@@ -2,7 +2,7 @@
 
 ## Summary
 
-**All LightVela configuration lives in the "My Hermes" console, which you open from the top-right corner after signing in. Agent instance tabs sit at the top, and below them are three configuration buttons: Models (choose a Model Coding Plan, Model API, or a custom OpenAI-compatible endpoint), Channels (entry points for each messaging platform — some connect by QR code, others need a token or app ID), and Skills (install reusable capability packs). Beyond those three, the console also offers Chat, Tasks, memory management, cloud storage, model switching, and a diagnostics center. Once the three basics are set, your agent is ready to talk in your messaging channels.**
+**All LightVela configuration lives in the "My Hermes" console, which you open from the top-right corner after signing in. Bot tabs for the current Hermes Agent sit at the top, and below them are three configuration buttons: Models (choose a Model Coding Plan, Model API, or a custom OpenAI-compatible endpoint), Channels (entry points for each messaging platform — some connect by QR code, others need a token or app ID), and Skills (install reusable capability packs). Beyond those three, the console also offers Chat, Tasks, memory management, cloud storage, model switching, and a diagnostics center. Once the three basics are set, your Bot is ready to talk in its messaging channels.**
 
 ---
 
@@ -20,13 +20,13 @@ This page introduces the overall console structure and the function of each butt
 
 - How to enter the console
 
-- Hermes Agent instance information button
+- Bot switcher and selected Bot information
 
 - Functions and entry points of the three configuration buttons
 
 - Success state after configuration
 
-- Common operations such as switching models, connecting multiple channels, and recreating Hermes Agent
+- Common operations such as managing Bots, switching models, and connecting multiple channels
 
 ---
 
@@ -36,11 +36,11 @@ After signing in, click "My Hermes" in the upper-right corner to enter the conso
 
 ---
 
-## Hermes Agent instance information
+## Bots and selected Bot information
 
-The top of the console contains Hermes Agent tabs. Each tab represents one Hermes Agent instance (the Launch plan supports only 1). The "+ Create" button on the right becomes unavailable after the instance limit is reached.
+The top of the console contains Bot tabs for the current Hermes Agent. The first tab is the main Bot; each additional tab is a separate Bot profile. Your plan determines the total Bot limit, including the main Bot. During the staged international rollout, the creation entry is not shown by default. See [Manage Bots](./configuration/bots.md) for creation methods and inheritance rules.
 
-After selecting a Hermes Agent, its basic information is shown below:
+After selecting a Bot, its basic information is shown below:
 
 - Avatar
 
@@ -54,7 +54,7 @@ After selecting a Hermes Agent, its basic information is shown below:
 
 > ⚠️ **Deletion is irreversible**
 >
-> Clicking the trash icon permanently deletes the Hermes Agent instance, including all conversation memory, connected channels, and installed skills. If the Launch plan quota still allows it, you can create a new Hermes Agent afterward.
+> Deleting an additional Bot permanently removes that Bot's profile and data. Deleting the main Bot deletes the entire Hermes Agent and all related data, and is allowed only after the other Bots have been deleted.
 
 ---
 
@@ -141,17 +141,19 @@ In the "Model" button, choose the source and model again, enter the API Key, and
 
 ### Connect multiple channels
 
-In the "Channel" button, switch dropdown options one by one and click "Authorize Access". Multiple channels point to the same Hermes Agent and share memory and Agent behavior.
+In the "Channel" button, switch dropdown options one by one and click "Authorize Access". Multiple channels connected to the same Bot share that Bot's memory and behavior.
 
-### Recreate Hermes Agent
+### Manage multiple Bots
 
-Click the trash icon on the right side of the basic information button to delete the current Hermes Agent, then click "+ Create Hermes Agent" to create it again. **All conversation memory will be lost**.
+Use the Bot tabs to switch between profiles. When the creation entry is available, you can copy the current or main Bot, or use Basic setup. See [Manage Bots](./configuration/bots.md) for the inheritance and deletion rules.
 
 ---
 
 ## Next steps
 
 Detailed configuration for each module:
+
+- [Manage Bots](./configuration/bots.md) — Create, copy, switch, rename, and delete Bots
 
 - [Configure Models](./configuration/model.md) — Model sources, API Key acquisition, and selection guidance
 

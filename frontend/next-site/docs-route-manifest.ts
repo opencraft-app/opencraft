@@ -35,6 +35,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots"
+    ],
+    [
+      "configuration",
       "model"
     ],
     [
@@ -485,6 +489,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots"
+    ],
+    [
+      "configuration",
       "model"
     ],
     [
@@ -756,6 +764,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration"
+    ],
+    [
+      "configuration",
+      "bots"
     ],
     [
       "configuration",
@@ -2121,7 +2133,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
+    "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",
@@ -2243,7 +2256,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
+    "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",
@@ -2316,7 +2330,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
+    "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",
@@ -2389,7 +2404,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",

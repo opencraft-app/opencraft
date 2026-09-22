@@ -317,12 +317,14 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("handleCreateNew();");
     expect(page).not.toContain('t("立即创建")');
     expect(page).not.toContain('t("创建智能体")');
-    expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>');
+    expect(readGeneratedDictionary("en-US").k_43ea9a84).toBe("Basic setup");
+    expect(page.match(/grid-cols-\[max-content_minmax\(0,1fr\)\]/g)).toHaveLength(2);
+    expect(page).toContain('<dt className="whitespace-nowrap font-medium text-black/70">{t("继承")}</dt>');
     expect(page).toContain('t("模型、人设、技能、用户偏好和长期记忆")');
-    expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>');
+    expect(page).toContain('<dt className="whitespace-nowrap font-medium text-black/70">{t("不继承")}</dt>');
     expect(page).toContain('t("当前对话、历史会话、定时任务、运行状态或通道连接")');
     expect(page).toContain('t("主 Bot 当前主模型及其 Provider 凭据")');
-    expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>');
+    expect(page).toContain('<dt className="whitespace-nowrap font-medium text-black/70">Skills</dt>');
     expect(page).toContain('t("系统预置")');
     expect(page).toContain('t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")');
     expect(page).not.toContain('t("使用 LightVela 默认配置创建一个独立 Bot。")');
