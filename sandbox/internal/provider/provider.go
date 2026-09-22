@@ -24,10 +24,11 @@ type CloudProvider interface {
 	// VerifyInstance confirms that the cloud instance is ready for control-plane
 	// delivery. The reference is regional and never uses an IP address as identity.
 	VerifyInstance(ctx context.Context, instance CloudInstanceRef) error
-	// StopInstance shuts down the instance while preserving system disk data.
+	// StopInstance submits an asynchronous shutdown while preserving system disk data.
 	// Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
 	// On Tencent Cloud this maps to StopInstances with StoppedMode=STOP_CHARGING
-	// to release CPU/memory billing while keeping disks intact.
+	// to release CPU/memory billing while keeping disks intact. Callers must use
+	// DescribeInstance to confirm that the instance eventually reaches STOPPED.
 	StopInstance(ctx context.Context, instance CloudInstanceRef) error
 	// StartInstance boots a previously stopped instance back to RUNNING.
 	// Reserved for renewal/restore flows that follow trade pass isolation.
