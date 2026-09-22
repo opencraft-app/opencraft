@@ -267,6 +267,11 @@ master 源码
 - 现有 CynosDB 集群 ID、内部 endpoint、独立 DB/账号、SSM 名、namespace 和 node pool 进入
   `infra_pulumi` inventory。`infractl bootstrap-collaboration` 默认只读，显式 `--apply` 后按
   SSM → 账号 → 逻辑库 → DB 级权限幂等执行；任何失败都可重入，默认拒绝密码或 IM Secret 轮换。
+- 已运行环境只有在确认 Tencent IM 返回 `70009` 或以等价证据证明 SDKAppID/SecretKey 不匹配后，
+  才能在人工启动时设置 `ALLOW_IM_SECRET_ROTATION=true`。dry-run 与 apply 必须同时显式传递
+  `--allow-im-secret-rotation`，由受保护的 `COLLABORATION_IM_CREDENTIAL` 更新 SSM，再导出 SOPS；
+  该开关不得隐式允许数据库密码重置。runtime 投影必须同时刷新 `COLLABORATION_DEPLOYED_AT`，
+  使 Deployment 滚动重启并重新读取 Secret，不能只修改 live Secret 或手工重启 Pod。
 - 首次创建账号的密码须符合目标 CynosDB 的复杂度约束，同时能安全写入受管 DSN。若 SSM 已创建而
   账号尚未创建，且其中旧 DSN 密码不合规，重入 bootstrap 仅重新生成并更新该受管 DSN 密码，
   保留其他 Secret 字段后再创建账号；账号已经存在时不得借此隐式轮换密码，仍需显式恢复授权。

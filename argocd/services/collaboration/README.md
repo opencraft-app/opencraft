@@ -30,6 +30,12 @@ kubectl 或复制 YAML。流水线固定为 dry-run → 人工审批 → apply/G
 7. 门禁成功后自动投影 active 描述符为 runtime sourcePath 并创建 GitOps MR；合入后再确认 Argo revision、镜像、
    `Synced/Healthy` 与 API 健康。Migration 不在常驻 Kustomize 中。
 
+已运行环境修正 Tencent IM 凭据时仍使用同一入口：先确认 protected setting 中的 SDKAppID、管理员和
+SecretKey 属于同一个应用，再以 `BOOTSTRAP_PHASE=runtime`、`ALLOW_IM_SECRET_ROTATION=true` 启动。
+该变量默认 `false`，只允许显式更新 IM Secret，不允许数据库密码重置。apply 会按
+SSM → SOPS → GitOps 投影更新，并刷新 `COLLABORATION_DEPLOYED_AT` 触发 Deployment 滚动重启；
+禁止只修改集群 Secret 或手工重启 Pod。
+
 Gateway 上游配置与匹配的内部 token 仍是单独的激活步骤，本轮不开放用户流量。
 缺少 SSM、SOPS、平台值或基础阶段时保持候选状态，不提交伪造的 Secret、旧服务镜像
 或复制其他环境的凭据来获得可渲染表象。上海、新加坡及 Playground 不随北京接入。

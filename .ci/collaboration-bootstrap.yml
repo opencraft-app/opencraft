@@ -31,6 +31,10 @@ variables:
     value: "1600137234"
     readonly: false
     allow-modify-at-startup: true
+  ALLOW_IM_SECRET_ROTATION:
+    value: "false"
+    readonly: false
+    allow-modify-at-startup: true
 
 stages:
   - name: Dry-run Collaboration 北京 bootstrap
@@ -56,6 +60,18 @@ stages:
               case "${{ variables.BOOTSTRAP_PHASE }}" in
                 foundation|runtime) ;;
                 *) echo "BOOTSTRAP_PHASE must be foundation or runtime" >&2; exit 1 ;;
+              esac
+              bootstrap_args=()
+              case "${{ variables.ALLOW_IM_SECRET_ROTATION }}" in
+                true)
+                  if [[ "${{ variables.BOOTSTRAP_PHASE }}" != runtime ]]; then
+                    echo "IM Secret rotation requires BOOTSTRAP_PHASE=runtime" >&2
+                    exit 1
+                  fi
+                  bootstrap_args+=(--allow-im-secret-rotation)
+                  ;;
+                false) ;;
+                *) echo "ALLOW_IM_SECRET_ROTATION must be true or false" >&2; exit 1 ;;
               esac
               source .ci/init.sh
               ci_init_repo_root
@@ -83,7 +99,8 @@ stages:
                 cd infra_pulumi
                 GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
                   --stack beijing-sandbox \
-                  --im-material-file "$im_file"
+                  --im-material-file "$im_file" \
+                  "${bootstrap_args[@]}"
               )
 
   - name: 人工确认 Collaboration 北京 bootstrap
@@ -98,6 +115,8 @@ stages:
           - 环境只能是 beijing-sandbox，数据库实例必须是既有 cynosdb-bj8。
           - foundation 只创建/核对独立逻辑库、账号、SSM，并生成 Namespace/Secret GitOps MR。
           - runtime 必须在 foundation 已收敛后执行 MySQL migrate/status/verify，再生成 Runtime MR。
+          - 仅在修正已核实的 SDKAppID/SecretKey 不匹配时设置 ALLOW_IM_SECRET_ROTATION=true；
+            它只允许 IM Secret 显式轮换，不允许数据库密码重置。
           - 不会新建数据库实例，不会触及 shprod、sgprod 或 Playground，不会自动合并 GitOps MR。
       timeout-hours: 24
     jobs:
@@ -143,6 +162,18 @@ stages:
                 foundation|runtime) ;;
                 *) echo "BOOTSTRAP_PHASE must be foundation or runtime" >&2; exit 1 ;;
               esac
+              bootstrap_args=()
+              case "${{ variables.ALLOW_IM_SECRET_ROTATION }}" in
+                true)
+                  if [[ "$phase" != runtime ]]; then
+                    echo "IM Secret rotation requires BOOTSTRAP_PHASE=runtime" >&2
+                    exit 1
+                  fi
+                  bootstrap_args+=(--allow-im-secret-rotation)
+                  ;;
+                false) ;;
+                *) echo "ALLOW_IM_SECRET_ROTATION must be true or false" >&2; exit 1 ;;
+              esac
               source .ci/init.sh
               ci_init_repo_root
               ci_ensure_go
@@ -180,6 +211,7 @@ stages:
                 GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
                   --stack beijing-sandbox \
                   --im-material-file "$im_file" \
+                  "${bootstrap_args[@]}" \
                   --apply
               )
               python3 scripts/export_ssm_to_sops.py \
