@@ -30,6 +30,7 @@ Current upstreams:
 - `/admin/api/sandbox/*` -> `gateway-dashboard-internal.ai-gateway.svc.cluster.local` with `rewrite_prefix: /admin/gateway/api/sandbox`
 - `/admin/api/ctl/bundles/*` -> `ctl-api.ctl.svc.cluster.local` (direct, no rewrite)
 - `/admin/api/ctl/passes/*` -> `ctl-api.ctl.svc.cluster.local` (direct, no rewrite)
+- `/admin/api/referral/*` -> `referral.referral.svc.cluster.local` (direct, no rewrite; attribution reset only)
 - `/admin/api/ctl/*` -> `gateway-dashboard-internal.ai-gateway.svc.cluster.local` with `rewrite_prefix: /admin/gateway/api/ctl`
 
 There is no `/` or `/admin` catch-all route in the standard public admin entrypoint.

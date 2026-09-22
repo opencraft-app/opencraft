@@ -24,6 +24,7 @@ import {
   BadgeDollarSign,
   Coins,
   GitBranch,
+  Gift,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -47,6 +48,7 @@ const navItems = [
   { label: "邀请码", href: "/invites", icon: Ticket },
   { label: "业务订阅", href: "/subscriptions", icon: BadgeDollarSign },
   { label: "积分包", href: "/credit-packages", icon: Coins },
+  { label: "邀请返利", href: "/referrals", icon: Gift },
   { type: "separator" as const },
   { label: "套餐", href: "/plans", icon: Package },
   { label: "供应商", href: "/providers", icon: Plug },

@@ -29,6 +29,7 @@ data:
   # CTL_INTERNAL_TOKEN is injected from gateway-dashboard-runtime-secrets.
   CREDIT_API_URL: "REPLACE_GATEWAY_DASHBOARD_CREDIT_API_URL"
   # CREDIT_INTERNAL_TOKEN is mapped from the shared internal-service token below.
+  REFERRAL_ADMIN_API_URL: "REPLACE_GATEWAY_DASHBOARD_REFERRAL_ADMIN_API_URL"
   # 反馈后台（用户反馈页）上游与代理身份：
   # TICKET_API_URL 指向 ticket 服务管理地址；
   # SUPPORT_FEEDBACK_AGENT_ID 须落在 ticket 的 SUPPORT_AGENT_IDS 白名单内，

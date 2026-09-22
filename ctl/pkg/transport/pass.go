@@ -184,6 +184,16 @@ type GrantFreeCreditResponse struct {
 	PeriodEnd        time.Time `json:"period_end"`
 }
 
+type RevokeFreeCreditRequest struct {
+	UserID            string   `json:"user_id"`
+	SubscriptionNames []string `json:"subscription_names"`
+}
+
+type RevokeFreeCreditResponse struct {
+	UserID                   string   `json:"user_id"`
+	RevokedSubscriptionNames []string `json:"revoked_subscription_names"`
+}
+
 // === jifei 反查接口三件套 transport DTOs（billing-integration B11A 新增）===
 // 设计稿：.tmp/trade-resource-query-design.md §4.1
 

@@ -67,6 +67,16 @@ class GatewayDashboardCreditDeliveryTest(unittest.TestCase):
                     values["GATEWAY_DASHBOARD_CREDIT_API_URL"], expected_url
                 )
 
+    def test_referral_environments_define_cluster_internal_admin_url(self) -> None:
+        expected_url = "http://referral.referral.svc.cluster.local"
+        for environment in ("beijing-sandbox", "shprod", "sgprod"):
+            with self.subTest(environment=environment):
+                values = load_platform_env(environment)
+                self.assertEqual(
+                    values["GATEWAY_DASHBOARD_REFERRAL_ADMIN_API_URL"],
+                    expected_url,
+                )
+
     def test_tokyo_dashboard_ssm_requires_shared_credit_token(self) -> None:
         manifest = yaml.safe_load(
             (REPO_ROOT / "scripts/ssm_manifest.runtime.sandbox-jp-1.yaml").read_text()

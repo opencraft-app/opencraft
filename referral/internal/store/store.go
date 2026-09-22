@@ -24,3 +24,9 @@ type Store interface {
 	MarkRewardRetryable(context.Context, string, string, string, time.Time) error
 	CancelExpiredRewards(context.Context, time.Time) (int64, error)
 }
+
+type AttributionAdminStore interface {
+	AttributionResetPreview(context.Context, string, string) (*domain.AttributionResetPreview, error)
+	AttributionResetResult(context.Context, string) (*domain.AttributionResetResult, error)
+	CompleteAttributionReset(context.Context, domain.AttributionResetPreview, string, string, string, time.Time) (*domain.AttributionResetResult, error)
+}

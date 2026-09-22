@@ -418,6 +418,7 @@ func normalizePath(path string) string {
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete",
 		"/internal/ctl/passes/free-credit",
+		"/internal/ctl/passes/free-credit/revoke",
 		"/cloudapi":
 		return path
 	}

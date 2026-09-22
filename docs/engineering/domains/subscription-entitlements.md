@@ -62,6 +62,11 @@
 - 上海生产使用独立 Campaign 和 Pulsar 角色，奖励口径与北京一致但不共享 Campaign ID、Token 或预算。
   退款只取消其资格 Pass 对应的未发奖励，不自动追回已发积分。发放前 CTL 还要
   重新校验资格 Pass 的 owner、active 状态和有效期，避免退款事件延迟造成竞态。
+- 已发 `free-credit:*` 是独立奖励权益。Pass 退款、隔离、销毁只能取消 `package:*`，不能按
+  `free-credit:` 前缀清理奖励；账户清退、风控追回或运营纠错必须由奖励所有者提交精确
+  `subscription_name` 撤销。Referral 运营重置先预览 Attribution/Reward，撤销已发权益后原子删除
+  关系与奖励，并把操作人、原因、幂等键和完整快照写入独立审计表；首购/退款事实不得删除。奖励发放
+  幂等键必须包含归因事件 generation，确保同一 Campaign 合法重新归因后不会复用已取消的旧订阅。
 - 邀请人无 active Pass 时保留最多 90 天重试。两侧奖励使用独立幂等键；活动持有单邀请人上限、
   全局积分预算和 30 天奖励 Plan，前端常量不能替代这些服务端约束。
 

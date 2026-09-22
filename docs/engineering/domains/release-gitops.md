@@ -243,6 +243,9 @@ master 源码
 - 上海 foundation 使用独立 `lightvela_referral` 数据库和 `referral` 用户。激活时必须使用上海独立 Campaign、
   Pulsar producer/consumer Token 和精确 Gateway 路由，同时把 worker 恢复到 2 副本；不得复用北京 campaign ID、
   Token 或 endpoint。上海 Campaign 双方各 500 积分、`vesting_days=0`，资格仍是首次成功开通且 0 元 dianshi 订单也算。
+- Referral Attribution 运营重置依赖 schema `000003_attribution_reset_audit`、Referral API、CTL 精确免费积分撤销
+  和 Admin Gateway `/admin/api/referral` 路由同时就绪。发布顺序必须是 migration → CTL → Referral → Admin Gateway；
+  缺任一阶段时管理入口保持不可用，不能退化为直接 SQL 删除。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。

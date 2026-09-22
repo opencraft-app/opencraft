@@ -27,6 +27,10 @@
   必须经过现有 LightVela session 内省。`service-gateway` 在转发前清除调用方提供的 `X-User-Id`
   等身份头并注入会话中的权威用户 ID，Referral 只消费该集群内断言；不得把 Referral ClusterIP、
   任意 owner 参数或宽泛路径暴露为公共身份入口。
+- Attribution 重置不是用户能力。它只通过 Admin Gateway 的 Basic Auth 管理面暴露
+  `/admin/api/referral/attributions/{invitee_user_id}` 预览和 `/reset` 执行，不进入用户 Service Gateway。
+  执行必须携带期望 attribution ID、操作人、原因和幂等键；Referral 不信任调用方提交的奖励或订阅列表，
+  只能从自身数据库快照生成 CTL 精确撤销请求。
 
 ## 机器契约与验证
 

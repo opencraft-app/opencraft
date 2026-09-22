@@ -226,7 +226,11 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - 修改救援 Workflow 的 Activity 序列时使用 Temporal version marker 保证旧 History 继续 replay，不能让存量执行产生 nondeterminism。
 - `ctl.user_subscription_gateway` 是已分配用户的网关归属真源；Pass 续费只延长当前归属网关的权益，不隐式迁移网关。active Pass 续费完成前必须确保套餐权益存在：VelaGW 使用稳定幂等键和唯一订阅语义直接补齐，旧 AI-Gateway 则先探测 active subscription，仅在明确缺失时补建；探测失败必须保持任务可重试，不能用补建覆盖未知状态的旧订阅。
 - Pass 升配在实例规格完成后，使用目标 Bundle 的 `AiGatewayPlanID` 和订单稳定幂等键确保唯一套餐订阅；这既覆盖 AI 套餐间的 Plan 替换，也覆盖通用套餐用户首次升到 AI SP 时创建目标 Plan。权益成功但本地收尾失败时必须持久化进度并幂等前滚，不能重复发放套餐积分。
-- VelaGW 中套餐、免费积分与独立购买的积分包是可并存的订阅。Pass 到期清理只能按名称前缀删除 `package:`、`free-credit:` 及历史空名称套餐订阅，必须保留 `credit-package:`；单个积分包退款或隔离则按完整订阅名删除目标订阅，不得清理 Pass 周期元数据或其他积分包。旧 AI-Gateway 不具备定向删除能力，仍沿用用户级全量取消语义。
+- VelaGW 中套餐、免费积分与独立购买的积分包是可并存的订阅。Pass 到期、退款、隔离或销毁只能删除
+  `package:` 及历史空名称套餐订阅，必须保留 `free-credit:` 与 `credit-package:`；单个积分包退款或隔离
+  按完整订阅名删除目标订阅。Referral 运营纠错也只能通过 CTL 按 Referral DB 记录的完整
+  `free-credit:*` 名称撤销，禁止把前缀取消能力暴露给运营入口。旧 AI-Gateway 不具备定向删除能力，
+  仍沿用用户级全量取消语义。
 - 邀请返利复用 `free-credit:referral:*` named subscription，但发放权在 Referral 状态机，CTL 提供强鉴权
   的幂等送积分包装。调用方只传积分额度和资格标识，不传 Plan ID；CTL 将积分换算成 token，
   VelaGW 自动确保 `never` reset 的内部权益模板，并在其同步到全部 active Set 后发放。包装在调用 VelaGW 前

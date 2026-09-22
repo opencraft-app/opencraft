@@ -388,9 +388,8 @@ func TestCancelAiGatewayEntitlementUsesSelectedCancelForLLMGateway(t *testing.T)
 	if llmStub.cancelSelectedReq.UserID != "user-1" {
 		t.Fatalf("selected cancel user_id=%q", llmStub.cancelSelectedReq.UserID)
 	}
-	if len(llmStub.cancelSelectedReq.SubscriptionNamePrefixes) != 2 ||
-		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[0] != "package:" ||
-		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[1] != "free-credit:" {
+	if len(llmStub.cancelSelectedReq.SubscriptionNamePrefixes) != 1 ||
+		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[0] != "package:" {
 		t.Fatalf("selected cancel prefixes=%+v", llmStub.cancelSelectedReq.SubscriptionNamePrefixes)
 	}
 	if !llmStub.cancelSelectedReq.IncludeLegacyPackageSubscription {
