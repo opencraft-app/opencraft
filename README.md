@@ -796,9 +796,6 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 - [gateway-dashboard](gateway-dashboard)
   - 当前主线管理后台
   - 负责 auth users、providers/routing、sandbox pools、ctl bots 等后台管理页
-- [nextgen-dashboard-client](nextgen-dashboard-client)
-  - 本地终端客户端
-  - 通过 websocket + Basic Auth 连接 `nextgen-dashboard`（服务端源码已移除，存量部署待下线）
 
 ### 4. 基础设施
 
@@ -830,8 +827,6 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
   - 多端 Agent 工作台与桌面 Local Agent；独立 npm workspace
 - [service-gateway](service-gateway)
   - 公网服务网关
-- [nextgen-dashboard-client](nextgen-dashboard-client)
-  - 管理台的本地客户端
 - [images](images)
   - 镜像辅助内容、envd daemon 源码、agent/helper、小工具镜像
 - [ctl](ctl)

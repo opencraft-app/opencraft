@@ -124,7 +124,6 @@ mono2-clean/
 ├── subscription/             # 订阅与计费
 │
 ├── 【运维管理】
-├── nextgen-dashboard-client/ # 本地管理台客户端
 ├── gateway-dashboard/        # 后台管理系统 (React)
 ├── admin-gateway/            # 管理 API 入口
 ├── argocd/                   # GitOps 部署配置 (Argo CD)

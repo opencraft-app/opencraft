@@ -188,7 +188,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
                 self.assertIn("does not define docker build inputs", result.stderr)
 
     def test_resolve_release_bundle_supports_sandbox2_image_services(self) -> None:
-        for service in ["ai-gateway", "nextgen-dashboard"]:
+        for service in ["ai-gateway"]:
             with self.subTest(service=service):
                 result = run_command(
                     [

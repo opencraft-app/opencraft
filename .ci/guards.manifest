@@ -26,7 +26,6 @@ guards:
       - frontend/src/app-env.d.ts
       - admin-gateway/**
       - gateway-dashboard/**
-      - nextgen-dashboard/**
       - .ci/runtime/**
       - argocd/**
       - infra_pulumi/**
