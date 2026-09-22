@@ -71,6 +71,10 @@ master 源码
 - LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
   产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
   通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。
+- frontend Pages artifact在release matrix显式启用时，先构建OpenCraft独立Embedded Workbench
+  target，再把无sourcemap、内容寻址的静态树放入Next导出的`/__opencraft/`子树；Next主chunk
+  不导入OpenCraft，未执行rollout `show()`的页面也不请求该树。同源共包避免ES module CORS和
+  两个独立发布版本漂移，但artifact构建必须在缺少loader输入时失败，不能静默回退成只含前端代码。
 - `vela-computer`客户端候选CI只构建原生Linux AMD64、校验并归档到流水线制品库，不下发
   实例、不接自动更新、不上传公共COS。候选带`schemaVersion=1`、完整源码SHA、dirty标记、
   平台、版本和SHA256SUMS；`deploymentQualified=false`不能用作正式可用证明。
@@ -423,6 +427,19 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
 - SSM manifest 应声明运行时必填键。重新导出时缺少 required key 必须失败，避免后续 promotion 静默删除 live 已有凭据。
+
+## nextgen-dashboard 下线的 GitOps 处置（2026-09-22）
+
+- admin-gateway 五个环境（`shprod`、`sgprod`、`beijing-sandbox`、`beijing-sandbox-2`、`sandbox-bj-7`）的
+  deploy-facing `config.yaml` 已移除 `/admin` → `nextgen-dashboard` 的 upstream 路由；`/admin/gateway` 与
+  `/` 兜底仍指向 gateway-dashboard，未知 `/admin` 子路径改由 gateway-dashboard 应答。该变更在
+  admin-gateway 的 Argo Application 同步后才生效，源码合入不等于发布。
+- `nextgen-dashboard` 源码目录已删除，但 `argocd/services/nextgen-dashboard/`、catalog 描述符、
+  SOPS secrets、SSM manifest 与 `.ci/nextgen-dashboard.yml` 在存量 deployment 下线前暂保留；
+  其 CI 触发路径不再命中源码，不要手动触发该流水线。
+- 正式下线是后续独立 GitOps 变更：删除 deploy-facing 目录与 secrets 后，必须确认对应 Argo
+  Application 移除、workload 达到 `Synced`/`Healthy` 终态，且 `user-auth` 与 playground namespace
+  中不再有 nextgen-dashboard workload。
 - SOPS 每次加密的密文可以不同。判断 Secret 是否一致必须在受控环境中比较解密后的键集合和值，或比较逐键安全摘要；仅看到密文 diff、MR 已合入或 Argo `Healthy` 都不能证明语义一致。
 - live hotfix 后，即使业务已经恢复，也必须补齐 SSM、`master` 和 `gitops`。执行 Argo Sync 前先确认 deploy-facing 明文语义与 live 一致，否则 Sync 可能把正确的 live Secret 覆盖成旧值。
 - Secret 只更新对象数据时，Pod 不会自动重启。需要运行进程读取新值时应单独执行受控 rollout，并分别验证 Secret、Pod 环境和业务请求；不要把 Secret `Synced` 等同于进程已生效。

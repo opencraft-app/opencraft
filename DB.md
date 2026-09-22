@@ -42,7 +42,6 @@ schema_migrations(version, dirty)
 | `frontend` | `none` | 静态前端，无 DB。 |
 | `frontend-ds` | `none` | 前端设计系统，无 DB。 |
 | `gateway-dashboard` | `none` | 管理前端，无 DB migration。 |
-| `nextgen-dashboard` | `none` | 管理前端，无 DB migration。 |
 | `service-gateway` | `none` | 网关服务本身不维护 DB schema。 |
 | `admin-gateway` | `none` | 网关服务本身不维护 DB schema。 |
 | `staticpages` | `none` | 静态页面服务，无 DB migration。 |

@@ -7,7 +7,7 @@ flowchart TB
   U[国内/国际用户] --> FE[frontend / VelaLink]
   OP[运营与管理员] --> AG[admin-gateway]
   FE --> SG[service-gateway]
-  AG --> GD[gateway-dashboard / nextgen-dashboard]
+  AG --> GD[gateway-dashboard]
   SG --> AUTH[user/auth + shadow]
   SG --> COM[subscription + payment + trade]
   SG --> CTL[ctl]

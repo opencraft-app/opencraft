@@ -42,3 +42,7 @@ Server/Member/腾讯 IM 映射控制面，后者是下发到托管 Computer 的 
 ## 2026-09-16 应用：OpenCraft 工作台入口
 
 根 `AGENTS.md` 只登记 OpenCraft 的路径和局部入口，不承载桌面运行手册；根 `README.md` 给人类可执行的本地与隔离预览步骤，`opencraft/AGENTS.md` 仅补充服务内所有权、参考仓库和验收约束。完整平台契约仍由 OpenCraft 正式文档与构建矩阵拥有。这保持了根路由、服务局部规则与人类操作说明的单一权威关系。
+
+## 2026-09-22 应用：nextgen-dashboard 服务下线
+
+`nextgen-dashboard` 一级服务废弃，按新增一级服务的原子登记契约做逆向收敛：源码目录与本地 catalog 随之删除，中央 Service Catalog 条目、派生 service Context Pack、`service-nextgen-dashboard` 路由与冒烟用例、change-impact 命中路径、校验器 `PRIMARY_SERVICES` 集合及测试同步移除。deploy-facing 的 `argocd/services/nextgen-dashboard/`、SOPS secrets、SSM manifest 与 CI 流水线在存量部署下线前暂保留；admin-gateway 各环境配置中的 `/admin` upstream 路由已先行摘除。历史 runbook 与分析快照不回写。

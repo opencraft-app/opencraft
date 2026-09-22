@@ -265,15 +265,6 @@
       "deferred_paths": ["new-api/docs/README.md", "new-api/AGENTS.md"]
     },
     {
-      "id": "service-nextgen-dashboard",
-      "scope": "Nextgen Dashboard 管理服务入口。",
-      "triggers": ["nextgen-dashboard", "nextgen dashboard", "下一代管理台"],
-      "symbols": ["nextgen-dashboard"],
-      "path_prefixes": ["nextgen-dashboard/"],
-      "must_read": ["docs/context/project/services/nextgen-dashboard.md"],
-      "deferred_paths": ["nextgen-dashboard/docs/README.md", "nextgen-dashboard/AGENTS.md"]
-    },
-    {
       "id": "service-payment",
       "scope": "支付链接、支付回调与支付幂等服务入口。",
       "triggers": ["payment service", "支付回调", "pay url"],

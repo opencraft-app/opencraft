@@ -75,7 +75,7 @@
       "superseded_by": null,
       "owner_ref": "wisp/mono2-maintainers",
       "design_record": "docs/engineering/domains/site-environment-routing.md",
-      "current_code_evidence": ["frontend/", "admin-gateway/", "gateway-dashboard/", "nextgen-dashboard/"],
+      "current_code_evidence": ["frontend/", "admin-gateway/", "gateway-dashboard/"],
       "derived_contexts": [{"context_id": "site-environment-routing", "path": "docs/context/domains/site-environment-routing.md", "status": "active", "default_routed": true}],
       "risk": "normal",
       "unknowns": ["外部 DNS、CDN 与环境实时配置不在仓库历史中。"]
