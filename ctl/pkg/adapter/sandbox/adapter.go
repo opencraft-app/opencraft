@@ -43,6 +43,7 @@ const (
 	maxPollInterval       = 8 * time.Second
 
 	defaultProcessUser = "agentuser"
+	pausePollTimeout   = 5 * time.Minute
 )
 
 // Adapter defines sandbox lifecycle operations exposed to the business layer.
@@ -624,7 +625,47 @@ func (a *SandboxAdapter) PauseSandbox(ctx context.Context, sandboxID string) (er
 	if err = validateSandboxID(sandboxID); err != nil {
 		return err
 	}
-	return a.doRequest(ctx, "pause", http.MethodPost, "/sandboxes/"+url.PathEscape(sandboxID)+"/pause", nil, nil, http.StatusNoContent, nil)
+	if err = a.doRequest(ctx, "pause", http.MethodPost, "/sandboxes/"+url.PathEscape(sandboxID)+"/pause", nil, nil, http.StatusNoContent, nil); err != nil {
+		return err
+	}
+	return a.waitSandboxPaused(ctx, sandboxID)
+}
+
+func (a *SandboxAdapter) waitSandboxPaused(ctx context.Context, sandboxID string) error {
+	pollCtx, cancel := context.WithTimeout(ctx, pausePollTimeout)
+	defer cancel()
+
+	pollInterval := initialPollInterval
+	for {
+		detail, err := a.GetSandbox(pollCtx, sandboxID)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return errcode.Wrap(errcode.ErrSandboxTimeout, "wait sandbox paused")
+			}
+			return err
+		}
+		switch strings.ToLower(strings.TrimSpace(detail.State)) {
+		case "paused":
+			return nil
+		case "running", "pausing":
+			// StopInstances is asynchronous; keep polling until Sandbox reconciles STOPPED.
+		default:
+			return errcode.Wrap(errcode.ErrSandboxStatusConflict, "unexpected sandbox state %q while pausing", detail.State)
+		}
+
+		if err := sleepWithContext(pollCtx, pollInterval); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return errcode.Wrap(errcode.ErrSandboxTimeout, "wait sandbox paused")
+			}
+			return err
+		}
+		if pollInterval < maxPollInterval {
+			pollInterval *= 2
+			if pollInterval > maxPollInterval {
+				pollInterval = maxPollInterval
+			}
+		}
+	}
 }
 
 // ResumeSandbox resumes a sandbox.

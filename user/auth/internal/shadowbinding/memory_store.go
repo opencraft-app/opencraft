@@ -3,6 +3,9 @@ package shadowbinding
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -67,6 +70,58 @@ func (s *MemoryStore) GetBindingByShadowUserName(_ context.Context, shadowUserNa
 		return disabled, nil
 	}
 	return Binding{}, ErrNotFound
+}
+
+func (s *MemoryStore) ListAdminBindings(_ context.Context, search string, limit int, offset int) ([]Binding, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	needle := strings.ToLower(strings.TrimSpace(search))
+	bindings := make([]Binding, 0, len(s.bindings))
+	for _, binding := range s.bindings {
+		if needle != "" && !adminBindingMatches(binding, needle) {
+			continue
+		}
+		bindings = append(bindings, binding)
+	}
+	sort.Slice(bindings, func(i, j int) bool {
+		if bindings[i].CreatedAt.Equal(bindings[j].CreatedAt) {
+			return bindings[i].UserID < bindings[j].UserID
+		}
+		return bindings[i].CreatedAt.After(bindings[j].CreatedAt)
+	})
+
+	total := len(bindings)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return []Binding{}, total, nil
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return append([]Binding(nil), bindings[offset:end]...), total, nil
+}
+
+func adminBindingMatches(binding Binding, needle string) bool {
+	values := []string{
+		binding.UserID,
+		binding.ShadowUserName,
+		strconv.FormatInt(binding.Uin, 10),
+		strconv.FormatInt(binding.OwnerUin, 10),
+		strconv.FormatInt(binding.AppID, 10),
+	}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *MemoryStore) UpsertAdminBinding(_ context.Context, requested Binding, now time.Time) (Binding, error) {

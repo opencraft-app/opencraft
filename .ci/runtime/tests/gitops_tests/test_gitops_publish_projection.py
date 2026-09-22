@@ -188,7 +188,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
                 self.assertIn("does not define docker build inputs", result.stderr)
 
     def test_resolve_release_bundle_supports_sandbox2_image_services(self) -> None:
-        for service in ["ai-gateway", "nextgen-dashboard"]:
+        for service in ["ai-gateway"]:
             with self.subTest(service=service):
                 result = run_command(
                     [
@@ -364,7 +364,7 @@ class SandboxCatalogTests(unittest.TestCase):
             self.assertIn("sourcePath: argocd/services/", content, msg=str(catalog_file))
             self.assertNotIn("\npath: argocd/services/", content, msg=str(catalog_file))
 
-    def test_beijing_service_common_is_component(self) -> None:
+    def test_beijing_services_reuse_common_component_or_explicit_root(self) -> None:
         service_root = REPO_ROOT / "argocd" / "services"
         common_files = sorted(service_root.glob("*/common/kustomization.yaml"))
         self.assertGreaterEqual(len(common_files), 1)
@@ -379,6 +379,18 @@ class SandboxCatalogTests(unittest.TestCase):
                 # Foundation is deliberately self-contained for Argo's default load restriction.
                 continue
             content = beijing_file.read_text()
+            if beijing_file == service_root / "service-gateway/beijing-sandbox/kustomization.yaml":
+                # The Beijing gateway must own the base and its Collaboration patch in one
+                # Kustomization; a Component patch cannot target resources introduced by a
+                # Component, including itself.
+                self.assertIn("kind: Kustomization", content, msg=str(beijing_file))
+                self.assertIn(
+                    "resources:\n- ../../../../service-gateway/k8s/base",
+                    content,
+                    msg=str(beijing_file),
+                )
+                self.assertNotIn("components:", content, msg=str(beijing_file))
+                continue
             self.assertIn("- ../common", content, msg=str(beijing_file))
             self.assertNotIn("resources:\n- ../common", content, msg=str(beijing_file))
 

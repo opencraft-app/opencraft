@@ -75,6 +75,57 @@ font role, and platform rendering can change without rewriting every component.
 Shell and extension chrome consume the semantic primitive; feature-local raw
 metrics are reserved for content systems with a separate owner.
 
+Shared Button and Settings form controls also consume registry roles:
+`control/controlSmall/controlLarge/controlCompact`, `input`, and settings
+heading/label roles. Native button text metrics are projected from the same
+registry; geometry remains in the button contract and is not changed by this
+normalization. Web role projection can omit TextTone (`null`) when a control
+variant owns its semantic colors. `controls.web.scss` owns state-only focus,
+disabled and invalid feedback, including forced-colors focus visibility.
+Generic Button loading preserves its label footprint and exposes `aria-busy`;
+it cannot widen the button or animate the spinner under reduced motion.
+
+The focused standards test rejects typography literals in these shared
+consumers. `scripts/smoke-control-standards.ts` renders actual controls across
+light/dark/custom palettes and tests size, focus, invalid, disabled and loading
+states; optional isolated Electron execution requires an explicit executable.
+
+### Theme surfaces and native appearance
+
+`ZenCode` (`vela.core.zencode`) is an optional built-in Web/Electron palette
+inspired by ZCode's layered grays: opaque chrome, light gray/white surfaces in
+light mode and charcoal layers in dark mode. It does not change default theme,
+typography or control density. Settings preview cards project each theme's
+actual resolved-mode tokens rather than maintaining ID-specific color copies.
+
+The design-system `theme-options` contract owns optional semantic surface
+overrides (`window`, `sidebar`, `panel`, `input`, `popover`) and material enums
+(`window: translucent | opaque`, `elevation: soft | flat`). Extensions provide
+strict hex colors and enum values, never CSS, selectors, URLs or geometry.
+Registration validates and freezes nested options before the activation batch
+is published. Omitted fields retain generated colors and existing internal
+shell-material defaults. Each selection regenerates the full property map,
+including fallback values, so unloading a theme cannot leave old overrides.
+The elevation enum affects main workspace surfaces, not every popup's shadow.
+
+Web forwards selected palette options without narrowing away material intent.
+Settings inputs consume the dedicated input surface rather than borrowing an
+unrelated elevated layer. Other components use the corresponding existing
+panel/popover tokens. The renderer sends only light/dark/system intent, resolved
+mode, opaque-window intent and a hex backing color through the desktop bridge.
+Main validates the message and retains sender ownership checks; on macOS an
+opaque theme always disables vibrancy, while a translucent theme may use it only
+while focused. Unfocused windows and non-macOS windows remain opaque. Legacy
+mode-only messages retain their previous backing defaults. Material changes do
+not recreate the window or change its bounds.
+
+`tests/theme-material-capabilities.test.ts` covers the shared contract and native
+policy; `scripts/smoke-theme-materials.ts` uses real extension registration,
+renderer projection, production preload and native applicator in an isolated
+Electron harness. The harness does not boot the full Agent runtime. Expo still
+uses its static light/dark palette adapter; dynamic Native themes are not part
+of this capability.
+
 ### Client voice input ownership
 
 Voice input is a client input service, not an Agent Host tool or chat model.
@@ -207,9 +258,11 @@ The SDK fences late unsubscribe responses, retains newly acquired views and
 actually reattaches them. Naming uses per-Host/Thread acknowledgement queues and
 optimistic-write generations; archive/unarchive modifies durable catalog state,
 never deletes a workspace. Catalog notifications invalidate shared queries.
-The sidebar offers only Host-declared operations, with an archived management
-dialog and restore/undo action. All menus/dialogs use the existing Radix and
-theme controls. Source and acceptance are tracked in
+The main sidebar offers only Host-declared operations for active Threads and
+does not retain archive-management or transient undo state. Archived browsing
+and restore belong to a capability-gated Settings page, scoped to the active
+Host and backed by the same catalog query/invalidation owner. All menus and
+settings controls reuse the existing Radix and theme primitives. Source and acceptance are tracked in
 [the lifecycle plan](../design/thread-lifecycle/task_plan.md).
 
 ### Project selection and persistence
@@ -234,6 +287,20 @@ in their original Host catalog, but never retarget a replacement draft.
 
 ### Read-only SQLite diagnostics
 
+The decided, not-yet-implemented lifecycle for OpenCraft-owned SQLite and
+IndexedDB stores is documented in [storage lifecycle](./sqlite-lifecycle.md)
+and [plugin persistence](./plugin-persistence.md). It retains node:sqlite and
+does not adopt Drizzle in this phase. Client-local and Host-owned data have
+separate authorities; engine-private databases retain their owners.
+
+The first [Host document API](./host-document-storage.md) implementation exposes
+versioned capability discovery, read/CAS and content-free invalidation on the
+authenticated Local Agent Host. The client borrows a fixed initialized Host
+connection and rejects old generations, with no local fallback or implicit
+reconnect. This adds API capability, not a Host plugin runtime or multi-tenant
+authorization model. SQLite code is shared through document-storage's explicit
+Node entry; Web/Expo consume only the pure contract.
+
 Electron internal developer mode exposes a Settings inspector for the four
 OpenCraft-owned local Agent SQLite databases under the current desktop profile:
 session routing, history index, thread catalog and execution authority. Main
@@ -256,6 +323,53 @@ mode restores them together; disabling it while a Bot view is active returns
 to the ordinary Chat route. The extensions and AppServer capabilities remain
 loaded, so this audience flag is a presentation policy rather than an
 authorization or persistence boundary.
+
+### Internationalization authority
+
+OpenCraft follows the recovered Codex application localization path: explicit
+locale override, an `IDE` / `SYSTEM` / `FIRST_AVAILABLE` source policy, canonical
+BCP-47 tags, regional catalog matching, lazy messages, and a cached FormatJS Intl
+instance. `FIRST_AVAILABLE` prefers a non-English IDE locale, then a non-English
+system locale. The standalone Web/Electron adapter selects `SYSTEM`; the embedded
+host supplies the equivalent of Codex's IDE locale. Product region is not an input.
+
+`packages/i18n` owns `LocaleRuntime` and its narrow `IntlPort`. Each application
+gets its own runtime/cache. Its snapshot carries the exact Intl object consumed
+both by `RawIntlProvider` and imperative services; no global language singleton
+can cross embedded application lifetimes. UI call sites own stable message IDs,
+English `defaultMessage` and optional translator descriptions. FormatJS handles
+ICU plural/select, rich text, dates, numbers, lists and relative time. Missing
+translations use English source messages while Intl retains the resolved locale.
+
+`locale.override` is an installation-scoped UiPreferences key. Empty string means
+no explicit override and must remain empty when resolving system/host language.
+The existing IndexedDB / Main SQLite adapters own persistence and invalidation.
+React does not write locale localStorage. Desktop supplies preferred system
+languages through a trusted preload port; resolved renderer locale also updates
+the native tray through a validated IPC projection, without writing another preference.
+
+`WorkbenchIntlProvider` sets lang/dir on its owned presentation root. Standalone
+owns the document element; an embedded instance owns its custom element only.
+Embedded `localization` options and `setLocalization()` update the existing
+runtime. Without explicit host input, the embed observes its parent document's
+lang. Language changes never recreate applications, conversations or Composer
+editors. ProseMirror updates placeholder/aria-label in place and retains history,
+selection, composition and draft ownership. Translator resource requests are
+generation-fenced; failed chunks retain source messages and can be retried.
+
+The initial OpenCraft catalogs cover English and Simplified Chinese for the
+migrated shell/settings/chat/browser controls. Other feature-local hardcoded
+copy and vendored Hermes dictionaries have not been claimed as migrated, nor
+are Codex's product-specific 64 translation catalogs represented as OpenCraft
+translations. Their messages belong to different products. Catalog registration
+uses literal dynamic imports so only the selected translation chunk loads.
+
+`npm run check:i18n` checks source ID/default consistency and ICU parameter parity;
+`--extract <path>` on its script exports descriptors for translators. `test:i18n`
+covers source policy, late results, load failure/retry, root isolation, persistence
+and shared Intl identity. `smoke:i18n` exercises actual Settings/Composer/Intl and
+IndexedDB, including focus, DOM identity and undo across a locale switch. These
+checks are part of `gate`; locale coverage is distinct from runtime correctness.
 
 ### UI preference authority
 
@@ -338,6 +452,7 @@ protocol adaptations are tracked there rather than implied by a successful build
 | `app-host-protocol` | host/generation/lease envelopes outside AppServer JSON-RPC | none |
 | `app-host-client` | Renderer-side logical App Host channel transport | MessagePort-like port |
 | `app-host-server` | daemon-side physical Host lifecycle and cross-window lease multiplexing | injected transports only |
+| `account-pool-host` | Host-private account metadata/secrets, affinity, quota policy and loopback provider proxy | Node filesystem, SQLite and HTTP |
 | `daemon-ipc` | authenticated local daemon handshake and framed IPC | Node socket types |
 | `chat-core` | host-aware identity and Turn → Frame → Block projection | none |
 | `chat-runtime` | Replica-derived Timeline snapshots and command/history ports | none |
@@ -369,6 +484,66 @@ are independent; the invariant is that a physical connection, Browser instance
 or native Surface has exactly one owner and every child scope is disposed by the
 Application Supervisor. Renderer extension registries do not need to share a
 Context with AppServer Host runtimes.
+
+### Embedded Workbench Shell
+
+`workbench-web` also publishes a native Web Component entry for embedding the
+Workbench canvas without an iframe. The embedding product owns its outer
+Sidebar, Explore/Chat routing and page history. OpenCraft owns only the right
+canvas: the standard Thread/Draft conversation route, Composer and Header.
+The embedded projection omits OpenCraft's Right Panel and its toggle; the full
+Workbench keeps that panel unchanged. Embedded Chat does not use the Bot
+conversation protocol. The outer Bot identity selects a logical Hermes Host
+scoped by both physical instance and native Profile; the canvas uses ordinary
+AppServer Thread ownership inside that fixed Profile. Thread list, creation,
+resume, history, model catalog, rename and delete must never escape it. Physical
+Dashboard/session-token reuse remains instance-scoped, while Composer queue and
+other logical Host state include the Profile identity.
+The embedded entry constructs the same Application runtime as the full
+Workbench, but contributes an explicit, ephemeral LightVela Host profile and
+never persists that physical instance identity into the normal Host catalog.
+
+These differences are expressed by a typed Workbench Presentation Policy, not
+route- or product-name conditionals. The full policy enables Shell navigation,
+context Sidebar, Right Panel and Connector launcher. The Embedded Core Chat
+policy disables those four optional surfaces and projects an empty allow-list
+for extension-contributed Composer actions. The full policy projects all
+Composer actions. This keeps unavailable Web Speech or future optional actions
+out of embedded products without component-level product checks.
+
+The host keeps legacy AgentChat authoritative until its explicit rollout
+`show()` command enables the embedded candidate. Route visibility alone never
+loads or adopts OpenCraft. After enablement, legacy remains visible while the
+embedded Host connects, activates its ordinary Thread/Draft, hydrates initial
+history and paints; the Web Component's own `show()` then grants its write
+lease. `hide()` revokes that lease synchronously without disposing the
+Application, so returning to the host-owned Explore view cannot lose
+conversation state. Only the visible owner may send,
+cancel, approve or answer an interaction. The stable
+`/__opencraft/embedded-workbench.js` loader points to a content-addressed Vite
+entry; deployments using another static origin must provide the required module
+CORS policy explicitly.
+For the LightVela Pages release, the Embedded Workbench remains an independent
+Vite target and is staged under the same-origin `/__opencraft/` subtree beside
+the Next export. It is not imported by the Next application bundle and is only
+requested after rollout enablement. The release build fails closed when the
+reviewed Embedded artifact is unavailable, so legacy fallback cannot disguise
+an incomplete production artifact.
+
+`show()` is a browser-origin-scoped persisted toggle, not a one-way component
+callback. One shared feature-state controller owns versioned storage, in-page
+events, cross-tab storage reconciliation and a ref-counted global command.
+Calling `show()` again disables the revealed surfaces and persists that choice;
+page components subscribe to the state and never wrap `window.show` themselves.
+The underlying persisted-feature primitive is reusable by other internal
+feature gates without copying localStorage/error/event lifecycle code.
+
+An embedded canvas owns one explicit Presentation Root inside its Shadow DOM.
+The appearance engine projects the complete semantic token set onto that root,
+and every menu, dialog, context menu, drag overlay and panel tab portal targets
+the same root. Embedded code must not compensate with global CSS, copied menu
+styles or arbitrary z-index overrides; those bypass focus, collision geometry
+and theme ownership.
 
 `ExtensionSupervisor` is the one product-level owner for client extension
 activation. A Contribution Broker lets one activation register commands,
@@ -407,6 +582,34 @@ providers and records exact receipts. Extension activation never implicitly
 adds every contributed Tool or Skill to a model request. The full design is in
 [`agent-capability-fabric.md`](./agent-capability-fabric.md).
 
+The first concrete external-integration slice is the application-owned
+`ConnectorRuntime` plus its `ConnectorCapabilityRuntime` projection, documented in [platform connectors](./platform-connectors.md).
+Trusted extensions register Providers through the existing internal contribution
+transaction. It borrows Authentication session epochs and Host-owned clients;
+the ConnectorRuntime owns logical readiness, explicit Thread selections and execution,
+not credentials or native MCP transports. The capability projection derives a scoped,
+revisioned search view, returns compact paginated summaries, loads exact schema only on
+detail and then issues revocable invocation handles. Web/Electron wire stable
+search/detail/compatibility/call meta tools; AppServer receives them through standard
+`thread/start.dynamicTools` with `deferLoading`. Composer exposes a dedicated Connector panel, backed
+by a domain Manager, Host-native MCP OAuth and a one-shot write approval queue.
+Configuration/intended selections use a separate CAS store (Web IndexedDB,
+Electron Main SQLite); credentials remain with the Host, and restart restores
+intent without automatic connection or execution grants. Native OAuth completion
+is uncorrelated by operation ID and never grants conversation access by itself.
+This implemented vertical slice does not imply the complete Capability Fabric, reuse of the Hermes Settings
+prototype, new native methods in DSH/Hermes, or verified third-party accounts.
+
+The Skills capability surface now hosts a platform Connector Library alongside
+Skills/packages. `connector-core` owns the directory and DTOs; `connector-host`
+owns Host-private SQLite configuration, credentials and bounded OAuth transactions,
+plus the MCP SDK/API adapters. The renderer receives only public projection and
+authorization progress, never stored tokens. This managed path is independent of
+the existing borrowed native-MCP adapter, which retains its original authority.
+The Composer remains a per-conversation selector, not the configuration catalog.
+The Octop-derived catalog contains 23 recipes; 19 have execution adapters and four
+remain guide-only. Isolated validation is not third-party account qualification.
+
 The settled AppServer ownership model is application `HostRuntimeRegistry` →
 one `HostRuntime(hostId)` → one logical `AppServerClient(hostId)`. A shared
 Electron MessageChannel or multiplexed WebSocket may live in an optional
@@ -428,6 +631,75 @@ Adding a Host is `validate provider config → persist profile → register lazy
 runtime`. Removing one is `reject active work → detach registry identity →
 dispose runtime → delete profile`. The Profile Store is seeded from deployment
 configuration only when empty; after that, IndexedDB is the Web authority.
+
+### Host-side provider account pooling
+
+An Account Pool is a Host-private provider credential-routing policy. It is not
+a Host, execution Engine, Thread, model, authentication session or renderer
+preference. `account-pool-host` owns account metadata, separate 0600 credential
+files, quota observations, the provider cursor and affinity keyed by
+`(provider, hostId, providerThreadId)`. Renderer-facing projections expose only
+metadata and credential presence. Storage roots are injected by the platform
+directory resolver; the package never derives product state from `homedir()` or
+the process cwd.
+
+Codex AppServer connects to one synthetic Responses provider on a loopback-only
+HTTP proxy. Each AppServer child receives only the proxy URL and a Host-scoped
+token through its environment; real account OAuth credentials do not enter
+process arguments, AppServer configuration, Renderer state or logs. The proxy
+authenticates the Host, strips inbound credentials, selects the account, and
+injects the upstream bearer token plus ChatGPT account identity at the final
+HTTP boundary. Forks may inherit their parent's affinity within the same Host;
+identical provider Thread IDs on different Hosts never share a binding.
+
+An eligible bound Thread stays pinned. A short temporary hold returns bounded
+`Retry-After` for that Thread while new Threads may use another account. The
+proxy advances within one request only after an explicit pre-success quota or
+authorization rejection; successful responses, transport failures and
+indeterminate streaming outcomes are never replayed. The provider cursor moves
+to the next eligible account after the current account and wraps in configured
+priority order; recovery of an earlier account does not pull new Threads back.
+Account order, enablement, quota and accepted affinity survive Host restart.
+Affinity expires after 30 idle minutes and storage retains only the 4,096 most
+recent bindings, matching the bounded BB scheduling contract.
+
+Codex subscription state is distinct from credential presence. The Host reads
+the ChatGPT Usage endpoint with the selected account credential on add/enable,
+manual refresh and a five-minute background interval. It persists plan type,
+primary/secondary limit windows, reset times, observation time, last-use
+metadata and the derived `ready | held | exhausted | error | disabled` state.
+Header observations from real inference merge into the same windows. Renderer
+projections contain only this metadata; access and refresh tokens remain in the
+Host-private 0600 secret files. Usage refresh failure does not invalidate an
+otherwise usable inference credential.
+
+Electron now contributes a `local-codex` Host backed by the Daemon-owned
+`CodexEngineAdapter`. One physical stdio AppServer serves the Host generation;
+the adapter virtualizes request IDs, shares physical initialize, and restores
+logical-client targeting for responses, Thread notifications and server
+requests. The adapter is recreated for every physical Host generation, so a
+last-lease close cannot poison a later reconnect with a disposed process.
+Codex also declares `opencraft/thread-start-durability` because `thread/start`
+can return an in-memory ID before a recoverable rollout exists. The Workbench
+therefore dispatches the first `turn/start` before retiring and navigating away
+from the Draft. DSH and Hermes do not inherit this policy: absence of the
+capability preserves their durable-Thread-first promotion path.
+
+The builtin Codex Accounts Settings page consumes Host extension methods for
+redacted list, enable, reorder, remove, subscription refresh and Device Login
+operations. It presents the plan, live limit windows, reset times and derived
+account state without growing a second account or quota authority in React.
+Device Login runs an isolated Codex maintenance AppServer using the official
+`chatgptDeviceCode` flow; only a completed login with a valid private auth file
+commits an account. An explicit import action reads the external Codex authority
+(`CODEX_HOME`, otherwise `~/.codex`) supplied by Electron Main, copies its
+validated OAuth credential into the private pool and never rewrites the source
+`auth.json`. Refresh likewise round-trips one account through an isolated
+managed-auth profile and verifies that account identity does not change. Login
+and refresh profiles are 0700/0600 temporary state and stale profiles are pruned
+on the next service construction. Renderer snapshots never include tokens.
+The external Codex executable is resolved once by Electron from an explicit
+override, PATH or the official user installation location; it is not bundled.
 
 The transport packages are peers. Replay is not a wrapper around WebSocket and
 Memory is not a fake method surface: all three carry the same JSON-RPC text
@@ -816,6 +1088,15 @@ detent. Vela, the shared Sidecar trigger and history controls remain a complete
 window-chrome group at every detent. The separator between primary and context
 panes begins below that Header and terminates above the Footer; it has no authority
 over either fixed region.
+
+`workbenchWindowMetrics` is the shared native/renderer window-size authority.
+The primary desktop window may shrink to 480px, matching the main content
+reserve and the current Codex primary-window contract. At that width the Shell
+uses its immersive fallback: application navigation, context and right tools
+are temporarily hidden without changing their saved open/Pin/width intent.
+Electron Main must consume this metric rather than maintaining a larger
+platform-local minimum. The 760px value used by Settings is a content maximum,
+not a minimum window width.
 
 `workbench-runtime/shell-navigation` owns the renderer-free reducer and responsive
 projection. The initial preference pins applications, not account. Width pressure

@@ -2317,7 +2317,7 @@ func (l *logic) configureHermesProfileChannel(
 	if !ok || strings.TrimSpace(appID) == "" || strings.TrimSpace(clientSecret) == "" {
 		return nil, errcode.ErrChannelInvalidParam
 	}
-	configured, err := l.ExecDebugCommand(
+	configured, err := l.execHermesProfileCommand(
 		ctx,
 		instanceID,
 		fmt.Sprintf(
@@ -2326,7 +2326,6 @@ func (l *logic) configureHermesProfileChannel(
 			shellQuoteArg(strings.TrimSpace(clientSecret)),
 			shellQuoteArg(profileID),
 		),
-		"agentuser",
 	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel: %v", err)
@@ -2334,11 +2333,10 @@ func (l *logic) configureHermesProfileChannel(
 	if configured == nil || configured.ExitCode != 0 {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel failed")
 	}
-	restarted, err := l.ExecDebugCommand(
+	restarted, err := l.execHermesProfileCommand(
 		ctx,
 		instanceID,
 		fmt.Sprintf("acli gateway restart --agent %s", shellQuoteArg(profileID)),
-		"agentuser",
 	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "restart profile gateway: %v", err)

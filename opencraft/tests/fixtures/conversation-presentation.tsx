@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { createRoot } from "react-dom/client";
+import { createIntlTestRoot as createRoot } from "./intl-root";
 import { Context } from "@deepseek-ai/cordis";
 import { buildCodexThemeCssProperties } from "@opencraft/design-system/theme-engine";
 import {
@@ -53,7 +53,19 @@ function Demo() {
         scenario === "todo"
           ? [
               {
-                id: "todo",
+                id: "todo-old",
+                type: "todo-list",
+                payload: {
+                  explanation: "Inspect first",
+                  plan: [
+                    { step: "Inspect source", status: "inProgress" },
+                    { step: "Test rendering", status: "pending" },
+                    { step: "Ship", status: "pending" },
+                  ],
+                },
+              },
+              {
+                id: "todo-latest",
                 type: "todo-list",
                 payload: {
                   explanation: "Inspect first",

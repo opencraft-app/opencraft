@@ -438,6 +438,19 @@ func TestMySQLStoreCapacityBundleAndSandboxRoundTrip(t *testing.T) {
 		t.Fatalf("expected divergence %q, got %q", sb.ResolutionDivergence, gotSandbox.ResolutionDivergence)
 	}
 
+	sbByInstanceRows := sqlmock.NewRows([]string{"id", "instance_id", "pool_id", "template_class_id", "resolution_mode", "resolution_source", "resolution_divergence", "region", "metadata", "env_vars", "timeout_seconds", "auto_pause", "secure", "allow_internet", "created_at", "updated_at"}).
+		AddRow(sb.ID, sb.InstanceID, sb.PoolID, sb.TemplateClassID, sb.ResolutionMode, sb.ResolutionSource, sb.ResolutionDivergence, sb.Region, "", "", sb.TimeoutSeconds, sb.AutoPause, sb.Secure, sb.AllowInternetAccess, sb.CreatedAt, sb.UpdatedAt)
+	mock.ExpectQuery("SELECT id, instance_id, pool_id, template_class_id, resolution_mode, resolution_source, resolution_divergence, region, metadata, env_vars, timeout_seconds, auto_pause, secure, allow_internet, created_at, updated_at FROM sandboxes WHERE instance_id = \\? LIMIT 1").
+		WithArgs(sb.InstanceID).
+		WillReturnRows(sbByInstanceRows)
+	gotSandbox, err = store.GetSandboxByInstanceID(context.Background(), sb.InstanceID)
+	if err != nil {
+		t.Fatalf("get sandbox by instance id: %v", err)
+	}
+	if gotSandbox.ID != sb.ID {
+		t.Fatalf("expected sandbox %q, got %q", sb.ID, gotSandbox.ID)
+	}
+
 	sbNullRows := sqlmock.NewRows([]string{"id", "instance_id", "pool_id", "template_class_id", "resolution_mode", "resolution_source", "resolution_divergence", "region", "metadata", "env_vars", "timeout_seconds", "auto_pause", "secure", "allow_internet", "created_at", "updated_at"}).
 		AddRow(sb.ID, sb.InstanceID, sb.PoolID, sb.TemplateClassID, sb.ResolutionMode, sb.ResolutionSource, nil, sb.Region, "", "", sb.TimeoutSeconds, sb.AutoPause, sb.Secure, sb.AllowInternetAccess, sb.CreatedAt, sb.UpdatedAt)
 	mock.ExpectQuery("SELECT id, instance_id, pool_id, template_class_id, resolution_mode, resolution_source, resolution_divergence, region, metadata, env_vars, timeout_seconds, auto_pause, secure, allow_internet, created_at, updated_at FROM sandboxes").

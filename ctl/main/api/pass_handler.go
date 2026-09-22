@@ -263,6 +263,34 @@ func (h *passHandler) handleAdminPassesFreeCredit(w http.ResponseWriter, r *http
 	writeSuccess(w, r, http.StatusOK, result)
 }
 
+type freeCreditRevoker interface {
+	RevokeFreeCredit(*transport.RevokeFreeCreditRequest) (*transport.RevokeFreeCreditResponse, error)
+}
+
+func (h *passHandler) handleInternalRevokeFreeCredit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	var req transport.RevokeFreeCreditRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	revoker, ok := h.logic.(freeCreditRevoker)
+	if !ok {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInternalServer, "free-credit revocation is unavailable"))
+		return
+	}
+	result, err := revoker.RevokeFreeCredit(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
 // handleUserPassesOrder POST /v1/passes/order — 用户可见付费 pass 下单入口
 //
 // 用途（billing-integration B2 新增）：
@@ -535,6 +563,10 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 	subPath := strings.Trim(strings.TrimPrefix(r.URL.Path, "/internal/ctl/passes"), "/")
 	if subPath == "" {
 		h.listInternalPasses(w, r)
+		return
+	}
+	if subPath == "free-credit/revoke" {
+		h.handleInternalRevokeFreeCredit(w, r)
 		return
 	}
 
@@ -967,6 +999,7 @@ func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassRespon
 		UserID:              d.UserID,
 		BundleID:            d.BundleID,
 		BundleName:          d.BundleName,
+		BundleType:          d.BundleType,
 		CreatedTime:         d.CreatedTime,
 		ExpiredTime:         d.ExpiredTime,
 		IsolatedTime:        d.IsolatedTime,

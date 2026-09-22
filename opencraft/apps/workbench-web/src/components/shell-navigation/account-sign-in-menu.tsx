@@ -1,4 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useIntl } from "@opencraft/i18n/react";
 import { ArrowUpRight, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AccountLeadingVisual, shellAccountEntranceLabel, type ShellAccount, type ShellSignIn } from "./navigation-content";
@@ -14,7 +15,8 @@ export function AccountSignInMenu({ account, signIn, id, visible, container, onO
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => { if (!visible) setOpen(false); }, [visible]);
-  const label = shellAccountEntranceLabel(account)!;
+  const intl = useIntl();
+  const label = shellAccountEntranceLabel(account, intl)!;
   return <DropdownMenu.Root modal={false} open={visible && open} onOpenChange={setOpen}>
     <DropdownMenu.Trigger asChild>
       <button id={id} type="button" className="shell-navigation__entrance" data-surface="account"

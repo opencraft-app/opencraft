@@ -643,13 +643,55 @@ func describeInstanceState(ctx context.Context, client *cvm.Client, cloudID stri
 	return strings.ToUpper(strings.TrimSpace(*instance.InstanceState)), nil
 }
 
-// StopInstance shuts down the instance with StoppedMode=STOP_CHARGING so that
-// CPU/memory billing is released while system disk and data remain intact.
-// Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
+// StopInstance submits an asynchronous shutdown with StoppedMode=STOP_CHARGING.
+// The isolation caller confirms STOPPED through DescribeInstance.
 func (p *TencentCloudProvider) StopInstance(ctx context.Context, instance CloudInstanceRef) error {
-	return p.stopInstanceWithMode(ctx, instance, "STOP_CHARGING")
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return err
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return err
+	}
+	state, err := describeInstanceState(ctx, client, instance.CloudID)
+	if err != nil {
+		return fmt.Errorf("check state before stopping %s: %w", instance.CloudID, err)
+	}
+	switch state {
+	case "STOPPED", "STOPPING":
+		return nil
+	case "RUNNING":
+		// Continue below and submit StopInstances once.
+	default:
+		return fmt.Errorf("stop %s: unsupported instance state %s", instance.CloudID, state)
+	}
+
+	req := cvm.NewStopInstancesRequest()
+	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
+	req.StoppedMode = common.StringPtr("STOP_CHARGING")
+	req.SetContext(ctx)
+	err = retryRateLimit(ctx, "StopInstances", func() error {
+		_, e := client.StopInstances(req)
+		return e
+	})
+	if err == nil {
+		return nil
+	}
+	switch classifyStopInstanceError(err) {
+	case stopInstanceErrorNotFound:
+		return fmt.Errorf("stop %s: instance not found: %w", instance.CloudID, err)
+	case stopInstanceErrorAlreadyStopped, stopInstanceErrorPollStatus:
+		return nil
+	case stopInstanceErrorRetryRequest:
+		return fmt.Errorf("stop %s blocked by another instance operation: %w", instance.CloudID, err)
+	default:
+		return err
+	}
 }
 
+// stopInstanceWithMode waits for STOPPED because resize callers must not move
+// to the next mutation until their KEEP_CHARGING shutdown has completed.
 func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, instance CloudInstanceRef, stoppedMode string) error {
 	instance, err := normalizeCloudInstanceRef(instance)
 	if err != nil {
@@ -707,7 +749,7 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, instanc
 	default:
 		return fmt.Errorf("stop %s: unsupported instance state %s", instance.CloudID, state)
 	}
-	// Confirm by polling status until STOPPED.
+
 	statusReq := cvm.NewDescribeInstancesStatusRequest()
 	statusReq.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	statusReq.SetContext(ctx)

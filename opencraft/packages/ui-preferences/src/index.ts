@@ -3,6 +3,7 @@ export type ShellNavigationDetent = "expanded" | "compact" | "hidden";
 export type ShellNavigationVisibleDetent = Exclude<ShellNavigationDetent, "hidden">;
 
 export interface UiPreferenceValues {
+  readonly "locale.override": string;
   readonly "shell.applicationsPinned": boolean;
   readonly "shell.accountPinned": boolean;
   readonly "shell.navigationDetent": ShellNavigationDetent;
@@ -30,6 +31,16 @@ const widthValue = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export const uiPreferenceDefinitions = Object.freeze({
+  "locale.override": {
+    key: "locale.override",
+    scope: "installation",
+    defaultValue: "",
+    parse: (value: unknown): string | null => {
+      if (value === "") return "";
+      if (typeof value !== "string" || value.length > 100) return null;
+      try { return Intl.getCanonicalLocales(value)[0] ?? null; } catch { return null; }
+    },
+  },
   "shell.applicationsPinned": {
     key: "shell.applicationsPinned",
     scope: "installation",

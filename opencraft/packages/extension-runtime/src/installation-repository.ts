@@ -1,4 +1,5 @@
 import { Context, Service, type Plugin } from "@deepseek-ai/cordis";
+import { parseExtensionArtifact, type ExtensionArtifact } from "./artifact";
 import {
   isExtensionId,
   parseExtensionManifestV1,
@@ -21,6 +22,8 @@ export interface ExtensionInstallationRecord {
   readonly updatedAt: number;
   /** Presentation cache only; the loaded module manifest remains authoritative. */
   readonly lastResolvedManifest?: ExtensionManifestV1;
+  readonly artifact?: ExtensionArtifact;
+  readonly artifactRef?: string;
 }
 
 export interface ExtensionInstallationLoadError {
@@ -39,6 +42,7 @@ export interface ExtensionInstallationPersistence {
   put(record: ExtensionInstallationRecord): Promise<void>;
   remove(extensionId: string): Promise<void>;
   close?(): void | Promise<void>;
+  subscribe?(listener: () => void): () => void;
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> {
@@ -55,12 +59,15 @@ function normalizeUrl(value: unknown): string {
   return value.trim();
 }
 
-function normalizeInstallation(value: unknown): ExtensionInstallationRecord {
+export function normalizeInstallation(value: unknown): ExtensionInstallationRecord {
   const input = record(value);
   if (typeof input.extensionId !== "string" || !isExtensionId(input.extensionId)) {
     throw new TypeError("Extension installation has an invalid extensionId");
   }
   const source = record(input.source);
+  if (input.artifactRef !== undefined && (typeof input.artifactRef !== "string" || !/^[a-f0-9]{64}$/.test(input.artifactRef))) {
+    throw new TypeError("Invalid installation artifact reference");
+  }
   if (source.kind !== "module-url") throw new TypeError("Unsupported extension installation source");
   if (typeof input.enabled !== "boolean") throw new TypeError("Extension installation requires enabled");
   if (!Number.isFinite(input.installedAt) || !Number.isFinite(input.updatedAt)) {
@@ -79,6 +86,8 @@ function normalizeInstallation(value: unknown): ExtensionInstallationRecord {
     installedAt: input.installedAt as number,
     updatedAt: input.updatedAt as number,
     ...(lastResolvedManifest === undefined ? {} : { lastResolvedManifest }),
+    ...(input.artifact === undefined ? {} : { artifact: parseExtensionArtifact(input.artifact) }),
+    ...(input.artifactRef === undefined ? {} : { artifactRef: input.artifactRef as string }),
   });
 }
 
@@ -90,6 +99,7 @@ export class ExtensionInstallationRepository extends Service {
   private mutations: Promise<unknown> = Promise.resolve();
   private revision = 0;
   private closed = false;
+  private unsubscribeStorage: (() => void) | undefined;
   private snapshot: ExtensionInstallationSnapshot = { revision: 0, records: [], loadErrors: [] };
 
   constructor(context: Context, private readonly persistence: ExtensionInstallationPersistence) {
@@ -111,6 +121,17 @@ export class ExtensionInstallationRepository extends Service {
       }
     });
     this.publish();
+    this.unsubscribeStorage = this.persistence.subscribe?.(() => {
+      if (this.closed) return;
+      void this.enqueue(async () => {
+        const values = await this.persistence.load();
+        if (this.closed) return;
+        const records = values.map(normalizeInstallation);
+        this.records.clear();
+        for (const record of records) this.records.set(record.extensionId, record);
+        this.publish();
+      }).catch(() => { /* Keep last good state; subsequent mutations report failures. */ });
+    });
   }
 
   getSnapshot = (): ExtensionInstallationSnapshot => this.snapshot;
@@ -145,6 +166,7 @@ export class ExtensionInstallationRepository extends Service {
 
   private async close(): Promise<void> {
     if (this.closed) return;
+    this.unsubscribeStorage?.();
     await this.mutations.catch(() => undefined);
     this.closed = true;
     this.listeners.clear();

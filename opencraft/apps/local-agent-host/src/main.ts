@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFile, readdir, stat, writeFile, mkdtemp, rm, access } from "node:fs/promises";
+import { readFile, readdir, stat, lstat, writeFile, mkdtemp, rm, access } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { resolve, dirname, join } from "node:path";
@@ -13,6 +13,9 @@ import { DshSupervisor } from "./dsh-supervisor.js";
 import { DshRestartBudget } from "./dsh-restart-budget.js";
 import { DshExecutionAuthority } from "./dsh-execution-authority.js";
 import { DshCapabilityBroker, normalizeCapabilities } from "./dsh-capability-broker.js";
+import { ManagedConnectorService } from "@opencraft/connector-host";
+import { HostDocumentService, HostDocumentFault } from "./storage/host-document-service.js";
+import { HOST_STORAGE } from "@opencraft/appserver-protocol/host-storage";
 import {
   DshCapabilityLink,
   verifyDshCapabilityRegistration,
@@ -28,6 +31,9 @@ import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ProfileSkillsMethod } from "@opencraft/appserver-protocol";
 import { DshProfileSkillsHandler } from "./dsh-profile-skills.js";
+import { SkillCatalogRefresh } from "./skills/catalog-refresh.js";
+import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
+import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
 
 type JsonRpcMessage = Record<string, unknown>;
 const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
@@ -55,6 +61,7 @@ interface LogicalClient {
 }
 
 function rpcError(error: unknown): { code: number; message: string; data?: unknown } {
+  if (error instanceof HostDocumentFault) return { code: error.code, message: error.message };
   if (error instanceof DshClientError) return { code: -32001, message: error.message, data: { code: error.code, retryable: error.retryable } };
   if (typeof error === "object" && error !== null) {
     const candidate = error as { rpcCode?: unknown; domainData?: unknown; message?: unknown };
@@ -84,11 +91,23 @@ async function fileRequest(method: string, params: unknown): Promise<unknown> {
   const path = resolve(String(value.path ?? homedir()));
   if (method === "fs/readDirectory") {
     const entries = await readdir(path, { withFileTypes: true });
-    return { entries: entries.map((entry) => ({ name: entry.name, path: resolve(path, entry.name), type: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "unknown" })) };
+    return {
+      entries: entries.map((entry) => ({
+        fileName: entry.name,
+        isDirectory: entry.isDirectory(),
+        isFile: entry.isFile(),
+      })),
+    };
   }
   if (method === "fs/getMetadata") {
-    const metadata = await stat(path);
-    return { path, type: metadata.isDirectory() ? "directory" : metadata.isFile() ? "file" : "unknown", size: metadata.size, modifiedAt: Math.floor(metadata.mtimeMs / 1_000) };
+    const [metadata, pathMetadata] = await Promise.all([stat(path), lstat(path)]);
+    return {
+      isDirectory: metadata.isDirectory(),
+      isFile: metadata.isFile(),
+      isSymlink: pathMetadata.isSymbolicLink(),
+      createdAtMs: Number.isFinite(metadata.birthtimeMs) ? metadata.birthtimeMs : 0,
+      modifiedAtMs: Number.isFinite(metadata.mtimeMs) ? metadata.mtimeMs : 0,
+    };
   }
   if (method === "fs/readFile") return { dataBase64: (await readFile(path)).toString("base64") };
   if (method === "fs/writeFile") {
@@ -105,6 +124,8 @@ export async function startLocalAgentHost(options: {
   readonly dshUrl?: string;
   readonly dshExecutable?: string;
   readonly dshRepository?: string;
+  /** Stable operational cwd for packaged Daemon/DSH processes; never a Thread workspace. */
+  readonly runtimeDirectory?: string;
   /** Explicit development/package path; the Agent Host never infers Electron's cwd. */
   readonly dshCapabilityPlugin?: string;
   readonly dataDirectory?: string;
@@ -118,9 +139,21 @@ export async function startLocalAgentHost(options: {
   let engineStatus: "ready" | "restarting" | "failed" = "ready";
   const bridgeToken = randomBytes(32).toString("hex");
   const persistentSkillsRoot = resolve(options.skillsDirectory ?? join(homedir(), ".opencraft", "skills"));
-  const profileSkills = new DshProfileSkillsHandler(persistentSkillsRoot);
+  const productDataRoot = resolve(options.dataDirectory ?? join(homedir(), ".opencraft"));
+  const attachmentStaging = new LocalAttachmentStagingService(
+    join(productDataRoot, "attachments"),
+  );
   let bridgeUrl: string | undefined;
   let capabilityLink: DshCapabilityLink | undefined;
+  let managedConnectors: ManagedConnectorService | undefined;
+  const connectorListeners = new Set<(id: string) => void>();
+  const connectors = () => {
+    if (!managedConnectors) {
+      managedConnectors = new ManagedConnectorService(join(options.dataDirectory ?? join(homedir(), ".opencraft"), "opencraft-managed-connectors.sqlite"));
+      managedConnectors.subscribe(id => { for (const listener of connectorListeners) listener(id); });
+    }
+    return managedConnectors;
+  };
   let bridgeDirectory: string | undefined;
   const patches: string[] = [];
   if (!options.dshUrl && !process.env.OPENCRAFT_DSH_URL?.trim()) {
@@ -147,9 +180,17 @@ export async function startLocalAgentHost(options: {
     } }] }]), { mode: 0o600 });
     patches.push(patch);
   }
+  // Only the owned, patched engine has a refresh port. An external engine's
+  // absence of support is permanent, not a failed refresh to retry on send.
+  const skillRefresh = new SkillCatalogRefresh(patches.length ? async () => {
+    if (!capabilityLink) throw new Error("The engine Skill catalog refresh bridge is not ready");
+    await capabilityLink.invalidateSkills();
+  } : null);
+  const profileSkills = new DshProfileSkillsHandler(persistentSkillsRoot, () => skillRefresh.changed());
   const supervisor = new DshSupervisor({
     executable: options.dshExecutable,
     repository: options.dshRepository,
+    runtimeDirectory: options.runtimeDirectory,
     dataDirectory: options.dataDirectory,
     onUnexpectedExit: error => onEngineExit?.(error),
     patches,
@@ -198,7 +239,11 @@ export async function startLocalAgentHost(options: {
   } : undefined);
   const capabilities = new DshCapabilityBroker();
   try { if (patches.length) {
-    capabilityLink = new DshCapabilityLink(bridgeToken, capabilities, authority, routing);
+    capabilityLink = new DshCapabilityLink(bridgeToken, capabilities, authority, routing, () => {
+      for (const [socket, clients] of socketClients) for (const state of clients.values()) {
+        sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "skills/changed", params: {} });
+      }
+    });
     if (bridgeUrl) capabilityLink.attach(bridgeUrl);
     for (const pending of routing.pending()) routing.reconcile(pending.logicalId, await capabilityLink.resolveGeneration(pending.logicalId));
   } } catch (error) {
@@ -210,10 +255,21 @@ export async function startLocalAgentHost(options: {
     throw error;
   }
   if (capabilityLink) adapter.setModelInfoReader((provider, model) => capabilityLink!.modelInfo(provider, model));
+  if (capabilityLink) adapter.setSkillInvocationValidator((threadId, skills) => capabilityLink!.validateSkillInvocations(threadId, skills));
   if (capabilityLink) adapter.setThreadEngine({
     describe: params => capabilityLink!.thread("describe", { ...params, sessionId: routing.native(String(params.sessionId)) }),
     create: async params => {
-      const created = await capabilityLink!.thread("create", params);
+      const { dynamicTools, ...creation } = params;
+      const sessionId = randomUUID();
+      let created;
+      try { created = await capabilityLink!.thread("create", {
+        ...creation,
+        sessionId,
+        ...(dynamicTools === undefined ? {} : { capabilities: normalizeCapabilities(dynamicTools) }),
+      }); } catch (error) {
+        await capabilityLink!.thread("release", { sessionId }).catch(() => undefined);
+        throw error;
+      }
       if (created.ephemeral) client.markVolatile(created.sessionId);
       return created;
     },
@@ -236,7 +292,16 @@ export async function startLocalAgentHost(options: {
     fork: async params => {
       const source = String(params.sourceSessionId);
       const coordinates = routing.forkCoordinates(source, params.lastTurn as number | undefined, params.beforeTurn as number | undefined);
-      const created = await capabilityLink!.thread("fork", { ...params, sourceSessionId: coordinates.nativeId, lastTurn: coordinates.lastTurn, beforeTurn: coordinates.beforeTurn });
+      const { dynamicTools, ...forkParams } = params;
+      const sessionId = randomUUID();
+      let created;
+      try { created = await capabilityLink!.thread("fork", { ...forkParams, sessionId,
+        ...(dynamicTools === undefined ? {} : { capabilities: normalizeCapabilities(dynamicTools) }),
+        sourceSessionId: coordinates.nativeId, lastTurn: coordinates.lastTurn, beforeTurn: coordinates.beforeTurn });
+      } catch (error) {
+        await capabilityLink!.thread("release", { sessionId }).catch(() => undefined);
+        throw error;
+      }
       if (created.ephemeral) client.markVolatile(created.sessionId);
       return created;
     },
@@ -321,6 +386,7 @@ export async function startLocalAgentHost(options: {
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
   const processes = new HostProcessService();
+  const hostDocuments = new HostDocumentService(options.dataDirectory ? join(options.dataDirectory, "opencraft-host-documents.sqlite") : null);
   const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
   const token = options.token ?? randomBytes(24).toString("base64url");
   const server = createServer((request, response) => {
@@ -352,17 +418,22 @@ export async function startLocalAgentHost(options: {
     const logicalClient = (clientId: string) => {
       let state = clients.get(clientId);
       if (!state) {
-        const key = physicalId + ":" + clientId;
+        const key = physicalId + ":" + clientId + ":" + randomUUID();
         state = { key, clientId, owner: { connectionId: key, identity: { id: "local-user", username: "local" } }, offered: new Set(), openedThreads: new Set() };
         clients.set(clientId, state);
       }
       return state;
     };
     const disconnectClient = async (state: LogicalClient) => {
-      clients.delete(state.clientId);
-      for (const threadId of capabilities.threads(state.owner)) await capabilityLink?.unregister(threadId);
+      if (clients.get(state.clientId) === state) clients.delete(state.clientId);
+      const ownedThreads = capabilities.threads(state.owner);
+      lifecycle.revokeClient(state.key);
       capabilities.disconnect(state.owner); authority.disconnect(state.owner);
       state.unsubscribeInteractions?.(); state.offered.clear(); state.openedThreads.clear();
+      await Promise.allSettled(ownedThreads.map(threadId => lifecycle.enqueue(threadId, async () => {
+        // A successor may already have established its own capability lease.
+        if (capabilities.list(threadId).length === 0) await capabilityLink?.unregister(threadId);
+      })));
       await lifecycle.disconnect(state.key);
     };
     const unsubscribe = adapter.subscribe((method, params) => {
@@ -375,6 +446,11 @@ export async function startLocalAgentHost(options: {
       }
     });
     const unsubscribeProcesses = processes.subscribe((method, params) => send(socket, { jsonrpc: "2.0", method, params }));
+    const connectorChanged = (id: string) => { for (const state of clients.values()) sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "connectors/managed/changed", params: { id } }); };
+    connectorListeners.add(connectorChanged);
+    const unsubscribeDocuments = hostDocuments.subscribe(params => {
+      for (const state of clients.values()) sendClient(socket, state.clientId, { jsonrpc: "2.0", method: HOST_STORAGE.changed, params });
+    });
     socket.on("message", async (data, isBinary) => {
       if (isBinary) { socket.close(1003, "Text frames only"); return; }
       let request: JsonRpcMessage;
@@ -402,8 +478,37 @@ export async function startLocalAgentHost(options: {
         return;
       }
       try {
+        if (request.method.startsWith("storage/documents/")) {
+          const result = hostDocuments.handle(request.method, request.params);
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
+        if (request.method.startsWith("connectors/managed/")) {
+          const result = await connectors().handle(request.method, request.params);
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
+        if (request.method.startsWith("attachment/")) {
+          const result = await attachmentStaging.handle(request.method, request.params);
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
         const targetThread = (request.params as { threadId?: string } | null)?.threadId;
         if (request.method.startsWith("turn/") && typeof targetThread === "string") lifecycle.assertOpen(targetThread);
+        const prepareExecution = async () => {
+        if ((request.method === "turn/start" || request.method === "thread/queue/start") && typeof targetThread === "string") {
+          // JIT history keeps display-only resume cold. Execution is the point
+          // where the native Agent must exist and every declared Host tool must
+          // be mounted before the prompt can enter DSH.
+          await adapter.activateThread(targetThread);
+          await skillRefresh.ensureFresh();
+          const expected = capabilities.list(targetThread).length;
+          if (expected > 0) {
+            if (!capabilityLink) throw new Error("This host cannot register engine capabilities");
+            verifyDshCapabilityRegistration(
+              expected,
+              await capabilityLink.register(targetThread),
+            );
+          }
+        }
+        };
         if (request.method === "runtime/http/cancel") {
           const id = (request.params as { requestId: string }).requestId;
           const active = httpRequests.get(id);
@@ -425,6 +530,8 @@ export async function startLocalAgentHost(options: {
         }
         if (request.method === "runtime/capabilities/register") {
           const params = request.params as { threadId: string; dynamicTools: unknown };
+          await lifecycle.enqueue(params.threadId, async () => {
+          lifecycle.assertClient(state.key);
           if (!openedThreads.has(params?.threadId)) throw new Error("Open the thread before registering its capabilities");
           if (!capabilityLink) throw new Error("This host cannot register engine capabilities");
           const sameOwner = capabilities.threads(owner).includes(params.threadId);
@@ -433,20 +540,23 @@ export async function startLocalAgentHost(options: {
           if (unchanged) {
             const expected = capabilities.list(params.threadId).length;
             const engineRegistration = await capabilityLink.register(params.threadId);
-            verifyDshCapabilityRegistration(expected, engineRegistration);
+            verifyDshCapabilityRegistration(expected, engineRegistration, { allowDeferred: true });
             send(socket, { jsonrpc: "2.0", id: request.id, result: engineRegistration });
             return;
           }
           await capabilityLink.validate(normalizeCapabilities(params.dynamicTools));
+          lifecycle.assertClient(state.key);
           const registered = capabilities.register(params.threadId, owner, params.dynamicTools, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
           await capabilityLink.unregister(params.threadId);
           const engineRegistration = await capabilityLink.register(params.threadId);
-          verifyDshCapabilityRegistration(registered.length, engineRegistration);
+          verifyDshCapabilityRegistration(registered.length, engineRegistration, { allowDeferred: true });
           send(socket, { jsonrpc: "2.0", id: request.id, result: engineRegistration });
+          });
           return;
         }
         const readSkills = async () => {
           if (!capabilityLink) throw new Error("This DSH host does not expose complete Skill metadata");
+          await skillRefresh.ensureFresh();
           const threadId = [...openedThreads].at(-1);
           const cwd = threadId
             ? (await adapter.dispatch("thread/read", { threadId, includeTurns: false }) as { thread: { cwd: string } }).thread.cwd
@@ -466,7 +576,37 @@ export async function startLocalAgentHost(options: {
           const normalized = normalizeCapabilities(toolSpecs);
           if (capabilityLink) await capabilityLink.validate(normalized);
         }
-        const result = request.method === "project/list"
+        const dispatchThread = async (method: string, params: Record<string, unknown>) => {
+          lifecycle.assertClient(state.key);
+          await prepareExecution();
+          lifecycle.assertClient(state.key);
+          const reply = await adapter.dispatchOwned(method,
+            toolSpecs === undefined ? params : { ...params, dynamicTools: toolSpecs }, owner, request.id as string | number);
+          const id = (reply as { thread?: { id?: string } } | null)?.thread?.id;
+          try {
+          lifecycle.assertClient(state.key);
+          if (bindsCapabilities && id && toolSpecs !== undefined) {
+            const registered = capabilities.register(id, owner, toolSpecs, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
+            if (capabilityLink) {
+              if (method === "thread/resume") await capabilityLink.unregister(id);
+              lifecycle.assertClient(state.key);
+              const mounted = await capabilityLink.register(id);
+              lifecycle.assertClient(state.key);
+              verifyDshCapabilityRegistration(registered.length, mounted, { allowDeferred: method === "thread/resume" });
+            }
+          }
+          return reply;
+          } catch (error) {
+            if (id && (method === "thread/start" || method === "thread/fork")) {
+              capabilities.release(id, owner);
+              // Reclaim only this newly-created idle runtime. Durable history
+              // is never deleted as compensation for a failed attachment.
+              await capabilityLink?.thread("release", { sessionId: routing.native(id) }).catch(() => undefined);
+            }
+            throw error;
+          }
+        };
+        let result = request.method === "project/list"
           ? await projects.list(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectListParams)
           : request.method === "project/create"
           ? await projects.create(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectCreateParams)
@@ -480,19 +620,24 @@ export async function startLocalAgentHost(options: {
           ? await fileRequest(request.method, request.params)
           : request.method.startsWith("thread/") || request.method === "turn/start"
           ? await lifecycle.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>, state.key,
-            (method, params) => adapter.dispatchOwned(method, params, owner, request.id as string | number))
+            dispatchThread)
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
+        if (request.method === "initialize") {
+          const initialized = result as import("@opencraft/appserver-protocol").AppServerInitializeResponse;
+          result = {
+            ...initialized,
+            capabilities: {
+              ...initialized.capabilities,
+              extensions: {
+                ...initialized.capabilities?.extensions,
+                [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
+              },
+            },
+          };
+        }
         const capabilityThreadId = (result as { thread?: { id?: string } } | null)?.thread?.id
           ?? (request.params as { threadId?: string } | undefined)?.threadId;
         if (request.method === "turn/start" && typeof capabilityThreadId === "string") lifecycle.acceptedTurn(capabilityThreadId, request.params as Record<string, unknown>);
-        if (bindsCapabilities && typeof capabilityThreadId === "string" && toolSpecs !== undefined) {
-          const registered = capabilities.register(capabilityThreadId, owner, toolSpecs, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
-          if (capabilityLink) {
-            await capabilityLink.unregister(capabilityThreadId);
-            const engineRegistration = await capabilityLink.register(capabilityThreadId);
-            verifyDshCapabilityRegistration(registered.length, engineRegistration);
-          }
-        }
         send(socket, { jsonrpc: "2.0", id: request.id, result });
         // Initialization (including preflight) must not claim another client's
         // user interactions. Only a connection opening a thread may answer it.
@@ -517,7 +662,7 @@ export async function startLocalAgentHost(options: {
       for (const pending of httpRequests.values()) pending.abort();
       socketClients.delete(socket);
       for (const state of [...clients.values()]) void disconnectClient(state).catch(() => undefined);
-      unsubscribe(); unsubscribeProcesses();
+      unsubscribe(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
     });
   });
   try {
@@ -530,6 +675,8 @@ export async function startLocalAgentHost(options: {
     });
   } catch (error) {
     closing = true;
+    managedConnectors?.close();
+    hostDocuments.close();
     await lifecycle.close();
     adapter.close();
     capabilities.close();
@@ -556,6 +703,8 @@ export async function startLocalAgentHost(options: {
     async close(): Promise<void> {
       if (closing) return;
       closing = true;
+      managedConnectors?.close();
+      hostDocuments.close();
       await lifecycle.close();
       adapter.close();
       capabilities.close();

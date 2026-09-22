@@ -53,18 +53,19 @@ test("native picker cancellation is null, overlapping calls share one dialog and
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test("native project capability is local Electron only, not remote or Web", () => {
+test("native project capability belongs to local Electron hosts, not one logical Host id", () => {
   const global = globalThis as typeof globalThis & { opencraftDesktop?: unknown };
   const previous = global.opencraftDesktop;
   try {
     delete global.opencraftDesktop;
-    assert.equal(nativeProjectPicker("local"), null);
+    assert.equal(nativeProjectPicker({ kind: "local" }), null);
     const projects = { pickDirectory: async () => null };
     global.opencraftDesktop = { kind: "electron", projects };
-    assert.equal(nativeProjectPicker("local"), projects);
-    assert.equal(nativeProjectPicker("remote-host"), null);
+    assert.equal(nativeProjectPicker({ kind: "local" }), projects);
+    assert.equal(nativeProjectPicker({ kind: "remote-ssh" }), null);
+    assert.equal(nativeProjectPicker({ kind: "remote-control" }), null);
     global.opencraftDesktop = { kind: "web", projects };
-    assert.equal(nativeProjectPicker("local"), null);
+    assert.equal(nativeProjectPicker({ kind: "local" }), null);
   } finally {
     if (previous === undefined) delete global.opencraftDesktop; else global.opencraftDesktop = previous;
   }

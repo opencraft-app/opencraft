@@ -121,6 +121,99 @@ export function hasHermesBundledSkillsOptOut(output: string): boolean {
   return output.includes(HERMES_NO_BUNDLED_SKILLS_MARKER);
 }
 
+/** GitHub 仓库子目录作为技能来源 */
+export interface GithubSkillSource {
+  /** owner/repo，如 NousResearch/hermes-agent */
+  repo: string;
+  /** 分支名，如 main 或 feature/stocks；不支持 tag 或 commit SHA。 */
+  ref: string;
+  /** 仓库内目录，如 optional-skills/finance/stocks */
+  path: string;
+}
+
+const GITHUB_REPO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const GITHUB_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
+const GITHUB_PATH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
+// 安装目录允许多层，官方技能会保留 category 层级（如 finance/stocks）
+const SKILL_DIR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
+
+/**
+ * 从 GitHub 仓库子目录安装 Hermes 技能。
+ *
+ * 为什么不调用 CLI：
+ *   官方文档写的是 `hermes skills install <ref>`，但沙箱里既没有 `hermes`
+ *   可执行文件，`hermes_cli.main` 也没有 install 子命令的先例（同文件只用到
+ *   skills list）。所以这里不猜 CLI，直接按技能的落盘契约安装。
+ *
+ * 落盘契约（由同文件两处代码确证，非推测）：
+ *   - buildInstalledSkillsListCommand 用
+ *     `find "$HERMES_PROFILE_ROOT/skills" -mindepth 2 -name SKILL.md` 发现技能
+ *   - buildHermesSkillDeleteCommand 直接 rm -rf 技能目录
+ *   ⇒ 把目录放到 skills/<name>/ 且含 SKILL.md 即视为已安装。
+ *
+ * 实现要点：
+ *   - 下载 codeload tarball，只解出目标子目录（--strip-components）
+ *   - 先在临时目录校验 SKILL.md 存在，再原子替换，避免装出半个技能
+ *   - 全部入参走白名单正则，挡命令注入与路径穿越
+ *
+ * @param installDir 相对 skills/ 的安装目录，可含多层。必须与 SKILL.md 里
+ *   自述的路径一致 —— agent 会照着 SKILL.md 的示例命令执行脚本，层级装错
+ *   会 file-not-found。例：stocks 技能的 SKILL.md 写的是
+ *   `~/.hermes/skills/finance/stocks/scripts/stocks_client.py`，
+ *   所以必须传 "finance/stocks" 而不是 "stocks"。
+ */
+export function buildGithubSkillInstallCommand(
+  source: GithubSkillSource,
+  installDir: string,
+  profileId: string = DEFAULT_HERMES_AGENT_ID,
+): string {
+  const repo = source.repo.trim();
+  const ref = source.ref.trim();
+  const path = source.path.trim().replace(/\/+$/, "");
+  const dirName = installDir.trim().replace(/\/+$/, "");
+
+  if (!GITHUB_REPO_PATTERN.test(repo)) throw new Error("Invalid GitHub repo");
+  if (!GITHUB_REF_PATTERN.test(ref) || ref.includes("..")) throw new Error("Invalid GitHub ref");
+  if (!GITHUB_PATH_PATTERN.test(path) || path.includes("..")) throw new Error("Invalid GitHub path");
+  if (!SKILL_DIR_PATTERN.test(dirName) || dirName.includes("..")) {
+    throw new Error("Invalid skill directory name");
+  }
+
+  // tarball 顶层目录是 <repo>-<ref>，加上子目录层数一起剥掉
+  const repoName = repo.split("/")[1]!;
+  const tarballTopDir = `${repoName}-${ref.replace(/\//g, "-")}`;
+  const stripDepth = 1 + path.split("/").length;
+  const tarUrl = `https://codeload.github.com/${repo}/tar.gz/refs/heads/${ref}`;
+
+  const skillDir = `"$HERMES_PROFILE_ROOT/skills/${dirName}"`;
+  // 前置语句用 ; 分隔（含 trap），实际安装步骤用 && 串成失败即停
+  const prelude = [
+    buildHermesProfileRootCommand(profileId),
+    'SKILL_TMP="$(mktemp -d)"',
+    // 无论成功失败都清理临时目录，不留垃圾
+    `trap 'rm -rf "$SKILL_TMP"' EXIT`,
+  ].join("; ");
+
+  const install = [
+    `curl -fsSL --retry 3 --max-time 300 ${shellQuote(tarUrl)} -o "$SKILL_TMP/repo.tar.gz"`,
+    `mkdir -p "$SKILL_TMP/extract"`,
+    `tar -xzf "$SKILL_TMP/repo.tar.gz" -C "$SKILL_TMP/extract" --strip-components=${stripDepth} ${shellQuote(`${tarballTopDir}/${path}`)}`,
+    // 没有 SKILL.md 就不是合法技能，直接失败而不是装个空目录进去
+    `{ test -f "$SKILL_TMP/extract/SKILL.md" || { echo ${shellQuote(`SKILL.md not found in ${path}`)} >&2; exit 1; }; }`,
+    // 多层安装目录（如 finance/stocks）需要先建出父目录
+    `mkdir -p "$(dirname ${skillDir})"`,
+    // 先删旧目录再整体拷入，避免残留上一版本的文件
+    `rm -rf ${skillDir}`,
+    `cp -R "$SKILL_TMP/extract" ${skillDir}`,
+    // scripts/ 下的脚本需要可执行位，tar 通常保留，这里兜底
+    `{ find ${skillDir} -type f \\( -name "*.sh" -o -name "*.py" \\) -exec chmod +x {} + 2>/dev/null || true; }`,
+    // 收尾自检：落盘结果满足 skills/<name>/SKILL.md 契约才算装好
+    `test -f ${skillDir}/SKILL.md`,
+  ].join(" && ");
+
+  return `${prelude}; ${install}`;
+}
+
 export function buildHermesSkillDeleteCommand(slug: string, profileId: string = DEFAULT_HERMES_AGENT_ID): string {
   const normalized = slug.trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(normalized) || normalized === "." || normalized === "..") {

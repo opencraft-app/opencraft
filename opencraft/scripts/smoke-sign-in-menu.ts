@@ -4,7 +4,7 @@ import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const output = "/tmp/opencraft-sign-in-menu";
 const source = `
-import React,{useState,useSyncExternalStore}from'react';import{createRoot}from'react-dom/client';
+import React,{useState,useSyncExternalStore}from'react';import{createIntlTestRoot as createRoot}from'/tests/fixtures/intl-root.tsx';
 import{Context}from'@deepseek-ai/cordis';import{AuthenticationService,AuthenticationFlowService}from'/packages/workbench-runtime/src/index.ts';
 import{AppShell}from'/apps/workbench-web/src/components/app-shell.tsx';
 import{useAuthenticationPresentation}from'/apps/workbench-web/src/runtime/use-authentication-presentation.tsx';

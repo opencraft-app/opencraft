@@ -16,7 +16,29 @@ def routes_for(env: str) -> dict[str, dict]:
     return {route["name"]: route for route in config.get("routes") or []}
 
 
+def admin_routes_for(env: str) -> dict[str, dict]:
+    config = yaml.safe_load(
+        (REPO_ROOT / f"argocd/services/admin-gateway/{env}/config.yaml").read_text()
+    )
+    return {route["name"]: route for route in config.get("routes") or []}
+
+
 class ReferralGatewayRoutesTest(unittest.TestCase):
+    def test_admin_gateway_exposes_only_authenticated_referral_operations(self) -> None:
+        expected = {
+            "prefix": "/admin/api/referral",
+            "methods": ["GET", "POST", "OPTIONS"],
+            "upstream": "http://referral.referral.svc.cluster.local",
+            "access": "admin",
+        }
+        for environment in ("beijing-sandbox", "shprod", "sgprod"):
+            with self.subTest(environment=environment):
+                route = admin_routes_for(environment)["referral-admin"]
+                self.assertEqual(
+                    {key: route[key] for key in expected},
+                    expected,
+                )
+
     def test_beijing_exposes_only_the_declared_referral_contract(self) -> None:
         routes = routes_for("beijing-sandbox")
 

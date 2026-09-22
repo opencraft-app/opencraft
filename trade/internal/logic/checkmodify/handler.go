@@ -14,7 +14,7 @@
 // 源 / 目标套餐从哪儿来：checkModify 不带 dealName（与 checkRenew 同），没法反查
 // trade_order；而计费只回传协议内字段，goodsDetail 里 trade 自塞的 bundleId /
 // newBundleId 会被丢弃（2026-09-02 联调实测）。所以改由协议一等字段
-// oldConfig / newConfig 的 SV 集合在同 SP 内反查，详见 resolve.go 顶部说明。
+// oldConfig / newConfig 各自在自己声明的 SP 内按 SV 集合反查，详见 resolve.go。
 //
 // 错误码段 60080x（与 transfer 60070x / renew 60050x 错开）。
 package checkmodify
@@ -187,6 +187,12 @@ func validatePara(p *callbackPara) error {
 	if newConfig := jifeiproto.GoodsDetailSVMap(p.GoodsDetail, "newConfig"); len(newConfig) == 0 {
 		return errors.New("goodsDetail.newConfig is required and must be a non-empty object")
 	}
+	if _, err := jifeiproto.GoodsDetailModifyConfigIdentity(p.GoodsDetail, "oldConfig"); err != nil {
+		return err
+	}
+	if _, err := jifeiproto.GoodsDetailModifyConfigIdentity(p.GoodsDetail, "newConfig"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -206,12 +212,14 @@ type configVerdict struct {
 //
 // 校验项，全部 fail-closed：
 //  1. oldConfig / newConfig 各自唯一命中一个在册套餐
-//  2. 两者 subProductCode 一致（本期只支持同 SP 变配）
+//  2. 两者 productCode 一致，外层 product/sub 与源侧一致
 //  3. 源 ≠ 目标（相同意味着 0 元差价，用户付钱却什么都不变）
-//  4. goodsDetail.pid（若计费带了）与源套餐 PID 一致
+//  4. goodsDetail.pid（若计费带了）与目标套餐 PID 一致
 //
-// 检索域从哪儿取：用 para 的 productCode + subProductCode（计费视角）。两者缺任一都拒——
-// 没有检索域就只能全表反查，会把跨 SP 的套餐纳入候选，违背本期"只做同 SP"的边界。
+// 外层商品身份从 para 的 productCode + subProductCode 读取并要求与源配置一致。
+// 跨二层使用目标 goodsCategoryId 下单，但计费真实回调会把这两个外层字段规范化为
+// 当前资源（oldConfig）的身份；目标身份只从 newConfig 读取。
+// 源、目标检索域分别来自 oldConfig/newConfig 的完整身份；任一侧缺失都拒。
 // 实测计费 checkModify 回调这两个字段都带（2026-09-02），所以要求必填不会误伤真实流量。
 func verifyBillingConfig(
 	ctx context.Context,
@@ -224,11 +232,8 @@ func verifyBillingConfig(
 				para.ProductCode, para.SubProductCode)}, nil
 	}
 
-	oldConfig := jifeiproto.GoodsDetailSVMap(para.GoodsDetail, "oldConfig")
-	newConfig := jifeiproto.GoodsDetailSVMap(para.GoodsDetail, "newConfig")
-
 	sourceDef, targetDef, verdict, err := resolveBundlesBySV(
-		ctx, bundleStore, para.ProductCode, para.SubProductCode, oldConfig, newConfig)
+		ctx, bundleStore, para.ProductCode, para.SubProductCode, para.GoodsDetail)
 	if err != nil {
 		return "", "", configVerdict{}, err
 	}
@@ -236,18 +241,9 @@ func verifyBillingConfig(
 		return "", "", verdict, nil
 	}
 
-	if sourceDef.BundleID == targetDef.BundleID {
+	if pid, ok := goodsDetailIntField(para.GoodsDetail, "pid"); ok && int64(pid) != targetDef.Pid {
 		return "", "", configVerdict{ReturnCodeConfigMismatch,
-			fmt.Sprintf("source and target bundle are identical: %q", sourceDef.BundleID)}, nil
-	}
-	if sourceDef.SubProductCode != targetDef.SubProductCode {
-		return "", "", configVerdict{ReturnCodeConfigMismatch,
-			fmt.Sprintf("cross sub product modify is not supported: source sp=%q target sp=%q",
-				sourceDef.SubProductCode, targetDef.SubProductCode)}, nil
-	}
-	if pid, ok := goodsDetailIntField(para.GoodsDetail, "pid"); ok && int64(pid) != sourceDef.Pid {
-		return "", "", configVerdict{ReturnCodeConfigMismatch,
-			fmt.Sprintf("pid mismatch: goodsDetail=%d source bundle definition=%d", pid, sourceDef.Pid)}, nil
+			fmt.Sprintf("pid mismatch: goodsDetail=%d target bundle definition=%d", pid, targetDef.Pid)}, nil
 	}
 	return sourceDef.BundleID, targetDef.BundleID, configVerdict{}, nil
 }

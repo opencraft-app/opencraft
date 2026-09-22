@@ -1,13 +1,12 @@
 # 身份与访问领域
 
-本领域覆盖登录、会话、OIDC/OAuth、实名、影子账号和网关授权。核心 Owner 是 `user/auth`；`shadow` 负责腾讯云影子身份流程；`service-gateway` 消费身份状态执行公共路由门禁。
+本领域覆盖登录、会话、OIDC/OAuth、实名、影子账号和网关授权。核心 Owner 是 `user/auth`，包括腾讯云影子身份和绑定状态；`service-gateway` 消费身份状态执行公共路由门禁。
 
 ## 服务与责任
 
 | 服务 | 责任 |
 |---|---|
-| `user/auth` | 登录、会话、实名与身份 API 真源 |
-| `shadow` | 影子账号注册、临时凭据与平台回调编排 |
+| `user/auth` | 登录、会话、实名、影子账号注册/绑定与身份 API 真源 |
 | `service-gateway` | 在公共入口消费身份/实名状态 |
 | `collaboration` | 消费 Gateway 已验证的 LightVela Human 断言并映射本地协作 actor；不签发登录会话 |
 | `frontend` / `admin-gateway` | 表达登录状态和引导，不独占授权逻辑 |
@@ -18,6 +17,7 @@
 - 一次性 `auth_code`、临时凭据和回调 token 必须保持最小暴露与明确过期语义。
 - 公共行为至少验证网关路径；直连 `user/auth` 只证明内部 API。
 - 外部 IdP、腾讯云账号/CAM/STS 的实时契约通过登记来源校验，不把凭据或完整响应复制进文档。
+- Frontend 的复用 OAuth 登录入口只负责呈现既有身份 Owner 构造的 authorize URL；无 URL 时不展示，也不在组件内签发 state、拼接 callback、交换 code 或保存 token。路由适配器只能在权威兑换完成后恢复站内路径，不能成为并行认证协议。
 - `service-gateway` 必须先完成会话、实名门禁和 Bot 所有权校验，再启动后台 Worker Action；认证完成后的 TAT 执行超时、重试和清理策略属于运行控制，不得改变或绕过身份判定。
 - Collaboration Human 请求必须经过 `service-gateway`。浏览器只携现有 LightVela session，不能持有 Gateway 到 Collaboration 的内部 Bearer，也不能通过自定义身份头声明用户。
 - 邀请返利上下文不是访问邀请码或登录凭据。浏览器先通过公开接口校验返利码；未登录用户由 Auth 写入
@@ -28,6 +28,10 @@
   必须经过现有 LightVela session 内省。`service-gateway` 在转发前清除调用方提供的 `X-User-Id`
   等身份头并注入会话中的权威用户 ID，Referral 只消费该集群内断言；不得把 Referral ClusterIP、
   任意 owner 参数或宽泛路径暴露为公共身份入口。
+- Attribution 重置不是用户能力。它只通过 Admin Gateway 的 Basic Auth 管理面暴露
+  `/admin/api/referral/attributions/{invitee_user_id}` 预览和 `/reset` 执行，不进入用户 Service Gateway。
+  执行必须携带期望 attribution ID、操作人、原因和幂等键；Referral 不信任调用方提交的奖励或订阅列表，
+  只能从自身数据库快照生成 CTL 精确撤销请求。
 
 ## 机器契约与验证
 
@@ -37,12 +41,13 @@ Gateway Dashboard 的“认证用户”列表通过 User Auth `GET /admin/users`
 
 ### 影子账号后台查询与 testing 绑定管理
 
-Gateway Dashboard 在“认证用户”页面内以“Shadow 服务视图”展示 Shadow 服务侧账号状态；该事实仍由
-`shadow` 独占。Dashboard BFF 使用服务端 `SHADOW_INTERNAL_TOKEN` 调用
-`GET /internal/shadow/admin/accounts`，浏览器只携 Dashboard 管理员会话，不接触 Shadow Token，
-也不得直接读取 SQLite。
+Gateway Dashboard 在“认证用户”页面内展示 User Auth 持有的影子账号绑定。Dashboard BFF 复用
+`AUTH_ADMIN_API_URL` 和服务端 `AUTH_ADMIN_TOKEN` 调用 `GET /admin/shadow-accounts`；浏览器只携
+Dashboard 管理员会话，不接触 Auth admin token，也不得跨服务或直接读取数据库。
 
-查询使用 `users LEFT JOIN bindings`，同时返回尚未完成注册的本地用户和已建立腾讯云绑定的账号，并强制分页。该管理面仅用于检索注册、基础认证、标准实名和绑定标识；不得增加后台修改实名、换绑手机号或删除绑定的捷径。Shadow 未配置内部 Token 时必须返回不可用，不能回退到匿名访问、callback token 或浏览器管理员凭据。
+查询以 `shadow_bindings` 为分页主体，并从同一 Auth 用户存储补充手机号和实名状态；支持按用户 ID、
+影子用户名、UIN、OwnerUIN 或 AppID 搜索。UIN、OwnerUIN 和 AppID 在 HTTP 契约中使用十进制字符串，
+避免 JavaScript 精度丢失。该管理面只读，不得增加后台修改实名、换绑手机号或删除绑定的捷径。
 
 个人 DevCloud 的 testing mock 账号分配是另一套受控事实：它只修改 Auth MySQL 中既有的
 `shadow_bindings`，不修改 Shadow SQLite。Auth 提供 admin token 保护的查询、绑定和显式解绑接口；
@@ -122,9 +127,13 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
 Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
 北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
-而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入；对应
-Deployment patch 由北京 source-facing Service Gateway Component 持有，与基准 Deployment 同层组合，
-deploy-facing 目录只提供环境配置和加密 Secret generator，避免身份桥接因无目标 patch 而未落入运行时。
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入。北京主 sandbox
+使用普通 Kustomization 同时拥有 base、平台值 replacements、Secret generator 和身份桥接 patch，确保
+patch 与基准 Deployment 在同一累计器；禁止通过 Component 注入内部 token，因为 Component patch
+无法修改其引入的 Deployment。
+浏览器 CORS 只由公共 Gateway 判定和响应；通过 allowlist 后，Gateway 必须从私有 Collaboration hop
+删除浏览器 `Origin`，避免 Collaboration 的直连 CORS allowlist 再次解释公网来源并拒绝合法本地预览。
+该删除不影响权威 subject、内部 Bearer、请求 ID 或客户端 IP 投影。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 
@@ -145,11 +154,28 @@ Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route
 disabled tombstone，TTL 过期由消费者按 `renewed_at + ttl_seconds` 判定，二者都必须使 capability 和
 动态路由同时失效。registry 不可用、响应字段不合法或目标超出 DevCloud CIDR/端口约束时必须 fail closed。
 
+同一短期 capability 也可用于 sandbox-only 的个人计费代理，但它不是计费长期凭据。Auth 逐请求从
+capability 解析 UIN，重新读取 registry 并校验 digest、TTL、disabled 与 `delivery_mode=devtunnel`，
+然后只允许固定的 Jifei `ModifyResourceStatus` 和 Billing CloudAPI 支付动作。Jifei envelope 的
+`ownerUin/uin` 必须等于 registration UIN。CloudAPI 用户身份由绑定账号签发的短期 TC3 凭证负责；
+`X-Qcloud-User-Id` 是 testing 路由服务账号，不等于购买用户 UIN，个人客户端不得提交，只能由中央 Trade
+注入。客户端 capability 不转发给 Trade，Auth 改用既有内部 Bearer，并把个人 Trade 已生成的 TC3
+Authorization 放入内部专用 header。
+续租覆盖 digest 后旧 token 立即失效，注销后同一 token 必须返回 `401`；`403` 只能用于已验证 capability
+的业务 allowlist 拒绝探针。个人环境不得取得 Jifei AppSecret、CloudLadder HMAC 或中央内部 Bearer。
+
+个人环境必须把中央 testing 身份和本地浏览器身份分开保存：`central_*` 只用于恢复持有真实 shadow
+binding 的 testing session，`local_*` 只用于个人 Auth。自动生成的 `lv-local-*` 身份不得尝试登录中央
+Auth，中央 session 失效时也不得静默新建另一个账号或覆盖原 UIN。计费 capability readiness 使用固定
+探针穿透个人 Trade、中央 Auth 和中央 Trade；只有完成 capability、registration、UIN 和内部 Bearer
+校验后，中央 Trade 才在调用 Jifei/CloudAPI 之前返回 `200 + {"code":"OK","message":"ready"}`。
+空 `204`、业务 allowlist `403` 或页面可访问都不能证明该链路已就绪。
+
 生产和 staging 不启用 `PERSONAL_DEV_ROUTE_CONTROL_ENABLED` 或 developer route store；同名 HTTP 路由
 即使存在也只返回 disabled，不得降级到客户端自报身份或共享 Secret。验收至少覆盖无 session、非 active
 binding、伪造代理头、错误 HMAC、跨 UIN、注销和过期；任何日志与测试报告都不得包含 session、密码或
 capability 明文。
 
-API 真源是 `user/auth/api/openapi.yaml`，Shadow 的实现/架构在 `shadow/internal/` 和 `shadow/ARCHITECTURE.md`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
+API 真源是 `user/auth/api/openapi.yaml`，影子账号实现位于 `user/auth/internal/shadowbinding/`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
 
 相关 Journey：[账号到 Agent](../journeys/account-to-agent.md)。Agent 摘要：[identity-access Context](../../context/domains/identity-access.md)。

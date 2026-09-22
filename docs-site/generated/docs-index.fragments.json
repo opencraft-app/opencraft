@@ -492,69 +492,6 @@
     {
       "object": "mono2.docs.fragment",
       "version": "v1",
-      "level": 0,
-      "component": "nextgen-dashboard-client",
-      "component_path": "nextgen-dashboard-client",
-      "owner": "nextgen-dashboard-client",
-      "source_path": "nextgen-dashboard-client",
-      "docs": [
-        {
-          "kind": "readme",
-          "path": "nextgen-dashboard-client/README.md",
-          "title": "nextgen-dashboard-client"
-        }
-      ],
-      "apis": [],
-      "generated": [
-        {
-          "kind": "mdx",
-          "path": "docs-site/content/docs/components/nextgen-dashboard-client.mdx",
-          "url": "/docs/components/nextgen-dashboard-client"
-        },
-        {
-          "kind": "llms",
-          "path": "docs-site/generated/llms/nextgen-dashboard-client.txt",
-          "url": "/llms/nextgen-dashboard-client.txt"
-        }
-      ]
-    },
-    {
-      "object": "mono2.docs.fragment",
-      "version": "v1",
-      "level": 0,
-      "component": "nextgen-dashboard",
-      "component_path": "nextgen-dashboard",
-      "owner": "nextgen-dashboard",
-      "source_path": "nextgen-dashboard",
-      "docs": [
-        {
-          "kind": "agents",
-          "path": "nextgen-dashboard/AGENTS.md",
-          "title": "Nextgen Dashboard Agent Guide"
-        },
-        {
-          "kind": "readme",
-          "path": "nextgen-dashboard/README.md",
-          "title": "nextgen-dashboard"
-        }
-      ],
-      "apis": [],
-      "generated": [
-        {
-          "kind": "mdx",
-          "path": "docs-site/content/docs/components/nextgen-dashboard.mdx",
-          "url": "/docs/components/nextgen-dashboard"
-        },
-        {
-          "kind": "llms",
-          "path": "docs-site/generated/llms/nextgen-dashboard.txt",
-          "url": "/llms/nextgen-dashboard.txt"
-        }
-      ]
-    },
-    {
-      "object": "mono2.docs.fragment",
-      "version": "v1",
       "level": 2,
       "component": "payment",
       "component_path": "payment",

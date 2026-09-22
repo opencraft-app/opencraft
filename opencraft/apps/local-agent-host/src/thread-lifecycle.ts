@@ -10,6 +10,7 @@ export class ThreadLifecycle {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private closed = false;
   private readonly closedTemporaryIds = new Set<string>();
+  private readonly disconnectedClients = new Set<string>();
   constructor(readonly catalog: ThreadCatalog, private readonly release: (id: string) => Promise<{ released: boolean }>,
     private readonly notify: (method: string, params: Params) => void, private readonly graceMs = 30 * 60 * 1000) {}
   private async known(id: string, delegate: Delegate) {
@@ -30,6 +31,7 @@ export class ThreadLifecycle {
   }
   private async execute(method: string, params: Params, clientId: string, delegate: Delegate): Promise<any> {
     if (this.closed) throw new Error("Thread lifecycle is closing");
+    this.assertClient(clientId);
     if (method !== "thread/unsubscribe" && typeof params.threadId === "string") this.assertOpen(params.threadId);
     if (method === "thread/name/set") {
       await this.known(params.threadId, delegate);
@@ -81,6 +83,7 @@ export class ThreadLifecycle {
     const effectiveParams = params.model == null && typeof savedModel === "string" && savedModel !== "" && savedModel !== "dsh"
       ? { ...params, model: savedModel } : params;
     const reply = await delegate(method, effectiveParams);
+    this.assertClient(clientId);
     if (reply?.thread && ["thread/start", "thread/resume", "thread/fork"].includes(method)) {
       this.catalog.upsert(reply.thread, {
         ...(method === "thread/fork" ? { ephemeral: params.ephemeral === true, forkedFromId: params.threadId, parentThreadId: null } : {}),
@@ -98,7 +101,8 @@ export class ThreadLifecycle {
     const id = typeof params.threadId === "string" ? params.threadId : "creating:" + clientId;
     return this.enqueue(id, () => this.execute(method, params, clientId, delegate));
   }
-  private enqueue<T>(id: string, execute: () => Promise<T>): Promise<T> {
+  /** Shared by lifecycle changes, capability replacement and execution admission. */
+  enqueue<T>(id: string, execute: () => Promise<T>): Promise<T> {
     const previous = this.operations.get(id) ?? Promise.resolve();
     const operation = previous.catch(() => undefined).then(execute);
     this.operations.set(id, operation);
@@ -130,6 +134,7 @@ export class ThreadLifecycle {
     timer.unref(); this.timers.set(id, timer);
   }
   async disconnect(clientId: string): Promise<void> {
+    this.disconnectedClients.add(clientId);
     if (this.closed) return;
     await Promise.all(this.attachments.disconnect(clientId).map(id => this.enqueue(id, async () => {
       if (this.closed || this.attachments.count(id)) return;
@@ -141,6 +146,10 @@ export class ThreadLifecycle {
         catch { this.scheduleUnload(id); }
       } else this.touch(id);
     })));
+  }
+  revokeClient(clientId: string): void { this.disconnectedClients.add(clientId); }
+  assertClient(clientId: string): void {
+    if (this.disconnectedClients.has(clientId)) throw new Error("Thread client has disconnected");
   }
   async close(): Promise<void> {
     this.closed = true; for (const id of this.timers.keys()) this.cancelTimer(id);

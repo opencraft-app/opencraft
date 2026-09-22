@@ -114,7 +114,11 @@ try {
   assert.equal((await request("thread/resume", { threadId: parent })).model, text.model);
   assert.equal((await request("thread/resume", { threadId: fork.thread.id })).model, text.model);
   assert.equal((await request("thread/resume", { threadId: overrideFork.thread.id })).model, vision.model);
-  assert.equal((await request("runtime/capabilities/register", { threadId: overrideFork.thread.id, dynamicTools })).registered, 2);
+  const coldRegistration = await request("runtime/capabilities/register", {
+    threadId: overrideFork.thread.id,
+    dynamicTools,
+  });
+  assert.deepEqual(coldRegistration, { registered: 0, deferred: true });
   await assert.rejects(access(join(directory, "opencraft-history-index.sqlite")), { code: "ENOENT" });
   const beforeRestartTurn = captured.length;
   await request("turn/start", { threadId: parent, input: [{ type: "text", text: "synthetic cold continuation" }] });

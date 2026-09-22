@@ -12,7 +12,7 @@ export type AdminProxyModule =
   | "ctl"
   | "ctl-admin"
   | "credit"
-  | "shadow"
+  | "referral"
   | "support-feedback";
 
 interface BuildModuleAdminProxyRequestOptions {
@@ -43,7 +43,7 @@ const upstreamPathPrefixes: Record<AdminProxyModule, string> = {
   ctl: "/internal",
   "ctl-admin": "/admin/api/ctl",
   credit: "/internal/credit/admin",
-  shadow: "/internal/shadow/admin",
+  referral: "/admin/api/referral",
   // ticket 反馈后台：经 supportAgentMiddleware 校验 X-User-Id（白名单），
   // 由 dashboard BFF 注入配置的运营账号 ID，dashboard 本身已 admin 登录。
   "support-feedback": "/support/feedback",

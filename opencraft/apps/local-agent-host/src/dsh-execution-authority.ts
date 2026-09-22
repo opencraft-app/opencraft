@@ -61,6 +61,7 @@ export class DshExecutionAuthority {
     for (const entry of this.journal.loadEpochs()) this.table.seedEpoch(entry.threadId, entry.epoch);
   }
   claim(threadId: string, owner: DshExecutionOwner, requestId: string | number): DshAdmission {
+    this.assertConnected(owner);
     const lease = this.leases.acquire(threadId, owner, "executing");
     if (!lease.acquired) throw new Error("Thread write lease belongs to another connection");
     const result = this.table.claim(threadId, {
@@ -121,6 +122,7 @@ export class DshExecutionAuthority {
     this.database.prepare("UPDATE opencraft_queue_inputs SET consumed=1 WHERE native_rpc_id=?").run(rpcId);
   }
   assertOwner(threadId: string, owner: DshExecutionOwner, turnId?: string): DshAdmission {
+    this.assertConnected(owner);
     const execution = this.table.get(threadId);
     if (!execution || execution.connection !== owner || (turnId && execution.turnId !== turnId)) {
       throw new Error("Execution authority does not belong to this connection/Turn");
@@ -128,6 +130,7 @@ export class DshExecutionAuthority {
     return execution;
   }
   async withWriteLease<T>(threadId: string, owner: DshExecutionOwner, operation: () => Promise<T>): Promise<T> {
+    this.assertConnected(owner);
     const execution = this.table.get(threadId);
     if (execution) {
       this.assertOwner(threadId, owner);
@@ -167,6 +170,9 @@ export class DshExecutionAuthority {
     execution.connection = owner;
     this.journal.update(execution, execution.state);
     return true;
+  }
+  assertConnected(owner: DshExecutionOwner): void {
+    if (this.disconnected.has(owner)) throw new Error("Execution authority owner has disconnected");
   }
   disconnect(owner: DshExecutionOwner): void { this.disconnected.add(owner); this.leases.disconnect(owner); }
   close(): void { this.database.close(); }

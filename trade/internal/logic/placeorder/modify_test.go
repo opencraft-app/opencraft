@@ -11,7 +11,8 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
-// 同 SP 变配下单。需求：TAPD 1010132091137784162 §4.1 / §5.1 / §7.1
+// Pass 变配下单（含产品允许的跨 SP 路径）。
+// 需求：TAPD 1010132091137784162 §4.1 / §5.1 / §7.1
 
 const (
 	modifySourceBundleID = "bundle_sail"
@@ -293,6 +294,31 @@ func TestPlaceModifyOrderAndPayPersistsPaidPendingProvisionOnAsyncDelivery(t *te
 	}
 }
 
+func TestPlaceModifyOrderAndPayPersistsPaidPendingProvisionWhenBillingRequestsQueryFlowRetry(t *testing.T) {
+	d := newModifyDeps()
+	d.jifei.generateDealsAndPayFn = func(_ context.Context, _ *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		resp := modifyDealsAndPayResp()
+		resp.DealDeliverResults["20260509000000001-001"]["state"] = "2"
+		resp.ResourceIDs["20260509000000001-001"] = nil
+		return resp, nil
+	}
+
+	if _, err := d.service.PlaceModifyOrderAndPay(context.Background(), stdPlaceModifyOrderReq()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.writer.createOrderCalls.Load() != 1 {
+		t.Fatalf("CreateOrder calls=%d, want 1 for queryFlow retry delivery",
+			d.writer.createOrderCalls.Load())
+	}
+	in := d.writer.lastCreateOrderInput
+	if in.Status != store.OrderStatusPaidPendingProvision {
+		t.Errorf("Status = %q, want %q", in.Status, store.OrderStatusPaidPendingProvision)
+	}
+	if in.ResourceID != "lhpass-r1" || in.OrderType != store.OrderTypeModify {
+		t.Errorf("queryFlow retry modify order = %+v", in)
+	}
+}
+
 func TestPlaceModifyOrderAndPayPromotesOrderWhenCompletionWonInsertRace(t *testing.T) {
 	d := newModifyDeps()
 	d.jifei.generateDealsAndPayFn = func(_ context.Context, _ *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
@@ -350,15 +376,40 @@ func TestPlaceModifyOrderInvalidInput(t *testing.T) {
 	}
 }
 
-func TestPlaceModifyOrderRejectsCrossSubProduct(t *testing.T) {
+func TestPlaceModifyOrderSupportsCrossSubProduct(t *testing.T) {
 	d := newModifyDeps()
 	defs := modifyDefs()
-	defs[modifyTargetBundleID].SubProductCode = "sp_lightvela_ai_cn"
+	target := defs[modifyTargetBundleID]
+	target.SubProductCode = "sp_lightvela_ai_cn"
+	target.Pid = 5002
+	d.bundle.defs = defs
+
+	if _, err := d.service.PlaceModifyOrder(context.Background(), stdPlaceModifyOrderReq()); err != nil {
+		t.Fatalf("PlaceModifyOrder cross SP: %v", err)
+	}
+	gd := d.jifei.lastGenerateDealsReq.Goods[0].GoodsDetail
+	if gd["subProductCode"] != "sp_lightvela_ai_cn" || gd["pid"] != int64(5002) {
+		t.Fatalf("top-level billing identity = %v/%v, want target AI identity", gd["subProductCode"], gd["pid"])
+	}
+	oldConfig := gd["oldConfig"].(map[string]interface{})
+	newConfig := gd["newConfig"].(map[string]interface{})
+	if oldConfig["subProductCode"] != modifySubProductCode || oldConfig["pid"] != modifyPid {
+		t.Fatalf("oldConfig identity = %+v, want source", oldConfig)
+	}
+	if newConfig["subProductCode"] != "sp_lightvela_ai_cn" || newConfig["pid"] != int64(5002) {
+		t.Fatalf("newConfig identity = %+v, want target", newConfig)
+	}
+}
+
+func TestPlaceModifyOrderRejectsCrossProduct(t *testing.T) {
+	d := newModifyDeps()
+	defs := modifyDefs()
+	defs[modifyTargetBundleID].ProductCode = "p_other"
 	d.bundle.defs = defs
 
 	_, err := d.service.PlaceModifyOrder(context.Background(), stdPlaceModifyOrderReq())
-	if !errors.Is(err, ErrModifyCrossSubProduct) {
-		t.Fatalf("err = %v, want ErrModifyCrossSubProduct", err)
+	if !errors.Is(err, ErrModifyCrossProduct) {
+		t.Fatalf("err = %v, want ErrModifyCrossProduct", err)
 	}
 }
 

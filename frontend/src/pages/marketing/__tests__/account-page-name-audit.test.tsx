@@ -52,6 +52,8 @@ const createMemoryStorage = (): Storage => {
 };
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => text,
 }));
 
@@ -475,6 +477,35 @@ describe("AccountPage nickname audit state", () => {
     expect(percentage).toHaveStyle({ color: expectedColor });
     expect(progressFill).not.toBeNull();
     expect(progressFill).toHaveStyle({ background: expectedColor });
+  });
+
+  it("shows referral credits separately from the package quota", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 4500,
+      credit_available: 4500,
+      free_credit_total: 500,
+      free_credit_available: 500,
+    };
+
+    renderAccountPage("billing");
+
+    expect(screen.getByText("套餐积分")).toBeInTheDocument();
+    expect(screen.getByText("额外积分")).toBeInTheDocument();
+    expect(screen.getByText("当前可用")).toBeInTheDocument();
+    expect(screen.getByText("5,000")).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === "P" &&
+        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 4,500"
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === "SPAN" &&
+        element.textContent?.replace(/\s+/g, " ").trim() === "500 / 500"
+      )
+    ).toBeInTheDocument();
   });
 
   it("shows no model prompt at 95% credit usage", () => {

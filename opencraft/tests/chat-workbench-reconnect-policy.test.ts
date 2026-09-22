@@ -196,7 +196,7 @@ test("Workbench rejects ambiguous fixed and factory transport ownership", () => 
   }), /exactly one transport ownership mode/u);
 });
 
-test("Thread capability readiness counts namespace tools and rejects a partial Host lease", () => {
+test("Thread capability readiness distinguishes cold deferral from partial Host leases", () => {
   const dynamicTools = [
     {
       type: "namespace" as const,
@@ -212,8 +212,21 @@ test("Thread capability readiness counts namespace tools and rejects a partial H
 
   assert.equal(countDynamicToolDefinitions(dynamicTools), 3);
   assert.doesNotThrow(() => verifyDynamicToolRegistration(dynamicTools, { registered: 3 }));
+  assert.doesNotThrow(() => verifyDynamicToolRegistration(
+    dynamicTools,
+    { registered: 0, deferred: true },
+    { allowDeferred: true },
+  ));
+  assert.throws(
+    () => verifyDynamicToolRegistration(dynamicTools, { registered: 0, deferred: true }),
+    /registered 0 of 3 dynamic tools/u,
+  );
   assert.throws(
     () => verifyDynamicToolRegistration(dynamicTools, { registered: 0 }),
     /registered 0 of 3 dynamic tools/u,
+  );
+  assert.throws(
+    () => verifyDynamicToolRegistration(dynamicTools, { registered: 2, deferred: true }, { allowDeferred: true }),
+    /registered 2 of 3 dynamic tools/u,
   );
 });

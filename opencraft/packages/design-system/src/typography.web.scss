@@ -14,11 +14,12 @@ $text-tones: (
   @if list.index(generated.$typography-role-names, $name) == null {
     @error "Unknown typography role: #{$name}";
   }
-  @if not map.has-key($text-tones, $tone) {
+  @if $tone != null and not map.has-key($text-tones, $tone) {
     @error "Unknown TextTone: #{$tone}";
   }
 
-  color: map.get($text-tones, $tone);
+  // Control variants own tone; null projects typography without resetting it.
+  @if $tone != null { color: map.get($text-tones, $tone); }
   font-family: var(--typography-#{$name}-family);
   font-size: var(--typography-#{$name}-size);
   font-weight: var(--typography-#{$name}-weight);

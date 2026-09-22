@@ -188,7 +188,7 @@ func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	t.Fatal("auth-payment-methods route not found")
 }
 
-func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, wantUpstream string) {
+func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, wantUpstream string, wantRealname bool) {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -218,8 +218,8 @@ func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, want
 		if route.Upstream != wantUpstream {
 			t.Fatalf("credit upstream=%q", route.Upstream)
 		}
-		if !route.RequireRealname {
-			t.Fatal("credit route must require realname")
+		if route.RequireRealname != wantRealname {
+			t.Fatalf("credit require_realname=%v, want %v", route.RequireRealname, wantRealname)
 		}
 		if route.PathPolicy != PathPolicyAllowlist {
 			t.Fatalf("credit path_policy=%q, want allowlist", route.PathPolicy)
@@ -236,13 +236,18 @@ func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, want
 				t.Fatalf("credit allowlist missing %s", path)
 			}
 		}
-		wantOptionalAuth := http.MethodPost + " /v1/credit/packages/order-url"
-		if len(route.OptionalAuthAllow) != 1 {
-			t.Fatalf("credit optional auth allowlist=%+v, want only %s", route.OptionalAuthAllow, wantOptionalAuth)
+		wantOptionalAuth := map[string]struct{}{
+			http.MethodPost + " /v1/credit/inquiry":            {},
+			http.MethodPost + " /v1/credit/packages/order-url": {},
 		}
-		gotOptionalAuth := route.OptionalAuthAllow[0].Method + " " + route.OptionalAuthAllow[0].Path
-		if gotOptionalAuth != wantOptionalAuth {
-			t.Fatalf("credit optional auth route=%s, want %s", gotOptionalAuth, wantOptionalAuth)
+		if len(route.OptionalAuthAllow) != len(wantOptionalAuth) {
+			t.Fatalf("credit optional auth allowlist=%+v, want=%+v", route.OptionalAuthAllow, wantOptionalAuth)
+		}
+		for _, rule := range route.OptionalAuthAllow {
+			key := rule.Method + " " + rule.Path
+			if _, ok := wantOptionalAuth[key]; !ok {
+				t.Fatalf("unexpected credit optional auth route=%s", key)
+			}
 		}
 		return
 	}
@@ -254,6 +259,7 @@ func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
 		t,
 		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
 		"http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local",
+		true,
 	)
 }
 
@@ -262,6 +268,34 @@ func TestBeijingCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
 		t,
 		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
 		"http://credit.credit.svc.cluster.local",
+		true,
+	)
+}
+
+func TestShanghaiCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/shprod/config.yaml",
+		"http://credit.credit.svc.cluster.local",
+		true,
+	)
+}
+
+func TestSingaporeCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/sgprod/config.yaml",
+		"http://credit.credit.svc.cluster.local",
+		false,
+	)
+}
+
+func TestTokyoCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/sandbox-jp-1/config.yaml",
+		"http://credit.lightvela-playground-sandbox-jp-1.svc.cluster.local",
+		true,
 	)
 }
 
@@ -351,17 +385,9 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodPost + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel": {},
 	}
 	domesticWant := make(map[string]struct{}, len(baseWant)+8)
-	globalWant := make(map[string]struct{}, len(baseWant)+4)
+	globalWant := make(map[string]struct{}, len(baseWant)+8)
 	for key := range baseWant {
 		domesticWant[key] = struct{}{}
-		globalWant[key] = struct{}{}
-	}
-	for _, key := range []string{
-		http.MethodGet + " /v1/instances/{instance_id}/bots",
-		http.MethodPost + " /v1/instances/{instance_id}/bots",
-		http.MethodPut + " /v1/instances/{instance_id}/bots/{bot_id}",
-		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}",
-	} {
 		globalWant[key] = struct{}{}
 	}
 	for _, key := range []string{
@@ -375,6 +401,7 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
 	} {
 		domesticWant[key] = struct{}{}
+		globalWant[key] = struct{}{}
 	}
 
 	assertAllowlist := func(t *testing.T, configPath string, want map[string]struct{}) {
@@ -661,6 +688,61 @@ func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T)
 				}
 			}
 			t.Fatal("TencentCloud account callback must bypass session authentication")
+		})
+	}
+}
+
+func TestPersonalDevBillingProxyIsPublicOnlyInTestingSandboxes(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	want := map[string]struct{}{
+		http.MethodPost + " /auth/dev-environments/billing-proxy/jifei/resource-center/interface": {},
+		http.MethodPost + " /auth/dev-environments/billing-proxy/cloudapi/":                       {},
+	}
+
+	for _, env := range []string{"sandbox-bj-7", "sandbox-kr-1"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			got := make(map[string]struct{})
+			for _, route := range cfg.Routes {
+				if route.Name != "auth" {
+					continue
+				}
+				for _, rule := range route.PublicAllow {
+					key := strings.ToUpper(strings.TrimSpace(rule.Method)) + " " + strings.TrimSpace(rule.Path)
+					if _, required := want[key]; required {
+						got[key] = struct{}{}
+					}
+				}
+			}
+			for key := range want {
+				if _, ok := got[key]; !ok {
+					t.Fatalf("testing sandbox auth route is missing public rule %s", key)
+				}
+			}
+		})
+	}
+
+	for _, env := range []string{"shprod", "sgprod"} {
+		t.Run(env+"-production", func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			for _, route := range cfg.Routes {
+				for _, rule := range route.PublicAllow {
+					key := strings.ToUpper(strings.TrimSpace(rule.Method)) + " " + strings.TrimSpace(rule.Path)
+					if _, forbidden := want[key]; forbidden {
+						t.Fatalf("production config %s must not expose personal DevCloud billing proxy", env)
+					}
+				}
+			}
 		})
 	}
 }

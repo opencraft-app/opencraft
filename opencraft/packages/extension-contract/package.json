@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": { "@opencraft/design-system": "0.1.0" },
   "scripts": {
     "typecheck": "tsc --noEmit"
   }

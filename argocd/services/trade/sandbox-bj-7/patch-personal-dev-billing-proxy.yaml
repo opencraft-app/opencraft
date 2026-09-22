@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-config
+  namespace: trade
+data:
+  PERSONAL_DEV_BILLING_PROXY_ENABLED: "true"

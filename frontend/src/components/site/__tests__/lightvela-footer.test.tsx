@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LightVelaFooter } from "@/components/site/lightvela-footer";
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => text,
   // 组件用 `useLocaleOverride() ?? i18n.language` 判定语言；
   // 这里返回 null 表示无覆盖，让用例继续通过 mockLanguage 控制语言。

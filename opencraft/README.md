@@ -24,6 +24,20 @@ npm ci
 npm run dev:web
 ```
 
+To run the LightVela product against an explicit regional Gateway while keeping
+the same application-owned account/session service:
+
+```bash
+VITE_LIGHTVELA_API_BASE_URL=https://lightclaw.tech \
+VITE_LIGHTVELA_REGION=cn \
+npm run dev:lightvela-web
+```
+
+`VITE_LIGHTVELA_API_BASE_URL` must be an absolute HTTP(S) origin and
+`VITE_LIGHTVELA_REGION` must be `cn` or `intl`. These are endpoint-selection
+inputs only; credentials remain owned by `LightVelaAccountService` and are never
+build inputs.
+
 The browser UI starts without a configured model account. To execute agent
 tasks, connect an available Host or use the desktop app's built-in Local Agent;
 configure its models through the current Settings surface. Model credentials

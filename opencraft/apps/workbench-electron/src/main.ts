@@ -1,6 +1,6 @@
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
+import { isWindowAppearanceMessage, applyNativeWindowAppearance, type WindowAppearanceMessage } from "./window-appearance.js";
 import { execFileSync, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -11,14 +11,25 @@ import { createDesktopSessionStore } from "./lightvela-session-store.js";
 import { desktopAccountPublicError, requestDesktopAccount, type DesktopAccountRequest } from "./lightvela-account-http.js";
 import { desktopSkillHubPublicError, requestDesktopSkillHub } from "./skillhub-http.js";
 import { resolveDesktopProduct } from "./product-identity.js";
+import {
+  prepareDesktopDirectories,
+  resolveDesktopDirectoryPlan,
+  type DesktopDirectoryPlan,
+} from "./desktop-directories.js";
 import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
+import { createDesktopLocaleRuntime, requireDesktopLocale } from "./desktop-locale.js";
 import { installBrowserGuests } from "./browser-guests.js";
 import { createFilePrivateStorage } from "./private-storage.js";
 import { BrowserPermissionPolicy } from "./browser-permissions.js";
 import { ProjectFolderPicker } from "./project-folder-picker.js";
 import { SqliteDebugReader } from "./sqlite-debug-reader.js";
 import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
+import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
+import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
+import { registerExtensionDataIpc } from "./extension-data-ipc.js";
+import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
+import { resolveCodexExecutable } from "./codex-executable.js";
 
 import {
   BrowserWindow,
@@ -52,47 +63,39 @@ const executableName = basename(process.execPath, extname(process.execPath));
 const desktopProduct = resolveDesktopProduct(executableName);
 app.setName(desktopProduct.displayName);
 const requestedProfile = app.commandLine.getSwitchValue("user-data-dir");
-const userDataDirectory = requestedProfile
-  ? resolve(requestedProfile)
-  : join(app.getPath("appData"), desktopProduct.profileDirectoryName);
-// Electron rejects setPath for a missing directory on a fresh machine.
-mkdirSync(userDataDirectory, { recursive: true });
-app.setPath("userData", userDataDirectory);
+const directoryPlan = resolveDesktopDirectoryPlan({
+  appDataDirectory: app.getPath("appData"),
+  homeDirectory: homedir(),
+  product: desktopProduct,
+  requestedUserDataDirectory: requestedProfile,
+  requestedProductHomeDirectory: process.env.OPENCRAFT_HOME,
+});
+let desktopPaths!: DesktopDirectoryPlan;
 
 let mainWindow: BrowserWindow | null = null;
 let mainWebContents: WebContents | null = null;
 let browserGuests: ReturnType<typeof installBrowserGuests> | null = null;
-const browserPermissions = new BrowserPermissionPolicy({
-  read: () => {
-    const raw = createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).read("permissions");
-    return raw ? JSON.parse(raw) : {};
-  },
-  write: value => createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).write("permissions", JSON.stringify(value)),
-}, async (origin, permission) => {
-  if (!mainWindow || mainWindow.isDestroyed()) return { allow: false, remember: false };
-  const labels: Record<string, string> = { camera: "摄像头", microphone: "麦克风", geolocation: "位置", notifications: "通知" };
-  const result = await dialog.showMessageBox(mainWindow, { type: "question",
-    message: `${origin} 请求使用${labels[permission] ?? permission}`,
-    detail: "只授权给当前网站。可从浏览器的“网站权限”入口撤销。",
-    buttons: ["不允许", "允许"], defaultId: 0, cancelId: 0, checkboxLabel: "记住此网站的选择", checkboxChecked: false });
-  return { allow: result.response === 1, remember: result.checkboxChecked };
-});
+let browserPermissions!: BrowserPermissionPolicy;
 let tray: Tray | null = null;
 let loopbackHost: WorkbenchStaticServer | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
-const desktopSessions = createDesktopSessionStore(userDataDirectory);
-const sqliteDebugReader = new SqliteDebugReader(join(userDataDirectory, "dsh"));
-const uiPreferences = new DesktopUiPreferenceStore(join(userDataDirectory, "opencraft-ui.sqlite"));
-const desktopLogin = new DesktopLightVelaLogin({
-  openExternal: url => shell.openExternal(url),
-  saveSession: (value, signal) => desktopSessions.save(value, signal),
-  onSuccess: () => { void ensureMainWindow().catch(() => {}); },
-});
+let desktopSessions!: ReturnType<typeof createDesktopSessionStore>;
+let sqliteDebugReader!: SqliteDebugReader;
+let uiPreferences!: DesktopUiPreferenceStore;
+const desktopLocale = createDesktopLocaleRuntime();
+let connectorConfiguration: DesktopConnectorConfigurationStore | null = null;
+const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(join(desktopPaths.userDataDirectory, "opencraft-connectors.sqlite"));
+let extensionData: DesktopExtensionDataStore | null = null;
+registerExtensionDataIpc(() => extensionData ??= new DesktopExtensionDataStore(join(desktopPaths.userDataDirectory, "opencraft-extensions.sqlite")), trustedLoginCaller);
+let desktopLogin!: DesktopLightVelaLogin;
+let desktopLoginReady = false;
+const pendingLoginCallbacks: string[] = [];
 let startupCallbackFlight: Promise<boolean> | null = null;
 
 function receiveLoginCallback(url: string): void {
+  if (!desktopLoginReady) { pendingLoginCallbacks.push(url); return; }
   if (desktopLogin.receive(url)) return;
   const forwarding = forwardLoginCallback(url);
   if (mainWindow === null && daemonManager === null) startupCallbackFlight = forwarding;
@@ -106,13 +109,46 @@ function trustedLoginCaller(event: Electron.IpcMainInvokeEvent): boolean {
     && rendererOrigin !== null && event.senderFrame?.url.startsWith(`${rendererOrigin}/`) === true;
 }
 
+function initializeDesktopProfile(paths: DesktopDirectoryPlan): void {
+  desktopPaths = paths;
+  app.commandLine.appendSwitch("user-data-dir", paths.userDataDirectory);
+  app.setPath("userData", paths.userDataDirectory);
+  process.chdir(desktopPaths.runtimeDirectory);
+  browserPermissions = new BrowserPermissionPolicy({
+    read: () => {
+      const raw = createFilePrivateStorage(join(paths.userDataDirectory, "browser-metadata")).read("permissions");
+      return raw ? JSON.parse(raw) : {};
+    },
+    write: value => createFilePrivateStorage(join(paths.userDataDirectory, "browser-metadata")).write("permissions", JSON.stringify(value)),
+  }, async (origin, permission) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return { allow: false, remember: false };
+    const labels: Record<string, string> = { camera: "摄像头", microphone: "麦克风", geolocation: "位置", notifications: "通知" };
+    const result = await dialog.showMessageBox(mainWindow, { type: "question",
+      message: `${origin} 请求使用${labels[permission] ?? permission}`,
+      detail: "只授权给当前网站。可从浏览器的“网站权限”入口撤销。",
+      buttons: ["不允许", "允许"], defaultId: 0, cancelId: 0, checkboxLabel: "记住此网站的选择", checkboxChecked: false });
+    return { allow: result.response === 1, remember: result.checkboxChecked };
+  });
+  desktopSessions = createDesktopSessionStore(paths.userDataDirectory);
+  sqliteDebugReader = new SqliteDebugReader(paths.dshDataDirectory);
+  uiPreferences = new DesktopUiPreferenceStore(join(paths.userDataDirectory, "opencraft-ui.sqlite"));
+  speechPreferences = createFilePrivateStorage(join(paths.userDataDirectory, "voice-input"));
+  desktopLogin = new DesktopLightVelaLogin({
+    openExternal: url => shell.openExternal(url),
+    saveSession: (value, signal) => desktopSessions.save(value, signal),
+    onSuccess: () => { void ensureMainWindow().catch(() => {}); },
+  });
+  desktopLoginReady = true;
+  for (const url of pendingLoginCallbacks.splice(0)) receiveLoginCallback(url);
+}
+
 function speechHelperPath(): string {
   // Explicit diagnostic override; never supplied by the renderer.
   return process.env.OPENCRAFT_NATIVE_SPEECH_HELPER ?? (app.isPackaged
     ? join(process.resourcesPath, "native", "opencraft-speech-helper")
     : resolve(dirname(fileURLToPath(import.meta.url)), "../build/native/opencraft-speech-helper"));
 }
-const speechPreferences = createFilePrivateStorage(join(userDataDirectory, "voice-input"));
+let speechPreferences!: ReturnType<typeof createFilePrivateStorage>;
 function validateSpeechPreferences(value: unknown): asserts value is NativeSpeechPreferences {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid speech preferences");
   const entry = value as NativeSpeechPreferences;
@@ -183,6 +219,24 @@ ipcMain.handle("opencraft:sqlite-debug-tables", (event, databaseId: unknown) => 
 ipcMain.handle("opencraft:sqlite-debug-rows", (event, databaseId: unknown, table: unknown, offset: unknown, limit: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted SQLite debug caller");
   return sqliteDebugReader.rows(databaseId, table, offset, limit);
+});
+ipcMain.handle("opencraft:connector-configuration-load", (event) => {
+  if (event.sender !== mainWebContents) throw new Error("Untrusted Connector configuration request");
+  return connectorStore().load();
+});
+ipcMain.handle("opencraft:connector-configuration-save", (event, revision: unknown, value: unknown) => {
+  if (event.sender !== mainWebContents) throw new Error("Untrusted Connector configuration request");
+  const result = connectorStore().compareAndSet(revision, value);
+  if (result.updated) event.sender.send("opencraft:connector-configuration-changed");
+  return result;
+});
+ipcMain.handle("opencraft:system-locale", event => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted locale caller");
+  return app.getPreferredSystemLanguages()[0] ?? app.getLocale();
+});
+ipcMain.handle("opencraft:application-locale", (event, value: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted locale caller");
+  return desktopLocale.update({ localeOverride: requireDesktopLocale(value) });
 });
 ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
@@ -425,29 +479,10 @@ const APP_SHELL_HEADER_HEIGHT = 46;
 const MACOS_WINDOW_BUTTON_SIZE = 14;
 const MACOS_WINDOW_BUTTON_X = 16;
 
-type WindowThemeSource = "system" | "light" | "dark";
-type WindowResolvedTheme = "light" | "dark";
-
-interface WindowAppearanceMessage {
-  readonly themeSource: WindowThemeSource;
-  readonly resolvedTheme: WindowResolvedTheme;
-}
-
 let currentWindowAppearance: WindowAppearanceMessage = {
   themeSource: "system",
   resolvedTheme: nativeTheme.shouldUseDarkColors ? "dark" : "light",
 };
-
-function isWindowAppearanceMessage(value: unknown): value is WindowAppearanceMessage {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<WindowAppearanceMessage>;
-  return (
-    (candidate.themeSource === "system"
-      || candidate.themeSource === "light"
-      || candidate.themeSource === "dark")
-    && (candidate.resolvedTheme === "light" || candidate.resolvedTheme === "dark")
-  );
-}
 
 function getMacWindowButtonPosition(windowZoom = 1): { x: number; y: number } {
   return {
@@ -474,23 +509,7 @@ function applyWindowAppearance(
   if (window.isDestroyed()) return;
   currentWindowAppearance = appearance;
   nativeTheme.themeSource = appearance.themeSource;
-  if (process.platform === "darwin") {
-    const useOpaqueSurface = !window.isFocused();
-    window.setBackgroundColor(
-      useOpaqueSurface
-        ? appearance.resolvedTheme === "dark"
-          ? DARK_OPAQUE_WINDOW_BACKGROUND
-          : LIGHT_OPAQUE_WINDOW_BACKGROUND
-        : TRANSPARENT_WINDOW_BACKGROUND,
-    );
-    window.setVibrancy(useOpaqueSurface ? null : "menu");
-    return;
-  }
-  window.setBackgroundColor(
-    appearance.resolvedTheme === "dark"
-      ? DARK_OPAQUE_WINDOW_BACKGROUND
-      : LIGHT_OPAQUE_WINDOW_BACKGROUND,
-  );
+  applyNativeWindowAppearance(window, appearance, process.platform);
 }
 
 ipcMain.on("vela:set-window-appearance", (event, payload: unknown) => {
@@ -527,8 +546,8 @@ async function createMainWindow(): Promise<void> {
     title: "OpenCraft",
     width: 1440,
     height: 960,
-    minWidth: 760,
-    minHeight: 560,
+    minWidth: workbenchWindowMetrics.minimumWidth,
+    minHeight: workbenchWindowMetrics.minimumHeight,
     // AppKit owns the material plane while the window is active. The focus
     // state machine below swaps it for an opaque, theme-matched backing before
     // macOS captures minimize/restore snapshots.
@@ -551,10 +570,8 @@ async function createMainWindow(): Promise<void> {
           symbolColor: "#686868",
           height: 46,
         },
-    // Codex lets AppKit make the primary window key in the same transaction
-    // that creates the hidden-inset titlebar. Deferring the first show until
-    // renderer readiness lets the native traffic-light subviews miss that
-    // transaction on Electron 44 and they disappear from minimize snapshots.
+    // Let AppKit establish the hidden-inset titlebar and key-window lifecycle
+    // from the first frame. Renderer readiness never owns native window chrome.
     show: true,
     webPreferences: {
       preload: join(app.getAppPath(), "dist-host/preload.cjs"),
@@ -647,8 +664,11 @@ const lifecycle = new DesktopLifecycle({
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
+    desktopLocale.dispose();
     await nativeSpeech.close();
     uiPreferences.close();
+    connectorConfiguration?.close();
+    extensionData?.close();
     desktopLogin.cancel();
     const daemon = daemonManager;
     const loopback = loopbackHost;
@@ -667,10 +687,16 @@ const lifecycle = new DesktopLifecycle({
 });
 
 async function bootstrap(): Promise<void> {
+  const preparedDirectories = await prepareDesktopDirectories(directoryPlan);
+  if (preparedDirectories.diagnostic) console.warn(`[opencraft directories] ${preparedDirectories.diagnostic}`);
+  initializeDesktopProfile(preparedDirectories.paths);
   const singleInstance = app.requestSingleInstanceLock();
   if (!singleInstance) {
     app.quit();
     return;
+  }
+  if (preparedDirectories.status === "legacy-active") {
+    throw new Error("The legacy OpenCraft runtime is still active. Quit the existing application and retry the upgrade.");
   }
 
   app.on("second-instance", (_event, argv) => {
@@ -691,7 +717,9 @@ async function bootstrap(): Promise<void> {
     return;
   }
   daemonManager = new OpenCraftDaemonClientManager({
-    userDataDirectory: app.getPath("userData"),
+    endpoint: desktopPaths.daemonEndpoint,
+    tokenPath: desktopPaths.daemonTokenPath,
+    runtimeDirectory: desktopPaths.runtimeDirectory,
     daemonEntry: app.isPackaged
       ? join(process.resourcesPath, "runtime/opencraft-daemon.cjs")
       : join(app.getAppPath(), "../opencraft-daemon/dist/main.cjs"),
@@ -701,11 +729,23 @@ async function bootstrap(): Promise<void> {
     dshCapabilityPlugin: app.isPackaged
       ? join(process.resourcesPath, "runtime/dsh/opencraft-capability-plugin.mjs")
       : join(app.getAppPath(), "../local-agent-host/src/dsh-capability-plugin.mjs"),
-    dataDirectory: join(app.getPath("userData"), "dsh"),
-    modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || join(homedir(), ".opencraft"),
+    dataDirectory: desktopPaths.dshDataDirectory,
+    modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || desktopPaths.productHomeDirectory,
+    skillsDirectory: process.env.OPENCRAFT_SKILLS_DIRECTORY?.trim() || join(desktopPaths.productHomeDirectory, "skills"),
+    codexExecutable: resolveCodexExecutable({
+      explicit: process.env.OPENCRAFT_CODEX_EXECUTABLE,
+      path: process.env.PATH,
+      homeDirectory: homedir(),
+    }),
+    codexDataDirectory: desktopPaths.codexDataDirectory,
+    nativeCodexHomeDirectory: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
     executable: process.execPath,
   });
-  tray = createDesktopTray({ open: () => { void lifecycle.show().catch(console.error); }, quit: () => { void lifecycle.quit(); } });
+  let localeOverride: unknown;
+  try { localeOverride = JSON.parse(uiPreferences.load("locale.override")?.valueJson ?? '""'); } catch { /* Invalid preferences use system locale. */ }
+  await desktopLocale.update({ localeOverride: typeof localeOverride === "string" ? localeOverride : null,
+    localeSource: "SYSTEM", systemLocale: app.getPreferredSystemLanguages()[0] ?? app.getLocale() });
+  tray = createDesktopTray({ open: () => { void lifecycle.show().catch(console.error); }, quit: () => { void lifecycle.quit(); } }, desktopLocale);
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const trustedRenderer = rendererOrigin !== null
       && webContents === mainWebContents

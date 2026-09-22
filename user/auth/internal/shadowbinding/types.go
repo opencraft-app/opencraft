@@ -61,6 +61,7 @@ type Store interface {
 	SavePendingBinding(ctx context.Context, userID string, shadowUserName string, now time.Time) (Binding, error)
 	GetBindingByUserID(ctx context.Context, userID string) (Binding, error)
 	GetBindingByShadowUserName(ctx context.Context, shadowUserName string) (Binding, error)
+	ListAdminBindings(ctx context.Context, search string, limit int, offset int) ([]Binding, int, error)
 	UpsertAdminBinding(ctx context.Context, binding Binding, now time.Time) (Binding, error)
 	DisableAdminBinding(ctx context.Context, userID string, now time.Time) (Binding, error)
 	MarkBindingRegistered(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)

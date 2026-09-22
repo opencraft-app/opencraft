@@ -38,7 +38,6 @@ PLAYGROUND_BUILDABLE_BUNDLES = {
     "credit",
     "frontend",
     "gateway-dashboard",
-    "nextgen-dashboard",
     "payment",
     "sandbox",
     "service-gateway",
@@ -55,7 +54,6 @@ AUTO_RELEASE_WORKFLOWS = {
     "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod,sgprod", "ctl"),
     "credit": (".ci/credit.yml", "beijing-sandbox,shprod,sgprod", "credit"),
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod,sgprod", "gateway-dashboard"),
-    "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod,sgprod", "nextgen-dashboard"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod,sgprod", "payment"),
     "sandbox": (".ci/sandbox.yml", "beijing-sandbox,shprod,sgprod", "sandbox"),
     "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod,sgprod", "service-gateway"),
@@ -76,12 +74,6 @@ TOKYO_RELEASE_WORKFLOWS = {
         "env",
     ),
     "user-auth": (".ci/tokyo-lightclaw-auth.yml", ".ci/lightclaw-auth.yml", "lightclaw-auth", "env"),
-    "nextgen-dashboard": (
-        ".ci/tokyo-nextgen-dashboard.yml",
-        ".ci/nextgen-dashboard.yml",
-        "nextgen-dashboard",
-        "env",
-    ),
     "payment": (".ci/tokyo-payment.yml", ".ci/payment.yml", "payment", "env"),
     "sandbox": (".ci/tokyo-sandbox.yml", ".ci/sandbox.yml", "sandbox", "env"),
     "service-gateway": (
@@ -105,7 +97,6 @@ BUSINESS_WORKFLOWS = {
     ".ci/frontend.yml",
     ".ci/gateway-dashboard.yml",
     ".ci/lightclaw-auth.yml",
-    ".ci/nextgen-dashboard.yml",
     ".ci/payment.yml",
     ".ci/sandbox.yml",
     ".ci/service-gateway.yml",
@@ -121,6 +112,7 @@ PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/credit.yml",
     ".ci/lightclaw-auth.yml",
     ".ci/payment.yml",
+    ".ci/referral.yml",
     ".ci/sandbox.yml",
     ".ci/subscription.yml",
     ".ci/trade.yml",
@@ -1379,14 +1371,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 item = next(item for item in ssm["items"] if item["id"] == "credit-runtime-secrets")
                 self.assertEqual(set(item["required_keys"]), required_secret_keys)
 
-    def test_referral_pipeline_keeps_manual_release_and_environment_boundaries(self) -> None:
+    def test_referral_pipeline_uses_standard_prod_orchestration_and_environment_boundaries(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
-        self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
 
         manifest = load_manifest()
         referral = load_bundle(manifest, "referral", "beijing-sandbox")
@@ -1740,8 +1735,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
         self.assertEqual(manifest["defaults"]["version_id"], "SSM_Current")
         items = manifest["items"]
-        self.assertEqual(len(items), 16)
-        self.assertEqual(len({item["id"] for item in items}), 16)
+        self.assertEqual(len(items), 15)
+        self.assertEqual(len({item["id"] for item in items}), 15)
         for item in items:
             with self.subTest(item=item["id"]):
                 self.assertTrue(item["secret_name"].startswith("mono-sandbox-jp-1-"))
@@ -1760,7 +1755,6 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "ctl-conf-rewrite.sops.yaml",
             "ctl-runtime-secrets.sops.yaml",
             "gateway-dashboard-runtime-secrets.sops.yaml",
-            "nextgen-dashboard-runtime-secrets.sops.yaml",
             "payment-runtime-secrets.sops.yaml",
             "sandbox-runtime-secrets.sops.yaml",
             "service-gateway-runtime-secrets.sops.yaml",
@@ -1826,6 +1820,32 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
+
+    def test_sgprod_multi_bot_runtime_flag_is_wired(self) -> None:
+        sgprod_values = {
+            key: value
+            for line in (REPO_ROOT / "argocd/services/ctl/sgprod/ctl-platform.env").read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(sgprod_values["MULTI_BOT_ENABLED"], "true")
+
+        ctl_api = next(
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if isinstance(document, dict)
+            and document.get("kind") == "Deployment"
+            and document.get("metadata", {}).get("name") == "ctl-api"
+        )
+        ctl_env = {
+            item["name"]: item
+            for item in ctl_api["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        config_map_ref = ctl_env["MULTI_BOT_ENABLED"]["valueFrom"]["configMapKeyRef"]
+        self.assertEqual(config_map_ref["name"], "ctl-platform-values")
+        self.assertEqual(config_map_ref["key"], "MULTI_BOT_ENABLED")
+        self.assertTrue(config_map_ref["optional"])
 
     def test_shprod_website_credential_bootstrap_contract_is_complete(self) -> None:
         def env_values(path: Path) -> dict[str, str]:
@@ -3214,6 +3234,20 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
+    def test_frontend_artifact_build_stages_the_opencraft_embed_release(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        workflow = yaml.safe_load(workflow_text)
+        trigger_paths = (workflow.get("on") or workflow[True])["push"]["paths"]
+
+        self.assertIn("opencraft/apps/workbench-web/**", trigger_paths)
+        self.assertIn("opencraft/packages/**", trigger_paths)
+        self.assertIn("opencraft/plugins/**", trigger_paths)
+        self.assertIn('cd "$REPO_ROOT/opencraft"', workflow_text)
+        self.assertIn('"$NPM_BIN" ci', workflow_text)
+        self.assertIn('"$NPM_BIN" run build:embedded-workbench:release', workflow_text)
+        self.assertIn('export OPENCRAFT_EMBED_DIST_DIR=', workflow_text)
+        self.assertIn('test -f "$OPENCRAFT_EMBED_DIST_DIR/embedded-workbench.js"', workflow_text)
+
 
     def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
         guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
@@ -3416,6 +3450,24 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("ci-triggers/trade", self.push_paths(workflow))
         self.assertIn("ci-triggers/trade", self.push_paths(tokyo_workflow))
         self.assertTrue((REPO_ROOT / "ci-triggers/trade").is_file())
+
+    def test_sgprod_trade_exports_general_cloudladder_hmac(self) -> None:
+        manifest_path = REPO_ROOT / "scripts/ssm_manifest.trade.sgprod.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        items = {item["id"]: item for item in manifest["items"]}
+        item = items["trade-runtime-secrets"]
+
+        self.assertEqual(item["secret_name"], "mono-sgprod-trade-runtime-secrets")
+        self.assertEqual(item["output_path"], "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml")
+        self.assertIn("TRADE_CLOUDLADDER_HMAC_SECRET", item["required_keys"])
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", item["required_keys"])
+
+        encrypted_secret = yaml.safe_load(
+            (REPO_ROOT / item["output_path"]).read_text()
+        )
+        runtime_keys = set(encrypted_secret["stringData"])
+        self.assertIn("TRADE_CLOUDLADDER_HMAC_SECRET", runtime_keys)
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", runtime_keys)
 
     def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
         env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
@@ -3814,9 +3866,6 @@ refresh_skus http://unused img-jhb "$pools_json"
     def test_frontend_template_consumers_keep_frontend_prod_reviewers(self) -> None:
         frontend_reviewers = '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
         workflows = [
-            ".ci/nextgen-dashboard.yml",
-            ".ci/tokyo-nextgen-dashboard.yml",
-            ".ci/gateway-dashboard.yml",
             ".ci/tokyo-gateway-dashboard.yml",
             ".ci/tokyo-frontend.yml",
         ]
@@ -3826,6 +3875,15 @@ refresh_skus http://unused img-jhb "$pools_json"
                 workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
                 parameters = (workflow.get("extends") or {}).get("parameters") or {}
                 self.assertEqual(parameters.get("PROD_REVIEWERS"), frontend_reviewers)
+
+    def test_gateway_dashboard_adds_service_prod_reviewer(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/gateway-dashboard.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+
+        self.assertEqual(
+            parameters.get("PROD_REVIEWERS"),
+            '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "xinqishang"]',
+        )
 
     def test_db_contract_workflows_enable_prod_db_migration_child_pipelines(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):

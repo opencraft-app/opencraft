@@ -24,10 +24,11 @@ type CloudProvider interface {
 	// VerifyInstance confirms that the cloud instance is ready for control-plane
 	// delivery. The reference is regional and never uses an IP address as identity.
 	VerifyInstance(ctx context.Context, instance CloudInstanceRef) error
-	// StopInstance shuts down the instance while preserving system disk data.
+	// StopInstance submits an asynchronous shutdown while preserving system disk data.
 	// Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
 	// On Tencent Cloud this maps to StopInstances with StoppedMode=STOP_CHARGING
-	// to release CPU/memory billing while keeping disks intact.
+	// to release CPU/memory billing while keeping disks intact. Callers must use
+	// DescribeInstance to confirm that the instance eventually reaches STOPPED.
 	StopInstance(ctx context.Context, instance CloudInstanceRef) error
 	// StartInstance boots a previously stopped instance back to RUNNING.
 	// Reserved for renewal/restore flows that follow trade pass isolation.
@@ -443,6 +444,47 @@ func NewMockCloudProvider() *MockCloudProvider {
 		snapshots: make(map[string]SnapshotStatus),
 		specs:     make(map[string]InstanceSpec),
 	}
+}
+
+// StreamTerminalCommand makes the local mock provider satisfy the same
+// server-side PTY contract as TencentCloudProvider. The mock has no backing
+// guest OS, so it acknowledges a validated command without producing output.
+// This keeps personal/local end-to-end flows on the real HTTP streaming path
+// while avoiding any effect on Tencent Cloud providers.
+func (*MockCloudProvider) StreamTerminalCommand(ctx context.Context, req TerminalCommandStreamRequest, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error) {
+	if emit == nil {
+		return TerminalCommandResult{}, protocolStreamError("event callback is required")
+	}
+	if strings.TrimSpace(req.Region) == "" {
+		return TerminalCommandResult{}, protocolStreamError("region is required")
+	}
+	if strings.TrimSpace(req.InstanceID) == "" {
+		return TerminalCommandResult{}, protocolStreamError("instance id is required")
+	}
+	if strings.TrimSpace(req.Command) == "" {
+		return TerminalCommandResult{}, protocolStreamError("command is required")
+	}
+	if req.Username != terminalCommandUsername {
+		return TerminalCommandResult{}, protocolStreamError("unsupported terminal username")
+	}
+	if req.WorkingDirectory != terminalCommandWorkingDirectory {
+		return TerminalCommandResult{}, protocolStreamError("unsupported terminal working directory")
+	}
+	if ctx.Err() != nil {
+		return TerminalCommandResult{}, &TerminalCommandStreamError{
+			Code:    TerminalCommandErrorCanceled,
+			Message: "command canceled",
+		}
+	}
+
+	executionID := "mock:" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	if err := emit(TerminalCommandStreamEvent{
+		Type:        TerminalCommandEventStarted,
+		ExecutionID: executionID,
+	}); err != nil {
+		return TerminalCommandResult{}, protocolStreamError("started event callback failed")
+	}
+	return TerminalCommandResult{ExecutionID: executionID, ExitCode: 0}, nil
 }
 
 // mockDefaultSpec is what the mock reports for an instance it has never seen a

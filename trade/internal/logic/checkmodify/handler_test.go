@@ -165,8 +165,14 @@ func stdParaMap() map[string]any {
 			"bundleId":    sourceBundleID,
 			"newBundleId": targetBundleID,
 			"curDeadline": "2026-06-15 10:30:00",
-			"oldConfig":   map[string]any{"sv_cpu": 2, "sv_mem": 4, "sv_disk": 60},
-			"newConfig":   map[string]any{"sv_cpu": 4, "sv_mem": 8, "sv_disk": 80},
+			"oldConfig": map[string]any{
+				"productCode": "p_lighthouse", "subProductCode": "sp_lightvela_cn", "pid": 4001,
+				"sv_cpu": 2, "sv_mem": 4, "sv_disk": 60,
+			},
+			"newConfig": map[string]any{
+				"productCode": "p_lighthouse", "subProductCode": "sp_lightvela_cn", "pid": 4001,
+				"sv_cpu": 4, "sv_mem": 8, "sv_disk": 80,
+			},
 		},
 	}
 }
@@ -271,6 +277,12 @@ func TestCheckModifyInvalidPara(t *testing.T) {
 		{"goodsNum not 1", paraWithGoodsDetail(func(gd map[string]any) { gd["goodsNum"] = 2 }), "goodsNum"},
 		{"missing oldConfig", paraWithGoodsDetail(func(gd map[string]any) { delete(gd, "oldConfig") }), "oldConfig"},
 		{"missing newConfig", paraWithGoodsDetail(func(gd map[string]any) { delete(gd, "newConfig") }), "newConfig"},
+		{"oldConfig missing billing identity", paraWithGoodsDetail(func(gd map[string]any) {
+			delete(gd["oldConfig"].(map[string]any), "subProductCode")
+		}), "oldConfig.subProductCode"},
+		{"newConfig missing billing identity", paraWithGoodsDetail(func(gd map[string]any) {
+			delete(gd["newConfig"].(map[string]any), "productCode")
+		}), "newConfig.productCode"},
 		{"missing subProductCode", func() map[string]any { p := stdParaMap(); p["subProductCode"] = ""; return p }(), "subProductCode"},
 		{"missing productCode", func() map[string]any { p := stdParaMap(); p["productCode"] = ""; return p }(), "productCode"},
 		{"bad curDeadline", paraWithGoodsDetail(func(gd map[string]any) { gd["curDeadline"] = "2026/06/15 10:30:00" }), "curDeadline"},
@@ -330,37 +342,25 @@ func TestCheckModifyUnresolvableSVIsBundleNotFound(t *testing.T) {
 	}{
 		{
 			// 计费准备扣巡游的钱，newConfig 却描述别的规格。
-			name:    "newConfig value drifted from every bundle",
-			para:    paraWithGoodsDetail(func(gd map[string]any) { gd["newConfig"] = map[string]any{"sv_cpu": 8, "sv_mem": 8, "sv_disk": 80} }),
+			name: "newConfig value drifted from every bundle",
+			para: paraWithGoodsDetail(func(gd map[string]any) {
+				gd["newConfig"] = map[string]any{"productCode": "p_lighthouse", "subProductCode": "sp_lightvela_cn", "pid": 4001, "sv_cpu": 8, "sv_mem": 8, "sv_disk": 80}
+			}),
 			wantMsg: "newConfig sv list matches no bundle definition",
 		},
 		{
-			name:    "newConfig key count differs",
-			para:    paraWithGoodsDetail(func(gd map[string]any) { gd["newConfig"] = map[string]any{"sv_cpu": 4} }),
+			name: "newConfig key count differs",
+			para: paraWithGoodsDetail(func(gd map[string]any) {
+				gd["newConfig"] = map[string]any{"productCode": "p_lighthouse", "subProductCode": "sp_lightvela_cn", "pid": 4001, "sv_cpu": 4}
+			}),
 			wantMsg: "newConfig sv list matches no bundle definition",
 		},
 		{
-			name:    "oldConfig drifted from every bundle",
-			para:    paraWithGoodsDetail(func(gd map[string]any) { gd["oldConfig"] = map[string]any{"sv_cpu": 1} }),
+			name: "oldConfig drifted from every bundle",
+			para: paraWithGoodsDetail(func(gd map[string]any) {
+				gd["oldConfig"] = map[string]any{"productCode": "p_lighthouse", "subProductCode": "sp_lightvela_cn", "pid": 4001, "sv_cpu": 1}
+			}),
 			wantMsg: "oldConfig sv list matches no bundle definition",
-		},
-		{
-			// 目标套餐被挪到别的 SP：本期只做同 SP，检索域按 para.subProductCode 限定，
-			// 于是目标在域内查不到 → 600802。跨 SP 变配请求进不来是这一层的边界保证。
-			name: "target moved to another sub product",
-			para: stdParaMap(),
-			defs: func() map[string]*store.BundleDefinition {
-				defs := stdDefs()
-				defs[targetBundleID].SubProductCode = "sp_lightvela_ai_cn"
-				return defs
-			}(),
-			wantMsg: "newConfig sv list matches no bundle definition",
-		},
-		{
-			// 计费送来的 SP 与我们在册的都不匹配 → 检索域为空。
-			name:    "para sub product drifted",
-			para:    func() map[string]any { p := stdParaMap(); p["subProductCode"] = "sp_other"; return p }(),
-			wantMsg: "no bundle definition for",
 		},
 	}
 	for _, c := range cases {
@@ -394,14 +394,42 @@ func TestCheckModifyConfigMismatch(t *testing.T) {
 		wantMsg string
 	}{
 		{
-			name:    "same source and target",
-			para:    paraWithGoodsDetail(func(gd map[string]any) { gd["newConfig"] = map[string]any{"sv_cpu": 2, "sv_mem": 4, "sv_disk": 60} }),
+			name: "same source and target",
+			para: paraWithGoodsDetail(func(gd map[string]any) {
+				gd["newConfig"] = map[string]any{"productCode": "p_lighthouse", "subProductCode": "sp_lightvela_cn", "pid": 4001, "sv_cpu": 2, "sv_mem": 4, "sv_disk": 60}
+			}),
 			wantMsg: "identical",
 		},
 		{
-			name:    "pid mismatch",
+			name:    "outer billing identity differs from source",
+			para:    func() map[string]any { p := stdParaMap(); p["subProductCode"] = "sp_other"; return p }(),
+			wantMsg: "outer billing identity",
+		},
+		{
+			name:    "outer pid differs from target",
 			para:    paraWithGoodsDetail(func(gd map[string]any) { gd["pid"] = 9999 }),
 			wantMsg: "pid mismatch",
+		},
+		{
+			name: "source and target belong to different products",
+			para: paraWithGoodsDetail(func(gd map[string]any) {
+				gd["oldConfig"].(map[string]any)["productCode"] = "p_other"
+			}),
+			wantMsg: "cross product modify",
+		},
+		{
+			name: "oldConfig pid differs from source definition",
+			para: paraWithGoodsDetail(func(gd map[string]any) {
+				gd["oldConfig"].(map[string]any)["pid"] = 9999
+			}),
+			wantMsg: "oldConfig pid mismatch",
+		},
+		{
+			name: "newConfig pid differs from target definition",
+			para: paraWithGoodsDetail(func(gd map[string]any) {
+				gd["newConfig"].(map[string]any)["pid"] = 9999
+			}),
+			wantMsg: "newConfig pid mismatch",
 		},
 		{
 			// 同 SP 内出现两个 sv_list 完全相同的套餐：任何选择都是猜，必须拒。
@@ -525,15 +553,18 @@ func TestCheckModifyAcceptsGoodsDetailBuiltByInquiryPath(t *testing.T) {
 	source, target := defs[sourceBundleID], defs[targetBundleID]
 
 	built := jifeiproto.BuildModifyGoodsDetail(jifeiproto.ModifyGoodsDetailInput{
-		ProductCode:    source.ProductCode,
-		SubProductCode: source.SubProductCode,
-		Pid:            source.Pid,
-		ResourceID:     testPassID,
-		CurDeadline:    "2026-06-15 10:30:00",
-		SourceBundleID: sourceBundleID,
-		TargetBundleID: targetBundleID,
-		SourceSVList:   source.SVList,
-		TargetSVList:   target.SVList,
+		SourceProductCode:    source.ProductCode,
+		SourceSubProductCode: source.SubProductCode,
+		SourcePid:            source.Pid,
+		TargetProductCode:    target.ProductCode,
+		TargetSubProductCode: target.SubProductCode,
+		TargetPid:            target.Pid,
+		ResourceID:           testPassID,
+		CurDeadline:          "2026-06-15 10:30:00",
+		SourceBundleID:       sourceBundleID,
+		TargetBundleID:       targetBundleID,
+		SourceSVList:         source.SVList,
+		TargetSVList:         target.SVList,
 	})
 
 	// 先自检：出向确实带了这两个自定义键（否则本用例的"过滤"就没在过滤任何东西，
@@ -565,6 +596,32 @@ func TestCheckModifyAcceptsGoodsDetailBuiltByInquiryPath(t *testing.T) {
 	}
 	if req.CurDeadline == nil {
 		t.Fatal("CurDeadline is nil, want the built literal parsed back")
+	}
+}
+
+func TestCheckModifyAcceptsCrossSubProductConfig(t *testing.T) {
+	defs := stdDefs()
+	source := defs[sourceBundleID]
+	target := defs[targetBundleID]
+	target.SubProductCode = "sp_lightvela_ai_cn"
+	target.Pid = 5002
+	para := stdParaMap()
+	gd := para["goodsDetail"].(map[string]any)
+	gd["pid"] = target.Pid
+	gd["newConfig"].(map[string]any)["subProductCode"] = target.SubProductCode
+	gd["newConfig"].(map[string]any)["pid"] = target.Pid
+
+	deps, ctl := stdDeps()
+	deps.BundleStore = &fakeBundleStore{defs: defs}
+	resp := invokeHandler(t, deps, para)
+	if resp.ReturnCode != 0 {
+		t.Fatalf("returnCode = %d, want 0 (msg=%q)", resp.ReturnCode, resp.ReturnMessage)
+	}
+	if ctl.lastReq == nil || ctl.lastReq.SourceBundleID != sourceBundleID || ctl.lastReq.TargetBundleID != targetBundleID {
+		t.Fatalf("ctl request = %+v", ctl.lastReq)
+	}
+	if ctl.lastReq.SubProductCode != source.SubProductCode {
+		t.Fatalf("ctl source subProductCode = %q, want %q", ctl.lastReq.SubProductCode, source.SubProductCode)
 	}
 }
 

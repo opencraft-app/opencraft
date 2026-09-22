@@ -27,6 +27,11 @@ const (
 	maxInstanceBotSoulRunes        = 12000
 )
 
+func (l *logic) execHermesProfileCommand(ctx pctx.Context, instanceID, command string) (*transport.ExecDebugCommandResponse, error) {
+	// Profile management must follow the instance Pool's regional TAT route; envd is not universal across regions.
+	return l.ExecDebugCommandWithBackend(ctx, instanceID, command, "agentuser", debugExecutionBackendTAT)
+}
+
 type hermesProfileRecord struct {
 	NativeID       string `json:"native_id"`
 	DisplayName    string `json:"display_name"`
@@ -551,7 +556,7 @@ func (l *logic) CreateInstanceBot(ctx pctx.Context, instanceID string, req *tran
 	if mode != instanceBotCreatedFromBlank && mode != instanceBotCreatedFromClone {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported create_mode %q", mode)
 	}
-	if _, err := l.ExecDebugCommand(ctx, instanceID, checkHermesProfileCapabilityCommand, "agentuser"); err != nil {
+	if _, err := l.execHermesProfileCommand(ctx, instanceID, checkHermesProfileCapabilityCommand); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotUnsupported, "profile capability check failed: %v", err)
 	}
 
@@ -577,8 +582,8 @@ func (l *logic) CreateInstanceBot(ctx pctx.Context, instanceID string, req *tran
 
 	profileID := l.objectIdLogic.GenerateProfileId()
 	command := buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, name, description)
-	if _, err := l.ExecDebugCommand(ctx, instanceID, command, "agentuser"); err != nil {
-		_, _ = l.ExecDebugCommand(ctx, instanceID, buildHermesProfileDeleteCommand(profileID), "agentuser")
+	if _, err := l.execHermesProfileCommand(ctx, instanceID, command); err != nil {
+		_, _ = l.execHermesProfileCommand(ctx, instanceID, buildHermesProfileDeleteCommand(profileID))
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "create Hermes profile %s: %v", profileID, err)
 	}
 	return l.getInstanceBotResponse(ctx, instanceID, profileID)
@@ -611,7 +616,7 @@ func (l *logic) UpdateInstanceBot(ctx pctx.Context, instanceID, botID string, re
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "encode profile metadata: %v", err)
 	}
-	if _, err := l.ExecDebugCommand(ctx, instanceID, command, "agentuser"); err != nil {
+	if _, err := l.execHermesProfileCommand(ctx, instanceID, command); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "update Hermes profile %s: %v", bot.ProfileID, err)
 	}
 	return l.getInstanceBotResponse(ctx, instanceID, botID)
@@ -632,7 +637,7 @@ func (l *logic) DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*
 	if weixinOwner != nil && weixinOwner.BotID == bot.BotID {
 		return nil, errcode.Wrap(errcode.ErrChannelOccupied, "disconnect weixin before deleting bot %s", botID)
 	}
-	if _, err := l.ExecDebugCommand(ctx, instanceID, buildHermesProfileDeleteCommand(bot.ProfileID), "agentuser"); err != nil {
+	if _, err := l.execHermesProfileCommand(ctx, instanceID, buildHermesProfileDeleteCommand(bot.ProfileID)); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "delete Hermes profile %s: %v", bot.ProfileID, err)
 	}
 	bot.Status = instanceBotStatusDeleted
@@ -679,7 +684,7 @@ func (l *logic) getInstanceBotByProfileID(ctx pctx.Context, instanceID, profileI
 }
 
 func (l *logic) listHermesProfiles(ctx pctx.Context, instanceID, defaultName string) ([]*transport.InstanceBotResponse, error) {
-	result, err := l.ExecDebugCommand(ctx, instanceID, buildHermesPythonCommand(listHermesProfilesScript), "agentuser")
+	result, err := l.execHermesProfileCommand(ctx, instanceID, buildHermesPythonCommand(listHermesProfilesScript))
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "list Hermes profiles: %v", err)
 	}
@@ -797,7 +802,7 @@ func (l *logic) getChannelBindingResponse(ctx pctx.Context, instanceID, channel 
 
 func (l *logic) runChannelBindingAction(ctx pctx.Context, instanceID, action, botID, profileID string) (*channelBindingPayload, error) {
 	command := buildHermesPythonCommand(manageChannelBindingScript, action, botID, hermesNativeProfileID(profileID))
-	result, err := l.ExecDebugCommand(ctx, instanceID, command, "agentuser")
+	result, err := l.execHermesProfileCommand(ctx, instanceID, command)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "manage channel binding: %v", err)
 	}

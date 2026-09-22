@@ -1,4 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { useIntl } from "@opencraft/i18n/react";
 import { LayoutGrid } from "lucide-react";
 import { AccountSignInMenu } from "./account-sign-in-menu";
 import {
@@ -215,7 +216,8 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
     wasVisible.current = visible;
   }, [visible, state.peek, dispatch]);
   const anonymousAccount = isAnonymousShellAccount(config.account);
-  const accountLabel = shellAccountEntranceLabel(config.account);
+  const intl = useIntl();
+  const accountLabel = shellAccountEntranceLabel(config.account, intl);
   const availableSurfaces = surfaces.filter((surface) => surface !== "account" || accountLabel !== null);
   return <div ref={root} className="shell-navigation__footer" aria-label="Application entrances">
     {availableSurfaces.map(surface => {

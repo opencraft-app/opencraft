@@ -1,7 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { TargetConnectionStatus } from "./components/target-connection-status";
+import { FormattedMessage } from "@opencraft/i18n/react";
 import {
   retargetSubmitIntentForFollowUp,
+  type ComposerAttachment,
   type ComposerFollowUpAction,
   type SubmitIntent,
 } from "@opencraft/composer-core";
@@ -14,7 +15,7 @@ import {
   type ComposerSelectionCatalog,
 } from "@opencraft/codex-composer";
 import { asHostId, findPendingInteraction } from "@opencraft/chat-core";
-import type { ChatResourceDecision } from "@opencraft/chat-render-web";
+import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-web";
 import type { PlatformViewHost } from "@opencraft/extension-react";
 import type {
   LatestTurnPlacementSnapshot,
@@ -24,7 +25,6 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
 import { ThreadTitleWriter } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
-import { ArchivedThreadsDialog, type ThreadActionTarget } from "./components/thread-management";
 import {
   type PanelAction,
   type PanelTabDescriptor,
@@ -91,6 +91,7 @@ import {
 import { PendingConversationPage } from "./components/pending-conversation-page";
 import { Sidebar } from "./components/sidebar";
 import { WorkspaceDirectoryPicker } from "./components/workspace-directory-picker";
+import { useWorkbenchPresentationRoot } from "./components/workbench-presentation-root";
 import { useResponsiveSidebarDock } from "./components/use-responsive-sidebar-dock";
 import { usePersistedSidebarWidth } from "./components/use-persisted-sidebar-width";
 import {
@@ -133,8 +134,13 @@ import {
 import { getWindowChromePolicy, useWindowChrome } from "./window-chrome";
 import { useTimelineViewportHost } from "./timeline-viewport";
 import { ComposerExtensionActions } from "./runtime/composer-action-renderers";
+import { useConnectorPresentation } from "./components/connectors/connector-panel";
 import { useExtensionWorkbenchProjection } from "./runtime/extension-workbench-projection";
 import { useAuthenticationPresentation } from "./runtime/use-authentication-presentation";
+import {
+  FULL_WORKBENCH_PRESENTATION,
+  type WorkbenchPresentationPolicy,
+} from "./workbench-presentation-policy";
 
 const SettingsContent = lazy(async () => {
   const module = await import("./components/settings-page");
@@ -193,7 +199,7 @@ function ConversationHydration({
   onRetry,
   state,
 }: {
-  readonly detail: string;
+  readonly detail: import("react").ReactNode;
   readonly errorMessage?: string | null;
   readonly onRetry?: (() => void) | null;
   readonly state: "loading" | "error";
@@ -212,23 +218,57 @@ function ConversationHydration({
           <span />
         </span>
         <div className="conversation-hydration__copy">
-          <strong>{failed ? "Could not restore this conversation" : "Restoring conversation"}</strong>
-          <p>{failed ? errorMessage ?? "The conversation could not be loaded." : detail}</p>
+          <strong>{failed ? <FormattedMessage id="chat.restore.failed" defaultMessage="Could not restore this conversation" /> : <FormattedMessage id="chat.restore" defaultMessage="Restoring conversation" />}</strong>
+          <p>{failed ? errorMessage ?? <FormattedMessage id="chat.restore.error" defaultMessage="The conversation could not be loaded." /> : detail}</p>
         </div>
         {failed && onRetry != null ? (
-          <button type="button" onClick={onRetry}>Try again</button>
+          <button type="button" onClick={onRetry}><FormattedMessage id="common.retry" defaultMessage="Try again" /></button>
         ) : null}
       </section>
     </div>
   );
 }
 
-export function App() {
+export interface EmbeddedWorkbenchAppSession {
+  readonly chatId: string;
+  readonly title: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly readOnly: boolean;
+}
+
+export interface EmbeddedWorkbenchAppActions {
+  selectThread(threadId: string): Promise<void>;
+  createThread(): Promise<void>;
+  renameThread(threadId: string, title: string): Promise<void>;
+  deleteThread(threadId: string): Promise<void>;
+}
+
+export interface EmbeddedWorkbenchAppPresentation {
+  readonly hostId: string;
+  readonly onReady: (threadId: string | null) => void;
+  readonly onError: (error: Error) => void;
+  readonly onSessionsChange: (detail: {
+    readonly sessions: readonly EmbeddedWorkbenchAppSession[];
+    readonly loading: boolean;
+    readonly selectedChatId: string | null;
+  }) => void;
+  readonly bindActions: (actions: EmbeddedWorkbenchAppActions) => (() => void);
+}
+
+export function App({
+  embedded,
+  presentation = FULL_WORKBENCH_PRESENTATION,
+}: {
+  readonly embedded?: EmbeddedWorkbenchAppPresentation;
+  readonly presentation?: WorkbenchPresentationPolicy;
+} = {}) {
   const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
   const appearanceTheme = useAppearanceTheme();
   const windowChrome = useWindowChrome();
+  const portalContainer = useWorkbenchPresentationRoot();
   const chromePolicy = getWindowChromePolicy(windowChrome);
   useTimelineViewportHost(windowChrome);
   const runtime = useAppServerRuntime();
@@ -243,6 +283,9 @@ export function App() {
         ) ?? null);
   const composerController = useRootComposerController();
   const hostCatalog = useAppServerHosts();
+  const conversationViewIdentity = useConversationViewIdentity();
+  const connectorPresentation = useConnectorPresentation(hostCatalog.connectorManager, hostCatalog.connectorApprovals,
+    { hostId: hostCatalog.selectedHostId, scopeId: conversationViewIdentity.scopeId }, () => hostCatalog.navigation.openSettings("lightvela.hermes.skills"));
   const extensionPlatform = (
     globalThis as typeof globalThis & {
       opencraftDesktop?: { readonly kind?: string };
@@ -251,14 +294,17 @@ export function App() {
     ? "electron"
     : "web";
   const composerEndActions = (
-    <ComposerExtensionActions
+    <>{presentation.connectorLauncher ? connectorPresentation.launcher : null}<ComposerExtensionActions
+      actionIds={presentation.composerActions}
       controller={composerController}
       disabled={draft !== null && draftSubmissionOwnsNavigation(draft.phase)}
       platform={extensionPlatform}
       registry={hostCatalog.composerActionRenderers}
-    />
+    /></>
   );
-  const conversationViewIdentity = useConversationViewIdentity();
+  const composerAddMenuContent = presentation.connectorLauncher
+    ? connectorPresentation.addMenuContent
+    : null;
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
   const activeHostConnectionPhase = useHostConnectionPhase(snapshot.hostId);
@@ -302,20 +348,23 @@ export function App() {
   );
   const resolveActiveHostAttachment = useCallback(
     (file: File, pending: Parameters<typeof resolveBrowserAttachment>[1], signal?: AbortSignal) => {
-      const initialize = runtime.resources.host.getInitializeResult();
       return resolveBrowserAttachment(file, pending, {
-        directory:
-          initialize === null
-            ? null
-            : `${initialize.codexHome.replace(/\/+$/u, "")}/opencraft-attachments`,
-        writeFile:
-          initialize === null
-            ? null
-            : (path, dataBase64) =>
-                runtime.resources.fileSystem.writeFile(path, dataBase64),
+        stage:
+          runtime.resources.attachments.capabilities()?.sources.includes("client-bytes") === true
+            ? (request, requestSignal) =>
+                runtime.resources.attachments.stage(request, requestSignal)
+            : null,
       }, images, signal);
     },
     [runtime, images],
+  );
+  const removeActiveHostAttachment = useCallback(
+    async (attachment: ComposerAttachment) => {
+      const ref = attachment.metadata?.attachmentRef;
+      if (typeof ref !== "object" || ref === null || !("id" in ref) || typeof ref.id !== "string") return;
+      await runtime.resources.attachments.remove(ref.id);
+    },
+    [runtime],
   );
   const catalog = useThreadCatalog();
   const multiHostCatalog = useMultiHostThreadCatalog();
@@ -327,6 +376,7 @@ export function App() {
   // layout token. Top-level routes consume the token instead of inventing
   // route-local widths, so switching routes cannot move the content boundary.
   useLayoutEffect(() => {
+    if (!presentation.contextSidebar) return;
     document.documentElement.style.setProperty(
       "--codex-sidebar-preferred-width",
       `${sidebarWidth}px`,
@@ -336,7 +386,7 @@ export function App() {
         "--codex-sidebar-preferred-width",
       );
     };
-  }, [sidebarWidth]);
+  }, [presentation.contextSidebar, sidebarWidth]);
   const timelineSurfaceCapabilities = useMemo<TimelineSurfaceCapabilities>(
     () => ({
       // These are renderer capabilities, not values inferred from AppServer data.
@@ -411,7 +461,7 @@ export function App() {
   // the dialog owns interaction and focus.
   const conversationSurfaceVisible = conversationRouteOpen
     || (managementSettingsOpen && !standaloneManagementOpen);
-  const shellSidebarOpen = sidebarOpen;
+  const shellSidebarOpen = presentation.contextSidebar ? sidebarOpen : false;
   const openSettingsFromConversation = useCallback(() => {
     const focusedElement = document.activeElement;
     if (
@@ -751,10 +801,11 @@ export function App() {
   ]);
 
   const openBrowserTab = useCallback(
-    (initialUrl?: string) => {
+    (initialUrl?: string, background = false) => {
       browserWorkbench.open(conversationResourceOwnerId, {
         panelOwnerId,
         hostId: snapshot.hostId,
+        background,
         ...(initialUrl === undefined ? {} : { initialUrl }),
       });
     },
@@ -766,14 +817,18 @@ export function App() {
   }, [browserWorkbench, conversationResourceOwnerId, panelPresentationId]);
 
   const openChatResource = useCallback(
-    (target: string, decision: ChatResourceDecision) => {
+    (target: string, decision: ChatResourceDecision, intent?: ChatResourceOpenIntent) => {
       if (decision.kind === "mail") {
         window.open(target, "_blank", "noopener,noreferrer");
         return;
       }
       if (decision.kind === "external") {
+        if (intent?.target === "external-browser") {
+          window.open(target, "_blank", "noopener,noreferrer");
+          return;
+        }
         try {
-          openBrowserTab(target);
+          openBrowserTab(target, intent?.disposition === "new-tab");
         } catch {
           window.open(target, "_blank", "noopener,noreferrer");
         }
@@ -904,8 +959,6 @@ export function App() {
   const draftWorkspaceOptions = useMemo(() => {
     return buildDraftWorkspaceOptions(projectCatalog.projects);
   }, [projectCatalog.projects]);
-  const [archivedHostId, setArchivedHostId] = useState<string | null>(null);
-  const [lastArchived, setLastArchived] = useState<ThreadActionTarget | null>(null);
   const [threadActionError, setThreadActionError] = useState<string | null>(null);
   const threadTitleWriter = useMemo(() => new ThreadTitleWriter({
     read: key => readCachedThreadName(queryClient, key),
@@ -923,6 +976,59 @@ export function App() {
   const loadArchivedThreads = useCallback(async (hostId: string) => {
     return hostCatalog.threadManagement.listArchived(hostId);
   }, [hostCatalog.threadManagement]);
+  const archivedConversationsAvailable = hostCatalog.threadManagement.capabilities(snapshot.hostId).archive;
+  const embeddedSessions = useMemo(() => {
+    if (embedded === undefined) return [];
+    return catalog.threads.map((thread): EmbeddedWorkbenchAppSession => {
+      const protocolThread = catalog.protocolThreads.find((candidate) => candidate.id === thread.id);
+      const updatedAt = protocolThread?.updatedAt ?? 0;
+      return {
+        chatId: thread.id,
+        title: thread.title,
+        createdAt: updatedAt,
+        updatedAt,
+        readOnly: false,
+      };
+    });
+  }, [catalog.protocolThreads, catalog.threads, embedded]);
+  useEffect(() => {
+    if (embedded === undefined) return;
+    embedded.onSessionsChange({
+      sessions: embeddedSessions,
+      loading: catalog.isFetching,
+      selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
+    });
+  }, [activeThreadId, catalog.isFetching, embedded, embeddedSessions, snapshot.hostId]);
+  useEffect(() => {
+    if (embedded === undefined) return;
+    if (conversationViewActivation.phase === "error") {
+      embedded.onError(
+        conversationViewActivation.error ?? new Error("Embedded Workbench conversation failed"),
+      );
+      return;
+    }
+    if (conversationViewActivation.phase === "ready" && snapshot.hostId === embedded.hostId) {
+      embedded.onReady(activeThreadId);
+    }
+  }, [activeThreadId, conversationViewActivation.error, conversationViewActivation.phase, embedded, snapshot.hostId]);
+  useEffect(() => {
+    if (embedded === undefined) return;
+    return embedded.bindActions({
+      selectThread: async (threadId) => {
+        await hostCatalog.navigate(createWorkbenchThreadLocation(embedded.hostId, threadId));
+      },
+      createThread: async () => { navigateToHome(); },
+      renameThread: async (threadId, title) => {
+        await hostCatalog.threadManagement.rename(embedded.hostId, threadId, title);
+        await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] });
+      },
+      deleteThread: async (threadId) => {
+        await hostCatalog.threadManagement.delete(embedded.hostId, threadId);
+        await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] });
+        if (activeThreadId === threadId) navigateToHome();
+      },
+    });
+  }, [activeThreadId, embedded, hostCatalog, navigateToHome, queryClient]);
   const workspaceSelectionEpoch = useRef(0);
   useLayoutEffect(() => {
     workspaceSelectionEpoch.current++;
@@ -979,7 +1085,7 @@ export function App() {
     activeHost.workspaceBrowseRoots[0] ??
     draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ??
     null;
-  const localProjectPicker = nativeProjectPicker(snapshot.hostId);
+  const localProjectPicker = nativeProjectPicker(activeHost);
   const browseWorkspace = useCallback(async () => {
     if (localProjectPicker === null) {
       if (workspaceBrowseRoot !== null) setWorkspacePickerOpen(true);
@@ -1007,6 +1113,7 @@ export function App() {
         extensionContributions={hostCatalog.extensionContributions}
         profiles={hostCatalog.profiles}
         activeHostId={snapshot.hostId}
+        showArchivedConversations={archivedConversationsAvailable}
         onBack={closeSettings}
         presentation={managementSettingsOpen ? "dialog" : "sidebar"}
       />
@@ -1034,6 +1141,10 @@ export function App() {
         extensionManager={hostCatalog.extensionManager}
         platformViewRenderers={hostCatalog.platformViewRenderers}
         regions={appShellPlatformViewRegions}
+        archivedConversations={archivedConversationsAvailable ? {
+          load: loadArchivedThreads,
+          restore: restoreArchivedThread,
+        } : undefined}
         themes={appearanceTheme.availableThemes}
         themeId={appearanceTheme.themeId}
         themePreference={appearanceTheme.preference}
@@ -1095,13 +1206,15 @@ export function App() {
   // Settings window becomes the top nested window instead of appearing under it.
   if (authenticationPresentation.modal) modalRequests.push(authenticationPresentation.modal);
   modalRequests.push(...announcementModalRequests);
+  modalRequests.push(...connectorPresentation.requests);
   const presentedRightPanelOpen =
-    panelState.right.open;
+    presentation.rightPanel && panelState.right.open;
   const presentedRightPanelFullWidth =
-    panelState.rightPanelFullWidth;
+    presentation.rightPanel && panelState.rightPanelFullWidth;
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
+  const presentedHeaderNavigationActions = presentation.shellNavigation ? headerNavigationActions : [];
   const header = (
     <AppShellHeader
       title={
@@ -1123,7 +1236,7 @@ export function App() {
       sidebarOpen={shellSidebarOpen}
       rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
       rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
-      showRightPanelAction={conversationSurfaceVisible}
+      showRightPanelAction={conversationSurfaceVisible && presentation.rightPanel}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
@@ -1131,7 +1244,7 @@ export function App() {
       onHome={navigateToHome}
       onBack={workbenchNavigation.back}
       onForward={workbenchNavigation.forward}
-      navigationActions={headerNavigationActions}
+      navigationActions={presentedHeaderNavigationActions}
       routeHeaderActive={routeHeader.active}
       routeHeaderHostRef={routeHeader.hostRef}
     />
@@ -1145,7 +1258,7 @@ export function App() {
         target={routeHeader.target}
       >
       <AppShell
-          navigation={{
+          navigation={!presentation.shellNavigation ? undefined : {
             settingsActive: routeSettingsOpen,
             actions: [
               { id: "shell.chat", title: "Chat", icon: "chat", active: conversationRouteOpen,
@@ -1166,7 +1279,10 @@ export function App() {
           layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
           mainContentLayout={conversationSurfaceVisible ? "thread-edge-scroll" : "default"}
           sidebarOpen={shellSidebarOpen}
-          sidebarWidth={sidebarWidth}
+          sidebarWidth={presentation.contextSidebar ? sidebarWidth : 0}
+          sidebarCollapsible={presentation.contextSidebar}
+          sidebarTransientEnabled={presentation.contextSidebar}
+          sidebarResizable={presentation.contextSidebar}
           windowChrome={windowChrome}
           onSidebarCollapse={collapseSidebar}
           onSidebarExpand={expandSidebar}
@@ -1183,7 +1299,7 @@ export function App() {
             })
           }
           header={header}
-          floatingSidebarHeader={(onDock) => (
+          floatingSidebarHeader={(onDock) => !presentation.contextSidebar ? null : (
             <AppShellNavigationControls
               hostRole="transient"
               sidebarOpen={false}
@@ -1193,13 +1309,12 @@ export function App() {
               onHome={navigateToHome}
               onBack={workbenchNavigation.back}
               onForward={workbenchNavigation.forward}
-              actions={headerNavigationActions}
+              actions={presentedHeaderNavigationActions}
             />
           )}
-          leftPanel={
+          leftPanel={!presentation.contextSidebar ? null : (
             routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
-              renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
               onNewTaskForTarget={async (hostId) => hostCatalog.navigateToHome({
                   execution: {
                     hostId: asHostId(hostId),
@@ -1226,12 +1341,6 @@ export function App() {
               showFooter={false}
               threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
-              onManageArchived={runtime.resources.threads.capabilities?.().archive ? () => setArchivedHostId(snapshot.hostId) : undefined}
-              archiveUndo={lastArchived ? { title: lastArchived.title, restore: () => {
-                const target = lastArchived;
-                void restoreArchivedThread(target.hostId, target.threadId).then(() => setLastArchived(previous => previous === target ? null : previous))
-                  .catch(error => setThreadActionError(error.message));
-              } } : null}
               threadActions={{
                 onRename: (target, title) => threadTitleWriter.rename(target, title),
                 onFork: async target => {
@@ -1242,7 +1351,6 @@ export function App() {
                 },
                 onArchive: async target => {
                   await hostCatalog.threadManagement.archive(target.hostId, target.threadId);
-                  setLastArchived(target);
                   await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
                 },
               }}
@@ -1285,8 +1393,8 @@ export function App() {
               // route's focus before issuing a semantic navigation command.
               onOpenSettings={openSettingsFromConversation}
             /> : null
-          }
-          rightPanel={
+          )}
+          rightPanel={!presentation.rightPanel ? null : (
             <RightPanel
               state={panelState}
               presentationId={panelPresentationId}
@@ -1308,8 +1416,9 @@ export function App() {
               }}
               onAction={dispatchPanel}
               onCloseTab={requestClosePanel}
+              portalContainer={portalContainer}
             />
-          }
+          )}
         >
         <div className="workbench-route-stage">
           <div
@@ -1325,7 +1434,7 @@ export function App() {
         ) : draft !== null && draft.submission === null ? (
           <NewThreadDraftPage
             key={draft.id}
-            activeTabId={panelState.right.activeTabId}
+            activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
             composerPresentationEnabled={conversationRouteOpen}
             draft={draft}
             controller={composerController}
@@ -1350,6 +1459,8 @@ export function App() {
             }}
             onBrowseWorkspace={browseWorkspace}
             onResolveAttachment={resolveActiveHostAttachment}
+            onRemoveAttachment={removeActiveHostAttachment}
+            composerAddMenuContent={composerAddMenuContent}
             composerEndActions={composerEndActions}
             onSubmit={sendMessage}
           />
@@ -1377,7 +1488,7 @@ export function App() {
             ) : (
               <>
                 <Conversation
-                  scrollPolicy="response-placement"
+                  scrollPolicy="natural"
                   key={activeConversationRestoreKey ?? "empty"}
                   documentContext={{
                     conversationId: activeThreadId,
@@ -1430,7 +1541,7 @@ export function App() {
                       scopeId={panelOwnerId}
                       forceExpanded={pendingInteraction !== null}
                       controller={composerController}
-                      activeTabId={panelState.right.activeTabId}
+                      activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
                       enabled={conversationRouteOpen}
                       timeline={timeline}
                       documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, theme: appearanceTheme.resolvedTheme }}
@@ -1445,6 +1556,7 @@ export function App() {
                     {pendingInteraction === null ? (
                       <CodexComposer
                         controller={composerController}
+                        portalContainer={portalContainer}
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
                         queuedSubmissions={(
@@ -1468,6 +1580,8 @@ export function App() {
                         onSteerQueuedSubmission={steerQueuedSubmission}
                         onResumeQueuedSubmissions={resumeQueuedSubmissions}
                         onResolveAttachment={resolveActiveHostAttachment}
+                        onRemoveAttachment={removeActiveHostAttachment}
+                        addMenuContent={composerAddMenuContent}
                         endActions={composerEndActions}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
@@ -1493,7 +1607,7 @@ export function App() {
                 />
                 {!snapshot.conversation?.authoritative ? (
                   <ConversationHydration
-                    detail="Loading conversation history…"
+                    detail={<FormattedMessage id="chat.restore.loading" defaultMessage="Loading conversation history…" />}
                     errorMessage={snapshot.conversation?.error?.message}
                     onRetry={() => {
                       void activeThreadLease.retryRestore().catch(() => undefined);
@@ -1521,7 +1635,6 @@ export function App() {
         </AppShell>
       </AppShellRouteRegionsProvider>
         <ModalHost requests={modalRequests} />
-      {archivedHostId !== null ? <ArchivedThreadsDialog key={archivedHostId} hostId={archivedHostId} load={loadArchivedThreads} restore={restoreArchivedThread} onDismiss={() => setArchivedHostId(null)} /> : null}
       {threadActionError ? <div role="alert" className="settings-control-notice">{threadActionError}<button type="button" onClick={() => setThreadActionError(null)}>关闭提示</button></div> : null}
       <WorkspaceDirectoryPicker
           open={

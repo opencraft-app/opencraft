@@ -72,10 +72,7 @@ func newIsolateLogicWith(daoStub *isolateInstanceDaoStub, sbStub *isolateSandbox
 	}
 }
 
-// TestRunIsolateInstanceTaskTreatsSandboxNotFoundAsSuccess I-MR-1 修复回归：
-// 当 PauseSandbox 返 ErrSandboxNotFound 时，子 task 应继续走 CAS Running→Paused 并视为成功。
-// 行为对齐 RenewInstance / DestroyInstance 子 task 对 sandbox 缺失的幂等容错。
-func TestRunIsolateInstanceTaskTreatsSandboxNotFoundAsSuccess(t *testing.T) {
+func TestRunIsolateInstanceTaskRejectsSandboxNotFound(t *testing.T) {
 	dao := &isolateInstanceDaoStub{
 		entity: &modelinstance.Entity{
 			Id:         201,
@@ -92,20 +89,17 @@ func TestRunIsolateInstanceTaskTreatsSandboxNotFoundAsSuccess(t *testing.T) {
 		InstanceID: "ins-isolate-sb-404",
 		PassID:     "pass-isolate-404",
 	})
-	if err != nil {
-		t.Fatalf("expected sandbox not_found to be treated as success, got err=%v", err)
+	if !errors.Is(err, errcode.ErrSandboxNotFound) {
+		t.Fatalf("expected sandbox not_found to fail isolation, got err=%v", err)
 	}
 	if sb.pauseCalls != 1 {
 		t.Fatalf("expected PauseSandbox to be called exactly once, got %d", sb.pauseCalls)
 	}
-	if dao.transitionCalls != 1 {
-		t.Fatalf("expected TransitionStatus to be called exactly once, got %d", dao.transitionCalls)
+	if dao.transitionCalls != 0 {
+		t.Fatalf("expected no status transition after sandbox not_found, got %d", dao.transitionCalls)
 	}
-	if dao.lastTargetStatus != modelinstance.InstanceStatusPaused {
-		t.Fatalf("expected target status Paused, got %s", dao.lastTargetStatus)
-	}
-	if dao.entity.Status != modelinstance.InstanceStatusPaused {
-		t.Fatalf("expected instance to flip to Paused, got %s", dao.entity.Status)
+	if dao.entity.Status != modelinstance.InstanceStatusRunning {
+		t.Fatalf("expected instance to remain Running, got %s", dao.entity.Status)
 	}
 }
 

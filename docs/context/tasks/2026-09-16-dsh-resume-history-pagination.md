@@ -10,7 +10,6 @@ attention.
 - Do not alter the shared AppServer protocol or DSH's durable event storage.
 - Do not migrate, delete, or modify user session data.
 - Do not change Hermes bridge behavior.
-- Do not restart, replace, or mutate the installed `/Applications/OpenCraft.app`.
 - Do not add another history cache, timeout owner, or renderer recovery state machine.
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -110,6 +109,21 @@ attention.
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json` (passed).
 - Bounded `validate_change_impact.py --changed-file ...` (passed; `agent-gateway-runtime` owner review remains an MR concern).
 - `git diff --check` for the task files (passed).
+- Follow-up installation authorization: fresh release build
+  `20260917125220-32117fe25346`; Developer ID deep/strict verification passed,
+  packaged Renderer/Daemon/DSH engine matched the build, and the signed app
+  started with an isolated profile. Gatekeeper assessment remains
+  `Unnotarized Developer ID` and is not reported as notarized.
+- `/Applications/OpenCraft.app` was replaced with that verified build and the
+  previous app was retained at
+  `opencraft/apps/workbench-electron/release/install-20260917-1225/previous-OpenCraft.app`.
+  The installed executable and daemon run from `/Applications/OpenCraft.app`;
+  Local reached Connected.
+- Installed-app UI validation opened Thread
+  `1787a3a0-0a3a-461c-be95-56ea9d5bf4cb`: bounded history navigation appeared
+  and restore left the loading state, then reported the separate runtime error
+  `DSH registered 0 of 4 dynamic tools`. Full conversation recovery is therefore
+  not yet accepted.
 
 ## decisions
 
@@ -130,7 +144,9 @@ attention.
 
 ## handoff
 
-- Source repair is implemented locally; focused regressions, DSH and Workbench
-  suites, type checks, boundaries, documentation, Web build and Electron build
-  pass. Nothing is committed, packaged, deployed, or installed; the running
-  desktop remains the older bundle until a separate rebuild/install is authorized.
+- Source repair is implemented and the fresh signed build is installed at
+  `/Applications/OpenCraft.app`; the previous bundle is recoverable from the
+  release backup path above. The original indefinite restore and false review
+  marker no longer reproduce. The affected legacy Thread now terminates with a
+  distinct dynamic-tool registration error, so end-to-end conversation recovery
+  remains a follow-up rather than being hidden behind the completed installation.

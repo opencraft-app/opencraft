@@ -35,6 +35,7 @@ type Config struct {
 	Region        string
 	Endpoint      string
 	CloudLadder   CloudLadderConfig
+	PersonalDev   PersonalDevProxyConfig
 	HTTPTransport http.RoundTripper
 }
 
@@ -42,6 +43,11 @@ type CloudLadderConfig struct {
 	GatewayBaseURL string
 	RouteID        string
 	Secret         string
+}
+
+type PersonalDevProxyConfig struct {
+	BaseURL    string
+	Capability string
 }
 
 type TencentCloudClient struct {
@@ -70,7 +76,15 @@ func NewTencentCloudClient(cfg Config) (*TencentCloudClient, error) {
 	if baseTransport == nil {
 		baseTransport = http.DefaultTransport
 	}
-	transport, err := newCloudLadderTransport(cfg.CloudLadder, baseTransport)
+	var (
+		transport http.RoundTripper
+		err       error
+	)
+	if strings.TrimSpace(cfg.PersonalDev.BaseURL) != "" || strings.TrimSpace(cfg.PersonalDev.Capability) != "" {
+		transport, err = newPersonalDevProxyTransport(cfg.PersonalDev, baseTransport)
+	} else {
+		transport, err = newCloudLadderTransport(cfg.CloudLadder, baseTransport)
+	}
 	if err != nil {
 		return nil, err
 	}

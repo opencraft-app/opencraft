@@ -10,12 +10,12 @@ import {
 import { useRepositories } from "@/contexts/repository-context";
 
 /**
- * 合并「套餐积分」与「付费积分包」两套数据源，供账号页积分额度模块使用。
+ * 合并「套餐积分」「活动赠送积分」与「付费积分包」数据源，供账号页积分额度模块使用。
  *
  * 为什么需要合并：套餐积分来自 pass（`operablePass.credit_total/credit_available`），
- * 付费积分包来自 credit 服务（`GET /v1/credit/packages`）。credit 服务当前只实现
- * 付费积分包，套餐积分的入口迁移「后续再补」（见 credit/AGENTS.md:3），
- * 因此账号页只能在前端把两者拼起来展示。
+ * 活动赠送积分由 pass 聚合返回，付费积分包来自 credit 服务（`GET /v1/credit/packages`）。
+ * credit 服务当前只实现付费积分包，套餐积分的入口迁移「后续再补」
+ * （见 credit/AGENTS.md:3），因此账号页只能在前端把这些来源拼起来展示。
  *
  * ⚠️ 服务端才是扣减顺序的权威，本 hook 的排序仅用于解释性展示。
  */
@@ -27,6 +27,13 @@ export type PlanCreditInput = {
   creditAvailable: number;
   /** 下一次刷新时间（套餐周期）；未知时留空 */
   nextRefreshAt?: string;
+};
+
+/** 免费或活动积分入参；后端按 free-credit:* 权益聚合后随 pass 返回。 */
+export type FreeCreditInput = {
+  displayName: string;
+  creditTotal: number;
+  creditAvailable: number;
 };
 
 export type CreditSourcesState = {
@@ -57,7 +64,10 @@ export const formatCreditDate = (iso: string): string => {
   });
 };
 
-export const useCreditSources = (planCredit: PlanCreditInput | null): CreditSourcesState => {
+export const useCreditSources = (
+  planCredit: PlanCreditInput | null,
+  freeCredit: FreeCreditInput | null = null,
+): CreditSourcesState => {
   const repositories = useRepositories();
   /* 用 ref 持有：repositories 若非 memo 化，放进依赖会导致 effect 反复重跑 */
   const repositoriesRef = useRef(repositories);
@@ -135,9 +145,18 @@ export const useCreditSources = (planCredit: PlanCreditInput | null): CreditSour
         next_expire_at: planCredit.nextRefreshAt,
       });
     }
+    if (freeCredit && freeCredit.creditTotal > 0) {
+      all.push({
+        source_type: "free_credit",
+        source_id: "free-credit",
+        display_name: freeCredit.displayName,
+        credit_total: freeCredit.creditTotal,
+        credit_available: freeCredit.creditAvailable,
+      });
+    }
     all.push(...packSources);
     return sortCreditSources(all);
-  }, [packSources, planCredit]);
+  }, [freeCredit, packSources, planCredit]);
 
   const summary = useMemo(() => summarizeCreditSources(sources), [sources]);
 

@@ -9,6 +9,10 @@ test("shadow binding mutations require a validated dashboard admin session", () 
   assert.equal(requiresDashboardAdminValidation(["shadow-bindings", "usr_1"]), true);
 });
 
+test("shadow account queries require a validated dashboard admin session", () => {
+  assert.equal(requiresDashboardAdminValidation(["shadow-accounts"]), true);
+});
+
 test("existing Auth admin routes retain their current proxy policy", () => {
   assert.equal(requiresDashboardAdminValidation(["users"]), false);
   assert.equal(requiresDashboardAdminValidation(["invites"]), false);

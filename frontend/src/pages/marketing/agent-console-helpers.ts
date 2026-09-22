@@ -1,9 +1,14 @@
+import {
+  installConsoleShowCommand,
+  type ConsoleShowHost,
+} from "@/lib/console-show-event";
+
 type ConsoleHelperHost = {
   console: Console;
   help?: unknown;
   terminal?: unknown;
   show?: unknown;
-};
+} & ConsoleShowHost;
 
 type HelpCommand = {
   name: string;
@@ -17,23 +22,22 @@ const HELP_COMMANDS: HelpCommand[] = [
 
 const SHOW_EXPORT_COMMAND: HelpCommand = {
   name: "show()",
-  description: "显示当前 bot 的隐藏工具入口",
+  description: "切换当前页面的隐藏功能入口",
 };
 
 export const installOpenClawConsoleHelpers = ({
   host,
   getTerminalPath,
-  onShowHiddenTools,
+  enableShowCommand = false,
 }: {
   host: ConsoleHelperHost;
   getTerminalPath: () => string | null;
-  onShowHiddenTools?: () => void;
+  enableShowCommand?: boolean;
 }) => {
   const originalConsole = host.console;
   const originalHelp = host.help;
   const originalTerminal = host.terminal;
-  const originalShow = host.show;
-  const commands = onShowHiddenTools ? [...HELP_COMMANDS, SHOW_EXPORT_COMMAND] : HELP_COMMANDS;
+  const commands = enableShowCommand ? [...HELP_COMMANDS, SHOW_EXPORT_COMMAND] : HELP_COMMANDS;
 
   const helpFn = () => {
     originalConsole.info("OpenClaw console helpers:");
@@ -62,39 +66,29 @@ export const installOpenClawConsoleHelpers = ({
     return currentPath;
   };
 
-  const showFn = () => {
-    if (typeof originalShow === "function") {
-      originalShow();
-    }
-    onShowHiddenTools?.();
-    originalConsole.info("隐藏工具入口已显示。");
-    return true;
-  };
   host.help = helpFn;
   host.terminal = terminalFn;
-  if (onShowHiddenTools) {
-    host.show = showFn;
-  }
+  const stopShowCommand = enableShowCommand
+    ? installConsoleShowCommand(host)
+    : () => undefined;
 
   return () => {
-    if (originalHelp === undefined) {
-      delete host.help;
-    } else {
-      host.help = originalHelp;
-    }
-
-    if (originalTerminal === undefined) {
-      delete host.terminal;
-    } else {
-      host.terminal = originalTerminal;
-    }
-
-    if (onShowHiddenTools) {
-      if (originalShow === undefined) {
-        delete host.show;
+    stopShowCommand();
+    if (host.help === helpFn) {
+      if (originalHelp === undefined) {
+        delete host.help;
       } else {
-        host.show = originalShow;
+        host.help = originalHelp;
       }
     }
+
+    if (host.terminal === terminalFn) {
+      if (originalTerminal === undefined) {
+        delete host.terminal;
+      } else {
+        host.terminal = originalTerminal;
+      }
+    }
+
   };
 };

@@ -47,10 +47,6 @@ var (
 	inflightStates      = []core.InstanceState{core.StateCreating, core.StateResetting, core.StateDeleting, core.StatePausing}
 	creatingStaleAfter  = defaultCreatingStaleAfter
 	resettingStaleAfter = defaultResettingStaleAfter
-	// pausingStaleAfter bounds how long an instance may sit in PAUSING before
-	// being failed (the cvm StopInstances path is bounded by ~3min sync polling
-	// inside api-gin handler, so 10min is a generous safety net for stuck rows).
-	pausingStaleAfter = 10 * time.Minute
 	// reinstallVerifyDelay prevents marking CLEAN immediately after a reinstall request returns.
 	// Tests may override this to avoid slow sleeps.
 	reinstallVerifyDelay   = 30 * time.Second
@@ -68,6 +64,17 @@ type inflightStaleRule struct {
 	StaleAfter time.Duration
 	Target     core.InstanceState
 	Name       string
+}
+
+func staleInflightRules() []inflightStaleRule {
+	return []inflightStaleRule{
+		{State: core.StateCreating, StaleAfter: creatingStaleAfter, Target: core.StateFailed, Name: "creating"},
+		{State: core.StateResetting, StaleAfter: resettingStaleAfter, Target: core.StateFailed, Name: "resetting"},
+		// Backward compatibility for old rows persisted as REINSTALLING.
+		{State: core.StateReinstalling, StaleAfter: resettingStaleAfter, Target: core.StateFailed, Name: "reinstalling(legacy)"},
+		// PAUSING is intentionally excluded: it may own user data and must be
+		// reconciled with cloud state instead of entering destructive cleanup.
+	}
 }
 
 type createBatchResult struct {
@@ -1341,14 +1348,7 @@ func runCleanupLoop(ctx context.Context, svc *service.Service, cp provider.Cloud
 
 				}
 				// Stale scan for long-running in-flight states (easy to extend with new ING states).
-				cleanupStaleInflightStates(ctx, svc, pool, []inflightStaleRule{
-					{State: core.StateCreating, StaleAfter: creatingStaleAfter, Target: core.StateFailed, Name: "creating"},
-					{State: core.StateResetting, StaleAfter: resettingStaleAfter, Target: core.StateFailed, Name: "resetting"},
-					// Backward compatibility for old rows persisted as REINSTALLING.
-					{State: core.StateReinstalling, StaleAfter: resettingStaleAfter, Target: core.StateFailed, Name: "reinstalling(legacy)"},
-					// Pausing rows that never reached PAUSED (Q26-D 修订版 + Q32=b).
-					{State: core.StatePausing, StaleAfter: pausingStaleAfter, Target: core.StateFailed, Name: "pausing"},
-				})
+				cleanupStaleInflightStates(ctx, svc, pool, staleInflightRules())
 
 				cleanupFailed(ctx, svc, cp, pool)
 				cleanupDeleting(ctx, svc, cp, pool)
@@ -1373,6 +1373,15 @@ func cleanupFailed(ctx context.Context, svc *service.Service, cp provider.CloudP
 		return
 	}
 	for _, inst := range insts {
+		sb, bindingErr := svc.GetSandboxByInstanceID(ctx, inst.ID)
+		if bindingErr == nil {
+			emitWorkerEvent(ctx, "sandbox.cleanup.bound_instance_skipped", "worker 拒绝清理仍绑定 Sandbox 的 FAILED 实例，防止误删用户数据。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("sandbox_id", sb.ID), attribute.String("cloud_id", inst.CloudID))
+			continue
+		}
+		if !errors.Is(bindingErr, core.ErrSandboxNotFound) {
+			emitWorkerEvent(ctx, "sandbox.cleanup.binding_check_failed", "worker 无法确认 FAILED 实例是否仍绑定 Sandbox，本轮按数据安全原则跳过清理。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", bindingErr.Error()))
+			continue
+		}
 		emitWorkerEvent(ctx, "sandbox.cleanup.failed_instance_started", "worker 开始清理一个 FAILED 实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID))
 		if inst.CloudID != "" {
 			instance, refErr := provider.CloudInstanceForPool(pool, inst.CloudID)

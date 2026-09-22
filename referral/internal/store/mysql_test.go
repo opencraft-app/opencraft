@@ -94,7 +94,7 @@ func TestCreateRewardsUsesCampaignDelayAndIndependentAmounts(t *testing.T) {
 			mock.ExpectQuery("SELECT COALESCE").WithArgs("campaign", domain.RewardStatusCancelled).WillReturnRows(sqlmock.NewRows([]string{"sum"}).AddRow(0))
 			for _, side := range []string{"inviter", "invitee"} {
 				mock.ExpectExec("INSERT INTO referral_reward").WithArgs(sqlmock.AnyArg(), "campaign", "invitee", "pass", side, side, 500,
-					"referral:campaign:invitee:"+side, status, eligible, now.AddDate(0, 0, 90), eligible, sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+					rewardIdempotencyKey("campaign", "invitee", "registration", side), status, eligible, now.AddDate(0, 0, 90), eligible, sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
 			}
 			mock.ExpectCommit()
 			tx, err := db.BeginTx(t.Context(), nil)
@@ -112,6 +112,17 @@ func TestCreateRewardsUsesCampaignDelayAndIndependentAmounts(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestRewardIdempotencyKeyChangesWithAttributionGeneration(t *testing.T) {
+	first := rewardIdempotencyKey("campaign", "invitee", "registration-1", domain.RewardSideInvitee)
+	second := rewardIdempotencyKey("campaign", "invitee", "registration-2", domain.RewardSideInvitee)
+	if first == second {
+		t.Fatalf("different attribution events must produce different reward keys: %q", first)
+	}
+	if first != rewardIdempotencyKey("campaign", "invitee", "registration-1", domain.RewardSideInvitee) {
+		t.Fatal("reward key must remain stable for the same attribution event")
 	}
 }
 
