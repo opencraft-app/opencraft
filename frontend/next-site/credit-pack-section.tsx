@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CREDIT_PACK_DENOMINATIONS, getCreditPackPrice, type CreditProduct, type CreditQuote } from '@/domain/credit-pack';
+import { CREDIT_PACK_DENOMINATIONS, type CreditProduct, type CreditQuote } from '@/domain/credit-pack';
 import { useRepositories } from '@/contexts/repository-context';
 import { RepositoryError } from '@/repositories/http-repositories';
 import { useT } from '@/i18n/t';
@@ -42,7 +42,8 @@ type PurchaseGate =
   | 'purchasable'
   | 'not-logged-in'
   | 'no-active-plan'
-  | 'realname-required';
+  | 'realname-required'
+  | 'quote-unavailable';
 
 /** URL query 参数名（与 subscribe-page 的 section 定位约定一致） */
 const SECTION_QUERY_KEY_PARAM = 'section';
@@ -67,12 +68,6 @@ const isCreditPackBindingError = (error: string | null): boolean => {
  * 与套餐 BundlePrice 一致（见 billing-flow.ts 的 centsToYuan），
  * 展示前必须除以 100 转元。
  */
-const formatAmount = (productId: string): string | null => {
-  const currency = isGlobal ? 'USD' : 'CNY';
-  const cents = getCreditPackPrice(productId, currency);
-  return cents === null ? null : formatYuan(centsToYuan(cents), currency);
-};
-
 const parseCents = (value: string): number | null => {
   const cents = Number(value);
   return Number.isInteger(cents) && cents >= 0 ? cents : null;
@@ -120,7 +115,7 @@ export const CreditPackSection = ({
   const navigate = useAppNavigate();
   const repositories = useRepositories();
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const [, setQuotes] = useState<Record<string, QuoteState>>({});
+  const [quotes, setQuotes] = useState<Record<string, QuoteState>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -204,11 +199,12 @@ export const CreditPackSection = ({
 
   const gate: PurchaseGate = useMemo(() => {
     if (!selectedProductId) return 'unselected';
+    if (quotes[selectedProductId]?.status !== 'ready') return 'quote-unavailable';
     if (!isLoggedIn) return 'not-logged-in';
     if (!hasActivePlan) return 'no-active-plan';
     if (!canPurchaseCreditPack) return 'realname-required';
     return 'purchasable';
-  }, [canPurchaseCreditPack, hasActivePlan, isLoggedIn, selectedProductId]);
+  }, [canPurchaseCreditPack, hasActivePlan, isLoggedIn, quotes, selectedProductId]);
 
   const primaryLabel = useMemo(() => {
     switch (gate) {
@@ -220,6 +216,8 @@ export const CreditPackSection = ({
         return t('先开通套餐');
       case 'realname-required':
         return t('完成实名后购买');
+      case 'quote-unavailable':
+        return t('价格暂不可用');
       default:
         return t('购买所选积分包');
     }
@@ -245,7 +243,7 @@ export const CreditPackSection = ({
   const hasCurrentOrder = checkout.state.status !== 'idle' && checkout.state.status !== 'failed';
   const effectivePrimaryLabel =
     hasCurrentOrder ? t('订单详情') : primaryLabel;
-  const primaryDisabled = !hasCurrentOrder && (gate === 'unselected' || gate === 'realname-required');
+  const primaryDisabled = !hasCurrentOrder && (gate === 'unselected' || gate === 'realname-required' || gate === 'quote-unavailable');
 
   const handlePrimary = useCallback(() => {
     if (gate === 'not-logged-in') {
@@ -398,7 +396,10 @@ export const CreditPackSection = ({
     () => CREDIT_PACK_DENOMINATIONS.find((d) => d.product_id === dialogProductId),
     [dialogProductId],
   );
-  const dialogAmount = dialogProductId ? formatAmount(dialogProductId) : null;
+  const dialogQuote = dialogProductId && quotes[dialogProductId]?.status === 'ready'
+    ? quotes[dialogProductId].quote
+    : null;
+  const dialogAmounts = dialogQuote ? formatQuoteAmounts(dialogQuote) : null;
   const isConfirmationStep = checkout.state.status === 'idle' || checkout.state.status === 'creating';
   const paymentDialogTitle =
     checkout.state.status === 'delivered'
@@ -447,11 +448,13 @@ export const CreditPackSection = ({
         <ul className="mt-6 grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3 lg:grid-cols-5">
           {visibleDenominations.map((denomination) => {
             const selected = selectedProductId === denomination.product_id;
+            const quoteState = quotes[denomination.product_id];
             return (
               <li key={denomination.product_id}>
                 <button
                   type="button"
                   aria-pressed={selected}
+                  disabled={quoteState?.status === 'failed'}
                   data-testid={`credit-pack-card-${denomination.product_id}`}
                   onClick={() => setSelectedProductId(denomination.product_id)}
                   className={cn(
@@ -471,7 +474,11 @@ export const CreditPackSection = ({
                     {t('{{count}} 模型积分', { count: denomination.credit_total.toLocaleString() })}
                   </span>
                   <span className="text-sm tabular-nums text-[var(--text-secondary)]">
-                    {formatAmount(denomination.product_id) ?? t('加载中…')}
+                    {quoteState?.status === 'ready'
+                      ? formatQuoteAmounts(quoteState.quote)?.total ?? t('价格暂不可用')
+                      : quoteState?.status === 'failed'
+                        ? t('价格暂不可用')
+                        : t('加载中…')}
                   </span>
                 </button>
               </li>
@@ -526,7 +533,7 @@ export const CreditPackSection = ({
       ) : null}
 
       {/* 积分下单保持两阶段：确认订单后进入对应站点的支付与到账状态。 */}
-      {dialogDenomination && dialogAmount ? (
+      {dialogDenomination && dialogAmounts ? (
         <Dialog open={modalOpen} onOpenChange={setModalOpen}>
           <DialogContent
             closeLabel={t('关闭')}
@@ -546,19 +553,23 @@ export const CreditPackSection = ({
                     <dt className="text-pretty">
                       {t('{{count}} 模型积分', { count: dialogDenomination.credit_total.toLocaleString() })}
                     </dt>
-                    <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmount}</dd>
+                    <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmounts.price}</dd>
                   </div>
                   <div className="mt-3 flex items-start justify-between gap-4 text-[var(--text-secondary)]">
                     <dt>{t('有效期')}</dt>
                     <dd className="font-semibold text-[var(--text-primary)]">{t('到账后 1 个月')}</dd>
                   </div>
                   <div data-testid="credit-pack-price-breakdown" className="mt-4 border-t border-[var(--border-strong)] pt-4 text-[var(--text-secondary)]">
+                    <div className="mt-3 space-y-1 text-sm">
+                      <div className="flex items-center justify-between"><dt>{t('积分包价格')}</dt><dd>{dialogAmounts.price}</dd></div>
+                      <div className="flex items-center justify-between"><dt>{t('税费')}</dt><dd>{dialogAmounts.tax}</dd></div>
+                    </div>
                     <p className="text-xs leading-relaxed">{t('最终付款价格包含税费，请以付款页面显示为准。')}</p>
                   </div>
                   <div className="my-4 h-px bg-[var(--border-strong)]" />
                   <div className="flex items-baseline justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">{t('总计：')}</dt>
-                    <dd className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">{dialogAmount}</dd>
+                    <dd className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">{dialogAmounts.total}</dd>
                   </div>
                 </dl>
 
@@ -591,6 +602,12 @@ export const CreditPackSection = ({
                   />
                   <span>
                     {t('我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。')}
+                    {isGlobal ? null : (
+                      <>
+                        <br />
+                        {t('法律规定、重复扣款或平台交付异常等情况，由客服核验处理。')}
+                      </>
+                    )}
                   </span>
                 </label>
 
@@ -612,7 +629,7 @@ export const CreditPackSection = ({
                     {checkout.state.status === 'creating' ? (
                       t('正在创建订单…')
                     ) : (
-                      <>{t('支付')} {dialogAmount}</>
+                      <>{t('支付')} {dialogAmounts.total}</>
                     )}
                   </button>
                 </div>
@@ -631,7 +648,7 @@ export const CreditPackSection = ({
                   <dt className="text-pretty font-medium text-[var(--text-primary)]">
                     {t('{{count}} 模型积分', { count: dialogDenomination.credit_total.toLocaleString() })}
                   </dt>
-                  <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmount}</dd>
+                  <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmounts.total}</dd>
                 </dl>
 
                 {isQrPaymentState && !isGlobal && checkout.bridgePlan && !qrExpired ? (

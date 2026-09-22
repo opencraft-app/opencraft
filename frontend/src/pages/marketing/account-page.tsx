@@ -908,7 +908,6 @@ const SubscriptionSection = ({
   const planCreditsTotal = operablePass ? operablePass.credit_total : 0;
   const planCreditsAvailable = operablePass ? operablePass.credit_available : 0;
   const freeCreditsTotal = freeCreditInput?.creditTotal ?? 0;
-  const freeCreditsAvailable = freeCreditInput?.creditAvailable ?? 0;
   const planCreditsUsed = Math.max(0, planCreditsTotal - planCreditsAvailable);
   const planUsedPercent = planCreditsTotal > 0
     ? Math.min(100, Math.round((planCreditsUsed / planCreditsTotal) * 100))
@@ -984,6 +983,7 @@ const SubscriptionSection = ({
   return (
     <motion.div
       variants={fadeIn}
+      id="account-credit-section"
       className="overflow-hidden bg-white"
       style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
     >
@@ -1437,6 +1437,14 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
     setEmailBindError(message);
     setEmailBindSuccess(null);
   }, [isBillingView, refreshProfile, searchParams, setSearchParams, t]);
+
+  useEffect(() => {
+    if (!isBillingView || searchParams.get("section") !== "credits") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("account-credit-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isBillingView, searchParams]);
 
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {

@@ -2822,6 +2822,7 @@ export const SubscribePage = ({
   const creditPackRealnameVerified = realnamePhoneVerificationEnabled
     ? session.user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
     : Boolean(session.user?.realnameVerified);
+  /* 前端门禁只负责在购买前改善引导体验；询价可使用后端默认账号，实际下单的影子绑定校验仍以后端响应为准。 */
   const creditPackBindingReady = isGlobal || (
     creditPackRealnameVerified
     && (!session.user?.shadowBindingStatus || session.user.shadowBindingStatus === "active")
