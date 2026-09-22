@@ -94,6 +94,18 @@ vi.mock("@/i18n/t", () => ({
 
 const navigateMock = vi.fn();
 
+const creditPackVisibilityState = vi.hoisted(() => ({ visible: false }));
+vi.mock("@/lib/credit-pack-visibility", () => ({
+  installCreditPackVisibilityHelper: () => () => undefined,
+  useCreditPackVisibility: () => creditPackVisibilityState.visible,
+}));
+
+vi.mock("../credit-pack-section", () => ({
+  CreditPackSection: ({ sectionId }: { sectionId?: string }) => (
+    <section id={sectionId} data-testid="credit-pack-section" />
+  ),
+}));
+
 vi.mock("@/lib/app-navigation", () => ({
   AppLink: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a href={to} {...props}>
@@ -179,10 +191,75 @@ const resetState = () => {
   /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
   listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
   navigateMock.mockReset();
+  creditPackVisibilityState.visible = false;
   window.history.replaceState({}, "", "/subscribe");
 };
 
 describe("SubscribePage", () => {
+  it("shows a page-level loading state until the bundles request returns", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    let resolveBundles!: (bundles: ReturnType<typeof buildBundle>[]) => void;
+    listBundlesMock.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBundles = resolve;
+      }),
+    );
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("订阅套餐");
+    expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("加载套餐中...");
+    expect(screen.queryByRole("tab", { name: "4500" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+    });
+
+    expect(screen.queryByTestId("subscribe-bundles-loading")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "巡游 Cruise" })).toBeInTheDocument();
+  });
+
+  it("scrolls a credits deep link after bundle loading mounts the credit section", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    creditPackVisibilityState.visible = true;
+    window.history.replaceState({}, "", "/subscribe?section=credits");
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    let resolveBundles!: (bundles: ReturnType<typeof buildBundle>[]) => void;
+    listBundlesMock.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBundles = resolve;
+      }),
+    );
+
+    try {
+      const { SubscribePage } = await import("@next-site/subscribe-page");
+      render(<SubscribePage />);
+
+      expect(screen.getByTestId("subscribe-bundles-loading")).toBeInTheDocument();
+      expect(screen.queryByTestId("credit-pack-section")).not.toBeInTheDocument();
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+      });
+
+      expect(await screen.findByTestId("credit-pack-section")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+      });
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
   /**
    * 源码契约：「我已完成支付」手动确认按钮已移除。
    * 轮询是唯一自动接棒途径（超时后也持续轮询），用户无需手动确认。
@@ -549,6 +626,80 @@ describe("SubscribePage", () => {
     await userEvent.click(getCreditTab("4500"));
     await userEvent.click(screen.getByRole("button", { name: "升级至此套餐" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade same-card-target");
+  });
+
+  it.each([
+    {
+      name: "Launch to Launch AI",
+      sourceId: "launch",
+      sourceName: "启航 Launch",
+      targetId: "launch-ai",
+      selectCredit: "4500",
+      buttonIndex: 0,
+      allowedTargets: ["launch-ai", "cruise", "cruise-ai"],
+    },
+    {
+      name: "Cruise to Cruise AI",
+      sourceId: "cruise",
+      sourceName: "巡游 Cruise",
+      targetId: "cruise-ai",
+      selectCredit: "10000",
+      buttonIndex: 0,
+      allowedTargets: ["cruise-ai"],
+    },
+    {
+      name: "Launch to Cruise AI",
+      sourceId: "launch",
+      sourceName: "启航 Launch",
+      targetId: "cruise-ai",
+      selectCredit: null,
+      buttonIndex: 0,
+      allowedTargets: ["launch-ai", "cruise", "cruise-ai"],
+    },
+  ])("opens the backend-approved cross-SP checkout for $name", async ({
+    sourceId,
+    sourceName,
+    targetId,
+    selectCredit,
+    buttonIndex,
+    allowedTargets,
+  }) => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: sourceId, bundle_name: sourceName, expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    const bundles = [
+      { ...buildBundle("launch", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("launch-ai", "启航 Launch"), credit: 4500 },
+      { ...buildBundle("cruise", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+      { ...buildBundle("cruise-ai", "巡游 Cruise"), credit: 10000 },
+    ];
+    listBundlesMock.mockResolvedValue(bundles);
+    listModifyBundlesMock.mockResolvedValue({
+      source_bundle_id: sourceId,
+      modify_bundle_set: allowedTargets.map((id) => {
+        const bundle = bundles.find((item) => item.bundle_id === id)!;
+        return {
+          target_bundle_id: id,
+          bundle,
+          modify_price: { currency: "CNY", real_total_cost: 100 },
+        };
+      }),
+    });
+    window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await waitFor(() => expect(listModifyBundlesMock).toHaveBeenCalledWith("p1"));
+    if (selectCredit) {
+      await userEvent.click(getCreditTab(selectCredit));
+    }
+    const buttons = await screen.findAllByRole("button", { name: "升级至此套餐" });
+    await userEvent.click(buttons[buttonIndex]!);
+    expect(await screen.findByRole("dialog")).toHaveTextContent(`Upgrade ${targetId}`);
   });
 
   it("leaves original AI defaults and locked actions unchanged when backend returns no targets", async () => {

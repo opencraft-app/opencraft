@@ -88,8 +88,11 @@ func TestModifyAllowedRejectsTargetsFrontendMightReplay(t *testing.T) {
 		{name: "AI 升配", source: "bundle_launch_ai_01", target: "bundle_cruise_ai_01", want: true},
 		// 降配：本期明确不支持，放过去会让计费按负差价退钱。
 		{name: "降配", source: "bundle_cruise_01", target: "bundle_launch_01"},
-		// 跨 SP：通用与 AI 的计费定义、积分额度都不同，串了会算错钱。
-		{name: "通用跨到 AI", source: "bundle_launch_01", target: "bundle_cruise_ai_01"},
+		// 跨 SP：只允许产品明确列出的通用 → AI 有向边，反向或越级降配仍拒绝。
+		{name: "Launch 跨到 Launch AI", source: "bundle_launch_01", target: "bundle_launch_ai_01", want: true},
+		{name: "Cruise 跨到 Cruise AI", source: "bundle_cruise_01", target: "bundle_cruise_ai_01", want: true},
+		{name: "Launch 跨到 Cruise AI", source: "bundle_launch_01", target: "bundle_cruise_ai_01", want: true},
+		{name: "Cruise 不可降到 Launch AI", source: "bundle_cruise_01", target: "bundle_launch_ai_01"},
 		{name: "AI 跨到通用", source: "bundle_launch_ai_01", target: "bundle_cruise_01"},
 		// 同档原地变配：没有差价，属于无意义订单。
 		{name: "同档", source: "bundle_launch_01", target: "bundle_launch_01"},

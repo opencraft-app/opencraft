@@ -667,6 +667,8 @@ export interface CodexComposerProps {
   mentionSuggestionsEnabled?: boolean;
   isStreaming: boolean;
   disabled?: boolean;
+  /** Embedded surfaces keep menu focus, styling and stacking in their owner. */
+  portalContainer?: HTMLElement | null;
   /**
    * Blocks command admission without taking ownership of the editable Draft.
    * Use this for a temporarily unavailable execution Host: the user may keep
@@ -693,6 +695,9 @@ export interface CodexComposerProps {
     pending: ComposerAttachment,
     signal?: AbortSignal,
   ) => ComposerAttachment | Promise<ComposerAttachment>;
+  onRemoveAttachment?: (
+    attachment: ComposerAttachment,
+  ) => void | Promise<void>;
   /**
    * Hands an immutable intent to its command owner. A synchronous non-false
    * result means ownership was adopted locally and the draft can be consumed;
@@ -718,6 +723,7 @@ export const CodexComposer = forwardRef<
     mentionSuggestionsEnabled = true,
     isStreaming,
     disabled = false,
+    portalContainer,
     submissionDisabled = false,
     placeholder = "Ask for follow-up changes",
     selectionCatalog,
@@ -731,6 +737,7 @@ export const CodexComposer = forwardRef<
     onSteerQueuedSubmission,
     onResumeQueuedSubmissions,
     onResolveAttachment,
+    onRemoveAttachment,
     onSubmit,
     onCancel,
   },
@@ -1552,7 +1559,18 @@ export const CodexComposer = forwardRef<
   );
 
   const removeAttachment = (id: string) => {
+    const attachment = controller.getSnapshot().draft.attachments.find(
+      (candidate) => candidate.id === id,
+    );
+    attachmentJobs.current.get(id)?.abort();
+    attachmentJobs.current.delete(id);
     controller.dispatch({ type: "remove-attachment", id });
+    if (attachment !== undefined) {
+      void Promise.resolve(onRemoveAttachment?.(attachment)).catch(() => {
+        // The draft removal already owns the UI transaction. Host cleanup is
+        // best-effort and may be retried by its retention policy.
+      });
+    }
   };
 
   const insertTrigger = (trigger: "@" | "/" | "$") => {
@@ -1830,7 +1848,7 @@ export const CodexComposer = forwardRef<
           data-input-mode={voiceActive ? "dictation" : "standard"}
         >
           {inputInteraction === null ? null : <DictationFooter interaction={inputInteraction}
-            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasProcessingAssets && selectedModelValue !== null}
+            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && selectedModelValue !== null}
             onSend={() => { void submit(); }} onCancel={() => { inputInteraction.cancel(); controller.focus(); }} />}
           <div
             ref={footerLayout.attachmentRef}
@@ -1915,7 +1933,7 @@ export const CodexComposer = forwardRef<
                       />
                     </button>
                   </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
+                  <DropdownMenu.Portal container={portalContainer}>
                     <DropdownMenu.Content
                       className="codex-composer-selection-menu codex-composer-selection-menu--intelligence"
                       aria-label="Model and reasoning"
@@ -2024,7 +2042,7 @@ export const CodexComposer = forwardRef<
                       <ChevronDown size={12} />
                     </button>
                   </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
+                  <DropdownMenu.Portal container={portalContainer}>
                     <DropdownMenu.Content
                       className="codex-composer-selection-menu codex-composer-selection-menu--permissions"
                       aria-label="Permissions"

@@ -27,6 +27,10 @@ auth:
         - tcapi-account-cn-test
         - tcapi-cam-cn-test
         - tcapi-sts-cn-test
+    - id: lightvela-trade
+      secret_env: CLOUDLADDER_TRADE_HMAC_SECRET
+      routes:
+        - tcapi-billing-trade-intl-test
 
 audit:
   service_name: cloudladdergateway-local
@@ -63,6 +67,11 @@ backends:
       allowed_methods: [POST]
       headers:
         Host: sts.test.tencentcloudapi.com
+  - alias: tcapi-billing-trade-intl-test
+    upstream:
+      base_url: https://billing.test.tencentcloudapi.com
+      timeout: 10s
+      allowed_methods: [POST]
 
 routes:
   - id: jifei-test
@@ -91,3 +100,10 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-sts-local
+  - id: tcapi-billing-trade-intl-test
+    description: Personal DevCloud Trade to the international Billing CloudAPI testing endpoint.
+    mode: signed_http_tunnel
+    callers: [lightvela-trade]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-trade-intl-test

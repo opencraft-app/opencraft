@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Seluruh konfigurasi LightVela terpusat di konsol "My Hermes", yang dibuka dari sudut kanan atas setelah Anda masuk. Tab instance Hermes Agent berada di bagian atas, dan di bawahnya terdapat tiga tombol konfigurasi: Model (pilih Model Coding Plan bulanan, Model API sesuai pemakaian, atau endpoint kustom yang kompatibel dengan OpenAI), Kanal (pintu masuk tiap platform pesan — sebagian dihubungkan dengan kode QR, sebagian memerlukan token atau AppID), dan Skill (memasang paket kemampuan yang dapat dipakai ulang). Selain ketiganya, konsol juga menyediakan Percakapan, Tugas Otomatis, manajemen memori, penyimpanan cloud, penggantian model, dan pusat diagnostik. Setelah tiga konfigurasi dasar selesai, Agent siap dipakai di kanal pesan Anda.**
+**Seluruh konfigurasi LightVela terpusat di konsol "My Hermes", yang dibuka dari sudut kanan atas setelah Anda masuk. Tab Bot untuk Hermes Agent saat ini berada di bagian atas, dan di bawahnya terdapat tiga tombol konfigurasi: Model (pilih Model Coding Plan bulanan, Model API sesuai pemakaian, atau endpoint kustom yang kompatibel dengan OpenAI), Kanal (pintu masuk tiap platform pesan — sebagian dihubungkan dengan kode QR, sebagian memerlukan token atau AppID), dan Skill (memasang paket kemampuan yang dapat dipakai ulang). Selain ketiganya, konsol juga menyediakan Percakapan, Tugas Otomatis, manajemen memori, penyimpanan cloud, penggantian model, dan pusat diagnostik. Setelah tiga konfigurasi dasar selesai, Bot siap dipakai di kanal pesan yang terhubung.**
 
 ---
 
@@ -20,13 +20,13 @@ Halaman ini memperkenalkan struktur umum konsol dan fungsi tiap tombol. Untuk la
 
 - Cara masuk ke konsol
 
-- Tombol informasi instans Hermes Agent
+- Pemilih Bot dan informasi Bot yang dipilih
 
 - Fungsi dan pintu masuk dari tiga tombol konfigurasi
 
 - Kondisi berhasil setelah konfigurasi
 
-- Operasi umum seperti mengganti model, menghubungkan beberapa kanal, dan membuat ulang Hermes Agent
+- Operasi umum seperti mengelola Bot, mengganti model, dan menghubungkan beberapa kanal
 
 ---
 
@@ -36,11 +36,11 @@ Setelah masuk, klik "Hermes Saya" di kanan atas untuk membuka konsol. Di bagian 
 
 ---
 
-## Informasi instans Hermes Agent
+## Bot dan informasi Bot yang dipilih
 
-Bagian atas konsol berisi tab Hermes Agent. Setiap tab mewakili satu instans Hermes Agent. Paket Launch hanya mendukung 1 instans. Tombol "+ Create" di kanan akan nonaktif setelah batas instans tercapai.
+Bagian atas konsol berisi tab Bot untuk Hermes Agent saat ini. Tab pertama adalah Bot utama, sedangkan setiap tab tambahan adalah profil Bot terpisah. Paket Anda menentukan jumlah total Bot, termasuk Bot utama. Selama peluncuran internasional bertahap, pintu masuk pembuatan tidak ditampilkan secara default.
 
-Setelah memilih Hermes Agent, informasi dasarnya ditampilkan di bawah:
+Setelah memilih Bot, informasi dasarnya ditampilkan di bawah:
 
 - Avatar
 
@@ -54,7 +54,7 @@ Setelah memilih Hermes Agent, informasi dasarnya ditampilkan di bawah:
 
 > ⚠️ **Penghapusan tidak bisa dibatalkan**
 >
-> Mengklik ikon tempat sampah akan menghapus instans Hermes Agent secara permanen, termasuk seluruh memori percakapan, kanal yang terhubung, dan Skill yang terpasang. Jika kuota paket Launch masih memungkinkan, Anda dapat membuat Hermes Agent baru setelahnya.
+> Menghapus Bot tambahan akan menghapus profil dan data Bot tersebut secara permanen. Menghapus Bot utama akan menghapus seluruh Hermes Agent beserta semua data terkait dan hanya dapat dilakukan setelah Bot lain dihapus.
 
 ---
 
@@ -141,11 +141,11 @@ Di tombol "Model", pilih kembali sumber dan model, masukkan API Key, lalu klik "
 
 ### Menghubungkan beberapa kanal
 
-Di tombol "Kanal", pilih opsi dropdown satu per satu lalu klik "Izinkan akses". Beberapa kanal akan mengarah ke Hermes Agent yang sama dan berbagi memori serta perilaku Agent.
+Di tombol "Kanal", pilih opsi dropdown satu per satu lalu klik "Izinkan akses". Beberapa kanal yang terhubung ke Bot yang sama akan berbagi memori dan perilaku Bot tersebut.
 
-### Membuat ulang Hermes Agent
+### Mengelola beberapa Bot
 
-Klik ikon tempat sampah di sisi kanan informasi dasar untuk menghapus Hermes Agent saat ini, lalu klik "+ Buat Hermes Agent" untuk membuatnya lagi. **Seluruh memori percakapan akan hilang**.
+Gunakan tab Bot untuk berpindah profil. Saat pintu masuk pembuatan tersedia, Anda dapat menyalin Bot saat ini atau Bot utama, atau menggunakan Basic setup. Periksa ringkasan pewarisan sebelum mengonfirmasi pembuatan.
 
 ---
 

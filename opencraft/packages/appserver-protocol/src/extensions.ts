@@ -24,3 +24,11 @@ export const OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION =
 export const OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY = Object.freeze({
   version: 1,
 });
+
+/** Host-declared history strategy that can be selected before Thread Resume. */
+export const OPENCRAFT_RESUME_HISTORY_EXTENSION = "opencraft/resume-history";
+
+export interface OpenCraftResumeHistoryCapability {
+  readonly version: 1;
+  readonly mode: "legacy" | "paginated" | "message-window";
+}

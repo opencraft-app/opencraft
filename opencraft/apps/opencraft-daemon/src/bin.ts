@@ -20,11 +20,13 @@ function requiredEnvironment(name: string): string {
 
 void startOpenCraftDaemon({
   endpoint: requiredArgument("--endpoint"),
+  runtimeDirectory: requiredArgument("--runtime-directory"),
   authToken: requiredEnvironment("OPENCRAFT_DAEMON_AUTH_TOKEN"),
   dshExecutable: requiredArgument("--dsh-executable"),
   dshCapabilityPlugin: argument("--dsh-capability-plugin"),
   dataDirectory: requiredArgument("--data-directory"),
   modelStorageDirectory: argument("--model-storage-directory"),
+  skillsDirectory: argument("--skills-directory"),
 }).then((daemon) => {
   process.stdout.write(`${JSON.stringify({ type: "opencraft-daemon-ready", endpoint: daemon.endpoint, pid: process.pid })}\n`);
   const shutdown = () => void daemon.close().finally(() => process.exit(0));

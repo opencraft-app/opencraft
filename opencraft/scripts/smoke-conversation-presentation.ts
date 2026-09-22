@@ -89,6 +89,10 @@ try {
   await page.evaluate(() => (window as any).restore());
   await page.getByRole("button", { name: "Collapse plan summary" }).waitFor();
   await page.evaluate(() => (window as any).scenario("todo"));
+  assert.equal(await page.getByRole("button", { name: "Step 1 / 3" }).count(), 0);
+  assert.equal(await page.locator(".thread-content .thread-todo").count(), 0, "todo snapshots never remain in transcript rows");
+  assert.equal(await page.locator('[data-in-progress-fixed-content="true"] .thread-todo').count(), 1);
+  await page.screenshot({ path: "/tmp/conversation-presentation-todo-collapsed.png" });
   await page.getByRole("button", { name: "Step 2 / 3" }).click();
   await page.getByRole("region", { name: "Plan steps" }).waitFor();
   assert.equal(await page.locator(".thread-todo__popup li").count(), 3);
@@ -107,11 +111,14 @@ try {
     true,
     "steps belong to the top layer, not virtualized row layout",
   );
+  await page.screenshot({ path: "/tmp/conversation-presentation-todo-expanded.png" });
   await page.keyboard.press("Escape");
   await page.waitForFunction(
     () =>
       !document.querySelector(".thread-todo__popup")!.matches(":popover-open"),
   );
+  await page.evaluate(() => (window as any).complete());
+  await page.waitForFunction(() => document.querySelector('[data-in-progress-fixed-content="true"]') === null);
   await page.evaluate(() => (window as any).scenario("compaction"));
   await page.waitForSelector('.thread-compaction[data-completed="false"]');
   assert.equal(await page.locator(".thread-thinking-placeholder").count(), 0);
@@ -162,7 +169,9 @@ try {
         "completion/collapse ownership",
         "download",
         "history restoration",
+        "latest todo fixed outside transcript",
         "todo top-layer steps",
+        "terminal todo removal",
         "compaction lifecycle",
         "detail mode",
         "failed-turn message actions",

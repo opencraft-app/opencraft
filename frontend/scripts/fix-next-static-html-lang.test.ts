@@ -25,6 +25,7 @@ describe("fix-next-static-html-lang", () => {
       const config = JSON.parse(readFileSync(join(out, ".edgeone", "cloud-functions", "ssr-node", "config.json"), "utf8"));
       expect(config.routes).toEqual(expect.arrayContaining([
         { src: "^/__releases/([^/]+)/_next/static/(.*)$", headers: { "cache-control": "public, max-age=31536000, immutable" }, continue: true },
+        { src: "^/__opencraft/opencraft-host-proxy-sw\\.js$", headers: { "cache-control": "no-cache" }, continue: true },
         { src: "^/(.*)\\.html$", headers: { "cache-control": "no-cache" }, continue: true },
         { src: "^/(.*)\\.txt$", headers: { "cache-control": "no-cache" }, continue: true },
         { src: "^/\\.txt$", dest: "/index.txt", headers: { "cache-control": "no-cache" } },
@@ -48,7 +49,7 @@ describe("fix-next-static-html-lang", () => {
       expect(Math.max(...flightRoutes.map((route) => config.routes.indexOf(route)))).toBeLessThan(textHeaderIndex);
       expect(textHeaderIndex).toBeLessThan(filesystemIndex);
       expect(filesystemIndex).toBeLessThan(htmlFallbackIndex);
-      expect(config.routes).toHaveLength(7);
+      expect(config.routes).toHaveLength(8);
       expect(Buffer.byteLength(JSON.stringify(config))).toBeLessThan(16 * 1024);
       expect(Math.max(...config.routes.filter((route) => route.src).map((route) => Buffer.byteLength(route.src)))).toBeLessThanOrEqual(480);
       expect(existsSync(join(out, ".edgeone", "assets", "docs", "overview", "index.txt"))).toBe(true);

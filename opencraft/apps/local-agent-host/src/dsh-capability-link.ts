@@ -10,8 +10,12 @@ export interface DshCapabilityRegistrationResult {
 export function verifyDshCapabilityRegistration(
   expected: number,
   result: DshCapabilityRegistrationResult,
+  options: { readonly allowDeferred?: boolean } = {},
 ): void {
-  if (result.deferred === true || result.registered !== expected) {
+  if (
+    result.registered !== expected
+    && !(options.allowDeferred === true && result.deferred === true && result.registered === 0)
+  ) {
     throw new Error(
       `DSH registered ${result.registered} of ${expected} dynamic tools`,
     );
@@ -25,7 +29,7 @@ export class DshCapabilityLink {
   private endpoint: string | null = null;
   private task: Promise<void> | null = null;
   private inFlight = new Set<Promise<void>>();
-  constructor(private readonly token: string, private readonly broker: DshCapabilityBroker, private readonly authority: DshExecutionAuthority, private readonly routing?: DshSessionRouting) {}
+  constructor(private readonly token: string, private readonly broker: DshCapabilityBroker, private readonly authority: DshExecutionAuthority, private readonly routing?: DshSessionRouting, private readonly onSkillsChanged?: () => void) {}
   attach(url: string) {
     if (this.endpoint === url) return;
     this.endpoint = url;
@@ -62,6 +66,11 @@ export class DshCapabilityLink {
   async skills(threadId: string | undefined, cwd: string, forceReload = false) {
     return this.request("/skills", { ...(threadId ? { sessionId: this.routing?.native(threadId) ?? threadId } : {}), cwd, forceReload });
   }
+  async invalidateSkills(): Promise<void> {
+    const endpoint = this.endpoint;
+    await this.request("/skills/invalidate", {}, endpoint);
+    if (endpoint !== this.endpoint) throw new Error("DSH restarted during Skill refresh; retry required");
+  }
   async permissions(threadId?: string, preset?: string): Promise<any> {
     return this.request("/permissions", { ...(threadId ? { sessionId: this.routing?.native(threadId) ?? threadId } : {}), ...(preset ? { preset } : {}) });
   }
@@ -82,6 +91,7 @@ export class DshCapabilityLink {
         const batch = await this.request("/events", undefined, endpoint) as {events: any[]};
         if (endpoint !== this.endpoint) continue;
         for (const event of batch.events) {
+          if (event.type === "skills-changed") { this.onSkillsChanged?.(); continue; }
           if (event.type === "capability-cancel") { this.calls.get(event.id)?.abort(); continue; }
           if (event.type !== "capability-request" || this.calls.has(event.id)) continue;
           const abort = new AbortController();

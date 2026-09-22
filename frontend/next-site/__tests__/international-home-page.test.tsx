@@ -509,6 +509,16 @@ describe("international v2 homepage artifact", () => {
       "ja-JP": ["ホーム", "料金", "更新履歴", "ドキュメント", "会社概要"],
       "ko-KR": ["홈", "요금", "업데이트 내역", "문서", "회사 소개"],
     } as const;
+    // CTA 优势列表是独立长条，不受 134px 审批卡容器约束，保持原翻译，不跟随审批卡标题简写。
+    const expectedCtaApprovalBenefit = {
+      "en-US": "Confirms important actions",
+      "zh-SG": "重要动作先确认",
+      "zh-Hant": "重要動作先確認",
+      "id-ID": "Mengonfirmasi tindakan penting",
+      es: "Confirma acciones importantes",
+      "ja-JP": "重要な操作は確認します",
+      "ko-KR": "중요한 작업은 확인합니다",
+    } as const;
 
     for (const locale of publishedInternationalLocales) {
       const localizedPath = path.join(homeRoot, `index-fragment.${locale}.html`);
@@ -543,10 +553,17 @@ describe("international v2 homepage artifact", () => {
       expect(document.querySelector("#play-2 .automation-card-video"), `${locale} stale automation video`).toBeNull();
       expect(document.querySelector("#play-2 .automation-card-poster"), `${locale} stale automation poster`).toBeNull();
       const approvalTitle = document.querySelector(".channel-approval__title")?.textContent ?? "";
+      expect(approvalTitle, `${locale} approval title`).not.toContain("Human Approval");
+      // 孤行护栏：标题超过 24 字符时，134px 容器内必然折行且末行易剩 1–2 字符。
+      expect(approvalTitle.length, `${locale} approval title length`).toBeLessThanOrEqual(24);
+      const benefitTitles = Array.from(
+        document.querySelectorAll(".cta__benefits .benefit h3"),
+        (node) => node.textContent ?? "",
+      );
+      expect(benefitTitles, `${locale} CTA benefit titles`).toContain(expectedCtaApprovalBenefit[locale]);
       const skillKinds = Array.from(document.querySelectorAll(".skwall__tile em"), (node) => node.textContent ?? "");
       if (locale !== "en-US") {
         const bodyText = document.body.textContent ?? "";
-        expect(approvalTitle, `${locale} approval title`).not.toContain("Human Approval");
         expect(skillKinds, `${locale} skill kind labels`).not.toContain("Skill");
         expect(skillKinds, `${locale} tool kind labels`).not.toContain("Tool");
         expect(bodyText, `${locale} stale Skill testimonial copy`).not.toMatch(
@@ -969,7 +986,8 @@ describe("international v2 homepage artifact", () => {
     expect(document.querySelectorAll(".chnloop__viewport")).toHaveLength(1);
     expect(document.querySelectorAll(".chnloop__list:first-child .chnloop__item")).toHaveLength(8);
     expect(document.querySelectorAll(".channel-stack")).toHaveLength(1);
-    expect(document.querySelector(".channel-approval__title")?.textContent).toContain("Human Approval");
+    expect(document.querySelector(".channel-approval__title")?.textContent).toContain("Confirm before acting");
+    expect(html).not.toContain("memory-preference");
     expect(document.querySelectorAll(".channel-approval__bubble")).toHaveLength(2);
     expect(document.querySelector(".channel-approval__bubble--agent")?.textContent).toContain("Confirm delete");
     expect(document.querySelectorAll(".channel-approval__actions")).toHaveLength(0);

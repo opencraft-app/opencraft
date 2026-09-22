@@ -1302,6 +1302,28 @@ func TestAdminShadowBindingLifecycle(t *testing.T) {
 		t.Fatalf("unexpected queried binding: %+v", binding)
 	}
 
+	listed := performAdminJSONRequest(t, router, http.MethodGet, "/admin/shadow-accounts?search=mock_first&page=1&page_size=1", nil, testAdminToken)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("expected list 200, got %d: %s", listed.Code, listed.Body.String())
+	}
+	var accountPage struct {
+		Items    []adminShadowAccountResponse `json:"items"`
+		Total    int                          `json:"total"`
+		Page     int                          `json:"page"`
+		PageSize int                          `json:"pageSize"`
+	}
+	decodeJSONResponse(t, listed, &accountPage)
+	if accountPage.Total != 1 || len(accountPage.Items) != 1 {
+		t.Fatalf("unexpected shadow account page: %+v", accountPage)
+	}
+	if accountPage.Page != 1 || accountPage.PageSize != 1 {
+		t.Fatalf("unexpected shadow account pagination: %+v", accountPage)
+	}
+	account := accountPage.Items[0]
+	if account.UserID != firstUserID || account.ShadowUserName != "mock_first" || account.Uin != "450860000013" || account.BindingStatus != shadowbinding.StatusActive {
+		t.Fatalf("unexpected shadow account: %+v", account)
+	}
+
 	conflictingBody := map[string]any{
 		"userId":         secondUserID,
 		"shadowUserName": "mock_second",

@@ -234,9 +234,12 @@ export const useZeroTokenAutomationsEnabled = (): boolean => {
   return config.features.zeroTokenAutomationsEnabled === true;
 };
 
+const resolveMultiBotEnabled = (config: RuntimeConfig): boolean =>
+  config.features.multiBotEnabled === true;
+
 export const useMultiBotEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
-  return isCN && config.features.multiBotEnabled === true;
+  return resolveMultiBotEnabled(config);
 };
 
 export const useReferralEnabled = (): boolean => {
@@ -254,5 +257,6 @@ export const __runtimeConfigTestHooks = {
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
+  resolveMultiBotEnabled,
   shouldSkipRemoteRuntimeConfig,
 };

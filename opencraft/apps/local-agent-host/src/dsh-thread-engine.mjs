@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { volatileSessions } from "./dsh-thread-storage.mjs";
 
+export function requireThreadWorkspaceCwd(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error("Native Thread creation requires an explicit workspace cwd");
+  }
+  return value;
+}
+
 export function forkSeed(source, { lastTurn, beforeTurn } = {}, closers) {
   if (lastTurn !== undefined && beforeTurn !== undefined) throw new Error("Fork boundaries are mutually exclusive");
   let selected = source;
@@ -44,10 +51,11 @@ export async function createThreadEngine(ctx, toolsModuleUrl) {
     const sessionId = input.sessionId ?? randomUUID();
     if (input.ephemeral) volatileSessions.mark(sessionId);
     const agentPreset = (await ctx.agentPresets.resolve(input.agentPreset)).id;
+    const cwd = requireThreadWorkspaceCwd(input.cwd);
     try {
       const handle = await ctx.agents.create({ sessionId: SessionId(sessionId),
         seed: input.seed,
-        meta: { cwd: input.cwd ?? process.cwd(), agentPreset, ...(input.sourceSessionId ? { parentSession: SessionId(input.sourceSessionId), seedLength: input.seed.length } : {}) },
+        meta: { cwd, agentPreset, ...(input.sourceSessionId ? { parentSession: SessionId(input.sourceSessionId), seedLength: input.seed.length } : {}) },
         agentOptions: { ...(input.provider ? { provider: input.provider } : {}), ...(input.model ? { model: input.model } : {}) },
         setup: setup({ ...input, agentPreset }) });
       handles.set(sessionId, handle);

@@ -29,6 +29,8 @@
     "web": {
       "scales": {
         "body": { "fontSize": 14, "lineHeight": 20 },
+        "controlLarge": { "fontSize": 16, "lineHeight": 22 },
+        "settingsTitle": { "fontSize": 24, "lineHeight": 30 },
         "chat": { "fontSize": 14, "lineHeight": 22 },
         "composer": { "fontSize": 14, "lineHeight": 21 },
         "modeTitle": { "fontSize": 17, "lineHeight": 24 },
@@ -52,6 +54,15 @@
         "text2xs": { "fontSize": 10, "lineHeight": 14 }
       },
       "roles": {
+        "control": { "family": "ui", "scale": "body", "weight": "semibold" },
+        "controlSmall": { "family": "ui", "scale": "caption", "weight": "semibold" },
+        "controlLarge": { "family": "ui", "scale": "controlLarge", "weight": "semibold" },
+        "controlCompact": { "family": "ui", "scale": "toolbarTitle", "weight": "medium" },
+        "input": { "family": "ui", "scale": "toolbarTitle", "weight": "regular" },
+        "settingsTitle": { "family": "ui", "scale": "settingsTitle", "weight": "regular" },
+        "settingsSummary": { "family": "ui", "scale": "textMd", "weight": "regular" },
+        "settingsLabel": { "family": "ui", "scale": "body", "weight": "medium" },
+        "settingsSectionTitle": { "family": "ui", "scale": "body", "weight": "semibold" },
         "body": { "family": "ui", "scale": "body", "weight": "regular" },
         "chat": { "family": "content", "scale": "chat", "weight": "regular" },
         "composer": { "family": "content", "scale": "composer", "weight": "regular" },
@@ -75,6 +86,10 @@
     "native": {
       "scales": {
         "body": { "fontSize": 17, "lineHeight": 24 },
+        "control": { "fontSize": 14, "lineHeight": 20 },
+        "controlLarge": { "fontSize": 16, "lineHeight": 22 },
+        "settingsTitle": { "fontSize": 24, "lineHeight": 30 },
+        "settingsSummary": { "fontSize": 16, "lineHeight": 24 },
         "chat": { "fontSize": 17, "lineHeight": 25 },
         "composer": { "fontSize": 17, "lineHeight": 24 },
         "modeTitle": { "fontSize": 17, "lineHeight": 22 },
@@ -94,6 +109,15 @@
         "emptyTitle": { "fontSize": 28, "lineHeight": 34 }
       },
       "roles": {
+        "control": { "family": "ui", "scale": "control", "weight": "semibold" },
+        "controlSmall": { "family": "ui", "scale": "caption", "weight": "semibold" },
+        "controlLarge": { "family": "ui", "scale": "controlLarge", "weight": "semibold" },
+        "controlCompact": { "family": "ui", "scale": "toolbarTitle", "weight": "medium" },
+        "input": { "family": "ui", "scale": "toolbarTitle", "weight": "regular" },
+        "settingsTitle": { "family": "ui", "scale": "settingsTitle", "weight": "regular" },
+        "settingsSummary": { "family": "ui", "scale": "settingsSummary", "weight": "regular" },
+        "settingsLabel": { "family": "ui", "scale": "body", "weight": "medium" },
+        "settingsSectionTitle": { "family": "ui", "scale": "body", "weight": "semibold" },
         "body": { "family": "ui", "scale": "body", "weight": "regular" },
         "chat": { "family": "content", "scale": "chat", "weight": "regular" },
         "composer": { "family": "content", "scale": "composer", "weight": "regular" },

@@ -11,10 +11,20 @@ const previewBridgeBundlePath = fileURLToPath(new URL(
   "../../packages/browser-preview-bridge/dist/preview-bridge.js",
   import.meta.url,
 ));
+const workbenchHtmlPath = fileURLToPath(new URL("./index.html", import.meta.url));
+const embeddedWorkbenchEntryPath = fileURLToPath(new URL(
+  "./src/embedded-chat-entry.ts",
+  import.meta.url,
+));
+const hostProxyServiceWorkerPath = fileURLToPath(new URL(
+  "./public/opencraft-host-proxy-sw.js",
+  import.meta.url,
+));
 const hyperNodeUser = process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "skipzhang";
 const buildTarget = process.env.OPENCRAFT_BUILD_TARGET?.trim() || "web";
 const product = process.env.OPENCRAFT_PRODUCT?.trim() || "opencraft";
 const isElectronRenderer = buildTarget === "electron";
+const isEmbeddedWorkbenchBuild = buildTarget === "embedded-workbench";
 const isLightVelaWeb = product === "lightvela-web";
 const includeHyperNodePlugin = !isLightVelaWeb && !isElectronRenderer
   && process.env.VITE_HYPERNODE_PLUGIN?.trim() !== "disabled";
@@ -149,6 +159,13 @@ function releaseMetadata(metadata: WebReleaseMetadata): Plugin {
         fileName: "version.json",
         source: `${JSON.stringify(metadata, null, 2)}\n`,
       });
+      this.emitFile({
+        type: "asset",
+        fileName: isEmbeddedWorkbenchBuild
+          ? "opencraft-host-proxy-sw.js"
+          : "__opencraft/opencraft-host-proxy-sw.js",
+        source: readFileSync(hostProxyServiceWorkerPath, "utf8"),
+      });
     },
   };
 }
@@ -181,14 +198,60 @@ function previewBridgeAsset(): Plugin {
   };
 }
 
+function embeddedWorkbenchDevEntry(): Plugin {
+  return {
+    name: "opencraft-embedded-workbench-dev-entry",
+    configureServer(server) {
+      server.middlewares.use("/__opencraft/embedded-workbench.js", (_request, response) => {
+        response.setHeader("content-type", "text/javascript; charset=utf-8");
+        response.setHeader("cache-control", "no-store");
+        response.end(
+          'const base = new URL("/", import.meta.url);\n'
+          + 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = base.href;\n'
+          + 'globalThis.process ??= { env: {} };\n'
+          + 'globalThis.global ??= globalThis;\n'
+          + 'const RefreshRuntime = (await import(new URL("@react-refresh", base).href)).default;\n'
+          + 'RefreshRuntime.injectIntoGlobalHook(globalThis);\n'
+          + 'globalThis.$RefreshReg$ = () => {};\n'
+          + 'globalThis.$RefreshSig$ = () => (type) => type;\n'
+          + 'globalThis.__vite_plugin_react_preamble_installed__ = true;\n'
+          + 'await import(new URL("src/embedded-chat-entry.ts", base).href);\n',
+        );
+      });
+    },
+    generateBundle(_options, bundle) {
+      const entry = Object.values(bundle).find((item) => (
+        item.type === "chunk"
+        && item.isEntry
+        && item.facadeModuleId === embeddedWorkbenchEntryPath
+      ));
+      if (entry === undefined || entry.type !== "chunk") {
+        throw new Error("Embedded Workbench entry chunk was not generated");
+      }
+      this.emitFile({
+        type: "asset",
+        fileName: isEmbeddedWorkbenchBuild
+          ? "embedded-workbench.js"
+          : "__opencraft/embedded-workbench.js",
+        source: isEmbeddedWorkbenchBuild
+          ? 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = new URL("./", import.meta.url).href;\n'
+            + `await import("./${entry.fileName}");\n`
+          : 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = new URL("../", import.meta.url).href;\n'
+            + `await import("../${entry.fileName}");\n`,
+      });
+    },
+  };
+}
+
 export default defineConfig({
   // Both targets are served at their origin root. Root-relative assets also
   // survive direct loading/reloading /views/:id and /settings/:id routes.
   // The Electron static server maps that root to the relocatable signed bundle.
-  base: "/",
+  base: isEmbeddedWorkbenchBuild ? "/__opencraft/" : "/",
   plugins: [
     releaseMetadata(webRelease),
-    previewBridgeAsset(),
+    ...(!isEmbeddedWorkbenchBuild ? [previewBridgeAsset()] : []),
+    embeddedWorkbenchDevEntry(),
     runtimeErrorCapture(),
     react(),
   ],
@@ -211,6 +274,15 @@ export default defineConfig({
       "react-dom/client",
       "react/jsx-runtime",
       "react/jsx-dev-runtime",
+      // Embedded Workbench reaches the LightVela auth client from a raw Vite
+      // module entry. Prebundle cookie's CommonJS facade so browser ESM can
+      // consume its named parse/serialize exports in development as it does
+      // in the production bundle.
+      "cookie",
+      "set-cookie-parser",
+      "tim-upload-plugin",
+      "void-elements",
+      "@tencentcloud/chat",
     ],
     // `bson` is browser-native ESM and is reached through an optional
     // workspace plugin. Vite's discovery optimizer can encounter it after the
@@ -258,16 +330,24 @@ export default defineConfig({
     // minifier; aggressive secondary compression/mangling has caused
     // renderer hangs and is intentionally not part of the release contract.
     minify: "oxc",
-    rolldownOptions: releaseMinification ? {
+    rolldownOptions: {
+      input: isEmbeddedWorkbenchBuild
+        ? { "embedded-workbench": embeddedWorkbenchEntryPath }
+        : {
+            workbench: workbenchHtmlPath,
+            "embedded-workbench": embeddedWorkbenchEntryPath,
+          },
       output: {
+        entryFileNames: releaseMinification ? "assets/a-[hash].js" : "assets/[name]-[hash].js",
+        ...(releaseMinification ? {
         // Hardened releases expose only opaque content identities. Human
         // chunk/module names remain available in source builds and private
         // observability metadata, never in the public asset topology.
-        entryFileNames: "assets/a-[hash].js",
         chunkFileNames: "assets/a-[hash].js",
         assetFileNames: "assets/a-[hash][extname]",
+        } : {}),
       },
-    } : undefined,
+    },
     // Hidden maps remain available to an error collector, while the release
     // publisher deliberately excludes them from the public static tree.
     sourcemap: releaseMinification ? false : "hidden",
@@ -275,8 +355,11 @@ export default defineConfig({
     assetsDir: "assets",
     outDir: isElectronRenderer
       ? "dist-electron"
-      : isLightVelaWeb
-        ? "dist-lightvela-web"
-        : "dist",
+      : isEmbeddedWorkbenchBuild
+        ? "dist-embedded-workbench"
+        : isLightVelaWeb
+          ? "dist-lightvela-web"
+          : "dist",
+    copyPublicDir: !isEmbeddedWorkbenchBuild,
   },
 });

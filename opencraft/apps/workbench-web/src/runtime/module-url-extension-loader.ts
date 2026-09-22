@@ -54,6 +54,7 @@ export class BrowserModuleUrlExtensionLoader implements ExtensionModuleLoader {
       activate(api: TrustedExtensionApiV1) {
         const publicApi: OpenCraftExtensionApiV1 = Object.freeze({
           identity: api.identity,
+          storage: api.storage,
           subscriptions: api.subscriptions,
           commands: api.commands,
           settings: api.settings,

@@ -9,7 +9,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
-// 同 SP 变配的三个内部端点。需求：TAPD 1010132091137784162 §5.1 / §7.1
+// Pass 变配的三个内部端点。需求：TAPD 1010132091137784162 §5.1 / §7.1
 
 const (
 	modifySourceBundle = "bundle_sail"
@@ -173,9 +173,7 @@ func TestPlaceModifyOrderAndPay_HappyPath(t *testing.T) {
 	}
 }
 
-// 跨 SP 变配（启航 → 巡游 AI）本期不支持，端点必须给出可区分的错误码，
-// 而不是混进通用的 InvalidRequest。
-func TestModifyEndpoints_CrossSubProduct(t *testing.T) {
+func TestModifyEndpoints_SupportCrossSubProduct(t *testing.T) {
 	paths := []string{
 		"/internal/trade/inquiry/modify",
 		"/internal/trade/orders/modify",
@@ -198,6 +196,43 @@ func TestModifyEndpoints_CrossSubProduct(t *testing.T) {
 				}
 				if bundleID == modifyTargetBundle {
 					def.SubProductCode = "sp_test_ai"
+					def.Pid = 5678
+				}
+				return def, nil
+			}
+
+			rec := env.doJSON(http.MethodPost, path, modifyBody(), true)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// 跨 productCode 仍不支持，端点必须给出可区分的错误码，不能混进通用 InvalidRequest。
+func TestModifyEndpoints_RejectCrossProduct(t *testing.T) {
+	paths := []string{
+		"/internal/trade/inquiry/modify",
+		"/internal/trade/orders/modify",
+		"/internal/trade/orders/modify/place-and-pay",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			env := newTestEnv(t)
+			env.bundle.getBundleDefinitionByIDFn = func(_ context.Context, bundleID string) (*store.BundleDefinition, error) {
+				def := &store.BundleDefinition{
+					BundleID:       bundleID,
+					ProductCode:    "p_lighthouse",
+					SubProductCode: "sp_test",
+					Pid:            1234,
+					CategoryIDs: []store.CategoryIDEntry{
+						{Scene: "purchase", Category: 100059},
+						{Scene: "modify", Category: 2025048},
+					},
+					SVList: map[string]int64{"sv_cpu": 2},
+				}
+				if bundleID == modifyTargetBundle {
+					def.ProductCode = "p_other"
 				}
 				return def, nil
 			}
@@ -206,8 +241,8 @@ func TestModifyEndpoints_CrossSubProduct(t *testing.T) {
 			if rec.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("expected 422, got %d body=%s", rec.Code, rec.Body.String())
 			}
-			if resp := decodeBody(t, rec); resp["code"] != "ModifyCrossSubProduct" {
-				t.Errorf("code = %v, want ModifyCrossSubProduct", resp["code"])
+			if resp := decodeBody(t, rec); resp["code"] != "ModifyCrossProduct" {
+				t.Errorf("code = %v, want ModifyCrossProduct", resp["code"])
 			}
 		})
 	}

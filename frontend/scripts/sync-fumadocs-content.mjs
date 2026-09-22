@@ -301,6 +301,17 @@ const globalDocs = [
     hideDescription: true,
   },
   {
+    slug: 'configuration/bots',
+    title: { 'en-US': 'Manage Bots', 'zh-CN': '管理 Bots' },
+    file: 'configuration/bots.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Create, copy, switch, rename, and delete Bots within one Hermes Agent.',
+      'zh-CN': '在同一个 Hermes Agent 中创建、复制、切换、重命名和删除 Bot。',
+    },
+    hideDescription: true,
+  },
+  {
     slug: 'configuration/model',
     title: { 'en-US': 'Configure Models', 'zh-CN': '配置模型' },
     file: 'configuration/model.md',

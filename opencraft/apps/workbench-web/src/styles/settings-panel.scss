@@ -1,3 +1,6 @@
+@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
 // Shared utility-window controls. Product views provide content, not a second UI kit.
 .settings-panel {
   display: flex;
@@ -11,7 +14,7 @@
   font-size: 13px;
   line-height: 1.5;
   .settings-control-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); min-height: 48px; gap: 16px; padding: 10px 0; }
-  .settings-control-row__label { font-size: 13px; font-weight: 500; }
+  .settings-control-row__label { @include typography.role(control-compact); }
   .settings-control-row__value { width: 100%; justify-content: flex-start; }
   .settings-control-notice { margin: 0 0 12px; }
 }
@@ -51,7 +54,7 @@
   &:hover:not(:disabled) { background: var(--color-background-primary-ghost-hover); }
 }
 .settings-copy-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
-.settings-copy-control > .settings-control-button { height: 26px; font-size: 11px; padding-inline: 0; }
+.settings-copy-control > .settings-control-button { @include typography.role(label, null); height: 26px; padding-inline: 0; }
 .settings-copy-control__status { color: var(--color-text-secondary); font-size: 11px; }
 .settings-editable-text { display: flex; min-width: 0; align-items: center; gap: 6px; }
 .settings-editable-text > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
@@ -75,8 +78,8 @@
   img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
   i { position: absolute; right: -3px; bottom: -2px; display: grid; place-items: center; width: 18px; height: 18px;
     border: .5px solid var(--color-border-default); border-radius: 50%; background: var(--color-background-elevated-primary-opaque); }
-  &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 3px; }
-  &:disabled { opacity: .6; cursor: default; }
+  &:focus-visible { @include controls.focus-indicator; }
+  &:disabled { @include controls.disabled-feedback; }
 }
 .settings-usage-meter {
   display: block; appearance: none; width: 100%; height: 4px; border: 0; border-radius: 4px; overflow: hidden;

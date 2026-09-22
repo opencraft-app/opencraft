@@ -152,6 +152,7 @@ items:
     required_keys:
       - ADMIN_TOKEN
       - AUTH_ADMIN_TOKEN
+      - CTL_INTERNAL_TOKEN
       - SUBSCRIPTION_ADMIN_TOKEN
     namespace: lightvela-playground-sandbox-jp-1
     kubernetes_resource_name: gateway-dashboard-runtime-secrets

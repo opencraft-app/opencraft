@@ -328,6 +328,7 @@ closed ──选套餐下单──▶ paying ──轮询到 pass──▶ final
 | 字段 | 含义 |
 |---|---|
 | `pass_id` / `user_id` / `bundle_id` / `bundle_name` | 权益 / 用户 / 套餐标识 |
+| `bundle_type` | 套餐类型：`free` / `general` / `ai`；来自 Bundle 真源，不从 `bundle_id` 或套餐名推断 |
 | `created_time` / `expired_time` | 生效 / 到期时间 |
 | `isolated_time` | 进入隔离态时间（销毁前置） |
 | `agent_quota_total` / `agent_quota_available` | Agent 席位总数 / 剩余（已扣运行中实例占用） |

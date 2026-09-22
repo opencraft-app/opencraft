@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -71,6 +72,63 @@ func (s *MySQLStore) GetBindingByShadowUserName(ctx context.Context, shadowUserN
 			LIMIT 1
 		`, shadowUserName, StatusDisabled)
 	return scanBinding(row, "get shadow binding by shadow username")
+}
+
+func (s *MySQLStore) ListAdminBindings(ctx context.Context, search string, limit int, offset int) ([]Binding, int, error) {
+	pattern := "%"
+	if trimmed := strings.TrimSpace(search); trimmed != "" {
+		pattern = "%" + trimmed + "%"
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	where := `(user_id LIKE ? OR shadow_user_name LIKE ?
+		OR CAST(COALESCE(uin, 0) AS CHAR) LIKE ?
+		OR CAST(COALESCE(owner_uin, 0) AS CHAR) LIKE ?
+		OR CAST(COALESCE(app_id, 0) AS CHAR) LIKE ?)`
+	args := []any{pattern, pattern, pattern, pattern, pattern}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM shadow_bindings WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count admin shadow bindings: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT user_id, shadow_user_name, COALESCE(uin, 0), COALESCE(owner_uin, 0), COALESCE(app_id, 0), status,
+		       COALESCE(last_error_code, ''), COALESCE(last_error_message, ''),
+		       COALESCE(basic_auth_status, ''), basic_auth_synced_at,
+		       COALESCE(basic_auth_source_attempt_id, ''), COALESCE(basic_auth_identity_hash, ''), COALESCE(basic_auth_phone_hash, ''),
+		       COALESCE(basic_auth_last_error_code, ''), COALESCE(basic_auth_last_error_message, ''),
+		       created_at, updated_at
+		FROM shadow_bindings
+		WHERE `+where+`
+		ORDER BY created_at DESC, user_id ASC
+		LIMIT ? OFFSET ?
+	`, append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list admin shadow bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]Binding, 0, limit)
+	for rows.Next() {
+		binding, err := scanBinding(rows, "scan admin shadow binding")
+		if err != nil {
+			return nil, 0, err
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate admin shadow bindings: %w", err)
+	}
+	return bindings, total, nil
 }
 
 type bindingScanner interface {

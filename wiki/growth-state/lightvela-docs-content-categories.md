@@ -40,6 +40,7 @@
 # 功能与配置
 
 - 【CN ✓ | GLOBAL ✓】配置总览
+- 【CN 待补 | GLOBAL ✓】管理 Bots
 - 【CN ✓ | GLOBAL ✓】配置模型
 - 【CN N/A | GLOBAL ✓】Telegram
 - 【CN N/A | GLOBAL ✓】WhatsApp

@@ -23,6 +23,8 @@ let maxBots = 1;
 let multiBotEnabled = true;
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   t: (text: string) => (
     testRegion.isGlobal && text === "已有 Bot 正在删除中，请稍后刷新页面后再创建。"
       ? "A Bot is being deleted. Refresh the page in a moment before creating another."
@@ -304,31 +306,71 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 
-  it("shows Bot creation without show() and preserves visibility on page remount", async () => {
+  it("opens the onboarding panel from the create entry without a legacy dialog", async () => {
     maxBots = 5;
-    const view = render(page("ins-1"));
+    render(page("ins-1"));
+    // 入口常驻，不依赖 revealHiddenTools()
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeEnabled();
+    fireEvent.click(createButton);
+    /*
+     * 现在点「新建 Bot」直接进创建引导（选头像 + 填名字），
+     * 不再弹旧的「创建 Bot」弹窗 —— 那个弹窗只问名字，会让用户填两次。
+     */
+    // 「换一批」是引导页独有的头像操作，用它确认进的是引导而非旧弹窗
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
+    // 「空白创建」已从复制来源里移除，下拉只列可复制的 bot
+    expect(screen.queryByRole("radio", { name: "空白创建" })).not.toBeInTheDocument();
+  });
+
+  /*
+   * 从 master 侧冲突里拆出来的断言。
+   *
+   * master 那条测试把两件事写在一起：①隐藏工具仍需 show() ②点「新建 Bot」
+   * 弹旧的「创建 Bot」弹窗。②与本分支的实现互斥（入口已改为直接进引导，
+   * 见上一条），但①以及按钮顺序、remount 后入口不丢，都跟创建流程无关，
+   * 是独立的有效约束 —— 所以单独留一条，不跟着弹窗一起丢掉。
+   */
+  it("still hides advanced tools behind show() and keeps the create entry across remounts", async () => {
+    maxBots = 5;
+    const view = render(page("ins-1"));
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    // 「终端」这类高级工具仍藏在 console 的 show() 后面
     expect(screen.queryByRole("link", { name: "终端" })).not.toBeInTheDocument();
     const show = (window as Window & { show?: () => void }).show;
     expect(show).toBeTypeOf("function");
     act(() => show?.());
     expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
-    expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
-      "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
-    ]);
-    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).toHaveAttribute("aria-hidden", "true");
-    fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
-    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
-    expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
-    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(
+      Array.from(view.container.querySelectorAll(".lv-agent-actions button"))
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot"]);
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down"))
+      .toHaveAttribute("aria-hidden", "true");
+    // 切换 bot 与整页重挂后，入口都不该消失
     view.rerender(page("sales"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
     view.unmount();
     render(page("ins-1"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+  });
+
+  it("keeps global Bot creation hidden until show() reveals it", () => {
+    maxBots = 5;
+    testRegion.isCN = false;
+    testRegion.isGlobal = true;
+    const view = render(page("ins-1"));
+
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => void }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => show?.());
+
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
+    ]);
   });
 
   it("explains a disabled create icon in a portaled tooltip", async () => {
@@ -348,21 +390,28 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
-  it("rechecks the current quota when the create dialog is confirmed", async () => {
+  it("rechecks the current quota when creation is submitted from the panel", async () => {
     bots = [buildBot()];
     maxBots = 2;
     const view = render(page("ins-1"));
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
-    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
 
+    /*
+     * 这条守的保障没变，只是入口从旧弹窗换成了引导页：
+     * 打开创建界面之后配额才被占满，此时提交必须重新校验、不能真的去建。
+     * 否则用户会拿到一个后端拒绝的失败，或超额建出第三个 bot。
+     */
     bots = [buildBot(), { ...buildBot(), id: "sales", profileId: "sales", isDefault: false, name: "Sales" }];
     view.rerender(page("ins-1"));
-    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
+    await waitFor(() => {
+      expect(screen.getAllByText(
+        "当前套餐最多可创建 2 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+      ).length).toBeGreaterThan(0);
+    });
     expect(addBot).not.toHaveBeenCalled();
-    expect(screen.getAllByText(
-      "当前套餐最多可创建 2 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
-    ).length).toBeGreaterThan(0);
   });
 
   it("localizes the deleting-Bot limit message on the global empty state", () => {
