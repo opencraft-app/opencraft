@@ -967,6 +967,7 @@ func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassRespon
 		UserID:              d.UserID,
 		BundleID:            d.BundleID,
 		BundleName:          d.BundleName,
+		BundleType:          d.BundleType,
 		CreatedTime:         d.CreatedTime,
 		ExpiredTime:         d.ExpiredTime,
 		IsolatedTime:        d.IsolatedTime,

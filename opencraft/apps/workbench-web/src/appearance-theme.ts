@@ -184,21 +184,32 @@ function activeDefinition(next: AppearanceThemeSnapshot): CodexThemeDefinition {
   return resolveThemeRecord(next.themeId).palettes[next.resolvedTheme];
 }
 
+/** Project the complete semantic theme contract onto a non-document root. */
+export function applyAppearanceThemeToElement(
+  element: HTMLElement,
+  next: AppearanceThemeSnapshot = snapshot,
+): void {
+  const definition = activeDefinition(next);
+  element.dataset.theme = next.resolvedTheme;
+  element.dataset.themePreference = next.preference;
+  element.dataset.themeId = next.themeId;
+  element.style.colorScheme = next.resolvedTheme;
+  for (const [name, value] of Object.entries(
+    buildCodexThemeCssProperties(next.resolvedTheme, definition),
+  )) {
+    if (element.style.getPropertyValue(name) !== value) {
+      element.style.setProperty(name, value);
+    }
+  }
+}
+
 function applySnapshot(next: AppearanceThemeSnapshot): void {
   const root = document.documentElement;
   const definition = activeDefinition(next);
 
-  root.dataset.theme = next.resolvedTheme;
-  root.dataset.themePreference = next.preference;
-  root.dataset.themeId = next.themeId;
+  applyAppearanceThemeToElement(root, next);
   root.classList.toggle("electron-dark", next.resolvedTheme === "dark");
   root.classList.toggle("electron-light", next.resolvedTheme === "light");
-  root.style.colorScheme = next.resolvedTheme;
-  for (const [name, value] of Object.entries(
-    buildCodexThemeCssProperties(next.resolvedTheme, definition),
-  )) {
-    if (root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value);
-  }
 
   document
     .querySelector<HTMLMetaElement>('meta[name="theme-color"]')

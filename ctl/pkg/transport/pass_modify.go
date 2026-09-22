@@ -1,6 +1,7 @@
 package transport
 
-// 同 SP 升配的用户侧 transport DTO。需求：TAPD 1010132091137784162 §5.1
+// Pass 升配（含产品允许的跨 SP 路径）的用户侧 transport DTO。
+// 需求：TAPD 1010132091137784162 §5.1
 //
 // 入口：
 //

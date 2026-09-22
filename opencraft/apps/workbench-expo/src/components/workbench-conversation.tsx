@@ -1914,6 +1914,12 @@ export function WorkbenchConversation({
     () => timeline === null ? [] : groupTimelineFramesByTurn(timeline),
     [timeline],
   );
+  const activeTodo = useMemo(() => {
+    const latest = entries.at(-1);
+    return latest === undefined
+      ? null
+      : createTimelineTurnPresentationPlan(latest, toolActivityPresenterRegistry, { isMostRecentTurn: true }).activeTodo;
+  }, [entries, toolActivityPresenterRegistry]);
   const historyKey = timeline === null
     ? null
     : JSON.stringify([timeline.key.hostId, timeline.key.threadId]);
@@ -1935,6 +1941,7 @@ export function WorkbenchConversation({
                         resolveSource: resolveInspectedImageSource ?? null,
                       }}>
                         <NativeInteractionContext.Provider value={onRespondInteraction ?? null}>
+                        <View style={styles.conversationRoot}>
                         <NativeResponsePositionedTurns
                           entries={entries}
                           historyKey={historyKey}
@@ -1975,6 +1982,12 @@ export function WorkbenchConversation({
                           scrollContentStyle={styles.scrollContent}
                           contentStyle={styles.content}
                         />
+                        {activeTodo === null ? null : (
+                          <View pointerEvents="box-none" style={[styles.todoDock, { bottom: footerScrollPaddingPx + 8 }]}>
+                            <NativeTodoTimelineRenderer block={activeTodo} richText={false} />
+                          </View>
+                        )}
+                        </View>
                         </NativeInteractionContext.Provider>
                       </NativeImageViewHostContext.Provider>
                     </NativeGeneratedImageHostContext.Provider>
@@ -1989,6 +2002,8 @@ export function WorkbenchConversation({
   );
 }
 const styles = StyleSheet.create((theme) => ({
+  conversationRoot: { flex: 1, minHeight: 0 },
+  todoDock: { position: "absolute", zIndex: 10, left: theme.metrics.conversation.horizontalInset, right: theme.metrics.conversation.horizontalInset, alignItems: "center" },
   scroll: { flex: 1, minHeight: 0, backgroundColor: theme.color.surface.main },
   scrollContent: { flexGrow: 1 },
   content: { width: "100%", maxWidth: theme.metrics.conversation.maximumWidth, flexGrow: 1, alignSelf: "center", paddingHorizontal: theme.metrics.conversation.horizontalInset, paddingTop: theme.metrics.conversation.topInset, paddingBottom: theme.metrics.conversation.bottomInset },

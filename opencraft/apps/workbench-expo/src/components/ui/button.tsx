@@ -159,7 +159,6 @@ const styles = StyleSheet.create((theme) => ({
   linkPressed: { opacity: theme.metrics.interaction.pressedOpacity },
   destructivePressed: { opacity: theme.metrics.interaction.pressedOpacity },
   label: {
-    fontWeight: "600",
     variants: {
       variant: {
         primary: { color: theme.color.button.primaryForeground },
@@ -172,18 +171,22 @@ const styles = StyleSheet.create((theme) => ({
       },
       size: {
         sm: {
+          fontWeight: buttonSizeMetrics.sm.fontWeight,
           fontSize: buttonSizeMetrics.sm.fontSize,
           lineHeight: buttonSizeMetrics.sm.lineHeight,
         },
         md: {
+          fontWeight: buttonSizeMetrics.md.fontWeight,
           fontSize: buttonSizeMetrics.md.fontSize,
           lineHeight: buttonSizeMetrics.md.lineHeight,
         },
         lg: {
+          fontWeight: buttonSizeMetrics.lg.fontWeight,
           fontSize: buttonSizeMetrics.lg.fontSize,
           lineHeight: buttonSizeMetrics.lg.lineHeight,
         },
         toolbar: {
+          fontWeight: buttonSizeMetrics.toolbar.fontWeight,
           fontSize: buttonSizeMetrics.toolbar.fontSize,
           lineHeight: buttonSizeMetrics.toolbar.lineHeight,
         },

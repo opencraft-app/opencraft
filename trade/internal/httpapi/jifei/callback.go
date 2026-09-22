@@ -57,7 +57,7 @@ const (
 	//   的 uin/app_id 并把免费 bundle 迁移为计费 bundle。
 	InterfaceNameTransferResource = "lightvela.pass.transferResource"
 
-	// 同 SP 变配（TAPD 1010132091137784162 §4.1 / §5.2 / §7.1）：
+	// Pass 变配（含产品允许的跨 SP 路径，TAPD 1010132091137784162 §4.1 / §5.2 / §7.1）：
 	// - checkModify：变配前置校验回调（不带 dealName，与 checkRenew 同），trade 校验
 	//   SP/PID/SV 一致性后反向调 ctl /internal/ctl/passes/{pass_id}/check-modify
 	// - modifyResource：变配发货回调，trade 抢占式幂等（trade_flow.flow_type='modify_resource'）+

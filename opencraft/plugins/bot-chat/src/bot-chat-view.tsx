@@ -56,6 +56,32 @@ import "./styles.scss";
 
 const EMPTY_REPLAY_SUBSCRIBE = () => () => undefined;
 const EMPTY_REPLAY_SNAPSHOT = () => null;
+const ALWAYS_WRITABLE = Object.freeze({ writable: true });
+const subscribeNever = () => () => undefined;
+
+export interface BotChatWriteAuthoritySnapshot {
+  readonly writable: boolean;
+}
+
+/** Presentation authority is separate from Conversation capability. */
+export interface BotChatWriteAuthority {
+  getSnapshot(): BotChatWriteAuthoritySnapshot;
+  subscribe(listener: () => void): () => void;
+}
+
+export interface BotChatViewStatus {
+  readonly conversationId: string | null;
+  readonly error: string | null;
+  readonly phase: "opening" | "ready" | "error";
+}
+
+export interface BotChatViewOptions {
+  readonly resolver: BotConversationResolver;
+  readonly createMotionReplay?: () => BotMotionReplayController;
+  readonly writeAuthority?: BotChatWriteAuthority;
+  readonly onStatusChange?: (status: BotChatViewStatus) => void;
+  readonly portalContainer?: HTMLElement | null;
+}
 
 function currentRenderTheme(): "light" | "dark" {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -443,13 +469,17 @@ function useEnteringMessageKeys(
 
 export function createBotChatView(
   source: BotConversationSource,
-  options: {
-    readonly resolver: BotConversationResolver;
-    readonly createMotionReplay?: () => BotMotionReplayController;
-  },
+  options: BotChatViewOptions,
 ) {
   return function BotChatView({ activation, host }: ExtensionSettingsViewProps) {
     const replay = useMemo(() => options.createMotionReplay?.(), []);
+    const writeAuthority = options.writeAuthority;
+    const writeSnapshot = useSyncExternalStore(
+      writeAuthority?.subscribe ?? subscribeNever,
+      writeAuthority?.getSnapshot ?? (() => ALWAYS_WRITABLE),
+      writeAuthority?.getSnapshot ?? (() => ALWAYS_WRITABLE),
+    );
+    const writable = writeSnapshot.writable;
     const requestedResource = useMemo(
       () => parseBotConversationViewResource(activation.resourceUri),
       [activation.resourceUri],
@@ -634,6 +664,19 @@ export function createBotChatView(
     ]);
 
     const conversationReady = exactRequestedKey !== null || resolvedKey !== null;
+    const statusPhase = activationError !== null || snapshot.phase === "error"
+      ? "error"
+      : conversationReady && snapshot.phase === "ready"
+        ? "ready"
+        : "opening";
+    const statusError = activationError ?? (snapshot.phase === "error" ? snapshot.error : null);
+    useLayoutEffect(() => {
+      options.onStatusChange?.({
+        conversationId: conversationReady ? key.threadId : null,
+        error: statusError,
+        phase: statusPhase,
+      });
+    }, [conversationReady, identity, statusError, statusPhase]);
     useEffect(() => {
       if (!conversationReady) return;
       // Source owns the error frame. A failed Host hydration must not escape
@@ -654,6 +697,10 @@ export function createBotChatView(
     );
     const submit = useCallback(
       (intent: Parameters<BotConversationSource["send"]>[1]) => {
+        if (!writable) {
+          setSubmissionError("This Chat is still preparing. Your message was not sent.");
+          return false;
+        }
         if (snapshot.descriptor.readOnly === true) {
           setSubmissionError("This historical group is read-only because a member no longer exists.");
           return false;
@@ -671,20 +718,22 @@ export function createBotChatView(
         });
         return true;
       },
-      [followLatest, identity, replay, replayEnabled, snapshot.descriptor.readOnly],
+      [followLatest, identity, replay, replayEnabled, snapshot.descriptor.readOnly, writable],
     );
     const cancel = useCallback(() => {
+      if (!writable) return;
       if (replay !== undefined && replayEnabled) {
         replay.pause();
         return;
       }
       const executionId = latestBotPresenceFacts(effectivePresence).at(-1)?.executionId;
       if (executionId !== undefined) void source.cancel(key, executionId);
-    }, [effectivePresence, identity, replay, replayEnabled]);
+    }, [effectivePresence, identity, replay, replayEnabled, writable]);
     const respondToInteraction = useCallback((
       interaction: BotInteractionSnapshot,
       response: BotInteractionResponse,
     ) => {
+      if (!writable) return;
       setSubmissionError(null);
       setRespondingInteractionId(interaction.interactionId);
       void source.respondToInteraction(
@@ -697,7 +746,7 @@ export function createBotChatView(
       }).finally(() => setRespondingInteractionId((current) =>
         current === interaction.interactionId ? null : current
       ));
-    }, [identity]);
+    }, [identity, writable]);
     const resolveAttachment = useCallback(
       (
         file: File,
@@ -735,6 +784,7 @@ export function createBotChatView(
       <section
         className="bot-chat-stage"
         data-topology={snapshot.descriptor.topology}
+        data-writable={writable || undefined}
       >
         <BotAvatarStage
           motionOverrides={replayProjection?.motionStates}
@@ -870,7 +920,7 @@ export function createBotChatView(
                 .filter((interaction) => interaction.status === "pending")
                 .map((interaction) => (
                   <BotInteractionCard
-                    busy={respondingInteractionId === interaction.interactionId}
+                    busy={!writable || respondingInteractionId === interaction.interactionId}
                     interaction={interaction}
                     key={interaction.interactionId}
                     onRespond={(response) => respondToInteraction(interaction, response)}
@@ -899,12 +949,13 @@ export function createBotChatView(
               {snapshot.descriptor.readOnly === true ? <p className="bot-chat-stage__status" role="status">This historical group is read-only because a member no longer exists.</p> : null}
               <CodexComposer
                 controller={composer}
-                disabled={snapshot.descriptor.readOnly === true}
+                disabled={!writable || snapshot.descriptor.readOnly === true}
                 isStreaming={isStreaming}
                 onCancel={cancel}
                 onResolveAttachment={resolveAttachment}
                 onSubmit={submit}
                 placeholder={`Message ${bot.displayName}`}
+                portalContainer={options.portalContainer}
               />
             </div>
           </div>

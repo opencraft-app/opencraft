@@ -1,7 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildResumeHistoryRequest } from "@opencraft/appserver-protocol";
+import {
+  buildResumeHistoryRequest,
+  OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
+  parseAttachmentStagingCapability,
+} from "@opencraft/appserver-protocol";
+
+test("attachment staging capability is explicit and forward-compatible", () => {
+  assert.equal(OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, "opencraft/attachment-staging");
+  assert.deepEqual(parseAttachmentStagingCapability({
+    version: 1,
+    sources: ["client-bytes"],
+    locations: ["host-file"],
+    maxBytes: 32 * 1024 * 1024,
+  }), {
+    version: 1,
+    sources: ["client-bytes"],
+    locations: ["host-file"],
+    maxBytes: 32 * 1024 * 1024,
+  });
+  assert.throws(
+    () => parseAttachmentStagingCapability({ version: 1, sources: [], locations: [], maxBytes: 0 }),
+    /unsupported or incompatible/i,
+  );
+});
 
 test("legacy Resume keeps turns in the response", () => {
   assert.deepEqual(buildResumeHistoryRequest({

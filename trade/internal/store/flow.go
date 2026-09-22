@@ -32,7 +32,7 @@ const (
 //   - FlowTypeRenewResource = "renew_resource"   jifei lightvela.pass.renewResource (R-A 续费)
 //   - FlowTypeDestroyResource = "destroy_resource" jifei lightvela.pass.destroyResource (D-1 销毁)
 //   - FlowTypeTransferResource = "transfer_resource" jifei lightvela.pass.transferResource (外部资源迁入)
-//   - FlowTypeModifyResource = "modify_resource"   jifei lightvela.pass.modifyResource (同 SP 变配)
+//   - FlowTypeModifyResource = "modify_resource"   jifei lightvela.pass.modifyResource（Pass 变配）
 //
 // checkCreate 不写本表（Q62），所以无对应 flow_type；queryFlow 是只读链路（按 ID 反查），
 // 不写本表，也无对应 flow_type。
@@ -48,7 +48,7 @@ const (
 	FlowTypeRenewResource    = "renew_resource"
 	FlowTypeDestroyResource  = "destroy_resource"
 	FlowTypeTransferResource = "transfer_resource"
-	// FlowTypeModifyResource = "modify_resource"  jifei lightvela.pass.modifyResource（同 SP 变配，
+	// FlowTypeModifyResource = "modify_resource"  jifei lightvela.pass.modifyResource（Pass 变配，
 	// TAPD 1010132091137784162 §7.1）。与 renew 同幂等范式：走 TryAcquireSlot 的
 	// (deal_name, flow_type, app_id) 唯一键，因为变配必然有 dealName（不像 isolate/destroy 有
 	// dealName 为 NULL 的生命周期分支）。

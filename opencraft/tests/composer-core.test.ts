@@ -302,14 +302,25 @@ test("processing attachments prevent submission until the asset is ready", () =>
     },
   });
   assert.equal(controller.getSnapshot().hasProcessingAssets, true);
+  assert.equal(controller.getSnapshot().hasUnavailableAssets, true);
   assert.equal(controller.getSnapshot().canSubmit, false);
   assert.throws(() => controller.createSubmitIntent(), /cannot be submitted/);
 
   controller.dispatch({
     type: "update-attachment",
     id: "asset-1",
+    patch: { lifecycle: "failed", error: "Host staging failed" },
+  });
+  assert.equal(controller.getSnapshot().hasProcessingAssets, false);
+  assert.equal(controller.getSnapshot().hasUnavailableAssets, true);
+  assert.equal(controller.getSnapshot().canSubmit, false);
+
+  controller.dispatch({
+    type: "update-attachment",
+    id: "asset-1",
     patch: { lifecycle: "ready", uri: "asset://asset-1" },
   });
+  assert.equal(controller.getSnapshot().hasUnavailableAssets, false);
   assert.equal(controller.getSnapshot().canSubmit, true);
 });
 

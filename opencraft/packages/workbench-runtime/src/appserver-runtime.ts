@@ -13,6 +13,10 @@ import type {
   AppServerMethodResult,
   AppServerInitializeParams,
   AppServerInitializeResponse,
+  AttachmentRemoveResponse,
+  AttachmentStageParams,
+  AttachmentStageResponse,
+  AttachmentStagingCapability,
   ModelListParams,
   ModelListResponse,
   PermissionProfileListParams,
@@ -30,10 +34,16 @@ import type {
   ThreadListResponse,
   ThreadQueueListResponse,
   QueuedSubmission as ProtocolQueuedSubmission,
+  SteeringSubmission as ProtocolSteeringSubmission,
   ThreadStartParams,
   ThreadForkParams,
 } from "@opencraft/appserver-protocol";
-import { OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
+import {
+  OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
+  OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
+  parseAttachmentStagingCapability,
+} from "@opencraft/appserver-protocol";
+import { OPENCRAFT_RESUME_HISTORY_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
 import type {
   DynamicToolSpec,
@@ -174,16 +184,21 @@ export function countDynamicToolDefinitions(
 }
 
 /**
- * A Thread capability registration is a readiness lease, not best-effort
- * metadata. The Renderer owns the handlers, so a partial Host registration
- * must keep the Thread out of the resident/executable phase.
+ * A Thread capability registration is a scoped declaration lease, not
+ * best-effort metadata. Display hydration may explicitly defer Engine mounting
+ * while the Agent stays cold; partial registration is never valid. The Host
+ * separately enforces exact mounting before execution admission.
  */
 export function verifyDynamicToolRegistration(
   specs: readonly DynamicToolSpec[],
-  result: { readonly registered: number },
+  result: { readonly registered: number; readonly deferred?: boolean },
+  options: { readonly allowDeferred?: boolean } = {},
 ): void {
   const expected = countDynamicToolDefinitions(specs);
-  if (result.registered !== expected) {
+  if (
+    result.registered !== expected
+    && !(options.allowDeferred === true && result.deferred === true && result.registered === 0)
+  ) {
     throw new Error(
       `Host registered ${result.registered} of ${expected} dynamic tools`,
     );
@@ -200,8 +215,9 @@ export interface StartThreadOptions {
 }
 
 export interface AppServerThreadResourcePort {
-  capabilities?(): { fork: boolean; rename: boolean; archive: boolean };
+  capabilities?(): { fork: boolean; rename: boolean; archive: boolean; delete: boolean };
   rename?(threadId: string, name: string): Promise<void>;
+  delete?(threadId: string): Promise<void>;
   archive?(threadId: string): Promise<void>;
   unarchive?(threadId: string): Promise<ProtocolThread>;
   injectItems?(threadId: string, items: ThreadInjectItemsParams["items"]): Promise<void>;
@@ -276,6 +292,15 @@ export interface AppServerFileSystemResourcePort {
   ): Promise<FuzzyFileSearchSession>;
 }
 
+export interface AppServerAttachmentResourcePort {
+  capabilities(): AttachmentStagingCapability | null;
+  stage(
+    params: AttachmentStageParams,
+    signal?: AbortSignal,
+  ): Promise<AttachmentStageResponse>;
+  remove(id: string): Promise<AttachmentRemoveResponse>;
+}
+
 export interface AppServerFileWatchLease {
   readonly watchId: string;
   readonly path: string;
@@ -289,6 +314,7 @@ export interface AppServerWorkbenchRuntime {
     readonly threads: AppServerThreadResourcePort;
     readonly projects: AppServerProjectResourcePort;
     readonly fileSystem: AppServerFileSystemResourcePort;
+    readonly attachments: AppServerAttachmentResourcePort;
     readonly composerCatalog: AppServerComposerCatalogResourcePort;
     readonly terminal: AppServerTerminalResourcePort;
   };
@@ -404,6 +430,7 @@ export function createAppServerWorkbenchRuntime(
   ];
   const maxInactiveThreads = config.maxInactiveThreads ?? 4;
   const listeners = new Set<() => void>();
+  const skillsChangedListeners = new Set<() => void>();
   const bindings = new Map<string, ConversationBinding>();
   const ephemeralThreadIds = new Set<string>();
   const bindingOperations = new Map<string, Promise<ConversationBinding>>();
@@ -438,6 +465,7 @@ export function createAppServerWorkbenchRuntime(
   let removeTransportListener: (() => void) | null = null;
   let removeClientHandlers: (() => void) | null = null;
   let removeFileSystemNotificationListener: (() => void) | null = null;
+  let removeSkillsNotificationListener: (() => void) | null = null;
   let fileSystemWatchSequence = 0;
   const fileSystemWatches = new Map<string, {
     readonly path: string;
@@ -800,6 +828,7 @@ export function createAppServerWorkbenchRuntime(
           do {
             binding.queueRefreshRequested = false;
             const submissions: ProtocolQueuedSubmission[] = [];
+            const steering: ProtocolSteeringSubmission[] = [];
             let cursor: string | null = null;
             do {
               const page: ThreadQueueListResponse = await currentClient.request(
@@ -812,10 +841,11 @@ export function createAppServerWorkbenchRuntime(
                 { priority: "background" },
               );
               submissions.push(...page.data);
+              steering.push(...(page.steering ?? []));
               cursor = page.nextCursor;
             } while (cursor !== null);
             if (!disposed && !binding.disposed) {
-              conversation!.replaceQueuedSubmissions(submissions);
+              conversation!.replaceQueuedSubmissions(submissions, steering);
             }
           } while (
             binding.queueRefreshRequested &&
@@ -911,7 +941,9 @@ export function createAppServerWorkbenchRuntime(
               threadId: binding.threadId,
               dynamicTools: config.dynamicTools,
             });
-            verifyDynamicToolRegistration(config.dynamicTools, registration);
+            verifyDynamicToolRegistration(config.dynamicTools, registration, {
+              allowDeferred: true,
+            });
           }
         } finally { stopPreview(); }
         const source = createCodexThreadReplicaSource(
@@ -995,6 +1027,12 @@ export function createAppServerWorkbenchRuntime(
         requestTimeoutMs: config.requestTimeoutMs ?? 30_000,
       });
       terminalController = new AppServerTerminalController(hostId, client);
+      removeSkillsNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method !== "skills/changed") return;
+        for (const listener of skillsChangedListeners) {
+          try { listener(); } catch { /* One View cannot break the shared notification pump. */ }
+        }
+      });
       removeFileSystemNotificationListener = client.subscribeNotification((notification) => {
         if (notification.method !== "fs/changed") return;
         const changed = notification.params as FsChangedNotification;
@@ -1032,11 +1070,19 @@ export function createAppServerWorkbenchRuntime(
       });
       await connectPhysicalHost(generation);
       ensureLifecycle(generation);
+      const resumeHistoryCapability = client.initializeResult?.capabilities?.extensions?.[
+        OPENCRAFT_RESUME_HISTORY_EXTENSION
+      ] as { version?: unknown; mode?: unknown } | undefined;
+      const historyModeHint = resumeHistoryCapability?.version === 1
+        && ["legacy", "paginated", "message-window"].includes(String(resumeHistoryCapability.mode))
+        ? resumeHistoryCapability.mode as "legacy" | "paginated" | "message-window"
+        : null;
       session = await createCordisThreadSessionRuntime({
         client,
         hostKind:
           config.hostKind ?? (hostId === "durable" ? "durable" : "local"),
         supportsPaginatedHistory: true,
+        historyModeHint,
         useTailHydration: true,
         requestTimeoutMs: config.requestTimeoutMs ?? 30_000,
       });
@@ -1096,6 +1142,8 @@ export function createAppServerWorkbenchRuntime(
         removeClientHandlers = null;
         removeFileSystemNotificationListener?.();
         removeFileSystemNotificationListener = null;
+        removeSkillsNotificationListener?.();
+        removeSkillsNotificationListener = null;
         interactions?.dispose();
         interactions = null;
         fuzzyFileSearch?.dispose();
@@ -1168,10 +1216,11 @@ export function createAppServerWorkbenchRuntime(
       },
       threads: {
         capabilities() {
-          const capability = client?.initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; rename?: boolean; archive?: boolean } | undefined;
-          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true };
+          const capability = client?.initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; rename?: boolean; archive?: boolean; delete?: boolean } | undefined;
+          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true, delete: capability?.delete === true };
         },
         async rename(threadId, name) { await requireClient().request("thread/name/set", { threadId, name }); },
+        async delete(threadId) { await requireClient().request("thread/delete", { threadId }); },
         async archive(threadId) { await requireClient().request("thread/archive", { threadId }); },
         async unarchive(threadId) { return (await requireClient().request("thread/unarchive", { threadId })).thread as ProtocolThread; },
         supportsSideChat() {
@@ -1210,7 +1259,7 @@ export function createAppServerWorkbenchRuntime(
           requireSession().views.remove(threadId);
         },
         async list(params = {}) {
-          return requireClient().request("thread/list", {
+          const response = await requireClient().request("thread/list", {
             archived: false,
             cursor: null,
             limit: 30,
@@ -1218,6 +1267,9 @@ export function createAppServerWorkbenchRuntime(
             sortKey: "updated_at",
             ...params,
           });
+          const views = requireSession().views;
+          for (const thread of response.data) views.seedMetadata(thread);
+          return response;
         },
         async start(options) {
           const params: ThreadStartParams = {
@@ -1299,6 +1351,32 @@ export function createAppServerWorkbenchRuntime(
           return fuzzyFileSearch.createSession(options);
         },
       },
+      attachments: {
+        capabilities() {
+          const advertised = client?.initializeResult?.capabilities?.extensions?.[
+            OPENCRAFT_ATTACHMENT_STAGING_EXTENSION
+          ];
+          return advertised === undefined
+            ? null
+            : parseAttachmentStagingCapability(advertised);
+        },
+        async stage(params, signal) {
+          const capability = runtime.resources.attachments.capabilities();
+          if (capability === null) {
+            throw new Error(`Host ${hostId} does not provide attachment staging`);
+          }
+          if (!capability.sources.includes(params.source.kind)) {
+            throw new Error(`Host ${hostId} does not accept ${params.source.kind} attachments`);
+          }
+          if (params.size > capability.maxBytes) {
+            throw new Error(`Attachment exceeds ${capability.maxBytes} bytes`);
+          }
+          return requireClient().request("attachment/stage", params, { signal });
+        },
+        async remove(id) {
+          return requireClient().request("attachment/remove", { id });
+        },
+      },
       composerCatalog: {
         async listModels(params = {}) {
           return requireClient().request("model/list", {
@@ -1331,9 +1409,9 @@ export function createAppServerWorkbenchRuntime(
           return fuzzyFileSearch.createSession(options);
         },
         subscribeSkillsChanged(listener) {
-          return requireClient().subscribeNotification((notification) => {
-            if (notification.method === "skills/changed") listener();
-          });
+          if (disposed) throw new Error("AppServer Workbench is disposed");
+          skillsChangedListeners.add(listener);
+          return () => { skillsChangedListeners.delete(listener); };
         },
       },
       terminal: {
@@ -1583,6 +1661,9 @@ export function createAppServerWorkbenchRuntime(
         removeClientHandlers = null;
         removeFileSystemNotificationListener?.();
         removeFileSystemNotificationListener = null;
+        removeSkillsNotificationListener?.();
+        removeSkillsNotificationListener = null;
+        skillsChangedListeners.clear();
 
         const pending = [
           startOperation,

@@ -385,8 +385,8 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
 	}
-	if cfg.CloudLadderHMACSecret != "trade-hmac" {
-		t.Fatalf("CloudLadderHMACSecret fallback = %q", cfg.CloudLadderHMACSecret)
+	if cfg.CloudLadderHMACSecret != "" {
+		t.Fatalf("CloudLadderHMACSecret = %q, want empty for Billing-only secret", cfg.CloudLadderHMACSecret)
 	}
 	if cfg.BillingCloudAPIXQCloudUserID != "800000294207" {
 		t.Fatalf("BillingCloudAPIXQCloudUserID = %q", cfg.BillingCloudAPIXQCloudUserID)
@@ -407,6 +407,24 @@ func TestLoad_CloudLadderHMACSecretPrefersGeneralName(t *testing.T) {
 		t.Fatalf("CloudLadderHMACSecret = %q", cfg.CloudLadderHMACSecret)
 	}
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "general-secret" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+}
+
+func TestLoad_BillingCloudLadderHMACSecretDoesNotSignOtherRoutes(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("TRADE_CLOUDLADDER_HMAC_SECRET", "")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "billing-only-secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.CloudLadderHMACSecret != "" {
+		t.Fatalf("CloudLadderHMACSecret = %q, want empty", cfg.CloudLadderHMACSecret)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "billing-only-secret" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
 	}
 }

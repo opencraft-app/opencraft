@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCALSTACK_ROOT="$REPO_ROOT/deploy/localstack"
 ENV_ROOT="$REPO_ROOT/deploy/envs/localstack"
+SECRET_OVERRIDE_ROOTS="${LOCALSTACK_SECRET_OVERRIDE_DIRS:-${LOCALSTACK_SECRET_OVERRIDE_DIR:-$ENV_ROOT/overrides}}"
 STATE_DIR="${LOCALSTACK_STATE_DIR:-$REPO_ROOT/.localstack}"
 SITE_SEED_ROOT="$LOCALSTACK_ROOT/seed-data"
 KUBECTL="${KUBECTL:-kubectl}"
@@ -189,9 +190,7 @@ wait_job() {
 
 apply_secret_override() {
   local component="$1"
-  local namespace secret override
-  override="$ENV_ROOT/overrides/$component.env"
-  [[ -f "$override" ]] || return 0
+  local namespace secret override override_root
 
   case "$component" in
     infrastructure)
@@ -239,20 +238,42 @@ apply_secret_override() {
       ;;
   esac
 
-  log "applying developer-local Secret override for $component"
-  "$KUBECTL" create secret generic "$secret" \
-    -n "$namespace" \
-    --from-env-file="$override" \
-    --dry-run=client \
-    -o yaml |
-    "$KUBECTL" apply -f -
-  "$KUBECTL" label secret "$secret" -n "$namespace" "$LABEL" --overwrite >/dev/null
+  while IFS= read -r override_root; do
+    [[ -n "$override_root" ]] || continue
+    override="$override_root/$component.env"
+    [[ -f "$override" ]] || continue
+    log "applying developer-local Secret override for $component from $override_root"
+    "$KUBECTL" create secret generic "$secret" \
+      -n "$namespace" \
+      --from-env-file="$override" \
+      --dry-run=client \
+      -o yaml |
+      "$KUBECTL" apply -f -
+    "$KUBECTL" label secret "$secret" -n "$namespace" "$LABEL" --overwrite >/dev/null
+  done < <(printf '%s' "$SECRET_OVERRIDE_ROOTS" | tr ':' '\n')
+}
+
+shadow_sdk_repository() {
+  local parent_remote=""
+  if [[ -n "${SHADOW_TENCENT_SDK_REPO:-}" ]]; then
+    printf '%s\n' "$SHADOW_TENCENT_SDK_REPO"
+    return 0
+  fi
+  parent_remote="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+  case "$parent_remote" in
+    https://git.woa.com/* | http://git.woa.com/*)
+      printf 'https://git.woa.com/tencentcloud-internal/tencentcloud-sdk-go.git\n'
+      ;;
+    *)
+      printf 'git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git\n'
+      ;;
+  esac
 }
 
 prepare_shadow_sdk() {
   local sdk_dir repo ref tracked_ref
   sdk_dir="$REPO_ROOT/shadow/tencentcloud-sdk-go"
-  repo="${SHADOW_TENCENT_SDK_REPO:-git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git}"
+  repo="$(shadow_sdk_repository)"
   tracked_ref="$(
     git -C "$REPO_ROOT" ls-files --stage shadow/tencentcloud-sdk-go |
       awk '$1 == "160000" { print $2; exit }'
@@ -265,13 +286,24 @@ prepare_shadow_sdk() {
   if [[ -d "$sdk_dir" ]] && [[ -z "$(find "$sdk_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
     rmdir "$sdk_dir"
   fi
-  [[ ! -e "$sdk_dir" ]] || die "shadow SDK directory exists but is incomplete: $sdk_dir"
   require_command git
-  log "preparing Shadow Tencent Cloud SDK dependency at tracked ref $ref"
-  git init -q "$sdk_dir"
-  git -C "$sdk_dir" remote add origin "$repo"
+  if [[ -e "$sdk_dir" ]]; then
+    git -C "$sdk_dir" rev-parse --git-dir >/dev/null 2>&1 \
+      || die "shadow SDK directory exists but is incomplete: $sdk_dir"
+    log "repairing incomplete Shadow Tencent Cloud SDK checkout at tracked ref $ref"
+  else
+    log "preparing Shadow Tencent Cloud SDK dependency at tracked ref $ref"
+    git init -q "$sdk_dir"
+  fi
+  if git -C "$sdk_dir" remote get-url origin >/dev/null 2>&1; then
+    git -C "$sdk_dir" remote set-url origin "$repo"
+  else
+    git -C "$sdk_dir" remote add origin "$repo"
+  fi
   git -C "$sdk_dir" fetch -q --depth 1 origin "$ref"
   git -C "$sdk_dir" checkout -q --detach FETCH_HEAD
+  [[ -f "$sdk_dir/tencentcloud/common/go.mod" ]] \
+    || die "Shadow Tencent Cloud SDK checkout is incomplete after fetch: $sdk_dir"
 }
 
 build_image() {
@@ -805,19 +837,25 @@ Commands:
 EOF
 }
 
-command="${1:-}"
-case "$command" in
-  doctor) doctor ;;
-  build) doctor; build_image "${2:-all}" ;;
-  render) render_all ;;
-  up) up ;;
-  expose) require_local_context; start_exposure ;;
-  exposure-plan) print_exposure_plan ;;
-  internal-token-patch-plan) internal_service_token_patch_plan ;;
-  stop-expose) stop_exposure ;;
-  status) status ;;
-  logs) logs ;;
-  down) down ;;
-  reset) reset ;;
-  *) usage; [[ -z "$command" ]] || exit 1 ;;
-esac
+main() {
+  local command="${1:-}"
+  case "$command" in
+    doctor) doctor ;;
+    build) doctor; build_image "${2:-all}" ;;
+    render) render_all ;;
+    up) up ;;
+    expose) require_local_context; start_exposure ;;
+    exposure-plan) print_exposure_plan ;;
+    internal-token-patch-plan) internal_service_token_patch_plan ;;
+    stop-expose) stop_exposure ;;
+    status) status ;;
+    logs) logs ;;
+    down) down ;;
+    reset) reset ;;
+    *) usage; [[ -z "$command" ]] || return 1 ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

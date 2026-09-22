@@ -30,6 +30,7 @@ import {
   type HermesComposerQueueService,
 } from "./composer-queue/service";
 import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
+import type { AttachmentLocation, AttachmentRef } from "@opencraft/appserver-protocol";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const PROFILE_MODEL_OPTIONS_SETTLE_MS = 20_000;
@@ -44,6 +45,10 @@ class HermesAppServerDomainError extends Error {
     super(message);
     this.name = "HermesAppServerDomainError";
   }
+}
+
+export interface AttachmentMetadataResolver {
+  resolve(location: AttachmentLocation): Promise<AttachmentRef | null>;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -218,7 +223,6 @@ function imageDirective(value: string): string | null {
 
 const HERMES_FILE_REFERENCE_RE = /@file:(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)/gu;
 const HERMES_REFERENCE_TRAILING_PUNCTUATION_RE = /[,.;!?]+$/u;
-const STAGED_ATTACHMENT_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-(.+)$/iu;
 
 function unwrapHermesReferenceValue(raw: string): string {
   if (raw.length >= 2) {
@@ -233,13 +237,17 @@ function unwrapHermesReferenceValue(raw: string): string {
 
 function fileReferenceName(path: string, explicitName?: string): string {
   if (explicitName?.trim()) return explicitName.trim();
-  const normalized = path.replace(/\\/gu, "/");
-  const basename = normalized.split("/").at(-1) ?? path;
-  if (!/(?:^|\/)opencraft-attachments\/[^/]+$/u.test(normalized)) return path;
-  return STAGED_ATTACHMENT_NAME_RE.exec(basename)?.[1] ?? basename;
+  // A path is resource identity, never display authority. When metadata is
+  // unavailable (for example, history predating the metadata index), degrade
+  // to a generic basename without knowing any Host storage layout.
+  const basename = path.replace(/\\/gu, "/").split("/").filter(Boolean).at(-1);
+  return basename?.trim() || "attachment";
 }
 
-function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
+function userMessageContent(
+  message: HermesMessage,
+  attachmentNames: ReadonlyMap<string, string> = new Map(),
+): Record<string, unknown>[] {
   const source = Array.isArray(message.content) ? message.content : [message.text ?? message.content];
   const result: Record<string, unknown>[] = [];
   const referencedPaths = new Set<string>();
@@ -248,7 +256,11 @@ function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
   const appendFileReference = (path: string, name?: string) => {
     if (path === "" || referencedPaths.has(path)) return;
     referencedPaths.add(path);
-    result.push({ type: "mention", name: fileReferenceName(path, name), path });
+    result.push({
+      type: "mention",
+      name: fileReferenceName(path, name ?? attachmentNames.get(path)),
+      path,
+    });
   };
   const appendText = (value: string) => {
     const kept: string[] = [];
@@ -297,6 +309,34 @@ function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
     for (const path of deferredPaths) result.push({ type: "localImage", path });
   }
   return result;
+}
+
+function referencedFilePaths(messages: readonly HermesMessage[]): string[] {
+  const paths = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      for (const match of value.matchAll(HERMES_FILE_REFERENCE_RE)) {
+        const raw = match[1];
+        if (raw !== undefined) paths.add(unwrapHermesReferenceValue(raw));
+      }
+      return;
+    }
+    if (!Array.isArray(value)) return;
+    for (const rawPart of value) {
+      if (typeof rawPart === "string") {
+        visit(rawPart);
+        continue;
+      }
+      const part = record(rawPart);
+      if (part.type === "mention" && typeof part.path === "string") paths.add(part.path);
+      else if (part.type === "text") visit(part.text);
+    }
+  };
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    visit(message.display_content ?? message.content ?? message.text);
+  }
+  return [...paths];
 }
 
 function isHiddenTranscriptMessage(message: HermesMessage): boolean {
@@ -396,7 +436,11 @@ function normalizeVisibleText(value: string): string {
  * never the physical database row. This mirrors Hermes Desktop hydration and
  * keeps live and restored conversations on the same Item model.
  */
-function projectTurnItems(sessionId: string, entries: Array<{ message: HermesMessage; index: number }>): AppServerTurn["items"] {
+function projectTurnItems(
+  sessionId: string,
+  entries: Array<{ message: HermesMessage; index: number }>,
+  attachmentNames: ReadonlyMap<string, string>,
+): AppServerTurn["items"] {
   const items: AppServerTurn["items"] = [];
   const toolsByCallId = new Map<string, number>();
 
@@ -409,7 +453,10 @@ function projectTurnItems(sessionId: string, entries: Array<{ message: HermesMes
         type: "userMessage",
         id: `hermes-${sessionId}-${address}`,
         clientId: null,
-        content: userMessageContent({ ...message, content: message.display_content ?? message.content }),
+        content: userMessageContent(
+          { ...message, content: message.display_content ?? message.content },
+          attachmentNames,
+        ),
       });
       continue;
     }
@@ -558,13 +605,18 @@ function applyDurableTurnTime(
     : Math.round((turn.completedAt - startedAt!) * 1_000);
 }
 
-function mapMessageRanges(sessionId: string, messages: HermesMessage[], running = false): MappedTurnRange[] {
+function mapMessageRanges(
+  sessionId: string,
+  messages: HermesMessage[],
+  running = false,
+  attachmentNames: ReadonlyMap<string, string> = new Map(),
+): MappedTurnRange[] {
   const turns: MappedTurnRange[] = [];
   let entries: Array<{ message: HermesMessage; index: number }> = [];
   const flush = () => {
     const current = turns.at(-1);
     if (current !== undefined) {
-      current.turn.items = projectTurnItems(sessionId, entries);
+      current.turn.items = projectTurnItems(sessionId, entries, attachmentNames);
       applyDurableTurnTime(current.turn, entries);
     }
     entries = [];
@@ -597,8 +649,13 @@ function mapMessageRanges(sessionId: string, messages: HermesMessage[], running 
   return turns;
 }
 
-export function mapMessages(sessionId: string, messages: HermesMessage[], running = false): AppServerTurn[] {
-  return mapMessageRanges(sessionId, messages, running).map(({ turn }) => turn);
+export function mapMessages(
+  sessionId: string,
+  messages: HermesMessage[],
+  running = false,
+  attachmentNames: ReadonlyMap<string, string> = new Map(),
+): AppServerTurn[] {
+  return mapMessageRanges(sessionId, messages, running, attachmentNames).map(({ turn }) => turn);
 }
 
 function makeThread(summary: HermesSessionSummary, cwd: string, turns: AppServerTurn[] = [], running = false): AppServerThread {
@@ -791,6 +848,7 @@ export class HermesAppServerAdapter {
   /** `running=false` means waiting-for-input while this barrier exists, not Turn completion. */
   private readonly stopGatewayEvents: () => void;
   private readonly stopComposerQueue: () => void;
+  private readonly profileScope: string | null;
 
   constructor(
     private readonly gateway: HermesRpcClient,
@@ -799,7 +857,10 @@ export class HermesAppServerAdapter {
     private readonly projectionScheduler: HermesProjectionScheduler = DEFAULT_PROJECTION_SCHEDULER,
     recovery?: HermesProjectionRecovery,
     composerQueue: HermesComposerQueueService = new MemoryHermesComposerQueueService(),
+    private readonly attachmentMetadata?: AttachmentMetadataResolver,
+    profileScope?: string,
   ) {
+    this.profileScope = profileScope?.trim() || null;
     this.composerQueue = composerQueue;
     this.activeByLive = recovery?.owners ?? new Map();
     this.pendingByLive = recovery?.pending ?? new Map();
@@ -891,9 +952,84 @@ export class HermesAppServerAdapter {
     return true;
   }
 
+  private async resolveAttachmentNames(
+    messages: readonly HermesMessage[],
+  ): Promise<ReadonlyMap<string, string>> {
+    if (this.attachmentMetadata === undefined) return new Map();
+    const entries = await Promise.all(referencedFilePaths(messages).map(async (path) => {
+      try {
+        const ref = await this.attachmentMetadata!.resolve({ kind: "host-file", path });
+        return ref === null ? null : [path, ref.name] as const;
+      } catch {
+        // Attachment metadata is presentation enrichment, never history authority.
+        return null;
+      }
+    }));
+    return new Map(entries.filter((entry): entry is readonly [string, string] => entry !== null));
+  }
+
+  private scopedProfile(requested?: string | null): string | null {
+    const normalized = requested?.trim() || null;
+    if (this.profileScope === null) return normalized;
+    if (normalized !== null && normalized !== this.profileScope) {
+      throw new Error(`Hermes Profile ${normalized} is outside this Host scope`);
+    }
+    return this.profileScope;
+  }
+
+  async renameThread(threadId: string, requestedTitle: string): Promise<void> {
+    const title = requestedTitle.trim();
+    if (title.length === 0) throw new TypeError("Thread title must not be empty");
+    const profile = await this.resolveThreadProfile(threadId);
+    const live = await this.ensureLive(threadId, profile);
+    const result = await this.gateway.call<{ title?: string }>("session.title", {
+      session_id: live,
+      profile,
+      title,
+    });
+    const committedTitle = result.title?.trim() || title;
+    const provisional = this.provisionalSummaryByStored.get(threadId);
+    if (provisional !== undefined) {
+      this.provisionalSummaryByStored.set(threadId, {
+        ...provisional,
+        title: committedTitle,
+      });
+    }
+    this.emit("thread/name/updated", { threadId, threadName: committedTitle });
+  }
+
+  async deleteThread(threadId: string): Promise<void> {
+    const profile = await this.resolveThreadProfile(threadId);
+    const live = this.liveByStored.get(threadId);
+    if (live !== undefined) {
+      await this.gateway.call("session.close", { session_id: live, profile });
+    }
+    await this.gateway.call("session.delete", { session_id: threadId, profile });
+    if (live !== undefined) {
+      this.liveByStored.delete(threadId);
+      this.storedByLive.delete(live);
+      this.activeByLive.delete(live);
+      this.pendingByLive.delete(live);
+      this.queuedBoundaryPendingByLive.delete(live);
+      this.submissionTailByLive.delete(live);
+      this.admissionByLive.delete(live);
+      this.clearSettlementTimer(live);
+    }
+    this.payloadByStored.delete(threadId);
+    this.profileByStored.delete(threadId);
+    this.provisionalSummaryByStored.delete(threadId);
+    this.preparedHistoryByStored.delete(threadId);
+    this.profileDiscoveryByStored.delete(threadId);
+    const transcriptKey = JSON.stringify([profile, threadId]);
+    this.transcriptWindows.get(transcriptKey)?.invalidate();
+    this.transcriptWindows.delete(transcriptKey);
+    this.transcriptSnapshots.delete(transcriptKey);
+    this.emit("thread/deleted", { threadId });
+  }
+
   async listThreads(params: ThreadListParams = {}) {
     if (params.archived === true) return { data: [], nextCursor: null, backwardsCursor: null };
-    const profile = params.profile?.trim() || null;
+    const profile = this.scopedProfile(params.profile);
     const response = await this.gateway.call<{ sessions: HermesSessionSummary[] }>("session.list", {
       limit: 1000,
       ...(profile === null ? {} : { profile }),
@@ -901,7 +1037,7 @@ export class HermesAppServerAdapter {
       ...(params.exactTitle?.trim() ? { title: params.exactTitle.trim() } : {}),
     });
     for (const row of response.sessions) {
-      this.profileByStored.set(row.id, row.profile?.trim() || profile || "default");
+      this.profileByStored.set(row.id, this.profileScope ?? (row.profile?.trim() || profile || "default"));
     }
     const query = params.searchTerm?.trim().toLocaleLowerCase();
     let rows = response.sessions.filter((row) => (
@@ -942,9 +1078,9 @@ export class HermesAppServerAdapter {
 
   async loadThread(threadId: string, includeTurns: boolean, requestedProfile?: string | null, signal?: AbortSignal): Promise<AppServerThread> {
     throwIfSignalAborted(signal);
-    const profile = requestedProfile?.trim()
-      || this.profileByStored.get(threadId)
-      || await this.resolveThreadProfile(threadId);
+    const profile = this.scopedProfile(requestedProfile)
+      ?? this.profileByStored.get(threadId)
+      ?? await this.resolveThreadProfile(threadId);
     this.profileByStored.set(threadId, profile);
     const historyPromise = includeTurns ? this.readTurnsPage(threadId, 0, 120, "desc", signal) : null;
     const [payload, list, historyPage] = await Promise.all([
@@ -968,13 +1104,14 @@ export class HermesAppServerAdapter {
       // callers can distinguish a genuinely empty session from lost history.
       message_count: payload.message_count,
     };
-    this.profileByStored.set(threadId, summary.profile?.trim() || profile || "default");
+    this.profileByStored.set(threadId, this.profileScope ?? (summary.profile?.trim() || profile || "default"));
     const turns = historyPage?.chronological ?? [];
     return makeThread(summary, payload.info?.cwd ?? this.defaultCwd, turns, payload.running === true);
   }
 
   /** Resolve a server-owned named session without depending on list visibility. */
   async resolveNamedThread(profile: string, title: string): Promise<AppServerThread | null> {
+    profile = this.scopedProfile(profile) ?? "default";
     let payload: HermesSessionPayload;
     try {
       payload = await this.gateway.call<HermesSessionPayload>("session.resume", {
@@ -1064,7 +1201,9 @@ export class HermesAppServerAdapter {
     // Desktop paginates transcript rows, never scans for a complete execution
     // Turn. A window may start inside an assistant/tool sequence. Its groups
     // are presentation projections and can regroup when older rows arrive.
-    const profile = this.profileByStored.get(threadId) ?? await this.resolveThreadProfile(threadId);
+    const profile = this.profileScope
+      ?? this.profileByStored.get(threadId)
+      ?? await this.resolveThreadProfile(threadId);
     throwIfSignalAborted(signal);
     const key = JSON.stringify([profile, threadId]);
     let window = this.transcriptWindows.get(key);
@@ -1090,7 +1229,8 @@ export class HermesAppServerAdapter {
     // so subsequent pages can be served from this window until its older edge
     // is reached and the transport must backfill again.
     const end = Math.max(0, page.messages.length - offset);
-    const eligible = mapMessageRanges(threadId, [...page.messages])
+    const attachmentNames = await this.resolveAttachmentNames(page.messages);
+    const eligible = mapMessageRanges(threadId, [...page.messages], false, attachmentNames)
       .filter(({ end: rangeEnd }) => rangeEnd <= end);
     const selected = eligible.slice(-limit);
     const chronological = selected.map(({ turn }) => ({
@@ -1216,8 +1356,10 @@ export class HermesAppServerAdapter {
       ? params.threadId.trim()
       : null;
     const profile = threadId === null
-      ? null
-      : this.profileByStored.get(threadId) ?? await this.resolveThreadProfile(threadId);
+      ? this.profileScope
+      : this.profileScope
+        ?? this.profileByStored.get(threadId)
+        ?? await this.resolveThreadProfile(threadId);
     const liveSessionId = threadId === null
       ? null
       : this.liveByStored.get(threadId) ?? threadId;
@@ -1300,7 +1442,7 @@ export class HermesAppServerAdapter {
     options: ThreadStartOptions = {},
   ): Promise<AppServerThread> {
     const selection = decodeHermesModelSelection(requestedModel);
-    const profile = requestedProfile?.trim() || null;
+    const profile = this.scopedProfile(requestedProfile);
     const payload = await this.gateway.call<HermesSessionPayload>("session.create", {
       cwd: cwd ?? this.defaultCwd,
       source: "desktop",
@@ -1776,7 +1918,9 @@ export class HermesAppServerAdapter {
       "profiles.list",
       { include_sessions: true },
     );
-    const profiles = Array.isArray(result.profiles) ? result.profiles : [];
+    const profiles = (Array.isArray(result.profiles) ? result.profiles : [])
+      .filter((profile) => this.profileScope === null
+        || (profile.name.trim() || "default") === this.profileScope);
     const bindings = new Map<string, string>();
     for (const profile of profiles) {
       const name = profile.name.trim() || "default";
@@ -1848,7 +1992,7 @@ export class HermesAppServerAdapter {
   }
 
   profileForThread(threadId: string): string {
-    return this.profileByStored.get(threadId) ?? "default";
+    return this.profileScope ?? this.profileByStored.get(threadId) ?? "default";
   }
 
   /**
@@ -1857,6 +2001,10 @@ export class HermesAppServerAdapter {
    * before Resume; routes and React must never carry a Hermes Profile hint.
    */
   private resolveThreadProfile(threadId: string): Promise<string> {
+    if (this.profileScope !== null) {
+      this.profileByStored.set(threadId, this.profileScope);
+      return Promise.resolve(this.profileScope);
+    }
     const known = this.profileByStored.get(threadId);
     if (known !== undefined) return Promise.resolve(known);
     const existing = this.profileDiscoveryByStored.get(threadId);
@@ -1998,7 +2146,9 @@ export class HermesAppServerAdapter {
   private async resume(storedId: string, requestedProfile?: string | null): Promise<HermesSessionPayload> {
     let payload = this.payloadByStored.get(storedId);
     if (payload === undefined) {
-      const profile = requestedProfile?.trim() || this.profileByStored.get(storedId) || null;
+      const profile = this.scopedProfile(
+        requestedProfile?.trim() || this.profileByStored.get(storedId) || null,
+      );
       payload = await this.gateway.call<HermesSessionPayload>("session.resume", {
         session_id: storedId,
         defer_history: true,

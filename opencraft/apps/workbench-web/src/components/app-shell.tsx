@@ -307,7 +307,7 @@ export function AppShell({
   const contextViewportWidth = contextGeometry.viewportWidth;
   const headerRightWidth = useMotionValue(0);
   const headerLeftFitWidth = useMotionValue(
-    getHeaderStartMinimumWidth(windowChrome),
+    getHeaderStartMinimumWidth(windowChrome, sidebarOpen),
   );
   const sidebarAnimation = useMotionValue(sidebarOpen ? 1 : 0);
   const rightPanelAnimation = useMotionValue(rightPanelOpen ? 1 : 0);
@@ -346,8 +346,8 @@ export function AppShell({
   useLayoutEffect(() => {
     // Seed synchronously for the first paint. Once mounted, the physical
     // HeaderSlot measures its own max-content rail and becomes authoritative.
-    headerLeftFitWidth.set(getHeaderStartMinimumWidth(windowChrome));
-  }, [headerLeftFitWidth, windowChrome]);
+    headerLeftFitWidth.set(getHeaderStartMinimumWidth(windowChrome, sidebarOpen));
+  }, [headerLeftFitWidth, sidebarOpen, windowChrome]);
   useLayoutEffect(() => {
     if (rightPanelOpen) {
       setRightPanelPresentationActive(true);
@@ -607,7 +607,7 @@ export function AppShell({
   useLayoutEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="menu"], [role="listbox"]')) return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b" && !event.shiftKey && !event.altKey) {
+      if (sidebarCollapsible && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b" && !event.shiftKey && !event.altKey) {
         event.preventDefault(); event.stopImmediatePropagation(); toggleSidebar();
       }
       if (event.key === "Escape" && showFloatingSidebar && !event.defaultPrevented) {

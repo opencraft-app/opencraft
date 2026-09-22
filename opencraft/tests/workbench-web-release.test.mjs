@@ -30,7 +30,12 @@ test("release builds use standard Oxc minification without aggressive obfuscatio
     "utf8",
   );
 
-  for (const scriptName of ["build:web:release", "build:lightvela-web:release", "build:electron:release"]) {
+  for (const scriptName of [
+    "build:web:release",
+    "build:lightvela-web:release",
+    "build:embedded-workbench:release",
+    "build:electron:release",
+  ]) {
     const script = packageManifest.scripts[scriptName];
     assert.match(script, /OPENCRAFT_RELEASE_MINIFY=standard/u);
     assert.doesNotMatch(script, /obfuscate-web-release|obfuscate-electron-host/u);

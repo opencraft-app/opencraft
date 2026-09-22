@@ -63,7 +63,7 @@ artifact and separately compiled Electron host.
 The explicit macOS preview command is a local QA contract, not a distribution
 artifact. It writes below `release/preview`, uses product name `OpenCraft
 Preview`, Bundle ID `ai.lightvela.vela.preview`, and the independent
-`@vela/workbench-electron-preview` profile. It disables certificate discovery,
+`OpenCraft Preview` application-state profile. It disables certificate discovery,
 prunes foreign-platform `node-pty` prebuilds from both packaged runtime trees,
 and applies one consistent ad-hoc hardened-runtime signature and entitlements
 to the Electron helpers and outer app before ZIP creation. Release ZIP/DMG
@@ -75,6 +75,13 @@ server is only a static asset owner. Renderer App Host frames cross a transferre
 the separately bundled OpenCraft Daemon. Only the daemon starts the pinned DSH
 runtime, local Agent AppServer and physical transports. The desktop build has no
 `/appserver` proxy or `OPENCRAFT_APPSERVER_URL` fallback.
+
+For isolated Skills acceptance, set `OPENCRAFT_SKILLS_DIRECTORY` alongside
+`OPENCRAFT_MODEL_STORAGE_DIRECTORY` and a fresh `--user-data-dir`. Main forwards
+the Skills root through the daemon's `--skills-directory` option to the local
+Host. Omission retains `~/.opencraft/skills`; changing the model/profile directory
+alone does not isolate Skill writes. `scripts/skills-desktop-fixture.ts` seeds
+only a synthetic loopback model and temporary roots for manual desktop QA.
 
 The `web-browser` artifact does not contain the local Host, DSH, Node APIs, or
 their extension entry. Its `/appserver` endpoint is owned by the deployment

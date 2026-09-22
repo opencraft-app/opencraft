@@ -22,37 +22,34 @@ describe("Agent settings navigation groups", () => {
     return page.slice(settingsGroupsStart, settingsGroupsEnd);
   };
 
-  it("orders the task-oriented groups as setup, use, growth, manage, and labs", () => {
+  it("orders the task-oriented groups as use, growth, manage, and labs", () => {
     const settingsGroups = readNavigationSource();
-    const labels = ['t("配置")', 't("使用")', 't("成长")', 't("管理")', 't("实验室")'];
+    const labels = ['t("使用")', 't("成长")', 't("管理")', 't("实验室")'];
     const indexes = labels.map((label) => settingsGroups.indexOf(label));
 
     indexes.forEach((index) => expect(index).toBeGreaterThanOrEqual(0));
     expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
+    expect(settingsGroups).not.toContain('t("配置")');
   });
 
   it("places every visible section in its approved group", () => {
     const settingsGroups = readNavigationSource();
-    const setupStart = settingsGroups.indexOf('id: "setup"');
     const useStart = settingsGroups.indexOf('id: "use"');
     const growthStart = settingsGroups.indexOf('id: "growth"');
     const manageStart = settingsGroups.indexOf('id: "manage"');
     const labsStart = settingsGroups.indexOf('id: "labs"');
 
-    [setupStart, useStart, growthStart, manageStart, labsStart].forEach((index) => {
+    [useStart, growthStart, manageStart, labsStart].forEach((index) => {
       expect(index).toBeGreaterThanOrEqual(0);
     });
 
-    const setup = settingsGroups.slice(setupStart, useStart);
     const use = settingsGroups.slice(useStart, growthStart);
     const growth = settingsGroups.slice(growthStart, manageStart);
     const manage = settingsGroups.slice(manageStart, labsStart);
     const labs = settingsGroups.slice(labsStart);
 
-    expect(setup).toMatch(/id: "channel"[\s\S]*id: "model"/);
-    expect(setup).not.toContain('id: "skill"');
     // 「对话」菜单项已移除：入口改由侧边栏顶部「探索/对话」双 tab 承担（sidebar-tabs 改造）。
-    expect(use).toMatch(/id: "skill"[\s\S]*id: "automations"/);
+    expect(use).toMatch(/id: "channel"[\s\S]*id: "model"[\s\S]*id: "skill"[\s\S]*id: "automations"/);
     expect(use).not.toContain('id: "website"');
     expect(use).not.toContain('id: "chat"');
     expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"/);

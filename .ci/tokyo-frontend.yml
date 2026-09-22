@@ -8,6 +8,11 @@ on:
       - playground/sandbox-jp-*
     paths:
       - frontend/**
+      - opencraft/apps/workbench-web/**
+      - opencraft/packages/**
+      - opencraft/plugins/**
+      - opencraft/package.json
+      - opencraft/package-lock.json
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
     paths-ignore:

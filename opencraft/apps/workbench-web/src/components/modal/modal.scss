@@ -1,5 +1,8 @@
 @use "./announcement-dialog";
 
+.modal-surface.modal-confirmation { display: flex; flex-direction: column; overflow-y: auto; }
+.modal-confirmation__actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 24px 24px; }
+
 .modal-surface__scrim,
 .modal-surface {
   --modal-layer-base: var(--layer-application-modal, 230);
@@ -76,6 +79,28 @@
   transform: none;
   border: 0;
   border-radius: 0;
+}
+
+// Detail inspector: the platform owns placement; features own only content.
+.modal-surface[data-presentation="inspector"] {
+  inset: calc(var(--spacing) * 3) calc(var(--spacing) * 3) auto auto;
+  transform: none;
+  width: min(560px, calc(100vw - var(--spacing) * 6));
+  height: calc(100dvh - var(--spacing) * 6);
+  max-width: none;
+  max-height: none;
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 640px) {
+  .modal-surface[data-presentation="inspector"] {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+  }
 }
 
 .modal-surface__accessible-title {

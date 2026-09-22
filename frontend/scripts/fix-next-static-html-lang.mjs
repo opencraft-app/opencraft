@@ -173,6 +173,7 @@ function writeEdgeOneBuildOutput() {
 
   const routes = [
     { src: '^/__releases/([^/]+)/_next/static/(.*)$', headers: nextStaticCacheHeaders, continue: true },
+    { src: '^/__opencraft/opencraft-host-proxy-sw\\.js$', headers: htmlCacheHeaders, continue: true },
     { src: '^/(.*)\\.html$', headers: htmlCacheHeaders, continue: true },
     { src: '^/\\.txt$', dest: '/index.txt', headers: htmlCacheHeaders },
     ...collectNextFlightRoutes(),

@@ -211,9 +211,28 @@ test_download_binary_is_nounset_safe() (
   [[ -x "$TOOLS_DIR/test-tool" ]] || fail "downloaded tool is not executable"
 )
 
+test_devcloud_ip_accepts_current_networks_and_rejects_unsafe_overrides() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/devcloud-ip" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+
+  PERSONAL_DEV_IP='9.134.214.121'
+  assert_eq '9.134.214.121' "$(discover_devcloud_ip)" "legacy DevCloud IP"
+  PERSONAL_DEV_IP='21.214.48.147'
+  assert_eq '21.214.48.147' "$(discover_devcloud_ip)" "current DevCloud IP"
+
+  for unsafe_ip in 127.0.0.1 14.22.11.161 2001:db8::1 not-an-ip; do
+    PERSONAL_DEV_IP="$unsafe_ip"
+    if discover_devcloud_ip >/dev/null 2>&1; then
+      fail "unsafe DevCloud IP override was accepted: $unsafe_ip"
+    fi
+  done
+)
+
 test_intl_registration_starts_tunnel() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/intl-register" PERSONAL_DEV_SITE=intl
-  export PERSONAL_DEV_IP='9.134.214.121'
+  export PERSONAL_DEV_IP='21.214.48.147'
+  export PERSONAL_DEV_REGISTRATION_SOURCE_IP='14.22.11.161'
   source "$SCRIPT"
   prepare_state
   state_set uin '450860000013'
@@ -222,16 +241,63 @@ test_intl_registration_starts_tunnel() (
   curl() { return 0; }
   curl_with_token() {
     printf '%s\n' "$*" >"$TEST_ROOT/intl-registration-request"
-    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","tunnelToken":"short-lived-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"14.22.11.161","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","tunnelToken":"short-lived-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
   }
   ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/intl-tunnel-assignment"; }
   register_route
   assert_eq 'uin-450860000013.sg.tunnel.internal|short-lived-registration-token' \
     "$(<"$TEST_ROOT/intl-tunnel-assignment")" "tunnel assignment passed to agent"
   assert_eq 'active' "$(state_get registration_status)" "intl registration status"
-  grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/intl-registration-request"
+  ! grep -q '"targetIp"' "$TEST_ROOT/intl-registration-request"
   ! grep -q '"uin"' "$TEST_ROOT/intl-registration-request"
+  assert_eq '14.22.11.161' "$(state_get registration_target_ip)" "server-confirmed Intl NAT source IP"
   ! grep -Eq 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
+)
+
+test_intl_registration_source_override_fails_closed_on_mismatch() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/intl-source-mismatch" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_IP='21.214.48.147'
+  export PERSONAL_DEV_REGISTRATION_SOURCE_IP='14.22.11.161'
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  require_personal_context() { :; }
+  central_session() { printf 'session-token\n'; }
+  curl() { return 0; }
+  curl_with_token() {
+    if [[ " $* " == *' -X DELETE '* ]]; then
+      printf 'disabled\n' >"$TEST_ROOT/intl-source-mismatch-delete"
+      printf '%s\n' '{"uin":450860000013,"status":"disabled"}'
+      return
+    fi
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"14.22.11.162","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","tunnelToken":"short-lived-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  ensure_devtunnel_agent() { fail "agent must not start for an unexpected registration source IP"; }
+  if (register_route) >/dev/null 2>&1; then
+    fail "Intl registration accepted an unexpected server-confirmed source IP"
+  fi
+  [[ -s "$TEST_ROOT/intl-source-mismatch-delete" ]] \
+    || fail "source IP mismatch left an active developer route"
+)
+
+test_registration_failure_surfaces_safe_business_error() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/registration-error" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_IP='21.214.48.147'
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  require_personal_context() { :; }
+  central_session() { printf 'session-token\n'; }
+  curl() { return 0; }
+  curl_with_token() {
+    printf '%s\n' '{"code":"target_ip_not_allowed","message":"request source IP is not allowlisted"}'
+    return 22
+  }
+  local output
+  output="$((register_route) 2>&1 || true)"
+  grep -Fq 'code=target_ip_not_allowed' <<<"$output"
+  grep -Fq 'message=request source IP is not allowlisted' <<<"$output"
+  ! grep -Fq 'curl: (22)' <<<"$output"
 )
 
 test_devtunnel_build_uses_current_checkout() (
@@ -288,7 +354,7 @@ test_intl_registration_without_capability_fails_closed() (
   [[ -s "$TEST_ROOT/intl-missing-token-delete" ]] || fail "unsafe active registration was not disabled"
 )
 
-test_cn_registration_sends_explicit_devcloud_target() (
+test_cn_registration_requires_server_confirmed_devcloud_target() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/cn-register" PERSONAL_DEV_SITE=cn
   export PERSONAL_DEV_IP='9.134.214.121'
   source "$SCRIPT"
@@ -303,7 +369,7 @@ test_cn_registration_sends_explicit_devcloud_target() (
   }
   ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/cn-tunnel-assignment"; }
   register_route
-  grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/cn-registration-request"
+  ! grep -q '"targetIp"' "$TEST_ROOT/cn-registration-request"
   ! grep -q '"uin"' "$TEST_ROOT/cn-registration-request"
   assert_eq 'uin-450860000013.cn.tunnel.internal|short-lived-cn-registration-token' \
     "$(<"$TEST_ROOT/cn-tunnel-assignment")" "CN tunnel assignment"
@@ -445,6 +511,38 @@ test_status_fails_when_dependencies_fail() (
   fi
 )
 
+test_intl_status_accepts_server_confirmed_nat_source() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/status-intl-nat" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_IP='21.214.48.147'
+  export PERSONAL_DEV_REGISTRATION_SOURCE_IP='14.22.11.161'
+  source "$SCRIPT"
+  prepare_state
+  state_set central_session_token 'session-token'
+  require_personal_context() { :; }
+  curl() { return 0; }
+  curl_with_token() {
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"14.22.11.161","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  kubectl() { return 0; }
+  heartbeat_running() { return 0; }
+  devtunnel_agent_running() { return 0; }
+  status >/dev/null
+)
+
+test_intl_active_registration_accepts_server_confirmed_nat_source() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/active-registration-intl-nat" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_IP='21.214.48.147'
+  export PERSONAL_DEV_REGISTRATION_SOURCE_IP='14.22.11.161'
+  source "$SCRIPT"
+  prepare_state
+  central_session() { printf '%s\n' 'session-token'; }
+  curl_with_token() {
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"14.22.11.161","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  devtunnel_agent_running() { [[ "$1" == 'uin-450860000013.sg.tunnel.internal' ]]; }
+  require_active_registration
+)
+
 test_down_stops_stack_after_unregister_failure() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/down" PERSONAL_DEV_SITE=intl
   export TEST_LOCALSTACK_MARKER="$TEST_ROOT/down-called"
@@ -508,6 +606,7 @@ test_runtime_instrumentation_is_streamed_from_skill() (
   export PERSONAL_DEV_RUNTIME_SITE=intl
   export PERSONAL_DEV_RUNTIME_PUBLIC_HOST=9.134.214.121
   export PERSONAL_DEV_RUNTIME_JIFEI_GATEWAY=http://testing-gateway.example/v1/proxy/jifei-test/interfaces/interface.php
+  export PERSONAL_DEV_RUNTIME_BILLING_APIGW_URL=http://billing-gateway.example/v1/proxy/jifei-billing-apigw-test/resource-center/interface
   local auth_render trade_render ctl_render
   auth_render="$TEST_ROOT/runtime-auth.yaml"
   trade_render="$TEST_ROOT/runtime-trade.yaml"
@@ -524,15 +623,156 @@ test_runtime_instrumentation_is_streamed_from_skill() (
   grep -Fq 'LIGHTVELA_SITE_KIND: "intl"' "$auth_render"
   grep -Fq 'SHADOW_PLATFORM: "intlSaaSLightvela"' "$auth_render"
   grep -Fq 'JIFEI_CGW_GATEWAY_URL: "http://testing-gateway.example/v1/proxy/jifei-test/interfaces/interface.php"' "$trade_render"
+  grep -Fq 'JIFEI_BILLING_APIGW_URL: "http://billing-gateway.example/v1/proxy/jifei-billing-apigw-test/resource-center/interface"' "$trade_render"
+  grep -Fq 'TRADE_BILLING_PAY_REDIRECT_URL: "http://9.134.214.121:5173/subscribe"' "$trade_render"
   grep -Fq 'LIGHTVELA_TRADE_REGION: "ap-singapore"' "$trade_render"
   grep -Fq 'LIGHTVELA_SITE_KIND: "intl"' "$ctl_render"
   ! grep -q '9.134.214.121' "$REPO_ROOT/deploy/localstack/auth/kustomization.yaml"
   ! grep -q 'testing-gateway.example' "$REPO_ROOT/deploy/localstack/trade/kustomization.yaml"
 )
 
+test_billing_apigw_rejects_non_testing_routes() {
+  if PERSONAL_DEV_STATE_DIR="$TEST_ROOT/billing-apigw-prod" \
+    PERSONAL_DEV_SITE=intl \
+    PERSONAL_DEV_BILLING_APIGW_URL=http://billing.example/v1/proxy/jifei-billing-apigw-prod/resource-center/interface \
+    bash -c 'source "$1"; prepare_state' bash "$SCRIPT" >/dev/null 2>&1; then
+    fail "production Billing APIGW route was accepted"
+  fi
+}
+
+test_paid_e2e_private_overrides_are_strict_and_reused() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/paid-e2e" PERSONAL_DEV_SITE=intl
+  local input="$TEST_ROOT/paid-e2e-input.env" first_hash second_hash
+  printf '%s\n' \
+    'JIFEI_BILLING_APP_ID=test-app-id' \
+    'JIFEI_BILLING_APP_SECRET=test-app-secret' \
+    'TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=test-hmac-secret' >"$input"
+  chmod 600 "$input"
+  export PERSONAL_DEV_PAID_E2E_SECRET_FILE="$input"
+  source "$SCRIPT"
+  prepare_state
+  prepare_paid_e2e_overrides
+
+  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/trade.env")" "trade override mode"
+  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env")" "cloudladder override mode"
+  grep -Fq 'JIFEI_BILLING_APP_ID=test-app-id' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'JIFEI_BILLING_APP_SECRET=test-app-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'CLOUDLADDER_TRADE_HMAC_SECRET=test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env"
+  ! grep -Fq 'test-app-secret' "$STATE_FILE"
+  ! grep -Fq 'test-hmac-secret' "$STATE_FILE"
+
+  first_hash="$(python3 - "$PAID_E2E_OVERRIDE_DIR/trade.env" "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env" <<'PY'
+import hashlib, pathlib, sys
+digest = hashlib.sha256()
+for path in sys.argv[1:]:
+    digest.update(pathlib.Path(path).read_bytes())
+print(digest.hexdigest())
+PY
+)"
+  unset PERSONAL_DEV_PAID_E2E_SECRET_FILE
+  prepare_paid_e2e_overrides
+  second_hash="$(python3 - "$PAID_E2E_OVERRIDE_DIR/trade.env" "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env" <<'PY'
+import hashlib, pathlib, sys
+digest = hashlib.sha256()
+for path in sys.argv[1:]:
+    digest.update(pathlib.Path(path).read_bytes())
+print(digest.hexdigest())
+PY
+)"
+  assert_eq "$first_hash" "$second_hash" "paid-E2E overrides survive a later up without the source file"
+
+  chmod 644 "$input"
+  if PERSONAL_DEV_STATE_DIR="$PERSONAL_DEV_STATE_DIR" \
+    PERSONAL_DEV_SITE=intl \
+    PERSONAL_DEV_PAID_E2E_SECRET_FILE="$input" \
+    bash -c 'source "$1"; prepare_state; prepare_paid_e2e_overrides' bash "$SCRIPT" >/dev/null 2>&1; then
+    fail "world-readable paid-E2E input was accepted"
+  fi
+)
+
+assert_paid_e2e_sops_import() (
+  local site="$1" expected_trade_source="$2" expected_gateway_source="$3"
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/paid-e2e-sops-$site" PERSONAL_DEV_SITE="$site"
+  local calls="$TEST_ROOT/paid-e2e-sops-$site.calls"
+  local output="$TEST_ROOT/paid-e2e-sops-$site.output"
+  source "$SCRIPT"
+  sops() {
+    [[ "$1" == "--decrypt" && "$2" == "--extract" && -n "$3" && -n "$4" ]] \
+      || return 2
+    printf '%s|%s\n' "$3" "$4" >>"$calls"
+    case "$3" in
+      *JIFEI_BILLING_APP_ID*) printf '%s\n' 'authorized-test-app-id' ;;
+      *JIFEI_BILLING_APP_SECRET*) printf '%s\n' 'authorized-test-app-secret' ;;
+      *CLOUDLADDER_PAYMENT_HMAC_SECRET*) printf '%s\n' 'authorized-test-hmac-secret' ;;
+      *) return 3 ;;
+    esac
+  }
+
+  prepare_paid_e2e_from_sops >"$output" 2>&1
+
+  grep -Fq "$expected_trade_source" "$calls"
+  grep -Fq "$expected_gateway_source" "$calls"
+  ! grep -Eq '/(shprod|sgprod|beijing-sandbox|sandbox-jp-1)/' "$calls"
+  grep -Fq 'JIFEI_BILLING_APP_ID=authorized-test-app-id' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'JIFEI_BILLING_APP_SECRET=authorized-test-app-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=authorized-test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'CLOUDLADDER_TRADE_HMAC_SECRET=authorized-test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env"
+  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/trade.env")" "SOPS trade override mode"
+  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env")" "SOPS CloudLadder override mode"
+  ! grep -Fq 'authorized-test-app-secret' "$output"
+  ! grep -Fq 'authorized-test-hmac-secret' "$output"
+  ! grep -Fq 'authorized-test-app-secret' "$STATE_FILE"
+  ! grep -Fq 'authorized-test-hmac-secret' "$STATE_FILE"
+)
+
+test_paid_e2e_sops_import_is_site_scoped_and_private() {
+  assert_paid_e2e_sops_import \
+    cn \
+    "$REPO_ROOT/argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml" \
+    "$REPO_ROOT/argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml"
+  assert_paid_e2e_sops_import \
+    intl \
+    "$REPO_ROOT/argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml" \
+    "$REPO_ROOT/argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml"
+}
+
+test_prerequisites_document_account_balance_binding_and_secrets() {
+  local cn_output intl_output
+  cn_output="$(PERSONAL_DEV_SITE=cn bash -c 'source "$1"; prerequisites' bash "$SCRIPT")"
+  intl_output="$(PERSONAL_DEV_SITE=intl bash -c 'source "$1"; prerequisites' bash "$SCRIPT")"
+
+  grep -Fq 'resource/account/4/' <<<"$cn_output"
+  grep -Fq '状态=正常' <<<"$cn_output"
+  grep -Fq '/充值' <<<"$cn_output"
+  grep -Fq 'DevCloud 测试绑定' <<<"$cn_output"
+  grep -Fq 'prepare-paid-e2e' <<<"$cn_output"
+  grep -Fq 'international=false' <<<"$cn_output"
+  ! grep -Fq '/国际开户' <<<"$cn_output"
+
+  grep -Fq 'international=true' <<<"$intl_output"
+  grep -Fq '/国际开户' <<<"$intl_output"
+  grep -Fq '/充值' <<<"$intl_output"
+  grep -Fq '金额单位为分' <<<"$intl_output"
+  grep -Fq '旧 pending 单不要重试' <<<"$intl_output"
+}
+
+test_real_kustomize_rejects_runtime_wrapper_alias() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/kustomize-alias" PERSONAL_DEV_SITE=intl
+  local bin_dir="$TEST_ROOT/kustomize-alias-bin"
+  mkdir -p "$bin_dir"
+  ln -s "$RUNTIME_KUSTOMIZE" "$bin_dir/kustomize"
+  if PATH="$bin_dir:$PATH" \
+    PERSONAL_DEV_STATE_DIR="$PERSONAL_DEV_STATE_DIR" \
+    PERSONAL_DEV_SITE=intl \
+    bash -c 'source "$1"; prepare_state; real_kustomize_binary' bash "$SCRIPT" >/dev/null 2>&1; then
+    fail "runtime kustomize wrapper was accepted as the real binary"
+  fi
+)
+
 test_browser_login_is_minted_privately() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/browser-login" PERSONAL_DEV_SITE=intl
-  export PERSONAL_DEV_IP=127.0.0.1 PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS=900
+  export PERSONAL_DEV_IP=21.214.48.147 PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS=900
   export PERSONAL_DEV_BROWSER_BOOTSTRAP_PORT=0 PERSONAL_DEV_BROWSER_BOOTSTRAP_TTL_SECONDS=10
   source "$SCRIPT"
   prepare_state
@@ -566,13 +806,17 @@ test_browser_login_is_minted_privately() (
   output="$(<"$output_file")"
   [[ "$output" != *private-token* ]] || fail "replacement browser session token leaked to command output"
   url="$(<"$BROWSER_BOOTSTRAP_READY_FILE")"
-  [[ "$url" =~ ^http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9_-]{24,128}$ ]] \
+  [[ "$url" =~ ^http://21\.214\.48\.147:[0-9]+/[A-Za-z0-9_-]{24,128}$ ]] \
     || fail "one-time browser URL is malformed: $url"
   [[ "$url" != *private-token* ]] || fail "one-time URL leaked the browser session token"
   pid="$(<"$BROWSER_BOOTSTRAP_PID_FILE")"
-  headers="$("$curl_bin" --silent --show-error --max-time 2 --dump-header - --output /dev/null "$url")"
+  local bootstrap_port bootstrap_path local_url
+  bootstrap_port="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.urlparse(sys.argv[1]).port)' "$url")"
+  bootstrap_path="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.urlparse(sys.argv[1]).path)' "$url")"
+  local_url="http://127.0.0.1:$bootstrap_port$bootstrap_path"
+  headers="$("$curl_bin" --silent --show-error --max-time 2 --dump-header - --output /dev/null "$local_url")"
   grep -q '^HTTP/1\.[01] 303 ' <<<"$headers"
-  grep -Fq 'Location: http://127.0.0.1:5173/dashboard/settings#session_token=private-token' <<<"$headers"
+  grep -Fq 'Location: http://21.214.48.147:5173/dashboard/settings#session_token=private-token' <<<"$headers"
   wait "$pid"
   [[ ! -e "$BROWSER_BOOTSTRAP_READY_FILE" ]] || fail "one-time browser URL survived consumption"
   ! find "$STATE_ROOT" -maxdepth 1 -name 'browser-session.*' -print -quit | grep -q . \
@@ -727,9 +971,29 @@ test_skill_name_and_paths_are_consistent() {
   test -x "$SCRIPT_DIR/browser-login-bootstrap.py"
 }
 
+test_intl_dynamic_route_allowlists_match() {
+  local gateway_manifest tunnel_manifest gateway_cidrs tunnel_cidrs
+  gateway_manifest="$REPO_ROOT/argocd/services/cloudladdergateway/tkexsg/statefulsetplus-testing.yaml"
+  tunnel_manifest="$REPO_ROOT/argocd/services/cloudladdergateway/tkexsg/devtunnel-testing.yaml"
+  gateway_cidrs="$(awk '
+    $0 ~ /name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_CIDRS/ { getline; sub(/^[[:space:]]*value:[[:space:]]*/, ""); print; exit }
+  ' "$gateway_manifest")"
+  tunnel_cidrs="$(awk '
+    $0 ~ /name: DEVTUNNEL_CAPABILITY_ALLOWED_CIDRS/ { getline; sub(/^[[:space:]]*value:[[:space:]]*/, ""); print; exit }
+  ' "$tunnel_manifest")"
+  test -n "$gateway_cidrs"
+  assert_eq "$gateway_cidrs" "$tunnel_cidrs" "SG testing CloudLadder/devtunnel allowlists"
+  [[ ",$gateway_cidrs," == *,9.0.0.0/8,* ]] || fail "SG testing allowlist lost the DevCloud 9/8 range"
+  [[ "$gateway_cidrs" != *'0.0.0.0/0'* ]] || fail "SG testing allowlist became globally open"
+}
+
 test_payment_and_production_guardrails() {
   ! grep -En 'place-and-pay|pay-url' "$SCRIPT"
-  ! grep -En 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl.*sync' "$SCRIPT"
+  ! grep -En 'api\.lightvela\.(com|ai)|production|staging|kubectl.*sync|argocd/secrets/(shprod|sgprod|beijing-sandbox|sandbox-jp-1)' "$SCRIPT"
+  grep -Fq 'argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml' "$SCRIPT"
+  grep -Fq 'argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml' "$SCRIPT"
+  grep -Fq 'argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml' "$SCRIPT"
+  grep -Fq 'argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml' "$SCRIPT"
   grep -q 'verify-order-no-pay' "$SCRIPT"
   grep -q 'verify-checkmodify-no-pay' "$SCRIPT"
   grep -q 'checkModify verification is not implemented' "$SCRIPT"
@@ -746,19 +1010,29 @@ run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubec
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
 run_test 'Auth admin override is loopback-only' test_auth_admin_override_is_loopback_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
+run_test 'DevCloud IP discovery accepts 9/8 and 21/8 only' test_devcloud_ip_accepts_current_networks_and_rejects_unsafe_overrides
 run_test 'Intl registration starts the assigned tunnel' test_intl_registration_starts_tunnel
+run_test 'Intl registration source override fails closed on mismatch' test_intl_registration_source_override_fails_closed_on_mismatch
+run_test 'registration failures surface safe business errors' test_registration_failure_surfaces_safe_business_error
 run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build_uses_current_checkout
 run_test 'Intl registration without a capability fails closed' test_intl_registration_without_capability_fails_closed
-run_test 'CN registration sends the DevCloud target and starts its assigned tunnel' test_cn_registration_sends_explicit_devcloud_target
+run_test 'CN registration requires the server-confirmed DevCloud target' test_cn_registration_requires_server_confirmed_devcloud_target
 run_test 'CN registration without a capability fails closed' test_cn_registration_without_capability_fails_closed
 run_test 'registration agent failure fails closed' test_registration_agent_failure_fails_closed
 run_test 'heartbeat survives transient failures' test_heartbeat_survives_transient_failures
 run_test 'heartbeat stop interrupts a long sleep' test_stop_heartbeat_interrupts_long_sleep
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
+run_test 'Intl status accepts the server-confirmed NAT source IP' test_intl_status_accepts_server_confirmed_nat_source
+run_test 'Intl active-registration guard accepts the server-confirmed NAT source IP' test_intl_active_registration_accepts_server_confirmed_nat_source
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure
 run_test 'gateway override reaches Trade runtime' test_gateway_override_reaches_trade_runtime
 run_test 'testing gateway migrates stale state and rejects production overrides' test_testing_gateway_migrates_stale_state_and_rejects_prod_override
+run_test 'Billing APIGW accepts only the testing route' test_billing_apigw_rejects_non_testing_routes
+run_test 'paid E2E overrides are private and survive rebuilds' test_paid_e2e_private_overrides_are_strict_and_reused
+run_test 'paid E2E SOPS import is site-scoped and private' test_paid_e2e_sops_import_is_site_scoped_and_private
+run_test 'prerequisites cover account, balance, binding, and secrets' test_prerequisites_document_account_balance_binding_and_secrets
+run_test 'runtime kustomize wrapper cannot become its own real binary' test_real_kustomize_rejects_runtime_wrapper_alias
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately
 run_test 'browser login retries an empty nonce generation' test_browser_nonce_retries_empty_generation
@@ -766,6 +1040,7 @@ run_test 'testing binding bootstrap derives the target user and keeps admin toke
 run_test 'missing binding is bootstrapped when managed inputs are present' test_wait_for_binding_bootstraps_when_managed_inputs_are_present
 run_test 'testing binding release derives the target user and keeps admin token private' test_testing_binding_release_derives_user_and_keeps_admin_token_private
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
+run_test 'SG testing CloudLadder and devtunnel allowlists stay aligned' test_intl_dynamic_route_allowlists_match
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
 
 printf 'personal devcloud skill contract passed\n'

@@ -47,6 +47,19 @@ func TestBuildHermesProfileCreateCommandCreatesBlankProfileWithMetadata(t *testi
 	}
 }
 
+func TestBuildHermesProfileCreateCommandFitsTATLimit(t *testing.T) {
+	command := buildHermesProfileCreateCommand(
+		"profile-max",
+		"",
+		strings.Repeat("界", maxInstanceBotSoulRunes),
+		strings.Repeat("名", maxInstanceBotNameRunes),
+		strings.Repeat("述", maxInstanceBotDescriptionRunes),
+	)
+	if got, limit := len([]byte(command)), 64*1024; got >= limit {
+		t.Fatalf("maximal Hermes profile create command is %d bytes, must stay below TAT limit %d", got, limit)
+	}
+}
+
 func TestCopyHermesPrimaryModelScriptScopesProviderAndCredentials(t *testing.T) {
 	checks := []string{
 		`model_keys = (`,
@@ -273,6 +286,38 @@ func TestListHermesProfilesScriptKeepsGatewayRunningTriState(t *testing.T) {
 	}
 }
 
+func TestExecHermesProfileCommandUsesTAT(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		ptyEvents: []psandbox.PtyExecStreamEvent{
+			{Type: "started", ExecutionID: "pty:profile"},
+			{Type: "output", ExecutionID: "pty:profile", Index: 0, Chunk: "profile-ok\n"},
+			{Type: "finished", ExecutionID: "pty:profile", Status: "SUCCESS", ExitCode: 0},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	resp, err := logic.execHermesProfileCommand(
+		pctx.NewContext(nil).WithUserID("user-1"),
+		"ins-1",
+		"printf profile-ok",
+	)
+	if err != nil {
+		t.Fatalf("execute Hermes profile command: %v", err)
+	}
+	if resp == nil || resp.Status != "SUCCESS" || resp.Output != "profile-ok\n" {
+		t.Fatalf("unexpected Hermes profile response: %+v", resp)
+	}
+	if len(adapter.ptyCalls) != 1 || len(adapter.processCalls) != 0 {
+		t.Fatalf("Hermes profile command must use TAT PTY only, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
+	}
+}
+
 func TestProjectHermesProfilesPropagatesUnknownGatewayState(t *testing.T) {
 	running := true
 	bots := projectHermesProfiles([]hermesProfileRecord{
@@ -399,9 +444,9 @@ func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *tes
 
 func TestDeleteInstanceBotRejectsDefaultBot(t *testing.T) {
 	adapter := &commandSandboxAdapterStub{
-		processBatches: [][]psandbox.ProcessStreamEvent{{
-			{Stdout: `{"items":[{"native_id":"default","display_name":"Main","is_default":true}]}`},
-			{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+		ptyBatches: [][]psandbox.PtyExecStreamEvent{{
+			{Type: "output", Chunk: `{"items":[{"native_id":"default","display_name":"Main","is_default":true}]}`},
+			{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
 		}},
 	}
 	logic := &logic{
@@ -416,21 +461,21 @@ func TestDeleteInstanceBotRejectsDefaultBot(t *testing.T) {
 	if !errors.Is(err, errcode.ErrInstanceBotDefaultDelete) {
 		t.Fatalf("expected default Bot delete rejection, got %v", err)
 	}
-	if len(adapter.processCalls) != 1 {
-		t.Fatalf("default Bot rejection must not run delete or binding commands, got %d calls", len(adapter.processCalls))
+	if len(adapter.ptyCalls) != 1 || len(adapter.processCalls) != 0 {
+		t.Fatalf("default Bot rejection must only run one TAT lookup, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
 	}
 }
 
 func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
 	adapter := &commandSandboxAdapterStub{
-		processBatches: [][]psandbox.ProcessStreamEvent{
+		ptyBatches: [][]psandbox.PtyExecStreamEvent{
 			{
-				{Stdout: `{"items":[{"native_id":"sales-123","display_name":"Sales","is_default":false}]}`},
-				{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+				{Type: "output", Chunk: `{"items":[{"native_id":"sales-123","display_name":"Sales","is_default":false}]}`},
+				{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
 			},
 			{
-				{Stdout: `{"ok":true,"channel":"weixin","bot_id":"sales-123","profile_id":"sales-123","status":"connected"}`},
-				{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+				{Type: "output", Chunk: `{"ok":true,"channel":"weixin","bot_id":"sales-123","profile_id":"sales-123","status":"connected"}`},
+				{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
 			},
 		},
 	}
@@ -446,8 +491,8 @@ func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
 	if !errors.Is(err, errcode.ErrChannelOccupied) {
 		t.Fatalf("expected connected Weixin owner rejection, got %v", err)
 	}
-	if len(adapter.processCalls) != 2 {
-		t.Fatalf("connected Weixin owner rejection must not run profile delete, got %d calls", len(adapter.processCalls))
+	if len(adapter.ptyCalls) != 2 || len(adapter.processCalls) != 0 {
+		t.Fatalf("connected Weixin owner rejection must only use TAT lookups, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
 	}
 }
 

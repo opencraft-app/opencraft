@@ -45,6 +45,11 @@ const workbenchStyles = readFileSync(
   "utf8",
 );
 
+const designTokens = readFileSync(
+  new URL("../packages/design-system/src/tokens.web.scss", import.meta.url),
+  "utf8",
+);
+
 test("Applications has a content cap during held drag as well as release", () => {
   const { compactWidth, expandedMinimumWidth, expandedMaximumWidth } = shellNavigationMetrics;
   const transaction = beginSidecarPrimaryResize({clientX: 200, detent: "expanded", expandedWidth: 137, compactWidth});
@@ -166,17 +171,17 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
 
 test("context sidebar actions share one stable leading slot after account moves to the Sidecar footer", () => {
   assert.equal(
-    sidebarSource.match(/<SidebarActionIcon>/gu)?.length,
+    sidebarSource.match(/<SidebarNavigationItem/gu)?.length,
     4,
     "every primary and footer sidebar action reserves the shared leading slot",
   );
   assert.match(
-    workbenchStyles,
-    /\.sidebar-panel\s*\{[\s\S]*?--sidebar-leading-slot-size:\s*28px;/u,
+    designTokens,
+    /--size-navigation-leading-slot:\s*28px;/u,
   );
   assert.match(
     workbenchStyles,
-    /\.sidebar-action__icon\s*\{[\s\S]*?width:\s*var\(--sidebar-leading-slot-size\);[\s\S]*?place-items:\s*center;/u,
+    /\.sidebar-navigation-item__icon\s*\{[\s\S]*?width:\s*var\(--size-navigation-leading-slot\);[\s\S]*?place-items:\s*center;/u,
   );
   assert.doesNotMatch(sidebarSource, /sidebar-account__trigger/u);
 });

@@ -62,7 +62,13 @@ export function createBotChatExtension(
   };
 }
 
-export { createBotChatView } from "./bot-chat-view";
+export {
+  createBotChatView,
+  type BotChatViewOptions,
+  type BotChatViewStatus,
+  type BotChatWriteAuthority,
+  type BotChatWriteAuthoritySnapshot,
+} from "./bot-chat-view";
 export {
   BOT_MOTION_REPLAY_SCENES,
   createBotMotionReplayController,
