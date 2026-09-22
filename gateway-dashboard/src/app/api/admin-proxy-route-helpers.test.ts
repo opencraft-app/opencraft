@@ -147,6 +147,27 @@ test("buildModuleAdminProxyRequest maps credit module and keeps the internal tok
   assert.equal(built.usedBrowserToken, false);
 });
 
+test("buildModuleAdminProxyRequest maps referral module without forwarding the browser token", async () => {
+  const req = new Request(
+    "https://admin.example.com/admin/gateway/api/referral/attributions/usr_1?attribution_id=rattr_1",
+    { headers: { authorization: "Bearer browser-token" } }
+  );
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "referral",
+    path: ["attributions", "usr_1"],
+    upstreamBaseURL: "http://referral.internal",
+    forwardBrowserToken: false,
+  });
+
+  assert.equal(
+    built.url.toString(),
+    "http://referral.internal/admin/api/referral/attributions/usr_1?attribution_id=rattr_1"
+  );
+  assert.equal(built.init.headers.get("authorization"), null);
+  assert.equal(built.usedBrowserToken, false);
+});
+
 test("buildModuleAdminProxyRequest maps sandbox PUT binding replacements to internal API", async () => {
   const body = JSON.stringify([{ sku_id: "sku-hermes-2c4g", priority: 1, weight: 100 }]);
   const req = new Request("https://admin.example.com/admin/api/sandbox/template-classes/hermes/skus", {

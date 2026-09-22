@@ -51,6 +51,7 @@ npm run build
 | `CTL_INTERNAL_TOKEN` | Required for gateway operations | Dashboard BFF 调用 CTL 单用户迁移和 VelaGW 额度重置接口的服务端 Token；不得下发浏览器 |
 | `CREDIT_API_URL` | Required for credit package administration | 指向 `credit` 的内部管理上游；仅积分包页面使用 |
 | `CREDIT_INTERNAL_TOKEN` | Required for credit package administration | Dashboard BFF 调用 Credit 查询与退款管理接口的服务端 Token；必须与 Credit 的 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 一致，不得下发浏览器。标准部署从同值的共享内部服务 Token 显式映射 |
+| `REFERRAL_ADMIN_API_URL` | Required for referral administration | 指向 `referral` 的集群内管理上游；BFF 先校验 Dashboard 管理员会话，再转发精确归因查询和重置请求，不向浏览器暴露上游地址或内部凭据 |
 | `TICKET_API_URL` | No | 指向 `ticket` 管理上游；仅「用户反馈」页使用。未配置时该页接口返回 500 |
 | `SUPPORT_FEEDBACK_AGENT_ID` | No | 白名单内运营账号的 lightclaw 用户 ID，由 BFF 作为 `X-User-Id` 注入 ticket 以通过 `SUPPORT_AGENT_IDS` 校验；需与 ticket 的 `SUPPORT_AGENT_IDS` 一致。未配置时反馈接口恒 401 |
 | `ADMIN_TOKEN` | Yes | Dashboard 登录所用的管理员 token |
@@ -79,6 +80,9 @@ npm run build
 - `/admin/api/credit/[...path]`
   - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/credit/[...path]`
   - 代理 `credit` 的 `/internal/credit/admin/*` 接口，并由 BFF 注入 `CREDIT_INTERNAL_TOKEN`
+- `/admin/api/referral/[...path]`
+  - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/referral/[...path]`
+  - 代理 `referral` 的 `/admin/api/referral/*` 接口；BFF 必须先用 `GATEWAY_API_URL` 验证管理员会话，且不向上游转发浏览器 Token
 浏览器不再长期持有裸管理员 token；登录成功后由服务端签发 `HttpOnly` 的无状态 session cookie，真正的上游地址和可选的专用管理 token 通过 Next.js route handler 在服务端转发。旧的 `/api/[...path]`、`/api/auth-admin/*`、`/api/subscription-admin/*`、`/api/sandbox-admin/*`、`/api/ctl-admin/*` 不再是标准入口。
 
 ## Deploy
@@ -119,6 +123,7 @@ python3 scripts/build-release-image.py --service gateway-dashboard --env shprod 
 - `SANDBOX_API_URL=http://sandbox-api.sandbox.svc.cluster.local`
 - `CTL_API_URL=http://ctl-api.ctl.svc.cluster.local`
 - `CREDIT_API_URL=http://credit.credit.svc.cluster.local`
+- `REFERRAL_ADMIN_API_URL=http://referral.referral.svc.cluster.local`
 
 建议的内部访问方式：
 

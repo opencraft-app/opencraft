@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"git.woa.com/wisp/mono/referral/internal/config"
+	"git.woa.com/wisp/mono/referral/internal/ctlclient"
 	"git.woa.com/wisp/mono/referral/internal/httpapi"
 	"git.woa.com/wisp/mono/referral/internal/service"
 	"git.woa.com/wisp/mono/referral/internal/store"
@@ -26,7 +27,7 @@ func main() {
 		log.Fatalf("init referral store: %v", err)
 	}
 	defer st.Close()
-	svc := service.New(st, cfg.PublicBaseURL)
+	svc := service.NewWithAdmin(st, st, ctlclient.New(cfg.CTLBaseURL, cfg.CTLInternalToken), cfg.PublicBaseURL)
 	server := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           httpapi.NewRouter(true, svc),

@@ -1039,6 +1039,43 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 	}, nil
 }
 
+func (l *logic) RevokeFreeCredit(req *transport.RevokeFreeCreditRequest) (*transport.RevokeFreeCreditResponse, error) {
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	userID := strings.TrimSpace(req.UserID)
+	if userID == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required")
+	}
+	if len(req.SubscriptionNames) == 0 || len(req.SubscriptionNames) > 20 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "subscription_names must contain between 1 and 20 values")
+	}
+	names := make([]string, 0, len(req.SubscriptionNames))
+	seen := make(map[string]struct{}, len(req.SubscriptionNames))
+	for _, raw := range req.SubscriptionNames {
+		name := strings.TrimSpace(raw)
+		if !strings.HasPrefix(name, freeCreditSubscriptionNamePrefix) {
+			return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "subscription_name %q is not a free-credit subscription", name)
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	if !config.LLMGatewayEnabled() {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "llmgateway is disabled")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSelectedSubscriptions(ctx, &llmgateway.CancelSelectedSubscriptionsRequest{
+		UserID: userID, SubscriptionNames: names,
+	}); err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "revoke llmgateway free credit subscriptions: %v", err)
+	}
+	return &transport.RevokeFreeCreditResponse{UserID: userID, RevokedSubscriptionNames: names}, nil
+}
+
 func validateQualifyingPassForFreeCredit(passID, inviteeUserID string) error {
 	passID = strings.TrimSpace(passID)
 	inviteeUserID = strings.TrimSpace(inviteeUserID)

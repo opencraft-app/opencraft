@@ -31,6 +31,11 @@ type GrantResult struct {
 	SubscriptionName string `json:"subscription_name"`
 }
 
+type RevokeRequest struct {
+	UserID            string   `json:"user_id"`
+	SubscriptionNames []string `json:"subscription_names"`
+}
+
 type responseEnvelope struct {
 	Code    string          `json:"code"`
 	Message string          `json:"message"`
@@ -80,4 +85,32 @@ func (c *Client) Grant(ctx context.Context, request GrantRequest) (GrantResult, 
 		return GrantResult{}, fmt.Errorf("CTL grant returned empty subscription_id")
 	}
 	return result, nil
+}
+
+func (c *Client) Revoke(ctx context.Context, request RevokeRequest) error {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/ctl/passes/free-credit/revoke", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("revoke referral credit: %w", err)
+	}
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var envelope responseEnvelope
+		_ = json.Unmarshal(responseBody, &envelope)
+		return fmt.Errorf("CTL revoke failed: status=%d code=%s message=%s", resp.StatusCode, envelope.Code, envelope.Message)
+	}
+	return nil
 }

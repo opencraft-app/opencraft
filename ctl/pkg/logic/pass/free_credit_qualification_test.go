@@ -17,7 +17,13 @@ import (
 
 type freeCreditLLMStub struct {
 	llmgateway.Adapter
-	applied llmgateway.ApplySubscriptionRequest
+	applied   llmgateway.ApplySubscriptionRequest
+	cancelled llmgateway.CancelSelectedSubscriptionsRequest
+}
+
+func (s *freeCreditLLMStub) CancelSelectedSubscriptions(_ context.Context, req *llmgateway.CancelSelectedSubscriptionsRequest) error {
+	s.cancelled = *req
+	return nil
 }
 
 func (s *freeCreditLLMStub) ApplySubscription(_ context.Context, req *llmgateway.ApplySubscriptionRequest) (*llmgateway.Subscription, error) {
@@ -112,5 +118,40 @@ func TestGrantFreeCreditAcceptsAmountWithoutCallerPlan(t *testing.T) {
 	}
 	if remaining := time.Until(result.PeriodEnd); remaining < 59*24*time.Hour || remaining > 61*24*time.Hour {
 		t.Fatalf("period_end=%s does not follow active Pass lifecycle", result.PeriodEnd)
+	}
+}
+
+func TestRevokeFreeCreditUsesExactNamesOnly(t *testing.T) {
+	originalConfig := config.ServerConf
+	originalFactory := adapterfactory.DefaultAdapterFactory
+	t.Cleanup(func() {
+		config.ServerConf = originalConfig
+		adapterfactory.DefaultAdapterFactory = originalFactory
+	})
+	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+		LLMGateway: &config.LLMGatewayConfig{Enabled: true},
+	}}
+	stub := &freeCreditLLMStub{}
+	adapterfactory.DefaultAdapterFactory = &freeCreditAdapterFactory{llm: stub}
+
+	result, err := (&logic{}).RevokeFreeCredit(&transport.RevokeFreeCreditRequest{
+		UserID:            "usr-beneficiary",
+		SubscriptionNames: []string{"free-credit:referral:reward-1", "free-credit:referral:reward-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stub.cancelled.UserID != "usr-beneficiary" || len(stub.cancelled.SubscriptionNames) != 1 ||
+		stub.cancelled.SubscriptionNames[0] != "free-credit:referral:reward-1" || len(stub.cancelled.SubscriptionNamePrefixes) != 0 {
+		t.Fatalf("unexpected cancel request: %+v", stub.cancelled)
+	}
+	if len(result.RevokedSubscriptionNames) != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	if _, err := (&logic{}).RevokeFreeCredit(&transport.RevokeFreeCreditRequest{
+		UserID: "usr-beneficiary", SubscriptionNames: []string{"package:usr-beneficiary:pass-1"},
+	}); !errors.Is(err, errcode.ErrPassInvalidParam) {
+		t.Fatalf("package subscription must be rejected, err=%v", err)
 	}
 }

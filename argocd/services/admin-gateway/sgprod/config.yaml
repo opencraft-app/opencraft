@@ -4,6 +4,11 @@ allowed_origins:
   - https://admin.lightvela.ai
 
 routes:
+  - name: referral-admin
+    prefix: /admin/api/referral
+    methods: [GET, POST, OPTIONS]
+    upstream: http://referral.referral.svc.cluster.local
+    access: admin
   - name: gateway-dashboard
     prefix: /admin/gateway
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
