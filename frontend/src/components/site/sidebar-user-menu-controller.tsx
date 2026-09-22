@@ -48,10 +48,10 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   useEffect(() => { setHostname(window.location.hostname); }, []);
   useEffect(() => subscribeConsoleShow(setHiddenEntriesRevealed), []);
   useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
-    const enabled = emitConsoleShowEvent();
-    setHiddenEntriesRevealed(enabled);
     const result = next(...args);
-    return result === undefined ? enabled : result;
+    const enabled = typeof result === "boolean" ? result : emitConsoleShowEvent();
+    setHiddenEntriesRevealed(enabled);
+    return enabled;
   }), []);
 
   const state = summary.pass ? "ready" : passesLoading || summary.state === "loading" ? "loading" : passesError || summary.state === "error" ? "error" : summary.state;

@@ -48,6 +48,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - OpenCraft 的会话能力更新保持引擎中立：公共 Skills 查询/失效事件与安装作用域不携带 DSH scope。首个 DSH 适配将 OpenCraft 根注册在 native standing preset 同层，保留项目覆盖用户的 rank；安装提交与运行时刷新分别确认，步骤前对账，冷历史查询不激活 Agent。Hermes Profile action 是独立适配，不能从 DSH 结果推定其热更新能力。阶段与证据见 [存量会话能力刷新](../../../opencraft/docs/session-capability-refresh.md#72-当前落地证据2026-09-17)。
 
 - OpenCraft 的 mono2 Agent Console 路由常量与翻译字典仍由 `frontend/` 真源机械生成，副本记录在 `UPSTREAM.json`；其中 `/account` 与 `/account/billing` 是 LightVela Web 账号/套餐页面地址，不代表 OpenCraft 宿主新增同名应用路由。宿主导航继续由自己的 Router 拥有；有界同步的文件验证不能替代整个共享闭包的漂移检查。生成边界见 [mono2 migration](../../../opencraft/MONO2_MIGRATION.md#shared-frontend-boundary)。
+- mono2 Agent Console 的 Account、Memory 与 Buddy 页面只负责呈现页面状态和调用既有业务 action，不拥有 Hermes Host/Profile、Repository 或命令执行权。侧栏账号入口采用 click 触发菜单并交给既有 account controller/page 处理摘要、刷新、续费与删除；菜单展开不得再由 hover 或第二个 owner 改变 toggle 语义。
+- Embedded Agent Console 的 `window.show()` 只有一个 owner 负责切换 Legacy AgentChat 与嵌入工作台；frontend 真源变更后必须通过 `sync:mono2-agent-console` 更新 OpenCraft 副本，再由 `check:mono2-agent-console` 验证生成闭包和 `UPSTREAM.json.sourceRevision`。
 
 - OpenCraft 标签栏在 + 后提供统一下拉：上方新建类型、下方当前任务该 region 的全部标签；右侧 Browser/Terminal 图标保持一键新建。切换复用 activate-tab，新建复用 creation action，不按类型拆菜单或新增列表真源。见 [工作区所有权](../../../opencraft/docs/platform-architecture.md)。
 

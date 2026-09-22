@@ -1,1326 +1,52 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
-import {
-  ArrowLeft,
-  Camera,
-  Check,
-  ChevronRight,
-  Copy,
-  CreditCard,
-  Loader2,
-  Pencil,
-  ShieldAlert,
-  ShieldCheck,
-  Trash2,
-  X,
-  Zap,
-} from "lucide-react";
-import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
+import { ArrowLeft, ShieldAlert } from "lucide-react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferralEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
-import { REALNAME_LEVEL, type Pass } from "@/domain/types";
+import { REALNAME_LEVEL } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
 import { ProductPageShell, ProductReturnHomeHeader } from "@/components/site/product-chrome";
+import { Button } from "@/components/ui/button";
+import { DisplayTitle } from "@/components/ui/display-title";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import {
-  canDeletePass,
-  canRenewPass,
-  getPassStatus,
-  isPaidBillingEnabled,
-} from "@/lib/billing-flow";
+import { isPaidBillingEnabled } from "@/lib/billing-flow";
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
-import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
-import { useCreditSources, formatCreditDate } from "@/lib/use-credit-sources";
 import { isCN, isGlobal } from "@/lib/region";
 import { publicSiteHref } from "@/lib/public-site-navigation";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
+import { AccountProfileCard, AccountSecurityCard, AccountSubscriptionCard } from "@/components/account";
+import {
+  AccountDeleteDialog,
+  AccountPageGate,
+  BindEmailDialog,
+  ChangePhoneDialog,
+  PassDeleteDialogController,
+} from "@/components/account/account-dialogs";
 import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
-import { subscribeConsoleShow } from "@/lib/console-show-event";
-import { cn } from "@/lib/utils";
+import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
-import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
 import { ReferralSection } from "./referral-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
-import { usePassUpgrade } from "@/lib/use-pass-upgrade";
-
-/* ─── animation variants ─── */
-
-const fadeIn = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.25, 0.1, 0.25, 1] } },
-};
-
-const staggerContainer = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
-};
-
-/* ─── Info Row ─── */
-
-const InfoRow = ({
-  label,
-  children,
-  borderBottom = true,
-}: {
-  label: string;
-  children: React.ReactNode;
-  borderBottom?: boolean;
-}) => (
-  <div
-    className="flex items-center justify-between py-3.5"
-    style={{ borderBottom: borderBottom ? `1px solid rgba(0,0,0,0.04)` : "none" }}
-  >
-    <span className="flex-shrink-0 text-sm" style={{ color: "#999" }}>{label}</span>
-    <div className="text-right text-sm font-medium" style={{ color: "#333" }}>{children}</div>
-  </div>
-);
-
-/* ─── Change Phone Modal ─── */
-
-const ChangePhoneModal = ({
-  currentPhone,
-  onClose,
-  onSuccess,
-}: {
-  /** 当前已绑定手机号；为空表示「首次绑定」形态 */
-  currentPhone?: string;
-  onClose: () => void;
-  onSuccess: () => void;
-}) => {
-  const t = useT();
-  const { auth } = useRepositories();
-  const { refreshProfile } = useSession();
-  const [phone, setPhone] = useState("");
-  const [smsCode, setSmsCode] = useState("");
-  const [sendingCode, setSendingCode] = useState(false);
-  const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const normalizedPhone = phone.replace(/[^\d]/g, "").slice(0, 11);
-  const canSubmit = /^1\d{10}$/.test(normalizedPhone) && smsCode.trim().length >= 4 && !submitting;
-
-  useEffect(() => {
-    if (cooldownSeconds <= 0) return;
-    const timer = window.setTimeout(() => setCooldownSeconds((current) => Math.max(0, current - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [cooldownSeconds]);
-
-  const mapErrorMessage = (err: unknown): string => {
-    if (err instanceof RepositoryError) {
-      switch (err.code) {
-        case "invalid_phone":
-          return t("手机号格式不正确，请检查后重试。");
-        case "phone_in_use":
-          return t("该手机号已绑定其他账号，请更换手机号。");
-        case "sms_code_not_found":
-          return t("请先获取短信验证码。");
-        case "sms_code_expired":
-          return t("验证码已过期，请重新获取。");
-        case "invalid_sms_code":
-          return t("验证码不正确，请检查后重试。");
-        case "shadow_binding_failed":
-        case "shadow_binding_incomplete":
-          return t("安全手机同步失败，请稍后重试。");
-        case "unauthorized":
-          return t("登录已失效，请重新登录后再试。");
-        default:
-          break;
-      }
-      if (err.status === 502 || err.status === 503) {
-        return t("账号服务繁忙，请稍后重试。");
-      }
-      return err.message || t("手机号修改失败，请稍后重试。");
-    }
-    return t("网络异常，请稍后再试。");
-  };
-
-  const sendPhoneCode = async () => {
-    if (!/^1\d{10}$/.test(normalizedPhone) || sendingCode || cooldownSeconds > 0) return;
-    setSendingCode(true);
-    setError(null);
-    try {
-      const result = await auth.sendPhoneChangeCode({ phone: normalizedPhone });
-      setCooldownSeconds(Math.max(1, result.cooldownSeconds || 60));
-    } catch (err) {
-      setError(mapErrorMessage(err));
-    } finally {
-      setSendingCode(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await auth.verifyPhoneChange({ phone: normalizedPhone, code: smsCode.trim() });
-      try {
-        await refreshProfile();
-      } catch (refreshErr) {
-        console.warn("Failed to refresh profile after phone change", refreshErr);
-      }
-      onSuccess();
-    } catch (err) {
-      setError(mapErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
-      <motion.div
-        className="relative mx-4 w-full max-w-[520px] overflow-hidden bg-white"
-        style={{
-          borderRadius: 12,
-          border: "1px solid #E6E9EF",
-          boxShadow: "0px 24px 48px -12px rgba(0, 0, 0, 0.15)",
-        }}
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-      >
-        <div className="flex flex-col gap-4" style={{ padding: "32px 32px 24px" }}>
-          <div className="flex items-center gap-4">
-            <div className="flex flex-1 flex-col gap-2">
-              <h3 className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 20, lineHeight: "1.6em", color: "rgba(0,0,0,0.9)" }}>
-                {currentPhone ? t("修改绑定手机号") : t("绑定安全手机")}
-              </h3>
-            </div>
-            <button
-              onClick={onClose}
-              className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-              style={{ color: "rgba(0,0,0,0.5)" }}
-              aria-label={t("关闭")}
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          {currentPhone && (
-            <div className="rounded-lg bg-[rgba(7,193,96,0.08)] px-4 py-3 text-sm leading-[22px]" style={{ color: "rgba(0,0,0,0.75)" }}>
-              {t("当前绑定手机号：{{phone}}", { phone: currentPhone })}
-            </div>
-          )}
-        </div>
-
-        <div style={{ height: 1, background: "#E9ECF1" }} />
-
-        <div className="flex flex-col" style={{ gap: 24, padding: "24px 32px" }}>
-          <div className="flex flex-col" style={{ gap: 8 }}>
-            <label style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
-              {currentPhone ? t("新手机号") : t("手机号")} <span style={{ color: "#cf3d4c" }}>*</span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="tel"
-                inputMode="numeric"
-                placeholder={t("请输入中国大陆手机号")}
-                value={normalizedPhone}
-                onChange={(e) => setPhone(e.target.value)}
-                maxLength={11}
-                className="w-full focus:outline-none"
-                style={{
-                  background: "rgba(255,255,255,0.9)",
-                  border: "1px solid #E9ECF1",
-                  borderRadius: 8,
-                  padding: "6px 16px",
-                  fontFamily: "PingFang SC",
-                  fontWeight: 400,
-                  fontSize: 14,
-                  lineHeight: "24px",
-                  color: "rgba(0,0,0,0.9)",
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => void sendPhoneCode()}
-                disabled={!/^1\d{10}$/.test(normalizedPhone) || sendingCode || cooldownSeconds > 0}
-                className="flex-shrink-0 rounded-lg px-4 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ border: "1px solid #202020", color: "#202020" }}
-              >
-                {sendingCode
-                  ? t("发送中...")
-                  : cooldownSeconds > 0
-                    ? t("重新发送 {{seconds}}s").replace("{{seconds}}", String(cooldownSeconds))
-                    : t("获取验证码")}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-col" style={{ gap: 8 }}>
-            <label style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
-              {t("短信验证码")} <span style={{ color: "#cf3d4c" }}>*</span>
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder={t("请输入短信验证码")}
-              value={smsCode}
-              onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
-              maxLength={8}
-              className="w-full focus:outline-none"
-              style={{
-                background: "rgba(255,255,255,0.9)",
-                border: "1px solid #E9ECF1",
-                borderRadius: 8,
-                padding: "6px 16px",
-                fontFamily: "PingFang SC",
-                fontWeight: 400,
-                fontSize: 14,
-                lineHeight: "24px",
-                color: "rgba(0,0,0,0.9)",
-              }}
-            />
-          </div>
-
-          {error && (
-            <p className="m-0 text-[13px]" style={{ color: "#cf3d4c" }}>
-              {error}
-            </p>
-          )}
-        </div>
-
-        <div style={{ height: 1, background: "#E9ECF1" }} />
-
-        <div className="flex flex-col" style={{ gap: 8, padding: "24px 32px 32px" }}>
-          <button
-            onClick={() => void handleSubmit()}
-            disabled={!canSubmit}
-            className="flex w-full items-center justify-center gap-2 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-            style={{
-              background: "#202020",
-              color: "#FFFFFF",
-              borderRadius: 28,
-              padding: "15px 24px",
-              fontFamily: "PingFang SC",
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: "24px",
-            }}
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t("更新中...")}
-              </>
-            ) : (
-              currentPhone ? t("确认修改") : t("确认绑定")
-            )}
-          </button>
-          {!currentPhone && (
-            <p className="m-0 text-center" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 12, lineHeight: "24px", color: "rgba(0,0,0,0.3)" }}>
-              {t("验证码通过后会绑定安全手机；同步失败时不会绑定。")}
-            </p>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
-/* ─── Bind Email Modal ─── */
-
-const BindEmailModal = ({
-  onClose,
-}: {
-  onClose: () => void;
-}) => {
-  const t = useT();
-  const { auth } = useRepositories();
-  const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
-
-  const canSubmit = EMAIL_REGEX.test(email.trim()) && !submitting && cooldownSeconds <= 0;
-
-  useEffect(() => {
-    if (cooldownSeconds <= 0) return;
-    const timer = window.setTimeout(() => setCooldownSeconds((current) => Math.max(0, current - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [cooldownSeconds]);
-
-  const mapErrorMessage = (err: unknown): string => {
-    if (err instanceof RepositoryError) {
-      switch (err.code) {
-        case "invalid_email":
-          return t("邮箱格式不正确，请检查后重试。");
-        case "email_already_bound":
-          return t("当前账号已绑定邮箱。");
-        case "email_bind_cooldown":
-          return t("发送过于频繁，请稍后再试。");
-        case "email_bind_disabled":
-        case "email_bind_unavailable":
-          return t("邮箱绑定服务暂未开放，请稍后再试。");
-        case "email_send_failed":
-          return t("验证邮件发送失败，请稍后重试。");
-        default:
-          break;
-      }
-      if (err.status === 429) {
-        return t("发送过于频繁，请稍后再试。");
-      }
-      return err.message || t("发送验证邮件失败，请稍后重试。");
-    }
-    return t("网络异常，请稍后再试。");
-  };
-
-  const handleSend = async () => {
-    const trimmed = email.trim();
-    if (!EMAIL_REGEX.test(trimmed) || submitting || cooldownSeconds > 0) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      // 复用 master 现有接口：发送验证邮件，用户点击 magic link（后端 ConfirmEmailBind）后完成绑定。
-      const response = await auth.requestEmailBind({ email: trimmed });
-      const seconds = Math.max(1, response.cooldownSeconds ?? 60);
-      setCooldownSeconds(seconds);
-      setSent(true);
-    } catch (err) {
-      setError(mapErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-    >
-      <motion.div
-        className="relative mx-4 w-full max-w-[520px] overflow-hidden bg-white"
-        style={{
-          borderRadius: 12,
-          border: "1px solid #E6E9EF",
-          boxShadow: "0px 24px 48px -12px rgba(0, 0, 0, 0.15)",
-        }}
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-      >
-        <div className="flex flex-col gap-4" style={{ padding: "32px 32px 24px" }}>
-          <div className="flex items-center gap-4">
-            <div className="flex flex-1 flex-col gap-2">
-              <h3 className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 20, lineHeight: "1.6em", color: "rgba(0,0,0,0.9)" }}>
-                {t("绑定邮箱")}
-              </h3>
-              <p className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
-                {t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-              style={{ color: "rgba(0,0,0,0.5)" }}
-              aria-label={t("关闭")}
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <div style={{ height: 1, background: "#E9ECF1" }} />
-
-        <div className="flex flex-col" style={{ gap: 24, padding: "24px 32px 32px" }}>
-          <div className="flex flex-col" style={{ gap: 8 }}>
-            <label style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
-              {t("邮箱地址")} <span style={{ color: "#cf3d4c" }}>*</span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder={t("请输入邮箱地址")}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full focus:outline-none"
-                style={{
-                  background: "rgba(255,255,255,0.9)",
-                  border: "1px solid #E9ECF1",
-                  borderRadius: 8,
-                  padding: "6px 16px",
-                  fontFamily: "PingFang SC",
-                  fontWeight: 400,
-                  fontSize: 14,
-                  lineHeight: "24px",
-                  color: "rgba(0,0,0,0.9)",
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => void handleSend()}
-                disabled={!canSubmit}
-                className="flex-shrink-0 rounded-lg px-4 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ border: "1px solid #202020", color: "#202020" }}
-              >
-                {submitting
-                  ? t("发送中...")
-                  : cooldownSeconds > 0
-                    ? t("重新发送 {{seconds}}s").replace("{{seconds}}", String(cooldownSeconds))
-                    : t("发送验证邮件")}
-              </button>
-            </div>
-          </div>
-
-          {sent && (
-            <div
-              className="flex items-start gap-2 rounded-lg"
-              style={{ background: "rgba(40, 93, 255, 0.06)", padding: "10px 12px" }}
-            >
-              <ShieldCheck className="mt-0.5 h-[18px] w-[18px] flex-shrink-0" style={{ color: "var(--lw-accent)" }} />
-              <span style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 13, lineHeight: "20px", color: "rgba(0,0,0,0.75)" }}>
-                {t("验证邮件已发送，请前往邮箱点击链接完成验证。")}
-                <br />
-                {t("若未收到，请检查垃圾邮件，或在倒计时结束后重新发送。")}
-              </span>
-            </div>
-          )}
-
-          {error && (
-            <p className="m-0 text-[13px]" style={{ color: "#cf3d4c" }}>
-              {error}
-            </p>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
-/* ─── Delete Account Confirm Modal ─── */
-
-const DeleteAccountModal = ({
-  onCancel,
-  onConfirm,
-  submitting,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
-  submitting: boolean;
-}) => {
-  const t = useT();
-  return (
-  <motion.div
-    className="fixed inset-0 z-[100] flex items-center justify-center"
-    style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    transition={{ duration: 0.2 }}
-    onClick={onCancel}
-  >
-    <motion.div
-      className="relative mx-4 w-full max-w-[420px] overflow-hidden rounded-2xl bg-white"
-      style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
-      initial={{ opacity: 0, scale: 0.96, y: 10 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96, y: 10 }}
-      transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="px-7 pb-6 pt-7">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full"
-            style={{ background: "rgba(207,61,76,0.08)" }}
-          >
-            <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
-          </div>
-          <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-            {t("注销账号")}
-          </h3>
-        </div>
-        <p className="text-sm leading-relaxed" style={{ margin: '12px 0 32px 0', color: "#666" }}>
-          {t("注销后，账号内的订阅、订单、Agent 数据将被永久清除且不可恢复。确定要注销账号吗？")}
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            disabled={submitting}
-            className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
-            style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
-          >
-            {t("取消")}
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={submitting}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
-            style={{ background: "#cf3d4c" }}
-          >
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {submitting ? t("处理中...") : t("确认注销")}
-          </button>
-        </div>
-      </div>
-    </motion.div>
-  </motion.div>
-  );
-};
-
-/* ─── Pass Delete Modal ─── */
-
-/**
- * Pass 销毁弹窗 —— 联调文档 §4.1
- *
- * 流程：
- *   1. 二次确认 → 调 deletePass 同步返回 deleted=true
- *   2. 启动轮询：每 3s 拉 listMyPasses，直到目标 pass 从列表消失或被打上 deleted_time
- *   3. 2 分钟超时 → 提示用户稍后刷新
- *
- * 注意：与账号注销 DeleteAccountModal 区分 —— 这里仅销毁单个 pass，账号本体不受影响
- */
-const PassDeleteModal = ({
-  pass,
-  onClose,
-  onSuccess,
-  t,
-}: {
-  pass: Pass;
-  onClose: () => void;
-  onSuccess: () => void;
-  t: (zh: string, opts?: Record<string, unknown>) => string;
-}) => {
-  const { plans } = useRepositories();
-  const [step, setStep] = useState<"confirm" | "polling">("confirm");
-  const [submitting, setSubmitting] = useState(false);
-  const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
-  const [errMsg, setErrMsg] = useState<string | null>(null);
-
-  /* 销毁后的轮询：等 pass 从列表消失 */
-  useEffect(() => {
-    if (step !== "polling" || pollStartedAt == null) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const tick = async () => {
-      if (cancelled) return;
-      if (Date.now() - pollStartedAt > DELETE_POLL_TIMEOUT_MS) {
-        setErrMsg(t("销毁请求已提交，但状态确认超时。请稍后刷新页面查看结果。"));
-        setStep("confirm");
-        return;
-      }
-      try {
-        const list = await plans.listMyPasses();
-        if (cancelled) return;
-        const stillThere = list.find((p) => p.pass_id === pass.pass_id);
-        const finalized = !stillThere || Boolean(stillThere.deleted_time);
-        if (finalized) {
-          onSuccess();
-          return;
-        }
-      } catch (err) {
-        console.warn("[account] poll delete pass status failed", err);
-      }
-      if (!cancelled) {
-        timer = setTimeout(tick, DELETE_POLL_INTERVAL_MS);
-      }
-    };
-
-    timer = setTimeout(tick, DELETE_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [step, pollStartedAt, pass.pass_id, plans, onSuccess, t]);
-
-  const handleConfirm = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    setErrMsg(null);
-    try {
-      const result = await plans.deletePass(pass.pass_id);
-      if (!result.deleted) {
-        setErrMsg(t("销毁请求未确认，请稍后重试。"));
-        return;
-      }
-      setPollStartedAt(Date.now());
-      setStep("polling");
-    } catch (err) {
-      const fallbackMsg = err instanceof Error ? err.message : t("销毁失败，请稍后重试。");
-      console.error("[account] delete pass failed", err instanceof RepositoryError
-        ? { status: err.status, code: err.code, message: err.message }
-        : err);
-      setErrMsg(resolveBillingErrorMessage(err, fallbackMsg));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      onClick={step === "confirm" ? onClose : undefined}
-    >
-      <motion.div
-        className="relative mx-4 w-full max-w-[420px] overflow-hidden rounded-2xl bg-white"
-        style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
-        initial={{ opacity: 0, scale: 0.96, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 10 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-7 pb-6 pt-7">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full"
-              style={{ background: "rgba(207,61,76,0.08)" }}
-            >
-              <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
-            </div>
-            <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-              {t("销毁套餐")}
-            </h3>
-          </div>
-          <p className="text-sm leading-relaxed" style={{ margin: "12px 0 8px 0", color: "#666" }}>
-            {t("销毁套餐 {{name}} 后，该套餐对应的 Agent 资源、积分与订单关联将被清除，且无法恢复。", { name: pass.bundle_name })}
-          </p>
-          <p className="text-xs" style={{ margin: "0 0 24px 0", color: "#999" }}>
-            {t("销毁完成后，您可以重新购买新的套餐。")}
-          </p>
-
-          {errMsg && (
-            <p className="mb-3 text-sm" style={{ color: "#cf3d4c" }}>{errMsg}</p>
-          )}
-
-          {step === "polling" ? (
-            <div
-              className="flex items-center gap-3 rounded-xl p-3"
-              style={{ background: "#F9F8F7" }}
-            >
-              <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" style={{ color: "var(--lw-accent)" }} />
-              <p className="m-0 text-sm" style={{ color: "#333" }}>
-                {t("正在销毁套餐，请稍候...")}
-              </p>
-            </div>
-          ) : (
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={submitting}
-                className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
-                style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
-              >
-                {t("取消")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleConfirm()}
-                disabled={submitting}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
-                style={{ background: "#cf3d4c" }}
-              >
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitting ? t("处理中...") : t("确认销毁")}
-              </button>
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
-/* ─── Subscription Section ─── */
-
-/** 销毁轮询：联调文档 §4.1 说明销毁是异步，需等 pass 从列表消失 */
-const DELETE_POLL_INTERVAL_MS = 3_000;
-const DELETE_POLL_TIMEOUT_MS = 2 * 60 * 1_000;
-
-const SubscriptionSection = ({
-  subscription,
-  pass,
-}: {
-  subscription: { code?: string; status?: string; currentPeriodStart?: string; currentPeriodEnd?: string } | null | undefined;
-  pass: Pass | null;
-}) => {
-  const t = useT();
-  const { i18n } = useTranslation();
-  const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
-  const plansDocHref = publicSiteHref("/docs/plans", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
-  const { refreshPasses, user, modifyingPass, passUpgradeFailed } = useOpenClaw();
-  useEffect(() => { void refreshPasses(); }, [refreshPasses]);
-  const { session } = useSession();
-  const { plans } = useRepositories();
-  const paidBillingEnabled = usePaidBillingEnabled();
-  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
-  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
-  const plan = user.plan;
-  const renewalRealnameVerified = isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled);
-
-  /**
-   * 只读 fallback pass：activePass 为空时仍需展示 expired/isolated pass 的续费状态。
-   * 国内站仅在付费开关开启时拉取；国际站关闭时也要展示 Coming Soon。
-   */
-  const [fallbackPass, setFallbackPass] = useState<Pass | null>(null);
-
-  /** 续费 / 销毁弹窗状态 */
-  const [renewModalOpen, setRenewModalOpen] = useState(false);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-
-  useEffect(() => {
-    if (!isGlobal && !paidBillingActive) return;
-    if (pass) {
-      setFallbackPass(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const list = await plans.listMyPasses();
-        if (cancelled) return;
-        /* 取首个未销毁的 pass；isolated/expired 都会在这里被包含。
-           互斥占用规则保证不会同时出现多个未销毁 pass。 */
-        const first = list.find((p) => !p.deleted_time) ?? null;
-        setFallbackPass(first);
-      } catch (err) {
-        console.warn("[account] fetch fallback pass failed", err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [paidBillingActive, pass, plans]);
-
-  /** 可操作的 pass：优先 active，其次 fallback */
-  const operablePass = modifyingPass ?? pass ?? fallbackPass;
-  const isModifying = operablePass?.status === "modifying";
-  const passStatus = operablePass ? getPassStatus(operablePass) : null;
-  const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
-  const canRenew = !isModifying && (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
-  const canDelete = !isModifying && paidBillingActive && operablePass != null && canDeletePass(operablePass);
-  const upgrade = usePassUpgrade({ userId: session.user?.id, passId: operablePass?.pass_id, currentPass: operablePass, enabled: paidBillingActive });
-
-  const handleRenewSuccess = useCallback(async () => {
-    setRenewModalOpen(false);
-    await refreshPasses();
-    setFallbackPass(null);
-  }, [refreshPasses]);
-
-  const handleDeleteSuccess = useCallback(async () => {
-    setDeleteModalOpen(false);
-    await refreshPasses();
-    setFallbackPass(null);
-  }, [refreshPasses]);
-
-  /**
-   * 活跃权益的认定：
-   * 1. 有 activePass 〔主路径〕
-   * 2. 有 fallbackPass 〔过期 / 隔离期，仍需展示以供续费 / 销毁〕
-   * 3. 后退到旧的 subscription
-   */
-  const hasActive = Boolean(operablePass) || Boolean(subscription);
-
-  /**
-   * 所有 Hook 必须在任何 early return 之前调用，以保证每次渲染 Hook 数量恒定。
-   * 这里把有效期计算无条件执行，未订阅分支直接忽略其返回值即可。
-   */
-  const validityInfo = useMemo(() => {
-    const now = new Date();
-    /* 优先从 operablePass（activePass / fallbackPass）取有效期，其次才是 subscription / 试用默认 */
-    const sourcePass = operablePass;
-    if (sourcePass) {
-      const start = new Date(sourcePass.created_time);
-      const end = new Date(sourcePass.expired_time);
-      const remainDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-      return {
-        startDate: start.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
-        endDate: end.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
-        remainDays,
-        expired: remainDays <= 0,
-      };
-    }
-    if (subscription?.currentPeriodStart && subscription.currentPeriodEnd) {
-      const start = new Date(subscription.currentPeriodStart);
-      const end = new Date(subscription.currentPeriodEnd);
-      const remainDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-      return {
-        startDate: start.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
-        endDate: end.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
-        remainDays,
-        expired: remainDays <= 0,
-      };
-    }
-    // 有订阅但无日期，基于试用天数模拟
-    const end = new Date(now.getTime() + plan.trialDays * 24 * 60 * 60 * 1000);
-    return {
-      startDate: now.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
-      endDate: end.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
-      remainDays: plan.trialDays,
-      expired: false,
-    };
-  }, [operablePass, subscription, plan.trialDays]);
-
-  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。
-     积分包区域未开启时（feature flag 默认关闭）退化为仅套餐积分，
-     与改造前行为一致。挂载 show_credit_pack() 控制台助手（两页任一挂载即可生效）。 */
-  const planCreditInput = useMemo(
-    () =>
-      operablePass
-        ? {
-            displayName: operablePass.bundle_name ?? t("套餐积分"),
-            creditTotal: operablePass.credit_total,
-            creditAvailable: operablePass.credit_available,
-          }
-        : null,
-    [operablePass, t],
-  );
-  const freeCreditInput = useMemo(() => {
-    const creditTotal = Math.max(0, operablePass?.free_credit_total ?? 0);
-    if (creditTotal <= 0) return null;
-    return {
-      displayName: t("额外积分"),
-      creditTotal,
-      creditAvailable: Math.min(creditTotal, Math.max(0, operablePass?.free_credit_available ?? 0)),
-    };
-  }, [operablePass, t]);
-  const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
-    useCreditSources(planCreditInput, freeCreditInput);
-  const creditPackVisible = useCreditPackVisibility();
-  useEffect(() => installCreditPackVisibilityHelper(), []);
-
-  /* 套餐进度保持独立；汇总和告警才计算所有已开放的积分来源。 */
-  const planCreditsTotal = operablePass ? operablePass.credit_total : 0;
-  const planCreditsAvailable = operablePass ? operablePass.credit_available : 0;
-  const freeCreditsTotal = freeCreditInput?.creditTotal ?? 0;
-  const freeCreditsAvailable = freeCreditInput?.creditAvailable ?? 0;
-  const planCreditsUsed = Math.max(0, planCreditsTotal - planCreditsAvailable);
-  const planUsedPercent = planCreditsTotal > 0
-    ? Math.min(100, Math.round((planCreditsUsed / planCreditsTotal) * 100))
-    : 0;
-  const allCreditsTotal = creditPackVisible ? creditSummary.total : planCreditsTotal + freeCreditsTotal;
-  const allCreditsAvailable = creditPackVisible
-    ? creditSummary.available
-    : planCreditsAvailable + freeCreditsAvailable;
-  const allCreditsUsedPercent = allCreditsTotal > 0
-    ? Math.min(100, Math.round(((allCreditsTotal - allCreditsAvailable) / allCreditsTotal) * 100))
-    : 0;
-  const creditsExhausted = Boolean(allCreditsTotal > 0 && allCreditsAvailable <= 0);
-  const showCreditPrompt = creditsExhausted || allCreditsUsedPercent > 95;
-  const creditUsageColor = planUsedPercent > 95
-    ? "#991B1B"
-    : planUsedPercent >= 80
-      ? "#CF3D4C"
-      : planUsedPercent >= 50
-        ? "#C67B1E"
-        : "var(--lw-accent)";
-
-  // 展示用的套餐名称
-  const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
-  const legacySubscriptionStatus = operablePass ? null : subscription?.status;
-  const displayStatus = isModifying
-    ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中"))
-    : passStatus === "expired" || legacySubscriptionStatus === "expired"
-      ? t("已过期")
-      : passStatus === "isolated"
-        ? t("隔离期")
-        : legacySubscriptionStatus === "pending_payment"
-          ? t("待支付")
-          : legacySubscriptionStatus === "cancelled"
-            ? t("已取消")
-            : t("生效中");
-
-  /* ── 未订阅：缺省引导状态 ── */
-  if (!hasActive) {
-    return (
-      <motion.div
-        variants={fadeIn}
-        className="overflow-hidden bg-white"
-        style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
-      >
-        <div className="px-5 py-5 md:px-8 md:py-8" style={{ borderBottom: "1px solid #E6E9EF" }}>
-          <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-            {t("订阅套餐")}
-          </h3>
-        </div>
-        <div className="flex flex-col items-center gap-5 px-5 py-8 text-center md:px-8 md:py-10">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl">
-            <CreditCard className="h-7 w-7" style={{ color: "rgba(0,0,0,0.9)" }} />
-          </div>
-          <div>
-            <p className="text-base font-bold" style={{ color: "#333" }}>{t("还没有订阅套餐")}</p>
-            <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "#999" }}>
-              {t("即刻创建你的专属云端 Hermes")}
-            </p>
-          </div>
-          <AppLink
-            to={subscribeHref}
-            className="inline-flex items-center justify-center gap-2 bg-black/90 px-6 py-3 rounded-full font-semibold text-sm cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)] transition-all"
-            style={{ color: "#fff" }}
-          >
-            <Zap className="h-4 w-4" style={{ color: "#fff" }} />
-            <span style={{ color: "#fff" }}>{t("立即创建")}</span>
-          </AppLink>
-        </div>
-      </motion.div>
-    );
-  }
-
-  /* ── 已订阅：展示详情 ── */
-
-  return (
-    <motion.div
-      variants={fadeIn}
-      className="overflow-hidden bg-white"
-      style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
-    >
-      <div
-        className="flex items-center justify-between gap-3 px-5 py-5 md:px-8 md:py-8"
-        style={{ borderBottom: "1px solid #E6E9EF" }}
-      >
-        <h3 className="min-w-0 text-balance text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-          {t("订阅套餐")}
-        </h3>
-        {canRenew && operablePass && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {!renewalAvailable ? (
-              <RenewComingSoonButton
-                label={t("立即续费")}
-                tooltip={t("敬请期待")}
-                icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setRenewModalOpen(true)}
-                className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#202020] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black"
-              >
-                <CreditCard className="h-4 w-4" />
-                {t("立即续费")}
-              </button>
-            )}
-            {upgrade.pass && upgrade.options.length > 0 && (
-              <AppLink to={`${subscribeHref}/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`} className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-[#202020] transition-colors hover:bg-black/5">
-                {t("升级套餐")}
-              </AppLink>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
-        {upgrade.error && <p role="alert" className="text-sm">{t("升级资格加载失败，请重试")} <button type="button" className="underline" onClick={upgrade.retry}>{t("重试")}</button></p>}
-        {/* Current plan */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: "rgba(0,0,0,0.03)" }}>
-              <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/8f6347f3-5b3f-4dfb-844d-bb2501cb9e3d.png" alt="" className="h-7 w-7 rounded-lg object-cover" />
-            </div> */}
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-bold" style={{ color: "#333" }}>{t("当前套餐")}</p>
-                <AppLink
-                  to={plansDocHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 text-xs font-medium transition-colors hover:text-black/70"
-                  style={{ color: "var(--lw-accent)" }}
-                >
-                  {t("套餐说明")}
-                  <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
-                </AppLink>
-              </div>
-              <p className="text-sm" style={{ color: "#666" }}>{displayName}</p>
-            </div>
-          </div>
-          <span role={isModifying ? "status" : undefined} className="inline-flex shrink-0 items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
-            {displayStatus}
-          </span>
-        </div>
-
-        {/* Divider */}
-        <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
-
-        {/* Validity period */}
-        <div>
-          <div className="mb-2">
-            <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("订阅有效期")}</span>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm" style={{ color: "#666" }}>
-              {validityInfo.startDate} — {validityInfo.endDate}
-            </p>
-            <span
-              className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-bold"
-              style={{
-                background:
-                  passStatus === "isolated"
-                    ? "rgba(198,123,30,0.12)"
-                    : passStatus === "expired" || validityInfo.expired
-                      ? "rgba(207,61,76,0.08)"
-                      : validityInfo.remainDays <= 2
-                        ? "rgba(198,123,30,0.08)"
-                        : "rgba(20,122,86,0.08)",
-                color:
-                  passStatus === "isolated"
-                    ? "#C67B1E"
-                    : passStatus === "expired" || validityInfo.expired
-                      ? "#cf3d4c"
-                      : validityInfo.remainDays <= 2
-                        ? "#C67B1E"
-                        : "#147A56",
-                borderRadius: "6px",
-              }}
-            >
-              {validityInfo.expired ? t("已过期") : t("剩余 {{days}} 天", { days: validityInfo.remainDays })}
-            </span>
-          </div>
-        </div>
-
-        {/* Credits progress and usage prompt */}
-        {(allCreditsTotal > 0 || showCreditPrompt) && (
-          <>
-            {/* Divider */}
-            <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
-
-            <div>
-              {planCreditsTotal > 0 && (
-                <>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-semibold" style={{ color: "#333" }}>
-                      {freeCreditsTotal > 0 || (creditPackVisible && creditSummary.sourceCount > 1)
-                        ? t("套餐积分")
-                        : t("已使用积分")}
-                    </span>
-                    {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
-                    {creditPackVisible && (
-                      <AppLink
-                        to="/subscribe?section=credits"
-                        className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
-                        style={{ color: "var(--lw-accent)" }}
-                      >
-                        {t("购买积分包")}
-                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
-                      </AppLink>
-                    )}
-                  </div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
-                      {planCreditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {planCreditsTotal.toLocaleString()}</span>
-                    </p>
-                    <span className="text-xs font-semibold" style={{ color: creditUsageColor }}>
-                      {planUsedPercent}%
-                    </span>
-                  </div>
-                  {/* Progress bar */}
-                  <div className="relative h-2.5 w-full overflow-hidden rounded-full" style={{ background: "rgba(0,0,0,0.05)" }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${planUsedPercent}%`,
-                        background: creditUsageColor,
-                      }}
-                    />
-                  </div>
-
-                  {freeCreditsTotal > 0 && !creditPackVisible && (
-                    <div className="mt-3 space-y-2 border-t border-black/[0.06] pt-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span style={{ color: "#666" }}>{t("额外积分")}</span>
-                        <span className="font-semibold tabular-nums" style={{ color: "#333" }}>
-                          {freeCreditsAvailable.toLocaleString()}
-                          <span className="font-normal" style={{ color: "#999" }}>
-                            {" / "}
-                            {freeCreditsTotal.toLocaleString()}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span style={{ color: "#666" }}>{t("当前可用")}</span>
-                        <span className="font-semibold tabular-nums" style={{ color: "var(--lw-accent)" }}>
-                          {allCreditsAvailable.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。
-                      仅在积分包功能开启后展示，未开启时保持原有单套餐视图。 */}
-                  {creditPackVisible && creditSources.length > 0 && (
-                    <div className="mt-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-semibold" style={{ color: "#333" }}>
-                          {t("额度明细")}
-                        </span>
-                        <span className="text-xs" style={{ color: "#999" }}>
-                          {t("共 {{count}} 个来源", { count: creditSummary.sourceCount })}
-                        </span>
-                      </div>
-                      <ul className="list-none space-y-2 p-0">
-                        {creditSources.map((source) => (
-                          <li
-                            key={source.source_id}
-                            className="flex items-center justify-between rounded-lg px-3 py-2"
-                            style={{ background: "rgba(0,0,0,0.02)" }}
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-sm" style={{ color: "#333" }}>
-                                {source.display_name}
-                              </p>
-                              {source.next_expire_at && (
-                                <p className="mt-0.5 text-xs" style={{ color: "#999" }}>
-                                  {source.source_type === "plan"
-                                    ? t("下次刷新：{{date}}", { date: formatCreditDate(source.next_expire_at) })
-                                    : t("到期时间：{{date}}", { date: formatCreditDate(source.next_expire_at) })}
-                                </p>
-                              )}
-                            </div>
-                            <p className="shrink-0 pl-3 text-sm font-semibold" style={{ color: "var(--lw-accent)" }}>
-                              {source.credit_available.toLocaleString()}
-                              <span className="font-normal" style={{ color: "#999" }}>
-                                {" / "}
-                                {source.credit_total.toLocaleString()}
-                              </span>
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                      {creditPacksFailed && (
-                        <button
-                          type="button"
-                          onClick={reloadCreditPacks}
-                          className="mt-2 text-xs font-semibold underline underline-offset-2"
-                          style={{ color: "#991B1B" }}
-                        >
-                          {t("积分包额度加载失败，点击重试")}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-              {showCreditPrompt && operablePass && (
-                <p className="mt-3 text-xs leading-relaxed" style={{ color: "#991B1B" }}>
-                  {!creditsExhausted ? (
-                    <>
-                      {t("模型积分即将用尽，为避免智能体停止响应，请尽快")}
-                      <AppLink
-                        to="/agents/models"
-                        className="inline-flex items-center gap-0.5 font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
-                        style={{ color: "inherit" }}
-                      >
-                        {t("配置自有模型")}
-                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
-                      </AppLink>
-                    </>
-                  ) : (
-                    <>
-                      {t("模型积分已用尽，如未配置自有模型，智能体将无法继续响应。")}
-                      <AppLink
-                        to="/agents/models"
-                        className="inline-flex items-center gap-0.5 font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
-                        style={{ color: "inherit" }}
-                      >
-                        {t("立即配置模型")}
-                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
-                      </AppLink>
-                    </>
-                  )}
-                </p>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* 销毁按钮及隔离期 / 过期说明；续费入口位于标题栏。 */}
-        {(canDelete || passStatus === "isolated" || passStatus === "expired") && operablePass && (
-          <>
-            <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
-            <div className="flex flex-wrap items-center gap-3">
-              {canDelete && (
-                <button
-                  type="button"
-                  onClick={() => setDeleteModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full border bg-white px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(207,61,76,0.04)]"
-                  style={{ borderColor: "rgba(207,61,76,0.3)", color: "#cf3d4c" }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {t("销毁套餐")}
-                </button>
-              )}
-              {passStatus === "isolated" && (
-                <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
-                  {!renewalAvailable
-                    ? t("续费功能敬请期待。你仍可销毁当前套餐后重新购买。")
-                    : t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
-                </p>
-              )}
-              {passStatus === "expired" && (
-                <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
-                  {!renewalAvailable
-                    ? t("续费功能敬请期待。套餐已过期，暂时无法发起续费。")
-                    : t("套餐已过期，请及时续费以免进入隔离期。")}
-                </p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* 续费 / 销毁弹窗 — 国际站续费入口由 paidBillingEnabled 控制。 */}
-      <AnimatePresence>
-        {renewModalOpen && renewalAvailable && operablePass && (
-          <RenewPassModal
-            key="renew"
-            pass={operablePass}
-            onClose={() => setRenewModalOpen(false)}
-            onSuccess={() => void handleRenewSuccess()}
-            initialRealnameRequired={Boolean(session.user) && !renewalRealnameVerified}
-          />
-        )}
-        {deleteModalOpen && operablePass && (
-          <PassDeleteModal
-            key="delete-pass"
-            pass={operablePass}
-            onClose={() => setDeleteModalOpen(false)}
-            onSuccess={() => void handleDeleteSuccess()}
-            t={t}
-          />
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-};
+import { useAccountSubscriptionModel } from "@/lib/use-account-subscription-model";
 
 /* ─── Main Account Page ─── */
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const AccountPage = ({ view = "account" }: { view?: "account" | "billing" }) => {
   const isBillingView = view === "billing";
   const t = useT();
+  const { i18n } = useTranslation();
   const navigate = useAppNavigate();
   const [searchParams, setSearchParams] = useAppSearchParams();
-  const { auth } = useRepositories();
+  const { auth, plans } = useRepositories();
   const {
     session,
     isAuthenticated,
@@ -1334,7 +60,32 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   } = useSession();
   const user = session.user;
   const subscription = session.currentSubscription;
-  const { activePass } = useOpenClaw();
+  const {
+    activePass,
+    modifyingPass,
+    passUpgradeFailed,
+    passesError,
+    refreshPasses,
+    user: openClawUser,
+  } = useOpenClaw();
+  const paidBillingActive = isPaidBillingEnabled(usePaidBillingEnabled());
+  const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
+  const subscriptionModel = useAccountSubscriptionModel({
+    userId: session.user?.id,
+    activePass,
+    modifyingPass,
+    subscription,
+    planName: openClawUser.plan.name,
+    trialDays: openClawUser.plan.trialDays,
+    paidBillingActive,
+    global: isGlobal,
+    passUpgradeFailed,
+    subscribeHref,
+    listMyPasses: plans.listMyPasses,
+    refreshPasses,
+  });
+
+  useEffect(() => { void refreshPasses(); }, [refreshPasses]);
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(user?.name ?? "");
@@ -1343,10 +94,11 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const [referralRevealed, setReferralRevealed] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    return subscribeConsoleShow(setReferralRevealed);
+    const revealReferral = () => setReferralRevealed(true);
+    window.addEventListener(CONSOLE_SHOW_EVENT, revealReferral);
+    return () => window.removeEventListener(CONSOLE_SHOW_EVENT, revealReferral);
   }, []);
 
   // Unauthenticated view state
@@ -1408,7 +160,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const [realnameReturnTo, setRealnameReturnTo] = useState<string | null>(null);
 
   // Email bind —— 国内站微信/QQ 登录用户通过 Magic Link 绑定邮箱。
-  // 邮箱输入/发送验证邮件的交互已收敛进 BindEmailModal；这里仅保留 OAuth 回跳
+  // 邮箱输入/发送验证邮件的交互已收敛进 BindEmailDialog；这里仅保留 OAuth 回跳
   // （?email_bound / ?email_bind_error）结果提示所需的状态。
   const [emailBindError, setEmailBindError] = useState<string | null>(null);
   const [emailBindSuccess, setEmailBindSuccess] = useState<string | null>(null);
@@ -1471,8 +223,9 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
 
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {
+    if (isBillingView) return;
     // 国际站无实名概念，即便被手动拼接该 query 也不展示中文提醒
-    if (isBillingView || isGlobal) return;
+    if (isGlobal) return;
     if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
 
     // 读取 return_to（仅站内路径，防开放重定向），实名完成后自动跳回
@@ -1608,6 +361,71 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
     setShowChangePhoneModal(false);
   };
 
+  const mapPhoneChangeError = (err: unknown): string => {
+    if (err instanceof RepositoryError) {
+      switch (err.code) {
+        case "invalid_phone": return t("手机号格式不正确，请检查后重试。");
+        case "phone_in_use": return t("该手机号已绑定其他账号，请更换手机号。");
+        case "sms_code_not_found": return t("请先获取短信验证码。");
+        case "sms_code_expired": return t("验证码已过期，请重新获取。");
+        case "invalid_sms_code": return t("验证码不正确，请检查后重试。");
+        case "shadow_binding_failed":
+        case "shadow_binding_incomplete": return t("安全手机同步失败，请稍后重试。");
+        case "unauthorized": return t("登录已失效，请重新登录后再试。");
+        default: break;
+      }
+      if (err.status === 502 || err.status === 503) return t("账号服务繁忙，请稍后重试。");
+      return err.message || t("手机号修改失败，请稍后重试。");
+    }
+    return t("网络异常，请稍后再试。");
+  };
+
+  const handleSendPhoneChangeCode = async (phone: string) => {
+    try {
+      return await auth.sendPhoneChangeCode({ phone });
+    } catch (err) {
+      throw new Error(mapPhoneChangeError(err));
+    }
+  };
+
+  const handleSubmitPhoneChange = async (input: { phone: string; code: string }) => {
+    try {
+      await auth.verifyPhoneChange(input);
+      try {
+        await refreshProfile();
+      } catch (refreshError) {
+        console.warn("Failed to refresh profile after phone change", refreshError);
+      }
+    } catch (err) {
+      throw new Error(mapPhoneChangeError(err));
+    }
+  };
+
+  const mapEmailBindError = (err: unknown): string => {
+    if (err instanceof RepositoryError) {
+      switch (err.code) {
+        case "invalid_email": return t("邮箱格式不正确，请检查后重试。");
+        case "email_already_bound": return t("当前账号已绑定邮箱。");
+        case "email_bind_cooldown": return t("发送过于频繁，请稍后再试。");
+        case "email_bind_disabled":
+        case "email_bind_unavailable": return t("邮箱绑定服务暂未开放，请稍后再试。");
+        case "email_send_failed": return t("验证邮件发送失败，请稍后重试。");
+        default: break;
+      }
+      if (err.status === 429) return t("发送过于频繁，请稍后再试。");
+      return err.message || t("发送验证邮件失败，请稍后重试。");
+    }
+    return t("网络异常，请稍后再试。");
+  };
+
+  const handleSendEmailBind = async (email: string) => {
+    try {
+      return await auth.requestEmailBind({ email });
+    } catch (err) {
+      throw new Error(mapEmailBindError(err));
+    }
+  };
+
   const handleCopyUserId = async () => {
     if (!user?.id) return;
     try {
@@ -1653,12 +471,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   if (authReady && !isAuthenticated && !isSigningOut) {
     pageContent = (
         <main className="relative z-10 flex flex-grow items-center justify-center px-6 pb-16 pt-24 md:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="max-w-[360px] text-center"
-          >
+          <div className="max-w-[360px] text-center">
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border"
               style={{ background: "rgba(0,0,0,0.02)", borderColor: "rgba(0,0,0,0.04)" }}
             >
@@ -1669,21 +482,24 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
                 style={{ pointerEvents: "none" }}
               />
             </div>
-            <h2 className="m-0 text-xl font-bold tracking-[-0.3px]" style={{ color: "#333" }}>
+            <DisplayTitle size="section" className="text-balance">
               {t("登录以查看账号信息")}
-            </h2>
+            </DisplayTitle>
             <p className="mb-8 mt-2 text-sm leading-relaxed" style={{ color: "#999" }}>
               {t("登录后可查看和管理你的个人信息、订阅套餐和订单记录。")}
             </p>
 
             <div className="flex flex-col gap-2.5">
-              <button
+              <Button
+                type="button"
                 onClick={() => setShowLoginModal(true)}
-                className="lw-btn-primary w-full"
+                className="w-full"
               >
                 {t("登录 / 注册")}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => {
                   setGuestLoading(true);
                   setGuestError(null);
@@ -1692,11 +508,10 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
                     .finally(() => setGuestLoading(false));
                 }}
                 disabled={guestLoading}
-                className="w-full rounded-lg border px-4 py-3 text-[15px] font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:cursor-not-allowed disabled:opacity-60"
-                style={{ borderColor: "rgba(0,0,0,0.1)", color: "#999" }}
+                className="w-full"
               >
                 {guestLoading ? t("进入中...") : t("游客体验")}
-              </button>
+              </Button>
             </div>
 
             {guestError && (
@@ -1710,7 +525,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
             >
               ← {t("返回首页")}
             </AppLink>
-          </motion.div>
+          </div>
 
           <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
         </main>
@@ -1718,40 +533,53 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   } else if (!authReady || isSigningOut) {
     /* ── Loading auth ── */
     pageContent = (
-        <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24" aria-hidden="true">
-          <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
-            <div className="mb-8 h-9 w-36 rounded-full bg-black/[0.06]" />
-            <div className="space-y-4">
-              <div className="h-40 rounded-lg bg-black/[0.04]" />
-              <div className="h-24 rounded-lg bg-black/[0.04]" />
-              <div className="h-24 rounded-lg bg-black/[0.04]" />
-            </div>
-          </section>
-        </main>
+      <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24">
+        <AccountPageGate
+          authReady={authReady}
+          isAuthenticated={isAuthenticated}
+          isSigningOut={isSigningOut}
+          subscriptionState={subscriptionModel.state}
+          passesError={passesError}
+          onRetry={() => {
+            subscriptionModel.actions.onRetrySummary();
+            void refreshPasses();
+          }}
+          loadingTitle={t("正在加载账号")}
+          errorTitle={t("套餐列表加载失败")}
+          retryLabel={t("重试")}
+        >
+          {null}
+        </AccountPageGate>
+      </main>
     );
   } else {
     /* ── Authenticated view ── */
     pageContent = (
-      <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24">
-        <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
+      <main className="relative z-10 flex-grow px-6 pb-8 pt-20 md:px-8 md:pt-24">
+      <AccountPageGate
+        authReady={authReady}
+        isAuthenticated={isAuthenticated}
+        isSigningOut={isSigningOut}
+        subscriptionState={subscriptionModel.state}
+        passesError={passesError || subscriptionModel.error.summary}
+        onRetry={() => {
+          subscriptionModel.actions.onRetrySummary();
+          void refreshPasses();
+        }}
+        loadingTitle={t("正在加载账号")}
+        errorTitle={t("套餐列表加载失败")}
+        errorDescription={t("请刷新套餐信息后重试。")}
+        retryLabel={t("重试")}
+      >
+        <section className="mx-auto w-full max-w-[46rem]">
           {/* Page Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="mb-6 md:mb-8"
-          >
-            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{isBillingView ? t("套餐与费用") : t("账号")}</h2>
-          </motion.div>
+          <DisplayTitle className="mb-6 text-balance md:mb-8">{t(isBillingView ? "套餐与费用" : "账号")}</DisplayTitle>
 
           {/* 实名提醒 tips：从首页「立即创建」跳转、且尚未完成实名认证时展示（仅国内站） */}
           {!isBillingView && realnameRequiredTip && !verified && showRealnameSection && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
+            <div
               role="alert"
-              className="mb-6 flex items-start gap-3 rounded-xl px-4 py-3"
+              className="mb-6 flex items-start gap-3 rounded-md px-4 py-3"
               style={{
                 background: "var(--color-warning-bg, rgba(255, 161, 0, 0.1))",
                 border: "1px solid var(--color-warning-border, rgba(255, 161, 0, 0.35))",
@@ -1761,356 +589,110 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
               <p className="m-0 text-sm" style={{ color: "var(--color-warning-text, rgba(0,0,0,0.75))", lineHeight: 1.5 }}>
                 {realnameRequiredTip}
               </p>
-            </motion.div>
+            </div>
           )}
 
           {/* Sections */}
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate="visible"
-            className="space-y-6"
-          >
-            {/* ── Section 1: Profile ── */}
-            {!isBillingView && <motion.div
-              variants={fadeIn}
-              className="overflow-hidden bg-white"
-              style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
-            >
-              {/* Top row: avatar + nickname + actions */}
-              <div
-                className="flex flex-col gap-5 px-5 py-6 md:flex-row md:items-center md:justify-between md:gap-4 md:px-8 md:py-8"
-                style={{ borderBottom: "1px solid #E6E9EF" }}
-              >
-                <div className="flex items-center gap-4 md:gap-[22px]">
-                  {/* Avatar */}
-                  <div className="relative flex-shrink-0">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => void handleAvatarUpload(e)}
-                    />
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={avatarUploading}
-                      className="group relative block"
-                      title={avatarUploadError ?? (avatarUploading ? t("头像上传中...") : t("点击更换头像"))}
-                    >
-                      <img
-                        src={displayAvatarSrc}
-                        alt="avatar"
-                        className={cn("h-14 w-14 object-cover transition-[filter,transform]", hasPendingAvatarAudit && "scale-105 blur-sm")}
-                        style={{
-                          border: hasPendingAvatarAudit ? "2px solid rgba(198, 123, 30, 0.55)" : "1px solid #E6E9EF",
-                          borderRadius: "9999px",
-                          background: "#F9F8F7",
-                        }}
-                      />
-                      {hasPendingAvatarAudit && (
-                        <span
-                          className="absolute -bottom-1 -right-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                          style={{ background: "#FFF4DE", color: "#9A5A00", border: "1px solid rgba(198, 123, 30, 0.28)" }}
-                        >
-                          {t("审核中")}
-                        </span>
-                      )}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity group-hover:opacity-100 disabled:opacity-100" style={{ borderRadius: "9999px" }}>
-                        {avatarUploading ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-white" />
-                        ) : (
-                          <Camera className="h-4 w-4 text-white" />
-                        )}
-                      </div>
-                    </button>
-                  </div>
+          <div className="space-y-6">
+            <div className="space-y-6">
+              {!isBillingView && <AccountProfileCard
+                user={user}
+                displayAvatarSrc={displayAvatarSrc}
+                hasPendingAvatarAudit={hasPendingAvatarAudit}
+                avatarAuditFailed={avatarAuditFailed}
+                pendingName={pendingName}
+                hasPendingNameAudit={hasPendingNameAudit}
+                nameAuditFailed={nameAuditFailed}
+                copiedUserId={copiedUserId}
+                isEditingName={isEditingName}
+                editName={editName}
+                saving={saving}
+                nameSaveError={nameSaveError}
+                avatarUploading={avatarUploading}
+                avatarUploadError={avatarUploadError}
+                onAvatarUpload={(event) => void handleAvatarUpload(event)}
+                onEditNameChange={setEditName}
+                onBeginNameEdit={beginNameEdit}
+                onCancelNameEdit={cancelNameEdit}
+                onSaveName={() => void handleSaveName()}
+                onCopyUserId={() => void handleCopyUserId()}
+                onSignOut={() => void handleSignOut()}
+              />}
 
-                  {/* Nickname */}
-                  <div className="min-w-0">
-                    {isEditingName ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          className="lw-input w-full flex-1 md:w-auto"
-                          maxLength={20}
-                          autoFocus
-                        />
-                        <div className="flex w-full items-center gap-2 md:w-auto">
-                          <button
-                            onClick={() => void handleSaveName()}
-                            disabled={saving || !editName.trim()}
-                            className="lw-btn-primary !px-4 !py-2.5 !text-sm !rounded-lg disabled:opacity-60"
-                          >
-                            {saving ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Check className="h-4 w-4" />
-                            )}
-                          </button>
-                          <button
-                            onClick={cancelNameEdit}
-                            className="rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-[rgba(0,0,0,0.03)]"
-                            style={{ color: "#aaa" }}
-                          >
-                            {t("取消")}
-                          </button>
-                        </div>
-                        {nameSaveError && (
-                          <p className="w-full text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
-                            {nameSaveError}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <p
-                            className={cn("truncate transition-[filter]", hasPendingNameAudit && "select-none blur-sm")}
-                            style={{ fontSize: 20, fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
-                          >
-                            {hasPendingNameAudit ? pendingName : user?.name || t("未设置")}
-                          </p>
-                          {hasPendingNameAudit && (
-                            <span
-                              className="inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium"
-                              style={{ background: "rgba(198, 123, 30, 0.12)", color: "#9A5A00" }}
-                            >
-                              {t("审核中")}
-                            </span>
-                          )}
-                          <button
-                            onClick={beginNameEdit}
-                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-                            style={{ color: "#aaa" }}
-                            aria-label={hasPendingNameAudit ? t("修改待审核昵称") : t("修改昵称")}
-                            title={hasPendingNameAudit ? t("修改待审核昵称") : t("修改昵称")}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                        {user?.id && (
-                          <div className="flex min-w-0 items-center gap-1">
-                            <span
-                              className="truncate"
-                              style={{
-                                fontSize: 12,
-                                lineHeight: "18px",
-                                color: "rgba(0,0,0,0.35)",
-                                fontFamily: "JetBrains Mono, monospace",
-                                maxWidth: 300,
-                              }}
-                              title={user.id}
-                            >
-                              {t("id: {{id}}").replace("{{id}}", user.id)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => void handleCopyUserId()}
-                              className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-                              aria-label={t("复制")}
-                              title={copiedUserId ? t("已复制") : t("复制")}
-                              style={{ color: copiedUserId ? "var(--color-success)" : "rgba(0,0,0,0.35)" }}
-                            >
-                              {copiedUserId ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                            </button>
-                          </div>
-                        )}
-                        {hasPendingNameAudit && (
-                          <p className="text-xs" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
-                            {t("当前对外显示：")}<span style={{ color: "rgba(0,0,0,0.78)" }}>{user?.name || t("未设置")}</span>
-                            {t("，审核通过后将自动生效。")}
-                          </p>
-                        )}
-                        {nameAuditFailed && (
-                          <p className="text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
-                            {t("上次昵称修改未通过审核，当前仍使用原昵称。")}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {avatarUploadError && (
-                      <p className="mt-1 text-xs" style={{ color: "#cf3d4c" }}>{avatarUploadError}</p>
-                    )}
-                    {hasPendingAvatarAudit && (
-                      <p className="mt-1 text-xs" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
-                        {t("新头像已提交审核，审核通过后将对外生效。")}
-                      </p>
-                    )}
-                    {avatarAuditFailed && (
-                      <p className="mt-1 text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
-                        {t("上次头像修改未通过审核，当前仍使用原头像。")}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right: logout / delete */}
-                <div className="flex w-full items-center gap-2 md:w-auto md:gap-1">
-                  <button
-                    onClick={() => void handleSignOut()}
-                    className="inline-flex flex-1 items-center justify-center rounded-full bg-white px-4 py-2 transition-colors hover:bg-[rgba(0,0,0,0.03)] md:flex-initial md:py-[4px]"
-                    style={{
-                      border: "1px solid #E6E9EF",
-                      fontSize: 14,
-                      lineHeight: "22px",
-                      color: "rgba(0,0,0,0.9)",
-                      boxShadow: "0px 2px 0px 0px rgba(187, 187, 187, 0.05)",
-                    }}
-                  >
-                    {t("退出登录")}
-                  </button>
-                  {/* <button
-                    onClick={() => setShowDeleteModal(true)}
-                    className="inline-flex flex-1 items-center justify-center rounded-full bg-white px-4 py-2 transition-colors hover:bg-[rgba(207,61,76,0.04)] md:flex-initial md:py-[4px]"
-                    style={{
-                      border: "1px solid #E6E9EF",
-                      fontSize: 14,
-                      lineHeight: "22px",
-                      color: "rgba(0,0,0,0.9)",
-                      boxShadow: "0px 2px 0px 0px rgba(187, 187, 187, 0.05)",
-                    }}
-                  >
-                    注销
-                  </button> */}
-                </div>
-              </div>
-
-              {/* 账号 ID 已上移至昵称下方展示 */}
-
-              {(showEmailBindSection || showRealnameSection) && (
-                /* Bottom: info rows —— 安全手机 / 实名认证 / 邮箱 */
-                <div className="flex flex-col gap-12 px-8 pb-8 pt-8">
-                  {showEmailBindSection && (
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
-                          {t("邮箱")}
-                        </span>
-                        {user?.emailVerified ? (
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-sm" style={{ color: "rgba(0,0,0,0.9)", maxWidth: 260 }}>
-                              {user.email || t("已绑定")}
-                            </span>
-                            <span className="inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: "rgba(22, 163, 74, 0.1)", color: "var(--color-success)" }}>
-                              {t("已验证")}
-                            </span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setShowBindEmailModal(true)}
-                            className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-                            style={{ color: "var(--lw-accent)" }}
-                          >
-                            {t("去绑定")}
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                      {emailBindSuccess && (
-                        <p className="m-0 text-xs" style={{ color: "var(--color-success)", lineHeight: 1.5 }}>
-                          {emailBindSuccess}
-                        </p>
-                      )}
-                      {emailBindError && (
-                        <p className="m-0 text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
-                          {emailBindError}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {showSafetyPhoneSection && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("手机号")}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm" style={{ color: user?.phone ? "rgba(0,0,0,0.9)" : "rgba(0,0,0,0.5)" }}>
-                          {user?.phone || t("未绑定")}
-                        </span>
-                        <button
-                          onClick={() => setShowChangePhoneModal(true)}
-                          className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-                          style={{ color: "var(--lw-accent)" }}
-                        >
-                          {user?.phone ? t("修改") : t("绑定")}
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {showRealnameSection && (
-                    <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("实名认证")}</span>
-                    {verified ? (
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "var(--color-success)" }} />
-                          <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
-                            {realnameStatusLabel}
-                          </span>
-                        </div>
-                        <button
-                          onClick={handleOpenVerifyModal}
-                          className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-                          style={{ color: "var(--lw-accent)" }}
-                        >
-                          {t("修改")}
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3">
-                        {(phoneProofEnabled || faceIdFlowEnabled) && (idCardVerified || realnameSyncError) && (
-                          <div className="flex flex-col items-end gap-1">
-                            {realnameStatusLabel && (
-                              <span
-                                className="text-sm"
-                                style={{ color: idCardSyncStatus === "failed" ? "var(--color-danger, #cf3d4c)" : "rgba(0,0,0,0.5)" }}
-                              >
-                                {realnameStatusLabel}
-                              </span>
-                            )}
-                            {realnameSyncError && (
-                              <span className="max-w-[240px] text-right text-xs" style={{ color: "var(--color-danger, #cf3d4c)" }}>
-                                {realnameSyncError}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        <button
-                          onClick={realnameSyncNeedsRetry ? () => void handleRetryRealnameSync() : handleOpenVerifyModal}
-                          disabled={realnameSyncRetrying}
-                          className="flex items-center gap-1 text-sm transition-colors hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-                          style={{ color: "var(--lw-accent)" }}
-                        >
-                          {realnameSyncRetrying && <Loader2 className="h-4 w-4 animate-spin" />}
-                          {realnameSyncNeedsRetry
-                            ? t("重新同步")
-                            : phoneProofEnabled && idCardVerified
-                              ? t("继续认证")
-                              : t("去认证")}
-                          {!realnameSyncRetrying && <ChevronRight className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  )}
-                </div>
+              {!isBillingView && (showEmailBindSection || showRealnameSection) && (
+                <AccountSecurityCard
+                  email={user?.email}
+                  emailVerified={Boolean(user?.emailVerified)}
+                  phone={user?.phone}
+                  showEmailBindSection={showEmailBindSection}
+                  showSafetyPhoneSection={showSafetyPhoneSection}
+                  showRealnameSection={showRealnameSection}
+                  verified={verified}
+                  realnameStatusLabel={realnameStatusLabel}
+                  phoneProofEnabled={phoneProofEnabled}
+                  faceIdFlowEnabled={faceIdFlowEnabled}
+                  idCardVerified={idCardVerified}
+                  realnameSyncNeedsRetry={realnameSyncNeedsRetry}
+                  realnameSyncRetrying={realnameSyncRetrying}
+                  idCardSyncStatus={idCardSyncStatus}
+                  emailBindSuccess={emailBindSuccess}
+                  emailBindError={emailBindError}
+                  realnameSyncError={realnameSyncError}
+                  onBindEmail={() => setShowBindEmailModal(true)}
+                  onBindPhone={() => setShowChangePhoneModal(true)}
+                  onChangePhone={() => setShowChangePhoneModal(true)}
+                  onVerifyRealname={handleOpenVerifyModal}
+                  onRetryRealnameSync={() => void handleRetryRealnameSync()}
+                />
               )}
-            </motion.div>}
+            </div>
 
             {/* ── Section 2: Subscription ── */}
-            {isBillingView && <SubscriptionSection subscription={subscription} pass={activePass} />}
+            {isBillingView && <>
+              <AccountSubscriptionCard
+                state={subscriptionModel.state}
+                pass={subscriptionModel.pass}
+                displayName={subscriptionModel.displayName}
+                validity={subscriptionModel.validity}
+                credits={subscriptionModel.credits}
+                creditPacks={subscriptionModel.creditPacks}
+                passStatus={subscriptionModel.passStatus}
+                passState={subscriptionModel.passState}
+                actions={subscriptionModel.actions}
+                error={subscriptionModel.error}
+                subscribeHref={subscribeHref}
+              />
+              {subscriptionModel.dialogs.renewOpen && subscriptionModel.actions.renewalAvailable && subscriptionModel.pass ? (
+                <RenewPassModal
+                  pass={subscriptionModel.pass}
+                  onClose={subscriptionModel.dialogs.closeRenew}
+                  onSuccess={() => void subscriptionModel.dialogs.handleRenewSuccess()}
+                  initialRealnameRequired={Boolean(session.user) && !isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled)}
+                />
+              ) : null}
+              {subscriptionModel.pass ? (
+                <PassDeleteDialogController
+                  open={subscriptionModel.dialogs.deleteOpen}
+                  onOpenChange={(open) => { if (!open) subscriptionModel.dialogs.closeDelete(); }}
+                  passId={subscriptionModel.pass.pass_id}
+                  passName={subscriptionModel.pass.bundle_name}
+                  deletePass={plans.deletePass}
+                  listMyPasses={plans.listMyPasses}
+                  onSuccess={() => void subscriptionModel.dialogs.handleDeleteSuccess()}
+                  resolveError={(error) => resolveBillingErrorMessage(
+                    error,
+                    error instanceof Error ? error.message : t("销毁失败，请稍后重试。"),
+                  )}
+                />
+              ) : null}
+            </>}
 
             {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
 
-            {isBillingView && isGlobal && <SavedCardsSection />}
-          </motion.div>
+            {isGlobal && <SavedCardsSection />}
+          </div>
         </section>
+      </AccountPageGate>
       </main>
     );
 
@@ -2131,34 +713,39 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
             phone={user?.phone}
           />
         )}
-        {!isBillingView && showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
-          <ChangePhoneModal
+        {!isBillingView && showRealnameSection && phoneProofEnabled && (
+          <ChangePhoneDialog
             key="change-phone"
+            open={showChangePhoneModal}
             currentPhone={user?.phone}
-            onClose={() => setShowChangePhoneModal(false)}
+            onOpenChange={setShowChangePhoneModal}
+            onSendCode={handleSendPhoneChangeCode}
+            onSubmit={handleSubmitPhoneChange}
             onSuccess={handlePhoneChangeSuccess}
           />
         )}
-        {!isBillingView && showEmailBindSection && !user?.emailVerified && showBindEmailModal && (
-          <BindEmailModal
+        {!isBillingView && showEmailBindSection && !user?.emailVerified && (
+          <BindEmailDialog
             key="bind-email"
-            onClose={() => setShowBindEmailModal(false)}
+            open={showBindEmailModal}
+            onOpenChange={setShowBindEmailModal}
+            onSend={handleSendEmailBind}
           />
         )}
-        {!isBillingView && showDeleteModal && (
-          <DeleteAccountModal
+        {!isBillingView && <AccountDeleteDialog
             key="delete"
-            onCancel={() => setShowDeleteModal(false)}
+            open={showDeleteModal}
+            onOpenChange={setShowDeleteModal}
             onConfirm={() => void handleDeleteAccount()}
             submitting={deleting}
-          />
-        )}
+        />}
       </AnimatePresence>
     );
   }
 
   return (
     <ProductPageShell
+      className="agents-ui min-h-dvh"
       afterFooter={pageOverlays}
       footer={null}
       header={(
@@ -2185,7 +772,3 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
 };
 
 export const PlansBillingPage = () => <AccountPage view="billing" />;
-
-// InfoRow 组件保留定义以便后续功能上线时恢复使用。
-// 通过 void 引用避免 TS 未使用告警（code: 6133）。
-void InfoRow;

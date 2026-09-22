@@ -192,8 +192,8 @@ describe("Agent settings navigation spacing", () => {
     const desktopNavigation = getBlockBody(styles, "\n.lv-agents-nav {");
     const desktopItem = getBlockBody(styles, "\n.lv-agents-nav-item {");
     const profileName = getBlockBody(styles, "\n.lv-agent-profile-name {");
-    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
-    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {");
+    const responsiveStyles = styles.slice(styles.indexOf("@media (max-width: 1023px) {"));
+    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {\n    gap");
     const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
 
     expect(desktopSidebar).toContain("padding-bottom: 24px;");

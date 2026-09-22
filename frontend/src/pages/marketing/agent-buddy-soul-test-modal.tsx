@@ -1,6 +1,7 @@
-import { Check, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PersonaDialogView } from "./agent-buddy-views";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { useT } from "@/i18n/t";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { cn } from "@/lib/utils";
@@ -96,7 +97,10 @@ export function SoulTestModal({
 
   useEffect(() => {
     if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
+      document.body.style.overflow = previousOverflow;
       if (autoAdvanceTimer.current) window.clearTimeout(autoAdvanceTimer.current);
     };
   }, [open]);
@@ -187,9 +191,43 @@ export function SoulTestModal({
 
   if (!open) return null;
 
-  return <PersonaDialogView open={open} title={t("Soul人格测试")} closeLabel={t("关闭 Soul人格测试")} onClose={onClose}
-    hideHeader className="rounded-[28px] p-0 shadow-[0_28px_80px_rgba(0,0,0,0.22)] md:w-[min(760px,calc(100vw-32px))]">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-32" style={{ background: "linear-gradient(180deg, rgba(255,166,0,0.30) 0%, rgba(255,214,116,0.18) 42%, rgba(255,255,255,0) 100%)" }} />
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-[2px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("Soul人格测试")}
+          className="relative flex max-h-[88vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_28px_80px_rgba(0,0,0,0.22)]"
+          initial={{ y: 18, scale: 0.98, opacity: 0 }}
+          animate={{ y: 0, scale: 1, opacity: 1 }}
+          exit={{ y: 18, scale: 0.98, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 260, damping: 24 }}
+        >
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-32"
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(255,166,0,0.30) 0%, rgba(255,214,116,0.18) 42%, rgba(255,255,255,0) 100%)",
+            }}
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("关闭 Soul人格测试")}
+            className="absolute right-5 top-5 z-10 rounded-full p-2 text-black/45 transition-colors hover:bg-black/5 hover:text-black"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
           {phase === "testing" && currentQuestion ? (
             <QuestionStep
               question={currentQuestion}
@@ -215,7 +253,11 @@ export function SoulTestModal({
               soulDataLocale={activeSoulLocale}
             />
           )}
-  </PersonaDialogView>;
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body,
+  );
 }
 
 function QuestionStep({
@@ -248,7 +290,7 @@ function QuestionStep({
           <Sparkles className="h-3.5 w-3.5 text-[#FFA600]" />
           {t("Soul人格测试")}
         </div>
-        <h3 className="text-2xl font-semibold text-black/90">
+        <h3 className="text-2xl font-semibold tracking-normal text-black/90">
           {isPersonality
             ? t("第一部分：了解你的灵魂画像")
             : t("第二部分：选择你对智能体伙伴的偏好")}
@@ -296,18 +338,16 @@ function QuestionStep({
                   key={option.key}
                   type="button"
                   onClick={() => onSelect(option.key)}
-                  aria-pressed={isSelected}
                   style={{ fontSize: "14px" }}
                   className={cn(
-                    "flex w-full items-start gap-3 rounded-2xl border px-5 py-4 text-left text-lg leading-relaxed transition-colors duration-200",
+                    "w-full rounded-[10px] border px-5 py-4 text-left text-lg leading-relaxed transition-all duration-200",
                     isSelected
                       ? "border-black bg-black text-white shadow-[0_10px_26px_rgba(0,0,0,0.16)]"
                       : "border-black/8 bg-white text-black/70 hover:border-black/18 hover:bg-black/[0.03]",
                   )}
                 >
-                  <span className="font-semibold">{option.key}.</span>
-                  <span className="min-w-0 flex-1">{formatSoulTestText(option.text, t, useEnglishSoulData)}</span>
-                  {isSelected ? <Check className="mt-1 size-4 shrink-0" aria-hidden="true" /> : null}
+                  <span className="mr-2 font-semibold">{option.key}.</span>
+                  {formatSoulTestText(option.text, t, useEnglishSoulData)}
                 </button>
               );
             })}
@@ -351,7 +391,7 @@ function ResultStep({
   return (
     <div className="relative max-h-[88vh] overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
       <div className="mb-6 text-center">
-        <h3 className="text-2xl font-semibold text-black/90">
+        <h3 className="text-2xl font-semibold tracking-normal text-black/90">
           {t("为你推荐的智能体伙伴 Soul 是")}
         </h3>
       </div>
@@ -448,7 +488,7 @@ function ResultStep({
           }}
           disabled={!soul}
           style={{ fontSize: "16px" }}
-          className="inline-flex h-12 min-w-40 items-center justify-center rounded-full bg-black px-7 font-semibold leading-none text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition duration-150 motion-safe:hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+          className="inline-flex h-12 min-w-40 items-center justify-center rounded-full bg-black px-7 font-semibold leading-none text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
           {t("添加该人设")}
         </button>
@@ -456,7 +496,7 @@ function ResultStep({
           type="button"
           onClick={onRetry}
           style={{ fontSize: "16px" }}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-black/8 bg-white px-7 font-semibold leading-none text-black/70 transition duration-150 motion-safe:hover:-translate-y-0.5 hover:bg-black/[0.03]"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-black/8 bg-white px-7 font-semibold leading-none text-black/70 transition-all hover:-translate-y-0.5 hover:bg-black/[0.03]"
         >
           <RotateCcw className="h-[18px] w-[18px]" />
           {t("重新测试")}

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Pass } from "@/domain/types";
-import { AccountPage } from "../account-page";
+import { PlansBillingPage } from "../account-page";
 import { SidebarUserMenuController } from "@/components/site/sidebar-user-menu-controller";
 
 const mocks = vi.hoisted(() => ({ list: vi.fn(), options: vi.fn(), refresh: vi.fn(), signOut: vi.fn(), deletePass: vi.fn() }));
@@ -17,7 +17,10 @@ vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => ({ plan
 vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => true, useRealnamePhoneVerificationEnabled: () => false, useReferralEnabled: () => false }));
 vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass, modifyingPass, refreshPasses: mocks.refresh, user: { plan: { name: "Legacy plan", trialDays: 7 } } }) }));
 vi.mock("@/contexts/session-context", () => ({ useSession: () => ({ session: { user: { id: userId, name: `Owner ${userId}`, createdAt: "2026-01-01" }, currentSubscription: null }, authReady: true, isAuthenticated: true, signOut: mocks.signOut }) }));
-vi.mock("@/components/site/product-chrome", () => ({ ProductPageShell: ({ children, className }: { children: ReactNode; className?: string }) => <div data-testid="account-shell" className={className}>{children}</div> }));
+vi.mock("@/components/site/product-chrome", () => ({
+  ProductPageShell: ({ children, className, header }: { children: ReactNode; className?: string; header?: ReactNode }) => <div data-testid="account-shell" className={className}>{header}{children}</div>,
+  ProductReturnHomeHeader: ({ beforeUserMenu }: { beforeUserMenu?: ReactNode }) => <header>{beforeUserMenu}<div>avatar menu</div></header>,
+}));
 vi.mock("@/pages/marketing/saved-cards-section", () => ({ SavedCardsSection: () => null }));
 vi.mock("@/components/dev/account-preview-state-switcher", () => ({ AccountPreviewStateSwitcher: () => null }));
 vi.mock("@/pages/marketing/renew-pass-modal", () => ({ RenewPassModal: ({ onSuccess }: { onSuccess: () => void }) => <button onClick={onSuccess}>Complete synthetic renewal</button> }));
@@ -26,8 +29,8 @@ vi.mock("@/i18n/t", () => ({ useT: () => (text: string) => text }));
 vi.mock("@/lib/use-pass-upgrade", () => ({ usePassUpgrade: () => ({ pass: null, options: [] }) }));
 vi.mock("@tencent/universal-report", () => ({ default: class { reportEvent = vi.fn(); setPublicParams = vi.fn(); setAccountInfo = vi.fn(); startReport = vi.fn(); } }));
 const commandHost = () => window as Window & { hide?: () => void };
-const both = () => <MemoryRouter><section aria-label="account"><AccountPage /></section><SidebarUserMenuController /></MemoryRouter>;
-const accountOnly = () => <MemoryRouter><AccountPage /></MemoryRouter>;
+const both = () => <MemoryRouter><section aria-label="account"><PlansBillingPage /></section><SidebarUserMenuController /></MemoryRouter>;
+const billingOnly = () => <MemoryRouter><PlansBillingPage /></MemoryRouter>;
 
 beforeEach(() => {
   vi.clearAllMocks(); userId = "a"; activePass = buildPass(); modifyingPass = null;
@@ -38,17 +41,17 @@ afterEach(() => { act(() => commandHost().hide?.()); cleanup(); vi.unstubAllGlob
 
 describe("account and sidebar shared pass selection", () => {
   it("opts into Agents tokens and uses a page-level display heading", () => {
-    render(accountOnly());
+    render(billingOnly());
     expect(screen.getByTestId("account-shell")).toHaveClass("agents-ui");
-    expect(screen.getByRole("heading", { name: "账号管理", level: 1 })).toHaveClass("font-display-zh");
+    expect(screen.getByRole("heading", { name: "套餐与费用", level: 1 })).toHaveClass("font-display-zh");
   });
 
   it("keeps the initial loading state inside the main page layout", () => {
     activePass = null;
     mocks.list.mockReturnValue(new Promise<Pass[]>(() => {}));
-    render(accountOnly());
+    render(billingOnly());
     expect(screen.getByRole("main")).toContainElement(screen.getByRole("status"));
-    expect(screen.queryByText("账号管理")).not.toBeInTheDocument();
+    expect(screen.queryByText("套餐与费用")).not.toBeInTheDocument();
   });
 
   it.each([
@@ -57,7 +60,7 @@ describe("account and sidebar shared pass selection", () => {
   ] as const)("recovers the page-level pass error to %s after retry", async (expected, recoveredPasses) => {
     activePass = null;
     mocks.list.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(recoveredPasses);
-    render(accountOnly());
+    render(billingOnly());
 
     expect(await screen.findByRole("alert")).toHaveTextContent("套餐列表加载失败");
     expect(screen.getByRole("main")).toContainElement(screen.getByRole("alert"));
@@ -101,9 +104,9 @@ describe("account and sidebar shared pass selection", () => {
     activePass = null;
     let resolveA!: (value: Pass[]) => void;
     mocks.list.mockImplementation(() => userId === "a" ? new Promise<Pass[]>((resolve) => { resolveA = resolve; }) : Promise.resolve([buildPass(), buildPass({ user_id: "b", pass_id: "p-b", bundle_name: "Owned B", credit_total: 800, credit_available: 700 })]));
-    const view = render(accountOnly());
+    const view = render(billingOnly());
     await waitFor(() => expect(mocks.list).toHaveBeenCalled());
-    userId = "b"; view.rerender(accountOnly());
+    userId = "b"; view.rerender(billingOnly());
     await act(async () => resolveA([buildPass()]));
     await waitFor(() => expect(screen.getByText("Owned B")).toBeVisible());
     expect(screen.queryByText("Owned A")).not.toBeInTheDocument();
@@ -114,7 +117,7 @@ describe("account and sidebar shared pass selection", () => {
     activePass = null;
     const expired = buildPass({ expired_time: "2020-01-01" });
     mocks.list.mockResolvedValue([expired]);
-    render(accountOnly());
+    render(billingOnly());
     await waitFor(() => expect(screen.getByText("Owned A")).toBeVisible());
     await userEvent.click(screen.getByRole("button", { name: "立即续费" }));
     let finishRefresh!: () => void;
@@ -133,7 +136,7 @@ describe("account and sidebar shared pass selection", () => {
     activePass = null;
     const isolated = buildPass({ expired_time: "2020-01-01", isolated_time: "2020-01-02" });
     mocks.list.mockResolvedValue([isolated]); mocks.deletePass.mockResolvedValue({ deleted: true });
-    render(accountOnly());
+    render(billingOnly());
     await waitFor(() => expect(screen.getByText("Owned A")).toBeVisible());
     await userEvent.click(screen.getByRole("button", { name: "销毁套餐" }));
     let finishRefresh!: () => void;

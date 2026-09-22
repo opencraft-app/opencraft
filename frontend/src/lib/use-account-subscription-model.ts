@@ -42,15 +42,20 @@ export interface UseAccountSubscriptionModelOptions {
   refreshPasses: () => Promise<unknown> | unknown;
 }
 
-const formatValidity = (startValue: string | Date, endValue: string | Date, now: Date): AccountSubscriptionValidity => {
+export const formatValidity = (startValue: string | Date, endValue: string | Date, now: Date): AccountSubscriptionValidity => {
   const start = new Date(startValue);
   const end = new Date(endValue);
-  const remainDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  const startTime = start.getTime();
+  const endTime = end.getTime();
+  const hasValidDates = Number.isFinite(startTime) && Number.isFinite(endTime);
+  const remainDays = hasValidDates
+    ? Math.max(0, Math.ceil((endTime - now.getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
   return {
-    startDate: start.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
-    endDate: end.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
+    startDate: hasValidDates ? start.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }) : "—",
+    endDate: hasValidDates ? end.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }) : "—",
     remainDays,
-    expired: remainDays <= 0,
+    expired: !hasValidDates || remainDays <= 0,
   };
 };
 
@@ -131,14 +136,22 @@ export function useAccountSubscriptionModel({
 
   const handleRenewSuccess = useCallback(async () => {
     setRenewOpen(false);
-    await refreshPasses();
-    summary.clearFallback();
+    try {
+      await refreshPasses();
+      summary.clearFallback();
+    } catch (error) {
+      console.error("Failed to refresh passes after renewal", error);
+    }
   }, [refreshPasses, summary.clearFallback]);
 
   const handleDeleteSuccess = useCallback(async () => {
     setDeleteOpen(false);
-    await refreshPasses();
-    summary.clearFallback();
+    try {
+      await refreshPasses();
+      summary.clearFallback();
+    } catch (error) {
+      console.error("Failed to refresh passes after deletion", error);
+    }
   }, [refreshPasses, summary.clearFallback]);
 
   return {

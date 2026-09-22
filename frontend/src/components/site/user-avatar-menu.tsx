@@ -71,10 +71,10 @@ const HeaderUserAvatarMenu = ({
   }, []);
 
   useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
-    const enabled = emitConsoleShowEvent();
-    setHiddenEntriesRevealed(enabled);
     const result = next(...args);
-    return result === undefined ? enabled : result;
+    const enabled = typeof result === "boolean" ? result : emitConsoleShowEvent();
+    setHiddenEntriesRevealed(enabled);
+    return enabled;
   }), []);
   useEffect(() => subscribeConsoleShow(setHiddenEntriesRevealed), []);
 

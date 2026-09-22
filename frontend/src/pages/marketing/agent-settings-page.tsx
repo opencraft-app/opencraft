@@ -43,17 +43,15 @@ import { assetUrl } from "@/lib/asset-url";
 import { ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useIsDesktop } from "@/components/site/public-site-header";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
-import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
-import { isCN, isGlobal } from "@/lib/region";
+import { isGlobal } from "@/lib/region";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
@@ -140,6 +138,7 @@ import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
+import { MemoryLimitCardView, MemoryPanelView } from "@/pages/marketing/agent-memory-views";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
@@ -856,128 +855,29 @@ const MemoryLimitCard = ({
     }
   };
 
-  return (
-    <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-black/85">{title}</p>
-          <p className="mt-1 max-w-lg text-pretty text-xs leading-relaxed text-black/45">{description}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
-          {percent}%
-        </span>
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-2">
-        <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
-        <span className="text-sm tabular-nums text-black/45">/</span>
-        {isEditing ? (
-          <input
-            type="number"
-            min={bounds.min}
-            max={bounds.max}
-            step={1}
-            value={draftLimit}
-            onBlur={() => setTouched(true)}
-            onWheel={(event) => event.currentTarget.blur()}
-            onChange={(event) => {
-              setDraftLimit(event.target.value);
-              setTouched(true);
-              onDraftChange(target);
-            }}
-            disabled={isDisabled}
-            className="h-9 w-28 rounded-md border border-black/[0.10] bg-white px-3 text-sm tabular-nums text-black/85 outline-none transition-colors focus:border-black/30 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        ) : (
-          <span className="text-sm tabular-nums text-black/45">{limit}</span>
-        )}
-        <span className="text-sm text-black/45">{t("字符")}</span>
-        {!isEditing && <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>}
-        {!isEditing ? (
-          <button
-            type="button"
-            onClick={() => {
-              setDraftLimit(String(limit));
-              setTouched(false);
-              setIsEditing(true);
-            }}
-            disabled={isDisabled}
-            className={cn(
-              "ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80",
-              isDisabled && "cursor-not-allowed opacity-45",
-            )}
-          >
-            {t("调整限额")}
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isDisabled || !validation.ok}
-              className={cn(
-                "ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white transition-colors hover:bg-black/85",
-                (isDisabled || !validation.ok) && "cursor-not-allowed opacity-45",
-              )}
-            >
-              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {isSaving ? t("保存中...") : t("保存")}
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={isDisabled}
-              className={cn(
-                "inline-flex h-8 items-center rounded-md border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.04] hover:text-black/75",
-                isDisabled && "cursor-not-allowed opacity-45",
-              )}
-            >
-              {t("取消")}
-            </button>
-          </>
-        )}
-      </div>
-      {isEditing && (
-        <p className={cn("mt-3 text-xs leading-relaxed", helperTone)}>
-          {helperMessage}
-        </p>
-      )}
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
-        <div
-          className="h-full rounded-full bg-black/80 transition-[width]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-    </div>
-  );
-};
-
-const MemoryEntries = ({
-  entries,
-  emptyText,
-}: {
-  entries: string[];
-  emptyText: string;
-}) => {
-  if (entries.length === 0) {
-    return (
-      <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-black/[0.10] bg-black/[0.015] px-6 text-center text-sm text-black/45">
-        {emptyText}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {entries.map((entry, index) => (
-        <div
-          key={`${index}-${entry.slice(0, 24)}`}
-          className="min-h-11 rounded-md border border-black/[0.06] bg-white px-3 py-3 text-sm leading-relaxed text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
-        >
-          <p className="whitespace-pre-wrap break-words text-pretty">{entry}</p>
-        </div>
-      ))}
-    </div>
-  );
+  return <MemoryLimitCardView
+    title={title}
+    description={description}
+    used={used}
+    limit={limit}
+    percent={percent}
+    editing={isEditing}
+    draft={draftLimit}
+    min={bounds.min}
+    max={bounds.max}
+    saving={isSaving}
+    disabled={isDisabled}
+    valid={validation.ok}
+    helperMessage={helperMessage}
+    helperTone={helperTone}
+    hasError={Boolean(displayError)}
+    labels={{ chars: t("字符"), usage: t("当前占用 / 字符限额"), edit: t("调整限额"), save: t("保存"), saving: t("保存中..."), cancel: t("取消") }}
+    onEdit={() => { setDraftLimit(String(limit)); setTouched(false); setIsEditing(true); }}
+    onDraftChange={(value) => { setDraftLimit(value); setTouched(true); onDraftChange(target); }}
+    onBlur={() => setTouched(true)}
+    onSave={() => void handleSave()}
+    onCancel={handleCancel}
+  />;
 };
 
 export const MemoryPanel = ({
@@ -1007,109 +907,36 @@ export const MemoryPanel = ({
 }) => {
   const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
   const userEntries = splitHermesMemoryEntries(snapshot?.userText ?? "");
-  const visibleEntries = activeTab === "memory" ? memoryEntries : userEntries;
   const isLoading = status === "loading";
-
-  return (
-    <div className="space-y-4">
-      <AgentSectionHeader
-        title={t("持久记忆")}
-        description={t("查看当前 Hermes Agent 的持久记忆和用户画像文件")}
-        actions={(
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
-            aria-label={t("刷新")}
-            title={t("刷新")}
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-          </button>
-        )}
-      />
-
-      {status === "error" && (
-        <div className="rounded-lg border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-sm leading-relaxed text-red-600">
-          {error || t("记忆读取失败，请稍后重试。")}
-        </div>
-      )}
-
-      {isLoading && !snapshot && (
-        <div className="flex min-h-64 items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/50">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          {t("正在读取记忆...")}
-        </div>
-      )}
-
-      {snapshot && (
-        <>
-          <div className="grid gap-3 md:grid-cols-2">
-            <MemoryLimitCard
-              target="memory"
-              title={t("记忆统计")}
-              description={t("MEMORY.md：跨会话长期记忆文件，主要保存项目环境事实、工作约定和经验教训等。")}
-              used={snapshot.memoryChars}
-              limit={snapshot.memoryCharLimit}
-              isSaving={savingLimitTarget === "memory"}
-              isDisabled={savingLimitTarget !== null}
-              saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
-              onSaveLimit={onSaveLimit}
-              onDraftChange={onDraftChange}
-              t={t}
-            />
-            <MemoryLimitCard
-              target="user"
-              title={t("用户画像统计")}
-              description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
-              used={snapshot.userChars}
-              limit={snapshot.userCharLimit}
-              isSaving={savingLimitTarget === "user"}
-              isDisabled={savingLimitTarget !== null}
-              saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
-              onSaveLimit={onSaveLimit}
-              onDraftChange={onDraftChange}
-              t={t}
-            />
-          </div>
-
-          {snapshot.usedFallbackLimits && (
-            <p className="text-xs text-black/40">
-              {t("未读取到完整限额配置，当前展示默认值。")}
-            </p>
-          )}
-
-          <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-            <div className="mb-3 inline-flex rounded-lg bg-black/[0.04] p-1">
-              {([
-                ["memory", t("记忆")],
-                ["user", t("用户画像")],
-              ] as const).map(([tab, label]) => {
-                const isActive = activeTab === tab;
-                return (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => onTabChange(tab)}
-                    className={cn(
-                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-                      isActive ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80",
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            <MemoryEntries
-              entries={visibleEntries}
-              emptyText={activeTab === "memory" ? t("MEMORY.md 文件为空") : t("USER.md 文件为空")}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
+  return <MemoryPanelView
+    title={t("持久记忆")}
+    description={t("查看当前 Hermes Agent 的持久记忆和用户画像文件")}
+    refreshLabel={t("刷新")}
+    loadingLabel={t("正在读取记忆")}
+    loading={isLoading}
+    hasSnapshot={Boolean(snapshot)}
+    error={status === "error" ? error || t("记忆读取失败，请稍后重试。") : null}
+    fallbackMessage={snapshot?.usedFallbackLimits ? t("未读取到完整限额配置，当前展示默认值。") : undefined}
+    activeTab={activeTab}
+    onTabChange={onTabChange}
+    onRefresh={onRefresh}
+    tabs={[
+      { value: "memory", label: t("记忆"), entries: memoryEntries, emptyText: t("MEMORY.md 文件为空") },
+      { value: "user", label: t("用户画像"), entries: userEntries, emptyText: t("USER.md 文件为空") },
+    ]}
+    cards={snapshot && <>
+      <MemoryLimitCard target="memory" title={t("记忆统计")}
+        description={t("MEMORY.md：跨会话长期记忆文件，主要保存项目环境事实、工作约定和经验教训等。")}
+        used={snapshot.memoryChars} limit={snapshot.memoryCharLimit} isSaving={savingLimitTarget === "memory"}
+        isDisabled={savingLimitTarget !== null} saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
+        onSaveLimit={onSaveLimit} onDraftChange={onDraftChange} t={t} />
+      <MemoryLimitCard target="user" title={t("用户画像统计")}
+        description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
+        used={snapshot.userChars} limit={snapshot.userCharLimit} isSaving={savingLimitTarget === "user"}
+        isDisabled={savingLimitTarget !== null} saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
+        onSaveLimit={onSaveLimit} onDraftChange={onDraftChange} t={t} />
+    </>}
+  />;
 };
 
 /* ─── Delete Confirm Dialog ─── */
@@ -6338,18 +6165,6 @@ export const AgentSettingsPage = ({
                         })}
                       </nav>
                     )}
-
-                    {sidebarTab === "settings" && isCN ? (
-                      <a
-                        href={PRODUCT_FEEDBACK_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="lv-agent-feedback-link"
-                      >
-                        <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>{t("有建议？提交反馈")}</span>
-                      </a>
-                    ) : null}
 
                     {isDesktop ? (
                       <div className="lv-agent-account-footer">

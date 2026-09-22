@@ -648,6 +648,32 @@ a {
   padding-bottom: 8px;
 }
 
+.lv-agent-feedback-link {
+  display: flex;
+  width: calc(100% + 12px);
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 8px 12px;
+  color: rgb(0 0 0 / 40%);
+  font-size: 12px;
+  line-height: 20px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.lv-agent-feedback-link:hover,
+.lv-agent-feedback-link:focus-visible {
+  color: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 2.5%);
+}
+
+.lv-agent-feedback-link:focus-visible {
+  outline: 2px solid rgb(0 0 0 / 30%);
+  outline-offset: 2px;
+}
+
 .lv-agent-profile {
   position: relative;
   display: flex;
@@ -1120,9 +1146,11 @@ a {
     left: 0;
     width: 264px;
     max-height: calc(100dvh - 68px);
-    margin-left: 0;
+    margin-left: -16px;
     padding-left: 16px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: #fff;
   }
 
@@ -1131,7 +1159,7 @@ a {
     height: calc(100dvh - 68px);
     min-height: 0;
     flex-direction: column;
-    padding-top: 12px;
+    padding-top: 20px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
@@ -1220,6 +1248,14 @@ a {
     line-height: 20px;
   }
 
+  .lv-agent-feedback-link {
+    margin-top: auto;
+  }
+
+  .lv-agent-feedback-link + .lv-agent-account-footer {
+    margin-top: 8px;
+  }
+
 }
 
 @media (max-width: 1023px) {
@@ -1251,6 +1287,10 @@ a {
   .lv-agents-nav-item {
     width: 100%;
     height: 36px;
+  }
+
+  .lv-agent-feedback-link {
+    width: 100%;
   }
 
   .lv-agents-sidebar-tabs {

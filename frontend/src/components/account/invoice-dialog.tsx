@@ -75,7 +75,8 @@ export function InvoiceDialog({ open, onOpenChange }: InvoiceDialogProps) {
         closeLabel="关闭"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          previousFocusRef.current?.focus();
+          const previousFocus = previousFocusRef.current;
+          if (previousFocus?.isConnected) previousFocus.focus();
         }}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-md border border-black/[0.08] bg-white p-0 shadow-xl md:w-[28rem]"
       >
