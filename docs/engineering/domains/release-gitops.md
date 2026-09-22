@@ -27,6 +27,15 @@ master 源码
 
 ## 不变量
 
+- 个人 DevCloud 计费能力只部署到北京 `sandbox-bj-7` 和韩国 `sandbox-kr-1` testing。临时验证镜像需要
+  暂停 Argo 自动同步时，必须记录并只操作对应环境的 Auth、Trade、Service Gateway 应用；不修改生产
+  应用。若同一 Argo Application 已有无关 `OutOfSync` 资源，禁止 App 级全量 Sync，只能精确同步目标
+  资源。源码、镜像和 GitOps 期望合入后，先基于最新 master 完成注册、readiness、真实业务终态、注销
+  401 与 down 验收，再恢复原 `automated + prune + selfHeal` 策略并确认 `Synced/Healthy`。
+- CloudLadder testing 的 DevCloud 来源 CIDR 必须在 data-plane proxy 与 devtunnel 两套 workload 中保持
+  一致，并由 GitOps 契约测试校验；扩大 testing allowlist 不能扩散到 production manifests。北京允许
+  Skill 探测并提交受限 `9/8` 或 `21/8` 目标，韩国仍以服务端观测 NAT 来源为准。
+
 - 新加坡 Sandbox 扩展到新山时，云网络与现有 `llmgateway-sgprod-jhb` 支撑 VPC 分离。
   `infra_pulumi` 使用持久化 `sandbox-network` scope，只拥有 VPC、pool/support 子网、
   NAT/EIP、路由/SNAT 和 TAT-only Sandbox 安全组；不得借网络扩容创建第二套 TKE、数据库、
@@ -195,6 +204,10 @@ master 源码
   环境级 fallback UIN/AppID，Credit 再接受可选用户身份，最后才将精确的
   `POST /v1/credit/inquiry` 加入 `optional_auth_allow`。下单、支付、退款和资源查询不得随该入口放宽；
   国内与国际各环境必须分别验证 fallback 配置、最终 Kustomize 渲染和真实未登录询价。
+- Trade 通过 CloudLadder 推送 Credit 资源用量时必须使用通用的
+  `TRADE_CLOUDLADDER_HMAC_SECRET`；不得回退到 Billing 专用键。每个启用 sendResource 的生产地域必须
+  在发布新镜像前先完成 SSM 真源、SOPS Secret 和 release contract 的同批迁移，避免新 Pod 因缺密钥
+  CrashLoop。Secret 变更只经受保护发布链路生效，不以 live patch 或手工删除 Pod 代替。
 
 ### Referral 北京与上海交付
 

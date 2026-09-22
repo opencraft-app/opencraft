@@ -692,6 +692,61 @@ func TestTencentCloudAccountCallbackIsPublicInRequiredEnvironments(t *testing.T)
 	}
 }
 
+func TestPersonalDevBillingProxyIsPublicOnlyInTestingSandboxes(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	want := map[string]struct{}{
+		http.MethodPost + " /auth/dev-environments/billing-proxy/jifei/resource-center/interface": {},
+		http.MethodPost + " /auth/dev-environments/billing-proxy/cloudapi/":                       {},
+	}
+
+	for _, env := range []string{"sandbox-bj-7", "sandbox-kr-1"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			got := make(map[string]struct{})
+			for _, route := range cfg.Routes {
+				if route.Name != "auth" {
+					continue
+				}
+				for _, rule := range route.PublicAllow {
+					key := strings.ToUpper(strings.TrimSpace(rule.Method)) + " " + strings.TrimSpace(rule.Path)
+					if _, required := want[key]; required {
+						got[key] = struct{}{}
+					}
+				}
+			}
+			for key := range want {
+				if _, ok := got[key]; !ok {
+					t.Fatalf("testing sandbox auth route is missing public rule %s", key)
+				}
+			}
+		})
+	}
+
+	for _, env := range []string{"shprod", "sgprod"} {
+		t.Run(env+"-production", func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			for _, route := range cfg.Routes {
+				for _, rule := range route.PublicAllow {
+					key := strings.ToUpper(strings.TrimSpace(rule.Method)) + " " + strings.TrimSpace(rule.Path)
+					if _, forbidden := want[key]; forbidden {
+						t.Fatalf("production config %s must not expose personal DevCloud billing proxy", env)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestSingaporeBillingEntryRoutesArePublic(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {

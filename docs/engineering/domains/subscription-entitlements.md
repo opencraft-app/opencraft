@@ -139,6 +139,16 @@ testing 账号开户和余额仍由受控账号工具负责，余额不足后必
 只有使用 testing mock 支付，并同时保存订单、真实回调和业务终态证据，才能宣称支付闭环；缺少任一
 层证据时必须明确停在哪一层。
 
+个人 testing 的支付、退款和销毁请求均按最多一次提交。客户端超时、`502/504`、空响应或端口转发
+重连不代表上游未受理；必须先用 transaction/event/deal 核对计费与 Trade 日志，再核对
+`trade_order`、`trade_flow`、Pass、Task、实例和订阅终态。只有同时证明没有计费订单、没有 Flow、
+没有业务落单且回调未到达时，才能创建一笔新的 testing 请求，禁止重放原请求。readiness `200`
+在调用计费前结束，只证明短期代理可用，不产生订单、扣费或回调。
+
+一个源套餐存在多个合法升配目标时，CTL 对各目标询价并行执行但按服务端策略顺序返回；单目标预算为
+20 秒，Service Gateway `ctl-passes` 上游预算为 30 秒。任一目标询价失败时整条请求失败，不能把临时
+故障降级成“无可升级套餐”，也不能只展示部分目标诱导用户做出错误购买决定。
+
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
 ## Pass 升配回调参数边界（2026-09-07，2026-09-20 扩展跨 SP）

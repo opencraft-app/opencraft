@@ -678,9 +678,8 @@ func (s *Service) Release(ctx context.Context, instanceID string) (core.Instance
 	}
 }
 
-// Pause moves an instance from ALLOCATED to PAUSING. The caller must follow up
-// with the cloud-side StopInstance call and then either MarkPaused on success
-// or RollbackPausing on failure.
+// Pause moves an instance from ALLOCATED to PAUSING. The caller submits the
+// asynchronous cloud stop, then marks PAUSED only after observing STOPPED.
 //
 // Implements Q26-D 修订版 + Q29=E5 拍板（2026-05-14）：trade pass isolation 走
 // "关机保留数据"路径，不再走历史的 ALLOCATED → DRY → RESETTING（释放 + 重装）。
@@ -700,8 +699,8 @@ func (s *Service) Pause(ctx context.Context, instanceID string) (core.Instance, 
 	}
 }
 
-// MarkPaused transitions PAUSING to PAUSED after the cloud-side StopInstance
-// call has succeeded. Idempotent for an already-paused instance.
+// MarkPaused transitions PAUSING to PAUSED after cloud reconciliation observes
+// STOPPED. Idempotent for an already-paused instance.
 func (s *Service) MarkPaused(ctx context.Context, instanceID string) (core.Instance, error) {
 	inst, err := s.store.GetInstance(ctx, instanceID)
 	if err != nil {

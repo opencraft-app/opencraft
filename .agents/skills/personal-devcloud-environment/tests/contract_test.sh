@@ -114,7 +114,7 @@ test_auth_failure_removes_temp_credentials() (
 test_session_only_generates_local_credentials() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/session-only" PERSONAL_DEV_SITE=intl
   export PERSONAL_DEV_SESSION_TOKEN='short-lived-testing-session' # pragma: allowlist secret
-  unset PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD
+  unset PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD PERSONAL_DEV_LOCAL_EMAIL PERSONAL_DEV_LOCAL_PASSWORD
   source "$SCRIPT"
   prepare_state
   curl_with_token() { return 0; }
@@ -125,8 +125,70 @@ test_session_only_generates_local_credentials() (
     || fail "session-only flow did not generate a local email"
   [[ -n "$LOCAL_IDENTITY_PASSWORD" ]] \
     || fail "session-only flow did not generate a local password"
-  assert_eq "$LOCAL_IDENTITY_EMAIL" "$(state_get email)" "local email state"
-  assert_eq "$LOCAL_IDENTITY_PASSWORD" "$(state_get password)" "local password state"
+  assert_eq "$LOCAL_IDENTITY_EMAIL" "$(state_get local_email)" "local email state"
+  assert_eq "$LOCAL_IDENTITY_PASSWORD" "$(state_get local_password)" "local password state"
+  assert_eq '' "$(state_get central_email)" "central email remains unset"
+  assert_eq '' "$(state_get central_password)" "central password remains unset"
+)
+
+test_local_identity_preserves_central_credentials_and_expired_session_reauthenticates() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/credential-separation" PERSONAL_DEV_SITE=intl
+  unset PERSONAL_DEV_SESSION_TOKEN PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD PERSONAL_DEV_LOCAL_EMAIL PERSONAL_DEV_LOCAL_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  state_set central_email 'managed@example.com'
+  state_set central_password 'managed-password' # pragma: allowlist secret
+  state_set central_session_token 'expired-testing-session' # pragma: allowlist secret
+
+  prepare_local_credentials
+  [[ "$LOCAL_IDENTITY_EMAIL" == lv-local-*@example.com ]] \
+    || fail "local identity was not generated independently"
+  [[ "$LOCAL_IDENTITY_EMAIL" != "$(state_get central_email)" ]] \
+    || fail "local identity reused the central email"
+
+  local request_body="$TEST_ROOT/credential-separation-signin.json"
+  curl_with_token() { return 1; }
+  curl() {
+    local previous='' arg
+    for arg in "$@"; do
+      if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
+        cp "${arg#@}" "$request_body"
+      fi
+      previous="$arg"
+    done
+    printf '%s\n' '{"session":{"sessionToken":"fresh-testing-session"}}'
+  }
+
+  assert_eq 'fresh-testing-session' "$(central_session)" "expired central session reauthentication"
+  python3 - "$request_body" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["email"] == "managed@example.com", payload
+assert payload["password"] == "managed-password", payload
+PY
+  assert_eq 'managed@example.com' "$(state_get central_email)" "central email after reauthentication"
+  assert_eq 'managed-password' "$(state_get central_password)" "central password after reauthentication"
+  assert_eq "$LOCAL_IDENTITY_EMAIL" "$(state_get local_email)" "local email after reauthentication"
+  assert_eq "$LOCAL_IDENTITY_PASSWORD" "$(state_get local_password)" "local password after reauthentication"
+)
+
+test_legacy_local_identity_is_not_used_as_central_login() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/legacy-local-state" PERSONAL_DEV_SITE=intl
+  unset PERSONAL_DEV_SESSION_TOKEN PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD PERSONAL_DEV_LOCAL_EMAIL PERSONAL_DEV_LOCAL_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  state_set email 'lv-local-old@example.com'
+  state_set password 'legacy-local-password' # pragma: allowlist secret
+  state_set central_user_id 'usr_existing'
+  state_set central_session_token 'expired-testing-session' # pragma: allowlist secret
+  curl_with_token() { return 1; }
+  curl() {
+    fail "legacy local identity was submitted to central Auth"
+  }
+
+  if (central_session) >/dev/null 2>&1; then
+    fail "legacy local identity unexpectedly authenticated as the central user"
+  fi
 )
 
 test_personal_kubeconfig_guard() (
@@ -165,6 +227,80 @@ test_personal_kubeconfig_guard() (
   if (require_personal_context) >/dev/null 2>&1; then
     fail "non-loopback API server passed the personal context guard"
   fi
+)
+
+test_doctor_reuses_bootstrapped_private_tools() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/doctor-private-tools" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_IP='21.214.48.147'
+  source "$SCRIPT"
+  prepare_state
+  : >"$KUBECONFIG_FILE"
+  local tool
+  for tool in kubectl kind kustomize; do
+    cat >"$TOOLS_DIR/$tool" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  "config current-context") printf '%s\n' 'kind-lightvela-personal-intl' ;;
+  *".context.cluster}"*) printf '%s\n' 'lightvela-personal-intl' ;;
+  *".cluster.server}"*) printf '%s\n' 'https://127.0.0.1:53421' ;;
+esac
+EOF
+    chmod 700 "$TOOLS_DIR/$tool"
+  done
+  docker() {
+    case "$*" in
+      info) return 0 ;;
+      "version --format {{.Server.Arch}}") printf '%s\n' 'amd64' ;;
+      *) return 1 ;;
+    esac
+  }
+  PATH="$(dirname "$(type -P bash)"):$(dirname "$(type -P curl)"):/usr/bin:/bin" ensure_tools >/dev/null 2>&1
+  PATH="$(dirname "$(type -P bash)"):$(dirname "$(type -P curl)"):/usr/bin:/bin" doctor >/dev/null 2>&1
+)
+
+test_port_forward_supervisor_restarts_and_stops_child() (
+  local supervisor="$REPO_ROOT/deploy/localstack/port-forward-supervisor.sh"
+  local test_dir="$TEST_ROOT/port-forward-supervisor"
+  local fake_command="$test_dir/fake-port-forward.sh"
+  local count_file="$test_dir/count"
+  local child_pid_file="$test_dir/child.pid"
+  local log_file="$test_dir/port-forward.log"
+  local supervisor_pid child_pid count
+  mkdir -p "$test_dir"
+  printf '0\n' >"$count_file"
+  cat >"$fake_command" <<'EOF'
+#!/usr/bin/env bash
+set -u
+count="$(<"$1")"
+count=$((count + 1))
+printf '%s\n' "$count" >"$1"
+if ((count == 1)); then
+  exit 42
+fi
+printf '%s\n' "$$" >"$2"
+trap 'exit 0' HUP INT TERM
+while true; do sleep 1; done
+EOF
+  chmod 700 "$fake_command"
+  LOCALSTACK_PORT_FORWARD_RESTART_DELAY_SECONDS=0.05 \
+    "$supervisor" "$log_file" "$fake_command" "$count_file" "$child_pid_file" &
+  supervisor_pid=$!
+  for _ in $(seq 1 100); do
+    [[ -s "$child_pid_file" ]] && break
+    sleep 0.05
+  done
+  [[ -s "$child_pid_file" ]] || fail "port-forward supervisor did not restart the failed command"
+  count="$(<"$count_file")"
+  ((count >= 2)) || fail "port-forward supervisor restart count was $count"
+  child_pid="$(<"$child_pid_file")"
+  kill -0 "$child_pid" >/dev/null 2>&1 || fail "restarted port-forward child is not running"
+  kill "$supervisor_pid"
+  wait "$supervisor_pid" >/dev/null 2>&1 || true
+  for _ in $(seq 1 40); do
+    ! kill -0 "$child_pid" >/dev/null 2>&1 && break
+    sleep 0.05
+  done
+  ! kill -0 "$child_pid" >/dev/null 2>&1 || fail "supervisor left the port-forward child running"
 )
 
 test_auth_override_is_sandbox_only() (
@@ -359,7 +495,7 @@ test_intl_registration_without_capability_fails_closed() (
 
 test_cn_registration_requires_server_confirmed_devcloud_target() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/cn-register" PERSONAL_DEV_SITE=cn
-  export PERSONAL_DEV_IP='9.134.214.121'
+  export PERSONAL_DEV_IP='21.214.48.147'
   source "$SCRIPT"
   prepare_state
   state_set uin '450860000013'
@@ -368,16 +504,16 @@ test_cn_registration_requires_server_confirmed_devcloud_target() (
   curl() { return 0; }
   curl_with_token() {
     printf '%s\n' "$*" >"$TEST_ROOT/cn-registration-request"
-    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"lvdt1.450860000013.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","expiresAt":"2099-01-01T00:00:00Z"}'
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"21.214.48.147","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"lvdt1.450860000013.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","expiresAt":"2099-01-01T00:00:00Z"}'
   }
   ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/cn-tunnel-assignment"; }
   install_billing_capability() { printf '%s\n' "$1" >"$TEST_ROOT/cn-billing-capability"; }
   register_route
-  ! grep -q '"targetIp"' "$TEST_ROOT/cn-registration-request"
+  grep -Fq '"targetIp":"21.214.48.147"' "$TEST_ROOT/cn-registration-request"
   ! grep -q '"uin"' "$TEST_ROOT/cn-registration-request"
   assert_eq 'uin-450860000013.cn.tunnel.internal|lvdt1.450860000013.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' \
     "$(<"$TEST_ROOT/cn-tunnel-assignment")" "CN tunnel assignment"
-  assert_eq '9.134.214.121' "$(state_get registration_target_ip)" "CN registration target IP"
+  assert_eq '21.214.48.147' "$(state_get registration_target_ip)" "CN registration target IP"
   assert_eq '18084' "$(state_get registration_port)" "CN registration port"
   ! grep -Eq 'lvdt1\.450860000013|tunnelToken' "$STATE_FILE"
 )
@@ -580,6 +716,21 @@ PY
   ! grep -Fq "$second" "$STATE_FILE"
 )
 
+test_billing_capability_readiness_requires_json_200() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/billing-readiness" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  current_billing_capability() {
+    printf '%s\n' 'lvdt1.450860000013.DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'
+  }
+  curl() { printf '200'; }
+  verify_billing_capability || fail "HTTP 200 readiness response was rejected"
+  curl() { printf '204'; }
+  if verify_billing_capability; then
+    fail "legacy empty HTTP 204 readiness response was accepted"
+  fi
+)
+
 test_unregister_requires_old_billing_capability_revocation() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/unregister-capability" PERSONAL_DEV_SITE=intl
   source "$SCRIPT"
@@ -597,7 +748,7 @@ test_unregister_requires_old_billing_capability_revocation() (
     printf '%s\n' '{"uin":450860000013,"status":"disabled","expiresAt":"2026-09-22T12:00:00Z"}'
   }
   curl() {
-    [[ "$*" == *'/auth/dev-environments/billing-proxy/jifei/resource-center/interface'* ]] || return 1
+    [[ "$*" == *'/auth/dev-environments/billing-proxy/cloudapi/?Action=DescribeOrderList'* ]] || return 1
     printf 'revocation-probed\n' >"$TEST_ROOT/unregister-capability-probed"
     printf '401'
   }
@@ -773,7 +924,7 @@ test_browser_login_is_minted_privately() (
   curl_with_token() {
     printf '%s\n' '{"userId":"usr_browser","sessionToken":"private-token","loginUrl":"http://127.0.0.1:5173/#session_token=private-token","expiresAt":"2099-01-01T00:00:00Z","impersonated":false}'
   }
-  local output output_file url headers pid first_pid curl_bin
+  local output output_file url headers pid first_pid curl_bin blocker_pid blocker_ready
   curl_bin="$(type -P curl)"
   output_file="$TEST_ROOT/browser-login-output"
   mint_browser_login >"$output_file" 2>&1
@@ -795,9 +946,29 @@ test_browser_login_is_minted_privately() (
   bootstrap_port="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.urlparse(sys.argv[1]).port)' "$url")"
   bootstrap_path="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.urlparse(sys.argv[1]).path)' "$url")"
   local_url="http://127.0.0.1:$bootstrap_port$bootstrap_path"
+  blocker_ready="$TEST_ROOT/browser-partial-connection-ready"
+  python3 - "$bootstrap_port" "$blocker_ready" <<'PY' &
+import pathlib
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+ready = pathlib.Path(sys.argv[2])
+with socket.create_connection(("127.0.0.1", port), timeout=2) as connection:
+    ready.write_text("ready\n", encoding="utf-8")
+    time.sleep(3)
+PY
+  blocker_pid=$!
+  for _ in $(seq 1 40); do
+    [[ -s "$blocker_ready" ]] && break
+    sleep 0.05
+  done
+  [[ -s "$blocker_ready" ]] || fail "partial browser connection was not established"
   headers="$("$curl_bin" --silent --show-error --max-time 2 --dump-header - --output /dev/null "$local_url")"
   grep -q '^HTTP/1\.[01] 303 ' <<<"$headers"
   grep -Fq 'Location: http://21.214.48.147:5173/dashboard/settings#session_token=private-token' <<<"$headers"
+  wait "$blocker_pid"
   wait "$pid"
   [[ ! -e "$BROWSER_BOOTSTRAP_READY_FILE" ]] || fail "one-time browser URL survived consumption"
   ! find "$STATE_ROOT" -maxdepth 1 -name 'browser-session.*' -print -quit | grep -q . \
@@ -965,6 +1136,7 @@ test_intl_dynamic_route_allowlists_match() {
   test -n "$gateway_cidrs"
   assert_eq "$gateway_cidrs" "$tunnel_cidrs" "SG testing CloudLadder/devtunnel allowlists"
   [[ ",$gateway_cidrs," == *,9.0.0.0/8,* ]] || fail "SG testing allowlist lost the DevCloud 9/8 range"
+  [[ ",$gateway_cidrs," == *,21.0.0.0/8,* ]] || fail "SG testing allowlist lost the DevCloud 21/8 range"
   [[ "$gateway_cidrs" != *'0.0.0.0/0'* ]] || fail "SG testing allowlist became globally open"
 }
 
@@ -999,7 +1171,11 @@ run_test 'active site blocks cross-site activation' test_active_site_blocks_swit
 run_test 'state updates are atomic' test_state_updates_are_atomic
 run_test 'auth failure removes credential temp files' test_auth_failure_removes_temp_credentials
 run_test 'session-only auth generates private local credentials' test_session_only_generates_local_credentials
+run_test 'local identity preserves central credentials across session refresh' test_local_identity_preserves_central_credentials_and_expired_session_reauthenticates
+run_test 'legacy local identity is not reused as central login' test_legacy_local_identity_is_not_used_as_central_login
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
+run_test 'doctor reuses bootstrapped private tools' test_doctor_reuses_bootstrapped_private_tools
+run_test 'port-forward supervisor restarts and cleans up its child' test_port_forward_supervisor_restarts_and_stops_child
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
 run_test 'Auth admin override is loopback-only' test_auth_admin_override_is_loopback_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
@@ -1018,6 +1194,7 @@ run_test 'no-pay order verification stays on loopback and validates USD' test_or
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
 run_test 'Intl status accepts the server-confirmed NAT source IP' test_intl_status_accepts_server_confirmed_nat_source
 run_test 'billing capability rotates without state persistence' test_billing_capability_rotates_without_state_persistence
+run_test 'billing capability readiness requires JSON HTTP 200' test_billing_capability_readiness_requires_json_200
 run_test 'unregister verifies old billing capability revocation' test_unregister_requires_old_billing_capability_revocation
 run_test 'Intl active-registration guard accepts the server-confirmed NAT source IP' test_intl_active_registration_accepts_server_confirmed_nat_source
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure

@@ -334,7 +334,11 @@ test "$internal_token_patch_plan" = $'user-auth|lightclaw-auth-secrets|LIGHTCLAW
 rg -q '^randomize_shared_internal_tokens\(\)' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'randomize_shared_internal_tokens' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'start_exposure_linux' "$LOCALSTACK_ROOT/localstack.sh"
+test -x "$LOCALSTACK_ROOT/port-forward-supervisor.sh"
+rg -Fq 'port-forward-supervisor.sh' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'load_images_into_local_cluster' "$LOCALSTACK_ROOT/localstack.sh"
+rg -Fq 'deployment/mock-control \' "$LOCALSTACK_ROOT/localstack.sh"
+rg -q 'ProgressDeadlineExceeded' "$LOCALSTACK_ROOT/localstack.sh"
 rg -Fq 'frontend|localstack-frontend|service/frontend|5173:8080|$PUBLIC_BIND_ADDRESS' \
   "$LOCALSTACK_ROOT/localstack.sh"
 rg -Fq 'gateway|lightclaw-gateway|service/service-gateway|8085:80|$PUBLIC_BIND_ADDRESS' \
@@ -410,4 +414,5 @@ rg -q 'processBaseUrl = "http://fake-envd.localstack-system.svc.cluster.local:19
 rg -q 'launchctl bootstrap' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'wait_for_namespaces_deleted' "$LOCALSTACK_ROOT/localstack.sh"
 bash -n "$LOCALSTACK_ROOT/localstack.sh"
+bash "$LOCALSTACK_ROOT/tests/build_cleanup_test.sh"
 bash "$REPO_ROOT/.agents/skills/personal-devcloud-environment/tests/contract_test.sh"

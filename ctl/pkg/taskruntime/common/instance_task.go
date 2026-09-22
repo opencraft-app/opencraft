@@ -76,9 +76,8 @@ type IsolatePassTaskPayload struct {
 
 // IsolateInstanceTaskPayload 是子 task 的 payload
 //   - 子 task 负责：
-//     1. CAS 拿 instance status → Pausing（Q22-I-D）
-//     2. 调 sandbox.PauseSandbox 走关机语义（Q26-D 修订版 / Q29=E5 / Q32=b）
-//     3. CAS Pausing → Paused（成功）或 Pausing → Running 回滚（finalizeFailure）
+//     1. 调 sandbox.PauseSandbox 提交关机并轮询到 Sandbox PAUSED
+//     2. CAS ctl instance Running/Resuming → Paused
 //   - interval=60s, max_execute_count=60 → 1h 重试窗口
 //   - finalizeFailure 行为：CAS Pausing → Running，让 user 后续可以正常使用
 type IsolateInstanceTaskPayload struct {

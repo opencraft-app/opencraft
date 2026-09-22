@@ -1807,12 +1807,15 @@ func TestInternalTemplateClassResolveRouteReturnsActivePools(t *testing.T) {
 // calls and lets tests script their return values. It satisfies the full
 // CloudProvider interface for use as handler.cloud in pause-path tests.
 type stubPauseProvider struct {
-	stopCalls  int
-	stopWith   []provider.CloudInstanceRef
-	stopErr    error
-	startCalls int
-	startWith  []provider.CloudInstanceRef
-	startErr   error
+	stopCalls      int
+	stopWith       []provider.CloudInstanceRef
+	stopErr        error
+	describeCalls  int
+	describeStates []string
+	describeErr    error
+	startCalls     int
+	startWith      []provider.CloudInstanceRef
+	startErr       error
 }
 
 func (p *stubPauseProvider) CreateInstance(context.Context, core.Pool) (string, string, error) {
@@ -1822,7 +1825,16 @@ func (p *stubPauseProvider) ReinstallInstance(context.Context, provider.CloudIns
 	return nil
 }
 func (p *stubPauseProvider) DescribeInstance(context.Context, provider.CloudInstanceRef) (string, error) {
-	return "", nil
+	p.describeCalls++
+	if p.describeErr != nil {
+		return "", p.describeErr
+	}
+	if len(p.describeStates) == 0 {
+		return "RUNNING", nil
+	}
+	state := p.describeStates[0]
+	p.describeStates = p.describeStates[1:]
+	return state, nil
 }
 func (p *stubPauseProvider) TerminateInstance(context.Context, provider.CloudInstanceRef) error {
 	return nil
@@ -1902,9 +1914,8 @@ func TestPostSandboxesSandboxIDResumeUsesLegacyNoopWhenCloudPauseResumeDisabled(
 	}
 }
 
-// TestPostSandboxesSandboxIDPauseHappyPath asserts that the new pause handler
-// (Q26-D 修订版 + Q29=E5) drives ALLOCATED → PAUSING → PAUSED via cp.StopInstance,
-// instead of the legacy ALLOCATED → DRY release path.
+// TestPostSandboxesSandboxIDPauseHappyPath asserts that pause only submits the
+// asynchronous cloud stop and leaves reconciliation to subsequent status reads.
 func TestPostSandboxesSandboxIDPauseHappyPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := service.NewService(store.NewMemoryStore())
@@ -1929,8 +1940,65 @@ func TestPostSandboxesSandboxIDPauseHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get instance: %v", err)
 	}
+	if got.State != core.StatePausing {
+		t.Fatalf("expected instance state PAUSING after stop submission, got %s", got.State)
+	}
+}
+
+func TestGetSandboxReconcilesPausingInstanceFromCloudState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{describeStates: []string{"STOPPING", "STOPPED"}}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	pauseReq := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	pauseResp := httptest.NewRecorder()
+	router.ServeHTTP(pauseResp, pauseReq)
+	if pauseResp.Code != http.StatusNoContent {
+		t.Fatalf("pause: expected 204, got %d body=%s", pauseResp.Code, pauseResp.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/sandboxes/"+sb.ID, nil)
+	getResp := httptest.NewRecorder()
+	router.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("first get: expected 200, got %d body=%s", getResp.Code, getResp.Body.String())
+	}
+	var first api.SandboxDetail
+	if err := json.Unmarshal(getResp.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode first get: %v", err)
+	}
+	if first.State != api.Running {
+		t.Fatalf("first get state=%s, want running while cloud is STOPPING", first.State)
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get pausing instance: %v", err)
+	}
+	if got.State != core.StatePausing {
+		t.Fatalf("instance state=%s, want PAUSING while cloud is STOPPING", got.State)
+	}
+
+	getReq = httptest.NewRequest(http.MethodGet, "/sandboxes/"+sb.ID, nil)
+	getResp = httptest.NewRecorder()
+	router.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("second get: expected 200, got %d body=%s", getResp.Code, getResp.Body.String())
+	}
+	var second api.SandboxDetail
+	if err := json.Unmarshal(getResp.Body.Bytes(), &second); err != nil {
+		t.Fatalf("decode second get: %v", err)
+	}
+	if second.State != api.Paused {
+		t.Fatalf("second get state=%s, want paused after cloud reaches STOPPED", second.State)
+	}
+	got, err = svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get paused instance: %v", err)
+	}
 	if got.State != core.StatePaused {
-		t.Fatalf("expected instance state PAUSED after pause, got %s", got.State)
+		t.Fatalf("instance state=%s, want PAUSED after cloud reaches STOPPED", got.State)
 	}
 }
 
@@ -1941,7 +2009,10 @@ func TestPostSandboxesSandboxIDPauseRollsBackOnStopFailure(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := service.NewService(store.NewMemoryStore())
 	_, inst, sb := createAllocatedSandbox(t, svc)
-	cp := &stubPauseProvider{stopErr: errors.New("cvm StopInstances rate limited")}
+	cp := &stubPauseProvider{
+		stopErr:        errors.New("cvm StopInstances rate limited"),
+		describeStates: []string{"RUNNING"},
+	}
 	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
@@ -1958,37 +2029,112 @@ func TestPostSandboxesSandboxIDPauseRollsBackOnStopFailure(t *testing.T) {
 	if got.State != core.StateAllocated {
 		t.Fatalf("expected instance rolled back to ALLOCATED, got %s", got.State)
 	}
+	if cp.describeCalls != 1 {
+		t.Fatalf("expected cloud state reconciliation before rollback, got %d calls", cp.describeCalls)
+	}
 }
 
-// TestPostSandboxesSandboxIDPauseIdempotent asserts that calling pause a second
-// time on an already-paused sandbox returns 204 without invoking cp.StopInstance.
-func TestPostSandboxesSandboxIDPauseIdempotent(t *testing.T) {
+func TestPostSandboxesSandboxIDPauseKeepsPausingWhenCloudIsStopping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{
+		stopErr:        context.Canceled,
+		describeStates: []string{"STOPPING"},
+	}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for accepted asynchronous stop, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StatePausing {
+		t.Fatalf("instance state=%s, want PAUSING while cloud is STOPPING", got.State)
+	}
+}
+
+func TestPostSandboxesSandboxIDPauseKeepsPausingWhenCloudStateIsUnknown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{
+		stopErr:     context.DeadlineExceeded,
+		describeErr: errors.New("DescribeInstancesStatus unavailable"),
+	}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 while cloud state is unknown, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StatePausing {
+		t.Fatalf("instance state=%s, want PAUSING while cloud state is unknown", got.State)
+	}
+}
+
+// TestPostSandboxesSandboxIDPauseRetriesSubmissionWhilePausing closes the crash
+// window between persisting PAUSING and submitting StopInstances. The provider
+// call is idempotent and checks STOPPING/STOPPED before issuing another request.
+func TestPostSandboxesSandboxIDPauseRetriesSubmissionWhilePausing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := service.NewService(store.NewMemoryStore())
 	_, inst, sb := createAllocatedSandbox(t, svc)
 	cp := &stubPauseProvider{}
 	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
 
-	// First call: ALLOCATED → PAUSED.
+	// First call: ALLOCATED → PAUSING.
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
 	router.ServeHTTP(httptest.NewRecorder(), req)
 	if cp.stopCalls != 1 {
 		t.Fatalf("first pause: expected 1 StopInstance, got %d", cp.stopCalls)
 	}
 	got, _ := svc.GetInstance(context.Background(), inst.ID)
-	if got.State != core.StatePaused {
-		t.Fatalf("first pause: expected PAUSED, got %s", got.State)
+	if got.State != core.StatePausing {
+		t.Fatalf("first pause: expected PAUSING, got %s", got.State)
 	}
 
-	// Second call must be no-op and 204.
+	// Second call retries the idempotent provider operation and still returns 204.
 	req2 := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
 	rr2 := httptest.NewRecorder()
 	router.ServeHTTP(rr2, req2)
 	if rr2.Code != http.StatusNoContent {
 		t.Fatalf("second pause: expected 204, got %d body=%s", rr2.Code, rr2.Body.String())
 	}
-	if cp.stopCalls != 1 {
-		t.Fatalf("second pause: expected no extra StopInstance, got total %d", cp.stopCalls)
+	if cp.stopCalls != 2 {
+		t.Fatalf("second pause: expected StopInstance retry, got total %d", cp.stopCalls)
+	}
+}
+
+func TestPostSandboxesSandboxIDPauseRollsBackWithoutCloudProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	router := newHandlerTestRouter(&handler{svc: svc, cloudPauseResume: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StateAllocated {
+		t.Fatalf("instance state=%s, want ALLOCATED after missing provider rollback", got.State)
 	}
 }
 
@@ -1999,13 +2145,19 @@ func TestPostSandboxesSandboxIDPauseIdempotent(t *testing.T) {
 func createPausedSandbox(t *testing.T, svc *service.Service) (core.Pool, core.Instance, core.Sandbox) {
 	t.Helper()
 	pool, inst, sb := createAllocatedSandbox(t, svc)
-	cp := &stubPauseProvider{}
+	cp := &stubPauseProvider{describeStates: []string{"STOPPED"}}
 	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("pre-pause failed: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	getReq := httptest.NewRequest(http.MethodGet, "/sandboxes/"+sb.ID, nil)
+	getResp := httptest.NewRecorder()
+	router.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("pre-pause reconciliation failed: code=%d body=%s", getResp.Code, getResp.Body.String())
 	}
 	got, err := svc.GetInstance(context.Background(), inst.ID)
 	if err != nil {

@@ -14,9 +14,9 @@ source_of_truth:
   - cloudladdergateway/internal/devroute
   - deploy/localstack/localstack.sh
 status: active
-reviewed_at: 2026-09-17
+reviewed_at: 2026-09-22
 review_due: 2026-12-16
-revision: 0.3.0
+revision: 0.4.0
 precedence: task
 derived: false
 ---
@@ -32,7 +32,7 @@ derived: false
 - 不修改、发布或同步任何生产/staging 工作负载。
 - 不把动态注册数据写回 Git、GitOps 或 Argo CD desired state。
 - 不允许客户端任意指定 UIN、URL 或任意内网端口。
-- 不默认触发支付或发货闭环；只有明确授权且询价确认 `real_total_cost=0` 的 testing mock 账号才能调用测试专用 `order-and-pay`。
+- 不默认触发支付、退款或销毁；只有用户明确授权、账号余额已确认且限定在 testing 时才调用测试专用 `order-and-pay`。金额大于零的 funded testing 账号允许用于验收，但不得调用生产账号或生产支付。
 - 不在本轮替代“一需求一共享集群环境”的 playground 克隆能力。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -78,6 +78,8 @@ derived: false
 - tkexgz/tkexsg 仅 testing 工作负载启用 HTTP registry；不新增 ServiceAccount/RBAC/Lease，prod/staging manifest 无变化。
 - DevCloud Linux 执行 Skill 脚本后可从 `http://<DevCloud-IP>:5173` 打开前端，API 指向 `http://<DevCloud-IP>:8085`，trade callback 监听 `0.0.0.0:18084`。
 - Skill 覆盖 doctor/bootstrap/up/register/status/heartbeat/unregister/down，以及真实询价、下单不支付和个人 DB 不变量验收。
+- `doctor` 在干净 shell 中复用本 Skill 私有目录已安装的 `kubectl/kind/kustomize`；Linux port-forward 子进程退出后自动重建，停止 supervisor 时不得遗留子进程。
+- 浏览器一次性 nonce 在并发请求下只能原子消费一次；半连接最多占用 2 秒，不能阻塞后续正常登录。
 
 ## affected_paths
 
@@ -123,6 +125,8 @@ derived: false
 - 2026-09-17（DevCloud 日志跨至 2026-09-18）：北京实时询价返回 `bundle_launch_01`、CNY、`real_total_cost=0`；testing `order-and-pay` HTTP 200、业务 `code=OK`。真实回调后终态为 `trade_order=provisioned`、`trade_flow(create_resource)=completed`、Pass `bundle_launch_01/active`、quota `1/1`、subscription 0。浏览器一次性 nonce 被消费，`session_token` fragment 被清除，登录态写入 localStorage，浏览器 `GET /v1/passes` 返回 1 条 active Launch Pass。
 - 浏览器可达性边界：当前办公网 Chrome 直接访问 DevCloud 5173/19050 会被终端代理返回 502；本轮通过 Codex 自动建立 SSH 本地转发完成真实 DOM、localStorage 和 API 验收。该证据证明 Skill 登录链路可用，但不证明所有办公网终端都能裸直连 `http://<DevCloud-IP>:<高位端口>`；Codex-managed tunnel 是必要 fallback。
 - 2026-09-17（DevCloud 日志跨至 2026-09-18）：北京 60 秒 TTL 自然过期后，generic callback 返回 HTTP 503 / `status=expired` 且个人 Trade/代理计数保持 `2->2 / 4->4`；`unregister` 后返回 HTTP 503 / `status=disabled` 且计数仍不变。随后标准 `down`，远端和本机转发端口、后台 PID、临时浏览器登录态与个人 kind 集群全部释放。
+- 2026-09-22：韩国国际站按短期 capability 新路径重新完成 Launch→Launch AI、Launch→Cruise AI、Cruise→Cruise AI 三条跨 SP 真实 testing 支付、`checkModify/modifyResource/queryResource`、Trade/Flow/Pass/Task/AI Gateway 终态，并逐笔只退款一次、只销毁一次。注销后旧 capability 探针返回 401，registration 保留 disabled tombstone，`down` 停止个人 workload 并保留 PVC。完整 Deal/event/Flow/Task/Pass/实例证据记录在 `2026-09-20-pass-cross-sp-modify.md`。
+- 2026-09-22：真实测试确认两个运行时坑。其一，三目标串行询价会叠加外部延迟并触碰 15 秒单目标边界；CTL 改为并行询价、单目标 20 秒、按策略顺序组装，配合 `ctl-passes=30s` 后公开网关连续三次 HTTP 200。其二，Pod rollout 会让裸 `kubectl port-forward` 永久退出；Linux localstack 改由 supervisor 自动重建。请求刚好落在重连窗口时仍可能失败，因此支付/退款/销毁必须先查计费回调和 DB 终态，不能按客户端错误盲目重试。
 - 双站原始请求/响应只保存在 DevCloud 私有状态目录中，权限为 0600；本 Pack 仅记录方法、路径、HTTP/业务状态和终态，不保存 session、capability、token、完整账号标识或 Deal/BigOrder 原值。
 
 ## risks
@@ -131,6 +135,7 @@ derived: false
 - 跨环境污染：已认领 UIN 的 expired/disabled 状态 fail closed；静态路由保留到动态迁移真实验证完成。
 - GitOps 误同步生产：TKEx 构建固定使用 `testing` image-pin variant，只允许修改 testing platform env；发布时仅精确同步 testing 资源，禁止 app 级 Sync。
 - callback 晚到：unregister 写 tombstone 而不是物理删除。
+- 请求结果不确定：testing `order-and-pay` 已出现客户端 504 后 `checkCreate/createResource` 继续成功的真实案例；付款、退款、销毁请求只能提交一次，超时后必须先按 transaction/event/deal 和业务库终态对账。
 - Session 泄露：Skill 只在本机内存中用一次性 nonce 把 session 交给浏览器，不写状态文件、shell argv、仓库或日志。
 - 浏览器网络：办公网代理或安全组可能阻止裸访问 DevCloud 高位端口；自动化验收和无直连终端应使用 agent-managed SSH local forwarding，且清理阶段必须停止转发。
 - 探针重定向：健康探针禁止跟随 3xx，避免允许的 DevCloud 第一跳扩展为任意内网 SSRF。
@@ -145,6 +150,7 @@ derived: false
 - `/usr/bin/python3 .ci/runtime/tests/gitops_tests/test_clgateway_sg_testing_callback.py`
 - `/usr/bin/python3 <skill-creator>/scripts/quick_validate.py .agents/skills/personal-devcloud-environment`
 - `bash .agents/skills/personal-devcloud-environment/tests/contract_test.sh`
+- `cd ctl && go test ./pkg/logic/pass ./main/api -count=1`
 - 双站 live testing：`up -> browser-login -> register -> inquiry -> testing order-and-pay -> callback/DB terminal state -> TTL expired 503 -> unregister disabled 503 -> down`。
 - 仓库 docs/change-impact 门禁按实际变更运行；未能运行的 live testing 验证明确标注。
 

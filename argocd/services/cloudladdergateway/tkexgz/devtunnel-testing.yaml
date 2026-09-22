@@ -93,7 +93,7 @@ spec:
               key: CLOUDLADDER_SHADOW_HMAC_SECRET
               name: cloudladdergateway-runtime-secrets
         - name: DEVTUNNEL_CAPABILITY_ALLOWED_CIDRS
-          value: 9.0.0.0/8
+          value: 9.0.0.0/8,21.0.0.0/8
         - name: DEVTUNNEL_CAPABILITY_ALLOWED_PORTS
           value: "18084"
         - name: DEVTUNNEL_CAPABILITY_TUNNEL_BASE_URL

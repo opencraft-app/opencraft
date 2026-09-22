@@ -1,10 +1,12 @@
 package pass
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	passmodel "ctl/pkg/model/pass"
+	"ctl/pkg/transport"
 )
 
 // 升配用户侧入口的入参构造。需求：TAPD 1010132091137784162 §5.1
@@ -19,6 +21,54 @@ func modifyTestPass() *passmodel.Entity {
 		BundleID:    "bundle_launch_01",
 		Status:      passmodel.StatusActive,
 		ExpiredTime: time.Date(2026, 6, 15, 10, 30, 0, 0, time.Local),
+	}
+}
+
+func TestQuoteModifyTargetsRunsConcurrentlyAndPreservesPolicyOrder(t *testing.T) {
+	targets := []string{"bundle_cruise_01", "bundle_launch_ai_01", "bundle_cruise_ai_01"}
+	started := make(chan string, len(targets))
+	release := make(chan struct{})
+	type result struct {
+		options []transport.ModifyBundleOption
+		err     error
+	}
+	done := make(chan result, 1)
+
+	go func() {
+		options, err := quoteModifyTargets(context.Background(), targets,
+			func(ctx context.Context, targetBundleID string) (*transport.ModifyBundleOption, bool, error) {
+				started <- targetBundleID
+				select {
+				case <-release:
+					return &transport.ModifyBundleOption{TargetBundleID: targetBundleID}, true, nil
+				case <-ctx.Done():
+					return nil, false, ctx.Err()
+				}
+			})
+		done <- result{options: options, err: err}
+	}()
+
+	for range targets {
+		select {
+		case <-started:
+		case <-time.After(500 * time.Millisecond):
+			close(release)
+			t.Fatal("modify target inquiries did not start concurrently")
+		}
+	}
+	close(release)
+
+	got := <-done
+	if got.err != nil {
+		t.Fatalf("quoteModifyTargets: %v", got.err)
+	}
+	if len(got.options) != len(targets) {
+		t.Fatalf("options = %d, want %d", len(got.options), len(targets))
+	}
+	for i, targetBundleID := range targets {
+		if got.options[i].TargetBundleID != targetBundleID {
+			t.Fatalf("options[%d] = %q, want %q", i, got.options[i].TargetBundleID, targetBundleID)
+		}
 	}
 }
 

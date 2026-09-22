@@ -164,6 +164,13 @@ Authorization 放入内部专用 header。
 续租覆盖 digest 后旧 token 立即失效，注销后同一 token 必须返回 `401`；`403` 只能用于已验证 capability
 的业务 allowlist 拒绝探针。个人环境不得取得 Jifei AppSecret、CloudLadder HMAC 或中央内部 Bearer。
 
+个人环境必须把中央 testing 身份和本地浏览器身份分开保存：`central_*` 只用于恢复持有真实 shadow
+binding 的 testing session，`local_*` 只用于个人 Auth。自动生成的 `lv-local-*` 身份不得尝试登录中央
+Auth，中央 session 失效时也不得静默新建另一个账号或覆盖原 UIN。计费 capability readiness 使用固定
+探针穿透个人 Trade、中央 Auth 和中央 Trade；只有完成 capability、registration、UIN 和内部 Bearer
+校验后，中央 Trade 才在调用 Jifei/CloudAPI 之前返回 `200 + {"code":"OK","message":"ready"}`。
+空 `204`、业务 allowlist `403` 或页面可访问都不能证明该链路已就绪。
+
 生产和 staging 不启用 `PERSONAL_DEV_ROUTE_CONTROL_ENABLED` 或 developer route store；同名 HTTP 路由
 即使存在也只返回 disabled，不得降级到客户端自报身份或共享 Secret。验收至少覆盖无 session、非 active
 binding、伪造代理头、错误 HMAC、跨 UIN、注销和过期；任何日志与测试报告都不得包含 session、密码或
