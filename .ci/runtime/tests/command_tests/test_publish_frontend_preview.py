@@ -8,6 +8,13 @@ SCRIPT = REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh"
 
 
 class PublishFrontendPreviewTests(unittest.TestCase):
+    def test_ordinary_international_preview_uses_kr_sandbox_api(self) -> None:
+        source = SCRIPT.read_text()
+
+        self.assertIn("printf 'https://api-sandbox-kr-1.lightclaw.tech'", source)
+        self.assertEqual(source.count("printf 'https://lightclaw.tech'"), 1)
+        self.assertNotIn("printf 'https://api.lightvela.ai'", source)
+
     def test_variants_use_isolated_workspaces_and_external_artifacts(self) -> None:
         source = SCRIPT.read_text()
 

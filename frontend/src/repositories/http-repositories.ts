@@ -3,6 +3,7 @@ import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import { defaultHermesAgentName } from "@/i18n/default-agent-name";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
+import type { OAuthProvider } from "@/lib/oauth";
 import { isGlobal } from "@/lib/region";
 import type {
   AuthSessionSnapshot,
@@ -390,6 +391,11 @@ const resolveOAuthStartBaseURL = (baseUrl: string) => {
   // local-proxy keeps OAuth start/callback on the dev server origin so the
   // state cookie and returned session token survive the browser redirect flow.
   return baseUrl === "" ? "" : baseUrl;
+};
+
+const oauthProviderAvailableOnBackend = (baseUrl: string, provider: OAuthProvider): boolean => {
+  const normalizedBaseURL = baseUrl.replace(/\/$/, "").toLowerCase();
+  return normalizedBaseURL !== "https://api-sandbox-kr-1.lightclaw.tech" || provider !== "google";
 };
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {
@@ -2031,6 +2037,9 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     await request(baseUrl, "/auth/federation/switch", { method: "DELETE" });
   },
   getOAuthStartUrl(provider, options) {
+    if (!oauthProviderAvailableOnBackend(baseUrl, provider)) {
+      return null;
+    }
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
     const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl);
     const startURL = new URL(buildUrl(oauthStartBaseURL, `/auth/oauth/${provider}/start`), base);
