@@ -28,7 +28,6 @@
 - `gateway-dashboard-runtime-secrets.sops.yaml`
 - `lightclaw-auth-content-audit-secrets.sops.yaml`
 - `lightclaw-auth-secrets.sops.yaml`
-- `nextgen-dashboard-runtime-secrets.sops.yaml`
 - `payment-runtime-secrets.sops.yaml`
 - `sandbox-runtime-secrets.sops.yaml`
 - `service-gateway-runtime-secrets.sops.yaml`

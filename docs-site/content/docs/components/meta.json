@@ -16,7 +16,6 @@
     "gateway-dashboard",
     "images",
     "infra-pulumi",
-    "nextgen-dashboard-client",
     "payment",
     "sandbox",
     "service-gateway",

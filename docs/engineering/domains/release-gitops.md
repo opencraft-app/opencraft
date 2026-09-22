@@ -458,12 +458,14 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
   deploy-facing `config.yaml` 已移除 `/admin` → `nextgen-dashboard` 的 upstream 路由；`/admin/gateway` 与
   `/` 兜底仍指向 gateway-dashboard，未知 `/admin` 子路径改由 gateway-dashboard 应答。该变更在
   admin-gateway 的 Argo Application 同步后才生效，源码合入不等于发布。
-- `nextgen-dashboard` 源码目录已删除，但 `argocd/services/nextgen-dashboard/`、catalog 描述符、
-  SOPS secrets、SSM manifest 与 `.ci/nextgen-dashboard.yml` 在存量 deployment 下线前暂保留；
-  其 CI 触发路径不再命中源码，不要手动触发该流水线。
-- 正式下线是后续独立 GitOps 变更：删除 deploy-facing 目录与 secrets 后，必须确认对应 Argo
-  Application 移除、workload 达到 `Synced`/`Healthy` 终态，且 `user-auth` 与 playground namespace
-  中不再有 nextgen-dashboard workload。
+- `nextgen-dashboard` 源码与 `nextgen-dashboard-client/` 客户端均已删除；deploy-facing 的
+  `argocd/services/nextgen-dashboard/`、4 个 catalog 描述符、6 个环境的 SOPS secrets、
+  SSM manifest（含 sandbox-jp-1 runtime 清单段）、`.ci/nextgen-dashboard.yml` CI 流水线与
+  guards manifest 条目已在同日下线变更中移除。
+- 合入生效后 ApplicationSet 不再生成 nextgen-dashboard Application，Argo 将移除对应 workload；
+  必须确认 `user-auth` 与各 playground namespace 中 nextgen-dashboard 的 workload、Ingress 与
+  Secret 消失。BK-CI 侧同名流水线如仍存在应停用或删除；SSM 中的
+  `mono-*-nextgen-dashboard-runtime-secrets` 在确认无消费后按 Secret 交付顺序清理。
 - SOPS 每次加密的密文可以不同。判断 Secret 是否一致必须在受控环境中比较解密后的键集合和值，或比较逐键安全摘要；仅看到密文 diff、MR 已合入或 Argo `Healthy` 都不能证明语义一致。
 - live hotfix 后，即使业务已经恢复，也必须补齐 SSM、`master` 和 `gitops`。执行 Argo Sync 前先确认 deploy-facing 明文语义与 live 一致，否则 Sync 可能把正确的 live Secret 覆盖成旧值。
 - Secret 只更新对象数据时，Pod 不会自动重启。需要运行进程读取新值时应单独执行受控 rollout，并分别验证 Secret、Pod 环境和业务请求；不要把 Secret `Synced` 等同于进程已生效。

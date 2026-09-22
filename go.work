@@ -9,7 +9,6 @@ use (
 	./images/envd
 	./velagw
 	./vela-computer
-	./nextgen-dashboard-client
 	./payment
 	./referral
 	./service-gateway
