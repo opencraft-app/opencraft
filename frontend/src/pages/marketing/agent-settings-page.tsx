@@ -5455,30 +5455,20 @@ export const AgentSettingsPage = ({
                     </div>
                   </fieldset>
                   {createBotMode === "blank" ? (
-                    <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
-                      <div className="flex items-start gap-2">
-                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>
-                        <dd>{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>
-                        <dd>{t("系统预置")}</dd>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
-                        <dd>{t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")}</dd>
-                      </div>
+                    <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                      <dt className="whitespace-nowrap font-medium text-black/70">{t("继承")}</dt>
+                      <dd className="min-w-0 text-pretty">{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
+                      <dt className="whitespace-nowrap font-medium text-black/70">Skills</dt>
+                      <dd className="min-w-0 text-pretty">{t("系统预置")}</dd>
+                      <dt className="whitespace-nowrap font-medium text-black/70">{t("不继承")}</dt>
+                      <dd className="min-w-0 text-pretty">{t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")}</dd>
                     </dl>
                   ) : (
-                    <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
-                      <div className="flex items-start gap-2">
-                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>
-                        <dd>{t("模型、人设、技能、用户偏好和长期记忆")}</dd>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
-                        <dd>{t("当前对话、历史会话、定时任务、运行状态或通道连接")}</dd>
-                      </div>
+                    <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                      <dt className="whitespace-nowrap font-medium text-black/70">{t("继承")}</dt>
+                      <dd className="min-w-0 text-pretty">{t("模型、人设、技能、用户偏好和长期记忆")}</dd>
+                      <dt className="whitespace-nowrap font-medium text-black/70">{t("不继承")}</dt>
+                      <dd className="min-w-0 text-pretty">{t("当前对话、历史会话、定时任务、运行状态或通道连接")}</dd>
                     </dl>
                   )}
                 </>

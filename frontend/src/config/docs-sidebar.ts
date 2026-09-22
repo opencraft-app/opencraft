@@ -177,6 +177,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     titleEn: "Features & Configuration",
     items: [
       { slug: "configuration", title: "配置总览", titleEn: "Configuration Overview" },
+      { slug: "configuration/bots", title: "管理 Bots", titleEn: "Manage Bots" },
       { slug: "configuration/model", title: "配置模型", titleEn: "Configure Models" },
       { slug: null, title: "配置通道", titleEn: "Configure Channels", defaultChildSlug: "configuration/channel-telegram" },
       { slug: "configuration/channel-telegram", title: "Telegram", titleEn: "Telegram", indent: true },
@@ -428,6 +429,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
   configuration: "05-configuration.md",
+  "configuration/bots": "configuration/bots.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-telegram": "configuration/channel-telegram.md",
   "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",

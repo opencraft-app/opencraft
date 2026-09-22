@@ -35,6 +35,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots"
+    ],
+    [
+      "configuration",
       "model"
     ],
     [
@@ -485,6 +489,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots"
+    ],
+    [
+      "configuration",
       "model"
     ],
     [
@@ -756,6 +764,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration"
+    ],
+    [
+      "configuration",
+      "bots"
     ],
     [
       "configuration",
@@ -1299,6 +1311,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots"
+    ],
+    [
+      "configuration",
       "model"
     ],
     [
@@ -1570,6 +1586,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration"
+    ],
+    [
+      "configuration",
+      "bots"
     ],
     [
       "configuration",
@@ -1847,6 +1867,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots"
+    ],
+    [
+      "configuration",
       "model"
     ],
     [
@@ -2121,7 +2145,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
+    "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",
@@ -2243,7 +2268,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
+    "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",
@@ -2316,7 +2342,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
+    "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",
@@ -2389,7 +2416,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
-    "configuration": "2026-08-20",
+    "configuration": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
     "configuration/channel-whatsapp": "2026-08-20",
@@ -2460,7 +2487,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-26",
     "credits": "2026-08-26",
     "create-first-hermes": "2026-08-26",
-    "configuration": "2026-08-26",
+    "configuration": "2026-09-22",
+    "configuration/bots": "2026-09-22",
     "configuration/model": "2026-08-26",
     "configuration/channel-telegram": "2026-08-26",
     "configuration/channel-whatsapp": "2026-08-26",
@@ -2533,7 +2561,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-28",
     "credits": "2026-08-28",
     "create-first-hermes": "2026-08-28",
-    "configuration": "2026-08-28",
+    "configuration": "2026-09-22",
+    "configuration/bots": "2026-09-22",
     "configuration/model": "2026-08-28",
     "configuration/channel-telegram": "2026-08-28",
     "configuration/channel-whatsapp": "2026-08-28",
@@ -2606,7 +2635,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "announcements/public-beta": "2026-08-31",
     "credits": "2026-08-31",
     "create-first-hermes": "2026-08-31",
-    "configuration": "2026-08-31",
+    "configuration": "2026-09-22",
+    "configuration/bots": "2026-09-22",
     "configuration/model": "2026-08-31",
     "configuration/channel-telegram": "2026-08-31",
     "configuration/channel-whatsapp": "2026-08-31",
