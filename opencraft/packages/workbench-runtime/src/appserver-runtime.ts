@@ -40,6 +40,7 @@ import type {
 } from "@opencraft/appserver-protocol";
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
+  OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
   parseAttachmentStagingCapability,
 } from "@opencraft/appserver-protocol";
@@ -324,7 +325,11 @@ export interface AppServerWorkbenchRuntime {
   connect(): Promise<void>;
   reconnect(): Promise<void>;
   acquireThread(threadId: string): Promise<AppServerThreadRuntimeLease>;
-  /** Creates a Thread only; its first Turn is submitted by the promoted Conversation Runtime. */
+  /**
+   * Creates the recoverable submission boundary declared by the Host. Most
+   * Hosts return after Thread creation; first-Turn durable Hosts return only
+   * after that Turn is accepted.
+   */
   createThread(intent: SubmitIntent): Promise<SubmissionReceipt>;
   submit(intent: SubmitIntent): Promise<SubmissionReceipt>;
   getThreadResidency(threadId: string): ThreadRuntimeResidencySnapshot | null;
@@ -369,6 +374,10 @@ interface ConversationBinding {
   touchedAt: number;
   hydrationOperation: Promise<void> | null;
   hydrationForReconnect: boolean;
+  capabilityRegistrationOperation: Promise<void> | null;
+  capabilityRegistrationClient: AppServerClient | null;
+  capabilityRegistrationGeneration: number | null;
+  capabilityDeclarationAccepted: boolean;
   phase: ThreadRuntimeResidencyPhase;
   subscriberCount: number;
   pendingCommandCount: number;
@@ -620,6 +629,57 @@ export function createAppServerWorkbenchRuntime(
     if (binding.phase === "evictable") binding.phase = "resident";
   };
 
+  /**
+   * Dynamic tools are an execution capability lease, not Conversation history.
+   * Keep one registration flight per physical client generation so visible
+   * hydration can commit independently while every mutation reuses the same
+   * readiness boundary.
+   */
+  const ensureBindingCapabilities = (
+    binding: ConversationBinding,
+  ): Promise<void> => {
+    const currentClient = requireClient();
+    const dynamicTools = config.dynamicTools;
+    if (
+      dynamicTools === undefined
+      || currentClient.initializeResult?.capabilities?.extensions?.["opencraft/host-capabilities"] === undefined
+    ) return Promise.resolve();
+    const generation = currentClient.connectionGeneration;
+    const sameGeneration = binding.capabilityRegistrationClient === currentClient
+      && binding.capabilityRegistrationGeneration === generation;
+    if (sameGeneration && binding.capabilityDeclarationAccepted) return Promise.resolve();
+    if (sameGeneration && binding.capabilityRegistrationOperation !== null) {
+      return binding.capabilityRegistrationOperation;
+    }
+
+    binding.capabilityRegistrationClient = currentClient;
+    binding.capabilityRegistrationGeneration = generation;
+    binding.capabilityDeclarationAccepted = false;
+    const operation = currentClient.request("runtime/capabilities/register", {
+      threadId: binding.threadId,
+      dynamicTools,
+    }).then((registration) => {
+      if (
+        disposed
+        || binding.disposed
+        || client !== currentClient
+        || currentClient.connectionGeneration !== generation
+      ) throw new Error(`Dynamic-tool registration expired for Thread ${binding.threadId}`);
+      verifyDynamicToolRegistration(dynamicTools, registration, {
+        allowDeferred: true,
+      });
+      binding.capabilityDeclarationAccepted = true;
+    }).finally(() => {
+      if (
+        binding.capabilityRegistrationClient === currentClient
+        && binding.capabilityRegistrationGeneration === generation
+        && binding.capabilityRegistrationOperation === operation
+      ) binding.capabilityRegistrationOperation = null;
+    });
+    binding.capabilityRegistrationOperation = operation;
+    return operation;
+  };
+
   const runBindingCommand = async <T>(
     binding: ConversationBinding,
     operation: () => Promise<T>,
@@ -676,7 +736,7 @@ export function createAppServerWorkbenchRuntime(
     let navigation: ConversationNavigationController | null = null;
     try {
       await replica.prepare();
-      const afterAuthoritativeBaseline = async <T>(operation: () => Promise<T>): Promise<T> => {
+      const afterAuthoritativeBaseline = async <T>(operation: () => Promise<T>, requiresCapabilities = false): Promise<T> => {
         const owner = bindings.get(threadId);
         if (owner === undefined || owner.disposed) {
           throw new Error(`Thread ${threadId} is unavailable`);
@@ -691,13 +751,14 @@ export function createAppServerWorkbenchRuntime(
         if (!owner.runtime.getSnapshot().authoritative) {
           await hydrateBinding(owner, false);
         }
+        if (requiresCapabilities) await ensureBindingCapabilities(owner);
         return operation();
       };
       const baselineGatedCommands: ConversationCommandPort = {
         ...currentCommandPort,
-        submit: (intent) => afterAuthoritativeBaseline(() => currentCommandPort.submit(intent)),
+        submit: (intent) => afterAuthoritativeBaseline(() => currentCommandPort.submit(intent), true),
         interrupt: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.interrupt(key, turnId)),
-        continueTurn: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.continueTurn(key, turnId)),
+        continueTurn: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.continueTurn(key, turnId), true),
         respond: (key, response) => afterAuthoritativeBaseline(() => currentCommandPort.respond(key, response)),
         updateQueuedSubmission: (key, id, input) => afterAuthoritativeBaseline(
           () => currentCommandPort.updateQueuedSubmission(key, id, input),
@@ -709,10 +770,10 @@ export function createAppServerWorkbenchRuntime(
           () => currentCommandPort.reorderQueuedSubmissions(key, ids),
         ),
         startQueuedSubmission: (key, id) => afterAuthoritativeBaseline(
-          () => currentCommandPort.startQueuedSubmission(key, id),
+          () => currentCommandPort.startQueuedSubmission(key, id), true,
         ),
         steerQueuedSubmission: (key, submission, activeTurnId) => afterAuthoritativeBaseline(
-          () => currentCommandPort.steerQueuedSubmission(key, submission, activeTurnId),
+          () => currentCommandPort.steerQueuedSubmission(key, submission, activeTurnId), true,
         ),
       };
       conversation = createReplicaConversationRuntime({
@@ -785,6 +846,10 @@ export function createAppServerWorkbenchRuntime(
         touchedAt: ++logicalClock,
         hydrationOperation: null,
         hydrationForReconnect: false,
+        capabilityRegistrationOperation: null,
+        capabilityRegistrationClient: null,
+        capabilityRegistrationGeneration: null,
+        capabilityDeclarationAccepted: false,
         phase: "preparing",
         subscriberCount: 0,
         pendingCommandCount: 0,
@@ -936,15 +1001,9 @@ export function createAppServerWorkbenchRuntime(
               throw new Error("This temporary side chat expired after disconnect. Start a new side chat.");
             }
           } else await currentSession.resume.resume({ threadId: binding.threadId, force });
-          if (config.dynamicTools && requireClient().initializeResult?.capabilities?.extensions?.["opencraft/host-capabilities"]) {
-            const registration = await requireClient().request("runtime/capabilities/register", {
-              threadId: binding.threadId,
-              dynamicTools: config.dynamicTools,
-            });
-            verifyDynamicToolRegistration(config.dynamicTools, registration, {
-              allowDeferred: true,
-            });
-          }
+          // Prewarm execution readiness, but do not keep already-restored
+          // history behind a slow connector/tool registration request.
+          void ensureBindingCapabilities(binding).catch(() => undefined);
         } finally { stopPreview(); }
         const source = createCodexThreadReplicaSource(
           currentSession.views,
@@ -1633,7 +1692,13 @@ export function createAppServerWorkbenchRuntime(
       await initializeServices();
       if (commandPort === null)
         throw new Error("AppServer command port is unavailable");
-      return commandPort.createThread(intent);
+      const durability = client?.initializeResult?.capabilities?.extensions?.[
+        OPENCRAFT_THREAD_START_DURABILITY_EXTENSION
+      ] as { version?: unknown; durableAfter?: unknown } | undefined;
+      return durability?.version === 1
+        && durability.durableAfter === "first-turn-accepted"
+        ? commandPort.submit(intent)
+        : commandPort.createThread(intent);
     },
     async submit(intent) {
       if (intent.target.type === "new-thread") return runtime.createThread(intent);

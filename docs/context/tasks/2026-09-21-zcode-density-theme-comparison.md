@@ -92,3 +92,13 @@ Important: ZCode settings rows with descriptions may be taller, not shorter. Its
 - node --import tsx --test tests/typography-system.test.ts tests/workbench-appearance-theme.test.ts: 7 passed, 0 failed.
 - No product files changed. ZCode was not installed or launched. Static evidence supports control-family inconsistencies and theme-model comparison, not aesthetic pass/fail or computed pixel equality.
 - Complete: strongest takeaway is consistent application of existing models, not borrowing a stronger model from ZCode.
+
+## Follow-up: can the current theme system carry a ZCode-inspired theme?
+- Read-only trace: extension-contract ThemePaletteContribution -> contribution-store validation/freezing -> appearance-theme import/projection -> theme-engine -> shell CSS; separately checked Electron appearance IPC and Expo Unistyles.
+- Web theme registration, palette selection, retained intent/unload fallback and light/dark switching are wired. Existing appearance tests: 3 passed.
+- Internal shellMaterial is emitted as CSS and consumed by app.scss. Public extension palettes do not expose it; their adapter fixes opaqueWindows=false and fonts=null.
+- Panel/control/elevated/border colors mostly derive from ink/surface/contrast, rather than independently selectable surface roles. A close palette is possible now; precise ZCode surface layering needs controlled semantic overrides.
+- Direct pure-function probes: toggling opaqueWindows or changing fonts leaves emitted CSS identical in both modes. Fields are declared, not effective generator inputs.
+- Electron IPC carries only themeSource and resolvedTheme; focused macOS vibrancy and backing colors are Main policy, not selected-theme policy. CSS opaque material does not prove native vibrancy was disabled.
+- Expo registers only static nativeThemes.light/dark; no dynamic theme contribution/catalog adapter found in the inspected Expo path. Do not claim selecting a Web extension theme changes Native.
+- Conclusion: existing architecture can host the feature without replacement, but current capability is not a complete arbitrary cross-platform appearance system. For a faithful desktop theme, extend controlled semantic surfaces/material policy end-to-end, preserve generated defaults and interaction/geometry ownership. Native dynamic palette support is a separate optional implementation scope.

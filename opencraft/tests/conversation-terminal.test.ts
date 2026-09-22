@@ -198,9 +198,10 @@ test("read_thread_terminal is an unnamespaced no-argument tool scoped by Host an
   assert.deepEqual(
     OPENCRAFT_WORKBENCH_DYNAMIC_TOOLS.flatMap((spec) =>
       spec.type === "namespace" ? spec.tools.map((tool) => tool.name) : [spec.name]),
-    ["open_in_vela", "get_tab_context", "browser_use", "read_thread_terminal", "connectors_search_tools", "connectors_get_tool", "connectors_list_tools", "connectors_call_tool"],
+    ["open_in_vela", "get_tab_context", "browser_use", "read_thread_terminal", "search_tools", "get_tool", "call_tool"],
   );
-  assert.ok(OPENCRAFT_CONNECTOR_DYNAMIC_TOOLS.every(spec => spec.type === "function" && spec.deferLoading === true));
+  assert.deepEqual(OPENCRAFT_CONNECTOR_DYNAMIC_TOOLS.map(spec => spec.type === "namespace" ? spec.name : null), ["connectors"]);
+  assert.ok(OPENCRAFT_CONNECTOR_DYNAMIC_TOOLS.every(spec => spec.type === "namespace" && spec.tools.every(tool => tool.deferLoading === true)));
   const { registry, sessions } = fixture();
   const sessionId = registry.open({
     resourceOwnerId: "scope-1",

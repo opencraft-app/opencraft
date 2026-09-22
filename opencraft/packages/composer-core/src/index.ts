@@ -1,4 +1,5 @@
 export { contentBlocksToPrompt } from "./content";
+export { shouldSearchComposerCatalog } from "./catalog";
 export type {
   AttachmentBlock,
   CommandBlock,

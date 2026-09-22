@@ -4,6 +4,7 @@ import {
   Code2,
 } from "lucide-react";
 import { motion, useTransform } from "motion/react";
+import { useIntl } from "@opencraft/i18n/react";
 import {
   useCallback,
   useLayoutEffect,
@@ -54,6 +55,7 @@ export function AppShellNavigationControls({
   onForward,
   actions,
 }: AppShellNavigationControlsProps) {
+  const intl = useIntl();
   const presentation = useShellPresentation();
   const sidebarOpen = hostRole === "persistent" && presentation ? presentation.sidebarOpen : requestedSidebarOpen;
   const onToggleSidebar = hostRole === "persistent" && presentation ? presentation.toggleSidebar : requestedToggleSidebar;
@@ -79,7 +81,7 @@ export function AppShellNavigationControls({
         key="home"
         className="chrome-button no-drag app-shell-home-button"
         type="button"
-        aria-label="Home"
+        aria-label={intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" })}
         title="Vela · Home"
         data-app-shell-home-trigger="true"
         onClick={onHome}
@@ -93,7 +95,7 @@ export function AppShellNavigationControls({
         ref={sidebarToggleRef}
         className="chrome-button no-drag"
         type="button"
-        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        aria-label={intl.formatMessage(sidebarOpen ? { id: "navigation.hideSidebar", defaultMessage: "Hide sidebar" } : { id: "navigation.showSidebar", defaultMessage: "Show sidebar" })}
         data-app-shell-sidebar-trigger="true"
         data-chrome-action-id="sidebar-toggle"
         data-chrome-action-host-role={hostRole}
@@ -109,10 +111,10 @@ export function AppShellNavigationControls({
         key="new-task"
         className="chrome-button no-drag"
         type="button"
-        aria-label="Start new task"
+        aria-label={intl.formatMessage({ id: "navigation.newTask", defaultMessage: "Start new task" })}
         data-app-shell-new-task-trigger="true"
         onClick={onHome}
-        title="Start new task"
+        title={intl.formatMessage({ id: "navigation.newTask", defaultMessage: "Start new task" })}
       >
         <NewTaskIcon />
       </button>
@@ -124,7 +126,7 @@ export function AppShellNavigationControls({
         type="button"
         disabled={!canGoBack}
         onClick={onBack}
-        title="Back"
+        title={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })}
       >
         <ArrowLeft size={15} />
       </button>
@@ -136,7 +138,7 @@ export function AppShellNavigationControls({
         type="button"
         disabled={!canGoForward}
         onClick={onForward}
-        title="Forward"
+        title={intl.formatMessage({ id: "navigation.forward", defaultMessage: "Forward" })}
       >
         <ArrowRight size={15} />
       </button>
@@ -280,20 +282,6 @@ export function AppShellHeader({
       data-app-shell-header-edge-scroll={isHeaderEdgeScroll}
       data-pip-obstacle="app-shell-header"
     >
-      {/**
-       * Electron hides its AppKit traffic-light container in
-       * windowWillMiniaturize. Keep a non-interactive inactive rendering below
-       * the native controls so the macOS window snapshot never acquires an
-       * empty titlebar. AppKit remains the sole interaction and hover owner.
-       */}
-      <span
-        aria-hidden="true"
-        className="app-shell-header__traffic-light-snapshot"
-      >
-        <i />
-        <i />
-        <i />
-      </span>
       <AppShellNavigationControls
         hostRole="persistent"
         sidebarOpen={sidebarOpen}

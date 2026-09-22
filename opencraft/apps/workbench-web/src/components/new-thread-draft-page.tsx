@@ -1,4 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useIntl } from "@opencraft/i18n/react";
 import { ThreadComposerPresentation } from "./thread-composer-presentation";
 import {
   CodexComposer,
@@ -82,6 +83,7 @@ export interface NewThreadDraftPageProps {
   readonly onRemoveAttachment?: (
     attachment: ComposerAttachment,
   ) => void | Promise<void>;
+  readonly composerAddMenuContent?: ReactNode | ((closeMenu: () => void) => ReactNode);
   readonly composerEndActions?: ReactNode;
   readonly onSubmit: (
     intent: SubmitIntent,
@@ -441,9 +443,11 @@ export function NewThreadDraftPage({
   onBrowseWorkspace,
   onResolveAttachment,
   onRemoveAttachment,
+  composerAddMenuContent,
   composerEndActions,
   onSubmit,
 }: NewThreadDraftPageProps) {
+  const intl = useIntl();
   const composerRef = useRef<CodexComposerHandle>(null);
   const portalContainer = useWorkbenchPresentationRoot();
 
@@ -496,9 +500,10 @@ export function NewThreadDraftPage({
                   disabled={draftSubmissionOwnsNavigation(draft.phase)}
                   submissionDisabled={connectionPhase !== "ready"}
                   isStreaming={false}
-                  placeholder="Ask OpenCraft to work on anything"
+                  placeholder={intl.formatMessage({ id: "chat.newPlaceholder", defaultMessage: "Ask OpenCraft to work on anything" })}
                   onResolveAttachment={onResolveAttachment}
                   onRemoveAttachment={onRemoveAttachment}
+                  addMenuContent={composerAddMenuContent}
                   endActions={composerEndActions}
                   selectionCatalog={selectionCatalog}
                   catalog={catalog}

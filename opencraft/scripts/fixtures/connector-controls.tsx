@@ -1,9 +1,11 @@
 import { Context } from "@deepseek-ai/cordis";
-import { createRoot } from "react-dom/client";
+import { createIntlTestRoot as createRoot } from "../../tests/fixtures/intl-root";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { asHostId, createConversationKey } from "@opencraft/chat-core";
 import { AuthenticationService, ConnectorApprovalQueue, ConnectorManager, ConnectorRuntime, asConversationScopeId, createConversationBindingStore } from "@opencraft/workbench-runtime";
+import { createComposerController } from "@opencraft/composer-core";
+import { CodexComposer } from "@opencraft/codex-composer";
 import { openConnectorConfigurationStore } from "../../apps/workbench-web/src/runtime/connector-configuration-store";
 import { useConnectorPresentation } from "../../apps/workbench-web/src/components/connectors/connector-panel";
 import { ConnectorNativeServices } from "../../apps/workbench-web/src/components/connectors/connector-native-services";
@@ -20,6 +22,7 @@ const bindings = createConversationBindingStore(), scopeId = asConversationScope
 bindings.register(scopeId, hostId); bindings.bind(scopeId, createConversationKey(hostId, "fixture-thread"));
 const approvals = new ConnectorApprovalQueue(), runtime = new ConnectorRuntime(ctx.authentication, 30000, { approvals });
 const manager = await ConnectorManager.open(runtime, ctx.authentication, bindings, await openConnectorConfigurationStore(), async () => client);
+const composer = createComposerController({ type: "existing-thread", key: createConversationKey(hostId, "fixture-thread") }, { now: Date.now, createId: () => crypto.randomUUID() });
 const scope = { hostId, threadId: "fixture-thread" };
 const probe = {
   result: "idle", setThemePreference,
@@ -38,11 +41,22 @@ const probe = {
 Object.assign(window, { connectorProbe: probe });
 initializeAppearanceTheme();
 function App() {
-  const presentation = useConnectorPresentation(manager, approvals, { hostId, scopeId });
+  const presentation = useConnectorPresentation(manager, approvals, { hostId, scopeId }, () => { (window as any).connectorProbe.managed = true; });
   return <main style={{ padding: 32, minHeight: "100dvh", background: "var(--color-background-surface)" }}>
     <h1>隔离连接器验收</h1><p>只连接本地模拟 Host 和授权服务，不使用真实账号。</p>
     <ConnectorNativeServices hostId={hostId} manager={manager} />
-    {presentation.launcher}<ModalHost requests={presentation.requests} />
+    <div style={{ width: "min(720px, calc(100vw - 32px))", marginTop: 48 }}>
+      <CodexComposer
+        controller={composer}
+        isStreaming={false}
+        addMenuContent={presentation.addMenuContent}
+        endActions={presentation.launcher}
+        selectionCatalog={{ models: [{ id: "fixture", value: "fixture", label: "Fixture", description: null, isDefault: true, defaultEffort: null, efforts: [] }], permissionProfiles: [] }}
+        onSubmit={async () => {}}
+        onCancel={() => {}}
+      />
+    </div>
+    <ModalHost requests={presentation.requests} />
   </main>;
 }
 createRoot(document.getElementById("root")!).render(<App />);

@@ -20,6 +20,12 @@
   provider owner 是 activationId，卸载会先撤出 provider，再等待在用 Host lease 归还；
 - `vela.theme-pack` 是第二个真实 Extension 切片：插件只登记 accent/ink/surface/contrast 与
   diff/skill 语义色，应用根统一派生完整 Token；选择被持久化，卸载时原子回退到内建 Codex 主题；
+- Theme palette 现在还可选择性声明 `surfaces`（window/sidebar/panel/input/popover 的
+  `#RRGGBB` 色值）、`material.window`（translucent/opaque）和
+  `material.elevation`（soft/flat，主工作区表面阴影）。没有覆盖的值继续由原算法生成。
+  注册层拒绝 CSS/URL、未知选项和不完整的明暗色板，并冻结嵌套数据。
+  Web/Electron 已消费这些字段；Expo 动态主题不在本轮范围。完整链路见
+  [Theme surfaces and native appearance](./platform-architecture.md#theme-surfaces-and-native-appearance)。
 - 场景测试覆盖成功激活、激活失败零残留、内部 commit 中断回滚、旧代 API 拒绝、重激活代际、
   平台筛选、Theme palette 校验和真实 WebSocket provider lease retirement。
 - Workbench 已采用 Obsidian 式 `entry -> semantic View -> host placement`：插件不再用一个
@@ -27,12 +33,23 @@
   应用级导航事务统一拥有 URL、Back/Forward、激活态与卸载回退。
 
 已实现第一阶段的 `module-url` Installation、启用意图持久化、刷新恢复、运行代际和声明式设置
-页面。尚未实现：Verified Artifact/lock、惰性 activation event dispatcher、Extension Workshop、
+页面，以及自包含 ESM 摘要固定和更新失败恢复。尚未实现：签名包/依赖 lock、惰性 activation event dispatcher、Extension Workshop、
 Marketplace、restricted host/permissions，以及把 Chat/Panel/Composer 的所有既有内建项迁入
 Supervisor。`internal.register()` 只供 first-party 适配器使用，不属于稳定社区 ABI。
 
 Settings V1 刻意不包含 global/host/workspace 多层 scope、自定义 migration、远端同步或 Replica。
 插件卸载只撤销 schema，不删除持久化值；重新安装同一 contribution 后原值重新生效。
+
+### 插件平台补齐进度（2026-09-22）
+
+- 扩展管理主入口为 Skills 的“扩展”Tab。应用通过 `PlatformViewRegions.ExtensionLibrary` 提供内容；不受技能 Host 选择影响。目录只读合并 Supervisor、Manager 与公开贡献，区分内建/安装、启用意图、运行故障和当前版本仍运行时的操作失败。列表搜索/来源筛选，详情复用 Manager 操作；内建项暂不开放停用/移除，URL 安装仅开发者模式。旧 Settings 插件路由保留兼容，导航不再展示入口。
+- Web bootstrap 保留 WebSocket 基础连接扩展为关键依赖；主题、语音、模型管理、产品接入等第一方扩展使用可选激活，失败记录在 Supervisor，继续其他扩展。语音、Builtin Agents、HyperNode、Collaboration、Bot Chat/Management 的动态 import 和工厂也通过 `loadOptional` 有界执行；平台账户服务模块仍属于 Application bootstrap 的必需依赖。
+- 持久化产物独立存入 `system/artifacts/<sha256>`；安装集合只保存引用，CAS 成功后才切换安装指针，候选写入失败保留旧指针。缺失产物不自动联网换版本，插件提示显式重新加载修复。旧产物暂时保留，后续 GC 不影响正确性。
+- Module Loader、`activate` 工厂与每个内部 adapter prepare/commit 等待默认各 15 秒；subscription/internal disposer、rollback 与 command drain 默认每次 5 秒。超时撤销旧 API，继续剩余清理；工厂或 commit 迟到返回的 disposer 仍被调用，退休后命令结果不再成功返回。不隔离 trusted 模块同步死循环，也不能强制终止任意插件自行创建的副作用；prepare 必须无副作用。
+- 公共 `OpenCraftExtensionDefinition` 只引用公共 API，第一方 Theme Pack 已消费；`api.signal` 在失败或停用时先于清理 abort，运行中的插件可继续登记资源 subscription（贡献本身仍只在激活期登记）。自包含示例见 `examples/extensions/hello.mjs`，测试覆盖注册导航、调用公告与卸载中的待决结果。
+- Manifest V1 的格式解析保留合法的未来 `apiVersion`，当前 Supervisor 在执行 `activate` 前单独检查 API 与平台兼容性。未来 API 的安装记录不会被当作损坏记录删除；Manager 投影 `incompatible`，保留启用意图及配置。当前仅支持 API 1，不承诺旧 API 永久兼容。
+- `reload` 与同 ID 重新安装共享替换流程：候选成功激活且保存成功才更新安装记录；失败重新激活本进程保存的旧定义，使用新 activationId，旧安装版本和 enabled 保持不变。已停用插件重新安装保持停用。
+- 更新恢复不回滚插件自行产生的副作用。新 module-url 安装随记录持久化自包含 ESM 与 SHA-256；恢复先校验保存内容，不请求源 URL，只有显式 reload 才下载候选。模块上限 512 KiB，静态/动态 import 与 import.meta 在执行前拒绝，要求作者 bundle 私有依赖。旧的未固定记录仍走原 URL 加载，显式更新后固定。摘要用于完整性而非发布者身份认证；可信代码不是沙箱。完整版本范围、第一方隔离、公共接口扩展与客户端验收仍在建设，跟踪于 `docs/context/tasks/2026-09-22-extension-platform-completion.md`（仓库根）。
 
 ## 1. 结论
 
@@ -466,12 +483,17 @@ Host 插件装载器。插件可自建 Worker 并登记清理，Cordis 管激活
 
 ```text
 module-url
-  -> load self-contained ESM
+  -> download bounded self-contained ESM + SHA-256
+  -> validate dependencies and evaluate saved bytes
   -> validate manifest + platform + API version
   -> persist disabled InstallationRecord
   -> activate one Supervisor generation
   -> persist enabled=true only after activation succeeds
 ```
+
+新安装把产物独立保存为摘要寻址文档、安装记录只保存引用；进程重启不重新下载已固定的源 URL。
+该内容校验不是签名或发布者信任校验。只有显式 reload 请求候选版本；候选激活或保存失败保持
+原安装指针，并尽可能恢复本进程旧定义。清理失败报告 failed，不能保留不存在的 active 状态。
 
 它沿用 Obsidian 已验证的三层所有权：Installation Repository 保存用户意图，Module Loader
 解析工件，Extension Supervisor 保存活跃实例；三者由 Extension Manager 串成唯一事务。
@@ -752,12 +774,11 @@ apps/workbench-expo/src/extensions/
 - Web 与 Native 已经按 semantic model / platform renderer 分层；
 - AppServer 协议已经拥有最新 Plugin 产品面类型。
 
-### 14.2 仍然只是“内部微插件”
+### 14.2 尚未完成的生态边界
 
-- `install(plugin: Plugin, config?: unknown)` 直接暴露 Cordis；
-- 一个业务扩展跨 Chat/Panel/Composer 注册时没有统一 Activation owner；
-- Registry key 是裸字符串，没有 extension namespace、版本和 provenance；
-- 没有 manifest、activation event、capability grant、依赖解析；
+- 部分旧 Chat/Panel/Composer Runtime 仍使用内部 Cordis install，尚未全部迁移至统一公开贡献协议；
+- 公共贡献已有 namespace 与 Activation owner，但正式 Artifact provenance、内容锁定与跨重启更新恢复仍缺失；
+- 已有 manifest 与活动依赖检查，activation event 调度、完整依赖解析及可选 capability grant 仍待建设；
 - 没有 Web sandbox/utility/remote ExtensionHost；
 - 没有 View state migration、失败 quarantine、crash-loop 防护；
 - React Component registration 还没有明确标注为 Tier 0 only；

@@ -32,3 +32,21 @@ export interface OpenCraftResumeHistoryCapability {
   readonly version: 1;
   readonly mode: "legacy" | "paginated" | "message-window";
 }
+
+/**
+ * Host declaration for engines whose `thread/start` identity is not yet a
+ * recoverable conversation. The client must not retire its Draft until the
+ * first `turn/start` has been accepted by that same engine generation.
+ */
+export const OPENCRAFT_THREAD_START_DURABILITY_EXTENSION =
+  "opencraft/thread-start-durability";
+
+export interface OpenCraftThreadStartDurabilityCapability {
+  readonly version: 1;
+  readonly durableAfter: "first-turn-accepted";
+}
+
+export const OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY = Object.freeze({
+  version: 1,
+  durableAfter: "first-turn-accepted",
+} satisfies OpenCraftThreadStartDurabilityCapability);

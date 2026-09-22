@@ -28,6 +28,7 @@ test("production and Preview resolve stable Vela-free directory identities", () 
   assert.equal(production.legacyUserDataDirectory, `${appDataDirectory}/@vela/workbench-electron`);
   assert.equal(production.runtimeDirectory, `${appDataDirectory}/OpenCraft/runtime`);
   assert.equal(production.dshDataDirectory, `${appDataDirectory}/OpenCraft/dsh`);
+  assert.equal(production.codexDataDirectory, `${appDataDirectory}/OpenCraft/codex`);
   assert.equal(production.daemonEndpoint, `${appDataDirectory}/OpenCraft/opencraft-daemon.sock`);
   assert.equal(production.daemonTokenPath, `${appDataDirectory}/OpenCraft/opencraft-daemon.token`);
   assert.equal(production.productHomeDirectory, `${homeDirectory}/.opencraft`);
@@ -142,6 +143,9 @@ test("daemon launch consumes resolver-owned endpoint, token and runtime cwd", ()
     dataDirectory: "/state/OpenCraft/dsh",
     modelStorageDirectory: "/Users/test/.opencraft",
     skillsDirectory: "/Users/test/.opencraft/skills",
+    codexExecutable: "/Users/test/.local/bin/codex",
+    codexDataDirectory: "/state/OpenCraft/codex",
+    nativeCodexHomeDirectory: "/Users/example/.codex",
     executable: "/Applications/OpenCraft.app/Contents/MacOS/OpenCraft",
   }, "secret");
   assert.equal(spec.options.cwd, "/state/OpenCraft/runtime");
@@ -153,4 +157,7 @@ test("daemon launch consumes resolver-owned endpoint, token and runtime cwd", ()
     "--runtime-directory",
   ]);
   assert.ok(spec.args.includes("/state/OpenCraft/runtime"));
+  assert.ok(spec.args.includes("/Users/test/.local/bin/codex"));
+  assert.ok(spec.args.includes("/state/OpenCraft/codex"));
+  assert.ok(spec.args.includes("/Users/example/.codex"));
 });

@@ -13,6 +13,10 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
 
 contextBridge.exposeInMainWorld("opencraftDesktop", Object.freeze({
   kind: "electron",
+  locale: Object.freeze({
+    getSystemLocale: () => ipcRenderer.invoke("opencraft:system-locale"),
+    setApplicationLocale: (locale: string) => ipcRenderer.invoke("opencraft:application-locale", locale),
+  }),
   extensionData: Object.freeze({
     read: (scope: string) => ipcRenderer.invoke("opencraft:extension-data-read", scope),
     compareAndSet: (scope: string, revision: number, version: number, value: unknown) => ipcRenderer.invoke("opencraft:extension-data-commit", scope, revision, version, value),
@@ -110,10 +114,7 @@ contextBridge.exposeInMainWorld("opencraftDesktop", Object.freeze({
     ipcRenderer.on("vela:window-fullscreen-changed", receive);
     return () => ipcRenderer.off("vela:window-fullscreen-changed", receive);
   },
-  setWindowAppearance(appearance: {
-    readonly themeSource: "system" | "light" | "dark";
-    readonly resolvedTheme: "light" | "dark";
-  }): void {
+  setWindowAppearance(appearance: import("@opencraft/design-system/theme-options").ThemeWindowAppearance): void {
     ipcRenderer.send("vela:set-window-appearance", appearance);
   },
 }));

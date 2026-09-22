@@ -52,7 +52,7 @@ OAuth 由 Host 使用 MCP SDK 的 DCR/PKCE 流程执行；临时 verifier/client
 本轮收敛三项实现选择：
 
 1. 先复用 ExtensionSupervisor 内部 `connectorProvider` 通道，不冻结新的公开插件 manifest。
-2. 模型使用稳定的 `connectors_search_tools` / `connectors_get_tool` / `connectors_call_tool` 渐进披露；兼容入口 `connectors_list_tools` 只返回有界摘要页。统一 capability view 由 Engine Adapter 投影，不要求各引擎支持热换工具 schema。
+2. 模型使用 `connectors` Capability Namespace 下的 `search_tools` / `get_tool` / `call_tool` 渐进披露。统一 capability view 由 Engine Adapter 投影，不要求各引擎支持热换工具 schema。
 3. 登录、连接、会话选择、写操作批准是四个不同意图。明确声明只读的工具可直接执行；写操作与未知副作用进入一次性确认，没有审批 port 的客户端不发现这些工具。
 
 `readOnly`/MCP `readOnlyHint` 是声明和保守筛选条件，不是沙箱或服务端权限保证。第一方 Provider 必须兑现声明并验证业务参数，Host/MCP 服务仍负责真实访问控制；不能把不可信服务的自报属性当成权限隔离。
@@ -65,7 +65,7 @@ OAuth 由 Host 使用 MCP SDK 的 DCR/PKCE 流程执行；临时 verifier/client
 | AuthenticationService / Provider | 当前账号状态、epoch、登录和凭据；Connector 不保存 token |
 | ConnectorRuntime | 逻辑连接意图、贡献准备结果、显式会话选择、实际调用和撤销 |
 | ConnectorCapabilityRuntime | scoped capability view、确定性搜索、cursor、按需 schema 与短期 handle；不持有连接或凭据 |
-| ConnectorManager | 保存的配置和选择意图、原生 Provider 注册、用户连接操作及 View owner 取消 |
+| ConnectorManager | 保存的配置和选择意图、原生 Provider 注册、用户连接操作及 Conversation Scope owner 取消 |
 | ConnectorApprovalQueue | 一次调用的一次决定；不是账号权限或永久授权 |
 | ConnectorConfigurationStore | 严格白名单配置、CAS revision；不是 UI preference 或凭据仓库 |
 | 具体贡献 Provider | 原生工具客户端、参数验证、安装事务、服务端访问复核 |
@@ -84,6 +84,8 @@ first-party extension
 
 物理 MCP 连接仍归 Host。Web/Electron 的应用 Supervisor 装配 ConnectorRuntime、注册适配器和模型 handler，hostless 状态也可以维护声明；页面卸载不销毁共享账号或 Host。Expo 尚未装配这个入口，不宣称全部客户端均已接通。
 
+Composer 采用渐进披露，不把完整管理页缩进一个 Modal：未确认连接器时，Add 菜单提供 Connector 子菜单；确认后显示最多三个品牌图标的状态 Chip；两者复用同一紧凑 Radix 列表完成连接、授权跳转、显式会话选择、取消和原位错误反馈。完整安装、凭据、删除仍进入管理页，一次写审批仍进入确认层。连接操作 owner 绑定 `(hostId, scopeId)`，关闭 Popover 不得取消；只有用户显式取消、Scope 退出或运行时撤销才终止。
+
 实现文件：
 
 - [contract](../packages/workbench-runtime/src/connectors/contract.ts)：目标、贡献、状态和窄 SPI。
@@ -94,7 +96,7 @@ first-party extension
 - [模型工具 adapter](../packages/workbench-runtime/src/connectors/dynamic-tools.ts)：固定发现/调用入口。
 - [扩展注册 adapter](../apps/workbench-web/src/runtime/connector-contributions.ts)：第一方命名空间与事务接入。
 - [manager](../packages/workbench-runtime/src/connectors/manager.ts)、[OAuth](../packages/workbench-runtime/src/connectors/oauth.ts)、[审批](../packages/workbench-runtime/src/connectors/approvals.ts)、[配置 contract](../packages/workbench-runtime/src/connectors/configuration.ts)：各自独立领域模块，不把协议、存储或 React 塞进 runtime。
-- [用户入口](../apps/workbench-web/src/components/connectors/connector-panel.tsx)：只消费领域快照/action；焦点、模态层级与确认由共享 Modal/Radix 持有。
+- [用户入口](../apps/workbench-web/src/components/connectors/connector-panel.tsx) 与 [快速选择](../apps/workbench-web/src/components/connectors/connector-quick-picker.tsx)：只消费领域快照/action；Add menu、Popover、焦点与确认由共享 Radix/Modal 持有。
 - [Web store](../apps/workbench-web/src/runtime/connector-configuration-store.ts)、[Desktop store](../apps/workbench-electron/src/connector-configuration-store.ts)：IndexedDB 与 Main SQLite 的平台投影。
 
 ## 连接、授权与通知
@@ -112,7 +114,7 @@ first-party extension
 
 ### Host 原生 OAuth 的真实边界
 
-普通用户从 Composer 的“连接器”进入共享 Modal，发现当前 Host 已配置的 MCP 服务并保存连接。这里不创建远端 MCP 配置、不安装服务器、不要求 LightVela 登录。发现失败在当前控件反馈，不阻塞聊天；没有原生方法的 Host 明确失败。
+普通用户从 Composer 的 Add 菜单进入“连接器”紧凑子菜单，发现当前 Host 已配置的 MCP 服务并保存连接；已选服务通过 Composer 状态 Chip 重新打开 Popover。这里不创建远端 MCP 配置、不安装服务器、不要求 LightVela 登录。发现失败在当前控件反馈，不阻塞聊天；没有原生方法的 Host 明确失败。
 
 ```text
 发现并保存 → 连接 / 授权 → 用户打开授权页
@@ -140,15 +142,16 @@ connectors.select({ hostId, threadId }, [connection.connectionId]);
 
 这是产品/第一方扩展的调用入口，不是模型工具。Composer 面板消费 Manager，默认不启用任何服务；第一方扩展也可以直接使用窄运行时 SPI。
 
-- `connectors_search_tools` 只搜索当前 Host/Thread 显式选择的就绪工具，返回有界 compact summaries、`toolRef` 与 `nextCursor`，不返回 schema 或 handle；不返回未选择账号的能力。
-- `connectors_get_tool` 一次只加载 1–4 个精确 `toolRef` 的 schema，并在尺寸/深度/节点预算通过后签发短期 handle。兼容的 `connectors_list_tools` 等价于有界搜索页，不再表示全量展开。
+- `connectors.search_tools` 只搜索当前 Host/Thread 显式选择的就绪工具，返回有界 compact summaries、`toolRef` 与 `nextCursor`，不返回 schema 或 handle；不返回未选择账号的能力。
+- `connectors.get_tool` 一次只加载 1–4 个精确 `toolRef` 的 schema，并在尺寸/深度/节点预算通过后签发短期 handle。空 query 的 `search_tools` 就是有界 browse page，不存在全量 list 别名。
 - handle 绑定连接对象、原生实现、授权 epoch 和 Host/Thread。重新连接、取消选择、卸载、撤销或 `thread/closed` 均使旧 handle 失效；同名新实现不能接管旧调用。
 - 每次调用再次验证当前授权、会话选择以及 Provider 的服务端访问条件。开始后撤销会中断等待并丢弃迟到结果，不能保证不配合取消的远端已经停止运行。
 - `serverRequest/resolved` 与 handler disposal 传播调用取消。Provider 异常仅返回安全的稳定错误，避免泄漏 callback URL/token。
 - Tool schema 是准备时的副本；调用和处置函数绑定原对象，修改注册对象不能替换正在使用的实现。
 - 运行时限制：最多 128 个连接键、4096 个会话选择和4096 个活跃发现 handle、单贡献256 个工具；输入/模型输出有大小边界。被淘汰的 handle 明确失效，重新发现即可。
 
-发现入口本身不等于主动给模型推送新目录。四个稳定 Connector meta tools 在 AppServer 标准 `thread/start.dynamicTools` 中以 `deferLoading` 投影；DSH 等其他 Engine Adapter 消费同一 capability contract。模型调用发现时读取当前选择；不会在每个模型步骤注入所有 Connector schema，不承诺自动替换历史中已加载的 Skill 正文。`thread/resume` 当前没有 `dynamicTools`，OpenCraft 私有注册 RPC 不能冒充 AppServer 标准恢复字段。
+发现入口本身不等于主动给模型推送新目录。`connectors` namespace 在 AppServer 标准 `thread/start.dynamicTools` 中拥有三个 `deferLoading` meta tools；DSH 等其他 Engine Adapter 消费同一 capability identity/contract。模型调用发现时读取当前选择；不会在每个模型步骤注入所有 Connector schema，不承诺自动替换历史中已加载的 Skill 正文。`thread/resume` 当前没有 `dynamicTools`，OpenCraft 私有注册 RPC 不能冒充 AppServer 标准恢复字段。
+DSH 模型工具层将这三个身份投影为 `connectors__search_tools` / `connectors__get_tool` / `connectors__call_tool`，但 Host broker、租约和调用路由始终使用权威的 `connectors.*` identity。
 
 ### 逐次写审批
 
@@ -156,7 +159,7 @@ connectors.select({ hostId, threadId }, [connection.connectionId]);
 
 共享 AlertDialog 默认聚焦“拒绝”，用户可拒绝/Escape 或“仅允许这一次”。批准后仍核验连接、选择、epoch、取消信号和原生 schema/权限，随后调用冻结参数。批准不缓存、不持久化；撤销、断线、卸载、取消请求或关闭应用使等待失效。已经发往不支持取消的远端写操作不能保证回滚，未知结果不能自动重试。
 
-队列上限 32、审批默认 60 秒、Connector 调用总期限 120 秒。本机 Host 在能力注册时为 `connectors_call_tool` 计算 150 秒期限，经内部 contract 传给 broker 和引擎插件，原生 tool envelope 再留 2 秒返回余量；其余动态工具仍为 10 秒。期限不取自模型参数。其他引擎若提前取消，审批会随取消信号关闭，不伪装成已完成写入。这是 Connector 执行面的审批，不取代引擎独立原生工具或远端权限系统。
+队列上限 32、审批默认 60 秒、Connector 调用总期限 120 秒。本机 Host 在能力注册时为 `connectors.call_tool` 计算 150 秒期限，经内部 contract 传给 broker 和引擎插件，原生 tool envelope 再留 2 秒返回余量；其余动态工具仍为 10 秒。期限不取自模型参数。其他引擎若提前取消，审批会随取消信号关闭，不伪装成已完成写入。这是 Connector 执行面的审批，不取代引擎独立原生工具或远端权限系统。
 
 ### 保存意图，而不是保存授权
 
@@ -194,8 +197,8 @@ Skill contribution 目前接收已有安装服务提供的 `installationId + ref
 - `npm run smoke:connectors`：真实 ExtensionSupervisor → ConnectorRuntime → ConnectorCapabilityRuntime → 真实 DSH/AppServer → 受控 HTTP 服务 → 真实模型请求回传；模型实际执行 search → detail → call，等待 13 秒逐次写审批，断开后原会话复用 handle 被拒绝，HTTP 调用计数不增加。模型是本地合成服务，不使用真实账号或付费推理。
 - `npm run gate`：边界、全 workspace typecheck、Connector/AppServer/DSH/Chat/Workbench 测试及 Web、Expo Web、Expo iOS 构建通过。
 - MCP adapter 使用真实 AppServer codec/handler 与受控 MCP 协议端点，服务调用经过真实 loopback HTTP；没有验证用户现有远端 MCP 配置或第三方 OAuth。
-- `npm run smoke:connector-controls`：真实共享 Modal/面板/Runtime/Authentication/IndexedDB + WebSocket AppServer，与隔离 HTTP 授权页进行实际浏览器弹窗交互，验证明确连接/选择、逐次允许/拒绝/Escape、刷新恢复待确认、浅深色/窄屏/焦点；仅 native Host/OAuth authority 为替身。通过 `OPENCRAFT_PLAYWRIGHT_MODULE` / `OPENCRAFT_CHROMIUM_EXECUTABLE` 指定已有测试环境。
-- `scripts/smoke-connector-desktop.ts`：当前源码 Electron Main/Preload IPC 保存、通知、CAS 冲突、字段白名单与真实进程重启，随后从真实 Composer 打开已保存但未连接的配置。使用独立 profile，不覆盖 `/Applications`，不代表签名发行包或真实 OAuth 已验收。
+- `npm run smoke:connector-controls`：真实 CodexComposer Add 子菜单、状态 Chip、紧凑 Popover、Runtime/Authentication/IndexedDB + WebSocket AppServer，与隔离 HTTP 授权页进行实际浏览器弹窗交互，验证明确连接/选择、关闭 Popover 不取消 Scope owner、逐次允许/拒绝/Escape、刷新恢复待确认、浅深色/窄屏/焦点；仅 native Host/OAuth authority 为替身。通过 `OPENCRAFT_PLAYWRIGHT_MODULE` / `OPENCRAFT_CHROMIUM_EXECUTABLE` 指定已有测试环境。
+- `scripts/smoke-connector-desktop.ts`：当前源码 Electron Main/Preload IPC 保存、通知、CAS 冲突、字段白名单与真实进程重启，随后从新任务 Composer 的 Add 子菜单打开已保存但未连接的配置，并验证不支持托管连接器的 Host 不暴露凭据表单。使用独立 profile，不覆盖 `/Applications`，不代表签名发行包或真实 OAuth 已验收。
 - `platform-connectors-lifecycle.test.ts`：原生 completion 去重、取消隔离、View owner 退出、草稿晋升、持久化 CAS/重开、保存期间撤销、精确参数审批与撤销。SQLite 使用真实数据库文件，不使用用户 profile。
 
 尚未交付：真实第三方账号接入与各服务权限范围验收、远端 MCP 配置/安装器、内置 Skill 安装 Provider、Expo 装配。Host 需要实际实现原生 MCP/OAuth 方法；本轮未给 DSH/Hermes 新增这些方法。恢复的是配置和期望选择，不是旧连接或执行授权。

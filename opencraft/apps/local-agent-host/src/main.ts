@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFile, readdir, stat, writeFile, mkdtemp, rm, access } from "node:fs/promises";
+import { readFile, readdir, stat, lstat, writeFile, mkdtemp, rm, access } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { resolve, dirname, join } from "node:path";
@@ -91,11 +91,23 @@ async function fileRequest(method: string, params: unknown): Promise<unknown> {
   const path = resolve(String(value.path ?? homedir()));
   if (method === "fs/readDirectory") {
     const entries = await readdir(path, { withFileTypes: true });
-    return { entries: entries.map((entry) => ({ name: entry.name, path: resolve(path, entry.name), type: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "unknown" })) };
+    return {
+      entries: entries.map((entry) => ({
+        fileName: entry.name,
+        isDirectory: entry.isDirectory(),
+        isFile: entry.isFile(),
+      })),
+    };
   }
   if (method === "fs/getMetadata") {
-    const metadata = await stat(path);
-    return { path, type: metadata.isDirectory() ? "directory" : metadata.isFile() ? "file" : "unknown", size: metadata.size, modifiedAt: Math.floor(metadata.mtimeMs / 1_000) };
+    const [metadata, pathMetadata] = await Promise.all([stat(path), lstat(path)]);
+    return {
+      isDirectory: metadata.isDirectory(),
+      isFile: metadata.isFile(),
+      isSymlink: pathMetadata.isSymbolicLink(),
+      createdAtMs: Number.isFinite(metadata.birthtimeMs) ? metadata.birthtimeMs : 0,
+      modifiedAtMs: Number.isFinite(metadata.mtimeMs) ? metadata.mtimeMs : 0,
+    };
   }
   if (method === "fs/readFile") return { dataBase64: (await readFile(path)).toString("base64") };
   if (method === "fs/writeFile") {
@@ -243,10 +255,21 @@ export async function startLocalAgentHost(options: {
     throw error;
   }
   if (capabilityLink) adapter.setModelInfoReader((provider, model) => capabilityLink!.modelInfo(provider, model));
+  if (capabilityLink) adapter.setSkillInvocationValidator((threadId, skills) => capabilityLink!.validateSkillInvocations(threadId, skills));
   if (capabilityLink) adapter.setThreadEngine({
     describe: params => capabilityLink!.thread("describe", { ...params, sessionId: routing.native(String(params.sessionId)) }),
     create: async params => {
-      const created = await capabilityLink!.thread("create", params);
+      const { dynamicTools, ...creation } = params;
+      const sessionId = randomUUID();
+      let created;
+      try { created = await capabilityLink!.thread("create", {
+        ...creation,
+        sessionId,
+        ...(dynamicTools === undefined ? {} : { capabilities: normalizeCapabilities(dynamicTools) }),
+      }); } catch (error) {
+        await capabilityLink!.thread("release", { sessionId }).catch(() => undefined);
+        throw error;
+      }
       if (created.ephemeral) client.markVolatile(created.sessionId);
       return created;
     },
@@ -269,7 +292,16 @@ export async function startLocalAgentHost(options: {
     fork: async params => {
       const source = String(params.sourceSessionId);
       const coordinates = routing.forkCoordinates(source, params.lastTurn as number | undefined, params.beforeTurn as number | undefined);
-      const created = await capabilityLink!.thread("fork", { ...params, sourceSessionId: coordinates.nativeId, lastTurn: coordinates.lastTurn, beforeTurn: coordinates.beforeTurn });
+      const { dynamicTools, ...forkParams } = params;
+      const sessionId = randomUUID();
+      let created;
+      try { created = await capabilityLink!.thread("fork", { ...forkParams, sessionId,
+        ...(dynamicTools === undefined ? {} : { capabilities: normalizeCapabilities(dynamicTools) }),
+        sourceSessionId: coordinates.nativeId, lastTurn: coordinates.lastTurn, beforeTurn: coordinates.beforeTurn });
+      } catch (error) {
+        await capabilityLink!.thread("release", { sessionId }).catch(() => undefined);
+        throw error;
+      }
       if (created.ephemeral) client.markVolatile(created.sessionId);
       return created;
     },
@@ -386,17 +418,22 @@ export async function startLocalAgentHost(options: {
     const logicalClient = (clientId: string) => {
       let state = clients.get(clientId);
       if (!state) {
-        const key = physicalId + ":" + clientId;
+        const key = physicalId + ":" + clientId + ":" + randomUUID();
         state = { key, clientId, owner: { connectionId: key, identity: { id: "local-user", username: "local" } }, offered: new Set(), openedThreads: new Set() };
         clients.set(clientId, state);
       }
       return state;
     };
     const disconnectClient = async (state: LogicalClient) => {
-      clients.delete(state.clientId);
-      for (const threadId of capabilities.threads(state.owner)) await capabilityLink?.unregister(threadId);
+      if (clients.get(state.clientId) === state) clients.delete(state.clientId);
+      const ownedThreads = capabilities.threads(state.owner);
+      lifecycle.revokeClient(state.key);
       capabilities.disconnect(state.owner); authority.disconnect(state.owner);
       state.unsubscribeInteractions?.(); state.offered.clear(); state.openedThreads.clear();
+      await Promise.allSettled(ownedThreads.map(threadId => lifecycle.enqueue(threadId, async () => {
+        // A successor may already have established its own capability lease.
+        if (capabilities.list(threadId).length === 0) await capabilityLink?.unregister(threadId);
+      })));
       await lifecycle.disconnect(state.key);
     };
     const unsubscribe = adapter.subscribe((method, params) => {
@@ -455,7 +492,8 @@ export async function startLocalAgentHost(options: {
         }
         const targetThread = (request.params as { threadId?: string } | null)?.threadId;
         if (request.method.startsWith("turn/") && typeof targetThread === "string") lifecycle.assertOpen(targetThread);
-        if (request.method === "turn/start" && typeof targetThread === "string") {
+        const prepareExecution = async () => {
+        if ((request.method === "turn/start" || request.method === "thread/queue/start") && typeof targetThread === "string") {
           // JIT history keeps display-only resume cold. Execution is the point
           // where the native Agent must exist and every declared Host tool must
           // be mounted before the prompt can enter DSH.
@@ -470,6 +508,7 @@ export async function startLocalAgentHost(options: {
             );
           }
         }
+        };
         if (request.method === "runtime/http/cancel") {
           const id = (request.params as { requestId: string }).requestId;
           const active = httpRequests.get(id);
@@ -491,6 +530,8 @@ export async function startLocalAgentHost(options: {
         }
         if (request.method === "runtime/capabilities/register") {
           const params = request.params as { threadId: string; dynamicTools: unknown };
+          await lifecycle.enqueue(params.threadId, async () => {
+          lifecycle.assertClient(state.key);
           if (!openedThreads.has(params?.threadId)) throw new Error("Open the thread before registering its capabilities");
           if (!capabilityLink) throw new Error("This host cannot register engine capabilities");
           const sameOwner = capabilities.threads(owner).includes(params.threadId);
@@ -504,11 +545,13 @@ export async function startLocalAgentHost(options: {
             return;
           }
           await capabilityLink.validate(normalizeCapabilities(params.dynamicTools));
+          lifecycle.assertClient(state.key);
           const registered = capabilities.register(params.threadId, owner, params.dynamicTools, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
           await capabilityLink.unregister(params.threadId);
           const engineRegistration = await capabilityLink.register(params.threadId);
           verifyDshCapabilityRegistration(registered.length, engineRegistration, { allowDeferred: true });
           send(socket, { jsonrpc: "2.0", id: request.id, result: engineRegistration });
+          });
           return;
         }
         const readSkills = async () => {
@@ -533,6 +576,36 @@ export async function startLocalAgentHost(options: {
           const normalized = normalizeCapabilities(toolSpecs);
           if (capabilityLink) await capabilityLink.validate(normalized);
         }
+        const dispatchThread = async (method: string, params: Record<string, unknown>) => {
+          lifecycle.assertClient(state.key);
+          await prepareExecution();
+          lifecycle.assertClient(state.key);
+          const reply = await adapter.dispatchOwned(method,
+            toolSpecs === undefined ? params : { ...params, dynamicTools: toolSpecs }, owner, request.id as string | number);
+          const id = (reply as { thread?: { id?: string } } | null)?.thread?.id;
+          try {
+          lifecycle.assertClient(state.key);
+          if (bindsCapabilities && id && toolSpecs !== undefined) {
+            const registered = capabilities.register(id, owner, toolSpecs, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
+            if (capabilityLink) {
+              if (method === "thread/resume") await capabilityLink.unregister(id);
+              lifecycle.assertClient(state.key);
+              const mounted = await capabilityLink.register(id);
+              lifecycle.assertClient(state.key);
+              verifyDshCapabilityRegistration(registered.length, mounted, { allowDeferred: method === "thread/resume" });
+            }
+          }
+          return reply;
+          } catch (error) {
+            if (id && (method === "thread/start" || method === "thread/fork")) {
+              capabilities.release(id, owner);
+              // Reclaim only this newly-created idle runtime. Durable history
+              // is never deleted as compensation for a failed attachment.
+              await capabilityLink?.thread("release", { sessionId: routing.native(id) }).catch(() => undefined);
+            }
+            throw error;
+          }
+        };
         let result = request.method === "project/list"
           ? await projects.list(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectListParams)
           : request.method === "project/create"
@@ -547,7 +620,7 @@ export async function startLocalAgentHost(options: {
           ? await fileRequest(request.method, request.params)
           : request.method.startsWith("thread/") || request.method === "turn/start"
           ? await lifecycle.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>, state.key,
-            (method, params) => adapter.dispatchOwned(method, params, owner, request.id as string | number))
+            dispatchThread)
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
         if (request.method === "initialize") {
           const initialized = result as import("@opencraft/appserver-protocol").AppServerInitializeResponse;
@@ -565,18 +638,6 @@ export async function startLocalAgentHost(options: {
         const capabilityThreadId = (result as { thread?: { id?: string } } | null)?.thread?.id
           ?? (request.params as { threadId?: string } | undefined)?.threadId;
         if (request.method === "turn/start" && typeof capabilityThreadId === "string") lifecycle.acceptedTurn(capabilityThreadId, request.params as Record<string, unknown>);
-        if (bindsCapabilities && typeof capabilityThreadId === "string" && toolSpecs !== undefined) {
-          const registered = capabilities.register(capabilityThreadId, owner, toolSpecs, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
-          if (capabilityLink) {
-            await capabilityLink.unregister(capabilityThreadId);
-            const engineRegistration = await capabilityLink.register(capabilityThreadId);
-            verifyDshCapabilityRegistration(
-              registered.length,
-              engineRegistration,
-              { allowDeferred: request.method === "thread/resume" },
-            );
-          }
-        }
         send(socket, { jsonrpc: "2.0", id: request.id, result });
         // Initialization (including preflight) must not claim another client's
         // user interactions. Only a connection opening a thread may answer it.

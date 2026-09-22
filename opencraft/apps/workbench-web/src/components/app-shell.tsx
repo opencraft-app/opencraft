@@ -639,7 +639,6 @@ export function AppShell({
     <ShellPresentationContext.Provider value={{
       sidebarOpen: sidebarOpen || navigationOpen || sidebarPeek,
       rightPanelOpen, rightPanelFullWidth, toggleSidebar, toggleRightPanel,
-      restoreRightPanel: rightPanelRevealed && rightPanelFullWidth ? toggleRightPanel : undefined,
     }}>
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
       <ApplicationShellRoot

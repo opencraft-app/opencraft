@@ -28,6 +28,9 @@ export interface OpenCraftDaemonClientOptions {
   readonly dataDirectory: string;
   readonly modelStorageDirectory?: string;
   readonly skillsDirectory?: string;
+  readonly codexExecutable: string;
+  readonly codexDataDirectory: string;
+  readonly nativeCodexHomeDirectory: string;
   readonly executable: string;
 }
 
@@ -71,6 +74,9 @@ export function daemonLaunchSpec(
       "--data-directory", options.dataDirectory,
       ...(options.modelStorageDirectory ? ["--model-storage-directory", options.modelStorageDirectory] : []),
       ...(options.skillsDirectory ? ["--skills-directory", options.skillsDirectory] : []),
+      "--codex-executable", options.codexExecutable,
+      "--codex-data-directory", options.codexDataDirectory,
+      "--native-codex-home-directory", options.nativeCodexHomeDirectory,
     ],
     options: {
       cwd: options.runtimeDirectory,

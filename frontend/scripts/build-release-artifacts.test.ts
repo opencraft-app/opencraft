@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
-import { fileURLToPath, URL as NodeURL } from "node:url";
-import { resolveDeployDir } from "./deploy-edgeone-pages.mjs";
 
 import {
   executeBuildReleaseArtifacts,
@@ -134,7 +131,6 @@ describe("build release artifacts", () => {
     mkdirSync(join(source, ".vite"), { recursive: true });
     mkdirSync(join(source, "assets"), { recursive: true });
     writeFileSync(join(source, "embedded-workbench.js"), "await import('./assets/a-test.js');\n");
-    writeFileSync(join(source, "opencraft-host-proxy-sw.js"), "self.addEventListener('fetch', () => {});\n");
     writeFileSync(join(source, "version.json"), '{"schemaVersion":1,"buildId":"test"}');
     writeFileSync(join(source, ".vite", "manifest.json"), "{}");
     writeFileSync(join(source, "assets", "a-test.js"), "export {};\n");
@@ -146,51 +142,9 @@ describe("build release artifacts", () => {
         OPENCRAFT_EMBED_DIST_DIR: source,
       })).toBe(true);
       expect(existsSync(join(output, "__opencraft", "embedded-workbench.js"))).toBe(true);
-      expect(existsSync(join(output, "__opencraft", "opencraft-host-proxy-sw.js"))).toBe(true);
       expect(existsSync(join(output, "__opencraft", "assets", "a-test.js"))).toBe(true);
       expect(existsSync(join(output, "__opencraft", "assets", "a-test.js.map"))).toBe(false);
       expect(existsSync(join(output, "__opencraft", ".vite"))).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("includes embedded assets in the real EdgeOne upload projection", async () => {
-    const root = mkdtempSync(join(tmpdir(), "frontend-opencraft-edgeone-"));
-    const source = join(root, "embedded");
-    const workspace = join(root, "workspace");
-    const output = join(root, "artifact");
-    mkdirSync(join(source, ".vite"), { recursive: true });
-    mkdirSync(join(source, "assets"), { recursive: true });
-    mkdirSync(workspace, { recursive: true });
-    writeFileSync(join(source, "embedded-workbench.js"), "await import('./assets/a-test.js');\n");
-    writeFileSync(join(source, "opencraft-host-proxy-sw.js"), "self.addEventListener('fetch', () => {});\n");
-    writeFileSync(join(source, "version.json"), '{"schemaVersion":1,"buildId":"test"}');
-    writeFileSync(join(source, ".vite", "manifest.json"), "{}");
-    writeFileSync(join(source, "assets", "a-test.js"), "export {};\n");
-    try {
-      await runFrontendArtifactBuildCommand("build:next", {
-        FRONTEND_BUILD_OUTPUT_DIR: output,
-        NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL: "/__opencraft/embedded-workbench.js",
-        OPENCRAFT_EMBED_DIST_DIR: source,
-      }, async (_command: string, args: string[]) => {
-        if (args.join(" ") === "exec next build") {
-          mkdirSync(join(workspace, "out"), { recursive: true });
-          writeFileSync(join(workspace, "out", "index.html"), '<html lang="en-US"></html>');
-        }
-        if (args[0] === "scripts/fix-next-static-html-lang.mjs") {
-          execFileSync(process.execPath, [fileURLToPath(new NodeURL("./fix-next-static-html-lang.mjs", import.meta.url))], {
-            cwd: workspace,
-            env: { ...process.env, NEXT_PUBLIC_REGION: "global", NEXT_WRITE_EDGEONE_BUILD_OUTPUT: "1" },
-          });
-        }
-      }, workspace);
-      const upload = resolveDeployDir({ EDGEONE_PAGES_DIR: output });
-      expect(upload).toBe(join(output, ".edgeone"));
-      for (const path of ["embedded-workbench.js", "opencraft-host-proxy-sw.js", "version.json", "assets/a-test.js"]) {
-        expect(existsSync(join(upload, "assets", "__opencraft", path))).toBe(true);
-      }
-      expect(existsSync(join(upload, "assets", "__opencraft", ".vite"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

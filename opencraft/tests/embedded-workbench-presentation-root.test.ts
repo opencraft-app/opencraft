@@ -20,6 +20,8 @@ test("Embedded Workbench owns one presentation root for theme and overlays", () 
   assert.match(app, /showRightPanelAction=\{conversationSurfaceVisible && presentation\.rightPanel\}/u);
   assert.match(app, /rightPanel=\{!presentation\.rightPanel \? null : \(/u);
   assert.match(app, /presentation\.connectorLauncher \? connectorPresentation\.launcher : null/u);
+  assert.match(app, /presentation\.connectorLauncher[\s\S]*?connectorPresentation\.addMenuContent/u);
+  assert.match(app, /composerAddMenuContent=\{composerAddMenuContent\}/u);
   assert.match(app, /actionIds=\{presentation\.composerActions\}/u);
   assert.match(policy, /EMBEDDED_CORE_CHAT_PRESENTATION[\s\S]*?rightPanel:\s*false,[\s\S]*?connectorLauncher:\s*false,[\s\S]*?composerActions:\s*Object\.freeze\(\[\]\)/u);
   assert.equal(
@@ -27,4 +29,5 @@ test("Embedded Workbench owns one presentation root for theme and overlays", () 
     2,
   );
   assert.match(draft, /<CodexComposer[\s\S]*?portalContainer=\{portalContainer\}/u);
+  assert.match(draft, /addMenuContent=\{composerAddMenuContent\}/u);
 });

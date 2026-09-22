@@ -1,6 +1,7 @@
 import { Context, type Fiber } from "@deepseek-ai/cordis";
 import {
   parseExtensionManifestV1,
+  assertExtensionCompatibility,
   type BotContribution,
   type AnnouncementContribution,
   type CommandContribution,
@@ -21,6 +22,8 @@ import {
 } from "@opencraft/extension-contract";
 
 import { AnnouncementCenter } from "./announcement-center";
+import type { ExtensionArtifact } from "./artifact";
+import { extensionTimeout, withExtensionDeadline } from "./deadline";
 import { createScopedExtensionStorage } from "./scoped-storage";
 import type { ExtensionPersistence } from "./persistence";
 
@@ -30,11 +33,13 @@ import {
 } from "./contribution-store";
 
 export interface TrustedExtensionDefinition {
+  readonly artifact?: ExtensionArtifact;
   readonly manifest: ExtensionManifestV1;
   activate(api: TrustedExtensionApiV1): void | ExtensionDisposable | Promise<void | ExtensionDisposable>;
 }
 
 export interface PreparedInternalContribution {
+  /** Prepare is side-effect free; commit transfers resources through its disposer. */
   commit(): ExtensionDisposable | Promise<ExtensionDisposable>;
 }
 
@@ -60,6 +65,7 @@ export type ExtensionActivationStatus = "activating" | "active" | "deactivating"
 export interface ExtensionRuntimeDescriptor {
   readonly id: string;
   readonly name: string;
+  readonly description?: string;
   readonly version: string;
   readonly status: ExtensionActivationStatus;
   readonly generation: number;
@@ -79,9 +85,12 @@ export interface ExtensionSupervisorOptions {
   readonly platform: ExtensionPlatform;
   readonly internalContributions?: Readonly<Record<string, InternalContributionAdapter>>;
   readonly createActivationId?: () => string;
+  readonly activationTimeoutMs?: number;
+  readonly cleanupTimeoutMs?: number;
 }
 
 interface ActivationToken {
+  readonly controller: AbortController;
   phase: "activating" | "active" | "deactivating" | "disposed";
   readonly identity: ExtensionActivationIdentity;
 }
@@ -187,11 +196,14 @@ class ActivationTransaction {
     private readonly adapters: Readonly<Record<string, InternalContributionAdapter>>,
     persistence?: ExtensionPersistence,
     resolveHostPersistence?: ExtensionSupervisorOptions["resolveHostPersistence"],
+    private readonly cleanupTimeoutMs = 5000,
+    private readonly activationTimeoutMs = 15000,
   ) {
     const storage = persistence || resolveHostPersistence ? createScopedExtensionStorage(persistence, token.identity.extensionId,
       () => token.phase === "activating" || token.phase === "active", resolveHostPersistence) : null;
     if (storage) this.subscriptions.push({ disposable: () => storage.dispose(), disposed: false });
     this.api = Object.freeze({
+      signal: token.controller.signal,
       storage: storage?.api ?? null,
       identity: token.identity,
       commands: Object.freeze({
@@ -283,13 +295,30 @@ class ActivationTransaction {
       if (entry.disposed) continue;
       const adapter = this.adapters[entry.channel];
       if (adapter === undefined) throw new Error(`Unknown internal contribution channel ${entry.channel}`);
-      preparedInternal.push({ entry, prepared: await adapter.prepare(this.token.identity, entry.value) });
+      const prepared = await withExtensionDeadline(
+        Promise.resolve().then(() => adapter.prepare(this.token.identity, entry.value)),
+        `${this.token.identity.extensionId} prepare ${entry.channel}`, this.activationTimeoutMs,
+      );
+      this.assertActivating();
+      preparedInternal.push({ entry, prepared });
     }
 
     const committedInternal: InternalStageEntry[] = [];
     try {
       for (const { entry, prepared } of preparedInternal) {
-        entry.disposeCommitted = await prepared.commit();
+        let abandoned = false;
+        const committing = Promise.resolve().then(() => prepared.commit());
+        void committing.then(async dispose => {
+          if (abandoned) await dispose();
+        }).catch(() => undefined);
+        try {
+          entry.disposeCommitted = await withExtensionDeadline(committing,
+            `${this.token.identity.extensionId} commit ${entry.channel}`, this.activationTimeoutMs);
+        } catch (error) {
+          abandoned = true;
+          throw error;
+        }
+        this.assertActivating();
         entry.committed = true;
         committedInternal.push(entry);
       }
@@ -302,7 +331,10 @@ class ActivationTransaction {
       let rollbackError: unknown;
       try {
         await disposeAllReverse(
-          committedInternal.flatMap((entry) => entry.disposeCommitted === undefined ? [] : [entry.disposeCommitted]),
+          committedInternal.flatMap((entry) => entry.disposeCommitted === undefined ? [] : [
+            () => withExtensionDeadline(Promise.resolve().then(() => entry.disposeCommitted!()),
+              `${this.token.identity.extensionId} rollback ${entry.channel}`, this.cleanupTimeoutMs),
+          ]),
           `Failed to roll back internal contributions for ${this.token.identity.extensionId}`,
         );
       } catch (cause) {
@@ -335,13 +367,18 @@ class ActivationTransaction {
       this.invocationDrain ??= new Promise<void>((resolve) => {
         this.resolveInvocationDrain = resolve;
       });
-      await this.invocationDrain;
+      try {
+        await withExtensionDeadline(this.invocationDrain, `${this.token.identity.extensionId} command drain`, this.cleanupTimeoutMs);
+      } catch (error) {
+        failures.push(error);
+      }
     }
     for (const entry of [...this.internalEntries].reverse()) {
       if (!entry.committed || entry.disposeCommitted === undefined || entry.disposed) continue;
       entry.disposed = true;
       try {
-        await entry.disposeCommitted();
+        await withExtensionDeadline(Promise.resolve().then(() => entry.disposeCommitted!()),
+          `${this.token.identity.extensionId} internal cleanup`, this.cleanupTimeoutMs);
       } catch (error) {
         failures.push(error);
       }
@@ -350,7 +387,8 @@ class ActivationTransaction {
       if (entry.disposed) continue;
       entry.disposed = true;
       try {
-        await entry.disposable();
+        await withExtensionDeadline(Promise.resolve().then(() => entry.disposable()),
+          `${this.token.identity.extensionId} subscription cleanup`, this.cleanupTimeoutMs);
       } catch (error) {
         failures.push(error);
       }
@@ -400,7 +438,9 @@ class ActivationTransaction {
   }
 
   private stageSubscription(disposable: ExtensionDisposable): ExtensionDisposable {
-    this.assertActivating();
+    if (this.token.phase !== "activating" && this.token.phase !== "active") {
+      throw new ExtensionActivationStaleError(this.token.identity);
+    }
     if (typeof disposable !== "function") throw new TypeError("Extension subscription must be disposable");
     const entry: SubscriptionEntry = { disposable, disposed: false };
     this.subscriptions.push(entry);
@@ -420,7 +460,9 @@ class ActivationTransaction {
     }
     this.invocations += 1;
     try {
-      return await handler(...arguments_);
+      const result = await handler(...arguments_);
+      this.assertNotDisposed();
+      return result;
     } finally {
       this.invocations -= 1;
       if (this.invocations === 0) {
@@ -433,6 +475,10 @@ class ActivationTransaction {
 
   private assertActivating(): void {
     if (this.token.phase !== "activating") throw new ExtensionActivationStaleError(this.token.identity);
+  }
+
+  private assertNotDisposed(): void {
+    if (this.token.phase === "disposed") throw new ExtensionActivationStaleError(this.token.identity);
   }
 
   private assertActive(): void {
@@ -450,6 +496,8 @@ export class ExtensionSupervisor {
   private readonly resolveHostPersistence: ExtensionSupervisorOptions["resolveHostPersistence"];
   private readonly adapters: Readonly<Record<string, InternalContributionAdapter>>;
   private readonly createActivationId: () => string;
+  private readonly activationTimeoutMs: number;
+  private readonly cleanupTimeoutMs: number;
   private readonly active = new Map<string, ActiveRecord>();
   private readonly generations = new Map<string, number>();
   private readonly descriptors = new Map<string, ExtensionRuntimeDescriptor>();
@@ -467,9 +515,47 @@ export class ExtensionSupervisor {
     this.resolveHostPersistence = options.resolveHostPersistence;
     this.adapters = options.internalContributions ?? {};
     this.createActivationId = options.createActivationId ?? defaultActivationId;
+    this.activationTimeoutMs = extensionTimeout(options.activationTimeoutMs, 15000);
+    this.cleanupTimeoutMs = extensionTimeout(options.cleanupTimeoutMs, 5000);
   }
 
   getSnapshot = (): ExtensionRuntimeSnapshot => this.snapshot;
+
+  checkCompatibility(value: unknown): ExtensionManifestV1 {
+    const manifest = parseExtensionManifestV1(value);
+    assertExtensionCompatibility(manifest, this.platform);
+    return manifest;
+  }
+
+  async activateOptional(definition: TrustedExtensionDefinition): Promise<boolean> {
+    try {
+      await this.activate(definition);
+      return true;
+    } catch (error) {
+      const manifest = parseExtensionManifestV1(definition.manifest);
+      if (!this.descriptors.has(manifest.id)) {
+        this.setDescriptor(manifest, { extensionId: manifest.id, activationId: this.createActivationId(), generation: 0 }, "failed", error);
+      }
+      return false;
+    }
+  }
+
+  async loadOptional(extensionId: string, load: () => TrustedExtensionDefinition | Promise<TrustedExtensionDefinition>): Promise<boolean> {
+    try {
+      const definition = await withExtensionDeadline(Promise.resolve().then(load), `${extensionId} module load`, this.activationTimeoutMs);
+      if (definition.manifest.id !== extensionId) throw new Error(`Expected extension ${extensionId}, received ${definition.manifest.id}`);
+      return await this.activateOptional(definition);
+    } catch (error) {
+      if (!this.active.has(extensionId)) {
+        this.descriptors.set(extensionId, Object.freeze({ id: extensionId, name: extensionId, version: "unresolved",
+          status: "failed", activationId: this.createActivationId(), generation: 0,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        this.publish();
+      }
+      return false;
+    }
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.ensureOpen();
@@ -481,9 +567,7 @@ export class ExtensionSupervisor {
     const manifest = parseExtensionManifestV1(definition.manifest);
     return this.enqueue(manifest.id, async () => {
       this.ensureOpen();
-      if (!manifest.platforms.includes(this.platform)) {
-        throw new Error(`Extension ${manifest.id} does not target ${this.platform}`);
-      }
+      assertExtensionCompatibility(manifest, this.platform);
       if (this.active.has(manifest.id)) throw new Error(`Extension ${manifest.id} is already active`);
       const missingDependencies = (manifest.dependencies ?? []).filter((id) => !this.active.has(id));
       if (missingDependencies.length > 0) {
@@ -498,21 +582,28 @@ export class ExtensionSupervisor {
         activationId: this.createActivationId(),
         generation,
       });
-      const token: ActivationToken = { phase: "activating", identity };
-      const transaction = new ActivationTransaction(token, this.contributions, this.announcements, this.adapters, this.persistence, this.resolveHostPersistence);
+      const token: ActivationToken = { phase: "activating", identity, controller: new AbortController() };
+      const transaction = new ActivationTransaction(token, this.contributions, this.announcements, this.adapters, this.persistence, this.resolveHostPersistence, this.cleanupTimeoutMs, this.activationTimeoutMs);
       this.setDescriptor(manifest, identity, "activating");
+      const activationTimeoutMs = this.activationTimeoutMs;
 
       const activationPlugin = {
         name: `extension:${manifest.id}#${generation}`,
         async apply() {
           try {
-            const returned = await definition.activate(transaction.api);
+            const activation = Promise.resolve().then(() => definition.activate(transaction.api));
+            // A late completion cannot publish, but must release a returned resource.
+            void activation.then(async returned => {
+              if (token.phase === "disposed" && typeof returned === "function") await returned();
+            }).catch(() => undefined);
+            const returned = await withExtensionDeadline(activation, `${manifest.id} activation`, activationTimeoutMs);
             if (typeof returned === "function") transaction.api.subscriptions.add(returned);
             await transaction.commit();
             token.phase = "active";
             return () => transaction.cleanup();
           } catch (error) {
             token.phase = "disposed";
+            token.controller.abort(error);
             try {
               await transaction.cleanup();
             } catch (cleanupError) {
@@ -551,6 +642,7 @@ export class ExtensionSupervisor {
         throw new Error(`Extension ${extensionId} is required by active extensions: ${dependents.join(", ")}`);
       }
       record.token.phase = "deactivating";
+      record.token.controller.abort();
       this.setDescriptor(record.manifest, record.identity, "deactivating");
       this.active.delete(extensionId);
       this.activationOrder = this.activationOrder.filter((id) => id !== extensionId);
@@ -613,6 +705,7 @@ export class ExtensionSupervisor {
     this.descriptors.set(manifest.id, Object.freeze({
       id: manifest.id,
       name: manifest.name,
+      ...(manifest.description === undefined ? {} : { description: manifest.description }),
       version: manifest.version,
       status,
       generation: identity.generation,

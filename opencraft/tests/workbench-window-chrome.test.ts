@@ -1,12 +1,37 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
 
 test("pane resize hit targets start below window navigation chrome", () => {
   const styles = readFileSync(new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
   const hitTarget = styles.slice(styles.indexOf(".app-shell-left-panel__resize {"));
   const rule = hitTarget.slice(0, hitTarget.indexOf("> span"));
   assert.match(rule, /top: var\(--height-toolbar\)/);
+});
+
+test("Electron consumes the shared narrow-window geometry instead of a platform-local width", () => {
+  const desktopMain = readFileSync(
+    new URL("../apps/workbench-electron/src/main.ts", import.meta.url),
+    "utf8",
+  );
+  assert.equal(workbenchWindowMetrics.minimumWidth, 480);
+  assert.match(desktopMain, /@opencraft\/workbench-runtime\/window-metrics/u);
+  assert.match(desktopMain, /minWidth:\s*workbenchWindowMetrics\.minimumWidth/u);
+  assert.match(desktopMain, /minHeight:\s*workbenchWindowMetrics\.minimumHeight/u);
+  assert.doesNotMatch(desktopMain, /minWidth:\s*760/u);
+});
+
+test("narrow route chrome keeps Skills tabs scrollable and compresses the Host selector", () => {
+  const styles = readFileSync(
+    new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
+    "utf8",
+  );
+  const narrow = styles.slice(styles.indexOf("@media (max-width: 620px)"));
+  assert.match(narrow, /\.app-shell-header__route \.lv-skills-route-toolbar/u);
+  assert.match(narrow, /\.segmented-control[\s\S]*?overflow-x:\s*auto/u);
+  assert.match(narrow, /\.app-shell-toolbar-select[\s\S]*?width:\s*44px/u);
+  assert.match(narrow, /\.app-shell-toolbar-select__label[\s\S]*?display:\s*none/u);
 });
 
 import {
@@ -89,7 +114,7 @@ test("the persistent Electron header exposes Write only while the sidebar is hid
   );
   assert.match(header, /hostRole !== "persistent" \|\| sidebarOpen \|\| actions\.includes\("home"\)/u);
   assert.match(header, /action === "sidebar-toggle"[\s\S]*?"new-task" as const/u);
-  assert.match(header, /aria-label="Start new task"/u);
+  assert.match(header, /aria-label=\{intl\.formatMessage\(\{ id: "navigation\.newTask", defaultMessage: "Start new task" \}\)\}/u);
   assert.match(header, /data-app-shell-new-task-trigger="true"/u);
   assert.match(header, /onClick=\{onHome\}/u);
 });
@@ -199,8 +224,7 @@ test("macOS desktop uses a snapshot-safe focus-driven native surface", () => {
   assert.doesNotMatch(desktopMain, /^\s*visualEffectState\s*:/mu);
   assert.match(desktopMain, /function applyWindowAppearance/u);
   assert.match(desktopMain, /nativeTheme\.themeSource = appearance\.themeSource/u);
-  assert.match(desktopMain, /const useOpaqueSurface = !window\.isFocused\(\)/u);
-  assert.match(desktopMain, /window\.setVibrancy\(useOpaqueSurface \? null : "menu"\)/u);
+  assert.match(desktopMain, /applyNativeWindowAppearance\(window, appearance, process\.platform\)/u);
   assert.doesNotMatch(desktopMain, /setWindowButtonVisibility/u);
   assert.match(desktopMain, /const APP_SHELL_HEADER_HEIGHT = 46/u);
   assert.match(desktopMain, /const MACOS_WINDOW_BUTTON_SIZE = 14/u);
@@ -235,12 +259,6 @@ test("macOS desktop uses a snapshot-safe focus-driven native surface", () => {
   assert.match(rendererMain, /data(?:set)?\.opencraftWindowFullscreen/u);
   assert.doesNotMatch(rendererMain, /electron-opaque/u);
   assert.doesNotMatch(appStyles, /electron-opaque/u);
-  assert.match(appShellHeader, /app-shell-header__traffic-light-snapshot/u);
-  assert.match(
-    appStyles,
-    /data-codex-window-type="electron"\]\[data-codex-os="darwin"\]\[data-opencraft-window-fullscreen="false"\][\s\S]*?\.app-shell-header__traffic-light-snapshot/u,
-  );
-  assert.match(appStyles, /\.app-shell-header__traffic-light-snapshot[\s\S]*?pointer-events:\s*none/u);
-  assert.match(appStyles, /top:\s*16px[\s\S]*?left:\s*16px/u);
-  assert.match(appStyles, /gap:\s*9px[\s\S]*?width:\s*60px/u);
+  assert.doesNotMatch(appShellHeader, /traffic-light-snapshot/u);
+  assert.doesNotMatch(appStyles, /traffic-light-snapshot/u);
 });

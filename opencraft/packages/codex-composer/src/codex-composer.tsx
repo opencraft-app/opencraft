@@ -1,7 +1,9 @@
 // Semantically adapted from the recovered Codex Composer/editor, queue tray,
 // and responsive footer boundaries. AppServer state remains externally owned.
 import { baseKeymap, newlineInCode, splitBlock } from "prosemirror-commands";
+import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { DictationFooter } from "./dictation-footer";
+import { SkillIcon } from "./skill-icon";
 import { resolveDictationKeyAction } from "./dictation-keyboard";
 import { history, redo, undo } from "prosemirror-history";
 import {
@@ -46,10 +48,12 @@ import {
 } from "lucide-react";
 import {
   forwardRef,
+  type CSSProperties,
   type ReactNode,
   useCallback,
   useEffect,
   useImperativeHandle,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -61,6 +65,7 @@ import {
   encodeComposerTarget,
   invertComposerFollowUpAction,
   resolveComposerPrimaryAction,
+  shouldSearchComposerCatalog,
   type ComposerAttachment,
   type ComposerCatalog,
   type ComposerCatalogEntry,
@@ -109,6 +114,10 @@ export interface ComposerModelOption {
   readonly label: string;
   readonly description: string | null;
   readonly isDefault: boolean;
+  readonly inputModalities?: readonly ("text" | "image" | "audio")[];
+  readonly contextWindow?: number | null;
+  readonly maxTokens?: number | null;
+  readonly source?: "builtin" | "custom" | null;
   readonly defaultEffort: string | null;
   readonly efforts: readonly ComposerReasoningEffortOption[];
 }
@@ -164,6 +173,18 @@ function displayReasoningEffort(effort: ComposerReasoningEffortOption): string {
     default:
       return effort.label;
   }
+}
+
+function formatModelTokenLimit(value: number): string {
+  if (value >= 1_000_000) {
+    const millions = value / 1_000_000;
+    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    const thousands = value / 1_000;
+    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1)}K`;
+  }
+  return String(value);
 }
 
 interface SelectionMenuItemContentProps {
@@ -487,7 +508,7 @@ export const composerSchema = new Schema({
   },
 });
 
-function createPlaceholderPlugin(placeholder: string): Plugin {
+function createPlaceholderPlugin(placeholder: () => string): Plugin {
   return new Plugin({
     key: new PluginKey("codex-composer-placeholder"),
     props: {
@@ -509,7 +530,7 @@ function createPlaceholderPlugin(placeholder: string): Plugin {
           () => {
             const span = document.createElement("span");
             span.className = "codex-composer-placeholder";
-            span.textContent = placeholder;
+            span.textContent = placeholder();
             return span;
           },
           { side: -1 },
@@ -660,6 +681,8 @@ export interface CodexComposerProps {
   controller: ComposerController;
   /** Composer-owned chrome rendered above attachments and the editor. */
   chromeHeader?: ReactNode;
+  /** Host-owned Radix items appended to Add; render callbacks may close the root menu after nested actions. */
+  addMenuContent?: ReactNode | ((closeMenu: () => void) => ReactNode);
   /** Host-owned trusted extension actions placed before built-in end actions. */
   endActions?: ReactNode;
   catalog?: ComposerCatalog;
@@ -718,6 +741,7 @@ export const CodexComposer = forwardRef<
   {
     controller,
     chromeHeader,
+    addMenuContent,
     endActions,
     catalog,
     mentionSuggestionsEnabled = true,
@@ -725,7 +749,7 @@ export const CodexComposer = forwardRef<
     disabled = false,
     portalContainer,
     submissionDisabled = false,
-    placeholder = "Ask for follow-up changes",
+    placeholder: suppliedPlaceholder,
     selectionCatalog,
     effectiveSelections,
     executionTarget,
@@ -743,6 +767,10 @@ export const CodexComposer = forwardRef<
   },
   forwardedRef,
 ) {
+  const intl = useIntl();
+  const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.placeholder", defaultMessage: "Ask for follow-up changes", description: "Follow-up composer placeholder" });
+  const placeholderRef = useRef(placeholder);
+  placeholderRef.current = placeholder;
   const mountRef = useRef<HTMLDivElement>(null);
   const attachmentJobs = useRef(new Map<string, AbortController>());
   useEffect(() => {
@@ -759,6 +787,10 @@ export const CodexComposer = forwardRef<
   // A native picker may outlive the Composer that opened it.
   const attachmentPickerOwnerRef = useRef<EditorView | null>(null);
   const suggestionQueryRef = useRef<SuggestionQuery | null>(null);
+  const dismissedSuggestionRef = useRef<SuggestionQuery | null>(null);
+  const suggestionListId = useId();
+  const reasoningGroupLabelId = useId();
+  const suggestionListRef = useRef<HTMLDivElement | null>(null);
   const filteredSuggestionsRef = useRef<readonly Suggestion[]>([]);
   const suggestionLoadingRef = useRef(false);
   const selectedSuggestionRef = useRef(0);
@@ -779,12 +811,27 @@ export const CodexComposer = forwardRef<
   const [suggestionQuery, setSuggestionQuery] =
     useState<SuggestionQuery | null>(null);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [catalogSuggestions, setCatalogSuggestions] = useState<
-    readonly Suggestion[]
-  >([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogRetry, setCatalogRetry] = useState(0);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  useEffect(() => catalog?.subscribeSkillsChanged?.(() => {
+    if (suggestionQueryRef.current?.kind === "skill") {
+      filteredSuggestionsRef.current = [];
+      suggestionLoadingRef.current = true;
+      selectedSuggestionRef.current = 0;
+      setSelectedSuggestion(0);
+    }
+    setCatalogRevision(value => value + 1);
+  }), [catalog]);
+  const [catalogResult, setCatalogResult] = useState<{
+    readonly key: string;
+    readonly catalog: ComposerCatalog;
+    readonly controller: ComposerController;
+    readonly items: readonly Suggestion[];
+    readonly phase: "loading" | "ready" | "error";
+    readonly error: string | null;
+  } | null>(null);
   const [openPicker, setOpenPicker] = useState<SelectionPicker | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [editingQueuedSubmissionId, setEditingQueuedSubmissionId] = useState<
     string | null
   >(null);
@@ -852,6 +899,17 @@ export const CodexComposer = forwardRef<
       : null;
   const catalogQueryText =
     catalogQueryKind === null ? "" : (suggestionQuery?.query.trim() ?? "");
+  const catalogTargetKey = encodeComposerTarget(composerSnapshot.draft.target);
+  const catalogSearchActive = catalogQueryKind !== null && shouldSearchComposerCatalog(catalogQueryKind, catalogQueryText);
+  const catalogRequestKey = JSON.stringify([catalogTargetKey, catalogQueryKind, catalogQueryText, catalogRetry, catalogQueryKind === "skill" ? catalogRevision : 0]);
+  const currentCatalogResult = catalogResult?.key === catalogRequestKey
+    && catalogResult.catalog === catalog && catalogResult.controller === controller ? catalogResult : null;
+  const catalogSuggestions = currentCatalogResult?.phase === "ready" ? currentCatalogResult.items : [];
+  const catalogLoading = catalogSearchActive && catalog !== undefined
+    && (currentCatalogResult === null || currentCatalogResult.phase === "loading");
+  const catalogError = !catalogSearchActive ? null : catalog === undefined
+    ? "No catalog is available for this Host"
+    : currentCatalogResult?.error ?? null;
   const filteredSuggestions =
     suggestionQuery == null
       ? []
@@ -861,70 +919,101 @@ export const CodexComposer = forwardRef<
               .toLowerCase()
               .includes(suggestionQuery.query.toLowerCase()),
           )
-        : catalogQueryText.length === 0
+        : !catalogSearchActive
           ? []
           : catalogSuggestions;
   filteredSuggestionsRef.current = filteredSuggestions;
   suggestionLoadingRef.current = catalogLoading;
 
-  const catalogTargetKey = encodeComposerTarget(composerSnapshot.draft.target);
   useEffect(() => {
     if (
       catalog === undefined ||
       catalogQueryKind === null ||
-      catalogQueryText.length === 0
+      !catalogSearchActive
     ) {
-      setCatalogSuggestions((current) => (current.length === 0 ? current : []));
-      setCatalogLoading(false);
-      setCatalogError(null);
+      setCatalogResult(null);
       return;
     }
     const abortController = new AbortController();
     let active = true;
-    setCatalogSuggestions([]);
-    setCatalogLoading(true);
-    setCatalogError(null);
-    void catalog
-      .search(
+    const owner = { key: catalogRequestKey, catalog, controller };
+    setCatalogResult({ ...owner, items: [], phase: "loading", error: null });
+    void Promise.resolve().then(() => catalog.search(
         {
           kind: catalogQueryKind,
           query: catalogQueryText,
           target: composerSnapshot.draft.target,
-          limit: 50,
+          // skills/list already returns the complete directory. Do not hide
+          // entries after an arbitrary first page; file search stays bounded.
+          limit: catalogQueryKind === "skill" ? Number.MAX_SAFE_INTEGER : 50,
         },
         abortController.signal,
-      )
+      ))
       .then(
         (entries) => {
           if (!active) return;
-          setCatalogSuggestions(entries.map(catalogSuggestion));
-          setCatalogLoading(false);
+          setCatalogResult({ ...owner, items: entries.map(catalogSuggestion), phase: "ready", error: null });
         },
         (error: unknown) => {
           if (!active || abortController.signal.aborted) return;
-          setCatalogSuggestions([]);
-          setCatalogLoading(false);
-          setCatalogError(
-            error instanceof Error ? error.message : String(error),
-          );
+          setCatalogResult({ ...owner, items: [], phase: "error", error: error instanceof Error ? error.message : String(error) });
         },
       );
     return () => {
       active = false;
       abortController.abort();
     };
-  }, [catalog, catalogQueryKind, catalogQueryText, catalogTargetKey]);
+  }, [catalog, controller, catalogQueryKind, catalogQueryText, catalogTargetKey, catalogSearchActive, catalogRequestKey]);
+
+  const dismissSuggestions = useCallback(() => {
+    dismissedSuggestionRef.current = suggestionQueryRef.current;
+    suggestionQueryRef.current = null;
+    filteredSuggestionsRef.current = [];
+    setSuggestionQuery(null);
+  }, []);
 
   const syncSuggestions = useCallback((state: EditorState) => {
     const candidate = querySuggestion(state);
-    const next = candidate?.kind === "mention" && !mentionSuggestionsEnabled
+    const dismissed = dismissedSuggestionRef.current;
+    const isDismissed = candidate !== null && dismissed !== null && candidate.kind === dismissed.kind
+      && candidate.from === dismissed.from && candidate.to === dismissed.to && candidate.query === dismissed.query;
+    if (!isDismissed) dismissedSuggestionRef.current = null;
+    const next = isDismissed || (candidate?.kind === "mention" && !mentionSuggestionsEnabled)
       ? null
       : candidate;
+    const previous = suggestionQueryRef.current;
+    if (next?.kind === previous?.kind && next?.query === previous?.query && next?.from === previous?.from && next?.to === previous?.to) return;
+    // Clear keyboard-visible results immediately, before React/effects run.
+    filteredSuggestionsRef.current = [];
+    suggestionLoadingRef.current = next?.kind === "skill";
     suggestionQueryRef.current = next;
     selectedSuggestionRef.current = 0;
     setSuggestionQuery(next);
     setSelectedSuggestion(0);
   }, [mentionSuggestionsEnabled]);
+
+  const showSuggestions = !voiceActive && suggestionQuery !== null
+    && (filteredSuggestions.length > 0 || suggestionQuery.kind === "mention" || suggestionQuery.kind === "skill");
+
+  useEffect(() => {
+    if (suggestionQuery?.kind === "skill" && catalogSearchActive && !catalogLoading
+      && catalogError === null && filteredSuggestions.length === 0
+      && suggestionQuery.query.trim().length > 0 && /\s/u.test(suggestionQuery.query)) dismissSuggestions();
+  }, [suggestionQuery, catalogSearchActive, catalogLoading, catalogError, filteredSuggestions.length, dismissSuggestions]);
+
+  useLayoutEffect(() => {
+    const editor = editorViewRef.current?.dom;
+    if (!editor) return;
+    editor.setAttribute("aria-autocomplete", "list");
+    editor.setAttribute("aria-expanded", String(showSuggestions));
+    if (showSuggestions) editor.setAttribute("aria-controls", suggestionListId);
+    else editor.removeAttribute("aria-controls");
+    if (showSuggestions && filteredSuggestions[selectedSuggestion]) {
+      const id = `${suggestionListId}-${selectedSuggestion}`;
+      editor.setAttribute("aria-activedescendant", id);
+      document.getElementById(id)?.scrollIntoView({ block: "nearest" });
+    } else editor.removeAttribute("aria-activedescendant");
+  }, [controller, showSuggestions, selectedSuggestion, filteredSuggestions, suggestionListId]);
 
   const appendFiles = useCallback(
     (files: File[]) => {
@@ -1205,7 +1294,9 @@ export const CodexComposer = forwardRef<
   const insertSuggestion = useCallback((suggestion: Suggestion) => {
     const view = editorViewRef.current;
     const query = suggestionQueryRef.current;
-    if (view == null || query == null) return;
+    if (view == null || query == null || view.composing || !filteredSuggestionsRef.current.includes(suggestion)) return;
+    const actualQuery = querySuggestion(view.state);
+    if (actualQuery?.kind !== query.kind || actualQuery.from !== query.from || actualQuery.to !== query.to || actualQuery.query !== query.query) return;
     const token = composerSchema.nodes.token.create({
       id: suggestion.id,
       kind: suggestion.kind,
@@ -1232,9 +1323,19 @@ export const CodexComposer = forwardRef<
     view.focus();
   }, []);
 
+  const moveSuggestion = useCallback((delta: number) => {
+    if (suggestionQueryRef.current === null || editorViewRef.current?.composing) return false;
+    const count = filteredSuggestionsRef.current.length;
+    if (count === 0) return false;
+    selectedSuggestionRef.current = (selectedSuggestionRef.current + delta + count) % count;
+    setSelectedSuggestion(selectedSuggestionRef.current);
+    return true;
+  }, []);
+
   useLayoutEffect(() => {
     const mount = mountRef.current;
     if (mount == null) return;
+    dismissedSuggestionRef.current = null;
 
     const editorState = EditorState.create({
       schema: composerSchema,
@@ -1248,34 +1349,17 @@ export const CodexComposer = forwardRef<
         createStableListItemIdPlugin(),
         ...createInputRulePlugins(),
         keymap({
-          ArrowUp: () => {
-            const query = suggestionQueryRef.current;
-            if (query == null) return false;
-            selectedSuggestionRef.current = Math.max(
-              0,
-              selectedSuggestionRef.current - 1,
-            );
-            setSelectedSuggestion(selectedSuggestionRef.current);
-            return true;
-          },
-          ArrowDown: () => {
-            const query = suggestionQueryRef.current;
-            if (query == null) return false;
-            const count = filteredSuggestionsRef.current.length;
-            selectedSuggestionRef.current = Math.min(
-              Math.max(0, count - 1),
-              selectedSuggestionRef.current + 1,
-            );
-            setSelectedSuggestion(selectedSuggestionRef.current);
-            return true;
-          },
+          ArrowUp: () => moveSuggestion(-1),
+          ArrowDown: () => moveSuggestion(1),
+          "Ctrl-p": () => /Mac|iPhone|iPad/u.test(navigator.platform) && moveSuggestion(-1),
+          "Ctrl-n": () => /Mac|iPhone|iPad/u.test(navigator.platform) && moveSuggestion(1),
           Escape: () => {
             if (suggestionQueryRef.current == null) return false;
-            suggestionQueryRef.current = null;
-            setSuggestionQuery(null);
+            dismissSuggestions();
             return true;
           },
           Enter: (state, dispatch, view) => {
+            if (view?.composing) return false;
             const query = suggestionQueryRef.current;
             if (query != null) {
               const items = filteredSuggestionsRef.current;
@@ -1284,7 +1368,7 @@ export const CodexComposer = forwardRef<
                 insertSuggestion(item);
                 return true;
               }
-              if (suggestionLoadingRef.current) return true;
+              if (suggestionLoadingRef.current || query.kind === "skill") return true;
             }
             // Let the browser/IME finish composition. The base Enter binding
             // is deliberately removed below so it cannot split the document.
@@ -1330,12 +1414,20 @@ export const CodexComposer = forwardRef<
           "Mod-z": undo,
           "Mod-y": redo,
           "Mod-Shift-z": redo,
-          Tab: sinkListItem(composerSchema.nodes.list_item),
+          Tab: (state, dispatch, view) => {
+            if (view?.composing) return false;
+            if (suggestionQueryRef.current?.kind === "skill") {
+              const item = filteredSuggestionsRef.current[selectedSuggestionRef.current];
+              if (item) insertSuggestion(item);
+              return true;
+            }
+            return sinkListItem(composerSchema.nodes.list_item)(state, dispatch);
+          },
           "Shift-Tab": liftListItem(composerSchema.nodes.list_item),
           "Alt-Enter": (state, dispatch) => splitBlock(state, dispatch),
         }),
         keymap(composerBaseKeymap),
-        createPlaceholderPlugin(placeholder),
+        createPlaceholderPlugin(() => placeholderRef.current),
         new Plugin({
           key: suggestionPluginKey,
           props: {
@@ -1375,12 +1467,15 @@ export const CodexComposer = forwardRef<
         !disabledRef.current && !voiceActiveRef.current &&
         pendingSubmissionRef.current?.controller !== controller,
       attributes: {
-        "aria-label": placeholder,
+        "aria-label": placeholderRef.current,
         "aria-multiline": "true",
         class: "codex-composer-editor",
         dir: "auto",
         role: "textbox",
         spellcheck: "true",
+      },
+      handleDOMEvents: {
+        blur: () => { dismissSuggestions(); return false; },
       },
       dispatchTransaction(transaction) {
         const nextState = view.state.apply(transaction);
@@ -1405,7 +1500,12 @@ export const CodexComposer = forwardRef<
       // replacement View is mounted so one mount never contains two editors.
       view.destroy();
     };
-  }, [appendFiles, controller, insertSuggestion, placeholder, syncSuggestions]);
+  }, [appendFiles, controller, dismissSuggestions, insertSuggestion, moveSuggestion, syncSuggestions]);
+
+  useLayoutEffect(() => {
+    const view = editorViewRef.current;
+    if (view) view.setProps({ attributes: { ...view.props.attributes, "aria-label": placeholder } });
+  }, [placeholder]);
 
   useLayoutEffect(() => {
     const view = editorViewRef.current;
@@ -1586,11 +1686,15 @@ export const CodexComposer = forwardRef<
       type: "set-selections",
       patch: {
         model: model.value,
-        effort: resolveReasoningEffort(reasoningCapability(model.efforts.map(e=>e.value),model.defaultEffort),supportsCurrentEffort ? selectedEffortValue : undefined),
+        effort: resolveReasoningEffort(
+          reasoningCapability(
+            model.efforts.map((effort) => effort.value),
+            model.defaultEffort,
+          ),
+          supportsCurrentEffort ? selectedEffortValue : undefined,
+        ),
       },
     });
-    refocusEditorAfterIntelligenceMenuRef.current = true;
-    setOpenPicker(null);
   };
 
   const selectEffort = (effort: ComposerReasoningEffortOption) => {
@@ -1624,7 +1728,7 @@ export const CodexComposer = forwardRef<
   const modelLabel =
     selectedModel?.label ??
     (selectedModelValue === null
-      ? "Model"
+      ? intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })
       : formatSelectionLabel(selectedModelValue));
   const compactSelectedModelLabel = compactModelLabel(modelLabel);
   const selectedEffort =
@@ -1634,9 +1738,25 @@ export const CodexComposer = forwardRef<
   const effortLabel =
     selectedEffort === null
       ? selectedEffortValue === null
-        ? "Effort"
+        ? intl.formatMessage({
+            id: "chat.reasoning",
+            defaultMessage: "Reasoning",
+          })
         : formatSelectionLabel(selectedEffortValue)
       : displayReasoningEffort(selectedEffort);
+  const reasoningLabel = intl.formatMessage({
+    id: "chat.reasoning",
+    defaultMessage: "Reasoning",
+  });
+  const reasoningEffortIndex = selectedModel === null || selectedEffortValue === null
+    ? -1
+    : selectedModel.efforts.findIndex((effort) => effort.value === selectedEffortValue);
+  const reasoningProgress = selectedModel === null || selectedModel.efforts.length <= 1
+    ? 50
+    : Math.max(0, reasoningEffortIndex) / (selectedModel.efforts.length - 1) * 100;
+  const intelligenceLabel = selectedModel?.efforts.length
+    ? `${modelLabel}, ${reasoningLabel}: ${effortLabel}`
+    : modelLabel;
   const permissionTriggerLabel =
     selectedPermission?.label ??
     (selectedPermissionValue === null
@@ -1658,7 +1778,7 @@ export const CodexComposer = forwardRef<
           ? "Queue follow-up"
           : primaryAction === "steer"
             ? "Steer active response"
-            : "Send message";
+            : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
   const inverseFollowUpAction = invertComposerFollowUpAction(
     defaultFollowUpAction,
   );
@@ -1751,14 +1871,12 @@ export const CodexComposer = forwardRef<
           </div>
         )}
 
-        {!voiceActive && suggestionQuery != null &&
-          (filteredSuggestions.length > 0 ||
-            suggestionQuery.kind === "mention" ||
-            (suggestionQuery.kind === "skill" &&
-              catalogQueryText.length > 0 &&
-              (catalogLoading || catalogError !== null))) && (
+        {showSuggestions && suggestionQuery != null && (
             <div
+              ref={suggestionListRef}
+              id={suggestionListId}
               className="codex-composer-suggestions"
+              data-kind={suggestionQuery.kind}
               role="listbox"
               aria-label={`${suggestionQuery.kind} suggestions`}
             >
@@ -1766,7 +1884,7 @@ export const CodexComposer = forwardRef<
                 {suggestionQuery.kind === "command"
                   ? "Commands"
                   : suggestionQuery.kind === "skill"
-                    ? "Skills"
+                    ? <FormattedMessage id="composer.skills.title" defaultMessage="Skills" />
                     : "Files and context"}
               </div>
               {suggestionQuery.kind === "mention" &&
@@ -1785,7 +1903,7 @@ export const CodexComposer = forwardRef<
                 >
                   {suggestionQuery.kind === "mention"
                     ? "Searching files…"
-                    : "Loading skills…"}
+                    : <FormattedMessage id="composer.skills.loading" defaultMessage="Loading skills…" />}
                 </div>
               ) : null}
               {catalogError !== null ? (
@@ -1795,13 +1913,24 @@ export const CodexComposer = forwardRef<
                 >
                   {suggestionQuery.kind === "mention"
                     ? "File search unavailable"
-                    : "Skills unavailable"}
+                    : <FormattedMessage id="composer.skills.unavailable" defaultMessage="Skills unavailable" />}
+                  {catalog !== undefined ? <button type="button"
+                    onMouseDown={event => event.preventDefault()}
+                    onClick={() => { selectedSuggestionRef.current = 0; setSelectedSuggestion(0); setCatalogRetry(value => value + 1); }}>
+                    <FormattedMessage id="composer.skills.retry" defaultMessage="Retry" />
+                  </button> : null}
                 </div>
+              ) : null}
+              {suggestionQuery.kind === "skill" && !catalogLoading && catalogError === null && filteredSuggestions.length === 0 ? (
+                <div className="codex-composer-suggestions__status" role="status"><FormattedMessage id="composer.skills.empty" defaultMessage="No skills found" /></div>
               ) : null}
               {filteredSuggestions.map((suggestion, index) => (
                 <button
                   type="button"
                   role="option"
+                  id={`${suggestionListId}-${index}`}
+                  tabIndex={-1}
+                  title={suggestion.uri ?? undefined}
                   aria-selected={index === selectedSuggestion}
                   className={
                     index === selectedSuggestion ? "is-selected" : undefined
@@ -1809,14 +1938,15 @@ export const CodexComposer = forwardRef<
                   key={suggestion.id}
                   onMouseDown={(event) => {
                     event.preventDefault();
-                    insertSuggestion(suggestion);
                   }}
+                  onMouseEnter={() => { selectedSuggestionRef.current = index; setSelectedSuggestion(index); }}
+                  onClick={() => insertSuggestion(suggestion)}
                 >
                   <span>
                     {suggestion.kind === "command" ? (
                       <Zap size={15} />
                     ) : suggestion.kind === "skill" ? (
-                      <Sparkles size={15} />
+                      <SkillIcon source={suggestion.metadata?.iconSmallUrl ?? suggestion.metadata?.iconSmall} />
                     ) : (
                       <FileCode2 size={15} />
                     )}
@@ -1826,11 +1956,16 @@ export const CodexComposer = forwardRef<
                       {suggestion.kind === "command"
                         ? "/"
                         : suggestion.kind === "skill"
-                          ? "$"
+                          ? ""
                           : "@"}
                       {suggestion.label}
                     </strong>
-                    <small>{suggestion.detail}</small>
+                    <small>{suggestion.kind === "skill" && typeof suggestion.metadata?.scope === "string"
+                      ? <>{suggestion.metadata.scope === "repo" ? <FormattedMessage id="composer.skills.scope.project" defaultMessage="Project" />
+                        : suggestion.metadata.scope === "user" ? <FormattedMessage id="composer.skills.scope.user" defaultMessage="User" />
+                        : suggestion.metadata.scope === "system" ? <FormattedMessage id="composer.skills.scope.system" defaultMessage="Built-in" />
+                        : suggestion.metadata.scope === "admin" ? <FormattedMessage id="composer.skills.scope.admin" defaultMessage="Admin" /> : suggestion.metadata.scope} · {suggestion.detail}</>
+                      : suggestion.detail}</small>
                   </span>
                 </button>
               ))}
@@ -1855,14 +1990,47 @@ export const CodexComposer = forwardRef<
             className="codex-composer-footer__attachment"
             inert={voiceActive ? true : undefined} aria-hidden={voiceActive ? true : undefined}
           >
-            <button
-              className="codex-composer-icon-button"
-              type="button"
-              aria-label="Add attachment"
-              onClick={openAttachmentPicker}
-            >
-              <Plus size={16} />
-            </button>
+            {addMenuContent === undefined || addMenuContent === null ? (
+              <button
+                className="codex-composer-icon-button"
+                type="button"
+                aria-label={intl.formatMessage({ id: "composer.add", defaultMessage: "Add" })}
+                onClick={openAttachmentPicker}
+              >
+                <Plus size={16} />
+              </button>
+            ) : (
+              <DropdownMenu.Root modal={false} open={addMenuOpen} onOpenChange={setAddMenuOpen}>
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    className="codex-composer-icon-button"
+                    type="button"
+                    aria-label={intl.formatMessage({ id: "composer.add", defaultMessage: "Add" })}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal container={portalContainer}>
+                  <DropdownMenu.Content
+                    className="codex-composer-selection-menu codex-composer-add-menu"
+                    align="start"
+                    sideOffset={6}
+                    collisionPadding={6}
+                  >
+                    <DropdownMenu.Item
+                      className="codex-composer-selection-menu__item codex-composer-add-menu__item"
+                      onSelect={openAttachmentPicker}
+                    >
+                      <Paperclip size={15} aria-hidden="true" />
+                      <FormattedMessage id="chat.attach" defaultMessage="Attach files" />
+                    </DropdownMenu.Item>
+                    {typeof addMenuContent === "function"
+                      ? addMenuContent(() => setAddMenuOpen(false))
+                      : addMenuContent}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            )}
             <input
               ref={fileInputRef}
               hidden
@@ -1914,10 +2082,8 @@ export const CodexComposer = forwardRef<
                       className="codex-composer-mode codex-composer-mode--intelligence"
                       type="button"
                       disabled={modelPickerDisabled}
-                      title={
-                        selectionCatalog?.modelError ??
-                        `${modelLabel} · ${effortLabel}`
-                      }
+                      aria-label={intelligenceLabel}
+                      title={selectionCatalog?.modelError ?? intelligenceLabel}
                     >
                       <span className="codex-composer-mode__model-label">
                         {compactSelectedModelLabel}
@@ -1936,7 +2102,8 @@ export const CodexComposer = forwardRef<
                   <DropdownMenu.Portal container={portalContainer}>
                     <DropdownMenu.Content
                       className="codex-composer-selection-menu codex-composer-selection-menu--intelligence"
-                      aria-label="Model and reasoning"
+                      data-has-detail={selectedModel === null ? "false" : "true"}
+                      aria-label={`${intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })} · ${reasoningLabel}`}
                       align="start"
                       sideOffset={6}
                       collisionPadding={6}
@@ -1944,65 +2111,157 @@ export const CodexComposer = forwardRef<
                       onEscapeKeyDown={handleIntelligenceMenuEscape}
                     >
                       <div className="codex-composer-intelligence-view">
-                        <DropdownMenu.Label className="codex-composer-selection-menu__heading">
-                          Model
-                        </DropdownMenu.Label>
-                        {catalogModels.map((model) => {
-                          const isSelected =
-                            model.value === selectedModelValue ||
-                            model.id === selectedModelValue;
-                          return (
-                            <DropdownMenu.Item
-                              key={model.id}
-                              className="codex-composer-selection-menu__item"
-                              data-selected={isSelected ? "true" : undefined}
-                              onSelect={() => selectModel(model)}
-                            >
-                              <SelectionMenuItemContent
-                                description={model.description}
-                                label={model.label}
-                                selected={isSelected}
-                              />
-                            </DropdownMenu.Item>
-                          );
-                        })}
-                        {selectionCatalog?.isFetching &&
-                        catalogModels.length === 0 ? (
-                          <div className="codex-composer-selection-menu__status">
-                            Loading models…
-                          </div>
-                        ) : null}
-                        {selectionCatalog?.modelError ? (
-                          <div className="codex-composer-selection-menu__status is-error">
-                            {selectionCatalog.modelError}
-                            {selectionCatalog.retryModels ? <DropdownMenu.Item className="codex-composer-selection-menu__item" onSelect={event => { event.preventDefault(); selectionCatalog.retryModels?.(); }}>重试</DropdownMenu.Item> : null}
-                          </div>
-                        ) : null}
-                        {!selectionCatalog?.isFetching && selectedModelValue !== null && selectedModel === null ? <div className="codex-composer-selection-menu__status is-error">当前选择的模型不可用，请重新选择。</div> : null}
-                        {selectedModel?.efforts.length ? (
+                        <div className="codex-composer-intelligence-models">
+                          <DropdownMenu.Label className="codex-composer-selection-menu__heading">
+                            <FormattedMessage id="chat.model" defaultMessage="Model" />
+                          </DropdownMenu.Label>
+                          {catalogModels.map((model) => {
+                            const isSelected =
+                              model.value === selectedModelValue ||
+                              model.id === selectedModelValue;
+                            return (
+                              <DropdownMenu.Item
+                                key={model.id}
+                                className="codex-composer-selection-menu__item"
+                                data-selected={isSelected ? "true" : undefined}
+                                onSelect={(event) => {
+                                  event.preventDefault();
+                                  selectModel(model);
+                                }}
+                              >
+                                <SelectionMenuItemContent
+                                  description={null}
+                                  label={model.label}
+                                  selected={isSelected}
+                                />
+                              </DropdownMenu.Item>
+                            );
+                          })}
+                          {selectionCatalog?.isFetching &&
+                          catalogModels.length === 0 ? (
+                            <div className="codex-composer-selection-menu__status">
+                              Loading models…
+                            </div>
+                          ) : null}
+                          {selectionCatalog?.modelError ? (
+                            <div className="codex-composer-selection-menu__status is-error">
+                              {selectionCatalog.modelError}
+                              {selectionCatalog.retryModels ? (
+                                <DropdownMenu.Item
+                                  className="codex-composer-selection-menu__item"
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    selectionCatalog.retryModels?.();
+                                  }}
+                                >
+                                  重试
+                                </DropdownMenu.Item>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {!selectionCatalog?.isFetching &&
+                          selectedModelValue !== null &&
+                          selectedModel === null ? (
+                            <div className="codex-composer-selection-menu__status is-error">
+                              当前选择的模型不可用，请重新选择。
+                            </div>
+                          ) : null}
+                        </div>
+                        {selectedModel ? (
                           <>
                             <DropdownMenu.Separator className="codex-composer-selection-menu__separator" />
-                            <DropdownMenu.Label className="codex-composer-selection-menu__heading">
-                              Reasoning
-                            </DropdownMenu.Label>
-                            {selectedModel.efforts.map((effort) => {
-                              const isSelected =
-                                effort.value === selectedEffortValue;
-                              return (
-                                <DropdownMenu.Item
-                                  key={effort.value}
-                                  className="codex-composer-selection-menu__item"
-                                  data-selected={isSelected ? "true" : undefined}
-                                  onSelect={() => selectEffort(effort)}
-                                >
-                                  <SelectionMenuItemContent
-                                    description={effort.description}
-                                    label={displayReasoningEffort(effort)}
-                                    selected={isSelected}
-                                  />
-                                </DropdownMenu.Item>
-                              );
-                            })}
+                            <div className="codex-composer-intelligence-detail">
+                              <div className="codex-composer-intelligence-detail__header">
+                                <strong>{modelLabel}</strong>
+                                {selectedModel.source === "custom" ? (
+                                  <span className="codex-composer-intelligence-detail__source">
+                                    <FormattedMessage id="composer.model.custom" defaultMessage="Custom" />
+                                  </span>
+                                ) : null}
+                              </div>
+                              {selectedModel.contextWindow != null ||
+                              selectedModel.maxTokens != null ? (
+                                <dl className="codex-composer-model-metadata">
+                                  {selectedModel.contextWindow != null ? (
+                                    <div>
+                                      <dt><FormattedMessage id="composer.model.context" defaultMessage="Context" /></dt>
+                                      <dd>{formatModelTokenLimit(selectedModel.contextWindow)}</dd>
+                                    </div>
+                                  ) : null}
+                                  {selectedModel.maxTokens != null ? (
+                                    <div>
+                                      <dt><FormattedMessage id="composer.model.output" defaultMessage="Max output" /></dt>
+                                      <dd>{formatModelTokenLimit(selectedModel.maxTokens)}</dd>
+                                    </div>
+                                  ) : null}
+                                </dl>
+                              ) : null}
+                              <div className="codex-composer-model-capabilities">
+                                <span className="codex-composer-selection-menu__heading">
+                                  <FormattedMessage id="composer.model.supports" defaultMessage="Supports" />
+                                </span>
+                                <div className="codex-composer-model-capabilities__list">
+                                  {(selectedModel.inputModalities ?? ["text"]).map((modality) => (
+                                    <span key={modality}>
+                                      {modality === "image" ? (
+                                        <FormattedMessage id="composer.model.image" defaultMessage="Image" />
+                                      ) : modality === "audio" ? (
+                                        <FormattedMessage id="composer.model.audio" defaultMessage="Audio" />
+                                      ) : (
+                                        <FormattedMessage id="composer.model.text" defaultMessage="Text" />
+                                      )}
+                                    </span>
+                                  ))}
+                                  {selectedModel.efforts.length ? (
+                                    <span><FormattedMessage id="composer.model.reasoning" defaultMessage="Reasoning" /></span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              {selectedModel.efforts.length ? (
+                                <div className="codex-composer-intelligence-reasoning">
+                                  <div className="codex-composer-reasoning-heading">
+                                    <DropdownMenu.Label id={reasoningGroupLabelId} className="codex-composer-selection-menu__heading">
+                                      <FormattedMessage id="chat.reasoning" defaultMessage="Reasoning" />
+                                    </DropdownMenu.Label>
+                                    <span className="codex-composer-reasoning-value">{effortLabel}</span>
+                                  </div>
+                                  <DropdownMenu.RadioGroup
+                                    className="codex-composer-reasoning-options"
+                                    aria-labelledby={reasoningGroupLabelId}
+                                    data-single={selectedModel.efforts.length === 1 ? "true" : undefined}
+                                    style={{ "--reasoning-progress": `${reasoningProgress}%` } as CSSProperties}
+                                    value={selectedEffortValue ?? ""}
+                                    onValueChange={(value) => {
+                                      const effort = selectedModel.efforts.find(
+                                        (candidate) => candidate.value === value,
+                                      );
+                                      if (effort !== undefined) selectEffort(effort);
+                                    }}
+                                  >
+                                    <span className="codex-composer-reasoning-track" aria-hidden="true">
+                                      <span className="codex-composer-reasoning-track__fill" />
+                                    </span>
+                                    {selectedModel.efforts.map((effort) => (
+                                      <DropdownMenu.RadioItem
+                                        key={effort.value}
+                                        className="codex-composer-reasoning-option"
+                                        value={effort.value}
+                                        aria-label={displayReasoningEffort(effort)}
+                                        title={displayReasoningEffort(effort)}
+                                      >
+                                        <span className="codex-composer-reasoning-option__marker" aria-hidden="true" />
+                                      </DropdownMenu.RadioItem>
+                                    ))}
+                                  </DropdownMenu.RadioGroup>
+                                  <div className="codex-composer-reasoning-endpoints" aria-hidden="true">
+                                    <span>{displayReasoningEffort(selectedModel.efforts[0]!)}</span>
+                                    {selectedModel.efforts.length > 1 ? (
+                                      <span>{displayReasoningEffort(selectedModel.efforts[selectedModel.efforts.length - 1]!)}</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
                           </>
                         ) : null}
                       </div>
@@ -2115,14 +2374,16 @@ export const CodexComposer = forwardRef<
                 <AtSign size={15} />
               </button>
             ) : null}
-            <button
-              className="codex-composer-icon-button codex-composer-icon-button--context"
-              type="button"
-              title="Attach files"
-              onClick={openAttachmentPicker}
-            >
-              <Paperclip size={15} />
-            </button>
+            {addMenuContent === undefined || addMenuContent === null ? (
+              <button
+                className="codex-composer-icon-button codex-composer-icon-button--context"
+                type="button"
+                title={intl.formatMessage({ id: "chat.attach", defaultMessage: "Attach files" })}
+                onClick={openAttachmentPicker}
+              >
+                <Paperclip size={15} />
+              </button>
+            ) : null}
             {primaryAction === "stop" ? (
               <button
                 className="codex-composer-submit is-stop"

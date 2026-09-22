@@ -6,6 +6,7 @@ import { WebSocketTransport, type AppServerWebSocket } from "@opencraft/appserve
 import { startLocalAgentHost } from "@opencraft/local-agent-host";
 import WebSocket from "ws";
 
+import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { startOpenCraftDaemonServer } from "./server.js";
 
 function isNamedPipe(endpoint: string): boolean {
@@ -44,27 +45,43 @@ export async function startOpenCraftDaemon(options: {
   readonly dataDirectory: string;
   readonly modelStorageDirectory?: string;
   readonly skillsDirectory?: string;
+  readonly codexExecutable: string;
+  readonly codexDataDirectory: string;
+  readonly nativeCodexHomeDirectory: string;
 }) {
   process.chdir(options.runtimeDirectory);
   await removeStaleSocket(options.endpoint);
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
+  const codexAgents = new Set<CodexEngineAdapter>();
   let closing: Promise<void> | null = null;
   const appHost = new AppHostServer({
     logicalClientRouting: true,
     async createTransport(hostId) {
-      if (hostId !== "local") throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
-      localAgent ??= await startLocalAgentHost({
-        dshExecutable: options.dshExecutable,
-        dshCapabilityPlugin: options.dshCapabilityPlugin,
-        runtimeDirectory: options.runtimeDirectory,
-        dataDirectory: options.dataDirectory,
-        modelStorageDirectory: options.modelStorageDirectory,
-        skillsDirectory: options.skillsDirectory,
-      });
-      return new WebSocketTransport({
-        url: localAgent.websocketUrl,
-        createSocket: (url, protocols) => new WebSocket(url, protocols) as unknown as AppServerWebSocket,
-      });
+      if (hostId === "local") {
+        localAgent ??= await startLocalAgentHost({
+          dshExecutable: options.dshExecutable,
+          dshCapabilityPlugin: options.dshCapabilityPlugin,
+          runtimeDirectory: options.runtimeDirectory,
+          dataDirectory: options.dataDirectory,
+          modelStorageDirectory: options.modelStorageDirectory,
+          skillsDirectory: options.skillsDirectory,
+        });
+        return new WebSocketTransport({
+          url: localAgent.websocketUrl,
+          createSocket: (url, protocols) => new WebSocket(url, protocols) as unknown as AppServerWebSocket,
+        });
+      }
+      if (hostId === "local-codex") {
+        const codexAgent = new CodexEngineAdapter({
+          executable: options.codexExecutable,
+          runtimeDirectory: options.runtimeDirectory,
+          dataDirectory: options.codexDataDirectory,
+          nativeCodexHomeDirectory: options.nativeCodexHomeDirectory,
+        });
+        codexAgents.add(codexAgent);
+        return codexAgent;
+      }
+      throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
     },
   });
   let daemonServer: Awaited<ReturnType<typeof startOpenCraftDaemonServer>>;
@@ -76,6 +93,8 @@ export async function startOpenCraftDaemon(options: {
       const agent = localAgent;
       localAgent = null;
       await agent?.close();
+      await Promise.allSettled([...codexAgents].map(adapter => adapter.close()));
+      codexAgents.clear();
     })();
     return closing;
   };

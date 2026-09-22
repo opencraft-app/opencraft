@@ -296,7 +296,9 @@ test("Skills exposes an install target selector for local DSH and Hermes Profile
     "utf8",
   );
 
-  assert.match(view, /label="选择技能安装位置"/u);
+  assert.match(view, /label=\{connectorsVisible \? "选择连接器所在设备" : "选择技能安装位置"\}/u);
+  assert.match(view, /surface === "extensions" \? undefined/u);
+  assert.match(view, /value: "extensions", label: "扩展"/u);
   assert.doesNotMatch(view, /<p[^>]*>安装位置<\/p>|~\/\.opencraft\/skills/u);
   assert.match(view, /const installTargetSelector = ToolbarSelect/u);
   assert.match(view, /<ToolbarSelect/u);

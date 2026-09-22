@@ -45,7 +45,7 @@ test("actual AppServer codec/interceptor → MCP adapter → loopback service, r
       const timer = setTimeout(() => { pending.delete(id); reject(new Error("tool timeout")); }, 3000);
       pending.set(id, value => { clearTimeout(timer); resolve(value.result); });
     });
-    peer.send(JSON.stringify({ jsonrpc: "2.0", id, method: "item/tool/call", params: { threadId, turnId: "turn", callId: id, namespace: null, tool: name, arguments: args } }));
+    peer.send(JSON.stringify({ jsonrpc: "2.0", id, method: "item/tool/call", params: { threadId, turnId: "turn", callId: id, namespace: "connectors", tool: name, arguments: args } }));
     return result;
   }
   try {
@@ -54,29 +54,29 @@ test("actual AppServer codec/interceptor → MCP adapter → loopback service, r
     const c = await runtime.connect("test.mcp", "host", "op");
     assert.equal(c.phase, "ready");
     runtime.select({ hostId: "host", threadId: "allowed" }, [c.connectionId]);
-    const listed = await tool("connectors_list_tools", {});
-    assert.equal(listed.success, true);
-    const page = JSON.parse(listed.contentItems[0].text);
+    const searched = await tool("search_tools", {});
+    assert.equal(searched.success, true);
+    const page = JSON.parse(searched.contentItems[0].text);
     assert.equal(page.items.length, 1, "connection does not authorize write tools");
     assert.equal(page.items[0].inputSchema, undefined, "browse pages do not expand schemas");
-    const detail = await tool("connectors_get_tool", { toolRefs: [page.items[0].toolRef] });
+    const detail = await tool("get_tool", { toolRefs: [page.items[0].toolRef] });
     assert.equal(detail.success, true);
     const [entry] = JSON.parse(detail.contentItems[0].text).items;
-    const called = await tool("connectors_call_tool", { handle: entry.handle, arguments: { text: "LOOPBACK_TOOL_RESULT" } });
+    const called = await tool("call_tool", { handle: entry.handle, arguments: { text: "LOOPBACK_TOOL_RESULT" } });
     assert.equal(called.success, true); assert.match(called.contentItems[0].text, /LOOPBACK_TOOL_RESULT/);
     assert.equal(serviceCalls, 1);
-    const foreign = await tool("connectors_call_tool", { handle: entry.handle, arguments: {} }, "foreign");
+    const foreign = await tool("call_tool", { handle: entry.handle, arguments: {} }, "foreign");
     assert.equal(foreign.success, false); assert.equal(serviceCalls, 1);
     schemaVersion++;
-    assert.equal((await tool("connectors_call_tool", { handle: entry.handle, arguments: {} })).success, false);
+    assert.equal((await tool("call_tool", { handle: entry.handle, arguments: {} })).success, false);
     assert.equal(serviceCalls, 1, "old schema cannot silently call a changed implementation");
     schemaVersion--; remoteAuthorized = false;
-    assert.equal((await tool("connectors_call_tool", { handle: entry.handle, arguments: {} })).success, false);
+    assert.equal((await tool("call_tool", { handle: entry.handle, arguments: {} })).success, false);
     remoteAuthorized = true;
     peer.send(JSON.stringify({ jsonrpc: "2.0", method: "mcpServer/startupStatus/updated", params: { threadId: null, name: "fixture", status: "starting", error: null, failureReason: null } }));
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(runtime.getSnapshot().connections[0].phase, "refresh-required");
-    assert.equal((await tool("connectors_call_tool", { handle: entry.handle, arguments: {} })).success, false);
+    assert.equal((await tool("call_tool", { handle: entry.handle, arguments: {} })).success, false);
     assert.equal(serviceCalls, 1);
     assert.ok(requests.filter(r => r.method === "mcpServerStatus/list").some(r => r.params.threadId === "allowed"));
   } finally { removeHandler(); await runtime.dispose(); await client.close(); endpoint.closeAllConnections(); await new Promise<void>(resolve => endpoint.close(() => resolve())); }

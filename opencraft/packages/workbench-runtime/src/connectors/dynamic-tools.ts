@@ -4,15 +4,25 @@ import type { ConnectorRuntime } from "./runtime";
 import { ConnectorError, objectInput } from "./lifetime";
 import { ConnectorCapabilityRuntime, type ConnectorCapabilitySearchRequest } from "./capability-runtime";
 
+export const CONNECTOR_DYNAMIC_TOOL_NAMESPACE = "connectors";
+const SEARCH_TOOLS = "search_tools";
+const GET_TOOL = "get_tool";
+const CALL_TOOL = "call_tool";
+
 export const OPENCRAFT_CONNECTOR_DYNAMIC_TOOLS: readonly DynamicToolSpec[] = Object.freeze([
-  { type: "function", name: "connectors_search_tools", description: "Search the bounded capability catalog of external integrations selected for this conversation. Returns compact summaries and opaque tool references, never every JSON schema. Continue with nextCursor or load exact schemas with connectors_get_tool.", inputSchema: { type: "object", properties: { query: { type: "string" }, connectorId: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, additionalProperties: false }, deferLoading: true },
-  { type: "function", name: "connectors_get_tool", description: "Load exact schemas and temporary invocation handles for one to four tool references returned by connectors_search_tools or connectors_list_tools.", inputSchema: { type: "object", properties: { toolRefs: { type: "array", minItems: 1, maxItems: 4, items: { type: "string" } } }, required: ["toolRefs"], additionalProperties: false }, deferLoading: true },
-  { type: "function", name: "connectors_list_tools", description: "Compatibility browse entry for selected external integrations. Returns one bounded compact page and nextCursor; use query for search and connectors_get_tool before calling a tool.", inputSchema: { type: "object", properties: { query: { type: "string" }, connectorId: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, additionalProperties: false }, deferLoading: true },
-  { type: "function", name: "connectors_call_tool", description: "Call a selected integration tool using an exact handle from connectors_get_tool. Cannot authorize, select accounts or bypass revoked access.", inputSchema: { type: "object", properties: { handle: { type: "string" }, arguments: { type: "object", additionalProperties: true } }, required: ["handle", "arguments"], additionalProperties: false }, deferLoading: true },
+  {
+    type: "namespace",
+    name: CONNECTOR_DYNAMIC_TOOL_NAMESPACE,
+    description: "Discover and invoke external integrations explicitly selected for this conversation.",
+    tools: [
+      { type: "function", name: SEARCH_TOOLS, description: "Search the bounded capability catalog selected for this conversation. Returns compact summaries and opaque tool references, never every JSON schema. Continue with nextCursor or load exact schemas with get_tool.", inputSchema: { type: "object", properties: { query: { type: "string" }, connectorId: { type: "string" }, cursor: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, additionalProperties: false }, deferLoading: true },
+      { type: "function", name: GET_TOOL, description: "Load exact schemas and temporary invocation handles for one to four tool references returned by search_tools.", inputSchema: { type: "object", properties: { toolRefs: { type: "array", minItems: 1, maxItems: 4, items: { type: "string" } } }, required: ["toolRefs"], additionalProperties: false }, deferLoading: true },
+      { type: "function", name: CALL_TOOL, description: "Call a selected integration tool using an exact handle from get_tool. Cannot authorize, select accounts or bypass revoked access.", inputSchema: { type: "object", properties: { handle: { type: "string" }, arguments: { type: "object", additionalProperties: true } }, required: ["handle", "arguments"], additionalProperties: false }, deferLoading: true },
+    ],
+  },
 ]);
 
-const DISCOVERY_TOOLS = new Set(["connectors_search_tools", "connectors_list_tools"]);
-const CONNECTOR_TOOLS = new Set([...DISCOVERY_TOOLS, "connectors_get_tool", "connectors_call_tool"]);
+const CONNECTOR_TOOLS = new Set([SEARCH_TOOLS, GET_TOOL, CALL_TOOL]);
 
 function searchInput(value: Record<string, unknown>): ConnectorCapabilitySearchRequest {
   if (Object.keys(value).some(key => !["query", "connectorId", "cursor", "limit"].includes(key))) throw new ConnectorError("invalid-input");
@@ -46,16 +56,16 @@ export function installConnectorDynamicToolHandler(
   const removeHandler = client.interceptServerRequest(async (request, next) => {
     if (request.method !== "item/tool/call") return next();
     const params = request.params as DynamicToolCallParams;
-    if (params.namespace !== null || !CONNECTOR_TOOLS.has(params.tool)) return next();
+    if (params.namespace !== CONNECTOR_DYNAMIC_TOOL_NAMESPACE || !CONNECTOR_TOOLS.has(params.tool)) return next();
     const abort = new AbortController(), id = String(request.id);
     calls.set(id, abort);
     try {
       if (typeof params.threadId !== "string" || !params.threadId) throw new ConnectorError("invalid-input");
       const input = objectInput(params.arguments), scope = { hostId: options.hostId, threadId: params.threadId };
       let value: unknown;
-      if (DISCOVERY_TOOLS.has(params.tool)) {
+      if (params.tool === SEARCH_TOOLS) {
         value = await capabilities.search(scope, searchInput(input), abort.signal);
-      } else if (params.tool === "connectors_get_tool") {
+      } else if (params.tool === GET_TOOL) {
         if (Object.keys(input).some(key => key !== "toolRefs") || !Array.isArray(input.toolRefs)) throw new ConnectorError("invalid-input");
         value = await capabilities.detail(scope, input.toolRefs, abort.signal);
       } else {

@@ -108,11 +108,29 @@ const IMAGE_MEDIA_TYPES = new Map([
   [".gif", "image/gif"],
 ]);
 
-async function promptContent(input: unknown): Promise<RecordValue[]> {
+export interface ExplicitSkillReference { readonly name: string; readonly path: string }
+export async function promptContent(input: unknown, validateSkills?: (skills: readonly ExplicitSkillReference[]) => Promise<void>): Promise<RecordValue[]> {
   if (!Array.isArray(input)) return [];
+  const skills = input.filter(raw => object(raw).type === "skill").map(raw => {
+    const part = object(raw);
+    if (typeof part.name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(part.name)
+      || typeof part.path !== "string" || part.path.length === 0) throw new Error("Invalid explicit Skill reference");
+    return { name: part.name, path: part.path };
+  });
+  if (skills.length) {
+    if (!validateSkills) throw new Error("This DSH host cannot validate explicit Skill invocations");
+    await validateSkills(skills);
+  }
   const content: RecordValue[] = [];
   for (const raw of input) {
     const part = object(raw);
+    if (part.type === "skill") {
+      // Native dsh-tool-skill scans each direct-user text block for /name and
+      // loads the full instructions during agent/pre-step. Never ask the model
+      // to infer a Skill from a display label or read an arbitrary input path.
+      content.push({ type: "text", text: ` /${part.name} ` });
+      continue;
+    }
     if (part.type === "text" && typeof part.text === "string") {
       content.push({ type: "text", text: part.text });
       continue;
@@ -269,6 +287,9 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
     })),
     defaultReasoningEffort: reasoningCapability((model.reasoning?.efforts ?? []).map(e=>e.id),model.reasoning?.defaultEffort).defaultEffort,
     inputModalities: modelInputModalities(model.input),
+    ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+    ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
+    ...(model.source === undefined ? {} : { source: model.source }),
     supportsPersonality: false,
     multiAgentVersion: null,
     additionalSpeedTiers: [],
@@ -281,6 +302,11 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  private skillInvocationValidator?: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>;
+  setSkillInvocationValidator(validate: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>): void { this.skillInvocationValidator = validate; }
+  private promptContent(threadId: string, input: unknown) {
+    return promptContent(input, this.skillInvocationValidator ? refs => this.skillInvocationValidator!(threadId, refs) : undefined);
+  }
   setModelInfoReader(reader: RuntimeModelInfoReader): void { this.providers.setModelInfoReader(reader); }
   private threadEngine: DshThreadEnginePort | null = null;
   private readonly activations = new Map<string, Promise<unknown>>();
@@ -1004,8 +1030,9 @@ export class DshAppServerAdapter {
           await this.modelConfiguration.config.synchronize();
           if (this.modelConfiguration.config.application.state !== "applied") throw new Error("模型配置尚未应用");
         }
-        const content = await promptContent(value.input);
+        const content = await this.promptContent(sessionId, value.input);
         await this.selectModel(sessionId, value.model, value.effort);
+        this.authority.assertConnected(owner);
         await this.client.call("session.prompt", {
           sessionId, mode: "queue", content, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }, undefined, pending.rpcId);
@@ -1277,7 +1304,7 @@ export class DshAppServerAdapter {
             {
               sessionId,
               mode: "queue",
-              content: await promptContent(value.input),
+              content: await this.promptContent(sessionId, value.input),
               clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             },
             undefined,
@@ -1295,7 +1322,7 @@ export class DshAppServerAdapter {
         const previous = this.queue(sessionId).find((item) => item.id === queuedSubmissionId);
         if (previous === undefined) return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is no longer pending`));
         await this.assertInput(sessionId, value.input);
-        const content = await promptContent(value.input);
+        const content = await this.promptContent(sessionId, value.input);
         const input = userContent(content);
         await this.client.call("session.updateQueue", {
           sessionId,
@@ -1395,6 +1422,7 @@ export class DshAppServerAdapter {
           return Number(id.slice(prefix.length));
         };
         const created = await this.threadEngine.fork({ sourceSessionId: sourceId,
+          dynamicTools: value.dynamicTools,
           cwd: typeof value.cwd === "string" ? value.cwd : source.cwd ?? homedir(),
           ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions,
           provider: selection?.provider, model: selection?.model,
@@ -1429,12 +1457,14 @@ export class DshAppServerAdapter {
         if (!catalog.groups.some(group => group.id === selection.provider && group.models.some(model => model.id === selection.model)))
           throw new Error("所选模型已停用或不可用，请重新选择");
         const creation = {
+          dynamicTools: value.dynamicTools,
           ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
           ...(typeof value.agentId === "string" && value.agentId !== "dsh" ? { agentPreset: value.agentId } : {}),
           ...(this.threadEngine ? { ...selection, ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions } : {}),
         };
         const created = this.threadEngine ? await this.threadEngine.create(creation)
           : await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", creation);
+        try {
         const models = await this.selectModel(created.sessionId, selectedModel);
         if (!models.current) throw new Error("Engine did not acknowledge the selected model");
         const currentModel = encodeModel(models.current.provider, models.current.model);
@@ -1447,6 +1477,11 @@ export class DshAppServerAdapter {
           approvalsReviewer: "user",
           reasoningEffort: null, multiAgentMode: "explicitRequestOnly", ...permissionState,
         };
+        } catch (error) {
+          this.summaries.delete(created.sessionId);
+          await this.threadEngine?.release({ sessionId: created.sessionId }).catch(() => undefined);
+          throw error;
+        }
       }
       case "turn/start": {
         await this.ensureRuntime(string(value.threadId));
@@ -1457,7 +1492,7 @@ export class DshAppServerAdapter {
         const sessionId = string(value.threadId);
         await this.selectModel(sessionId, value.model, value.effort);
         await this.assertInput(sessionId, value.input);
-        const content = await promptContent(value.input);
+        const content = await this.promptContent(sessionId, value.input);
         const nextTurn = this.waitForNextTurn(sessionId);
         try {
           await this.client.call(
@@ -1488,7 +1523,7 @@ export class DshAppServerAdapter {
           {
             sessionId,
             mode: "steer",
-            content: await promptContent(value.input),
+            content: await this.promptContent(sessionId, value.input),
             clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
           undefined,

@@ -15,7 +15,7 @@ import {
   type InMemoryAppServerPeer,
 } from "@opencraft/appserver-transport-memory";
 import type { SubmitIntent } from "@opencraft/composer-core";
-import { createConversationKey } from "@opencraft/chat-core";
+import { createConversationKey, asTurnId } from "@opencraft/chat-core";
 import {
   createAppServerWorkbenchRuntime,
   createConversationScopeRegistry,
@@ -26,6 +26,8 @@ interface DraftHarness {
   readonly transport: MemoryTransport;
   releaseTurn(): void;
   releaseResume(): void;
+  releaseCapabilityRegistration(): void;
+  failCapabilityRegistration(): void;
   releaseUnsubscribe(): void;
   notifySkillsChanged(): void;
   notifyFsChanged(watchId: string, changedPaths: readonly string[]): void;
@@ -51,10 +53,15 @@ function createHarness(
   delayUnsubscribe = false,
   models: readonly Record<string, unknown>[] = [{ id: "codex", model: "codex", isDefault: true, inputModalities: ["text"], supportedReasoningEfforts: [{reasoningEffort:"medium",description:"Medium"}], defaultReasoningEffort:"medium" }],
   declareResumeHistory = false,
+  delayCapabilityRegistration = false,
+  firstTurnDurability = false,
+  rejectTurn = false,
 ): DraftHarness {
   const requests: JsonRpcRequest[] = [];
   let releaseTurn = () => undefined;
   let releaseResume = () => undefined;
+  let releaseCapabilityRegistration = () => undefined;
+  let failCapabilityRegistration = () => undefined;
   let releaseUnsubscribe = () => undefined;
   let activePeer: InMemoryAppServerPeer | null = null;
   const server: InMemoryAppServer = {
@@ -71,9 +78,17 @@ function createHarness(
       }));
       if (message.method === "initialize") {
         send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "draft-test",
-          capabilities: { extensions: declareResumeHistory
-            ? { [OPENCRAFT_RESUME_HISTORY_EXTENSION]: { version: 1, mode: "paginated" } }
-            : {} } });
+          capabilities: { extensions: {
+            ...(declareResumeHistory
+              ? { [OPENCRAFT_RESUME_HISTORY_EXTENSION]: { version: 1, mode: "paginated" } }
+              : {}),
+            ...(delayCapabilityRegistration
+              ? { "opencraft/host-capabilities": { version: 1 } }
+              : {}),
+            ...(firstTurnDurability
+              ? { "opencraft/thread-start-durability": { version: 1, durableAfter: "first-turn-accepted" } }
+              : {}),
+          } } });
       } else if (message.method === "model/list") {
         send({ data: models, nextCursor:null });
       } else if (message.method === "thread/list") {
@@ -84,7 +99,9 @@ function createHarness(
       } else if (message.method === "thread/start") {
         send({ thread: protocolThread("thread-created") });
       } else if (message.method === "turn/start") {
-        const respond = () => send({ turn: { id: "turn-created" } });
+        const respond = () => rejectTurn
+          ? peer.send(encodeJsonRpcMessage({ id: message.id, error: { code: -32000, message: "first turn rejected" } }))
+          : send({ turn: { id: "turn-created" } });
         if (delayTurn) releaseTurn = respond;
         else respond();
       } else if (message.method === "thread/resume") {
@@ -107,6 +124,16 @@ function createHarness(
           initialTurnsPage: { data: [], nextCursor: null },
         });
         if (delayResume) releaseResume = respond;
+        else respond();
+      } else if (message.method === "runtime/capabilities/register") {
+        const respond = () => send({ registered: 1 });
+        if (delayCapabilityRegistration) {
+          releaseCapabilityRegistration = respond;
+          failCapabilityRegistration = () => peer.send(encodeJsonRpcMessage({
+            id: message.id,
+            error: { code: -32000, message: "fixture capability failure" },
+          }));
+        }
         else respond();
       } else if (message.method === "thread/unsubscribe") {
         const respond = () => send({ status: "unsubscribed" });
@@ -204,6 +231,8 @@ function createHarness(
     transport: new MemoryTransport(server),
     releaseTurn: () => releaseTurn(),
     releaseResume: () => releaseResume(),
+    releaseCapabilityRegistration: () => releaseCapabilityRegistration(),
+    failCapabilityRegistration: () => failCapabilityRegistration(),
     releaseUnsubscribe: () => releaseUnsubscribe(),
     notifySkillsChanged: () => activePeer?.send(encodeJsonRpcMessage({
       method: "skills/changed",
@@ -215,6 +244,13 @@ function createHarness(
     })),
   };
 }
+
+const oneDynamicTool = [{
+  type: "function" as const,
+  name: "read_workspace",
+  description: "Read the current workspace",
+  inputSchema: { type: "object" },
+}];
 
 function intent(target: Extract<SubmitIntent["target"], { type: "new-thread" }>): SubmitIntent {
   return {
@@ -563,6 +599,79 @@ test("Draft Thread creation returns identity without starting or stealing a View
   }
 });
 
+test("a first-Turn durable Host does not return a promotable Thread before turn/start is accepted", async () => {
+  const harness = createHarness(true, false, [], false, undefined, false, false, true);
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local-codex",
+    transport: harness.transport,
+    autoReconnect: false,
+  });
+  const drafts = createConversationScopeRegistry({
+    initialDraft: {
+      draftId: "client-new-thread:codex-first-turn",
+      execution: {
+        hostId: "local-codex",
+        workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+      },
+    },
+  });
+  try {
+    await runtime.connect();
+    const target = drafts.getActiveDraft()?.target;
+    assert.ok(target);
+    const submitted = runtime.createThread(intent(target));
+    await waitForRequest(harness, "turn/start");
+    let settled = false;
+    void submitted.finally(() => { settled = true; });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    assert.equal(settled, false);
+    assert.deepEqual(
+      harness.requests
+        .filter(request => request.method === "thread/start" || request.method === "turn/start")
+        .map(request => request.method),
+      ["thread/start", "turn/start"],
+    );
+    harness.releaseTurn();
+    const receipt = await submitted;
+    assert.equal(receipt.threadId, "thread-created");
+    assert.equal(receipt.turnId, "turn-created");
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("a rejected first Turn never publishes a promotable Codex Thread receipt", async () => {
+  const harness = createHarness(false, false, [], false, undefined, false, false, true, true);
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local-codex",
+    transport: harness.transport,
+    autoReconnect: false,
+  });
+  const drafts = createConversationScopeRegistry({
+    initialDraft: {
+      draftId: "client-new-thread:codex-rejected",
+      execution: {
+        hostId: "local-codex",
+        workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+      },
+    },
+  });
+  try {
+    await runtime.connect();
+    const target = drafts.getActiveDraft()?.target;
+    assert.ok(target);
+    await assert.rejects(runtime.createThread(intent(target)), /first turn rejected/u);
+    assert.deepEqual(
+      harness.requests
+        .filter(request => request.method === "thread/start" || request.method === "turn/start")
+        .map(request => request.method),
+      ["thread/start", "turn/start"],
+    );
+  } finally {
+    await runtime.dispose();
+  }
+});
+
 test("a created Thread cannot steal focus after its Draft is dismissed", async () => {
   const harness = createHarness();
   const runtime = createAppServerWorkbenchRuntime({
@@ -666,6 +775,115 @@ test("Thread acquisition stays empty until its single authoritative Resume promo
     assert.equal(lease.getSnapshot().timeline.frames.length, 1);
     assert.equal(visibleTimelinePromotions, 1);
     unsubscribe();
+    lease.release();
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("slow dynamic-tool registration does not hold restored history behind hydration", async () => {
+  const harness = createHarness(false, false, [{
+    id: "turn-history-one",
+    status: "completed",
+    itemsView: "full",
+    items: [{ id: "message-history-one", type: "agentMessage", text: "history is ready" }],
+  }], false, undefined, true, true);
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local",
+    transport: harness.transport,
+    autoReconnect: false,
+    dynamicTools: oneDynamicTool,
+  });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("thread-created");
+    await waitForRequest(harness, "runtime/capabilities/register");
+    await waitForAuthoritative(lease);
+    assert.equal(lease.getSnapshot().timeline.frames.length, 1);
+    const stopping = lease.interrupt(asTurnId("turn-history-one"));
+    await waitForRequest(harness, "turn/interrupt");
+    await stopping;
+
+    const submitting = lease.submit({
+      ...intent({
+        type: "new-thread",
+        draftId: "unused",
+        execution: {
+          hostId: "local",
+          workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+        },
+      }),
+      target: {
+        type: "existing-thread",
+        key: createConversationKey("local", "thread-created"),
+      },
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(
+      harness.requests.some((request) => request.method === "turn/start"),
+      false,
+      "execution must still wait for the capability lease",
+    );
+    harness.releaseCapabilityRegistration();
+    await submitting;
+    assert.equal(
+      harness.requests.filter((request) => request.method === "runtime/capabilities/register").length,
+      1,
+    );
+    assert.equal(harness.requests.filter((request) => request.method === "turn/start").length, 1);
+    lease.release();
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("failed background capability registration preserves history and retries on execution", async () => {
+  const harness = createHarness(false, false, [{
+    id: "turn-history-one",
+    status: "completed",
+    itemsView: "full",
+    items: [{ id: "message-history-one", type: "agentMessage", text: "history survives" }],
+  }], false, undefined, true, true);
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local",
+    transport: harness.transport,
+    autoReconnect: false,
+    dynamicTools: oneDynamicTool,
+  });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("thread-created");
+    await waitForRequest(harness, "runtime/capabilities/register");
+    harness.failCapabilityRegistration();
+    await waitForAuthoritative(lease);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(lease.getSnapshot().timeline.frames.length, 1);
+
+    const submitting = lease.submit({
+      ...intent({
+        type: "new-thread",
+        draftId: "unused",
+        execution: {
+          hostId: "local",
+          workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+        },
+      }),
+      target: {
+        type: "existing-thread",
+        key: createConversationKey("local", "thread-created"),
+      },
+    });
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if (harness.requests.filter((request) => request.method === "runtime/capabilities/register").length === 2) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    assert.equal(
+      harness.requests.filter((request) => request.method === "runtime/capabilities/register").length,
+      2,
+    );
+    harness.releaseCapabilityRegistration();
+    await submitting;
+    assert.equal(harness.requests.filter((request) => request.method === "turn/start").length, 1);
     lease.release();
   } finally {
     await runtime.dispose();
