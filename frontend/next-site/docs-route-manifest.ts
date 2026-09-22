@@ -107,6 +107,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots-switching"
+    ],
+    [
+      "configuration",
       "deepseek-harness"
     ],
     [
@@ -368,6 +372,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots-switching"
+    ],
+    [
+      "configuration",
       "deepseek-harness"
     ],
     [
@@ -554,6 +562,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "multiple-models"
+    ],
+    [
+      "configuration",
+      "bots-switching"
     ],
     [
       "configuration",
@@ -831,6 +843,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots-switching"
+    ],
+    [
+      "configuration",
       "deepseek-harness"
     ],
     [
@@ -1105,6 +1121,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots-switching"
+    ],
+    [
+      "configuration",
       "deepseek-harness"
     ],
     [
@@ -1368,6 +1388,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "multiple-models"
+    ],
+    [
+      "configuration",
+      "bots-switching"
     ],
     [
       "configuration",
@@ -1645,6 +1669,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots-switching"
+    ],
+    [
+      "configuration",
       "deepseek-harness"
     ],
     [
@@ -1919,6 +1947,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "bots-switching"
+    ],
+    [
+      "configuration",
       "deepseek-harness"
     ],
     [
@@ -2140,6 +2172,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-20",
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-28",
     "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
@@ -2210,6 +2243,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-24",
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-28",
     "configuration/workbench": "2026-09-02",
     "use-cases/scheduled-task-agent": "2026-09-14",
@@ -2262,6 +2296,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-20",
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-28",
     "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
@@ -2335,6 +2370,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-20",
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-28",
     "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
@@ -2408,6 +2444,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-20",
     "configuration/advanced-settings": "2026-08-25",
     "configuration/multiple-models": "2026-08-28",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-28",
     "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-18",
@@ -2479,6 +2516,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-26",
     "configuration/advanced-settings": "2026-08-26",
     "configuration/multiple-models": "2026-08-28",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-28",
     "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-26",
@@ -2552,6 +2590,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-28",
     "configuration/advanced-settings": "2026-08-28",
     "configuration/multiple-models": "2026-08-31",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-31",
     "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-28",
@@ -2625,6 +2664,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/diagnostics": "2026-08-31",
     "configuration/advanced-settings": "2026-08-31",
     "configuration/multiple-models": "2026-08-31",
+    "configuration/bots-switching": "2026-09-22",
     "configuration/deepseek-harness": "2026-08-31",
     "configuration/workbench": "2026-09-02",
     "use-cases/personal-ai-assistant": "2026-08-31",
