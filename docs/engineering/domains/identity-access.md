@@ -122,11 +122,13 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
 Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
 北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
-而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入；对应
-Deployment patch 由北京 source-facing Service Gateway Component 持有，与基准 Deployment 同层组合，
-deploy-facing 目录只提供环境配置和加密 Secret generator，避免身份桥接因无目标 patch 而未落入运行时。
-北京主 sandbox 使用普通 Kustomization 同时拥有 base、平台值 replacements、Secret generator 和身份桥接
-patch；禁止通过 Component 注入内部 token，因为 Component patch 无法修改其引入的 Deployment。
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入。北京主 sandbox
+使用普通 Kustomization 同时拥有 base、平台值 replacements、Secret generator 和身份桥接 patch，确保
+patch 与基准 Deployment 在同一累计器；禁止通过 Component 注入内部 token，因为 Component patch
+无法修改其引入的 Deployment。
+浏览器 CORS 只由公共 Gateway 判定和响应；通过 allowlist 后，Gateway 必须从私有 Collaboration hop
+删除浏览器 `Origin`，避免 Collaboration 的直连 CORS allowlist 再次解释公网来源并拒绝合法本地预览。
+该删除不影响权威 subject、内部 Bearer、请求 ID 或客户端 IP 投影。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 

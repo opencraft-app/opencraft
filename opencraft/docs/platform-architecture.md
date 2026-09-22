@@ -485,6 +485,14 @@ port for its OpenAPI responses, while Hermes retains the envelope-aware request
 path. No consumer creates a second token store or interprets another extension's
 resource loading failure as logout.
 
+The standalone Web bootstrap may select that same account authority's regional
+Gateway with `VITE_LIGHTVELA_API_BASE_URL` and `VITE_LIGHTVELA_REGION`; it does
+not construct a second account client. The API Base is validated as one absolute
+HTTP(S) origin before application startup. The browser entry also installs the
+minimal `process.env` compatibility object before dynamically loading the
+mechanically generated Hermes closure, matching the embedded loader's runtime
+contract without copying Node environment values into the browser bundle.
+
 `lightvela.collaboration` owns one routed Collaboration Workspace and the Human
 Tencent IM Web data plane for Server, Channel, private Group and Member surfaces.
 Its activation-scoped service obtains a short-lived

@@ -22,6 +22,12 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 ## 稳定不变量
 
+- Collaboration 的浏览器 CORS 由公共 `service-gateway` 唯一拥有：Gateway 先按 route-specific
+  allowlist 响应预检和 credentialed 请求，再从私有 Collaboration hop 删除浏览器 `Origin`。
+  内部 hop 只保留权威 LightVela subject、内部 Bearer、请求 ID 与规范化客户端 IP，避免私有服务的
+  直连 CORS allowlist 成为第二套冲突的公网策略。OpenCraft standalone Web 只通过显式 API Base/region
+  选择同一个应用级 `LightVelaAccountService`，不得建立 Collaboration 专用 token store。
+
 - OpenCraft Embedded Chat 的 loader 和内容寻址资源使用独立 Vite 构建目标，由 frontend artifact 在 EdgeOne Build Output 投影前放入同源 `/__opencraft/`。实际交付包含 `.edgeone/assets/__opencraft/`，入口仍由显式 `show()` 接管；资源缺失时保留 AgentChat 回退，不通过自动开启 rollout 掩盖交付问题。见 [发布契约](release-gitops.md)。
 - Embedded Browser 的 Host Proxy Service Worker 固定在 `/__opencraft/opencraft-host-proxy-sw.js`，scope 仅为 `/__opencraft/host-proxy/`；构建产物缺失时必须失败，禁止将 scope 扩到站点根。稳定 SW 路径在 EdgeOne 使用 `no-cache`，内容寻址的应用资源继续走独立缓存策略。
 
