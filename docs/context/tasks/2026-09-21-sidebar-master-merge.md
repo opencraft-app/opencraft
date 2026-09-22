@@ -59,15 +59,17 @@ derived: false
 - `git diff --name-only --diff-filter=U` 与 `git ls-files -u` 均为空；26 个冲突路径已逐一处理。
 - 合并头为 `origin/master` 的 `440379e9c749dfd193f913045e48cc8e2ccf0009`，当前索引包含双方合并结果。
 - `opencraft/npm run check:mono2-agent-console`：162 个 Agent Console 投影文件通过同步检查；本次诊断视图变更已重新同步。
-- 本轮 TypeScript 与账号/Buddy/弹窗/订阅聚焦回归共 80 项通过；侧栏账号菜单测试补充根节点、全宽 trigger 与 click-only 行为断言。
-- OpenCraft 投影检查待源码提交后重跑；`UPSTREAM.json` 当前仍记录旧的不可达 `sourceRevision`，必须在源码提交后运行同步脚本更新。
+- `frontend` 类型检查通过；10 个账号、Buddy、弹窗、订阅和侧栏相关测试文件共 108 项通过。
+- OpenCraft `test:extensions` 通过：扩展相关 226 项、协作插件 56 项；`check:mono2-agent-console` 验证 162/162 个投影文件。
+- `frontend pnpm test` 本轮结果为 320 passed、41 failed、13 skipped，另有 6 个 worker 异常；运行中出现 Node OOM 与 worker 超时，不能表述为全量通过。失败主要来自既有文档/i18n/静态页面断言、环境依赖和资源门禁，聚焦改动测试未失败。
+- `validate_documentation.py`、`git diff --check` 通过；`validate_change_impact.py --staged` 待本次改动暂存后复核。`validate_context.py --build-catalog` 仍被仓库既有 Task Pack 格式错误和 secret-scan 告警阻塞，catalog 已按当前 Task Pack 生成。
 
 ## risks
 - 选取整个文件可能丢弃另一侧独有的行为；逐处检查后配套测试。
 - 生成副本可能漂移；从 frontend 真源重新同步并检查。
 
 ## validation
-- `cd frontend && pnpm check`; 聚焦 Vitest；源码提交后运行 OpenCraft `npm run sync:mono2-agent-console`、`check:mono2-agent-console` 与 `test:extensions`。全量 `frontend/pnpm test` 仍需在完整依赖环境中重跑并记录 master 基线。
+- `cd frontend && pnpm check`; 聚焦 Vitest；OpenCraft `check:mono2-agent-console` 与 `test:extensions`；全量 `frontend/pnpm test` 已执行并记录失败清单，master 基线对比未完成，不宣称全量门禁闭环。
 - `cd opencraft && npm run check:mono2-agent-console && npm run gate`
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`
 
@@ -89,7 +91,7 @@ derived: false
 ### verified
 - 目标 worktree 为独立分支；`MERGE_HEAD` 指向 `440379e9c`；未解决冲突为 0。
 - 用户原有未暂存改动仍保留：侧栏账号菜单、账号积分模型；本次生成副本已按真源同步并纳入索引。Task Pack 已纳入本次合并索引。
-- TypeScript 与聚焦回归已通过；全量 frontend `pnpm test` 未闭环，OpenCraft 投影检查需在源码提交后重跑；change-impact 需在正式设计文档更新后重跑。
+- TypeScript、聚焦回归、OpenCraft 扩展测试与投影检查已通过；全量 frontend `pnpm test` 仍未闭环；change-impact 需在本次改动暂存后重跑。
 ### unverified
 - 全量 `frontend/pnpm test` 未通过，存在既有/生成内容失败、Vitest worker 超时及 Node OOM；不能以此宣称全量测试通过。
 - 未进行真实登录、远端 Host/模型链路、全量 frontend `pnpm test` 或部署验证。
@@ -98,4 +100,4 @@ derived: false
 ### restore
 - 目标路径与分支见本文 goal/history；生成层只能同步。
 ### next_action
-- 先提交当前源码修复；随后运行同步脚本并单独提交生成物 metadata，再重跑 OpenCraft 与上下文门禁，最后按用户授权 push 并更新 target 为 `master` 的 MR。
+- 提交测试断言和 catalog 派生物；暂存后重跑 change-impact，随后按用户授权 push 并更新 target 为 `master` 的 MR。全量 frontend 失败与 Context 历史门禁问题写入 MR 说明。
