@@ -979,6 +979,20 @@ test_payment_and_production_guardrails() {
   ! grep -q 'verified.*checkCreate' "$SCRIPT"
 }
 
+test_personal_dev_billing_proxy_patches_target_trade_namespace() {
+  local site patch
+  for site in sandbox-bj-7 sandbox-kr-1; do
+    patch="$REPO_ROOT/argocd/services/trade/$site/patch-personal-dev-billing-proxy.yaml"
+    test -f "$patch" || fail "missing personal DevCloud billing proxy patch for $site"
+    awk '
+      /^metadata:/ { in_metadata = 1; next }
+      in_metadata && /^[^[:space:]]/ { in_metadata = 0 }
+      in_metadata && /^[[:space:]]+namespace:[[:space:]]+trade[[:space:]]*$/ { found = 1 }
+      END { exit found ? 0 : 1 }
+    ' "$patch" || fail "$site billing proxy patch must target ConfigMap trade-config in namespace trade"
+  done
+}
+
 run_test 'CN and Intl state are isolated' test_site_state_isolation
 run_test 'saved kind cluster is restored for follow-up commands' test_saved_kind_cluster_is_restored
 run_test 'active site blocks cross-site activation' test_active_site_blocks_switch
@@ -1021,5 +1035,6 @@ run_test 'testing binding release derives the target user and keeps admin token 
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
 run_test 'SG testing CloudLadder and devtunnel allowlists stay aligned' test_intl_dynamic_route_allowlists_match
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
+run_test 'personal DevCloud billing proxy patches target the original Trade namespace' test_personal_dev_billing_proxy_patches_target_trade_namespace
 
 printf 'personal devcloud skill contract passed\n'
