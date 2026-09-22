@@ -35,8 +35,9 @@ capability；中央 testing Trade 使用其现有运行时 Secret 代签。此�
 
 - 只允许 `cn` 和 `intl` testing；脚本拒绝 production Auth origin。
 - UIN 只来自当前 testing 登录会话的 active shadow binding，客户端不能提交或覆盖。
-- 国内、国际只提交回调端口和 TTL；来源 IP 由 Auth 从可信代理链确认。国际经 NAT 时，注册响应的
-  `targetIp` 是服务端观测到的来源 IP，不要求等于浏览器访问的 DevCloud IP。
+- 国内提交脚本发现并校验过的 DevCloud `9/8` 或 `21/8` 地址、回调端口和 TTL；这是因为北京公网
+  Gateway 之后的代理链无法稳定保留开发机源地址。国际只提交端口和 TTL，经 NAT 时注册响应的
+  `targetIp` 以服务端观测值为准，不要求等于浏览器访问的 DevCloud IP。
 - `up/register` 不读取或下发共享 HMAC、AppSecret、SOPS、age identity、`DEVTUNNEL_TOKEN` 或共享
   Kubernetes Secret。capability 只注入个人 kind 的 `trade-runtime-secrets`，不写入 `state.json`、
   日志、回复、测试报告或 Git。
@@ -90,6 +91,11 @@ PERSONAL_DEV_SITE=intl \
 国内站改为 `PERSONAL_DEV_SITE=cn`。`up` 会完成工具检查/安装、个人 kind 集群、完整 localstack、
 testing 登录、本地身份对齐、动态回调注册、短期 capability 注入、个人 Trade 滚动及续租进程。
 
+`PERSONAL_DEV_EMAIL/PERSONAL_DEV_PASSWORD` 只表示中央 testing 账号；本地 Auth 身份使用独立的
+`PERSONAL_DEV_LOCAL_EMAIL/PERSONAL_DEV_LOCAL_PASSWORD`，通常无需设置并由脚本随机生成。两组凭据分别
+保存在私有 `state.json` 的 `central_*` 与 `local_*` 字段，不能互相覆盖。已有中央账号的 session 失效后，
+必须用该账号的 session 或登录凭据续签；脚本不会静默新建另一个国际账号。
+
 中央 testing 用户与个人环境用户是两个不同的 `user_id`：中央用户持有真实 testing shadow binding；
 个人用户只承载本地浏览器 session。`up/register` 把中央 binding 的
 `shadow_user_name / uin / owner_uin / app_id` 写入个人 Auth，并在私有 `state.json` 记录
@@ -118,9 +124,10 @@ PERSONAL_DEV_SITE=intl bash .agents/skills/personal-devcloud-environment/scripts
 `verify-order-no-pay` 只验证询价和创建 `pending_pay` 订单；因为没有支付，所以不期待、也不宣称收到
 计费 `checkCreate` 或发货回调。`verify-checkmodify-no-pay` 会明确失败，防止把普通下单误报成升配覆盖。
 
-`status` 会用个人 Trade Secret 中的 capability 向中央 Auth 发一个必然被业务策略拒绝的探针：
+`status` 会用个人 Trade Secret 中的 capability 向中央 Auth 发一个无计费副作用的 readiness 探针：
 
-- `403`：capability 有效，但探针接口不在 allowlist；请求不会到达中央 Trade/Jifei。
+- `200` + `{"code":"OK","message":"ready"}`：capability 有效，且请求已穿透中央 Auth 与中央 Trade；
+  Trade 在调用 Jifei/CloudAPI 前终止探针。
 - `401`：capability 已过期、撤销或被续租轮换；重新执行 `register`。
 - 其他状态：中央 proxy、网络或配置异常，不能宣称计费链路已通。
 
@@ -138,6 +145,12 @@ PERSONAL_DEV_SITE=intl bash .agents/skills/personal-devcloud-environment/scripts
 
 真实 paid-E2E 不是 `up` 的默认副作用；不要自动创建付费订单或退款。只有用户明确要求真实测试时才执行，
 并优先使用新订单，不尝试恢复余额不足或状态不明的历史订单。
+
+支付、退款和销毁请求都按“最多提交一次”处理。客户端超时、`502/504`、`Empty reply` 或 port-forward
+重连不等于上游没有受理：先按 transaction/event/deal 查询 Trade 日志，再查 `trade_order`、
+`trade_flow`、CTL Pass/Task/实例终态。只有同时证明计费未生成订单/Flow、业务库未落单且回调未到达时，
+才能创建一笔**新**请求；禁止重放原请求。testing 的 `order-and-pay` 曾在客户端收到超时后继续收到
+`checkCreate/createResource` 并生成 active Pass，这类情况必须按已支付成功收敛，不能再次扣费。
 
 ## 切站与清理
 
@@ -160,6 +173,10 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 - `personal_dev_uin_mismatch`：请求 UIN 与 active binding 不一致；修复 testing binding，禁止改 header 绕过。
 - `PersonalDevBillingProxyFailed`：中央 Trade 代签/转发失败；用 transaction ID 查 CloudLadder/计费流水。
 - registration 若缺 capability 或本机 devtunnel-agent 启动失败，脚本会立即 DELETE 注册并 fail closed。
+- Linux localstack 由 supervisor 自动重建失效的 `kubectl port-forward`。Pod rollout 的重连窗口内，单个
+  请求仍可能失败；查看对应 `localstack/logs/<name>.log`，按上面的“先查终态、禁止盲重试”规则处理。
+- 多目标变配询价应并行返回并保持服务端策略顺序；当前 CTL 单目标预算 20 秒，Service Gateway
+  `ctl-passes` 上游预算 30 秒。任一目标询价失败时整条请求失败，不能把临时故障展示成“无可升级套餐”。
 - `target_ip_not_allowed`：Auth 观测到的来源 IP 未进入对应 testing allowlist；核对服务端观测值，不要把
   页面 IP 或整段公网 CIDR 盲目放开。
 - 验收以 `status`、相关业务终态、CloudLadder 审计、本机 agent 日志和

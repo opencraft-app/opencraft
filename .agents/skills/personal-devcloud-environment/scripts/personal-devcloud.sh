@@ -331,29 +331,20 @@ verify_billing_capability() {
   capability="$(current_billing_capability)"
   status_code="$(billing_capability_probe_status "$capability" || true)"
   unset capability
-  [[ "$status_code" == "403" ]]
+  [[ "$status_code" == "200" ]]
 }
 
 billing_capability_probe_status() {
-  local capability="$1" uin body config_file status_code
-  uin="$(state_get uin)"
-  [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ && "$uin" =~ ^[1-9][0-9]*$ ]] \
+  local capability="$1" config_file status_code
+  [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ ]] \
     || return 1
-  new_private_temp billing-capability-probe-body
-  body="$TEMP_FILE_RESULT"
-  python3 - "$body" "$uin" <<'PY'
-import json, sys
-path, uin = sys.argv[1:]
-with open(path, "w", encoding="utf-8") as output:
-    json.dump({"interface": {"interfaceName": "qcloud.Deal.OnlineRefund", "extraPara": {"ownerUin": uin}, "para": {"uin": uin}}}, output, separators=(",", ":"))
-PY
   new_private_temp billing-capability-probe-config
   config_file="$TEMP_FILE_RESULT"
   printf 'header = "X-LightVela-Developer-Capability: %s"\n' "$capability" >"$config_file"
   status_code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-    --config "$config_file" -H 'Content-Type: application/json' --data-binary "@$body" \
-    "$AUTH_BASE/auth/dev-environments/billing-proxy/jifei/resource-center/interface" || true)"
-  remove_private_temp "$body"
+    --request POST --config "$config_file" -H 'X-TC-Action: DescribeOrderList' \
+    -H 'Authorization: LightVela-Readiness-Probe' \
+    "$AUTH_BASE/auth/dev-environments/billing-proxy/cloudapi/?Action=DescribeOrderList" || true)"
   remove_private_temp "$config_file"
   unset capability
   printf '%s\n' "$status_code"
@@ -521,7 +512,7 @@ download_binary() {
 ensure_tools() {
   prepare_state
   local dependency
-  for dependency in curl docker python3 tar git nohup base64 awk rg; do
+  for dependency in curl docker python3 tar git nohup base64 awk; do
     require_command "$dependency"
   done
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
@@ -661,6 +652,7 @@ require_personal_context() {
 }
 
 doctor() {
+  prepare_state
   local dependency
   for dependency in curl docker python3 tar git nohup base64 awk; do
     require_command "$dependency"
@@ -718,10 +710,6 @@ clear_legacy_runtime_overrides() {
 }
 
 generate_password() {
-  if [[ -n "${PERSONAL_DEV_PASSWORD:-}" ]]; then
-    printf '%s\n' "$PERSONAL_DEV_PASSWORD"
-    return
-  fi
   python3 - <<'PY'
 import secrets
 print('Lv!' + secrets.token_urlsafe(18))
@@ -729,29 +717,36 @@ PY
 }
 
 prepare_local_credentials() {
-  LOCAL_IDENTITY_EMAIL="${PERSONAL_DEV_EMAIL:-$(state_get email)}"
-  LOCAL_IDENTITY_PASSWORD="${PERSONAL_DEV_PASSWORD:-$(state_get password)}"
+  local legacy_email legacy_password
+  LOCAL_IDENTITY_EMAIL="${PERSONAL_DEV_LOCAL_EMAIL:-$(state_get local_email)}"
+  LOCAL_IDENTITY_PASSWORD="${PERSONAL_DEV_LOCAL_PASSWORD:-$(state_get local_password)}"
+  legacy_email="$(state_get email)"
+  legacy_password="$(state_get password)"
+  if [[ -z "$LOCAL_IDENTITY_EMAIL" && "$legacy_email" == lv-local-*"@example.com" ]]; then
+    LOCAL_IDENTITY_EMAIL="$legacy_email"
+    LOCAL_IDENTITY_PASSWORD="${LOCAL_IDENTITY_PASSWORD:-$legacy_password}"
+  fi
   if [[ -z "$LOCAL_IDENTITY_EMAIL" ]]; then
     LOCAL_IDENTITY_EMAIL="lv-local-$(hostname -s | tr -cd 'A-Za-z0-9-' | tr '[:upper:]' '[:lower:]')-$(date +%s)@example.com"
   fi
   if [[ -z "$LOCAL_IDENTITY_PASSWORD" ]]; then
     LOCAL_IDENTITY_PASSWORD="$(generate_password)"
   fi
-  state_set email "$LOCAL_IDENTITY_EMAIL"
-  state_set password "$LOCAL_IDENTITY_PASSWORD"
+  state_set local_email "$LOCAL_IDENTITY_EMAIL"
+  state_set local_password "$LOCAL_IDENTITY_PASSWORD"
 }
 
 central_session() {
-  local token email password body response
+  local token email password body response legacy_email legacy_password create_account=0
   token="${PERSONAL_DEV_SESSION_TOKEN:-$(state_get central_session_token)}"
   if [[ -n "$token" ]]; then
     if curl_with_token "$token" "$AUTH_BASE/auth/shadow/binding" >/dev/null 2>&1; then
       persist_endpoint_config
       if [[ -n "${PERSONAL_DEV_EMAIL:-}" ]]; then
-        state_set email "$PERSONAL_DEV_EMAIL"
+        state_set central_email "$PERSONAL_DEV_EMAIL"
       fi
       if [[ -n "${PERSONAL_DEV_PASSWORD:-}" ]]; then
-        state_set password "$PERSONAL_DEV_PASSWORD"
+        state_set central_password "$PERSONAL_DEV_PASSWORD"
       fi
       state_set central_session_token "$token"
       printf '%s\n' "$token"
@@ -759,18 +754,31 @@ central_session() {
     fi
   fi
 
-  email="${PERSONAL_DEV_EMAIL:-$(state_get email)}"
-  password="${PERSONAL_DEV_PASSWORD:-$(state_get password)}"
+  email="${PERSONAL_DEV_EMAIL:-$(state_get central_email)}"
+  password="${PERSONAL_DEV_PASSWORD:-$(state_get central_password)}"
+  legacy_email="$(state_get email)"
+  legacy_password="$(state_get password)"
+  if [[ -z "$email" && -n "$legacy_email" && "$legacy_email" != lv-local-*"@example.com" ]]; then
+    email="$legacy_email"
+    password="${password:-$legacy_password}"
+  fi
   if [[ -z "$email" && "$SITE" == "intl" ]]; then
+    if [[ -n "$(state_get central_user_id)" || -n "$(state_get uin)" ]]; then
+      die "central testing session expired; provide PERSONAL_DEV_SESSION_TOKEN or PERSONAL_DEV_EMAIL/PERSONAL_DEV_PASSWORD for the existing account"
+    fi
     email="lv-dev-$(hostname -s | tr -cd 'A-Za-z0-9-' | tr '[:upper:]' '[:lower:]')-$(date +%s)@example.com"
+    create_account=1
   fi
   [[ -n "$email" ]] || die "CN requires PERSONAL_DEV_EMAIL/PERSONAL_DEV_PASSWORD or PERSONAL_DEV_SESSION_TOKEN for a pre-provisioned real-name test account"
-  [[ -n "$password" ]] || password="$(generate_password)"
+  if [[ "$create_account" == "1" ]]; then
+    password="${PERSONAL_DEV_PASSWORD:-$(generate_password)}"
+  fi
+  [[ -n "$password" ]] || die "central testing login requires PERSONAL_DEV_PASSWORD or a reusable PERSONAL_DEV_SESSION_TOKEN"
 
   new_private_temp signup
   body="$TEMP_FILE_RESULT"
   json_body_file "$body" "name=devcloud-$(hostname -s)" "email=$email" "password=$password" # pragma: allowlist secret
-  if [[ "$SITE" == "intl" && -z "${PERSONAL_DEV_EMAIL:-}" && -z "$(state_get email)" ]]; then
+  if [[ "$create_account" == "1" ]]; then
     if ! response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 90 \
       -H 'Content-Type: application/json' --data-binary "@$body" "$AUTH_BASE/auth/password/sign-up")"; then
       remove_private_temp "$body"
@@ -787,8 +795,8 @@ central_session() {
   token="$(printf '%s' "$response" | json_value 'd["session"]["sessionToken"]')"
   [[ -n "$token" ]] || die "central auth did not return a session token"
   persist_endpoint_config
-  state_set email "$email"
-  state_set password "$password"
+  state_set central_email "$email"
+  state_set central_password "$password"
   state_set central_session_token "$token"
   printf '%s\n' "$token"
 }
@@ -1286,7 +1294,11 @@ register_route() {
   fi
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" >/dev/null \
     || die "local trade callback is not healthy on port $CALLBACK_PORT"
-  registration_body="{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
+  if [[ "$SITE" == "cn" ]]; then
+    registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
+  else
+    registration_body="{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
+  fi
   new_private_temp registration-request-error
   request_error="$TEMP_FILE_RESULT"
   if ! response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
