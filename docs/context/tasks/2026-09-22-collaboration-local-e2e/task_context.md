@@ -138,5 +138,6 @@ Collaboration Workspace，不再被内部上游的重复 CORS 或本地启动配
 
 ## handoff
 
-- 源码和本地验证完成；尚未提交、推送、创建 MR 或发布。真实成功态必须在 Gateway 新镜像完成
-  GitOps/Argo 收敛后，用同一已登录本地 OpenCraft 输入序列复验 Server/IM session。
+- 源码和本地验证已提交并推送到 `fix/collaboration-local-e2e`，MR !4402 等待评审；尚未合入或发布。
+  真实成功态必须在 Gateway 新镜像完成 GitOps/Argo 收敛后，用同一已登录本地 OpenCraft 输入序列
+  复验 Server/IM session。
