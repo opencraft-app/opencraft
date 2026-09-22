@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "3df79dfd6038407f346aaf067ee6a0cf9a892ba2",
+  "sourceRevision": "30e79ec42780487a307663d23546ad83320109fb",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "file": "domain/credit-pack.ts",
-      "sourceSha256": "a6ed1e13a136510c85e1a196c8d36e738d1eb106f7d7de7bb1d7fdf381399c72"
+      "sourceSha256": "f78799980163d794dc23b4da1511efcfa2545d65635566b55642006eed277aaa"
     },
     {
       "file": "domain/instance-bot-errors.ts",
@@ -141,7 +141,7 @@
     },
     {
       "file": "lib/auth-api-base.ts",
-      "sourceSha256": "01852a927e270f4590705fc62e010af2d1115444d5803139473721b8d1d6569f"
+      "sourceSha256": "c154dae2a964529ca0743bc6dd714e6093d0a7b51af1e39e7227d8c83125c2f6"
     },
     {
       "file": "lib/cookie-consent.ts",
@@ -513,7 +513,7 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "57fe74f723430e1119c063b8ba9e5d5663095749835c77ce4b720b1aacf32076"
+      "sourceSha256": "27803c9f587321363ab1540d8d6499424409abe5d3854a45414adbff3ba48232"
     },
     {
       "file": "repositories/types.ts",

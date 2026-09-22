@@ -3,7 +3,6 @@ interface ImportMetaEnv {
   readonly PROD?: boolean;
   readonly VITE_REGION?: "cn" | "global";
   readonly VITE_AUTH_API_BASE_URL?: string;
-  readonly VITE_SUPPORT_ADMIN_API_BASE_URL?: string;
   readonly VITE_PAID_BILLING_ENABLED?: string;
   readonly VITE_ZERO_TOKEN_AUTOMATIONS_ENABLED?: string;
   readonly VITE_MULTI_BOT_ENABLED?: string;

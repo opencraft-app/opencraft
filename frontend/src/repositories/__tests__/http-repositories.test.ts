@@ -2225,19 +2225,6 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it("exposes only GitHub OAuth when the auth backend is the KR sandbox", () => {
-    stubHostname("intl-remove-credit-pack-support-note.preview.lightclaw.tech");
-
-    const repositories = createHttpRepositories("https://api-sandbox-kr-1.lightclaw.tech");
-
-    expect(repositories.auth.getOAuthStartUrl("google")).toBeNull();
-    expectOAuthStartURL(
-      repositories.auth.getOAuthStartUrl("github"),
-      "https://api-sandbox-kr-1.lightclaw.tech/auth/oauth/github/start",
-      "https://intl-remove-credit-pack-support-note.preview.lightclaw.tech/auth/sign-in",
-    );
-  });
-
   it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
     stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
