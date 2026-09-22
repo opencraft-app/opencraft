@@ -7,7 +7,7 @@
  *   - POST /v1/credit/inquiry    询价
  *   - GET  /v1/credit/packages   用户积分包
  *
- * 本期为「前端 UI + 询价」范围，不接入下单与支付。
+ * 前端使用该模型承载积分包询价、下单、支付和到账状态确认。
  */
 
 /** 站点币种：国内站 CNY，国际站 USD。 */
@@ -30,9 +30,11 @@ export interface CreditProduct {
 /** 询价结果（trade/internal/logic/creditorder/service.go:64-75 透传）。 */
 export interface CreditQuote {
   product_id: string;
-  /** 折后应付金额（元 / 美元，字符串避免浮点误差） */
+  /** 积分包价格，单位为最小货币单位（分），字符串避免浮点误差。 */
+  price: string;
+  /** 含税实付总价，单位为最小货币单位（分），字符串避免浮点误差。 */
   real_total_cost: string;
-  /** 原价 */
+  /** 原价，单位为最小货币单位（分）。 */
   total_cost: string;
   currency: CreditCurrency;
 }
@@ -134,6 +136,27 @@ export const CREDIT_PACK_DENOMINATIONS: readonly CreditPackDenomination[] = [
   { product_id: "credit_8000", credit_total: 8000 },
   { product_id: "credit_12000", credit_total: 12000 },
 ] as const;
+
+/** 产品确认的积分包固定标价，金额均为最小货币单位。 */
+export interface CreditPackPrice {
+  product_id: string;
+  cnCents: string;
+  globalCents: string;
+}
+
+export const CREDIT_PACK_PRICES: readonly CreditPackPrice[] = [
+  { product_id: "credit_1000", cnCents: "1200", globalCents: "180" },
+  { product_id: "credit_2000", cnCents: "2400", globalCents: "360" },
+  { product_id: "credit_4000", cnCents: "4500", globalCents: "650" },
+  { product_id: "credit_8000", cnCents: "9000", globalCents: "1300" },
+  { product_id: "credit_12000", cnCents: "13500", globalCents: "2000" },
+] as const;
+
+export const getCreditPackPrice = (productId: string, currency: CreditCurrency): string | null => {
+  const price = CREDIT_PACK_PRICES.find((item) => item.product_id === productId);
+  if (!price) return null;
+  return currency === "USD" ? price.globalCents : price.cnCents;
+};
 
 /** 积分来源类型：套餐积分、活动赠送积分或付费积分包。 */
 export type CreditSourceType = "plan" | "free_credit" | "paid_pack";
