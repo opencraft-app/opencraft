@@ -107,3 +107,11 @@
 - 当前：文案、布局和回归测试已完成，本地改动尚未提交或推送。
 - 下一步：等待用户确认视觉方向后提交 MR；若需要目标弹窗截图，需在已登录 Chrome 中授权本地代理映射。
 - 阻塞：localhost 无法复用国际站登录态，仅阻塞目标弹窗的浏览器截图，不阻塞源码与构建验证。
+
+## MR 提交 checkpoint（2026-09-22）
+
+- 用户已明确授权提交 MR。源码提交 `8425028ed` 后合并最新 `origin/master@7595dcaeb`，没有文本冲突；相对最新 master 的变更仍限定为本任务 14 个文件。
+- 合并后聚焦回归 4 个文件共 50 项通过；唯一失败为 master 既有的 16 篇定时任务 use-case 缺少摘要标题，本任务新增页面的摘要、链接与语言结构检查均通过。
+- 合并后 `pnpm check` 通过：TypeScript 171 current / 171 baseline / 0 new，i18n 结构错误 0；`pnpm build:global` 通过，654/654 个静态页面生成，42 条公开路由 SEO 检查通过。
+- 文档完整性检查 errors 0、broken links 0、warnings 0；构建产生的字体子集噪声已恢复，工作树干净。
+- 下一步：推送 `codex/global-bot-create-copy-layout` 并创建指向 `master` 的 MR；不执行合并或发布。
