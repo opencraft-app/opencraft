@@ -111,10 +111,7 @@ func (s *Server) inquiry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	userID, ok := requireUserID(w, r)
-	if !ok {
-		return
-	}
+	userID := strings.TrimSpace(r.Header.Get("X-User-Id"))
 	var body userOrderRequest
 	if !decodeJSON(w, r, &body) {
 		return

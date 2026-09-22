@@ -78,6 +78,10 @@
 - `GET /v1/credit/packages`
 - `POST /v1/credit/packages/{package_id}/refund`
 
+`POST /v1/credit/inquiry` 支持可选登录态：已登录时透传可信 `X-User-Id` 并优先使用用户自己的
+影子账号；未登录或用户尚未绑定影子账号时，Trade 仅在询价链路使用环境配置的
+`TRADE_INQUIRY_FALLBACK_UIN/APP_ID`。该兜底不得用于下单，下单相关接口仍必须校验用户身份。
+
 `order` 返回 Trade 的 `bigOrderId/dealName` 和 `auth_code`。ticket 由 Credit 自己的 Redis store
 保存，绑定 `user_id + deal_name`，默认 10 分钟过期；消费使用 Lua `GET + DEL` 保证多 Pod 下
 严格一次性。签发失败不回滚已经创建的 Trade 订单，返回空 `auth_code`，登录态链路仍可继续。
