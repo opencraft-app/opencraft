@@ -28,13 +28,15 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/renewresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/resourcequery"
 	"git.woa.com/wisp/mono/trade/internal/logic/transferresource"
+	"git.woa.com/wisp/mono/trade/internal/personaldevbilling"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
 // ServerConfig 是 NewRouter 的输入参数。
 type ServerConfig struct {
 	// InternalServiceToken 用于校验 ctl → trade 内部接口调用方身份。
-	InternalServiceToken string
+	InternalServiceToken    string
+	PersonalDevBillingProxy *personaldevbilling.Proxy
 
 	// JifeiComponentName / JifeiProtocolVersion / JifeiOurInterfacePrefix 是
 	// jifei callback dispatcher（Q60）+ 出口 framework builder（Q58）的协议层配置；
@@ -314,14 +316,15 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 	if cfg.InquiryService != nil && cfg.PlaceOrderService != nil {
 		provisionedOrderStore, _ := cfg.OrderStore.(store.ProvisionedCreateOrderStore)
 		internalapi.Install(router, internalapi.Deps{
-			InternalServiceToken:  cfg.InternalServiceToken,
-			Inquiry:               cfg.InquiryService,
-			PlaceOrder:            cfg.PlaceOrderService,
-			CreditOrder:           cfg.CreditOrderService,
-			CreditUsage:           cfg.CreditUsageService,
-			CreditDefinitionStore: cfg.CreditDefinitionStore,
-			FlowStore:             cfg.FlowStore,
-			OrderUpdater:          cfg.OrderUpdater,
+			InternalServiceToken:    cfg.InternalServiceToken,
+			PersonalDevBillingProxy: cfg.PersonalDevBillingProxy,
+			Inquiry:                 cfg.InquiryService,
+			PlaceOrder:              cfg.PlaceOrderService,
+			CreditOrder:             cfg.CreditOrderService,
+			CreditUsage:             cfg.CreditUsageService,
+			CreditDefinitionStore:   cfg.CreditDefinitionStore,
+			FlowStore:               cfg.FlowStore,
+			OrderUpdater:            cfg.OrderUpdater,
 			// D-2 销毁链路用户主动入口（设计稿 §3.5 + §11-A Q26）：BundleStore + JifeiClient
 			// 任一 nil 时 internalapi 不挂载 /internal/trade/resources/:resourceID/delete 路由。
 			BundleStore: cfg.BundleStore,

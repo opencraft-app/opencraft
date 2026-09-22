@@ -241,17 +241,20 @@ test_intl_registration_starts_tunnel() (
   curl() { return 0; }
   curl_with_token() {
     printf '%s\n' "$*" >"$TEST_ROOT/intl-registration-request"
-    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"14.22.11.161","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","tunnelToken":"short-lived-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"14.22.11.161","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","tunnelToken":"lvdt1.450860000013.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","expiresAt":"2099-01-01T00:00:00Z"}'
   }
   ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/intl-tunnel-assignment"; }
+  install_billing_capability() { printf '%s\n' "$1" >"$TEST_ROOT/intl-billing-capability"; }
   register_route
-  assert_eq 'uin-450860000013.sg.tunnel.internal|short-lived-registration-token' \
+  assert_eq 'uin-450860000013.sg.tunnel.internal|lvdt1.450860000013.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
     "$(<"$TEST_ROOT/intl-tunnel-assignment")" "tunnel assignment passed to agent"
+  assert_eq 'lvdt1.450860000013.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+    "$(<"$TEST_ROOT/intl-billing-capability")" "billing capability installed"
   assert_eq 'active' "$(state_get registration_status)" "intl registration status"
   ! grep -q '"targetIp"' "$TEST_ROOT/intl-registration-request"
   ! grep -q '"uin"' "$TEST_ROOT/intl-registration-request"
   assert_eq '14.22.11.161' "$(state_get registration_target_ip)" "server-confirmed Intl NAT source IP"
-  ! grep -Eq 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
+  ! grep -Eq 'lvdt1\.450860000013|tunnelToken' "$STATE_FILE"
 )
 
 test_intl_registration_source_override_fails_closed_on_mismatch() (
@@ -365,17 +368,18 @@ test_cn_registration_requires_server_confirmed_devcloud_target() (
   curl() { return 0; }
   curl_with_token() {
     printf '%s\n' "$*" >"$TEST_ROOT/cn-registration-request"
-    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"short-lived-cn-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"lvdt1.450860000013.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","expiresAt":"2099-01-01T00:00:00Z"}'
   }
   ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/cn-tunnel-assignment"; }
+  install_billing_capability() { printf '%s\n' "$1" >"$TEST_ROOT/cn-billing-capability"; }
   register_route
   ! grep -q '"targetIp"' "$TEST_ROOT/cn-registration-request"
   ! grep -q '"uin"' "$TEST_ROOT/cn-registration-request"
-  assert_eq 'uin-450860000013.cn.tunnel.internal|short-lived-cn-registration-token' \
+  assert_eq 'uin-450860000013.cn.tunnel.internal|lvdt1.450860000013.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' \
     "$(<"$TEST_ROOT/cn-tunnel-assignment")" "CN tunnel assignment"
   assert_eq '9.134.214.121' "$(state_get registration_target_ip)" "CN registration target IP"
   assert_eq '18084' "$(state_get registration_port)" "CN registration port"
-  ! grep -Eq 'short-lived-cn-registration-token|tunnelToken' "$STATE_FILE"
+  ! grep -Eq 'lvdt1\.450860000013|tunnelToken' "$STATE_FILE"
 )
 
 test_registration_agent_failure_fails_closed() (
@@ -518,15 +522,88 @@ test_intl_status_accepts_server_confirmed_nat_source() (
   source "$SCRIPT"
   prepare_state
   state_set central_session_token 'session-token'
+  state_set uin '450860000013'
   require_personal_context() { :; }
   curl() { return 0; }
   curl_with_token() {
     printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"14.22.11.161","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","expiresAt":"2099-01-01T00:00:00Z"}'
   }
   kubectl() { return 0; }
+  verify_billing_capability() { return 0; }
   heartbeat_running() { return 0; }
   devtunnel_agent_running() { return 0; }
   status >/dev/null
+)
+
+test_billing_capability_rotates_without_state_persistence() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/billing-capability" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  local patch_count=0
+  kubectl() {
+    if [[ "$*" == patch\ secret\ trade-runtime-secrets* ]]; then
+      local previous='' arg patch_file=''
+      for arg in "$@"; do
+        if [[ "$previous" == '--patch-file' ]]; then
+          patch_file="$arg"
+          break
+        fi
+        previous="$arg"
+      done
+      [[ -n "$patch_file" && -f "$patch_file" ]] || fail "capability patch file was not provided"
+      patch_count=$((patch_count + 1))
+      cp "$patch_file" "$TEST_ROOT/billing-capability-patch-$patch_count.json"
+      return 0
+    fi
+    [[ "$*" == rollout\ restart\ deployment/trade\ -n\ trade || "$*" == rollout\ status\ deployment/trade\ -n\ trade\ --timeout=180s ]]
+  }
+  local first='lvdt1.450860000013.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+  local second='lvdt1.450860000013.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+  install_billing_capability "$first"
+  install_billing_capability "$second"
+  assert_eq '2' "$patch_count" "capability rotation patch count"
+  python3 - "$TEST_ROOT/billing-capability-patch-1.json" "$TEST_ROOT/billing-capability-patch-2.json" "$first" "$second" <<'PY'
+import base64, json, sys
+
+first_path, second_path, first, second = sys.argv[1:]
+def capability(path):
+    payload = json.load(open(path, encoding="utf-8"))
+    data = payload["data"]
+    assert base64.b64decode(data["PERSONAL_DEV_BILLING_PROXY_URL"]).decode().endswith("/auth/dev-environments/billing-proxy")
+    return base64.b64decode(data["PERSONAL_DEV_BILLING_CAPABILITY"]).decode()
+
+assert capability(first_path) == first
+assert capability(second_path) == second
+PY
+  ! grep -Fq "$first" "$STATE_FILE"
+  ! grep -Fq "$second" "$STATE_FILE"
+)
+
+test_unregister_requires_old_billing_capability_revocation() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/unregister-capability" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  state_set registration_status active
+  current_billing_capability() {
+    printf '%s\n' 'lvdt1.450860000013.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+  }
+  central_session() { printf '%s\n' 'session-token'; }
+  stop_heartbeat() { :; }
+  stop_devtunnel_agent() { :; }
+  curl_with_token() {
+    [[ " $* " == *' -X DELETE '* ]] || return 1
+    printf '%s\n' '{"uin":450860000013,"status":"disabled","expiresAt":"2026-09-22T12:00:00Z"}'
+  }
+  curl() {
+    [[ "$*" == *'/auth/dev-environments/billing-proxy/jifei/resource-center/interface'* ]] || return 1
+    printf 'revocation-probed\n' >"$TEST_ROOT/unregister-capability-probed"
+    printf '401'
+  }
+  unregister >/dev/null
+  [[ -s "$TEST_ROOT/unregister-capability-probed" ]] || fail "unregister did not verify capability revocation"
+  assert_eq 'disabled' "$(state_get registration_status)" "unregister state"
 )
 
 test_intl_active_registration_accepts_server_confirmed_nat_source() (
@@ -640,104 +717,7 @@ test_billing_apigw_rejects_non_testing_routes() {
   fi
 }
 
-test_paid_e2e_private_overrides_are_strict_and_reused() (
-  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/paid-e2e" PERSONAL_DEV_SITE=intl
-  local input="$TEST_ROOT/paid-e2e-input.env" first_hash second_hash
-  printf '%s\n' \
-    'JIFEI_BILLING_APP_ID=test-app-id' \
-    'JIFEI_BILLING_APP_SECRET=test-app-secret' \
-    'TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=test-hmac-secret' >"$input"
-  chmod 600 "$input"
-  export PERSONAL_DEV_PAID_E2E_SECRET_FILE="$input"
-  source "$SCRIPT"
-  prepare_state
-  prepare_paid_e2e_overrides
-
-  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/trade.env")" "trade override mode"
-  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env")" "cloudladder override mode"
-  grep -Fq 'JIFEI_BILLING_APP_ID=test-app-id' "$PAID_E2E_OVERRIDE_DIR/trade.env"
-  grep -Fq 'JIFEI_BILLING_APP_SECRET=test-app-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
-  grep -Fq 'TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
-  grep -Fq 'CLOUDLADDER_TRADE_HMAC_SECRET=test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env"
-  ! grep -Fq 'test-app-secret' "$STATE_FILE"
-  ! grep -Fq 'test-hmac-secret' "$STATE_FILE"
-
-  first_hash="$(python3 - "$PAID_E2E_OVERRIDE_DIR/trade.env" "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env" <<'PY'
-import hashlib, pathlib, sys
-digest = hashlib.sha256()
-for path in sys.argv[1:]:
-    digest.update(pathlib.Path(path).read_bytes())
-print(digest.hexdigest())
-PY
-)"
-  unset PERSONAL_DEV_PAID_E2E_SECRET_FILE
-  prepare_paid_e2e_overrides
-  second_hash="$(python3 - "$PAID_E2E_OVERRIDE_DIR/trade.env" "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env" <<'PY'
-import hashlib, pathlib, sys
-digest = hashlib.sha256()
-for path in sys.argv[1:]:
-    digest.update(pathlib.Path(path).read_bytes())
-print(digest.hexdigest())
-PY
-)"
-  assert_eq "$first_hash" "$second_hash" "paid-E2E overrides survive a later up without the source file"
-
-  chmod 644 "$input"
-  if PERSONAL_DEV_STATE_DIR="$PERSONAL_DEV_STATE_DIR" \
-    PERSONAL_DEV_SITE=intl \
-    PERSONAL_DEV_PAID_E2E_SECRET_FILE="$input" \
-    bash -c 'source "$1"; prepare_state; prepare_paid_e2e_overrides' bash "$SCRIPT" >/dev/null 2>&1; then
-    fail "world-readable paid-E2E input was accepted"
-  fi
-)
-
-assert_paid_e2e_sops_import() (
-  local site="$1" expected_trade_source="$2" expected_gateway_source="$3"
-  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/paid-e2e-sops-$site" PERSONAL_DEV_SITE="$site"
-  local calls="$TEST_ROOT/paid-e2e-sops-$site.calls"
-  local output="$TEST_ROOT/paid-e2e-sops-$site.output"
-  source "$SCRIPT"
-  sops() {
-    [[ "$1" == "--decrypt" && "$2" == "--extract" && -n "$3" && -n "$4" ]] \
-      || return 2
-    printf '%s|%s\n' "$3" "$4" >>"$calls"
-    case "$3" in
-      *JIFEI_BILLING_APP_ID*) printf '%s\n' 'authorized-test-app-id' ;;
-      *JIFEI_BILLING_APP_SECRET*) printf '%s\n' 'authorized-test-app-secret' ;;
-      *CLOUDLADDER_PAYMENT_HMAC_SECRET*) printf '%s\n' 'authorized-test-hmac-secret' ;;
-      *) return 3 ;;
-    esac
-  }
-
-  prepare_paid_e2e_from_sops >"$output" 2>&1
-
-  grep -Fq "$expected_trade_source" "$calls"
-  grep -Fq "$expected_gateway_source" "$calls"
-  ! grep -Eq '/(shprod|sgprod|beijing-sandbox|sandbox-jp-1)/' "$calls"
-  grep -Fq 'JIFEI_BILLING_APP_ID=authorized-test-app-id' "$PAID_E2E_OVERRIDE_DIR/trade.env"
-  grep -Fq 'JIFEI_BILLING_APP_SECRET=authorized-test-app-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
-  grep -Fq 'TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=authorized-test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
-  grep -Fq 'CLOUDLADDER_TRADE_HMAC_SECRET=authorized-test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env"
-  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/trade.env")" "SOPS trade override mode"
-  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env")" "SOPS CloudLadder override mode"
-  ! grep -Fq 'authorized-test-app-secret' "$output"
-  ! grep -Fq 'authorized-test-hmac-secret' "$output"
-  ! grep -Fq 'authorized-test-app-secret' "$STATE_FILE"
-  ! grep -Fq 'authorized-test-hmac-secret' "$STATE_FILE"
-)
-
-test_paid_e2e_sops_import_is_site_scoped_and_private() {
-  assert_paid_e2e_sops_import \
-    cn \
-    "$REPO_ROOT/argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml" \
-    "$REPO_ROOT/argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml"
-  assert_paid_e2e_sops_import \
-    intl \
-    "$REPO_ROOT/argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml" \
-    "$REPO_ROOT/argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml"
-}
-
-test_prerequisites_document_account_balance_binding_and_secrets() {
+test_prerequisites_document_account_balance_binding_and_capability() {
   local cn_output intl_output
   cn_output="$(PERSONAL_DEV_SITE=cn bash -c 'source "$1"; prerequisites' bash "$SCRIPT")"
   intl_output="$(PERSONAL_DEV_SITE=intl bash -c 'source "$1"; prerequisites' bash "$SCRIPT")"
@@ -746,7 +726,8 @@ test_prerequisites_document_account_balance_binding_and_secrets() {
   grep -Fq '状态=正常' <<<"$cn_output"
   grep -Fq '/充值' <<<"$cn_output"
   grep -Fq 'DevCloud 测试绑定' <<<"$cn_output"
-  grep -Fq 'prepare-paid-e2e' <<<"$cn_output"
+  grep -Fq '短期 capability' <<<"$cn_output"
+  grep -Fq '不需要 SOPS' <<<"$cn_output"
   grep -Fq 'international=false' <<<"$cn_output"
   ! grep -Fq '/国际开户' <<<"$cn_output"
 
@@ -990,10 +971,8 @@ test_intl_dynamic_route_allowlists_match() {
 test_payment_and_production_guardrails() {
   ! grep -En 'place-and-pay|pay-url' "$SCRIPT"
   ! grep -En 'api\.lightvela\.(com|ai)|production|staging|kubectl.*sync|argocd/secrets/(shprod|sgprod|beijing-sandbox|sandbox-jp-1)' "$SCRIPT"
-  grep -Fq 'argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml' "$SCRIPT"
-  grep -Fq 'argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml' "$SCRIPT"
-  grep -Fq 'argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml' "$SCRIPT"
-  grep -Fq 'argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml' "$SCRIPT"
+  ! grep -Eq 'sops|JIFEI_BILLING_APP_SECRET|TRADE_BILLING_CLOUDLADDER_HMAC_SECRET|PERSONAL_DEV_PAID_E2E_SECRET_FILE' "$SCRIPT"
+  grep -Fq 'PERSONAL_DEV_BILLING_CAPABILITY' "$SCRIPT"
   grep -q 'verify-order-no-pay' "$SCRIPT"
   grep -q 'verify-checkmodify-no-pay' "$SCRIPT"
   grep -q 'checkModify verification is not implemented' "$SCRIPT"
@@ -1024,14 +1003,14 @@ run_test 'heartbeat stop interrupts a long sleep' test_stop_heartbeat_interrupts
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
 run_test 'Intl status accepts the server-confirmed NAT source IP' test_intl_status_accepts_server_confirmed_nat_source
+run_test 'billing capability rotates without state persistence' test_billing_capability_rotates_without_state_persistence
+run_test 'unregister verifies old billing capability revocation' test_unregister_requires_old_billing_capability_revocation
 run_test 'Intl active-registration guard accepts the server-confirmed NAT source IP' test_intl_active_registration_accepts_server_confirmed_nat_source
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure
 run_test 'gateway override reaches Trade runtime' test_gateway_override_reaches_trade_runtime
 run_test 'testing gateway migrates stale state and rejects production overrides' test_testing_gateway_migrates_stale_state_and_rejects_prod_override
 run_test 'Billing APIGW accepts only the testing route' test_billing_apigw_rejects_non_testing_routes
-run_test 'paid E2E overrides are private and survive rebuilds' test_paid_e2e_private_overrides_are_strict_and_reused
-run_test 'paid E2E SOPS import is site-scoped and private' test_paid_e2e_sops_import_is_site_scoped_and_private
-run_test 'prerequisites cover account, balance, binding, and secrets' test_prerequisites_document_account_balance_binding_and_secrets
+run_test 'prerequisites cover account, balance, binding, and capability' test_prerequisites_document_account_balance_binding_and_capability
 run_test 'runtime kustomize wrapper cannot become its own real binary' test_real_kustomize_rejects_runtime_wrapper_alias
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately

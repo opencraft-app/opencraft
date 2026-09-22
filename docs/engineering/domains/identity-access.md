@@ -147,6 +147,16 @@ Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route
 disabled tombstone，TTL 过期由消费者按 `renewed_at + ttl_seconds` 判定，二者都必须使 capability 和
 动态路由同时失效。registry 不可用、响应字段不合法或目标超出 DevCloud CIDR/端口约束时必须 fail closed。
 
+同一短期 capability 也可用于 sandbox-only 的个人计费代理，但它不是计费长期凭据。Auth 逐请求从
+capability 解析 UIN，重新读取 registry 并校验 digest、TTL、disabled 与 `delivery_mode=devtunnel`，
+然后只允许固定的 Jifei `ModifyResourceStatus` 和 Billing CloudAPI 支付动作。Jifei envelope 的
+`ownerUin/uin` 必须等于 registration UIN。CloudAPI 用户身份由绑定账号签发的短期 TC3 凭证负责；
+`X-Qcloud-User-Id` 是 testing 路由服务账号，不等于购买用户 UIN，个人客户端不得提交，只能由中央 Trade
+注入。客户端 capability 不转发给 Trade，Auth 改用既有内部 Bearer，并把个人 Trade 已生成的 TC3
+Authorization 放入内部专用 header。
+续租覆盖 digest 后旧 token 立即失效，注销后同一 token 必须返回 `401`；`403` 只能用于已验证 capability
+的业务 allowlist 拒绝探针。个人环境不得取得 Jifei AppSecret、CloudLadder HMAC 或中央内部 Bearer。
+
 生产和 staging 不启用 `PERSONAL_DEV_ROUTE_CONTROL_ENABLED` 或 developer route store；同名 HTTP 路由
 即使存在也只返回 disabled，不得降级到客户端自报身份或共享 Secret。验收至少覆盖无 session、非 active
 binding、伪造代理头、错误 HMAC、跨 UIN、注销和过期；任何日志与测试报告都不得包含 session、密码或

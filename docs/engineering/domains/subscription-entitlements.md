@@ -120,6 +120,13 @@ workload 可以通过环境变量开启动态注册。发布门禁必须直接�
 验证 route、caller、secret env 与 `18084` 端口契约，不能只验证 handler 代码，避免出现接口已发布但
 镜像配置未注册 caller 的运行时断层。
 
+个人 DevCloud 的 signed billing 出向不复制 testing 长期 Secret。个人 Trade 对
+`ModifyResourceStatus`、国际 `CreatePayUrl` 与 `DescribeOrderList` 保留原业务请求和 TC3 签名，但把请求
+交给 Auth capability proxy；Auth 校验 active UIN 后用内部 Bearer 转给同站点中央 testing Trade，中央
+Trade 再使用本环境 Jifei AppSecret 与 CloudLadder HMAC 代签。两层都必须使用静态 allowlist、固定 upstream
+和 UIN 二次校验，个人请求不能提交目标 URL、route ID 或其他接口。该代理只解决个人环境的签名能力；
+testing 账号开户和余额仍由受控账号工具负责，余额不足后必须新建订单，不能把旧 `pending` 单自动补付。
+
 `verify-order-no-pay` 只证明询价和 `pending_pay` 下单成功，不证明支付、计费回调、发货或权益终态。
 只有使用 testing mock 支付，并同时保存订单、真实回调和业务终态证据，才能宣称支付闭环；缺少任一
 层证据时必须明确停在哪一层。

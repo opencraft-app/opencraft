@@ -116,6 +116,7 @@ func (t *cloudLadderTransport) RoundTrip(req *http.Request) (*http.Response, err
 		out.ContentLength = int64(len(body))
 	}
 	out.Header = req.Header.Clone()
+	preserveTencentCloudHeaderCase(out.Header)
 	out.Header.Set(headerCloudLadderSignedHost, originalHost)
 	signCloudLadderHTTPHeaders(t.secret, out.Header, cloudLadderSignatureRequest{
 		caller:  t.caller,
@@ -126,6 +127,19 @@ func (t *cloudLadderTransport) RoundTrip(req *http.Request) (*http.Response, err
 		body:    body,
 	}, t.now())
 	return t.base.RoundTrip(out)
+}
+
+func preserveTencentCloudHeaderCase(headers http.Header) {
+	for _, name := range []string{"X-TC-Action", "X-TC-Version", "X-TC-Region", "X-TC-Timestamp", "X-TC-Token"} {
+		values := headers.Values(name)
+		if len(values) > 0 {
+			headers.Set(name, values[0])
+			for _, value := range values[1:] {
+				headers.Add(name, value)
+			}
+			headers[name] = append([]string(nil), values...)
+		}
+	}
 }
 
 func (t *cloudLadderTransport) rewriteURL(originalPath string, rawQuery string) *url.URL {

@@ -51,6 +51,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
+	"git.woa.com/wisp/mono/trade/internal/personaldevbilling"
 	"git.woa.com/wisp/mono/trade/internal/region"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
@@ -59,6 +60,10 @@ import (
 type Deps struct {
 	// InternalServiceToken 与 ctl ↔ ai-gateway / shadow 共用的内部服务间互信 token。
 	InternalServiceToken string
+
+	PersonalDevBillingProxy interface {
+		Forward(context.Context, string, string, string, string, http.Header, []byte) (*personaldevbilling.Response, error)
+	}
 
 	// Inquiry 提供询价业务能力。
 	Inquiry *inquiry.Service
@@ -157,6 +162,9 @@ func Install(router *gin.Engine, deps Deps) {
 
 	group := router.Group("/internal/trade")
 	group.Use(authMiddleware(deps.InternalServiceToken))
+	if deps.PersonalDevBillingProxy != nil {
+		group.POST("/personal-dev/billing-proxy/:kind/*path", personalDevBillingProxyHandler(deps.PersonalDevBillingProxy))
+	}
 
 	group.POST("/inquiry/batch", inquiryBatchHandler(deps.Inquiry))
 	group.POST("/inquiry/renew", inquiryRenewHandler(deps.Inquiry))

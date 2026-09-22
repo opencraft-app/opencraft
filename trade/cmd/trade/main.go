@@ -23,6 +23,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
+	"git.woa.com/wisp/mono/trade/internal/personaldevbilling"
 	"git.woa.com/wisp/mono/trade/internal/region"
 	"git.woa.com/wisp/mono/trade/internal/resourcebillingclient"
 	"git.woa.com/wisp/mono/trade/internal/shadowclient"
@@ -90,6 +91,8 @@ func main() {
 			BillingAppSecret:             cfg.JifeiBillingAppSecret,
 			CloudLadderHMACSecret:        cfg.CloudLadderHMACSecret,
 			BillingCloudLadderHMACSecret: cfg.BillingCloudAPICloudLadderHMACSecret,
+			PersonalDevBillingProxyURL:   cfg.PersonalDevBillingProxyURL,
+			PersonalDevBillingCapability: cfg.PersonalDevBillingCapability,
 			// v1.7.x 国际站接入 A3：出向 envelope.interface.extraPara 按 site 注入
 			// site / language（intl → site="2" language="en"；cn / 空 / 非法 → 不注入）。
 			SiteKind: cfg.SiteKind,
@@ -103,6 +106,10 @@ func main() {
 			Endpoint:      cfg.BillingCloudAPIEndpoint,
 			XQCloudUserID: cfg.BillingCloudAPIXQCloudUserID,
 			CloudLadder:   billingCloudLadderConfig(cfg),
+			PersonalDev: cloudbillingclient.PersonalDevProxyConfig{
+				BaseURL:    cfg.PersonalDevBillingProxyURL,
+				Capability: cfg.PersonalDevBillingCapability,
+			},
 		})
 		if billingErr != nil {
 			log.Printf("[billing-cloudapi] unavailable: %v", billingErr)
@@ -228,8 +235,29 @@ func main() {
 		JifeiClient: jifeiClient,
 	})
 
+	var personalDevBillingProxy *personaldevbilling.Proxy
+	if cfg.PersonalDevBillingProxyEnabled {
+		personalDevBillingProxy, err = personaldevbilling.New(personaldevbilling.Config{
+			JifeiURL:                  cfg.JifeiBillingAPIGWURL,
+			JifeiAppID:                cfg.JifeiBillingAppID,
+			JifeiAppSecret:            cfg.JifeiBillingAppSecret,
+			JifeiXQCloudUserID:        cfg.JifeiCGWXQCloudUserID,
+			JifeiCloudLadderSecret:    cfg.BillingCloudAPICloudLadderHMACSecret,
+			CloudAPIEndpoint:          cfg.BillingCloudAPIEndpoint,
+			CloudAPIGatewayURL:        cfg.BillingCloudAPICloudLadderGatewayURL,
+			CloudAPIRouteID:           cfg.BillingCloudAPICloudLadderRouteID,
+			CloudAPICloudLadderSecret: cfg.BillingCloudAPICloudLadderHMACSecret,
+			CloudAPIXQCloudUserID:     cfg.BillingCloudAPIXQCloudUserID,
+		})
+		if err != nil {
+			log.Fatalf("init personal DevCloud billing proxy: %v", err)
+		}
+		log.Printf("[personal-dev-billing-proxy] activated")
+	}
+
 	router := httpapi.NewRouter(httpapi.ServerConfig{
 		InternalServiceToken:    cfg.InternalServiceToken,
+		PersonalDevBillingProxy: personalDevBillingProxy,
 		JifeiComponentName:      cfg.JifeiComponentName,
 		JifeiProtocolVersion:    cfg.JifeiProtocolVersion,
 		JifeiOurInterfacePrefix: cfg.JifeiOurInterfacePrefix,
