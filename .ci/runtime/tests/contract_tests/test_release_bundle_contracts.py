@@ -112,6 +112,7 @@ PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/credit.yml",
     ".ci/lightclaw-auth.yml",
     ".ci/payment.yml",
+    ".ci/referral.yml",
     ".ci/sandbox.yml",
     ".ci/subscription.yml",
     ".ci/trade.yml",
@@ -1370,14 +1371,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 item = next(item for item in ssm["items"] if item["id"] == "credit-runtime-secrets")
                 self.assertEqual(set(item["required_keys"]), required_secret_keys)
 
-    def test_referral_pipeline_keeps_manual_release_and_environment_boundaries(self) -> None:
+    def test_referral_pipeline_uses_standard_prod_orchestration_and_environment_boundaries(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
-        self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
 
         manifest = load_manifest()
         referral = load_bundle(manifest, "referral", "beijing-sandbox")

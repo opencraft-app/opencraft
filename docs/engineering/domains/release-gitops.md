@@ -246,6 +246,9 @@ master 源码
 - Referral Attribution 运营重置依赖 schema `000003_attribution_reset_audit`、Referral API、CTL 精确免费积分撤销
   和 Admin Gateway `/admin/api/referral` 路由同时就绪。发布顺序必须是 migration → CTL → Referral → Admin Gateway；
   缺任一阶段时管理入口保持不可用，不能退化为直接 SQL 删除。
+- Referral 已纳入标准 `service-release` 生产编排。`master` 构建进入生产候选后，由 Referral 主流水线先对
+  `shprod` / `sgprod` 执行真实 schema 探测并创建相应 DB migration 子流水线，migration/readiness 通过后再创建
+  各环境 GitOps promote；生产审批和 Argo Sync 仍保持人工，不得绕过主流水线长期直接触发通用 migration。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
