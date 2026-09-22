@@ -1,3 +1,21 @@
+---
+id: task-persona-style-restore-20260920
+type: task
+scope: 人设页面视觉恢复并保留现有加载与编辑行为。
+triggers: ["人设页面", "人设样式", "persona style"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - frontend/src/pages/marketing/agent-buddy-panel.tsx
+  - frontend/src/pages/marketing/agent-buddy-views.tsx
+status: active
+reviewed_at: 2026-09-20
+review_due: 2026-12-20
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 # 人设原版视觉恢复
 
 ## goal
@@ -7,7 +25,8 @@
 - 不处理上一轮发现的全站加载问题，不改接口、权限、持久化、计费或导航。
 - 不覆盖或提交 DevCloud 规划，不创建 MR，不改生产环境。
 
-## requirement_refs / requirement_excerpt
+## requirement_ids / requirement_refs / requirement_excerpt
+- `persona-style-restore-20260920`
 - 当前对话：“人设这个页面，除了加载逻辑以外，重新回到原有的样式实现吧”。
 
 ## interface_refs / data_structure_refs
@@ -17,6 +36,7 @@
 ## history_context
 - current_design_refs: `frontend/src/pages/marketing/agent-buddy-README.md`
 - relevant_evolution: `222a2cc51` 引入 Agents 统一样式，`b921c559e` 合入 master。
+- superseded_refs: 无。
 - 视觉参照为已合入的 `f2a1ec32f`，仅恢复表现属性；禁止整文件覆盖历史功能。
 
 ## acceptance / validation

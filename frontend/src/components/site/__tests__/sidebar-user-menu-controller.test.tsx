@@ -20,7 +20,10 @@ vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => { mocks
 vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => { mocks.paidBilling(); return paidBilling; } }));
 vi.mock("@/contexts/session-context", () => ({ useSession: () => ({ session: { user: userId ? { id: userId, name: `Owner ${userId}`, email: `${userId}@example.com` } : null, currentSubscription }, signOut: mocks.signOut }) }));
 vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass: currentPass, modifyingPass, passUpgradeFailed: false, passesLoading: false, passesError: false, user: { plan: { name: "STALE PLAN SHOULD NOT LEAK" } } }) }));
-vi.mock("@/lib/app-navigation", () => ({ useAppNavigate: () => mocks.navigate }));
+vi.mock("@/lib/app-navigation", () => ({
+  useAppNavigate: () => mocks.navigate,
+  useAppSearchParams: () => [new URLSearchParams()],
+}));
 vi.mock("@/i18n/t", () => ({ useT: () => (text: string) => text }));
 const target = { target_bundle_id: "target", bundle: { bundle_id: "target" } };
 const host = () => window as Window & { show?: (...args: unknown[]) => unknown; hide?: () => void };

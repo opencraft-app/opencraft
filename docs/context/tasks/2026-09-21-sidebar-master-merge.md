@@ -1,3 +1,22 @@
+---
+id: task-sidebar-master-merge-20260921
+type: task
+scope: 合并 master 并保留侧栏账户命中区域与 Agent 组件样式。
+triggers: ["master merge", "sidebar merge", "冲突解决"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - frontend/src/components/site/sidebar-user-menu.tsx
+  - frontend/src/pages/marketing/agent-settings-page.tsx
+  - opencraft/scripts/sync-mono2-agent-console.mjs
+status: active
+reviewed_at: 2026-09-22
+review_due: 2026-12-22
+revision: 1.1.0
+precedence: task
+derived: false
+---
+
 ## goal
 将 `origin/master` 合入 `frontsandbox/agents-sidebar-account-hit-area`，保留该分支的 Agent/Account/Radix 组件样式与侧栏账号命中区域，并吸收 master 的菜单与近期业务修复。
 
@@ -14,7 +33,7 @@
 
 ## history_context
 - current_design_refs: `docs/engineering/domains/site-environment-routing.md`、`docs/engineering/domains/agent-gateway-runtime.md`、`opencraft/MONO2_MIGRATION.md`。
-- relevant_evolution: 本分支 HEAD `eb9f39d95`，待合入 master `440379e9c`；合并有 41 个冲突文件。
+- relevant_evolution: 本分支原提交为 `eb9f39d95`，合入时 master 基线为 `440379e9c`；按当前 `origin/master` 复算得到 26 个冲突路径。
 - superseded_refs: 无。
 
 ## acceptance
@@ -37,18 +56,19 @@
 | `docs/engineering/domains/site-environment-routing.md@HEAD`、`docs/engineering/domains/agent-gateway-runtime.md@HEAD` | 正式设计 | 国际站与共享 Agent Console 约束 |
 
 ## evidence
-- `git diff --name-only --diff-filter=U` 与 `git ls-files -u` 均为空；41 个冲突已逐一处理。
+- `git diff --name-only --diff-filter=U` 与 `git ls-files -u` 均为空；26 个冲突路径已逐一处理。
 - 合并头为 `origin/master` 的 `440379e9c749dfd193f913045e48cc8e2ccf0009`，当前索引包含双方合并结果。
-- `opencraft/npm run check:mono2-agent-console`：162 个 Agent Console 投影文件通过同步检查。
-- 聚焦 frontend 测试 5 个文件、312 项通过；`frontend/pnpm check` 与 `frontend/pnpm build` 通过。
-- `git diff --cached --check`、`python3 .agents/context/scripts/validate_change_impact.py --repo . --staged` 通过。
+- `opencraft/npm run check:mono2-agent-console`：162 个 Agent Console 投影文件通过同步检查；本次诊断视图变更已重新同步。
+- `frontend/pnpm check`：i18n、文档、MDX 与 TypeScript 检查通过；独立 `pnpm exec tsc --noEmit --pretty false --incremental false` 通过。侧栏聚焦测试 2 个文件、47 项通过。
+- OpenCraft 新增 5 个测试已接入 `test:extensions`；新增测试 27/27 通过，完整 `test:extensions` 206/206 通过。
+- `npm run sync:mono2-agent-console` / `check:mono2-agent-console`：162 个文件同步并通过检查。
 
 ## risks
 - 选取整个文件可能丢弃另一侧独有的行为；逐处检查后配套测试。
 - 生成副本可能漂移；从 frontend 真源重新同步并检查。
 
 ## validation
-- `cd frontend && pnpm check && pnpm test && pnpm build`
+- `cd frontend && pnpm check`; 聚焦 Vitest；OpenCraft `npm run check:mono2-agent-console` 与 `npm run test:extensions` 通过。全量 `frontend/pnpm test` 仍需在完整依赖环境中重跑并记录 master 基线。
 - `cd opencraft && npm run check:mono2-agent-console && npm run gate`
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`
 
@@ -62,21 +82,21 @@
 - 有界 `git diff --name-only --diff-filter=U`，41 项；未保存大范围扫描。
 
 ## handoff
-- 合并进行中，尚无 merge commit、push、MR。
+- 合并提交 `022d988b7` 已创建；当前修复改动尚未提交、push、MR。
 
 ## checkpoint
 ### stage
-- 合并冲突已解决，等待用户确认后创建 merge commit；commit、push、MR 尚未执行。
+- 合并冲突已解决；sidebar 入口恢复为 controller 分层并保持 click-only，AI 套餐模型入口已接入 controller。
 ### verified
 - 目标 worktree 为独立分支；`MERGE_HEAD` 指向 `440379e9c`；未解决冲突为 0。
 - 用户原有未暂存改动仍保留：侧栏账号菜单、账号积分模型；本次生成副本已按真源同步并纳入索引。Task Pack 已纳入本次合并索引。
-- 前端检查、构建、聚焦测试、OpenCraft 投影检查、change-impact 与 staged diff 检查已通过。
+- 前端检查、TypeScript、聚焦测试、OpenCraft 投影检查已通过；change-impact 需在本次正式设计文档更新后重跑。
 ### unverified
 - 全量 `frontend/pnpm test` 未通过，存在既有/生成内容失败、Vitest worker 超时及 Node OOM；不能以此宣称全量测试通过。
-- 未进行真实登录、远端 Host/模型链路或部署验证。
+- 未进行真实登录、远端 Host/模型链路、全量 frontend `pnpm test` 或部署验证。
 ### discard
 - 旧扫描结果；以本次索引和源码为准。
 ### restore
 - 目标路径与分支见本文 goal/history；生成层只能同步。
 ### next_action
-- 用户确认后先复核 `git diff --cached --stat` 与工作区分层，再创建 merge commit；之后按授权 push 并创建 target 为 `master` 的 MR。
+- 先暂存并提交当前修复与文档改动；之后按用户授权 push 并更新 target 为 `master` 的 MR。

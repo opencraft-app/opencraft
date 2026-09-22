@@ -234,8 +234,8 @@ test("scheduled tasks delegates controls and surfaces to the host theme", () => 
   assert.doesNotMatch(source, /const PANEL_CARD_STYLE[\s\S]*?background:\s*"#ffffff"/);
   assert.match(source, /<Button\s+onClick=\{requestCreate\}/);
   assert.match(source, /<Tabs value=\{activeView\} onValueChange=/);
-  assert.match(source, /<TabsList aria-label=\{t\("定时任务"\)\}/);
-  for (const value of ["created", "ended", "recent"]) assert.match(source, new RegExp(`<TabsTrigger[^>]*value="${value}"`));
+  assert.match(source, /<AgentTabsList variant="underline" aria-label=\{t\("定时任务"\)\}/);
+  for (const value of ["created", "ended", "recent"]) assert.match(source, new RegExp(`<AgentTabsTrigger[^>]*value="${value}"`));
   assert.match(segmentedSource, /"lv-segmented-control"/);
   assert.match(segmentedSource, /"lv-segmented-control__item"/);
   assert.match(css, /\.lv-segmented-control__item\[data-state="active"\]/);

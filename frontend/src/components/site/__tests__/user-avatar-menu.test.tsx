@@ -58,6 +58,9 @@ vi.mock("@/lib/region", () => ({
   get isGlobal() {
     return mockIsGlobal;
   },
+  get DEFAULT_LOCALE() {
+    return "zh-CN";
+  },
 }));
 
 const stubLocation = (hostname: string) => {
@@ -163,7 +166,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
-  it("opens the sidebar account menu on hover and still supports click", () => {
+  it("keeps the sidebar account menu click-only and preserves identity and account navigation", () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -184,28 +187,23 @@ describe("UserAvatarMenu", () => {
     const trigger = screen.getByRole("button", { name: "打开用户菜单" });
     expect(trigger).toHaveClass("lv-agent-account-trigger");
     expect(trigger).toHaveTextContent("海盐小猫");
-    expect(trigger).toHaveTextContent("cat@example.com");
+    expect(trigger).toHaveTextContent("套餐：launch");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("link", { name: "avatar" })).not.toBeInTheDocument();
 
     fireEvent.mouseEnter(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
 
+    fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(document.querySelector(".lw-user-avatar-menu")).toHaveClass(
-      "bottom-full",
-      "left-0",
-      "origin-bottom-left",
+    expect(screen.getByRole("dialog", { name: "账号管理" })).toHaveClass(
+      "lv-sidebar-user-menu",
+      "w-72",
     );
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
     fireEvent.mouseLeave(trigger.parentElement!);
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
-
-    fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
@@ -224,7 +222,7 @@ describe("UserAvatarMenu", () => {
     useOpenClaw.mockReturnValue({ activePass: null });
 
     const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
@@ -258,7 +256,7 @@ describe("UserAvatarMenu", () => {
         <UserAvatarMenu variant="sidebar" />
       </AppNavigationProvider>,
     );
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     const billingLink = screen.getByRole("link", { name: "套餐与费用" });
     const modelLink = screen.getByRole("link", { name: "模型" });
@@ -283,7 +281,7 @@ describe("UserAvatarMenu", () => {
     });
 
     render(<UserAvatarMenu variant="sidebar" />);
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
   });
@@ -306,7 +304,7 @@ describe("UserAvatarMenu", () => {
     });
 
     render(<UserAvatarMenu variant="sidebar" />);
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute(
       "href",
@@ -353,13 +351,13 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu showLanguageSwitcher variant="sidebar" />);
     const accountTrigger = screen.getByRole("button", { name: "打开用户菜单" });
-    fireEvent.mouseEnter(accountTrigger);
+    fireEvent.click(accountTrigger);
 
     const languageTrigger = screen.getByRole("button", { name: "语言" });
     expect(languageTrigger).toHaveAttribute("aria-haspopup", "dialog");
     expect(screen.queryByLabelText("International site languages")).not.toBeInTheDocument();
 
-    fireEvent.mouseEnter(languageTrigger);
+    fireEvent.click(languageTrigger);
 
     expect(screen.getByLabelText("International site languages")).toBeVisible();
     expect(document.querySelector('[data-lv-agent-language-menu="true"]')).toBeInTheDocument();
@@ -476,7 +474,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
   });
 
-  it("reveals the agents workbench menu item after show() on public hosts", () => {
+  it("reveals the agents workbench menu item after show() on public hosts", async () => {
     stubLocation("lightclaw.tech");
     useSession.mockReturnValue({
       session: {
@@ -507,7 +505,7 @@ describe("UserAvatarMenu", () => {
     view.unmount();
     render(<UserAvatarMenu />);
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
-    expect(screen.getByRole("link", { name: "工作台" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "工作台" })).toBeInTheDocument();
 
     act(() => {
       shown = (window as Window & { show?: () => boolean }).show?.();

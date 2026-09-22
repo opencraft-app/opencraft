@@ -980,7 +980,7 @@ const MemoryEntries = ({
   );
 };
 
-const MemoryPanel = ({
+export const MemoryPanel = ({
   status,
   snapshot,
   error,

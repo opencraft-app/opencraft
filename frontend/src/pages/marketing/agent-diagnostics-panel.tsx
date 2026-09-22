@@ -371,7 +371,7 @@ export function AgentDiagnosticsPanel({
         {commands.map((item) => (
           <DiagnosticLogView key={item.id}
             title={t("最近日志")} description={t("查询或导出 Hermes Agent 最近日志，辅助定位问题")}
-            command={item.command} status={states[item.id].status} output={states[item.id].output}
+            command={item.command} status={states[item.id].status} output={states[item.id].output} unavailableReason={unavailableProfileReason}
             exporting={exportingLogs} since={logsSince}
             options={LOGS_SINCE_VALUES.map((value) => ({ value, label: getLogsSinceLabel(value, t) }))}
             labels={{ range: t("选择日志时间段"), query: t("查询"), querying: t("查询中..."), export: t("导出"), empty: t("最近日志"), exportHint: t("可导出当前时间范围内返回的日志") }}

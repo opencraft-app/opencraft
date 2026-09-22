@@ -18,6 +18,7 @@
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
 OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
+- OpenCraft 扩展侧新增的 Agent Console 适配、生成控件和诊断流测试必须显式加入 `test:extensions` 的文件清单，并在生成副本同步检查后执行；测试文件存在但不在门禁清单中不能作为消费端验证证据。该约束只补充验证覆盖范围，不改变 Hermes 命令的执行归属或网关路由。
 - 创建引导共用的翻译 helper、Hermes Profile 命令环境注入、技能安装命令也属于该闭包：真源修改后需连同翻译资源一起机械同步并更新清单摘要，不能只复制评审列举的文件。生成层不参与官网国内/国际站 frontend 构建，OpenCraft 消费端需单独验证。
 
 ## 稳定不变量

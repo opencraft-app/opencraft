@@ -19,6 +19,9 @@ derived: false
 
 # 记忆页 Tab 样式对齐
 
+## requirement_ids / requirement_refs / requirement_excerpt
+- 用户请求：记忆与用户画像 Tab 对齐“探索 / 对话”的视觉样式。
+
 ## goal
 按用户指定，将「记忆 / 用户画像」Tab 对齐现有「探索 / 对话」视觉。
 
@@ -26,16 +29,14 @@ derived: false
 - 不改其他 Tab、controller、加载、数据请求、限额保存、依赖或共享接口。
 - 不提交、推送、重新部署；保留原有 DevCloud 规划。
 
-## requirement_refs / requirement_excerpt
-- 当前对话：“这个组件的样式可以和【探索/对话】保持一致”。
-
 ## interface_refs / data_structure_refs
 - MemoryPanelView 继续接收受控 activeTab 与 onTabChange，Radix 拥有键盘行为。
 - 保留 MemoryPanelViewProps 与 MemoryEntryTab，加载条件不变。
 
 ## history_context
-- current_design_refs: frontend/DESIGN.md、frontend/src/pages/marketing/agent-memory-README.md。
-- relevant_evolution: 当前分支 204a3338d 的 ConsoleSidebarTabs 已采用 36px/12px 及无描边白色选中块。
+- `current_design_refs`：frontend/DESIGN.md、frontend/src/pages/marketing/agent-memory-README.md。
+- `relevant_evolution`：当前分支 `204a3338d` 的 ConsoleSidebarTabs 已采用 36px/12px 及无描边白色选中块。
+- `superseded_refs`：无。
 
 ## acceptance / validation
 - Tab 高 36px、字体 12px、4px 内边距和项间距、轻灰底，选中项白底轻阴影；宽度仍由内容决定。

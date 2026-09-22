@@ -98,13 +98,22 @@ export function useAccountSubscriptionModel({
     creditTotal: pass.credit_total,
     creditAvailable: pass.credit_available,
   } : null, [pass, t]);
-  const creditSources = useCreditSources(planCredit);
+  const freeCredit = useMemo(() => {
+    const creditTotal = Math.max(0, pass?.free_credit_total ?? 0);
+    if (creditTotal <= 0) return null;
+    return {
+      displayName: t("额外积分"),
+      creditTotal,
+      creditAvailable: Math.min(creditTotal, Math.max(0, pass?.free_credit_available ?? 0)),
+    };
+  }, [pass, t]);
+  const creditSources = useCreditSources(planCredit, freeCredit);
   const creditPackVisible = useCreditPackVisibility();
   useEffect(() => installCreditPackVisibilityHelper(), []);
-  const totalCredits = creditPackVisible ? creditSources.summary.total : summary.credits?.total ?? 0;
+  const totalCredits = creditPackVisible ? creditSources.summary.total : (summary.credits?.total ?? 0) + (freeCredit?.creditTotal ?? 0);
   const usedCredits = creditPackVisible
     ? Math.max(0, totalCredits - creditSources.summary.available)
-    : summary.credits?.used ?? 0;
+    : (summary.credits?.used ?? 0) + Math.max(0, (freeCredit?.creditTotal ?? 0) - (freeCredit?.creditAvailable ?? 0));
   const passStatus: PassStatus | null = pass ? getPassStatus(pass) : null;
   const isModifying = pass?.status === "modifying";
   const renewalAvailable = isRenewalAvailableForRegion(global, paidBillingActive);

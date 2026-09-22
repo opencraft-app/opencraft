@@ -5,8 +5,9 @@ import { useOpenClaw } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
 import { useT } from "@/i18n/t";
-import { AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
-import { useAppNavigate } from "@/lib/app-navigation";
+import { AGENT_SECTION_PATH_BY_ID, getAgentSectionHref, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { shouldMoveModelEntryToAccountMenu } from "@/lib/agent-plan-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { accountPassCanRenew, accountPassDisplayName } from "@/lib/account-pass-summary";
 import { getPassStatus, isPaidBillingEnabled } from "@/lib/billing-flow";
@@ -16,7 +17,8 @@ import { isGlobal } from "@/lib/region";
 import { useAccountPassSummary } from "@/lib/use-account-pass-summary";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { registerWindowCommand } from "@/lib/window-command-chain";
-import { emitConsoleShowEvent } from "@/lib/console-show-event";
+import { emitConsoleShowEvent, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
+import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { InternationalLanguageMenu } from "./language-switcher";
 import { SidebarUserMenu, type SidebarUserMenuProps } from "./sidebar-user-menu";
@@ -29,6 +31,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   const t = useT();
   const { i18n } = useTranslation();
   const navigate = useAppNavigate();
+  const [searchParams] = useAppSearchParams();
   const languageId = useId();
   const [open, setOpen] = useState(false);
   const [loadedUserId, setLoadedUserId] = useState<string>();
@@ -40,14 +43,15 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   const upgrade = usePassUpgrade({ userId, passId: operablePass?.pass_id, currentPass: operablePass, enabled: enabled && paidBillingActive });
   const canRenew = accountPassCanRenew(operablePass, isGlobal, paidBillingActive);
   const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
-  const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
+  const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(() => isConsoleShowEnabled());
   const [hostname, setHostname] = useState<string | null>(null);
   useEffect(() => { setHostname(window.location.hostname); }, []);
+  useEffect(() => subscribeConsoleShow(setHiddenEntriesRevealed), []);
   useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
-    setHiddenEntriesRevealed(true);
-    emitConsoleShowEvent();
+    const enabled = emitConsoleShowEvent();
+    setHiddenEntriesRevealed(enabled);
     const result = next(...args);
-    return result === undefined ? true : result;
+    return result === undefined ? enabled : result;
   }), []);
 
   const state = summary.pass ? "ready" : passesLoading || summary.state === "loading" ? "loading" : passesError || summary.state === "error" ? "error" : summary.state;
@@ -65,8 +69,15 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     ? { state: "ready", label: t("已使用积分"), ...summary.credits }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
   const entries: SidebarUserMenuProps["entries"][number][] = [
-    { id: "account", kind: "account", href: "/account", label: t("账号管理") },
+    { id: "account", kind: "account", href: "/account", label: t("账号") },
+    { id: "billing", kind: "account", href: "/account/billing", label: t("套餐与费用") },
   ];
+  if (shouldMoveModelEntryToAccountMenu(activePass)) entries.push({
+    id: "model",
+    kind: "model",
+    href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams),
+    label: resolveAgentConsoleCollectionLabel("model", i18n.language, t),
+  });
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });
   if (!isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("建议反馈"), external: true });
   return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}

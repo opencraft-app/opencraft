@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, ChevronRight, Globe, LayoutDashboard, LogOut, MessageSquare, User } from "lucide-react";
+import { BrainCircuit, Bot, ChevronDown, ChevronRight, Globe, LayoutDashboard, LogOut, MessageSquare, User } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { agentPortalClassName } from "@/components/agents";
@@ -17,13 +17,13 @@ export interface SidebarUserMenuProps {
   status?: { text: string; tone: "warning" | "danger" | "neutral" };
   credit: SidebarCreditSummary;
   upgrade?: { href: string; label: string };
-  entries: readonly { id: string; kind: "agent" | "account" | "workbench" | "feedback"; href: string; label: string; external?: boolean }[];
+  entries: readonly { id: string; kind: "agent" | "account" | "model" | "workbench" | "feedback"; href: string; label: string; external?: boolean }[];
   labels: { trigger: string; menu: string; logout: string; language: string };
   languageContent?: ReactNode;
   onSignOut: () => void;
 }
 
-const icons = { agent: Bot, account: User, workbench: LayoutDashboard, feedback: MessageSquare };
+const icons = { agent: Bot, account: User, model: BrainCircuit, workbench: LayoutDashboard, feedback: MessageSquare };
 
 function SidebarLanguagePopover({ label, children }: { label: string; children: ReactNode }) {
   const [wide, setWide] = useState(false);
