@@ -19,7 +19,6 @@ STATE_ROOT="$STATE_BASE/$SITE"
 STATE_FILE="$STATE_ROOT/state.json"
 TOOLS_DIR="$STATE_ROOT/bin"
 LOG_DIR="$STATE_ROOT/logs"
-PAID_E2E_OVERRIDE_DIR="$STATE_ROOT/private-overrides"
 HEARTBEAT_PID_FILE="$STATE_ROOT/heartbeat.pid"
 DEVTUNNEL_PID_FILE="$STATE_ROOT/devtunnel-agent.pid"
 DEVTUNNEL_BIN="$STATE_ROOT/bin/devtunnel-agent"
@@ -295,235 +294,76 @@ persist_endpoint_config() {
   state_set billing_apigw_url "$BILLING_APIGW_URL"
 }
 
-private_file_mode() {
-  if stat -f '%Lp' "$1" >/dev/null 2>&1; then
-    stat -f '%Lp' "$1"
-  else
-    stat -c '%a' "$1"
-  fi
+install_billing_capability() {
+  local capability="$1" patch_file
+  [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ ]] \
+    || die "registration API returned an invalid personal billing capability"
+  new_private_temp billing-capability-patch
+  patch_file="$TEMP_FILE_RESULT"
+  python3 - "$patch_file" "$AUTH_BASE/auth/dev-environments/billing-proxy" "$capability" <<'PY'
+import base64, json, os, sys
+
+path, proxy_url, capability = sys.argv[1:]
+data = {
+    "PERSONAL_DEV_BILLING_PROXY_URL": proxy_url,
+    "PERSONAL_DEV_BILLING_CAPABILITY": capability,
 }
-
-require_0600_file() {
-  local path="$1" mode
-  [[ -f "$path" ]] || die "private paid-E2E file does not exist: $path"
-  mode="$(private_file_mode "$path")"
-  [[ "$mode" == "600" ]] || die "private paid-E2E file must have mode 0600: $path (got $mode)"
-}
-
-paid_e2e_sops_sources() {
-  case "$SITE" in
-    cn)
-      PAID_E2E_TRADE_SOPS="$REPO_ROOT/argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml"
-      PAID_E2E_GATEWAY_SOPS="$REPO_ROOT/argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml"
-      ;;
-    intl)
-      PAID_E2E_TRADE_SOPS="$REPO_ROOT/argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml"
-      PAID_E2E_GATEWAY_SOPS="$REPO_ROOT/argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml"
-      ;;
-    *) die "PERSONAL_DEV_SITE must be intl or cn" ;;
-  esac
-}
-
-extract_sops_scalar() {
-  local source="$1" selector="$2" destination="$3" label="$4"
-  [[ -f "$source" ]] || die "missing testing SOPS source for $label: $source"
-  if ! sops --decrypt --extract "$selector" "$source" >"$destination"; then
-    : >"$destination"
-    die "could not decrypt testing $label; request testing SOPS access or an owner-provided 0600 paid-E2E file"
-  fi
-  chmod 600 "$destination"
-  python3 - "$destination" "$label" <<'PY'
-import os
-import pathlib
-import sys
-
-path, label = sys.argv[1:]
-value = pathlib.Path(path).read_text(encoding="utf-8").rstrip("\n")
-if not value or "\x00" in value or "\r" in value or "\n" in value:
-    raise SystemExit(f"decrypted testing {label} is empty or malformed")
-pathlib.Path(path).write_text(value, encoding="utf-8")
+with open(path, "w", encoding="utf-8") as output:
+    json.dump({"data": {key: base64.b64encode(value.encode()).decode() for key, value in data.items()}}, output, separators=(",", ":"))
+    output.write("\n")
 os.chmod(path, 0o600)
 PY
+  kubectl patch secret trade-runtime-secrets -n trade --type merge --patch-file "$patch_file" >/dev/null \
+    || die "could not install the short-lived personal billing capability"
+  remove_private_temp "$patch_file"
+  kubectl rollout restart deployment/trade -n trade >/dev/null
+  kubectl rollout status deployment/trade -n trade --timeout=180s >/dev/null \
+    || die "Trade did not become ready after installing the personal billing capability"
 }
 
-prepare_paid_e2e_from_sops() {
-  prepare_state
-  require_command sops
-  paid_e2e_sops_sources
-
-  local app_id_file app_secret_file hmac_file bundle
-  new_private_temp paid-e2e-app-id
-  app_id_file="$TEMP_FILE_RESULT"
-  new_private_temp paid-e2e-app-secret
-  app_secret_file="$TEMP_FILE_RESULT"
-  new_private_temp paid-e2e-cloudladder-hmac
-  hmac_file="$TEMP_FILE_RESULT"
-  new_private_temp paid-e2e-source
-  bundle="$TEMP_FILE_RESULT"
-
-  extract_sops_scalar "$PAID_E2E_TRADE_SOPS" \
-    '["stringData"]["JIFEI_BILLING_APP_ID"]' "$app_id_file" "billing app ID"
-  extract_sops_scalar "$PAID_E2E_TRADE_SOPS" \
-    '["stringData"]["JIFEI_BILLING_APP_SECRET"]' "$app_secret_file" "billing app secret"
-  extract_sops_scalar "$PAID_E2E_GATEWAY_SOPS" \
-    '["stringData"]["CLOUDLADDER_PAYMENT_HMAC_SECRET"]' "$hmac_file" "CloudLadder testing HMAC"
-
-  python3 - "$app_id_file" "$app_secret_file" "$hmac_file" "$bundle" <<'PY'
-import os
-import pathlib
-import sys
-
-app_id_path, app_secret_path, hmac_path, output_path = sys.argv[1:]
-values = {
-    "JIFEI_BILLING_APP_ID": pathlib.Path(app_id_path).read_text(encoding="utf-8"),
-    "JIFEI_BILLING_APP_SECRET": pathlib.Path(app_secret_path).read_text(encoding="utf-8"),
-    "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET": pathlib.Path(hmac_path).read_text(encoding="utf-8"),
+current_billing_capability() {
+  kubectl get secret trade-runtime-secrets -n trade \
+    -o jsonpath='{.data.PERSONAL_DEV_BILLING_CAPABILITY}' 2>/dev/null | base64 --decode
 }
-with open(output_path, "w", encoding="utf-8") as output:
-    for key, value in values.items():
-        output.write(f"{key}={value}\n")
-os.chmod(output_path, 0o600)
+
+verify_billing_capability() {
+  local capability status_code
+  capability="$(current_billing_capability)"
+  status_code="$(billing_capability_probe_status "$capability" || true)"
+  unset capability
+  [[ "$status_code" == "403" ]]
+}
+
+billing_capability_probe_status() {
+  local capability="$1" uin body config_file status_code
+  uin="$(state_get uin)"
+  [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ && "$uin" =~ ^[1-9][0-9]*$ ]] \
+    || return 1
+  new_private_temp billing-capability-probe-body
+  body="$TEMP_FILE_RESULT"
+  python3 - "$body" "$uin" <<'PY'
+import json, sys
+path, uin = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as output:
+    json.dump({"interface": {"interfaceName": "qcloud.Deal.OnlineRefund", "extraPara": {"ownerUin": uin}, "para": {"uin": uin}}}, output, separators=(",", ":"))
 PY
-
-  PERSONAL_DEV_PAID_E2E_SECRET_FILE="$bundle" prepare_paid_e2e_overrides
-  remove_private_temp "$app_id_file"
-  remove_private_temp "$app_secret_file"
-  remove_private_temp "$hmac_file"
-  remove_private_temp "$bundle"
-  log "testing paid-E2E configuration imported from authorized SOPS sources; plaintext values were not printed"
+  new_private_temp billing-capability-probe-config
+  config_file="$TEMP_FILE_RESULT"
+  printf 'header = "X-LightVela-Developer-Capability: %s"\n' "$capability" >"$config_file"
+  status_code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --config "$config_file" -H 'Content-Type: application/json' --data-binary "@$body" \
+    "$AUTH_BASE/auth/dev-environments/billing-proxy/jifei/resource-center/interface" || true)"
+  remove_private_temp "$body"
+  remove_private_temp "$config_file"
+  unset capability
+  printf '%s\n' "$status_code"
 }
 
-prepare_paid_e2e_overrides() {
-  local input="${PERSONAL_DEV_PAID_E2E_SECRET_FILE:-}"
-  local trade_override="$PAID_E2E_OVERRIDE_DIR/trade.env"
-  local cloudladder_override="$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env"
-  local fingerprint=""
-
-  if [[ -z "$input" && ! -f "$trade_override" && ! -f "$cloudladder_override" ]]; then
-    state_set paid_e2e_enabled false
-    return 1
-  fi
-
-  mkdir -p "$PAID_E2E_OVERRIDE_DIR"
-  chmod 700 "$PAID_E2E_OVERRIDE_DIR"
-  if [[ -n "$input" ]]; then
-    require_0600_file "$input"
-    python3 - \
-      "$input" \
-      "$REPO_ROOT/deploy/localstack/trade/secrets.defaults.env" \
-      "$REPO_ROOT/deploy/localstack/cloudladdergateway/secrets.defaults.env" \
-      "$trade_override" \
-      "$cloudladder_override" <<'PY'
-import os
-import pathlib
-import re
-import sys
-import tempfile
-
-source_path, trade_defaults_path, cloudladder_defaults_path, trade_output, cloudladder_output = sys.argv[1:]
-required = (
-    "JIFEI_BILLING_APP_ID",
-    "JIFEI_BILLING_APP_SECRET",
-    "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET",
-)
-key_pattern = re.compile(r"^[A-Z][A-Z0-9_]*$")
-
-
-def read_env(path: str) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for line_number, raw in enumerate(pathlib.Path(path).read_text(encoding="utf-8").splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            raise SystemExit(f"invalid env line {line_number} in {path}")
-        key, value = line.split("=", 1)
-        if not key_pattern.fullmatch(key) or key in result:
-            raise SystemExit(f"invalid or duplicate env key at line {line_number} in {path}")
-        if not value or "\x00" in value or "\r" in value or "\n" in value:
-            raise SystemExit(f"empty or invalid env value for {key} in {path}")
-        result[key] = value
-    return result
-
-
-def atomic_write(path: str, values: dict[str, str]) -> None:
-    destination = pathlib.Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=destination.name + ".", dir=destination.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as output:
-            for key, value in values.items():
-                output.write(f"{key}={value}\n")
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, destination)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-source = read_env(source_path)
-missing = [key for key in required if key not in source]
-unexpected = sorted(set(source) - set(required))
-if missing or unexpected:
-    raise SystemExit(f"paid-E2E env keys mismatch: missing={missing} unexpected={unexpected}")
-
-trade = read_env(trade_defaults_path)
-trade.update({key: source[key] for key in required})
-cloudladder = read_env(cloudladder_defaults_path)
-cloudladder["CLOUDLADDER_TRADE_HMAC_SECRET"] = source[
-    "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"
-]
-atomic_write(trade_output, trade)
-atomic_write(cloudladder_output, cloudladder)
-PY
-  fi
-
-  require_0600_file "$trade_override"
-  require_0600_file "$cloudladder_override"
-  fingerprint="$(python3 - "$trade_override" "$cloudladder_override" <<'PY'
-import hashlib
-import pathlib
-import sys
-
-
-def value(path: str, key: str) -> str:
-    prefix = key + "="
-    matches = [line[len(prefix):] for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines() if line.startswith(prefix)]
-    if len(matches) != 1 or not matches[0]:
-        raise SystemExit(f"missing {key} in {path}")
-    return matches[0]
-
-
-trade_secret = value(sys.argv[1], "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET")
-cloudladder_secret = value(sys.argv[2], "CLOUDLADDER_TRADE_HMAC_SECRET")
-if trade_secret != cloudladder_secret:
-    raise SystemExit("Trade and local CloudLadder billing HMAC values differ")
-print(hashlib.sha256(trade_secret.encode()).hexdigest())
-PY
-)" || die "private paid-E2E overrides are invalid"
-
-  local expected="${PERSONAL_DEV_EXPECTED_BILLING_HMAC_SHA256:-}"
-  if [[ -n "$expected" ]]; then
-    [[ "$expected" =~ ^[0-9a-fA-F]{12,64}$ ]] || die "PERSONAL_DEV_EXPECTED_BILLING_HMAC_SHA256 must be a 12-64 character hex prefix"
-    [[ "${fingerprint,,}" == "${expected,,}"* ]] || die "billing HMAC fingerprint does not match the expected shared-testing fingerprint"
-  fi
-  state_set paid_e2e_enabled true
-  state_set billing_hmac_fingerprint "${fingerprint:0:12}"
-  log "paid-E2E private overrides ready; billing_hmac_fingerprint=${fingerprint:0:12}"
-  return 0
-}
-
-verify_paid_e2e_runtime_secrets() {
-  [[ "$(state_get paid_e2e_enabled)" == "true" ]] || return 0
-  local trade_encoded cloudladder_encoded fingerprint
-  trade_encoded="$(kubectl get secret -n trade trade-runtime-secrets -o jsonpath='{.data.TRADE_BILLING_CLOUDLADDER_HMAC_SECRET}')"
-  cloudladder_encoded="$(kubectl get secret -n cloudladdergateway cloudladdergateway-runtime-secrets -o jsonpath='{.data.CLOUDLADDER_TRADE_HMAC_SECRET}')"
-  [[ -n "$trade_encoded" && "$trade_encoded" == "$cloudladder_encoded" ]] \
-    || die "runtime Trade and local CloudLadder billing HMAC values are missing or mismatched"
-  fingerprint="$(printf '%s' "$trade_encoded" | base64 --decode | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
-  [[ "${fingerprint:0:12}" == "$(state_get billing_hmac_fingerprint)" ]] \
-    || die "runtime billing HMAC fingerprint differs from the private override"
-  log "runtime billing HMAC aligned; fingerprint=${fingerprint:0:12}"
+verify_billing_capability_revoked() {
+  local capability="$1" status_code
+  status_code="$(billing_capability_probe_status "$capability" || true)"
+  unset capability
+  [[ "$status_code" == "401" ]]
 }
 
 mark_current_site() {
@@ -1483,6 +1323,12 @@ register_route() {
     unset tunnel_token
     die "local devtunnel-agent failed; unsafe active registration was disabled"
   fi
+  if ! (install_billing_capability "$tunnel_token"); then
+    stop_devtunnel_agent
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    unset tunnel_token
+    die "short-lived billing capability could not be installed; unsafe active registration was disabled"
+  fi
   safe_response="$(printf '%s' "$response" | json_without_secrets)"
   state_set devcloud_ip "$ip"
   state_set registration_response "$safe_response"
@@ -1637,9 +1483,6 @@ up() {
   ip="$(discover_devcloud_ip)"
   real_kustomize="$(real_kustomize_binary)"
   secret_override_dirs="$REPO_ROOT/deploy/envs/localstack/overrides"
-  if prepare_paid_e2e_overrides; then
-    secret_override_dirs="$secret_override_dirs:$PAID_E2E_OVERRIDE_DIR"
-  fi
   bash "$REPO_ROOT/deploy/localstack/tests/${SITE}_cross_sp_seed_test.sh"
   clear_legacy_runtime_overrides
   LOCALSTACK_SITE_KIND="$SITE" LOCALSTACK_PUBLIC_HOST="$ip" \
@@ -1652,7 +1495,6 @@ up() {
     PERSONAL_DEV_RUNTIME_BILLING_APIGW_URL="$BILLING_APIGW_URL" \
     KUBECTL="$(command -v kubectl)" KUSTOMIZE="$RUNTIME_KUSTOMIZE" \
     "$LOCALSTACK" up
-  verify_paid_e2e_runtime_secrets
   state_set stack_status up
   mark_current_site
   register_command
@@ -1691,7 +1533,7 @@ status() {
     rc=1
   fi
   kubectl get pods -A -l app.kubernetes.io/part-of=lightclaw-localstack -o wide || rc=1
-  verify_paid_e2e_runtime_secrets || rc=1
+  verify_billing_capability || rc=1
   local pod_namespace pod_name
   while IFS=$'\t' read -r pod_namespace pod_name; do
     [[ -n "$pod_namespace" && -n "$pod_name" ]] || continue
@@ -1840,7 +1682,8 @@ verify_no_pay() {
 unregister() {
   prepare_state
   stop_heartbeat
-  local token response rc=0
+  local token response capability="" rc=0
+  capability="$(current_billing_capability 2>/dev/null || true)"
   if ! token="$(central_session)"; then
     stop_devtunnel_agent
     die "cannot refresh central session for unregister"
@@ -1850,9 +1693,14 @@ unregister() {
     state_set registration_response "$response"
     state_set registration_status disabled
     state_set registration_expires_at "$(printf '%s' "$response" | json_value 'd.get("expiresAt", "")' 2>/dev/null || true)"
+    if [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ ]] && ! verify_billing_capability_revoked "$capability"; then
+      log "developer route was disabled but the old billing capability did not return 401"
+      rc=1
+    fi
   else
     rc=$?
   fi
+  unset capability
   stop_devtunnel_agent
   [[ "$rc" == "0" ]] || return "$rc"
   printf '\n'
@@ -1892,7 +1740,7 @@ prerequisites() {
       ;;
   esac
   cat <<EOF
-Personal DevCloud paid-E2E prerequisites for $account_site
+Personal DevCloud paid-E2E readiness for $account_site
 
 1. 取得合法 testing 账号
    - 打开智研账号池：
@@ -1912,13 +1760,10 @@ $billing_onboarding
    - 把当前 testing 登录用户绑定到上面的 UIN/OwnerUIN/APPID，并确认状态为 active。
    - 受控管理员也可使用 personal-devcloud.sh bootstrap-binding；不要把 admin token 发给开发者。
 
-4. 准备计费签名配置
-   - 已获 testing SOPS 解密权限：运行
-       PERSONAL_DEV_SITE=$SITE bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh prepare-paid-e2e
-     命令只读取对应站点的 testing SOPS，写入个人 0600 override，并只打印 fingerprint。
-   - 无 SOPS 权限：向 LightVela testing owner 申请站点=$SITE 的 paid-E2E 0600 文件，文件只包含
-     JIFEI_BILLING_APP_ID、JIFEI_BILLING_APP_SECRET、TRADE_BILLING_CLOUDLADDER_HMAC_SECRET。
-     不要通过聊天粘贴值，不要申请或使用 production secret。
+4. 计费能力无需人工准备
+   - up/register 从中央 testing Auth registration 获得绑定当前 UIN 和 TTL 的短期 capability。
+   - capability 自动注入个人 Trade；Jifei AppSecret 与 CloudLadder HMAC 只留在中央 testing Trade。
+   - 不需要 SOPS、age 私钥、owner 文件或 production secret；registration 续租会自动轮换 capability。
 
 5. 启动与验收
    - 运行 personal-devcloud.sh up；随后运行 status 和 browser-login。
@@ -1934,8 +1779,7 @@ Usage: personal-devcloud.sh <command>
 Commands:
   doctor          Check DevCloud IP, Docker, and required tools
   bootstrap       Install user-local tools and create/reuse a kind cluster
-  prerequisites   Print the site-specific account, balance, binding, and secret onboarding checklist
-  prepare-paid-e2e  Import testing billing values from authorized site-specific SOPS without printing them
+  prerequisites   Print the site-specific account, balance, binding, and capability readiness checklist
   up              Build the full stack, provision identity, register callback, start heartbeat
   register        Align local identity and register/renew this DevCloud callback
   heartbeat       Renew the dynamic registration once
@@ -1959,7 +1803,6 @@ main() {
     doctor) doctor ;;
     bootstrap) bootstrap ;;
     prerequisites) prerequisites ;;
-    prepare-paid-e2e) prepare_paid_e2e_from_sops ;;
     up) up ;;
     register) register_command ;;
     heartbeat) register_route ;;

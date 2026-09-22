@@ -346,6 +346,14 @@ capability，不能让 TKEx Pod 直连任意 DevCloud。该开关只有在 sandb
 才生效，不能进入 production、staging 或其他环境的 Auth 配置。已有静态 UIN 路由可以继续保留原落点，
 动态注册的 delivery mode 变化不得顺带改写静态测试账号。
 
+个人计费 capability proxy 只在 `sandbox-bj-7` 与 `sandbox-kr-1` 成对开启：Auth 配置固定指向同 namespace
+的中央 Trade internal endpoint，中央 Trade server 复用既有内部服务 Bearer、testing Jifei AppSecret 和
+CloudLadder HMAC；个人 Trade 只配置 Auth proxy URL 与短期 capability。客户端配置两项必须同进同退，
+中央 server 开关与客户端 URL/capability 不能混用。production、staging 及其他 sandbox 不设置
+`PERSONAL_DEV_BILLING_PROXY_ENABLED`，个人客户端变量默认空；因此源码合入不自动改变现网出向路径。
+发布验证除 Pod Ready 外，还要证明有效 capability 的拒绝探针为 `403`、注销后的同一 token 为 `401`，
+并分别保存国内和国际真实支付、回调与业务终态。任何长期 Secret 都不得进入 Skill、个人 kind 状态或日志。
+
 CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
 环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
 `cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部

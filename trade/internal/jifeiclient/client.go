@@ -270,6 +270,13 @@ type Options struct {
 	// compatibility with deployments that use one secret for every route.
 	BillingCloudLadderHMACSecret string
 
+	// PersonalDevBillingProxyURL and PersonalDevBillingCapability switch only
+	// signed testing billing requests to the central Auth capability proxy. They
+	// are intended for personal DevCloud environments, where shared long-lived
+	// billing secrets must not be distributed. Both values must be present.
+	PersonalDevBillingProxyURL   string
+	PersonalDevBillingCapability string
+
 	// ===== 销毁链路（Q-D-SIG-1~6）专用 — 计费网关协议三件套 =====
 	//
 	// 与 "jifei-test" CGW 路由（询价 / 下单 / 支付） 严格区分：
@@ -315,6 +322,8 @@ type client struct {
 	nowProvider                  func() time.Time
 	cloudLadderHMACSecret        string
 	billingCloudLadderHMACSecret string
+	personalDevBillingProxyURL   string
+	personalDevBillingCapability string
 
 	// 销毁链路签名路径配置（Q-D-SIG-1~6）；空值表示未启用签名路径。
 	billingBaseURL   string
@@ -361,6 +370,8 @@ func New(baseURL, xQCloudUserID string, opts ...Options) Client {
 		}
 		c.cloudLadderHMACSecret = strings.TrimSpace(o.CloudLadderHMACSecret)
 		c.billingCloudLadderHMACSecret = strings.TrimSpace(o.BillingCloudLadderHMACSecret)
+		c.personalDevBillingProxyURL = strings.TrimRight(strings.TrimSpace(o.PersonalDevBillingProxyURL), "/")
+		c.personalDevBillingCapability = strings.TrimSpace(o.PersonalDevBillingCapability)
 		c.billingBaseURL = strings.TrimRight(strings.TrimSpace(o.BillingAPIGWBaseURL), "/")
 		c.billingAppID = strings.TrimSpace(o.BillingAppID)
 		c.billingAppSecret = strings.TrimSpace(o.BillingAppSecret)
@@ -599,13 +610,21 @@ func (c *client) doWithRoute(
 	signed bool,
 ) error {
 	targetURL := c.baseURL
+	personalDevProxy := signed && (c.personalDevBillingProxyURL != "" || c.personalDevBillingCapability != "")
 	if signed {
-		targetURL = c.billingBaseURL
-		if targetURL == "" {
-			return fmt.Errorf("jifeiclient: BillingAPIGWBaseURL is required for signed interface %s", interfaceName)
-		}
-		if c.billingAppID == "" || c.billingAppSecret == "" {
-			return fmt.Errorf("jifeiclient: BillingAppID/BillingAppSecret are required for signed interface %s", interfaceName)
+		if personalDevProxy {
+			if c.personalDevBillingProxyURL == "" || c.personalDevBillingCapability == "" {
+				return fmt.Errorf("jifeiclient: personal DevCloud billing proxy URL and capability must be configured together")
+			}
+			targetURL = c.personalDevBillingProxyURL + "/jifei/resource-center/interface"
+		} else {
+			targetURL = c.billingBaseURL
+			if targetURL == "" {
+				return fmt.Errorf("jifeiclient: BillingAPIGWBaseURL is required for signed interface %s", interfaceName)
+			}
+			if c.billingAppID == "" || c.billingAppSecret == "" {
+				return fmt.Errorf("jifeiclient: BillingAppID/BillingAppSecret are required for signed interface %s", interfaceName)
+			}
 		}
 	} else if targetURL == "" {
 		return fmt.Errorf("jifeiclient: baseURL is required")
@@ -642,7 +661,7 @@ func (c *client) doWithRoute(
 
 	// 计费网关签名（Q-D-SIG-1~6）：在 envelope.interface.auth 注入 4 字段。
 	// 算法详见 signBillingEnvelope —— 必须在 marshal envelope 之前完成签名注入。
-	if signed {
+	if signed && !personalDevProxy {
 		nowSec := c.nowProvider().Unix()
 		nonce := c.billingNonceFn()
 		auth, err := signBillingEnvelope(c.billingAppID, c.billingAppSecret, nowSec, nonce, iface)
@@ -663,6 +682,9 @@ func (c *client) doWithRoute(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if personalDevProxy {
+		req.Header.Set("X-LightVela-Developer-Capability", c.personalDevBillingCapability)
+	}
 	// v1.7.4：x-qcloud-user-id 仅测试环境带（uin = 700000164995）；现网空字符串 → 不发 header
 	// （由部署侧出口 IP 鉴权）。Host header 不再主动注入 — 由 clgateway upstream 段重写。
 	if c.xQCloudUserID != "" {
@@ -672,7 +694,7 @@ func (c *client) doWithRoute(
 	if signed && c.billingCloudLadderHMACSecret != "" {
 		cloudLadderSecret = c.billingCloudLadderHMACSecret
 	}
-	if cloudLadderSecret != "" {
+	if !personalDevProxy && cloudLadderSecret != "" {
 		if err := cloudladderauth.SignProxyURLHeaders(
 			cloudLadderSecret,
 			"lightvela-trade",

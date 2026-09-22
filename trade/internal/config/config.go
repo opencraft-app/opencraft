@@ -90,6 +90,9 @@ type Config struct {
 	BillingCloudAPICloudLadderHMACSecret string
 	BillingCloudAPIXQCloudUserID         string
 	BillingCloudAPIPayRedirectURL        string
+	PersonalDevBillingProxyEnabled       bool
+	PersonalDevBillingProxyURL           string
+	PersonalDevBillingCapability         string
 
 	// Q58 出口 framework 双层结构必填项；Q60 dispatcher 入参三段式校验前缀。
 	JifeiComponentName      string
@@ -206,7 +209,10 @@ func Load() (Config, error) {
 			os.Getenv("TRADE_BILLING_X_QCLOUD_USER_ID"),
 			os.Getenv("JIFEI_CGW_X_QCLOUD_USER_ID"),
 		),
-		BillingCloudAPIPayRedirectURL: strings.TrimSpace(os.Getenv("TRADE_BILLING_PAY_REDIRECT_URL")),
+		BillingCloudAPIPayRedirectURL:  strings.TrimSpace(os.Getenv("TRADE_BILLING_PAY_REDIRECT_URL")),
+		PersonalDevBillingProxyEnabled: parseBoolEnv("PERSONAL_DEV_BILLING_PROXY_ENABLED"),
+		PersonalDevBillingProxyURL:     strings.TrimRight(strings.TrimSpace(os.Getenv("PERSONAL_DEV_BILLING_PROXY_URL")), "/"),
+		PersonalDevBillingCapability:   strings.TrimSpace(os.Getenv("PERSONAL_DEV_BILLING_CAPABILITY")),
 
 		// Q58 / Q60 dispatcher + builder 默认值（联调期按 jifei align 后再 override）
 		JifeiComponentName:      envOrDefault("TRADE_JIFEI_COMPONENT_NAME", "trade"),
@@ -254,6 +260,9 @@ func Load() (Config, error) {
 	}
 	if cfg.AccountBindingInternalBaseURL == "" {
 		return Config{}, fmt.Errorf("ACCOUNT_BINDING_INTERNAL_BASE_URL is required")
+	}
+	if (cfg.PersonalDevBillingProxyURL == "") != (cfg.PersonalDevBillingCapability == "") {
+		return Config{}, fmt.Errorf("PERSONAL_DEV_BILLING_PROXY_URL and PERSONAL_DEV_BILLING_CAPABILITY must be configured together")
 	}
 	if cfg.CreditRegionOverride == "" {
 		cfg.CreditRegionOverride = cfg.RegionOverride
