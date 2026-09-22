@@ -170,6 +170,7 @@ export function useAccountSubscriptionModel({
       onRetry: creditSources.reload,
     } : undefined,
     passStatus,
+    subscriptionStatus: subscription?.status ?? (passStatus === "expired" ? "expired" : passStatus === "isolated" ? "active" : "active"),
     passState: isModifying ? (passUpgradeFailed ? "modify-failed" as const : "modifying" as const) : "current" as const,
     actions: {
       canRenew: accountPassCanRenew(pass, global, paidBillingActive),

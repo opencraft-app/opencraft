@@ -1,5 +1,5 @@
 import { ChevronRight, CreditCard, Trash2, Zap } from "lucide-react";
-import type { Pass } from "@/domain/types";
+import type { Pass, SubscriptionStatus } from "@/domain/types";
 import type { CreditSourceView } from "@/domain/credit-pack";
 import { formatCreditDate } from "@/lib/use-credit-sources";
 import type { PassStatus } from "@/lib/billing-flow";
@@ -36,6 +36,7 @@ export interface AccountSubscriptionCardProps {
     onRetry: () => void;
   };
   passStatus: PassStatus | null;
+  subscriptionStatus?: SubscriptionStatus | null;
   passState: AccountSubscriptionPassState;
   actions: {
     canRenew: boolean;
@@ -83,6 +84,7 @@ export function AccountSubscriptionCard({
   credits,
   creditPacks,
   passStatus,
+  subscriptionStatus = null,
   passState,
   actions,
   error,
@@ -91,6 +93,22 @@ export function AccountSubscriptionCard({
   const t = useT();
   const creditsExhausted = Boolean(credits && credits.total > 0 && credits.used >= credits.total);
   const showCreditPrompt = Boolean(credits && (creditsExhausted || credits.usedPercent > 95));
+  const lifecycleStatus = subscriptionStatus === null
+    ? t("当前套餐")
+    : passStatus === "isolated"
+    ? t("隔离期")
+    : passStatus === "expired" || validity?.expired
+      ? t("已过期")
+      : subscriptionStatus === "pending_payment"
+        ? t("待支付")
+        : subscriptionStatus === "cancelled"
+          ? t("已取消")
+          : t("生效中");
+  const lifecycleTone = passStatus === "isolated"
+    ? "warning" as const
+    : passStatus === "expired" || validity?.expired
+      ? "danger" as const
+      : "success" as const;
 
   if (state === "loading") {
     return (
@@ -150,9 +168,9 @@ export function AccountSubscriptionCard({
               {passState === "current" ? t("当前生效") : t("套餐信息将在升级完成后更新，到期时间不变。")}
             </p>
           </div>
-          <AccountStatusBadge tone={passState === "modify-failed" ? "danger" : passState === "modifying" ? "warning" : "neutral"}>
+          <AccountStatusBadge tone={passState === "modify-failed" ? "danger" : passState === "modifying" ? "warning" : lifecycleTone}>
             <span role={passState === "current" ? undefined : "status"}>
-              {passState === "modify-failed" ? t("套餐升级失败") : passState === "modifying" ? t("套餐升级中") : t("当前套餐")}
+              {passState === "modify-failed" ? t("套餐升级失败") : passState === "modifying" ? t("套餐升级中") : lifecycleStatus}
             </span>
           </AccountStatusBadge>
         </div>

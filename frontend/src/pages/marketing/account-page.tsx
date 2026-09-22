@@ -31,7 +31,7 @@ import {
   PassDeleteDialogController,
 } from "@/components/account/account-dialogs";
 import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
+import { subscribeConsoleShow } from "@/lib/console-show-event";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { SavedCardsSection } from "./saved-cards-section";
 import { ReferralSection } from "./referral-section";
@@ -96,9 +96,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const [referralRevealed, setReferralRevealed] = useState(false);
 
   useEffect(() => {
-    const revealReferral = () => setReferralRevealed(true);
-    window.addEventListener(CONSOLE_SHOW_EVENT, revealReferral);
-    return () => window.removeEventListener(CONSOLE_SHOW_EVENT, revealReferral);
+    return subscribeConsoleShow(setReferralRevealed);
   }, []);
 
   // Unauthenticated view state
@@ -657,6 +655,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
                 credits={subscriptionModel.credits}
                 creditPacks={subscriptionModel.creditPacks}
                 passStatus={subscriptionModel.passStatus}
+                subscriptionStatus={subscriptionModel.subscriptionStatus}
                 passState={subscriptionModel.passState}
                 actions={subscriptionModel.actions}
                 error={subscriptionModel.error}
@@ -689,7 +688,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
 
             {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
 
-            {isGlobal && <SavedCardsSection />}
+            {isBillingView && isGlobal && <SavedCardsSection />}
           </div>
         </section>
       </AccountPageGate>

@@ -185,7 +185,10 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu variant="sidebar" />);
 
     const trigger = screen.getByRole("button", { name: "打开用户菜单" });
+    expect(trigger.closest(".lv-agent-account-menu")).toBeInTheDocument();
     expect(trigger).toHaveClass("lv-agent-account-trigger");
+    const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
+    expect(styles).toMatch(/\.lv-agent-account-trigger\s*\{[\s\S]*?width:\s*100%\s*;/);
     expect(trigger).toHaveTextContent("海盐小猫");
     expect(trigger).toHaveTextContent("套餐：launch");
     expect(trigger).toHaveAttribute("aria-expanded", "false");

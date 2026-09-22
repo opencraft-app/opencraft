@@ -1,15 +1,12 @@
 # Persona module
 
-`BuddyPanel` remains the only owner of catalog loading, saved card state, active Bot/profile identity, SOUL reads/writes, draw slots, injection results, and stale-response guards. Cards keep their existing IDs, images, localization and canonical-slug mapping.
+`BuddyPanel` remains the only owner of catalog loading, saved card state, active Bot/profile identity, SOUL reads/writes, draw slots, injection results, and stale-response guards. Cards keep their existing IDs, images, localization and canonical-slug mapping. The current implementation keeps the shared Radix dialog primitives in the panel and restores the responsive fixed-coordinate draw stage in `agent-buddy-views.tsx`.
 
 ## Display interfaces
 
-- `SoulSlotCardView`: typed soul, selected/applied/canReroll flags, labels and select/reroll/delete/preview actions. The selection button and preview/action buttons are separate native controls. Optional `onFocusedRemoval` runs before a focused card is removed; it does not move focus when the user is elsewhere.
-- `EmptySoulSlotView`: label, tooltip and draw action.
-- `PersonaDialogView`: title/description, close label, controlled open/close, pending close guard and content. It provides a visible initial focus target, Radix focus containment and return to the original connected trigger. Its Portal opts into `agents-ui`.
-- `PersonaDrawStageView`: fixed-coordinate animation children scaled to the available width. It only owns a ResizeObserver and local scale; draw timers and selection stay in `DrawSoulModal`.
-- `PersonaInfoView`: caller-provided confirmation text and dismissal action.
-- `PersonaOverwriteConfirmView`: controlled AlertDialog with separate back-to-editor, close and confirm actions. It deliberately distinguishes returning to the draft from dismissing the upload flow.
+- `FilledSlot` and `EmptySlot`: typed soul, selected/applied flags, labels and select/reroll/delete/preview actions. Selection and preview are separate native controls; the card never nests an interactive preview inside the selection button.
+- `PersonaDrawStageView`: fixed-coordinate animation children scaled to the available width. It only owns a `ResizeObserver` and local scale; draw timers and selection stay in `DrawSoulModal`.
+- The panel preview, information, deletion confirmation, and Soul test surfaces use the shared Radix `Dialog`/`AlertDialog` primitives. Escape handling, focus containment, scroll locking, accessible titles/descriptions, and return focus are delegated to those primitives.
 
 The views use shared Radix primitives and Agents Tooltip/Confirm components. They do not import repositories, contexts or request services.
 
@@ -19,7 +16,7 @@ At the user's request, persona-specific surfaces restore the visual treatment fr
 
 - `PersonaDeleteConfirmView` uses the existing Radix AlertDialog with the original centered warning/action layout. Escape, cancellation, and removal focus fallback remain available.
 - `SoulFaceCard.selectionControl` places the native selection button alongside the preview control so the original inline preview can be restored without nested buttons. Information remains click-through; the preview is independently focusable/clickable.
-- Dialogs retain Portal, focus containment, return focus, pending close guards, and a scrollable inner body for short viewports.
+- Dialogs retain Portal, focus containment, return focus, pending close guards where an operation can still be running, and a scrollable inner body for short viewports.
 - The existing `AgentPageLoadingState` condition and all request, persistence and loading branches are unchanged. The separate multi-stage loading diagnosis is outside this visual restoration.
 
 ## Preserved operation order

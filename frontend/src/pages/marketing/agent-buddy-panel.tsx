@@ -2,7 +2,7 @@
  * AI 搭子面板（v0.8）
  *
  * 在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）目录，
- * 渲染成 9 张抽卡槽（3×3 网格）：默认全部为空白卡背，每抽到一张人设填入下一格。
+ * 渲染成 8 张抽卡槽（4×2 网格）：默认全部为空白卡背，每抽到一张人设填入下一格。
  * 视觉对齐 SkillHub `/hermes/edit-soul` —— 抽到的卡用 SoulFaceCard（bgUrl 全卡面），
  * 没抽到的用 CardBack（灰底 + 拼图 icon）。
  *
@@ -17,7 +17,6 @@
 
 import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { useT } from "@/i18n/t";
@@ -39,6 +38,8 @@ import {
 } from "@/lib/skillhub-api";
 import { buildSoulMd } from "@/lib/soul-interpretations";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import {
@@ -520,14 +521,18 @@ export function BuddyPanel({
     }
   }, [drawnSouls, selectedSlug]);
 
-  // 当已注入卡被重抽掉，"已注入"徽章应一并清空（避免错位到其它卡）
-  // 注意：被覆盖的旧 SOUL.md 已经备份在 sandbox，前端只是失去本地 UI 状态。
+  // 只有当本轮抽卡集合中原本存在的已注入卡被移除时才清空徽章。
+  // 引导期或沙箱侧写入的 SOUL 可能没有对应卡片，不能因本地集合变化而清空并回写服务端。
+  const previousDrawnCardsRef = useRef({ botId, slugs: new Set<string>() });
   useEffect(() => {
-    if (appliedSlug && !drawnSouls.some((s) => s.slug === appliedSlug)) {
+    const previous = previousDrawnCardsRef.current;
+    const slugs = new Set(drawnSouls.map((soul) => soul.slug));
+    previousDrawnCardsRef.current = { botId, slugs };
+    if (previous.botId === botId && appliedSlug && previous.slugs.has(appliedSlug) && !slugs.has(appliedSlug)) {
       setAppliedSlug(null);
       setAppliedPersonaFileName(null);
     }
-  }, [drawnSouls, appliedSlug]);
+  }, [botId, drawnSouls, appliedSlug]);
 
   /** 注入人设：
    *  - 有 botId → 走 `debug/exec` 一把梭：备份旧 SOUL.md（若存在）→ 写入新 SOUL.md
@@ -1560,7 +1565,14 @@ function FilledSlot({
         aria-label={selected ? t("取消选中此人设") : t("选中此人设")}
         className="block w-full cursor-pointer"
       >
-        <SoulFaceCard soul={soul} size="slot" onInterpret={onPreview} />
+        <SoulFaceCard soul={soul} size="slot" />
+      </button>
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); onPreview(); }}
+        className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-sm bg-white/90 px-1.5 py-0.5 text-[10px] underline shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      >
+        <span>{t("人设解读")}</span>
       </button>
 
       {/* 左上角：注入状态标签。appliedSlug 是单值，同一时间最多 1 张卡显示已注入。 */}
@@ -1767,17 +1779,10 @@ function PreviewModal({
   const t = useT();
   // 用 Portal 挂到 body，避开外层 framer-motion `filter: blur(...)`
   // 创建的 containing block —— 否则 fixed 会相对该祖先定位，导致弹窗被裁。
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white"
-        style={PANEL_CARD_STYLE}
-        onClick={(e) => e.stopPropagation()}
-      >
+  return (
+    <Dialog modal={false} open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} portalClassName="agents-ui" className="flex max-h-[80dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl p-0" style={PANEL_CARD_STYLE}>
+        <DialogTitle className="sr-only">{title || t("人设解读")}</DialogTitle>
         <div
           className="flex items-center gap-3 px-6 py-4"
           style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
@@ -1798,9 +1803,8 @@ function PreviewModal({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1857,7 +1861,7 @@ function UnauthorizedState() {
 // 视觉对齐 `agent-settings-page.tsx` 的 `_DeleteConfirmDialog`：
 //   - 半透明遮罩 + 8px 模糊
 //   - 圆角白色卡片 + AlertTriangle 红色图标 + 标题 + 说明 + 取消/确认按钮
-// 通过 `createPortal` 挂到 document.body，避免 panel 内嵌套定位影响
+// 使用 Radix Portal 挂到 document.body，避免 panel 内嵌套定位影响
 //
 // onConfirm / onCancel 由调用方控制；本组件不持有状态，仅展示 + 转发事件。
 
@@ -1875,70 +1879,25 @@ function ConfirmDialog({
   onCancel: () => void;
 }) {
   const t = useT();
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.6)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-      }}
-      onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 20, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
-        style={{
-          background: "rgba(255,255,255,0.98)",
-          borderColor: "rgba(0,0,0,0.06)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+  return (
+    <AlertDialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <AlertDialogContent className="max-w-sm rounded-[1.75rem] p-8">
         <div
           className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl"
           style={{ background: "rgba(207,61,76,0.08)" }}
         >
           <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
         </div>
-        <h3 className="mb-1.5 text-lg font-bold" style={{ color: "rgba(0,0,0,0.92)" }}>
-          {title}
-        </h3>
-        <p
-          className="mb-6 text-center text-sm leading-relaxed"
-          style={{ color: "rgba(0,0,0,0.65)" }}
-        >
-          {message}
-        </p>
-        <div className="flex w-full gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 rounded-full border px-4 py-2.5 font-medium transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666", fontSize: "16px" }}
-          >
-            {t("取消")}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="flex-1 rounded-full px-4 py-2.5 font-bold text-white transition-colors hover:opacity-90"
-            style={{ background: "#cf3d4c", fontSize: "16px" }}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>,
-    document.body,
+        <AlertDialogHeader className="items-center text-center">
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="w-full flex-row gap-3 sm:justify-center">
+          <AlertDialogCancel className="flex-1 rounded-full" onClick={onCancel}>{t("取消")}</AlertDialogCancel>
+          <AlertDialogAction className="flex-1 rounded-full" onClick={onConfirm}>{confirmLabel}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -1957,66 +1916,22 @@ function InfoDialog({
   buttonLabel: string;
   onClose: () => void;
 }) {
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.6)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-      }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 20, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full max-w-sm flex-col rounded-[1.5rem] border p-6 shadow-2xl"
-        style={{
-          background: "rgba(255,255,255,0.98)",
-          borderColor: "rgba(0,0,0,0.06)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3
-          className="mb-2.5 inline-flex items-center gap-1.5 text-base font-semibold"
-          style={{ color: "rgba(0,0,0,0.92)" }}
-        >
-          <Check className="h-4 w-4" style={{ color: "rgba(0,0,0,0.55)" }} aria-hidden />
+  return (
+    <Dialog modal={false} open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} portalClassName="agents-ui" className="max-w-sm rounded-[1.5rem] p-6">
+        <DialogTitle className="inline-flex items-center gap-1.5 text-base font-semibold">
+          <Check className="h-4 w-4 text-black/55" aria-hidden />
           {title}
-        </h3>
-        <p
-          className="text-left text-[13px] leading-relaxed"
-          style={{ color: "rgba(0,0,0,0.55)", paddingTop: 10, paddingBottom: 10 }}
-        >
-          {/* 把 message 里的命令高亮成蓝色加粗，便于用户一眼识别要输入的内容 */}
+        </DialogTitle>
+        <DialogDescription className="py-2.5 text-left text-[13px] leading-relaxed">
           {message.split(/(\/new|\/approve)/g).map((part, i) =>
-            part === "/new" || part === "/approve" ? (
-              <strong key={i} style={{ color: "#2563EB", fontWeight: 600 }}>{part}</strong>
-            ) : (
-              <span key={i}>{part}</span>
-            ),
+            part === "/new" || part === "/approve" ? <strong key={i} className="font-semibold text-blue-600">{part}</strong> : <span key={i}>{part}</span>,
           )}
-        </p>
+        </DialogDescription>
         <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full px-5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
-            style={{ background: "rgba(0,0,0,0.90)" }}
-          >
-            {buttonLabel}
-          </button>
+          <button type="button" onClick={onClose} className="rounded-full bg-black/90 px-5 py-2 text-sm font-medium text-white hover:opacity-90">{buttonLabel}</button>
         </div>
-      </motion.div>
-    </motion.div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }

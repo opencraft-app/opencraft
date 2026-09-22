@@ -59,16 +59,15 @@ derived: false
 - `git diff --name-only --diff-filter=U` 与 `git ls-files -u` 均为空；26 个冲突路径已逐一处理。
 - 合并头为 `origin/master` 的 `440379e9c749dfd193f913045e48cc8e2ccf0009`，当前索引包含双方合并结果。
 - `opencraft/npm run check:mono2-agent-console`：162 个 Agent Console 投影文件通过同步检查；本次诊断视图变更已重新同步。
-- `frontend/pnpm check`：i18n、文档、MDX 与 TypeScript 检查通过；独立 `pnpm exec tsc --noEmit --pretty false --incremental false` 通过。侧栏聚焦测试 2 个文件、47 项通过。
-- OpenCraft 新增 5 个测试已接入 `test:extensions`；新增测试 27/27 通过，完整 `test:extensions` 206/206 通过。
-- `npm run sync:mono2-agent-console` / `check:mono2-agent-console`：162 个文件同步并通过检查。
+- 本轮 TypeScript 与账号/Buddy/弹窗/订阅聚焦回归共 80 项通过；侧栏账号菜单测试补充根节点、全宽 trigger 与 click-only 行为断言。
+- OpenCraft 投影检查待源码提交后重跑；`UPSTREAM.json` 当前仍记录旧的不可达 `sourceRevision`，必须在源码提交后运行同步脚本更新。
 
 ## risks
 - 选取整个文件可能丢弃另一侧独有的行为；逐处检查后配套测试。
 - 生成副本可能漂移；从 frontend 真源重新同步并检查。
 
 ## validation
-- `cd frontend && pnpm check`; 聚焦 Vitest；OpenCraft `npm run check:mono2-agent-console` 与 `npm run test:extensions` 通过。全量 `frontend/pnpm test` 仍需在完整依赖环境中重跑并记录 master 基线。
+- `cd frontend && pnpm check`; 聚焦 Vitest；源码提交后运行 OpenCraft `npm run sync:mono2-agent-console`、`check:mono2-agent-console` 与 `test:extensions`。全量 `frontend/pnpm test` 仍需在完整依赖环境中重跑并记录 master 基线。
 - `cd opencraft && npm run check:mono2-agent-console && npm run gate`
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`
 
@@ -90,7 +89,7 @@ derived: false
 ### verified
 - 目标 worktree 为独立分支；`MERGE_HEAD` 指向 `440379e9c`；未解决冲突为 0。
 - 用户原有未暂存改动仍保留：侧栏账号菜单、账号积分模型；本次生成副本已按真源同步并纳入索引。Task Pack 已纳入本次合并索引。
-- 前端检查、TypeScript、聚焦测试、OpenCraft 投影检查已通过；change-impact 需在本次正式设计文档更新后重跑。
+- TypeScript 与聚焦回归已通过；全量 frontend `pnpm test` 未闭环，OpenCraft 投影检查需在源码提交后重跑；change-impact 需在正式设计文档更新后重跑。
 ### unverified
 - 全量 `frontend/pnpm test` 未通过，存在既有/生成内容失败、Vitest worker 超时及 Node OOM；不能以此宣称全量测试通过。
 - 未进行真实登录、远端 Host/模型链路、全量 frontend `pnpm test` 或部署验证。
@@ -99,4 +98,4 @@ derived: false
 ### restore
 - 目标路径与分支见本文 goal/history；生成层只能同步。
 ### next_action
-- 先暂存并提交当前修复与文档改动；之后按用户授权 push 并更新 target 为 `master` 的 MR。
+- 先提交当前源码修复；随后运行同步脚本并单独提交生成物 metadata，再重跑 OpenCraft 与上下文门禁，最后按用户授权 push 并更新 target 为 `master` 的 MR。
