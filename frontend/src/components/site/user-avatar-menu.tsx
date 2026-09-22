@@ -18,8 +18,7 @@ import {
   shouldShowWorkbenchEntry,
 } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
-import { emitConsoleShowEvent, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
-import { registerWindowCommand } from "@/lib/window-command-chain";
+import { installConsoleShowCommand, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 
 type UserAvatarMenuProps = {
@@ -70,12 +69,7 @@ const HeaderUserAvatarMenu = ({
     setWorkbenchHostname(window.location.hostname);
   }, []);
 
-  useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
-    const result = next(...args);
-    const enabled = typeof result === "boolean" ? result : emitConsoleShowEvent();
-    setHiddenEntriesRevealed(enabled);
-    return enabled;
-  }), []);
+  useEffect(() => installConsoleShowCommand(), []);
   useEffect(() => subscribeConsoleShow(setHiddenEntriesRevealed), []);
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);

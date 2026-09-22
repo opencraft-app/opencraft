@@ -16,8 +16,7 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isGlobal } from "@/lib/region";
 import { useAccountPassSummary } from "@/lib/use-account-pass-summary";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
-import { registerWindowCommand } from "@/lib/window-command-chain";
-import { emitConsoleShowEvent, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
+import { installConsoleShowCommand, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { InternationalLanguageMenu } from "./language-switcher";
@@ -47,12 +46,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   const [hostname, setHostname] = useState<string | null>(null);
   useEffect(() => { setHostname(window.location.hostname); }, []);
   useEffect(() => subscribeConsoleShow(setHiddenEntriesRevealed), []);
-  useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
-    const result = next(...args);
-    const enabled = typeof result === "boolean" ? result : emitConsoleShowEvent();
-    setHiddenEntriesRevealed(enabled);
-    return enabled;
-  }), []);
+  useEffect(() => installConsoleShowCommand(), []);
 
   const state = summary.pass ? "ready" : passesLoading || summary.state === "loading" ? "loading" : passesError || summary.state === "error" ? "error" : summary.state;
   const stateLabel = state === "loading" ? t("加载中...") : state === "error" ? t("套餐列表加载失败") : t("未订阅");
@@ -79,7 +73,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     label: resolveAgentConsoleCollectionLabel("model", i18n.language, t),
   });
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });
-  if (!isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("建议反馈"), external: true });
+  if (!isGlobal && hiddenEntriesRevealed) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈"), external: true });
   return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
     name={session.user?.name || t("用户")} email={session.user?.email || undefined} avatarSrc={avatarImageUrl(session.user?.avatarUrl ?? null)}
     planLabel={planLabel} credit={credit} status={statusText} entries={entries}

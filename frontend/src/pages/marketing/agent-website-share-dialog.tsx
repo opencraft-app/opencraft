@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { Copy, KeyRound, Loader2, RefreshCw, Share2, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { motion } from "framer-motion";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
 import { useT } from "@/i18n/t";
-import { WebsiteShareDialogView } from "./website-share-dialog-view";
 
 /**
  * 分享弹窗所需的站点最小字段。两个页面各自的 WebsiteSite 都满足此结构化子集，
@@ -61,7 +62,6 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const clipboardContainerRef = useRef<HTMLDivElement>(null);
 
   /** 是否处于分享中：本次会话拿到过明文码，或后端返回的站点本就是 share_code 模式 */
   const isSharing = !stopped && (code !== null || site.AccessMode === "share_code" || hasEnabled);
@@ -156,19 +156,14 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
       ta.value = text;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
-      const container = clipboardContainerRef.current ?? document.body;
-      const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      // Keep the native selection inside the active modal's focus scope.
-      container.appendChild(ta);
+      document.body.appendChild(ta);
       ta.select();
       try {
         return document.execCommand("copy");
       } catch {
         return false;
       } finally {
-        const restoreFocus = document.activeElement === ta;
-        container.removeChild(ta);
-        if (restoreFocus && previousFocus?.isConnected) previousFocus.focus();
+        document.body.removeChild(ta);
       }
     }
   }, []);
@@ -225,31 +220,222 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
   const shownCode = code ?? "";
 
   return (
-    <WebsiteShareDialogView
-      contentRef={clipboardContainerRef}
-      siteName={site.Name}
-      publicUrl={site.PublicURL}
-      durationDays={durationDays}
-      durationOptions={SHARE_DURATIONS.map((days) => ({ value: days, label: `${days} ${t("天")}` }))}
-      isSharing={isSharing}
-      code={shownCode}
-      expiresLabel={expiresAt ? `${t("有效期至")} ${formatDateTime(expiresAt)}` : ""}
-      loading={loading}
-      copied={copied}
-      error={error}
-      labels={{
-        title: t("分享网站"), close: t("关闭"), cancel: t("取消"), siteName: t("工作台名称"),
-        duration: t("分享链接有效期"), enable: t("开启分享"), enableHint: t("开启分享后将生成分享码，可一键复制给好友。"),
-        code: t("分享码"), reset: t("重置分享码"), copy: t("复制分享信息"), copied: t("已复制"),
-        stop: t("停止分享"), address: t("站点地址"), sharing: t("分享已开启"),
-        resetCopyHint: t("点击「复制分享信息」会重置分享码并复制新的分享信息，原分享码将立即失效。"),
-      }}
-      onDurationChange={setDurationDays}
-      onEnable={handleEnable}
-      onReset={handleReset}
-      onCopy={shownCode ? handleCopy : handleCopyWithReset}
-      onStop={handleStop}
-      onClose={onClose}
-    />
+    <motion.div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={() => !loading && onClose()}
+    >
+      <motion.div
+        className="relative mx-4 w-full max-w-[420px] overflow-hidden rounded-2xl bg-white"
+        style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 10 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 pb-5 pt-6">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full"
+              style={{ background: "rgba(0,0,0,0.05)" }}
+            >
+              <Share2 className="h-4 w-4" style={{ color: "#333" }} />
+            </div>
+            <h3 className="m-0 flex-1 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
+              {t("分享网站")}
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-black/[0.05] disabled:opacity-50"
+              title={t("取消")}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <p className="text-[13px] leading-relaxed" style={{ margin: "10px 0 0 0", color: "#666" }}>
+            {t("工作台名称")}：{site.Name}
+          </p>
+
+          {/* 未分享态：直接选择有效期后开启 */}
+          {!isSharing ? (
+            <div className="mt-4">
+              <p className="mb-1.5 text-[11px] font-medium" style={{ color: "#999" }}>
+                {t("分享链接有效期")}
+              </p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {SHARE_DURATIONS.map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setDurationDays(days)}
+                    className="rounded-md border py-1.5 text-[13px] font-medium transition-colors"
+                    style={{
+                      borderColor: durationDays === days ? "#000" : "rgba(0,0,0,0.1)",
+                      background: durationDays === days ? "#000" : "transparent",
+                      color: durationDays === days ? "#fff" : "#666",
+                    }}
+                  >
+                    {days} {t("天")}
+                  </button>
+                ))}
+              </div>
+
+              <p className="mt-2.5 text-[11px] leading-relaxed" style={{ color: "#999" }}>
+                {t("开启分享后将生成分享码，可一键复制给好友。")}
+              </p>
+
+              <div className="mt-4 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={loading}
+                  className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
+                >
+                  {t("取消")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEnable}
+                  disabled={loading}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-85 disabled:opacity-50"
+                >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {t("开启分享")}
+                </button>
+              </div>
+            </div>
+          ) : shownCode ? (
+            /* 已分享 + 有明文码（刚开启/重置后） */
+            <div className="mt-4">
+              <div className="relative rounded-xl px-4 py-3.5 text-center" style={{ background: "rgba(0,0,0,0.04)" }}>
+                <div className="group absolute right-2 top-2">
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    disabled={loading}
+                    aria-label={t("重置分享码")}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-black/40 transition-colors group-hover:bg-black/[0.05] disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  </button>
+                  <div
+                    role="tooltip"
+                    className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-[rgba(0,0,0,0.08)] bg-white px-2.5 py-1 text-[11px] font-medium text-[#333] opacity-0 shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-opacity duration-150 group-hover:opacity-100"
+                  >
+                    {t("重置分享码")}
+                    <span
+                      aria-hidden
+                      className="absolute left-1/2 top-full h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[rgba(0,0,0,0.08)] bg-white"
+                    />
+                  </div>
+                </div>
+                <p className="mb-1.5 text-[11px]" style={{ color: "#999" }}>
+                  {t("分享码")}
+                </p>
+                <p className="select-all text-xl font-bold tracking-[0.2em]" style={{ color: "#111" }}>
+                  {shownCode}
+                </p>
+                {expiresAt && (
+                  <p className="mt-1.5 text-[11px]" style={{ color: "#999" }}>
+                    {t("有效期至")} {formatDateTime(expiresAt)}
+                  </p>
+                )}
+              </div>
+              <div className="mt-3.5 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="flex flex-[2] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-85"
+                >
+                  {copied ? <KeyRound className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? t("已复制") : t("复制分享信息")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  disabled={loading}
+                  title={t("停止分享")}
+                  className="flex flex-1 items-center justify-center rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--danger)" }}
+                >
+                  {t("停止分享")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* 已分享 + 无明文码（二次打开） */
+            <div className="mt-4">
+              <div className="rounded-xl px-4 py-3" style={{ background: "rgba(0,0,0,0.04)" }}>
+                <p className="mb-1 text-[11px] font-medium" style={{ color: "#999" }}>
+                  {t("站点地址")}
+                </p>
+                <p
+                  className="select-all truncate text-sm font-medium"
+                  style={{ color: "#333" }}
+                  title={site.PublicURL}
+                >
+                  {site.PublicURL}
+                </p>
+              </div>
+              <div className="mt-2 rounded-xl px-4 py-3">
+                <p className="text-sm font-medium" style={{ color: "#333" }}>
+                  {t("分享已开启")}
+                </p>
+                {expiresAt && (
+                  <p className="mt-0.5 text-xs" style={{ color: "#999" }}>
+                    {t("有效期至")} {formatDateTime(expiresAt)}
+                  </p>
+                )}
+              </div>
+              <p className="mt-2.5 text-[11px] leading-relaxed" style={{ color: "#999" }}>
+                {t("点击「复制分享信息」会重置分享码并复制新的分享信息，原分享码将立即失效。")}
+              </p>
+              <div className="mt-2.5 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleCopyWithReset}
+                  disabled={loading}
+                  className="flex flex-[2] items-center justify-center gap-1.5 rounded-lg bg-black px-3 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-85 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : copied ? (
+                    <KeyRound className="h-4 w-4" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                  {copied ? t("已复制") : t("复制分享信息")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  disabled={loading}
+                  className="flex flex-1 items-center justify-center rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--danger)" }}
+                >
+                  {t("停止分享")}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <p className="mt-4 rounded-lg bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] px-3 py-2 text-xs text-[var(--danger)]">
+              {error}
+            </p>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
   );
 };

@@ -19,6 +19,7 @@ const loadingView = readFileSync(
   join(process.cwd(), "src/pages/marketing/agent-settings-loading-view.tsx"),
   "utf8",
 );
+const sidebar = readFileSync(join(process.cwd(), "src/components/site/agent-sidebar.tsx"), "utf8");
 
 function getBlockBody(source: string, marker: string): string | undefined {
   const markerStart = source.indexOf(marker);
@@ -192,8 +193,8 @@ describe("Agent settings navigation spacing", () => {
     const desktopNavigation = getBlockBody(styles, "\n.lv-agents-nav {");
     const desktopItem = getBlockBody(styles, "\n.lv-agents-nav-item {");
     const profileName = getBlockBody(styles, "\n.lv-agent-profile-name {");
-    const responsiveStyles = styles.slice(styles.indexOf("@media (max-width: 1023px) {"));
-    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {\n    gap");
+    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
+    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {");
     const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
 
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
@@ -227,7 +228,13 @@ describe("Agent settings navigation spacing", () => {
     expect(appRouteShell).toContain("<AgentSettingsLoadingContent />");
     expect(page).toContain("return <AgentSettingsLoadingContent />;");
     expect(loadingView).toContain('lg:grid-cols-[248px_minmax(0,1fr)]');
-    expect(loadingView).toContain('className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"');
+    expect(loadingView).toContain('<AgentSidebar>');
+    expect(page).toContain('<AgentSidebar>');
+    expect(sidebar).toContain('className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"');
+    for (const source of [loadingView, page]) {
+      expect(source).toContain('className="lv-agents-sidebar-middle"');
+      expect(source).toContain('className="lv-agents-sidebar-footer"');
+    }
     expect(loadingView).toContain('className="lv-agent-account-footer hidden lg:flex"');
     expect(loadingView).not.toContain('lg:top-[84px]');
   });
@@ -258,7 +265,12 @@ describe("Agent settings navigation spacing", () => {
     expect(accountSeparator).toContain("padding-left: 16px;");
     expect(accountSeparator).toContain("border-top: 1px solid #e9ecf1;");
     expect(desktopScrollContainer).toContain("width: 264px;");
-    expect(desktopScrollContainer).toContain("margin-left: -16px;");
+    expect(desktopScrollContainer).toContain("margin-left: 0;");
+    expect(desktopScrollContainer).toContain("left: 0;");
+    expect(desktopScrollContainer).toContain("overflow-y: hidden;");
+    expect(getBlockBody(styles, "\n  .lv-agents-sidebar-middle {")).toContain("overflow-y: auto;");
+    expect(getBlockBody(styles, "\n.lv-agent-account-menu {")).toContain("width: 100%;");
+    expect(getBlockBody(styles, "\n.lv-agent-account-trigger {")).toContain("width: 100%;");
     expect(desktopScrollContainer).toContain("padding-left: 16px;");
     expect(desktopScrollContainer).toContain("overflow-x: hidden;");
   });

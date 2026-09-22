@@ -1,10 +1,7 @@
-import { KeyRound, RefreshCw } from "lucide-react";
+import { KeyRound, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRepositories } from "@/contexts/repository-context";
-import { AgentState, agentButtonClassName, agentPanelClassName } from "@/components/agents";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { useT } from "@/i18n/t";
 import {
   DeepSeekHarnessCommandClient,
@@ -53,7 +50,6 @@ export const AgentDeepSeekHarnessModelCard = ({
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<DeepSeekHarnessProviderID | null>(null);
   const savingIdRef = useRef<DeepSeekHarnessProviderID | null>(null);
-  const configuredHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -177,7 +173,7 @@ export const AgentDeepSeekHarnessModelCard = ({
     <section
       role="region"
       aria-label={t("模型配置")}
-      className={cn("agents-ui min-w-0 p-4 sm:p-5", agentPanelClassName)}
+      className="rounded-md border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:p-6"
     >
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-black/[0.04] text-black/70">
@@ -190,22 +186,25 @@ export const AgentDeepSeekHarnessModelCard = ({
       </div>
 
       {loading ? (
-        <AgentState kind="loading" title={t("正在加载模型配置")} className="mt-5" />
+        <div role="status" className="mt-6 flex min-h-28 items-center gap-2 text-sm text-black/50">
+          <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          {t("正在加载模型配置")}
+        </div>
       ) : loadError ? (
-        <AgentState kind="error" title={loadError} className="mt-5" action={
-          <Button variant="outline"
+        <div className="mt-6 min-h-28 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p role="alert">{loadError}</p>
+          <button
             type="button"
             onClick={() => setReloadKey((key) => key + 1)}
-            className={agentButtonClassName}
+            className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-3 font-semibold hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
           >
             <RefreshCw className="size-4" aria-hidden="true" />
             {t("重试")}
-          </Button>
-        } />
+          </button>
+        </div>
       ) : (
         <div className="mt-6 space-y-6">
           <DeepSeekHarnessConfiguredProviderList
-            headingRef={configuredHeadingRef}
             providers={configuredProviders}
             editingId={editingId}
             savingId={savingId}
@@ -249,7 +248,6 @@ export const AgentDeepSeekHarnessModelCard = ({
       )}
 
       <DeepSeekHarnessProviderDeleteDialog
-        fallbackFocusRef={configuredHeadingRef}
         provider={pendingDelete}
         busy={deleting}
         error={deleteError}

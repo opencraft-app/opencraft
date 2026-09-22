@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, ChevronDown, CircleHelp, Loader2, Search, X } from "lucide-react";
-import { useId, useMemo, useRef, useState } from "react";
-import { AgentTooltip } from "@/components/agents";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
@@ -26,6 +27,11 @@ export interface AutomationSkillBindingSummaryProps {
 function getSkillLabel(slug: string): string {
   return formatInstalledSkillDisplayName(slug) || slug;
 }
+
+const HELP_TOOLTIP_MAX_WIDTH = 320;
+const HELP_TOOLTIP_VIEWPORT_MARGIN = 16;
+const HELP_TOOLTIP_GAP = 8;
+const HELP_TOOLTIP_CLOSE_DELAY_MS = 120;
 
 export function AutomationSkillBindingSummary({
   value,
@@ -73,9 +79,13 @@ export function AutomationSkillPicker({
 }: AutomationSkillPickerProps) {
   const t = useT();
   const listboxId = useId();
-  const searchRef = useRef<HTMLInputElement>(null);
+  const helpTooltipId = useId();
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
+  const helpCloseTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [helpTooltipOpen, setHelpTooltipOpen] = useState(false);
+  const [helpTooltipPosition, setHelpTooltipPosition] = useState({ left: 0, top: 0 });
   const filteredSlugs = useMemo(
     () => loadState.slugs.filter((slug) => matchesInstalledSkillSearch(slug, getSkillLabel(slug), query)),
     [loadState.slugs, query],
@@ -102,98 +112,178 @@ export function AutomationSkillPicker({
     onChange(value.filter((item) => item !== slug));
   };
 
-  const changeOpen = (next: boolean) => { setOpen(next); if (!next) setQuery(""); };
+  const clearHelpCloseTimer = useCallback(() => {
+    if (helpCloseTimerRef.current === null) return;
+    window.clearTimeout(helpCloseTimerRef.current);
+    helpCloseTimerRef.current = null;
+  }, []);
+
+  const updateHelpTooltipPosition = useCallback(() => {
+    const rect = helpButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const tooltipWidth = Math.min(
+      HELP_TOOLTIP_MAX_WIDTH,
+      Math.max(0, window.innerWidth - HELP_TOOLTIP_VIEWPORT_MARGIN * 2),
+    );
+    const halfWidth = tooltipWidth / 2;
+    const centeredLeft = rect.left + rect.width / 2;
+    const left = Math.min(
+      Math.max(centeredLeft, HELP_TOOLTIP_VIEWPORT_MARGIN + halfWidth),
+      window.innerWidth - HELP_TOOLTIP_VIEWPORT_MARGIN - halfWidth,
+    );
+
+    setHelpTooltipPosition({
+      left,
+      top: rect.top - HELP_TOOLTIP_GAP,
+    });
+  }, []);
+
+  const showHelpTooltip = () => {
+    clearHelpCloseTimer();
+    updateHelpTooltipPosition();
+    setHelpTooltipOpen(true);
+  };
+
+  const scheduleHelpTooltipClose = () => {
+    clearHelpCloseTimer();
+    helpCloseTimerRef.current = window.setTimeout(() => {
+      setHelpTooltipOpen(false);
+      helpCloseTimerRef.current = null;
+    }, HELP_TOOLTIP_CLOSE_DELAY_MS);
+  };
+
+  useEffect(() => {
+    if (!helpTooltipOpen) return;
+
+    window.addEventListener("resize", updateHelpTooltipPosition);
+    window.addEventListener("scroll", updateHelpTooltipPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateHelpTooltipPosition);
+      window.removeEventListener("scroll", updateHelpTooltipPosition, true);
+    };
+  }, [helpTooltipOpen, updateHelpTooltipPosition]);
+
+  useEffect(() => () => clearHelpCloseTimer(), [clearHelpCloseTimer]);
 
   return (
     <div className="mt-4">
       <div className="flex items-center gap-1 text-sm font-medium text-black/80">
         <span>{t("调用技能")}</span>
-        <AgentTooltip triggerMode="control" content={t("在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。")}>
-          <button type="button" aria-label={t("为什么选择调用技能更稳定")}
-            className="inline-flex size-6 items-center justify-center rounded-md text-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+        <span
+          className="relative inline-flex"
+          onMouseEnter={showHelpTooltip}
+          onMouseLeave={scheduleHelpTooltipClose}
+        >
+          <button
+            ref={helpButtonRef}
+            type="button"
+            aria-label={t("为什么选择调用技能更稳定")}
+            aria-describedby={helpTooltipId}
+            onFocus={showHelpTooltip}
+            onBlur={scheduleHelpTooltipClose}
+            className="inline-flex size-4 items-center justify-center rounded-full text-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+          >
             <CircleHelp className="size-3.5" aria-hidden="true" />
           </button>
-        </AgentTooltip>
+        </span>
+        {helpTooltipOpen && typeof document !== "undefined" && createPortal(
+          <span
+            id={helpTooltipId}
+            role="tooltip"
+            onMouseEnter={showHelpTooltip}
+            onMouseLeave={scheduleHelpTooltipClose}
+            style={{ left: helpTooltipPosition.left, top: helpTooltipPosition.top }}
+            className="pointer-events-auto fixed z-[260] w-80 max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-full select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-pretty text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+          >
+            {t("在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。")}
+            <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+          </span>,
+          document.body,
+        )}
         <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
       </div>
-      <Popover open={open} onOpenChange={changeOpen}>
-      <PopoverAnchor asChild>
-      <div className="relative mt-1.5">
-        <div className="flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-md border border-black/10 bg-white p-1.5 pl-2 transition focus-within:border-black/30 hover:border-black/20">
-          {value.map((slug) => {
-            const displayName = getSkillLabel(slug);
-            const unavailable = loadState.status === "ready" && !loadState.slugs.includes(slug);
-            return (
-              <span
-                key={slug}
-                className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
-                  unavailable
-                    ? "bg-[var(--automation-skill-unavailable-bg)] text-[var(--automation-skill-unavailable-text)]"
-                    : "bg-[var(--automation-skill-chip-bg)] text-[var(--automation-skill-chip-text)]"
-                }`}
-              >
-                <span className="max-w-40 truncate">{displayName}</span>
-                {unavailable && <span className="text-[10px] font-normal">{t("不可用")}</span>}
-                <button type="button" aria-label={`${t("移除技能")} ${displayName}`}
-                  onClick={() => removeSelection(slug)} className="-mr-1 inline-flex size-4 shrink-0 items-center justify-center rounded focus-visible:ring-2">
-                  <X className="size-3" aria-hidden="true" />
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) setQuery("");
+        }}
+      >
+        <PopoverAnchor asChild>
+          <div className="mt-1.5">
+            <div className="flex min-h-[38px] w-full flex-wrap items-center gap-1.5 rounded-md border border-black/10 bg-white p-1.5 pl-2 transition focus-within:border-black/30 hover:border-black/20">
+              {value.map((slug) => {
+                const displayName = getSkillLabel(slug);
+                const unavailable = loadState.status === "ready" && !loadState.slugs.includes(slug);
+                return (
+                  <span
+                    key={slug}
+                    className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
+                      unavailable
+                        ? "bg-[var(--automation-skill-unavailable-bg)] text-[var(--automation-skill-unavailable-text)]"
+                        : "bg-[var(--automation-skill-chip-bg)] text-[var(--automation-skill-chip-text)]"
+                    }`}
+                  >
+                    <span className="max-w-40 truncate">{displayName}</span>
+                    {unavailable && <span className="text-[10px] font-normal">{t("不可用")}</span>}
+                    <button
+                      type="button"
+                      aria-label={`${t("移除技能")} ${displayName}`}
+                      onClick={() => removeSelection(slug)}
+                      className="-mr-1 inline-flex size-4 shrink-0 items-center justify-center rounded text-black/45 hover:bg-black/[0.06] hover:text-black/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
+                    >
+                      <X className="size-3" aria-hidden="true" />
+                    </button>
+                  </span>
+                );
+              })}
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("调用技能")}
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  aria-controls={open ? listboxId : undefined}
+                  className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-sm focus:outline-none ${
+                    value.length > 0 ? "text-black/55" : "text-black/35"
+                  }`}
+                >
+                  <span className={`truncate ${value.length > 0 ? "text-black/55" : "text-black/35"}`}>
+                    {value.length > 0 ? t("继续添加技能") : t("选择你希望 Agent 稳定调用的技能")}
+                  </span>
+                  <ChevronDown className={`size-4 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
                 </button>
-              </span>
-            );
-          })}
-          <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label={t("调用技能")}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            aria-controls={open ? listboxId : undefined}
-            className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-sm focus:outline-none ${
-              value.length > 0 ? "text-black/55" : "text-black/35"
-            }`}
+              </PopoverTrigger>
+            </div>
+          </div>
+        </PopoverAnchor>
+
+        {open && (
+          <PopoverContent
+            align="start"
+            side="top"
+            sideOffset={6}
+            collisionPadding={16}
+            data-testid="automation-skill-picker-popup"
+            className="z-[210] max-h-[var(--radix-popover-content-available-height)] w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-lg border border-black/10 bg-white p-0 shadow-xl"
           >
-            <span className={`truncate ${value.length > 0 ? "text-black/55" : "text-black/35"}`}>
-              {value.length > 0 ? t("继续添加技能") : t("选择你希望 Agent 稳定调用的技能")}
-            </span>
-            <ChevronDown className={`size-4 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
-          </button>
-          </PopoverTrigger>
-        </div>
-      </div>
-      </PopoverAnchor>
-      {open && <PopoverContent align="start" side="top" sideOffset={6} collisionPadding={16}
-        data-testid="automation-skill-picker-popup" aria-label={t("调用技能")}
-        className="agents-ui z-[250] max-h-[var(--radix-popover-content-available-height)] w-[var(--radix-popover-trigger-width)] min-w-[min(320px,calc(100vw-32px))] max-w-[calc(100vw-32px)] overflow-hidden rounded-md p-0"
-        onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus(); }}>
             <div className="border-b border-black/[0.06] p-1.5">
               <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-1.5">
                 <Search className="h-4 w-4 shrink-0 text-black/35" />
                 <input
-                  ref={searchRef}
                   type="search"
                   aria-label={t("搜索已安装的技能")}
                   placeholder={t("搜索已安装的技能")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="min-w-0 flex-1 bg-transparent text-sm text-black/85 placeholder:text-black/35 focus:outline-none"
-                  onKeyDown={(event) => {
-                    if (event.key === "ArrowDown") {
-                      event.preventDefault();
-                      document.getElementById(listboxId)?.querySelector<HTMLElement>('[role="option"]')?.focus();
-                    }
-                  }}
+                  autoFocus
                 />
               </label>
             </div>
 
-            <div id={listboxId} role="listbox" aria-multiselectable="true" aria-label={t("已安装 Skill")}
-              onKeyDown={(event) => {
-                if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-                event.preventDefault();
-                const options = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]')];
-                const index = options.indexOf(document.activeElement as HTMLElement);
-                options[(index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length]?.focus();
-              }} className="max-h-48 overflow-y-auto p-1">
+            <div id={listboxId} role="listbox" aria-multiselectable="true" aria-label={t("已安装 Skill")} className="max-h-48 overflow-y-auto p-1">
               {selectedFallbacks.map((slug) => (
                 <button
                   key={slug}
@@ -280,7 +370,8 @@ export function AutomationSkillPicker({
                 <div className="px-2.5 py-3 text-sm text-black/45">{t("没有匹配的 Skill")}</div>
               )}
             </div>
-        </PopoverContent>}
+          </PopoverContent>
+        )}
       </Popover>
     </div>
   );

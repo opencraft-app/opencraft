@@ -1,17 +1,25 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
 import {
+  ArrowLeft,
+  AlertTriangle,
   BookOpen,
   Clapperboard,
+  Check,
   Cpu,
   GraduationCap,
   HeartPulse,
   Landmark,
+  LayoutGrid,
+  List,
+  Loader2,
   Megaphone,
   MoonStar,
   PackageOpen,
   Palette,
+  Puzzle,
   RefreshCw,
   Scale,
+  Search,
   ShoppingCart,
   Users,
 } from "lucide-react";
@@ -19,11 +27,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ElementType } f
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { AgentPageLoadingState, AgentState } from "../../components/agents/index";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
-import { Spinner } from "../../components/ui/spinner";
-import { ExpertPackageCardView, ExpertToolbarView, SkillPackageDetailLayout, SkillPackageModulesView } from "./agent-experts-views";
 import { useT } from "../../i18n/t";
 import { loadExpertPackagesState, saveExpertPackagesState } from "../../lib/expert-package-storage";
 import { requireHermesSkillsProfile, withHermesAgent, withHermesSkillsProfile } from "../../lib/hermes-agent-command";
@@ -145,6 +148,10 @@ const EXPERT_PACKAGE_SUB_SCENE_ROLES: Record<string, string> = {
 };
 
 const EXPERT_KNOWN_SCENE_SET = new Set(Object.keys(EXPERT_PACKAGE_SCENE_ROLES) as SkillHubKnownSkillSetScene[]);
+const EXPERT_VIEW_OPTIONS: Array<{ value: ExpertView; label: string; icon: ElementType }> = [
+  { value: "list", label: "列表", icon: List },
+  { value: "grid", label: "卡片", icon: LayoutGrid },
+];
 
 const EXPERT_PAGE_SIZE = 200;
 // SkillHub currently returns both domestic and international packages from the
@@ -1332,18 +1339,13 @@ export function ExpertsPanel({
     );
   }
 
-  if (expertsLoading && visibleCards.length === 0) {
-    return <AgentPageLoadingState className="agents-ui" title={t("正在读取技能")} />;
-  }
-
   return (
-    <div className="agents-ui min-w-0 space-y-6">
+    <div className="space-y-6">
       <div className="space-y-4">
-        <ExpertToolbarView query={searchDraft} onQueryChange={setSearchDraft} onQueryCommit={commitSearch}
-          placeholder={lang === "es" ? "Buscar paquetes de Skills" : lang === "en" ? "Search skill packages" : "搜索技能包"}
-          view={view} onViewChange={handleViewChange}
-          viewLabels={lang === "es" ? { list: "Lista", grid: "Tarjetas" } : lang === "en" ? { list: "List", grid: "Cards" } : { list: "列表", grid: "卡片" }} />
-
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <ExpertSearchBox value={searchDraft} onChange={setSearchDraft} onCommit={commitSearch} lang={lang} />
+          <ExpertViewToggle value={view} onChange={handleViewChange} lang={lang} />
+        </div>
 
         <ExpertSceneFilters
           activeFilter={activeFilter}
@@ -1355,9 +1357,29 @@ export function ExpertsPanel({
         />
       </div>
 
-      {expertsError ? (
-        <AgentState kind="error" title={t("技能包加载失败")} description={getSkillHubErrorMessage(expertsError, t)}
-          action={<Button onClick={reloadExperts} className="h-9 rounded-md shadow-none transition-none hover:translate-y-0"><RefreshCw className="size-4" aria-hidden="true" />{t("重试")}</Button>} />
+      {expertsLoading && visibleCards.length === 0 ? (
+        <div className="flex min-h-[240px] items-center justify-center rounded-md bg-white">
+          <Loader2 className="h-5 w-5 animate-spin text-black/35" />
+          <span className="ml-2 text-sm text-black/45">{t("正在加载技能包")}</span>
+        </div>
+      ) : expertsError ? (
+        <div className="rounded-md border border-red-500/15 bg-white p-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500" />
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-black/90">{t("技能包加载失败")}</h2>
+              <p className="mt-1 text-sm leading-6 text-black/50">{getSkillHubErrorMessage(expertsError, t)}</p>
+              <button
+                type="button"
+                onClick={reloadExperts}
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-sm font-medium text-white transition-colors hover:bg-black/85"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t("重试")}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : visibleCards.length > 0 ? (
         view === "grid" ? (
           <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2" data-testid="skill-package-card-view">
@@ -1398,9 +1420,104 @@ export function ExpertsPanel({
           </div>
         )
       ) : (
-        <AgentState kind="empty" title={t("没有找到匹配的技能包")} />
+        <div className="rounded-md bg-white px-5 py-10 text-center text-sm text-black/40">
+          {t("没有找到匹配的技能包")}
+        </div>
       )}
 
+    </div>
+  );
+}
+
+function ExpertSearchBox({
+  value,
+  onChange,
+  onCommit,
+  lang,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: (value: string) => void;
+  lang?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const placeholder = lang === "es"
+    ? "Buscar paquetes de Skills"
+    : lang === "en"
+      ? "Search skill packages"
+      : "搜索技能包";
+
+  return (
+    <div className="lv-agent-search-box">
+      <Search className="lv-agent-search-box-icon" />
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        onBlur={(event) => onCommit(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            onCommit(event.currentTarget.value);
+            inputRef.current?.blur();
+          }
+        }}
+        placeholder={placeholder}
+        className="lv-skills-search-input lv-agent-search-box-input"
+      />
+    </div>
+  );
+}
+
+function ExpertViewToggle({
+  value,
+  onChange,
+  lang,
+}: {
+  value: ExpertView;
+  onChange: (value: ExpertView) => void;
+  lang?: ExpertLanguage;
+}) {
+  const viewLabelsEs: Record<ExpertView, string> = {
+    list: "Lista",
+    grid: "Tarjetas",
+  };
+  return (
+    <div className="flex w-max items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
+      {EXPERT_VIEW_OPTIONS.map((item) => {
+        const Icon = item.icon;
+        const active = value === item.value;
+        const label = lang === "es"
+          ? viewLabelsEs[item.value]
+          : lang === "en"
+            ? (item.value === "list" ? "List" : "Cards")
+            : item.label;
+        const tooltipId = `skill-package-view-${item.value}-tooltip`;
+        return (
+          <span key={item.value} className="group relative inline-flex">
+            <button
+              type="button"
+              onClick={() => onChange(item.value)}
+              aria-label={label}
+              aria-describedby={tooltipId}
+              aria-pressed={active}
+              className={cn(
+                "peer lv-agent-view-toggle-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40",
+                active ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]" : "text-black/45 hover:text-black/70",
+              )}
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <span
+              id={tooltipId}
+              role="tooltip"
+              className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-hover:opacity-100 peer-focus-visible:opacity-100"
+            >
+              {label}
+              <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+            </span>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -1572,7 +1689,6 @@ function InstallButton({
         void onInstall(pkg);
       }}
       disabled={Boolean(installingSlug) || isInstalled}
-      aria-busy={isInstalling}
       className={cn(
         "inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-semibold leading-none transition-colors",
         isInstalled
@@ -1583,7 +1699,7 @@ function InstallButton({
         className,
       )}
     >
-      {isInstalling ? <Spinner size="sm" /> : null}
+      {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
       {label}
     </button>
   );
@@ -1612,12 +1728,38 @@ function ExpertListItem({
   const role = getExpertRole(card.pkg, activeFilter, t, lang);
   const summary = getPackageSummary(card.pkg, t, lang);
 
-  return <ExpertPackageCardView variant="list" displayName={getLocalizedPackageDisplayName(card.pkg, lang)}
-    summary={summary} role={role} onOpen={() => onOpen(card)}
-    profile={<SkillPackageProfileIcon pkg={card.pkg} displayName={getLocalizedPackageDisplayName(card.pkg, lang)} className="size-10 shrink-0 rounded-md" />}
-    action={<InstallButton pkg={card.pkg} installingSlug={installingSlug} installProgress={installProgress}
-      isInstalled={isInstalled} onInstall={onInstall} className="h-9 px-3" />} />;
-
+  return (
+    <article
+      className="group flex items-stretch gap-3 px-4 py-4 transition-colors hover:bg-black/[0.018]"
+    >
+      <button
+        type="button"
+        onClick={() => onOpen(card)}
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/35"
+      >
+        <SkillPackageProfileIcon
+          pkg={card.pkg}
+          displayName={getLocalizedPackageDisplayName(card.pkg, lang)}
+          className="h-10 w-10 rounded-[9px]"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold leading-5 text-black/90">
+            {getLocalizedPackageDisplayName(card.pkg, lang)}
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] font-medium leading-4 text-black/48">{role}</span>
+          <span className="mt-1 line-clamp-2 text-xs leading-5 text-black/50" title={summary}>{summary}</span>
+        </span>
+      </button>
+      <InstallButton
+        pkg={card.pkg}
+        installingSlug={installingSlug}
+        installProgress={installProgress}
+        isInstalled={isInstalled}
+        onInstall={onInstall}
+        className="h-9 shrink-0 self-center px-3"
+      />
+    </article>
+  );
 }
 
 function ExpertGridCard({
@@ -1643,12 +1785,41 @@ function ExpertGridCard({
   const role = getExpertRole(card.pkg, activeFilter, t, lang);
   const summary = getPackageSummary(card.pkg, t, lang);
 
-  return <ExpertPackageCardView variant="grid" displayName={getLocalizedPackageDisplayName(card.pkg, lang)}
-    summary={summary} role={role} onOpen={() => onOpen(card)}
-    profile={<SkillPackageProfileIcon pkg={card.pkg} displayName={getLocalizedPackageDisplayName(card.pkg, lang)} className="size-10 shrink-0 rounded-md" />}
-    action={<InstallButton pkg={card.pkg} installingSlug={installingSlug} installProgress={installProgress}
-      isInstalled={isInstalled} onInstall={onInstall} className="h-9 px-3" />} />;
-
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(card)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(card);
+        }
+      }}
+      className="group flex cursor-pointer items-start gap-3 rounded-md border border-black/[0.06] bg-white px-3.5 py-3 text-left transition-colors hover:border-black/[0.12] hover:bg-black/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40"
+    >
+      <SkillPackageProfileIcon
+        pkg={card.pkg}
+        displayName={getLocalizedPackageDisplayName(card.pkg, lang)}
+        className="h-9 w-9 rounded-[8px]"
+      />
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate text-sm font-semibold text-black/90">{getLocalizedPackageDisplayName(card.pkg, lang)}</h3>
+        <p className="mt-1 line-clamp-2 text-xs leading-4 text-black/45" title={summary}>{summary}</p>
+        <div className="mt-1 truncate text-[11px] text-black/50">{role}</div>
+      </div>
+      <div className="relative shrink-0 self-center">
+        <InstallButton
+          pkg={card.pkg}
+          installingSlug={installingSlug}
+          installProgress={installProgress}
+          isInstalled={isInstalled}
+          onInstall={onInstall}
+          className="h-9 px-3"
+        />
+      </div>
+    </article>
+  );
 }
 
 function SkillPackageDetailView({
@@ -1712,21 +1883,62 @@ function SkillPackageDetailView({
   }, [activeSkillIndex, skillSlugs.length]);
 
   return (
-    <SkillPackageDetailLayout title={getLocalizedPackageDisplayName(detail, lang)}
-      backLabel={`${t("技能包")} / ${getLocalizedPackageDisplayName(detail, lang)}`} onBack={onBack}
-      profile={<SkillPackageProfileIcon pkg={detail} displayName={getLocalizedPackageDisplayName(detail, lang)} className="size-14 shrink-0 rounded-md" />}
-      metadata={<>
-        <span>{role}</span>
-        {skillSlugs.length > 0 && <span className="inline-flex items-center gap-1.5 text-xs tabular-nums"><PackageOpen className="size-3.5" aria-hidden="true" />{t("{{count}} 个技能", { count: skillSlugs.length })}</span>}
-        <a href={SKILLHUB_PACKAGE_SOURCE_URL} target="_blank" rel="noreferrer" className="text-[13px] text-[#2563EB] underline-offset-2 hover:underline">{t("源自 SkillHub")}<span aria-hidden="true">↗</span></a>
-      </>}
-      description={getPackageSummary(detail as SkillHubSkillSet, t, lang)}
-      action={<InstallButton pkg={card.pkg} installingSlug={installingSlug} installProgress={installProgress} isInstalled={isInstalled} onInstall={onInstall} className="h-9 flex-shrink-0 px-4" />}>
+    <div className="space-y-10">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex min-h-8 items-center gap-2 text-sm font-semibold leading-8 text-black/42 transition-colors hover:text-black/78"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        <span>{t("技能包")} / {getLocalizedPackageDisplayName(detail, lang)}</span>
+      </button>
+
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-5">
+          <SkillPackageProfileIcon
+            pkg={detail}
+            displayName={getLocalizedPackageDisplayName(detail, lang)}
+            className="h-16 w-16 rounded-[14px]"
+          />
+          <div className="min-w-0">
+            <h2 className="text-[28px] font-semibold leading-tight text-black/95">{getLocalizedPackageDisplayName(detail, lang)}</h2>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-7 gap-y-1 text-sm font-medium leading-6 text-black/48">
+              <span>{role}</span>
+              {skillSlugs.length > 0 ? (
+                <span className="inline-flex flex-shrink-0 items-center gap-1.5 text-xs font-light text-black/52">
+                  <PackageOpen className="h-3.5 w-3.5" />
+                  {t("{{count}} 个技能", { count: skillSlugs.length })}
+                </span>
+              ) : null}
+              <a
+                href={SKILLHUB_PACKAGE_SOURCE_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex flex-shrink-0 items-center gap-[3px] text-[13px] font-normal text-[#2563EB] underline-offset-2 transition-colors hover:text-[#1D4ED8] hover:underline"
+              >
+                {t("源自 SkillHub")}
+                <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+            <p className="mt-5 max-w-5xl text-sm leading-7 text-black/62">
+              {getPackageSummary(detail as SkillHubSkillSet, t, lang)}
+            </p>
+          </div>
+        </div>
+        <InstallButton
+          pkg={card.pkg}
+          installingSlug={installingSlug}
+          installProgress={installProgress}
+          isInstalled={isInstalled}
+          onInstall={onInstall}
+          className="h-9 flex-shrink-0 px-4"
+        />
+      </div>
 
       <div>
         {loading && !data ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
-            <Spinner size="md" />
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             {t("正在加载技能包详情...")}
           </div>
         ) : error ? (
@@ -1735,21 +1947,42 @@ function SkillPackageDetailView({
           </div>
         ) : availableSkillSlugs.loading && candidateSkillSlugs.length > 0 ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
-            <Spinner size="md" />
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             {t("正在加载技能包详情...")}
           </div>
         ) : skillSlugs.length > 0 ? (
-          <SkillPackageModulesView value={activeSkillSlug ?? ""}
-            modules={skillSlugs.map((slug) => ({ slug, label: skillDisplayNames.data?.get(slug) ?? formatSkillDisplayName(slug) }))}
-            onValueChange={(slug) => { const index = skillSlugs.indexOf(slug); if (index >= 0) setActiveSkillIndex(index); }}>
+          <div className="space-y-8">
+            <div className="inline-flex max-w-full items-center overflow-x-auto rounded-[4px] bg-[#EEEEEE] p-[3px]">
+              {skillSlugs.map((skillSlug, index) => {
+                const skillDisplayName = skillDisplayNames.data?.get(skillSlug) ?? formatSkillDisplayName(skillSlug);
+                return (
+                  <button
+                    key={skillSlug}
+                    type="button"
+                    onClick={() => setActiveSkillIndex(index)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[8px] px-4 py-2 text-sm transition-all",
+                      index === activeSkillIndex
+                        ? "bg-white font-semibold text-black/90 shadow-[0_1px_4px_rgba(0,0,0,0.05)]"
+                        : "bg-transparent font-medium text-black/62 hover:text-black/88",
+                    )}
+                  >
+                    <Puzzle className="h-4 w-4" />
+                    <span className="max-w-40 overflow-hidden text-ellipsis" title={skillDisplayName}>
+                      {skillDisplayName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
             {activeSkillSlug ? <SkillContent slug={activeSkillSlug} lang={lang} /> : null}
-          </SkillPackageModulesView>
+          </div>
         ) : (
           <p className="py-8 text-sm text-black/40">{t("暂无技能模块。")}</p>
         )}
       </div>
-    </SkillPackageDetailLayout>
+    </div>
   );
 }
 
@@ -1761,9 +1994,9 @@ function SkillContent({ slug, lang }: { slug: string; lang?: ExpertLanguage }) {
   if (loading && !data) {
     return (
       <div className="space-y-4 py-4">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-4/5" />
+        <div className="h-5 w-40 animate-pulse rounded bg-black/8" />
+        <div className="h-4 w-full animate-pulse rounded bg-black/5" />
+        <div className="h-4 w-4/5 animate-pulse rounded bg-black/5" />
       </div>
     );
   }

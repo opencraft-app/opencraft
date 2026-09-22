@@ -34,7 +34,6 @@ describe("CustomPersonaFileModal", () => {
         onSave={vi.fn()}
       />,
     );
-    expect(screen.getByRole("dialog")).toHaveClass("agents-ui");
 
     const dialog = screen.getByRole("dialog", { name: "编辑人设文件" });
     expect(within(dialog).getByText("SOUL.md")).toBeInTheDocument();
@@ -194,7 +193,7 @@ describe("CustomPersonaFileModal", () => {
     expect(save).toBeDisabled();
     fireEvent.click(save);
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     expect(onSave).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();

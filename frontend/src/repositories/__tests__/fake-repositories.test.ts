@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DeepSeekHarnessCommandClient } from "@/lib/deepseek-harness-command";
 import { createFakeRepositories } from "@/repositories/fake-repositories";
 
@@ -145,94 +145,5 @@ describe("fake repositories FaceID flow", () => {
     expect(installation).toMatchObject({ status: "succeeded", progress: 100 });
     await expect(client.getStatus()).resolves.toMatchObject({ installed: true, status: "running", healthy: true });
     await expect(client.restart()).resolves.toMatchObject({ installed: true, status: "running", healthy: true });
-  });
-});
-
-describe("explicit sidebar account demo", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    vi.stubGlobal("localStorage", createMemoryStorage());
-    window.history.replaceState({}, "", "/");
-  });
-  afterEach(() => { window.history.replaceState({}, "", "/"); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-
-  it("keeps default and unrecognized presets empty without upgrade targets", async () => {
-    const { plans } = createFakeRepositories();
-    expect(await plans.listMyPasses()).toEqual([]);
-    window.history.replaceState({}, "", "/account?passState=unknown");
-    expect(await plans.listMyPasses()).toEqual([]);
-    expect(await plans.listModifyBundles("pass-preview-sidebar-demo")).toEqual({ source_bundle_id: "", modify_bundle_set: [] });
-  });
-
-  it("provides a stable active owned demo pass and a matching distinct upgrade target", async () => {
-    window.history.replaceState({}, "", "/account?state=default&passState=sidebar-demo");
-    const { auth, plans } = createFakeRepositories();
-    const session = await auth.getSession();
-    const write = vi.spyOn(window.localStorage, "setItem");
-    const passes = await plans.listMyPasses();
-    expect(passes).toHaveLength(1);
-    const pass = passes[0]!;
-    expect(pass).toMatchObject({ user_id: session?.user.id, status: "active", credit_total: 1000, credit_available: 750 });
-    expect(pass.bundle_name).toContain("演示");
-    expect(Date.parse(pass.expired_time)).toBeGreaterThan(Date.now());
-    expect(await plans.listMyPasses()).toEqual(passes);
-    const result = await plans.listModifyBundles(pass.pass_id);
-    expect(result.source_bundle_id).toBe(pass.bundle_id);
-    expect(result.modify_bundle_set).toHaveLength(1);
-    const target = result.modify_bundle_set[0]!;
-    expect(target.target_bundle_id).not.toBe(pass.bundle_id);
-    expect(target.bundle.bundle_id).toBe(target.target_bundle_id);
-    expect(target.bundle.bundle_name).toContain("演示");
-    expect(await plans.listModifyBundles("unknown-pass")).toEqual({ source_bundle_id: "", modify_bundle_set: [] });
-    expect(write).not.toHaveBeenCalled();
-    expect(window.localStorage.getItem("lightclaw-fake-passes-v1")).toBeNull();
-  });
-
-  it("uses the current stored fake session owner instead of a fixed preview owner", async () => {
-    window.history.replaceState({}, "", "/account?state=default");
-    const { auth, plans } = createFakeRepositories();
-    const original = await auth.getSession();
-    expect(original).not.toBeNull();
-    window.localStorage.setItem("lightclaw-fake-auth-v1", JSON.stringify({ ...original, user: { ...original!.user, id: "demo-owner-b" } }));
-    window.history.replaceState({}, "", "/account?passState=sidebar-demo");
-    const session = await auth.getSession();
-    expect((await plans.listMyPasses())[0]?.user_id).toBe(session?.user.id);
-    expect(session?.user.id).toBe("demo-owner-b");
-  });
-
-  it("falls back to the existing preview owner without writing an auth or pass record", async () => {
-    window.history.replaceState({}, "", "/account?passState=sidebar-demo");
-    const { plans } = createFakeRepositories();
-    const pass = (await plans.listMyPasses())[0];
-    expect(pass?.user_id).toBe("usr_01hxa2f");
-    expect(window.localStorage.length).toBe(0);
-  });
-
-  it("restores stored passes and empty upgrade options when the explicit query is removed", async () => {
-    const stored = { pass_id: "stored-pass", user_id: "stored-owner", bundle_id: "stored-bundle", bundle_name: "Stored", created_time: "2026-01-01", expired_time: "2099-01-01", credit_total: 50, credit_available: 20 };
-    const raw = JSON.stringify([stored]);
-    window.localStorage.setItem("lightclaw-fake-passes-v1", raw);
-    const { plans } = createFakeRepositories();
-    window.history.replaceState({}, "", "/account?passState=sidebar-demo");
-    const demo = (await plans.listMyPasses())[0]!;
-    expect(demo.pass_id).not.toBe(stored.pass_id);
-    window.history.replaceState({}, "", "/account");
-    expect(await plans.listMyPasses()).toEqual([stored]);
-    expect(await plans.listModifyBundles(stored.pass_id)).toEqual({ source_bundle_id: stored.bundle_id, modify_bundle_set: [] });
-    expect(await plans.listModifyBundles(demo.pass_id)).toEqual({ source_bundle_id: "", modify_bundle_set: [] });
-    expect(window.localStorage.getItem("lightclaw-fake-passes-v1")).toBe(raw);
-  });
-
-  it("continues rejecting upgrade checkout and payment operations in the demo", async () => {
-    window.history.replaceState({}, "", "/account?passState=sidebar-demo");
-    const { plans } = createFakeRepositories();
-    const pass = (await plans.listMyPasses())[0]!;
-    expect(pass).toBeDefined();
-    const target = (await plans.listModifyBundles(pass.pass_id)).modify_bundle_set[0]!;
-    await expect(plans.createModifyOrder(pass.pass_id, { target_bundle_id: target.target_bundle_id })).rejects.toThrow("connected billing service");
-    await expect(plans.getModifyOrderUrl(pass.pass_id, { deal_names: ["demo-order"], platform: "pc" })).rejects.toThrow("connected billing service");
-    await expect(plans.refreshModifyPaymentAuthorization(pass.pass_id, { deal_names: ["demo-order"] })).rejects.toThrow("connected billing service");
-    expect(await plans.getModifyCheckout(pass.pass_id)).toEqual({ checkout: null });
-    expect(window.localStorage.length).toBe(0);
   });
 });

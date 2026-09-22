@@ -1,5 +1,4 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PersonaUploadModal } from "../agent-persona-upload-modal";
@@ -40,7 +39,6 @@ describe("PersonaUploadModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "上传人设文件" }));
 
     const dialog = await screen.findByRole("dialog", { name: "上传人设文件" });
-    expect(dialog).toHaveClass("agents-ui");
     expect(inputClick).not.toHaveBeenCalled();
     expect(within(dialog).queryByText(
       "上传人设文件后，你可以在此处继续编辑。",
@@ -122,7 +120,7 @@ describe("PersonaUploadModal", () => {
 
     selectFile(file);
     expect(await screen.findByText("正在读取人设文件…")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     await act(async () => finishRead(new TextEncoder().encode("# Soul").buffer));
     expect(screen.queryByRole("dialog", { name: "上传人设文件" })).not.toBeInTheDocument();
@@ -199,7 +197,7 @@ describe("PersonaUploadModal", () => {
     fireEvent.change(editor, { target: { value: "# 自定义助手\n保持冷静。" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "注入人设" }));
 
-    const confirmDialog = await screen.findByRole("alertdialog", { name: "覆盖当前人设？" });
+    const confirmDialog = await screen.findByRole("dialog", { name: "覆盖当前人设？" });
     expect(within(confirmDialog).getByText("旧人设会自动备份，然后注入新人设。")).toBeInTheDocument();
     expect(within(confirmDialog).queryByText("确认后会替换 Agent 当前人设，旧文件会自动备份。")).not.toBeInTheDocument();
     expect(within(confirmDialog).queryByText("当前 SOUL.md 会先保存到备份目录，再写入这份自定义人设。")).not.toBeInTheDocument();
@@ -218,27 +216,7 @@ describe("PersonaUploadModal", () => {
       displayName: "focus",
       markdown: expect.stringContaining("LightVela-Source: custom-upload"),
     }));
-    expect(screen.queryByRole("alertdialog", { name: "覆盖当前人设？" })).not.toBeInTheDocument();
-  });
-
-  it("keeps overwrite confirmation open while pending and restores the upload trigger after success", async () => {
-    const user = userEvent.setup();
-    let finish!: () => void;
-    const onInject = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
-    render(<PersonaUploadModal disabled={false} hasExistingSoul onInject={onInject} />);
-    const trigger = screen.getByRole("button", { name: "上传人设文件" });
-    await user.click(trigger);
-    selectFile(new File(["# Soul\nName: Pending"], "pending.md"));
-    await user.click(await screen.findByRole("button", { name: "注入人设" }));
-    const confirm = await screen.findByRole("alertdialog", { name: "覆盖当前人设？" });
-    await user.click(within(confirm).getByRole("button", { name: "覆盖并注入" }));
-    await user.keyboard("{Escape}");
-    expect(confirm).toBeInTheDocument();
-    expect(within(confirm).getByRole("button", { name: "返回编辑" })).toBeDisabled();
-    expect(onInject).toHaveBeenCalledTimes(1);
-    await act(async () => finish());
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
-    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole("dialog", { name: "覆盖当前人设？" })).not.toBeInTheDocument();
   });
 
   it("uses the localized display-name fallback", async () => {

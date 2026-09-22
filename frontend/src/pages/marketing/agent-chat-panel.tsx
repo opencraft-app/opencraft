@@ -20,7 +20,6 @@ import { useT } from "@/i18n/t";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongEvent } from "@/observability/datong-tracker";
 import { WorkbenchPromptAutoSender } from "./workbench-prompt-auto-sender";
-import { AgentChatStatusView } from "./agent-chat-status-view";
 
 // AgentChat carries side-effect CSS. Keep it out of the agents shell until the chat tab is actually rendered.
 const LightVelaPanel = lazy(() =>
@@ -174,23 +173,33 @@ export const AgentChatPanel = ({
 
   return (
     <div className={framed
-      ? "agents-ui min-w-0 h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-md border border-black/[0.08] bg-white lg:h-full [&>*]:h-full"
-      : "agents-ui size-full overflow-hidden bg-white [&>*]:h-full"}>
+      ? "h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full [&>*]:h-full"
+      : "size-full overflow-hidden bg-white [&>*]:h-full"}>
       {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
-        <AgentChatStatusView kind="loading" title={t("正在获取 AgentChat 启动 token…")} />
+        <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
+          {t("正在获取 AgentChat 启动 token…")}
+        </div>
       )}
       {launchTokenStatus === "error" && (
-        <AgentChatStatusView
-          kind="error"
-          title={t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
-          retryLabel={t("重试")}
-          onRetry={onRetryLaunchToken}
-        />
+        <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
+          <p className="text-red-500">
+            {t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
+          </p>
+          <button
+            type="button"
+            onClick={onRetryLaunchToken}
+            className="mt-3 inline-flex items-center rounded-md border border-black/[0.12] bg-white px-3 py-1.5 text-xs font-medium text-black/80 hover:bg-black/[0.04]"
+          >
+            {t("重试")}
+          </button>
+        </div>
       )}
       {launchTokenStatus === "ready" && launchToken && accountId && stableApiParams && (
         <Suspense
           fallback={(
-            <AgentChatStatusView kind="loading" title={t("正在加载 AgentChat…")} />
+            <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
+              {t("正在加载 AgentChat…")}
+            </div>
           )}
         >
           <LightVelaPanel

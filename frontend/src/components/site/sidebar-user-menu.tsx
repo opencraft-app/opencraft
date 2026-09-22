@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrainCircuit, Bot, ChevronDown, ChevronRight, Globe, LayoutDashboard, LogOut, MessageSquare, User } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
-import { agentPortalClassName } from "@/components/agents";
+const agentPortalClassName = "lv-sidebar-account-surface";
 
 export type SidebarCreditSummary =
   | { state: "ready"; label: string; total: number; used: number; usedPercent: number }

@@ -1,8 +1,9 @@
-import { Check, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { useT } from "@/i18n/t";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import type { SoulSpec } from "@/lib/soul-interpretations";
@@ -83,15 +84,6 @@ export function SoulTestModal({
   const [questions, setQuestions] = useState<SoulTestQuestion[]>(
     () => buildBuddyQuestions(activeSoulLocale),
   );
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const wasOpenRef = useRef(false);
-
-  useEffect(() => {
-    if (open && !wasOpenRef.current && document.activeElement instanceof HTMLElement) {
-      previousFocusRef.current = document.activeElement;
-    }
-    wasOpenRef.current = open;
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -199,18 +191,27 @@ export function SoulTestModal({
 
   if (!open) return null;
 
-  return (
-    <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
-      <DialogContent showCloseButton={false} portalClassName="agents-ui" className="relative flex max-h-[88dvh] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] p-0"
-        onCloseAutoFocus={(event) => {
-          const target = previousFocusRef.current;
-          if (target?.isConnected) {
-            event.preventDefault();
-            target.focus();
-          }
-        }}>
-        <DialogTitle className="sr-only">{t("Soul人格测试")}</DialogTitle>
-        <DialogDescription className="sr-only">{t("Soul人格测试")}</DialogDescription>
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-[2px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("Soul人格测试")}
+          className="relative flex max-h-[88vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_28px_80px_rgba(0,0,0,0.22)]"
+          initial={{ y: 18, scale: 0.98, opacity: 0 }}
+          animate={{ y: 0, scale: 1, opacity: 1 }}
+          exit={{ y: 18, scale: 0.98, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 260, damping: 24 }}
+        >
           <div
             className="pointer-events-none absolute inset-x-0 top-0 h-32"
             style={{
@@ -252,8 +253,10 @@ export function SoulTestModal({
               soulDataLocale={activeSoulLocale}
             />
           )}
-      </DialogContent>
-    </Dialog>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -335,7 +338,6 @@ function QuestionStep({
                   key={option.key}
                   type="button"
                   onClick={() => onSelect(option.key)}
-                  aria-pressed={isSelected}
                   style={{ fontSize: "14px" }}
                   className={cn(
                     "w-full rounded-[10px] border px-5 py-4 text-left text-lg leading-relaxed transition-all duration-200",
@@ -346,7 +348,6 @@ function QuestionStep({
                 >
                   <span className="mr-2 font-semibold">{option.key}.</span>
                   {formatSoulTestText(option.text, t, useEnglishSoulData)}
-                  {isSelected ? <Check className="ml-2 inline-block size-4" aria-hidden="true" /> : null}
                 </button>
               );
             })}

@@ -2,12 +2,12 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
-import { controlFieldClass, floatingPanelClass, productFloatingPanelClass } from "./control-shell";
+import { controlFieldClass, floatingPanelClass } from "./control-shell";
 import { cn } from "../../lib/utils";
 
 const Select = SelectPrimitive.Root;
 const SelectValue = SelectPrimitive.Value;
-type SelectVariant = "default" | "filter" | "product";
+type SelectVariant = "default" | "filter";
 
 const SelectSeparator = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Separator>,
@@ -44,29 +44,24 @@ const SelectTrigger = React.forwardRef<
 ));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
-type SelectContentProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & { variant?: SelectVariant };
-
 const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
-  SelectContentProps
->(({ className, children, position, variant = "default", sideOffset, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & { variant?: SelectVariant }
+>(({ className, children, position, variant = "default", ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
       position={position ?? (variant === "filter" ? "popper" : undefined)}
-      sideOffset={sideOffset ?? (variant === "product" ? 6 : undefined)}
-      data-surface-variant={variant}
       className={cn(
         "lv-select-content",
         variant === "filter" && "lv-select-content--filter",
-        "lightvela-agent-console-portal lv-floating-control lv-select-content z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",
+        "lightvela-agent-console-portal z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",
         floatingPanelClass,
-        variant === "product" && productFloatingPanelClass,
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className={cn("lv-select-viewport", variant === "product" ? "p-0" : "p-1.5")}>{children}</SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport className="lv-select-viewport p-1.5">{children}</SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));
@@ -97,4 +92,3 @@ const SelectItem = React.forwardRef<
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
 export { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue };
-export type { SelectContentProps };

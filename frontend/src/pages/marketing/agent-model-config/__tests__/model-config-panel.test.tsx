@@ -3,7 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AgentModelConfigPanel } from "../agent-model-config-panel";
 import {
@@ -34,9 +34,7 @@ vi.mock("@/i18n/t", () => ({
 
 vi.mock("@/lib/toast", () => ({ toast: toastMocks }));
 
-afterAll(() => vi.unstubAllGlobals());
 beforeAll(() => {
-  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => false },
     releasePointerCapture: { configurable: true, value: () => undefined },
@@ -529,8 +527,8 @@ describe("AgentModelConfigPanel", () => {
     expect(within(form).getByRole("combobox", { name: "模型" })).toHaveTextContent("new-model");
     await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
     await userEvent.click(within(screen.getByRole("button", { name: /Alpha API/ }).closest("li")!).getByRole("button", { name: "添加模型" }));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("放弃当前添加？");
-    await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "取消" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("放弃当前添加？");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "取消" }));
     await userEvent.click(within(form).getByRole("button", { name: "取消" }));
     expect(remote.actions.map((action) => action.type)).toEqual(["read", "probeConfiguredProvider"]);
   });
@@ -740,8 +738,9 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote);
 
-    expect(await screen.findByRole("heading", { name: "模型" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
     expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型")).toBeInTheDocument();
+    expect(screen.getByText("正在读取模型配置")).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /Alpha API/ }));
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
 
@@ -778,15 +777,12 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.hover(primaryTooltipTrigger);
     const primaryTooltip = await screen.findByRole("tooltip");
     expect(primaryTooltip).toHaveTextContent("当前模型已经是主模型");
-    const tooltipContent = primaryTooltip.closest("[data-slot=tooltip-content]") as HTMLElement;
-    expect(document.body).toContainElement(tooltipContent);
-    expect(tooltipContent).toHaveClass("agents-ui");
+    expect(primaryTooltip.parentElement).toBe(document.body);
     expect(within(primaryRow).queryByRole("tooltip")).not.toBeInTheDocument();
-    expect(tooltipContent).toHaveClass("pointer-events-auto", "select-text");
-    await userEvent.hover(tooltipContent);
+    expect(primaryTooltip).toHaveClass("fixed", "pointer-events-auto", "select-text");
+    await userEvent.hover(primaryTooltip);
     expect(screen.getByRole("tooltip")).toBeInTheDocument();
-    await userEvent.unhover(tooltipContent);
-    await userEvent.pointer({ target: document.body, coords: { clientX: 1000, clientY: 1000 } });
+    await userEvent.unhover(primaryTooltip);
     await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
 
     primaryTooltipTrigger.focus();
@@ -953,7 +949,7 @@ describe("AgentModelConfigPanel", () => {
     const modelFormPanel = screen.getByRole("tabpanel", { name: "模型 Coding Plan" });
     expect(tabList).toHaveClass("w-full", "gap-4", "rounded-none", "border-b", "bg-transparent");
     expect(tabList).not.toHaveClass("min-w-max");
-    expect(codingPlanTab).toHaveClass("rounded-none", "text-sm", "sm:text-base", "data-[state=active]:after:bg-[var(--text-primary)]");
+    expect(codingPlanTab).toHaveClass("rounded-none", "text-sm", "sm:text-base", "data-[state=active]:after:bg-black");
     expect(modelFormPanel).toHaveClass("bg-white");
     expect(modelFormPanel).not.toHaveClass("bg-black/[0.025]");
     expect(screen.queryByText("推荐")).not.toBeInTheDocument();
@@ -1731,14 +1727,13 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /Gamma API/ }));
     const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "删除" }));
-    const dialog = screen.getByRole("alertdialog", { name: "删除模型" });
+    const dialog = screen.getByRole("dialog", { name: "删除模型" });
     expect(dialog).toHaveAccessibleDescription("删除后将移除此模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。");
     await userEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(remote.actions.some((action) => action.type === "remove")).toBe(false);
-    await waitFor(() => expect(within(idleRow).getByRole("button", { name: "删除" })).toHaveFocus());
 
     await userEvent.click(within(idleRow).getByRole("button", { name: "删除" }));
-    await userEvent.click(within(screen.getByRole("alertdialog", { name: "删除模型" })).getByRole("button", { name: "确认删除" }));
+    await userEvent.click(within(screen.getByRole("dialog", { name: "删除模型" })).getByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(screen.queryByText("model-idle")).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole("heading", { name: "已配置模型" })).toHaveFocus());
     expect(remote.actions).toContainEqual({ type: "remove", providerKey: idleModel.providerKey, modelId: idleModel.id, baseUrl: idleModel.baseUrl, routeBaseUrl: idleModel.baseUrl });
@@ -1760,7 +1755,7 @@ describe("AgentModelConfigPanel", () => {
     const fallbackRow = screen.getByText("model-fallback").closest("li") as HTMLElement;
     await userEvent.click(within(fallbackRow).getByRole("button", { name: "删除" }));
 
-    expect(screen.getByRole("alertdialog", { name: "删除模型" })).toHaveAccessibleDescription(
+    expect(screen.getByRole("dialog", { name: "删除模型" })).toHaveAccessibleDescription(
       "删除后将移除该备用模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。",
     );
   });
@@ -2128,9 +2123,9 @@ describe("AgentModelConfigPanel", () => {
     const idleRow = screen.getByText("model-idle").closest("li") as HTMLElement;
     await userEvent.click(within(idleRow).getByRole("button", { name: "删除" }));
     remote.failNext("remove");
-    await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "确认删除" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认删除" }));
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("模型配置操作失败，请重试。");
     expect(within(dialog).getByRole("button", { name: "确认删除" })).toBeEnabled();
   });

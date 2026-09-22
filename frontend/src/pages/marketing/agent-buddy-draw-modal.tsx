@@ -15,10 +15,10 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useAsyncResource } from "@/services/use-async-resource";
 import {
   REVEAL_STAR_BG,
@@ -29,7 +29,6 @@ import {
   SoulFaceCard,
   SoulSpecRenderer,
 } from "@/pages/marketing/agent-buddy-cards";
-import { PersonaDrawStageView } from "@/pages/marketing/agent-buddy-views";
 import { DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick } from "@/observability/datong-tracker";
 import {
@@ -120,20 +119,11 @@ export function DrawSoulModal({
   /** 抽中的 Soul */
   const [winnerSoul, setWinnerSoul] = useState<SkillHubSoul | null>(null);
   const [isInjecting, setIsInjecting] = useState(false);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const wasOpenRef = useRef(false);
 
   const stepRef = useRef(0);
   const tickerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** 弹窗打开时复位 */
-  useEffect(() => {
-    if (open && !wasOpenRef.current && document.activeElement instanceof HTMLElement) {
-      previousFocusRef.current = document.activeElement;
-    }
-    wasOpenRef.current = open;
-  }, [open]);
-
   useEffect(() => {
     if (!open) {
       setPhase("idle");
@@ -237,22 +227,11 @@ export function DrawSoulModal({
   const isRevealed = phase === "revealed" && winnerSoul !== null;
 
   return (
-    <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen) handleClose(); }}>
-      <DialogContent
-        showCloseButton={false}
-        portalClassName="agents-ui"
-        aria-describedby={undefined}
-        onCloseAutoFocus={(event) => {
-          const target = previousFocusRef.current;
-          if (target?.isConnected) {
-            event.preventDefault();
-            target.focus();
-          }
-        }}
-        className="relative w-full max-w-[412px] overflow-hidden rounded-2xl p-0"
-      >
-        <DialogTitle className="sr-only">{t("抽取人设")}</DialogTitle>
-        <DialogDescription className="sr-only">{t("从人设卡片中抽取一个推荐人设")}</DialogDescription>
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
+      onClick={handleClose}
+    >
       {/* 弹窗主体：reveal 阶段切换为 soul.color 全屏渐变背景 */}
       <motion.div
         className="relative w-full max-w-[412px] overflow-hidden rounded-2xl"
@@ -290,7 +269,10 @@ export function DrawSoulModal({
               </h3>
 
               {/* 6 张卡牌 3×2 网格（绝对坐标，方便中奖卡 framer-motion 移动到中心 + 放大 + 翻转） */}
-              <PersonaDrawStageView width={GRID_W} height={GRID_H}>
+              <div
+                className="relative"
+                style={{ width: GRID_W, height: GRID_H }}
+              >
                 {CARD_POSITIONS.map((pos, i) => (
                   <DrawCard
                     key={i}
@@ -303,7 +285,7 @@ export function DrawSoulModal({
                     onStart={phase === "idle" && drawablePool.length > 0 ? handleStart : undefined}
                   />
                 ))}
-              </PersonaDrawStageView>
+              </div>
 
               {phase === "idle" && (
                 <button
@@ -342,8 +324,7 @@ export function DrawSoulModal({
           )}
         </AnimatePresence>
       </motion.div>
-      </DialogContent>
-    </Dialog>
+    </div>
   );
 }
 
@@ -601,11 +582,22 @@ function SoulInterpretModal({
 
   // 用 Portal 挂到 body，避开 reveal panel 的 padding/高度裁切，
   // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent showCloseButton={false} portalClassName="agents-ui" className="flex max-h-[85dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl p-0">
-        <DialogTitle className="sr-only">{t("人设解读")}</DialogTitle>
-        <DialogDescription className="sr-only">{soul.displayName}</DialogDescription>
+  return createPortal(
+    <motion.div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4 py-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        initial={{ y: 18, scale: 0.98 }}
+        animate={{ y: 0, scale: 1 }}
+        exit={{ y: 12, scale: 0.98 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-3 border-b border-black/10 px-6 py-4">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Eye className="h-4 w-4 text-black/70" />
@@ -645,8 +637,9 @@ function SoulInterpretModal({
             );
           })()}
         </div>
-      </DialogContent>
-    </Dialog>
+      </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 

@@ -1,6 +1,6 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { InstalledSkillLoadState } from "@/lib/hermes-skills-client";
 import { fetchSkillDetail, fetchSkillFile, fetchSkillFiles } from "@/lib/skillhub-api";
@@ -29,25 +29,20 @@ vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => text,
 }));
 
-const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
-beforeAll(() => {
-  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
-  Object.defineProperties(HTMLElement.prototype, {
-    scrollIntoView: { configurable: true, value: vi.fn() },
-    hasPointerCapture: { configurable: true, value: () => false },
-    releasePointerCapture: { configurable: true, value() {} },
-    setPointerCapture: { configurable: true, value() {} },
-  });
-});
-afterAll(() => {
-  vi.unstubAllGlobals();
-  if (scrollIntoViewDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", scrollIntoViewDescriptor);
-  else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function ready(slugs: string[]): InstalledSkillLoadState {
@@ -114,22 +109,20 @@ describe("AutomationSkillPicker", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     await user.hover(helpButton);
 
-    const tooltip = await screen.findByRole("tooltip");
-    const surface = tooltip.closest("[data-slot='tooltip-content']");
-    if (!(surface instanceof HTMLElement)) throw new Error("Missing Tooltip surface");
+    const tooltip = screen.getByRole("tooltip");
 
     expect(tooltip).toHaveTextContent(
       "在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。",
     );
     expect(helpButton).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(helpButton.parentElement).not.toContainElement(surface);
-    expect(surface).toHaveClass("agents-ui", "select-text");
+    expect(tooltip.parentElement).toBe(document.body);
+    expect(tooltip).toHaveClass("fixed");
 
     await user.unhover(helpButton);
-    await user.hover(surface);
+    await user.hover(tooltip);
     expect(screen.getByRole("tooltip")).toBeInTheDocument();
 
-    await user.unhover(surface);
+    await user.unhover(tooltip);
     await user.tab();
     expect(helpButton).toHaveFocus();
     expect(screen.getByRole("tooltip")).toBeInTheDocument();
@@ -173,7 +166,7 @@ describe("AutomationSkillPicker", () => {
     expect(document.body).toContainElement(popup);
     expect(field).not.toContainElement(popup);
     expect(popup).toHaveClass(
-      "z-[250]",
+      "z-[210]",
       "max-h-[var(--radix-popover-content-available-height)]",
       "w-[var(--radix-popover-trigger-width)]",
     );
@@ -186,7 +179,7 @@ describe("AutomationSkillPicker", () => {
 
     expect(trigger).toHaveTextContent("选择你希望 Agent 稳定调用的技能");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(trigger.parentElement).toHaveClass("min-h-10");
+    expect(trigger.parentElement).toHaveClass("min-h-[38px]");
     expect(screen.getByText("选择你希望 Agent 稳定调用的技能")).toHaveClass("text-black/35");
 
     await user.click(trigger);
@@ -332,13 +325,13 @@ describe("AutomationFormModal", () => {
 
     const picker = screen.getByRole("dialog", { name: "执行时间" });
     // Keep the portal layer regression explicit for frontend build verification.
-    expect(picker).toHaveClass("agents-ui", "z-[250]");
+    expect(picker).toHaveClass("z-[210]");
     expect(picker).toHaveClass("w-[420px]");
     const hourListbox = within(picker).getByRole("listbox", { name: "小时" });
     expect(hourListbox).toBeInTheDocument();
     expect(within(picker).getByRole("listbox", { name: "分钟" })).toBeInTheDocument();
     expect(within(hourListbox).getByRole("option", { name: "00" })).toBeInTheDocument();
-    expect(within(picker).getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(within(picker).queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
     expect(within(picker).getByRole("button", { name: "确认" })).toBeInTheDocument();
   });
 
@@ -357,39 +350,39 @@ describe("AutomationFormModal", () => {
     expect(within(control).getByRole("textbox", { name: "执行时间 YYYY" })).toHaveClass("text-sm");
   });
 
-  it("keeps recurring controls compact and wraps multiple daily time inputs", async () => {
+  it("aligns recurring controls and fits up to six daily times per row", async () => {
     const user = userEvent.setup();
     renderAutomationFormModal();
 
-    await user.click(screen.getByRole("tab", { name: "周期" }));
+    await user.click(screen.getByRole("button", { name: "周期" }));
 
-    const periodControl = screen.getByRole("combobox", { name: "周期" });
+    const periodControl = screen.getByRole("button", { name: "每天" });
     const addTimeButton = screen.getByRole("button", { name: "添加时间" });
     expect(periodControl).toHaveClass("h-9");
-    expect(addTimeButton).toHaveClass("size-7");
+    expect(addTimeButton).toHaveClass("h-6", "w-6");
 
     for (let index = 0; index < 5; index += 1) {
       await user.click(addTimeButton);
     }
 
-    const timeControls = screen.getAllByRole("group", { name: /^执行时间 \d+$/ });
+    const timeControls = screen.getAllByRole("group", { name: /执行时间 \d+/ });
     expect(timeControls).toHaveLength(6);
     timeControls.forEach((control) => expect(control).toHaveClass("h-9", "w-fit"));
-    expect(timeControls[0]?.parentElement).toHaveClass("w-[588px]", "max-w-full", "flex-wrap", "gap-1");
-    expect(addTimeButton).toHaveClass("size-7");
+    expect(timeControls[0]?.parentElement).toHaveClass("w-[588px]", "flex-wrap", "gap-1");
+    expect(addTimeButton).toHaveClass("h-6", "w-6");
   });
 
   it("allows up to eighteen daily time points", async () => {
     const user = userEvent.setup();
     renderAutomationFormModal();
 
-    await user.click(screen.getByRole("tab", { name: "周期" }));
+    await user.click(screen.getByRole("button", { name: "周期" }));
     const addTimeButton = screen.getByRole("button", { name: "添加时间" });
     for (let index = 0; index < 17; index += 1) {
       await user.click(addTimeButton);
     }
 
-    expect(screen.getAllByRole("group", { name: /^执行时间 \d+$/ })).toHaveLength(18);
+    expect(screen.getAllByRole("group", { name: /执行时间 \d+/ })).toHaveLength(18);
     expect(screen.getByRole("button", { name: "最多支持18个时间点" })).toHaveAttribute("aria-disabled", "true");
   });
 
@@ -397,32 +390,34 @@ describe("AutomationFormModal", () => {
     const user = userEvent.setup();
     renderAutomationFormModal();
 
-    await user.click(screen.getByRole("tab", { name: "周期" }));
-    await user.click(screen.getByRole("combobox", { name: "周期" }));
+    await user.click(screen.getByRole("button", { name: "周期" }));
+    await user.click(screen.getByRole("button", { name: "每天" }));
     await user.click(screen.getByRole("option", { name: "每周" }));
 
-    const weeklySelection = screen.getByRole("button", { name: "每周" }).parentElement;
-    expect(screen.getByRole("combobox", { name: "周期" })).toHaveClass("h-9");
-    expect(weeklySelection).toHaveClass("min-h-9", "max-w-full");
-    expect(screen.getByRole("group", { name: "执行时间 1" })).toHaveClass("h-9");
+    const weeklySelection = screen.getByRole("button", { name: "周一" }).parentElement;
+    let recurringTime = document.querySelector<HTMLInputElement>('input[type="time"]');
+    expect(screen.getByRole("button", { name: "每周" })).toHaveClass("h-9");
+    expect(weeklySelection).toHaveClass("min-h-9", "py-1");
+    expect(recurringTime).toHaveClass("h-9");
 
-    await user.click(screen.getByRole("combobox", { name: "周期" }));
+    await user.click(screen.getByRole("button", { name: "每周" }));
     await user.click(screen.getByRole("option", { name: "每月" }));
 
-    const monthlySelection = screen.getByRole("button", { name: "每月" }).parentElement;
-    expect(screen.getByRole("combobox", { name: "周期" })).toHaveClass("h-9");
-    expect(monthlySelection).toHaveClass("min-h-9", "max-w-full");
-    expect(screen.getByRole("group", { name: "执行时间 1" })).toHaveClass("h-9");
+    const monthlySelection = screen.getByRole("button", { name: "{{n}}日" }).parentElement;
+    recurringTime = document.querySelector<HTMLInputElement>('input[type="time"]');
+    expect(screen.getByRole("button", { name: "每月" })).toHaveClass("h-9");
+    expect(monthlySelection).toHaveClass("min-h-9", "py-1");
+    expect(recurringTime).toHaveClass("h-9");
   });
 
   it("uses compact matching heights for the interval amount and unit", async () => {
     const user = userEvent.setup();
     renderAutomationFormModal();
 
-    await user.click(screen.getByRole("tab", { name: "按间隔" }));
+    await user.click(screen.getByRole("button", { name: "按间隔" }));
 
     expect(screen.getByRole("spinbutton")).toHaveClass("h-9");
-    expect(screen.getByRole("combobox", { name: "按间隔" })).toHaveClass("h-9");
+    expect(screen.getByRole("button", { name: "小时" })).toHaveClass("h-9");
   });
 
   it("matches the Name and Skill control radius to the task description", () => {

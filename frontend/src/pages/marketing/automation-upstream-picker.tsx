@@ -161,7 +161,7 @@ export function AutomationUpstreamPicker({
               searchRef.current?.focus();
             }}
             data-testid="automation-upstream-picker-popup"
-            className="agents-ui z-[250] w-[var(--radix-popover-trigger-width)] max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-32px)] overflow-hidden rounded-md p-1.5"
+            className="z-[210] w-[var(--radix-popover-trigger-width)] max-h-[var(--radix-popover-content-available-height)] overflow-hidden rounded-xl border border-black/10 bg-white p-1.5 shadow-xl"
           >
             <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-1.5">
               <Search className="size-4 shrink-0 text-black/35" aria-hidden="true" />
@@ -191,6 +191,9 @@ export function AutomationUpstreamPicker({
                   } else if (event.key === "Enter" && activeIndex >= 0) {
                     event.preventDefault();
                     choose(filteredOptions[activeIndex]!.id);
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    close(true);
                   }
                 }}
                 placeholder={t("搜索上游任务")}

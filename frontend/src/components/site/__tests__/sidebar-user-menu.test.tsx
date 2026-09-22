@@ -21,6 +21,21 @@ function Fixture(props: Partial<typeof data> = {}) {
 }
 
 describe("sidebar user menu presentation", () => {
+  it("opens from every part of the account row and never opens on hover", async () => {
+    const user = userEvent.setup();
+    render(<Fixture />);
+    const trigger = screen.getByRole("button", { name: "Open user menu" });
+    await user.hover(trigger);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const targets = [trigger.querySelector("img")!, screen.getByText("Agent Owner"),
+      screen.getByText("Plan: Pro"), trigger.querySelector("svg")!, trigger];
+    for (const target of targets) {
+      await user.click(target);
+      expect(await screen.findByRole("dialog", { name: "Account menu" })).toBeVisible();
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    }
+  });
   it.each([
     { used: 0, total: 4500, usedPercent: 0, expected: 0 },
     { used: 250, total: 1000, usedPercent: 25, expected: 25 },
@@ -75,7 +90,7 @@ describe("sidebar user menu presentation", () => {
     await user.tab(); await user.keyboard("{Enter}");
     const dialog = await screen.findByRole("dialog", { name: "Account menu" });
     expect(screen.getByTestId("clipped-sidebar")).not.toContainElement(dialog);
-    expect(dialog).toHaveClass("agents-ui", "lv-sidebar-user-menu");
+    expect(dialog).toHaveClass("lv-sidebar-account-surface", "lv-sidebar-user-menu");
     expect(within(dialog).getByRole("progressbar", { name: "Credits used" })).toHaveAttribute("aria-valuenow", "25");
     expect(within(dialog).getByText("250 / 1,000")).toBeVisible();
     expect(within(dialog).getByRole("link", { name: "Upgrade plan" })).toHaveAttribute("href", "/subscribe/?upgrade_pass_id=p%2F1");

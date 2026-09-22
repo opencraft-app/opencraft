@@ -1,18 +1,10 @@
-import { act, cleanup, fireEvent, render as renderComponent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useState, type ReactElement } from "react";
-import userEvent from "@testing-library/user-event";
 import { SoulTestModal } from "@/pages/marketing/agent-buddy-soul-test-modal";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { ENGLISH_SOULS } from "@/lib/soul-english-data";
 import { JAPANESE_SOULS } from "@/lib/soul-japanese-data";
 import { SPANISH_SOULS } from "@/lib/soul-spanish-data";
-import { LocaleOverrideProvider, type I18nLocale } from "@/i18n/t";
-
-// UI locale is independent of the selected Soul dataset and the deployment region.
-const render = (ui: ReactElement, locale: I18nLocale = "zh-CN") => renderComponent(
-  <LocaleOverrideProvider locale={locale}>{ui}</LocaleOverrideProvider>,
-);
 
 const yydsSoul: SkillHubSoul = {
   id: 1,
@@ -26,30 +18,12 @@ const yydsSoul: SkillHubSoul = {
 };
 
 describe("SoulTestModal", () => {
-  it("keeps keyboard focus in the test and returns it after Escape", async () => {
-    vi.useRealTimers();
-    function Harness() {
-      const [open, setOpen] = useState(false);
-      return <><button onClick={() => setOpen(true)}>Test</button><SoulTestModal open={open} souls={[yydsSoul]} maxDrawsReached={false} drawnSlugs={[]} onClose={() => setOpen(false)} onUseSoul={() => true} /></>;
-    }
-    render(<Harness />);
-    const user = userEvent.setup();
-    const trigger = screen.getByRole("button", { name: "Test" });
-    await user.click(trigger);
-    const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveClass("agents-ui", "rounded-[28px]");
-    expect(dialog).toContainElement(document.activeElement as HTMLElement);
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-    vi.useFakeTimers();
-  });
   beforeEach(() => {
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    if (vi.isFakeTimers()) vi.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
     vi.useRealTimers();
     vi.restoreAllMocks();
     cleanup();
@@ -71,14 +45,7 @@ describe("SoulTestModal", () => {
       />,
     );
 
-    const firstAnswer = screen.getByRole("button", { name: /^A\./ });
-    fireEvent.click(firstAnswer);
-    expect(firstAnswer).toHaveClass("border-black", "bg-black", "text-white");
-    expect(firstAnswer).toHaveAttribute("aria-pressed", "true");
-    expect(firstAnswer.querySelector("svg")).not.toBeNull();
-    act(() => { vi.advanceTimersByTime(300); });
-
-    for (let index = 1; index < 15; index += 1) {
+    for (let index = 0; index < 15; index += 1) {
       fireEvent.click(screen.getByRole("button", { name: /^A\./ }));
       act(() => {
         vi.advanceTimersByTime(300);
@@ -97,7 +64,7 @@ describe("SoulTestModal", () => {
     expect(openSpy).not.toHaveBeenCalled();
   });
 
-  it("uses English UI labels and passes the displayed English Soul to the host", async () => {
+  it("uses the English soul test dataset when requested", async () => {
     const onUseSoul = vi.fn(() => true);
     const onClose = vi.fn();
 
@@ -111,11 +78,8 @@ describe("SoulTestModal", () => {
         onClose={onClose}
         onUseSoul={onUseSoul}
       />,
-      "en-US",
     );
 
-    expect(screen.getByRole("dialog", { name: "Soul Quiz" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close Soul Quiz" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^A\./ })).toHaveTextContent(/[A-Za-z]/);
 
     for (let index = 0; index < 15; index += 1) {
@@ -123,19 +87,12 @@ describe("SoulTestModal", () => {
       act(() => {
         vi.advanceTimersByTime(300);
       });
-      if (index === 4) {
-        expect(screen.getByText("Part 2: Choose your preferences for your AI companion")).toBeInTheDocument();
-      }
     }
 
-    expect(screen.getByRole("heading", { name: "We recommend this Soul for your Agent" })).toBeInTheDocument();
-    const displayedSoul = screen.getByText(/The Legend|The Worker|The Wayfarer|The Blunt One/);
-    const expectedSoul = ENGLISH_SOULS.find((soul) => soul.displayName === displayedSoul.textContent);
-    expect(expectedSoul).toBeDefined();
+    expect(screen.getByText(/The Legend|The Worker|The Wayfarer|The Blunt One/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add this Soul" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加该人设" }));
 
-    expect(onUseSoul).toHaveBeenCalledWith(expectedSoul);
     expect(onUseSoul).toHaveBeenCalledWith(expect.objectContaining({
       displayName: expect.stringMatching(/[A-Za-z]/),
     }));

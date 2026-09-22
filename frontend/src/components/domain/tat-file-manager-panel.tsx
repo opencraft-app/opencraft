@@ -1,13 +1,8 @@
-import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
-import { Download, File, FileArchive, FileCode2, FileText, Folder, FolderPlus, Loader2, PencilLine, RefreshCw, Trash2, Undo2, Upload } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle, Download, Eye, EyeOff, File, FileArchive, FileCode2, FileText, Folder, FolderPlus, Loader2, PencilLine, RefreshCw, Trash2, Undo2, Upload, XCircle } from "lucide-react";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { AgentTooltip } from "@/components/agents/agent-tooltip";
-import { AgentPageLoadingState } from "@/components/agents";
-import { AgentState } from "@/components/agents/agent-state";
-import { FileManagerEntryView, FileManagerInlineEditor } from "./file-manager-entry-view";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
 import { DEFAULT_LOCALE } from "@/lib/region";
@@ -17,6 +12,34 @@ import { canReadTsshFile } from "@/lib/tssh-file-permissions";
 interface TatFileManagerPanelProps {
   botId: string;
 }
+
+interface ActionTooltipProps {
+  children: ReactNode;
+  label?: string;
+  variant?: "light";
+}
+
+const ActionTooltip = ({ children, label }: ActionTooltipProps) => {
+  return (
+    <span
+      className="group relative inline-flex"
+      tabIndex={label ? 0 : undefined}
+    >
+      {children}
+      {label ? (
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+        >
+          {label}
+          <span
+            className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white"
+          />
+        </span>
+      ) : null}
+    </span>
+  );
+};
 
 type FileManagerStatus = "idle" | "connecting" | "loading" | "working" | "ready" | "error";
 type StorageCapacityStatus = "loading" | "ready" | "error";
@@ -365,9 +388,6 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const pathControlsRef = useRef<HTMLDivElement | null>(null);
   const createFolderInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
-  const createFolderTriggerRef = useRef<HTMLButtonElement>(null);
-  const renameTriggerRef = useRef<HTMLButtonElement>(null);
-  const cancelFocusRef = useRef<{ botId: string; target: "create" | "rename" } | null>(null);
   const downloadTriggerIframesRef = useRef<Set<DownloadTriggerIframe>>(new Set());
   const capacityRequestSequenceRef = useRef(0);
   const activeBotIdRef = useRef(botId);
@@ -379,10 +399,9 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const [renamingName, setRenamingName] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [files, setFiles] = useState<TsshFileInfo[]>([]);
-  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
-  const [status, setStatus] = useState<FileManagerStatus>("loading");
+  const [status, setStatus] = useState<FileManagerStatus>("idle");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -483,12 +502,11 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setRenamingName(null);
     setRenameDraft("");
     setFiles([]);
-    setHasSnapshot(false);
     setSelectedName(null);
     setNotice(null);
     setError(null);
     setProgress(null);
-    setStatus("loading");
+    setStatus("idle");
     setStorageCapacity(null);
     setStorageCapacityStatus("loading");
   }, [botId, clearDownloadTriggerIframes]);
@@ -499,15 +517,6 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       await loadStorageCapacity();
     })();
   }, [botId]);
-
-  useLayoutEffect(() => {
-    const intent = cancelFocusRef.current;
-    if (!intent) return;
-    cancelFocusRef.current = null;
-    if (intent.botId !== botId) return;
-    const target = intent.target === "create" ? createFolderTriggerRef.current : renameTriggerRef.current;
-    target?.focus();
-  }, [botId, creatingFolder, renamingName]);
 
   useEffect(() => {
     if (!creatingFolder) {
@@ -794,7 +803,6 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       const entries = await runWithReconnectedClient((client) => client.listPath(managedPath));
       entries.sort((a, b) => Number(isDirectory(b)) - Number(isDirectory(a)) || a.name.localeCompare(b.name));
       setFiles(entries);
-      setHasSnapshot(true);
       setPath(managedPath);
       setPathDraft(managedPath);
       setSelectedName(null);
@@ -830,7 +838,6 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   };
 
   const cancelCreateFolder = () => {
-    cancelFocusRef.current = { botId, target: "create" };
     setCreatingFolder(false);
     setNewFolderDraft("");
   };
@@ -846,7 +853,6 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   };
 
   const cancelRename = () => {
-    cancelFocusRef.current = { botId, target: "rename" };
     setRenamingName(null);
     setRenameDraft("");
   };
@@ -1075,12 +1081,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     ? Math.min(100, Math.max(0, Math.round((storageCapacity.usedBytes / storageCapacity.totalBytes) * 100)))
     : 0;
 
-  if ((status === "loading" || status === "connecting") && !hasSnapshot && !error) {
-    return <AgentPageLoadingState className="agents-ui" title={t("正在加载云存储")} />;
-  }
-
   return (
-    <div className="agents-ui space-y-5">
+    <div className="space-y-5">
       <AgentSectionHeader
         title={t("云存储")}
         description={t("查看、管理云存储中的文件")}
@@ -1088,7 +1090,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
 
       <section
         aria-labelledby="instance-storage-title"
-        className="rounded-md border border-[var(--border-subtle)] bg-white p-4"
+        className="rounded-md border border-[var(--border-subtle)] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -1147,14 +1149,13 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
 
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-start gap-2">
-          <Button ref={createFolderTriggerRef} type="button" variant="outline" className="rounded-md" onClick={beginCreateFolder} disabled={busy || creatingFolder}>
+          <Button type="button" variant="outline" onClick={beginCreateFolder} disabled={busy || creatingFolder}>
             <FolderPlus className="size-4" />
             {t("新建文件夹")}
           </Button>
           <input
             ref={fileInputRef}
             type="file"
-            hidden
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -1163,29 +1164,30 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
               }
             }}
           />
-          <Button type="button" variant="outline" className="rounded-md" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+          <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={busy}>
             <Upload className="size-4" />
             {t("上传文件")}
           </Button>
         </div>
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
           <div ref={pathControlsRef} className="flex w-full min-w-0 flex-wrap items-center gap-2">
-            <AgentTooltip content={parentPathTooltip} triggerMode={busy || parentPathBlocked ? "explanation" : "control"}>
+            <ActionTooltip label={parentPathTooltip} variant="light">
               <Button
                 type="button"
                 variant="outline"
-                className="size-9 shrink-0 rounded-md px-0"
+                className="h-10 w-10 shrink-0 px-0"
                 onClick={() => void loadPath(parentTsshPath(path))}
                 disabled={busy || parentPathBlocked}
                 aria-label={t("上级")}
+                title={parentPathTooltip}
               >
                 <Undo2 className="size-5" />
               </Button>
-            </AgentTooltip>
+            </ActionTooltip>
             <div className="relative min-w-[min(100%,18rem)] flex-1">
               <Input
                 ref={pathInputRef}
-                className={`h-9 rounded-md ${pathEditing ? "" : "pr-11"}`}
+                className={pathEditing ? undefined : "pr-11"}
                 value={pathDraft}
                 onFocus={() => setPathEditing(true)}
                 onClick={() => setPathEditing(true)}
@@ -1203,18 +1205,15 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                     setPathEditing(false);
                   }
                 }}
-                aria-label={t("当前目录路径")}
                 placeholder={t("当前目录路径")}
                 disabled={busy}
               />
               {!pathEditing ? (
                 <span className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <AgentTooltip content={t("点击按钮或输入框空白区域可输入文件路径")} triggerMode={busy ? "explanation" : "control"}>
-                    <Button
+                  <ActionTooltip label={t("点击按钮或输入框空白区域可输入文件路径")}>
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="size-7 rounded-md p-0"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={() => {
                         setPathEditing(true);
                         window.requestAnimationFrame(() => pathInputRef.current?.focus());
@@ -1223,109 +1222,205 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                       aria-label={t("编辑文件路径")}
                     >
                       <PencilLine className="size-4" />
-                    </Button>
-                  </AgentTooltip>
+                    </button>
+                  </ActionTooltip>
                 </span>
               ) : null}
             </div>
             {pathEditing ? (
-              <Button type="button" className="h-9 shrink-0 rounded-md px-6" onMouseDown={(event) => event.preventDefault()} onClick={() => void openPathDraft()} disabled={busy}>
+              <Button type="button" className="h-10 shrink-0 px-6" onMouseDown={(event) => event.preventDefault()} onClick={() => void openPathDraft()} disabled={busy}>
                 {t("进入")}
               </Button>
             ) : (
               <>
-                <label className="inline-flex shrink-0 items-center gap-2 text-sm">
-                  <Switch checked={showHiddenFiles} onCheckedChange={toggleHiddenFiles} aria-label={t("显示隐藏文件")} />
-                  {t("显示隐藏文件")}
-                </label>
-                <AgentTooltip content={t("刷新")} triggerMode={busy ? "explanation" : "control"}>
+                <ActionTooltip label={showHiddenFiles ? t("不显示隐藏文件") : t("显示隐藏文件")} variant="light">
                   <Button
                     type="button"
                     variant="outline"
-                    className="size-9 shrink-0 rounded-md px-0"
+                    className="h-10 w-10 shrink-0 px-0"
+                    onClick={toggleHiddenFiles}
+                    aria-label={showHiddenFiles ? t("不显示隐藏文件") : t("显示隐藏文件")}
+                  >
+                    {showHiddenFiles ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                  </Button>
+                </ActionTooltip>
+                <ActionTooltip label={t("刷新")} variant="light">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 w-10 shrink-0 px-0"
                     onClick={() => void refreshPathAndCapacity()}
                     disabled={busy}
                     aria-label={t("刷新")}
                   >
                     {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                   </Button>
-                </AgentTooltip>
+                </ActionTooltip>
               </>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2 xl:shrink-0">
-            <AgentTooltip content={downloadTooltip}>
+            <ActionTooltip label={downloadTooltip}>
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-md"
                 onClick={() => void downloadSelected()}
                 disabled={busy || !selectedFile || isDirectory(selectedFile) || Boolean(selectedDownloadBlockReason)}
               >
                 <Download className="size-4" />
                 {t("下载")}
               </Button>
-            </AgentTooltip>
-            <AgentTooltip content={renameTooltip}>
-              <Button ref={renameTriggerRef} type="button" variant="outline" className="rounded-md" onClick={beginRenameSelected} disabled={busy || !selectedFile}>
+            </ActionTooltip>
+            <ActionTooltip label={renameTooltip}>
+              <Button type="button" variant="outline" onClick={beginRenameSelected} disabled={busy || !selectedFile}>
                 <PencilLine className="size-4" />
                 {t("重命名")}
               </Button>
-            </AgentTooltip>
-            <AgentTooltip content={deleteTooltip}>
-              <Button type="button" variant="destructive" className="rounded-md" onClick={() => void deleteSelected()} disabled={busy || !selectedFile}>
+            </ActionTooltip>
+            <ActionTooltip label={deleteTooltip}>
+              <Button type="button" variant="destructive" onClick={() => void deleteSelected()} disabled={busy || !selectedFile}>
                 <Trash2 className="size-4" />
                 {t("删除")}
               </Button>
-            </AgentTooltip>
+            </ActionTooltip>
           </div>
         </div>
       </div>
 
-      {error ? <AgentState kind="error" title={error} className="p-3" /> : null}
+      {error ? <div className="rounded-md border border-[color-mix(in_oklab,var(--danger)_28%,white)] bg-[color-mix(in_oklab,var(--danger)_8%,white)] px-3 py-2 text-sm text-[var(--danger)]">{error}</div> : null}
       {selectedPermissionBlockReason ? (
         <div className="rounded-md border border-[color-mix(in_oklab,var(--warning)_28%,white)] bg-[color-mix(in_oklab,var(--warning)_8%,white)] px-3 py-2 text-sm text-[var(--warning)]">
           {selectedPermissionBlockReason}
         </div>
       ) : null}
-      {notice ? <AgentState kind="success" title={notice} className="p-3" /> : null}
-      {progress ? <div role="status" className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-secondary)]">{progress}</div> : null}
+      {notice ? <div className="rounded-md border border-[color-mix(in_oklab,var(--success)_24%,white)] bg-[color-mix(in_oklab,var(--success)_8%,white)] px-3 py-2 text-sm text-[var(--success)]">{notice}</div> : null}
+      {progress ? <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-secondary)]">{progress}</div> : null}
 
       <div className="overflow-hidden rounded-md border border-[var(--border-subtle)]">
-        <div className="hidden grid-cols-[minmax(0,1fr)_104px_116px] bg-[var(--surface-muted)] sm:grid px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+        <div className="grid grid-cols-[minmax(0,1fr)_104px_116px] bg-[var(--surface-muted)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
           <span>{t("名称")}</span>
           <span>{t("大小")}</span>
           <span>{t("修改时间")}</span>
         </div>
         <div className="max-h-[615px] overflow-auto bg-white">
           {creatingFolder ? (
-            <FileManagerEntryView name="" icon={<Folder className="size-4 text-[#b7791f]" />} size="-" modified="-"
-              editor={<FileManagerInlineEditor
-                inputRef={createFolderInputRef} value={newFolderDraft} placeholder={t("请输入文件夹名")}
-                confirmLabel={t("确认新建文件夹")} cancelLabel={t("取消新建文件夹")} busy={busy}
-                onChange={setNewFolderDraft} onConfirm={() => void createFolder()} onCancel={cancelCreateFolder}
-              />}
-            />
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_104px_116px] items-center border-t border-[var(--border-subtle)] px-3 py-2.5 text-left text-sm">
+              <span className="flex min-w-0 items-center gap-2">
+                <Folder className="size-4 text-[#b7791f]" />
+                <Input
+                  ref={createFolderInputRef}
+                  className="h-9 max-w-sm"
+                  value={newFolderDraft}
+                  onChange={(event) => setNewFolderDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void createFolder();
+                      return;
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelCreateFolder();
+                    }
+                  }}
+                  placeholder={t("请输入文件夹名")}
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-blue-500 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => void createFolder()}
+                  disabled={busy || !newFolderDraft.trim()}
+                  aria-label={t("确认新建文件夹")}
+                >
+                  <CheckCircle className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={cancelCreateFolder}
+                  disabled={busy}
+                  aria-label={t("取消新建文件夹")}
+                >
+                  <XCircle className="size-4" />
+                </button>
+              </span>
+              <span className="text-[var(--text-secondary)]">-</span>
+              <span className="text-[var(--text-secondary)]">-</span>
+            </div>
           ) : null}
           {displayedFiles.length === 0 && !creatingFolder ? (
-            <AgentState kind={busy ? "loading" : "empty"} title={busy ? t("加载中...") : status === "idle" ? t("连接后会显示当前目录文件。") : t("当前目录为空。")} className="border-0 py-8 text-center" />
+            <div className="px-4 py-10 text-center text-sm text-[var(--text-tertiary)]">
+              {status === "idle" ? t("连接后会显示当前目录文件。") : t("当前目录为空。")}
+            </div>
           ) : (
             displayedFiles.map((file) => {
               const selected = selectedName === file.name;
               const renaming = renamingName === file.name;
               return (
-                <FileManagerEntryView
+                <div
                   key={`${file.type}:${file.name}`}
-                  name={file.name} icon={fileIconFor(file)}
-                  size={isDirectory(file) ? "-" : formatBytes(file.size)} modified={formatTime(file.modifyTime)}
-                  selected={selected} directory={isDirectory(file)}
-                  onSelect={() => setSelectedName(file.name)} onOpen={() => openEntry(file)}
-                  editor={renaming ? <FileManagerInlineEditor
-                    inputRef={renameInputRef} value={renameDraft} placeholder={t("请输入文件名")}
-                    confirmLabel={t("确认重命名")} cancelLabel={t("取消重命名")} busy={busy}
-                    onChange={setRenameDraft} onConfirm={() => void renameSelected()} onCancel={cancelRename}
-                  /> : undefined}
-                />
+                  className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_104px_116px] items-center border-t border-[var(--border-subtle)] px-3 py-2.5 text-left text-sm transition hover:bg-[var(--surface-muted)]"
+                  style={selected ? { background: "color-mix(in oklab, var(--brand-500) 9%, white)" } : undefined}
+                  onClick={() => setSelectedName(file.name)}
+                  onDoubleClick={() => openEntry(file)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {fileIconFor(file)}
+                    {renaming ? (
+                      <>
+                        <Input
+                          ref={renameInputRef}
+                          className="h-9 max-w-sm"
+                          value={renameDraft}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void renameSelected();
+                              return;
+                            }
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              cancelRename();
+                            }
+                          }}
+                          placeholder={t("请输入文件名")}
+                          disabled={busy}
+                        />
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-blue-500 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void renameSelected();
+                          }}
+                          disabled={busy || !renameDraft.trim()}
+                          aria-label={t("确认重命名")}
+                        >
+                          <CheckCircle className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            cancelRename();
+                          }}
+                          disabled={busy}
+                          aria-label={t("取消重命名")}
+                        >
+                          <XCircle className="size-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <span className="truncate font-medium text-[var(--text-primary)]">{file.name}</span>
+                    )}
+                  </span>
+                  <span className="text-[var(--text-secondary)]">{isDirectory(file) ? "-" : formatBytes(file.size)}</span>
+                  <span className="text-[var(--text-secondary)]">{formatTime(file.modifyTime)}</span>
+                </div>
               );
             })
           )}

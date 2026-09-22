@@ -1,19 +1,32 @@
 "use client";
 
 import {
+  CheckCircle2,
+  ChevronDown,
   CircleHelp,
   ExternalLink,
   Eye,
   EyeOff,
+  Loader2,
   Plus,
   RefreshCw,
+  Trash2,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
-import { AgentConfirmDialog, AgentPageLoadingState, AgentState, Spinner, agentPortalClassName } from "@/components/agents";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -22,8 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AgentTabsList, AgentTabsTrigger } from "@/components/agents";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -36,8 +48,6 @@ import type {
   ModelProviderOption,
 } from "./model-config-client";
 import { ModelActionTooltip } from "./model-action-tooltip";
-import { ModelConnectionResultView } from "./model-connection-result-view";
-import { ConfiguredModelRowView, ModelProviderGroupView } from "./model-provider-views";
 import { ConfiguredProviderModelForm } from "./configured-provider-model-form";
 import { MODEL_CONTROL_CLASS, MODEL_SELECT_CONTENT_CLASS, ModelCompoundActionContent, modelCompoundClasses } from "./model-form-controls";
 import {
@@ -216,6 +226,19 @@ function displayError(message: string, localizedFallback: string) {
     return localizedFallback;
   }
   return message;
+}
+
+function ModelConfigLoading() {
+  const t = useT();
+  return (
+    <div
+      className="flex min-h-48 items-center justify-center rounded-md border border-black/[0.06] bg-white text-sm text-black/50"
+      aria-busy="true"
+    >
+      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
+      {t("正在读取模型配置")}
+    </div>
+  );
 }
 
 export function AgentModelConfigPanel({
@@ -534,12 +557,17 @@ export function AgentModelConfigPanel({
   };
 
   if (controller.loading && !controller.snapshot) {
-    return <AgentPageLoadingState className="agents-ui" title={t("正在读取模型")} />;
+    return (
+      <div className="space-y-5 pb-12 md:pb-16">
+        {pageHeader}
+        <ModelConfigLoading />
+      </div>
+    );
   }
 
   if (controller.loadError && !controller.snapshot) {
     return (
-      <div className="agents-ui space-y-5 pb-12 md:pb-16">
+      <div className="space-y-5 pb-12 md:pb-16">
         {pageHeader}
         <div className="rounded-md border border-red-100 bg-red-50 px-5 py-5 text-sm text-red-700" role="alert">
           <p className="font-medium">{t("读取模型配置失败")}</p>
@@ -560,7 +588,7 @@ export function AgentModelConfigPanel({
   }
 
   return (
-    <div className="agents-ui space-y-5 pb-12 md:pb-16" aria-busy={busy || controller.loading}>
+    <div className="space-y-5 pb-12 md:pb-16" aria-busy={busy || controller.loading}>
       {pageHeader}
       <section className="overflow-hidden rounded-md border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         <div className="flex items-start justify-between gap-4 border-b border-black/[0.06] px-5 py-4">
@@ -593,7 +621,7 @@ export function AgentModelConfigPanel({
           </div>
         ) : (
           <ul className="divide-y divide-black/[0.06]">
-            {configuredProviderGroups.map((group) => {
+            {configuredProviderGroups.map((group, groupIndex) => {
               const expanded = effectiveExpandedConfiguredProviderKey === group.key;
               const primaryModel = group.models.find((model) => sameModel(snapshot.primary, model)) ?? null;
               const fallbackModels = group.models.filter((model) => (
@@ -606,32 +634,146 @@ export function AgentModelConfigPanel({
               const savedModels = group.models.filter((model) => !model.catalogOnly);
               const anchor = savedModels[0];
               const canAppend = !!anchor && canAppendToProviderGroup(group);
+              const groupPanelId = `configured-provider-${groupIndex}`;
               return (
-                <ModelProviderGroupView key={group.key}
-                  name={providerDisplayName} contentLabel={`${providerDisplayName} ${t("已配置模型")}`}
-                  expanded={expanded} keepMounted={addingProviderKey === group.key}
-                  toggleDisabled={controller.operation === "append"} addDisabled={busy} addLabel={t("添加模型")}
-                  primaryLabel={primaryModel ? t("主模型：{{model}}", { model: displayConfiguredModelName(primaryModel, autoModelDisplayName) }) : undefined}
-                  fallbackLabel={fallbackModels.length ? t("备用模型：{{models}}", { models: fallbackModels.map((model) => displayConfiguredModelName(model, autoModelDisplayName)).join("、") }) : undefined}
-                  onToggle={() => setExpandedConfiguredProviderKey(expanded ? null : group.key)}
-                  onAdd={canAppend ? (event) => { providerAddTriggerRef.current = event.currentTarget; openProviderForm(group.key); } : undefined}>
+                <li key={group.key}>
+                  <div className="flex items-center gap-2 pr-5">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 flex-wrap items-center gap-3 px-5 py-4 text-left hover:bg-black/[0.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2F6BFF] sm:flex-nowrap"
+                    aria-expanded={expanded}
+                    aria-controls={groupPanelId}
+                    disabled={controller.operation === "append"}
+                    onClick={() => setExpandedConfiguredProviderKey(expanded ? null : group.key)}
+                  >
+                    <ChevronDown
+                      className={cn("size-4 shrink-0 text-black/35", !expanded && "-rotate-90")}
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-black/85">
+                      {providerDisplayName}
+                    </span>
+                    {primaryModel || fallbackModels.length > 0 ? (
+                      <span className="flex w-full shrink-0 flex-row flex-wrap items-center gap-1 sm:w-auto sm:max-w-[60%] sm:justify-end">
+                        {primaryModel ? (
+                          <Badge
+                            variant="success"
+                            className="justify-end whitespace-normal break-all text-right leading-tight"
+                          >
+                            {t("主模型：{{model}}", {
+                              model: displayConfiguredModelName(primaryModel, autoModelDisplayName),
+                            })}
+                          </Badge>
+                        ) : null}
+                        {fallbackModels.length > 0 ? (
+                          <Badge
+                            variant="neutral"
+                            className="justify-end whitespace-normal break-all border border-[var(--border-subtle)] text-right leading-tight"
+                          >
+                            {t("备用模型：{{models}}", {
+                              models: fallbackModels
+                                .map((model) => displayConfiguredModelName(model, autoModelDisplayName))
+                                .join("、"),
+                            })}
+                          </Badge>
+                        ) : null}
+                      </span>
+                    ) : null}
+                  </button>
+                  {canAppend ? <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-md text-xs font-normal" disabled={busy} onClick={(event) => { providerAddTriggerRef.current = event.currentTarget; openProviderForm(group.key); }}>
+                    <Plus className="size-3.5" aria-hidden="true" />{t("添加模型")}
+                  </Button> : null}
+                  </div>
+
+                  {expanded || addingProviderKey === group.key ? (
+                    <div
+                      id={groupPanelId}
+                      role="group"
+                      aria-label={`${providerDisplayName} ${t("已配置模型")}`}
+                      hidden={!expanded}
+                      className="bg-white pl-4 pr-5 sm:pl-10"
+                    >
+                      <ul className="divide-y divide-black/[0.06]">
                         {group.models.map((model) => {
                           const primary = sameModel(snapshot.primary, model);
                           const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
                           const role = primary ? "primary" : fallback ? "fallback" : "idle";
                           const modelIdentity = getHermesModelIdentity(model);
-                          return <ConfiguredModelRowView key={modelIdentity}
-                            name={displayConfiguredModelName(model, autoModelDisplayName)}
-                            badge={model.catalogOnly ? undefined : role === "primary" ? t("主模型") : role === "fallback" ? t("备用模型") : t("已添加")}
-                            primary={primary} fallback={fallback}
-                            primaryDisabled={busy || model.requiresSetup === true || primary} fallbackDisabled={busy || primary} deleteDisabled={busy || primary}
-                            primaryLabel={primary ? t("已是主模型") : t("设为主模型")} fallbackLabel={fallback ? t("取消备用") : t("设为备用模型")} deleteLabel={t("删除")}
-                            primaryHelp={primary ? t("当前模型已经是主模型") : undefined}
-                            fallbackHelp={primary ? t("主模型不能同时设为备用模型") : undefined}
-                            deleteHelp={primary ? t("无法删除主模型，请先切换至其他模型") : undefined}
-                            onPrimary={() => void controller.assign(model, "primary")}
-                            onFallback={() => void (fallback ? controller.removeFallback(model) : controller.assign(model, "fallback"))}
-                            onDelete={model.catalogOnly ? undefined : () => { controller.clearOperationError(); setDeleteTarget(model); }} />;
+                          return (
+                            <li
+                              key={modelIdentity}
+                              className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
+                                <span className="min-w-0">
+                                  <span className="flex flex-wrap items-center gap-2">
+                                    <span className="break-all text-sm font-normal text-black/85">
+                                      {displayConfiguredModelName(model, autoModelDisplayName)}
+                                    </span>
+                                    {!model.catalogOnly ? (
+                                      <Badge
+                                        variant={primary ? "success" : "neutral"}
+                                        className={cn("text-xs", fallback && "border border-[var(--border-subtle)]")}
+                                      >
+                                        {role === "primary"
+                                          ? t("主模型")
+                                          : role === "fallback"
+                                            ? t("备用模型")
+                                            : t("已添加")}
+                                      </Badge>
+                                    ) : null}
+                                  </span>
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <ModelActionTooltip content={primary ? t("当前模型已经是主模型") : undefined}>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="rounded-md text-xs font-normal"
+                                  disabled={busy || model.requiresSetup === true || primary}
+                                  onClick={() => void controller.assign(model, "primary")}
+                                >
+                                    {primary ? t("已是主模型") : t("设为主模型")}
+                                  </Button>
+                                </ModelActionTooltip>
+                                <ModelActionTooltip content={primary ? t("主模型不能同时设为备用模型") : undefined}>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="rounded-md text-xs font-normal"
+                                    disabled={busy || primary}
+                                    onClick={() => void (fallback
+                                      ? controller.removeFallback(model)
+                                      : controller.assign(model, "fallback"))}
+                                  >
+                                    {fallback ? t("取消备用") : t("设为备用模型")}
+                                  </Button>
+                                </ModelActionTooltip>
+                                {!model.catalogOnly ? (
+                                  <ModelActionTooltip content={primary ? t("无法删除主模型，请先切换至其他模型") : undefined}>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="size-8 rounded-md p-0 font-normal enabled:cursor-pointer"
+                                      aria-label={t("删除")}
+                                      disabled={busy || primary}
+                                      onClick={() => {
+                                        controller.clearOperationError();
+                                        setDeleteTarget(model);
+                                      }}
+                                    >
+                                      <Trash2 className="size-3.5" aria-hidden="true" />
+                                    </Button>
+                                  </ModelActionTooltip>
+                                ) : null}
+                              </div>
+                            </li>
+                          );
                         })}
                       {addingProviderKey === group.key && anchor && canAppend ? (
                         <li className="px-4 py-3">
@@ -649,23 +791,32 @@ export function AgentModelConfigPanel({
                         />
                         </li>
                       ) : null}
-                </ModelProviderGroupView>
+                      </ul>
+                    </div>
+                  ) : null}
+                </li>
               );
             })}
           </ul>
         )}
       </section>
 
-      <AgentConfirmDialog open={pendingAddingProviderKey !== null}
-        onOpenChange={(open) => { if (!open) setPendingAddingProviderKey(null); }}
-        title={t("放弃当前添加？")} description={t("当前填写的模型尚未添加，切换后将清空。")}
-        cancelLabel={t("取消")} confirmLabel={t("放弃并切换")}
-        onConfirm={() => {
-          const key = pendingAddingProviderKey;
-          closeProviderForm();
-          if (key) { setAddingProviderKey(key); setExpandedConfiguredProviderKey(key); }
-        }} />
-
+      <Dialog open={pendingAddingProviderKey !== null} onOpenChange={(open) => { if (!open) setPendingAddingProviderKey(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("放弃当前添加？")}</DialogTitle>
+            <DialogDescription>{t("当前填写的模型尚未添加，切换后将清空。")}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingAddingProviderKey(null)}>{t("取消")}</Button>
+            <Button onClick={() => {
+              const key = pendingAddingProviderKey;
+              closeProviderForm();
+              if (key) { setAddingProviderKey(key); setExpandedConfiguredProviderKey(key); }
+            }}>{t("放弃并切换")}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <section
         ref={addSectionRef}
@@ -673,27 +824,27 @@ export function AgentModelConfigPanel({
       >
         <Tabs value={category} onValueChange={(value) => handleCategoryChange(value as ProviderCategory)}>
           <div className="overflow-x-auto bg-white px-5 pt-4 sm:px-6">
-            <AgentTabsList variant="underline"
-              className="flex h-auto w-full gap-4 sm:gap-10"
+            <TabsList
+              className="flex h-auto w-full justify-start gap-4 rounded-none border-0 border-b border-black/[0.06] bg-transparent p-0 shadow-none sm:gap-10"
               aria-label={t("模型配置方式")}
             >
               {PROVIDER_CATEGORIES.map((item) => {
                 return (
-                  <AgentTabsTrigger variant="underline"
+                  <TabsTrigger
                     key={item.id}
                     value={item.id}
                     disabled={busy}
-                    className="min-w-0 flex-none pb-4 pt-1 text-sm font-normal data-[state=active]:font-semibold sm:text-base"
+                    className="relative min-w-0 flex-none rounded-none border-0 bg-transparent px-0 pb-4 pt-1 text-sm font-normal text-black/60 shadow-none transition-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-transparent after:content-[''] hover:text-black/85 data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-black data-[state=active]:shadow-none data-[state=active]:after:bg-black sm:text-base"
                   >
                     {item.id === "coding_plan"
                       ? t("模型 Coding Plan")
                       : item.id === "api"
                         ? t("模型 API")
                         : t("自定义模型")}
-                  </AgentTabsTrigger>
+                  </TabsTrigger>
                 );
               })}
-            </AgentTabsList>
+            </TabsList>
           </div>
 
           <TabsContent value={category} forceMount className="m-0 grid gap-5 bg-white px-5 py-6 sm:px-6">
@@ -746,9 +897,8 @@ export function AgentModelConfigPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent
-                    variant="product"
                     position="popper"
-                    className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}
+                    className={MODEL_SELECT_CONTENT_CLASS}
                     style={MODEL_SELECT_CONTENT_STYLE}
                   >
                     <SelectItem value="chat_completions">
@@ -791,9 +941,8 @@ export function AgentModelConfigPanel({
                   <SelectValue placeholder={t("请选择 Provider")} />
                 </SelectTrigger>
                 <SelectContent
-                  variant="product"
                   position="popper"
-                  className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}
+                  className={MODEL_SELECT_CONTENT_CLASS}
                   style={MODEL_SELECT_CONTENT_STYLE}
                 >
                   {providerOptions.map((provider) => (
@@ -889,9 +1038,8 @@ export function AgentModelConfigPanel({
                     <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("暂无可用模型")} />
                   </SelectTrigger>
                   <SelectContent
-                    variant="product"
                     position="popper"
-                    className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}
+                    className={MODEL_SELECT_CONTENT_CLASS}
                     style={MODEL_SELECT_CONTENT_STYLE}
                   >
                     {availableModelOptions.map((modelOption) => (
@@ -985,12 +1133,11 @@ export function AgentModelConfigPanel({
             <Button
               type="button"
               className="rounded-md"
-              aria-busy={controller.operation === "add"}
               disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (selectedModelIsPrimary && purpose !== "primary")}
               onClick={() => void handleAdd()}
             >
               {controller.operation === "add"
-                ? <Spinner size="md" />
+                ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 : null}
               {t("确认配置")}
             </Button>
@@ -999,45 +1146,122 @@ export function AgentModelConfigPanel({
         </Tabs>
       </section>
 
-      <ModelConnectionResultView open={connectionResult !== null}
-        onOpenChange={(open) => { if (!open) setConnectionResult(null); }}
-        success={!!connectionResult?.success}
-        title={connectionResult?.success ? t("模型可用性检测通过") : t("模型可用性检测未通过")}
-        description={connectionResult?.success ? t("当前凭据可以访问该模型。") : t("未能确认当前凭据可以访问该模型，请检查配置后重试。")}
-        closeLabel={t("确定")} dismissLabel={t("关闭")}
-        rows={connectionResult ? [
-          { label: "Provider", value: connectionResult.provider },
-          { label: t("模型"), value: connectionResult.model },
-          { label: "Base URL", value: connectionResult.baseUrl },
-          ...(connectionResult.timeMs !== undefined ? [{ label: t("响应时间"), value: `${connectionResult.timeMs} ms` }] : []),
-          ...(connectionResult.errorCode !== undefined ? [{ label: t("错误码"), value: connectionResult.errorCode }] : []),
-          ...(connectionResult.errorMessage ? [{ label: t("失败原因"), value: connectionResult.errorMessage, error: true }] : []),
-        ] : []} />
-
-
-      <AgentConfirmDialog open={deleteTarget !== null}
-        onOpenChange={(open) => { if (!open) { setDeleteTarget(null); controller.clearOperationError(); } }}
-        title={t("删除模型")}
-        description={deleteTarget && snapshot.fallbacks.some((model) => sameModel(model, deleteTarget))
-          ? t("删除后将移除该备用模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。")
-          : t("删除后将移除此模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。")}
-        cancelLabel={t("取消")} confirmLabel={t("确认删除")} confirmDisabled={busy}
-        onCloseAutoFocus={(event) => {
-          if (!restoreFocusAfterDelete.current) return;
-          event.preventDefault();
-          restoreFocusAfterDelete.current = false;
-          configuredHeadingRef.current?.focus();
+      <Dialog
+        open={connectionResult !== null}
+        onOpenChange={(open) => {
+          if (!open) setConnectionResult(null);
         }}
-        onConfirm={async () => {
-          if (!deleteTarget) return;
-          const removed = await controller.remove(deleteTarget);
-          if (removed) { restoreFocusAfterDelete.current = true; setDeleteTarget(null); }
-        }}>
-        {controller.operationError && controller.operationErrorOperation === "remove" ? (
-          <AgentState kind="error" title={displayError(controller.operationError, t("模型配置操作失败，请重试。"))} />
-        ) : null}
-      </AgentConfirmDialog>
+      >
+        <DialogContent className="rounded-md md:rounded-md">
+          <DialogHeader className="mb-5">
+            <DialogTitle className="flex items-center gap-2">
+              {connectionResult?.success
+                ? <CheckCircle2 className="size-5 text-emerald-600" aria-hidden="true" />
+                : <XCircle className="size-5 text-red-600" aria-hidden="true" />}
+              {connectionResult?.success ? t("模型可用性检测通过") : t("模型可用性检测未通过")}
+            </DialogTitle>
+            <DialogDescription>
+              {connectionResult?.success
+                ? t("当前凭据可以访问该模型。")
+                : t("未能确认当前凭据可以访问该模型，请检查配置后重试。")}
+            </DialogDescription>
+          </DialogHeader>
+          {connectionResult ? (
+            <dl className="grid gap-3 rounded-md border border-black/[0.06] bg-black/[0.02] p-4 text-sm">
+              <div className="grid gap-1 sm:grid-cols-[6rem_minmax(0,1fr)]">
+                <dt className="text-black/45">Provider</dt>
+                <dd className="break-all text-black/75">{connectionResult.provider}</dd>
+              </div>
+              <div className="grid gap-1 sm:grid-cols-[6rem_minmax(0,1fr)]">
+                <dt className="text-black/45">{t("模型")}</dt>
+                <dd className="break-all text-black/75">{connectionResult.model}</dd>
+              </div>
+              <div className="grid gap-1 sm:grid-cols-[6rem_minmax(0,1fr)]">
+                <dt className="text-black/45">Base URL</dt>
+                <dd className="break-all text-black/75">{connectionResult.baseUrl}</dd>
+              </div>
+              {connectionResult.timeMs !== undefined ? (
+                <div className="grid gap-1 sm:grid-cols-[6rem_minmax(0,1fr)]">
+                  <dt className="text-black/45">{t("响应时间")}</dt>
+                  <dd className="text-black/75">{connectionResult.timeMs} ms</dd>
+                </div>
+              ) : null}
+              {connectionResult.errorCode !== undefined ? (
+                <div className="grid gap-1 sm:grid-cols-[6rem_minmax(0,1fr)]">
+                  <dt className="text-black/45">{t("错误码")}</dt>
+                  <dd className="break-all text-black/75">{connectionResult.errorCode}</dd>
+                </div>
+              ) : null}
+              {connectionResult.errorMessage ? (
+                <div className="grid gap-1 sm:grid-cols-[6rem_minmax(0,1fr)]">
+                  <dt className="text-black/45">{t("失败原因")}</dt>
+                  <dd className="break-words text-red-700">{connectionResult.errorMessage}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
+          <div className="flex justify-end pt-2">
+            <DialogClose asChild>
+              <Button type="button" className="rounded-md">{t("确定")}</Button>
+            </DialogClose>
+          </div>
+        </DialogContent>
+      </Dialog>
 
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            controller.clearOperationError();
+          }
+        }}
+      >
+        <DialogContent
+          className="rounded-md md:rounded-md"
+          onCloseAutoFocus={(event) => {
+            if (!restoreFocusAfterDelete.current) return;
+            event.preventDefault();
+            restoreFocusAfterDelete.current = false;
+            configuredHeadingRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("删除模型")}</DialogTitle>
+            <DialogDescription>
+              {deleteTarget && snapshot.fallbacks.some((model) => sameModel(model, deleteTarget))
+                ? t("删除后将移除该备用模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。")
+                : t("删除后将移除此模型配置。若这是该模型服务商下最后一个已添加模型，将同时移除该模型服务商。")}
+            </DialogDescription>
+          </DialogHeader>
+          {controller.operationError && controller.operationErrorOperation === "remove" ? (
+            <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {displayError(controller.operationError, t("模型配置操作失败，请重试。"))}
+            </div>
+          ) : null}
+          <div className="flex justify-end gap-2 pt-2">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" className="rounded-md">{t("取消")}</Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              className="rounded-md"
+              disabled={busy}
+              onClick={async () => {
+                if (!deleteTarget) return;
+                const removed = await controller.remove(deleteTarget);
+                if (removed) {
+                  restoreFocusAfterDelete.current = true;
+                  setDeleteTarget(null);
+                }
+              }}
+            >
+              {t("确认删除")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

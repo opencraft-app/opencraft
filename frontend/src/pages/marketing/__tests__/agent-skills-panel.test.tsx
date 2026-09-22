@@ -117,21 +117,16 @@ describe("HermesAgentSkillsPanel", () => {
     tsshMocks.listPathMock.mockReset();
   });
 
-  it("keeps the skills page content behind the initial data boundary", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/pages/marketing/agent-skills-panel.tsx"), "utf8");
-
-    expect(source).toContain("AgentPageLoadingState");
-  });
-
   it("defaults to the mono2 Skills Demo and can switch to Experts", async () => {
     renderPanel("skills");
 
+    const outerTabs = within(screen.getByRole("tablist", { name: "技能页面切换" }));
     const demoTabs = within(screen.getByRole("tablist", { name: "技能市场页面切换" }));
-    const skillsTitle = await screen.findByRole("heading", { name: "技能" });
+    const skillsTab = outerTabs.getByRole("tab", { name: "技能" });
     const expertsTab = demoTabs.getByRole("tab", { name: "技能包" });
 
-    expect(screen.queryByRole("tablist", { name: "技能页面切换" })).not.toBeInTheDocument();
-    expect(skillsTitle).toHaveClass("text-lg", "font-semibold");
+    expect(skillsTab).toHaveAttribute("aria-selected", "true");
+    expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
     expect(expertsTab).toBeInTheDocument();
     const description = isGlobal
       ? "为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。"
@@ -245,7 +240,6 @@ describe("HermesAgentSkillsPanel", () => {
       resolve(process.cwd(), "src/pages/marketing/agent-skills-panel.tsx"),
       "utf8",
     );
-    expect(skillsPanelSource).toContain('portalClassName="agents-ui" closeLabel={t("关闭")}');
     const stableHostSource = readFileSync(
       resolve(process.cwd(), "src/pages/marketing/agent-settings-sdk-stable-host.tsx"),
       "utf8",

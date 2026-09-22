@@ -59,12 +59,12 @@ describe("DingTalk channel QR binding", () => {
 
   it("uses the standard dialog radius instead of the Skills panel private token", () => {
     const channelButtonRule = standardPanelStyles.match(
-      /\.agents-ui\.lh-std-channel-panel :is\([^}]+\)\s*\{([^}]*)\}/,
+      /\.lh-std-channel-panel__btn-outline,\s*\.lh-std-channel-panel__btn-primary\s*\{([^}]*)\}/,
     )?.[1];
 
     expect(channelButtonRule).toBeDefined();
     expect(channelButtonRule).toMatch(
-      /border-radius\s*:\s*6px\s*;/,
+      /border-radius\s*:\s*var\(--lh-std-radius-lg\)\s*;/,
     );
     expect(channelButtonRule).not.toContain("--lh-std-skill-radius");
   });

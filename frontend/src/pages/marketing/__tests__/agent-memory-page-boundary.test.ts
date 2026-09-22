@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 
 const readPageSource = () =>
   readFileSync(join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"), "utf8");
-const readViewSource = () => readFileSync(join(process.cwd(), "src/pages/marketing/agent-memory-views.tsx"), "utf8");
 
 describe("Agent memory page async boundary", () => {
   it("scopes memory saves by Agent and request id", () => {
@@ -39,7 +38,11 @@ describe("Agent memory page async boundary", () => {
   });
 
   it("preserves line breaks and wraps long memory content", () => {
-    const memoryEntries = readViewSource();
+    const page = readPageSource();
+    const memoryEntries = page.slice(
+      page.indexOf("const MemoryEntries ="),
+      page.indexOf("const MemoryPanel ="),
+    );
 
     expect(memoryEntries).toContain("whitespace-pre-wrap");
     expect(memoryEntries).toContain("break-words");
@@ -54,28 +57,20 @@ describe("Agent memory page async boundary", () => {
     expect(page).not.toContain('查看当前 Hermes Agent 的记忆和用户画像文件');
   });
 
-  it("keeps memory state ownership in the host and passes typed display actions", () => {
+  it("uses the automations icon-only refresh button style", () => {
     const page = readPageSource();
     const memoryPanel = page.slice(
       page.indexOf("const MemoryPanel ="),
       page.indexOf("/* ─── Delete Confirm Dialog ─── */"),
     );
 
-    expect(memoryPanel).toContain("<MemoryPanelView");
-    expect(memoryPanel).toContain('refreshLabel={t("刷新")}');
-    expect(memoryPanel).toContain("onRefresh={onRefresh}");
-    expect(page).toContain("const [draftLimit, setDraftLimit]");
-    expect(page).toContain("const saved = await onSaveLimit(target, validation.value, used)");
-    const views = readViewSource();
-    expect(views).toContain("AgentTooltip");
-    expect(views).toContain("aria-label={refreshLabel}");
-    expect(views).not.toMatch(/useRepositories|useOpenClaw|execDebugCommand|fetchHermes|saveHermes/);
-  });
-
-  it("uses the centered page state before the first memory snapshot", () => {
-    const views = readViewSource();
-
-    expect(views).toContain("AgentPageLoadingState");
-    expect(views).toContain("loading && !hasSnapshot");
+    expect(memoryPanel).toContain(
+      'className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"',
+    );
+    expect(memoryPanel).toContain('aria-label={t("刷新")}');
+    expect(memoryPanel).toContain('title={t("刷新")}');
+    expect(memoryPanel).toContain('RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}');
+    expect(memoryPanel).not.toContain('Loader2 className="h-4 w-4 animate-spin"');
+    expect(memoryPanel).not.toContain('\n            {t("刷新")}\n');
   });
 });

@@ -1,14 +1,18 @@
 import {
   ArrowRight,
   BarChart3,
+  ExternalLink,
   LayoutTemplate,
+  Loader2,
   Megaphone,
   Plus,
+  Share2,
+  Trash2,
   UserRound,
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
 import { useT } from "@/i18n/t";
@@ -17,10 +21,6 @@ import { AppLink } from "@/lib/app-navigation";
 import { isCN } from "@/lib/region";
 import { savePendingWorkbenchPrompt } from "./workbench-prompt-templates";
 import { WebsiteShareDialog } from "./agent-website-share-dialog";
-import { WebsiteSiteRowView } from "./website-site-row-view";
-import { AgentPageLoadingState } from "@/components/agents";
-import { AgentConfirmDialog } from "@/components/agents/agent-confirm-dialog";
-import { AgentState } from "@/components/agents/agent-state";
 
 interface WebsiteCapability {
   max_sites: number;
@@ -241,8 +241,6 @@ export const AgentWebsitePanel = () => {
   /** 删除未成功时的行内提示（siteID -> 用户可读文案 + 语气） */
   const [deleteNotices, setDeleteNotices] = useState<Record<string, DeleteNotice>>({});
 
-  const listHeadingRef = useRef<HTMLHeadingElement>(null);
-  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const unmountedRef = useRef(false);
   const pollTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
@@ -499,25 +497,29 @@ export const AgentWebsitePanel = () => {
 
   if (loading) {
     return (
-      <AgentPageLoadingState className="agents-ui" title={t("正在加载工作台")} />
+      <div className="flex min-h-[320px] items-center justify-center">
+        <Loader2 className="h-5 w-5 animate-spin text-black/30" />
+      </div>
     );
   }
 
   if (error) {
     return (
-      <AgentState className="agents-ui" kind="error" title={error === "unauthorized" ? t("请先登录") : error} />
+      <div className="rounded-lg border border-black/[0.06] bg-white p-6 text-sm text-black/60">
+        <p>{error === "unauthorized" ? t("请先登录") : error}</p>
+      </div>
     );
   }
 
   return (
-    <div className="agents-ui space-y-6">
+    <div className="space-y-6">
       <AgentSectionHeader
         title={t("我的工作台")}
         description={t("让 Agent 帮你构建、发布并持续管理可访问的 Web 工作台")}
         actionsClassName="w-full sm:w-auto"
         actions={
           <div className="grid w-full grid-cols-2 gap-2 sm:w-[360px]">
-            <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5">
+            <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <p className="text-[11px] font-medium text-black/45">{t("工作台数量")}</p>
               <p className="mt-1 text-lg font-semibold leading-none text-black/90">
                 {capability ? (
@@ -529,7 +531,7 @@ export const AgentWebsitePanel = () => {
                 )}
               </p>
             </div>
-            <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5">
+            <div className="rounded-md border border-black/[0.06] bg-white px-3 py-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <p className="text-[11px] font-medium text-black/45">{t("本月访问流量")}</p>
               <p className="mt-1 truncate text-lg font-semibold leading-none text-black/90">
                 {capability ? (
@@ -557,7 +559,7 @@ export const AgentWebsitePanel = () => {
         variants={staggerContainer}
         initial="hidden"
         animate="visible"
-        className="rounded-md border border-black/[0.06] bg-white p-5"
+        className="rounded-md border border-black/[0.06] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
       >
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black/[0.04]">
@@ -614,10 +616,10 @@ export const AgentWebsitePanel = () => {
         variants={fadeIn}
         initial="hidden"
         animate="visible"
-        className="overflow-hidden rounded-md border border-black/[0.06] bg-white"
+        className="overflow-hidden rounded-md border border-black/[0.06] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
       >
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-          <h3 ref={listHeadingRef} tabIndex={-1} className="text-base font-semibold text-black/90 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">{t("工作台列表")}</h3>
+          <h3 className="text-base font-semibold text-black/90">{t("工作台列表")}</h3>
           <span className="text-sm text-black/40">
             {hasLoadError ? t("暂不可用") : <>{t("共")} {sites.length} {t("个")}</>}
           </span>
@@ -675,55 +677,157 @@ export const AgentWebsitePanel = () => {
                         : "bg-black/5 text-black/45";
               const notice = deleteNotices[site.SiteID];
               return (
-                <WebsiteSiteRowView
-                  key={site.SiteID}
-                  address={siteURL || t("访问地址生成中")}
-                  metadata={`${site.Name} · ${t("创建于")} ${formatDate(site.CreatedTime)}`}
-                  status={statusView.label}
-                  statusClassName={statusClassName}
-                  notice={notice}
-                  visitUrl={status === "active" && siteURL ? siteURL : undefined}
-                  canShare={Boolean(status === "active" && isCN && siteURL && !isDeleting)}
-                  canDelete={!isDeleting}
-                  labels={{ visit: t("访问"), addressPending: t("访问地址生成中"), share: t("分享"), delete: t("删除") }}
-                  onShare={() => setShareTarget(site)}
-                  onDelete={(trigger) => {
-                    deleteTriggerRef.current = trigger;
-                    setDeleteError(null);
-                    setDeleteTarget(site);
-                  }}
-                />
+                <div key={site.SiteID} className="group grid gap-3 px-5 py-4 transition-colors hover:bg-black/[0.015] md:grid-cols-[minmax(0,1fr)_112px_120px] md:items-center md:gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-black/90">
+                      {siteURL || t("访问地址生成中")}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-black/40">
+                      {site.Name} · {t("创建于")} {formatDate(site.CreatedTime)}
+                    </p>
+                    {notice && (
+                      <p
+                        className={`mt-1 text-xs ${notice.tone === "error" ? "text-[var(--danger)]" : "text-orange-600"}`}
+                      >
+                        {notice.message}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusClassName}`}>
+                      {statusView.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 md:justify-end">
+                    {status === "active" && siteURL ? (
+                      <a
+                        href={siteURL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={t("访问")}
+                        className="group/btn relative inline-flex h-8 w-8 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-black/[0.05] hover:text-[#007AFF]"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
+                          {t("访问")}
+                        </span>
+                      </a>
+                    ) : (
+                      <span
+                        title={t("访问地址生成中")}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-black/20"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </span>
+                    )}
+                    {status === "active" && isCN && siteURL && !isDeleting && (
+                      <button
+                        type="button"
+                        onClick={() => setShareTarget(site)}
+                        title={t("分享")}
+                        className="group/btn relative inline-flex h-8 w-8 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-black/[0.05] hover:text-[#007AFF]"
+                      >
+                        <Share2 className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
+                          {t("分享")}
+                        </span>
+                      </button>
+                    )}
+                    {!isDeleting && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(site);
+                        }}
+                        title={t("删除")}
+                        className="group/btn relative inline-flex h-8 w-8 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] hover:text-[var(--danger)]"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="pointer-events-none absolute -top-8 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover/btn:opacity-100">
+                          {t("删除")}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               );
             })}
           </div>
         )}
       </motion.div>
 
-      <AgentConfirmDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title={t("删除工作台")}
-        description={<>
-          <p>{t("删除后，工作台将立即下线，相关文件也会同步清理。此操作不可撤销。")}</p>
-          <p className="mt-3 break-words font-medium">{t("工作台名称")}：{deleteTarget?.Name}</p>
-        </>}
-        confirmLabel={deleting ? t("删除中...") : t("确认删除")}
-        cancelLabel={t("取消")}
-        confirmDisabled={deleting}
-        cancelDisabled={deleting}
-        onConfirm={handleDelete}
-        onCloseAutoFocus={(event) => {
-          // Accepted deletion removes only this row's action. Cancellation retains its trigger.
-          if (!deleteTriggerRef.current?.isConnected && listHeadingRef.current) {
-            event.preventDefault();
-            listHeadingRef.current.focus();
-          }
-        }}
-      >
-        {deleteError && <p role="alert" className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800">{deleteError}</p>}
-      </AgentConfirmDialog>
+      {/* 删除确认弹窗 */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => !deleting && setDeleteTarget(null)}
+          >
+            <motion.div
+              className="relative mx-4 w-full max-w-[420px] overflow-hidden rounded-2xl bg-white"
+              style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-7 pb-6 pt-7">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="flex h-9 w-9 items-center justify-center rounded-full"
+                    style={{ background: "color-mix(in oklab, var(--danger) 8%, transparent)" }}
+                  >
+                    <Trash2 className="h-[18px] w-[18px]" style={{ color: "var(--danger)" }} />
+                  </div>
+                  <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
+                    {t("删除工作台")}
+                  </h3>
+                </div>
+                <p className="text-sm leading-relaxed" style={{ margin: "12px 0 16px 0", color: "#666" }}>
+                  {t("删除后，工作台将立即下线，相关文件也会同步清理。此操作不可撤销。")}
+                </p>
+                <p className="text-sm font-medium" style={{ margin: "0 0 24px 0", color: "#333" }}>
+                  {t("工作台名称")}：{deleteTarget.Name}
+                </p>
+                {deleteError && (
+                  <p className="mb-4 rounded-lg bg-[color-mix(in_oklab,var(--danger)_8%,transparent)] px-3 py-2 text-xs text-[var(--danger)]">
+                    {deleteError}
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteTarget(null)}
+                    disabled={deleting}
+                    className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
+                    style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
+                  >
+                    {t("取消")}
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                    style={{ background: "var(--danger)" }}
+                  >
+                    {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {deleting ? t("删除中...") : t("确认删除")}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 分享弹窗 */}
+      <AnimatePresence>
         {shareTarget && (
           <WebsiteShareDialog
             site={shareTarget}
@@ -746,6 +850,7 @@ export const AgentWebsitePanel = () => {
             }}
           />
         )}
+      </AnimatePresence>
     </div>
   );
 };

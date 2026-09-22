@@ -18,8 +18,6 @@
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
 OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
-- OpenCraft 扩展侧新增的 Agent Console 适配、生成控件和诊断流测试必须显式加入 `test:extensions` 的文件清单，并在生成副本同步检查后执行；测试文件存在但不在门禁清单中不能作为消费端验证证据。该约束只补充验证覆盖范围，不改变 Hermes 命令的执行归属或网关路由。
-- 创建引导共用的翻译 helper、Hermes Profile 命令环境注入、技能安装命令也属于该闭包：真源修改后需连同翻译资源一起机械同步并更新清单摘要，不能只复制评审列举的文件。生成层不参与官网国内/国际站 frontend 构建，OpenCraft 消费端需单独验证。
 
 ## 稳定不变量
 
@@ -48,8 +46,6 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - OpenCraft 的会话能力更新保持引擎中立：公共 Skills 查询/失效事件与安装作用域不携带 DSH scope。首个 DSH 适配将 OpenCraft 根注册在 native standing preset 同层，保留项目覆盖用户的 rank；安装提交与运行时刷新分别确认，步骤前对账，冷历史查询不激活 Agent。Hermes Profile action 是独立适配，不能从 DSH 结果推定其热更新能力。阶段与证据见 [存量会话能力刷新](../../../opencraft/docs/session-capability-refresh.md#72-当前落地证据2026-09-17)。
 
 - OpenCraft 的 mono2 Agent Console 路由常量与翻译字典仍由 `frontend/` 真源机械生成，副本记录在 `UPSTREAM.json`；其中 `/account` 与 `/account/billing` 是 LightVela Web 账号/套餐页面地址，不代表 OpenCraft 宿主新增同名应用路由。宿主导航继续由自己的 Router 拥有；有界同步的文件验证不能替代整个共享闭包的漂移检查。生成边界见 [mono2 migration](../../../opencraft/MONO2_MIGRATION.md#shared-frontend-boundary)。
-- mono2 Agent Console 的 Account、Memory 与 Buddy 页面只负责呈现页面状态和调用既有业务 action，不拥有 Hermes Host/Profile、Repository 或命令执行权。侧栏账号入口采用 click 触发菜单并交给既有 account controller/page 处理摘要、刷新、续费与删除；菜单展开不得再由 hover 或第二个 owner 改变 toggle 语义。
-- Embedded Agent Console 的 `window.show()` 只有一个 owner 负责切换 Legacy AgentChat 与嵌入工作台；frontend 真源变更后必须通过 `sync:mono2-agent-console` 更新 OpenCraft 副本，再由 `check:mono2-agent-console` 验证生成闭包和 `UPSTREAM.json.sourceRevision`。
 
 - OpenCraft 标签栏在 + 后提供统一下拉：上方新建类型、下方当前任务该 region 的全部标签；右侧 Browser/Terminal 图标保持一键新建。切换复用 activate-tab，新建复用 creation action，不按类型拆菜单或新增列表真源。见 [工作区所有权](../../../opencraft/docs/platform-architecture.md)。
 
@@ -192,18 +188,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - 上游 subtree 与 vendored 内容保留 pin 和本地差异，不无边界复制。
 - OpenCraft 迁入后由 mono2 单一所有；旧仓库仅保留历史。它与 `frontend` 通过显式生成闭包过渡共享 Agent Console，生成层不得成为第二真源，后续稳定边界应收敛为 workspace package。
 - Agent Console 生成命令必须在 Git 工作树中记录真实源 revision；任何命中生成闭包的 `frontend` 源码变更（包括生成的 i18n 字典）都必须在最终源码提交后运行 `npm --prefix opencraft run sync:mono2-agent-console`，并在同一 MR 提交机械生成副本与 `UPSTREAM.json`，再运行 `check:mono2-agent-console`。并行 MR 先后命中闭包时，后合分支须先纳入最新目标分支，再按合并后的源码重新生成。只读漂移检查可在不包含 `.git` 的 CI 隔离目录中复用已提交清单的 revision，但仍须逐文件校验源内容与 SHA，不能因此跳过 vendored 一致性检查。
-- 当前同步脚本的 `sourceRevision` 取 `frontend/src`、`frontend/public/tat-hermes-web-proxy-sw.js` 与 `frontend/public/assets/skills` 路径集合的最后一次提交，范围大于生成闭包。因此，闭包之外的人设页等前端源码提交也需通过标准脚本刷新清单的 revision；当生成组件、逐文件 SHA 与资源清单均未变化时，只提交 `UPSTREAM.json` 的 revision 更新，不手工改写生成内容。该 SHA 记录源码基线，不表示所有前端页面都已共享给 OpenCraft。
 - 共享范围包含 Dialog 原语、i18n 字典 / 映射和 HTTP Repository，不能只按被修改的业务页面判断同步范围。Dialog 的关闭文案、遮罩样式等可选 prop 与键盘焦点样式随来源同步，同时保留 OpenCraft 的 portal / import 适配。Repository 在升配期间遇到嵌套 Bot 查询 `403 PASS_MODIFYING` 时保留实例根 Bot 数据；其他鉴权错误仍抛出，该数据降级不放宽服务端权限，也不表示升配已交付。
-- Agents 的共享 UI 原语与纯展示组件不拥有账户、实例、Bot/Profile、Repository 或命令执行能力；功能 controller 与宿主继续拥有请求、草稿和可中断资源。弹窗关闭、交互禁用与远端取消是不同操作，视图迁移不得改写成功/失败后的关闭时机或销毁业务资源。具体模块输入、动作与资源归属见 [Agents 模块边界](../../../frontend/openspec/changes/2026-09-16-agents-radix-boundaries.md)。
-- Agents 桌面左栏由既有顶部 header 和固定 sidebar 连续覆盖视口；Agent 信息与账户入口不收缩，中间导航/会话区单独滚动并隐藏滚动条。布局层不拥有 SDK 会话，不能通过切换桌面/移动布局重建主内容；浮层须通过 Portal 避免被左栏裁切，加载态沿用相同槽位。
-- 滚动上下边界阴影归 AgentConsoleShell 展示层所有：仅在对应方向还有隐藏内容时显示，抵达边界或无溢出时隐藏。容器与内容尺寸变化触发重新测量，桌面退出或卸载时清理观察器/监听；不写滚动位置、不读取账户或 SDK 数据。装饰性阴影占用已有间距，不改变布局或拦截点击，手机导航保持原 Sheet。
-- Agents 白底导航、连续细边框与整行浅灰选中块由宿主局部 CSS 所有；会话更多操作与导航仍是独立交互元素。AgentTabs 展示层区分 segmented（白色选中项）与 underline（透明底与下划线），用于切换内容面板；表单单选卡片使用 RadioGroup 的边框与勾选，不产生悬空 Tab 面板引用。OpenCraft 通过同一生成闭包和宿主主题 token 适配明暗主题，不产生第二套业务状态；共享原语兼容默认、焦点与 controller 权限逻辑不变。
-- Agents 下拉选择与动作菜单显式使用共享产品浮层变体，Portal 节点承载宿主作用域，页面只保留尺寸/定位及业务事件；不通过全局 listbox 圆角覆盖或每页重复阴影来定义外观。自动任务共享弹窗的标题区拥有底部留白，首块内容不再承担同职责的顶部间距，内部滚动不滚走标题留白。规则见 [frontend DESIGN](../../../frontend/DESIGN.md)。
-- 侧栏账户快捷菜单与 account 页共享只读套餐摘要：先校验当前用户归属，再按 modifying、active、未销毁 fallback 选择；额度只由所选 Pass 推导。异步结果与清理回调绑定不可复用代次，换号或再次进入同一账号不能复用旧请求权限。菜单 controller 拥有上下文与导航，纯视图只接收 DTO；账户页保留刷新、续费及删除流程，升级快捷入口复用原资格与订购路由，不创建订单。接口边界见 [侧栏账户菜单](../../../frontend/src/components/site/sidebar-user-menu.README.md)。
-- 本地账户菜单验收应区分无套餐与有套餐合成数据：无套餐不伪造积分或可升级资格；显式mock预设仅用于展示既有组件，不持久化或改变真实HTTP接口与资格门禁。演示名称须可辨识，不能从合成额度/链接推断真实账务或支付已验证。
-- 侧栏账户额度的 Progress 原语只展示既有摘要百分比，视图保留小号精确 used/total；进度范围夹紧与未知值 ARIA 处理不重新计算账务，也不把加载、失败或缺失额度视为零。纯展示原语不依赖账户上下文或订购能力。
-- 国内站反馈入口集中到桌面 sidebar / 手机 header 的头像菜单，默认显示“建议反馈”，统一消费 `PRODUCT_FEEDBACK_URL` 并保留安全新窗口属性；Agent 侧栏不再单列反馈链接。国际站保持不展示此问卷，工作台等其他隐藏入口仍沿用原 reveal 规则，反馈显隐不改变账户权限或计费资格。
-- 新增 Portal 原语必须显式携带消费宿主的样式作用域；frontend 的 Agents token 不自动等同 OpenCraft 的 Portal token。生成脚本集中完成必要适配，两个 workspace 分别声明实际导入的 Radix 依赖并验证锁文件，不以源码可导入或单端构建替代生成一致性及消费检查。
 - 前端升级错误文案按当前页面 locale 解析，生成字典通过同一闭包同步到 OpenCraft；字典可用不代表宿主已经接入升级 checkout。后端未知错误使用本地化兜底，错误文案翻译不改变支付、Pass 权限或交付判定；实现与测试入口见[升级套餐交互](../../../frontend/openspec/specs/pass-upgrade.md)。
 - 前端 Agents 首次套餐读取未确认时隐藏 Bot；请求卡住后允许显式重试，失败不能被解释为已完成套餐确认。升级订单已确认本地失败终态后停止自动读取，保留同单手动刷新与支持；正常可查询的 `modifying` 不设前端交付期限。支付准备失效后，旧状态 / URL / 授权响应不得重新触发旧单支付。这些界面恢复规则不改变后端扣款和交付判定。
 - OpenCraft 不注册 mono2 MR 占位检查或专用 CI 流水线，避免共享 `frontend` 路径触发隔离 workspace 的重复安装；完整验证能力由 `opencraft/` 内的 `npm run gate` 保留，并按变更风险由开发者或发布流程显式执行。

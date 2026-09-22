@@ -53,7 +53,7 @@ function cron(id: string, contextFrom: string[] = [], overrides: Partial<CronJob
 test("Hermes QR command and parser preserve the mono2 acli protocol", () => {
   assert.equal(
     createHermesCommandBuilder().channel.getQrUrlCommand({ platform: "feishu", isI18n: false }),
-    "acli gateway qr-url --platform feishu --wait true --greeting 'Hi，我是你刚刚使用LightVela创建的机器人，你现在可以跟我聊天了！' --agent 'main'",
+    "acli gateway qr-url --platform feishu --wait true --greeting 'Hi，我是你刚刚使用LightVela创建的机器人，你现在可以跟我聊天了！'",
   );
   assert.deepEqual(parseHermesQrStream([
     "starting",
@@ -125,8 +125,8 @@ test("embedded Hermes portals consume the host-owned presentation planes", () =>
     new URL("../apps/workbench-web/src/components/modal/modal.scss", import.meta.url),
     "utf8",
   );
-  const dialogSource = readFileSync(
-    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/dialog.tsx", import.meta.url),
+  const controlShell = readFileSync(
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/control-shell.ts", import.meta.url),
     "utf8",
   );
   const selectSource = readFileSync(
@@ -142,36 +142,34 @@ test("embedded Hermes portals consume the host-owned presentation planes", () =>
   assert.match(webTokens, /--layer-nested-modal:\s*240/);
   assert.match(webTokens, /--layer-confirmation-modal:\s*245/);
   assert.match(webTokens, /--layer-floating-control:\s*250/);
-  assert.match(modalCss, /--modal-layer-base:\s*var\(--layer-application-modal,\s*230\)/);
-  assert.match(modalCss, /z-index:\s*calc\(var\(--modal-layer-base\) \+ var\(--modal-stack-offset, 0\)\)/);
-  assert.match(modalCss, /z-index:\s*calc\(var\(--modal-layer-base\) \+ var\(--modal-stack-offset, 0\) \+ 1\)/);
+  assert.match(modalCss, /z-index:\s*var\(--layer-application-modal,\s*230\)/);
   assert.match(css, /\.lightvela-agent-console-portal\.lv-dialog-backdrop\s*\{[^}]*z-index:\s*var\(--layer-nested-modal,\s*240\)/s);
   assert.match(css, /\.lightvela-agent-console-portal\.lv-dialog-backdrop--confirmation\s*\{[^}]*z-index:\s*var\(--layer-confirmation-modal,\s*245\)/s);
   assert.match(css, /\.lightvela-agent-console-portal\.lv-floating-control\s*\{[^}]*z-index:\s*var\(--layer-floating-control,\s*250\)/s);
-  // Upstream utility z-index remains intact; the scoped host role owns the
-  // actual plane. The primitive, not the old control-shell string, is adapted.
-  assert.match(dialogSource, /lightvela-agent-console-portal lv-dialog-backdrop/);
-  assert.match(dialogSource, /lightvela-agent-console-portal lv-dialog-surface/);
-  assert.match(css, /:is\([^)]*\.lightvela-agent-console-portal\.lv-dialog-surface[^)]*\)\s*\{[^}]*z-index:\s*calc\(var\(--layer-nested-modal,\s*240\) \+ 1\)/s);
+  assert.match(controlShell, /lv-dialog-backdrop fixed inset-0/);
+  assert.doesNotMatch(controlShell, /z-50/);
   assert.match(selectSource, /lightvela-agent-console-portal lv-floating-control/);
   assert.match(popoverSource, /lightvela-agent-console-portal lv-floating-control/);
 
-  const confirmationSource = readFileSync(
-    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/alert-dialog.tsx", import.meta.url),
+  const automationsSource = readFileSync(
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-automations-panel.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(confirmationSource, /lv-dialog-backdrop--confirmation/);
-  assert.match(confirmationSource, /lv-dialog-surface--confirmation/);
-  assert.match(css, /\.lv-dialog-surface--confirmation\s*\{[^}]*z-index:\s*calc\(var\(--layer-confirmation-modal,\s*245\) \+ 1\)/s);
+  assert.match(automationsSource, /lv-dialog-backdrop--confirmation/);
+  assert.doesNotMatch(automationsSource, /lv-dialog-backdrop[^"\n]*z-\[(?:200|210)\]/);
 });
 
-test("model Select and native purpose options consume the host token contract", () => {
+test("model Select and Option primitives consume the host token contract", () => {
   const css = readFileSync(
     new URL("../plugins/lightvela-hermes/src/upstream/agent-console.css", import.meta.url),
     "utf8",
   );
   const selectSource = readFileSync(
     new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/select.tsx", import.meta.url),
+    "utf8",
+  );
+  const optionSource = readFileSync(
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/option-group.tsx", import.meta.url),
     "utf8",
   );
   const modelSource = readFileSync(
@@ -182,36 +180,33 @@ test("model Select and native purpose options consume the host token contract", 
   assert.match(css, /--lv-option-background-selected:\s*var\(--color-background-button-secondary\)/);
   assert.match(css, /--lv-option-border-selected:\s*var\(--color-border-focus\)/);
   assert.match(css, /\.lightvela-agent-console-portal\.lv-select-content/);
-  assert.match(css, /\.lv-select-item\[data-state="checked"\]/);
+  assert.match(css, /\.lightvela-agent-console \.lv-option\[data-state="checked"\]/);
   assert.match(selectSource, /lv-select-trigger/);
   assert.match(selectSource, /lv-select-content/);
   assert.match(selectSource, /lv-select-item/);
-  assert.match(modelSource, /<fieldset>[\s\S]*?<legend[^>]*>\{t\("选择用途"\)\}/);
-  assert.match(modelSource, /type="radio"[\s\S]*?name="model-purpose"/);
-  assert.match(modelSource, /checked=\{active\}[\s\S]*?disabled=\{disabled\}/);
-  assert.match(modelSource, /onChange=\{\(\) => setPurpose\(item.value\)\}/);
-  for (const purpose of ["primary", "fallback", "idle"]) assert.ok(modelSource.includes(`value: "${purpose}"`));
+  assert.doesNotMatch(selectSource, /\bz-50\b|bg-white|bg-black/u);
+  assert.match(optionSource, /className="lv-option"/);
+  assert.match(optionSource, /className="lv-radio"/);
+  assert.match(modelSource, /<OptionGroup<ConfigurePurpose>/);
+  assert.match(modelSource, /const MODEL_CONTROL_CLASS = "lv-model-control h-12"/);
+  assert.match(modelSource, /const MODEL_RADIO_CLASS = "lv-radio shrink-0"/);
 });
 
 test("custom provider append keeps shared model controls and host option styling", () => {
   const modelRoot = new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-model-config/", import.meta.url);
   const panel = readFileSync(new URL("agent-model-config-panel.tsx", modelRoot), "utf8");
-  const formController = readFileSync(new URL("configured-provider-model-form.tsx", modelRoot), "utf8");
-  const form = readFileSync(new URL("configured-provider-model-form-view.tsx", modelRoot), "utf8");
+  const form = readFileSync(new URL("configured-provider-model-form.tsx", modelRoot), "utf8");
   const controls = readFileSync(new URL("model-form-controls.tsx", modelRoot), "utf8");
 
   assert.match(panel, /<ConfiguredProviderModelForm/);
+  assert.match(panel, /<OptionGroup<ConfigurePurpose>/);
   assert.match(panel, /canAppendToProviderGroup/);
-  assert.match(panel, /addingProviderKey === group.key && anchor && canAppend/);
   assert.doesNotMatch(panel, /^<{7}|^={7}|^>{7}/m);
   assert.match(form, /from "\.\/model-form-controls"/);
   assert.match(form, /<Select/);
-  assert.match(formController, /<ConfiguredProviderModelFormView/);
-  assert.match(formController, /检测模型状态/);
-  assert.match(form, /value=\{modelId\} onValueChange=\{onModelChange\}/);
-  assert.match(form, /disabled=\{busy \|\| !selectionAvailable \|\| duplicate\}/);
-  assert.match(controls, /MODEL_CONTROL_CLASS = "h-12 /);
-  assert.match(controls, /MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-\[var\(--radix-select-trigger-width\)\]/);
+  assert.match(form, /检测模型状态/);
+  assert.match(controls, /MODEL_CONTROL_CLASS = "lv-model-control h-12"/);
+  assert.match(controls, /MODEL_SELECT_CONTENT_CLASS = "lv-model-select-content /);
   assert.match(controls, /sm:grid-cols-\[minmax\(0,1fr\)_max-content\]/);
 });
 
@@ -225,23 +220,21 @@ test("scheduled tasks delegates controls and surfaces to the host theme", () => 
     "utf8",
   );
   const segmentedSource = readFileSync(
-    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/tabs.tsx", import.meta.url),
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/segmented-control.tsx", import.meta.url),
     "utf8",
   );
 
   assert.match(source, /background:\s*"var\(--surface-raised\)"/);
   assert.match(source, /border:\s*"1px solid var\(--border-subtle\)"/);
   assert.doesNotMatch(source, /const PANEL_CARD_STYLE[\s\S]*?background:\s*"#ffffff"/);
-  assert.match(source, /<Button\s+onClick=\{requestCreate\}/);
-  assert.match(source, /<Tabs value=\{activeView\} onValueChange=/);
-  assert.match(source, /<AgentTabsList variant="underline" aria-label=\{t\("定时任务"\)\}/);
-  for (const value of ["created", "ended", "recent"]) assert.match(source, new RegExp(`<AgentTabsTrigger[^>]*value="${value}"`));
-  assert.match(segmentedSource, /"lv-segmented-control"/);
-  assert.match(segmentedSource, /"lv-segmented-control__item"/);
-  assert.match(css, /\.lv-segmented-control__item\[data-state="active"\]/);
-  const dialog = readFileSync(new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/automation-dialog-view.tsx", import.meta.url), "utf8");
-  assert.match(dialog, /<Dialog open onOpenChange=/);
-  assert.match(dialog, /<DialogContent portalClassName="agents-ui"/);
+  assert.match(source, /lv-automations/);
+  assert.match(source, /<Button[\s\S]*?variant="secondary"[\s\S]*?requestCreate/);
+  assert.match(source, /<SegmentedControl aria-label=/);
+  assert.match(source, /<SegmentedControlItem[\s\S]*?selected=\{activeView === "created"\}/);
+  assert.match(segmentedSource, /lv-segmented-control inline-flex/);
+  assert.match(source, /lv-automation-list-surface/);
+  assert.match(css, /\.lightvela-agent-console \.lv-segmented-control/);
+  assert.match(css, /\.lightvela-agent-console \.lv-automations \.lv-automation-list-surface/);
 });
 
 test("Hermes management actions share one host-tokenized button primitive", () => {
@@ -250,7 +243,7 @@ test("Hermes management actions share one host-tokenized button primitive", () =
     "utf8",
   );
   const diagnosticsSource = readFileSync(
-    new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-diagnostics-views.tsx", import.meta.url),
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-diagnostics-panel.tsx", import.meta.url),
     "utf8",
   );
   const css = readFileSync(
@@ -258,13 +251,14 @@ test("Hermes management actions share one host-tokenized button primitive", () =
     "utf8",
   );
 
-  assert.match(buttonSource, /"lv-button",[\s\S]*?resolvedVariant === "default" \? "primary" : resolvedVariant/);
-  assert.match(buttonSource, /default: \{ color: "var\(--color-text-button-primary\)" \}/);
-  assert.match(buttonSource, /secondary: \{ color: "var\(--color-text-button-secondary\)" \}/);
-  assert.doesNotMatch(buttonSource, /color: "white"/);
+  assert.match(buttonSource, /rounded-\[var\(--radius-md\)\]/);
+  assert.match(buttonSource, /webButtonVariantClasses:\s*Record<ButtonVariant, string>/);
+  assert.match(buttonSource, /primary:[\s\S]*?secondary:[\s\S]*?ghost:/);
+  assert.match(buttonSource, /from "@opencraft\/design-system\/button"/);
+  assert.match(buttonSource, /"lv-button",[\s\S]*?buttonSemanticClasses\[resolvedVariant\]/);
   assert.match(diagnosticsSource, /import \{ Button \} from "\.\.\/\.\.\/components\/ui\/button"/);
   assert.match(diagnosticsSource, /<Button[\s\S]*?variant="ghost"[\s\S]*?onClick=\{onExport\}/);
-  assert.match(diagnosticsSource, /<Button[^>]*onClick=\{action\.onExecute\} disabled=\{action.disabled\}/);
+  assert.match(diagnosticsSource, /<Button[\s\S]*?variant="secondary"[\s\S]*?onClick=\{action\.onExecute\}/);
   assert.doesNotMatch(diagnosticsSource, /function LogsSelectMenu/);
   assert.match(css, /--lv-card-background:\s*var\(--surface-raised\)/);
   assert.match(css, /\.lightvela-agent-console \.lv-card/);
@@ -305,25 +299,16 @@ test("Web and Expo buttons implement one platform-neutral semantic contract", ()
 });
 
 test("feature code delegates press mechanics to platform interaction primitives", () => {
-  // Migrated action views consume Button/Radix; semantic native disclosures in
-  // the generated closure remain valid and must not be rewritten for this test.
-  const actionViews = ["agent-diagnostics-views.tsx", "automation-card-actions-view.tsx", "automation-form-actions-view.tsx", "agent-model-config/configured-provider-model-form-view.tsx"];
-  const root = new URL("../plugins/lightvela-hermes/src/upstream/mono2/", import.meta.url);
-  const webFeatureSources = actionViews.map((file) => readFileSync(new URL(`pages/marketing/${file}`, root), "utf8"));
+  const webFeatureSources = sourceFiles(
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/", import.meta.url),
+  ).map((file) => readFileSync(file, "utf8"));
   const nativeComponentSources = sourceFiles(
     new URL("../apps/workbench-expo/src/components/", import.meta.url),
   ).filter((file) => !file.pathname.includes("/components/ui/"));
 
   for (const source of webFeatureSources) {
-    assert.match(source, /components\/ui\/button/);
-    assert.match(source, /<Button\b/u);
     assert.doesNotMatch(source, /<button\b/u);
   }
-  const button = readFileSync(new URL("components/ui/button.tsx", root), "utf8");
-  assert.match(button, /const Comp = asChild \? Slot : "button"/);
-  assert.match(button, /\.\.\.props/);
-  const modelGroups = readFileSync(new URL("pages/marketing/agent-model-config/model-provider-views.tsx", root), "utf8");
-  assert.match(modelGroups, /<button type="button"[\s\S]*?aria-expanded=\{expanded\} aria-controls=\{panelId\} disabled=\{toggleDisabled\} onClick=\{onToggle\}/);
 
   const nativePressables = nativeComponentSources.flatMap((file) => {
     const source = readFileSync(file, "utf8");
@@ -332,9 +317,8 @@ test("feature code delegates press mechanics to platform interaction primitives"
   assert.deepEqual(
     nativePressables.map(({ tag }) => tag),
     [
+      '<Pressable accessibilityLabel="Close model picker" onPress={() => setModelPickerOpen(false)} style={styles.modalScrim} />',
       '<Pressable accessibilityLabel="Close sidebar" onPress={() => setSidebarOpen(false)} style={styles.scrim} />',
     ],
   );
-  const nativeComposer = readFileSync(new URL("../apps/workbench-expo/src/components/workbench-composer.tsx", import.meta.url), "utf8");
-  assert.match(nativeComposer, /<ModalSurface\s+label="Model"[\s\S]*?onDismiss=\{\(\) => setModelPickerOpen\(false\)\}/);
 });

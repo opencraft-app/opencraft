@@ -13,9 +13,7 @@ import { useTranslation } from 'react-i18next';
 import './agent-config/styles-index.css';
 import { t } from "@/i18n/t";
 import { resolveAgentConsoleCollectionLabel } from '@/pages/marketing/agent-provider-locale';
-import { Info } from 'lucide-react';
-import { AgentConfirmDialog, AgentPageLoadingState } from '@/components/agents';
-import { ChannelCardView, ChannelCredentialDialogView, ChannelMethodDialogView } from './agent-channel-views';
+import { Info, Eye, EyeOff } from 'lucide-react';
 import {
   useChannelOperations,
   message,
@@ -131,8 +129,6 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
   const { i18n } = useTranslation();
 
   const ops = useChannelOperations(baseProps);
-  const connectionTriggerRef = useRef<HTMLElement | null>(null);
-  const methodHandoffRef = useRef(false);
 
   // ── QQ 表单弹窗状态 ──
   const [qqModalVisible, setQqModalVisible] = useState(false);
@@ -211,7 +207,6 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
     (method: 'qrcode' | 'manual') => {
       const channelValue = methodPickerChannel;
       if (!channelValue) return;
-      methodHandoffRef.current = true;
       setMethodPickerChannel(null);
       if (method === 'manual') {
         if (channelValue === 'qqbot') {
@@ -297,12 +292,16 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
   }, [pendingDisconnect, ops]);
 
   if (ops.loading) {
-    return <AgentPageLoadingState className={`${CLS} ${CLS}--loading ${className || ''}`} title={t('正在读取通道')} />;
+    return (
+      <div className={`${CLS} ${CLS}--loading ${className || ''}`}>
+        <div className={`${CLS}__loader`}>{t('加载中...')}</div>
+      </div>
+    );
   }
 
   return (
     <div
-      className={`agents-ui ${CLS} ${ops.productConfig.isI18n ? `${CLS}--i18n` : ''} ${className || ''}`}
+      className={`${CLS} ${ops.productConfig.isI18n ? `${CLS}--i18n` : ''} ${className || ''}`}
     >
       <h2 className={`${CLS}__title`}>
         {resolveAgentConsoleCollectionLabel('channel', i18n.language, t)}
@@ -325,13 +324,52 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
           .map((channel) => {
             const isBound = boundChannels.has(channel.value);
             return (
-              <ChannelCardView key={channel.value} name={channel.channel_name} description={getChannelDesc(channel.channel)}
-                icon={<ChannelIcon channel={channel.value} />} connected={isBound} connectedLabel={t('已连接')}
-                guideUrl={ops.productConfig.isI18n ? CHANNEL_GUIDE_LINKS[channel.value] : undefined} guideLabel={t('配置教程')}
-                disconnectLabel={t('断开')} connectLabel={isBound ? t('重新连接') : `+ ${t('连接')}`}
-                disconnectDisabled={ops.deletingChannel === channel.value}
-                onDisconnect={() => handleDisconnect(channel.value)}
-                onConnect={(trigger) => { connectionTriggerRef.current = trigger; handleConnect(channel.value); }} />
+              <div key={channel.value} className={`${CLS}__card ${isBound ? `${CLS}__card--bound` : ''}`}>
+                <div className={`${CLS}__card-body`}>
+                  <div className={`${CLS}__card-icon`}>
+                    <ChannelIcon channel={channel.value} />
+                  </div>
+                  <div className={`${CLS}__card-content`}>
+                    <div className={`${CLS}__card-header`}>
+                      <h3 className={`${CLS}__card-name`}>{channel.channel_name}</h3>
+                      {isBound && <span className={`${CLS}__card-badge`}>{t('已连接')}</span>}
+                    </div>
+                    <p className={`${CLS}__card-desc`}>{getChannelDesc(channel.channel)}</p>
+                  </div>
+                </div>
+                <div className={`${CLS}__card-action`}>
+                  <div className={`${CLS}__card-action-right`}>
+                    {ops.productConfig.isI18n && CHANNEL_GUIDE_LINKS[channel.value] && (
+                      <a
+                        className={`${CLS}__guide-btn`}
+                        href={CHANNEL_GUIDE_LINKS[channel.value]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {t('配置教程')}
+                      </a>
+                    )}
+                    {isBound && (
+                      <button
+                        type="button"
+                        className={`${CLS}__card-unbind`}
+                        onClick={() => handleDisconnect(channel.value)}
+                        disabled={ops.deletingChannel === channel.value}
+                        aria-label={t('断开')}
+                      >
+                        {t('断开')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`${CLS}__connect-btn ${isBound ? `${CLS}__connect-btn--reconnect` : ''}`}
+                      onClick={() => handleConnect(channel.value)}
+                    >
+                      {isBound ? t('重新连接') : `+ ${t('连接')}`}
+                    </button>
+                  </div>
+                </div>
+              </div>
             );
           })}
       </div>
@@ -354,28 +392,108 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
                 manualDesc: t('填入 QQ 机器人的 App ID 与 App Secret'),
               };
           return (
-            <ChannelMethodDialogView open onOpenChange={(open) => { if (!open) setMethodPickerChannel(null); }}
-              title={pickerText.title} description={t('请选择适合你的连接方式')} closeLabel={t('关闭')}
-              value={methodChoice} onValueChange={setMethodChoice} qrLabel={t('扫码连接')} qrDescription={pickerText.qrDesc}
-              manualLabel={pickerText.manualTitle} manualDescription={pickerText.manualDesc}
-              cancelLabel={t('取消')} confirmLabel={t('确认')} onConfirm={() => handleMethodSelect(methodChoice)}
-              returnFocusRef={connectionTriggerRef} onCloseAutoFocus={(event) => {
-                if (methodHandoffRef.current) { event.preventDefault(); methodHandoffRef.current = false; }
-              }} />
+            <div
+              className={`${CLS}__modal-overlay`}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setMethodPickerChannel(null);
+              }}
+            >
+              <div className={`${CLS}__modal`}>
+                <div className={`${CLS}__modal-header`}>
+                  <h3 className={`${CLS}__modal-title`}>{pickerText.title}</h3>
+                  <p className={`${CLS}__modal-desc`}>{t('请选择适合你的连接方式')}</p>
+                </div>
+                <div className={`${CLS}__method-list`}>
+                  <button
+                    type="button"
+                    className={`${CLS}__method-card${methodChoice === 'qrcode' ? ` ${CLS}__method-card--active` : ''}`}
+                    onClick={() => setMethodChoice('qrcode')}
+                  >
+                    <div className={`${CLS}__method-title`}>{t('扫码连接')}</div>
+                    <div className={`${CLS}__method-desc`}>{pickerText.qrDesc}</div>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${CLS}__method-card${methodChoice === 'manual' ? ` ${CLS}__method-card--active` : ''}`}
+                    onClick={() => setMethodChoice('manual')}
+                  >
+                    <div className={`${CLS}__method-title`}>{pickerText.manualTitle}</div>
+                    <div className={`${CLS}__method-desc`}>{pickerText.manualDesc}</div>
+                  </button>
+                </div>
+                <div className={`${CLS}__modal-actions`}>
+                  <button type="button" className={`${CLS}__btn-outline`} onClick={() => setMethodPickerChannel(null)}>
+                    {t('取消')}
+                  </button>
+                  <button
+                    type="button"
+                    className={`${CLS}__btn-primary`}
+                    onClick={() => handleMethodSelect(methodChoice)}
+                  >
+                    {t('确认')}
+                  </button>
+                </div>
+              </div>
+            </div>
           );
         })()
       )}
 
-      <ChannelCredentialDialogView open={qqModalVisible} onOpenChange={setQqModalVisible}
-        title={t('连接 QQ')} description={t('填入 QQ 机器人的 App ID 与 App Secret 完成绑定')} closeLabel={t('关闭')}
-        returnFocusRef={connectionTriggerRef} cancelLabel={t('取消')} submitLabel={ops.configuring ? t('绑定中...') : t('绑定 QQ 机器人')}
-        submitDisabled={ops.configuring || !qqAppId.trim() || !qqSecret.trim()} onSubmit={() => void handleSaveQQ()}
-        fields={[
-          { key: 'appId', label: t('App ID'), placeholder: t('QQ 机器人的 App ID'), value: qqAppId, onChange: setQqAppId },
-          { key: 'secret', label: t('App Secret'), placeholder: t('QQ 机器人的 App Secret'), value: qqSecret, onChange: setQqSecret,
-            secret: true, visible: qqSecretVisible, onToggleVisible: () => setQqSecretVisible((value) => !value),
-            visibilityLabel: qqSecretVisible ? t('隐藏凭据') : t('显示凭据') },
-        ]} />
+      {/* QQ 表单弹窗 */}
+      {qqModalVisible && (
+        <div
+          className={`${CLS}__modal-overlay`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setQqModalVisible(false);
+          }}
+        >
+          <div className={`${CLS}__modal`}>
+            <div className={`${CLS}__modal-header`}>
+              <h3 className={`${CLS}__modal-title`}>{t('连接 QQ')}</h3>
+              <p className={`${CLS}__modal-desc`}>{t('填入 QQ 机器人的 App ID 与 App Secret 完成绑定')}</p>
+            </div>
+            <div className={`${CLS}__modal-body`}>
+              <div className={`${CLS}__modal-field`}>
+                <label className={`${CLS}__modal-label`}>{t('App ID')}</label>
+                <input
+                  className={`${CLS}__modal-input`}
+                  value={qqAppId}
+                  onChange={(e) => setQqAppId(e.target.value)}
+                  placeholder={t('QQ 机器人的 App ID')}
+                />
+              </div>
+              <div className={`${CLS}__modal-field`}>
+                <label className={`${CLS}__modal-label`}>{t('App Secret')}</label>
+                <div className={`${CLS}__secret-wrap`}>
+                  <input
+                    className={`${CLS}__modal-input`}
+                    type={qqSecretVisible ? 'text' : 'password'}
+                    value={qqSecret}
+                    onChange={(e) => setQqSecret(e.target.value)}
+                    placeholder={t('QQ 机器人的 App Secret')}
+                  />
+                  <button type="button" className={`${CLS}__secret-eye`} onClick={() => setQqSecretVisible((v) => !v)}>
+                    {qqSecretVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className={`${CLS}__modal-actions`}>
+              <button type="button" className={`${CLS}__btn-outline`} onClick={() => setQqModalVisible(false)}>
+                {t('取消')}
+              </button>
+              <button
+                type="button"
+                className={`${CLS}__btn-primary`}
+                disabled={ops.configuring || !qqAppId.trim() || !qqSecret.trim()}
+                onClick={handleSaveQQ}
+              >
+                {ops.configuring ? t('绑定中...') : t('绑定 QQ 机器人')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 通用 Token 表单弹窗（Telegram / Discord / Slack / 钉钉 共用） */}
       {tokenChannelKind &&
@@ -385,33 +503,114 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
           const submitDisabled =
             ops.configuring || !tokenInput.trim() || (hasSecondaryToken && !secondaryTokenInput.trim());
           return (
-            <ChannelCredentialDialogView open onOpenChange={(open) => { if (!open) setTokenChannelKind(null); }}
-              title={t('连接 {{name}}', { name: meta.name })}
-              description={hasSecondaryToken ? t('填入 {{name}} 凭据完成绑定', { name: meta.name }) : t('填入 {{label}} 完成绑定', { label: meta.tokenLabel })}
-              closeLabel={t('关闭')} returnFocusRef={connectionTriggerRef} cancelLabel={t('取消')}
-              submitLabel={ops.configuring ? t('绑定中...') : meta.bindButton} submitDisabled={submitDisabled}
-              onSubmit={() => void handleSaveToken()}
-              fields={[
-                { key: 'token', label: meta.tokenLabel, placeholder: meta.placeholder, value: tokenInput, onChange: setTokenInput,
-                  secret: true, visible: tokenInputVisible, onToggleVisible: () => setTokenInputVisible((value) => !value),
-                  visibilityLabel: tokenInputVisible ? t('隐藏凭据') : t('显示凭据') },
-                ...(hasSecondaryToken ? [{ key: 'secondary', label: meta.secondaryTokenLabel!, placeholder: meta.secondaryPlaceholder,
-                  value: secondaryTokenInput, onChange: setSecondaryTokenInput, secret: true, visible: secondaryTokenInputVisible,
-                  onToggleVisible: () => setSecondaryTokenInputVisible((value) => !value),
-                  visibilityLabel: secondaryTokenInputVisible ? t('隐藏凭据') : t('显示凭据') }] : []),
-              ]} />
+            <div
+              className={`${CLS}__modal-overlay`}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setTokenChannelKind(null);
+              }}
+            >
+              <div className={`${CLS}__modal`}>
+                <div className={`${CLS}__modal-header`}>
+                  <h3 className={`${CLS}__modal-title`}>{t('连接 {{name}}', { name: meta.name })}</h3>
+                  <p className={`${CLS}__modal-desc`}>
+                    {hasSecondaryToken
+                      ? t('填入 {{name}} 凭据完成绑定', { name: meta.name })
+                      : t('填入 {{label}} 完成绑定', { label: meta.tokenLabel })}
+                  </p>
+                </div>
+                <div className={`${CLS}__modal-body`}>
+                  <div className={`${CLS}__modal-field`}>
+                    <label className={`${CLS}__modal-label`}>{meta.tokenLabel}</label>
+                    <div className={`${CLS}__secret-wrap`}>
+                      <input
+                        className={`${CLS}__modal-input`}
+                        type={tokenInputVisible ? 'text' : 'password'}
+                        value={tokenInput}
+                        onChange={(e) => setTokenInput(e.target.value)}
+                        placeholder={meta.placeholder}
+                      />
+                      <button
+                        type="button"
+                        className={`${CLS}__secret-eye`}
+                        onClick={() => setTokenInputVisible((v) => !v)}
+                      >
+                        {tokenInputVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                  {hasSecondaryToken && (
+                    <div className={`${CLS}__modal-field`}>
+                      <label className={`${CLS}__modal-label`}>{meta.secondaryTokenLabel}</label>
+                      <div className={`${CLS}__secret-wrap`}>
+                        <input
+                          className={`${CLS}__modal-input`}
+                          type={secondaryTokenInputVisible ? 'text' : 'password'}
+                          value={secondaryTokenInput}
+                          onChange={(e) => setSecondaryTokenInput(e.target.value)}
+                          placeholder={meta.secondaryPlaceholder}
+                        />
+                        <button
+                          type="button"
+                          className={`${CLS}__secret-eye`}
+                          onClick={() => setSecondaryTokenInputVisible((v) => !v)}
+                        >
+                          {secondaryTokenInputVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className={`${CLS}__modal-actions`}>
+                  <button type="button" className={`${CLS}__btn-outline`} onClick={() => setTokenChannelKind(null)}>
+                    {t('取消')}
+                  </button>
+                  <button
+                    type="button"
+                    className={`${CLS}__btn-primary`}
+                    disabled={submitDisabled}
+                    onClick={handleSaveToken}
+                  >
+                    {ops.configuring ? t('绑定中...') : meta.bindButton}
+                  </button>
+                </div>
+              </div>
+            </div>
           );
         })()}
 
-      <AgentConfirmDialog open={pendingDisconnect !== null} onOpenChange={(open) => { if (!open) setPendingDisconnect(null); }}
-        title={t('确认断开通道？')} description={t('确认断开「{{name}}」通道？断开后将无法通过该通道与智能体对话。', { name: pendingDisconnect?.name ?? '' })}
-        cancelLabel={t('取消')} confirmLabel={ops.deletingChannel ? t('断开中...') : t('确认断开')}
-        confirmDisabled={!!ops.deletingChannel} onConfirm={() => void confirmDisconnect()} />
+      {/* 断开确认弹窗 */}
+      {pendingDisconnect && (
+        <div
+          className={`${CLS}__modal-overlay`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPendingDisconnect(null);
+          }}
+        >
+          <div className={`${CLS}__modal`}>
+            <h3 className={`${CLS}__modal-title`}>{t('确认断开通道？')}</h3>
+            <p className={`${CLS}__modal-desc`}>
+              {t('确认断开「{{name}}」通道？断开后将无法通过该通道与智能体对话。', { name: pendingDisconnect.name })}
+            </p>
+            <div className={`${CLS}__modal-actions`}>
+              <button type="button" className={`${CLS}__btn-outline`} onClick={() => setPendingDisconnect(null)}>
+                {t('取消')}
+              </button>
+              <button
+                type="button"
+                className={`${CLS}__btn-primary ${CLS}__btn-danger`}
+                disabled={!!ops.deletingChannel}
+                onClick={confirmDisconnect}
+              >
+                {ops.deletingChannel ? t('断开中...') : t('确认断开')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 扫码弹窗（微信/飞书） */}
       <HermesQrCodeModal
         ref={hermesQrModalRef}
-        returnFocusRef={connectionTriggerRef}
         channel={qrChannel}
         scriptCommands={ops.scriptCommands}
         executor={ops.executor}

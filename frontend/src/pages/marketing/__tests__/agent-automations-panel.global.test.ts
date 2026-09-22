@@ -1,7 +1,6 @@
 import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const cronClientMocks = vi.hoisted(() => ({
   createCronJobWithContextAndScriptRollback: vi.fn(),
@@ -50,24 +49,6 @@ vi.mock("@/contexts/runtime-config-context", async () => ({
 
 import type { CronJob } from "@/lib/hermes-cron-client";
 import { HermesAgentAutomationsPanel } from "../agent-automations-panel";
-
-const browserApiDescriptors = Object.fromEntries(["scrollIntoView", "hasPointerCapture", "setPointerCapture", "releasePointerCapture"].map((key) => [key, Object.getOwnPropertyDescriptor(HTMLElement.prototype, key)]));
-beforeAll(() => {
-  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
-  Object.defineProperties(HTMLElement.prototype, {
-    scrollIntoView: { configurable: true, value: vi.fn() },
-    hasPointerCapture: { configurable: true, value: () => false },
-    setPointerCapture: { configurable: true, value() {} },
-    releasePointerCapture: { configurable: true, value() {} },
-  });
-});
-afterAll(() => {
-  vi.unstubAllGlobals();
-  for (const [key, descriptor] of Object.entries(browserApiDescriptors)) {
-    if (descriptor) Object.defineProperty(HTMLElement.prototype, key, descriptor);
-    else Reflect.deleteProperty(HTMLElement.prototype, key);
-  }
-});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -177,14 +158,13 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     const upstreamCard = await getCronJobCard("Upstream");
-    await userEvent.click(within(upstreamCard).getByRole("button", { name: "Actions" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "View" }));
+    fireEvent.click(within(upstreamCard).getByRole("button", { name: /View|查看/ }));
     expect(within(screen.getByRole("dialog")).getByText("Scheduled Task Details")).toBeInTheDocument();
     expect(within(screen.getByRole("dialog")).getByText("Upstream Task")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Close|关闭/ }));
 
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /Delete|删除/ }));
-    const deleteDialog = screen.getByRole("alertdialog");
+    const deleteDialog = screen.getByRole("dialog");
     expect(within(deleteDialog).getByText("Downstream")).toBeInTheDocument();
     fireEvent.click(within(deleteDialog).getByRole("button", { name: /Delete|删除/ }));
 
@@ -307,19 +287,19 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    const currentTab = await screen.findByRole("tab", { name: "Current Tasks" });
+    const currentTab = await screen.findByRole("button", { name: "Current Tasks" });
     const taskTypeFilter = screen.getByRole("combobox", { name: "Task type" });
     expect(taskTypeFilter).toHaveTextContent("All");
-    await userEvent.click(taskTypeFilter);
+    fireEvent.click(taskTypeFilter);
     expect(screen.getByRole("option", { name: "Agent task" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("option", { name: "All" }));
+    fireEvent.click(screen.getByRole("option", { name: "All" }));
     expect(taskTypeFilter.parentElement).not.toBe(currentTab.parentElement);
-    expect(screen.getByRole("tab", { name: "Ended Tasks" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Recent Runs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ended Tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recent Runs" })).toBeInTheDocument();
     expect(screen.getByText("Active task")).toBeInTheDocument();
     expect(screen.queryByText("Completed task")).toBeNull();
 
-    await userEvent.click(screen.getByRole("tab", { name: "Ended Tasks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ended Tasks" }));
 
     const card = await getCronJobCard("Completed task");
     expect(within(card).getByText("Completed")).toBeInTheDocument();
@@ -328,10 +308,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
     expect(within(card).queryByRole("button", { name: "Test run" })).toBeNull();
     expect(within(card).queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(within(card).getByRole("button", { name: "View" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Delete" })).toBeInTheDocument();
-    await userEvent.click(within(card).getByRole("button", { name: "Actions" }));
-    expect(screen.getByRole("menuitem", { name: "View" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Test run" })).not.toBeInTheDocument();
   });
 });
 

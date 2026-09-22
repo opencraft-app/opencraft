@@ -3,8 +3,6 @@ import { CreditCard, LoaderCircle, Plus, RefreshCw, Trash2 } from "lucide-react"
 
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
-import { accountCardClass } from "@/components/account/account-surface";
-import { cn } from "@/lib/utils";
 import { useAppSearchParams } from "@/lib/app-navigation";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type {
@@ -308,10 +306,10 @@ export const SavedCardsSection = ({
   if (isUnavailable) return null;
 
   return (
-    <section className={cn(accountCardClass, "overflow-hidden")}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.08] p-5">
+    <section className="overflow-hidden rounded-2xl border border-[#E6E9EF] bg-white">
+      <div className="flex items-center justify-between border-b border-[#E6E9EF] px-5 py-5 md:px-8 md:py-7">
         <div>
-          <h3 className="text-base font-semibold text-[var(--text-primary)]">
+          <h3 className="text-[18px] font-medium leading-7 text-black/90 md:text-[20px]">
             {t("支付方式")}
           </h3>
           <p className="mt-1 text-sm text-black/50">
@@ -329,7 +327,7 @@ export const SavedCardsSection = ({
         </button>
       </div>
 
-      <div className="min-h-36 p-5">
+      <div className="min-h-36 px-5 py-6 md:px-8 md:py-7">
         {notice && (
           <div
             role={notice.tone === "error" ? "alert" : "status"}

@@ -2,7 +2,8 @@
 /**
  * @fileoverview HermesQrCodeModal — Hermes 镜像专用扫码弹窗（acli 流式协议）
  *
- * 受控 Radix Dialog 管理展示和焦点；流式请求和关闭时机仍由本容器管理。
+ * tea-component Modal 在 Vite+React19 环境下 visible 切换不生效，
+ * 改用纯 JSX + createPortal 实现，DOM 结构对齐截图视觉。
  *
  * 协议：acli `gateway qr-url --platform X --wait true` 以 NDJSON 流式输出，
  * 每行一个 JSON 对象，带 `status: 'pending'|'success'|'failed'` + `url` 字段。
@@ -18,8 +19,10 @@
  */
 
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { HermesQrDialogView } from './hermes-qr-dialog-view';
+import { createPortal } from 'react-dom';
 import { t } from "../../../../i18n/t";
+import { Loader2 } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { message } from '../utils/message';
 import { parseHermesQrStream } from "../utils/hermes-parsers";
 import { useWecomAIBotSDK } from '../hooks/useWecomAIBotSDK';
@@ -41,7 +44,6 @@ export interface IHermesQrCodeModalProps {
   isI18n?: boolean;
   onSuccess?: () => Promise<void> | void;
   onStatusChange?: (status: HermesQrUiStatus) => void;
-  returnFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
 export interface IHermesQrCodeModalHandle {
@@ -61,6 +63,26 @@ export interface IHermesQrCodeModalHandle {
   startWecomAuthFlow: () => Promise<void>;
 }
 
+/** info 圆圈图标（蓝色） */
+const InfoIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+    <circle cx="12" cy="12" r="11" stroke="#1d67e0" strokeWidth="2" fill="none" />
+    <text x="12" y="17" textAnchor="middle" fill="#1d67e0" fontSize="14" fontWeight="600" fontFamily="inherit">
+      i
+    </text>
+  </svg>
+);
+
+/** error 圆圈图标（红色） */
+const ErrorIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+    <circle cx="12" cy="12" r="11" stroke="#eb1c26" strokeWidth="2" fill="none" />
+    <text x="12" y="17" textAnchor="middle" fill="#eb1c26" fontSize="14" fontWeight="600" fontFamily="inherit">
+      !
+    </text>
+  </svg>
+);
+
 function getWecomAuthErrorMessage(error: any): string {
   switch (error?.code) {
     case 'WINDOW_BLOCKED':
@@ -77,7 +99,7 @@ function getWecomAuthErrorMessage(error: any): string {
 }
 
 export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrCodeModalProps>(
-  ({ channel, scriptCommands, executor, instance, isI18n, onSuccess, onStatusChange, returnFocusRef }, ref) => {
+  ({ channel, scriptCommands, executor, instance, isI18n, onSuccess, onStatusChange }, ref) => {
     const [visible, setVisible] = useState(false);
     const [qrUrl, setQrUrl] = useState('');
     const [status, setStatus] = useState<HermesQrUiStatus>('init');
@@ -226,7 +248,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         }
       } catch (error) {
         if (!isFlowValid()) return;
-        if ((error as { code?: string } | null)?.code === 'CANCELLED') {
+        if (error?.code === 'CANCELLED') {
           resetState();
           return;
         }
@@ -271,10 +293,60 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
       return undefined;
     };
 
-    return <HermesQrDialogView open={visible} onOpenChange={(open) => { if (!open) closeModal(); }}
-      title={getTitle()} description={getDescription()} status={status} qrUrl={qrUrl}
-      closeLabel={t('关闭')} retryLabel={t('重试')} loadingLabel={t('加载中')}
-      returnFocusRef={returnFocusRef} onRetry={() => void startQrCodeFlow()} />;
+    const isError = status === 'expired' || status === 'failed';
+
+    if (!visible) return null;
+
+    const modal = (
+      <div
+        className="lightvela-agent-console-portal _lh-hermes-qr-modal__overlay"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeModal();
+        }}
+      >
+        <div className="_lh-hermes-qr-modal__dialog">
+          {/* header: 图标 + 标题/描述 + 关闭按钮 */}
+          <div className="_lh-hermes-qr-modal__header">
+            <div className="_lh-hermes-qr-modal__header-icon">{isError ? <ErrorIcon /> : <InfoIcon />}</div>
+            <div className="_lh-hermes-qr-modal__header-content">
+              <div className="_lh-hermes-qr-modal__title">{getTitle()}</div>
+              {getDescription() && <div className="_lh-hermes-qr-modal__desc">{getDescription()}</div>}
+            </div>
+            <button className="_lh-hermes-qr-modal__close" onClick={closeModal}>
+              ✕
+            </button>
+          </div>
+
+          {/* body: 二维码 / loading */}
+          {(status === 'loading' || status === 'ready') && (
+            <div className="_lh-hermes-qr-modal__body">
+              {status === 'ready' && qrUrl ? (
+                <QRCodeCanvas value={qrUrl} size={200} level="L" />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: 'rgba(0,0,0,0.45)' }}>
+                  <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} className="animate-spin" />
+                  <span style={{ fontSize: 13 }}>{t('加载中')}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* footer: 仅失败/过期时显示 */}
+          {isError && (
+            <div className="_lh-hermes-qr-modal__footer">
+              <button type="button" className="tea-btn tea-btn--primary" onClick={() => startQrCodeFlow()}>
+                {t('重试')}
+              </button>
+              <button type="button" className="tea-btn" onClick={closeModal}>
+                {t('关闭')}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+
+    return createPortal(modal, document.body);
   },
 );
 

@@ -13,12 +13,6 @@ const nextConfigSource = readFileSync(resolve(repoRoot, 'next.config.mjs'), 'utf
 const globalCssSource = readFileSync(resolve(repoRoot, 'src/app/global.css'), 'utf8');
 
 describe('AgentChat CSS boundary', () => {
-  it('keeps the side-effect SDK import inside the lazy loader', () => {
-    const source = readFileSync(resolve(repoRoot, 'src/pages/marketing/agent-chat-panel.tsx'), 'utf8');
-    expect(source).toMatch(/const LightVelaPanel = lazy\(\(\) =>\s*import\("@tencent\/agentchat-lightvela-panel"\)/);
-    expect(source).not.toMatch(/import\s+["'][^"']*agentchat[^"']*\.css["']/);
-  });
-
   it('keeps the bundler alias pointed at the installed no-reset Tea build', () => {
     expect(nextConfigSource).toContain('@tencent/tea-component/dist/tea-themeable.css');
     expect(nextConfigSource).toContain('@tencent/tea-component/dist/tea-no-reset.css');

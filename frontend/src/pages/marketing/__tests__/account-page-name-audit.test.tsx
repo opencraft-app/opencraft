@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Pass, User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
-import { setCreditPackVisible } from "@/lib/credit-pack-visibility";
 
 vi.mock("@tencent/universal-report", () => ({
   default: class MockUniversalReport {
@@ -25,9 +24,6 @@ const deleteAccount = vi.fn();
 const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
 const retryRealnameSync = vi.fn();
-const sendPhoneChangeCode = vi.fn();
-const verifyPhoneChange = vi.fn();
-const requestEmailBind = vi.fn();
 const refreshPasses = vi.fn();
 const listMyPasses = vi.fn();
 const getRenewPrice = vi.fn();
@@ -111,9 +107,6 @@ vi.mock("@/contexts/repository-context", () => ({
     auth: {
       verifyRealname: vi.fn(),
       retryRealnameSync,
-      sendPhoneChangeCode,
-      verifyPhoneChange,
-      requestEmailBind,
     },
     plans: {
       listMyPasses,
@@ -182,7 +175,6 @@ const buildActivePass = (): Pass => ({
 describe("AccountPage nickname audit state", () => {
   afterEach(() => {
     cleanup();
-    setCreditPackVisible(false);
     vi.unstubAllGlobals();
   });
 
@@ -218,35 +210,6 @@ describe("AccountPage nickname audit state", () => {
       auth_code: "weixin://wxpay/bizpayurl?pr=renewal",
       deal_names: ["启航套餐 续费"],
     });
-    sendPhoneChangeCode.mockResolvedValue({ cooldownSeconds: 60 });
-    verifyPhoneChange.mockResolvedValue(undefined);
-    requestEmailBind.mockResolvedValue({ cooldownSeconds: 60 });
-    refreshProfile.mockResolvedValue(undefined);
-  });
-
-  it("runs phone verification before profile refresh and closes after success", async () => {
-    const order: string[] = [];
-    realnamePhoneVerificationEnabled = true;
-    currentUser = {
-      ...currentUser,
-      phone: "13800138000",
-      realnameVerified: true,
-      realnameLevel: "phone_3fa",
-    };
-    verifyPhoneChange.mockImplementation(async () => { order.push("verify"); });
-    refreshProfile.mockImplementation(async () => { order.push("refresh"); });
-    renderAccountPage();
-
-    await userEvent.click(screen.getByRole("button", { name: "修改 手机号" }));
-    await userEvent.type(screen.getByPlaceholderText("请输入中国大陆手机号"), "13900139000");
-    await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
-    await userEvent.type(screen.getByPlaceholderText("请输入短信验证码"), "1234");
-    await userEvent.click(screen.getByRole("button", { name: "确认修改" }));
-
-    expect(sendPhoneChangeCode).toHaveBeenCalledExactlyOnceWith({ phone: "13900139000" });
-    expect(verifyPhoneChange).toHaveBeenCalledExactlyOnceWith({ phone: "13900139000", code: "1234" });
-    expect(order).toEqual(["verify", "refresh"]);
-    expect(screen.queryByRole("dialog", { name: "修改绑定手机号" })).not.toBeInTheDocument();
   });
 
   it.each(["account", "billing"] as const)("shows a direct Agents link immediately before the avatar on %s", async (view) => {
@@ -426,12 +389,17 @@ describe("AccountPage nickname audit state", () => {
 
     expect(screen.getByText("当前套餐")).toBeInTheDocument();
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
-    expect(screen.getByText("当前生效")).toBeInTheDocument();
+    expect(screen.getByText("生效中")).toBeInTheDocument();
+    expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
+    const planDetailsLink = screen.getByRole("link", { name: "套餐说明" });
+    expect(planDetailsLink).toHaveAttribute("href", "/docs/plans");
+    expect(planDetailsLink).toHaveAttribute("target", "_blank");
+    expect(planDetailsLink).toHaveAttribute("rel", "noopener noreferrer");
     const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
-    const subscriptionCard = subscriptionHeading.closest("section");
+    const subscriptionHeader = subscriptionHeading.parentElement;
 
-    expect(subscriptionCard).not.toBeNull();
-    expect(within(subscriptionCard!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+    expect(subscriptionHeader).not.toBeNull();
+    expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
   });
 
   it.each(["account", "billing"] as const)("separates profile and subscription content on the %s page", (view) => {
@@ -489,32 +457,29 @@ describe("AccountPage nickname audit state", () => {
   );
 
   it.each([
-    { usedPercent: 49, textClass: "text-[var(--lw-accent)]", fillClass: "bg-[var(--lw-accent)]" },
-    { usedPercent: 50, textClass: "text-[#C67B1E]", fillClass: "bg-[#C67B1E]" },
-    { usedPercent: 79, textClass: "text-[#C67B1E]", fillClass: "bg-[#C67B1E]" },
-    { usedPercent: 80, textClass: "text-[#CF3D4C]", fillClass: "bg-[#CF3D4C]" },
-    { usedPercent: 95, textClass: "text-[#CF3D4C]", fillClass: "bg-[#CF3D4C]" },
-    { usedPercent: 96, textClass: "text-[#991B1B]", fillClass: "bg-[#991B1B]" },
-  ])("uses the archived credit tone for $usedPercent% usage", ({ usedPercent, textClass, fillClass }) => {
+    { usedPercent: 49, expectedColor: "var(--lw-accent)" },
+    { usedPercent: 50, expectedColor: "#C67B1E" },
+    { usedPercent: 79, expectedColor: "#C67B1E" },
+    { usedPercent: 80, expectedColor: "#CF3D4C" },
+    { usedPercent: 95, expectedColor: "#CF3D4C" },
+    { usedPercent: 96, expectedColor: "#991B1B" },
+  ])("uses $expectedColor for $usedPercent% credit usage", ({ usedPercent, expectedColor }) => {
     activePass = {
       ...buildActivePass(),
       credit_total: 100,
       credit_available: 100 - usedPercent,
     };
 
-    renderAccountPage("billing");
+    const { container } = renderAccountPage("billing");
     const percentage = screen.getByText(`${usedPercent}%`);
-    const progress = screen.getByRole("progressbar", { name: "已使用积分" });
-    const progressFill = progress.querySelector<HTMLElement>('[data-slot="progress-indicator"]');
+    const progressFill = container.querySelector<HTMLElement>(`[style*="width: ${usedPercent}%"]`);
 
-    expect(percentage.parentElement).toHaveClass(textClass);
-    expect(progress).toHaveAttribute("aria-valuenow", String(usedPercent));
+    expect(percentage).toHaveStyle({ color: expectedColor });
     expect(progressFill).not.toBeNull();
-    expect(progressFill).toHaveClass(fillClass);
-    expect(progressFill).toHaveStyle({ transform: `translateX(-${100 - usedPercent}%)` });
+    expect(progressFill).toHaveStyle({ background: expectedColor });
   });
 
-  it("shows referral credits separately from the package quota", async () => {
+  it("shows referral credits separately from the package quota", () => {
     activePass = {
       ...buildActivePass(),
       credit_total: 4500,
@@ -523,21 +488,21 @@ describe("AccountPage nickname audit state", () => {
       free_credit_available: 500,
     };
 
-    setCreditPackVisible(true);
     renderAccountPage("billing");
 
-    expect(await screen.findAllByText("启航套餐")).toHaveLength(2);
+    expect(screen.getByText("套餐积分")).toBeInTheDocument();
     expect(screen.getByText("额外积分")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "已使用积分" })).toHaveAttribute("aria-valuenow", "0");
+    expect(screen.getByText("当前可用")).toBeInTheDocument();
+    expect(screen.getByText("5,000")).toBeInTheDocument();
     expect(
       screen.getByText((_, element) =>
         element?.tagName === "P" &&
-        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 5,000"
+        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 4,500"
       )
     ).toBeInTheDocument();
     expect(
       screen.getByText((_, element) =>
-        element?.tagName === "P" &&
+        element?.tagName === "SPAN" &&
         element.textContent?.replace(/\s+/g, " ").trim() === "500 / 500"
       )
     ).toBeInTheDocument();

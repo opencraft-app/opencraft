@@ -1,17 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { createElement } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
-import { ChannelCardView } from "../agent-channel-views";
-afterEach(cleanup);
+import { describe, expect, it } from "vitest";
 
 const channelPanelSource = readFileSync(
   join(process.cwd(), "src/pages/marketing/agent-channel-panel.tsx"),
   "utf8",
 );
-const globalStyles = readFileSync(join(process.cwd(), "src/app/global.css"), "utf8");
-const configStyleImports = readFileSync(join(process.cwd(), "src/pages/marketing/agent-config/styles-index.css"), "utf8");
 const standardPanelStyles = readFileSync(
   join(process.cwd(), "src/pages/marketing/agent-config/standard-panel.css"),
   "utf8",
@@ -95,39 +89,28 @@ describe("channel card action placement", () => {
     expect(actionRule).toContain("margin-top: auto;");
     expect(actionGroupRule).toContain("justify-content: flex-end;");
     expect(actionGroupRule).toContain("flex-wrap: wrap;");
-    render(createElement(ChannelCardView, {
-      name: "Slack", description: "Credentials", icon: null, connected: true, connectedLabel: "Connected",
-      guideUrl: "https://lightvela.ai/docs/configuration/channel-slack", guideLabel: "Guide",
-      disconnectLabel: "Disconnect", connectLabel: "Reconnect", disconnectDisabled: false,
-      onConnect: () => undefined, onDisconnect: () => undefined,
-    }));
-    const guide = screen.getByRole("link", { name: "Guide" });
-    const connect = screen.getByRole("button", { name: "Reconnect" });
-    expect(guide.closest(".lh-std-channel-panel__card-action-right")).toContainElement(connect);
-    expect(guide.compareDocumentPosition(connect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(connect).toHaveClass("text-white", "lh-std-channel-panel__connect-btn--reconnect");
-    expect(connect).toHaveStyle({ color: "rgb(255, 255, 255)" });
+    expect(channelPanelSource).toMatch(
+      /__card-action-right`}>[\s\S]*?__guide-btn`}[\s\S]*?__connect-btn/,
+    );
   });
 });
 
 describe("channel card action button radius", () => {
-  it("uses the explicit Agents radius for the card and its actions", () => {
-    // The app stylesheet is layered. Overrides must share the unlayered channel
-    // stylesheet, otherwise the legacy 16px/999px radii win regardless of specificity.
-    expect(globalStyles).toMatch(/@import ['"]\.\.\/styles\.css['"] layer\(app\);/);
-    expect(configStyleImports).toMatch(/@import ['"]\.\/standard-panel\.css['"];/);
-    expect(getRuleBody(standardPanelStyles, ".agents-ui.lh-std-channel-panel .lh-std-channel-panel__card")).toContain("border-radius: 6px;");
-    const actionRule = getRuleBody(standardPanelStyles, ".agents-ui.lh-std-channel-panel :is(.lh-std-channel-panel__guide-btn, .lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn)");
-    expect(actionRule).toContain("border-radius: 6px;");
-    expect(actionRule).toContain("min-height: 36px;");
-    expect(actionRule).toContain("white-space: normal;");
-    expect(actionRule).toContain("overflow-wrap: anywhere;");
-  });
-
-  it("keeps the connected reconnect action on the filled white-text treatment", () => {
-    const reconnectRule = getRuleBody(standardPanelStyles, ".lh-std-channel-panel__connect-btn--reconnect");
-    expect(reconnectRule).toContain("background: #1f2937;");
-    expect(reconnectRule).toContain("color: #fff;");
-    expect(reconnectRule).toContain("border-color: #1f2937;");
+  it("uses a consistent larger radius for the card and every card action", () => {
+    expect(getRuleBody(standardPanelStyles, ".lh-std-channel-panel__card")).toContain(
+      "border-radius: 16px;",
+    );
+    for (const selector of [
+      ".lh-std-channel-panel__guide-btn",
+      ".lh-std-channel-panel__card-unbind",
+      ".lh-std-channel-panel__connect-btn",
+    ]) {
+      expect(getRuleBody(standardPanelStyles, selector)).toContain(
+        "border-radius: 999px;",
+      );
+      expect(getRuleBody(standardPanelStyles, selector)).toContain(
+        "min-height: 36px;",
+      );
+    }
   });
 });

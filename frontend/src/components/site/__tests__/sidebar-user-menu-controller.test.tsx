@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Pass } from "@/domain/types";
 import { UserAvatarMenu } from "../user-avatar-menu";
 import { isGlobal } from "@/lib/region";
-import { usePassUpgrade } from "@/lib/use-pass-upgrade";
-import { createFakeRepositories } from "@/repositories/fake-repositories";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
+import { CONSOLE_SHOW_EVENT, setConsoleShowEnabled } from "@/lib/console-show-event";
 
 const mocks = vi.hoisted(() => ({ listMyPasses: vi.fn(), listModifyBundles: vi.fn(), repositories: vi.fn(), paidBilling: vi.fn(), navigate: vi.fn(), signOut: vi.fn() }));
 const pass = (overrides: Partial<Pass> = {}): Pass => ({ pass_id: "p/a", user_id: "a", status: "active", bundle_id: "source", bundle_name: "Pro A", created_time: "2026-01-01", expired_time: "2099-01-01", credit_total: 1000, credit_available: 750, ...overrides });
@@ -26,59 +24,16 @@ vi.mock("@/lib/app-navigation", () => ({
 }));
 vi.mock("@/i18n/t", () => ({ useT: () => (text: string) => text }));
 const target = { target_bundle_id: "target", bundle: { bundle_id: "target" } };
-const host = () => window as Window & { show?: (...args: unknown[]) => unknown; hide?: () => void };
-function AccountUpgradeConsumer() {
-  const upgrade = usePassUpgrade({ userId, passId: currentPass?.pass_id, currentPass, enabled: true });
-  return <output data-testid="account-upgrade">{upgrade.options.length}</output>;
-}
-
+const host = () => window as Window & { show?: (...args: unknown[]) => unknown };
 beforeEach(() => {
+  setConsoleShowEnabled(false);
   vi.clearAllMocks(); currentPass = pass(); modifyingPass = null; userId = "a"; paidBilling = true; currentSubscription = null;
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   mocks.listMyPasses.mockResolvedValue([pass()]);
   mocks.listModifyBundles.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [target] });
 });
 
-describe("real fake repository account preview consumption", () => {
-  beforeEach(() => { window.localStorage.clear(); });
-  afterEach(() => { window.history.replaceState({}, "", "/"); window.localStorage.clear(); });
-
-  it("displays the demo pass quota and original upgrade href through the real summary and upgrade hooks", async () => {
-    window.history.replaceState({}, "", "/agents/automations?state=default&passState=sidebar-demo");
-    const repositories = createFakeRepositories();
-    const session = await repositories.auth.getSession();
-    userId = session?.user.id;
-    currentPass = (await repositories.plans.listMyPasses())[0] ?? null;
-    mocks.listMyPasses.mockImplementation(repositories.plans.listMyPasses);
-    mocks.listModifyBundles.mockImplementation(repositories.plans.listModifyBundles);
-    render(<UserAvatarMenu variant="sidebar" />);
-    await openSidebar();
-    expect(await screen.findByText("250 / 1,000")).toBeVisible();
-    expect(screen.getByRole("button", { name: "打开用户菜单" })).toHaveTextContent("演示");
-    expect(screen.getByRole("progressbar", { name: "已使用积分" })).toHaveAttribute("aria-valuenow", "25");
-    expect(await screen.findByRole("link", { name: "升级套餐" })).toHaveAttribute("href", expect.stringContaining(`/?upgrade_pass_id=${encodeURIComponent(currentPass!.pass_id)}`));
-    expect(mocks.listModifyBundles).toHaveBeenCalledWith(currentPass!.pass_id);
-    expect(window.localStorage.getItem("lightclaw-fake-passes-v1")).toBeNull();
-  });
-
-  it("keeps the same fake session unsubscribed without the explicit demo query", async () => {
-    window.history.replaceState({}, "", "/agents/automations?state=default");
-    const repositories = createFakeRepositories();
-    const session = await repositories.auth.getSession();
-    userId = session?.user.id;
-    currentPass = (await repositories.plans.listMyPasses())[0] ?? null;
-    mocks.listMyPasses.mockImplementation(repositories.plans.listMyPasses);
-    mocks.listModifyBundles.mockImplementation(repositories.plans.listModifyBundles);
-    render(<UserAvatarMenu variant="sidebar" />);
-    await openSidebar();
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("未订阅"));
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
-    expect(screen.queryByText("0 / 0")).not.toBeInTheDocument();
-    expect(mocks.listModifyBundles).not.toHaveBeenCalled();
-  });
-});
-afterEach(() => { act(() => host().hide?.()); cleanup(); delete host().show; delete host().hide; vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); setConsoleShowEnabled(false); delete host().show; vi.unstubAllGlobals(); });
 async function openSidebar() {
   await userEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
   act(() => host().show?.());
@@ -97,29 +52,14 @@ describe("sidebar account controller boundary", () => {
     }
   });
 
-  it("shows domestic feedback without show(), preserves the external link, and closes back to the avatar", async () => {
+  it("keeps feedback visibility consistent with master", async () => {
     render(<UserAvatarMenu variant="sidebar" />);
-    const trigger = screen.getByRole("button", { name: "打开用户菜单" });
-    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
-    if (isGlobal) {
-      expect(screen.queryByRole("link", { name: "建议反馈" })).not.toBeInTheDocument();
-      act(() => host().show?.());
-      expect(screen.queryByRole("link", { name: "建议反馈" })).not.toBeInTheDocument();
-      act(() => host().hide?.());
-      expect(screen.queryByRole("link", { name: "建议反馈" })).not.toBeInTheDocument();
-      await userEvent.keyboard("{Escape}");
-    } else {
-      const feedback = screen.getByRole("link", { name: "建议反馈" });
-      expect(feedback).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
-      expect(feedback).toHaveAttribute("target", "_blank");
-      expect(feedback).toHaveAttribute("rel", "noopener noreferrer");
-      act(() => { host().show?.(); host().show?.(); host().hide?.(); });
-      expect(screen.getAllByRole("link", { name: "建议反馈" })).toHaveLength(1);
-      await userEvent.click(feedback);
-    }
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "账号管理" })).not.toBeInTheDocument());
-    expect(trigger).toHaveFocus();
+    act(() => host().show?.());
+    expect(screen.queryByRole("link", { name: "产品反馈" }) !== null).toBe(!isGlobal);
+    act(() => host().show?.());
+    expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
   });
 
   it("does not mount billing or upgrade hooks for the unchanged header", () => {
@@ -196,60 +136,20 @@ describe("sidebar account controller boundary", () => {
     expect(mocks.listMyPasses).toHaveBeenCalledTimes(reads);
   });
 
-  it("keeps the header/sidebar show chain receiver, arguments, defined result and region guards", async () => {
-    const originalShow = vi.fn(function (this: Window, ...args: unknown[]) { expect(this).toBe(window); expect(args).toEqual(["reveal", 7]); return false; });
+  it("shares master's show toggle across header/sidebar and restores the original command", () => {
+    const originalShow = vi.fn();
     host().show = originalShow;
     const header = render(<UserAvatarMenu />);
     const sidebar = render(<UserAvatarMenu variant="sidebar" />);
-    const trigger = screen.getAllByRole("button", { name: "打开用户菜单" })[1]!;
-    await userEvent.click(trigger);
-    expect(await screen.findByRole("link", { name: "升级套餐" })).toBeVisible();
-    let result: unknown;
-    act(() => { result = host().show?.("reveal", 7); });
-    expect(result).toBe(false);
-    expect(originalShow).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole("link", { name: "升级套餐" })).toBeVisible();
-    expect(screen.queryByRole("link", { name: "建议反馈" }) !== null).toBe(!isGlobal);
-    act(() => host().hide?.());
-    expect(screen.getByRole("link", { name: "升级套餐" })).toBeVisible();
-    // Cleanup must not overwrite a newer command owner mounted after both menus.
-    const laterOwner = vi.fn(); host().show = laterOwner;
-    sidebar.unmount(); header.unmount();
-    expect(host().show).toBe(laterOwner);
-    expect(originalShow).toHaveBeenCalledTimes(1);
-  });
-
-  it("restores the original show and hide commands after the real sidebar upgrade hook unmounts", () => {
-    const originalShow = vi.fn();
-    const originalHide = vi.fn();
-    host().show = originalShow; host().hide = originalHide;
-    const view = render(<><UserAvatarMenu /><UserAvatarMenu variant="sidebar" /></>);
-    view.unmount();
-    expect(host().show).toBe(originalShow);
-    expect(host().hide).toBe(originalHide);
-  });
-
-  it.each(["account-first", "sidebar-first"])("cleans two real upgrade consumers in %s order while preserving the remaining consumer", async (order) => {
-    const originalShow = vi.fn(() => false); const originalHide = vi.fn(() => false);
-    host().show = originalShow; host().hide = originalHide;
-    const account = render(<AccountUpgradeConsumer />);
-    const sidebar = render(<UserAvatarMenu variant="sidebar" />);
-    await openSidebar();
-    await waitFor(() => expect(screen.getByTestId("account-upgrade")).toHaveTextContent("1"));
-    expect(await screen.findByRole("link", { name: "升级套餐" })).toBeVisible();
-    if (order === "account-first") account.unmount(); else sidebar.unmount();
-    act(() => host().hide?.());
-    // Upgrade discovery is public in every region after the master rollout.
-    if (order === "account-first") expect(screen.getByRole("link", { name: "升级套餐" })).toBeVisible();
-    else expect(screen.getByTestId("account-upgrade")).toHaveTextContent("1");
     let result: unknown;
     act(() => { result = host().show?.(); });
+    expect(result).toBe(true);
+    header.unmount();
+    act(() => { result = host().show?.(); });
     expect(result).toBe(false);
-    if (order === "account-first") expect(await screen.findByRole("link", { name: "升级套餐" })).toBeVisible();
-    else await waitFor(() => expect(screen.getByTestId("account-upgrade")).toHaveTextContent("1"));
-    if (order === "account-first") sidebar.unmount(); else account.unmount();
-    expect(host().show).toBe(originalShow); expect(host().hide).toBe(originalHide);
-    expect(originalShow).toHaveBeenCalledTimes(2); expect(originalHide).toHaveBeenCalledTimes(1);
+    expect(originalShow).not.toHaveBeenCalled();
+    sidebar.unmount();
+    expect(host().show).toBe(originalShow);
   });
 
   it.each(["modifying", "expired", "isolated"])("retains %s display state without an upgrade shortcut", async (state) => {

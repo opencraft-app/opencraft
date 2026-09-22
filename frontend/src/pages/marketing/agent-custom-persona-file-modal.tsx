@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import {
@@ -54,7 +53,6 @@ export function CustomPersonaFileModal({
   const [saveError, setSaveError] = useState(false);
   const [showNameWarning, setShowNameWarning] = useState(false);
   const saveRequestIdRef = useRef(0);
-  const triggerRef = useRef<HTMLElement | null>(null);
   const validation = useMemo(
     () => validateCustomSoulMarkdown(markdown, "SOUL.md", t("自定义人设")),
     [markdown, t],
@@ -111,10 +109,6 @@ export function CustomPersonaFileModal({
       }}
     >
       <DialogContent
-        portalClassName="agents-ui"
-        closeLabel={t("关闭")}
-        onOpenAutoFocus={() => { triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; }}
-        onCloseAutoFocus={(event) => { if (triggerRef.current?.isConnected) { event.preventDefault(); triggerRef.current.focus(); } }}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto md:w-[42rem]"
         onEscapeKeyDown={(event) => {
           if (saving) event.preventDefault();
@@ -187,24 +181,23 @@ export function CustomPersonaFileModal({
           </div>
 
           <div className="flex items-center justify-end gap-2">
-            <Button
+            <button
               type="button"
-              variant="outline"
               disabled={saving}
               onClick={close}
-              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50 h-auto shadow-none transition-none hover:translate-y-0"
+              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50"
             >
               {t("取消")}
-            </Button>
-            <Button
+            </button>
+            <button
               type="button"
               disabled={!validation.valid || unchanged || saving}
               onClick={() => void save()}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 h-auto shadow-none transition-none hover:translate-y-0"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               {saving ? t("保存中…") : t("保存修改")}
-            </Button>
+            </button>
           </div>
         </div>
       </DialogContent>

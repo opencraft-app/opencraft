@@ -35,11 +35,7 @@ test("pinned module survives offline restart and failed update retains its persi
   assert.ok(saved.artifact?.sha256);
   code = moduleCode("2.0.0", true);
   await assert.rejects(first.manager.reload("example.pinned"), /broken candidate/);
-  const afterFailedReload = first.repository.getSnapshot().records[0]!;
-  assert.deepEqual(afterFailedReload, {
-    ...saved,
-    artifactRef: saved.artifactRef ?? saved.artifact?.sha256,
-  });
+  assert.deepEqual(first.repository.getSnapshot().records[0], saved);
   await first.close();
   offline = true;
   const before = downloads;

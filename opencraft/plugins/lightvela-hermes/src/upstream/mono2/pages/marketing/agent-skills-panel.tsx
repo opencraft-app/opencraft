@@ -1,11 +1,9 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
-import { useCallback, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
+import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Loader2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { AgentPageLoadingState } from "../../components/agents/index";
 import { Button } from "../../components/ui/button";
-import { Spinner } from "../../components/ui/spinner";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +14,7 @@ import {
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Textarea } from "../../components/ui/textarea";
 import { useRepositories } from "../../contexts/repository-context";
 import { useT } from "../../i18n/t";
@@ -77,6 +76,16 @@ const INITIAL_LEARN_SKILL_PROGRESS: LearnSkillProgress = {
   percent: 0,
   label: "Ready to learn",
 };
+
+function getAgentSkillsTabStyle(isActive: boolean): CSSProperties {
+  return {
+    color: isActive ? "rgba(0,0,0,0.95)" : "rgba(0,0,0,0.38)",
+    fontFamily: "inherit",
+    fontSize: "18px",
+    fontWeight: 600,
+    lineHeight: "24px",
+  };
+}
 
 function getLearnSourcePanelClass(selected: boolean) {
   return [
@@ -647,12 +656,11 @@ function LearnSkillDialog({
               <Button
                 type="button"
                 aria-label={t("学习")}
-                aria-busy={busy}
                 onClick={() => void learnSkill()}
                 disabled={busy}
                 className="size-9 shrink-0 rounded-full bg-black p-0 text-white hover:bg-black/80"
               >
-                {busy ? <Spinner size="md" /> : <ArrowUp className="size-4" aria-hidden="true" />}
+                {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ArrowUp className="size-4" aria-hidden="true" />}
               </Button>
             </div>
           </div>
@@ -764,7 +772,7 @@ function LearnSkillDialog({
                       <div className="max-h-48 overflow-y-auto rounded-md border border-black/5 bg-white">
                         {status === "loading" ? (
                           <div className="flex items-center gap-2 px-3 py-4 text-sm text-black/55">
-                            <Spinner size="md" />
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                             {t("正在加载云端存储...")}
                           </div>
                         ) : files.length === 0 ? (
@@ -963,7 +971,7 @@ function LearnSkillDialog({
                         <div className="max-h-48 overflow-y-auto rounded-md border border-black/5 bg-white">
                           {status === "loading" ? (
                             <div className="flex items-center gap-2 px-3 py-4 text-sm text-black/55">
-                              <Spinner size="md" />
+                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                               {t("正在加载云端存储...")}
                             </div>
                           ) : files.length === 0 ? (
@@ -1200,9 +1208,8 @@ function LearnSkillDialog({
               className="rounded-md"
               onClick={() => void learnSkill()}
               disabled={busy}
-              aria-busy={status === "learning"}
             >
-              {status === "learning" ? <Spinner size="md" /> : null}
+              {status === "learning" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
               {t("学习")}
             </Button>
           </div>
@@ -1227,7 +1234,7 @@ function LearnSkillDialog({
           {triggerLabel ?? t("学习技能")}
         </Button>
       </DialogTrigger>
-      <DialogContent portalClassName="agents-ui" closeLabel={t("关闭")} className="overflow-hidden rounded-md border border-black/[0.08] bg-white p-0 shadow-xl md:w-[42rem]">
+      <DialogContent className="overflow-hidden rounded-md border border-black/[0.08] bg-white p-0 shadow-xl md:w-[42rem]">
         {learnBody}
       </DialogContent>
     </Dialog>
@@ -1271,27 +1278,35 @@ export function HermesAgentSkillsPanel({
     ? "experts"
     : "discover";
   const [skillsPanelRevision, refreshSkillsPanel] = useState(0);
-  const [skillsReadyBotId, setSkillsReadyBotId] = useState<string | null>(null);
-  const skillsReady = skillsReadyBotId === botId;
-  const handleSkillsInitialLoadComplete = useCallback(() => {
-    setSkillsReadyBotId(botId);
-  }, [botId]);
 
   return (
     <ZhHantScope className="min-w-0">
-      {!skillsReady ? <AgentPageLoadingState className="agents-ui" title={t("正在读取技能")} /> : showHeader ? (
+      <Tabs value="skills" className="min-w-0">
+      {showHeader ? (
         <>
           <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
-            <h2 className="text-balance text-lg font-semibold leading-6 text-black/95">{t("技能")}</h2>
+            <TabsList
+              aria-label={t("技能页面切换")}
+              className="h-auto justify-start gap-8 rounded-none border-0 bg-transparent p-0 text-black/38 shadow-none"
+            >
+              <TabsTrigger
+                value="skills"
+                className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                style={getAgentSkillsTabStyle(true)}
+              >
+                {t("技能")}
+              </TabsTrigger>
+            </TabsList>
           </div>
-          <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
+          <p className="mb-3 min-w-0 text-pretty text-sm font-medium leading-6 text-black/50">
             {isGlobal
               ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
               : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
           </p>
         </>
       ) : null}
-      <div className={skillsReady ? undefined : "hidden"}>
+
+      <TabsContent value="skills" className="mt-0">
         <SkillsDemoPanel
           key={`${botId}-${skillsPanelRevision}`}
           botId={botId}
@@ -1304,7 +1319,6 @@ export function HermesAgentSkillsPanel({
           headerEnd={headerEnd}
           headerRegion={headerRegion}
           renderHeaderNavigation={renderHeaderNavigation}
-          onInitialLoadComplete={handleSkillsInitialLoadComplete}
           expertsPanel={(
             <ExpertsPanel
               botId={botId}
@@ -1335,7 +1349,8 @@ export function HermesAgentSkillsPanel({
             />
           )}
         />
-      </div>
+      </TabsContent>
+      </Tabs>
     </ZhHantScope>
   );
 }

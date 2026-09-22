@@ -14,7 +14,7 @@ import {
 const bot = (id: string, status: ResettableBot["status"] = "running"): ResettableBot => ({ id, status });
 
 describe("getResetBlockReason", () => {
-  it("allows the backend to decide gateway compatibility for main and named Bots", () => {
+  it("allows the backend to decide gateway compatibility for main and named Profiles", () => {
     expect(getResetBlockReason(bot("main"), false)).toBeNull();
     expect(getResetBlockReason(bot("sales"), false)).toBeNull();
   });

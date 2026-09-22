@@ -1,11 +1,6 @@
 import type { BundleTimeUnit, Pass } from "@/domain/types";
 import { getPassStatus, type PassStatus } from "@/lib/billing-flow";
 
-export const isRenewalAvailableForRegion = (
-  globalRegion: boolean,
-  paidBillingEnabled: boolean,
-): boolean => !globalRegion || paidBillingEnabled;
-
 export type RenewalPeriodOption = {
   key: "monthly" | "quarterly";
   label: string;

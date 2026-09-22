@@ -101,11 +101,6 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国际站英文分别使用 `Account`、`Plans & billing` 与 `My AI Companion`。两个账号私域页面均要求登录、保持 noindex/nofollow；账号页承载资料与身份管理，套餐与费用页承载订阅和国际站支付方式，购买入口仍为 `/subscribe`。
 - 订阅失败后的套餐管理/续费引导进入 `/account/billing`；创建前的实名认证引导与邮箱绑定回调仍进入 `/account`，仅账号视图消费对应 query。国内续费的实名子流程由 `RenewPassModal` 自己承载，不依赖账号页资料卡的认证入口。
 
-## 本地账户套餐验收
-
-- `fake-repositories` 的显式 `passState=sidebar-demo` 只提供合成套餐与升级候选，供账户页和 Agents 侧栏菜单对照展示；无参数或未知预设仍读取原模拟状态。套餐名称标注演示，预设不写入套餐存储。
-- 该参数不改变生产 HTTP 仓库、区域开放条件、当前用户归属或升级资格；mock 升级下单和支付接口继续拒绝。验收时记录使用的环境与参数，不能把模拟额度/升级链接当作真实订阅或交易成功。
-
 ## 邀请返利环境边界
 
 - 新邀请链接使用当前环境前端首页 `/?ref=<code>`，由现有公共 Header 打开统一登录弹窗。
