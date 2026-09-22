@@ -194,7 +194,7 @@ describe("Agent settings navigation spacing", () => {
     const desktopItem = getBlockBody(styles, "\n.lv-agents-nav-item {");
     const profileName = getBlockBody(styles, "\n.lv-agent-profile-name {");
     const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
-    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {");
+    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n\n  .lv-agents-nav {");
     const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
 
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
@@ -232,6 +232,7 @@ describe("Agent settings navigation spacing", () => {
     expect(page).toContain('<AgentSidebar>');
     expect(sidebar).toContain('className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"');
     for (const source of [loadingView, page]) {
+      expect(source).toContain('className="lv-agents-sidebar-controls"');
       expect(source).toContain('className="lv-agents-sidebar-middle"');
       expect(source).toContain('className="lv-agents-sidebar-footer"');
     }
@@ -241,12 +242,8 @@ describe("Agent settings navigation spacing", () => {
 
   it("keeps the requested desktop sidebar separators and bottom actions aligned", () => {
     const profileSeparator = getBlockBody(styles, "\n.lv-agent-profile-wrap {");
-    const feedbackLink = getBlockBody(styles, "\n.lv-agent-feedback-link {");
-    const desktopFeedbackLink = getBlockBody(styles, "\n  .lv-agent-feedback-link {");
-    const adjacentAccountFooter = getBlockBody(
-      styles,
-      "\n  .lv-agent-feedback-link + .lv-agent-account-footer {",
-    );
+    const controls = getBlockBody(styles, "\n  .lv-agents-sidebar-controls {");
+    const middle = getBlockBody(styles, "\n  .lv-agents-sidebar-middle {");
     const accountSeparator = getBlockBody(styles, "\n.lv-agent-account-footer {");
     const desktopScrollContainer = getBlockBody(
       styles,
@@ -256,10 +253,12 @@ describe("Agent settings navigation spacing", () => {
     expect(profileSeparator).toContain("width: calc(100% + 12px);");
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
-    expect(feedbackLink).toContain("width: calc(100% + 12px);");
-    expect(feedbackLink).not.toContain("border-top:");
-    expect(desktopFeedbackLink).toContain("margin-top: auto;");
-    expect(adjacentAccountFooter).toContain("margin-top: 8px;");
+    expect(controls).toContain("padding-top: 16px;");
+    expect(middle).toContain("padding-top: 16px;");
+    expect(styles).toContain('.lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-controls::after');
+    for (const source of [page, loadingView, styles]) {
+      expect(source).not.toContain("lv-agent-feedback-link");
+    }
     expect(accountSeparator).toContain("width: calc(100% + 12px + 16px);");
     expect(accountSeparator).toContain("margin-left: -16px;");
     expect(accountSeparator).toContain("padding-left: 16px;");

@@ -608,32 +608,6 @@ a {
   padding-bottom: 8px;
 }
 
-.lv-agent-feedback-link {
-  display: flex;
-  width: calc(100% + 12px);
-  align-items: center;
-  gap: 8px;
-  margin-top: 16px;
-  padding: 8px 12px;
-  color: rgb(0 0 0 / 40%);
-  font-size: 12px;
-  line-height: 20px;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.lv-agent-feedback-link:hover,
-.lv-agent-feedback-link:focus-visible {
-  color: rgb(0 0 0 / 70%);
-  background: rgb(0 0 0 / 2.5%);
-}
-
-.lv-agent-feedback-link:focus-visible {
-  outline: 2px solid rgb(0 0 0 / 30%);
-  outline-offset: 2px;
-}
-
 .lv-agent-profile {
   position: relative;
   display: flex;
@@ -1125,6 +1099,7 @@ a {
   }
 
   .lv-agents-sidebar-profile,
+  .lv-agents-sidebar-controls,
   .lv-agents-sidebar-footer {
     position: relative;
     width: calc(100% + 28px);
@@ -1141,6 +1116,15 @@ a {
     border-bottom: 1px solid #e9ecf1;
   }
 
+  .lv-agents-sidebar-controls {
+    padding-top: 16px;
+    padding-left: 16px;
+  }
+
+  .lv-agents-sidebar-controls .lv-agents-sidebar-tabs {
+    margin-top: 0;
+  }
+
   .lv-agents-sidebar-footer {
     padding-left: 16px;
     border-top: 1px solid #e9ecf1;
@@ -1153,7 +1137,7 @@ a {
     border-top: 0;
   }
 
-  .lv-agents-sidebar-profile::after,
+  .lv-agents-sidebar-controls::after,
   .lv-agents-sidebar-footer::before {
     position: absolute;
     right: 0;
@@ -1162,7 +1146,7 @@ a {
     pointer-events: none;
   }
 
-  .lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-profile::after {
+  .lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-controls::after {
     content: "";
     top: 100%;
     box-shadow: inset 0 8px 8px -8px rgb(0 0 0 / 20%);
@@ -1206,14 +1190,6 @@ a {
     line-height: 20px;
   }
 
-  .lv-agent-feedback-link {
-    margin-top: auto;
-  }
-
-  .lv-agent-feedback-link + .lv-agent-account-footer {
-    margin-top: 8px;
-  }
-
 }
 
 @media (max-width: 1023px) {
@@ -1228,7 +1204,9 @@ a {
 
   .lv-agent-profile-wrap,
   .lv-agent-profile,
-  .lv-agents-nav,
+  .lv-agents-nav {
+    width: 100%;
+  }
 
   .lv-agents-nav {
     gap: 12px;
@@ -1246,10 +1224,6 @@ a {
   .lv-agents-nav-item {
     width: 100%;
     height: 36px;
-  }
-
-  .lv-agent-feedback-link {
-    width: 100%;
   }
 
   .lv-agents-sidebar-tabs {

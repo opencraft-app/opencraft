@@ -114,15 +114,31 @@ git diff -w origin/master 的 settings page 仅侧栏 wrapper/import；正文与
 
 ## checkpoint
 
+### 2026-09-22 预览侧栏回归修复
+
+- 目标：修复探索/对话页签随导航滚动被裁切及与首项紧贴；把国内站反馈收回头像菜单，移除独立入口。
+- 范围：真实侧栏、加载态、局部 CSS、账号菜单反馈显隐及相关测试/README；不动正文、依赖、show/hide、OpenCraft。
+- 回归矩阵：正式/加载态页签不在滚动容器；桌面顶部/底部滚动页签固定且间距正常；账号菜单默认及 show 切换后仅一个反馈入口；国际站无反馈。
+- 已读取技能：baseline-ui、lightvela-web-validation；沿用本文件 context_receipt 的 frontend 服务与邻接卡，核对既有导航测试。
+- 修复前证据：3 个聚焦组件用例均在预期断言失败（页签包含关系、默认反馈缺失），日志 /tmp/sidebar-fix-red.log。预览浏览器实测页签上部随导航滚动被裁切。
+- 修复：探索/对话移出导航滚动区，保留原切换逻辑；桌面页签前后各 16px 间距，上边滚动阴影移到页签下沿；加载态同步。反馈仅在国内站账号菜单默认展示，复用既有“产品反馈”字典，无新文案。
+- 最新测试：上述 3 项修复后通过；6 个侧栏聚焦文件 104 项通过；global 环境 controller/header 2 文件 42 项通过。日志 /tmp/sidebar-fix-{green,focused,global}.log；未跑全量测试。
+- 最新 check：171 current / 171 baseline / 0 new，i18n 无缺译；日志 /tmp/sidebar-fix-check.log。
+- 浏览器证据：本地 mock 登录、CN、Chrome，http://127.0.0.1:5194/agents/；滚动顶部/底部页签完整固定，反馈只在菜单内，Escape 归还头像按钮焦点，探索/对话导航切换正常。截图 /tmp/lightvela-sidebar-fix/screenshots/；不等同于远端部署或真实计费验收。
+- 环境说明：首次 NEXT_DIST_DIR=.next-sidebar-fix 被 Tailwind 扫入缓存导致热更新 CSS 解析失败；改用 git-ignored 的 .next/sidebar-fix 后恢复，未改构建配置。
+- 最新 build：pnpm build 通过（CN）；首次与 dev 同时运行因缓存目录占用失败，停止本轮 dev 后完整重跑通过，日志 /tmp/sidebar-fix-build-final.log。撤回构建生成的无关字体差异，保留侧栏范围。
+- 文档：validate_documentation 无错误；实际本轮 diff 文件的 docs-impact 通过；context catalog 仅更新本 Pack 的 hash，仓库 context 校验仍因其他 Pack 等错误 exit 1，不扩修。
+- 未覆盖：移动端浏览器、国际站浏览器、真实账号服务端操作和远端预览新版本；本轮未提交或推送。报告 /tmp/lightvela-sidebar-fix/report.html。
+
 ### stage
-收敛收尾。
+侧栏两处预览回归已修复，本地验证收尾。
 ### verified
-master 已纳入，默认/global 125 项聚焦测试、check 与 cn build 通过。
+master 已纳入；本轮 104 项侧栏、42 项 global、3 项定向回归、check 与 CN build 通过，桌面 mock 浏览器回归完成；旧版 125 项仅为历史证据。
 ### unverified
-全量测试、master 基线对比、真实浏览器与发布状态。
+全量测试、master 基线对比、移动端/国际站浏览器与远端部署状态未验证。
 ### discard
 旧重构和旧门禁声明。
 ### restore
 独立 worktree frontsandbox/agents-sidebar-account-hit-area；原版本 6214001a0。
 ### next_action
-提交收敛结果后同步 metadata，推送现有分支并更新 MR 描述。
+交付本地修复及回归证据，等待用户提交/推送指示；不扩大业务修改范围。

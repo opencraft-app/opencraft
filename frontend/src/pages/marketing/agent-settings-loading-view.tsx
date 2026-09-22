@@ -32,13 +32,14 @@ export function AgentSettingsLoadingContent() {
           </div>
 
         </div>
+        <div className="lv-agents-sidebar-controls">
+          <div className="lv-agents-sidebar-tabs">
+            <span className="h-8 flex-1 rounded-full bg-white shadow-sm" />
+            <AgentSettingsSkeletonBlock className="h-8 flex-1 rounded-full" />
+          </div>
+        </div>
         <div className="lv-agents-sidebar-middle">
           <div className="flow-root">
-            <div className="lv-agents-sidebar-tabs">
-              <span className="h-8 flex-1 rounded-full bg-white shadow-sm" />
-              <AgentSettingsSkeletonBlock className="h-8 flex-1 rounded-full" />
-            </div>
-
             <nav className="lv-agents-nav">
               {sidebarGroups.map((itemCount, groupIndex) => (
                 <div key={groupIndex} className="lv-agents-nav-group">
@@ -56,11 +57,6 @@ export function AgentSettingsLoadingContent() {
                 </div>
               ))}
             </nav>
-
-            <div className="lv-agent-feedback-link">
-              <AgentSettingsSkeletonBlock className="size-3.5 rounded" />
-              <AgentSettingsSkeletonBlock className="h-3 w-24 rounded" />
-            </div>
 
           </div>
         </div>

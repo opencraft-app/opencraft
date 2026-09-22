@@ -1,10 +1,19 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSidebar } from "../agent-sidebar";
+import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("Agent sidebar scrolling", () => {
+  it("keeps loading tabs outside the scroll area and omits the standalone feedback placeholder", () => {
+    const { container } = render(<AgentSettingsLoadingContent />);
+    const tabs = container.querySelector(".lv-agents-sidebar-tabs");
+    const middle = container.querySelector(".lv-agents-sidebar-middle");
+    expect(tabs).not.toBeNull();
+    expect(middle).not.toContainElement(tabs as HTMLElement);
+    expect(container.querySelector(".lv-agent-feedback-link")).toBeNull();
+  });
   it("updates both edges on scroll and content resize, keeping profile and account outside the scroll area", () => {
     let resize: () => void = () => {};
     const disconnect = vi.fn();

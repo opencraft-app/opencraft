@@ -48,13 +48,12 @@ import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
-import { isCN, isGlobal } from "@/lib/region";
+import { isGlobal } from "@/lib/region";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
@@ -5996,50 +5995,51 @@ export const AgentSettingsPage = ({
                       </div>
 
                     </div>
-                    <div className="lv-agents-sidebar-middle">
-                      <div className="flow-root">
-                        {/* ── 侧边栏顶层「探索/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
-                        <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
+                    <div className="lv-agents-sidebar-controls">
+                      {/* ── 侧边栏顶层「探索/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
+                      <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={sidebarTab === "settings"}
+                          className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
+                          onClick={handleSidebarSettingsTabClick}
+                        >
+                          {t("探索")}
+                        </button>
+                        {/* 「对话」入口：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）时禁用，
+                            统一复用上游的 lv-agent-action-tooltip 做悬浮提示。 */}
+                        <span
+                          className={cn(
+                            "lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30",
+                            showBuddyOnboarding && "cursor-not-allowed opacity-40",
+                          )}
+                          tabIndex={isChatTabDisabled ? 0 : undefined}
+                          aria-describedby={isChatTabDisabled ? chatAvailabilityTooltipId : undefined}
+                        >
                           <button
                             type="button"
                             role="tab"
-                            aria-selected={sidebarTab === "settings"}
-                            className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
-                            onClick={handleSidebarSettingsTabClick}
+                            aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
+                            aria-disabled={isChatTabDisabled}
+                            aria-describedby={isActiveBotChatAvailable ? undefined : chatAvailabilityTooltipId}
+                            disabled={isChatTabDisabled}
+                            className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
+                            onClick={handleSidebarChatTabClick}
                           >
-                            {t("探索")}
+                            {t("对话")}
                           </button>
-                          {/* 「对话」入口：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）时禁用，
-                              统一复用上游的 lv-agent-action-tooltip 做悬浮提示。 */}
-                          <span
-                            className={cn(
-                              "lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30",
-                              showBuddyOnboarding && "cursor-not-allowed opacity-40",
-                            )}
-                            tabIndex={isChatTabDisabled ? 0 : undefined}
-                            aria-describedby={isChatTabDisabled ? chatAvailabilityTooltipId : undefined}
-                          >
-                            <button
-                              type="button"
-                              role="tab"
-                              aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
-                              aria-disabled={isChatTabDisabled}
-                              aria-describedby={isActiveBotChatAvailable ? undefined : chatAvailabilityTooltipId}
-                              disabled={isChatTabDisabled}
-                              className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
-                              onClick={handleSidebarChatTabClick}
-                            >
-                              {t("对话")}
-                            </button>
-                            {isChatTabDisabled && (
-                              <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
-                                {showBuddyOnboarding ? t("请先创建你的个人助手") : t("对话功能目前仅支持主 Bot")}
-                                <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
-                              </span>
-                            )}
-                          </span>
-                        </div>
-
+                          {isChatTabDisabled && (
+                            <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
+                              {showBuddyOnboarding ? t("请先创建你的个人助手") : t("对话功能目前仅支持主 Bot")}
+                              <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="lv-agents-sidebar-middle">
+                      <div className="flow-root">
                         {sidebarTab === "chat" && isActiveBotChatAvailable ? (
                           <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
                             <div className="lv-agents-nav-group" role="group">
@@ -6343,18 +6343,6 @@ export const AgentSettingsPage = ({
                             })}
                           </nav>
                         )}
-
-                        {sidebarTab === "settings" && isCN ? (
-                          <a
-                            href={PRODUCT_FEEDBACK_URL}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="lv-agent-feedback-link"
-                          >
-                            <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                            <span>{t("有建议？提交反馈")}</span>
-                          </a>
-                        ) : null}
 
                       </div>
                     </div>
