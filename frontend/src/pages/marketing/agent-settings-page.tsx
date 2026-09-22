@@ -92,6 +92,7 @@ import {
   getAgentSectionHref,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
+import { shouldMoveModelEntryToAccountMenu } from "@/lib/agent-plan-navigation";
 import type { Repositories, WorkerActionStatusResult } from "@/repositories/types";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
@@ -5671,19 +5672,16 @@ export const AgentSettingsPage = ({
                 path: string;
                 badge?: string;
               };
+              const moveModelEntryToAccountMenu = shouldMoveModelEntryToAccountMenu(activePass);
               const settingsGroups: { id: string; label: string; sections: SettingsSectionLink[] }[] = [
-                {
-                  id: "setup",
-                  label: t("配置"),
-                  sections: [
-                    { id: "channel", label: resolveAgentConsoleCollectionLabel("channel", i18n.language, t), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
-                    { id: "model", label: resolveAgentConsoleCollectionLabel("model", i18n.language, t), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
-                  ],
-                },
                 {
                   id: "use",
                   label: t("使用"),
                   sections: [
+                    { id: "channel", label: resolveAgentConsoleCollectionLabel("channel", i18n.language, t), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    ...(!moveModelEntryToAccountMenu
+                      ? [{ id: "model" as const, label: resolveAgentConsoleCollectionLabel("model", i18n.language, t), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model }]
+                      : []),
                     { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     { id: "automations", label: t("定时任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                   ],

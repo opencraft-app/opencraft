@@ -1,22 +1,31 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
+import { Bot, BrainCircuit, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
+import { useTranslation } from "react-i18next";
 import { InternationalLanguageMenu } from "@/components/site/language-switcher";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
-import { useAppNavigate } from "@/lib/app-navigation";
+import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { ACCOUNT_BILLING_PATH, AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import {
+  ACCOUNT_BILLING_PATH,
+  AGENTS_HOME_PATH,
+  AGENT_SECTION_PATH_BY_ID,
+  getAgentSectionHref,
+  shouldShowWorkbenchEntry,
+} from "@/lib/agent-routes";
+import { shouldMoveModelEntryToAccountMenu } from "@/lib/agent-plan-navigation";
 import { isGlobal } from "@/lib/region";
 import {
   installConsoleShowCommand,
   subscribeConsoleShow,
 } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
+import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 
 type UserAvatarMenuProps = {
   showLanguageSwitcher?: boolean;
@@ -30,7 +39,9 @@ export const UserAvatarMenu = ({
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
+  const { i18n } = useTranslation();
   const navigate = useAppNavigate();
+  const [searchParams] = useAppSearchParams();
   const user = session.user;
   const [open, setOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
@@ -91,6 +102,7 @@ export const UserAvatarMenu = ({
     revealed: hiddenEntriesRevealed,
   });
   const isSidebar = variant === "sidebar";
+  const showModelEntry = isSidebar && shouldMoveModelEntryToAccountMenu(activePass);
 
   return (
     <div
@@ -232,6 +244,16 @@ export const UserAvatarMenu = ({
                 <CreditCard className={menuIconClass} />
                 {t("套餐与费用")}
               </a>
+              {showModelEntry ? (
+                <a
+                  href={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams)}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <BrainCircuit className={menuIconClass} />
+                  {resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
+                </a>
+              ) : null}
               {showWorkbenchEntry ? (
                 <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}

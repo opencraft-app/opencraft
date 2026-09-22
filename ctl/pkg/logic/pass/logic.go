@@ -162,6 +162,7 @@ type PassDetail struct {
 
 	// 以下字段运行时从 Bundle / ai-gateway / user_resource_quota 拉取填充，不持久化
 	BundleName          string // 套餐名称（= bundle.bundle_name）
+	BundleType          string // 套餐类型（= bundle.bundle_type；free / general / ai）
 	CreditTotal         int64  // 套餐积分总量（active 且存在套餐订阅时 = bundle.credit）
 	CreditAvailable     int64  // 积分余量（= token_balance / credit_token_ratio）
 	FreeCreditTotal     int64  // 免费/额外积分总量（LLMGateway subscription_name=free-credit:*）
@@ -739,8 +740,7 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		return nil, fmt.Errorf("read back pass: %w", err)
 	}
 	detail := entityToDetail(saved)
-	detail.BundleName = bundle.BundleName
-	detail.CreditTotal = bundle.Credit
+	fillBundleMetadata(detail, bundle)
 	detail.CreditAvailable = bundle.Credit
 	return detail, nil
 }
@@ -1221,8 +1221,18 @@ func (l *logic) fillCredits(details []*PassDetail) {
 	}
 }
 
+func fillBundleMetadata(detail *PassDetail, bundle *bundlelogic.BundleDetail) {
+	if detail == nil || bundle == nil {
+		return
+	}
+	detail.BundleName = bundle.BundleName
+	detail.BundleType = bundle.BundleType
+	detail.CreditTotal = bundle.Credit
+}
+
 // fillCredit 为单个 PassDetail 填充 bundle / 配额 / ai-gateway 相关字段
 //   - bundle_name 从 bundle 读取
+//   - bundle_type 从 bundle 读取
 //   - credit_total 从 bundle.credit 读取；pass 非 active 或无套餐订阅时返回 0
 //   - credit_available 实时调 ai-gateway 查 subscription 换算；失败时返回 0 + 日志告警
 //   - agent_quota_total / agent_quota_available 从 user_resource_quota 表读取（v1.7.23 B18 新增,
@@ -1240,8 +1250,7 @@ func (l *logic) fillCredit(d *PassDetail) {
 		)
 		return
 	}
-	d.BundleName = bundle.BundleName
-	d.CreditTotal = bundle.Credit
+	fillBundleMetadata(d, bundle)
 
 	// v1.7.24 B19: agent_quota_total / agent_quota_available 都从 user_resource_quota
 	// 同一行读取 (resource_name=OPENCLAW_INSTANCE, resource_key="" — 与 Instance 模块共享
@@ -1692,8 +1701,7 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		return nil, fmt.Errorf("read back pass: %w", err)
 	}
 	detail := entityToDetail(saved)
-	detail.BundleName = bundle.BundleName
-	detail.CreditTotal = bundle.Credit
+	fillBundleMetadata(detail, bundle)
 	detail.CreditAvailable = bundle.Credit
 
 	logger.Info("complete pass succeeded", zap.String("pass_id", passID))
