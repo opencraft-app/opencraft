@@ -188,6 +188,7 @@ class BuildReleaseImageTests(unittest.TestCase):
         )
 
         with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
+            mock.patch("contracts.build_release_image.resolve_local_image_id", return_value="sha256:workers"), \
             mock.patch("contracts.build_release_image.push_image_with_retry") as push_image, \
             mock.patch("contracts.build_release_image.wait_for_remote_image") as wait, \
             mock.patch("contracts.build_release_image.remove_local_image") as remove, \
@@ -208,6 +209,7 @@ class BuildReleaseImageTests(unittest.TestCase):
             image,
             max_attempts=3,
             retry_interval_seconds=10,
+            local_image_id="sha256:workers",
         )
         wait.assert_called_once_with(
             "registry.example.com/lightclaw/workers:workers-test",
@@ -228,6 +230,7 @@ class BuildReleaseImageTests(unittest.TestCase):
         image = "registry.example.com/lightclaw/workers:workers-test"
 
         with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
+            mock.patch("contracts.build_release_image.resolve_local_image_id", return_value="sha256:workers"), \
             mock.patch(
                 "contracts.build_release_image.push_image_with_retry",
                 side_effect=RuntimeError("push failed"),
@@ -274,6 +277,41 @@ class BuildReleaseImageTests(unittest.TestCase):
 
         self.assertEqual(login.call_count, 2)
         self.assertEqual(run.call_count, 2)
+        verify.assert_called_once_with([image], skip_login=True)
+        sleep.assert_called_once_with(4)
+
+    def test_push_image_restores_missing_local_tag_before_retry(self) -> None:
+        image = "registry.example.com/lightclaw/workers:workers-test"
+        image_id = "sha256:workers"
+        push_error = subprocess.CalledProcessError(1, ["docker", "push", image])
+        missing_tag = subprocess.CompletedProcess(["docker", "image", "inspect", image], 1)
+
+        with mock.patch("contracts.build_release_image.docker_login") as login, \
+            mock.patch(
+                "contracts.build_release_image.run_command",
+                side_effect=[push_error, missing_tag, mock.DEFAULT, mock.DEFAULT],
+            ) as run, mock.patch(
+                "contracts.build_release_image.verify_images",
+                return_value=[ImageCheckResult(image, False)],
+            ) as verify, mock.patch("contracts.build_release_image.time.sleep") as sleep:
+            push_image_with_retry(
+                "registry.example.com/lightclaw/workers",
+                image,
+                max_attempts=3,
+                retry_interval_seconds=4,
+                local_image_id=image_id,
+            )
+
+        self.assertEqual(login.call_count, 2)
+        self.assertEqual(
+            run.call_args_list,
+            [
+                mock.call(["docker", "push", image], check=True),
+                mock.call(["docker", "image", "inspect", image], check=False, capture_output=True),
+                mock.call(["docker", "tag", image_id, image], check=True),
+                mock.call(["docker", "push", image], check=True),
+            ],
+        )
         verify.assert_called_once_with([image], skip_login=True)
         sleep.assert_called_once_with(4)
 
