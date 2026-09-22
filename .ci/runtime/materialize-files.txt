@@ -69,7 +69,6 @@
 .ci/runtime/bundles/frontend.bundle
 .ci/runtime/bundles/gateway-dashboard.bundle
 .ci/runtime/bundles/new-api.bundle
-.ci/runtime/bundles/nextgen-dashboard.bundle
 .ci/runtime/bundles/payment.bundle
 .ci/runtime/bundles/sandbox.bundle
 .ci/runtime/bundles/service-gateway.bundle
