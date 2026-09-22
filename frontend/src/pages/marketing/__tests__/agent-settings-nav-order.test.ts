@@ -52,10 +52,31 @@ describe("Agent settings navigation groups", () => {
     expect(use).toMatch(/id: "channel"[\s\S]*id: "model"[\s\S]*id: "skill"[\s\S]*id: "automations"/);
     expect(use).not.toContain('id: "website"');
     expect(use).not.toContain('id: "chat"');
-    expect(growth).toMatch(/id: "buddy"[\s\S]*id: "memory"[\s\S]*id: "achievement"/);
+    expect(growth.match(/id: "(buddy|memory|achievement)"/g)).toEqual([
+      'id: "buddy"',
+      'id: "memory"',
+      'id: "achievement"',
+    ]);
     expect(manage).toMatch(/id: "files"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"/);
     expect(manage).not.toContain('id: "labs"');
     expect(labs).toMatch(/id: "website"[\s\S]*id: "deepseek-harness"/);
+  });
+
+  it("keeps the achievements navigation route and panel wiring intact", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
+      "utf8",
+    );
+    const routes = readFileSync(
+      join(process.cwd(), "src/lib/agent-routes.ts"),
+      "utf8",
+    );
+
+    expect(routes).toContain('achievement: `${AGENTS_HOME_PATH}/achievements`');
+    expect(routes).toContain('achievements: "achievement"');
+    expect(page).toContain('import("@/pages/marketing/agent-achievements-panel")');
+    expect(page).toContain('activeSection === "achievement"');
+    expect(page).toContain('<AchievementsPanel botId={activeBot.id} botName={activeBot.name} />');
   });
 
   it("工作台导航入口默认显示，不再需要 show() 解锁", () => {
