@@ -29,6 +29,9 @@ type Deps struct {
 	ShadowClient          shadowclient.Client
 	SiteKind              string
 	RegionOverride        string
+	// Inquiry fallback is quote-only. Order paths always require ExternalUserID and never use it.
+	InquiryFallbackUin   string
+	InquiryFallbackAppID string
 }
 
 type Service struct {
@@ -81,7 +84,7 @@ type OrderResult struct {
 }
 
 func (s *Service) Quote(ctx context.Context, req Request) (*QuoteResult, error) {
-	def, normalized, err := s.prepare(ctx, req)
+	def, normalized, err := s.prepare(ctx, req, true)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +193,7 @@ func creditAmountCents(field, rawAmount, taxRate string) (string, error) {
 }
 
 func (s *Service) PlaceOrder(ctx context.Context, req Request) (*OrderResult, error) {
-	def, normalized, err := s.prepare(ctx, req)
+	def, normalized, err := s.prepare(ctx, req, false)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +231,7 @@ func (s *Service) PlaceOrder(ctx context.Context, req Request) (*OrderResult, er
 }
 
 func (s *Service) PlaceOrderAndPay(ctx context.Context, req Request) (*OrderResult, error) {
-	def, normalized, err := s.prepare(ctx, req)
+	def, normalized, err := s.prepare(ctx, req, false)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +281,7 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req Request) (*OrderResu
 	return s.writeOrder(ctx, normalized, def, resp.BigDealIDs[0], dealName, status, resourceID, "")
 }
 
-func (s *Service) prepare(ctx context.Context, req Request) (*store.CreditDefinition, Request, error) {
+func (s *Service) prepare(ctx context.Context, req Request, quoteOnly bool) (*store.CreditDefinition, Request, error) {
 	req.ExternalUserID = strings.TrimSpace(req.ExternalUserID)
 	req.Uin = strings.TrimSpace(req.Uin)
 	req.AppID = strings.TrimSpace(req.AppID)
@@ -296,7 +299,7 @@ func (s *Service) prepare(ctx context.Context, req Request) (*store.CreditDefini
 	if req.PayMode == 0 {
 		req.PayMode = 1
 	}
-	if req.ExternalUserID == "" {
+	if req.ExternalUserID == "" && !quoteOnly {
 		return nil, req, fmt.Errorf("%w: external_user_id is required", ErrInvalidInput)
 	}
 	if req.ProductID == "" {
@@ -311,18 +314,25 @@ func (s *Service) prepare(ctx context.Context, req Request) (*store.CreditDefini
 	if err := validatePeriod(req.TimeSpan, req.TimeUnit); err != nil {
 		return nil, req, err
 	}
-	if req.Uin == "" && s.deps.ShadowClient != nil {
+	if req.Uin == "" && req.ExternalUserID != "" && s.deps.ShadowClient != nil {
 		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
 		if err != nil {
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
-				return nil, req, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+				if !quoteOnly || !s.applyInquiryFallbackIdentity(&req) {
+					return nil, req, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+				}
+			} else {
+				return nil, req, fmt.Errorf("creditorder: shadow GetBindingByExternalUserID: %w", err)
 			}
-			return nil, req, fmt.Errorf("creditorder: shadow GetBindingByExternalUserID: %w", err)
+		} else {
+			req.Uin = strings.TrimSpace(binding.Uin)
+			if req.AppID == "" {
+				req.AppID = strings.TrimSpace(binding.AppID)
+			}
 		}
-		req.Uin = strings.TrimSpace(binding.Uin)
-		if req.AppID == "" {
-			req.AppID = strings.TrimSpace(binding.AppID)
-		}
+	}
+	if req.Uin == "" && quoteOnly {
+		s.applyInquiryFallbackIdentity(&req)
 	}
 	if req.Uin == "" {
 		return nil, req, fmt.Errorf("%w: uin is required", ErrInvalidInput)
@@ -338,6 +348,17 @@ func (s *Service) prepare(ctx context.Context, req Request) (*store.CreditDefini
 		return nil, req, fmt.Errorf("creditorder: get credit definition: %w", err)
 	}
 	return def, req, nil
+}
+
+func (s *Service) applyInquiryFallbackIdentity(req *Request) bool {
+	fallbackUin := strings.TrimSpace(s.deps.InquiryFallbackUin)
+	fallbackAppID := strings.TrimSpace(s.deps.InquiryFallbackAppID)
+	if fallbackUin == "" || fallbackAppID == "" {
+		return false
+	}
+	req.Uin = fallbackUin
+	req.AppID = fallbackAppID
+	return true
 }
 
 func (s *Service) writeOrder(ctx context.Context, req Request, def *store.CreditDefinition, bigOrderID string, dealName string, status string, resourceID string, payURL string) (*OrderResult, error) {
@@ -376,11 +397,13 @@ func buildGoodsDetail(def *store.CreditDefinition, req Request) map[string]inter
 		"pid":             def.Pid,
 		"goodsNum":        req.GoodsNum,
 		"productId":       req.ProductID,
-		"externalUserId":  req.ExternalUserID,
 		"timeSpan":        1,
 		"timeUnit":        "p",
 		"packageTimeSpan": req.TimeSpan,
 		"packageTimeUnit": req.TimeUnit,
+	}
+	if req.ExternalUserID != "" {
+		out["externalUserId"] = req.ExternalUserID
 	}
 	for k, v := range def.SVList {
 		out[k] = v

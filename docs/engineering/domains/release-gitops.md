@@ -191,6 +191,10 @@ master 源码
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
   `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成
   接线后启用该路由；共享源码或策略测试不能替代目标地域的独立发布验收。
+- 匿名积分包询价必须按 Trade → Credit → Service Gateway 的顺序发布：Trade 先支持仅询价使用的
+  环境级 fallback UIN/AppID，Credit 再接受可选用户身份，最后才将精确的
+  `POST /v1/credit/inquiry` 加入 `optional_auth_allow`。下单、支付、退款和资源查询不得随该入口放宽；
+  国内与国际各环境必须分别验证 fallback 配置、最终 Kustomize 渲染和真实未登录询价。
 
 ### Referral 北京与上海交付
 

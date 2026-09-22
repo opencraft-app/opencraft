@@ -51,9 +51,14 @@ func (w *fakeOrderWriter) MarkOrderCancelled(context.Context, string) error {
 	return errors.New("not used")
 }
 
-type fakeShadow struct{}
+type fakeShadow struct {
+	getBindingFn func(context.Context, string) (*shadowclient.Binding, error)
+}
 
-func (fakeShadow) GetBindingByExternalUserID(_ context.Context, externalUserID string) (*shadowclient.Binding, error) {
+func (f fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	if f.getBindingFn != nil {
+		return f.getBindingFn(ctx, externalUserID)
+	}
 	return &shadowclient.Binding{UserID: externalUserID, Uin: "700000164995", AppID: "1300000001"}, nil
 }
 
@@ -148,6 +153,73 @@ func TestQuoteBuildsCreditGoodsDetail(t *testing.T) {
 	}
 	if detail["timeSpan"] != 1 || detail["timeUnit"] != "p" || detail["packageTimeSpan"] != 1 || detail["packageTimeUnit"] != "m" {
 		t.Fatalf("resource package goodsDetail has wrong billing periods: %+v", detail)
+	}
+}
+
+func TestQuoteAnonymousUsesConfiguredFallbackIdentity(t *testing.T) {
+	jifei := &fakeJifei{}
+	svc := New(Deps{
+		CreditDefinitionStore: fakeCreditDefStore{def: stdCreditDefinition()},
+		JifeiClient:           jifei,
+		OrderWriter:           &fakeOrderWriter{},
+		ShadowClient:          fakeShadow{},
+		InquiryFallbackUin:    "450850000019",
+		InquiryFallbackAppID:  "1472039146",
+	})
+
+	_, err := svc.Quote(context.Background(), Request{ProductID: "credit_prod_100"})
+	if err != nil {
+		t.Fatalf("quote: %v", err)
+	}
+	if jifei.lastPriceReq == nil {
+		t.Fatal("expected GetPrice request")
+	}
+	if jifei.lastPriceReq.OwnerUin != "450850000019" || jifei.lastPriceReq.Uin != "450850000019" {
+		t.Fatalf("quote identity=%q/%q, want fallback uin", jifei.lastPriceReq.OwnerUin, jifei.lastPriceReq.Uin)
+	}
+	detail := jifei.lastPriceReq.ResInfo[0].GoodsDetail
+	if _, exists := detail["externalUserId"]; exists {
+		t.Fatalf("anonymous quote must omit externalUserId: %+v", detail)
+	}
+}
+
+func TestQuoteUnboundUserUsesConfiguredFallbackIdentity(t *testing.T) {
+	jifei := &fakeJifei{}
+	svc := New(Deps{
+		CreditDefinitionStore: fakeCreditDefStore{def: stdCreditDefinition()},
+		JifeiClient:           jifei,
+		OrderWriter:           &fakeOrderWriter{},
+		ShadowClient: fakeShadow{getBindingFn: func(context.Context, string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		}},
+		InquiryFallbackUin:   "330500000004",
+		InquiryFallbackAppID: "1447552654",
+	})
+
+	_, err := svc.Quote(context.Background(), Request{
+		ExternalUserID: "usr-unbound",
+		ProductID:      "credit_prod_100",
+	})
+	if err != nil {
+		t.Fatalf("quote: %v", err)
+	}
+	if jifei.lastPriceReq == nil || jifei.lastPriceReq.Uin != "330500000004" {
+		t.Fatalf("quote request=%+v, want fallback identity", jifei.lastPriceReq)
+	}
+}
+
+func TestPlaceOrderStillRejectsAnonymousUser(t *testing.T) {
+	svc := New(Deps{
+		CreditDefinitionStore: fakeCreditDefStore{def: stdCreditDefinition()},
+		JifeiClient:           &fakeJifei{},
+		OrderWriter:           &fakeOrderWriter{},
+		InquiryFallbackUin:    "330500000004",
+		InquiryFallbackAppID:  "1447552654",
+	})
+
+	_, err := svc.PlaceOrder(context.Background(), Request{ProductID: "credit_prod_100"})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error=%v, want ErrInvalidInput", err)
 	}
 }
 

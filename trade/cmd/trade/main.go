@@ -194,6 +194,8 @@ func main() {
 		ShadowClient:          shadowClient,
 		SiteKind:              cfg.SiteKind,
 		RegionOverride:        cfg.CreditRegionOverride,
+		InquiryFallbackUin:    cfg.InquiryFallbackUin,
+		InquiryFallbackAppID:  cfg.InquiryFallbackAppID,
 	})
 	var creditUsageSvc *creditusage.Service
 	if cfg.CreditSendResourceURL != "" {

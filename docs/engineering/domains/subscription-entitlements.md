@@ -35,6 +35,9 @@
   `LIGHTVELA_CREDIT_REGION` 仅控制 Credit 询价、下单、退款、资源回调和用量上报；后者未配置时
   继承前者。已接入环境分别使用北京 `ap-beijing`、东京 `ap-seoul`、上海 `ap-shanghai`、新加坡
   `ap-singapore`；单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
+- Credit 商品询价是可选登录态的展示链路。已登录请求优先按用户影子账号询价；匿名或尚未绑定
+  影子账号的请求只允许使用目标环境的 `TRADE_INQUIRY_FALLBACK_UIN/APP_ID` 获取价格。该身份不得
+  进入下单、支付、退款或资源归属链路，Service Gateway 也只能对精确的 Credit inquiry 路径放行。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
 - Pass 升配（同 SP 或产品允许的跨 SP）是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
   `trade_order` 保持 `paid_pending_provision`、`trade_flow` 保持 `in_progress`；只有

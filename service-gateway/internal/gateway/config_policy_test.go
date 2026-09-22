@@ -188,7 +188,7 @@ func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	t.Fatal("auth-payment-methods route not found")
 }
 
-func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, wantUpstream string) {
+func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, wantUpstream string, wantRealname bool) {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -218,8 +218,8 @@ func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, want
 		if route.Upstream != wantUpstream {
 			t.Fatalf("credit upstream=%q", route.Upstream)
 		}
-		if !route.RequireRealname {
-			t.Fatal("credit route must require realname")
+		if route.RequireRealname != wantRealname {
+			t.Fatalf("credit require_realname=%v, want %v", route.RequireRealname, wantRealname)
 		}
 		if route.PathPolicy != PathPolicyAllowlist {
 			t.Fatalf("credit path_policy=%q, want allowlist", route.PathPolicy)
@@ -236,13 +236,18 @@ func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, want
 				t.Fatalf("credit allowlist missing %s", path)
 			}
 		}
-		wantOptionalAuth := http.MethodPost + " /v1/credit/packages/order-url"
-		if len(route.OptionalAuthAllow) != 1 {
-			t.Fatalf("credit optional auth allowlist=%+v, want only %s", route.OptionalAuthAllow, wantOptionalAuth)
+		wantOptionalAuth := map[string]struct{}{
+			http.MethodPost + " /v1/credit/inquiry":            {},
+			http.MethodPost + " /v1/credit/packages/order-url": {},
 		}
-		gotOptionalAuth := route.OptionalAuthAllow[0].Method + " " + route.OptionalAuthAllow[0].Path
-		if gotOptionalAuth != wantOptionalAuth {
-			t.Fatalf("credit optional auth route=%s, want %s", gotOptionalAuth, wantOptionalAuth)
+		if len(route.OptionalAuthAllow) != len(wantOptionalAuth) {
+			t.Fatalf("credit optional auth allowlist=%+v, want=%+v", route.OptionalAuthAllow, wantOptionalAuth)
+		}
+		for _, rule := range route.OptionalAuthAllow {
+			key := rule.Method + " " + rule.Path
+			if _, ok := wantOptionalAuth[key]; !ok {
+				t.Fatalf("unexpected credit optional auth route=%s", key)
+			}
 		}
 		return
 	}
@@ -254,6 +259,7 @@ func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
 		t,
 		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
 		"http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local",
+		true,
 	)
 }
 
@@ -262,6 +268,34 @@ func TestBeijingCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
 		t,
 		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
 		"http://credit.credit.svc.cluster.local",
+		true,
+	)
+}
+
+func TestShanghaiCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/shprod/config.yaml",
+		"http://credit.credit.svc.cluster.local",
+		true,
+	)
+}
+
+func TestSingaporeCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/sgprod/config.yaml",
+		"http://credit.credit.svc.cluster.local",
+		false,
+	)
+}
+
+func TestTokyoCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/sandbox-jp-1/config.yaml",
+		"http://credit.lightvela-playground-sandbox-jp-1.svc.cluster.local",
+		true,
 	)
 }
 
