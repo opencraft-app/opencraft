@@ -7,6 +7,16 @@ export interface DshCapabilityRegistrationResult {
   readonly deferred?: boolean;
 }
 
+function bridgeFailureDetail(text: string): string | null {
+  try {
+    const value = JSON.parse(text) as { code?: unknown };
+    return typeof value.code === "string" && ["CAPABILITY_CONFLICT", "CAPABILITY_INVALID", "ENGINE_OPERATION_FAILED"].includes(value.code)
+      ? value.code : null;
+  } catch {
+    return null;
+  }
+}
+
 export function verifyDshCapabilityRegistration(
   expected: number,
   result: DshCapabilityRegistrationResult,
@@ -45,8 +55,13 @@ export class DshCapabilityLink {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(5000)]),
     });
-    if (!response.ok) throw new Error("DSH capability bridge request failed: " + response.status);
-    return response.json();
+    const text = await response.text();
+    if (endpoint !== this.endpoint) throw new Error("DSH bridge generation changed; retry required");
+    if (!response.ok) {
+      const detail = bridgeFailureDetail(text);
+      throw new Error(`DSH capability bridge request failed: ${response.status}${detail === null ? "" : ` (${detail})`}`);
+    }
+    return text.length === 0 ? {} : JSON.parse(text);
   }
   async register(threadId: string): Promise<DshCapabilityRegistrationResult> {
     return this.request("/register", {
@@ -71,6 +86,9 @@ export class DshCapabilityLink {
     await this.request("/skills/invalidate", {}, endpoint);
     if (endpoint !== this.endpoint) throw new Error("DSH restarted during Skill refresh; retry required");
   }
+  async validateSkillInvocations(threadId: string, skills: readonly { name: string; path: string }[]): Promise<void> {
+    await this.request("/skills/validate-invocations", { sessionId: this.routing?.native(threadId) ?? threadId, skills });
+  }
   async permissions(threadId?: string, preset?: string): Promise<any> {
     return this.request("/permissions", { ...(threadId ? { sessionId: this.routing?.native(threadId) ?? threadId } : {}), ...(preset ? { preset } : {}) });
   }
@@ -82,7 +100,7 @@ export class DshCapabilityLink {
     return this.request("/generation", input) as Promise<{ sessionId: string; generation: number; interruptedTurns: number; seedThroughSeq: number; seedThroughTurn: number }>;
   }
   async unregister(threadId: string) {
-    await this.request("/unregister", { sessionId: this.routing?.native(threadId) ?? threadId }).catch(() => undefined);
+    await this.request("/unregister", { sessionId: this.routing?.native(threadId) ?? threadId });
   }
   private async poll() {
     while (!this.controller.signal.aborted) {

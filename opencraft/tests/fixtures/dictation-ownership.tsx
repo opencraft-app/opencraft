@@ -1,4 +1,4 @@
-import { createRoot } from "react-dom/client";
+import { createIntlTestRoot as createRoot } from "./intl-root";
 import { CodexComposer } from "@opencraft/codex-composer";
 import { createComposerController, legacyContentBlocksToComposer, composerDocumentToPlainText } from "@opencraft/composer-core";
 import { createConversationKey } from "@opencraft/chat-core";

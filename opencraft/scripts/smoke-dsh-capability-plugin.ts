@@ -9,6 +9,8 @@ import { DshClient } from "../apps/local-agent-host/src/dsh-client.js";
 import { createServer } from "node:http";
 import { DshModelEngineAdapter } from "../apps/local-agent-host/src/model-config/dsh-adapter.js";
 import { OPENCRAFT_BROWSER_DYNAMIC_TOOLS } from "../packages/browser-appserver/src/dynamic-tools.js";
+import { OPENCRAFT_TERMINAL_DYNAMIC_TOOLS } from "../packages/workbench-runtime/src/conversation-terminal-tools.js";
+import { OPENCRAFT_CONNECTOR_DYNAMIC_TOOLS } from "../packages/workbench-runtime/src/connectors/dynamic-tools.js";
 import { DshCapabilityBroker } from "../apps/local-agent-host/src/dsh-capability-broker.js";
 const root = await mkdtemp(join(tmpdir(), "dsh-capability-plugin-"));
 const originalNodeOptions = process.env.NODE_OPTIONS;
@@ -77,6 +79,28 @@ try {
     providers: [{ id: "fixture-provider", name: "Fixture", protocol: "openai-completions", baseUrl: `http://127.0.0.1:${(model.address() as {port:number}).port}/v1`, credentialRef: "FIXTURE", enabled: true, models: [{ id: "fixture", enabled: true }] }],
     defaultModel: { providerId: "fixture-provider", modelId: "fixture" },
   }, { resolve: async () => "synthetic-key" });
+  const createWithCapabilities = async (sessionId: string, capabilities: unknown[]) => {
+    const response = await fetch(bridge + "/thread/create", {
+      method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+      body: JSON.stringify({ sessionId, cwd: root, provider: "fixture-provider", model: "fixture", capabilities }),
+    });
+    return { status: response.status, result: await response.json() };
+  };
+  const invalidCreation = await createWithCapabilities("invalid-capability-creation", [{
+    id: "invalid", name: "invalid", description: "invalid", inputSchema: { type: "not-a-type" },
+  }]);
+  assert.equal(invalidCreation.status, 400);
+  const afterFailure = await client.call<{ items: Array<{ sessionId: string }> }>("session.list");
+  assert.equal(afterFailure.items.some(item => item.sessionId === "invalid-capability-creation"), false,
+    "failed setup must not publish a native session");
+  const initialCapability = { id: "initial", name: "initial_tool", description: "initial", inputSchema: { type: "object", properties: {} } };
+  const createdWithCapabilities = await createWithCapabilities("prepared-capability-creation", [initialCapability]);
+  assert.equal(createdWithCapabilities.status, 200, JSON.stringify(createdWithCapabilities.result));
+  const reattach = await fetch(bridge + "/register", {
+    method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+    body: JSON.stringify({ sessionId: "prepared-capability-creation", capabilities: [initialCapability] }),
+  });
+  assert.equal(reattach.status, 200, "initial setup mount is idempotent on attachment");
   const session = await client.call<{sessionId: string}>("session.create", { cwd: root });
   await querySkills(session.sessionId);
   const localSkill = join(root, ".agents", "skills", "fresh-skill");
@@ -90,10 +114,22 @@ try {
   assert.ok(modelCatalog.skills.some(skill => skill.name === "fresh-skill"), "native model skill catalog observes the same project skill");
   const denied = await fetch(bridge + "/events");
   assert.equal(denied.status, 401);
-  const browserCapabilities = new DshCapabilityBroker().register(session.sessionId, { connectionId: "fixture", identity: { id: "fixture", username: "fixture" } }, OPENCRAFT_BROWSER_DYNAMIC_TOOLS, () => {});
-  const registered = await fetch(bridge + "/register", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" },
-    body: JSON.stringify({ sessionId: session.sessionId, capabilities: [...browserCapabilities, { id: "fixture", name: "fixture_capability", description: "Fixture capability", inputSchema: { type: "object", properties: {} } }] }) });
-  assert.equal(registered.status, 200, await registered.text());
+  const workbenchCapabilities = new DshCapabilityBroker().register(session.sessionId, { connectionId: "fixture", identity: { id: "fixture", username: "fixture" } }, [
+    ...OPENCRAFT_BROWSER_DYNAMIC_TOOLS,
+    ...OPENCRAFT_TERMINAL_DYNAMIC_TOOLS,
+    ...OPENCRAFT_CONNECTOR_DYNAMIC_TOOLS,
+  ], () => {});
+  const registerBody = JSON.stringify({ sessionId: session.sessionId, capabilities: [...workbenchCapabilities, { id: "fixture", name: "fixture_capability", description: "Fixture capability", inputSchema: { type: "object", properties: {} } }] });
+  const registrations = await Promise.all([1, 2].map(() => fetch(bridge + "/register", {
+    method: "POST",
+    headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+    body: registerBody,
+  })));
+  assert.deepEqual(
+    registrations.map(response => response.status),
+    [200, 200],
+    `same-session registration must be idempotent: ${await Promise.all(registrations.map(response => response.text()))}`,
+  );
   const skills = await fetch(bridge + "/skills", { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" },
     body: JSON.stringify({ sessionId: session.sessionId, cwd: root }) }).then(response => response.json()) as any;
   assert.ok(skills.skills.some((skill: any) => skill.name === "opencraft-host-tools" && skill.path.endsWith("/SKILL.md")));

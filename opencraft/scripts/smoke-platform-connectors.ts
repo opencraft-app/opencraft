@@ -36,21 +36,21 @@ function findToolRef(value: unknown): string | undefined {
 const model = createServer(async (req, res) => {
   let text = ""; for await (const chunk of req) text += chunk;
   const body = JSON.parse(text), base = { id: "fixture", created: 1, model: "fixture" };
-  const isAgent = body.stream && body.tools?.some((t: any) => t.function?.name === "connectors_list_tools");
+  const isAgent = body.stream && body.tools?.some((t: any) => t.function?.name === "connectors__search_tools");
   let message: unknown = { role: "assistant", content: "Connector fixture complete" }, finish = "stop";
   if (isAgent) {
     modelRequests.push(body);
     let name: string | undefined, args: unknown = {};
-    if (stage === 0) name = "connectors_search_tools";
+    if (stage === 0) name = "connectors__search_tools";
     if (stage === 1) {
       toolRef = body.messages.filter((m: any) => m.role === "tool").map((m: any) => findToolRef(m.content)).find(Boolean) ?? "";
-      name = "connectors_get_tool"; args = { toolRefs: [toolRef] };
+      name = "connectors__get_tool"; args = { toolRefs: [toolRef] };
     }
     if (stage === 2) {
       handle = body.messages.filter((m: any) => m.role === "tool").map((m: any) => findHandle(m.content)).find(Boolean) ?? "";
-      name = "connectors_call_tool"; args = { handle, arguments: { text: "actual-call" } };
+      name = "connectors__call_tool"; args = { handle, arguments: { text: "actual-call" } };
     }
-    if (stage === 4) { name = "connectors_call_tool"; args = { handle, arguments: { text: "must-not-run" } }; }
+    if (stage === 4) { name = "connectors__call_tool"; args = { handle, arguments: { text: "must-not-run" } }; }
     if (name) { message = { role: "assistant", tool_calls: [{ index: 0, id: `fixture-${stage}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] }; finish = "tool_calls"; }
     stage++;
   }

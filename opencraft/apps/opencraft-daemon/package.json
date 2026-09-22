@@ -10,7 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/account-pool-host": "0.1.0",
     "@opencraft/app-host-server": "0.1.0",
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/appserver-transport-websocket": "0.1.0",
     "@opencraft/daemon-ipc": "0.1.0",
     "@opencraft/local-agent-host": "0.1.0",

@@ -1,3 +1,4 @@
+import { validateThemeOptions } from "@opencraft/design-system/theme-options";
 import {
   assertOwnedContributionId,
   type BotContribution,
@@ -207,7 +208,13 @@ const colorPattern = /^#[0-9a-f]{6}$/iu;
 function validateTheme(owner: ExtensionActivationIdentity, value: ThemeContribution): void {
   assertOwnedContributionId(owner.extensionId, value.id);
   requireLabel(value.label, `Theme ${value.id} label`);
+  if (!value.palettes?.light || !value.palettes?.dark) throw new TypeError("Theme requires light and dark palettes");
   for (const [mode, palette] of Object.entries(value.palettes)) {
+    if (mode !== "light" && mode !== "dark") throw new TypeError(`Invalid theme mode: ${mode}`);
+    validateThemeOptions(palette.surfaces, palette.material);
+    for (const name of ["diffAdded", "diffRemoved", "skill"] as const) {
+      if (!colorPattern.test(palette.semanticColors?.[name])) throw new TypeError(`Missing theme semantic color: ${name}`);
+    }
     if (!Number.isFinite(palette.contrast) || palette.contrast < 0 || palette.contrast > 100) {
       throw new RangeError(`Theme ${value.id} ${mode} contrast must be between 0 and 100`);
     }
@@ -314,6 +321,8 @@ function freezeNavigation(value: NavigationContribution): NavigationContribution
 function freezeTheme(value: ThemeContribution): ThemeContribution {
   const freezePalette = (palette: ThemeContribution["palettes"]["light"]) => Object.freeze({
     ...palette,
+    ...(palette.surfaces === undefined ? {} : { surfaces: Object.freeze({ ...palette.surfaces }) }),
+    ...(palette.material === undefined ? {} : { material: Object.freeze({ ...palette.material }) }),
     semanticColors: Object.freeze({ ...palette.semanticColors }),
   });
   return Object.freeze({

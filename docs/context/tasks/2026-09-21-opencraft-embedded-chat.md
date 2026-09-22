@@ -39,6 +39,9 @@ Host; it must not switch the canvas onto the separate Bot conversation protocol.
 - User requirement: run both chat implementations initially; legacy AgentChat remains the default, and the new OpenCraft Chat replaces it only after an explicit successful `show()` boundary.
 - User requirement: no iframe; omit the OpenCraft sidebar and reuse the remaining Chat implementation.
 - User requirement: existing OpenCraft behavior should remain unaffected; provide a reusable embed mode.
+- User follow-up (2026-09-21): production must actually wire the Embedded
+  artifact; co-hosting must not fold OpenCraft into the Next main bundle or
+  increase the default page download.
 
 ## interface_refs / data_structure_refs
 
@@ -72,12 +75,18 @@ Host; it must not switch the canvas onto the separate Bot conversation protocol.
   It selects an OpenCraft Draft immediately and adds no recent Thread until the
   first submission is accepted.
 - Automatic prompt delivery is routed through the current owner instead of document-global DOM discovery.
+- Frontend Pages artifacts stage an independent, content-addressed OpenCraft
+  subtree at `/__opencraft/`; no loader request occurs before rollout enablement,
+  and a missing Embedded input fails the artifact build instead of silently
+  shipping a permanently legacy-only release.
 
 ## affected_paths
 
 - `opencraft/apps/workbench-web/src/**`
 - `opencraft/plugins/bot-chat/src/**` only if a narrow reusable surface contract is required.
 - `frontend/src/pages/marketing/**`
+- `frontend/scripts/{release-matrix,build-release-artifacts}*`,
+  `frontend/release-matrix.json`, and `.ci/frontend.yml` for production artifact wiring.
 - Focused OpenCraft/frontend tests.
 - `opencraft/docs/platform-architecture.md` and/or `opencraft/docs/chat-ui-architecture.md` for the durable embed contract.
 
@@ -196,6 +205,22 @@ Host; it must not switch the canvas onto the separate Bot conversation protocol.
 - Secondary-Bot route correction waits for persisted reveal hydration, so a
   cold reload of an enabled `/agents/chat/?bot=<profile>` cannot redirect to
   Channels from the server-compatible false first frame.
+- Production diagnosis on `https://lightvela.ai/agents/chat/` found release
+  `20260921100241-b79c792c87ae-global`: reveal was enabled (Terminal and Browser
+  were visible), but Legacy AgentChat remained owner, no Embedded custom element
+  or loader script existed, and the same-origin loader returned 404. This closed
+  the issue as missing production artifact wiring, not a `show()` state failure.
+- The dedicated `embedded-workbench` Vite target builds only the Web Component
+  graph under `/__opencraft/`: 320 public files, zero sourcemaps, about 17.4 MB
+  raw / 5.88 MB Brotli. In an isolated full global Next build, the final Pages
+  artifact was about 1.0 GB and the staged subtree 18 MB (about 1.8%); the Chat
+  HTML contained no eager loader reference and the loader URL appeared in one
+  lazy business chunk. A same-origin browser probe loaded the stable loader and
+  defined `opencraft-embedded-workbench` successfully.
+- Release matrix/staging tests passed 40/40; OpenCraft Workbench typecheck,
+  9/9 Web release tests, the focused CI workflow contract and frontend `pnpm
+  check` passed. The full isolated international static build generated 650
+  pages and staged the loader, content-addressed assets and version metadata.
 
 ## risks
 
@@ -234,6 +259,10 @@ Host; it must not switch the canvas onto the separate Bot conversation protocol.
   `thread/name/set -> session.title`; confirmed deletion maps
   `thread/delete -> session.close + session.delete`.
 - Keep the stable embed loader mutable but point it only at a content-addressed Vite entry; use the loader origin as the Shadow DOM asset base.
+- Co-package the independent Embedded target with each reviewed frontend Pages
+  artifact under a same-origin namespace. Do not import it into Next chunks;
+  build it once per source revision, reuse it across release combos, and reject
+  artifact creation when its loader/manifest/version input is incomplete.
 
 ## scan_scope
 
@@ -248,10 +277,12 @@ Host; it must not switch the canvas onto the separate Bot conversation protocol.
 
 ## handoff
 
-- Status: ordinary Thread/Draft embedded presentation and authenticated local
-  adoption are implemented and verified; release remains out of scope.
-- Next: add production artifact wiring and exercise an actual first submission
-  only when external model execution is explicitly in scope.
+- Status: ordinary Thread/Draft embedded presentation, authenticated local
+  adoption and production artifact source wiring are implemented and verified.
+  No production release was started in this task turn.
+- Next: commit/review the source change, build the frontend artifact matrix and
+  publish the approved international Pages artifact; then verify public loader,
+  adoption and an actual first submission when external model execution is in scope.
 - Blockers: none for the local presentation. AgentChat conversation identity is
   intentionally not migrated; the embedded session list comes from ordinary
   AppServer Thread authority.

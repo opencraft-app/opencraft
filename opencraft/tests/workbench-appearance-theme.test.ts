@@ -5,12 +5,15 @@ import { ExtensionContributionStore } from "@opencraft/extension-runtime";
 import {
   buildCodexThemeCssProperties,
   codexThemePalette,
+  frostThemePalette,
+  lavenderThemePalette,
+  zenCodeThemePalette,
   velaThemePalette,
 } from "@opencraft/design-system/theme-engine";
 
 test("utility controls receive semantic status colors in both themes and accept theme overrides", () => {
   for (const mode of ["light", "dark"] as const) {
-    for (const definition of [codexThemePalette[mode], velaThemePalette[mode]]) {
+    for (const definition of [codexThemePalette[mode], velaThemePalette[mode], frostThemePalette[mode], lavenderThemePalette[mode]]) {
       const css = buildCodexThemeCssProperties(mode, definition);
       for (const key of ["--color-text-warning", "--color-text-danger", "--color-status-success", "--color-usage-track", "--color-dialog-scrim", "--elevation-dialog-utility"]) {
         assert.ok(css[key], `${mode} must define ${key}`);
@@ -22,6 +25,49 @@ test("utility controls receive semantic status colors in both themes and accept 
     assert.equal(custom["--color-text-warning"], "#9b4a00");
     assert.equal(custom["--color-text-danger"], "#b42318");
     assert.equal(custom["--color-status-success"], "#18743b");
+  }
+});
+
+test("ZenCode uses layered neutral surfaces without changing shared geometry", () => {
+  const light = buildCodexThemeCssProperties("light", zenCodeThemePalette.light);
+  const dark = buildCodexThemeCssProperties("dark", zenCodeThemePalette.dark);
+  assert.equal(light["--color-background-surface"], "#f8f8f8");
+  assert.equal(light["--codex-sidebar-material-background"], "#f0f0f0");
+  assert.equal(light["--color-background-panel"], "#ffffff");
+  assert.equal(dark["--color-background-surface"], "#161616");
+  assert.equal(dark["--color-background-panel"], "#202020");
+  assert.equal(dark["--color-background-input"], "#2b2b2b");
+  assert.equal(dark["--color-background-elevated-primary-opaque"], "#2b2b2b");
+  for (const css of [light, dark]) {
+    assert.equal(css["--codex-sidebar-material-filter"], "none");
+    assert.equal(css["--codex-main-surface-elevation"], "none");
+    assert.ok(Object.keys(css).every(key => !/height|width|font-size/u.test(key)));
+  }
+});
+
+test("Frost owns a fixed half-opacity cool Sidebar material", () => {
+  const light = buildCodexThemeCssProperties("light", frostThemePalette.light);
+  const dark = buildCodexThemeCssProperties("dark", frostThemePalette.dark);
+  assert.equal(light["--codex-sidebar-material-background"], "rgb(226 244 250 / 35%)");
+  assert.equal(dark["--codex-sidebar-material-background"], "rgb(20 37 46 / 35%)");
+  assert.equal(light["--codex-sidebar-material-filter"], "blur(28px) saturate(145%)");
+  assert.doesNotMatch(light["--codex-sidebar-material-background"], /color-mix|calc|var\(/u);
+});
+
+test("Lavender projects a complete soft-purple surface hierarchy without geometry", () => {
+  const light = buildCodexThemeCssProperties("light", lavenderThemePalette.light);
+  const dark = buildCodexThemeCssProperties("dark", lavenderThemePalette.dark);
+  assert.equal(light["--codex-window-material"], "#f8f6ff");
+  assert.equal(light["--codex-sidebar-material-background"], "#f1ecff");
+  assert.equal(light["--color-background-panel"], "#ffffff");
+  assert.equal(light["--color-background-input"], "#f7f4ff");
+  assert.equal(light["--color-accent-blue"], "#6d5ce7");
+  assert.equal(dark["--codex-window-material"], "#17141f");
+  assert.equal(dark["--codex-sidebar-material-background"], "#1d1828");
+  assert.equal(dark["--color-background-panel"], "#221d2e");
+  for (const css of [light, dark]) {
+    assert.equal(css["--codex-sidebar-material-filter"], "none");
+    assert.ok(Object.keys(css).every(key => !/height|width|font-size/u.test(key)));
   }
 });
 
@@ -112,28 +158,52 @@ test("extension theme selection is root-owned and unload falls back atomically",
     appearance.initializeAppearanceTheme();
     assert.equal(dataset.themeId, appearance.coreThemeId);
     assert.deepEqual(
-      appearance.getAppearanceThemeSnapshot().availableThemes.slice(0, 2).map(({ label }) => label),
-      ["Codex", "Vela"],
+      appearance.getAppearanceThemeSnapshot().availableThemes.slice(0, 5).map(({ label }) => label),
+      ["Codex", "Vela", "Frost", "Lavender", "ZenCode"],
     );
+    assert.equal(appearance.getAppearanceThemeSnapshot().availableThemes.find(theme => theme.id === appearance.zenCodeThemeId)?.label, "ZenCode");
     assert.equal(properties.get("--codex-base-surface"), "#ffffff");
     assert.deepEqual(desktopAppearances.at(-1), {
       themeSource: "light",
       resolvedTheme: "light",
+      opaqueWindows: false,
+      backgroundColor: "#ffffff",
     });
 
     appearance.setThemePreference("dark");
     assert.deepEqual(desktopAppearances.at(-1), {
       themeSource: "dark",
       resolvedTheme: "dark",
+      opaqueWindows: false,
+      backgroundColor: "#181818",
     });
+    appearance.setThemePreference("light");
+
+    appearance.setAppearanceThemeId(appearance.zenCodeThemeId);
+    assert.equal(properties.get("--color-background-surface"), "#f8f8f8");
+    assert.equal(appearance.getAppearanceThemePreviewProperties(appearance.zenCodeThemeId)["--color-background-panel"], "#ffffff");
+    assert.deepEqual(desktopAppearances.at(-1), {themeSource:"light",resolvedTheme:"light",opaqueWindows:true,backgroundColor:"#f8f8f8"});
+    appearance.setThemePreference("dark");
+    assert.equal(properties.get("--color-background-input"), "#2b2b2b");
+    assert.equal(appearance.getAppearanceThemePreviewProperties(appearance.zenCodeThemeId)["--color-background-panel"], "#202020");
     appearance.setThemePreference("light");
 
     appearance.setAppearanceThemeId(appearance.velaThemeId);
     assert.equal(dataset.themeId, appearance.velaThemeId);
     assert.equal(properties.get("--codex-sidebar-material-background"), "#ffffff");
     assert.equal(properties.get("--codex-sidebar-material-filter"), "none");
+    assert.deepEqual(desktopAppearances.at(-1), { themeSource: "light", resolvedTheme: "light", opaqueWindows: true, backgroundColor: "#ffffff" });
     appearance.setAppearanceThemeId(appearance.coreThemeId);
     assert.equal(properties.get("--codex-sidebar-material-filter"), "blur(28px) saturate(145%)");
+    appearance.setAppearanceThemeId(appearance.frostThemeId);
+    assert.equal(dataset.themeId, appearance.frostThemeId);
+    assert.equal(properties.get("--codex-sidebar-material-background"), "rgb(226 244 250 / 35%)");
+    appearance.setAppearanceThemeId(appearance.lavenderThemeId);
+    assert.equal(dataset.themeId, appearance.lavenderThemeId);
+    assert.equal(properties.get("--codex-sidebar-material-background"), "#f1ecff");
+    assert.equal(properties.get("--color-background-input"), "#f7f4ff");
+    assert.deepEqual(desktopAppearances.at(-1), { themeSource: "light", resolvedTheme: "light", opaqueWindows: true, backgroundColor: "#f8f6ff" });
+    appearance.setAppearanceThemeId(appearance.coreThemeId);
 
     const contributions = new ExtensionContributionStore();
     const disconnect = appearance.connectAppearanceThemeContributions(contributions);
@@ -159,6 +229,8 @@ test("extension theme selection is root-owned and unload falls back atomically",
             contrast: 46,
             ink: "#202124",
             surface: "#fbfaf7",
+            surfaces: { window: "#eeeeee", sidebar: "#f0f0f0", panel: "#ffffff", input: "#f8f8f8", popover: "#fafafa" },
+            material: { window: "opaque", elevation: "flat" },
             semanticColors: {
               diffAdded: "#18864b",
               diffRemoved: "#c13a35",
@@ -185,6 +257,11 @@ test("extension theme selection is root-owned and unload falls back atomically",
     assert.equal(dataset.themeId, "vela.test-theme.paper");
     assert.equal(properties.get("--codex-base-surface"), "#fbfaf7");
     assert.equal(metaColor, "#fbfaf7");
+    assert.equal(properties.get("--color-background-input"), "#f8f8f8");
+    assert.equal(properties.get("--color-background-panel"), "#ffffff");
+    assert.equal(properties.get("--color-background-elevated-primary-opaque"), "#fafafa");
+    assert.equal(properties.get("--codex-sidebar-material-filter"), "none");
+    assert.deepEqual(desktopAppearances.at(-1), { themeSource: "light", resolvedTheme: "light", opaqueWindows: true, backgroundColor: "#eeeeee" });
 
     contributions.removeOwner(owner);
     const fallback = appearance.getAppearanceThemeSnapshot();
@@ -194,6 +271,8 @@ test("extension theme selection is root-owned and unload falls back atomically",
     assert.equal(properties.get("--codex-base-surface"), "#ffffff");
 
     disconnect();
+    assert.equal(properties.get("--color-background-input"), buildCodexThemeCssProperties("light")["--color-background-input"]);
+    assert.equal(properties.get("--codex-sidebar-material-filter"), "blur(28px) saturate(145%)");
     contributions.close();
   } finally {
     Object.defineProperty(globalThis, "window", {

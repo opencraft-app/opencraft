@@ -21,6 +21,7 @@ import {
   isProfileSkillScope,
 } from "@opencraft/appserver-protocol";
 import type { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
+import type { SkillsListResponse, SkillMetadata } from "@opencraft/appserver-protocol/generated/v2";
 
 type JsonHttpClient = Pick<TatHttpVirtualClient, "fetchJson" | "close">;
 
@@ -240,6 +241,48 @@ export class ProfileSkillsDomainError extends Error {
 
 /** Profile-scoped projection and Action owner over Hermes Dashboard REST. */
 export class HermesDashboardProfileSkillsHandler {
+  /** Paths come from the Profile content API, never from a guessed home directory. */
+  async listComposerSkills(profileId: string, cwd: string): Promise<SkillsListResponse> {
+    const scope = normalizeScope({ type: "profile", profileId });
+    const client = this.client;
+    const rows = await this.get<unknown[]>(`/api/skills?${profileQuery(scope)}`);
+    if (!Array.isArray(rows)) throw new Error("Invalid Hermes Skill directory");
+    const entries = rows.map(value => installedSkill(value)).filter((value): value is ProfileSkillInstalled => value !== null && value.enabled);
+    const results: Array<SkillMetadata | null> = entries.map(() => null);
+    const errors: Array<{ path: string; message: string }> = [];
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, entries.length) }, async () => {
+      while (next < entries.length) {
+        const index = next++, entry = entries[index]!;
+        try {
+          const path = await this.composerSkillPath(scope, entry.name);
+          results[index] = { name: entry.name, description: entry.description, path, enabled: true, scope: entry.provenance === "bundled" ? "system" : "user" };
+        } catch { errors.push({ path: cwd, message: `Skill metadata unavailable: ${entry.name}` }); }
+      }
+    }));
+    if (client !== this.client) throw new Error("Hermes connection changed during Skill discovery");
+    return { data: [{ cwd, skills: results.filter((entry): entry is SkillMetadata => entry !== null), errors }] };
+  }
+
+  async validateComposerSkills(profileId: string, skills: readonly { name: string; path: string }[]): Promise<void> {
+    const scope = normalizeScope({ type: "profile", profileId });
+    const client = this.client;
+    const rows = await this.get<unknown[]>(`/api/skills?${profileQuery(scope)}`);
+    if (!Array.isArray(rows)) throw new Error("Invalid Hermes Skill directory");
+    const enabled = new Set(rows.map(value => installedSkill(value)).filter(value => value?.enabled).map(value => value!.name));
+    for (const skill of skills) {
+      if (!enabled.has(skill.name)) throw new Error(`Skill is no longer enabled: ${skill.name}`);
+      if (await this.composerSkillPath(scope, skill.name) !== skill.path) throw new Error(`Skill path changed: ${skill.name}`);
+    }
+    if (client !== this.client) throw new Error("Hermes connection changed during Skill validation");
+  }
+
+  private async composerSkillPath(scope: ProfileSkillScope, name: string): Promise<string> {
+    const result = record(await this.get(`/api/skills/content?name=${encodeURIComponent(name)}&${profileQuery(scope)}`));
+    const path = text(result.path);
+    if (text(result.name) !== name || !path.startsWith("/") || path.includes("\0") || !path.endsWith("/SKILL.md")) throw new Error("Hermes did not return a canonical Skill path");
+    return path;
+  }
   private client: JsonHttpClient | null = null;
   private sessionToken: string | null = null;
   private journal: JournalDocument;

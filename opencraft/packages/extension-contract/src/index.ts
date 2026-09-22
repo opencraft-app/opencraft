@@ -14,7 +14,7 @@ export interface ExtensionManifestV1 {
   readonly id: string;
   readonly name: string;
   readonly version: string;
-  readonly apiVersion: 1;
+  readonly apiVersion: number;
   readonly trust: ExtensionTrust;
   readonly platforms: readonly ExtensionPlatform[];
   readonly activationEvents: readonly ExtensionActivationEvent[];
@@ -27,6 +27,27 @@ export interface ExtensionActivationIdentity {
   readonly extensionId: string;
   readonly activationId: string;
   readonly generation: number;
+}
+
+export class ExtensionCompatibilityError extends Error {
+  readonly code = "OPENCRAFT_EXTENSION_INCOMPATIBLE";
+
+  constructor(readonly extensionId: string, readonly reason: "api-version" | "platform", message: string) {
+    super(message);
+    this.name = "ExtensionCompatibilityError";
+  }
+}
+
+/** Parsing preserves valid future manifests; the executing host owns compatibility. */
+export function assertExtensionCompatibility(manifest: ExtensionManifestV1, platform: ExtensionPlatform): void {
+  if (manifest.apiVersion !== 1) {
+    throw new ExtensionCompatibilityError(manifest.id, "api-version",
+      `Extension ${manifest.id} requires API ${manifest.apiVersion}; this host supports API 1`);
+  }
+  if (!manifest.platforms.includes(platform)) {
+    throw new ExtensionCompatibilityError(manifest.id, "platform",
+      `Extension ${manifest.id} does not target ${platform}`);
+  }
 }
 
 export type ExtensionJson =
@@ -286,6 +307,8 @@ export interface BotContribution {
 }
 
 export interface ThemePaletteContribution {
+  readonly surfaces?: import("@opencraft/design-system/theme-options").ThemeSurfaceOverrides;
+  readonly material?: import("@opencraft/design-system/theme-options").ThemeMaterialOptions;
   /** Strict #RRGGBB colors; the Host derives all semantic CSS/native tokens. */
   readonly accent: string;
   readonly contrast: number;
@@ -295,6 +318,9 @@ export interface ThemePaletteContribution {
     readonly diffAdded: string;
     readonly diffRemoved: string;
     readonly skill: string;
+    readonly warning?: string;
+    readonly error?: string;
+    readonly success?: string;
   };
 }
 
@@ -363,6 +389,8 @@ export interface ExtensionWindowApiV1 {
 
 /** Stable, UI-framework-free API exposed to trusted V1 extensions. */
 export interface OpenCraftExtensionApiV1 {
+  /** Aborted on activation failure or retirement, before resource cleanup. */
+  readonly signal: AbortSignal;
   /** Null when this runtime has neither local nor Host document persistence. */
   readonly storage: import("./storage.js").ExtensionStorageApiV1 | null;
   readonly identity: ExtensionActivationIdentity;
@@ -376,6 +404,11 @@ export interface OpenCraftExtensionApiV1 {
   readonly themes: ExtensionThemesApiV1;
   readonly bots: ExtensionBotsApiV1;
   readonly window: ExtensionWindowApiV1;
+}
+
+export interface OpenCraftExtensionDefinition {
+  readonly manifest: ExtensionManifestV1;
+  activate(api: OpenCraftExtensionApiV1): void | ExtensionDisposable | Promise<void | ExtensionDisposable>;
 }
 
 export class ExtensionManifestError extends TypeError {
@@ -440,8 +473,8 @@ export function parseExtensionManifestV1(value: unknown): ExtensionManifestV1 {
   if (record.manifestVersion !== 1) {
     throw new ExtensionManifestError("Only extension manifestVersion 1 is supported");
   }
-  if (record.apiVersion !== 1) {
-    throw new ExtensionManifestError("Only extension apiVersion 1 is supported");
+  if (typeof record.apiVersion !== "number" || !Number.isSafeInteger(record.apiVersion) || record.apiVersion < 1) {
+    throw new ExtensionManifestError("Extension apiVersion must be a positive integer");
   }
   if (record.trust !== "trusted") {
     throw new ExtensionManifestError("Trusted V1 extensions require trust=trusted");
@@ -491,7 +524,7 @@ export function parseExtensionManifestV1(value: unknown): ExtensionManifestV1 {
     id,
     name: requireString(record, "name"),
     version,
-    apiVersion: 1,
+    apiVersion: record.apiVersion,
     trust: "trusted",
     platforms: platformValues as readonly ExtensionPlatform[],
     activationEvents: activationEvents as readonly ExtensionActivationEvent[],

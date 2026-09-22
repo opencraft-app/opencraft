@@ -1,4 +1,6 @@
 import type { ShellNavigationRailDetent } from "./shell-navigation";
+import { workbenchWindowMetrics } from "./window-metrics";
+export { workbenchWindowMetrics } from "./window-metrics";
 
 export interface ShellSpaceInput {
   readonly width: number;
@@ -12,7 +14,12 @@ export interface ShellSpaceInput {
   readonly previousLevel?: number;
 }
 
-export const shellSpaceMetrics = { mainMinimum: 480, rightMinimum: 320, compact: 52, hysteresis: 32 };
+export const shellSpaceMetrics = {
+  mainMinimum: workbenchWindowMetrics.minimumWidth,
+  rightMinimum: 320,
+  compact: 52,
+  hysteresis: 32,
+};
 
 /** One window budget; the returned presentation never edits a saved preference. */
 export function resolveShellSpace(input: ShellSpaceInput) {

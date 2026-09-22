@@ -21,6 +21,11 @@ test("replaced presentation has no settings-list catalog or test-only alternate 
   assert.ok(!library.includes("SettingsListItem"));
   assert.ok(!chooser.includes("setCatalog"));
   assert.ok(!chooser.includes("发现 Host 服务"));
+  assert.ok(!chooser.includes('label: "连接器", size: "wide"'), "conversation selection is no longer a wide Modal");
+  assert.match(chooser, /ConnectorAddMenuItem/u);
+  assert.match(chooser, /ConnectorStatusChip/u);
+  assert.match(chooser, /cancelOwner\(operationOwner\)/u);
+  assert.doesNotMatch(chooser, /onDismiss:[\s\S]{0,120}cancelOwner/u, "closing a Popover does not own connection cancellation");
   assert.ok(!css.includes(".connector-library__setup"));
   assert.match(library, /presentation:\s*"inspector"/);
   assert.ok(!css.includes("font-size:"), "presentation consumes semantic typography roles");

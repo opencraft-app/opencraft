@@ -55,7 +55,9 @@ export function createWorkbenchSubmissionPipeline(
       // Promotion transfers the immutable first Turn to the target
       // Conversation Runtime. From here failures belong to that Runtime and
       // must not resurrect or mutate the retired Draft.
-      const turnReceipt = await config.submitFirstTurn(submission, receipt);
+      const turnReceipt = receipt.turnId === null
+        ? await config.submitFirstTurn(submission, receipt)
+        : receipt;
       await config.afterAccepted?.(turnReceipt);
       return turnReceipt;
     })().finally(() => {

@@ -21,6 +21,7 @@ export * from "./composer-model-catalog";
 export * from "./adaptive-navigation";
 export * from "./shell-navigation";
 export * from "./shell-space";
+export * from "./window-metrics";
 export * from "./side-chat/service";
 export * from "./adaptive-panel";
 export * from "./abort-signal";

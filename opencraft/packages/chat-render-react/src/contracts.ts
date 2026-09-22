@@ -5,6 +5,13 @@ import type { ChatFadeTimeline } from "./fade-timeline";
 export type ChatRenderTheme = "light" | "dark";
 export type ChatExternalResourcePolicy = "allow" | "restricted";
 
+export interface ChatResourceOpenIntent {
+  /** Semantic destination. The product shell chooses the concrete surface. */
+  readonly target: "default" | "in-app-browser" | "external-browser";
+  readonly disposition: "current-tab" | "new-tab";
+  readonly source: "keyboard" | "pointer" | "context-menu";
+}
+
 export type ChatMeasurementReason =
   | "code-highlight"
   | "diagram-render"
@@ -42,7 +49,11 @@ export interface ChatRenderContext {
    */
   readonly stickyCodeHeaders?: boolean;
   readonly fadeTimeline?: ChatFadeTimeline;
-  readonly openResource?: (target: string, decision: ChatResourceDecision) => void;
+  readonly openResource?: (
+    target: string,
+    decision: ChatResourceDecision,
+    intent?: ChatResourceOpenIntent,
+  ) => void;
   /**
    * Product-host byte boundary for resources that a browser cannot load
    * directly (for example an AppServer-local `file://` image). The renderer

@@ -40,6 +40,8 @@ export interface PlatformViewRegions {
   readonly ToolbarSelect?: ComponentType<PlatformToolbarSelectProps>;
   /** Platform-owned capability content; plugins supply only the selected Host identity. */
   readonly ConnectorLibrary?: ComponentType<{ readonly hostId: string }>;
+  /** Application-scoped extension inventory; independent of the selected execution Host. */
+  readonly ExtensionLibrary?: ComponentType;
 }
 
 export interface PlatformToolbarSelectOption {

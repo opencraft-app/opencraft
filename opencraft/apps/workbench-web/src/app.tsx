@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { FormattedMessage } from "@opencraft/i18n/react";
 import {
   retargetSubmitIntentForFollowUp,
   type ComposerAttachment,
@@ -14,7 +15,7 @@ import {
   type ComposerSelectionCatalog,
 } from "@opencraft/codex-composer";
 import { asHostId, findPendingInteraction } from "@opencraft/chat-core";
-import type { ChatResourceDecision } from "@opencraft/chat-render-web";
+import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-web";
 import type { PlatformViewHost } from "@opencraft/extension-react";
 import type {
   LatestTurnPlacementSnapshot,
@@ -198,7 +199,7 @@ function ConversationHydration({
   onRetry,
   state,
 }: {
-  readonly detail: string;
+  readonly detail: import("react").ReactNode;
   readonly errorMessage?: string | null;
   readonly onRetry?: (() => void) | null;
   readonly state: "loading" | "error";
@@ -217,11 +218,11 @@ function ConversationHydration({
           <span />
         </span>
         <div className="conversation-hydration__copy">
-          <strong>{failed ? "Could not restore this conversation" : "Restoring conversation"}</strong>
-          <p>{failed ? errorMessage ?? "The conversation could not be loaded." : detail}</p>
+          <strong>{failed ? <FormattedMessage id="chat.restore.failed" defaultMessage="Could not restore this conversation" /> : <FormattedMessage id="chat.restore" defaultMessage="Restoring conversation" />}</strong>
+          <p>{failed ? errorMessage ?? <FormattedMessage id="chat.restore.error" defaultMessage="The conversation could not be loaded." /> : detail}</p>
         </div>
         {failed && onRetry != null ? (
-          <button type="button" onClick={onRetry}>Try again</button>
+          <button type="button" onClick={onRetry}><FormattedMessage id="common.retry" defaultMessage="Try again" /></button>
         ) : null}
       </section>
     </div>
@@ -301,6 +302,9 @@ export function App({
       registry={hostCatalog.composerActionRenderers}
     /></>
   );
+  const composerAddMenuContent = presentation.connectorLauncher
+    ? connectorPresentation.addMenuContent
+    : null;
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
   const activeHostConnectionPhase = useHostConnectionPhase(snapshot.hostId);
@@ -797,10 +801,11 @@ export function App({
   ]);
 
   const openBrowserTab = useCallback(
-    (initialUrl?: string) => {
+    (initialUrl?: string, background = false) => {
       browserWorkbench.open(conversationResourceOwnerId, {
         panelOwnerId,
         hostId: snapshot.hostId,
+        background,
         ...(initialUrl === undefined ? {} : { initialUrl }),
       });
     },
@@ -812,14 +817,18 @@ export function App({
   }, [browserWorkbench, conversationResourceOwnerId, panelPresentationId]);
 
   const openChatResource = useCallback(
-    (target: string, decision: ChatResourceDecision) => {
+    (target: string, decision: ChatResourceDecision, intent?: ChatResourceOpenIntent) => {
       if (decision.kind === "mail") {
         window.open(target, "_blank", "noopener,noreferrer");
         return;
       }
       if (decision.kind === "external") {
+        if (intent?.target === "external-browser") {
+          window.open(target, "_blank", "noopener,noreferrer");
+          return;
+        }
         try {
-          openBrowserTab(target);
+          openBrowserTab(target, intent?.disposition === "new-tab");
         } catch {
           window.open(target, "_blank", "noopener,noreferrer");
         }
@@ -1076,7 +1085,7 @@ export function App({
     activeHost.workspaceBrowseRoots[0] ??
     draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ??
     null;
-  const localProjectPicker = nativeProjectPicker(snapshot.hostId);
+  const localProjectPicker = nativeProjectPicker(activeHost);
   const browseWorkspace = useCallback(async () => {
     if (localProjectPicker === null) {
       if (workspaceBrowseRoot !== null) setWorkspacePickerOpen(true);
@@ -1451,6 +1460,7 @@ export function App({
             onBrowseWorkspace={browseWorkspace}
             onResolveAttachment={resolveActiveHostAttachment}
             onRemoveAttachment={removeActiveHostAttachment}
+            composerAddMenuContent={composerAddMenuContent}
             composerEndActions={composerEndActions}
             onSubmit={sendMessage}
           />
@@ -1571,6 +1581,7 @@ export function App({
                         onResumeQueuedSubmissions={resumeQueuedSubmissions}
                         onResolveAttachment={resolveActiveHostAttachment}
                         onRemoveAttachment={removeActiveHostAttachment}
+                        addMenuContent={composerAddMenuContent}
                         endActions={composerEndActions}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
@@ -1596,7 +1607,7 @@ export function App({
                 />
                 {!snapshot.conversation?.authoritative ? (
                   <ConversationHydration
-                    detail="Loading conversation history…"
+                    detail={<FormattedMessage id="chat.restore.loading" defaultMessage="Loading conversation history…" />}
                     errorMessage={snapshot.conversation?.error?.message}
                     onRetry={() => {
                       void activeThreadLease.retryRestore().catch(() => undefined);

@@ -81,6 +81,7 @@ import type {
   FuzzyFileSearchSessionUpdateResponse,
 } from "./generated";
 import type { AppServerBotMethodMap } from "./bot-conversations";
+import type { AppServerCodexAccountMethodMap } from "./codex-accounts";
 import type { ProfileSkillsMethodMap } from "./profile-skills";
 import type {
   RuntimeCredentialSetParams,
@@ -192,6 +193,10 @@ export type ModelListParams = GeneratedModelListParams & {
 /** OpenCraft can explicitly represent a model without configurable reasoning. */
 export type CatalogModel = Omit<GeneratedModelListResponse["data"][number], "defaultReasoningEffort"> & {
   defaultReasoningEffort: GeneratedModelListResponse["data"][number]["defaultReasoningEffort"] | null;
+  /** OpenCraft-owned model metadata that the generated Codex catalog omits. */
+  contextWindow?: number;
+  maxTokens?: number;
+  source?: "builtin" | "custom";
 };
 export type ModelListResponse = Omit<GeneratedModelListResponse, "data"> & { data: CatalogModel[] };
 export type PermissionProfileListParams = GeneratedPermissionProfileListParams;
@@ -291,7 +296,7 @@ export interface ThreadArchiveParams {
  * packages can add protocol methods without introducing an untyped index
  * signature into the core client.
  */
-export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap {
   "runtime/status/read": {
     params: Record<string, never>;
     result: RuntimeStatusResponse;

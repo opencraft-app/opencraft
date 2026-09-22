@@ -113,3 +113,36 @@ test("concurrent promotion retries share one operation", async () => {
   await first;
   assert.equal(promotions, 1);
 });
+
+test("an atomic first-Turn receipt promotes without submitting the message twice", async () => {
+  const scopes = createConversationScopeRegistry();
+  const draft = scopes.openDraft({
+    draftId: "draft-atomic",
+    execution: {
+      hostId: "local-codex",
+      workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+    },
+  });
+  const atomicReceipt = { ...receipt, hostId: "local-codex" };
+  let firstTurnSubmits = 0;
+  const pipeline = createWorkbenchSubmissionPipeline({
+    scopes,
+    async submitNewThread() { return atomicReceipt; },
+    async submitExistingThread() { throw new Error("not used"); },
+    async submitFirstTurn() {
+      firstTurnSubmits += 1;
+      return atomicReceipt;
+    },
+    async promoteDraft(draftId) {
+      assert.equal(scopes.promoteDraft(draftId), true);
+    },
+  });
+
+  const result = await pipeline.submit({
+    ...createIntent(draft.id),
+    target: draft.target,
+  });
+  assert.equal(result.turnId, "turn-one");
+  assert.equal(firstTurnSubmits, 0);
+  assert.equal(scopes.getDraft(draft.id), null);
+});

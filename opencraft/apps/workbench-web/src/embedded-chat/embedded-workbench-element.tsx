@@ -16,6 +16,7 @@ import type {
   EmbeddedWorkbenchAppSession,
 } from "../app";
 import type { UiPreferencesRuntime } from "@opencraft/ui-preferences";
+import { WorkbenchLocaleController, WorkbenchIntlProvider, validateWorkbenchLocaleOptions, type WorkbenchLocaleOptions } from "../i18n/workbench-locale";
 import {
   applyAppearanceThemeToElement,
   getAppearanceThemeSnapshot,
@@ -37,7 +38,9 @@ import {
 
 const ELEMENT_NAME = "opencraft-embedded-workbench";
 
-export interface EmbeddedWorkbenchConfig extends EmbeddedChatApplicationOptions {}
+export interface EmbeddedWorkbenchConfig extends EmbeddedChatApplicationOptions {
+  readonly localization?: WorkbenchLocaleOptions;
+}
 
 export interface EmbeddedWorkbenchReadyDetail {
   readonly threadId: string | null;
@@ -119,6 +122,8 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private application: EmbeddedChatApplication | null = null;
   private config: EmbeddedWorkbenchConfig | null = null;
   private preferences: UiPreferencesRuntime | null = null;
+  private locale: WorkbenchLocaleController | null = null;
+  private localeObserver: MutationObserver | null = null;
   private preparePromise: Promise<void> | null = null;
   private readyPromise: Promise<EmbeddedWorkbenchReadyDetail>;
   private resolveReady!: (detail: EmbeddedWorkbenchReadyDetail) => void;
@@ -162,7 +167,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (this.preparePromise !== null) {
       throw new Error("Embedded Workbench cannot be reconfigured after preparation starts");
     }
-    this.config = Object.freeze({ ...config });
+    this.config = Object.freeze({ ...config, localization: validateWorkbenchLocaleOptions(config.localization ?? {}) });
   }
 
   prepare(): Promise<void> {
@@ -204,6 +209,14 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     await this.requireActions().createThread();
   }
 
+  /** Host-controlled locale updates retain the application and draft identity. */
+  async setLocalization(options: WorkbenchLocaleOptions): Promise<void> {
+    if (this.disposed) throw new Error("Embedded Workbench is disposed");
+    if (this.config === null) throw new Error("Embedded Workbench is not configured");
+    this.config = Object.freeze({ ...this.config, localization: validateWorkbenchLocaleOptions(options) });
+    await this.locale?.configure(this.localeOptions());
+  }
+
   async renameConversation(conversationId: string, title: string): Promise<void> {
     const session = this.requireSession(conversationId);
     const normalizedTitle = title.trim().slice(0, 50);
@@ -224,6 +237,10 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       this.rejectReady(new Error("Embedded Workbench was disposed before it became ready"));
     }
     this.root.unmount();
+    this.locale?.dispose();
+    this.localeObserver?.disconnect();
+    this.localeObserver = null;
+    this.locale = null;
     this.stopThemeSubscription?.();
     this.stopThemeSubscription = null;
     this.actions = null;
@@ -249,6 +266,11 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       }
       this.application = application;
       this.preferences = preferences;
+      this.locale = new WorkbenchLocaleController(preferences, this.localeOptions());
+      this.localeObserver = new MutationObserver(() => { void this.locale?.configure(this.localeOptions()); });
+      this.localeObserver.observe(this.ownerDocument.documentElement, { attributes: true, attributeFilter: ["lang"] });
+      await this.locale.initialize();
+      if (this.disposed) return;
       this.renderApplication();
       await this.readyPromise;
     } catch (cause) {
@@ -309,10 +331,12 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     const application = this.application;
     const preferences = this.preferences;
     const config = this.config;
-    if (application === null || preferences === null || config === null || this.disposed) return;
+    const locale = this.locale;
+    if (application === null || preferences === null || config === null || locale === null || this.disposed) return;
     this.root.render(
       <EmbeddedWorkbenchErrorBoundary onError={(error) => this.fail(error)}>
         <UiPreferencesProvider runtime={preferences}>
+          <WorkbenchIntlProvider controller={locale} target={this}>
           <EmbeddedChatRoot
             application={application.application}
             bindActions={(actions) => this.bindActions(actions)}
@@ -322,6 +346,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
             onSessionsChange={(detail) => this.handleSessions(detail)}
             portalContainer={this.mount}
           />
+          </WorkbenchIntlProvider>
         </UiPreferencesProvider>
       </EmbeddedWorkbenchErrorBoundary>,
     );
@@ -356,6 +381,12 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
 
   private syncTheme(): void {
     applyAppearanceThemeToElement(this, getAppearanceThemeSnapshot());
+  }
+
+  private localeOptions(): WorkbenchLocaleOptions {
+    return { ...this.config?.localization,
+      ideLocale: this.config?.localization?.ideLocale ?? (this.ownerDocument.documentElement.lang || null),
+    };
   }
 }
 

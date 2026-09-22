@@ -123,7 +123,11 @@ export class BrowserHermesAppServerBridge {
     this.stopProfileSkillsNotifications = options.profileSkills?.subscribe((event) => {
       const notification: AppServerNotification = { jsonrpc: "2.0", ...event };
       for (const listener of this.notificationListeners) listener(notification);
+      if (event.method === "skills/installed/changed") {
+        for (const listener of this.notificationListeners) listener({ jsonrpc: "2.0", method: "skills/changed", params: {} });
+      }
     }) ?? (() => undefined);
+    if (options.profileSkills) this.adapter.setSkillValidator((profile, skills) => options.profileSkills!.validateComposerSkills(profile, skills));
   }
 
   onNotification(listener: (event: AppServerOutboundMessage) => void): () => void {

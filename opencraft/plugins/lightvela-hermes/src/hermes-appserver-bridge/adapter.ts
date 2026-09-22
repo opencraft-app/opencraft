@@ -205,7 +205,8 @@ async function parseInput(input: unknown): Promise<ParsedInput> {
       continue;
     }
     if (type === "skill" && typeof part.name === "string" && typeof part.path === "string") {
-      body.push(`/${part.name}`);
+      if (!/^[\p{L}\p{N}_-]+$/u.test(part.name)) throw new Error("Invalid Hermes Skill name");
+      body.push(` /${part.name} `);
       content.push({ ...part, type: "skill", name: part.name, path: part.path });
       continue;
     }
@@ -785,6 +786,20 @@ interface PendingClarifyOwnership {
 }
 
 export class HermesAppServerAdapter {
+  private skillValidator?: (profile: string, skills: readonly { name: string; path: string }[]) => Promise<void>;
+  setSkillValidator(validator: (profile: string, skills: readonly { name: string; path: string }[]) => Promise<void>): void { this.skillValidator = validator; }
+  composerProfile(): string {
+    if (this.profileScope === null) throw new Error("Choose a Profile-scoped Host to browse Hermes Skills");
+    return this.profileScope;
+  }
+  composerCwd(): string { return this.defaultCwd; }
+  private async validateSkillInput(threadId: string, input: unknown): Promise<void> {
+    const refs = (Array.isArray(input) ? input : []).filter(part => part !== null && typeof part === "object" && part.type === "skill") as Array<{name:string;path:string}>;
+    if (!refs.length) return;
+    if (!this.skillValidator) throw new Error("Hermes Skill validation is unavailable");
+    if (refs.some(ref => typeof ref.name !== "string" || typeof ref.path !== "string")) throw new Error("Invalid Hermes Skill reference");
+    await this.skillValidator(await this.resolveThreadProfile(threadId), refs);
+  }
   private readonly liveByStored = new Map<string, string>();
   private readonly payloadByStored = new Map<string, HermesSessionPayload>();
   private readonly storedByLive = new Map<string, string>();
@@ -1547,6 +1562,7 @@ export class HermesAppServerAdapter {
     requestedEffort: unknown,
     allowWhileTurnUnsettled: boolean,
   ): Promise<HermesTurnSubmission> {
+    await this.validateSkillInput(threadId, input);
     const parsed = await parseInput(input);
     if (parsed.body.trim() === "" && parsed.images.length === 0) throw new Error("Hermes input is empty");
     const live = await this.ensureLive(threadId, requestedProfile);
@@ -1687,6 +1703,7 @@ export class HermesAppServerAdapter {
     input: unknown,
     clientUserMessageId: string | null,
   ): Promise<{ turnId: string; disposition: "steered" | "queued" }> {
+    await this.validateSkillInput(threadId, input);
     const parsed = await parseInput(input);
     if (parsed.images.length > 0) throw new Error("Hermes session.steer accepts text only; send the image as a queued follow-up");
     if (parsed.body.trim() === "") throw new Error("Hermes steer input is empty");

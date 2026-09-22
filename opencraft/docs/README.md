@@ -13,6 +13,7 @@ OpenCraft 是 mono2 内的多端 Agent Workbench 服务根，包含 Codex-faithf
 - 平台级 Connector：[机制、已实现链路与剩余范围](platform-connectors.md)；独立于 Hermes 设置页原型，不复用它的页面状态。
 - 跨端存储生命周期：[SQLite / IndexedDB 升级与恢复](sqlite-lifecycle.md)、[插件持久化契约](plugin-persistence.md)、[Host 通用文档 API](host-document-storage.md)；client-local 与首个 Host 适配已实现，全量旧库恢复未实现，不引入 Drizzle。
 - Chat 与浏览器 Workbench：`opencraft/docs/chat-ui-architecture.md`、`opencraft/docs/browser-workbench-architecture.md`。
+- 执行所有权：[会话、运行实例与能力租约](execution-ownership.md)；明确创建提交、执行准入、断线撤销、释放及 warm 边界。
 - 构建目标：`opencraft/docs/build-matrix.md` 与 `opencraft/config/build-matrix.json`。
 
 ## 核心不变量

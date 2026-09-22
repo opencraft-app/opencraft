@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { createRoot } from "react-dom/client";
+import { createIntlTestRoot as createRoot } from "./intl-root";
 import { Context } from "@deepseek-ai/cordis";
 import { TimelineBlockRendererProvider, TimelineBlockRendererRegistryService } from "@opencraft/timeline-render-react";
 import { WebConversationViewportOwner } from "@opencraft/timeline-host-web";

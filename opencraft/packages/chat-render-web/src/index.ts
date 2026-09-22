@@ -14,4 +14,5 @@ export {
   type ChatMeasurementRequest,
   type ChatRenderTheme,
   type ChatResourceDecision,
+  type ChatResourceOpenIntent,
 } from "@opencraft/chat-render-react";

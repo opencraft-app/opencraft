@@ -17,9 +17,14 @@
     "@shikijs/themes": "4.4.3",
     "@opencraft/chat-document": "0.1.0",
     "@opencraft/chat-render-react": "0.1.0",
+    "@opencraft/i18n": "0.1.0",
+    "@radix-ui/react-context-menu": "^2.3.7",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "katex": "0.18.4",
+    "lucide-react": "^1.35.0",
     "mermaid": "11.17.2",
-    "react": "19.2.3"
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

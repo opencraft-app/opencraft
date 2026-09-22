@@ -7,6 +7,7 @@ import {
   browserUrlDisplayValue,
 } from "@opencraft/browser-core";
 import { BrowserDeviceToolbar, BrowserDeviceHandles } from "./browser-device-toolbar";
+import { useIntl } from "@opencraft/i18n/react";
 import type { Context } from "@deepseek-ai/cordis";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { PanelToolbarActionContext } from "@opencraft/workbench-panels";
@@ -52,6 +53,7 @@ function browserTabIdFromPanel(tab: PanelRendererProps["tab"]): BrowserTabId {
 }
 
 function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
+  const intl = useIntl();
   const portalContainer = useWorkbenchPresentationRoot();
   const tabId = browserTabIdFromPanel(panelTab);
   const pages = useWebBrowserPageRuntime();
@@ -120,8 +122,8 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
     return (
       <div className="right-panel-empty">
         <span><Globe2 size={18} /></span>
-        <strong>Browser tab unavailable</strong>
-        <p>This tab can be closed and reopened.</p>
+        <strong>{intl.formatMessage({ id: "browser.unavailable", defaultMessage: "Browser tab unavailable" })}</strong>
+        <p>{intl.formatMessage({ id: "browser.reopen", defaultMessage: "This tab can be closed and reopened." })}</p>
       </div>
     );
   }
@@ -141,16 +143,16 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
     <section className="browser-panel" data-viewport-mode={tab.viewportMode.type} aria-label={page.title}>
       <form className="browser-panel__toolbar" onSubmit={submit}>
         <button type="button" className="browser-toolbar-button" disabled={!page.navigation.canGoBack}
-          aria-label="Back" title="Back" onClick={() => pages.goBack(page.id)}>
+          aria-label={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })} title={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })} onClick={() => pages.goBack(page.id)}>
           <ArrowLeft size={14} />
         </button>
         <button type="button" className="browser-toolbar-button" disabled={!page.navigation.canGoForward}
-          aria-label="Forward" title="Forward" onClick={() => pages.goForward(page.id)}>
+          aria-label={intl.formatMessage({ id: "navigation.forward", defaultMessage: "Forward" })} title={intl.formatMessage({ id: "navigation.forward", defaultMessage: "Forward" })} onClick={() => pages.goForward(page.id)}>
           <ArrowRight size={14} />
         </button>
         <button type="button" className="browser-toolbar-button"
-          aria-label={page.navigation.isLoading ? "Stop" : "Reload"}
-          title={page.navigation.isLoading ? "Stop" : "Reload"}
+          aria-label={intl.formatMessage(page.navigation.isLoading ? { id: "browser.stop", defaultMessage: "Stop" } : { id: "browser.reload", defaultMessage: "Reload" })}
+          title={intl.formatMessage(page.navigation.isLoading ? { id: "browser.stop", defaultMessage: "Stop" } : { id: "browser.reload", defaultMessage: "Reload" })}
           onClick={() => page.navigation.isLoading ? pages.stop(page.id) : pages.reload(page.id)}>
           {page.navigation.isLoading ? <X size={13} /> : <RotateCw size={13} />}
         </button>
@@ -158,29 +160,29 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
           {page.navigation.isLoading
             ? <LoaderCircle className="browser-address-field__spinner" size={13} />
             : <Globe2 size={13} />}
-          <input aria-label="Web address" autoCapitalize="none" autoCorrect="off"
-            placeholder="Enter a web address" spellCheck={false} value={address}
+          <input aria-label={intl.formatMessage({ id: "browser.address", defaultMessage: "Web address" })} autoCapitalize="none" autoCorrect="off"
+            placeholder={intl.formatMessage({ id: "browser.address.placeholder", defaultMessage: "Enter a web address" })} spellCheck={false} value={address}
             onChange={(event) => setAddress(event.target.value)}
             onFocus={(event) => event.currentTarget.select()} />
         </label>
         <button type="button" className="browser-toolbar-button" disabled={currentUrl === null}
-          aria-label="Open in external browser" title="Open in external browser"
+          aria-label={intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })} title={intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })}
           onClick={() => currentUrl !== null && window.open(currentUrl, "_blank", "noopener,noreferrer")}>
           <ExternalLink size={13} />
         </button>
-        <button type="button" className="browser-toolbar-button" aria-label="Toggle device toolbar" title="Toggle device toolbar"
+        <button type="button" className="browser-toolbar-button" aria-label={intl.formatMessage({ id: "browser.device", defaultMessage: "Toggle device toolbar" })} title={intl.formatMessage({ id: "browser.device", defaultMessage: "Toggle device toolbar" })}
           aria-pressed={tab.viewportMode.type !== "responsive"}
           onClick={()=>workbench.setViewportMode(tab.id,tab.viewportMode.type==="responsive"?FIT_VIEWPORT:{type:"responsive"})}>
           <MonitorSmartphone size={15}/>
         </button>
         <FloatingComposerToggle activeTabId={panelTab.id} />
         {pages.supportsSiteSettings && currentUrl ? <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild><button type="button" className="browser-toolbar-button" aria-label="网站设置" title="网站设置"><Globe2 size={13} /></button></DropdownMenu.Trigger>
+          <DropdownMenu.Trigger asChild><button type="button" className="browser-toolbar-button" aria-label={intl.formatMessage({ id: "browser.settings", defaultMessage: "Site settings" })} title={intl.formatMessage({ id: "browser.settings", defaultMessage: "Site settings" })}><Globe2 size={13} /></button></DropdownMenu.Trigger>
           <DropdownMenu.Portal container={portalContainer}><DropdownMenu.Content className="new-thread-project-menu" align="end" sideOffset={6} collisionPadding={8}>
-            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "permissions").catch(error => setInputError(error.message)); }}>网站权限</DropdownMenu.Item>
-            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "clear-data").catch(error => setInputError(error.message)); }}>清除网站数据</DropdownMenu.Item>
+            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "permissions").catch(error => setInputError(error.message)); }}>{intl.formatMessage({ id: "browser.permissions", defaultMessage: "Site permissions" })}</DropdownMenu.Item>
+            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "clear-data").catch(error => setInputError(error.message)); }}>{intl.formatMessage({ id: "browser.clearData", defaultMessage: "Clear site data" })}</DropdownMenu.Item>
             <DropdownMenu.Separator className="new-thread-project-menu__separator" />
-            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.clearClosedData().catch((error: Error) => setInputError(error.message)); }}>清理已关闭标签数据</DropdownMenu.Item>
+            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.clearClosedData().catch((error: Error) => setInputError(error.message)); }}>{intl.formatMessage({ id: "browser.clearClosed", defaultMessage: "Clear closed tab data" })}</DropdownMenu.Item>
           </DropdownMenu.Content></DropdownMenu.Portal>
         </DropdownMenu.Root> : null}
       </form>

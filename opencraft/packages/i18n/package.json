@@ -1,0 +1,11 @@
+{
+  "name": "@opencraft/i18n",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./react": "./src/react.tsx" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "react-intl": "7.1.14" },
+  "peerDependencies": { "react": "^19.0.0" },
+  "devDependencies": { "@types/react": "~19.2.2", "typescript": "^5.9.3" }
+}

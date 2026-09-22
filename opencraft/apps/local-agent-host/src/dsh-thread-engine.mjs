@@ -30,7 +30,7 @@ export function forkSeed(source, { lastTurn, beforeTurn } = {}, closers) {
 }
 
 /** Native ownership and full event seeding; no renderer projection enters this port. */
-export async function createThreadEngine(ctx, toolsModuleUrl) {
+export async function createThreadEngine(ctx, toolsModuleUrl, capabilities) {
   const module = path => new URL(path, toolsModuleUrl).href;
   const { SessionId, interruptedTurnClosers } = await import(module("../../dsh-session/lib/index.js"));
   const { createUserMessage } = await import(module("../../dsh-llm/lib/index.js"));
@@ -46,6 +46,7 @@ export async function createThreadEngine(ctx, toolsModuleUrl) {
       setSandboxMode(child.agent.session, input.permissionState.mode);
       setApprovalPolicy(child.agent.session, input.permissionState.approval);
     }
+    await capabilities?.mount(input, child.agent);
   };
   const create = async input => {
     const sessionId = input.sessionId ?? randomUUID();
@@ -57,12 +58,13 @@ export async function createThreadEngine(ctx, toolsModuleUrl) {
         seed: input.seed,
         meta: { cwd, agentPreset, ...(input.sourceSessionId ? { parentSession: SessionId(input.sourceSessionId), seedLength: input.seed.length } : {}) },
         agentOptions: { ...(input.provider ? { provider: input.provider } : {}), ...(input.model ? { model: input.model } : {}) },
-        setup: setup({ ...input, agentPreset }) });
+        setup: setup({ ...input, sessionId, agentPreset }) });
       handles.set(sessionId, handle);
       if (handle.agent.session.events.length === 0) handle.agent.session.append("session/end-seed", {});
       await ctx.sessions.flush(handle.agent.session);
       return { sessionId, agentPreset, cwd: handle.agent.session.header.cwd, ephemeral: input.ephemeral === true };
     } catch (error) {
+      await capabilities?.rollback(sessionId);
       const handle = handles.get(sessionId);
       if (handle) { await handle.dispose(); handles.delete(sessionId); }
       if (input.ephemeral) volatileSessions.forget(sessionId);

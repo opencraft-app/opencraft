@@ -8,6 +8,9 @@ import {
 import {
   buildCodexThemeCssProperties,
   codexThemePalette,
+  frostThemePalette,
+  lavenderThemePalette,
+  zenCodeThemePalette,
   velaThemePalette,
   type CodexThemeDefinition,
 } from "@opencraft/design-system/theme-engine";
@@ -23,6 +26,9 @@ const preferenceStorageKey = "vela.appearance-theme";
 const themeIdStorageKey = "vela.appearance-theme-id";
 export const coreThemeId = "vela.core.codex";
 export const velaThemeId = "vela.core.web";
+export const frostThemeId = "vela.core.frost";
+export const lavenderThemeId = "vela.core.lavender";
+export const zenCodeThemeId = "vela.core.zencode";
 
 export function defaultAppearanceThemeId(productId: string): string {
   return productId === "lightvela-web" ? velaThemeId : coreThemeId;
@@ -91,9 +97,42 @@ const velaTheme: AppearanceThemeRecord = Object.freeze({
   palettes: velaThemePalette,
 });
 
+const frostTheme: AppearanceThemeRecord = Object.freeze({
+  descriptor: Object.freeze({
+    id: frostThemeId,
+    label: "Frost",
+    description: "A cool translucent Sidebar with a lighter fixed material.",
+    source: "core",
+  }),
+  palettes: frostThemePalette,
+});
+
+const lavenderTheme: AppearanceThemeRecord = Object.freeze({
+  descriptor: Object.freeze({
+    id: lavenderThemeId,
+    label: "Lavender",
+    description: "A soft lavender workspace inspired by LightVela's quiet UI palette.",
+    source: "core",
+  }),
+  palettes: lavenderThemePalette,
+});
+
+const zenCodeTheme: AppearanceThemeRecord = Object.freeze({
+  descriptor: Object.freeze({
+    id: zenCodeThemeId,
+    label: "ZenCode",
+    description: "Quiet grayscale layers, crisp controls, and an opaque workspace.",
+    source: "core",
+  }),
+  palettes: zenCodeThemePalette,
+});
+
 const coreThemes = new Map<string, AppearanceThemeRecord>([
   [coreThemeId, coreTheme],
   [velaThemeId, velaTheme],
+  [frostThemeId, frostTheme],
+  [lavenderThemeId, lavenderTheme],
+  [zenCodeThemeId, zenCodeTheme],
 ]);
 
 let extensionThemes = new Map<string, AppearanceThemeRecord>();
@@ -164,19 +203,19 @@ let listeningToSystemTheme = false;
 let initialized = false;
 
 interface DesktopAppearanceBridge {
-  readonly setWindowAppearance?: (appearance: {
-    readonly themeSource: ThemePreference;
-    readonly resolvedTheme: ResolvedTheme;
-  }) => void;
+  readonly setWindowAppearance?: (appearance: import("@opencraft/design-system/theme-options").ThemeWindowAppearance) => void;
 }
 
 function synchronizeDesktopAppearance(next: AppearanceThemeSnapshot): void {
+  const definition = activeDefinition(next);
   const bridge = (
     globalThis as typeof globalThis & { readonly opencraftDesktop?: DesktopAppearanceBridge }
   ).opencraftDesktop;
   bridge?.setWindowAppearance?.({
     themeSource: next.preference,
     resolvedTheme: next.resolvedTheme,
+    opaqueWindows: definition.material?.window === undefined ? definition.opaqueWindows : definition.material.window === "opaque",
+    backgroundColor: definition.surfaces?.window ?? definition.surface,
   });
 }
 
@@ -263,7 +302,9 @@ function toThemeDefinition(palette: ContributedPalette): CodexThemeDefinition {
     contrast: palette.contrast,
     fonts: Object.freeze({ code: null, ui: null }),
     ink: palette.ink,
-    opaqueWindows: false,
+    opaqueWindows: palette.material?.window === "opaque",
+    surfaces: palette.surfaces,
+    material: palette.material,
     semanticColors: palette.semanticColors,
     surface: palette.surface,
   });
@@ -294,6 +335,11 @@ function importContributedThemes(contributions: ExtensionContributionSnapshot): 
 
 export function getAppearanceThemeSnapshot(): AppearanceThemeSnapshot {
   return snapshot;
+}
+
+/** Theme cards sample the actual selected-mode palette, never an ID-specific CSS copy. */
+export function getAppearanceThemePreviewProperties(themeId: string) {
+  return buildCodexThemeCssProperties(snapshot.resolvedTheme, resolveThemeRecord(themeId).palettes[snapshot.resolvedTheme]);
 }
 
 export function subscribeToAppearanceTheme(listener: () => void): () => void {

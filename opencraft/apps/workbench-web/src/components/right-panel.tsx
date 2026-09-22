@@ -336,6 +336,7 @@ export function RightPanel({
   const regionState = state[region];
   const presentation = useShellPresentation();
   const fullWidth = presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth;
+  const autoFullWidth = fullWidth && !state.rightPanelFullWidth;
   const { headerRightWidth, rightPanelTabBarLeftInset, rightPanelPresentationActive } =
     useAppShellLayoutMotion();
   const headerRightWidthPx = useTransform(
@@ -564,11 +565,7 @@ export function RightPanel({
                   context={toolbarActionContext}
                 />
               ))}
-            {presentation?.restoreRightPanel ? <button
-              className="chrome-button right-panel-back-to-chat"
-              type="button"
-              onClick={presentation.restoreRightPanel}
-            >Back to chat</button> : <button
+            {autoFullWidth ? null : <button
               className="chrome-button"
               type="button"
               title={

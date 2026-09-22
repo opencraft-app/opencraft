@@ -130,6 +130,8 @@ export interface ComposerCatalogEntry {
 
 export interface ComposerCatalog {
   search(query: ComposerCatalogQuery, signal?: AbortSignal): Promise<readonly ComposerCatalogEntry[]>;
+  /** Invalidate displayed Skill results without disturbing file-search sessions. */
+  subscribeSkillsChanged?(listener: () => void): () => void;
 }
 
 export interface AssetResolver {

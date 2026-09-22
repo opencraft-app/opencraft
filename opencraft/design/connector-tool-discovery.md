@@ -18,7 +18,7 @@ Engine Adapter 投影到各自协议。产品层、Connector 层和 Composer 不
 
 | 实现 | 已验证做法 | 能借鉴什么 | 不能直接照搬什么 |
 |---|---|---|---|
-| `ref/workbuddy` | 产品特性 `DeferToolLoading` 默认开启；MCP 工具通过 `ToolSearch` 按需激活；另有 `search_integration_tool` 返回匹配工具 | 搜索优先、延迟加载；不把全部工具放进首轮上下文 | 恢复的前端/协议代码没有完整后端检索排序实现，不能假定其精确分页和权限模型 |
+| `ref/workbuddy` | 产品特性 `DeferToolLoading` 默认开启；MCP 工具通过 `ToolSearch` 按需激活；meta tools 保留 MCP 所有者边界，物理工具使用 `mcp__server__tool` 身份 | 搜索优先、延迟加载；不把全部工具放进首轮上下文；不丢失能力所有者 | 恢复的前端/协议代码没有完整后端检索排序实现，不能假定其精确分页和权限模型 |
 | `ref/codex` | DynamicToolFunctionSpec 有 `deferLoading`；存在 `tool_search_always_defer_mcp_tools`；线程启动时提供动态工具目录，延迟工具由运行时搜索 | `deferLoading` 是工具目录属性；线程能力与 UI 列表分开；运行时原生 ToolSearch 优先 | OpenCraft 的 DSH/其他 Host 不一定都实现 Codex ToolSearch，不能只设置布尔字段就宣称完成 |
 | `ref/octop` | 腾讯文档 catalog 只允许 10 个工具；自定义 MCP 在 turn 前按选择加载，按 user/server/config fingerprint 缓存并注入 Agent | 仅用于解释它为何没有触发 224-tool 全量问题；本章程不借鉴该产品收敛策略 | 固定白名单会静默移除已连接服务的能力，与 OpenCraft 要求的完整可发现目录冲突；不得进入目标设计 |
 | OpenCraft 当前 | 会话先选择连接，再 `discover()` 所有工具，为每个完整 schema 生成 handle，一次 JSON 返回；总文本超过 262144 字符则整批失败 | 已有 scope、授权、approval、stale-handle 和 provider 生命周期可保留 | 全量 list 不是可扩展发现协议；MCP 的 cursor 只用于 Host 拉取，到了模型边界已经被彻底展开 |
@@ -81,11 +81,12 @@ Capability Runtime 始终提供同一套有界 catalog/search/detail/handle 语�
 
 通用两阶段 disclosure operation 为：
 
-1. `connectors_search_tools`：按关键词、可选 connector filter 和 cursor 搜索 compact summaries；返回固定上限的匹配项和 `nextCursor`。
-2. `connectors_get_tool` 或搜索结果的显式 detail 请求：只为少量精确候选返回完整 schema 和临时 handle。
-3. `connectors_call_tool`：使用 exact handle 调用；stale handle 明确要求重新搜索。
+1. `connectors.search_tools`：按关键词、可选 connector filter 和 cursor 搜索 compact summaries；返回固定上限的匹配项和 `nextCursor`。
+2. `connectors.get_tool` 或搜索结果的显式 detail 请求：只为少量精确候选返回完整 schema 和临时 handle。
+3. `connectors.call_tool`：使用 exact handle 调用；stale handle 明确要求重新搜索。
 
-兼容期保留 `connectors_list_tools`，但它必须映射为第一页有界搜索并返回 cursor，不得再表示“全部展开”。空参数不能恢复旧的全量语义。该兼容名称属于 Engine Adapter，不是 Capability Runtime 的领域 API。
+`connectors` namespace 是 Capability Runtime 在 AppServer/DSH 投影中的稳定 owner。不提供 null namespace 的全局别名，也不保留 list 兼容入口；空 query 的 `search_tools` 已等价提供有界 browse page。
+AppServer 原生传递 namespace；DSH 的模型工具名不支持点分 identity，因此 adapter 确定性投影为 `connectors__search_tools` / `connectors__get_tool` / `connectors__call_tool`。双下划线是 engine 编码，内部权威身份仍是 `connectors.*`。
 
 ### 2. 搜索与分页
 
@@ -143,8 +144,8 @@ Thread selection
 
 1. `ConnectorRuntime.inspectCapabilities/openCapability` 构成 Connector provider seam；连接、授权、选择、审批和调用仍由原 Runtime 唯一持有。
 2. `ConnectorCapabilityRuntime` 实现 compact view、确定性排序、cursor、toolRef、search/detail 预算和 scope/revision fence。
-3. AppServer Adapter 暴露稳定的 search/detail/list-compat/call meta tools，并在标准 `thread/start.dynamicTools` 中声明 `deferLoading`；DSH adapter 投影同一组稳定工具，不进入产品分支。
-4. `connectors_list_tools` 已改为有界兼容搜索页；生产模型路径不再调用旧的全量 `discover()` 或在完整 JSON 生成后才检查 256 KiB。
+3. AppServer Adapter 只暴露 `connectors` namespace 下的 search/detail/call meta tools，并在标准 `thread/start.dynamicTools` 中声明 `deferLoading`；DSH adapter 投影同一 capability identity，不进入产品分支。
+4. 空 query 的 `connectors.search_tools` 提供有界 browse page；生产模型路径不再调用旧的全量 `discover()` 或在完整 JSON 生成后才检查 256 KiB。
 5. MCP inventory 仍由 Host 完整持有，模型只看到 compact page；单 schema、detail page 与实际 tool output 使用独立预算和结构化错误。
 
 ## 验收矩阵
