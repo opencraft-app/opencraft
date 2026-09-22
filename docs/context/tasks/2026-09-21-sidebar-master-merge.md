@@ -77,8 +77,13 @@ frontend、site-environment-routing、frontend-runtime-openspec-i18n、upstream-
 - 收敛后账号页、Buddy、Memory、依赖、锁文件及 OpenCraft 产品代码与 master 相同；原内容可由 6214001a0 找回。
 - pnpm check 通过：171 current / 171 baseline / 0 new TypeScript diagnostics；所有必填语种无缺译。
 - 默认和 global 环境聚焦 Vitest 均 8 文件、125 项通过，含滚动边界、整行按钮子元素点击、hover 不开、Portal 和焦点恢复；mock 测试不等同于真实双站验收。
+- 补充侧栏引导 guard：agent-multi-bot-onboarding.test.ts 16 项通过；仅将旧 aside 字面匹配更新为 AgentSidebar，保留原引导条件。
 - pnpm build 通过（cn 静态构建）；未宣称 global 构建、浏览器像素命中、真实登录/计费验证。
 - 全量 pnpm run test --maxWorkers=2 已启动并出现失败，后按收窄范围停止；未完成 master 基线对比，不将失败定性为既有，也不宣称全量通过。
+
+- validate_documentation.py 无错误；validate_context.py --build-catalog 已生成 catalog，但仓库文档元数据及 secret-scan 告警仍导致 exit 1；本次两份侧栏 Pack 无报错。
+- 收敛提交的 --staged docs-impact 通过；后续机械 UPSTREAM metadata 会单独触发 agent-gateway-runtime 正式设计要求。本次不为满足路径门禁改写无关架构文档，需 owner 评审此生成物例外。
+- 标准同步脚本核对 130 文件；除菜单账号管理文案，顺带同步 master 已有的英文 Basic setup，OpenCraft 依赖/脚本/产品源码与 master 无差异。
 
 ## risks
 
