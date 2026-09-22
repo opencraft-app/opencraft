@@ -27,6 +27,10 @@
   必须经过现有 LightVela session 内省。`service-gateway` 在转发前清除调用方提供的 `X-User-Id`
   等身份头并注入会话中的权威用户 ID，Referral 只消费该集群内断言；不得把 Referral ClusterIP、
   任意 owner 参数或宽泛路径暴露为公共身份入口。
+- Attribution 重置不是用户能力。它只通过 Admin Gateway 的 Basic Auth 管理面暴露
+  `/admin/api/referral/attributions/{invitee_user_id}` 预览和 `/reset` 执行，不进入用户 Service Gateway。
+  执行必须携带期望 attribution ID、操作人、原因和幂等键；Referral 不信任调用方提交的奖励或订阅列表，
+  只能从自身数据库快照生成 CTL 精确撤销请求。
 
 ## 机器契约与验证
 
@@ -122,10 +126,13 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
 Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
 北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
-而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入；对应
-Deployment patch 由北京 source-facing Service Gateway Component 持有，与基准 Deployment 同层组合，
-deploy-facing 目录只提供环境配置和加密 Secret generator，避免身份桥接因无目标 patch 而未落入运行时。
-北京主 sandbox 直接按 common、北京 source-facing Component 的顺序组合，禁止再经 profile 嵌套隔离 patch 累计器。
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入。北京主 sandbox
+使用普通 Kustomization 同时拥有 base、平台值 replacements、Secret generator 和身份桥接 patch，确保
+patch 与基准 Deployment 在同一累计器；禁止通过 Component 注入内部 token，因为 Component patch
+无法修改其引入的 Deployment。
+浏览器 CORS 只由公共 Gateway 判定和响应；通过 allowlist 后，Gateway 必须从私有 Collaboration hop
+删除浏览器 `Origin`，避免 Collaboration 的直连 CORS allowlist 再次解释公网来源并拒绝合法本地预览。
+该删除不影响权威 subject、内部 Bearer、请求 ID 或客户端 IP 投影。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 
@@ -145,6 +152,16 @@ Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route
 `developer_route_registrations`；表内只保存 capability SHA-256，不保存 capability 明文。注销写入
 disabled tombstone，TTL 过期由消费者按 `renewed_at + ttl_seconds` 判定，二者都必须使 capability 和
 动态路由同时失效。registry 不可用、响应字段不合法或目标超出 DevCloud CIDR/端口约束时必须 fail closed。
+
+同一短期 capability 也可用于 sandbox-only 的个人计费代理，但它不是计费长期凭据。Auth 逐请求从
+capability 解析 UIN，重新读取 registry 并校验 digest、TTL、disabled 与 `delivery_mode=devtunnel`，
+然后只允许固定的 Jifei `ModifyResourceStatus` 和 Billing CloudAPI 支付动作。Jifei envelope 的
+`ownerUin/uin` 必须等于 registration UIN。CloudAPI 用户身份由绑定账号签发的短期 TC3 凭证负责；
+`X-Qcloud-User-Id` 是 testing 路由服务账号，不等于购买用户 UIN，个人客户端不得提交，只能由中央 Trade
+注入。客户端 capability 不转发给 Trade，Auth 改用既有内部 Bearer，并把个人 Trade 已生成的 TC3
+Authorization 放入内部专用 header。
+续租覆盖 digest 后旧 token 立即失效，注销后同一 token 必须返回 `401`；`403` 只能用于已验证 capability
+的业务 allowlist 拒绝探针。个人环境不得取得 Jifei AppSecret、CloudLadder HMAC 或中央内部 Bearer。
 
 生产和 staging 不启用 `PERSONAL_DEV_ROUTE_CONTROL_ENABLED` 或 developer route store；同名 HTTP 路由
 即使存在也只返回 disabled，不得降级到客户端自报身份或共享 Secret。验收至少覆盖无 session、非 active

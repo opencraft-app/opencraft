@@ -20,6 +20,8 @@ data:
   PERSONAL_DEV_ROUTE_CLOUDLADDER_ROUTE_ID: "developer-route-control"
   PERSONAL_DEV_ROUTE_CLOUDLADDER_CALLER: "lightclaw-auth"
   PERSONAL_DEV_ROUTE_CLOUDLADDER_TIMEOUT: "10s"
+  PERSONAL_DEV_BILLING_PROXY_ENABLED: "true"
+  PERSONAL_DEV_BILLING_PROXY_TRADE_URL: "http://trade.lightvela-playground-sandbox-bj-7.svc.cluster.local/internal/trade/personal-dev/billing-proxy"
   SHADOW_ACCOUNT_ENDPOINT: "account.test.tencentcloudapi.com"
   SHADOW_CAM_ENDPOINT: "cam.test.tencentcloudapi.com"
   SHADOW_STS_ENDPOINT: "sts.test.tencentcloudapi.com"

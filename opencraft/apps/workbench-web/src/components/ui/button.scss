@@ -1,4 +1,9 @@
+@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
 .ui-button {
+  @include typography.role(control, null);
+  position: relative;
   display: inline-flex;
   min-width: 0;
   align-items: center;
@@ -10,9 +15,6 @@
   outline: none;
   background: var(--color-background-button-primary, var(--color-text));
   color: var(--color-text-button-primary, var(--color-background-surface));
-  font: inherit;
-  font-weight: 590;
-  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -21,17 +23,15 @@
     color var(--transition-duration-basic) var(--ease-standard),
     opacity var(--transition-duration-basic) var(--ease-standard);
 
-  &[data-size="sm"] { min-height: 32px; padding: 0 12px; font-size: 12px; }
-  &[data-size="md"] { min-height: 40px; padding: 0 16px; font-size: 14px; }
-  &[data-size="lg"] { min-height: 44px; padding: 0 24px; font-size: 16px; }
+  &[data-size="sm"] { @include typography.role(control-small, null); min-height: 32px; padding: 0 12px; }
+  &[data-size="md"] { min-height: 40px; padding: 0 16px; }
+  &[data-size="lg"] { @include typography.role(control-large, null); min-height: 44px; padding: 0 24px; }
   &[data-size="toolbar"] {
+    @include typography.role(control-compact, null);
     height: var(--height-toolbar-control);
     min-height: var(--height-toolbar-control);
     border-radius: var(--radius-toolbar-control);
     padding: 0 var(--padding-toolbar-control-inline);
-    font-size: var(--font-toolbar-control-size);
-    font-weight: var(--font-toolbar-control-weight);
-    line-height: var(--font-toolbar-control-line-height);
   }
 
   &[data-variant="primary"],
@@ -86,22 +86,25 @@
   }
 
   &:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-border-focus);
+    @include controls.focus-indicator;
   }
 
   &:disabled {
-    opacity: .45;
-    cursor: default;
+    @include controls.disabled-feedback;
   }
+  &[aria-busy="true"] .ui-button__label { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { transition: none; }
 }
 
 .ui-button__spinner {
+  position: absolute;
   width: 14px;
   height: 14px;
   border: 1.5px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
   animation: ui-button-spin 680ms linear infinite;
+  @media (prefers-reduced-motion: reduce) { animation: none; }
 }
 
 @keyframes ui-button-spin {

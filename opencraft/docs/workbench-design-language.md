@@ -5,7 +5,8 @@ typography and surfaces, not a separate LightVela theme.
 
 ## Ownership
 
-- Host identity groups tasks. Display names are labels, never identity keys.
+- Activity chronology groups tasks. Host identity remains per-task provenance;
+  display names are labels, never identity keys.
 - The runtime supplies connection phase. A status dot does not initiate a connection.
 - Selected task, chosen execution target and connection health are different states.
 - Target-local new chat supplies that Host explicitly and does not inherit another Host's workspace.
@@ -29,6 +30,13 @@ group may retain its own accessible navigation landmark without rendering a
 visual heading; section separation comes from the Shell spacing tokens rather
 than stacked feature margins.
 
+The persistent desktop titlebar rail mirrors Codex's disclosure rule: while the
+Sidebar is open, Start is the single new-task affordance; while it is hidden, a
+16px Write action appears immediately after the Sidebar toggle and dispatches
+the same `navigateToHome` intent. The transient floating Sidebar never renders a
+second Write action. Dynamic registration participates in the rail's measured
+width and macOS safe-area geometry instead of overlaying window chrome.
+
 Header toolbar controls consume `toolbar.web.scss` and the corresponding
 `--*-toolbar-control` tokens. That contract owns control height, radius,
 typography, inline padding, content gap, icon and chevron scale, bounded menu
@@ -36,12 +44,20 @@ width and list density. Feature adapters provide semantic values and visual
 roles such as `local` or `remote`; they do not choose concrete icons or repeat
 toolbar geometry in feature CSS.
 
-- Target headings have no permanent border or filled capsule, and no task count.
-- Task rows are single-line; repeated usernames are omitted. Full identity stays in the tooltip.
+- Activity sections use Today, Yesterday, weekday or date headings derived from
+  the canonical Thread recency timestamp; presentation never parses relative-time copy.
+- Task rows use a shared two-line contract: title first, then project identity and
+  an optional remote Host label. Local is not repeated on every row; full Thread
+  identity stays in the tooltip.
 - Every current navigation destination gets one persistent selection surface;
   hover remains transient and must not double as location state.
-- Target creation is revealed on hover/focus on fine-pointer devices; touch keeps it visible.
-- Show more is a quiet text action, not a full-width outlined button.
+- Thread status, unread state, pending navigation and row actions share a stable
+  trailing rail so asynchronous changes do not shift title or metadata geometry.
+- Show more is a quiet text action, not a full-width outlined button. Start and
+  the Composer target picker own target-specific task creation; Settings owns
+  connection configuration rather than repeating Host controls in each date group.
+  The existing task context menu may expose these Host-scoped actions without
+  changing the Activity row's resting geometry.
 - Composer displays the selected target name and health. Transport type/location
   remain secondary details in the target menu, not duplicate labels in the toolbar.
 - Ready is filled green, connecting/reconnecting amber, error red, idle hollow.

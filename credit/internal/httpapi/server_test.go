@@ -107,6 +107,9 @@ type httpFakeLLMGateway struct {
 }
 
 type httpFakeTrade struct {
+	inquiryRequest     tradeclient.InquiryRequest
+	inquiryResult      map[string]any
+	inquiryError       error
 	orderRequest       tradeclient.OrderRequest
 	orderResult        *tradeclient.OrderResult
 	orderError         error
@@ -118,7 +121,11 @@ type httpFakeTrade struct {
 	refundRequest      tradeclient.RefundRequest
 }
 
-func (f *httpFakeTrade) Inquiry(context.Context, tradeclient.InquiryRequest) (map[string]any, error) {
+func (f *httpFakeTrade) Inquiry(_ context.Context, req tradeclient.InquiryRequest) (map[string]any, error) {
+	f.inquiryRequest = req
+	if f.inquiryResult != nil || f.inquiryError != nil {
+		return f.inquiryResult, f.inquiryError
+	}
 	return map[string]any{}, nil
 }
 
@@ -300,6 +307,43 @@ func TestUserOrderAndPayRequiresTrustedUserHeader(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInquiryAllowsAnonymousUser(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.products["credit_1000"] = &store.CreditProduct{ProductID: "credit_1000", State: store.ProductStateOnline}
+	trade := &httpFakeTrade{inquiryResult: map[string]any{"price": "10.00"}}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, nil, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/inquiry", strings.NewReader(`{"product_id":"credit_1000"}`))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.inquiryRequest.ExternalUserID != "" {
+		t.Fatalf("anonymous inquiry user=%q, want empty", trade.inquiryRequest.ExternalUserID)
+	}
+}
+
+func TestInquiryUsesAuthenticatedUserWhenPresent(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.products["credit_1000"] = &store.CreditProduct{ProductID: "credit_1000", State: store.ProductStateOnline}
+	trade := &httpFakeTrade{}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, nil, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/inquiry", strings.NewReader(`{"product_id":"credit_1000"}`))
+	req.Header.Set("X-User-Id", "usr-trusted")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.inquiryRequest.ExternalUserID != "usr-trusted" {
+		t.Fatalf("inquiry user=%q, want usr-trusted", trade.inquiryRequest.ExternalUserID)
 	}
 }
 

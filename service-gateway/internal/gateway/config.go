@@ -53,6 +53,7 @@ type Route struct {
 	VelaInstanceKeyAllow   []PublicRule `yaml:"vela_instance_key_allow"`
 	RequireRealname        bool         `yaml:"require_realname"`
 	ResponseHeaderTimeout  string       `yaml:"response_header_timeout"`
+	stripBrowserOrigin     bool
 }
 
 type Config struct {

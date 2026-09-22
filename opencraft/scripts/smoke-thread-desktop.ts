@@ -52,11 +52,11 @@ try {
     return thread.id;
   }, directory);
   await page.waitForFunction(() => document.querySelector(".codex-composer-mode__model-label")?.textContent?.trim() === "Model");
-  const row = page.locator(".sidebar-thread").filter({ hasText: "Lifecycle desktop fixture" }); await row.waitFor();
+  const row = page.locator(".sidebar-activity-item").filter({ hasText: "Lifecycle desktop fixture" }); await row.waitFor();
   await row.click({ button: "right" }); await page.getByRole("menuitem", { name: "重命名", exact: true }).click();
   await page.getByRole("textbox", { name: "会话名称" }).fill("Desktop renamed fixture");
   await page.getByRole("button", { name: "保存", exact: true }).click();
-  const renamed = page.locator(".sidebar-thread").filter({ hasText: "Desktop renamed fixture" }); await renamed.waitFor();
+  const renamed = page.locator(".sidebar-activity-item").filter({ hasText: "Desktop renamed fixture" }); await renamed.waitFor();
   await renamed.click({ button: "right" }); await page.getByRole("menuitem", { name: "新建分支", exact: true }).click();
   try {
     await page.waitForFunction((parent: string) => location.pathname.startsWith("/local/") && location.pathname.split("/").at(-1) !== parent, parent);
@@ -70,7 +70,7 @@ try {
   await page.getByRole("dialog", { name: "已归档会话" }).waitFor();
   await page.getByRole("button", { name: "恢复", exact: true }).click();
   await page.getByRole("button", { name: "Close 已归档会话", exact: true }).click();
-  await page.locator(".sidebar-thread").filter({ hasText: "Desktop renamed fixture" }).waitFor();
+  await page.locator(".sidebar-activity-item").filter({ hasText: "Desktop renamed fixture" }).waitFor();
   assert.deepEqual(errors, []);
   await page.screenshot({ path: "/tmp/opencraft-thread-desktop.png" });
   console.log("PASS: signed desktop actual AppHost/DSH rename, fork navigation, archive and persistent restore UI; no model inference");

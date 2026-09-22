@@ -76,8 +76,9 @@ var allowedTransitions = map[core.InstanceState][]core.InstanceState{
 	core.StateDeleting:     {core.StateDeleted},
 	core.StateFailed:       {core.StateDeleted},
 	// Pause path (Q26-D 修订版 + Q29=E5 + Q32=b 拍板 2026-05-14)：
-	// 关机语义保留数据，pausing 失败时回滚到 Allocated；paused 终态可被销毁/失败。
-	core.StatePausing: {core.StatePaused, core.StateAllocated, core.StateFailed},
+	// 关机语义保留数据，pausing 失败时只能回滚到 Allocated。禁止进入 FAILED，
+	// 避免通用 FAILED cleanup 将仍承载用户数据的 CVM 销毁。
+	core.StatePausing: {core.StatePaused, core.StateAllocated},
 	// Resume path (R-F 2026-05-15，对偶 trade 续费链路 .tmp/trade-pass-renew-design.md §10 R-F)：
 	// 开机语义恢复数据，paused → resuming → allocated；resuming 失败回滚到 paused 让 ctl 子 task 重投。
 	core.StatePaused:   {core.StateDeleting, core.StateFailed, core.StateResuming},
@@ -846,6 +847,10 @@ func (s *Service) CreateSandbox(ctx context.Context, sb core.Sandbox) (core.Sand
 
 func (s *Service) GetSandbox(ctx context.Context, id string) (core.Sandbox, error) {
 	return s.store.GetSandbox(ctx, id)
+}
+
+func (s *Service) GetSandboxByInstanceID(ctx context.Context, instanceID string) (core.Sandbox, error) {
+	return s.store.GetSandboxByInstanceID(ctx, instanceID)
 }
 
 func (s *Service) ListSandboxes(ctx context.Context) ([]core.Sandbox, error) {

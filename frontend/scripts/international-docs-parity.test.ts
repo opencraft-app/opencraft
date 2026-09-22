@@ -273,11 +273,11 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
     });
 
-    it("generates the same 71-route inventory as English from Japanese sources", () => {
+    it("generates the same 73-route inventory as English from Japanese sources", () => {
       expect(docsRouteSlugs["ja-jp"]).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs["ja-jp"]).toHaveLength(71);
+      expect(docsRouteSlugs["ja-jp"]).toHaveLength(73);
       const generatedDocs = walkFiles(generatedJaRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(70);
+      expect(generatedDocs).toHaveLength(72);
       for (const path of generatedDocs) {
         expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
           /^src\/content\/docs\/ja\//,
@@ -377,11 +377,11 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
     });
 
-    it("generates the same 71-route inventory as English from Korean sources", () => {
+    it("generates the same 73-route inventory as English from Korean sources", () => {
       expect(docsRouteSlugs["ko-kr"]).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs["ko-kr"]).toHaveLength(71);
+      expect(docsRouteSlugs["ko-kr"]).toHaveLength(73);
       const generatedDocs = walkFiles(generatedKoRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(70);
+      expect(generatedDocs).toHaveLength(72);
       for (const path of generatedDocs) {
         expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
           /^src\/content\/docs\/ko\//,
@@ -512,28 +512,28 @@ describe("international docs publication inventory", () => {
   describe("Spanish docs source publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
-    it("publishes the same 71 routes as international English for every completed locale", () => {
+    it("publishes the same 73 routes as international English for every completed locale", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs.es).toHaveLength(71);
+      expect(docsRouteSlugs.es).toHaveLength(73);
       expect(docsRouteSlugs.es).toContainEqual([]);
       expect(Object.keys(docsRouteSlugs)).toContain("ja-jp");
       expect(Object.keys(docsRouteSlugs)).toContain("ko-kr");
     });
 
     it("keeps the expected locale route inventories", () => {
-      expect(docsRouteSlugs["en-us"]).toHaveLength(71);
-      expect(docsRouteSlugs["zh-cn"]).toHaveLength(47);
-      expect(docsRouteSlugs["zh-sg"]).toHaveLength(71);
-      expect(docsRouteSlugs["zh-hant"]).toHaveLength(71);
-      expect(docsRouteSlugs["id-id"]).toHaveLength(69);
+      expect(docsRouteSlugs["en-us"]).toHaveLength(73);
+      expect(docsRouteSlugs["zh-cn"]).toHaveLength(48);
+      expect(docsRouteSlugs["zh-sg"]).toHaveLength(73);
+      expect(docsRouteSlugs["zh-hant"]).toHaveLength(73);
+      expect(docsRouteSlugs["id-id"]).toHaveLength(70);
     });
 
-    it("generates 70 Spanish documents from explicit Spanish body sources", () => {
+    it("generates 72 Spanish documents from explicit Spanish body sources", () => {
       expect(existsSync(join(docsContentRoot, "es"))).toBe(true);
       expect(existsSync(esRoot)).toBe(true);
 
       const generatedDocs = walkFiles(esRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(70);
+      expect(generatedDocs).toHaveLength(72);
 
       for (const path of generatedDocs) {
         const content = readFileSync(path, "utf8");

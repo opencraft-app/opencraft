@@ -1,8 +1,6 @@
 // Semantically restored from the r1442 AppShell left-panel ownership model.
 import {
   ChevronDown,
-  Monitor,
-  Plus,
   Settings,
   SquarePen,
 } from "lucide-react";
@@ -15,8 +13,9 @@ import type {
 import type { ReactNode } from "react";
 import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
 import { ThreadRowMenu, type ThreadActionCallbacks, type ThreadActionCapabilities } from "./thread-management";
-import { groupThreadsByTarget } from "../sidebar-target-groups";
+import { groupThreadsByActivityDate, sidebarActivityMetadata } from "../sidebar-activity";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
+import { SidebarActivityItem } from "./sidebar-activity-item";
 import { SidebarNavigationItem } from "./sidebar-navigation-item";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 
@@ -51,7 +50,6 @@ interface SidebarProps {
   onNewTask(): void;
   onNewTaskForTarget?(hostId: string): Promise<unknown>;
   onOpenTargetSettings?(hostId: string): void;
-  renderTargetStatus?(hostId: string): ReactNode;
   onOpenSettings(): void;
   showFooter?: boolean;
   threadActions?: ThreadActionCallbacks;
@@ -81,34 +79,6 @@ function ExtensionCatalog({ catalog }: { readonly catalog: SidebarCatalogItem })
   );
 }
 
-function ThreadActivity({ status }: { status: WorkbenchThread["status"] }) {
-  if (status === "running")
-    return (
-      <span
-        className="sidebar-thread__activity is-running"
-        role="img"
-        aria-label="Running"
-      />
-    );
-  if (status === "review")
-    return (
-      <span
-        className="sidebar-thread__activity is-review"
-        role="img"
-        aria-label="Ready for review"
-      />
-    );
-  if (status === "error")
-    return (
-      <span
-        className="sidebar-thread__activity is-error"
-        role="img"
-        aria-label="Thread unavailable"
-      />
-    );
-  return <span className="sidebar-thread__activity" aria-hidden="true" />;
-}
-
 export function Sidebar({
   threads,
   activeHostId,
@@ -126,7 +96,6 @@ export function Sidebar({
   onNewTask,
   onNewTaskForTarget,
   onOpenTargetSettings,
-  renderTargetStatus,
   onOpenSettings,
   showFooter = true,
   threadActions,
@@ -134,21 +103,22 @@ export function Sidebar({
   pendingTitle,
 }: SidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const [collapsedTargets, setCollapsedTargets] = useState<ReadonlySet<string>>(new Set());
-  const [expandedTargets, setExpandedTargets] = useState<ReadonlySet<string>>(new Set());
-  const groups = groupThreadsByTarget(threads);
-  const [creatingTarget, setCreatingTarget] = useState<string | null>(null);
-  const creatingRef = useRef(false);
-  const [creationError, setCreationError] = useState<{ hostId: string; message: string } | null>(null);
+  const [activityExpanded, setActivityExpanded] = useState(false);
   const selectedThreadKey =
     pendingThreadId === null
       ? `${activeHostId}:${activeThreadId}`
       : `${pendingHostId ?? activeHostId}:${pendingThreadId}`;
+  const orderedThreads = [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
+  const visibleThreads = activityExpanded
+    ? orderedThreads
+    : orderedThreads.filter((thread, index) =>
+      index < 10 || `${thread.hostId}:${thread.id}` === selectedThreadKey);
+  const activityGroups = groupThreadsByActivityDate(visibleThreads);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     const activeThread = container?.querySelector<HTMLElement>(
-      ".sidebar-thread.is-selected",
+      ".sidebar-activity-item.is-selected",
     );
     if (container == null || activeThread == null) return;
     const containerRect = container.getBoundingClientRect();
@@ -190,102 +160,64 @@ export function Sidebar({
         ))}
 
         <section className="sidebar-tasks" aria-label="Tasks">
-          {groups.length === 0 ? <div className="sidebar-target-empty">No tasks yet</div> : null}
-          {groups.map(group => {
-            const collapsed = collapsedTargets.has(group.id);
-            const expanded = expandedTargets.has(group.id);
-            const selectedId = pendingThreadId ?? activeThreadId;
-            const selectedHost = pendingThreadId === null ? activeHostId : pendingHostId ?? activeHostId;
-            const visible = expanded ? group.threads : group.threads.filter((thread, index) =>
-              index < 6 || (thread.hostId === selectedHost && thread.id === selectedId));
-            return <section className="sidebar-target-group" key={group.id} aria-label={group.label}>
-              <div className="sidebar-target-heading-row">
-              <button type="button" className="sidebar-target-heading" aria-expanded={!collapsed}
-                title={group.id} onClick={() => setCollapsedTargets(previous => {
-                  const next = new Set(previous);
-                  if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
-                  return next;
-                })}>
-                <ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
-                <Monitor size={15} />
-                <span>{group.label}</span>
-                {renderTargetStatus?.(group.id)}
-              </button>
-              {onOpenTargetSettings ? <button type="button" className="sidebar-target-action"
-                aria-label={`Settings for ${group.label}`} title={`Settings for ${group.label}`}
-                onClick={() => onOpenTargetSettings(group.id)}><Settings size={14} /></button> : null}
-              {onNewTaskForTarget ? <button type="button" className="sidebar-target-new"
-                aria-label={`New task on ${group.label}`} title={`New task on ${group.label}`}
-                disabled={creatingTarget !== null} aria-busy={creatingTarget === group.id}
-                onClick={() => {
-                  if (creatingRef.current) return;
-                  creatingRef.current = true;
-                  setCreatingTarget(group.id);
-                  setCreationError(null);
-                  void Promise.resolve().then(() => onNewTaskForTarget(group.id)).catch(error => {
-                    setCreationError({ hostId: group.id, message: error instanceof Error ? error.message : String(error) });
-                  }).finally(() => { creatingRef.current = false; setCreatingTarget(null); });
-                }}><Plus size={14} /></button> : null}
-              </div>
-              {creationError?.hostId === group.id ? <div role="alert" className="sidebar-target-empty">{creationError.message}</div> : null}
-          {!collapsed ? <div className="sidebar-thread-list">
-            {visible.map((thread) => {
-            const threadKey = `${thread.hostId}:${thread.id}`;
-            const active =
-              thread.hostId === activeHostId && thread.id === activeThreadId;
-            const pending =
-              thread.hostId === pendingHostId && thread.id === pendingThreadId;
-            const selected = threadKey === selectedThreadKey;
-            const title = pendingTitle?.(thread.hostId, thread.id) ?? thread.title;
-            const button = (
+          {activityGroups.length === 0 ? <div className="sidebar-activity-empty">No tasks yet</div> : null}
+          <div className="sidebar-activity-list">
+            {activityGroups.map(group => (
+              <section className="sidebar-activity-group" key={group.key} aria-label={group.label}>
+                <h2 className="sidebar-activity-group__heading">{group.label}</h2>
+                <div className="sidebar-activity-group__items">
+                  {group.threads.map((thread) => {
+                    const threadKey = `${thread.hostId}:${thread.id}`;
+                    const active =
+                      thread.hostId === activeHostId && thread.id === activeThreadId;
+                    const pending =
+                      thread.hostId === pendingHostId && thread.id === pendingThreadId;
+                    const selected = threadKey === selectedThreadKey;
+                    const title = pendingTitle?.(thread.hostId, thread.id) ?? thread.title;
+                    const metadata = sidebarActivityMetadata(thread);
+                    const button = <SidebarActivityItem
+                      key={threadKey}
+                      active={active}
+                      host={metadata.host}
+                      onInvoke={() => onSelectThread(thread.hostId, thread.id)}
+                      pending={pending}
+                      project={metadata.project}
+                      selected={selected}
+                      status={thread.status}
+                      title={title}
+                      tooltip={`${title} · ${metadata.project}${metadata.host === null ? "" : ` · ${metadata.host}`} · ${thread.id}`}
+                      unread={thread.unread === true}
+                    />;
+                    if (threadActions && threadCapabilities) return (
+                      <ThreadRowMenu
+                        key={threadKey}
+                        target={{ hostId: thread.hostId, threadId: thread.id, title }}
+                        capabilities={threadCapabilities(thread.hostId)}
+                        hostActions={{
+                          label: thread.hostLabel,
+                          onNewTask: onNewTaskForTarget,
+                          onOpenSettings: onOpenTargetSettings,
+                        }}
+                        {...threadActions}
+                      >
+                        {button}
+                      </ThreadRowMenu>
+                    );
+                    return button;
+                  })}
+                </div>
+              </section>
+            ))}
+            {threads.length > 10 ? (
               <button
                 type="button"
-                className={["sidebar-thread", selected ? "is-selected" : "", active ? "is-active" : "", pending ? "is-pending" : ""].filter(Boolean).join(" ")}
-                onClick={() => onSelectThread(thread.hostId, thread.id)} aria-current={selected ? "page" : undefined} aria-busy={pending || undefined}
-                title={`${title} · ${thread.hostLabel} · ${thread.id}`}>
-                <ThreadActivity status={thread.status} />
-                <span className="sidebar-thread__copy"><span className="sidebar-thread__label">{title}</span></span>
-                {thread.unread ? <span className="sidebar-thread__unread" /> : null}
-              </button>
-            );
-            if (threadActions && threadCapabilities) return <ThreadRowMenu key={threadKey} target={{ hostId: thread.hostId, threadId: thread.id, title }}
-              capabilities={threadCapabilities(thread.hostId)} {...threadActions}>{button}</ThreadRowMenu>;
-            return (
-              <button
-                type="button"
-                key={threadKey}
-                className={[
-                  "sidebar-thread",
-                  selected ? "is-selected" : "",
-                  active ? "is-active" : "",
-                  pending ? "is-pending" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onSelectThread(thread.hostId, thread.id)}
-                aria-current={selected ? "page" : undefined}
-                aria-busy={pending || undefined}
-                title={`${thread.title} · ${thread.hostLabel} · ${thread.id}`}
+                className="sidebar-activity-more"
+                onClick={() => setActivityExpanded(value => !value)}
               >
-                <ThreadActivity status={thread.status} />
-                <span className="sidebar-thread__copy">
-                  <span className="sidebar-thread__label">{thread.title}</span>
-                </span>
-                {thread.unread ? (
-                  <span className="sidebar-thread__unread" />
-                ) : null}
+                {activityExpanded ? "Show less" : "Show more"}
               </button>
-            );
-            })}
-            {group.threads.length > 6 ? <button type="button" className="sidebar-target-more"
-              onClick={() => setExpandedTargets(previous => {
-                const next = new Set(previous);
-                if (next.has(group.id)) next.delete(group.id); else next.add(group.id);
-                return next;
-              })}>{expanded ? "Show less" : "Show more"}</button> : null}
-          </div> : null}
-          </section>;
-          })}
+            ) : null}
+          </div>
         </section>
       </div>
 

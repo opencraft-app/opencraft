@@ -241,7 +241,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 		}
 		routes = append(routes, compiledRoute{
 			route:          route,
-			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs),
+			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs, route.stripBrowserOrigin),
 			allowedOrigins: normalizeAllowedOrigins(routeAllowedOrigins),
 			corsAllow:      corsAllow,
 		})
@@ -456,6 +456,7 @@ func collaborationRoute(config CollaborationRouteConfig) Route {
 			Path:   prefix + "/callbacks/tencent-im/state",
 		}},
 		ResponseHeaderTimeout: "30s",
+		stripBrowserOrigin:    true,
 	}
 }
 
@@ -1424,7 +1425,7 @@ func (h *Handler) observeRequest(start time.Time, route string, r *http.Request,
 	h.metrics.ObserveRequest(r.Method, route, r.URL.Path, status, time.Since(start))
 }
 
-func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string, upstreamBearerTokenEnv string, trustedProxyCIDRs []netip.Prefix) *httputil.ReverseProxy {
+func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string, upstreamBearerTokenEnv string, trustedProxyCIDRs []netip.Prefix, stripBrowserOrigin bool) *httputil.ReverseProxy {
 	proxy := &httputil.ReverseProxy{}
 	proxy.Rewrite = func(req *httputil.ProxyRequest) {
 		clientIP := canonicalClientIP(req.In, trustedProxyCIDRs)
@@ -1434,6 +1435,9 @@ func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, rou
 		req.Out.URL.Path = rewriteRoutePath(req.Out.URL.Path, routePrefix, rewritePrefix)
 		req.Out.URL.RawPath = ""
 		setCanonicalClientIPHeaders(req.Out.Header, clientIP)
+		if stripBrowserOrigin {
+			req.Out.Header.Del("Origin")
+		}
 	}
 	proxy.Transport = withUpstreamBearerToken(transport, upstreamBearerTokenEnv)
 	proxy.ModifyResponse = func(resp *http.Response) error {

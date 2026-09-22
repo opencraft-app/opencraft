@@ -110,6 +110,7 @@ const cnDocs = [
   { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
   { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
+  { slug: 'configuration/bots-switching', title: 'Bot 切换', file: 'configuration/bots-switching.md', group: '功能与配置', description: '在一个 LightVela 云端 Agent 中创建、配置并切换多个专用 Bot。', hideDescription: true },
   { slug: 'configuration/deepseek-harness', title: 'DeepSeek Harness', file: 'configuration/deepseek-harness.md', group: '功能与配置', description: '在 LightVela 中安装和管理 DeepSeek Harness Labs 运行环境。', hideDescription: true },
   { slug: 'configuration/workbench', title: '工作台', file: 'configuration/workbench.md', group: '功能与配置', description: '在 LightVela 中使用 AI Agent 创建、部署和管理静态网站。', hideDescription: true },
   { slug: 'use-cases/scheduled-task-agent', title: '使用 LightVela 自动化 Agent 任务', file: 'use-cases/scheduled-task-agent.md', group: '场景方案', description: '使用定时任务让 Agent 按计划整理信息并发送结果。', hideDescription: true },
@@ -300,6 +301,17 @@ const globalDocs = [
     hideDescription: true,
   },
   {
+    slug: 'configuration/bots',
+    title: { 'en-US': 'Manage Bots', 'zh-CN': '管理 Bots' },
+    file: 'configuration/bots.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Create, copy, switch, rename, and delete Bots within one Hermes Agent.',
+      'zh-CN': '在同一个 Hermes Agent 中创建、复制、切换、重命名和删除 Bot。',
+    },
+    hideDescription: true,
+  },
+  {
     slug: 'configuration/model',
     title: { 'en-US': 'Configure Models', 'zh-CN': '配置模型' },
     file: 'configuration/model.md',
@@ -486,6 +498,17 @@ const globalDocs = [
     file: 'configuration/multiple-models.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'configuration/bots-switching',
+    title: { 'en-US': 'Bots Switching', 'zh-CN': 'Bot 切换' },
+    file: 'configuration/bots-switching.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Create, configure, and switch between specialized Bots in one LightVela cloud Agent.',
+      'zh-CN': '在一个 LightVela 云端 Agent 中创建、配置并切换多个专用 Bot。',
+    },
     hideDescription: true,
   },
   {
@@ -920,6 +943,10 @@ const ES_DOC_METADATA = {
     title: 'Qué es LightVela',
     description: 'LightVela es un compañero Hermes Agent alojado en la nube que mantiene activas tus conversaciones y automatizaciones.',
   },
+  'configuration/bots-switching': {
+    title: 'Cambio entre Bots',
+    description: 'Crea, configura y cambia entre Bots especializados dentro de un Agent de LightVela en la nube.',
+  },
   quickstart: {
     title: 'Inicio rápido',
     description: 'Configura tu primera conversación con LightVela en pocos minutos.',
@@ -1242,6 +1269,10 @@ const ID_DOC_METADATA = {
   'configuration/model': {
     title: 'Konfigurasi Model',
     description: 'Atur model bahasa untuk Hermes Agent, termasuk penyedia model, kredensial API, dan pemeriksaan koneksi.',
+  },
+  'configuration/bots-switching': {
+    title: 'Beralih Antar Bot',
+    description: 'Buat, konfigurasikan, dan beralih di antara Bot khusus dalam satu Hermes Agent cloud LightVela.',
   },
   'configuration/channel-telegram': {
     title: 'Kanal Telegram',

@@ -35,13 +35,23 @@
   `LIGHTVELA_CREDIT_REGION` 仅控制 Credit 询价、下单、退款、资源回调和用量上报；后者未配置时
   继承前者。已接入环境分别使用北京 `ap-beijing`、东京 `ap-seoul`、上海 `ap-shanghai`、新加坡
   `ap-singapore`；单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
+- Credit 商品询价是可选登录态的展示链路。已登录请求优先按用户影子账号询价；匿名或尚未绑定
+  影子账号的请求只允许使用目标环境的 `TRADE_INQUIRY_FALLBACK_UIN/APP_ID` 获取价格。该身份不得
+  进入下单、支付、退款或资源归属链路，Service Gateway 也只能对精确的 Credit inquiry 路径放行。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
-- 同 SP 升配是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
+- Pass 升配（同 SP 或产品允许的跨 SP）是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
   `trade_order` 保持 `paid_pending_provision`、`trade_flow` 保持 `in_progress`；只有
   CTL 完成实例、Pass、配额与网关权益收敛并回调 Trade 后，才能分别进入
   `provisioned` 与 `completed`。系统盘扩容不可逆，失败只能幂等前滚，不能自动降配。
+- 跨 SP 升配仍沿用同一 Pass/resource ID，且只允许源、目标属于同一 `productCode`。Trade
+  使用目标套餐的 modify category 和顶层商品身份，`oldConfig`/`newConfig` 分别携带源、目标
+  `productCode/subProductCode/pid/SV`；`checkModify` 与 `modifyResource` 必须在两侧各自 SP 内
+  唯一反解套餐。跨二层下单使用目标 `goodsCategoryId`，但计费回调外层
+  `para.productCode/subProductCode` 描述当前源资源，因此必须拒绝外层不是源身份、
+  双侧 PID 不一致或缺失内层身份的请求；目标身份只信任 `newConfig`。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
+- CTL 用户面 `GET /v1/passes` 与免费试用创建响应必须随 Pass 返回其 Bundle 的 `bundle_type`（`free` / `general` / `ai`）。该字段来自 Bundle 真源，不从 `bundle_id` 或套餐名称推断；前端遇到缺失或未知值时必须采用保守兼容行为。
 - 邀请返利不复用访问邀请码。Auth 在新用户创建时写 `user.registered.v1`，存量用户在首次开通前认领时写
   `user.referral_claimed.v1`；CTL 在首个非免费 Pass 开通和退款隔离事务中写 versioned outbox。Referral
   通过 Pulsar inbox 去重并允许归因、首付、退款事实乱序到达，但只有归因事件发生时间不晚于首次开通
@@ -52,12 +62,17 @@
 - 上海生产使用独立 Campaign 和 Pulsar 角色，奖励口径与北京一致但不共享 Campaign ID、Token 或预算。
   退款只取消其资格 Pass 对应的未发奖励，不自动追回已发积分。发放前 CTL 还要
   重新校验资格 Pass 的 owner、active 状态和有效期，避免退款事件延迟造成竞态。
+- 已发 `free-credit:*` 是独立奖励权益。Pass 退款、隔离、销毁只能取消 `package:*`，不能按
+  `free-credit:` 前缀清理奖励；账户清退、风控追回或运营纠错必须由奖励所有者提交精确
+  `subscription_name` 撤销。Referral 运营重置先预览 Attribution/Reward，撤销已发权益后原子删除
+  关系与奖励，并把操作人、原因、幂等键和完整快照写入独立审计表；首购/退款事实不得删除。奖励发放
+  幂等键必须包含归因事件 generation，确保同一 Campaign 合法重新归因后不会复用已取消的旧订阅。
 - 邀请人无 active Pass 时保留最多 90 天重试。两侧奖励使用独立幂等键；活动持有单邀请人上限、
   全局积分预算和 30 天奖励 Plan，前端常量不能替代这些服务端约束。
 
 ## 机器契约与验证
 
-API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明，积分包 contract 由 `credit/AGENTS.md`、Credit/Trade 实现与测试共同证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复；积分包还需覆盖重复购买、退款隔离、精确订阅删除、自然到期归档、零用量推量和多 Pod 抢占。同 SP 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态。
+API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明，积分包 contract 由 `credit/AGENTS.md`、Credit/Trade 实现与测试共同证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复；积分包还需覆盖重复购买、退款隔离、精确订阅删除、自然到期归档、零用量推量和多 Pod 抢占。Pass 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态；跨 SP 额外覆盖双侧商品身份、目标 category、目标 Plan 创建/替换和计费退款查询关系。
 
 ## 计费代理认证边界
 
@@ -113,13 +128,20 @@ workload 可以通过环境变量开启动态注册。发布门禁必须直接�
 验证 route、caller、secret env 与 `18084` 端口契约，不能只验证 handler 代码，避免出现接口已发布但
 镜像配置未注册 caller 的运行时断层。
 
+个人 DevCloud 的 signed billing 出向不复制 testing 长期 Secret。个人 Trade 对
+`ModifyResourceStatus`、国际 `CreatePayUrl` 与 `DescribeOrderList` 保留原业务请求和 TC3 签名，但把请求
+交给 Auth capability proxy；Auth 校验 active UIN 后用内部 Bearer 转给同站点中央 testing Trade，中央
+Trade 再使用本环境 Jifei AppSecret 与 CloudLadder HMAC 代签。两层都必须使用静态 allowlist、固定 upstream
+和 UIN 二次校验，个人请求不能提交目标 URL、route ID 或其他接口。该代理只解决个人环境的签名能力；
+testing 账号开户和余额仍由受控账号工具负责，余额不足后必须新建订单，不能把旧 `pending` 单自动补付。
+
 `verify-order-no-pay` 只证明询价和 `pending_pay` 下单成功，不证明支付、计费回调、发货或权益终态。
 只有使用 testing mock 支付，并同时保存订单、真实回调和业务终态证据，才能宣称支付闭环；缺少任一
 层证据时必须明确停在哪一层。
 
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
-## 同 SP 升配回调参数边界（2026-09-07）
+## Pass 升配回调参数边界（2026-09-07，2026-09-20 扩展跨 SP）
 
 Trade 的预付费 `checkModify` 与 `modifyResource` 入站均要求可解析且大于零的 int64 UIN，并要求有效的 `goodsDetail.curDeadline`（计费北京时间格式）。缺失或非法参数必须在调用 CTL 前拒绝；`modifyResource` 的参数级拒绝发生在占用 Flow 前，使用可重试的业务错误，不触发自动退款。不得用 UIN=0 或 deadline=nil 绕过 CTL 归属/期限校验。该收口的8个负向用例已先复现再修复；测试环境部署验收状态以当日 release-gates 为准。
 

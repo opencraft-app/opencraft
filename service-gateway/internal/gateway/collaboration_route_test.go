@@ -27,6 +27,9 @@ func TestCollaborationRouteUsesVerifiedHumanAndInternalBearer(t *testing.T) {
 		if r.Header.Get("X-Lightclaw-User-ID") != "usr_0123456789abcdef" {
 			t.Fatalf("upstream user = %q", r.Header.Get("X-Lightclaw-User-ID"))
 		}
+		if got := r.Header.Get("Origin"); got != "" {
+			t.Fatalf("upstream origin = %q", got)
+		}
 		if r.Header.Get("Cookie") != "" {
 			t.Fatalf("upstream cookie = %q", r.Header.Get("Cookie"))
 		}
@@ -39,6 +42,7 @@ func TestCollaborationRouteUsesVerifiedHumanAndInternalBearer(t *testing.T) {
 		Collaboration: &CollaborationRouteConfig{
 			Upstream:               upstream.URL,
 			UpstreamBearerTokenEnv: "COLLABORATION_GATEWAY_TOKEN",
+			AllowedOrigins:         []string{"http://127.0.0.1:*"},
 		},
 	})
 	if err != nil {
@@ -46,11 +50,15 @@ func TestCollaborationRouteUsesVerifiedHumanAndInternalBearer(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodGet, "/v1/collaboration/me", nil)
 	req.Header.Set("Authorization", "Bearer human-session")
+	req.Header.Set("Origin", "http://127.0.0.1:10000")
 	req.Header.Set("X-Lightclaw-User-ID", "forged")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:10000" {
+		t.Fatalf("public Access-Control-Allow-Origin = %q", got)
 	}
 }
 

@@ -19,6 +19,11 @@ configMapGenerator:
       - JIFEI_CGW_GATEWAY_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local:8095/v1/proxy/jifei-test/interfaces/interface.php
       - JIFEI_CGW_HOST_HEADER=
       - JIFEI_CGW_X_QCLOUD_USER_ID=700000164995
+      - TRADE_BILLING_ENDPOINT=billing.test.tencentcloudapi.com
+      - TRADE_BILLING_REGION=ap-guangzhou
+      - TRADE_BILLING_CLOUDLADDER_GATEWAY_BASE_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local:8095
+      - TRADE_BILLING_CLOUDLADDER_ROUTE_ID=tcapi-billing-trade-intl-test
+      - TRADE_BILLING_PAY_REDIRECT_URL=http://localhost:5173/subscribe
       - TRADE_SHADOW_MOCK_ENABLED=false
       - LIGHTVELA_SITE_KIND=cn
       - LIGHTVELA_TRADE_REGION=ap-guangzhou

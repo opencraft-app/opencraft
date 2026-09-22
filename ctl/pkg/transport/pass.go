@@ -128,13 +128,14 @@ type ListPassesResponse struct {
 //   - deleted_time：DB 字段后期会删除（pass 销毁后会迁到 history_pass 表）
 //   - renew_flag：内部计费状态，不在用户面响应中暴露
 //
-// 保留：pass_id / user_id / bundle_id / bundle_name / 时间字段（除 deleted_time）/
+// 保留：pass_id / user_id / bundle_id / bundle_name / bundle_type / 时间字段（除 deleted_time）/
 // agent_quota_total / agent_quota_available / credit_total / credit_available
 type UserPassResponse struct {
 	PassID       string     `json:"pass_id"`
 	UserID       string     `json:"user_id"`
 	BundleID     string     `json:"bundle_id"`
 	BundleName   string     `json:"bundle_name"`
+	BundleType   string     `json:"bundle_type"`
 	CreatedTime  time.Time  `json:"created_time"`
 	ExpiredTime  time.Time  `json:"expired_time"`
 	IsolatedTime *time.Time `json:"isolated_time"`
@@ -181,6 +182,16 @@ type GrantFreeCreditResponse struct {
 	SubscriptionID   string    `json:"subscription_id"`
 	SubscriptionName string    `json:"subscription_name"`
 	PeriodEnd        time.Time `json:"period_end"`
+}
+
+type RevokeFreeCreditRequest struct {
+	UserID            string   `json:"user_id"`
+	SubscriptionNames []string `json:"subscription_names"`
+}
+
+type RevokeFreeCreditResponse struct {
+	UserID                   string   `json:"user_id"`
+	RevokedSubscriptionNames []string `json:"revoked_subscription_names"`
 }
 
 // === jifei 反查接口三件套 transport DTOs（billing-integration B11A 新增）===
@@ -626,7 +637,7 @@ type RenewPassResponse struct {
 	TaskID string `json:"task_id"`
 }
 
-// === 同 SP 变配（升配）内部接口 DTO ===
+// === Pass 变配（升配，含产品允许的跨 SP 路径）内部接口 DTO ===
 // 需求：TAPD 1010132091137784162 §5.2
 //
 // trade → ctl 两个内部端点共用请求体的公共部分：

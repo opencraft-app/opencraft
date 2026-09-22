@@ -301,7 +301,7 @@ type DestroyInstanceForPassTaskPayload struct {
 	SnapshotsDone bool `json:"snapshots_done,omitempty"`
 }
 
-// === 同 SP 变配（升配）父子 task payload ===
+// === Pass 变配（升配）父子 task payload ===
 // 需求：TAPD 1010132091137784162 §6 执行顺序 / §8 幂等
 //
 // ModifyPassTaskPayload 是变配父 task 的 payload。入口 logic.AcceptPassModify 已 CAS
@@ -407,7 +407,7 @@ const (
 	//   - interval=60s × max=60 = 1h 重试窗口（与 IsolateInstance 同范式）
 	TaskNameDestroyInstanceWithSnapshot = "DestroyInstanceWithSnapshot"
 
-	// 同 SP 变配父子 task（TAPD 1010132091137784162 §6）
+	// Pass 变配父子 task（TAPD 1010132091137784162 §6）
 	//
 	// 父 task ModifyPass：max=1<<30「永不放弃」，因为磁盘扩容不可逆，只能前滚收敛。
 	// 子 task ModifyInstance：interval=60s × max=60 = 1h；单台机器停机→改配→扩盘→开机

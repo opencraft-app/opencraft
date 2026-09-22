@@ -40,6 +40,7 @@
 # 功能与配置
 
 - 【CN ✓ | GLOBAL ✓】配置总览
+- 【CN 待补 | GLOBAL ✓】管理 Bots
 - 【CN ✓ | GLOBAL ✓】配置模型
 - 【CN N/A | GLOBAL ✓】Telegram
 - 【CN N/A | GLOBAL ✓】WhatsApp
@@ -57,6 +58,7 @@
 - 【CN 待核实 | GLOBAL ✓】诊断
 - 【CN ✓ | GLOBAL ✓】高级设置
 - 【CN 待核实 | GLOBAL ✓】模型切换
+- 【CN ✓ | GLOBAL ✓】Bots Switching
 - 【CN ✓ | GLOBAL ✓】DeepSeek Harness
 
 # Hermes Agent 科普

@@ -9,6 +9,11 @@ on:
       - playground/sandbox-kr-*
     paths:
       - frontend/**
+      - opencraft/apps/workbench-web/**
+      - opencraft/packages/**
+      - opencraft/plugins/**
+      - opencraft/package.json
+      - opencraft/package-lock.json
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
     paths-ignore:
@@ -137,6 +142,17 @@ stages:
 
               "$NODE_BIN" --version
               "$NPM_BIN" --version
+
+              OPENCRAFT_SOURCE_REVISION="${FRONTEND_ARTIFACT_SOURCE_SHA}"
+              OPENCRAFT_SHORT_SHA="$(printf '%.12s' "$OPENCRAFT_SOURCE_REVISION")"
+              cd "$REPO_ROOT/opencraft"
+              "$NPM_BIN" ci
+              OPENCRAFT_BUILD_ID="embedded-${OPENCRAFT_SHORT_SHA}" \
+                OPENCRAFT_SOURCE_REVISION="$OPENCRAFT_SOURCE_REVISION" \
+                "$NPM_BIN" run build:embedded-workbench:release
+              export OPENCRAFT_EMBED_DIST_DIR="$REPO_ROOT/opencraft/apps/workbench-web/dist-embedded-workbench"
+              test -f "$OPENCRAFT_EMBED_DIST_DIR/embedded-workbench.js"
+              test -f "$OPENCRAFT_EMBED_DIST_DIR/.vite/manifest.json"
 
               cd "$REPO_ROOT/frontend"
               rm -rf node_modules

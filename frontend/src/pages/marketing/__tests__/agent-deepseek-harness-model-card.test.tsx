@@ -27,7 +27,9 @@ vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => repositories,
 }));
 
-vi.mock("@/i18n/t", () => ({ useT: () => translate }));
+vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN", useT: () => translate }));
 vi.mock("@/lib/toast", () => ({
   toast: { success: toastSuccess, error: toastError },
 }));

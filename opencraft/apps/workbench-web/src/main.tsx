@@ -9,6 +9,10 @@ import {
   openWorkbenchUiPreferences,
   UiPreferencesProvider,
 } from "./runtime/ui-preferences-runtime";
+import {
+  ensureBrowserProcessEnv,
+  resolveLightVelaWebBootstrapOptions,
+} from "./runtime/lightvela-web-bootstrap";
 import type { UiPreferencesRuntime } from "@opencraft/ui-preferences";
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/inter/wght-italic.css";
@@ -41,6 +45,7 @@ type BootstrapState =
     }
   | { readonly phase: "error"; readonly error: Error };
 
+ensureBrowserProcessEnv(globalThis);
 initializeAppearanceTheme();
 
 const desktopWindowBridge = (
@@ -96,7 +101,7 @@ function ApplicationBootstrap() {
     void import("./workbench-entry?opencraft-entry=1")
       .then(async (module) => {
         preferences = await openWorkbenchUiPreferences();
-        const created = await module.a();
+        const created = await module.a(resolveLightVelaWebBootstrapOptions(import.meta.env));
         application = created;
         if (disposed) {
           await Promise.all([created.dispose(), preferences.close()]);

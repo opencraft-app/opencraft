@@ -134,8 +134,9 @@ func ensureGatewayEntitlement(
 	}, nil
 }
 
-// CancelAiGatewayEntitlement 可靠清理用户的 Pass 关联权益。
-// LLMGateway 只删除套餐与免费积分订阅，保留独立购买的积分包；旧 AI-Gateway 仍取消全部订阅。
+// CancelAiGatewayEntitlement 可靠清理用户的 Pass 套餐权益。
+// LLMGateway 只删除 package:*，保留独立赠送的 free-credit:* 和付费积分包；
+// free-credit:* 只能由奖励所有者通过精确订阅名撤销。旧 AI-Gateway 仍取消全部订阅。
 // 调用失败必须由上层重试，不能推进 isolated/deleted 等本地终态。
 func CancelAiGatewayEntitlement(logger *zap.Logger, userID string) error {
 	userID = strings.TrimSpace(userID)
@@ -178,7 +179,6 @@ func CancelAiGatewayEntitlement(logger *zap.Logger, userID string) error {
 			UserID: userID,
 			SubscriptionNamePrefixes: []string{
 				packageSubscriptionNamePrefix,
-				freeCreditSubscriptionNamePrefix,
 			},
 			IncludeLegacyPackageSubscription: true,
 		})

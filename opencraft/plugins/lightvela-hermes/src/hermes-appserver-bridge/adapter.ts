@@ -848,6 +848,7 @@ export class HermesAppServerAdapter {
   /** `running=false` means waiting-for-input while this barrier exists, not Turn completion. */
   private readonly stopGatewayEvents: () => void;
   private readonly stopComposerQueue: () => void;
+  private readonly profileScope: string | null;
 
   constructor(
     private readonly gateway: HermesRpcClient,
@@ -857,7 +858,9 @@ export class HermesAppServerAdapter {
     recovery?: HermesProjectionRecovery,
     composerQueue: HermesComposerQueueService = new MemoryHermesComposerQueueService(),
     private readonly attachmentMetadata?: AttachmentMetadataResolver,
+    profileScope?: string,
   ) {
+    this.profileScope = profileScope?.trim() || null;
     this.composerQueue = composerQueue;
     this.activeByLive = recovery?.owners ?? new Map();
     this.pendingByLive = recovery?.pending ?? new Map();
@@ -965,6 +968,15 @@ export class HermesAppServerAdapter {
     return new Map(entries.filter((entry): entry is readonly [string, string] => entry !== null));
   }
 
+  private scopedProfile(requested?: string | null): string | null {
+    const normalized = requested?.trim() || null;
+    if (this.profileScope === null) return normalized;
+    if (normalized !== null && normalized !== this.profileScope) {
+      throw new Error(`Hermes Profile ${normalized} is outside this Host scope`);
+    }
+    return this.profileScope;
+  }
+
   async renameThread(threadId: string, requestedTitle: string): Promise<void> {
     const title = requestedTitle.trim();
     if (title.length === 0) throw new TypeError("Thread title must not be empty");
@@ -1017,7 +1029,7 @@ export class HermesAppServerAdapter {
 
   async listThreads(params: ThreadListParams = {}) {
     if (params.archived === true) return { data: [], nextCursor: null, backwardsCursor: null };
-    const profile = params.profile?.trim() || null;
+    const profile = this.scopedProfile(params.profile);
     const response = await this.gateway.call<{ sessions: HermesSessionSummary[] }>("session.list", {
       limit: 1000,
       ...(profile === null ? {} : { profile }),
@@ -1025,7 +1037,7 @@ export class HermesAppServerAdapter {
       ...(params.exactTitle?.trim() ? { title: params.exactTitle.trim() } : {}),
     });
     for (const row of response.sessions) {
-      this.profileByStored.set(row.id, row.profile?.trim() || profile || "default");
+      this.profileByStored.set(row.id, this.profileScope ?? (row.profile?.trim() || profile || "default"));
     }
     const query = params.searchTerm?.trim().toLocaleLowerCase();
     let rows = response.sessions.filter((row) => (
@@ -1066,9 +1078,9 @@ export class HermesAppServerAdapter {
 
   async loadThread(threadId: string, includeTurns: boolean, requestedProfile?: string | null, signal?: AbortSignal): Promise<AppServerThread> {
     throwIfSignalAborted(signal);
-    const profile = requestedProfile?.trim()
-      || this.profileByStored.get(threadId)
-      || await this.resolveThreadProfile(threadId);
+    const profile = this.scopedProfile(requestedProfile)
+      ?? this.profileByStored.get(threadId)
+      ?? await this.resolveThreadProfile(threadId);
     this.profileByStored.set(threadId, profile);
     const historyPromise = includeTurns ? this.readTurnsPage(threadId, 0, 120, "desc", signal) : null;
     const [payload, list, historyPage] = await Promise.all([
@@ -1092,13 +1104,14 @@ export class HermesAppServerAdapter {
       // callers can distinguish a genuinely empty session from lost history.
       message_count: payload.message_count,
     };
-    this.profileByStored.set(threadId, summary.profile?.trim() || profile || "default");
+    this.profileByStored.set(threadId, this.profileScope ?? (summary.profile?.trim() || profile || "default"));
     const turns = historyPage?.chronological ?? [];
     return makeThread(summary, payload.info?.cwd ?? this.defaultCwd, turns, payload.running === true);
   }
 
   /** Resolve a server-owned named session without depending on list visibility. */
   async resolveNamedThread(profile: string, title: string): Promise<AppServerThread | null> {
+    profile = this.scopedProfile(profile) ?? "default";
     let payload: HermesSessionPayload;
     try {
       payload = await this.gateway.call<HermesSessionPayload>("session.resume", {
@@ -1188,7 +1201,9 @@ export class HermesAppServerAdapter {
     // Desktop paginates transcript rows, never scans for a complete execution
     // Turn. A window may start inside an assistant/tool sequence. Its groups
     // are presentation projections and can regroup when older rows arrive.
-    const profile = this.profileByStored.get(threadId) ?? await this.resolveThreadProfile(threadId);
+    const profile = this.profileScope
+      ?? this.profileByStored.get(threadId)
+      ?? await this.resolveThreadProfile(threadId);
     throwIfSignalAborted(signal);
     const key = JSON.stringify([profile, threadId]);
     let window = this.transcriptWindows.get(key);
@@ -1341,8 +1356,10 @@ export class HermesAppServerAdapter {
       ? params.threadId.trim()
       : null;
     const profile = threadId === null
-      ? null
-      : this.profileByStored.get(threadId) ?? await this.resolveThreadProfile(threadId);
+      ? this.profileScope
+      : this.profileScope
+        ?? this.profileByStored.get(threadId)
+        ?? await this.resolveThreadProfile(threadId);
     const liveSessionId = threadId === null
       ? null
       : this.liveByStored.get(threadId) ?? threadId;
@@ -1425,7 +1442,7 @@ export class HermesAppServerAdapter {
     options: ThreadStartOptions = {},
   ): Promise<AppServerThread> {
     const selection = decodeHermesModelSelection(requestedModel);
-    const profile = requestedProfile?.trim() || null;
+    const profile = this.scopedProfile(requestedProfile);
     const payload = await this.gateway.call<HermesSessionPayload>("session.create", {
       cwd: cwd ?? this.defaultCwd,
       source: "desktop",
@@ -1901,7 +1918,9 @@ export class HermesAppServerAdapter {
       "profiles.list",
       { include_sessions: true },
     );
-    const profiles = Array.isArray(result.profiles) ? result.profiles : [];
+    const profiles = (Array.isArray(result.profiles) ? result.profiles : [])
+      .filter((profile) => this.profileScope === null
+        || (profile.name.trim() || "default") === this.profileScope);
     const bindings = new Map<string, string>();
     for (const profile of profiles) {
       const name = profile.name.trim() || "default";
@@ -1973,7 +1992,7 @@ export class HermesAppServerAdapter {
   }
 
   profileForThread(threadId: string): string {
-    return this.profileByStored.get(threadId) ?? "default";
+    return this.profileScope ?? this.profileByStored.get(threadId) ?? "default";
   }
 
   /**
@@ -1982,6 +2001,10 @@ export class HermesAppServerAdapter {
    * before Resume; routes and React must never carry a Hermes Profile hint.
    */
   private resolveThreadProfile(threadId: string): Promise<string> {
+    if (this.profileScope !== null) {
+      this.profileByStored.set(threadId, this.profileScope);
+      return Promise.resolve(this.profileScope);
+    }
     const known = this.profileByStored.get(threadId);
     if (known !== undefined) return Promise.resolve(known);
     const existing = this.profileDiscoveryByStored.get(threadId);
@@ -2123,7 +2146,9 @@ export class HermesAppServerAdapter {
   private async resume(storedId: string, requestedProfile?: string | null): Promise<HermesSessionPayload> {
     let payload = this.payloadByStored.get(storedId);
     if (payload === undefined) {
-      const profile = requestedProfile?.trim() || this.profileByStored.get(storedId) || null;
+      const profile = this.scopedProfile(
+        requestedProfile?.trim() || this.profileByStored.get(storedId) || null,
+      );
       payload = await this.gateway.call<HermesSessionPayload>("session.resume", {
         session_id: storedId,
         defer_history: true,

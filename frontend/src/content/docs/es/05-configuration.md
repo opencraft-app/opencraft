@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Todas las configuraciones de LightVela residen en el consola "Mi Hermes", que se abre desde la esquina superior derecha después de iniciar sesión. Las pestañas de instancia de Agent de Hermes se sitúan en la parte superior, y debajo de ellas hay tres botones de configuración: Modelos (elegir un Plan de Codificación de Modelo, API de Modelo o un punto de extremo personalizado compatible con OpenAI), Canales (puntos de entrada para cada plataforma de mensajería — algunos se conectan mediante código QR, otros requieren un token o ID de aplicación) y Skills (paquetes de capacidades reutilizables para instalar). Además de esos tres, el consola también ofrece Chat, Tareas, gestión de memoria, almacenamiento en la nube, cambio de modelos y un centro de diagnóstico. Una vez que los tres básicos están configurados, su Agent está listo para hablar en sus canales de mensajería.**
+**Toda la configuración de LightVela se encuentra en la consola "Mi Hermes", que se abre desde la esquina superior derecha después de iniciar sesión. Las pestañas de Bot del Agent de Hermes actual aparecen en la parte superior, seguidas de tres botones de configuración: Modelos, Canales y Skills. Modelos permite elegir un Plan de Codificación de Modelo, una API de Modelo o un endpoint personalizado compatible con OpenAI. Canales conecta plataformas de mensajería mediante código QR, token o ID de aplicación. Skills instala paquetes de capacidades reutilizables. La consola también ofrece Chat, Tareas, gestión de memoria, almacenamiento en la nube, cambio de modelos y un centro de diagnóstico. Después de completar la configuración básica, el Bot puede conversar en sus canales conectados.**
 
 ---
 
@@ -20,13 +20,13 @@ Esta página introduce la estructura general del consola y la función de cada b
 
 - Cómo ingresar al consola
 
-- Botón de información de instancia de Agent de Hermes
+- Selector de Bots e información del Bot seleccionado
 
 - Funciones y puntos de entrada de los tres botones de configuración
 
 - Estado de éxito después de la configuración
 
-- Operaciones comunes como cambiar modelos, conectar múltiples canales y recrear Agent de Hermes
+- Operaciones comunes como gestionar Bots, cambiar modelos y conectar múltiples canales
 
 ---
 
@@ -36,9 +36,9 @@ Después de iniciar sesión, haga clic en "Mi Hermes" en la esquina superior der
 
 ---
 
-## Información de instancia de Agent de Hermes
+## Bots e información del Bot seleccionado
 
-La parte superior del consola contiene pestañas de Agent de Hermes. Cada pestaña representa una instancia de Agent de Hermes (el plan Launch soporta solo 1). El botón "+ Crear" a la derecha se vuelve inaccesible después de alcanzar el límite de instancias.
+La parte superior de la consola contiene las pestañas de Bot del Agent de Hermes actual. La primera pestaña es el Bot principal y cada pestaña adicional corresponde a un perfil de Bot independiente. El plan determina el límite total de Bots, incluido el principal. Durante el despliegue gradual en el sitio internacional, la entrada de creación no se muestra de forma predeterminada. Consulte [Gestionar Bots](./configuration/bots.md) para conocer los métodos de creación y las reglas de herencia.
 
 Después de seleccionar un Agent de Hermes, se muestran sus información básica a continuación:
 
@@ -54,7 +54,7 @@ Después de seleccionar un Agent de Hermes, se muestran sus información básica
 
 > ⚠️ **La eliminación es irreversible**
 >
-> Hacer clic en el icono de papelera elimina permanentemente la instancia de Agent de Hermes, incluyendo toda la memoria de conversación, canales conectados y Skills instaladas. Si el cupo del plan Launch aún lo permite, puede crear un nuevo Agent de Hermes después.
+> Eliminar un Bot adicional borra permanentemente su perfil y sus datos. Eliminar el Bot principal borra todo el Agent de Hermes y los datos relacionados, y solo se permite después de eliminar los demás Bots.
 
 ---
 
@@ -141,17 +141,19 @@ En el botón "Modelo", elija el origen y el modelo nuevamente, ingrese la Clave 
 
 ### Conectar múltiples canales
 
-En el botón "Canal", cambie las opciones del selector uno por uno y haga clic en "Autorizar Acceso". Los múltiples canales apuntan al mismo Agent de Hermes y comparten memoria y comportamiento del Agent.
+En el botón "Canal", cambie las opciones del selector una por una y haga clic en "Autorizar Acceso". Los canales conectados al mismo Bot comparten la memoria y el comportamiento de ese Bot.
 
-### Recrear Agent de Hermes
+### Gestionar varios Bots
 
-Haga clic en el icono de papelera en el lado derecho del botón de información básica para eliminar el actual Agent de Hermes, luego haga clic en "+ Crear Agent de Hermes" para crearlo nuevamente. **Se perderá toda la memoria de conversación**.
+Use las pestañas de Bot para cambiar de perfil. Cuando la entrada de creación esté disponible, puede copiar el Bot actual o principal, o utilizar Basic setup. Consulte [Gestionar Bots](./configuration/bots.md) para conocer las reglas de herencia y eliminación.
 
 ---
 
 ## Próximos pasos
 
 Configuración detallada para cada módulo:
+
+- [Gestionar Bots](./configuration/bots.md) — Crear, copiar, cambiar, renombrar y eliminar Bots
 
 - [Configurar Modelos](./configuration/model.md) — Fuentes de modelo, adquisición de Clave de API y guía de selección
 

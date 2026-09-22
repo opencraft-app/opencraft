@@ -1,5 +1,4 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -16,20 +15,16 @@ const resetInstanceConfig = vi.fn();
 const resetToPlatformDefault = vi.fn();
 const addBot = vi.fn();
 const botRepository = { execDebugCommand, getRescueExportStatus, getHermesImportStatus, startRescueExport, resetInstanceConfig };
-const planRepository = {
-  getRenewPrice: vi.fn(),
-  createRenewOrder: vi.fn(),
-  listMyPasses: vi.fn(),
-};
 const testRegion = vi.hoisted(() => ({ isCN: true, isGlobal: false }));
 
 let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
 let maxBots = 1;
 let multiBotEnabled = true;
-const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   t: (text: string) => (
     testRegion.isGlobal && text === "已有 Bot 正在删除中，请稍后刷新页面后再创建。"
       ? "A Bot is being deleted. Refresh the page in a moment before creating another."
@@ -100,7 +95,11 @@ vi.mock("@/contexts/agent-context", () => ({
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     bots: botRepository,
-    plans: planRepository,
+    plans: {
+      getRenewPrice: vi.fn(),
+      createRenewOrder: vi.fn(),
+      listMyPasses: vi.fn(),
+    },
   }),
 }));
 
@@ -122,10 +121,6 @@ vi.mock("@/pages/marketing/agent-skills-panel", () => ({
 
 vi.mock("@/pages/marketing/agent-deepseek-harness-panel", () => ({
   AgentDeepSeekHarnessPanel: () => <div>DeepSeek Harness panel</div>,
-}));
-
-vi.mock("@/pages/marketing/agent-channel-panel", () => ({
-  ChannelPanel: () => <div>Channel panel</div>,
 }));
 
 const createNavigation = (): AppNavigationValue => ({
@@ -161,10 +156,6 @@ const page = (botId: string) => (
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    planRepository.listMyPasses.mockResolvedValue([]);
-    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
-    // jsdom has no layout scrolling; Radix Select uses the browser API while focusing options.
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
     maxBots = 1;
     multiBotEnabled = true;
     testRegion.isCN = true;
@@ -192,11 +183,7 @@ describe("multi-Bot diagnostics", () => {
     resetToPlatformDefault.mockResolvedValue({ primary: null, fallbacks: [], configuredModels: [] });
     addBot.mockResolvedValue({ ...buildBot(), id: "created", profileId: "created", isDefault: false });
   });
-  afterEach(() => {
-    cleanup(); vi.unstubAllGlobals();
-    if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScrollIntoView);
-    else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
-  });
+  afterEach(cleanup);
 
   it("only shows instance maintenance on main and scopes logs after switching", async () => {
     const view = render(page("ins-1"));
@@ -215,9 +202,7 @@ describe("multi-Bot diagnostics", () => {
     expect(chatTab).toBeDisabled();
     expect(chatTab).not.toHaveAttribute("title");
     expect(chatTab).toHaveAccessibleDescription("对话功能目前仅支持主 Bot");
-    await userEvent.hover(chatTab.parentElement!);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("对话功能目前仅支持主 Bot");
-    expect(screen.getByRole("tooltip").closest("[data-slot='tooltip-content']")).toHaveClass("agents-ui");
+    expect(screen.getByRole("tooltip", { name: "对话功能目前仅支持主 Bot" })).toHaveClass("lv-agent-action-tooltip");
     expect(screen.queryByText("重置 Hermes（保留数据）")).not.toBeInTheDocument();
     expect(screen.queryByText("root log")).not.toBeInTheDocument();
     expect(resetInstanceConfig).not.toHaveBeenCalled();
@@ -313,27 +298,57 @@ describe("multi-Bot diagnostics", () => {
 
   it("keeps single-Bot maintenance available and shows quota-disabled creation", async () => {
     bots = [buildBot()];
-    render(page("ins-1"));
+    const view = render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
     expect(screen.getByRole("button", {name:"新建 Bot"})).toBeDisabled();
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).not.toBeInTheDocument();
     expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 
-  it("shows domestic Bot creation without show() and preserves visibility on page remount", async () => {
+  it("opens the onboarding panel from the create entry without a legacy dialog", async () => {
+    maxBots = 5;
+    render(page("ins-1"));
+    // 入口常驻，不依赖 revealHiddenTools()
+    const createButton = screen.getByRole("button", { name: "新建 Bot" });
+    expect(createButton).toBeEnabled();
+    fireEvent.click(createButton);
+    /*
+     * 现在点「新建 Bot」直接进创建引导（选头像 + 填名字），
+     * 不再弹旧的「创建 Bot」弹窗 —— 那个弹窗只问名字，会让用户填两次。
+     */
+    // 「换一批」是引导页独有的头像操作，用它确认进的是引导而非旧弹窗
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
+    // 「空白创建」已从复制来源里移除，下拉只列可复制的 bot
+    expect(screen.queryByRole("radio", { name: "空白创建" })).not.toBeInTheDocument();
+  });
+
+  /*
+   * 从 master 侧冲突里拆出来的断言。
+   *
+   * master 那条测试把两件事写在一起：①隐藏工具仍需 show() ②点「新建 Bot」
+   * 弹旧的「创建 Bot」弹窗。②与本分支的实现互斥（入口已改为直接进引导，
+   * 见上一条），但①以及按钮顺序、remount 后入口不丢，都跟创建流程无关，
+   * 是独立的有效约束 —— 所以单独留一条，不跟着弹窗一起丢掉。
+   */
+  it("still hides advanced tools behind show() and keeps the create entry across remounts", async () => {
     maxBots = 5;
     const view = render(page("ins-1"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
-    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByPlaceholderText("请输入 Bot 名称")).toHaveFocus());
-    act(() => screen.getByRole("combobox", { name: "创建方式" }).focus());
-    await userEvent.keyboard("{Enter}");
-    await screen.findByRole("option", { name: "空白创建" });
-    await userEvent.keyboard("{End}{Enter}");
-    expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
-    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    // 「终端」这类高级工具仍藏在 console 的 show() 后面
+    expect(screen.queryByRole("link", { name: "终端" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => void }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => show?.());
+    expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
+    expect(
+      Array.from(view.container.querySelectorAll(".lv-agent-actions button"))
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot"]);
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down"))
+      .toHaveAttribute("aria-hidden", "true");
+    // 切换 bot 与整页重挂后，入口都不该消失
     view.rerender(page("sales"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
     view.unmount();
@@ -364,38 +379,39 @@ describe("multi-Bot diagnostics", () => {
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
     const tooltipTrigger = createButton.parentElement;
-    expect(tooltipTrigger).not.toBeNull();
-    const user = userEvent.setup();
-    await user.hover(tooltipTrigger!);
+    expect(tooltipTrigger).toHaveAttribute("tabindex", "0");
+    fireEvent.focus(tooltipTrigger!);
     const tooltip = await screen.findByRole("tooltip");
-    expect(tooltip).toHaveTextContent("当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。");
-    const surface = tooltip.closest("[data-slot='tooltip-content']");
-    expect(surface).toHaveAttribute("data-side", "bottom");
-    expect(surface).toHaveClass("agents-ui", "select-text");
-    expect(surface?.closest(".lv-agents-sidebar")).toBeNull();
-    expect(tooltipTrigger).toHaveAttribute("aria-describedby", tooltip.id);
-    await user.keyboard("{Escape}");
+    expect(tooltip).toHaveTextContent(
+      "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+    );
+    expect(tooltip.parentElement).toBe(document.body);
+    fireEvent.keyDown(tooltipTrigger!, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-    await user.unhover(tooltipTrigger!);
-    act(() => tooltipTrigger!.focus());
-    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
   });
 
-  it("rechecks the current quota when the create dialog is confirmed", async () => {
+  it("rechecks the current quota when creation is submitted from the panel", async () => {
     bots = [buildBot()];
     maxBots = 2;
     const view = render(page("ins-1"));
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
-    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
 
+    /*
+     * 这条守的保障没变，只是入口从旧弹窗换成了引导页：
+     * 打开创建界面之后配额才被占满，此时提交必须重新校验、不能真的去建。
+     * 否则用户会拿到一个后端拒绝的失败，或超额建出第三个 bot。
+     */
     bots = [buildBot(), { ...buildBot(), id: "sales", profileId: "sales", isDefault: false, name: "Sales" }];
     view.rerender(page("ins-1"));
-    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
+    await waitFor(() => {
+      expect(screen.getAllByText(
+        "当前套餐最多可创建 2 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+      ).length).toBeGreaterThan(0);
+    });
     expect(addBot).not.toHaveBeenCalled();
-    expect(screen.getAllByText(
-      "当前套餐最多可创建 2 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
-    ).length).toBeGreaterThan(0);
   });
 
   it("localizes the deleting-Bot limit message on the global empty state", () => {
@@ -412,7 +428,7 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByText("已有 Bot 正在删除中，请稍后刷新页面后再创建。")).not.toBeInTheDocument();
   });
 
-  it("keeps new-Bot creation hidden when the feature flag is disabled", () => {
+  it("does not bypass the multi-Bot feature flag", () => {
     maxBots = 5;
     multiBotEnabled = false;
     render(page("ins-1"));

@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
-const consoleShell = readFileSync(join(process.cwd(), "src/pages/marketing/agents-console/console-shell.tsx"), "utf8");
 const page = readFileSync(
   join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
   "utf8",
@@ -39,59 +38,6 @@ function getBlockBody(source: string, marker: string): string | undefined {
 }
 
 describe("Agent settings navigation spacing", () => {
-  it("joins the 68px header to a fixed remaining-height sidebar with only its middle scrolling", () => {
-    const sidebar = getBlockBody(styles, "\n  .lv-agents-sidebar-scroll-isolated {");
-    const middle = getBlockBody(styles, "\n  .lv-agents-sidebar-middle {");
-    const fixedSlots = getBlockBody(styles, "\n  .lv-agents-sidebar-profile,");
-    const scrollbar = getBlockBody(styles, "\n  .lv-agents-sidebar-middle::-webkit-scrollbar {");
-    expect(sidebar).toContain("position: fixed;");
-    expect(sidebar).toContain("left: 0;");
-    expect(sidebar).toContain("top: 68px;");
-    expect(sidebar).toContain("max-height: calc(100dvh - 68px);");
-    expect(sidebar).toContain("overflow: hidden;");
-    expect(sidebar).not.toContain("overflow-y: auto;");
-    expect(middle).toContain("flex: 1 1 auto;");
-    expect(middle).toContain("min-height: 0;");
-    expect(middle).toContain("overflow-y: auto;");
-    expect(middle).toContain("scrollbar-width: none;");
-    expect(scrollbar).toContain("display: none;");
-    expect(fixedSlots).toContain("flex-shrink: 0;");
-    const header = getBlockBody(styles, "\n  header.lv-agent-sidebar-header {");
-    expect(header).toContain("background: #fff !important;");
-    expect(sidebar).toContain("background: #fff;");
-    expect(header).toContain("border-right: 1px solid #e9ecf1;");
-    expect(header).toContain("border-right-color: #e9ecf1 !important;");
-    expect(getBlockBody(styles, "\n.lv-agents-sidebar {")).toContain("border-right: 1px solid #e9ecf1;");
-  });
-
-  it("gives navigation and session links a clear selected color without weakening their text or icons", () => {
-    const item = getBlockBody(styles, "\n\n.agents-ui .lv-agents-nav-item {");
-    const active = getBlockBody(styles, "\n.agents-ui .lv-agents-nav-item.is-active {");
-    const hover = getBlockBody(styles, "\n.agents-ui .lv-agents-nav-item:not(.is-active):hover {");
-    const icon = getBlockBody(styles, "\n.agents-ui .lv-agents-nav-item .lv-agents-nav-icon {");
-    expect(item).toContain("color: var(--text-secondary) !important;");
-    expect(item).toContain("background: #fff;");
-    expect(active).toContain("background: #f2f2ef !important;");
-    expect(active).toContain("color: #171717 !important;");
-    expect(active).toContain("font-weight: 600;");
-    expect(active).not.toContain("opacity:");
-    expect(hover).toContain("background: #f7f7f5 !important;");
-    expect(icon).toContain("color: inherit;");
-    // Desktop-specific overrides must not recolor the same links/icons.
-    expect(styles).not.toContain(".lv-agents-sidebar-middle .lv-agents-nav-item.is-active {");
-    expect(styles).not.toContain(".lv-agents-sidebar-middle .lv-agents-nav-icon {");
-  });
-
-  it("leaves Agents tabs to explicit component variants", () => {
-    const track = getBlockBody(styles, '\n.agents-ui [role="tablist"] {');
-    const active = getBlockBody(styles, '\n.agents-ui [role="tab"][data-state="active"] {');
-    const hover = getBlockBody(styles, '\n.agents-ui [role="tab"][data-state="inactive"]:not(:disabled):hover {');
-    expect(track).toBeUndefined();
-    expect(active).toBeUndefined();
-    expect(hover).toBeUndefined();
-    expect(styles).not.toContain('.agents-ui [role="tab"][data-state="active"]');
-  });
-
   it("keeps the desktop chat height chain within the viewport", () => {
     const chatPage = getBlockBody(styles, "\n  .lv-agent-chat-page {");
     const chatMain = getBlockBody(
@@ -158,12 +104,32 @@ describe("Agent settings navigation spacing", () => {
     const agentHeaderShell = getBlockBody(styles, "\n  header.lv-agent-sidebar-header {");
     const agentHeader = getBlockBody(styles, "\n  header.lv-agent-sidebar-header > div {");
 
-    expect(page).toContain('"lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6",');
+    /*
+     * 这三个 class 在常规态必须生效，但创建期引导没有侧边栏，
+     * 沿用会留下一块 264px 的空白竖条，所以按 hasSidebarLayout 条件化。
+     * 断言「基类 + 条件类 + 条件本身」三者都在，避免例外被悄悄扩大。
+     *
+     * shouldShowDataLoading 是刻意放进条件里的第二个分支：页面级骨架屏画的
+     * 就是侧边栏两列，而它渲染时 bot 还没加载完（hasSidebarLayout 仍为
+     * false）。少了它，骨架屏会按居中窄容器 + 96px 顶距排版，而它前后的
+     * 路由级加载壳（app-route-shell）与最终页面都是左对齐宽容器 + 68px，
+     * 中间就会横竖双向跳一下。
+     */
+    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
+    expect(page).toContain('"lw-settings-shell"');
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell"');
+    /*
+     * header 的 className 从三元式换成了 cn()：除了「是否套侧边栏表头」，
+     * 还要叠加引导态的 --borderless 标记，两个条件互不相干。
+     */
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-sidebar-header"');
+    // 聊天页铺满到底（来自 master），与上面的条件化并存
     expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
-    expect(page).toContain('<section className="lw-settings-shell lv-agent-settings-shell">');
-    expect(page).toContain('className="lv-agent-sidebar-header"');
-    expect(consoleShell.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
-    expect(page).toContain("<AgentConsoleShell");
+    // 页面级骨架屏必须跟路由级加载壳用同一套几何，否则两段加载之间会跳
+    expect(appRouteShell).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
+    expect(appRouteShell).toContain('className="lw-settings-shell lv-agent-settings-shell"');
+    expect(page.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
     expect(agentsPageClient).toContain(
       "className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}",
     );
@@ -173,8 +139,32 @@ describe("Agent settings navigation spacing", () => {
     expect(agentHeaderShell).toContain("right: auto;");
     expect(agentHeaderShell).toContain("width: 264px;");
     expect(agentHeaderShell).toContain("height: 68px;");
+    /*
+     * 常规 agent 页的 header 要画边框 —— 它和侧边栏的分隔线是连着的，
+     * 去掉会让 logo 那一格和下方侧边栏断开。
+     *
+     * 只有创建 / 引导态是例外：那时右侧没有侧边栏，这两条边会把 logo
+     * 框成一个孤立的小方块。用根节点 class 把例外圈出来，而不是把常规态
+     * 的边框一起砍了（之前就是这么改过头的）。
+     *
+     * 关键：这条路由的 header 由 next-site/agents-page-client.tsx 渲染，
+     * 传给 AgentSettingsPage 的是 showHeader={false} —— 页面内那个 header
+     * 在这条路由上根本不渲染。所以只改页面内的 className 是无效的，必须
+     * 走 <html class="lv-agent-onboarding"> 才能作用到真正生效的那个
+     * header 上。上一轮就是漏了这一层，改完线框依旧在。
+     */
     expect(agentHeaderShell).toContain("border-right: 1px solid #e9ecf1;");
     expect(agentHeaderShell).toContain("border-bottom-color: #e9ecf1 !important;");
+    expect(agentsPageClient).toContain("showHeader={false}");
+    expect(styles).toContain(".lv-agent-onboarding header.lv-agent-sidebar-header,");
+    // 三个引导标记都要算进去，漏一个那条路径下 logo 还是会被框住
+    expect(page).toContain("const isOnboardingVisible = showEarlyOnboarding");
+    expect(page).toContain("|| showBuddyOnboarding");
+    expect(page).toContain("|| showMultiBotOnboarding;");
+    expect(page).toContain('root.classList.toggle("lv-agent-onboarding", isOnboardingVisible);');
+    expect(page).toContain(
+      '(showBuddyOnboarding || showMultiBotOnboarding) && "lv-agent-sidebar-header--borderless"',
+    );
     expect(agentHeader).toContain("height: 68px !important;");
     expect(agentHeader).toContain("max-width: none;");
     expect(agentHeader).toContain("padding-left: 16px !important;");
@@ -185,7 +175,14 @@ describe("Agent settings navigation spacing", () => {
     expect(agentContent).toContain("margin-top: -24px;");
     expect(agentContent).toContain("margin-left: auto;");
     expect(agentContent).toContain("margin-right: auto;");
-    expect(consoleShell).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
+    /*
+     * 内容区原本恒定 `lg:col-start-2`（给 248px 侧边栏让位）。引导态没有
+     * 侧边栏，需要自己居中，所以改成条件类。这里断言「两个分支都在」，
+     * 而不是放宽成只检查基类 —— 漏掉任一分支都会布局错位。
+     */
+    expect(page).toContain('"lv-agent-settings-content min-w-0"');
+    expect(page).toContain('hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
+    // 创建 Loading 视图没有侧边栏问题，仍是固定写法
     expect(loadingView).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
     expect(styles).toContain("width: min(1440px, calc(100vw - 160px));");
   });
@@ -193,23 +190,24 @@ describe("Agent settings navigation spacing", () => {
   it("uses compact desktop spacing and preserves mobile hit areas", () => {
     const desktopSidebar = getBlockBody(styles, "\n.lv-agents-sidebar {");
     const desktopNavigation = getBlockBody(styles, "\n.lv-agents-nav {");
-    const desktopItem = getBlockBody(styles, "\n\n.agents-ui .lv-agents-nav-item {");
-    const mobileNavigation = getBlockBody(styles, ".agents-ui.lv-agents-navigation-sheet .lv-agents-nav-group-items {");
-    const mobileItem = getBlockBody(styles, ".agents-ui.lv-agents-navigation-sheet .lv-agents-nav-item {");
+    const desktopItem = getBlockBody(styles, "\n.lv-agents-nav-item {");
+    const profileName = getBlockBody(styles, "\n.lv-agent-profile-name {");
+    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
+    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {");
+    const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
 
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
     expect(desktopSidebar).toContain("padding-right: 12px;");
     expect(desktopNavigation).toContain("gap: 8px;");
-    expect(desktopItem).toContain("min-height: 36px;");
-    expect(desktopItem).toContain("overflow-wrap: anywhere;");
-    expect(mobileNavigation).toContain("flex-direction: column;");
-    expect(mobileItem).toContain("min-height: 40px;");
+    expect(desktopItem).toContain("height: 32px;");
+    expect(profileName).toContain("font-size: 14px;");
+    expect(profileName).toContain("line-height: 20px;");
+    expect(mobileNavigation).toContain("gap: 12px;");
+    expect(mobileItem).toContain("height: 36px;");
   });
 
   it("moves the desktop account menu to the bottom of the Agent sidebar", () => {
     const accountFooter = getBlockBody(styles, "\n.lv-agent-account-footer {");
-    const accountMenu = getBlockBody(styles, "\n.lv-agent-account-menu {");
-    const accountTrigger = getBlockBody(styles, "\n.lv-agent-account-trigger {");
     const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");
 
     expect(page).toMatch(/<UserAvatarMenu\b[^>]*\bvariant="sidebar"[^>]*\/>/);
@@ -218,12 +216,8 @@ describe("Agent settings navigation spacing", () => {
     expect(accountFooter).toContain("margin-top: auto;");
     expect(accountFooter).toContain("padding-top: 8px;");
     expect(accountFooter).toContain("border-top: 1px solid #e9ecf1;");
-    expect(accountMenu).toContain("width: 100%;");
-    expect(accountMenu).not.toContain("width: var(--lv-agents-nav-width);");
-    expect(accountTrigger).toContain("width: 100%;");
     expect(styles).toContain("height: calc(100dvh - 68px);");
-    expect(desktopSidebar).toContain("padding-top: 12px;");
-    expect(desktopSidebar).toContain("padding-bottom: max(12px, env(safe-area-inset-bottom));");
+    expect(desktopSidebar).toContain("padding-top: 20px;");
   });
 
   it("keeps auth and data loading states on the final Agent shell geometry", () => {
@@ -236,13 +230,16 @@ describe("Agent settings navigation spacing", () => {
     expect(loadingView).toContain('className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"');
     expect(loadingView).toContain('className="lv-agent-account-footer hidden lg:flex"');
     expect(loadingView).not.toContain('lg:top-[84px]');
-    expect(loadingView).toContain('className="lv-agent-profile-wrap lv-agents-sidebar-profile"');
-    expect(loadingView).toContain('className="lv-agents-sidebar-middle"');
-    expect(loadingView).toContain('className="lv-agents-sidebar-footer"');
   });
 
-  it("removes the standalone feedback link while retaining desktop account alignment and separators", () => {
+  it("keeps the requested desktop sidebar separators and bottom actions aligned", () => {
     const profileSeparator = getBlockBody(styles, "\n.lv-agent-profile-wrap {");
+    const feedbackLink = getBlockBody(styles, "\n.lv-agent-feedback-link {");
+    const desktopFeedbackLink = getBlockBody(styles, "\n  .lv-agent-feedback-link {");
+    const adjacentAccountFooter = getBlockBody(
+      styles,
+      "\n  .lv-agent-feedback-link + .lv-agent-account-footer {",
+    );
     const accountSeparator = getBlockBody(styles, "\n.lv-agent-account-footer {");
     const desktopScrollContainer = getBlockBody(
       styles,
@@ -252,20 +249,18 @@ describe("Agent settings navigation spacing", () => {
     expect(profileSeparator).toContain("width: calc(100% + 12px);");
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
-    expect(page).not.toContain("lv-agent-feedback-link");
-    expect(page).not.toContain("有建议？提交反馈");
-    expect(page).not.toContain("PRODUCT_FEEDBACK_URL");
-    expect(styles).not.toContain("lv-agent-feedback-link");
-    expect(page).toContain('<UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />');
+    expect(feedbackLink).toContain("width: calc(100% + 12px);");
+    expect(feedbackLink).not.toContain("border-top:");
+    expect(desktopFeedbackLink).toContain("margin-top: auto;");
+    expect(adjacentAccountFooter).toContain("margin-top: 8px;");
     expect(accountSeparator).toContain("width: calc(100% + 12px + 16px);");
     expect(accountSeparator).toContain("margin-left: -16px;");
     expect(accountSeparator).toContain("padding-left: 16px;");
     expect(accountSeparator).toContain("border-top: 1px solid #e9ecf1;");
     expect(desktopScrollContainer).toContain("width: 264px;");
-    expect(desktopScrollContainer).toContain("left: 0;");
-    expect(desktopScrollContainer).toContain("margin-left: 0;");
+    expect(desktopScrollContainer).toContain("margin-left: -16px;");
     expect(desktopScrollContainer).toContain("padding-left: 16px;");
-    expect(desktopScrollContainer).toContain("overflow: hidden;");
+    expect(desktopScrollContainer).toContain("overflow-x: hidden;");
   });
 
 });

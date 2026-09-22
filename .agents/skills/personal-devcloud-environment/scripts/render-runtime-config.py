@@ -34,7 +34,9 @@ CONFIG_MAPS = {
             "LIGHTVELA_SITE_KIND": "site",
             "LIGHTVELA_TRADE_REGION": "trade_region",
             "JIFEI_CGW_GATEWAY_URL": "jifei_gateway",
+            "JIFEI_BILLING_APIGW_URL": "billing_apigw_url",
             "JIFEI_CGW_X_QCLOUD_USER_ID": "jifei_user_id",
+            "TRADE_BILLING_PAY_REDIRECT_URL": "billing_pay_redirect_url",
             "TRADE_SHADOW_MOCK_ENABLED": "trade_shadow_mock_enabled",
         },
     ),
@@ -54,6 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gateway-url", required=True)
     parser.add_argument("--fake-qq-url", required=True)
     parser.add_argument("--jifei-gateway", required=True)
+    parser.add_argument("--billing-apigw-url", required=True)
     parser.add_argument("--jifei-user-id", required=True)
     parser.add_argument("--trade-region", required=True)
     parser.add_argument("--shadow-platform", required=True)
@@ -71,6 +74,7 @@ def runtime_values(args: argparse.Namespace) -> dict[str, str]:
         qq_authorize_url=f"{args.fake_qq_url}/oauth2.0/authorize",
         wechat_redirect_uri=f"{args.gateway_url}/auth/oauth/wechat/callback",
         github_redirect_uri=f"{args.gateway_url}/auth/oauth/github/callback",
+        billing_pay_redirect_url=f"{args.frontend_url}/subscribe",
         shadow_binding_enabled="true",
         password_shadow_provisioning_enabled="false",
         trade_shadow_mock_enabled="false",

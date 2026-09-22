@@ -186,6 +186,47 @@ func TestEnsureAiGatewayEntitlementDoesNotSendBusinessDuration(t *testing.T) {
 	}
 }
 
+func TestEnsureAiGatewayEntitlementCreatesUniquePlanWithoutPriorSubscription(t *testing.T) {
+	testutil.NewSQLiteDB(t, &modelgateway.Entity{})
+	originalConfig := config.ServerConf
+	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+		LLMGateway: &config.LLMGatewayConfig{
+			Enabled:                    true,
+			NewAllocationUserAllowlist: []string{"*"},
+		},
+	}}
+	t.Cleanup(func() { config.ServerConf = originalConfig })
+
+	aiStub := &entitlementStubAiGateway{}
+	llmStub := &entitlementStubLLMGateway{
+		applyResp: &llmgateway.Subscription{ID: "llm-sub-ai", UserID: "general-user", PlanID: "plan-cruise-ai"},
+	}
+	t.Cleanup(installEntitlementFactory(aiStub, llmStub))
+
+	sub, err := EnsureAiGatewayEntitlement(
+		zap.NewNop(), "general-user", "plan-cruise-ai", "modify:deal-cross-sp",
+	)
+	if err != nil {
+		t.Fatalf("ensure cross-SP target entitlement: %v", err)
+	}
+	if sub == nil || sub.ID != "llm-sub-ai" || sub.PlanID != "plan-cruise-ai" {
+		t.Fatalf("subscription = %+v", sub)
+	}
+	if aiStub.getCalls != 0 || aiStub.applyCalls != 0 {
+		t.Fatalf("legacy gateway calls: get=%d apply=%d", aiStub.getCalls, aiStub.applyCalls)
+	}
+	if llmStub.applyCalls != 1 || llmStub.applyReq == nil {
+		t.Fatalf("llmgateway apply calls=%d request=%+v", llmStub.applyCalls, llmStub.applyReq)
+	}
+	if !llmStub.applyReq.IsUnique {
+		t.Fatal("cross-SP target entitlement must replace/create the unique package subscription")
+	}
+	if llmStub.applyReq.UserID != "general-user" || llmStub.applyReq.PlanID != "plan-cruise-ai" ||
+		llmStub.applyReq.IdempotencyKey != "modify:deal-cross-sp" {
+		t.Fatalf("llmgateway request = %+v", llmStub.applyReq)
+	}
+}
+
 func TestEnsureActiveRenewalGatewayEntitlementAppliesUniqueLLMGatewaySubscription(t *testing.T) {
 	testutil.NewSQLiteDB(t, &modelgateway.Entity{})
 	originalConfig := config.ServerConf
@@ -347,9 +388,8 @@ func TestCancelAiGatewayEntitlementUsesSelectedCancelForLLMGateway(t *testing.T)
 	if llmStub.cancelSelectedReq.UserID != "user-1" {
 		t.Fatalf("selected cancel user_id=%q", llmStub.cancelSelectedReq.UserID)
 	}
-	if len(llmStub.cancelSelectedReq.SubscriptionNamePrefixes) != 2 ||
-		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[0] != "package:" ||
-		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[1] != "free-credit:" {
+	if len(llmStub.cancelSelectedReq.SubscriptionNamePrefixes) != 1 ||
+		llmStub.cancelSelectedReq.SubscriptionNamePrefixes[0] != "package:" {
 		t.Fatalf("selected cancel prefixes=%+v", llmStub.cancelSelectedReq.SubscriptionNamePrefixes)
 	}
 	if !llmStub.cancelSelectedReq.IncludeLegacyPackageSubscription {

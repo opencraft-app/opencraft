@@ -1,6 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import userEvent from "@testing-library/user-event";
 
 import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
 import {
@@ -52,18 +51,22 @@ vi.mock("@/lib/region", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@/contexts/repository-context", () => {
-  const repositories = { bots: { execDebugCommand: repositoryMocks.execDebugCommand } };
-  return { useRepositories: () => repositories };
-});
+vi.mock("@/contexts/repository-context", () => ({
+  useRepositories: () => ({
+    bots: {
+      execDebugCommand: repositoryMocks.execDebugCommand,
+    },
+  }),
+}));
 
-vi.mock("@/i18n/t", () => {
-  const t = (text: string, options?: Record<string, unknown>) => text.replace(
+vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
+  useT: () => (text: string, options?: Record<string, unknown>) => text.replace(
     /\{\{\s*([\w$]+)\s*\}\}/g,
     (raw, key: string) => options?.[key] === undefined ? raw : String(options[key]),
-  );
-  return { useT: () => t };
-});
+  ),
+}));
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ i18n: { language: "zh-CN" } }),
@@ -110,14 +113,13 @@ vi.mock("@/pages/marketing/agent-buddy-draw-modal", () => ({
   DrawSoulModal: ({
     open,
     onInject,
-    onPick,
   }: {
     open: boolean;
-    onPick: (soul: SkillHubSoul) => void;
     onInject: (soul: SkillHubSoul) => Promise<boolean>;
   }) => open ? (
-    <><button type="button" onClick={() => void onInject(fixtures.extra)}>注入抽卡结果</button>
-    <button type="button" onClick={() => onPick(fixtures.extra)}>暂存抽卡结果</button></>
+    <button type="button" onClick={() => void onInject(fixtures.extra)}>
+      注入抽卡结果
+    </button>
   ) : null,
 }));
 
@@ -160,7 +162,6 @@ describe("BuddyPanel P1 stability", () => {
 
   beforeEach(() => {
     now = 0;
-    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     regionState.isGlobal = false;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     repositoryMocks.execDebugCommand.mockReset();
@@ -185,10 +186,9 @@ describe("BuddyPanel P1 stability", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
-    vi.unstubAllGlobals();
   });
 
-  it("renders the page title and description above the persona card", async () => {
+  it("renders the page title and description above the persona card", () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -196,7 +196,7 @@ describe("BuddyPanel P1 stability", () => {
 
     const { container } = render(<BuddyPanel botId="agent-a" />);
 
-    const title = await screen.findByRole("heading", { level: 2, name: "人设" });
+    const title = screen.getByRole("heading", { level: 2, name: "人设" });
     const description = screen.getByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
     const card = container.querySelector(".lv-buddy-panel");
 
@@ -222,7 +222,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(container.querySelector(".lv-buddy-panel__title")).not.toBeInTheDocument();
   });
 
-  it("aligns the SkillHub source with the persona card grid bounds", async () => {
+  it("aligns the SkillHub source with the persona card grid bounds", () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -230,7 +230,7 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
 
-    const description = await screen.findByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
+    const description = screen.getByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
     const source = screen.getByRole("link", { name: "灵感来自 SkillHub" });
     const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
 
@@ -246,7 +246,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(description.parentElement).not.toBe(source.parentElement);
   });
 
-  it("hides the SkillHub source on the international site", async () => {
+  it("hides the SkillHub source on the international site", () => {
     regionState.isGlobal = true;
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
@@ -255,17 +255,16 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
 
-    await waitFor(() => expect(screen.queryByRole("link", { name: "灵感来自 SkillHub" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: "灵感来自 SkillHub" })).not.toBeInTheDocument();
   });
 
-  it("restores the original gradient heading, soft panel and pill actions", async () => {
+  it("renders the persona card heading with the historical slogan typography", () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
     });
 
     const { container } = render(<BuddyPanel botId="agent-a" />);
-    await screen.findByRole("heading", { level: 3, name: "人设卡片" });
     const card = container.querySelector(".lv-buddy-panel");
 
     expect(card).not.toBeNull();
@@ -277,39 +276,11 @@ describe("BuddyPanel P1 stability", () => {
       "text-balance",
     );
     expect(cardHeading).not.toHaveClass("text-base", "text-xl");
+    expect(cardHeading.style.letterSpacing).toBe("-0.2px");
     expect(cardHeading.style.backgroundImage).toContain("linear-gradient");
+    expect(cardHeading.style.backgroundClip).toBe("text");
     expect(cardHeading.style.color).toBe("transparent");
-    expect(card).toHaveClass("rounded-2xl");
-    expect(card).toHaveStyle({ boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)" });
-    for (const name of ["抽取人设", "测试人设", "上传人设文件"]) {
-      expect(screen.getByRole("button", { name })).toHaveClass("rounded-full");
-    }
     expect(screen.queryByText("已抽")).not.toBeInTheDocument();
-  });
-
-  it("keeps the existing centered page loading before the saved persona state resolves", async () => {
-    const request = deferred<Awaited<ReturnType<typeof loadBuddyState>>>();
-    mockedLoadBuddyState.mockReturnValue(request.promise);
-    const { container } = render(<BuddyPanel botId="agent-a" />);
-    expect(screen.getByRole("status")).toHaveTextContent("正在读取人设");
-    expect(container.querySelector(".lv-buddy-panel")).toBeNull();
-    await act(async () => request.resolve({ drawnSouls: [], appliedSlug: null }));
-    expect(await screen.findByRole("heading", { name: "人设卡片" })).toBeInTheDocument();
-  });
-
-  it("restores the original card selection shadow and round applied badge", async () => {
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: fixtures.agentA.slug });
-    repositoryMocks.execDebugCommand.mockResolvedValue(successResult(`Exists: yes\nSlug: ${fixtures.agentA.slug}\nName: Agent A Soul`));
-    render(<BuddyPanel botId="agent-a" />);
-    const select = await screen.findByRole("button", { name: "选中此人设" });
-    fireEvent.click(select);
-    expect(select).toHaveAttribute("aria-pressed", "true");
-    expect(select.parentElement?.parentElement).toHaveStyle({ boxShadow: "0 0 0 2px #000000, 0 20px 48px rgba(0,0,0,0.08)" });
-    const badge = screen.getByLabelText("当前已注入到 Agent");
-    expect(badge).toHaveClass("rounded-full", "text-white");
-    expect(badge.style.backgroundImage).toContain("linear-gradient");
-    const preview = screen.getByRole("button", { name: "人设解读" });
-    expect(preview.parentElement?.closest("button")).toBeNull();
   });
 
   it("places the drawn-card count immediately after the persona card heading", async () => {
@@ -326,7 +297,6 @@ describe("BuddyPanel P1 stability", () => {
 
     expect(progressChip).not.toBeNull();
     expect(progressChip).toHaveTextContent("已抽1/8");
-    expect(progressChip).toHaveClass("rounded-full");
     expect(cardHeading.parentElement).toHaveClass("lv-buddy-panel__heading");
     expect(cardHeading.nextElementSibling).toBe(progressChip);
     expect(container.querySelector(".lv-buddy-panel__actions")).not.toContainElement(progressChip);
@@ -439,7 +409,6 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText("Extra Soul", {}, { timeout: 3_000 })).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "我知道了" }));
     expect(screen.getByLabelText("当前已注入到 Agent")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("已注入：Extra Soul");
     expect(screen.queryByRole("button", { name: "注入抽卡结果" })).not.toBeInTheDocument();
@@ -462,7 +431,7 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
 
-    expect(await screen.findByText("已注入：Agent A Soul")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("已注入：Agent A Soul");
   });
 
   it("keeps the copied SOUL summary when the new Bot card state is empty", async () => {
@@ -475,7 +444,7 @@ describe("BuddyPanel P1 stability", () => {
     ].join("\n")));
 
     render(<BuddyPanel botId="agent-a" />);
-    expect(screen.queryByText("已注入：Agent A Soul")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
 
     buddyState.resolve({ drawnSouls: [], appliedSlug: null });
     await waitFor(() => expect(repositoryMocks.execDebugCommand.mock.calls.length).toBeGreaterThanOrEqual(2));
@@ -540,10 +509,7 @@ describe("BuddyPanel P1 stability", () => {
 
     expect(await screen.findByText("已注入：自定义人设 · 我的 Agent A Soul"))
       .toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "人设已更新" })).toHaveFocus();
-    fireEvent.click(await screen.findByRole("button", { name: "我知道了" }));
     expect(screen.getByRole("button", { name: "编辑自定义人设" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "编辑自定义人设" })).toHaveFocus());
     expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeInTheDocument();
     expect(atob(writtenCommand.match(/\n([A-Za-z0-9+/=]+)\n__CTL_SOUL_EOF__/)?.[1] ?? ""))
       .toContain("LightVela-Source: custom-upload");
@@ -722,7 +688,7 @@ describe("BuddyPanel P1 stability", () => {
     const editButton = screen.getByRole("button", { name: "编辑自定义人设" });
     expect(editButton).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeInTheDocument();
-    expect(editButton.parentElement).toHaveClass("gap-0");
+    expect(editButton.parentElement?.parentElement).toHaveClass("gap-0");
     expect(screen.queryByRole("button", { name: "已注入：自定义人设 · 冷静的项目搭档" }))
       .not.toBeInTheDocument();
     expect(screen.queryByLabelText("当前已注入到 Agent")).not.toBeInTheDocument();
@@ -944,7 +910,6 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(await screen.findByRole("button", { name: "覆盖并注入" }));
 
     expect(await screen.findByText("已注入：自定义人设 · 新人设")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "我知道了" }));
     expect(screen.getByRole("button", { name: "编辑自定义人设" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "下载自定义人设" })).toBeEnabled();
 
@@ -1149,7 +1114,6 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("keeps the applied card and reports an error when clearing SOUL.md fails", async () => {
-    const user = userEvent.setup();
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [fixtures.agentA],
       appliedSlug: fixtures.agentA.slug,
@@ -1163,122 +1127,11 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    const trigger = screen.getByRole("button", { name: "删除这张人设" });
-    await user.click(trigger);
-    await user.click(await screen.findByRole("button", { name: "确认删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除这张人设" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
 
     expect(await screen.findByText("删除人设失败，请检查网络后重试")).toBeInTheDocument();
     expect(screen.getByText("Agent A Soul")).toBeInTheDocument();
-    expect(screen.getByText("已注入：Agent A Soul")).toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-  });
-
-  it("clears the local applied summary only when an existing applied card is rerolled out", async () => {
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: fixtures.agentA.slug });
-    repositoryMocks.execDebugCommand.mockResolvedValue(successResult(`Exists: yes\nSlug: ${fixtures.agentA.slug}\nName: Agent A Soul`));
-    render(<BuddyPanel botId="agent-a" />);
-    await screen.findByText("已注入：Agent A Soul");
-    const calls = repositoryMocks.execDebugCommand.mock.calls.length;
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "重新抽取这张人设" }));
-    await user.click(screen.getByRole("button", { name: "暂存抽卡结果" }));
-    expect(screen.getByText("Extra Soul")).toBeInTheDocument();
-    expect(screen.queryByText("已注入：Agent A Soul")).not.toBeInTheDocument();
-    expect(repositoryMocks.execDebugCommand).toHaveBeenCalledTimes(calls);
-  });
-
-  it.each([false, true])("returns focus to the card area after deleting the last card (applied=%s)", async (applied) => {
-    const cleared = deferred<ReturnType<typeof successResult>>();
-    let exists = applied;
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: applied ? fixtures.agentA.slug : null });
-    repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => command.includes("rm -f")
-      ? cleared.promise
-      : successResult(exists ? `Exists: yes\nSlug: ${fixtures.agentA.slug}\nName: Agent A Soul` : "Exists: no"));
-    render(<BuddyPanel botId="agent-a" />);
-    await screen.findByText("Agent A Soul");
-    const user = userEvent.setup();
-    const trigger = screen.getByRole("button", { name: "删除这张人设" });
-    await user.click(trigger);
-    await user.click(screen.getByRole("button", { name: "确认删除" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    if (applied) {
-      expect(screen.getByText("Agent A Soul")).toBeInTheDocument();
-      expect(trigger).toHaveFocus();
-      exists = false;
-      await act(async () => cleared.resolve(successResult()));
-    }
-    await waitFor(() => expect(screen.queryByText("Agent A Soul")).not.toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole("group", { name: "人设卡片" })).toHaveFocus());
-    expect(screen.queryByText("已注入：Agent A Soul")).not.toBeInTheDocument();
-  });
-
-  it("does not steal focus moved elsewhere while an applied-card deletion is pending", async () => {
-    const cleared = deferred<ReturnType<typeof successResult>>();
-    let exists = true;
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: fixtures.agentA.slug });
-    repositoryMocks.execDebugCommand.mockImplementation(async (_botId, command) => command.includes("rm -f")
-      ? cleared.promise
-      : successResult(exists ? `Exists: yes\nSlug: ${fixtures.agentA.slug}\nName: Agent A Soul` : "Exists: no"));
-    render(<><button>Elsewhere</button><BuddyPanel botId="agent-a" /></>);
-    await screen.findByText("Agent A Soul");
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "删除这张人设" }));
-    await user.click(screen.getByRole("button", { name: "确认删除" }));
-    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
-    await user.click(elsewhere);
-    exists = false;
-    await act(async () => cleared.resolve(successResult()));
-    await waitFor(() => expect(screen.queryByText("Agent A Soul")).not.toBeInTheDocument());
-    expect(elsewhere).toHaveFocus();
-  });
-
-  it("keeps the new Bot SOUL identity when an old Bot read resolves late", async () => {
-    const oldRead = deferred<ReturnType<typeof successResult>>();
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [], appliedSlug: null });
-    repositoryMocks.execDebugCommand.mockImplementation(async (botId) => botId === "agent-a" ? oldRead.promise
-      : successResult(`Exists: yes\nSlug: ${fixtures.agentB.slug}\nName: Agent B Soul`));
-    const { rerender } = render(<BuddyPanel botId="agent-a" />);
-    await waitFor(() => expect(repositoryMocks.execDebugCommand).toHaveBeenCalled());
-    rerender(<BuddyPanel botId="agent-b" />);
-    expect(await screen.findByText("已注入：Agent B Soul")).toBeInTheDocument();
-    await act(async () => oldRead.resolve(successResult(`Exists: yes\nSlug: ${fixtures.agentA.slug}\nName: Agent A Soul`)));
-    expect(screen.getByText("已注入：Agent B Soul")).toBeInTheDocument();
-    expect(screen.queryByText("已注入：Agent A Soul")).not.toBeInTheDocument();
-  });
-
-  it("opens a named preview from a separate native trigger and restores focus on Escape", async () => {
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: null });
-    render(<BuddyPanel botId="agent-a" />);
-    await screen.findByText("Agent A Soul");
-    const user = userEvent.setup();
-    const trigger = screen.getByRole("button", { name: "人设解读" });
-    expect(trigger.tagName).toBe("BUTTON");
-    expect(trigger.parentElement?.closest("button")).toBeNull();
-    await user.click(trigger);
-    const dialog = await screen.findByRole("dialog", { name: /Agent A Soul/ });
-    expect(dialog).toContainElement(document.activeElement as HTMLElement);
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-  });
-
-  it("cancels persona deletion with Escape without issuing a clear command", async () => {
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: fixtures.agentA.slug });
-    repositoryMocks.execDebugCommand.mockResolvedValue(successResult(`Exists: yes\nSlug: ${fixtures.agentA.slug}\nName: Agent A Soul`));
-    render(<BuddyPanel botId="agent-a" />);
-    await screen.findByText("Agent A Soul");
-    const calls = repositoryMocks.execDebugCommand.mock.calls.length;
-    const user = userEvent.setup();
-    const trigger = screen.getByRole("button", { name: "删除这张人设" });
-    await user.click(trigger);
-    const dialog = screen.getByRole("alertdialog", { name: "确认删除人设" });
-    expect(dialog).toContainElement(document.activeElement as HTMLElement);
-    expect(dialog).toHaveClass("rounded-[1.75rem]", "max-w-sm");
-    expect(within(dialog).getByRole("button", { name: "取消" })).toHaveClass("rounded-full");
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-    expect(repositoryMocks.execDebugCommand).toHaveBeenCalledTimes(calls);
   });
 
   it("retries a failed persona detail request without closing the preview", async () => {

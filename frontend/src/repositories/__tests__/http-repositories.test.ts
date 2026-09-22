@@ -2378,6 +2378,20 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
+  it.each([new TypeError("Failed to fetch"), "CORS request blocked"])(
+    "keeps debug transport details in cause rather than the user message (%s)", async (cause) => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(cause));
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const error = await repositories.bots.execDebugCommand("bot-1", "true").catch((value: unknown) => value);
+      expect(error).toMatchObject({
+        message: AUTH_SERVICE_UNAVAILABLE_MESSAGE,
+        status: 0,
+        code: "network_error",
+      });
+      expect((error as Error).cause).toBe(cause);
+    },
+  );
+
   it("aborts a debug command after the requested timeout", async () => {
     vi.useFakeTimers();
     try {

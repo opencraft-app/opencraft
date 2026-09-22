@@ -188,7 +188,8 @@ type Client interface {
 	// CheckPassModify 调 POST /internal/ctl/passes/{pass_id}/check-modify
 	// ModifyPass 调 POST /internal/ctl/passes/{pass_id}/modify
 	//
-	// 同 SP 变配链路（TAPD 1010132091137784162 §5.2 / §7.1），实现与错误语义见 modify.go。
+	// Pass 变配链路（含产品允许的跨 SP 路径，TAPD 1010132091137784162 §5.2 / §7.1），
+	// 实现与错误语义见 modify.go。
 	CheckPassModify(ctx context.Context, passID string, req *CheckPassModifyRequest) (*CheckPassModifyResponse, error)
 	ModifyPass(ctx context.Context, passID string, req *ModifyPassRequest) (*ModifyPassResponse, error)
 }

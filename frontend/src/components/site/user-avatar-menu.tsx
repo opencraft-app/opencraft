@@ -1,43 +1,54 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
+import { Bot, BrainCircuit, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
+import { useTranslation } from "react-i18next";
 import { InternationalLanguageMenu } from "@/components/site/language-switcher";
-import { SidebarUserMenuController } from "@/components/site/sidebar-user-menu-controller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
-import { useAppNavigate } from "@/lib/app-navigation";
+import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { ACCOUNT_BILLING_PATH, AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import {
+  ACCOUNT_BILLING_PATH,
+  AGENTS_HOME_PATH,
+  AGENT_SECTION_PATH_BY_ID,
+  getAgentSectionHref,
+  shouldShowWorkbenchEntry,
+} from "@/lib/agent-routes";
+import { shouldMoveModelEntryToAccountMenu } from "@/lib/agent-plan-navigation";
 import { isGlobal } from "@/lib/region";
-import { registerWindowCommand } from "@/lib/window-command-chain";
-import { emitConsoleShowEvent } from "@/lib/console-show-event";
+import {
+  installConsoleShowCommand,
+  subscribeConsoleShow,
+} from "@/lib/console-show-event";
+import { cn } from "@/lib/utils";
+import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 
 type UserAvatarMenuProps = {
   showLanguageSwitcher?: boolean;
   variant?: "header" | "sidebar";
 };
 
-export const UserAvatarMenu = ({ showLanguageSwitcher = false, variant = "header" }: UserAvatarMenuProps) => variant === "sidebar"
-  ? <SidebarUserMenuController showLanguageSwitcher={showLanguageSwitcher} />
-  : <HeaderUserAvatarMenu showLanguageSwitcher={showLanguageSwitcher} />;
-
-const HeaderUserAvatarMenu = ({
+export const UserAvatarMenu = ({
   showLanguageSwitcher = false,
-}: Pick<UserAvatarMenuProps, "showLanguageSwitcher">) => {
+  variant = "header",
+}: UserAvatarMenuProps) => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
+  const { i18n } = useTranslation();
   const navigate = useAppNavigate();
+  const [searchParams] = useAppSearchParams();
   const user = session.user;
   const [open, setOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
   const [workbenchHostname, setWorkbenchHostname] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const accountHoveredRef = useRef(false);
   const languageMenuOpenedByHoverRef = useRef(false);
   const languageMenuId = useId();
 
@@ -61,12 +72,14 @@ const HeaderUserAvatarMenu = ({
     setWorkbenchHostname(window.location.hostname);
   }, []);
 
-  useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
-    setHiddenEntriesRevealed(true);
-    emitConsoleShowEvent();
-    const result = next(...args);
-    return result === undefined ? true : result;
-  }), []);
+  useEffect(() => {
+    const stopState = subscribeConsoleShow(setHiddenEntriesRevealed);
+    const stopCommand = installConsoleShowCommand();
+    return () => {
+      stopState();
+      stopCommand();
+    };
+  }, []);
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
   const subscriptionName = activePass?.bundle_name ?? session.currentSubscription?.code ?? null;
@@ -88,13 +101,54 @@ const HeaderUserAvatarMenu = ({
     hostname: workbenchHostname,
     revealed: hiddenEntriesRevealed,
   });
+  const isSidebar = variant === "sidebar";
+  const showModelEntry = isSidebar && shouldMoveModelEntryToAccountMenu(activePass);
 
   return (
     <div
       ref={containerRef}
-      className="relative"
+      className={cn("relative", isSidebar && "lv-agent-account-menu")}
+      onMouseEnter={() => {
+        if (!isSidebar) return;
+        accountHoveredRef.current = true;
+        setOpen(true);
+      }}
+      onMouseLeave={() => {
+        if (!isSidebar) return;
+        accountHoveredRef.current = false;
+        if (!languageMenuOpen) setOpen(false);
+      }}
     >
       {/* Avatar trigger */}
+      {isSidebar ? (
+        <button
+          type="button"
+          className="lv-agent-account-trigger"
+          aria-label={t("打开用户菜单")}
+          aria-expanded={open}
+          aria-haspopup="true"
+          onClick={() => setOpen(true)}
+        >
+          <img
+            src={avatarSrc}
+            alt=""
+            className="h-9 w-9 shrink-0 object-cover"
+            style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
+          />
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-sm font-semibold text-black/80">
+              {user?.name || t("用户")}
+            </span>
+            <span className="block truncate text-xs text-black/40">
+              {user?.email || subscriptionLabel}
+            </span>
+          </span>
+          <ChevronDown
+            className="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+            style={{ color: "#aaa", transform: open ? "rotate(0deg)" : "rotate(180deg)" }}
+          />
+        </button>
+      ) : (
         <div
           onMouseEnter={() => setOpen(true)}
           className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
@@ -121,6 +175,7 @@ const HeaderUserAvatarMenu = ({
             />
           </button>
         </div>
+      )}
 
       {/* Dropdown */}
       <AnimatePresence>
@@ -130,10 +185,15 @@ const HeaderUserAvatarMenu = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
-            className="lw-user-avatar-menu absolute z-50 overflow-hidden border border-black/[0.05] bg-white/95 right-0 top-full mt-2 w-52 origin-top-right"
+            className={cn(
+              "lw-user-avatar-menu absolute z-50 overflow-hidden border border-black/[0.05] bg-white/95",
+              isSidebar
+                ? "bottom-full left-0 mb-2 w-[var(--lv-agents-nav-width)] origin-bottom-left"
+                : "right-0 top-full mt-2 w-52 origin-top-right",
+            )}
             style={menuStyle}
             onMouseLeave={() => {
-              if (!languageMenuOpen) setOpen(false);
+              if (!isSidebar && !languageMenuOpen) setOpen(false);
             }}
           >
             {/* User info */}
@@ -158,6 +218,7 @@ const HeaderUserAvatarMenu = ({
 
             {/* Menu items */}
             <div className="py-1.5">
+              {!isSidebar && (
                 <a
                   href={AGENTS_HOME_PATH}
                   onClick={() => setOpen(false)}
@@ -166,6 +227,7 @@ const HeaderUserAvatarMenu = ({
                   <Bot className={menuIconClass} />
                   {t("我的智能体")}
                 </a>
+              )}
               <a
                 href="/account"
                 onClick={() => setOpen(false)}
@@ -182,6 +244,16 @@ const HeaderUserAvatarMenu = ({
                 <CreditCard className={menuIconClass} />
                 {t("套餐与费用")}
               </a>
+              {showModelEntry ? (
+                <a
+                  href={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams)}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <BrainCircuit className={menuIconClass} />
+                  {resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
+                </a>
+              ) : null}
               {showWorkbenchEntry ? (
                 <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}
@@ -192,7 +264,7 @@ const HeaderUserAvatarMenu = ({
                   {t("工作台")}
                 </a>
               ) : null}
-              {!isGlobal ? (
+              {hiddenEntriesRevealed && !isGlobal ? (
                 <a
                   href={PRODUCT_FEEDBACK_URL}
                   target="_blank"
@@ -201,7 +273,7 @@ const HeaderUserAvatarMenu = ({
                   className={menuItemClass}
                 >
                   <MessageSquare className={menuIconClass} />
-                  {t("建议反馈")}
+                  {t("产品反馈")}
                 </a>
               ) : null}
               {isGlobal && showLanguageSwitcher ? (
@@ -209,7 +281,7 @@ const HeaderUserAvatarMenu = ({
                   open={languageMenuOpen}
                   onOpenChange={(value) => {
                     setLanguageMenuOpen(value);
-                    if (!value) setOpen(false);
+                    if (!value && !accountHoveredRef.current) setOpen(false);
                   }}
                 >
                   <PopoverTrigger asChild>
@@ -245,7 +317,7 @@ const HeaderUserAvatarMenu = ({
                     onMouseLeave={() => {
                       languageMenuOpenedByHoverRef.current = false;
                       setLanguageMenuOpen(false);
-                      setOpen(false);
+                      if (!accountHoveredRef.current) setOpen(false);
                     }}
                   >
                     <InternationalLanguageMenu

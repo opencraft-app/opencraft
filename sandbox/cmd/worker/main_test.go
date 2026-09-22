@@ -282,6 +282,15 @@ func (s *recordingStore) ListInstancesByStates(ctx context.Context, poolID strin
 	return s.Store.ListInstancesByStates(ctx, poolID, states, limit)
 }
 
+type sandboxLookupErrorStore struct {
+	store.Store
+	err error
+}
+
+func (s *sandboxLookupErrorStore) GetSandboxByInstanceID(context.Context, string) (core.Sandbox, error) {
+	return core.Sandbox{}, s.err
+}
+
 func mustGetSKU(t *testing.T, svc *service.Service, skuID string) core.SKU {
 	t.Helper()
 	sku, err := svc.GetSKU(context.Background(), skuID)
@@ -331,7 +340,7 @@ func TestCleanupDeletingRetriesThenSucceeds(t *testing.T) {
 	}
 }
 
-func TestCleanupStaleInflightMarksFailed(t *testing.T) {
+func TestCleanupStaleInflightMarksOnlyDisposableStatesFailed(t *testing.T) {
 	defer func(old time.Duration) { creatingStaleAfter = old }(creatingStaleAfter)
 	defer func(old time.Duration) { resettingStaleAfter = old }(resettingStaleAfter)
 	creatingStaleAfter = 0
@@ -343,14 +352,18 @@ func TestCleanupStaleInflightMarksFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	insts, err := svc.InsertCreating(ctx, pool.ID, 2)
+	insts, err := svc.InsertCreating(ctx, pool.ID, 3)
 	if err != nil {
 		t.Fatalf("insert creating: %v", err)
 	}
 	creatingInst := insts[0]
-	cleanCandidate := insts[1]
-	if _, err := svc.FinalizeCreating(ctx, cleanCandidate.ID, core.StateClean, "1.1.1.1", "cloud-x"); err != nil {
+	resetCandidate := insts[1]
+	if _, err := svc.FinalizeCreating(ctx, resetCandidate.ID, core.StateClean, "1.1.1.1", "cloud-reset"); err != nil {
 		t.Fatalf("finalize creating to clean: %v", err)
+	}
+	pauseCandidate := insts[2]
+	if _, err := svc.FinalizeCreating(ctx, pauseCandidate.ID, core.StateClean, "1.1.1.2", "cloud-pause"); err != nil {
+		t.Fatalf("finalize pausing candidate to clean: %v", err)
 	}
 	reinstallInst, err := svc.Allocate(ctx, pool.ID)
 	if err != nil {
@@ -362,11 +375,15 @@ func TestCleanupStaleInflightMarksFailed(t *testing.T) {
 	if _, err := svc.AdvanceState(ctx, reinstallInst.ID, core.StateResetting); err != nil {
 		t.Fatalf("advance to resetting: %v", err)
 	}
+	pausingInst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate pausing candidate: %v", err)
+	}
+	if _, err := svc.Pause(ctx, pausingInst.ID); err != nil {
+		t.Fatalf("advance to pausing: %v", err)
+	}
 
-	cleanupStaleInflightStates(ctx, svc, pool, []inflightStaleRule{
-		{State: core.StateCreating, StaleAfter: creatingStaleAfter, Target: core.StateFailed, Name: "creating"},
-		{State: core.StateResetting, StaleAfter: resettingStaleAfter, Target: core.StateFailed, Name: "resetting"},
-	})
+	cleanupStaleInflightStates(ctx, svc, pool, staleInflightRules())
 
 	gotCreating, err := svc.GetInstance(ctx, creatingInst.ID)
 	if err != nil {
@@ -381,6 +398,137 @@ func TestCleanupStaleInflightMarksFailed(t *testing.T) {
 	}
 	if gotResetting.State != core.StateFailed {
 		t.Fatalf("expected resetting instance state FAILED after stale cleanup, got %s", gotResetting.State)
+	}
+	gotPausing, err := svc.GetInstance(ctx, pausingInst.ID)
+	if err != nil {
+		t.Fatalf("get pausing instance: %v", err)
+	}
+	if gotPausing.State != core.StatePausing {
+		t.Fatalf("expected pausing instance to remain PAUSING, got %s", gotPausing.State)
+	}
+}
+
+func TestCleanupFailedSkipsInstanceStillBoundToSandbox(t *testing.T) {
+	ctx := context.Background()
+	memoryStore := store.NewMemoryStore()
+	svc := service.NewService(memoryStore)
+	pool, err := svc.CreatePool(ctx, "p-bound-failed", "desc", "img", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, []string{"cloud-bound"}, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	sb, err := svc.CreateSandbox(ctx, core.Sandbox{ID: "sb-bound", InstanceID: inst.ID, PoolID: pool.ID})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if _, err := svc.Pause(ctx, inst.ID); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	// Simulate a historical/corrupt row written before PAUSING -> FAILED was
+	// removed from the service state machine. The cleanup guard must still hold.
+	if _, err := memoryStore.UpdateInstanceState(ctx, inst.ID, core.StatePausing, core.StateFailed); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	cp := &stubProvider{}
+	cleanupFailed(ctx, svc, cp, pool)
+
+	if cp.terminateCalls != 0 {
+		t.Fatalf("expected bound instance not to be terminated, got %d calls", cp.terminateCalls)
+	}
+	got, err := svc.GetInstance(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("get protected instance: %v", err)
+	}
+	if got.State != core.StateFailed {
+		t.Fatalf("expected protected instance to remain FAILED, got %s", got.State)
+	}
+	if _, err := svc.GetSandbox(ctx, sb.ID); err != nil {
+		t.Fatalf("expected sandbox binding to remain: %v", err)
+	}
+}
+
+func TestCleanupFailedTerminatesUnboundInstance(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "p-unbound-failed", "desc", "img", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, []string{"cloud-unbound"}, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Release(ctx, inst.ID); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if _, err := svc.AdvanceState(ctx, inst.ID, core.StateResetting); err != nil {
+		t.Fatalf("mark resetting: %v", err)
+	}
+	if _, err := svc.AdvanceState(ctx, inst.ID, core.StateFailed); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	cp := &stubProvider{}
+	cleanupFailed(ctx, svc, cp, pool)
+
+	if cp.terminateCalls != 1 {
+		t.Fatalf("expected unbound instance to be terminated once, got %d calls", cp.terminateCalls)
+	}
+	if _, err := svc.GetInstance(ctx, inst.ID); !errors.Is(err, core.ErrInstanceNotFound) {
+		t.Fatalf("expected unbound instance record removed, got err=%v", err)
+	}
+}
+
+func TestCleanupFailedSkipsWhenSandboxBindingLookupFails(t *testing.T) {
+	ctx := context.Background()
+	lookupErr := errors.New("sandbox lookup unavailable")
+	svc := service.NewService(&sandboxLookupErrorStore{Store: store.NewMemoryStore(), err: lookupErr})
+	pool, err := svc.CreatePool(ctx, "p-binding-error", "desc", "img", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, []string{"cloud-binding-error"}, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Release(ctx, inst.ID); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if _, err := svc.AdvanceState(ctx, inst.ID, core.StateResetting); err != nil {
+		t.Fatalf("mark resetting: %v", err)
+	}
+	if _, err := svc.AdvanceState(ctx, inst.ID, core.StateFailed); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	cp := &stubProvider{}
+	cleanupFailed(ctx, svc, cp, pool)
+
+	if cp.terminateCalls != 0 {
+		t.Fatalf("expected lookup failure to block termination, got %d calls", cp.terminateCalls)
+	}
+	got, err := svc.GetInstance(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("get protected instance: %v", err)
+	}
+	if got.State != core.StateFailed {
+		t.Fatalf("expected protected instance to remain FAILED, got %s", got.State)
 	}
 }
 

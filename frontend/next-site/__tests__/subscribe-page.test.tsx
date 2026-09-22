@@ -628,6 +628,80 @@ describe("SubscribePage", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade same-card-target");
   });
 
+  it.each([
+    {
+      name: "Launch to Launch AI",
+      sourceId: "launch",
+      sourceName: "启航 Launch",
+      targetId: "launch-ai",
+      selectCredit: "4500",
+      buttonIndex: 0,
+      allowedTargets: ["launch-ai", "cruise", "cruise-ai"],
+    },
+    {
+      name: "Cruise to Cruise AI",
+      sourceId: "cruise",
+      sourceName: "巡游 Cruise",
+      targetId: "cruise-ai",
+      selectCredit: "10000",
+      buttonIndex: 0,
+      allowedTargets: ["cruise-ai"],
+    },
+    {
+      name: "Launch to Cruise AI",
+      sourceId: "launch",
+      sourceName: "启航 Launch",
+      targetId: "cruise-ai",
+      selectCredit: null,
+      buttonIndex: 0,
+      allowedTargets: ["launch-ai", "cruise", "cruise-ai"],
+    },
+  ])("opens the backend-approved cross-SP checkout for $name", async ({
+    sourceId,
+    sourceName,
+    targetId,
+    selectCredit,
+    buttonIndex,
+    allowedTargets,
+  }) => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: sourceId, bundle_name: sourceName, expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    const bundles = [
+      { ...buildBundle("launch", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("launch-ai", "启航 Launch"), credit: 4500 },
+      { ...buildBundle("cruise", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+      { ...buildBundle("cruise-ai", "巡游 Cruise"), credit: 10000 },
+    ];
+    listBundlesMock.mockResolvedValue(bundles);
+    listModifyBundlesMock.mockResolvedValue({
+      source_bundle_id: sourceId,
+      modify_bundle_set: allowedTargets.map((id) => {
+        const bundle = bundles.find((item) => item.bundle_id === id)!;
+        return {
+          target_bundle_id: id,
+          bundle,
+          modify_price: { currency: "CNY", real_total_cost: 100 },
+        };
+      }),
+    });
+    window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await waitFor(() => expect(listModifyBundlesMock).toHaveBeenCalledWith("p1"));
+    if (selectCredit) {
+      await userEvent.click(getCreditTab(selectCredit));
+    }
+    const buttons = await screen.findAllByRole("button", { name: "升级至此套餐" });
+    await userEvent.click(buttons[buttonIndex]!);
+    expect(await screen.findByRole("dialog")).toHaveTextContent(`Upgrade ${targetId}`);
+  });
+
   it("leaves original AI defaults and locked actions unchanged when backend returns no targets", async () => {
     openClawState.isLoggedIn = true;
     openClawState.isSubscribed = true;

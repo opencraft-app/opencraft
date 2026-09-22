@@ -71,6 +71,15 @@ master 源码
 - LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
   产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
   通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。
+- frontend Pages artifact在release matrix显式启用时，先构建OpenCraft独立Embedded Workbench
+  target，再把无sourcemap、内容寻址的静态树放入Next导出的`/__opencraft/`子树；Next主chunk
+  不导入OpenCraft，未执行rollout `show()`的页面也不请求该树。同源共包避免ES module CORS和
+  两个独立发布版本漂移，但artifact构建必须在缺少loader输入时失败，不能静默回退成只含前端代码。
+  Embedded staging 必须先于 EdgeOne Build Output 投影脚本执行，确保实际上传的
+  `.edgeone/assets/__opencraft/` 同样包含 loader、version 与 hashed assets；仅检查 `out/__opencraft/`
+  不能作为正式站产物验收。回归用例执行真实投影脚本并通过 `resolveDeployDir` 检查上传树。
+  Embedded artifact 还必须携带 namespaced Host Proxy Service Worker；该稳定路径需要
+  `no-cache`，同时其注册 scope 必须限制在 `/__opencraft/host-proxy/`，不能扩大到站点根。
 - `vela-computer`客户端候选CI只构建原生Linux AMD64、校验并归档到流水线制品库，不下发
   实例、不接自动更新、不上传公共COS。候选带`schemaVersion=1`、完整源码SHA、dirty标记、
   平台、版本和SHA256SUMS；`deploymentQualified=false`不能用作正式可用证明。
@@ -116,7 +125,7 @@ master 源码
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
 - 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，并由 CTL base 将该可选键注入 `ctl-api`。回滚时只把目标环境值切为 `false`，仍需独立审查 Gateway Bot 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实国际站回归；源码中的 `true` 不代表运行态已启用。
-- 个人 DevCloud 动态注册的显式 `targetIp` 只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启，用于跨地域 testing 入口 NAT 后仍能登记自动探测的 `9.0.0.0/8:18084`；UIN 必须继续由 Auth session 的 active shadow binding 派生。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
+- 个人 DevCloud 动态注册只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启。客户端只提交 callback port 与 TTL；UIN 必须由 Auth session 的 active shadow binding 派生，来源 IP 必须由 Auth 从可信代理链确认，不能接受客户端自报 `targetIp`。CloudLadder 与 devtunnel 的 testing allowlist 只加入真实观测到的最小 DevCloud/NAT 网段，两个工作负载必须保持一致；不要用页面访问 IP 代替服务端观测值，也不要放开整段公网 CIDR。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
 - 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
 - 生产镜像 promote 只有在 staged diff 符合该服务的 pin-only 合约时才允许自动合并或自动同步。VelaGW 的 pin-only 合约仅允许目标环境 `velagw-platform.env` 中的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT` 变化；Kustomize 结构、NewAPI release pin 或任何其他 deploy-facing 配置变化必须关闭自动合并和自动同步，先审查差异并回填 `master` 真源后重新生成候选。
 - Service Gateway 为独立 chat 前端开放浏览器能力时，应使用精确 method/path 的 `cors_allow`，
@@ -182,6 +191,10 @@ master 源码
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
   `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成
   接线后启用该路由；共享源码或策略测试不能替代目标地域的独立发布验收。
+- 匿名积分包询价必须按 Trade → Credit → Service Gateway 的顺序发布：Trade 先支持仅询价使用的
+  环境级 fallback UIN/AppID，Credit 再接受可选用户身份，最后才将精确的
+  `POST /v1/credit/inquiry` 加入 `optional_auth_allow`。下单、支付、退款和资源查询不得随该入口放宽；
+  国内与国际各环境必须分别验证 fallback 配置、最终 Kustomize 渲染和真实未登录询价。
 
 ### Referral 北京与上海交付
 
@@ -230,6 +243,9 @@ master 源码
 - 上海 foundation 使用独立 `lightvela_referral` 数据库和 `referral` 用户。激活时必须使用上海独立 Campaign、
   Pulsar producer/consumer Token 和精确 Gateway 路由，同时把 worker 恢复到 2 副本；不得复用北京 campaign ID、
   Token 或 endpoint。上海 Campaign 双方各 500 积分、`vesting_days=0`，资格仍是首次成功开通且 0 元 dianshi 订单也算。
+- Referral Attribution 运营重置依赖 schema `000003_attribution_reset_audit`、Referral API、CTL 精确免费积分撤销
+  和 Admin Gateway `/admin/api/referral` 路由同时就绪。发布顺序必须是 migration → CTL → Referral → Admin Gateway；
+  缺任一阶段时管理入口保持不可用，不能退化为直接 SQL 删除。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
@@ -268,8 +284,9 @@ master 源码
   应在创建 promote MR 前 fail closed。Deployment 的 bridge Secret 注入 patch 必须由
   `service-gateway/k8s/overlays/beijing-sandbox` source-facing Component 持有，与基准 Deployment 同层组合；
   deploy-facing 目录只保留环境配置和 Secret generator，不能对仅由 Component 引入的资源做顶层 patch。
-  北京主 sandbox 必须将该 source-facing Component 直接排在 common Component 后，不能经 sandbox profile
-  再嵌套一层；嵌套 Component 使用隔离累计器，仍会让结构性 patch 看不到 common 引入的 Deployment。
+  北京主 sandbox 必须使用一个普通 Kustomization，直接拥有 base resource、平台值 replacements、
+  Secret generators 和北京专用 patches；禁止使用 Component 注入内部 token，因为 Component 的 patch
+  不能修改 Component 自己或其他 Component 引入的资源。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
@@ -335,6 +352,17 @@ CloudLadder testing 的动态 developer route 都必须使用各自的 `devtunne
 capability，不能让 TKEx Pod 直连任意 DevCloud。该开关只有在 sandbox route control client 成功构造时
 才生效，不能进入 production、staging 或其他环境的 Auth 配置。已有静态 UIN 路由可以继续保留原落点，
 动态注册的 delivery mode 变化不得顺带改写静态测试账号。
+
+个人计费 capability proxy 只在 `sandbox-bj-7` 与 `sandbox-kr-1` 成对开启：Auth 配置固定指向同 namespace
+的中央 Trade internal endpoint，中央 Trade server 复用既有内部服务 Bearer、testing Jifei AppSecret 和
+CloudLadder HMAC；个人 Trade 只配置 Auth proxy URL 与短期 capability。客户端配置两项必须同进同退，
+中央 server 开关与客户端 URL/capability 不能混用。production、staging 及其他 sandbox 不设置
+`PERSONAL_DEV_BILLING_PROXY_ENABLED`，个人客户端变量默认空；因此源码合入不自动改变现网出向路径。
+这两个 playground 的 `trade-config` 来自 shared base 的 `trade` namespace；环境层 strategic merge patch
+必须保留该原始 `metadata.namespace: trade`，不能只依赖 overlay 的 namespace transformer。否则 Kustomize
+在 namespace 变换前无法定位 patch 目标，GitOps promote 必须在写回镜像或创建 MR 前 fail closed。
+发布验证除 Pod Ready 外，还要证明有效 capability 的拒绝探针为 `403`、注销后的同一 token 为 `401`，
+并分别保存国内和国际真实支付、回调与业务终态。任何长期 Secret 都不得进入 Skill、个人 kind 状态或日志。
 
 CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
 环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
@@ -427,6 +455,9 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 - live hotfix 后，即使业务已经恢复，也必须补齐 SSM、`master` 和 `gitops`。执行 Argo Sync 前先确认 deploy-facing 明文语义与 live 一致，否则 Sync 可能把正确的 live Secret 覆盖成旧值。
 - Secret 只更新对象数据时，Pod 不会自动重启。需要运行进程读取新值时应单独执行受控 rollout，并分别验证 Secret、Pod 环境和业务请求；不要把 Secret `Synced` 等同于进程已生效。
 - 跨服务运营 BFF Token 必须在同一环境内从服务端真源复制到消费方 SSM，并由 manifest 固定明确版本、声明 required key 后生成 SOPS；禁止跨地域复用或只在 live Secret 中临时补键。
+- Gateway Dashboard 调用 Credit 时，`CREDIT_INTERNAL_TOKEN` 必须由 Dashboard 自有 Secret 的
+  `CTL_INTERNAL_TOKEN` 显式映射，不能只依赖 `envFrom`；北京 sandbox、上海、新加坡和东京分别使用
+  本地域 Credit 内部 token。东京的 Credit 地址和消费方 SSM/SOPS 必须随 `sandbox-jp-1` overlay 一起交付。
 
 VelaGW subtree 更新时，北京 workload 的 `OTEL_SERVICE_VERSION` 以及 `shprod`、`sgprod` 的
 `VELAGW_OTEL_SERVICE_VERSION` 必须同步指向 subtree 源码短版本；这些字段只描述构建源码，

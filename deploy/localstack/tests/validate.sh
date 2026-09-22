@@ -74,6 +74,12 @@ for secret in \
   rg -q "name: $secret" "$rendered"
 done
 
+sandbox_api_key="$(sed -n 's/^SANDBOX_API_KEY=//p' "$LOCALSTACK_ROOT/sandbox/secrets.defaults.env")"
+ctl_sandbox_api_key="$(sed -n 's/^SANDBOX_API_KEY=//p' "$LOCALSTACK_ROOT/ctl/secrets.defaults.env")"
+test -n "$sandbox_api_key"
+test "$ctl_sandbox_api_key" = "$sandbox_api_key"
+unset sandbox_api_key ctl_sandbox_api_key
+
 ruby -ryaml -e '
   workloads = %w[Deployment StatefulSet Job]
   rendered_host_ports = []
@@ -212,8 +218,15 @@ for deployment in mock-control fake-qq-oauth fake-jifei fake-tencentcloud fake-w
 done
 rg -q 'base_url = "http://trade.trade.svc.cluster.local"' "$LOCALSTACK_ROOT/ctl/server_conf_rewrite.toml"
 rg -q 'base_url = "http://shadow.shadow.svc.cluster.local"' "$LOCALSTACK_ROOT/ctl/server_conf_rewrite.toml"
+rg -q '^specify_names = \[[^]]*"checkTasks"' "$LOCALSTACK_ROOT/ctl/server_conf_rewrite.toml"
 rg -q 'JIFEI_CGW_GATEWAY_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local' "$LOCALSTACK_ROOT/trade/kustomization.yaml"
 rg -q 'SHADOW_INTERNAL_BASE_URL=http://lightclaw-auth.user-auth.svc.cluster.local' "$LOCALSTACK_ROOT/trade/kustomization.yaml"
+ruby -ryaml -e '
+  config = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true) || {}
+  route = Array(config["routes"]).find { |item| item["name"] == "ctl-passes" }
+  abort "ctl-passes response_header_timeout must be 30s" unless
+    route && route["response_header_timeout"] == "30s"
+' "$LOCALSTACK_ROOT/service-gateway/config.yaml"
 rg -q 'SHADOW_PROVIDER=tencent' "$LOCALSTACK_ROOT/shadow/kustomization.yaml"
 rg -q 'SHADOW_CLOUDLADDER_GATEWAY_BASE_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local' "$LOCALSTACK_ROOT/shadow/kustomization.yaml"
 ctl_ai_gateway_token="$(sed -n 's/^CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN=//p' "$LOCALSTACK_ROOT/ctl/secrets.defaults.env")"
@@ -352,6 +365,8 @@ for site in cn intl; do
   test -f "$LOCALSTACK_ROOT/seed-data/$site/030-ctl-bundles.sql"
   test -f "$LOCALSTACK_ROOT/seed-data/$site/040-trade-bundles.sql"
 done
+bash "$LOCALSTACK_ROOT/tests/cn_cross_sp_seed_test.sh"
+bash "$LOCALSTACK_ROOT/tests/intl_cross_sp_seed_test.sh"
 rg -Fq '$SITE_SEED_ROOT/$LOCALSTACK_SITE_KIND/030-ctl-bundles.sql' \
   "$LOCALSTACK_ROOT/localstack.sh"
 for dockerfile in \
