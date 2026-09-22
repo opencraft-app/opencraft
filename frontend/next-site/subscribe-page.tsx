@@ -2819,6 +2819,15 @@ export const SubscribePage = ({
   const selectedUpgradePass = upgradeSelection && upgrade.pass?.pass_id === upgradeSelection.passId
     && upgradeTargetIds.has(upgradeSelection.targetBundleId) ? upgrade.pass : null;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
+  const creditPackRealnameVerified = realnamePhoneVerificationEnabled
+    ? session.user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
+    : Boolean(session.user?.realnameVerified);
+  const creditPackBindingReady = isGlobal || (
+    creditPackRealnameVerified
+    && (!session.user?.shadowBindingStatus || session.user.shadowBindingStatus === "active")
+    && session.user?.realnameSyncStatus !== "pending"
+    && session.user?.realnameSyncStatus !== "failed"
+  );
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
      国际站已全量放开，付费开关只由后端 features 熔断；
      任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
@@ -3950,7 +3959,11 @@ export const SubscribePage = ({
           sectionId={CREDIT_SECTION_ID}
           isLoggedIn={isLoggedIn}
           hasActivePlan={Boolean(activePass)}
+          canPurchaseCreditPack={creditPackBindingReady}
           onRequireLogin={() => setShowLoginModal(true)}
+          onRequireRealname={() => {
+            navigate(`${ACCOUNT_PATH}/?${REALNAME_REQUIRED_QUERY_KEY}=1&return_to=${encodeURIComponent(`${ACCOUNT_BILLING_PATH}?section=${CREDIT_SECTION_QUERY_VALUE}`)}`);
+          }}
           onRequirePlan={() => {
             /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
             document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });

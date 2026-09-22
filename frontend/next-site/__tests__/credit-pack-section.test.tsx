@@ -127,14 +127,19 @@ describe("CreditPackSection", () => {
     expect(indicator).toHaveClass("text-[#07C160]");
   });
 
-  it("渲染 5 张面额卡片并展示询价金额", async () => {
+  it("渲染 5 张面额卡片并展示国内固定价格", async () => {
     renderSection();
 
     expect(await screen.findByText("1,000 模型积分")).toBeInTheDocument();
     expect(screen.getByText("12,000 模型积分")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByText("¥80.00")).toHaveLength(5);
+      expect(screen.getByText("¥12.00")).toBeInTheDocument();
+      expect(screen.getByText("¥24.00")).toBeInTheDocument();
+      expect(screen.getByText("¥45.00")).toBeInTheDocument();
+      expect(screen.getByText("¥90.00")).toBeInTheDocument();
+      expect(screen.getByText("¥135.00")).toBeInTheDocument();
     });
+    expect(screen.getAllByText("最终付款价格包含税费，请以付款页面显示为准。")).toHaveLength(1);
   });
 
   it("统一展示 1 个月有效期说明", async () => {
@@ -188,7 +193,21 @@ describe("CreditPackSection", () => {
     expect(onRequirePlan).toHaveBeenCalledTimes(1);
   });
 
-  it("单个商品询价失败只禁用该卡片，其他卡片仍可选", async () => {
+  it("已登录但未完成实名时展示固定价格并禁用购买，提供实名入口", async () => {
+    const onRequireRealname = vi.fn();
+    renderSection({ canPurchaseCreditPack: false, onRequireRealname });
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    const action = screen.getByTestId("credit-pack-primary-action");
+    expect(action).toHaveTextContent("完成实名后购买");
+    expect(action).toBeDisabled();
+    expect(screen.getByText("¥12.00")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("credit-pack-realname-action"));
+    expect(onRequireRealname).toHaveBeenCalledTimes(1);
+  });
+
+  it("单个商品询价失败不影响固定价格展示和选卡", async () => {
     inquireCreditPrice.mockImplementation(async (productId: string) => {
       if (productId === "credit_1000") throw new Error("quote failed");
       return quoteFor(productId);
@@ -197,14 +216,12 @@ describe("CreditPackSection", () => {
     renderSection();
 
     const failedCard = await screen.findByTestId("credit-pack-card-credit_1000");
-    await waitFor(() => {
-      expect(failedCard).toBeDisabled();
-    });
+    await waitFor(() => expect(failedCard).toBeEnabled());
 
     const healthyCard = screen.getByTestId("credit-pack-card-credit_2000");
     expect(healthyCard).toBeEnabled();
     await waitFor(() => {
-      expect(screen.getAllByText("¥80.00")).toHaveLength(4);
+      expect(screen.getByText("¥12.00")).toBeInTheDocument();
     });
   });
 
@@ -219,22 +236,18 @@ describe("CreditPackSection", () => {
     expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
     expect(screen.getByText("订单详情")).toBeInTheDocument();
     expect(screen.getByText("到账后 1 个月")).toBeInTheDocument();
-    expect(screen.getByText("积分包价格")).toBeInTheDocument();
-    expect(screen.getByText("税费")).toBeInTheDocument();
-    expect(screen.getByText("总价")).toBeInTheDocument();
+    expect(screen.getByTestId("credit-pack-price-breakdown")).toBeInTheDocument();
     expect(screen.getByText("微信支付")).toBeInTheDocument();
     /* 弹窗展示商品与金额（卡片上也有同样文本，用 getAllByText 断言至少两处） */
     expect(screen.getAllByText("8,000 模型积分").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("¥80.00").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("积分包价格¥71.00");
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("税费¥9.00");
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("总价¥80.00");
+    expect(screen.getAllByText("¥90.00").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("最终付款价格包含税费，请以付款页面显示为准。");
     expect(screen.getByTestId("credit-pack-terms-checkbox").parentElement?.textContent).toBe(
       "我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。",
     );
 
     const payButton = screen.getByTestId("credit-pack-confirm-pay");
-    expect(payButton).toHaveTextContent("支付 ¥80.00");
+    expect(payButton).toHaveTextContent("支付 ¥90.00");
     expect(payButton).toBeDisabled();
 
     /* 勾选条款后可支付 */
@@ -353,12 +366,38 @@ describe("CreditPackSection", () => {
     expect(screen.queryByTestId("credit-pack-checkout-status")).not.toBeInTheDocument();
   });
 
-  it("金额按分转元展示（联调文档 §5 最小货币单位）", async () => {
+  it("下单时发现影子账号绑定缺失会引导实名认证且不允许重复下单", async () => {
+    const { RepositoryError } = await import("@/repositories/http-repositories");
+    const onRequireRealname = vi.fn();
+    createCreditOrder.mockRejectedValue(new RepositoryError("shadow binding is required", 422, "BindingNotFound"));
+
+    renderSection({ onRequireRealname });
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+
+    expect(await screen.findByRole("heading", { name: "请完成实名认证" })).toBeInTheDocument();
+    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("请先完成实名认证");
+    expect(screen.getByTestId("credit-pack-modal-realname-action")).toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-reorder")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("credit-pack-modal-realname-action"));
+    expect(onRequireRealname).toHaveBeenCalledTimes(1);
+  });
+
+  it("国际站展示固定美元价格", async () => {
     /* quoteFor 返回 8000 分；直接拼字符串会错误显示 ¥8000 */
+    regionState.isGlobal = true;
     renderSection();
 
     await waitFor(() => {
-      expect(screen.getAllByText("¥80.00")).toHaveLength(5);
+    expect(screen.getByText("$1.80")).toBeInTheDocument();
+    expect(screen.getByText("$3.60")).toBeInTheDocument();
+    expect(screen.getByText("$6.50")).toBeInTheDocument();
+    expect(screen.getByText("$13.00")).toBeInTheDocument();
+    expect(screen.getByText("$20.00")).toBeInTheDocument();
     });
     expect(screen.queryByText("¥8000")).not.toBeInTheDocument();
   });
@@ -384,7 +423,7 @@ describe("CreditPackSection", () => {
     renderSection();
 
     await userEvent.click(await screen.findByTestId("credit-pack-card-credit_4000"));
-    expect(screen.getByTestId("credit-pack-primary-action")).toHaveTextContent("请选择积分包");
+    expect(screen.getByTestId("credit-pack-primary-action")).toHaveTextContent("购买所选积分包");
 
     await waitFor(() => {
       expect(listCreditProducts).toHaveBeenCalledTimes(2);

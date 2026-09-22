@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CREDIT_PACK_DENOMINATIONS, type CreditProduct, type CreditQuote } from '@/domain/credit-pack';
+import { CREDIT_PACK_DENOMINATIONS, getCreditPackPrice, type CreditProduct, type CreditQuote } from '@/domain/credit-pack';
 import { useRepositories } from '@/contexts/repository-context';
 import { RepositoryError } from '@/repositories/http-repositories';
 import { useT } from '@/i18n/t';
@@ -36,13 +36,13 @@ type QuoteState =
   | { status: 'ready'; quote: CreditQuote }
   | { status: 'failed' };
 
-/** 主按钮的五种形态，对应产品方案 6.3。 */
+/** 主按钮的购买资格状态。 */
 type PurchaseGate =
   | 'unselected'
   | 'purchasable'
   | 'not-logged-in'
   | 'no-active-plan'
-  | 'quote-failed';
+  | 'realname-required';
 
 /** URL query 参数名（与 subscribe-page 的 section 定位约定一致） */
 const SECTION_QUERY_KEY_PARAM = 'section';
@@ -52,14 +52,26 @@ const PAY_RETURN_QUERY_KEY = 'credit_pay';
 const PAY_RETURN_QUERY_VALUE = 'return';
 
 /**
+ * 下单接口在不同网关版本中可能把绑定错误作为业务 code 或嵌套 message
+ * 返回。统一在展示层识别这些稳定语义，避免用户看到「重新下单」并重复提交。
+ */
+const isCreditPackBindingError = (error: string | null): boolean => {
+  if (!error) return false;
+  return /BindingNotFound|binding[_ ]not[_ ]found|shadow[_ ]binding|shadow binding|影子账号绑定|uin is required|app[_ ]id is required/i.test(error);
+};
+
+/**
  * 格式化金额。
  *
  * ⚠️ 联调文档 §5：金额字段沿用现有计费接口的**最小货币单位（分）**，
  * 与套餐 BundlePrice 一致（见 billing-flow.ts 的 centsToYuan），
  * 展示前必须除以 100 转元。
  */
-const formatAmount = (quote: CreditQuote): string =>
-  formatYuan(centsToYuan(quote.real_total_cost), quote.currency);
+const formatAmount = (productId: string): string | null => {
+  const currency = isGlobal ? 'USD' : 'CNY';
+  const cents = getCreditPackPrice(productId, currency);
+  return cents === null ? null : formatYuan(centsToYuan(cents), currency);
+};
 
 const parseCents = (value: string): number | null => {
   const cents = Number(value);
@@ -89,6 +101,10 @@ export type CreditPackSectionProps = {
   onRequireLogin: () => void;
   /** 引导先开通套餐（定位到套餐卡片区） */
   onRequirePlan: () => void;
+  /** 用户是否具备完整实名/影子账号绑定，可进入下单。 */
+  canPurchaseCreditPack?: boolean;
+  /** 引导完成实名认证。 */
+  onRequireRealname?: () => void;
 };
 
 export const CreditPackSection = ({
@@ -97,12 +113,14 @@ export const CreditPackSection = ({
   hasActivePlan,
   onRequireLogin,
   onRequirePlan,
+  canPurchaseCreditPack = true,
+  onRequireRealname = () => undefined,
 }: CreditPackSectionProps): React.ReactElement => {
   const t = useT();
   const navigate = useAppNavigate();
   const repositories = useRepositories();
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const [quotes, setQuotes] = useState<Record<string, QuoteState>>({});
+  const [, setQuotes] = useState<Record<string, QuoteState>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -184,15 +202,13 @@ export const CreditPackSection = ({
     void Promise.all(CREDIT_PACK_DENOMINATIONS.map((denomination) => loadQuote(denomination.product_id)));
   }, [loadProducts, loadQuote]);
 
-  const selectedQuote = selectedProductId ? quotes[selectedProductId] : undefined;
-
   const gate: PurchaseGate = useMemo(() => {
     if (!selectedProductId) return 'unselected';
     if (!isLoggedIn) return 'not-logged-in';
     if (!hasActivePlan) return 'no-active-plan';
-    if (selectedQuote?.status !== 'ready') return 'quote-failed';
+    if (!canPurchaseCreditPack) return 'realname-required';
     return 'purchasable';
-  }, [hasActivePlan, isLoggedIn, selectedProductId, selectedQuote]);
+  }, [canPurchaseCreditPack, hasActivePlan, isLoggedIn, selectedProductId]);
 
   const primaryLabel = useMemo(() => {
     switch (gate) {
@@ -202,8 +218,8 @@ export const CreditPackSection = ({
         return t('登录后购买');
       case 'no-active-plan':
         return t('先开通套餐');
-      case 'quote-failed':
-        return t('价格暂不可用');
+      case 'realname-required':
+        return t('完成实名后购买');
       default:
         return t('购买所选积分包');
     }
@@ -229,7 +245,7 @@ export const CreditPackSection = ({
   const hasCurrentOrder = checkout.state.status !== 'idle' && checkout.state.status !== 'failed';
   const effectivePrimaryLabel =
     hasCurrentOrder ? t('订单详情') : primaryLabel;
-  const primaryDisabled = !hasCurrentOrder && gate === 'unselected';
+  const primaryDisabled = !hasCurrentOrder && (gate === 'unselected' || gate === 'realname-required');
 
   const handlePrimary = useCallback(() => {
     if (gate === 'not-logged-in') {
@@ -240,13 +256,13 @@ export const CreditPackSection = ({
       onRequirePlan();
       return;
     }
+    if (gate === 'realname-required') {
+      onRequireRealname();
+      return;
+    }
     if (hasCurrentOrder) {
       setTermsAccepted(false);
       setModalOpen(true);
-      return;
-    }
-    if (gate === 'quote-failed' && selectedProductId) {
-      void loadQuote(selectedProductId);
       return;
     }
     if (gate === 'purchasable') {
@@ -260,7 +276,7 @@ export const CreditPackSection = ({
       setTermsAccepted(false);
       setModalOpen(true);
     }
-  }, [checkout, gate, hasCurrentOrder, loadQuote, onRequireLogin, onRequirePlan, selectedProductId]);
+  }, [checkout, gate, hasCurrentOrder, onRequireLogin, onRequirePlan, onRequireRealname, selectedProductId]);
 
   /* 到账轮询统一启动：payment_pending（扫码 / 新窗口支付）或 delivery_pending
      （need_charge=0 零元单）即开始，超时进 delivery_exception 后可手动重查，
@@ -323,6 +339,9 @@ export const CreditPackSection = ({
   /* 只为异常与手动刷新未到账渲染独立状态行。成功、到账处理中由弹窗说明承载，
      避免同一句文案在 DialogDescription 和状态行中重复。 */
   const checkoutStatusNotice = useMemo(() => {
+    if (checkout.state.status === 'failed' && isCreditPackBindingError(checkout.state.error)) {
+      return t('请先完成实名认证，完成影子账号绑定后再购买积分包。');
+    }
     switch (checkout.state.status) {
       case 'payment_pending':
         return recheckPendingNotice ? t('暂未确认支付结果，请稍后刷新。') : null;
@@ -340,6 +359,8 @@ export const CreditPackSection = ({
         return null;
     }
   }, [checkout.state.status, checkout.state.error, recheckPendingNotice, t]);
+
+  const checkoutNeedsRealname = checkout.state.status === 'failed' && isCreditPackBindingError(checkout.state.error);
 
   /* 二维码过期校验：bridgePlan.expiresAt 由 buildPayPlan 写入（now + 9 分钟，
      比后端 auth_code TTL 10 分钟短 1 分钟 buffer）。中转页（wechat-pay-page）
@@ -373,13 +394,11 @@ export const CreditPackSection = ({
 
   const dialogProductId =
     checkout.state.status === 'idle' ? selectedProductId : (checkout.state.productId ?? selectedProductId);
-  const dialogQuote = dialogProductId ? quotes[dialogProductId] : undefined;
   const dialogDenomination = useMemo(
     () => CREDIT_PACK_DENOMINATIONS.find((d) => d.product_id === dialogProductId),
     [dialogProductId],
   );
-  const dialogAmounts = dialogQuote?.status === 'ready' ? formatQuoteAmounts(dialogQuote.quote) : null;
-  const dialogAmount = dialogAmounts?.total ?? null;
+  const dialogAmount = dialogProductId ? formatAmount(dialogProductId) : null;
   const isConfirmationStep = checkout.state.status === 'idle' || checkout.state.status === 'creating';
   const paymentDialogTitle =
     checkout.state.status === 'delivered'
@@ -387,7 +406,9 @@ export const CreditPackSection = ({
       : checkout.state.status === 'delivery_pending'
         ? t('积分到账处理中')
         : checkout.state.status === 'failed'
-          ? t('支付遇到问题')
+          ? checkoutNeedsRealname
+            ? t('请完成实名认证')
+            : t('支付遇到问题')
           : isGlobal
             ? t('信用卡支付')
             : t('请完成支付');
@@ -401,7 +422,9 @@ export const CreditPackSection = ({
           : isExpiredQrOrder
             ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。')
         : checkout.state.status === 'failed'
-          ? t('请查看下方提示并重新下单。')
+          ? checkoutNeedsRealname
+            ? t('完成实名认证后即可购买积分包。')
+            : t('请查看下方提示并重新下单。')
           : isGlobal
             ? t('已在新窗口打开信用卡支付页')
             : t('请使用微信扫描下方二维码完成支付');
@@ -423,15 +446,12 @@ export const CreditPackSection = ({
       {visibleDenominations.length > 0 ? (
         <ul className="mt-6 grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3 lg:grid-cols-5">
           {visibleDenominations.map((denomination) => {
-            const state = quotes[denomination.product_id];
             const selected = selectedProductId === denomination.product_id;
-            const failed = state?.status === 'failed';
             return (
               <li key={denomination.product_id}>
                 <button
                   type="button"
                   aria-pressed={selected}
-                  disabled={failed}
                   data-testid={`credit-pack-card-${denomination.product_id}`}
                   onClick={() => setSelectedProductId(denomination.product_id)}
                   className={cn(
@@ -450,12 +470,8 @@ export const CreditPackSection = ({
                   <span className="text-pretty text-base font-semibold text-[var(--text-primary)]">
                     {t('{{count}} 模型积分', { count: denomination.credit_total.toLocaleString() })}
                   </span>
-                  <span className={cn('text-sm tabular-nums', failed ? 'text-red-600' : 'text-[var(--text-secondary)]')}>
-                    {state?.status === 'ready'
-                      ? formatAmount(state.quote)
-                      : failed
-                        ? t('价格暂不可用')
-                        : t('加载中…')}
+                  <span className="text-sm tabular-nums text-[var(--text-secondary)]">
+                    {formatAmount(denomination.product_id) ?? t('加载中…')}
                   </span>
                 </button>
               </li>
@@ -469,6 +485,9 @@ export const CreditPackSection = ({
       </p>
       <p className="mt-1 max-w-4xl text-pretty text-xs leading-relaxed text-[var(--text-tertiary)]">
         {t('适用于已有有效套餐、需要增加模型调用额度的用户。实际抵扣优先使用到期时间更早的额度；到期时间相同时，优先使用创建时间更早的额度。')}
+      </p>
+      <p className="mt-1 max-w-4xl text-pretty text-xs leading-relaxed text-[var(--text-tertiary)]">
+        {t('最终付款价格包含税费，请以付款页面显示为准。')}
       </p>
 
       <div className="mt-4 flex flex-col gap-2">
@@ -488,6 +507,16 @@ export const CreditPackSection = ({
             {notice}
           </p>
         ) : null}
+        {gate === 'realname-required' ? (
+          <button
+            type="button"
+            onClick={onRequireRealname}
+            data-testid="credit-pack-realname-action"
+            className="w-full rounded-md border border-[var(--text-primary)] bg-white px-4 py-3 text-sm font-semibold text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 sm:w-auto sm:self-start"
+          >
+            {t('去实名认证')}
+          </button>
+        ) : null}
       </div>
 
       {isGlobal ? (
@@ -497,7 +526,7 @@ export const CreditPackSection = ({
       ) : null}
 
       {/* 积分下单保持两阶段：确认订单后进入对应站点的支付与到账状态。 */}
-      {dialogDenomination && dialogQuote?.status === 'ready' ? (
+      {dialogDenomination && dialogAmount ? (
         <Dialog open={modalOpen} onOpenChange={setModalOpen}>
           <DialogContent
             closeLabel={t('关闭')}
@@ -523,25 +552,9 @@ export const CreditPackSection = ({
                     <dt>{t('有效期')}</dt>
                     <dd className="font-semibold text-[var(--text-primary)]">{t('到账后 1 个月')}</dd>
                   </div>
-                  {dialogAmounts ? (
-                    <div
-                      data-testid="credit-pack-price-breakdown"
-                      className="mt-4 space-y-2 border-t border-[var(--border-strong)] pt-4 text-[var(--text-secondary)]"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <dt>{t('积分包价格')}</dt>
-                        <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmounts.price}</dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-4">
-                        <dt>{t('税费')}</dt>
-                        <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmounts.tax}</dd>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 font-medium text-[var(--text-primary)]">
-                        <dt>{t('总价')}</dt>
-                        <dd className="shrink-0 font-semibold tabular-nums">{dialogAmounts.total}</dd>
-                      </div>
-                    </div>
-                  ) : null}
+                  <div data-testid="credit-pack-price-breakdown" className="mt-4 border-t border-[var(--border-strong)] pt-4 text-[var(--text-secondary)]">
+                    <p className="text-xs leading-relaxed">{t('最终付款价格包含税费，请以付款页面显示为准。')}</p>
+                  </div>
                   <div className="my-4 h-px bg-[var(--border-strong)]" />
                   <div className="flex items-baseline justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">{t('总计：')}</dt>
@@ -689,7 +702,7 @@ export const CreditPackSection = ({
                       {checkingPayment ? t('刷新中...') : t('刷新')}
                     </button>
                   ) : null}
-                  {checkout.state.status === 'failed' || isExpiredQrOrder ? (
+                  {checkout.state.status === 'failed' && !checkoutNeedsRealname || isExpiredQrOrder ? (
                     <button
                       type="button"
                       onClick={handleReorder}
@@ -701,13 +714,23 @@ export const CreditPackSection = ({
                   ) : null}
                   {checkout.state.status === 'payment_pending' ||
                   checkout.state.status === 'delivery_exception' ||
-                  checkout.state.status === 'failed' ? (
+                  checkout.state.status === 'failed' && !checkoutNeedsRealname ? (
                     <button
                       type="button"
                       onClick={() => setModalOpen(false)}
                       className="h-10 w-full rounded-md px-4 text-sm font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
                       {t('暂不处理')}
+                    </button>
+                  ) : null}
+                  {checkoutNeedsRealname ? (
+                    <button
+                      type="button"
+                      onClick={onRequireRealname}
+                      data-testid="credit-pack-modal-realname-action"
+                      className="h-11 w-full rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      {t('去实名认证')}
                     </button>
                   ) : null}
                   {checkout.state.status === 'delivered' || checkout.state.status === 'delivery_pending' ? (

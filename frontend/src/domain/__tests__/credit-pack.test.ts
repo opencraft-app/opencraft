@@ -5,6 +5,7 @@ import {
   creditPackageSourceId,
   sortCreditSources,
   summarizeCreditSources,
+  getCreditPackPrice,
   type CreditPackageItem,
   type CreditSourceView,
 } from "../credit-pack";
@@ -156,5 +157,32 @@ describe("creditPackageSourceId", () => {
     const b = creditPackageSourceId(item({}));
 
     expect(a).toBe(b);
+  });
+});
+
+
+describe("credit pack fixed prices", () => {
+  it("returns the confirmed domestic prices in cents", () => {
+    expect(["credit_1000", "credit_2000", "credit_4000", "credit_8000", "credit_12000"].map((id) => getCreditPackPrice(id, "CNY"))).toEqual([
+      "1200",
+      "2400",
+      "4500",
+      "9000",
+      "13500",
+    ]);
+  });
+
+  it("returns the confirmed international prices in cents", () => {
+    expect(["credit_1000", "credit_2000", "credit_4000", "credit_8000", "credit_12000"].map((id) => getCreditPackPrice(id, "USD"))).toEqual([
+      "180",
+      "360",
+      "650",
+      "1300",
+      "2000",
+    ]);
+  });
+
+  it("returns null for an unknown product", () => {
+    expect(getCreditPackPrice("unknown", "CNY")).toBeNull();
   });
 });

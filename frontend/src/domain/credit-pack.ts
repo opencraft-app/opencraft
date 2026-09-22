@@ -136,6 +136,27 @@ export const CREDIT_PACK_DENOMINATIONS: readonly CreditPackDenomination[] = [
   { product_id: "credit_12000", credit_total: 12000 },
 ] as const;
 
+/** 产品确认的积分包固定标价，金额均为最小货币单位。 */
+export interface CreditPackPrice {
+  product_id: string;
+  cnCents: string;
+  globalCents: string;
+}
+
+export const CREDIT_PACK_PRICES: readonly CreditPackPrice[] = [
+  { product_id: "credit_1000", cnCents: "1200", globalCents: "180" },
+  { product_id: "credit_2000", cnCents: "2400", globalCents: "360" },
+  { product_id: "credit_4000", cnCents: "4500", globalCents: "650" },
+  { product_id: "credit_8000", cnCents: "9000", globalCents: "1300" },
+  { product_id: "credit_12000", cnCents: "13500", globalCents: "2000" },
+] as const;
+
+export const getCreditPackPrice = (productId: string, currency: CreditCurrency): string | null => {
+  const price = CREDIT_PACK_PRICES.find((item) => item.product_id === productId);
+  if (!price) return null;
+  return currency === "USD" ? price.globalCents : price.cnCents;
+};
+
 /** 积分来源类型：套餐积分 or 付费积分包。 */
 export type CreditSourceType = "plan" | "paid_pack";
 
