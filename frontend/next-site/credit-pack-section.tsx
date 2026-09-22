@@ -264,10 +264,6 @@ export const CreditPackSection = ({
       onRequirePlan();
       return;
     }
-    if (gate === 'realname-required') {
-      onRequireRealname();
-      return;
-    }
     if (hasCurrentOrder) {
       setTermsAccepted(false);
       setModalOpen(true);
@@ -284,7 +280,7 @@ export const CreditPackSection = ({
       setTermsAccepted(false);
       setModalOpen(true);
     }
-  }, [checkout, gate, hasCurrentOrder, onRequireLogin, onRequirePlan, onRequireRealname, selectedProductId]);
+  }, [checkout, gate, hasCurrentOrder, onRequireLogin, onRequirePlan, selectedProductId]);
 
   /* 到账轮询统一启动：payment_pending（扫码 / 新窗口支付）或 delivery_pending
      （need_charge=0 零元单）即开始，超时进 delivery_exception 后可手动重查，

@@ -40,7 +40,7 @@ export interface User {
   /** 实名信息同步状态：pending / failed / succeeded */
   realnameSyncStatus?: "pending" | "failed" | "succeeded";
   /** 影子账号绑定状态；实名完成后可能仍处于同步中或失败。 */
-  shadowBindingStatus?: "active" | "pending" | "failed" | "disabled" | string;
+  shadowBindingStatus?: "active" | "pending" | "failed" | "disabled";
   /** 邮箱是否已验证（Magic Link 绑定），后端 /auth/session /auth/profile 下发 */
   emailVerified?: boolean;
   createdAt: string;

@@ -94,3 +94,9 @@ guards:
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
     command: .ci/checks/frontend_guard.sh
+
+  - name: opencraft
+    paths:
+      - opencraft/**
+      - .ci/checks/opencraft_guard.sh
+    command: .ci/checks/opencraft_guard.sh
