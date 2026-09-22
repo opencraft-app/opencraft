@@ -22,12 +22,14 @@ const (
 )
 
 var (
-	ErrNoActiveCampaign = errors.New("no active referral campaign")
-	ErrCodeNotFound     = errors.New("referral code not found")
-	ErrSelfReferral     = errors.New("self referral is not allowed")
-	ErrDuplicateEvent   = errors.New("referral event already processed")
-	ErrEventConflict    = errors.New("referral event id has conflicting payload")
-	ErrCodeConflict     = errors.New("referral code conflicts with an existing code or owner")
+	ErrNoActiveCampaign         = errors.New("no active referral campaign")
+	ErrCodeNotFound             = errors.New("referral code not found")
+	ErrAttributionNotFound      = errors.New("referral attribution not found")
+	ErrAttributionResetConflict = errors.New("referral attribution reset conflict")
+	ErrSelfReferral             = errors.New("self referral is not allowed")
+	ErrDuplicateEvent           = errors.New("referral event already processed")
+	ErrEventConflict            = errors.New("referral event id has conflicting payload")
+	ErrCodeConflict             = errors.New("referral code conflicts with an existing code or owner")
 )
 
 type Campaign struct {
@@ -80,4 +82,42 @@ type Reward struct {
 	EligibleAt        time.Time
 	GrantDeadline     time.Time
 	AttemptCount      int
+}
+
+type Attribution struct {
+	ID                  string    `json:"attribution_id"`
+	CampaignID          string    `json:"campaign_id"`
+	InviteeUserID       string    `json:"invitee_user_id"`
+	InviterUserID       string    `json:"inviter_user_id"`
+	ReferralCode        string    `json:"referral_code"`
+	RegistrationEventID string    `json:"registration_event_id"`
+	RegisteredAt        time.Time `json:"registered_at"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
+type AttributionReward struct {
+	ID                string `json:"reward_id"`
+	BeneficiaryUserID string `json:"beneficiary_user_id"`
+	Side              string `json:"reward_side"`
+	CreditAmount      int64  `json:"credit_amount"`
+	Status            string `json:"status"`
+	SubscriptionID    string `json:"subscription_id,omitempty"`
+	SubscriptionName  string `json:"subscription_name,omitempty"`
+}
+
+type AttributionResetPreview struct {
+	Attribution Attribution         `json:"attribution"`
+	Rewards     []AttributionReward `json:"rewards"`
+	Resettable  bool                `json:"resettable"`
+	BlockReason string              `json:"block_reason,omitempty"`
+}
+
+type AttributionResetResult struct {
+	OperationID          string    `json:"operation_id"`
+	IdempotencyKey       string    `json:"idempotency_key"`
+	InviteeUserID        string    `json:"invitee_user_id"`
+	AttributionID        string    `json:"attribution_id"`
+	RewardsRemoved       int       `json:"rewards_removed"`
+	SubscriptionsRevoked int       `json:"subscriptions_revoked"`
+	CompletedAt          time.Time `json:"completed_at"`
 }

@@ -253,6 +253,17 @@ func (s *MemoryStore) GetSandbox(_ context.Context, id string) (core.Sandbox, er
 	return sb, nil
 }
 
+func (s *MemoryStore) GetSandboxByInstanceID(_ context.Context, instanceID string) (core.Sandbox, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sb := range s.sandboxes {
+		if sb.InstanceID == instanceID {
+			return sb, nil
+		}
+	}
+	return core.Sandbox{}, core.ErrSandboxNotFound
+}
+
 func (s *MemoryStore) ListSandboxes(_ context.Context) ([]core.Sandbox, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

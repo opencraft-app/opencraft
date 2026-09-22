@@ -1024,6 +1024,33 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
     setCreatingFromTemplate(template);
   }, [jobLimitReached, runtimeBotId]);
 
+  /*
+   * URL 预选模板：`/agents/automations?template=<id>`。
+   *
+   * 供总览页「定时任务推荐」卡片跳转使用 —— 那边直接复用
+   * AutomationFormModal 需要 17 个 props（含 channel / skill / capability
+   * 三套独立请求状态），成本过高且容易与本页状态漂移，所以改为跳转预选。
+   * 只在模板列表就绪后执行一次，命中后清掉 query 避免刷新重复弹窗。
+   */
+  const templateQueryHandledRef = useRef(false);
+  useEffect(() => {
+    if (templateQueryHandledRef.current) return;
+    if (typeof window === "undefined" || templates.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const requestedId = params.get("template")?.trim();
+    if (!requestedId) return;
+
+    templateQueryHandledRef.current = true;
+    const matched = templates.find((item) => item.id === requestedId);
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("template");
+    window.history.replaceState({}, "", url.toString());
+
+    if (matched) requestTemplateCreate(matched);
+  }, [templates, requestTemplateCreate]);
+
   const requestDuplicate = useCallback((job: CronJob) => {
     if (jobLimitReached) {
       setPendingCreateMode("duplicate");

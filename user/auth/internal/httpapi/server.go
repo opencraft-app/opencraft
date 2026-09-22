@@ -21,37 +21,41 @@ import (
 )
 
 type ServerConfig struct {
-	CookieSecure                  bool
-	CookieSameSite                http.SameSite
-	SessionTTL                    time.Duration
-	OAuthReturnToAllowedHosts     []string
-	QQOAuth                       *QQOAuthConfig
-	GoogleOAuth                   *GoogleOAuthConfig
-	GitHubOAuth                   *GitHubOAuthConfig
-	WeChatOAuth                   *WeChatOAuthConfig
-	AvatarStore                   AvatarStore
-	TATRegisterIssuer             tat.RegisterCodeIssuer
-	DeviceBindTokenSecret         string
-	DeviceBindTokenTTL            time.Duration
-	Logger                        *slog.Logger
-	PublicBaseURL                 string
-	FrontendBaseURL               string
-	AdminToken                    string
-	E2EAuthEnabled                bool
-	E2EAuthToken                  string
-	E2ESessionTTL                 time.Duration
-	ShadowBindingInternalToken    string
-	ShadowTencentCallbackToken    string
-	DeveloperRouteClient          DeveloperRouteClient
-	DeveloperRouteExplicitIP      bool
-	DeveloperRouteRegistry        devroute.Registry
-	DeveloperRouteRegistrySecret  string
-	DeveloperRouteRegistryCaller  string
-	DeveloperRouteRegistryRouteID string
-	TrustedProxyCIDRs             []string
-	Federation                    *FederationConfig
-	OIDC                          *OIDCConfig
-	ReferralEnabled               bool
+	CookieSecure                   bool
+	CookieSameSite                 http.SameSite
+	SessionTTL                     time.Duration
+	OAuthReturnToAllowedHosts      []string
+	QQOAuth                        *QQOAuthConfig
+	GoogleOAuth                    *GoogleOAuthConfig
+	GitHubOAuth                    *GitHubOAuthConfig
+	WeChatOAuth                    *WeChatOAuthConfig
+	AvatarStore                    AvatarStore
+	TATRegisterIssuer              tat.RegisterCodeIssuer
+	DeviceBindTokenSecret          string
+	DeviceBindTokenTTL             time.Duration
+	Logger                         *slog.Logger
+	PublicBaseURL                  string
+	FrontendBaseURL                string
+	AdminToken                     string
+	E2EAuthEnabled                 bool
+	E2EAuthToken                   string
+	E2ESessionTTL                  time.Duration
+	ShadowBindingInternalToken     string
+	ShadowTencentCallbackToken     string
+	DeveloperRouteClient           DeveloperRouteClient
+	DeveloperRouteExplicitIP       bool
+	DeveloperRouteRegistry         devroute.Registry
+	DeveloperRouteRegistrySecret   string
+	DeveloperRouteRegistryCaller   string
+	DeveloperRouteRegistryRouteID  string
+	PersonalDevBillingProxyEnabled bool
+	PersonalDevBillingProxyURL     string
+	PersonalDevBillingProxyToken   string
+	PersonalDevBillingProxyClient  *http.Client
+	TrustedProxyCIDRs              []string
+	Federation                     *FederationConfig
+	OIDC                           *OIDCConfig
+	ReferralEnabled                bool
 }
 
 type FederationConfig struct {
@@ -95,6 +99,10 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.referralEnabled = config.ReferralEnabled
 	handler.developerRoutes = config.DeveloperRouteClient
 	handler.allowExplicitIP = config.DeveloperRouteExplicitIP
+	personalDevBillingProxy, err := newPersonalDevBillingProxy(config)
+	if err != nil {
+		panic("configure personal DevCloud billing proxy: " + err.Error())
+	}
 	router.POST("/auth/session/exchange", handler.ExchangeFirstPartySession)
 	// Compatibility alias for already released native clients. New first-party
 	// clients use the neutral session adapter above.
@@ -102,6 +110,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	registerOAuthRoutes(router, handler)
 	registerFederationSwitchRoutes(router, handler)
 	registerDeveloperRouteRoutes(router, handler)
+	registerPersonalDevBillingProxyRoutes(router, personalDevBillingProxy)
 	registerDeveloperRouteRegistryRoutes(router, config)
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)

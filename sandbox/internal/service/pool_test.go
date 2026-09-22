@@ -330,6 +330,36 @@ func TestReleasePausingRejected(t *testing.T) {
 	}
 }
 
+func TestPausingCannotAdvanceToFailed(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
+	pool, err := svc.CreatePool(ctx, "pausing-no-failed", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, nil, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Pause(ctx, inst.ID); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if _, err := svc.AdvanceState(ctx, inst.ID, core.StateFailed); !errors.Is(err, core.ErrInvalidTransition) {
+		t.Fatalf("expected PAUSING -> FAILED to be rejected, got %v", err)
+	}
+	got, err := svc.GetInstance(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StatePausing {
+		t.Fatalf("expected PAUSING to remain unchanged, got %s", got.State)
+	}
+}
+
 func TestAdvanceStateInvalidTransition(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())

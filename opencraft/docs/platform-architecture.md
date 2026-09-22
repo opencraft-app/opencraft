@@ -440,6 +440,15 @@ cancel, approve or answer an interaction. The stable
 entry; deployments using another static origin must provide the required module
 CORS policy explicitly.
 
+Web Host loopback preview uses a page-owned broker plus a same-origin Service
+Worker. The worker is deployed at
+`/__opencraft/opencraft-host-proxy-sw.js` and its scope is limited to
+`/__opencraft/host-proxy/`; it must never control the LightVela document root.
+Both ordinary Workbench and Embedded builds explicitly emit this asset because
+the Embedded target does not copy the public directory. Frontend artifact
+staging treats a missing worker as a build failure, and EdgeOne serves the
+stable worker URL with `no-cache` so a release can update its routing logic.
+
 `show()` is a browser-origin-scoped persisted toggle, not a one-way component
 callback. One shared feature-state controller owns versioned storage, in-page
 events, cross-tab storage reconciliation and a ref-counted global command.
@@ -475,6 +484,14 @@ dispose the account. Collaboration uses the account's authenticated raw-request
 port for its OpenAPI responses, while Hermes retains the envelope-aware request
 path. No consumer creates a second token store or interprets another extension's
 resource loading failure as logout.
+
+The standalone Web bootstrap may select that same account authority's regional
+Gateway with `VITE_LIGHTVELA_API_BASE_URL` and `VITE_LIGHTVELA_REGION`; it does
+not construct a second account client. The API Base is validated as one absolute
+HTTP(S) origin before application startup. The browser entry also installs the
+minimal `process.env` compatibility object before dynamically loading the
+mechanically generated Hermes closure, matching the embedded loader's runtime
+contract without copying Node environment values into the browser bundle.
 
 `lightvela.collaboration` owns one routed Collaboration Workspace and the Human
 Tencent IM Web data plane for Server, Channel, private Group and Member surfaces.

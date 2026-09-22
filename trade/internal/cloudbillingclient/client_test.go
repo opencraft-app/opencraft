@@ -120,6 +120,45 @@ func TestCreatePayURLSignsWithTemporaryCredentials(t *testing.T) {
 	}
 }
 
+func TestCreatePayURLPersonalDevDoesNotSignClientRouteUIN(t *testing.T) {
+	var captured *http.Request
+	client, err := NewTencentCloudClient(Config{
+		Endpoint:      "billing.test.tencentcloudapi.com",
+		XQCloudUserID: "700000164995",
+		PersonalDev: PersonalDevProxyConfig{
+			BaseURL:    "https://auth.testing/auth/dev-environments/billing-proxy",
+			Capability: "lvdt1.450860000023.token",
+		},
+		HTTPTransport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			captured = req.Clone(req.Context())
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"Response":{"Url":"/pay","RequestId":"req-1"}}`)),
+				Request:    req,
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewTencentCloudClient: %v", err)
+	}
+	_, err = client.CreatePayURL(context.Background(), TemporaryCredentials{
+		SecretID: "tmp-secret-id", SecretKey: "tmp-secret-key", Token: "tmp-session-token",
+	}, &CreatePayURLRequest{OrderIDs: []string{"deal-1"}})
+	if err != nil {
+		t.Fatalf("CreatePayURL: %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected transport to capture request")
+	}
+	if got := captured.Header.Get(headerXQCloudUserID); got != "" {
+		t.Fatalf("personal request route uin=%q", got)
+	}
+	if authorization := strings.ToLower(captured.Header.Get("Authorization")); strings.Contains(authorization, strings.ToLower(headerXQCloudUserID)) {
+		t.Fatalf("personal request signed client route uin: %q", authorization)
+	}
+}
+
 func TestCreatePayURLParamsUsesBillingCloudAPIFieldNames(t *testing.T) {
 	req := &CreatePayURLRequest{
 		OrderIDs:      []string{" 20260811207021864194801 ", ""},

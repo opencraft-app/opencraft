@@ -7,6 +7,65 @@ import (
 	"strings"
 )
 
+// ModifyConfigIdentity 是 oldConfig/newConfig 自描述的计费身份。
+type ModifyConfigIdentity struct {
+	ProductCode    string
+	SubProductCode string
+	Pid            int64
+}
+
+// GoodsDetailModifyConfigIdentity 读取 oldConfig/newConfig 内层计费身份。
+func GoodsDetailModifyConfigIdentity(m map[string]interface{}, key string) (ModifyConfigIdentity, error) {
+	raw, ok := m[key]
+	if !ok || raw == nil {
+		return ModifyConfigIdentity{}, fmt.Errorf("goodsDetail.%s is required", key)
+	}
+	obj, ok := raw.(map[string]interface{})
+	if !ok {
+		return ModifyConfigIdentity{}, fmt.Errorf("goodsDetail.%s must be an object", key)
+	}
+	productCode, ok := modifyConfigString(obj["productCode"])
+	if !ok || productCode == "" {
+		return ModifyConfigIdentity{}, fmt.Errorf("goodsDetail.%s.productCode is required", key)
+	}
+	subProductCode, ok := modifyConfigString(obj["subProductCode"])
+	if !ok || subProductCode == "" {
+		return ModifyConfigIdentity{}, fmt.Errorf("goodsDetail.%s.subProductCode is required", key)
+	}
+	pid, ok := modifyConfigInt64(obj["pid"])
+	if !ok || pid <= 0 {
+		return ModifyConfigIdentity{}, fmt.Errorf("goodsDetail.%s.pid must be a positive integer", key)
+	}
+	return ModifyConfigIdentity{ProductCode: productCode, SubProductCode: subProductCode, Pid: pid}, nil
+}
+
+func modifyConfigString(v interface{}) (string, bool) {
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSpace(s), true
+}
+
+func modifyConfigInt64(v interface{}) (int64, bool) {
+	switch t := v.(type) {
+	case int:
+		return int64(t), true
+	case int64:
+		return t, true
+	case float64:
+		if t != float64(int64(t)) {
+			return 0, false
+		}
+		return int64(t), true
+	case string:
+		n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		return n, err == nil
+	default:
+		return 0, false
+	}
+}
+
 // 变配回调的源 / 目标套餐解析，checkModify 与 modifyResource 共用。
 //
 // **为什么不能靠 goodsDetail 里的自定义字段**（2026-09-02 联调实测推翻的原设计）：
@@ -48,6 +107,10 @@ const (
 
 	// ResolveAmbiguous 同 SP 内出现 sv_list 重复的套餐。属配置错误，此时任何选择都是猜。
 	ResolveAmbiguous
+
+	// ResolveConfigMismatch 表示配置身份自相矛盾，例如跨产品、外层不是源 SP、
+	// 或 old/new pid 与各自 BundleDefinition 不一致。
+	ResolveConfigMismatch
 )
 
 // SVBundle 是 SV 反查所需的套餐视图。

@@ -39,6 +39,7 @@ BROWSER_SESSION_TTL_SECONDS="${PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS:-28800}"
 AUTH_BASE=""
 AUTH_ADMIN_BASE=""
 CLGATEWAY_BASE=""
+BILLING_APIGW_URL=""
 REGISTRATION_URL=""
 TEMP_FILES=()
 
@@ -153,12 +154,16 @@ configure_site() {
       AUTH_BASE="${AUTH_BASE:-https://api-sandbox-kr-1.lightclaw.tech}"
       CLGATEWAY_BASE="${PERSONAL_DEV_CLGATEWAY_BASE_URL:-$(state_get clgateway_base)}"
       CLGATEWAY_BASE="${CLGATEWAY_BASE:-http://43.153.246.14}"
+      BILLING_APIGW_URL="${PERSONAL_DEV_BILLING_APIGW_URL:-$(state_get billing_apigw_url)}"
+      BILLING_APIGW_URL="${BILLING_APIGW_URL:-http://43.153.236.65/v1/proxy/jifei-billing-apigw-test/resource-center/interface}"
       ;;
     cn)
       AUTH_BASE="${PERSONAL_DEV_AUTH_BASE_URL:-$(state_get auth_base)}"
       AUTH_BASE="${AUTH_BASE:-https://api-sandbox-bj-7.lightclaw.tech}"
       CLGATEWAY_BASE="${PERSONAL_DEV_CLGATEWAY_BASE_URL:-$(state_get clgateway_base)}"
       CLGATEWAY_BASE="${CLGATEWAY_BASE:-http://1.12.212.56}"
+      BILLING_APIGW_URL="${PERSONAL_DEV_BILLING_APIGW_URL:-$(state_get billing_apigw_url)}"
+      BILLING_APIGW_URL="${BILLING_APIGW_URL:-http://1.12.212.56/v1/proxy/jifei-billing-apigw-test/resource-center/interface}"
       ;;
     *)
       die "PERSONAL_DEV_SITE must be intl or cn"
@@ -178,9 +183,11 @@ configure_site() {
   AUTH_ADMIN_BASE="${PERSONAL_DEV_AUTH_ADMIN_BASE_URL:-$AUTH_BASE}"
   AUTH_ADMIN_BASE="${AUTH_ADMIN_BASE%/}"
   CLGATEWAY_BASE="${CLGATEWAY_BASE%/}"
+  BILLING_APIGW_URL="${BILLING_APIGW_URL%/}"
   validate_auth_base
   validate_auth_admin_base
   validate_clgateway_base
+  validate_billing_apigw_url
   REGISTRATION_URL="$AUTH_BASE/auth/dev-environments/registration"
 }
 
@@ -205,6 +212,25 @@ valid = (
     and parsed.password is None
     and parsed.port is not None
     and parsed.path in ("", "/")
+    and not parsed.query
+    and not parsed.fragment
+)
+raise SystemExit(0 if valid else 1)
+PY
+}
+
+validate_billing_apigw_url() {
+  python3 - "$BILLING_APIGW_URL" <<'PY' || die "Billing APIGW must use the testing jifei-billing route without credentials, query, or fragment"
+import sys
+from urllib.parse import urlsplit
+
+parsed = urlsplit(sys.argv[1])
+valid = (
+    parsed.scheme in ("http", "https")
+    and bool(parsed.hostname)
+    and parsed.username is None
+    and parsed.password is None
+    and parsed.path == "/v1/proxy/jifei-billing-apigw-test/resource-center/interface"
     and not parsed.query
     and not parsed.fragment
 )
@@ -265,6 +291,79 @@ persist_endpoint_config() {
   state_set site "$SITE"
   state_set auth_base "$AUTH_BASE"
   state_set clgateway_base "$CLGATEWAY_BASE"
+  state_set billing_apigw_url "$BILLING_APIGW_URL"
+}
+
+install_billing_capability() {
+  local capability="$1" patch_file
+  [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ ]] \
+    || die "registration API returned an invalid personal billing capability"
+  new_private_temp billing-capability-patch
+  patch_file="$TEMP_FILE_RESULT"
+  python3 - "$patch_file" "$AUTH_BASE/auth/dev-environments/billing-proxy" "$capability" <<'PY'
+import base64, json, os, sys
+
+path, proxy_url, capability = sys.argv[1:]
+data = {
+    "PERSONAL_DEV_BILLING_PROXY_URL": proxy_url,
+    "PERSONAL_DEV_BILLING_CAPABILITY": capability,
+}
+with open(path, "w", encoding="utf-8") as output:
+    json.dump({"data": {key: base64.b64encode(value.encode()).decode() for key, value in data.items()}}, output, separators=(",", ":"))
+    output.write("\n")
+os.chmod(path, 0o600)
+PY
+  kubectl patch secret trade-runtime-secrets -n trade --type merge --patch-file "$patch_file" >/dev/null \
+    || die "could not install the short-lived personal billing capability"
+  remove_private_temp "$patch_file"
+  kubectl rollout restart deployment/trade -n trade >/dev/null
+  kubectl rollout status deployment/trade -n trade --timeout=180s >/dev/null \
+    || die "Trade did not become ready after installing the personal billing capability"
+}
+
+current_billing_capability() {
+  kubectl get secret trade-runtime-secrets -n trade \
+    -o jsonpath='{.data.PERSONAL_DEV_BILLING_CAPABILITY}' 2>/dev/null | base64 --decode
+}
+
+verify_billing_capability() {
+  local capability status_code
+  capability="$(current_billing_capability)"
+  status_code="$(billing_capability_probe_status "$capability" || true)"
+  unset capability
+  [[ "$status_code" == "403" ]]
+}
+
+billing_capability_probe_status() {
+  local capability="$1" uin body config_file status_code
+  uin="$(state_get uin)"
+  [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ && "$uin" =~ ^[1-9][0-9]*$ ]] \
+    || return 1
+  new_private_temp billing-capability-probe-body
+  body="$TEMP_FILE_RESULT"
+  python3 - "$body" "$uin" <<'PY'
+import json, sys
+path, uin = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as output:
+    json.dump({"interface": {"interfaceName": "qcloud.Deal.OnlineRefund", "extraPara": {"ownerUin": uin}, "para": {"uin": uin}}}, output, separators=(",", ":"))
+PY
+  new_private_temp billing-capability-probe-config
+  config_file="$TEMP_FILE_RESULT"
+  printf 'header = "X-LightVela-Developer-Capability: %s"\n' "$capability" >"$config_file"
+  status_code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --config "$config_file" -H 'Content-Type: application/json' --data-binary "@$body" \
+    "$AUTH_BASE/auth/dev-environments/billing-proxy/jifei/resource-center/interface" || true)"
+  remove_private_temp "$body"
+  remove_private_temp "$config_file"
+  unset capability
+  printf '%s\n' "$status_code"
+}
+
+verify_billing_capability_revoked() {
+  local capability="$1" status_code
+  status_code="$(billing_capability_probe_status "$capability" || true)"
+  unset capability
+  [[ "$status_code" == "401" ]]
 }
 
 mark_current_site() {
@@ -422,7 +521,7 @@ download_binary() {
 ensure_tools() {
   prepare_state
   local dependency
-  for dependency in curl docker python3 tar git nohup base64 awk; do
+  for dependency in curl docker python3 tar git nohup base64 awk rg; do
     require_command "$dependency"
   done
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
@@ -474,8 +573,12 @@ ensure_tools() {
 
 discover_devcloud_ip() {
   if [[ -n "${PERSONAL_DEV_IP:-}" ]]; then
+    if ! is_devcloud_page_ip "$PERSONAL_DEV_IP"; then
+      log "PERSONAL_DEV_IP must be an IPv4 address in 9.0.0.0/8 or 21.0.0.0/8"
+      return 1
+    fi
     printf '%s\n' "$PERSONAL_DEV_IP"
-    return
+    return 0
   fi
   python3 - <<'PY'
 import ipaddress, socket
@@ -493,10 +596,39 @@ for raw in candidates:
         ip = ipaddress.ip_address(raw)
     except ValueError:
         continue
-    if ip.version == 4 and ip in ipaddress.ip_network('9.0.0.0/8'):
+    if ip.version == 4 and any(ip in network for network in (
+        ipaddress.ip_network('9.0.0.0/8'),
+        ipaddress.ip_network('21.0.0.0/8'),
+    )):
         print(ip)
         raise SystemExit(0)
 raise SystemExit(1)
+PY
+}
+
+is_ipv4() {
+  python3 - "$1" <<'PY' >/dev/null 2>&1
+import ipaddress, sys
+try:
+    address = ipaddress.ip_address(sys.argv[1].strip())
+except ValueError:
+    raise SystemExit(1)
+raise SystemExit(0 if address.version == 4 else 1)
+PY
+}
+
+is_devcloud_page_ip() {
+  python3 - "$1" <<'PY' >/dev/null 2>&1
+import ipaddress, sys
+try:
+    address = ipaddress.ip_address(sys.argv[1].strip())
+except ValueError:
+    raise SystemExit(1)
+allowed = (
+    ipaddress.ip_network('9.0.0.0/8'),
+    ipaddress.ip_network('21.0.0.0/8'),
+)
+raise SystemExit(0 if address.version == 4 and any(address in network for network in allowed) else 1)
 PY
 }
 
@@ -537,7 +669,7 @@ doctor() {
   docker info >/dev/null
   local ip=""
   ip="$(discover_devcloud_ip 2>/dev/null || true)"
-  [[ -n "$ip" ]] || die "cannot discover a 9.0.0.0/8 DevCloud IP; set PERSONAL_DEV_IP"
+  [[ -n "$ip" ]] || die "cannot discover a DevCloud IP in 9.0.0.0/8 or 21.0.0.0/8; set PERSONAL_DEV_IP"
   log "site=$SITE devcloud_ip=$ip auth=$AUTH_BASE clgateway=$CLGATEWAY_BASE"
   log "docker=$(docker version --format '{{.Server.Arch}}')"
   for tool in kubectl kustomize kind; do
@@ -771,9 +903,12 @@ release_binding() {
 }
 
 ensure_local_identity() {
-  local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token
+  local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token central_session_response central_user_id
   require_personal_context
   central_token="$(central_session)"
+  central_session_response="$(curl_with_token "$central_token" "$AUTH_BASE/auth/session")"
+  central_user_id="$(printf '%s' "$central_session_response" | json_value 'd.get("session", {}).get("user", {}).get("id", "")')"
+  [[ "$central_user_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid central user id"
   prepare_local_credentials
   email="$LOCAL_IDENTITY_EMAIL"
   password="$LOCAL_IDENTITY_PASSWORD" # pragma: allowlist secret -- generated private state reference only
@@ -809,8 +944,7 @@ ensure_local_identity() {
   [[ "$app_id" =~ ^[1-9][0-9]*$ ]] \
     || die "central shadow binding is active but appId is unavailable; use a pre-provisioned testing account"
 
-  kubectl exec -i -n localstack-system statefulset/mysql -- \
-    sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' <<SQL
+  mysql_exec "$(cat <<SQL
 USE lightclaw_auth;
 INSERT INTO shadow_bindings
   (user_id, shadow_user_name, uin, owner_uin, app_id, status, created_at, updated_at)
@@ -821,14 +955,16 @@ ON DUPLICATE KEY UPDATE
   app_id=VALUES(app_id), status='active', last_error_code=NULL, last_error_message=NULL,
   updated_at=UTC_TIMESTAMP(6);
 SQL
+  )"
 
   state_set local_session_token "$token"
   state_set local_user_id "$local_user_id"
+  state_set central_user_id "$central_user_id"
   state_set shadow_user_name "$shadow_name"
   state_set uin "$uin"
   state_set owner_uin "$owner_uin"
   state_set app_id "$app_id"
-  log "local browser account is aligned with central shadow uin=$uin"
+  log "identity aligned local_user_id=$local_user_id central_user_id=$central_user_id shadow_user_name=$shadow_name uin=$uin app_id=$app_id"
 }
 
 browser_bootstrap_process_matches() {
@@ -1102,19 +1238,67 @@ ensure_devtunnel_agent() {
   log "devtunnel-agent is polling tunnelHost=$tunnel_host and replays only to callback-only 127.0.0.1:$CALLBACK_PORT"
 }
 
+registration_target_matches() {
+  local devcloud_ip="$1" target_ip="$2" registered_port="$3"
+  local expected_source="${PERSONAL_DEV_REGISTRATION_SOURCE_IP:-}"
+  [[ "$registered_port" == "$CALLBACK_PORT" ]] || return 1
+  is_ipv4 "$target_ip" || return 1
+  if [[ -n "$expected_source" ]]; then
+    is_ipv4 "$expected_source" || return 1
+    [[ "$target_ip" == "$expected_source" ]] || return 1
+  fi
+  if [[ "$SITE" == "cn" ]]; then
+    [[ "$target_ip" == "$devcloud_ip" ]] || return 1
+  fi
+}
+
+registration_target_expectation() {
+  local devcloud_ip="$1" expected_source="${PERSONAL_DEV_REGISTRATION_SOURCE_IP:-}"
+  if [[ -n "$expected_source" ]]; then
+    printf '%s:%s\n' "$expected_source" "$CALLBACK_PORT"
+  elif [[ "$SITE" == "cn" ]]; then
+    printf '%s:%s\n' "$devcloud_ip" "$CALLBACK_PORT"
+  else
+    printf 'server-confirmed IPv4:%s\n' "$CALLBACK_PORT"
+  fi
+}
+
+safe_registration_error_field() {
+  python3 - "$1" <<'PY'
+import re, sys
+value = re.sub(r'[\x00-\x1f\x7f]+', ' ', sys.argv[1]).strip()
+value = re.sub(r'\s+', ' ', value)
+print(value[:240])
+PY
+}
+
 register_route() {
   prepare_state
   ensure_site_activation_safe
   require_personal_context
   persist_endpoint_config
   local token response safe_response ip registered_uin target_ip registered_port status tunnel_host tunnel_token expires_at registration_body
+  local request_error error_code error_message expected_target
   token="$(central_session)"
   ip="$(discover_devcloud_ip)"
+  if [[ -n "${PERSONAL_DEV_REGISTRATION_SOURCE_IP:-}" ]] && ! is_ipv4 "$PERSONAL_DEV_REGISTRATION_SOURCE_IP"; then
+    die "PERSONAL_DEV_REGISTRATION_SOURCE_IP must be a valid IPv4 address"
+  fi
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" >/dev/null \
     || die "local trade callback is not healthy on port $CALLBACK_PORT"
-  registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
-  response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
-    --data-binary "$registration_body" "$REGISTRATION_URL")"
+  registration_body="{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
+  new_private_temp registration-request-error
+  request_error="$TEMP_FILE_RESULT"
+  if ! response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
+    --data-binary "$registration_body" "$REGISTRATION_URL" 2>"$request_error")"; then
+    error_code="$(printf '%s' "$response" | json_value 'd.get("code", "") or (d.get("data") or {}).get("code", "")' 2>/dev/null || true)"
+    error_message="$(printf '%s' "$response" | json_value 'd.get("message", "") or (d.get("data") or {}).get("message", "")' 2>/dev/null || true)"
+    error_code="$(safe_registration_error_field "${error_code:-request_failed}")"
+    error_message="$(safe_registration_error_field "${error_message:-registration endpoint request failed}")"
+    remove_private_temp "$request_error"
+    die "registration failed: code=$error_code message=$error_message"
+  fi
+  remove_private_temp "$request_error"
   registered_uin="$(printf '%s' "$response" | json_value 'd.get("uin", "")' 2>/dev/null || true)"
   target_ip="$(printf '%s' "$response" | json_value 'd.get("targetIp", "")' 2>/dev/null || true)"
   registered_port="$(printf '%s' "$response" | json_value 'd.get("port", "")' 2>/dev/null || true)"
@@ -1124,8 +1308,11 @@ register_route() {
   expires_at="$(printf '%s' "$response" | json_value 'd.get("expiresAt", "")' 2>/dev/null || true)"
   [[ "$registered_uin" == "$(state_get uin)" ]] || die "registration returned an unexpected uin"
   [[ "$status" == "active" ]] || die "registration is not active: ${status:-missing}"
-  [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
-    || die "registration source address mismatch: expected $ip:$CALLBACK_PORT, got ${target_ip:-missing}:${registered_port:-missing}"
+  if ! registration_target_matches "$ip" "$target_ip" "$registered_port"; then
+    expected_target="$(registration_target_expectation "$ip")"
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    die "registration source address mismatch: expected $expected_target, got ${target_ip:-missing}:${registered_port:-missing}; unsafe active registration was disabled"
+  fi
   if [[ ! "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ || ${#tunnel_token} -lt 16 || ${#tunnel_token} -gt 512 ]]; then
     curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
     die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
@@ -1135,6 +1322,12 @@ register_route() {
     curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
     unset tunnel_token
     die "local devtunnel-agent failed; unsafe active registration was disabled"
+  fi
+  if ! (install_billing_capability "$tunnel_token"); then
+    stop_devtunnel_agent
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    unset tunnel_token
+    die "short-lived billing capability could not be installed; unsafe active registration was disabled"
   fi
   safe_response="$(printf '%s' "$response" | json_without_secrets)"
   state_set devcloud_ip "$ip"
@@ -1266,19 +1459,40 @@ mysql_scalar() {
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -N -B -uroot -e "$1"' sh "$sql"
 }
 
+mysql_exec() {
+  local sql="$1"
+  kubectl exec -n localstack-system statefulset/mysql -- \
+    sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -e "$1"' sh "$sql"
+}
+
+real_kustomize_binary() {
+  local candidate candidate_real wrapper_real
+  candidate="$(command -v kustomize)"
+  [[ -n "$candidate" ]] || die "kustomize is unavailable"
+  candidate_real="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$candidate")"
+  wrapper_real="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RUNTIME_KUSTOMIZE")"
+  [[ "$candidate_real" != "$wrapper_real" ]] || die "PERSONAL_DEV_REAL_KUSTOMIZE resolved to the runtime wrapper"
+  printf '%s\n' "$candidate"
+}
+
 up() {
   prepare_state
   ensure_site_activation_safe
   bootstrap
-  local ip
+  local ip real_kustomize secret_override_dirs
   ip="$(discover_devcloud_ip)"
+  real_kustomize="$(real_kustomize_binary)"
+  secret_override_dirs="$REPO_ROOT/deploy/envs/localstack/overrides"
+  bash "$REPO_ROOT/deploy/localstack/tests/${SITE}_cross_sp_seed_test.sh"
   clear_legacy_runtime_overrides
   LOCALSTACK_SITE_KIND="$SITE" LOCALSTACK_PUBLIC_HOST="$ip" \
     LOCALSTACK_STATE_DIR="$STATE_ROOT/localstack" \
+    LOCALSTACK_SECRET_OVERRIDE_DIRS="$secret_override_dirs" \
     LOCALSTACK_JIFEI_GATEWAY_URL="$CLGATEWAY_BASE/v1/proxy/jifei-test/interfaces/interface.php" \
-    PERSONAL_DEV_REAL_KUSTOMIZE="$(command -v kustomize)" \
+    PERSONAL_DEV_REAL_KUSTOMIZE="$real_kustomize" \
     PERSONAL_DEV_RUNTIME_SITE="$SITE" PERSONAL_DEV_RUNTIME_PUBLIC_HOST="$ip" \
     PERSONAL_DEV_RUNTIME_JIFEI_GATEWAY="$CLGATEWAY_BASE/v1/proxy/jifei-test/interfaces/interface.php" \
+    PERSONAL_DEV_RUNTIME_BILLING_APIGW_URL="$BILLING_APIGW_URL" \
     KUBECTL="$(command -v kubectl)" KUSTOMIZE="$RUNTIME_KUSTOMIZE" \
     "$LOCALSTACK" up
   state_set stack_status up
@@ -1309,7 +1523,7 @@ status() {
       registered_port="$(printf '%s' "$response" | json_value 'd.get("port", "")' 2>/dev/null || true)"
       tunnel_host="$(printf '%s' "$response" | json_value 'd.get("tunnelHost", "")' 2>/dev/null || true)"
       [[ "$status" == "active" ]] || rc=1
-      [[ -n "$ip" && "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] || rc=1
+      [[ -n "$ip" ]] && registration_target_matches "$ip" "$target_ip" "$registered_port" || rc=1
       [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || rc=1
       devtunnel_agent_running "$tunnel_host" || rc=1
     else
@@ -1319,6 +1533,7 @@ status() {
     rc=1
   fi
   kubectl get pods -A -l app.kubernetes.io/part-of=lightclaw-localstack -o wide || rc=1
+  verify_billing_capability || rc=1
   local pod_namespace pod_name
   while IFS=$'\t' read -r pod_namespace pod_name; do
     [[ -n "$pod_namespace" && -n "$pod_name" ]] || continue
@@ -1338,7 +1553,7 @@ heartbeat_running() {
 }
 
 require_active_registration() {
-  local token response status target_ip registered_port tunnel_host ip
+  local token response status target_ip registered_port tunnel_host ip expected_target
   token="$(central_session)"
   response="$(curl_with_token "$token" "$REGISTRATION_URL")"
   status="$(printf '%s' "$response" | json_value 'd.get("status", "")' 2>/dev/null || true)"
@@ -1347,8 +1562,10 @@ require_active_registration() {
   tunnel_host="$(printf '%s' "$response" | json_value 'd.get("tunnelHost", "")' 2>/dev/null || true)"
   [[ "$status" == "active" ]] || die "developer route is not active"
   ip="$(discover_devcloud_ip)"
-  [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
-    || die "developer route is registered for ${target_ip:-missing}:${registered_port:-missing}, not this DevCloud $ip:$CALLBACK_PORT"
+  if ! registration_target_matches "$ip" "$target_ip" "$registered_port"; then
+    expected_target="$(registration_target_expectation "$ip")"
+    die "developer route is registered for ${target_ip:-missing}:${registered_port:-missing}, expected $expected_target"
+  fi
   devtunnel_agent_running "$tunnel_host" || die "devtunnel-agent is not running for tunnelHost=${tunnel_host:-missing}"
 }
 
@@ -1465,7 +1682,8 @@ verify_no_pay() {
 unregister() {
   prepare_state
   stop_heartbeat
-  local token response rc=0
+  local token response capability="" rc=0
+  capability="$(current_billing_capability 2>/dev/null || true)"
   if ! token="$(central_session)"; then
     stop_devtunnel_agent
     die "cannot refresh central session for unregister"
@@ -1475,9 +1693,14 @@ unregister() {
     state_set registration_response "$response"
     state_set registration_status disabled
     state_set registration_expires_at "$(printf '%s' "$response" | json_value 'd.get("expiresAt", "")' 2>/dev/null || true)"
+    if [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ ]] && ! verify_billing_capability_revoked "$capability"; then
+      log "developer route was disabled but the old billing capability did not return 401"
+      rc=1
+    fi
   else
     rc=$?
   fi
+  unset capability
   stop_devtunnel_agent
   [[ "$rc" == "0" ]] || return "$rc"
   printf '\n'
@@ -1502,6 +1725,53 @@ unregister_for_down() {
     "$SCRIPT_DIR/personal-devcloud.sh" unregister
 }
 
+prerequisites() {
+  local account_site account_hint billing_onboarding
+  case "$SITE" in
+    cn)
+      account_site="国内站（北京 testing）"
+      account_hint="确认 international=false；国内实名 testing 用户需提供已有 session 或账号密码。"
+      billing_onboarding=""
+      ;;
+    intl)
+      account_site="国际站（韩国 testing）"
+      account_hint="确认 international=true。"
+      billing_onboarding="   - 在计费助手机器人的命令模式执行 /国际开户，并确认开户成功。"
+      ;;
+  esac
+  cat <<EOF
+Personal DevCloud paid-E2E readiness for $account_site
+
+1. 取得合法 testing 账号
+   - 打开智研账号池：
+     https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/?current=1&pageSize=20
+   - 使用“添加账号”创建/导入自己的 testing 账号，或“占用”一个明确允许共享的空闲账号。
+   - 账号必须显示“状态=正常”，且账号 ID(UIN) 与 APPID 均非空。
+   - $account_hint
+
+2. 完成开户与充值
+$billing_onboarding
+   - 执行 /充值，按提示填写 UIN、站别和金额；金额单位为分，结果必须显示操作= recharge
+     且“操作后余额”足以覆盖本次订单。/设置金额只用于需要精确目标余额的受控场景。
+   - 余额不足产生的旧 pending 单不要重试；充值确认后创建一笔新订单。
+
+3. 绑定 LightVela testing 用户
+   - 在 testing Gateway Dashboard 打开“认证用户 → DevCloud 测试绑定”。
+   - 把当前 testing 登录用户绑定到上面的 UIN/OwnerUIN/APPID，并确认状态为 active。
+   - 受控管理员也可使用 personal-devcloud.sh bootstrap-binding；不要把 admin token 发给开发者。
+
+4. 计费能力无需人工准备
+   - up/register 从中央 testing Auth registration 获得绑定当前 UIN 和 TTL 的短期 capability。
+   - capability 自动注入个人 Trade；Jifei AppSecret 与 CloudLadder HMAC 只留在中央 testing Trade。
+   - 不需要 SOPS、age 私钥、owner 文件或 production secret；registration 续租会自动轮换 capability。
+
+5. 启动与验收
+   - 运行 personal-devcloud.sh up；随后运行 status 和 browser-login。
+   - 默认 verify-order-no-pay 不证明支付。真实闭环必须检查支付、计费回调、Trade/Pass/Task 终态，
+     退款场景还要检查 isolateResource/销毁终态。
+EOF
+}
+
 usage() {
   cat <<'EOF'
 Usage: personal-devcloud.sh <command>
@@ -1509,6 +1779,7 @@ Usage: personal-devcloud.sh <command>
 Commands:
   doctor          Check DevCloud IP, Docker, and required tools
   bootstrap       Install user-local tools and create/reuse a kind cluster
+  prerequisites   Print the site-specific account, balance, binding, and capability readiness checklist
   up              Build the full stack, provision identity, register callback, start heartbeat
   register        Align local identity and register/renew this DevCloud callback
   heartbeat       Renew the dynamic registration once
@@ -1531,6 +1802,7 @@ main() {
   case "$command" in
     doctor) doctor ;;
     bootstrap) bootstrap ;;
+    prerequisites) prerequisites ;;
     up) up ;;
     register) register_command ;;
     heartbeat) register_route ;;

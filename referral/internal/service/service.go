@@ -18,6 +18,8 @@ const referralAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 
 type Service struct {
 	store         store.Store
+	adminStore    store.AttributionAdminStore
+	creditRevoker creditRevoker
 	now           func() time.Time
 	publicBaseURL string
 }
@@ -33,6 +35,13 @@ type Me struct {
 
 func New(st store.Store, publicBaseURL string) *Service {
 	return &Service{store: st, now: time.Now, publicBaseURL: strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")}
+}
+
+func NewWithAdmin(st store.Store, adminStore store.AttributionAdminStore, revoker creditRevoker, publicBaseURL string) *Service {
+	service := New(st, publicBaseURL)
+	service.adminStore = adminStore
+	service.creditRevoker = revoker
+	return service
 }
 
 func (s *Service) ResolveCode(ctx context.Context, code string) (*domain.CodeResolution, error) {

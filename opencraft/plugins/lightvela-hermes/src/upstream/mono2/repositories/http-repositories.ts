@@ -283,7 +283,12 @@ class RepositoryError extends Error {
   }
 }
 
-const createNetworkUnavailableError = () => new RepositoryError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 0, "network_error");
+const createNetworkUnavailableError = (cause?: unknown) => {
+  // message 会进入终端用户的 toast；诊断细节仅保留在 cause。
+  const error = new RepositoryError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 0, "network_error");
+  if (cause !== undefined) (error as RepositoryError & { cause?: unknown }).cause = cause;
+  return error;
+};
 
 const isNestedBotsUnavailable = (error: unknown) => {
   if (error instanceof RepositoryError) {
@@ -1364,11 +1369,11 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           body: JSON.stringify(createDebugExecRequestBody(command)),
           signal: abortController.signal,
         });
-      } catch {
+      } catch (error) {
         if (abortController.signal.aborted) {
           throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
         }
-        throw createNetworkUnavailableError();
+        throw createNetworkUnavailableError(error);
       } finally {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
       }

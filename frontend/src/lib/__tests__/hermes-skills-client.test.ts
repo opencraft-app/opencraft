@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { execCommand } from "@/lib/hermes-cron-client";
 import {
+  buildGithubSkillInstallCommand,
   buildHermesSkillDeleteCommand,
   buildInstalledSkillsListCommand,
   formatInstalledSkillDisplayName,
@@ -26,6 +27,55 @@ vi.mock("@/lib/hermes-cron-client", () => ({
 const execFileAsync = promisify(execFile);
 
 describe("hermes skills client", () => {
+  describe("buildGithubSkillInstallCommand", () => {
+    const source = {
+      repo: "NousResearch/hermes-agent",
+      ref: "main",
+      path: "optional-skills/finance/stocks",
+    };
+
+    it("downloads only the target subdirectory from the repo tarball", () => {
+      const cmd = buildGithubSkillInstallCommand(source, "finance/stocks", "main");
+      expect(cmd).toContain("codeload.github.com/NousResearch/hermes-agent/tar.gz/refs/heads/main");
+      // strip-components = 1 (tarball 顶层) + 3 (optional-skills/finance/stocks)
+      expect(cmd).toContain("--strip-components=4");
+      expect(cmd).toContain("'hermes-agent-main/optional-skills/finance/stocks'");
+    });
+
+    it("installs to the directory named by installDir, keeping category depth", () => {
+      // SKILL.md 自述路径含 finance 层级，装错层级 agent 会 file-not-found
+      const cmd = buildGithubSkillInstallCommand(source, "finance/stocks", "main");
+      expect(cmd).toContain('"$HERMES_PROFILE_ROOT/skills/finance/stocks"');
+      expect(cmd).toContain('mkdir -p "$(dirname "$HERMES_PROFILE_ROOT/skills/finance/stocks")"');
+    });
+
+    it("verifies SKILL.md before and after install", () => {
+      const cmd = buildGithubSkillInstallCommand(source, "finance/stocks", "main");
+      // 解压后先校验，避免把空目录当成装好了
+      expect(cmd).toContain('test -f "$SKILL_TMP/extract/SKILL.md"');
+      // 收尾自检落盘契约
+      expect(cmd).toContain('test -f "$HERMES_PROFILE_ROOT/skills/finance/stocks"/SKILL.md');
+    });
+
+    it("always cleans up the temp directory", () => {
+      const cmd = buildGithubSkillInstallCommand(source, "finance/stocks", "main");
+      expect(cmd).toContain(`trap 'rm -rf "$SKILL_TMP"' EXIT`);
+    });
+
+    it("rejects injection and traversal in every input", () => {
+      expect(() => buildGithubSkillInstallCommand({ ...source, repo: "a/b; rm -rf /" }, "x"))
+        .toThrow(/Invalid GitHub repo/);
+      expect(() => buildGithubSkillInstallCommand({ ...source, ref: "main;whoami" }, "x"))
+        .toThrow(/Invalid GitHub ref/);
+      expect(() => buildGithubSkillInstallCommand({ ...source, path: "../../etc" }, "x"))
+        .toThrow(/Invalid GitHub path/);
+      expect(() => buildGithubSkillInstallCommand(source, "../escape"))
+        .toThrow(/Invalid skill directory name/);
+      expect(() => buildGithubSkillInstallCommand(source, "a/$(id)"))
+        .toThrow(/Invalid skill directory name/);
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

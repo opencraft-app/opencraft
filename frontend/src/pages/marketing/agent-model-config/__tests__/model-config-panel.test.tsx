@@ -23,6 +23,8 @@ const toastMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string, options?: Record<string, unknown>) =>
     text.replace(/\{\{\s*([\w$]+)\s*\}\}/g, (raw, name: string) => {
       const value = options?.[name];

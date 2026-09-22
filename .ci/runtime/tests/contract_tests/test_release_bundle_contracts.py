@@ -3233,6 +3233,20 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
+    def test_frontend_artifact_build_stages_the_opencraft_embed_release(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        workflow = yaml.safe_load(workflow_text)
+        trigger_paths = (workflow.get("on") or workflow[True])["push"]["paths"]
+
+        self.assertIn("opencraft/apps/workbench-web/**", trigger_paths)
+        self.assertIn("opencraft/packages/**", trigger_paths)
+        self.assertIn("opencraft/plugins/**", trigger_paths)
+        self.assertIn('cd "$REPO_ROOT/opencraft"', workflow_text)
+        self.assertIn('"$NPM_BIN" ci', workflow_text)
+        self.assertIn('"$NPM_BIN" run build:embedded-workbench:release', workflow_text)
+        self.assertIn('export OPENCRAFT_EMBED_DIST_DIR=', workflow_text)
+        self.assertIn('test -f "$OPENCRAFT_EMBED_DIST_DIR/embedded-workbench.js"', workflow_text)
+
 
     def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
         guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()

@@ -18,17 +18,17 @@ import (
 // 本文件只做一件本包特有的事：把与码段无关的 ResolveOutcome 映射到 checkModify 的
 // 60080x 业务码。
 
-// resolveBundlesBySV 在给定 (productCode, subProductCode) 范围内，按 oldConfig /
-// newConfig 的 SV 集合反查源与目标 BundleDefinition。
+// resolveBundlesBySV 按 oldConfig/newConfig 各自携带的计费身份与 SV 集合反查源、
+// 目标 BundleDefinition；外层 product/sub 描述当前资源，必须与源侧一致。
 //
 // verdict.code != 0 表示反查失败，调用方直接按该业务码回计费。
 func resolveBundlesBySV(
 	ctx context.Context,
 	bundleStore store.BundleDefinitionStore,
 	productCode, subProductCode string,
-	oldConfig, newConfig map[string]int64,
+	goodsDetail map[string]interface{},
 ) (*store.BundleDefinition, *store.BundleDefinition, configVerdict, error) {
-	res, err := bundleresolve.ModifyBundles(ctx, bundleStore, productCode, subProductCode, oldConfig, newConfig)
+	res, err := bundleresolve.ModifyBundles(ctx, bundleStore, productCode, subProductCode, goodsDetail)
 	if err != nil {
 		return nil, nil, configVerdict{}, err
 	}
@@ -44,7 +44,7 @@ func resolveBundlesBySV(
 // 两个套餐共用同一份 SV 配置"这个接入配置，语义上属配置不符。
 func resolveOutcomeToCode(outcome jifeiproto.ResolveOutcome) int {
 	switch outcome {
-	case jifeiproto.ResolveAmbiguous:
+	case jifeiproto.ResolveAmbiguous, jifeiproto.ResolveConfigMismatch:
 		return ReturnCodeConfigMismatch
 	default:
 		return ReturnCodeBundleNotFound
