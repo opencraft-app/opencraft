@@ -5,7 +5,7 @@
 ## non_goals
 
 - 不修改 Bot 创建模式、继承范围、配额、站点门禁或后端接口。
-- 不修改国内站文档，不提交 MR、不发布。
+- 不修改国内站文档，不合并 MR、不发布。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
@@ -39,6 +39,11 @@
 - `frontend/scripts/sync-fumadocs-content.mjs`
 - `frontend/src/content/docs/{en,global,id}/05-configuration.md`
 - `frontend/src/content/docs/{en,global}/configuration/bots.md`
+- `frontend/src/content/docs/{es,ja,ko}/05-configuration.md`
+- `frontend/src/content/docs/{es,ja,ko}/configuration/bots.md`
+- `frontend/scripts/international-docs-parity.test.ts`
+- `frontend/next-site/docs-route-manifest.ts`
+- `frontend/src/content/docs/last-updated.json`
 - `wiki/growth-state/lightvela-docs-content-categories.md`
 - `docs/context/tasks/2026-09-21-global-bot-create-copy-layout.md`
 
@@ -60,6 +65,7 @@
 | `frontend/src/i18n/index.ts@0ce20f94d` | 中文 key 运行时链路 | 保持中文 key，仅覆盖英文译文 |
 | `frontend/scripts/i18n-extract.mjs@0ce20f94d` | 字典生成规则 | 避免新增或误删 hash key |
 | `frontend/scripts/i18n-apply.mjs@0ce20f94d` | 翻译写入入口 | 通过中文原文定位并安全覆盖英文译文 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@d66a0b5f4` | MR CI 修复与交付边界 | 在现有 MR 上追加最小修复并重新核验远端状态 |
 
 ## evidence
 
@@ -115,3 +121,11 @@
 - 合并后 `pnpm check` 通过：TypeScript 171 current / 171 baseline / 0 new，i18n 结构错误 0；`pnpm build:global` 通过，654/654 个静态页面生成，42 条公开路由 SEO 检查通过。
 - 文档完整性检查 errors 0、broken links 0、warnings 0；构建产生的字体子集噪声已恢复，工作树干净。
 - 下一步：推送 `codex/global-bot-create-copy-layout` 并创建指向 `master` 的 MR；不执行合并或发布。
+
+## MR !4391 CI 修复 checkpoint（2026-09-22）
+
+- CI 的 `frontend` 守卫失败不是业务代码回归，而是新增英文与国际站中文 `configuration/bots` 后，完整语种日语、韩语、西班牙语仍停留在 71 条路由，和英文 72 条路由不一致；失败步骤共 10 个 parity 断言。
+- 补齐 `es`、`ja`、`ko` 的 Bot 管理页和配置总览入口，同步文档更新时间与生成路由清单；印尼语仍按非完整语种保留 69 条路由，国内站保持 47 条路由。
+- 国际站文档 parity 聚焦测试 44/44 通过；CI 同款 7 个测试文件 129/129 通过；`pnpm check` 通过，TypeScript 171 current / 171 baseline / 0 new。
+- `pnpm build:global` 通过，657/657 个静态页面生成，42 条公开路由 SEO 检查通过。
+- 当前：准备在现有 MR !4391 上提交并推送 CI 修复；不执行流水线重试、合并或发布。
