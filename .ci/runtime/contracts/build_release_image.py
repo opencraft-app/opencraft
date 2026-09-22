@@ -135,6 +135,7 @@ def push_image_with_retry(
     *,
     max_attempts: int,
     retry_interval_seconds: int,
+    local_image_id: str | None = None,
 ) -> None:
     attempts = max(max_attempts, 1)
     base_sleep_seconds = max(retry_interval_seconds, 1)
@@ -153,6 +154,8 @@ def push_image_with_retry(
             )
         else:
             try:
+                if attempt > 1 and local_image_id:
+                    restore_local_image_tag(image, local_image_id)
                 run_command(["docker", "push", image], check=True)
                 return
             except subprocess.CalledProcessError as exc:
@@ -183,6 +186,32 @@ def push_image_with_retry(
     raise RuntimeError(
         f"docker {last_phase} failed after {attempts} attempts: image={image}"
     ) from last_error
+
+
+def resolve_local_image_id(image: str) -> str:
+    result = run_command(
+        ["docker", "image", "inspect", "--format={{.Id}}", image],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    image_id = result.stdout.strip()
+    if not image_id:
+        raise RuntimeError(f"docker image id is empty after build: image={image}")
+    return image_id
+
+
+def restore_local_image_tag(image: str, image_id: str) -> None:
+    result = run_command(["docker", "image", "inspect", image], check=False, capture_output=True)
+    if result.returncode == 0:
+        return
+    try:
+        run_command(["docker", "tag", image_id, image], check=True)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"local image tag disappeared and could not be restored: image={image} image_id={image_id}"
+        ) from exc
+    print(f"restored local image tag before docker push retry: image={image} image_id={image_id}")
 
 
 def single_target_from_bundle(service: str, dockerfile: str, build_context: str, image_repo: str) -> ImageTarget:
@@ -354,11 +383,13 @@ def build_target(
     run_command(cmd, cwd=REPO_ROOT, check=True)
     if push:
         try:
+            local_image_id = resolve_local_image_id(image)
             push_image_with_retry(
                 target.image_repo,
                 image,
                 max_attempts=push_max_attempts,
                 retry_interval_seconds=push_retry_interval_seconds,
+                local_image_id=local_image_id,
             )
             wait_for_remote_image(
                 image,
