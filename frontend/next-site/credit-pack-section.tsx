@@ -43,6 +43,7 @@ type PurchaseGate =
   | 'not-logged-in'
   | 'no-active-plan'
   | 'realname-required'
+  | 'quote-loading'
   | 'quote-unavailable';
 
 /** URL query 参数名（与 subscribe-page 的 section 定位约定一致） */
@@ -199,10 +200,12 @@ export const CreditPackSection = ({
 
   const gate: PurchaseGate = useMemo(() => {
     if (!selectedProductId) return 'unselected';
-    if (quotes[selectedProductId]?.status !== 'ready') return 'quote-unavailable';
     if (!isLoggedIn) return 'not-logged-in';
     if (!hasActivePlan) return 'no-active-plan';
     if (!canPurchaseCreditPack) return 'realname-required';
+    const quoteStatus = quotes[selectedProductId]?.status;
+    if (quoteStatus === 'failed') return 'quote-unavailable';
+    if (quoteStatus !== 'ready') return 'quote-loading';
     return 'purchasable';
   }, [canPurchaseCreditPack, hasActivePlan, isLoggedIn, quotes, selectedProductId]);
 
@@ -216,6 +219,8 @@ export const CreditPackSection = ({
         return t('先开通套餐');
       case 'realname-required':
         return t('完成实名后购买');
+      case 'quote-loading':
+        return t('加载中…');
       case 'quote-unavailable':
         return t('价格暂不可用');
       default:
@@ -243,7 +248,12 @@ export const CreditPackSection = ({
   const hasCurrentOrder = checkout.state.status !== 'idle' && checkout.state.status !== 'failed';
   const effectivePrimaryLabel =
     hasCurrentOrder ? t('订单详情') : primaryLabel;
-  const primaryDisabled = !hasCurrentOrder && (gate === 'unselected' || gate === 'realname-required' || gate === 'quote-unavailable');
+  const primaryDisabled = !hasCurrentOrder && (
+    gate === 'unselected'
+    || gate === 'realname-required'
+    || gate === 'quote-loading'
+    || gate === 'quote-unavailable'
+  );
 
   const handlePrimary = useCallback(() => {
     if (gate === 'not-logged-in') {

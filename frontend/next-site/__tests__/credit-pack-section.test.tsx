@@ -177,6 +177,20 @@ describe("CreditPackSection", () => {
     expect(onRequireLogin).toHaveBeenCalledTimes(1);
   });
 
+  it("询价加载中时未登录用户仍提示登录", async () => {
+    inquireCreditPrice.mockImplementation(() => new Promise(() => undefined));
+    const onRequireLogin = vi.fn();
+    renderSection({ isLoggedIn: false, hasActivePlan: false, onRequireLogin });
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_2000"));
+    const action = screen.getByTestId("credit-pack-primary-action");
+    expect(action).toHaveTextContent("登录后购买");
+    expect(action).toBeEnabled();
+
+    await userEvent.click(action);
+    expect(onRequireLogin).toHaveBeenCalledTimes(1);
+  });
+
   it("已登录但无有效套餐时引导先开通套餐", async () => {
     const onRequirePlan = vi.fn();
     renderSection({ hasActivePlan: false, onRequirePlan });
@@ -187,6 +201,31 @@ describe("CreditPackSection", () => {
 
     await userEvent.click(action);
     expect(onRequirePlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("询价加载中时无有效套餐用户仍提示先开通套餐", async () => {
+    inquireCreditPrice.mockImplementation(() => new Promise(() => undefined));
+    const onRequirePlan = vi.fn();
+    renderSection({ hasActivePlan: false, onRequirePlan });
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_4000"));
+    const action = screen.getByTestId("credit-pack-primary-action");
+    expect(action).toHaveTextContent("先开通套餐");
+    expect(action).toBeEnabled();
+
+    await userEvent.click(action);
+    expect(onRequirePlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("询价加载中时已登录且有套餐用户不能下单，直到询价完成", async () => {
+    inquireCreditPrice.mockImplementation(() => new Promise(() => undefined));
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    const action = screen.getByTestId("credit-pack-primary-action");
+    expect(action).toHaveTextContent("加载中…");
+    expect(action).toBeDisabled();
+    expect(screen.queryByTestId("credit-pack-confirm-modal")).not.toBeInTheDocument();
   });
 
   it("已登录但未完成实名时展示询价价格并禁用购买，提供实名入口", async () => {

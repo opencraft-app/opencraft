@@ -3970,7 +3970,7 @@ export const SubscribePage = ({
             document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
           }}
         />
-          </>
+        </>
         )}
       </main>
 

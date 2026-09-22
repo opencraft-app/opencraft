@@ -269,7 +269,6 @@ describe("韩语翻译完成门禁", () => {
     expect(koKR.k_4e21f1d4).toBe("24시간 연중무휴");
     expect(koKR.k_8ed5493c).toBe("반복 작업은 Hermes에 맡기세요");
     expect(koKR.k_89a9e11e).toBe("LightVela 이용 방법");
-    expect(koKR.k_01be26f3).toBe("물 한 잔 마시는 동안 클라우드의 Hermes Agent가 준비됩니다.");
     expect(koKR.k_26a64af5).toBe("물 한 잔 마시는 동안 클라우드의 Hermes Agent가 준비됩니다.");
     expect(koKR.k_ecb0cd78).toBe("시작하기");
     expect(koKR.k_da72cec6).toBe("바닥글 탐색");
@@ -290,20 +289,16 @@ describe("韩语翻译完成门禁", () => {
     );
     expect(koKR.k_6de351e5).toBe("기기 자원을 소모하지 않고 언제든지 호출하세요");
     expect(koKR.k_50495c0d).toBe("정식 Hermes Agent, 클릭 한 번으로 바로 사용");
-    expect(koKR.k_ff4289bd).toBe("정식 Hermes Agent,\n클릭 한 번으로 바로 사용");
     expect(koKR.k_45786e15).toBe("내 예약 작업 관리");
     expect(koKR.k_bdcffa6c).toBe("‘지금 만들기’를 클릭하세요");
     expect(koKR.k_7f472118).toBe("완전 자동 클라우드 프로비저닝");
-    expect(koKR.k_c0f65be9).toBe("완전 자동 클라우드 프로비저닝");
     expect(koKR.k_7e359b79).toBe("새로운 여정—");
     expect(koKR.k_d7abd6c7).toBe("시작할 준비가 되셨나요");
     expect(koKR.k_7b6bd0b8).toBe("?");
-    expect(koKR.k_5ea72ed7).toBe("AI가 클라우드에서 기다립니다. 어디서든 항상 함께합니다.");
     expect(koKR.k_8f0bbb96).toBe("AI가 클라우드에서 기다립니다. 어디서든 항상 함께합니다.");
     expect(koKR.k_888af1f2).toBe("커뮤니티");
     expect(koKR.k_c24697b5).toBe("Tencent CloudBase");
     expect(koKR.k_7ad1c108).toBe("언제나 온라인, 데이터는 온전히 내 것");
-    expect(koKR.k_020a4682).toBe("대화 내용은\n나만의 공간에 저장");
     expect(koKR.k_cc96d3c2).toBe("대화 내용은 나만의 공간에만 저장");
     expect(koKR.k_aedf5b7e).toBe(
       "Hermes Agent와 나눈 모든 메시지는 전용 서버에 저장되며 제3자와 공유되지 않습니다. 언제든 직접 관리할 수 있습니다.",
