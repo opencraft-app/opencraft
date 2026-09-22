@@ -21,6 +21,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
+import { defineMessages } from "@opencraft/i18n";
+import { LanguageSetting } from "../i18n/language-setting";
+
+const appearanceMessages = defineMessages({
+  light: { id: "settings.light", defaultMessage: "Light" },
+  dark: { id: "settings.dark", defaultMessage: "Dark" },
+  system: { id: "settings.system", defaultMessage: "System" },
+});
 
 import type { ThemePreference } from "@opencraft/design-system/theme";
 import type { ExtensionContributionStore, ExtensionManager } from "@opencraft/extension-runtime";
@@ -40,7 +49,7 @@ import {
   type ProvisionHostInput,
 } from "@opencraft/extension-react";
 import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
-import type { AppearanceThemeDescriptor } from "../appearance-theme";
+import { getAppearanceThemePreviewProperties, type AppearanceThemeDescriptor } from "../appearance-theme";
 import { useInternalDeveloperMode } from "../internal-developer-mode";
 import { SqliteDebugSettings } from "./sqlite-debug-settings";
 import {
@@ -212,9 +221,9 @@ export function SettingsNavigation({
       <nav aria-label="Settings sections">
         {presentation === "route" ? <button type="button" className="settings-page__back" onClick={onBack}>
           <ArrowLeft size={15} />
-          <span>Back to app</span>
+          <span><FormattedMessage id="settings.back" defaultMessage="Back to app" /></span>
         </button> : null}
-        <div className="settings-page__navigation-heading">Settings</div>
+        <div className="settings-page__navigation-heading"><FormattedMessage id="settings.title" defaultMessage="Settings" /></div>
         <div className="settings-page__navigation-list">
           <button
             type="button"
@@ -222,7 +231,7 @@ export function SettingsNavigation({
             onClick={() => onSectionChange("appearance")}
           >
             <Palette size={16} />
-            <span>Appearance</span>
+            <span><FormattedMessage id="settings.appearance" defaultMessage="Appearance" /></span>
           </button>
           {showArchivedConversations ? <button
             type="button"
@@ -230,25 +239,17 @@ export function SettingsNavigation({
             onClick={() => onSectionChange("archived-conversations")}
           >
             <Archive size={16} />
-            <span>Archived conversations</span>
+            <span><FormattedMessage id="settings.archived" defaultMessage="Archived conversations" /></span>
           </button> : null}
           {internalDeveloperMode ? (
             <>
-              <button
-                type="button"
-                aria-current={section === "plugins" ? "page" : undefined}
-                onClick={() => onSectionChange("plugins")}
-              >
-                <Blocks size={16} />
-                <span>Plugins</span>
-              </button>
               <button
                 type="button"
                 aria-current={section === "laboratory" ? "page" : undefined}
                 onClick={() => onSectionChange("laboratory")}
               >
                 <FlaskConical size={16} />
-                <span>Laboratory</span>
+                <span><FormattedMessage id="settings.laboratory" defaultMessage="Laboratory" /></span>
               </button>
             </>
           ) : null}
@@ -356,6 +357,7 @@ export function SettingsContent({
   onPushViewResource,
   onReplaceViewResource,
 }: SettingsContentProps) {
+  const intl = useIntl();
   const internalDeveloperMode = useInternalDeveloperMode();
   const [error, setError] = useState<string | null>(null);
   const [extensionUrl, setExtensionUrl] = useState("");
@@ -436,28 +438,29 @@ export function SettingsContent({
                 />
               ) : section === "appearance" ? (
                 <>
-                  <SettingsPageHeader title="Appearance" description="Choose how OpenCraft looks across the workbench." />
+                  <SettingsPageHeader title={intl.formatMessage({ id: "settings.appearance", defaultMessage: "Appearance" })} description={intl.formatMessage({ id: "settings.appearance.description", defaultMessage: "Choose how OpenCraft looks across the workbench." })} />
 
-                  <SettingsSection title="Interface" description="Shared display preferences apply across every Workbench view.">
+                  <SettingsSection title={intl.formatMessage({ id: "settings.interface", defaultMessage: "Interface" })} description={intl.formatMessage({ id: "settings.interface.description", defaultMessage: "Shared display preferences apply across every Workbench view." })}>
                     <SettingsGroup>
+                      <LanguageSetting />
                       <SettingsRow
-                        label="Appearance"
-                        description="Follow the system or keep one appearance."
+                        label={intl.formatMessage({ id: "settings.appearance", defaultMessage: "Appearance" })}
+                        description={intl.formatMessage({ id: "settings.appearance.follow", defaultMessage: "Follow the system or keep one appearance." })}
                         controlWidth="compact"
                       >
                         <SettingsSegmented
-                          label="Appearance mode"
+                          label={intl.formatMessage({ id: "settings.appearance.mode", defaultMessage: "Appearance mode" })}
                           value={themePreference}
                           onValueChange={(value) => onThemePreferenceChange(value as ThemePreference)}
                           options={(["light", "dark", "system"] as const).map((preference) => ({
                             value: preference,
-                            label: preference[0]!.toUpperCase() + preference.slice(1),
+                            label: intl.formatMessage(appearanceMessages[preference]),
                           }))}
                         />
                       </SettingsRow>
                       <SettingsRow
-                        label="Theme"
-                        description="Semantic palettes define every surface, border, and interaction state."
+                        label={intl.formatMessage({ id: "settings.theme", defaultMessage: "Theme" })}
+                        description={intl.formatMessage({ id: "settings.theme.description", defaultMessage: "Semantic palettes define every surface, border, and interaction state." })}
                         layout="stacked"
                         controlWidth="wide"
                       >
@@ -474,6 +477,7 @@ export function SettingsContent({
                               <span
                                 className="settings-theme-card__preview"
                                 data-theme-preview={theme.id}
+                                style={getAppearanceThemePreviewProperties(theme.id) as import("react").CSSProperties}
                                 aria-hidden="true"
                               >
                                 <span />
@@ -539,7 +543,7 @@ export function SettingsContent({
                               icon={<Blocks size={16} />}
                               label={manifest?.name ?? installation.extensionId}
                               description={installation.source.url}
-                              metadata={<>{manifest?.version ?? "Unresolved"} · {status}</>}
+                              metadata={<>{manifest?.version ?? "Unresolved"} · {{ active: "Active", disabled: "Disabled", loading: "Loading", failed: "Failed", incompatible: "Needs update — incompatible" }[status]}</>}
                               error={pluginError}
                               actions={(
                                 <>

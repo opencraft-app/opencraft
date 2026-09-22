@@ -37,6 +37,22 @@ the same `navigateToHome` intent. The transient floating Sidebar never renders a
 second Write action. Dynamic registration participates in the rail's measured
 width and macOS safe-area geometry instead of overlaying window chrome.
 
+Right Panel visibility and width mode are separate controls. The global Header
+toggle owns open/close. The panel toolbar owns explicit maximize/restore width;
+when the Shell must auto-expand the panel because split space is unavailable,
+it renders no duplicate `Back to chat` or ineffective width action.
+
+Frost is an optional core palette for the translucent desktop treatment. Its
+light Sidebar uses the fixed material `rgb(226 244 250 / 35%)`; this constant is
+intentionally independent of Codex's 70% client material. Theme identity remains
+orthogonal to Light/Dark/System appearance mode.
+
+Lavender is an optional opaque core palette derived from LightVela frontend's
+quiet purple vocabulary. It supplies a complete window, Sidebar, panel, input
+and popover hierarchy through the same semantic theme contract. It does not
+change component geometry, typography or density, and feature CSS must not
+special-case its theme ID.
+
 Header toolbar controls consume `toolbar.web.scss` and the corresponding
 `--*-toolbar-control` tokens. That contract owns control height, radius,
 typography, inline padding, content gap, icon and chevron scale, bounded menu

@@ -2503,7 +2503,6 @@ PLAYGROUND_RESTART_SELECTORS = (
     "app=ctl-service",
     "app=gateway-backend",
     "app=lightclaw-auth",
-    "app=nextgen-dashboard",
     "app=payment",
     "app=sandbox-api",
     "app=sandbox-worker-sharded",

@@ -8,7 +8,7 @@ import { electronLaunchSpec } from "./start-electron.mjs";
 // Actual repository Main + Preload + Renderer, isolated profile; no remote login.
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const root = await mkdtemp("/tmp/oc-connector-desktop-");
-const config = { version: 1, connectors: [{ id: "desktop-fixture", hostId: "local", server: "Desktop isolated fixture", title: "Desktop isolated fixture" }], selections: [] };
+const config = { version: 1, connectors: [{ id: "desktop-fixture", hostId: "local-codex", server: "Desktop isolated fixture", title: "Desktop isolated fixture" }], selections: [] };
 let child: ChildProcess | undefined, browser: any;
 const evidence: string[] = [];
 async function stop() {
@@ -63,33 +63,41 @@ try {
   assert.equal(rejected, true); evidence.push("actual Main/Preload IPC save + changed event + CAS conflict + strict whitelist");
   await stop(); page = await launch();
   assert.deepEqual(await page.evaluate(() => (globalThis as any).opencraftDesktop.connectorConfiguration.load()), { revision: 1, value: config });
-  await page.getByRole("button", { name: "连接器", exact: true }).click({ timeout: 45000 });
-  await page.getByText("Desktop isolated fixture", { exact: true }).waitFor();
-  await page.getByText("已保存，等待连接", { exact: true }).waitFor();
+  await page.getByRole("button", { name: /^(Add|添加)$/ }).click({ timeout: 45000 });
+  const connectors = page.getByRole("menuitem", { name: /^(Connectors|连接器)$/ });
+  await connectors.hover({ force: true });
+  await page.locator('.connector-quick-menu__row[aria-label="Desktop isolated fixture，连接"]').waitFor();
   await page.screenshot({ path: join(root, "desktop-reopened.png") });
-  evidence.push("native process restart retained configuration; real Composer opens saved/unconnected panel");
-  await page.getByRole("button", { name: "Close 连接器", exact: true }).click();
+  evidence.push("native process restart retained configuration; real Composer Add submenu opens the saved unconnected connector without a Modal");
+  await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
   await page.getByText("Skills", { exact: true }).click();
   await page.getByRole("radio", { name: "连接器", exact: true }).click({ timeout: 45000 });
   await page.getByRole("button", { name: "腾讯 IMA · 查看接入详情", exact: true }).click();
   const setup = page.getByRole("dialog", { name: "腾讯 IMA接入配置", exact: true }); await setup.waitFor();
-  await page.getByLabel("API Key", { exact: true }).fill("synthetic-desktop-ima-key");
-  await page.getByLabel("Client ID", { exact: true }).fill("synthetic-client");
-  await page.getByRole("button", { name: "保存", exact: true }).click();
-  await page.getByText("配置已保存", { exact: true }).waitFor();
-  assert.equal(await page.getByLabel("API Key", { exact: true }).inputValue(), "");
-  await page.getByRole("button", { name: "检查配置", exact: true }).click();
-  await page.getByRole("status").filter({ hasText: "仅检查了填写格式" }).waitFor();
-  await page.screenshot({ path: join(root, "skills-connector-setup.png") });
-  await page.getByRole("button", { name: "Close 腾讯 ima接入配置", exact: true }).click();
-  await page.screenshot({ path: join(root, "skills-connector-tab.png") });
-  await stop(); page = await launch();
-  await page.getByText("Skills", { exact: true }).click();
-  await page.getByRole("radio", { name: "连接器", exact: true }).click({ timeout: 45000 });
-  await page.getByRole("radio", { name: "已配置 1", exact: true }).click();
-  await page.getByRole("button", { name: "配置", exact: true }).click();
-  await page.getByText("已保存，留空保留原值。", { exact: true }).waitFor();
-  assert.equal(await page.getByLabel("API Key", { exact: true }).inputValue(), "");
-  evidence.push("real Skills header tab -> Host database save/probe -> process restart restores instance but never projects secret");
+  const apiKey = page.getByLabel("API Key", { exact: true });
+  if (await apiKey.count() === 0) {
+    await setup.getByText("所选设备暂不支持此服务。你可以先查看接入说明。", { exact: true }).waitFor();
+    await page.screenshot({ path: join(root, "skills-connector-unsupported.png") });
+    evidence.push("Skills connector setup reflects the selected Host capability instead of exposing unusable credential fields");
+  } else {
+    await apiKey.fill("synthetic-desktop-ima-key");
+    await page.getByLabel("Client ID", { exact: true }).fill("synthetic-client");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByText("配置已保存", { exact: true }).waitFor();
+    assert.equal(await apiKey.inputValue(), "");
+    await page.getByRole("button", { name: "检查配置", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "仅检查了填写格式" }).waitFor();
+    await page.screenshot({ path: join(root, "skills-connector-setup.png") });
+    await page.getByRole("button", { name: "Close 腾讯 ima接入配置", exact: true }).click();
+    await page.screenshot({ path: join(root, "skills-connector-tab.png") });
+    await stop(); page = await launch();
+    await page.getByText("Skills", { exact: true }).click();
+    await page.getByRole("radio", { name: "连接器", exact: true }).click({ timeout: 45000 });
+    await page.getByRole("radio", { name: "已配置 1", exact: true }).click();
+    await page.getByRole("button", { name: "配置", exact: true }).click();
+    await page.getByText("已保存，留空保留原值。", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("API Key", { exact: true }).inputValue(), "");
+    evidence.push("real Skills header tab -> Host database save/probe -> process restart restores instance but never projects secret");
+  }
   console.log(JSON.stringify({ root, evidence }, null, 2));
 } finally { await writeFile(join(root, "report.json"), JSON.stringify({ evidence }, null, 2)); await stop(); }

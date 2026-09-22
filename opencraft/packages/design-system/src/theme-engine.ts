@@ -1,3 +1,5 @@
+import { validateThemeOptions, type ThemeMaterialOptions, type ThemeSurfaceOverrides } from "./theme-options";
+
 // Restored and typed from Codex r822:
 // lazy/app-initial/build-theme-css-for-mode.js,
 // build-theme-css-properties.js, and height-class-mapper.js.
@@ -8,6 +10,8 @@ export interface RgbColor {
 }
 
 export interface CodexThemeDefinition {
+  surfaces?: ThemeSurfaceOverrides;
+  material?: ThemeMaterialOptions;
   accent: string;
   contrast: number;
   fonts: { code: string | null; ui: string | null };
@@ -101,6 +105,139 @@ export const velaThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
     },
     semanticColors: { diffAdded: "#07c160", diffRemoved: "#cf3d4c", skill: "#7b61ff" },
     surface: "#ffffff",
+  },
+};
+
+/**
+ * Frost owns its material constants. The 35% Sidebar alpha is intentionally
+ * not derived from Codex's 70% material so the themes can evolve independently.
+ */
+export const frostThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
+  dark: {
+    accent: "#66a9ff",
+    contrast: 56,
+    fonts: { code: null, ui: null },
+    ink: "#eef8fb",
+    opaqueWindows: false,
+    shellMaterial: {
+      mainSurfaceElevation: "var(--elevation-prominent)",
+      sidebarBackground: "rgb(20 37 46 / 35%)",
+      sidebarFilter: "blur(28px) saturate(145%)",
+      windowHighlight: "none",
+      windowMaterial: "#10191e",
+    },
+    semanticColors: { diffAdded: "#53c987", diffRemoved: "#ff7b75", skill: "#bca0f5" },
+    surface: "#152129",
+  },
+  light: {
+    accent: "#287ee8",
+    contrast: 43,
+    fonts: { code: null, ui: null },
+    ink: "#182126",
+    opaqueWindows: false,
+    shellMaterial: {
+      mainSurfaceElevation: "var(--elevation-prominent)",
+      sidebarBackground: "rgb(226 244 250 / 35%)",
+      sidebarFilter: "blur(28px) saturate(145%)",
+      windowHighlight: "none",
+      windowMaterial: "#f4f8fa",
+    },
+    semanticColors: { diffAdded: "#13834d", diffRemoved: "#c73d3a", skill: "#7956c8" },
+    surface: "#ffffff",
+  },
+};
+
+/**
+ * LightVela's restrained lavender language projected through the shared
+ * Workbench theme contract. The palette changes color and material only;
+ * typography, density and geometry remain owned by the Design System.
+ */
+export const lavenderThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
+  dark: {
+    accent: "#b09afc",
+    contrast: 56,
+    fonts: { code: null, ui: null },
+    ink: "#f1edf8",
+    opaqueWindows: true,
+    material: { window: "opaque", elevation: "soft" },
+    surfaces: {
+      window: "#17141f",
+      sidebar: "#1d1828",
+      panel: "#221d2e",
+      input: "#2a2338",
+      popover: "#2d263b",
+    },
+    semanticColors: {
+      diffAdded: "#61c58a",
+      diffRemoved: "#ff817b",
+      skill: "#c2adff",
+      warning: "#f4b36e",
+      error: "#ff9993",
+      success: "#8bd9a9",
+    },
+    surface: "#17141f",
+  },
+  light: {
+    accent: "#6d5ce7",
+    contrast: 44,
+    fonts: { code: null, ui: null },
+    ink: "#211d2b",
+    opaqueWindows: true,
+    material: { window: "opaque", elevation: "soft" },
+    surfaces: {
+      window: "#f8f6ff",
+      sidebar: "#f1ecff",
+      panel: "#ffffff",
+      input: "#f7f4ff",
+      popover: "#ffffff",
+    },
+    semanticColors: {
+      diffAdded: "#18844e",
+      diffRemoved: "#c6404c",
+      skill: "#8063dc",
+      warning: "#995d16",
+      error: "#b82f3d",
+      success: "#247648",
+    },
+    surface: "#f8f6ff",
+  },
+};
+
+/** ZCode-inspired surface hierarchy, expressed through OpenCraft's own theme contract. */
+export const zenCodeThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
+  light: {
+    accent: "#0b7fff",
+    contrast: 45,
+    fonts: { code: null, ui: null },
+    ink: "#262626",
+    surface: "#f8f8f8",
+    opaqueWindows: true,
+    material: { window: "opaque", elevation: "flat" },
+    surfaces: {
+      window: "#f8f8f8", sidebar: "#f0f0f0", panel: "#ffffff",
+      input: "#ffffff", popover: "#ffffff",
+    },
+    semanticColors: {
+      diffAdded: "#1e8a3e", diffRemoved: "#e03131", skill: "#7956b8",
+      warning: "#995200", error: "#b42318", success: "#1e783a",
+    },
+  },
+  dark: {
+    accent: "#4099ff",
+    contrast: 55,
+    fonts: { code: null, ui: null },
+    ink: "#d4d4d4",
+    surface: "#161616",
+    opaqueWindows: true,
+    material: { window: "opaque", elevation: "flat" },
+    surfaces: {
+      window: "#161616", sidebar: "#161616", panel: "#202020",
+      input: "#2b2b2b", popover: "#2b2b2b",
+    },
+    semanticColors: {
+      diffAdded: "#46bf72", diffRemoved: "#ff5c5c", skill: "#b69bf2",
+      warning: "#ffb26b", error: "#ff9999", success: "#87d9a4",
+    },
   },
 };
 
@@ -359,6 +496,7 @@ export function buildCodexThemeCssProperties(
   mode: CodexThemeMode,
   definition: CodexThemeDefinition = codexThemePalette[mode],
 ): ThemeCssProperties {
+  validateThemeOptions(definition.surfaces, definition.material);
   const theme = buildThemeVariant(definition, mode);
   const semantic = mode === "light" ? lightSemanticColors(theme) : darkSemanticColors(theme);
   const applicationMenu = interpolateColor(theme.surface, theme.ink, 0.02 + theme.contrast * 0.02);
@@ -366,7 +504,19 @@ export function buildCodexThemeCssProperties(
   const panelOpacity = (mode === "light" ? 0.18 : 0.03) + theme.contrast * (mode === "light" ? 0.008 : 0.03);
   // Color-only themes belong to the Client family by default. A theme opts
   // out only when its product surface has a genuinely different host model.
-  const shell = definition.shellMaterial ?? clientShellMaterial;
+  const surfaces = definition.surfaces ?? {};
+  const opaque = definition.material?.window === undefined ? definition.opaqueWindows : definition.material.window === "opaque";
+  const shell = { ...(definition.shellMaterial ?? clientShellMaterial) };
+  if (definition.material?.window !== undefined || (opaque && !definition.shellMaterial)) {
+    shell.sidebarFilter = opaque ? "none" : clientShellMaterial.sidebarFilter;
+    shell.windowHighlight = opaque ? "none" : clientShellMaterial.windowHighlight;
+    shell.sidebarBackground = opaque ? definition.surface : clientShellMaterial.sidebarBackground;
+    shell.windowMaterial = opaque ? definition.surface : clientShellMaterial.windowMaterial;
+  }
+  if (surfaces.window) shell.windowMaterial = surfaces.window;
+  if (surfaces.sidebar) shell.sidebarBackground = surfaces.sidebar;
+  if (definition.material?.elevation === "flat") shell.mainSurfaceElevation = "none";
+  if (definition.material?.elevation === "soft") shell.mainSurfaceElevation = clientShellMaterial.mainSurfaceElevation;
 
   return {
     "--codex-base-accent": definition.accent,
@@ -405,14 +555,15 @@ export function buildCodexThemeCssProperties(
     "--color-background-button-tertiary": semantic.buttonTertiaryBackground,
     "--color-background-button-tertiary-active": semantic.buttonTertiaryBackgroundActive,
     "--color-background-button-tertiary-hover": semantic.buttonTertiaryBackgroundHover,
-    "--color-background-control": semantic.controlBackground,
-    "--color-background-control-opaque": semantic.controlBackgroundOpaque,
+    "--color-background-input": surfaces.input ?? semantic.elevatedSecondaryOpaque,
+    "--color-background-control": surfaces.input ?? semantic.controlBackground,
+    "--color-background-control-opaque": surfaces.input ?? semantic.controlBackgroundOpaque,
     "--color-background-editor-opaque": rgbString(theme.editorBackground),
-    "--color-background-elevated-primary": semantic.elevatedPrimary,
-    "--color-background-elevated-primary-opaque": semantic.elevatedPrimaryOpaque,
+    "--color-background-elevated-primary": surfaces.popover ?? semantic.elevatedPrimary,
+    "--color-background-elevated-primary-opaque": surfaces.popover ?? semantic.elevatedPrimaryOpaque,
     "--color-background-elevated-secondary": semantic.elevatedSecondary,
     "--color-background-elevated-secondary-opaque": semantic.elevatedSecondaryOpaque,
-    "--color-background-panel": mix(theme.surface, panelBase, panelOpacity),
+    "--color-background-panel": surfaces.panel ?? mix(theme.surface, panelBase, panelOpacity),
     "--color-background-surface": definition.surface,
     "--color-background-surface-under": theme.surfaceUnder,
     "--color-border": semantic.border,

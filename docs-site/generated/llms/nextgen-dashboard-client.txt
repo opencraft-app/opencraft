@@ -1,8 +1,0 @@
-# nextgen-dashboard-client
-
-Component ID: nextgen-dashboard-client
-Source path: nextgen-dashboard-client
-Docs contract level: 0
-
-## Key documentation
-- nextgen-dashboard-client: nextgen-dashboard-client/README.md

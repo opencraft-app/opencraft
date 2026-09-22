@@ -1,5 +1,6 @@
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { isWindowAppearanceMessage, applyNativeWindowAppearance, type WindowAppearanceMessage } from "./window-appearance.js";
 import { execFileSync, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,7 @@ import {
 } from "./desktop-directories.js";
 import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
+import { createDesktopLocaleRuntime, requireDesktopLocale } from "./desktop-locale.js";
 import { installBrowserGuests } from "./browser-guests.js";
 import { createFilePrivateStorage } from "./private-storage.js";
 import { BrowserPermissionPolicy } from "./browser-permissions.js";
@@ -26,6 +28,8 @@ import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
 import { DesktopConnectorConfigurationStore } from "./connector-configuration-store.js";
 import { SqliteDocumentStore as DesktopExtensionDataStore } from "@opencraft/document-storage/sqlite";
 import { registerExtensionDataIpc } from "./extension-data-ipc.js";
+import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
+import { resolveCodexExecutable } from "./codex-executable.js";
 
 import {
   BrowserWindow,
@@ -80,6 +84,7 @@ const daemonBridges = new Set<{ close(): void }>();
 let desktopSessions!: ReturnType<typeof createDesktopSessionStore>;
 let sqliteDebugReader!: SqliteDebugReader;
 let uiPreferences!: DesktopUiPreferenceStore;
+const desktopLocale = createDesktopLocaleRuntime();
 let connectorConfiguration: DesktopConnectorConfigurationStore | null = null;
 const connectorStore = () => connectorConfiguration ??= new DesktopConnectorConfigurationStore(join(desktopPaths.userDataDirectory, "opencraft-connectors.sqlite"));
 let extensionData: DesktopExtensionDataStore | null = null;
@@ -224,6 +229,14 @@ ipcMain.handle("opencraft:connector-configuration-save", (event, revision: unkno
   const result = connectorStore().compareAndSet(revision, value);
   if (result.updated) event.sender.send("opencraft:connector-configuration-changed");
   return result;
+});
+ipcMain.handle("opencraft:system-locale", event => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted locale caller");
+  return app.getPreferredSystemLanguages()[0] ?? app.getLocale();
+});
+ipcMain.handle("opencraft:application-locale", (event, value: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted locale caller");
+  return desktopLocale.update({ localeOverride: requireDesktopLocale(value) });
 });
 ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
@@ -466,29 +479,10 @@ const APP_SHELL_HEADER_HEIGHT = 46;
 const MACOS_WINDOW_BUTTON_SIZE = 14;
 const MACOS_WINDOW_BUTTON_X = 16;
 
-type WindowThemeSource = "system" | "light" | "dark";
-type WindowResolvedTheme = "light" | "dark";
-
-interface WindowAppearanceMessage {
-  readonly themeSource: WindowThemeSource;
-  readonly resolvedTheme: WindowResolvedTheme;
-}
-
 let currentWindowAppearance: WindowAppearanceMessage = {
   themeSource: "system",
   resolvedTheme: nativeTheme.shouldUseDarkColors ? "dark" : "light",
 };
-
-function isWindowAppearanceMessage(value: unknown): value is WindowAppearanceMessage {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<WindowAppearanceMessage>;
-  return (
-    (candidate.themeSource === "system"
-      || candidate.themeSource === "light"
-      || candidate.themeSource === "dark")
-    && (candidate.resolvedTheme === "light" || candidate.resolvedTheme === "dark")
-  );
-}
 
 function getMacWindowButtonPosition(windowZoom = 1): { x: number; y: number } {
   return {
@@ -515,23 +509,7 @@ function applyWindowAppearance(
   if (window.isDestroyed()) return;
   currentWindowAppearance = appearance;
   nativeTheme.themeSource = appearance.themeSource;
-  if (process.platform === "darwin") {
-    const useOpaqueSurface = !window.isFocused();
-    window.setBackgroundColor(
-      useOpaqueSurface
-        ? appearance.resolvedTheme === "dark"
-          ? DARK_OPAQUE_WINDOW_BACKGROUND
-          : LIGHT_OPAQUE_WINDOW_BACKGROUND
-        : TRANSPARENT_WINDOW_BACKGROUND,
-    );
-    window.setVibrancy(useOpaqueSurface ? null : "menu");
-    return;
-  }
-  window.setBackgroundColor(
-    appearance.resolvedTheme === "dark"
-      ? DARK_OPAQUE_WINDOW_BACKGROUND
-      : LIGHT_OPAQUE_WINDOW_BACKGROUND,
-  );
+  applyNativeWindowAppearance(window, appearance, process.platform);
 }
 
 ipcMain.on("vela:set-window-appearance", (event, payload: unknown) => {
@@ -568,8 +546,8 @@ async function createMainWindow(): Promise<void> {
     title: "OpenCraft",
     width: 1440,
     height: 960,
-    minWidth: 760,
-    minHeight: 560,
+    minWidth: workbenchWindowMetrics.minimumWidth,
+    minHeight: workbenchWindowMetrics.minimumHeight,
     // AppKit owns the material plane while the window is active. The focus
     // state machine below swaps it for an opaque, theme-matched backing before
     // macOS captures minimize/restore snapshots.
@@ -592,10 +570,8 @@ async function createMainWindow(): Promise<void> {
           symbolColor: "#686868",
           height: 46,
         },
-    // Codex lets AppKit make the primary window key in the same transaction
-    // that creates the hidden-inset titlebar. Deferring the first show until
-    // renderer readiness lets the native traffic-light subviews miss that
-    // transaction on Electron 44 and they disappear from minimize snapshots.
+    // Let AppKit establish the hidden-inset titlebar and key-window lifecycle
+    // from the first frame. Renderer readiness never owns native window chrome.
     show: true,
     webPreferences: {
       preload: join(app.getAppPath(), "dist-host/preload.cjs"),
@@ -688,6 +664,7 @@ const lifecycle = new DesktopLifecycle({
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
+    desktopLocale.dispose();
     await nativeSpeech.close();
     uiPreferences.close();
     connectorConfiguration?.close();
@@ -755,9 +732,20 @@ async function bootstrap(): Promise<void> {
     dataDirectory: desktopPaths.dshDataDirectory,
     modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || desktopPaths.productHomeDirectory,
     skillsDirectory: process.env.OPENCRAFT_SKILLS_DIRECTORY?.trim() || join(desktopPaths.productHomeDirectory, "skills"),
+    codexExecutable: resolveCodexExecutable({
+      explicit: process.env.OPENCRAFT_CODEX_EXECUTABLE,
+      path: process.env.PATH,
+      homeDirectory: homedir(),
+    }),
+    codexDataDirectory: desktopPaths.codexDataDirectory,
+    nativeCodexHomeDirectory: process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"),
     executable: process.execPath,
   });
-  tray = createDesktopTray({ open: () => { void lifecycle.show().catch(console.error); }, quit: () => { void lifecycle.quit(); } });
+  let localeOverride: unknown;
+  try { localeOverride = JSON.parse(uiPreferences.load("locale.override")?.valueJson ?? '""'); } catch { /* Invalid preferences use system locale. */ }
+  await desktopLocale.update({ localeOverride: typeof localeOverride === "string" ? localeOverride : null,
+    localeSource: "SYSTEM", systemLocale: app.getPreferredSystemLanguages()[0] ?? app.getLocale() });
+  tray = createDesktopTray({ open: () => { void lifecycle.show().catch(console.error); }, quit: () => { void lifecycle.quit(); } }, desktopLocale);
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const trustedRenderer = rendererOrigin !== null
       && webContents === mainWebContents

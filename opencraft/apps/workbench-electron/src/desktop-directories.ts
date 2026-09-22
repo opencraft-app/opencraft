@@ -18,6 +18,7 @@ export interface DesktopDirectoryPlan {
   readonly legacyUserDataDirectory: string | null;
   readonly runtimeDirectory: string;
   readonly dshDataDirectory: string;
+  readonly codexDataDirectory: string;
   readonly daemonEndpoint: string;
   readonly daemonTokenPath: string;
   readonly productHomeDirectory: string;
@@ -58,6 +59,7 @@ function withUserDataDirectory(plan: DesktopDirectoryPlan, userDataDirectory: st
     userDataDirectory,
     runtimeDirectory: join(userDataDirectory, "runtime"),
     dshDataDirectory: join(userDataDirectory, "dsh"),
+    codexDataDirectory: join(userDataDirectory, "codex"),
     daemonEndpoint: endpointFor(userDataDirectory, plan.platform),
     daemonTokenPath: join(userDataDirectory, "opencraft-daemon.token"),
     migrationAllowed: false,
@@ -191,6 +193,7 @@ export function resolveDesktopDirectoryPlan(input: {
     legacyUserDataDirectory,
     runtimeDirectory: join(userDataDirectory, "runtime"),
     dshDataDirectory: join(userDataDirectory, "dsh"),
+    codexDataDirectory: join(userDataDirectory, "codex"),
     daemonEndpoint,
     daemonTokenPath: join(userDataDirectory, "opencraft-daemon.token"),
     productHomeDirectory: input.requestedProductHomeDirectory?.trim()

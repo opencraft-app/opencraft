@@ -246,6 +246,9 @@ master 源码
 - Referral Attribution 运营重置依赖 schema `000003_attribution_reset_audit`、Referral API、CTL 精确免费积分撤销
   和 Admin Gateway `/admin/api/referral` 路由同时就绪。发布顺序必须是 migration → CTL → Referral → Admin Gateway；
   缺任一阶段时管理入口保持不可用，不能退化为直接 SQL 删除。
+- Referral 已纳入标准 `service-release` 生产编排。`master` 构建进入生产候选后，由 Referral 主流水线先对
+  `shprod` / `sgprod` 执行真实 schema 探测并创建相应 DB migration 子流水线，migration/readiness 通过后再创建
+  各环境 GitOps promote；生产审批和 Argo Sync 仍保持人工，不得绕过主流水线长期直接触发通用 migration。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
@@ -451,6 +454,21 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
 - SSM manifest 应声明运行时必填键。重新导出时缺少 required key 必须失败，避免后续 promotion 静默删除 live 已有凭据。
+
+## nextgen-dashboard 下线的 GitOps 处置（2026-09-22）
+
+- admin-gateway 五个环境（`shprod`、`sgprod`、`beijing-sandbox`、`beijing-sandbox-2`、`sandbox-bj-7`）的
+  deploy-facing `config.yaml` 已移除 `/admin` → `nextgen-dashboard` 的 upstream 路由；`/admin/gateway` 与
+  `/` 兜底仍指向 gateway-dashboard，未知 `/admin` 子路径改由 gateway-dashboard 应答。该变更在
+  admin-gateway 的 Argo Application 同步后才生效，源码合入不等于发布。
+- `nextgen-dashboard` 源码与 `nextgen-dashboard-client/` 客户端均已删除；deploy-facing 的
+  `argocd/services/nextgen-dashboard/`、4 个 catalog 描述符、6 个环境的 SOPS secrets、
+  SSM manifest（含 sandbox-jp-1 runtime 清单段）、`.ci/nextgen-dashboard.yml` CI 流水线与
+  guards manifest 条目已在同日下线变更中移除。
+- 合入生效后 ApplicationSet 不再生成 nextgen-dashboard Application，Argo 将移除对应 workload；
+  必须确认 `user-auth` 与各 playground namespace 中 nextgen-dashboard 的 workload、Ingress 与
+  Secret 消失。BK-CI 侧同名流水线如仍存在应停用或删除；SSM 中的
+  `mono-*-nextgen-dashboard-runtime-secrets` 在确认无消费后按 Secret 交付顺序清理。
 - SOPS 每次加密的密文可以不同。判断 Secret 是否一致必须在受控环境中比较解密后的键集合和值，或比较逐键安全摘要；仅看到密文 diff、MR 已合入或 Argo `Healthy` 都不能证明语义一致。
 - live hotfix 后，即使业务已经恢复，也必须补齐 SSM、`master` 和 `gitops`。执行 Argo Sync 前先确认 deploy-facing 明文语义与 live 一致，否则 Sync 可能把正确的 live Secret 覆盖成旧值。
 - Secret 只更新对象数据时，Pod 不会自动重启。需要运行进程读取新值时应单独执行受控 rollout，并分别验证 Secret、Pod 环境和业务请求；不要把 Secret `Synced` 等同于进程已生效。

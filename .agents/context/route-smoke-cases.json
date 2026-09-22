@@ -30,7 +30,6 @@
     {"id": "service-route-gateway-dashboard", "query": "修改 gateway-dashboard/src/App.tsx", "required_pack_ids": ["control-plane-ops", "service-gateway-dashboard"]},
     {"id": "service-route-infra-pulumi", "query": "修改 infra_pulumi/cmd/infractl/main.go", "required_pack_ids": ["release-gitops", "service-infra-pulumi"]},
     {"id": "service-route-new-api", "query": "修改 new-api/relay/channel.go", "required_pack_ids": ["upstream-subtrees", "service-new-api"]},
-    {"id": "service-route-nextgen-dashboard", "query": "修改 nextgen-dashboard/internal/httpapi/router.go", "required_pack_ids": ["service-nextgen-dashboard"]},
     {"id": "service-route-payment", "query": "修改 payment/internal/httpapi/callback.go", "required_pack_ids": ["subscription-entitlements", "service-payment"]},
     {"id": "service-route-sandbox", "query": "修改 sandbox/internal/service/pool.go", "required_pack_ids": ["control-plane-ops", "service-sandbox"]},
     {"id": "service-route-service-gateway", "query": "修改 service-gateway/internal/gateway/config.go", "required_pack_ids": ["identity-access", "agent-gateway-runtime", "service-service-gateway"]},

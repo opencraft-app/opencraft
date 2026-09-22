@@ -49,7 +49,6 @@
 - `.ci/ctl.yml`
 - `.ci/gateway-dashboard.yml`
 - `.ci/lightclaw-auth.yml`
-- `.ci/nextgen-dashboard.yml`
 - `.ci/payment.yml`
 - `.ci/sandbox.yml`
 - `.ci/service-gateway.yml`
@@ -927,7 +926,6 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `gitops-promotion.yml`
 - `lightclaw-auth.yml`
 - `mr-placeholder.yml`
-- `nextgen-dashboard.yml`
 - `payment.yml`
 - `sandbox.yml`
 - `service-gateway.yml`

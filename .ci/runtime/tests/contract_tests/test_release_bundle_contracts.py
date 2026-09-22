@@ -38,7 +38,6 @@ PLAYGROUND_BUILDABLE_BUNDLES = {
     "credit",
     "frontend",
     "gateway-dashboard",
-    "nextgen-dashboard",
     "payment",
     "sandbox",
     "service-gateway",
@@ -55,7 +54,6 @@ AUTO_RELEASE_WORKFLOWS = {
     "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod,sgprod", "ctl"),
     "credit": (".ci/credit.yml", "beijing-sandbox,shprod,sgprod", "credit"),
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod,sgprod", "gateway-dashboard"),
-    "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod,sgprod", "nextgen-dashboard"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod,sgprod", "payment"),
     "sandbox": (".ci/sandbox.yml", "beijing-sandbox,shprod,sgprod", "sandbox"),
     "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod,sgprod", "service-gateway"),
@@ -76,12 +74,6 @@ TOKYO_RELEASE_WORKFLOWS = {
         "env",
     ),
     "user-auth": (".ci/tokyo-lightclaw-auth.yml", ".ci/lightclaw-auth.yml", "lightclaw-auth", "env"),
-    "nextgen-dashboard": (
-        ".ci/tokyo-nextgen-dashboard.yml",
-        ".ci/nextgen-dashboard.yml",
-        "nextgen-dashboard",
-        "env",
-    ),
     "payment": (".ci/tokyo-payment.yml", ".ci/payment.yml", "payment", "env"),
     "sandbox": (".ci/tokyo-sandbox.yml", ".ci/sandbox.yml", "sandbox", "env"),
     "service-gateway": (
@@ -105,7 +97,6 @@ BUSINESS_WORKFLOWS = {
     ".ci/frontend.yml",
     ".ci/gateway-dashboard.yml",
     ".ci/lightclaw-auth.yml",
-    ".ci/nextgen-dashboard.yml",
     ".ci/payment.yml",
     ".ci/sandbox.yml",
     ".ci/service-gateway.yml",
@@ -121,6 +112,7 @@ PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/credit.yml",
     ".ci/lightclaw-auth.yml",
     ".ci/payment.yml",
+    ".ci/referral.yml",
     ".ci/sandbox.yml",
     ".ci/subscription.yml",
     ".ci/trade.yml",
@@ -1379,14 +1371,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 item = next(item for item in ssm["items"] if item["id"] == "credit-runtime-secrets")
                 self.assertEqual(set(item["required_keys"]), required_secret_keys)
 
-    def test_referral_pipeline_keeps_manual_release_and_environment_boundaries(self) -> None:
+    def test_referral_pipeline_uses_standard_prod_orchestration_and_environment_boundaries(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
-        self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
 
         manifest = load_manifest()
         referral = load_bundle(manifest, "referral", "beijing-sandbox")
@@ -1740,8 +1735,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
         self.assertEqual(manifest["defaults"]["version_id"], "SSM_Current")
         items = manifest["items"]
-        self.assertEqual(len(items), 16)
-        self.assertEqual(len({item["id"] for item in items}), 16)
+        self.assertEqual(len(items), 15)
+        self.assertEqual(len({item["id"] for item in items}), 15)
         for item in items:
             with self.subTest(item=item["id"]):
                 self.assertTrue(item["secret_name"].startswith("mono-sandbox-jp-1-"))
@@ -1760,7 +1755,6 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "ctl-conf-rewrite.sops.yaml",
             "ctl-runtime-secrets.sops.yaml",
             "gateway-dashboard-runtime-secrets.sops.yaml",
-            "nextgen-dashboard-runtime-secrets.sops.yaml",
             "payment-runtime-secrets.sops.yaml",
             "sandbox-runtime-secrets.sops.yaml",
             "service-gateway-runtime-secrets.sops.yaml",
@@ -3847,8 +3841,6 @@ refresh_skus http://unused img-jhb "$pools_json"
     def test_frontend_template_consumers_keep_frontend_prod_reviewers(self) -> None:
         frontend_reviewers = '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
         workflows = [
-            ".ci/nextgen-dashboard.yml",
-            ".ci/tokyo-nextgen-dashboard.yml",
             ".ci/tokyo-gateway-dashboard.yml",
             ".ci/tokyo-frontend.yml",
         ]

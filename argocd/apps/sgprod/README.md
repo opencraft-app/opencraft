@@ -50,7 +50,6 @@
   - `sgprod-frontend`
   - `sgprod-gateway-dashboard`
   - `sgprod-lightclaw-auth`
-  - `sgprod-nextgen-dashboard`（项目已预置；尚无 leaf app）
   - `sgprod-payment`
   - `sgprod-referral`
   - `sgprod-sandbox`
@@ -63,7 +62,6 @@
 
 当前已有 deploy-facing 目录但尚未接入 live leaf app：
 
-- `nextgen-dashboard`
 
 新增/修改新加坡 leaf app 时，至少要同时确认：
 

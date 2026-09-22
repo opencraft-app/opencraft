@@ -14,6 +14,8 @@ export interface DshHostCapability {
 type Send = (frame: Record<string, unknown>) => void;
 interface Registration { owner: DshExecutionOwner; send: Send; specs: readonly DynamicToolSpec[]; capabilities: readonly DshHostCapability[] }
 interface Pending { registration: Registration; threadId: string; reject: (error: Error) => void; respond: (result: unknown, error?: unknown) => void }
+const CONNECTOR_NAMESPACE = "connectors";
+const CONNECTOR_CALL_TOOL = "call_tool";
 
 /** Host half of HyperNode capability-request/result/cancel, addressed only to
  * the connection that registered the capability for this execution's Thread.
@@ -21,8 +23,10 @@ interface Pending { registration: Registration; threadId: string; reject: (error
 export class DshCapabilityBroker {
   private registrations = new Map<string, Registration>();
   private pending = new Map<string, Pending>();
+  private readonly revokedOwners = new WeakSet<DshExecutionOwner>();
   constructor(private readonly timeoutMs?: number) {}
   register(threadId: string, owner: DshExecutionOwner, specs: unknown, send: Send): readonly DshHostCapability[] {
+    if (this.revokedOwners.has(owner)) throw new Error("Capability owner has disconnected");
     const previous = this.registrations.get(threadId);
     if (previous && previous.owner !== owner) throw new Error("Thread capabilities belong to another connection");
     const capabilities = normalizeCapabilities(specs);
@@ -36,6 +40,12 @@ export class DshCapabilityBroker {
     return !!previous && previous.owner === owner && isDeepStrictEqual(previous.capabilities, normalizeCapabilities(specs));
   }
   list(threadId: string): readonly DshHostCapability[] { return this.registrations.get(threadId)?.capabilities ?? []; }
+  release(threadId: string, owner: DshExecutionOwner): boolean {
+    if (this.registrations.get(threadId)?.owner !== owner) return false;
+    this.cancelThread(threadId, "Capability lease released");
+    this.registrations.delete(threadId);
+    return true;
+  }
   /** Fork inherits wire declarations, not normalized invocation descriptors or reply ownership. */
   specs(threadId: string, owner: DshExecutionOwner): readonly DynamicToolSpec[] | undefined {
     const registration = this.registrations.get(threadId);
@@ -92,6 +102,7 @@ export class DshCapabilityBroker {
     for (const call of [...this.pending.values()]) if (call.threadId === threadId) call.reject(new Error(reason));
   }
   disconnect(owner: DshExecutionOwner): void {
+    this.revokedOwners.add(owner);
     for (const [threadId, registration] of this.registrations) if (registration.owner === owner) {
       this.cancelThread(threadId, "Capability owner disconnected");
       this.registrations.delete(threadId);
@@ -114,7 +125,7 @@ export function normalizeCapabilities(specs: unknown): DshHostCapability[] {
       if (ids.has(id)) throw new Error("Duplicate dynamic capability: " + id);
       ids.add(id);
       // Internal Host → engine contract, not a model-provided deadline.
-      const timeoutMs = namespace === null && tool.name === "connectors_call_tool" ? 150_000 : 10_000;
+      const timeoutMs = namespace === CONNECTOR_NAMESPACE && tool.name === CONNECTOR_CALL_TOOL ? 150_000 : 10_000;
       capabilities.push({ id, namespace, name: tool.name, description: tool.description, inputSchema: structuredClone(tool.inputSchema), timeoutMs });
     };
     for (const spec of specs) {

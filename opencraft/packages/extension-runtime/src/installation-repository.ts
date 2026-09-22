@@ -1,4 +1,5 @@
 import { Context, Service, type Plugin } from "@deepseek-ai/cordis";
+import { parseExtensionArtifact, type ExtensionArtifact } from "./artifact";
 import {
   isExtensionId,
   parseExtensionManifestV1,
@@ -21,6 +22,8 @@ export interface ExtensionInstallationRecord {
   readonly updatedAt: number;
   /** Presentation cache only; the loaded module manifest remains authoritative. */
   readonly lastResolvedManifest?: ExtensionManifestV1;
+  readonly artifact?: ExtensionArtifact;
+  readonly artifactRef?: string;
 }
 
 export interface ExtensionInstallationLoadError {
@@ -62,6 +65,9 @@ export function normalizeInstallation(value: unknown): ExtensionInstallationReco
     throw new TypeError("Extension installation has an invalid extensionId");
   }
   const source = record(input.source);
+  if (input.artifactRef !== undefined && (typeof input.artifactRef !== "string" || !/^[a-f0-9]{64}$/.test(input.artifactRef))) {
+    throw new TypeError("Invalid installation artifact reference");
+  }
   if (source.kind !== "module-url") throw new TypeError("Unsupported extension installation source");
   if (typeof input.enabled !== "boolean") throw new TypeError("Extension installation requires enabled");
   if (!Number.isFinite(input.installedAt) || !Number.isFinite(input.updatedAt)) {
@@ -80,6 +86,8 @@ export function normalizeInstallation(value: unknown): ExtensionInstallationReco
     installedAt: input.installedAt as number,
     updatedAt: input.updatedAt as number,
     ...(lastResolvedManifest === undefined ? {} : { lastResolvedManifest }),
+    ...(input.artifact === undefined ? {} : { artifact: parseExtensionArtifact(input.artifact) }),
+    ...(input.artifactRef === undefined ? {} : { artifactRef: input.artifactRef as string }),
   });
 }
 

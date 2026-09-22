@@ -6,6 +6,7 @@ import {
   type ProfileSkillsJournalStorage,
 } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/profile-skills-handler";
 import { dispatchAppServerRequest } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/protocol";
+import { BrowserHermesAppServerBridge } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/index";
 
 class MemoryStorage implements ProfileSkillsJournalStorage {
   private readonly values = new Map<string, string>();
@@ -23,6 +24,7 @@ class FakeDashboardClient {
     if (input.startsWith("/api/skills?")) {
       return [{ name: "weather", description: "Weather", category: "utility", enabled: true, provenance: "hub", usage: 3 }] as T;
     }
+    if (input.startsWith("/api/skills/content?")) return { name: "weather", path: "/home/agent/.hermes/profiles/sales/skills/weather/SKILL.md", content: "private body not copied into catalog" } as T;
     if (input.startsWith("/api/skills/hub/sources?")) {
       return {
         sources: [],
@@ -118,4 +120,37 @@ test("Profile Skills rejects implicit or Bot-shaped scope", async () => {
     /explicit Profile scope/u,
   );
   handler.dispose();
+});
+
+test("Composer Skills use explicit Profile and authoritative content path without leaking body", async () => {
+  const handler = new HermesDashboardProfileSkillsHandler("journal", new MemoryStorage());
+  const client = new FakeDashboardClient();handler.attach(client,"test-token");
+  const result = await handler.listComposerSkills("sales","/workspace");
+  assert.equal(result.data[0]?.skills[0]?.path,"/home/agent/.hermes/profiles/sales/skills/weather/SKILL.md");
+  assert.equal(JSON.stringify(result).includes("private body"),false);
+  assert.ok(client.requests.every(request=>request.input.includes("profile=sales")));
+  await handler.validateComposerSkills("sales",[{name:"weather",path:result.data[0]!.skills[0]!.path}]);
+  await assert.rejects(handler.validateComposerSkills("sales",[{name:"weather",path:"/other/SKILL.md"}]),/path changed/u);
+  await assert.rejects(handler.validateComposerSkills("sales",[{name:"deleted",path:"/other/SKILL.md"}]),/no longer enabled/u);
+  handler.dispose();
+});
+
+test("missing remote metadata is reported instead of guessing a filesystem path", async () => {
+  const handler = new HermesDashboardProfileSkillsHandler("journal", new MemoryStorage());
+  handler.attach({fetchJson:async <T>(path:string)=> (path.startsWith("/api/skills?")?[{name:"weather",enabled:true}]:{name:"weather",content:"text"}) as T, close:()=>{}},"test-token");
+  const result=await handler.listComposerSkills("sales","/workspace");
+  assert.equal(result.data[0]!.skills.length,0);assert.equal(result.data[0]!.errors.length,1);
+  handler.dispose();
+});
+
+test("real Hermes bridge scopes Composer discovery and rejects stale Skill before gateway submission", async () => {
+  const handler=new HermesDashboardProfileSkillsHandler("journal",new MemoryStorage());
+  handler.attach(new FakeDashboardClient(),"test-token");
+  class Socket extends EventTarget { readyState=1; send(){throw Error("Gateway must not be called for rejected Skill")};close(){} }
+  const bridge=new BrowserHermesAppServerBridge(new Socket() as any,{profileScope:"sales",defaultCwd:"/workspace",profileSkills:handler});
+  const result=await bridge.request("skills/list",{cwds:["/untrusted-root"]}) as any;
+  assert.equal(result.data[0].cwd,"/workspace");
+  assert.equal(result.data[0].skills[0].name,"weather");
+  await assert.rejects(bridge.request("turn/start",{threadId:"session",input:[{type:"skill",name:"weather",path:"/wrong/SKILL.md"}]}),/path changed/u);
+  bridge.dispose();handler.dispose();
 });

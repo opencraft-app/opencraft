@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./demo": "./src/demo-seed.ts",
+    "./window-metrics": "./src/window-metrics.ts",
     "./connectors/configuration": "./src/connectors/configuration.ts"
   },
   "scripts": {

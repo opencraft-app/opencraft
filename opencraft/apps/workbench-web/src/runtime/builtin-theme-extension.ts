@@ -1,7 +1,7 @@
-import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
+import type { OpenCraftExtensionDefinition } from "@opencraft/extension-contract";
 
 /** A real public contribution that exercises registration, selection and unload. */
-export const BuiltinThemePackExtension: TrustedExtensionDefinition = {
+export const BuiltinThemePackExtension: OpenCraftExtensionDefinition = {
   manifest: {
     manifestVersion: 1,
     id: "vela.theme-pack",

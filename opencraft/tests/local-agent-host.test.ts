@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,6 +41,42 @@ test("local product project RPC persists across Host restart without a reachable
     assert.deepEqual((await request(socket, 3, "project/list", {})).data, [created.project]);
     assert.equal((await request(socket, 4, "project/create", { name: "Workspace", roots: [{ path: root }], idempotencyKey: "test-project" })).project.id, created.project.id);
   } finally { socket?.close(); await host?.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("local Agent Host projects filesystem responses into the AppServer v2 contract", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-filesystem-contract-test-"));
+  let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined;
+  let socket: WebSocket | undefined;
+  try {
+    const folder = join(directory, "folder");
+    const file = join(directory, "example.txt");
+    await mkdir(folder);
+    await writeFile(file, "hello");
+    host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1" });
+    socket = await connect(host.websocketUrl);
+
+    const response = await request(socket, 10, "fs/readDirectory", { path: directory });
+    assert.deepEqual(
+      response.entries.sort((left: { fileName: string }, right: { fileName: string }) => left.fileName.localeCompare(right.fileName)),
+      [
+        { fileName: "example.txt", isDirectory: false, isFile: true },
+        { fileName: "folder", isDirectory: true, isFile: false },
+      ],
+    );
+    const metadata = await request(socket, 11, "fs/getMetadata", { path: file });
+    assert.equal(metadata.isFile, true);
+    assert.equal(metadata.isDirectory, false);
+    assert.equal(metadata.isSymlink, false);
+    assert.equal(typeof metadata.createdAtMs, "number");
+    assert.equal(typeof metadata.modifiedAtMs, "number");
+    assert.deepEqual(await request(socket, 12, "fs/readFile", { path: file }), {
+      dataBase64: Buffer.from("hello").toString("base64"),
+    });
+  } finally {
+    socket?.close();
+    await host?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 async function fakeDsh() {
@@ -272,6 +308,17 @@ function request(socket: WebSocket, id: number, method: string, params: unknown 
     socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
   });
 }
+
+test("a logical client can reconnect on the same physical socket after revocation", async () => {
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url });
+  const socket = await connect(host.websocketUrl);
+  try {
+    await request(socket, 801, "thread/resume", { threadId: "s1" });
+    socket.send(JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }));
+    await request(socket, 802, "thread/resume", { threadId: "s1" });
+  } finally { socket.close(); await host.close(); await dsh.close(); }
+});
 
 test("Local Agent Host advertises and owns attachment staging", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-host-attachments-"));

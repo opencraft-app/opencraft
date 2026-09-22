@@ -1,4 +1,5 @@
 // Semantically restored from the r1442 AppShell left-panel ownership model.
+import { useIntl } from "@opencraft/i18n/react";
 import {
   ChevronDown,
   Settings,
@@ -102,6 +103,7 @@ export function Sidebar({
   threadCapabilities,
   pendingTitle,
 }: SidebarProps) {
+  const intl = useIntl();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
   const selectedThreadKey =
@@ -135,7 +137,7 @@ export function Sidebar({
     <SidebarEntityDndCoordinator items={bots} layout={sidebarLayout}>
       <div className="sidebar-panel" data-app-shell-focus-area="left-panel">
       <nav className="sidebar-navigation" aria-label="Primary">
-        <SidebarNavigationItem icon={<SquarePen size={15} />} title="Start" onInvoke={onNewTask} />
+        <SidebarNavigationItem icon={<SquarePen size={15} />} title={intl.formatMessage({ id: "sidebar.start", defaultMessage: "Start" })} onInvoke={onNewTask} />
         {primaryActions.map((action) => (
           <SidebarNavigationItem
             key={action.id}
@@ -160,7 +162,7 @@ export function Sidebar({
         ))}
 
         <section className="sidebar-tasks" aria-label="Tasks">
-          {activityGroups.length === 0 ? <div className="sidebar-activity-empty">No tasks yet</div> : null}
+          {activityGroups.length === 0 ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
           <div className="sidebar-activity-list">
             {activityGroups.map(group => (
               <section className="sidebar-activity-group" key={group.key} aria-label={group.label}>
@@ -231,7 +233,7 @@ export function Sidebar({
             onInvoke={action.onInvoke}
           />
         ))}
-          <SidebarNavigationItem icon={<Settings size={15} />} title="Settings" onInvoke={onOpenSettings} />
+          <SidebarNavigationItem icon={<Settings size={15} />} title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })} onInvoke={onOpenSettings} />
       </div> : null}
       </div>
     </SidebarEntityDndCoordinator>

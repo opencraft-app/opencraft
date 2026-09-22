@@ -145,7 +145,7 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
   assert.match(navigationSource, /config\.account\?\.onOpen\(\)/u);
   assert.doesNotMatch(navigationSource, /Keep in sidebar|Unpin from sidebar/u);
   assert.match(navigationSource, /dispatch\(\{ type: "pin", surface, pinned: true \}\)/u);
-  assert.match(navigationContentSource, /return "Sign in"/u);
+  assert.match(navigationContentSource, /id: "account\.signIn", defaultMessage: "Sign in"/u);
   assert.match(navigationSource, /useTransform\(\s*\[progress, expandedWidth\]/u);
   assert.match(navigationSource, /data-surface=\{surface\}/u);
   assert.match(navigationSource, /useUiPreferencesRuntime\(\)/u);

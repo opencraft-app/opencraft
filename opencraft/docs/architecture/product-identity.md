@@ -26,6 +26,7 @@ OpenCraft follows the same model without copying either product's filenames.
 | Preview application state | `~/Library/Application Support/OpenCraft Preview` | Electron Preview Main | Durable but isolated from production |
 | Managed runtime root | `<desktop-state>/runtime` | Electron Main | Stable cwd and runtime-owned files |
 | DSH state | `<desktop-state>/dsh` | Local Agent Host / DSH | Durable engine state |
+| Codex state | `<desktop-state>/codex` | OpenCraft Daemon / Codex Engine Adapter | Account Pool metadata, private credentials and isolated native runtime state |
 | Daemon endpoint and token | `<desktop-state>/opencraft-daemon.sock` and `opencraft-daemon.token` | Electron Main / Daemon | Runtime coordination; never shared with Preview |
 | Product home | `OPENCRAFT_HOME`, otherwise `~/.opencraft` | OpenCraft product services | Portable product configuration, Projects, Skills and model definitions |
 | Project workspace | Explicit Project/Thread cwd | Project catalog / Thread | User-owned files |

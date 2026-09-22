@@ -20,16 +20,19 @@ const launch = async () => {
   page.setDefaultTimeout(30_000);
   page.on("pageerror", (error: Error) => errors.push(error.message));
   await page.locator(".app-shell-root").waitFor();
-  const chat = page.getByRole("button", { name: "Chat", exact: true });
-  if (await chat.isVisible()) await chat.click();
-  try {
-    await page.getByRole("button", { name: "New chat", exact: true }).waitFor();
-  } catch (error) {
-    console.log("DESKTOP_DIAGNOSTIC", page.url(), await page.locator("body").innerText());
-    throw error;
+  const projectTrigger = page.getByRole("button", { name: "Choose project folder" });
+  if (!(await projectTrigger.isVisible())) {
+    const chat = page.getByRole("button", { name: "Chat", exact: true });
+    if (await chat.isVisible()) await chat.click();
+    const fresh = page.getByRole("button", { name: /^(New chat|新对话)$/ });
+    if (await fresh.isVisible()) await fresh.click();
+    else {
+      const start = page.getByRole("button", { name: /^(Start|开始)$/ });
+      if (await start.isVisible()) await start.click();
+    }
   }
-  await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await page.getByRole("button", { name: "Choose project folder" }).waitFor();
+  try { await projectTrigger.waitFor(); }
+  catch (error) { console.log("DESKTOP_DIAGNOSTIC", page.url(), await page.locator("body").innerText()); throw error; }
   await page.locator('.new-thread-context-trigger .workbench-connection-status[data-phase="ready"]').waitFor({ timeout: 60_000 });
   return page;
 };
@@ -89,10 +92,11 @@ try {
   await mockDialog({ canceled: false, filePaths: [directory] }, true);
   await addProject(page);
   await page.getByRole("status").filter({ hasText: "Choosing folder…" }).waitFor();
-  if (!await page.getByRole("button", { name: "Settings", exact: true }).isVisible()) {
+  const settings = page.getByRole("button", { name: /^(Settings|设置)$/ });
+  if (!await settings.isVisible()) {
     await page.locator('.shell-navigation__entrance[data-surface="applications"]').click();
   }
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await settings.click();
   await desktop.evaluate((_electron: unknown, path: string) => (globalThis as any).__finishProjectDialog({ canceled: false, filePaths: [path] }), directory);
   await page.getByRole("status").filter({ hasText: "Choosing folder…" }).waitFor({ state: "hidden" });
   assert.equal(await page.getByRole("alert").count(), 0);

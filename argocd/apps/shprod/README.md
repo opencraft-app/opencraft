@@ -31,7 +31,6 @@
 - `gateway-dashboard`
 - `lightclaw-auth`
 - `vibebase`
-- `nextgen-dashboard`
 - `payment`
 - `referral`（独立 Campaign、Pulsar worker 与精确 Gateway 路由）
 - `sandbox`

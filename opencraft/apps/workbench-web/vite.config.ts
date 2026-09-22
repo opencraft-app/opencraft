@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
 import react from "@vitejs/plugin-react";
@@ -15,10 +14,6 @@ const previewBridgeBundlePath = fileURLToPath(new URL(
 const workbenchHtmlPath = fileURLToPath(new URL("./index.html", import.meta.url));
 const embeddedWorkbenchEntryPath = fileURLToPath(new URL(
   "./src/embedded-chat-entry.ts",
-  import.meta.url,
-));
-const hostProxyServiceWorkerPath = fileURLToPath(new URL(
-  "./public/opencraft-host-proxy-sw.js",
   import.meta.url,
 ));
 const hyperNodeUser = process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "skipzhang";
@@ -66,99 +61,6 @@ function createWebReleaseMetadata(): WebReleaseMetadata {
 }
 
 const webRelease = createWebReleaseMetadata();
-
-// Vendored mono2 sources (plugins/lightvela-hermes/src/upstream/mono2) read
-// Next-style `process.env.*` at module top level. Vite does not define
-// `process` in the browser, so every variable those sources reference must be
-// statically defined or the workbench fails with `ReferenceError: process is
-// not defined`. NEXT_PUBLIC_REGION defaults to 'cn' to match the Next.js
-// default; feature flags default to '' (falsy) exactly as unset Next env vars.
-const vendoredEnvKeys = [
-  "NEXT_PUBLIC_REGION",
-  "NEXT_PUBLIC_PREVIEW_LOCALES",
-  "NEXT_PUBLIC_LOCAL_PREVIEW_AUTH",
-  "NEXT_PUBLIC_AUTH_API_BASE_URL",
-  "NEXT_PUBLIC_ZERO_TOKEN_AUTOMATIONS_ENABLED",
-  "NEXT_PUBLIC_SUPPORT_ADMIN_API_BASE_URL",
-  "NEXT_PUBLIC_PAID_BILLING_ENABLED",
-  "NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL",
-  "NEXT_PUBLIC_MULTI_BOT_ENABLED",
-  "NEXT_PUBLIC_DATONG_ENABLED",
-  "NEXT_PUBLIC_DATONG_DEV_ENABLED",
-  "NEXT_PUBLIC_DATONG_APPKEY",
-  "NEXT_PUBLIC_APP_ENV",
-  "VITE_AUTH_API_BASE_URL",
-  "VITE_LOCAL_PREVIEW_AUTH",
-] as const;
-
-function buildVendoredEnvDefines(mode: string): Record<string, string> {
-  const defines: Record<string, string> = {
-    "process.env.NODE_ENV": JSON.stringify(mode),
-    "process.env.PROD": JSON.stringify(mode === "production"),
-  };
-  for (const key of vendoredEnvKeys) {
-    const fallback = key === "NEXT_PUBLIC_REGION" ? "cn" : "";
-    defines[`process.env.${key}`] = JSON.stringify(process.env[key] ?? fallback);
-  }
-  return defines;
-}
-
-// With `optimizeDeps.noDiscovery` enabled, Vite never prebundles a dependency
-// unless it is listed here. Several runtime dependencies ship CJS only (no
-// `module`, no `exports` map with ESM entries, no `type: "module"`); serving
-// them raw makes the browser fail with `does not provide an export named ...`.
-// Instead of maintaining that list by hand, walk the workbench runtime
-// dependency tree (`dependencies` only — the devDependencies tree is
-// build-tooling like vite/babel and must stay out of the browser prebundle)
-// and include every CJS-only package automatically. Packages whose entry is
-// CSS (`@fontsource-*`) and type-only entries take no part in JS prebundling
-// and are skipped.
-function collectCjsOnlyDependencies(): string[] {
-  const workspaceRootDir = fileURLToPath(new URL("../..", import.meta.url));
-  const webPackage = JSON.parse(readFileSync(
-    fileURLToPath(new URL("./package.json", import.meta.url)),
-    "utf8",
-  )) as { dependencies?: Record<string, string> };
-  const visited = new Set<string>();
-  const cjsOnly = new Set<string>();
-  const queue = Object.keys(webPackage.dependencies ?? {});
-  while (queue.length > 0) {
-    const name = queue.shift() as string;
-    if (visited.has(name)) continue;
-    visited.add(name);
-    let info: {
-      main?: string;
-      module?: string;
-      type?: string;
-      exports?: unknown;
-      dependencies?: Record<string, string>;
-    };
-    try {
-      info = JSON.parse(readFileSync(
-        path.join(workspaceRootDir, "node_modules", name, "package.json"),
-        "utf8",
-      ));
-    } catch {
-      continue;
-    }
-    const main = typeof info.main === "string" ? info.main : "";
-    const hasEsm = Boolean(info.module)
-      || info.type === "module"
-      || JSON.stringify(info.exports ?? "").includes(".mjs");
-    const entryIsCss = main.endsWith(".css");
-    const entryIsTypes = main.endsWith(".d.ts") || main.endsWith(".d.mts");
-    if (!hasEsm && !entryIsCss && !entryIsTypes && main !== "") {
-      cjsOnly.add(name);
-    }
-    for (const dependency of Object.keys(info.dependencies ?? {})) {
-      if (!visited.has(dependency)) queue.push(dependency);
-    }
-  }
-  return [...cjsOnly].sort();
-}
-
-const cjsOnlyInclude = collectCjsOnlyDependencies();
-console.log(`[opencraft] optimizeDeps.include auto CJS packages (${cjsOnlyInclude.length}):`, cjsOnlyInclude.join(", "));
 
 const appServerProxy = {
   "/appserver": {
@@ -253,13 +155,6 @@ function releaseMetadata(metadata: WebReleaseMetadata): Plugin {
         fileName: "version.json",
         source: `${JSON.stringify(metadata, null, 2)}\n`,
       });
-      this.emitFile({
-        type: "asset",
-        fileName: isEmbeddedWorkbenchBuild
-          ? "opencraft-host-proxy-sw.js"
-          : "__opencraft/opencraft-host-proxy-sw.js",
-        source: readFileSync(hostProxyServiceWorkerPath, "utf8"),
-      });
     },
   };
 }
@@ -337,25 +232,11 @@ function embeddedWorkbenchDevEntry(): Plugin {
   };
 }
 
-// The conditional ternary yields a union of object literals with different key
-// sets. Inside `defineConfig(({ mode }) => ...)` the returned object loses
-// per-branch contextual typing, and TypeScript normalizes the missing
-// `workbench` key to `workbench?: undefined`, violating Rolldown's
-// `Record<string, string>` index signature. Declaring the constant with an
-// explicit type restores branch-by-branch assignability checks.
-const rolldownInput: Record<string, string> = isEmbeddedWorkbenchBuild
-  ? { "embedded-workbench": embeddedWorkbenchEntryPath }
-  : {
-      workbench: workbenchHtmlPath,
-      "embedded-workbench": embeddedWorkbenchEntryPath,
-    };
-
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   // Both targets are served at their origin root. Root-relative assets also
   // survive direct loading/reloading /views/:id and /settings/:id routes.
   // The Electron static server maps that root to the relocatable signed bundle.
   base: isEmbeddedWorkbenchBuild ? "/__opencraft/" : "/",
-  define: buildVendoredEnvDefines(mode),
   plugins: [
     releaseMetadata(webRelease),
     ...(!isEmbeddedWorkbenchBuild ? [previewBridgeAsset()] : []),
@@ -372,11 +253,9 @@ export default defineConfig(({ mode }) => ({
     // The workbench activates large optional workspace plugins at runtime.
     // Letting Vite discover every transitive ESM dependency after the server
     // has started publishes temporary hashes and causes 504 responses while
-    // the optimizer is still replacing its cache. React and the CJS-only
-    // packages reached through react-router require the compatibility
-    // prebundle; every other dependency ships browser ESM and is served
-    // directly. Adding a browser-reachable CJS dependency means adding it here
-    // as well, otherwise it is served as raw CJS and its named exports fail.
+    // the optimizer is still replacing its cache. Only React requires the
+    // compatibility prebundle; the remaining dependencies ship browser ESM
+    // and are served directly.
     noDiscovery: true,
     include: [
       "react",
@@ -384,15 +263,15 @@ export default defineConfig(({ mode }) => ({
       "react-dom/client",
       "react/jsx-runtime",
       "react/jsx-dev-runtime",
-      // CJS-only runtime dependencies, collected automatically — see
-      // collectCjsOnlyDependencies(). Covers the packages the embedded
-      // workbench previously had to list by hand (cookie,
-      // set-cookie-parser, tim-upload-plugin, void-elements,
-      // @tencentcloud/chat) plus every other CJS-only package in the
-      // runtime dependency tree (dayjs, @xterm, cytoscape layouts, ...),
-      // so adding a new CJS dependency no longer requires editing this
-      // file.
-      ...cjsOnlyInclude,
+      // Embedded Workbench reaches the LightVela auth client from a raw Vite
+      // module entry. Prebundle cookie's CommonJS facade so browser ESM can
+      // consume its named parse/serialize exports in development as it does
+      // in the production bundle.
+      "cookie",
+      "set-cookie-parser",
+      "tim-upload-plugin",
+      "void-elements",
+      "@tencentcloud/chat",
     ],
     // `bson` is browser-native ESM and is reached through an optional
     // workspace plugin. Vite's discovery optimizer can encounter it after the
@@ -441,7 +320,12 @@ export default defineConfig(({ mode }) => ({
     // renderer hangs and is intentionally not part of the release contract.
     minify: "oxc",
     rolldownOptions: {
-      input: rolldownInput,
+      input: isEmbeddedWorkbenchBuild
+        ? { "embedded-workbench": embeddedWorkbenchEntryPath }
+        : {
+            workbench: workbenchHtmlPath,
+            "embedded-workbench": embeddedWorkbenchEntryPath,
+          },
       output: {
         entryFileNames: releaseMinification ? "assets/a-[hash].js" : "assets/[name]-[hash].js",
         ...(releaseMinification ? {
@@ -467,4 +351,4 @@ export default defineConfig(({ mode }) => ({
           : "dist",
     copyPublicDir: !isEmbeddedWorkbenchBuild,
   },
-}));
+});

@@ -4,6 +4,7 @@ import type { ExtensionSettingsStorage, StoredExtensionSetting } from "./setting
 import { normalizeStoredExtensionSetting } from "./settings-store";
 import { normalizeInstallation } from "./installation-repository";
 import type { ExtensionInstallationPersistence, ExtensionInstallationRecord } from "./installation-repository";
+import { parseExtensionArtifact } from "./artifact";
 
 /** Existing settings/installations keep their domain codecs; this owns persistent CAS. */
 class RecordCollection {
@@ -69,11 +70,46 @@ export async function createPersistentExtensionSettingsStorage(backend: Extensio
   };
 }
 export async function createPersistentExtensionInstallations(backend: ExtensionPersistence, legacy: () => Promise<readonly unknown[]> = async () => []): Promise<ExtensionInstallationPersistence> {
-  const collection = new RecordCollection(backend, "system/installations", "extensionId", normalizeInstallation);
+  const collection = new RecordCollection(backend, "system/installations", "extensionId", value => {
+    normalizeInstallation(value);
+    const reference = (value as Record<string, unknown>).artifactRef;
+    if (reference !== undefined && (typeof reference !== "string" || !/^[a-f0-9]{64}$/.test(reference))) {
+      throw new TypeError("Invalid installation artifact reference");
+    }
+  });
   await collection.initialize(legacy);
   return {
-    load: () => collection.load(),
-    put: (record: ExtensionInstallationRecord) => collection.change(record.extensionId, record),
+    load: async () => Promise.all((await collection.load()).map(async value => {
+      const stored = value as Record<string, unknown>;
+      if (stored.artifactRef === undefined) return value;
+      try {
+        const artifact = await backend.read(`system/artifacts/${stored.artifactRef}`);
+        if (!artifact || artifact.version !== 1) return stored;
+        const parsed = parseExtensionArtifact(artifact.value);
+        if (parsed.sha256 !== stored.artifactRef) return stored;
+        return { ...stored, artifact: parsed };
+      } catch {
+        // Keep the reference so Manager rejects this row without a network fallback.
+        return stored;
+      }
+    })),
+    put: async (record: ExtensionInstallationRecord) => {
+      if (record.artifact === undefined) return collection.change(record.extensionId, record);
+      const artifact = parseExtensionArtifact(record.artifact);
+      const scope = `system/artifacts/${artifact.sha256}`;
+      const current = await backend.read(scope);
+      if (!current) {
+        const saved = await backend.compareAndSet(scope, 0, 1, { ...artifact });
+        if (!saved.record) throw new Error("Artifact was removed during installation");
+        const existing = parseExtensionArtifact(saved.record.value);
+        if (existing.code !== artifact.code || existing.sha256 !== artifact.sha256) throw new Error("Artifact digest collision");
+      } else {
+        const existing = parseExtensionArtifact(current.value);
+        if (existing.code !== artifact.code || existing.sha256 !== artifact.sha256) throw new Error("Artifact digest collision");
+      }
+      const { artifact: _artifact, ...metadata } = record;
+      await collection.change(record.extensionId, { ...metadata, artifactRef: artifact.sha256 });
+    },
     remove: id => collection.change(id),
     subscribe: listener => collection.subscribe(listener),
     close: () => collection.close(),

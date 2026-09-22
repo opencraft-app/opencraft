@@ -4,7 +4,7 @@ import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const source = `
 import React from 'react';
-import {createRoot} from 'react-dom/client';
+import {createIntlTestRoot as createRoot} from '/tests/fixtures/intl-root.tsx';
 import {AppShell} from '/apps/workbench-web/src/components/app-shell.tsx';
 import {useSettingsPresentation} from '/apps/workbench-web/src/components/use-settings-presentation.ts';
 import {buildCodexThemeCssProperties} from '/packages/design-system/src/theme-engine.ts';

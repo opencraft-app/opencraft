@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { createRoot } from "react-dom/client";
+import { createIntlTestRoot as createRoot } from "./intl-root";
 import { flushSync } from "react-dom";
 import { Context } from "@deepseek-ai/cordis";
 import { buildCodexThemeCssProperties } from "@opencraft/design-system/theme-engine";

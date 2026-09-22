@@ -287,6 +287,13 @@ test("panel creation picker is outlet-owned and shares its actions with the empt
   assert.match(rightPanelTabsSource, /aria-label=\{tabs \? "Tabs" : "New tab"\}/);
   assert.doesNotMatch(rightPanelTabsSource, /action\.panelKind|panelTabsForAction|right-panel-type-picker/);
 });
+
+test("auto-full-width panels rely on the global panel toggle without Back to chat chrome", () => {
+  assert.match(rightPanelTabsSource, /const autoFullWidth = fullWidth && !state\.rightPanelFullWidth/u);
+  assert.match(rightPanelTabsSource, /\{autoFullWidth \? null : <button/u);
+  assert.doesNotMatch(rightPanelTabsSource, /Back to chat|right-panel-back-to-chat|restoreRightPanel/u);
+  assert.doesNotMatch(appShellSource, /restoreRightPanel:/u);
+});
 const browserPanelSource = readFileSync(
   new URL(
     "../apps/workbench-web/src/browser/browser-panel-plugin.tsx",
@@ -723,14 +730,12 @@ test("physical scroll distance and input classification have one platform transa
 });
 
 test("Composer menus live in the root overlay plane with Codex viewport constraints", () => {
-  assert.equal(
-    Array.from(composerSource.matchAll(/<DropdownMenu\.Portal container=\{portalContainer\}>/gu)).length,
-    2,
-  );
-  assert.equal(
-    Array.from(composerSource.matchAll(/modal=\{false\}/gu)).length,
-    2,
-  );
+  const menus = Array.from(composerSource.matchAll(/<DropdownMenu\.Root\b/gu)).length;
+  assert.ok(menus >= 2, "Composer retains its selection menus");
+  assert.equal(Array.from(composerSource.matchAll(/<DropdownMenu\.Portal container=\{portalContainer\}>/gu)).length, menus,
+    "every menu targets the root overlay plane");
+  assert.equal(Array.from(composerSource.matchAll(/modal=\{false\}/gu)).length, menus,
+    "every menu remains non-modal");
   assert.match(
     composerSource,
     /window\.addEventListener\("blur", dismissOnWindowBlur\)/u,
@@ -783,11 +788,11 @@ test("Composer intelligence keeps model and reasoning in one catalog-owned menu"
   assert.doesNotMatch(composerSource, /<DropdownMenu\.Sub(?:Trigger|Content)/u);
   assert.match(
     composerSource,
-    /codex-composer-selection-menu__heading">\s*Model/u,
+    /codex-composer-selection-menu__heading">\s*<FormattedMessage id="chat\.model" defaultMessage="Model"/u,
   );
   assert.match(
     composerSource,
-    /codex-composer-selection-menu__heading">\s*Reasoning/u,
+    /codex-composer-selection-menu__heading">\s*<FormattedMessage id="chat\.reasoning" defaultMessage="Reasoning"/u,
   );
   assert.doesNotMatch(composerSource, /Power presets|>\s*Advanced\s*</u);
   assert.doesNotMatch(

@@ -91,18 +91,13 @@ function runCommand(command, args, env) {
   });
 }
 
-const EMBEDDED_WORKBENCH_DIRECTORY = "__opencraft";
-const EMBEDDED_WORKBENCH_LOADER = "embedded-workbench.js";
-const EMBEDDED_HOST_PROXY_SERVICE_WORKER = "opencraft-host-proxy-sw.js";
-const EMBEDDED_WORKBENCH_SCRIPT_PATH = `/${EMBEDDED_WORKBENCH_DIRECTORY}/${EMBEDDED_WORKBENCH_LOADER}`;
-
 export function stageOpenCraftEmbeddedWorkbench(
   outputRoot,
   env = process.env,
 ) {
   const scriptPath = env.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL?.trim();
   if (!scriptPath) return false;
-  if (scriptPath !== EMBEDDED_WORKBENCH_SCRIPT_PATH) {
+  if (scriptPath !== "/__opencraft/embedded-workbench.js") {
     throw new Error(
       `frontend artifact only stages the reviewed same-origin OpenCraft loader, got ${scriptPath}`,
     );
@@ -116,8 +111,7 @@ export function stageOpenCraftEmbeddedWorkbench(
   }
   const sourceRoot = resolve(configuredSource);
   for (const requiredPath of [
-    EMBEDDED_WORKBENCH_LOADER,
-    EMBEDDED_HOST_PROXY_SERVICE_WORKER,
+    "embedded-workbench.js",
     "version.json",
     ".vite/manifest.json",
   ]) {
@@ -126,7 +120,7 @@ export function stageOpenCraftEmbeddedWorkbench(
     }
   }
 
-  const targetRoot = resolve(outputRoot, EMBEDDED_WORKBENCH_DIRECTORY);
+  const targetRoot = resolve(outputRoot, "__opencraft");
   const privateManifestRoot = join(sourceRoot, ".vite");
   rmSync(targetRoot, { recursive: true, force: true });
   cpSync(sourceRoot, targetRoot, {
@@ -135,7 +129,7 @@ export function stageOpenCraftEmbeddedWorkbench(
       && !source.startsWith(`${privateManifestRoot}${sep}`)
       && !source.endsWith(".map"),
   });
-  if (!existsSync(join(targetRoot, EMBEDDED_WORKBENCH_LOADER))) {
+  if (!existsSync(join(targetRoot, "embedded-workbench.js"))) {
     throw new Error("OpenCraft Embedded Workbench loader was not staged");
   }
   return true;
@@ -183,12 +177,10 @@ export async function runFrontendArtifactBuildCommand(
   await runner(pnpmBin(env), ["exec", "fumadocs-mdx"], env);
   await runner(pnpmBin(env), ["exec", "next", "build"], env);
   await runner(nodeBin(env), ["scripts/version-next-static-assets.mjs"], env);
-  // This must precede the EdgeOne build-output projection: that script copies
-  // out into .edgeone/assets, which is the directory actually uploaded.
-  stageOpenCraftEmbeddedWorkbench(outDir, env);
   await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
   await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);
   await runner(nodeBin(env), ["scripts/check-versioned-next-static-assets.mjs"], env);
+  stageOpenCraftEmbeddedWorkbench(outDir, env);
   // 必须在 cpSync 之前：edgeone.json 写进 `out`，再随产物整体拷到 outputDir，
   // 这样 OCI artifact 里就带着当前 region 对应的 301 规则（静态导出下 Next 的
   // redirects() 不生效，这是唯一能让 301 进版本控制的位置）。

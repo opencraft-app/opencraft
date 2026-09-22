@@ -478,7 +478,8 @@ export const dispatchAppServerRequest = async (
     case "project/list":
       return { data: [], nextCursor: null };
     case "skills/list":
-      return { data: [] };
+      if (!services.profileSkills) throw new Error("Hermes Skill directory is unavailable");
+      return services.profileSkills.listComposerSkills(adapter.composerProfile(), adapter.composerCwd());
     default:
       throw Object.assign(
         new Error(`Method not supported by Hermes bridge: ${request.method}`),

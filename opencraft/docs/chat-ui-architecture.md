@@ -1,5 +1,9 @@
 # ChatUI integration architecture
 
+Thread identity, execution activation, capability leases and revocation follow
+the [execution ownership contract](execution-ownership.md), including its
+explicit distinction between implemented coordination and pending delivery guarantees.
+
 ## Target
 
 OpenCraft uses the latest Codex AppServer `Thread -> Turn -> Item` protocol. The
@@ -29,6 +33,75 @@ ProseMirror adapter                 Native editor adapter
 ```
 
 ## Non-negotiable boundaries
+
+Skill autocomplete treats a bare `$` as catalog browsing, not an empty file
+search. The Composer, runtime catalog and Skill search share this policy;
+`@` remains query-gated. Skills are scoped to the current Host/root set,
+enabled-only and deduplicated by authoritative path. Empty queries retain
+source order; typed queries match canonical name, display label and path.
+Discovery errors are rejected before query caching rather than stored as a
+successful empty catalog. A Host returning no metadata is not supplemented
+with renderer-local or fabricated Skills.
+
+The picker displays loading, unavailable/retry and no-results states, supports
+wrapped arrow navigation (and macOS Ctrl-P/N), Enter/Tab insertion and mouse
+selection, and never submits while a Skill picker owns Enter. Escape/blur
+dismiss the current match without deleting its text; changing the match may
+reopen it. Unmatched queries containing whitespace dismiss as in the Codex
+reference. Selected text and code blocks do not activate the picker, and IME
+commit does not select or submit. Async results carry catalog, target, query,
+retry and controller ownership; stale completions cannot become selectable.
+Inserted resources retain canonical Skill name/path through the document
+codec and native AppServer UserInput compiler.
+
+`smoke:skill-autocomplete` tests the real ProseMirror Composer with a synthetic
+Host catalog in Chromium or isolated Electron. This proves the interaction and
+protocol payload, not remote Skill installation or model execution.
+
+Model-response URLs are resources, not page-local anchors. `chat-document`
+preserves the model-authored paragraph/heading/list/table structure and raw
+Markdown label; `chat-render-react` alone classifies and sanitizes the target;
+the Web renderer projects an allowed HTTP(S) target as a Codex-style inline
+mention with origin favicon, globe fallback, URL tooltip and Radix context
+actions. It never demotes a heading merely because its child is a link.
+Restricted or unsafe targets receive no href, favicon request or open action.
+
+During streaming, a changed URL remains inert for 500ms before it receives an
+href or begins remote favicon loading, and the prior href cannot remain active.
+Opening is a semantic `ChatResourceOpenIntent` (`target`, `disposition`,
+`source`): the Renderer reports ordinary, modifier/middle-click and context-menu
+intent while the Workbench Browser owner chooses the physical in-app or external
+surface. Copying uses the sanitized target. Favicon pixels, tooltip state and
+menu focus are presentation state only and never enter Timeline, Replica or
+history. `smoke:url-presentation` verifies the real renderer, heading
+preservation, fallback favicon, tooltip, menu, clipboard and delayed streaming
+activation in Chromium.
+
+Open pickers subscribe to catalog invalidation. Host/root/revision query keys
+prevent pre-change RPC completions from entering the new directory. Browsing
+does not silently truncate at 50 entries. Search normalizes path separators and
+Unicode compatibility forms and requires every query word to match a name,
+display name or path. Icons accept explicit HTTPS or raster data URLs, never a
+remote filesystem path interpreted as a renderer-local file; text and icon
+fallbacks remain usable. Skill status/scope text uses the shared i18n port.
+
+The Local DSH adapter validates explicit name/path against the executing Agent's
+registry and user-invocation permission through the private capability bridge,
+then lowers each reference to DSH's native `/name` user gesture. The installed
+`dsh-tool-skill` pre-step hook loads and injects the full instructions. Missing
+loader, unavailable Skill and changed path fail closed; `turn/start`, steer and
+queue paths share this lowering. This uses native Skill semantics rather than
+asking a model to infer instructions from labels. Native gesture history remains
+owned by DSH. Tests execute the installed native pre-step handler without a
+provider request; no live inference outcome is implied.
+
+Profile-scoped Hermes Hosts implement `skills/list` using `/api/skills` plus
+bounded-concurrency `/api/skills/content` reads for authoritative paths. Content
+bodies are not returned in the directory. An unscoped instance Host requires
+Profile selection instead of guessing a default. Submit/steer revalidate selected
+Skill enablement and path in the owning Profile before invoking Hermes' existing
+slash Skill behavior. Profile management change events invalidate Composer
+catalogs; old dashboards that omit canonical paths report metadata errors.
 
 DSH terminal adaptation follows the HyperNode reference contract: completion,
 interruption and failure notifications are lifecycle summaries (`itemsView:
@@ -100,6 +173,32 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    `send(blocks): boolean` in the final architecture.
 7. Unknown AppServer Item types render an explicit fallback Block. Protocol
    growth must not blank the conversation surface.
+8. Visible restore authority and execution capability readiness are separate.
+   `thread/resume` plus the initial history window may promote the Conversation
+   immediately; connector or dynamic-tool registration prewarms independently
+   and must never prolong the full-page restoring state. Every mutation that
+   can execute Agent work still awaits the binding's generation-scoped
+   capability lease, and a failed prewarm is retried there rather than
+   invalidating already-restored history.
+
+Host execution preparation is coordinated by the existing Thread lifecycle
+queue. Capability replacement and Turn admission share that queue; connection
+revocation is synchronous and invalidates pending commits before asynchronous
+engine cleanup. Renderer declaration acceptance (including cold deferral) does
+not assert that engine tools are mounted. The Host checks exact mounting before
+execution. Interrupt, approval replies and queue removal do not wait for tools.
+
+For new local DSH Agents, initial capability mounting runs inside native Agent
+setup alongside the preset, with an independently revocable capability scope.
+The product catalog and `thread/started` commit only after preparation succeeds.
+Setup failure rolls back its unpublished native resources. An attachment failure
+after native persistence releases the new idle runtime but never deletes durable
+history; response-loss idempotency is a separate delivery concern.
+
+Engine release and mounting use the same session queue. Bridge responses expose
+allowlisted error codes instead of arbitrary provider or filesystem exception
+text. No warm reservation or speculative Thread identity is required for these
+correctness guarantees.
 
 ## Package ownership
 
@@ -114,6 +213,23 @@ set: an empty set hides the control, `none` means disable only when explicitly
 declared, and the model default must be a member of the same set. Hermes maps
 its Session-owned effort through the existing AppServer model/Turn fields;
 provider-specific wire clamping remains inside Hermes Runtime.
+The Web Composer presents model and reasoning through one Radix menu but keeps
+their hierarchy distinct. At desktop widths, models are the primary scrollable
+column and the selected model owns an adjacent detail column; narrow surfaces
+stack the same two regions without changing their state. The detail projection
+shows only catalog-authoritative metadata: user-authored display name, custom
+source, context/output limits, input modalities and declared reasoning efforts.
+It does not infer capabilities from a model name or render catalog descriptions
+in the compact picker. Selecting a model keeps the menu open so that this
+projection can refresh in place; selecting an effort completes the interaction,
+closes the menu and restores editor focus. Model changes preserve a compatible
+effort and otherwise resolve through that model's declared default rather than
+a global effort order. The detail column projects the declared effort set as a
+horizontal discrete scale: the current effort is named explicitly, endpoints
+show the available range, and every stop remains a Radix radio item for menu
+keyboard semantics. Pointer hover and roving keyboard focus use the shared menu
+highlight state; they do not introduce a feature-owned focus color. Track,
+thumb, highlight and shadow consume the active Design System theme tokens.
 
 The Composer permissions menu contains only declared permission profiles, without
 an AppServer-default row or explanatory question. An absent or null draft choice

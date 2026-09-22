@@ -27,6 +27,9 @@ void startOpenCraftDaemon({
   dataDirectory: requiredArgument("--data-directory"),
   modelStorageDirectory: argument("--model-storage-directory"),
   skillsDirectory: argument("--skills-directory"),
+  codexExecutable: requiredArgument("--codex-executable"),
+  codexDataDirectory: requiredArgument("--codex-data-directory"),
+  nativeCodexHomeDirectory: requiredArgument("--native-codex-home-directory"),
 }).then((daemon) => {
   process.stdout.write(`${JSON.stringify({ type: "opencraft-daemon-ready", endpoint: daemon.endpoint, pid: process.pid })}\n`);
   const shutdown = () => void daemon.close().finally(() => process.exit(0));

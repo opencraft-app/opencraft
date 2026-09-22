@@ -47,10 +47,12 @@ import {
 } from "./workbench-dynamic-tools";
 import {
   searchAppServerSkills,
+  assertSkillDiscoveryAvailable,
   type FuzzyFileSearchSession,
 } from "@opencraft/composer-appserver";
 import {
   createClientId,
+  shouldSearchComposerCatalog,
   type ComposerCatalog,
   type ComposerController,
   type ComposerTarget,
@@ -166,6 +168,7 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly extensionRuntime: Pick<ExtensionSupervisor, "subscribe" | "getSnapshot" | "contributions">;
   readonly connectors: ConnectorRuntime;
   readonly connectorManager: ConnectorManager;
   readonly connectorApprovals: ConnectorApprovalQueue;
@@ -999,39 +1002,45 @@ export async function createWebWorkbenchApplicationSupervisor(
     const sidebarLayout = await SidebarLayoutStore.open(sidebarLayoutStorage);
     startupRollback.push(() => sidebarLayout.close());
     await extensions.activate(BuiltinWebSocketHostConnectionExtension);
-    await extensions.activate(BuiltinThemePackExtension);
-    const createVoiceInputExtension = (
-      await import("@opencraft/plugin-voice-input/runtime-entry")
-    ).default;
-    await extensions.activate(createVoiceInputExtension());
+    await extensions.activateOptional(BuiltinThemePackExtension);
+    await extensions.loadOptional("vela.voice-input", async () => {
+      const createVoiceInputExtension = (
+        await import("@opencraft/plugin-voice-input/runtime-entry")
+      ).default;
+      return createVoiceInputExtension();
+    });
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
-      const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
-      await extensions.activate(createBuiltinAgentsExtension({
-        requestHost: async (hostId, method, params) => {
-          const result = await agentRuntimes.request(hostId, method, params);
-          if (changesComposerCapabilities(method)) {
-            // UI requests start after application construction. Invalidate the
-            // existing host-scoped catalog owner, never a session's selection.
-            void invalidateComposerCapabilities(queryClient, hostId).catch(() => undefined);
-          }
-          return result;
-        },
-        createTransport: (hostId) => {
-          if (electronAppHost === null) throw new Error("Electron App Host is unavailable");
-          return electronAppHost.createTransport(hostId);
-        },
-      }));
+      await extensions.loadOptional("vela.builtin-agents", async () => {
+        const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
+        return createBuiltinAgentsExtension({
+          requestHost: async (hostId, method, params) => {
+            const result = await agentRuntimes.request(hostId, method, params);
+            if (changesComposerCapabilities(method)) {
+              // UI requests start after application construction. Invalidate the
+              // existing host-scoped catalog owner, never a session's selection.
+              void invalidateComposerCapabilities(queryClient, hostId).catch(() => undefined);
+            }
+            return result;
+          },
+          createTransport: (hostId) => {
+            if (electronAppHost === null) throw new Error("Electron App Host is unavailable");
+            return electronAppHost.createTransport(hostId);
+          },
+        });
+      });
     }
     // Keep this expression direct: Vite can erase the entire dynamic-import
     // edge from product builds instead of merely disabling it at runtime.
     if (import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN !== "false") {
-      const { createHyperNodeExtension } = await import("@opencraft/plugin-hypernode");
-      await extensions.activate(createHyperNodeExtension({ url: appServerUrl() }));
+      await extensions.loadOptional("vela.hypernode", async () => {
+        const { createHyperNodeExtension } = await import("@opencraft/plugin-hypernode");
+        return createHyperNodeExtension({ url: appServerUrl() });
+      });
     }
-    await extensions.activate(lightVelaPlatform.createLightVelaPlatformExtension({
+    await extensions.activateOptional(lightVelaPlatform.createLightVelaPlatformExtension({
       account: lightVelaAccount,
     }));
-    await extensions.activate(createLightVelaHermesExtension({
+    await extensions.activateOptional(createLightVelaHermesExtension({
       account: lightVelaAccount,
       profileSkills: profileSkills.service,
       profileDirectory: botDirectory,
@@ -1046,26 +1055,30 @@ export async function createWebWorkbenchApplicationSupervisor(
       ]);
     }
     if (platform === "web") {
-      const createLightVelaCollaborationExtension = (
-        await import("@opencraft/plugin-lightvela-collaboration/runtime-entry")
-      ).default;
-      await extensions.activate(createLightVelaCollaborationExtension({
-        account: lightVelaAccount,
-      }));
+      await extensions.loadOptional("lightvela.collaboration", async () => {
+        const createLightVelaCollaborationExtension = (
+          await import("@opencraft/plugin-lightvela-collaboration/runtime-entry")
+        ).default;
+        return createLightVelaCollaborationExtension({ account: lightVelaAccount });
+      });
     }
     const botSource = new AppServerBotConversationSource(botConversations.service);
     startupRollback.push(() => botSource.dispose());
-    const createBotChatExtension = (
-      await import("@opencraft/plugin-bot-chat/runtime-entry")
-    ).default;
-    await extensions.activate(createBotChatExtension({
-      source: botSource,
-      resolver: new AppServerBotConversationResolver(botConversations.service),
-      showNavigation: false,
-    }));
+    await extensions.loadOptional("vela.bot-chat", async () => {
+      const createBotChatExtension = (
+        await import("@opencraft/plugin-bot-chat/runtime-entry")
+      ).default;
+      return createBotChatExtension({
+        source: botSource,
+        resolver: new AppServerBotConversationResolver(botConversations.service),
+        showNavigation: false,
+      });
+    });
     let connectBotHost: (hostId: string) => Promise<void> = async () => { throw new Error("暂无可连接的实例。"); };
-    const { createBotManagementExtension } = await import("./bot-management-extension");
-    await extensions.activate(createBotManagementExtension(botDirectory, botConversations.service, hostId => connectBotHost(hostId)));
+    await extensions.loadOptional("vela.bot-management", async () => {
+      const { createBotManagementExtension } = await import("./bot-management-extension");
+      return createBotManagementExtension(botDirectory, botConversations.service, hostId => connectBotHost(hostId));
+    });
     const extensionInstallationFiber = cordis.plugin(
       provideExtensionInstallationRepository(extensionPersistence.installations),
     );
@@ -1193,7 +1206,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     ? requestedHostId
     : profiles.some((host) => host.hostId === persistedHostId)
       ? persistedHostId!
-      : profiles[0]!.hostId;
+      : profiles.find((host) => host.hostId === "local")?.hostId ?? profiles[0]!.hostId;
   const initialWorkspaceRoot = profiles.find((host) => host.hostId === initialHostId)
     ?.workspaceBrowseRoots[0] ?? null;
   const createHostRegistration = (
@@ -1574,6 +1587,7 @@ export function AppServerRuntimeProvider({
     extensionSettings,
     extensionManager,
     extensionContributions: extensions.contributions,
+    extensionRuntime: extensions,
     announcements: extensions.announcements,
     platformViewRenderers,
     platformAccounts,
@@ -2004,8 +2018,9 @@ function abortError(): Error {
 
 /**
  * Codex skills are host/cwd query data, not Replica state. The returned
- * catalog delays `skills/list` until the user has typed a non-empty `$`
- * query, shares results through TanStack Query, and invalidates every cached
+ * catalog delays `skills/list` until the user opens `$` (including an empty
+ * query); file search still requires text. It shares Host/root-scoped results
+ * through TanStack Query and invalidates every cached
  * root-set for this host when AppServer emits `skills/changed`.
  */
 interface PendingMentionSearch {
@@ -2047,6 +2062,8 @@ export function useAppServerComposerCatalog(workspaceRoots: readonly string[]): 
   const snapshot = useAppServerSnapshot();
   const queryClient = useQueryClient();
   const rootKey = JSON.stringify(normalizeRoots(workspaceRoots));
+  const skillRevision = useRef(0);
+  const skillListeners = useRef(new Set<() => void>());
   const enabled = snapshot.phase === "ready" || snapshot.phase === "reconnecting";
   const searchStateRef = useRef<{
     key: string;
@@ -2057,9 +2074,13 @@ export function useAppServerComposerCatalog(workspaceRoots: readonly string[]): 
   useEffect(() => {
     if (!enabled) return;
     return runtime.resources.composerCatalog.subscribeSkillsChanged(() => {
+      // A new key prevents an in-flight pre-change response from becoming the
+      // current catalog even when the underlying RPC cannot be cancelled.
+      skillRevision.current++;
       void queryClient.invalidateQueries({
         queryKey: ["appserver", snapshot.hostId, "skills"],
       });
+      for (const listener of [...skillListeners.current]) listener();
     });
   }, [enabled, queryClient, runtime, snapshot.hostId]);
 
@@ -2109,9 +2130,13 @@ export function useAppServerComposerCatalog(workspaceRoots: readonly string[]): 
       return state.session;
     };
     return {
+      subscribeSkillsChanged(listener) {
+        skillListeners.current.add(listener);
+        return () => { skillListeners.current.delete(listener); };
+      },
       async search(query, signal) {
         const text = query.query.trim();
-        if (text.length === 0) return [];
+        if (!shouldSearchComposerCatalog(query.kind, text)) return [];
         if (targetHostId(query.target) !== snapshot.hostId) return [];
         if (signal?.aborted) throw abortError();
         if (query.kind === "mention") {
@@ -2143,11 +2168,12 @@ export function useAppServerComposerCatalog(workspaceRoots: readonly string[]): 
         }
         if (query.kind !== "skill") return [];
         const response = await queryClient.fetchQuery({
-          queryKey: ["appserver", snapshot.hostId, "skills", ...roots] as const,
-          queryFn: () => runtime.resources.composerCatalog.listSkills({
-            cwds: roots,
-            forceReload: false,
-          }),
+          queryKey: ["appserver", snapshot.hostId, "skills", ...roots, skillRevision.current] as const,
+          queryFn: async () => {
+            const result = await runtime.resources.composerCatalog.listSkills({ cwds: roots, forceReload: false });
+            assertSkillDiscoveryAvailable(result);
+            return result;
+          },
           staleTime: 5 * 60_000,
           gcTime: 5 * 60_000,
         });

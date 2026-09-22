@@ -129,10 +129,8 @@ export function resolveWindowChrome(input: WindowChromeInput): WindowChromeSnaps
   if (hostInsets !== null) return { kind, platform, safeArea: hostInsets };
   if (overlayInsets !== null) return { kind, platform, safeArea: overlayInsets };
 
-  // Electron's macOS traffic lights are native interactive window chrome. We
-  // reserve their hit region. AppShell additionally paints a non-interactive
-  // inactive underlay because stock Electron removes its native container
-  // while AppKit captures minimize animation frames.
+  // Electron's macOS traffic lights are native interactive window chrome. The
+  // Renderer reserves their hit region but never paints a second copy.
   if (kind === "electron" && platform === "darwin") {
     return {
       kind,
