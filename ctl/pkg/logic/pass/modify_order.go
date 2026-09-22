@@ -19,6 +19,7 @@ import (
 	passmodel "ctl/pkg/model/pass"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
+	"golang.org/x/sync/errgroup"
 )
 
 // Pass 升配的用户侧入口。需求：TAPD 1010132091137784162 §5.1
@@ -27,9 +28,9 @@ import (
 // jifei → trade.modifyResource → ctl.AcceptPassModify 链路触发（与新购 / 续费同范式）。
 // 查询和下单都在服务端重新解析源套餐与合法目标，绝不信任前端带来的上下文。
 
-// modifyInquiryTimeout 与新购 / 续费询价同口径。变配要逐个目标询价，超时给足以免
-// jifei 慢响应把前端确认页拖成白屏。
-const modifyInquiryTimeout = 15 * time.Second
+// modifyInquiryTimeout 给单个计费目标询价保留余量。国际 testing 实测计费响应可能刚好
+// 超过 15 秒；目标会并行询价，因此这里仍小于 ctl-passes 的 30 秒网关上游超时。
+const modifyInquiryTimeout = 20 * time.Second
 
 // modifyOrderTimeout 下单侧超时，与续费下单一致。
 const modifyOrderTimeout = 15 * time.Second
@@ -61,27 +62,69 @@ func (l *logic) ListPassModifyBundles(userID, passID string) (*transport.ModifyB
 		return result, nil
 	}
 
-	for _, targetBundleID := range targets {
-		option, offered, err := l.quoteModifyTarget(passEntity, targetBundleID, logger)
-		if err != nil {
-			// 询价失败整条请求失败，不静默跳过：没有价格的升配项在确认页无法展示，
-			// 而"跳过"会让用户看到"没有可升配套餐"——把一次故障说成了产品事实。
-			return nil, err
-		}
-		if !offered {
-			continue
-		}
-		result.ModifyBundleSet = append(result.ModifyBundleSet, *option)
+	options, err := quoteModifyTargets(context.Background(), targets,
+		func(ctx context.Context, targetBundleID string) (*transport.ModifyBundleOption, bool, error) {
+			return l.quoteModifyTarget(ctx, passEntity, targetBundleID, logger)
+		})
+	if err != nil {
+		// 询价失败整条请求失败，不静默跳过：没有价格的升配项在确认页无法展示，
+		// 而"跳过"会让用户看到"没有可升配套餐"——把一次故障说成了产品事实。
+		return nil, err
 	}
+	result.ModifyBundleSet = append(result.ModifyBundleSet, options...)
 
 	logger.Info("list pass modify bundles succeeded", zap.Int("target_count", len(result.ModifyBundleSet)))
 	return result, nil
+}
+
+type modifyTargetQuoteFunc func(
+	ctx context.Context,
+	targetBundleID string,
+) (*transport.ModifyBundleOption, bool, error)
+
+// quoteModifyTargets 并行执行彼此独立的计费询价，并按策略表顺序返回结果。
+// 这样新增跨 SP 目标不会把外部计费延迟线性叠加到用户请求上。
+func quoteModifyTargets(
+	ctx context.Context,
+	targets []string,
+	quote modifyTargetQuoteFunc,
+) ([]transport.ModifyBundleOption, error) {
+	type targetResult struct {
+		option  *transport.ModifyBundleOption
+		offered bool
+	}
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	results := make([]targetResult, len(targets))
+	for i, targetBundleID := range targets {
+		i, targetBundleID := i, targetBundleID
+		group.Go(func() error {
+			option, offered, err := quote(groupCtx, targetBundleID)
+			if err != nil {
+				return err
+			}
+			results[i] = targetResult{option: option, offered: offered}
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
+	options := make([]transport.ModifyBundleOption, 0, len(results))
+	for _, result := range results {
+		if result.offered {
+			options = append(options, *result.option)
+		}
+	}
+	return options, nil
 }
 
 // quoteModifyTarget 组装单个可升配目标：目标套餐规格 + 实时差价。
 //
 // offered=false 表示这个目标当前不该出现在列表里（套餐已下架），不是错误。
 func (l *logic) quoteModifyTarget(
+	ctx context.Context,
 	passEntity *passmodel.Entity,
 	targetBundleID string,
 	logger *zap.Logger,
@@ -104,7 +147,7 @@ func (l *logic) quoteModifyTarget(
 		return nil, false, fmt.Errorf("resolve instance spec %q of bundle %s", target.InstanceSpecID, targetBundleID)
 	}
 
-	inqCtx, cancel := context.WithTimeout(context.Background(), modifyInquiryTimeout)
+	inqCtx, cancel := context.WithTimeout(ctx, modifyInquiryTimeout)
 	inqResp, inqErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().InquiryModify(
 		inqCtx, l.buildModifyOrderRequest(passEntity, targetBundleID))
 	cancel()

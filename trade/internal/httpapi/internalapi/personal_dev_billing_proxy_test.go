@@ -84,6 +84,26 @@ func TestPersonalDevBillingProxyInternalRouteRequiresAuthAndForwardsUIN(t *testi
 	}
 }
 
+func TestPersonalDevBillingProxyReadinessDoesNotCallBillingForwarder(t *testing.T) {
+	forwarder := &recordingPersonalDevBillingForwarder{response: &personaldevbilling.Response{
+		StatusCode: http.StatusTeapot,
+	}}
+	router := newPersonalDevBillingInternalRouter(forwarder)
+	request := httptest.NewRequest(http.MethodPost, "/internal/trade/personal-dev/billing-proxy/cloudapi/?Action=DescribeOrderList", nil)
+	request.Header.Set("Authorization", "Bearer internal-token")
+	request.Header.Set(personaldevbilling.DeveloperUINHeader, "450860000023")
+	request.Header.Set("X-TC-Action", "DescribeOrderList")
+	request.Header.Set(personaldevbilling.OriginalAuthorizationHeader, personalDevBillingReadinessAuthorization)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || strings.TrimSpace(recorder.Body.String()) != `{"code":"OK","message":"ready"}` {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if forwarder.kind != "" || forwarder.path != "" {
+		t.Fatalf("billing forwarder was called: %+v", forwarder)
+	}
+}
+
 func TestPersonalDevBillingProxyInternalRouteDoesNotExposeForwarderError(t *testing.T) {
 	const sensitive = "lvdt1.450860000023.secret-capability"
 	forwarder := &recordingPersonalDevBillingForwarder{err: errors.New("upstream failed with " + sensitive)}

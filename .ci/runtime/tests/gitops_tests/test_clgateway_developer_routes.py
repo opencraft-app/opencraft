@@ -34,12 +34,12 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
             "tkexgz": (
                 "devtunnel",
                 "https://api-sandbox-bj-7.lightclaw.tech",
-                "9.0.0.0/8",
+                "9.0.0.0/8,21.0.0.0/8",
             ),
             "tkexsg": (
                 "devtunnel",
                 "https://api-sandbox-kr-1.lightclaw.tech",
-                "9.0.0.0/8,14.22.11.160/29,14.116.239.32/29",
+                "9.0.0.0/8,21.0.0.0/8,14.22.11.160/29,14.116.239.32/29",
             ),
         }
         for region, (delivery_mode, registry_base_url, allowed_cidrs) in environments.items():

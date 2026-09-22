@@ -306,6 +306,51 @@ prepare_shadow_sdk() {
     || die "Shadow Tencent Cloud SDK checkout is incomplete after fetch: $sdk_dir"
 }
 
+snapshot_dangling_image_ids() {
+  "$DOCKER" image ls --filter dangling=true --quiet --no-trunc 2>/dev/null |
+    LC_ALL=C sort -u
+}
+
+cleanup_new_dangling_images() {
+  local before_file="$1"
+  local after_file="$2"
+  local image_id removed=0
+
+  snapshot_dangling_image_ids >"$after_file"
+  while IFS= read -r image_id; do
+    [[ -n "$image_id" ]] || continue
+    if "$DOCKER" image rm "$image_id" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+    fi
+  done < <(comm -13 "$before_file" "$after_file")
+
+  if ((removed > 0)); then
+    log "removed $removed dangling image(s) created by the $3 build"
+  fi
+}
+
+build_component_with_cleanup() (
+  local component="$1"
+  local before_file after_file
+  mkdir -p "$STATE_DIR"
+  before_file="$(mktemp "$STATE_DIR/dangling-before.XXXXXX")"
+  after_file="$(mktemp "$STATE_DIR/dangling-after.XXXXXX")"
+  snapshot_dangling_image_ids >"$before_file"
+
+  cleanup_build_artifacts() {
+    local rc=$?
+    trap - EXIT
+    if [[ "${LOCALSTACK_PRUNE_NEW_DANGLING_IMAGES:-1}" == "1" ]]; then
+      cleanup_new_dangling_images "$before_file" "$after_file" "$component" || true
+    fi
+    rm -f "$before_file" "$after_file"
+    exit "$rc"
+  }
+  trap cleanup_build_artifacts EXIT
+
+  build_image "$component"
+)
+
 build_image() {
   local component="$1"
   case "$component" in
@@ -390,9 +435,9 @@ build_image() {
     all)
       local item
       for item in "${app_components[@]}"; do
-        build_image "$item"
+        build_component_with_cleanup "$item"
       done
-      build_image mock-control
+      build_component_with_cleanup mock-control
       ;;
     *)
       die "unknown build component: $component"
@@ -562,9 +607,11 @@ EOF
 }
 
 start_exposure_linux() {
-  local kubectl_path context spec name namespace resource mapping address profile log_file pid_file pid
+  local kubectl_path context supervisor spec name namespace resource mapping address profile log_file pid_file pid
   kubectl_path="$(command -v "$KUBECTL")"
   context="$(current_context)"
+  supervisor="$LOCALSTACK_ROOT/port-forward-supervisor.sh"
+  [[ -x "$supervisor" ]] || die "missing executable port-forward supervisor: $supervisor"
   stop_exposure
   mkdir -p "$STATE_DIR/exposure" "$STATE_DIR/logs"
 
@@ -573,8 +620,9 @@ start_exposure_linux() {
     exposure_enabled "$profile" || continue
     log_file="$STATE_DIR/logs/$name.log"
     pid_file="$STATE_DIR/exposure/$name.pid"
-    nohup "$kubectl_path" --context "$context" port-forward -n "$namespace" \
-      --address "$address" "$resource" "$mapping" >"$log_file" 2>&1 </dev/null &
+    nohup "$supervisor" "$log_file" \
+      "$kubectl_path" --context "$context" port-forward -n "$namespace" \
+      --address "$address" "$resource" "$mapping" >/dev/null 2>&1 </dev/null &
     pid=$!
     printf '%s\n' "$pid" >"$pid_file"
     chmod 600 "$pid_file"
@@ -706,6 +754,17 @@ up() {
   apply_secret_override infrastructure
   "$KUBECTL" rollout status -n localstack-system statefulset/mysql --timeout=300s
   "$KUBECTL" rollout status -n localstack-system deployment/redis --timeout=180s
+  # A previous interrupted `up` can leave the infrastructure Deployments with
+  # ProgressDeadlineExceeded while MySQL was unavailable. Kubernetes keeps
+  # that stale rollout condition even after the database recovers, so make the
+  # dependency boundary explicit and start a fresh rollout before waiting.
+  "$KUBECTL" rollout restart -n localstack-system \
+    deployment/mock-control \
+    deployment/fake-qq-oauth \
+    deployment/fake-jifei \
+    deployment/fake-tencentcloud \
+    deployment/fake-wechat-pay-bridge \
+    deployment/fake-envd
   "$KUBECTL" rollout status -n localstack-system deployment/mock-control --timeout=180s
   "$KUBECTL" rollout status -n localstack-system deployment/fake-qq-oauth --timeout=180s
   "$KUBECTL" rollout status -n localstack-system deployment/fake-jifei --timeout=180s
@@ -841,7 +900,14 @@ main() {
   local command="${1:-}"
   case "$command" in
     doctor) doctor ;;
-    build) doctor; build_image "${2:-all}" ;;
+    build)
+      doctor
+      if [[ "${2:-all}" == "all" ]]; then
+        build_image all
+      else
+        build_component_with_cleanup "$2"
+      fi
+      ;;
     render) render_all ;;
     up) up ;;
     expose) require_local_context; start_exposure ;;

@@ -27,6 +27,15 @@ master 源码
 
 ## 不变量
 
+- 个人 DevCloud 计费能力只部署到北京 `sandbox-bj-7` 和韩国 `sandbox-kr-1` testing。临时验证镜像需要
+  暂停 Argo 自动同步时，必须记录并只操作对应环境的 Auth、Trade、Service Gateway 应用；不修改生产
+  应用。若同一 Argo Application 已有无关 `OutOfSync` 资源，禁止 App 级全量 Sync，只能精确同步目标
+  资源。源码、镜像和 GitOps 期望合入后，先基于最新 master 完成注册、readiness、真实业务终态、注销
+  401 与 down 验收，再恢复原 `automated + prune + selfHeal` 策略并确认 `Synced/Healthy`。
+- CloudLadder testing 的 DevCloud 来源 CIDR 必须在 data-plane proxy 与 devtunnel 两套 workload 中保持
+  一致，并由 GitOps 契约测试校验；扩大 testing allowlist 不能扩散到 production manifests。北京允许
+  Skill 探测并提交受限 `9/8` 或 `21/8` 目标，韩国仍以服务端观测 NAT 来源为准。
+
 - 新加坡 Sandbox 扩展到新山时，云网络与现有 `llmgateway-sgprod-jhb` 支撑 VPC 分离。
   `infra_pulumi` 使用持久化 `sandbox-network` scope，只拥有 VPC、pool/support 子网、
   NAT/EIP、路由/SNAT 和 TAT-only Sandbox 安全组；不得借网络扩容创建第二套 TKE、数据库、

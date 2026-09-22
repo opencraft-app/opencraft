@@ -122,18 +122,22 @@ func TestPersonalDeveloperRouteRejectsExplicitTargetIPByDefault(t *testing.T) {
 }
 
 func TestPersonalDeveloperRouteAcceptsSandboxDevCloudTargetAndDerivesUIN(t *testing.T) {
-	client := &recordingDeveloperRouteClient{}
-	router, svc, _ := newShadowBindingHTTPTestRouterWithDeveloperRouteConfig(httpTestShadowClient{}, client, true)
-	sessionCookie, _ := completePhone3FAHTTPFlow(t, router, svc)
+	for _, targetIP := range []string{"9.208.245.238", "21.214.48.147"} {
+		t.Run(targetIP, func(t *testing.T) {
+			client := &recordingDeveloperRouteClient{}
+			router, svc, _ := newShadowBindingHTTPTestRouterWithDeveloperRouteConfig(httpTestShadowClient{}, client, true)
+			sessionCookie, _ := completePhone3FAHTTPFlow(t, router, svc)
 
-	response := performJSONRequest(t, router, http.MethodPost, "/auth/dev-environments/registration", map[string]any{
-		"uin": 999999999999, "targetIp": "9.208.245.238", "port": 18084, "ttlSeconds": 28800,
-	}, sessionCookie)
-	if response.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
-	}
-	if client.registerInput.Uin != 300000000053 || client.registerInput.TargetIP != "9.208.245.238" || client.registerInput.Port != 18084 {
-		t.Fatalf("unexpected explicit target registration: %+v", client.registerInput)
+			response := performJSONRequest(t, router, http.MethodPost, "/auth/dev-environments/registration", map[string]any{
+				"uin": 999999999999, "targetIp": targetIP, "port": 18084, "ttlSeconds": 28800,
+			}, sessionCookie)
+			if response.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+			}
+			if client.registerInput.Uin != 300000000053 || client.registerInput.TargetIP != targetIP || client.registerInput.Port != 18084 {
+				t.Fatalf("unexpected explicit target registration: %+v", client.registerInput)
+			}
+		})
 	}
 }
 
