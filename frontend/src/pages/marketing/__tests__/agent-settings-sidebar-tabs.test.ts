@@ -27,11 +27,11 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
-  it("exposes additional Bot creation without console reveal while preserving feature and quota gates", () => {
+  it("reveals global additional Bot creation through show() while preserving feature and quota gates", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).not.toContain("const showCreateBotEntry = showHiddenAgentTools;");
-    expect(page).toContain("createAction={multiBotEnabled && (");
+    expect(page).toContain("const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);");
+    expect(page).toContain("{showCreateBotEntry && (");
     expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
     expect(page).toContain('aria-label={t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
@@ -192,7 +192,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(tabs).toContain('aria-describedby={canChat ? undefined : unavailableId}');
     expect(page).toContain('t("对话功能目前仅支持主 Bot")');
     expect(page).toContain('activeSection !== "chat" || !isActiveBotDefault');
-    expect(page).toContain('activeSection === "chat" && isActiveBotDefault &&');
+    expect(page).toContain('active={activeSection === "chat"}');
+    expect(page).toContain('sidebarTab === "chat" && isActiveBotDefault ?');
     expect(page).toContain('activeSection === "chat" && !selectedBot?.isDefault ? "channel" : activeSection');
   });
   it("derives the initial tab from the current route", () => {
@@ -314,13 +315,13 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('AGENT_SECTION_PATH_BY_ID.chat');
   });
 
-  it("wires the SDK multiSession controlled bridge into AgentChatPanel", () => {
+  it("wires the SDK multiSession controlled bridge into the OpenCraft chat surface", () => {
     const page = readPageSource();
     const chatPanel = readChatPanelSource();
 
     // 宿主构造受控桥并下传。
-    expect(page).toContain("chatMultiSessionBridge");
-    expect(page).toContain("multiSession={chatMultiSessionBridge}");
+    expect(page).toContain("openCraftChatMultiSessionBridge");
+    expect(page).toContain("multiSession={openCraftChatMultiSessionBridge}");
     // AgentChatPanel 透传给 LightVelaPanel。
     expect(chatPanel).toContain("multiSession?: LightVelaMultiSessionOptions");
     expect(chatPanel).toContain("multiSession={multiSession}");
@@ -396,7 +397,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
     expect(page).toContain("[sdkInstance?.InstanceId]");
-    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setChatSessionCommands\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
@@ -433,18 +434,18 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("keeps multi-session callback identities stable across selectedChatId changes", () => {
     const page = readPageSource();
 
-    expect(page).toContain("const handleChatSessionStateChange = useCallback<");
-    expect(page).toContain("const handleChatSelectedChatIdChange = useCallback<");
-    expect(page).toContain("const handleChatSessionActionsChange = useCallback<");
+    expect(page).toContain("const applyChatSessionState = useCallback<");
+    expect(page).toContain("const applyChatSelectedChatId = useCallback<");
+    expect(page).toContain("const applyChatSessionActions = useCallback<");
 
     // bridge 只能引用稳定回调，不能内联箭头函数。
-    expect(page).toContain("onSessionStateChange: handleChatSessionStateChange,");
-    expect(page).toContain("onSelectedChatIdChange: handleChatSelectedChatIdChange,");
-    expect(page).toContain("onSessionActionsChange: handleChatSessionActionsChange,");
+    expect(page).toContain("onSessionStateChange: applyChatSessionState,");
+    expect(page).toContain("onSelectedChatIdChange: applyChatSelectedChatId,");
+    expect(page).toContain("onSessionActionsChange: applyChatSessionActions,");
 
     const bridge = page.slice(
-      page.indexOf("const chatMultiSessionBridge = useMemo<"),
-      page.indexOf("const startSessionRename"),
+      page.indexOf("const openCraftChatMultiSessionBridge = useMemo<"),
+      page.indexOf("const handleChatSurfaceOwnerChange"),
     );
     expect(bridge).not.toMatch(/onSessionActionsChange: \(actions\) =>/);
     expect(bridge).not.toMatch(/onSessionStateChange: \(\{/);

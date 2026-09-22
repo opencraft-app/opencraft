@@ -3,7 +3,7 @@
  * presentation intent; each Workbench host owns the concrete window, focus,
  * dismissal, portal and animation implementation.
  */
-export type ModalPresentation = "dialog" | "sheet" | "fullscreen";
+export type ModalPresentation = "dialog" | "sheet" | "fullscreen" | "inspector";
 
 export type ModalSize = "compact" | "default" | "wide" | "workspace";
 

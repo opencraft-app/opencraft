@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { spawn, type SpawnOptions } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { join } from "node:path";
+import { dirname } from "node:path";
 
 import {
   DaemonJsonLineChannel,
@@ -19,12 +19,15 @@ export interface OpenCraftDaemonAppHostConnection {
 }
 
 export interface OpenCraftDaemonClientOptions {
-  readonly userDataDirectory: string;
+  readonly endpoint: string;
+  readonly tokenPath: string;
+  readonly runtimeDirectory: string;
   readonly daemonEntry: string;
   readonly dshExecutable: string;
   readonly dshCapabilityPlugin?: string;
   readonly dataDirectory: string;
   readonly modelStorageDirectory?: string;
+  readonly skillsDirectory?: string;
   readonly executable: string;
 }
 
@@ -37,15 +40,8 @@ export function isDaemonEndpointUnavailable(error: unknown): boolean {
   return code === "ENOENT" || code === "ECONNREFUSED" || code === "EPIPE";
 }
 
-function daemonEndpoint(userDataDirectory: string): string {
-  if (process.platform !== "win32") return join(userDataDirectory, "vela-daemon.sock");
-  const identity = createHash("sha256").update(userDataDirectory).digest("hex").slice(0, 24);
-  return `\\\\.\\pipe\\vela-daemon-${identity}`;
-}
-
-function loadOrCreateToken(userDataDirectory: string): string {
-  mkdirSync(userDataDirectory, { recursive: true, mode: 0o700 });
-  const path = join(userDataDirectory, "vela-daemon.token");
+function loadOrCreateToken(path: string): string {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   try {
     const existing = readFileSync(path, "utf8").trim();
     if (existing.length >= 32) {
@@ -58,6 +54,35 @@ function loadOrCreateToken(userDataDirectory: string): string {
   const token = randomBytes(48).toString("base64url");
   writeFileSync(path, `${token}\n`, { encoding: "utf8", mode: 0o600 });
   return token;
+}
+
+export function daemonLaunchSpec(
+  options: OpenCraftDaemonClientOptions,
+  authToken: string,
+): { executable: string; args: string[]; options: SpawnOptions } {
+  return {
+    executable: options.executable,
+    args: [
+      options.daemonEntry,
+      "--endpoint", options.endpoint,
+      "--runtime-directory", options.runtimeDirectory,
+      "--dsh-executable", options.dshExecutable,
+      ...(options.dshCapabilityPlugin ? ["--dsh-capability-plugin", options.dshCapabilityPlugin] : []),
+      "--data-directory", options.dataDirectory,
+      ...(options.modelStorageDirectory ? ["--model-storage-directory", options.modelStorageDirectory] : []),
+      ...(options.skillsDirectory ? ["--skills-directory", options.skillsDirectory] : []),
+    ],
+    options: {
+      cwd: options.runtimeDirectory,
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1",
+        OPENCRAFT_DAEMON_AUTH_TOKEN: authToken,
+      },
+    },
+  };
 }
 
 class ConnectedDaemonChannel {
@@ -73,8 +98,8 @@ export class OpenCraftDaemonClientManager {
   private shuttingDown = false;
 
   constructor(private readonly options: OpenCraftDaemonClientOptions) {
-    this.endpoint = daemonEndpoint(options.userDataDirectory);
-    this.authToken = loadOrCreateToken(options.userDataDirectory);
+    this.endpoint = options.endpoint;
+    this.authToken = loadOrCreateToken(options.tokenPath);
   }
 
   async connectAppHost(connectionId: string): Promise<OpenCraftDaemonAppHostConnection> {
@@ -187,22 +212,8 @@ export class OpenCraftDaemonClientManager {
   }
 
   private spawnDaemon(): void {
-    const child = spawn(this.options.executable, [
-      this.options.daemonEntry,
-      "--endpoint", this.endpoint,
-      "--dsh-executable", this.options.dshExecutable,
-      ...(this.options.dshCapabilityPlugin ? ["--dsh-capability-plugin", this.options.dshCapabilityPlugin] : []),
-      "--data-directory", this.options.dataDirectory,
-      ...(this.options.modelStorageDirectory ? ["--model-storage-directory", this.options.modelStorageDirectory] : []),
-    ], {
-      detached: true,
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: "1",
-        OPENCRAFT_DAEMON_AUTH_TOKEN: this.authToken,
-      },
-    });
+    const launch = daemonLaunchSpec(this.options, this.authToken);
+    const child = spawn(launch.executable, launch.args, launch.options);
     child.unref();
   }
 

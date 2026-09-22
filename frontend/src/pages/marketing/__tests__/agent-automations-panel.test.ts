@@ -115,7 +115,11 @@ async function chooseCronAction(card: HTMLElement, label: string) {
   await userEvent.click(within(menu).getByRole("menuitem", { name: label }));
 }
 
+class ResizeObserverMock { observe() {} unobserve() {} disconnect() {}
+}
+
 beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
   vi.clearAllMocks();
   window.localStorage.clear();
   runtimeConfigMocks.zeroTokenAutomationsEnabled = true;
@@ -146,6 +150,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -1028,10 +1033,15 @@ describe("cron context panel integration", () => {
     expect(await screen.findByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") })).toBeTruthy();
   });
 
-  it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", (mode) => {
+  it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", async (mode) => {
     renderAutomationForm({
       mode,
-      initialJob: mode === "edit" ? makeCronJob({ id: "edit-width", name: "编辑宽度任务" }) : undefined,
+      initialJob: mode === "edit" ? makeCronJob({
+        id: "edit-width",
+        name: "编辑宽度任务",
+        schedule: { kind: "cron", expr: "0 9 * * *", display: "每天 09:00" },
+        lightvela_schedule: { kind: "daily_times", times: ["09:00"] },
+      }) : undefined,
     });
 
     const dialog = screen.getByRole("dialog");
@@ -1041,7 +1051,7 @@ describe("cron context panel integration", () => {
     );
     expect(form).toHaveClass("agents-ui", "max-w-[760px]", "p-5");
     expect(form).toHaveStyle({ width: "min(760px, calc(100vw - 32px))" });
-    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
+    expect(form).toHaveClass("h-[755px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
     expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
     expect(taskDescription).toHaveClass("resize-y");
     expect(taskDescription).not.toHaveClass("resize-none");
@@ -1050,9 +1060,14 @@ describe("cron context panel integration", () => {
     expect(within(dialog).getByRole("button", {
       name: mode === "create" ? localizedText("新建", "Create") : localizedText("保存", "Save"),
     })).toHaveClass("rounded-md", "text-sm");
+    const advancedSettings = within(dialog).getByText(localizedText("高级设置", "Advanced Settings"));
+    const summary = advancedSettings.closest("summary");
+    if (!summary) throw new Error("Expected advanced settings summary");
+    fireEvent.click(summary);
+    await waitFor(() => expect(form).toHaveClass("h-[840px]"));
   });
 
-  it("keeps template create forms at the shared modal height", () => {
+  it("grows template create forms when advanced settings are expanded", async () => {
     const template = getUnifiedAutomationTemplates((text) => text, "zh-CN")[0]!;
     renderAutomationForm({ template });
 
@@ -1061,12 +1076,19 @@ describe("cron context panel integration", () => {
     const testRunButton = within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") });
 
     if (!(form instanceof HTMLElement)) throw new Error("Expected the template task form");
-    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
+    expect(form).toHaveClass("h-[755px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
     expect(form).not.toHaveClass("overflow-y-auto");
-    const runTimeScrollBody = within(form).getByText(localizedText("执行时间", "Run time")).parentElement?.parentElement;
+    const runTimeScrollBody = form.querySelector(".lv-automation-form-scroll");
     if (!runTimeScrollBody) throw new Error("Expected the task form scroll body");
-    expect(runTimeScrollBody).toHaveClass("overflow-y-auto", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+    expect(runTimeScrollBody).toHaveClass("min-h-0", "flex-1");
+    expect(runTimeScrollBody.querySelector("[data-radix-scroll-area-viewport]")).toBeInTheDocument();
     expect(testRunButton.closest('[data-slot="automation-form-actions"]')).toHaveClass("mt-auto", "pt-4");
+
+    const advancedSettings = within(dialog).getByText(localizedText("高级设置", "Advanced Settings"));
+    const advancedSettingsSummary = advancedSettings.closest("summary");
+    if (!advancedSettingsSummary) throw new Error("Expected advanced settings summary");
+    fireEvent.click(advancedSettingsSummary);
+    await waitFor(() => expect(form).toHaveClass("h-[840px]"));
   });
 
   it("uses the new copy for the blank create entry and modal title", async () => {
@@ -1074,11 +1096,13 @@ describe("cron context panel integration", () => {
 
     expect(await screen.findByRole("heading", { name: isGlobal ? "Task Templates" : "任务模板" })).toBeTruthy();
     const templateHint = await screen.findByText(
-      isGlobal ? "quickly enable one from the task templates below" : "可从下方任务模板快速启用",
+      isGlobal ? "quickly enable one from the task templates below, or directly" : "可从下方任务模板快速启用，或直接",
     );
     expect(templateHint).not.toHaveClass("font-medium", "text-black/70");
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
+    const emptyState = screen.getByTestId("automation-empty-state");
+    expect(emptyState.querySelector("svg")).toHaveClass("h-6", "w-6", "opacity-50");
+    fireEvent.click(within(emptyState).getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(isGlobal ? "Create Scheduled Task" : "新建定时任务")).toBeTruthy();
@@ -1159,7 +1183,9 @@ describe("cron context panel integration", () => {
     await waitFor(() => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
     });
-    fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
+    const pageHeader = screen.getByRole("heading", { name: localizedText("定时任务", "Scheduled Tasks") }).closest("header");
+    if (!pageHeader) throw new Error("Expected the scheduled tasks header");
+    fireEvent.click(within(pageHeader).getByRole("button", { name: localizedText("新建", "Create") }));
 
     const advancedSummary = await screen.findByText(localizedText("高级设置", "Advanced Settings"));
     const advancedSettings = advancedSummary.closest("details");
@@ -1958,12 +1984,14 @@ describe("terminal cron card visibility", () => {
   });
 
   it("copies a current notification job with its zero-token task type and content", async () => {
+    const notificationChannel = isGlobal ? "telegram" : "wecom";
     const source = makeCronJob({
       id: "copy-current-notification",
       name: "喝水通知",
       prompt: "",
       schedule: { kind: "cron", expr: "0 10 * * *", display: "0 10 * * *" },
       state: "scheduled",
+      deliver: notificationChannel,
       script: "lightvela-zero-token-copy-source.py",
       inference_config: { provider: null, model: null, no_agent: true },
       zero_token_config: {
@@ -1973,6 +2001,14 @@ describe("terminal cron card visibility", () => {
         managed: true,
         editable: true,
       },
+    });
+    cronClientMocks.execCommand.mockResolvedValue({
+      status: "SUCCESS",
+      exit_code: 0,
+      output: JSON.stringify({
+        success: true,
+        data: { platforms: [{ name: notificationChannel, status: "connected" }] },
+      }),
     });
     cronClientMocks.listCronJobs.mockResolvedValue([source]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
@@ -1986,6 +2022,9 @@ describe("terminal cron card visibility", () => {
     expect(within(dialog).getByRole("button", {
       name: new RegExp(localizedText("通知任务", "Notification task")),
     })).toHaveClass("border-blue-300", "bg-blue-50");
+    await waitFor(() => expect(within(dialog).getByRole("checkbox", {
+      name: isGlobal ? "Telegram" : /企业微信/,
+    })).toBeChecked());
 
     fireEvent.click(within(dialog).getByRole("button", { name: localizedText("新建", "Create") }));
 
@@ -2003,7 +2042,7 @@ describe("terminal cron card visibility", () => {
       expect.objectContaining({
         name: source.name,
         schedule: "0 10 * * *",
-        deliver: "local",
+        deliver: notificationChannel,
         noAgent: true,
       }),
       expect.stringMatching(/^lightvela-zero-token-[a-z0-9-]+\.py$/),
@@ -3063,7 +3102,9 @@ describe("automation Radix interaction boundaries", () => {
     cronClientMocks.listCronJobs.mockResolvedValue(Array.from({ length: 20 }, (_, i) => makeCronJob({ id: `limit-${i}`, name: `Limit ${i}` })));
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
     await getCronJobCard("Limit 0");
-    const trigger = screen.getByRole("button", { name: localizedText("新建", "Create") });
+    const pageHeader = screen.getByRole("heading", { name: localizedText("定时任务", "Scheduled Tasks") }).closest("header");
+    if (!pageHeader) throw new Error("Expected the scheduled tasks header");
+    const trigger = within(pageHeader).getByRole("button", { name: localizedText("新建", "Create") });
     await user.click(trigger);
     let dialog = screen.getByRole("alertdialog");
     expect(dialog).toHaveAccessibleName(within(dialog).getByRole("heading").textContent!);
@@ -3087,7 +3128,9 @@ describe("automation Radix interaction boundaries", () => {
     cronClientMocks.startCronTestRun.mockResolvedValue({ completion });
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
     await screen.findByRole("heading", { name: localizedText("任务模板", "Task Templates") });
-    const trigger = screen.getByRole("button", { name: localizedText("新建", "Create") });
+    const pageHeader = screen.getByRole("heading", { name: localizedText("定时任务", "Scheduled Tasks") }).closest("header");
+    if (!pageHeader) throw new Error("Expected the scheduled tasks header");
+    const trigger = within(pageHeader).getByRole("button", { name: localizedText("新建", "Create") });
     await user.click(trigger);
     fillCreateFields("Unsaved run");
     await user.click(screen.getByRole("button", { name: localizedText("测试运行", "Test run") }));
@@ -3125,7 +3168,9 @@ describe("automation Radix interaction boundaries", () => {
     const user = userEvent.setup();
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
     await screen.findByRole("heading", { name: localizedText("任务模板", "Task Templates") });
-    const opener = screen.getByRole("button", { name: localizedText("新建", "Create") });
+    const pageHeader = screen.getByRole("heading", { name: localizedText("定时任务", "Scheduled Tasks") }).closest("header");
+    if (!pageHeader) throw new Error("Expected the scheduled tasks header");
+    const opener = within(pageHeader).getByRole("button", { name: localizedText("新建", "Create") });
     await user.click(opener);
     const title = localizedText("新建定时任务", "Create Scheduled Task");
     const dialog = screen.getByRole("dialog", { name: title });
@@ -3219,7 +3264,9 @@ describe("automation Radix interaction boundaries", () => {
     resolveDelete();
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(cronClientMocks.removeManagedCronScriptIfUnreferenced).toHaveBeenCalledExactlyOnceWith("bot-1", job, [job]);
-    expect(screen.getByRole("button", { name: localizedText("新建", "Create") })).toHaveFocus();
+    const pageHeader = screen.getByRole("heading", { name: localizedText("定时任务", "Scheduled Tasks") }).closest("header");
+    if (!pageHeader) throw new Error("Expected the scheduled tasks header");
+    expect(within(pageHeader).getByRole("button", { name: localizedText("新建", "Create") })).toHaveFocus();
   });
 });
 
@@ -3242,7 +3289,7 @@ describe("once execution time picker", () => {
     expect(screen.getByRole("group", { name: runTime })).toHaveClass("h-9");
   });
 
-  it("matches the one-time control with typed recurring time segments and a clock picker", () => {
+  it("keeps recurring time inputs compact without clock picker icons", () => {
     renderAutomationForm();
 
     const runTime = localizedText("执行时间", "Run time");
@@ -3254,15 +3301,18 @@ describe("once execution time picker", () => {
     fireEvent.change(minuteInput, { target: { value: "45" } });
     expect(hourInput).toHaveValue("14");
     expect(minuteInput).toHaveValue("45");
+    expect(hourInput).toHaveClass("w-6");
+    expect(minuteInput).toHaveClass("w-6");
+    expect(group).toHaveClass("w-fit");
+    expect(group.firstElementChild).not.toHaveClass("flex-1");
+    expect(group.firstElementChild).toHaveClass("pl-2");
+    expect(group.firstElementChild).not.toHaveClass("pr-2");
+    expect(within(group).queryByRole("button")).toBeNull();
 
-    fireEvent.click(within(group).getByRole("button", { name: `${localizedText("选择", "Select")} ${runTime} 1` }));
-    const picker = screen.getByRole("dialog", { name: `${runTime} 1` });
-    expect(picker).toHaveClass("w-[176px]", "agents-ui");
-    expect(within(picker).getByRole("button", { name: localizedText("取消", "Cancel") })).toBeEnabled();
-    const hourListbox = within(picker).getByRole("listbox", { name: localizedText("小时", "hours") });
-    const minuteListbox = within(picker).getByRole("listbox", { name: localizedText("分钟", "minutes") });
-    expect(within(hourListbox).getByRole("option", { selected: true })).toHaveTextContent("14");
-    expect(within(minuteListbox).getByRole("option", { selected: true })).toHaveTextContent("45");
+    fireEvent.click(screen.getByRole("button", { name: localizedText("添加时间", "Add time") }));
+    expect(screen.getByRole("group", { name: `${runTime} 1` })).toHaveClass("w-fit");
+    expect(screen.getByRole("group", { name: `${runTime} 2` })).toHaveClass("w-fit");
+    expect(screen.queryByRole("button", { name: `${localizedText("选择", "Select")} ${runTime} 1` })).toBeNull();
   });
 
   it("edits and commits each date-time segment independently on group blur", async () => {
@@ -3656,7 +3706,7 @@ describe("zero-token automation form", () => {
     expect(notificationTaskButton).not.toHaveClass("min-h-24");
     expect(scriptTaskButton).not.toHaveClass("min-h-24");
     expect(dialogContent).toHaveClass("flex", "flex-col");
-    expect(dialogContent).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]");
+    expect(dialogContent).toHaveClass("h-[755px]", "max-h-[calc(100dvh-32px)]");
     expect(dialogContent).toHaveClass("agents-ui");
     expect(testRunButton.closest('[data-slot="automation-form-actions"]')).toHaveClass("mt-auto", "pt-4");
     expect(dialogContent).not.toHaveClass("overflow-y-auto");
@@ -3670,8 +3720,8 @@ describe("zero-token automation form", () => {
     const notificationTooltip = await screen.findByRole("tooltip");
     expect(notificationTooltip).toHaveTextContent(
       localizedText(
-        "如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。",
-        "If no notification channel is selected, the job will only run in the background and write to logs. No notification will be sent.",
+        "通知任务必须选择至少一种通知方式。",
+        "Notification tasks require at least one notification method.",
       ),
     );
     expect(dialogContent).not.toContainElement(notificationTooltip);
@@ -3712,6 +3762,81 @@ describe("zero-token automation form", () => {
     expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["create", "edit"] as const)(
+    "requires a notification method before submitting a %s notification task",
+    async (mode) => {
+      const user = userEvent.setup();
+      const notificationChannel = isGlobal ? "telegram" : "wecom";
+      renderAutomationForm({
+        mode,
+        enabledChannels: new Set([notificationChannel]),
+        initialJob: mode === "edit" ? makeCronJob({
+          id: "managed-notification",
+          name: "喝水提醒",
+          deliver: "local",
+          script: "lightvela-zero-token-managed-notification.py",
+          inference_config: { provider: null, model: null, no_agent: true },
+          zero_token_config: {
+            kind: "fixed_notification",
+            language: "python",
+            content: "该喝水啦",
+            managed: true,
+            editable: true,
+          },
+        }) : undefined,
+      });
+
+      if (mode === "create") {
+        fireEvent.click(screen.getByRole("button", {
+          name: new RegExp(localizedText("通知任务", "Notification task")),
+        }));
+        fireEvent.change(screen.getByPlaceholderText(localizedText(
+          "请输入定时任务名称",
+          "Enter the scheduled task name",
+        )), { target: { value: "喝水提醒" } });
+        fireEvent.change(screen.getByPlaceholderText(localizedText(
+          "例如：该喝水啦，休息一下再继续吧",
+          "For example: Time for some water—take a short break",
+        )), { target: { value: "该喝水啦" } });
+      }
+
+      const channel = screen.getByRole("checkbox", {
+        name: isGlobal ? "Telegram" : /企业微信/,
+      });
+      if (mode === "create") {
+        await waitFor(() => expect(channel).toBeChecked());
+        await user.click(channel);
+      } else {
+        expect(channel).not.toBeChecked();
+      }
+
+      const notificationHelpButton = screen.getByRole("button", {
+        name: localizedText("通知方式", "Notification"),
+      });
+      const notificationLabelRow = notificationHelpButton.parentElement?.parentElement;
+      if (!notificationLabelRow) throw new Error("Expected notification label row");
+      expect(within(notificationLabelRow).queryByText(localizedText("（可选）", "(Optional)"))).toBeNull();
+
+      const submitButton = screen.getByRole("button", {
+        name: mode === "create" ? localizedText("新建", "Create") : localizedText("保存", "Save"),
+      });
+      expect(submitButton).toBeDisabled();
+      if (!submitButton.parentElement) throw new Error("Expected submit button wrapper");
+      await userEvent.hover(submitButton.parentElement);
+      const tooltip = await screen.findByRole("tooltip");
+      expect(tooltip).toHaveTextContent(localizedText(
+        "未选择通知方式",
+        "No notification method selected",
+      ));
+      expect(submitButton.parentElement).toHaveAttribute("aria-describedby", tooltip.id);
+
+      await user.click(channel);
+      await waitFor(() => expect(screen.getByRole("button", {
+        name: mode === "create" ? localizedText("新建", "Create") : localizedText("保存", "Save"),
+      })).toBeEnabled());
+    },
+  );
 
   it("requires the host-execution acknowledgement before testing a script task", () => {
     const onTestRun = vi.fn();
@@ -3950,17 +4075,23 @@ describe("automation create button placement", () => {
 
     await screen.findByText("已存在的任务");
     expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(1);
-    expect(container.querySelector("header")?.textContent).toContain(localizedText("新建", "Create"));
+    const header = container.querySelector("header");
+    expect(header).not.toBeNull();
+    expect(within(header!).getByRole("button", { name: localizedText("新建", "Create") })).toBeInTheDocument();
   });
 
-  it("keeps the create button in the header when there is no task", async () => {
+  it("keeps the header create button and adds an empty-state shortcut when there is no task", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([]);
     const { container } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     await screen.findByText(localizedText("暂无定时任务，", "No scheduled tasks yet,"));
-    // 入口只有一个且恒定在 header 右上角，避免列表加载完成后按钮从 header 换到空状态导致节点被替换
-    expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(1);
-    expect(container.querySelector("header")?.textContent ?? "").toContain(localizedText("新建", "Create"));
+    expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(2);
+    const header = container.querySelector("header");
+    expect(header).not.toBeNull();
+    expect(within(header!).getByRole("button", { name: localizedText("新建", "Create") })).toBeInTheDocument();
+    const emptyState = screen.getByTestId("automation-empty-state");
+    fireEvent.click(within(emptyState).getByRole("button", { name: localizedText("新建", "Create") }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
 
@@ -3972,7 +4103,10 @@ describe("automation form test-state wiring", () => {
       render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
       if (entry === "blank") {
-        fireEvent.click(await screen.findByRole("button", { name: localizedText("新建", "Create") }));
+        await screen.findByRole("heading", { name: localizedText("任务模板", "Task Templates") });
+        const pageHeader = screen.getByRole("heading", { name: localizedText("定时任务", "Scheduled Tasks") }).closest("header");
+        if (!pageHeader) throw new Error("Expected the scheduled tasks header");
+        fireEvent.click(within(pageHeader).getByRole("button", { name: localizedText("新建", "Create") }));
         fillCreateFields();
       } else {
         fireEvent.click(await screen.findByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));

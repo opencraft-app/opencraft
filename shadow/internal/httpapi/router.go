@@ -1,15 +1,12 @@
 package httpapi
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"shadow/internal/shadow"
-	"shadow/internal/storage"
 	"shadow/internal/telemetry"
 	"shadow/internal/trade"
 	"shadow/internal/wallet"
@@ -21,17 +18,14 @@ type API struct {
 	service       *shadow.Service
 	tradeService  *trade.Service
 	walletService *wallet.Service
-	store         storage.Store
 	opts          Options
 }
 
 type Options struct {
 	CallbackToken       string
-	InternalToken       string
 	PaymentConfirmToken string
 	TradeService        *trade.Service
 	WalletService       *wallet.Service
-	Store               storage.Store
 }
 
 func New(service *shadow.Service) *API {
@@ -39,13 +33,7 @@ func New(service *shadow.Service) *API {
 }
 
 func NewWithOptions(service *shadow.Service, opts Options) *API {
-	return &API{
-		service:       service,
-		tradeService:  opts.TradeService,
-		walletService: opts.WalletService,
-		store:         opts.Store,
-		opts:          opts,
-	}
+	return &API{service: service, tradeService: opts.TradeService, walletService: opts.WalletService, opts: opts}
 }
 
 func (a *API) Handler() http.Handler {
@@ -62,75 +50,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/shadow/package-orders", a.handleCreatePackageOrder)
 	mux.HandleFunc("GET /v1/shadow/package-orders/{id}", a.handleGetPackageOrder)
 	mux.HandleFunc("GET /v1/shadow/wallet", a.handleGetWallet)
-	mux.HandleFunc("GET /internal/shadow/admin/accounts", a.requireConfiguredInternal(a.handleAdminAccounts))
 	mux.HandleFunc("POST /internal/shadow/package-orders/{id}/confirm", a.handleConfirmPackageOrder)
 	mux.HandleFunc("POST /internal/tencentcloud/account", a.handleTencentCloudCallback)
 	return mux
-}
-
-func (a *API) handleAdminAccounts(w http.ResponseWriter, r *http.Request) {
-	if a.store == nil {
-		writeError(w, http.StatusServiceUnavailable, errors.New("shadow store is not configured"))
-		return
-	}
-	page, err := positiveQueryInt(r, "page", 1, 0)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	pageSize, err := positiveQueryInt(r, "page_size", 20, 100)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	accounts, total, err := a.store.ListAdminAccounts(r.Context(), storage.AdminAccountFilter{
-		Search:   r.URL.Query().Get("search"),
-		Page:     page,
-		PageSize: pageSize,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items":     accounts,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-	})
-}
-
-func (a *API) requireConfiguredInternal(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		expected := strings.TrimSpace(a.opts.InternalToken)
-		if expected == "" {
-			writeError(w, http.StatusServiceUnavailable, errors.New("internal token is not configured"))
-			return
-		}
-		authorization := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authorization, "Bearer ") {
-			writeError(w, http.StatusUnauthorized, errors.New("unauthorized"))
-			return
-		}
-		provided := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
-		if len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
-			writeError(w, http.StatusUnauthorized, errors.New("unauthorized"))
-			return
-		}
-		next(w, r)
-	}
-}
-
-func positiveQueryInt(r *http.Request, name string, defaultValue, maxValue int) (int, error) {
-	raw := strings.TrimSpace(r.URL.Query().Get(name))
-	if raw == "" {
-		return defaultValue, nil
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value <= 0 || (maxValue > 0 && value > maxValue) {
-		return 0, errInvalid(name)
-	}
-	return value, nil
 }
 
 func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {

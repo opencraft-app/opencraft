@@ -164,6 +164,11 @@ import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harn
 import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
+import {
+  AgentChatMigrationSurface,
+  type EmbeddedSessionCommands,
+  type EmbeddedSessionMutationState,
+} from "@/pages/marketing/opencraft-embedded-workbench";
 
 const MAX_BOT_NAME_LENGTH = 60;
 
@@ -2328,6 +2333,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -2345,8 +2351,8 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
-  const isEmptyPersonaPage = activeSection === "buddy"
-    && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
+  const isEmptyAgentPage = !isModifying
+    && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
@@ -2358,6 +2364,14 @@ export const AgentSettingsPage = ({
   const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
   const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
   const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
+  const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
+  const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
+  const chatSurfaceOwnerRef = useRef<"legacy" | "opencraft">("legacy");
+  const legacyChatSessionStateRef = useRef<Parameters<
+    NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
+  >[0] | null>(null);
+  const legacySelectedChatIdRef = useRef<string | null>(null);
+  const legacyChatSessionActionsRef = useRef<LightVelaSessionActions | null>(null);
   /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定（SDK 侧会驱动默认会话）。 */
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
   /** SDK 会话动作句柄（renameSession / deleteSession）。 */
@@ -2430,14 +2444,14 @@ export const AgentSettingsPage = ({
    * 另两个回调 SDK 内部走 ref（onSelectedChatIdChangeRef），本就不受引用变化影响，
    * 但一并稳定化以免后续版本改成直接依赖。
    */
-  const handleChatSessionStateChange = useCallback<
+  const applyChatSessionState = useCallback<
     NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
   >(({ sessions, loading }) => {
     setChatSessions(sessions);
     setChatSessionsLoading(loading);
   }, []);
 
-  const handleChatSelectedChatIdChange = useCallback<
+  const applyChatSelectedChatId = useCallback<
     NonNullable<LightVelaMultiSessionOptions["onSelectedChatIdChange"]>
   >((chatId) => {
     // 注意事项 2：收到值必须无条件写回，否则受控状态与 SDK 失步。
@@ -2445,21 +2459,77 @@ export const AgentSettingsPage = ({
     setSelectedChatId(chatId);
   }, []);
 
-  const handleChatSessionActionsChange = useCallback<
+  const applyChatSessionActions = useCallback<
     NonNullable<LightVelaMultiSessionOptions["onSessionActionsChange"]>
   >((actions) => {
     setChatSessionActions(actions);
   }, []);
 
-  const chatMultiSessionBridge = useMemo<LightVelaMultiSessionOptions>(
+  const handleLegacyChatSessionStateChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
+  >((state) => {
+    legacyChatSessionStateRef.current = state;
+    if (chatSurfaceOwnerRef.current === "legacy") applyChatSessionState(state);
+  }, [applyChatSessionState]);
+  const handleLegacyChatSelectedChatIdChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSelectedChatIdChange"]>
+  >((chatId) => {
+    legacySelectedChatIdRef.current = chatId;
+    if (chatSurfaceOwnerRef.current === "legacy") applyChatSelectedChatId(chatId);
+  }, [applyChatSelectedChatId]);
+  const handleLegacyChatSessionActionsChange = useCallback<
+    NonNullable<LightVelaMultiSessionOptions["onSessionActionsChange"]>
+  >((actions) => {
+    legacyChatSessionActionsRef.current = actions;
+    if (chatSurfaceOwnerRef.current === "legacy") applyChatSessionActions(actions);
+  }, [applyChatSessionActions]);
+
+  const legacyChatMultiSessionBridge = useMemo<LightVelaMultiSessionOptions>(
     () => ({
       selectedChatId,
-      onSessionStateChange: handleChatSessionStateChange,
-      onSelectedChatIdChange: handleChatSelectedChatIdChange,
-      onSessionActionsChange: handleChatSessionActionsChange,
+      onSessionStateChange: handleLegacyChatSessionStateChange,
+      onSelectedChatIdChange: handleLegacyChatSelectedChatIdChange,
+      onSessionActionsChange: handleLegacyChatSessionActionsChange,
     }),
-    [selectedChatId, handleChatSessionStateChange, handleChatSelectedChatIdChange, handleChatSessionActionsChange],
+    [
+      selectedChatId,
+      handleLegacyChatSessionStateChange,
+      handleLegacyChatSelectedChatIdChange,
+      handleLegacyChatSessionActionsChange,
+    ],
   );
+  const openCraftChatMultiSessionBridge = useMemo<LightVelaMultiSessionOptions>(
+    () => ({
+      selectedChatId,
+      onSessionStateChange: applyChatSessionState,
+      onSelectedChatIdChange: applyChatSelectedChatId,
+      onSessionActionsChange: applyChatSessionActions,
+    }),
+    [selectedChatId, applyChatSessionState, applyChatSelectedChatId, applyChatSessionActions],
+  );
+  const handleChatSurfaceOwnerChange = useCallback((owner: "legacy" | "opencraft") => {
+    chatSurfaceOwnerRef.current = owner;
+    if (owner !== "legacy") return;
+    if (legacyChatSessionStateRef.current !== null) {
+      applyChatSessionState(legacyChatSessionStateRef.current);
+    }
+    if (legacySelectedChatIdRef.current !== null) {
+      applyChatSelectedChatId(legacySelectedChatIdRef.current);
+    }
+    applyChatSessionActions(legacyChatSessionActionsRef.current);
+  }, [applyChatSelectedChatId, applyChatSessionActions, applyChatSessionState]);
+
+  const createChatSession = () => {
+    if (chatSessionCommands === null || chatSessionMutationState?.pending === true) return;
+    const previousSelection = selectedChatId;
+    setOpenSessionMenuChatId(null);
+    setRenamingChatId(null);
+    setSessionToDelete(null);
+    setSelectedChatId("");
+    void chatSessionCommands.createSession().catch(() => {
+      setSelectedChatId((current) => current === "" ? previousSelection : current);
+    });
+  };
 
   const startSessionRename = (session: LightVelaSession) => {
     setOpenSessionMenuChatId(null);
@@ -3126,9 +3196,35 @@ export const AgentSettingsPage = ({
   const [importStatusByInstanceId, setImportStatusByInstanceId] = useState<Record<string, WorkerActionStatusResult | null>>({});
   const [importStatusLoadingInstanceIds, setImportStatusLoadingInstanceIds] = useState<Set<string>>(new Set());
   const [importStatusErrors, setImportStatusErrors] = useState<Record<string, string | null>>({});
+  const [sessionRepairPendingKeysByInstanceId, setSessionRepairPendingKeysByInstanceId] = useState<Record<string, string[]>>({});
   const [workspaceConfirm, setWorkspaceConfirm] = useState<WorkspaceConfirmState | null>(null);
   const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleSessionRepairPendingChange = useCallback((change: {
+    maintenanceScopeId: string;
+    requestKey: string;
+    pending: boolean;
+  }) => {
+    setSessionRepairPendingKeysByInstanceId((current) => {
+      const scopeKeys = current[change.maintenanceScopeId] ?? [];
+      if (change.pending) {
+        if (scopeKeys.includes(change.requestKey)) return current;
+        return {
+          ...current,
+          [change.maintenanceScopeId]: [...scopeKeys, change.requestKey],
+        };
+      }
+      if (!scopeKeys.includes(change.requestKey)) return current;
+      const nextScopeKeys = scopeKeys.filter((requestKey) => requestKey !== change.requestKey);
+      const next = { ...current };
+      if (nextScopeKeys.length > 0) {
+        next[change.maintenanceScopeId] = nextScopeKeys;
+      } else {
+        delete next[change.maintenanceScopeId];
+      }
+      return next;
+    });
+  }, []);
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3330,6 +3426,9 @@ export const AgentSettingsPage = ({
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
   const isActiveBotExporting = activeRuntimeInstanceId ? exportingInstanceIds.has(activeRuntimeInstanceId) : false;
   const isActiveBotImporting = activeRuntimeInstanceId ? importingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const isActiveSessionRepairing = activeRuntimeInstanceId
+    ? (sessionRepairPendingKeysByInstanceId[activeRuntimeInstanceId]?.length ?? 0) > 0
+    : false;
   const activeExportStatus = activeRuntimeInstanceId ? exportStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const activeImportStatus = activeRuntimeInstanceId ? importStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const isActiveExportStatusLoading = activeRuntimeInstanceId ? exportStatusLoadingInstanceIds.has(activeRuntimeInstanceId) : false;
@@ -3345,6 +3444,7 @@ export const AgentSettingsPage = ({
     currentTask: activeWorkspaceTask,
   });
   const maintenanceBusy = resetting || resettingAcli || isActiveBotExporting || isActiveBotImporting
+    || isActiveSessionRepairing
     || isActiveExportStatusLoading || isActiveImportStatusLoading
     || isWorkspaceActionRunning(activeWorkspaceTask?.status);
   // 当前 tab 是否展示错误
@@ -3365,8 +3465,14 @@ export const AgentSettingsPage = ({
    * 重置后 selectedChatId 回到 undefined，SDK 按新实例重新下发默认会话。
    */
   useEffect(() => {
+    chatSurfaceOwnerRef.current = "legacy";
+    legacyChatSessionStateRef.current = null;
+    legacySelectedChatIdRef.current = null;
+    legacyChatSessionActionsRef.current = null;
     setChatSessions([]);
     setChatSessionsLoading(false);
+    setChatSessionMutationState(null);
+    setChatSessionCommands(null);
     setSelectedChatId(undefined);
     setChatSessionActions(null);
     setRenamingChatId(null);
@@ -3922,7 +4028,7 @@ export const AgentSettingsPage = ({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
+                                            <button
               type="button"
               onClick={() => {
                 if (!activeRuntimeInstanceId) return;
@@ -4039,7 +4145,8 @@ export const AgentSettingsPage = ({
       className={cn(
         "agents-ui flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
-        isEmptyPersonaPage && "lv-agent-empty-persona-page",
+        isEmptyAgentPage && "lv-agent-empty-page",
+        isModifying && "lv-agent-upgrading-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -4473,7 +4580,7 @@ export const AgentSettingsPage = ({
                       </WorkspaceActionTooltip>
                     </>}
                     error={activeBotRestartError}
-                    createAction={multiBotEnabled && (
+                    createAction={showCreateBotEntry && (
                       <WorkspaceActionTooltip content={createLimitMessage || t("新建 Bot")} label={t("新建 Bot")} side="bottom">
                         <button type="button" className="lv-agent-action-button" aria-label={t("新建 Bot")} onClick={handleCreateNew} disabled={!canCreateAdditionalBot}>
                           <Plus className="size-4" aria-hidden="true" />
@@ -4492,6 +4599,7 @@ export const AgentSettingsPage = ({
                       onSelect={setSelectedChatId} onRename={(id) => { const selected = chatSessions.find((item) => item.chatId === id); if (selected) startSessionRename(selected); }}
                       onDelete={(id) => { const selected = chatSessions.find((item) => item.chatId === id); if (selected) openSessionDeleteConfirm(selected); }}
                       onRenameDraftChange={setRenamingDraft} onRenameCommit={commitSessionRename} onRenameCancel={cancelSessionRename}
+                      newSessionAction={<button type="button" aria-label={t("新会话")} onClick={createChatSession} disabled={chatSessionCommands === null || chatSessionMutationState?.pending === true}><Plus className="size-4" aria-hidden="true" /></button>}
                       onNavigate={() => setMobileNavigationOpen(false)}
                       labels={{ navigation: t("会话列表导航"), recent: t("最近会话"), loading: t("正在加载会话…"), defaultChat: t("默认对话"), actions: t("会话操作"), rename: t("重命名"), delete: t("删除"), name: t("会话名称"), cancel: t("取消"), confirm: t("确认"), protectedSession: t("默认会话不支持删除") }}
                     /> : <ConsoleNavigation label={t("实例配置导航")} activeId={activeSection} onNavigate={() => setMobileNavigationOpen(false)}
@@ -4510,7 +4618,7 @@ export const AgentSettingsPage = ({
                       <Suspense
                         fallback={sectionFallback}
                       >
-                        <div className="_lh-claw-bot-panel__cards min-w-0">
+                        <div className="_lh-claw-bot-panel__cards relative min-w-0">
                           {activeSection === "channel" && (
                             <TeaSdkSettingsPanel
                               kind="channel"
@@ -4573,7 +4681,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
                               botId={activeBot.id}
-                              profileId={activeBot.profileId ?? "main"}
+                              profileId={activeBot.profileId}
                               botName={activeBot.name}
                               isMainBot={isActiveBotDefault}
                               execDebugCommand={repositories.bots.execDebugCommand}
@@ -4598,26 +4706,43 @@ export const AgentSettingsPage = ({
                               }}
                               resetAgentConsole={acliResetConsole}
                               resetAgentConsoleRef={acliResetConsoleRef}
+                              maintenanceBusy={maintenanceBusy}
+                              maintenanceScopeId={activeRuntimeInstanceId ?? activeBot.id}
+                              onSessionRepairPendingChange={handleSessionRepairPendingChange}
                               workspaceRecoveryPanel={workspaceRecoveryPanel}
                             />
                           )}
-                          {activeSection === "chat" && isActiveBotDefault && (
+                          {isActiveBotDefault && (
                             /* 国际站语言切换时重挂 AgentChatPanel：组件内部用 ref 锁定首帧 launch token
                                与 lightvelaApiParams（见 agent-chat-panel.tsx 注释），切换语言需整体卸载
                                重挂以重置这些 ref，让 LightVelaPanel 用新语言重新初始化。国内站固定 key，
                                不因其他 state 变化无谓重挂。 */
-                            <AgentChatPanel
-                              key={isGlobal ? i18n.language : "cn"}
+                            <AgentChatMigrationSurface
+                              active={activeSection === "chat"}
                               accountId={accountId}
-                              commandExecutor={lightvelaCommandExecutor}
+                              apiBase={resolveConfiguredAuthApiBaseUrl() || undefined}
                               instanceId={sdkInstance.InstanceId}
-                              launchToken={launchToken}
-                              launchTokenExpiresAt={launchTokenExpiresAt}
-                              launchTokenError={launchTokenError}
-                              launchTokenStatus={launchTokenStatus}
-                              onRetryLaunchToken={retryLaunchToken}
-                              onRefreshLaunchToken={refreshLaunchToken}
-                              multiSession={chatMultiSessionBridge}
+                              region={isGlobal ? "intl" : "cn"}
+                              multiSession={openCraftChatMultiSessionBridge}
+                              onOwnerChange={handleChatSurfaceOwnerChange}
+                              onSessionCommandsChange={setChatSessionCommands}
+                              onSessionMutationStateChange={setChatSessionMutationState}
+                              legacy={(
+                                <AgentChatPanel
+                                  key={isGlobal ? i18n.language : "cn"}
+                                  accountId={accountId}
+                                  commandExecutor={lightvelaCommandExecutor}
+                                  instanceId={sdkInstance.InstanceId}
+                                  launchToken={launchToken}
+                                  launchTokenExpiresAt={launchTokenExpiresAt}
+                                  launchTokenError={launchTokenError}
+                                  launchTokenStatus={launchTokenStatus}
+                                  onRetryLaunchToken={retryLaunchToken}
+                                  onRefreshLaunchToken={refreshLaunchToken}
+                                  multiSession={legacyChatMultiSessionBridge}
+                                  framed={false}
+                                />
+                              )}
                             />
                           )}
                           {activeSection === "memory" && (

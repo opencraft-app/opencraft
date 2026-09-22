@@ -35,6 +35,39 @@ const makeOverview = (
 });
 
 export const CURATED_SKILL_OVERVIEWS_ID: Readonly<Record<string, CuratedSkillOverview>> = {
+  "mattpocock/skills/teach": makeOverview(
+    [
+      "Teach mengubah satu topik menjadi ruang kerja pembelajaran yang terus bertumbuh, dengan pelajaran singkat dan mandiri yang berlanjut antar-sesi.",
+      "Berikan alasan belajar, topik, serta preferensi atau batasan. Skill ini mendasarkan pelajaran pada sumber tepercaya, menambahkan sitasi, dan memakai latihan mengingat agar kemajuan tidak dimulai ulang setiap kali.",
+    ],
+    [["Pembelajar jangka panjang", "Menginginkan kursus yang berlanjut di beberapa sesi, bukan penjelasan satu kali."], ["Anggota tim baru", "Memerlukan cara terstruktur untuk mempelajari codebase, framework, proses, atau domain."], ["Pembelajar yang suka praktik", "Menginginkan pelajaran singkat, praktik, dan catatan atas penguasaan yang telah dibuktikan."]],
+    [["Belajar yang terpencar", "Menyimpan misi, sumber, pelajaran, dan catatan pembelajaran dalam satu ruang kerja."], ["Penjelasan tanpa dasar", "Mendorong penggunaan sumber tepercaya dan sitasi sebelum pelajaran ditulis."], ["Lancar tetapi tidak melekat", "Menggunakan latihan mengingat, jeda, dan umpan balik untuk membantu retensi jangka panjang."]],
+    [["Ruang kerja berkelanjutan", "Memelihara misi, sumber, pelajaran, referensi, dan catatan pembelajaran antar-sesi."], ["Pelajaran berbasis sumber", "Menyusun pelajaran dari sumber yang diteliti dan menghubungkan klaim kembali ke sumbernya."], ["Praktik interaktif", "Menggunakan kuis atau langkah dunia nyata dengan umpan balik agar pembelajaran lebih tahan lama."], ["Progres adaptif", "Memakai misi dan catatan pembelajaran untuk memilih pelajaran berikutnya dengan tingkat tantangan yang tepat."]],
+    "Jalankan Teach dalam ruang kerja belajar khusus, jelaskan apa yang ingin dipelajari dan alasannya, lalu lanjutkan dengan prompt seperti pelajaran berikutnya. Pisahkan ruang kerja ini dari repositori produk agar kursus dapat berkembang dengan aman.",
+    "Ajari saya dasar-dasar codebase ini melalui beberapa pelajaran singkat. Mulailah dengan mewawancarai misi saya, kumpulkan sumber tepercaya, dan jangan tulis pelajaran pertama sebelum sumber dicatat.",
+  ),
+  "mattpocock/skills/grill-me": makeOverview(
+    [
+      "Grill Me mengubah rencana atau desain awal menjadi wawancara terfokus yang mengungkap asumsi, keputusan yang belum ada, dan risiko sebelum implementasi.",
+      "Berikan rencana, desain, atau ide lalu minta untuk ditanya secara mendalam. Pertanyaannya bertujuan menajamkan pemikiran Anda, bukan menggantikan keputusan Anda, jadi jawab setiap pertanyaan dan gunakan celah yang ditemukan untuk memperbaiki rencana.",
+    ],
+    [["Pembuat produk", "Ingin menguji ketahanan sebuah ide sebelum berinvestasi pada implementasi."], ["Peninjau desain dan arsitektur", "Memerlukan cara terstruktur untuk menemukan keputusan yang hilang dan kasus tepi."], ["Tim yang menyiapkan eksekusi", "Menginginkan pemahaman bersama sebelum rencana menjadi pekerjaan."]],
+    [["Asumsi yang tidak diucapkan", "Memunculkan keputusan yang tersirat dalam rencana saat ini."], ["Penemuan terlambat", "Menemukan kasus tepi dan pertanyaan yang belum terjawab sebelum menjadi pengerjaan ulang mahal."], ["Kepercayaan diri semu", "Membuat rencana layak disetujui melalui jawaban jelas, bukan hanya momentum."]],
+    [["Pertanyaan sistematis", "Mewawancarai rencana pada dimensi produk, desain, dan implementasi yang penting."], ["Kedalaman pohon keputusan", "Mengikuti jawaban ke cabang relevan berikutnya, bukan berhenti pada pertanyaan permukaan."], ["Kesadaran codebase", "Dapat menggunakan konteks kode yang tersedia untuk menjawab pertanyaan dan mengurangi bolak-balik."], ["Validasi pra-pengembangan", "Menciptakan pemahaman bersama yang lebih jelas sebelum implementasi dimulai."]],
+    "Panggil Grill Me dengan rencana atau desain yang ingin diasah. Jawab pertanyaan secara langsung, catat keputusan yang berubah, dan revisi rencana sebelum meminta implementasi.",
+    "Grill saya tentang rencana ini. Ajukan satu pertanyaan terfokus setiap kali, ikuti jawaban penting ke cabang keputusan berikutnya, dan teruskan sampai cakupan, risiko, dan kriteria penerimaan jelas.",
+  ),
+  "flowkit-labs/skills/reddit-automation": makeOverview(
+    [
+      "Reddit Automation membantu menemukan diskusi Reddit tempat produk benar-benar dapat membantu dan menyusun balasan yang berguna untuk ditinjau manusia.",
+      "Berikan konteks produk, audiens, dan apa yang dapat Anda tawarkan secara jujur. Skill ini berfokus pada sejumlah kecil utas relevan, mengharuskan pengungkapan afiliasi secara transparan, dan mempertahankan keputusan akhir untuk meninjau serta memposting pada pengguna.",
+    ],
+    [["Pendiri dan pemasar", "Ingin menemukan percakapan Reddit yang relevan tanpa menjadikan outreach sebagai spam."], ["Developer advocate", "Memerlukan cara yang dapat diulang untuk menemukan pertanyaan yang layak dijawab dengan baik."], ["Tim yang berorientasi komunitas", "Ingin partisipasi produk tetap jujur, membantu, dan dapat ditinjau."]],
+    [["Menemukan utas yang tepat", "Menyaring komunitas luas menjadi percakapan tempat produk benar-benar dapat menjawab pertanyaan."], ["Promosi bernilai rendah", "Menjaga alur kerja tetap berpusat pada kontribusi nyata dan pengungkapan yang jelas."], ["Beban menyusun balasan", "Mengubah utas relevan menjadi draf balasan berguna yang dapat ditinjau sebelum diposting."]],
+    [["Penemuan peluang", "Menemukan pertanyaan dan diskusi Reddit terbaru yang sesuai dengan konteks produk."], ["Penyusunan balasan yang membantu", "Membuat balasan yang menjawab pertanyaan sebelum menyebut produk jika relevan."], ["Partisipasi transparan", "Mendorong pengungkapan afiliasi secara jujur dan menghindari promosi tersembunyi."], ["Gerbang tinjauan manusia", "Menjaga pengguna tetap mengendalikan apa yang diposting dan di mana."]],
+    "Berikan konteks produk, komunitas atau ruang masalah yang ingin dicari, serta rentang waktu. Tinjau setiap utas dan draf yang disarankan, ungkapkan afiliasi Anda, dan posting hanya ketika balasan benar-benar membantu.",
+    "Temukan utas Reddit minggu ini tempat produk kami benar-benar dapat membantu. Untuk setiap kandidat, jelaskan relevansinya, susun balasan berguna dengan pengungkapan afiliasi yang transparan, dan tunggu tinjauan saya sebelum apa pun diposting.",
+  ),
   "charon-fan/agent-playbook/self-improving-agent": makeOverview(
     [
       "Self-Improving Agent membantu Agent belajar dari hasil eksekusi skill, kesalahan, dan umpan balik, sehingga alur kerja berulang dapat terus membaik.",

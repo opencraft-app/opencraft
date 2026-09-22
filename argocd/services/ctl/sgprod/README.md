@@ -29,6 +29,7 @@
 - `CTL_CLS_TOPIC_ID`
 - `CTL_DEPLOYED_AT`
 - `CTL_TEST_MYSQL_HOST`
+- `MULTI_BOT_ENABLED`：国际站多 Bot 服务端开关；由 `ctl-api` 显式读取，改为 `false` 可独立回滚额外 Bot 能力
 - `WEBSITE_AGENT_API_BASE`：机器侧建站 API 根地址，当前为 `https://api.lightvela.ai`
 - `WEBSITE_CREDENTIAL_TAT_COMMAND_ID`：生产地域参数化 TAT CommandId；未配置时自动下发保持关闭
 

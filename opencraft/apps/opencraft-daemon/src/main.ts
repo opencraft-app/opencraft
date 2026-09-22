@@ -37,12 +37,15 @@ async function removeStaleSocket(endpoint: string): Promise<void> {
 
 export async function startOpenCraftDaemon(options: {
   readonly endpoint: string;
+  readonly runtimeDirectory: string;
   readonly authToken: string;
   readonly dshExecutable: string;
   readonly dshCapabilityPlugin?: string;
   readonly dataDirectory: string;
   readonly modelStorageDirectory?: string;
+  readonly skillsDirectory?: string;
 }) {
+  process.chdir(options.runtimeDirectory);
   await removeStaleSocket(options.endpoint);
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
   let closing: Promise<void> | null = null;
@@ -53,8 +56,10 @@ export async function startOpenCraftDaemon(options: {
       localAgent ??= await startLocalAgentHost({
         dshExecutable: options.dshExecutable,
         dshCapabilityPlugin: options.dshCapabilityPlugin,
+        runtimeDirectory: options.runtimeDirectory,
         dataDirectory: options.dataDirectory,
         modelStorageDirectory: options.modelStorageDirectory,
+        skillsDirectory: options.skillsDirectory,
       });
       return new WebSocketTransport({
         url: localAgent.websocketUrl,

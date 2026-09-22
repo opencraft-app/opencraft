@@ -48,27 +48,52 @@ test("browser images become host-independent Codex image URLs", async () => {
   });
 });
 
-test("the browser resolver stages non-image files through the active Host filesystem", async () => {
+test("the browser resolver stages non-image files through the semantic Host attachment port", async () => {
   const text = new File(["hello"], "note.txt", { type: "text/plain" });
-  const writes: Array<{ path: string; dataBase64: string }> = [];
+  const stages: unknown[] = [];
   const resolved = await resolveBrowserAttachment(text, pending(text), {
-    directory: "/home/agentuser/.hermes/opencraft-attachments",
-    writeFile: async (path, dataBase64) => { writes.push({ path, dataBase64 }); },
+    stage: async (request) => {
+      stages.push(request);
+      return {
+        ref: {
+          id: request.clientAttachmentId,
+          name: request.name,
+          mimeType: request.mimeType,
+          size: request.size,
+          location: {
+            kind: "host-file" as const,
+            path: "/host-owned/attachments/attachment-1/note.txt",
+          },
+        },
+      };
+    },
   });
 
-  assert.deepEqual(writes, [{
-    path: "/home/agentuser/.hermes/opencraft-attachments/attachment-1-note.txt",
-    dataBase64: "aGVsbG8=",
+  assert.deepEqual(stages, [{
+    clientAttachmentId: "attachment-1",
+    name: "note.txt",
+    mimeType: "text/plain",
+    size: 5,
+    source: { kind: "client-bytes", dataBase64: "aGVsbG8=" },
   }]);
   assert.equal(
     resolved.uri,
-    "file:///home/agentuser/.hermes/opencraft-attachments/attachment-1-note.txt",
+    "file:///host-owned/attachments/attachment-1/note.txt",
   );
   assert.equal(resolved.lifecycle, "ready");
   assert.deepEqual(resolved.metadata, {
     source: "browser-host-staged",
-    transport: "appserver-fs-write-file",
-    path: "/home/agentuser/.hermes/opencraft-attachments/attachment-1-note.txt",
+    transport: "opencraft-attachment-staging",
+    attachmentRef: {
+      id: "attachment-1",
+      name: "note.txt",
+      mimeType: "text/plain",
+      size: 5,
+      location: {
+        kind: "host-file",
+        path: "/host-owned/attachments/attachment-1/note.txt",
+      },
+    },
   });
 });
 

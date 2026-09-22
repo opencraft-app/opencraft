@@ -160,7 +160,11 @@ function rememberedIdMatchesSkill(id: string, skill: Pick<Skill, "registry" | "r
   const prefix = `${skill.registry}:`;
   if (!id.startsWith(prefix)) return false;
   const rawId = id.slice(prefix.length);
-  return rawId === skill.rawId.trim().toLowerCase() || rawId.split("/").pop() === skill.slug.trim().toLowerCase();
+  const targetRawId = skill.rawId.trim().toLowerCase();
+  if (rawId === targetRawId) return true;
+  return !rawId.includes("/")
+    && !targetRawId.includes("/")
+    && rawId === skill.slug.trim().toLowerCase();
 }
 
 function rememberedIdExistsInInstalledList(id: string, skills: InstalledSkill[]): boolean {
@@ -175,7 +179,11 @@ function rememberedIdExistsInInstalledList(id: string, skills: InstalledSkill[])
   const matchesIdentity = (skill: InstalledSkill) => {
     const candidates = [skill.rawId, skill.slug, ...(skill.nativeAliases ?? [])]
       .map((value) => value.trim().toLowerCase());
-    return candidates.includes(rawId) || (shortSlug ? candidates.includes(shortSlug) : false);
+    return candidates.includes(rawId) || (
+      !rawId.includes("/")
+      && shortSlug !== undefined
+      && candidates.some((candidate) => !candidate.includes("/") && candidate === shortSlug)
+    );
   };
 
   if (skills.some((skill) => skill.registries.includes(registry) && matchesIdentity(skill))) return true;
@@ -195,6 +203,9 @@ function getSearchInstallRowStatus(message?: string): SearchInstallRowStatus {
 }
 
 type FeaturedSkillId =
+  | "teach"
+  | "grill-me"
+  | "reddit-automation"
   | "self-improving-agent"
   | "find-skills"
   | "weather"
@@ -279,6 +290,42 @@ const FEATURED_SKILLS: ReadonlyArray<{
     },
     heroImageSrc: "/assets/skills/featured-simple.jpg",
     heroClassName: "bg-[#65B9A8]",
+  },
+  {
+    id: "teach",
+    skill: {
+      registry: "skills-sh",
+      rawId: "mattpocock/skills/teach",
+      slug: "teach",
+      name: "Teach",
+      sourceOrg: "mattpocock/skills",
+    },
+    heroImageSrc: "/assets/skills/featured-teach.jpg",
+    heroClassName: "bg-[#2F78B8]",
+  },
+  {
+    id: "grill-me",
+    skill: {
+      registry: "skills-sh",
+      rawId: "mattpocock/skills/grill-me",
+      slug: "grill-me",
+      name: "Grill Me",
+      sourceOrg: "mattpocock/skills",
+    },
+    heroImageSrc: "/assets/skills/featured-grill-me.jpg",
+    heroClassName: "bg-[#35358F]",
+  },
+  {
+    id: "reddit-automation",
+    skill: {
+      registry: "skills-sh",
+      rawId: "flowkit-labs/skills/reddit-automation",
+      slug: "reddit-automation",
+      name: "Reddit Automation",
+      sourceOrg: "flowkit-labs/skills",
+    },
+    heroImageSrc: "/assets/skills/featured-reddit-automation.jpg",
+    heroClassName: "bg-[#A92B4C]",
   },
 ] as const;
 
@@ -1722,10 +1769,40 @@ export function SkillsDemoPanel({
       subtitle: t("送祝福，赢实例"),
       description: t("为轻量云六周年生成祝福文案与海报，支持多场景风格定制"),
     },
+    "suno-lyrics-to-song": {
+      title: t("精选技能：Suno歌词成曲"),
+      subtitle: t("把歌词唱成一首歌"),
+      description: t("整理歌词结构、曲风和人声方向，用 Suno 生成可试听歌曲"),
+    },
+    "anti-fraud-expert": {
+      title: t("精选技能：防诈专家"),
+      subtitle: t("识别风险，稳妥止损"),
+      description: t("拆解可疑话术，提供核验、止损和取证建议"),
+    },
+    "chinese-official-writing": {
+      title: t("精选技能：中文公文写作"),
+      subtitle: t("规范起草，准确表达"),
+      description: t("起草、改写、审校中文公文和事务性材料"),
+    },
     "self-improving-agent": {
       title: t("精选技能：Self-Improving Agent"),
       subtitle: t("从每次执行中学习"),
       description: t("让 Agent 复盘结果，并持续改进自己的工作方式"),
+    },
+    teach: {
+      title: t("精选技能：Teach"),
+      subtitle: t("把学习变成持续的课程"),
+      description: t("围绕一个主题建立有来源、可持续推进的学习工作区"),
+    },
+    "grill-me": {
+      title: t("精选技能：Grill Me"),
+      subtitle: t("用问题找出计划盲点"),
+      description: t("在开始实现前，通过系统追问验证计划和设计"),
+    },
+    "reddit-automation": {
+      title: t("精选技能：Reddit Automation"),
+      subtitle: t("在真实讨论中提供帮助"),
+      description: t("发现适合参与的 Reddit 讨论，并起草透明、有帮助的回复"),
     },
     "find-skills": {
       title: t("精选技能：Find Skills"),

@@ -4,7 +4,6 @@ import { INSTANCE_BOT_ERROR_CODE } from "../domain/instance-bot-errors";
 import { defaultHermesAgentName } from "../i18n/default-agent-name";
 import { resolveConfiguredAuthApiBaseUrl } from "../lib/auth-api-base";
 import { createDebugExecRequestBody } from "../lib/debug-exec-request";
-import { isGlobal } from "../lib/region";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
@@ -860,33 +859,31 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     // treated as a legacy single-Bot instance: sibling Bots may exist on the server
     // even though this list cannot show them.
     const projectedInstanceReasons = new Map<string, BotSiblingsUnknownReason>();
-    const bots = isGlobal
-      ? instances.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]))
-      : (await Promise.all(instances.map(async (instance) => {
-        if (mapInstanceStatusToBotStatus(instance.status) !== "active") {
-          projectedInstanceReasons.set(instance.instance_id, "instance_stopped");
-          return [projectInstanceToBot(instance, drafts[instance.instance_id])];
-        }
-        try {
-          const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
-            baseUrl,
-            `/v1/instances/${encodeURIComponent(instance.instance_id)}/bots`,
-            { method: "GET" },
-          );
-          if (Array.isArray(nested.items) && nested.items.every((bot) => typeof bot.bot_id === "string")) {
-            return nested.items.map((bot) => projectInstanceBotToBot(instance, bot, drafts[bot.bot_id]));
-          }
-        } catch (error) {
-          if (!isNestedBotsTemporarilyUnavailable(error)) {
-            throw error;
-          }
-          // Backend rollout and pass upgrades can make profiles briefly unavailable; keep the root Bot visible.
-        }
-        // The instance is running, so this is a transient /bots outage rather than a
-        // stopped instance. Callers must not tell the user to start the instance.
-        projectedInstanceReasons.set(instance.instance_id, "bot_list_unavailable");
+    const bots = (await Promise.all(instances.map(async (instance) => {
+      if (mapInstanceStatusToBotStatus(instance.status) !== "active") {
+        projectedInstanceReasons.set(instance.instance_id, "instance_stopped");
         return [projectInstanceToBot(instance, drafts[instance.instance_id])];
-      }))).flat();
+      }
+      try {
+        const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
+          baseUrl,
+          `/v1/instances/${encodeURIComponent(instance.instance_id)}/bots`,
+          { method: "GET" },
+        );
+        if (Array.isArray(nested.items) && nested.items.every((bot) => typeof bot.bot_id === "string")) {
+          return nested.items.map((bot) => projectInstanceBotToBot(instance, bot, drafts[bot.bot_id]));
+        }
+      } catch (error) {
+        if (!isNestedBotsTemporarilyUnavailable(error)) {
+          throw error;
+        }
+        // Backend rollout and pass upgrades can make profiles briefly unavailable; keep the root Bot visible.
+      }
+      // The instance is running, so this is a transient /bots outage rather than a
+      // stopped instance. Callers must not tell the user to start the instance.
+      projectedInstanceReasons.set(instance.instance_id, "bot_list_unavailable");
+      return [projectInstanceToBot(instance, drafts[instance.instance_id])];
+    }))).flat();
     botScopeCache.clear();
     bots.forEach((bot) => {
       const instanceId = bot.instanceId ?? bot.id;
@@ -899,11 +896,11 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       });
       botScopeCache.set(bot.id, {
         ...identity,
-        legacy: isGlobal || projectedReason !== undefined,
+        legacy: projectedReason !== undefined,
       });
-      // Surface the incomplete-list signal to the UI. Global builds are single-Bot
-      // by design, so only the domestic multi-Bot path can have hidden siblings.
-      bot.siblingsUnknown = isGlobal ? undefined : projectedReason;
+      // Surface the incomplete-list signal to the UI on both sites so a temporary
+      // /bots outage never makes a projected root Bot look authoritative.
+      bot.siblingsUnknown = projectedReason;
     });
     return bots;
   };
@@ -955,7 +952,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     async createBot(input) {
       const displayName = input?.name?.trim() || defaultHermesAgentName();
       const creationPlan = planBotCreation({
-        supportsNestedBots: !isGlobal,
+        supportsNestedBots: true,
         instances: Array.from(instanceCache.values()).map((instance) => ({
           instanceId: instance.instance_id,
           status: instance.status,
@@ -1011,43 +1008,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         body,
       });
 
-      if (!isGlobal) {
-        if (mapInstanceStatusToBotStatus(created.status) !== "active") {
-          const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
-          botScopeCache.set(bot.id, createBotIdentity({
-            botId: bot.id,
-            instanceId: created.instance_id,
-            profileId: "main",
-            isDefault: true,
-          }));
-          instanceCache.set(created.instance_id, created);
-          return bot;
-        }
-        try {
-          const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
-            baseUrl,
-            `/v1/instances/${encodeURIComponent(created.instance_id)}/bots`,
-            { method: "GET" },
-          );
-          const items = Array.isArray(nested.items) ? nested.items : [];
-          const main = items.find((item) => item.is_default) ?? items[0];
-          if (main?.bot_id) {
-            const bot = projectInstanceBotToBot(created, main, readBotDrafts()[main.bot_id]);
-            botScopeCache.set(bot.id, createBotIdentity({
-              botId: bot.id,
-              instanceId: main.instance_id,
-              profileId: main.profile_id,
-              isDefault: main.is_default,
-            }));
-            instanceCache.set(created.instance_id, created);
-            return bot;
-          }
-        } catch (error) {
-          if (!isNestedBotsUnavailable(error)) {
-            throw error;
-          }
-          // The root instance remains the compatibility Bot until the nested API is available.
-        }
+      if (mapInstanceStatusToBotStatus(created.status) !== "active") {
         const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
         botScopeCache.set(bot.id, createBotIdentity({
           botId: bot.id,
@@ -1058,16 +1019,45 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         instanceCache.set(created.instance_id, created);
         return bot;
       }
-      return projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
+      try {
+        const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
+          baseUrl,
+          `/v1/instances/${encodeURIComponent(created.instance_id)}/bots`,
+          { method: "GET" },
+        );
+        const items = Array.isArray(nested.items) ? nested.items : [];
+        const main = items.find((item) => item.is_default) ?? items[0];
+        if (main?.bot_id) {
+          const bot = projectInstanceBotToBot(created, main, readBotDrafts()[main.bot_id]);
+          botScopeCache.set(bot.id, createBotIdentity({
+            botId: bot.id,
+            instanceId: main.instance_id,
+            profileId: main.profile_id,
+            isDefault: main.is_default,
+          }));
+          instanceCache.set(created.instance_id, created);
+          return bot;
+        }
+      } catch (error) {
+        if (!isNestedBotsUnavailable(error)) {
+          throw error;
+        }
+        // The root instance remains the compatibility Bot until the nested API is available.
+      }
+      const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
+      botScopeCache.set(bot.id, createBotIdentity({
+        botId: bot.id,
+        instanceId: created.instance_id,
+        profileId: "main",
+        isDefault: true,
+      }));
+      instanceCache.set(created.instance_id, created);
+      return bot;
     },
 
     async destroyBot(botId) {
       const scope = await resolveBotScope(botId);
-      if (isGlobal) {
-        await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(scope.instanceId)}`, {
-          method: "DELETE",
-        });
-      } else if (scope.isDefault || scope.legacy) {
+      if (scope.isDefault || scope.legacy) {
         // Destroying the main Bot destroys the whole instance. `legacy` scopes come from the
         // single-instance projection, so sibling Bots may exist even though this client cannot
         // see them — both cases must go through the guard. The query flag is kept for older
@@ -1109,13 +1099,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     async renameBot(botId: string, name: string): Promise<Bot> {
       const scope = await resolveBotScope(botId);
       const drafts = readBotDrafts();
-      if (isGlobal) {
-        const data = await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(scope.instanceId)}`, {
-          method: "PUT",
-          body: { name },
-        });
-        return projectInstanceToBot(data, drafts[botId]);
-      }
       const data = await requestEnvelope<CtlInstanceBotPayload>(
         baseUrl,
         `/v1/instances/${encodeURIComponent(scope.instanceId)}/bots/${encodeURIComponent(botId)}`,
@@ -1224,7 +1207,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async claimUniqueChannel(botId, channel) {
-      if (isGlobal) return;
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "PUT",
@@ -1232,7 +1214,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async confirmUniqueChannel(botId, channel) {
-      if (isGlobal) return;
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "POST",
@@ -1240,7 +1221,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async releaseUniqueChannel(botId, channel) {
-      if (isGlobal) return;
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "DELETE",

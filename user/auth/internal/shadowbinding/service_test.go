@@ -973,3 +973,155 @@ func TestShadowUserNameForUserUsesTencentSafeName(t *testing.T) {
 		t.Fatalf("expected hashed safe username, got %q len=%d", long, len(long))
 	}
 }
+
+func TestAdminUpsertBindingRejectsWhenDisabled(t *testing.T) {
+	svc := New(NewMemoryStore(), nil, Options{Enabled: true})
+
+	_, err := svc.AdminUpsertBinding(context.Background(), AdminBindingInput{
+		UserID:         "usr_1",
+		ShadowUserName: "mock_usr_1",
+		Uin:            450860000013,
+		OwnerUin:       450860000013,
+		AppID:          1250000000,
+		Reason:         "personal DevCloud testing",
+	})
+	if !errors.Is(err, ErrAdminDisabled) {
+		t.Fatalf("AdminUpsertBinding error = %v, want ErrAdminDisabled", err)
+	}
+}
+
+func TestListAdminBindingsPageFiltersAndPaginates(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 9, 21, 2, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	svc := New(store, nil, Options{Enabled: true, AdminEnabled: true, Now: func() time.Time { return base }})
+	for index, input := range []AdminBindingInput{
+		{UserID: "usr_first", ShadowUserName: "shadow_first", Uin: 330500000001, OwnerUin: 260203940, AppID: 1250000001, Reason: "test"},
+		{UserID: "usr_second", ShadowUserName: "shadow_second", Uin: 330500000002, OwnerUin: 260203940, AppID: 1250000002, Reason: "test"},
+	} {
+		svc.now = func() time.Time { return base.Add(time.Duration(index) * time.Minute) }
+		if _, err := svc.AdminUpsertBinding(context.Background(), input); err != nil {
+			t.Fatalf("upsert binding %d: %v", index, err)
+		}
+	}
+
+	items, total, err := svc.ListAdminBindingsPage(context.Background(), "330500000002", 1, 20)
+	if err != nil {
+		t.Fatalf("filter bindings: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].UserID != "usr_second" {
+		t.Fatalf("unexpected filtered bindings: total=%d items=%+v", total, items)
+	}
+
+	items, total, err = svc.ListAdminBindingsPage(context.Background(), "", 2, 1)
+	if err != nil {
+		t.Fatalf("paginate bindings: %v", err)
+	}
+	if total != 2 || len(items) != 1 || items[0].UserID != "usr_first" {
+		t.Fatalf("unexpected paginated bindings: total=%d items=%+v", total, items)
+	}
+}
+
+func TestAdminUpsertBindingValidatesRequiredFields(t *testing.T) {
+	svc := New(NewMemoryStore(), nil, Options{Enabled: true, AdminEnabled: true})
+	valid := AdminBindingInput{
+		UserID:         "usr_1",
+		ShadowUserName: "mock_usr_1",
+		Uin:            450860000013,
+		OwnerUin:       450860000013,
+		AppID:          1250000000,
+		Reason:         "personal DevCloud testing",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*AdminBindingInput)
+	}{
+		{name: "user id", mutate: func(in *AdminBindingInput) { in.UserID = "" }},
+		{name: "shadow user name", mutate: func(in *AdminBindingInput) { in.ShadowUserName = "" }},
+		{name: "uin", mutate: func(in *AdminBindingInput) { in.Uin = 0 }},
+		{name: "owner uin", mutate: func(in *AdminBindingInput) { in.OwnerUin = 0 }},
+		{name: "app id", mutate: func(in *AdminBindingInput) { in.AppID = 0 }},
+		{name: "reason", mutate: func(in *AdminBindingInput) { in.Reason = "" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := valid
+			tt.mutate(&input)
+			if _, err := svc.AdminUpsertBinding(context.Background(), input); !errors.Is(err, ErrInvalidAdminInput) {
+				t.Fatalf("AdminUpsertBinding error = %v, want ErrInvalidAdminInput", err)
+			}
+		})
+	}
+}
+
+func TestAdminBindingLifecycleRequiresExplicitUnbindForChanges(t *testing.T) {
+	now := time.Date(2026, 9, 20, 8, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	svc := New(store, nil, Options{
+		Enabled:      true,
+		AdminEnabled: true,
+		Now:          func() time.Time { return now },
+	})
+	first := AdminBindingInput{
+		UserID:         "usr_1",
+		ShadowUserName: "mock_usr_1",
+		Uin:            450860000013,
+		OwnerUin:       450860000013,
+		AppID:          1250000000,
+		Reason:         "personal DevCloud testing",
+	}
+
+	created, err := svc.AdminUpsertBinding(context.Background(), first)
+	if err != nil {
+		t.Fatalf("create admin binding: %v", err)
+	}
+	if created.Status != StatusActive || created.Uin != first.Uin || created.ShadowUserName != first.ShadowUserName {
+		t.Fatalf("unexpected created binding: %+v", created)
+	}
+
+	idempotent, err := svc.AdminUpsertBinding(context.Background(), first)
+	if err != nil {
+		t.Fatalf("idempotent admin binding: %v", err)
+	}
+	if idempotent != created {
+		t.Fatalf("idempotent binding changed: got %+v want %+v", idempotent, created)
+	}
+
+	changed := first
+	changed.Uin++
+	changed.OwnerUin++
+	if _, err := svc.AdminUpsertBinding(context.Background(), changed); !errors.Is(err, ErrBindingConflict) {
+		t.Fatalf("changed binding error = %v, want ErrBindingConflict", err)
+	}
+
+	second := first
+	second.UserID = "usr_2"
+	second.ShadowUserName = "mock_usr_2"
+	if _, err := svc.AdminUpsertBinding(context.Background(), second); !errors.Is(err, ErrBindingConflict) {
+		t.Fatalf("duplicate UIN error = %v, want ErrBindingConflict", err)
+	}
+
+	disabled, err := svc.AdminDisableBinding(context.Background(), AdminDisableInput{
+		UserID: "usr_1",
+		Reason: "test completed",
+	})
+	if err != nil {
+		t.Fatalf("disable admin binding: %v", err)
+	}
+	if disabled.Status != StatusDisabled {
+		t.Fatalf("disabled status = %q, want %q", disabled.Status, StatusDisabled)
+	}
+	if _, err := svc.AdminDisableBinding(context.Background(), AdminDisableInput{UserID: "usr_1", Reason: "repeat cleanup"}); err != nil {
+		t.Fatalf("repeated disable should be idempotent: %v", err)
+	}
+
+	reused, err := svc.AdminUpsertBinding(context.Background(), second)
+	if err != nil {
+		t.Fatalf("reuse UIN after explicit unbind: %v", err)
+	}
+	if reused.UserID != "usr_2" || reused.Status != StatusActive {
+		t.Fatalf("unexpected reused binding: %+v", reused)
+	}
+}

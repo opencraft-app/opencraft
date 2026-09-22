@@ -17,6 +17,7 @@ import (
 
 type Options struct {
 	Enabled             bool
+	AdminEnabled        bool
 	Now                 func() time.Time
 	Wait                func(context.Context, time.Duration) error
 	RunAsync            func(func())
@@ -40,6 +41,7 @@ type Service struct {
 	wait                func(context.Context, time.Duration) error
 	runAsync            func(func())
 	enabled             bool
+	adminEnabled        bool
 	now                 func() time.Time
 	authCodeTTL         time.Duration
 	authCodePrefix      string
@@ -90,6 +92,7 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 		wait:                wait,
 		runAsync:            runAsync,
 		enabled:             opts.Enabled,
+		adminEnabled:        opts.AdminEnabled,
 		now:                 now,
 		authCodeTTL:         ttl,
 		authCodePrefix:      strings.Trim(strings.TrimSpace(opts.AuthCodePrefix), "."),
@@ -99,6 +102,66 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 }
 
 func (s *Service) Enabled() bool { return s != nil && s.enabled }
+
+func (s *Service) AdminEnabled() bool { return s != nil && s.enabled && s.adminEnabled }
+
+func (s *Service) AdminGetBinding(ctx context.Context, userID string) (Binding, error) {
+	if !s.AdminEnabled() {
+		return Binding{}, ErrAdminDisabled
+	}
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" || len(trimmedUserID) > 64 {
+		return Binding{}, ErrInvalidAdminInput
+	}
+	return s.store.GetBindingByUserID(ctx, trimmedUserID)
+}
+
+func (s *Service) ListAdminBindingsPage(ctx context.Context, search string, page int, pageSize int) ([]Binding, int, error) {
+	if s == nil || s.store == nil {
+		return nil, 0, errors.New("shadow binding store is not configured")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return s.store.ListAdminBindings(ctx, strings.TrimSpace(search), pageSize, (page-1)*pageSize)
+}
+
+func (s *Service) AdminUpsertBinding(ctx context.Context, in AdminBindingInput) (Binding, error) {
+	if !s.AdminEnabled() {
+		return Binding{}, ErrAdminDisabled
+	}
+	requested := Binding{
+		UserID:         strings.TrimSpace(in.UserID),
+		ShadowUserName: strings.TrimSpace(in.ShadowUserName),
+		Uin:            in.Uin,
+		OwnerUin:       in.OwnerUin,
+		AppID:          in.AppID,
+	}
+	if requested.UserID == "" || len(requested.UserID) > 64 ||
+		requested.ShadowUserName == "" || len(requested.ShadowUserName) > 128 ||
+		requested.Uin <= 0 || requested.OwnerUin <= 0 || requested.AppID <= 0 ||
+		strings.TrimSpace(in.Reason) == "" {
+		return Binding{}, ErrInvalidAdminInput
+	}
+	return s.store.UpsertAdminBinding(ctx, requested, s.now())
+}
+
+func (s *Service) AdminDisableBinding(ctx context.Context, in AdminDisableInput) (Binding, error) {
+	if !s.AdminEnabled() {
+		return Binding{}, ErrAdminDisabled
+	}
+	userID := strings.TrimSpace(in.UserID)
+	if userID == "" || len(userID) > 64 || strings.TrimSpace(in.Reason) == "" {
+		return Binding{}, ErrInvalidAdminInput
+	}
+	return s.store.DisableAdminBinding(ctx, userID, s.now())
+}
 
 func (s *Service) Ready() bool {
 	if s == nil || !s.enabled || s.store == nil || s.client == nil {

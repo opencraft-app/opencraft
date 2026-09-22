@@ -951,6 +951,24 @@ it("focuses curated details, closes with Escape and restores the clicked trigger
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
+
+});
+
+it("puts the new skills.sh skills in the last international Featured batch", () => {
+  renderPanel("global");
+
+  const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
+  const nextBatchButton = within(featuredSection).getByRole("button", { name: "下一批" });
+  fireEvent.click(nextBatchButton);
+  fireEvent.click(nextBatchButton);
+  const teachCard = within(featuredSection).getByRole("button", { name: "查看Teach详情" }).closest("li") as HTMLElement;
+  expect(within(featuredSection).getByRole("button", { name: "查看Grill Me详情" })).toBeInTheDocument();
+  expect(within(featuredSection).getByRole("button", { name: "查看Reddit Automation详情" })).toBeInTheDocument();
+  expect(Array.from(teachCard.closest("ul")?.querySelectorAll<HTMLImageElement>('img[src^="/assets/skills/featured-"]') ?? []).map((image) => image.getAttribute("src"))).toEqual([
+    "/assets/skills/featured-teach.jpg",
+    "/assets/skills/featured-grill-me.jpg",
+    "/assets/skills/featured-reddit-automation.jpg",
+  ]);
 });
 
 it("uses Spanish category and overview copy when the international locale is es", async () => {

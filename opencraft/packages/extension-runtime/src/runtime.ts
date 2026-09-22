@@ -21,6 +21,8 @@ import {
 } from "@opencraft/extension-contract";
 
 import { AnnouncementCenter } from "./announcement-center";
+import { createScopedExtensionStorage } from "./scoped-storage";
+import type { ExtensionPersistence } from "./persistence";
 
 import {
   ExtensionContributionStore,
@@ -71,6 +73,8 @@ export interface ExtensionRuntimeSnapshot {
 }
 
 export interface ExtensionSupervisorOptions {
+  readonly persistence?: ExtensionPersistence;
+  readonly resolveHostPersistence?: (hostId: string, signal: AbortSignal) => Promise<ExtensionPersistence>;
   readonly context?: Context;
   readonly platform: ExtensionPlatform;
   readonly internalContributions?: Readonly<Record<string, InternalContributionAdapter>>;
@@ -181,8 +185,14 @@ class ActivationTransaction {
     private readonly contributions: ExtensionContributionStore,
     private readonly announcements: AnnouncementCenter,
     private readonly adapters: Readonly<Record<string, InternalContributionAdapter>>,
+    persistence?: ExtensionPersistence,
+    resolveHostPersistence?: ExtensionSupervisorOptions["resolveHostPersistence"],
   ) {
+    const storage = persistence || resolveHostPersistence ? createScopedExtensionStorage(persistence, token.identity.extensionId,
+      () => token.phase === "activating" || token.phase === "active", resolveHostPersistence) : null;
+    if (storage) this.subscriptions.push({ disposable: () => storage.dispose(), disposed: false });
     this.api = Object.freeze({
+      storage: storage?.api ?? null,
       identity: token.identity,
       commands: Object.freeze({
         register: (contribution: CommandContribution, handler: CommandHandler) =>
@@ -436,6 +446,8 @@ export class ExtensionSupervisor {
   readonly context: Context;
 
   private readonly platform: ExtensionPlatform;
+  private readonly persistence: ExtensionPersistence | undefined;
+  private readonly resolveHostPersistence: ExtensionSupervisorOptions["resolveHostPersistence"];
   private readonly adapters: Readonly<Record<string, InternalContributionAdapter>>;
   private readonly createActivationId: () => string;
   private readonly active = new Map<string, ActiveRecord>();
@@ -451,6 +463,8 @@ export class ExtensionSupervisor {
   constructor(options: ExtensionSupervisorOptions) {
     this.context = options.context ?? new Context();
     this.platform = options.platform;
+    this.persistence = options.persistence;
+    this.resolveHostPersistence = options.resolveHostPersistence;
     this.adapters = options.internalContributions ?? {};
     this.createActivationId = options.createActivationId ?? defaultActivationId;
   }
@@ -485,7 +499,7 @@ export class ExtensionSupervisor {
         generation,
       });
       const token: ActivationToken = { phase: "activating", identity };
-      const transaction = new ActivationTransaction(token, this.contributions, this.announcements, this.adapters);
+      const transaction = new ActivationTransaction(token, this.contributions, this.announcements, this.adapters, this.persistence, this.resolveHostPersistence);
       this.setDescriptor(manifest, identity, "activating");
 
       const activationPlugin = {

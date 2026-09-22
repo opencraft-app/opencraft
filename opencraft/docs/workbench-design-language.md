@@ -24,6 +24,11 @@ consume that primitive instead of choosing feature-local backgrounds. Menus keep
 the existing `menu.web.scss` geometry; dialogs retain their established surfaces
 rather than adopting navigation styling.
 
+Primary Sidebar routes also share one leading icon slot and text axis. A route
+group may retain its own accessible navigation landmark without rendering a
+visual heading; section separation comes from the Shell spacing tokens rather
+than stacked feature margins.
+
 Header toolbar controls consume `toolbar.web.scss` and the corresponding
 `--*-toolbar-control` tokens. That contract owns control height, radius,
 typography, inline padding, content gap, icon and chevron scale, bounded menu

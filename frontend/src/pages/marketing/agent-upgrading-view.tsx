@@ -27,6 +27,7 @@ export function AgentUpgradingView({ pass, failed = false, paused = false, refre
   const reduceMotion = useReducedMotion();
   const animate = inView && !reduceMotion && !failed && !paused;
   const showRecovery = paused || refreshing;
+  const showUpgradeTitle = Boolean(pass) && !failed && !paused;
 
   useEffect(() => {
     if (!passId || paused || failed) return;
@@ -66,7 +67,20 @@ export function AgentUpgradingView({ pass, failed = false, paused = false, refre
       />
       <div role="status" aria-live="polite" className="text-center">
         <h2 className="text-balance text-base font-semibold text-[var(--text-primary)]">
-          {failed ? t("套餐升级失败") : paused ? t("暂时无法确认升级进度") : pass ? t("正在为 Hermes Agent 升级套餐") : t("正在确认套餐升级状态")}
+          {failed ? t("套餐升级失败") : paused ? t("暂时无法确认升级进度") : pass ? t("正在升级您的 LightVela 套餐") : t("正在确认套餐升级状态")}
+          {showUpgradeTitle && (
+            <span aria-hidden="true" className="inline-flex">
+              {[0, 1, 2].map(index => (
+                <motion.span
+                  key={index}
+                  animate={animate ? { opacity: [0.25, 1, 0.25] } : { opacity: 1 }}
+                  transition={animate ? { duration: 1.2, repeat: Infinity, delay: index * 0.2 } : { duration: 0 }}
+                >
+                  .
+                </motion.span>
+              ))}
+            </span>
+          )}
         </h2>
         <p className="mt-2 text-pretty text-sm leading-6 text-[var(--text-secondary)]">
           {failed ? t("订单已关闭或失败，请联系支持确认后再操作。") : paused ? t("已暂停自动查询，请刷新状态或联系支持，避免重复付款。") : pass ? t("套餐升级中，完成后将自动展示 Agent。") : t("暂时无法确认订单状态，请稍后查询，避免重复付款。")}

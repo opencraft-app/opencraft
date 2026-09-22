@@ -9,6 +9,7 @@ export interface DshHostCapability {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
+  readonly timeoutMs: number;
 }
 type Send = (frame: Record<string, unknown>) => void;
 interface Registration { owner: DshExecutionOwner; send: Send; specs: readonly DynamicToolSpec[]; capabilities: readonly DshHostCapability[] }
@@ -20,7 +21,7 @@ interface Pending { registration: Registration; threadId: string; reject: (error
 export class DshCapabilityBroker {
   private registrations = new Map<string, Registration>();
   private pending = new Map<string, Pending>();
-  constructor(private readonly timeoutMs = 10_000) {}
+  constructor(private readonly timeoutMs?: number) {}
   register(threadId: string, owner: DshExecutionOwner, specs: unknown, send: Send): readonly DshHostCapability[] {
     const previous = this.registrations.get(threadId);
     if (previous && previous.owner !== owner) throw new Error("Thread capabilities belong to another connection");
@@ -63,7 +64,7 @@ export class DshCapabilityBroker {
         try { registration.send({ method: "serverRequest/resolved", params: { threadId, requestId: id } }); } finally { reject(error); }
       };
       const abort = () => cancel(new Error("Capability call cancelled"));
-      const timer = setTimeout(() => cancel(new Error("Capability call timed out")), this.timeoutMs);
+      const timer = setTimeout(() => cancel(new Error("Capability call timed out")), this.timeoutMs ?? capability.timeoutMs);
       signal.addEventListener("abort", abort, { once: true });
       this.pending.set(id, {
         registration, threadId, reject: cancel,
@@ -112,7 +113,9 @@ export function normalizeCapabilities(specs: unknown): DshHostCapability[] {
       const id = namespace ? namespace + "." + tool.name : tool.name;
       if (ids.has(id)) throw new Error("Duplicate dynamic capability: " + id);
       ids.add(id);
-      capabilities.push({ id, namespace, name: tool.name, description: tool.description, inputSchema: structuredClone(tool.inputSchema) });
+      // Internal Host → engine contract, not a model-provided deadline.
+      const timeoutMs = namespace === null && tool.name === "connectors_call_tool" ? 150_000 : 10_000;
+      capabilities.push({ id, namespace, name: tool.name, description: tool.description, inputSchema: structuredClone(tool.inputSchema), timeoutMs });
     };
     for (const spec of specs) {
       if (spec?.type === "function") add(null, spec);

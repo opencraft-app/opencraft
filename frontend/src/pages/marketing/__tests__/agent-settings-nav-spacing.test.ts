@@ -167,9 +167,9 @@ describe("Agent settings navigation spacing", () => {
     expect(agentsPageClient).toContain(
       "className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}",
     );
-    expect(agentShell).toContain("width: min(1760px, calc(100vw - 32px));");
+    expect(agentShell).toContain("width: calc(100% - 40px);");
     expect(agentShell).toContain("margin-left: 16px;");
-    expect(agentShell).toContain("margin-right: auto;");
+    expect(agentShell).toContain("margin-right: 24px;");
     expect(agentHeaderShell).toContain("right: auto;");
     expect(agentHeaderShell).toContain("width: 264px;");
     expect(agentHeaderShell).toContain("height: 68px;");

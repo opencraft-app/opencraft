@@ -36,6 +36,9 @@
 
 ## Credit 积分包 Web checkout
 
+- 积分包询价与 Pass 使用相同的前端金额契约：`price`、`total_cost` 和 `real_total_cost` 均以分/美分返回。
+  国际站 Trade 必须优先读取计费 `highPrecisionPrice.*High`（主币种 `×1e8`），在后端精确换算为美分，
+  `real_total_cost` 同时按计费税率换算为含税美分；前端统一除以 `100` 展示，不能直接消费高精度原值。
 - 控制台购买积分包使用两段式订单链路：`POST /v1/credit/packages/order` 只创建订单并返回
   `dealName` 和绑定用户、订单的 10 分钟一次性 `auth_code`，随后调用
   `POST /v1/credit/packages/order-url` 获取支付信息；

@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import { useRef, type ReactNode, type RefObject } from "react";
 import { MessageSquare, MoreVertical } from "lucide-react";
 import { AppLink } from "@/lib/app-navigation";
 import { cn } from "@/lib/utils";
@@ -29,14 +29,15 @@ export interface ConsoleSessionListProps {
   onRenameDraftChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
+  newSessionAction?: ReactNode;
   onNavigate: () => void;
   labels: { navigation: string; recent: string; loading: string; defaultChat: string; actions: string; rename: string; delete: string; name: string; cancel: string; confirm: string; protectedSession: string };
 }
 
-export function ConsoleSessionList({ sessions, loading, selectedId, href, active, actionsAvailable, menuId, renameId, renameDraft, confirmationOpen, actionTriggerRef, onMenuChange, onSelect, onRename, onDelete, onRenameDraftChange, onRenameCommit, onRenameCancel, onNavigate, labels }: ConsoleSessionListProps) {
+export function ConsoleSessionList({ sessions, loading, selectedId, href, active, actionsAvailable, menuId, renameId, renameDraft, confirmationOpen, actionTriggerRef, onMenuChange, onSelect, onRename, onDelete, onRenameDraftChange, onRenameCommit, onRenameCancel, newSessionAction, onNavigate, labels }: ConsoleSessionListProps) {
   const triggers = useRef(new Map<string, HTMLButtonElement>());
   return <>
-    <nav className="lv-agents-nav" aria-label={labels.navigation}><div className="lv-agents-nav-group" role="group"><span className="lv-agents-nav-group-label">{labels.recent}</span><ul className="lv-agents-nav-group-items">
+    <nav className="lv-agents-nav" aria-label={labels.navigation}><div className="lv-agents-nav-group" role="group"><div className="flex items-center justify-between gap-2"><span className="lv-agents-nav-group-label">{labels.recent}</span>{newSessionAction}</div><ul className="lv-agents-nav-group-items">
       {loading && sessions.length === 0 ? <li className="lv-agents-session-hint flex items-center gap-2" role="status" aria-busy="true"><Skeleton className="h-3.5 w-28" /><span className="sr-only">{labels.loading}</span></li> : sessions.length === 0 ? <li><AppLink to={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("lv-agents-session-item lv-agents-nav-item", active && "is-active")}><span className="lv-agents-nav-icon"><MessageSquare className="size-4" aria-hidden="true" /></span><span className="lv-agents-session-title">{labels.defaultChat}</span></AppLink></li> : sessions.map((session) => (
         <li key={session.id} className={cn("lv-agents-session-item-wrap", selectedId === session.id && "is-active")}>
           <AppLink to={href} onClick={() => { onSelect(session.id); onNavigate(); }} aria-current={selectedId === session.id ? "page" : undefined} className="lv-agents-session-item lv-agents-nav-item"><span className="lv-agents-nav-icon"><MessageSquare className="size-4" aria-hidden="true" /></span><span className="lv-agents-session-title">{session.title}</span></AppLink>

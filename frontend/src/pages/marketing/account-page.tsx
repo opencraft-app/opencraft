@@ -1,6 +1,6 @@
 import { AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
-import { ShieldAlert } from "lucide-react";
+import { ArrowLeft, ShieldAlert } from "lucide-react";
 import { useEffect, useState, useRef, type ReactNode } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -9,7 +9,7 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferral
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
-import { ProductPageShell } from "@/components/site/product-chrome";
+import { ProductPageShell, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { Button } from "@/components/ui/button";
 import { DisplayTitle } from "@/components/ui/display-title";
 import { useT } from "@/i18n/t";
@@ -30,7 +30,7 @@ import {
   ChangePhoneDialog,
   PassDeleteDialogController,
 } from "@/components/account/account-dialogs";
-import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { SavedCardsSection } from "./saved-cards-section";
@@ -40,7 +40,8 @@ import { useAccountSubscriptionModel } from "@/lib/use-account-subscription-mode
 
 /* ─── Main Account Page ─── */
 
-export const AccountPage = () => {
+export const AccountPage = ({ view = "account" }: { view?: "account" | "billing" }) => {
+  const isBillingView = view === "billing";
   const t = useT();
   const { i18n } = useTranslation();
   const navigate = useAppNavigate();
@@ -183,6 +184,7 @@ export const AccountPage = () => {
   const nameAuditFailed = user?.nameAuditStatus === "failed";
 
   useEffect(() => {
+    if (isBillingView) return;
     const bound = searchParams.get("email_bound");
     const bindError = searchParams.get("email_bind_error");
     if (!bound && !bindError) return;
@@ -217,12 +219,12 @@ export const AccountPage = () => {
     })();
     setEmailBindError(message);
     setEmailBindSuccess(null);
-  }, [refreshProfile, searchParams, setSearchParams, t]);
+  }, [isBillingView, refreshProfile, searchParams, setSearchParams, t]);
 
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {
     // 国际站无实名概念，即便被手动拼接该 query 也不展示中文提醒
-    if (isGlobal) return;
+    if (isBillingView || isGlobal) return;
     if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
 
     // 读取 return_to（仅站内路径，防开放重定向），实名完成后自动跳回
@@ -237,7 +239,7 @@ export const AccountPage = () => {
     setSearchParams(next, { replace: true });
 
     setRealnameRequiredTip(t("创建 LightVela 前，请先完成实名认证。"));
-  }, [searchParams, setSearchParams, t, isGlobal]);
+  }, [isBillingView, searchParams, setSearchParams, t, isGlobal]);
 
   // 实名认证完成后自动清除提醒；若有 return_to 则自动跳回原页面
   useEffect(() => {
@@ -570,10 +572,10 @@ export const AccountPage = () => {
       >
         <section className="mx-auto w-full max-w-[46rem]">
           {/* Page Header */}
-          <DisplayTitle className="mb-6 text-balance md:mb-8">{t("账号管理")}</DisplayTitle>
+          <DisplayTitle className="mb-6 text-balance md:mb-8">{isBillingView ? t("套餐与费用") : t("账号")}</DisplayTitle>
 
           {/* 实名提醒 tips：从首页「立即创建」跳转、且尚未完成实名认证时展示（仅国内站） */}
-          {realnameRequiredTip && !verified && showRealnameSection && (
+          {!isBillingView && realnameRequiredTip && !verified && showRealnameSection && (
             <div
               role="alert"
               className="mb-6 flex items-start gap-3 rounded-md px-4 py-3"
@@ -591,7 +593,7 @@ export const AccountPage = () => {
 
           {/* Sections */}
           <div className="space-y-6">
-            <div className="space-y-6">
+            {!isBillingView && <div className="space-y-6">
               <AccountProfileCard
                 user={user}
                 displayAvatarSrc={displayAvatarSrc}
@@ -642,10 +644,10 @@ export const AccountPage = () => {
                   onRetryRealnameSync={() => void handleRetryRealnameSync()}
                 />
               )}
-            </div>
+            </div>}
 
             {/* ── Section 2: Subscription ── */}
-            <AccountSubscriptionCard
+            {isBillingView && <AccountSubscriptionCard
               state={subscriptionModel.state}
               pass={subscriptionModel.pass}
               displayName={subscriptionModel.displayName}
@@ -657,8 +659,8 @@ export const AccountPage = () => {
               actions={subscriptionModel.actions}
               error={subscriptionModel.error}
               subscribeHref={subscribeHref}
-            />
-            {subscriptionModel.dialogs.renewOpen && subscriptionModel.actions.renewalAvailable && subscriptionModel.pass ? (
+            />}
+            {isBillingView && subscriptionModel.dialogs.renewOpen && subscriptionModel.actions.renewalAvailable && subscriptionModel.pass ? (
               <RenewPassModal
                 pass={subscriptionModel.pass}
                 onClose={subscriptionModel.dialogs.closeRenew}
@@ -666,7 +668,7 @@ export const AccountPage = () => {
                 initialRealnameRequired={Boolean(session.user) && !isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled)}
               />
             ) : null}
-            {subscriptionModel.pass ? (
+            {isBillingView && subscriptionModel.pass ? (
               <PassDeleteDialogController
                 open={subscriptionModel.dialogs.deleteOpen}
                 onOpenChange={(open) => { if (!open) subscriptionModel.dialogs.closeDelete(); }}
@@ -682,9 +684,9 @@ export const AccountPage = () => {
               />
             ) : null}
 
-            {referralEnabled && referralRevealed && <ReferralSection />}
+            {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
 
-            {isGlobal && <SavedCardsSection />}
+            {isBillingView && isGlobal && <SavedCardsSection />}
           </div>
         </section>
       </AccountPageGate>
@@ -693,7 +695,7 @@ export const AccountPage = () => {
 
     pageOverlays = (
       <AnimatePresence>
-        {showRealnameSection && showVerifyModal && (
+        {!isBillingView && showRealnameSection && showVerifyModal && (
           <VerifyIdentityModal
             key="verify"
             onClose={() => setShowVerifyModal(false)}
@@ -708,7 +710,7 @@ export const AccountPage = () => {
             phone={user?.phone}
           />
         )}
-        {showRealnameSection && phoneProofEnabled && (
+        {!isBillingView && showRealnameSection && phoneProofEnabled && (
           <ChangePhoneDialog
             key="change-phone"
             open={showChangePhoneModal}
@@ -719,7 +721,7 @@ export const AccountPage = () => {
             onSuccess={handlePhoneChangeSuccess}
           />
         )}
-        {showEmailBindSection && !user?.emailVerified && (
+        {!isBillingView && showEmailBindSection && !user?.emailVerified && (
           <BindEmailDialog
             key="bind-email"
             open={showBindEmailModal}
@@ -727,22 +729,29 @@ export const AccountPage = () => {
             onSend={handleSendEmailBind}
           />
         )}
-        <AccountDeleteDialog
+        {!isBillingView && <AccountDeleteDialog
             key="delete"
             open={showDeleteModal}
             onOpenChange={setShowDeleteModal}
             onConfirm={() => void handleDeleteAccount()}
             submitting={deleting}
-        />
+        />}
       </AnimatePresence>
     );
   }
 
   return (
-    <ProductPageShell className="agents-ui min-h-dvh" afterFooter={pageOverlays} footer={null}>
+    <ProductPageShell className="agents-ui min-h-dvh" afterFooter={pageOverlays} footer={null}
+      header={<ProductReturnHomeHeader showLanguageSwitcher={false} beforeUserMenu={
+        <AppLink to={AGENTS_HOME_PATH} aria-label={t("返回智能体")}
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-medium text-black/70 hover:bg-black/5 hover:text-black/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 sm:h-9 sm:min-h-9 sm:px-4 sm:py-0">
+          <ArrowLeft className="size-4 shrink-0" aria-hidden="true" /><span className="hidden sm:inline">{t("返回智能体")}</span>
+        </AppLink>} />}>
       {pageContent}
       {/* 本地 mock 预览专用：交互状态切换器（生产/真实后端环境自动隐藏，不影响线上） */}
       <AccountPreviewStateSwitcher />
     </ProductPageShell>
   );
 };
+
+export const PlansBillingPage = () => <AccountPage view="billing" />;

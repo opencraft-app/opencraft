@@ -76,6 +76,31 @@ describe("AutomationUpstreamPicker", () => {
     expect(option).not.toHaveTextContent("2026-08-17 20:35");
   });
 
+  it("portals the option list outside the form scroll area", async () => {
+    const user = userEvent.setup();
+    render(
+      <AutomationUpstreamPicker
+        value=""
+        options={[makeCronJob({ id: "a", name: "每日新闻收集" })]}
+        state="supported"
+        onChange={vi.fn()}
+      />,
+    );
+
+    const trigger = screen.getByRole("combobox", { name: "上游任务" });
+    const field = trigger.parentElement;
+    await user.click(trigger);
+
+    const popup = screen.getByTestId("automation-upstream-picker-popup");
+    expect(document.body).toContainElement(popup);
+    expect(field).not.toContainElement(popup);
+    expect(popup).toHaveClass(
+      "z-[210]",
+      "w-[var(--radix-popover-trigger-width)]",
+      "max-h-[var(--radix-popover-content-available-height)]",
+    );
+  });
+
   it("removes the no-upstream option and clears the selection from the trigger action", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
+import { Bot, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
 import { InternationalLanguageMenu } from "@/components/site/language-switcher";
@@ -11,7 +11,7 @@ import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { ACCOUNT_BILLING_PATH, AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
 import { registerWindowCommand } from "@/lib/window-command-chain";
 import { emitConsoleShowEvent } from "@/lib/console-show-event";
@@ -164,7 +164,7 @@ const HeaderUserAvatarMenu = ({
                   className={menuItemClass}
                 >
                   <Bot className={menuIconClass} />
-                  {t("我的智能体伙伴")}
+                  {t("我的智能体")}
                 </a>
               <a
                 href="/account"
@@ -172,7 +172,15 @@ const HeaderUserAvatarMenu = ({
                 className={menuItemClass}
               >
                 <User className={menuIconClass} />
-                {t("账号管理")}
+                {t("账号")}
+              </a>
+              <a
+                href={ACCOUNT_BILLING_PATH}
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <CreditCard className={menuIconClass} />
+                {t("套餐与费用")}
               </a>
               {showWorkbenchEntry ? (
                 <a

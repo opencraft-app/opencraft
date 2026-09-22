@@ -4,6 +4,7 @@ import type {
   InteractionTimelineFrame,
   SubagentTimelineBlock,
   TextTimelineBlock,
+  TodoTimelineBlock,
   TimelineBlock,
   TimelineStatus,
   UserTimelineFrame,
@@ -209,6 +210,8 @@ export interface TimelineTurnPresentationPlan {
   readonly userFrames: readonly UserTimelineFrame[];
   readonly assistantFrame: AssistantTimelineFrame | null;
   readonly assistant: AssistantTurnPresentationPlan | null;
+  /** Latest live todo snapshot, projected outside transcript/virtual rows. */
+  readonly activeTodo: TodoTimelineBlock | null;
   readonly auxiliaryFrames: readonly (EventTimelineFrame | InteractionTimelineFrame)[];
   /** Turn-parent arbitration: one discriminated owner, with no parallel visibility flag. */
   readonly thinkingOwner: TimelineTurnThinkingOwner;
@@ -937,6 +940,10 @@ export function createAssistantTurnPresentationPlan(
     // implementation records remain facts and never become a second card.
     if (block.type === "plan-implementation") continue;
     if (block.type === "plan") { proposedPlan = block; continue; }
+    // Plan updates are immutable protocol observations. Codex selects the
+    // latest snapshot into fixed in-progress chrome; snapshots never become
+    // transcript Activity rows.
+    if (block.type === "todo") continue;
     // Registered dynamic renderers may intentionally reject malformed tool
     // arguments. Codex does not leak those calls through its generic row.
     if (block.type === "tool-call" && isToolActivityPresentationSuppressed(block, registry)) continue;
@@ -1030,6 +1037,10 @@ export function createTimelineTurnPresentationPlan(
   const assistant = assistantFrame === null
     ? null
     : createAssistantTurnPresentationPlan(assistantFrame, registry, partitionOptions);
+  const latestTodo = assistantFrame?.blocks.filter(
+    (block): block is TodoTimelineBlock => block.type === "todo",
+  ).at(-1) ?? null;
+  const activeTodo = isMostRecentTurn && turnIsActive ? latestTodo : null;
   const hasPendingInteraction = auxiliaryFrames.some((frame) =>
     frame.type === "interaction" && frame.blocks.some(isPendingNonActivityBlock));
   const latestProposal = assistantFrame?.blocks.filter((block) => block.type === "plan").at(-1);
@@ -1064,6 +1075,7 @@ export function createTimelineTurnPresentationPlan(
     userFrames,
     assistantFrame,
     assistant,
+    activeTodo,
     auxiliaryFrames,
     thinkingOwner,
     topLevelSlotCount,

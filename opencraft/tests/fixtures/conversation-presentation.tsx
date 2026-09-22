@@ -53,7 +53,19 @@ function Demo() {
         scenario === "todo"
           ? [
               {
-                id: "todo",
+                id: "todo-old",
+                type: "todo-list",
+                payload: {
+                  explanation: "Inspect first",
+                  plan: [
+                    { step: "Inspect source", status: "inProgress" },
+                    { step: "Test rendering", status: "pending" },
+                    { step: "Ship", status: "pending" },
+                  ],
+                },
+              },
+              {
+                id: "todo-latest",
                 type: "todo-list",
                 payload: {
                   explanation: "Inspect first",

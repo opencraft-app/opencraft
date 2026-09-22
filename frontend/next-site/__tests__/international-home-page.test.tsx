@@ -28,8 +28,11 @@ const requiredInternalRoutes = [
   "/about",
   "/agents",
   "/agents/automations",
+  "/agents/channels",
   "/agents/files",
   "/agents/labs/deepseek-harness",
+  "/agents/memory",
+  "/agents/skills",
   "/agents/websites/",
   "/changelog",
   "/docs/configuration/channel-discord",
@@ -128,9 +131,13 @@ describe("international v2 homepage artifact", () => {
     expect(document.querySelector(".hero__cta .btn-dark")?.getAttribute("href")).toBe("/subscribe");
     expect(document.querySelector("[data-domestic-home-hero-cta-label]")?.textContent).toBe("免费试用");
     expect(tabLabels).toEqual(["微信", "QQ", "企业微信", "钉钉", "飞书"]);
-    expect(document.querySelector(".wcard__thumb--1 img")?.getAttribute("alt")).toBe(
+    expect(document.querySelector(".chnloop")?.getAttribute("aria-label")).toBe(
       "微信、企业微信、钉钉、飞书、QQ 等当前支持的平台",
     );
+    expect(document.querySelectorAll(".chnloop__list:first-child .chnloop__item")).toHaveLength(8);
+    expect(document.querySelector(".channel-approval__title")?.textContent).toContain("重要动作先确认");
+    expect(document.querySelector(".channel-approval__bubble--agent")?.textContent).toContain("请回复「确认删除」");
+    expect(document.querySelectorAll(".channel-approval__actions")).toHaveLength(0);
     expect(document.querySelector("#panel-wa .native--wa")).not.toBeNull();
     expect(document.querySelector("#panel-qq .native--qq")).not.toBeNull();
     expect(document.querySelector("#panel-tg .native--wecom")).not.toBeNull();
@@ -458,31 +465,40 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     } as const;
     const expectedAlwaysOnCopy = {
-      "en-US": "I stay available 24/7 in the cloud, so your computer can stay off. As we work together, I learn your preferences and adapt to your feedback.",
-      "zh-SG": "我在云端 7×24 小时在线，不用你一直开着电脑。协作越久，我越懂你的偏好，也会根据反馈持续调整。",
-      "zh-Hant": "我在雲端 7×24 小時在線，不用你一直開著電腦。協作越久，我越懂你的偏好，也會根據回饋持續調整。",
-      "id-ID": "Saya tersedia 24/7 di cloud, jadi komputer Anda tidak perlu terus menyala. Seiring kita bekerja bersama, saya memahami preferensi Anda dan menyesuaikan diri dengan masukan.",
-      es: "Estoy disponible 24/7 en la nube, así que no necesitas mantener tu ordenador encendido. Al trabajar juntos, comprendo tus preferencias y me adapto a tus comentarios.",
-      "ja-JP": "私はクラウドで24時間365日稼働するため、パソコンを起動したままにする必要はありません。協力するほど好みを理解し、フィードバックに合わせて調整します。",
-      "ko-KR": "저는 클라우드에서 24시간 연중무휴로 작동하므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 함께할수록 선호를 더 잘 이해하고 피드백에 맞춰 조정합니다.",
+      "en-US": "Work keeps finishing even after you step away.",
+      "zh-SG": "即使你离开，任务也会继续完成。",
+      "zh-Hant": "即使你離開，任務也會繼續完成。",
+      "id-ID": "Pekerjaan tetap berjalan sampai selesai meski Anda pergi.",
+      es: "El trabajo sigue completándose aunque te vayas.",
+      "ja-JP": "あなたが離れても、タスクは最後まで完了します。",
+      "ko-KR": "자리를 비워도 작업은 끝까지 완료됩니다.",
     } as const;
     const expectedCardAssets = {
-      "en-US": ["wcard-apps-en.png", "wcard-folder-en.png", "wcard-hub-v3-en.png"],
-      "zh-SG": ["wcard-apps-zh-Hans.png", "wcard-folder-zh-Hans.webp", "wcard-hub-v3-zh-Hans.webp"],
-      "zh-Hant": ["wcard-apps-zh-Hant.png", "wcard-folder-zh-Hans.webp", "wcard-hub-v3-zh-Hans.webp"],
-      "id-ID": ["wcard-apps-id.png", "wcard-folder-id.png", "wcard-hub-v3-id.png"],
-      es: ["wcard-apps-es.png", "wcard-folder-es.png", "wcard-hub-v3-es.png"],
-      "ja-JP": ["wcard-apps-ja.png", "wcard-folder-ja.png", "wcard-hub-v3-ja.png"],
-      "ko-KR": ["wcard-apps-ko.png", "wcard-folder-ko.png", "wcard-hub-v3-ko.png"],
+      "en-US": [],
+      "zh-SG": [],
+      "zh-Hant": [],
+      "id-ID": [],
+      es: [],
+      "ja-JP": [],
+      "ko-KR": [],
+    } as const;
+    const expectedAutomationPanelAsset = {
+      "en-US": "automation-templates-panel-en.png",
+      "zh-SG": "automation-templates-panel.png",
+      "zh-Hant": "automation-templates-panel-zh-Hant.png",
+      "id-ID": "automation-templates-panel-id.png",
+      es: "automation-templates-panel-es.png",
+      "ja-JP": "automation-templates-panel-ja.png",
+      "ko-KR": "automation-templates-panel-ko.png",
     } as const;
     const expectedProductPanelAssets = {
-      "en-US": ["automation-templates-panel-en.png", "workbench-panel-en.png"],
-      "zh-SG": ["automation-screenshot.png", "workbench-screenshot.png"],
-      "zh-Hant": ["automation-screenshot.png", "workbench-screenshot.png"],
-      "id-ID": ["automation-templates-panel-id.png", "workbench-panel-id.png"],
-      es: ["automation-templates-panel-es.png", "workbench-panel-es.png"],
-      "ja-JP": ["automation-templates-panel-ja.png", "workbench-panel-ja.png"],
-      "ko-KR": ["automation-templates-panel-ko.png", "workbench-panel-ko.png"],
+      "en-US": [expectedAutomationPanelAsset["en-US"], "workbench-panel-en.png"],
+      "zh-SG": [expectedAutomationPanelAsset["zh-SG"], "workbench-screenshot.png"],
+      "zh-Hant": [expectedAutomationPanelAsset["zh-Hant"], "workbench-screenshot.png"],
+      "id-ID": [expectedAutomationPanelAsset["id-ID"], "workbench-panel-id.png"],
+      es: [expectedAutomationPanelAsset.es, "workbench-panel-es.png"],
+      "ja-JP": [expectedAutomationPanelAsset["ja-JP"], "workbench-panel-ja.png"],
+      "ko-KR": [expectedAutomationPanelAsset["ko-KR"], "workbench-panel-ko.png"],
     } as const;
     const expectedNavLabels = {
       "en-US": ["Home", "Pricing", "Changelog", "Docs", "About"],
@@ -492,6 +508,16 @@ describe("international v2 homepage artifact", () => {
       es: ["Inicio", "Precios", "Novedades", "Documentación", "Acerca de"],
       "ja-JP": ["ホーム", "料金", "更新履歴", "ドキュメント", "会社概要"],
       "ko-KR": ["홈", "요금", "업데이트 내역", "문서", "회사 소개"],
+    } as const;
+    // CTA 优势列表是独立长条，不受 134px 审批卡容器约束，保持原翻译，不跟随审批卡标题简写。
+    const expectedCtaApprovalBenefit = {
+      "en-US": "Confirms important actions",
+      "zh-SG": "重要动作先确认",
+      "zh-Hant": "重要動作先確認",
+      "id-ID": "Mengonfirmasi tindakan penting",
+      es: "Confirma acciones importantes",
+      "ja-JP": "重要な操作は確認します",
+      "ko-KR": "중요한 작업은 확인합니다",
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -518,6 +544,42 @@ describe("international v2 homepage artifact", () => {
       for (const assetName of expectedProductPanelAssets[locale]) {
         expect(html).toContain(`/lightvela-intl-home/assets/${assetName}`);
         expect(existsSync(path.join(homeRoot, "assets", assetName)), `missing ${assetName}`).toBe(true);
+      }
+      const automationPanel = document.querySelector<HTMLImageElement>("#play-2 .automation-template-panel");
+      expect(automationPanel, `${locale} automation template panel`).not.toBeNull();
+      expect(automationPanel?.getAttribute("src"), `${locale} automation template panel src`).toContain(
+        expectedAutomationPanelAsset[locale],
+      );
+      expect(document.querySelector("#play-2 .automation-card-video"), `${locale} stale automation video`).toBeNull();
+      expect(document.querySelector("#play-2 .automation-card-poster"), `${locale} stale automation poster`).toBeNull();
+      const approvalTitle = document.querySelector(".channel-approval__title")?.textContent ?? "";
+      expect(approvalTitle, `${locale} approval title`).not.toContain("Human Approval");
+      // 孤行护栏：标题超过 24 字符时，134px 容器内必然折行且末行易剩 1–2 字符。
+      expect(approvalTitle.length, `${locale} approval title length`).toBeLessThanOrEqual(24);
+      const benefitTitles = Array.from(
+        document.querySelectorAll(".cta__benefits .benefit h3"),
+        (node) => node.textContent ?? "",
+      );
+      expect(benefitTitles, `${locale} CTA benefit titles`).toContain(expectedCtaApprovalBenefit[locale]);
+      const skillKinds = Array.from(document.querySelectorAll(".skwall__tile em"), (node) => node.textContent ?? "");
+      if (locale !== "en-US") {
+        const bodyText = document.body.textContent ?? "";
+        expect(skillKinds, `${locale} skill kind labels`).not.toContain("Skill");
+        expect(skillKinds, `${locale} tool kind labels`).not.toContain("Tool");
+        expect(bodyText, `${locale} stale Skill testimonial copy`).not.toMatch(
+          /Halaman Skill|La página de Skills|Skillページ|Skill 페이지|100\+ skill|100\+ skills|100개 이상의 Skill/,
+        );
+      }
+      if (["zh-SG", "zh-Hant"].includes(locale)) {
+        expect(document.querySelectorAll('.workspace-carousel__slide[src$=".zh-CN.png"]')).toHaveLength(6);
+      }
+      const automationDeliveries = Array.from(
+        document.querySelectorAll(".aut__bubble--delivery"),
+      );
+      expect(automationDeliveries, `${locale} automation deliveries`).toHaveLength(3);
+      for (const delivery of automationDeliveries) {
+        expect(delivery.querySelector("b")?.textContent?.trim(), `${locale} automation sender`).toBe("LightVela");
+        expect(delivery.querySelector("span")?.textContent?.trim().length, `${locale} automation copy`).toBeGreaterThan(0);
       }
     }
   });
@@ -637,6 +699,7 @@ describe("international v2 homepage artifact", () => {
       const html = readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8");
       const document = new DOMParser().parseFromString(html, "text/html");
       document.querySelector(".hero__stage")?.remove();
+      document.querySelectorAll(".chnloop__item > span:last-child").forEach((label) => label.remove());
       const localizedHtml = document.body.innerHTML;
       if (locale === "id-ID" || locale === "es") {
         expect(localizedHtml).not.toMatch(/[\u4e00-\u9fff]/);
@@ -670,6 +733,19 @@ describe("international v2 homepage artifact", () => {
       expect(hrefs).toContain(`${prefix}/docs/overview`);
       expect(hrefs).toContain(`${prefix}/about`);
       expect(hrefs).toContain("/agents");
+
+      const capabilityHrefs = Array.from(
+        document.querySelectorAll<HTMLAnchorElement>(".about__cards .wcard__more"),
+        (anchor) => anchor.getAttribute("href"),
+      );
+      expect(capabilityHrefs).toEqual([
+        "/agents/channels",
+        prefix,
+        "/agents/automations",
+        "/agents/websites/",
+        "/agents/skills",
+        "/agents/memory",
+      ]);
     }
   });
 
@@ -853,14 +929,23 @@ describe("international v2 homepage artifact", () => {
   );
 
   it("keeps the always-on card localized across homepage locales", () => {
+    const expectedRuntimeTitle = {
+      "en-US": "Always-On Cloud Agent",
+      "zh-SG": "7×24 小时云端智能体",
+      "zh-Hant": "7×24 小時雲端智能體",
+      "id-ID": "Agen Cloud Selalu Aktif",
+      es: "Agente en la nube siempre activo",
+      "ja-JP": "常時稼働するクラウドエージェント",
+      "ko-KR": "상시 실행 클라우드 에이전트",
+    } as const;
     const expectedEmphasis = {
-      "en-US": ["available 24/7 in the cloud", "adapt to your feedback"],
-      "zh-SG": ["云端 7×24 小时在线", "根据反馈持续调整"],
-      "zh-Hant": ["雲端 7×24 小時在線", "根據回饋持續調整"],
-      "id-ID": ["tersedia 24/7 di cloud", "menyesuaikan diri dengan masukan"],
-      es: ["disponible 24/7 en la nube", "me adapto a tus comentarios"],
-      "ja-JP": ["クラウドで24時間365日稼働する", "フィードバックに合わせて調整します"],
-      "ko-KR": ["클라우드에서 24시간 연중무휴로 작동", "피드백에 맞춰 조정합니다"],
+      "en-US": ["keeps finishing"],
+      "zh-SG": ["继续完成"],
+      "zh-Hant": ["繼續完成"],
+      "id-ID": ["berjalan sampai selesai"],
+      es: ["sigue completándose"],
+      "ja-JP": ["最後まで完了"],
+      "ko-KR": ["끝까지 완료"],
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -868,12 +953,88 @@ describe("international v2 homepage artifact", () => {
         readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8"),
         "text/html",
       );
+      const runtimeCard = Array.from(document.querySelectorAll(".wcard")).find((card) =>
+        card.querySelector("h4")?.textContent?.trim() === expectedRuntimeTitle[locale],
+      );
+      expect(runtimeCard, `${locale} runtime capability card`).toBeDefined();
       expect(
-        Array.from(document.querySelectorAll(".wcard__body p")[2]?.querySelectorAll("b") ?? [], (element) =>
+        Array.from(runtimeCard?.querySelectorAll(".wcard__body p b") ?? [], (element) =>
           element.textContent?.trim(),
         ),
       ).toEqual(expectedEmphasis[locale]);
     }
+  });
+
+  it("ships capability cards that stay readable until the section enters the viewport", () => {
+    const document = parseFragment();
+    const cards = Array.from(document.querySelectorAll(".about__cards .wcard"));
+    expect(cards).toHaveLength(6);
+
+    /* 每张卡都有一次性动画时长与 Hover 重播时长，静止时停在完成帧 */
+    for (const card of cards) {
+      const demo = card.querySelector(".wcard__demo");
+      expect(demo, "card demo").not.toBeNull();
+      expect(Number(demo?.getAttribute("data-dur"))).toBeGreaterThan(0);
+      expect(Number(demo?.getAttribute("data-replay"))).toBeGreaterThan(0);
+    }
+
+    /* 渠道卡复用仓库内的真实 Logo，其他演示仍使用 SVG/DOM。 */
+    const html = readFileSync(fragmentPath, "utf8");
+    expect(html).not.toContain("wcard-apps-");
+    const cardImages = Array.from(document.querySelectorAll(".about__cards .wcard img"));
+    expect(cardImages).toHaveLength(22);
+    expect(document.querySelectorAll(".chnloop__viewport")).toHaveLength(1);
+    expect(document.querySelectorAll(".chnloop__list:first-child .chnloop__item")).toHaveLength(8);
+    expect(document.querySelectorAll(".channel-stack")).toHaveLength(1);
+    expect(document.querySelector(".channel-approval__title")?.textContent).toContain("Confirm before acting");
+    expect(html).not.toContain("memory-preference");
+    expect(document.querySelectorAll(".channel-approval__bubble")).toHaveLength(2);
+    expect(document.querySelector(".channel-approval__bubble--agent")?.textContent).toContain("Confirm delete");
+    expect(document.querySelectorAll(".channel-approval__actions")).toHaveLength(0);
+    expect(html).not.toContain("wcard-folder-");
+
+    /* 每张卡使用不同的演示结构，避免退化成统一骨架屏模板 */
+    expect(document.querySelector(".chnloop")).not.toBeNull();
+    expect(document.querySelectorAll(".cld__flow-line")).toHaveLength(5);
+    expect(document.querySelector(".cld__sent circle")).not.toBeNull();
+    expect(document.querySelector(".aut__bar")).toBeNull();
+    expect(document.querySelectorAll(".aut__conversation .aut__case")).toHaveLength(3);
+    expect(document.querySelectorAll(".aut__conversation .aut__bubble")).toHaveLength(9);
+    expect(document.querySelector(".aut__case--1 .aut__bubble--user")?.textContent).toContain("09:00");
+    expect(document.querySelector(".skwall")).not.toBeNull();
+    expect(cards[3].querySelectorAll(".workspace-carousel__slide")).toHaveLength(6);
+    expect(cards[1].querySelector(".cloud-status")?.textContent).toContain("24/7");
+    expect(document.querySelector(".memory-reel")).toBeNull();
+    expect(document.querySelectorAll(".memory-md")).toHaveLength(1);
+    expect(cards[5].querySelectorAll(".memory-md__line")).toHaveLength(2);
+    expect(cards[5].querySelector(".memory-md__saved")).not.toBeNull();
+    expect(cards[5].querySelector(".mem")).toBeNull();
+
+    /* 整卡可点：主卡运行机制 / 渠道 / 自动化 / 权限 / 记忆 / 工作台 */
+    expect(
+      cards.map((card) => card.querySelector(".wcard__more")?.getAttribute("href")),
+    ).toEqual([
+      "/agents/channels",
+      "/",
+      "/agents/automations",
+      "/agents/websites/",
+      "/agents/skills",
+      "/agents/memory",
+    ]);
+
+    const runtime = readFileSync(runtimePath, "utf8");
+    expect(runtime).toContain("new IntersectionObserver(");
+    expect(runtime).toContain("intersectionRatio < 0.4");
+    expect(runtime).toContain("intersectionRatio < 0.6");
+    expect(runtime).toContain('setAttribute("data-motion"');
+    expect(runtime).toContain("prefers-reduced-motion: reduce");
+
+    const css = readFileSync(stylesheetPath, "utf8");
+    expect(css).toMatch(/#lightvela-intl-home \.about__inner\s*\{[^}]*max-width:\s*var\(--shell\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.wcard__inner\s*\{[^}]*border-radius:\s*24px;/s);
+    expect(css).toMatch(/grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/);
+    expect(css).not.toMatch(/grid-template-columns:\s*repeat\(100,/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
 
   it("keeps the imported reset inside the international homepage root", () => {
@@ -1045,61 +1206,142 @@ describe("international v2 homepage artifact", () => {
   });
 
   it("keeps the approved onboarding relationship copy across locales", () => {
-    const expectedCompanionTitles = {
-      "index-fragment.html": "Then I become your best working partner",
-      "index-fragment.en-US.html": "Then I become your best working partner",
-      "index-fragment.zh-CN.html": "然后逐渐成为你的 AI 伙伴",
-      "index-fragment.zh-SG.html": "然后逐渐成为你的 AI 伙伴",
-      "index-fragment.zh-Hant.html": "然後逐漸成為你的 AI 夥伴",
-      "index-fragment.id-ID.html": "Lalu saya menjadi partner kerja terbaik Anda",
-      "index-fragment.es.html": "Luego me convierto en tu mejor partner de trabajo",
-      "index-fragment.ja-JP.html": "その後、あなたの最高の仕事パートナーになります",
-      "index-fragment.ko-KR.html": "그다음에는 최고의 업무 파트너가 됩니다",
+    const expectedCapabilityTitles = {
+      "index-fragment.html": [
+        "Multi-Channel Messaging",
+        "Always-On Cloud Agent",
+        "Scheduled Automations",
+        "Publishable Web Workspace",
+        "Installable Skills",
+        "Memory & Personalization",
+      ],
+      "index-fragment.en-US.html": [
+        "Multi-Channel Messaging",
+        "Always-On Cloud Agent",
+        "Scheduled Automations",
+        "Publishable Web Workspace",
+        "Installable Skills",
+        "Memory & Personalization",
+      ],
+      "index-fragment.zh-CN.html": [
+        "多平台聊天接入",
+        "7×24 小时云端智能体",
+        "定时自动执行任务",
+        "可发布的网页工作台",
+        "可安装技能扩展",
+        "长期记忆与个性化",
+      ],
+      "index-fragment.zh-SG.html": [
+        "多平台聊天接入",
+        "7×24 小时云端智能体",
+        "定时自动执行任务",
+        "可发布的网页工作台",
+        "可安装技能扩展",
+        "长期记忆与个性化",
+      ],
+      "index-fragment.zh-Hant.html": [
+        "多平台聊天接入",
+        "7×24 小時雲端智能體",
+        "定時自動執行任務",
+        "可發布的網頁工作台",
+        "可安裝技能擴充",
+        "長期記憶與個人化",
+      ],
+      "index-fragment.id-ID.html": [
+        "Pesan Lintas Platform",
+        "Agen Cloud Selalu Aktif",
+        "Otomatisasi Terjadwal",
+        "Workspace Web yang Dapat Dipublikasikan",
+        "Kemampuan yang Dapat Dipasang",
+        "Memori & Personalisasi",
+      ],
+      "index-fragment.es.html": [
+        "Mensajería multicanal",
+        "Agente en la nube siempre activo",
+        "Automatizaciones programadas",
+        "Espacio web publicable",
+        "Habilidades instalables",
+        "Memoria y personalización",
+      ],
+      "index-fragment.ja-JP.html": [
+        "マルチチャネルメッセージング",
+        "常時稼働するクラウドエージェント",
+        "スケジュール自動化",
+        "公開できる Web ワークスペース",
+        "インストール可能なスキル",
+        "長期メモリとパーソナライズ",
+      ],
+      "index-fragment.ko-KR.html": [
+        "멀티 채널 메시징",
+        "상시 실행 클라우드 에이전트",
+        "예약 자동화",
+        "게시 가능한 웹 워크스페이스",
+        "설치 가능한 스킬",
+        "장기 메모리와 개인화",
+      ],
     } as const;
 
-    for (const [fragmentName, title] of Object.entries(expectedCompanionTitles)) {
-      const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
-      expect(html).toContain(`<h4>${title}</h4>`);
+    for (const [fragmentName, titles] of Object.entries(expectedCapabilityTitles)) {
+      const document = new DOMParser().parseFromString(
+        readFileSync(path.join(homeRoot, fragmentName), "utf8"),
+        "text/html",
+      );
+      expect(document.querySelectorAll(".about__cards .wcard"), `${fragmentName} capability cards`).toHaveLength(6);
+      expect(
+        Array.from(document.querySelectorAll(".about__cards .wcard h4"), (heading) => heading.textContent?.trim()),
+        `${fragmentName} capability titles`,
+      ).toEqual(titles);
     }
   });
 
   it("uses SEO-friendly homepage heading levels in every localized fragment", () => {
+    const expectedEyebrows = {
+      "index-fragment.html": "LightVela · Hermes Agent in the cloud",
+      "index-fragment.en-US.html": "LightVela · Hermes Agent in the cloud",
+      "index-fragment.zh-CN.html": "LightVela · 云端 Hermes Agent",
+      "index-fragment.zh-SG.html": "LightVela · 云端 Hermes Agent",
+      "index-fragment.zh-Hant.html": "LightVela · 雲端 Hermes Agent",
+      "index-fragment.id-ID.html": "LightVela · Hermes Agent di cloud",
+      "index-fragment.es.html": "LightVela · Hermes Agent en la nube",
+      "index-fragment.ja-JP.html": "LightVela · クラウドの Hermes Agent",
+      "index-fragment.ko-KR.html": "LightVela · 클라우드의 Hermes Agent",
+    } as const;
     const expectedHeadings = {
       "index-fragment.html": {
         h1: "Your AI companion—always on, always evolving with you.",
-        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, activate in 10 seconds"],
+        h2: ["Core features of LightVela", "How to Get Started", "Try it free, activate in 10 seconds"],
       },
       "index-fragment.en-US.html": {
         h1: "Your AI companion—always on, always evolving with you.",
-        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, activate in 10 seconds"],
+        h2: ["Core features of LightVela", "How to Get Started", "Try it free, activate in 10 seconds"],
       },
       "index-fragment.zh-CN.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
+        h2: ["LightVela 的核心特征", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-SG.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
+        h2: ["LightVela 的核心特征", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-Hant.html": {
         h1: "越用越懂你，長期在線的 AI 夥伴",
-        h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，10秒極速開通"],
+        h2: ["LightVela 的核心特色", "如何擁有？", "免費體驗，10秒極速開通"],
       },
       "index-fragment.id-ID.html": {
         h1: "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
-        h2: ["Dari sapaan pertama hingga pendamping tepercaya", "Cara Memulai", "Coba gratis, aktif dalam 10 detik"],
+        h2: ["Fitur utama LightVela", "Cara Memulai", "Coba gratis, aktif dalam 10 detik"],
       },
       "index-fragment.es.html": {
         h1: "Cuanto más lo uses, mejor te entenderá, tu compañero de IA siempre en línea",
-        h2: ["Del primer hola a un compañero de confianza", "Cómo empezar", "Pruébalo gratis, activa en 10 segundos"],
+        h2: ["Funciones principales de LightVela", "Cómo empezar", "Pruébalo gratis, activa en 10 segundos"],
       },
       "index-fragment.ja-JP.html": {
         h1: "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
-        h2: ["最初の挨拶から、信頼できるパートナーへ", "始め方", "無料体験、10秒でスピード開通"],
+        h2: ["LightVela の主な特長", "始め方", "無料体験、10秒でスピード開通"],
       },
       "index-fragment.ko-KR.html": {
         h1: "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
-        h2: ["첫 인사에서 믿을 수 있는 파트너까지", "시작 방법", "무료 체험, 10초 만에 개통"],
+        h2: ["LightVela의 핵심 기능", "시작 방법", "무료 체험, 10초 만에 개통"],
       },
     } as const;
 
@@ -1114,6 +1356,9 @@ describe("international v2 homepage artifact", () => {
       const eyebrow = document.querySelector(".hero__eyebrow");
       expect(eyebrow?.tagName, fragmentName).toBe("DIV");
       expect(eyebrow?.getAttribute("aria-label"), fragmentName).toBe(eyebrow?.textContent?.trim());
+      expect(eyebrow?.textContent?.trim(), fragmentName).toBe(
+        expectedEyebrows[fragmentName as keyof typeof expectedEyebrows],
+      );
       expect(document.querySelector('.nav__links a')?.getAttribute('aria-current'), fragmentName).toBe('page');
       expect(document.querySelector('.about__head .k')?.tagName, fragmentName).toBe('H2');
       expect(document.querySelector('.deploy__lead')?.tagName, fragmentName).toBe('H2');
@@ -1296,8 +1541,8 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.about__cards\s*\{[^}]*display:\s*flex;[^}]*scroll-snap-type:\s*x mandatory;/s);
     expect(css).toMatch(/#lightvela-intl-home \.wcard\s*\{[^}]*flex:\s*0 0 min\(72vw, 282px\);[^}]*scroll-snap-align:\s*center;/s);
     expect(css).toMatch(/#lightvela-intl-home \.wcard__thumb\s*\{[^}]*display:\s*block;[^}]*height:\s*86px;/s);
-    expect(css).toMatch(/#lightvela-intl-home \.wcard__list\s*\{[^}]*max-height:\s*0;[^}]*opacity:\s*0;/s);
-    expect(css).toMatch(/#lightvela-intl-home \.wcard\.is-mobile-active \.wcard__list,\s*#lightvela-intl-home \.wcard:active \.wcard__list\s*\{[^}]*max-height:\s*140px;[^}]*opacity:\s*1;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.wcard__demo\s*\{[^}]*height:\s*86px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.wcard__more\s*\{[^}]*margin-top:\s*10px;[^}]*font-size:\s*12px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.hero__frame \.dc__rail,\s*#lightvela-intl-home \.hero__frame \.dc__side,\s*#lightvela-intl-home \.hero__frame \.dc__members\s*\{[^}]*display:\s*none;/s);
     expect(css).toMatch(/#lightvela-intl-home \.scenes__tabs\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
     expect(css).toMatch(/#lightvela-intl-home \.scenes__tabs label\s*\{[^}]*min-height:\s*36px;[^}]*font-size:\s*10\.5px;/s);

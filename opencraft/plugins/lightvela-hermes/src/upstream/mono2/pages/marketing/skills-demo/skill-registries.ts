@@ -16,7 +16,8 @@
  * 3. 三套数据通道：
  *    - mock：直接用联调样例 JSON 当 fixture，不需要真实实例即可演示前端
  *    - live：通过 execDebugCommand 下发 acli 命令并解析输出
- *    - domestic：国内站通过 SkillHub HTTP 搜索，并通过 `acli skills` 管理实例技能
+ *    - domestic：国内站通过 SkillHub HTTP 搜索，并通过 `acli skills` 管理实例技能。SkillHub 若提供
+ *      `namespace.canonicalName`，必须保留其 `@namespace/slug` 作为 rawId，不能只用短 slug。
  *    由 SKILLS_DEMO_LIVE 切换。等后端把 acli skills-sh 部署到实例后翻成 true 即可联调。
  *
  * 国际站命令契约来源：联调表 skills联调.xlsx（ClawHub / skills.sh 各 4 条命令的输入输出样例）。
@@ -75,6 +76,8 @@ export interface Skill {
   author?: string;
   /** skills.sh 源组织前缀，如 `anthropics/skills` */
   sourceOrg?: string;
+  /** 市场返回或人工配置的规范详情页链接 */
+  sourceUrl?: string;
   /** 国内 SkillHub 分类，用于 Discover 分类展示 */
   category?: string;
 }
@@ -215,7 +218,9 @@ function getCompleteSkillsshId(id: string): string | undefined {
  * 返回市场中该技能的规范详情页。
  * 仅使用 registry 搜索结果提供的稳定标识，避免从展示名称推测不可靠的外部 URL。
  */
-export function getSkillSourceUrl(skill: Pick<Skill, "registry" | "rawId" | "slug" | "author">): string | undefined {
+export function getSkillSourceUrl(skill: Pick<Skill, "registry" | "rawId" | "slug" | "author" | "sourceUrl">): string | undefined {
+  if (skill.sourceUrl?.trim()) return skill.sourceUrl.trim();
+
   if (skill.registry === "skills-sh") {
     const id = getCompleteSkillsshId(skill.rawId);
     return id ? `https://skills.sh/${id}` : undefined;
@@ -232,22 +237,22 @@ export function getSkillSourceUrl(skill: Pick<Skill, "registry" | "rawId" | "slu
 }
 
 function getInstalledSourceUrls(
-  skill: Pick<Skill, "registry" | "rawId" | "slug" | "author">,
+  skill: Pick<Skill, "registry" | "rawId" | "slug" | "author" | "sourceUrl">,
 ): Partial<Record<Registry, string>> | undefined {
   const sourceUrl = getSkillSourceUrl(skill);
   return sourceUrl ? { [skill.registry]: sourceUrl } : undefined;
 }
 
-export function buildSkillhubInstallCommand(slug: string): string {
-  return `acli skills install ${shellQuote(slug)}`;
+export function buildSkillhubInstallCommand(id: string): string {
+  return `acli skills install ${shellQuote(id)}`;
 }
 
-export function buildSkillhubBatchInstallCommand(slugs: string[]): string {
-  return `acli skills batch-install --wait=true ${shellQuote(slugs.join(" "))}`;
+export function buildSkillhubBatchInstallCommand(ids: string[]): string {
+  return `acli skills batch-install --wait=true ${shellQuote(ids.join(" "))}`;
 }
 
-export function buildSkillhubUninstallCommand(slug: string): string {
-  return `acli skills uninstall ${shellQuote(slug)}`;
+export function buildSkillhubUninstallCommand(id: string): string {
+  return `acli skills uninstall ${shellQuote(id)}`;
 }
 
 export function buildHermesNativeUninstallCommand(slug: string): string {
@@ -456,7 +461,12 @@ interface SkillhubSearchItem {
   downloads?: number;
   iconUrl?: string;
   installs?: number;
+  homepage?: string;
   name?: string;
+  namespace?: {
+    canonicalName?: string;
+    displayName?: string;
+  };
   score?: number;
   slug?: string;
   source?: string;
@@ -469,6 +479,8 @@ type SkillhubLanguage = "zh" | "en";
 function mapSkillhubItem(item: SkillhubSearchItem, language: SkillhubLanguage): Skill | null {
   const slug = item.slug?.trim() || "";
   if (!slug) return null;
+  const canonicalName = item.namespace?.canonicalName?.trim();
+  const rawId = canonicalName && /^@[^/\s]+\/[^/\s]+$/.test(canonicalName) ? canonicalName : slug;
   const name = language === "en"
     ? item.displayNameEn?.trim() || item.display_name_en?.trim() || item.name?.trim() || slug
     : item.name?.trim() || slug;
@@ -481,7 +493,7 @@ function mapSkillhubItem(item: SkillhubSearchItem, language: SkillhubLanguage): 
     : item.description_zh?.trim() || item.description?.trim();
   return {
     registry: "skillhub",
-    rawId: slug,
+    rawId,
     slug,
     name,
     description: description || undefined,
@@ -489,7 +501,8 @@ function mapSkillhubItem(item: SkillhubSearchItem, language: SkillhubLanguage): 
     downloads: typeof item.downloads === "number" ? item.downloads : undefined,
     iconUrl: item.iconUrl?.trim() || undefined,
     score: typeof item.score === "number" ? item.score : undefined,
-    sourceOrg: item.source?.trim() || undefined,
+    sourceOrg: item.namespace?.displayName?.trim() || item.source?.trim() || undefined,
+    sourceUrl: item.homepage?.trim() || undefined,
     category: item.category?.trim() || undefined,
   };
 }

@@ -54,6 +54,72 @@ const capabilities = (first: string, second: string, third: string, fourth: stri
 ];
 
 export const CURATED_SKILL_OVERVIEWS: Readonly<Record<string, CuratedSkillOverview>> = {
+  "mattpocock/skills/teach": overview(
+    "Teach turns a topic into a persistent learning workspace with short, self-contained lessons that build across sessions.",
+    "Provide the reason you want to learn, the topic, and any preferences or constraints. It grounds lessons in trusted resources, adds citations, and uses retrieval practice so progress continues instead of restarting each time.",
+    [
+      { title: "People learning over time", description: "They want a course that continues across multiple sessions instead of a one-off explanation." },
+      { title: "New team members", description: "They need a structured way to learn a codebase, framework, process, or domain." },
+      { title: "Hands-on learners", description: "They want short lessons, practice, and records of what they have demonstrated." },
+    ],
+    [
+      { title: "Scattered learning", description: "Keeps the mission, sources, lessons, and learning records together in one workspace." },
+      { title: "Untrusted explanations", description: "Encourages high-trust resources and citations before lessons are written." },
+      { title: "Fluency without retention", description: "Uses retrieval practice, spacing, and feedback to support long-term storage strength." },
+    ],
+    [
+      { title: "Persistent workspace", description: "Maintains a mission, resources, lessons, references, and learning records across sessions." },
+      { title: "Source-grounded lessons", description: "Builds lessons from researched resources and links claims back to the sources." },
+      { title: "Interactive practice", description: "Uses quizzes or real-world steps with feedback to make learning durable." },
+      { title: "Adaptive progression", description: "Uses the mission and learning records to choose a suitably challenging next lesson." },
+    ],
+    "Run Teach in a dedicated learning workspace, state what you want to learn and why, then continue with prompts such as next lesson. Keep the workspace separate from the product repository so the course can accumulate safely.",
+    "Teach me the fundamentals of this codebase over several short lessons. Start by interviewing me about my mission, gather high-trust resources, and do not write the first lesson until the sources are recorded.",
+  ),
+  "mattpocock/skills/grill-me": overview(
+    "Grill Me turns a rough plan or design into a focused interview that exposes assumptions, missing decisions, and risks before implementation.",
+    "Provide the plan, design, or idea and ask to be grilled. The questioning is meant to sharpen your own thinking, not to replace your decision, so answer each question and use the discovered gaps to improve the plan.",
+    [
+      { title: "Product builders", description: "They want to pressure-test an idea before investing in implementation." },
+      { title: "Design and architecture reviewers", description: "They need a structured way to uncover missing decisions and edge cases." },
+      { title: "Teams preparing execution", description: "They want shared understanding before a plan becomes work." },
+    ],
+    [
+      { title: "Unstated assumptions", description: "Surfaces decisions that are implicit in the current plan." },
+      { title: "Late discovery", description: "Finds edge cases and unanswered questions before they become expensive rework." },
+      { title: "False confidence", description: "Makes the plan earn approval through clear answers rather than momentum." },
+    ],
+    [
+      { title: "Systematic questioning", description: "Interviews the plan across its important product, design, and implementation dimensions." },
+      { title: "Decision-tree depth", description: "Follows answers into the next relevant branch instead of stopping at surface-level questions." },
+      { title: "Codebase awareness", description: "Can use available code context to answer questions and reduce repeated back-and-forth." },
+      { title: "Pre-build validation", description: "Creates a clearer shared understanding before implementation begins." },
+    ],
+    "Invoke Grill Me with the plan or design you want to sharpen. Answer the questions directly, record any decisions that change, and revise the plan before asking for implementation.",
+    "Grill me on this plan. Ask one focused question at a time, follow important answers into their next decision branch, and keep going until the scope, risks, and acceptance criteria are clear.",
+  ),
+  "flowkit-labs/skills/reddit-automation": overview(
+    "Reddit Automation helps find Reddit discussions where a product can genuinely help and drafts useful replies for human review.",
+    "Provide the product context, audience, and what you can honestly offer. It focuses on a small number of relevant threads, requires transparent affiliation, and keeps the final decision to review and post with the user.",
+    [
+      { title: "Founders and marketers", description: "They want to discover relevant Reddit conversations without turning outreach into spam." },
+      { title: "Developer advocates", description: "They need a repeatable way to find questions where a thoughtful answer is useful." },
+      { title: "Community-minded teams", description: "They want product participation to be honest, helpful, and reviewable." },
+    ],
+    [
+      { title: "Finding the right threads", description: "Narrows a broad community into conversations where the product can actually answer the question." },
+      { title: "Low-value promotion", description: "Keeps the workflow centered on genuine contribution and explicit disclosure." },
+      { title: "Reply drafting overhead", description: "Turns relevant threads into useful draft replies that a person can review before posting." },
+    ],
+    [
+      { title: "Opportunity discovery", description: "Finds recent Reddit questions and discussions that match the product context." },
+      { title: "Helpful reply drafting", description: "Creates a reply that addresses the question before mentioning the product when relevant." },
+      { title: "Transparent participation", description: "Prompts honest disclosure of affiliation and avoids hidden promotion." },
+      { title: "Human review gate", description: "Keeps the user in control of what is posted and where." },
+    ],
+    "Give the skill your product context, the communities or problem space to search, and the time window. Review every suggested thread and draft, disclose your affiliation, and post only when the reply genuinely helps.",
+    "Find Reddit threads this week where our product can genuinely help. For each candidate, explain why it is relevant, draft a useful reply with transparent affiliation, and wait for my review before anything is posted.",
+  ),
   "charon-fan/agent-playbook/self-improving-agent": overview(
     "Self-Improving Agent helps an agent learn from skill outcomes, errors, and feedback so repeated workflows can improve over time.",
     "Provide the skill run context, what happened, and any correction or feedback. It helps turn those events into validated, reusable guidance rather than silently changing behavior.",

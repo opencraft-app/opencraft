@@ -2,6 +2,8 @@
 
 ## Summary
 
+**The avatar menu at the bottom of the Agent console's left sidebar has two separate entries: Account for your profile and user ID, and Plans & billing for subscriptions, credit usage, renewals, and payment methods.**
+
 **LightVela offers four plans—Launch, Cruise, Launch AI, and Cruise AI—covering everything from a light first try to high-frequency use. Each plan activates a Hermes Agent in a dedicated cloud runtime with its own CPU, memory, and storage, where the agent stays online 24/7 without a server to buy or a local deployment to maintain. Plans differ in runtime resources, storage capacity, and monthly AI credits, while core capabilities such as self-improvement, multi-channel access, skills, scheduled tasks, and long-term memory remain available across tiers. This page also explains refund rules and the email-based application process. Live pricing and availability are shown on the subscribe page.**
 
 ---
@@ -23,6 +25,25 @@ LightVela offers four plan tiers—**Launch, Cruise, Launch AI, and Cruise AI**�
 ---
 
 ## What is a plan?
+
+### Account and billing access
+
+Sign in to LightVela. In the Agent console, hover over your avatar and name at the bottom of the left sidebar to open the menu:
+
+- **Account** opens the [Account page](/account/) for your profile, display name, user ID, and sign-out action.
+- **Plans & billing** opens the [Plans & billing page](/account/billing/) for your subscription, validity period, credit usage, payment methods, and renewals.
+
+On **Plans & billing**, check your status in **Subscription plans**. If a renewable plan is available, select **Renew now** and follow the on-screen instructions. If you have no subscription, select **Create Now** to choose a plan on the Subscribe page. Under **Payment method**, you can add a payment card. Enter card details on the payment provider's page; LightVela does not store full card numbers.
+
+Check the page title to confirm you are in the right place. If a purchased plan is missing, verify that you signed in with the account used for the purchase, then refresh; do not place a duplicate order. If a payment card has not appeared, finish the payment provider's flow before returning and refreshing.
+
+![Account page: profile details](../images/account-global.webp)
+
+![Plans & billing: subscription and payment method](../images/account-billing-global.webp)
+
+*New interface shown with local demo data: no active subscription or saved payment card.*
+
+### Plans and resources
 
 A plan is the resource package that activates a Hermes Agent on LightVela. After you activate any currently available plan, LightVela assigns you a **dedicated cloud runtime** with its own CPU, memory, and storage. Your Hermes Agent can stay online 24/7 without requiring you to buy a server or deploy anything locally.
 
@@ -90,7 +111,7 @@ For how AI credits are allocated and consumed, see [Credits](./credits.md).
 
 ### Plan change rules
 
-Direct upgrades, switches, or downgrades on an active plan are not currently supported. When an existing plan is active, the Subscribe page prioritizes marking your current plan. To continue using the same plan, renew it to extend the validity period. To change plans, refer to the actual options currently available on the account page and Subscribe page.
+Direct upgrades, switches, or downgrades on an active plan are not currently supported. When an existing plan is active, the Subscribe page prioritizes marking your current plan. To continue using the same plan, renew it to extend the validity period. To change plans, refer to the actual options currently available on the Plans & billing page and Subscribe page.
 
 ### Plan lifecycle
 

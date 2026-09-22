@@ -159,6 +159,24 @@ describe("AutomationSkillPicker", () => {
     expect(screen.getByText("Legal Review")).toBeInTheDocument();
   });
 
+  it("portals the Skill list outside the form scroll area", async () => {
+    const user = userEvent.setup();
+    renderPicker();
+    const trigger = screen.getByRole("button", { name: "调用技能" });
+    const field = trigger.parentElement?.parentElement;
+
+    await user.click(trigger);
+
+    const popup = screen.getByTestId("automation-skill-picker-popup");
+    expect(document.body).toContainElement(popup);
+    expect(field).not.toContainElement(popup);
+    expect(popup).toHaveClass(
+      "z-[250]",
+      "max-h-[var(--radix-popover-content-available-height)]",
+      "w-[var(--radix-popover-trigger-width)]",
+    );
+  });
+
   it("defaults to no Skill and adds a real installed slug after search", async () => {
     const user = userEvent.setup();
     const { onChange } = renderPicker();
@@ -166,6 +184,7 @@ describe("AutomationSkillPicker", () => {
 
     expect(trigger).toHaveTextContent("选择你希望 Agent 稳定调用的技能");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger.parentElement).toHaveClass("min-h-10");
     expect(screen.getByText("选择你希望 Agent 稳定调用的技能")).toHaveClass("text-black/35");
 
     await user.click(trigger);
@@ -353,7 +372,7 @@ describe("AutomationFormModal", () => {
 
     const timeControls = screen.getAllByRole("group", { name: /^执行时间 \d+$/ });
     expect(timeControls).toHaveLength(6);
-    timeControls.forEach((control) => expect(control).toHaveClass("h-9", "w-[140px]"));
+    timeControls.forEach((control) => expect(control).toHaveClass("h-9", "w-fit"));
     expect(timeControls[0]?.parentElement).toHaveClass("w-[588px]", "max-w-full", "flex-wrap", "gap-1");
     expect(addTimeButton).toHaveClass("size-7");
   });

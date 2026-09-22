@@ -211,6 +211,15 @@ describe("AgentSettingsPage renewal reminder", () => {
     expect(refreshPasses).not.toHaveBeenCalled();
   });
 
+  it("labels the first Bot creation action as 新建 with a leading plus icon", () => {
+    bots = [];
+    renderAgentSettingsPage();
+
+    const createButton = screen.getByRole("button", { name: "新建" });
+    expect(createButton.querySelector("svg.lucide-plus")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+  });
+
   it("keeps the existing Agent visible and offers retry when the Pass query stalls", async () => {
     activePass = null;
     passesLoading = true;
@@ -240,7 +249,7 @@ describe("AgentSettingsPage renewal reminder", () => {
     activePass = { ...buildPass(), status: "modifying" };
     const view = renderAgentSettingsPage();
 
-    expect(screen.getByRole("status")).toHaveTextContent("正在为 Hermes Agent 升级套餐");
+    expect(screen.getByRole("status")).toHaveTextContent("正在升级您的 LightVela 套餐...");
     expect(await screen.findByText("巡航套餐")).toBeInTheDocument();
     expect(screen.getByText("目标套餐")).toBeInTheDocument();
     expect(screen.queryByText("当前套餐")).not.toBeInTheDocument();

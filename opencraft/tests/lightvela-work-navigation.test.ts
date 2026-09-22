@@ -6,7 +6,7 @@ import { buildCodexThemeCssProperties } from "@opencraft/design-system/theme-eng
 import { isLightVelaStandaloneManagementSection } from "../apps/workbench-web/src/components/lightvela-management-route";
 import { machineResourcePhaseLabel } from "../apps/workbench-web/src/components/machine-resource-presentation";
 
-test("Skills and Cloud Storage use standalone management routes from the Work sidebar group", () => {
+test("Skills and Cloud Storage use standalone management routes from Sidebar navigation", () => {
   assert.equal(isLightVelaStandaloneManagementSection("lightvela.hermes.skills"), true);
   assert.equal(isLightVelaStandaloneManagementSection("lightvela.hermes.storage"), true);
   assert.equal(isLightVelaStandaloneManagementSection("lightvela.hermes.channels"), false);
@@ -14,7 +14,7 @@ test("Skills and Cloud Storage use standalone management routes from the Work si
   assert.equal(isLightVelaStandaloneManagementSection("lightvela.hermes.runtime"), false);
 });
 
-test("the active Work route keeps the shared sidebar selected state", () => {
+test("the active standalone route keeps the shared sidebar selected state", () => {
   const navigation = readFileSync(
     new URL("../apps/workbench-web/src/components/lightvela-work-navigation.tsx", import.meta.url),
     "utf8",
@@ -23,9 +23,17 @@ test("the active Work route keeps the shared sidebar selected state", () => {
     new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
     "utf8",
   );
+  const item = readFileSync(
+    new URL("../apps/workbench-web/src/components/sidebar-navigation-item.tsx", import.meta.url),
+    "utf8",
+  );
   const workNavigationStyles = styles.slice(
     styles.indexOf(".lightvela-work-navigation__items"),
     styles.indexOf(".lightvela-management-route"),
+  );
+  const itemStyles = styles.slice(
+    styles.indexOf(".sidebar-navigation-item {"),
+    styles.indexOf(".sidebar-content-scroll"),
   );
   const controls = readFileSync(
     new URL("../packages/design-system/src/controls.web.scss", import.meta.url),
@@ -36,8 +44,11 @@ test("the active Work route keeps the shared sidebar selected state", () => {
     "utf8",
   );
 
-  assert.match(navigation, /aria-current=\{section === page\.id \? "page" : undefined\}/u);
-  assert.match(workNavigationStyles, /@include controls\.navigation-control/u);
+  assert.match(navigation, /active=\{section === page\.id\}/u);
+  assert.match(item, /aria-current=\{active \? "page" : undefined\}/u);
+  assert.doesNotMatch(navigation, />Work<|lightvela-work-navigation__label/u);
+  assert.match(item, /className="sidebar-navigation-item__icon" aria-hidden="true"/u);
+  assert.match(itemStyles, /@include controls\.navigation-control/u);
   assert.doesNotMatch(workNavigationStyles, /color-background-tertiary/u);
   assert.match(controls, /color-background-navigation-hover/u);
   assert.match(controls, /color-background-navigation-current/u);
@@ -63,6 +74,35 @@ test("the active Work route keeps the shared sidebar selected state", () => {
         < alpha(theme["--color-background-navigation-pressed"]!),
     );
   }
+});
+
+test("Start and LightVela routes share one leading slot and one section rhythm", () => {
+  const sidebar = readFileSync(
+    new URL("../apps/workbench-web/src/components/sidebar.tsx", import.meta.url),
+    "utf8",
+  );
+  const navigation = readFileSync(
+    new URL("../apps/workbench-web/src/components/lightvela-work-navigation.tsx", import.meta.url),
+    "utf8",
+  );
+  const item = readFileSync(
+    new URL("../apps/workbench-web/src/components/sidebar-navigation-item.tsx", import.meta.url),
+    "utf8",
+  );
+  const styles = readFileSync(
+    new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(sidebar, /<SidebarNavigationItem/u);
+  assert.match(navigation, /<SidebarNavigationItem/u);
+  assert.match(item, /className="sidebar-navigation-item"/u);
+  assert.match(item, /className="sidebar-navigation-item__icon"/u);
+  assert.match(styles, /\.lightvela-work-navigation\s*\{[\s\S]*?padding:\s*var\(--gap-navigation-rows\) 0 var\(--gap-navigation-sections\)/u);
+  assert.match(styles, /\.lightvela-work-navigation__items\s*\{[\s\S]*?gap:\s*var\(--gap-navigation-rows\)/u);
+  assert.match(styles, /\.sidebar-content-scroll\s*\{[\s\S]*?margin-top:\s*var\(--gap-navigation-sections\)/u);
+  assert.match(styles, /\.sidebar-tasks\s*\{[\s\S]*?margin-top:\s*0/u);
+  assert.match(styles, /\.sidebar-target-group\s*\{[\s\S]*?&:first-of-type\s*\{\s*margin-top:\s*0/u);
 });
 
 test("both workbench boot paths render standalone pages outside the management dialog", () => {
@@ -158,10 +198,15 @@ test("the Home action is presented as Start without changing its navigation cont
     new URL("../apps/workbench-web/src/components/sidebar.tsx", import.meta.url),
     "utf8",
   );
+  const item = readFileSync(
+    new URL("../apps/workbench-web/src/components/sidebar-navigation-item.tsx", import.meta.url),
+    "utf8",
+  );
 
-  assert.match(sidebar, /<span>Start<\/span>/u);
-  assert.doesNotMatch(sidebar, /<span>New chat<\/span>/u);
-  assert.match(sidebar, /onClick=\{onNewTask\}/u);
+  assert.ok(sidebar.includes('<SidebarNavigationItem icon={<SquarePen size={15} />} title="Start" onInvoke={onNewTask} />'));
+  assert.doesNotMatch(sidebar, /title="New chat"/u);
+  assert.match(item, /<span>\{title\}<\/span>/u);
+  assert.match(item, /onClick=\{onInvoke\}/u);
 });
 
 test("Skills is the complete chat-demo workspace rather than an installed-only management list", () => {

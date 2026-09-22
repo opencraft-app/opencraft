@@ -2,7 +2,6 @@ import { AlertTriangle, Check, ChevronDown, CircleHelp, Loader2, Search, X } fro
 import { useId, useMemo, useRef, useState } from "react";
 import { AgentTooltip } from "@/components/agents";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import {
@@ -135,12 +134,8 @@ export function AutomationSkillPicker({
               >
                 <span className="max-w-40 truncate">{displayName}</span>
                 {unavailable && <span className="text-[10px] font-normal">{t("不可用")}</span>}
-                <button
-                  type="button"
-                  aria-label={`${t("移除技能")} ${displayName}`}
-                  onClick={() => removeSelection(slug)}
-                  className="-mr-1 inline-flex size-4 shrink-0 items-center justify-center rounded text-black/45 hover:bg-black/[0.06] hover:text-black/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
-                >
+                <button type="button" aria-label={`${t("移除技能")} ${displayName}`}
+                  onClick={() => removeSelection(slug)} className="-mr-1 inline-flex size-4 shrink-0 items-center justify-center rounded focus-visible:ring-2">
                   <X className="size-3" aria-hidden="true" />
                 </button>
               </span>
@@ -166,7 +161,10 @@ export function AutomationSkillPicker({
         </div>
       </div>
       </PopoverAnchor>
-      <PopoverContent align="start" aria-label={t("调用技能")} className="agents-ui z-[250] w-[var(--radix-popover-trigger-width)] min-w-[min(320px,calc(100vw-32px))] max-w-[calc(100vw-32px)] overflow-hidden rounded-md p-0" onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus(); }}>
+      {open && <PopoverContent align="start" side="top" sideOffset={6} collisionPadding={16}
+        data-testid="automation-skill-picker-popup" aria-label={t("调用技能")}
+        className="agents-ui z-[250] max-h-[var(--radix-popover-content-available-height)] w-[var(--radix-popover-trigger-width)] min-w-[min(320px,calc(100vw-32px))] max-w-[calc(100vw-32px)] overflow-hidden rounded-md p-0"
+        onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus(); }}>
             <div className="border-b border-black/[0.06] p-1.5">
               <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-1.5">
                 <Search className="h-4 w-4 shrink-0 text-black/35" />
@@ -282,7 +280,7 @@ export function AutomationSkillPicker({
                 <div className="px-2.5 py-3 text-sm text-black/45">{t("没有匹配的 Skill")}</div>
               )}
             </div>
-      </PopoverContent>
+        </PopoverContent>}
       </Popover>
     </div>
   );

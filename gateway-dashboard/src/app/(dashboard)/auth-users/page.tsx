@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LogIn, MoreHorizontal, Trash2 } from "lucide-react";
+import { Link2, LogIn, MoreHorizontal, Trash2 } from "lucide-react";
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { ShadowBindingsPanel } from "@/components/auth/shadow-bindings-panel";
 import {
   Tabs,
   TabsContent,
@@ -57,32 +58,32 @@ function ShadowAccountsPanel() {
   const columns = useMemo<ColumnDef<AdminShadowAccount>[]>(
     () => [
       {
-        accessorKey: "user_id",
+        accessorKey: "userId",
         header: "用户 ID",
         cell: ({ row }) => (
           <code className="block max-w-48 truncate font-mono text-xs">
-            {row.original.user_id}
+            {row.original.userId}
           </code>
         ),
       },
       {
-        accessorKey: "shadow_user_name",
+        accessorKey: "shadowUserName",
         header: "影子用户名",
         cell: ({ row }) =>
-          row.original.shadow_user_name ? (
+          row.original.shadowUserName ? (
             <code className="block max-w-40 truncate font-mono text-xs">
-              {row.original.shadow_user_name}
+              {row.original.shadowUserName}
             </code>
           ) : (
             "—"
           ),
       },
       {
-        accessorKey: "phone_number",
+        accessorKey: "phone",
         header: "手机号",
         cell: ({ row }) => (
           <span className="whitespace-nowrap tabular-nums">
-            {row.original.country_code} {row.original.phone_number}
+            {row.original.phone || "—"}
           </span>
         ),
       },
@@ -93,53 +94,40 @@ function ShadowAccountsPanel() {
           <div className="space-y-1 font-mono text-[11px] tabular-nums">
             <div>{row.original.uin || "—"}</div>
             <div className="text-muted-foreground">
-              {row.original.owner_uin || "—"}
+              {row.original.ownerUin || "—"}
             </div>
             <div className="text-muted-foreground">
-              {row.original.appid || "—"}
+              {row.original.appId || "—"}
             </div>
           </div>
         ),
-      },
-      {
-        accessorKey: "instance_id",
-        header: "实例 ID",
-        cell: ({ row }) =>
-          row.original.instance_id ? (
-            <code className="block max-w-40 truncate font-mono text-xs">
-              {row.original.instance_id}
-            </code>
-          ) : (
-            "—"
-          ),
       },
       {
         id: "states",
         header: "认证状态",
         cell: ({ row }) => (
           <div className="flex min-w-28 flex-col items-start gap-1">
-            <Badge variant={row.original.is_register_shadow_account ? "default" : "outline"}>
-              {row.original.is_register_shadow_account ? "已注册" : "注册中"}
+            <Badge variant={row.original.bindingStatus === "active" ? "default" : "outline"}>
+              {row.original.bindingStatus || "未知"}
             </Badge>
-            <Badge variant={row.original.is_shadow_account_basic_auth ? "secondary" : "outline"}>
-              {row.original.is_shadow_account_basic_auth ? "基础认证" : "未基础认证"}
+            <Badge variant={row.original.basicAuthStatus === "succeeded" ? "secondary" : "outline"}>
+              {row.original.basicAuthStatus === "succeeded" ? "基础认证" : "未基础认证"}
             </Badge>
-            <Badge variant={row.original.is_standard_realname_auth ? "secondary" : "outline"}>
-              {row.original.is_standard_realname_auth ? "标准实名" : "未标准实名"}
+            <Badge variant={row.original.realnameVerified ? "secondary" : "outline"}>
+              {row.original.realnameVerified ? "已实名" : "未实名"}
             </Badge>
           </div>
         ),
       },
       {
-        accessorKey: "created_at",
-        header: "创建时间",
-        cell: ({ row }) => formatDateTime(row.original.created_at),
+        accessorKey: "bindingCreatedAt",
+        header: "绑定时间",
+        cell: ({ row }) => formatDateTime(row.original.bindingCreatedAt),
       },
       {
-        accessorKey: "bound_at",
-        header: "绑定时间",
-        cell: ({ row }) =>
-          row.original.bound_at ? formatDateTime(row.original.bound_at) : "—",
+        accessorKey: "bindingUpdatedAt",
+        header: "更新时间",
+        cell: ({ row }) => formatDateTime(row.original.bindingUpdatedAt),
       },
     ],
     []
@@ -155,7 +143,7 @@ function ShadowAccountsPanel() {
         </Label>
         <Input
           id="shadow-account-search"
-          placeholder="按用户 ID、影子用户名、手机号、UIN、AppID 或实例 ID 搜索"
+          placeholder="按用户 ID、影子用户名、UIN、OwnerUIN 或 AppID 搜索"
           value={search}
           onChange={(event) => {
             setSearch(event.target.value);
@@ -190,7 +178,8 @@ function ShadowAccountsPanel() {
 }
 
 export default function AuthUsersPage() {
-  const [activeView, setActiveView] = useState<"auth" | "shadow">("auth");
+  const [activeView, setActiveView] = useState<"auth" | "binding" | "shadow">("auth");
+  const [shadowBindingUserID, setShadowBindingUserID] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -223,6 +212,11 @@ export default function AuthUsersPage() {
     setImpersonationTarget(user);
     setImpersonationReturnTo("");
     setImpersonationReason("");
+  }
+
+  function openShadowBinding(user: AuthAdminUser) {
+    setShadowBindingUserID(user.id);
+    setActiveView("binding");
   }
 
   async function handleCreateImpersonationSession() {
@@ -338,6 +332,10 @@ export default function AuthUsersPage() {
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openShadowBinding(row.original)}>
+                <Link2 className="mr-2 h-4 w-4" />
+                管理 DevCloud 测试绑定
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => openImpersonationDialog(row.original)}>
                 <LogIn className="mr-2 h-4 w-4" />
                 以此用户身份登录
@@ -361,16 +359,17 @@ export default function AuthUsersPage() {
     <div className="space-y-6">
       <PageHeader
         title="认证用户"
-        description="查看认证账号主数据，以及对应的腾讯云影子账号映射。"
+        description="查看认证账号主数据，并管理仅限 testing 的个人 DevCloud 影子账号绑定。"
       />
 
       <Tabs
         value={activeView}
-        onValueChange={(value) => setActiveView(value as "auth" | "shadow")}
+        onValueChange={(value) => setActiveView(value as "auth" | "binding" | "shadow")}
       >
         <TabsList variant="line" aria-label="用户数据类型">
           <TabsTrigger value="auth">认证用户</TabsTrigger>
-          <TabsTrigger value="shadow">影子账号</TabsTrigger>
+          <TabsTrigger value="binding">DevCloud 测试绑定</TabsTrigger>
+          <TabsTrigger value="shadow">Shadow 服务视图</TabsTrigger>
         </TabsList>
 
         <TabsContent value="auth" className="space-y-6 pt-4">
@@ -404,6 +403,10 @@ export default function AuthUsersPage() {
             }}
             isLoading={isLoading}
           />
+        </TabsContent>
+
+        <TabsContent value="binding">
+          {activeView === "binding" && <ShadowBindingsPanel initialUserID={shadowBindingUserID} />}
         </TabsContent>
 
         <TabsContent value="shadow">

@@ -29,6 +29,7 @@ import { BuiltinTimelineRendererPlugin } from "../components/conversation-render
 import {
   createWebWorkbenchApplicationSupervisor,
   type WebWorkbenchApplicationSupervisor,
+  type WebWorkbenchSupervisorOptions,
 } from "./appserver-runtime-context";
 import {
   createWorkbenchPanelRuntime,
@@ -79,7 +80,11 @@ function loadConversationBindings(storage: BrowserMetadataStorage = window.local
 }
 
 /** Single application owner for every long-lived renderer service. */
-export async function createWebWorkbenchApplication(): Promise<WebWorkbenchApplication> {
+export interface CreateWebWorkbenchApplicationOptions extends WebWorkbenchSupervisorOptions {}
+
+export async function createWebWorkbenchApplication(
+  options: CreateWebWorkbenchApplicationOptions = {},
+): Promise<WebWorkbenchApplication> {
   // OAuth can return into any Workbench route. Consume its one-time fragment
   // before IndexedDB, Cordis and extension activation so authentication does
   // not depend on the latency or success of the rest of application startup.
@@ -190,6 +195,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
         }
       },
       (viewId) => browserWorkbench.releaseView(viewId),
+      options,
     );
     releaseSupervisor = () => supervisor.dispose();
     if (supervisor.mode === "active") {

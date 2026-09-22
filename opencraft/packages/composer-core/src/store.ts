@@ -61,6 +61,7 @@ export interface ComposerStoreSnapshot {
   readonly hasTransientText: boolean;
   readonly canSubmit: boolean;
   readonly hasProcessingAssets: boolean;
+  readonly hasUnavailableAssets: boolean;
 }
 
 export interface ComposerViewHandle {
@@ -242,6 +243,9 @@ function snapshot(
       attachment.lifecycle === "uploading" ||
       attachment.lifecycle === "processing",
   );
+  const hasUnavailableAssets = draft.attachments.some(
+    (attachment) => attachment.lifecycle !== "ready" || attachment.uri === null,
+  );
   const hasContent =
     !isComposerDocumentEmpty(draft.document) ||
     draft.attachments.length > 0 ||
@@ -254,9 +258,10 @@ function snapshot(
     hasTransientText,
     canSubmit:
       hasContent &&
-      !hasProcessingAssets &&
+      !hasUnavailableAssets &&
       draft.lifecycle.phase !== "submitting",
     hasProcessingAssets,
+    hasUnavailableAssets,
   };
 }
 

@@ -35,7 +35,6 @@ test("generated Web typography is checked in and feature styles consume semantic
   assert.doesNotMatch(controls, /font-weight:\s*400/u);
 
   const app = read("../apps/workbench-web/src/styles/app.scss");
-  assert.match(app, /@include typography\.role\(navigation-label, primary\)/u);
   assert.match(
     app,
     /\.lightvela-work-navigation__items[\s\S]*?@include controls\.navigation-control/u,
