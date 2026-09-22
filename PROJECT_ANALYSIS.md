@@ -43,7 +43,6 @@ infra_pulumi 决定"这些东西跑在哪些云资源上"
 - **user/auth** - 用户认证系统 (Go)
 - **service-gateway** - 对外统一 API 入口 (Go)
 - **sandbox** - 沙箱资源池系统 (Go)
-- **nextgen-dashboard** - 管理终端 (Go + Shell CLI)
 - **infra_pulumi** - 云资源基础设施即代码 (Go + Pulumi)
 - **ai-gateway** - AI 兼容代理网关 (Go)
 - **gateway-dashboard** - 后台管理系统 (Node.js + React)
@@ -125,7 +124,6 @@ mono2-clean/
 ├── subscription/             # 订阅与计费
 │
 ├── 【运维管理】
-├── nextgen-dashboard/        # 浏览器终端管理台 (Shell)
 ├── nextgen-dashboard-client/ # 本地管理台客户端
 ├── gateway-dashboard/        # 后台管理系统 (React)
 ├── admin-gateway/            # 管理 API 入口
@@ -859,7 +857,7 @@ LLM Providers (OpenAI, Anthropic, etc)
 ```
 argocd/ (GitOps 部署)
   ↓
-nextgen-dashboard/ + gateway-dashboard/
+gateway-dashboard/
   ↓
 infra_pulumi/ (IaC 云资源)
 ```

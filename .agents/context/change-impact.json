@@ -31,7 +31,7 @@
     },
     {
       "id": "site-environment-routing",
-      "paths": ["frontend/src/config/**", "frontend/src/app/**", "frontend/src/services/**", "frontend/src/repositories/**", "frontend/src/lib/env*", "frontend/*.config.*", "frontend/src/app-env.d.ts", "admin-gateway/**", "gateway-dashboard/**", "nextgen-dashboard/**"],
+      "paths": ["frontend/src/config/**", "frontend/src/app/**", "frontend/src/services/**", "frontend/src/repositories/**", "frontend/src/lib/env*", "frontend/*.config.*", "frontend/src/app-env.d.ts", "admin-gateway/**", "gateway-dashboard/**"],
       "exclude_paths": ["gateway-dashboard/OWNERS", "**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "**/i18n/**", "**/pages/marketing/**", "**/public/assets/**", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.svg", "**/*.gif", "**/*.webp", "**/*.ico"],
       "design_docs": ["docs/engineering/domains/site-environment-routing.md", "docs/engineering/journeys/dual-site-request-routing.md"],
       "risk": "normal",
