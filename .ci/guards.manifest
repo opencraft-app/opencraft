@@ -98,5 +98,8 @@ guards:
   - name: opencraft
     paths:
       - opencraft/**
+      - frontend/src/**
+      - frontend/public/tat-hermes-web-proxy-sw.js
+      - frontend/public/assets/skills/**
       - .ci/checks/opencraft_guard.sh
     command: .ci/checks/opencraft_guard.sh
