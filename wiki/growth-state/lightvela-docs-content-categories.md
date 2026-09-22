@@ -58,6 +58,7 @@
 - 【CN 待核实 | GLOBAL ✓】诊断
 - 【CN ✓ | GLOBAL ✓】高级设置
 - 【CN 待核实 | GLOBAL ✓】模型切换
+- 【CN ✓ | GLOBAL ✓】Bots Switching
 - 【CN ✓ | GLOBAL ✓】DeepSeek Harness
 
 # Hermes Agent 科普
