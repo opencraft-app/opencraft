@@ -351,6 +351,9 @@ capability，不能让 TKEx Pod 直连任意 DevCloud。该开关只有在 sandb
 CloudLadder HMAC；个人 Trade 只配置 Auth proxy URL 与短期 capability。客户端配置两项必须同进同退，
 中央 server 开关与客户端 URL/capability 不能混用。production、staging 及其他 sandbox 不设置
 `PERSONAL_DEV_BILLING_PROXY_ENABLED`，个人客户端变量默认空；因此源码合入不自动改变现网出向路径。
+这两个 playground 的 `trade-config` 来自 shared base 的 `trade` namespace；环境层 strategic merge patch
+必须保留该原始 `metadata.namespace: trade`，不能只依赖 overlay 的 namespace transformer。否则 Kustomize
+在 namespace 变换前无法定位 patch 目标，GitOps promote 必须在写回镜像或创建 MR 前 fail closed。
 发布验证除 Pod Ready 外，还要证明有效 capability 的拒绝探针为 `403`、注销后的同一 token 为 `401`，
 并分别保存国内和国际真实支付、回调与业务终态。任何长期 Secret 都不得进入 Skill、个人 kind 状态或日志。
 
