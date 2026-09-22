@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -436,7 +438,8 @@ func (h *handler) GetSandboxesSandboxIDSnapshotStatus(c *gin.Context, sandboxID 
 
 // GET /sandboxes/{sandboxID}
 func (h *handler) GetSandboxesSandboxID(c *gin.Context, sandboxID api.SandboxID) {
-	sb, err := h.svc.GetSandbox(c.Request.Context(), string(sandboxID))
+	ctx := c.Request.Context()
+	sb, err := h.svc.GetSandbox(ctx, string(sandboxID))
 	if err != nil {
 		if err == core.ErrSandboxNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "sandbox not found"})
@@ -445,17 +448,43 @@ func (h *handler) GetSandboxesSandboxID(c *gin.Context, sandboxID api.SandboxID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	inst, err := h.svc.GetInstance(c.Request.Context(), sb.InstanceID)
+	inst, err := h.svc.GetInstance(ctx, sb.InstanceID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	pool, err := h.svc.GetPool(c.Request.Context(), sb.PoolID)
+	pool, err := h.svc.GetPool(ctx, sb.PoolID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if h.cloudPauseResume && h.cloud != nil && inst.State == core.StatePausing {
+		inst, err = h.reconcilePausingInstance(ctx, inst, pool)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "reconcile pausing instance failed: " + err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, toSandboxDetail(inst, pool, sb))
+}
+
+func (h *handler) reconcilePausingInstance(ctx context.Context, inst core.Instance, pool core.Pool) (core.Instance, error) {
+	instance, err := provider.CloudInstanceForPool(pool, inst.CloudID)
+	if err != nil {
+		return inst, err
+	}
+	state, err := h.cloud.DescribeInstance(ctx, instance)
+	if err != nil {
+		return inst, err
+	}
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case "STOPPED":
+		return h.svc.MarkPaused(ctx, inst.ID)
+	case "RUNNING", "STOPPING":
+		return inst, nil
+	default:
+		return inst, fmt.Errorf("unexpected cloud state %q", state)
+	}
 }
 
 // Logs
@@ -469,11 +498,9 @@ func (h *handler) GetSandboxesSandboxIDLogs(c *gin.Context, _ api.SandboxID, _ a
 // Implements Q26-D 修订版 + Q29=E5 + Q33=a 拍板（2026-05-14）：
 //   - 旧实现是 best-effort Release（ALLOCATED→DRY），会让 worker 立刻把数据盘
 //     重装清空，对应 trade pass isolation 是错误语义（用户付费暂停期希望保留数据）。
-//   - 新实现走"关机保留数据"路径：CAS ALLOCATED→PAUSING → 同步调
-//     cp.StopInstance（cvm StopInstances + StoppedMode=STOP_CHARGING） →
-//     CAS PAUSING→PAUSED → 204。
-//   - 同步范式（Q37）：HTTP 层阻塞最多 ~3min 等 cvm STOPPED；超时/失败回滚到
-//     ALLOCATED 并返回 5xx，由上游 ctl 子 task 走 1h 重试窗口（Q22-I-D / Q36=a）。
+//   - 新实现走"关机保留数据"路径：CAS ALLOCATED→PAUSING → 异步提交
+//     cvm StopInstances（StoppedMode=STOP_CHARGING）→204。
+//   - ctl 随后轮询 GET sandbox；查询观察到 STOPPED 时再 CAS PAUSING→PAUSED。
 func (h *handler) PostSandboxesSandboxIDPause(c *gin.Context, sandboxID api.SandboxID) {
 	if !h.cloudPauseResume {
 		sb, err := h.svc.GetSandbox(c.Request.Context(), string(sandboxID))
@@ -527,31 +554,62 @@ func (h *handler) PostSandboxesSandboxIDPause(c *gin.Context, sandboxID api.Sand
 		c.Status(http.StatusNoContent)
 		return
 	}
-	// Sync stop the cloud instance. cp may be nil in unit tests; treat as no-op.
-	if h.cloud != nil && strings.TrimSpace(pausing.CloudID) != "" {
-		instance, refErr := provider.CloudInstanceForPool(pool, pausing.CloudID)
-		if refErr != nil {
-			_, _ = h.svc.RollbackPausing(ctx, sb.InstanceID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": refErr.Error()})
+	// Submit the asynchronous cloud stop. Re-entry deliberately repeats this
+	// idempotent provider call to close the crash window after PAUSING was saved.
+	if h.cloud == nil || strings.TrimSpace(pausing.CloudID) == "" {
+		h.rollbackPausing(sb.InstanceID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cloud provider or cloud instance id is unavailable"})
+		return
+	}
+	instance, refErr := provider.CloudInstanceForPool(pool, pausing.CloudID)
+	if refErr != nil {
+		h.rollbackPausing(sb.InstanceID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": refErr.Error()})
+		return
+	}
+	if err := h.cloud.StopInstance(ctx, instance); err != nil {
+		cloudState, stateErr := h.describeInstanceStateDetached(instance)
+		if stateErr != nil {
+			log.Printf("[api] pause submission result ambiguous sandbox=%s instance=%s cloud=%s err=%v reconcile_err=%v",
+				sb.ID, sb.InstanceID, pausing.CloudID, err, stateErr)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "stop instance result is unknown: " + err.Error()})
 			return
 		}
-		if err := h.cloud.StopInstance(ctx, instance); err != nil {
-			// Roll back to ALLOCATED so upstream ctl child-task can retry.
-			if _, rbErr := h.svc.RollbackPausing(ctx, sb.InstanceID); rbErr != nil {
+		switch strings.ToUpper(strings.TrimSpace(cloudState)) {
+		case "STOPPING", "STOPPED":
+			// The request reached CVM despite the client-side error. Keep PAUSING;
+			// the ctl status poll will reconcile STOPPED to PAUSED.
+			c.Status(http.StatusNoContent)
+			return
+		case "RUNNING":
+			// Only a confirmed RUNNING state is safe to expose as ALLOCATED again.
+			if rbErr := h.rollbackPausing(sb.InstanceID); rbErr != nil {
 				log.Printf("[api] pause rollback failed sandbox=%s instance=%s err=%v rollback_err=%v",
 					sb.ID, sb.InstanceID, err, rbErr)
 			}
-			c.JSON(http.StatusBadGateway, gin.H{"error": "stop instance failed: " + err.Error()})
+		default:
+			log.Printf("[api] pause submission returned unexpected cloud state sandbox=%s instance=%s cloud=%s state=%s err=%v",
+				sb.ID, sb.InstanceID, pausing.CloudID, cloudState, err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "stop instance result is unknown: " + err.Error()})
 			return
 		}
-	}
-	// CAS PAUSING → PAUSED.
-	if _, err := h.svc.MarkPaused(ctx, sb.InstanceID); err != nil {
-		// Rare: state drifted between StopInstance ack and MarkPaused (e.g. concurrent rollback).
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "mark paused failed: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "stop instance failed: " + err.Error()})
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *handler) rollbackPausing(instanceID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := h.svc.RollbackPausing(ctx, instanceID)
+	return err
+}
+
+func (h *handler) describeInstanceStateDetached(instance provider.CloudInstanceRef) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return h.cloud.DescribeInstance(ctx, instance)
 }
 
 // Refresh -> no-op 204
@@ -708,14 +766,12 @@ func (h *handler) GetV2Sandboxes(c *gin.Context, params api.GetV2SandboxesParams
 
 // mapInstanceState converts domain state to openapi SandboxState.
 //
-// StateDry remains mapped to api.Paused for backward compatibility with
-// existing clients that observed "paused" while a release-then-reinstall
-// was in flight on the legacy path. The new pause path goes through
-// StatePausing/StatePaused which both surface as api.Paused (Q26-D 修订版 +
-// Q29=E5 + Q32=b 拍板 2026-05-14).
+// StateDry remains mapped to api.Paused for backward compatibility. PAUSING
+// intentionally remains api.Running until cloud reconciliation confirms that
+// the instance reached STOPPED and advances it to PAUSED.
 func mapInstanceState(s core.InstanceState) api.SandboxState {
 	switch s {
-	case core.StateDry, core.StatePausing, core.StatePaused:
+	case core.StateDry, core.StatePaused:
 		return api.Paused
 	default:
 		return api.Running

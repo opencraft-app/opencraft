@@ -22,7 +22,7 @@ import (
 //
 // 行为契约：
 //   - 每个 IsolateInstance 子 task 对应一台 instance；多个 instance 时父 task 派发多个子 task
-//   - execute：调 sandbox.PauseSandbox 走关机语义 + CAS Running → Paused
+//   - execute：调 sandbox.PauseSandbox 提交关机并轮询确认 + CAS Running → Paused
 //   - finalizeFailure：execute 一直失败到 max_execute_count 后，CAS Pausing→Running 不需要
 //     （instance entity 没有 Pausing 中间态，整个流程对 instance.status 是 "Running → Paused" 直接迁移，
 //      execute 失败时 instance 仍是 Running 不需回滚）
@@ -30,7 +30,8 @@ import (
 // 重试窗口（Q22-I-D）：interval=60s × max=60 = 1h，覆盖 sandbox 短暂抖动场景
 
 const (
-	// IsolateInstance 子 task 复用与 create/destroy 相同的 lock 时长（10min），单次 PauseSandbox 不需要更长
+	// IsolateInstance 子 task 复用与 create/destroy 相同的 lock 时长（10min），
+	// 覆盖 PauseSandbox 最长 5min 的异步关机轮询。
 	isolateInstanceTaskLockSeconds = instanceTaskLockSeconds
 )
 

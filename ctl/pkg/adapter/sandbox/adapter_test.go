@@ -59,6 +59,35 @@ func TestInvokeCommandPostsParametersAndPollsInternalInvocation(t *testing.T) {
 	}
 }
 
+func TestPauseSandboxWaitsUntilSandboxReportsPaused(t *testing.T) {
+	getCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/sandboxes/sbx-123/pause":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/sandboxes/sbx-123":
+			getCalls++
+			state := "running"
+			if getCalls >= 2 {
+				state = "paused"
+			}
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(SandboxDetail{State: state})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewSandboxAdapter(&config.SandboxConfig{BaseURL: server.URL, APIKey: "test-api-key", Timeout: 2}, zap.NewNop())
+	if err := adapter.PauseSandbox(t.Context(), "sbx-123"); err != nil {
+		t.Fatalf("PauseSandbox: %v", err)
+	}
+	if getCalls != 2 {
+		t.Fatalf("GetSandbox calls=%d, want 2 before pause completes", getCalls)
+	}
+}
+
 func TestApplyProcessHeadersIncludesAccessTokenWhenPresent(t *testing.T) {
 	headers := make(http.Header)
 
