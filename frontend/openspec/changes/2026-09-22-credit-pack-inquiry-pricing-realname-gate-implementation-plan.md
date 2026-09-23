@@ -51,7 +51,7 @@
   `pnpm exec vitest run next-site/__tests__/credit-pack-section.test.tsx next-site/__tests__/credit-pack-section-timeout.test.tsx`。
 - [x] 运行 i18n 字典测试、`pnpm i18n:check` 和 `pnpm i18n:validate`。
 - [x] 运行 `pnpm exec tsc --noEmit -p tsconfig.app.json` 或仓库规定的 `pnpm check`。
-- [ ] 所有 `frontend/src` 修改完成并提交后执行 `node opencraft/scripts/sync-mono2-agent-console.mjs`，单独提交生成物，再执行 `--check`。
+- [x] 所有 `frontend/src` 修改完成并提交后执行 `node opencraft/scripts/sync-mono2-agent-console.mjs`，单独提交生成物，再执行 `--check`。
 - [x] 运行 `git diff --check`，确认无空白错误。
 
 ## 验收结论
@@ -93,4 +93,4 @@
 - 全量并发运行额外失败的 `model-config-client.test.ts`（10）、`SkillsDemoPanel.test.tsx`（1）及 `account-page-faceid.test.tsx`（1）在当前合并树单 worker 原配置重跑，3 文件 174/174 通过；保留初次失败记录，不称全量通过。
 - 全量 `VITE_REGION=cn pnpm run test --maxWorkers=2` 运行约 11 分钟后仍有 worker 连续约 4 分钟满核且无输出，人工终止该 worker；结束统计为 64 failed / 3805 passed / 13 skipped、3 errors，23 failed files。64 项由上表 52 项与已单独复验通过的 12 项组成；3 errors 包含加载错误及人工终止导致的 worker 异常，不能视为完整门禁通过。
 - `docs-impact` 通过；原有规则排除仍要求 `wisp/mono2-maintainers` 独立审阅。
-- vendored 必须在本次合并提交之后重新同步并单独提交，不能以提交前的 sourceRevision 校验替代提交后校验。
+- 合并提交 `875cc088c` 完成后同步 vendored，130 个文件校验通过；sourceRevision 指向该合并提交。生成物与此验证记录作为后续独立提交，不再改 `frontend/src`；`repositories/http-repositories.ts` 没有同步差异。
