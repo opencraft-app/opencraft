@@ -486,15 +486,25 @@ stages:
                   exit 1
                   ;;
               esac
+              case "$DECISION" in
+                run_migration)
+                  PIPELINE_PATH=".ci/db-migration-apply.yml"
+                  ;;
+                skip_migration|block)
+                  PIPELINE_PATH=".ci/db-migration.yml"
+                  ;;
+              esac
               echo "::set-output name=decision::$DECISION"
+              echo "::set-output name=pipeline_path::$PIPELINE_PATH"
               echo "shprod DB migration decision=$DECISION"
+              echo "shprod DB migration pipeline=$PIPELINE_PATH"
           - name: 调用 shprod 生产 DB migration 子流水线
             uses: "SubPipelineExecStream@1.*"
             with:
               repositoryType: "URL"
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
-              targetPathFromUrl: ".ci/db-migration.yml"
+              targetPathFromUrl: "${{ steps.plan.outputs.pipeline_path }}"
               buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"
               paramsInput:
                 - key: "SERVICE"
@@ -586,15 +596,25 @@ stages:
                   exit 1
                   ;;
               esac
+              case "$DECISION" in
+                run_migration)
+                  PIPELINE_PATH=".ci/db-migration-apply.yml"
+                  ;;
+                skip_migration|block)
+                  PIPELINE_PATH=".ci/db-migration.yml"
+                  ;;
+              esac
               echo "::set-output name=decision::$DECISION"
+              echo "::set-output name=pipeline_path::$PIPELINE_PATH"
               echo "sgprod DB migration decision=$DECISION"
+              echo "sgprod DB migration pipeline=$PIPELINE_PATH"
           - name: 调用 sgprod 生产 DB migration 子流水线
             uses: "SubPipelineExecStream@1.*"
             with:
               repositoryType: "URL"
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
-              targetPathFromUrl: ".ci/db-migration.yml"
+              targetPathFromUrl: "${{ steps.plan.outputs.pipeline_path }}"
               buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"
               paramsInput:
                 - key: "SERVICE"

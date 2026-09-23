@@ -3332,6 +3332,8 @@ refresh_skus http://unused img-jhb "$pools_json"
             ["Dry-run 生产 DB migration", "人工确认生产 DB migration", "执行生产 DB migration"],
         )
         self.assertTrue(all("if" not in stage for stage in explicit_stages))
+        self.assertEqual(((explicit.get("variables") or {}).get("MIGRATION_DECISION") or {}).get("value"), "run_migration")
+        self.assertEqual(((explicit.get("variables") or {}).get("SKIP_IF_NO_MIGRATION_CHANGE") or {}).get("value"), "true")
         self.assertIn("check-in", explicit_stages[1])
         explicit_reviews = explicit_stages[1]["check-in"]["reviews"]
         self.assertIn("description", explicit_reviews)
@@ -3880,7 +3882,10 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertEqual(template_text.count(release_image_dir), 2)
         self.assertNotIn('RELEASE_IMAGE_DIR=".ci/.release-images/', template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
-        self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
+        self.assertEqual(template_text.count('targetPathFromUrl: "${{ steps.plan.outputs.pipeline_path }}"'), 2)
+        self.assertEqual(template_text.count('PIPELINE_PATH=".ci/db-migration-apply.yml"'), 2)
+        self.assertEqual(template_text.count('PIPELINE_PATH=".ci/db-migration.yml"'), 2)
+        self.assertEqual(template_text.count('echo "::set-output name=pipeline_path::$PIPELINE_PATH"'), 2)
         self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)
         self.assertIn('buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)
         self.assertIn('key: "SERVICE"', template_text)
