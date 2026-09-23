@@ -1,3 +1,21 @@
+---
+id: task-plan-runtime-specs-20260923
+type: task
+scope: 同步双站套餐云端运行环境规格，并交付 Gongfeng MR。
+triggers: ["plan runtime specs", "套餐云端运行环境", "MR 4546"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - frontend/src/content/docs/plans.md
+  - wiki/product-state/geo-fact-table.md
+status: active
+reviewed_at: 2026-09-23
+review_due: 2026-10-23
+revision: 1.1.0
+precedence: task
+derived: false
+---
+
 ## goal
 同步更新 LightVela 国内站与国际站套餐文档中的云端独立运行环境规格，并在套餐说明页记录 2026 年 9 月 23 日起生效的规格升级。
 
@@ -27,7 +45,7 @@
 ## affected_paths
 - `frontend/src/content/docs/{01-overview.md,plans.md,announcements/public-beta.md}`
 - `frontend/src/content/docs/{global,en,id,es,ja,ko}/{01-overview.md,plans.md,announcements/public-beta.md}`
-- `frontend/.fumadocs-content/docs/**`
+- `wiki/product-state/geo-fact-table.md`
 - `docs/context/tasks/2026-09-23-plan-runtime-specs.md`
 
 ## required_context
@@ -52,6 +70,8 @@
 - `pnpm vitest run scripts/docs-last-updated.test.ts scripts/international-docs-parity.test.ts`：2 个文件、64 项测试通过。
 - `validate_documentation.py`：错误 0、断链 0、警告 0。
 - 国内站目标文件相对链接与图片引用：16 项，断链 0；区域关键词与内部信息残留 0。
+- `validate_context.py`：本 Task Pack 元数据错误 0；全仓既有 context/catalog 问题不在本 MR 扩展处理。
+- `wiki/product-state/geo-fact-table.md`：环境规格事实同步为启航 2C8G+50G、巡游 4C16G+80G。
 - `docs-image-assets.test.ts` 与全量 `doc-summary.test.ts` 在主干既有内容上失败：139 个历史大图、16 篇未改动的场景文档缺摘要；失败路径相对 `origin/master` 无 diff。
 
 ## risks
@@ -80,9 +100,10 @@
 - 21 份手写源文件完成现行规格替换；概览与公告旧规格残留 0。
 - 7 份套餐语言源中的旧规格仅保留在“由旧规格升级到新规格”的历史说明中。
 - 升级说明覆盖 7 份手写源和 8 个生成 locale（含自动转换的 `zh-hant`）。
+- `frontend/.fumadocs-content/docs/**` 仅作为本地生成物重跑 `docs:sync` 并检查，不纳入提交。
 - `lightvela-docs-content-categories.md` 中套餐与付费公告的 CN/GLOBAL 状态已为 `✓`，无需改变状态。
 
 ## handoff
-- 当前状态：实现与本地验证完成，待提交并创建 MR。
-- 下一步：复核 staged diff，提交、推送并核对 MR/CI 即时状态。
+- 当前状态：实现与本地验证完成，Gongfeng MR !4546 为本任务交付载体。
+- 下一步：等待 MR 评审；合并、发布与生产验证均需独立授权和证据。
 - 阻塞项：无；两个扩展测试存在已确认与本次 diff 无关的主干存量失败。
