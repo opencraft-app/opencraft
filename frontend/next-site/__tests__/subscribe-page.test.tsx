@@ -2,6 +2,8 @@ import React, { type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { User } from "@/domain/types";
+import type { CreditPackSectionProps } from "../credit-pack-section";
 
 vi.mock("@/components/site/public-site-header", () => ({
   PublicSiteHeader: ({ authControls }: { authControls?: ReactNode }) => (
@@ -44,8 +46,9 @@ vi.mock("next/navigation", () => ({
 const sessionState = {
   authReady: true,
   isAuthenticated: false,
-  user: null as { id?: string; realnameVerified?: boolean } | null,
+  user: null as Partial<User> | null,
 };
+let realnamePhoneVerificationEnabled = false;
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
@@ -82,7 +85,7 @@ vi.mock("@/contexts/repository-context", () => ({
 
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => true,
-  useRealnamePhoneVerificationEnabled: () => false,
+  useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
 }));
 
 vi.mock("@/i18n/t", () => ({
@@ -95,8 +98,11 @@ vi.mock("@/i18n/t", () => ({
 const navigateMock = vi.fn();
 
 vi.mock("../credit-pack-section", () => ({
-  CreditPackSection: ({ sectionId }: { sectionId?: string }) => (
-    <section id={sectionId} data-testid="credit-pack-section" />
+  CreditPackSection: ({ sectionId, canPurchaseCreditPack, onRequireRealname }: CreditPackSectionProps) => (
+    <section id={sectionId} data-testid="credit-pack-section">
+      <button disabled={!canPurchaseCreditPack}>积分包购买资格</button>
+      <button onClick={onRequireRealname}>积分包实名入口</button>
+    </section>
   ),
 }));
 
@@ -152,6 +158,7 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 });
 
 const resetState = () => {
+  realnamePhoneVerificationEnabled = false;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
   openClawState.subscribe = vi.fn();
@@ -282,6 +289,36 @@ describe("SubscribePage", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it.each<{ label: string; phone3fa: boolean; user: Partial<User>; allowed: boolean }>([
+    { label: "未实名", phone3fa: false, user: { realnameVerified: false }, allowed: false },
+    { label: "旧版已实名且未下发绑定字段", phone3fa: false, user: { realnameVerified: true }, allowed: true },
+    { label: "启用三要素但只有旧实名", phone3fa: true, user: { realnameVerified: true }, allowed: false },
+    { label: "三要素实名", phone3fa: true, user: { realnameLevel: "phone_3fa" }, allowed: true },
+    ...(["pending", "failed", "disabled"] as const).map((status) => ({
+      label: `绑定 ${status}`, phone3fa: false, user: { realnameVerified: true, shadowBindingStatus: status }, allowed: false,
+    })),
+    { label: "绑定 active", phone3fa: false, user: { realnameVerified: true, shadowBindingStatus: "active" }, allowed: true },
+    ...(["pending", "failed"] as const).map((status) => ({
+      label: `实名同步 ${status}`, phone3fa: false, user: { realnameVerified: true, realnameSyncStatus: status }, allowed: false,
+    })),
+    { label: "实名同步 succeeded", phone3fa: false, user: { realnameVerified: true, realnameSyncStatus: "succeeded" }, allowed: true },
+  ])("积分包购买资格：$label", async ({ phone3fa, user, allowed }) => {
+    realnamePhoneVerificationEnabled = phone3fa;
+    sessionState.user = user;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    const purchase = await screen.findByRole("button", { name: "积分包购买资格" });
+    if (allowed) expect(purchase).toBeEnabled();
+    else expect(purchase).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "积分包实名入口" }));
+    expect(navigateMock).toHaveBeenCalledWith(
+      "/account/?realname_required=1&return_to=%2Faccount%2Fbilling%3Fsection%3Dcredits",
+    );
   });
 
   it("shows AI tiers first and selects them by default", async () => {

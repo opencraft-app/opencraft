@@ -1,4 +1,5 @@
 import React, { type ReactNode } from "react";
+import type { CreditPackSectionProps } from "../credit-pack-section";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -123,8 +124,10 @@ vi.mock("@/lib/app-navigation", () => ({
 }));
 
 vi.mock("../credit-pack-section", () => ({
-  CreditPackSection: ({ sectionId }: { sectionId?: string }) => (
-    <section id={sectionId} data-testid="credit-pack-section" />
+  CreditPackSection: ({ sectionId, canPurchaseCreditPack }: CreditPackSectionProps) => (
+    <section id={sectionId} data-testid="credit-pack-section">
+      <button disabled={!canPurchaseCreditPack}>积分包购买资格</button>
+    </section>
   ),
 }));
 
@@ -325,6 +328,7 @@ describe("SubscribePage paid billing visibility", () => {
     expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即订阅" })).toBeEnabled();
     expect(screen.getByTestId("credit-pack-section")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "积分包购买资格" })).toBeEnabled();
   });
 });
 

@@ -39,7 +39,7 @@ export interface User {
   realnameAssuranceMode?: "legacy" | "faceless" | "observe" | "face_required";
   /** 实名信息同步状态：pending / failed / succeeded */
   realnameSyncStatus?: "pending" | "failed" | "succeeded";
-  /** 影子账号绑定状态；实名完成后可能仍处于同步中或失败。 */
+  /** 影子绑定状态，供后端未来扩展 session/profile 时透传；当前 User 契约未下发，缺省时仍由下单接口校验绑定。 */
   shadowBindingStatus?: "active" | "pending" | "failed" | "disabled";
   /** 邮箱是否已验证（Magic Link 绑定），后端 /auth/session /auth/profile 下发 */
   emailVerified?: boolean;

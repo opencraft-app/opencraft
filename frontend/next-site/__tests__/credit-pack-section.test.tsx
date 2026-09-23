@@ -65,10 +65,11 @@ const ALL_PRODUCTS_ONLINE = [
    credit_8000 → 8000 分 = ¥80.00，用于验证分转元。 */
 const quoteFor = (productId: string) => ({
   product_id: productId,
-  price: "7100",
+  price: "8000",
   real_total_cost: "8000",
   total_cost: "8000",
   currency: "CNY" as const,
+  discount: 100,
 });
 
 beforeEach(() => {
@@ -135,7 +136,7 @@ describe("CreditPackSection", () => {
     await waitFor(() => {
       expect(screen.getAllByText("¥80.00")).toHaveLength(5);
     });
-    expect(screen.getAllByText("最终付款价格包含税费，请以付款页面显示为准。")).toHaveLength(1);
+    expect(screen.queryByText("最终付款价格包含税费，请以付款页面显示为准。")).not.toBeInTheDocument();
   });
 
   it("统一展示 1 个月有效期说明", async () => {
@@ -258,6 +259,53 @@ describe("CreditPackSection", () => {
     expect(screen.getAllByText("¥80.00").length).toBeGreaterThan(0);
   });
 
+  it("询价失败可单独重试该商品并恢复购买，不重新询价正常商品", async () => {
+    inquireCreditPrice.mockImplementation(async (productId: string) => {
+      if (productId === "credit_1000") throw new Error("temporary failure");
+      return quoteFor(productId);
+    });
+    renderSection();
+
+    const card = await screen.findByTestId("credit-pack-card-credit_1000");
+    await waitFor(() => expect(card).toBeDisabled());
+    inquireCreditPrice.mockImplementation(async (productId: string) => quoteFor(productId));
+    await userEvent.click(screen.getByTestId("credit-pack-retry-credit_1000"));
+    await waitFor(() => expect(card).toBeEnabled());
+    expect(inquireCreditPrice).toHaveBeenCalledTimes(6);
+    expect(inquireCreditPrice).toHaveBeenLastCalledWith("credit_1000");
+    await userEvent.click(card);
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    expect(await screen.findByRole("heading", { name: "确认订单" })).toBeInTheDocument();
+  });
+
+  it("全部询价失败时仍有逐商品重试入口", async () => {
+    inquireCreditPrice.mockRejectedValue(new Error("offline"));
+    renderSection();
+    const retries = await screen.findAllByRole("button", { name: "重试" });
+    expect(retries).toHaveLength(5);
+    inquireCreditPrice.mockImplementation(async (productId: string) => quoteFor(productId));
+    await userEvent.click(retries[0]);
+    await waitFor(() => expect(screen.getByTestId("credit-pack-card-credit_1000")).toBeEnabled());
+    expect(inquireCreditPrice).toHaveBeenCalledTimes(6);
+  });
+
+  it.each(["", "   ", "80.00", "1e3", "0x10", "8000.5", "-1", "9007199254740992"])(
+    "拒绝非法的分单位金额 %j，不能作为零元或有效询价购买",
+    async (value) => {
+      inquireCreditPrice.mockImplementation(async (productId: string) => ({
+        ...quoteFor(productId),
+        price: value,
+        real_total_cost: value,
+      }));
+      renderSection();
+      const card = await screen.findByTestId("credit-pack-card-credit_1000");
+      await waitFor(() => expect(card).toBeDisabled());
+      expect(within(card).getByText("价格暂不可用")).toBeInTheDocument();
+      expect(screen.getByTestId("credit-pack-primary-action")).toBeDisabled();
+      expect(createCreditOrder).not.toHaveBeenCalled();
+    },
+  );
+
   it("购买流程：选中商品 → 打开弹窗 → 未勾选条款时支付禁用", async () => {
     renderSection();
 
@@ -269,16 +317,13 @@ describe("CreditPackSection", () => {
     expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
     expect(screen.getByText("订单详情")).toBeInTheDocument();
     expect(screen.getByText("到账后 1 个月")).toBeInTheDocument();
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-price-breakdown")).not.toBeInTheDocument();
     expect(screen.getByText("微信支付")).toBeInTheDocument();
     /* 弹窗展示商品与金额（卡片上也有同样文本，用 getAllByText 断言至少两处） */
     expect(screen.getAllByText("8,000 模型积分").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("¥80.00").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("积分包价格");
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("¥71.00");
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("税费");
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("¥9.00");
-    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("最终付款价格包含税费，请以付款页面显示为准。");
+    expect(within(modal).queryByText("税费")).not.toBeInTheDocument();
+    expect(within(modal).queryByText("最终付款价格包含税费，请以付款页面显示为准。")).not.toBeInTheDocument();
     expect(screen.getByTestId("credit-pack-terms-checkbox").parentElement?.textContent).toContain(
       "法律规定、重复扣款或平台交付异常等情况，由客服核验处理。",
     );
@@ -424,20 +469,80 @@ describe("CreditPackSection", () => {
     expect(onRequireRealname).toHaveBeenCalledTimes(1);
   });
 
-  it("国际站展示询价返回的美元总价", async () => {
+  it("国际站无折扣报价展示实测美元价格、税费差额和总价", async () => {
     inquireCreditPrice.mockImplementation(async (productId: string) => ({
       ...quoteFor(productId),
       currency: "USD" as const,
-      price: "650",
-      real_total_cost: "800",
+      price: "180",
+      total_cost: "180",
+      real_total_cost: "197",
     }));
     regionState.isGlobal = true;
     renderSection();
 
     await waitFor(() => {
-    expect(screen.getAllByText("$8.00")).toHaveLength(5);
+      expect(screen.getAllByText("$1.97")).toHaveLength(5);
     });
     expect(screen.queryByText("¥8000")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    const breakdown = await screen.findByTestId("credit-pack-price-breakdown");
+    expect(breakdown).toHaveTextContent("积分包价格$1.80");
+    expect(breakdown).toHaveTextContent("税费$0.17");
+    expect(breakdown).toHaveTextContent("最终付款价格包含税费，请以付款页面显示为准。");
+    expect(screen.getByTestId("credit-pack-confirm-pay")).toHaveTextContent("支付 $1.97");
+  });
+
+  it.each([
+    { label: "国内折扣", global: false, price: "8000", total: "7200", totalCost: "8000", discount: 90, amount: "¥72.00" },
+    { label: "国际折扣低于原价", global: true, price: "1000", total: "880", totalCost: "1000", discount: 80, amount: "$8.80" },
+    { label: "国际折扣含税后高于原价", global: true, price: "1000", total: "1046", totalCost: "1000", discount: 96, amount: "$10.46" },
+    { label: "国际缺少折扣字段", global: true, price: "180", total: "197", totalCost: "180", discount: undefined, amount: "$1.97" },
+    { label: "国际原价字段不一致", global: true, price: "180", total: "197", totalCost: "190", discount: 100, amount: "$1.97" },
+    { label: "国际缺少原价总额", global: true, price: "180", total: "197", totalCost: undefined, discount: 100, amount: "$1.97" },
+    { label: "国际总价低于原价但折扣字段未同步", global: true, price: "180", total: "170", totalCost: "180", discount: 100, amount: "$1.70" },
+    { label: "国内合法零元", global: false, price: "8000", total: "0", totalCost: "8000", discount: 0, amount: "¥0.00" },
+  ])("$label只展示实际总价，不将优惠当税费或禁止购买", async ({ global, price, total, totalCost, discount, amount }) => {
+    regionState.isGlobal = global;
+    inquireCreditPrice.mockImplementation(async (productId: string) => ({
+      ...quoteFor(productId),
+      currency: global ? "USD" : "CNY",
+      price,
+      total_cost: totalCost,
+      real_total_cost: total,
+      discount,
+    }));
+    renderSection();
+    const card = await screen.findByTestId("credit-pack-card-credit_1000");
+    await waitFor(() => expect(within(card).getByText(amount)).toBeInTheDocument());
+    expect(card).toBeEnabled();
+    await userEvent.click(card);
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    const modal = await screen.findByTestId("credit-pack-confirm-modal");
+    expect(within(modal).queryByText("税费")).not.toBeInTheDocument();
+    expect(within(modal).queryByText("积分包价格")).not.toBeInTheDocument();
+    expect(within(modal).queryByText("最终付款价格包含税费，请以付款页面显示为准。") !== null).toBe(global);
+    const payButton = screen.getByTestId("credit-pack-confirm-pay");
+    expect(payButton).toHaveTextContent(`支付 ${amount}`);
+    await userEvent.click(screen.getByTestId("credit-pack-terms-checkbox"));
+    expect(payButton).toBeEnabled();
+  });
+
+  it("国际站绑定错误保留重新下单入口，不引导不存在的实名认证", async () => {
+    regionState.isGlobal = true;
+    createCreditOrder.mockRejectedValue(new Error("uin is required"));
+    renderSection();
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+
+    expect(await screen.findByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
+    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("uin is required");
+    expect(screen.queryByTestId("credit-pack-modal-realname-action")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "暂不处理" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "重新下单" }));
+    expect(await screen.findByRole("heading", { name: "确认订单" })).toBeInTheDocument();
   });
 
   it("商品列表以接口为准：OFFLINE 商品不渲染", async () => {

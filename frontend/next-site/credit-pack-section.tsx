@@ -70,18 +70,30 @@ const isCreditPackBindingError = (error: string | null): boolean => {
  * 展示前必须除以 100 转元。
  */
 const parseCents = (value: string): number | null => {
+  if (!/^\d+$/.test(value.trim())) return null;
   const cents = Number(value);
-  return Number.isInteger(cents) && cents >= 0 ? cents : null;
+  return Number.isSafeInteger(cents) && cents >= 0 ? cents : null;
 };
 
 const formatQuoteAmounts = (quote: CreditQuote) => {
   const priceCents = parseCents(quote.price);
   const totalCents = parseCents(quote.real_total_cost);
-  if (priceCents === null || totalCents === null || totalCents < priceCents) return null;
+  if (priceCents === null || totalCents === null) return null;
+
+  /*
+   * inquiry 没有独立税额字段：price / total_cost 是原价，real_total_cost 是
+   * 折后实付总价（国际站已含税），不能无条件用两者差值当税费。
+   * 仅国际 USD 报价明确无折扣（discount=100 且两项原价一致）并且差额
+   * 非负时拆税；其余只展示实付总价，国际保留含税提示，以付款页为准。
+   * real_total_cost < price 可能是正常优惠，不能因此禁用购买。
+   */
+  const canSplitTax = isGlobal && quote.currency === 'USD' && quote.discount === 100
+    && typeof quote.total_cost === 'string' && parseCents(quote.total_cost) === priceCents
+    && totalCents >= priceCents;
 
   return {
-    price: formatYuan(centsToYuan(priceCents), quote.currency),
-    tax: formatYuan(centsToYuan(totalCents - priceCents), quote.currency),
+    price: formatYuan(centsToYuan(canSplitTax ? priceCents : totalCents), quote.currency),
+    tax: canSplitTax ? formatYuan(centsToYuan(totalCents - priceCents), quote.currency) : null,
     total: formatYuan(centsToYuan(totalCents), quote.currency),
   };
 };
@@ -150,7 +162,7 @@ export const CreditPackSection = ({
       setQuotes((prev) => ({ ...prev, [productId]: { status: 'loading' } }));
       try {
         const quote = await repositoriesRef.current.credit.inquireCreditPrice(productId);
-        /* 契约防御：响应缺少金额字段或总价小于积分包价格时按询价失败处理，
+        /* 契约防御：响应缺少金额字段或金额不是有效的非负整数分时按询价失败处理，
            显示「价格暂不可用」而非渲染崩溃 */
         if (
           !quote ||
@@ -343,7 +355,7 @@ export const CreditPackSection = ({
   /* 只为异常与手动刷新未到账渲染独立状态行。成功、到账处理中由弹窗说明承载，
      避免同一句文案在 DialogDescription 和状态行中重复。 */
   const checkoutStatusNotice = useMemo(() => {
-    if (checkout.state.status === 'failed' && isCreditPackBindingError(checkout.state.error)) {
+    if (!isGlobal && checkout.state.status === 'failed' && isCreditPackBindingError(checkout.state.error)) {
       return t('请先完成实名认证，完成影子账号绑定后再购买积分包。');
     }
     switch (checkout.state.status) {
@@ -362,9 +374,9 @@ export const CreditPackSection = ({
       default:
         return null;
     }
-  }, [checkout.state.status, checkout.state.error, recheckPendingNotice, t]);
+  }, [checkout.state.status, checkout.state.error, isGlobal, recheckPendingNotice, t]);
 
-  const checkoutNeedsRealname = checkout.state.status === 'failed' && isCreditPackBindingError(checkout.state.error);
+  const checkoutNeedsRealname = !isGlobal && checkout.state.status === 'failed' && isCreditPackBindingError(checkout.state.error);
 
   /* 二维码过期校验：bridgePlan.expiresAt 由 buildPayPlan 写入（now + 9 分钟，
      比后端 auth_code TTL 10 分钟短 1 分钟 buffer）。中转页（wechat-pay-page）
@@ -487,6 +499,16 @@ export const CreditPackSection = ({
                         : t('加载中…')}
                   </span>
                 </button>
+                {quoteState?.status === 'failed' ? (
+                  <button
+                    type="button"
+                    onClick={() => void loadQuote(denomination.product_id)}
+                    data-testid={`credit-pack-retry-${denomination.product_id}`}
+                    className="mt-2 rounded-md px-3 py-2 text-sm font-semibold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  >
+                    {t('重试')}
+                  </button>
+                ) : null}
               </li>
             );
           })}
@@ -499,9 +521,11 @@ export const CreditPackSection = ({
       <p className="mt-1 max-w-4xl text-pretty text-xs leading-relaxed text-[var(--text-tertiary)]">
         {t('适用于已有有效套餐、需要增加模型调用额度的用户。实际抵扣优先使用到期时间更早的额度；到期时间相同时，优先使用创建时间更早的额度。')}
       </p>
-      <p className="mt-1 max-w-4xl text-pretty text-xs leading-relaxed text-[var(--text-tertiary)]">
-        {t('最终付款价格包含税费，请以付款页面显示为准。')}
-      </p>
+      {isGlobal ? (
+        <p className="mt-1 max-w-4xl text-pretty text-xs leading-relaxed text-[var(--text-tertiary)]">
+          {t('最终付款价格包含税费，请以付款页面显示为准。')}
+        </p>
+      ) : null}
 
       <div className="mt-4 flex flex-col gap-2">
         <button
@@ -565,13 +589,17 @@ export const CreditPackSection = ({
                     <dt>{t('有效期')}</dt>
                     <dd className="font-semibold text-[var(--text-primary)]">{t('到账后 1 个月')}</dd>
                   </div>
-                  <div data-testid="credit-pack-price-breakdown" className="mt-4 border-t border-[var(--border-strong)] pt-4 text-[var(--text-secondary)]">
-                    <div className="mt-3 space-y-1 text-sm">
-                      <div className="flex items-center justify-between"><dt>{t('积分包价格')}</dt><dd>{dialogAmounts.price}</dd></div>
-                      <div className="flex items-center justify-between"><dt>{t('税费')}</dt><dd>{dialogAmounts.tax}</dd></div>
+                  {isGlobal ? (
+                    <div data-testid="credit-pack-price-breakdown" className="mt-4 border-t border-[var(--border-strong)] pt-4 text-[var(--text-secondary)]">
+                      {dialogAmounts.tax !== null ? (
+                        <div className="mt-3 space-y-1 text-sm tabular-nums">
+                          <div className="flex items-center justify-between"><dt>{t('积分包价格')}</dt><dd>{dialogAmounts.price}</dd></div>
+                          <div className="flex items-center justify-between"><dt>{t('税费')}</dt><dd>{dialogAmounts.tax}</dd></div>
+                        </div>
+                      ) : null}
+                      <p className="text-xs leading-relaxed">{t('最终付款价格包含税费，请以付款页面显示为准。')}</p>
                     </div>
-                    <p className="text-xs leading-relaxed">{t('最终付款价格包含税费，请以付款页面显示为准。')}</p>
-                  </div>
+                  ) : null}
                   <div className="my-4 h-px bg-[var(--border-strong)]" />
                   <div className="flex items-baseline justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">{t('总计：')}</dt>
@@ -725,7 +753,7 @@ export const CreditPackSection = ({
                       {checkingPayment ? t('刷新中...') : t('刷新')}
                     </button>
                   ) : null}
-                  {checkout.state.status === 'failed' && !checkoutNeedsRealname || isExpiredQrOrder ? (
+                  {(checkout.state.status === 'failed' && !checkoutNeedsRealname) || isExpiredQrOrder ? (
                     <button
                       type="button"
                       onClick={handleReorder}
@@ -737,7 +765,7 @@ export const CreditPackSection = ({
                   ) : null}
                   {checkout.state.status === 'payment_pending' ||
                   checkout.state.status === 'delivery_exception' ||
-                  checkout.state.status === 'failed' && !checkoutNeedsRealname ? (
+                  (checkout.state.status === 'failed' && !checkoutNeedsRealname) ? (
                     <button
                       type="button"
                       onClick={() => setModalOpen(false)}

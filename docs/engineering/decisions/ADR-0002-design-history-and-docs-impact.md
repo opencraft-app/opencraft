@@ -39,6 +39,8 @@
 
 本规则也适用于两类已确认的工具性变更：`opencraft/plugins/lightvela-hermes/src/upstream/**` 是由前端源码同步生成的 vendored 快照，不承载独立的 Agent Gateway 架构语义；`.ci/runtime/check_ci_runtime.sh` 中的语法检查清单只验证已注册脚本可解析，不改变发布流程或 GitOps 责任。两类路径分别由 opencraft vendored 一致性 guard 和 CI 脚本测试负责，因而在 `agent-gateway-runtime` 与 `release-gitops` 的 `exclude_paths` 中排除。若同步机制或脚本行为开始改变相应责任面，必须移除排除并补充正式设计文档。
 
+路径级排除无法区分语法检查清单的新增与删除：未来删除 `check_ci_runtime.sh` 中某个检查项也不会触发 `release-gitops` 文档要求，剩余覆盖范围需由维护者在代码评审中核对。docs-impact 读取 MR 工作区规则，规则作者不能以本地校验通过代替 `wisp/mono2-maintainers` 对排除项的独立审阅。
+
 服务 `OWNERS` 只声明代码评审责任，不改变服务接口、运行时或跨服务边界。已确认由独立 Owner 流程治理的 `shadow/OWNERS` 与 `gateway-dashboard/OWNERS` 分别从对应业务责任面排除，不以修改业务架构文档作为 Owner 变更的前提；其他服务仍保持原门禁范围。
 
 一级服务迁入必须原子更新本地四入口、中央 Catalog、派生 Service Context、路由 smoke case、变更影响映射和正式责任文档。OpenCraft 的一次性 subtree 迁移按此流程登记为独立服务，并把其 Chat/AppServer/Hermes 投影纳入 `agent-gateway-runtime`；旧仓库谱系只作为有界历史，不形成第二写入真源。服务总数由校验器的一级服务集合派生，文档和测试不维护孤立的手写计数。
