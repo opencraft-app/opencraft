@@ -52,7 +52,7 @@ El producto actual de LightVela es **Hermes Agent**, un Agent de IA impulsado po
 
 * **Implementación totalmente gestionada**: La nube se encarga automáticamente de la configuración del entorno y la gestión del tiempo de ejecución. No se requieren operaciones de servidor, imágenes de contenedor ni conocimientos de infraestructura
 
-* **Entorno de tiempo de ejecución aislado**: Cada instancia de Hermes Agent tiene su propio entorno de tiempo de ejecución, aislamiento de recursos, disponibilidad 24/7 y no depende de dispositivos locales
+* **Entorno de nube dedicado**: Cada instancia de Hermes Agent tiene su propio entorno de nube, aislamiento de recursos, disponibilidad 24/7 y no depende de dispositivos locales
 
 * **Soporte multi-modelo**: Conéctate a modelos de lenguaje grandes chinos principales, suscripciones a planes de codificación de proveedores o cualquier punto de extremo compatible con OpenAI. Consulta [Configurar modelos](./configuration/model.md)
 
@@ -103,7 +103,7 @@ Planes actualmente disponibles:
 | Launch | $7.5 / mes | Prueba gratuita de 1 mes para nuevos usuarios después del inicio del beta pública y la facturación |
 | Cruise | $15 / mes | Plan pagado |
 
-El plan Launch incluye: 1 instancia de Hermes Agent, entorno de tiempo de ejecución aislado de 2 núcleos 8G, 50 GB de almacenamiento en la nube dedicado, 100 créditos de prueba, disponibilidad 24/7 y acceso a la consola.
+El plan Launch incluye: 1 instancia de Hermes Agent, un entorno de nube dedicado con 2 vCPU · 8 GB de RAM, 50 GB de almacenamiento en la nube dedicado, 100 créditos de prueba, disponibilidad 24/7 y acceso a la consola.
 
 > ℹ️ **Aviso de plan beta**
 >

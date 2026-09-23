@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**LightVela tiene cuatro conceptos fundamentales. Un Hermes Agent es la entidad conversacional ejecutada en la nube, con su propio entorno de ejecución aislado, memoria que persiste entre conversaciones y disponibilidad 24/7. El modelo es el modelo de lenguaje grande que invoca —ya sea un Plan de Codificación de Modelo (mensual), API de Modelo (pago por uso) o un punto de extremo personalizado compatible con OpenAI. Los canales son las plataformas de mensajería a través de las cuales interactúas con él; múltiples canales pueden conectarse al mismo Agent y compartir una sola personalidad y memoria. Las Skills son paquetes de capacidades instalables que extienden lo que puede hacer. Una conversación completa fluye de la siguiente manera: un canal recibe tu mensaje, el Agent decide si invocar una Skill, llama al modelo para generar una respuesta y la respuesta regresa por el mismo canal.**
+**LightVela tiene cuatro conceptos fundamentales. Un Hermes Agent es la entidad conversacional ejecutada en la nube, con su propio entorno de nube dedicado, memoria que persiste entre conversaciones y disponibilidad 24/7. El modelo es el modelo de lenguaje grande que invoca —ya sea un Plan de Codificación de Modelo (mensual), API de Modelo (pago por uso) o un punto de extremo personalizado compatible con OpenAI. Los canales son las plataformas de mensajería a través de las cuales interactúas con él; múltiples canales pueden conectarse al mismo Agent y compartir una sola personalidad y memoria. Las Skills son paquetes de capacidades instalables que extienden lo que puede hacer. Una conversación completa fluye de la siguiente manera: un canal recibe tu mensaje, el Agent decide si invocar una Skill, llama al modelo para generar una respuesta y la respuesta regresa por el mismo canal.**
 
 ---
 
@@ -50,7 +50,7 @@ Hermes Agent es la instancia de Agent de IA en LightVela. Crear un Hermes Agent 
 
 Hermes Agent tiene las siguientes características:
 
-- **Entorno de ejecución aislado**: Cada Hermes Agent se ejecuta en un entorno dedicado aislado de otras instancias
+- **Entorno de nube dedicado**: Cada Hermes Agent se ejecuta en su propio entorno, con recursos aislados de otras instancias
 - **Memoria persistente**: El contenido de la conversación se guarda entre sesiones y el Agent utiliza el contexto histórico al responder
 - **Siempre en línea**: Se ejecuta 24/7 y no depende del dispositivo local del usuario
 

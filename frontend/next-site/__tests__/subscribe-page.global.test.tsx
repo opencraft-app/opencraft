@@ -94,8 +94,9 @@ vi.mock("@/contexts/repository-context", () => ({
   }),
 }));
 
+const runtimeConfigState = { paidBillingEnabled: true };
 vi.mock("@/contexts/runtime-config-context", () => ({
-  usePaidBillingEnabled: () => true,
+  usePaidBillingEnabled: () => runtimeConfigState.paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -163,7 +164,7 @@ describe("international upgrade return", () => {
   it("shows the Singapore campaign memory on the international pricing card", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    expect((await screen.findAllByText("4核 16G 内存")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("4 vCPU · 16 GB 内存")).length).toBeGreaterThan(0);
     expect(screen.queryByText("4核 8G 内存")).not.toBeInTheDocument();
   });
 
@@ -271,6 +272,7 @@ const buildNestedBundle = () => ({
 
 const resetState = () => {
   translationState.real = false;
+  runtimeConfigState.paidBillingEnabled = true;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
   openClawState.subscribe = vi.fn();
@@ -300,6 +302,111 @@ const resetState = () => {
   navigateMock.mockReset();
   window.history.replaceState({}, "", "/subscribe");
 };
+
+describe("SubscribePage international cloud computer copy", () => {
+  beforeEach(resetState);
+  afterEach(cleanupPage);
+
+  it("normalizes English backend features without duplicating plan resources", async () => {
+    translationState.real = true;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([
+      {
+        ...buildBundle("bundle_launch_ai_01", "启航 Launch AI"),
+        credit: 4500,
+        description: [
+          { Key: "Standalone Environment", Value: "" },
+          { Key: "Dedicated Cloud Storage", Value: "" },
+          { Key: "Minimalist Config Panel", Value: "" },
+        ],
+      },
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<LocaleOverrideProvider locale="en-US"><SubscribePage /></LocaleOverrideProvider>);
+
+    await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
+    expect(await screen.findAllByText("Dedicated cloud environment")).toHaveLength(1);
+    expect(screen.getByText("2 vCPU · 8 GB RAM")).toBeInTheDocument();
+    expect(screen.getAllByText("Dedicated cloud storage")).toHaveLength(1);
+    expect(screen.getByText("50 GB")).toBeInTheDocument();
+    expect(screen.getAllByText("Simple configuration console")).toHaveLength(1);
+    expect(screen.queryByText("Standalone Environment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dedicated Cloud Storage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Minimalist Config Panel")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["zh-CN", "专属云端环境", "2 vCPU · 8 GB 内存", "专属云端存储", "极简配置面板"],
+    ["zh-Hant", "專屬雲端環境", "2 vCPU · 8 GB 內存", "專屬雲端存儲", "極簡配置面板"],
+    ["en-US", "Dedicated cloud environment", "2 vCPU · 8 GB RAM", "Dedicated cloud storage", "Simple configuration console"],
+    ["id-ID", "Lingkungan cloud khusus", "2 vCPU · 8 GB RAM", "Penyimpanan cloud khusus", "Konsol konfigurasi sederhana"],
+    ["es", "Entorno de nube dedicado", "2 vCPU · 8 GB de RAM", "Almacenamiento exclusivo en la nube", "Consola de configuración sencilla"],
+    ["ja-JP", "専用クラウド環境", "2 vCPU · 8 GB メモリ", "専用クラウドストレージ", "シンプルな設定コンソール"],
+    ["ko-KR", "전용 클라우드 환경", "2 vCPU · 8 GB RAM", "전용 클라우드 저장소", "간단한 설정 콘솔"],
+  ] as const)("localizes English backend feature names in %s", async (locale, environment, spec, storage, consoleLabel) => {
+    translationState.real = true;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockResolvedValue([{
+      ...buildBundle("bundle_launch_ai_01", "启航 Launch AI"),
+      credit: 4500,
+      description: [
+        { Key: "Standalone Environment", Value: "" },
+        { Key: "Dedicated Cloud Storage", Value: "" },
+        { Key: "Minimalist Config Panel", Value: "" },
+      ],
+    }]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<LocaleOverrideProvider locale={locale}><SubscribePage /></LocaleOverrideProvider>);
+
+    expect(await screen.findAllByText(environment)).toHaveLength(1);
+    expect(screen.getByText(spec)).toBeInTheDocument();
+    expect(screen.getAllByText(storage)).toHaveLength(1);
+    expect(screen.getAllByText(consoleLabel)).toHaveLength(1);
+    for (const englishKey of ["Standalone Environment", "Dedicated Cloud Storage", "Minimalist Config Panel"]) {
+      expect(screen.queryByText(englishKey)).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ["zh-CN", "/ 月"], ["zh-Hant", "/ 月"], ["en-US", "/ month"],
+    ["id-ID", "/ bulan"], ["es", "/ mes"], ["ja-JP", "/月"], ["ko-KR", "/ 달"],
+  ] as const)("localizes the placeholder plan's price unit in %s", async (locale, unit) => {
+    translationState.real = true;
+    runtimeConfigState.paidBillingEnabled = false;
+    listBundlesMock.mockResolvedValue([]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<LocaleOverrideProvider locale={locale}><SubscribePage /></LocaleOverrideProvider>);
+
+    expect((await screen.findAllByText(unit)).length).toBeGreaterThan(0);
+    if (locale !== "en-US") expect(screen.queryByText("/ month")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["zh-CN", "套餐列表加载失败"],
+    ["zh-Hant", "套餐列表加載失敗"],
+    ["en-US", "Failed to load plans"],
+    ["id-ID", "Gagal memuat paket"],
+    ["es", "No se pudo cargar la lista de planes"],
+    ["ja-JP", "プラン一覧の読み込みに失敗しました"],
+    ["ko-KR", "계획들을 로드하지 못했어요"],
+  ] as const)("localizes a backend plan-loading error in %s", async (locale, message) => {
+    translationState.real = true;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    listBundlesMock.mockRejectedValue(new Error("English backend unavailable"));
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<LocaleOverrideProvider locale={locale}><SubscribePage /></LocaleOverrideProvider>);
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByText("English backend unavailable")).not.toBeInTheDocument();
+  });
+});
 
 describe("SubscribePage paid billing visibility", () => {
   beforeEach(resetState);
