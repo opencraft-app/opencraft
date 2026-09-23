@@ -94,14 +94,15 @@ const rotatorWordsByLocale = {
   "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "相場ウォッチャー", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
   "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "시세 관찰자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
 };
-const tokenTrialCopyByLocale = {
-  "en-US": "Try an AI token plan free for 7 days.",
-  "zh-SG": "AI Token 套餐免费体验 7 天",
-  "zh-Hant": "AI Token 套餐免費體驗 7 天",
-  "id-ID": "Coba paket AI Token gratis selama 7 hari.",
-  es: "Prueba un plan de tokens de IA gratis durante 7 días.",
-  "ja-JP": "AI Tokenプランを7日間無料でお試しいただけます。",
-  "ko-KR": "AI Token 플랜을 7일 동안 무료로 사용해 보세요.",
+const trialOfferCopyByLocale = {
+  "en-US": "New users get 1 month free and 4,500 AI credits.",
+  "zh-CN": "新用户免费体验1个月，送4500 AI 积分",
+  "zh-SG": "新用户免费体验1个月，送4500 AI 积分",
+  "zh-Hant": "新使用者免費體驗1個月，送4500 AI 積分",
+  "id-ID": "Pengguna baru mendapat uji coba gratis 1 bulan dan 4.500 kredit AI.",
+  "es": "Los nuevos usuarios reciben 1 mes gratis y 4500 créditos de IA.",
+  "ja-JP": "新規ユーザーは1か月間無料、4,500 AIクレジット付き。",
+  "ko-KR": "신규 사용자에게 1개월 무료 체험과 AI 크레딧 4,500점을 드립니다."
 };
 const trialTitleCopyByLocale = {
   "en-US": "Try it free, activate in 10 seconds",
@@ -271,7 +272,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已连接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版权所有。由 Tencent Lighthouse 构建。",
     Product: "产品",
-    "14-day free trial": "14 天免费试用",
+    "1-month free trial": "1 个月免费试用",
     Pricing: "定价",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -337,7 +338,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已连接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版权所有。由 Tencent Lighthouse 构建。",
     Product: "产品",
-    "14-day free trial": "14 天免费试用",
+    "1-month free trial": "1 个月免费试用",
     Pricing: "定价",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -404,7 +405,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已連接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版權所有。由 Tencent Lighthouse 構建。",
     Product: "產品",
-    "14-day free trial": "14 天免費試用",
+    "1-month free trial": "1 個月免費試用",
     Pricing: "定價",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -601,7 +602,7 @@ const coreCopyByLocale = {
     "Terms of Service": "Ketentuan Layanan",
     "Open Source Notice": "Pemberitahuan Open Source",
     "Related products": "Produk terkait",
-    "14-day free trial": "Uji coba gratis 14 hari",
+    "1-month free trial": "Uji coba gratis 1 bulan",
     "WhatsApp setup guide": "Panduan setup WhatsApp",
     "Telegram setup guide": "Panduan setup Telegram",
     "Discord setup guide": "Panduan setup Discord",
@@ -776,7 +777,7 @@ const coreCopyByLocale = {
     "Terms of Service": "Términos del servicio",
     "Open Source Notice": "Aviso de código abierto",
     "Related products": "Productos relacionados",
-    "14-day free trial": "Prueba gratis de 14 días",
+    "1-month free trial": "Prueba gratis de 1 mes",
     "WhatsApp setup guide": "Guía de conexión de WhatsApp",
     "Telegram setup guide": "Guía de conexión de Telegram",
     "Discord setup guide": "Guía de conexión de Discord",
@@ -972,7 +973,7 @@ Object.assign(coreCopyByLocale, {
     Company: "会社",
     "About Us": "会社概要",
     "Related products": "関連製品",
-    "14-day free trial": "14日間無料トライアル",
+    "1-month free trial": "1か月間無料トライアル",
     "WhatsApp setup guide": "WhatsApp接続ガイド",
     "Telegram setup guide": "Telegram接続ガイド",
     "Discord setup guide": "Discord接続ガイド",
@@ -1167,7 +1168,7 @@ Object.assign(coreCopyByLocale, {
     Company: "회사",
     "About Us": "회사 소개",
     "Related products": "관련 제품",
-    "14-day free trial": "14일 무료 체험",
+    "1-month free trial": "1개월 무료 체험",
     "WhatsApp setup guide": "WhatsApp 연결 가이드",
     "Telegram setup guide": "Telegram 연결 가이드",
     "Discord setup guide": "Discord 연결 가이드",
@@ -4091,9 +4092,11 @@ function prepareDocumentForLocale(document, locale) {
   ensureSoulStripSecondaryStates(document, locale);
   highlightHeroLightVelaMentions(document);
   revealHeroDemoMessages(document);
-  const tokenTrial = document.querySelector(".cta__copy li:nth-child(2)");
-  if (tokenTrial && tokenTrialCopyByLocale[locale]) {
-    tokenTrial.textContent = tokenTrialCopyByLocale[locale];
+  const trialCopy = document.querySelector(".cta__copy");
+  if (trialCopy && trialOfferCopyByLocale[locale]) {
+    const offer = document.createElement("li");
+    offer.textContent = trialOfferCopyByLocale[locale];
+    trialCopy.replaceChildren(offer);
   }
   const trialTitle = document.querySelector(".cta__title");
   if (trialTitle && trialTitleCopyByLocale[locale]) {
@@ -4129,7 +4132,7 @@ function applyFooterLayout(document) {
   </div>
   <div class="foot__links"><div class="foot__links-grid">
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.</p></div>
-    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
+    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">1-month free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Compare</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Compare with self-hosting</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Compare with Hostinger</a></li><li><a href="/docs/compare/lightvela-vs-manus">Compare with Manus</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">Compare with ChatGPT</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Compare with Genspark</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li></ul></div>
     <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>

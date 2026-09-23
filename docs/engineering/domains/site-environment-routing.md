@@ -39,6 +39,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## 官网首页展示产物
 
+- 双站首页的试用展示统一为「新用户免费体验1个月，送4500 AI 积分」，用一条文案表达，不分列标准版和 AI 积分版；静态多语言片段、导入脚本、共用页脚和 `llms.txt` 摘要同步维护。前端文案不决定实际权益期限，权益仍由服务端执行。
+
 - 国内站与国际站共享同一组 LightVela favicon 资源与浏览器页签品牌形象；`layout.next.tsx` 的 icon/shortcut/apple 声明和 `manifest.webmanifest` 必须引用同一版本化 URL。图标内容更新时应同步更换版本标识，避免任一生产域名继续命中旧 favicon 缓存。
 - 国内站与国际站根路由分别以默认 `zh-CN` / `en-US` locale 直接渲染 `InternationalHomePage` 的已提交静态片段，不再静态引入旧 `PublicHomePage`；带 locale 的路由仍保留 V2 选择与旧页面 fallback。
 - 国际站首页使用 `frontend/scripts/import-international-homepage.mjs` 维护导入与本地化规则，运行时消费 `frontend/public/lightvela-intl-home/index-fragment*.html` 中已提交的多语言静态片段。

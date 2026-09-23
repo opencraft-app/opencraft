@@ -309,7 +309,7 @@ describe("international v2 homepage artifact", () => {
         heading: "产品",
         links: [
           "博客",
-          "免费试用",
+          "1 个月免费试用",
           "产品定价",
           "接入微信指引",
           "接入飞书指引",
@@ -851,7 +851,7 @@ describe("international v2 homepage artifact", () => {
     ]);
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
-    expect(footer?.textContent).toContain("14-day free trial");
+    expect(footer?.textContent).toContain("1-month free trial");
     expect(footer?.textContent).toContain("Compare with self-hosting");
     expect(footer?.textContent).not.toContain("Comparison");
     expect(footer?.textContent).not.toContain("LightVela keeps your personal AI companion online in the cloud.");
@@ -878,13 +878,13 @@ describe("international v2 homepage artifact", () => {
         title: ["把想法交给 Hermes Agent，", "让它们在云端持续推进。"],
         cta: "我的智能体伙伴",
         headings: ["产品", "对比", "社区", "公司", "相关产品"],
-        links: ["14 天免费试用", "定价", "接入 WhatsApp 指引", "与本地部署对比", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
+        links: ["1 个月免费试用", "定价", "接入 WhatsApp 指引", "与本地部署对比", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
       },
       "zh-Hant": {
         title: ["把想法交給 Hermes Agent，", "讓它們在雲端持續推進。"],
         cta: "我的智能體夥伴",
         headings: ["產品", "對比", "社群", "公司", "相關產品"],
-        links: ["14 天免費試用", "定價", "接入 WhatsApp 指引", "與本地部署對比", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
+        links: ["1 個月免費試用", "定價", "接入 WhatsApp 指引", "與本地部署對比", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
       },
     } as const;
 
@@ -1164,12 +1164,12 @@ describe("international v2 homepage artifact", () => {
 
   it("localizes the revised free-trial CTA in every non-English locale", () => {
     const expectedCtaCopy = {
-      "zh-SG": ["免费体验，10秒极速开通", "LightVela免费体验 14 天", "AI Token 套餐免费体验 7 天"],
-      "zh-Hant": ["免費體驗，10秒極速開通", "LightVela免費體驗 14 天", "AI Token 套餐免費體驗 7 天"],
-      "id-ID": ["Coba gratis, aktif dalam 10 detik", "Coba LightVela gratis selama 14 hari.", "Coba paket AI Token gratis selama 7 hari."],
-      es: ["Pruébalo gratis, activa en 10 segundos", "Prueba LightVela gratis durante 14 días.", "Prueba un plan de tokens de IA gratis durante 7 días."],
-      "ja-JP": ["無料体験、10秒でスピード開通", "LightVelaを14日間無料でお試しいただけます。", "AI Tokenプランを7日間無料でお試しいただけます。"],
-      "ko-KR": ["무료 체험, 10초 만에 개통", "LightVela를 14일 동안 무료로 사용해 보세요.", "AI Token 플랜을 7일 동안 무료로 사용해 보세요."],
+      "zh-SG": ["免费体验，10秒极速开通", "新用户免费体验1个月，送4500 AI 积分"],
+      "zh-Hant": ["免費體驗，10秒極速開通", "新使用者免費體驗1個月，送4500 AI 積分"],
+      "id-ID": ["Coba gratis, aktif dalam 10 detik", "Pengguna baru mendapat uji coba gratis 1 bulan dan 4.500 kredit AI."],
+      es: ["Pruébalo gratis, activa en 10 segundos", "Los nuevos usuarios reciben 1 mes gratis y 4500 créditos de IA."],
+      "ja-JP": ["無料体験、10秒でスピード開通", "新規ユーザーは1か月間無料、4,500 AIクレジット付き。"],
+      "ko-KR": ["무료 체험, 10초 만에 개통", "신규 사용자에게 1개월 무료 체험과 AI 크레딧 4,500점을 드립니다."],
     } as const;
 
     for (const [locale, phrases] of Object.entries(expectedCtaCopy)) {
@@ -1185,22 +1185,20 @@ describe("international v2 homepage artifact", () => {
     }
   });
 
-  it("keeps domestic trial copy distinct while international AI token trial lasts seven days", () => {
+  it("offers new users one month and 4500 AI credits on both homepages", () => {
     const defaultHtml = readFragment();
     const englishHtml = readLocaleFragment("en-US");
     const domesticHtml = readFileSync(path.join(homeRoot, "index-fragment.zh-CN.html"), "utf8");
 
     for (const html of [defaultHtml, englishHtml]) {
-      expect(html).toContain("Try LightVela free for 14 days.");
-      expect(html).toContain("Try an AI token plan free for 7 days.");
+      expect(html).toContain("New users get 1 month free and 4,500 AI credits.");
       expect(html).not.toContain("Try an AI token plan free for 3 days.");
     }
 
     const domesticDocument = new DOMParser().parseFromString(domesticHtml, "text/html");
     expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，10秒极速开通");
     expect(Array.from(domesticDocument.querySelectorAll(".cta__copy li"), (item) => item.textContent?.trim())).toEqual([
-      "LightVela免费体验 14 天",
-      "AI Token 套餐免费体验 3 天",
+      "新用户免费体验1个月，送4500 AI 积分",
     ]);
     expect(domesticHtml).not.toContain("AI Token 套餐免费体验 7 天");
   });
