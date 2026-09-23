@@ -199,6 +199,10 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 - `developer_test_account_busy`：池内账号都处于有效租约；等待其他 DevCloud `down`/TTL，或由环境 owner
   按正式流程扩容，不得复用仍有 active callback 的账号。
 - `developer_test_account_renewal_requires_session`：目标 DevCloud 已有有效租约，但请求未证明持有当前
-  `developer_lease` session；使用私有 state 中的现有 session 续租，不得无认证重领。
+  `developer_lease` session。优先用私有 state 中的现有 session 续租；若私有 state 已被清空
+  （重新 checkout、`down` 中断），`up` 会自动带 `"force": true` 重领**本机自己**那条租约，
+  服务端在同一事务里作废陈旧 lease session 并推进 `leaseVersion`，无需等满 24h TTL。
+  `force` 只对同一 owner（allowlist 来源 + 同一 targetIp）生效：别的 DevCloud 带 `force`
+  仍然拿到 `developer_test_account_busy`，也绕不过来源网段校验。
 - 验收以 `status`、相关业务终态、CloudLadder 审计、本机 agent 日志和
   [`tests/contract_test.sh`](tests/contract_test.sh) 为准；HTTP 200、MR 合入或页面状态不能单独证明闭环。
