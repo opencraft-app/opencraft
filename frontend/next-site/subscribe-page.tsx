@@ -1416,9 +1416,9 @@ const PlanCard = ({
   reserveCreditTabSpace,
   subscriptionLocked,
   upgradeTargetIds,
+  preferredBundleId,
   upgradeQuotingPlanId,
   upgradeQuoteError,
-  selectedBundleId,
   onVariantChange,
 }: {
   /* 同一 tier 的档位列表（AI 增强版 / 标准版）；未命中 tier 时长度为 1 */
@@ -1432,9 +1432,9 @@ const PlanCard = ({
   /* 用户已有生效订阅时锁定新购；仅后端确认的升级目标可启用。 */
   subscriptionLocked?: boolean;
   upgradeTargetIds?: ReadonlySet<string>;
+  preferredBundleId?: string;
   upgradeQuotingPlanId?: string | null;
   upgradeQuoteError?: { targetBundleId: string; message: string } | null;
-  selectedBundleId?: string;
   onVariantChange?: (bundleId: string) => void;
 }) => {
   const t = useT();
@@ -1442,9 +1442,17 @@ const PlanCard = ({
      价格 / 积分 / 折扣 / 下单套餐随之联动。国内外统一默认选 AI 增强版
      （启航 4500 / 巡游 10000）。 */
   const defaultVariantIdx = getDefaultVariantIndex(variants);
-  const [activeVariantIdx, setActiveVariantIdx] = useState(() => defaultVariantIdx);
-  const controlledIdx = variants.findIndex((v) => v.id === selectedBundleId);
-  const safeIdx = controlledIdx >= 0 ? controlledIdx : activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
+  const preferredVariantIdx = variants.findIndex((variant) => variant.id === preferredBundleId);
+  const [activeVariantIdx, setActiveVariantIdx] = useState(() => preferredVariantIdx >= 0 ? preferredVariantIdx : defaultVariantIdx);
+  const appliedPreferredBundleIdRef = useRef<string | undefined>(preferredVariantIdx >= 0 ? preferredBundleId : undefined);
+  useEffect(() => {
+    if (!preferredBundleId || appliedPreferredBundleIdRef.current === preferredBundleId) return;
+    const nextPreferredIdx = variants.findIndex((variant) => variant.id === preferredBundleId);
+    if (nextPreferredIdx < 0) return;
+    appliedPreferredBundleIdRef.current = preferredBundleId;
+    setActiveVariantIdx(nextPreferredIdx);
+  }, [preferredBundleId, variants]);
+  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
   const selectedVariant = variants[safeIdx]!;
   const isUpgradeTarget = upgradeTargetIds?.has(selectedVariant.id) === true;
   const plan = isUpgradeTarget ? { ...selectedVariant, ctaLabel: t("升级至此套餐") } : selectedVariant;
@@ -3023,39 +3031,10 @@ export const SubscribePage = ({
     return groups;
   }, [planList, t]);
 
-  // Link only the source and targets returned by the backend. Card grouping is presentation,
-  // not an assumption about tier, credit count, or service-plan compatibility.
-  const upgradeLinkKey = JSON.stringify([upgrade.revisionKey, upgrade.pass?.bundle_id, [...upgradeTargetIds]]);
-  const [linkedVariants, setLinkedVariants] = useState<{ key: string; selected: Record<string, string> }>({ key: "", selected: {} });
-  const upgradeLinkEnabled = upgrade.pass != null && upgradeTargetIds.size > 0;
-  const initialLinkedVariant = (tier: PlanTierGroup) =>
-    tier.variants.find((v) => v.id === upgrade.pass?.bundle_id)?.id ??
-    tier.variants.find((v) => upgradeTargetIds.has(v.id))?.id;
-  const selectedLinkedVariant = (tier: PlanTierGroup) => upgradeLinkEnabled
-    ? (linkedVariants.key === upgradeLinkKey ? linkedVariants.selected[tier.key] : undefined) ?? initialLinkedVariant(tier)
-    : undefined;
-  const handleUpgradeVariantChange = (changedGroup: PlanTierGroup, bundleId: string) => {
-    if (!upgradeLinkEnabled || !upgrade.pass) return;
-    cancelUpgradeQuote();
-    const sourceBundleId = upgrade.pass.bundle_id;
-    setLinkedVariants((previous) => {
-      const selected = previous.key === upgradeLinkKey ? { ...previous.selected } : {};
-      selected[changedGroup.key] = bundleId;
-      for (const group of planTiers) {
-        // Same-card upgrades keep the user's exact choice instead of toggling it back.
-        if (group.key === changedGroup.key) continue;
-        if (bundleId === sourceBundleId) {
-          const targets = group.variants.filter((variant) => upgradeTargetIds.has(variant.id));
-          if (targets.length > 0 && !targets.some((target) => target.id === selected[group.key])) {
-            selected[group.key] = targets[0]!.id;
-          }
-        } else if (upgradeTargetIds.has(bundleId) && group.variants.some((variant) => variant.id === sourceBundleId)) {
-          selected[group.key] = sourceBundleId;
-        }
-      }
-      return { key: upgradeLinkKey, selected };
-    });
-  };
+  // 初次加载时只让源套餐所在卡选中当前套餐；其他卡保持原有默认展示。
+  // 后续套餐卡各自保留用户选择，按钮资格只由后端目标列表决定。
+  const preferredUpgradeVariant = (tier: PlanTierGroup) =>
+    tier.variants.find((variant) => variant.id === upgrade.pass?.bundle_id)?.id;
 
   /* 付费过程上下文：国内站走 bridge 中转页二维码方案；国际站走信用卡 hosted page 跳转。
      保存当前订单 deal_names + 已选套餐 + 支付页 URL，供 PaymentPendingModal 渲染。 */
@@ -3921,10 +3900,10 @@ export const SubscribePage = ({
                     /* 已有权益时锁定新购，仅按后端返回的目标 ID 开放升级。 */
                     subscriptionLocked={isSubscribed || activePass !== null || bots.length > 0}
                     upgradeTargetIds={upgradeTargetIds}
+                    preferredBundleId={upgrade.pass ? preferredUpgradeVariant(tier) : undefined}
                     upgradeQuotingPlanId={upgradeQuotingPlanId}
                     upgradeQuoteError={upgradeQuoteError}
-                    selectedBundleId={selectedLinkedVariant(tier)}
-                    onVariantChange={upgradeLinkEnabled ? (bundleId) => handleUpgradeVariantChange(tier, bundleId) : undefined}
+                    onVariantChange={upgrade.pass ? () => cancelUpgradeQuote() : undefined}
                   />
                 ))}
               </motion.div>

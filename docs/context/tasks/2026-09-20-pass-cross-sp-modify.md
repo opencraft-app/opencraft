@@ -1,19 +1,19 @@
 ---
 id: pass-cross-sp-modify
 type: task
-status: complete
+status: active
 owner: shawnmy
 ---
 
 ## goal
 
-在保持既有同 SP 升配不变的前提下，实现并验证 LightVela Pass 从通用 SP 升配到 AI SP：`Launch → Launch AI`、`Cruise → Cruise AI`、`Launch → Cruise AI`。
+在保持既有同 SP 升配不变的前提下，实现并验证 LightVela Pass 从通用 SP 升配到 AI SP：`Launch → Launch AI`、`Cruise → Cruise AI`、`Launch → Cruise AI`；在北京国内 testing 与韩国国际 testing 完成共享环境真实闭环并达到可上线状态，但不发布生产。
 
 ## non_goals
 
 - 不重新实现 `Launch → Cruise`、`Launch AI → Cruise AI`，只做回归。
 - 不支持 `Cruise → Launch AI`、AI → 通用套餐、降配或跨地域变配。
-- 本轮不提交、推送、创建 MR、修改生产、GitOps 或共享环境。
+- 不修改或发布上海、国际生产环境；共享 testing 发布只允许北京 `sandbox-bj-7` 与韩国 `sandbox-kr-1`。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
@@ -41,7 +41,7 @@ owner: shawnmy
 - `checkModify`、`modifyResource` 能分别反解源、目标 SP，并拒绝产品、PID、SV 或外层源资源域不一致的请求。
 - 通用 → AI 发货后 AI Gateway 权益正确创建或切换；`Launch → Cruise AI` 同时完成规格和权益升级，且地域不变。
 - 既有两条同 SP 路径及非法路径回归通过。
-- 本地门禁通过；随后在个人 DevCloud testing 环境保留真实请求、回调、Pass/订单/Flow/权益终态证据。
+- 本地门禁通过；个人 DevCloud testing 证据作为实现基线，北京与韩国共享 testing 分别保留真实请求、支付、回调、Pass/订单/Flow/权益、退款和销毁终态证据。
 
 ## affected_paths
 
@@ -73,6 +73,10 @@ owner: shawnmy
 | `docs/context/project/services/trade.md@7e907e1a3` | Trade 服务上下文 | 约束 provider 与 CTL 调用 |
 | `docs/context/project/services/ctl.md@7e907e1a3` | CTL 服务上下文 | 约束实例与地域事实 |
 | `.agents/skills/personal-devcloud-environment/SKILL.md@7e907e1a3` | DevCloud testing 安全和验收流程 | 后续真实测试入口 |
+| `docs/context/domains/release-gitops.md@69af15357`、`docs/engineering/domains/release-gitops.md@69af15357` | 共享 testing 镜像、GitOps 与 Argo 发布门禁 | 区分源码、镜像、GitOps、Argo 和业务闭环证据 |
+| `docs/context/domains/site-environment-routing.md@69af15357` | 国内、国际站独立交付边界 | 要求北京、韩国分别发布和验证 |
+| `docs/context/runbooks/playground-environment.md@69af15357` | Playground 环境发布与验收 contract | 禁止用临时 live patch 代替正常发布链路 |
+| `.ci/AGENTS.md@69af15357`、`ctl/AGENTS.md@69af15357`、`frontend/AGENTS.md@69af15357` | 流水线、CTL、前端局部门禁 | 约束两站 testing 发布与本地验证范围 |
 
 ## evidence
 
@@ -107,6 +111,11 @@ owner: shawnmy
 - 2026-09-22 国内 `Cruise → Cruise AI` 短期 capability 重新验收：Cruise 新购订单 `20260923995023754868631` / 大单 `20260923995023754868621` 生成 `pass-7re8qtu5`；升配订单 `20260923995023754928341` / 大单 `20260923995023754928331`，request ID `f48f9dd6-9a91-4eaa-9fc8-2faf59a75d41`，transaction ID `2ddbb5da98be57362d634921470dbcc9`，`checkModify` event `32647356`、`modifyResource` event `21781914`。终态为 order `provisioned`、Flow `6 modify_resource completed`、任务 `task-modify-pass-1b00458c4820493acd6e06f9b5c5200f / SUCCESS`、Pass `bundle_cruise_ai_01 / active / modify_flow_id=0`。退款只提交一次，返回 `20260923995023754952341` / 大单 `20260923995023754952331`，Flow `7 isolate_resource completed`、IsolatePass `SUCCESS`、Pass `isolated`；用户销毁只提交一次，Flow `8 destroy_resource completed`、DestroyPass `SUCCESS`、活表行消失且 `history_pass=deleted`。
 - 2026-09-22 国内 `Launch → Cruise AI` 短期 capability 重新验收：全新 Launch 新购订单 `20260923995023754923591` / 大单 `20260923995023754923581` 生成 `pass-g7o1lr49`，order `provisioned`、Flow `9 create_resource completed`。实时询价按策略顺序返回 `Cruise / Launch AI / Cruise AI`，目标 Cruise AI 差价 `15800 CNY`；升配订单 `20260923995023755007681` / 大单 `20260923995023755007671`，request ID `9433721b-8073-4dbf-95fb-84086c786bf0`，transaction ID `7da0a369ea85f36ff9dc71750ab8120a`，`checkModify` event `67054365`、`modifyResource` event `87928062`。终态为 order `provisioned`、Flow `10 modify_resource completed`、任务 `task-modify-pass-c9e35b529aca947457a1fcfc2a634c00 / SUCCESS`、Pass `bundle_cruise_ai_01 / active / modify_flow_id=0`、`OPENCLAW_INSTANCE=1/1`，AI Gateway subscription `2e9c73f2-f0b8-4ed0-8450-dcf7a143fcee` 为 `active / 100000000 tokens`。退款只提交一次，返回 `20260923995023755050091` / 大单 `20260923995023755050081`，Flow `11 isolate_resource completed`、Pass `isolated`、AI subscription `cancelled`；用户销毁只提交一次，Flow `12 destroy_resource completed`、DestroyPass `SUCCESS`、活表行消失且 `history_pass=deleted`。
 - 2026-09-22 国内个人环境清理门禁：registration 已变为 `disabled` 且保留 tombstone，脚本用旧 billing capability 验证中央代理返回 `401`；heartbeat、devtunnel-agent、browser bootstrap 均停止，`5173/8085/18084/48084/29010/29040` 全部释放，业务 Deployment/StatefulSet/Job 已删除，只保留 kind 自身 `coredns` 与 `local-path-provisioner` 以及 PVC 数据。
+- 2026-09-22 基于 `origin/master@69af15357` 的共享 testing 发布增量：跨 SP 后端核心继续复用已合入 master 的 MR !4380；本轮源码只删除前端启航/巡游套餐卡联动，默认只选中当前套餐，用户独立选择其他套餐后仅由 `modify/bundles` 的目标集合开放既有“升级至此套餐”按钮，非目标沿用线上禁用状态，询价、下单、支付和轮询链路保持不变。
+- 2026-09-22 最新 master 增量门禁：国内、国际订阅页与 upgrade hook/repository 聚焦测试 160/160 通过；`pnpm check` 通过且 TypeScript 为 0 个新增诊断；国内 `pnpm build` 与国际 `pnpm build:global` 均通过。Trade 的 bundleresolve/config/internal API/jifei client/询价/下单/`checkModify`/`modifyResource` 聚焦 test+vet 通过；CTL Pass/worker/instance worker 聚焦 test+vet 通过，`go test -race ./pkg/logic/pass` 通过。前端全量 `pnpm test` 与 CTL `go test ./...` 的既有环境/基线边界沿用此前记录，不用于替代本次聚焦门禁。
+- 2026-09-22 当前工作树复核：`subscribe-page.test.tsx` 27/27 通过；`pnpm check` 通过且 TypeScript `171 current / 171 baseline / 0 new`；国内 `pnpm build`、国际 `pnpm build:global` 顺序构建通过。Trade 九个受影响包的 test+vet 通过；CTL 四个受影响包的 test+vet 以及 `go test -race ./pkg/logic/pass` 通过；构建生成的字体文件已恢复，未扩大预期源码 diff。
+- 2026-09-22 共享 testing 当前运行态：北京、韩国六个 CTL/Trade/Frontend Argo Application 均跟踪 `gitops@4557e8878725103843abd86a2d05f6bdf645f6f0`。两站 frontend 为 `Synced/Healthy`；两站 CTL、Trade 为 `OutOfSync/Healthy`，不能把 live 镜像视为 GitOps 正式发布证据。北京 CTL live 为 `ctl-61fa99a885e4`，韩国 CTL live 为 `ctl-e1533b8e572e`；两站 Trade live 均为临时标签 `personal-dev-billing-readiness-20260922-r3-delta`；北京、韩国 frontend live 分别为 `frontend-sandbox-bj-7-81e11f962bcf`、`frontend-sandbox-kr-1-058b9f0eab9d`。当前 live 不能证明已部署本次最新 master + 前端增量，发布仍须通过正式制品与 GitOps MR 消除漂移。
+- 2026-09-22 正式流水线反查：`构建 ctl` 为 `p-014644333b7948fd99e4f80c3641d5bd`，`构建 trade` 为 `p-178d4b5778af408eb564c114a88ace43`，`构建 frontend` 为 `p-d7b21a8b85b2495683c8afd1d806f763`，`发布 frontend 分支预览` 为 `p-9a3eeb676e0a4b0bacd778af7e39a952`。启动任何手动构建前须获取 startup-info、展示完整参数并由用户确认；韩国制品必须证明来源是最终 master/MR commit，不能复用当前临时 Trade 标签或旧 Playground 分支源码。
 - 2026-09-20 本地验证：Trade 受影响包、vet、race；CTL Pass/worker/实例 worker、vet、race；Sandbox provider；前端订阅页 53 条用例；localstack/Personal DevCloud contract；文档系统校验和 `git diff --check` 均通过。完整 Trade 仅剩基线可复现的 `cloudbillingclient` 两条签名测试失败，CTL 全量受既有 lightginkgo 配置和 rootless Docker 前置阻塞。
 
 ## risks
@@ -144,8 +153,8 @@ owner: shawnmy
 
 ## scan_output
 
-- 当前不生成独立扫描产物；证据记录在本 Task Pack。
+- 当前不生成独立扫描产物；代码、共享 testing 发布与真实闭环证据统一记录在本 Task Pack。
 
 ## handoff
 
-- 隔离分支 `codex/lightvela-cross-sp-modify` 已完成源码、文档和本地门禁；国内、国际的 `Launch → Launch AI`、`Launch → Cruise AI`、`Cruise → Cruise AI` 三条新增路径均已在个人 DevCloud 通过真实 testing 计费下单、支付、`checkModify`、`modifyResource`、`queryFlow`、`queryResource`、Trade/Pass/CTL Task/AI Gateway 终态验证，并覆盖跨 SP `OnlineRefund → isolateResource`。国内三条路径严格使用当前账号 `330500000005 / 260203940` 下的全新用户、全新源 Pass 和全新订单；旧未支付 testing 单保持不动并自然超时。个人 Sandbox 使用本地外部资源替身，不能替代共享 testing/生产真实 CVM 的物理规格验证，该边界已单独记录。当前未 commit、push、创建 MR、部署共享环境或生产。
+- 跨 SP 核心实现已在 master；当前隔离分支 `codex/cross-sp-testing-release` 基于 `69af15357` 收口共享 testing 发布增量和前端交互。本地门禁已完成，北京、韩国共享 testing 的发布与真实三路径闭环尚未执行，因此任务保持 active。个人 Sandbox 使用本地外部资源替身，不能替代共享 testing 真实 CVM 的物理规格验证。
