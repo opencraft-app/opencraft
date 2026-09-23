@@ -21,6 +21,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 ## 稳定不变量
 
+- OpenCraft macOS 分发由下游 GitHub 镜像的 `macos-release` Environment 承载，但不取得源码权威。arm64 与 x64 必须在对应原生 Runner 组装，最终 job 才可读取 Developer ID 与 Apple 公证凭据；Universal 合并后依次完成签名、公证、staple、DMG/ZIP 封包和完整性验证。手工主分支运行只生成 Actions artifact，只有 `v*` tag 创建 GitHub Release；源码进入 mono2、镜像导出和公开制品发布仍是三个独立状态。详细运行契约见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md)。
+
 - OpenCraft 显式 Skill 引用在 Local DSH 提交边界按当前 Agent registry 校验名称、路径、userInvocable 和原生加载器，再转换为 DSH 原生 `/name` 手势；不再静默丢弃。远程 Profile Host 从 Hermes 内容接口读取真实路径并在执行前复核，不猜目录。打开的候选列表订阅变更，按 Host/roots/revision 隔离旧结果，完整浏览不固定截断到 50 项。见 [Skill 输入与执行契约](../../../opencraft/docs/chat-ui-architecture.md#non-negotiable-boundaries)。
 
 - OpenCraft 国际化由 Application-scoped `LocaleRuntime` 持有，沿用 Codex 的 override/source policy、FormatJS、按语言加载与迟到结果隔离。持久化只走 `UiPreferencesRuntime`；Agent Host/模型/provider 不拥有 UI 语言。Embedded 只更新自身 lang/dir，原生菜单通过受限端口消费解析结果。当前中英迁移范围和验证见 [国际化权威](../../../opencraft/docs/platform-architecture.md#internationalization-authority)。

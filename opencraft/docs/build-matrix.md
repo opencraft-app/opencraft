@@ -15,6 +15,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `electron-macos-arm64-dmg` | Electron host + renderer | Apple Silicon DMG | macOS |
 | `electron-macos-x64-zip` | Electron host + renderer | Intel `.app` ZIP | Linux/macOS |
 | `electron-macos-x64-dmg` | Electron host + renderer | Intel DMG | macOS |
+| `electron-macos-universal-release` | Native arm64 + native x64 Electron apps | Signed, notarized Universal DMG and ZIP | GitHub Actions macOS arm64 + Intel |
 | `electron-linux-x64-appimage` | Electron host + renderer | Portable x86_64 AppImage | Linux |
 | `electron-linux-x64-rpm` | Electron host + renderer | TencentOS/RHEL/Fedora RPM | Linux |
 | `electron-linux-x64-deb` | Electron host + renderer | Debian/Ubuntu amd64 package | Linux |
@@ -40,6 +41,13 @@ npm run matrix:build -- electron-linux-x64-rpm
 npm run matrix:build -- electron-linux-x64-deb
 npm run package:electron:mac:arm64:preview
 ```
+
+`electron-macos-universal-release` is an orchestrated delivery target rather
+than a single-host matrix command. `.github/workflows/macos-universal-release.yml`
+assembles arm64 on `macos-15` and x64 on `macos-15-intel`, merges only after both
+native packages pass, then enters the `macos-release` Environment for signing,
+notarization and final packaging. Manual runs are accepted only from `main`;
+version tags matching `v*` additionally publish a GitHub Release.
 
 `deploy:lightvela-web` builds the LightVela product and publishes only
 `apps/workbench-web/dist-lightvela-web`, after its product boundary check.
@@ -68,6 +76,20 @@ prunes foreign-platform `node-pty` prebuilds from both packaged runtime trees,
 and applies one consistent ad-hoc hardened-runtime signature and entitlements
 to the Electron helpers and outer app before ZIP creation. Release ZIP/DMG
 commands retain their Developer ID and notarization responsibilities.
+
+The GitHub `macos-release` Environment owns these secrets; values must never be
+committed or printed:
+
+- `MACOS_CERTIFICATE_P12_BASE64`
+- `MACOS_CERTIFICATE_PASSWORD`
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+
+The release job imports the Developer ID into an ephemeral keychain, deletes it
+in an `always()` cleanup step, verifies the Universal slices,
+Developer ID signature, stapled notarization ticket, Gatekeeper assessment,
+DMG signature/image and ZIP integrity, then emits SHA-256 checksums.
 
 The Electron host never loads the application with `file://`, but its loopback
 server is only a static asset owner. Renderer App Host frames cross a transferred
