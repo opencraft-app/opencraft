@@ -135,6 +135,80 @@ describe("deploy-edgeone-pages", () => {
     }
   });
 
+  it("verifies every JS/CSS asset referenced by the HTML, not just the entry script", async () => {
+    const root = mkdtempSync(join(tmpdir(), "edgeone-deploy-smoke-"));
+    const assets = join(root, "assets");
+    const entryPath = "/__releases/rel/_next/static/chunks/main.js";
+    const otherPath = "/__releases/rel/_next/static/chunks/other.js";
+    const cssPath = "/__releases/rel/_next/static/css/main.css";
+    const html = `<!doctype html><html><head>`
+      + `<link rel="stylesheet" href="${cssPath}"/>`
+      + `<script src="${entryPath}"></script>`
+      + `<script src="${otherPath}"></script>`
+      + `</head></html>`;
+
+    try {
+      mkdirSync(assets, { recursive: true });
+      writeFileSync(join(assets, "index.html"), html);
+
+      const served = new Set([entryPath, otherPath, cssPath]);
+      const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        if (url.searchParams.has("eo_token")) {
+          return response("", { status: 302, headers: { "set-cookie": "eo_token=t; Path=/" } });
+        }
+        if (url.pathname === "/") return response(html, { status: 200, headers: { "content-type": "text/html" } });
+        if (served.has(url.pathname)) return response("asset", { status: 200 });
+        return response("missing", { status: 404 });
+      });
+
+      await expect(verifyEdgeOneDeployment({
+        deployUrl: "https://preview.example.com?eo_token=t",
+        deployDir: root,
+        fetchImpl,
+        retryDelayMs: 0,
+      })).resolves.toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a deployment missing any non-entry chunk referenced by the HTML", async () => {
+    const root = mkdtempSync(join(tmpdir(), "edgeone-deploy-smoke-"));
+    const assets = join(root, "assets");
+    const entryPath = "/__releases/rel/_next/static/chunks/main.js";
+    const missingPath = "/__releases/rel/_next/static/chunks/missing.js";
+    const html = `<!doctype html><html><head>`
+      + `<script src="${entryPath}"></script>`
+      + `<script src="${missingPath}"></script>`
+      + `</head></html>`;
+
+    try {
+      mkdirSync(assets, { recursive: true });
+      writeFileSync(join(assets, "index.html"), html);
+
+      const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        if (url.searchParams.has("eo_token")) {
+          return response("", { status: 302, headers: { "set-cookie": "eo_token=t; Path=/" } });
+        }
+        if (url.pathname === "/") return response(html, { status: 200, headers: { "content-type": "text/html" } });
+        if (url.pathname === entryPath) return response("ok", { status: 200 });
+        return response("missing", { status: 404 });
+      });
+
+      await expect(verifyEdgeOneDeployment({
+        deployUrl: "https://preview.example.com?eo_token=t",
+        deployDir: root,
+        fetchImpl,
+        attempts: 1,
+        retryDelayMs: 0,
+      })).rejects.toThrow(missingPath);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a deployment that serves HTML for its entry JS", async () => {
     const root = mkdtempSync(join(tmpdir(), "edgeone-deploy-smoke-"));
     const assets = join(root, "assets");
