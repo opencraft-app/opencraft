@@ -16,7 +16,13 @@ beforeEach(() => { vi.resetAllMocks(); const entries = new Map<string, string>()
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("upgrade eligibility", () => {
-  it.each(["lightvela.com", "www.lightvela.com", "lightvela.ai", "www.lightvela.ai"])("keeps upgrade hidden on %s until show() without recovering an order", async (hostname) => {
+  it.each(["lightvela.ai", "www.lightvela.ai"])("shows server-approved upgrade targets on %s without show()", async (hostname) => {
+    vi.stubGlobal("location", { hostname });
+    const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
+    await waitFor(() => expect(result.current.options).toEqual([target]));
+    expect(listModifyBundles).toHaveBeenCalledWith("p1");
+  });
+  it.each(["lightvela.com", "www.lightvela.com"])("keeps upgrade hidden on %s until show() without recovering an order", async (hostname) => {
     vi.stubGlobal("location", { hostname });
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "other-sp", phase: "ordered", dealName: "old-order" });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));

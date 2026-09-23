@@ -4,14 +4,13 @@ import { installConsoleShowCommand, isConsoleShowEnabled, subscribeConsoleShow }
 const productionHosts = new Set([
   "lightvela.com", "www.lightvela.com",
   "lightvela.tencent.com", "www.lightvela.tencent.com",
-  "lightvela.ai", "www.lightvela.ai",
 ]);
 
 const subscribe = (notify: () => void) => subscribeConsoleShow(notify);
 
-// UI rollout only: test/preview hosts stay visible, while public production
-// sites require the shared console show() command. The backend still decides
-// which target bundles are eligible.
+// UI rollout only: international production and test/preview hosts show backend-approved
+// targets; domestic production still requires the shared console show() command.
+// The backend remains authoritative for eligibility and checkout.
 export function usePassUpgradeVisible(): boolean {
   const isProduction = typeof window !== "undefined" && productionHosts.has(window.location.hostname.toLowerCase());
   useEffect(() => isProduction ? installConsoleShowCommand() : undefined, [isProduction]);
