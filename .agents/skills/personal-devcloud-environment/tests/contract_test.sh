@@ -388,6 +388,138 @@ EOF
   ! kill -0 "$child_pid" >/dev/null 2>&1 || fail "supervisor left the port-forward child running"
 )
 
+# 跨 checkout 串台回归。
+#
+# 真实踩过：旧 intl checkout 的 port-forward 还占着 8085，新 checkout 起 cn 时本地 sign-up
+# 打到了 intl 的 Auth，用户落在 intl 库、shadow binding 写进 cn 库，最后炸外键。站点互斥必须
+# 看主机端口归属，不能只看 checkout 内的 current-site。
+start_foreign_port_holder() {
+  local port="$1" pid_file="$2" holder="$3" i
+  cat >"$holder" <<'EOF'
+#!/usr/bin/env bash
+set -u
+exec python3 - "$1" <<'PY'
+import socket, sys, time
+server = socket.socket()
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(("127.0.0.1", int(sys.argv[1])))
+server.listen(1)
+while True:
+    time.sleep(1)
+PY
+EOF
+  chmod 700 "$holder"
+  "$holder" "$port" >/dev/null 2>&1 </dev/null &
+  printf '%s\n' "$!" >"$pid_file"
+  for i in $(seq 1 100); do
+    if python3 - "$port" <<'PY'
+import socket, sys
+probe = socket.socket()
+probe.settimeout(0.2)
+raise SystemExit(0 if probe.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
+PY
+    then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
+free_tcp_port() {
+  python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+}
+
+test_foreign_checkout_port_holder_blocks_site_activation() (
+  local state_base="$TEST_ROOT/host-port-guard" port pid_file holder holder_pid output=""
+  mkdir -p "$state_base"
+  port="$(free_tcp_port)"
+  pid_file="$state_base/holder.pid"
+  holder="$state_base/holder.sh"
+  start_foreign_port_holder "$port" "$pid_file" "$holder" || fail "could not start the foreign port holder"
+  holder_pid="$(<"$pid_file")"
+  export PERSONAL_DEV_STATE_DIR="$state_base" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_GATEWAY_PORT="$port"
+  source "$SCRIPT"
+  prepare_state
+  if output="$(ensure_site_activation_safe 2>&1)"; then
+    kill "$holder_pid" >/dev/null 2>&1 || true
+    fail "a foreign process holding the gateway port did not block site activation"
+  fi
+  kill "$holder_pid" >/dev/null 2>&1 || true
+  wait "$holder_pid" >/dev/null 2>&1 || true
+  [[ "$output" == *"another personal DevCloud stack"* ]] \
+    || fail "port conflict message did not name the competing stack: $output"
+  [[ "$output" == *"port $port is held by pid"* ]] \
+    || fail "port conflict message did not identify the holder: $output"
+)
+
+test_site_activation_allows_own_context_port_forward() (
+  local state_base="$TEST_ROOT/host-port-own" port pid_file holder holder_pid
+  mkdir -p "$state_base"
+  port="$(free_tcp_port)"
+  pid_file="$state_base/holder.pid"
+  holder="$state_base/holder.sh"
+  start_foreign_port_holder "$port" "$pid_file" "$holder" || fail "could not start the port holder"
+  holder_pid="$(<"$pid_file")"
+  export PERSONAL_DEV_STATE_DIR="$state_base" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_GATEWAY_PORT="$port"
+  source "$SCRIPT"
+  prepare_state
+  host_process_cmdline() {
+    printf 'kubectl --context %s port-forward -n lightclaw-gateway service/service-gateway ' "$KUBE_CONTEXT"
+  }
+  if ! (ensure_site_activation_safe) >/dev/null 2>&1; then
+    kill "$holder_pid" >/dev/null 2>&1 || true
+    fail "this site's own port-forward was treated as a conflict"
+  fi
+  kill "$holder_pid" >/dev/null 2>&1 || true
+  wait "$holder_pid" >/dev/null 2>&1 || true
+)
+
+test_localstack_exposure_ports_are_overridable() (
+  local ports
+  ports="$(LOCALSTACK_SITE_KIND=cn LOCALSTACK_PUBLIC_HOST=127.0.0.1 \
+    LOCALSTACK_FRONTEND_PORT=15173 LOCALSTACK_GATEWAY_PORT=18085 \
+    LOCALSTACK_TRADE_CALLBACK_PORT=18184 LOCALSTACK_TRADE_INTERNAL_PORT=28184 \
+    bash -c '
+      source "$1" >/dev/null 2>&1 || true
+      printf "%s\n" "${exposure_specs[@]}"
+    ' bash "$REPO_ROOT/deploy/localstack/localstack.sh" 2>/dev/null)"
+  [[ "$ports" == *"|15173:8080|"* ]] || fail "frontend port override was ignored: $ports"
+  [[ "$ports" == *"|18085:80|"* ]] || fail "gateway port override was ignored: $ports"
+  [[ "$ports" == *"|18184:80|"* ]] || fail "trade callback port override was ignored: $ports"
+  [[ "$ports" == *"|28184:80|"* ]] || fail "trade internal port override was ignored: $ports"
+)
+
+test_exposure_fails_when_port_is_held_by_another_stack() (
+  local state_base="$TEST_ROOT/exposure-conflict" port pid_file holder holder_pid output=""
+  mkdir -p "$state_base"
+  port="$(free_tcp_port)"
+  pid_file="$state_base/holder.pid"
+  holder="$state_base/holder.sh"
+  start_foreign_port_holder "$port" "$pid_file" "$holder" || fail "could not start the foreign port holder"
+  holder_pid="$(<"$pid_file")"
+  if output="$(LOCALSTACK_SITE_KIND=cn LOCALSTACK_PUBLIC_HOST=127.0.0.1 \
+    LOCALSTACK_GATEWAY_PORT="$port" \
+    bash -c '
+      source "$1" >/dev/null 2>&1 || true
+      ensure_exposure_ports_free kind-lightvela-personal-cn
+    ' bash "$REPO_ROOT/deploy/localstack/localstack.sh" 2>&1)"; then
+    kill "$holder_pid" >/dev/null 2>&1 || true
+    fail "exposure did not fail closed on a foreign port holder"
+  fi
+  kill "$holder_pid" >/dev/null 2>&1 || true
+  wait "$holder_pid" >/dev/null 2>&1 || true
+  [[ "$output" == *"another stack already owns the ports above"* ]] \
+    || fail "exposure conflict message was not actionable: $output"
+)
+
 test_auth_override_is_sandbox_only() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/auth-allowlist" PERSONAL_DEV_SITE=intl
   export PERSONAL_DEV_AUTH_BASE_URL='https://api.lightvela.ai'
@@ -1544,6 +1676,10 @@ run_test 'legacy local identity is not reused as central login' test_legacy_loca
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
 run_test 'doctor reuses bootstrapped private tools' test_doctor_reuses_bootstrapped_private_tools
 run_test 'port-forward supervisor restarts and cleans up its child' test_port_forward_supervisor_restarts_and_stops_child
+run_test 'a foreign checkout holding a host port blocks site activation' test_foreign_checkout_port_holder_blocks_site_activation
+run_test "this site's own port-forward is not treated as a conflict" test_site_activation_allows_own_context_port_forward
+run_test 'localstack exposure ports are overridable' test_localstack_exposure_ports_are_overridable
+run_test 'localstack exposure fails closed when a port is held by another stack' test_exposure_fails_when_port_is_held_by_another_stack
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
 run_test 'Auth admin override is loopback-only' test_auth_admin_override_is_loopback_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
