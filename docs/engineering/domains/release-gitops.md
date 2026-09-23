@@ -66,7 +66,8 @@ master 源码
   控制面时，Pool/VM 发现必须按 `pool.zone` 对应的 region 隔离；不得把新加坡目标带入新山阶段，
   也不得用跨地域共享 SKU 的单一全局镜像字段代替各 Pool 的地域权威 `base_image`。
   `images/hermes-image-trigger` 用于显式触发新版本构建，不能以仅同步镜像冒充新山 Pool 和存量 VM
-  已完成发布。
+  已完成发布。Runtime 验证只能从规范的 `Hermes Agent vX.Y.Z` 输出行提取版本，SSH 重试诊断、IP
+  地址和传输错误不得参与版本匹配。
 
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
