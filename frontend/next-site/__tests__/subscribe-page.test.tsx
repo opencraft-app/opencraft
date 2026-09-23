@@ -204,6 +204,39 @@ describe("SubscribePage", () => {
     expect(screen.queryByText("4核 8G 内存")).not.toBeInTheDocument();
   });
 
+  it("explains why an existing subscription disables a non-upgrade plan CTA", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    openClawState.activePass = {
+      bundle_id: "legacy_bundle",
+      bundle_name: "巡游 Cruise",
+    };
+    sessionState.isAuthenticated = true;
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    const subscribeButton = await screen.findByRole("button", { name: "立即订阅" });
+    expect(subscribeButton).toBeDisabled();
+
+    const tooltipTrigger = screen.getByRole("group", {
+      name: "你已订阅「{{plan}}」套餐。",
+    });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    await userEvent.hover(tooltipTrigger);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("你已订阅「{{plan}}」套餐。");
+    expect(tooltip.parentElement).toBe(document.body);
+
+    await userEvent.unhover(tooltipTrigger);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+    tooltipTrigger.focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("你已订阅「{{plan}}」套餐。");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
   it("shows a page-level loading state until the bundles request returns", async () => {
     sessionState.isAuthenticated = true;
     openClawState.isLoggedIn = true;
@@ -517,7 +550,7 @@ describe("SubscribePage", () => {
     await userEvent.click(button);
     expect(await screen.findByRole("alert")).toHaveTextContent("升级询价失败，请稍后重试。");
     expect(screen.getByRole("alert")).not.toHaveTextContent("offline");
-    expect(button.parentElement).toContainElement(screen.getByRole("alert"));
+    expect(button).toHaveAccessibleDescription("升级询价失败，请稍后重试。");
     expect(button).toBeEnabled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(button);

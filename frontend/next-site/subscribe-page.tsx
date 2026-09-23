@@ -2,6 +2,7 @@ import { LegalFooter } from "@/components/site/legal-footer";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { Card } from "@/components/ui/card";
+import { ModelActionTooltip as DisabledReasonTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
@@ -1432,6 +1433,7 @@ const PlanCard = ({
   currentBots,
   reserveCreditTabSpace,
   subscriptionLocked,
+  subscriptionLockReason,
   upgradeTargetIds,
   preferredBundleId,
   upgradeQuotingPlanId,
@@ -1448,6 +1450,8 @@ const PlanCard = ({
   reserveCreditTabSpace?: boolean;
   /* 用户已有生效订阅时锁定新购；仅后端确认的升级目标可启用。 */
   subscriptionLocked?: boolean;
+  /* 新购因已有权益或 Agent 锁定时展示的原因；升级目标不消费该提示。 */
+  subscriptionLockReason?: string;
   upgradeTargetIds?: ReadonlySet<string>;
   preferredBundleId?: string;
   upgradeQuotingPlanId?: string | null;
@@ -1492,6 +1496,17 @@ const PlanCard = ({
   const showCreditTabs = variants.length > 1;
   /* 售罄 / 未上线 / 暂无报价 / 询价加载中：按钮禁用。
      询价加载中虽然价格数字仍在展示（旧价），但为避免用户以旧价口径提交订单，CTA 必须 disabled。 */
+  /* 已有明确状态文案的禁用态不叠加订阅提示，升级目标也不展示新购锁定原因。 */
+  const disabledReason =
+    !isUpgradeTarget &&
+    subscriptionLocked === true &&
+    !isSoldOut &&
+    !isComingSoon &&
+    !isPriceUnavailable &&
+    plan.pricingLoading !== true &&
+    !subscribing
+      ? subscriptionLockReason
+      : undefined;
   /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
 
@@ -1903,7 +1918,7 @@ const PlanCard = ({
 
         {/* CTA Button — 需求3：上移到功能点上方（积分切换与分割线之间），order=3 */}
         <div
-          style={{ position: "relative", marginTop: 4, marginBottom: 4, order: 3 }}
+          style={{ position: "relative", display: "flex", flexDirection: "column", marginTop: 4, marginBottom: 4, order: 3 }}
           onMouseEnter={() => {
             if (plan.freeTrialHint) setShowFreeTrialHint(true);
           }}
@@ -1951,7 +1966,8 @@ const PlanCard = ({
               />
             </div>
           )}
-          {isComingSoon && !isUpgradeTarget ? (
+          <DisabledReasonTooltip content={disabledReason} preserveWrapper>
+            {isComingSoon && !isUpgradeTarget ? (
             <button
               className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               disabled
@@ -2050,7 +2066,8 @@ const PlanCard = ({
             >
               {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
-          )}
+            )}
+          </DisabledReasonTooltip>
           {quoteError && <p id={quoteErrorId} role="alert" className="mt-2 text-pretty text-sm text-[var(--danger)]">{quoteError}</p>}
         </div>
       </div>
@@ -2756,6 +2773,12 @@ export const SubscribePage = ({
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
   const { isLoggedIn, isSubscribed, subscribe, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
+  const subscriptionLockReason =
+    isSubscribed || activePass !== null || bots.length > 0
+      ? t("你已订阅「{{plan}}」套餐。", {
+          plan: activePass?.bundle_name ?? latestPass?.bundle_name ?? "LightVela",
+        })
+      : undefined;
   void BUNDLE_TYPE_FALLBACK_KEY;
   void BUNDLE_TYPE_TABS;
   __markAiDurationTabsForI18n(t);
@@ -3918,6 +3941,7 @@ export const SubscribePage = ({
                     reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
                     /* 已有权益时锁定新购，仅按后端返回的目标 ID 开放升级。 */
                     subscriptionLocked={isSubscribed || activePass !== null || bots.length > 0}
+                    subscriptionLockReason={subscriptionLockReason}
                     upgradeTargetIds={upgradeTargetIds}
                     preferredBundleId={upgrade.pass ? preferredUpgradeVariant(tier) : undefined}
                     upgradeQuotingPlanId={upgradeQuotingPlanId}

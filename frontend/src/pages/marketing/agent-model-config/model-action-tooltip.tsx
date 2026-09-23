@@ -21,7 +21,15 @@ type TooltipPosition = {
 const TOOLTIP_GAP = 8;
 const VIEWPORT_MARGIN = 16;
 
-export function ModelActionTooltip({ children, content }: { children: ReactNode; content?: string }) {
+export function ModelActionTooltip({
+  children,
+  content,
+  preserveWrapper = false,
+}: {
+  children: ReactNode;
+  content?: string;
+  preserveWrapper?: boolean;
+}) {
   const tooltipId = useId();
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLSpanElement>(null);
@@ -97,21 +105,23 @@ export function ModelActionTooltip({ children, content }: { children: ReactNode;
     setOpen(false);
   };
 
-  if (!content) return <>{children}</>;
+  if (!content && !preserveWrapper) return <>{children}</>;
+
+  const interactive = Boolean(content);
 
   return (
     <span
       ref={triggerRef}
-      role="group"
-      aria-label={content}
+      role={interactive ? "group" : undefined}
+      aria-label={content || undefined}
       aria-describedby={open ? tooltipId : undefined}
-      className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
-      tabIndex={0}
-      onMouseEnter={showTooltip}
-      onMouseLeave={scheduleClose}
-      onFocus={showTooltip}
-      onBlur={scheduleClose}
-      onKeyDown={handleKeyDown}
+      className={`inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30 ${preserveWrapper ? "w-full" : ""}`}
+      tabIndex={interactive ? 0 : undefined}
+      onMouseEnter={interactive ? showTooltip : undefined}
+      onMouseLeave={interactive ? scheduleClose : undefined}
+      onFocus={interactive ? showTooltip : undefined}
+      onBlur={interactive ? scheduleClose : undefined}
+      onKeyDown={interactive ? handleKeyDown : undefined}
     >
       {children}
       {open && typeof document !== "undefined"
