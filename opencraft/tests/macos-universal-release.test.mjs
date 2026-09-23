@@ -75,6 +75,8 @@ test("macOS release workflow isolates secrets to the merge job and uses native r
   assert.doesNotMatch(workflow, /APPLE_API_KEY_P8/u);
   assert.match(workflow, /merge-macos-universal\.mjs/u);
   assert.match(workflow, /sign-notarize-macos\.mjs/u);
+  assert.match(workflow, /builder_identity="\$\{CSC_NAME#Developer ID Application: \}"/u);
+  assert.match(workflow, /--config\.mac\.identity="\$builder_identity"/u);
   assert.match(workflow, /publish:\n/u);
   assert.match(workflow, /permissions:\n      contents: write/u);
 });
