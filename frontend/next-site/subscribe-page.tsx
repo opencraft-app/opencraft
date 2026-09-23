@@ -1,8 +1,7 @@
-import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
+import { Card } from "@/components/ui/card";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
@@ -22,6 +21,7 @@ import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { cn } from "@/lib/utils";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -178,6 +178,15 @@ const shadows = {
 };
 
 /* ─── Animation Variants (subtle, Notion-style) ─── */
+
+const fadeIn = {
+  hidden: { opacity: 0, y: 12 },
+  visible: (custom: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: custom * 0.08, duration: 0.5, ease: [0.25, 0.1, 0.25, 1] },
+  }),
+};
 
 const staggerContainer = {
   hidden: { opacity: 0 },
@@ -1400,6 +1409,8 @@ const SubscribePageHeader = ({
 
 /* ─── Plan Card Component ─── */
 
+const MotionCard = motion.create(Card);
+
 const PlanCard = ({
   variants,
   index,
@@ -1471,11 +1482,25 @@ const PlanCard = ({
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
 
   return (
-    <Card
-      className="relative flex min-w-0 flex-col rounded-md shadow-none"
+    <MotionCard
+      variant={isFeatured ? "pricing-featured" : "pricing"}
+      variants={fadeIn}
+      custom={index}
+      className="relative flex min-w-0 flex-col overflow-hidden"
       style={{
         background: colors.white,
         border: isFeatured ? `1.5px solid ${colors.primary}` : `1px solid ${colors.border}`,
+        transition: "transform 0.3s",
+      }}
+      onMouseEnter={(e) => {
+        if (!isFeatured) {
+          e.currentTarget.style.transform = "translateY(-2px)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isFeatured) {
+          e.currentTarget.style.transform = "translateY(0)";
+        }
       }}
     >
       {/* Popular Badge */}
@@ -1607,7 +1632,7 @@ const PlanCard = ({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  className="min-h-11 min-w-0 flex-1 justify-center px-3 py-1.5 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:min-h-8 md:px-3.5"
+                  className="min-h-11 min-w-0 flex-1 justify-center px-3 py-1.5 tabular-nums md:normal-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:min-h-0 md:flex-none md:justify-start md:px-3.5 md:py-[5px]"
                   onClick={() => { setActiveVariantIdx(vi); onVariantChange?.(v.id); }}
                   style={{
                     display: "inline-flex",
@@ -1635,7 +1660,7 @@ const PlanCard = ({
 
         {/* 无积分切换的卡补一段与积分 tabs 等高的占位，使 CTA/分割线/功能点与其他卡对齐 */}
         {!showCreditTabs && reserveCreditTabSpace && (
-          <div aria-hidden className="hidden md:block" style={{ height: 38, marginTop: 4, marginBottom: 16, order: 2 }} />
+          <div aria-hidden className="hidden md:block" style={{ height: 32, marginTop: 4, marginBottom: 16, order: 2 }} />
         )}
 
         {/* Price - 未上线占位卡：有价格时正常展示价格，无价格时显示「敬请期待」；售罄套餐用「已售罄」遮盖价格 */}
@@ -1696,7 +1721,7 @@ const PlanCard = ({
             </span>
           </div>
         ) : plan.price ? (
-          <div className="flex flex-wrap items-baseline gap-x-1 gap-y-2 mb-2 tabular-nums">
+          <div className={cn("mb-2 flex flex-wrap items-baseline gap-x-1 gap-y-2 tabular-nums md:normal-nums md:gap-x-0.5 md:gap-y-1.5", isGlobal && "md:flex-nowrap")}>
             {(() => {
               /* 价格拆分：把前缀货币符号（¥ / $）与数字分离，符号用更小字号并顶端对齐，
                  让数字成为视觉主体（参考设计稿）。无符号时整体按数字大字号展示。 */
@@ -1773,11 +1798,11 @@ const PlanCard = ({
         {/* 今日剩余名额提示：只在未售罄且剩余比例较低时显示，避免每张卡都出现 */}
         {!isSoldOut && typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
           <p
+            className={cn("mt-1.5", !isGlobal && "md:-mt-5")}
             style={{
               fontSize: 12,
               fontWeight: 500,
               color: plan.availableCount <= 5 ? "#C67B1E" : colors.warmGray500,
-              marginTop: 6,
               marginBottom: isGlobal ? 18 : 20,
             }}
           >
@@ -1833,7 +1858,7 @@ const PlanCard = ({
             {plan.features.map((feature, idx) => (
               <li
                 key={idx}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:justify-between md:gap-0"
                 style={{
                   fontSize: 14,
                   fontWeight: 400,
@@ -1846,7 +1871,7 @@ const PlanCard = ({
                   <span>{feature.label}</span>
                 </span>
                 {feature.value ? (
-                  <span className="whitespace-nowrap text-right tabular-nums" style={{ fontSize: 14, fontWeight: 600, color: colors.primary }}>
+                  <span className="whitespace-nowrap text-right tabular-nums md:normal-nums md:whitespace-normal md:text-left" style={{ fontSize: 14, fontWeight: 600, color: colors.primary }}>
                     {feature.value}
                   </span>
                 ) : feature.hasCheck ? (
@@ -1909,7 +1934,7 @@ const PlanCard = ({
           )}
           {isComingSoon && !isUpgradeTarget ? (
             <button
-              className="min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               disabled
               style={{
                 display: "flex",
@@ -1932,7 +1957,7 @@ const PlanCard = ({
             </button>
           ) : isUpgradeTarget || plan.ctaStyle === "primary" ? (
             <button
-              className="min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               aria-busy={upgradeQuoting || undefined}
@@ -1970,7 +1995,7 @@ const PlanCard = ({
             </button>
           ) : (
             <button
-              className="min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               style={{
@@ -2010,7 +2035,7 @@ const PlanCard = ({
           {quoteError && <p id={quoteErrorId} role="alert" className="mt-2 text-pretty text-sm text-[var(--danger)]">{quoteError}</p>}
         </div>
       </div>
-    </Card>
+    </MotionCard>
   );
 };
 
@@ -3807,7 +3832,7 @@ export const SubscribePage = ({
                     type="button"
                     role="tab"
                     aria-selected={active}
-                    className="min-h-11 min-w-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 md:min-h-8"
+                    className="min-h-11 min-w-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 md:min-h-0 md:min-w-0"
                     onClick={() => setAiDurationKey(tab.key)}
                     disabled={bundlesLoading}
                     style={{
@@ -3858,8 +3883,9 @@ export const SubscribePage = ({
                 animate="visible"
                 className={cn(
                   "mx-auto grid max-w-lg grid-cols-1 gap-4 md:max-w-none md:gap-6",
-                  planTiers.length >= 2 && "md:grid-cols-2",
-                  planTiers.length >= 3 && "lg:grid-cols-3",
+                  planTiers.length >= 3
+                    ? "md:grid-cols-3 md:gap-4 min-[1025px]:gap-6"
+                    : planTiers.length === 2 && "md:grid-cols-2",
                 )}
               >
                 {planTiers.map((tier, idx) => (

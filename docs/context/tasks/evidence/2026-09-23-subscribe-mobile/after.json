@@ -1,0 +1,223 @@
+{
+  "rows": [
+    {
+      "width": 320,
+      "pageWidth": 320,
+      "cards": [
+        {
+          "rect": {
+            "x": 16,
+            "y": 251.96875,
+            "width": 288,
+            "height": 803.109375
+          },
+          "radius": "16px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        },
+        {
+          "rect": {
+            "x": 16,
+            "y": 1071.078125,
+            "width": 288,
+            "height": 803.109375
+          },
+          "radius": "12px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        }
+      ],
+      "overflow": []
+    },
+    {
+      "width": 375,
+      "pageWidth": 375,
+      "cards": [
+        {
+          "rect": {
+            "x": 16,
+            "y": 251.96875,
+            "width": 343,
+            "height": 803.109375
+          },
+          "radius": "16px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        },
+        {
+          "rect": {
+            "x": 16,
+            "y": 1071.078125,
+            "width": 343,
+            "height": 803.109375
+          },
+          "radius": "12px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        }
+      ],
+      "overflow": []
+    },
+    {
+      "width": 390,
+      "pageWidth": 390,
+      "cards": [
+        {
+          "rect": {
+            "x": 16,
+            "y": 251.96875,
+            "width": 358,
+            "height": 803.109375
+          },
+          "radius": "16px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        },
+        {
+          "rect": {
+            "x": 16,
+            "y": 1071.078125,
+            "width": 358,
+            "height": 803.109375
+          },
+          "radius": "12px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        }
+      ],
+      "overflow": []
+    },
+    {
+      "width": 430,
+      "pageWidth": 430,
+      "cards": [
+        {
+          "rect": {
+            "x": 16,
+            "y": 251.96875,
+            "width": 398,
+            "height": 803.109375
+          },
+          "radius": "16px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        },
+        {
+          "rect": {
+            "x": 16,
+            "y": 1071.078125,
+            "width": 398,
+            "height": 803.109375
+          },
+          "radius": "12px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        }
+      ],
+      "overflow": []
+    },
+    {
+      "width": 768,
+      "pageWidth": 768,
+      "cards": [
+        {
+          "rect": {
+            "x": 24,
+            "y": 249.46875,
+            "width": 348,
+            "height": 816.703125
+          },
+          "radius": "16px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        },
+        {
+          "rect": {
+            "x": 396,
+            "y": 249.46875,
+            "width": 348,
+            "height": 816.703125
+          },
+          "radius": "12px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        }
+      ],
+      "overflow": []
+    },
+    {
+      "width": 1024,
+      "pageWidth": 1024,
+      "cards": [
+        {
+          "rect": {
+            "x": 24,
+            "y": 255.28125,
+            "width": 476,
+            "height": 816.703125
+          },
+          "radius": "16px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        },
+        {
+          "rect": {
+            "x": 524,
+            "y": 255.28125,
+            "width": 476,
+            "height": 816.703125
+          },
+          "radius": "12px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        }
+      ],
+      "overflow": []
+    },
+    {
+      "width": 1440,
+      "pageWidth": 1440,
+      "cards": [
+        {
+          "rect": {
+            "x": 180,
+            "y": 256.859375,
+            "width": 528,
+            "height": 816.703125
+          },
+          "radius": "16px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        },
+        {
+          "rect": {
+            "x": 732,
+            "y": 256.859375,
+            "width": 528,
+            "height": 816.703125
+          },
+          "radius": "12px",
+          "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+          "overflow": "hidden",
+          "quota": []
+        }
+      ],
+      "overflow": []
+    }
+  ],
+  "hover": "matrix(1, 0, 0, 1, 0, -2)",
+  "leave": "matrix(1, 0, 0, 1, 0, 0)"
+}

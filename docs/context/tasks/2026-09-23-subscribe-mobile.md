@@ -47,7 +47,9 @@ derived: false
 
 ## affected_paths
 - frontend/next-site/subscribe-page.tsx
-- 本 Task Pack。
+- frontend/src/components/ui/card.tsx 及聚焦测试
+- frontend/DESIGN.md
+- 本 Task Pack 与 evidence/2026-09-23-subscribe-mobile/。
 
 ## required_context
 frontend-product-surface、service-frontend、site-environment-routing。
@@ -68,6 +70,8 @@ frontend-product-surface、service-frontend、site-environment-routing。
 | .agents/skills/baseline-ui/SKILL.md | UI 实现 | Tailwind / cn / 触控尺寸 |
 | .agents/skills/fixing-accessibility/SKILL.md | 控件回归 | 可访问名称与焦点 |
 | .agents/skills/product-skills/lv-vibe-coding/SKILL.md | 研发协作 | 最新 master、独立分支、本地验证；用户已授权本地适配 |
+
+| docs/context/flows/tapd-gongfeng-delivery.md@ac1735ca0 | 评审修正交付路由 | 更新已有 MR 的授权与证据边界 |
 
 ## evidence
 - git fetch origin master：7595dcaeb → 870d03dcb。
@@ -93,9 +97,9 @@ frontend-product-surface、service-frontend、site-environment-routing。
 - git diff --check：通过。
 
 ## decisions
-- 手机单列；md 双列；lg 最多三列。使用明确的 Tailwind 断点，不通过 inline style 文本匹配。
-- 复用 Card 并显式采用 DESIGN.md 的圆角值（共享 Card 的默认值尚未与规范完全一致）。
-- 保留业务数据和操作回调，集中调整布局。
+- 当前两档套餐手机单列、md 双列；兼容三档时 md 三列，保留原有平板 16px 间距。没有新增在售档位。
+- Card 新增 pricing / pricing-featured 显式变体，保留 12px / 16px 与无阴影；默认外观不变，页面不覆盖圆角或阴影。
+- 保留业务数据和操作回调，集中调整手机布局。恢复 motion.create(Card) 的 fadeIn / stagger 和 hover，保留 overflow-hidden；国内名额提示仅手机使用非负间距，桌面仍为 -20px。
 
 ## scan_scope
 frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
@@ -107,13 +111,19 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 本地适配已完成；用户追加要求“合并master，提交mr”，已授权提交、推送和创建指向 master 的 MR。原工作区未改动，未发布。
 分支 codex/subscribe-mobile，工作区 /Users/junweicao/.codex/worktrees/subscribe-mobile/mono2。
 国内本地预览 http://127.0.0.1:5187/subscribe/。
-截图、矩阵和命令日志：.local/subscribe-mobile/（忽略的本地证据，不纳入提交）。
+截图与矩阵：[评审证据](evidence/2026-09-23-subscribe-mobile/README.md)，已纳入版本控制；本地日志仍在 .local/subscribe-mobile/。
+
+## review_followup
+用户评审要求恢复桌面圆角／名额间距／动效，提供 MR 可见证据，兼容三档平板布局，并确认现网当前仅两档。实施以上限定修正；三档只用本地 fixture 验证，不增加线上套餐。
+主题 --radius-md 实际为 1rem（16px），此前不是 6px；普通卡 12→16px 的变化仍然恢复。
+
+本轮证据：国内桌面 1024 / 1440px before/after 像素差为 0；原圆角、名额位置、hover 一致。国内 7 视口、国际 28 组合无溢出；三档仅本地 fixture，在 768 / 1023px 同行三列，无裁切。
 
 ## checkpoint
 ### stage
-实现与双站构建完成；已执行 git fetch origin master 及 git merge origin/master（Already up to date，870d03dcb），准备提交 MR。
+评审修正已实施；已合入最新 origin/master ac1735ca0；58 项测试、check、双站构建、文档及单文件 Task Pack 校验通过，准备追加提交到既有 MR !4509。
 ### verified
-- 订阅页行为 55/55、类型基线及双站生产构建通过。
+- 最新聚焦行为测试 58/58（订阅页 55 + Card 3）通过；pnpm check（0 新增诊断）及 build:cn / build:global 已重新通过。
 - 国内 7 视口与国际 28 组合无溢出，截图已人工复核。
 - 相邻价格测试失败在未修改基线复现。
 - 本次 Task Pack schema / link / secret 检查通过，改动 impact / diff 检查通过。
@@ -123,7 +133,7 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 - 早期编辑中重复 className 和 Task Pack 缺失 metadata 已修复。
 - 首次国际中文测试使用错误路径 /zh、/zh-cn，已按注册表改为 /zh-sg 并通过。
 ### restore
-- 基线 870d03dcb；改动仅 frontend/next-site/subscribe-page.tsx 和本 Task Pack。
+- 基线订阅源码 870d03dcb，合并 master ac1735ca0；修改范围见 affected_paths。
 - 证据 .local/subscribe-mobile/；本地预览端口 5187。
 ### next_action
-提交两个任务文件、推送 codex/subscribe-mobile，创建目标 master 的 MR；MR 描述披露验证结果和未全绿门禁。
+追加提交并推送 codex/subscribe-mobile，更新既有 MR !4509 的描述和证据链接，保留未全绿门禁说明。
