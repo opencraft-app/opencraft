@@ -1,0 +1,240 @@
+[
+  {
+    "observation": "externalUserId",
+    "value": "usr_30c2388c9832239aa7b9e5c4",
+    "at": "2026-09-23T21:57:56Z"
+  },
+  {
+    "site": "intl",
+    "method": "POST",
+    "path": "/inquiry/batch",
+    "request": {
+      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "uin": "450860000023",
+      "appId": "1374222817",
+      "bundleIds": [
+        "bundle_launch_01",
+        "bundle_cruise_01"
+      ],
+      "period": 1,
+      "timeUnit": "m",
+      "goodsNum": 1,
+      "payMode": 1
+    },
+    "status": 200,
+    "response": {
+      "prices": [
+        {
+          "bundle_id": "bundle_launch_01",
+          "bundle_name": "Launch",
+          "price": "650",
+          "total_cost": "650",
+          "tax_price": "59",
+          "real_total_cost": "709",
+          "currency": "USD",
+          "discount": 100,
+          "time_span": 1,
+          "time_unit": "m",
+          "goods_num": 1,
+          "product_code": "p_lighthouse",
+          "sub_product_code": "sp_lighthouse_lightvela_bundle_intl",
+          "pid": 1059132
+        },
+        {
+          "bundle_id": "bundle_cruise_01",
+          "bundle_name": "Cruise",
+          "price": "1400",
+          "total_cost": "1400",
+          "tax_price": "126",
+          "real_total_cost": "1526",
+          "currency": "USD",
+          "discount": 100,
+          "time_span": 1,
+          "time_unit": "m",
+          "goods_num": 1,
+          "product_code": "p_lighthouse",
+          "sub_product_code": "sp_lighthouse_lightvela_bundle_intl",
+          "pid": 1059132
+        }
+      ]
+    },
+    "elapsedSeconds": 1.661,
+    "at": "2026-09-23T21:57:58Z"
+  },
+  {
+    "site": "intl",
+    "method": "POST",
+    "path": "/orders/place-and-pay",
+    "request": {
+      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "uin": "450860000023",
+      "appId": "1374222817",
+      "bundleId": "bundle_launch_01",
+      "period": 1,
+      "timeUnit": "m",
+      "goodsNum": 1,
+      "payMode": 1
+    },
+    "status": 200,
+    "response": {
+      "dealName": "20260924023021874269821",
+      "bigOrderId": "20260924023021874269811"
+    },
+    "elapsedSeconds": 7.881,
+    "at": "2026-09-23T21:58:06Z"
+  },
+  {
+    "observation": "createDealName",
+    "value": "20260924023021874269821",
+    "at": "2026-09-23T21:58:06Z"
+  },
+  {
+    "observation": "resourceId",
+    "value": "pass-n0e4pwy1",
+    "at": "2026-09-23T21:58:06Z"
+  },
+  {
+    "observation": "passAfterCreate",
+    "value": "active|bundle_launch_01|2026-10-23 21:58:04",
+    "at": "2026-09-23T21:58:06Z"
+  },
+  {
+    "observation": "curDeadlineCST",
+    "value": "2026-10-24 05:58:04",
+    "at": "2026-09-23T21:58:06Z"
+  },
+  {
+    "site": "intl",
+    "method": "POST",
+    "path": "/inquiry/modify",
+    "request": {
+      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "uin": "450860000023",
+      "appId": "1374222817",
+      "resourceId": "pass-n0e4pwy1",
+      "sourceBundleId": "bundle_launch_01",
+      "targetBundleId": "bundle_cruise_ai_01",
+      "curDeadline": "2026-10-24 05:58:04",
+      "payMode": 1
+    },
+    "status": 200,
+    "response": {
+      "prices": [
+        {
+          "bundle_id": "bundle_cruise_ai_01",
+          "bundle_name": "Cruise AI",
+          "price": "1650",
+          "total_cost": "1650",
+          "tax_price": "149",
+          "real_total_cost": "1799",
+          "currency": "USD",
+          "discount": 100,
+          "time_span": 1,
+          "time_unit": "m",
+          "goods_num": 1,
+          "product_code": "p_lighthouse",
+          "sub_product_code": "sp_lighthouse_lightvela_ai_intl",
+          "pid": 1060119
+        }
+      ]
+    },
+    "elapsedSeconds": 3.028,
+    "at": "2026-09-23T21:58:09Z"
+  },
+  {
+    "site": "intl",
+    "method": "POST",
+    "path": "/orders/modify/place-and-pay",
+    "request": {
+      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "uin": "450860000023",
+      "appId": "1374222817",
+      "resourceId": "pass-n0e4pwy1",
+      "sourceBundleId": "bundle_launch_01",
+      "targetBundleId": "bundle_cruise_ai_01",
+      "curDeadline": "2026-10-24 05:58:04",
+      "payMode": 1
+    },
+    "status": 200,
+    "response": {
+      "dealName": "20260924023021874330801",
+      "bigOrderId": "20260924023021874330791"
+    },
+    "elapsedSeconds": 5.867,
+    "at": "2026-09-23T21:58:15Z"
+  },
+  {
+    "observation": "modifyDealName",
+    "value": "20260924023021874330801",
+    "at": "2026-09-23T21:58:15Z"
+  },
+  {
+    "observation": "passAfterModify",
+    "value": "active|bundle_cruise_ai_01|0|",
+    "at": "2026-09-23T21:58:25Z"
+  },
+  {
+    "observation": "userResourceQuotaAfterModify",
+    "value": "OPENCLAW_INSTANCE:3:3",
+    "at": "2026-09-23T21:58:25Z"
+  },
+  {
+    "observation": "sandboxModifyOperation",
+    "value": "",
+    "at": "2026-09-23T21:58:26Z"
+  },
+  {
+    "site": "intl",
+    "method": "POST",
+    "path": "/resources/pass-n0e4pwy1/refund",
+    "request": {
+      "ownerUin": "450860000023",
+      "uin": "450860000023",
+      "appId": 1374222817,
+      "bundleId": "bundle_cruise_ai_01"
+    },
+    "status": 200,
+    "response": {
+      "dealName": "20260924023021874368331",
+      "bigDealId": "20260924023021874368321"
+    },
+    "elapsedSeconds": 3.629,
+    "at": "2026-09-23T21:58:50Z"
+  },
+  {
+    "observation": "dealLockRetriesForrefund",
+    "value": 1,
+    "at": "2026-09-23T21:58:50Z"
+  },
+  {
+    "observation": "passAfterRefund",
+    "value": "isolated",
+    "at": "2026-09-23T21:59:00Z"
+  },
+  {
+    "site": "intl",
+    "method": "POST",
+    "path": "/resources/pass-n0e4pwy1/delete",
+    "request": {
+      "uin": "450860000023",
+      "appId": 1374222817,
+      "bundleId": "bundle_cruise_ai_01"
+    },
+    "status": 200,
+    "response": {
+      "referenceId": "pass-n0e4pwy1_1790200740878527626"
+    },
+    "elapsedSeconds": 1.706,
+    "at": "2026-09-23T21:59:02Z"
+  },
+  {
+    "observation": "historyPassAfterDelete",
+    "value": "deleted|bundle_cruise_ai_01",
+    "at": "2026-09-23T21:59:02Z"
+  },
+  {
+    "observation": "tradeFlowsForDeals",
+    "value": "create_resource:completed, modify_resource:completed, isolate_resource:completed, destroy_resource:completed",
+    "at": "2026-09-23T21:59:02Z"
+  }
+]

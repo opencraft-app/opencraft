@@ -1365,14 +1365,154 @@ test_intl_dynamic_route_allowlists_match() {
 }
 
 test_payment_and_production_guardrails() {
-  ! grep -En 'place-and-pay|pay-url' "$SCRIPT"
   ! grep -En 'api\.lightvela\.(com|ai)|production|staging|kubectl.*sync|argocd/secrets/(shprod|sgprod|beijing-sandbox|sandbox-jp-1)' "$SCRIPT"
   ! grep -Eq 'sops|JIFEI_BILLING_APP_SECRET|TRADE_BILLING_CLOUDLADDER_HMAC_SECRET|PERSONAL_DEV_PAID_E2E_SECRET_FILE' "$SCRIPT"
   grep -Fq 'PERSONAL_DEV_BILLING_CAPABILITY' "$SCRIPT"
   grep -q 'verify-order-no-pay' "$SCRIPT"
   grep -q 'verify-checkmodify-no-pay' "$SCRIPT"
-  grep -q 'checkModify verification is not implemented' "$SCRIPT"
   ! grep -q 'verified.*checkCreate' "$SCRIPT"
+  # 真实付费只允许出现在 loopback 的 trade internal API 上，绝不能出现米大师/收银台等外部支付入口。
+  ! grep -Eq 'buy\.cloud\.tencent\.com|midas|pay\.weixin|cashier' "$SCRIPT"
+  ! grep -Eq 'place-and-pay|pay-url' "$SCRIPT_DIR/real-payment-loop.py" \
+    || grep -Fq 'http://127.0.0.1:' "$SCRIPT_DIR/real-payment-loop.py" \
+    || fail "real payment loop must only call the loopback trade internal API"
+}
+
+# checkModify 只有"付过钱的变配单"才能证明，所以旧的 no-pay 子命令必须继续拒绝，
+# 并把调用方引导到真正的付费闭环命令。
+test_checkmodify_no_pay_refuses_and_points_at_real_loop() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/checkmodify-refusal" PERSONAL_DEV_SITE=cn
+  source "$SCRIPT"
+  local output=""
+  if output="$(verify_checkmodify_no_pay 2>&1)"; then
+    fail "verify-checkmodify-no-pay must keep failing closed"
+  fi
+  grep -q 'verify-real-payment-loop' <<<"$output" \
+    || fail "the refusal must name the real paid command, got: $output"
+)
+
+# verify-real-payment-loop 必须被 dispatch/usage 接线，且 internal token 只能经环境变量
+# 传给子进程（写进命令行会被 ps 看到）。
+test_real_payment_loop_is_wired_and_keeps_token_out_of_argv() {
+  grep -q 'verify-real-payment-loop) verify_real_payment_loop ;;' "$SCRIPT" \
+    || fail "verify-real-payment-loop is not dispatched"
+  grep -q 'verify-real-payment-loop ' "$SCRIPT" || fail "verify-real-payment-loop is not documented in usage"
+  test -x "$SCRIPT_DIR/real-payment-loop.py" || fail "real-payment-loop.py must be executable"
+  grep -q 'LV_INTERNAL_TOKEN="$internal_token"' "$SCRIPT" \
+    || fail "the internal token must be passed through the environment"
+  ! grep -Eq 'python3 .*real-payment-loop\.py.*(--token|\$internal_token)' "$SCRIPT" \
+    || fail "the internal token must never appear in argv"
+  grep -q 'chmod 600 "$transcript"' "$SCRIPT" || fail "the transcript must be private"
+}
+
+# curDeadline 是本次最大的坑：计费协议层按北京时间（CST/UTC+8）字面值解析，
+# 而 ctl.pass.expired_time 在 DB 里是 UTC 字面值，直接透传必然 PASS_MODIFY_CONFIG_MISMATCH。
+test_cur_deadline_is_converted_to_cst() {
+  local converted
+  converted="$(python3 - "$SCRIPT_DIR/real-payment-loop.py" <<'PY'
+import importlib.util
+import sys
+
+spec = importlib.util.spec_from_loader("loop", loader=None)
+module = importlib.util.module_from_spec(spec)
+source = open(sys.argv[1], encoding="utf-8").read()
+start = source.index("def utc_literal_to_cst")
+end = source.index("def wait_for")
+exec(compile(source[start:end], "loop", "exec"), module.__dict__)
+print(module.utc_literal_to_cst("2026-10-23 21:08:49"))
+PY
+)"
+  assert_eq '2026-10-24 05:08:49' "$converted" "UTC pass deadline must become a CST literal"
+  grep -Fq 'CurDeadlineLocation' "$SCRIPT_DIR/real-payment-loop.py" \
+    || fail "the CST contract must cite its source of truth"
+}
+
+# 下面这些用例锁定的是真实跑出来的 transcript（真实扣款、真实计费回调），
+# 它们是"个人环境确实打通了计费"的回归基线，不是 mock。
+assert_transcript_closed_loop() {
+  local transcript="$1" site="$2" currency="$3"
+  test -f "$transcript" || fail "missing recorded transcript $transcript"
+  python3 - "$transcript" "$site" "$currency" <<'PY'
+import json
+import sys
+
+path, site, currency = sys.argv[1], sys.argv[2], sys.argv[3]
+entries = json.load(open(path, encoding="utf-8"))
+calls = [e for e in entries if "method" in e]
+obs = {e["observation"]: e["value"] for e in entries if "observation" in e}
+
+
+def die(message):
+    raise SystemExit(path + ": " + message)
+
+
+for call in calls:
+    if call.get("site") != site:
+        die("call recorded for the wrong site: " + str(call.get("site")))
+    if call["status"] != 200:
+        die("non-200 recorded for " + call["path"] + ": " + str(call["status"]))
+
+paths = [c["path"] for c in calls]
+for required in ("/inquiry/modify", "/orders/modify/place-and-pay"):
+    if required not in paths:
+        die("missing " + required)
+if not any(p.endswith("/refund") for p in paths):
+    die("missing refund call")
+if not any(p.endswith("/delete") for p in paths):
+    die("missing delete call")
+
+inquiry = next(c for c in calls if c["path"] == "/inquiry/modify")
+prices = inquiry["response"]["prices"]
+if not prices:
+    die("modify inquiry returned no price")
+for price in prices:
+    if price["currency"] != currency:
+        die("expected " + currency + ", got " + price["currency"])
+
+target = inquiry["request"]["targetBundleId"]
+source = inquiry["request"]["sourceBundleId"]
+if source == target:
+    die("the recorded loop must actually change the bundle")
+
+deadline = inquiry["request"]["curDeadline"]
+if deadline != obs["curDeadlineCST"]:
+    die("modify request did not use the CST deadline")
+
+order = next(c for c in calls if c["path"] == "/orders/modify/place-and-pay")
+if not order["response"].get("dealName") or not order["response"].get("bigOrderId"):
+    die("paid modify order did not return a deal")
+
+if not obs["passAfterModify"].startswith("active|" + target + "|"):
+    die("pass did not settle on the target bundle: " + obs["passAfterModify"])
+if obs["passAfterRefund"] not in ("isolated", "expired"):
+    die("refund did not isolate the pass: " + obs["passAfterRefund"])
+if not obs["historyPassAfterDelete"].startswith("deleted|"):
+    die("delete did not reach a deleted history pass: " + obs["historyPassAfterDelete"])
+
+flows = obs["tradeFlowsForDeals"]
+for flow in ("create_resource:completed", "modify_resource:completed",
+             "isolate_resource:completed", "destroy_resource:completed"):
+    if flow not in flows:
+        die("missing terminal flow " + flow + " in " + flows)
+
+blob = json.dumps(entries)
+for secret_marker in ("Bearer ", "LV_INTERNAL_TOKEN", "secretKey", "password"):
+    if secret_marker in blob:
+        die("transcript leaked a credential marker: " + secret_marker)
+PY
+}
+
+test_recorded_cn_loop_proves_paid_closed_loop() {
+  assert_transcript_closed_loop "$SCRIPT_DIR/../tests/fixtures/real-payment-loop-cn.json" cn CNY
+}
+
+test_recorded_intl_loop_proves_paid_closed_loop() {
+  local transcript="$SCRIPT_DIR/../tests/fixtures/real-payment-loop-intl.json"
+  if [[ ! -f "$transcript" ]]; then
+    printf '# skip - intl transcript not recorded in this checkout\n'
+    return 0
+  fi
+  assert_transcript_closed_loop "$transcript" intl USD
 }
 
 test_personal_dev_billing_proxy_patches_target_trade_namespace() {
@@ -1445,6 +1585,11 @@ run_test 'testing binding release derives the target user and keeps admin token 
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
 run_test 'SG testing CloudLadder and devtunnel allowlists stay aligned' test_intl_dynamic_route_allowlists_match
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
+run_test 'checkmodify no-pay keeps failing closed and points at the real loop' test_checkmodify_no_pay_refuses_and_points_at_real_loop
+run_test 'real payment loop is wired and keeps the token out of argv' test_real_payment_loop_is_wired_and_keeps_token_out_of_argv
+run_test 'curDeadline is converted from the DB UTC literal to CST' test_cur_deadline_is_converted_to_cst
+run_test 'recorded CN loop proves a real paid closed loop' test_recorded_cn_loop_proves_paid_closed_loop
+run_test 'recorded Intl loop proves a real paid closed loop' test_recorded_intl_loop_proves_paid_closed_loop
 run_test 'personal DevCloud billing proxy patches target the original Trade namespace' test_personal_dev_billing_proxy_patches_target_trade_namespace
 
 printf 'personal devcloud skill contract passed\n'
