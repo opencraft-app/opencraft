@@ -137,6 +137,58 @@ func newDeveloperTestAccountLeaseHTTPTestRouter(t *testing.T) (*gin.Engine, *ser
 	return router, authService, userID
 }
 
+func TestDeveloperTestAccountLeaseForceTakeoverHTTPContract(t *testing.T) {
+	router, authService, userID := newDeveloperTestAccountLeaseHTTPTestRouter(t)
+
+	first := performDeveloperTestAccountLease(t, router, "21.214.48.147", map[string]any{
+		"targetIp": "21.214.48.147", "ttlSeconds": 28800,
+	})
+	if first.Code != http.StatusOK {
+		t.Fatalf("initial lease status = %d, body=%s", first.Code, first.Body.String())
+	}
+	var leased developerTestAccountLeaseResponse
+	decodeJSONResponse(t, first, &leased)
+
+	// Same DevCloud, session lost locally, force omitted: still locked out.
+	blocked := performDeveloperTestAccountLease(t, router, "21.214.48.147", map[string]any{
+		"targetIp": "21.214.48.147", "ttlSeconds": 28800,
+	})
+	if blocked.Code != http.StatusUnauthorized || !stringsContainsAll(blocked.Body.String(), `"code":"developer_test_account_renewal_requires_session"`) {
+		t.Fatalf("sessionless re-acquire status = %d, body=%s", blocked.Code, blocked.Body.String())
+	}
+
+	forced := performDeveloperTestAccountLease(t, router, "21.214.48.147", map[string]any{
+		"targetIp": "21.214.48.147", "ttlSeconds": 28800, "force": true,
+	})
+	if forced.Code != http.StatusOK {
+		t.Fatalf("forced takeover status = %d, body=%s", forced.Code, forced.Body.String())
+	}
+	var reclaimed developerTestAccountLeaseResponse
+	decodeJSONResponse(t, forced, &reclaimed)
+	if reclaimed.UserID != userID || reclaimed.LeaseVersion != leased.LeaseVersion+1 || reclaimed.SessionToken == leased.SessionToken {
+		t.Fatalf("unexpected forced takeover response: %+v", reclaimed)
+	}
+	if _, err := authService.CurrentSession(context.Background(), leased.SessionToken); err == nil {
+		t.Fatal("stale lease session remained valid after forced takeover")
+	}
+
+	// force never bypasses the source allowlist.
+	forbidden := performJSONRequest(t, router, http.MethodPost, "/auth/dev-environments/account-lease", map[string]any{
+		"targetIp": "21.214.48.147", "ttlSeconds": 28800, "force": true,
+	})
+	if forbidden.Code != http.StatusForbidden || !stringsContainsAll(forbidden.Body.String(), `"code":"developer_test_account_source_forbidden"`) {
+		t.Fatalf("forced takeover from untrusted source status = %d, body=%s", forbidden.Code, forbidden.Body.String())
+	}
+
+	// force never lets another DevCloud steal an active lease from a single-account pool.
+	otherOwner := performDeveloperTestAccountLease(t, router, "21.214.48.148", map[string]any{
+		"targetIp": "21.214.48.148", "ttlSeconds": 28800, "force": true,
+	})
+	if otherOwner.Code != http.StatusConflict || !stringsContainsAll(otherOwner.Body.String(), `"code":"developer_test_account_busy"`) {
+		t.Fatalf("forced takeover by a different owner status = %d, body=%s", otherOwner.Code, otherOwner.Body.String())
+	}
+}
+
 func performDeveloperTestAccountRelease(t *testing.T, router http.Handler, token string, targetIP string) *httptest.ResponseRecorder {
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{"targetIp": targetIP})

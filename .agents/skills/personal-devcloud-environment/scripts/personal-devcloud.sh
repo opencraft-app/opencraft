@@ -857,6 +857,20 @@ raise SystemExit(0 if expiry <= renew_at else 1)
 PY
 }
 
+write_account_lease_body() {
+  local path="$1" target_ip="$2" ttl="$3" force="$4"
+  python3 - "$path" "$target_ip" "$ttl" "$force" <<'PY'
+import json, os, sys
+path, target_ip, ttl, force = sys.argv[1:]
+payload = {"targetIp": target_ip, "ttlSeconds": int(ttl)}
+if force == "true":
+    payload["force"] = True
+with open(path, "w", encoding="utf-8") as output:
+    json.dump(payload, output, separators=(",", ":"))
+os.chmod(path, 0o600)
+PY
+}
+
 acquire_central_account_lease() {
   local ip body response response_status token renewal_token user_id lease_expires session_expires lease_version error_code error_message request_error
   ACCOUNT_LEASE_ERROR=""
@@ -874,14 +888,7 @@ acquire_central_account_lease() {
   fi
   new_private_temp account-lease-body
   body="$TEMP_FILE_RESULT"
-  if ! python3 - "$body" "$ip" "$BILLING_ACCOUNT_LEASE_TTL_SECONDS" <<'PY'
-import json, os, sys
-path, target_ip, ttl = sys.argv[1:]
-with open(path, "w", encoding="utf-8") as output:
-    json.dump({"targetIp": target_ip, "ttlSeconds": int(ttl)}, output, separators=(",", ":"))
-os.chmod(path, 0o600)
-PY
-  then
+  if ! write_account_lease_body "$body" "$ip" "$BILLING_ACCOUNT_LEASE_TTL_SECONDS" false; then
     remove_private_temp "$body"
     ACCOUNT_LEASE_ERROR="unable to prepare the testing account lease request"
     return 1
@@ -905,6 +912,22 @@ PY
       response_status=""
       response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
         -H 'Content-Type: application/json' --data-binary "@$body" "$ACCOUNT_LEASE_URL" 2>"$request_error")" || response_status=$?
+      renewal_token=""
+    fi
+  fi
+  # The lease this DevCloud already owns can outlive its local session (wiped
+  # private state, fresh checkout, interrupted `down`). Reclaim it instead of
+  # waiting out the lease TTL; the server still refuses takeovers from any
+  # other owner.
+  if [[ -z "$renewal_token" && -n "${response_status:-}" ]]; then
+    error_code="$(printf '%s' "$response" | json_value 'd.get("code", "")' 2>/dev/null || true)"
+    if [[ "$error_code" == "developer_test_account_renewal_requires_session" ]]; then
+      log "this DevCloud already owns a testing account lease but its session is gone; reclaiming the lease"
+      if write_account_lease_body "$body" "$ip" "$BILLING_ACCOUNT_LEASE_TTL_SECONDS" true; then
+        response_status=""
+        response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+          -H 'Content-Type: application/json' --data-binary "@$body" "$ACCOUNT_LEASE_URL" 2>"$request_error")" || response_status=$?
+      fi
     fi
   fi
   if [[ -n "${response_status:-}" ]]; then
@@ -947,11 +970,13 @@ PY
 
 release_account_lease() {
   prepare_state
-  [[ "$(state_get central_account_mode)" == "leased" ]] || return 0
+  if [[ "$(state_get central_account_mode)" != "leased" ]]; then
+    return 0
+  fi
   local token ip body response
   token="$(state_get central_session_token)"
   [[ -n "$token" ]] || {
-    log "testing account lease session is unavailable; lease will expire by TTL"
+    log "testing account lease session is unavailable; the next 'up' reclaims this lease automatically (force takeover)"
     return 1
   }
   ip="$(state_get devcloud_ip)"
