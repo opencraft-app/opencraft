@@ -246,9 +246,6 @@ interface PlanInfo {
   comingSoon?: boolean;
   /* 免费套餐：跳过支付弹窗，直接创建 */
   skipPayment?: boolean;
-  /* 当日剩余名额展示 */
-  availableCount?: number;
-  totalCount?: number;
   /**
    * 套餐分类（用于按 tab 分组展示），原始值来自后端 `bundle.bundle_type`。
    * 后端枚举：`free` / `general` / `ai`（migration 000023 拍板）。
@@ -910,8 +907,6 @@ const mapBundleToPlan = (
     pricingLoading: showPricingPlaceholder,
     /* 国际站继续走免费试用；国内站走付费下单 */
     skipPayment: !paid,
-    availableCount: bundle.bundle_sales_available_count,
-    totalCount: bundle.bundle_sales_total_count,
     /* 后端联调期可能缺失：缺失时由后续 tabGroups 兜底到「未分类」分组 */
     bundleType: bundle.bundle_type,
     /**
@@ -1117,8 +1112,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
   const base = {
     bundle_state: "ONLINE" as const,
     time_unit: "m" as const,
-    /* 未登录纯静态展示不露出「今日剩余 N/M 份」名额提示：available === total 时，
-       PlanCard 的 `availableCount < totalCount` 条件不成立，名额行不渲染。 */
+    /* 保留 Bundle contract 的销售字段；页面不展示剩余名额。 */
     bundle_sales_available_count: 100,
     bundle_sales_total_count: 100,
     bundle_sales_state: "AVAILABLE" as const,
@@ -1795,20 +1789,7 @@ const PlanCard = ({
           /* 兜底：price 为空且非售罄非占位（理论上不会走到），保留占位高度避免塌陷 */
           <div style={{ minHeight: 48, marginBottom: 8 }} />
         )}
-        {/* 今日剩余名额提示：只在未售罄且剩余比例较低时显示，避免每张卡都出现 */}
-        {!isSoldOut && typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
-          <p
-            className={cn("mt-1.5", !isGlobal && "md:-mt-5")}
-            style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: plan.availableCount <= 5 ? "#C67B1E" : colors.warmGray500,
-              marginBottom: isGlobal ? 18 : 20,
-            }}
-          >
-            {t("今日剩余 {{available}}/{{total}} 份", { available: plan.availableCount, total: plan.totalCount })}
-          </p>
-        )}
+        {/* 暂不展示剩余名额；售罄与可订阅状态继续由后端销售状态决定。 */}
         {/* Divider */}
         <div style={{ height: 1, background: colors.border, marginTop: 4, marginBottom: 24, order: 4 }} />
 

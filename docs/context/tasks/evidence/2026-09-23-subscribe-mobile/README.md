@@ -34,18 +34,25 @@ derived: false
 | --- | --- | --- | --- | --- | --- |
 | [截图](after-320.png) | [截图](after-375.png) | [截图](after-430.png) | [截图](after-768.png) | [截图](after-1024.png) | [截图](after-1440.png) |
 
-## 桌面回归（含剩余名额 fixture）
+## 最新要求：屏蔽剩余名额
 
-为覆盖原本在未登录静态列表里不显示的名额提示，仅在本地截图时把静态 `bundle_sales_available_count` 从 100 改为 5，总量保持 100。基线和修改后应用完全相同的 fixture，截图后恢复；产品代码未更改套餐数据。
+用户追加要求：无论是否登录或后端返回多少库存，都不展示“今日剩余 x/y 份”。已移除渲染和专用展示字段；后端销售状态仍负责售罄与订阅按钮禁用。
 
-| 宽度 | 修改前 | 修改后 | 像素比较 |
-| --- | --- | --- | --- |
-| 1024px | [截图](before-stock-1024.png) | [截图](after-stock-1024.png) | 0 不同像素 |
-| 1440px | [截图](before-stock-1440.png) | [截图](after-stock-1440.png) | 0 不同像素 |
+以下截图同样在本地把 available_count 临时设为 5、total_count 为 100，页面均未出现名额提示，截图后恢复数据：
 
-[基线测量](before-stock.json) / [修改后测量](after-stock.json)：普通／主推圆角保持 12px／16px，卡片位置和尺寸、名额提示矩形与 `margin-top: -20px` 完全一致；指针移入普通卡的 transform 为 `matrix(1, 0, 0, 1, 0, -2)`，移出恢复为 `matrix(1, 0, 0, 1, 0, 0)`。`motion.create(Card)` 保留逐卡 fadeIn 及 stagger，卡片保留 overflow-hidden。
+| 390px | 1024px | 1440px |
+| --- | --- | --- |
+| [截图](quota-hidden-390.png) | [截图](quota-hidden-1024.png) | [截图](quota-hidden-1440.png) |
 
-主题 `--radius-md` 是 1rem，上一版 rounded-md 的实测结果是 16px，并非 Tailwind 默认的 6px。本次用 Card 的 pricing／pricing-featured 变体保留原来的层级；默认 Card 外观不变，pricing 变体不继承 floatingPanelClass 的阴影。
+[测量结果](quota-hidden.json)：quota 数组全部为空，无横向溢出。国内和国际新增组件用例分别覆盖登录后 AVAILABLE（5/100）与 SOLD_OUT（0/100）：剩余数字均隐藏、可售按钮启用、售罄按钮禁用。
+
+## 桌面回归历史（隐藏要求之前）
+
+此前评审修正已验证 1024／1440px 的卡片圆角、尺寸和 hover 与基线一致，旧名额提示的截图为 [before 1024](before-stock-1024.png) / [after 1024](after-stock-1024.png)、[before 1440](before-stock-1440.png) / [after 1440](after-stock-1440.png)，当时像素差为 0。该状态已被上方用户追加的“屏蔽名额”要求取代，不代表最终产品界面。
+
+[基线测量](before-stock.json) / [历史测量](after-stock.json)保留作追溯。普通／主推圆角保持 12px／16px，hover 抬升为 -2px，`motion.create(Card)` 保留 fadeIn / stagger，卡片保留 overflow-hidden。
+
+主题 `--radius-md` 是 1rem，上一版 rounded-md 的实测结果是 16px，并非 Tailwind 默认的 6px。Card pricing／pricing-featured 变体保留原来的层级；默认 Card 外观不变，pricing 变体不继承 floatingPanelClass 的阴影。
 
 ## 三档兼容路径（仅本地 fixture）
 
@@ -67,4 +74,4 @@ derived: false
 
 ## 检查边界
 
-58 个聚焦测试（订阅页 55、共享 Card 3）通过。类型基线与双站生产构建结果见任务记录。上一轮全量测试和整仓 context 门禁未全绿；本轮没有将其描述为通过，是否接受基线失败由 owner 决定。没有线上发布或真实支付操作。
+最新 62 个聚焦测试（订阅页 59、共享 Card 3）通过。类型基线与双站生产构建结果见任务记录。上一轮全量测试和整仓 context 门禁未全绿；本轮没有将其描述为通过，是否接受基线失败由 owner 决定。没有线上发布或真实支付操作。

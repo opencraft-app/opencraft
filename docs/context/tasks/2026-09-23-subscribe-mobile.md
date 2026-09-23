@@ -19,7 +19,7 @@ derived: false
 # Subscribe 移动端适配
 
 ## goal
-基于最新 master 修复 /subscribe/ 在手机上的双列挤压，并按 frontend/DESIGN.md 复用组件规范。
+基于最新 master 修复 /subscribe/ 在手机上的双列挤压，并按 frontend/DESIGN.md 复用组件规范；按用户追加要求，在所有登录和销售状态下屏蔽剩余名额提示。
 
 ## non_goals
 - 不改价格、促销、套餐数据、登录、支付或升级逻辑。
@@ -43,6 +43,7 @@ derived: false
 - 320 / 375 / 390 / 430px 手机单列，卡片、价格、额度和权益无横向溢出或裁切。
 - 768px 起恢复多列；桌面保留完整套餐对比。
 - 月付/季付、额度切换及订阅入口可用。
+- 国内／国际均不展示剩余名额，售罄状态和购买资格判断保持不变。
 - pnpm check / test / build；浏览器截图及溢出测量。
 
 ## affected_paths
@@ -99,7 +100,7 @@ frontend-product-surface、service-frontend、site-environment-routing。
 ## decisions
 - 当前两档套餐手机单列、md 双列；兼容三档时 md 三列，保留原有平板 16px 间距。没有新增在售档位。
 - Card 新增 pricing / pricing-featured 显式变体，保留 12px / 16px 与无阴影；默认外观不变，页面不覆盖圆角或阴影。
-- 保留业务数据和操作回调，集中调整手机布局。恢复 motion.create(Card) 的 fadeIn / stagger 和 hover，保留 overflow-hidden；国内名额提示仅手机使用非负间距，桌面仍为 -20px。
+- 保留业务数据和操作回调，集中调整手机布局。恢复 motion.create(Card) 的 fadeIn / stagger 和 hover，保留 overflow-hidden；用户最新要求屏蔽剩余名额，已删除显示区域和专用映射字段，保留售罄判断。
 
 ## scan_scope
 frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
@@ -117,14 +118,18 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 用户评审要求恢复桌面圆角／名额间距／动效，提供 MR 可见证据，兼容三档平板布局，并确认现网当前仅两档。实施以上限定修正；三档只用本地 fixture 验证，不增加线上套餐。
 主题 --radius-md 实际为 1rem（16px），此前不是 6px；普通卡 12→16px 的变化仍然恢复。
 
-本轮证据：国内桌面 1024 / 1440px before/after 像素差为 0；原圆角、名额位置、hover 一致。国内 7 视口、国际 28 组合无溢出；三档仅本地 fixture，在 768 / 1023px 同行三列，无裁切。
+历史评审证据：屏蔽名额之前，国内桌面 1024 / 1440px before/after 像素差为 0；原圆角、名额位置、hover 一致。此后用户明确要求所有状态屏蔽名额，最新 quota-hidden 截图取代含名额截图。国内 7 视口、国际 28 组合无溢出；三档仅本地 fixture，在 768 / 1023px 同行三列，无裁切。
+
+## hide_quota_followup
+用户明确要求“这个不可展示，先屏蔽掉吧”。国内／国际、登录／未登录、手机／桌面统一移除名额提示。售罄标记、CTA 禁用、订单判断和后端库存 contract 保持不变。删除 PlanInfo.availableCount / totalCount 两个仅用于展示的字段与映射。
+新增 CN / global 各两条登录态组件回归：AVAILABLE 5/100 仍可订阅且不显示名额；SOLD_OUT 0/100 保持禁用且不显示名额。临时 5/100 fixture 的浏览器截图覆盖 390 / 1024 / 1440px，quota=[]，无溢出；测试数据已恢复。
 
 ## checkpoint
 ### stage
-评审修正已实施；已合入最新 origin/master ac1735ca0；58 项测试、check、双站构建、文档及单文件 Task Pack 校验通过，准备追加提交到既有 MR !4509。
+名额屏蔽已实施；62 项聚焦测试、check、双站构建通过，准备更新既有 MR !4509 并恢复国内本地预览。
 ### verified
-- 最新聚焦行为测试 58/58（订阅页 55 + Card 3）通过；pnpm check（0 新增诊断）及 build:cn / build:global 已重新通过。
-- 国内 7 视口与国际 28 组合无溢出，截图已人工复核。
+- 最新聚焦行为测试 62/62（订阅页 59 + Card 3）通过；pnpm check（0 新增诊断）及 build:cn / build:global 已重新通过。
+- 国内 7 视口与国际 28 组合无溢出，截图已人工复核；最新名额隐藏 fixture 的 390 / 1024 / 1440px 截图无名额提示和横向溢出。
 - 相邻价格测试失败在未修改基线复现。
 - 本次 Task Pack schema / link / secret 检查通过，改动 impact / diff 检查通过。
 ### unverified
