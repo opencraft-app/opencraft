@@ -1813,6 +1813,18 @@ const demoExactCopyByLocale = {
   "id-ID": Object.fromEntries(demoExactCopyTriples.map(([from, id]) => [from, id])),
   es: Object.fromEntries(demoExactCopyTriples.map(([from, , es]) => [from, es])),
 };
+const currentHeroCopyTriples = [
+  ["Nasdaq Brief Assistant", "Asisten Ringkasan Nasdaq", "Asistente del Nasdaq"],
+  ["Hermes Agent: Nasdaq sector brief is ready", "Hermes Agent: ringkasan sektor Nasdaq sudah siap", "Hermes Agent: el resumen sectorial del Nasdaq está listo"],
+  ["Hermes updated the weekly draft.", "Hermes memperbarui draf mingguan.", "Hermes actualizó el borrador semanal."],
+  ["@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.", "@LightVela minta DSH memperbaiki Hermes: penyedia memori terkadang menulis data ganda. Reproduksi dulu, lalu perbaiki.", "@LightVela pide a DSH que arregle Hermes: el proveedor de memoria a veces duplica registros. Primero reproduce el error y luego corrígelo."],
+  ["memory-dedupe pushed", "perbaikan duplikasi memori sudah dikirim", "corrección de duplicados de memoria enviada"],
+  ["patch · tests passed", "perbaikan · tes lulus", "corrección · pruebas superadas"],
+];
+for (const [from, id, es] of currentHeroCopyTriples) {
+  demoExactCopyByLocale["id-ID"][from] = id;
+  demoExactCopyByLocale.es[from] = es;
+}
 Object.assign(demoExactCopyByLocale, {
   "ja-JP": {
     "@LightVela are you ready? Help me start my AI companion.": "@LightVela 準備できていますか？私のAIパートナーを始めるのを手伝って。",
@@ -2384,6 +2396,38 @@ Object.assign(demoExactCopyByLocale, {
     "Preparing for Computer Science and tech certifications means handling a lot of information. With LightVela, I can automate daily documentation summaries, coding exercises, and knowledge reviews so I always stay on track with my technical goals.": "컴퓨터 과학과 기술 자격증을 준비하려면 많은 정보를 다뤄야 합니다. LightVela로 매일 문서 요약, 코딩 연습, 지식 복습을 자동화해 기술 목표를 계속 따라갈 수 있습니다.",
     "It keeps my class notes, coding practice, and exam reviews in one rhythm. I know what to read, what to code, and what to revisit.": "수업 노트, 코딩 연습, 시험 복습을 하나의 리듬으로 유지해 줍니다. 무엇을 읽고, 무엇을 코딩하고, 무엇을 다시 봐야 할지 알 수 있습니다.",
   },
+});
+Object.assign(demoExactCopyByLocale["ja-JP"], {
+  "Nasdaq Brief Assistant": "Nasdaq市場アシスタント",
+  "Hermes Agent: Nasdaq sector brief is ready": "Hermes Agent：Nasdaqのセクター速報ができました",
+  "Hermes updated the weekly draft.": "Hermesが週次ドラフトを更新しました。",
+  "DSH finished the patch.": "DSHが修正を完了しました。",
+  "CI Alerts": "CI通知",
+  "Release Notes": "リリースノート",
+  "Ops Monitor": "運用モニター",
+  "API latency is back to normal.": "APIの応答速度が正常に戻りました。",
+  "Design Review": "デザインレビュー",
+  "Support Digest": "サポート要約",
+  "API Changes": "API変更",
+  "@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.": "@LightVela Hermesのメモリに重複レコードが書き込まれる問題をDSHに修正してもらって。まず再現してから直して。",
+  "DSH reproduced it in an isolated branch. It happens when provider sync and session end fire together.": "DSHが隔離ブランチで再現しました。プロバイダーの同期とセッション終了が同時に起きると発生します。",
+  "The minimal fix is ready with a regression test. Unit, integration, and CI all pass. Review only provider sync and the session-end hook.": "最小限の修正と回帰テストを用意しました。単体・結合・CIテストはすべて通過しています。プロバイダーの同期とセッション終了処理を確認してください。",
+});
+Object.assign(demoExactCopyByLocale["ko-KR"], {
+  "Nasdaq Brief Assistant": "나스닥 시장 브리핑 도우미",
+  "Hermes Agent: Nasdaq sector brief is ready": "Hermes Agent: 나스닥 섹터 브리핑이 준비되었습니다",
+  "Hermes updated the weekly draft.": "Hermes가 주간 초안을 업데이트했습니다.",
+  "DSH finished the patch.": "DSH가 수정을 완료했습니다.",
+  "CI Alerts": "CI 알림",
+  "Release Notes": "릴리스 노트",
+  "Ops Monitor": "운영 모니터",
+  "API latency is back to normal.": "API 지연 시간이 정상으로 돌아왔습니다.",
+  "Design Review": "디자인 검토",
+  "Support Digest": "지원 요약",
+  "API Changes": "API 변경",
+  "@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.": "@LightVela Hermes 메모리에 중복 기록이 생기는 문제를 DSH에게 수정해 달라고 해 줘. 먼저 재현한 뒤 고쳐 줘.",
+  "DSH reproduced it in an isolated branch. It happens when provider sync and session end fire together.": "DSH가 격리된 브랜치에서 재현했습니다. 제공자 동기화와 세션 종료가 동시에 실행될 때 발생합니다.",
+  "The minimal fix is ready with a regression test. Unit, integration, and CI all pass. Review only provider sync and the session-end hook.": "최소 수정과 회귀 테스트가 준비되었습니다. 단위·통합·CI 테스트가 모두 통과했습니다. 제공자 동기화와 세션 종료 처리만 검토해 주세요.",
 });
 const headerActionsLayerCss = `
 #lightvela-intl-home .nav {
@@ -3483,6 +3527,47 @@ function sourceLocaleFor(locale) {
   return locale;
 }
 
+const heroReportFragmentsByLocale = {
+  "id-ID": [
+    ["Main chain:", "Rantai utama:"],
+    ["chips → equipment / EDA → optical → AI software / security", "chip → peralatan / EDA → optik → perangkat lunak AI / keamanan"],
+    ["breadth", "cakupan pasar"],
+    ["risk appetite", "selera risiko"],
+    ["Software aplikasi AI", "Perangkat lunak aplikasi AI"],
+    ["Optical /", "Optik /"],
+    ["outlook NVDA", "prospek NVDA"],
+    ["healthcare", "layanan kesehatan"],
+    ["equipment and software", "peralatan dan perangkat lunak"],
+    ["laporan earnings", "laporan keuangan"],
+  ],
+  es: [
+    ["Main chain:", "Cadena principal:"],
+    ["chips → equipment / EDA → optical → AI software / security", "chips → equipos / EDA → óptica → software de IA / seguridad"],
+    ["outlook de NVDA", "pronóstico de NVDA"],
+    ["equipment and software", "equipos y software"],
+  ],
+  "ja-JP": [
+    ["Main chain:", "主な流れ："],
+    ["chips → equipment / EDA → optical → AI software / security", "チップ → 装置 / EDA → 光通信 → AIソフトウェア / セキュリティ"],
+  ],
+  "ko-KR": [
+    ["Main chain:", "주요 흐름:"],
+    ["chips → equipment / EDA → optical → AI software / security", "칩 → 장비 / EDA → 광통신 → AI 소프트웨어 / 보안"],
+  ],
+};
+
+const zhHantHeroTerms = [
+  ["搜索", "搜尋"],
+  ["設置", "設定"],
+  ["信息", "資訊"],
+  ["芯片", "晶片"],
+  ["軟件", "軟體"],
+  ["網絡", "網路"],
+  ["光通信", "光通訊"],
+  ["寬度", "廣度"],
+  ["科技吸血", "科技股領漲"],
+];
+
 function localizeText(value, locale) {
   if (!value) return value;
   const exact = coreCopyByLocale[locale]?.[value];
@@ -3498,6 +3583,17 @@ function localizeText(value, locale) {
   let localized = value;
   for (const [from, to] of textFragmentsByLocale[locale] ?? []) {
     localized = localized.replaceAll(from, to);
+  }
+  return localized;
+}
+
+function localizeHeroText(value, locale) {
+  let localized = localizeText(value, locale);
+  for (const [from, to] of heroReportFragmentsByLocale[locale] ?? []) {
+    localized = localized.replaceAll(from, to);
+  }
+  if (locale === "zh-Hant") {
+    for (const [from, to] of zhHantHeroTerms) localized = localized.replaceAll(from, to);
   }
   return localized;
 }
@@ -3522,12 +3618,12 @@ function localizeElementText(element, locale) {
   const textNodes = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode);
   for (const node of textNodes) {
-    node.nodeValue = localizeText(node.nodeValue, locale);
+    node.nodeValue = localizeHeroText(node.nodeValue, locale);
   }
   for (const node of element.querySelectorAll("[aria-label], [alt], [placeholder], [data-full-html]")) {
     for (const attribute of ["aria-label", "alt", "placeholder", "data-full-html"]) {
       const value = node.getAttribute(attribute);
-      if (value) node.setAttribute(attribute, localizeText(value, locale));
+      if (value) node.setAttribute(attribute, localizeHeroText(value, locale));
     }
   }
 }
@@ -4169,6 +4265,26 @@ function emphasizeFooterHermes(document) {
   }
 }
 
+if (sourceArgument === "--refresh-hero-locales") {
+  // Refresh the checked-in hero fragments without the separately approved source bundle.
+  // The full import path below uses the same localizeElementText function.
+  for (const locale of supportedLocales.filter((value) => value !== "en-US" && value !== "zh-CN")) {
+    const fragmentPath = path.join(targetRoot, `index-fragment.${locale}.html`);
+    let fragment = await readFile(fragmentPath, "utf8");
+    const document = new JSDOM(fragment).window.document;
+    for (const id of ["panel-wa", "panel-tg", "panel-dc", "panel-sl"]) {
+      const panel = document.getElementById(id);
+      if (!panel) throw new Error(`Missing hero surface panel: ${id} (${locale})`);
+      const original = panel.outerHTML;
+      localizeElementText(panel, locale);
+      if (!fragment.includes(original)) throw new Error(`Hero panel markup drifted: ${id} (${locale})`);
+      fragment = fragment.replace(original, panel.outerHTML);
+    }
+    await writeFile(fragmentPath, fragment);
+  }
+  process.exit(0);
+}
+
 if (!process.argv[2]) {
   throw new Error("Usage: node scripts/import-international-homepage.mjs <approved-static-homepage-root>");
 }
@@ -4621,6 +4737,18 @@ const homepageReadingCss = `
   text-decoration: none;
   color: inherit;
   border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu-language {
+  padding: 20px 8px 4px;
+  border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu-language h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-mobile-menu-language button {
+  min-height: 44px;
 }
 .home-mobile-menu :focus-visible,
 .home-mobile-menu-trigger:focus-visible {
