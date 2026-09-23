@@ -31,6 +31,14 @@ stages:
                 exit 0
               fi
 
+              # A reused runner can have a valid index but missing Git objects;
+              # checkout otherwise fails while resolving deltas before guards run.
+              if ! git fsck --no-reflogs --connectivity-only >/dev/null 2>&1; then
+                echo "detected corrupt Git object store; forcing a fresh checkout"
+                rm -rf .git
+                exit 0
+              fi
+
               status_log="$(mktemp)"
               index_needs_repair=false
               if [[ -f .git/index ]]; then
