@@ -1,6 +1,7 @@
 import { LegalFooter } from "@/components/site/legal-footer";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
+import { Card } from "@/components/ui/card";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
@@ -20,6 +21,7 @@ import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { cn } from "@/lib/utils";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -1407,6 +1409,8 @@ const SubscribePageHeader = ({
 
 /* ─── Plan Card Component ─── */
 
+const MotionCard = motion.create(Card);
+
 const PlanCard = ({
   variants,
   index,
@@ -1478,19 +1482,14 @@ const PlanCard = ({
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
 
   return (
-    <motion.div
+    <MotionCard
+      variant={isFeatured ? "pricing-featured" : "pricing"}
       variants={fadeIn}
       custom={index}
+      className="relative flex min-w-0 flex-col overflow-hidden"
       style={{
-        position: "relative",
-        display: "flex",
-        flexDirection: "column",
         background: colors.white,
         border: isFeatured ? `1.5px solid ${colors.primary}` : `1px solid ${colors.border}`,
-        borderRadius: isFeatured ? 16 : 12,
-        /* 需求3：三张卡统一取消阴影，仅保留边框（主推卡为高亮描边） */
-        boxShadow: "none",
-        overflow: "hidden",
         transition: "transform 0.3s",
       }}
       onMouseEnter={(e) => {
@@ -1524,7 +1523,7 @@ const PlanCard = ({
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "32px 28px 28px" }}>
+      <div className="flex min-w-0 flex-1 flex-col p-5 md:px-7 md:pb-7 md:pt-8">
         {/* Header: Name + Description */}
         <div style={{ marginBottom: 16 }}>
           <div
@@ -1536,7 +1535,8 @@ const PlanCard = ({
               marginBottom: 12,
             }}
           >
-            <h3
+            <h2
+              className="text-balance"
               style={{
                 fontSize: 22,
                 fontWeight: 700,
@@ -1547,7 +1547,7 @@ const PlanCard = ({
               }}
             >
               {plan.name}
-            </h3>
+            </h2>
             {/* 促销小徐章：挪到套餐名右侧，粉色背景 + 深色文字，醒目告诉用户促销信息 */}
             {plan.promoTag && (
               <span
@@ -1589,6 +1589,7 @@ const PlanCard = ({
           {/* Description - 移到套餐名下方；为空时不渲染，避免留下空段落间距 */}
           {plan.description ? (
             <p
+              className="text-pretty"
               style={{
                 fontSize: 14,
                 fontWeight: 400,
@@ -1608,6 +1609,7 @@ const PlanCard = ({
           <div
             role="tablist"
             aria-label={t("模型积分")}
+            className="w-full max-w-full md:w-auto"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -1630,12 +1632,12 @@ const PlanCard = ({
                   type="button"
                   role="tab"
                   aria-selected={active}
+                  className="min-h-11 min-w-0 flex-1 justify-center px-3 py-1.5 tabular-nums md:normal-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:min-h-0 md:flex-none md:justify-start md:px-3.5 md:py-[5px]"
                   onClick={() => { setActiveVariantIdx(vi); onVariantChange?.(v.id); }}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 4,
-                    padding: "5px 14px",
                     borderRadius: 9999,
                     border: "none",
                     background: active ? colors.white : "transparent",
@@ -1648,7 +1650,7 @@ const PlanCard = ({
                     transition: "all 0.2s ease",
                   }}
                 >
-                  <Zap style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
+                  <Zap aria-hidden="true" className="shrink-0" style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
                   <span>{v.raw.credit}</span>
                 </button>
               );
@@ -1658,7 +1660,7 @@ const PlanCard = ({
 
         {/* 无积分切换的卡补一段与积分 tabs 等高的占位，使 CTA/分割线/功能点与其他卡对齐 */}
         {!showCreditTabs && reserveCreditTabSpace && (
-          <div aria-hidden style={{ height: 32, marginTop: 4, marginBottom: 16, order: 2 }} />
+          <div aria-hidden className="hidden md:block" style={{ height: 32, marginTop: 4, marginBottom: 16, order: 2 }} />
         )}
 
         {/* Price - 未上线占位卡：有价格时正常展示价格，无价格时显示「敬请期待」；售罄套餐用「已售罄」遮盖价格 */}
@@ -1719,7 +1721,7 @@ const PlanCard = ({
             </span>
           </div>
         ) : plan.price ? (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8, flexWrap: isGlobal ? "nowrap" : "wrap", rowGap: 6 }}>
+          <div className={cn("mb-2 flex flex-wrap items-baseline gap-x-1 gap-y-2 tabular-nums md:normal-nums md:gap-x-0.5 md:gap-y-1.5", isGlobal && "md:flex-nowrap")}>
             {(() => {
               /* 价格拆分：把前缀货币符号（¥ / $）与数字分离，符号用更小字号并顶端对齐，
                  让数字成为视觉主体（参考设计稿）。无符号时整体按数字大字号展示。 */
@@ -1741,8 +1743,8 @@ const PlanCard = ({
                     </span>
                   )}
                   <span
+                    className="text-4xl md:text-5xl"
                     style={{
-                      fontSize: 48,
                       fontWeight: 700,
                       letterSpacing: "-1.5px",
                       lineHeight: 1,
@@ -1755,6 +1757,7 @@ const PlanCard = ({
             })()}
             {(plan.priceUnit || plan.priceNote) && (
               <span
+                className="whitespace-nowrap"
                 style={{
                   fontSize: 14,
                   fontWeight: 400,
@@ -1795,11 +1798,11 @@ const PlanCard = ({
         {/* 今日剩余名额提示：只在未售罄且剩余比例较低时显示，避免每张卡都出现 */}
         {!isSoldOut && typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
           <p
+            className={cn("mt-1.5", !isGlobal && "md:-mt-5")}
             style={{
               fontSize: 12,
               fontWeight: 500,
               color: plan.availableCount <= 5 ? "#C67B1E" : colors.warmGray500,
-              marginTop: isGlobal ? 6 : -20,
               marginBottom: isGlobal ? 18 : 20,
             }}
           >
@@ -1855,26 +1858,24 @@ const PlanCard = ({
             {plan.features.map((feature, idx) => (
               <li
                 key={idx}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:justify-between md:gap-0"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
                   fontSize: 14,
                   fontWeight: 400,
                   lineHeight: 1.43,
                   color: colors.warmGray500,
                 }}
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="flex min-w-0 items-center gap-2.5 text-pretty [&>svg]:shrink-0">
                   {feature.icon}
                   <span>{feature.label}</span>
                 </span>
                 {feature.value ? (
-                  <span style={{ fontSize: 14, fontWeight: 600, color: colors.primary }}>
+                  <span className="whitespace-nowrap text-right tabular-nums md:normal-nums md:whitespace-normal md:text-left" style={{ fontSize: 14, fontWeight: 600, color: colors.primary }}>
                     {feature.value}
                   </span>
                 ) : feature.hasCheck ? (
-                  <Check style={{ width: 16, height: 16, color: colors.warmGray500, strokeWidth: 2 }} />
+                  <Check aria-hidden="true" className="shrink-0" style={{ width: 16, height: 16, color: colors.warmGray500, strokeWidth: 2 }} />
                 ) : null}
               </li>
             ))}
@@ -1933,6 +1934,7 @@ const PlanCard = ({
           )}
           {isComingSoon && !isUpgradeTarget ? (
             <button
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               disabled
               style={{
                 display: "flex",
@@ -1955,6 +1957,7 @@ const PlanCard = ({
             </button>
           ) : isUpgradeTarget || plan.ctaStyle === "primary" ? (
             <button
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               aria-busy={upgradeQuoting || undefined}
@@ -1992,6 +1995,7 @@ const PlanCard = ({
             </button>
           ) : (
             <button
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               style={{
@@ -2031,7 +2035,7 @@ const PlanCard = ({
           {quoteError && <p id={quoteErrorId} role="alert" className="mt-2 text-pretty text-sm text-[var(--danger)]">{quoteError}</p>}
         </div>
       </div>
-    </motion.div>
+    </MotionCard>
   );
 };
 
@@ -3667,10 +3671,10 @@ export const SubscribePage = ({
      原轮询 listMyPasses 的 useEffect 已删除，SDK callback / 用户手动确认均会走 finalizeBot 接棒。 */
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
+    <div className="flex min-h-dvh flex-col" style={{ background: colors.white, color: colors.black }}>
       {header}
 
-      <main style={{ flexGrow: 1, padding: "96px 24px 64px" }}>
+      <main className="flex-grow px-4 pb-12 pt-24 md:px-6 md:pb-16">
         {bundlesInitialLoading ? (
           <section
             aria-labelledby="subscribe-bundles-loading-title"
@@ -3694,9 +3698,10 @@ export const SubscribePage = ({
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            style={{ marginBottom: 48, textAlign: "center" }}
+            className="mb-6 text-center md:mb-12"
           >
             <h1
+              className="text-balance"
               style={{
                 fontSize: "clamp(1.625rem, 3vw, 2rem)",
                 fontWeight: 700,
@@ -3709,6 +3714,7 @@ export const SubscribePage = ({
               {t("选择适合你的套餐")}
             </h1>
             <p
+              className="text-pretty"
               style={{
                 fontSize: 16,
                 fontWeight: 400,
@@ -3814,13 +3820,7 @@ export const SubscribePage = ({
               切换后重新询价并影响所有可购买套餐的展示价格与下单参数。 */}
           {paidBillingActive && (
             <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                gap: 8,
-                marginBottom: 24,
-                marginTop: -16,
-              }}
+              className="mb-6 flex justify-center gap-2 md:-mt-4"
               role="tablist"
               aria-label={t("付费时长")}
             >
@@ -3832,6 +3832,7 @@ export const SubscribePage = ({
                     type="button"
                     role="tab"
                     aria-selected={active}
+                    className="min-h-11 min-w-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 md:min-h-0 md:min-w-0"
                     onClick={() => setAiDurationKey(tab.key)}
                     disabled={bundlesLoading}
                     style={{
@@ -3880,13 +3881,12 @@ export const SubscribePage = ({
                 variants={staggerContainer}
                 initial="hidden"
                 animate="visible"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: planTiers.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planTiers.length}, 1fr)`,
-                  gap: 24,
-                  maxWidth: 1080,
-                  margin: "0 auto",
-                }}
+                className={cn(
+                  "mx-auto grid max-w-lg grid-cols-1 gap-4 md:max-w-none md:gap-6",
+                  planTiers.length >= 3
+                    ? "md:grid-cols-3 md:gap-4 min-[1025px]:gap-6"
+                    : planTiers.length === 2 && "md:grid-cols-2",
+                )}
               >
                 {planTiers.map((tier, idx) => (
                   <PlanCard
@@ -4028,21 +4028,6 @@ export const SubscribePage = ({
         }}
         onSuccess={() => redirectAfterLogin()}
       />
-
-      {/* Responsive: collapse to single column on mobile */}
-      <style>{`
-        @media (max-width: 768px) {
-          [style*="grid-template-columns: repeat(3"] {
-            grid-template-columns: 1fr !important;
-            max-width: 400px !important;
-          }
-        }
-        @media (min-width: 769px) and (max-width: 1024px) {
-          [style*="grid-template-columns: repeat(3"] {
-            gap: 16px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 };
