@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   architectureSpecificRuntimeGlob,
+  synchronizeRendererFiles,
   synchronizeRuntimeFiles,
 } from "../scripts/merge-macos-universal.mjs";
 import { signAndNotarizeMacos } from "../scripts/sign-notarize-macos.mjs";
@@ -39,6 +40,29 @@ test("universal merge synchronizes architecture-qualified runtime packages witho
   assert.match(architectureSpecificRuntimeGlob, /runtime/u);
   assert.match(architectureSpecificRuntimeGlob, /arm64/u);
   assert.match(architectureSpecificRuntimeGlob, /x64/u);
+});
+
+test("universal merge uses one architecture-independent renderer tree", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-universal-renderer-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const x64App = join(directory, "x64/OpenCraft.app");
+  const arm64App = join(directory, "arm64/OpenCraft.app");
+  const x64Renderer = join(x64App, "Contents/Resources/renderer");
+  const arm64Renderer = join(arm64App, "Contents/Resources/renderer");
+  await Promise.all([
+    mkdir(join(x64Renderer, "assets"), { recursive: true }),
+    mkdir(join(arm64Renderer, "assets"), { recursive: true }),
+  ]);
+  await writeFile(join(x64Renderer, "assets/app-x64-hash.js"), "shared renderer");
+  await writeFile(join(arm64Renderer, "assets/app-arm64-hash.js"), "shared renderer");
+
+  await synchronizeRendererFiles(x64App, arm64App);
+
+  assert.equal(
+    await readFile(join(arm64Renderer, "assets/app-x64-hash.js"), "utf8"),
+    "shared renderer",
+  );
+  await assert.rejects(readFile(join(arm64Renderer, "assets/app-arm64-hash.js")), /ENOENT/u);
 });
 
 test("macOS release workflow isolates secrets to the merge job and uses native runners", async () => {

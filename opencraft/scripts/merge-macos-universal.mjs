@@ -20,6 +20,7 @@ import { makeUniversalApp } from "@electron/universal";
 
 const execFileAsync = promisify(execFile);
 const runtimeRelativePath = "Contents/Resources/runtime";
+const rendererRelativePath = "Contents/Resources/renderer";
 
 // Per-architecture DSH packages and node-pty prebuilds intentionally remain at
 // architecture-qualified paths. Both source apps must contain their union so
@@ -74,6 +75,19 @@ export async function synchronizeRuntimeFiles(x64AppPath, arm64AppPath) {
   ]);
 }
 
+// The renderer is architecture-independent, but Vite's content-hashed chunk
+// names can differ when it resolves platform-specific optional dependencies on
+// the two native runners. Use the x64 renderer as the canonical copy so the
+// universal merge compares one deterministic resource tree while retaining the
+// architecture-specific native runtimes from both apps.
+export async function synchronizeRendererFiles(x64AppPath, arm64AppPath) {
+  const x64Renderer = join(x64AppPath, rendererRelativePath);
+  const arm64Renderer = join(arm64AppPath, rendererRelativePath);
+  await Promise.all([access(x64Renderer), access(arm64Renderer)]);
+  await rm(arm64Renderer, { recursive: true, force: true });
+  await copyMissingTree(x64Renderer, arm64Renderer);
+}
+
 async function sha256(path) {
   return createHash("sha256").update(await readFile(path)).digest("hex");
 }
@@ -116,6 +130,7 @@ export async function mergeMacosUniversal({ x64AppPath, arm64AppPath, outputAppP
   const arm64 = resolve(arm64AppPath);
   const output = resolve(outputAppPath);
   await synchronizeRuntimeFiles(x64, arm64);
+  await synchronizeRendererFiles(x64, arm64);
   await assertMatchingRuntimeInventory(x64, arm64);
   await makeUniversalApp({
     x64AppPath: x64,
