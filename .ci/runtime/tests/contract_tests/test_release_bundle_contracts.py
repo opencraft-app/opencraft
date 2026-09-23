@@ -3237,7 +3237,7 @@ jq() {
   printf '%s\n' 'jq must not be required before the multi-region early return' >&2
   return 127
 }
-refresh_skus http://unused img-jhb "$pools_json"
+refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
 '''
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
             source_file.write(source_text)
@@ -3251,6 +3251,73 @@ refresh_skus http://unused img-jhb "$pools_json"
             )
 
         self.assertNotIn("updating SKU", result.stdout)
+
+    def test_hermes_pool_refresh_updates_region_local_sku_without_touching_shared_sku(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg-shared",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb-shared",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+                {
+                    "id": "pool-jhb-local",
+                    "template_class_id": "openclaw-2c8g50g",
+                    "sku_id": "sku-hermes-2c8g50g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+source "$script_path"
+api_get() {
+  printf '%s' '[{"id":"sku-hermes-2c4g","template_class_id":"hermes","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"},{"id":"sku-hermes-2c8g50g","template_class_id":"openclaw-2c8g50g","base_image":"img-old","desired_image_id":"img-old","stable_image_id":"img-old","rollout_state":"stable"}]'
+}
+api_post_json() {
+  printf '%s' "$3"
+}
+jq() {
+  if [[ "$1" == "-r" && "$2" == "--arg" && "$3" == "ids" ]]; then
+    cat >/dev/null
+    printf '%s\n' 'sku-hermes-2c8g50g'
+    return
+  fi
+  if [[ "$1" == "-c" && "$2" == "--arg" && "$3" == "id" ]]; then
+    cat >/dev/null
+    printf '%s\n' '{"id":"sku-hermes-2c8g50g","template_class_id":"openclaw-2c8g50g","base_image":"img-jhb","desired_image_id":"img-jhb","stable_image_id":"img-old","rollout_state":"rolling","last_rollout_error":""}'
+    return
+  fi
+  cat >/dev/null
+  printf '%s\n' $'sku-hermes-2c8g50g\timg-jhb\timg-jhb\timg-old\trolling\t'
+}
+refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertIn("updating SKU sku-hermes-2c8g50g desired image -> img-jhb", result.stdout)
+        self.assertNotIn("updating SKU sku-hermes-2c4g", result.stdout)
+        self.assertIn("skipping cross-region SKU sku-hermes-2c4g", result.stderr)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
