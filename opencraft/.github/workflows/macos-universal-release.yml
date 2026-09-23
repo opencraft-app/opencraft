@@ -134,10 +134,11 @@ jobs:
       - name: Package signed DMG and ZIP
         working-directory: apps/workbench-electron
         run: |
+          builder_identity="${CSC_NAME#Developer ID Application: }"
           ../../node_modules/.bin/electron-builder \
             --prepackaged ../../.release/universal/OpenCraft.app \
             --mac dmg zip --universal --publish never \
-            --config.mac.identity="$CSC_NAME" \
+            --config.mac.identity="$builder_identity" \
             --config.forceCodeSigning=true \
             --config.dmg.sign=true \
             --config.directories.output=release/ci-universal
