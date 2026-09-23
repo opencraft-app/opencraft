@@ -58,6 +58,39 @@ Dashboard 管理员会话，不接触 Auth admin token，也不得跨服务或�
 相同映射可幂等重试；同一用户改绑、UIN 或影子用户名转移必须先解绑。操作必须携带原因并记录 request ID、
 用户、UIN、OwnerUIN、AppID 的结构化审计日志，不接收 SecretID、SecretKey、密码或客户端自报登录用户。
 
+### 个人 DevCloud testing 账号租约（2026-09-22）
+
+为让新同学在公司 DevCloud 上从全空 state 直接启动，`user/auth` 提供 sandbox-only 的
+`POST/DELETE /auth/dev-environments/account-lease`。功能默认关闭；只有环境名为 `sandbox-bj-7` 或
+`sandbox-kr-1`、
+`LIGHTCLAW_PUBLIC_BASE_URL` 精确为 `https://api-<environment>.lightclaw.tech`，且配置了明确的 Auth
+`user_id` 池和 DevCloud 出口 CIDR 时才注册路由。Service Gateway 只在北京、韩国 testing 对这两个
+method/path 做精确公开放行，并覆盖客户端可伪造的 forwarding headers；Auth 仅接受 Gateway 写入且命中
+`PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS` 的 `X-Lightclaw-Client-IP`。production 和 staging 不配置账号池，
+也不放行该路径。
+
+账号池只包含当前站点合格且 shadow binding 为 active 的 testing 用户：国内候选必须完成实名，国际候选
+必须完成国际开户映射。Auth 在发放前重新读取用户与 binding，拒绝缺 UIN、OwnerUIN 或 AppID 的候选；
+客户端不能提交 UIN、AppID、密码或云 Secret。MySQL
+`developer_test_account_leases` 是并发真源：以账号为主键保存 `lease_owner=<sandbox>:<DevCloud IP>`、
+目标地址、TTL 与单调版本。同一 DevCloud 幂等续租现有账号，不同 DevCloud 不能同时占用；池满返回 409。
+发放的会话标记为 `developer_lease`，释放时在同一事务中撤销该用户的全部 developer-lease sessions，避免
+续租前的旧 token 在账号转租后继续可用。续租不会立即撤销仍在 TTL 内的旧 session，避免服务端成功续租但
+客户端超时丢失新 token 时把个人环境锁死；旧 session 最迟随自身 TTL 过期，并在显式释放时全部撤销。
+首次领取在受控 DevCloud 网络内无需账号凭据；如果该 `lease_owner` 已存在有效租约，POST 必须携带当前
+`developer_lease` bearer session，Auth 校验 session 用户与租约用户一致后才续租。仅知道或伪造另一台
+DevCloud 的 `targetIp` 不能签发新 session。
+
+当前入口的组织信任边界是 sandbox-only 配置、Gateway 规范化的 DevCloud 出口 allowlist，以及脚本校验的
+公司 DevCloud `9.0.0.0/8`、`21.0.0.0/8` 目标地址，不是独立的 WOA 员工 OAuth 证明。因此它只能服务
+受控 testing 账号和测试余额，不能扩展到生产账号、
+客户数据或公网 CIDR。长期 AppSecret、CloudLadder HMAC、admin token、账号密码和 SOPS/age identity
+都不得进入账号池、响应、Skill 或 Git。环境 owner 通过智研/计费助手完成账号开户、充值和 active binding
+后，只把 Auth `user_id` 加入对应 sandbox 配置；普通开发者只消费短期租约。
+
+清理顺序必须是 callback unregister 成功后再释放账号租约；若 unregister 失败，保留租约直到 TTL，避免
+仍有 active callback 的账号被另一台 DevCloud 立即复用。数据库迁移必须先于启用配置执行，不能只发布二进制。
+
 ### OpenCraft 第一方客户端登录
 
 原生 App 与 Workbench Web 都是现有 OIDC 的第一方 public client，不是登录渠道。客户端使用现有

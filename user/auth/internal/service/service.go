@@ -28,11 +28,12 @@ const (
 	RealnameSyncStatusFailed    = "failed"
 	RealnameSyncStatusSucceeded = "succeeded"
 
-	AuthMethodUnknown       = "unknown"
-	AuthMethodSMS           = "sms"
-	AuthMethodOAuth         = "oauth"
-	AuthMethodPassword      = "password"
-	AuthMethodImpersonation = "impersonation"
+	AuthMethodUnknown        = "unknown"
+	AuthMethodSMS            = "sms"
+	AuthMethodOAuth          = "oauth"
+	AuthMethodPassword       = "password"
+	AuthMethodImpersonation  = "impersonation"
+	AuthMethodDeveloperLease = "developer_lease"
 
 	PhoneAuthFlowExistingUserLocal = "existing_user_local"
 	PhoneAuthFlowNewUserShadow     = "new_user_shadow"
@@ -189,6 +190,14 @@ type ShadowBindingResult struct {
 	BasicAuthLastErrorMessage string
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+type DeveloperTestAccountLease struct {
+	UserID       string
+	LeaseOwner   string
+	TargetIP     string
+	LeaseUntil   time.Time
+	LeaseVersion int64
 }
 
 type AdminShadowAccount struct {
