@@ -111,6 +111,27 @@ stages:
             with:
               fetchDepth: 50
               enableSubmodule: false
+          - name: 固定 Playground 构建提交
+            shell: bash
+            env:
+              PIN_MODE: ${{ variables.PIPELINE_MODE }}
+              PIN_SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+              PIN_CI_SHA: ${{ ci.sha }}
+              PIN_BRANCH: ${{ ci.branch }}
+            run: |
+              if [[ "$PIN_MODE" != "playground-build" ]]; then
+                exit 0
+              fi
+              if [[ ! "$PIN_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$PIN_SOURCE_SHA" != "$PIN_CI_SHA" || "$PIN_BRANCH" != "master" ]]; then
+                echo "playground-build requires an exact selected master commit" >&2
+                exit 1
+              fi
+              if ! git cat-file -e "${PIN_SOURCE_SHA}^{commit}" 2>/dev/null || ! git merge-base --is-ancestor "$PIN_SOURCE_SHA" HEAD; then
+                git fetch --no-tags origin master
+                git merge-base --is-ancestor "$PIN_SOURCE_SHA" FETCH_HEAD || exit 1
+              fi
+              git -c advice.detachedHead=false checkout --detach --quiet "$PIN_SOURCE_SHA"
+              test "$(git rev-parse HEAD)" = "$PIN_SOURCE_SHA"
           - name: 打印 ${{ parameters.DISPLAY_NAME }} 构建上下文
             shell: bash
             run: |
