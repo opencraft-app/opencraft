@@ -338,8 +338,7 @@ describe("SubscribePage", () => {
     await screen.findByRole("tab", { name: /^4500/ });
 
     const expectBotCount = (name: string, count: number) => {
-      const card = screen.getByRole("heading", { name }).parentElement?.parentElement?.parentElement;
-      if (!card) throw new Error(`Missing ${name} card`);
+      const card = screen.getByRole("group", { name });
       const row = within(card).getByText("Bot 数").closest("li");
       expect(row).toHaveTextContent(`${count} 个`);
       expect(within(card).queryByText("Agent")).not.toBeInTheDocument();
