@@ -285,7 +285,7 @@ export default defineConfig({
     // The local LightVela HTTPS gateway preserves its public Host header while
     // proxying module requests to this development server. Keep the allowlist
     // explicit: `true` would also admit DNS-rebinding hosts.
-    allowedHosts: ["localhost.lightvela.ai"],
+    allowedHosts: ["localhost.lightvela.ai", "chat.lightvela.com"],
     port: 10000,
     strictPort: true,
     // ResizeObserver reports its delivery-loop warning through window.onerror.
@@ -299,7 +299,7 @@ export default defineConfig({
   },
   preview: {
     host: "0.0.0.0",
-    allowedHosts: ["localhost.lightvela.ai"],
+    allowedHosts: ["localhost.lightvela.ai", "chat.lightvela.com"],
     port: 10000,
     strictPort: true,
     proxy: appServerProxy,
