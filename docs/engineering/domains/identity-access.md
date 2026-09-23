@@ -152,6 +152,12 @@ refresh 和 logout 路由不进入已实现路由集合。Human 产品路径由 
 旧 Computer/TAT bootstrap 不因复用 Handler 而扩大公开认证面。腾讯云 IM 状态 callback 是单独的
 provider callback 路径，仍由 callback token 校验，不产生 Human principal。
 
+Human IM identity projection 的幂等键必须绑定由 IM Secret 与长期稳定 identity key 派生的非明文
+credential epoch。账号处于 `error` 时，只有当前 epoch 尚未创建过 identity operation，JIT 映射才允许
+在同一账号分片内把账号恢复为 `provisioning` 并追加新的 operation/outbox；同一 epoch 已失败时不得因
+页面刷新重复请求腾讯 IM。这样凭据修正后用户下次访问可自愈，同时保留旧失败 operation 作为审计事实，
+不修改 OpenAPI、身份映射或聊天正文权威边界。
+
 部署边界是一个只在集群内可达的 Collaboration Service，以及两端独立挂载但值相同的内部 token。
 缺少 token、会话内省失败、subject 为空或 subject 与内部 Bearer 不匹配时必须 fail closed，不能降级为
 本地账号认证或信任浏览器身份头。验证至少覆盖身份头覆盖、用户凭据剥离、内部 Bearer 替换、JIT 映射
