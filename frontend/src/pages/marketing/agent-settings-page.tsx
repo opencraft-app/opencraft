@@ -7,6 +7,7 @@ import {
   Check,
   Copy,
   Globe2,
+  Plug,
   MessageCircle,
   MessageSquare,
   Loader2,
@@ -53,6 +54,7 @@ import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerification
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
+import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
@@ -350,9 +352,6 @@ function TeaSdkSettingsPanel({
           commandExecutor={commandExecutor}
           afterDescription={channelAfterDescription}
         />
-      </Suspense>
-      <Suspense fallback={null}>
-        <AgentConnectorsPanel instanceId={instance.InstanceId} />
       </Suspense>
     </StableTeaSdkPanelHost>
   );
@@ -2723,6 +2722,18 @@ export const AgentSettingsPage = ({
   /* ── 侧边栏「探索/对话」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
   /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
   const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
+  /**
+   * 连接器入口默认隐藏（灰度）：控制台执行 show() 后显示（与工作台 reveal
+   * 同款机制——window.show 劫持方广播 CONSOLE_SHOW_EVENT）。且仅国内站
+   * 显示（国际站走独立计费体系，连接器域名后续单独接入）。
+   */
+  const [connectorsRevealed, setConnectorsRevealed] = useState(false);
+  useEffect(() => {
+    const handler = () => setConnectorsRevealed(true);
+    window.addEventListener(CONSOLE_SHOW_EVENT, handler);
+    return () => window.removeEventListener(CONSOLE_SHOW_EVENT, handler);
+  }, []);
+  const showConnectorsEntry = connectorsRevealed && !isGlobal;
   const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
   const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
   /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定（SDK 侧会驱动默认会话）。 */
@@ -5078,6 +5089,9 @@ export const AgentSettingsPage = ({
                   label: t("配置"),
                   sections: [
                     { id: "channel", label: resolveAgentConsoleCollectionLabel("channel", i18n.language, t), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    ...(showConnectorsEntry
+                      ? [{ id: "connectors", label: t("连接器"), icon: <Plug className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.connectors }]
+                      : []),
                     { id: "model", label: resolveAgentConsoleCollectionLabel("model", i18n.language, t), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                   ],
                 },
@@ -5681,6 +5695,14 @@ export const AgentSettingsPage = ({
                                   </button>
                                 </div>
                               ) : undefined}
+                            />
+                          )}
+                          {activeSection === "connectors" && showConnectorsEntry && (
+                            <AgentConnectorsPanel
+                              instanceId={sdkInstance.InstanceId}
+                              execCommand={activeBot ? (command, options) =>
+                                repositories.bots.execDebugCommand(activeBot.id, command, options)
+                              : undefined}
                             />
                           )}
                           {activeSection === "model" && (

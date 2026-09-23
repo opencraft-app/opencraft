@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as client from "@/lib/connectors-client";
+import { fetchAgentChatLaunchToken } from "@/lib/agentchat-launch-token";
 import { ConnectorsPanel } from "@/pages/marketing/agent-connectors-panel";
 
 vi.mock("@/i18n/t", () => ({ t: (s: string) => s }));
@@ -10,23 +11,47 @@ vi.mock("@/lib/agentchat-launch-token", () => ({
 }));
 vi.mock("@/lib/connectors-client", () => ({
   listInstanceConnectors: vi.fn(),
-  enableBuiltinConnector: vi.fn(),
+  startConnectorOAuth: vi.fn(),
   completeConnectorOAuth: vi.fn(),
   cancelConnectorOAuth: vi.fn(),
-  disableBuiltinConnector: vi.fn(),
-  retryConnectorDelivery: vi.fn(),
+  enableBuiltinConnector: vi.fn(),
+  detachBuiltinConnector: vi.fn(),
+  checkBuiltinConnectorLocal: vi.fn(),
+  reportConnectorDelivery: vi.fn(),
+  // 真实实现的内联副本（factory 里不能引用被 mock 的模块自身）
+  normalizeInstanceConnectors: (data: {
+    builtin?: unknown;
+    customMcp?: unknown;
+  } | null) => ({
+    builtin: Array.isArray(data?.builtin) ? (data.builtin as never[]) : [],
+    customMcp: Array.isArray(data?.customMcp) ? (data.customMcp as never[]) : [],
+  }),
   CONNECTOR_OAUTH_COMPLETE_MESSAGE: "connector.oauth.complete",
 }));
+vi.mock("@/lib/connector-tat", () => ({
+  executeConnectorTat: vi.fn(),
+}));
+
+function builtinView(overrides: Partial<client.InstanceBuiltinConnectorView> = {}): client.InstanceBuiltinConnectorView {
+  return {
+    connectorKey: "tencent-meeting",
+    name: "腾讯会议",
+    connectorType: "local_cli",
+    authType: "instance_local",
+    authStatus: "not_required",
+    bindingStatus: "active",
+    bindingVersion: 1,
+    enableStatus: "enabled",
+    deliverStatus: "delivered",
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // 每例独立注入 OAuth 流测试所需的 env；unstubAllGlobals 统一放 afterEach，
-  // 避免用例中途 unstub 清掉 localStorage stub 造成跨用例污染。
   vi.stubEnv("NEXT_PUBLIC_AI_SERVER_BASE_URL", "https://ai-server.example.com");
-  // 兜底：所有异步 API 默认返回 resolved promise（与真实契约一致），
-  // 用例再用 mockResolvedValue 覆盖具体返回值。
-  vi.mocked(client.cancelConnectorOAuth).mockResolvedValue(undefined);
-  vi.mocked(client.completeConnectorOAuth).mockResolvedValue({ ok: true });
+  vi.mocked(fetchAgentChatLaunchToken).mockReset().mockResolvedValue({ token: "launch-token-1" });
+  vi.mocked(client.cancelConnectorOAuth).mockResolvedValue({ flowId: "f", connectorKey: "k", status: "cancelled" } as never);
 });
 afterEach(() => {
   cleanup();
@@ -34,221 +59,308 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("ConnectorsPanel", () => {
-  it("渲染连接器卡片与状态徽标", async () => {
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
-      {
-        key: "tencent-meeting",
-        name: "腾讯会议",
-        connectorType: "local_cli",
-        status: "not_connected",
-      },
-      {
-        key: "tencent-docs",
-        name: "腾讯文档",
-        connectorType: "mcp_proxy",
-        status: "connected",
-        authorizedAt: 1_700_000_000_000,
-      },
-    ]);
+describe("ConnectorsPanel 列表与状态", () => {
+  it("渲染连接器卡片与三态数据（已授权）", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+      builtin: [builtinView({ authStatus: "authorized" })],
+      customMcp: [],
+    });
     render(<ConnectorsPanel instanceId="ins-1" />);
     expect(await screen.findByText("腾讯会议")).toBeTruthy();
-    expect(screen.getByText("腾讯文档")).toBeTruthy();
-    expect(screen.getByText("CLI")).toBeTruthy();
-    expect(screen.getByText("MCP")).toBeTruthy();
-    expect(screen.getByText("已连接")).toBeTruthy();
+    expect(await screen.findByText("已授权")).toBeTruthy();
   });
 
-  it("下发警告状态显示同步提示", async () => {
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
-      {
-        key: "tencent-meeting",
-        name: "腾讯会议",
-        connectorType: "local_cli",
-        status: "connected",
-        deliveryWarning: true,
-      },
-    ]);
+  it("未授权（not_bound）显示去授权按钮", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+      builtin: [builtinView({ bindingStatus: "detached", authStatus: "not_added", deliverStatus: "none" })],
+      customMcp: [],
+    });
     render(<ConnectorsPanel instanceId="ins-1" />);
-    expect(await screen.findByText(/等待 Agent 在线后同步/)).toBeTruthy();
+    expect(await screen.findByText("尚未授权")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "去授权" })).toBeTruthy();
+  });
+
+  it("下发失败状态显示重试下发", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+      builtin: [builtinView({ deliverStatus: "failed" })],
+      customMcp: [],
+    });
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    expect(await screen.findByText("下发失败")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重试下发" })).toBeTruthy();
   });
 
   it("空列表显示引导文案", async () => {
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([]);
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue({ builtin: [], customMcp: [] });
     render(<ConnectorsPanel instanceId="ins-1" />);
     expect(await screen.findByText("暂无可用的连接器")).toBeTruthy();
   });
 
-  it("加载失败显示重试且不抛错", async () => {
-    vi.mocked(client.listInstanceConnectors).mockRejectedValue(
-      new Error("登录已过期，请重新登录后再试"),
+  it("接口返回非数组时按空列表处理（不崩溃）", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue(
+      undefined as unknown as client.InstanceConnectorsResponse,
     );
     render(<ConnectorsPanel instanceId="ins-1" />);
-    expect(await screen.findByText(/登录已过期/)).toBeTruthy();
+    expect(await screen.findByText("暂无可用的连接器")).toBeTruthy();
+  });
+
+  it("列表加载失败显示重试且重试重新发起请求", async () => {
+    vi.mocked(client.listInstanceConnectors).mockRejectedValue(
+      new Error("连接器服务异常（500）"),
+    );
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    expect(await screen.findByText(/连接器服务异常/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     await waitFor(() =>
       expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
     );
   });
-});
 
-describe("ConnectorsPanel OAuth 流程", () => {
-  it("点连接：auth_required 时打开授权窗口并监听 postMessage 完成", async () => {
-    const windowOpen = vi.fn(() => ({ closed: false }) as unknown as Window);
-    vi.stubGlobal("open", windowOpen);
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
-      {
-        key: "tencent-meeting",
-        name: "腾讯会议",
-        connectorType: "local_cli",
-        status: "not_connected",
-      },
-    ]);
-    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({
-      status: "auth_required",
-      authorizationUrl: "https://oauth.example.com/auth",
-      flowId: "flow-1",
+  it("pending 下发自动恢复：发现 pending+operationId 自动重新 enable 并执行 TAT", async () => {
+    // 场景：OAuth 已完成（authorized）但下发中断，状态停在 binding+pending
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+      builtin: [builtinView({
+        connectorKey: "tencent-docs",
+        name: "腾讯文档",
+        connectorType: "mcp_proxy",
+        authType: "oauth",
+        authStatus: "authorized",
+        bindingStatus: "binding",
+        deliverStatus: "pending",
+        operationId: "op-recover-1",
+        operationAction: "upsert",
+      })],
+      customMcp: [],
     });
-    vi.mocked(client.completeConnectorOAuth).mockResolvedValue({ ok: true });
-    render(<ConnectorsPanel instanceId="ins-1" />);
-    fireEvent.click(await screen.findByRole("button", { name: "连接" }));
-    // 不带 noopener：ai-server 回调页依赖 window.opener.postMessage 回执
+    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({
+      status: "ok",
+      installId: "i-r",
+      installType: "builtin",
+      operationId: "op-recover-2",
+      bindingVersion: 2,
+      tat: {
+        protocolVersion: 2,
+        action: "upsert",
+        installId: "i-r",
+        installType: "builtin",
+        instanceId: "ins-1",
+        runtime: "openclaw",
+        scriptName: "connector-runtime.abc12345.sh",
+      },
+    } as never);
+    const { executeConnectorTat } = await import("@/lib/connector-tat");
+    vi.mocked(executeConnectorTat).mockResolvedValue({ status: "success", message: "", tatTaskId: "t-r" });
+    const noopExecutor = vi.fn(async () => ({ status: "SUCCESS", exitCode: 0, output: "" }));
+
+    render(<ConnectorsPanel instanceId="ins-1" execCommand={noopExecutor} />);
+    // 自动恢复：无需点击，列表就绪后自动 enable + TAT + 回写
     await waitFor(() =>
-      expect(windowOpen).toHaveBeenCalledWith("https://oauth.example.com/auth", "_blank"),
-    );
-    // 模拟 ai-server 回调页 postMessage（合法 origin）
-    fireEvent(
-      window,
-      new MessageEvent("message", {
-        origin: "https://ai-server.example.com",
-        data: {
-          type: "connector.oauth.complete",
-          flowId: "flow-1",
-          connectorKey: "tencent-meeting",
-          status: "ok",
-        },
-      }),
-    );
-    await waitFor(() =>
-      expect(client.completeConnectorOAuth).toHaveBeenCalledWith(
+      expect(client.enableBuiltinConnector).toHaveBeenCalledWith(
         "launch-token-1",
         "ins-1",
-        "tencent-meeting",
+        "tencent-docs",
+      ),
+      { timeout: 3000 },
+    );
+    await waitFor(() => expect(executeConnectorTat).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(client.reportConnectorDelivery).toHaveBeenCalledWith(
+        "launch-token-1",
+        expect.objectContaining({ installId: "i-r", status: "success" }),
+      ),
+    );
+  });
+
+  it("launch token 获取失败（实例未就绪）时，点重试应重新发起 token 请求", async () => {
+    const err = new Error("DEBUG_NOT_SUPPORTED. debug command not supported in this instance state");
+    vi.mocked(fetchAgentChatLaunchToken)
+      .mockRejectedValueOnce(err)
+      .mockRejectedValueOnce(err);
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    expect(await screen.findByText(/DEBUG_NOT_SUPPORTED/)).toBeTruthy();
+    expect(fetchAgentChatLaunchToken).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() =>
+      expect(fetchAgentChatLaunchToken).toHaveBeenCalledTimes(2),
+    );
+  });
+});
+
+describe("ConnectorsPanel 操作", () => {
+  const noopExecutor = vi.fn(async () => ({ status: "SUCCESS", exitCode: 0, output: "CONNECTOR_RESULT_JSON={\"status\":\"success\"}" }));
+
+  it("已连接卡片：解除需确认弹窗后调 detach 并执行 TAT + 回写", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+      builtin: [builtinView({ authStatus: "authorized" })],
+      customMcp: [],
+    });
+    vi.mocked(client.detachBuiltinConnector).mockResolvedValue({
+      status: "ok",
+      installId: "i-1",
+      installType: "builtin",
+      operationId: "op-1",
+      bindingVersion: 2,
+      tat: {
+        protocolVersion: 2,
+        action: "remove",
+        installId: "i-1",
+        installType: "builtin",
+        instanceId: "ins-1",
+        runtime: "openclaw",
+        scriptName: "connector-runtime.abc12345.sh",
+      },
+    } as never);
+    const { executeConnectorTat } = await import("@/lib/connector-tat");
+    vi.mocked(executeConnectorTat).mockResolvedValue({ status: "success", message: "", tatTaskId: "t-1" });
+
+    render(<ConnectorsPanel instanceId="ins-1" execCommand={noopExecutor} />);
+    fireEvent.click(await screen.findByRole("button", { name: "解除授权" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认解除" }));
+    await waitFor(() => expect(client.detachBuiltinConnector).toHaveBeenCalled());
+    await waitFor(() => expect(executeConnectorTat).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(client.reportConnectorDelivery).toHaveBeenCalledWith(
+        "launch-token-1",
+        expect.objectContaining({ installId: "i-1", status: "success" }),
+      ),
+    );
+  });
+
+  it("local_cli 未授权：点去授权走 enable 并执行 TAT 下发", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+      builtin: [builtinView({ bindingStatus: "detached", authStatus: "not_added", deliverStatus: "none" })],
+      customMcp: [],
+    });
+    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({
+      status: "ok",
+      installId: "i-2",
+      installType: "builtin",
+      operationId: "op-2",
+      bindingVersion: 1,
+      tat: {
+        protocolVersion: 2,
+        action: "local_cli_enable",
+        installId: "i-2",
+        installType: "builtin",
+        instanceId: "ins-1",
+        runtime: "openclaw",
+        scriptName: "connector-runtime.abc12345.sh",
+      },
+    } as never);
+    const { executeConnectorTat } = await import("@/lib/connector-tat");
+    vi.mocked(executeConnectorTat).mockResolvedValue({ status: "success", message: "", tatTaskId: "t-2" });
+
+    render(<ConnectorsPanel instanceId="ins-1" execCommand={noopExecutor} />);
+    fireEvent.click(await screen.findByRole("button", { name: "去授权" }));
+    await waitFor(() => expect(client.enableBuiltinConnector).toHaveBeenCalled());
+    await waitFor(() => expect(executeConnectorTat).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(client.reportConnectorDelivery).toHaveBeenCalledWith(
+        "launch-token-1",
+        expect.objectContaining({ action: "local_cli_enable" }),
+      ),
+    );
+  });
+
+  it("OAuth 型未授权：走 startOAuth 授权流（关窗 pending 宽限超窗后才 cancel）", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+        builtin: [builtinView({
+          connectorKey: "tencent-docs",
+          name: "腾讯文档",
+          connectorType: "mcp_proxy",
+          authType: "oauth",
+          bindingStatus: "detached",
+          authStatus: "not_added",
+          deliverStatus: "none",
+        })],
+        customMcp: [],
+      });
+      // 弹窗关闭（closed=true）：关窗 ≠ 失败——complete 一直 pending 时，
+      // 宽限窗口（10s）内不 cancel，超窗才 cancel 兜底
+      vi.stubGlobal("open", vi.fn(() => ({ closed: true }) as unknown as Window));
+      vi.mocked(client.startConnectorOAuth).mockResolvedValue({
+        authorizeUrl: "https://oauth.example.com/auth",
+        state: "s1",
+        flowId: "flow-1",
+      });
+      vi.mocked(client.completeConnectorOAuth).mockResolvedValue({ status: "pending" } as never);
+
+      render(<ConnectorsPanel instanceId="ins-1" execCommand={noopExecutor} />);
+      const authButton = screen.findByRole("button", { name: "去授权" });
+      await vi.advanceTimersByTimeAsync(100);
+      fireEvent.click(await authButton);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(client.startConnectorOAuth).toHaveBeenCalledWith(
+        "launch-token-1",
+        "ins-1",
+        "tencent-docs",
+        expect.any(String),
+      );
+      // 宽限窗口内（首次关窗轮询 2s + 6s < 10s）：不 cancel
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(client.cancelConnectorOAuth).not.toHaveBeenCalled();
+      // 超窗（累计 13s > 2s + 10s）：cancel 兜底
+      await vi.advanceTimersByTimeAsync(7_000);
+      expect(client.cancelConnectorOAuth).toHaveBeenCalledWith(
+        "launch-token-1",
+        "ins-1",
+        "tencent-docs",
         "flow-1",
-      ),
-    );
-    await waitFor(() =>
-      expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
-    );
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("点连接：enable 直接成功（无需 OAuth）时仅刷新列表", async () => {
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
-      { key: "x", name: "X", connectorType: "mcp_proxy", status: "not_connected" },
-    ]);
-    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({ status: "ok" });
-    render(<ConnectorsPanel instanceId="ins-1" />);
-    fireEvent.click(await screen.findByRole("button", { name: "连接" }));
-    await waitFor(() =>
-      expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
-    );
-    expect(client.completeConnectorOAuth).not.toHaveBeenCalled();
-  });
+  it("OAuth：关窗后 complete 返回 binding（已授权绑定中）→ 等 complete 终态，不 cancel", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(client.listInstanceConnectors).mockResolvedValue({
+        builtin: [builtinView({
+          connectorKey: "tencent-docs",
+          name: "腾讯文档",
+          connectorType: "mcp_proxy",
+          authType: "oauth",
+          bindingStatus: "detached",
+          authStatus: "not_added",
+          deliverStatus: "none",
+        })],
+        customMcp: [],
+      });
+      // 用户授权成功、回调页自动关闭，postMessage 丢失：complete 先 pending
+      // 后 binding，最终 completed → 静默 resolve，全程不 cancel
+      vi.stubGlobal("open", vi.fn(() => ({ closed: true }) as unknown as Window));
+      vi.mocked(client.startConnectorOAuth).mockResolvedValue({
+        authorizeUrl: "https://oauth.example.com/auth",
+        state: "s1",
+        flowId: "flow-1",
+      });
+      vi.mocked(client.completeConnectorOAuth)
+        .mockResolvedValueOnce({ status: "pending" } as never)
+        .mockResolvedValueOnce({ status: "binding" } as never)
+        .mockResolvedValue({
+          status: "completed",
+          connectorKey: "tencent-docs",
+          operationId: "op-1",
+        } as never);
+      vi.mocked(client.reportConnectorDelivery).mockResolvedValue({ status: "ok" } as never);
 
-  it("postMessage origin 不匹配时忽略（安全）", async () => {
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
-      {
-        key: "tencent-meeting",
-        name: "腾讯会议",
-        connectorType: "local_cli",
-        status: "not_connected",
-      },
-    ]);
-    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({
-      status: "auth_required",
-      authorizationUrl: "https://oauth.example.com/auth",
-      flowId: "flow-9",
-    });
-    vi.stubGlobal("open", vi.fn(() => ({}) as unknown as Window));
-    render(<ConnectorsPanel instanceId="ins-1" />);
-    fireEvent.click(await screen.findByRole("button", { name: "连接" }));
-    fireEvent(
-      window,
-      new MessageEvent("message", {
-        origin: "https://evil.example.com",
-        data: {
-          type: "connector.oauth.complete",
-          flowId: "flow-9",
-          connectorKey: "tencent-meeting",
-        },
-      }),
-    );
-    await new Promise((r) => setTimeout(r, 20));
-    expect(client.completeConnectorOAuth).not.toHaveBeenCalled();
-  });
-});
-
-describe("ConnectorsPanel 断开与重试", () => {
-  it("已连接卡片：断开需确认弹窗后调用 disable", async () => {
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
-      {
-        key: "tencent-meeting",
-        name: "腾讯会议",
-        connectorType: "local_cli",
-        status: "connected",
-      },
-    ]);
-    vi.mocked(client.disableBuiltinConnector).mockResolvedValue(undefined);
-    render(<ConnectorsPanel instanceId="ins-1" />);
-    fireEvent.click(await screen.findByRole("button", { name: "断开" }));
-    // 确认弹窗
-    fireEvent.click(screen.getByRole("button", { name: "确认断开" }));
-    await waitFor(() =>
-      expect(client.disableBuiltinConnector).toHaveBeenCalledWith(
-        "launch-token-1",
-        "ins-1",
-        "tencent-meeting",
-      ),
-    );
-    await waitFor(() =>
-      expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
-    );
-  });
-
-  it("下发警告卡片：显示重试下发按钮并调用 retry", async () => {
-    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
-      {
-        key: "tencent-meeting",
-        name: "腾讯会议",
-        connectorType: "local_cli",
-        status: "connected",
-        deliveryWarning: true,
-      },
-    ]);
-    vi.mocked(client.retryConnectorDelivery).mockResolvedValue(undefined);
-    render(<ConnectorsPanel instanceId="ins-1" />);
-    fireEvent.click(await screen.findByRole("button", { name: "重试同步" }));
-    await waitFor(() =>
-      expect(client.retryConnectorDelivery).toHaveBeenCalledWith(
-        "launch-token-1",
-        "ins-1",
-        "tencent-meeting",
-      ),
-    );
-  });
-});
-
-describe("ConnectorsPanel launch token", () => {
-  it("launch token 获取失败时显示错误且不调连接器接口", async () => {
-    const { fetchAgentChatLaunchToken } = await import("@/lib/agentchat-launch-token");
-    vi.mocked(fetchAgentChatLaunchToken).mockRejectedValue(
-      new Error("未登录，无法获取 AgentChat 启动 token"),
-    );
-    render(<ConnectorsPanel instanceId="ins-1" />);
-    expect(
-      await screen.findByText(/未登录，无法获取 AgentChat 启动 token/),
-    ).toBeTruthy();
-    await new Promise((r) => setTimeout(r, 20));
-    expect(client.listInstanceConnectors).not.toHaveBeenCalled();
+      render(<ConnectorsPanel instanceId="ins-1" execCommand={noopExecutor} />);
+      const authButton = screen.findByRole("button", { name: "去授权" });
+      await vi.advanceTimersByTimeAsync(100);
+      fireEvent.click(await authButton);
+      await vi.advanceTimersByTimeAsync(50);
+      // 轮询推进：pending → binding → completed（远超关窗 pending 宽限，
+      // 但 binding 后不再受宽限约束，completed 即 resolve，不 cancel）
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(client.cancelConnectorOAuth).not.toHaveBeenCalled();
+      // completed 后 finishOperation（complete 响应无 tat → 跳过下发）→ refresh
+      expect(client.completeConnectorOAuth).toHaveBeenCalled();
+      expect(client.listInstanceConnectors).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

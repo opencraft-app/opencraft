@@ -1,5 +1,6 @@
 export type AgentSettingsSectionId =
   | "channel"
+  | "connectors"
   | "model"
   | "skill"
   | "buddy"
@@ -56,6 +57,7 @@ export const shouldShowWorkbenchEntry = ({
 export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   workbench: `${AGENTS_HOME_PATH}/workbench`,
   channel: `${AGENTS_HOME_PATH}/channels`,
+  connectors: `${AGENTS_HOME_PATH}/connectors`,
   model: `${AGENTS_HOME_PATH}/models`,
   skill: `${AGENTS_HOME_PATH}/skills`,
   buddy: `${AGENTS_HOME_PATH}/persona`,
@@ -74,6 +76,7 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
 
 export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   channels: "channel",
+  connectors: "connectors",
   models: "model",
   skills: "skill",
   experts: "skill",
