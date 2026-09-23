@@ -43,6 +43,10 @@ KUBECONFIG_PATH=/path/to/argocd-control-plane.kubeconfig \
   bash scripts/bootstrap_argocd_sops_age.sh
 ```
 
+The control plane runs as a native k0s system service. Do not wrap it in a
+Docker container: the extra network namespace causes selected cross-region TKE
+TLS connections to be intercepted by the DevCloud outbound proxy.
+
 Why this exists:
 
 - Beijing deploy-facing services use `ksops`
