@@ -129,6 +129,21 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(badgeRule).toContain("white-space: nowrap;");
   });
 
+  it("explains that a paused Agent resumes automatically after renewal", () => {
+    const page = readPageSource();
+    const statusRow = page.slice(
+      page.indexOf('className="lv-agent-status-row"'),
+      page.indexOf("{passExpiryReminder", page.indexOf('className="lv-agent-status-row"')),
+    );
+
+    expect(page).toContain('const pausedStatusTooltip = activeBot.status === "paused"');
+    expect(page).toContain('t("套餐已到期，Agent 已暂停运行，续费后会自动恢复。")');
+    expect(statusRow).toContain(
+      '<WorkspaceActionTooltip content={pausedStatusTooltip} side="bottom">',
+    );
+    expect(statusRow).toContain('className="lv-agent-status"');
+  });
+
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
     expect(readPageSource()).not.toContain("SHOW_AGENTCHAT_ENTRY");
   });
