@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Pass, PassModifyOption } from "@/domain/types";
 import { useRepositories } from "@/contexts/repository-context";
-import { usePassUpgradeVisible } from "@/lib/pass-upgrade-rollout";
+import { isPassUpgradeTargetVisible, usePassUpgradeVisible } from "@/lib/pass-upgrade-rollout";
 
 const isActive = (pass: Pass) => pass.status === "active" && !pass.deleted_time && !pass.isolated_time && Date.parse(pass.expired_time) > Date.now();
 const empty = { pass: null, options: [], error: false, loading: false };
@@ -15,13 +15,13 @@ export function usePassUpgrade({ userId, passId, enabled, currentPass }: {
 }) {
   const { plans } = useRepositories();
   const { listMyPasses, listModifyBundles } = plans;
-  const upgradeVisible = usePassUpgradeVisible();
+  const revealAllTargets = usePassUpgradeVisible();
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const currentInvalid = currentPass != null && (currentPass.user_id !== userId || !isActive(currentPass));
-  const key = JSON.stringify([userId, passId, enabled, upgradeVisible, currentPass?.pass_id, currentPass?.bundle_id, currentPass?.status, currentPass?.expired_time, currentPass?.isolated_time, currentPass?.deleted_time, currentPass?.updated_time, currentInvalid, attempt]);
+  const key = JSON.stringify([userId, passId, enabled, revealAllTargets, currentPass?.pass_id, currentPass?.bundle_id, currentPass?.status, currentPass?.expired_time, currentPass?.isolated_time, currentPass?.deleted_time, currentPass?.updated_time, currentInvalid, attempt]);
   const [state, setState] = useState<{ key: string; pass: Pass | null; options: PassModifyOption[]; error: boolean; loading: boolean }>({ key: "", ...empty });
-  const canLoad = enabled && upgradeVisible && Boolean(userId);
+  const canLoad = enabled && Boolean(userId);
 
   useEffect(() => {
     if (!canLoad) return;
@@ -43,14 +43,14 @@ export function usePassUpgrade({ userId, passId, enabled, currentPass }: {
         }
         const result = await listModifyBundles(pass.pass_id);
         if (result.source_bundle_id !== pass.bundle_id) throw new Error("Upgrade source changed");
-        const options = result.modify_bundle_set.filter((option) => option.target_bundle_id && option.target_bundle_id !== pass.bundle_id && option.bundle.bundle_id === option.target_bundle_id);
+        const options = result.modify_bundle_set.filter((option) => option.target_bundle_id && option.target_bundle_id !== pass.bundle_id && option.bundle.bundle_id === option.target_bundle_id && isPassUpgradeTargetVisible(pass.bundle_id, option.target_bundle_id, revealAllTargets));
         if (!cancelled) setState({ key, pass, options, loading: false, error: false });
       } catch {
         if (!cancelled) setState({ key, ...empty, error: true });
       }
     })();
     return () => { cancelled = true; };
-  }, [canLoad, key, passId, listMyPasses, listModifyBundles, userId, currentInvalid, currentPass?.pass_id]);
+  }, [canLoad, key, passId, listMyPasses, listModifyBundles, userId, currentInvalid, currentPass?.pass_id, revealAllTargets]);
 
   useEffect(() => {
     if (!canLoad || state.key !== key || !state.pass) return;

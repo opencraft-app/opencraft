@@ -9,9 +9,20 @@ const productionHosts = new Set([
 
 const subscribe = (notify: () => void) => subscribeConsoleShow(notify);
 
-// UI rollout only: test/preview hosts stay visible, while public production
-// sites require the shared console show() command. The backend still decides
-// which target bundles are eligible.
+// Restrictive production UI rollout: only existing within-SP tier upgrades are
+// public. This does not grant eligibility; CTL still validates source and target.
+const productionSameSPTargets: Readonly<Record<string, string>> = {
+  bundle_launch_01: "bundle_cruise_01",
+  bundle_launch_ai_01: "bundle_cruise_ai_01",
+};
+
+export function isPassUpgradeTargetVisible(sourceBundleID: string, targetBundleID: string, revealAll: boolean): boolean {
+  return revealAll || productionSameSPTargets[sourceBundleID] === targetBundleID;
+}
+
+// Test/preview hosts expose all server-approved targets. Production exposes
+// only same-SP tier upgrades until console show() reveals the other targets.
+// The backend remains authoritative for all paths.
 export function usePassUpgradeVisible(): boolean {
   const isProduction = typeof window !== "undefined" && productionHosts.has(window.location.hostname.toLowerCase());
   useEffect(() => isProduction ? installConsoleShowCommand() : undefined, [isProduction]);

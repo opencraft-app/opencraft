@@ -18,36 +18,36 @@ func TestResolveByID_Known(t *testing.T) {
 			name:           "spec-2c4g50g",
 			specID:         SpecID2C4G50G,
 			wantCPU:        2,
-			wantMemory:     4, // GB
+			wantMemory:     8, // GB
 			wantDisk:       50,
-			wantDisplay:    "2核4G 50G系统盘",
+			wantDisplay:    "2核8G 50G系统盘",
 			wantResolvedID: SpecID2C4G50G,
 		},
 		{
 			name:           "spec-4c8g80g",
 			specID:         SpecID4C8G80G,
 			wantCPU:        4,
-			wantMemory:     8, // GB
+			wantMemory:     16, // GB
 			wantDisk:       80,
-			wantDisplay:    "4核8G 80G系统盘",
+			wantDisplay:    "4核16G 80G系统盘",
 			wantResolvedID: SpecID4C8G80G,
 		},
 		{
 			name:           "empty falls back to default",
 			specID:         "",
 			wantCPU:        2,
-			wantMemory:     4, // GB
+			wantMemory:     8, // GB
 			wantDisk:       50,
-			wantDisplay:    "2核4G 50G系统盘",
+			wantDisplay:    "2核8G 50G系统盘",
 			wantResolvedID: DefaultSpecID,
 		},
 		{
 			name:           "whitespace falls back to default",
 			specID:         "   ",
 			wantCPU:        2,
-			wantMemory:     4, // GB
+			wantMemory:     8, // GB
 			wantDisk:       50,
-			wantDisplay:    "2核4G 50G系统盘",
+			wantDisplay:    "2核8G 50G系统盘",
 			wantResolvedID: DefaultSpecID,
 		},
 	}
