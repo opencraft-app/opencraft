@@ -27,7 +27,9 @@ master 源码
 
 ## 不变量
 
-- 统一 Argo CD 控制面运行在受控国内发布机时，固定版本 k0s/Argo 基线、NodePort、repo-server
+- 统一 Argo CD 控制面运行在受控国内发布机时，必须使用宿主机原生 k0s systemd 服务；禁止使用
+  k0s-in-Docker 承载生产 GitOps 控制面，因为嵌套网络命名空间会使部分跨地域 TKE TLS 流量被
+  DevCloud 出口代理错误降级为明文响应。固定版本 k0s/Argo 基线、NodePort、repo-server
   ksops patch 和跨地域客户端超时必须保存在 Git；repo SSH 私钥、目标集群 kubeconfig、管理员密码和
   `sops-age` 私钥继续只存在于受保护的 Git 外存储。控制面重建顺序固定为
   `base install -> repo credential -> sops-age -> target clusters -> projects/runtime -> root apps`。
