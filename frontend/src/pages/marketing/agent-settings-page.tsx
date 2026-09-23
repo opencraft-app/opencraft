@@ -496,6 +496,10 @@ export function WorkspaceActionTooltip({
       onFocus={showTooltip}
       onBlur={scheduleClose}
       onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.stopPropagation();
+          return;
+        }
         if (event.key !== "Escape") return;
         clearCloseTimer();
         setOpen(false);
@@ -5718,7 +5722,7 @@ export const AgentSettingsPage = ({
               const isRepairingBot = repairingBotIds.has(activeBot.id);
               const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启");
               const pausedStatusTooltip = activeBot.status === "paused"
-                ? t("套餐已到期，Agent 已暂停运行，续费后会自动恢复。")
+                ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
                 : undefined;
               const restartOrRepairDisabled = activeBot.status === "failed" ? isRepairingBot : isRestartDisabled;
               const resetBlockReason = getResetBlockReason(activeBot, resetting);

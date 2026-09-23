@@ -1,12 +1,29 @@
+---
+id: agent-paused-status-tooltip
+type: task
+scope: Agent 侧边栏已暂停状态提示与键盘交互
+triggers: ["agent paused tooltip", "已暂停提示", "MR 4531"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - frontend/src/pages/marketing/agent-settings-page.tsx
+status: active
+reviewed_at: 2026-09-23
+review_due: 2026-12-22
+revision: 1.1.0
+precedence: task
+derived: false
+---
+
 ## goal
-为 Agent 侧边栏的“已暂停”状态补充可访问的悬浮提示，说明续费后会自动恢复运行。
+为 Agent 侧边栏的“已暂停”状态补充可访问的悬浮提示，并准确说明套餐到期后的恢复方式。
 
 ## non_goals
 - 不修改实例/Bot 状态来源、续费流程、恢复逻辑或后端接口。
 - 不合并 MR、发布或变更生产环境。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
-- 用户对话（2026-09-23）：状态为“已暂停”时，悬浮显示“套餐已到期，Agent 已暂停运行，续费后会自动恢复。”
+- 用户对话（2026-09-23）：状态为“已暂停”时提供续费恢复提示；CR 后收敛为条件式文案，并阻止键盘操作误展开 Bot 选择器。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/pages/marketing/agent-settings-page.tsx` 的 `activeBot.status`：仅 `paused` 状态显示提示。
@@ -19,6 +36,7 @@
 
 ## acceptance
 - “已暂停”可通过鼠标悬浮和键盘聚焦在状态下方显示指定文案，Escape 可关闭。
+- 聚焦“已暂停”提示时，Enter/空格不展开多 Bot 选择器。
 - 非暂停状态不显示该提示。
 - 提示通过 Portal 渲染，不受侧边栏滚动容器裁切。
 - 聚焦测试、i18n 检查和前端检查通过。
@@ -26,6 +44,7 @@
 ## affected_paths
 - `frontend/src/pages/marketing/agent-settings-page.tsx`
 - `frontend/src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts`
+- `frontend/src/pages/marketing/__tests__/agent-settings-sidebar-tooltip.test.tsx`
 - `frontend/src/i18n/generated/*.json`
 - `docs/context/tasks/2026-09-23-agent-paused-status-tooltip.md`
 
@@ -41,6 +60,7 @@
 | `frontend/DESIGN.md@origin/master` | Tooltip 交互规范 | 复用 Portal Tooltip 与键盘交互 |
 | `docs/context/domains/subscription-entitlements.md@origin/master` | 续费与权益边界 | 保持前端仅展示，不改变恢复逻辑 |
 | `docs/context/project/services/frontend.md@origin/master` | 前端产品面约束 | 确认国内站/国际站共享组件与验证范围 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@origin/master` | MR 交付门禁 | 确认提交、推送与远端核验边界 |
 
 ## evidence
 - `pnpm vitest run --api.host 127.0.0.1 src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts src/pages/marketing/__tests__/agent-settings-sidebar-tooltip.test.tsx src/i18n/__tests__/dictionaries.test.ts`：3 个文件、55 个测试通过；`--api.host` 仅用于绕过本机 `localhost` DNS 解析异常，未写入配置。
@@ -63,7 +83,8 @@
 
 ## decisions
 - 直接复用 `WorkspaceActionTooltip`，不新增 Tooltip 实现；在状态下方显示，并继续通过 `document.body` Portal 避免被页面容器遮挡。
-- 仅以 `activeBot.status === "paused"` 控制文案，保持现有状态映射不变。
+- 仅以 `activeBot.status === "paused"` 控制提示入口，但文案使用“如因套餐到期”的条件式表述，避免把所有暂停状态归因于套餐到期。
+- Tooltip 触发器消费 Enter/空格事件，避免键盘操作冒泡并误展开外层多 Bot 选择器。
 
 ## scan_scope
 - `frontend/src/pages/marketing/agent-settings-page.tsx`
