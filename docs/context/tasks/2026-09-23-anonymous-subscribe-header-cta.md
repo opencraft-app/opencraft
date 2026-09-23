@@ -2,8 +2,19 @@
 id: anonymous-subscribe-header-cta-2026-09-23
 type: task
 scope: 去除订阅页未登录头部立即创建入口，消除同页导航与动作语义歧义。
-status: ready-for-review
+triggers: ["订阅页头部", "未登录 CTA", "立即创建"]
 owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - frontend/next-site/subscribe-page-client.tsx
+  - frontend/next-site/public-header-auth-island.tsx
+  - docs/engineering/domains/site-environment-routing.md
+status: active
+reviewed_at: 2026-09-23
+review_due: 2026-12-22
+revision: 1.0.0
+precedence: task
+derived: false
 ---
 
 ## goal
@@ -29,13 +40,14 @@ owner: wisp/mono2-maintainers
 
 ## history_context
 
-- `current_design_refs`：`frontend/openspec/specs/marketing.md`、`docs/context/tasks/2026-09-04-fix-cn-home-cta.md`。
+- `current_design_refs`：`docs/engineering/domains/site-environment-routing.md`、`docs/context/tasks/2026-09-04-fix-cn-home-cta.md`。
 - `relevant_evolution`：MR !3990 将未登录头部 CTA 统一改为 `/subscribe`；在订阅页形成同路径导航。
-- `superseded_refs`：无。
+- `superseded_refs`：`frontend/openspec/specs/marketing.md` 的旧路由守卫表仍把 `/subscribe` 记为登录门禁页，不代表当前 Next 路由的 `requireAuth={false}` 行为。
 
 ## acceptance
 
 - 未登录订阅页头部不再展示“立即创建”，只展示黑色“登录”主按钮。
+- 桌面端和移动端均保持“登录”为唯一头部主动作。
 - 其他公开页未登录 CTA 仍跳转订阅页。
 - 已登录头部 CTA 分流不变。
 - 聚焦测试、`pnpm check`、相关构建和 `git diff --check` 通过。
@@ -50,8 +62,9 @@ owner: wisp/mono2-maintainers
 
 - `frontend/AGENTS.md`
 - `frontend/DESIGN.md`
-- `frontend/openspec/specs/marketing.md`
+- `docs/engineering/domains/site-environment-routing.md`
 - `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`
+- `docs/context/tasks/TASK-TEMPLATE.md`
 
 ## context_receipt
 
@@ -59,18 +72,21 @@ owner: wisp/mono2-maintainers
 |---|---|---|
 | `frontend/AGENTS.md@d45795b6a` | 前端硬规则与验证命令 | 约束实现与门禁 |
 | `frontend/DESIGN.md@d45795b6a` | 现有弹窗和交互规范 | 复用登录弹窗，不新增视觉模式 |
-| `frontend/openspec/specs/marketing.md@d45795b6a` | 订阅页和登录门禁现状 | 保持套餐 CTA 与公开页行为边界 |
+| `docs/engineering/domains/site-environment-routing.md@d45795b6a` | 双站公开页路由与 Header 规则 | 记录订阅页显式启用 `loginOnly` |
 | `docs/context/tasks/2026-09-04-fix-cn-home-cta.md@d45795b6a` | 国内未登录 CTA 历史不变量 | 其他页面继续指向 `/subscribe` |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@d45795b6a` | 前端实现与测试邻接 | 要求检查相邻组件测试 |
+| `docs/context/tasks/TASK-TEMPLATE.md@d45795b6a` | Task Pack 状态合同 | 补齐合法 frontmatter 与生命周期字段 |
 
 ## evidence
 
 - `origin/master@d45795b6a`：`goToCreate()` 对匿名用户解析为 `/subscribe`；订阅页本身为 `/subscribe`，形成同页导航。
 - GREEN：相关 3 个测试文件 52/52 通过，覆盖认证岛行为、订阅页装配与套餐页回归。
 - 本地国内站 `http://127.0.0.1:5176/subscribe/` 匿名桌面实测：页面中“立即创建”按钮数量为 0，头部只保留黑色“登录”主按钮且无 Next 错误遮罩。
+- 本地移动视口 `390x844` 实测：可见认证按钮仅有黑色“登录”，点击后 URL 保持 `/subscribe/` 并打开 `aria-label=登录` 对话框。
 - 点击头部“登录”后 URL 保持 `/subscribe/`，出现 `aria-label=登录` 对话框。
 - 首页“免费试用”仍进入 `/subscribe/`；套餐卡“立即订阅”仍打开登录弹窗。
 - 本地 HTML 验证报告与截图已生成，未纳入仓库。
+- CR 复核后补充移动端截图，并确认黑色登录按钮是订阅页唯一头部主动作的预期表现。
 
 ## risks
 
@@ -83,15 +99,18 @@ owner: wisp/mono2-maintainers
 - [x] `pnpm check`：171 current / 171 baseline / 0 new diagnostics。
 - [x] `pnpm build:cn`：106 个静态页面生成，SEO 与静态资源检查通过。
 - [x] 本地桌面匿名交互验证与截图。
+- [x] 本地移动端 `390x844` 匿名交互验证与截图。
 - [x] `git diff --check`。
 - [x] `python3 .agents/context/scripts/validate_change_impact.py --repo . --changed-file ...`。
 - [x] `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：0 errors / 0 warnings。
+- [x] `python3 .agents/context/scripts/validate_context.py --repo . --format json`：本 Task Pack 0 errors；仓库仍有 2441 条历史 context 错误。
 - [ ] `pnpm test`：全量 312 个测试文件中 289 passed / 21 failed / 1 skipped；失败集中在未改动的模型配置、Agent 设置、文档/静态契约等测试，包含缺少 Python `cryptography`、CSS ESM 加载错误，最终 Vitest worker 触发约 4GB heap OOM。本次相关 3 个文件已独立 52/52 通过。
 
 ## decisions
 
 - 复用认证岛现有 `loginOnly` 模式，不新增订阅页专用状态或点击分支。
 - 套餐转化继续由卡片内“立即订阅”承担，未登录时打开现有登录弹窗。
+- 移动端登录按钮随 `loginOnly` 使用黑色主按钮样式，作为唯一头部转化动作；该连带效果已完成移动视口实测。
 
 ## scan_scope
 
@@ -104,6 +123,6 @@ owner: wisp/mono2-maintainers
 
 ## handoff
 
-- 当前状态：实现与本地验证完成；用户已授权通过 Gongfeng MR 交付。
+- 当前状态：实现、本地验证与 CR 建议修正完成；用户已授权更新 Gongfeng MR。
 - 下一步：代码审阅与 CI；不在本任务内合并或发布。
 - 阻塞项：仓库全量 Vitest 当前不全绿，详见 validation；不影响本次聚焦用例与国内构建结论。

@@ -44,7 +44,7 @@ afterEach(cleanup);
 
 describe("SubscribePageClient", () => {
   it("keeps only the login action in the subscribe page header", () => {
-    render(<SubscribePageClient locale="zh-CN" localized={false} />);
+    render(<SubscribePageClient />);
 
     expect(screen.getByTestId("header-auth-island")).toHaveAttribute(
       "data-login-only",
