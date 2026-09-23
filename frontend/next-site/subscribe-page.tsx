@@ -96,10 +96,10 @@ const matchBundleTier = (bundleName: string | undefined) => {
  * —— 该字段在本文件内存在两套单位口径（小数 `0<d<1` 与百分数 `50`），
  * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
  *
- * 站点口径差异（本次需求仅调整国际站，国内站维持现状）：
+ * 站点口径差异：
  *   - 国际站启航 AI：`首单免费 7 天`（**仅新用户**，见下方 isNewUser 门禁）
  *   - 国际站巡游 AI：`首月 6 折`
- *   - 国内站启航 / 巡游 AI：`首月 6 折`（与改动前一致）
+ *   - 国内站启航 AI：`首单免费 1 个月`（仅零元新用户）；巡游 AI：`首月 6 折`
  *
  * 国际站标签必须同时匹配用户资格和真实询价：
  *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 7 天」；
@@ -115,11 +115,11 @@ const aiPromoTagText = (
   isNewUser: boolean,
   price?: BundlePrice | null,
 ): string | undefined => {
-  /* 启航 AI 零元新用户「首单免费」标签（国内外统一门禁，天数不同）：
-     国际站 7 天、国内站 3 天。巡游 AI 无免费试用，走下方折扣分支。
+  /* 启航 AI 零元新用户「首单免费」标签（国内外统一门禁，时长不同）：
+     国际站 7 天、国内站 1 个月。巡游 AI 无免费试用，走下方折扣分支。
      注意 t() 必须直接消费字面量（i18n-extract 静态扫描，三元内联字符串扫不到）。 */
   if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
-    return isGlobal ? t("首单免费 7 天") : t("首单免费 3 天");
+    return isGlobal ? t("首单免费 7 天") : t("首单免费 1 个月");
   }
   if (isGlobal) {
     const discountRate = actualDiscountRate(price);
@@ -445,6 +445,15 @@ const __markBundleTypeTabsForI18n = (t: (zh: string, opts?: Record<string, unkno
   void t("其他");
 };
 
+/* 国内套餐每台 Agent 的 Bot 数，与 agent-context.tsx 的 resolveBotQuotaPerAgent 保持一致。
+   仅用于权益展示，不能用 bundle.agent_quota（Agent 实例数）替代。 */
+const CN_BOT_COUNT_BY_BUNDLE: Readonly<Record<string, number>> = {
+  bundle_launch_01: 5,
+  bundle_launch_ai_01: 5,
+  bundle_cruise_01: 10,
+  bundle_cruise_ai_01: 10,
+};
+
 const mapBundleToPlan = (
   bundle: Bundle,
   index: number,
@@ -496,9 +505,15 @@ const mapBundleToPlan = (
       ? t("日常主力，让智能化成为习惯")
       : "";
 
-  /* agent_quota 打头阵 */
-  if (bundle.agent_quota > 0) {
-    features.push({ icon: iconMap.user, label: "Agent", value: `${bundle.agent_quota} ${t("个")}` });
+  const displayedBotCount = isGlobal
+    ? bundle.agent_quota
+    : CN_BOT_COUNT_BY_BUNDLE[bundle.bundle_id] ?? bundle.agent_quota;
+  if (displayedBotCount > 0) {
+    features.push({
+      icon: iconMap.user,
+      label: isGlobal ? "Agent" : t("Bot 数"),
+      value: `${displayedBotCount} ${t("个")}`,
+    });
   }
   /* description 里的其他卖点（已出现的 Agent/积分不重复添加）*/
   /* 「独立环境」「专属云端存储」前端统一规格并固定顺序展示，其余项顺延 */
@@ -614,8 +629,7 @@ const mapBundleToPlan = (
   let price = "";
   let originalPrice: string | undefined;
   let promoTag: string | undefined;
-  /* 需求4：是否可享受「免费 14 天 0 元下单」——命中即把 CTA 文案改为「免费开通」。
-     当前口径：国内付费启航标准版（非 AI 增强、无后端折扣）享 14 天免费试用、首单 0 元。 */
+  /* 是否可享受首单零元下单，供 CTA 展示使用；活动时长由各站点角标文案给出。 */
   let isZeroDownFreeTrial = false;
   if (paid) {
     const currency = bundle.price?.currency ?? "CNY";
@@ -645,7 +659,7 @@ const mapBundleToPlan = (
       if (durationKey === "quarterly") {
         /* 季付：静态 price 已内置折扣（标准版 8.5 折 / AI 增强版 9 折，见 STATIC_*_DISCOUNT），
            结构与登录后询价一致（total_cost=原价 / real_total_cost=折后价）。此处仅取原价展示删除线，
-           不套用月付促销（免费14天 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
+           不套用月付促销（首单免费 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
            折扣角标（如「8.5折」）由后续 promoTag 分支按 price.discount 计算。标准版与 AI 增强版一致。 */
         if (isLaunch || isCruise) {
           const staticOriginalYuan = bundle.price
@@ -660,15 +674,15 @@ const mapBundleToPlan = (
           }
         }
       } else if (isLaunch && notAi) {
-        displayPriceYuan = 0; // 月付：免费 14 天 → ¥0
+        displayPriceYuan = 0; // 月付：首单免费 1 个月 → ¥0
         originalPriceYuan = realPriceYuan; // 原价展示
       } else if (isCruise && notAi) {
         displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 月付：首月 5 折
         originalPriceYuan = realPriceYuan; // 原价展示
       } else if (isLaunch && !notAi) {
-        /* 启航 AI 增强版月付：首单免费 3 天 → ¥0（2026-09-02 国内站口径，参考国际站启航 AI）。
+        /* 启航 AI 增强版月付：首单免费 1 个月 → ¥0（国内站活动角标口径）。
            静态构建时 real_total_cost 已置 0（见 buildStaticPriceWithAiTier），realPriceYuan 即 0；
-           原价走静态 total_cost 展示删除线。「首单免费 3 天」标签由 aiPromoTagText 免费门禁给出。 */
+           原价走静态 total_cost 展示删除线。「首单免费 1 个月」标签由 aiPromoTagText 免费门禁给出。 */
         displayPriceYuan = 0;
         originalPriceYuan =
           bundle.price?.total_cost != null ? centsToYuan(bundle.price.total_cost) : null;
@@ -694,7 +708,7 @@ const mapBundleToPlan = (
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
     if (durationKey === "quarterly") {
-      /* 季付：不展示月付首期促销（免费14天 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
+      /* 季付：不展示月付首期促销（首单免费 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
          折扣直接由「折后价 / 原价」比值算出（originalPriceYuan=原价、displayPriceYuan=折后价，前面价格逻辑已备好），
          登录取后端 total_cost/real_total_cost、未登录取静态价，口径一致，不依赖后端 discount 字段口径。
          无原价删除线（即无折扣）时不展示角标。 */
@@ -741,13 +755,13 @@ const mapBundleToPlan = (
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
           /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
-             国际站启航 AI「首单免费 7 天」，国内站启航 AI 零元新用户「首单免费 3 天」。
+             国际站启航 AI「首单免费 7 天」，国内站启航 AI 零元新用户「首单免费 1 个月」。
              改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
              已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
           promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
         } else if (!isLoggedIn || backendDiscount === 0) {
-          /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
-          promoTag = t("首单免费 14 天");
+          /* 启航01：未登录直接展示「首单免费 1 个月」；已登录需 discount=0 */
+          promoTag = t("首单免费 1 个月");
           isZeroDownFreeTrial = true;
         }
       } else if (tier.isCruise) {
@@ -835,7 +849,7 @@ const mapBundleToPlan = (
       ? t("询价中...")
       : priceUnavailable
         ? t("暂无报价")
-        : /* 可享免费 14 天的零元下单，或内测「免费订阅」引导态，显示「免费订阅」。
+        : /* 可享首单免费的零元下单，或内测「免费订阅」引导态，显示「免费订阅」。
              国际站启航标准版 / AI 版均须同时满足新用户、月付、实付为零。
              已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。
              季付无首期免费试用，freeTrialEligibleDuration=false 时统一收口为「立即订阅」。 */
@@ -1098,7 +1112,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       return buildIntlStaticPrice(STATIC_INTL_PRICE_USD[tier][kind][durationKey]);
     }
     if (kind === "ai") {
-      /* 月付：启航 AI 首单免费 3 天 → discount=0（real_total_cost=0，配合 mapBundleToPlan
+      /* 月付：启航 AI 首单免费 1 个月 → discount=0（real_total_cost=0，配合 mapBundleToPlan
          置 ¥0 与 aiPromoTagText 免费门禁）；巡游 AI 维持原价（real），由 mapBundleToPlan ×0.6。
          季付：统一 9 折不变。 */
       const monthlyDiscount = tier === "launch" ? 0 : 1.0;
@@ -1136,7 +1150,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       time_span: 7,
       time_unit: "d",
     },
-    /* 启航 Launch —— 标准版（可购买、露真实价，促销「免费 14 天」）+ AI 增强版（敬请期待） */
+    /* 启航 Launch —— 标准版（可购买、露真实价，促销「首单免费 1 个月」）+ AI 增强版（敬请期待） */
     {
       ...base,
       bundle_id: "bundle_launch_01",
@@ -1296,8 +1310,10 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
       description: t(def.description),
       features: def.features.map((f) => ({
         icon: iconMap[f.iconKey],
-        label: t(f.label),
-        value: f.value ? t(f.value) : undefined,
+        label: !isGlobal && f.label === "Agent" ? t("Bot 数") : t(f.label),
+        value: !isGlobal && f.label === "Agent"
+          ? `10 ${t("个")}`
+          : f.value ? t(f.value) : undefined,
         hasCheck: f.hasCheck,
       })),
       ctaLabel: releasedForGlobal ? t("立即订阅") : t(def.ctaLabel),
@@ -1650,6 +1666,19 @@ const PlanCard = ({
                 >
                   <Zap style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
                   <span>{v.raw.credit}</span>
+                  {isCN && v.raw.bundle_type === BUNDLE_TYPE_AI && tierOfPlan(v) !== null && (
+                    <span
+                      style={{
+                        color: "#B82E6B",
+                        fontSize: 11,
+                        fontWeight: 500,
+                        lineHeight: 1.2,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {t("推荐")}
+                    </span>
+                  )}
                 </button>
               );
             })}
