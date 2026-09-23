@@ -3288,6 +3288,20 @@ api_get() {
 api_post_json() {
   printf '%s' "$3"
 }
+jq() {
+  if [[ "$1" == "-r" && "$2" == "--arg" && "$3" == "ids" ]]; then
+    cat >/dev/null
+    printf '%s\n' 'sku-hermes-2c8g50g'
+    return
+  fi
+  if [[ "$1" == "-c" && "$2" == "--arg" && "$3" == "id" ]]; then
+    cat >/dev/null
+    printf '%s\n' '{"id":"sku-hermes-2c8g50g","template_class_id":"openclaw-2c8g50g","base_image":"img-jhb","desired_image_id":"img-jhb","stable_image_id":"img-old","rollout_state":"rolling","last_rollout_error":""}'
+    return
+  fi
+  cat >/dev/null
+  printf '%s\n' $'sku-hermes-2c8g50g\timg-jhb\timg-jhb\timg-old\trolling\t'
+}
 refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
 '''
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
