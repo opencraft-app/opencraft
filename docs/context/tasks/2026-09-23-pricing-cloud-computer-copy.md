@@ -4,7 +4,7 @@
 ## non_goals
 - 不调整套餐价格、权益数值、计费流程或运行时资源分配。
 - 不重写定价页其他营销文案。
-- 不执行提交、推送、MR、发布或生产操作。
+- 不执行合并、发布或生产操作；提交与 MR 已由用户于 2026-09-24 单独授权。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户会话（2026-09-23）：采用 `Dedicated cloud environment`，规格使用 `2 vCPU · 8 GB RAM` / `4 vCPU · 16 GB RAM`，存储使用 `50 GB` / `80 GB`。
@@ -49,6 +49,9 @@
 | `docs/context/project/services/frontend.md@e51dc8196` | 前端服务门禁 | 确定测试、check 与构建要求 |
 | `frontend/AGENTS.md@e51dc8196` | 最近服务级指令 | 遵守前端实现与验证规则 |
 | `frontend/DESIGN.md@e51dc8196` | 定价卡现有设计约束 | 确认本任务不扩张为视觉重构 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@32a6a807d` | MR 交付边界 | 区分源码修复、CI 检查和合并 |
+| `docs/context/project/services/ci.md@32a6a807d`、`docs/context/domains/release-gitops.md@32a6a807d`、`.ci/AGENTS.md@32a6a807d` | CI guard 与授权边界 | 定位 trusted guard 和验证要求 |
+| `opencraft/AGENTS.md@32a6a807d`、`opencraft/MONO2_MIGRATION.md@32a6a807d` | vendored 同步规则 | 生成而不手改 OpenCraft 副本 |
 
 ## evidence
 - `corepack pnpm@10.23.0 exec vitest run next-site/__tests__/subscribe-page.global.test.tsx next-site/__tests__/subscribe-page.test.tsx --api.host 127.0.0.1`：2 个文件、73 个用例通过。
@@ -63,6 +66,10 @@
 - 2026-09-24 增量修改后重跑 `pnpm check`、`build:global`、`build:cn`：全部通过；TypeScript 171 current / 171 baseline / 0 new，双站分别生成 664 / 106 个静态页面。
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`：使用临时 index 校验通过，无命中 change-impact 规则。
 - 全量 `pnpm test` 未通过：3704 个通过、136 个失败、13 个跳过，并出现 worker OOM；失败集中在模型配置测试缺少 Python `cryptography`、现有国际路由/文档资源断言、CSS 导入等非本任务路径。本任务聚焦套件在全量运行后再次验证仍为 73/73 通过。
+- 2026-09-24 MR !4576 CI 日志：frontend guard 通过，7 个测试文件共 130 个用例通过，CN/Global 构建分别完成 106/664 页；真正失败点为 trusted `opencraft_guard.sh` 未初始化 Node，runner 报 `node: command not found`。MDX deprecated option 与 i18n 空白提示未使 frontend guard 失败。
+- 2026-09-24 重新运行 `node opencraft/scripts/sync-mono2-agent-console.mjs`：同步 130 个文件，仅 12 个 vendored 文件有差异；`npm --prefix opencraft run check:mono2-agent-console` 和 `npm --prefix opencraft run typecheck --workspace @opencraft/plugin-lightvela-hermes` 通过。
+- 独立 `origin/master` worktree 中已准备 `.ci/checks/opencraft_guard.sh` 的 Node bootstrap 修复；聚焦 guard 测试 7/7 通过。完整 `.ci/runtime/check_ci_runtime.sh` 在本机临时 PyYAML 环境运行至 592 个单测，19 个因 macOS Apple Git 2.24 不支持 `git init -b` 而失败，并非该补丁诊断。
+- 用户确认后，独立 CI 修复已提交为 MR !4603，源分支 `codex/fix-opencraft-guard-node`，目标 `master`；!4576 的生成副本仍需单独提交并待 !4603 合入后复验 CI。
 
 ## risks
 - 英文后端 Key 与中文 Key 并存导致重复；通过语义别名归一化和英文回归用例覆盖。
@@ -97,24 +104,26 @@
 - 套餐页属于既有正式产品文档，内容分类状态原本已是 `CN ✓ | GLOBAL ✓`，无需变更；本次没有新增或替换图片。
 - 国内站与国际站共用映射逻辑，两个生产构建均通过。
 - 截图中的英文后端权益 Key 和旧规格来自线上版本；当前工作树已有对应修复，本次补齐全语言回归及免费链路/错误状态的漏翻。代码和构建完成不代表线上已更新。
-- OpenCraft 机械副本未同步：`npm run check:mono2-agent-console` 在本次词典文件之前即因 `contexts/runtime-config-context.tsx` 的既有漂移失败；为避免把无关上游漂移并入本任务，没有执行全量同步。
+- OpenCraft 机械副本原本未同步；CI 失败后确认 `opencraft` guard 必须先有 Node，且本分支现有 vendored 文件确有漂移。已按生成脚本同步并本地验证，尚未提交或推送。
 - 用户于 2026-09-24 明确授权提交 MR；合并与发布仍需独立指令。
 
 ## stage
-本地实现与验证完成，提交 MR 中；不包含合并或发布。
+MR !4576 已打开；独立 `.ci` trusted guard 补丁已提交为 MR !4603，原 MR 的 vendored 同步待提交；不包含合并或发布。
 
 ## verified
 - 国际站七种字典的英文后端权益、免费链路价格单位与套餐加载错误组件回归通过。
 - `pnpm check`、CN/Global 构建及 `git diff --check` 通过。
+- 原 MR 的 OpenCraft 同步校验和插件 TypeScript 检查通过；独立 CI 补丁聚焦测试 7/7 通过。
 
 ## unverified
 - 线上 `lightvela.ai/zh-sg/subscribe` 尚未发布本工作树改动，截图中的线上现状不能由本地构建证明已修复。
+- MR !4603 尚未合入；trusted guard 只有进入 `master` 后才会用于原 MR 的 CI。未验证 !4576 新提交的远端 CI 结果。
 
 ## discard
 - 旧线上截图所示 `2核 4G` 规格不是当前工作树的规格；本地使用 `2 vCPU · 8 GB 内存`。
 
 ## restore
-- 在隔离工作树 `/Users/pablozhong/.codex/worktrees/pricing-cloud-computer-copy/lightvela` 续接；主工作区改动不参与本任务。
+- 在隔离工作树 `/Users/pablozhong/.codex/worktrees/pricing-cloud-computer-copy/lightvela` 续接原 MR 的生成物；CI-only 补丁在 `/Users/pablozhong/.codex/worktrees/opencraft-guard-node/lightvela`。主工作区改动不参与本任务。
 
 ## next_action
-- 创建并核验 Gongfeng MR，记录 source SHA、目标分支与 CI 即时状态。
+- 提交并核验 !4576 的 vendored 生成物；待 !4603 经独立审批合入 `master` 后复验 !4576 CI，不自行合并或发布。
