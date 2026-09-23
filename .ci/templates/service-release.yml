@@ -207,6 +207,33 @@ stages:
                 esac
               }
               SOURCE_BRANCH="$(resolve_source_branch '${{ ci.branch }}')"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]; then
+                SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+                CI_SHA_VALUE='${{ ci.sha }}'
+                if [[ -z "$CI_SHA_VALUE" || "$CI_SHA_VALUE" == *'${{'* ]]; then
+                  CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+                fi
+                TARGET_ENV="${{ variables.TARGET_ENV }}"
+                if [[ "$SOURCE_BRANCH" != "master" ]]; then
+                  echo "playground-build must run from master, got ${SOURCE_BRANCH:-empty}" >&2
+                  exit 1
+                fi
+                if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" != "$CI_SHA_VALUE" || "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+                  echo "playground-build source mismatch: source=${SOURCE_SHA:-empty} ci=${CI_SHA_VALUE:-empty} head=$(git rev-parse HEAD)" >&2
+                  exit 1
+                fi
+                case "$TARGET_ENV" in
+                  sandbox-bj-*|sandbox-kr-*)
+                    ;;
+                  *)
+                    echo "playground-build only supports sandbox-bj-* or sandbox-kr-*: ${TARGET_ENV:-empty}" >&2
+                    exit 1
+                    ;;
+                esac
+                BUILD_ENVS="$TARGET_ENV"
+                AUTO_PIN_ENVS="$TARGET_ENV"
+                echo "Playground 发布决策：master 精确提交 $SOURCE_SHA 构建 ${{ parameters.DISPLAY_NAME }} 并自动 pin ${TARGET_ENV}"
+              else
               case "$SOURCE_BRANCH" in
                 master)
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
@@ -224,6 +251,7 @@ stages:
                   exit 1
                   ;;
               esac
+              fi
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
               export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
@@ -280,6 +308,33 @@ stages:
                 esac
               }
               SOURCE_BRANCH="$(resolve_source_branch '${{ ci.branch }}')"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]; then
+                SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+                CI_SHA_VALUE='${{ ci.sha }}'
+                if [[ -z "$CI_SHA_VALUE" || "$CI_SHA_VALUE" == *'${{'* ]]; then
+                  CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+                fi
+                TARGET_ENV="${{ variables.TARGET_ENV }}"
+                if [[ "$SOURCE_BRANCH" != "master" ]]; then
+                  echo "playground-build must run from master, got ${SOURCE_BRANCH:-empty}" >&2
+                  exit 1
+                fi
+                if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" != "$CI_SHA_VALUE" || "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+                  echo "playground-build source mismatch: source=${SOURCE_SHA:-empty} ci=${CI_SHA_VALUE:-empty} head=$(git rev-parse HEAD)" >&2
+                  exit 1
+                fi
+                case "$TARGET_ENV" in
+                  sandbox-bj-*|sandbox-kr-*)
+                    ;;
+                  *)
+                    echo "playground-build only supports sandbox-bj-* or sandbox-kr-*: ${TARGET_ENV:-empty}" >&2
+                    exit 1
+                    ;;
+                esac
+                BUILD_ENVS="$TARGET_ENV"
+                AUTO_PIN_ENVS="$TARGET_ENV"
+                echo "Playground 发布决策：master 精确提交 $SOURCE_SHA 校验 ${{ parameters.DISPLAY_NAME }} 并自动 pin ${TARGET_ENV}"
+              else
               case "$SOURCE_BRANCH" in
                 master)
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
@@ -297,6 +352,7 @@ stages:
                   exit 1
                   ;;
               esac
+              fi
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
               export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"

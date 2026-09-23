@@ -2753,6 +2753,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_workflow_supports_exact_master_playground_build(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+
+        self.assertIn('PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"', workflow_text)
+        self.assertIn('if [[ "$PIPELINE_MODE_VALUE" == "playground-build" ]]', workflow_text)
+        self.assertIn('SOURCE_SHA="${{ variables.SOURCE_SHA }}"', workflow_text)
+        self.assertIn('TARGET_ENV="${{ variables.TARGET_ENV }}"', workflow_text)
+        self.assertIn('if [[ "$SOURCE_BRANCH" != "master" ]]', workflow_text)
+        self.assertIn('SOURCE_BRANCH="${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"', workflow_text)
+        self.assertIn('"$(git rev-parse HEAD)" != "$SOURCE_SHA"', workflow_text)
+        self.assertIn('sandbox-bj-*|sandbox-kr-*)', workflow_text)
+        self.assertIn('BUILD_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('AUTO_PIN_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('frontend-${TARGET_ENV}-${SHORT_SHA}', workflow_text)
+        self.assertEqual(
+            workflow_text.count('|| "${{ variables.PIPELINE_MODE }}" == "playground-build"'),
+            2,
+        )
+        self.assertIn('if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"', workflow_text)
+
     def test_frontend_checkouts_disable_virtual_merge(self) -> None:
         for workflow_path in (".ci/frontend.yml", ".ci/frontend-preview.yml"):
             with self.subTest(workflow=workflow_path):
@@ -3726,6 +3746,24 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn('case "$SOURCE_BRANCH" in', template_text)
         self.assertIn('PLAYGROUND_ENV="$SOURCE_BRANCH"', template_text)
         self.assertIn('unsupported source branch for release: ${SOURCE_BRANCH:-unknown}', template_text)
+
+    def test_service_release_supports_exact_master_playground_build(self) -> None:
+        template_text = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+
+        self.assertEqual(template_text.count('if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]'), 2)
+        self.assertEqual(template_text.count('SOURCE_SHA="${{ variables.SOURCE_SHA }}"'), 3)
+        self.assertEqual(template_text.count('CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"'), 2)
+        self.assertEqual(template_text.count('if [[ "$SOURCE_BRANCH" != "master" ]]'), 2)
+        self.assertEqual(template_text.count('"$(git rev-parse HEAD)" != "$SOURCE_SHA"'), 2)
+        self.assertEqual(template_text.count('sandbox-bj-*|sandbox-kr-*)'), 2)
+        self.assertEqual(template_text.count('BUILD_ENVS="$TARGET_ENV"'), 2)
+        self.assertEqual(template_text.count('AUTO_PIN_ENVS="$TARGET_ENV"'), 2)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 构建', template_text)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 校验', template_text)
+        self.assertIn(
+            '${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master',
+            template_text,
+        )
 
     def test_service_release_creates_independent_prod_promote_candidates(self) -> None:
         template_path = REPO_ROOT / ".ci/templates/service-release.yml"
