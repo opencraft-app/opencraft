@@ -350,6 +350,12 @@ function ChangelogContent() {
     desc: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
     visual: "zeroTokenScheduledTasks",
   };
+  const multiBotEntry: ChangelogEntry = {
+    id: "multi-bot-creation",
+    title: t("LightVela 支持创建多个 Bot"),
+    desc: t("在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。"),
+    visual: "none",
+  };
 
   const changelogGroups: ChangelogMonthGroup[] = [
     ...(isGlobal
@@ -358,6 +364,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              multiBotEntry,
               zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
               {
@@ -442,6 +449,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              multiBotEntry,
               zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
               {

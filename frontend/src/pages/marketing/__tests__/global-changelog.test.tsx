@@ -53,6 +53,78 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("announces multi-Bot creation in every visible locale", async () => {
+    const multiBotCopies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 9 月",
+        title: "LightVela 支持创建多个 Bot",
+        description:
+          "在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。",
+      },
+      {
+        locale: "zh-Hant",
+        month: "2026 年 9 月",
+        title: "LightVela 支持創建多個 Bot",
+        description:
+          "在同一個 Agent 中創建多個 Bot，讓它們各司其職；每個 Bot 的記憶、技能、定時任務、模型和通道配置相互隔離。",
+      },
+      {
+        locale: "en-US",
+        month: "September 2026",
+        title: "LightVela Now Supports Multiple Bots",
+        description:
+          "Create multiple Bots in a single Agent, give each one a distinct role, and keep their memory, Skills, scheduled tasks, models, and channel settings isolated from one another.",
+      },
+      {
+        locale: "id-ID",
+        month: "September 2026",
+        title: "LightVela Kini Mendukung Beberapa Bot",
+        description:
+          "Buat beberapa Bot dalam satu Agent agar masing-masing menjalankan perannya sendiri, dengan memori, Skills, tugas terjadwal, model, dan konfigurasi channel yang saling terisolasi.",
+      },
+      {
+        locale: "es",
+        month: "Septiembre de 2026",
+        title: "LightVela Ahora Admite Varios Bots",
+        description:
+          "Crea varios Bots en un solo Agent para que cada uno cumpla su función, manteniendo aisladas entre sí la memoria, las Skills, las tareas programadas y las configuraciones de modelos y canales.",
+      },
+      {
+        locale: "ja-JP",
+        month: "2026年9月",
+        title: "LightVela で複数の Bot を作成可能に",
+        description:
+          "1 つの Agent に複数の Bot を作成して役割を分担し、各 Bot のメモリ、Skills、スケジュールタスク、モデル、チャンネル設定を相互に分離できます。",
+      },
+      {
+        locale: "ko-KR",
+        month: "2026년 9월",
+        title: "LightVela에서 여러 Bot 생성 지원",
+        description:
+          "하나의 Agent에 여러 Bot을 만들어 각자의 역할을 맡기고, Bot별 메모리, Skills, 예약 작업, 모델 및 채널 설정을 서로 분리할 수 있습니다.",
+      },
+    ] as const;
+
+    for (const copy of multiBotCopies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const septemberSection = screen.getByText(copy.month).closest("section");
+      expect(septemberSection).not.toBeNull();
+      const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
+      expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(heading.closest("article")?.querySelector("img")).toBeNull();
+      cleanup();
+    }
+  });
+
   it("announces zero-token notification and script tasks in every visible locale", async () => {
     const scheduledTaskCopies = [
       {
@@ -125,7 +197,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
-      expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute(
         "src",
@@ -207,7 +279,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const headings = within(septemberSection!).getAllByRole("heading");
-      expect(headings[1]).toHaveTextContent(copy.title);
+      expect(headings[2]).toHaveTextContent(copy.title);
       expect(within(septemberSection!).getByRole("heading", { name: copy.title })).toBeInTheDocument();
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));
