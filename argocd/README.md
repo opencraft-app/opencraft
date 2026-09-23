@@ -26,9 +26,9 @@
 当前访问入口：
 
 - HTTP:
-  - `http://9.208.245.238:32059`
+  - `http://9.135.92.56:32059`
 - HTTPS:
-  - `https://9.208.245.238:30547`
+  - `https://9.135.92.56:30547`
 
 登录说明：
 
@@ -117,6 +117,10 @@
   - 给 `argocd-repo-server` 注入 `ksops`
   - 挂载 `sops-age`
   - 配置 `KUSTOMIZE_PLUGIN_HOME`
+- `argocd/runtime/beijing-sandbox/argocd-cmd-params-cm.yaml`
+  - 为国内控制面访问跨地域 API Server 提供显式 TCP/TLS 预算
+- `argocd/runtime/beijing-sandbox/argocd-server-service.yaml`
+  - 固化 HTTP/HTTPS NodePort 入口
 
 这层现在由 `argocd-runtime-beijing-sandbox` 自己同步，避免重装后还要手工 patch repo-server。
 
@@ -124,24 +128,27 @@
 
 如果要在一套新的 Argo CD 上恢复北京环境，顺序固定如下：
 
-1. 准备 repo 凭据
+1. 安装固定版本的单节点 k0s 与 Argo CD 基线
+   - 使用 [bootstrap_argocd_control_plane.sh](../scripts/bootstrap_argocd_control_plane.sh)
+   - 该脚本不读取或生成业务 Secret
+2. 准备 repo 凭据
    - `git.woa.com` 的 repo creds
    - `mono2` repository object
-2. 注入 `sops-age`
+3. 注入 `sops-age`
    - 这是 Git 外的唯一必需前置 Secret
    - 用：
      - [bootstrap_argocd_sops_age.sh](../scripts/bootstrap_argocd_sops_age.sh)
-3. 注册北京目标集群
+4. 注册目标集群
    - cluster name 必须叫 `beijing-sandbox`
-4. apply 北京 projects
+5. apply 北京 projects
    - `beijing-argocd-runtime`
    - `beijing-root`
    - `beijing-sandbox`
-5. apply `root-beijing-sandbox`
-6. 等 root app 自动创建：
+6. apply `root-beijing-sandbox`
+7. 等 root app 自动创建：
    - `argocd-runtime-beijing-sandbox`
    - 所有北京 leaf apps
-7. 验证：
+8. 验证：
    - root app `Synced/Healthy`
    - runtime app `Synced/Healthy`
    - 北京 leaf apps 全部 `Synced/Healthy`
