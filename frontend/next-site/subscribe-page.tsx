@@ -18,7 +18,7 @@ import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } from "@/domain/types";
 import { REALNAME_LEVEL } from "@/domain/types";
-import { useT } from "@/i18n/t";
+import { useCurrentLocale, useT, type I18nLocale } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { cn } from "@/lib/utils";
@@ -74,6 +74,16 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
 } as const;
 /** AI 增强版套餐类型标识（启航 AI 对新用户提供 1 个月免费，巡游 AI 为首购折扣） */
 const BUNDLE_TYPE_AI = "ai";
+/** 套餐选项专用短标签，避免影响其他场景的完整“推荐”译文。 */
+const PLAN_RECOMMENDATION_BY_LOCALE: Record<I18nLocale, string> = {
+  "zh-CN": "推荐",
+  "zh-Hant": "推薦",
+  "en-US": "Top pick",
+  "id-ID": "Pilihan",
+  es: "Sugerido",
+  "ja-JP": "推奨",
+  "ko-KR": "추천",
+};
 /** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
 const CRUISE_BUNDLE_NAME_KEYWORDS = {
   zh: "巡游",
@@ -497,15 +507,13 @@ const mapBundleToPlan = (
       ? t("日常主力，让智能化成为习惯")
       : "";
 
-  /* 国内四档展示每台实例内的 Bot 上限；agent_quota 仍决定可创建的 Hermes 实例数量。 */
-  const displayedBotCount = isGlobal
-    ? bundle.agent_quota
-    : BOT_QUOTA_BY_BUNDLE[bundle.bundle_id] ?? bundle.agent_quota;
+  /* 双站四档展示每台实例内的 Bot 上限；agent_quota 仍决定可创建的 Hermes 实例数量。 */
+  const displayedBotCount = BOT_QUOTA_BY_BUNDLE[bundle.bundle_id] ?? bundle.agent_quota;
   if (displayedBotCount > 0) {
     features.push({
       icon: iconMap.user,
-      label: isGlobal ? "Agent" : t("Bot 数"),
-      value: `${displayedBotCount} ${t("个")}`,
+      label: t("Bot 数"),
+      value: isGlobal ? String(displayedBotCount) : `${displayedBotCount} ${t("个")}`,
     });
   }
   /* description 里的其他卖点（已出现的 Agent/积分不重复添加）*/
@@ -1300,9 +1308,9 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
       description: t(def.description),
       features: def.features.map((f) => ({
         icon: iconMap[f.iconKey],
-        label: !isGlobal && f.label === "Agent" ? t("Bot 数") : t(f.label),
-        value: !isGlobal && f.label === "Agent"
-          ? `${BOT_QUOTA_BY_BUNDLE.bundle_cruise_01} ${t("个")}`
+        label: f.label === "Agent" ? t("Bot 数") : t(f.label),
+        value: f.label === "Agent"
+          ? isGlobal ? String(BOT_QUOTA_BY_BUNDLE.bundle_cruise_01) : `${BOT_QUOTA_BY_BUNDLE.bundle_cruise_01} ${t("个")}`
           : f.value ? t(f.value) : undefined,
         hasCheck: f.hasCheck,
       })),
@@ -1446,6 +1454,7 @@ const PlanCard = ({
   onVariantChange?: (bundleId: string) => void;
 }) => {
   const t = useT();
+  const locale = useCurrentLocale();
   /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
      价格 / 积分 / 折扣 / 下单套餐随之联动。国内外统一默认选 AI 增强版
      （启航 4500 / 巡游 10000）。 */
@@ -1638,7 +1647,10 @@ const PlanCard = ({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  className="min-h-11 min-w-0 flex-1 justify-center px-3 py-1.5 tabular-nums md:normal-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:min-h-0 md:flex-none md:justify-start md:px-3.5 md:py-[5px]"
+                  className={cn(
+                    "min-h-11 justify-center py-1.5 tabular-nums md:normal-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:min-h-0 md:flex-none md:justify-start md:px-3.5 md:py-[5px]",
+                    isGlobal ? "min-w-max flex-auto px-2" : "min-w-0 flex-1 px-3",
+                  )}
                   onClick={() => { setActiveVariantIdx(vi); onVariantChange?.(v.id); }}
                   style={{
                     display: "inline-flex",
@@ -1658,7 +1670,7 @@ const PlanCard = ({
                 >
                   <Zap aria-hidden="true" className="shrink-0" style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
                   <span>{v.raw.credit}</span>
-                  {isCN && v.raw.bundle_type === BUNDLE_TYPE_AI && tierOfPlan(v) !== null && (
+                  {v.raw.bundle_type === BUNDLE_TYPE_AI && tierOfPlan(v) !== null && (
                     <span
                       style={{
                         color: colors.recommendationText,
@@ -1668,7 +1680,7 @@ const PlanCard = ({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {t("推荐")}
+                      {PLAN_RECOMMENDATION_BY_LOCALE[locale]}
                     </span>
                   )}
                 </button>

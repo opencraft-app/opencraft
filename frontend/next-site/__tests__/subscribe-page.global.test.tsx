@@ -105,7 +105,10 @@ vi.mock("@/i18n/t", async importOriginal => {
   const translate = (zh: string, opts?: Record<string, unknown>) => zh.replace(
     /\{\{(\w+)\}\}/g, (placeholder, key: string) => opts?.[key] == null ? placeholder : String(opts[key]),
   );
-  return { ...actual, useT: () => {
+  return { ...actual, useCurrentLocale: () => {
+    const locale = actual.useCurrentLocale();
+    return translationState.real ? locale : "zh-CN";
+  }, useT: () => {
     const t = actual.useT();
     return translationState.real ? t : translate;
   } };
@@ -407,11 +410,13 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const launchCard = getTierCard("启航 Launch");
     const cruiseCard = getTierCard("巡游 Cruise");
-    expect(within(launchCard).getByText("Agent").closest("li")).toHaveTextContent("1 个");
-    expect(within(cruiseCard).getByText("Agent").closest("li")).toHaveTextContent("1 个");
-    expect(screen.queryByText("Bot 数")).not.toBeInTheDocument();
-    expect(within(launchCard).queryByText("推荐")).not.toBeInTheDocument();
-    expect(within(cruiseCard).queryByText("推荐")).not.toBeInTheDocument();
+    expect(within(launchCard).getByText("Bot 数").closest("li")).toHaveTextContent(/^Bot 数5$/);
+    expect(within(cruiseCard).getByText("Bot 数").closest("li")).toHaveTextContent(/^Bot 数10$/);
+    expect(screen.queryByText("Agent")).not.toBeInTheDocument();
+    expect(within(getCreditTab("4500")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("10000")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("100")).queryByText("推荐")).not.toBeInTheDocument();
+    expect(within(getCreditTab("200")).queryByText("推荐")).not.toBeInTheDocument();
 
     /* 默认 AI 增强版（国际站顺序调整，2026-08-27）：启航新用户 1 个月免费；巡游首购 6 折。 */
     expectTierPrice(launchCard, "$0.00", "$10.00");
@@ -428,6 +433,66 @@ describe("SubscribePage intl AI promo tags", () => {
     });
     expect(within(launchCard).getByText("首单免费 1 个月")).toBeInTheDocument();
     expect(within(cruiseCard).getByText("首月 5 折")).toBeInTheDocument();
+    expect(within(launchCard).getByText("Bot 数").closest("li")).toHaveTextContent(/^Bot 数5$/);
+    expect(within(cruiseCard).getByText("Bot 数").closest("li")).toHaveTextContent(/^Bot 数10$/);
+    expect(within(getCreditTab("4500")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("10000")).getByText("推荐")).toBeInTheDocument();
+  });
+
+  it("shows logged-in Bot limits without changing the Hermes instance limit", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    openClawState.bots = [{ id: "hermes-1", status: "running" }, { id: "hermes-2", status: "running" }];
+    listBundlesMock.mockResolvedValue([
+      { ...buildLaunchStandardQuote(0), agent_quota: 2 },
+      { ...buildLaunchAiQuote(0), agent_quota: 2 },
+      { ...buildNestedBundle(), agent_quota: 2 },
+      { ...buildNestedBundle(), bundle_id: "bundle_cruise_01", bundle_type: "general", credit: 200, agent_quota: 2 },
+    ]);
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await waitFor(() => expect(getTierCard("巡游 Cruise")).toHaveTextContent("$48.00"));
+
+    const expectEntitlements = () => {
+      for (const [name, count] of [["启航 Launch", 5], ["巡游 Cruise", 10]] as const) {
+        const card = getTierCard(name);
+        expect(within(card).getByText("Bot 数").closest("li")).toHaveTextContent(new RegExp(`^Bot 数${count}$`));
+        expect(within(card).queryByText("Agent")).not.toBeInTheDocument();
+        // 已有 2 个 Hermes 达到后端实例上限；Bot 的 5/10 不能放宽订阅门禁。
+        expect(within(card).getByRole("button", { name: /免费订阅|立即订阅/ })).toBeDisabled();
+      }
+      expect(within(getCreditTab("4500")).getByText("推荐")).toBeInTheDocument();
+      expect(within(getCreditTab("10000")).getByText("推荐")).toBeInTheDocument();
+      expect(within(getCreditTab("100")).queryByText("推荐")).not.toBeInTheDocument();
+      expect(within(getCreditTab("200")).queryByText("推荐")).not.toBeInTheDocument();
+    };
+    expectEntitlements();
+    await userEvent.click(getCreditTab("100"));
+    await userEvent.click(getCreditTab("200"));
+    expectEntitlements();
+  });
+
+  it.each([
+    ["en-US", "Bots", "Top pick"],
+    ["zh-CN", "Bot 数", "推荐"],
+    ["zh-Hant", "Bot 數", "推薦"],
+    ["id-ID", "Jumlah Bot", "Pilihan"],
+    ["es", "Número de bots", "Sugerido"],
+    ["ja-JP", "Bot数", "推奨"],
+    ["ko-KR", "Bot 수", "추천"],
+  ] as const)("localizes Bot limits and AI recommendations in %s", async (locale, botLabel, recommendation) => {
+    translationState.real = true;
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<LocaleOverrideProvider locale={locale}><SubscribePage /></LocaleOverrideProvider>);
+    await waitFor(() => expect(screen.getAllByText(botLabel)).toHaveLength(2));
+    expect(screen.getAllByText(botLabel).map(label => label.closest("li")?.textContent)).toEqual([
+      `${botLabel}5`, `${botLabel}10`,
+    ]);
+    expect(screen.getAllByText(recommendation)).toHaveLength(2);
+    expect(within(getCreditTab("4500")).getByText(recommendation)).toBeInTheDocument();
+    expect(within(getCreditTab("10000")).getByText(recommendation)).toBeInTheDocument();
+    expect(within(getCreditTab("100")).queryByText(recommendation)).not.toBeInTheDocument();
+    expect(within(getCreditTab("200")).queryByText(recommendation)).not.toBeInTheDocument();
   });
 
   /* 季付四档只展示静态季付折后价，不继承月付首期免费/首购标签。 */
