@@ -35,6 +35,7 @@ const seoSource = read("next-site/seo.tsx");
 const plansDoc = read("src/content/docs/plans.md");
 const overviewDoc = read("src/content/docs/01-overview.md");
 const announcementDoc = read("src/content/docs/announcements/public-beta.md");
+const geoFactTable = read("../wiki/product-state/geo-fact-table.md");
 
 /* ── 基准解析：从 subscribe-page.tsx 提取静态价表与折扣常量 ── */
 
@@ -244,6 +245,31 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
           round2(price.quarterly * discount),
         );
       }
+    });
+  });
+
+  describe("免费试用权益口径", () => {
+    it("GEO 主事实表与套餐页统一为 Launch / Launch AI 首单免费 1 个月", () => {
+      const pricingFacts = sectionOf(geoFactTable, "### 1.2 Launch 价格");
+      const trialFacts = sectionOf(geoFactTable, "### 1.3 免费试用");
+
+      expect(pricingFacts).toContain("启航 ¥0（首单免费 1 个月）");
+      expect(pricingFacts).toContain("启航 AI ¥0（首单免费 1 个月）");
+      expect(trialFacts).toContain("Launch / Launch AI 首单免费体验 **1 个月**");
+      expect(trialFacts).not.toMatch(/免费体验\s*\*\*(?:14|7|3)\s*天\*\*/);
+    });
+
+    it("订阅页不再保留旧 7 天试用的 i18n 占位标记", () => {
+      expect(subscribeSource).not.toContain('t("免费试用 7天")');
+    });
+
+    it("关闭计费开关时的兼容免费 Bundle 也使用 1 个月时长", () => {
+      const legacyIdIndex = subscribeSource.indexOf('bundle_id: "bundle_free_7d"');
+      expect(legacyIdIndex).toBeGreaterThan(-1);
+      const freeBundleBlock = subscribeSource.slice(legacyIdIndex, legacyIdIndex + 320);
+      expect(freeBundleBlock).toContain('time_span: 1');
+      expect(freeBundleBlock).toContain('time_unit: "m"');
+      expect(freeBundleBlock).not.toContain('time_span: 7');
     });
   });
 

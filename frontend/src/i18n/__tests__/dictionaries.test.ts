@@ -282,7 +282,6 @@ describe("韩语翻译完成门禁", () => {
     expect(koKR.k_248f81e2).toBe("무료 체험");
     expect(koKR.k_d88baed5).toBe("무료 체험");
     expect(koKR.k_fc115671).toBe("무료 체험");
-    expect(koKR.k_310eb572).toBe("7일 무료 체험");
     expect(koKR.k_5a84204f).toBe("무료 체험 선택");
     expect(koKR.k_4bfe1ed1).toBe("1개월 무료 체험");
     expect(koKR.k_14833b0a).toBe(

@@ -1135,7 +1135,8 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
   };
   return [
     /* 免费试用：仅在计费开关关闭（paidBillingActive=false）时经 planList 过滤后展示；
-       开关开启的付费场景会被 planList 过滤掉，与登录后一致。 */
+       开关开启的付费场景会被 planList 过滤掉，与登录后一致。
+       bundle_id 保留历史 `bundle_free_7d` 以兼容免费链路识别，展示时长按当前权益使用 1 个月。 */
     {
       ...base,
       bundle_id: "bundle_free_7d",
@@ -1145,8 +1146,8 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       agent_quota: 1,
       credit: 0,
       price: null,
-      time_span: 7,
-      time_unit: "d",
+      time_span: 1,
+      time_unit: "m",
     },
     /* 启航 Launch —— 标准版（可购买、露真实价，促销「首单免费 1 个月」）+ AI 增强版（敬请期待） */
     {
@@ -1274,7 +1275,6 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
  * 修改 PLACEHOLDER_PLAN_DEFS 时请同步更新此处。
  */
 const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
-  void t("免费试用 7天");
   void t("巡游 Cruise");
   void t("日常主力，让智能化成为习惯");
   void t("1 个");
