@@ -50,7 +50,7 @@ const preservedHarnessAssetNames = [
   "deepseek-harness-ko-kr.png",
 ];
 const preservedHarnessAssetNameSet = new Set(preservedHarnessAssetNames);
-const zhHantConverter = OpenCC.Converter({ from: "cn", to: "tw" });
+const zhHantConverter = OpenCC.Converter({ from: "cn", to: "hk" });
 const supportedLocales = ["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"];
 const sourceFileByLocale = {
   "en-US": "index-en.html",
@@ -3556,18 +3556,6 @@ const heroReportFragmentsByLocale = {
   ],
 };
 
-const zhHantHeroTerms = [
-  ["搜索", "搜尋"],
-  ["設置", "設定"],
-  ["信息", "資訊"],
-  ["芯片", "晶片"],
-  ["軟件", "軟體"],
-  ["網絡", "網路"],
-  ["光通信", "光通訊"],
-  ["寬度", "廣度"],
-  ["科技吸血", "科技股領漲"],
-];
-
 function localizeText(value, locale) {
   if (!value) return value;
   const exact = coreCopyByLocale[locale]?.[value];
@@ -3591,9 +3579,6 @@ function localizeHeroText(value, locale) {
   let localized = localizeText(value, locale);
   for (const [from, to] of heroReportFragmentsByLocale[locale] ?? []) {
     localized = localized.replaceAll(from, to);
-  }
-  if (locale === "zh-Hant") {
-    for (const [from, to] of zhHantHeroTerms) localized = localized.replaceAll(from, to);
   }
   return localized;
 }
@@ -5181,8 +5166,8 @@ function applyAboutCapabilityCards(document, locale) {
         ["slack.svg", "Slack"],
         ["qq.png", "QQ"],
         ["wechat.png", "微信"],
-        ["feishu.png", "飞书"],
-        ["dingtalk.png", "钉钉"],
+        ["feishu.png", locale === "zh-Hant" ? "飛書" : "飞书"],
+        ["dingtalk.png", locale === "zh-Hant" ? "釘釘" : "钉钉"],
       ];
       const logoItems = channelLogos
         .map(([src, name]) => `<li class="chnloop__item"><span class="chnloop__logo"><img src="/lightvela-intl-home/assets/${src}" alt="" draggable="false"></span><span>${name}</span></li>`)

@@ -35,7 +35,7 @@ describe('HomeMobileNavigation', () => {
 
     expect(screen.getByRole('region', { name: isGlobal ? '語言' : '语言' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Intl - English' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '中国站' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: isGlobal ? '中國站' : '中国站' })).toBeInTheDocument();
 
     if (isGlobal) {
       fireEvent.click(screen.getByRole('button', { name: 'Intl - Español' }));

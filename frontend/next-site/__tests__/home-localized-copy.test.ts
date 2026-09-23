@@ -37,8 +37,20 @@ describe('homepage localized copy', () => {
     const page = new DOMParser().parseFromString(markup, 'text/html');
     const demo = page.querySelector('.hero__frame')?.textContent ?? '';
     expect(demo).toContain('納斯達克熱門板塊速覽');
-    expect(demo).toContain('搜尋或開始新對話');
-    expect(demo).not.toMatch(/纳斯达克|软件|网络|搜索|设置|归档|后续|项目/);
+    expect(demo).toContain('搜索或開始新對話');
+    expect(demo).toContain('科技吸血');
+    expect(demo).not.toContain('科技股領漲');
+    expect(demo).not.toMatch(/搜尋|設定|資訊|晶片|軟體|網路|光通訊|廣度/);
+    expect(demo).not.toMatch(/纳斯达克|软件|网络|设置|归档|后续|项目/);
+  });
+
+  it('uses traditional brand names in the zh-Hant channel carousel', () => {
+    const markup = readFileSync(path.resolve('public/lightvela-intl-home/index-fragment.zh-Hant.html'), 'utf8');
+    const page = new DOMParser().parseFromString(markup, 'text/html');
+    const channelNames = page.querySelector('.chnloop__list:not([aria-hidden])')?.textContent ?? '';
+    expect(channelNames).toContain('飛書');
+    expect(channelNames).toContain('釘釘');
+    expect(channelNames).not.toMatch(/飞书|钉钉/);
   });
 
   it.each(expected)('keeps the full %s dictionary when adding Blog copy', (locale, home, pricing, docs, headline) => {
