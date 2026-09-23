@@ -65,6 +65,9 @@ master 源码
   只读预检和人工确认后，才能刷新 Pool 并通过 TAT 修补存量 VM。新加坡与新山共享 `sgprod`
   控制面时，Pool/VM 发现必须按 `pool.zone` 对应的 region 隔离；不得把新加坡目标带入新山阶段，
   也不得用跨地域共享 SKU 的单一全局镜像字段代替各 Pool 的地域权威 `base_image`。
+  仅存在于单一地域的 SKU 则必须同步更新 `desired_image_id`，避免 SKU rollout controller 将该地域
+  Pool 回写到旧的 stable image；是否更新 SKU 必须按每个 SKU 的 Pool 地域集合判断，不能按全部
+  Hermes Pool 是否跨地域进行一次性全局跳过。
   `images/hermes-image-trigger` 用于显式触发新版本构建，不能以仅同步镜像冒充新山 Pool 和存量 VM
   已完成发布。Runtime 验证只能从规范的 `Hermes Agent vX.Y.Z` 输出行提取版本，SSH 重试诊断、IP
   地址和传输错误不得参与版本匹配。
