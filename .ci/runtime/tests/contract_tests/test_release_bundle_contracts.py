@@ -3747,6 +3747,24 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn('PLAYGROUND_ENV="$SOURCE_BRANCH"', template_text)
         self.assertIn('unsupported source branch for release: ${SOURCE_BRANCH:-unknown}', template_text)
 
+    def test_service_release_supports_exact_master_playground_build(self) -> None:
+        template_text = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+
+        self.assertEqual(template_text.count('if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]'), 2)
+        self.assertEqual(template_text.count('SOURCE_SHA="${{ variables.SOURCE_SHA }}"'), 3)
+        self.assertEqual(template_text.count('CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"'), 2)
+        self.assertEqual(template_text.count('if [[ "$SOURCE_BRANCH" != "master" ]]'), 2)
+        self.assertEqual(template_text.count('"$(git rev-parse HEAD)" != "$SOURCE_SHA"'), 2)
+        self.assertEqual(template_text.count('sandbox-bj-*|sandbox-kr-*)'), 2)
+        self.assertEqual(template_text.count('BUILD_ENVS="$TARGET_ENV"'), 2)
+        self.assertEqual(template_text.count('AUTO_PIN_ENVS="$TARGET_ENV"'), 2)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 构建', template_text)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 校验', template_text)
+        self.assertIn(
+            '${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master',
+            template_text,
+        )
+
     def test_service_release_creates_independent_prod_promote_candidates(self) -> None:
         template_path = REPO_ROOT / ".ci/templates/service-release.yml"
         template_text = template_path.read_text()
