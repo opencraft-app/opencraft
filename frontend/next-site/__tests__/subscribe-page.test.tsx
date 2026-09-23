@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -211,7 +211,7 @@ describe("SubscribePage", () => {
 
     expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("订阅套餐");
     expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("加载套餐中...");
-    expect(screen.queryByRole("tab", { name: "4500" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^4500/ })).not.toBeInTheDocument();
 
     await act(async () => {
       resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
@@ -297,7 +297,7 @@ describe("SubscribePage", () => {
 
     render(<SubscribePage />);
 
-    await screen.findByRole("tab", { name: "4500" });
+    await screen.findByRole("tab", { name: /^4500/ });
 
     await waitFor(() => {
       expect(getCreditTabs().map(getCreditValue)).toEqual([
@@ -311,14 +311,53 @@ describe("SubscribePage", () => {
     expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "false");
     expect(getCreditTab("200")).toHaveAttribute("aria-selected", "false");
-    /* 启航 AI 默认选中且为首单免费 3 天（2026-09-02 国内站口径）：¥0 + 免费标签。
+    /* 启航 AI 默认选中且为首单免费 1 个月：¥0 + 免费标签。
        巡游 AI 无免费试用，仍展示「首月 6 折」（合法共存，不做否定断言）。 */
-    expect(screen.getAllByText("首单免费 3 天").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("首单免费 1 个月").length).toBeGreaterThanOrEqual(1);
+    await userEvent.click(getCreditTab("100"));
+    expect(screen.getByText("首单免费 1 个月")).toBeInTheDocument();
+    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
     expect(screen.queryByText("14天免费体验")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "退款规则" })).toHaveAttribute(
       "href",
       "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99",
     );
+  });
+
+  it.each([false, true])("shows fixed CN Bot counts for all four plans (logged in: %s)", async (loggedIn) => {
+    openClawState.isLoggedIn = loggedIn;
+    sessionState.isAuthenticated = loggedIn;
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("bundle_launch_01", "启航 Launch"), bundle_type: "general", credit: 100, agent_quota: 2 },
+      { ...buildBundle("bundle_launch_ai_01", "启航 Launch"), bundle_type: "ai", credit: 4500, agent_quota: 2 },
+      { ...buildBundle("bundle_cruise_01", "巡游 Cruise"), bundle_type: "general", credit: 200, agent_quota: 2 },
+      { ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"), bundle_type: "ai", credit: 10000, agent_quota: 2 },
+    ]);
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await screen.findByRole("tab", { name: /^4500/ });
+
+    const expectBotCount = (name: string, count: number) => {
+      const card = screen.getByRole("heading", { name }).parentElement?.parentElement?.parentElement;
+      if (!card) throw new Error(`Missing ${name} card`);
+      const row = within(card).getByText("Bot 数").closest("li");
+      expect(row).toHaveTextContent(`${count} 个`);
+      expect(within(card).queryByText("Agent")).not.toBeInTheDocument();
+    };
+    expectBotCount("启航 Launch", 5);
+    expectBotCount("巡游 Cruise", 10);
+    expect(within(getCreditTab("4500")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("10000")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("100")).queryByText("推荐")).not.toBeInTheDocument();
+    expect(within(getCreditTab("200")).queryByText("推荐")).not.toBeInTheDocument();
+    await userEvent.click(getCreditTab("100"));
+    await userEvent.click(getCreditTab("200"));
+    expectBotCount("启航 Launch", 5);
+    expectBotCount("巡游 Cruise", 10);
+    expect(within(getCreditTab("4500")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("10000")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("100")).queryByText("推荐")).not.toBeInTheDocument();
+    expect(within(getCreditTab("200")).queryByText("推荐")).not.toBeInTheDocument();
   });
 
   it("keeps quoted zero-price bundles on the legacy order flow in CN", async () => {

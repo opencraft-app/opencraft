@@ -410,6 +410,11 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const launchCard = getTierCard("启航 Launch");
     const cruiseCard = getTierCard("巡游 Cruise");
+    expect(within(launchCard).getByText("Agent").closest("li")).toHaveTextContent("1 个");
+    expect(within(cruiseCard).getByText("Agent").closest("li")).toHaveTextContent("1 个");
+    expect(screen.queryByText("Bot 数")).not.toBeInTheDocument();
+    expect(within(launchCard).queryByText("推荐")).not.toBeInTheDocument();
+    expect(within(cruiseCard).queryByText("推荐")).not.toBeInTheDocument();
 
     /* 默认 AI 增强版（国际站顺序调整，2026-08-27）：启航新用户 7 天免费；巡游首购 6 折。 */
     expectTierPrice(launchCard, "$0.00", "$10.00");
