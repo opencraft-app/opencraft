@@ -11,6 +11,12 @@ Credit 是付费积分包的业务真源。它持有积分商品、live/history 
 - `credit/migrations/`：商品、package、history、usage 和 ID 分配 schema。
 - `trade/internal/logic/credit*`：订单、计费回调、用量上报协议。
 
+## 方案文档
+
+- [国内站 Pass 续费接入点石方案](domestic-pass-renewal-dianshi-plan.md)：记录控制台单次续费活动、
+  Trade 内部无限次续费入口、点石适配及安全边界。该方案存放在计费域文档中，运行时实现仍
+  归属 CTL 和 Trade，Credit 不提供 Pass 续费能力。
+
 ## 关键边界
 
 - 积分包是一次性资源包，不提供续费。自然到期由 Credit 删除精确 LLMGateway 订阅并直接归档；

@@ -3,7 +3,7 @@
 //   - PlaceOrder + Resolver useDianshi=true → 走 placeOrderDianshi 调点石 do_goods
 //   - PlaceOrderAndPay + Resolver useDianshi=true → 同样走 placeOrderDianshi（点石不区分双步/一体化）
 //   - Resolver useDianshi=false → 完全走 jifei 原路径，断言点石未被调
-//   - PlaceRenewOrder / PlaceRenewOrderAndPay + Resolver 注入 → **不分叉**点石（设计稿 §5.5 续费写死 jifei）
+//   - 国内 PlaceRenewOrder 首次参与 → 点石 do_goods；国际站保持 jifei
 //   - 点石下单失败 → 返业务错，不写任何 trade_order 落地
 //   - check_sum：mapping.SecretKey 非空时 envelope.para 出现 check_sum；空时不出现
 package placeorder
@@ -28,6 +28,8 @@ type fakeResolver struct {
 	err                 error
 	resolveInquiryCalls atomic.Int32
 	resolvePlaceCalls   atomic.Int32
+	getMappingCalls     atomic.Int32
+	lastPlaceScene      store.ActivityScene
 }
 
 type fakeParticipationReader struct {
@@ -38,21 +40,46 @@ type fakeParticipationReader struct {
 	lastActID int64
 }
 
-func (f *fakeParticipationReader) HasUserParticipated(_ context.Context, uin string, activityID int64) (bool, error) {
+func (f *fakeParticipationReader) HasUserParticipated(_ context.Context, uin string, activityID int64, _ store.ActivityScene) (bool, error) {
 	f.calls.Add(1)
 	f.lastUin = uin
 	f.lastActID = activityID
 	return f.hit, f.err
 }
 
-func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForInquiry(_ context.Context, _ store.ActivityScene, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.resolveInquiryCalls.Add(1)
 	return f.mapping, f.useDianshi, f.err
 }
 
-func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, scene store.ActivityScene, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.resolvePlaceCalls.Add(1)
+	f.lastPlaceScene = scene
 	return f.mapping, f.useDianshi, f.err
+}
+
+func (f *fakeResolver) GetMapping(_ context.Context, scene store.ActivityScene, _ string) (*activity.Mapping, error) {
+	f.getMappingCalls.Add(1)
+	f.lastPlaceScene = scene
+	return f.mapping, f.err
+}
+
+type fakeDianshiRenewWriter struct {
+	calls         atomic.Int32
+	order         store.CreateOrderInput
+	participation store.UserActivityParticipation
+	err           error
+}
+
+func (f *fakeDianshiRenewWriter) CreateDianshiRenewOrderWithParticipation(
+	_ context.Context,
+	order store.CreateOrderInput,
+	participation store.UserActivityParticipation,
+) error {
+	f.calls.Add(1)
+	f.order = order
+	f.participation = participation
+	return f.err
 }
 
 // fakeDianshi 是 dianshiclient.Client 的测试替身。
@@ -611,20 +638,26 @@ func TestPlaceDianshiOrderAndPay_RejectsNonActivityBundle(t *testing.T) {
 	}
 }
 
-func TestPlaceRenewOrder_NeverDispatchesToDianshi(t *testing.T) {
-	// 续费链路即便 Resolver 注入也写死走 jifei（设计稿 §5.5）
+func TestPlaceRenewOrder_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 	d := newStdDeps()
 	d.bundle = &fakeBundleStore{def: stdRenewDef()}
-	r := &fakeResolver{mapping: stdActivityMapping(), useDianshi: true}
+	mapping := stdActivityMapping()
+	mapping.Scene = store.ActivitySceneRenew
+	mapping.ActivityID = 166165503931688
+	mapping.ActID = 1975812517099088
+	r := &fakeResolver{mapping: mapping, useDianshi: true}
 	dc := newFakeDianshiSuccess()
+	renewWriter := &fakeDianshiRenewWriter{}
 	d.service = New(Deps{
-		CTLClient:        d.ctl,
-		BundleStore:      d.bundle,
-		JifeiClient:      d.jifei,
-		OrderWriter:      d.writer,
-		OrderStore:       d.store,
-		ActivityResolver: r,
-		DianshiClient:    dc,
+		CTLClient:          d.ctl,
+		BundleStore:        d.bundle,
+		JifeiClient:        d.jifei,
+		OrderWriter:        d.writer,
+		OrderStore:         d.store,
+		ActivityResolver:   r,
+		DianshiClient:      dc,
+		DianshiRenewWriter: renewWriter,
+		SiteKind:           "cn",
 	})
 
 	_, err := d.service.PlaceRenewOrder(context.Background(), PlaceRenewOrderRequest{
@@ -642,11 +675,194 @@ func TestPlaceRenewOrder_NeverDispatchesToDianshi(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlaceRenewOrder err=%v", err)
 	}
-	if r.resolvePlaceCalls.Load() != 0 || r.resolveInquiryCalls.Load() != 0 {
-		t.Errorf("Resolver should NOT be called for renew, place=%d inquiry=%d",
-			r.resolvePlaceCalls.Load(), r.resolveInquiryCalls.Load())
+	if r.resolvePlaceCalls.Load() != 1 || r.lastPlaceScene != store.ActivitySceneRenew {
+		t.Fatalf("resolver place calls=%d scene=%q, want 1/%q",
+			r.resolvePlaceCalls.Load(), r.lastPlaceScene, store.ActivitySceneRenew)
 	}
-	if dc.doGoodsCalls.Load() != 0 {
-		t.Errorf("dianshi should NOT be called for renew, calls=%d", dc.doGoodsCalls.Load())
+	if dc.doGoodsCalls.Load() != 1 {
+		t.Fatalf("dianshi do_goods calls=%d, want 1", dc.doGoodsCalls.Load())
+	}
+	pref := dc.lastDoGoodsReq.Goods[0].PreferenceParam
+	if len(pref) != 4 {
+		t.Fatalf("preference_param=%v, want exactly 4 fields", pref)
+	}
+	wantPref := map[string]interface{}{
+		"regionId":     1,
+		"resourceId":   "pass_xxx",
+		"timeSpanUnit": "1m",
+		"bundleId":     "bundle_launch_01",
+	}
+	for key, want := range wantPref {
+		if got := pref[key]; got != want {
+			t.Errorf("preference_param[%q]=%v, want %v", key, got, want)
+		}
+	}
+	if renewWriter.calls.Load() != 1 {
+		t.Fatalf("atomic renew writer calls=%d, want 1", renewWriter.calls.Load())
+	}
+	if renewWriter.order.OrderType != store.OrderTypeRenew || renewWriter.order.ResourceID != "pass_xxx" {
+		t.Errorf("renew order=%+v", renewWriter.order)
+	}
+	if renewWriter.participation.Scene != store.ActivitySceneRenew ||
+		renewWriter.participation.ActivityID != mapping.ActivityID ||
+		renewWriter.participation.DealName == "" {
+		t.Errorf("renew participation=%+v", renewWriter.participation)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("plain order writer calls=%d, want 0", d.writer.createOrderCalls.Load())
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 {
+		t.Errorf("jifei generateDeals calls=%d, want 0", d.jifei.generateDealsCalls.Load())
+	}
+}
+
+func TestPlaceRenewOrder_InternationalKeepsJifei(t *testing.T) {
+	d := newStdDeps()
+	d.bundle = &fakeBundleStore{def: stdRenewDef()}
+	r := &fakeResolver{mapping: stdActivityMapping(), useDianshi: true}
+	dc := newFakeDianshiSuccess()
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store,
+		ActivityResolver: r, DianshiClient: dc, SiteKind: "intl",
+	})
+
+	_, err := d.service.PlaceRenewOrder(context.Background(), PlaceRenewOrderRequest{
+		ExternalUserID: "user-1", Uin: "1000123456", AppID: "10001",
+		BundleID: "bundle_launch_01", ResourceID: "pass_xxx", CurDeadline: "2026-12-01 00:00:00",
+		Period: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if err != nil {
+		t.Fatalf("PlaceRenewOrder err=%v", err)
+	}
+	if r.resolvePlaceCalls.Load() != 0 || dc.doGoodsCalls.Load() != 0 {
+		t.Fatalf("intl entered dianshi: resolver=%d do_goods=%d", r.resolvePlaceCalls.Load(), dc.doGoodsCalls.Load())
+	}
+	if d.jifei.generateDealsCalls.Load() != 1 {
+		t.Fatalf("jifei calls=%d, want 1", d.jifei.generateDealsCalls.Load())
+	}
+}
+
+func TestPlaceRenewOrder_AlreadyParticipatedFallsBackToJifei(t *testing.T) {
+	d := newStdDeps()
+	d.bundle = &fakeBundleStore{def: stdRenewDef()}
+	mapping := stdActivityMapping()
+	mapping.Scene = store.ActivitySceneRenew
+	r := &fakeResolver{mapping: mapping, useDianshi: false}
+	dc := newFakeDianshiSuccess()
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store,
+		ActivityResolver: r, DianshiClient: dc, SiteKind: "cn",
+	})
+
+	_, err := d.service.PlaceRenewOrder(context.Background(), PlaceRenewOrderRequest{
+		ExternalUserID: "user-1", Uin: "1000123456", AppID: "10001",
+		BundleID: "bundle_launch_01", ResourceID: "pass_xxx", CurDeadline: "2026-12-01 00:00:00",
+		Period: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if err != nil {
+		t.Fatalf("PlaceRenewOrder err=%v", err)
+	}
+	if dc.doGoodsCalls.Load() != 0 || d.jifei.generateDealsCalls.Load() != 1 {
+		t.Fatalf("calls dianshi=%d jifei=%d, want 0/1", dc.doGoodsCalls.Load(), d.jifei.generateDealsCalls.Load())
+	}
+}
+
+func TestPlaceDianshiRenewOrderAndPay_BypassesParticipation(t *testing.T) {
+	d := newStdDeps()
+	d.bundle = &fakeBundleStore{def: stdRenewDef()}
+	mapping := stdActivityMapping()
+	mapping.Scene = store.ActivitySceneRenew
+	mapping.ActivityID = 166165503931688
+	mapping.ActID = 1975812517099088
+	// useDianshi=false 模拟用户已参加过控制台续费活动；内部入口仍允许无限次活动续费。
+	r := &fakeResolver{mapping: mapping, useDianshi: false}
+	dc := newFakeDianshiSuccess()
+	d.service = New(Deps{
+		CTLClient:        d.ctl,
+		BundleStore:      d.bundle,
+		JifeiClient:      d.jifei,
+		OrderWriter:      d.writer,
+		OrderStore:       d.store,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+		SiteKind:         "cn",
+	})
+
+	result, err := d.service.PlaceDianshiRenewOrderAndPay(context.Background(), PlaceRenewOrderRequest{
+		ExternalUserID: "user-1",
+		Uin:            "1000123456",
+		AppID:          "10001",
+		BundleID:       "bundle_launch_01",
+		ResourceID:     "pass_xxx",
+		CurDeadline:    "2026-12-01 00:00:00",
+		Period:         1,
+		TimeUnit:       "m",
+		GoodsNum:       1,
+		PayMode:        1,
+	})
+	if err != nil {
+		t.Fatalf("PlaceDianshiRenewOrderAndPay err=%v", err)
+	}
+	if result.DealName == "" || result.BigOrderID == "" {
+		t.Fatalf("result=%+v", result)
+	}
+	if r.resolvePlaceCalls.Load() != 0 || r.getMappingCalls.Load() != 1 || r.lastPlaceScene != store.ActivitySceneRenew {
+		t.Fatalf("resolver participation calls=%d mapping calls=%d scene=%q",
+			r.resolvePlaceCalls.Load(), r.getMappingCalls.Load(), r.lastPlaceScene)
+	}
+	if dc.doGoodsAndPayCalls.Load() != 1 || dc.doGoodsCalls.Load() != 0 {
+		t.Fatalf("dianshi calls andPay=%d goods=%d", dc.doGoodsAndPayCalls.Load(), dc.doGoodsCalls.Load())
+	}
+	pref := dc.lastDoGoodsAndPay.Goods[0].PreferenceParam
+	if len(pref) != 4 || pref["resourceId"] != "pass_xxx" || pref["timeSpanUnit"] != "1m" {
+		t.Fatalf("preference_param=%v", pref)
+	}
+	if d.writer.createOrderCalls.Load() != 1 {
+		t.Fatalf("order writer calls=%d, want 1", d.writer.createOrderCalls.Load())
+	}
+	order := d.writer.lastCreateOrderInput
+	if order.OrderType != store.OrderTypeRenew || order.ResourceID != "pass_xxx" ||
+		order.Status != store.OrderStatusProvisioned || order.Source != store.OrderSourceDianshi {
+		t.Errorf("order=%+v", order)
+	}
+}
+
+func TestPlaceDianshiRenewOrderAndPay_RejectsInternationalSite(t *testing.T) {
+	d := newStdDeps()
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store,
+		ActivityResolver: &fakeResolver{mapping: stdActivityMapping(), useDianshi: true},
+		DianshiClient:    newFakeDianshiSuccess(), SiteKind: "intl",
+	})
+	_, err := d.service.PlaceDianshiRenewOrderAndPay(context.Background(), PlaceRenewOrderRequest{
+		ExternalUserID: "user-1", Uin: "1000123456", AppID: "10001",
+		BundleID: "bundle_launch_01", ResourceID: "pass_xxx", CurDeadline: "2026-12-01 00:00:00",
+		Period: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if !errors.Is(err, ErrUnsupportedSite) {
+		t.Fatalf("err=%v, want ErrUnsupportedSite", err)
+	}
+}
+
+func TestPlaceDianshiRenewOrderAndPay_RequiresRenewActivity(t *testing.T) {
+	d := newStdDeps()
+	d.bundle = &fakeBundleStore{def: stdRenewDef()}
+	r := &fakeResolver{err: store.ErrBundleActivityNotFound}
+	d.service = New(Deps{
+		CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+		OrderWriter: d.writer, OrderStore: d.store,
+		ActivityResolver: r, DianshiClient: newFakeDianshiSuccess(), SiteKind: "cn",
+	})
+
+	_, err := d.service.PlaceDianshiRenewOrderAndPay(context.Background(), PlaceRenewOrderRequest{
+		ExternalUserID: "user-1", Uin: "1000123456", AppID: "10001",
+		BundleID: "bundle_launch_01", ResourceID: "pass_xxx", CurDeadline: "2026-12-01 00:00:00",
+		Period: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if !errors.Is(err, ErrDianshiActivityRequired) {
+		t.Fatalf("err=%v, want ErrDianshiActivityRequired", err)
 	}
 }

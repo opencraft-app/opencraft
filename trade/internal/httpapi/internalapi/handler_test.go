@@ -259,7 +259,7 @@ type fakeOrderStore struct {
 	getProvisionedCreateOrderByResourceIDFn func(ctx context.Context, resourceID string) (*store.TradeOrder, error)
 }
 
-func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, int64, time.Time) (*store.TradeOrder, error) {
+func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, string, int64, string, time.Time) (*store.TradeOrder, error) {
 	return nil, store.ErrTradeOrderNotFound
 }
 
@@ -305,16 +305,20 @@ type fakeParticipationReader struct {
 	err error
 }
 
-func (f *fakeParticipationReader) HasUserParticipated(context.Context, string, int64) (bool, error) {
+func (f *fakeParticipationReader) HasUserParticipated(context.Context, string, int64, store.ActivityScene) (bool, error) {
 	return f.hit, f.err
 }
 
-func (f *fakeActivityResolver) ResolveForInquiry(context.Context, string, string, int, string) (*activity.Mapping, bool, error) {
+func (f *fakeActivityResolver) ResolveForInquiry(context.Context, store.ActivityScene, string, string, int, string) (*activity.Mapping, bool, error) {
 	return f.mapping, f.use, f.err
 }
 
-func (f *fakeActivityResolver) ResolveForPlaceOrder(context.Context, string, string, int, string) (*activity.Mapping, bool, error) {
+func (f *fakeActivityResolver) ResolveForPlaceOrder(context.Context, store.ActivityScene, string, string, int, string) (*activity.Mapping, bool, error) {
 	return f.mapping, f.use, f.err
+}
+
+func (f *fakeActivityResolver) GetMapping(context.Context, store.ActivityScene, string) (*activity.Mapping, error) {
+	return f.mapping, f.err
 }
 
 type fakeDianshiClient struct {
@@ -939,6 +943,43 @@ func TestPlaceDianshiOrderAndPay_RequiresActivity(t *testing.T) {
 func TestPlaceDianshiOrderAndPay_AuthRequired(t *testing.T) {
 	env := newTestEnv(t)
 	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/place-and-pay", map[string]any{}, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestPlaceDianshiRenewOrderAndPay_HappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	stubRenewBundleDefStore(env)
+	env.activity.mapping = &activity.Mapping{
+		BundleID:         "b1",
+		Scene:            store.ActivitySceneRenew,
+		ActivityID:       166165503931688,
+		ActID:            1975812517099088,
+		Active:           true,
+		TimeSpanUnit:     "1m",
+		OrderExpiredTime: 1,
+	}
+	// 内部入口不受已有参与记录影响，因此 resolver.use=false 仍应成功。
+	env.activity.use = false
+
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/renew/place-and-pay", renewBody(), true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeBody(t, rec)
+	if resp["dealName"] != "dianshi-deal-1" || resp["bigOrderId"] != "dianshi-big-1" {
+		t.Fatalf("unexpected response: %v", resp)
+	}
+	got := env.orderWriter.lastCreateOrderInput
+	if got.OrderType != store.OrderTypeRenew || got.ResourceID != "lhpass-r1" || got.Source != store.OrderSourceDianshi {
+		t.Fatalf("persisted renew order=%+v", got)
+	}
+}
+
+func TestPlaceDianshiRenewOrderAndPay_AuthRequired(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/renew/place-and-pay", renewBody(), false)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}

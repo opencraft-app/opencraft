@@ -151,6 +151,16 @@ type OrderWriter interface {
 	MarkOrderCancelled(ctx context.Context, dealName string) error
 }
 
+// DianshiRenewOrderWriter 原子写入点石续费订单和续费场景参与记录。
+// 独立于 OrderWriter，避免把点石活动能力扩散到所有订单写端测试替身。
+type DianshiRenewOrderWriter interface {
+	CreateDianshiRenewOrderWithParticipation(
+		ctx context.Context,
+		order CreateOrderInput,
+		participation UserActivityParticipation,
+	) error
+}
+
 // ErrTradeOrderResourceIDConflict 表示 trade_order 已被另一个不同 resource_id 占用。
 //
 // 这是数据不一致信号（同一 deal_name 不应被两个不同 pass 占用）；上层 createresource handler
@@ -159,6 +169,7 @@ var ErrTradeOrderResourceIDConflict = errors.New("trade_order: resource_id confl
 
 // 编译期断言 *MySQLStore 实现 OrderWriter 接口。
 var _ OrderWriter = (*MySQLStore)(nil)
+var _ DianshiRenewOrderWriter = (*MySQLStore)(nil)
 
 // CreateOrder 实现 OrderWriter。
 //
@@ -176,6 +187,14 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 	if s == nil || s.db == nil {
 		return fmt.Errorf("trade_order: store is nil")
 	}
+	return createOrder(ctx, s.db, in)
+}
+
+type orderExecer interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
+func createOrder(ctx context.Context, exec orderExecer, in CreateOrderInput) error {
 	if in.Status == "" {
 		return fmt.Errorf("trade_order: status is required")
 	}
@@ -228,7 +247,7 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 		resourceIDArg = in.ResourceID
 	}
 
-	if _, err := s.db.ExecContext(ctx, q,
+	if _, err := exec.ExecContext(ctx, q,
 		in.BigOrderID, in.DealName, in.ExternalUserID, in.Uin, in.AppID,
 		in.SubProductCode, in.BundleID, in.OrderType, in.Period, in.TimeUnit, in.GoodsNum,
 		in.RegionID, in.PayMode, goodsDetailArg, payURLArg, in.Status,
@@ -239,6 +258,44 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 			return fmt.Errorf("%w: dealName=%s: %v", ErrTradeOrderDuplicate, in.DealName, err)
 		}
 		return fmt.Errorf("trade_order: insert dealName=%s: %w", in.DealName, err)
+	}
+	return nil
+}
+
+// CreateDianshiRenewOrderWithParticipation 在一个本地事务中消费续费活动资格并记录订单。
+// 点石远端 do_goods 已在调用本方法前成功；本事务保证本地不会出现“有订单但资格未消费”。
+func (s *MySQLStore) CreateDianshiRenewOrderWithParticipation(
+	ctx context.Context,
+	order CreateOrderInput,
+	participation UserActivityParticipation,
+) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("trade_order: store is nil")
+	}
+	if order.OrderType != OrderTypeRenew {
+		return fmt.Errorf("trade_order: dianshi renew order_type must be %q", OrderTypeRenew)
+	}
+	if order.Source != OrderSourceDianshi {
+		return fmt.Errorf("trade_order: dianshi renew source must be %q", OrderSourceDianshi)
+	}
+	if participation.Scene != ActivitySceneRenew {
+		return fmt.Errorf("trade_user_activity_participation: dianshi renew scene must be %q", ActivitySceneRenew)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("trade_order: begin dianshi renew transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := createOrder(ctx, tx, order); err != nil {
+		return err
+	}
+	if _, err := s.InsertUserParticipation(ctx, tx, &participation); err != nil {
+		return fmt.Errorf("trade_order: insert dianshi renew participation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("trade_order: commit dianshi renew transaction: %w", err)
 	}
 	return nil
 }

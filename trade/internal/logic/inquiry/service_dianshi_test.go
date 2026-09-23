@@ -4,7 +4,7 @@
 //   - bundle 活动 + 用户未参与 → 走 quoteDianshi（断言 dianshi 被调、jifei 未调）
 //   - bundle 活动 + 用户已参与 → 回落 jifei（断言 jifei 被调、dianshi 未调）
 //   - Resolver DB 错 → 降级 jifei，单条询价不 5xx
-//   - QuoteRenew 不分叉点石（即便 Resolver 注入）
+//   - 国内站 QuoteRenew 首次参与走点石，国际站保持 jifei
 package inquiry
 
 import (
@@ -27,16 +27,24 @@ type fakeResolver struct {
 	useDianshi bool
 	err        error
 	calls      int
+	lastScene  store.ActivityScene
 }
 
-func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForInquiry(_ context.Context, scene store.ActivityScene, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
+	f.calls++
+	f.lastScene = scene
+	return f.mapping, f.useDianshi, f.err
+}
+
+func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _ store.ActivityScene, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.calls++
 	return f.mapping, f.useDianshi, f.err
 }
 
-func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) GetMapping(_ context.Context, scene store.ActivityScene, _ string) (*activity.Mapping, error) {
 	f.calls++
-	return f.mapping, f.useDianshi, f.err
+	f.lastScene = scene
+	return f.mapping, f.err
 }
 
 // fakeDianshi 是 dianshiclient.Client 的测试替身。
@@ -333,7 +341,7 @@ func TestQuote_DianshiBranch_OtherBundleKeepsActivityTimeSpanUnit(t *testing.T) 
 func TestQuote_DianshiBranch_AlreadyParticipated_FallbackJifei(t *testing.T) {
 	jc := &fakeJifei{
 		getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
-			return stdJifeiPriceResp(), nil
+			return stdIntlJifeiPriceResp(), nil
 		},
 	}
 	dc := newFakeDianshiSuccess()
@@ -413,7 +421,7 @@ func TestQuote_ResolverDBError_FallbackJifei(t *testing.T) {
 	}
 }
 
-func TestQuoteRenew_NeverDispatchesToDianshi(t *testing.T) {
+func TestQuoteRenew_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 	jc := &fakeJifei{
 		getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
 			return stdJifeiPriceResp(), nil
@@ -433,6 +441,7 @@ func TestQuoteRenew_NeverDispatchesToDianshi(t *testing.T) {
 		JifeiClient:      jc,
 		ActivityResolver: r,
 		DianshiClient:    dc,
+		SiteKind:         "cn",
 	})
 
 	_, err := svc.QuoteRenew(context.Background(), QuoteRenewRequest{
@@ -443,13 +452,69 @@ func TestQuoteRenew_NeverDispatchesToDianshi(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QuoteRenew err=%v", err)
 	}
-	if r.calls != 0 {
-		t.Errorf("Resolver should NOT be called for renew, calls=%d", r.calls)
+	if r.calls != 1 {
+		t.Fatalf("Resolver calls=%d, want 1", r.calls)
 	}
-	if dc.priceCalls != 0 {
-		t.Errorf("dianshi should NOT be called for renew, calls=%d", dc.priceCalls)
+	if r.lastScene != store.ActivitySceneRenew {
+		t.Errorf("Resolver scene=%q, want %q", r.lastScene, store.ActivitySceneRenew)
+	}
+	if dc.priceCalls != 1 {
+		t.Fatalf("dianshi calls=%d, want 1", dc.priceCalls)
+	}
+	if jc.getPriceCalls.Load() != 0 {
+		t.Errorf("jifei calls=%d, want 0", jc.getPriceCalls.Load())
+	}
+	preference := dc.lastPriceReq.Goods[0].PreferenceParam
+	if len(preference) != 4 {
+		t.Fatalf("preference_param=%v, want exactly 4 fields", preference)
+	}
+	want := map[string]interface{}{
+		"regionId":     1,
+		"resourceId":   "pass_xxx",
+		"timeSpanUnit": "1m",
+		"bundleId":     "bundle_launch_01",
+	}
+	for key, wantValue := range want {
+		if got := preference[key]; got != wantValue {
+			t.Errorf("preference_param[%q]=%v, want %v", key, got, wantValue)
+		}
+	}
+}
+
+func TestQuoteRenew_InternationalKeepsJifei(t *testing.T) {
+	jc := &fakeJifei{
+		getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+			return stdIntlJifeiPriceResp(), nil
+		},
+	}
+	dc := newFakeDianshiSuccess()
+	r := &fakeResolver{
+		mapping:    &activity.Mapping{BundleID: "bundle_launch_01", Scene: store.ActivitySceneRenew, ActivityID: 166165503931688, ActID: 1975812517099088, Active: true},
+		useDianshi: true,
+	}
+	def := stdDef()
+	def.CategoryIDs = append(def.CategoryIDs, store.CategoryIDEntry{Scene: "renew", Category: 100060})
+	svc := New(Deps{
+		CTLClient:        &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:      &fakeBundleStore{def: def},
+		JifeiClient:      jc,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+		SiteKind:         "intl",
+	})
+
+	_, err := svc.QuoteRenew(context.Background(), QuoteRenewRequest{
+		BundleID: "bundle_launch_01", ResourceID: "pass_xxx",
+		Uin: "815836472", CurDeadline: "2026-12-01 00:00:00",
+		TimeSpan: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+	})
+	if err != nil {
+		t.Fatalf("QuoteRenew err=%v", err)
+	}
+	if r.calls != 0 || dc.priceCalls != 0 {
+		t.Errorf("intl renewal must not enter dianshi: resolver=%d dianshi=%d", r.calls, dc.priceCalls)
 	}
 	if jc.getPriceCalls.Load() != 1 {
-		t.Errorf("jifei GetPrice should be called for renew, calls=%d", jc.getPriceCalls.Load())
+		t.Errorf("jifei calls=%d, want 1", jc.getPriceCalls.Load())
 	}
 }

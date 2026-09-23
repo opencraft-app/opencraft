@@ -18,3 +18,19 @@ func TestParseDianshiRecordFilterAllowsEmptyFilter(t *testing.T) {
 		t.Fatalf("unexpected filter: %+v", filter)
 	}
 }
+
+func TestParseDianshiRecordFilterScene(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/ctl/dianshi/orders?scene=renew", nil)
+	filter, err := parseDianshiRecordFilter(req)
+	if err != nil {
+		t.Fatalf("parse scene: %v", err)
+	}
+	if filter.Scene != "renew" {
+		t.Fatalf("scene=%q want renew", filter.Scene)
+	}
+
+	badReq := httptest.NewRequest(http.MethodGet, "/admin/api/ctl/dianshi/orders?scene=refund", nil)
+	if _, err := parseDianshiRecordFilter(badReq); err == nil {
+		t.Fatal("expected invalid scene error")
+	}
+}

@@ -437,10 +437,7 @@ type RenewPassOrderUrlResult struct {
 
 // === trade-pass-renew transport DTO 一体化变体（设计稿 §3.3 / §4.4 / R-D-7）===
 //
-// 入口：POST /v1/passes/{pass_id}/renew/order-and-pay         前端 e2e
-//       POST /admin/api/ctl/passes/{pass_id}/renew/order-and-pay 后台 e2e
-//
-// **仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露此入口给真实用户。**
+// CTL 不再注册该能力的 HTTP 路由；该类型仅由遗留 logic 接口保留以兼容现有代码。
 //
 // 与 RenewPassOrderUrl 的差异（与 CreatePassOrderAndPay vs CreatePassOrder 同范式）：
 //   - RenewPassOrderUrl     → trade.PlaceRenewOrder      + trade.GeneratePayURL
