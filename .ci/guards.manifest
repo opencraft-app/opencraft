@@ -94,3 +94,12 @@ guards:
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
     command: .ci/checks/frontend_guard.sh
+
+  - name: opencraft
+    paths:
+      - opencraft/**
+      - frontend/src/**
+      - frontend/public/tat-hermes-web-proxy-sw.js
+      - frontend/public/assets/skills/**
+      - .ci/checks/opencraft_guard.sh
+    command: .ci/checks/opencraft_guard.sh
