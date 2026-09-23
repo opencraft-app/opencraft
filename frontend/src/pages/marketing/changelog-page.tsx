@@ -48,8 +48,8 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
+  /** 卡片视觉样式：lobster=上线图 / multiBot=创建多个 Bot 图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "multiBot" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -72,7 +72,7 @@ const zeroTokenScheduledTasksGlobalAssets: Record<string, string> = {
   "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
 };
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -82,7 +82,11 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
     : "/assets/changelog/scheduled-tasks-notification-zh-CN.png";
   /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
-    variant === "zeroTokenScheduledTasks"
+    variant === "multiBot"
+      ? isGlobal && !useGlobalChineseAsset
+        ? "/docs-images/bots-switching-create-en.webp"
+        : "/docs-images/bots-switching-create.webp"
+      : variant === "zeroTokenScheduledTasks"
       ? zeroTokenScheduledTasksAsset
       : variant === "instanceStorage"
       ? useGlobalChineseAsset
@@ -188,7 +192,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
           : "/assets/changelog/lightvela-launch-global-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
-    variant === "zeroTokenScheduledTasks"
+    variant === "multiBot"
+      ? t("LightVela 支持创建多个 Bot")
+      : variant === "zeroTokenScheduledTasks"
       ? t("定时任务新增通知任务和脚本任务")
       : variant === "instanceStorage"
       ? t("LightVela 支持查看 Agent 实例存储空间")
@@ -240,7 +246,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         ? t("Soul 人设能力上线")
         : t("LightVela 产品公测上线");
   const aspectRatio =
-    variant === "zeroTokenScheduledTasks"
+    variant === "multiBot"
+      ? isGlobal && !useGlobalChineseAsset ? "1690 / 931" : "3408 / 1878"
+      : variant === "zeroTokenScheduledTasks"
       ? "760 / 656"
       : variant === "instanceStorage"
       ? useGlobalChineseAsset ? "2372 / 1262" : "2367 / 1259"
@@ -317,7 +325,13 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       <img
         src={assetUrl(imgPath)}
         alt={altText}
-        className={`absolute inset-0 h-full w-full rounded-[inherit] ${variant === "lobster" ? "object-cover" : "object-contain"}`}
+        className={`absolute inset-0 h-full w-full rounded-[inherit] ${
+          variant === "lobster"
+            ? "object-cover"
+            : variant === "multiBot"
+              ? "translate-y-[10%] scale-150 object-contain"
+              : "object-contain"
+        }`}
         loading="lazy"
       />
     </div>
@@ -354,7 +368,7 @@ function ChangelogContent() {
     id: "multi-bot-creation",
     title: t("LightVela 支持创建多个 Bot"),
     desc: t("在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。"),
-    visual: "none",
+    visual: "multiBot",
   };
 
   const changelogGroups: ChangelogMonthGroup[] = [

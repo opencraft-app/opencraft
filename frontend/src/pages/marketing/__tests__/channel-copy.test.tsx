@@ -72,7 +72,10 @@ describe("marketing channel copy", () => {
         "在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。",
       ),
     ).toBeInTheDocument();
-    expect(heading.closest("article")?.querySelector("img")).toBeNull();
+    expect(within(septemberSection!).getByAltText("LightVela 支持创建多个 Bot")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/docs-images/bots-switching-create.webp"),
+    );
   });
 
   it("announces zero-token notification and script tasks in the September changelog", () => {

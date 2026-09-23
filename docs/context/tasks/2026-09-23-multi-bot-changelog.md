@@ -23,12 +23,13 @@ derived: false
 ## non_goals
 
 - 不修改多 Bot 的业务逻辑、套餐配额、站点门禁或后端接口。
-- 不新增或生成产品截图，不调整 Changelog 页面布局。
-- 不提交、推送、创建 MR、合并或发布。
+- 不生成或编辑产品截图，不调整 Changelog 页面布局。
+- 不合并、发布或修改生产环境。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
 - 用户需求（2026-09-23）：国内站和国际站 Changelog 增加一条支持创建多 Bot 的动态。
+- 用户补充（2026-09-23）：配图使用创建第二个 Bot 的界面截图。
 
 ## interface_refs / data_structure_refs
 
@@ -46,7 +47,7 @@ derived: false
 - 国内站与国际站 2026 年 9 月分组均展示“支持创建多个 Bot”的独立动态。
 - 国际站简体中文、繁体中文、英语、印度尼西亚语、西班牙语、日语和韩语文案完整。
 - 英文标题使用 Title Case；描述强调多个 Bot 各司其职，并准确列出 Profile 级隔离范围，不承诺全面开放或套餐上限。
-- 新条目使用现有无图样式，不新增视觉资源或布局。
+- 新条目复用文档站已有的真实 Bot 创建截图；国内站与国际站中文 locale 使用中文图，国际站其他 locale 使用英文图。
 - 双站聚焦测试、i18n 门禁、前端检查与构建通过。
 
 ## affected_paths
@@ -77,13 +78,14 @@ derived: false
 
 ## evidence
 
-- `ChangelogContent` 新增共享 `multiBotEntry`，并作为国内站、国际站 2026 年 9 月分组首条；使用 `visual: "none"`，未新增图片或布局。
+- `ChangelogContent` 新增共享 `multiBotEntry`，并作为国内站、国际站 2026 年 9 月分组首条；使用 `visual: "multiBot"` 复用现有真实 Bot 创建截图，未新增或编辑图片文件。
 - 新增中文源标题与描述，英语、印尼语、西班牙语、日语、韩语人工补齐，繁体中文由仓库脚本转换；国际站七种可见语言均由矩阵测试覆盖。
 - 国内站与国际站 Changelog 聚焦测试 2 个文件、21 个用例全部通过。
 - `pnpm i18n:check`、`pnpm i18n:zh-hant:check` 通过；`pnpm i18n:validate` 为 0 个错误，仅保留 50 个既有告警。
 - `pnpm check` 通过，TypeScript diagnostics 为 171 current / 171 baseline / 0 new。
 - 国内站 `pnpm build` 通过，生成 106/106 个静态页面；国际站 `pnpm build:global` 通过，生成 664/664 个静态页面。
 - 国际站构建产物中，默认英文与 `zh-sg`、`zh-hant`、`id-id`、`es`、`ja-jp`、`ko-kr` 共七个 Changelog 路由均包含对应多 Bot 标题。
+- 本地浏览器预览确认国内站显示中文 Bot 创建截图，国际站英文页面显示英文图、`zh-sg` 页面显示中文图；卡片内使用无损 CSS 放大裁切，表单比例正常。
 - `validate_documentation.py --format json` 通过：errors 0、broken links 0；构建产生的字体与 Context catalog 噪声不纳入变更。
 
 ## risks
@@ -101,7 +103,7 @@ derived: false
 
 - 条目标题使用“LightVela 支持创建多个 Bot”，正文强调多个 Bot 各司其职，并列出记忆、技能、定时任务、模型和通道配置相互隔离。
 - 条目放在 2026 年 9 月分组首位，反映当前新增动态。
-- 使用 `visual: "none"`，不在没有真实双站截图的情况下生成或复用无关图片。
+- 使用 `visual: "multiBot"`，复用文档站已有的中英文 Bot 创建截图，避免重复资源与不真实插图。
 
 ## scan_scope
 
@@ -115,6 +117,6 @@ derived: false
 
 ## handoff
 
-- 当前：双站条目、七语种翻译、测试和完整构建均已完成，用户已确认提交 MR。
+- 当前：MR !4534 已创建；创建第二个 Bot 的真实界面截图、双站预览和回归均已完成。
 - 下一步：等待 MR 评审与 CI。
 - 阻塞：无。
