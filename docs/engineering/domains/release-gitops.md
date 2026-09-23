@@ -267,6 +267,9 @@ master 源码
 - Referral 已纳入标准 `service-release` 生产编排。`master` 构建进入生产候选后，由 Referral 主流水线先对
   `shprod` / `sgprod` 执行真实 schema 探测并创建相应 DB migration 子流水线，migration/readiness 通过后再创建
   各环境 GitOps promote；生产审批和 Argo Sync 仍保持人工，不得绕过主流水线长期直接触发通用 migration。
+- 标准 `service-release` 的 DB 父编排必须按真实探测决策选择子入口：`run_migration` 调用无运行时条件阶段的
+  `.ci/db-migration-apply.yml`，由其完成二次 dry-run、人工审批、apply 和 readiness；`skip_migration` / `block`
+  才调用 `.ci/db-migration.yml`。不得把 `run_migration` 交给 Stream 会跳过条件阶段的旧入口。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
