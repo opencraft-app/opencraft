@@ -2,6 +2,12 @@
 set -euo pipefail
 
 cd "${GUARD_REPO_ROOT:-$(pwd)}"
+source .ci/init.sh
+ci_init_repo_root
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  ci_ensure_node
+fi
 
 echo "opencraft guard: changed files"
 cat "${GUARD_CHANGED_FILES_FILE:?}"
