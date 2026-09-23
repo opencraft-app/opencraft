@@ -92,7 +92,8 @@ case "${directory}" in
     mkdir -p \
       "${directory}/node_modules/.bin" \
       "${directory}/node_modules/@deepseek-ai/dsh" \
-      "${directory}/node_modules/@deepseek-ai/dsh-client-connection/lib"
+      "${directory}/node_modules/@deepseek-ai/dsh-client-connection/lib" \
+      "${directory}/node_modules/@deepseek-ai/dsh-app-boot/lib"
     cat >"${directory}/node_modules/.bin/dsh" <<'INNER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -142,6 +143,8 @@ const handle = {
   isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),
 };
 INNER
+    printf '%s\n' 'if (hmr === void 0) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`);' \
+      >"${directory}/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js"
     ;;
   */profiles/web)
     if [[ "$*" == *"--lockfile-only"* ]]; then
@@ -343,11 +346,7 @@ if "onlyBuiltDependencies" not in runtime.get("pnpm", {}):
 if "onlyBuiltDependencies" in profile.get("pnpm", {}):
     raise SystemExit("DSH web profile must leave dynamic plugin build policy to the workspace")
 PY
-grep -Fq 'ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --host 127.0.0.1 --port 3080' "${unit}"
-if grep -Fq -- '--no-open' "${unit}"; then
-  echo 'unsupported DSH web option --no-open was written to the service unit' >&2
-  exit 1
-fi
+grep -Fq 'ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --no-open --host 127.0.0.1 --port 3080' "${unit}"
 grep -Fq 'Environment=PATH=/opt/lightvela/dsh/current/node_modules/.bin:/opt/lightvela/dsh/tooling/pnpm-10.33.0/node_modules/.bin:/usr/local/bin:/usr/bin:/bin' "${unit}"
 grep -Fq 'Environment=DSH_HOME=/home/agentuser/.dsh' "${unit}"
 grep -Fq 'User=agentuser' "${unit}"
@@ -644,6 +643,19 @@ printf '{"browserTrustPatch":{"version":1,"hostname":"%s"}}\n' \
 if bash -c 'source "$1"; patch_browser_connection "$2" "$3"' \
   lightvela-dsh-test "${INSTALLER}" "${drift_runtime}" "${drift_manifest}" >/dev/null 2>&1; then
   echo 'unexpected DSH connection source was patched' >&2
+  exit 1
+fi
+
+hmr_runtime="${TMPDIR}/hmr-runtime"
+hmr_boot="${hmr_runtime}/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js"
+mkdir -p "$(dirname "${hmr_boot}")"
+printf '%s\n' 'if (hmr === void 0) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`);' >"${hmr_boot}"
+bash -c 'source "$1"; patch_missing_hmr_fallback "$2"' \
+  lightvela-dsh-test "${INSTALLER}" "${hmr_runtime}" >/dev/null
+grep -Fq 'patch-layer live watching disabled' "${hmr_boot}"
+if bash -c 'source "$1"; patch_missing_hmr_fallback "$2"' \
+  lightvela-dsh-test "${INSTALLER}" "${hmr_runtime}" >/dev/null 2>&1; then
+  echo 'HMR source drift unexpectedly accepted' >&2
   exit 1
 fi
 
