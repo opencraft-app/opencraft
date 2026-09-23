@@ -896,3 +896,37 @@ describe("SubscribePage payment return", () => {
     expect(window.location.search).toBe("?pay_plan=bundle_cruise_ai_01");
   });
 });
+
+describe("SubscribePage sales quota visibility", () => {
+  beforeEach(() => {
+    cleanup();
+    resetState();
+  });
+  afterEach(cleanup);
+
+  it.each(["AVAILABLE", "SOLD_OUT"] as const)(
+    "hides remaining sales counts while preserving %s subscription eligibility",
+    async (salesState) => {
+      openClawState.isLoggedIn = true;
+      sessionState.isAuthenticated = true;
+      sessionState.user = { id: "quota-preview-user" };
+      listBundlesMock.mockResolvedValue([{
+        ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
+        bundle_sales_state: salesState,
+        bundle_sales_available_count: salesState === "SOLD_OUT" ? 0 : 5,
+        bundle_sales_total_count: 100,
+        price: { price: 4900, total_cost: 4900, real_total_cost: 4900, currency: "USD" },
+      }]);
+
+      const { SubscribePage } = await import("@next-site/subscribe-page");
+      render(<SubscribePage />);
+      await screen.findByRole("heading", { name: "巡游 Cruise" });
+      expect(screen.queryByText(/今日剩余/)).not.toBeInTheDocument();
+      const button = screen.getByRole("button", {
+        name: salesState === "SOLD_OUT" ? "已售罄" : "立即订阅",
+      });
+      if (salesState === "SOLD_OUT") expect(button).toBeDisabled();
+      else expect(button).toBeEnabled();
+    },
+  );
+});
