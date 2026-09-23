@@ -52,14 +52,19 @@ if ! systemctl list-unit-files k0scontroller.service --no-legend 2>/dev/null | g
 fi
 /usr/local/bin/k0s start
 
+node_name=""
 for _ in $(seq 1 90); do
-  if /usr/local/bin/k0s kubectl get nodes >/dev/null 2>&1; then
-    break
-  fi
+  node_name="$(/usr/local/bin/k0s kubectl get nodes \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  [[ -n "${node_name}" ]] && break
   sleep 2
 done
 
-node_name="$(/usr/local/bin/k0s kubectl get nodes -o jsonpath='{.items[0].metadata.name}')"
+if [[ -z "${node_name}" ]]; then
+  echo "k0s node was not registered before the bootstrap timeout" >&2
+  exit 1
+fi
+
 /usr/local/bin/k0s kubectl taint node "${node_name}" \
   node-role.kubernetes.io/control-plane:NoSchedule- >/dev/null 2>&1 || true
 
