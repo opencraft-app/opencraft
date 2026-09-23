@@ -121,10 +121,17 @@ skip = set()
 if skip_path:
     for path in [part.strip() for part in skip_path.split(",") if part.strip()]:
         with open(path) as f:
-            for line in f:
+            for line_number, line in enumerate(f, start=1):
                 if not line.strip():
                     continue
-                row = json.loads(line)
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    print(
+                        f"warning: ignoring malformed TAT checkpoint row {path}:{line_number}: {exc}",
+                        file=sys.stderr,
+                    )
+                    continue
                 if row.get("invoke_status") == "INVOKED" and row.get("cloud_id"):
                     skip.add(row["cloud_id"])
 
