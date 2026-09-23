@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Pass } from "@/domain/types";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { readUpgradeCheckout, saveUpgradeCheckout } from "@/lib/upgrade-checkout";
+import { setConsoleShowEnabled } from "@/lib/console-show-event";
 
 const listMyPasses = vi.fn();
 const listModifyBundles = vi.fn();
@@ -11,14 +12,17 @@ const plans = { listMyPasses, listModifyBundles, getModifyCheckout };
 vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => ({ plans }) }));
 const pass: Pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "Source", created_time: "2026-01-01", expired_time: "2099-01-01", credit_total: 1, credit_available: 1 };
 const target = { target_bundle_id: "other-sp", bundle: { bundle_id: "other-sp", bundle_name: "Target", cpu: 4, memory: 4, system_disk_size: 40, credit: 100 }, modify_price: { real_total_cost: 100, total_cost: 100, currency: "CNY" } };
-beforeEach(() => { vi.resetAllMocks(); const entries = new Map<string, string>(); vi.stubGlobal("localStorage", { getItem: (key: string) => entries.get(key) ?? null, setItem: (key: string, value: string) => entries.set(key, value) }); listMyPasses.mockResolvedValue([pass]); listModifyBundles.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [target] }); getModifyCheckout.mockResolvedValue({ checkout: null }); });
+beforeEach(() => { vi.resetAllMocks(); const entries = new Map<string, string>(); vi.stubGlobal("localStorage", { getItem: (key: string) => entries.get(key) ?? null, setItem: (key: string, value: string) => entries.set(key, value) }); setConsoleShowEnabled(false); listMyPasses.mockResolvedValue([pass]); listModifyBundles.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [target] }); getModifyCheckout.mockResolvedValue({ checkout: null }); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("upgrade eligibility", () => {
-  it.each(["lightvela.com", "www.lightvela.com", "lightvela.ai", "www.lightvela.ai"])("loads eligible targets on %s without console opt-in or order recovery", async (hostname) => {
+  it.each(["lightvela.com", "www.lightvela.com", "lightvela.ai", "www.lightvela.ai"])("keeps upgrade hidden on %s until show() without recovering an order", async (hostname) => {
     vi.stubGlobal("location", { hostname });
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "other-sp", phase: "ordered", dealName: "old-order" });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
+    expect(result.current.options).toEqual([]);
+    expect(listModifyBundles).not.toHaveBeenCalled();
+    act(() => { (window as unknown as { show: () => boolean }).show(); });
     await waitFor(() => expect(result.current.options).toEqual([target]));
     expect(result.current.pass?.pass_id).toBe("p1");
     expect(listModifyBundles).toHaveBeenCalledWith("p1");
