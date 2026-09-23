@@ -87,6 +87,7 @@ derived: false
 - `macos-release` 现有五项 Secret：Developer ID P12、P12 包装密码、Apple 账户、App 专用密码与 Team ID；Secret 值未写入仓库、日志或 Task Pack。
 - 首次 GitHub workflow `35811006754` 在 arm64/x64 的 Renderer build 暴露镜像缺少 `@lightvela/vela-chat-client-core`；修复采用从 mono2 `shared/` authority 机械同步的 workspace 快照，同时补齐同类 `@lightvela/agent-core`，不以 Vite external 掩盖运行时缺包。
 - 在不含 mono2 父目录、node_modules 与历史构建输出的临时独立 checkout 中，`npm ci`、`check:shared-packages` 与 `build:electron:release` 通过。
+- 第二次 GitHub workflow `35814021276` 在 identity gate 证明旧规则会拒绝权威的 `@lightvela/*` 快照包名；规则现仅对两个带 `UPSTREAM.json` 且 source 精确指向 `shared/` 的包开放，其他 workspace 继续强制 `@opencraft/*`。
 
 ## risks
 - 两架构原生依赖文件集合不同：合并前只补齐缺失的架构限定资源，绝不覆盖同路径文件；其余 Mach-O 由 `lipo` 合并。
