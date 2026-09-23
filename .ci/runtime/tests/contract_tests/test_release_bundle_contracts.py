@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import sys
@@ -3068,6 +3069,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("create_hermes_tat_command.sh", repair_vm_script_text)
         self.assertIn("invoke_hermes_tat_command.sh", repair_vm_script_text)
         self.assertIn("Repair existing Hermes VM inventory", repair_vm_script_text)
+        self.assertIn("HERMES_TAT_CHECKPOINT_ROOT", repair_vm_script_text)
+        self.assertIn('HERMES_TAT_SKIP_INVOKED_FILE="$skip_invoked_files"', repair_vm_script_text)
+        self.assertIn('HERMES_TAT_OUTPUT_DIR="$checkpoint_dir"', repair_vm_script_text)
         self.assertIn("Refresh then repair one Hermes sandbox environment", rollout_script_text)
         self.assertIn(">&2", rollout_script_text)
         self.assertIn("refresh_hermes_sandbox_env.sh", rollout_script_text)
@@ -3080,6 +3084,60 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("acli bundle-update", repair_script_text)
         self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
+
+    def test_hermes_tat_resume_skips_invoked_and_tolerates_truncated_checkpoint(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            output_dir = root / "output"
+            bin_dir.mkdir()
+            output_dir.mkdir()
+            tccli = bin_dir / "tccli"
+            tccli.write_text('#!/usr/bin/env bash\nprintf \'%s\\n\' \'{"InvocationId":"inv-test"}\'\n')
+            tccli.chmod(0o755)
+            input_file = root / "input.jsonl"
+            input_file.write_text(
+                '\n'.join(
+                    [
+                        json.dumps({"cloud_id": "ins-done", "instance_id": "vm-done"}),
+                        json.dumps({"cloud_id": "ins-pending", "instance_id": "vm-pending"}),
+                    ]
+                )
+                + "\n"
+            )
+            checkpoint = root / "checkpoint.jsonl"
+            checkpoint.write_text(
+                json.dumps({"cloud_id": "ins-done", "invoke_status": "INVOKED"})
+                + "\n"
+                + '{"cloud_id":"truncated"\n'
+            )
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{bin_dir}:{env['PATH']}",
+                    "HERMES_TAT_REGION": "ap-shanghai",
+                    "HERMES_TAT_COMMAND_ID": "cmd-test",
+                    "HERMES_TAT_INPUT_FILE": str(input_file),
+                    "HERMES_TAT_OUTPUT_DIR": str(output_dir),
+                    "HERMES_TAT_SKIP_INVOKED_FILE": str(checkpoint),
+                }
+            )
+            result = subprocess.run(
+                ["bash", str(script)],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            summary_path = next(output_dir.glob("*.summary.json"))
+            summary = json.loads(summary_path.read_text())
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["counts"], {"INVOKED": 1})
+            self.assertIn('"targets": 1, "skipped": 1', result.stderr)
+            self.assertIn("ignoring malformed TAT checkpoint row", result.stderr)
 
     def test_hermes_pool_refresh_selects_only_target_region(self) -> None:
         script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"

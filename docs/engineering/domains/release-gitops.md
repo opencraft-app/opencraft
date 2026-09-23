@@ -73,6 +73,9 @@ master 源码
   `images/hermes-image-trigger` 用于显式触发新版本构建，不能以仅同步镜像冒充新山 Pool 和存量 VM
   已完成发布。Runtime 验证只能从规范的 `Hermes Agent vX.Y.Z` 输出行提取版本，SSH 重试诊断、IP
   地址和传输错误不得参与版本匹配。
+  存量 VM 的 TAT 修补必须以 build ID 和环境为作用域持久化逐台派发 checkpoint；runner 重启或阶段
+  重试时只跳过已有 `INVOKED` 的 cloud instance，继续失败和未处理项。checkpoint JSONL 的中断尾行
+  可以忽略，但不得因读取失败退化成全量 `--force=true` 重复升级。
 
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
