@@ -1,4 +1,5 @@
 import React, { type ReactNode } from "react";
+import type { CreditPackSectionProps } from "../credit-pack-section";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -123,6 +124,14 @@ vi.mock("@/lib/app-navigation", () => ({
     </a>
   ),
   useAppNavigate: () => navigateMock,
+}));
+
+vi.mock("../credit-pack-section", () => ({
+  CreditPackSection: ({ sectionId, canPurchaseCreditPack }: CreditPackSectionProps) => (
+    <section id={sectionId} data-testid="credit-pack-section">
+      <button disabled={!canPurchaseCreditPack}>积分包购买资格</button>
+    </section>
+  ),
 }));
 
 /* 必须完整列出被依赖链引用的导出：vi.mock 会整体替换模块，
@@ -328,6 +337,8 @@ describe("SubscribePage paid billing visibility", () => {
     /* 全量放开：登录后无需 show() 即展示付费时长与可订阅 CTA。 */
     expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即订阅" })).toBeEnabled();
+    expect(screen.getByTestId("credit-pack-section")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "积分包购买资格" })).toBeEnabled();
   });
 });
 

@@ -180,7 +180,7 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                 self.assertRegex(config["PERSONAL_DEV_ACCOUNT_POOL_USER_IDS"], r"^usr_[a-z0-9]+(?:,usr_[a-z0-9]+)*$")
                 self.assertEqual(
                     config["PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS"],
-                    "9.0.0.0/8,21.0.0.0/8,14.22.11.160/29,14.116.239.32/29",
+                    "9.0.0.0/8,21.0.0.0/8,14.22.11.160/27,14.116.239.32/27",
                 )
                 self.assertEqual(
                     config["PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED"],

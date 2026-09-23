@@ -21,9 +21,10 @@ func (s *MySQLStore) AcquireDeveloperTestAccount(
 	now time.Time,
 	ttl time.Duration,
 	renewalUserID string,
+	forceSameOwnerTakeover bool,
 ) (DeveloperTestAccountLease, *AuthSession, error) {
 	for attempt := 0; attempt < developerTestAccountLeaseTransactionAttempts; attempt++ {
-		lease, session, err := s.acquireDeveloperTestAccountOnce(ctx, candidateUserIDs, leaseOwner, targetIP, now, ttl, renewalUserID)
+		lease, session, err := s.acquireDeveloperTestAccountOnce(ctx, candidateUserIDs, leaseOwner, targetIP, now, ttl, renewalUserID, forceSameOwnerTakeover)
 		if err == nil || (!isMySQLDuplicate(err) && !isMySQLRetryableTransactionError(err)) {
 			return lease, session, err
 		}
@@ -48,6 +49,7 @@ func (s *MySQLStore) acquireDeveloperTestAccountOnce(
 	now time.Time,
 	ttl time.Duration,
 	renewalUserID string,
+	forceSameOwnerTakeover bool,
 ) (DeveloperTestAccountLease, *AuthSession, error) {
 	candidates := append([]string(nil), candidateUserIDs...)
 	sort.Strings(candidates)
@@ -95,7 +97,17 @@ func (s *MySQLStore) acquireDeveloperTestAccountOnce(
 			return DeveloperTestAccountLease{}, nil, newError("developer_test_account_unavailable", "没有可租用的 testing 账号。", http.StatusServiceUnavailable)
 		}
 		if lease.LeaseUntil.After(now) {
-			if renewalUserID == "" || renewalUserID != lease.UserID {
+			switch {
+			case renewalUserID != "" && renewalUserID == lease.UserID:
+			case renewalUserID == "" && forceSameOwnerTakeover:
+				// The owner reclaims its own lease; drop its stale lease sessions below.
+				if _, err := tx.ExecContext(ctx, `
+					DELETE FROM auth_sessions
+					WHERE user_id = ? AND auth_method = ?
+				`, lease.UserID, AuthMethodDeveloperLease); err != nil {
+					return DeveloperTestAccountLease{}, nil, fmt.Errorf("revoke superseded developer test account sessions: %w", err)
+				}
+			default:
 				return DeveloperTestAccountLease{}, nil, newError("developer_test_account_renewal_requires_session", "续租 testing 账号需要当前租约会话。", http.StatusUnauthorized)
 			}
 		} else if renewalUserID != "" {

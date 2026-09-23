@@ -35,7 +35,7 @@ import (
 //     1. 列出 user 下所有非 Deleted/Failed 的 instance
 //     2. 通过反查 task.parent_task_id == 当前父 taskID 的 task 集合作为 child_registry，
 //     对未派发过的 instance enqueue IsolateInstance 子 task（防重派发）
-//     3. 检查所有子 task 是否都已到 SUCCESS/FAILED 终态：
+//     3. 按 instance_id 聚合子 task；每个当前实例有 SUCCESS 或已处于终态才算完成：
 //   - 否：返错让 task 框架按 ExecuteInterval 重试
 //   - 是：CAS pass.status isolating → isolated，markSuccess
 //   - markSuccess 前 best-effort 反向调 trade `/internal/trade/flows/{flow_id}/complete`
@@ -61,6 +61,74 @@ type isolatePassTask struct {
 	*taskruntime.BaseTask
 	in             *taskcommon.IsolatePassTaskPayload
 	lastExecuteErr error
+}
+
+type isolateInstanceChildState struct {
+	succeeded bool
+	pending   bool
+}
+
+func indexIsolateInstanceChildTasks(childTasks []*taskmodel.Entity, logger *zap.Logger) map[string]isolateInstanceChildState {
+	states := make(map[string]isolateInstanceChildState, len(childTasks))
+	for _, child := range childTasks {
+		if child == nil || child.TaskName != taskcommon.TaskNameIsolateInstance {
+			continue
+		}
+
+		var payload taskcommon.IsolateInstanceTaskPayload
+		if err := jsonUnmarshal(child.TaskParams, &payload); err != nil {
+			logger.Warn("decode child task payload failed, skip",
+				zap.Error(err), zap.String("child_task_id", child.TaskId))
+			continue
+		}
+		if payload.InstanceID == "" {
+			logger.Warn("child task payload missing instance_id, skip",
+				zap.String("child_task_id", child.TaskId))
+			continue
+		}
+
+		state := states[payload.InstanceID]
+		switch child.TaskState {
+		case taskmodel.StateSuccess:
+			state.succeeded = true
+		case taskmodel.StateFailed, taskmodel.StatePartialFailed:
+			// 失败态保留零值；没有 SUCCESS / 执行中任务时允许重派。
+		default:
+			// CREATED / RUNNING 以及未知的非终态均按执行中处理，避免重复派发。
+			state.pending = true
+		}
+		states[payload.InstanceID] = state
+	}
+	return states
+}
+
+func isolateInstanceTerminal(status string) bool {
+	return status == modelinstance.InstanceStatusPaused ||
+		status == modelinstance.InstanceStatusDeleted ||
+		status == modelinstance.InstanceStatusFailed
+}
+
+func countIncompleteIsolateInstances(
+	instances []*modelinstance.Entity,
+	childStates map[string]isolateInstanceChildState,
+) (pendingCount, failedCount int) {
+	for _, instance := range instances {
+		if instance == nil || isolateInstanceTerminal(instance.Status) {
+			continue
+		}
+
+		state := childStates[instance.InstanceId]
+		switch {
+		case state.succeeded:
+			// 同一实例后续成功后，历史失败任务不再阻塞父任务。
+		case state.pending:
+			pendingCount++
+		default:
+			// 没有成功或执行中任务：下一轮需要重派。
+			failedCount++
+		}
+	}
+	return pendingCount, failedCount
 }
 
 func newIsolatePassTask() *isolatePassTask {
@@ -212,41 +280,23 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 		return "", fmt.Errorf("list child tasks: %w", err)
 	}
 
-	// 解析子 task payload，提取 instance_id 集合。
+	// 按 instance_id 聚合历史子 task。
 	//
-	// I-MR-1 修复（Bug A）：FAILED 终态的子 task 不计入 dispatched，
-	// 让 step 3 把它当成"未派发"重新派一个新子 task。这样运维只需重启 sandbox
-	// 等下游恢复，无需手动 reset 子 task 状态。配合子 task markRetryable + max=60，
-	// 整条隔离链路具备从短暂故障自愈的能力。
-	dispatched := make(map[string]*taskmodel.Entity, len(childTasks))
-	for _, ct := range childTasks {
-		if ct.TaskName != taskcommon.TaskNameIsolateInstance {
-			continue
-		}
-		if ct.TaskState == taskmodel.StateFailed {
-			// 终态失败子 task：跳过登记，让 step 3 重派新子覆盖（I-MR-1 自愈）
-			continue
-		}
-		var p taskcommon.IsolateInstanceTaskPayload
-		if err := jsonUnmarshal(ct.TaskParams, &p); err != nil {
-			logger.Warn("decode child task payload failed, skip",
-				zap.Error(err), zap.String("child_task_id", ct.TaskId))
-			continue
-		}
-		if p.InstanceID != "" {
-			dispatched[p.InstanceID] = ct
-		}
-	}
+	// SUCCESS 和执行中的子 task 都会阻止重复派发；只有 FAILED 且没有后续 SUCCESS /
+	// 执行中任务的实例才会重派。这样短暂故障恢复后无需手动清理历史失败行。
+	childStates := indexIsolateInstanceChildTasks(childTasks, logger)
 
 	// 3. 对未派发过的 instance enqueue IsolateInstance 子 task
 	for _, inst := range instances {
-		if _, ok := dispatched[inst.InstanceId]; ok {
+		if inst == nil {
 			continue
 		}
-		// instance 处于 Paused/Deleted/Failed 终态时跳过派发
-		if inst.Status == modelinstance.InstanceStatusPaused ||
-			inst.Status == modelinstance.InstanceStatusDeleted ||
-			inst.Status == modelinstance.InstanceStatusFailed {
+		state := childStates[inst.InstanceId]
+		if state.succeeded || state.pending {
+			continue
+		}
+		// instance 处于 Paused/Deleted/Failed 终态时跳过派发。
+		if isolateInstanceTerminal(inst.Status) {
 			continue
 		}
 		if err := instanceasync.EnqueueIsolateInstanceTask(
@@ -265,42 +315,27 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 		logger.Info("dispatched isolate instance child task", zap.String("instance_id", inst.InstanceId))
 	}
 
-	// 4. 检查所有子 task 是否都终态 SUCCESS
+	// 4. 按当前实例检查隔离是否已收敛
 	//
-	// I-MR-1 修复（Bug A）：原实现用 TaskCompleted（SUCCESS or FAILED 都算"完成"）
-	// 导致子 FAILED 时父也声明 SUCCESS，pass=isolated 但 instance 仍 Running 的虚假隔离。
-	// 修订：只有 SUCCESS 才算"实际完成"；FAILED 被当成 pending 让父 task 继续重投，
-	// 下一轮 dispatch 阶段会因 dispatched map 不再包含该 instance 而重新 enqueue 新子 task。
+	// 一个实例可能因下游短暂故障产生多个历史 FAILED 子 task。只要同一实例存在后续
+	// SUCCESS，就视为已完成；历史失败不能继续阻塞父任务。没有 SUCCESS 时，执行中任务
+	// 继续等待，只有失败记录的实例由下一轮重派。
 	// 重新 ListByParentTaskID 拿最新视图（包含本轮 enqueue 的）
 	childTasks, err = daoFactory.DefaultDaoFactory.TaskDao(nil).ListByParentTaskID(t.TaskId)
 	if err != nil {
 		return "", fmt.Errorf("re-list child tasks: %w", err)
 	}
-	pendingCount := 0
-	failedCount := 0
-	for _, ct := range childTasks {
-		if ct.TaskName != taskcommon.TaskNameIsolateInstance {
-			continue
-		}
-		switch ct.TaskState {
-		case taskmodel.StateSuccess:
-			// 真正完成
-		case taskmodel.StateFailed:
-			// 终态失败：在下一轮 execute 重新派子 task（dispatched map 已剔除）
-			failedCount++
-		default:
-			// CREATED / RUNNING：仍在跑
-			pendingCount++
-		}
-	}
+	childStates = indexIsolateInstanceChildTasks(childTasks, logger)
+	pendingCount, failedCount := countIncompleteIsolateInstances(instances, childStates)
 	if pendingCount > 0 || failedCount > 0 {
-		// 还有子 task 在跑或有 FAILED 待重派，让框架按 30s ExecuteInterval 重试
+		// 还有实例在隔离或需要重派，让框架按 30s ExecuteInterval 重试。
 		logger.Info("child tasks not all SUCCESS, will retry parent",
 			zap.Int("pending_count", pendingCount),
 			zap.Int("failed_count", failedCount),
-			zap.Int("total_children", len(childTasks)),
+			zap.Int("instance_count", len(instances)),
+			zap.Int("historical_child_count", len(childTasks)),
 		)
-		return "", fmt.Errorf("waiting for %d pending + %d failed-to-redispatch child task(s)", pendingCount, failedCount)
+		return "", fmt.Errorf("waiting for %d pending + %d failed-to-redispatch instance(s)", pendingCount, failedCount)
 	}
 
 	// 5. 全部子 task 终态后，先撤销长期 AI 权益。失败时保持 isolating 并重试，

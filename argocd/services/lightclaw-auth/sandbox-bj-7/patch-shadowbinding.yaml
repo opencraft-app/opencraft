@@ -23,7 +23,7 @@ data:
   PERSONAL_DEV_ACCOUNT_LEASE_ENABLED: "true"
   PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT: "sandbox-bj-7"
   PERSONAL_DEV_ACCOUNT_POOL_USER_IDS: "usr_a91666c074db49d452e19c26"
-  PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS: "9.0.0.0/8,21.0.0.0/8,14.22.11.160/29,14.116.239.32/29"
+  PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS: "9.0.0.0/8,21.0.0.0/8,14.22.11.160/27,14.116.239.32/27"
   PERSONAL_DEV_BILLING_PROXY_ENABLED: "true"
   PERSONAL_DEV_BILLING_PROXY_TRADE_URL: "http://trade.lightvela-playground-sandbox-bj-7.svc.cluster.local/internal/trade/personal-dev/billing-proxy"
   SHADOW_ACCOUNT_ENDPOINT: "account.test.tencentcloudapi.com"
@@ -41,6 +41,9 @@ metadata:
   namespace: user-auth
 spec:
   template:
+    metadata:
+      annotations:
+        lightclaw.tech/config-revision: "2026-09-24-lease-cidr-27"
     spec:
       containers:
         - name: auth

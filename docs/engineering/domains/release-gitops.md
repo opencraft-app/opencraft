@@ -27,7 +27,9 @@ master 源码
 
 ## 不变量
 
-- 统一 Argo CD 控制面运行在受控国内发布机时，固定版本 k0s/Argo 基线、NodePort、repo-server
+- 统一 Argo CD 控制面运行在受控国内发布机时，必须使用宿主机原生 k0s systemd 服务；禁止使用
+  k0s-in-Docker 承载生产 GitOps 控制面，因为嵌套网络命名空间会使部分跨地域 TKE TLS 流量被
+  DevCloud 出口代理错误降级为明文响应。固定版本 k0s/Argo 基线、NodePort、repo-server
   ksops patch 和跨地域客户端超时必须保存在 Git；repo SSH 私钥、目标集群 kubeconfig、管理员密码和
   `sops-age` 私钥继续只存在于受保护的 Git 外存储。控制面重建顺序固定为
   `base install -> repo credential -> sops-age -> target clusters -> projects/runtime -> root apps`。
@@ -58,6 +60,22 @@ master 源码
   `candidate_template_ids` 只保留兼容元数据，不能作为目标库存已就绪的证据。发布映射前必须在
   各环境独立确认对应 Template Class、SKU 和至少一个 active/CLEAN Pool；上海验证不能替代新山。
   回滚只恢复上一组 class/SKU 映射，不删除新旧 Pool，也不改变已分配实例的规格。
+
+- Hermes CVM 镜像流水线在构建开始时解析 COS `latest.json`，完成构建验证后把同一镜像复制到
+  北京、上海、新加坡、东京和新山；东京当前只接收地域镜像，不进入 Pool/存量 VM rollout。
+  Pool 和存量 VM 的发布顺序固定为北京主沙箱、新加坡、新山、上海，每个生产地域必须经过独立
+  只读预检和人工确认后，才能刷新 Pool 并通过 TAT 修补存量 VM。新加坡与新山共享 `sgprod`
+  控制面时，Pool/VM 发现必须按 `pool.zone` 对应的 region 隔离；不得把新加坡目标带入新山阶段，
+  也不得用跨地域共享 SKU 的单一全局镜像字段代替各 Pool 的地域权威 `base_image`。
+  仅存在于单一地域的 SKU 则必须同步更新 `desired_image_id`，避免 SKU rollout controller 将该地域
+  Pool 回写到旧的 stable image；是否更新 SKU 必须按每个 SKU 的 Pool 地域集合判断，不能按全部
+  Hermes Pool 是否跨地域进行一次性全局跳过。
+  `images/hermes-image-trigger` 用于显式触发新版本构建，不能以仅同步镜像冒充新山 Pool 和存量 VM
+  已完成发布。Runtime 验证只能从规范的 `Hermes Agent vX.Y.Z` 输出行提取版本，SSH 重试诊断、IP
+  地址和传输错误不得参与版本匹配。
+  存量 VM 的 TAT 修补必须以 build ID 和环境为作用域持久化逐台派发 checkpoint；runner 重启或阶段
+  重试时只跳过已有 `INVOKED` 的 cloud instance，继续失败和未处理项。checkpoint JSONL 的中断尾行
+  可以忽略，但不得因读取失败退化成全量 `--force=true` 重复升级。
 
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
@@ -521,5 +539,53 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 VelaGW subtree 更新时，北京 workload 的 `OTEL_SERVICE_VERSION` 以及 `shprod`、`sgprod` 的
 `VELAGW_OTEL_SERVICE_VERSION` 必须同步指向 subtree 源码短版本；这些字段只描述构建源码，
 不得借此修改镜像 pin 或触发生产 Argo sync。
+
+## playground 环境的 DB migration job
+
+playground（`sandbox-*`）环境的应用镜像不在启动时执行 migration；`lightclaw-auth` Deployment 的
+`wait-db-schema` initContainer 也只校验历史核心表，不覆盖新增 migration。因此新 migration 要在
+playground 生效，必须显式落一个 GitOps job：
+
+- 在 `argocd/services/<service>/<env>/` 下新增 `*-migration-job.yaml`，并在同目录
+  `kustomization.yaml` 的 `resources` 中挂载。参考实现：
+  `argocd/services/credit/sandbox-bj-7/credit-migration-job.yaml` 与
+  `argocd/services/lightclaw-auth/sandbox-bj-7/auth-migration-job.yaml`。
+- job 复用该环境当前已部署的镜像 digest 与 `envFrom`（服务 ConfigMap + Secret），执行镜像内置的
+  migrate 二进制。migration 必须幂等（`CREATE TABLE IF NOT EXISTS`、容忍 `ErrNoChange`），
+  因此补建表不需要重新构建镜像或发布服务。
+- Kubernetes Job spec 不可变。需要重跑同一 migration 时改 job `metadata.name`（例如追加用途后缀），
+  不要原地修改已存在的 job。
+- 该改动必须同时落到 `master`（源）与 `gitops`（Argo 实际读取分支）。Argo 自动 Sync 后，以 job
+  完成状态和接口真实行为为验收依据；manifest 合入本身不是证据。
+- 只新增 job，不改 Deployment 镜像、副本，也不触碰生产环境目录。
+
+## 个人 DevCloud 租约来源网段（PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS）
+
+`sandbox-bj-7`、`sandbox-kr-1` 的 `lightclaw-auth` 通过 `PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS`
+限制 `POST /auth/dev-environments/account-lease` 的调用来源。网关在
+`service-gateway/internal/gateway/client_ip.go` 里由右向左剥离可信跳后写入 `X-Lightclaw-Client-IP`，
+auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forwarded-For` 无法绕过，
+因此网段配置错误会直接表现为 `403 developer_test_account_source_forbidden`。
+
+- DevCloud 开发机的公网出口确实是**多 IP NAT 轮换**（实测 `21.214.48.147` 覆盖
+  `14.22.11.160-180` 与 `14.116.239.33-42`），因此网段必须按实测出口池放宽为 `/27`，
+  即 `14.22.11.160/27` 与 `14.116.239.32/27`；原先的 `/29` 只覆盖 `.160-.167` 与 `.32-.39`。
+- 但**出口轮换不是偶发 403 的直接原因**。`PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS`
+  只在进程启动时解析成 `h.sourceCIDRs`（`user/auth/internal/httpapi/developer_test_account.go`），
+  ConfigMap 更新**不会**触发 Deployment 滚动，旧 Pod 会继续按旧网段判定。
+  副本数为 1~2 时新旧 Pod 并存，请求随机落到旧 Pod 即 403、落到新 Pod 即 401/200，
+  表现为"概率性 403"。实测同一出口 IP `14.116.239.40` 既出现 403 也出现 401，可证明
+  403 与出口 IP 无关。
+- 因此凡是修改 `lightclaw-auth` 这类**启动期读取配置**的 ConfigMap，必须在同一次变更里
+  同步更新 Deployment pod template 的 `lightclaw.tech/config-revision` 注解强制滚动，
+  否则配置不会生效。
+- 判断这类来源问题必须**多次采样**（建议 ≥ 12 次），并且采样方式要能区分变量：
+  `curl ifconfig.me` 与业务请求是两条独立连接，不能用前者归因后者；HTTP 连接复用会让
+  连续请求固定落在同一 Pod，需要同时跑"复用单连接"与"每次新建连接"两组对照。
+- 该配置只作用于 playground/sandbox overlay，用于个人开发环境自助领号，不涉及任何生产目录；
+  变更后需分别在 bj-7 与 kr-1 连续调用租约接口，以 0 个 403 作为验收证据。
+  2026-09-24 实测：bj-7 与 kr-1 各连续 12 次调用，24/24 返回
+  `401 developer_test_account_renewal_requires_session`（已有租约需带 session 续租的正常分支），
+  0 个 403，验收通过。
 
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。

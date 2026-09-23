@@ -52,7 +52,7 @@ type Store interface {
 	GetPasswordUser(ctx context.Context, email string) (User, []byte, error)
 	CreateSession(ctx context.Context, user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	CreateImpersonationSession(ctx context.Context, user User, reason string, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
-	AcquireDeveloperTestAccount(ctx context.Context, candidateUserIDs []string, leaseOwner string, targetIP string, now time.Time, ttl time.Duration, renewalUserID string) (DeveloperTestAccountLease, *AuthSession, error)
+	AcquireDeveloperTestAccount(ctx context.Context, candidateUserIDs []string, leaseOwner string, targetIP string, now time.Time, ttl time.Duration, renewalUserID string, forceSameOwnerTakeover bool) (DeveloperTestAccountLease, *AuthSession, error)
 	ReleaseDeveloperTestAccount(ctx context.Context, userID string, leaseOwner string, now time.Time) (DeveloperTestAccountLease, error)
 	CurrentSession(ctx context.Context, token string, now time.Time) (*AuthSession, error)
 	CurrentProfile(ctx context.Context, token string, now time.Time) (User, error)
