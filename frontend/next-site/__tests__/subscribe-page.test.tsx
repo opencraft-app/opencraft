@@ -197,6 +197,13 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  it("shows the Shanghai campaign memory on the domestic pricing card", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    expect((await screen.findAllByText("4核 16G 内存")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("4核 8G 内存")).not.toBeInTheDocument();
+  });
+
   it("shows a page-level loading state until the bundles request returns", async () => {
     sessionState.isAuthenticated = true;
     openClawState.isLoggedIn = true;

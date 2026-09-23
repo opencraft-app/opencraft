@@ -495,7 +495,7 @@ const mapBundleToPlan = (
   const nmLower = bundleNm.toLowerCase();
   const isLaunchTier = bundleNm.includes("启航") || nmLower.includes("launch");
   const isCruiseTier = bundleNm.includes("巡游") || nmLower.includes("cruise");
-  /* 活动规格：启航 2核8G；巡游 4核16G。 */
+  /* 两地活动规格：启航 2核8G；巡游 4核16G。 */
   const envSpec = isLaunchTier ? t("2核 8G 内存") : t("4核 16G 内存");
   /* 专属云端存储：启航 50G；巡游升配 80G。 */
   const storageSpec = isLaunchTier ? "50G" : "80G";
@@ -1279,6 +1279,7 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("日常主力，让智能化成为习惯");
   void t("1 个");
   void t("云端独立环境");
+  void t("4核 8G 内存");
   void t("4核 16G 内存");
   void t("极简配置面板");
   void t("定时任务");

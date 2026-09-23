@@ -36,10 +36,13 @@ describe("Agent sidebar action tooltip", () => {
     });
 
     const onClick = vi.fn();
+    const onParentKeyDown = vi.fn();
     const { unmount } = render(
-      <WorkspaceActionTooltip content="删除整个 Agent" side="bottom" compact focusable={false}>
-        <button type="button" aria-label="删除整个 Agent" onClick={onClick}>删除</button>
-      </WorkspaceActionTooltip>,
+      <div onKeyDown={onParentKeyDown}>
+        <WorkspaceActionTooltip content="删除整个 Agent" side="bottom" compact focusable={false}>
+          <button type="button" aria-label="删除整个 Agent" onClick={onClick}>删除</button>
+        </WorkspaceActionTooltip>
+      </div>,
       { container: sidebar },
     );
 
@@ -55,6 +58,9 @@ describe("Agent sidebar action tooltip", () => {
 
     fireEvent.click(button);
     expect(onClick).toHaveBeenCalledOnce();
+    fireEvent.keyDown(trigger!, { key: "Enter" });
+    fireEvent.keyDown(trigger!, { key: " " });
+    expect(onParentKeyDown).not.toHaveBeenCalled();
     fireEvent.keyDown(trigger!, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).toBeNull();
     fireEvent.focus(button);

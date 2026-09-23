@@ -497,6 +497,10 @@ export function WorkspaceActionTooltip({
       onFocus={showTooltip}
       onBlur={scheduleClose}
       onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.stopPropagation();
+          return;
+        }
         if (event.key !== "Escape") return;
         clearCloseTimer();
         setOpen(false);
@@ -5719,6 +5723,9 @@ export const AgentSettingsPage = ({
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const isRepairingBot = repairingBotIds.has(activeBot.id);
               const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启");
+              const pausedStatusTooltip = activeBot.status === "paused"
+                ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
+                : undefined;
               const restartOrRepairDisabled = activeBot.status === "failed" ? isRepairingBot : isRestartDisabled;
               const resetBlockReason = getResetBlockReason(activeBot, resetting);
               const resetDisabled = botsLoading || maintenanceBusy || resetBlockReason !== null;
@@ -5807,17 +5814,19 @@ export const AgentSettingsPage = ({
                                 {truncateBotName(agentProfileDisplayName)}
                               </span>
                               <span className="lv-agent-status-row">
-                                <span className="lv-agent-status">
-                                  {isActiveBotRestarting ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <span
-                                      className="inline-block h-1.5 w-1.5 rounded-full"
-                                      style={{ background: getBotStatusColor(activeBot.status) }}
-                                    />
-                                  )}
-                                  {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                                </span>
+                                <WorkspaceActionTooltip content={pausedStatusTooltip} side="bottom">
+                                  <span className="lv-agent-status">
+                                    {isActiveBotRestarting ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <span
+                                        className="inline-block h-1.5 w-1.5 rounded-full"
+                                        style={{ background: getBotStatusColor(activeBot.status) }}
+                                      />
+                                    )}
+                                    {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                  </span>
+                                </WorkspaceActionTooltip>
                                 {passExpiryReminder && passExpiryReminderCopy && activePass && (
                                   renewalAvailable ? (
                                     <span className="group relative inline-flex">
