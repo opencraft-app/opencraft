@@ -18,7 +18,7 @@ import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } from "@/domain/types";
 import { REALNAME_LEVEL } from "@/domain/types";
-import { useT } from "@/i18n/t";
+import { useCurrentLocale, useT, type I18nLocale } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { cn } from "@/lib/utils";
@@ -74,6 +74,16 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
 } as const;
 /** AI 增强版套餐类型标识（启航 AI 对新用户提供 1 个月免费，巡游 AI 为首购折扣） */
 const BUNDLE_TYPE_AI = "ai";
+/** 套餐选项专用短标签，避免影响其他场景的完整“推荐”译文。 */
+const PLAN_RECOMMENDATION_BY_LOCALE: Record<I18nLocale, string> = {
+  "zh-CN": "推荐",
+  "zh-Hant": "推薦",
+  "en-US": "Top pick",
+  "id-ID": "Pilihan",
+  es: "Sugerido",
+  "ja-JP": "推奨",
+  "ko-KR": "추천",
+};
 /** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
 const CRUISE_BUNDLE_NAME_KEYWORDS = {
   zh: "巡游",
@@ -1444,6 +1454,7 @@ const PlanCard = ({
   onVariantChange?: (bundleId: string) => void;
 }) => {
   const t = useT();
+  const locale = useCurrentLocale();
   /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
      价格 / 积分 / 折扣 / 下单套餐随之联动。国内外统一默认选 AI 增强版
      （启航 4500 / 巡游 10000）。 */
@@ -1669,7 +1680,7 @@ const PlanCard = ({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {t("推荐")}
+                      {PLAN_RECOMMENDATION_BY_LOCALE[locale]}
                     </span>
                   )}
                 </button>

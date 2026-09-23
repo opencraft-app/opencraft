@@ -41,6 +41,7 @@ derived: false
 
 ## decisions / plan
 - 国际 Bot 数值只显示数量；复用通用“个”会被英/印尼/韩字典翻译成 Agent，故保留国内量词、国际省略量词。
+- 用户后续确认套餐标签短文案：en-US Top pick、id-ID Pilihan、es Sugerido、ja-JP 推奨、ko-KR 추천、中文推荐/推薦；使用页面内穷举 locale 表，仅替换本标签，不修改通用字典。
 - 沿用已批准设计：AI 积分选项旁的粉色纯文字“推荐”，无新增边框或交互；两站复用现有翻译与 colors.recommendationText。
 - 1. 先更新国际测试：匿名/登录、AI/标准档均展示 5/10 Bot，只有 AI 选项带推荐，保留一月活动与价格断言；确认旧实现失败。
 - 2. 移除 Bot 展示、占位卡及推荐的国内限定，复用同一映射和组件。
@@ -71,6 +72,7 @@ subscription-entitlements、frontend-runtime-openspec-i18n。
 - pnpm build:global：通过，664 个静态路由及 HTML / SEO 后处理完成。
 - Playwright 浏览器复测：7 种语言 × 320/390/768/1440px 共 28 组均无页面/标签溢出，每页 2 个推荐标签；人工查看 320px 印尼语截图通过。临时证据 /tmp/global-bots-browser.json、/tmp/global-bots-id-id-320.png，不提交生成物。
 - 文档链接校验 errors=[]；变更影响校验、git diff --check 通过。
+- 短标签后续验证：双站订阅及字典 87 项测试通过，pnpm check 和 build:global 通过；7 语言 × 4 宽度共 28 组浏览器复测无溢出，截图 /tmp/global-bots-short-en-320.png。原通用推荐字典未改动。
 - 构建字体子集差异已恢复。
 
 ## risks

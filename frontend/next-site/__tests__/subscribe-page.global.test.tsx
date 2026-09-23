@@ -105,7 +105,10 @@ vi.mock("@/i18n/t", async importOriginal => {
   const translate = (zh: string, opts?: Record<string, unknown>) => zh.replace(
     /\{\{(\w+)\}\}/g, (placeholder, key: string) => opts?.[key] == null ? placeholder : String(opts[key]),
   );
-  return { ...actual, useT: () => {
+  return { ...actual, useCurrentLocale: () => {
+    const locale = actual.useCurrentLocale();
+    return translationState.real ? locale : "zh-CN";
+  }, useT: () => {
     const t = actual.useT();
     return translationState.real ? t : translate;
   } };
@@ -470,12 +473,12 @@ describe("SubscribePage intl AI promo tags", () => {
   });
 
   it.each([
-    ["en-US", "Bots", "Recommended"],
+    ["en-US", "Bots", "Top pick"],
     ["zh-CN", "Bot 数", "推荐"],
     ["zh-Hant", "Bot 數", "推薦"],
-    ["id-ID", "Jumlah Bot", "Direkomendasikan"],
-    ["es", "Número de bots", "Recomendado"],
-    ["ja-JP", "Bot数", "おすすめ"],
+    ["id-ID", "Jumlah Bot", "Pilihan"],
+    ["es", "Número de bots", "Sugerido"],
+    ["ja-JP", "Bot数", "推奨"],
     ["ko-KR", "Bot 수", "추천"],
   ] as const)("localizes Bot limits and AI recommendations in %s", async (locale, botLabel, recommendation) => {
     translationState.real = true;
