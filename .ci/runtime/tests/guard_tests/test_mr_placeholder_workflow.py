@@ -95,6 +95,13 @@ class MRPlaceholderWorkflowTests(unittest.TestCase):
         self.assertIn("bash .ci/checks/guard.sh", workflow)
         self.assertIn('GUARD_NAME="ci-runtime-candidate"', workflow)
 
+    def test_opencraft_guard_bootstraps_node_before_sync(self) -> None:
+        guard = (REPO_ROOT / ".ci/checks/opencraft_guard.sh").read_text()
+        self.assertIn("source .ci/init.sh", guard)
+        self.assertIn("ci_init_repo_root", guard)
+        self.assertIn('if [[ "$(uname -s)" == "Linux" ]]; then\n  ci_ensure_node\nfi', guard)
+        self.assertLess(guard.index("ci_ensure_node"), guard.index("node opencraft/scripts/sync-mono2-agent-console.mjs --check"))
+
 
 if __name__ == "__main__":
     unittest.main()
