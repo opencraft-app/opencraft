@@ -50,6 +50,9 @@ metadata:
   namespace: user-auth
 spec:
   template:
+    metadata:
+      annotations:
+        lightclaw.tech/config-revision: "2026-09-24-lease-cidr-27"
     spec:
       containers:
         - name: auth

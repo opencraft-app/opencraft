@@ -186,6 +186,16 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
   `ctl-passes` 上游预算 30 秒。任一目标询价失败时整条请求失败，不能把临时故障展示成“无可升级套餐”。
 - `target_ip_not_allowed`：Auth 观测到的来源 IP 未进入对应 testing allowlist；核对服务端观测值，不要把
   页面 IP 或整段公网 CIDR 盲目放开。
+- `developer_test_account_source_forbidden`（HTTP 403）：按下述顺序排查，不要先怀疑网段。
+  1. **先确认 Auth Pod 是否已滚动**。`PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS` 只在进程启动时解析，
+     改 ConfigMap 不会自动重启 Pod；新旧 Pod 并存时同一台 DevCloud 会随机命中旧 Pod 而 403。
+     修复方式是在 gitops 与 master 的 Deployment pod template 同步更新
+     `lightclaw.tech/config-revision` 注解强制滚动，不是继续放宽网段。
+  2. 再核对服务端观测到的来源 IP 是否落在 allowlist 内（当前为 `9.0.0.0/8`、`21.0.0.0/8`、
+     `14.22.11.160/27`、`14.116.239.32/27`）。
+  3. 采样要能区分变量：至少 12 次，并分别用“复用单连接”和“每次新建连接”两组对照；
+     `curl ifconfig.me` 与业务请求是两条独立连接，不能用来给业务请求的 403 归因。
+  4. 本机 Mac 直连必然 403，租约请求只能从 DevCloud 发起。
 - `developer_test_account_busy`：池内账号都处于有效租约；等待其他 DevCloud `down`/TTL，或由环境 owner
   按正式流程扩容，不得复用仍有 active callback 的账号。
 - `developer_test_account_renewal_requires_session`：目标 DevCloud 已有有效租约，但请求未证明持有当前

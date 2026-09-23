@@ -559,14 +559,25 @@ playground 生效，必须显式落一个 GitOps job：
 auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forwarded-For` 无法绕过，
 因此网段配置错误会直接表现为 `403 developer_test_account_source_forbidden`。
 
-- DevCloud 开发机的公网出口是**多 IP NAT 轮换**，同一台机器连续请求会落在不同出口 IP 上。
-  实测 `21.214.48.147` 采样 120 次，出口覆盖 `14.22.11.160-180` 与 `14.116.239.33-42`。
-- 原先配置的 `/29`（`14.22.11.160/29`、`14.116.239.32/29`）只覆盖 `.160-.167` 与 `.32-.39`，
-  导致约三分之一请求落在段外并偶发 403。现统一放宽为 `/27`，覆盖 `14.22.11.160-191`
-  与 `14.116.239.32-63`，与实测出口池完全包含。
-- 判断这类来源问题必须**多次采样**（建议 ≥ 20 次）。单次探测在轮换出口下会得到随机结论，
-  既可能误判为"已修复"，也可能误判为服务故障。
+- DevCloud 开发机的公网出口确实是**多 IP NAT 轮换**（实测 `21.214.48.147` 覆盖
+  `14.22.11.160-180` 与 `14.116.239.33-42`），因此网段必须按实测出口池放宽为 `/27`，
+  即 `14.22.11.160/27` 与 `14.116.239.32/27`；原先的 `/29` 只覆盖 `.160-.167` 与 `.32-.39`。
+- 但**出口轮换不是偶发 403 的直接原因**。`PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS`
+  只在进程启动时解析成 `h.sourceCIDRs`（`user/auth/internal/httpapi/developer_test_account.go`），
+  ConfigMap 更新**不会**触发 Deployment 滚动，旧 Pod 会继续按旧网段判定。
+  副本数为 1~2 时新旧 Pod 并存，请求随机落到旧 Pod 即 403、落到新 Pod 即 401/200，
+  表现为"概率性 403"。实测同一出口 IP `14.116.239.40` 既出现 403 也出现 401，可证明
+  403 与出口 IP 无关。
+- 因此凡是修改 `lightclaw-auth` 这类**启动期读取配置**的 ConfigMap，必须在同一次变更里
+  同步更新 Deployment pod template 的 `lightclaw.tech/config-revision` 注解强制滚动，
+  否则配置不会生效。
+- 判断这类来源问题必须**多次采样**（建议 ≥ 12 次），并且采样方式要能区分变量：
+  `curl ifconfig.me` 与业务请求是两条独立连接，不能用前者归因后者；HTTP 连接复用会让
+  连续请求固定落在同一 Pod，需要同时跑"复用单连接"与"每次新建连接"两组对照。
 - 该配置只作用于 playground/sandbox overlay，用于个人开发环境自助领号，不涉及任何生产目录；
   变更后需分别在 bj-7 与 kr-1 连续调用租约接口，以 0 个 403 作为验收证据。
+  2026-09-24 实测：bj-7 与 kr-1 各连续 12 次调用，24/24 返回
+  `401 developer_test_account_renewal_requires_session`（已有租约需带 session 续租的正常分支），
+  0 个 403，验收通过。
 
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。
