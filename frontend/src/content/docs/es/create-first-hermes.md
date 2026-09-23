@@ -40,7 +40,7 @@ No hay un paso de verificación de identidad real en China en el sitio internaci
 
 ### 3. Activar el plan mediante el flujo de activación internacional actual
 
-Los planes de LightVela entrarán en beta pública y comenzarán la facturación el 18 de agosto de 2026 (hora de Singapur). Una vez que el beta pública y la facturación comiencen oficialmente, la validez del plan de los usuarios beta se extenderá por un mes adicional, y los nuevos usuarios pueden probar Launch gratis por 14 días. Siga las instrucciones en la tarjeta del plan para activarlo y consulte la página de Suscripción para la información actual.
+Los planes de LightVela entrarán en beta pública y comenzarán la facturación el 18 de agosto de 2026 (hora de Singapur). Una vez que el beta pública y la facturación comiencen oficialmente, la validez del plan de los usuarios beta se extenderá por un mes adicional, y los nuevos usuarios pueden probar Launch gratis por 1 mes. Siga las instrucciones en la tarjeta del plan para activarlo y consulte la página de Suscripción para la información actual.
 
 ### 4. Permita que LightVela provisione la instancia automáticamente
 
@@ -68,7 +68,7 @@ LightVela comienza a provisionar la instancia de Hermes automáticamente despué
 
 ### ¿Qué ocurre después de que comience la facturación?
 
-Una vez que comience oficialmente la facturación, la validez del plan de los usuarios beta se extenderá por un mes adicional. Los nuevos usuarios pueden probar Launch gratis por 14 días. Consulte la [página de Suscripción](/subscribe) y [Anuncio de la Versión de Pago de LightVela](./announcements/public-beta.md) para la información más reciente.
+Una vez que comience oficialmente la facturación, la validez del plan de los usuarios beta se extenderá por un mes adicional. Los nuevos usuarios pueden probar Launch gratis por 1 mes. Consulte la [página de Suscripción](/subscribe) y [Anuncio de la Versión de Pago de LightVela](./announcements/public-beta.md) para la información más reciente.
 
 ### ¿Cuántas instancias de Hermes puede activar una cuenta?
 

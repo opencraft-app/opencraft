@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "source": "shared/lightvela-agent-core",
+  "digest": "2fb3d58725734bdbd0209e1f2429cef3d5cf4e661aeff1387d322a47212b93a7",
+  "files": [
+    {
+      "file": "README.md",
+      "sha256": "b7fa76e37a7252b22fc204214d78ca1e6e4e4cbe2b27a7d8c2dd97c767267e2d"
+    },
+    {
+      "file": "package.json",
+      "sha256": "66a18a604a79c7d363d2856eb2a0bafe25357c2b6fb0bc8182b7cfd1f6faf5d5"
+    },
+    {
+      "file": "src/bot-catalog.ts",
+      "sha256": "f54c55bbbc5a4f6fa351f4ef43b1831ec3ded3dc7ad0add8ee7be73a945051c6"
+    },
+    {
+      "file": "src/bot-creation.ts",
+      "sha256": "e395e299b5b129503f9ab0354b69c8789817904f64383e85c873d9c683df0633"
+    },
+    {
+      "file": "src/bot-identity.ts",
+      "sha256": "1e3737fbcb9be0c8394b63752be7d2421deb258e49c6234b8a003443b1bf9520"
+    },
+    {
+      "file": "src/bot-lifecycle.ts",
+      "sha256": "45846cd3be554123e90702f4ec04c52695aa6637f4a76dbbc616eb853fe27807"
+    },
+    {
+      "file": "src/index.ts",
+      "sha256": "9bdd712b37c7be23c8766036880523015e3464de45ff8c16163b55e659ec4bc5"
+    },
+    {
+      "file": "tsconfig.json",
+      "sha256": "075744344d36dad0ac59a9e35a73d98bc177b80b5fdc1c38c4adcf1dcdb1694d"
+    }
+  ]
+}

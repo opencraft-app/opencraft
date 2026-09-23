@@ -15,6 +15,10 @@ import { LIGHTVELA_TOKEN_KEY, LIGHTVELA_ACTIVE_BOT_KEY, LIGHTVELA_API_BASE } fro
 const root = new URL("../", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), "utf8");
 const json = (path: string) => JSON.parse(read(path));
+const sharedWorkspacePackages = new Map([
+  ["packages/lightvela-agent-core/package.json", ["@lightvela/agent-core", "shared/lightvela-agent-core"]],
+  ["packages/vela-chat-client-core/package.json", ["@lightvela/vela-chat-client-core", "shared/vela-chat-client-core"]],
+]);
 
 test("all workspace packages use OpenCraft without old scope aliases", () => {
   assert.equal(json("package.json").name, "opencraft");
@@ -24,7 +28,13 @@ test("all workspace packages use OpenCraft without old scope aliases", () => {
       const path = `${group}/${entry.name}/package.json`;
       if (!existsSync(new URL(path, root))) continue;
       const manifest = json(path);
-      assert.match(manifest.name, /^@opencraft\//u, path);
+      const sharedPackage = sharedWorkspacePackages.get(path);
+      if (sharedPackage) {
+        assert.equal(manifest.name, sharedPackage[0], path);
+        assert.equal(json(`${group}/${entry.name}/UPSTREAM.json`).source, sharedPackage[1], path);
+      } else {
+        assert.match(manifest.name, /^@opencraft\//u, path);
+      }
       assert.doesNotMatch(JSON.stringify(manifest), /@vela\//u, path);
     }
   }

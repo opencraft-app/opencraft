@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**LightVela planea entrar en beta pública con facturación habilitada el 18 de agosto de 2026 (hora de Singapur). Una vez que esto ocurra, los planes actuales de beta cerrado se extenderán por un mes adicional, y los nuevos usuarios pueden probar Launch gratis durante 14 días o Launch AI gratis durante 7 días en su primer pedido. Actualmente se ofrecen dos planes: Launch y Cruise, que difieren en las especificaciones de la ejecución en la nube, el almacenamiento dedicado y los créditos mensuales de modelo; las capacidades del Agent central son idénticas en todos los niveles. Los precios en vivo, la disponibilidad y los derechos exactos son lo que se muestra en la página de suscripción.**
+**LightVela planea entrar en beta pública con facturación habilitada el 18 de agosto de 2026 (hora de Singapur). Una vez que esto ocurra, los planes actuales de beta cerrado se extenderán por un mes adicional, y los nuevos usuarios pueden probar Launch gratis durante 1 mes o Launch AI gratis durante 1 mes en su primer pedido. Actualmente se ofrecen dos planes: Launch y Cruise, que difieren en las especificaciones de la ejecución en la nube, el almacenamiento dedicado y los créditos mensuales de modelo; las capacidades del Agent central son idénticas en todos los niveles. Los precios en vivo, la disponibilidad y los derechos exactos son lo que se muestra en la página de suscripción.**
 
 ---
 
@@ -18,7 +18,7 @@ Desde que se abrió el acceso beta, hemos recibido muchas sugerencias y informes
 | --- | --- |
 | Fecha planeada de beta pública y facturación | 18 de agosto de 2026 (Hora de Singapur) |
 | Beneficio para usuarios beta | Una vez que el beta pública y la facturación comiencen oficialmente, la validez del plan de los usuarios beta se extenderá por un mes adicional |
-| Beneficio para nuevos usuarios después del inicio del beta pública y facturación | Launch gratis 14 días en el primer pedido; Launch AI gratis 7 días en el primer pedido |
+| Beneficio para nuevos usuarios después del inicio del beta pública y facturación | Launch gratis 1 mes en el primer pedido; Launch AI gratis 1 mes en el primer pedido |
 
 ## Capacidades del producto que continuaremos construyendo
 
@@ -42,22 +42,22 @@ LightVela planea entrar en beta pública e iniciar la facturación el 18 de agos
 
 | Plan | Precio mensual | Agent | Ejecución aislada | Almacenamiento en la nube dedicado | Créditos | Otros beneficios |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch | $7.5 / mes | 1 | 2 núcleos 4GB | 50GB | 100 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
-| Cruise | $15 / mes | 1 | 4 núcleos 8GB | 80GB | 200 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
+| Launch | $7.5 / mes | 1 | 2 núcleos 8GB | 50GB | 100 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
+| Cruise | $15 / mes | 1 | 4 núcleos 16GB | 80GB | 200 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
 
 ### Planes con créditos de IA
 
 | Plan | Precio mensual | Agent | Ejecución aislada | Almacenamiento en la nube dedicado | Créditos | Otros beneficios |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch AI | Pronto | Pronto | 2 núcleos 4GB | 50GB | 4500 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
-| Cruise AI | Pronto | Pronto | 4 núcleos 8GB | 80GB | 10000 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
+| Launch AI | Pronto | Pronto | 2 núcleos 8GB | 50GB | 4500 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
+| Cruise AI | Pronto | Pronto | 4 núcleos 16GB | 80GB | 10000 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
 
 ## Beneficios para nuevos usuarios después del inicio del beta pública y facturación
 
 También esperamos seguir escuchando a los usuarios beta.
 
-- Prueba gratuita de Launch por 14 días: los nuevos usuarios pueden probar Launch de forma gratuita, incluyendo 1 Agent en la nube, una ejecución aislada de 2 núcleos 4GB, 50GB de almacenamiento en la nube dedicado, una pequeña cantidad de créditos de prueba, disponibilidad 24/7 y la consola de configuración simple.
-- Prueba gratuita de Launch AI por 7 días: los nuevos usuarios que deseen más créditos de IA pueden probar Launch AI gratis durante 7 días en su primer pedido.
+- Prueba gratuita de Launch por 1 mes: los nuevos usuarios pueden probar Launch de forma gratuita, incluyendo 1 Agent en la nube, una ejecución aislada de 2 núcleos 8GB, 50GB de almacenamiento en la nube dedicado, una pequeña cantidad de créditos de prueba, disponibilidad 24/7 y la consola de configuración simple.
+- Prueba gratuita de Launch AI por 1 mes: los nuevos usuarios que deseen más créditos de IA pueden probar Launch AI gratis durante 1 mes en su primer pedido.
 - Más beneficios de compra llegarán más tarde.
 
 ## Direcciones de la siguiente iteración del producto

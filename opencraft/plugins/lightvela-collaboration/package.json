@@ -8,7 +8,7 @@
     "./runtime-entry": "./src/runtime-entry.ts"
   },
   "dependencies": {
-    "@lightvela/vela-chat-client-core": "file:../../../shared/vela-chat-client-core",
+    "@lightvela/vela-chat-client-core": "0.0.0",
     "@opencraft/extension-react": "0.1.0",
     "@opencraft/extension-runtime": "0.1.0",
     "@tencentcloud/chat": "3.6.6",

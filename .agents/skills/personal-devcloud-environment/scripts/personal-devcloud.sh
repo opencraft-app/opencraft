@@ -34,6 +34,7 @@ KUBECONFIG_FILE="$STATE_ROOT/kubeconfig"
 CALLBACK_PORT="${PERSONAL_DEV_CALLBACK_PORT:-18084}"
 INTERNAL_TRADE_PORT="${PERSONAL_DEV_INTERNAL_TRADE_PORT:-28084}"
 TTL_SECONDS="${PERSONAL_DEV_TTL_SECONDS:-28800}"
+BILLING_ACCOUNT_LEASE_TTL_SECONDS="${PERSONAL_DEV_ACCOUNT_LEASE_TTL_SECONDS:-86400}"
 BROWSER_SESSION_TTL_SECONDS="${PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS:-28800}"
 
 AUTH_BASE=""
@@ -41,6 +42,8 @@ AUTH_ADMIN_BASE=""
 CLGATEWAY_BASE=""
 BILLING_APIGW_URL=""
 REGISTRATION_URL=""
+ACCOUNT_LEASE_URL=""
+ACCOUNT_LEASE_ERROR=""
 TEMP_FILES=()
 
 cleanup_temp_files() {
@@ -189,6 +192,7 @@ configure_site() {
   validate_clgateway_base
   validate_billing_apigw_url
   REGISTRATION_URL="$AUTH_BASE/auth/dev-environments/registration"
+  ACCOUNT_LEASE_URL="$AUTH_BASE/auth/dev-environments/account-lease"
 }
 
 validate_auth_admin_base() {
@@ -327,21 +331,40 @@ current_billing_capability() {
 }
 
 verify_billing_capability() {
-  local capability status_code
+  local capability status_code response_file
   capability="$(current_billing_capability)"
-  status_code="$(billing_capability_probe_status "$capability" || true)"
+  new_private_temp billing-capability-probe-response
+  response_file="$TEMP_FILE_RESULT"
+  status_code="$(billing_capability_probe_status "$capability" "$response_file" || true)"
   unset capability
-  [[ "$status_code" == "200" ]]
+  if [[ "$status_code" != "200" ]]; then
+    remove_private_temp "$response_file"
+    return 1
+  fi
+  if ! python3 - "$response_file" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(0 if payload == {"code": "OK", "message": "ready"} else 1)
+PY
+  then
+    remove_private_temp "$response_file"
+    return 1
+  fi
+  remove_private_temp "$response_file"
 }
 
 billing_capability_probe_status() {
-  local capability="$1" config_file status_code
+  local capability="$1" response_file="${2:-/dev/null}" config_file status_code
   [[ "$capability" =~ ^lvdt1\.[1-9][0-9]*\.[A-Za-z0-9_-]+$ ]] \
     || return 1
   new_private_temp billing-capability-probe-config
   config_file="$TEMP_FILE_RESULT"
   printf 'header = "X-LightVela-Developer-Capability: %s"\n' "$capability" >"$config_file"
-  status_code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  status_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
     --request POST --config "$config_file" -H 'X-TC-Action: DescribeOrderList' \
     -H 'Authorization: LightVela-Readiness-Probe' \
     "$AUTH_BASE/auth/dev-environments/billing-proxy/cloudapi/?Action=DescribeOrderList" || true)"
@@ -741,6 +764,13 @@ central_session() {
   token="${PERSONAL_DEV_SESSION_TOKEN:-$(state_get central_session_token)}"
   if [[ -n "$token" ]]; then
     if curl_with_token "$token" "$AUTH_BASE/auth/shadow/binding" >/dev/null 2>&1; then
+      if [[ "$(state_get central_account_mode)" == "leased" ]] && account_lease_needs_renewal; then
+        if acquire_central_account_lease >/dev/null; then
+          token="$(state_get central_session_token)"
+        else
+          log "${ACCOUNT_LEASE_ERROR:-testing account lease renewal failed}; reusing the still-valid session until its TTL expires"
+        fi
+      fi
       persist_endpoint_config
       if [[ -n "${PERSONAL_DEV_EMAIL:-}" ]]; then
         state_set central_email "$PERSONAL_DEV_EMAIL"
@@ -761,6 +791,15 @@ central_session() {
   if [[ -z "$email" && -n "$legacy_email" && "$legacy_email" != lv-local-*"@example.com" ]]; then
     email="$legacy_email"
     password="${password:-$legacy_password}"
+  fi
+  if [[ -z "$email" && -z "$password" ]]; then
+    if ! acquire_central_account_lease >/dev/null; then
+      die "${ACCOUNT_LEASE_ERROR:-testing account lease failed}"
+    fi
+    token="$(state_get central_session_token)"
+    [[ -n "$token" ]] || die "testing account lease did not return a central session"
+    printf '%s\n' "$token"
+    return
   fi
   if [[ -z "$email" && "$SITE" == "intl" ]]; then
     if [[ -n "$(state_get central_user_id)" || -n "$(state_get uin)" ]]; then
@@ -797,8 +836,153 @@ central_session() {
   persist_endpoint_config
   state_set central_email "$email"
   state_set central_password "$password"
+  state_set central_account_mode existing
   state_set central_session_token "$token"
   printf '%s\n' "$token"
+}
+
+account_lease_needs_renewal() {
+  local expires_at
+  expires_at="$(state_get central_account_lease_expires_at)"
+  [[ -n "$expires_at" ]] || return 0
+  python3 - "$expires_at" "$BILLING_ACCOUNT_LEASE_TTL_SECONDS" <<'PY'
+import datetime as dt, sys
+try:
+    expiry = dt.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+    ttl = int(sys.argv[2])
+except (ValueError, TypeError):
+    raise SystemExit(0)
+renew_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=max(300, ttl // 3))
+raise SystemExit(0 if expiry <= renew_at else 1)
+PY
+}
+
+acquire_central_account_lease() {
+  local ip body response response_status token renewal_token user_id lease_expires session_expires lease_version error_code error_message request_error
+  ACCOUNT_LEASE_ERROR=""
+  if ! ip="$(discover_devcloud_ip)"; then
+    ACCOUNT_LEASE_ERROR="unable to discover a supported DevCloud IP for the testing account lease"
+    return 1
+  fi
+  if [[ ! "$BILLING_ACCOUNT_LEASE_TTL_SECONDS" =~ ^[0-9]+$ ]]; then
+    ACCOUNT_LEASE_ERROR="PERSONAL_DEV_ACCOUNT_LEASE_TTL_SECONDS must be an integer"
+    return 1
+  fi
+  if ((BILLING_ACCOUNT_LEASE_TTL_SECONDS < 60 || BILLING_ACCOUNT_LEASE_TTL_SECONDS > 86400)); then
+    ACCOUNT_LEASE_ERROR="testing account lease TTL must be between 60 and 86400 seconds"
+    return 1
+  fi
+  new_private_temp account-lease-body
+  body="$TEMP_FILE_RESULT"
+  if ! python3 - "$body" "$ip" "$BILLING_ACCOUNT_LEASE_TTL_SECONDS" <<'PY'
+import json, os, sys
+path, target_ip, ttl = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as output:
+    json.dump({"targetIp": target_ip, "ttlSeconds": int(ttl)}, output, separators=(",", ":"))
+os.chmod(path, 0o600)
+PY
+  then
+    remove_private_temp "$body"
+    ACCOUNT_LEASE_ERROR="unable to prepare the testing account lease request"
+    return 1
+  fi
+  new_private_temp account-lease-error
+  request_error="$TEMP_FILE_RESULT"
+  renewal_token=""
+  if [[ "$(state_get central_account_mode)" == "leased" ]]; then
+    renewal_token="$(state_get central_session_token)"
+  fi
+  if [[ -n "$renewal_token" ]]; then
+    response="$(curl_with_token "$renewal_token" -H 'Content-Type: application/json' \
+      --data-binary "@$body" "$ACCOUNT_LEASE_URL" 2>"$request_error")" || response_status=$?
+  else
+    response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+      -H 'Content-Type: application/json' --data-binary "@$body" "$ACCOUNT_LEASE_URL" 2>"$request_error")" || response_status=$?
+  fi
+  if [[ -n "$renewal_token" && -n "${response_status:-}" ]]; then
+    error_code="$(printf '%s' "$response" | json_value 'd.get("code", "")' 2>/dev/null || true)"
+    if [[ "$error_code" == "unauthorized" || "$error_code" == "session_expired" ]]; then
+      response_status=""
+      response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+        -H 'Content-Type: application/json' --data-binary "@$body" "$ACCOUNT_LEASE_URL" 2>"$request_error")" || response_status=$?
+    fi
+  fi
+  if [[ -n "${response_status:-}" ]]; then
+    error_code="$(printf '%s' "$response" | json_value 'd.get("code", "")' 2>/dev/null || true)"
+    error_message="$(printf '%s' "$response" | json_value 'd.get("message", "")' 2>/dev/null || true)"
+    remove_private_temp "$body"
+    remove_private_temp "$request_error"
+    ACCOUNT_LEASE_ERROR="testing account lease failed: code=${error_code:-request_failed} message=${error_message:-account lease endpoint unavailable}"
+    return 1
+  fi
+  remove_private_temp "$body"
+  remove_private_temp "$request_error"
+  token="$(printf '%s' "$response" | json_value 'd.get("sessionToken", "")')"
+  user_id="$(printf '%s' "$response" | json_value 'd.get("userId", "")')"
+  lease_expires="$(printf '%s' "$response" | json_value 'd.get("leaseExpiresAt", "")')"
+  session_expires="$(printf '%s' "$response" | json_value 'd.get("sessionExpiresAt", "")')"
+  lease_version="$(printf '%s' "$response" | json_value 'd.get("leaseVersion", "")')"
+  if [[ ! "$token" =~ ^[A-Za-z0-9._~-]+$ || ${#token} -lt 32 || ${#token} -gt 512 ]]; then
+    ACCOUNT_LEASE_ERROR="testing account lease returned an invalid session"
+    return 1
+  fi
+  if [[ ! "$user_id" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    ACCOUNT_LEASE_ERROR="testing account lease returned an invalid user"
+    return 1
+  fi
+  if ! state_set central_account_mode leased \
+    || ! state_set central_email "" \
+    || ! state_set central_password "" \
+    || ! state_set central_user_id "$user_id" \
+    || ! state_set central_session_expires_at "$session_expires" \
+    || ! state_set central_account_lease_expires_at "$lease_expires" \
+    || ! state_set central_account_lease_version "$lease_version" \
+    || ! state_set central_session_token "$token"; then
+    ACCOUNT_LEASE_ERROR="unable to persist the testing account lease in private state"
+    return 1
+  fi
+  log "leased a sandbox testing account for DevCloud $ip until $lease_expires"
+  printf '%s\n' "$token"
+}
+
+release_account_lease() {
+  prepare_state
+  [[ "$(state_get central_account_mode)" == "leased" ]] || return 0
+  local token ip body response
+  token="$(state_get central_session_token)"
+  [[ -n "$token" ]] || {
+    log "testing account lease session is unavailable; lease will expire by TTL"
+    return 1
+  }
+  ip="$(state_get devcloud_ip)"
+  ip="${ip:-$(discover_devcloud_ip 2>/dev/null || true)}"
+  [[ -n "$ip" ]] || {
+    log "DevCloud IP is unavailable; testing account lease will expire by TTL"
+    return 1
+  }
+  new_private_temp account-lease-release
+  body="$TEMP_FILE_RESULT"
+  python3 - "$body" "$ip" <<'PY'
+import json, os, sys
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump({"targetIp": sys.argv[2]}, output, separators=(",", ":"))
+os.chmod(sys.argv[1], 0o600)
+PY
+  response="$(curl_with_token "$token" -X DELETE -H 'Content-Type: application/json' \
+    --data-binary "@$body" "$ACCOUNT_LEASE_URL")" || {
+      remove_private_temp "$body"
+      log "testing account lease release failed; lease will expire by TTL"
+      return 1
+  }
+  remove_private_temp "$body"
+  if [[ "$(printf '%s' "$response" | json_value 'd.get("released", False)')" != "True" ]]; then
+    log "testing account lease release returned an invalid response; lease will expire by TTL"
+    return 1
+  fi
+  state_set central_account_mode released
+  state_set central_session_token ""
+  state_set central_account_lease_expires_at ""
+  log "released the sandbox testing account lease"
 }
 
 wait_for_binding() {
@@ -893,6 +1077,14 @@ bootstrap_binding() {
 
 release_binding() {
   prepare_state
+  if [[ "$(state_get central_account_mode)" == "leased" ]]; then
+    if ! unregister; then
+      log "developer route unregister failed; retaining the account lease until server-side TTL expiry"
+      return 1
+    fi
+    release_account_lease
+    return
+  fi
   local admin_token reason token user_id body response
   admin_token="${PERSONAL_DEV_ADMIN_TOKEN:-}"
   reason="${PERSONAL_DEV_BINDING_RELEASE_REASON:-${PERSONAL_DEV_BINDING_REASON:-}}"
@@ -1434,6 +1626,14 @@ heartbeat_once() {
     "$SCRIPT_DIR/personal-devcloud.sh" heartbeat
 }
 
+heartbeat_command() {
+  prepare_state
+  ensure_site_activation_safe
+  require_personal_context
+  ensure_local_identity
+  register_route
+}
+
 register_command() {
   prepare_state
   ensure_site_activation_safe
@@ -1722,8 +1922,18 @@ unregister() {
 down() {
   prepare_state
   stop_browser_bootstrap
-  if ! unregister_for_down; then
-    log "unregister failed; continuing local shutdown so callback replay becomes unreachable"
+  local registration_disabled=0
+  if [[ "$(state_get central_account_mode)" == "released" && "$(state_get registration_status)" == "disabled" ]]; then
+    registration_disabled=1
+  elif ! unregister_for_down; then
+    log "unregister failed; retaining the account lease and continuing local shutdown so callback replay becomes unreachable"
+  else
+    registration_disabled=1
+  fi
+  if ((registration_disabled == 1)) && [[ "$(state_get central_account_mode)" == "leased" ]]; then
+    if ! release_account_lease; then
+      log "testing account lease was not released immediately; server-side TTL remains the fallback"
+    fi
   fi
   require_personal_context
   LOCALSTACK_SITE_KIND="$SITE" LOCALSTACK_STATE_DIR="$STATE_ROOT/localstack" \
@@ -1738,39 +1948,37 @@ unregister_for_down() {
 }
 
 prerequisites() {
-  local account_site account_hint billing_onboarding
+  local account_site account_hint billing_onboarding identity_hint
   case "$SITE" in
     cn)
       account_site="国内站（北京 testing）"
-      account_hint="确认 international=false；国内实名 testing 用户需提供已有 session 或账号密码。"
-      billing_onboarding=""
+      account_hint="默认由 sandbox testing 账号租约池自动提供 international=false 的已实名账号。"
+      billing_onboarding="   - 智研 testing 账号池：https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/；国内账号要求 international=false，不执行 /国际开户。"
+      identity_hint="账号池只包含已实名且 active binding 的国内 testing 用户"
       ;;
     intl)
       account_site="国际站（韩国 testing）"
-      account_hint="确认 international=true。"
-      billing_onboarding="   - 在计费助手机器人的命令模式执行 /国际开户，并确认开户成功。"
+      account_hint="默认由 sandbox testing 账号租约池自动提供 international=true 的已开户账号。"
+      billing_onboarding="   - 智研 testing 账号池：https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/；国际账号要求 international=true，新入池前先完成 /国际开户。"
+      identity_hint="账号池只包含已开户映射且 active binding 的国际 testing 用户"
       ;;
   esac
   cat <<EOF
 Personal DevCloud paid-E2E readiness for $account_site
 
-1. 取得合法 testing 账号
-   - 打开智研账号池：
-     https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/?current=1&pageSize=20
-   - 使用“添加账号”创建/导入自己的 testing 账号，或“占用”一个明确允许共享的空闲账号。
-   - 账号必须显示“状态=正常”，且账号 ID(UIN) 与 APPID 均非空。
+1. 自动租用合法 testing 账号
+   - up 会按 DevCloud 内网地址从目标 sandbox 的受控账号池领取短期 session；无需 SOPS、owner 文件、
+     共享 admin token 或账号密码。并发占用、TTL、释放和审计由 Auth testing 服务端完成。
    - $account_hint
 
-2. 完成开户与充值
+2. 账号池维护（仅环境 owner）
 $billing_onboarding
-   - 执行 /充值，按提示填写 UIN、站别和金额；金额单位为分，结果必须显示操作= recharge
-     且“操作后余额”足以覆盖本次订单。/设置金额只用于需要精确目标余额的受控场景。
-   - 余额不足产生的旧 pending 单不要重试；充值确认后创建一笔新订单。
+   - 账号池中的账号必须预先在智研标记 状态=正常、完成国际开户（国际站）、充值，并在 Gateway Dashboard 的“DevCloud 测试绑定”中保持 active binding。
+   - /充值 金额单位为分；余额不足产生的旧 pending 单不要重试，补充余额后创建新订单。
 
-3. 绑定 LightVela testing 用户
-   - 在 testing Gateway Dashboard 打开“认证用户 → DevCloud 测试绑定”。
-   - 把当前 testing 登录用户绑定到上面的 UIN/OwnerUIN/APPID，并确认状态为 active。
-   - 受控管理员也可使用 personal-devcloud.sh bootstrap-binding；不要把 admin token 发给开发者。
+3. 身份与绑定
+   - ${identity_hint}；up 不改绑、不复制云密钥。
+   - 新同学进入公司 DevCloud 后直接运行 up；down 会先保留 callback tombstone，再释放账号租约。
 
 4. 计费能力无需人工准备
    - up/register 从中央 testing Auth registration 获得绑定当前 UIN 和 TTL 的短期 capability。
@@ -1799,7 +2007,7 @@ Commands:
   status          Show local health, registration, and Kubernetes workload state
   browser-login   Create a single-use browser login URL without printing its session token
   bootstrap-binding  Bind the current testing user to a managed mock account without persisting the admin token
-  release-binding    Disable the current testing binding so its mock UIN can be reused
+  release-binding    Reclaim a leased account; existing-account mode also disables its testing binding
   verify-order-no-pay        Run inquiry, create a pending-pay order, and expect no billing callback
   verify-checkcreate-no-pay  Deprecated alias; does not prove checkCreate
   verify-checkmodify-no-pay  Refuse until this checkout exposes a real modify-order API
@@ -1817,7 +2025,7 @@ main() {
     prerequisites) prerequisites ;;
     up) up ;;
     register) register_command ;;
-    heartbeat) register_route ;;
+    heartbeat) heartbeat_command ;;
     heartbeat-loop) heartbeat_loop ;;
     status) status ;;
     browser-login) browser_login ;;

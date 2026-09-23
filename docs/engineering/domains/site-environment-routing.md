@@ -39,6 +39,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## 官网首页展示产物
 
+- 双站首页的试用展示统一为「新用户免费体验1个月，送4500 AI 积分」，用一条文案表达，不分列标准版和 AI 积分版；静态多语言片段、导入脚本、共用页脚和 `llms.txt` 摘要同步维护。前端文案不决定实际权益期限，权益仍由服务端执行。
+
 - 国内站与国际站共享同一组 LightVela favicon 资源与浏览器页签品牌形象；`layout.next.tsx` 的 icon/shortcut/apple 声明和 `manifest.webmanifest` 必须引用同一版本化 URL。图标内容更新时应同步更换版本标识，避免任一生产域名继续命中旧 favicon 缓存。
 - 国内站与国际站根路由分别以默认 `zh-CN` / `en-US` locale 直接渲染 `InternationalHomePage` 的已提交静态片段，不再静态引入旧 `PublicHomePage`；带 locale 的路由仍保留 V2 选择与旧页面 fallback。
 - 国际站首页使用 `frontend/scripts/import-international-homepage.mjs` 维护导入与本地化规则，运行时消费 `frontend/public/lightvela-intl-home/index-fragment*.html` 中已提交的多语言静态片段。
@@ -51,6 +53,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国内站与国际站共享产品名时仍属于两套展示产物，验证时应分别启动对应区域构建或预览，不能用单站截图替代双站边界确认。
 - 国内站与国际站首页在登录态均显示直达 `/agents` 的本地化产品入口；国际站新版首页由 `InternationalHomeRuntime` 显式开启该入口，同时保留未登录态仅展示语言切换与登录动作的 `loginOnly` 规则。
 - 国内站 V2 首页不使用国际站的 `loginOnly` 规则：未登录 Header 与 Hero 展示“免费试用”并进入 `/subscribe`，登录态 Header 与 Hero 展示“开始使用”并进入 `/agents`；静态 Hero 默认输出未登录态，认证恢复后再同步登录态入口。
+- 国内站与国际站 `/subscribe` 的未登录 Header 统一启用 `loginOnly`：隐藏创建入口，仅保留登录主动作（国际站同时保留语言切换）；套餐卡“立即订阅”继续承担转化并触发登录。
 - 根首页的初始 HTML、Flight、Next 脚本数量与 raw/gzip 体积由 `pnpm check:homepage-performance` 对真实 `out/index.html` 执行预算检查，同时拒绝旧 `PublicHomePage` / `LandingPageView` chunk 回流；国内与国际构建仍须分别验证，预算通过不能替代浏览器回归或线上 Web Vitals。
 
 ## 公开营销页区域边界

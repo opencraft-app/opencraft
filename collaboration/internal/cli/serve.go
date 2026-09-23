@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -1044,15 +1045,16 @@ func serveHumanPlatform(
 	platformHandler, err := bootstrap.NewPlatformAPIHandler(bootstrap.PlatformAPIConfig{
 		Human: bootstrap.HumanAPIConfig{
 			Auth: bootstrap.AuthAPIConfig{
-				Database:          handle,
-				AccessTokenKey:    accessTokenKey,
-				GatewayHumanToken: []byte(lightVelaGatewayToken),
-				Password:          credentialsadapter.ProductionArgon2idConfig(),
-				AccessTTL:         15 * time.Minute,
-				RefreshTTL:        30 * 24 * time.Hour,
-				RequestTimeout:    30 * time.Second,
-				MaxBodyBytes:      16 * 1024,
-				AllowedOrigins:    cfg.allowedOrigins,
+				Database:                       handle,
+				AccessTokenKey:                 accessTokenKey,
+				GatewayHumanToken:              []byte(lightVelaGatewayToken),
+				ExternalHumanProvisioningEpoch: externalHumanProvisioningEpoch(identityKey, imSecret),
+				Password:                       credentialsadapter.ProductionArgon2idConfig(),
+				AccessTTL:                      15 * time.Minute,
+				RefreshTTL:                     30 * 24 * time.Hour,
+				RequestTimeout:                 30 * time.Second,
+				MaxBodyBytes:                   16 * 1024,
+				AllowedOrigins:                 cfg.allowedOrigins,
 			},
 			SDKAppID:      cfg.imSDKAppID,
 			UserSigTTL:    time.Hour,
@@ -1262,6 +1264,14 @@ func serveHumanPlatform(
 		}
 		return nil
 	}
+}
+
+func externalHumanProvisioningEpoch(identityKey []byte, imSecret string) string {
+	mac := hmac.New(sha256.New, identityKey)
+	_, _ = mac.Write([]byte("collaboration-external-human-im-v1\x00"))
+	_, _ = mac.Write([]byte(imSecret))
+	digest := mac.Sum(nil)
+	return base64.RawURLEncoding.EncodeToString(digest[:18])
 }
 
 func productionTATWorkerConfig(workerID string) apptencentoperation.Config {

@@ -1,0 +1,16 @@
+{
+  "name": "@lightvela/vela-chat-client-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./tui-runtime": {
+      "types": "./dist/tui-runtime.d.ts",
+      "import": "./dist/tui-runtime.js"
+    }
+  }
+}

@@ -19,6 +19,8 @@
 
 落点：卡片容器优先复用 `src/components/ui/card.tsx`（`Card`/`CardHeader`/`CardContent` 等）而不是在页面里手写 `rounded-*` class；仅在该组件未覆盖的场景才手写，且必须遵守本节默认值。
 
+已有定价卡通过 `Card` 的 `variant="pricing"`（12px）或 `variant="pricing-featured"`（16px）保留普通／主推层级，两者均无阴影。页面不覆盖其圆角或阴影；默认变体暂保留已有外观，避免单页适配改变其他调用方。
+
 ## Card Shadow
 
 Agent 控制台、诊断中心等工具型页面的同级卡片必须使用一致的轻阴影。默认卡片阴影使用 `0 10px 30px rgba(15,23,42,0.04)`，对应 Tailwind arbitrary value：`shadow-[0_10px_30px_rgba(15,23,42,0.04)]`。

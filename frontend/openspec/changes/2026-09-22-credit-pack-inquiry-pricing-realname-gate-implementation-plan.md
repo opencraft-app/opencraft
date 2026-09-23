@@ -47,13 +47,50 @@
 
 ## 任务 4：验证与生成物
 
-- [ ] 运行积分包聚焦测试：
+- [x] 运行积分包聚焦测试：
   `pnpm exec vitest run next-site/__tests__/credit-pack-section.test.tsx next-site/__tests__/credit-pack-section-timeout.test.tsx`。
-- [ ] 运行 i18n 字典测试、`pnpm i18n:check` 和 `pnpm i18n:validate`。
-- [ ] 运行 `pnpm exec tsc --noEmit -p tsconfig.app.json` 或仓库规定的 `pnpm check`。
+- [x] 运行 i18n 字典测试、`pnpm i18n:check` 和 `pnpm i18n:validate`。
+- [x] 运行 `pnpm exec tsc --noEmit -p tsconfig.app.json` 或仓库规定的 `pnpm check`。
 - [ ] 所有 `frontend/src` 修改完成并提交后执行 `node opencraft/scripts/sync-mono2-agent-console.mjs`，单独提交生成物，再执行 `--check`。
-- [ ] 运行 `git diff --check`，确认无空白错误。
+- [x] 运行 `git diff --check`，确认无空白错误。
 
 ## 验收结论
 
 实现以询价接口实付总价为价格真源，仅对国际明确无折扣报价展示差值税费；固定价格方案已废弃。询价失败可重试，支付票据缺失保持失败态，默认账号只服务价格展示，真实下单继续依赖用户自己的影子绑定。
+
+## 2026-09-23 master 合并复验
+
+- 合并目标：`origin/master@d4c1306221d3b821a8aaaf08299c0f0d3da7af2a`，吸收 91 个提交，不重写本分支历史。
+- 唯一文本冲突：`next-site/subscribe-page.tsx` 的 import 段。保留 master 新增的 `cn`、`BOT_QUOTA_BY_BUNDLE`，不恢复本分支已删除的 `credit-pack-visibility` 门控导入；无整文件选边。
+- 保留 master 套餐配置、匿名登录入口、Bot 配额/推荐标签及试用期调整；保留本分支积分询价、税费降级、实名引导、失败重试及账单回跳。
+- `pnpm install --frozen-lockfile`、`pnpm check` 通过（171 current / 171 baseline / 0 new）；国内与国际 `pnpm build:cn` / `pnpm build:global` 通过。
+- 积分、订阅、账号、字典与支付 hook 的 12 文件聚焦回归 284/284 通过。发布脚本 7 文件单 worker 复验 130/130 通过；初次并发执行两项 5 秒超时，不修改脚本来规避超时。
+- 全量测试并非绿色。下列 20 文件在相同锁文件独立安装依赖的 master 副本中对照：合并树已报告的 52 条失败断言均可在 master 复现，另有 2 个 suite 加载失败在两侧一致；master 该子集共 53 failed / 85 passed，多出一项 reminder 时序失败。不将基线子集结果冒充 master 全量结果。
+
+| 失败文件（相对 frontend） | 合并树失败断言数 |
+| --- | ---: |
+| `src/pages/marketing/__tests__/agent-settings-renewal-reminder.global.test.tsx` | 3 |
+| `src/pages/marketing/__tests__/agent-diagnostics-multi-bot.test.tsx` | 11 |
+| `src/pages/marketing/__tests__/agent-automations-panel.global.test.ts` | 6 |
+| `src/content/docs/__tests__/doc-summary.test.ts` | 1 |
+| `src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx` | 7 |
+| `next-site/__tests__/home-localized-copy.test.ts` | 4 |
+| `next-site/__tests__/home-play-badges.test.ts` | 1 |
+| `scripts/intl-only-pages.test.ts` | 1 |
+| `scripts/docs-image-assets.test.ts` | 1 |
+| `scripts/international-home-fragment-accessibility.test.ts` | 1 |
+| `src/pages/marketing/agents-workbench/__tests__/workbench-desktop-shell-boundary.test.ts` | 1 |
+| `src/content/docs/__tests__/automation-tab-order.test.ts` | 7 |
+| `mdx-components.test.tsx` | 2 |
+| `src/pages/marketing/__tests__/renewal-id-ID.test.ts` | 2 |
+| `src/pages/marketing/__tests__/agent-memory-save.test.ts` | 1 |
+| `src/pages/marketing/__tests__/agent-settings-channel-slack.test.ts` | 1 |
+| `src/lib/__tests__/debug-exec-request.global.test.ts` | 1 |
+| `next-site/__tests__/search-routing.test.ts` | 1 |
+| `scripts/next-config.test.mjs` | suite 加载失败（node:test） |
+| `next-site/__tests__/static-navigation.test.tsx` | suite 加载失败（region mock） |
+
+- 全量并发运行额外失败的 `model-config-client.test.ts`（10）、`SkillsDemoPanel.test.tsx`（1）及 `account-page-faceid.test.tsx`（1）在当前合并树单 worker 原配置重跑，3 文件 174/174 通过；保留初次失败记录，不称全量通过。
+- 全量 `VITE_REGION=cn pnpm run test --maxWorkers=2` 运行约 11 分钟后仍有 worker 连续约 4 分钟满核且无输出，人工终止该 worker；结束统计为 64 failed / 3805 passed / 13 skipped、3 errors，23 failed files。64 项由上表 52 项与已单独复验通过的 12 项组成；3 errors 包含加载错误及人工终止导致的 worker 异常，不能视为完整门禁通过。
+- `docs-impact` 通过；原有规则排除仍要求 `wisp/mono2-maintainers` 独立审阅。
+- vendored 必须在本次合并提交之后重新同步并单独提交，不能以提交前的 sourceRevision 校验替代提交后校验。

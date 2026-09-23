@@ -175,6 +175,8 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(trigger, {"manual": "enabled"})
         self.assertEqual(workflow["variables"]["BOOTSTRAP_PHASE"]["value"], "foundation")
         self.assertEqual(workflow["variables"]["COLLABORATION_IM_SDK_APP_ID"]["value"], "1600137234")
+        self.assertEqual(workflow["variables"]["ALLOW_IM_SECRET_ROTATION"]["value"], "false")
+        self.assertTrue(workflow["variables"]["ALLOW_IM_SECRET_ROTATION"]["allow-modify-at-startup"])
         self.assertIn("@sha256:", workflow["variables"]["COLLABORATION_IMAGE"]["value"])
         self.assertEqual(len(workflow["stages"]), 3)
         self.assertIn("check-in", workflow["stages"][1])
@@ -207,9 +209,13 @@ class CollaborationDeliveryTests(unittest.TestCase):
             "promote_collaboration_bootstrap_to_gitops.sh",
             "DB_JOB_KUBECONFIG_B64",
             "COLLABORATION_IM_CREDENTIAL.password",
+            "ALLOW_IM_SECRET_ROTATION",
         ):
             self.assertIn(required, text)
-        for forbidden in ("--allow-database-password-reset", "--allow-im-secret-rotation", "--env shprod", "--env sgprod"):
+        self.assertEqual(text.count('bootstrap_args+=(--allow-im-secret-rotation)'), 2)
+        self.assertEqual(text.count('ALLOW_IM_SECRET_ROTATION must be true or false'), 2)
+        self.assertEqual(text.count('IM Secret rotation requires BOOTSTRAP_PHASE=runtime'), 2)
+        for forbidden in ("--allow-database-password-reset", "--env shprod", "--env sgprod"):
             self.assertNotIn(forbidden, text)
 
     def test_collaboration_recovery_jobs_use_native_fail_closed_cli(self):

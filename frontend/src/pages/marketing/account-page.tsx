@@ -41,7 +41,6 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
-import { subscribeConsoleShow } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
@@ -1311,12 +1310,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const [nameSaveError, setNameSaveError] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
-  const [referralRevealed, setReferralRevealed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    return subscribeConsoleShow(setReferralRevealed);
-  }, []);
 
   // Unauthenticated view state
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -2083,7 +2077,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
             {/* ── Section 2: Subscription ── */}
             {isBillingView && <SubscriptionSection subscription={subscription} pass={activePass} />}
 
-            {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
+            {!isBillingView && referralEnabled && <ReferralSection />}
 
             {isBillingView && isGlobal && <SavedCardsSection />}
           </motion.div>

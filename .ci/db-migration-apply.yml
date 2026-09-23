@@ -29,6 +29,14 @@ variables:
     value: "1800"
     readonly: false
     allow-modify-at-startup: true
+  SKIP_IF_NO_MIGRATION_CHANGE:
+    value: "true"
+    readonly: false
+    allow-modify-at-startup: true
+  MIGRATION_DECISION:
+    value: run_migration
+    readonly: false
+    allow-modify-at-startup: true
 
 stages:
   - name: Dry-run 生产 DB migration
@@ -43,6 +51,7 @@ stages:
           TARGET_ENV: ${{ variables.TARGET_ENV }}
           SOURCE_SHA: ${{ variables.SOURCE_SHA }}
           TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          MIGRATION_DECISION: ${{ variables.MIGRATION_DECISION }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:
@@ -57,6 +66,7 @@ stages:
               set -euo pipefail
               case "$TARGET_ENV" in shprod|sgprod) ;; *) echo "TARGET_ENV must be shprod or sgprod" >&2; exit 1 ;; esac
               [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "SOURCE_SHA must be a full commit SHA" >&2; exit 1; }
+              [[ "${MIGRATION_DECISION:-}" == "run_migration" ]] || { echo "MIGRATION_DECISION must be run_migration" >&2; exit 1; }
               source .ci/init.sh
               ci_init_repo_root
               ci_ensure_db_job_tools
@@ -103,6 +113,7 @@ stages:
           TARGET_ENV: ${{ variables.TARGET_ENV }}
           SOURCE_SHA: ${{ variables.SOURCE_SHA }}
           TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          MIGRATION_DECISION: ${{ variables.MIGRATION_DECISION }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:
@@ -117,6 +128,7 @@ stages:
               set -euo pipefail
               case "$TARGET_ENV" in shprod|sgprod) ;; *) echo "TARGET_ENV must be shprod or sgprod" >&2; exit 1 ;; esac
               [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "SOURCE_SHA must be a full commit SHA" >&2; exit 1; }
+              [[ "${MIGRATION_DECISION:-}" == "run_migration" ]] || { echo "MIGRATION_DECISION must be run_migration" >&2; exit 1; }
               source .ci/init.sh
               ci_init_repo_root
               ci_ensure_db_job_tools

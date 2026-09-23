@@ -8,9 +8,9 @@ describe("Account referral visibility", () => {
     "utf8",
   );
 
-  it("keeps the referral section hidden until console show() reveals it", () => {
-    expect(page).toContain("const [referralRevealed, setReferralRevealed] = useState(false);");
-    expect(page).toContain("return subscribeConsoleShow(setReferralRevealed);");
-    expect(page).toContain("referralEnabled && referralRevealed && <ReferralSection />");
+  it("shows the referral section whenever the runtime feature is enabled", () => {
+    expect(page).not.toContain("referralRevealed");
+    expect(page).not.toContain("subscribeConsoleShow");
+    expect(page).toContain("referralEnabled && <ReferralSection />");
   });
 });

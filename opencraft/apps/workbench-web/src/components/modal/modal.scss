@@ -2,6 +2,9 @@
 
 .modal-surface.modal-confirmation { display: flex; flex-direction: column; overflow-y: auto; }
 .modal-confirmation__actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 24px 24px; }
+// Utility panels presented inside modals align footer actions to the right,
+// matching modal-confirmation__actions (settings pages keep their own layout).
+.modal-surface .settings-panel__footer { justify-content: flex-end; }
 
 .modal-surface__scrim,
 .modal-surface {

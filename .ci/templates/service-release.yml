@@ -111,6 +111,27 @@ stages:
             with:
               fetchDepth: 50
               enableSubmodule: false
+          - name: 固定 Playground 构建提交
+            shell: bash
+            env:
+              PIN_MODE: ${{ variables.PIPELINE_MODE }}
+              PIN_SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+              PIN_CI_SHA: ${{ ci.sha }}
+              PIN_BRANCH: ${{ ci.branch }}
+            run: |
+              if [[ "$PIN_MODE" != "playground-build" ]]; then
+                exit 0
+              fi
+              if [[ ! "$PIN_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$PIN_SOURCE_SHA" != "$PIN_CI_SHA" || "$PIN_BRANCH" != "master" ]]; then
+                echo "playground-build requires an exact selected master commit" >&2
+                exit 1
+              fi
+              if ! git cat-file -e "${PIN_SOURCE_SHA}^{commit}" 2>/dev/null || ! git merge-base --is-ancestor "$PIN_SOURCE_SHA" HEAD; then
+                git fetch --no-tags origin master
+                git merge-base --is-ancestor "$PIN_SOURCE_SHA" FETCH_HEAD || exit 1
+              fi
+              git -c advice.detachedHead=false checkout --detach --quiet "$PIN_SOURCE_SHA"
+              test "$(git rev-parse HEAD)" = "$PIN_SOURCE_SHA"
           - name: 打印 ${{ parameters.DISPLAY_NAME }} 构建上下文
             shell: bash
             run: |
@@ -207,6 +228,33 @@ stages:
                 esac
               }
               SOURCE_BRANCH="$(resolve_source_branch '${{ ci.branch }}')"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]; then
+                SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+                CI_SHA_VALUE='${{ ci.sha }}'
+                if [[ -z "$CI_SHA_VALUE" || "$CI_SHA_VALUE" == *'${{'* ]]; then
+                  CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+                fi
+                TARGET_ENV="${{ variables.TARGET_ENV }}"
+                if [[ "$SOURCE_BRANCH" != "master" ]]; then
+                  echo "playground-build must run from master, got ${SOURCE_BRANCH:-empty}" >&2
+                  exit 1
+                fi
+                if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" != "$CI_SHA_VALUE" || "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+                  echo "playground-build source mismatch: source=${SOURCE_SHA:-empty} ci=${CI_SHA_VALUE:-empty} head=$(git rev-parse HEAD)" >&2
+                  exit 1
+                fi
+                case "$TARGET_ENV" in
+                  sandbox-bj-*|sandbox-kr-*)
+                    ;;
+                  *)
+                    echo "playground-build only supports sandbox-bj-* or sandbox-kr-*: ${TARGET_ENV:-empty}" >&2
+                    exit 1
+                    ;;
+                esac
+                BUILD_ENVS="$TARGET_ENV"
+                AUTO_PIN_ENVS="$TARGET_ENV"
+                echo "Playground 发布决策：master 精确提交 $SOURCE_SHA 构建 ${{ parameters.DISPLAY_NAME }} 并自动 pin ${TARGET_ENV}"
+              else
               case "$SOURCE_BRANCH" in
                 master)
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
@@ -224,6 +272,7 @@ stages:
                   exit 1
                   ;;
               esac
+              fi
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
               export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
@@ -280,6 +329,33 @@ stages:
                 esac
               }
               SOURCE_BRANCH="$(resolve_source_branch '${{ ci.branch }}')"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]; then
+                SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+                CI_SHA_VALUE='${{ ci.sha }}'
+                if [[ -z "$CI_SHA_VALUE" || "$CI_SHA_VALUE" == *'${{'* ]]; then
+                  CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+                fi
+                TARGET_ENV="${{ variables.TARGET_ENV }}"
+                if [[ "$SOURCE_BRANCH" != "master" ]]; then
+                  echo "playground-build must run from master, got ${SOURCE_BRANCH:-empty}" >&2
+                  exit 1
+                fi
+                if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" != "$CI_SHA_VALUE" || "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+                  echo "playground-build source mismatch: source=${SOURCE_SHA:-empty} ci=${CI_SHA_VALUE:-empty} head=$(git rev-parse HEAD)" >&2
+                  exit 1
+                fi
+                case "$TARGET_ENV" in
+                  sandbox-bj-*|sandbox-kr-*)
+                    ;;
+                  *)
+                    echo "playground-build only supports sandbox-bj-* or sandbox-kr-*: ${TARGET_ENV:-empty}" >&2
+                    exit 1
+                    ;;
+                esac
+                BUILD_ENVS="$TARGET_ENV"
+                AUTO_PIN_ENVS="$TARGET_ENV"
+                echo "Playground 发布决策：master 精确提交 $SOURCE_SHA 校验 ${{ parameters.DISPLAY_NAME }} 并自动 pin ${TARGET_ENV}"
+              else
               case "$SOURCE_BRANCH" in
                 master)
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
@@ -297,6 +373,7 @@ stages:
                   exit 1
                   ;;
               esac
+              fi
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
               export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
@@ -430,15 +507,25 @@ stages:
                   exit 1
                   ;;
               esac
+              case "$DECISION" in
+                run_migration)
+                  PIPELINE_PATH=".ci/db-migration-apply.yml"
+                  ;;
+                skip_migration|block)
+                  PIPELINE_PATH=".ci/db-migration.yml"
+                  ;;
+              esac
               echo "::set-output name=decision::$DECISION"
+              echo "::set-output name=pipeline_path::$PIPELINE_PATH"
               echo "shprod DB migration decision=$DECISION"
+              echo "shprod DB migration pipeline=$PIPELINE_PATH"
           - name: 调用 shprod 生产 DB migration 子流水线
             uses: "SubPipelineExecStream@1.*"
             with:
               repositoryType: "URL"
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
-              targetPathFromUrl: ".ci/db-migration.yml"
+              targetPathFromUrl: "${{ steps.plan.outputs.pipeline_path }}"
               buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"
               paramsInput:
                 - key: "SERVICE"
@@ -530,15 +617,25 @@ stages:
                   exit 1
                   ;;
               esac
+              case "$DECISION" in
+                run_migration)
+                  PIPELINE_PATH=".ci/db-migration-apply.yml"
+                  ;;
+                skip_migration|block)
+                  PIPELINE_PATH=".ci/db-migration.yml"
+                  ;;
+              esac
               echo "::set-output name=decision::$DECISION"
+              echo "::set-output name=pipeline_path::$PIPELINE_PATH"
               echo "sgprod DB migration decision=$DECISION"
+              echo "sgprod DB migration pipeline=$PIPELINE_PATH"
           - name: 调用 sgprod 生产 DB migration 子流水线
             uses: "SubPipelineExecStream@1.*"
             with:
               repositoryType: "URL"
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
-              targetPathFromUrl: ".ci/db-migration.yml"
+              targetPathFromUrl: "${{ steps.plan.outputs.pipeline_path }}"
               buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"
               paramsInput:
                 - key: "SERVICE"

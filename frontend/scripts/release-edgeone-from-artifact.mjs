@@ -94,11 +94,13 @@ export function executeEdgeOneArtifactRelease({
     EDGEONE_PAGES_ENV: "preview",
     EDGEONE_PAGES_VERIFY_DEPLOYMENT: "1",
   });
+  // Production deployments get the same post-deploy verification as Preview:
+  // a partial upload (missing chunks) must fail the release instead of going live.
   const productionEnv = {
     ...deployEnv,
     EDGEONE_PAGES_ENV: "production",
+    EDGEONE_PAGES_VERIFY_DEPLOYMENT: "1",
   };
-  delete productionEnv.EDGEONE_PAGES_VERIFY_DEPLOYMENT;
   deployScript(combo.deployCommand, productionEnv);
   log(`${colorText("frontend EO artifact release done:", "green", env)} ${highlightComboId(combo.id, env)}`);
 }
