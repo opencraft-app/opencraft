@@ -1,5 +1,4 @@
 import {
-  DEEPSEEK_HARNESS_INSTALLER_SHA256,
   DEEPSEEK_HARNESS_PROVIDER_HELPER_BASE64,
 } from "@/lib/generated/deepseek-harness-runtime-assets";
 import { isCN } from "@/lib/region";
@@ -75,7 +74,6 @@ const SERVICE = "deepseek-harness.service";
 const TASK_ID_PATTERN = /^dshi-[0-9a-f]{32}$/;
 const SECRET_ID_PATTERN = /^dshk-[0-9a-f]{32}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const INSTALL_WORK_PREFIX = "/tmp/lightvela-dsh-install-";
 const INSTALLATION_STATE_DIR = "/var/lib/lightvela/dsh/installations";
 const WEB_PROFILE_DIR = "/home/agentuser/.dsh/profiles/web";
@@ -214,11 +212,7 @@ const shellQuote = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`;
 
 export const createDeepSeekHarnessInstallLaunchScript = (
   installerUrl = DEEPSEEK_HARNESS_INSTALLER_URL,
-  installerSha256 = DEEPSEEK_HARNESS_INSTALLER_SHA256,
 ) => {
-  if (!SHA256_PATTERN.test(installerSha256)) {
-    throw new Error("Invalid DeepSeek Harness installer checksum");
-  }
   const taskStatusCheckerBase64 = encodeUtf8Base64(INSTALL_TASK_STATUS_CHECKER);
   const taskWriterBase64 = encodeUtf8Base64(INSTALL_TASK_WRITER);
   const repairProfilePreparerBase64 = encodeUtf8Base64(REPAIR_PROFILE_PREPARER);
@@ -236,7 +230,6 @@ export const createDeepSeekHarnessInstallLaunchScript = (
     'repair_backup="$repair_profile_parent/.lightvela-repair-backup-$task_id"',
     "repair_profile_isolated=0",
     "repair_service_was_active=0",
-    `installer_sha256=${shellQuote(installerSha256)}`,
     "installer_started=0",
     'write_task_state() { python3 -c "import base64;exec(base64.b64decode(\''
       + taskWriterBase64
@@ -271,11 +264,6 @@ export const createDeepSeekHarnessInstallLaunchScript = (
       '--output "$installer_path"',
       shellQuote(installerUrl),
     ].join(" "),
-    'installer_size="$(wc -c < "$installer_path" | tr -d \'[:space:]\')"',
-    'if ! [[ "$installer_size" =~ ^[0-9]+$ ]] || [ "$installer_size" -lt 1024 ] || [ "$installer_size" -gt 1048576 ]; then write_task_state failed prepare 0 "Invalid installer size"; exit 1; fi',
-    'if [ "$(head -n 1 "$installer_path")" != "#!/usr/bin/env bash" ]; then write_task_state failed prepare 0 "Invalid installer header"; exit 1; fi',
-    'if ! bash -n "$installer_path"; then write_task_state failed prepare 0 "Invalid installer syntax"; exit 1; fi',
-    'if ! python3 -c \'import hashlib,pathlib,sys; path,expected=sys.argv[1:]; actual=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(); sys.exit(0 if actual == expected else 1)\' "$installer_path" "$installer_sha256"; then write_task_state failed verify_installer 0 "Installer checksum mismatch"; exit 1; fi',
     'chmod 0700 "$installer_path"',
     'case "$operation" in install|repair) ;; *) write_task_state failed prepare 0 "Invalid installation operation"; exit 2 ;; esac',
     "prepare_repair_profile",

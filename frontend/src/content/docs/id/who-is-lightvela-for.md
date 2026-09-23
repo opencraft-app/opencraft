@@ -53,7 +53,7 @@ Sebelum mulai, siapkan:
 
 * Akun Google atau GitHub untuk masuk ke LightVela. Situs internasional tidak memerlukan verifikasi nama asli China.
 
-* Paket yang tersedia dan sudah diaktifkan dari halaman [Paket](/subscribe). Setelah beta publik dan penagihan dimulai, pengguna baru dapat mencoba Launch gratis selama 14 hari.
+* Paket yang tersedia dan sudah diaktifkan dari halaman [Paket](/subscribe). Setelah beta publik dan penagihan dimulai, pengguna baru dapat mencoba Launch gratis selama 1 bulan.
 
 * Setidaknya satu akun aplikasi chat yang didukung, seperti Telegram, WhatsApp, Discord, Slack, atau WeChat.
 

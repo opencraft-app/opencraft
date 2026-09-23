@@ -1,0 +1,192 @@
+name: macOS Universal release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-universal-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  OPENCRAFT_BUILD_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+  OPENCRAFT_SOURCE_REVISION: ${{ github.sha }}
+
+jobs:
+  arm64:
+    if: github.repository == 'opencraft-app/opencraft' && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: test "$(uname -m)" = arm64
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:identity
+      - run: npm run build:electron:release
+      - name: Assemble unsigned arm64 app
+        working-directory: apps/workbench-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: ../../node_modules/.bin/electron-builder --mac dir --arm64 --publish never --config.mac.identity=null --config.directories.output=release/ci-arm64
+      - run: ditto -c -k --sequesterRsrc --keepParent apps/workbench-electron/release/ci-arm64/mac-arm64/OpenCraft.app OpenCraft-arm64-app.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: opencraft-macos-arm64-app
+          path: OpenCraft-arm64-app.zip
+          if-no-files-found: error
+          retention-days: 3
+
+  x64:
+    if: github.repository == 'opencraft-app/opencraft' && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: test "$(uname -m)" = x86_64
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:identity
+      - run: npm run build:electron:release
+      - name: Assemble unsigned x64 app
+        working-directory: apps/workbench-electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: ../../node_modules/.bin/electron-builder --mac dir --x64 --publish never --config.mac.identity=null --config.directories.output=release/ci-x64
+      - run: ditto -c -k --sequesterRsrc --keepParent apps/workbench-electron/release/ci-x64/mac/OpenCraft.app OpenCraft-x64-app.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: opencraft-macos-x64-app
+          path: OpenCraft-x64-app.zip
+          if-no-files-found: error
+          retention-days: 3
+
+  universal:
+    needs: [arm64, x64]
+    runs-on: macos-15
+    environment: macos-release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: opencraft-macos-*-app
+          path: .artifacts
+      - name: Extract architecture apps
+        run: |
+          mkdir -p .release/x64 .release/arm64 .release/universal
+          ditto -x -k .artifacts/opencraft-macos-x64-app/OpenCraft-x64-app.zip .release/x64
+          ditto -x -k .artifacts/opencraft-macos-arm64-app/OpenCraft-arm64-app.zip .release/arm64
+      - name: Merge Universal app
+        run: node scripts/merge-macos-universal.mjs --x64 .release/x64/OpenCraft.app --arm64 .release/arm64/OpenCraft.app --output .release/universal/OpenCraft.app
+      - name: Check release credentials
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for name in MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if test -z "${!name}"; then echo "Missing macos-release secret: ${name}"; missing=1; fi
+          done
+          test "$missing" -eq 0
+      - name: Import Developer ID
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/opencraft-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          certificate="$RUNNER_TEMP/opencraft-developer-id.p12"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | /usr/bin/base64 -D > "$certificate"
+          chmod 600 "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)"
+          test -n "$identity"
+          echo "CSC_NAME=$identity" >> "$GITHUB_ENV"
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Sign and notarize app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/sign-notarize-macos.mjs .release/universal/OpenCraft.app
+      - name: Package signed DMG and ZIP
+        working-directory: apps/workbench-electron
+        run: |
+          builder_identity="${CSC_NAME#Developer ID Application: }"
+          ../../node_modules/.bin/electron-builder \
+            --prepackaged ../../.release/universal/OpenCraft.app \
+            --mac dmg zip --universal --publish never \
+            --config.mac.identity="$builder_identity" \
+            --config.forceCodeSigning=true \
+            --config.dmg.sign=true \
+            --config.directories.output=release/ci-universal
+      - name: Verify final artifacts
+        run: |
+          app=.release/universal/OpenCraft.app
+          dmg=apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+          zip=apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
+          test "$(lipo -archs "$app/Contents/MacOS/OpenCraft")" = "x86_64 arm64" || test "$(lipo -archs "$app/Contents/MacOS/OpenCraft")" = "arm64 x86_64"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          codesign --verify --verbose=2 "$dmg"
+          hdiutil verify "$dmg"
+          unzip -t "$zip"
+          shasum -a 256 "$dmg" "$zip" > apps/workbench-electron/release/ci-universal/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: opencraft-macos-universal-${{ github.sha }}
+          path: |
+            apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+            apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
+            apps/workbench-electron/release/ci-universal/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary credentials
+        if: always()
+        run: |
+          if test -n "${CSC_KEYCHAIN:-}"; then security delete-keychain "$CSC_KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP/opencraft-developer-id.p12"
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: universal
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: opencraft-macos-universal-${{ github.sha }}
+          path: .release-artifacts
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            .release-artifacts/OpenCraft-0.1.0-universal.dmg \
+            .release-artifacts/OpenCraft-0.1.0-mac-universal.zip \
+            .release-artifacts/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

@@ -1373,6 +1373,62 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   }
 }
 
+// Row wrapper for the thread "..." dropdown: the activity item is a <button>,
+// so the menu trigger cannot be nested inside it and sits beside it, absolutely
+// positioned over the trailing status dot and revealed on hover.
+.sidebar-activity-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+
+  > .sidebar-activity-item { flex: 1 1 auto; min-width: 0; }
+}
+
+.sidebar-activity-item__menu-trigger {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-background-button-tertiary-hover);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+
+  &:hover { color: var(--color-text); }
+  &:focus-visible {
+    outline: var(--focus-outline);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  &[data-state="open"] { opacity: 1; pointer-events: auto; }
+}
+
+.sidebar-activity-row:hover .sidebar-activity-item__menu-trigger {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-activity-row:has(> .sidebar-activity-item.is-selected) .sidebar-activity-item__menu-trigger {
+  background: var(--color-background-button-secondary);
+}
+
+// Thread deletion confirmation, mirroring connector-delete-confirmation.
+.thread-delete-confirmation {
+  padding: calc(var(--spacing) * 6);
+
+  h2 { @include typography.role(navigation-title); }
+  p { @include typography.role(body); }
+}
+
 .sidebar-activity-item__body {
   display: grid;
   min-width: 0;
@@ -2812,7 +2868,10 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 
   &:focus-visible,
   &:has(.settings-control-select:focus-visible) {
-    @include controls.focus-indicator;
+    // Input focus favors a quieter affordance than the global focus ring:
+    // accent border + retained baseline shadow, no outer glow.
+    border-color: var(--color-border-focus);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
   }
 
   &[aria-invalid="true"], &:has(.settings-control-select[aria-invalid="true"]) {

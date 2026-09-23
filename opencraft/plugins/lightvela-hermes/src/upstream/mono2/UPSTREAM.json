@@ -65,7 +65,7 @@
     },
     {
       "file": "contexts/runtime-config-context.tsx",
-      "sourceSha256": "61e0846c69eee7782296df57a8e912ee8aaea8444a857b5d792a17beb2f2ba11"
+      "sourceSha256": "9844c21e8259d61216cfbf3da986cb0b3a594bf0cd1650dac72107c19c5c6f44"
     },
     {
       "file": "domain/credit-pack.ts",
@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "b3941509a271cea87f4fd0baef4b43a4e21c4f2027b042ceb38489b029c81d48"
+      "sourceSha256": "1fde587eef8d4a59caf8756e798f76f8a1727575c34fca2b7a588b2464a36766"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "086848e9024e9bbd3115127bc8ea9467605e19b339fa686ab1a022eee6598f2c"
+      "sourceSha256": "50f44545ba103efbfb58335c39fd269821146581dd53ad5426317ab69a75a535"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "f2767a3f4c56ab38c8326b29dcc3998f4c2c0aa66a1f1d7f5eb59eb2d3e23478"
+      "sourceSha256": "70cd2fb0933b2a810b8d5f02b49c884e92d111cc045863f5bdc143043fe3d79b"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "edca3b036aefbe8f5e51d6afb9100bd8cbe7fec0189490baf2b9151ba2eaf39f"
+      "sourceSha256": "67a142970362eed963be8ceb21f32cc443703e6373b016ca94380f363a14558c"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "61002e025b9a38b7e6f2b5018662495f98b5dbc3e66b31fb473f235b4928c84e"
+      "sourceSha256": "180e28b4a5f6cdcb52fab98954748f41b050f67b29aebd7169b00d7e7b640697"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "c4862fb4a395c9a1362b34a1a33424909fe827d229b391038152e5f8eb809ad2"
+      "sourceSha256": "584e8aa4233ada3983e45eb795b813e467918cc5a6e60f000a811db242877bf9"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "c0bb442bb0b751cc04c5f5526c99bd9547d5edfb0df4ba3fc4bc38847c53c34f"
+      "sourceSha256": "393a246287240d90143d33917bf64355c13961796b2888015f303e888eacb35a"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "80d7d28a8db5d5a3d5bd2c059d35cae0b47d02e119983fe087ae0f3298a1879b"
+      "sourceSha256": "667329c61d98d7f051c6dd4fddf4eb9166407090ed58cb829ce71c54b4c7215b"
     },
     {
       "file": "i18n/index.ts",
@@ -373,7 +373,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
-      "sourceSha256": "c5e946a309f3bbff8588e7e91b9d7d421842cecc0172b86f3d41f714f9f01cb6"
+      "sourceSha256": "46fbe6f5753e01316a5be5c608ef484c074391cc0dbffeae917cc24c4f48953e"
     },
     {
       "file": "pages/marketing/agent-model-config/model-config-client.ts",
@@ -509,7 +509,7 @@
     },
     {
       "file": "repositories/fake-repositories.ts",
-      "sourceSha256": "4d59fb5acdd4bd4a4128e23b3bb5462e349240864bdbfe4577846b719490a8c1"
+      "sourceSha256": "377c1afb306b793eaaaebe628fc24f814b8261443a521d8ce9e79b08c1bf77ac"
     },
     {
       "file": "repositories/http-repositories.ts",

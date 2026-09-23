@@ -10,6 +10,7 @@ const {
   resolveMultiBotEnabled,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
+  resolveReferralEnabled,
   shouldSkipRemoteRuntimeConfig,
 } = __runtimeConfigTestHooks;
 
@@ -34,6 +35,11 @@ describe("runtime config normalization", () => {
     expect(normalizeRuntimeConfig({ features: { referralEnabled: true } }).features.referralEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { referralEnabled: false } }).features.referralEnabled).toBe(false);
     expect(normalizeRuntimeConfig({ features: { referralEnabled: "true" } }).features.referralEnabled).toBe(false);
+  });
+
+  it("uses the runtime referral flag without a regional override", () => {
+    expect(resolveReferralEnabled(normalizeRuntimeConfig({ features: { referralEnabled: true } }))).toBe(true);
+    expect(resolveReferralEnabled(normalizeRuntimeConfig({ features: { referralEnabled: false } }))).toBe(false);
   });
 
   it("defaults multi-bot on but accepts an explicit runtime rollback", () => {

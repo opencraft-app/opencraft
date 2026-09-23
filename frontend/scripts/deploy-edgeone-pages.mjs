@@ -88,6 +88,16 @@ function firstEntryScript(html) {
   return match[1];
 }
 
+function listStaticAssetRefs(html) {
+  const refs = new Set();
+  for (const match of html.matchAll(/(?:\bsrc|\bhref)=["']([^"']+\.(?:js|mjs|css)(?:\?[^"']*)?)["']/gi)) {
+    const ref = match[1];
+    // Only verify same-origin assets; third-party scripts are out of deploy scope.
+    if (ref.startsWith("/")) refs.add(ref);
+  }
+  return [...refs];
+}
+
 function firstFlightAsset(assetsRoot) {
   const file = walkFiles(assetsRoot).find((path) => path.endsWith(`${sep}index.txt`) && path !== join(assetsRoot, "index.txt"));
   if (!file) return null;
@@ -114,6 +124,17 @@ async function verifyEdgeOneDeploymentOnce({ deployUrl, deployDir, fetchImpl }) 
   assertStatus(entry, 200, "Preview entry JS");
   if (/^\s*</.test(entry.body.toString("utf8"))) {
     throw new Error("Preview entry JS returned HTML");
+  }
+
+  // Verify every JS/CSS asset the HTML references, not just the entry script:
+  // a partial upload (e.g. missing non-entry chunks) must fail the smoke check.
+  for (const ref of listStaticAssetRefs(localHtml)) {
+    if (ref === entryScript) continue;
+    const asset = await readResponse(session, ref, fetchImpl);
+    assertStatus(asset, 200, `Static asset ${ref}`);
+    if (/^\s*</.test(asset.body.toString("utf8"))) {
+      throw new Error(`Static asset ${ref} returned HTML`);
+    }
   }
 
   const flightAsset = firstFlightAsset(assetsRoot);

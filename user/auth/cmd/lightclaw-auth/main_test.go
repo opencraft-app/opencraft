@@ -185,6 +185,82 @@ func TestBuildDeveloperRouteClientDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestBuildDeveloperTestAccountLeaseConfigDisabledByDefault(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENABLED", "false")
+	userIDs, namespace, sourceCIDRs, err := buildDeveloperTestAccountLeaseConfig("https://api.lightvela.com")
+	if err != nil || userIDs != nil || namespace != "" || sourceCIDRs != nil {
+		t.Fatalf("disabled account lease config user_ids=%v namespace=%q source_cidrs=%v err=%v", userIDs, namespace, sourceCIDRs, err)
+	}
+}
+
+func TestBuildDeveloperTestAccountLeaseConfigRequiresMatchingSandbox(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_POOL_USER_IDS", "usr_pool_a")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS", "14.22.11.160/29")
+
+	tests := []struct {
+		name        string
+		environment string
+		publicURL   string
+	}{
+		{name: "production environment", environment: "shprod", publicURL: "https://api-shprod.lightclaw.tech"},
+		{name: "unsupported sandbox", environment: "sandbox-bj-8", publicURL: "https://api-sandbox-bj-8.lightclaw.tech"},
+		{name: "production host", environment: "sandbox-bj-7", publicURL: "https://api.lightvela.com"},
+		{name: "wrong sandbox host", environment: "sandbox-bj-7", publicURL: "https://api-sandbox-kr-1.lightclaw.tech"},
+		{name: "plaintext sandbox host", environment: "sandbox-bj-7", publicURL: "http://api-sandbox-bj-7.lightclaw.tech"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT", test.environment)
+			if userIDs, namespace, sourceCIDRs, err := buildDeveloperTestAccountLeaseConfig(test.publicURL); err == nil || userIDs != nil || namespace != "" || sourceCIDRs != nil {
+				t.Fatalf("unsafe config accepted: user_ids=%v namespace=%q source_cidrs=%v err=%v", userIDs, namespace, sourceCIDRs, err)
+			}
+		})
+	}
+}
+
+func TestBuildDeveloperTestAccountLeaseConfigRequiresValidPool(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS", "14.22.11.160/29")
+
+	for _, pool := range []string{"", "pool-a", "usr_valid,pool-invalid"} {
+		t.Setenv("PERSONAL_DEV_ACCOUNT_POOL_USER_IDS", pool)
+		if userIDs, namespace, sourceCIDRs, err := buildDeveloperTestAccountLeaseConfig("https://api-sandbox-bj-7.lightclaw.tech"); err == nil || userIDs != nil || namespace != "" || sourceCIDRs != nil {
+			t.Fatalf("invalid pool %q accepted: user_ids=%v namespace=%q source_cidrs=%v err=%v", pool, userIDs, namespace, sourceCIDRs, err)
+		}
+	}
+}
+
+func TestBuildDeveloperTestAccountLeaseConfigRequiresNarrowIPv4SourceCIDRs(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_POOL_USER_IDS", "usr_pool_a")
+
+	for _, sourceCIDRs := range []string{"", "not-a-prefix", "0.0.0.0/0", "2001:db8::/32"} {
+		t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS", sourceCIDRs)
+		userIDs, namespace, prefixes, err := buildDeveloperTestAccountLeaseConfig("https://api-sandbox-bj-7.lightclaw.tech")
+		if err == nil || userIDs != nil || namespace != "" || prefixes != nil {
+			t.Fatalf("unsafe source CIDRs %q accepted: user_ids=%v namespace=%q prefixes=%v err=%v", sourceCIDRs, userIDs, namespace, prefixes, err)
+		}
+	}
+}
+
+func TestBuildDeveloperTestAccountLeaseConfigAcceptsSandboxPool(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT", "sandbox-kr-1")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_POOL_USER_IDS", "usr_pool_b, usr_pool_a,usr_pool_b")
+	t.Setenv("PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS", "21.0.0.0/8,14.116.239.32/29")
+
+	userIDs, namespace, sourceCIDRs, err := buildDeveloperTestAccountLeaseConfig("https://api-sandbox-kr-1.lightclaw.tech")
+	if err != nil {
+		t.Fatalf("valid account lease config rejected: %v", err)
+	}
+	if namespace != "sandbox-kr-1" || len(userIDs) != 3 || userIDs[0] != "usr_pool_b" || userIDs[1] != "usr_pool_a" || userIDs[2] != "usr_pool_b" || len(sourceCIDRs) != 2 {
+		t.Fatalf("unexpected account lease config: user_ids=%v namespace=%q source_cidrs=%v", userIDs, namespace, sourceCIDRs)
+	}
+}
+
 func TestDeveloperRouteExplicitTargetIPRequiresSandboxControlClient(t *testing.T) {
 	t.Setenv("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "true")
 	if developerRouteExplicitTargetIPEnabled(nil) {

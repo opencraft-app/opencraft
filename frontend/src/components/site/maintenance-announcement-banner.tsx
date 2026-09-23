@@ -21,14 +21,14 @@ type AnnouncementItem = {
   expiresAt: number;
 };
 
-const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0907-hermes-agent-upgrade";
+const SYSTEM_UPGRADE_ANNOUNCEMENT_ID = "0923-system-upgrade";
 
-/** 北京时间 / 新加坡时间 2026-09-08 02:00:00 = UTC 2026-09-07 18:00:00 */
-const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
+/** 北京时间 / 新加坡时间 2026-09-24 06:00:00 = UTC 2026-09-23 22:00:00 */
+const SYSTEM_UPGRADE_EXPIRES_AT = Date.UTC(
   2026,
   8 /* 0-indexed: September */,
-  7,
-  18,
+  23,
+  22,
   0,
   0,
 );
@@ -48,14 +48,14 @@ export function MaintenanceAnnouncementBanner() {
   const t = useT();
   const pathname = usePathname();
   const announcement: AnnouncementItem = {
-    id: HERMES_UPGRADE_ANNOUNCEMENT_ID,
-    expiresAt: HERMES_UPGRADE_EXPIRES_AT,
+    id: SYSTEM_UPGRADE_ANNOUNCEMENT_ID,
+    expiresAt: SYSTEM_UPGRADE_EXPIRES_AT,
     message: isGlobal
       ? t(
-          "LightVela 将于新加坡时间 2026 年 9 月 7 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+          "LightVela 将于新加坡时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
         )
       : t(
-          "LightVela 将于北京时间 2026 年 9 月 7 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+          "LightVela 将于北京时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
         ),
   };
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
@@ -67,10 +67,10 @@ export function MaintenanceAnnouncementBanner() {
       const nextDismissedIds = new Set<string>();
       if (
         window.localStorage.getItem(
-          getStorageKey(HERMES_UPGRADE_ANNOUNCEMENT_ID),
+          getStorageKey(SYSTEM_UPGRADE_ANNOUNCEMENT_ID),
         ) === "1"
       ) {
-        nextDismissedIds.add(HERMES_UPGRADE_ANNOUNCEMENT_ID);
+        nextDismissedIds.add(SYSTEM_UPGRADE_ANNOUNCEMENT_ID);
       }
       setDismissedIds(nextDismissedIds);
     } catch {
@@ -82,7 +82,7 @@ export function MaintenanceAnnouncementBanner() {
   // 用户挂着浏览器跨过撤下时间的场景：不依赖刷新 / 切路由，到点强制隐藏最早过期的公告。
   // setTimeout 上限约 24 天；距离过期太久时跳过定时器，后续访问会重新计算过期状态。
   useEffect(() => {
-    const remaining = HERMES_UPGRADE_EXPIRES_AT - now;
+    const remaining = SYSTEM_UPGRADE_EXPIRES_AT - now;
     if (remaining <= 0) return;
     if (remaining > MAX_SAFE_TIMEOUT_MS) return;
     const timer = setTimeout(() => setNow(Date.now()), remaining);

@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -86,6 +86,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  useCurrentLocale: () => "zh-CN",
   useT: () => (zh: string) => zh,
   // LoginModal 等组件用 `useLocaleOverride() ?? i18n.language` 判定语言，
   // 返回 null 表示无路由级覆盖，保持用例原有语言行为。
@@ -196,6 +197,46 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  it("shows the Shanghai campaign memory on the domestic pricing card", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    expect((await screen.findAllByText("4核 16G 内存")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("4核 8G 内存")).not.toBeInTheDocument();
+  });
+
+  it("explains why an existing subscription disables a non-upgrade plan CTA", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    openClawState.activePass = {
+      bundle_id: "legacy_bundle",
+      bundle_name: "巡游 Cruise",
+    };
+    sessionState.isAuthenticated = true;
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    const subscribeButton = await screen.findByRole("button", { name: "立即订阅" });
+    expect(subscribeButton).toBeDisabled();
+
+    const tooltipTrigger = screen.getByRole("group", {
+      name: "你已订阅「{{plan}}」套餐。",
+    });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    await userEvent.hover(tooltipTrigger);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("你已订阅「{{plan}}」套餐。");
+    expect(tooltip.parentElement).toBe(document.body);
+
+    await userEvent.unhover(tooltipTrigger);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+    tooltipTrigger.focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("你已订阅「{{plan}}」套餐。");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
   it("shows a page-level loading state until the bundles request returns", async () => {
     sessionState.isAuthenticated = true;
     openClawState.isLoggedIn = true;
@@ -211,7 +252,7 @@ describe("SubscribePage", () => {
 
     expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("订阅套餐");
     expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("加载套餐中...");
-    expect(screen.queryByRole("tab", { name: "4500" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^4500/ })).not.toBeInTheDocument();
 
     await act(async () => {
       resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
@@ -297,7 +338,7 @@ describe("SubscribePage", () => {
 
     render(<SubscribePage />);
 
-    await screen.findByRole("tab", { name: "4500" });
+    await screen.findByRole("tab", { name: /^4500/ });
 
     await waitFor(() => {
       expect(getCreditTabs().map(getCreditValue)).toEqual([
@@ -311,14 +352,52 @@ describe("SubscribePage", () => {
     expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "false");
     expect(getCreditTab("200")).toHaveAttribute("aria-selected", "false");
-    /* 启航 AI 默认选中且为首单免费 3 天（2026-09-02 国内站口径）：¥0 + 免费标签。
+    /* 启航 AI 默认选中且为首单免费 1 个月：¥0 + 免费标签。
        巡游 AI 无免费试用，仍展示「首月 6 折」（合法共存，不做否定断言）。 */
-    expect(screen.getAllByText("首单免费 3 天").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("首单免费 1 个月").length).toBeGreaterThanOrEqual(1);
+    await userEvent.click(getCreditTab("100"));
+    expect(screen.getByText("首单免费 1 个月")).toBeInTheDocument();
+    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
     expect(screen.queryByText("14天免费体验")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "退款规则" })).toHaveAttribute(
       "href",
       "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99",
     );
+  });
+
+  it.each([false, true])("shows fixed CN Bot counts for all four plans (logged in: %s)", async (loggedIn) => {
+    openClawState.isLoggedIn = loggedIn;
+    sessionState.isAuthenticated = loggedIn;
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("bundle_launch_01", "启航 Launch"), bundle_type: "general", credit: 100, agent_quota: 2 },
+      { ...buildBundle("bundle_launch_ai_01", "启航 Launch"), bundle_type: "ai", credit: 4500, agent_quota: 2 },
+      { ...buildBundle("bundle_cruise_01", "巡游 Cruise"), bundle_type: "general", credit: 200, agent_quota: 2 },
+      { ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"), bundle_type: "ai", credit: 10000, agent_quota: 2 },
+    ]);
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await screen.findByRole("tab", { name: /^4500/ });
+
+    const expectBotCount = (name: string, count: number) => {
+      const card = screen.getByRole("group", { name });
+      const row = within(card).getByText("Bot 数").closest("li");
+      expect(row).toHaveTextContent(`${count} 个`);
+      expect(within(card).queryByText("Agent")).not.toBeInTheDocument();
+    };
+    expectBotCount("启航 Launch", 5);
+    expectBotCount("巡游 Cruise", 10);
+    expect(within(getCreditTab("4500")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("10000")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("100")).queryByText("推荐")).not.toBeInTheDocument();
+    expect(within(getCreditTab("200")).queryByText("推荐")).not.toBeInTheDocument();
+    await userEvent.click(getCreditTab("100"));
+    await userEvent.click(getCreditTab("200"));
+    expectBotCount("启航 Launch", 5);
+    expectBotCount("巡游 Cruise", 10);
+    expect(within(getCreditTab("4500")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("10000")).getByText("推荐")).toBeInTheDocument();
+    expect(within(getCreditTab("100")).queryByText("推荐")).not.toBeInTheDocument();
+    expect(within(getCreditTab("200")).queryByText("推荐")).not.toBeInTheDocument();
   });
 
   it("keeps quoted zero-price bundles on the legacy order flow in CN", async () => {
@@ -435,11 +514,17 @@ describe("SubscribePage", () => {
     return quote;
   }
 
+  async function selectSetupUpgradeTarget() {
+    const target = await waitFor(() => getCreditTab("200"));
+    await userEvent.click(target);
+    return screen.getByRole("button", { name: "升级至此套餐" });
+  }
+
   it("loads a fresh upgrade quote on the button before opening the populated modal", async () => {
     const quote = setupUpgradeQuote();
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    const button = await selectSetupUpgradeTarget();
     let resolveQuote!: (value: typeof quote) => void;
     listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
     const reads = listModifyBundlesMock.mock.calls.length;
@@ -460,12 +545,12 @@ describe("SubscribePage", () => {
     setupUpgradeQuote();
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    const button = await selectSetupUpgradeTarget();
     listModifyBundlesMock.mockRejectedValueOnce(new Error("offline"));
     await userEvent.click(button);
     expect(await screen.findByRole("alert")).toHaveTextContent("升级询价失败，请稍后重试。");
     expect(screen.getByRole("alert")).not.toHaveTextContent("offline");
-    expect(button.parentElement).toContainElement(screen.getByRole("alert"));
+    expect(button).toHaveAccessibleDescription("升级询价失败，请稍后重试。");
     expect(button).toBeEnabled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await userEvent.click(button);
@@ -477,7 +562,7 @@ describe("SubscribePage", () => {
     const quote = setupUpgradeQuote();
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    const button = await selectSetupUpgradeTarget();
     listModifyBundlesMock.mockResolvedValueOnce(invalid === "source" ? { ...quote, source_bundle_id: "changed" } : invalid === "target" ? { ...quote, modify_bundle_set: [] } : { ...quote, modify_bundle_set: [{ ...quote.modify_bundle_set[0]!, modify_price: { currency: "CNY", real_total_cost: NaN } }] });
     await userEvent.click(button);
     expect(await screen.findByRole("alert")).toHaveTextContent("当前套餐已变化或该升级目标暂不可用，请刷新后重试。");
@@ -489,7 +574,7 @@ describe("SubscribePage", () => {
     const quote = setupUpgradeQuote();
     const { SubscribePage } = await import("@next-site/subscribe-page");
     const { rerender } = render(<SubscribePage />);
-    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    const button = await selectSetupUpgradeTarget();
     let resolveQuote!: (value: typeof quote) => void;
     listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
     await userEvent.click(button);
@@ -506,7 +591,7 @@ describe("SubscribePage", () => {
     const quote = setupUpgradeQuote();
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    const button = await selectSetupUpgradeTarget();
     let resolveOld!: (value: typeof quote) => void;
     let resolveNew!: (value: typeof quote) => void;
     listModifyBundlesMock
@@ -525,7 +610,7 @@ describe("SubscribePage", () => {
     expect(button).toBeEnabled();
   });
 
-  it("selects source and legal target by bundle ID, enabling only the upgrade checkout", async () => {
+  it("keeps plan-card choices independent and enables every backend-approved upgrade target", async () => {
     openClawState.isLoggedIn = true;
     openClawState.isSubscribed = true;
     sessionState.isAuthenticated = true;
@@ -539,30 +624,38 @@ describe("SubscribePage", () => {
       { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
       { ...buildBundle("unrelated-target", "巡游 Cruise"), credit: 10000 },
     ]);
-    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", credit: 200 }, modify_price: { currency: "CNY", real_total_cost: 100 } }] });
+    listModifyBundlesMock.mockResolvedValue({
+      source_bundle_id: "source",
+      modify_bundle_set: [
+        { target_bundle_id: "unrelated-ai", bundle: { bundle_id: "unrelated-ai", credit: 4500 }, modify_price: { currency: "CNY", real_total_cost: 100 } },
+        { target_bundle_id: "target", bundle: { bundle_id: "target", credit: 200 }, modify_price: { currency: "CNY", real_total_cost: 100 } },
+        { target_bundle_id: "unrelated-target", bundle: { bundle_id: "unrelated-target", credit: 10000 }, modify_price: { currency: "CNY", real_total_cost: 100 } },
+      ],
+    });
     window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
     const { SubscribePage } = await import("@next-site/subscribe-page");
     const { rerender } = render(<SubscribePage />);
-    const upgrade = await screen.findByRole("button", { name: "升级至此套餐" });
-    expect(upgrade).toBeEnabled();
-    expect(upgrade).toHaveStyle({ background: "rgba(0,0,0,0.90)", color: "#FFFFFF" });
+    const initialUpgrade = await screen.findByRole("button", { name: "升级至此套餐" });
+    expect(initialUpgrade).toBeEnabled();
     expect(screen.queryByRole("button", { name: "查看升级进度" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "当前订阅" })).toBeDisabled();
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
-    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
-    // Unrelated variants remain independent. Selecting a legal target restores its source.
+    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
+
+    // Switching the Launch card does not rewrite the Cruise card selection.
     await userEvent.click(getCreditTab("4500"));
-    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
-    await userEvent.click(getCreditTab("10000"));
-    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
+    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("button", { name: "升级至此套餐" })).toHaveLength(2);
+
+    // Switching the Cruise card does not rewrite the Launch card selection.
     await userEvent.click(getCreditTab("200"));
-    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
-    // The inverse direction is also a click interaction, not just an initial default.
-    await userEvent.click(getCreditTab("10000"));
-    await userEvent.click(getCreditTab("4500"));
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
+    expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
     await userEvent.click(getCreditTab("100"));
     expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "当前订阅" })).toBeDisabled();
+    const upgrade = screen.getByRole("button", { name: "升级至此套餐" });
+    expect(upgrade).toBeEnabled();
+    expect(upgrade).toHaveStyle({ background: "rgba(0,0,0,0.90)", color: "#FFFFFF" });
     await userEvent.click(upgrade);
     expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade target");
     expect(createPassOrderMock).not.toHaveBeenCalled();
@@ -702,30 +795,34 @@ describe("SubscribePage", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent(`Upgrade ${targetId}`);
   });
 
-  it("leaves original AI defaults and locked actions unchanged when backend returns no targets", async () => {
+  it("shows unsupported and downgrade choices as disabled modify actions", async () => {
     openClawState.isLoggedIn = true;
     openClawState.isSubscribed = true;
     sessionState.isAuthenticated = true;
     sessionState.user = { id: "u1" };
-    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", expired_time: "2099-01-01" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "cruise-ai", expired_time: "2099-01-01" };
     openClawState.activePass = pass;
     listMyPassesMock.mockResolvedValue([pass]);
     listBundlesMock.mockResolvedValue([
-      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
-      { ...buildBundle("unrelated", "启航 Launch"), credit: 4500 },
+      { ...buildBundle("launch", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("launch-ai", "启航 Launch"), credit: 4500 },
       { ...buildBundle("cruise-standard", "巡游 Cruise"), bundle_type: "general", credit: 200 },
       { ...buildBundle("cruise-ai", "巡游 Cruise"), credit: 10000 },
     ]);
-    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [] });
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "cruise-ai", modify_bundle_set: [] });
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
     await waitFor(() => expect(listModifyBundlesMock).toHaveBeenCalledWith("p1"));
-    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "当前订阅" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "立即订阅" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
-    await userEvent.click(getCreditTab("100"));
-    expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
+
+    // Cruise AI -> Cruise and every Launch option are downgrade/unsupported.
     await userEvent.click(getCreditTab("200"));
-    expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(getCreditTab("100"));
+    const blocked = screen.getAllByRole("button", { name: "立即订阅" });
+    expect(blocked).toHaveLength(2);
+    blocked.forEach((button) => expect(button).toBeDisabled());
   });
 
   it.each(["PASS_EXPIRED", "PASS_ISOLATED"])("links domestic %s errors to billing", async (code) => {
@@ -767,4 +864,38 @@ describe("SubscribePage", () => {
     });
     expect(screen.queryByText("您已有有效套餐，无需重复购买。")).not.toBeInTheDocument();
   });
+});
+
+describe("SubscribePage sales quota visibility", () => {
+  beforeEach(() => {
+    cleanup();
+    resetState();
+  });
+  afterEach(cleanup);
+
+  it.each(["AVAILABLE", "SOLD_OUT"] as const)(
+    "hides remaining sales counts while preserving %s subscription eligibility",
+    async (salesState) => {
+      openClawState.isLoggedIn = true;
+      sessionState.isAuthenticated = true;
+      sessionState.user = { id: "quota-preview-user" };
+      listBundlesMock.mockResolvedValue([{
+        ...buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
+        bundle_sales_state: salesState,
+        bundle_sales_available_count: salesState === "SOLD_OUT" ? 0 : 5,
+        bundle_sales_total_count: 100,
+        price: { price: 4900, total_cost: 4900, real_total_cost: 4900, currency: "USD" },
+      }]);
+
+      const { SubscribePage } = await import("@next-site/subscribe-page");
+      render(<SubscribePage />);
+      await screen.findByRole("heading", { name: "巡游 Cruise" });
+      expect(screen.queryByText(/今日剩余/)).not.toBeInTheDocument();
+      const button = screen.getByRole("button", {
+        name: salesState === "SOLD_OUT" ? "已售罄" : "立即订阅",
+      });
+      if (salesState === "SOLD_OUT") expect(button).toBeDisabled();
+      else expect(button).toBeEnabled();
+    },
+  );
 });

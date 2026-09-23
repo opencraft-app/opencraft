@@ -27,13 +27,24 @@ Secret 或 Argo 状态来代替 registration API。
 capability；中央 testing Trade 使用其现有运行时 Secret 代签。此新路径在部署到两个 testing 环境后，
 必须重新保存国内、国际真实支付、回调与终态证据；历史闭环或本地单测不能冒充当前 live 验收。
 
-这里的“一键”是指账号已经具备 testing 资格、余额和 active binding 后，`up` 自动搭建完整个人环境、
-对齐身份、注册/续租回调、注入/轮换短期计费能力并启动浏览器入口。账号创建、国际开户和充值目前仍通过
-智研账号池与计费助手正式命令完成；仓库内没有已确认的自动充值 API，不得声称“完全无前置自动充值”。
+默认模式下，sandbox Auth 从环境 owner 维护的账号池自动租用已具备 testing 资格、余额和 active binding
+的账号；新同学不再准备账号密码、admin token、SOPS 或 owner 文件。`up` 自动领取短期 session、搭建完整
+个人环境、对齐身份、注册/续租回调、注入/轮换短期计费能力并启动浏览器入口。账号池扩容、国际开户和充值
+仍由环境 owner 通过智研账号池与计费助手正式命令完成，不是每位使用者的前置步骤。
 
 ## 安全边界
 
 - 只允许 `cn` 和 `intl` testing；脚本拒绝 production Auth origin。
+- testing 账号租约接口默认关闭，只能在公共地址精确匹配的 `sandbox-bj-7`、`sandbox-kr-1` Auth 启用；
+  账号池配置只含 Auth
+  `user_id`，不含密码或云凭据。服务端只选择当前站点合格且 active binding 的候选账号：国内必须完成实名，
+  国际必须完成开户映射；两站都重新校验 UIN、OwnerUIN 与 AppID。MySQL 租约、TTL、版本号和 session
+  revocation 防止不同 DevCloud 并发复用。首次领取只依赖受控 DevCloud 网络；已有租约的续租必须携带当前
+  `developer_lease` session，不能只伪造另一个 DevCloud 的 `targetIp` 冒领新 session。
+- 租约 POST/DELETE 只接受 Service Gateway 覆盖并规范化的 `X-Lightclaw-Client-IP`，且必须命中实测的
+  DevCloud 出口 allowlist；客户端自报 forwarding header 不生效。组织信任边界仍只是 sandbox-only
+  配置、DevCloud 出口和 `9/8`、`21/8` 目标地址，不是独立 WOA OAuth 用户证明；不得把它开放到
+  production/staging 或扩大到公网 CIDR。
 - UIN 只来自当前 testing 登录会话的 active shadow binding，客户端不能提交或覆盖。
 - 国内提交脚本发现并校验过的 DevCloud `9/8` 或 `21/8` 地址、回调端口和 TTL；这是因为北京公网
   Gateway 之后的代理链无法稳定保留开发机源地址。国际只提交端口和 TTL，经 NAT 时注册响应的
@@ -52,7 +63,7 @@ capability；中央 testing Trade 使用其现有运行时 Secret 代签。此�
 - 默认验收只下单不支付，不得描述为支付/发货闭环。不要调用生产、真实支付或生产数据库。
 - `commit`、`push`、MR、GitOps、Argo Sync 和发布仍需用户明确确认。
 
-## 从零准备 testing 账号
+## 从零启动
 
 先打印当前站点的前置条件：
 
@@ -62,22 +73,15 @@ PERSONAL_DEV_SITE=intl \
   bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh prerequisites
 ```
 
-1. 在智研 testing 账号池创建/导入自己的账号，或占用明确允许共享的空闲账号：
-   <https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/?current=1&pageSize=20>。
-   账号必须为“正常”，UIN/APPID 非空，且 `international` 与目标站点一致。
-2. 国际新账号在计费助手命令模式执行 `/国际开户` 并确认成功；国内不执行。
-3. 两站均使用 `/充值` 调整余额，金额单位为分。保存机器人返回的站别、操作后余额和 `reqId`。
-   `/设置金额` 只用于需要精确目标余额的受控场景。余额不足产生的旧 `pending` 单不要重试，充值后
-   创建新订单。
-4. 在 testing Gateway Dashboard 的“认证用户 → DevCloud 测试绑定”中，把当前 testing 登录用户
-   绑定到该 UIN/OwnerUIN/APPID，并确认状态为 `active`。浏览器表单里的 UIN 不是可信身份。
+正常使用不需要逐项人工准备。全空私有 state 会按 DevCloud 地址从对应 sandbox 领取账号租约；池满时
+返回 `409 developer_test_account_busy`，不得绕过并发占用或改用生产账号。
 
-当前没有安全、稳定且已确认的机器人充值 API，所以 Skill 只能把上面步骤教完整，不能复制机器人凭据、
-抓取私有接口或硬编码共享账号来假装自动完成。
-
-受控管理员可用 `bootstrap-binding`，但 admin token 只能来自本机 secret provider，不得发给开发者、
-写入仓库、shell profile、状态文件或回复。公网 Service Gateway 不暴露 Auth admin 路由，因此还必须
-把目标 Auth testing 服务转发到 loopback，并传入 `PERSONAL_DEV_AUTH_ADMIN_BASE_URL`。
+环境 owner 扩容账号池时才执行以下一次性工作：在
+<https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/?current=1&pageSize=20>
+准备状态正常、UIN/APPID 完整且站点匹配的 testing 账号；国际账号完成 `/国际开户`；使用 `/充值` 充值；
+国内账号完成实名，在 testing Gateway Dashboard 建立 active binding；最后只把持有该 active binding 的
+中央 Auth `user_id`（不是个人 localstack 用户）加入该 sandbox 的
+`PERSONAL_DEV_ACCOUNT_POOL_USER_IDS`。不得把账号密码、机器人凭据、admin token 或 SOPS identity 放入配置。
 
 ## 一键启动
 
@@ -91,10 +95,12 @@ PERSONAL_DEV_SITE=intl \
 国内站改为 `PERSONAL_DEV_SITE=cn`。`up` 会完成工具检查/安装、个人 kind 集群、完整 localstack、
 testing 登录、本地身份对齐、动态回调注册、短期 capability 注入、个人 Trade 滚动及续租进程。
 
-`PERSONAL_DEV_EMAIL/PERSONAL_DEV_PASSWORD` 只表示中央 testing 账号；本地 Auth 身份使用独立的
+默认中央身份来自短期账号租约。`PERSONAL_DEV_SESSION_TOKEN` 或
+`PERSONAL_DEV_EMAIL/PERSONAL_DEV_PASSWORD` 只保留给已有受控 testing 账号的兼容模式；本地 Auth 身份使用独立的
 `PERSONAL_DEV_LOCAL_EMAIL/PERSONAL_DEV_LOCAL_PASSWORD`，通常无需设置并由脚本随机生成。两组凭据分别
-保存在私有 `state.json` 的 `central_*` 与 `local_*` 字段，不能互相覆盖。已有中央账号的 session 失效后，
-必须用该账号的 session 或登录凭据续签；脚本不会静默新建另一个国际账号。
+保存在私有 `state.json` 的 `central_*` 与 `local_*` 字段，不能互相覆盖。兼容模式下已有中央账号的
+session 失效后必须用同一账号的 session 或登录凭据续签；租约模式则对同一 DevCloud 幂等续租，不会
+并发占用第二个账号。
 
 中央 testing 用户与个人环境用户是两个不同的 `user_id`：中央用户持有真实 testing shadow binding；
 个人用户只承载本地浏览器 session。`up/register` 把中央 binding 的
@@ -162,8 +168,9 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 ```
 
 `unregister` 会保留 disabled tombstone，使用仍在个人 Secret 中的旧 capability 发起撤销探针，只有返回
-`401` 才算撤销完成，然后停止 devtunnel。`down` 会先注销，再停止本地工作负载并保留 PVC。
-完整回收账号映射时先执行 `release-binding`，再执行 `down`；不要删除 tombstone 后回落共享环境。
+`401` 才算撤销完成，然后停止 devtunnel。正常清理直接执行 `down`：先写 tombstone，再释放租约并撤销
+该用户全部 developer-lease sessions，最后停止 localstack 并保留 PVC。`release-binding` 是显式提前回收
+命令，也严格执行 unregister → release；其后再执行 `down` 不会重新领取账号。不要删除 tombstone 后回落共享环境。
 
 ## 失败处理
 
@@ -179,5 +186,9 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
   `ctl-passes` 上游预算 30 秒。任一目标询价失败时整条请求失败，不能把临时故障展示成“无可升级套餐”。
 - `target_ip_not_allowed`：Auth 观测到的来源 IP 未进入对应 testing allowlist；核对服务端观测值，不要把
   页面 IP 或整段公网 CIDR 盲目放开。
+- `developer_test_account_busy`：池内账号都处于有效租约；等待其他 DevCloud `down`/TTL，或由环境 owner
+  按正式流程扩容，不得复用仍有 active callback 的账号。
+- `developer_test_account_renewal_requires_session`：目标 DevCloud 已有有效租约，但请求未证明持有当前
+  `developer_lease` session；使用私有 state 中的现有 session 续租，不得无认证重领。
 - 验收以 `status`、相关业务终态、CloudLadder 审计、本机 agent 日志和
   [`tests/contract_test.sh`](tests/contract_test.sh) 为准；HTTP 200、MR 合入或页面状态不能单独证明闭环。

@@ -42,7 +42,8 @@ const COPY = {
     ],
     /**
      * 面向 AI 检索的结构化事实摘要。
-     * 事实来源：`wiki/product-state/geo-fact-table.md`（唯一来源＝订阅后台 / 产品配置 / 运营规则）。
+     * 价格等事实来源：`wiki/product-state/geo-fact-table.md`。
+     * 新用户试用口径：`wiki/prd-docs/2026-09-23-launch-trial-one-month.md`（用户确认双站权益已调整）。
      * ⚠️ 价格与试用条件调整时，须与 docs/plans.md、公告页、subscribe-page.tsx 静态价表同步。
      */
     facts: [
@@ -55,7 +56,7 @@ const COPY = {
       {
         label: '免费试用',
         value:
-          '公测阶段首次注册用户可免费体验启航版 14 天，到期不自动扣款、需手动续费；巡游首月 5 折，AI 版首月 6 折，季付标准版 8.5 折、AI 版 9 折。',
+          '新用户免费体验1个月，送4500 AI 积分，到期不自动扣款、需手动续费。',
       },
       { label: '支持渠道', value: '微信、QQ、企业微信、飞书、钉钉（国内站）' },
       { label: '实名认证', value: '国内站首次开通套餐前需完成实名认证（需中国大陆居民身份证），一次生效' },
@@ -87,7 +88,7 @@ const COPY = {
      */
     facts: [
       { label: 'Plans & pricing', value: 'Launch $7.5/month; Cruise $15/month' },
-      { label: 'Free trial', value: 'New users can try the Launch plan free for 14 days' },
+      { label: 'Free trial', value: 'New users get 1 month free and 4,500 AI credits.' },
       {
         label: 'Supported channels',
         value: 'Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark',

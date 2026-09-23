@@ -1,18 +1,24 @@
-import type { HTMLAttributes } from "react";
+import { forwardRef, type HTMLAttributes } from "react";
 import { floatingPanelClass } from "@/components/ui/control-shell";
 import { displayTitleClass } from "@/components/ui/display-title";
 import { cn } from "@/lib/utils";
 
-export const Card = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn(
-      "rounded-[1.75rem]",
-      floatingPanelClass,
-      className,
-    )}
-    {...props}
-  />
+const cardVariants = {
+  default: cn("rounded-[1.75rem]", floatingPanelClass),
+  pricing: "rounded-[12px] border bg-white shadow-none",
+  "pricing-featured": "rounded-[16px] border bg-white shadow-none",
+};
+
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  variant?: keyof typeof cardVariants;
+}
+
+export const Card = forwardRef<HTMLDivElement, CardProps>(
+  ({ className, variant = "default", ...props }, ref) => (
+    <div ref={ref} className={cn(cardVariants[variant], className)} {...props} />
+  ),
 );
+Card.displayName = "Card";
 
 export const CardHeader = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("space-y-1.5 p-5", className)} {...props} />

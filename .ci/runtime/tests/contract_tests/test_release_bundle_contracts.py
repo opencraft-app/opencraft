@@ -2753,6 +2753,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_workflow_supports_exact_master_playground_build(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+
+        self.assertIn('PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"', workflow_text)
+        self.assertIn('if [[ "$PIPELINE_MODE_VALUE" == "playground-build" ]]', workflow_text)
+        self.assertIn('SOURCE_SHA="${{ variables.SOURCE_SHA }}"', workflow_text)
+        self.assertIn('TARGET_ENV="${{ variables.TARGET_ENV }}"', workflow_text)
+        self.assertIn('if [[ "$SOURCE_BRANCH" != "master" ]]', workflow_text)
+        self.assertIn('SOURCE_BRANCH="${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"', workflow_text)
+        self.assertIn('"$(git rev-parse HEAD)" != "$SOURCE_SHA"', workflow_text)
+        self.assertIn('sandbox-bj-*|sandbox-kr-*)', workflow_text)
+        self.assertIn('BUILD_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('AUTO_PIN_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('frontend-${TARGET_ENV}-${SHORT_SHA}', workflow_text)
+        self.assertEqual(
+            workflow_text.count('|| "${{ variables.PIPELINE_MODE }}" == "playground-build"'),
+            2,
+        )
+        self.assertIn('if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"', workflow_text)
+
     def test_frontend_checkouts_disable_virtual_merge(self) -> None:
         for workflow_path in (".ci/frontend.yml", ".ci/frontend-preview.yml"):
             with self.subTest(workflow=workflow_path):
@@ -3312,12 +3332,19 @@ refresh_skus http://unused img-jhb "$pools_json"
             ["Dry-run 生产 DB migration", "人工确认生产 DB migration", "执行生产 DB migration"],
         )
         self.assertTrue(all("if" not in stage for stage in explicit_stages))
+        self.assertEqual(((explicit.get("variables") or {}).get("MIGRATION_DECISION") or {}).get("value"), "run_migration")
+        self.assertEqual(((explicit.get("variables") or {}).get("SKIP_IF_NO_MIGRATION_CHANGE") or {}).get("value"), "true")
         self.assertIn("check-in", explicit_stages[1])
         explicit_reviews = explicit_stages[1]["check-in"]["reviews"]
         self.assertIn("description", explicit_reviews)
         self.assertNotIn("description", explicit_stages[1]["check-in"])
         for stage_index, job_name in ((0, "dry_run"), (2, "apply")):
-            steps = explicit_stages[stage_index]["jobs"][job_name]["steps"]
+            job = explicit_stages[stage_index]["jobs"][job_name]
+            self.assertEqual(
+                (job.get("env") or {}).get("MIGRATION_DECISION"),
+                "${{ variables.MIGRATION_DECISION }}",
+            )
+            steps = job["steps"]
             checkout = next(step for step in steps if step.get("checkout") == "self")
             self.assertIs(checkout["with"]["enableSubmodule"], False)
         self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
@@ -3727,6 +3754,24 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn('PLAYGROUND_ENV="$SOURCE_BRANCH"', template_text)
         self.assertIn('unsupported source branch for release: ${SOURCE_BRANCH:-unknown}', template_text)
 
+    def test_service_release_supports_exact_master_playground_build(self) -> None:
+        template_text = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+
+        self.assertEqual(template_text.count('if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]'), 2)
+        self.assertEqual(template_text.count('SOURCE_SHA="${{ variables.SOURCE_SHA }}"'), 3)
+        self.assertEqual(template_text.count('CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"'), 2)
+        self.assertEqual(template_text.count('if [[ "$SOURCE_BRANCH" != "master" ]]'), 2)
+        self.assertEqual(template_text.count('"$(git rev-parse HEAD)" != "$SOURCE_SHA"'), 2)
+        self.assertEqual(template_text.count('sandbox-bj-*|sandbox-kr-*)'), 2)
+        self.assertEqual(template_text.count('BUILD_ENVS="$TARGET_ENV"'), 2)
+        self.assertEqual(template_text.count('AUTO_PIN_ENVS="$TARGET_ENV"'), 2)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 构建', template_text)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 校验', template_text)
+        self.assertIn(
+            '${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master',
+            template_text,
+        )
+
     def test_service_release_creates_independent_prod_promote_candidates(self) -> None:
         template_path = REPO_ROOT / ".ci/templates/service-release.yml"
         template_text = template_path.read_text()
@@ -3842,7 +3887,10 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertEqual(template_text.count(release_image_dir), 2)
         self.assertNotIn('RELEASE_IMAGE_DIR=".ci/.release-images/', template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
-        self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
+        self.assertEqual(template_text.count('targetPathFromUrl: "${{ steps.plan.outputs.pipeline_path }}"'), 2)
+        self.assertEqual(template_text.count('PIPELINE_PATH=".ci/db-migration-apply.yml"'), 2)
+        self.assertEqual(template_text.count('PIPELINE_PATH=".ci/db-migration.yml"'), 2)
+        self.assertEqual(template_text.count('echo "::set-output name=pipeline_path::$PIPELINE_PATH"'), 2)
         self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)
         self.assertIn('buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)
         self.assertIn('key: "SERVICE"', template_text)

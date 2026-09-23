@@ -59,16 +59,25 @@ Cuatro planes están actualmente disponibles: **Launch, Cruise, Launch AI y Crui
 
 Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de compra se muestran en la [página de suscripción](/subscribe). La tabla a continuación lista solo los precios estándar de lista actuales.
 
+> ℹ️ **Actualización de las especificaciones del entorno de ejecución en la nube**
+>
+> Desde el **23 de septiembre de 2026**, los entornos de ejecución de los planes de LightVela tienen las siguientes especificaciones:
+>
+> - Launch y Launch AI: de **2 núcleos de CPU y 4 GB de memoria** a **2 núcleos de CPU y 8 GB de memoria**
+> - Cruise y Cruise AI: de **4 núcleos de CPU y 8 GB de memoria** a **4 núcleos de CPU y 16 GB de memoria**
+>
+> Esta actualización solo modifica la asignación de memoria. Los precios de los planes, la capacidad de almacenamiento y los beneficios de créditos de IA no cambian. Consulta la página de suscripción para conocer las especificaciones y la disponibilidad de compra más recientes.
+
 ### Beneficios del plan
 
 <div className="lv-plan-benefits-table">
 
 | Plan | Ideal para | Cuota de Agent | Entorno de ejecución en la nube aislado | Almacenamiento en la nube dedicado | Créditos de IA |
 |---|---|---|---|---|---|
-| Launch | Usuarios que ya tienen su propia llave de API de modelo grande y desean tener un Agent funcionando a un costo menor | 1 | 2 núcleos de CPU, 4 GB de memoria | 50 GB | 100 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
-| Cruise | Usuarios que ya tienen su propia llave de API de modelo grande y desean más recursos para el uso diario regular | 1 | 4 núcleos de CPU, 8 GB de memoria | 80 GB | 200 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
-| Launch AI | Uso ligero con más créditos de IA | 1 | 2 núcleos de CPU, 4 GB de memoria | 50 GB | 4,500 créditos / mes |
-| Cruise AI | Conversaciones frecuentes, Skills y tareas programadas | 1 | 4 núcleos de CPU, 8 GB de memoria | 80 GB | 10,000 créditos / mes |
+| Launch | Usuarios que ya tienen su propia llave de API de modelo grande y desean tener un Agent funcionando a un costo menor | 1 | 2 núcleos de CPU, 8 GB de memoria | 50 GB | 100 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
+| Cruise | Usuarios que ya tienen su propia llave de API de modelo grande y desean más recursos para el uso diario regular | 1 | 4 núcleos de CPU, 16 GB de memoria | 80 GB | 200 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
+| Launch AI | Uso ligero con más créditos de IA | 1 | 2 núcleos de CPU, 8 GB de memoria | 50 GB | 4,500 créditos / mes |
+| Cruise AI | Conversaciones frecuentes, Skills y tareas programadas | 1 | 4 núcleos de CPU, 16 GB de memoria | 80 GB | 10,000 créditos / mes |
 
 </div>
 
@@ -83,7 +92,7 @@ Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de
 
 > ℹ️ **Oferta para nuevos usuarios**
 >
-> Los nuevos usuarios pueden probar Launch gratis durante 14 días en su primer pedido y Launch AI gratis durante 7 días en su primer pedido. La oferta mostrada en la página de suscripción tiene prioridad.
+> Los nuevos usuarios pueden probar Launch gratis durante 1 mes en su primer pedido y Launch AI gratis durante 1 mes en su primer pedido. La oferta mostrada en la página de suscripción tiene prioridad.
 
 > ℹ️ **Nota de precio**
 >

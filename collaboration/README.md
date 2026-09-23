@@ -102,6 +102,7 @@ Provider 抽象、自研 Computer WebSocket 和系统级特权安装均不在 v1
 - Argon2id 密码摘要、HS256 JWT、refresh token 摘要/单次轮换与重放撤销；
 - 注册时可靠创建 Human IM 身份 TencentOperation 与 Outbox；
 - `im.identity.ensure` SQLite Worker、短租约、重试和旧 lease fencing；
+- 绑定非明文 credential epoch 的 Human IM 身份自愈：凭据变化后只追加一次可靠重试，同一错误凭据不因页面刷新反复重放；
 - 腾讯云 IM `account_import` 真实 REST Adapter；
 - 稳定、不含个人信息的 Human IM UserID 派生与持久化；
 - `GET /v1/me` 与 `POST /v1/me/im/session`；

@@ -852,6 +852,68 @@ paths:
                 $ref: '#/components/schemas/ShadowBindingResponse'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /auth/dev-environments/account-lease:
+    post:
+      operationId: acquireDeveloperTestAccountLease
+      summary: Lease a pre-provisioned testing account for a sandbox DevCloud
+      description: Sandbox-only bootstrap endpoint. The gateway must supply a canonical client IP from the configured DevCloud egress allowlist. An initial lease is anonymous inside that network boundary; renewing an active lease requires its current developer-lease bearer session. Domestic candidates require real-name verification; international candidates require an active provisioned shadow binding. Production and staging do not register this route.
+      security:
+        - {}
+        - SessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeveloperTestAccountLeaseRequest'
+      responses:
+        '200':
+          description: Testing account and short-lived session leased to this DevCloud
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeveloperTestAccountLeaseResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      operationId: releaseDeveloperTestAccountLease
+      summary: Release the current sandbox testing account lease
+      security:
+        - SessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeveloperTestAccountLeaseRequest'
+      responses:
+        '200':
+          description: Testing account lease released and lease session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeveloperTestAccountReleaseResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/tencent-cloud/redirect:
     post:
       operationId: createTencentCloudRedirect
@@ -1733,6 +1795,57 @@ components:
       properties:
         binding:
           $ref: '#/components/schemas/ShadowBinding'
+    DeveloperTestAccountLeaseRequest:
+      type: object
+      required:
+        - targetIp
+      properties:
+        targetIp:
+          type: string
+          format: ipv4
+          description: DevCloud address in the sandbox allowlist.
+        ttlSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          default: 28800
+    DeveloperTestAccountLeaseResponse:
+      type: object
+      required:
+        - userId
+        - sessionToken
+        - sessionExpiresAt
+        - leaseExpiresAt
+        - leaseVersion
+      properties:
+        userId:
+          type: string
+        sessionToken:
+          type: string
+          description: Short-lived sandbox session. Never log or persist outside private DevCloud state.
+        sessionExpiresAt:
+          type: string
+          format: date-time
+        leaseExpiresAt:
+          type: string
+          format: date-time
+        leaseVersion:
+          type: integer
+          format: int64
+    DeveloperTestAccountReleaseResponse:
+      type: object
+      required:
+        - userId
+        - released
+        - leaseVersion
+      properties:
+        userId:
+          type: string
+        released:
+          type: boolean
+        leaseVersion:
+          type: integer
+          format: int64
     TencentCloudRedirectRequest:
       type: object
       properties:

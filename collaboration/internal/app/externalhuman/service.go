@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,12 +17,19 @@ import (
 
 const LightVelaIdentityKind = "lightvela"
 
+var provisioningEpochPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
 type EnsureInput struct {
 	Kind              string
 	Subject           string
 	SubjectHash       string
 	ProposedAccountID string
+	ProvisioningEpoch string
 	OccurredAt        time.Time
+}
+
+type Config struct {
+	ProvisioningEpoch string
 }
 
 type Repository interface {
@@ -32,17 +40,20 @@ type Service struct {
 	repository Repository
 	ids        idport.Generator
 	clock      clockport.Clock
+	config     Config
 }
 
 func NewService(
 	repository Repository,
 	ids idport.Generator,
 	clock clockport.Clock,
+	config Config,
 ) (*Service, error) {
-	if repository == nil || ids == nil || clock == nil {
+	if repository == nil || ids == nil || clock == nil ||
+		!provisioningEpochPattern.MatchString(config.ProvisioningEpoch) {
 		return nil, errors.New("LightVela Human 映射服务配置无效")
 	}
-	return &Service{repository: repository, ids: ids, clock: clock}, nil
+	return &Service{repository: repository, ids: ids, clock: clock, config: config}, nil
 }
 
 func (service *Service) ResolveOrCreate(
@@ -63,6 +74,7 @@ func (service *Service) ResolveOrCreate(
 		Subject:           subject,
 		SubjectHash:       hex.EncodeToString(digest[:]),
 		ProposedAccountID: accountID,
+		ProvisioningEpoch: service.config.ProvisioningEpoch,
 		OccurredAt:        service.clock.Now().UTC(),
 	})
 }

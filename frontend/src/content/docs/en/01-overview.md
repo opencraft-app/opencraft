@@ -2,7 +2,7 @@
 
 ## Summary
 
-**LightVela is a cloud-hosted agent platform from the Tencent Lighthouse team, and its current product is Hermes Agent — an AI agent built on large language models. LightVela takes care of deployment, operations, and 24/7 uptime in the cloud, so you never write config files or SSH into a server: you set everything up by pointing and clicking in a visual panel, then talk to your agent through the messaging apps you already use. It remembers you across conversations, and you choose the model, tools, and persona. LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time); existing closed-beta plans will be extended by one additional month, and new users can try the Launch plan free for 14 days. Check the subscribe page for current status.**
+**LightVela is a cloud-hosted agent platform from the Tencent Lighthouse team, and its current product is Hermes Agent — an AI agent built on large language models. LightVela takes care of deployment, operations, and 24/7 uptime in the cloud, so you never write config files or SSH into a server: you set everything up by pointing and clicking in a visual panel, then talk to your agent through the messaging apps you already use. It remembers you across conversations, and you choose the model, tools, and persona. LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time); existing closed-beta plans will be extended by one additional month, and new users can try the Launch plan free for 1 month. Check the subscribe page for current status.**
 
 ---
 
@@ -14,7 +14,7 @@
 >
 > * **Public beta and billing**: LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 >
-> * **New-user benefit after public beta and billing start**: New users can try the Launch plan free for 14 days.
+> * **New-user benefit after public beta and billing start**: New users can try the Launch plan free for 1 month.
 
 LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an **AI companion that truly belongs to them**—not a tool that asks you to introduce yourself every time, but a long-term presence that **knows you, remembers you, and understands you better over time**.
 
@@ -100,14 +100,14 @@ Currently available plans:
 
 | Plan | Original price | Current status |
 | --------- | ------- | ---- |
-| Launch | $7.5 / month | 14-day free trial for new users after public beta and billing start |
+| Launch | $7.5 / month | 1-month free trial for new users after public beta and billing start |
 | Cruise | $15 / month | Paid plan |
 
-The Launch plan includes: 1 Hermes Agent instance, 2-core 4G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
+The Launch plan includes: 1 Hermes Agent instance, 2-core 8G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
 
 > ℹ️ **Beta plan notice**
 >
-> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try Launch free for 14 days. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
+> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try Launch free for 1 month. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 
 ***
 

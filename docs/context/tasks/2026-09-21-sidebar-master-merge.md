@@ -114,6 +114,19 @@ git diff -w origin/master 的 settings page 仅侧栏 wrapper/import；正文与
 
 ## checkpoint
 
+### 2026-09-23 再次合并 master
+
+- 用户请求：解决冲突后提交；本轮只创建本地提交，不自动推送。
+- 基点：原分支 2bedc539b；本次 fetch 的 master 为 b2573c45a，共 103 个待纳入 master 提交。工作树初始干净，远端源分支与本地一致。
+- 唯一冲突：agent-settings-page.tsx 的 Bot 资料区。保留分支 AgentSidebar/profile/controls/middle/footer 结构，精确纳入 master 的 pausedStatusTooltip 包裹；master 的键盘事件防冒泡和成就入口自动合并保留。
+- 审计：相对 master 的 settings page 忽略缩进差异后只剩侧栏结构和独立反馈移除；Account/Buddy/Memory 正文、frontend 依赖与锁文件和 master 一致；未整文件选 ours/theirs。
+- Context：路由 query “frontend sidebar merge latest master conflicts” 无匹配，随后有界搜索上述侧栏符号；读取 frontend/AGENTS.md、frontend-runtime-openspec-i18n 邻接、现有 sidebar 测试、openspec/plan.md 和 CHECKPOINT-TEMPLATE。机械同步路由补读 agent-gateway-runtime、site-environment-routing、upstream-subtrees、services/opencraft、opencraft/AGENTS.md、MONO2_MIGRATION.md。
+- 验证：7 个侧栏/导航文件 113 项通过；global 菜单 42 项通过；tooltip/onboarding 17 项通过；真实页面 “independent from content scrolling” 1 项通过（同文件其余 11 项未跑）。日志 /tmp/sidebar-merge-0923-{focused,global,tooltip,page}.log。
+- pnpm check：171 current / 171 baseline / 0 new，i18n 无新增缺译；CN pnpm build 通过。日志 /tmp/sidebar-merge-0923-{check,build}.log。未跑全量测试，未重做浏览器和远端部署验收。
+- 生成一致性：master 本身未同步 runtime-config-context、model-action-tooltip、fake-repositories 及 i18n 的源码 hash；已按原脚本机械同步 130 文件，实际差异为上述 3 个副本、8 个字典和 manifest。无手写 OpenCraft 产品改动。
+- 文档：validate_documentation 无错误；合并暂存集 docs-impact 通过；context 校验仍报其他 Pack 等错误，本任务 Pack 无报错，catalog 随本记录生成。不为单独来源 SHA 提交扩改架构文档。
+- 提交顺序：先提交合并树及生成内容，再用原同步脚本更新来源 SHA，另行提交；不 amend 源码提交。
+
 ### 2026-09-22 预览侧栏回归修复
 
 - 目标：修复探索/对话页签随导航滚动被裁切及与首项紧贴；把国内站反馈收回头像菜单，移除独立入口。
@@ -131,9 +144,9 @@ git diff -w origin/master 的 settings page 仅侧栏 wrapper/import；正文与
 - 未覆盖：移动端浏览器、国际站浏览器、真实账号服务端操作和远端预览新版本；本轮未提交或推送。报告 /tmp/lightvela-sidebar-fix/report.html。
 
 ### stage
-侧栏两处预览回归已修复，本地验证收尾。
+2026-09-23 master 冲突已解决，验证完成，准备合并提交及机械来源记录提交。
 ### verified
-master 已纳入；本轮 104 项侧栏、42 项 global、3 项定向回归、check 与 CN build 通过，桌面 mock 浏览器回归完成；旧版 125 项仅为历史证据。
+本轮 113 项侧栏/导航、42 项 global、17 项 tooltip/onboarding、1 项页面结构、check 与 CN build 通过；早期验证只作历史证据。
 ### unverified
 全量测试、master 基线对比、移动端/国际站浏览器与远端部署状态未验证。
 ### discard
@@ -141,4 +154,4 @@ master 已纳入；本轮 104 项侧栏、42 项 global、3 项定向回归、ch
 ### restore
 独立 worktree frontsandbox/agents-sidebar-account-hit-area；原版本 6214001a0。
 ### next_action
-交付本地修复及回归证据，等待用户提交/推送指示；不扩大业务修改范围。
+按用户授权提交本次合并，机械同步并核对生成漂移，交付提交 SHA；未授权新的推送。

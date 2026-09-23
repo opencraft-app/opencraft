@@ -9,9 +9,9 @@ Current live application:
 Current access:
 
 - HTTP:
-  - `http://9.208.245.238:32059`
+  - `http://9.135.92.56:32059`
 - HTTPS:
-  - `https://9.208.245.238:30547`
+  - `https://9.135.92.56:30547`
 
 Login note:
 
@@ -25,7 +25,9 @@ This app is created by `root-beijing-sandbox` from:
 Managed here:
 
 - `argocd-cm` kustomize build options for exec plugins
+- `argocd-cmd-params-cm` cross-region Kubernetes client timeouts
 - `argocd-repo-server` custom tools and plugin wiring for `ksops`
+- `argocd-server` NodePort exposure on `32059` / `30547`
 
 Out of scope:
 
@@ -34,6 +36,9 @@ Out of scope:
 Bootstrap prerequisite:
 
 ```bash
+CONTROL_PLANE_IP=9.135.92.56 \
+  bash scripts/bootstrap_argocd_control_plane.sh
+
 KUBECONFIG_PATH=/path/to/argocd-control-plane.kubeconfig \
   bash scripts/bootstrap_argocd_sops_age.sh
 ```

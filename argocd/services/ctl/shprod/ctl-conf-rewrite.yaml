@@ -25,18 +25,21 @@ data:
 
     # bundle.instance_spec_id 非空时，ctl 会走 per-spec pool 选择；若这里缺配
     # spec_pools，CreateInstance 会直接返回 BUNDLE_INSTANCE_SPEC_NO_POOL。
-    # shprod 2C4G 规格使用当前 sandbox 中 active 的 Hermes 2C4G 池。
+    # 历史 spec ID 保持稳定；实际供给升级为 2C8G 50G。
+    # CTL 会按 template class + SKU 从 Sandbox 实时发现 active Pool，下面的
+    # legacy template ID 列表只保留兼容配置，不参与当前 per-spec 实际选池。
     [[api.instance.spec_pools]]
     spec_id                = "spec-2c4g50g"
-    sku_id                 = "sku-hermes-2c4g"
+    template_class_id      = "openclaw-2c8g50g"
+    sku_id                 = "sku-hermes-2c8g50g"
     default_template_id    = "pool-1779142341361006934-114"
     candidate_template_ids = ["pool-1779142341361006934-114", "pool-1779142637960095668-265", "pool-1780305211975190544-2478", "pool-1782454138147183486-5972"]
 
-    # shprod 4C8G 规格使用独立 template class 和资源池，供后续付费 bundle 使用。
+    # 历史 4C8G spec ID 对应的新供给为 4C16G 80G。
     [[api.instance.spec_pools]]
     spec_id                = "spec-4c8g80g"
-    template_class_id      = "openclaw-4c8g80g"
-    sku_id                 = "sku-hermes-4c8g"
+    template_class_id      = "openclaw-4c16g80g"
+    sku_id                 = "sku-hermes-4c16g80g"
     default_template_id    = "pool-sh-4c8g80g-01"
     candidate_template_ids = ["pool-sh-4c8g80g-01"]
 

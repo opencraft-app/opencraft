@@ -27,6 +27,13 @@ master 源码
 
 ## 不变量
 
+- 统一 Argo CD 控制面运行在受控国内发布机时，固定版本 k0s/Argo 基线、NodePort、repo-server
+  ksops patch 和跨地域客户端超时必须保存在 Git；repo SSH 私钥、目标集群 kubeconfig、管理员密码和
+  `sops-age` 私钥继续只存在于受保护的 Git 外存储。控制面重建顺序固定为
+  `base install -> repo credential -> sops-age -> target clusters -> projects/runtime -> root apps`。
+  root app 恢复只负责重新创建 Application；生产 leaf app 仍保持 manual sync，不能因控制面迁移而
+  自动同步生产漂移。跨地域 API Server 受出口网络限制时应保留明确的 comparison error，不得通过
+  放开公网网段或未审查的转发通道伪造恢复。
 - 个人 DevCloud 计费能力只部署到北京 `sandbox-bj-7` 和韩国 `sandbox-kr-1` testing。临时验证镜像需要
   暂停 Argo 自动同步时，必须记录并只操作对应环境的 Auth、Trade、Service Gateway 应用；不修改生产
   应用。若同一 Argo Application 已有无关 `OutOfSync` 资源，禁止 App 级全量 Sync，只能精确同步目标
@@ -43,6 +50,14 @@ master 源码
   不回写 TKE deploy 输出或 kubeconfig，并且必须在精确资源 diff 审阅后单独获得付费授权。
   首个 pool 使用 `ap-johorbahru-1`，但网络预留 1/2 区 pool 子网；新加坡存量 pool 的生命周期
   继续由原 region 维护，网络创建本身不改变 CTL admission。
+
+- CTL 的生产 `spec_pools` 是业务 Spec ID 到 Sandbox 实际供给的环境级路由。业务 Spec ID 属于
+  Bundle/Pass 稳定契约，不因底层扩容改名；上海与新山可以分别把历史 `spec-2c4g50g`、
+  `spec-4c8g80g` 路由到更高内存的 2C8G 50G、4C16G 80G 供给。当前选池以
+  `template_class_id + sku_id` 实时发现 active Pool，`default_template_id` 和
+  `candidate_template_ids` 只保留兼容元数据，不能作为目标库存已就绪的证据。发布映射前必须在
+  各环境独立确认对应 Template Class、SKU 和至少一个 active/CLEAN Pool；上海验证不能替代新山。
+  回滚只恢复上一组 class/SKU 映射，不删除新旧 Pool，也不改变已分配实例的规格。
 
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
@@ -135,6 +150,11 @@ master 源码
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
 - 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，并由 CTL base 将该可选键注入 `ctl-api`。回滚时只把目标环境值切为 `false`，仍需独立审查 Gateway Bot 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实国际站回归；源码中的 `true` 不代表运行态已启用。
 - 个人 DevCloud 动态注册只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启。客户端只提交 callback port 与 TTL；UIN 必须由 Auth session 的 active shadow binding 派生，来源 IP 必须由 Auth 从可信代理链确认，不能接受客户端自报 `targetIp`。CloudLadder 与 devtunnel 的 testing allowlist 只加入真实观测到的最小 DevCloud/NAT 网段，两个工作负载必须保持一致；不要用页面访问 IP 代替服务端观测值，也不要放开整段公网 CIDR。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
+- 个人 DevCloud testing 账号租约依赖 Auth migration 创建持久化租约表。北京、韩国发布必须按
+  `migration readiness → Auth workload → Service Gateway 精确公开路由 → 一条全空 state up 验收`
+  顺序执行；在 schema readiness 成功前不得启用账号池配置或公开租约路径。回滚时先从 Gateway 移除公开
+  路由并关闭 Auth 账号池，让已有租约按显式 release 或 TTL 收敛，再回滚 workload；仍有租约/session 时
+  不得先执行 down migration。production、staging 和其他 sandbox 不得继承该配置。
 - 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
 - 生产镜像 promote 只有在 staged diff 符合该服务的 pin-only 合约时才允许自动合并或自动同步。VelaGW 的 pin-only 合约仅允许目标环境 `velagw-platform.env` 中的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT` 变化；Kustomize 结构、NewAPI release pin 或任何其他 deploy-facing 配置变化必须关闭自动合并和自动同步，先审查差异并回填 `master` 真源后重新生成候选。
 - Service Gateway 为独立 chat 前端开放浏览器能力时，应使用精确 method/path 的 `cors_allow`，
@@ -262,6 +282,9 @@ master 源码
 - Referral 已纳入标准 `service-release` 生产编排。`master` 构建进入生产候选后，由 Referral 主流水线先对
   `shprod` / `sgprod` 执行真实 schema 探测并创建相应 DB migration 子流水线，migration/readiness 通过后再创建
   各环境 GitOps promote；生产审批和 Argo Sync 仍保持人工，不得绕过主流水线长期直接触发通用 migration。
+- 标准 `service-release` 的 DB 父编排必须按真实探测决策选择子入口：`run_migration` 调用无运行时条件阶段的
+  `.ci/db-migration-apply.yml`，由其完成二次 dry-run、人工审批、apply 和 readiness；`skip_migration` / `block`
+  才调用 `.ci/db-migration.yml`。不得把 `run_migration` 交给 Stream 会跳过条件阶段的旧入口。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
@@ -280,6 +303,11 @@ master 源码
 - 现有 CynosDB 集群 ID、内部 endpoint、独立 DB/账号、SSM 名、namespace 和 node pool 进入
   `infra_pulumi` inventory。`infractl bootstrap-collaboration` 默认只读，显式 `--apply` 后按
   SSM → 账号 → 逻辑库 → DB 级权限幂等执行；任何失败都可重入，默认拒绝密码或 IM Secret 轮换。
+- 已运行环境只有在确认 Tencent IM 返回 `70009` 或以等价证据证明 SDKAppID/SecretKey 不匹配后，
+  才能在人工启动时设置 `ALLOW_IM_SECRET_ROTATION=true`。dry-run 与 apply 必须同时显式传递
+  `--allow-im-secret-rotation`，由受保护的 `COLLABORATION_IM_CREDENTIAL` 更新 SSM，再导出 SOPS；
+  该开关不得隐式允许数据库密码重置。runtime 投影必须同时刷新 `COLLABORATION_DEPLOYED_AT`，
+  使 Deployment 滚动重启并重新读取 Secret，不能只修改 live Secret 或手工重启 Pod。
 - 首次创建账号的密码须符合目标 CynosDB 的复杂度约束，同时能安全写入受管 DSN。若 SSM 已创建而
   账号尚未创建，且其中旧 DSN 密码不合规，重入 bootstrap 仅重新生成并更新该受管 DSN 密码，
   保留其他 Secret 字段后再创建账号；账号已经存在时不得借此隐式轮换密码，仍需显式恢复授权。
