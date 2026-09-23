@@ -122,11 +122,12 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 
 ## hide_quota_followup
 用户明确要求“这个不可展示，先屏蔽掉吧”。国内／国际、登录／未登录、手机／桌面统一移除名额提示。售罄标记、CTA 禁用、订单判断和后端库存 contract 保持不变。删除 PlanInfo.availableCount / totalCount 两个仅用于展示的字段与映射。
+原移动端 MR !4509 已于 2026-09-23 06:23 UTC 合并，source_commit 为 086d3d252；本次名额屏蔽提交 c3e05b384 不在该合并中，改用独立后续 MR 交付。最新 master 的并行改动仅涉及镜像构建和 macOS 打包，订阅组件及 pnpm 检查输入未变。
 新增 CN / global 各两条登录态组件回归：AVAILABLE 5/100 仍可订阅且不显示名额；SOLD_OUT 0/100 保持禁用且不显示名额。临时 5/100 fixture 的浏览器截图覆盖 390 / 1024 / 1440px，quota=[]，无溢出；测试数据已恢复。
 
 ## checkpoint
 ### stage
-名额屏蔽已实施；62 项聚焦测试、check、双站构建通过，准备更新既有 MR !4509 并恢复国内本地预览。
+名额屏蔽已实施；62 项聚焦测试、check、双站构建通过。!4509 在本次推送前已合并，合并版本不含名额屏蔽；已合入最新 master 32f055720，后续由 codex/subscribe-hide-quota 单独提交 MR。国内预览已恢复，/subscribe/ HTTP 200。
 ### verified
 - 最新聚焦行为测试 62/62（订阅页 59 + Card 3）通过；pnpm check（0 新增诊断）及 build:cn / build:global 已重新通过。
 - 国内 7 视口与国际 28 组合无溢出，截图已人工复核；最新名额隐藏 fixture 的 390 / 1024 / 1440px 截图无名额提示和横向溢出。
@@ -141,4 +142,4 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 - 基线订阅源码 870d03dcb，合并 master ac1735ca0；修改范围见 affected_paths。
 - 证据 .local/subscribe-mobile/；本地预览端口 5187。
 ### next_action
-追加提交并推送 codex/subscribe-mobile，更新既有 MR !4509 的描述和证据链接，保留未全绿门禁说明。
+推送 codex/subscribe-hide-quota，创建仅包含名额屏蔽及测试／证据的后续 MR，保留未全绿门禁说明。
