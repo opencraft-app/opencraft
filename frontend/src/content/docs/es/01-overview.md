@@ -103,7 +103,7 @@ Planes actualmente disponibles:
 | Launch | $7.5 / mes | Prueba gratuita de 1 mes para nuevos usuarios después del inicio del beta pública y la facturación |
 | Cruise | $15 / mes | Plan pagado |
 
-El plan Launch incluye: 1 instancia de Hermes Agent, entorno de tiempo de ejecución aislado de 2 núcleos 4G, 50 GB de almacenamiento en la nube dedicado, 100 créditos de prueba, disponibilidad 24/7 y acceso a la consola.
+El plan Launch incluye: 1 instancia de Hermes Agent, entorno de tiempo de ejecución aislado de 2 núcleos 8G, 50 GB de almacenamiento en la nube dedicado, 100 créditos de prueba, disponibilidad 24/7 y acceso a la consola.
 
 > ℹ️ **Aviso de plan beta**
 >

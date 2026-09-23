@@ -59,16 +59,25 @@ Four plans are currently available: **Launch, Cruise, Launch AI, and Cruise AI**
 
 Real-time prices, inventory, discounts, and purchase availability are shown on the [Subscribe page](/subscribe). The table below lists only the current standard list prices.
 
+> ℹ️ **Cloud runtime specification upgrade**
+>
+> Effective **September 23, 2026**, LightVela plan runtimes have the following specifications:
+>
+> - Launch and Launch AI: upgraded from **2 CPU cores and 4 GB memory** to **2 CPU cores and 8 GB memory**
+> - Cruise and Cruise AI: upgraded from **4 CPU cores and 8 GB memory** to **4 CPU cores and 16 GB memory**
+>
+> This upgrade changes only the memory allocation. Plan prices, storage capacity, and AI-credit benefits remain unchanged. Check the Subscribe page for the latest plan specifications and purchase availability.
+
 ### Plan benefits
 
 <div className="lv-plan-benefits-table">
 
 | Plan | Best for | Agent allowance | Isolated cloud runtime | Dedicated cloud storage | AI credits |
 |---|---|---|---|---|---|
-| Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 2 CPU cores, 4 GB memory | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
-| Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 4 CPU cores, 8 GB memory | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
-| Launch AI | Lightweight usage with more AI credits | 1 | 2 CPU cores, 4 GB memory | 50 GB | 4,500 credits / month |
-| Cruise AI | High-frequency conversations, skills, and scheduled tasks | 1 | 4 CPU cores, 8 GB memory | 80 GB | 10,000 credits / month |
+| Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 2 CPU cores, 8 GB memory | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 4 CPU cores, 16 GB memory | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Launch AI | Lightweight usage with more AI credits | 1 | 2 CPU cores, 8 GB memory | 50 GB | 4,500 credits / month |
+| Cruise AI | High-frequency conversations, skills, and scheduled tasks | 1 | 4 CPU cores, 16 GB memory | 80 GB | 10,000 credits / month |
 
 </div>
 

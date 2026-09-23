@@ -103,7 +103,7 @@ Currently available plans:
 | Launch | $7.5 / month | 1-month free trial for new users after public beta and billing start |
 | Cruise | $15 / month | Paid plan |
 
-The Launch plan includes: 1 Hermes Agent instance, 2-core 4G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
+The Launch plan includes: 1 Hermes Agent instance, 2-core 8G isolated runtime environment, 50G dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
 
 > ℹ️ **Beta plan notice**
 >
