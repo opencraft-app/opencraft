@@ -55,16 +55,16 @@ type SpecDefinition struct {
 var knownSpecs = []SpecDefinition{
 	{
 		SpecID:         SpecID2C4G50G,
-		DisplayName:    "2核4G 50G系统盘",
+		DisplayName:    "2核8G 50G系统盘",
 		CPU:            2,
-		Memory:         4, // GB
+		Memory:         8, // GB
 		SystemDiskSize: 50,
 	},
 	{
 		SpecID:         SpecID4C8G80G,
-		DisplayName:    "4核8G 80G系统盘",
+		DisplayName:    "4核16G 80G系统盘",
 		CPU:            4,
-		Memory:         8, // GB
+		Memory:         16, // GB
 		SystemDiskSize: 80,
 	},
 }
