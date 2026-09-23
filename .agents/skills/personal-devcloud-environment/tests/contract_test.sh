@@ -131,6 +131,91 @@ test_session_only_generates_local_credentials() (
   assert_eq '' "$(state_get central_password)" "central password remains unset"
 )
 
+test_fresh_state_leases_testing_account_without_credentials() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/account-lease" PERSONAL_DEV_SITE=intl
+  unset PERSONAL_DEV_SESSION_TOKEN PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  discover_devcloud_ip() { printf '%s\n' '21.214.48.147'; }
+  curl() {
+    [[ "${*: -1}" == "$ACCOUNT_LEASE_URL" ]] || return 22
+    printf '%s\n' '{"userId":"usr_pool_intl","sessionToken":"lease-session-token-abcdefghijklmnopqrstuvwxyz012345","sessionExpiresAt":"2026-09-23T08:00:00Z","leaseExpiresAt":"2026-09-23T08:00:00Z","leaseVersion":7}'
+  }
+
+  local token
+  token="$(central_session)"
+  assert_eq 'lease-session-token-abcdefghijklmnopqrstuvwxyz012345' "$token" "leased central session"
+  assert_eq 'leased' "$(state_get central_account_mode)" "leased account mode"
+  assert_eq 'usr_pool_intl' "$(state_get central_user_id)" "leased account user"
+  assert_eq '7' "$(state_get central_account_lease_version)" "lease version"
+  assert_eq '' "$(state_get central_email)" "leased account email remains private"
+  assert_eq '' "$(state_get central_password)" "leased account password remains private"
+  assert_eq '600' "$(stat -f '%Lp' "$STATE_FILE" 2>/dev/null || stat -c '%a' "$STATE_FILE")" "private lease state mode"
+)
+
+test_lease_renewal_failure_reuses_still_valid_session() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/account-lease-renewal-fallback" PERSONAL_DEV_SITE=intl
+  unset PERSONAL_DEV_SESSION_TOKEN PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode leased
+  state_set central_session_token 'still-valid-lease-session-abcdefghijklmnopqrstuvwxyz'
+  account_lease_needs_renewal() { return 0; }
+  discover_devcloud_ip() { printf '%s\n' '21.214.48.147'; }
+  curl_with_token() { return 0; }
+  curl() { return 22; }
+
+  local token errors="$TEST_ROOT/account-lease-renewal-fallback.err"
+  if ! token="$(central_session 2>"$errors")"; then
+    fail "central_session discarded a still-valid session after renewal failed"
+  fi
+  assert_eq 'still-valid-lease-session-abcdefghijklmnopqrstuvwxyz' "$token" "lease renewal fallback session"
+  grep -Fq 'reusing the still-valid session until its TTL expires' "$errors" \
+    || fail "lease renewal fallback was not reported"
+)
+
+test_lease_renewal_proves_current_session_ownership() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/account-lease-renewal-auth" PERSONAL_DEV_SITE=intl
+  unset PERSONAL_DEV_SESSION_TOKEN PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode leased
+  state_set central_session_token 'current-lease-session-abcdefghijklmnopqrstuvwxyz'
+  discover_devcloud_ip() { printf '%s\n' '21.214.48.147'; }
+  curl() { fail "lease renewal fell back to an unauthenticated request"; }
+  curl_with_token() {
+    assert_eq 'current-lease-session-abcdefghijklmnopqrstuvwxyz' "$1" "lease renewal authorization token"
+    shift
+    [[ " $* " == *' --data-binary '*"@$STATE_ROOT/"* ]] || fail "lease renewal request body was not submitted"
+    printf '%s\n' '{"userId":"usr_pool_intl","sessionToken":"renewed-lease-session-abcdefghijklmnopqrstuvwxyz","sessionExpiresAt":"2099-01-01T00:00:00Z","leaseExpiresAt":"2099-01-01T00:00:00Z","leaseVersion":8}'
+  }
+
+  acquire_central_account_lease >/dev/null
+  assert_eq 'renewed-lease-session-abcdefghijklmnopqrstuvwxyz' "$(state_get central_session_token)" "renewed lease session"
+  assert_eq '8' "$(state_get central_account_lease_version)" "renewed lease version"
+)
+
+test_expired_lease_session_reclaims_anonymously_after_server_rejects_renewal() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/account-lease-expired-session" PERSONAL_DEV_SITE=intl
+  unset PERSONAL_DEV_SESSION_TOKEN PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode leased
+  state_set central_session_token 'expired-lease-session-abcdefghijklmnopqrstuvwxyz'
+  discover_devcloud_ip() { printf '%s\n' '21.214.48.147'; }
+  curl_with_token() {
+    printf '%s\n' '{"code":"session_expired","message":"expired"}'
+    return 22
+  }
+  curl() {
+    printf '%s\n' '{"userId":"usr_pool_intl","sessionToken":"reclaimed-lease-session-abcdefghijklmnopqrstuvwxyz","sessionExpiresAt":"2099-01-01T00:00:00Z","leaseExpiresAt":"2099-01-01T00:00:00Z","leaseVersion":9}'
+  }
+
+  acquire_central_account_lease >/dev/null
+  assert_eq 'reclaimed-lease-session-abcdefghijklmnopqrstuvwxyz' "$(state_get central_session_token)" "reclaimed lease session"
+  assert_eq '9' "$(state_get central_account_lease_version)" "reclaimed lease version"
+)
+
 test_local_identity_preserves_central_credentials_and_expired_session_reauthenticates() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/credential-separation" PERSONAL_DEV_SITE=intl
   unset PERSONAL_DEV_SESSION_TOKEN PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD PERSONAL_DEV_LOCAL_EMAIL PERSONAL_DEV_LOCAL_PASSWORD
@@ -723,9 +808,31 @@ test_billing_capability_readiness_requires_json_200() (
   current_billing_capability() {
     printf '%s\n' 'lvdt1.450860000013.DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'
   }
-  curl() { printf '200'; }
+  local response_body='{"code":"OK","message":"ready"}' response_status='200'
+  curl() {
+    local previous='' arg output_file=''
+    for arg in "$@"; do
+      if [[ "$previous" == '--output' ]]; then
+        output_file="$arg"
+        break
+      fi
+      previous="$arg"
+    done
+    [[ -n "$output_file" ]] || fail "readiness probe did not capture its response body"
+    printf '%s' "$response_body" >"$output_file"
+    printf '%s' "$response_status"
+  }
   verify_billing_capability || fail "HTTP 200 readiness response was rejected"
-  curl() { printf '204'; }
+  response_body='<html>upstream error</html>'
+  if verify_billing_capability; then
+    fail "non-JSON HTTP 200 readiness response was accepted"
+  fi
+  response_body='{"code":"OK","message":"not_ready"}'
+  if verify_billing_capability; then
+    fail "unexpected JSON HTTP 200 readiness response was accepted"
+  fi
+  response_status='204'
+  response_body=''
   if verify_billing_capability; then
     fail "legacy empty HTTP 204 readiness response was accepted"
   fi
@@ -755,6 +862,118 @@ test_unregister_requires_old_billing_capability_revocation() (
   unregister >/dev/null
   [[ -s "$TEST_ROOT/unregister-capability-probed" ]] || fail "unregister did not verify capability revocation"
   assert_eq 'disabled' "$(state_get registration_status)" "unregister state"
+)
+
+test_release_binding_unregisters_before_releasing_leased_account() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/release-leased-binding" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode leased
+  local events="$TEST_ROOT/release-leased-binding-events"
+  unregister() { printf '%s\n' unregister >>"$events"; }
+  release_account_lease() { printf '%s\n' release >>"$events"; }
+
+  release_binding
+  assert_eq $'unregister\nrelease' "$(<"$events")" "leased binding cleanup order"
+)
+
+test_release_binding_keeps_lease_when_unregister_fails() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/release-leased-binding-failure" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode leased
+  local events="$TEST_ROOT/release-leased-binding-failure-events"
+  unregister() { printf '%s\n' unregister >>"$events"; return 1; }
+  release_account_lease() { printf '%s\n' release >>"$events"; }
+
+  if release_binding >/dev/null 2>&1; then
+    fail "leased binding release ignored unregister failure"
+  fi
+  assert_eq 'unregister' "$(<"$events")" "failed unregister must retain lease"
+)
+
+test_invalid_release_response_returns_to_caller_for_ttl_fallback() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/release-invalid-response" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode leased
+  state_set central_session_token 'still-valid-lease-session-abcdefghijklmnopqrstuvwxyz'
+  state_set devcloud_ip '21.214.48.147'
+  curl_with_token() { printf '%s\n' '{"released":false}'; }
+
+  local marker errors="$TEST_ROOT/release-invalid-response.err"
+  if ! marker="$({
+    if release_account_lease 2>"$errors"; then
+      fail "invalid release response was accepted"
+    fi
+    printf '%s' continued
+  })"; then
+    fail "invalid release response terminated the caller instead of falling back to TTL"
+  fi
+  assert_eq 'continued' "$marker" "release failure caller continuation"
+  assert_eq 'leased' "$(state_get central_account_mode)" "invalid release response lease state"
+  assert_eq 'still-valid-lease-session-abcdefghijklmnopqrstuvwxyz' "$(state_get central_session_token)" "invalid release response session state"
+  grep -Fq 'lease will expire by TTL' "$errors" \
+    || fail "invalid release response did not report the TTL fallback"
+)
+
+test_down_unregisters_then_releases_before_stopping_stack() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/down-cleanup-order" PERSONAL_DEV_SITE=cn
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode leased
+  local events="$TEST_ROOT/down-cleanup-order-events"
+  local fake_localstack="$TEST_ROOT/fake-localstack-down"
+  cat >"$fake_localstack" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' localstack >>'$events'
+EOF
+  chmod 700 "$fake_localstack"
+  LOCALSTACK="$fake_localstack"
+  stop_browser_bootstrap() { :; }
+  unregister_for_down() { printf '%s\n' unregister >>"$events"; }
+  release_account_lease() { printf '%s\n' release >>"$events"; }
+  require_personal_context() { :; }
+  command() {
+    case "${2:-}" in
+      kubectl) printf '%s\n' /usr/bin/kubectl ;;
+      kustomize) printf '%s\n' /usr/bin/kustomize ;;
+      *) builtin command "$@" ;;
+    esac
+  }
+
+  down
+  assert_eq $'unregister\nrelease\nlocalstack' "$(<"$events")" "down cleanup order"
+)
+
+test_down_after_release_binding_does_not_reacquire_account() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/down-after-release-binding" PERSONAL_DEV_SITE=cn
+  source "$SCRIPT"
+  prepare_state
+  state_set central_account_mode released
+  state_set registration_status disabled
+  local events="$TEST_ROOT/down-after-release-binding-events"
+  local fake_localstack="$TEST_ROOT/fake-localstack-released"
+  cat >"$fake_localstack" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' localstack >>'$events'
+EOF
+  chmod 700 "$fake_localstack"
+  LOCALSTACK="$fake_localstack"
+  stop_browser_bootstrap() { :; }
+  unregister_for_down() { printf '%s\n' reacquired >>"$events"; return 1; }
+  release_account_lease() { printf '%s\n' release >>"$events"; }
+  require_personal_context() { :; }
+  command() {
+    case "${2:-}" in
+      kubectl) printf '%s\n' /usr/bin/kubectl ;;
+      kustomize) printf '%s\n' /usr/bin/kustomize ;;
+      *) builtin command "$@" ;;
+    esac
+  }
+
+  down
+  assert_eq 'localstack' "$(<"$events")" "released account down must not reacquire"
 )
 
 test_intl_active_registration_accepts_server_confirmed_nat_source() (
@@ -879,11 +1098,16 @@ test_prerequisites_document_account_balance_binding_and_capability() {
   grep -Fq 'DevCloud 测试绑定' <<<"$cn_output"
   grep -Fq '短期 capability' <<<"$cn_output"
   grep -Fq '不需要 SOPS' <<<"$cn_output"
+  grep -Fq '自动租用合法 testing 账号' <<<"$cn_output"
+  grep -Fq '无需 SOPS、owner 文件' <<<"$cn_output"
   grep -Fq 'international=false' <<<"$cn_output"
-  ! grep -Fq '/国际开户' <<<"$cn_output"
+  grep -Fq '不执行 /国际开户' <<<"$cn_output"
+  grep -Fq '已实名且 active binding 的国内 testing 用户' <<<"$cn_output"
 
   grep -Fq 'international=true' <<<"$intl_output"
   grep -Fq '/国际开户' <<<"$intl_output"
+  grep -Fq '已开户映射且 active binding 的国际 testing 用户' <<<"$intl_output"
+  ! grep -Fq '已实名且 active binding 的 testing 用户' <<<"$intl_output"
   grep -Fq '/充值' <<<"$intl_output"
   grep -Fq '金额单位为分' <<<"$intl_output"
   grep -Fq '旧 pending 单不要重试' <<<"$intl_output"
@@ -1171,6 +1395,10 @@ run_test 'active site blocks cross-site activation' test_active_site_blocks_swit
 run_test 'state updates are atomic' test_state_updates_are_atomic
 run_test 'auth failure removes credential temp files' test_auth_failure_removes_temp_credentials
 run_test 'session-only auth generates private local credentials' test_session_only_generates_local_credentials
+run_test 'fresh state leases a testing account without credentials' test_fresh_state_leases_testing_account_without_credentials
+run_test 'lease renewal failure reuses the still-valid session' test_lease_renewal_failure_reuses_still_valid_session
+run_test 'lease renewal proves ownership with the current lease session' test_lease_renewal_proves_current_session_ownership
+run_test 'expired lease session reclaims anonymously only after server rejection' test_expired_lease_session_reclaims_anonymously_after_server_rejects_renewal
 run_test 'local identity preserves central credentials across session refresh' test_local_identity_preserves_central_credentials_and_expired_session_reauthenticates
 run_test 'legacy local identity is not reused as central login' test_legacy_local_identity_is_not_used_as_central_login
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
@@ -1196,6 +1424,11 @@ run_test 'Intl status accepts the server-confirmed NAT source IP' test_intl_stat
 run_test 'billing capability rotates without state persistence' test_billing_capability_rotates_without_state_persistence
 run_test 'billing capability readiness requires JSON HTTP 200' test_billing_capability_readiness_requires_json_200
 run_test 'unregister verifies old billing capability revocation' test_unregister_requires_old_billing_capability_revocation
+run_test 'release-binding unregisters before releasing a leased account' test_release_binding_unregisters_before_releasing_leased_account
+run_test 'release-binding retains the lease when unregister fails' test_release_binding_keeps_lease_when_unregister_fails
+run_test 'invalid lease release response falls back to TTL without terminating cleanup' test_invalid_release_response_returns_to_caller_for_ttl_fallback
+run_test 'down unregisters then releases before stopping localstack' test_down_unregisters_then_releases_before_stopping_stack
+run_test 'down after release-binding does not reacquire an account' test_down_after_release_binding_does_not_reacquire_account
 run_test 'Intl active-registration guard accepts the server-confirmed NAT source IP' test_intl_active_registration_accepts_server_confirmed_nat_source
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure
 run_test 'gateway override reaches Trade runtime' test_gateway_override_reaches_trade_runtime

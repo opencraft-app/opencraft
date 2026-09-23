@@ -175,6 +175,13 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                 config = next(doc for doc in auth_docs if doc["kind"] == "ConfigMap")["data"]
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CONTROL_ENABLED"], "true")
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT"], environment)
+                self.assertEqual(config["PERSONAL_DEV_ACCOUNT_LEASE_ENABLED"], "true")
+                self.assertEqual(config["PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT"], environment)
+                self.assertRegex(config["PERSONAL_DEV_ACCOUNT_POOL_USER_IDS"], r"^usr_[a-z0-9]+(?:,usr_[a-z0-9]+)*$")
+                self.assertEqual(
+                    config["PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS"],
+                    "9.0.0.0/8,21.0.0.0/8,14.22.11.160/29,14.116.239.32/29",
+                )
                 self.assertEqual(
                     config["PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED"],
                     "true",
@@ -196,6 +203,8 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                         ("GET", "/auth/internal/dev-environments/registration"),
                         ("PUT", "/auth/internal/dev-environments/registration"),
                         ("DELETE", "/auth/internal/dev-environments/registration"),
+                        ("POST", "/auth/dev-environments/account-lease"),
+                        ("DELETE", "/auth/dev-environments/account-lease"),
                     }.issubset(public)
                 )
 

@@ -135,6 +135,11 @@ master 源码
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
 - 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，并由 CTL base 将该可选键注入 `ctl-api`。回滚时只把目标环境值切为 `false`，仍需独立审查 Gateway Bot 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实国际站回归；源码中的 `true` 不代表运行态已启用。
 - 个人 DevCloud 动态注册只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启。客户端只提交 callback port 与 TTL；UIN 必须由 Auth session 的 active shadow binding 派生，来源 IP 必须由 Auth 从可信代理链确认，不能接受客户端自报 `targetIp`。CloudLadder 与 devtunnel 的 testing allowlist 只加入真实观测到的最小 DevCloud/NAT 网段，两个工作负载必须保持一致；不要用页面访问 IP 代替服务端观测值，也不要放开整段公网 CIDR。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
+- 个人 DevCloud testing 账号租约依赖 Auth migration 创建持久化租约表。北京、韩国发布必须按
+  `migration readiness → Auth workload → Service Gateway 精确公开路由 → 一条全空 state up 验收`
+  顺序执行；在 schema readiness 成功前不得启用账号池配置或公开租约路径。回滚时先从 Gateway 移除公开
+  路由并关闭 Auth 账号池，让已有租约按显式 release 或 TTL 收敛，再回滚 workload；仍有租约/session 时
+  不得先执行 down migration。production、staging 和其他 sandbox 不得继承该配置。
 - 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
 - 生产镜像 promote 只有在 staged diff 符合该服务的 pin-only 合约时才允许自动合并或自动同步。VelaGW 的 pin-only 合约仅允许目标环境 `velagw-platform.env` 中的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT` 变化；Kustomize 结构、NewAPI release pin 或任何其他 deploy-facing 配置变化必须关闭自动合并和自动同步，先审查差异并回填 `master` 真源后重新生成候选。
 - Service Gateway 为独立 chat 前端开放浏览器能力时，应使用精确 method/path 的 `cors_allow`，

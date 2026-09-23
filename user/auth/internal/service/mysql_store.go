@@ -2872,6 +2872,14 @@ func isMySQLDuplicate(err error) bool {
 	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
 }
 
+func isMySQLRetryableTransactionError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	if !errors.As(err, &mysqlErr) {
+		return false
+	}
+	return mysqlErr.Number == 1205 || mysqlErr.Number == 1213 || string(mysqlErr.SQLState[:]) == "40001"
+}
+
 func nullableString(value string) any {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {

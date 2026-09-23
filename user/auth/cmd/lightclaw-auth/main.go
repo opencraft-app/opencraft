@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -131,41 +132,50 @@ func main() {
 		logger.Error("invalid personal DevCloud route registry config", "err", err)
 		os.Exit(1)
 	}
+	developerAccountPoolUserIDs, developerAccountLeaseNamespace, developerAccountLeaseSourceCIDRs, err := buildDeveloperTestAccountLeaseConfig(publicBaseURL)
+	if err != nil {
+		logger.Error("invalid personal DevCloud testing account lease config", "err", err)
+		os.Exit(1)
+	}
 
 	router := httpapi.NewRouter(authService, httpapi.ServerConfig{
-		CookieSecure:                   envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
-		CookieSameSite:                 parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
-		SessionTTL:                     sessionTTL,
-		OAuthReturnToAllowedHosts:      parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
-		QQOAuth:                        buildQQOAuthConfig(),
-		GoogleOAuth:                    buildGoogleOAuthConfig(),
-		GitHubOAuth:                    buildGitHubOAuthConfig(),
-		WeChatOAuth:                    buildWeChatOAuthConfig(),
-		AvatarStore:                    avatarStore,
-		TATRegisterIssuer:              buildTATRegisterIssuer(logger),
-		DeviceBindTokenSecret:          envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
-		DeviceBindTokenTTL:             time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
-		Logger:                         logger,
-		PublicBaseURL:                  publicBaseURL,
-		FrontendBaseURL:                frontendBaseURL,
-		AdminToken:                     envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
-		E2EAuthEnabled:                 envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
-		E2EAuthToken:                   envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
-		ShadowBindingInternalToken:     envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
-		ShadowTencentCallbackToken:     envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
-		DeveloperRouteClient:           developerRouteClient,
-		DeveloperRouteExplicitIP:       developerRouteExplicitTargetIPEnabled(developerRouteClient),
-		DeveloperRouteRegistry:         developerRouteRegistry,
-		DeveloperRouteRegistrySecret:   developerRouteRegistrySecret,
-		DeveloperRouteRegistryCaller:   envOrDefault("PERSONAL_DEV_ROUTE_REGISTRY_CALLER", "cloudladdergateway"),
-		DeveloperRouteRegistryRouteID:  envOrDefault("PERSONAL_DEV_ROUTE_REGISTRY_ROUTE_ID", "developer-route-registry"),
-		PersonalDevBillingProxyEnabled: envOrDefault("PERSONAL_DEV_BILLING_PROXY_ENABLED", "false") == "true",
-		PersonalDevBillingProxyURL:     envOrDefault("PERSONAL_DEV_BILLING_PROXY_TRADE_URL", ""),
-		PersonalDevBillingProxyToken:   envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
-		TrustedProxyCIDRs:              parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
-		Federation:                     buildFederationConfig(logger),
-		OIDC:                           buildOIDCConfig(logger, stores.auth),
-		ReferralEnabled:                envOrDefault("REFERRAL_ENABLED", "false") == "true",
+		CookieSecure:                       envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
+		CookieSameSite:                     parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
+		SessionTTL:                         sessionTTL,
+		OAuthReturnToAllowedHosts:          parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
+		QQOAuth:                            buildQQOAuthConfig(),
+		GoogleOAuth:                        buildGoogleOAuthConfig(),
+		GitHubOAuth:                        buildGitHubOAuthConfig(),
+		WeChatOAuth:                        buildWeChatOAuthConfig(),
+		AvatarStore:                        avatarStore,
+		TATRegisterIssuer:                  buildTATRegisterIssuer(logger),
+		DeviceBindTokenSecret:              envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
+		DeviceBindTokenTTL:                 time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
+		Logger:                             logger,
+		PublicBaseURL:                      publicBaseURL,
+		FrontendBaseURL:                    frontendBaseURL,
+		AdminToken:                         envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
+		E2EAuthEnabled:                     envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
+		E2EAuthToken:                       envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
+		ShadowBindingInternalToken:         envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
+		ShadowTencentCallbackToken:         envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
+		DeveloperRouteClient:               developerRouteClient,
+		DeveloperRouteExplicitIP:           developerRouteExplicitTargetIPEnabled(developerRouteClient),
+		DeveloperRouteRegistry:             developerRouteRegistry,
+		DeveloperRouteRegistrySecret:       developerRouteRegistrySecret,
+		DeveloperRouteRegistryCaller:       envOrDefault("PERSONAL_DEV_ROUTE_REGISTRY_CALLER", "cloudladdergateway"),
+		DeveloperRouteRegistryRouteID:      envOrDefault("PERSONAL_DEV_ROUTE_REGISTRY_ROUTE_ID", "developer-route-registry"),
+		DeveloperTestAccountLeaseEnabled:   len(developerAccountPoolUserIDs) > 0,
+		DeveloperTestAccountPoolUserIDs:    developerAccountPoolUserIDs,
+		DeveloperTestAccountLeaseNamespace: developerAccountLeaseNamespace,
+		DeveloperTestAccountSourceCIDRs:    developerAccountLeaseSourceCIDRs,
+		PersonalDevBillingProxyEnabled:     envOrDefault("PERSONAL_DEV_BILLING_PROXY_ENABLED", "false") == "true",
+		PersonalDevBillingProxyURL:         envOrDefault("PERSONAL_DEV_BILLING_PROXY_TRADE_URL", ""),
+		PersonalDevBillingProxyToken:       envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
+		TrustedProxyCIDRs:                  parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
+		Federation:                         buildFederationConfig(logger),
+		OIDC:                               buildOIDCConfig(logger, stores.auth),
+		ReferralEnabled:                    envOrDefault("REFERRAL_ENABLED", "false") == "true",
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")
@@ -180,6 +190,42 @@ func main() {
 		slog.Error("lightclaw auth exited unexpectedly", "err", err)
 		os.Exit(1)
 	}
+}
+
+func buildDeveloperTestAccountLeaseConfig(publicBaseURL string) ([]string, string, []netip.Prefix, error) {
+	if envOrDefault("PERSONAL_DEV_ACCOUNT_LEASE_ENABLED", "false") != "true" {
+		return nil, "", nil, nil
+	}
+	environment := strings.TrimSpace(envOrDefault("PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT", os.Getenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT")))
+	if environment != "sandbox-bj-7" && environment != "sandbox-kr-1" {
+		return nil, "", nil, errors.New("PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT must be sandbox-bj-7 or sandbox-kr-1")
+	}
+	publicURL, err := url.Parse(strings.TrimSpace(publicBaseURL))
+	if err != nil || publicURL.Scheme != "https" || publicURL.Hostname() != "api-"+environment+".lightclaw.tech" {
+		return nil, "", nil, errors.New("personal DevCloud testing account lease requires the matching sandbox HTTPS public base URL")
+	}
+	userIDs := parseCSVEnv("PERSONAL_DEV_ACCOUNT_POOL_USER_IDS")
+	if len(userIDs) == 0 {
+		return nil, "", nil, errors.New("PERSONAL_DEV_ACCOUNT_POOL_USER_IDS must list at least one pre-provisioned testing user")
+	}
+	for _, userID := range userIDs {
+		if !strings.HasPrefix(userID, "usr_") {
+			return nil, "", nil, errors.New("PERSONAL_DEV_ACCOUNT_POOL_USER_IDS contains an invalid user ID")
+		}
+	}
+	sourceCIDRValues := parseCSVEnv("PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS")
+	if len(sourceCIDRValues) == 0 {
+		return nil, "", nil, errors.New("PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS must list the trusted DevCloud egress ranges")
+	}
+	sourceCIDRs := make([]netip.Prefix, 0, len(sourceCIDRValues))
+	for _, raw := range sourceCIDRValues {
+		prefix, parseErr := netip.ParsePrefix(strings.TrimSpace(raw))
+		if parseErr != nil || !prefix.Addr().Is4() || prefix.Bits() < 8 {
+			return nil, "", nil, errors.New("PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS contains an invalid or overly broad IPv4 prefix")
+		}
+		sourceCIDRs = append(sourceCIDRs, prefix.Masked())
+	}
+	return userIDs, environment, sourceCIDRs, nil
 }
 
 func developerRouteExplicitTargetIPEnabled(client *devroute.Client) bool {
