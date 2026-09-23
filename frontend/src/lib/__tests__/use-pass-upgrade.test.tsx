@@ -22,7 +22,7 @@ describe("upgrade eligibility", () => {
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
     expect(result.current.options).toEqual([]);
     expect(listModifyBundles).not.toHaveBeenCalled();
-    act(() => { (window as Window & { show: () => boolean }).show(); });
+    act(() => { (window as unknown as { show: () => boolean }).show(); });
     await waitFor(() => expect(result.current.options).toEqual([target]));
     expect(result.current.pass?.pass_id).toBe("p1");
     expect(listModifyBundles).toHaveBeenCalledWith("p1");
