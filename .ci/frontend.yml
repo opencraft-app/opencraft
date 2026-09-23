@@ -76,13 +76,28 @@ stages:
               if [[ "$PIN_MODE" != "playground-build" ]]; then
                 exit 0
               fi
-              if [[ ! "$PIN_SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$PIN_SOURCE_SHA" != "$PIN_CI_SHA" || "$PIN_BRANCH" != "master" ]]; then
+              if [[ -z "$PIN_CI_SHA" || "$PIN_CI_SHA" == *'${{'* ]]; then
+                PIN_CI_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              if [[ -z "$PIN_BRANCH" || "$PIN_BRANCH" == *'${{'* ]]; then
+                PIN_BRANCH="${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"
+              fi
+              if [[ ! "$PIN_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
                 echo "playground-build requires an exact selected master commit" >&2
                 exit 1
               fi
-              if ! git cat-file -e "${PIN_SOURCE_SHA}^{commit}" 2>/dev/null || ! git merge-base --is-ancestor "$PIN_SOURCE_SHA" HEAD; then
-                git fetch --no-tags origin master
-                git merge-base --is-ancestor "$PIN_SOURCE_SHA" FETCH_HEAD || exit 1
+              if [[ -n "$PIN_CI_SHA" && "$PIN_SOURCE_SHA" != "$PIN_CI_SHA" ]]; then
+                echo "playground-build requires an exact selected master commit" >&2
+                exit 1
+              fi
+              if [[ -n "$PIN_BRANCH" && "$PIN_BRANCH" != "master" ]]; then
+                echo "playground-build requires an exact selected master commit" >&2
+                exit 1
+              fi
+              git fetch --no-tags origin master
+              if ! git merge-base --is-ancestor "$PIN_SOURCE_SHA" FETCH_HEAD; then
+                echo "playground-build source commit is not on origin/master: $PIN_SOURCE_SHA" >&2
+                exit 1
               fi
               git -c advice.detachedHead=false checkout --detach --quiet "$PIN_SOURCE_SHA"
               test "$(git rev-parse HEAD)" = "$PIN_SOURCE_SHA"

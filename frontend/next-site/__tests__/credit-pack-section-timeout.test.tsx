@@ -139,6 +139,7 @@ beforeEach(() => {
   inquireCreditPrice.mockReset();
   inquireCreditPrice.mockImplementation(async (productId: string) => ({
     product_id: productId,
+    price: "7100",
     real_total_cost: "8000",
     total_cost: "8000",
     currency: "CNY" as const,
@@ -176,12 +177,12 @@ async function reachPayStage(initialStatus: CheckoutStatus) {
 }
 
 describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
-  it("购买成功后点击完成跳转到 account 页面", async () => {
+  it("购买成功后点击完成跳转到 account billing 页面", async () => {
     await reachPayStage("delivered");
 
     await userEvent.click(await screen.findByRole("button", { name: "完成" }));
 
-    expect(navigateMock).toHaveBeenCalledWith("/account");
+    expect(navigateMock).toHaveBeenCalledWith("/account/billing");
   });
 
   it("轮询超时就地转换：标题常驻「请完成支付」不切错误，文案中性不误报「支付已完成」", async () => {

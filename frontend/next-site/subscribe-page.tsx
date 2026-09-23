@@ -21,7 +21,6 @@ import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } fr
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useCurrentLocale, useT, type I18nLocale } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { cn } from "@/lib/utils";
 import { BOT_QUOTA_BY_BUNDLE } from "@/lib/bot-quota";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
@@ -2803,9 +2802,6 @@ export const SubscribePage = ({
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
-  /* 积分包区域可见性默认关闭；挂载 show_credit_pack() 控制台助手供内部验收开启。 */
-  const creditPackVisible = useCreditPackVisibility();
-  useEffect(() => installCreditPackVisibilityHelper(), []);
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -2827,7 +2823,7 @@ export const SubscribePage = ({
   /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
      页面级套餐 Loading 结束后积分区才挂载，因此加载状态必须参与重试时机。 */
   useEffect(() => {
-    if (!creditPackVisible || bundlesInitialLoading) return;
+    if (bundlesInitialLoading) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get(SECTION_QUERY_KEY) !== CREDIT_SECTION_QUERY_VALUE) return;
@@ -2835,7 +2831,7 @@ export const SubscribePage = ({
       document.getElementById(CREDIT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [bundlesInitialLoading, creditPackVisible]);
+  }, [bundlesInitialLoading]);
 
   /* 付费时长（月付 / 季付）；切换时会触发 listBundles 用新时长重拉价格。默认月付。
      作用于所有可购买套餐（general / ai），与卡内积分档位切换正交。 */
@@ -2896,6 +2892,17 @@ export const SubscribePage = ({
   const selectedUpgradePass = upgradeSelection && upgrade.pass?.pass_id === upgradeSelection.passId
     && upgradeTargetIds.has(upgradeSelection.targetBundleId) ? upgrade.pass : null;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
+  const creditPackRealnameVerified = realnamePhoneVerificationEnabled
+    ? session.user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
+    : Boolean(session.user?.realnameVerified);
+  /* session/profile 当前只下发实名及同步状态；shadowBindingStatus 预留兼容未来字段。
+     前端门禁用于提前引导，用户真实影子绑定的权威校验仍在下单接口。 */
+  const creditPackBindingReady = isGlobal || (
+    creditPackRealnameVerified
+    && (!session.user?.shadowBindingStatus || session.user.shadowBindingStatus === "active")
+    && session.user?.realnameSyncStatus !== "pending"
+    && session.user?.realnameSyncStatus !== "failed"
+  );
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
      国际站已全量放开，付费开关只由后端 features 熔断；
      任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
@@ -3990,21 +3997,22 @@ export const SubscribePage = ({
           )}
         </section>
 
-        {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。
-            默认关闭；控制台执行 show_credit_pack() 可开启内部验收。 */}
-        {creditPackVisible && (
-          <CreditPackSection
-            sectionId={CREDIT_SECTION_ID}
-            isLoggedIn={isLoggedIn}
-            hasActivePlan={Boolean(activePass)}
-            onRequireLogin={() => setShowLoginModal(true)}
-            onRequirePlan={() => {
-              /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
-              document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
-        )}
-          </>
+        {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。 */}
+        <CreditPackSection
+          sectionId={CREDIT_SECTION_ID}
+          isLoggedIn={isLoggedIn}
+          hasActivePlan={Boolean(activePass)}
+          canPurchaseCreditPack={creditPackBindingReady}
+          onRequireLogin={() => setShowLoginModal(true)}
+          onRequireRealname={() => {
+            navigate(`${ACCOUNT_PATH}/?${REALNAME_REQUIRED_QUERY_KEY}=1&return_to=${encodeURIComponent(`${ACCOUNT_BILLING_PATH}?section=${CREDIT_SECTION_QUERY_VALUE}`)}`);
+          }}
+          onRequirePlan={() => {
+            /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
+            document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
+        </>
         )}
       </main>
 

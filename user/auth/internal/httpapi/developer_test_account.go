@@ -24,6 +24,7 @@ type developerTestAccountLeaseHandler struct {
 type developerTestAccountLeaseRequest struct {
 	TargetIP   string `json:"targetIp"`
 	TTLSeconds int    `json:"ttlSeconds"`
+	Force      bool   `json:"force"`
 }
 
 type developerTestAccountLeaseResponse struct {
@@ -76,7 +77,9 @@ func (h *developerTestAccountLeaseHandler) acquire(ctx *gin.Context) {
 		ttl = time.Duration(request.TTLSeconds) * time.Second
 	}
 	leaseOwner := h.namespace + ":" + targetIP
-	lease, session, err := h.service.AcquireDeveloperTestAccount(ctx.Request.Context(), h.userIDs, leaseOwner, targetIP, ttl, tokenFromContext(ctx))
+	lease, session, err := h.service.AcquireDeveloperTestAccount(
+		ctx.Request.Context(), h.userIDs, leaseOwner, targetIP, ttl, tokenFromContext(ctx), request.Force,
+	)
 	if err != nil {
 		body, status := toErrorBody(err)
 		ctx.JSON(status, body)
@@ -88,6 +91,7 @@ func (h *developerTestAccountLeaseHandler) acquire(ctx *gin.Context) {
 		"target_ip", lease.TargetIP,
 		"lease_until", lease.LeaseUntil.UTC().Format(timeRFC3339Milli),
 		"lease_version", lease.LeaseVersion,
+		"forced_takeover", request.Force,
 	)
 	ctx.JSON(http.StatusOK, developerTestAccountLeaseResponse{
 		UserID:         lease.UserID,

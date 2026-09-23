@@ -3,12 +3,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SSH_LIB="${SCRIPT_DIR}/../lib/ssh.sh"
+HERMES_VERSION_LIB="${SCRIPT_DIR}/../lib/hermes-version.sh"
 if [ ! -f "${SSH_LIB}" ]; then
   echo "ERROR: ssh library not found: ${SSH_LIB}" >&2
   exit 1
 fi
+if [ ! -f "${HERMES_VERSION_LIB}" ]; then
+  echo "ERROR: Hermes version library not found: ${HERMES_VERSION_LIB}" >&2
+  exit 1
+fi
 # shellcheck source=/dev/null
 source "${SSH_LIB}"
+# shellcheck source=/dev/null
+source "${HERMES_VERSION_LIB}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -218,7 +225,7 @@ HERMES_VERSION_OUTPUT="$(remote_exec_runtime '
   export PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.hermes/hermes-agent/venv/bin
   hermes --version
 ' 2>&1 || true)"
-HERMES_BIN_VERSION="$(printf '%s\n' "${HERMES_VERSION_OUTPUT}" | grep -Eo '[0-9]+(\.[0-9]+){1,2}' | head -1 || true)"
+HERMES_BIN_VERSION="$(printf '%s\n' "${HERMES_VERSION_OUTPUT}" | parse_hermes_cli_version || true)"
 HERMES_IDENTITY_VERSION="$(remote_exec "awk -F': *' '/^runtime_version:/ {print \$2}' /etc/acli/identity.yaml 2>/dev/null" 2>&1 || true)"
 info "hermes --version output: ${HERMES_VERSION_OUTPUT}"
 info "parsed hermes version: ${HERMES_BIN_VERSION}"

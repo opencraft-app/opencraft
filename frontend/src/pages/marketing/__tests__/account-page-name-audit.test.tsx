@@ -387,8 +387,9 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage("billing");
 
-    expect(screen.getByText("当前套餐")).toBeInTheDocument();
-    expect(screen.getByText("启航套餐")).toBeInTheDocument();
+    const currentPlan = screen.getByText("当前套餐").parentElement?.parentElement;
+    expect(currentPlan).not.toBeNull();
+    expect(within(currentPlan!).getByText("启航套餐")).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();
     expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
     const planDetailsLink = screen.getByRole("link", { name: "套餐说明" });
@@ -491,19 +492,18 @@ describe("AccountPage nickname audit state", () => {
     renderAccountPage("billing");
 
     expect(screen.getByText("套餐积分")).toBeInTheDocument();
-    expect(screen.getByText("额外积分")).toBeInTheDocument();
-    expect(screen.getByText("当前可用")).toBeInTheDocument();
-    expect(screen.getByText("5,000")).toBeInTheDocument();
+    const creditDetails = screen.getByText("额度明细").parentElement?.parentElement;
+    expect(creditDetails).not.toBeNull();
+    const sources = within(creditDetails!).getAllByRole("listitem");
+    expect(sources).toHaveLength(2);
+    expect(sources[0]).toHaveTextContent("启航套餐");
+    expect(sources[0]).toHaveTextContent("4,500 / 4,500");
+    expect(sources[1]).toHaveTextContent("额外积分");
+    expect(sources[1]).toHaveTextContent("500 / 500");
     expect(
       screen.getByText((_, element) =>
         element?.tagName === "P" &&
         element.textContent?.replace(/\s+/g, " ").trim() === "0 / 4,500"
-      )
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText((_, element) =>
-        element?.tagName === "SPAN" &&
-        element.textContent?.replace(/\s+/g, " ").trim() === "500 / 500"
       )
     ).toBeInTheDocument();
   });
