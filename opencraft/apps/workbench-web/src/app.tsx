@@ -1353,6 +1353,15 @@ export function App({
                   await hostCatalog.threadManagement.archive(target.hostId, target.threadId);
                   await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
                 },
+                onDelete: async target => {
+                  await hostCatalog.threadManagement.delete(target.hostId, target.threadId);
+                  await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
+                  // Deleting the thread the workbench currently shows would
+                  // leave the route pointing at a missing thread; go home.
+                  if (snapshot.hostId === target.hostId && (draft === null ? activeThreadId ?? "" : "") === target.threadId) {
+                    navigateToHome();
+                  }
+                },
               }}
               catalogs={extensionProjection.catalogs}
               bots={extensionProjection.bots}
