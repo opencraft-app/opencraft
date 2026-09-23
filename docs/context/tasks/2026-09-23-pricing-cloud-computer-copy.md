@@ -69,7 +69,8 @@
 - 2026-09-24 MR !4576 CI 日志：frontend guard 通过，7 个测试文件共 130 个用例通过，CN/Global 构建分别完成 106/664 页；真正失败点为 trusted `opencraft_guard.sh` 未初始化 Node，runner 报 `node: command not found`。MDX deprecated option 与 i18n 空白提示未使 frontend guard 失败。
 - 2026-09-24 重新运行 `node opencraft/scripts/sync-mono2-agent-console.mjs`：同步 130 个文件，仅 12 个 vendored 文件有差异；`npm --prefix opencraft run check:mono2-agent-console` 和 `npm --prefix opencraft run typecheck --workspace @opencraft/plugin-lightvela-hermes` 通过。
 - 独立 `origin/master` worktree 中已准备 `.ci/checks/opencraft_guard.sh` 的 Node bootstrap 修复；聚焦 guard 测试 7/7 通过。完整 `.ci/runtime/check_ci_runtime.sh` 在本机临时 PyYAML 环境运行至 592 个单测，19 个因 macOS Apple Git 2.24 不支持 `git init -b` 而失败，并非该补丁诊断。
-- 用户确认后，独立 CI 修复已提交为 MR !4603，源分支 `codex/fix-opencraft-guard-node`，目标 `master`；!4576 的生成副本仍需单独提交并待 !4603 合入后复验 CI。
+- 用户确认后，独立 CI 修复提交为 MR !4603，源分支 `codex/fix-opencraft-guard-node`，目标 `master`；`2dc1b7a68` 已随 `d39c9352d` 合入 `master`，trusted guard 现已包含 Node bootstrap。
+- !4576 以普通 merge 同步 `master@96abc2691` 并重新生成 OpenCraft 清单；合并后 `pnpm check`、235 个聚焦测试、CN/Global 构建（106/664 页）、OpenCraft 同步校验与插件类型检查均通过。
 
 ## risks
 - 英文后端 Key 与中文 Key 并存导致重复；通过语义别名归一化和英文回归用例覆盖。
@@ -104,11 +105,11 @@
 - 套餐页属于既有正式产品文档，内容分类状态原本已是 `CN ✓ | GLOBAL ✓`，无需变更；本次没有新增或替换图片。
 - 国内站与国际站共用映射逻辑，两个生产构建均通过。
 - 截图中的英文后端权益 Key 和旧规格来自线上版本；当前工作树已有对应修复，本次补齐全语言回归及免费链路/错误状态的漏翻。代码和构建完成不代表线上已更新。
-- OpenCraft 机械副本原本未同步；CI 失败后确认 `opencraft` guard 必须先有 Node，且本分支现有 vendored 文件确有漂移。已按生成脚本同步并本地验证，尚未提交或推送。
+- OpenCraft 机械副本原本未同步；CI 失败后确认 `opencraft` guard 必须先有 Node，且本分支现有 vendored 文件确有漂移。已按生成脚本同步、提交并本地验证，尚未推送 !4576。
 - 用户于 2026-09-24 明确授权提交 MR；合并与发布仍需独立指令。
 
 ## stage
-MR !4576 已打开；独立 `.ci` trusted guard 补丁已提交为 MR !4603，原 MR 的 vendored 同步待提交；不包含合并或发布。
+MR !4576 已打开；独立 `.ci` trusted guard 补丁已通过 MR !4603 合入 `master`，原 MR 的 vendored 同步已本地提交、待推送；本任务不执行 !4576 合并或发布。
 
 ## verified
 - 国际站七种字典的英文后端权益、免费链路价格单位与套餐加载错误组件回归通过。
@@ -117,7 +118,7 @@ MR !4576 已打开；独立 `.ci` trusted guard 补丁已提交为 MR !4603，�
 
 ## unverified
 - 线上 `lightvela.ai/zh-sg/subscribe` 尚未发布本工作树改动，截图中的线上现状不能由本地构建证明已修复。
-- MR !4603 尚未合入；trusted guard 只有进入 `master` 后才会用于原 MR 的 CI。未验证 !4576 新提交的远端 CI 结果。
+- !4576 的新提交尚未推送，未验证远端新 CI 结果。
 
 ## discard
 - 旧线上截图所示 `2核 4G` 规格不是当前工作树的规格；本地使用 `2 vCPU · 8 GB 内存`。
@@ -126,4 +127,4 @@ MR !4576 已打开；独立 `.ci` trusted guard 补丁已提交为 MR !4603，�
 - 在隔离工作树 `/Users/pablozhong/.codex/worktrees/pricing-cloud-computer-copy/lightvela` 续接原 MR 的生成物；CI-only 补丁在 `/Users/pablozhong/.codex/worktrees/opencraft-guard-node/lightvela`。主工作区改动不参与本任务。
 
 ## next_action
-- 提交并核验 !4576 的 vendored 生成物；待 !4603 经独立审批合入 `master` 后复验 !4576 CI，不自行合并或发布。
+- 推送并核验 !4576 的 vendored 生成物，获取新 CI 即时状态；不自行合并或发布。
