@@ -1280,6 +1280,7 @@ const createCreditRepository = (): CreditRepository => ({
     const centsStr = cents.toFixed(0);
     return {
       product_id: productId,
+      price: centsStr,
       real_total_cost: centsStr,
       total_cost: centsStr,
       currency: isGlobal ? ("USD" as const) : ("CNY" as const),

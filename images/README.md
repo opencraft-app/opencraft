@@ -125,6 +125,7 @@ CI 入口：
 - CI 会验证 `agentuser` 的 Hermes venv 可以 import `lark_oapi` 和 `qrcode`
 - Hermes CI 镜像会同步到北京、上海、新加坡、东京和新山，并在构建结果中记录每个 Region 的 `HERMES_IMAGE_ID_<REGION>`
 - Pool 刷新按 `pool.zone` 选择对应 Region 的镜像 ID；同一 SKU 跨 Region 时不发布单个全局 SKU 镜像来覆盖各 Pool 的 `base_image`
+- `master` 发布按北京沙箱、新加坡生产、新山生产、上海生产顺序执行；新加坡和新山复用 `sgprod` control plane，但 preflight、Pool 刷新和存量 VM TAT 修补按 region 独立门禁
 - Hermes CI 在人工确认后会从仓库内修补脚本临时创建 TAT Command 修复存量 VM，不要求手工传 `HERMES_TAT_COMMAND_ID`
 - TAT Command 创建脚本会动态解析最新非南京 Hermes backend blueprint，并把 ID 注入到下发脚本环境，目标 VM 不需要携带仓库文件
 - `images/hermes-image-trigger` 是专用触发文件；当只改 `.ci/**` 但需要触发 `.ci/hermes-image.yml` 时，更新这个文件并随 MR 合入

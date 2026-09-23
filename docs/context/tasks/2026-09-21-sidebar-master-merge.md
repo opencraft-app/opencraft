@@ -10,9 +10,9 @@ source_of_truth:
   - frontend/src/components/site/sidebar-user-menu.tsx
   - frontend/src/pages/marketing/agent-settings-page.tsx
 status: active
-reviewed_at: 2026-09-22
-review_due: 2026-12-22
-revision: 2.0.0
+reviewed_at: 2026-09-23
+review_due: 2026-12-23
+revision: 2.1.0
 precedence: task
 derived: false
 ---
@@ -70,6 +70,7 @@ frontend、site-environment-routing、frontend-runtime-openspec-i18n、upstream-
 | frontend/openspec/plan.md、frontend/DESIGN.md | 现有规范 | 不迁移无关组件 |
 | docs/context/tasks/TASK-TEMPLATE.md、docs/context/tasks/CHECKPOINT-TEMPLATE.md | 交接契约 | 更新失效记录 |
 | opencraft/AGENTS.md、opencraft/MONO2_MIGRATION.md、docs/context/project/upstream-subtrees.md | 生成边界 | 只做必需机械同步 |
+| docs/context/domains/agent-gateway-runtime.md、docs/context/project/services/opencraft.md | 同步脚本路由 must_read | 校验生成冲突，不扩改 OpenCraft 产品 |
 
 ## evidence
 
@@ -114,6 +115,17 @@ git diff -w origin/master 的 settings page 仅侧栏 wrapper/import；正文与
 
 ## checkpoint
 
+### 2026-09-23 补齐最新 master 并推送原预览分支
+
+- 用户已明确同意继续合并、提交并推送原 frontsandbox 分支；覆盖上一轮“只本地提交”的限制。
+- 远端核验：MR !4390 仍 opened，source_commit 为 2bedc539b；此前 07aa1c18f / bdb42c768 仅在本地，因此 MR 仍显示冲突。master 此后又前进 26 个提交，本轮合并基点为 21f831c58416cc41c45406390970b094dfbffcae。
+- 唯一冲突为 opencraft 的 UPSTREAM.json；使用未改动的 sync:mono2-agent-console 重新生成，不手工选边。同步后 check:mono2-agent-console 核对 130 文件通过。
+- 范围复核：侧栏源码自动合并，保留固定探索/对话页签、滚动区与底部账号区、click-only 菜单、国内站菜单内反馈。Account/Buddy/Memory 正文、frontend 依赖和锁文件相对本轮 master 无差异；其余新增文件均来自 master。
+- 当前合并树验证：7 文件 113 项侧栏/导航测试、global 菜单 42 项及真实页面滚动独立性 1 项通过（同文件其他 11 项未跑）。pnpm check 通过：171 current / 171 baseline / 0 new，i18n 无缺译。日志 /tmp/sidebar-latest-0923-{focused,global,page,check}.log。未跑全量测试，不复用早期 head 的结论。
+- CN pnpm build 通过，日志 /tmp/sidebar-latest-0923-build.log；撤回其生成的无关字体文件。validate_documentation 无错误；context 校验仍有仓库其他 Pack 的既有报错，不扩修。
+- 提交顺序：先提交合并树，再运行 sync 并单独提交 sourceRevision metadata，最后在最终 HEAD 上复查生成一致性与来源提交可达性；不 amend 合并提交，不强推。
+- 推送目标仅 frontsandbox/agents-sidebar-account-hit-area；以远端 SHA 与 MR 读回结果为交付证据，不把 push 等同于预览部署完成。
+
 ### 2026-09-23 再次合并 master
 
 - 用户请求：解决冲突后提交；本轮只创建本地提交，不自动推送。
@@ -144,9 +156,9 @@ git diff -w origin/master 的 settings page 仅侧栏 wrapper/import；正文与
 - 未覆盖：移动端浏览器、国际站浏览器、真实账号服务端操作和远端预览新版本；本轮未提交或推送。报告 /tmp/lightvela-sidebar-fix/report.html。
 
 ### stage
-2026-09-23 master 冲突已解决，验证完成，准备合并提交及机械来源记录提交。
+2026-09-23 最新 master 21f831c58 的生成冲突已解决，准备合并提交及机械来源记录提交，并推送原预览分支。
 ### verified
-本轮 113 项侧栏/导航、42 项 global、17 项 tooltip/onboarding、1 项页面结构、check 与 CN build 通过；早期验证只作历史证据。
+最新合并树的 113 项侧栏/导航、42 项 global、1 项页面结构、pnpm check、CN build 与 130 文件生成检查通过；早期验证只作历史证据。
 ### unverified
 全量测试、master 基线对比、移动端/国际站浏览器与远端部署状态未验证。
 ### discard
@@ -154,4 +166,4 @@ git diff -w origin/master 的 settings page 仅侧栏 wrapper/import；正文与
 ### restore
 独立 worktree frontsandbox/agents-sidebar-account-hit-area；原版本 6214001a0。
 ### next_action
-按用户授权提交本次合并，机械同步并核对生成漂移，交付提交 SHA；未授权新的推送。
+按用户授权提交、机械同步并推送，核对远端 SHA 和 MR 冲突状态。

@@ -59,6 +59,15 @@ master 源码
   各环境独立确认对应 Template Class、SKU 和至少一个 active/CLEAN Pool；上海验证不能替代新山。
   回滚只恢复上一组 class/SKU 映射，不删除新旧 Pool，也不改变已分配实例的规格。
 
+- Hermes CVM 镜像流水线在构建开始时解析 COS `latest.json`，完成构建验证后把同一镜像复制到
+  北京、上海、新加坡、东京和新山；东京当前只接收地域镜像，不进入 Pool/存量 VM rollout。
+  Pool 和存量 VM 的发布顺序固定为北京主沙箱、新加坡、新山、上海，每个生产地域必须经过独立
+  只读预检和人工确认后，才能刷新 Pool 并通过 TAT 修补存量 VM。新加坡与新山共享 `sgprod`
+  控制面时，Pool/VM 发现必须按 `pool.zone` 对应的 region 隔离；不得把新加坡目标带入新山阶段，
+  也不得用跨地域共享 SKU 的单一全局镜像字段代替各 Pool 的地域权威 `base_image`。
+  `images/hermes-image-trigger` 用于显式触发新版本构建，不能以仅同步镜像冒充新山 Pool 和存量 VM
+  已完成发布。
+
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
   `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；
