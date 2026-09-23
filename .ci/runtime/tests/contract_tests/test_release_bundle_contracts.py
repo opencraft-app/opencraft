@@ -2753,6 +2753,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_workflow_supports_exact_master_playground_build(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+
+        self.assertIn('PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"', workflow_text)
+        self.assertIn('if [[ "$PIPELINE_MODE_VALUE" == "playground-build" ]]', workflow_text)
+        self.assertIn('SOURCE_SHA="${{ variables.SOURCE_SHA }}"', workflow_text)
+        self.assertIn('TARGET_ENV="${{ variables.TARGET_ENV }}"', workflow_text)
+        self.assertIn('if [[ "$SOURCE_BRANCH" != "master" ]]', workflow_text)
+        self.assertIn('SOURCE_BRANCH="${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"', workflow_text)
+        self.assertIn('"$(git rev-parse HEAD)" != "$SOURCE_SHA"', workflow_text)
+        self.assertIn('sandbox-bj-*|sandbox-kr-*)', workflow_text)
+        self.assertIn('BUILD_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('AUTO_PIN_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('frontend-${TARGET_ENV}-${SHORT_SHA}', workflow_text)
+        self.assertEqual(
+            workflow_text.count('|| "${{ variables.PIPELINE_MODE }}" == "playground-build"'),
+            2,
+        )
+        self.assertIn('if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"', workflow_text)
+
     def test_frontend_checkouts_disable_virtual_merge(self) -> None:
         for workflow_path in (".ci/frontend.yml", ".ci/frontend-preview.yml"):
             with self.subTest(workflow=workflow_path):

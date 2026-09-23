@@ -287,6 +287,7 @@ frontend 容器镜像必须单独确认：
 - 只有当同 registry 中已经存在同 source sha 的等价 frontend 镜像，且只是缺少目标 env tag 时，才允许把已有 tag retag 成目标 tag 来解锁 live。
 - retag 必须记录来源 tag、目标 tag、digest 和“不重新构建”的理由；它只解决 registry tag 缺失，不替代长期 CI 构建入口。
 - 如果 frontend 源码、Dockerfile、lockfile、`VITE_*` 构建参数或静态资源入口有任何差异，必须重新构建，不能 retag。
+- 当目标 Playground 分支长期落后于 `master`、又不能安全整体合并时，使用 `构建 frontend` 的受限手动模式：`PIPELINE_MODE=playground-build`、`TARGET_ENV=sandbox-bj-*|sandbox-kr-*`、`SOURCE_SHA=<当前 master 精确 SHA>`。该模式要求流水线 material、checkout HEAD 与 `SOURCE_SHA` 三者一致，只构建并自动 pin 指定 Playground 镜像，跳过共享 Pages artifact、Cloudflare 预发和 EdgeOne 正式候选。
 
 受控检查/retag 入口：
 
