@@ -49,6 +49,14 @@ native packages pass, then enters the `macos-release` Environment for signing,
 notarization and final packaging. Manual runs are accepted only from `main`;
 version tags matching `v*` additionally publish a GitHub Release.
 
+The standalone GitHub mirror cannot resolve mono2-parent `file:` dependencies.
+`packages/lightvela-agent-core` and `packages/vela-chat-client-core` are
+mechanical snapshots of their `shared/` authorities. Run
+`npm run sync:shared-packages` in mono2 when either source changes and
+`npm run check:shared-packages` in both mono2 and the exported repository.
+The check validates the committed snapshot manifest even when the parent
+`shared/` directory is intentionally absent.
+
 `deploy:lightvela-web` builds the LightVela product and publishes only
 `apps/workbench-web/dist-lightvela-web`, after its product boundary check.
 `publish:lightvela-web` explicitly selects that same input even when the generic

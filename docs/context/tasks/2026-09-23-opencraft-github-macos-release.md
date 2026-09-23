@@ -51,6 +51,10 @@ derived: false
 - `opencraft/scripts/merge-macos-universal.mjs`
 - `opencraft/scripts/sign-notarize-macos.mjs`
 - `opencraft/tests/macos-universal-release.test.mjs`
+- `opencraft/scripts/sync-shared-packages.mjs`
+- `opencraft/tests/shared-package-snapshots.test.mjs`
+- `opencraft/packages/lightvela-agent-core/`
+- `opencraft/packages/vela-chat-client-core/`
 - `opencraft/apps/workbench-electron/package.json`
 - `opencraft/package-lock.json`
 - `opencraft/package.json`
@@ -81,6 +85,8 @@ derived: false
 - 已将精确选择的 `Developer ID Application: jindong zhang (BF993VYGGF)` 单身份 P12 及随机包装密码写入 Environment Secrets；未上传同钥匙串中的其他身份，也未输出凭据值。
 - App Store Connect 团队未开放 Integrations/API 入口，未把本机 P8 候选误认作可用 Team Key。已按 Apple 官方支持的 Apple 账户、App 专用密码与 Team ID 路径配置公证。
 - `macos-release` 现有五项 Secret：Developer ID P12、P12 包装密码、Apple 账户、App 专用密码与 Team ID；Secret 值未写入仓库、日志或 Task Pack。
+- 首次 GitHub workflow `35811006754` 在 arm64/x64 的 Renderer build 暴露镜像缺少 `@lightvela/vela-chat-client-core`；修复采用从 mono2 `shared/` authority 机械同步的 workspace 快照，同时补齐同类 `@lightvela/agent-core`，不以 Vite external 掩盖运行时缺包。
+- 在不含 mono2 父目录、node_modules 与历史构建输出的临时独立 checkout 中，`npm ci`、`check:shared-packages` 与 `build:electron:release` 通过。
 
 ## risks
 - 两架构原生依赖文件集合不同：合并前只补齐缺失的架构限定资源，绝不覆盖同路径文件；其余 Mach-O 由 `lipo` 合并。
@@ -89,6 +95,8 @@ derived: false
 
 ## validation
 - `npm run test:macos-release`
+- `npm run test:shared-packages`
+- `npm run check:shared-packages`
 - `npm run test:identity`
 - `npm run matrix:check`
 - `npm run typecheck --workspace @opencraft/workbench-electron`
@@ -97,6 +105,7 @@ derived: false
 
 ## decisions
 - 使用双原生 Runner + 最终合并，不在单一架构 Runner 上交叉伪装 DSH 原生依赖。
+- 公开镜像所需的 mono2-parent shared package 以带哈希清单的机械快照闭包交付；`shared/` 仍是唯一真源。
 - 使用临时 Keychain 与 Apple 官方支持的 App 专用密码；不使用 Apple 账户主密码。当前团队尚未开通 App Store Connect API，后续批准 Team Key 时可迁移，不改变制品模型。
 - workflow_dispatch 生成 Actions artifact；`v*` tag 才创建 GitHub Release。
 

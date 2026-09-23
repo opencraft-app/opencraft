@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.1",
-    "@lightvela/agent-core": "file:../../../shared/lightvela-agent-core",
+    "@lightvela/agent-core": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/bot-conversation": "0.1.0",
