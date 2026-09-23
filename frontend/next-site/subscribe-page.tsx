@@ -495,10 +495,8 @@ const mapBundleToPlan = (
   const nmLower = bundleNm.toLowerCase();
   const isLaunchTier = bundleNm.includes("启航") || nmLower.includes("launch");
   const isCruiseTier = bundleNm.includes("巡游") || nmLower.includes("cruise");
-  /* 上海活动规格仅在国内站展示；国际站在对应供给发布前保持原规格。 */
-  const envSpec = isCN
-    ? (isLaunchTier ? t("2核 8G 内存") : t("4核 16G 内存"))
-    : (isLaunchTier ? t("2核 4G 内存") : t("4核 8G 内存"));
+  /* 两地活动规格：启航 2核8G；巡游 4核16G。 */
+  const envSpec = isLaunchTier ? t("2核 8G 内存") : t("4核 16G 内存");
   /* 专属云端存储：启航 50G；巡游升配 80G。 */
   const storageSpec = isLaunchTier ? "50G" : "80G";
   /* 一句话文案按 tier 差异化（PRD 需求2）。命中 tier 时直接使用 tier 文案，不受 freeGuideAllowed 清空；
@@ -1247,7 +1245,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
-      { iconKey: "monitor", label: "云端独立环境", value: isCN ? "4核 16G 内存" : "4核 8G 内存" },
+      { iconKey: "monitor", label: "云端独立环境", value: "4核 16G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
       { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },

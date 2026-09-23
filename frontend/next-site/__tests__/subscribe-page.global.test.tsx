@@ -160,11 +160,11 @@ const buildBillingError = (code: string, message: string) => Object.assign(new E
 const cleanupPage = () => cleanup();
 
 describe("international upgrade return", () => {
-  it("keeps the previous memory on the international pricing card", async () => {
+  it("shows the Singapore campaign memory on the international pricing card", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    expect((await screen.findAllByText("4核 8G 内存")).length).toBeGreaterThan(0);
-    expect(screen.queryByText("4核 16G 内存")).not.toBeInTheDocument();
+    expect((await screen.findAllByText("4核 16G 内存")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("4核 8G 内存")).not.toBeInTheDocument();
   });
 
   beforeEach(() => resetState());
