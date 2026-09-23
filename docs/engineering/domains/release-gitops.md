@@ -532,4 +532,23 @@ VelaGW subtree 更新时，北京 workload 的 `OTEL_SERVICE_VERSION` 以及 `sh
 `VELAGW_OTEL_SERVICE_VERSION` 必须同步指向 subtree 源码短版本；这些字段只描述构建源码，
 不得借此修改镜像 pin 或触发生产 Argo sync。
 
+## playground 环境的 DB migration job
+
+playground（`sandbox-*`）环境的应用镜像不在启动时执行 migration；`lightclaw-auth` Deployment 的
+`wait-db-schema` initContainer 也只校验历史核心表，不覆盖新增 migration。因此新 migration 要在
+playground 生效，必须显式落一个 GitOps job：
+
+- 在 `argocd/services/<service>/<env>/` 下新增 `*-migration-job.yaml`，并在同目录
+  `kustomization.yaml` 的 `resources` 中挂载。参考实现：
+  `argocd/services/credit/sandbox-bj-7/credit-migration-job.yaml` 与
+  `argocd/services/lightclaw-auth/sandbox-bj-7/auth-migration-job.yaml`。
+- job 复用该环境当前已部署的镜像 digest 与 `envFrom`（服务 ConfigMap + Secret），执行镜像内置的
+  migrate 二进制。migration 必须幂等（`CREATE TABLE IF NOT EXISTS`、容忍 `ErrNoChange`），
+  因此补建表不需要重新构建镜像或发布服务。
+- Kubernetes Job spec 不可变。需要重跑同一 migration 时改 job `metadata.name`（例如追加用途后缀），
+  不要原地修改已存在的 job。
+- 该改动必须同时落到 `master`（源）与 `gitops`（Argo 实际读取分支）。Argo 自动 Sync 后，以 job
+  完成状态和接口真实行为为验收依据；manifest 合入本身不是证据。
+- 只新增 job，不改 Deployment 镜像、副本，也不触碰生产环境目录。
+
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。
