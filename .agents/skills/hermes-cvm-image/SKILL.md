@@ -63,7 +63,7 @@ as `agentuser`.
 The expected production-safe order is:
 
 ```text
-build and sync image to ap-beijing, ap-shanghai, ap-singapore
+build and sync image to ap-beijing, ap-shanghai, ap-singapore, ap-tokyo, ap-johorbahru
 -> read-only preflight Beijing sandbox pools and VM inventory
 -> manual gate 1
 -> refresh Beijing sandbox Hermes pools
@@ -72,12 +72,16 @@ build and sync image to ap-beijing, ap-shanghai, ap-singapore
 -> manual gate 2
 -> refresh Singapore production Hermes pools
 -> repair existing Singapore production Hermes VMs
+-> read-only preflight Johor production pools and VM inventory
 -> manual gate 3
+-> refresh Johor production Hermes pools
+-> repair existing Johor Hermes VMs
+-> manual gate 4
 -> refresh Shanghai production pools
 -> repair existing Shanghai production Hermes VMs
 ```
 
-Beijing sandbox is the test pre-release environment and must roll out before Singapore or Shanghai production. Do not skip the read-only preflight stages or publish Shanghai before Beijing passes unless the user explicitly requests that risk.
+Beijing sandbox is the test pre-release environment and must roll out before Singapore, Johor, or Shanghai production. Singapore and Johor share the `sgprod` Sandbox control plane, but inventory, Pool refresh, and TAT repair must remain region-scoped by `pool.zone`. Do not skip the read-only preflight stages or publish Shanghai before the earlier regions pass unless the user explicitly requests that risk.
 
 ## Verification Checklist
 
@@ -88,6 +92,7 @@ Before claiming success, inspect the pipeline logs for:
 - Singapore preflight resolved the ap-singapore image, listed sgprod Hermes VM rows, and failed before manual approval if inventory was empty.
 - Beijing preflight resolved the ap-beijing image, listed beijing-sandbox Hermes VM rows, and failed before manual approval if inventory was empty.
 - Singapore stages use `sgprod:ap-singapore:kubeconfig_sgprod`.
+- Johor stages use `sgprod:ap-johorbahru:kubeconfig_sgprod` and only select `ap-johorbahru-*` Pools.
 - Beijing stages use `beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox`.
 - Shanghai stages use `shprod:ap-shanghai:kubeconfig_shprod`.
 - Existing VM repair logs show a nonzero VM list and TAT summary JSON files.

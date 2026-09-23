@@ -2904,6 +2904,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         singapore_approval_stage = stage_by_name["确认刷新并修补新加坡生产 Hermes"]
         singapore_refresh_stage = stage_by_name["刷新新加坡生产 Hermes pools"]
         singapore_repair_stage = stage_by_name["升级存量新加坡生产 Hermes VM"]
+        johor_preflight_stage = stage_by_name["预检新山生产 Hermes 更新目标"]
+        johor_approval_stage = stage_by_name["确认刷新并修补新山生产 Hermes"]
+        johor_refresh_stage = stage_by_name["刷新新山生产 Hermes pools"]
+        johor_repair_stage = stage_by_name["升级存量新山生产 Hermes VM"]
         shanghai_approval_stage = stage_by_name["确认刷新并修补上海生产 Hermes"]
         shanghai_refresh_stage = stage_by_name["刷新上海生产 Hermes pools"]
         shanghai_repair_stage = stage_by_name["升级存量上海生产 Hermes VM"]
@@ -2911,6 +2915,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         reviewers = ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]
         beijing_reviews = (((beijing_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         singapore_reviews = (((singapore_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        johor_reviews = (((johor_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         shanghai_reviews = (((shanghai_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
 
         self.assertEqual(beijing_approval_stage.get("if"), prod_if)
@@ -2921,11 +2926,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(singapore_preflight_stage.get("if"), prod_if)
         self.assertEqual(singapore_refresh_stage.get("if"), prod_if)
         self.assertEqual(singapore_repair_stage.get("if"), prod_if)
+        self.assertEqual(johor_preflight_stage.get("if"), prod_if)
+        self.assertEqual(johor_approval_stage.get("if"), prod_if)
+        self.assertEqual(johor_refresh_stage.get("if"), prod_if)
+        self.assertEqual(johor_repair_stage.get("if"), prod_if)
         self.assertEqual(shanghai_approval_stage.get("if"), prod_if)
         self.assertEqual(shanghai_refresh_stage.get("if"), prod_if)
         self.assertEqual(shanghai_repair_stage.get("if"), prod_if)
         self.assertEqual(beijing_reviews.get("reviewers"), reviewers)
         self.assertEqual(singapore_reviews.get("reviewers"), reviewers)
+        self.assertEqual(johor_reviews.get("reviewers"), reviewers)
         self.assertEqual(shanghai_reviews.get("reviewers"), reviewers)
         self.assertLess(stages.index(build_stage), stages.index(beijing_preflight_stage))
         self.assertLess(stages.index(beijing_preflight_stage), stages.index(beijing_approval_stage))
@@ -2935,7 +2945,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertLess(stages.index(singapore_preflight_stage), stages.index(singapore_approval_stage))
         self.assertLess(stages.index(singapore_approval_stage), stages.index(singapore_refresh_stage))
         self.assertLess(stages.index(singapore_refresh_stage), stages.index(singapore_repair_stage))
-        self.assertLess(stages.index(singapore_repair_stage), stages.index(shanghai_approval_stage))
+        self.assertLess(stages.index(singapore_repair_stage), stages.index(johor_preflight_stage))
+        self.assertLess(stages.index(johor_preflight_stage), stages.index(johor_approval_stage))
+        self.assertLess(stages.index(johor_approval_stage), stages.index(johor_refresh_stage))
+        self.assertLess(stages.index(johor_refresh_stage), stages.index(johor_repair_stage))
+        self.assertLess(stages.index(johor_repair_stage), stages.index(shanghai_approval_stage))
         self.assertLess(stages.index(shanghai_approval_stage), stages.index(shanghai_refresh_stage))
         self.assertLess(stages.index(shanghai_refresh_stage), stages.index(shanghai_repair_stage))
 
@@ -2957,10 +2971,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("HERMES_SKIP_IMAGE_BUILD", workflow_text)
         self.assertIn("--image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
         self.assertIn(
-            "--target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo",
+            "--target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo,ap-johorbahru",
             workflow_text,
         )
         self.assertIn("HERMES_IMAGE_ID_AP_TOKYO", workflow_text + refresh_env_script_text)
+        self.assertIn(
+            "for region in ap-beijing ap-shanghai ap-singapore ap-tokyo ap-johorbahru",
+            workflow_text,
+        )
         self.assertIn("resolve_hermes_image_id.py --region \"$region\" --image-name \"$HERMES_IMAGE_NAME\"", workflow_and_runtime_text)
         self.assertIn("split_hermes_pool_vms_by_region.py", workflow_and_runtime_text)
         self.assertIn("HERMES_REFRESH_ENV_SPEC", workflow_text)
@@ -2976,14 +2994,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("No Singapore Hermes VM rows found; abort before manual approval", workflow_text)
         self.assertIn("resolve_hermes_image_id.py --region ap-singapore --image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
         self.assertIn("确认刷新并修补新加坡生产 Hermes", workflow_text)
+        self.assertIn("预检新山生产 Hermes 更新目标", workflow_text)
+        self.assertIn("hermes-sgprod-johor-preflight-vms", workflow_text)
+        self.assertIn("No Johor Hermes VM rows found; abort before manual approval", workflow_text)
+        self.assertIn("resolve_hermes_image_id.py --region ap-johorbahru --image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
+        self.assertIn("确认刷新并修补新山生产 Hermes", workflow_text)
         self.assertIn("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox", workflow_text)
         self.assertIn("HERMES_BEIJING_HERMES_LEGACY_POOL_IDS", workflow_text)
         self.assertIn("pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
+        self.assertIn("sgprod:ap-johorbahru:kubeconfig_sgprod", workflow_text)
+        self.assertIn("HERMES_JOHOR_HERMES_LEGACY_POOL_IDS", workflow_text)
+        self.assertIn("pool-1789611181051332051-1", workflow_text)
         self.assertIn("shprod:ap-shanghai:kubeconfig_shprod", workflow_text)
         self.assertIn("HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS", workflow_text)
         self.assertIn("pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
         self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"))
-        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
+        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("sgprod:ap-johorbahru:kubeconfig_sgprod"))
+        self.assertLess(workflow_text.index("sgprod:ap-johorbahru:kubeconfig_sgprod"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
         self.assertNotIn("<<'PY'", workflow_text)
         self.assertNotIn("默认目标：shprod", workflow_text)
         self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
@@ -3095,6 +3122,86 @@ target_pool_ids http://unused "$pools_json" ap-johorbahru
             )
 
         self.assertEqual(result.stdout.splitlines(), ["pool-jhb"])
+
+    def test_hermes_vm_inventory_selects_only_target_region(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        resolved = json.dumps({"pools": []})
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+resolved_json="$3"
+source "$script_path"
+api_get() { printf '%s' "$resolved_json"; }
+target_pools_jsonl http://unused "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools, resolved],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        selected = [json.loads(line)["id"] for line in result.stdout.splitlines()]
+        self.assertEqual(selected, ["pool-jhb"])
+
+    def test_hermes_vm_inventory_rejects_cross_region_legacy_pool(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg-legacy",
+                    "template_class_id": "openclaw",
+                    "sku_id": "sku-openclaw-2c4g",
+                    "zone": "ap-singapore-1",
+                }
+            ]
+        )
+        resolved = json.dumps({"pools": []})
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+resolved_json="$3"
+source "$script_path"
+LEGACY_POOL_IDS="pool-sg-legacy"
+api_get() { printf '%s' "$resolved_json"; }
+target_pools_jsonl http://unused "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools, resolved],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertEqual(result.stdout, "")
 
     def test_hermes_pool_refresh_does_not_publish_one_global_image_for_multi_region_sku(self) -> None:
         script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
