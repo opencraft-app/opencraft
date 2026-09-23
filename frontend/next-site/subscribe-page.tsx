@@ -22,6 +22,7 @@ import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { cn } from "@/lib/utils";
+import { BOT_QUOTA_BY_BUNDLE } from "@/lib/bot-quota";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -59,6 +60,7 @@ const colors = {
   border: "rgba(0,0,0,0.1)",
   badgeBg: "rgba(0,0,0,0.04)",
   badgeText: "rgba(0,0,0,0.75)",
+  recommendationText: "#B82E6B",
   /* Tooltip（免费试用提示等）配色，集中管理避免散落硬编码 */
   tooltipBg: "rgba(23,23,23,0.92)",
   tooltipShadow: "0 4px 16px rgba(0,0,0,0.18)",
@@ -70,7 +72,7 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
   zh: "启航",
   en: "launch",
 } as const;
-/** AI 增强版套餐类型标识（国际站启航 AI 对新用户提供 7 天免费，巡游 AI 为首购折扣） */
+/** AI 增强版套餐类型标识（启航 AI 对新用户提供 1 个月免费，巡游 AI 为首购折扣） */
 const BUNDLE_TYPE_AI = "ai";
 /** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
 const CRUISE_BUNDLE_NAME_KEYWORDS = {
@@ -98,13 +100,13 @@ const matchBundleTier = (bundleName: string | undefined) => {
  * —— 该字段在本文件内存在两套单位口径（小数 `0<d<1` 与百分数 `50`），
  * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
  *
- * 站点口径差异：
- *   - 国际站启航 AI：`首单免费 7 天`（**仅新用户**，见下方 isNewUser 门禁）
+ * 活动口径（国内 / 国际站均为 1 个月，按已确认的活动配置同步）：
+ *   - 国际站启航 AI：`首单免费 1 个月`（**仅新用户**，见下方 isNewUser 门禁）
  *   - 国际站巡游 AI：`首月 6 折`
  *   - 国内站启航 AI：`首单免费 1 个月`（仅零元新用户）；巡游 AI：`首月 6 折`
  *
  * 国际站标签必须同时匹配用户资格和真实询价：
- *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 7 天」；
+ *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 1 个月」；
  *   - 只有实付价低于原价时才展示折扣，避免后端异常全价询价仍承诺优惠。
  * 未登录静态 Bundle 也携带同样的原价 / 实付价，因此继续稳定展示既定免费与折扣信息。
  *
@@ -117,11 +119,11 @@ const aiPromoTagText = (
   isNewUser: boolean,
   price?: BundlePrice | null,
 ): string | undefined => {
-  /* 启航 AI 零元新用户「首单免费」标签（国内外统一门禁，时长不同）：
-     国际站 7 天、国内站 1 个月。巡游 AI 无免费试用，走下方折扣分支。
+  /* 启航 AI 零元新用户「首单免费」标签（国内外均为 1 个月）：
+     实际下单时长由后端活动配置决定，前端不修改发放时长。巡游 AI 无免费试用，走下方折扣分支。
      注意 t() 必须直接消费字面量（i18n-extract 静态扫描，三元内联字符串扫不到）。 */
   if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
-    return isGlobal ? t("首单免费 7 天") : t("首单免费 1 个月");
+    return t("首单免费 1 个月");
   }
   if (isGlobal) {
     const discountRate = actualDiscountRate(price);
@@ -444,15 +446,6 @@ const __markBundleTypeTabsForI18n = (t: (zh: string, opts?: Record<string, unkno
   void t("其他");
 };
 
-/* 国内套餐每台 Agent 的 Bot 数，与 agent-context.tsx 的 resolveBotQuotaPerAgent 保持一致。
-   仅用于权益展示，不能用 bundle.agent_quota（Agent 实例数）替代。 */
-const CN_BOT_COUNT_BY_BUNDLE: Readonly<Record<string, number>> = {
-  bundle_launch_01: 5,
-  bundle_launch_ai_01: 5,
-  bundle_cruise_01: 10,
-  bundle_cruise_ai_01: 10,
-};
-
 const mapBundleToPlan = (
   bundle: Bundle,
   index: number,
@@ -504,9 +497,10 @@ const mapBundleToPlan = (
       ? t("日常主力，让智能化成为习惯")
       : "";
 
+  /* 国内四档展示每台实例内的 Bot 上限；agent_quota 仍决定可创建的 Hermes 实例数量。 */
   const displayedBotCount = isGlobal
     ? bundle.agent_quota
-    : CN_BOT_COUNT_BY_BUNDLE[bundle.bundle_id] ?? bundle.agent_quota;
+    : BOT_QUOTA_BY_BUNDLE[bundle.bundle_id] ?? bundle.agent_quota;
   if (displayedBotCount > 0) {
     features.push({
       icon: iconMap.user,
@@ -723,12 +717,12 @@ const mapBundleToPlan = (
       const isAi = bundle.bundle_type === BUNDLE_TYPE_AI;
       const discountRate = actualDiscountRate(bundle.price);
       if (isAi) {
-        /* AI 档位：启航零元新用户「首单免费 7 天」；有真实折扣时按询价展示。 */
+        /* AI 档位：启航零元新用户「首单免费 1 个月」；有真实折扣时按询价展示。 */
         promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
       } else if (tier.isLaunch) {
-        /* 启航标准版：只有新用户实付为零才承诺 14 天免费；其他状态只展示真实折扣。 */
+        /* 启航标准版：只有新用户实付为零才承诺 1 个月免费；其他状态只展示真实折扣。 */
         if (isNewUser && bundle.price?.real_total_cost === 0) {
-          promoTag = t("首单免费 14 天");
+          promoTag = t("首单免费 1 个月");
           isZeroDownFreeTrial = true;
         } else {
           promoTag = discountRate == null ? undefined : discountTagText(discountRate, t);
@@ -754,7 +748,7 @@ const mapBundleToPlan = (
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
           /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
-             国际站启航 AI「首单免费 7 天」，国内站启航 AI 零元新用户「首单免费 1 个月」。
+             国际站启航 AI「首单免费 1 个月」，国内站启航 AI 零元新用户「首单免费 1 个月」。
              改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
              已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
           promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
@@ -808,7 +802,7 @@ const mapBundleToPlan = (
      防止登录态异常全价询价仍承诺免费；未登录静态价为零，既定展示不受影响。 */
   const bundleTier = matchBundleTier(bundle.bundle_name);
   const isLaunchStandard = bundleTier.isLaunch && bundle.bundle_type !== BUNDLE_TYPE_AI;
-  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 7 天」（见 aiPromoTagText）。
+  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 1 个月」（见 aiPromoTagText）。
      国内站启航 AI 不进入本判定，CTA 维持「立即订阅」，与改动前一致。 */
   const isIntlLaunchAi =
     isGlobal && bundleTier.isLaunch && bundle.bundle_type === BUNDLE_TYPE_AI;
@@ -827,8 +821,7 @@ const mapBundleToPlan = (
    * 启航 AI 档位是否展示「免费订阅」CTA。
    *
    * 必须以**实付金额为 0** 为前提，不能只看档位 —— 否则会出现
-   * 「按钮承诺免费、点击后进入信用卡支付」的不一致（本次未实现 3 天试用能力，
-   * 权益与支付逻辑均未改动）。
+   * 「按钮承诺免费、点击后进入信用卡支付」的不一致。实际时长由后端活动配置决定。
    *
    * 金额为 0 时点击链路本身也是零元流程：`isDianshiZeroAmountPlan` 命中
    * `real_total_cost === 0` 走点石零元下单，不进入信用卡支付，与 CTA 语义一致。
@@ -912,6 +905,7 @@ const mapBundleToPlan = (
        featured（卡片描边 / 圆角强调）仍只由 tier 顺序决定，不随配色统一而变。 */
     ctaStyle: isGlobal || index === 0 ? "primary" : "outline",
     featured: index === 0,
+    // PlanInfo 的历史字段名：这里限制 Hermes 实例数量，不是实例内的 Bot 数。
     maxBots: bundle.agent_quota || 1,
     /* 真实缺价走 priceUnavailable（触发徽章 + CTA 禁用 + 点击拦截）；
        询价加载中走 pricingLoading（不触发徽章、保留旧价视觉，但 CTA 仍禁用 + 拦截点击）。
@@ -1022,12 +1016,12 @@ const STATIC_INTL_PRICE_USD: Record<
   Record<"general" | "ai", Record<"monthly" | "quarterly", { original: number; real: number }>>
 > = {
   launch: {
-    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 8.5 折 $16.58 */
+    /* 启航标准版：月付 $6.5，新用户 1 个月免费（实付 $0）；季付 $19.5 → 8.5 折 $16.58 */
     general: {
       monthly: { original: 6.5, real: 0 },
       quarterly: { original: 19.5, real: 16.58 },
     },
-    /* 启航 AI 版：月付 $10，新用户 7 天免费（实付 $0）；季付 $30 → 9 折 $27.00 */
+    /* 启航 AI 版：月付 $10，新用户 1 个月免费（实付 $0）；季付 $30 → 9 折 $27.00 */
     ai: {
       monthly: { original: 10, real: 0 },
       quarterly: { original: 30, real: 27 },
@@ -1308,7 +1302,7 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
         icon: iconMap[f.iconKey],
         label: !isGlobal && f.label === "Agent" ? t("Bot 数") : t(f.label),
         value: !isGlobal && f.label === "Agent"
-          ? `10 ${t("个")}`
+          ? `${BOT_QUOTA_BY_BUNDLE.bundle_cruise_01} ${t("个")}`
           : f.value ? t(f.value) : undefined,
         hasCheck: f.hasCheck,
       })),
@@ -1494,6 +1488,8 @@ const PlanCard = ({
   return (
     <MotionCard
       variant={isFeatured ? "pricing-featured" : "pricing"}
+      role="group"
+      aria-label={plan.name}
       variants={fadeIn}
       custom={index}
       className="relative flex min-w-0 flex-col overflow-hidden"
@@ -1665,7 +1661,7 @@ const PlanCard = ({
                   {isCN && v.raw.bundle_type === BUNDLE_TYPE_AI && tierOfPlan(v) !== null && (
                     <span
                       style={{
-                        color: "#B82E6B",
+                        color: colors.recommendationText,
                         fontSize: 11,
                         fontWeight: 500,
                         lineHeight: 1.2,

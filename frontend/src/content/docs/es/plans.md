@@ -83,7 +83,7 @@ Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de
 
 > ℹ️ **Oferta para nuevos usuarios**
 >
-> Los nuevos usuarios pueden probar Launch gratis durante 14 días en su primer pedido y Launch AI gratis durante 7 días en su primer pedido. La oferta mostrada en la página de suscripción tiene prioridad.
+> Los nuevos usuarios pueden probar Launch gratis durante 1 mes en su primer pedido y Launch AI gratis durante 1 mes en su primer pedido. La oferta mostrada en la página de suscripción tiene prioridad.
 
 > ℹ️ **Nota de precio**
 >

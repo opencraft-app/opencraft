@@ -53,7 +53,7 @@ Antes de comenzar, necesitas:
 
 * Una cuenta de Google o GitHub para iniciar sesión en LightVela; el sitio internacional no requiere verificación de identidad en China
 
-* Un plan actualmente disponible seleccionado y activado desde la [página de suscripción](/subscribe); después de la beta pública y el inicio de facturación, los nuevos usuarios pueden probar Launch gratis por 14 días
+* Un plan actualmente disponible seleccionado y activado desde la [página de suscripción](/subscribe); después de la beta pública y el inicio de facturación, los nuevos usuarios pueden probar Launch gratis por 1 mes
 
 * Al menos una cuenta de mensajería compatible, como Telegram, WhatsApp, Discord, Slack o WeChat
 

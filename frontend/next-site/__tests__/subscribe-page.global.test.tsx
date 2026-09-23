@@ -332,7 +332,7 @@ describe("SubscribePage paid billing visibility", () => {
  *   2. 后端 discount 单位不一致（`0<d<1` 与 `50` 两套口径），百分数下发时两分支均不命中。
  *
  * 现口径：国际站付费已全量放开（无 reveal 门禁），未登录使用静态美元价；
- * 国际站启航 AI「首单免费 7 天」、巡游 AI「首月 6 折」，登录后仍使用后端询价。
+ * 国际站启航 AI「首单免费 1 个月」、巡游 AI「首月 6 折」，登录后仍使用后端询价。
  */
 describe("SubscribePage intl AI promo tags", () => {
   beforeEach(resetState);
@@ -347,10 +347,7 @@ describe("SubscribePage intl AI promo tags", () => {
   };
 
   const getTierCard = (name: string): HTMLElement => {
-    const heading = screen.getByRole("heading", { name });
-    const cardContent = heading.parentElement?.parentElement?.parentElement;
-    if (!cardContent) throw new Error(`Missing ${name} card content`);
-    return cardContent;
+    return screen.getByRole("group", { name });
   };
 
   const expectTierPrice = (
@@ -416,20 +413,20 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(within(launchCard).queryByText("推荐")).not.toBeInTheDocument();
     expect(within(cruiseCard).queryByText("推荐")).not.toBeInTheDocument();
 
-    /* 默认 AI 增强版（国际站顺序调整，2026-08-27）：启航新用户 7 天免费；巡游首购 6 折。 */
+    /* 默认 AI 增强版（国际站顺序调整，2026-08-27）：启航新用户 1 个月免费；巡游首购 6 折。 */
     expectTierPrice(launchCard, "$0.00", "$10.00");
-    expect(within(launchCard).getByText("首单免费 7 天")).toBeInTheDocument();
+    expect(within(launchCard).getByText("首单免费 1 个月")).toBeInTheDocument();
     expectTierPrice(cruiseCard, "$13.80", "$23.00");
     expect(within(cruiseCard).getByText("首月 6 折")).toBeInTheDocument();
 
-    /* 切标准版：启航新用户 14 天免费；巡游首购 5 折。 */
+    /* 切标准版：启航新用户 1 个月免费；巡游首购 5 折。 */
     await user.click(getCreditTab("100"));
     await user.click(getCreditTab("200"));
     await waitFor(() => {
       expectTierPrice(launchCard, "$0.00", "$6.50");
       expectTierPrice(cruiseCard, "$7.00", "$14.00");
     });
-    expect(within(launchCard).getByText("首单免费 14 天")).toBeInTheDocument();
+    expect(within(launchCard).getByText("首单免费 1 个月")).toBeInTheDocument();
     expect(within(cruiseCard).getByText("首月 5 折")).toBeInTheDocument();
   });
 
@@ -484,7 +481,7 @@ describe("SubscribePage intl AI promo tags", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "免费订阅" })).toBeInTheDocument(),
     );
-    expect(await screen.findByText("首单免费 7 天")).toBeInTheDocument();
+    expect(await screen.findByText("首单免费 1 个月")).toBeInTheDocument();
 
     /* 巡游 AI 档位不对齐「免费订阅」，维持「立即订阅」 */
     await user.click(getCreditTab("10000"));
@@ -493,8 +490,8 @@ describe("SubscribePage intl AI promo tags", () => {
     );
   });
 
-  /* 切回标准版档位后标签必须还原，避免 promoTag 残留。 */
-  it("restores the standard tier label when switching back", async () => {
+  /* 切回标准版后恢复标准价格，两档均保留首单免费 1 个月。 */
+  it("restores the standard price and retains the free month when switching back", async () => {
     (globalThis as { React?: typeof React }).React = React;
     const user = userEvent.setup();
 
@@ -504,12 +501,13 @@ describe("SubscribePage intl AI promo tags", () => {
     await waitFor(() => expect(getCreditTab("4500")).toBeInTheDocument());
 
     await user.click(getCreditTab("4500"));
-    expect(await screen.findByText("首单免费 7 天")).toBeInTheDocument();
+    expect(await screen.findByText("首单免费 1 个月")).toBeInTheDocument();
 
     await user.click(getCreditTab("100"));
-    await waitFor(() =>
-      expect(screen.queryByText("首单免费 7 天")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true"));
+    expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "false");
+    expectTierPrice(getTierCard("启航 Launch"), "$0.00", "$6.50");
+    expect(screen.getByText("首单免费 1 个月")).toBeInTheDocument();
   });
 
   /**
@@ -534,8 +532,7 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(screen.getAllByRole("button", { name: "立即订阅" }).length).toBeGreaterThan(0);
 
     /* 季付不得出现月付首期促销标签 */
-    expect(screen.queryByText("首单免费 7 天")).not.toBeInTheDocument();
-    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 1 个月")).not.toBeInTheDocument();
 
     /* 切到启航 AI 档位，季付下同样不得回落到「免费订阅」 */
     await user.click(getCreditTab("4500"));
@@ -611,7 +608,7 @@ describe("SubscribePage intl AI promo tags", () => {
 
     const subscribeButton = await screen.findByRole("button", { name: "立即订阅" });
     expect(subscribeButton).toBeEnabled();
-    expect(screen.queryByText("首单免费 7 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 1 个月")).not.toBeInTheDocument();
     await user.click(subscribeButton);
     expect(await screen.findByText("信用卡")).toBeInTheDocument();
     expect(createDianshiPassOrderAndPayMock).not.toHaveBeenCalled();
@@ -624,7 +621,7 @@ describe("SubscribePage intl AI promo tags", () => {
 
     await renderLoggedPricing("0.00");
 
-    expect(await screen.findByText("首单免费 7 天")).toBeInTheDocument();
+    expect(await screen.findByText("首单免费 1 个月")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "免费订阅" }));
     expect(await screen.findByRole("button", { name: "确认开通" })).toBeInTheDocument();
     expect(screen.queryByText("信用卡")).not.toBeInTheDocument();
@@ -644,7 +641,7 @@ describe("SubscribePage intl AI promo tags", () => {
 
     await renderLoggedPricing("10.00");
 
-    expect(screen.queryByText("首单免费 7 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 1 个月")).not.toBeInTheDocument();
     expect(screen.queryByText("首月 6 折")).not.toBeInTheDocument();
   });
 
@@ -655,7 +652,7 @@ describe("SubscribePage intl AI promo tags", () => {
 
     await renderLoggedPricing("6.00");
 
-    expect(screen.queryByText("首单免费 7 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 1 个月")).not.toBeInTheDocument();
     expect(await screen.findByText("首月 6 折")).toBeInTheDocument();
   });
 
@@ -666,7 +663,7 @@ describe("SubscribePage intl AI promo tags", () => {
 
     await renderLoggedPricing("6.50");
 
-    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 1 个月")).not.toBeInTheDocument();
     expect(screen.queryByText("5折")).not.toBeInTheDocument();
   });
 
@@ -678,7 +675,7 @@ describe("SubscribePage intl AI promo tags", () => {
     await renderLoggedPricing("6.50");
 
     const subscribeButton = screen.getByRole("button", { name: "立即订阅" });
-    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 1 个月")).not.toBeInTheDocument();
     await user.click(subscribeButton);
     expect(await screen.findByText("信用卡")).toBeInTheDocument();
   });
@@ -725,7 +722,7 @@ describe("SubscribePage intl AI promo tags", () => {
     await renderLoggedPricing("3.25");
 
     expect(await screen.findByText("5折")).toBeInTheDocument();
-    expect(screen.queryByText("首单免费 14 天")).not.toBeInTheDocument();
+    expect(screen.queryByText("首单免费 1 个月")).not.toBeInTheDocument();
   });
 });
 

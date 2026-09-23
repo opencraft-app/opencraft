@@ -83,7 +83,7 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 
 > ℹ️ **New-user offer**
 >
-> New users can try Launch free for 14 days on their first order and Launch AI free for 7 days on their first order. The offer shown on the Subscribe page takes precedence.
+> New users can try Launch free for 1 month on their first order and Launch AI free for 1 month on their first order. The offer shown on the Subscribe page takes precedence.
 
 > ℹ️ **Price note**
 >

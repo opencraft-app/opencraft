@@ -83,7 +83,7 @@ LightVela 提供**启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Crui
 
 > ℹ️ **新用户权益**
 >
-> 新用户首单开通 Launch 可免费体验 14 天；首单开通 Launch AI 可免费体验 7 天。实际可享权益以订阅页为准。
+> 新用户首单开通 Launch 可免费体验 1 个月；首单开通 Launch AI 可免费体验 1 个月。实际可享权益以订阅页为准。
 
 > ℹ️ **价格说明**
 >

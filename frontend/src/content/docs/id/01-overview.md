@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Agent Anda melalui aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba paket Launch gratis selama 14 hari. Status terkini mengacu pada halaman langganan.**
+**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Agent Anda melalui aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba paket Launch gratis selama 1 bulan. Status terkini mengacu pada halaman langganan.**
 
 ---
 
@@ -14,7 +14,7 @@
 >
 > * **Beta publik dan penagihan**: LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan. Lihat [Paket](./plans.md) untuk ringkasan paket dan manfaat terbaru.
 >
-> * **Manfaat pengguna baru setelah beta publik dan penagihan dimulai**: Pengguna baru dapat mencoba paket Launch gratis selama 14 hari.
+> * **Manfaat pengguna baru setelah beta publik dan penagihan dimulai**: Pengguna baru dapat mencoba paket Launch gratis selama 1 bulan.
 
 LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse. Tujuannya sederhana: membantu setiap orang memiliki **pendamping AI yang benar-benar terasa milik sendiri**. Bukan alat yang setiap kali harus diajak berkenalan dari awal, melainkan kehadiran jangka panjang yang **mengenal Anda, mengingat Anda, dan makin memahami kebutuhan Anda seiring waktu**.
 
@@ -100,14 +100,14 @@ Paket yang saat ini tersedia:
 
 | Paket | Harga asli | Status saat ini |
 | --------- | ------- | ---- |
-| Launch | $7,5 / bulan | Uji coba gratis 14 hari untuk pengguna baru setelah beta publik dan penagihan dimulai |
+| Launch | $7,5 / bulan | Uji coba gratis 1 bulan untuk pengguna baru setelah beta publik dan penagihan dimulai |
 | Cruise | $15 / bulan | Paket berbayar |
 
 Paket Launch mencakup: 1 instans Hermes Agent, runtime terisolasi 2-core 4G, penyimpanan cloud khusus 50G, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
 
 > ℹ️ **Catatan paket beta**
 >
-> LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba Launch gratis selama 14 hari. Lihat [Paket](./plans.md) untuk detail ringkasnya.
+> LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba Launch gratis selama 1 bulan. Lihat [Paket](./plans.md) untuk detail ringkasnya.
 
 ***
 

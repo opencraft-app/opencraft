@@ -204,10 +204,10 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
     // 列序：套餐 | 月付首购价 | 月付优惠说明 | 季付折后价 | 季付折扣
     const rows = parseTableRows(sectionOf(plansDoc, "### 优惠与首购价"));
 
-    it("启航 Launch 首购价为 ¥0（首单免费 14 天）", () => {
+    it("启航 Launch 首购价为 ¥0（首单免费 1 个月）", () => {
       const row = rowByLabel(rows, "启航 Launch");
       expect(yuanIn(row[1] ?? "")).toBe(0);
-      expect(row[2] ?? "").toContain("首单免费");
+      expect(row[2] ?? "").toContain("首单免费体验 1 个月");
     });
 
     it("巡游 Cruise 首购价 = 月付原价 × 首月 5 折", () => {
@@ -217,18 +217,17 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
       );
     });
 
-    it("AI 版首购价 = 月付原价 × 首月 6 折", () => {
-      const aiCases = [
-        ["启航 Launch AI", BASELINE.launchAi],
-        ["巡游 Cruise AI", BASELINE.cruiseAi],
-      ] as const;
+    it("启航 Launch AI 首购价为 ¥0（首单免费 1 个月）", () => {
+      const row = rowByLabel(rows, "启航 Launch AI");
+      expect(yuanIn(row[1] ?? "")).toBe(0);
+      expect(row[2] ?? "").toContain("首单免费体验 1 个月");
+    });
 
-      for (const [label, price] of aiCases) {
-        const row = rowByLabel(rows, label);
-        expect(yuanIn(row[1] ?? ""), `${label} 首购价`).toBe(
-          round2(price.monthly * AI_MONTHLY_DISCOUNT),
-        );
-      }
+    it("巡游 Cruise AI 首购价 = 月付原价 × 首月 6 折", () => {
+      const row = rowByLabel(rows, "巡游 Cruise AI");
+      expect(yuanIn(row[1] ?? "")).toBe(
+        round2(BASELINE.cruiseAi.monthly * AI_MONTHLY_DISCOUNT),
+      );
     });
 
     it("季付折后价 = 季付原价 × 对应折扣（标准版 8.5 折 / AI 版 9 折）", () => {
