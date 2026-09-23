@@ -50,7 +50,7 @@ derived: false
 - frontend/next-site/subscribe-page.tsx
 - frontend/src/components/ui/card.tsx 及聚焦测试
 - frontend/DESIGN.md
-- 本 Task Pack 与 evidence/2026-09-23-subscribe-mobile/。
+- 本 Task Pack；.gitignore 及移出版本控制的本地验证产物目录。
 
 ## required_context
 frontend-product-surface、service-frontend、site-environment-routing。
@@ -58,21 +58,21 @@ frontend-product-surface、service-frontend、site-environment-routing。
 ## context_receipt
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
-| frontend/AGENTS.md@870d03dcb | 最近服务入口 | 组件复用及验证门禁 |
-| docs/context/project/services/frontend.md@870d03dcb | must_read | 前端边界 |
-| docs/context/domains/site-environment-routing.md@870d03dcb | must_read | 双站共用布局 |
-| docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@870d03dcb | 必查邻居 | 检查订阅页 CN/global 相邻测试及 vitest.config.ts |
+| frontend/AGENTS.md@534d9ed59 | 最近服务入口 | 组件复用及验证门禁 |
+| docs/context/project/services/frontend.md@534d9ed59 | must_read | 前端边界 |
+| docs/context/domains/site-environment-routing.md@534d9ed59 | must_read | 双站共用布局 |
+| docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@534d9ed59 | 必查邻居 | 检查订阅页 CN/global 相邻测试及 vitest.config.ts |
 | frontend/DESIGN.md@870d03dcb | 最新组件规范 | rounded-md、复用 Card、按钮移动端全宽 |
 | frontend/openspec/spec.md@870d03dcb | 当前规格入口 | 现有升级语义不变 |
 | frontend/openspec/changes/2026-07-28-frontsandbox-global-pricing-page.md@870d03dcb | 相关历史 | 保持 tier 分组 |
 | docs/context/tasks/TASK-TEMPLATE.md@870d03dcb | 任务契约 | 本记录结构 |
 | docs/context/tasks/CHECKPOINT-TEMPLATE.md@870d03dcb | 检查点契约 | 交接记录 |
-| .agents/context/change-impact.json@870d03dcb | 设计文档映射 | next-site UI 未命中强制设计同步路径 |
+| .agents/context/change-impact.json@534d9ed59 | 设计文档映射 | next-site UI 未命中强制设计同步路径 |
 | .agents/skills/baseline-ui/SKILL.md | UI 实现 | Tailwind / cn / 触控尺寸 |
 | .agents/skills/fixing-accessibility/SKILL.md | 控件回归 | 可访问名称与焦点 |
 | .agents/skills/product-skills/lv-vibe-coding/SKILL.md | 研发协作 | 最新 master、独立分支、本地验证；用户已授权本地适配 |
-
-| docs/context/flows/tapd-gongfeng-delivery.md@ac1735ca0 | 评审修正交付路由 | 更新已有 MR 的授权与证据边界 |
+| docs/context/flows/tapd-gongfeng-delivery.md@534d9ed59 | 评审修正交付路由 | 更新已有 MR 的授权与证据边界 |
+| .agents/skills/gongfeng/SKILL.md@534d9ed59 | 工蜂评论 | 读取 !4516 / !4509 评论并更新 MR |
 
 ## evidence
 - git fetch origin master：7595dcaeb → 870d03dcb。
@@ -110,9 +110,9 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 
 ## handoff
 本地适配已完成；用户追加要求“合并master，提交mr”，已授权提交、推送和创建指向 master 的 MR。原工作区未改动，未发布。
-分支 codex/subscribe-mobile，工作区 /Users/junweicao/.codex/worktrees/subscribe-mobile/mono2。
+后续分支 codex/subscribe-hide-quota，工作区 /Users/junweicao/.codex/worktrees/subscribe-mobile/mono2。
 国内本地预览 http://127.0.0.1:5187/subscribe/。
-截图与矩阵：[评审证据](evidence/2026-09-23-subscribe-mobile/README.md)，已纳入版本控制；本地日志仍在 .local/subscribe-mobile/。
+按评审意见，截图与矩阵移出 Git，保留于本地 `.local/subscribe-mobile/review-evidence/`；MR 提供已入库的双站组件测试作为可复核行为证据。
 
 ## review_followup
 用户评审要求恢复桌面圆角／名额间距／动效，提供 MR 可见证据，兼容三档平板布局，并确认现网当前仅两档。实施以上限定修正；三档只用本地 fixture 验证，不增加线上套餐。
@@ -125,10 +125,17 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 原移动端 MR !4509 已于 2026-09-23 06:23 UTC 合并，source_commit 为 086d3d252；本次名额屏蔽提交 c3e05b384 不在该合并中，改用独立后续 MR 交付。最新 master 的并行改动仅涉及镜像构建和 macOS 打包，订阅组件及 pnpm 检查输入未变。
 新增 CN / global 各两条登录态组件回归：AVAILABLE 5/100 仍可订阅且不显示名额；SOLD_OUT 0/100 保持禁用且不显示名额。临时 5/100 fixture 的浏览器截图覆盖 390 / 1024 / 1440px，quota=[]，无溢出；测试数据已恢复。
 
+## mr_comments_followup
+- !4516 暂无人工评论；本轮读取 !4509 的两条相关评论（1033610375、1033467234）。名额提示间距意见已由整体屏蔽该行解决，不再为已移除元素调整样式。
+- 按评论将本任务 33 份截图、fixture JSON 与本地报告从版本控制移除（约 3.2 MB），先逐文件校验备份至 `.local/subscribe-mobile/review-evidence/`；新增 `/docs/context/tasks/evidence/` 忽略规则，保留 Task Pack。
+- 使用追加删除提交，保留既有共享历史；不会缩小已经写入历史的对象体积。清理后 MR 不再把本地截图描述为仓库可见证据，双站组件测试继续验证名额隐藏与售罄按钮状态。
+- 本轮只改忽略规则及文档／验证产物，前端源码、测试和构建输入不变；沿用本轮之前通过的 check 与双站 build，不新增或重复无关测试。
+
 ## checkpoint
 ### stage
-名额屏蔽已实施；62 项聚焦测试、check、双站构建通过。!4509 在本次推送前已合并，合并版本不含名额屏蔽；已合入最新 master 32f055720，后续由 codex/subscribe-hide-quota 单独提交 MR。国内预览已恢复，/subscribe/ HTTP 200。
+MR !4516 已创建；按 !4509 评论清理本地验证产物并修正文档，本轮 62 项聚焦测试、文档检查、忽略规则检查通过，准备追加提交。
 ### verified
+- 评论修正后重新执行聚焦测试 62/62 通过；33 份文件已逐份验证本地备份，Git 不再跟踪 evidence 目录，旧路径及本地备份均命中忽略规则。
 - 最新聚焦行为测试 62/62（订阅页 59 + Card 3）通过；pnpm check（0 新增诊断）及 build:cn / build:global 已重新通过。
 - 国内 7 视口与国际 28 组合无溢出，截图已人工复核；最新名额隐藏 fixture 的 390 / 1024 / 1440px 截图无名额提示和横向溢出。
 - 相邻价格测试失败在未修改基线复现。
@@ -142,4 +149,4 @@ frontend/next-site/subscribe-page*，相关测试、组件和上述 context。
 - 基线订阅源码 870d03dcb，合并 master ac1735ca0；修改范围见 affected_paths。
 - 证据 .local/subscribe-mobile/；本地预览端口 5187。
 ### next_action
-推送 codex/subscribe-hide-quota，创建仅包含名额屏蔽及测试／证据的后续 MR，保留未全绿门禁说明。
+验证本轮删除和忽略规则，追加提交至 codex/subscribe-hide-quota 并更新 !4516 的范围与证据说明，保留未全绿门禁说明。
