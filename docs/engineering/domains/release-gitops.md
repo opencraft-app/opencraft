@@ -551,4 +551,22 @@ playground 生效，必须显式落一个 GitOps job：
   完成状态和接口真实行为为验收依据；manifest 合入本身不是证据。
 - 只新增 job，不改 Deployment 镜像、副本，也不触碰生产环境目录。
 
+## 个人 DevCloud 租约来源网段（PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS）
+
+`sandbox-bj-7`、`sandbox-kr-1` 的 `lightclaw-auth` 通过 `PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS`
+限制 `POST /auth/dev-environments/account-lease` 的调用来源。网关在
+`service-gateway/internal/gateway/client_ip.go` 里由右向左剥离可信跳后写入 `X-Lightclaw-Client-IP`，
+auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forwarded-For` 无法绕过，
+因此网段配置错误会直接表现为 `403 developer_test_account_source_forbidden`。
+
+- DevCloud 开发机的公网出口是**多 IP NAT 轮换**，同一台机器连续请求会落在不同出口 IP 上。
+  实测 `21.214.48.147` 采样 120 次，出口覆盖 `14.22.11.160-180` 与 `14.116.239.33-42`。
+- 原先配置的 `/29`（`14.22.11.160/29`、`14.116.239.32/29`）只覆盖 `.160-.167` 与 `.32-.39`，
+  导致约三分之一请求落在段外并偶发 403。现统一放宽为 `/27`，覆盖 `14.22.11.160-191`
+  与 `14.116.239.32-63`，与实测出口池完全包含。
+- 判断这类来源问题必须**多次采样**（建议 ≥ 20 次）。单次探测在轮换出口下会得到随机结论，
+  既可能误判为"已修复"，也可能误判为服务故障。
+- 该配置只作用于 playground/sandbox overlay，用于个人开发环境自助领号，不涉及任何生产目录；
+  变更后需分别在 bj-7 与 kr-1 连续调用租约接口，以 0 个 403 作为验收证据。
+
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。
