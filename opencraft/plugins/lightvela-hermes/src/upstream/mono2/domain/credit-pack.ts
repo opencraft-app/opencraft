@@ -30,13 +30,15 @@ export interface CreditProduct {
 /** 询价结果（trade/internal/logic/creditorder/service.go:64-75 透传）。 */
 export interface CreditQuote {
   product_id: string;
-  /** 积分包价格，单位为最小货币单位（分），字符串避免浮点误差。 */
+  /** 积分包原价，非折后价格；单位为最小货币单位（分）。 */
   price: string;
-  /** 含税实付总价，单位为最小货币单位（分），字符串避免浮点误差。 */
+  /** 折后实付总价（国际站已含税），单位为分；可能低于 price。 */
   real_total_cost: string;
   /** 原价，单位为最小货币单位（分）。 */
   total_cost: string;
   currency: CreditCurrency;
+  /** 计费折扣百分比，100 表示无折扣；缺失时不得按无折扣推算税费。 */
+  discount?: number;
 }
 
 /**
