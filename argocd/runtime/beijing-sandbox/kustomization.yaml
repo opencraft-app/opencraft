@@ -5,4 +5,6 @@ namespace: argocd
 
 resources:
   - argocd-cm.yaml
+  - argocd-cmd-params-cm.yaml
   - argocd-repo-server.yaml
+  - argocd-server-service.yaml

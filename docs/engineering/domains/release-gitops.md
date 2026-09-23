@@ -27,6 +27,13 @@ master 源码
 
 ## 不变量
 
+- 统一 Argo CD 控制面运行在受控国内发布机时，固定版本 k0s/Argo 基线、NodePort、repo-server
+  ksops patch 和跨地域客户端超时必须保存在 Git；repo SSH 私钥、目标集群 kubeconfig、管理员密码和
+  `sops-age` 私钥继续只存在于受保护的 Git 外存储。控制面重建顺序固定为
+  `base install -> repo credential -> sops-age -> target clusters -> projects/runtime -> root apps`。
+  root app 恢复只负责重新创建 Application；生产 leaf app 仍保持 manual sync，不能因控制面迁移而
+  自动同步生产漂移。跨地域 API Server 受出口网络限制时应保留明确的 comparison error，不得通过
+  放开公网网段或未审查的转发通道伪造恢复。
 - 个人 DevCloud 计费能力只部署到北京 `sandbox-bj-7` 和韩国 `sandbox-kr-1` testing。临时验证镜像需要
   暂停 Argo 自动同步时，必须记录并只操作对应环境的 Auth、Trade、Service Gateway 应用；不修改生产
   应用。若同一 Argo Application 已有无关 `OutOfSync` 资源，禁止 App 级全量 Sync，只能精确同步目标
