@@ -51,6 +51,7 @@ stages:
           TARGET_ENV: ${{ variables.TARGET_ENV }}
           SOURCE_SHA: ${{ variables.SOURCE_SHA }}
           TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          MIGRATION_DECISION: ${{ variables.MIGRATION_DECISION }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:
@@ -112,6 +113,7 @@ stages:
           TARGET_ENV: ${{ variables.TARGET_ENV }}
           SOURCE_SHA: ${{ variables.SOURCE_SHA }}
           TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          MIGRATION_DECISION: ${{ variables.MIGRATION_DECISION }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:

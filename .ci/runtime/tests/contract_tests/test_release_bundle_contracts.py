@@ -3339,7 +3339,12 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("description", explicit_reviews)
         self.assertNotIn("description", explicit_stages[1]["check-in"])
         for stage_index, job_name in ((0, "dry_run"), (2, "apply")):
-            steps = explicit_stages[stage_index]["jobs"][job_name]["steps"]
+            job = explicit_stages[stage_index]["jobs"][job_name]
+            self.assertEqual(
+                (job.get("env") or {}).get("MIGRATION_DECISION"),
+                "${{ variables.MIGRATION_DECISION }}",
+            )
+            steps = job["steps"]
             checkout = next(step for step in steps if step.get("checkout") == "self")
             self.assertIs(checkout["with"]["enableSubmodule"], False)
         self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
