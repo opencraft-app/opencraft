@@ -940,6 +940,16 @@ func TestServeCLIRejectsUnsafeIMSecretFile(t *testing.T) {
 	}
 }
 
+func TestExternalHumanProvisioningEpochIsStableAndCredentialBound(t *testing.T) {
+	identityKey := []byte("0123456789abcdef0123456789abcdef")
+	first := externalHumanProvisioningEpoch(identityKey, "im-secret-a")
+	second := externalHumanProvisioningEpoch(identityKey, "im-secret-a")
+	changed := externalHumanProvisioningEpoch(identityKey, "im-secret-b")
+	if first == "" || first != second || first == changed || len(first) < 16 {
+		t.Fatalf("epochs = %q, %q, %q", first, second, changed)
+	}
+}
+
 func writeJWTKey(
 	t *testing.T,
 	root string,
