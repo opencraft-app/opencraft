@@ -29,7 +29,8 @@ concurrency:
 
 extends:
   template: service-release.yml
-  # Refresh compiled Stream pipeline after service-release template changes.
+  # Recompile Stream pipeline definition: pin runner pool explicitly so playground
+  # branch pushes cannot recompile this pipeline back onto the retired `env` pool.
   parameters:
     SERVICE: user-auth
     BUNDLE: lightclaw-auth
@@ -40,3 +41,4 @@ extends:
     ENABLE_MASTER_PROD_DB_MIGRATION: true
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto
+    RUNNER_POOL_NAME: cn-pool
