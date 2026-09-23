@@ -22,19 +22,22 @@ data:
     default_sku_id = "sku-hermes-2c4g"
     candidate_template_ids = ["pool-c0", "pool-c1", "pool-c2", "pool-c3", "pool-c4", "pool-c5"]
 
-    # Keep bundle-spec routing aligned with shprod. CTL discovers the current
-    # active Singapore pools from Sandbox and filters them by class and SKU.
+    # Keep bundle-spec routing aligned with shprod. Historical spec IDs remain
+    # stable while the actual Johor supply is upgraded. CTL discovers active
+    # pools from Sandbox by template class + SKU; legacy template IDs below are
+    # retained only as compatibility metadata.
     [[api.instance.spec_pools]]
     spec_id                = "spec-2c4g50g"
-    sku_id                 = "sku-hermes-2c4g"
+    template_class_id      = "openclaw-2c8g50g"
+    sku_id                 = "sku-hermes-2c8g50g"
     default_template_id    = "pool-1778850277827939648-1"
     candidate_template_ids = ["pool-1778850277827939648-1"]
 
-    # Cruise / Voyage AI bundles use the isolated SG 4C8G80G pool.
+    # Cruise / Voyage AI keep their historical spec ID but use 4C16G 80G.
     [[api.instance.spec_pools]]
     spec_id                = "spec-4c8g80g"
-    template_class_id      = "openclaw-4c8g80g"
-    sku_id                 = "sku-hermes-4c8g"
+    template_class_id      = "openclaw-4c16g80g"
+    sku_id                 = "sku-hermes-4c16g80g"
     default_template_id    = "pool-1787798066081877763-1"
     candidate_template_ids = ["pool-1787798066081877763-1"]
 

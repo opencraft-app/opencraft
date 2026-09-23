@@ -44,6 +44,14 @@ master 源码
   首个 pool 使用 `ap-johorbahru-1`，但网络预留 1/2 区 pool 子网；新加坡存量 pool 的生命周期
   继续由原 region 维护，网络创建本身不改变 CTL admission。
 
+- CTL 的生产 `spec_pools` 是业务 Spec ID 到 Sandbox 实际供给的环境级路由。业务 Spec ID 属于
+  Bundle/Pass 稳定契约，不因底层扩容改名；上海与新山可以分别把历史 `spec-2c4g50g`、
+  `spec-4c8g80g` 路由到更高内存的 2C8G 50G、4C16G 80G 供给。当前选池以
+  `template_class_id + sku_id` 实时发现 active Pool，`default_template_id` 和
+  `candidate_template_ids` 只保留兼容元数据，不能作为目标库存已就绪的证据。发布映射前必须在
+  各环境独立确认对应 Template Class、SKU 和至少一个 active/CLEAN Pool；上海验证不能替代新山。
+  回滚只恢复上一组 class/SKU 映射，不删除新旧 Pool，也不改变已分配实例的规格。
+
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
   `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；
