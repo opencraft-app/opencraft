@@ -42,21 +42,21 @@ LightVela plans to enter public beta and start billing on August 18, 2026 (Singa
 
 | Plan | Monthly price | Agent | Isolated runtime | Dedicated cloud storage | Credits | Other benefits |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch | $7.5 / month | 1 | 2-core 4GB | 50GB | 100 trial credits | 24/7 availability, simple configuration console |
-| Cruise | $15 / month | 1 | 4-core 8GB | 80GB | 200 trial credits | 24/7 availability, simple configuration console |
+| Launch | $7.5 / month | 1 | 2-core 8GB | 50GB | 100 trial credits | 24/7 availability, simple configuration console |
+| Cruise | $15 / month | 1 | 4-core 16GB | 80GB | 200 trial credits | 24/7 availability, simple configuration console |
 
 ### Plans with AI credits
 
 | Plan | Monthly price | Agent | Isolated runtime | Dedicated cloud storage | Credits | Other benefits |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch AI | Coming soon | Coming soon | 2-core 4GB | 50GB | 4500 AI credits | 24/7 availability, simple configuration console |
-| Cruise AI | Coming soon | Coming soon | 4-core 8GB | 80GB | 10000 AI credits | 24/7 availability, simple configuration console |
+| Launch AI | Coming soon | Coming soon | 2-core 8GB | 50GB | 4500 AI credits | 24/7 availability, simple configuration console |
+| Cruise AI | Coming soon | Coming soon | 4-core 16GB | 80GB | 10000 AI credits | 24/7 availability, simple configuration console |
 
 ## New-user benefits after public beta and billing start
 
 We also hope to keep hearing from beta users.
 
-- Launch free trial for 1 month: new users can try Launch for free, including 1 cloud Agent, a 2-core 4GB isolated runtime, 50GB dedicated cloud storage, a small amount of trial credits, 24/7 availability, and the simple configuration console.
+- Launch free trial for 1 month: new users can try Launch for free, including 1 cloud Agent, a 2-core 8GB isolated runtime, 50GB dedicated cloud storage, a small amount of trial credits, 24/7 availability, and the simple configuration console.
 - Launch AI free trial for 1 month: new users who want more AI credits can try Launch AI free for 1 month on their first order.
 - More purchase benefits are coming later.
 

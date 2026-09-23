@@ -103,7 +103,7 @@ Paket yang saat ini tersedia:
 | Launch | $7,5 / bulan | Uji coba gratis 1 bulan untuk pengguna baru setelah beta publik dan penagihan dimulai |
 | Cruise | $15 / bulan | Paket berbayar |
 
-Paket Launch mencakup: 1 instans Hermes Agent, runtime terisolasi 2-core 4G, penyimpanan cloud khusus 50G, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
+Paket Launch mencakup: 1 instans Hermes Agent, runtime terisolasi 2-core 8G, penyimpanan cloud khusus 50G, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
 
 > ℹ️ **Catatan paket beta**
 >

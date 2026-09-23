@@ -42,21 +42,21 @@ LightVela planea entrar en beta pública e iniciar la facturación el 18 de agos
 
 | Plan | Precio mensual | Agent | Ejecución aislada | Almacenamiento en la nube dedicado | Créditos | Otros beneficios |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch | $7.5 / mes | 1 | 2 núcleos 4GB | 50GB | 100 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
-| Cruise | $15 / mes | 1 | 4 núcleos 8GB | 80GB | 200 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
+| Launch | $7.5 / mes | 1 | 2 núcleos 8GB | 50GB | 100 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
+| Cruise | $15 / mes | 1 | 4 núcleos 16GB | 80GB | 200 créditos de prueba | Disponibilidad 24/7, consola de configuración simple |
 
 ### Planes con créditos de IA
 
 | Plan | Precio mensual | Agent | Ejecución aislada | Almacenamiento en la nube dedicado | Créditos | Otros beneficios |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch AI | Pronto | Pronto | 2 núcleos 4GB | 50GB | 4500 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
-| Cruise AI | Pronto | Pronto | 4 núcleos 8GB | 80GB | 10000 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
+| Launch AI | Pronto | Pronto | 2 núcleos 8GB | 50GB | 4500 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
+| Cruise AI | Pronto | Pronto | 4 núcleos 16GB | 80GB | 10000 créditos de IA | Disponibilidad 24/7, consola de configuración simple |
 
 ## Beneficios para nuevos usuarios después del inicio del beta pública y facturación
 
 También esperamos seguir escuchando a los usuarios beta.
 
-- Prueba gratuita de Launch por 1 mes: los nuevos usuarios pueden probar Launch de forma gratuita, incluyendo 1 Agent en la nube, una ejecución aislada de 2 núcleos 4GB, 50GB de almacenamiento en la nube dedicado, una pequeña cantidad de créditos de prueba, disponibilidad 24/7 y la consola de configuración simple.
+- Prueba gratuita de Launch por 1 mes: los nuevos usuarios pueden probar Launch de forma gratuita, incluyendo 1 Agent en la nube, una ejecución aislada de 2 núcleos 8GB, 50GB de almacenamiento en la nube dedicado, una pequeña cantidad de créditos de prueba, disponibilidad 24/7 y la consola de configuración simple.
 - Prueba gratuita de Launch AI por 1 mes: los nuevos usuarios que deseen más créditos de IA pueden probar Launch AI gratis durante 1 mes en su primer pedido.
 - Más beneficios de compra llegarán más tarde.
 

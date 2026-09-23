@@ -42,21 +42,21 @@ LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Wa
 
 | Paket | Harga bulanan | Agent | Runtime terisolasi | Cloud storage khusus | Kredit | Manfaat lain |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch | $7,5 / bulan | 1 | 2-core 4GB | 50GB | 100 kredit uji coba | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
-| Cruise | $15 / bulan | 1 | 4-core 8GB | 80GB | 200 kredit uji coba | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
+| Launch | $7,5 / bulan | 1 | 2-core 8GB | 50GB | 100 kredit uji coba | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
+| Cruise | $15 / bulan | 1 | 4-core 16GB | 80GB | 200 kredit uji coba | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
 
 ### Paket dengan kredit AI
 
 | Paket | Harga bulanan | Agent | Runtime terisolasi | Cloud storage khusus | Kredit | Manfaat lain |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch AI | Segera tersedia | Segera tersedia | 2-core 4GB | 50GB | 4500 kredit AI | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
-| Cruise AI | Segera tersedia | Segera tersedia | 4-core 8GB | 80GB | 10000 kredit AI | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
+| Launch AI | Segera tersedia | Segera tersedia | 2-core 8GB | 50GB | 4500 kredit AI | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
+| Cruise AI | Segera tersedia | Segera tersedia | 4-core 16GB | 80GB | 10000 kredit AI | Ketersediaan 24/7, konsol konfigurasi yang sederhana |
 
 ## Manfaat pengguna baru setelah beta publik dan penagihan dimulai
 
 Kami juga berharap dapat terus mendengar masukan dari pengguna beta.
 
-- Uji coba gratis Launch selama 1 bulan: pengguna baru dapat mencoba Launch secara gratis, mencakup 1 Agent cloud, runtime terisolasi 2-core 4GB, cloud storage khusus 50GB, sejumlah kecil kredit uji coba, ketersediaan 24/7, dan konsol konfigurasi yang sederhana.
+- Uji coba gratis Launch selama 1 bulan: pengguna baru dapat mencoba Launch secara gratis, mencakup 1 Agent cloud, runtime terisolasi 2-core 8GB, cloud storage khusus 50GB, sejumlah kecil kredit uji coba, ketersediaan 24/7, dan konsol konfigurasi yang sederhana.
 - Uji coba gratis Launch AI selama 1 bulan: pengguna baru yang menginginkan lebih banyak kredit AI dapat mencoba Launch AI gratis selama 1 bulan pada pesanan pertama.
 - Manfaat pembelian lainnya akan menyusul kemudian.
 
