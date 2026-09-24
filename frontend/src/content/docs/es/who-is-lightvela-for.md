@@ -29,7 +29,7 @@ LightVela es especialmente útil para:
   A diferencia de un chatbot básico, Hermes puede retener el contexto de la conversación y memorías a largo plazo entre sesiones, por lo que no tienes que presentarte cada vez.
 
 * **Personas que desean un Agent que funciona de forma independiente y disponible 24/7**
-  Cada instancia de Hermes se ejecuta en un entorno de nube aislado y permanece disponible sin depender de si tu dispositivo local está en línea.
+  Cada instancia de Hermes se ejecuta en un entorno de nube dedicado y permanece disponible sin depender de si tu dispositivo local está en línea.
 
 ***
 
