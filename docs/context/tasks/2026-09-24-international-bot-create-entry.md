@@ -62,6 +62,7 @@
 - 在前端源码提交 `a836219d9d481adf7236d486054c2c48a2a4235d` 后运行官方同步脚本，仅更新清单的 `sourceRevision`；`check:mono2-agent-console` 验证 130 个文件通过。
 - 为解决 MR 与最新 `master` 的 `UPSTREAM.json` 冲突，合入 `origin/master@dac769cce` 后重新同步清单；`sourceRevision` 指向合并提交 `e1254d3c9`，生成层仍仅该字段变化。
 - 合并后聚焦 Vitest 54/54 通过、`pnpm check` 无新增类型诊断、`pnpm build:global` 通过，OpenCraft 130 文件一致性检查通过。
+- 目标分支再次前进至 `739579481`，仅与生成清单冲突；合入后官方脚本将 `sourceRevision` 更新为 `280a2d90b`，130 文件一致性检查再次通过。
 
 ## risks
 - 风险：误开放其他隐藏工具或绕过额度。
