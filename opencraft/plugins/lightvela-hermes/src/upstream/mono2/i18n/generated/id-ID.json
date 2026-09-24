@@ -3030,5 +3030,8 @@
   "k_ffcbaabf": "Penyimpanan cloud",
   "k_ffd26634": "Bangunkan kapan saja,\ntanpa menguras perangkat Anda",
   "k_ffdf78e6": "Penyedia model",
-  "k_ffea1468": "Daftar Skill terpasang"
+  "k_ffea1468": "Daftar Skill terpasang",
+  "k_374c5c8a": "WhatsApp terhubung ke {{name}}. Dalam satu instance, hanya satu Bot yang dapat terhubung ke WhatsApp dalam satu waktu. Putuskan koneksi dari Bot tersebut terlebih dahulu.",
+  "k_7234c1ff": "Sedang digunakan Bot lain",
+  "k_943416fd": "Pindai dengan WhatsApp di ponsel untuk masuk. Dalam satu instance, hanya satu Bot yang dapat terhubung ke WhatsApp dalam satu waktu."
 }

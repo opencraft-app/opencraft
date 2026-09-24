@@ -51,7 +51,7 @@ function getChannelDesc(channelType: string): string {
   if (channelType === 'discord') return t('通过 Bot Token 连接');
   if (channelType === 'slack') return t('通过 Bot Token 和 App Token 连接');
   if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 连接');
-  if (channelType === 'whatsapp') return t('使用手机 WhatsApp 扫码登录');
+  if (channelType === 'whatsapp') return t('使用手机 WhatsApp 扫码登录。同一实例内，WhatsApp 同时只能连接一个 Bot。');
   return t('扫码授权连接');
 }
 
@@ -123,10 +123,11 @@ function getTokenChannelMeta(kind: 'telegram' | 'discord' | 'slack' | 'dingtalk'
 
 type LightVelaChannelPanelProps = ChannelPanelProps & {
   afterDescription?: ReactNode;
+  whatsAppOccupiedByOther?: boolean;
 };
 
 export function ChannelPanel(props: LightVelaChannelPanelProps) {
-  const { className, afterDescription, ...baseProps } = props;
+  const { className, afterDescription, whatsAppOccupiedByOther = false, ...baseProps } = props;
   const { i18n } = useTranslation();
 
   const ops = useChannelOperations(baseProps);
@@ -165,6 +166,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
   // ── 处理连接 ──
   const handleConnect = useCallback(
     (channelValue: string) => {
+      if (channelValue === 'whatsapp' && whatsAppOccupiedByOther) return;
       // QQ / 钉钉 提供两种方式（扫码 / 手动填凭据）：先弹方式选择弹窗
       if (channelValue === 'qqbot' || channelValue === 'dingtalk') {
         setMethodChoice('qrcode');
@@ -200,7 +202,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
         hermesQrModalRef.current?.startQrCodeFlow();
       }, 0);
     },
-    [],
+    [whatsAppOccupiedByOther],
   );
 
   // ── 连接方式选择（QQ / 钉钉共用） ──
@@ -365,8 +367,11 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
                       type="button"
                       className={`${CLS}__connect-btn ${isBound ? `${CLS}__connect-btn--reconnect` : ''}`}
                       onClick={() => handleConnect(channel.value)}
+                      disabled={channel.value === 'whatsapp' && whatsAppOccupiedByOther}
                     >
-                      {isBound ? t('重新连接') : `+ ${t('连接')}`}
+                      {channel.value === 'whatsapp' && whatsAppOccupiedByOther
+                        ? t('已由其他 Bot 占用')
+                        : isBound ? t('重新连接') : `+ ${t('连接')}`}
                     </button>
                   </div>
                 </div>
