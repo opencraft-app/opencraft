@@ -2,7 +2,7 @@
 
 ## Summary
 
-**LightVela has four core concepts. A Hermes Agent is the cloud-run conversational entity, with its own isolated runtime, memory that persists across conversations, and 24/7 availability. The model is the large language model it calls — either a Model Coding Plan (monthly), Model API (pay as you go), or a custom OpenAI-compatible endpoint. Channels are the messaging platforms you talk to it through; multiple channels can connect to the same agent and share one persona and memory. Skills are installable capability packs that extend what it can do. A full conversation flows like this: a channel receives your message, the agent decides whether to invoke a skill, it calls the model to generate a response, and the reply comes back through the same channel.**
+**LightVela has four core concepts. A Hermes Agent is the cloud-run conversational entity, with its own dedicated cloud environment, memory that persists across conversations, and 24/7 availability. The model is the large language model it calls — either a Model Coding Plan (monthly), Model API (pay as you go), or a custom OpenAI-compatible endpoint. Channels are the messaging platforms you talk to it through; multiple channels can connect to the same agent and share one persona and memory. Skills are installable capability packs that extend what it can do. A full conversation flows like this: a channel receives your message, the agent decides whether to invoke a skill, it calls the model to generate a response, and the reply comes back through the same channel.**
 
 ---
 
@@ -53,7 +53,7 @@ Hermes Agent is the AI Agent instance in LightVela. Creating a Hermes Agent is e
 
 Hermes Agent has the following characteristics:
 
-- **Isolated runtime environment**: Each Hermes Agent runs in a dedicated environment isolated from other instances
+- **Dedicated cloud environment**: Each Hermes Agent runs in its own environment, with resources isolated from other instances
 
 - **Persistent memory**: Conversation content is saved across sessions, and the Agent uses historical context when responding
 

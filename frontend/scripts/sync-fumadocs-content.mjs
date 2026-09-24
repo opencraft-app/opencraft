@@ -251,8 +251,8 @@ const globalDocs = [
     file: 'plans.md',
     group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
     description: {
-      'en-US': 'Compare LightVela plans, isolated cloud resources, monthly AI credits, refund rules, and email-based refund application steps.',
-      'zh-CN': '对比 LightVela 套餐、独立云端资源、每月 AI 积分，并了解退款规则与邮件申请步骤。',
+      'en-US': 'Compare LightVela plans, dedicated cloud environments, monthly AI credits, refund rules, and email-based refund application steps.',
+      'zh-CN': '对比 LightVela 套餐、专属云端环境、每月 AI 积分，并了解退款规则与邮件申请步骤。',
     },
     hideDescription: true,
   },
@@ -961,7 +961,7 @@ const ES_DOC_METADATA = {
   },
   plans: {
     title: 'Planes',
-    description: 'Compara los planes de LightVela, los recursos aislados en la nube, los créditos de IA mensuales y las reglas y pasos de reembolso por correo electrónico.',
+    description: 'Compara los planes de LightVela, los entornos de nube dedicados, los créditos de IA mensuales y las reglas y pasos de reembolso por correo electrónico.',
   },
   'announcements/public-beta': {
     title: 'Anuncio de la versión de pago de LightVela',
@@ -1256,7 +1256,7 @@ const ID_DOC_METADATA = {
   },
   plans: {
     title: 'Paket',
-    description: 'Bandingkan paket LightVela, sumber daya cloud terisolasi, kredit model bulanan, dan alur aktivasi internasional saat ini.',
+    description: 'Bandingkan paket LightVela, lingkungan cloud khusus, kredit model bulanan, dan alur aktivasi internasional saat ini.',
   },
   'create-first-hermes': {
     title: 'Cara Mengaktifkan Instans Hermes Pertama',

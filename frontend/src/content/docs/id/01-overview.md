@@ -52,7 +52,7 @@ Produk LightVela saat ini adalah **Hermes Agent**, AI Agent yang didukung large 
 
 * **Deployment terkelola penuh**: Cloud menangani penyiapan lingkungan dan pengelolaan runtime secara otomatis. Tidak perlu operasional server, image container, atau pengetahuan infrastruktur
 
-* **Runtime terisolasi**: Setiap instans Hermes Agent memiliki runtime sendiri, sumber daya terisolasi, tersedia 24/7, dan tidak bergantung pada perangkat lokal
+* **Lingkungan cloud khusus**: Setiap instans Hermes Agent memiliki lingkungan cloud sendiri, sumber daya terisolasi, tersedia 24/7, dan tidak bergantung pada perangkat lokal
 
 * **Dukungan multi-model**: Hubungkan model besar arus utama dari Tiongkok, langganan Coding Plan penyedia model, atau endpoint yang kompatibel dengan OpenAI. Lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model)
 
@@ -103,7 +103,7 @@ Paket yang saat ini tersedia:
 | Launch | $7,5 / bulan | Uji coba gratis 1 bulan untuk pengguna baru setelah beta publik dan penagihan dimulai |
 | Cruise | $15 / bulan | Paket berbayar |
 
-Paket Launch mencakup: 1 instans Hermes Agent, runtime terisolasi 2-core 8G, penyimpanan cloud khusus 50G, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
+Paket Launch mencakup: 1 instans Hermes Agent, lingkungan cloud khusus dengan 2 vCPU · 8 GB RAM, penyimpanan cloud khusus 50 GB, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
 
 > ℹ️ **Catatan paket beta**
 >

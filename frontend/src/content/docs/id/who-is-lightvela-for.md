@@ -29,7 +29,7 @@ LightVela terutama cocok untuk:
   Berbeda dari chatbot dasar, Hermes dapat menyimpan konteks percakapan dan memori jangka panjang lintas sesi, sehingga Anda tidak perlu memperkenalkan diri dari awal setiap kali berbicara.
 
 * **Pengguna yang membutuhkan Agent mandiri dan tersedia 24/7**
-  Setiap instans Hermes berjalan di lingkungan cloud yang terisolasi dan tetap tersedia tanpa bergantung pada apakah perangkat lokal Anda sedang online.
+  Setiap instans Hermes berjalan di lingkungan cloud khusus dan tetap tersedia tanpa bergantung pada apakah perangkat lokal Anda sedang online.
 
 ***
 
