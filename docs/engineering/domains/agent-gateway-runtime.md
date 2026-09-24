@@ -334,6 +334,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - Provider、模型、通道、Gateway、Skills、自动任务、Memory、User Profile 和 SOUL 等 Profile 级操作必须携带后端返回的 `profile_id`；bootstrap、升级、重装、实例健康、资源、账单和套餐仍按 `instance_id` 执行。产品/API 层默认 Bot 的公开标识保持 `main`，但直接调用原生 Hermes CLI 时必须转换为内建根 Profile `default`；命名 Profile ID 原样透传。
 - Home channel 是 Profile 下按平台保存的映射，不是实例全局值。创建或克隆 Bot 默认不复制 Home channel；通道认证同样不得静默共享。
 - 通道是否允许多个 Bot 同时连接由 capability 决定。双站微信与国际站 WhatsApp 按实例级唯一资源处理；占用信息分别写入实例 `$HERMES_HOME/.lightvela/channel-bindings/weixin.json` 和 `whatsapp.json`，并通过对应文件锁原子更新。扫码前认领，成功后确认，断开后释放；非占用 Bot 不得覆盖或复用该通道凭据。此约束不判断同一 WhatsApp 号码在其他实例或用户下的连接。
+- WhatsApp 的认领返回有时限的 `reservation_id`，新版页面确认或失败回滚必须使用同一租约；回滚只能释放匹配的 `reserved`，不能删除已确认的 `connected`。CTL 按 Hermes Profile 实际运行目录的 `whatsapp/session/creds.json` 校验确认与断开，不能沿用旧的 `platforms/whatsapp` 路径。旧浏览器无 token 确认仅能确认本 Bot 当前认领且凭据已落盘；旧版无请求体 release 仅在已连接凭据确实消失且没有在途扫码/删除时清理，不能凭一次旧请求删除成功连接。旧/新页面经 CTL `debug/exec` 执行的标准 WhatsApp 扫码和删除命令由实例内 `whatsapp-qr.lock` 覆盖实际命令执行期，以阻止同 Bot 旧页面跳过前端认领而并发改写占用。该锁不声称约束任意手工 shell 命令；生产发布须先完成 CTL 滚动与旧请求排空，再发布前端，且新前端仍可能被缓存时不能单独回滚 CTL。
 - 命名 Bot 创建前必须同时通过服务端功能开关和目标实例的 Hermes Profile 能力预检。克隆完成后要移除消息通道配置、消息通道环境变量和 Home channel；配置键本就不存在应视为已完成清理，除此之外的清理失败仍须终止并回滚创建，无法证明清理完成时不得把 Bot 标记为可用。
 - Profile 创建、更新和删除为同步操作；失败直接返回稳定错误码且不得留下伪 Bot 记录。创建失败时应尽力删除未完成的命名 Profile，后续列表只展示 Hermes 当前真实存在的 Profile。
 - 桌面 Bot 管理在 POST/PUT/DELETE 的响应不确定时不得自动重发；如已收到 HTTP 错误响应，可展示状态码与符合稳定错误码格式的上游 code 用于诊断，但不能回显原始服务端错误文本或将 5xx 错认成可安全重试。刷新实例 Bot 列表仍是判断实际结果的必要步骤。
