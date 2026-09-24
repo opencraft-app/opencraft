@@ -211,6 +211,11 @@ master 源码
   Redis 地址、凭据和连通性；只有 API 与精确的 Service Gateway `optional_auth_allow` 同时收敛后，
   才允许无主站 session 的支付中转页流量进入。Redis 地址、DB 与 ticket TTL 属于环境级 API 配置，
   必须留在各环境的 Deployment patch，不能提升到 Credit shared base/common。
+- Credit 的 LLMGateway 管理面、internal token、商品 Plan 和用户模型流量必须属于同一地域控制面；
+  上海固定使用 `token-admin.lightvela.com`，新加坡固定使用 `token-admin.lightvela.ai`，不得复用北京
+  `llmgw-control.lightvela.com` 的 token 或同名 Plan ID。切换控制面时先暂停商品购买，再按
+  SSM/SOPS、URL、active package 精确订阅与快照、商品 Plan 映射的顺序收敛，最后恢复商品；必须用
+  现有用户模型 key 做真实数据面请求，不能用管理面余额查询代替验收。
 - 各环境通过 patch 独立设置 `LIGHTVELA_CREDIT_REGION`：北京 `ap-beijing`、东京 `ap-seoul`、上海
   `ap-shanghai`、新加坡 `ap-singapore`。Pass/default 的 `LIGHTVELA_TRADE_REGION` 保持原值；单独
   发布 Credit 不得改变存量 Pass 地域。
