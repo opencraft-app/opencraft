@@ -268,6 +268,9 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
   常用回收顺序：`docker image prune -f`、`docker builder prune -af`、删掉不再需要的旧 checkout，
   以及对已经不用的站点执行 `personal-devcloud.sh down`（kind 集群容器本身就占数 GB）。
   确有把握时用 `PERSONAL_DEV_REQUIRED_DOCKER_FREE_GIB` 显式下调阈值，不要注释掉检查。
+  注意两种模式的区别：`up`/`bootstrap` 会**强制**拦截（避免白构建一小时），而单独执行
+  `personal-devcloud.sh doctor` 只打印 `WARNING: low docker disk headroom` 并继续，
+  这样环境已经跑起来、只想做只读体检时不会被误判成失败。
 - `target_ip_not_allowed`：Auth 观测到的来源 IP 未进入对应 testing allowlist；核对服务端观测值，不要把
   页面 IP 或整段公网 CIDR 盲目放开。
 - `developer_test_account_source_forbidden`（HTTP 403）：按下述顺序排查，不要先怀疑网段。

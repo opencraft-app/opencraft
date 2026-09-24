@@ -394,6 +394,30 @@ test_disk_preflight_allows_enough_headroom_and_is_overridable() (
     || fail "PERSONAL_DEV_REQUIRED_DOCKER_FREE_GIB override was ignored"
 )
 
+test_disk_preflight_warns_in_diagnostic_mode_only() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/disk-preflight-warn" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_IP='21.214.48.147'
+  local out=""
+  source "$SCRIPT"
+  prepare_state
+  docker() {
+    case "$*" in
+      "info --format {{.DockerRootDir}}") printf '%s\n' "$PERSONAL_DEV_STATE_DIR" ;;
+      *) return 0 ;;
+    esac
+  }
+  df() { printf 'Filesystem 1024-blocks Used Available Capacity Mounted\n/dev/vdb 51200000 47000000 4200000 92%% /data\n'; }
+  out="$( ( ensure_docker_disk_headroom warn ) 2>&1 )" \
+    || fail "warn mode must not abort a read-only diagnostic on a low-disk host"
+  case "$out" in
+    *"WARNING: low docker disk headroom"*) ;;
+    *) fail "warn mode stayed silent about the low disk: $out" ;;
+  esac
+  if ( ensure_docker_disk_headroom enforce ) >/dev/null 2>&1; then
+    fail "enforce mode accepted the same low-disk host"
+  fi
+)
+
 test_port_forward_supervisor_restarts_and_stops_child() (
   local supervisor="$REPO_ROOT/deploy/localstack/port-forward-supervisor.sh"
   local test_dir="$TEST_ROOT/port-forward-supervisor"
@@ -1780,5 +1804,6 @@ run_test 'recorded Intl loop proves a real paid closed loop' test_recorded_intl_
 run_test 'personal DevCloud billing proxy patches target the original Trade namespace' test_personal_dev_billing_proxy_patches_target_trade_namespace
 run_test 'disk preflight blocks up before the image builds burn an hour' test_disk_preflight_blocks_up_before_image_builds
 run_test 'disk preflight allows real headroom and stays overridable' test_disk_preflight_allows_enough_headroom_and_is_overridable
+run_test 'disk preflight only warns in diagnostic mode' test_disk_preflight_warns_in_diagnostic_mode_only
 
 printf 'personal devcloud skill contract passed\n'

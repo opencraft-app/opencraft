@@ -722,6 +722,7 @@ require_personal_context() {
 }
 
 ensure_docker_disk_headroom() {
+  local enforce="${1:-enforce}"
   local root free_gib reclaimable
   root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
   [[ -n "$root" ]] || root=/var/lib/docker
@@ -750,10 +751,15 @@ ensure_docker_disk_headroom() {
   printf '  docker rmi $(docker images -f dangling=true -q)   # dangling build layers\n' >&2
   printf '  %s down                                            # release stacks you no longer need\n' "$0" >&2
   printf 'set PERSONAL_DEV_REQUIRED_DOCKER_FREE_GIB to override this threshold on purpose.\n' >&2
+  if [[ "$enforce" != "enforce" ]]; then
+    log "WARNING: low docker disk headroom on $root; image builds are likely to fail"
+    return 0
+  fi
   die "insufficient docker disk headroom on $root"
 }
 
 doctor() {
+  local disk_mode="${1:-enforce}"
   prepare_state
   local dependency
   for dependency in curl docker python3 tar git nohup base64 awk; do
@@ -761,7 +767,7 @@ doctor() {
   done
   configure_site
   docker info >/dev/null
-  ensure_docker_disk_headroom
+  ensure_docker_disk_headroom "$disk_mode"
   local ip=""
   ip="$(discover_devcloud_ip 2>/dev/null || true)"
   [[ -n "$ip" ]] || die "cannot discover a DevCloud IP in 9.0.0.0/8 or 21.0.0.0/8; set PERSONAL_DEV_IP"
@@ -2182,7 +2188,7 @@ EOF
 main() {
   local command="${1:-}"
   case "$command" in
-    doctor) doctor ;;
+    doctor) doctor warn ;;
     bootstrap) bootstrap ;;
     prerequisites) prerequisites ;;
     up) up ;;
