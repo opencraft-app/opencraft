@@ -316,11 +316,11 @@ func (c *client) GetActivityPrice(ctx context.Context, req *GetPriceRequest) (*G
 	}
 	out := &GetPriceResponse{}
 	outbound := *req
-	outbound.Preview = c.preview
+	outbound.Preview = effectivePreview(c.preview, req.Preview)
 	// preview 与顶层 uin 成对出现：preview=1 时点石强校验 uin，preview=0（正式形态）
 	// 则两个字段都不出现在出向 para（见 GetPriceRequest.Uin 注释）。
 	outbound.Uin = ""
-	if c.preview == 1 {
+	if outbound.Preview == 1 {
 		outbound.Uin = req.Uin
 	}
 	if err := c.do(ctx, c.priceBaseURL, InterfaceNameActivityGetPrice, ComponentNamePrice, &outbound, out); err != nil {
@@ -339,7 +339,7 @@ func (c *client) DoGoods(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResp
 	}
 	out := &DoGoodsResponse{}
 	outbound := *req
-	outbound.Preview = c.preview
+	outbound.Preview = effectivePreview(c.preview, req.Preview)
 	if err := c.do(ctx, c.orderBaseURL, InterfaceNameDoGoods, ComponentNameOrder, &outbound, out); err != nil {
 		return nil, err
 	}
@@ -357,11 +357,20 @@ func (c *client) DoGoodsAndPay(ctx context.Context, req *DoGoodsRequest) (*DoGoo
 	}
 	out := &DoGoodsResponse{}
 	outbound := *req
-	outbound.Preview = c.preview
+	outbound.Preview = effectivePreview(c.preview, req.Preview)
 	if err := c.do(ctx, targetURL, InterfaceNameDoGoodsAndPay, ComponentNameOrder, &outbound, out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// effectivePreview 允许单次请求开启 preview，但不允许请求关闭客户端级预览开关。
+// 这样续费联调可独立启用 preview=1，同时保持新购和既有 DIANSHI_PREVIEW 行为不变。
+func effectivePreview(clientPreview, requestPreview int) int {
+	if clientPreview == 1 || requestPreview == 1 {
+		return 1
+	}
+	return 0
 }
 
 func doGoodsAndPayURL(orderBaseURL string) (string, error) {

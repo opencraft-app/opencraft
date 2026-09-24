@@ -434,6 +434,8 @@ POST /internal/trade/orders/renew/place-and-pay
 
 ### 13.3 联调
 
+- 点石续费询价、`do_goods` 和 `do_goods_and_pay` 的请求级 `preview` 固定为 `1`；新购不设置请求级
+  preview，保持现有全局 `DIANSHI_PREVIEW` 行为。
 - 一个从未参与续费活动的国内用户完成点石询价、下单、支付及续费回调。
 - 同一用户第二次控制台续费回落现有计费。
 - 同一用户仍可由受信任调用方直接调用 Trade 内部接口，多次执行点石下单并支付。

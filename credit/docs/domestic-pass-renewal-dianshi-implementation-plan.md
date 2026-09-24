@@ -15,6 +15,7 @@ embed、diff 检查和敏感信息扫描均已通过。Task 6 仅剩按仓库门
 
 - 国内站续费活动：`activity_id=166165503931688`、`act_id=1975812517099088`。
 - `preference_param` 只能包含 `regionId/resourceId/timeSpanUnit/bundleId`。
+- 续费询价、`do_goods`、`do_goods_and_pay` 显式发送请求级 `preview=1`；新购请求不设置该覆盖。
 - 场景值只允许 `purchase`、`renew`。
 - 控制台续费每 UIN、activity、scene 只能参与一次；内部点石续费不读写参与记录。
 - 国际站不接点石续费。

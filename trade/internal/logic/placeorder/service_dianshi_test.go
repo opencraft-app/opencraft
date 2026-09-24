@@ -221,6 +221,9 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if dc.lastDoGoodsReq.CheckSum == "" {
 		t.Errorf("check_sum should be non-empty when mapping.SecretKey set")
 	}
+	if dc.lastDoGoodsReq.Preview != 0 {
+		t.Errorf("new purchase preview=%d, want 0", dc.lastDoGoodsReq.Preview)
+	}
 	// preference_param 5 字段断言（询价 4 字段 + 下单专属 externalUserId）
 	prefParam := dc.lastDoGoodsReq.Goods[0].PreferenceParam
 	if got, _ := prefParam["regionId"].(int); got != 1 {
@@ -682,6 +685,9 @@ func TestPlaceRenewOrder_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 	if dc.doGoodsCalls.Load() != 1 {
 		t.Fatalf("dianshi do_goods calls=%d, want 1", dc.doGoodsCalls.Load())
 	}
+	if dc.lastDoGoodsReq.Preview != 1 {
+		t.Fatalf("renew preview=%d, want 1", dc.lastDoGoodsReq.Preview)
+	}
 	pref := dc.lastDoGoodsReq.Goods[0].PreferenceParam
 	if len(pref) != 4 {
 		t.Fatalf("preference_param=%v, want exactly 4 fields", pref)
@@ -814,6 +820,9 @@ func TestPlaceDianshiRenewOrderAndPay_BypassesParticipation(t *testing.T) {
 	}
 	if dc.doGoodsAndPayCalls.Load() != 1 || dc.doGoodsCalls.Load() != 0 {
 		t.Fatalf("dianshi calls andPay=%d goods=%d", dc.doGoodsAndPayCalls.Load(), dc.doGoodsCalls.Load())
+	}
+	if dc.lastDoGoodsAndPay.Preview != 1 {
+		t.Fatalf("internal renew preview=%d, want 1", dc.lastDoGoodsAndPay.Preview)
 	}
 	pref := dc.lastDoGoodsAndPay.Goods[0].PreferenceParam
 	if len(pref) != 4 || pref["resourceId"] != "pass_xxx" || pref["timeSpanUnit"] != "1m" {
