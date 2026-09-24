@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "e52243b48d4b830aa56debd9dfa22953dfcd8e3d",
+  "sourceRevision": "64c84be50d763b0f0c2afe9124d22f3757ae7980",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -65,11 +65,11 @@
     },
     {
       "file": "contexts/runtime-config-context.tsx",
-      "sourceSha256": "61e0846c69eee7782296df57a8e912ee8aaea8444a857b5d792a17beb2f2ba11"
+      "sourceSha256": "9844c21e8259d61216cfbf3da986cb0b3a594bf0cd1650dac72107c19c5c6f44"
     },
     {
       "file": "domain/credit-pack.ts",
-      "sourceSha256": "077fef7df539f06a89a30d63e48654f1858c5dbc2433fbe5bf2ced8721078a75"
+      "sourceSha256": "fb5a49f8aeaa5c09a537a96b76fb5b28b03644d469012509a861aff9dad327d0"
     },
     {
       "file": "domain/instance-bot-errors.ts",
@@ -81,7 +81,7 @@
     },
     {
       "file": "domain/types.ts",
-      "sourceSha256": "d836480d5abd1eb58520a148c08d8748335afd88427484c2b6792f2ef0830987"
+      "sourceSha256": "ff651859d882345e8e223c5d4d411c4f6353ca76139575a3b1aa2d0c509bd063"
     },
     {
       "file": "i18n/default-agent-name.ts",
@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "cae75562325c69c46aad4c5d94fde8153f0239bb1aef5fbaf31c525797aa82d8"
+      "sourceSha256": "4f393c258e536fd9d07daa524073b189ca638c8b97c168959340963a3d4cc682"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "505d77cc81d227a65d050229da32eb60d62f3f8036cb9896b738ca7db5290aec"
+      "sourceSha256": "f7a624c6a9d66ae009847b6bc388e741940573e1e9fcf3b43567de165331b944"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "62aa6056a00c5b99c30f4550b1b3f2430ec2a2241ab20702b67da7b4f018f2f5"
+      "sourceSha256": "3c714b7f142b1f8328b71ac5179a4a5e6874418531e0071566f436c62ea10ccf"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "4bea129e8b23f01ad6340c47032f17571e392a3bda1f644bdd094276cd8be3ce"
+      "sourceSha256": "a26aede695c4ede260a39e4f6bd76458dedecc8b60d7e2097c5eabb2b3b35d55"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "08af7dacf74921ba4170c94c4b7586f5eafbc930edb4422303ac8b066cdc937a"
+      "sourceSha256": "13034665ea01b46fb23371b3b9ef8dfdbc84dfa05da8280950bb73d73ace04c4"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "1ee6ef44e298f8c6ee86dfa3729ff0c4bbe376b8102367fcc9559f031166580f"
+      "sourceSha256": "e4c15c32782c4f1b546442a4a503a11b38c123c4d9a1c5b95d0c703d7a8adf90"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "6bd4f0548f8e492bcea1b7a7a4e2043e7ff6f1e61eacd61c2a300f8382f4b235"
+      "sourceSha256": "2ea8a021c13fc3abb75a5ccb575f1b7cb152aa2a02099e051058465ea7ed9164"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "c2cb610d31078ffd518d5435ad01cfcfccd41726eb9bd33c7c73dc2b358b526b"
+      "sourceSha256": "4ce4fa70a28210ced3b31af58d56b66bada6cb033f3fdd9400cb98da52f72446"
     },
     {
       "file": "i18n/index.ts",
@@ -373,7 +373,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
-      "sourceSha256": "c5e946a309f3bbff8588e7e91b9d7d421842cecc0172b86f3d41f714f9f01cb6"
+      "sourceSha256": "46fbe6f5753e01316a5be5c608ef484c074391cc0dbffeae917cc24c4f48953e"
     },
     {
       "file": "pages/marketing/agent-model-config/model-config-client.ts",
@@ -509,7 +509,7 @@
     },
     {
       "file": "repositories/fake-repositories.ts",
-      "sourceSha256": "4d59fb5acdd4bd4a4128e23b3bb5462e349240864bdbfe4577846b719490a8c1"
+      "sourceSha256": "316639ce00e0c24e6d5d9a9b90c396b2a3bf20578a02cc4d9386acfea3b97621"
     },
     {
       "file": "repositories/http-repositories.ts",

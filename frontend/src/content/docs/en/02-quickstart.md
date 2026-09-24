@@ -40,9 +40,9 @@ Return to the homepage, click "Create Now" to enter the plan page, select "Launc
 
 ![](./images/2-2.webp)
 
-> ⚠️ **Launch has a 14-day free trial for new users after billing starts**
+> ⚠️ **Launch has a 1-month free trial for new users after billing starts**
 >
-> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After billing starts, new users can try Launch free for 14 days. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
+> LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After billing starts, new users can try Launch free for 1 month. See [LightVela Paid Version Announcement](./announcements/public-beta.md).
 
 After activation succeeds, the top navigation shows "My Hermes" and the page automatically redirects to the console. For plan details, see [What is LightVela - About plans](./01-overview.md#about-plans).
 

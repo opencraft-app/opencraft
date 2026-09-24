@@ -76,7 +76,7 @@ describe("LightVelaFooter", () => {
     const product = within(productSection as HTMLElement);
     expect(product.getAllByRole("link")[0]).toHaveAccessibleName("博客");
     expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/blog");
-    expect(product.getByRole("link", { name: "14 天免费试用" })).toHaveAttribute("href", "/subscribe");
+    expect(product.getByRole("link", { name: "1 个月免费试用" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "定价" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "接入 WhatsApp 指引" })).toHaveAttribute(
       "href",

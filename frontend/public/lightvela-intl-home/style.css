@@ -10834,6 +10834,18 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   color: inherit;
   border-top: 1px solid #f2f2f2;
 }
+.home-mobile-menu-language {
+  padding: 20px 8px 4px;
+  border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu-language h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-mobile-menu-language button {
+  min-height: 44px;
+}
 .home-mobile-menu :focus-visible,
 .home-mobile-menu-trigger:focus-visible {
   outline: 2px solid #6a4fde;

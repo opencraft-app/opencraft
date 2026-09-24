@@ -22,7 +22,7 @@ func TestDeveloperTestAccountLeaseLifecycle(t *testing.T) {
 	secondUserID := seedDeveloperTestAccount(t, service, store, shadowStore, now, "pool-second@example.invalid", "pool_second", 300000000102)
 
 	firstLease, firstSession, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{secondUserID, firstUserID, firstUserID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 8*time.Hour, "",
+		context.Background(), []string{secondUserID, firstUserID, firstUserID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 8*time.Hour, "", false,
 	)
 	if err != nil {
 		t.Fatalf("acquire first account: %v", err)
@@ -32,12 +32,12 @@ func TestDeveloperTestAccountLeaseLifecycle(t *testing.T) {
 	}
 
 	_, _, err = service.AcquireDeveloperTestAccount(
-		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 12*time.Hour, "",
+		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 12*time.Hour, "", false,
 	)
 	assertDeveloperTestAccountError(t, err, "developer_test_account_renewal_requires_session", http.StatusUnauthorized)
 
 	renewed, renewedSession, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 12*time.Hour, firstSession.Token,
+		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 12*time.Hour, firstSession.Token, false,
 	)
 	if err != nil {
 		t.Fatalf("renew first account: %v", err)
@@ -50,7 +50,7 @@ func TestDeveloperTestAccountLeaseLifecycle(t *testing.T) {
 	}
 
 	secondLease, secondSession, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.9.9.9", "9.9.9.9", 8*time.Hour, "",
+		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.9.9.9", "9.9.9.9", 8*time.Hour, "", false,
 	)
 	if err != nil {
 		t.Fatalf("acquire second account: %v", err)
@@ -60,7 +60,7 @@ func TestDeveloperTestAccountLeaseLifecycle(t *testing.T) {
 	}
 
 	_, _, err = service.AcquireDeveloperTestAccount(
-		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.8.8.8", "9.8.8.8", 8*time.Hour, "",
+		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.8.8.8", "9.8.8.8", 8*time.Hour, "", false,
 	)
 	assertDeveloperTestAccountError(t, err, "developer_test_account_busy", http.StatusConflict)
 
@@ -92,7 +92,7 @@ func TestDeveloperTestAccountLeaseLifecycle(t *testing.T) {
 	}
 
 	reassigned, _, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.8.8.8", "9.8.8.8", 8*time.Hour, "",
+		context.Background(), []string{firstUserID, secondUserID}, "sandbox-bj-7:9.8.8.8", "9.8.8.8", 8*time.Hour, "", false,
 	)
 	if err != nil {
 		t.Fatalf("reassign released account: %v", err)
@@ -121,7 +121,7 @@ func TestDeveloperTestAccountLeaseRequiresCNRealnameAndActiveBinding(t *testing.
 	store.mu.Unlock()
 
 	_, _, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{unverified.User.ID, inactive.User.ID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 8*time.Hour, "",
+		context.Background(), []string{unverified.User.ID, inactive.User.ID}, "sandbox-bj-7:9.1.2.3", "9.1.2.3", 8*time.Hour, "", false,
 	)
 	assertDeveloperTestAccountError(t, err, "developer_test_account_unavailable", http.StatusServiceUnavailable)
 }
@@ -147,7 +147,7 @@ func TestDeveloperTestAccountLeaseAllowsIntlActiveBindingWithoutCNRealname(t *te
 	}
 
 	lease, leasedSession, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{session.User.ID}, "sandbox-kr-1:21.214.48.147", "21.214.48.147", 8*time.Hour, "",
+		context.Background(), []string{session.User.ID}, "sandbox-kr-1:21.214.48.147", "21.214.48.147", 8*time.Hour, "", false,
 	)
 	if err != nil {
 		t.Fatalf("acquire intl account: %v", err)
@@ -169,7 +169,7 @@ func TestDeveloperTestAccountExpiredOwnerReclaimsSameAccount(t *testing.T) {
 	secondUserID := seedDeveloperTestAccount(t, service, store, shadowStore, now, "pool-expired-second@example.invalid", "pool_expired_second", 300000000112)
 	owner := "sandbox-bj-7:9.7.7.7"
 	initial, _, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{secondUserID}, owner, "9.7.7.7", time.Minute, "",
+		context.Background(), []string{secondUserID}, owner, "9.7.7.7", time.Minute, "", false,
 	)
 	if err != nil || initial.UserID != secondUserID {
 		t.Fatalf("acquire initial owner account: lease=%+v err=%v", initial, err)
@@ -177,7 +177,7 @@ func TestDeveloperTestAccountExpiredOwnerReclaimsSameAccount(t *testing.T) {
 
 	now = now.Add(2 * time.Minute)
 	reclaimed, _, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{firstUserID, secondUserID}, owner, "9.7.7.7", time.Hour, "",
+		context.Background(), []string{firstUserID, secondUserID}, owner, "9.7.7.7", time.Hour, "", false,
 	)
 	if err != nil {
 		t.Fatalf("reclaim expired owner account: %v", err)
@@ -199,15 +199,102 @@ func TestDeveloperTestAccountActiveOwnerCannotMoveWhenPoolChanges(t *testing.T) 
 	secondUserID := seedDeveloperTestAccount(t, service, store, shadowStore, now, "pool-change-second@example.invalid", "pool_change_second", 300000000122)
 	owner := "sandbox-bj-7:9.6.6.6"
 	if _, _, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{firstUserID}, owner, "9.6.6.6", time.Hour, "",
+		context.Background(), []string{firstUserID}, owner, "9.6.6.6", time.Hour, "", false,
 	); err != nil {
 		t.Fatalf("acquire original pool account: %v", err)
 	}
 
 	_, _, err := service.AcquireDeveloperTestAccount(
-		context.Background(), []string{secondUserID}, owner, "9.6.6.6", time.Hour, "",
+		context.Background(), []string{secondUserID}, owner, "9.6.6.6", time.Hour, "", false,
 	)
 	assertDeveloperTestAccountError(t, err, "developer_test_account_unavailable", http.StatusServiceUnavailable)
+}
+
+func TestDeveloperTestAccountForceTakeoverRecoversOwnLease(t *testing.T) {
+	now := time.Date(2026, 9, 24, 8, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	store := NewMemoryStore(StoreOptions{Now: clock})
+	shadowStore := shadowbinding.NewMemoryStore()
+	shadowService := shadowbinding.New(shadowStore, nil, shadowbinding.Options{Enabled: true, Now: clock})
+	service := NewWithStore(store, Options{Now: clock, SessionTTL: 24 * time.Hour, ShadowBinding: shadowService})
+
+	firstUserID := seedDeveloperTestAccount(t, service, store, shadowStore, now, "pool-force-first@example.invalid", "pool_force_first", 300000000131)
+	secondUserID := seedDeveloperTestAccount(t, service, store, shadowStore, now, "pool-force-second@example.invalid", "pool_force_second", 300000000132)
+	candidates := []string{firstUserID, secondUserID}
+	owner := "sandbox-kr-1:21.214.48.147"
+
+	original, originalSession, err := service.AcquireDeveloperTestAccount(
+		context.Background(), candidates, owner, "21.214.48.147", 8*time.Hour, "", false,
+	)
+	if err != nil {
+		t.Fatalf("acquire original lease: %v", err)
+	}
+
+	// The DevCloud host lost its local session (wiped private state) but its own
+	// lease is still inside the TTL: without force it stays locked out.
+	_, _, err = service.AcquireDeveloperTestAccount(
+		context.Background(), candidates, owner, "21.214.48.147", 8*time.Hour, "", false,
+	)
+	assertDeveloperTestAccountError(t, err, "developer_test_account_renewal_requires_session", http.StatusUnauthorized)
+
+	reclaimed, reclaimedSession, err := service.AcquireDeveloperTestAccount(
+		context.Background(), candidates, owner, "21.214.48.147", 8*time.Hour, "", true,
+	)
+	if err != nil {
+		t.Fatalf("force takeover of own lease: %v", err)
+	}
+	if reclaimed.UserID != original.UserID || reclaimed.LeaseVersion != original.LeaseVersion+1 {
+		t.Fatalf("force takeover changed account or did not advance version: before=%+v after=%+v", original, reclaimed)
+	}
+	if reclaimedSession.Token == originalSession.Token {
+		t.Fatal("force takeover reused the previous session token")
+	}
+	if _, err := service.CurrentSession(context.Background(), originalSession.Token); err == nil {
+		t.Fatal("stale lease session remained usable after force takeover")
+	}
+	if _, err := service.CurrentSession(context.Background(), reclaimedSession.Token); err != nil {
+		t.Fatalf("new lease session unusable after force takeover: %v", err)
+	}
+
+	// force must never let a different DevCloud steal an active lease.
+	_, _, err = service.AcquireDeveloperTestAccount(
+		context.Background(), candidates, "sandbox-kr-1:21.214.48.148", "21.214.48.148", 8*time.Hour, "", true,
+	)
+	if err != nil {
+		t.Fatalf("second owner should take the other free account: %v", err)
+	}
+	_, _, err = service.AcquireDeveloperTestAccount(
+		context.Background(), candidates, "sandbox-kr-1:21.214.48.149", "21.214.48.149", 8*time.Hour, "", true,
+	)
+	assertDeveloperTestAccountError(t, err, "developer_test_account_busy", http.StatusConflict)
+}
+
+func TestDeveloperTestAccountForceTakeoverKeepsRenewalTokenPath(t *testing.T) {
+	now := time.Date(2026, 9, 24, 8, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	store := NewMemoryStore(StoreOptions{Now: clock})
+	shadowStore := shadowbinding.NewMemoryStore()
+	shadowService := shadowbinding.New(shadowStore, nil, shadowbinding.Options{Enabled: true, Now: clock})
+	service := NewWithStore(store, Options{Now: clock, SessionTTL: 24 * time.Hour, ShadowBinding: shadowService})
+
+	userID := seedDeveloperTestAccount(t, service, store, shadowStore, now, "pool-force-renew@example.invalid", "pool_force_renew", 300000000141)
+	owner := "sandbox-bj-7:9.5.5.5"
+	lease, session, err := service.AcquireDeveloperTestAccount(
+		context.Background(), []string{userID}, owner, "9.5.5.5", time.Hour, "", false,
+	)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+
+	renewed, _, err := service.AcquireDeveloperTestAccount(
+		context.Background(), []string{userID}, owner, "9.5.5.5", time.Hour, session.Token, true,
+	)
+	if err != nil {
+		t.Fatalf("renew with token while force is set: %v", err)
+	}
+	if renewed.UserID != lease.UserID || renewed.LeaseVersion != lease.LeaseVersion+1 {
+		t.Fatalf("renewal with force flag did not behave like a renewal: %+v", renewed)
+	}
 }
 
 func seedDeveloperTestAccount(

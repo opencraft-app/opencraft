@@ -7,10 +7,10 @@ owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth:
   - docs/context/tasks/2026-09-23-opencraft-github-macos-release.md
-status: active
+status: completed
 reviewed_at: 2026-09-23
 review_due: 2026-12-22
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -76,7 +76,7 @@ derived: false
 | `desktop-apps/SKILL.md@local` | Electron 交付边界 | 保持 Main/Renderer 与原生包验证 |
 
 ## evidence
-- `npm run test:macos-release`：3/3 通过，覆盖架构资源并集、workflow secret/job 边界与缺凭据的 fail-fast。
+- `npm run test:macos-release`：4/4 通过，覆盖架构资源并集、架构无关 Renderer 归一、workflow secret/job 边界与缺凭据的 fail-fast。
 - `npm run test:identity`：OpenCraft identity 11/11、DSH prepare/packaging 10/10 通过。
 - `npm run matrix:check`：13 个现有单机构建目标有效；Universal 作为多 Runner 编排目标单独记录。
 - `npm run typecheck --workspace @opencraft/workbench-electron` 与 `git diff --check` 通过。
@@ -88,6 +88,10 @@ derived: false
 - 首次 GitHub workflow `35811006754` 在 arm64/x64 的 Renderer build 暴露镜像缺少 `@lightvela/vela-chat-client-core`；修复采用从 mono2 `shared/` authority 机械同步的 workspace 快照，同时补齐同类 `@lightvela/agent-core`，不以 Vite external 掩盖运行时缺包。
 - 在不含 mono2 父目录、node_modules 与历史构建输出的临时独立 checkout 中，`npm ci`、`check:shared-packages` 与 `build:electron:release` 通过。
 - 第二次 GitHub workflow `35814021276` 在 identity gate 证明旧规则会拒绝权威的 `@lightvela/*` 快照包名；规则现仅对两个带 `UPSTREAM.json` 且 source 精确指向 `shared/` 的包开放，其他 workspace 继续强制 `@opencraft/*`。
+- 第三次 workflow `35814687835` 证明双架构原生 App 均可成功构建，并暴露两个原生 Runner 产生不同 Vite 内容哈希；合并器现选择单一架构无关 Renderer，同时保留两套架构限定运行时。
+- workflow `35818902658` 的第 4 次 attempt 已证明 Universal 合并、单一 Developer ID 导入、签名、Apple 公证与 staple 全部成功；随后暴露 electron-builder 不接受带 `Developer ID Application:` 前缀的显式 identity。
+- 最终 workflow `35824922149` 全部通过：arm64、x64、Universal、签名、公证、staple、DMG/ZIP、Gatekeeper、校验和与 artifact 上传均成功。最终 artifact 为 `opencraft-macos-universal-15cf470bc78e991af8d2eaa5aeeb7ca2299d26af`，保留 30 天。
+- 最终 artifact 已下载到 `/Users/skipzhang/Downloads/OpenCraft-GitHub-15cf470` 并独立复核：DMG `hdiutil verify` 有效，ZIP 完整，SHA-256 与 `SHA256SUMS` 一致，主可执行文件为 `x86_64 arm64`，`codesign --verify --deep --strict`、`stapler validate` 与 Gatekeeper 均通过；Gatekeeper 来源为 `Notarized Developer ID`。
 
 ## risks
 - 两架构原生依赖文件集合不同：合并前只补齐缺失的架构限定资源，绝不覆盖同路径文件；其余 Mach-O 由 `lipo` 合并。
@@ -121,4 +125,4 @@ derived: false
 - Context Router 无匹配；已记录并对上述路径执行有界精确搜索。
 
 ## handoff
-- 源码、聚焦验证、Team Environment 策略及全部签名/公证 Secrets 已完成；尚需提交 mono2、执行受控 GitHub 镜像导出并运行真实双架构 workflow。公证成功、staple、Gatekeeper 与最终制品完整性均未验证，不能称为已发布。
+- 源码、mono2 `master`、GitHub 单向镜像、Team Environment、签名与公证凭据、真实双架构 workflow、Apple 公证、staple、Gatekeeper 和最终制品完整性均已验证。手工 `workflow_dispatch` 会生成 30 天 Actions artifact；推送 `v*` tag 才会额外创建 GitHub Release。

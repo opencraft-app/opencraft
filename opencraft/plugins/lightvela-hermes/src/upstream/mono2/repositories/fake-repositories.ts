@@ -351,8 +351,9 @@ const buildFakePrice = (yuan: number): BundlePrice => {
 
 const FAKE_BUNDLES: Bundle[] = [
   {
+    // bundle_id 为历史兼容标识；mock 的展示名和时长按当前 1 个月免费权益维护。
     bundle_id: "bundle_free_7d",
-    bundle_name: "免费试用 7天",
+    bundle_name: "启航 Launch",
     description: [
       { Key: "Agent", Value: "1个" },
     ],
@@ -361,8 +362,8 @@ const FAKE_BUNDLES: Bundle[] = [
     credit: 0,
     // 免费试用套餐，price = null 表示不走付费架构
     price: null,
-    time_span: 7,
-    time_unit: "d",
+    time_span: 1,
+    time_unit: "m",
     bundle_sales_available_count: 99,
     bundle_sales_total_count: 100,
     bundle_sales_state: "AVAILABLE",
@@ -1279,6 +1280,7 @@ const createCreditRepository = (): CreditRepository => ({
     const centsStr = cents.toFixed(0);
     return {
       product_id: productId,
+      price: centsStr,
       real_total_cost: centsStr,
       total_cost: centsStr,
       currency: isGlobal ? ("USD" as const) : ("CNY" as const),

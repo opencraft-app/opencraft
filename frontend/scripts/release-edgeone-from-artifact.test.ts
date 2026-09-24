@@ -81,7 +81,7 @@ describe("EdgeOne release from frontend artifact", () => {
     expect(calls).toEqual([
       `verify:${cnRef}`,
       "deploy:eo:/tmp/frontend-artifact-dist:lightvela:preview:1",
-      "deploy:eo:/tmp/frontend-artifact-dist:lightvela:production:",
+      "deploy:eo:/tmp/frontend-artifact-dist:lightvela:production:1",
     ]);
     expect(calls).not.toContain("release:matrix");
   });

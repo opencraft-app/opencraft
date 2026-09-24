@@ -24,6 +24,7 @@ bash -n \
   .ci/runtime/smoke_materialized_runtime.sh \
   .ci/checks/guard.sh \
   .ci/checks/frontend_guard.sh \
+  .ci/checks/opencraft_guard.sh \
   .ci/checks/service-gateway_guard.sh \
   .ci/checks/collaboration_guard.sh \
   .ci/checks/vela_computer_guard.sh \

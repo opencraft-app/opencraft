@@ -8,7 +8,8 @@
 //   - POST /internal/trade/orders                     下单（ctl/pass CreatePass 下单分支用）
 //   - POST /internal/trade/orders/place-and-pay       下单+支付一体化（迭代 8B-1.5 测试链路用）
 //   - POST /internal/trade/orders/renew               续费下单（ctl/pass.RenewPassOrderUrl 用，R-C-7）
-//   - POST /internal/trade/orders/renew/place-and-pay 续费下单+支付一体化（ctl/pass.RenewPassOrderAndPay 测试用，R-D-7）
+//   - POST /internal/trade/orders/renew/place-and-pay 原计费续费下单+支付一体化（保留）
+//   - POST /internal/trade/dianshi/orders/renew/place-and-pay 点石续费下单+支付（受信内部入口）
 //   - POST /internal/trade/inquiry/modify              升配询价（含允许的跨 SP 变配差价）
 //   - POST /internal/trade/orders/modify               升配下单（两步式，生产链路）
 //   - POST /internal/trade/orders/modify/place-and-pay 升配下单+代扣一体化（联调 / e2e）
@@ -171,6 +172,7 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/orders", placeOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/place-and-pay", placeOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/dianshi/orders/place-and-pay", placeDianshiOrderAndPayHandler(deps.PlaceOrder))
+	group.POST("/dianshi/orders/renew/place-and-pay", placeDianshiRenewOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/dianshi/subscriptions/grant", grantDianshiSubscriptionHandler(deps.PlaceOrder))
 	group.POST("/orders/move-in", moveInOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
@@ -602,6 +604,8 @@ func classifyPlaceOrderError(err error) (string, int) {
 		return "BillingAccountOpenFailed", http.StatusConflict
 	case errors.Is(err, placeorder.ErrDianshiActivityRequired):
 		return "DianshiActivityRequired", http.StatusUnprocessableEntity
+	case errors.Is(err, placeorder.ErrUnsupportedSite):
+		return "UnsupportedSite", http.StatusUnprocessableEntity
 	default:
 		return "UpstreamError", http.StatusBadGateway
 	}
@@ -644,6 +648,34 @@ func placeDianshiOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
 			DealName:   res.DealName,
 			BigOrderID: res.BigOrderID,
 		})
+	}
+}
+
+func placeDianshiRenewOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req placeRenewOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "decode JSON: " + err.Error()})
+			return
+		}
+		res, err := svc.PlaceDianshiRenewOrderAndPay(c.Request.Context(), placeorder.PlaceRenewOrderRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleID:       req.BundleID,
+			ResourceID:     req.ResourceID,
+			CurDeadline:    req.CurDeadline,
+			Period:         req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+		})
+		if err != nil {
+			code, status := classifyPlaceOrderError(err)
+			c.JSON(status, gin.H{"code": code, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, placeOrderResponse{DealName: res.DealName, BigOrderID: res.BigOrderID})
 	}
 }
 

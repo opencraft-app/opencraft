@@ -81,6 +81,13 @@ method/path 做精确公开放行，并覆盖客户端可伪造的 forwarding he
 `developer_lease` bearer session，Auth 校验 session 用户与租约用户一致后才续租。仅知道或伪造另一台
 DevCloud 的 `targetIp` 不能签发新 session。
 
+同一台 DevCloud 可能在重新 checkout、清空私有 state 或 `down` 中断后丢失本地 session，从而既不能续租
+也不能释放自己的租约，最长被自己的 TTL 锁死 24 小时。为此 POST 支持可选 `force`：只有在请求**没有**
+携带续租 session 时才生效，续租 token 始终优先。服务端在同一事务内作废该账号全部陈旧 `developer_lease`
+sessions、推进租约版本并签发新 session，因此被接管的旧 token 立即失效。`force` 不改变信任边界：owner
+身份仍然只由通过 CIDR 校验的来源与 `lease_owner` 决定，其他 DevCloud 携带 `force` 仍返回
+`developer_test_account_busy`，也不能跳过来源网段校验或访问其他站点的账号池。
+
 当前入口的组织信任边界是 sandbox-only 配置、Gateway 规范化的 DevCloud 出口 allowlist，以及脚本校验的
 公司 DevCloud `9.0.0.0/8`、`21.0.0.0/8` 目标地址，不是独立的 WOA 员工 OAuth 证明。因此它只能服务
 受控 testing 账号和测试余额，不能扩展到生产账号、

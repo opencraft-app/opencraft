@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+data:
+  controller.k8s.tcp.timeout: 90s
+  controller.k8s.tls.handshake.timeout: 60s
+  server.k8s.tcp.timeout: 90s
+  server.k8s.tls.handshake.timeout: 60s
+  applicationsetcontroller.k8s.tcp.timeout: 90s
+  applicationsetcontroller.k8s.tls.handshake.timeout: 60s

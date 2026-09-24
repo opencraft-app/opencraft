@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lightclaw-auth-migrate-devtestlease
+  labels:
+    app: lightclaw-auth
+    job: lightclaw-auth-migrate
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: lightclaw-auth
+        job: lightclaw-auth-migrate
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        pool: general-bj82
+      containers:
+        - name: lightclaw-auth-migrate
+          image: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth@sha256:0a6e3702a30b63419f9be559c5d8791f4103f534b439c1358c29b1f7208c76fd
+          command:
+            - /usr/local/bin/lightclaw-auth-migrate
+          envFrom:
+            - configMapRef:
+                name: lightclaw-auth-config
+            - secretRef:
+                name: lightclaw-auth-secrets
+            - secretRef:
+                name: lightclaw-auth-content-audit-secrets
+                optional: true

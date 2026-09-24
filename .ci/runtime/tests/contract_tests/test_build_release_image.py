@@ -99,7 +99,16 @@ class BuildReleaseImageTests(unittest.TestCase):
         self.assertIn("COPY frontend/deploy/nginx.conf /etc/nginx/conf.d/default.conf", dockerfile)
         self.assertEqual(
             dockerignore.splitlines(),
-            ["**", "!frontend/", "!frontend/**", "!velalink/", "!velalink/**"],
+            [
+                "**",
+                "!frontend/",
+                "!frontend/**",
+                "!velalink/",
+                "!velalink/**",
+                "!shared/",
+                "!shared/lightvela-agent-core/",
+                "!shared/lightvela-agent-core/**",
+            ],
         )
 
     def test_playground_frontend_region_uses_cluster_region(self) -> None:

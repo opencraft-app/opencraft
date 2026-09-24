@@ -17,7 +17,7 @@ import (
 type fakeActivityStore struct {
 	bundles       map[string]*store.BundleActivity
 	getErr        error
-	participation map[string]bool // key = uin + "|" + activityID
+	participation map[string]bool // key = uin + "|" + activityID + "|" + scene
 	hasErr        error
 	hasCalls      int
 }
@@ -29,23 +29,23 @@ func newFakeActivityStore() *fakeActivityStore {
 	}
 }
 
-func (f *fakeActivityStore) GetBundleActivityByBundleID(_ context.Context, bundleID string) (*store.BundleActivity, error) {
+func (f *fakeActivityStore) GetBundleActivity(_ context.Context, bundleID string, scene store.ActivityScene) (*store.BundleActivity, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
-	row, ok := f.bundles[bundleID]
+	row, ok := f.bundles[bundleID+"|"+string(scene)]
 	if !ok {
 		return nil, store.ErrBundleActivityNotFound
 	}
 	return row, nil
 }
 
-func (f *fakeActivityStore) HasUserParticipated(_ context.Context, uin string, activityID int64) (bool, error) {
+func (f *fakeActivityStore) HasUserParticipated(_ context.Context, uin string, activityID int64, scene store.ActivityScene) (bool, error) {
 	f.hasCalls++
 	if f.hasErr != nil {
 		return false, f.hasErr
 	}
-	return f.participation[keyOf(uin, activityID)], nil
+	return f.participation[keyOf(uin, activityID, scene)], nil
 }
 
 // InsertUserParticipation 满足 store.ActivityStore 接口；Resolver 不消费此方法，
@@ -57,14 +57,14 @@ func (f *fakeActivityStore) InsertUserParticipation(_ context.Context, _ *sql.Tx
 // 编译期断言：fakeActivityStore 真实实现 store.ActivityStore 接口（避免再出 wrong-type 错）。
 var _ store.ActivityStore = (*fakeActivityStore)(nil)
 
-func keyOf(uin string, activityID int64) string {
-	return uin + "|" + strconv.FormatInt(activityID, 10)
+func keyOf(uin string, activityID int64, scene store.ActivityScene) string {
+	return uin + "|" + strconv.FormatInt(activityID, 10) + "|" + string(scene)
 }
 
 func TestResolver_NonActivityBundle(t *testing.T) {
 	f := newFakeActivityStore()
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_other", "815836472", 1, "m")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_other", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -78,11 +78,11 @@ func TestResolver_NonActivityBundle(t *testing.T) {
 
 func TestResolver_ActivityInactive(t *testing.T) {
 	f := newFakeActivityStore()
-	f.bundles["bundle_launch_01"] = &store.BundleActivity{
-		BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255, Active: false,
+	f.bundles["bundle_launch_01|purchase"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivityScenePurchase, ActivityID: 164273735574009, ActID: 1862147936410255, Active: false,
 	}
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472", 1, "m")
+	mapping, useDianshi, err := r.ResolveForPlaceOrder(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -94,15 +94,35 @@ func TestResolver_ActivityInactive(t *testing.T) {
 	}
 }
 
+func TestResolver_GetMappingDoesNotReadParticipation(t *testing.T) {
+	f := newFakeActivityStore()
+	f.bundles["bundle_launch_01|renew"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivitySceneRenew,
+		ActivityID: 166165503931688, ActID: 1975812517099088, Active: true,
+	}
+	f.hasErr = errors.New("participation table must not be queried")
+
+	mapping, err := NewResolver(f).GetMapping(context.Background(), store.ActivitySceneRenew, "bundle_launch_01")
+	if err != nil {
+		t.Fatalf("GetMapping err=%v", err)
+	}
+	if mapping == nil || mapping.Scene != store.ActivitySceneRenew || mapping.ActivityID != 166165503931688 {
+		t.Fatalf("mapping=%+v", mapping)
+	}
+	if f.hasCalls != 0 {
+		t.Fatalf("participation queries=%d want 0", f.hasCalls)
+	}
+}
+
 func TestResolver_NotParticipated_UseDianshi(t *testing.T) {
 	f := newFakeActivityStore()
-	f.bundles["bundle_launch_01"] = &store.BundleActivity{
-		BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255,
+	f.bundles["bundle_launch_01|purchase"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivityScenePurchase, ActivityID: 164273735574009, ActID: 1862147936410255,
 		SecretKey: "demo_secret", Active: true,
 	}
 	r := NewResolver(f)
 
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -114,7 +134,7 @@ func TestResolver_NotParticipated_UseDianshi(t *testing.T) {
 	}
 
 	// 同样路径下 ResolveForPlaceOrder 行为应一致
-	_, useDianshi2, err := r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472", 1, "m")
+	_, useDianshi2, err := r.ResolveForPlaceOrder(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 1, "m")
 	if err != nil || !useDianshi2 {
 		t.Errorf("ResolveForPlaceOrder should use dianshi too, useDianshi=%v err=%v", useDianshi2, err)
 	}
@@ -122,13 +142,13 @@ func TestResolver_NotParticipated_UseDianshi(t *testing.T) {
 
 func TestResolver_NotOneMonth_FallbackJifei(t *testing.T) {
 	f := newFakeActivityStore()
-	f.bundles["bundle_launch_01"] = &store.BundleActivity{
-		BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255,
+	f.bundles["bundle_launch_01|purchase"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivityScenePurchase, ActivityID: 164273735574009, ActID: 1862147936410255,
 		SecretKey: "demo_secret", Active: true,
 	}
 	r := NewResolver(f)
 
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 14, "d")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 14, "d")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -142,7 +162,7 @@ func TestResolver_NotOneMonth_FallbackJifei(t *testing.T) {
 		t.Errorf("participation should not be queried for non-1m request, calls=%d", f.hasCalls)
 	}
 
-	_, useDianshi, err = r.ResolveForPlaceOrder(context.Background(), "bundle_launch_01", "815836472", 2, "m")
+	_, useDianshi, err = r.ResolveForPlaceOrder(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 2, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -153,13 +173,13 @@ func TestResolver_NotOneMonth_FallbackJifei(t *testing.T) {
 
 func TestResolver_AlreadyParticipated_FallbackJifei(t *testing.T) {
 	f := newFakeActivityStore()
-	f.bundles["bundle_launch_ai_01"] = &store.BundleActivity{
-		BundleID: "bundle_launch_ai_01", ActivityID: 164273735574009, ActID: 1862105749386679, Active: true,
+	f.bundles["bundle_launch_ai_01|purchase"] = &store.BundleActivity{
+		BundleID: "bundle_launch_ai_01", Scene: store.ActivityScenePurchase, ActivityID: 164273735574009, ActID: 1862105749386679, Active: true,
 	}
-	f.participation[keyOf("815836472", 164273735574009)] = true
+	f.participation[keyOf("815836472", 164273735574009, store.ActivityScenePurchase)] = true
 
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_ai_01", "815836472", 1, "m")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_launch_ai_01", "815836472", 1, "m")
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -175,7 +195,7 @@ func TestResolver_DBError_BundleActivity(t *testing.T) {
 	f := newFakeActivityStore()
 	f.getErr = errors.New("db boom")
 	r := NewResolver(f)
-	_, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m")
+	_, _, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 1, "m")
 	if err == nil {
 		t.Fatal("expect db err")
 	}
@@ -183,12 +203,12 @@ func TestResolver_DBError_BundleActivity(t *testing.T) {
 
 func TestResolver_DBError_Participation(t *testing.T) {
 	f := newFakeActivityStore()
-	f.bundles["bundle_launch_01"] = &store.BundleActivity{
-		BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255, Active: true,
+	f.bundles["bundle_launch_01|purchase"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivityScenePurchase, ActivityID: 164273735574009, ActID: 1862147936410255, Active: true,
 	}
 	f.hasErr = errors.New("db boom")
 	r := NewResolver(f)
-	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m")
+	mapping, useDianshi, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 1, "m")
 	if err == nil {
 		t.Fatal("expect db err")
 	}
@@ -203,17 +223,41 @@ func TestResolver_DBError_Participation(t *testing.T) {
 func TestResolver_RequiredArgs(t *testing.T) {
 	f := newFakeActivityStore()
 	r := NewResolver(f)
-	if _, _, err := r.ResolveForInquiry(context.Background(), "", "815836472", 1, "m"); err == nil {
+	if _, _, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "", "815836472", 1, "m"); err == nil {
 		t.Error("expect err on empty bundleID")
 	}
-	if _, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "", 1, "m"); err == nil {
+	if _, _, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "", 1, "m"); err == nil {
 		t.Error("expect err on empty uin")
 	}
 }
 
 func TestResolver_NilStore(t *testing.T) {
 	r := NewResolver(nil)
-	if _, _, err := r.ResolveForInquiry(context.Background(), "bundle_launch_01", "815836472", 1, "m"); err == nil {
+	if _, _, err := r.ResolveForInquiry(context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 1, "m"); err == nil {
 		t.Error("expect err on nil store")
+	}
+}
+
+func TestResolver_SeparatesPurchaseAndRenewScenes(t *testing.T) {
+	f := newFakeActivityStore()
+	f.bundles["bundle_launch_01|purchase"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivityScenePurchase, ActivityID: 1001, ActID: 2001, Active: true,
+	}
+	f.bundles["bundle_launch_01|renew"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivitySceneRenew, ActivityID: 1002, ActID: 2002, Active: true,
+	}
+	r := NewResolver(f)
+
+	purchase, usePurchase, err := r.ResolveForInquiry(
+		context.Background(), store.ActivityScenePurchase, "bundle_launch_01", "815836472", 1, "m",
+	)
+	if err != nil || !usePurchase || purchase.ActivityID != 1001 {
+		t.Fatalf("purchase mapping=%+v use=%v err=%v", purchase, usePurchase, err)
+	}
+	renew, useRenew, err := r.ResolveForInquiry(
+		context.Background(), store.ActivitySceneRenew, "bundle_launch_01", "815836472", 1, "m",
+	)
+	if err != nil || !useRenew || renew.ActivityID != 1002 {
+		t.Fatalf("renew mapping=%+v use=%v err=%v", renew, useRenew, err)
 	}
 }

@@ -54,6 +54,30 @@ afterEach(() => {
 });
 
 describe("marketing channel copy", () => {
+  it("announces multi-Bot creation in the September changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    const septemberSection = screen.getByText("2026 年 9 月").closest("section");
+    expect(septemberSection).not.toBeNull();
+    const heading = within(septemberSection!).getByRole("heading", {
+      name: "LightVela 支持创建多个 Bot",
+    });
+    expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+    expect(
+      within(septemberSection!).getByText(
+        "在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。",
+      ),
+    ).toBeInTheDocument();
+    expect(within(septemberSection!).getByAltText("LightVela 支持创建多个 Bot")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/docs-images/bots-switching-create.webp"),
+    );
+  });
+
   it("announces zero-token notification and script tasks in the September changelog", () => {
     render(
       <MemoryRouter>
@@ -66,7 +90,7 @@ describe("marketing channel copy", () => {
     const heading = within(septemberSection!).getByRole("heading", {
       name: "定时任务新增通知任务和脚本任务",
     });
-    expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+    expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
     expect(
       within(septemberSection!).getByText(
         "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",

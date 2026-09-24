@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strconv"
 	"strings"
 
 	"git.woa.com/wisp/mono/trade/internal/billingamount"
@@ -263,7 +264,7 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	//   - DB 错 → 落 warn 日志后回落 jifei，不让单次询价 5xx
 	//   - useDianshi=true → 走 quoteDianshi，绕过下方 jifei 路径
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin, req.TimeSpan, req.TimeUnit)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, store.ActivityScenePurchase, req.BundleID, req.Uin, req.TimeSpan, req.TimeUnit)
 		if resolveErr != nil {
 			log.Printf("[activity-resolver] inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
 				req.BundleID, req.Uin, resolveErr)
@@ -361,7 +362,7 @@ func (s *Service) QuoteBatch(ctx context.Context, req QuoteBatchRequest) ([]*Quo
 		itemReq.BundleID = bid
 
 		if s.deps.ActivityResolver != nil {
-			mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, itemReq.BundleID, itemReq.Uin, itemReq.TimeSpan, itemReq.TimeUnit)
+			mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, store.ActivityScenePurchase, itemReq.BundleID, itemReq.Uin, itemReq.TimeSpan, itemReq.TimeUnit)
 			if resolveErr != nil {
 				log.Printf("[activity-resolver] inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
 					itemReq.BundleID, itemReq.Uin, resolveErr)
@@ -561,6 +562,24 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 				ErrBundleNotFound, req.BundleID)
 		}
 		return nil, fmt.Errorf("inquiry: get bundle definition: %w", err)
+	}
+
+	// 国内站续费活动与新购活动分别计次。国际站暂不接入点石续费，继续走 jifei。
+	if !strings.EqualFold(strings.TrimSpace(s.deps.SiteKind), "intl") && s.deps.ActivityResolver != nil {
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(
+			ctx,
+			store.ActivitySceneRenew,
+			req.BundleID,
+			req.Uin,
+			req.TimeSpan,
+			req.TimeUnit,
+		)
+		if resolveErr != nil {
+			log.Printf("[activity-resolver] renew inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
+				req.BundleID, req.Uin, resolveErr)
+		} else if useDianshi {
+			return s.quoteDianshiRenew(ctx, req, bundle, def, mapping)
+		}
 	}
 
 	// scene="renew" 取 categoryId（与 Q71 对齐：未命中返 0）
@@ -1118,6 +1137,84 @@ func (s *Service) quoteDianshi(
 	log.Printf("[dianshi-quote] bundleId=%s uin=%s activityId=%d actId=%d price=%s totalCost=%s realCost=%s",
 		req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID,
 		result.Price, result.TotalCost, result.RealTotalCost)
+	return result, nil
+}
+
+// quoteDianshiRenew 使用续费协议要求的四个 preference_param 字段询价。
+// 续费活动按 resourceId 回调查询资源，因此不能复用新购的 subProductCode 参数结构。
+func (s *Service) quoteDianshiRenew(
+	ctx context.Context,
+	req QuoteRenewRequest,
+	bundle *ctlclient.BundleDetail,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+) (*QuoteResult, error) {
+	if s.deps.DianshiClient == nil {
+		return nil, fmt.Errorf("inquiry: dianshi client not configured (ActivityResolver injected without DianshiClient)")
+	}
+
+	resp, err := s.deps.DianshiClient.GetActivityPrice(ctx, &dianshiclient.GetPriceRequest{
+		ActivityID: mapping.ActivityID,
+		Preview:    1,
+		Uin:        req.Uin,
+		Goods: []dianshiclient.GetPriceGoodsItem{{
+			ActID: mapping.ActID,
+			PreferenceParam: map[string]interface{}{
+				"regionId":     s.region.RegionID,
+				"resourceId":   req.ResourceID,
+				"timeSpanUnit": strconv.Itoa(req.TimeSpan) + strings.ToLower(strings.TrimSpace(req.TimeUnit)),
+				"bundleId":     mapping.BundleID,
+			},
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice renew bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
+			req.BundleID, req.ResourceID, mapping.ActivityID, mapping.ActID, err)
+	}
+	if resp == nil || len(resp.PriceItems) == 0 {
+		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice renew returned empty data bundleId=%s resourceId=%s activityId=%d",
+			req.BundleID, req.ResourceID, mapping.ActivityID)
+	}
+
+	d := resp.PriceItems[0]
+	price, totalCost, realTotalCost, err := dianshiAmountFields(d)
+	if err != nil {
+		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice renew bundleId=%s resourceId=%s: %w",
+			req.BundleID, req.ResourceID, err)
+	}
+	result := &QuoteResult{
+		BundleID:       req.BundleID,
+		BundleName:     bundle.BundleName,
+		Price:          price,
+		TotalCost:      totalCost,
+		TaxPrice:       "0",
+		RealTotalCost:  realTotalCost,
+		Currency:       d.Currency,
+		TimeSpan:       float64(d.TimeSpan),
+		TimeUnit:       d.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		ProductCode:    d.ProductCode,
+		SubProductCode: d.SubProductCode,
+		Pid:            d.Pid,
+	}
+	if discount, ok := parseDianshiPolicyTotal(d.PolicyDetail); ok {
+		result.Discount = discount
+	}
+	if result.ProductCode == "" {
+		result.ProductCode = def.ProductCode
+	}
+	if result.SubProductCode == "" {
+		result.SubProductCode = def.SubProductCode
+	}
+	if result.Pid == 0 {
+		result.Pid = def.Pid
+	}
+	if result.TimeSpan == 0 {
+		result.TimeSpan = float64(req.TimeSpan)
+	}
+	if result.TimeUnit == "" {
+		result.TimeUnit = req.TimeUnit
+	}
 	return result, nil
 }
 

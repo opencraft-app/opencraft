@@ -10,6 +10,8 @@ configMapGenerator:
 - name: auth-platform-values
   envs:
   - auth-platform.env
+resources:
+- auth-migration-job.yaml
 patches:
 - path: delete-shared-namespace.yaml
 - path: delete-shared-serviceaccount.yaml

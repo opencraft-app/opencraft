@@ -50,7 +50,7 @@ const preservedHarnessAssetNames = [
   "deepseek-harness-ko-kr.png",
 ];
 const preservedHarnessAssetNameSet = new Set(preservedHarnessAssetNames);
-const zhHantConverter = OpenCC.Converter({ from: "cn", to: "tw" });
+const zhHantConverter = OpenCC.Converter({ from: "cn", to: "hk" });
 const supportedLocales = ["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"];
 const sourceFileByLocale = {
   "en-US": "index-en.html",
@@ -94,14 +94,15 @@ const rotatorWordsByLocale = {
   "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "相場ウォッチャー", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
   "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "시세 관찰자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
 };
-const tokenTrialCopyByLocale = {
-  "en-US": "Try an AI token plan free for 7 days.",
-  "zh-SG": "AI Token 套餐免费体验 7 天",
-  "zh-Hant": "AI Token 套餐免費體驗 7 天",
-  "id-ID": "Coba paket AI Token gratis selama 7 hari.",
-  es: "Prueba un plan de tokens de IA gratis durante 7 días.",
-  "ja-JP": "AI Tokenプランを7日間無料でお試しいただけます。",
-  "ko-KR": "AI Token 플랜을 7일 동안 무료로 사용해 보세요.",
+const trialOfferCopyByLocale = {
+  "en-US": "New users get 1 month free and 4,500 AI credits.",
+  "zh-CN": "新用户免费体验1个月，送4500 AI 积分",
+  "zh-SG": "新用户免费体验1个月，送4500 AI 积分",
+  "zh-Hant": "新使用者免費體驗1個月，送4500 AI 積分",
+  "id-ID": "Pengguna baru mendapat uji coba gratis 1 bulan dan 4.500 kredit AI.",
+  "es": "Los nuevos usuarios reciben 1 mes gratis y 4500 créditos de IA.",
+  "ja-JP": "新規ユーザーは1か月間無料、4,500 AIクレジット付き。",
+  "ko-KR": "신규 사용자에게 1개월 무료 체험과 AI 크레딧 4,500점을 드립니다."
 };
 const trialTitleCopyByLocale = {
   "en-US": "Try it free, activate in 10 seconds",
@@ -271,7 +272,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已连接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版权所有。由 Tencent Lighthouse 构建。",
     Product: "产品",
-    "14-day free trial": "14 天免费试用",
+    "1-month free trial": "1 个月免费试用",
     Pricing: "定价",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -337,7 +338,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已连接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版权所有。由 Tencent Lighthouse 构建。",
     Product: "产品",
-    "14-day free trial": "14 天免费试用",
+    "1-month free trial": "1 个月免费试用",
     Pricing: "定价",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -404,7 +405,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已連接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版權所有。由 Tencent Lighthouse 構建。",
     Product: "產品",
-    "14-day free trial": "14 天免費試用",
+    "1-month free trial": "1 個月免費試用",
     Pricing: "定價",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -601,7 +602,7 @@ const coreCopyByLocale = {
     "Terms of Service": "Ketentuan Layanan",
     "Open Source Notice": "Pemberitahuan Open Source",
     "Related products": "Produk terkait",
-    "14-day free trial": "Uji coba gratis 14 hari",
+    "1-month free trial": "Uji coba gratis 1 bulan",
     "WhatsApp setup guide": "Panduan setup WhatsApp",
     "Telegram setup guide": "Panduan setup Telegram",
     "Discord setup guide": "Panduan setup Discord",
@@ -776,7 +777,7 @@ const coreCopyByLocale = {
     "Terms of Service": "Términos del servicio",
     "Open Source Notice": "Aviso de código abierto",
     "Related products": "Productos relacionados",
-    "14-day free trial": "Prueba gratis de 14 días",
+    "1-month free trial": "Prueba gratis de 1 mes",
     "WhatsApp setup guide": "Guía de conexión de WhatsApp",
     "Telegram setup guide": "Guía de conexión de Telegram",
     "Discord setup guide": "Guía de conexión de Discord",
@@ -972,7 +973,7 @@ Object.assign(coreCopyByLocale, {
     Company: "会社",
     "About Us": "会社概要",
     "Related products": "関連製品",
-    "14-day free trial": "14日間無料トライアル",
+    "1-month free trial": "1か月間無料トライアル",
     "WhatsApp setup guide": "WhatsApp接続ガイド",
     "Telegram setup guide": "Telegram接続ガイド",
     "Discord setup guide": "Discord接続ガイド",
@@ -1167,7 +1168,7 @@ Object.assign(coreCopyByLocale, {
     Company: "회사",
     "About Us": "회사 소개",
     "Related products": "관련 제품",
-    "14-day free trial": "14일 무료 체험",
+    "1-month free trial": "1개월 무료 체험",
     "WhatsApp setup guide": "WhatsApp 연결 가이드",
     "Telegram setup guide": "Telegram 연결 가이드",
     "Discord setup guide": "Discord 연결 가이드",
@@ -1812,6 +1813,18 @@ const demoExactCopyByLocale = {
   "id-ID": Object.fromEntries(demoExactCopyTriples.map(([from, id]) => [from, id])),
   es: Object.fromEntries(demoExactCopyTriples.map(([from, , es]) => [from, es])),
 };
+const currentHeroCopyTriples = [
+  ["Nasdaq Brief Assistant", "Asisten Ringkasan Nasdaq", "Asistente del Nasdaq"],
+  ["Hermes Agent: Nasdaq sector brief is ready", "Hermes Agent: ringkasan sektor Nasdaq sudah siap", "Hermes Agent: el resumen sectorial del Nasdaq está listo"],
+  ["Hermes updated the weekly draft.", "Hermes memperbarui draf mingguan.", "Hermes actualizó el borrador semanal."],
+  ["@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.", "@LightVela minta DSH memperbaiki Hermes: penyedia memori terkadang menulis data ganda. Reproduksi dulu, lalu perbaiki.", "@LightVela pide a DSH que arregle Hermes: el proveedor de memoria a veces duplica registros. Primero reproduce el error y luego corrígelo."],
+  ["memory-dedupe pushed", "perbaikan duplikasi memori sudah dikirim", "corrección de duplicados de memoria enviada"],
+  ["patch · tests passed", "perbaikan · tes lulus", "corrección · pruebas superadas"],
+];
+for (const [from, id, es] of currentHeroCopyTriples) {
+  demoExactCopyByLocale["id-ID"][from] = id;
+  demoExactCopyByLocale.es[from] = es;
+}
 Object.assign(demoExactCopyByLocale, {
   "ja-JP": {
     "@LightVela are you ready? Help me start my AI companion.": "@LightVela 準備できていますか？私のAIパートナーを始めるのを手伝って。",
@@ -2383,6 +2396,38 @@ Object.assign(demoExactCopyByLocale, {
     "Preparing for Computer Science and tech certifications means handling a lot of information. With LightVela, I can automate daily documentation summaries, coding exercises, and knowledge reviews so I always stay on track with my technical goals.": "컴퓨터 과학과 기술 자격증을 준비하려면 많은 정보를 다뤄야 합니다. LightVela로 매일 문서 요약, 코딩 연습, 지식 복습을 자동화해 기술 목표를 계속 따라갈 수 있습니다.",
     "It keeps my class notes, coding practice, and exam reviews in one rhythm. I know what to read, what to code, and what to revisit.": "수업 노트, 코딩 연습, 시험 복습을 하나의 리듬으로 유지해 줍니다. 무엇을 읽고, 무엇을 코딩하고, 무엇을 다시 봐야 할지 알 수 있습니다.",
   },
+});
+Object.assign(demoExactCopyByLocale["ja-JP"], {
+  "Nasdaq Brief Assistant": "Nasdaq市場アシスタント",
+  "Hermes Agent: Nasdaq sector brief is ready": "Hermes Agent：Nasdaqのセクター速報ができました",
+  "Hermes updated the weekly draft.": "Hermesが週次ドラフトを更新しました。",
+  "DSH finished the patch.": "DSHが修正を完了しました。",
+  "CI Alerts": "CI通知",
+  "Release Notes": "リリースノート",
+  "Ops Monitor": "運用モニター",
+  "API latency is back to normal.": "APIの応答速度が正常に戻りました。",
+  "Design Review": "デザインレビュー",
+  "Support Digest": "サポート要約",
+  "API Changes": "API変更",
+  "@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.": "@LightVela Hermesのメモリに重複レコードが書き込まれる問題をDSHに修正してもらって。まず再現してから直して。",
+  "DSH reproduced it in an isolated branch. It happens when provider sync and session end fire together.": "DSHが隔離ブランチで再現しました。プロバイダーの同期とセッション終了が同時に起きると発生します。",
+  "The minimal fix is ready with a regression test. Unit, integration, and CI all pass. Review only provider sync and the session-end hook.": "最小限の修正と回帰テストを用意しました。単体・結合・CIテストはすべて通過しています。プロバイダーの同期とセッション終了処理を確認してください。",
+});
+Object.assign(demoExactCopyByLocale["ko-KR"], {
+  "Nasdaq Brief Assistant": "나스닥 시장 브리핑 도우미",
+  "Hermes Agent: Nasdaq sector brief is ready": "Hermes Agent: 나스닥 섹터 브리핑이 준비되었습니다",
+  "Hermes updated the weekly draft.": "Hermes가 주간 초안을 업데이트했습니다.",
+  "DSH finished the patch.": "DSH가 수정을 완료했습니다.",
+  "CI Alerts": "CI 알림",
+  "Release Notes": "릴리스 노트",
+  "Ops Monitor": "운영 모니터",
+  "API latency is back to normal.": "API 지연 시간이 정상으로 돌아왔습니다.",
+  "Design Review": "디자인 검토",
+  "Support Digest": "지원 요약",
+  "API Changes": "API 변경",
+  "@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.": "@LightVela Hermes 메모리에 중복 기록이 생기는 문제를 DSH에게 수정해 달라고 해 줘. 먼저 재현한 뒤 고쳐 줘.",
+  "DSH reproduced it in an isolated branch. It happens when provider sync and session end fire together.": "DSH가 격리된 브랜치에서 재현했습니다. 제공자 동기화와 세션 종료가 동시에 실행될 때 발생합니다.",
+  "The minimal fix is ready with a regression test. Unit, integration, and CI all pass. Review only provider sync and the session-end hook.": "최소 수정과 회귀 테스트가 준비되었습니다. 단위·통합·CI 테스트가 모두 통과했습니다. 제공자 동기화와 세션 종료 처리만 검토해 주세요.",
 });
 const headerActionsLayerCss = `
 #lightvela-intl-home .nav {
@@ -3482,6 +3527,35 @@ function sourceLocaleFor(locale) {
   return locale;
 }
 
+const heroReportFragmentsByLocale = {
+  "id-ID": [
+    ["Main chain:", "Rantai utama:"],
+    ["chips → equipment / EDA → optical → AI software / security", "chip → peralatan / EDA → optik → perangkat lunak AI / keamanan"],
+    ["breadth", "cakupan pasar"],
+    ["risk appetite", "selera risiko"],
+    ["Software aplikasi AI", "Perangkat lunak aplikasi AI"],
+    ["Optical /", "Optik /"],
+    ["outlook NVDA", "prospek NVDA"],
+    ["healthcare", "layanan kesehatan"],
+    ["equipment and software", "peralatan dan perangkat lunak"],
+    ["laporan earnings", "laporan keuangan"],
+  ],
+  es: [
+    ["Main chain:", "Cadena principal:"],
+    ["chips → equipment / EDA → optical → AI software / security", "chips → equipos / EDA → óptica → software de IA / seguridad"],
+    ["outlook de NVDA", "pronóstico de NVDA"],
+    ["equipment and software", "equipos y software"],
+  ],
+  "ja-JP": [
+    ["Main chain:", "主な流れ："],
+    ["chips → equipment / EDA → optical → AI software / security", "チップ → 装置 / EDA → 光通信 → AIソフトウェア / セキュリティ"],
+  ],
+  "ko-KR": [
+    ["Main chain:", "주요 흐름:"],
+    ["chips → equipment / EDA → optical → AI software / security", "칩 → 장비 / EDA → 광통신 → AI 소프트웨어 / 보안"],
+  ],
+};
+
 function localizeText(value, locale) {
   if (!value) return value;
   const exact = coreCopyByLocale[locale]?.[value];
@@ -3496,6 +3570,14 @@ function localizeText(value, locale) {
   if (locale === "zh-Hant") return zhHantConverter(value);
   let localized = value;
   for (const [from, to] of textFragmentsByLocale[locale] ?? []) {
+    localized = localized.replaceAll(from, to);
+  }
+  return localized;
+}
+
+function localizeHeroText(value, locale) {
+  let localized = localizeText(value, locale);
+  for (const [from, to] of heroReportFragmentsByLocale[locale] ?? []) {
     localized = localized.replaceAll(from, to);
   }
   return localized;
@@ -3521,12 +3603,12 @@ function localizeElementText(element, locale) {
   const textNodes = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode);
   for (const node of textNodes) {
-    node.nodeValue = localizeText(node.nodeValue, locale);
+    node.nodeValue = localizeHeroText(node.nodeValue, locale);
   }
   for (const node of element.querySelectorAll("[aria-label], [alt], [placeholder], [data-full-html]")) {
     for (const attribute of ["aria-label", "alt", "placeholder", "data-full-html"]) {
       const value = node.getAttribute(attribute);
-      if (value) node.setAttribute(attribute, localizeText(value, locale));
+      if (value) node.setAttribute(attribute, localizeHeroText(value, locale));
     }
   }
 }
@@ -4091,9 +4173,11 @@ function prepareDocumentForLocale(document, locale) {
   ensureSoulStripSecondaryStates(document, locale);
   highlightHeroLightVelaMentions(document);
   revealHeroDemoMessages(document);
-  const tokenTrial = document.querySelector(".cta__copy li:nth-child(2)");
-  if (tokenTrial && tokenTrialCopyByLocale[locale]) {
-    tokenTrial.textContent = tokenTrialCopyByLocale[locale];
+  const trialCopy = document.querySelector(".cta__copy");
+  if (trialCopy && trialOfferCopyByLocale[locale]) {
+    const offer = document.createElement("li");
+    offer.textContent = trialOfferCopyByLocale[locale];
+    trialCopy.replaceChildren(offer);
   }
   const trialTitle = document.querySelector(".cta__title");
   if (trialTitle && trialTitleCopyByLocale[locale]) {
@@ -4129,7 +4213,7 @@ function applyFooterLayout(document) {
   </div>
   <div class="foot__links"><div class="foot__links-grid">
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.</p></div>
-    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
+    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">1-month free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Compare</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Compare with self-hosting</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Compare with Hostinger</a></li><li><a href="/docs/compare/lightvela-vs-manus">Compare with Manus</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">Compare with ChatGPT</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Compare with Genspark</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li></ul></div>
     <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
@@ -4164,6 +4248,26 @@ function emphasizeFooterHermes(document) {
     node.replaceWith(fragment);
     return;
   }
+}
+
+if (sourceArgument === "--refresh-hero-locales") {
+  // Refresh the checked-in hero fragments without the separately approved source bundle.
+  // The full import path below uses the same localizeElementText function.
+  for (const locale of supportedLocales.filter((value) => value !== "en-US" && value !== "zh-CN")) {
+    const fragmentPath = path.join(targetRoot, `index-fragment.${locale}.html`);
+    let fragment = await readFile(fragmentPath, "utf8");
+    const document = new JSDOM(fragment).window.document;
+    for (const id of ["panel-wa", "panel-tg", "panel-dc", "panel-sl"]) {
+      const panel = document.getElementById(id);
+      if (!panel) throw new Error(`Missing hero surface panel: ${id} (${locale})`);
+      const original = panel.outerHTML;
+      localizeElementText(panel, locale);
+      if (!fragment.includes(original)) throw new Error(`Hero panel markup drifted: ${id} (${locale})`);
+      fragment = fragment.replace(original, panel.outerHTML);
+    }
+    await writeFile(fragmentPath, fragment);
+  }
+  process.exit(0);
 }
 
 if (!process.argv[2]) {
@@ -4619,6 +4723,18 @@ const homepageReadingCss = `
   color: inherit;
   border-top: 1px solid #f2f2f2;
 }
+.home-mobile-menu-language {
+  padding: 20px 8px 4px;
+  border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu-language h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-mobile-menu-language button {
+  min-height: 44px;
+}
 .home-mobile-menu :focus-visible,
 .home-mobile-menu-trigger:focus-visible {
   outline: 2px solid #6a4fde;
@@ -5050,8 +5166,8 @@ function applyAboutCapabilityCards(document, locale) {
         ["slack.svg", "Slack"],
         ["qq.png", "QQ"],
         ["wechat.png", "微信"],
-        ["feishu.png", "飞书"],
-        ["dingtalk.png", "钉钉"],
+        ["feishu.png", locale === "zh-Hant" ? "飛書" : "飞书"],
+        ["dingtalk.png", locale === "zh-Hant" ? "釘釘" : "钉钉"],
       ];
       const logoItems = channelLogos
         .map(([src, name]) => `<li class="chnloop__item"><span class="chnloop__logo"><img src="/lightvela-intl-home/assets/${src}" alt="" draggable="false"></span><span>${name}</span></li>`)
