@@ -27,11 +27,13 @@
 - `frontend/src/pages/marketing/agent-settings-page.tsx`
 - `frontend/src/pages/marketing/__tests__/agent-diagnostics-multi-bot.test.tsx`
 - `frontend/src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
 - `docs/engineering/domains/site-environment-routing.md`
 - `docs/context/tasks/2026-09-24-international-bot-create-entry.md`
+- `docs/context/tasks/2026-09-24-international-bot-create-entry.checkpoint.md`
 
 ## required_context
-- `site-environment-routing` Domain Pack；前端服务说明和页面测试邻居。
+- `site-environment-routing` Domain Pack；前端服务说明、页面测试邻居及 OpenCraft 生成层约束。
 
 ## context_receipt
 | 文件 | 阅读原因 | 用途 |
@@ -44,6 +46,9 @@
 | `frontend/openspec/specs/marketing.md@1bbb1a12` | 当前前端规格 | 诊断隐藏工具规则不受本次影响 |
 | `docs/engineering/domains/site-environment-routing.md@1bbb1a12` | 正式设计 | 更新创建入口显隐规则 |
 | `docs/context/tasks/TASK-TEMPLATE.md@1bbb1a12` | Task Pack 模板 | 记录范围与证据 |
+| `opencraft/AGENTS.md@a836219d` | OpenCraft 服务约束 | 同步机械生成层并运行只读漂移检查 |
+| `opencraft/MONO2_MIGRATION.md@a836219d` | 生成层权威 | 确认 frontend 为唯一写入真源 |
+| `docs/context/project/upstream-subtrees.md@a836219d` | 共置边界 | 不从旧 OpenCraft 仓库双向同步 |
 
 ## evidence
 - 当前 `origin/master` 的创建按钮条件为 `multiBotEnabled && (!isGlobal || showHiddenAgentTools)`。
@@ -53,6 +58,8 @@
 - `pnpm build:global` 通过：国际站静态页面生成和 SEO/静态资源检查完成。
 - `validate_documentation.py --repo . --format json`：错误和告警均为 0；`validate_change_impact.py --repo . --staged` 通过，未命中额外设计映射规则。
 - `git diff --check` 通过；构建生成的字体文件已恢复。
+- MR !4621 的 CI 日志显示 frontend 检查通过，OpenCraft guard 因 `UPSTREAM.json` 清单漂移失败；本地复现同一错误。
+- 在前端源码提交 `a836219d9d481adf7236d486054c2c48a2a4235d` 后运行官方同步脚本，仅更新清单的 `sourceRevision`；`check:mono2-agent-console` 验证 130 个文件通过。
 
 ## risks
 - 风险：误开放其他隐藏工具或绕过额度。
@@ -61,7 +68,8 @@
 
 ## validation
 - 聚焦 Vitest：多 Bot 组件和侧栏守卫。
-- `pnpm check`、前端 lint、国际站构建。
+- `pnpm check`、国际站构建。
+- OpenCraft `sync:mono2-agent-console` 与 `check:mono2-agent-console`。
 - context 文档和变更影响检查、`git diff --check`。
 
 ## decisions
@@ -74,4 +82,4 @@
 - 有界搜索命中上述路径；无需独立扫描产物。
 
 ## handoff
-- 实现和本地门禁已完成；通过 `codex/show-global-bot-create` 分支提交 MR，待审核与合并。
+- 实现与 OpenCraft 清单同步已本地验证；继续更新同源 MR !4621，待远端 CI 复核。
