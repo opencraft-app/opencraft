@@ -24,7 +24,7 @@
     {
       "id": "agent-gateway-runtime",
       "paths": ["cloudagent/**", "ai-gateway/**", "ctl/**", "sandbox/**", "velagw/**", "velalink/**", "workers/**", "new-api/**", "opencraft/**"],
-      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "opencraft/plugins/lightvela-hermes/src/upstream/**"],
+      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "ctl/pkg/model/instancespec/spec.go", "opencraft/plugins/lightvela-hermes/src/upstream/**"],
       "design_docs": ["docs/engineering/domains/agent-gateway-runtime.md", "docs/engineering/journeys/agent-request-streaming.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"
@@ -48,7 +48,7 @@
     {
       "id": "context-engineering",
       "paths": ["AGENTS.md", ".agents/context/**", "docs/context/decisions/**", "docs/context/project/overview.md", "docs/context/23-rules-matrix.md", "docs/context/.context/**", ".agents/skills/context-audit/**"],
-      "exclude_paths": ["**/tests/**", "docs/context/.context/**"],
+      "exclude_paths": ["**/tests/**", "docs/context/.context/**", ".agents/context/change-impact.json"],
       "design_docs": ["docs/context/decisions/ADR-0001-context-engineering-v2.md", "docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"
