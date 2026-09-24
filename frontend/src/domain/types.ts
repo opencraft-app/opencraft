@@ -78,6 +78,12 @@ export interface Bot {
     botName?: string;
     status: string;
   };
+  whatsAppOwner?: {
+    botId: string;
+    profileId: string;
+    botName?: string;
+    status: string;
+  };
   sandboxId?: string;
   name: string;
   type: "sales" | "support" | "ops" | "research";

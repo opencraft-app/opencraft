@@ -35,6 +35,7 @@ export interface OpenClawBot {
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;
   weixinOwner?: Bot["weixinOwner"];
+  whatsAppOwner?: Bot["whatsAppOwner"];
   name: string;
   personality: string;
   personalityEmoji: string;
@@ -126,6 +127,7 @@ const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClaw
     createdFrom: bot.createdFrom,
     sourceBotId: bot.sourceBotId,
     weixinOwner: bot.weixinOwner,
+    whatsAppOwner: bot.whatsAppOwner,
     name: bot.name,
     personality: bot.template || "默认设定",
     personalityEmoji: "✨",

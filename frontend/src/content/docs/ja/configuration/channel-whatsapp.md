@@ -34,6 +34,8 @@ LightVela にサインインし、右上の「My Hermes」をクリックして�
 
 WhatsApp カードを見つけ、「+ 接続」をクリックします。
 
+同じ LightVela インスタンス内では、WhatsApp を同時に接続できる Bot は 1 つだけです。別の Bot に接続済みの場合は、案内からその Bot を開いて WhatsApp を切断してから、ここで接続してください。
+
 ### 3. 携帯電話で WhatsApp を使って QR コードをスキャンする
 
 1. 携帯電話で WhatsApp を開く

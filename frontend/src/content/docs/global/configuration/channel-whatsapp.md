@@ -34,6 +34,8 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 找到 WhatsApp 模块，点击「+连接」。
 
+同一 LightVela 实例内，WhatsApp 同时只能连接一个 Bot。如果已由其他 Bot 连接，请通过占用提示前往原 Bot 断开 WhatsApp，再在当前 Bot 连接。
+
 ### 3. 使用手机 WhatsApp 扫码
 
 1. 打开手机 WhatsApp

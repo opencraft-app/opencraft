@@ -22,6 +22,7 @@ const (
 	instanceBotCreatedFromBlank    = "blank"
 	instanceBotCreatedFromClone    = "clone"
 	uniqueChannelWeixin            = "weixin"
+	uniqueChannelWhatsApp          = "whatsapp"
 	maxInstanceBotNameRunes        = 60
 	maxInstanceBotDescriptionRunes = 256
 	maxInstanceBotSoulRunes        = 12000
@@ -217,12 +218,13 @@ from pathlib import Path
 import sys
 from datetime import datetime, timezone
 
-action, bot_id, profile_id = sys.argv[1:4]
+action, channel, bot_id, profile_id, default_bot_id = sys.argv[1:6]
 home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
 root = home / ".lightvela" / "channel-bindings"
 root.mkdir(parents=True, exist_ok=True)
-path = root / "weixin.json"
-lock_path = root / "weixin.lock"
+path = root / (channel + ".json")
+lock_path = root / (channel + ".lock")
+legacy_marker = root / "whatsapp-legacy-checked"
 
 def read_current():
     try:
@@ -240,6 +242,18 @@ def write_current(value):
 with lock_path.open("a", encoding="utf-8") as lock:
     fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
     current = read_current()
+    if channel == "whatsapp" and not legacy_marker.exists():
+        if not current and (home / "platforms" / "whatsapp" / "session" / "creds.json").is_file():
+            current = {
+                "ok": True,
+                "channel": channel,
+                "bot_id": default_bot_id,
+                "profile_id": "default",
+                "status": "connected",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            write_current(current)
+        legacy_marker.touch(mode=0o600)
     if action == "get":
         result = current or {"ok": True}
     elif action == "claim":
@@ -248,7 +262,7 @@ with lock_path.open("a", encoding="utf-8") as lock:
         else:
             result = {
                 "ok": True,
-                "channel": "weixin",
+                "channel": channel,
                 "bot_id": bot_id,
                 "profile_id": profile_id,
                 "status": current.get("status", "reserved") if current else "reserved",
@@ -520,16 +534,24 @@ func (l *logic) ListInstanceBots(ctx pctx.Context, instanceID string) (*transpor
 	if err != nil {
 		return nil, err
 	}
-	if weixinOwner != nil {
+	whatsAppOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWhatsApp)
+	if err != nil {
+		return nil, err
+	}
+	for _, owner := range []*transport.InstanceChannelBindingResponse{weixinOwner, whatsAppOwner} {
+		if owner == nil {
+			continue
+		}
 		for _, bot := range profiles {
-			if bot.BotID == weixinOwner.BotID {
-				weixinOwner.BotName = bot.Name
+			if bot.BotID == owner.BotID {
+				owner.BotName = bot.Name
 				break
 			}
 		}
 	}
 	for _, bot := range profiles {
 		bot.WeixinOwner = weixinOwner
+		bot.WhatsAppOwner = whatsAppOwner
 	}
 	return &transport.ListInstanceBotsResponse{Items: profiles}, nil
 }
@@ -637,6 +659,13 @@ func (l *logic) DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*
 	if weixinOwner != nil && weixinOwner.BotID == bot.BotID {
 		return nil, errcode.Wrap(errcode.ErrChannelOccupied, "disconnect weixin before deleting bot %s", botID)
 	}
+	whatsAppOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWhatsApp)
+	if err != nil {
+		return nil, err
+	}
+	if whatsAppOwner != nil && whatsAppOwner.BotID == bot.BotID {
+		return nil, errcode.Wrap(errcode.ErrChannelOccupied, "disconnect whatsapp before deleting bot %s", botID)
+	}
 	if _, err := l.execHermesProfileCommand(ctx, instanceID, buildHermesProfileDeleteCommand(bot.ProfileID)); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "delete Hermes profile %s: %v", bot.ProfileID, err)
 	}
@@ -730,21 +759,26 @@ func projectHermesProfiles(profiles []hermesProfileRecord, instanceID, defaultNa
 	return items
 }
 
+func isUniqueChannel(channel string) bool {
+	return channel == uniqueChannelWeixin || channel == uniqueChannelWhatsApp
+}
+
 func (l *logic) ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) (*transport.InstanceChannelBindingResponse, error) {
-	if strings.TrimSpace(channel) != uniqueChannelWeixin {
+	channel = strings.TrimSpace(channel)
+	if !isUniqueChannel(channel) {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
 	bot, err := l.getInstanceBotResponse(ctx, instanceID, botID)
 	if err != nil {
 		return nil, err
 	}
-	binding, err := l.runChannelBindingAction(ctx, instanceID, "claim", bot.BotID, bot.ProfileID)
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "claim", bot.BotID, bot.ProfileID)
 	if err != nil {
 		return nil, err
 	}
 	if !binding.OK {
 		if binding.Reason == "occupied" {
-			return nil, errcode.Wrap(errcode.ErrChannelOccupied, "weixin is already connected to bot %s", binding.BotID)
+			return nil, errcode.Wrap(errcode.ErrChannelOccupied, "%s is already connected to bot %s", channel, binding.BotID)
 		}
 		return nil, errcode.Wrap(errcode.ErrInstanceBotConflict, "claim channel: %s", binding.Reason)
 	}
@@ -755,29 +789,31 @@ func (l *logic) ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, cha
 }
 
 func (l *logic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
-	if strings.TrimSpace(channel) != uniqueChannelWeixin {
+	channel = strings.TrimSpace(channel)
+	if !isUniqueChannel(channel) {
 		return errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
 	if _, err := l.getInstanceBotResponse(ctx, instanceID, botID); err != nil {
 		return err
 	}
-	_, err := l.runChannelBindingAction(ctx, instanceID, "release", botID, "")
+	_, err := l.runChannelBindingAction(ctx, instanceID, channel, "release", botID, "")
 	return err
 }
 
 func (l *logic) releaseReservedInstanceBotChannel(ctx pctx.Context, instanceID, botID string) error {
-	_, err := l.runChannelBindingAction(ctx, instanceID, "release_reserved", botID, "")
+	_, err := l.runChannelBindingAction(ctx, instanceID, uniqueChannelWeixin, "release_reserved", botID, "")
 	return err
 }
 
 func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
-	if strings.TrimSpace(channel) != uniqueChannelWeixin {
+	channel = strings.TrimSpace(channel)
+	if !isUniqueChannel(channel) {
 		return errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
 	if _, err := l.getInstanceBotResponse(ctx, instanceID, botID); err != nil {
 		return err
 	}
-	binding, err := l.runChannelBindingAction(ctx, instanceID, "confirm", botID, "")
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "confirm", botID, "")
 	if err != nil {
 		return err
 	}
@@ -788,10 +824,11 @@ func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 }
 
 func (l *logic) getChannelBindingResponse(ctx pctx.Context, instanceID, channel string) (*transport.InstanceChannelBindingResponse, error) {
-	if strings.TrimSpace(channel) != uniqueChannelWeixin {
+	channel = strings.TrimSpace(channel)
+	if !isUniqueChannel(channel) {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
-	binding, err := l.runChannelBindingAction(ctx, instanceID, "get", "", "")
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "get", "", "")
 	if err != nil || binding.BotID == "" {
 		return nil, err
 	}
@@ -800,8 +837,8 @@ func (l *logic) getChannelBindingResponse(ctx pctx.Context, instanceID, channel 
 	}, nil
 }
 
-func (l *logic) runChannelBindingAction(ctx pctx.Context, instanceID, action, botID, profileID string) (*channelBindingPayload, error) {
-	command := buildHermesPythonCommand(manageChannelBindingScript, action, botID, hermesNativeProfileID(profileID))
+func (l *logic) runChannelBindingAction(ctx pctx.Context, instanceID, channel, action, botID, profileID string) (*channelBindingPayload, error) {
+	command := buildHermesPythonCommand(manageChannelBindingScript, action, channel, botID, hermesNativeProfileID(profileID), instanceID)
 	result, err := l.execHermesProfileCommand(ctx, instanceID, command)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "manage channel binding: %v", err)

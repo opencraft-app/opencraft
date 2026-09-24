@@ -3028,5 +3028,8 @@
   "k_ffcbaabf": "Cloud storage",
   "k_ffd26634": "Wake it anytime,\nwithout draining your device",
   "k_ffdf78e6": "Model service provider",
-  "k_ffea1468": "Installed skills list"
+  "k_ffea1468": "Installed skills list",
+  "k_374c5c8a": "WhatsApp is connected to {{name}}. Only one Bot can connect to WhatsApp at a time in the same instance. Disconnect it from the original Bot first.",
+  "k_7234c1ff": "Already in use by another Bot",
+  "k_943416fd": "Scan with WhatsApp on your phone to sign in. Only one Bot can connect to WhatsApp at a time in the same instance."
 }

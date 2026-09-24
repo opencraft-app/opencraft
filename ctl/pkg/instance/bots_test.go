@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -408,9 +409,9 @@ func TestChannelBindingScriptUsesLockAndInstanceLocalHermesMetadata(t *testing.T
 
 func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *testing.T) {
 	home := t.TempDir()
-	run := func(action, botID, profileID string) channelBindingPayload {
+	run := func(channel, action, botID, profileID string) channelBindingPayload {
 		t.Helper()
-		command := exec.Command("python3", "-c", manageChannelBindingScript, action, botID, profileID)
+		command := exec.Command("python3", "-c", manageChannelBindingScript, action, channel, botID, profileID, "default-bot")
 		command.Env = append(os.Environ(), "HERMES_HOME="+home)
 		output, err := command.Output()
 		if err != nil {
@@ -423,22 +424,66 @@ func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *tes
 		return payload
 	}
 
-	if claim := run("claim", "bot-1", "profile-1"); !claim.OK || claim.Status != "reserved" {
+	if claim := run("weixin", "claim", "bot-1", "profile-1"); !claim.OK || claim.Status != "reserved" {
 		t.Fatalf("unexpected first claim: %+v", claim)
 	}
-	if occupied := run("claim", "bot-2", "profile-2"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-1" {
+	if occupied := run("weixin", "claim", "bot-2", "profile-2"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-1" {
 		t.Fatalf("expected occupied binding, got %+v", occupied)
 	}
-	if confirmed := run("confirm", "bot-1", "profile-1"); !confirmed.OK || confirmed.Status != "connected" {
+	if claim := run("whatsapp", "claim", "bot-2", "profile-2"); !claim.OK || claim.Channel != "whatsapp" || claim.BotID != "bot-2" {
+		t.Fatalf("independent WhatsApp claim failed: %+v", claim)
+	}
+	if occupied := run("whatsapp", "claim", "bot-1", "profile-1"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-2" {
+		t.Fatalf("expected WhatsApp to be occupied by bot-2, got %+v", occupied)
+	}
+	if confirmed := run("weixin", "confirm", "bot-1", "profile-1"); !confirmed.OK || confirmed.Status != "connected" {
 		t.Fatalf("unexpected confirmation: %+v", confirmed)
 	}
-	run("release_reserved", "bot-1", "profile-1")
-	if current := run("get", "", ""); current.BotID != "bot-1" || current.Status != "connected" {
+	run("weixin", "release_reserved", "bot-1", "profile-1")
+	if current := run("weixin", "get", "", ""); current.BotID != "bot-1" || current.Status != "connected" {
 		t.Fatalf("connected owner must survive reserved cleanup: %+v", current)
 	}
-	run("release", "bot-1", "profile-1")
-	if current := run("get", "", ""); current.BotID != "" {
+	run("weixin", "release", "bot-1", "profile-1")
+	if current := run("weixin", "get", "", ""); current.BotID != "" {
 		t.Fatalf("expected released binding, got %+v", current)
+	}
+	if current := run("whatsapp", "get", "", ""); current.BotID != "bot-2" {
+		t.Fatalf("Weixin release changed WhatsApp owner: %+v", current)
+	}
+}
+
+func TestWhatsAppBindingAdoptsLegacyDefaultSessionOnce(t *testing.T) {
+	home := t.TempDir()
+	session := filepath.Join(home, "platforms", "whatsapp", "session")
+	if err := os.MkdirAll(session, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(session, "creds.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(action, botID string) channelBindingPayload {
+		t.Helper()
+		command := exec.Command("python3", "-c", manageChannelBindingScript, action, "whatsapp", botID, "default", "default-bot")
+		command.Env = append(os.Environ(), "HERMES_HOME="+home)
+		output, err := command.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload channelBindingPayload
+		if err := json.Unmarshal(output, &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+	if current := run("get", ""); current.BotID != "default-bot" || current.Status != "connected" {
+		t.Fatalf("legacy session should belong to default bot: %+v", current)
+	}
+	if occupied := run("claim", "another-bot"); occupied.OK || occupied.Reason != "occupied" {
+		t.Fatalf("legacy session must block another bot: %+v", occupied)
+	}
+	run("release", "default-bot")
+	if current := run("get", ""); current.BotID != "" {
+		t.Fatalf("legacy session should not be adopted again after release: %+v", current)
 	}
 }
 
@@ -493,6 +538,30 @@ func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
 	}
 	if len(adapter.ptyCalls) != 2 || len(adapter.processCalls) != 0 {
 		t.Fatalf("connected Weixin owner rejection must only use TAT lookups, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
+	}
+}
+
+func TestDeleteInstanceBotRejectsWhatsAppOwner(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		ptyBatches: [][]psandbox.PtyExecStreamEvent{
+			{{Type: "output", Chunk: `{"items":[{"native_id":"sales-123","display_name":"Sales","is_default":false}]}`}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+			{{Type: "output", Chunk: `{"ok":true}`}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+			{{Type: "output", Chunk: `{"ok":true,"channel":"whatsapp","bot_id":"sales-123","profile_id":"sales-123","status":"connected"}`}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	_, err := logic.DeleteInstanceBot(pctx.NewContext(nil).WithUserID("user-1"), "ins-1", "sales-123")
+	if !errors.Is(err, errcode.ErrChannelOccupied) {
+		t.Fatalf("expected connected WhatsApp owner rejection, got %v", err)
+	}
+	if len(adapter.ptyCalls) != 3 {
+		t.Fatalf("expected profile and both channel binding lookups, got %d", len(adapter.ptyCalls))
 	}
 }
 

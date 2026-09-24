@@ -585,6 +585,12 @@ describe("http repositories auth token bootstrap", () => {
               bot_name: "销售 Bot",
               status: "connected",
             },
+            whatsapp_owner: {
+              bot_id: "bot_sales",
+              profile_id: "sales-123",
+              bot_name: "销售 Bot",
+              status: "connected",
+            },
           },
           {
             bot_id: "bot_sales",
@@ -650,6 +656,7 @@ describe("http repositories auth token bootstrap", () => {
         profileId: "main",
         isDefault: true,
         weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
+        whatsAppOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
       }),
       expect.objectContaining({
         id: "bot_sales",
