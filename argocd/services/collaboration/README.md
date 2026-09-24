@@ -1,8 +1,14 @@
 # Collaboration 北京交付
 
 源码构建入口是 `.ci/collaboration.yml`，复用 `service-release.yml` 与独立
-`collaboration` bundle，仅构建北京镜像。默认 `MASTER_AUTO_PIN_ENVS=none`，
-`ENABLE_MASTER_PROD_PROMOTE=false`，因此合入源码不会自动创建业务 workload。
+`collaboration` bundle，仅构建北京镜像。`master` 使用标准 service-release 流程为
+`beijing-sandbox` 构建并 auto-pin：候选镜像必须先通过受控 MySQL migration/verify，随后只创建
+一个可审阅的 GitOps MR，不自动合并，也不直接同步 Argo。
+
+日常 runtime 发布不得重跑 foundation、SSM 写入或 SOPS 导出。标准 GitOps 投影保留 `gitops`
+已有的 `collaboration-runtime-secrets.sops.yaml` 和 `collaboration-platform.env` 环境值，再由
+`update_image_pin.py` 只更新镜像 digest 与部署时间；其余 base/overlay 源码仍按 `master` 投影。
+缺少上述已激活输入时配置 gate 必须失败，不能从 source 占位模板重建或伪造凭据。
 
 `catalogs/candidates/beijing-sandbox/` 中的两个描述符不在 AppSet 扫描范围内。
 它们描述同一个 `collaboration-beijing-sandbox` Application 的先后两个阶段，
@@ -23,18 +29,21 @@ kubectl 或复制 YAML。流水线固定为 dry-run → 人工审批 → apply/G
    `beijing-sandbox/collaboration-platform.env`；不把 IM Secret 写入普通配置。
 5. foundation 收敛后以 `BOOTSTRAP_PHASE=runtime` 重跑。配置门禁要求 active catalog 仍指向
    foundation、SOPS artifact 存在、镜像按 digest 固定且所有占位符已消除。
-6. runtime 阶段 DB gate 以显式普通 `mysql` 方言先执行受控 `collaboration/migration` Job，再执行同一候选镜像的
+6. 首次 runtime 阶段 DB gate 以显式普通 `mysql` 方言先执行受控 `collaboration/migration` Job，再执行同一候选镜像的
    `database verify`；两者只挂 `database.dsn` 文件，不把 DSN 放入 argv/env 或日志。
    每次晋级都跑幂等迁移和 verify，首次发布不会依赖当前 diff 恰好包含 SQL；不得把普通
    MySQL DSN 改标成 `tdsql` 来绕过平台差异。
-7. 门禁成功后自动投影 active 描述符为 runtime sourcePath 并创建 GitOps MR；合入后再确认 Argo revision、镜像、
+7. 首次门禁成功后自动投影 active 描述符为 runtime sourcePath 并创建 GitOps MR；合入后再确认 Argo revision、镜像、
    `Synced/Healthy` 与 API 健康。Migration 不在常驻 Kustomize 中。
 
-已运行环境修正 Tencent IM 凭据时仍使用同一入口：先确认 protected setting 中的 SDKAppID、管理员和
+已运行环境修正 Tencent IM 凭据时仍使用 bootstrap 入口：先确认 protected setting 中的 SDKAppID、管理员和
 SecretKey 属于同一个应用，再以 `BOOTSTRAP_PHASE=runtime`、`ALLOW_IM_SECRET_ROTATION=true` 启动。
 该变量默认 `false`，只允许显式更新 IM Secret，不允许数据库密码重置。apply 会按
 SSM → SOPS → GitOps 投影更新，并刷新 `COLLABORATION_DEPLOYED_AT` 触发 Deployment 滚动重启；
 禁止只修改集群 Secret 或手工重启 Pod。
+
+环境完成 runtime 激活后，普通源码发布只能走 `.ci/collaboration.yml`。bootstrap runtime 不得作为
+日常镜像晋级入口；只有显式凭据轮换、灾难恢复或重新建立 foundation 时才使用，并继续要求人工审批。
 
 Gateway 上游配置与匹配的内部 token 仍是单独的激活步骤，本轮不开放用户流量。
 缺少 SSM、SOPS、平台值或基础阶段时保持候选状态，不提交伪造的 Secret、旧服务镜像
