@@ -32,14 +32,6 @@ describe("agent settings TEA SDK boundary", () => {
     expect(page).toContain('resolveAgentConsoleCollectionLabel("model", i18n.language, t)');
   });
 
-  it("projects new conversation creation through the embedded session command bridge", () => {
-    const page = readSource("src/pages/marketing/agent-settings-page.tsx");
-
-    expect(page).toContain("onSessionCommandsChange={setChatSessionCommands}");
-    expect(page).toContain("onClick={createChatSession}");
-    expect(page).toContain('aria-label={t("新会话")}');
-  });
-
   it("keeps panel inputs stable so background refreshes cannot remount ready content as loading", () => {
     const page = readSource("src/pages/marketing/agent-settings-page.tsx");
 

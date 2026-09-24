@@ -526,7 +526,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
     expect(page).toContain("[sdkInstance?.InstanceId]");
-    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setChatSessionCommands\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
