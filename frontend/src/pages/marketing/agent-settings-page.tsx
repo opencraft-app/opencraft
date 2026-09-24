@@ -186,7 +186,6 @@ import { trackDatongClick, trackDatongEvent } from "@/observability/datong-track
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import {
   AgentChatMigrationSurface,
-  type EmbeddedSessionCommands,
   type EmbeddedSessionMutationState,
 } from "@/pages/marketing/opencraft-embedded-workbench";
 
@@ -2725,7 +2724,6 @@ export const AgentSettingsPage = ({
   const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
   const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
-  const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
   const chatSurfaceOwnerRef = useRef<"legacy" | "opencraft">("legacy");
   const legacyChatSessionStateRef = useRef<Parameters<
     NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
@@ -2880,18 +2878,6 @@ export const AgentSettingsPage = ({
     }
     applyChatSessionActions(legacyChatSessionActionsRef.current);
   }, [applyChatSelectedChatId, applyChatSessionActions, applyChatSessionState]);
-
-  const createChatSession = () => {
-    if (chatSessionCommands === null || chatSessionMutationState?.pending === true) return;
-    const previousSelection = selectedChatId;
-    setOpenSessionMenuChatId(null);
-    setRenamingChatId(null);
-    setSessionToDelete(null);
-    setSelectedChatId("");
-    void chatSessionCommands.createSession().catch(() => {
-      setSelectedChatId((current) => current === "" ? previousSelection : current);
-    });
-  };
 
   const startSessionRename = (session: LightVelaSession) => {
     setOpenSessionMenuChatId(null);
@@ -4096,7 +4082,6 @@ export const AgentSettingsPage = ({
     setChatSessions([]);
     setChatSessionsLoading(false);
     setChatSessionMutationState(null);
-    setChatSessionCommands(null);
     setSelectedChatId(undefined);
     setChatSessionActions(null);
     setRenamingChatId(null);
@@ -6049,19 +6034,6 @@ export const AgentSettingsPage = ({
                     {sidebarTab === "chat" && isActiveBotChatAvailable ? (
                       <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
                         <div className="lv-agents-nav-group" role="group">
-                          <button
-                            type="button"
-                            className={cn(
-                              "lv-agents-nav-item text-left hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15 disabled:cursor-not-allowed disabled:opacity-40",
-                              selectedChatId === "" && "is-active",
-                            )}
-                            aria-label={t("新会话")}
-                            disabled={chatSessionCommands === null || chatSessionMutationState?.pending === true}
-                            onClick={createChatSession}
-                          >
-                            <span className="lv-agents-nav-icon"><Plus aria-hidden="true" className="size-4" /></span>
-                            <span className="min-w-0 flex-1 truncate">{t("新会话")}</span>
-                          </button>
                           <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
                           <ul className="lv-agents-nav-group-items">
                             {chatSessionsLoading && chatSessions.length === 0 ? (
@@ -6530,7 +6502,6 @@ export const AgentSettingsPage = ({
                               region={isGlobal ? "intl" : "cn"}
                               multiSession={openCraftChatMultiSessionBridge}
                               onOwnerChange={handleChatSurfaceOwnerChange}
-                              onSessionCommandsChange={setChatSessionCommands}
                               onSessionMutationStateChange={setChatSessionMutationState}
                               legacy={isActiveBotDefault ? (
                                 <AgentChatPanel
