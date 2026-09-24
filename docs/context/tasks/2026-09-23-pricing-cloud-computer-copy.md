@@ -1,5 +1,31 @@
+---
+id: task-pricing-cloud-environment-copy-2026-09-23
+type: task
+scope: LightVela 双站定价页与套餐文档的云端环境术语和资源规格。
+triggers: ["pricing cloud environment", "套餐云端环境", "subscribe specs"]
+owner: mingyuxiao
+authority: primary
+source_of_truth:
+  - frontend/next-site/subscribe-page.tsx
+  - frontend/src/content/docs/plans.md
+  - frontend/src/content/docs/global/plans.md
+  - frontend/src/content/docs/en/plans.md
+  - frontend/src/content/docs/es/plans.md
+  - frontend/src/content/docs/id/plans.md
+  - frontend/src/content/docs/ja/plans.md
+  - frontend/src/content/docs/ko/plans.md
+status: active
+reviewed_at: 2026-09-24
+review_due: 2026-12-23
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
+# 定价页云端环境文案
+
 ## goal
-统一 LightVela 定价页和官网文档中的云电脑对外术语与资源单位，并避免国际站后端英文能力 Key 造成重复规格行。
+统一 LightVela 定价页和官网文档中的云端环境对外术语与资源单位，并避免国际站后端英文能力 Key 造成重复规格行。
 
 ## non_goals
 - 不调整套餐价格、权益数值、计费流程或运行时资源分配。
@@ -26,6 +52,7 @@
 - 官网套餐文档的技术规格保留 `vCPU` 与 `RAM`，不称为独享物理核心。
 - 存储显示为 `50 GB` / `80 GB`。
 - 后端返回 `Standalone Environment`、`Dedicated Cloud Storage`、`Minimalist Config Panel` 时不出现重复能力行。
+- 后端返回 `Dedicated cloud environment` 时也归一为唯一的环境权益行。
 - 国际站各语言切换时，英文后端权益 Key 不回显英文；免费链路占位卡的价格单位按当前语言显示。
 - 套餐加载与创建失败时，未知后端错误不直接回显英语；已知计费错误码继续显示对应语言的明确提示。
 - 国内站与国际站现有文档语言统一使用对应语言的“专属云端环境”表述，并统一 `vCPU`、`GB RAM`、`GB` 单位格式。
@@ -74,6 +101,7 @@
 - 用户确认后，独立 CI 修复提交为 MR !4603，源分支 `codex/fix-opencraft-guard-node`，目标 `master`；`2dc1b7a68` 已随 `d39c9352d` 合入 `master`，trusted guard 现已包含 Node bootstrap。
 - !4576 以普通 merge 同步 `master@96abc2691` 并重新生成 OpenCraft 清单；合并后 `pnpm check`、235 个聚焦测试、CN/Global 构建（106/664 页）、OpenCraft 同步校验与插件类型检查均通过。
 - 2026-09-24 套餐卡改为易懂的 CPU 核数表述后：套餐页聚焦测试 105/105、字典测试 18/18、`pnpm check`（TypeScript 171 current / 171 baseline / 0 new）、CN/Global 构建（106/664 页）、OpenCraft 同步校验及文档校验均通过；8 个 locale 的生成套餐文档仍保留 `vCPU` 技术规格。
+- 2026-09-24 CR 跟进：新增 `Dedicated cloud environment` 后端别名，单独断言免费链路占位卡的七语规格，并固定七份套餐文档的 `vCPU` 技术规格；三个聚焦测试文件 141/141 通过。`pnpm check` 为 171 current / 171 baseline / 0 new；CN/Global 构建分别生成 106/664 页；文档校验错误 0；本 Task Pack 的 context 校验错误 0（全仓仍有 2511 条既有错误）；OpenCraft 130 个同步文件校验通过。
 
 ## risks
 - 英文后端 Key 与中文 Key 并存导致重复；通过语义别名归一化和英文回归用例覆盖。
@@ -112,7 +140,23 @@
 - 用户于 2026-09-24 明确授权提交 MR；合并与发布仍需独立指令。
 
 ## stage
-MR !4576 已打开；独立 `.ci` trusted guard 补丁已通过 MR !4603 合入 `master`。本轮卡片友好文案及其 OpenCraft 生成副本追加至该 MR；本任务不执行 !4576 合并或发布。
+MR !4576 已打开；独立 `.ci` trusted guard 补丁已通过 MR !4603 合入 `master`。本轮 CR 跟进修复已通过本地门禁，待核对提交后远端状态；本任务不执行 !4576 合并或发布。
+
+## verified
+- 用户确认修复 CR 意见并提交 MR；主工作区保持原状，改动仅在本 MR 专用 worktree。
+- 本轮只修改环境别名、两处回归测试和 Task Pack，未更改价格或实际资源。
+
+## unverified
+- 新提交推送后的 CI 与评审状态，须以 Gongfeng 最新 source SHA 查询。
+
+## discard
+- CR 报告中的 `behind = 0` 和旧 CI 结果仅对应先前 source SHA，不作为本轮远端状态。
+
+## restore
+- MR !4576 源分支 `codex/pricing-cloud-environment-copy`；本 Task Pack 记录本轮本地证据。
+
+## next_action
+- 核对暂存变更影响，提交并推送本轮修复，再查询 MR source SHA 和 CI。
 
 ## verified
 - 国际站七种字典的英文后端权益、免费链路价格单位与套餐加载错误组件回归通过。

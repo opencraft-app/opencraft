@@ -423,6 +423,7 @@ const ENVIRONMENT_DESC_KEYS = new Set<string>([
   "standalone environment",
   "cloud sandbox",
   "dedicated cloud computer",
+  "dedicated cloud environment",
 ].map(normalizePlanFeatureKey));
 const STORAGE_DESC_KEYS = new Set<string>([
   "专属云端存储",

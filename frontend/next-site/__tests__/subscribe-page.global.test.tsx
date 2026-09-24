@@ -312,7 +312,7 @@ const resetState = () => {
   window.history.replaceState({}, "", "/subscribe");
 };
 
-describe("SubscribePage international cloud computer copy", () => {
+describe("SubscribePage international cloud environment copy", () => {
   beforeEach(resetState);
   afterEach(cleanupPage);
 
@@ -326,6 +326,7 @@ describe("SubscribePage international cloud computer copy", () => {
         credit: 4500,
         description: [
           { Key: "Standalone Environment", Value: "" },
+          { Key: "Dedicated cloud environment", Value: "" },
           { Key: "Dedicated Cloud Storage", Value: "" },
           { Key: "Minimalist Config Panel", Value: "" },
         ],
@@ -363,6 +364,7 @@ describe("SubscribePage international cloud computer copy", () => {
       credit: 4500,
       description: [
         { Key: "Standalone Environment", Value: "" },
+        { Key: "Dedicated cloud environment", Value: "" },
         { Key: "Dedicated Cloud Storage", Value: "" },
         { Key: "Minimalist Config Panel", Value: "" },
       ],
@@ -378,12 +380,18 @@ describe("SubscribePage international cloud computer copy", () => {
     for (const englishKey of ["Standalone Environment", "Dedicated Cloud Storage", "Minimalist Config Panel"]) {
       expect(screen.queryByText(englishKey)).not.toBeInTheDocument();
     }
+    if (locale !== "en-US") expect(screen.queryByText("Dedicated cloud environment")).not.toBeInTheDocument();
   });
 
   it.each([
-    ["zh-CN", "/ 月"], ["zh-Hant", "/ 月"], ["en-US", "/ month"],
-    ["id-ID", "/ bulan"], ["es", "/ mes"], ["ja-JP", "/月"], ["ko-KR", "/ 달"],
-  ] as const)("localizes the placeholder plan's price unit in %s", async (locale, unit) => {
+    ["zh-CN", "/ 月", "4 核 CPU · 16 GB 内存"],
+    ["zh-Hant", "/ 月", "4 核 CPU · 16 GB 內存"],
+    ["en-US", "/ month", "4 CPU cores · 16 GB memory"],
+    ["id-ID", "/ bulan", "4 inti CPU · 16 GB memori"],
+    ["es", "/ mes", "4 núcleos de CPU · 16 GB de memoria"],
+    ["ja-JP", "/月", "CPU 4コア · 16 GB メモリ"],
+    ["ko-KR", "/ 달", "CPU 4코어 · 16 GB 메모리"],
+  ] as const)("localizes the placeholder plan's price unit and spec in %s", async (locale, unit, spec) => {
     translationState.real = true;
     runtimeConfigState.paidBillingEnabled = false;
     listBundlesMock.mockResolvedValue([]);
@@ -392,6 +400,7 @@ describe("SubscribePage international cloud computer copy", () => {
     render(<LocaleOverrideProvider locale={locale}><SubscribePage /></LocaleOverrideProvider>);
 
     expect((await screen.findAllByText(unit)).length).toBeGreaterThan(0);
+    expect(screen.getByText(spec)).toBeInTheDocument();
     if (locale !== "en-US") expect(screen.queryByText("/ month")).not.toBeInTheDocument();
   });
 
