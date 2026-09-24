@@ -38,6 +38,7 @@ INTERNAL_TRADE_PORT="${PERSONAL_DEV_INTERNAL_TRADE_PORT:-28084}"
 TTL_SECONDS="${PERSONAL_DEV_TTL_SECONDS:-28800}"
 BILLING_ACCOUNT_LEASE_TTL_SECONDS="${PERSONAL_DEV_ACCOUNT_LEASE_TTL_SECONDS:-86400}"
 BROWSER_SESSION_TTL_SECONDS="${PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS:-28800}"
+REQUIRED_DOCKER_FREE_GIB="${PERSONAL_DEV_REQUIRED_DOCKER_FREE_GIB:-12}"
 
 AUTH_BASE=""
 AUTH_ADMIN_BASE=""
@@ -720,6 +721,38 @@ require_personal_context() {
   state_set kind_cluster "$KIND_CLUSTER"
 }
 
+ensure_docker_disk_headroom() {
+  local root free_gib reclaimable
+  root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  [[ -n "$root" ]] || root=/var/lib/docker
+  while [[ ! -d "$root" && "$root" != "/" ]]; do
+    root="$(dirname "$root")"
+  done
+  free_gib="$(df -Pk "$root" 2>/dev/null | awk 'NR==2 {printf "%d", $4/1048576}')"
+  [[ -n "$free_gib" ]] || {
+    log "docker_disk=unknown (df failed on $root); skipping the headroom preflight"
+    return 0
+  }
+  log "docker_disk=$root free=${free_gib}Gi required=${REQUIRED_DOCKER_FREE_GIB}Gi"
+  if (( free_gib >= REQUIRED_DOCKER_FREE_GIB )); then
+    return 0
+  fi
+  reclaimable="$(docker system df --format '{{.Type}} {{.Reclaimable}}' 2>/dev/null || true)"
+  printf 'personal devcloud needs about %sGi free on the docker data disk (%s) to build every service image.\n' \
+    "$REQUIRED_DOCKER_FREE_GIB" "$root" >&2
+  printf 'currently free: %sGi. without headroom the frontend image build fails late with "no space left on device".\n' \
+    "$free_gib" >&2
+  if [[ -n "$reclaimable" ]]; then
+    printf 'reclaimable docker space:\n%s\n' "$reclaimable" >&2
+  fi
+  printf 'reclaim space first, for example:\n' >&2
+  printf '  docker image prune -f && docker builder prune -af\n' >&2
+  printf '  docker rmi $(docker images -f dangling=true -q)   # dangling build layers\n' >&2
+  printf '  %s down                                            # release stacks you no longer need\n' "$0" >&2
+  printf 'set PERSONAL_DEV_REQUIRED_DOCKER_FREE_GIB to override this threshold on purpose.\n' >&2
+  die "insufficient docker disk headroom on $root"
+}
+
 doctor() {
   prepare_state
   local dependency
@@ -728,6 +761,7 @@ doctor() {
   done
   configure_site
   docker info >/dev/null
+  ensure_docker_disk_headroom
   local ip=""
   ip="$(discover_devcloud_ip 2>/dev/null || true)"
   [[ -n "$ip" ]] || die "cannot discover a DevCloud IP in 9.0.0.0/8 or 21.0.0.0/8; set PERSONAL_DEV_IP"

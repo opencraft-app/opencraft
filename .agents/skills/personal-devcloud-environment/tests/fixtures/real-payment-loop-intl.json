@@ -1,15 +1,15 @@
 [
   {
     "observation": "externalUserId",
-    "value": "usr_30c2388c9832239aa7b9e5c4",
-    "at": "2026-09-23T21:57:56Z"
+    "value": "usr_3a57905a36f253218d72ded0",
+    "at": "2026-09-24T00:41:16Z"
   },
   {
     "site": "intl",
     "method": "POST",
     "path": "/inquiry/batch",
     "request": {
-      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "externalUserId": "usr_3a57905a36f253218d72ded0",
       "uin": "450860000023",
       "appId": "1374222817",
       "bundleIds": [
@@ -58,15 +58,15 @@
         }
       ]
     },
-    "elapsedSeconds": 1.661,
-    "at": "2026-09-23T21:57:58Z"
+    "elapsedSeconds": 1.854,
+    "at": "2026-09-24T00:41:18Z"
   },
   {
     "site": "intl",
     "method": "POST",
     "path": "/orders/place-and-pay",
     "request": {
-      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "externalUserId": "usr_3a57905a36f253218d72ded0",
       "uin": "450860000023",
       "appId": "1374222817",
       "bundleId": "bundle_launch_01",
@@ -77,44 +77,44 @@
     },
     "status": 200,
     "response": {
-      "dealName": "20260924023021874269821",
-      "bigOrderId": "20260924023021874269811"
+      "dealName": "20260924023021874371011",
+      "bigOrderId": "20260924023021874371001"
     },
-    "elapsedSeconds": 7.881,
-    "at": "2026-09-23T21:58:06Z"
+    "elapsedSeconds": 8.18,
+    "at": "2026-09-24T00:41:26Z"
   },
   {
     "observation": "createDealName",
-    "value": "20260924023021874269821",
-    "at": "2026-09-23T21:58:06Z"
+    "value": "20260924023021874371011",
+    "at": "2026-09-24T00:41:26Z"
   },
   {
     "observation": "resourceId",
-    "value": "pass-n0e4pwy1",
-    "at": "2026-09-23T21:58:06Z"
+    "value": "pass-n8800sdj",
+    "at": "2026-09-24T00:41:27Z"
   },
   {
     "observation": "passAfterCreate",
-    "value": "active|bundle_launch_01|2026-10-23 21:58:04",
-    "at": "2026-09-23T21:58:06Z"
+    "value": "active|bundle_launch_01|2026-10-24 00:41:24",
+    "at": "2026-09-24T00:41:27Z"
   },
   {
     "observation": "curDeadlineCST",
-    "value": "2026-10-24 05:58:04",
-    "at": "2026-09-23T21:58:06Z"
+    "value": "2026-10-24 08:41:24",
+    "at": "2026-09-24T00:41:27Z"
   },
   {
     "site": "intl",
     "method": "POST",
     "path": "/inquiry/modify",
     "request": {
-      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "externalUserId": "usr_3a57905a36f253218d72ded0",
       "uin": "450860000023",
       "appId": "1374222817",
-      "resourceId": "pass-n0e4pwy1",
+      "resourceId": "pass-n8800sdj",
       "sourceBundleId": "bundle_launch_01",
       "targetBundleId": "bundle_cruise_ai_01",
-      "curDeadline": "2026-10-24 05:58:04",
+      "curDeadline": "2026-10-24 08:41:24",
       "payMode": 1
     },
     "status": 200,
@@ -138,55 +138,55 @@
         }
       ]
     },
-    "elapsedSeconds": 3.028,
-    "at": "2026-09-23T21:58:09Z"
+    "elapsedSeconds": 2.786,
+    "at": "2026-09-24T00:41:29Z"
   },
   {
     "site": "intl",
     "method": "POST",
     "path": "/orders/modify/place-and-pay",
     "request": {
-      "externalUserId": "usr_30c2388c9832239aa7b9e5c4",
+      "externalUserId": "usr_3a57905a36f253218d72ded0",
       "uin": "450860000023",
       "appId": "1374222817",
-      "resourceId": "pass-n0e4pwy1",
+      "resourceId": "pass-n8800sdj",
       "sourceBundleId": "bundle_launch_01",
       "targetBundleId": "bundle_cruise_ai_01",
-      "curDeadline": "2026-10-24 05:58:04",
+      "curDeadline": "2026-10-24 08:41:24",
       "payMode": 1
     },
     "status": 200,
     "response": {
-      "dealName": "20260924023021874330801",
-      "bigOrderId": "20260924023021874330791"
+      "dealName": "20260924023021874351461",
+      "bigOrderId": "20260924023021874351451"
     },
-    "elapsedSeconds": 5.867,
-    "at": "2026-09-23T21:58:15Z"
+    "elapsedSeconds": 6.419,
+    "at": "2026-09-24T00:41:36Z"
   },
   {
     "observation": "modifyDealName",
-    "value": "20260924023021874330801",
-    "at": "2026-09-23T21:58:15Z"
+    "value": "20260924023021874351461",
+    "at": "2026-09-24T00:41:36Z"
   },
   {
     "observation": "passAfterModify",
     "value": "active|bundle_cruise_ai_01|0|",
-    "at": "2026-09-23T21:58:25Z"
+    "at": "2026-09-24T00:41:46Z"
   },
   {
     "observation": "userResourceQuotaAfterModify",
     "value": "OPENCLAW_INSTANCE:3:3",
-    "at": "2026-09-23T21:58:25Z"
+    "at": "2026-09-24T00:41:46Z"
   },
   {
     "observation": "sandboxModifyOperation",
     "value": "",
-    "at": "2026-09-23T21:58:26Z"
+    "at": "2026-09-24T00:41:46Z"
   },
   {
     "site": "intl",
     "method": "POST",
-    "path": "/resources/pass-n0e4pwy1/refund",
+    "path": "/resources/pass-n8800sdj/refund",
     "request": {
       "ownerUin": "450860000023",
       "uin": "450860000023",
@@ -195,26 +195,26 @@
     },
     "status": 200,
     "response": {
-      "dealName": "20260924023021874368331",
-      "bigDealId": "20260924023021874368321"
+      "dealName": "20260924023021874389831",
+      "bigDealId": "20260924023021874389821"
     },
-    "elapsedSeconds": 3.629,
-    "at": "2026-09-23T21:58:50Z"
+    "elapsedSeconds": 3.377,
+    "at": "2026-09-24T00:42:11Z"
   },
   {
     "observation": "dealLockRetriesForrefund",
     "value": 1,
-    "at": "2026-09-23T21:58:50Z"
+    "at": "2026-09-24T00:42:11Z"
   },
   {
     "observation": "passAfterRefund",
     "value": "isolated",
-    "at": "2026-09-23T21:59:00Z"
+    "at": "2026-09-24T00:42:21Z"
   },
   {
     "site": "intl",
     "method": "POST",
-    "path": "/resources/pass-n0e4pwy1/delete",
+    "path": "/resources/pass-n8800sdj/delete",
     "request": {
       "uin": "450860000023",
       "appId": 1374222817,
@@ -222,19 +222,19 @@
     },
     "status": 200,
     "response": {
-      "referenceId": "pass-n0e4pwy1_1790200740878527626"
+      "referenceId": "pass-n8800sdj_1790210541571382751"
     },
-    "elapsedSeconds": 1.706,
-    "at": "2026-09-23T21:59:02Z"
+    "elapsedSeconds": 2.807,
+    "at": "2026-09-24T00:42:24Z"
   },
   {
     "observation": "historyPassAfterDelete",
     "value": "deleted|bundle_cruise_ai_01",
-    "at": "2026-09-23T21:59:02Z"
+    "at": "2026-09-24T00:42:24Z"
   },
   {
     "observation": "tradeFlowsForDeals",
     "value": "create_resource:completed, modify_resource:completed, isolate_resource:completed, destroy_resource:completed",
-    "at": "2026-09-23T21:59:02Z"
+    "at": "2026-09-24T00:42:24Z"
   }
 ]

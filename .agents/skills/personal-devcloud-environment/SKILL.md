@@ -259,6 +259,15 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
   `LOCALSTACK_*_PORT` 透传给 localstack），不要用 `kill` 抢端口。
 - 多目标变配询价应并行返回并保持服务端策略顺序；当前 CTL 单目标预算 20 秒，Service Gateway
   `ctl-passes` 上游预算 30 秒。任一目标询价失败时整条请求失败，不能把临时故障展示成“无可升级套餐”。
+- **`up` 需要 docker 数据盘有足够余量**。整套 localstack 要现场构建十多个服务镜像，前端镜像
+  单独就接近 1GB，一次零状态 `up` 峰值会吃掉约 10GB。真实踩过：`/data` 只剩 977M 时，`up`
+  一路跑到前端镜像的最后一层 `COPY --from=build .../out` 才报
+  `failed to copy files: ... no space left on device`，此前约 40 分钟的构建全部作废，而报错本身
+  完全没有指向"清盘"。现在 `doctor`（`up` 会先跑它）会在构建前检查 docker root 所在分区，
+  低于 12GiB 直接 fail fast，并打印 `docker system df` 的可回收量与清理命令。
+  常用回收顺序：`docker image prune -f`、`docker builder prune -af`、删掉不再需要的旧 checkout，
+  以及对已经不用的站点执行 `personal-devcloud.sh down`（kind 集群容器本身就占数 GB）。
+  确有把握时用 `PERSONAL_DEV_REQUIRED_DOCKER_FREE_GIB` 显式下调阈值，不要注释掉检查。
 - `target_ip_not_allowed`：Auth 观测到的来源 IP 未进入对应 testing allowlist；核对服务端观测值，不要把
   页面 IP 或整段公网 CIDR 盲目放开。
 - `developer_test_account_source_forbidden`（HTTP 403）：按下述顺序排查，不要先怀疑网段。
