@@ -72,3 +72,5 @@ MR !4655 已创建；用户授权修复 3 条评审意见并追加提交。完�
 - MR：https://git.woa.com/wisp/mono2/-/merge_requests/4655；初次交付提交 d8c89f061。
 - 已修复索引越界/空动态列表、测试模板缺失及头像名称兜底 3 条评论；3 文件 90 测试通过，check 无新增类型错误，build:global 成功。
 - 最新日志 /tmp/intl-bot-review-fix-924/；继续保留并排除 next-env.d.ts 和字体的本地改动。
+
+- 评审修复提交 9df17d567；官方同步脚本已将 OpenCraft sourceRevision 更新为该源码提交，130 文件一致性检查通过。

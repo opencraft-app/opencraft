@@ -121,3 +121,5 @@ derived: false
 - 新增未知头像名称、轮播末项循环和手动选择暂停回归；本轮 3 测试文件 90 条通过。最新验证日志：/tmp/intl-bot-review-fix-924/。
 
 - 本轮 check 无新增类型错误，国际 build:global 成功，文档检查通过。源码提交后刷新 OpenCraft sourceRevision，并以提交后的漂移检查为准。
+
+- 评审修复提交 9df17d567；官方同步脚本已将 OpenCraft sourceRevision 更新为该源码提交，130 文件一致性检查通过。
