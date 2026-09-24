@@ -120,7 +120,7 @@ Para saber cómo se asignan y consumen los créditos de IA, consulta [Créditos]
 
 ### Reglas de cambio de plan
 
-Un plan activo se puede mejorar a otro plan si cumple los requisitos. Consulta los planes superiores disponibles en Planes y facturación o en la [página de suscripción](/subscribe), elige una opción ofrecida para tu plan y sigue las indicaciones para confirmar el pedido y pagar. Según los requisitos aplicables, puede haber opciones dentro de la misma familia de planes o entre familias distintas. Que exista un plan no significa que puedas cambiar a él libremente ni pasar directamente a un plan inferior.
+Un plan activo se puede mejorar a otro plan si cumple los requisitos. Consulta los planes superiores disponibles en Planes y facturación o en la [página de suscripción](/subscribe), elige una opción ofrecida para tu plan y sigue las indicaciones para confirmar el pedido y pagar. Según los requisitos aplicables, puede haber opciones dentro de la misma familia de planes o entre familias distintas. Elige únicamente las opciones de mejora que se muestran para tu plan.
 
 El importe de la mejora depende, entre otros factores, del tiempo de vigencia restante y del plan de destino. No hay un importe fijo para mejorar el plan: **el precio real que aparece en la página final de pago es el que prevalece**. Tras pagar, comprueba el estado y los beneficios del plan en la consola. Si no aparece el plan de destino entre las opciones disponibles, no puedes mejorarlo a ese plan desde el actual. Para conservar el mismo plan y ampliar su vigencia, renuévalo.
 
@@ -164,7 +164,7 @@ Los precios en tiempo real, el inventario, los impuestos, los descuentos y la di
 
 ### ¿Puedo actualizar o cambiar planes?
 
-Puedes mejorar un plan activo a uno de los planes superiores ofrecidos en la consola o en la página de suscripción, incluso entre familias distintas si esa opción está disponible. No se admiten por ello cambios arbitrarios ni descensos directos de plan. El importe real se confirma en la página final de pago.
+Puedes mejorar un plan activo a uno de los planes superiores ofrecidos en la consola o en la página de suscripción, incluso entre familias distintas si esa opción está disponible. Elige únicamente una opción de mejora disponible para tu plan. El importe real se confirma en la página final de pago.
 
 ### ¿Cuántos Agents incluye un plan?
 

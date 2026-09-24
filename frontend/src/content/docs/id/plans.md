@@ -134,7 +134,7 @@ Setelah penagihan dimulai, Launch dihargai $7,5 / bulan dan Cruise $15 / bulan. 
 
 ### Bisakah saya upgrade atau mengganti paket?
 
-Paket aktif dapat di-upgrade jika memenuhi syarat. Lihat pilihan upgrade untuk paket Anda di konsol atau [halaman Subscribe](/subscribe); pilihan dapat mencakup paket dalam seri yang sama maupun lintas seri jika ditawarkan. Pilih paket tujuan yang tersedia, konfirmasi pesanan, lalu lanjutkan ke pembayaran. Paket yang tidak tersedia tidak berarti Anda dapat langsung downgrade atau bebas mengganti paket. Jumlah yang harus dibayar dapat berbeda sesuai sisa masa berlaku dan paket tujuan; **harga aktual pada halaman pembayaran akhir yang berlaku**, bukan angka upgrade tetap.
+Paket aktif dapat di-upgrade jika memenuhi syarat. Lihat pilihan upgrade untuk paket Anda di konsol atau [halaman Subscribe](/subscribe); pilihan dapat mencakup paket dalam seri yang sama maupun lintas seri jika ditawarkan. Pilih paket tujuan yang tersedia, konfirmasi pesanan, lalu lanjutkan ke pembayaran. Jumlah yang harus dibayar dapat berbeda sesuai sisa masa berlaku dan paket tujuan; **harga aktual pada halaman pembayaran akhir yang berlaku**, bukan angka upgrade tetap.
 
 ### Berapa banyak Agent yang termasuk dalam satu paket?
 
