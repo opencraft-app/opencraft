@@ -10981,6 +10981,26 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+// iPhone in-app browsers zoom focused editable content below 16px. Keep the
+// desktop control scale, but give phone input targets a readable minimum.
+@media (max-width: 767px) and (any-pointer: coarse) {
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    select,
+    textarea:not(.xterm-helper-textarea),
+    [contenteditable="true"]
+  ) {
+    font-size: max(16px, 1rem) !important;
+  }
+
+  .codex-composer-editor {
+    line-height: 24px;
+
+    p { min-height: 24px; }
+    pre { font-size: 16px; line-height: 24px; }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

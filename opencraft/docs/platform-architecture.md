@@ -1246,6 +1246,14 @@ adds the authenticated HyperNode identity server-side. The current fixed
 multi-user Web deployment must obtain that identity from its authenticated
 gateway session and must never accept it from browser JavaScript.
 
+The app-like iPhone Web surface requests a fixed viewport scale for embedded
+browsers and keeps focused editable text at a 16px minimum on coarse-pointer
+phone viewports. This avoids WebKit focus zoom without changing desktop
+Composer density or blocking keyboard focus. Page pinch zoom is intentionally
+disabled for this product surface; actual WeChat and WeCom WKWebView handling
+must be checked on device because an embedding browser may interpret viewport
+scale limits differently.
+
 Electron does not use this HTTP gateway. Its loopback server is static-only;
 the application-scoped transferred port described in
 [`architecture/opencraft-app-host.md`](./architecture/opencraft-app-host.md) is the sole
