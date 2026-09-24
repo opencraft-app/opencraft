@@ -7,7 +7,8 @@
 - 不执行合并、发布或生产操作；提交与 MR 已由用户于 2026-09-24 单独授权。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
-- 用户会话（2026-09-23）：采用 `Dedicated cloud environment`，规格使用 `2 vCPU · 8 GB RAM` / `4 vCPU · 16 GB RAM`，存储使用 `50 GB` / `80 GB`。
+- 用户会话（2026-09-23）：采用 `Dedicated cloud environment`，存储使用 `50 GB` / `80 GB`。
+- 用户会话（2026-09-24）：套餐卡改为易懂的 `2 CPU cores · 8 GB memory` / `4 CPU cores · 16 GB memory`（中文为 `2 核 CPU · 8 GB 内存` / `4 核 CPU · 16 GB 内存`）；文档规格保留准确的 `2 vCPU · 8 GB RAM` / `4 vCPU · 16 GB RAM`。
 
 ## interface_refs / data_structure_refs
 - `frontend/next-site/subscribe-page.tsx` 的 `Bundle.description` 到 `PlanFeature` 映射。
@@ -21,7 +22,8 @@
 ## acceptance
 - 国际站套餐卡不再展示 `Cloud Sandbox`。
 - 云端运行资源统一展示为 `Dedicated cloud environment`，不暴露当前 VM 实现。
-- 运行环境规格显示为 `2 vCPU · 8 GB RAM` / `4 vCPU · 16 GB RAM`。
+- 国际站英文套餐卡显示 `2 CPU cores · 8 GB memory` / `4 CPU cores · 16 GB memory`，中文套餐卡显示 `2 核 CPU · 8 GB 内存` / `4 核 CPU · 16 GB 内存`；其他语言自然本地化。
+- 官网套餐文档的技术规格保留 `vCPU` 与 `RAM`，不称为独享物理核心。
 - 存储显示为 `50 GB` / `80 GB`。
 - 后端返回 `Standalone Environment`、`Dedicated Cloud Storage`、`Minimalist Config Panel` 时不出现重复能力行。
 - 国际站各语言切换时，英文后端权益 Key 不回显英文；免费链路占位卡的价格单位按当前语言显示。
@@ -71,6 +73,7 @@
 - 独立 `origin/master` worktree 中已准备 `.ci/checks/opencraft_guard.sh` 的 Node bootstrap 修复；聚焦 guard 测试 7/7 通过。完整 `.ci/runtime/check_ci_runtime.sh` 在本机临时 PyYAML 环境运行至 592 个单测，19 个因 macOS Apple Git 2.24 不支持 `git init -b` 而失败，并非该补丁诊断。
 - 用户确认后，独立 CI 修复提交为 MR !4603，源分支 `codex/fix-opencraft-guard-node`，目标 `master`；`2dc1b7a68` 已随 `d39c9352d` 合入 `master`，trusted guard 现已包含 Node bootstrap。
 - !4576 以普通 merge 同步 `master@96abc2691` 并重新生成 OpenCraft 清单；合并后 `pnpm check`、235 个聚焦测试、CN/Global 构建（106/664 页）、OpenCraft 同步校验与插件类型检查均通过。
+- 2026-09-24 套餐卡改为易懂的 CPU 核数表述后：套餐页聚焦测试 105/105、字典测试 18/18、`pnpm check`（TypeScript 171 current / 171 baseline / 0 new）、CN/Global 构建（106/664 页）、OpenCraft 同步校验及文档校验均通过；8 个 locale 的生成套餐文档仍保留 `vCPU` 技术规格。
 
 ## risks
 - 英文后端 Key 与中文 Key 并存导致重复；通过语义别名归一化和英文回归用例覆盖。
@@ -85,7 +88,7 @@
 
 ## decisions
 - 用户侧名称使用 `Dedicated cloud environment`，不绑定当前 VM 实现，也不使用 `Sandbox`。
-- 规格单位按套餐卡格式使用单数单位符号 `vCPU`，内存明确为 `RAM`。
+- 套餐卡以 `CPU cores` / `核 CPU` 与 `memory` / `内存` 方便 Agent 用户理解；技术规格文档仍使用 `vCPU` 与 `RAM`，不承诺独享物理核心。
 - 重复项按稳定语义别名识别，不按翻译后的显示文案去重。
 - 占位套餐复用现有 `/ 月` 字典键；未知服务端错误通过页面已存在的本地化兜底文案展示，不把后端原文当 UI 译文。
 
@@ -105,11 +108,11 @@
 - 套餐页属于既有正式产品文档，内容分类状态原本已是 `CN ✓ | GLOBAL ✓`，无需变更；本次没有新增或替换图片。
 - 国内站与国际站共用映射逻辑，两个生产构建均通过。
 - 截图中的英文后端权益 Key 和旧规格来自线上版本；当前工作树已有对应修复，本次补齐全语言回归及免费链路/错误状态的漏翻。代码和构建完成不代表线上已更新。
-- OpenCraft 机械副本原本未同步；CI 失败后确认 `opencraft` guard 必须先有 Node，且本分支现有 vendored 文件确有漂移。已按生成脚本同步、提交并本地验证，尚未推送 !4576。
+- OpenCraft 机械副本原本未同步；CI 失败后确认 `opencraft` guard 必须先有 Node。原 MR 的 vendored 同步已推送且 CI 通过；本轮卡片文案对应的字典副本已重新生成并纳入 MR 更新。
 - 用户于 2026-09-24 明确授权提交 MR；合并与发布仍需独立指令。
 
 ## stage
-MR !4576 已打开；独立 `.ci` trusted guard 补丁已通过 MR !4603 合入 `master`，原 MR 的 vendored 同步已本地提交、待推送；本任务不执行 !4576 合并或发布。
+MR !4576 已打开；独立 `.ci` trusted guard 补丁已通过 MR !4603 合入 `master`。本轮卡片友好文案及其 OpenCraft 生成副本追加至该 MR；本任务不执行 !4576 合并或发布。
 
 ## verified
 - 国际站七种字典的英文后端权益、免费链路价格单位与套餐加载错误组件回归通过。
@@ -118,13 +121,13 @@ MR !4576 已打开；独立 `.ci` trusted guard 补丁已通过 MR !4603 合入 
 
 ## unverified
 - 线上 `lightvela.ai/zh-sg/subscribe` 尚未发布本工作树改动，截图中的线上现状不能由本地构建证明已修复。
-- !4576 的新提交尚未推送，未验证远端新 CI 结果。
+- 本轮卡片文案的远端 CI 结果以 MR 当前提交的最新检查状态为准，不能由本地构建代替。
 
 ## discard
-- 旧线上截图所示 `2核 4G` 规格不是当前工作树的规格；本地使用 `2 vCPU · 8 GB 内存`。
+- 旧线上截图所示 `2核 4G` 规格不是当前工作树的规格；本地套餐卡使用 `2 核 CPU · 8 GB 内存`，文档技术规格仍使用 `2 vCPU · 8 GB 内存`。
 
 ## restore
 - 在隔离工作树 `/Users/pablozhong/.codex/worktrees/pricing-cloud-computer-copy/lightvela` 续接原 MR 的生成物；CI-only 补丁在 `/Users/pablozhong/.codex/worktrees/opencraft-guard-node/lightvela`。主工作区改动不参与本任务。
 
 ## next_action
-- 推送并核验 !4576 的 vendored 生成物，获取新 CI 即时状态；不自行合并或发布。
+- 核验 !4576 的远端 source SHA、冲突状态与新 CI 检查；不自行合并或发布。

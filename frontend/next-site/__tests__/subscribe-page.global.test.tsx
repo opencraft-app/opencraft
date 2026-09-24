@@ -173,7 +173,7 @@ describe("international upgrade return", () => {
   it("shows the Singapore campaign memory on the international pricing card", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    expect((await screen.findAllByText("4 vCPU · 16 GB 内存")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("4 核 CPU · 16 GB 内存")).length).toBeGreaterThan(0);
     expect(screen.queryByText("4核 8G 内存")).not.toBeInTheDocument();
   });
 
@@ -337,7 +337,7 @@ describe("SubscribePage international cloud computer copy", () => {
 
     await waitFor(() => expect(listBundlesMock).toHaveBeenCalled());
     expect(await screen.findAllByText("Dedicated cloud environment")).toHaveLength(1);
-    expect(screen.getByText("2 vCPU · 8 GB RAM")).toBeInTheDocument();
+    expect(screen.getByText("2 CPU cores · 8 GB memory")).toBeInTheDocument();
     expect(screen.getAllByText("Dedicated cloud storage")).toHaveLength(1);
     expect(screen.getByText("50 GB")).toBeInTheDocument();
     expect(screen.getAllByText("Simple configuration console")).toHaveLength(1);
@@ -347,13 +347,13 @@ describe("SubscribePage international cloud computer copy", () => {
   });
 
   it.each([
-    ["zh-CN", "专属云端环境", "2 vCPU · 8 GB 内存", "专属云端存储", "极简配置面板"],
-    ["zh-Hant", "專屬雲端環境", "2 vCPU · 8 GB 內存", "專屬雲端存儲", "極簡配置面板"],
-    ["en-US", "Dedicated cloud environment", "2 vCPU · 8 GB RAM", "Dedicated cloud storage", "Simple configuration console"],
-    ["id-ID", "Lingkungan cloud khusus", "2 vCPU · 8 GB RAM", "Penyimpanan cloud khusus", "Konsol konfigurasi sederhana"],
-    ["es", "Entorno de nube dedicado", "2 vCPU · 8 GB de RAM", "Almacenamiento exclusivo en la nube", "Consola de configuración sencilla"],
-    ["ja-JP", "専用クラウド環境", "2 vCPU · 8 GB メモリ", "専用クラウドストレージ", "シンプルな設定コンソール"],
-    ["ko-KR", "전용 클라우드 환경", "2 vCPU · 8 GB RAM", "전용 클라우드 저장소", "간단한 설정 콘솔"],
+    ["zh-CN", "专属云端环境", "2 核 CPU · 8 GB 内存", "专属云端存储", "极简配置面板"],
+    ["zh-Hant", "專屬雲端環境", "2 核 CPU · 8 GB 內存", "專屬雲端存儲", "極簡配置面板"],
+    ["en-US", "Dedicated cloud environment", "2 CPU cores · 8 GB memory", "Dedicated cloud storage", "Simple configuration console"],
+    ["id-ID", "Lingkungan cloud khusus", "2 inti CPU · 8 GB memori", "Penyimpanan cloud khusus", "Konsol konfigurasi sederhana"],
+    ["es", "Entorno de nube dedicado", "2 núcleos de CPU · 8 GB de memoria", "Almacenamiento exclusivo en la nube", "Consola de configuración sencilla"],
+    ["ja-JP", "専用クラウド環境", "CPU 2コア · 8 GB メモリ", "専用クラウドストレージ", "シンプルな設定コンソール"],
+    ["ko-KR", "전용 클라우드 환경", "CPU 2코어 · 8 GB 메모리", "전용 클라우드 저장소", "간단한 설정 콘솔"],
   ] as const)("localizes English backend feature names in %s", async (locale, environment, spec, storage, consoleLabel) => {
     translationState.real = true;
     sessionState.isAuthenticated = true;

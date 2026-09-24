@@ -200,7 +200,7 @@ describe("SubscribePage", () => {
   it("shows the Shanghai campaign memory on the domestic pricing card", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    expect((await screen.findAllByText("4 vCPU · 16 GB 内存")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("4 核 CPU · 16 GB 内存")).length).toBeGreaterThan(0);
     expect(screen.queryByText("4核 8G 内存")).not.toBeInTheDocument();
   });
 

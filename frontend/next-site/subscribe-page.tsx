@@ -520,8 +520,8 @@ const mapBundleToPlan = (
   const nmLower = bundleNm.toLowerCase();
   const isLaunchTier = bundleNm.includes("启航") || nmLower.includes("launch");
   const isCruiseTier = bundleNm.includes("巡游") || nmLower.includes("cruise");
-  /* 两地活动规格：启航 2 vCPU / 8 GB；巡游 4 vCPU / 16 GB。 */
-  const envSpec = isLaunchTier ? t("2 vCPU · 8 GB 内存") : t("4 vCPU · 16 GB 内存");
+  /* 套餐卡用易懂的 CPU 核数表述；详细规格仍以文档中的 vCPU 为准。 */
+  const envSpec = isLaunchTier ? t("2 核 CPU · 8 GB 内存") : t("4 核 CPU · 16 GB 内存");
   /* 专属云端存储：启航 50 GB；巡游升配 80 GB。 */
   const storageSpec = isLaunchTier ? "50 GB" : "80 GB";
   /* 一句话文案按 tier 差异化（PRD 需求2）。命中 tier 时直接使用 tier 文案，不受 freeGuideAllowed 清空；
@@ -1265,7 +1265,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
-      { iconKey: "monitor", label: "专属云端环境", value: "4 vCPU · 16 GB 内存" },
+      { iconKey: "monitor", label: "专属云端环境", value: "4 核 CPU · 16 GB 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80 GB" },
       { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
@@ -1299,7 +1299,7 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("日常主力，让智能化成为习惯");
   void t("1 个");
   void t("专属云端环境");
-  void t("4 vCPU · 16 GB 内存");
+  void t("4 核 CPU · 16 GB 内存");
   void t("极简配置面板");
   void t("定时任务");
   void t("精选技能/技能包");
