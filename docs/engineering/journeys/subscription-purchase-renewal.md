@@ -20,6 +20,21 @@
 - 权益应用失败：保留可重试状态，不重复创建外部订单。
 - CTL 开通失败：订单/支付事实不可丢失，补偿与重试单独记录。
 
+## 国内站 Pass 续费点石
+
+- 点石活动配置和参与资格按 `purchase`、`renew` 场景隔离；存量配置与参与记录迁移为
+  `purchase`。控制台续费只消费 `renew` 资格，因此同一用户可分别参与一次新购活动和一次续费活动，
+  但不得在同一活动场景重复享受优惠。
+- 国内站续费询价和普通续费下单向点石传递的 `preference_param` 固定为 `regionId`、
+  `resourceId`、`timeSpanUnit`、`bundleId`。首次符合续费活动的用户使用点石询价和 `do_goods`；
+  已参与用户或询价活动解析失败时回退原计费续费链路。国际站保持原计费续费逻辑。
+- 自动化续费折扣使用 Trade 专属内部接口
+  `POST /internal/trade/dianshi/orders/renew/place-and-pay` 调用点石 `do_goods_and_pay`。该入口不读取或写入
+  控制台参与资格，可重复调用，但只允许国内站和已登记的续费活动 Bundle。原计费内部续费接口
+  `POST /internal/trade/orders/renew/place-and-pay` 保持不变。
+- 点石同步回调可能早于本地续费订单写入；续费资源回调必须仅依赖稳定资源和外部订单事实完成幂等处理，
+  不能假设 `trade_order` 已经存在。Trade 在点石调用成功后仍须原子写入本地续费订单和 `renew` 参与记录。
+
 ## Pass 升配 Web checkout
 
 - 账号页和定价页仅对后端返回的合法 Bundle 关系展示升级入口与选择联动；展示资格不能代替 CTL 下单前的 owner、Pass 状态和目标校验。

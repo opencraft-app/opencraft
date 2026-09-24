@@ -30,7 +30,7 @@ type fakeActivityStoreCR struct {
 	lastParticipation *store.UserActivityParticipation
 }
 
-func (f *fakeActivityStoreCR) GetBundleActivityByBundleID(_ context.Context, bundleID string) (*store.BundleActivity, error) {
+func (f *fakeActivityStoreCR) GetBundleActivity(_ context.Context, bundleID string, scene store.ActivityScene) (*store.BundleActivity, error) {
 	f.getCalls.Add(1)
 	if f.getErr != nil {
 		return nil, f.getErr
@@ -39,12 +39,13 @@ func (f *fakeActivityStoreCR) GetBundleActivityByBundleID(_ context.Context, bun
 		// 浅拷贝防被测代码改 fixture
 		row := *f.getMapping
 		row.BundleID = bundleID
+		row.Scene = scene
 		return &row, nil
 	}
 	return nil, store.ErrBundleActivityNotFound
 }
 
-func (f *fakeActivityStoreCR) HasUserParticipated(_ context.Context, _ string, _ int64) (bool, error) {
+func (f *fakeActivityStoreCR) HasUserParticipated(_ context.Context, _ string, _ int64, _ store.ActivityScene) (bool, error) {
 	return false, errors.New("HasUserParticipated not used in createresource tests")
 }
 

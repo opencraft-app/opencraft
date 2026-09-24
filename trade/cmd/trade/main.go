@@ -175,6 +175,7 @@ func main() {
 		BillingPayRedirectURL:  cfg.BillingCloudAPIPayRedirectURL,
 		OrderWriter:            mysqlStore,
 		OrderStore:             mysqlStore,
+		DianshiRenewWriter:     mysqlStore,
 		ParticipationReader:    mysqlStore,
 		ShadowClient:           shadowClient,
 		// v1.7.x 国际站接入 A6.1：出向 envelope.resInfo.region/zone + trade_order.region_id
