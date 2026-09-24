@@ -1,7 +1,8 @@
+import type { ThreadServerOrigin } from "@opencraft/workbench-runtime";
+
 export interface SidebarActivityThread {
   readonly id: string;
-  readonly hostId: string;
-  readonly hostLabel: string;
+  readonly serverOrigin: ThreadServerOrigin;
   readonly project: string;
   /** AppServer timestamps are expressed in seconds. */
   readonly updatedAt: number;
@@ -47,8 +48,8 @@ function activityDayLabel(day: Date, today: Date, locale?: string): string {
 }
 
 /**
- * Codex Activity-style presentation: chronology owns sections; Host remains
- * provenance on each task and never changes the task's execution owner.
+ * Activity chronology owns sections. Server provenance remains per task while
+ * Hub route, Host placement and activity status stay orthogonal.
  */
 export function groupThreadsByActivityDate<T extends SidebarActivityThread>(
   threads: readonly T[],
@@ -74,12 +75,8 @@ export function groupThreadsByActivityDate<T extends SidebarActivityThread>(
 
 export function sidebarActivityMetadata(thread: SidebarActivityThread): {
   readonly project: string;
-  readonly host: string | null;
 } {
-  const host = thread.hostLabel.trim();
-  const isLocal = thread.hostId === "local" || host.toLocaleLowerCase() === "local";
   return {
     project: thread.project.trim() || "Workspace",
-    host: isLocal || host.length === 0 ? null : host,
   };
 }

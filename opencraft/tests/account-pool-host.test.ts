@@ -229,11 +229,15 @@ test("Codex proxy authenticates the Host and injects only the selected account c
     const response = await proxy.handle(request);
     assert.equal(response.status, 200);
     assert.deepEqual(upstream, [{
-      url: "https://chatgpt.example.test/backend-api/codex/v1/responses",
+      url: "https://chatgpt.example.test/backend-api/codex/responses",
       authorization: "Bearer access-a",
       accountId: "chatgpt-a",
       leaked: null,
     }]);
+    assert.equal((await proxy.handle(new Request("http://127.0.0.1/v1/models?client_version=test", {
+      headers: { "x-opencraft-account-pool-token": hostToken },
+    }))).status, 200);
+    assert.equal(upstream[1]?.url, "https://chatgpt.example.test/backend-api/codex/models?client_version=test");
     assert.equal((await proxy.handle(new Request("http://127.0.0.1/v1/models", {
       headers: { "x-opencraft-account-pool-token": "wrong" },
     }))).status, 401);

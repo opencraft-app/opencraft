@@ -19,6 +19,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `electron-linux-x64-appimage` | Electron host + renderer | Portable x86_64 AppImage | Linux |
 | `electron-linux-x64-rpm` | Electron host + renderer | TencentOS/RHEL/Fedora RPM | Linux |
 | `electron-linux-x64-deb` | Electron host + renderer | Debian/Ubuntu amd64 package | Linux |
+| `headless-linux-amd64-tar` | Node Local Agent Host + Vite WebUI | Self-contained private server `.tar.gz` | Native Linux amd64 |
 | `expo-web` | Expo Router + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
 
@@ -39,6 +40,7 @@ OPENCRAFT_WEB_RELEASE_ROOT=/explicit/static/root npm run publish:lightvela-web
 npm run matrix:build -- electron-linux-x64-appimage
 npm run matrix:build -- electron-linux-x64-rpm
 npm run matrix:build -- electron-linux-x64-deb
+npm run matrix:build -- headless-linux-amd64-tar
 npm run package:electron:mac:arm64:preview
 ```
 
@@ -117,6 +119,86 @@ The `web-browser` artifact does not contain the local Host, DSH, Node APIs, or
 their extension entry. Its `/appserver` endpoint is owned by the deployment
 gateway and may route to a cloud Host. This is a packaging boundary: desktop
 ships the Agent next to the application; Web ships only the AppServer client.
+
+### Headless Linux server archive
+
+`headless-linux-amd64-tar` builds a separate single-owner server artifact from
+the same OpenCraft sources. It bundles a pinned Node executable, the DSH runtime,
+an exact-version Linux amd64 Codex CLI, native Linux PTY module, Web renderer
+and a Node launcher. It does not contain
+Electron Main, Preload or window dependencies. The Web renderer seeds one
+same-origin `OpenCraft Server` Host profile; the launcher starts the actual
+Local Agent Host and proxies `/appserver` to its private loopback endpoint.
+The same loopback gateway exposes `/apphost` for a leased Codex Host, backed by
+the existing OpenCraft Codex stdio adapter and account pool. Web Settings
+reuses Model Services for DSH and Codex Accounts for user-initiated device-code
+sign-in. Credentials stay in the server data directory, not browser storage.
+Neither engine logs in automatically; a fresh installation needs a configured
+DSH model or a permitted Codex account before it can submit a task.
+
+Build on a native Linux amd64 machine with the checked-in Node version and
+installed dependencies. `release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
+must pass `npm run smoke:headless:linux` for both DSH and Codex initialization
+before distribution. GitHub's portable
+matrix produces and smoke-tests this archive as an Actions artifact; a PR build
+is not a published release.
+
+```sh
+tar -xzf OpenCraft-server-0.1.0-linux-amd64.tar.gz
+./opencraft-server/bin/opencraft-server --port 10000 --data-dir /private/opencraft-data
+```
+
+The startup command prints the local WebUI URL. The listener defaults to
+`127.0.0.1`; browser WebSockets must have the matching Origin, and the gateway
+never exposes its upstream Host token in health output. For a browser on your
+own computer, use a trusted SSH tunnel, for example
+`ssh -L 10000:127.0.0.1:10000 user@server`, then open
+`http://127.0.0.1:10000`. The data directory must be private (mode `0700`).
+Public binding requires both `--host 0.0.0.0` and
+`--allow-unauthenticated-public`; static WebUI and `/appserver`/`/apphost`
+WebSockets then share the chosen port with same-origin checks. This is one
+single-user Host, not multi-user authorization, HTTPS termination or a secure
+cloud deployment. LightVela account login is not a substitute for
+server access control. Two server processes cannot own the same data directory.
+For a restricted systemd preview, set a private `StateDirectory` and its
+`HOME` to that directory for the service user; the launcher puts its single-
+writer lock inside the data root so `ProtectSystem=strict` can remain enabled.
+
+For an operator-requested persistent, unauthenticated HTTP installation, run
+the separate repository tool `scripts/install-headless-linux.sh` on the Linux
+host. It consumes a newly built tar and its trusted SHA-256, installs a
+`DynamicUser` systemd service with `Restart=on-failure` and `enable --now`,
+binding OpenCraft directly to `0.0.0.0:80` by default. The static WebUI and both
+WebSocket paths run on that same port: there is no Nginx or second proxy.
+The tool is not part of the desktop executable; the server runtime retains its
+private default. It refuses occupied ports, an existing installer unit,
+checksum mismatch and unsafe archive entries. It never
+stops an existing preview or copies account data automatically.
+
+```sh
+sha256sum release/OpenCraft-server-0.1.0-linux-amd64.tar.gz
+sudo ./scripts/install-headless-linux.sh \
+  --archive release/OpenCraft-server-0.1.0-linux-amd64.tar.gz \
+  --sha256 '<verified 64-character digest>' \
+  --port 80 \
+  --state-name opencraft-server \
+  --allow-unauthenticated-public
+```
+
+The danger flag is an acknowledgement, **not access control**: every client
+that can reach that port can use the shared Codex accounts and Host file/
+terminal capabilities. There is no TLS or login, so do not treat this as a
+public multi-user deployment. To reuse an existing state directory, pass its
+exact `StateDirectory` name and stop its current owning service first; the
+single-writer lock prevents concurrent owners. Use `--render-dir <empty-dir>`
+to inspect the unit without root or server changes. A previous tar
+does not acquire source fixes merely because a running preview bundle has them.
+For ports below 1024, the unit grants only `CAP_NET_BIND_SERVICE` so its
+DynamicUser can bind without root or a system-wide sysctl change.
+Ordinary remote HTTP is not a browser [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts). The Web entry installs a
+[`getRandomValues`](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues)-backed UUID fallback for core drafts and conversations;
+secure-context-only browser features such as Service Worker-backed browser
+proxying, microphone and modern clipboard are not promised in this mode.
 
 ## macOS Developer ID 签名包运行手册
 

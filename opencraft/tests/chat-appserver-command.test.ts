@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
+import {
+  JsonRpcAppServerClient,
+  type AppServerClient,
+  type DuplexTransport,
+  type ServerRequestHandler,
+  type ServerRequestResponseContext,
+} from "@opencraft/appserver-client";
 import {
   AppServerInteractionBroker,
+  AppServerInteractionLedger,
   AppServerConversationCommandError,
   compileSubmitIntent,
   createAppServerConversationCommandPort,
@@ -1176,4 +1183,210 @@ test("server-initiated approvals and questions remain pending until an exact typ
 
   broker.dispose();
   await client.close();
+});
+
+test("interaction response remains pending until its server-response frame is delivered", async () => {
+  let triggeringRequestId: string | number | null = null;
+  const server: InMemoryAppServer = {
+    receive(frame, peer) {
+      const message = parseJsonRpcMessage(frame);
+      if (isJsonRpcSuccess(message) && message.id === "delivery-option-rpc") {
+        peer.send(encodeJsonRpcMessage({
+          id: triggeringRequestId,
+          result: { interactionResult: message.result },
+        }));
+        return;
+      }
+      if (!isJsonRpcRequest(message)) return;
+      if (message.method === "initialize") {
+        peer.send(encodeJsonRpcMessage({
+          id: message.id,
+          result: {
+            codexHome: "/tmp",
+            platformFamily: "unix",
+            platformOs: "linux",
+            userAgent: "test",
+          },
+        }));
+        return;
+      }
+      triggeringRequestId = message.id;
+      peer.send(encodeJsonRpcMessage({
+        id: "delivery-option-rpc",
+        method: "item/tool/call",
+        params: {
+          threadId: "thread-existing",
+          turnId: "turn-live",
+          callId: "delivery-option-call",
+          namespace: null,
+          tool: "request_option_picker",
+          arguments: {
+            question: "Skip this?",
+            options: [{ label: "Yes" }, { label: "No" }],
+          },
+        },
+      }));
+    },
+  };
+  const memory = new MemoryTransport(server);
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  const transport: DuplexTransport = {
+    get status() { return memory.status; },
+    connect: (signal) => memory.connect(signal),
+    subscribeMessage: (listener) => memory.subscribeMessage(listener),
+    subscribeStatus: (listener) => memory.subscribeStatus(listener),
+    close: () => memory.close(),
+    async send(frame, signal) {
+      const message = parseJsonRpcMessage(frame);
+      if (isJsonRpcSuccess(message) && message.id === "delivery-option-rpc") {
+        await responseGate;
+      }
+      await memory.send(frame, signal);
+    },
+  };
+  const client = new JsonRpcAppServerClient({ hostId, transport });
+  await client.connect({
+    clientInfo: { name: "interaction-delivery-tests", version: "1" },
+    capabilities: { experimentalApi: true },
+  });
+  const pending = new Map<string, PendingInteraction & { readonly threadId: string }>();
+  const broker = new AppServerInteractionBroker({
+    hostId,
+    client,
+    store: {
+      upsertPendingInteraction(interaction) { pending.set(interaction.requestId, interaction); },
+      removePendingInteraction(_threadId, requestId) { pending.delete(requestId); },
+    },
+  });
+  const operation = client.requestRaw<{ interactionResult: unknown }>("trigger", {});
+  const requestId = encodeServerRequestId("delivery-option-rpc");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(pending.has(requestId), true);
+
+  let responseSettled = false;
+  const response = broker.respond(existingKey, {
+    type: "option-picker",
+    requestId,
+    action: "skip",
+    selectedOptions: [],
+    freeformAnswer: null,
+  }).finally(() => { responseSettled = true; });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(responseSettled, false);
+    assert.equal(pending.has(requestId), true);
+    releaseResponse();
+    await response;
+    assert.equal(pending.has(requestId), false);
+    assert.deepEqual(await operation, {
+      interactionResult: {
+        contentItems: [{ type: "inputText", text: JSON.stringify({
+          action: "skip",
+          selectedOptions: [],
+          freeformAnswer: null,
+        }) }],
+        success: true,
+      },
+    });
+  } finally {
+    releaseResponse();
+    await operation.catch(() => undefined);
+    broker.dispose();
+    await client.close();
+  }
+});
+
+test("interaction ledger replays an unresolved Skip across client generations without reopening UI", async () => {
+  type Handler = (
+    params: unknown,
+    request: { id: string; method: string; params: unknown },
+    context: ServerRequestResponseContext,
+  ) => unknown | Promise<unknown>;
+  const createClient = () => {
+    const handlers = new Map<string, Handler>();
+    const client = {
+      handleServerRequest(method: string, handler: ServerRequestHandler) {
+        handlers.set(method, handler as Handler);
+        return () => { handlers.delete(method); };
+      },
+      interceptServerRequest() { return () => {}; },
+      subscribeNotification() { return () => {}; },
+      subscribeStatus() { return () => {}; },
+    } as unknown as AppServerClient;
+    return {
+      client,
+      emit(delivered: Promise<void>, id = "replayed-option-rpc") {
+        const method = "item/tool/requestOptionPicker";
+        const params = {
+          threadId: "thread-existing",
+          turnId: "turn-live",
+          itemId: "replayed-option-call",
+          question: "Skip this?",
+          options: [{ label: "Yes" }, { label: "No" }],
+        };
+        const handler = handlers.get(method);
+        assert.notEqual(handler, undefined);
+        return Promise.resolve(handler!(params, {
+          id,
+          method,
+          params,
+        }, { delivered }));
+      },
+    };
+  };
+  const ledger = new AppServerInteractionLedger();
+  const first = createClient();
+  const firstPending = new Map<string, PendingInteraction & { readonly threadId: string }>();
+  const firstBroker = new AppServerInteractionBroker({
+    hostId,
+    client: first.client,
+    ledger,
+    store: {
+      upsertPendingInteraction(interaction) { firstPending.set(interaction.requestId, interaction); },
+      removePendingInteraction(_threadId, requestId) { firstPending.delete(requestId); },
+    },
+  });
+  let rejectDelivery!: (error: Error) => void;
+  const failedDelivery = new Promise<void>((_resolve, reject) => { rejectDelivery = reject; });
+  const firstOperation = first.emit(failedDelivery);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const requestId = encodeServerRequestId("replayed-option-rpc");
+  assert.equal(firstPending.has(requestId), true);
+  const firstResponse = firstBroker.respond(existingKey, {
+    type: "option-picker",
+    requestId,
+    action: "skip",
+    selectedOptions: [],
+    freeformAnswer: null,
+  });
+  rejectDelivery(new Error("transport closed"));
+  await assert.rejects(firstResponse, /transport closed/);
+  await firstOperation;
+  firstBroker.dispose();
+
+  const second = createClient();
+  let reopened = 0;
+  const secondBroker = new AppServerInteractionBroker({
+    hostId,
+    client: second.client,
+    ledger,
+    store: {
+      upsertPendingInteraction() { reopened += 1; },
+      removePendingInteraction() {},
+    },
+  });
+  const replayedOperation = second.emit(Promise.resolve(), "replayed-option-rpc-2");
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(reopened, 0, "a remembered response must not reopen the interaction UI");
+    assert.deepEqual(await replayedOperation, {
+      action: "skip",
+      selectedOptions: [],
+      freeformAnswer: null,
+    });
+  } finally {
+    secondBroker.dispose();
+    await replayedOperation.catch(() => undefined);
+  }
 });

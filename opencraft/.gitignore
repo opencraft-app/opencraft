@@ -20,6 +20,10 @@ Pods/
 /runtime/dsh/*
 !/runtime/dsh/package.json
 !/runtime/dsh/package-lock.json
+!/runtime/codex/
+/runtime/codex/*
+!/runtime/codex/package.json
+!/runtime/codex/package-lock.json
 .env
 .env.*
 !.env.example

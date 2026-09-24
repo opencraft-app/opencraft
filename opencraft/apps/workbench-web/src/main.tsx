@@ -1,3 +1,4 @@
+import "./runtime/web-crypto-compat";
 import ReactDOM from "react-dom/client";
 import { useEffect, useState } from "react";
 

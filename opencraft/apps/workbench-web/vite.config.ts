@@ -30,6 +30,7 @@ const isLightVelaWeb = product === "lightvela-web";
 const includeHyperNodePlugin = !isLightVelaWeb && !isElectronRenderer
   && process.env.VITE_HYPERNODE_PLUGIN?.trim() !== "disabled";
 const includeBuiltinAgentsPlugin = isElectronRenderer;
+const includeHeadlessModelServices = process.env.OPENCRAFT_HEADLESS_SERVER_BUILD === "true";
 const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
 
 // Vite's native import.meta.env projection is honored by both the dev module
@@ -39,6 +40,8 @@ const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
 process.env.VITE_OPENCRAFT_PRODUCT_ID = product;
 process.env.VITE_INCLUDE_HYPERNODE_PLUGIN = includeHyperNodePlugin ? "true" : "false";
 process.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN = includeBuiltinAgentsPlugin ? "true" : "false";
+process.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES = includeHeadlessModelServices ? "true" : "false";
+process.env.VITE_INCLUDE_HEADLESS_CODEX = includeHeadlessModelServices ? "true" : "false";
 
 interface WebReleaseMetadata {
   readonly schemaVersion: 1;

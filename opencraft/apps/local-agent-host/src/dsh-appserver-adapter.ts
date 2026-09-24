@@ -17,6 +17,10 @@ import { DshNativeAdmission } from "./dsh-native-admission.js";
 import { projectDshPermissions, type DshPermissionPort } from "./dsh-permission-projection.js";
 import { DshPresentationQueue } from "./dsh-presentation-queue.js";
 import { projectDshGoal } from "./dsh-goal-projection.js";
+import type {
+  LocalWorkspaceResolution,
+  LocalWorkspaceResolutionInput,
+} from "./projectless-workspace.js";
 import {
   OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,
   OPENCRAFT_PROFILE_SKILLS_EXTENSION,
@@ -302,6 +306,12 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  private workspaceResolver?: {
+    resolve(input: LocalWorkspaceResolutionInput): Promise<LocalWorkspaceResolution>;
+  };
+  setWorkspaceResolver(resolver: {
+    resolve(input: LocalWorkspaceResolutionInput): Promise<LocalWorkspaceResolution>;
+  }): void { this.workspaceResolver = resolver; }
   private skillInvocationValidator?: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>;
   setSkillInvocationValidator(validate: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>): void { this.skillInvocationValidator = validate; }
   private promptContent(threadId: string, input: unknown) {
@@ -1456,30 +1466,45 @@ export class DshAppServerAdapter {
         const catalog = await this.providers.models();
         if (!catalog.groups.some(group => group.id === selection.provider && group.models.some(model => model.id === selection.model)))
           throw new Error("所选模型已停用或不可用，请重新选择");
+        const workspace = this.workspaceResolver === undefined
+          ? null
+          : await this.workspaceResolver.resolve({
+            cwd: value.cwd,
+            runtimeWorkspaceRoots: value.runtimeWorkspaceRoots,
+          });
         const creation = {
           dynamicTools: value.dynamicTools,
-          ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
+          ...(workspace !== null
+            ? { cwd: workspace.cwd }
+            : typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
           ...(typeof value.agentId === "string" && value.agentId !== "dsh" ? { agentPreset: value.agentId } : {}),
           ...(this.threadEngine ? { ...selection, ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions } : {}),
         };
-        const created = this.threadEngine ? await this.threadEngine.create(creation)
-          : await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", creation);
+        let created: { sessionId: string; agentPreset?: string; cwd?: string; ephemeral?: boolean } | null = null;
         try {
-        const models = await this.selectModel(created.sessionId, selectedModel);
+        const started = this.threadEngine ? await this.threadEngine.create(creation)
+          : await this.client.call<{ sessionId: string; agentPreset?: string; cwd?: string; ephemeral?: boolean }>("session.create", creation);
+        created = started;
+        const models = await this.selectModel(started.sessionId, selectedModel);
         if (!models.current) throw new Error("Engine did not acknowledge the selected model");
         const currentModel = encodeModel(models.current.provider, models.current.model);
-        const summary: DshSessionSummary = { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: true, cwd: created.cwd ?? string(value.cwd, homedir()), agentPreset: created.agentPreset, ephemeral: created.ephemeral === true };
+        const summary: DshSessionSummary = { sessionId: started.sessionId, updatedAt: Date.now(), running: false, blank: true,
+          cwd: started.cwd ?? workspace?.cwd ?? string(value.cwd, homedir()), agentPreset: started.agentPreset, ephemeral: started.ephemeral === true };
         this.summaries.set(summary.sessionId, summary);
         const thread = makeThread(summary);
         const permissionState = await this.effectivePermissions(summary.sessionId);
         return {
-          thread, model: currentModel, modelProvider: "dsh", serviceTier: null, cwd: thread.cwd, runtimeWorkspaceRoots: [thread.cwd], instructionSources: [],
+          thread, model: currentModel, modelProvider: "dsh", serviceTier: null, cwd: thread.cwd,
+          runtimeWorkspaceRoots: workspace?.runtimeWorkspaceRoots ?? [thread.cwd], instructionSources: [],
           approvalsReviewer: "user",
           reasoningEffort: null, multiAgentMode: "explicitRequestOnly", ...permissionState,
         };
         } catch (error) {
-          this.summaries.delete(created.sessionId);
-          await this.threadEngine?.release({ sessionId: created.sessionId }).catch(() => undefined);
+          if (created !== null) {
+            this.summaries.delete(created.sessionId);
+            await this.threadEngine?.release({ sessionId: created.sessionId }).catch(() => undefined);
+          }
+          await workspace?.rollback().catch(() => undefined);
           throw error;
         }
       }

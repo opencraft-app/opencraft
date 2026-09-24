@@ -61,9 +61,14 @@ const upstreamAuthorizations = new Set<string>();
 const upstreamPoolTokens = new Set<string>();
 const model = createHttpServer((request, response) => {
   request.resume();
-  if (request.url === "/backend-api/codex/v1/models") {
+  if (request.url === "/backend-api/codex/models") {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ object: "list", data: [{ id: "gpt-test", object: "model", owned_by: "fixture" }] }));
+    return;
+  }
+  if (request.url !== "/backend-api/codex/responses") {
+    response.writeHead(404);
+    response.end();
     return;
   }
   modelRequests += 1;

@@ -11,11 +11,21 @@ The Vite renderer is the precision desktop surface used by browsers and
 Electron. The Expo Router app owns iOS, Android, and an independent Expo Web
 build. Neither renderer is a wrapper around the other.
 
+The distributed product model is `Client / Hub / Server`. A Client is a
+protocol participant and may use an Electron renderer, a static Web page or
+another presentation surface. The Hub is the multi-tenant attachment, routing,
+subscription and lease authority. A Server owns Threads and execution state and
+may attach to multiple Hubs; a Client may attach to multiple Hubs. Host describes
+where a Server process and its resources run, not the Server's stable identity.
+The current direct topology still projects one Host profile to one Server route;
+that compatibility is isolated in `legacyDirectServerProjectionFromHost()` rather
+than being repeated by feature code.
+
 ```text
-ApplicationSupervisor
+Client ApplicationSupervisor
 ├─ AgentRuntimeDirectory
 │  └─ HostRuntimeRegistry
-│     └─ HostRuntime(hostId)
+│     └─ Legacy direct Server route (currently named HostRuntime(hostId))
 │        ├─ ProtocolPort (initialized AppServer request boundary)
 │        ├─ Runtime readiness / connection generation
 │        ├─ Domain resources (Threads, Projects, Files, Catalog, Terminal)
@@ -54,6 +64,14 @@ Electron bridge               native/web adapters
 `AgentRuntimeDirectory` waits for Host readiness; it does not own Host
 registration, transport, Thread state, Skills state or model configuration.
 Views and domain services never read the raw AppServer client registry.
+
+The Electron App Host channel is the first Hub-shaped implementation boundary,
+but its version-1 wire names are not the domain model: `rendererId` currently
+identifies a logical Client incarnation, and `hostId` currently identifies a
+direct Server route. New code must not use those historical names to make a
+Renderer or Host the owner of Thread identity. A future protocol migration can
+add explicit Hub, tenant and Server coordinates without changing the domain
+contract or Sidebar presentation again.
 
 ## Package ownership
 
@@ -651,6 +669,11 @@ authenticates the Host, strips inbound credentials, selects the account, and
 injects the upstream bearer token plus ChatGPT account identity at the final
 HTTP boundary. Forks may inherit their parent's affinity within the same Host;
 identical provider Thread IDs on different Hosts never share a binding.
+The synthetic provider's `/v1/responses` and `/v1/models` paths are translated
+to ChatGPT Codex's `/responses` and `/models` paths, preserving query parameters
+and Codex-owned request metadata. The Codex child generates its own persistent
+installation ID in its runtime `CODEX_HOME`; migrating account credentials does
+not copy another device's installation identity.
 
 An eligible bound Thread stays pinned. A short temporary hold returns bounded
 `Retry-After` for that Thread while new Threads may use another account. The
@@ -1245,6 +1268,45 @@ adds the authenticated HyperNode identity server-side. The current fixed
 `OPENCRAFT_HYPERNODE_USER` is suitable for a single-user/debug deployment only; a
 multi-user Web deployment must obtain that identity from its authenticated
 gateway session and must never accept it from browser JavaScript.
+
+The independent headless Linux server archive is a separate deployment of the
+existing Local Agent Host, not a new Thread authority. Its Node launcher starts
+the DSH-backed Host and serves a packaged Web Workbench from one HTTP server,
+bound to loopback by default. The renderer's bundled Host profile resolves `/appserver` against the
+actual browser origin at runtime; neither the browser nor the static host owns
+the DSH process or its credentials. A separate `/apphost` WebSocket attaches
+browser Clients to the existing Codex Engine Adapter through AppHostServer's
+lease/generation contract; Codex's stdio process and account pool remain
+Server-owned. The artifact is single-user, with a distinct private data root
+and a single-writer lock. Explicit `--host 0.0.0.0` plus the dangerous-mode
+acknowledgement allows unauthenticated HTTP on one port for static WebUI and
+both WebSockets. Public mode does not check HTTP or WebSocket Origin, so an
+HTTPS-terminating reverse proxy can forward to the same listener without
+special forwarded-header handling; the explicit unauthenticated-public flag
+is the only exposure gate. The
+installer defaults to port 80 and grants only `CAP_NET_BIND_SERVICE` for
+privileged ports. It adds persistent systemd supervision, not another proxy or
+access policy. This direct public mode is not a secure multi-user service and
+does not change the private default. The Web entry derives UUID v4 from
+`getRandomValues` if `crypto.randomUUID` is unavailable on an HTTP origin;
+this does not enable browser APIs that require HTTPS. It does not turn the
+typed Client/Hub/Server topology into a multi-tenant Hub or expose native
+Electron Preload features. The Web build registers the existing Model Services
+View against DSH and Codex Accounts View against the Codex Host, so
+configuration remains Host-owned rather than duplicated in browser storage.
+The packaged Linux Web Host advertises `/` as the remote browse root for its
+DSH and Codex nodes. The browser folder picker reads the Server filesystem via
+`fs/readDirectory` and registers the chosen path with that node's Project
+catalog; it never opens a macOS folder picker or uploads a client directory.
+The root is a navigation hint, not a filesystem permission grant: the systemd
+service's OS permissions still decide which directories can be read or used.
+An older browser profile seeded with an empty root is updated only when it
+still matches the bundled WebSocket endpoint; a custom non-empty root and
+unrelated profile fields remain untouched.
+The browser Workbench retains one AppServer transport object per Host; if its
+`/apphost` WebSocket closes, reconnect replaces the invalid AppHost client and
+lease inside that object. Existing Workbench listeners stay attached, while
+the new lease receives a fresh generation and reinitializes the logical client.
 
 The app-like iPhone Web surface requests a fixed viewport scale for embedded
 browsers and keeps focused editable text at a 16px minimum on coarse-pointer

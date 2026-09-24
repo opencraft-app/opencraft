@@ -40,14 +40,27 @@ export interface AppServerClientConfig {
   maxPendingRequests?: number;
 }
 
+/**
+ * Delivery receipt for one AppServer-initiated request.
+ *
+ * A handler returning a result only releases the response payload to the
+ * client. `delivered` settles after that JSON-RPC response is physically sent
+ * on the current transport (or the Host resolves the request independently).
+ */
+export interface ServerRequestResponseContext {
+  readonly delivered: Promise<void>;
+}
+
 export type ServerRequestHandler = (
   params: unknown,
   request: AppServerServerRequest,
+  context: ServerRequestResponseContext,
 ) => unknown | Promise<unknown>;
 
 export type TypedServerRequestHandler<TMethod extends AppServerServerMethod> = (
   params: AppServerServerRequestParams<TMethod>,
   request: TypedAppServerServerRequest<TMethod>,
+  context: ServerRequestResponseContext,
 ) => AppServerServerRequestResult<TMethod> | Promise<AppServerServerRequestResult<TMethod>>;
 
 export type AppServerNotificationInterceptor = (
@@ -58,6 +71,7 @@ export type AppServerNotificationInterceptor = (
 export type AppServerServerRequestInterceptor = (
   request: AppServerServerRequest,
   next: () => Promise<unknown>,
+  context: ServerRequestResponseContext,
 ) => unknown | Promise<unknown>;
 
 interface PendingRequest {
@@ -73,6 +87,25 @@ interface PendingRequest {
   reject(error: Error): void;
   timerId: ReturnType<typeof globalThis.setTimeout> | null;
   removeAbortListener(): void;
+}
+
+interface MutableServerRequestResponseContext extends ServerRequestResponseContext {
+  resolve(): void;
+  reject(error: Error): void;
+}
+
+function createServerRequestResponseContext(): MutableServerRequestResponseContext {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const delivered = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  // Most handlers do not need delivery observation. Retain the rejecting
+  // promise for interested owners without producing an unhandled rejection
+  // when a legacy handler ignores the optional lifecycle detail.
+  void delivered.catch(() => undefined);
+  return { delivered, resolve, reject };
 }
 
 const systemClock: AppServerClientClock = {
@@ -449,17 +482,20 @@ export class JsonRpcAppServerClient implements AppServerClient {
 
   private async answerServerRequest(request: JsonRpcRequest): Promise<void> {
     const requestKey = this.serverRequestKey(request.id);
+    const responseContext = createServerRequestResponseContext();
+    let result: unknown;
     try {
       const serverRequest: AppServerServerRequest = {
         id: request.id,
         method: request.method,
         params: request.params,
       };
-      const result = await this.dispatchServerRequest(serverRequest);
-      if (this.resolvedServerRequestIds.delete(requestKey)) return;
-      await this.transport.send(encodeJsonRpcMessage({ id: request.id, result }));
+      result = await this.dispatchServerRequest(serverRequest, responseContext);
     } catch (error) {
-      if (this.resolvedServerRequestIds.delete(requestKey)) return;
+      if (this.resolvedServerRequestIds.delete(requestKey)) {
+        responseContext.resolve();
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       const code = error instanceof AppServerRpcError ? error.code : -32000;
       try {
@@ -467,13 +503,33 @@ export class JsonRpcAppServerClient implements AppServerClient {
           id: request.id,
           error: { code, message },
         }));
+        responseContext.resolve();
       } catch (sendError) {
-        this.emitProtocolError(new AppServerClientError(
+        const deliveryError = new AppServerClientError(
           "TRANSPORT_ERROR",
           `Failed to answer AppServer request ${request.method}`,
           { cause: sendError },
-        ));
+        );
+        responseContext.reject(deliveryError);
+        this.emitProtocolError(deliveryError);
       }
+      return;
+    }
+    if (this.resolvedServerRequestIds.delete(requestKey)) {
+      responseContext.resolve();
+      return;
+    }
+    try {
+      await this.transport.send(encodeJsonRpcMessage({ id: request.id, result }));
+      responseContext.resolve();
+    } catch (sendError) {
+      const deliveryError = new AppServerClientError(
+        "TRANSPORT_ERROR",
+        `Failed to answer AppServer request ${request.method}`,
+        { cause: sendError },
+      );
+      responseContext.reject(deliveryError);
+      this.emitProtocolError(deliveryError);
     }
   }
 
@@ -519,7 +575,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
     dispatch(0);
   }
 
-  private dispatchServerRequest(request: AppServerServerRequest): Promise<unknown> {
+  private dispatchServerRequest(
+    request: AppServerServerRequest,
+    context: ServerRequestResponseContext,
+  ): Promise<unknown> {
     const interceptors = [...this.serverRequestInterceptors];
     const dispatch = async (index: number): Promise<unknown> => {
       if (index >= interceptors.length) {
@@ -527,7 +586,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         if (handler === undefined) {
           throw new AppServerRpcError({ code: -32601, message: `No client handler for ${request.method}` });
         }
-        return handler(request.params, request);
+        return handler(request.params, request, context);
       }
       let called = false;
       return interceptors[index]?.(request, () => {
@@ -537,7 +596,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
         ));
         called = true;
         return dispatch(index + 1);
-      });
+      }, context);
     };
     return dispatch(0);
   }

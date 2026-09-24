@@ -26,8 +26,10 @@ function upstreamUrl(base: string, requestUrl: string): string {
   const root = new URL(base);
   if (root.protocol !== "https:" && root.protocol !== "http:") throw new TypeError("Invalid Codex upstream URL");
   if (root.username || root.password || root.search || root.hash) throw new TypeError("Invalid Codex upstream URL");
-  const path = new URL(requestUrl).pathname;
-  root.pathname = `${root.pathname.replace(/\/+$/u, "")}${path}`;
+  const request = new URL(requestUrl);
+  // Codex's local OpenAI-compatible provider uses /v1; ChatGPT Codex does not.
+  root.pathname = `${root.pathname.replace(/\/+$/u, "")}${request.pathname.replace(/^\/v1(?=\/)/u, "")}`;
+  root.search = request.search;
   return root.toString();
 }
 
