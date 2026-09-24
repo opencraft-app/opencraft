@@ -300,6 +300,7 @@ function TeaSdkSettingsPanel({
   execDebugCommand,
   useEnglish,
   channelAfterDescription,
+  whatsAppOccupiedByOther,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
@@ -310,6 +311,7 @@ function TeaSdkSettingsPanel({
   useEnglish: boolean;
   /** 通道页标题说明后的上下文提示；模型页不会消费。 */
   channelAfterDescription?: ReactNode;
+  whatsAppOccupiedByOther?: boolean;
 }) {
   const t = useT();
   const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
@@ -370,6 +372,7 @@ function TeaSdkSettingsPanel({
           productConfig={productConfig}
           commandExecutor={commandExecutor}
           afterDescription={channelAfterDescription}
+          whatsAppOccupiedByOther={whatsAppOccupiedByOther}
         />
       </Suspense>
     </StableTeaSdkPanelHost>
@@ -3209,6 +3212,9 @@ export const AgentSettingsPage = ({
   const weixinOccupiedByOther = Boolean(
     activeBot?.weixinOwner && activeBot.weixinOwner.botId !== activeBot.id,
   );
+  const whatsAppOccupiedByOther = Boolean(
+    activeBot?.whatsAppOwner && activeBot.whatsAppOwner.botId !== activeBot.id,
+  );
   const handleSelectBot = (botId: string) => {
     setActiveTabId(botId);
     setIsAgentMenuOpen(false);
@@ -3560,39 +3566,42 @@ export const AgentSettingsPage = ({
         botId: activeBotId,
         commandLifecycle: sdkCommandLifecycle,
       });
-      const runWithWeixinBinding = async <T extends { success: boolean }>(
+      const runWithUniqueChannelBinding = async <T extends { success: boolean }>(
         command: string,
         run: () => Promise<T>,
       ): Promise<T> => {
-        const isWeixinConnect = /acli gateway qr-url\b/.test(command) && /--platform\s+'?weixin'?\b/.test(command);
-        const isWeixinDelete = /acli channel delete\b/.test(command) && /--platform\s+'?weixin'?\b/.test(command);
-        if (isWeixinConnect) await repositories.bots.claimUniqueChannel(activeBotId, "weixin");
+        const channel = /--platform\s+'?(weixin|whatsapp)'?(?:\s|$)/.exec(command)?.[1] as "weixin" | "whatsapp" | undefined;
+        const isConnect = Boolean(channel && /acli gateway qr-url\b/.test(command));
+        const isDelete = Boolean(channel && /acli channel delete\b/.test(command));
+        const whatsAppOwner = activeBot?.whatsAppOwner;
+        const shouldClaim = isConnect && (channel !== "whatsapp" || !(whatsAppOwner?.botId === activeBotId && whatsAppOwner.status === "connected"));
+        if (shouldClaim && channel) await repositories.bots.claimUniqueChannel(activeBotId, channel);
         try {
           const result = await run();
-          if (isWeixinConnect && !result.success) {
-            await repositories.bots.releaseUniqueChannel(activeBotId, "weixin").catch(() => undefined);
+          if (shouldClaim && channel && !result.success) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, channel).catch(() => undefined);
           }
-          if (isWeixinDelete && result.success) {
-            await repositories.bots.releaseUniqueChannel(activeBotId, "weixin");
+          if (isDelete && channel && result.success) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, channel);
           }
-          if (isWeixinConnect && result.success) {
-            await repositories.bots.confirmUniqueChannel(activeBotId, "weixin");
+          if (shouldClaim && channel && result.success) {
+            await repositories.bots.confirmUniqueChannel(activeBotId, channel);
           }
-          if ((isWeixinConnect || isWeixinDelete) && result.success) await refreshBots();
+          if ((isConnect || isDelete) && result.success) await refreshBots();
           return result;
         } catch (error) {
-          if (isWeixinConnect) {
-            await repositories.bots.releaseUniqueChannel(activeBotId, "weixin").catch(() => undefined);
+          if (shouldClaim && channel) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, channel).catch(() => undefined);
           }
           throw error;
         }
       };
       return {
-        run: (options) => runWithWeixinBinding(options.command, () => executor.run(options)),
-        runWithProgress: (options) => runWithWeixinBinding(options.command, () => executor.runWithProgress(options)),
+        run: (options) => runWithUniqueChannelBinding(options.command, () => executor.run(options)),
+        runWithProgress: (options) => runWithUniqueChannelBinding(options.command, () => executor.runWithProgress(options)),
       };
     },
-    [repositories, activeBotId, refreshBots, sdkCommandLifecycle],
+    [repositories, activeBotId, activeBot?.whatsAppOwner, refreshBots, sdkCommandLifecycle],
   );
 
   /**
@@ -6400,22 +6409,43 @@ export const AgentSettingsPage = ({
                               featureFlags={sdkFeatureFlags}
                               commandExecutor={teaSdkCommandExecutor}
                               useEnglish={useEnglish}
-                              channelAfterDescription={weixinOccupiedByOther && activeBot.weixinOwner ? (
-                                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                  <span className="text-pretty">
-                                    {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
-                                      name: activeBot.weixinOwner.botName || t("其他 Bot"),
-                                    })}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="font-medium text-amber-950 underline underline-offset-2"
-                                    onClick={() => handleSelectBot(activeBot.weixinOwner!.botId)}
-                                  >
-                                    {t("前往管理")}
-                                  </button>
-                                </div>
-                              ) : undefined}
+                              whatsAppOccupiedByOther={whatsAppOccupiedByOther}
+                              channelAfterDescription={(
+                                <>
+                                  {weixinOccupiedByOther && activeBot.weixinOwner && (
+                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                      <span className="text-pretty">
+                                        {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
+                                          name: activeBot.weixinOwner.botName || t("其他 Bot"),
+                                        })}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="font-medium text-amber-950 underline underline-offset-2"
+                                        onClick={() => handleSelectBot(activeBot.weixinOwner!.botId)}
+                                      >
+                                        {t("前往管理")}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {whatsAppOccupiedByOther && activeBot.whatsAppOwner && (
+                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                      <span className="text-pretty">
+                                        {t("WhatsApp 已由 {{name}} 连接。同一实例内，WhatsApp 同时只能连接一个 Bot。请先在原 Bot 断开连接。", {
+                                          name: activeBot.whatsAppOwner.botName || t("其他 Bot"),
+                                        })}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="font-medium text-amber-950 underline underline-offset-2"
+                                        onClick={() => handleSelectBot(activeBot.whatsAppOwner!.botId)}
+                                      >
+                                        {t("前往管理")}
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             />
                           )}
                           {activeSection === "model" && (

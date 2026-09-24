@@ -151,16 +151,20 @@ class CollaborationDeliveryTests(unittest.TestCase):
                                         bundle_manifest=manifest, pin_targets="collaboration", env="beijing-sandbox")
                     run.assert_not_called()
 
-    def test_beijing_build_pipeline_and_materialized_bundle_do_not_auto_publish(self):
+    def test_beijing_build_pipeline_uses_standard_runtime_auto_pin(self):
         workflow = yaml.safe_load((REPO_ROOT / ".ci/collaboration.yml").read_text())
         params = workflow["extends"]["parameters"]
         trigger = workflow.get("on", workflow.get(True))
         self.assertEqual(trigger["push"]["branches"], ["master"])
         self.assertEqual(params["MASTER_BUILD_ENVS"], "beijing-sandbox")
-        self.assertEqual(params["MASTER_AUTO_PIN_ENVS"], "none")
+        self.assertEqual(params["MASTER_AUTO_PIN_ENVS"], "beijing-sandbox")
         self.assertIs(params["ENABLE_MASTER_PROD_PROMOTE"], False)
         manifest = load_manifest()
         bundle = require_build_metadata(load_bundle(manifest, "collaboration", "beijing-sandbox"))
+        self.assertEqual(bundle.preserve_target_paths, [
+            "argocd/secrets/beijing-sandbox/collaboration-runtime-secrets.sops.yaml",
+            "argocd/services/collaboration/beijing-sandbox/collaboration-platform.env",
+        ])
         self.assertEqual(bundle.build_context, "collaboration")
         for env in ("shprod", "sgprod", "sandbox-bj-7", "sandbox-kr-1", "sandbox-jp-1"):
             with self.assertRaises(ValueError):

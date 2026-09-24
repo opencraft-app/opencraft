@@ -32,5 +32,5 @@ extends:
     DISPLAY_NAME: Collaboration
     DEFAULT_TARGET_ENV: beijing-sandbox
     MASTER_BUILD_ENVS: beijing-sandbox
-    MASTER_AUTO_PIN_ENVS: none
+    MASTER_AUTO_PIN_ENVS: beijing-sandbox
     ENABLE_MASTER_PROD_PROMOTE: false

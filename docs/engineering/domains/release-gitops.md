@@ -85,6 +85,13 @@ master 源码
 - Collaboration 北京 Runtime 的 `DB_JOB_KUBECONFIG_B64` 在 Stream 中使用 `PASSWORD` 类型 protected
   credential；流水线必须引用 `.password` 字段，不能把 credential 对象本身传给 Base64 解码器。
   kubeconfig 来源保持在受控 DevCloud/Stream 边界，不写入仓库或普通日志。
+- Collaboration 北京完成首次 foundation/runtime 激活后，普通源码发布必须复用标准 service-release：
+  为 `beijing-sandbox` 构建候选镜像，始终运行 MySQL migration/verify，再创建一个不自动合并的 GitOps MR。
+  日常发布不得重跑 `bootstrap-collaboration`、写 SSM 或重新加密 SOPS。投影必须显式保留 `gitops` 中的
+  runtime SOPS Secret 与已激活 `collaboration-platform.env`，随后只更新镜像 digest 和部署时间；其他
+  source-facing base/overlay 文件仍以目标源码 revision 为权威，未声明保留的 stale 文件继续删除。
+  保留路径必须是 bundle publish closure 内的精确文件，禁止通配符或越出仓库。缺少保留输入时配置 gate
+  必须 fail closed。首次 foundation、显式 IM Secret rotation 和灾难恢复仍使用独立 bootstrap 审批链。
 
 - Stream V2流水线的触发入口使用顶层普通`on:`。其预处理按行首文本映射到`triggerOn`，
   带引号的入口虽然符合YAML语法，却会丢失触发限制并落入默认通配规则；候选制品契约测试须覆盖此预处理差异。
