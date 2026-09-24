@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import i18n, { ensureLocaleDictionary } from "@/i18n";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { ChangelogPage } from "@/pages/marketing/changelog-page";
 
 vi.mock("@/lib/region", async (importOriginal) => ({
@@ -53,6 +54,38 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("localizes the subscription-upgrade entry for every public-site locale", async () => {
+    const copies = {
+      "zh-CN": ["2026 年 9 月", "LightVela 支持订阅升配", "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。"],
+      "zh-SG": ["2026 年 9 月", "LightVela 支持订阅升配", "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。"],
+      "zh-Hant": ["2026 年 9 月", "LightVela 支援訂閱升級", "現有訂閱可升級至更高規格，實際應付價格以最終支付頁顯示為準。"],
+      "en-US": ["September 2026", "LightVela Now Supports Subscription Upgrades", "Upgrade an active subscription to a higher plan. The actual amount due is the final price shown at checkout."],
+      "id-ID": ["September 2026", "LightVela Kini Mendukung Peningkatan Paket Langganan", "Tingkatkan langganan aktif ke paket yang lebih tinggi. Jumlah yang harus dibayar mengikuti harga akhir di halaman pembayaran."],
+      es: ["Septiembre de 2026", "LightVela ya permite mejorar tu suscripción", "Puedes mejorar una suscripción activa a un plan superior. El importe a pagar será el precio final mostrado en la página de pago."],
+      "ja-JP": ["2026年9月", "LightVela でサブスクリプションのアップグレードに対応", "現在のサブスクリプションを上位プランにアップグレードできます。お支払い金額は最終決済ページに表示される価格をご確認ください。"],
+      "ko-KR": ["2026년 9월", "LightVela에서 구독 업그레이드 지원", "현재 구독을 상위 요금제로 업그레이드할 수 있습니다. 실제 결제 금액은 최종 결제 페이지에 표시된 가격을 기준으로 합니다."],
+    } satisfies Record<PublicSiteLocaleCode | "es" | "ja-JP" | "ko-KR", readonly [string, string, string]>;
+
+    expect(Object.values(PUBLIC_SITE_LOCALES).every((locale) => locale in copies)).toBe(true);
+    for (const [locale, [month, title, description]] of Object.entries(copies)) {
+      await i18n.changeLanguage(locale);
+      render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+      const section = screen.getByText(month).closest("section");
+      expect(section).not.toBeNull();
+      expect(within(section!).getByRole("heading", { name: title })).toBeInTheDocument();
+      expect(within(section!).getByText(description)).toBeInTheDocument();
+      expect(description).not.toMatch(/[¥￥$€]|\b(?:USD|CNY|SGD)\b/);
+      cleanup();
+    }
+  });
+
+  it("uses English rather than Chinese for an unrecognized global locale", async () => {
+    await i18n.changeLanguage("fr-FR");
+    render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+    expect(screen.getByRole("heading", { name: "LightVela Now Supports Subscription Upgrades" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "LightVela 支持订阅升配" })).not.toBeInTheDocument();
+  });
+
   it("announces multi-Bot creation in every visible locale", async () => {
     const multiBotCopies = [
       {

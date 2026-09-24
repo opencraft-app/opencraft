@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
-import { useT } from "@/i18n/t";
+import { useLocaleOverride, useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { isGlobal } from "@/lib/region";
@@ -344,6 +344,55 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "clo
 
 function ChangelogContent() {
   const t = useT();
+  const { i18n } = useTranslation();
+  const locale = useLocaleOverride() ?? i18n.language;
+  // 穷举公开站语种；新增 PublicSiteLocale 时在编译期提示补齐，未知国际语种回退英文。
+  type UpgradeLocale = PublicSiteLocale | "es" | "ja-JP" | "ko-KR";
+  const upgradeCopies = {
+    "zh-CN": {
+      month: "2026 年 9 月",
+      title: "LightVela 支持订阅升配",
+      desc: "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。",
+    },
+    "zh-SG": {
+      month: "2026 年 9 月",
+      title: "LightVela 支持订阅升配",
+      desc: "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。",
+    },
+    "zh-Hant": {
+      month: "2026 年 9 月",
+      title: "LightVela 支援訂閱升級",
+      desc: "現有訂閱可升級至更高規格，實際應付價格以最終支付頁顯示為準。",
+    },
+    "en-US": {
+      month: "September 2026",
+      title: "LightVela Now Supports Subscription Upgrades",
+      desc: "Upgrade an active subscription to a higher plan. The actual amount due is the final price shown at checkout.",
+    },
+    "id-ID": {
+      month: "September 2026",
+      title: "LightVela Kini Mendukung Peningkatan Paket Langganan",
+      desc: "Tingkatkan langganan aktif ke paket yang lebih tinggi. Jumlah yang harus dibayar mengikuti harga akhir di halaman pembayaran.",
+    },
+    es: {
+      month: "Septiembre de 2026",
+      title: "LightVela ya permite mejorar tu suscripción",
+      desc: "Puedes mejorar una suscripción activa a un plan superior. El importe a pagar será el precio final mostrado en la página de pago.",
+    },
+    "ja-JP": {
+      month: "2026年9月",
+      title: "LightVela でサブスクリプションのアップグレードに対応",
+      desc: "現在のサブスクリプションを上位プランにアップグレードできます。お支払い金額は最終決済ページに表示される価格をご確認ください。",
+    },
+    "ko-KR": {
+      month: "2026년 9월",
+      title: "LightVela에서 구독 업그레이드 지원",
+      desc: "현재 구독을 상위 요금제로 업그레이드할 수 있습니다. 실제 결제 금액은 최종 결제 페이지에 표시된 가격을 기준으로 합니다.",
+    },
+  } satisfies Record<UpgradeLocale, { month: string; title: string; desc: string }>;
+  const upgradeCopy = Object.prototype.hasOwnProperty.call(upgradeCopies, locale)
+    ? upgradeCopies[locale as UpgradeLocale]
+    : upgradeCopies[isGlobal ? "en-US" : "zh-CN"];
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
      国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
@@ -371,12 +420,19 @@ function ChangelogContent() {
     visual: "multiBot",
   };
 
+  const upgradeEntry: ChangelogEntry = {
+    id: "subscription-upgrade",
+    title: upgradeCopy.title,
+    desc: upgradeCopy.desc,
+    visual: "none",
+  };
+
   const changelogGroups: ChangelogMonthGroup[] = [
     ...(isGlobal
       ? [
           {
             id: "2026-09",
-            month: t("2026 年 9 月"),
+            month: upgradeCopy.month,
             entries: [
               multiBotEntry,
               zeroTokenScheduledTasksEntry,
@@ -388,6 +444,7 @@ function ChangelogContent() {
                 badge: "Beta",
                 visual: "workbench" as const,
               },
+              upgradeEntry,
             ],
           },
           {
@@ -461,7 +518,7 @@ function ChangelogContent() {
       : [
           {
             id: "2026-09",
-            month: t("2026 年 9 月"),
+            month: upgradeCopy.month,
             entries: [
               multiBotEntry,
               zeroTokenScheduledTasksEntry,
@@ -473,6 +530,7 @@ function ChangelogContent() {
                 badge: "Beta",
                 visual: "workbench" as const,
               },
+              upgradeEntry,
             ],
           },
           {

@@ -120,7 +120,9 @@ For how AI credits are allocated and consumed, see [Credits](./credits.md).
 
 ### Plan change rules
 
-Direct upgrades, switches, or downgrades on an active plan are not currently supported. When an existing plan is active, the Subscribe page prioritizes marking your current plan. To continue using the same plan, renew it to extend the validity period. To change plans, refer to the actual options currently available on the Plans & billing page and Subscribe page.
+Active plans support eligible upgrades. Check your current plan and available upgrade options in the console or on the [Subscribe page](/subscribe), select a listed target plan, and follow the checkout instructions to confirm the order and pay. Depending on eligibility, options may include upgrades within the same plan family or across plan families. Only options actually offered for your plan are available; this does not mean you can directly downgrade or switch to any plan.
+
+The amount due for an upgrade depends on factors such as the remaining validity of your current plan, the target plan, and the rules at checkout. There is no fixed upgrade price: **the actual price on the final payment page is authoritative**. After payment, return to the console to check the updated plan status and benefits. If no upgrade option is offered for your target, you cannot upgrade to that target from your current plan. To keep your current tier and extend its validity, renew your plan instead.
 
 ### Plan lifecycle
 
@@ -162,7 +164,7 @@ Real-time prices, inventory, discounts, taxes, and purchase availability are sho
 
 ### Can I upgrade or switch plans?
 
-Direct upgrades and plan changes are not currently supported for an active plan. Refer to the options shown in the console and on the Subscribe page.
+You can upgrade an active plan using the eligible options shown in the console or on the Subscribe page, including cross-family upgrades when offered. A target that is not available cannot be treated as a downgrade or arbitrary switch. The actual amount due is shown on the final payment page.
 
 ### How many Agents does one plan include?
 
