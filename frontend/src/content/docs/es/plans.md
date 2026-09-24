@@ -120,7 +120,9 @@ Para saber cómo se asignan y consumen los créditos de IA, consulta [Créditos]
 
 ### Reglas de cambio de plan
 
-Las actualizaciones directas, cambios o degradaciones en un plan activo no están actualmente soportados. Cuando un plan existente está activo, la página de suscripción prioriza marcar tu plan actual. Para continuar usando el mismo plan, renuévalo para extender el período de validez. Para cambiar de planes, consulta las opciones actualmente disponibles en la página de Planes y facturación y la página de suscripción.
+Un plan activo se puede mejorar a otro plan si cumple los requisitos. Consulta los planes superiores disponibles en Planes y facturación o en la [página de suscripción](/subscribe), elige una opción ofrecida para tu plan y sigue las indicaciones para confirmar el pedido y pagar. Según los requisitos aplicables, puede haber opciones dentro de la misma familia de planes o entre familias distintas. Que exista un plan no significa que puedas cambiar a él libremente ni pasar directamente a un plan inferior.
+
+El importe de la mejora depende, entre otros factores, del tiempo de vigencia restante y del plan de destino. No hay un importe fijo para mejorar el plan: **el precio real que aparece en la página final de pago es el que prevalece**. Tras pagar, comprueba el estado y los beneficios del plan en la consola. Si no aparece el plan de destino entre las opciones disponibles, no puedes mejorarlo a ese plan desde el actual. Para conservar el mismo plan y ampliar su vigencia, renuévalo.
 
 ### Ciclo de vida del plan
 
@@ -162,7 +164,7 @@ Los precios en tiempo real, el inventario, los impuestos, los descuentos y la di
 
 ### ¿Puedo actualizar o cambiar planes?
 
-Las actualizaciones directas y cambios de plan no están actualmente soportados para un plan activo. Consulta las opciones mostradas en la consola y en la página de suscripción.
+Puedes mejorar un plan activo a uno de los planes superiores ofrecidos en la consola o en la página de suscripción, incluso entre familias distintas si esa opción está disponible. No se admiten por ello cambios arbitrarios ni descensos directos de plan. El importe real se confirma en la página final de pago.
 
 ### ¿Cuántos Agents incluye un plan?
 

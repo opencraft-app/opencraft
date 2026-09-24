@@ -3030,5 +3030,8 @@
   "k_ffcbaabf": "Almacenamiento en la nube",
   "k_ffd26634": "Actívalo en cualquier momento, \nsin consumir ninguno de tus recursos",
   "k_ffdf78e6": "Proveedor de modelos",
-  "k_ffea1468": "Lista de Skills instaladas"
+  "k_ffea1468": "Lista de Skills instaladas",
+  "k_374c5c8a": "WhatsApp está conectado a {{name}}. En una misma instancia, solo un Bot puede conectarse a WhatsApp a la vez. Desconéctelo primero del Bot original.",
+  "k_7234c1ff": "En uso por otro Bot",
+  "k_943416fd": "Escanee con WhatsApp en su teléfono para iniciar sesión. En una misma instancia, solo un Bot puede conectarse a WhatsApp a la vez."
 }
