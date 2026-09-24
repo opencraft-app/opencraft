@@ -978,7 +978,15 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+		var req struct {
+			ReservationID string `json:"reservation_id"`
+			Disconnect    bool   `json:"disconnect"`
+		}
+		if err := decodeOptionalJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err))
+			return
+		}
+		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4], req.ReservationID, req.Disconnect); err != nil {
 			writeHTTPError(w, r, err)
 			return
 		}
@@ -989,7 +997,14 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+		var req struct {
+			ReservationID string `json:"reservation_id"`
+		}
+		if err := decodeOptionalJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err))
+			return
+		}
+		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4], req.ReservationID); err != nil {
 			writeHTTPError(w, r, err)
 			return
 		}

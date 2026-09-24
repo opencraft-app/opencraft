@@ -3573,25 +3573,26 @@ export const AgentSettingsPage = ({
         const channel = /--platform\s+'?(weixin|whatsapp)'?(?:\s|$)/.exec(command)?.[1] as "weixin" | "whatsapp" | undefined;
         const isConnect = Boolean(channel && /acli gateway qr-url\b/.test(command));
         const isDelete = Boolean(channel && /acli channel delete\b/.test(command));
-        const whatsAppOwner = activeBot?.whatsAppOwner;
-        const shouldClaim = isConnect && (channel !== "whatsapp" || !(whatsAppOwner?.botId === activeBotId && whatsAppOwner.status === "connected"));
-        if (shouldClaim && channel) await repositories.bots.claimUniqueChannel(activeBotId, channel);
+        // Always consult CTL: a cached connected owner does not prove that its
+        // on-disk session is still present or that another scan is not reserved.
+        const shouldClaim = isConnect;
+        const reservationId = shouldClaim && channel ? await repositories.bots.claimUniqueChannel(activeBotId, channel) : undefined;
         try {
           const result = await run();
-          if (shouldClaim && channel && !result.success) {
-            await repositories.bots.releaseUniqueChannel(activeBotId, channel).catch(() => undefined);
+          if (shouldClaim && channel && !result.success && (channel === "weixin" || reservationId)) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, channel, reservationId).catch(() => undefined);
           }
           if (isDelete && channel && result.success) {
             await repositories.bots.releaseUniqueChannel(activeBotId, channel);
           }
-          if (shouldClaim && channel && result.success) {
-            await repositories.bots.confirmUniqueChannel(activeBotId, channel);
+          if (shouldClaim && channel && result.success && (channel === "weixin" || reservationId)) {
+            await repositories.bots.confirmUniqueChannel(activeBotId, channel, reservationId);
           }
           if ((isConnect || isDelete) && result.success) await refreshBots();
           return result;
         } catch (error) {
-          if (shouldClaim && channel) {
-            await repositories.bots.releaseUniqueChannel(activeBotId, channel).catch(() => undefined);
+          if (shouldClaim && channel && (channel === "weixin" || reservationId)) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, channel, reservationId).catch(() => undefined);
           }
           throw error;
         }
@@ -3601,7 +3602,7 @@ export const AgentSettingsPage = ({
         runWithProgress: (options) => runWithUniqueChannelBinding(options.command, () => executor.runWithProgress(options)),
       };
     },
-    [repositories, activeBotId, activeBot?.whatsAppOwner, refreshBots, sdkCommandLifecycle],
+    [repositories, activeBotId, refreshBots, sdkCommandLifecycle],
   );
 
   /**

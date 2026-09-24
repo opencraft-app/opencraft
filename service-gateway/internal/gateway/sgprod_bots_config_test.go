@@ -70,6 +70,14 @@ func TestSGProdBotManagementDeploymentPolicy(t *testing.T) {
 		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
 		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
 		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
+		// New FE sends tokenized rollback/explicit disconnect in DELETE bodies;
+		// cached old FE sends no body. The public gateway must preserve all three.
+		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", ""},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", `{"reservation_id":"lease-test"}`},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", ""},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", `{"reservation_id":"lease-test"}`},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", `{"disconnect":true}`},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", ""},
 	} {
 		t.Run(tc.method+tc.path+tc.body, func(t *testing.T) {
 			before := upstreamCalls

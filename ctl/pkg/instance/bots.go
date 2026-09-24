@@ -47,12 +47,13 @@ type hermesProfileListPayload struct {
 }
 
 type channelBindingPayload struct {
-	OK        bool   `json:"ok"`
-	Reason    string `json:"reason"`
-	Channel   string `json:"channel"`
-	BotID     string `json:"bot_id"`
-	ProfileID string `json:"profile_id"`
-	Status    string `json:"status"`
+	OK            bool   `json:"ok"`
+	Reason        string `json:"reason"`
+	Channel       string `json:"channel"`
+	BotID         string `json:"bot_id"`
+	ProfileID     string `json:"profile_id"`
+	Status        string `json:"status"`
+	ReservationID string `json:"reservation_id"`
 }
 
 const writeInitialSoulScript = `from pathlib import Path
@@ -215,16 +216,31 @@ const manageChannelBindingScript = `import fcntl
 import json
 import os
 from pathlib import Path
+import secrets
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 action, channel, bot_id, profile_id, default_bot_id = sys.argv[1:6]
+reservation_id = sys.argv[6] if len(sys.argv) > 6 else ""
+# QR waits for at most 180 seconds; a longer lease tolerates delayed TAT completion.
+reservation_ttl = timedelta(minutes=10)
 home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
 root = home / ".lightvela" / "channel-bindings"
 root.mkdir(parents=True, exist_ok=True)
 path = root / (channel + ".json")
 lock_path = root / (channel + ".lock")
-legacy_marker = root / "whatsapp-legacy-checked"
+scan_lock_path = root / "whatsapp-qr.lock"
+legacy_marker = root / "whatsapp-legacy-checked-v2"
+
+def scan_busy():
+    if channel != "whatsapp":
+        return False
+    with scan_lock_path.open("a") as scan_lock:
+        try:
+            fcntl.flock(scan_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        return False
 
 def read_current():
     try:
@@ -239,11 +255,27 @@ def write_current(value):
     os.chmod(temporary, 0o600)
     temporary.replace(path)
 
+def whatsapp_credentials_path(native_profile_id):
+    # ACLI --agent selects $HERMES_HOME/profiles/<id> for a named profile.
+    default_home = home if native_profile_id in ("", "default", "main") else home / "profiles" / native_profile_id
+    runtime_home = Path(os.environ.get("ACLI_RUNTIME_HOME", str(default_home)))
+    auth_dir = Path(os.environ.get("ACLI_WHATSAPP_AUTH_DIR", str(runtime_home / "whatsapp" / "session")))
+    return auth_dir / "creds.json"
+
+def fresh_legacy_credentials(binding):
+    credentials = whatsapp_credentials_path(binding.get("profile_id", "default"))
+    try:
+        # No-token confirms must not consume a newer same-Bot reservation
+        # using credentials that predate that reservation.
+        return credentials.stat().st_mtime_ns >= int(datetime.fromisoformat(binding["updated_at"]).timestamp() * 1_000_000_000)
+    except (OSError, KeyError, TypeError, ValueError):
+        return False
+
 with lock_path.open("a", encoding="utf-8") as lock:
     fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
     current = read_current()
     if channel == "whatsapp" and not legacy_marker.exists():
-        if not current and (home / "platforms" / "whatsapp" / "session" / "creds.json").is_file():
+        if not current and whatsapp_credentials_path("default").is_file():
             current = {
                 "ok": True,
                 "channel": channel,
@@ -254,35 +286,82 @@ with lock_path.open("a", encoding="utf-8") as lock:
             }
             write_current(current)
         legacy_marker.touch(mode=0o600)
+    if channel == "whatsapp" and current and current.get("status") == "reserved":
+        try:
+            updated_at = datetime.fromisoformat(current["updated_at"])
+            expired = datetime.now(timezone.utc) - updated_at >= reservation_ttl
+        except (KeyError, TypeError, ValueError):
+            expired = True
+        if expired and not scan_busy():
+            if whatsapp_credentials_path(current.get("profile_id", "default")).is_file():
+                # The QR process may have connected while its browser disappeared.
+                # Preserve ownership rather than allow a second Bot to scan.
+                current["status"] = "connected"
+                current["updated_at"] = datetime.now(timezone.utc).isoformat()
+                current.pop("reservation_id", None)
+                write_current(current)
+            else:
+                path.unlink(missing_ok=True)
+                current = None
     if action == "get":
         result = current or {"ok": True}
     elif action == "claim":
-        if current and current.get("bot_id") != bot_id:
-            result = {**current, "ok": False, "reason": "occupied"}
+        if (channel == "whatsapp" and scan_busy()) or (current and (current.get("bot_id") != bot_id or (channel == "whatsapp" and current.get("status") == "reserved"))):
+            result = {"ok": False, "reason": "occupied", "bot_id": current.get("bot_id", "") if current else ""}
         else:
             result = {
                 "ok": True,
                 "channel": channel,
                 "bot_id": bot_id,
                 "profile_id": profile_id,
-                "status": current.get("status", "reserved") if current else "reserved",
+                "status": "reserved" if channel == "whatsapp" else (current.get("status", "reserved") if current else "reserved"),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
+            if channel == "whatsapp":
+                result["reservation_id"] = secrets.token_urlsafe(24)
             write_current(result)
     elif action == "confirm":
-        if not current or current.get("bot_id") != bot_id:
+        may_confirm = bool(current and current.get("bot_id") == bot_id)
+        if channel == "whatsapp" and may_confirm:
+            # Both client generations require the reserved scan's actual credentials.
+            # Tokenized clients must also match their scan; old browsers have no token.
+            may_confirm = current.get("status") == "reserved" and (
+                current.get("reservation_id") == reservation_id if reservation_id else fresh_legacy_credentials(current)
+            ) and whatsapp_credentials_path(current.get("profile_id", "default")).is_file() and not scan_busy()
+        if not may_confirm:
             result = {"ok": False, "reason": "owner_mismatch"}
         else:
             current.update({"ok": True, "status": "connected", "updated_at": datetime.now(timezone.utc).isoformat()})
+            current.pop("reservation_id", None)
             write_current(current)
             result = current
-    elif action in ("release", "release_reserved"):
+    elif action in ("release", "release_reserved", "disconnect"):
         may_release = current and current.get("bot_id") == bot_id
-        if action == "release_reserved":
+        result = {"ok": True}
+        if channel == "whatsapp":
+            if scan_busy():
+                # A stale browser failure must not drop a live QR command's owner.
+                result = {"ok": False, "reason": "scan_in_progress"}
+                may_release = False
+            # A legacy DELETE has no lease or intent: never let it delete a
+            # reservation. A connected owner can be cleared only if the actual
+            # credentials are gone and no QR/delete request is in flight.
+            rollback = action == "release" and reservation_id and may_release and current.get("status") == "reserved" and current.get("reservation_id") == reservation_id
+            credentials_present = may_release and whatsapp_credentials_path(current.get("profile_id", "default")).is_file()
+            if rollback and credentials_present:
+                # A scan completed but its confirm failed in transit. Preserve ownership.
+                current["status"] = "connected"
+                current["updated_at"] = datetime.now(timezone.utc).isoformat()
+                current.pop("reservation_id", None)
+                write_current(current)
+            disconnected = may_release and current.get("status") == "connected" and not credentials_present
+            may_release = (rollback and not credentials_present) or (action in ("release", "disconnect") and disconnected)
+            if action == "disconnect" and current and current.get("bot_id") == bot_id and not may_release and result["ok"]:
+                result = {"ok": False, "reason": "credentials_present" if credentials_present else "not_connected"}
+        elif action == "release_reserved":
             may_release = may_release and current.get("status") == "reserved"
         if may_release:
             path.unlink(missing_ok=True)
-        result = {"ok": True}
     else:
         result = {"ok": False, "reason": "unsupported_action"}
     fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
@@ -784,11 +863,11 @@ func (l *logic) ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, cha
 	}
 	return &transport.InstanceChannelBindingResponse{
 		Channel: binding.Channel, BotID: binding.BotID, ProfileID: binding.ProfileID,
-		BotName: bot.Name, Status: binding.Status,
+		BotName: bot.Name, Status: binding.Status, ReservationID: binding.ReservationID,
 	}, nil
 }
 
-func (l *logic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
+func (l *logic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string, disconnect bool) error {
 	channel = strings.TrimSpace(channel)
 	if !isUniqueChannel(channel) {
 		return errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
@@ -796,8 +875,21 @@ func (l *logic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 	if _, err := l.getInstanceBotResponse(ctx, instanceID, botID); err != nil {
 		return err
 	}
-	_, err := l.runChannelBindingAction(ctx, instanceID, channel, "release", botID, "")
-	return err
+	if channel == uniqueChannelWhatsApp && disconnect && reservationID != "" {
+		return errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "whatsapp disconnect cannot include a reservation")
+	}
+	action := "release"
+	if disconnect {
+		action = "disconnect"
+	}
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, action, botID, "", reservationID)
+	if err != nil {
+		return err
+	}
+	if !binding.OK {
+		return errcode.Wrap(errcode.ErrInstanceBotConflict, "release channel: %s", binding.Reason)
+	}
+	return nil
 }
 
 func (l *logic) releaseReservedInstanceBotChannel(ctx pctx.Context, instanceID, botID string) error {
@@ -805,7 +897,7 @@ func (l *logic) releaseReservedInstanceBotChannel(ctx pctx.Context, instanceID, 
 	return err
 }
 
-func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
+func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string) error {
 	channel = strings.TrimSpace(channel)
 	if !isUniqueChannel(channel) {
 		return errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
@@ -813,7 +905,7 @@ func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 	if _, err := l.getInstanceBotResponse(ctx, instanceID, botID); err != nil {
 		return err
 	}
-	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "confirm", botID, "")
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "confirm", botID, "", reservationID)
 	if err != nil {
 		return err
 	}
@@ -837,8 +929,11 @@ func (l *logic) getChannelBindingResponse(ctx pctx.Context, instanceID, channel 
 	}, nil
 }
 
-func (l *logic) runChannelBindingAction(ctx pctx.Context, instanceID, channel, action, botID, profileID string) (*channelBindingPayload, error) {
-	command := buildHermesPythonCommand(manageChannelBindingScript, action, channel, botID, hermesNativeProfileID(profileID), instanceID)
+func (l *logic) runChannelBindingAction(ctx pctx.Context, instanceID, channel, action, botID, profileID string, reservationID ...string) (*channelBindingPayload, error) {
+	if len(reservationID) == 0 {
+		reservationID = []string{""}
+	}
+	command := buildHermesPythonCommand(manageChannelBindingScript, action, channel, botID, hermesNativeProfileID(profileID), instanceID, reservationID[0])
 	result, err := l.execHermesProfileCommand(ctx, instanceID, command)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "manage channel binding: %v", err)
