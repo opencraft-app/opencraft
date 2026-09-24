@@ -1155,6 +1155,7 @@ func (s *Service) quoteDianshiRenew(
 
 	resp, err := s.deps.DianshiClient.GetActivityPrice(ctx, &dianshiclient.GetPriceRequest{
 		ActivityID: mapping.ActivityID,
+		Preview:    1,
 		Uin:        req.Uin,
 		Goods: []dianshiclient.GetPriceGoodsItem{{
 			ActID: mapping.ActID,

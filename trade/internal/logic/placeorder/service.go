@@ -1128,6 +1128,7 @@ func (s *Service) PlaceDianshiRenewOrderAndPay(ctx context.Context, req PlaceRen
 	resp, err := s.deps.DianshiClient.DoGoodsAndPay(ctx, &dianshiclient.DoGoodsRequest{
 		Uin:        req.Uin,
 		ActivityID: mapping.ActivityID,
+		Preview:    1,
 		Originate:  dianshiclient.OriginateLightvelaTrade,
 		CheckSum:   dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey),
 		Goods: []dianshiclient.DoGoodsItem{{
@@ -2385,6 +2386,7 @@ func (s *Service) placeRenewOrderDianshi(
 	resp, err := s.deps.DianshiClient.DoGoods(ctx, &dianshiclient.DoGoodsRequest{
 		Uin:        req.Uin,
 		ActivityID: mapping.ActivityID,
+		Preview:    1,
 		Originate:  dianshiclient.OriginateLightvelaTrade,
 		CheckSum:   dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey),
 		Goods: []dianshiclient.DoGoodsItem{{

@@ -123,6 +123,9 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	if dc.lastPriceReq.ActivityID != 164273735574009 {
 		t.Errorf("dianshi req activity_id=%d", dc.lastPriceReq.ActivityID)
 	}
+	if dc.lastPriceReq.Preview != 0 {
+		t.Errorf("new purchase preview=%d, want 0", dc.lastPriceReq.Preview)
+	}
 	if len(dc.lastPriceReq.Goods) != 1 || dc.lastPriceReq.Goods[0].ActID != 1862147936410255 {
 		t.Errorf("dianshi req goods=%+v", dc.lastPriceReq.Goods)
 	}
@@ -460,6 +463,9 @@ func TestQuoteRenew_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 	}
 	if dc.priceCalls != 1 {
 		t.Fatalf("dianshi calls=%d, want 1", dc.priceCalls)
+	}
+	if dc.lastPriceReq.Preview != 1 {
+		t.Fatalf("renew preview=%d, want 1", dc.lastPriceReq.Preview)
 	}
 	if jc.getPriceCalls.Load() != 0 {
 		t.Errorf("jifei calls=%d, want 0", jc.getPriceCalls.Load())

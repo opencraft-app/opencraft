@@ -28,6 +28,9 @@
 - 国内站续费询价和普通续费下单向点石传递的 `preference_param` 固定为 `regionId`、
   `resourceId`、`timeSpanUnit`、`bundleId`。首次符合续费活动的用户使用点石询价和 `do_goods`；
   已参与用户或询价活动解析失败时回退原计费续费链路。国际站保持原计费续费逻辑。
+- 续费联调期间，点石续费询价、普通续费下单及内部续费下单显式发送 `preview=1`；新购请求不设置
+  请求级 preview，继续沿用既有 `DIANSHI_PREVIEW` 客户端配置。请求级设置只能开启 preview，不能关闭
+  客户端级开关，避免改变已有新购环境行为。
 - 自动化续费折扣使用 Trade 专属内部接口
   `POST /internal/trade/dianshi/orders/renew/place-and-pay` 调用点石 `do_goods_and_pay`。该入口不读取或写入
   控制台参与资格，可重复调用，但只允许国内站和已登记的续费活动 Bundle。原计费内部续费接口
