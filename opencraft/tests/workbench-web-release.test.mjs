@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -190,7 +191,7 @@ test("static host can serve Electron assets without owning an AppServer", async 
   const origin = `http://127.0.0.1:${address.port}`;
 
   const health = await fetch(`${origin}/__opencraft_health`).then((response) => response.json());
-  assert.equal(health.appServerTarget, null);
+  assert.deepEqual(health, { ok: true, appServerConfigured: false });
   const appServerResponse = await fetch(`${origin}/appserver`);
   assert.equal(appServerResponse.status, 404);
 });
@@ -240,4 +241,53 @@ test("static host bridges the same-origin AppServer WebSocket", async (context) 
   client.close(1000, "test complete");
   await clientClosed;
   await host.close();
+});
+
+test("headless gateway rejects foreign origins and never exposes its upstream token", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "opencraft-headless-gateway-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  await createFixture(temporaryRoot, "build-one", "index-AAAA1111.js", "entry");
+
+  const upstreamServer = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  await new Promise((resolvePromise) => upstreamServer.once("listening", resolvePromise));
+  context.after(() => new Promise((resolvePromise) => upstreamServer.close(resolvePromise)));
+  upstreamServer.on("connection", (socket) => socket.on("message", (message) => socket.send(message)));
+  const upstreamAddress = upstreamServer.address();
+  const secret = "test-host-token-not-for-browser";
+  const host = await createWorkbenchWebServer({
+    root: temporaryRoot,
+    appServerTarget: `ws://127.0.0.1:${upstreamAddress.port}/rpc?token=${secret}`,
+    loopbackOnly: true,
+  });
+  context.after(() => host.close());
+  const address = await host.listen({ host: "127.0.0.1", port: 0 });
+  const origin = `http://127.0.0.1:${address.port}`;
+  const health = await fetch(`${origin}/__opencraft_health`).then((response) => response.text());
+  assert.doesNotMatch(health, /token|127\.0\.0\.1:.*\/rpc/u);
+  const foreignHostStatus = await new Promise((resolvePromise, reject) => {
+    const probe = request(origin, { headers: { Host: `evil.example:${address.port}` } }, (response) => {
+      response.resume();
+      resolvePromise(response.statusCode);
+    });
+    probe.once("error", reject);
+    probe.end();
+  });
+  assert.equal(foreignHostStatus, 403);
+
+  const foreign = new WebSocket(`${origin.replace(/^http/u, "ws")}/appserver`, {
+    origin: "https://evil.example",
+  });
+  await assert.rejects(new Promise((resolvePromise, reject) => {
+    foreign.once("open", resolvePromise);
+    foreign.once("error", reject);
+  }), /403/u);
+
+  const sameOrigin = new WebSocket(`${origin.replace(/^http/u, "ws")}/appserver`, { origin });
+  await new Promise((resolvePromise, reject) => {
+    sameOrigin.once("open", resolvePromise);
+    sameOrigin.once("error", reject);
+  });
+  sameOrigin.send("ping");
+  assert.equal((await new Promise((resolvePromise) => sameOrigin.once("message", resolvePromise))).toString(), "ping");
+  sameOrigin.close();
 });

@@ -5,8 +5,12 @@ typography and surfaces, not a separate LightVela theme.
 
 ## Ownership
 
-- Activity chronology groups tasks. Host identity remains per-task provenance;
-  display names are labels, never identity keys.
+- Activity chronology groups tasks. Stable Server identity remains per-task
+  provenance; Hub route, tenant authorization and Host placement are not copied
+  into the task identity.
+- `serverOrigin.serverId` owns the origin badge identity. Display labels are
+  mutable copy; route, engine/provider, Host placement, connection health and
+  Thread activity remain separate facts and never change the Server color.
 - The runtime supplies connection phase. A status dot does not initiate a connection.
 - Selected task, chosen execution target and connection health are different states.
 - Target-local new chat supplies that Host explicitly and does not inherit another Host's workspace.
@@ -62,9 +66,11 @@ toolbar geometry in feature CSS.
 
 - Activity sections use Today, Yesterday, weekday or date headings derived from
   the canonical Thread recency timestamp; presentation never parses relative-time copy.
-- Task rows use a shared two-line contract: title first, then project identity and
-  an optional remote Host label. Local is not repeated on every row; full Thread
-  identity stays in the tooltip.
+- Task rows use a shared two-line contract: title first, then project identity.
+  A fixed trailing origin slot is empty for the default local Server and renders a
+  deterministic server-colored globe for remote Server origins. Full Server identity
+  stays in Tooltip/ARIA; display-name and Hub-route changes do not change color. The adjacent
+  fixed status slot independently renders running/review/error/unread state.
 - Every current navigation destination gets one persistent selection surface;
   hover remains transient and must not double as location state.
 - Thread status, unread state, pending navigation and row actions share a stable
@@ -84,3 +90,27 @@ toolbar geometry in feature CSS.
 
 Do not override global button styling: new quiet controls explicitly opt into
 the shared mixin, avoiding native button borders without changing primary actions.
+
+## Folder picker ownership and themes
+
+The folder picker is one reusable Workbench interaction, not a second Project
+store. The active Server advertises a browse root and serves directory entries;
+the picker keeps only transient path, loading and error state. On confirmation,
+the Application registers or reuses a Project and binds the Draft. A browser
+picker reads the Server filesystem; a native desktop adapter may use an OS
+dialog, but it must return the same selected Server path rather than upload a
+client folder or silently change execution target. A directory read error
+clears stale entries and disables confirmation until a readable folder is
+selected; a path merely appearing in the breadcrumb is not evidence that it
+can be used as a Project root.
+
+`ModalSurface` owns the dialog surface, scrim, focus and close behavior. The
+shared `Button` owns confirm/cancel variants and their foreground/background,
+hover, disabled, focus and loading states. Folder rows and breadcrumbs may own
+navigation layout, but must consume semantic theme tokens and typography
+roles. In particular, a primary action may not derive its foreground from a
+general page background token: that token may be absent in an extension theme,
+causing an invalid declaration and inherited unreadable text. Validate the
+computed color pair and contrast in light, dark and extension themes, including
+the enabled confirm state and long-path/error states, before claiming visual
+completion.

@@ -18,6 +18,7 @@
   "scripts": {
     "pretest:extensions": "tsx --test tests/extension-artifacts.test.ts tests/extension-catalog.test.ts",
     "smoke:extensions": "tsx scripts/smoke-extension-lifecycle.ts",
+    "smoke:sidebar-execution-owner": "tsx scripts/smoke-sidebar-execution-owner.ts",
     "check:i18n": "node scripts/check-i18n.mjs",
     "test:i18n": "tsx --test tests/i18n-runtime.test.ts tests/i18n-controller.test.ts",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
@@ -68,7 +69,11 @@
     "package:electron:linux:x64": "npm run build:electron:release && npm run package:linux:x64 --workspace @opencraft/workbench-electron",
     "publish:web": "node scripts/publish-workbench-web.mjs",
     "publish:lightvela-web": "npm run check:lightvela-web-product && node scripts/publish-workbench-web.mjs --source apps/workbench-web/dist-lightvela-web",
-    "serve:web:static": "node scripts/serve-workbench-web.mjs",
+    "serve:web:static": "node scripts/serve-workbench-web-cli.mjs",
+    "package:headless:linux:amd64": "node scripts/package-headless-linux.mjs",
+    "test:headless-server": "node --import tsx --test tests/headless-server.test.mjs tests/headless-installer.test.mjs tests/web-crypto-compat.test.ts tests/websocket-app-host.test.ts",
+    "smoke:headless:linux": "node scripts/smoke-headless-package.mjs",
+    "smoke:headless:source": "node --import tsx scripts/smoke-headless-source.mjs",
     "deploy:web": "npm run build:web:release && npm run publish:web",
     "deploy:lightvela-web": "npm run build:lightvela-web:release && npm run publish:lightvela-web",
     "build:expo:web": "npm run export:web --workspace @opencraft/workbench-expo",
@@ -134,7 +139,7 @@
     "test:chat": "tsx --test tests/chat-*.test.ts tests/composer-core.test.ts tests/codex-composer-codec.test.ts tests/codex-composer-attachment-focus.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:boundaries": "npm run check:typography && node scripts/check-platform-boundaries.mjs",
-    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
+    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
   },
   "dependencies": {
     "react": "19.2.3",
@@ -144,6 +149,7 @@
     "@formatjs/icu-messageformat-parser": "2.11.4",
     "@types/node": "^24.3.0",
     "@types/ws": "^8.18.1",
+    "esbuild": "0.28.2",
     "fake-indexeddb": "^6.2.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.3",

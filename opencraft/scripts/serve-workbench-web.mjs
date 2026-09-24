@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
 
@@ -56,6 +56,26 @@ function normalizeTarget(target) {
 
 function normalizeForwardedCloseCode(code, fallback) {
   return code === 1000 || (code >= 3000 && code <= 4999) ? code : fallback;
+}
+
+function requestOrigin(request, loopbackOnly) {
+  const host = request.headers.host;
+  if (typeof host !== "string") return null;
+  try {
+    const parsed = new URL(`http://${host}`);
+    if (parsed.host !== host || (loopbackOnly && !["127.0.0.1", "localhost"].includes(parsed.hostname))) return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function allowedSameOriginRequest(request, requireOrigin, loopbackOnly) {
+  const expected = requestOrigin(request, loopbackOnly);
+  if (expected === null) return false;
+  const origin = request.headers.origin;
+  if (requireOrigin) return origin === expected;
+  return origin === undefined || origin === expected;
 }
 
 function bridgeAppServerSocket(client, request, options) {
@@ -120,6 +140,55 @@ function bridgeAppServerSocket(client, request, options) {
   client.on("error", () => upstream.terminate());
 }
 
+function validAppHostFrame(message) {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return false;
+  const validId = value => typeof value === "string" && value.length > 0 && value.length <= 4096;
+  if (message.type === "hello") {
+    return message.protocolVersion === 1 && validId(message.rendererId);
+  }
+  if (!validId(message.requestId) || !validId(message.hostId) || !validId(message.leaseId)) return false;
+  if (message.type === "host/connect") return true;
+  if (message.type !== "host/send" && message.type !== "host/disconnect") return false;
+  if (!Number.isSafeInteger(message.generation) || message.generation < 0) return false;
+  return message.type === "host/disconnect" || typeof message.frame === "string";
+}
+
+function bridgeAppHostSocket(client, appHostServer) {
+  const listeners = new Set();
+  let connection = null;
+  const port = {
+    postMessage(message) {
+      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    start() {},
+    close() {
+      if (client.readyState === WebSocket.OPEN) client.close(1000, "App Host closed");
+    },
+  };
+  client.on("message", (raw, isBinary) => {
+    if (isBinary) { client.close(1003, "Text frames required"); return; }
+    let message;
+    try { message = JSON.parse(raw.toString()); }
+    catch { client.close(1003, "Invalid App Host frame"); return; }
+    if (!validAppHostFrame(message)) { client.close(1008, "Invalid App Host request"); return; }
+    if (connection === null) {
+      if (message?.type !== "hello" || typeof message.rendererId !== "string" || !message.rendererId) {
+        client.close(1008, "App Host hello required");
+        return;
+      }
+      try { connection = appHostServer.accept(port, message.rendererId); }
+      catch { client.close(1011, "App Host unavailable"); return; }
+    }
+    for (const listener of listeners) listener(message);
+  });
+  client.once("close", () => connection?.close());
+  client.once("error", () => connection?.close());
+}
+
 function resolveRequestPath(staticRoot, pathname) {
   let decoded;
   try {
@@ -169,6 +238,8 @@ export async function createWorkbenchWebServer({
   root,
   appServerTarget = "ws://127.0.0.1:9988/rpc",
   hyperNodeUser = "",
+  loopbackOnly = false,
+  appHostServer = null,
 } = {}) {
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
@@ -176,9 +247,13 @@ export async function createWorkbenchWebServer({
 
   const server = createServer(async (request, response) => {
     try {
+      if (loopbackOnly && !allowedSameOriginRequest(request, false, true)) {
+        sendJson(response, 403, { ok: false, error: "Matching origin required" });
+        return;
+      }
       const url = new URL(request.url || "/", "http://vela.invalid");
       if (url.pathname === "/__opencraft_health") {
-        sendJson(response, 200, { ok: true, staticRoot, appServerTarget: normalizedTarget });
+        sendJson(response, 200, { ok: true, appServerConfigured: normalizedTarget !== null });
         return;
       }
       if (url.pathname === "/__opencraft_runtime_error") {
@@ -200,6 +275,13 @@ export async function createWorkbenchWebServer({
         }
         response.setHeader("connection", "upgrade");
         sendJson(response, 426, { ok: false, error: "WebSocket upgrade required" });
+        return;
+      }
+      if (url.pathname === "/apphost") {
+        sendJson(response, appHostServer === null ? 404 : 426,
+          appHostServer === null
+            ? { ok: false, error: "App Host is not available in this host" }
+            : { ok: false, error: "WebSocket upgrade required" });
         return;
       }
       if (request.method !== "GET" && request.method !== "HEAD") {
@@ -238,13 +320,22 @@ export async function createWorkbenchWebServer({
     }
   });
 
-  const websocketServer = new WebSocketServer({ noServer: true });
+  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
   server.on("upgrade", (request, socket, head) => {
+    if (loopbackOnly && !allowedSameOriginRequest(request, true, true)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     let pathname;
     try {
       pathname = new URL(request.url || "/", "http://vela.invalid").pathname;
     } catch {
       socket.destroy();
+      return;
+    }
+    if (pathname === "/apphost" && appHostServer !== null) {
+      websocketServer.handleUpgrade(request, socket, head, (client) => bridgeAppHostSocket(client, appHostServer));
       return;
     }
     if (pathname !== "/appserver") {
@@ -295,29 +386,21 @@ function parseNumber(value, fallback) {
   return parsed;
 }
 
-const isMain = process.argv[1] != null
-  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-if (isMain) {
-  void (async () => {
-    const host = process.env.OPENCRAFT_WEB_HOST || "0.0.0.0";
-    const port = parseNumber(process.env.OPENCRAFT_WEB_PORT, 10000);
-    const webServer = await createWorkbenchWebServer({
-      root: process.env.OPENCRAFT_WEB_ROOT || join(repositoryRoot, "apps/workbench-web/dist"),
-      appServerTarget: process.env.OPENCRAFT_APPSERVER_URL || "ws://127.0.0.1:9988/rpc",
-      hyperNodeUser: process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "",
-    });
-    const address = await webServer.listen({ host, port });
-    console.log(`[opencraft static] ${webServer.staticRoot} -> http://${host}:${address.port}`);
-    console.log(`[opencraft appserver] /appserver -> ${webServer.appServerTarget}`);
-
-    const shutdown = async () => {
-      await webServer.close();
-      process.exit(0);
-    };
-    process.once("SIGINT", shutdown);
-    process.once("SIGTERM", shutdown);
-  })().catch((error) => {
-    console.error("[opencraft static] failed to start", error);
-    process.exitCode = 1;
+export async function runWorkbenchWebCli() {
+  const host = process.env.OPENCRAFT_WEB_HOST || "0.0.0.0";
+  const port = parseNumber(process.env.OPENCRAFT_WEB_PORT, 10000);
+  const webServer = await createWorkbenchWebServer({
+    root: process.env.OPENCRAFT_WEB_ROOT || join(repositoryRoot, "apps/workbench-web/dist"),
+    appServerTarget: process.env.OPENCRAFT_APPSERVER_URL || "ws://127.0.0.1:9988/rpc",
+    hyperNodeUser: process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "",
   });
+  const address = await webServer.listen({ host, port });
+  console.log(`[opencraft static] ${webServer.staticRoot} -> http://${host}:${address.port}`);
+  console.log(`[opencraft appserver] /appserver -> ${webServer.appServerTarget === null ? "disabled" : "configured"}`);
+  const shutdown = async () => {
+    await webServer.close();
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 }

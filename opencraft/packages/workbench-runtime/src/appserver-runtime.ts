@@ -88,6 +88,7 @@ import {
 import {
   AppServerFuzzyFileSearchController,
   AppServerInteractionBroker,
+  AppServerInteractionLedger,
   createAppServerConversationCommandPort,
   type FuzzyFileSearchSession,
   type FuzzyFileSearchSessionOptions,
@@ -441,6 +442,7 @@ export function createAppServerWorkbenchRuntime(
   const listeners = new Set<() => void>();
   const skillsChangedListeners = new Set<() => void>();
   const bindings = new Map<string, ConversationBinding>();
+  const interactionLedger = new AppServerInteractionLedger();
   const ephemeralThreadIds = new Set<string>();
   const bindingOperations = new Map<string, Promise<ConversationBinding>>();
   let revision = 0;
@@ -1149,6 +1151,7 @@ export function createAppServerWorkbenchRuntime(
       interactions = new AppServerInteractionBroker({
         hostId,
         client,
+        ledger: interactionLedger,
         store: session.views,
       });
       fuzzyFileSearch = new AppServerFuzzyFileSearchController(client);
@@ -1742,6 +1745,7 @@ export function createAppServerWorkbenchRuntime(
 
         interactions?.dispose();
         interactions = null;
+        interactionLedger.clear();
         fuzzyFileSearch?.dispose();
         fuzzyFileSearch = null;
         fileSystemWatches.clear();

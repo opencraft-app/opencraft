@@ -127,11 +127,12 @@ function AccountActionsMenu({ account, index, total, pending, onMove, onRefresh,
   </DropdownMenu.Root>;
 }
 
-function AccountRow({ account, index, total, service }: {
+function AccountRow({ account, index, total, service, credentialLocation }: {
   readonly account: CodexAccountView;
   readonly index: number;
   readonly total: number;
   readonly service: CodexAccountsService;
+  readonly credentialLocation: string;
 }) {
   const detailsId = useId();
   const [expanded, setExpanded] = useState(false);
@@ -203,7 +204,7 @@ function AccountRow({ account, index, total, service }: {
         <AlertDialog.Overlay className="codex-account-dialog__overlay" />
         <AlertDialog.Content className="codex-account-dialog codex-account-dialog--compact">
           <AlertDialog.Title>移除 Codex 账户？</AlertDialog.Title>
-          <AlertDialog.Description>将删除“{account.label}”的本机 OAuth 凭据和账户池绑定。现有会话记录不会删除。</AlertDialog.Description>
+          <AlertDialog.Description>将删除“{account.label}”在{credentialLocation}保存的 OAuth 凭据和账户池绑定。现有会话记录不会删除。</AlertDialog.Description>
           <footer>
             <AlertDialog.Cancel asChild><SettingsButton disabled={pending !== null}>取消</SettingsButton></AlertDialog.Cancel>
             <SettingsButton variant="danger" disabled={pending !== null} onClick={() => run("remove", () => service.remove(account.id))}>确认移除</SettingsButton>
@@ -214,12 +215,13 @@ function AccountRow({ account, index, total, service }: {
   </>;
 }
 
-function AddAccountMenu({ disabled, starting, importing, onSignIn, onImport }: {
+function AddAccountMenu({ disabled, starting, importing, onSignIn, onImport, allowImport }: {
   readonly disabled: boolean;
   readonly starting: boolean;
   readonly importing: boolean;
   readonly onSignIn: () => void;
   readonly onImport: () => void;
+  readonly allowImport: boolean;
 }) {
   return <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
@@ -233,10 +235,10 @@ function AddAccountMenu({ disabled, starting, importing, onSignIn, onImport }: {
           <UserRound size={16} />
           <span><strong>{starting ? "正在启动登录…" : "在浏览器中登录"}</strong><small>使用 ChatGPT 设备码添加账户</small></span>
         </DropdownMenu.Item>
-        <DropdownMenu.Item className="codex-account-menu__item codex-account-menu__item--descriptive" disabled={disabled} onSelect={onImport}>
+        {allowImport ? <DropdownMenu.Item className="codex-account-menu__item codex-account-menu__item--descriptive" disabled={disabled} onSelect={onImport}>
           <Download size={16} />
           <span><strong>{importing ? "正在导入…" : "导入本机 Codex 登录"}</strong><small>复制此设备已有的 Codex 登录</small></span>
-        </DropdownMenu.Item>
+        </DropdownMenu.Item> : null}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
   </DropdownMenu.Root>;
@@ -285,7 +287,12 @@ function DeviceLoginDialog({ login, service }: { readonly login: CodexDeviceLogi
   </Dialog.Root>;
 }
 
-export function createCodexAccountsView(service: CodexAccountsService) {
+export function createCodexAccountsView(service: CodexAccountsService, options: {
+  readonly allowImport?: boolean;
+  readonly credentialLocation?: string;
+} = {}) {
+  const allowImport = options.allowImport ?? true;
+  const credentialLocation = options.credentialLocation ?? "本机";
   return function CodexAccountsView(_props: ExtensionSettingsViewProps) {
     const snapshot = useSyncExternalStore(service.subscribe, service.getSnapshot, service.getSnapshot);
     const [starting, setStarting] = useState(false);
@@ -314,16 +321,16 @@ export function createCodexAccountsView(service: CodexAccountsService) {
         <SettingsSection
           title="ChatGPT 账户"
           description="多个账户按顺序使用；已有会话在账户可用时保持绑定。"
-          action={snapshot.accounts.length === 0 ? undefined : <AddAccountMenu disabled={busy} starting={starting} importing={importing} onSignIn={start} onImport={importLocal} />}
+          action={snapshot.accounts.length === 0 ? undefined : <AddAccountMenu disabled={busy} starting={starting} importing={importing} onSignIn={start} onImport={importLocal} allowImport={allowImport} />}
         >
           <SettingsGroup className="codex-account-list" aria-label="Codex 账户列表">
             {snapshot.phase === "loading" && snapshot.accounts.length === 0 ? <div className="codex-account-list__state" role="status"><RefreshCw size={16} />正在读取账户…</div> : null}
             {snapshot.phase !== "loading" && snapshot.accounts.length === 0 ? <div className="codex-account-list__empty">
               <span className="codex-account-list__empty-icon" aria-hidden="true"><UserRound size={18} /></span>
               <div><strong>还没有 Codex 账户</strong><p>添加 ChatGPT 账户后，Codex 会按可用额度自动选择并保持会话绑定。</p></div>
-              <AddAccountMenu disabled={busy} starting={starting} importing={importing} onSignIn={start} onImport={importLocal} />
+              <AddAccountMenu disabled={busy} starting={starting} importing={importing} onSignIn={start} onImport={importLocal} allowImport={allowImport} />
             </div> : null}
-            {snapshot.accounts.map((account, index) => <AccountRow key={account.id} account={account} index={index} total={snapshot.accounts.length} service={service} />)}
+            {snapshot.accounts.map((account, index) => <AccountRow key={account.id} account={account} index={index} total={snapshot.accounts.length} service={service} credentialLocation={credentialLocation} />)}
           </SettingsGroup>
         </SettingsSection>
       </div>

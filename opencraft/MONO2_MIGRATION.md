@@ -25,8 +25,29 @@ write source for OpenCraft.
 The source repository remains a read-only historical and rollback reference
 until it is archived. The tail pulls above only captured edits explicitly
 requested before migration handoff; they do not establish an ongoing sync contract.
-Do not use routine `git subtree pull`, `git subtree split`, or dual-write
-workflows for OpenCraft.
+Do not use routine `git subtree pull` or dual-write workflows for OpenCraft.
+
+## Public GitHub mirror
+
+`git@github.com:opencraft-app/opencraft.git` is a downstream, one-way public
+mirror of the committed `mono2/opencraft` tree. It does not change authority:
+mono2 remains the sole write source, and the GitHub repository must never be
+used as a `git subtree pull` source.
+
+A mirror update is a bounded delivery operation, not normal development:
+
+1. require a clean, committed `opencraft/` tree and explicit push authorization;
+2. generate the independent history with `git subtree split --prefix=opencraft`;
+3. apply the approved internal-to-public Author and Committer email mapping in
+   the temporary export without changing mono2 history or other contributors;
+4. scan the full exported history for secrets and stop on any finding;
+5. verify the exported tree equals the source `opencraft/` tree, then fast-forward
+   GitHub `main` without force-pushing or importing changes back.
+
+External GitHub contributions are inputs for a normal mono2 review. They must be
+reapplied or imported through an explicitly reviewed change, pass mono2 gates,
+and land in mono2 before the next mirror export. GitHub CI, Releases and Issues
+may consume the mirror, but they do not become source authority implicitly.
 
 ## Shared frontend boundary
 

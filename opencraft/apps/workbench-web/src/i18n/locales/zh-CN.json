@@ -31,6 +31,7 @@
   "sidebar.start": "开始",
   "sidebar.tasks": "任务",
   "sidebar.empty": "暂无任务",
+  "sidebar.serverOrigin": "来自 {server}",
   "sidebar.primary": "主导航",
   "navigation.applications": "应用",
   "navigation.home": "首页",

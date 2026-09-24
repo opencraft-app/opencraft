@@ -1,22 +1,24 @@
 ## stage
-Ready to commit the isolated iOS Web fix based on current `origin/master`, then push and fast-forward or merge through the repository's required path.
+Source, local Web build and authorized test-server deployment complete; iPhone WeChat/WeCom validation remains.
 
 ## verified
-- The isolated branch contains only this fix's Web metadata, mobile CSS, regression test, design docs and Task Pack.
-- Web typecheck, Workbench unit, shell-space, Web-release, boundary and build gates pass in this checkout.
-- The deployed test-server preview was separately smoke-tested; actual iPhone WeChat/WeCom behavior remains unverified.
+- Mobile viewport metadata now requests maximum scale 1 and disables user scaling.
+- Coarse-pointer phone text fields and editable content have a 16px floor; desktop Composer stays 14px.
+- Focused tests and Web release build pass; iPhone 17 simulator Safari focus keeps the page geometry stable.
+- The fixture HTTP server and iPhone 17 simulator used for validation were stopped afterward.
+- Native Linux build `20260924103545-79a7c75e1202` passed isolated archive smoke and ran on the 9.135.92.56 test server at that time. Direct and proxied HTML carried the viewport lock; WebUI and Codex AppHost smoke passed. Later preview releases superseded it.
 
 ## unverified
-- Remote branch acceptance and master merge are pending.
-- No physical iPhone embedded-browser result is available.
+- WeChat and WeCom on a physical iPhone have not been tested.
+- A second full-page iPhone Simulator pass was interrupted by the Mac lock screen; no visible result was obtained from that pass.
 
 ## discard
-- The older feature branch is 230 commits behind current master and has unrelated commits and dirty files; do not merge or push it as this fix.
+- Earlier Mac trackpad smart-zoom diagnosis; the user clarified the device is an iPhone running embedded Web browsers.
 
 ## restore
-- Worktree: task-isolated checkout of the current master base; its machine-local path is not part of this record.
-- Branch: `codex/opencraft-ios-webview-zoom-20260924` from the fetched master head.
-- The original checkout and its uncommitted changes have not been altered by this isolated branch.
+- Source: `opencraft/apps/workbench-web/index.html`, `opencraft/apps/workbench-web/src/styles/app.scss`, `opencraft/tests/typography-system.test.ts`.
+- Formal design: `opencraft/docs/platform-architecture.md` and `docs/engineering/domains/agent-gateway-runtime.md`.
+- The Linux service privilege change is documented by its own headless-server task pack; it is not part of this iOS UI fix.
 
 ## next_action
-- Commit the seven scoped files, push the topic branch, then update master only with that commit and verify remote master.
+- Ask the user to reload the new build on iPhone WeChat and WeCom and check focus and pinch gestures; investigate only if one embedded browser still zooms unexpectedly.

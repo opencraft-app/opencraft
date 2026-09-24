@@ -124,6 +124,9 @@ import {
   type ConversationScopeRegistrySnapshot,
   type HostRuntimeDescriptor,
   type HostRuntimeRegistration,
+  legacyDirectServerProjectionFromHost,
+  type ServerRouteLocality,
+  type ThreadServerOrigin,
   type ConversationScopeRegistry,
   type WorkbenchCoordinator,
   type WorkbenchLocation,
@@ -147,6 +150,7 @@ import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { IndexedDbSidebarLayoutStorage } from "./indexeddb-sidebar-layout-storage";
 import { BrowserModuleUrlExtensionLoader } from "./module-url-extension-loader";
 import { connectElectronAppHost } from "./electron-app-host";
+import { connectWebSocketAppHost } from "./websocket-app-host";
 import {
   BuiltinWebSocketHostConnectionExtension,
   createHostConnectionProviderContributionAdapter,
@@ -318,6 +322,29 @@ function hostDefinitionProfile(host: WebHostDefinition): HostConnectionProfile {
   };
 }
 
+export async function refreshBundledHostBrowseRoots(
+  store: HostConnectionProfileStore,
+  definitions: readonly WebHostDefinition[],
+): Promise<void> {
+  for (const definition of definitions) {
+    if (definition.workspaceBrowseRoots.length === 0) continue;
+    const current = store.getSnapshot().profiles.find((profile) => profile.hostId === definition.hostId);
+    const providerUrl = current?.providerConfig !== null
+      && typeof current?.providerConfig === "object"
+      && !Array.isArray(current.providerConfig)
+      ? (current.providerConfig as { readonly url?: unknown }).url
+      : null;
+    if (current === undefined || current.workspaceBrowseRoots.length > 0
+      || current.providerId !== "vela.websocket"
+      || providerUrl !== definition.url) continue;
+    await store.put({
+      ...current,
+      workspaceBrowseRoots: definition.workspaceBrowseRoots,
+      revision: current.revision + 1,
+    });
+  }
+}
+
 function profileDescriptor(profile: HostConnectionProfile): HostRuntimeDescriptor {
   return {
     hostId: profile.hostId,
@@ -349,7 +376,6 @@ export function parseWebHostDefinitions(
   raw: string | undefined,
   fallbackUrl: string,
 ): readonly WebHostDefinition[] {
-  void fallbackUrl;
   if (raw === undefined || raw.trim().length === 0) return [];
   let value: unknown;
   try {
@@ -385,7 +411,7 @@ export function parseWebHostDefinitions(
     if (hostId.length === 0 || label.length === 0 || url.length === 0) {
       throw new Error(`Host definition ${index} requires hostId, label and url`);
     }
-    const parsedUrl = new URL(url, window.location.href);
+    const parsedUrl = new URL(url, fallbackUrl);
     if (parsedUrl.protocol !== "ws:" && parsedUrl.protocol !== "wss:") {
       throw new Error(`Host definition ${hostId} must use ws: or wss:`);
     }
@@ -403,7 +429,7 @@ export function parseWebHostDefinitions(
       transportEndpoint,
       executionLocation,
       workspaceBrowseRoots,
-      url,
+      url: url.startsWith("/") ? parsedUrl.href : url,
       kind: kind as HostRuntimeDescriptor["kind"],
     };
   });
@@ -950,8 +976,15 @@ export async function createWebWorkbenchApplicationSupervisor(
     const authenticationFlows = cordis.authenticationFlows;
     const composerActionRenderers = new ComposerActionRendererRegistry();
     const platform = currentWorkbenchPlatform();
+    const bootstrapDefinitions = parseWebHostDefinitions(
+      import.meta.env.VITE_APPSERVER_HOSTS_JSON as string | undefined,
+      appServerUrl(),
+    );
     const electronAppHost = platform === "electron" ? connectElectronAppHost() : null;
     if (electronAppHost !== null) startupRollback.push(() => electronAppHost.close());
+    const headlessAppHost = platform === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_CODEX === "true"
+      ? connectWebSocketAppHost() : null;
+    if (headlessAppHost !== null) startupRollback.push(() => headlessAppHost.close());
     const [lightVelaPlatform, lightVela, createLightVelaHermesExtension] = await Promise.all([
       import("@opencraft/plugin-lightvela-platform"),
       import("@opencraft/plugin-lightvela-hermes"),
@@ -1029,6 +1062,25 @@ export async function createWebWorkbenchApplicationSupervisor(
         });
       });
     }
+    if (import.meta.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES === "true") {
+      await extensions.loadOptional("vela.headless-model-services", async () => {
+        const { createHeadlessModelServicesExtension } = await import("@opencraft/plugin-builtin-agents");
+        return createHeadlessModelServicesExtension({
+          hostId: "opencraft-server",
+          requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
+        });
+      });
+    }
+    if (headlessAppHost !== null) {
+      await extensions.loadOptional("vela.headless-codex", async () => {
+        const { createHeadlessCodexExtension } = await import("@opencraft/plugin-builtin-agents");
+        return createHeadlessCodexExtension({
+          requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
+          createTransport: hostId => headlessAppHost.createTransport(hostId),
+          workspaceBrowseRoots: bootstrapDefinitions.find((host) => host.hostId === "opencraft-server")?.workspaceBrowseRoots ?? [],
+        });
+      });
+    }
     // Keep this expression direct: Vite can erase the entire dynamic-import
     // edge from product builds instead of merely disabling it at runtime.
     if (import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN !== "false") {
@@ -1099,10 +1151,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => queryClient.clear());
     const routeCheckpoints = new BoundedCheckpointMap(32);
     const requestedBootstrapLocation = parseWorkbenchLocationUrl(new URL(window.location.href));
-    const bootstrapDefinitions = parseWebHostDefinitions(
-    import.meta.env.VITE_APPSERVER_HOSTS_JSON as string | undefined,
-    appServerUrl(),
-  );
   const configuredHostProfiles = await IndexedDbHostConnectionProfileStore.open({
     databaseName: currentProductDatabaseName("vela-host-connections"),
     seed: bootstrapDefinitions.map(hostDefinitionProfile),
@@ -1111,6 +1159,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       ...(options.ephemeralHostProfiles ?? []),
     ],
   });
+  await refreshBundledHostBrowseRoots(configuredHostProfiles, bootstrapDefinitions);
   const hostProfiles: HostConnectionProfileStore = options.hostProfileMode === "configured"
     ? configuredHostProfiles
     : new EnvironmentProfileStore(configuredHostProfiles, environmentDirectory);
@@ -1180,6 +1229,7 @@ export async function createWebWorkbenchApplicationSupervisor(
           () => botConversations.dispose(),
           () => appServerRegistry.dispose(),
           () => electronAppHost?.close(),
+          () => headlessAppHost?.close(),
           () => connectionProviders.dispose(),
           () => blobFiber.dispose(),
           () => imageFiber.dispose(),
@@ -1437,6 +1487,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         () => coordinator.dispose(),
         () => registry.dispose(),
         () => electronAppHost?.close(),
+        () => headlessAppHost?.close(),
         () => hostProfiles.close(),
         () => queryClient.clear(),
         () => extensionManager.dispose(),
@@ -1821,8 +1872,11 @@ export function useThreadCatalog(): {
 }
 
 export interface MultiHostWorkbenchThread extends WorkbenchThread {
-  readonly hostId: string;
-  readonly hostLabel: string;
+  /** Current transport route. Not the stable Server identity. */
+  readonly connectionHostId: string;
+  readonly connectionHostLabel: string;
+  readonly serverOrigin: ThreadServerOrigin;
+  readonly serverRouteLocality: ServerRouteLocality;
 }
 
 /**
@@ -1873,11 +1927,19 @@ export function useMultiHostThreadCatalog(): {
   });
   const querySignature = queries.map((query) => `${query.dataUpdatedAt}:${query.fetchStatus}`).join("|");
   const threads = useMemo(() => hosts.flatMap((host, index) =>
-    (queries[index]?.data?.data ?? []).map((thread) => ({
-      ...projectAppServerThread(thread),
-      hostId: host.hostId,
-      hostLabel: host.label,
-    }))).sort((left, right) => right.updatedAt - left.updatedAt), [hosts, querySignature]);
+    (queries[index]?.data?.data ?? []).map((thread) => {
+      const server = legacyDirectServerProjectionFromHost({
+        hostId: host.hostId,
+        hostKind: host.kind,
+        label: host.label,
+      });
+      return {
+        ...projectAppServerThread(thread),
+        connectionHostId: host.hostId,
+        connectionHostLabel: host.label,
+        ...server,
+      };
+    })).sort((left, right) => right.updatedAt - left.updatedAt), [hosts, querySignature]);
   return {
     threads,
     isFetching: queries.some((query) => query.isFetching),

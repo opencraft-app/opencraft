@@ -5,7 +5,7 @@ import {
   Settings,
   SquarePen,
 } from "lucide-react";
-import type { WorkbenchThread } from "@opencraft/workbench-runtime";
+import type { ServerRouteLocality, ThreadServerOrigin, WorkbenchThread } from "@opencraft/workbench-runtime";
 import type {
   SidebarEntity,
   SidebarEntityCreationCommand,
@@ -21,8 +21,10 @@ import { SidebarNavigationItem } from "./sidebar-navigation-item";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 
 interface SidebarThread extends WorkbenchThread {
-  readonly hostId: string;
-  readonly hostLabel: string;
+  readonly connectionHostId: string;
+  readonly connectionHostLabel: string;
+  readonly serverOrigin: ThreadServerOrigin;
+  readonly serverRouteLocality: ServerRouteLocality;
 }
 
 export interface SidebarCatalogItem {
@@ -114,7 +116,7 @@ export function Sidebar({
   const visibleThreads = activityExpanded
     ? orderedThreads
     : orderedThreads.filter((thread, index) =>
-      index < 10 || `${thread.hostId}:${thread.id}` === selectedThreadKey);
+      index < 10 || `${thread.connectionHostId}:${thread.id}` === selectedThreadKey);
   const activityGroups = groupThreadsByActivityDate(visibleThreads);
 
   useLayoutEffect(() => {
@@ -169,34 +171,35 @@ export function Sidebar({
                 <h2 className="sidebar-activity-group__heading">{group.label}</h2>
                 <div className="sidebar-activity-group__items">
                   {group.threads.map((thread) => {
-                    const threadKey = `${thread.hostId}:${thread.id}`;
+                    const threadKey = `${thread.connectionHostId}:${thread.id}`;
                     const active =
-                      thread.hostId === activeHostId && thread.id === activeThreadId;
+                      thread.connectionHostId === activeHostId && thread.id === activeThreadId;
                     const pending =
-                      thread.hostId === pendingHostId && thread.id === pendingThreadId;
+                      thread.connectionHostId === pendingHostId && thread.id === pendingThreadId;
                     const selected = threadKey === selectedThreadKey;
-                    const title = pendingTitle?.(thread.hostId, thread.id) ?? thread.title;
+                    const title = pendingTitle?.(thread.connectionHostId, thread.id) ?? thread.title;
                     const metadata = sidebarActivityMetadata(thread);
                     const button = <SidebarActivityItem
                       key={threadKey}
                       active={active}
-                      host={metadata.host}
-                      onInvoke={() => onSelectThread(thread.hostId, thread.id)}
+                      serverOrigin={thread.serverOrigin}
+                      serverRouteLocality={thread.serverRouteLocality}
+                      onInvoke={() => onSelectThread(thread.connectionHostId, thread.id)}
                       pending={pending}
                       project={metadata.project}
                       selected={selected}
                       status={thread.status}
                       title={title}
-                      tooltip={`${title} · ${metadata.project}${metadata.host === null ? "" : ` · ${metadata.host}`} · ${thread.id}`}
+                      tooltip={`${title} · ${metadata.project} · ${thread.serverOrigin.label} · ${thread.id}`}
                       unread={thread.unread === true}
                     />;
                     if (threadActions && threadCapabilities) return (
                       <ThreadRowMenu
                         key={threadKey}
-                        target={{ hostId: thread.hostId, threadId: thread.id, title }}
-                        capabilities={threadCapabilities(thread.hostId)}
+                        target={{ hostId: thread.connectionHostId, threadId: thread.id, title }}
+                        capabilities={threadCapabilities(thread.connectionHostId)}
                         hostActions={{
-                          label: thread.hostLabel,
+                          label: thread.connectionHostLabel,
                           onNewTask: onNewTaskForTarget,
                           onOpenSettings: onOpenTargetSettings,
                         }}

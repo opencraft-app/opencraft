@@ -7,6 +7,7 @@
 @use "../components/sidecar";
 @use "../components/modal/modal";
 @use "../components/ui/button";
+@use "../components/workspace-directory-picker";
 @use "../components/shell-navigation/shell-navigation";
 @use "./settings-panel";
 @use "./codex-accounts";
@@ -1351,7 +1352,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   display: grid;
   width: 100%;
   min-height: var(--height-sidebar-activity-row);
-  grid-template-columns: minmax(0, 1fr) 18px;
+  grid-template-columns: minmax(0, 1fr) 38px;
   align-items: center;
   gap: var(--gap-navigation-row-content);
   padding: 6px var(--padding-sidebar-activity-row-inline);
@@ -1458,9 +1459,21 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 
 .sidebar-activity-item__trailing {
   display: grid;
-  width: 18px;
+  width: 38px;
   height: 18px;
+  grid-template-columns: 16px 18px;
+  gap: 4px;
+  align-items: center;
+  justify-items: center;
+}
+
+.sidebar-activity-item__server-origin {
+  display: grid;
+  width: 16px;
+  height: 16px;
   place-items: center;
+
+  > svg { display: block; }
 }
 
 .sidebar-activity-item__status {
@@ -1665,7 +1678,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 }
 
 .pending-conversation-status svg {
-  animation: workspace-picker-spin 800ms linear infinite;
+  animation: workbench-spin 800ms linear infinite;
 }
 
 .pending-conversation-error {
@@ -1933,7 +1946,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   font-size: 11.5px;
 
   > svg {
-    animation: workspace-picker-spin 900ms linear infinite;
+    animation: workbench-spin 900ms linear infinite;
   }
 
   &.is-error {
@@ -3524,218 +3537,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   }
 }
 
-.modal-surface.workspace-picker-dialog {
-  display: flex;
-  width: min(560px, calc(100vw - 32px));
-  max-height: min(620px, calc(100vh - 48px));
-  min-height: 390px;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 16px;
-  background: var(--color-background-elevated-primary-opaque);
-  box-shadow:
-    0 24px 64px -24px rgb(0 0 0 / 38%),
-    0 4px 14px rgb(0 0 0 / 8%);
-  color: var(--color-text);
-}
-
-.workspace-picker-header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 11px;
-  padding: 16px 16px 13px;
-  border-bottom: 1px solid var(--color-border-subtle);
-
-  h2,
-  p {
-    margin: 0;
-  }
-
-  h2 {
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 20px;
-  }
-
-  p {
-    margin-top: 1px;
-    color: var(--color-text-tertiary);
-    font-size: 11.5px;
-    line-height: 16px;
-  }
-
-  > button {
-    display: grid;
-    width: 28px;
-    height: 28px;
-    place-items: center;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--color-icon-secondary);
-
-    &:hover:not(:disabled) {
-      background: var(--color-background-button-tertiary-hover);
-    }
-  }
-}
-
-.workspace-picker-header__icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 9px;
-  background: var(--color-background-button-tertiary-hover);
-  color: var(--color-icon-secondary);
-}
-
-.workspace-picker-breadcrumbs {
-  display: flex;
-  min-height: 43px;
-  align-items: center;
-  gap: 4px;
-  padding: 7px 14px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--color-border-subtle);
-  scrollbar-width: none;
-
-  span {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  i {
-    color: var(--color-text-tertiary);
-    font-style: normal;
-  }
-
-  button {
-    flex: 0 0 auto;
-    padding: 3px 6px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 11.5px;
-
-    &:hover {
-      background: var(--color-background-button-tertiary-hover);
-      color: var(--color-text);
-    }
-  }
-}
-
-.workspace-picker-list {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px;
-  overflow-y: auto;
-}
-
-.workspace-picker-row {
-  display: flex;
-  width: 100%;
-  min-height: 36px;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-text);
-  font-size: 12.5px;
-  text-align: left;
-
-  > svg {
-    flex: 0 0 auto;
-    color: var(--color-icon-secondary);
-  }
-
-  &:hover,
-  &:focus-visible {
-    background: var(--color-background-button-tertiary-hover);
-  }
-}
-
-.workspace-picker-row--parent {
-  color: var(--color-text-secondary);
-}
-
-.workspace-picker-state,
-.workspace-picker-error {
-  margin: 0;
-  padding: 18px 12px;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  text-align: center;
-}
-
-.workspace-picker-error {
-  padding: 8px 16px;
-  color: var(--color-text-danger, #b42318);
-  text-align: left;
-}
-
-.workspace-picker-footer {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
-  border-top: 1px solid var(--color-border-subtle);
-
-  code {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-family-mono, var(--font-mono, monospace));
-    font-size: 10.5px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  > div {
-    display: flex;
-    flex: 0 0 auto;
-    gap: 7px;
-  }
-
-  button {
-    min-height: 31px;
-    padding: 5px 11px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 500;
-
-    &:disabled {
-      cursor: default;
-      opacity: 0.55;
-    }
-  }
-}
-
-.workspace-picker-secondary {
-  border: 1px solid var(--color-border-subtle);
-  background: transparent;
-  color: var(--color-text-secondary);
-}
-
-.workspace-picker-primary {
-  border: 1px solid transparent;
-  background: var(--color-text);
-  color: var(--color-background-primary);
-}
-
-@keyframes workspace-picker-spin {
+@keyframes workbench-spin {
   to {
     transform: rotate(360deg);
   }
