@@ -235,7 +235,8 @@ const LatestNewsSection = () => {
   const [paused, setPaused] = useState(false);
   const entries = getChangelogEntries(t);
   const total = entries.length;
-  const entry = entries[index]!;
+  const activeIndex = index >= 0 && index < total ? index : 0;
+  const entry = entries[activeIndex];
 
   useEffect(() => {
     if (paused || total <= 1) return undefined;
@@ -244,6 +245,9 @@ const LatestNewsSection = () => {
     }, CAROUSEL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [paused, total]);
+
+  // An empty feed has no card to render; keep hooks unconditional.
+  if (!entry) return null;
 
   return (
     <section>
@@ -299,14 +303,14 @@ const LatestNewsSection = () => {
             key={item.title}
             type="button"
             aria-label={item.title}
-            aria-current={itemIndex === index ? "true" : undefined}
+            aria-current={itemIndex === activeIndex ? "true" : undefined}
             onClick={() => {
               setIndex(itemIndex);
               setPaused(true);
             }}
             className={cn(
               "h-1.5 cursor-pointer rounded-full transition-all",
-              itemIndex === index ? "w-5 bg-black/45" : "w-1.5 bg-black/15 hover:bg-black/25",
+              itemIndex === activeIndex ? "w-5 bg-black/45" : "w-1.5 bg-black/15 hover:bg-black/25",
             )}
           />
         ))}

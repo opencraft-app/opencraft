@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { LocaleOverrideProvider, useT } from "@/i18n/t";
@@ -11,7 +11,7 @@ import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { buildBuddySetupPlan } from "@/pages/marketing/agent-buddy-setup";
 import { TemplateDetailView } from "@/pages/marketing/agent-template-detail";
 import { resolveTemplatesForRegion, __TEMPLATE_DEFS_FOR_TEST } from "@/pages/marketing/agent-demo-templates";
-import { AVATAR_SHAPES, getAvatarShapeLabel } from "@/pages/marketing/agent-avatar-shapes";
+import { AVATAR_SHAPES, getAvatarShapeLabel, type AvatarShapeId } from "@/pages/marketing/agent-avatar-shapes";
 
 vi.mock("@/lib/region", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/region")>()), isCN: false, isGlobal: true, DEFAULT_LOCALE: "en-US" }));
 
@@ -48,6 +48,35 @@ const page = (locale: I18nDictKey) => (
 );
 
 describe("overview language consistency", () => {
+  it("uses a localized default accessible name for an unknown persisted avatar id", async () => {
+    await ensureLocaleDictionary("en-US");
+    const UnknownAvatar = () => {
+      const t = useT();
+      return <button aria-label={getAvatarShapeLabel("unknown-shape" as AvatarShapeId, t)} />;
+    };
+    render(<LocaleOverrideProvider locale="en-US"><UnknownAvatar /></LocaleOverrideProvider>);
+    expect(screen.getByRole("button", { name: "Jellyfish" })).toBeInTheDocument();
+  });
+
+  it("wraps the news carousel at its last entry and pauses after a manual selection", async () => {
+    await ensureLocaleDictionary("en-US");
+    vi.useFakeTimers();
+    try {
+      render(page("en-US"));
+      const initialTitle = screen.getByRole("img").getAttribute("alt");
+      act(() => { vi.advanceTimersByTime(10000); });
+      expect(screen.getByRole("img", { name: titles["en-US"][1] })).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(screen.getByRole("img").getAttribute("alt")).toBe(initialTitle);
+      fireEvent.click(screen.getByRole("button", { name: titles["en-US"][0] }));
+      act(() => { vi.advanceTimersByTime(15000); });
+      expect(screen.getByRole("img", { name: titles["en-US"][0] })).toBeInTheDocument();
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+
   it.each(Object.keys(titles) as I18nDictKey[])("localizes avatar controls and creation status in %s", async (locale) => {
     await ensureLocaleDictionary(locale);
     const Labels = () => {

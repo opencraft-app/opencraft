@@ -39,7 +39,7 @@ derived: false
 - 原始日志：/tmp/intl-bot-onboarding-*；本地引擎状态：frontend/.workflow/native。
 
 ## next_action
-合并后检查通过即提交本需求改动并创建 MR；用户已明确授权。国际模板非英文展示/写入策略保持既有配置；生产发布仍需单独授权。
+MR !4655 已创建；用户授权修复 3 条评审意见并追加提交。完成本轮检查后推送到现有 MR；生产发布不在范围。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 继承同目录 `2026-09-24-international-bot-onboarding.md` 与关联 PRD：国际站全量开放引导、默认总览，保留国际模板。
@@ -67,3 +67,8 @@ derived: false
 - 已合入最新 master@8ebf501bc，无冲突；CR 未发现新增阻断问题。
 - 合并后 14 文件 234 条聚焦测试通过，国际模板与安装测试 74 条通过，check 无新增类型错误，build:global 成功；其余最新日志 /tmp/intl-bot-mr-924/。
 - next-env.d.ts 与字体文件保持本地状态并排除提交；合并前改动另存 stash 备份。
+
+## review_followup
+- MR：https://git.woa.com/wisp/mono2/-/merge_requests/4655；初次交付提交 d8c89f061。
+- 已修复索引越界/空动态列表、测试模板缺失及头像名称兜底 3 条评论；3 文件 90 测试通过，check 无新增类型错误，build:global 成功。
+- 最新日志 /tmp/intl-bot-review-fix-924/；继续保留并排除 next-env.d.ts 和字体的本地改动。

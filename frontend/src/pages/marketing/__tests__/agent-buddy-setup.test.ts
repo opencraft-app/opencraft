@@ -447,7 +447,10 @@ describe("buildBuddySetupPlan", () => {
    */
   it("builds SkillHub installs exactly like the skills page does", () => {
     const domesticTemplate = resolveTemplatesForRegion(__TEMPLATE_DEFS_FOR_TEST, true)
-      .find((item) => item.skills.length > 0)!;
+      .find((item) => item.skills.length > 0);
+    if (!domesticTemplate) {
+      throw new Error("Expected a domestic template with installable skills");
+    }
     const steps = buildBuddySetupPlan({
       profile,
       template: domesticTemplate,
