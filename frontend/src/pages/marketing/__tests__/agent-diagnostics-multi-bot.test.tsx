@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawBot } from "@/contexts/agent-context";
 import type { User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
+import { setConsoleShowEnabled } from "@/lib/console-show-event";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 
 const execDebugCommand = vi.fn();
@@ -123,6 +124,10 @@ vi.mock("@/pages/marketing/agent-deepseek-harness-panel", () => ({
   AgentDeepSeekHarnessPanel: () => <div>DeepSeek Harness panel</div>,
 }));
 
+vi.mock("@/pages/marketing/agent-chat-panel", () => ({
+  AgentChatPanel: () => null,
+}));
+
 const createNavigation = (): AppNavigationValue => ({
   Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
   navigate: vi.fn(),
@@ -156,6 +161,7 @@ const page = (botId: string) => (
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setConsoleShowEnabled(false);
     maxBots = 1;
     multiBotEnabled = true;
     testRegion.isCN = true;
@@ -356,21 +362,29 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
   });
 
-  it("keeps global Bot creation hidden until show() reveals it", () => {
+  it("shows global Bot creation without show() while keeping advanced tools hidden", () => {
     maxBots = 5;
     testRegion.isCN = false;
     testRegion.isGlobal = true;
     const view = render(page("ins-1"));
 
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    expect(screen.queryByRole("link", { name: "终端" })).not.toBeInTheDocument();
     const show = (window as Window & { show?: () => void }).show;
     expect(show).toBeTypeOf("function");
     act(() => show?.());
 
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
     expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
       "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
     ]);
+    maxBots = 1;
+    view.rerender(page("ins-1"));
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeDisabled();
+    multiBotEnabled = false;
+    view.rerender(page("ins-1"));
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 
   it("explains a disabled create icon in a portaled tooltip", async () => {
