@@ -5,6 +5,7 @@ Release bundle metadata shared by CI and GitOps promotion commands.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import fnmatch
 from pathlib import Path
 import re
 from typing import Any
@@ -45,6 +46,7 @@ class ReleaseBundle:
     build_context: str | None
     image_repo: str | None
     publish_paths: list[str]
+    preserve_target_paths: list[str]
     promotion_gitops_services: list[str]
     image_targets: list[ImageTarget]
     config_contract: dict[str, Any]
@@ -70,6 +72,7 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
         raise KeyError(f"unknown release bundle: {service}")
 
     publish_paths = _resolve_publish_paths(bundle, env)
+    preserve_target_paths = _resolve_preserve_target_paths(bundle, env, publish_paths)
     promotion_gitops_services = [
         str(item).strip()
         for item in (bundle.get("promotion_gitops_services") or [])
@@ -93,6 +96,7 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
         build_context=_optional_str(bundle.get("build_context")),
         image_repo=_optional_str(_resolve_env_mapping_value(bundle.get("image_repo") or {}, env)),
         publish_paths=publish_paths,
+        preserve_target_paths=preserve_target_paths,
         promotion_gitops_services=promotion_gitops_services,
         image_targets=_resolve_image_targets(bundle, env),
         config_contract=_resolve_config_contract(bundle),
@@ -193,6 +197,35 @@ def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
             path = _rewrite_playground_publish_path(path, source_env, env)
         if is_playground_env(env) and _is_shared_playground_gitops_path(path):
             continue
+        if path not in seen:
+            seen.add(path)
+            resolved.append(path)
+    return resolved
+
+
+def _resolve_preserve_target_paths(
+    bundle: dict[str, Any],
+    env: str,
+    publish_paths: list[str],
+) -> list[str]:
+    paths_by_env = bundle.get("preserve_target_paths_by_env") or {}
+    if not isinstance(paths_by_env, dict):
+        raise ValueError("preserve_target_paths_by_env must be a mapping")
+    raw_paths = paths_by_env.get(env) or []
+    if not isinstance(raw_paths, list):
+        raise ValueError(f"preserve_target_paths_by_env.{env} must be a list")
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_paths:
+        path = str(raw).format(env=env)
+        candidate = Path(path)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise ValueError("preserve target paths must stay within the repository")
+        if any(character in path for character in "*?["):
+            raise ValueError("preserve target paths must name exact repository files")
+        if not any(fnmatch.fnmatchcase(path, pattern) for pattern in publish_paths):
+            raise ValueError(f"preserve target path is outside publish paths: {path}")
         if path not in seen:
             seen.add(path)
             resolved.append(path)
