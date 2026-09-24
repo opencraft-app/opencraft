@@ -3033,5 +3033,16 @@
   "k_ffea1468": "Lista de Skills instaladas",
   "k_374c5c8a": "WhatsApp está conectado a {{name}}. En una misma instancia, solo un Bot puede conectarse a WhatsApp a la vez. Desconéctelo primero del Bot original.",
   "k_7234c1ff": "En uso por otro Bot",
-  "k_943416fd": "Escanee con WhatsApp en su teléfono para iniciar sesión. En una misma instancia, solo un Bot puede conectarse a WhatsApp a la vez."
+  "k_943416fd": "Escanee con WhatsApp en su teléfono para iniciar sesión. En una misma instancia, solo un Bot puede conectarse a WhatsApp a la vez.",
+  "k_1a9431cb": "DeepSeek Harness ya está en Labs",
+  "k_1fc7ceca": "Hexágono",
+  "k_2db0fcd5": "Círculo",
+  "k_35908bb0": "Cuadrado",
+  "k_43559f37": "Medusa",
+  "k_43fd4154": "Triángulo",
+  "k_71101eb7": "Huevo",
+  "k_af8df3f5": "Gota",
+  "k_c6a6cb13": "Engranaje",
+  "k_e957ea93": "Cuadrado redondeado",
+  "k_ed3b674e": "Crea y publica espacios de trabajo"
 }

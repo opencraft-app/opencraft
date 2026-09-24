@@ -32,6 +32,7 @@ import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import {
   AVATAR_SHAPES,
+  getAvatarShapeLabel,
   DEFAULT_AVATAR_COLOR,
   DEFAULT_AVATAR_SHAPE,
   GeometricAvatar,
@@ -848,7 +849,7 @@ export const AgentOnboardingPanel = ({
             <button
               key={shape.id}
               type="button"
-              aria-label={shape.label}
+              aria-label={getAvatarShapeLabel(shape.id, t)}
               aria-pressed={shape.id === shapeId}
               onClick={() => setShapeId(shape.id)}
               className={cn(

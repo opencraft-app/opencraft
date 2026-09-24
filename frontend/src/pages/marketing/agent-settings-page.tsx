@@ -52,7 +52,7 @@ import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
-import { useT, t as rawT } from "@/i18n/t";
+import { useCurrentLocale, useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
@@ -2595,6 +2595,7 @@ export const AgentSettingsPage = ({
   showHeader?: boolean;
 } = {}) => {
   const t = useT();
+  const locale = useCurrentLocale();
   const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
@@ -2975,6 +2976,7 @@ export const AgentSettingsPage = ({
   const [buddySetupRevision, setBuddySetupRevision] = useState(0);
   const heroStats = useHeroStats({
     activePass,
+    locale,
     botId: activeBot?.id,
     profileId: activeBot?.profileId,
     refreshKey: buddySetupRevision,
@@ -4180,7 +4182,7 @@ export const AgentSettingsPage = ({
      * 订阅成功回跳同样进创建引导，不弹旧的「创建 Bot」弹窗 ——
      * 这是新用户订阅后的第一屏，看到的必须是新流程。
      *
-     * 国际站引导未上线，回落到旧的「创建 Bot」弹窗（master 原行为）。
+     * 引导开关关闭时，回落到旧的「创建 Bot」弹窗。
      */
     setCloneSourceBotId("");
     if (IS_BUDDY_ONBOARDING_ENABLED) {
@@ -4481,7 +4483,7 @@ export const AgentSettingsPage = ({
        * 首个 bot 不传 cloneOptions（没有可复制的来源），引导页会隐藏
        * 「创建方式」那一档，addBot 收到空 sourceBotId 走 blank。
        *
-       * 国际站引导未上线，回落到旧的「创建 Bot」弹窗（master 原行为）。
+       * 引导开关关闭时，回落到旧的「创建 Bot」弹窗。
        */
       setDirectCreateError(null);
       setCreateBotName("");
@@ -4512,7 +4514,7 @@ export const AgentSettingsPage = ({
      * 不复制，想复制的人自己去高级里选。
      */
     setCloneSourceBotId("");
-    /* 国际站引导未上线，回落到旧的「创建 Bot」弹窗（master 原行为：clone-current） */
+    /* 引导开关关闭时，回落到旧的「创建 Bot」弹窗（clone-current） */
     if (IS_BUDDY_ONBOARDING_ENABLED) {
       setShowMultiBotOnboarding(true);
     } else {
@@ -6195,7 +6197,7 @@ export const AgentSettingsPage = ({
                         {/* ── 「总览」：探索 tab 的置顶入口，新用户引导落地页（不参与下方任务分组）。
                              未创建个人助手时改名为「创建你的个人助手」，是此刻唯一可点的入口。
 
-                             分区域上线：国际站尚未上线总览页与引导，隐藏该入口，
+                             双站共用引导与总览开关；关闭时隐藏该入口，
                              否则会点进一个空白 section（见 IS_BUDDY_ONBOARDING_ENABLED）。 ── */}
                         {IS_BUDDY_ONBOARDING_ENABLED ? (
                         <div className="lv-agents-nav-group">

@@ -17,7 +17,7 @@ import {
   toCronExpression,
   updateSoulMetadataFields,
 } from "@/pages/marketing/agent-buddy-setup";
-import { DEMO_TEMPLATES } from "@/pages/marketing/agent-demo-templates";
+import { DEMO_TEMPLATES, __TEMPLATE_DEFS_FOR_TEST, resolveTemplatesForRegion } from "@/pages/marketing/agent-demo-templates";
 import { withHermesSkillsProfile } from "@/lib/hermes-agent-command";
 import { buildSkillhubInstallCommand } from "@/pages/marketing/skills-demo/skill-registries";
 
@@ -446,13 +446,15 @@ describe("buildBuddySetupPlan", () => {
    * 只要两边构造方式再次分叉，无论差在包装还是差在前缀，都会被抓住。
    */
   it("builds SkillHub installs exactly like the skills page does", () => {
+    const domesticTemplate = resolveTemplatesForRegion(__TEMPLATE_DEFS_FOR_TEST, true)
+      .find((item) => item.skills.length > 0)!;
     const steps = buildBuddySetupPlan({
       profile,
-      template: templateWithSkills,
+      template: domesticTemplate,
       profileId: "bot-research",
       timestamp: "20260914",
     });
-    const skillHubSkills = templateWithSkills.skills.filter(
+    const skillHubSkills = domesticTemplate.skills.filter(
       (skill) => !skill.githubSource && !skill.skillsShId,
     );
     expect(skillHubSkills.length).toBeGreaterThan(0);

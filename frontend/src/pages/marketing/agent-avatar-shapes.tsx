@@ -36,6 +36,19 @@ type ShapeDef = {
   eyeDx: number;
 };
 
+/** Resolve labels at render time so language changes also update accessible names. */
+export const getAvatarShapeLabel = (id: AvatarShapeId, t: (message: string) => string): string => ({
+  blob: t("水母"),
+  circle: t("圆形"),
+  squircle: t("圆角方"),
+  square: t("方形"),
+  teardrop: t("水滴"),
+  hexagon: t("六边形"),
+  burst: t("齿轮"),
+  triangle: t("三角"),
+  egg: t("蛋形"),
+})[id];
+
 export const AVATAR_SHAPES: ShapeDef[] = [
   {
     id: "blob",

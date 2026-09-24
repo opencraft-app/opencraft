@@ -23,13 +23,14 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { useCurrentLocale, useT } from "@/i18n/t";
+import { useCurrentLocale, useT, type TranslateFn } from "@/i18n/t";
 import { ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
 import {
   AVATAR_SHAPES,
+  getAvatarShapeLabel,
   GeometricAvatar,
   randomizeAvatarBatch,
 } from "@/pages/marketing/agent-avatar-shapes";
@@ -187,8 +188,8 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
  * 整串进词典等于每加一条动态都要翻 8 个语种。这里存数字，渲染时用
  * Intl.DateTimeFormat 按当前 locale 格式化。
  *
- * title / body / imageAlt 仍是中文原文 —— 它们是 t() 的 key，
- * 在渲染时翻译（模块级常量拿不到 hook）。
+ * 每次渲染通过当前 t 构造标题、正文和图片说明；字面量调用可被提取器收录，
+ * 并随语言切换重新生成，避免动态 key 漏译或模块级翻译缓存旧语言。
  */
 type ChangelogEntry = {
   date: { y: number; m: number; d: number };
@@ -199,27 +200,27 @@ type ChangelogEntry = {
 };
 
 /** TODO(demo): 接真实 changelog 数据源后替换 */
-const DEMO_CHANGELOG: ChangelogEntry[] = [
+const getChangelogEntries = (t: TranslateFn): ChangelogEntry[] => [
   {
     date: { y: 2026, m: 9, d: 10 },
-    title: "定时任务新增通知任务和脚本任务",
-    body: "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
+    title: t("定时任务新增通知任务和脚本任务"),
+    body: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
     image: assetUrl("/agent-overview/changelog-task-types.jpg"),
-    imageAlt: "定时任务新增通知任务和脚本任务",
+    imageAlt: t("定时任务新增通知任务和脚本任务"),
   },
   {
     date: { y: 2026, m: 9, d: 2 },
-    title: "支持创建和发布工作台",
-    body: "支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。",
+    title: t("支持创建和发布工作台"),
+    body: t("支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。"),
     image: assetUrl("/agent-overview/changelog-workbench.jpg"),
-    imageAlt: "支持创建和发布工作台",
+    imageAlt: t("支持创建和发布工作台"),
   },
   {
     date: { y: 2026, m: 8, d: 28 },
-    title: "实验室新增 DeepSeek Harness",
-    body: "在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。",
+    title: t("实验室新增 DeepSeek Harness"),
+    body: t("在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。"),
     image: assetUrl("/agent-overview/changelog-deepseek-harness.jpg"),
-    imageAlt: "实验室新增 DeepSeek Harness",
+    imageAlt: t("实验室新增 DeepSeek Harness"),
   },
 ];
 
@@ -232,8 +233,9 @@ const LatestNewsSection = () => {
   const [index, setIndex] = useState(0);
   /** 用户手动点过指示器后暂停自动轮播，避免和用户操作打架 */
   const [paused, setPaused] = useState(false);
-  const total = DEMO_CHANGELOG.length;
-  const entry = DEMO_CHANGELOG[index]!;
+  const entries = getChangelogEntries(t);
+  const total = entries.length;
+  const entry = entries[index]!;
 
   useEffect(() => {
     if (paused || total <= 1) return undefined;
@@ -261,7 +263,7 @@ const LatestNewsSection = () => {
           <div className="aspect-[16/9] overflow-hidden bg-black/[0.015]">
             <img
               src={entry.image}
-              alt={t(entry.imageAlt)}
+              alt={entry.imageAlt}
               loading="lazy"
               decoding="async"
               width={900}
@@ -283,20 +285,20 @@ const LatestNewsSection = () => {
               }).format(new Date(entry.date.y, entry.date.m - 1, entry.date.d))}
             </p>
             <p className="mt-1.5 text-[15px] font-semibold leading-6 text-black/[0.88]">
-              {t(entry.title)}
+              {entry.title}
             </p>
-            <p className="mt-1.5 text-[13px] leading-5 text-black/50">{t(entry.body)}</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-black/50">{entry.body}</p>
           </div>
         </div>
       </div>
 
       {/* 轮播指示器：移到卡片外，避免在卡片内引入下边距破坏配图铺满 */}
       <div className="mt-3 flex items-center justify-center gap-1.5">
-        {DEMO_CHANGELOG.map((item, itemIndex) => (
+        {entries.map((item, itemIndex) => (
           <button
             key={item.title}
             type="button"
-            aria-label={t(item.title)}
+            aria-label={item.title}
             aria-current={itemIndex === index ? "true" : undefined}
             onClick={() => {
               setIndex(itemIndex);
@@ -363,7 +365,7 @@ const ProfileEditDialog = ({
               <button
                 key={shape.id}
                 type="button"
-                aria-label={shape.id}
+                aria-label={getAvatarShapeLabel(shape.id, t)}
                 aria-pressed={shape.id === shapeId}
                 onClick={() => setShapeId(shape.id)}
                 className={cn(
