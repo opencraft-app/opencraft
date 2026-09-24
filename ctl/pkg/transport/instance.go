@@ -194,6 +194,7 @@ type InstanceBotResponse struct {
 	CreatedAt      time.Time                       `json:"created_at"`
 	UpdatedAt      time.Time                       `json:"updated_at"`
 	WeixinOwner    *InstanceChannelBindingResponse `json:"weixin_owner,omitempty"`
+	WhatsAppOwner  *InstanceChannelBindingResponse `json:"whatsapp_owner,omitempty"`
 }
 
 type InstanceChannelBindingResponse struct {

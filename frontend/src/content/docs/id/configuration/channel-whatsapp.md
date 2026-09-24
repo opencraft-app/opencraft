@@ -34,6 +34,8 @@ Masuk ke LightVela, klik "My Hermes" di kanan atas untuk membuka konsol, lalu te
 
 Temukan kartu WhatsApp lalu klik "+ Connect".
 
+Dalam satu instance LightVela, WhatsApp hanya dapat terhubung ke satu Bot dalam satu waktu. Jika sudah terhubung ke Bot lain, buka Bot tersebut dari pemberitahuan dan putuskan WhatsApp sebelum menghubungkannya di sini.
+
 ### 3. Pindai kode QR dengan WhatsApp di ponsel Anda
 
 1. Buka WhatsApp di ponsel Anda
