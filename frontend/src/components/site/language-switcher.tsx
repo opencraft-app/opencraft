@@ -143,6 +143,7 @@ function applyLocaleChange(
 }
 
 function chinaSiteLabel(activeLocale: PublicSiteLocale): string {
+  if (activeLocale === PUBLIC_SITE_LOCALES.ZH_HANT) return "中國站";
   return activeLocale.startsWith("zh") ? "中国站" : "China Site";
 }
 
@@ -331,7 +332,7 @@ function DropdownSwitcher({
           !isGlobal ? "font-semibold text-black/90" : "font-normal text-black/80"
         }`}
       >
-        <span>{isGlobal ? "中国站" : chinaSiteLabel(active.value)}</span>
+        <span>{isGlobal && active.value !== PUBLIC_SITE_LOCALES.ZH_HANT ? "中国站" : chinaSiteLabel(active.value)}</span>
         {!isGlobal && <Check className="h-[14px] w-[14px]" />}
       </button>
     </li>

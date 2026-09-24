@@ -31,6 +31,8 @@ KIND_CLUSTER_EXPLICIT="${PERSONAL_DEV_KIND_CLUSTER:-}"
 KIND_CLUSTER="${KIND_CLUSTER_EXPLICIT:-lightvela-personal-$SITE}"
 KUBE_CONTEXT="kind-$KIND_CLUSTER"
 KUBECONFIG_FILE="$STATE_ROOT/kubeconfig"
+FRONTEND_PORT="${PERSONAL_DEV_FRONTEND_PORT:-5173}"
+GATEWAY_PORT="${PERSONAL_DEV_GATEWAY_PORT:-8085}"
 CALLBACK_PORT="${PERSONAL_DEV_CALLBACK_PORT:-18084}"
 INTERNAL_TRADE_PORT="${PERSONAL_DEV_INTERNAL_TRADE_PORT:-28084}"
 TTL_SECONDS="${PERSONAL_DEV_TTL_SECONDS:-28800}"
@@ -434,6 +436,50 @@ ensure_site_activation_safe() {
   if ! blocker="$(site_switch_blocker)"; then
     die "$blocker; run PERSONAL_DEV_SITE=$(tr -dc 'a-z' <"$CURRENT_SITE_FILE") $SCRIPT_DIR/personal-devcloud.sh down before switching to $SITE"
   fi
+  ensure_host_ports_belong_to_site
+}
+
+# 主机级端口归属守卫。
+#
+# `current-site` 只落在 checkout 内的 STATE_BASE，另一个 checkout 起的 stack 完全看不见。
+# 实测踩过：intl 旧 checkout 还占着 8085，新 checkout 起 cn 时本地 sign-up 打到了 intl 的
+# Auth，用户建在 intl 库、shadow binding 写进 cn 库，最后炸在外键约束上。所以站点互斥必须
+# 按主机端口的真实归属判定，而不是 checkout 内的状态文件。
+host_port_listener_pids() {
+  local port="$1"
+  if [[ "$(uname -s)" == "Linux" ]] && command -v ss >/dev/null 2>&1; then
+    ss -ltnpH "sport = :$port" 2>/dev/null | grep -o 'pid=[0-9]\+' | cut -d= -f2 | sort -u
+    return 0
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u
+  fi
+}
+
+host_process_cmdline() {
+  local pid="$1"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    tr '\0' ' ' <"/proc/$pid/cmdline"
+    return 0
+  fi
+  ps -o command= -p "$pid" 2>/dev/null || true
+}
+
+ensure_host_ports_belong_to_site() {
+  local port pid cmdline conflicts=""
+  for port in "$FRONTEND_PORT" "$GATEWAY_PORT" "$CALLBACK_PORT" "$INTERNAL_TRADE_PORT" "$BROWSER_BOOTSTRAP_PORT"; do
+    while read -r pid; do
+      [[ -n "$pid" ]] || continue
+      cmdline="$(host_process_cmdline "$pid")"
+      [[ "$cmdline" == *"--context $KUBE_CONTEXT "* ]] && continue
+      [[ "$cmdline" == *"$BROWSER_BOOTSTRAP"* ]] && continue
+      conflicts+="  port $port is held by pid $pid: ${cmdline:-unknown process}"$'\n'
+    done < <(host_port_listener_pids "$port")
+  done
+  [[ -z "$conflicts" ]] && return 0
+  printf '%s' "$conflicts" >&2
+  die "the ports above belong to another personal DevCloud stack (another site or another checkout); run that stack's personal-devcloud.sh down first, then retry site=$SITE"
 }
 
 json_value() {
@@ -1142,14 +1188,14 @@ ensure_local_identity() {
   body="$TEMP_FILE_RESULT"
   json_body_file "$body" "name=devcloud-$(hostname -s)" "email=$email" "password=$password" # pragma: allowlist secret
   if ! response="$(curl --silent --show-error --connect-timeout 10 --max-time 90 \
-    -H 'Content-Type: application/json' --data-binary "@$body" "http://127.0.0.1:8085/auth/password/sign-up")"; then
+    -H 'Content-Type: application/json' --data-binary "@$body" "http://127.0.0.1:$GATEWAY_PORT/auth/password/sign-up")"; then
     remove_private_temp "$body"
     return 1
   fi
   token="$(printf '%s' "$response" | json_value 'd.get("session", {}).get("sessionToken", "")' 2>/dev/null || true)"
   if [[ -z "$token" ]]; then
     if ! response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 90 \
-      -H 'Content-Type: application/json' --data-binary "@$body" "http://127.0.0.1:8085/auth/password/sign-in")"; then
+      -H 'Content-Type: application/json' --data-binary "@$body" "http://127.0.0.1:$GATEWAY_PORT/auth/password/sign-in")"; then
       remove_private_temp "$body"
       return 1
     fi
@@ -1255,7 +1301,7 @@ start_browser_bootstrap() {
     --listen-host "$listen_host" \
     --port "$BROWSER_BOOTSTRAP_PORT" \
     --public-host "$ip" \
-    --frontend-url "http://$ip:5173/dashboard/settings" \
+    --frontend-url "http://$ip:$FRONTEND_PORT/dashboard/settings" \
     --nonce "$nonce" \
     --token-file "$token_file" \
     --ready-file "$BROWSER_BOOTSTRAP_READY_FILE" \
@@ -1306,7 +1352,7 @@ PY
 )"
   new_private_temp browser-login-body
   body="$TEMP_FILE_RESULT"
-  python3 - "$body" "$local_user_id" "http://$(discover_devcloud_ip):5173/" "$BROWSER_SESSION_TTL_SECONDS" <<'PY'
+  python3 - "$body" "$local_user_id" "http://$(discover_devcloud_ip):$FRONTEND_PORT/" "$BROWSER_SESSION_TTL_SECONDS" <<'PY'
 import json, sys
 path, user_id, return_to, ttl = sys.argv[1:]
 with open(path, "w", encoding="utf-8") as output:
@@ -1673,8 +1719,8 @@ register_command() {
 show_access() {
   local ip login_url=""
   ip="$(discover_devcloud_ip)"
-  log "frontend=http://$ip:5173"
-  log "gateway=http://$ip:8085"
+  log "frontend=http://$ip:$FRONTEND_PORT"
+  log "gateway=http://$ip:$GATEWAY_PORT"
   if [[ -s "$BROWSER_BOOTSTRAP_READY_FILE" ]]; then
     login_url="$(tr -d '\r\n' <"$BROWSER_BOOTSTRAP_READY_FILE")"
     log "one_time_login=$login_url expires_at=$(state_get browser_login_expires_at)"
@@ -1725,6 +1771,10 @@ up() {
   LOCALSTACK_SITE_KIND="$SITE" LOCALSTACK_PUBLIC_HOST="$ip" \
     LOCALSTACK_STATE_DIR="$STATE_ROOT/localstack" \
     LOCALSTACK_SECRET_OVERRIDE_DIRS="$secret_override_dirs" \
+    LOCALSTACK_FRONTEND_PORT="$FRONTEND_PORT" \
+    LOCALSTACK_GATEWAY_PORT="$GATEWAY_PORT" \
+    LOCALSTACK_TRADE_CALLBACK_PORT="$CALLBACK_PORT" \
+    LOCALSTACK_TRADE_INTERNAL_PORT="$INTERNAL_TRADE_PORT" \
     LOCALSTACK_JIFEI_GATEWAY_URL="$CLGATEWAY_BASE/v1/proxy/jifei-test/interfaces/interface.php" \
     PERSONAL_DEV_REAL_KUSTOMIZE="$real_kustomize" \
     PERSONAL_DEV_RUNTIME_SITE="$SITE" PERSONAL_DEV_RUNTIME_PUBLIC_HOST="$ip" \
@@ -1744,9 +1794,9 @@ status() {
   token="$(state_get central_session_token)"
   ip="$(discover_devcloud_ip 2>/dev/null || true)"
   log "site=$SITE devcloud_ip=${ip:-unknown} uin=$(state_get uin)"
-  curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:5173/healthz" || rc=1
+  curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$FRONTEND_PORT/healthz" || rc=1
   printf '\n'
-  curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:8085/healthz" || rc=1
+  curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$GATEWAY_PORT/healthz" || rc=1
   printf '\n'
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" || rc=1
   printf '\n'

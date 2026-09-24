@@ -244,6 +244,19 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 - registration 若缺 capability 或本机 devtunnel-agent 启动失败，脚本会立即 DELETE 注册并 fail closed。
 - Linux localstack 由 supervisor 自动重建失效的 `kubectl port-forward`。Pod rollout 的重连窗口内，单个
   请求仍可能失败；查看对应 `localstack/logs/<name>.log`，按上面的“先查终态、禁止盲重试”规则处理。
+- **同一台 DevCloud 上只能有一份个人环境持有这组宿主机端口**（frontend `5173`、gateway `8085`、
+  回调 `18084`、内部 Trade `28084`、browser-login `19050`）。这些端口是按 checkout 之外的宿主机
+  全局共享的，而 `current-site` 记录在 `<checkout>/.localstack/personal-devcloud/` 里、每个 checkout
+  独立，所以**另一个 checkout（或另一个站点）没有 `down` 干净时，切站保护是拦不住的**。此时
+  `kubectl port-forward` 会因 `address already in use` 秒退，supervisor 会不断重启它，而请求会被
+  转发到另一套环境——典型表象是新建用户落到 intl 库、shadow binding 写进 cn 库，最终报
+  `fk_shadow_binding_user` 外键失败。现在 `up` 会在启动前逐个端口核对监听者是否属于本站
+  kube context，不属于就 fail fast 并打印占用进程；同时 port-forward 启动后会确认端口真的由本站
+  绑定，否则打印日志尾部并退出，不再静默降级成“启动成功”。
+  修复方式：到占用端口的那个 checkout/站点执行 `personal-devcloud.sh down`，再重试。
+  确需并行两套时，用 `PERSONAL_DEV_FRONTEND_PORT` / `PERSONAL_DEV_GATEWAY_PORT` /
+  `PERSONAL_DEV_CALLBACK_PORT` / `PERSONAL_DEV_INTERNAL_TRADE_PORT` 覆写（脚本会把对应的
+  `LOCALSTACK_*_PORT` 透传给 localstack），不要用 `kill` 抢端口。
 - 多目标变配询价应并行返回并保持服务端策略顺序；当前 CTL 单目标预算 20 秒，Service Gateway
   `ctl-passes` 上游预算 30 秒。任一目标询价失败时整条请求失败，不能把临时故障展示成“无可升级套餐”。
 - `target_ip_not_allowed`：Auth 观测到的来源 IP 未进入对应 testing allowlist；核对服务端观测值，不要把
