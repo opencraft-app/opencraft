@@ -643,6 +643,9 @@ describe("http repositories auth token bootstrap", () => {
       if (url.includes("/channel-bindings/weixin")) {
         return jsonResponse({});
       }
+      if (url.includes("/channel-bindings/whatsapp")) {
+        return jsonResponse(method === "PUT" ? { reservation_id: "test-reservation" } : {});
+      }
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -677,6 +680,21 @@ describe("http repositories auth token bootstrap", () => {
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "PUT" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
+    ]);
+    const reservationId = await repositories.bots.claimUniqueChannel("bot_sales", "whatsapp");
+    expect(reservationId).toBe("test-reservation");
+    await repositories.bots.confirmUniqueChannel("bot_sales", "whatsapp", reservationId);
+    await repositories.bots.releaseUniqueChannel("bot_sales", "whatsapp", reservationId);
+    await repositories.bots.releaseUniqueChannel("bot_sales", "whatsapp");
+    const whatsappCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/channel-bindings/whatsapp"));
+    expect(whatsappCalls.map(([, init]) => ({
+      method: init?.method,
+      body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+    }))).toEqual([
+      { method: "PUT", body: undefined },
+      { method: "POST", body: { reservation_id: "test-reservation" } },
+      { method: "DELETE", body: { reservation_id: "test-reservation" } },
+      { method: "DELETE", body: { disconnect: true } },
     ]);
     await repositories.bots.destroyBot("bot_sales");
     expect(calls[calls.length - 1]).toEqual({

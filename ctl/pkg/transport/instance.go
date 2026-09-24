@@ -198,11 +198,12 @@ type InstanceBotResponse struct {
 }
 
 type InstanceChannelBindingResponse struct {
-	Channel   string `json:"channel"`
-	BotID     string `json:"bot_id"`
-	ProfileID string `json:"profile_id"`
-	BotName   string `json:"bot_name,omitempty"`
-	Status    string `json:"status"`
+	Channel       string `json:"channel"`
+	BotID         string `json:"bot_id"`
+	ProfileID     string `json:"profile_id"`
+	BotName       string `json:"bot_name,omitempty"`
+	Status        string `json:"status"`
+	ReservationID string `json:"reservation_id,omitempty"`
 }
 
 type ListInstanceBotsResponse struct {

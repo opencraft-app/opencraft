@@ -10,6 +10,13 @@ const readSource = (relativePath: string) =>
 // 真实 debug exec adapter 定义在 agent-tat-adapter，
 // authApiBaseUrl 空值守卫收敛到 repositories 层。
 describe("agent settings TEA SDK boundary", () => {
+  it("claims WhatsApp at CTL even when the browser cached a connected owner", () => {
+    const page = readSource("src/pages/marketing/agent-settings-page.tsx");
+    expect(page).toContain("const shouldClaim = isConnect;");
+    expect(page).toContain("const reservationId = shouldClaim && channel ? await repositories.bots.claimUniqueChannel(activeBotId, channel) : undefined;");
+    expect(page).not.toContain('whatsAppOwner?.botId === activeBotId && whatsAppOwner.status === "connected"');
+  });
+
   it("generates Hermes commands locally without loading the scripts SDK", () => {
     const packageJson = JSON.parse(readSource("package.json")) as {
       dependencies?: Record<string, string>;

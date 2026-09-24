@@ -1224,22 +1224,25 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async claimUniqueChannel(botId, channel) {
       const { instanceId } = await resolveBotScope(botId);
-      await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
+      const binding = await requestEnvelope<{ reservation_id?: string }>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "PUT",
       });
+      return binding.reservation_id;
     },
 
-    async confirmUniqueChannel(botId, channel) {
+    async confirmUniqueChannel(botId, channel, reservationId) {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "POST",
+        body: reservationId ? { reservation_id: reservationId } : undefined,
       });
     },
 
-    async releaseUniqueChannel(botId, channel) {
+    async releaseUniqueChannel(botId, channel, reservationId) {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "DELETE",
+        body: channel === "whatsapp" ? (reservationId ? { reservation_id: reservationId } : { disconnect: true }) : undefined,
       });
     },
 
