@@ -682,6 +682,9 @@ authorization rejection; successful responses, transport failures and
 indeterminate streaming outcomes are never replayed. The provider cursor moves
 to the next eligible account after the current account and wraps in configured
 priority order; recovery of an earlier account does not pull new Threads back.
+The loopback HTTP bridge owns each response stream until completion. When its
+client disconnects, it aborts the upstream request and consumes the resulting
+stream error without terminating the Host process or replaying the request.
 Account order, enablement, quota and accepted affinity survive Host restart.
 Affinity expires after 30 idle minutes and storage retains only the 4,096 most
 recent bindings, matching the bounded BB scheduling contract.
