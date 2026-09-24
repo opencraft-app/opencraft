@@ -1281,6 +1281,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "shprod": {
                 "region": "ap-shanghai",
                 "suffix": "test_env",
+                "llmgateway_url": "https://token-admin.lightvela.com",
                 "image": "lightclaw-shprod.tencentcloudcr.com/lightclaw/credit",
                 "app": "argocd/apps/shprod/credit.yaml",
                 "project": "argocd/projects/shprod-credit.yaml",
@@ -1295,6 +1296,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "sgprod": {
                 "region": "ap-singapore",
                 "suffix": "test_env",
+                "llmgateway_url": "https://token-admin.lightvela.ai",
                 "image": "lightclaw-sgprod.tencentcloudcr.com/lightclaw/credit",
                 "app": "argocd/apps/sgprod/credit.yaml",
                 "project": "argocd/projects/sgprod-credit.yaml",
@@ -1331,6 +1333,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertIn(f"CREDIT_REGION={contract['region']}", platform)
                 self.assertIn(f"CREDIT_OBJECT_ID_PASSWORD_SUFFIX={contract['suffix']}", platform)
                 self.assertIn(f"CREDIT_IMAGE={contract['image']}:", platform)
+                if llmgateway_url := contract.get("llmgateway_url"):
+                    self.assertIn(f"LLMGATEWAY_INTERNAL_BASE_URL={llmgateway_url}", platform)
 
                 for key in ("catalog", "app", "project", "trade_patch", "gateway", "ssm"):
                     if path := contract.get(key):
