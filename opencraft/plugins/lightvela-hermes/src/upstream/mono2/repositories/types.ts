@@ -474,9 +474,9 @@ export interface BotRepository {
   getSettingsSnapshot(botId: string, mode?: DataMode): Promise<SettingsSnapshot>;
   getTerminalSession(botId: string): Promise<BotTerminalSession>;
   configureQQChannel(botId: string, input: { appId: string; appSecret: string; account?: string }): Promise<BotChannelConfigResult>;
-  claimUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
-  confirmUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
-  releaseUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
+  claimUniqueChannel(botId: string, channel: "weixin" | "whatsapp"): Promise<void>;
+  confirmUniqueChannel(botId: string, channel: "weixin" | "whatsapp"): Promise<void>;
+  releaseUniqueChannel(botId: string, channel: "weixin" | "whatsapp"): Promise<void>;
   createWeixinLoginSession(botId: string): Promise<{ sessionId: string; status: string }>;
   getWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;
   cancelWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;

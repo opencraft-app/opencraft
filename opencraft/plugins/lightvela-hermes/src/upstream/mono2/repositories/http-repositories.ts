@@ -227,6 +227,12 @@ interface CtlInstanceBotPayload {
     bot_name?: string;
     status: string;
   };
+  whatsapp_owner?: {
+    bot_id: string;
+    profile_id: string;
+    bot_name?: string;
+    status: string;
+  };
 }
 
 interface CtlListInstanceBotsPayload {
@@ -797,6 +803,12 @@ const projectInstanceBotToBot = (
       profileId: instanceBot.weixin_owner.profile_id,
       botName: instanceBot.weixin_owner.bot_name,
       status: instanceBot.weixin_owner.status,
+    } : undefined,
+    whatsAppOwner: instanceBot.whatsapp_owner ? {
+      botId: instanceBot.whatsapp_owner.bot_id,
+      profileId: instanceBot.whatsapp_owner.profile_id,
+      botName: instanceBot.whatsapp_owner.bot_name,
+      status: instanceBot.whatsapp_owner.status,
     } : undefined,
     sandboxId: instance.sandbox_id,
     name: displayName || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
