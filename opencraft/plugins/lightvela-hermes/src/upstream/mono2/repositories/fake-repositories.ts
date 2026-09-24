@@ -1770,7 +1770,7 @@ const createBotRepository = (): BotRepository => {
       return { sessionId: `wxlogin_fake_${Date.now()}`, status: "starting" };
     },
 
-    async claimUniqueChannel() {},
+    async claimUniqueChannel() { return undefined; },
 
     async confirmUniqueChannel() {},
 
