@@ -71,9 +71,17 @@ export const isRetriableSetupFailure = (error: unknown): boolean => {
   if (error instanceof Error) {
     // 沙箱执行超时：上层用 debug_exec_timeout:<ms> 这个形态传递
     if (error.message.startsWith("debug_exec_timeout:")) return true;
-    // RepositoryError 带 code；用鸭子类型判断，避免为此从 repositories 引类型
-    const code = (error as Error & { code?: string }).code;
+    // RepositoryError 带 code / status；鸭子类型判断，避免为此从 repositories 引类型
+    const { code, status } = error as Error & { code?: string; status?: number };
     if (code === "network_error") return true;
+    /*
+     * 实例状态还没跟上（DEBUG_NOT_SUPPORTED / 409）。
+     *
+     * 预热探活通过只说明「那一刻」实例能跑命令，紧接着的第一条配置命令
+     * 仍可能撞上状态回退。这类失败跟命令本身对不对无关，退避几秒重试通常
+     * 就过了 —— 而 SOUL 是 required 步骤，不重试会让整条计划当场中止。
+     */
+    if (code === "DEBUG_NOT_SUPPORTED" || status === 409) return true;
     if (error.name === "TypeError" && /failed to fetch|networkerror|load failed/i.test(error.message)) {
       return true;
     }
@@ -81,6 +89,70 @@ export const isRetriableSetupFailure = (error: unknown): boolean => {
     if (/failed to fetch/i.test(error.message)) return true;
   }
   return false;
+};
+
+/**
+ * 沙箱探活失败的性质。
+ *
+ * - `transient`：实例可能还在冷启动，继续轮询等待。
+ * - `fatal`：等多久都不会自愈（鉴权失效、无权限、实例不存在、请求本身不
+ *   被接受），必须立刻中止并把真实原因交给用户。
+ */
+export type SandboxProbeFailureKind = "transient" | "fatal";
+
+/**
+ * 判断一次沙箱探活失败该继续等还是立刻放弃。
+ *
+ * 真实背景：预热探活循环原先是 `catch {}` 空吞一切异常，于是 401（登录态
+ * 失效）、403（无权配置该实例）、404（实例已被回收）也被当成「沙箱还没起
+ * 好」，一路空转到 180s 超时，最后只报一句「实例尚未就绪，请稍后在设置页
+ * 重试配置」。用户看到的是一个三分钟不动的 0/7 进度条加一句无信息量的报
+ * 错，排障的人连 status 和 request_id 都拿不到。
+ *
+ * 分级原则：只有「请求确实被服务端受理、并且明确拒绝，且拒绝理由与时间
+ * 无关」才算 fatal。其余一律 transient —— 预热本来就是在等一个还没准备好
+ * 的东西，把「还没好」误判成 fatal，比多等几十秒严重得多。
+ *
+ * ⚠️ 加新的 fatal 判定前先确认：这个错误在实例启动完成后还会不会出现？
+ * 会的话它就不是 fatal。DEBUG_NOT_SUPPORTED 就是踩过的坑，见下方注释。
+ */
+export const classifySandboxProbeFailure = (error: unknown): SandboxProbeFailureKind => {
+  if (!(error instanceof Error)) return "transient";
+
+  // 请求没能完成（沙箱侧超时 / 断网 / 代理掐连接）→ 实例大概只是还没起好
+  if (isRetriableSetupFailure(error)) return "transient";
+
+  // RepositoryError 带 status / code；鸭子类型判断，避免为此从 repositories 引类型
+  const { status, code } = error as Error & { status?: number; code?: string };
+
+  /*
+   * DEBUG_NOT_SUPPORTED（ctl/pkg/errcode/debug.go，HTTP 409）：
+   * 「debug command not supported in this instance state」。
+   *
+   * 这是 4xx 里的一个例外 —— 它描述的恰恰是「实例当前状态还不能跑 debug
+   * 命令」，也就是预热要等的那个状态本身，实例起好后就不再出现。按 4xx
+   * 一律 fatal 处理会把每一次正常的冷启动都判成失败。
+   *
+   * 同一约定在微信登录链路里已经存在（agent-settings-page.tsx 把
+   * 409 / DEBUG_NOT_SUPPORTED 当作「实例未就绪 → 等待重试」），这里保持一致。
+   */
+  if (code === "DEBUG_NOT_SUPPORTED") return "transient";
+
+  if (typeof status !== "number") return "transient";
+
+  // 0 是 createNetworkUnavailableError 的占位值，语义是网络不可用
+  if (status === 0) return "transient";
+  // 408 请求超时、429 限流：都会随时间好转
+  if (status === 408 || status === 429) return "transient";
+  /*
+   * 409 Conflict：语义是「当前状态下不能做这件事」，而状态是会变的。
+   * 对预热来说这基本等同于「还没准备好」，必须继续等。
+   */
+  if (status === 409) return "transient";
+  // 其余 4xx：请求被明确拒绝，再等一百次也是同样的响应
+  if (status >= 400 && status < 500) return "fatal";
+  // 5xx：服务端可能正在拉起实例，继续等
+  return "transient";
 };
 
 /** 重试间隔：立刻再试一次，仍失败则等 2s、5s。总共最多 4 次尝试 */

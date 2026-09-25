@@ -57,7 +57,13 @@ export interface BuddyProfileInput {
   description: string;
 }
 
-export type SetupStepKind = "soul" | "profile-meta" | "user-profile" | "skill" | "cron" | "gateway";
+/**
+ * `warmup` 不是一条沙箱命令，而是「等实例起到能执行命令」这段等待的
+ * 显性化。它由面板自己驱动状态，不进 runBuddySetupPlan，详见
+ * buildSandboxWarmupStep。
+ */
+export type SetupStepKind =
+  | "warmup" | "soul" | "profile-meta" | "user-profile" | "skill" | "cron" | "gateway";
 
 export interface SetupStep {
   kind: SetupStepKind;
@@ -84,6 +90,62 @@ export const SKILL_STEP_TIMEOUT_MS = 120_000;
 export const QUICK_STEP_TIMEOUT_MS = 60_000;
 /** 网关启动要加载配置与插件，给的比快命令宽一些 */
 export const GATEWAY_STEP_TIMEOUT_MS = 120_000;
+
+/**
+ * 预热总超时。
+ *
+ * 180s → 300s：海外节点首次拉取镜像会明显慢于国内，180s 会把一批本来
+ * 只是慢的冷启动判成失败。预热期间已有可见的等待计时，多等不再是黑盒。
+ */
+export const SANDBOX_READY_TIMEOUT_MS = 300_000;
+
+/**
+ * 单次探活超时。
+ *
+ * 15s → 8s：探活只是跑一个 `true`，8s 足够。缩短后单轮更快结束，遇到
+ * 4xx 这类永久错误能更早被 classifySandboxProbeFailure 判定并中止。
+ */
+export const SANDBOX_PROBE_TIMEOUT_MS = 8_000;
+
+/** 两次探活之间的间隔：5s → 3s，实例刚就绪时能更快进入下一步 */
+export const SANDBOX_PROBE_INTERVAL_MS = 3_000;
+
+/**
+ * 实例预热步骤：等沙箱容器起到能执行命令为止。
+ *
+ * 它刻意不是一条真命令（`command` 恒为空串，执行器也不会碰它），目的只是
+ * 把 `waitForSandbox` 那段**本来就存在、但完全没有 UI 表达**的等待显性化。
+ *
+ * 原先这段最长 3 分钟的等待发生在第一个步骤之前，期间清单全是灰色 pending、
+ * 进度恒为 0/N，用户没法区分「还要等」和「已经卡死」—— 这正是「创建 Bot
+ * 卡在喂咖啡环节」的表象来源。
+ *
+ * 为什么不交给 runBuddySetupPlan：
+ *   - 它不是「执行一条命令并看 exitCode」，而是一个带自有超时的轮询循环；
+ *   - 它绝不能进续跑快照。预热是一次实时探测，刷新或重试后必须重新探，
+ *     不能因为「上次探过了」就跳过 —— 那样会拿着一个未就绪的实例往下写
+ *     配置，每一步都失败。
+ * 所以状态由面板驱动，只是拼进同一份清单里一起渲染。
+ *
+ * required: true —— 实例没起来，后面写人设、装技能全无意义。
+ */
+export const buildSandboxWarmupStep = (tFn?: TranslateFn): SetupStep => {
+  /*
+   * 与 buildBuddySetupPlan 完全同一套约定：参数叫 tFn，局部变量必须叫 t。
+   *
+   * 不是风格问题 —— i18n-extract 的 T_CALL_RE 只认 t(...) 与 rawT(...)，
+   * 改成 tr(...) 之类的名字就扫不到，key 进不了词典，所有语种运行时都会
+   * 回显中文。不传翻译函数时回显中文原文，保证纯函数在测试里可直接用。
+   */
+  const t: TranslateFn = tFn ?? ((zh) => zh);
+  return {
+    kind: "warmup",
+    label: t("正在唤醒 Bot 实例"),
+    command: "",
+    timeoutMs: SANDBOX_READY_TIMEOUT_MS,
+    required: true,
+  };
+};
 
 /**
  * 拼装 SOUL.md 的人设正文。
