@@ -109,6 +109,7 @@ export async function startHeadlessServer(options = {}) {
     });
     appHostServer = new AppHostServer({
       logicalClientRouting: true,
+      physicalHostLifetime: "server",
       createTransport(hostId) {
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return options.createCodexTransport?.() ?? new CodexEngineAdapter({

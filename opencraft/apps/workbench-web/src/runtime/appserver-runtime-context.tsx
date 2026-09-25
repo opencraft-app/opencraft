@@ -136,6 +136,7 @@ import {
   createContext,
   type Context,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -1988,6 +1989,14 @@ export interface ComposerCatalogSnapshot {
   readonly isFetching: boolean;
   readonly modelError: Error | null;
   readonly permissionProfileError: Error | null;
+  readonly newThreadDefaults: {
+    readonly model: string | null;
+    readonly effort: string | null;
+  } | null;
+  readonly rememberModelDefaults: ((defaults: {
+    readonly model: string;
+    readonly effort: string | null;
+  }) => void) | undefined;
   readonly onModelMenuOpen: () => void;
   readonly retryModels: () => void;
 }
@@ -2017,6 +2026,50 @@ export function useComposerCatalog(
   const queryClient = useQueryClient();
   const options = useMemo(() => composerCapabilitiesOptions(snapshot.hostId, modelCatalogOwner, runtime.resources.composerCatalog), [snapshot.hostId, modelCatalogOwner, runtime]);
   const capabilities = useQuery({ ...options, enabled });
+  const defaultsWriteQueue = useRef<Promise<void>>(Promise.resolve());
+  const defaultsWriteRevision = useRef(0);
+  const connectionGeneration = runtime.resources.host.getConnectionGeneration?.() ?? 0;
+  const defaultsKey = useMemo(
+    () => ["appserver", snapshot.hostId, "composer-new-thread-defaults", connectionGeneration, cwd] as const,
+    [connectionGeneration, cwd, snapshot.hostId],
+  );
+  const defaults = useQuery({
+    queryKey: defaultsKey,
+    enabled,
+    retry: false,
+    queryFn: async () => {
+      try {
+        return {
+          supported: true as const,
+          ...(await runtime.resources.composerCatalog.readNewThreadDefaults(cwd)),
+        };
+      } catch {
+        return { supported: false as const, model: null, effort: null };
+      }
+    },
+    staleTime: 60_000,
+  });
+  const rememberModelDefaults = useCallback((next: {
+    readonly model: string;
+    readonly effort: string | null;
+  }) => {
+    if (defaults.data?.supported !== true) return;
+    const revision = ++defaultsWriteRevision.current;
+    queryClient.setQueryData(defaultsKey, { supported: true as const, ...next });
+    defaultsWriteQueue.current = defaultsWriteQueue.current
+      .catch(() => undefined)
+      .then(() => runtime.resources.composerCatalog.writeNewThreadDefaults(next))
+      .then(() => {
+        if (defaultsWriteRevision.current === revision) {
+          return queryClient.invalidateQueries({ queryKey: defaultsKey });
+        }
+      })
+      .catch(() => {
+        if (defaultsWriteRevision.current === revision) {
+          void queryClient.invalidateQueries({ queryKey: defaultsKey });
+        }
+      });
+  }, [defaults.data?.supported, defaultsKey, queryClient, runtime]);
   const catalogActions = useMemo(() => ({
     onModelMenuOpen: () => {
       if (!enabled) return;
@@ -2059,6 +2112,12 @@ export function useComposerCatalog(
     isFetching: capabilities.isFetching || permissionProfiles.isFetching,
     modelError: capabilities.error ? new Error(`${capabilities.data ? "能力目录刷新失败，当前显示上次结果" : "能力目录加载失败"}：${errorOrNull(capabilities.error)!.message}`) : null,
     permissionProfileError: errorOrNull(permissionProfiles.error),
+    newThreadDefaults: defaults.data?.supported === true
+      ? { model: defaults.data.model, effort: defaults.data.effort }
+      : null,
+    rememberModelDefaults: defaults.data?.supported === true
+      ? rememberModelDefaults
+      : undefined,
     ...catalogActions,
   };
 }

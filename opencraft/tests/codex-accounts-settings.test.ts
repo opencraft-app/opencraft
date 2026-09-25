@@ -16,7 +16,10 @@ test("Codex account Settings renders only redacted account state and device code
     id: "account-a", label: "user@example.com", priority: 1, enabled: true, credentialConfigured: true,
     email: "user@example.com", subscriptionType: "pro", rateLimitTier: null, status: "ready" as const,
     observedAt: 1_000, heldUntil: null, lastUsedAt: null, lastUsedHostId: null,
-    limitWindows: [{ slot: "primary" as const, windowMinutes: 300, utilization: 0.25, resetAt: null, observedAt: 1_000 }],
+    limitWindows: [
+      { slot: "primary" as const, windowMinutes: 300, utilization: 0.25, resetAt: Date.UTC(2026, 8, 26, 10), observedAt: 1_000 },
+      { slot: "secondary" as const, windowMinutes: 10_080, utilization: 0.5, resetAt: null, observedAt: 1_000 },
+    ],
   };
   let poll = 0;
   const request = (async (_hostId: string, method: string) => {
@@ -35,7 +38,8 @@ test("Codex account Settings renders only redacted account state and device code
   assert.match(render(), /user@example\.com/);
   assert.match(render(), /codex-account__plan[^>]*>Pro/);
   assert.match(render(), /codex-account__status-copy[^>]*>可用/);
-  assert.match(render(), /<small>5H<\/small><strong>25%<\/strong>/);
+  assert.match(render(), /<small>5H<\/small><strong>25%<\/strong><time[^>]*dateTime="2026-09-26T10:00:00\.000Z"[^>]*>/);
+  assert.match(render(), /<small>7D<\/small><strong>50%<\/strong><span class="codex-account__reset">重置未知<\/span>/);
   assert.match(render(), /添加账户/);
   assert.equal([...render().matchAll(/>添加账户</gu)].length, 1);
   assert.doesNotMatch(render(), /settings-control-row/);

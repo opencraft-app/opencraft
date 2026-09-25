@@ -34,7 +34,6 @@
   "sidebar.serverOrigin": "来自 {server}",
   "sidebar.primary": "主导航",
   "navigation.applications": "应用",
-  "navigation.home": "首页",
   "navigation.back": "后退",
   "navigation.forward": "前进",
   "navigation.newTask": "新任务",

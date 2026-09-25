@@ -55,7 +55,9 @@ try {
   assert.equal(typeof initialized.codexHome, "string");
   const threads = await rpc(2, "thread/list");
   assert.deepEqual(threads.data, []);
-  await smokeCodexAppHost(server.url);
+  await smokeCodexAppHost(server.url, null, {
+    expectQueueSteer: process.env.OPENCRAFT_CODEX_EXPECT_QUEUE_STEER === "1",
+  });
   process.stdout.write("Headless source smoke passed: WebUI, DSH and Codex AppServers are reachable\n");
 } finally {
   socket?.terminate();

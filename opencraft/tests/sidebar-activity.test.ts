@@ -91,7 +91,38 @@ test("Sidebar consumes the shared two-line Activity item instead of Host group r
   assert.match(item, /<ThreadActivity/u);
   assert.doesNotMatch(item, /host === null/u);
   assert.match(item, /aria-current=\{selected \? "page" : undefined\}/u);
-  assert.match(menu, /在 \{hostActions\.label\} 上新建任务/u);
-  assert.match(menu, /\{hostActions\.label\} 设置/u);
+  assert.match(menu, /在 \$\{hostActions\.label\} 上新建任务/u);
+  assert.match(menu, /\$\{hostActions\.label\} 设置/u);
   assert.match(menu, /ContextMenu\.Separator/u);
+  assert.match(menu, /aria-busy=\{forking \|\| undefined\}/u);
+  assert.match(menu, /data-forking=\{forking \|\| undefined\}/u);
+  assert.match(menu, /正在新建分支/u);
+});
+
+test("Activity hover is mouse-only and touch retains a reachable independent menu", () => {
+  const sidebar = readFileSync(
+    new URL("../apps/workbench-web/src/components/sidebar.tsx", import.meta.url),
+    "utf8",
+  );
+  const styles = readFileSync(
+    new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
+    "utf8",
+  );
+  const controls = readFileSync(
+    new URL("../packages/design-system/src/controls.web.scss", import.meta.url),
+    "utf8",
+  );
+  const itemRule = styles.slice(styles.indexOf(".sidebar-activity-item {\n  display: grid;"), styles.indexOf(".sidebar-activity-row {"));
+  assert.doesNotMatch(itemRule, /&:hover/u);
+  assert.match(styles, /\.sidebar-activity-item\s*\{\s*@include controls\.quiet-control\(\$hover: false\)/u);
+  assert.match(controls, /@mixin quiet-control\(\$hover: true\)/u);
+  assert.match(controls, /@if \$hover\s*\{\s*&:hover:not\(:disabled\)/u);
+  assert.match(styles, /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?\.sidebar-activity-list:not\(\[data-touch-interaction\]\) \.sidebar-activity-row:hover > \.sidebar-activity-item:not\(\.is-selected\)/u);
+  const menuTriggerRule = styles.slice(styles.indexOf(".sidebar-activity-item__menu-trigger {"), styles.indexOf("@media (hover: hover) and (pointer: fine)"));
+  assert.match(menuTriggerRule, /background: transparent;/u);
+  assert.doesNotMatch(styles, /\.sidebar-activity-row:has\(> \.sidebar-activity-item\.is-selected\) \.sidebar-activity-item__menu-trigger/u);
+  assert.match(styles, /\.sidebar-activity-item__menu-trigger\[data-forking="true"\]\s*\{[^}]*opacity: 1;[^}]*pointer-events: none;/u);
+  assert.match(styles, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.sidebar-activity-item__menu-trigger\s*\{[^}]*width: 44px;[^}]*height: 44px;[^}]*opacity: 1;[^}]*pointer-events: auto;/u);
+  assert.match(sidebar, /event\.pointerType === "touch"[\s\S]*?dataset\.touchInteraction = "true"/u);
+  assert.match(sidebar, /event\.pointerType === "mouse"[\s\S]*?delete event\.currentTarget\.dataset\.touchInteraction/u);
 });

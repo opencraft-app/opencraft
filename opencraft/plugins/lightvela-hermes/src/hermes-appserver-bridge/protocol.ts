@@ -10,6 +10,7 @@ import {
   OPENCRAFT_PROFILE_SKILLS_EXTENSION,
   OPENCRAFT_RESUME_HISTORY_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   type ProfileSkillsMethod,
 } from "@opencraft/appserver-protocol";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
@@ -148,7 +149,7 @@ export const dispatchAppServerRequest = async (
               atomicSteer: true,
               perItemPause: true,
             },
-            "opencraft/thread-lifecycle": {
+            [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: {
               version: 1,
               fork: false,
               rename: true,

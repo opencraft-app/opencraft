@@ -46,6 +46,35 @@ test("new process boot fences old attempts and preserves monotonic epochs", asyn
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("queued input survives a Host crash before native acknowledgement and retires on its matching native user message", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-queue-reconcile-"));
+  const path = join(root, "execution.sqlite");
+  try {
+    const first = new DshExecutionAuthority(path, "boot-a");
+    const queued = first.queueStore.add("thread-a", "client-queued", "local-user", [{ type: "text", text: "follow up" }]);
+    assert.equal(queued.created, true);
+    first.queueInput("native-queue-rpc", "thread-a", owner("a"), "request-queue", "client-queued");
+    first.close();
+
+    const restarted = new DshExecutionAuthority(path, "boot-b");
+    try {
+      assert.deepEqual(restarted.queueStore.pending("thread-a").map((item: any) => item.id), [queued.submission.id]);
+      assert.equal(restarted.queuedInputs().length, 1);
+      const unrelated = { type: "user/message", seq: 1, time: 1, data: { source: { kind: "user", rpcId: "native-queue-rpc" }, content: [] } };
+      restarted.projectInput("thread-b", unrelated);
+      assert.equal(restarted.queueStore.pending("thread-a").length, 1);
+
+      const projected = restarted.projectInput("thread-a", unrelated);
+      assert.equal((projected.data as any).source.rpcId, "client-queued");
+      assert.deepEqual(restarted.queueStore.pending("thread-a"), []);
+      assert.equal(restarted.queueStore.find("thread-a", queued.submission.id)?.state, "dispatched");
+      assert.deepEqual(restarted.queuedInputs(), []);
+      restarted.projectInput("thread-a", unrelated);
+      assert.deepEqual(restarted.queueStore.pending("thread-a"), [], "replayed native input cannot restore the queue row");
+    } finally { restarted.close(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("queue writes cannot bypass a running execution or a concurrent write lease", async () => {
   const authority = new DshExecutionAuthority(":memory:");
   try {

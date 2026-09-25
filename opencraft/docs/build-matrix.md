@@ -136,6 +136,13 @@ sign-in. Credentials stay in the server data directory, not browser storage.
 Neither engine logs in automatically; a fresh installation needs a configured
 DSH model or a permitted Codex account before it can submit a task.
 
+Codex queued-message Steer is implemented in the Host-owned durable queue and
+uses stock Codex `turn/steer`; no patched Codex binary is bundled. The server
+data-directory lock is the single-owner boundary for queue migration and
+dispatch. Do not share its Codex data directory with another independent
+AppServer process. The package smoke checks the Host queue capability rather
+than a native patch marker.
+
 Build on a native Linux amd64 machine with the checked-in Node version and
 installed dependencies. `release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
 must pass `npm run smoke:headless:linux` for both DSH and Codex initialization

@@ -52,7 +52,7 @@ await new Promise<void>((resolve, reject) => {
 const address = model.address();
 if (!address || typeof address === "string") throw new Error("Fixture model did not bind");
 
-const adapter = new CodexEngineAdapter({
+const createAdapter = () => new CodexEngineAdapter({
   executable: process.env.OPENCRAFT_CODEX_EXECUTABLE ?? "codex",
   runtimeDirectory: root,
   dataDirectory,
@@ -62,6 +62,8 @@ const adapter = new CodexEngineAdapter({
     ? Response.json({ plan_type: "fixture", rate_limit: { primary_window: { used_percent: 0 } } })
     : fetch(input, init),
 });
+const adapter = createAdapter();
+let restartedAdapter: CodexEngineAdapter | null = null;
 const frames: Array<Record<string, any>> = [];
 adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
 const waitFor = async (predicate: (frame: Record<string, any>) => boolean, timeoutMs = 20_000) => {
@@ -88,6 +90,53 @@ try {
   await adapter.send(JSON.stringify({ id: 3, method: "turn/start", params: { threadId, input: [{ type: "text", text: "Reply with fixture response", text_elements: [] }] }, [LOGICAL_CLIENT_FIELD]: client }));
   await waitFor(frame => frame.method === "turn/completed" && frame.params.threadId === threadId);
   assert.equal(modelRequests, 1);
+  await adapter.send(JSON.stringify({ id: 4, method: "thread/fork", params: { threadId }, [LOGICAL_CLIENT_FIELD]: client }));
+  const durableFork = await waitFor(frame => frame.id === 4);
+  assert.equal(durableFork.error, undefined, `Durable Fork failed: ${JSON.stringify(durableFork.error)}`);
+  assert.notEqual(durableFork.result.thread.id, threadId);
+  assert.equal(durableFork.result.thread.forkedFromId, threadId);
+  assert.equal(durableFork.result.thread.ephemeral, false);
+  assert.equal(durableFork.result.thread.turns.length, 1);
+  await adapter.send(JSON.stringify({ id: 8, method: "thread/read", params: { threadId: durableFork.result.thread.id, includeTurns: true }, [LOGICAL_CLIENT_FIELD]: client }));
+  const durableRead = await waitFor(frame => frame.id === 8);
+  assert.equal(durableRead.error, undefined, `Durable Fork read failed: ${JSON.stringify(durableRead.error)}`);
+  assert.equal(durableRead.result.thread.forkedFromId, threadId);
+  assert.equal(durableRead.result.thread.turns.length, 1);
+  await adapter.send(JSON.stringify({ id: 9, method: "thread/list", params: { limit: 20 }, [LOGICAL_CLIENT_FIELD]: client }));
+  const listed = await waitFor(frame => frame.id === 9);
+  assert.equal(listed.error, undefined, `Durable Fork listing failed: ${JSON.stringify(listed.error)}`);
+  const listedBeforeChildTurn = listed.result.data.some((thread: { id: string }) => thread.id === durableFork.result.thread.id);
+  await adapter.send(JSON.stringify({ id: 10, method: "turn/start", params: { threadId: durableFork.result.thread.id, input: [{ type: "text", text: "Reply with fixture response", text_elements: [] }] }, [LOGICAL_CLIENT_FIELD]: client }));
+  await waitFor(frame => frame.method === "turn/completed" && frame.params.threadId === durableFork.result.thread.id);
+  await adapter.send(JSON.stringify({ id: 11, method: "thread/list", params: { limit: 20 }, [LOGICAL_CLIENT_FIELD]: client }));
+  const listedAfterTurn = await waitFor(frame => frame.id === 11);
+  assert.equal(listedAfterTurn.error, undefined);
+  assert.ok(listedAfterTurn.result.data.some((thread: { id: string }) => thread.id === durableFork.result.thread.id),
+    `Fork absent after first child Turn: ${JSON.stringify(listedAfterTurn.result.data.map((thread: { id: string; source?: unknown }) => ({ id: thread.id, source: thread.source })))}`);
+  await adapter.send(JSON.stringify({ id: 5, method: "thread/fork", params: { threadId, ephemeral: true, excludeTurns: true }, [LOGICAL_CLIENT_FIELD]: client }));
+  const ephemeralFork = await waitFor(frame => frame.id === 5);
+  assert.equal(ephemeralFork.error, undefined, `Ephemeral Fork failed: ${JSON.stringify(ephemeralFork.error)}`);
+  assert.notEqual(ephemeralFork.result.thread.id, threadId);
+  assert.equal(ephemeralFork.result.thread.ephemeral, true);
+  await adapter.send(JSON.stringify({ id: 7, method: "thread/inject_items", params: { threadId: ephemeralFork.result.thread.id, items: [{ type: "message", role: "user", content: [{ type: "input_text", text: "Fixture side-chat boundary" }] }] }, [LOGICAL_CLIENT_FIELD]: client }));
+  const injected = await waitFor(frame => frame.id === 7);
+  assert.equal(injected.error, undefined, `Ephemeral history injection failed: ${JSON.stringify(injected.error)}`);
+  await adapter.send(JSON.stringify({ id: 6, method: "thread/unsubscribe", params: { threadId: ephemeralFork.result.thread.id }, [LOGICAL_CLIENT_FIELD]: client }));
+  const unsubscribed = await waitFor(frame => frame.id === 6);
+  assert.equal(unsubscribed.error, undefined, `Ephemeral unsubscribe failed: ${JSON.stringify(unsubscribed.error)}`);
+  await adapter.send(JSON.stringify({ id: 12, method: "thread/fork", params: { threadId }, [LOGICAL_CLIENT_FIELD]: client }));
+  const blankFork = await waitFor(frame => frame.id === 12);
+  assert.equal(blankFork.error, undefined);
+  await adapter.close();
+  restartedAdapter = createAdapter();
+  restartedAdapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  await restartedAdapter.connect();
+  await restartedAdapter.send(JSON.stringify({ id: 13, method: "initialize", params: { clientInfo: { name: "opencraft-smoke", version: "0.1.0" }, capabilities: { experimentalApi: true } }, [LOGICAL_CLIENT_FIELD]: client }));
+  await waitFor(frame => frame.id === 13);
+  await restartedAdapter.send(JSON.stringify({ id: 14, method: "thread/read", params: { threadId: blankFork.result.thread.id, includeTurns: true }, [LOGICAL_CLIENT_FIELD]: client }));
+  const blankForkAfterRestart = await waitFor(frame => frame.id === 14);
+  assert.equal(blankForkAfterRestart.error, undefined, `Blank Fork recovery failed: ${JSON.stringify(blankForkAfterRestart.error)}`);
+  assert.equal(blankForkAfterRestart.result.thread.forkedFromId, threadId);
   assert.deepEqual([...upstreamAccounts], ["fixture-chatgpt-account"]);
   assert.ok(frames.filter(frame => frame.method === "turn/completed").every(frame => frame[LOGICAL_CLIENT_FIELD] === client));
   console.log(JSON.stringify({
@@ -95,8 +144,15 @@ try {
     transport: "production CodexEngineAdapter stdio",
     localFixtureModelRequests: modelRequests,
     externalModelRequests: 0,
+    durableFork: true,
+    durableForkListedBeforeChildTurn: listedBeforeChildTurn,
+    durableForkListedAfterChildTurn: true,
+    blankForkReadableAfterRestart: true,
+    ephemeralFork: true,
+    ephemeralInjectItems: true,
   }));
 } finally {
+  await restartedAdapter?.close().catch(() => undefined);
   await adapter.close().catch(() => undefined);
   await new Promise<void>(resolve => model.close(() => resolve()));
   await rm(root, { recursive: true, force: true });

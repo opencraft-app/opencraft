@@ -20,6 +20,36 @@ import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
 import type { SetupStepState } from "@/pages/marketing/agent-buddy-setup-runner";
 
+/**
+ * 预热行正在跑时显示已等待秒数。
+ *
+ * 实例冷启动最坏要等数分钟（海外节点拉镜像更慢）。没有这个计时，用户面对
+ * 一行「正在唤醒 Bot 实例」同样分不清是在推进还是已经卡死 —— 一个会变的
+ * 数字是这段等待里唯一可信的「还活着」信号。
+ */
+const ElapsedHint = ({ running }: { running: boolean }) => {
+  const t = useT();
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!running) return;
+    // 每次重新进入 running（例如点了重试）都从 0 重新计
+    setSeconds(0);
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  if (!running) return null;
+  return (
+    <span className="mt-0.5 block text-[11px] leading-4 text-black/35">
+      {t("已等待 {{seconds}}s，实例首次启动可能需要几分钟", { seconds })}
+    </span>
+  );
+};
+
 /** 单行步骤：状态图标 + 文案 */
 const StepRow = ({ state }: { state: SetupStepState }) => {
   const t = useT();
@@ -63,6 +93,8 @@ const StepRow = ({ state }: { state: SetupStepState }) => {
             {state.error || t("这一步没成功，稍后可在对应页面重试")}
           </span>
         ) : null}
+        {/* 只有预热行需要计时：其余步骤都是秒级命令，标个秒数只是噪音 */}
+        {state.step.kind === "warmup" ? <ElapsedHint running={status === "running"} /> : null}
       </span>
     </li>
   );

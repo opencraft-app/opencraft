@@ -44,6 +44,7 @@ Client ── ClientAttachment ── Hub ── ServerAttachment ── Server
 | Capability 声明与访问租约 | Server capability broker | 绑定 Thread 和具体 Client attachment；可撤销 |
 | 引擎内工具挂载 | 引擎插件 | 绑定当前 native Agent 实例；不等于访问权限本身 |
 | Turn 执行权 | Host execution authority | 连接 owner、执行 epoch、Turn 身份；直到明确终态 |
+| Codex 待处理交互的投递路由 | Host 的 Codex adapter | 绑定物理 AppServer request ID、Thread 与当前 logical Client；断线撤销答复权但不删除请求 |
 | View 与导航 | Client Shell | 页面呈现、焦点、订阅；Renderer 不是协议 owner |
 
 同一个 Thread 可以存在且可读取，但没有活跃引擎实例。关闭 View 不等于停止 Turn；连接撤销不等于删除历史。原生 preset 属于引擎 composition，外部 Browser/Terminal/Connector 工具通过可撤销 scope 接入，不能把客户端回调权限固化进 preset。
@@ -115,6 +116,15 @@ ledger entry。当前 ledger 是 Client runtime 内存状态，用于跨 transpo
 对账；跨 Client/应用重启的 pending/resolving/resolved 持久化仍应由 Server 实现，
 不得把 localStorage、React state 或 Client ledger 升格为 Server authority。
 
+Codex stdio adapter 在同一物理 Host generation 内另持有投递路由表，不取代
+AppServer 的 pending 真相：它保留待答复请求的原始帧与 Thread ID，并只接受当前
+Thread 交互 owner 的 response。logical Client 断线或取消订阅时，adapter 撤销其
+答复权但保留请求；其他在线 Client 不因订阅或连接存在而自动取得请求。新的
+logical Client 成功 `thread/resume` 后才能认领无主请求并收到原始帧；迟到的旧
+resume 回执不能恢复已断开的 owner。AppServer 独立发出 `serverRequest/resolved`
+时删除对应路由。路由表有界且只存于 Host 进程；服务重启后的恢复仍由 AppServer
+与 Client ledger 的协议对账承担，不声称跨进程持久化或多租户授权。
+
 ## 撤销、重连与释放
 
 断线首先同步撤销客户端 owner 与执行权限，再异步清理引擎挂载和待处理调用。所有在途操作在提交前重新验证 owner；旧请求不能恢复已撤销租约。
@@ -145,6 +155,7 @@ Logical client incarnation 与 physical socket、客户端提供的 logical ID �
 | EXO-14 | Server 身份不随 Hub route 或 Host placement 改变；相同 Server 经多条 route 不复制 Thread |
 | EXO-15 | 级联 Hub 拒绝环路、旧 route epoch、跨 tenant 帧和重复执行；断开 route 不删除 Server 状态 |
 | EXO-16 | Interaction 的 Server 真相与 Client delivery ledger 分离；点击不等于送达，重连只可回放同一 identity 的 exact response |
+| EXO-17 | Renderer/Client attachment 消失只撤销该连接的路由与访问权；进程级 Host transport 和已接纳 Turn 不因最后一个页面关闭而结束。服务进程关闭与显式 Stop 仍可结束执行。 |
 
 ## 已有复用与 warm 的边界
 

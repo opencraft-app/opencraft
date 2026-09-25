@@ -2,7 +2,7 @@ import { cleanup, act, fireEvent, render, screen, waitFor } from "@testing-libra
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentOnboardingPanel } from "../agent-onboarding-panel";
-import { buildBuddySetupPlan } from "../agent-buddy-setup";
+import { buildBuddySetupPlan, SANDBOX_PROBE_TIMEOUT_MS } from "../agent-buddy-setup";
 import { buildSetupPlanSignature, loadBuddySetupSnapshot, saveBuddySetupSnapshot } from "../agent-buddy-setup-progress";
 
 vi.mock("@/i18n/t", () => {
@@ -27,6 +27,26 @@ beforeEach(() => window.sessionStorage.clear());
 afterEach(cleanup);
 
 describe("refresh recovery", () => {
+  it("shows warmup feedback while a restored sandbox probe is pending", async () => {
+    saveBuddySetupSnapshot({ ...snapshot, completedKeys: [] });
+    let resolveProbe!: (value: typeof ok) => void;
+    const exec = vi.fn(async (_botId: string, command: string) => command === "true"
+      ? new Promise<typeof ok>((resolve) => { resolveProbe = resolve; })
+      : ok);
+    const onCreated = vi.fn();
+    render(<AgentOnboardingPanel botId="bot-1" profileId="profile-1"
+      execDebugCommand={exec} onCreated={onCreated} />);
+
+    await waitFor(() => expect(exec).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("正在唤醒 Bot 实例")).toBeTruthy();
+    expect(screen.getByText(/已等待/)).toBeTruthy();
+    expect(onCreated).not.toHaveBeenCalled();
+
+    await act(async () => resolveProbe(ok));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-1"));
+    expect(screen.queryByText(/已等待/)).toBeNull();
+  });
+
   it("resumes after metadata without creating another Bot or rewriting completed steps", async () => {
     saveBuddySetupSnapshot(snapshot);
     const exec = vi.fn(async () => ok);
@@ -39,11 +59,12 @@ describe("refresh recovery", () => {
     expect(onCreateBot).not.toHaveBeenCalled();
     expect(onSetupStart).toHaveBeenCalledTimes(1);
     expect(exec.mock.calls).toEqual([
-      ["bot-1", "true", { timeoutMs: 15000 }],
+      // 第一条永远是探活；超时取常量，避免调参后又要来改这个断言
+      ["bot-1", "true", { timeoutMs: SANDBOX_PROBE_TIMEOUT_MS }],
       ["bot-1", plan.at(-1)!.command, { timeoutMs: plan.at(-1)!.timeoutMs }],
     ]);
     expect(loadBuddySetupSnapshot("bot-1")).toBeNull();
-    expect(unloadPrevented()).toBe(false);
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
   });
 
   it.each([["bot-2", "profile-1"], ["bot-1", "profile-other"], ["", ""]])(

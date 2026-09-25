@@ -67,6 +67,15 @@ function formatDate(value: number | null): string {
   });
 }
 
+function formatQuotaReset(value: number): string {
+  return new Date(value).toLocaleString([], {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function relativeDate(value: number | null): string {
   if (value === null) return "尚未使用";
   const elapsed = Math.max(0, Date.now() - value);
@@ -81,9 +90,12 @@ function relativeDate(value: number | null): string {
 function QuotaSlot({ window }: { readonly window: CodexAccountView["limitWindows"][number] }) {
   const percentage = window.utilization === null ? null : Math.round(window.utilization * 100);
   const tone = percentage === null ? "unknown" : percentage >= 90 ? "danger" : percentage >= 75 ? "warning" : "neutral";
-  return <span className="codex-account__quota" data-tone={tone} title={window.resetAt === null ? undefined : `${formatDate(window.resetAt)} 重置`}>
+  return <span className="codex-account__quota" data-tone={tone}>
     <small>{windowLabel(window.windowMinutes, window.slot)}</small>
     <strong>{percentage === null ? "—" : `${percentage}%`}</strong>
+    {window.resetAt === null
+      ? <span className="codex-account__reset">重置未知</span>
+      : <time className="codex-account__reset" dateTime={new Date(window.resetAt).toISOString()} aria-label={`${windowLabel(window.windowMinutes, window.slot)} 额度于 ${formatDate(window.resetAt)} 重置`}>重置 {formatQuotaReset(window.resetAt)}</time>}
   </span>;
 }
 
@@ -194,6 +206,7 @@ function AccountRow({ account, index, total, service, credentialLocation }: {
           <div><dt>登录身份</dt><dd>{account.email ?? account.label}</dd></div>
           <div><dt>使用顺序</dt><dd>第 {index + 1} 位</dd></div>
           <div><dt>最近同步</dt><dd>{formatDate(account.observedAt)}</dd></div>
+          {account.limitWindows.map(window => <div key={window.slot}><dt>{windowLabel(window.windowMinutes, window.slot)} 额度重置</dt><dd>{window.resetAt === null ? "未报告" : formatDate(window.resetAt)}</dd></div>)}
           <div><dt>最近使用环境</dt><dd>{account.lastUsedHostId ?? "—"}</dd></div>
           {account.heldUntil === null ? null : <div><dt>限制解除</dt><dd>{formatDate(account.heldUntil)}</dd></div>}
         </dl>

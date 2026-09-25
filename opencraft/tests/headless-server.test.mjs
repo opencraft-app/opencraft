@@ -195,10 +195,13 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
   const statusListeners = new Set();
   let transportCount = 0;
   let transportClosed = false;
-  const appHost = new AppHostServer({
-    logicalClientRouting: true,
-    createTransport(hostId) {
-      assert.equal(hostId, "local-codex");
+  const host = await startHeadlessServer({
+    root,
+    webRoot: root,
+    dataDirectory: join(root, "data"),
+    port: 0,
+    startAgentHost: async () => ({ websocketUrl: "ws://127.0.0.1:9988/rpc", close: async () => undefined }),
+    createCodexTransport() {
       transportCount += 1;
       return {
         status: { state: "idle" },
@@ -221,23 +224,22 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
       };
     },
   });
-  const host = await createWorkbenchWebServer({ root, appServerTarget: null, appHostServer: appHost, loopbackOnly: true });
-  context.after(async () => { await host.close(); await appHost.close(); });
-  const address = await host.listen({ host: "127.0.0.1", port: 0 });
-  const origin = `http://127.0.0.1:${address.port}`;
-  const foreign = new WebSocket(`ws://127.0.0.1:${address.port}/apphost`, { origin: "https://evil.example" });
+  context.after(() => host.close());
+  const origin = host.url;
+  const appHostUrl = `${origin.replace(/^http/u, "ws")}/apphost`;
+  const foreign = new WebSocket(appHostUrl, { origin: "https://evil.example" });
   await assert.rejects(new Promise((resolvePromise, reject) => {
     foreign.once("open", resolvePromise);
     foreign.once("error", reject);
   }), /403/u);
-  const invalid = new WebSocket(`ws://127.0.0.1:${address.port}/apphost`, { origin });
+  const invalid = new WebSocket(appHostUrl, { origin });
   await new Promise((resolvePromise, reject) => {
     invalid.once("open", resolvePromise);
     invalid.once("error", reject);
   });
   invalid.send(JSON.stringify({ type: "host/connect", hostId: "local-codex" }));
   assert.equal(await new Promise(resolvePromise => invalid.once("close", resolvePromise)), 1008);
-  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/apphost`, { origin });
+  const socket = new WebSocket(appHostUrl, { origin });
   context.after(() => socket.terminate());
   await new Promise((resolvePromise, reject) => {
     socket.once("open", resolvePromise);
@@ -272,8 +274,31 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
   assert.deepEqual(JSON.parse(accounts.frame).result, { accounts: [] });
   socket.close();
   await new Promise(resolvePromise => socket.once("close", resolvePromise));
-  for (let attempt = 0; attempt < 100 && !transportClosed; attempt += 1) {
-    await new Promise(resolvePromise => setTimeout(resolvePromise, 10));
-  }
+  assert.equal(transportClosed, false);
+  const reconnected = new WebSocket(appHostUrl, { origin });
+  context.after(() => reconnected.terminate());
+  await new Promise((resolvePromise, reject) => {
+    reconnected.once("open", resolvePromise);
+    reconnected.once("error", reject);
+  });
+  const reconnectFrames = [];
+  reconnected.on("message", raw => reconnectFrames.push(JSON.parse(raw.toString())));
+  const waitForReconnect = async predicate => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const found = reconnectFrames.find(predicate);
+      if (found) return found;
+      await new Promise(resolvePromise => setTimeout(resolvePromise, 10));
+    }
+    throw new Error(`Missing reconnected AppHost frame: ${JSON.stringify(reconnectFrames)}`);
+  };
+  reconnected.send(JSON.stringify({ type: "hello", protocolVersion: 1, rendererId: "web-client-awake" }));
+  await waitForReconnect(frame => frame.type === "ready");
+  reconnected.send(JSON.stringify({ type: "host/connect", requestId: "reconnect", hostId: "local-codex", leaseId: "new-lease" }));
+  const resumed = await waitForReconnect(frame => frame.type === "response" && frame.requestId === "reconnect");
+  assert.equal(resumed.result.generation, connected.result.generation);
+  assert.equal(transportCount, 1);
+  reconnected.close();
+  await new Promise(resolvePromise => reconnected.once("close", resolvePromise));
+  await host.close();
   assert.equal(transportClosed, true);
 });

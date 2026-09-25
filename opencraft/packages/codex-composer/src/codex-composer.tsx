@@ -48,7 +48,6 @@ import {
 } from "lucide-react";
 import {
   forwardRef,
-  type CSSProperties,
   type ReactNode,
   useCallback,
   useEffect,
@@ -143,6 +142,10 @@ export interface ComposerSelectionCatalog {
   readonly modelError?: string | null;
   readonly permissionProfileError?: string | null;
   readonly onModelMenuOpen?: () => void;
+  readonly onRememberModelDefaults?: (defaults: {
+    readonly model: string;
+    readonly effort: string | null;
+  }) => void;
   readonly retryModels?: () => void;
 }
 
@@ -669,6 +672,7 @@ export interface ComposerQueuedSubmissionPresentation {
   readonly editableContent: ComposerQueuedSubmissionContent;
   readonly pausedReason?: string | null;
   readonly error?: string | null;
+  readonly unconfirmedTargetTurnId?: string;
 }
 
 export interface ComposerQueuedSubmissionContent {
@@ -705,11 +709,13 @@ export interface CodexComposerProps {
   defaultFollowUpAction?: ComposerFollowUpAction;
   /** Thread-owned queue projection. The Composer only renders this state. */
   queuedSubmissions?: readonly ComposerQueuedSubmissionPresentation[];
+  supportsQueuedSteer?: boolean;
   onUpdateQueuedSubmission?: (
     id: string,
     intent: SubmitIntent,
   ) => Promise<void>;
   onDeleteQueuedSubmission?: (id: string) => Promise<void>;
+  onDiscardUnconfirmedSteer?: (id: string, expectedTurnId: string) => Promise<void>;
   onReorderQueuedSubmissions?: (ids: readonly string[]) => Promise<void>;
   onSteerQueuedSubmission?: (id: string) => Promise<void>;
   onResumeQueuedSubmissions?: () => Promise<void>;
@@ -731,7 +737,11 @@ export interface CodexComposerProps {
     intent: SubmitIntent,
     context: { readonly followUpAction: ComposerFollowUpAction | null },
   ): boolean | void | Promise<boolean | void>;
-  onCancel(): void;
+  onCancel(context: {
+    readonly trigger: "pointer" | "keyboard";
+    readonly isTrusted: boolean;
+    readonly occurredAt: number;
+  }): void;
 }
 
 export const CodexComposer = forwardRef<
@@ -755,8 +765,10 @@ export const CodexComposer = forwardRef<
     executionTarget,
     defaultFollowUpAction = "queue",
     queuedSubmissions = [],
+    supportsQueuedSteer = false,
     onUpdateQueuedSubmission,
     onDeleteQueuedSubmission,
+    onDiscardUnconfirmedSteer,
     onReorderQueuedSubmissions,
     onSteerQueuedSubmission,
     onResumeQueuedSubmissions,
@@ -1682,18 +1694,23 @@ export const CodexComposer = forwardRef<
     const supportsCurrentEffort =
       selectedEffortValue !== null &&
       model.efforts.some((effort) => effort.value === selectedEffortValue);
+    const effort = resolveReasoningEffort(
+      reasoningCapability(
+        model.efforts.map((candidate) => candidate.value),
+        model.defaultEffort,
+      ),
+      supportsCurrentEffort ? selectedEffortValue : undefined,
+    );
     controller.dispatch({
       type: "set-selections",
       patch: {
         model: model.value,
-        effort: resolveReasoningEffort(
-          reasoningCapability(
-            model.efforts.map((effort) => effort.value),
-            model.defaultEffort,
-          ),
-          supportsCurrentEffort ? selectedEffortValue : undefined,
-        ),
+        effort,
       },
+    });
+    selectionCatalog?.onRememberModelDefaults?.({
+      model: model.value,
+      effort: effort ?? null,
     });
   };
 
@@ -1702,6 +1719,12 @@ export const CodexComposer = forwardRef<
       type: "set-selections",
       patch: { effort: effort.value },
     });
+    if (selectedModel !== null) {
+      selectionCatalog?.onRememberModelDefaults?.({
+        model: selectedModel.value,
+        effort: effort.value,
+      });
+    }
     refocusEditorAfterIntelligenceMenuRef.current = true;
     setOpenPicker(null);
   };
@@ -1748,12 +1771,6 @@ export const CodexComposer = forwardRef<
     id: "chat.reasoning",
     defaultMessage: "Reasoning",
   });
-  const reasoningEffortIndex = selectedModel === null || selectedEffortValue === null
-    ? -1
-    : selectedModel.efforts.findIndex((effort) => effort.value === selectedEffortValue);
-  const reasoningProgress = selectedModel === null || selectedModel.efforts.length <= 1
-    ? 50
-    : Math.max(0, reasoningEffortIndex) / (selectedModel.efforts.length - 1) * 100;
   const intelligenceLabel = selectedModel?.efforts.length
     ? `${modelLabel}, ${reasoningLabel}: ${effortLabel}`
     : modelLabel;
@@ -1798,6 +1815,7 @@ export const CodexComposer = forwardRef<
       aria-busy={composerSnapshot.draft.lifecycle.phase === "submitting"}
     >
       <ComposerQueueTray
+        portalContainer={portalContainer}
         items={queuedSubmissions.map((item) => ({
           ...item,
           actionable:
@@ -1807,12 +1825,14 @@ export const CodexComposer = forwardRef<
           editing: item.id === editingQueuedSubmissionId,
         }))}
         isResponseInProgress={isStreaming}
+        atomicSteer={supportsQueuedSteer}
         onEdit={beginQueueEdit}
         onCancelEdit={cancelQueueEdit}
         onDelete={async (id) => {
           await onDeleteQueuedSubmission?.(id);
           if (id === editingQueuedSubmissionId) cancelQueueEdit();
         }}
+        onDiscardUnconfirmed={onDiscardUnconfirmedSteer}
         onReorder={onReorderQueuedSubmissions}
         onSteer={async (id) => {
           await onSteerQueuedSubmission?.(id);
@@ -2223,13 +2243,11 @@ export const CodexComposer = forwardRef<
                                     <DropdownMenu.Label id={reasoningGroupLabelId} className="codex-composer-selection-menu__heading">
                                       <FormattedMessage id="chat.reasoning" defaultMessage="Reasoning" />
                                     </DropdownMenu.Label>
-                                    <span className="codex-composer-reasoning-value">{effortLabel}</span>
                                   </div>
                                   <DropdownMenu.RadioGroup
                                     className="codex-composer-reasoning-options"
                                     aria-labelledby={reasoningGroupLabelId}
                                     data-single={selectedModel.efforts.length === 1 ? "true" : undefined}
-                                    style={{ "--reasoning-progress": `${reasoningProgress}%` } as CSSProperties}
                                     value={selectedEffortValue ?? ""}
                                     onValueChange={(value) => {
                                       const effort = selectedModel.efforts.find(
@@ -2238,9 +2256,6 @@ export const CodexComposer = forwardRef<
                                       if (effort !== undefined) selectEffort(effort);
                                     }}
                                   >
-                                    <span className="codex-composer-reasoning-track" aria-hidden="true">
-                                      <span className="codex-composer-reasoning-track__fill" />
-                                    </span>
                                     {selectedModel.efforts.map((effort) => (
                                       <DropdownMenu.RadioItem
                                         key={effort.value}
@@ -2249,16 +2264,10 @@ export const CodexComposer = forwardRef<
                                         aria-label={displayReasoningEffort(effort)}
                                         title={displayReasoningEffort(effort)}
                                       >
-                                        <span className="codex-composer-reasoning-option__marker" aria-hidden="true" />
+                                        {displayReasoningEffort(effort)}
                                       </DropdownMenu.RadioItem>
                                     ))}
                                   </DropdownMenu.RadioGroup>
-                                  <div className="codex-composer-reasoning-endpoints" aria-hidden="true">
-                                    <span>{displayReasoningEffort(selectedModel.efforts[0]!)}</span>
-                                    {selectedModel.efforts.length > 1 ? (
-                                      <span>{displayReasoningEffort(selectedModel.efforts[selectedModel.efforts.length - 1]!)}</span>
-                                    ) : null}
-                                  </div>
                                 </div>
                               ) : null}
                             </div>
@@ -2394,7 +2403,11 @@ export const CodexComposer = forwardRef<
                 onPointerDown={(event) => {
                   if (event.button === 0) event.preventDefault();
                 }}
-                onClick={onCancel}
+                onClick={(event) => onCancel({
+                  trigger: event.detail === 0 ? "keyboard" : "pointer",
+                  isTrusted: event.isTrusted,
+                  occurredAt: Date.now(),
+                })}
               >
                 <CircleStop size={17} />
               </button>

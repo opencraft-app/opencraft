@@ -220,6 +220,48 @@ test("App Host keeps one physical Host alive across Renderer windows until the f
   await server.close();
 });
 
+test("process-owned Host keeps an admitted Turn alive across a lost Renderer and reconnect", async () => {
+  const firstPorts = createPortPair();
+  const secondPorts = createPortPair();
+  const physical = new TestTransport();
+  let createCount = 0;
+  const server = new AppHostServer({
+    logicalClientRouting: true,
+    physicalHostLifetime: "server",
+    createTransport: () => { createCount += 1; return physical; },
+  });
+  const firstConnection = server.accept(firstPorts.host, "mobile-before-sleep");
+  const firstClient = new MessagePortAppHostClient(firstPorts.browser, "mobile-before-sleep");
+  await firstClient.waitUntilReady();
+  const first = await firstClient.connectHost("local-codex", "before-sleep");
+  await firstClient.sendHostFrame("local-codex", "before-sleep", first.generation,
+    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "turn/start", params: { threadId: "thread-1" } }));
+
+  firstConnection.close();
+  firstClient.close();
+  assert.equal(physical.closeCount, 0);
+  assert.ok(physical.sent.some(frame => JSON.parse(frame).method === "runtime/client/disconnect"));
+  physical.receive(JSON.stringify({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread-1" } }));
+
+  const secondConnection = server.accept(secondPorts.host, "mobile-after-wake");
+  const secondClient = new MessagePortAppHostClient(secondPorts.browser, "mobile-after-wake");
+  await secondClient.waitUntilReady();
+  const second = await secondClient.connectHost("local-codex", "after-wake");
+  assert.equal(second.generation, first.generation);
+  assert.equal(createCount, 1);
+  await secondClient.sendHostFrame("local-codex", "after-wake", second.generation,
+    JSON.stringify({ jsonrpc: "2.0", id: 2, method: "thread/resume", params: { threadId: "thread-1" } }));
+  assert.ok(physical.sent.some(frame => JSON.parse(frame).method === "thread/resume"));
+
+  await secondClient.disconnectHost("local-codex", "after-wake", second.generation);
+  assert.equal(physical.closeCount, 0);
+  secondConnection.close();
+  secondClient.close();
+  assert.equal(physical.closeCount, 0);
+  await server.close();
+  assert.equal(physical.closeCount, 1);
+});
+
 test("closing one Renderer during shared startup cannot tear down another Renderer claim", async () => {
   const firstPorts = createPortPair();
   const secondPorts = createPortPair();

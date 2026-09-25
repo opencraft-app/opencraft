@@ -10,6 +10,7 @@ import { WebSocketServer } from "ws";
 
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.js";
 import { ThreadCatalog } from "../apps/local-agent-host/src/thread-catalog.js";
+import { DshExecutionAuthority } from "../apps/local-agent-host/src/dsh-execution-authority.js";
 
 test("Host bind failure closes its thread catalog", async t => {
   const occupied = createServer();
@@ -36,6 +37,7 @@ test("local product project RPC persists across Host restart without a reachable
     host = await startLocalAgentHost(options); socket = await connect(host.websocketUrl);
     assert.deepEqual(await request(socket, 1, "project/list", {}), { data: [], nextCursor: null });
     const created = await request(socket, 2, "project/create", { name: "Workspace", roots: [{ path: root }], idempotencyKey: "test-project" });
+    assert.equal(created.project.recencyAt, null);
     socket.close(); socket = undefined; await host.close();
     host = await startLocalAgentHost(options); socket = await connect(host.websocketUrl);
     assert.deepEqual((await request(socket, 3, "project/list", {})).data, [created.project]);
@@ -633,6 +635,55 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
     await host.close();
     await dsh.close();
     await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("a restored DSH queue row cannot be dispatched before native reconciliation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-restored-queue-"));
+  const workspace = join(directory, "workspace");
+  await mkdir(workspace);
+  const dsh = await fakeDsh();
+  const journal = new DshExecutionAuthority(join(directory, "opencraft-executions.sqlite"), "seed-restored-queue");
+  const restored = journal.queueStore.add("s-new", "restored-client-message", "local-user", [
+    { type: "text", text: "uncertain native admission", text_elements: [] },
+  ]).submission;
+  journal.close();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory: directory });
+  const socket = await connect(host.websocketUrl);
+  try {
+    await request(socket, 70, "initialize", {});
+    const started = await request(socket, 71, "thread/start", { cwd: workspace });
+    assert.equal(started.thread.id, "s-new");
+    await request(socket, 72, "turn/start", {
+      threadId: started.thread.id,
+      clientUserMessageId: "active-user-message",
+      input: [{ type: "text", text: "start", text_elements: [] }],
+    });
+    const listed = await request(socket, 73, "thread/queue/list", { threadId: started.thread.id });
+    assert.equal(listed.data.find((item: any) => item.id === restored.id)?.pausedReason, "restored-after-host-restart");
+    await assert.rejects(
+      request(socket, 74, "thread/queue/steer", {
+        threadId: started.thread.id,
+        expectedTurnId: `dsh-turn-${started.thread.id}-1`,
+        queuedSubmissionId: restored.id,
+      }),
+      (error: any) => /awaiting native reconciliation/.test(String(error?.message)),
+    );
+    await assert.rejects(
+      request(socket, 75, "thread/queue/start", { threadId: started.thread.id, queuedSubmissionId: restored.id }),
+      (error: any) => /awaiting native reconciliation/.test(String(error?.message)),
+    );
+    await assert.rejects(
+      request(socket, 76, "thread/queue/start", { threadId: started.thread.id }),
+      (error: any) => /awaiting native reconciliation/.test(String(error?.message)),
+    );
+    assert.equal(dsh.calls.some((call) => call.method === "session.updateQueue"), false);
+    assert.equal(dsh.calls.filter((call) => call.method === "session.prompt").length, 1);
+  } finally {
+    socket.close();
+    await host.close();
+    await dsh.close();
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

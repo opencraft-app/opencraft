@@ -14,7 +14,7 @@ import {
   CodexComposer,
   type ComposerSelectionCatalog,
 } from "@opencraft/codex-composer";
-import { asHostId, findPendingInteraction } from "@opencraft/chat-core";
+import { asHostId, asTurnId, findPendingInteraction } from "@opencraft/chat-core";
 import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-web";
 import type { PlatformViewHost } from "@opencraft/extension-react";
 import type {
@@ -25,6 +25,7 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
 import { ThreadTitleWriter } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
+import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import {
   type PanelAction,
   type PanelTabDescriptor,
@@ -37,7 +38,7 @@ import {
   findHostConnectionInterventionError,
   projectComposerModelChoices,
 } from "@opencraft/workbench-runtime";
-import { OPENCRAFT_THREAD_QUEUE_EXTENSION } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_THREAD_QUEUE_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard } from "@opencraft/appserver-protocol";
 import {
   lazy,
   Suspense,
@@ -50,7 +51,6 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import { withBrowserAmbientContext } from "./browser/browser-ambient-context";
 import {
   useBrowserWorkbench,
 } from "./browser/browser-runtime-context";
@@ -315,6 +315,8 @@ export function App({
   );
   const queueExtension = runtime.resources.host.getInitializeResult()
     ?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION];
+  const queueAtomicSteer = supportsAtomicQueuedSteer(queueExtension);
+  const queueUnconfirmedSteerDiscard = supportsUnconfirmedSteerDiscard(queueExtension);
   const queueReorderable = !(
     typeof queueExtension === "object" &&
     queueExtension !== null &&
@@ -607,9 +609,16 @@ export function App({
   const isStreaming =
     snapshot.conversation?.activeTurn !== null &&
     snapshot.conversation?.activeTurn !== undefined;
-  const cancelStream = useCallback(() => {
+  const cancelStream = useCallback((context: {
+    readonly trigger: "pointer" | "keyboard";
+    readonly isTrusted: boolean;
+    readonly occurredAt: number;
+  }) => {
     const turnId = activeThreadLease?.getSnapshot().activeTurn?.turnId;
-    if (turnId !== undefined) void activeThreadLease?.interrupt(turnId);
+    if (turnId !== undefined) void activeThreadLease?.interrupt(turnId, {
+      source: "composer-stop",
+      ...context,
+    });
   }, [activeThreadLease]);
   const updateQueuedSubmission = useCallback(
     async (id: string, intent: SubmitIntent) => {
@@ -627,6 +636,14 @@ export function App({
       if (activeThreadLease === null)
         throw new Error("No active Thread owns this queue");
       await activeThreadLease.deleteQueuedSubmission(id);
+    },
+    [activeThreadLease],
+  );
+  const discardUnconfirmedSteer = useCallback(
+    async (id: string, expectedTurnId: string) => {
+      if (activeThreadLease === null)
+        throw new Error("No active Thread owns this steering claim");
+      await activeThreadLease.discardUnconfirmedSteer(id, asTurnId(expectedTurnId));
     },
     [activeThreadLease],
   );
@@ -687,10 +704,6 @@ export function App({
       }
       let submission: ReturnType<typeof hostCatalog.submit>;
       try {
-        submittedIntent = withBrowserAmbientContext(
-          submittedIntent,
-          browserWorkbench.listForOwner(conversationResourceOwnerId),
-        );
         submission = hostCatalog.submit(submittedIntent);
       } catch (error) {
         clearLatestTurnPlacement(submittedPlacement);
@@ -721,10 +734,8 @@ export function App({
       return true;
     },
     [
-      browserWorkbench,
       conversationScopes,
       hostCatalog,
-      conversationResourceOwnerId,
       queryClient,
       activeThreadLease,
       captureLatestTurnPlacement,
@@ -942,6 +953,7 @@ export function App({
       isFetching: composerCatalog.isFetching,
       modelError: composerCatalog.modelError?.message ?? null,
       onModelMenuOpen: composerCatalog.onModelMenuOpen,
+      onRememberModelDefaults: composerCatalog.rememberModelDefaults,
       retryModels: composerCatalog.retryModels,
       permissionProfileError:
         composerCatalog.permissionProfileError?.message ?? null,
@@ -950,6 +962,7 @@ export function App({
       composerCatalog.isFetching,
       composerCatalog.modelError,
       composerCatalog.onModelMenuOpen,
+      composerCatalog.rememberModelDefaults,
       composerCatalog.retryModels,
       composerCatalog.models,
       composerCatalog.permissionProfileError,
@@ -1343,12 +1356,12 @@ export function App({
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
               threadActions={{
                 onRename: (target, title) => threadTitleWriter.rename(target, title),
-                onFork: async target => {
-                  const origin = workbenchNavigation.getSnapshot().routeScopeId;
-                  const childId = await hostCatalog.threadManagement.fork(target.hostId, target.threadId);
-                  await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
-                  if (workbenchNavigation.getSnapshot().routeScopeId === origin) await hostCatalog.navigate(createWorkbenchThreadLocation(target.hostId, childId));
-                },
+                onFork: target => forkAndOpenThread({
+                  routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
+                  fork: () => hostCatalog.threadManagement.fork(target.hostId, target.threadId),
+                  refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }),
+                  openThread: childId => hostCatalog.navigate(createWorkbenchThreadLocation(target.hostId, childId)),
+                }),
                 onArchive: async target => {
                   await hostCatalog.threadManagement.archive(target.hostId, target.threadId);
                   await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
@@ -1449,6 +1462,7 @@ export function App({
             controller={composerController}
             selectionCatalog={composerSelectionCatalog}
             catalog={composerSuggestionCatalog}
+            effectiveSelections={composerCatalog.newThreadDefaults ?? undefined}
             workspaceOptions={draftWorkspaceOptions}
             workspaceOptionsLoading={projectCatalog.isFetching}
             nativeWorkspacePicking={localProjectPicker !== null}
@@ -1568,9 +1582,8 @@ export function App({
                         portalContainer={portalContainer}
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
-                        queuedSubmissions={(
-                          snapshot.conversation?.queuedSubmissions ?? []
-                        ).map((submission) => ({
+                        queuedSubmissions={[
+                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) => ({
                           id:
                             submission.serverSubmissionId ??
                             submission.commandId,
@@ -1582,11 +1595,26 @@ export function App({
                           editableContent: restoreQueuedInput(submission.input),
                           pausedReason: submission.pausedReason,
                           error: submission.error?.message ?? null,
-                        }))}
+                          })),
+                          ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({
+                            id: claim.id,
+                            preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",
+                            state: "queued" as const,
+                            operation: "idle" as const,
+                            actionable: false,
+                            reorderable: false,
+                            editableContent: restoreQueuedInput(claim.input),
+                            pausedReason: "Delivery unconfirmed",
+                            error: null,
+                            unconfirmedTargetTurnId: claim.targetTurnId,
+                          })),
+                        ]}
                         onUpdateQueuedSubmission={updateQueuedSubmission}
                         onDeleteQueuedSubmission={deleteQueuedSubmission}
+                        onDiscardUnconfirmedSteer={discardUnconfirmedSteer}
                         onReorderQueuedSubmissions={reorderQueuedSubmissions}
                         onSteerQueuedSubmission={steerQueuedSubmission}
+                        supportsQueuedSteer={queueAtomicSteer}
                         onResumeQueuedSubmissions={resumeQueuedSubmissions}
                         onResolveAttachment={resolveActiveHostAttachment}
                         onRemoveAttachment={removeActiveHostAttachment}
@@ -1609,7 +1637,7 @@ export function App({
                         block={pendingInteraction}
                         onRespondInteraction={respondToInteraction}
                       />
-                    )}
+                        )}
                     </div>
                     </ThreadComposerPresentation>
                   }

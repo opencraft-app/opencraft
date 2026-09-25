@@ -40,6 +40,10 @@ Sidebar is open, Start is the single new-task affordance; while it is hidden, a
 the same `navigateToHome` intent. The transient floating Sidebar never renders a
 second Write action. Dynamic registration participates in the rail's measured
 width and macOS safe-area geometry instead of overlaying window chrome.
+On narrow viewports, the conversation identity starts immediately after that
+measured rail; the rail's trailing inset already provides separation, so the
+desktop context inset is not added a second time. Action hit targets and the
+native drag region remain unchanged.
 
 Right Panel visibility and width mode are separate controls. The global Header
 toggle owns open/close. The panel toolbar owns explicit maximize/restore width;
@@ -73,6 +77,11 @@ toolbar geometry in feature CSS.
   fixed status slot independently renders running/review/error/unread state.
 - Every current navigation destination gets one persistent selection surface;
   hover remains transient and must not double as location state.
+- An Activity task owns the full row's hover/selection surface. Its independent
+  ellipsis trigger has a transparent background and supplies only hit area,
+  focus, and menu-open affordance; moving the pointer onto it must not split
+  or dismiss the row hover surface. Touch suppresses transient hover while
+  retaining the same selection surface and a visible menu trigger.
 - Thread status, unread state, pending navigation and row actions share a stable
   trailing rail so asynchronous changes do not shift title or metadata geometry.
 - Show more is a quiet text action, not a full-width outlined button. Start and

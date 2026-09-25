@@ -694,21 +694,6 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   min-width: max-content;
 }
 
-.chrome-button.app-shell-home-button {
-  width: auto;
-  min-width: 44px;
-  padding-inline: 5px;
-  color: var(--color-icon-primary);
-}
-
-.app-shell-wordmark {
-  font-family: var(--font-family-brand, var(--font-family-ui));
-  font-size: 18px;
-  line-height: 1;
-  font-weight: 600;
-  letter-spacing: -0.04em;
-}
-
 .chrome-button {
   display: inline-grid;
   width: 28px;
@@ -781,6 +766,12 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 }
 
 @media (max-width: 620px) {
+  // The rail already reserves its trailing 8px. On narrow screens the extra
+  // context inset would make the thread icon look detached from Back/Forward.
+  .app-shell-header__context {
+    padding-left: 0;
+  }
+
   .app-shell-header__route .lv-skills-route-toolbar {
     gap: 4px;
     padding-inline: 0 8px;
@@ -1202,7 +1193,10 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   overscroll-behavior: contain;
 }
 
-.sidebar-activity-item,
+.sidebar-activity-item {
+  @include controls.quiet-control($hover: false);
+}
+
 .sidebar-section-heading button,
 .sidebar-extension-catalog__heading {
   @include controls.quiet-control;
@@ -1359,10 +1353,6 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   border-radius: var(--radius-lg);
   text-align: left;
 
-  &:hover {
-    background: var(--color-background-button-tertiary-hover);
-  }
-
   &.is-selected {
     background: var(--color-background-button-secondary);
     color: var(--color-text);
@@ -1374,9 +1364,9 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   }
 }
 
-// Row wrapper for the thread "..." dropdown: the activity item is a <button>,
-// so the menu trigger cannot be nested inside it and sits beside it, absolutely
-// positioned over the trailing status dot and revealed on hover.
+// The activity item owns the row surface; its sibling menu trigger stays
+// transparent so selected and hover backgrounds remain one continuous surface.
+// Touch layouts reserve a separate hit area so the status remains visible.
 .sidebar-activity-row {
   position: relative;
   display: flex;
@@ -1397,7 +1387,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   padding: 0;
   border: 0;
   border-radius: var(--radius-control);
-  background: var(--color-background-button-tertiary-hover);
+  background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
   opacity: 0;
@@ -1413,13 +1403,53 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   &[data-state="open"] { opacity: 1; pointer-events: auto; }
 }
 
-.sidebar-activity-row:hover .sidebar-activity-item__menu-trigger {
-  opacity: 1;
-  pointer-events: auto;
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-activity-list:not([data-touch-interaction]) .sidebar-activity-row:hover > .sidebar-activity-item:not(.is-selected) {
+    background: var(--color-background-button-tertiary-hover);
+  }
+
+  .sidebar-activity-list:not([data-touch-interaction]) .sidebar-activity-row:hover .sidebar-activity-item__menu-trigger {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
-.sidebar-activity-row:has(> .sidebar-activity-item.is-selected) .sidebar-activity-item__menu-trigger {
-  background: var(--color-background-button-secondary);
+.sidebar-activity-list[data-touch-interaction] {
+  .sidebar-activity-row > .sidebar-activity-item {
+    padding-inline-end: calc(var(--padding-sidebar-activity-row-inline) + 44px);
+  }
+
+  .sidebar-activity-item__menu-trigger {
+    right: 0;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .sidebar-activity-row > .sidebar-activity-item {
+    padding-inline-end: calc(var(--padding-sidebar-activity-row-inline) + 44px);
+  }
+
+  .sidebar-activity-item__menu-trigger {
+    right: 0;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.sidebar-activity-item__menu-trigger[data-forking="true"] {
+  opacity: 1;
+  pointer-events: none;
+  > svg { animation: workbench-spin 800ms linear infinite; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-activity-item__menu-trigger[data-forking="true"] > svg { animation: none; }
 }
 
 // Thread deletion confirmation, mirroring connector-delete-confirmation.
@@ -8530,6 +8560,14 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+.codex-composer-steer-discard-dialog__body {
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+
+  [role="alert"] { color: var(--color-text-error, #cf222e); }
+}
+
 @keyframes codex-composer-tray-enter {
   from {
     opacity: 0;
@@ -8946,13 +8984,8 @@ html[data-codex-window-type="electron"] .thread-scroll {
 .codex-composer-mode__effort-label {
   @include typography.role(label, tertiary);
   display: inline-flex;
-  min-height: 18px;
   flex: 0 0 auto;
   align-items: center;
-  padding-inline: 5px;
-  border: 0.5px solid var(--color-border-subtle);
-  border-radius: 5px;
-  background: var(--color-background-button-secondary);
   color: var(--color-text-tertiary);
   text-transform: none;
 }
@@ -8971,7 +9004,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 
   &--intelligence {
-    width: min(500px, calc(100vw - 16px));
+    width: min(560px, calc(100vw - 16px));
     overflow: hidden;
 
     &[data-has-detail="false"] {
@@ -9231,69 +9264,34 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
-.codex-composer-reasoning-value {
-  @include typography.role(label, primary);
-  min-width: 0;
-  padding-inline: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .codex-composer-reasoning-options {
-  --reasoning-progress: 0%;
-
-  position: relative;
   display: flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   margin: 0 8px;
-  padding: 4px 0;
-  isolation: isolate;
+  padding: 0 0 8px;
+  gap: 4px;
 
   &[data-single="true"] {
-    justify-content: center;
-
-    .codex-composer-reasoning-track {
-      display: none;
-    }
+    justify-content: stretch;
   }
 }
 
-.codex-composer-reasoning-track {
-  position: absolute;
-  z-index: 0;
-  inset-inline: 14px;
-  height: 6px;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: var(--color-background-button-secondary-hover);
-  pointer-events: none;
-}
-
-.codex-composer-reasoning-track__fill {
-  display: block;
-  width: var(--reasoning-progress);
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-background-button-primary);
-}
-
 .codex-composer-reasoning-option {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  padding: 0;
+  @include typography.role(label, secondary);
+  display: inline-flex;
+  min-width: 52px;
+  min-height: 26px;
+  flex: 1 1 52px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
   border: 0;
-  border-radius: var(--radius-full);
+  border-radius: 5px;
   background: transparent;
   cursor: default;
   outline: none;
+  text-align: center;
+  white-space: nowrap;
 
   &:focus,
   &:hover,
@@ -9301,29 +9299,11 @@ html[data-codex-window-type="electron"] .thread-scroll {
     background: var(--color-background-primary-ghost-hover);
   }
 
-  &[data-state="checked"] .codex-composer-reasoning-option__marker {
-    width: 20px;
-    height: 20px;
-    border-color: var(--color-background-button-primary);
-    background: var(--color-background-elevated-primary-opaque);
-    box-shadow: var(--shadow-100);
+  &[data-state="checked"] {
+    background: var(--color-background-button-secondary-hover);
+    color: var(--color-text);
+    box-shadow: inset 0 0 0 0.5px var(--color-border-default);
   }
-}
-
-.codex-composer-reasoning-option__marker {
-  width: 7px;
-  height: 7px;
-  border: 1px solid var(--color-background-elevated-primary-opaque);
-  border-radius: var(--radius-full);
-  background: var(--color-icon-tertiary);
-  box-sizing: border-box;
-}
-
-.codex-composer-reasoning-endpoints {
-  @include typography.role(label, tertiary);
-  display: flex;
-  justify-content: space-between;
-  padding: 0 8px 5px;
 }
 
 @media (max-width: 560px) {
