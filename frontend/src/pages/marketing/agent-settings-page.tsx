@@ -5744,7 +5744,7 @@ export const AgentSettingsPage = ({
                 : (
                   <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {t("正在加载页面…")}
+                    {t("加载中...")}
                   </div>
                 );
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
