@@ -28,13 +28,13 @@ const Progress = () => {
 };
 
 const titles: Record<I18nDictKey, [string, string, string]> = {
-  "zh-CN": ["LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务", "LightVela 支持查看 Agent 实例存储空间"],
-  "zh-Hant": ["LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務", "LightVela 支持查看 Agent 實例存儲空間"],
-  "en-US": ["LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks", "View Your Agent Instance Storage at a Glance"],
-  "id-ID": ["LightVela Kini Mendukung Beberapa Bot", "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip", "Lihat Penyimpanan Instans Agent Anda Sekilas"],
-  es: ["LightVela Ahora Admite Varios Bots", "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script", "Consulta de un Vistazo el Almacenamiento de tu Instancia de Agent"],
-  "ja-JP": ["LightVela で複数の Bot を作成可能に", "スケジュールタスクに通知タスクとスクリプトタスクを追加", "Agent インスタンスのストレージをひと目で確認"],
-  "ko-KR": ["LightVela에서 여러 Bot 생성 지원", "예약 작업에 알림 작업 및 스크립트 작업 추가", "Agent 인스턴스 저장 공간을 한눈에 확인"],
+  "zh-CN": ["LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务", "LightVela 支持订阅升配"],
+  "zh-Hant": ["LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務", "LightVela 支援訂閱升級"],
+  "en-US": ["LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks", "LightVela Now Supports Subscription Upgrades"],
+  "id-ID": ["LightVela Kini Mendukung Beberapa Bot", "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip", "LightVela Kini Mendukung Peningkatan Paket Langganan"],
+  es: ["LightVela Ahora Admite Varios Bots", "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script", "LightVela ya permite mejorar tu suscripción"],
+  "ja-JP": ["LightVela で複数の Bot を作成可能に", "スケジュールタスクに通知タスクとスクリプトタスクを追加", "LightVela でサブスクリプションのアップグレードに対応"],
+  "ko-KR": ["LightVela에서 여러 Bot 생성 지원", "예약 작업에 알림 작업 및 스크립트 작업 추가", "LightVela에서 구독 업그레이드 지원"],
 };
 const page = (locale: I18nDictKey) => (
   <LocaleOverrideProvider locale={locale}>
@@ -65,7 +65,7 @@ describe("overview language consistency", () => {
       render(page("en-US"));
       const initialTitle = screen.getByRole("img").getAttribute("alt");
       act(() => { vi.advanceTimersByTime(10000); });
-      expect(screen.getByRole("img", { name: titles["en-US"][2] })).toBeInTheDocument();
+      expect(screen.getByText(titles["en-US"][2], { selector: "p" })).toBeInTheDocument();
       act(() => { vi.advanceTimersByTime(5000); });
       expect(screen.getByRole("img").getAttribute("alt")).toBe(initialTitle);
       fireEvent.click(screen.getByRole("button", { name: titles["en-US"][0] }));
@@ -88,26 +88,26 @@ describe("overview language consistency", () => {
     expect(screen.getByText(date)).toBeInTheDocument();
   });
 
-  it("uses the same three localized images as the international changelog", async () => {
+  it("uses localized images for the first two updates and no image for subscription upgrades", async () => {
     await ensureLocaleDictionary("en-US");
     await ensureLocaleDictionary("zh-CN");
     for (const [locale, imagePaths] of [
       ["en-US", [
         "/docs-images/bots-switching-create-en.webp",
         "/assets/changelog/scheduled-tasks-notification-en-US.png",
-        "/assets/changelog/lightvela-instance-storage-en.png",
       ]],
       ["zh-CN", [
         "/docs-images/bots-switching-create.webp",
         "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
-        "/assets/changelog/lightvela-instance-storage-zh.png",
       ]],
     ] as const) {
       render(page(locale));
-      for (const [index, title] of titles[locale].entries()) {
+      for (const [index, title] of titles[locale].slice(0, 2).entries()) {
         fireEvent.click(screen.getByRole("button", { name: title }));
         expect(screen.getByRole("img", { name: title })).toHaveAttribute("src", imagePaths[index]);
       }
+      fireEvent.click(screen.getByRole("button", { name: titles[locale][2] }));
+      expect(screen.queryByRole("img", { name: titles[locale][2] })).not.toBeInTheDocument();
       cleanup();
     }
   });
@@ -144,13 +144,14 @@ describe("overview language consistency", () => {
     }
   });
 
-  it.each(Object.keys(titles) as I18nDictKey[])("localizes news titles, image descriptions and carousel controls in %s", async (locale) => {
+  it.each(Object.keys(titles) as I18nDictKey[])("localizes news titles, available image descriptions and carousel controls in %s", async (locale) => {
     await ensureLocaleDictionary(locale);
     const view = render(page(locale));
-    for (const title of titles[locale]) {
+    for (const [index, title] of titles[locale].entries()) {
       fireEvent.click(screen.getByRole("button", { name: title }));
       expect(screen.getByText(title, { selector: "p" })).toBeInTheDocument();
-      expect(screen.getByRole("img", { name: title })).toBeInTheDocument();
+      if (index < 2) expect(screen.getByRole("img", { name: title })).toBeInTheDocument();
+      else expect(screen.queryByRole("img", { name: title })).not.toBeInTheDocument();
     }
     expect(view.container.textContent).not.toMatch(/\{\{|k_[a-f0-9]{8}/);
     // Account content is not silently translated or overwritten.

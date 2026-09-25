@@ -29,6 +29,7 @@ import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
+import { getChangelogUpgradeCopy } from "@/pages/marketing/changelog-upgrade-copy";
 import {
   AVATAR_SHAPES,
   getAvatarShapeLabel,
@@ -196,8 +197,8 @@ type ChangelogEntry = {
   date: { y: number; m: number };
   title: string;
   body: string;
-  image: string;
-  imageAlt: string;
+  image?: string;
+  imageAlt?: string;
 };
 
 const zeroTokenGlobalImages: Record<string, string> = {
@@ -210,9 +211,10 @@ const zeroTokenGlobalImages: Record<string, string> = {
   "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
 };
 
-/** TODO(demo): 接真实 changelog 数据源后替换；顺序与 Changelog 页 2026 年 9 月前三条一致。 */
+/** TODO(demo): 接真实 changelog 数据源后替换；展示 9 月动态中选定的三条。 */
 const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] => {
   const isChinese = locale.startsWith("zh");
+  const upgradeCopy = getChangelogUpgradeCopy(locale, isGlobal);
   return [
     {
       date: { y: 2026, m: 9 },
@@ -234,12 +236,8 @@ const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] =
     },
     {
       date: { y: 2026, m: 9 },
-      title: t("LightVela 支持查看 Agent 实例存储空间"),
-      body: t("云存储页面现在会显示 Agent 实例的总容量、已用容量和可用容量，并将 Agent 运行环境、系统预留空间和云存储文件计入使用量计算。"),
-      image: assetUrl(isChinese
-        ? "/assets/changelog/lightvela-instance-storage-zh.png"
-        : "/assets/changelog/lightvela-instance-storage-en.png"),
-      imageAlt: t("LightVela 支持查看 Agent 实例存储空间"),
+      title: upgradeCopy.title,
+      body: upgradeCopy.desc,
     },
   ];
 };
@@ -276,25 +274,27 @@ const LatestNewsSection = () => {
         subtitle={t("LightVela 的新功能、改进和修复更新")}
       />
 
-      {/* 卡片本身不留内边距：配图紧贴卡片左边与上下边框铺满，文案侧单独给 padding */}
+      {/* 有配图时贴齐卡片边缘；无配图的订阅升配沿用 Changelog 页的文字呈现。 */}
       <div className={cn(CARD_CLASS, "overflow-hidden")}>
-        <div className="grid items-stretch sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
+        <div className={cn("grid items-stretch", entry.image ? "sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]" : "sm:min-h-[169px]")}>
           {/*
             左：功能配图（撑满左侧，无左/上/下留白）。
             截图沿用 Changelog 页素材；竖向的任务截图从顶部裁切，
             保留任务类型区域。
           */}
-          <div className="aspect-[16/9] overflow-hidden bg-black/[0.015]">
-            <img
-              src={entry.image}
-              alt={entry.imageAlt}
-              loading="lazy"
-              decoding="async"
-              width={900}
-              height={506}
-              className="h-full w-full object-cover object-top"
-            />
-          </div>
+          {entry.image ? (
+            <div className="aspect-[16/9] overflow-hidden bg-black/[0.015]">
+              <img
+                src={entry.image}
+                alt={entry.imageAlt ?? entry.title}
+                loading="lazy"
+                decoding="async"
+                width={900}
+                height={506}
+                className="h-full w-full object-cover object-top"
+              />
+            </div>
+          ) : null}
 
           {/* 右：文案 */}
           <div className="flex min-w-0 flex-col justify-center p-4">
