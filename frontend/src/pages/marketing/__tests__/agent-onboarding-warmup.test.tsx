@@ -21,7 +21,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentOnboardingPanel } from "../agent-onboarding-panel";
-import { classifySandboxProbeFailure } from "../agent-buddy-setup-runner";
+import { classifySandboxProbeFailure, isRetriableSetupFailure } from "../agent-buddy-setup-runner";
 import { buildSandboxWarmupStep } from "../agent-buddy-setup";
 
 vi.mock("@/i18n/t", () => {
@@ -77,6 +77,45 @@ describe("classifySandboxProbeFailure", () => {
     expect(classifySandboxProbeFailure(repositoryError("内部错误", 500))).toBe("transient");
     // 非 Error 值不该被当成永久失败
     expect(classifySandboxProbeFailure("boom")).toBe("transient");
+  });
+
+  /*
+   * 线上回归：新账号注册后开通 Bot，预热第一轮就拿到 409
+   * DEBUG_NOT_SUPPORTED，被按「4xx 一律 fatal」判死，创建当场失败。
+   *
+   * 这个错误描述的恰恰是「实例当前状态还不能跑 debug 命令」—— 正是预热要
+   * 等的那个状态本身，实例起好后就不再出现，所以必须继续等。
+   */
+  it("keeps waiting on DEBUG_NOT_SUPPORTED, which means the instance is still starting", () => {
+    expect(classifySandboxProbeFailure(repositoryError(
+      "debug command not supported in this instance state（DEBUG_NOT_SUPPORTED, request_id=81300f9a）",
+      409,
+      "DEBUG_NOT_SUPPORTED",
+    ))).toBe("transient");
+    // 只凭 409 也要继续等：409 的语义就是「当前状态不行」，而状态会变
+    expect(classifySandboxProbeFailure(repositoryError("状态冲突", 409))).toBe("transient");
+    // 只凭 code 也要认（万一后端换了状态码）
+    const codeOnly = new Error("debug not supported") as Error & { code: string };
+    codeOnly.code = "DEBUG_NOT_SUPPORTED";
+    expect(classifySandboxProbeFailure(codeOnly)).toBe("transient");
+  });
+});
+
+describe("isRetriableSetupFailure", () => {
+  /*
+   * 预热探活通过只说明「那一刻」能跑命令，紧接着的第一条配置命令仍可能撞上
+   * 状态回退。SOUL 是 required，不重试会让整条计划当场中止。
+   */
+  it("retries setup commands that hit a not-yet-ready instance", () => {
+    expect(isRetriableSetupFailure(repositoryError("状态不支持", 409, "DEBUG_NOT_SUPPORTED"))).toBe(true);
+    expect(isRetriableSetupFailure(repositoryError("状态冲突", 409))).toBe(true);
+  });
+
+  it("still refuses to retry failures caused by the command itself", () => {
+    // 命令已执行、只是结果不对 —— 重跑一百次也是同样的错
+    expect(isRetriableSetupFailure(repositoryError("技能不存在", 404))).toBe(false);
+    expect(isRetriableSetupFailure(repositoryError("无权限", 403))).toBe(false);
+    expect(isRetriableSetupFailure(new Error("skill slug invalid"))).toBe(false);
   });
 });
 
@@ -179,4 +218,45 @@ describe("onboarding warmup visibility", () => {
     // 第一条 exec 是探活用的 `true`，不是配置命令
     expect(execDebugCommand.mock.calls[0]?.[1]).toBe("true");
   }, 25000);
+
+  /*
+   * 端到端回归：新账号开通 Bot 的真实时序 —— 实例刚建好，前几轮探活都返回
+   * 409 DEBUG_NOT_SUPPORTED，之后才起好。
+   *
+   * 必须跑完整条计划，而不是在第一个 409 上当场失败。
+   */
+  it("survives DEBUG_NOT_SUPPORTED while the fresh instance is still booting", async () => {
+    let probes = 0;
+    const execDebugCommand = vi.fn(async (_botId: string, command: string) => {
+      if (command === "true") {
+        probes += 1;
+        // 前两轮：实例状态还不支持 debug 命令
+        if (probes <= 2) {
+          throw repositoryError(
+            "debug command not supported in this instance state（DEBUG_NOT_SUPPORTED, request_id=req-boot）",
+            409,
+            "DEBUG_NOT_SUPPORTED",
+          );
+        }
+      }
+      return {
+        status: "ok",
+        exitCode: 0,
+        // 克隆路径会先读来源 bot 的 SOUL，读不到就会中止
+        output: command.includes("ContentBase64:")
+          ? `Exists: yes\nByteLength: 12\nContentBase64: ${btoa("cloned soul!")}`
+          : "",
+      };
+    });
+    const { onCreated } = renderPanel(execDebugCommand);
+
+    await userEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    // 没有当场失败，而是等到实例就绪后把配置写完
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-new"), { timeout: 25000 });
+    // 确实重试了探活，而不是一次就放弃
+    expect(probes).toBeGreaterThanOrEqual(3);
+    // 也没有弹出阻断错误
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+  }, 40000);
 });

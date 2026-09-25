@@ -98,6 +98,8 @@
 | 错误类型 | 判定 | 处理 |
 | --- | --- | --- |
 | 沙箱未就绪 | `exitCode !== 0`、`debug_exec_timeout:*`、`network_error`、`Failed to fetch` | 继续轮询等待 |
+| **实例状态未就绪** | **`DEBUG_NOT_SUPPORTED` 或 HTTP 409** | **继续轮询等待（见下方说明）** |
+| 请求超时 / 限流 | HTTP 408、429 | 继续轮询等待 |
 | 鉴权失效 | HTTP 401 | 立即中止，提示重新登录 |
 | 无权限 | HTTP 403 | 立即中止，提示账号无权配置该实例 |
 | 实例不存在 | HTTP 404 | 立即中止，提示实例不存在或已回收，请返回列表重试 |
@@ -105,6 +107,12 @@
 | 5xx 或未知 | 其余 | 继续轮询（服务端可能正在拉起） |
 
 立即中止时抛出的错误消息即为页面主文案，不再覆盖成「实例尚未就绪」。
+
+**关于 409 / `DEBUG_NOT_SUPPORTED`**：后端 `ctl/pkg/instance/logic.go` 在 `entity.Status != Running` 时返回该错误（`ctl/pkg/errcode/debug.go`，HTTP 409），文案为 `debug command not supported in this instance state`。它描述的恰恰是「实例当前状态还不能跑 debug 命令」——正是预热要等的那个状态本身，实例起好后就不再出现。新账号首次开通实例必然先经历这一阶段，因此它是 4xx 里必须排除的例外。同一约定在微信登录链路（`agent-settings-page.tsx`）中已经存在。
+
+分级判定的通用原则：**加新的 fatal 判定前先确认「这个错误在实例启动完成后还会不会出现」，会的话它就不是 fatal。**
+
+同理，`isRetriableSetupFailure` 也纳入 409 / `DEBUG_NOT_SUPPORTED`：预热探活通过只说明「那一刻」能跑命令，紧接着的第一条配置命令仍可能撞上状态回退，而 SOUL 是 `required` 步骤，不重试会让整条计划当场中止。
 
 ### 功能点 4：区分三种「尚未就绪」
 
@@ -189,6 +197,7 @@
 - 验收 2：沙箱探活成功后该步骤变为 `done`，进度至少推进到 `1/N`，随后业务步骤依次进入 `running`。
 - 验收 3：探活返回 HTTP 401/403/404 时，**不再等待到超时**，立即中止并在主文案处显示对应的具体原因（重新登录 / 无权限 / 实例不存在）。
 - 验收 4：探活遇到 `Failed to fetch`、`debug_exec_timeout:*`、`network_error`、`exitCode !== 0` 或 5xx 时，继续轮询直到就绪或超时，行为与现状一致。
+- 验收 4.1：**新账号注册后首次开通 Bot**（实例状态为 `creating`/`starting`，探活前几轮返回 409 `DEBUG_NOT_SUPPORTED`）时，预热持续等待并在实例转为 `running` 后跑完整条计划，不出现阻断错误。
 - 验收 5：等满超时时，错误文案包含最后一次探测失败原因；Retry 按钮仍可用，且点击后预热行重新回到 `running`（重新探活，不沿用上一轮结果）。
 - 验收 6：等不到 botId 与等不到 profileId 分别给出各自文案，不再与「实例尚未就绪」混用。
 - 验收 7：`agent-onboarding-setup-runs-once.test.tsx`、`agent-onboarding-recovery.test.tsx` 等既有用例全部通过；新增用例覆盖验收 3 与验收 4 的分流判定。
