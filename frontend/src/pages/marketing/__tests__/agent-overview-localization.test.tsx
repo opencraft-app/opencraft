@@ -28,13 +28,13 @@ const Progress = () => {
 };
 
 const titles: Record<I18nDictKey, [string, string, string]> = {
-  "zh-CN": ["LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务", "LightVela 支持订阅升配"],
-  "zh-Hant": ["LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務", "LightVela 支援訂閱升級"],
-  "en-US": ["LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks", "LightVela Now Supports Subscription Upgrades"],
-  "id-ID": ["LightVela Kini Mendukung Beberapa Bot", "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip", "LightVela Kini Mendukung Peningkatan Paket Langganan"],
-  es: ["LightVela Ahora Admite Varios Bots", "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script", "LightVela ya permite mejorar tu suscripción"],
-  "ja-JP": ["LightVela で複数の Bot を作成可能に", "スケジュールタスクに通知タスクとスクリプトタスクを追加", "LightVela でサブスクリプションのアップグレードに対応"],
-  "ko-KR": ["LightVela에서 여러 Bot 생성 지원", "예약 작업에 알림 작업 및 스크립트 작업 추가", "LightVela에서 구독 업그레이드 지원"],
+  "zh-CN": ["LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务", "LightVela 支持套餐升配"],
+  "zh-Hant": ["LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務", "LightVela 支援套餐升級"],
+  "en-US": ["LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks", "LightVela Now Supports Plan Upgrades"],
+  "id-ID": ["LightVela Kini Mendukung Beberapa Bot", "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip", "LightVela Kini Mendukung Peningkatan Paket"],
+  es: ["LightVela Ahora Admite Varios Bots", "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script", "LightVela ya permite mejorar tu plan"],
+  "ja-JP": ["LightVela で複数の Bot を作成可能に", "スケジュールタスクに通知タスクとスクリプトタスクを追加", "LightVela でプランのアップグレードに対応"],
+  "ko-KR": ["LightVela에서 여러 Bot 생성 지원", "예약 작업에 알림 작업 및 스크립트 작업 추가", "LightVela에서 요금제 업그레이드 지원"],
 };
 const page = (locale: I18nDictKey) => (
   <LocaleOverrideProvider locale={locale}>

@@ -102,6 +102,19 @@ describe("marketing channel copy", () => {
     );
   });
 
+  it("uses plan upgrade wording in the domestic September changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    const septemberSection = screen.getByText("2026 年 9 月").closest("section");
+    expect(septemberSection).not.toBeNull();
+    expect(within(septemberSection!).getByRole("heading", { name: "LightVela 支持套餐升配" })).toBeInTheDocument();
+    expect(within(septemberSection!).getByText("现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。")).toBeInTheDocument();
+  });
+
   it("shows the Workbench update with the domestic Chinese screenshot", () => {
     render(
       <MemoryRouter>

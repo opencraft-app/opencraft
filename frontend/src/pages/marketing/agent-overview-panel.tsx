@@ -274,7 +274,7 @@ const LatestNewsSection = () => {
         subtitle={t("LightVela 的新功能、改进和修复更新")}
       />
 
-      {/* 有配图时贴齐卡片边缘；无配图的订阅升配沿用 Changelog 页的文字呈现。 */}
+      {/* 有配图时贴齐卡片边缘；无配图的套餐升配沿用 Changelog 页的文字呈现。 */}
       <div className={cn(CARD_CLASS, "overflow-hidden")}>
         <div className={cn("grid items-stretch", entry.image ? "sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]" : "sm:min-h-[169px]")}>
           {/*
