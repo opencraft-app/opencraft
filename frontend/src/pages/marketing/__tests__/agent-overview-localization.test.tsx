@@ -28,13 +28,13 @@ const Progress = () => {
 };
 
 const titles: Record<I18nDictKey, [string, string, string]> = {
-  "zh-CN": ["LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务", "LightVela 支持套餐升配"],
-  "zh-Hant": ["LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務", "LightVela 支援套餐升級"],
-  "en-US": ["LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks", "LightVela Now Supports Plan Upgrades"],
-  "id-ID": ["LightVela Kini Mendukung Beberapa Bot", "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip", "LightVela Kini Mendukung Peningkatan Paket"],
-  es: ["LightVela Ahora Admite Varios Bots", "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script", "LightVela ya permite mejorar tu plan"],
-  "ja-JP": ["LightVela で複数の Bot を作成可能に", "スケジュールタスクに通知タスクとスクリプトタスクを追加", "LightVela でプランのアップグレードに対応"],
-  "ko-KR": ["LightVela에서 여러 Bot 생성 지원", "예약 작업에 알림 작업 및 스크립트 작업 추가", "LightVela에서 요금제 업그레이드 지원"],
+  "zh-CN": ["LightVela 支持套餐升配", "LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务"],
+  "zh-Hant": ["LightVela 支援套餐升級", "LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務"],
+  "en-US": ["LightVela Now Supports Plan Upgrades", "LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks"],
+  "id-ID": ["LightVela Kini Mendukung Peningkatan Paket", "LightVela Kini Mendukung Beberapa Bot", "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip"],
+  es: ["LightVela ya permite mejorar tu plan", "LightVela Ahora Admite Varios Bots", "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script"],
+  "ja-JP": ["LightVela でプランのアップグレードに対応", "LightVela で複数の Bot を作成可能に", "スケジュールタスクに通知タスクとスクリプトタスクを追加"],
+  "ko-KR": ["LightVela에서 요금제 업그레이드 지원", "LightVela에서 여러 Bot 생성 지원", "예약 작업에 알림 작업 및 스크립트 작업 추가"],
 };
 const page = (locale: I18nDictKey) => (
   <LocaleOverrideProvider locale={locale}>
@@ -88,26 +88,26 @@ describe("overview language consistency", () => {
     expect(screen.getByText(date)).toBeInTheDocument();
   });
 
-  it("uses localized images for the first two updates and no image for subscription upgrades", async () => {
+  it("uses site-specific upgrade screenshots and localized images for the other updates", async () => {
     await ensureLocaleDictionary("en-US");
     await ensureLocaleDictionary("zh-CN");
     for (const [locale, imagePaths] of [
       ["en-US", [
+        "/assets/changelog/lightvela-plan-upgrade-global-en.png",
         "/docs-images/bots-switching-create-en.webp",
         "/assets/changelog/scheduled-tasks-notification-en-US.png",
       ]],
       ["zh-CN", [
+        "/assets/changelog/lightvela-plan-upgrade-global-en.png",
         "/docs-images/bots-switching-create.webp",
         "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
       ]],
     ] as const) {
       render(page(locale));
-      for (const [index, title] of titles[locale].slice(0, 2).entries()) {
+      for (const [index, title] of titles[locale].entries()) {
         fireEvent.click(screen.getByRole("button", { name: title }));
         expect(screen.getByRole("img", { name: title })).toHaveAttribute("src", imagePaths[index]);
       }
-      fireEvent.click(screen.getByRole("button", { name: titles[locale][2] }));
-      expect(screen.queryByRole("img", { name: titles[locale][2] })).not.toBeInTheDocument();
       cleanup();
     }
   });
@@ -147,11 +147,10 @@ describe("overview language consistency", () => {
   it.each(Object.keys(titles) as I18nDictKey[])("localizes news titles, available image descriptions and carousel controls in %s", async (locale) => {
     await ensureLocaleDictionary(locale);
     const view = render(page(locale));
-    for (const [index, title] of titles[locale].entries()) {
+    for (const title of titles[locale]) {
       fireEvent.click(screen.getByRole("button", { name: title }));
       expect(screen.getByText(title, { selector: "p" })).toBeInTheDocument();
-      if (index < 2) expect(screen.getByRole("img", { name: title })).toBeInTheDocument();
-      else expect(screen.queryByRole("img", { name: title })).not.toBeInTheDocument();
+      expect(screen.getByRole("img", { name: title })).toBeInTheDocument();
     }
     expect(view.container.textContent).not.toMatch(/\{\{|k_[a-f0-9]{8}/);
     // Account content is not silently translated or overwritten.
