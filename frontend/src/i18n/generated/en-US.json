@@ -3033,5 +3033,16 @@
   "k_ffea1468": "Installed skills list",
   "k_374c5c8a": "WhatsApp is connected to {{name}}. Only one Bot can connect to WhatsApp at a time in the same instance. Disconnect it from the original Bot first.",
   "k_7234c1ff": "Already in use by another Bot",
-  "k_943416fd": "Scan with WhatsApp on your phone to sign in. Only one Bot can connect to WhatsApp at a time in the same instance."
+  "k_943416fd": "Scan with WhatsApp on your phone to sign in. Only one Bot can connect to WhatsApp at a time in the same instance.",
+  "k_1a9431cb": "DeepSeek Harness Is Now in Labs",
+  "k_1fc7ceca": "Hexagon",
+  "k_2db0fcd5": "Circle",
+  "k_35908bb0": "Square",
+  "k_43559f37": "Jellyfish",
+  "k_43fd4154": "Triangle",
+  "k_71101eb7": "Egg",
+  "k_af8df3f5": "Teardrop",
+  "k_c6a6cb13": "Gear",
+  "k_e957ea93": "Rounded Square",
+  "k_ed3b674e": "Create and Publish Workbenches"
 }
