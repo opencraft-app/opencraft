@@ -134,6 +134,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 ## Agent 高级设置展示边界
 
 - 高级设置初次读取使用面向用户的加载文案：中文为“正在加载设置…”，英文为 `Loading settings...`；加载结果、错误和重试逻辑保持不变。
+- Agent 设置页切换非 Tea SDK 分区时，懒加载占位文案复用通用翻译：中文为“加载中...”，英文为 `Loading...`；不显示“正在加载页面…”或 `Loading page…`。
 
 ## Agent 定时任务区域边界
 
