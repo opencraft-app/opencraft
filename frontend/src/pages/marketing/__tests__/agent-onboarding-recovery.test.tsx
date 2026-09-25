@@ -2,7 +2,7 @@ import { cleanup, act, fireEvent, render, screen, waitFor } from "@testing-libra
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentOnboardingPanel } from "../agent-onboarding-panel";
-import { buildBuddySetupPlan } from "../agent-buddy-setup";
+import { buildBuddySetupPlan, SANDBOX_PROBE_TIMEOUT_MS } from "../agent-buddy-setup";
 import { buildSetupPlanSignature, loadBuddySetupSnapshot, saveBuddySetupSnapshot } from "../agent-buddy-setup-progress";
 
 vi.mock("@/i18n/t", () => {
@@ -39,7 +39,8 @@ describe("refresh recovery", () => {
     expect(onCreateBot).not.toHaveBeenCalled();
     expect(onSetupStart).toHaveBeenCalledTimes(1);
     expect(exec.mock.calls).toEqual([
-      ["bot-1", "true", { timeoutMs: 15000 }],
+      // 第一条永远是探活；超时取常量，避免调参后又要来改这个断言
+      ["bot-1", "true", { timeoutMs: SANDBOX_PROBE_TIMEOUT_MS }],
       ["bot-1", plan.at(-1)!.command, { timeoutMs: plan.at(-1)!.timeoutMs }],
     ]);
     expect(loadBuddySetupSnapshot("bot-1")).toBeNull();

@@ -83,6 +83,48 @@ export const isRetriableSetupFailure = (error: unknown): boolean => {
   return false;
 };
 
+/**
+ * 沙箱探活失败的性质。
+ *
+ * - `transient`：实例可能还在冷启动，继续轮询等待。
+ * - `fatal`：等多久都不会自愈（鉴权失效、无权限、实例不存在、请求本身不
+ *   被接受），必须立刻中止并把真实原因交给用户。
+ */
+export type SandboxProbeFailureKind = "transient" | "fatal";
+
+/**
+ * 判断一次沙箱探活失败该继续等还是立刻放弃。
+ *
+ * 真实背景：预热探活循环原先是 `catch {}` 空吞一切异常，于是 401（登录态
+ * 失效）、403（无权配置该实例）、404（实例已被回收）也被当成「沙箱还没起
+ * 好」，一路空转到 180s 超时，最后只报一句「实例尚未就绪，请稍后在设置页
+ * 重试配置」。用户看到的是一个三分钟不动的 0/7 进度条加一句无信息量的报
+ * 错，排障的人连 status 和 request_id 都拿不到。
+ *
+ * 分级原则：只有「请求确实被服务端受理、并且明确拒绝」才算 fatal。其余
+ * 一律 transient —— 预热本来就是在等一个还没准备好的东西，误判成 fatal
+ * 会把正常的冷启动当成失败，比多等几十秒严重得多。
+ */
+export const classifySandboxProbeFailure = (error: unknown): SandboxProbeFailureKind => {
+  if (!(error instanceof Error)) return "transient";
+
+  // 请求没能完成（沙箱侧超时 / 断网 / 代理掐连接）→ 实例大概只是还没起好
+  if (isRetriableSetupFailure(error)) return "transient";
+
+  // RepositoryError 带 status；鸭子类型判断，避免为此从 repositories 引类型
+  const status = (error as Error & { status?: number }).status;
+  if (typeof status !== "number") return "transient";
+
+  // 0 是 createNetworkUnavailableError 的占位值，语义是网络不可用
+  if (status === 0) return "transient";
+  // 408 请求超时、429 限流：都会随时间好转
+  if (status === 408 || status === 429) return "transient";
+  // 其余 4xx：请求被明确拒绝，再等一百次也是同样的响应
+  if (status >= 400 && status < 500) return "fatal";
+  // 5xx：服务端可能正在拉起实例，继续等
+  return "transient";
+};
+
 /** 重试间隔：立刻再试一次，仍失败则等 2s、5s。总共最多 4 次尝试 */
 const RETRY_DELAYS_MS = [0, 2_000, 5_000] as const;
 
