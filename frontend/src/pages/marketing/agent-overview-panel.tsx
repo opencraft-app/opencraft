@@ -218,6 +218,15 @@ const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] =
   return [
     {
       date: { y: 2026, m: 9 },
+      title: upgradeCopy.title,
+      body: upgradeCopy.desc,
+      image: assetUrl(isGlobal
+        ? "/assets/changelog/lightvela-plan-upgrade-global-en.png"
+        : "/assets/changelog/lightvela-plan-upgrade-cn.png"),
+      imageAlt: upgradeCopy.title,
+    },
+    {
+      date: { y: 2026, m: 9 },
       title: t("LightVela 支持创建多个 Bot"),
       body: t("在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。"),
       image: assetUrl(isGlobal && !isChinese
@@ -233,11 +242,6 @@ const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] =
         ? zeroTokenGlobalImages[locale] ?? "/assets/changelog/scheduled-tasks-notification-en-US.png"
         : "/assets/changelog/scheduled-tasks-notification-zh-CN.png"),
       imageAlt: t("定时任务新增通知任务和脚本任务"),
-    },
-    {
-      date: { y: 2026, m: 9 },
-      title: upgradeCopy.title,
-      body: upgradeCopy.desc,
     },
   ];
 };
