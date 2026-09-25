@@ -103,6 +103,15 @@ export async function smokeCodexAppHost(origin, projectPath = null) {
     const initialized = await waitFor(frame => frame.type === "host/frame" && JSON.parse(frame.frame).id === "codex-initialize", "initialize");
     const initializeResult = JSON.parse(initialized.frame);
     assert.ok(initializeResult.result, JSON.stringify(initializeResult.error));
+    assert.equal(initializeResult.result.opencraftQueueSteerVersion, undefined);
+    assert.deepEqual(initializeResult.result.capabilities?.extensions?.["opencraft/thread-queue"], {
+      version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false,
+    });
+    send("codex-queue-list-send", "codex-queue-list", "thread/queue/list", {
+      threadId: "00000000-0000-0000-0000-000000000000",
+    });
+    const queueListed = await waitFor(frame => frame.type === "host/frame" && JSON.parse(frame.frame).id === "codex-queue-list", "Host queue list");
+    assert.deepEqual(JSON.parse(queueListed.frame).result, { data: [], nextCursor: null, steering: [] });
     send("codex-accounts-send", "codex-accounts", "opencraft/codex/accounts/list");
     const accounts = await waitFor(frame => frame.type === "host/frame" && JSON.parse(frame.frame).id === "codex-accounts", "account list");
     assert.ok(Array.isArray(JSON.parse(accounts.frame).result?.accounts));

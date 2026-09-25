@@ -7,8 +7,52 @@ export interface OpenCraftThreadQueueCapability {
   /** False for runtimes such as DSH whose inbox order is an invariant. */
   readonly reorder: boolean;
   readonly atomicSteer: true;
+  /** Patched Codex only: an acknowledged, target-bound discard of an unresolved claim. */
+  readonly unconfirmedSteerDiscard?: true;
   /** Whether pause reasons are durable queue-item state rather than UI state. */
   readonly perItemPause: boolean;
+}
+
+export function supportsAtomicQueuedSteer(value: unknown): value is OpenCraftThreadQueueCapability {
+  return typeof value === "object" && value !== null
+    && "version" in value && value.version === 2
+    && "atomicSteer" in value && value.atomicSteer === true;
+}
+
+export function supportsUnconfirmedSteerDiscard(value: unknown): boolean {
+  return supportsAtomicQueuedSteer(value)
+    && "unconfirmedSteerDiscard" in value
+    && value.unconfirmedSteerDiscard === true;
+}
+
+/** Host-owned Thread lifecycle operations; missing flags never imply support. */
+export const OPENCRAFT_THREAD_LIFECYCLE_EXTENSION = "opencraft/thread-lifecycle";
+
+export interface OpenCraftThreadLifecycleCapability {
+  readonly version: 1;
+  readonly fork?: boolean;
+  readonly ephemeral?: boolean;
+  readonly injectItems?: boolean;
+  readonly unsubscribe?: boolean;
+  readonly rename?: boolean;
+  readonly archive?: boolean;
+  readonly delete?: boolean;
+}
+
+export function parseThreadLifecycleCapability(value: unknown): OpenCraftThreadLifecycleCapability | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const capability = value as Record<string, unknown>;
+  if (capability.version !== 1) return null;
+  return {
+    version: 1,
+    fork: capability.fork === true,
+    ephemeral: capability.ephemeral === true,
+    injectItems: capability.injectItems === true,
+    unsubscribe: capability.unsubscribe === true,
+    rename: capability.rename === true,
+    archive: capability.archive === true,
+    delete: capability.delete === true,
+  };
 }
 
 /**

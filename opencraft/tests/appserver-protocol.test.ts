@@ -5,6 +5,7 @@ import {
   buildResumeHistoryRequest,
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   parseAttachmentStagingCapability,
+  parseThreadLifecycleCapability,
 } from "@opencraft/appserver-protocol";
 
 test("attachment staging capability is explicit and forward-compatible", () => {
@@ -24,6 +25,22 @@ test("attachment staging capability is explicit and forward-compatible", () => {
     () => parseAttachmentStagingCapability({ version: 1, sources: [], locations: [], maxBytes: 0 }),
     /unsupported or incompatible/i,
   );
+});
+
+test("Thread lifecycle capability requires a known version and explicit operation flags", () => {
+  assert.equal(parseThreadLifecycleCapability(undefined), null);
+  assert.equal(parseThreadLifecycleCapability({ version: 2, fork: true }), null);
+  assert.deepEqual(parseThreadLifecycleCapability({ version: 1, fork: true }), {
+    version: 1,
+    fork: true,
+    ephemeral: false,
+    injectItems: false,
+    unsubscribe: false,
+    rename: false,
+    archive: false,
+    delete: false,
+  });
+  assert.equal(parseThreadLifecycleCapability({ version: 1, fork: "true" })?.fork, false);
 });
 
 test("legacy Resume keeps turns in the response", () => {

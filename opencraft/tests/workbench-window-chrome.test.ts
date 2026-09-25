@@ -75,13 +75,13 @@ test("ordinary browsers do not inherit a macOS renderer safe area", () => {
     platform: "darwin",
     safeArea: { left: 0, right: 0 },
   });
-  assert.equal(getHeaderStartMinimumWidth(snapshot), 140);
+  assert.equal(getHeaderStartMinimumWidth(snapshot), 108);
   assert.deepEqual(getWindowChromePolicy(snapshot).leadingNavigationActions, [
-    "home",
     "sidebar-toggle",
     "back",
     "forward",
   ]);
+  assert.equal(getHeaderStartMinimumWidth(snapshot, false), 140);
 });
 
 test("macOS Electron reserves the native traffic-light interaction space", () => {
@@ -107,16 +107,17 @@ test("macOS Electron reserves the native traffic-light interaction space", () =>
   );
 });
 
-test("the persistent Electron header exposes Write only while the sidebar is hidden", () => {
+test("persistent browser and Electron headers expose Write only while the sidebar is hidden", () => {
   const header = readFileSync(
     new URL("../apps/workbench-web/src/components/app-shell-header.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(header, /hostRole !== "persistent" \|\| sidebarOpen \|\| actions\.includes\("home"\)/u);
+  assert.match(header, /hostRole !== "persistent" \|\| sidebarOpen/u);
   assert.match(header, /action === "sidebar-toggle"[\s\S]*?"new-task" as const/u);
   assert.match(header, /aria-label=\{intl\.formatMessage\(\{ id: "navigation\.newTask", defaultMessage: "Start new task" \}\)\}/u);
   assert.match(header, /data-app-shell-new-task-trigger="true"/u);
   assert.match(header, /onClick=\{onHome\}/u);
+  assert.doesNotMatch(header, /data-app-shell-home-trigger|app-shell-wordmark|Vela · Home/u);
 });
 
 test("native fullscreen atomically removes the macOS traffic-light safe area", () => {

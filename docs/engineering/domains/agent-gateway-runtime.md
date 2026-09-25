@@ -17,7 +17,7 @@
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
-OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
+OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
 
 ## 稳定不变量
 
@@ -106,7 +106,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 - OpenCraft Sidebar 的 Start、Skills/Storage、扩展入口与 Footer action 是同一种 `SidebarNavigationItem`，差异仅为 action、icon 和 active 状态。Design System 统一拥有 leading slot、inline padding、content gap、row gap 与 section gap；分组容器只保留 landmark/分隔语义，不显示额外的 “Work” 标题或复制 Item 几何。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md)。
 
-- OpenCraft Sidebar 的活跃会话目录采用 Activity 投影：Thread 规范 `recencyAt/updatedAt` 决定倒序与本地日期分组，Host 只作为任务 provenance，不再拥有视觉分组。共享两行任务项固定呈现标题、Project/可选远端 Host metadata 与尾部状态轨；pending、unread、运行状态和菜单不得推动正文。原 Host 标题上的目标新建/设置能力迁入既有 Radix 任务上下文菜单，Thread/Host 运行时 owner 不变。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-24](../../../opencraft/design/invariants.md)。
+- OpenCraft Sidebar 的活跃会话目录采用 Activity 投影：Thread 规范 `recencyAt/updatedAt` 决定倒序与本地日期分组，Host 只作为任务 provenance，不再拥有视觉分组。共享两行任务项固定呈现标题、Project/可选远端 Host metadata 与尾部状态轨；pending、unread、运行状态和菜单不得推动正文。主行独占选中/悬停底色，独立“…”入口保持透明并消费同一行的视觉状态，触屏不通过伪 hover 制造额外色块。原 Host 标题上的目标新建/设置能力迁入既有 Radix 任务上下文菜单，Thread/Host 运行时 owner 不变。菜单 Fork 的 Host 请求期间显示进行中状态，成功回执后立即打开 child，目录刷新在后台进行；route scope 已变化时不抢回导航。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-12/24](../../../opencraft/design/invariants.md)。
 
 - OpenCraft Desktop 的 titlebar Write 是 Sidebar Start 的收起态投影，不是第二个 Thread 创建器。仅 persistent Header 在 Sidebar hidden 时将 Write 注册到 Sidebar toggle 后，并复用 Router 的 `navigateToHome`；浮动 Sidebar 的 transient Header 不复制。动态 rail 宽度与 macOS safe area 由 Window Chrome / Header 测量共同拥有。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-25](../../../opencraft/design/invariants.md)。
 
@@ -236,6 +236,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - OpenCraft Sidebar Activity 把 `executionOwner` 与 Thread 状态分开：Thread/Conversation binding 持有 hostId，Host Directory 提供 kind/label，Sidebar 为远程 Host 投影按 hostId 稳定着色的地球。本机默认省略来源图标；改名、断线、重连、引擎或运行状态不得改变该身份颜色。运行/待审/错误/未读使用相邻独立状态槽，颜色不作为唯一身份信号。
 - OpenCraft Web 发布器以 Vite manifest 判定构建所有权：manifest 引用的 `assets/**` 必须内容寻址并按 immutable 追加；Vite 从 `public/` 原样复制的非哈希资源即使位于 `assets/**`，仍按可重验证公共文件原子覆盖。发布入口只能在两类资源全部落盘后切换。
 - OpenCraft 的 `headless-linux-amd64-tar` 是独立单用户服务器制品：Node 启动器在私有数据根下持有唯一 Local Agent Host，托管同源 WebUI 并把 `/appserver` 转发给本机 DSH；同源 `/apphost` 通过租约和代次连接 Server 拥有的 Codex stdio adapter，不让浏览器持有 Codex 凭据。Web 模型服务与 Codex 账户页复用 Host 配置能力，不另建浏览器配置真源。默认仅监听 loopback，远端浏览器须通过受控隧道。显式危险模式允许主体直接绑定 `0.0.0.0:80`，静态 WebUI、`/appserver`、`/apphost` 共用端口并保留同源 Origin 校验；仓库 Linux 安装脚本只负责校验 tar 和安装常驻 systemd unit，不套 Nginx；特权端口仅授予 `CAP_NET_BIND_SERVICE`，也不提供 TLS 或访问控制。任何可达客户端都会共享该 Host 的账户和执行权，绝非多租户或安全公网模式。脚本不得自动停掉现有预览、覆盖持久状态或把旧 tar 当作新构建。此包不包含 Electron Main/Preload，不提供多租户 Hub 或公开服务鉴权；不能把静态网页可访问或 tar 生成等同于 Linux 原生执行验收。详见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md#headless-linux-server-archive)。
+- OpenCraft Codex 排队消息由 Daemon Host 的私有 SQLite 唯一持有，Codex AppServer 只执行标准 `turn/start`/`turn/steer`。Host 先持久认领再投递；明确拒绝才放回队列，超时/断线一律保留未确认认领并阻止后续自动派发。Host 以 Codex 历史 user-message client ID 对账，确认丢弃前要求空闲 Thread、匹配目标和成功的历史核查；丢弃不等于证明模型未见消息。旧原生队列在物理 AppServer 启动前迁移，冲突或坏数据失败关闭。`atomicSteer`/`unconfirmedSteerDiscard` 来自 Host 实现，不依赖 Codex 二进制补丁；Headless 只打包官方 Codex。DSH 的 Host/原生队列路径独立，不继承 Codex 的恢复能力。单数据目录仍只允许一个物理 AppServer/Host owner。详见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。
 - OpenCraft 的客户端 Turn、queue、steer、工具活动和滚动投影遵循 Codex 生命周期；Hermes 事件游标、durable history 与投影状态遵循 Hermes Desktop 生命周期。断线恢复不得只保留 replay 游标却重建空投影状态。
 - OpenCraft 的 Hermes 工具完成状态只能来自明确结果证据：终端退出、结构化结果或后端失败。Turn 完成本身不得制造工具成功；后台命令保留运行中进程句柄，缺失结果保持未确认。实时与历史恢复必须复用同一工具身份和终态归并规则。
 - AppServer 传输失败必须保留结构化恢复策略。瞬态失败可由既有策略重连；远端资源已删除等不可恢复错误标记为手动恢复，Workbench 不得自动重建同一失效传输并形成重连循环。
@@ -411,6 +412,8 @@ Context Pane 的 frame/viewport 共用 useContextPaneGeometry 的同一个实时
 LightVela 的环境目录与实例创建服务继续保持独立 owner，既有 Host 绑定和进行中记录不得因页面删除而迁移或清空；但当前 Shell 不投影环境列表、虚线添加入口或创建窗口。任何未来重新引入的调用方仍须遵守资格校验、稳定 Host ID、未知 POST 结果不自动重发和不切换当前聊天等既有服务约束，不能把保留的服务代码解释为当前可见能力。
 
 OpenCraft 账户界面复用 utility Modal 与 SettingsPanel/Row/Group、头像编辑、Radix 名称编辑、复制反馈和语义用量条。宿主拥有 Dialog 焦点、关闭、滚动和主题材质，账户扩展只提供业务值与动作；不使用账户专属固定大画布。主题引擎补齐警告、错误、用量轨道及工具弹窗材质。模型配置通过宿主设置导航，外部订阅管理返回后刷新详情。匿名 Footer 的登录入口使用同一套 Radix 菜单：提供方贡献国内／国际选项，选中直接提交 Cordis `menu` 流程并打开系统浏览器，不经过中间登录弹窗。通用层只传递 optionId，区域校验和切换在旧事务取消完成后由提供方执行；入口反映等待/错误，菜单提供重试/取消，关闭菜单本身不取消已启动的登录。匿名登录是 action，使用无头像表面的共享 `LogIn` glyph；认证后账户才是 identity，使用真实头像、首字母或中性 User fallback。固定与浮动 Sidecar 共用同一 leading-visual helper、入口和主题。
+
+Codex 账户池的用量与额度重置时间由 Host 观察并持久化，管理页只读取去敏投影。每个额度窗口有报告的重置时刻时，桌面与触屏均直接显示本地时间，展开账户可看完整时刻；上游未报告时明确显示未知，不从窗口长度或账户状态推算，也不将额度重置误称为付费充值。
 
 OpenCraft 桌面 LightVela 登录通过系统浏览器和既有 native OIDC client/callback 完成，Electron Main 拥有 PKCE、单次交换、取消和超时；只向可信顶层 renderer 提供窄 IPC。跨 profile 回调按随机 state 摘要路由到发起登录的本地进程，传输不含会话。会话按 profile 使用上述 Main PrivateStorage 保存，renderer 只在内存持有；重启恢复不依赖静态回环服务端口。网页继续使用 Web 登录流程，后端 allowlist 保持精确匹配。
 

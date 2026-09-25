@@ -1,5 +1,11 @@
 # 实施进度
 
+## 2026-09-25：Sidebar Activity 触控 hover
+
+已实现：活动行的 hover 底色和“…”显露仅在精细指针且当前未处于触摸输入时生效；无 hover 或触摸输入时直接显示独立 44px 菜单入口，并为来源/状态槽位留出空间。已测试：Sidebar 聚焦测试 25/25、Shell 布局测试 17/17、Web 类型检查与构建、独立 Linux headless smoke 通过。当前运行服务已切换至 buildId `20260925022532-668d30451312`，健康与 HTTP 版本核对通过。未实机验证：iPhone 手指拖动、松开和菜单点击。
+
+后续用户反馈：常显“…”已出现，但手指滑动仍有问题。查得共享 `quiet-control` mixin 仍给 Activity 行生成无条件 hover 背景；源码已让该行关闭共享默认 hover，编译 CSS 核对无此规则，聚焦测试 25/25 和 Web 类型/构建通过。第二次修正已部署至 buildId `20260925024353-72c7b9ab13f4`，服务健康；手机实测仍待确认。触控与桌面继续消费同一 Activity 组件与 Design System 状态/token，只按输入能力适配瞬时交互。
+
 ## 2026-09-14：云端 Bot 不是工作区前置条件
 
 根因是账号零 Bot 产生 applicationIntervention，并在 App 中优先于选中 Host 的错误接管主内容。已删除该优先级及 LightVela 自动 empty-workbench 创建入口；无 Host 时显示中立环境入口。显式环境创建、选中 Host 的连接干预仍保留。正在验证匿名/已登录零 Bot、类型/门禁与新版预览。

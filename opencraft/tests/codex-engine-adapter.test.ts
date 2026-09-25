@@ -7,8 +7,9 @@ import test from "node:test";
 
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
-import { OPENCRAFT_THREAD_START_DURABILITY_EXTENSION } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION } from "@opencraft/appserver-protocol";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.js";
+import { CodexHostQueue } from "../apps/opencraft-daemon/src/codex-host-queue.js";
 
 function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> {
   const existing = frames.find(predicate);
@@ -22,6 +23,27 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
     };
     poll();
   });
+}
+
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string): CodexEngineAdapter {
+  const adapter = new CodexEngineAdapter({
+    executable: process.execPath,
+    runtimeDirectory: root,
+    dataDirectory: join(root, "data"),
+    nativeCodexHomeDirectory: join(root, "native-codex"),
+    upstreamBaseUrl: "http://127.0.0.1:9/backend-api/codex",
+    fetch: async () => Response.json({ ok: true }),
+    spawnAppServer: ({ cwd, env }) => spawn(process.execPath, [new URL("./fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname], { cwd, env: { ...env, ...(nativeQueueSteerVersion ? { OPENCRAFT_TEST_NATIVE_QUEUE_STEER: String(nativeQueueSteerVersion) } : {}), ...(steerResponse ? { OPENCRAFT_TEST_STEER_RESPONSE: steerResponse } : {}) }, stdio: ["pipe", "pipe", "pipe"] }),
+    createMaintenanceClient: async () => { throw new Error("not used"); },
+    logDiagnostic: () => undefined,
+  });
+  adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  return adapter;
+}
+
+async function initializeClient(adapter: CodexEngineAdapter, frames: Array<Record<string, unknown>>, clientId: string): Promise<void> {
+  await adapter.send(JSON.stringify({ id: `${clientId}:init`, method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: clientId }));
+  await waitFor(frames, frame => frame.id === `${clientId}:init`);
 }
 
 test("Codex Engine shares one physical initialize and restores logical client routing", async () => {
@@ -38,6 +60,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     tokens: { access_token: accessToken, refresh_token: "refresh-native", account_id: "chatgpt-native" },
   }));
   const frames: Array<Record<string, unknown>> = [];
+  const diagnostics: Array<Record<string, unknown>> = [];
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -49,6 +72,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
       : Response.json({ ok: true }),
     spawnAppServer: ({ cwd, env }) => spawn(process.execPath, [new URL("./fixtures/fake-codex-stdio-appserver.mjs", import.meta.url).pathname], { cwd, env, stdio: ["pipe", "pipe", "pipe"] }),
     createMaintenanceClient: async () => { throw new Error("not used"); },
+    logDiagnostic: event => diagnostics.push(event),
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
   try {
@@ -67,11 +91,29 @@ test("Codex Engine shares one physical initialize and restores logical client ro
       (first.result as any).capabilities.extensions[OPENCRAFT_THREAD_START_DURABILITY_EXTENSION],
       { version: 1, durableAfter: "first-turn-accepted" },
     );
+    assert.deepEqual(
+      (first.result as any).capabilities.extensions[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION],
+      { version: 1, fork: true, ephemeral: true, injectItems: true, unsubscribe: true },
+    );
+    assert.deepEqual((first.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false });
 
     await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.id === "a:start");
     const started = await waitFor(frames, frame => frame.method === "thread/started");
     assert.equal(started[LOGICAL_CLIENT_FIELD], "client-a");
+    await adapter.send(JSON.stringify({ id: "a:interrupt", method: "turn/interrupt", params: {
+      threadId: "thread-a", turnId: "turn-a", prompt: "must not be logged",
+    }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-b" }));
+    assert.ok(diagnostics.some(event => event.event === "appserver-start" && typeof event.pid === "number"));
+    assert.deepEqual(diagnostics.find(event => event.event === "turn-interrupt"), {
+      component: "codex-engine-adapter", at: diagnostics.find(event => event.event === "turn-interrupt")?.at,
+      event: "turn-interrupt", clientId: "client-a", requestId: "opencraft:3",
+      threadId: "thread-a", turnId: "turn-a", pid: diagnostics.find(event => event.event === "appserver-start")?.pid,
+    });
+    assert.ok(diagnostics.some(event => event.event === "client-disconnect" && event.clientId === "client-b"));
+    assert.doesNotMatch(JSON.stringify(diagnostics), /must not be logged/);
     const serverRequest = await waitFor(frames, frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
     assert.equal(serverRequest[LOGICAL_CLIENT_FIELD], "client-a");
     await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
@@ -97,6 +139,350 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     }
     assert.equal((refreshed?.result as any).accounts[0].subscriptionType, "pro");
     assert.equal((refreshed?.result as any).accounts[0].limitWindows[0].utilization, 0.1);
+  } finally {
+    await adapter.close();
+    assert.ok(diagnostics.some(event => event.event === "appserver-exit" && event.intentional === true));
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Codex Host queue Steer capability does not depend on a patched native marker", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-native-queue-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 2);
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
+    assert.deepEqual(
+      (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+    );
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("older native queue marker does not change Host queue capabilities", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-native-queue-v1-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 1);
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
+    assert.deepEqual(
+      (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+    );
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Host-owned Codex queue steers through standard turn/steer and reconciles the accepted message", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-queue-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const client = "client-a";
+  const request = async (id: string, method: string, params: Record<string, unknown>) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, client);
+    await request("thread", "thread/start", { cwd: root });
+    const started = await request("turn", "turn/start", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first",
+    });
+    const activeTurnId = (started.result as any).turn.id;
+    const added = await request("add", "thread/queue/add", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "follow up" }], clientUserMessageId: "queued-1",
+    });
+    const queuedId = (added.result as any).queuedSubmission.id;
+    const queued = await request("list-1", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.equal((queued.result as any).data[0].id, queuedId);
+    const steered = await request("steer", "thread/queue/steer", {
+      threadId: "codex-thread-1", queuedSubmissionId: queuedId, expectedTurnId: activeTurnId,
+    });
+    assert.deepEqual(steered.result, { turnId: activeTurnId });
+    const afterSteer = await request("list-2", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.deepEqual((afterSteer.result as any).data, []);
+    assert.equal((afterSteer.result as any).steering[0].clientUserMessageId, "queued-1");
+    await request("complete", "test/completeTurn", { threadId: "codex-thread-1" });
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const listed = await request(`list-final-${attempt}`, "thread/queue/list", { threadId: "codex-thread-1" });
+      if ((listed.result as any).steering.length === 0) break;
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    const settled = await request("settled", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.deepEqual((settled.result as any).steering, []);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ambiguous Codex queue steer stays claimed until explicit history-checked discard", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-unknown-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 0, "ambiguous");
+  const client = "client-a";
+  const request = async (id: string, method: string, params: Record<string, unknown>) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, client);
+    await request("thread", "thread/start", { cwd: root });
+    const turn = await request("turn", "turn/start", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first",
+    });
+    const targetTurnId = (turn.result as any).turn.id;
+    const added = await request("add", "thread/queue/add", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "possibly delivered" }], clientUserMessageId: "maybe-1",
+    });
+    const queuedId = (added.result as any).queuedSubmission.id;
+    const steer = await request("steer", "thread/queue/steer", {
+      threadId: "codex-thread-1", queuedSubmissionId: queuedId, expectedTurnId: targetTurnId,
+    });
+    assert.ok(steer.error);
+    const unknown = await request("unknown", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.equal((unknown.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
+    await request("complete", "test/completeTurn", { threadId: "codex-thread-1" });
+    const deleted = await request("discard", "thread/queue/delete", {
+      threadId: "codex-thread-1", queuedSubmissionId: queuedId,
+      expectedTurnId: targetTurnId, acknowledgeUnknownDelivery: true,
+    });
+    assert.deepEqual(deleted.result, { deleted: true });
+    const settled = await request("settled", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.deepEqual((settled.result as any).steering, []);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Host queue starts the next turn after completion without sending a native queue RPC", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-drain-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const request = async (id: string, method: string, params: Record<string, unknown>) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    await request("thread", "thread/start", { cwd: root });
+    const first = await request("turn", "turn/start", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first",
+    });
+    const firstTurnId = (first.result as any).turn.id;
+    await request("add", "thread/queue/add", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "next" }], clientUserMessageId: "next",
+    });
+    await request("complete", "test/completeTurn", { threadId: "codex-thread-1" });
+    const second = await waitFor(frames, frame => frame.method === "turn/started" && (frame.params as any).turn.id !== firstTurnId);
+    assert.ok((second.params as any).turn.id);
+    const listed = await request("listed", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.deepEqual((listed.result as any).data, []);
+    assert.deepEqual((listed.result as any).steering, []);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("definitive Codex steer rejection releases the Host claim without losing the queued item", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-reject-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const request = async (id: string, method: string, params: Record<string, unknown>) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    await request("thread", "thread/start", { cwd: root });
+    await request("turn", "turn/start", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first",
+    });
+    const added = await request("add", "thread/queue/add", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "follow" }], clientUserMessageId: "follow",
+    });
+    const queuedId = (added.result as any).queuedSubmission.id;
+    const rejected = await request("steer", "thread/queue/steer", {
+      threadId: "codex-thread-1", queuedSubmissionId: queuedId, expectedTurnId: "stale-turn",
+    });
+    assert.ok(rejected.error);
+    const listed = await request("listed", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.equal((listed.result as any).data[0].id, queuedId);
+    assert.deepEqual((listed.result as any).steering, []);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("restart preserves an unconfirmed claim and blocks a later queued turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-restart-"));
+  const dataRoot = join(root, "data");
+  await mkdir(dataRoot);
+  const queue = new CodexHostQueue(dataRoot);
+  const uncertain = queue.add("codex-thread-1", "uncertain", [{ type: "text", text: "maybe" }]);
+  queue.claim("codex-thread-1", uncertain.id, "turn-old");
+  queue.add("codex-thread-1", "later", [{ type: "text", text: "later" }]);
+  queue.close();
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    await adapter.send(JSON.stringify({ id: "list", method: "thread/queue/list", params: { threadId: "codex-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const listed = await waitFor(frames, frame => frame.id === "list");
+    assert.equal((listed.result as any).steering[0].id, uncertain.id);
+    assert.equal((listed.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
+    assert.equal((listed.result as any).data[0].clientUserMessageId, "later");
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(frames.some(frame => frame.method === "turn/started"), false);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Host resumes an unloaded Codex thread and drains a durable queued message without a browser subscription", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-background-"));
+  const dataRoot = join(root, "data");
+  await mkdir(dataRoot);
+  const queue = new CodexHostQueue(dataRoot);
+  queue.add("codex-thread-1", "background", [{ type: "text", text: "continue" }]);
+  queue.close();
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    let cleared = false;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const id = `list-${attempt}`;
+      await adapter.send(JSON.stringify({ id, method: "thread/queue/list", params: { threadId: "codex-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+      const listed = await waitFor(frames, frame => frame.id === id);
+      if ((listed.result as any).data.length === 0 && (listed.result as any).steering.length === 0) { cleared = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal(cleared, true);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Codex Fork subscribes only its requester to the child and late disconnected responses cannot reclaim it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-fork-routing-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    await initializeClient(adapter, frames, "client-b");
+    await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await waitFor(frames, frame => frame.id === "a:start");
+    await adapter.send(JSON.stringify({ id: "a:fork", method: "thread/fork", params: { threadId: "codex-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const forked = await waitFor(frames, frame => frame.id === "a:fork");
+    assert.equal((forked.result as any).thread.id, "codex-fork-1");
+    const childStarted = await waitFor(frames, frame => frame.method === "thread/started" && (frame.params as any).thread.id === "codex-fork-1");
+    assert.equal(childStarted[LOGICAL_CLIENT_FIELD], "client-a");
+    assert.equal(frames.some(frame => frame.method === "thread/started" && (frame.params as any).thread.id === "codex-fork-1" && frame[LOGICAL_CLIENT_FIELD] === "client-b"), false);
+    await adapter.send(JSON.stringify({ id: "a:failed-fork", method: "thread/fork", params: { threadId: "codex-thread-1", testFail: true }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const rejected = await waitFor(frames, frame => frame.id === "a:failed-fork");
+    assert.match((rejected.error as { message: string }).message, /fork rejected/);
+    assert.equal(frames.filter(frame => frame.method === "thread/started" && (frame.params as any).thread.id !== "codex-thread-1").length, 1);
+    await adapter.send(JSON.stringify({ id: "b:late-fork", method: "thread/fork", params: { threadId: "codex-thread-1", testDelayMs: 50 }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
+    await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-b" }));
+    await waitFor(frames, frame => frame.id === "b:late-fork");
+    await adapter.send(JSON.stringify({ id: "a:emit", method: "test/emitServerRequest", params: { threadId: "codex-fork-late" }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const emitted = await waitFor(frames, frame => frame.id === "a:emit");
+    const requestId = (emitted.result as { requestId: number }).requestId;
+    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("pending Codex server requests follow the resumed Thread owner, not an arbitrary connected client", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-routing-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    await initializeClient(adapter, frames, "client-b");
+    await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await waitFor(frames, frame => frame.id === "a:start");
+    const original = await waitFor(frames, frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
+    assert.equal(original[LOGICAL_CLIENT_FIELD], "client-a");
+
+    await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await adapter.send(JSON.stringify({ id: "b:emit", method: "test/emitServerRequest", params: { threadId: "codex-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
+    const emitted = await waitFor(frames, frame => frame.id === "b:emit");
+    const requestId = (emitted.result as { requestId: number }).requestId;
+    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+    await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await adapter.send(JSON.stringify({ id: requestId, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
+
+    await initializeClient(adapter, frames, "client-c");
+    await adapter.send(JSON.stringify({ id: "c:resume", method: "thread/resume", params: { threadId: "codex-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
+    await waitFor(frames, frame => frame.id === "c:resume");
+    const replayedOriginal = frames.filter(frame => frame.id === 900 && frame.method === "item/tool/requestUserInput");
+    assert.deepEqual(replayedOriginal.map(frame => frame[LOGICAL_CLIENT_FIELD]), ["client-a", "client-c"]);
+    const replayedNew = frames.filter(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput");
+    assert.deepEqual(replayedNew.map(frame => frame[LOGICAL_CLIENT_FIELD]), ["client-c"]);
+    assert.equal(frames.some(frame => frame.method === "serverRequest/resolved"), false);
+
+    await adapter.send(JSON.stringify({ id: 900, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
+    await adapter.send(JSON.stringify({ id: requestId, result: { answers: {} }, [LOGICAL_CLIENT_FIELD]: "client-c" }));
+    await waitFor(frames, frame => frame.method === "serverRequest/resolved" && (frame.params as any).requestId === requestId);
+    const resolved = frames.filter(frame => frame.method === "serverRequest/resolved");
+    assert.deepEqual(resolved.map(frame => (frame.params as any).requestId), [900, requestId]);
+    assert.ok(resolved.every(frame => frame[LOGICAL_CLIENT_FIELD] === "client-c"));
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a late Thread resume response cannot reclaim ownership for a disconnected client", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-late-resume-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    await initializeClient(adapter, frames, "client-b");
+    await adapter.send(JSON.stringify({ id: "a:resume", method: "thread/resume", params: { threadId: "codex-thread-1", testDelayMs: 50 }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    await waitFor(frames, frame => frame.id === "a:resume");
+    await adapter.send(JSON.stringify({ id: "b:emit", method: "test/emitServerRequest", params: { threadId: "codex-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
+    const emitted = await waitFor(frames, frame => frame.id === "b:emit");
+    const requestId = (emitted.result as { requestId: number }).requestId;
+    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+
+    await adapter.send(JSON.stringify({ id: "b:wrong-resume", method: "thread/resume", params: { threadId: "codex-thread-1", testWrongThreadId: true }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
+    await waitFor(frames, frame => frame.id === "b:wrong-resume");
+    assert.equal(frames.some(frame => frame.id === requestId && frame.method === "item/tool/requestUserInput"), false);
+
+    await adapter.send(JSON.stringify({ id: "b:resume", method: "thread/resume", params: { threadId: "codex-thread-1" }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
+    await waitFor(frames, frame => frame.id === "b:resume");
+    const request = await waitFor(frames, frame => frame.id === requestId && frame.method === "item/tool/requestUserInput");
+    assert.equal(request[LOGICAL_CLIENT_FIELD], "client-b");
   } finally {
     await adapter.close();
     await rm(root, { recursive: true, force: true });

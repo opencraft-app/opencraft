@@ -118,6 +118,10 @@ async function inventory(root, directory = root) {
 
 export async function packageHeadlessLinux() {
   assertHeadlessBuildHost();
+  const outputOverride = process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT;
+  if (outputOverride !== undefined && !isAbsolute(outputOverride)) {
+    throw new Error("OPENCRAFT_HEADLESS_PACKAGE_OUTPUT must be absolute");
+  }
   const require = createRequire(import.meta.url);
   if (typeof require("node-pty").spawn !== "function") throw new Error("Linux node-pty is unavailable");
   await run("npm", ["run", "prepare:dsh-runtime"]);
@@ -131,7 +135,8 @@ export async function packageHeadlessLinux() {
   });
 
   const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
-  const output = join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-amd64.tar.gz`);
+  const output = outputOverride
+    ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-amd64.tar.gz`);
   const temporary = await mkdtemp(join(tmpdir(), "opencraft-server-package-"));
   const stage = join(temporary, "opencraft-server");
   try {

@@ -60,7 +60,7 @@ export function AppShellNavigationControls({
   const sidebarOpen = hostRole === "persistent" && presentation ? presentation.sidebarOpen : requestedSidebarOpen;
   const onToggleSidebar = hostRole === "persistent" && presentation ? presentation.toggleSidebar : requestedToggleSidebar;
   const presentedActions = useMemo<readonly HeaderNavigationAction[]>(() => {
-    if (hostRole !== "persistent" || sidebarOpen || actions.includes("home")) return actions;
+    if (hostRole !== "persistent" || sidebarOpen) return actions;
     return actions.flatMap(action => action === "sidebar-toggle"
       ? [action, "new-task" as const]
       : [action]);
@@ -76,19 +76,6 @@ export function AppShellNavigationControls({
   }, [hostRole, onToggleSidebar]);
 
   const controls = {
-    home: (
-      <button
-        key="home"
-        className="chrome-button no-drag app-shell-home-button"
-        type="button"
-        aria-label={intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" })}
-        title="Vela · Home"
-        data-app-shell-home-trigger="true"
-        onClick={onHome}
-      >
-        <span className="app-shell-wordmark">Vela</span>
-      </button>
-    ),
     "sidebar-toggle": (
       <button
         key="sidebar-toggle"
@@ -175,9 +162,7 @@ export function AppShellNavigationControls({
               data-app-shell-window-action={action}
               key={action}
             >
-              <span className={action === "home" ? "chrome-button app-shell-home-button" : "chrome-button"}>
-                {action === "home" ? <span className="app-shell-wordmark">Vela</span> : null}
-              </span>
+              <span className="chrome-button" />
             </span>
           ))}
         </div>

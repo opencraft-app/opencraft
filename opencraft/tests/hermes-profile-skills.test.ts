@@ -127,6 +127,7 @@ test("Composer Skills use explicit Profile and authoritative content path withou
   const client = new FakeDashboardClient();handler.attach(client,"test-token");
   const result = await handler.listComposerSkills("sales","/workspace");
   assert.equal(result.data[0]?.skills[0]?.path,"/home/agent/.hermes/profiles/sales/skills/weather/SKILL.md");
+  assert.equal(result.data[0]?.skills[0]?.pluginId,null);
   assert.equal(JSON.stringify(result).includes("private body"),false);
   assert.ok(client.requests.every(request=>request.input.includes("profile=sales")));
   await handler.validateComposerSkills("sales",[{name:"weather",path:result.data[0]!.skills[0]!.path}]);

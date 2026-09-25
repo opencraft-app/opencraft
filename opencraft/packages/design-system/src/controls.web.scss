@@ -18,7 +18,9 @@
 }
 
 // Shared quiet controls. Layout belongs to the consumer, interaction to here.
-@mixin quiet-control {
+// An input-adaptive consumer may own its hover rule while retaining the same
+// open, keyboard-focus, and disabled states from this mixin.
+@mixin quiet-control($hover: true) {
   appearance: none;
   border: 0;
   background: transparent;
@@ -26,7 +28,12 @@
   color: inherit;
   border-radius: var(--radius-control);
   cursor: pointer;
-  &:hover:not(:disabled), &[data-state="open"] {
+  @if $hover {
+    &:hover:not(:disabled) {
+      background: var(--color-background-button-tertiary-hover);
+    }
+  }
+  &[data-state="open"] {
     background: var(--color-background-button-tertiary-hover);
   }
   &:focus-visible {

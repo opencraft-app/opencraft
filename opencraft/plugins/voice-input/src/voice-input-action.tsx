@@ -1,4 +1,4 @@
-import { Mic } from "lucide-react";
+import { Mic, MicOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ComposerActionHost } from "@opencraft/extension-react";
@@ -205,7 +205,6 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         : error?.message ?? "Start voice input";
 
     return (
-      <>
       <button
         className="codex-composer-icon-button opencraft-voice-input-action"
         type="button"
@@ -241,10 +240,10 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
           start();
         }}
       >
-        <Mic size={15} aria-hidden="true" />
+        {phase === "error"
+          ? <MicOff size={15} aria-hidden="true" />
+          : <Mic size={15} aria-hidden="true" />}
       </button>
-      {error && phase === "error" ? <span role="alert" title={error.message}>{error.code === "permission-denied" ? "需要系统权限" : error.code === "audio-capture" ? "麦克风不可用" : "语音识别失败"}<span className="sr-only">：{error.message}</span></span> : null}
-      </>
     );
   };
 }
