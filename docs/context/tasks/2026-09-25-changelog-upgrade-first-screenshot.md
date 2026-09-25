@@ -46,19 +46,24 @@
 | `frontend/src/i18n/index.ts@f3d40ccf3` | locale 装载 | 核对国际站语言范围 |
 | `docs/context/tasks/TASK-TEMPLATE.md@f3d40ccf3` | Task Pack 格式 | 记录任务 |
 | `docs/context/tasks/CHECKPOINT-TEMPLATE.md@f3d40ccf3` | 检查点格式 | 记录交接状态 |
+| `docs/context/project/services/opencraft.md@1ccafbf2f` | OpenCraft 服务边界 | 核对生成闭包门禁 |
+| `docs/context/project/upstream-subtrees.md@1ccafbf2f` | mono2 真源边界 | 只用官方同步脚本 |
+| `docs/context/domains/agent-gateway-runtime.md@1ccafbf2f` | Agent 运行时边界 | 确认无运行时逻辑变更 |
+| `opencraft/AGENTS.md@1ccafbf2f` | 同步规范 | 不手改 vendored 文件 |
 
 ## evidence
 - 国内与国际站均从登录后的升配入口进入真实升配页，分别截取当前套餐与可升配套餐卡片；两张 PNG 均为 2200×1240，未显示账号信息或查询参数。
 - 四个聚焦测试文件共 55 项通过；`pnpm check` 通过，TypeScript 诊断为 171 条基线、0 新增；`pnpm build:cn` 与 `pnpm build:global` 通过。
 - `npm --prefix opencraft run check:mono2-agent-console` 通过，vendored closure 无漂移。
-- 待补：远端 MR 与 CI 状态。
+- MR !4666 首次 CI 的 frontend 阶段通过；OpenCraft 检查在源码提交后因 `UPSTREAM.json.sourceRevision` 尚未刷新而失败。本地复现后，运行官方同步脚本仅生成 sourceRevision 一行变更，130 个被复用文件内容不变，随后只读检查通过。
+- 待补：修复推送后的远端 CI 状态。
 
 ## risks
 - 截图中出现实时套餐价格，未来价格变化时可能过时；图片可在本条动态中单独替换。
 - 国际站非英语 locale 暂使用国际站英语截图，以保持站点和价格正确；后续可补各语言截图。
 
 ## validation
-- 聚焦概览与 Changelog 测试、`pnpm check`、`pnpm build:cn`、`pnpm build:global`、OpenCraft closure 检查均已通过；staged change-impact 与 diff 检查待执行。
+- 聚焦概览与 Changelog 测试、`pnpm check`、`pnpm build:cn`、`pnpm build:global`、OpenCraft closure 检查及首个提交的 staged change-impact 与 diff 检查均已通过；修复提交的 staged 检查待执行。
 
 ## decisions
 - 概览首项同步置顶，因为它是 9 月 Changelog 的三条精选展示；保留原来的另两条。Owner：用户本轮要求。
@@ -71,4 +76,4 @@
 - 精确搜索命中 `upgradeEntry`、`getChangelogEntries` 与相邻测试；无独立动态 API。
 
 ## handoff
-- 待完成验证与新 MR；本轮不合并或发布。
+- MR !4666 已创建；OpenCraft 生成物修复待推送并核对新 CI。本轮不合并或发布。
