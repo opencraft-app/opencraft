@@ -335,8 +335,11 @@ for (const file of files) {
     ? Buffer.from(applyWorkbenchAdapter(localizeAliases(original.toString("utf8"), file), file))
     : original;
   if (checkOnly) {
-    if (!existsSync(target) || !readFileSync(target).equals(contents)) {
-      throw new Error(`vendored mono2 file drifted; run npm run sync:mono2-agent-console: ${file}`);
+    const actual = existsSync(target) ? readFileSync(target) : null;
+    if (!actual?.equals(contents)) {
+      const sourceSha256 = createHash("sha256").update(contents).digest("hex");
+      const targetSha256 = actual ? createHash("sha256").update(actual).digest("hex") : "missing";
+      throw new Error(`vendored mono2 file drifted; run npm run sync:mono2-agent-console: ${file} (source=${sourceDescriptor}, sourceSha256=${sourceSha256}, targetSha256=${targetSha256})`);
     }
   } else {
     writeFileSync(target, contents);
