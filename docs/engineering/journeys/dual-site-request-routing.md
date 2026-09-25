@@ -18,10 +18,12 @@
 
 - 页面语言错误：检查源 locale、路由映射和生成 parity。
 - 公开首页文案或 CTA 串站：检查首页 fragment 选择、构建期 `isCN` / `isGlobal` 分支、裸路径与 locale 前缀规则。
+- 已订阅但没有 Bot 的首页 CTA、登录后分流和订阅页兜底入口统一使用 `/agents?create=1`，由控制台等账号状态就绪后打开创建向导；`creating` 参数只表示等待已发起创建的实例，不能替代创建意图。已有 Bot 仍进入 `/agents`。入口回归须验证提交向导会调用创建接口并完成配置，不能仅断言进入了“喂咖啡”页。
 - Blog 在国内站出现：检查 App Router 中 `!isGlobal` 的 notFound 边界和导航入口。
 - 页脚或首页文档链接 404：检查 `frontend/src/content/docs/**` 的源文档、生成 slug 和静态链接测试。
 - 页面正确但 API 跨区：检查公开 base URL、gateway 路由和环境 overlay。
 - GitOps 正确但域名不可用：检查 Argo、Ingress/DNS/TLS 与浏览器网络证据。
+- 创建 Bot 的探活持续等待：`http-repositories.ts` 中非流式 `execDebugCommand` 的超时必须覆盖请求和响应正文读取；收到响应头不代表请求完成。正文读取被超时中止时仍返回 `debug_exec_timeout:<ms>`，由预热轮询按既有可恢复错误处理；完整的业务失败结果和 HTTP 错误语义保持不变。此请求层为双站共用，单站故障记录不能证明另一站的运行态。
 
 ## 验证
 

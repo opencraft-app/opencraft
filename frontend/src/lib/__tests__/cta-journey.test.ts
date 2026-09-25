@@ -8,7 +8,7 @@ import {
   resolveCtaRoute,
   resolvePostLoginRoute,
 } from '@/lib/cta-journey';
-import { AGENTS_HOME_PATH, SUBSCRIBE_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
+import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from '@/lib/agent-routes';
 
 describe('resolvePostLoginRoute', () => {
   it('sends unsubscribed users to the subscribe page', () => {
@@ -55,12 +55,14 @@ describe('journeyHref', () => {
   it('maps routes to their canonical paths', () => {
     expect(journeyHref(JOURNEY_ROUTE.SUBSCRIBE, 'zh-CN')).toBe(SUBSCRIBE_PATH);
     expect(journeyHref(JOURNEY_ROUTE.AGENTS, 'zh-CN')).toBe(AGENTS_HOME_PATH);
-    expect(journeyHref(JOURNEY_ROUTE.AGENTS_CREATING, 'zh-CN')).toBe(getAgentCreatingPath(true));
+    expect(journeyHref(JOURNEY_ROUTE.AGENTS_CREATING, 'zh-CN')).toBe('/agents?create=1');
   });
 
   it('only adds a language prefix for the global site', () => {
     expect(journeyHref(JOURNEY_ROUTE.SUBSCRIBE, 'es', { localized: true })).toBe('/es/subscribe');
     expect(journeyHref(JOURNEY_ROUTE.SUBSCRIBE, 'es', { localized: false })).toBe('/subscribe');
+    // 产品壳使用统一路由，创建意图不能丢失或误变成等待已有实例。
+    expect(journeyHref(JOURNEY_ROUTE.AGENTS_CREATING, 'es', { localized: true })).toBe('/agents?create=1');
   });
 });
 
