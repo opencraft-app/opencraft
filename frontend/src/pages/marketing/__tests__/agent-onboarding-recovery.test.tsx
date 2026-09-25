@@ -27,6 +27,26 @@ beforeEach(() => window.sessionStorage.clear());
 afterEach(cleanup);
 
 describe("refresh recovery", () => {
+  it("shows warmup feedback while a restored sandbox probe is pending", async () => {
+    saveBuddySetupSnapshot({ ...snapshot, completedKeys: [] });
+    let resolveProbe!: (value: typeof ok) => void;
+    const exec = vi.fn(async (_botId: string, command: string) => command === "true"
+      ? new Promise<typeof ok>((resolve) => { resolveProbe = resolve; })
+      : ok);
+    const onCreated = vi.fn();
+    render(<AgentOnboardingPanel botId="bot-1" profileId="profile-1"
+      execDebugCommand={exec} onCreated={onCreated} />);
+
+    await waitFor(() => expect(exec).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("正在唤醒 Bot 实例")).toBeTruthy();
+    expect(screen.getByText(/已等待/)).toBeTruthy();
+    expect(onCreated).not.toHaveBeenCalled();
+
+    await act(async () => resolveProbe(ok));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-1"));
+    expect(screen.queryByText(/已等待/)).toBeNull();
+  });
+
   it("resumes after metadata without creating another Bot or rewriting completed steps", async () => {
     saveBuddySetupSnapshot(snapshot);
     const exec = vi.fn(async () => ok);
@@ -44,7 +64,7 @@ describe("refresh recovery", () => {
       ["bot-1", plan.at(-1)!.command, { timeoutMs: plan.at(-1)!.timeoutMs }],
     ]);
     expect(loadBuddySetupSnapshot("bot-1")).toBeNull();
-    expect(unloadPrevented()).toBe(false);
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
   });
 
   it.each([["bot-2", "profile-1"], ["bot-1", "profile-other"], ["", ""]])(

@@ -506,8 +506,9 @@ export const AgentOnboardingPanel = ({
       preserveSoul: snapshot.preserveSoul,
       resume: true,
     });
+    setWarmupState({ step: buildSandboxWarmupStep(t), status: "running" });
     setPhase("creating");
-  }, [botId, profileId, pendingSetup]);
+  }, [botId, profileId, pendingSetup, t]);
 
   const protectUnload = phase === "creating" && !fatalError && !createdBotId
     && Boolean(pendingSetup);
