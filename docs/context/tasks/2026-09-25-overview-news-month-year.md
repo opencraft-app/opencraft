@@ -33,6 +33,7 @@
 - `frontend/src/pages/marketing/changelog-page.tsx`
 - `frontend/src/pages/marketing/changelog-upgrade-copy.ts`
 - `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`（同步脚本生成）
 
 ## required_context
 - `frontend-product-surface`：`docs/context/project/services/frontend.md`；服务级 `frontend/AGENTS.md`。
@@ -56,6 +57,7 @@
 - 最终源码的概览本地化及国内站组件测试 31 项通过；`pnpm check` 与 `pnpm typecheck` 为 171 条既有 TypeScript 诊断、0 新增；`pnpm build`、`git diff --check` 通过。构建生成的字体子集差异已还原。
 - 后续替换第 3 条后，概览与 Changelog 聚焦测试 54 项通过；`pnpm check` 为 171 条既有 TypeScript 诊断、0 新增；`pnpm build`、staged change-impact 和 diff 检查通过。原 MR 提交的 CI 为 failure/blocking，需在新提交推送后重新核对。
 - 改用「套餐升配」后，概览与 Changelog 聚焦测试 55 项通过；`pnpm check` 为 171 条既有 TypeScript 诊断、0 新增；国内站 `pnpm build` 和国际站 `pnpm build:global` 通过。国内站及国际站英语、简体中文静态 Changelog 产物均包含新标题与说明。
+- 合入 `origin/master@dec5125ac` 后，55 项聚焦测试、`pnpm check`、`pnpm build:cn` 与 `pnpm build:global` 再次通过。OpenCraft vendored manifest 检查先报告漂移，使用仓库同步脚本刷新 `UPSTREAM.json` 后检查通过；未手工编辑生成物。
 
 ## risks
 - locale 的年月顺序和月份字形各异；使用现有 `Intl.DateTimeFormat`，聚焦测试验证。动态截图需按站点和 locale 选择。
