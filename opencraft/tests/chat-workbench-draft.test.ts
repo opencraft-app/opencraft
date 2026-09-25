@@ -29,6 +29,7 @@ interface DraftHarness {
   releaseCapabilityRegistration(): void;
   failCapabilityRegistration(): void;
   releaseUnsubscribe(): void;
+  publishFork(): void;
   notifySkillsChanged(): void;
   notifyFsChanged(watchId: string, changedPaths: readonly string[]): void;
 }
@@ -56,6 +57,7 @@ function createHarness(
   delayCapabilityRegistration = false,
   firstTurnDurability = false,
   rejectTurn = false,
+  lifecycleCapability: unknown = undefined,
 ): DraftHarness {
   const requests: JsonRpcRequest[] = [];
   let releaseTurn = () => undefined;
@@ -63,6 +65,7 @@ function createHarness(
   let releaseCapabilityRegistration = () => undefined;
   let failCapabilityRegistration = () => undefined;
   let releaseUnsubscribe = () => undefined;
+  let forkPublished = false;
   let activePeer: InMemoryAppServerPeer | null = null;
   const server: InMemoryAppServer = {
     connected(peer) {
@@ -88,11 +91,33 @@ function createHarness(
             ...(firstTurnDurability
               ? { "opencraft/thread-start-durability": { version: 1, durableAfter: "first-turn-accepted" } }
               : {}),
+            ...(lifecycleCapability === undefined
+              ? {}
+              : { "opencraft/thread-lifecycle": lifecycleCapability }),
           } } });
       } else if (message.method === "model/list") {
         send({ data: models, nextCursor:null });
+      } else if (message.method === "config/read") {
+        send({
+          config: { model: "gpt-5.6", model_reasoning_effort: "high" },
+          origins: {},
+          layers: null,
+        });
+      } else if (message.method === "config/batchWrite") {
+        send({
+          status: "ok",
+          version: "fixture-version",
+          filePath: "/tmp/config.toml",
+          overriddenMetadata: null,
+        });
       } else if (message.method === "thread/list") {
-        send({ data: [protocolThread("thread-created")], nextCursor: null });
+        send({ data: [protocolThread("thread-created"), ...(forkPublished ? [protocolThread("thread-fork")] : [])], nextCursor: null });
+      } else if (message.method === "thread/fork") {
+        const ephemeral = (message.params as { ephemeral?: boolean }).ephemeral === true;
+        send({ thread: { ...protocolThread(ephemeral ? "thread-fork-ephemeral" : "thread-fork"), forkedFromId: "thread-created", ephemeral },
+          model: "codex", modelProvider: "openai", cwd: "/workspace", approvalPolicy: "on-request", approvalsReviewer: "user",
+          sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, runtimeWorkspaceRoots: ["/workspace"],
+        });
       } else if (message.method === "thread/read" && historyTurns.length > 0) {
         const threadId = (message.params as { threadId?: string }).threadId ?? "thread-created";
         send({ thread: protocolThread(threadId) });
@@ -234,6 +259,7 @@ function createHarness(
     releaseCapabilityRegistration: () => releaseCapabilityRegistration(),
     failCapabilityRegistration: () => failCapabilityRegistration(),
     releaseUnsubscribe: () => releaseUnsubscribe(),
+    publishFork: () => { forkPublished = true; },
     notifySkillsChanged: () => activePeer?.send(encodeJsonRpcMessage({
       method: "skills/changed",
       params: {},
@@ -286,6 +312,41 @@ async function waitForAuthoritative(
   }
   throw new Error(`Timed out waiting for authoritative Thread ${lease.threadId}`);
 }
+
+test("Workbench exposes Fork and Side Chat only for explicitly declared lifecycle operations", async () => {
+  const cases = [
+    { declared: undefined, fork: false, sideChat: false },
+    { declared: { version: 2, fork: true, ephemeral: true, injectItems: true, unsubscribe: true }, fork: false, sideChat: false },
+    { declared: { version: 1, fork: true }, fork: true, sideChat: false },
+    { declared: { version: 1, fork: true, ephemeral: true, injectItems: true, unsubscribe: true }, fork: true, sideChat: true },
+  ];
+  for (const item of cases) {
+    const harness = createHarness(false, false, [], false, undefined, false, false, false, false, item.declared);
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+    try {
+      await runtime.connect();
+      assert.equal(runtime.resources.threads.capabilities().fork, item.fork);
+      assert.equal(runtime.resources.threads.supportsSideChat?.(), item.sideChat);
+    } finally { await runtime.dispose(); }
+  }
+});
+
+test("an acknowledged durable Fork stays in the default catalog until the Host lists it", async () => {
+  const harness = createHarness(false, false, [], false, undefined, false, false, false, false, { version: 1, fork: true });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    assert.deepEqual((await runtime.resources.threads.list()).data.map(thread => thread.id), ["thread-created"]);
+    const child = await runtime.resources.threads.fork!({ threadId: "thread-created" });
+    assert.equal(child.id, "thread-fork");
+    assert.deepEqual((await runtime.resources.threads.list({ cursor: null, limit: 50 })).data.map(thread => thread.id), ["thread-fork", "thread-created"]);
+    assert.deepEqual((await runtime.resources.threads.list({ archived: true })).data.map(thread => thread.id), ["thread-created"]);
+    harness.publishFork();
+    assert.equal((await runtime.resources.threads.list()).data.filter(thread => thread.id === child.id).length, 1);
+    await runtime.resources.threads.fork!({ threadId: "thread-created", ephemeral: true, excludeTurns: true });
+    assert.equal((await runtime.resources.threads.list()).data.some(thread => thread.id === "thread-fork-ephemeral"), false);
+  } finally { await runtime.dispose(); }
+});
 
 test("a consumer acquired during unsubscribe keeps its view and reestablishes server attachment", async () => {
   const harness = createHarness(false, false, [], true);
@@ -557,6 +618,37 @@ test("skills are a typed host resource and skills/changed is an invalidation sig
     assert.equal(changes, 1);
     assert.equal(cancelledChanges, 0, "cancelled pre-start subscriptions remain cancelled");
     unsubscribe();
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("Composer catalog reads and writes AppServer-owned new-thread model defaults", async () => {
+  const harness = createHarness();
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local-codex",
+    transport: harness.transport,
+    autoReconnect: false,
+  });
+  try {
+    await runtime.connect();
+    assert.deepEqual(
+      await runtime.resources.composerCatalog.readNewThreadDefaults("/workspace"),
+      { model: "gpt-5.6", effort: "high" },
+    );
+    await runtime.resources.composerCatalog.writeNewThreadDefaults({
+      model: "gpt-5.6-codex",
+      effort: "xhigh",
+    });
+    const read = harness.requests.find((request) => request.method === "config/read");
+    assert.deepEqual(read?.params, { includeLayers: false, cwd: "/workspace" });
+    const write = harness.requests.find((request) => request.method === "config/batchWrite");
+    assert.deepEqual(write?.params, {
+      edits: [
+        { keyPath: "model", value: "gpt-5.6-codex", mergeStrategy: "replace" },
+        { keyPath: "model_reasoning_effort", value: "xhigh", mergeStrategy: "replace" },
+      ],
+    });
   } finally {
     await runtime.dispose();
   }

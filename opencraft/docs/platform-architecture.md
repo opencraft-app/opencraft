@@ -272,6 +272,30 @@ boundary before acquiring a view or accepting new work. It inherits the effectiv
 model, roots and permissions without continuing the parent task. Its close
 transaction retains cleanup ownership for retry and preserves primary failures.
 
+The Thread menu and Side Chat read one versioned Host lifecycle extension,
+`opencraft/thread-lifecycle`; an absent, unknown-version or omitted operation
+is unsupported. Codex and DSH both use the generic `thread/fork` menu action
+and navigate only after the Host acknowledges the child. The menu keeps a
+visible pending state while that acknowledgment is outstanding;
+once acknowledged, it opens the child without waiting for a background thread
+catalog refresh. A changed route scope prevents the late result from stealing
+navigation, while the catalog refresh still runs for eventual list freshness.
+Temporary Side Chat requires explicit fork, ephemeral, inject-items and
+unsubscribe support. Codex
+Fork is only recoverable after the source's first Turn has been accepted;
+paginated ephemeral Fork uses `excludeTurns: true` and its returned child is
+adopted as the baseline rather than resumed from durable storage. The shared
+Codex Engine adapter subscribes only the requesting logical client to the
+child; a disconnected client's late Fork response cannot reclaim ownership.
+Codex persists a blank durable Fork so `thread/read` can recover it after an
+engine restart, but its native `thread/list` omits that child until the first
+child Turn completes. The Host-scoped Workbench runtime temporarily projects
+the acknowledged child into the default catalog and removes that projection
+once the native list includes it; ephemeral children and filtered/archived
+queries are never overlaid. The projection is in-memory, so a browser reload
+before the child's first Turn retains direct-route recovery but not sidebar
+discovery of that blank child.
+
 The SDK fences late unsubscribe responses, retains newly acquired views and
 actually reattaches them. Naming uses per-Host/Thread acknowledgement queues and
 optimistic-write generations; archive/unarchive modifies durable catalog state,
@@ -698,13 +722,48 @@ Header observations from real inference merge into the same windows. Renderer
 projections contain only this metadata; access and refresh tokens remain in the
 Host-private 0600 secret files. Usage refresh failure does not invalidate an
 otherwise usable inference credential.
+The Codex account Settings projection renders each reported window reset time
+as visible local time in the quota row and full date/time in account details;
+touch access must not depend on hover. An absent reset time remains explicitly
+unknown rather than being inferred from the window duration or account status.
 
 Electron now contributes a `local-codex` Host backed by the Daemon-owned
 `CodexEngineAdapter`. One physical stdio AppServer serves the Host generation;
 the adapter virtualizes request IDs, shares physical initialize, and restores
 logical-client targeting for responses, Thread notifications and server
-requests. The adapter is recreated for every physical Host generation, so a
-last-lease close cannot poison a later reconnect with a disposed process.
+requests. The Daemon owns the physical Host generation independently of Renderer
+claims. A lost or closed Renderer revokes only its logical client lease; the
+adapter and an admitted Turn continue until the owning service closes or the
+transport fails. Reconnection creates a fresh logical client lease on the same
+physical generation and resumes the Thread. A failed physical generation is
+closed and recreated before it accepts a new claim.
+Queue-to-active-Turn steering is a separate Host capability. Stock Codex
+AppServer has no single queued-steer operation, and its idle queue drain cannot
+be fenced by two independent RPCs from the adapter. The Daemon therefore owns
+Codex queued messages in `codex-host-queue.sqlite`; its physical AppServer is
+only the execution target for standard `turn/start` and `turn/steer`. The Host
+serializes queue dispatch per Thread, persists a claim before sending, and
+advertises `atomicSteer` and `unconfirmedSteerDiscard` from this Host-owned
+implementation, independently of a patched Codex binary. An interrupted or
+timed-out dispatch stays delivery-unconfirmed and blocks later auto-dispatch;
+it is never blindly retried. The Host checks paged Codex user-message history
+by client ID before settling a claim. Explicit discard requires an idle Thread,
+the original target Turn and a successful history check; discard acknowledges
+uncertainty, not proof that the model never saw the input.
+Before starting the physical AppServer, the Host migrates any legacy native
+queued rows into its own store and removes the old rows. Migration is
+idempotent and fails closed on malformed or conflicting rows. The single
+Host/AppServer owner for the data directory remains required. DSH retains its
+own Host-side queue plus native `session.updateQueue(steer)` execution path;
+it does not inherit Codex's recovery capability.
+For pending Codex server requests, the adapter retains the exact request frame
+and Thread ID within that physical generation. Disconnect revokes the previous
+Client's response authority, not the AppServer request; successful `thread/resume`
+lets a new logical Client claim and receive unowned requests. Merely being an
+initialized or subscribed Client is not authority to answer. A late resume from
+a disconnected Client cannot reclaim ownership. The routing ledger is bounded
+and in-process, while the AppServer remains the pending/resolved authority; this
+does not add multi-tenant authentication to the single-user direct topology.
 Codex also declares `opencraft/thread-start-durability` because `thread/start`
 can return an in-memory ID before a recoverable rollout exists. The Workbench
 therefore dispatches the first `turn/start` before retiring and navigating away
@@ -1110,8 +1169,9 @@ route-era width inside a wider platform pane. This is why Settings replaces the
 context slot without leaving an unowned blank strip.
 
 The global Header is not a Sidecar pane child and never consumes the primary
-detent. Vela, the shared Sidecar trigger and history controls remain a complete
-window-chrome group at every detent. The separator between primary and context
+detent. The shared Sidecar trigger and history controls remain a complete
+window-chrome group at every detent; when the Sidebar is collapsed, the
+persistent Header also shows Write. The separator between primary and context
 panes begins below that Header and terminates above the Footer; it has no authority
 over either fixed region.
 
@@ -1178,10 +1238,10 @@ width from the layout owner. It must not add a rounded DOM viewport measurement
 to the left sidebar's animation value: these can represent different frames and
 toggle the divider at the 96rem threshold. Left navigation motion is not an input
 to this decision. A real right panel and route presentation remain inputs.
-The Home action is rendered as a Vela wordmark; its off-layout measurement clone
-must use the same text/geometry, including when a brand font loads. The dedicated
-brand font binding is separate from the UI font; final custom font selection is
-pending the supplied brand asset, so the current fallback is not a custom-font claim.
+The browser Header does not reserve a separate Vela/Home button. Sidebar Start
+owns the new-task entry while expanded; collapsed persistent Headers show Write
+after the Sidebar trigger, including in browsers. The off-layout Header clone
+must measure the same action count and geometry as the visible rail.
 
 Sidecar is a physical layout boundary, not an application hierarchy. Its optional
 `leftPanel` slot contains application context: Chat supplies a conversation list,
@@ -1280,7 +1340,9 @@ actual browser origin at runtime; neither the browser nor the static host owns
 the DSH process or its credentials. A separate `/apphost` WebSocket attaches
 browser Clients to the existing Codex Engine Adapter through AppHostServer's
 lease/generation contract; Codex's stdio process and account pool remain
-Server-owned. The artifact is single-user, with a distinct private data root
+Server-owned. The headless service retains that physical Host when the last
+browser WebSocket leaves, so mobile sleep does not terminate an admitted Turn;
+shutdown of the headless service releases it. The artifact is single-user, with a distinct private data root
 and a single-writer lock. Explicit `--host 0.0.0.0` plus the dangerous-mode
 acknowledgement allows unauthenticated HTTP on one port for static WebUI and
 both WebSockets. Public mode does not check HTTP or WebSocket Origin, so an
@@ -1309,7 +1371,9 @@ unrelated profile fields remain untouched.
 The browser Workbench retains one AppServer transport object per Host; if its
 `/apphost` WebSocket closes, reconnect replaces the invalid AppHost client and
 lease inside that object. Existing Workbench listeners stay attached, while
-the new lease receives a fresh generation and reinitializes the logical client.
+the new lease reinitializes the logical client. If the service and physical Host
+remain healthy, it keeps the same Host generation; service restart or physical
+failure produces a new generation. Thread state is re-read from AppServer.
 
 The app-like iPhone Web surface requests a fixed viewport scale for embedded
 browsers and keeps focused editable text at a 16px minimum on coarse-pointer

@@ -30,7 +30,7 @@ import {
   type JsonRpcRequest,
 } from "@opencraft/appserver-protocol";
 import { asHostId, asTurnId, createConversationKey } from "@opencraft/chat-core";
-import type { PendingInteraction } from "@opencraft/chat-runtime";
+import type { PendingInteraction, TurnInterruptProvenance } from "@opencraft/chat-runtime";
 import type { ComposerDocument, SubmitIntent } from "@opencraft/composer-core";
 
 const hostId = asHostId("ssh:9988");
@@ -210,6 +210,7 @@ test("queued native input restores into the Composer without flattening typed re
     { type: "skill", name: "review", path: "/skills/review/SKILL.md" },
     { type: "localImage", path: "/tmp/shot.png" },
     { type: "image", url: "https://assets.example/shot.png" },
+    { type: "image", fileId: "uploaded-image-1" },
     { type: "localAudio", path: "/tmp/note.wav" },
     { type: "audio", url: "https://assets.example/note.wav" },
   ] as const;
@@ -373,18 +374,25 @@ function commandPort(
   dynamicTools?: Parameters<
     typeof createAppServerConversationCommandPort
   >[0]["dynamicTools"],
+  interrupts: Array<{ turnId: string; provenance: TurnInterruptProvenance }> = [],
 ) {
   let retryId = 0;
   return createAppServerConversationCommandPort({
     hostId,
     client: h.client,
     interactions: { respond: async () => undefined },
+    queueAtomicSteer: true,
+    queueUnconfirmedSteerDiscard: true,
     compiler: { historyMode: "paginated" },
     dynamicTools,
     now: () => 1_000 + retryId,
     createCommandId: () => `retry-command-${++retryId}`,
     createClientMessageId: () => `retry-message-${retryId}`,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.code),
+    onInterrupt: (event) => interrupts.push({
+      turnId: event.turnId,
+      provenance: event.provenance,
+    }),
   });
 }
 
@@ -583,13 +591,29 @@ test("new, fork, steer, queue and interrupt targets use their native Codex metho
   assert.equal(queued.turnId, null);
   assert.equal(h.requests[5]?.method, "thread/queue/add");
 
-  await port.interrupt(existingKey, asTurnId("turn-active"));
+  const interrupts: Array<{ turnId: string; provenance: TurnInterruptProvenance }> = [];
+  const attributedPort = commandPort(h, [], undefined, interrupts);
+  await attributedPort.interrupt(existingKey, asTurnId("turn-active"), {
+    source: "composer-stop",
+    trigger: "pointer",
+    isTrusted: true,
+    occurredAt: 1_234,
+  });
   assert.deepEqual(h.requests[6], {
     jsonrpc: "2.0",
     id: h.requests[6]?.id,
     method: "turn/interrupt",
     params: { threadId: "thread-existing", turnId: "turn-active" },
   });
+  assert.deepEqual(interrupts, [{
+    turnId: "turn-active",
+    provenance: {
+      source: "composer-stop",
+      trigger: "pointer",
+      isTrusted: true,
+      occurredAt: 1_234,
+    },
+  }]);
   assert.deepEqual(diagnostics, [
     "TARGET_OPTION_NOT_SUPPORTED",
     "TARGET_OPTION_NOT_SUPPORTED",
@@ -700,6 +724,7 @@ test("queued-message command port preserves the AppServer queue ABI", async () =
     asTurnId("turn-active"),
   );
   await port.deleteQueuedSubmission(key, "queue-1");
+  await port.discardUnconfirmedSteer(key, "claim-1", asTurnId("turn-active"));
   assert.deepEqual(
     h.requests.map((request) => request.method),
     [
@@ -708,12 +733,54 @@ test("queued-message command port preserves the AppServer queue ABI", async () =
       "thread/queue/start",
       "thread/queue/steer",
       "thread/queue/delete",
+      "thread/queue/delete",
     ],
   );
   assert.deepEqual(h.requests[1]?.params, {
     threadId: "thread-existing",
     queuedSubmissionIds: ["queue-2", "queue-1"],
   });
+  assert.deepEqual(h.requests.at(-1)?.params, {
+    threadId: "thread-existing",
+    queuedSubmissionId: "claim-1",
+    expectedTurnId: "turn-active",
+    acknowledgeUnknownDelivery: true,
+  });
+  await h.close();
+});
+
+test("manual claim discard fails before transport without the dedicated recovery capability", async () => {
+  const h = await harness();
+  const port = createAppServerConversationCommandPort({
+    hostId: existingKey.hostId,
+    client: h.client,
+    interactions: { async respond() {} },
+    queueAtomicSteer: true,
+    queueUnconfirmedSteerDiscard: false,
+  });
+  await assert.rejects(port.discardUnconfirmedSteer(existingKey, "claim-1", asTurnId("turn-active")));
+  assert.deepEqual(h.requests, []);
+  await h.close();
+});
+
+test("queued steer fails before transport when Host does not declare atomic queue steering", async () => {
+  const h = await harness();
+  const port = createAppServerConversationCommandPort({
+    hostId,
+    client: h.client,
+    interactions: { respond: async () => undefined },
+  });
+  await assert.rejects(
+    port.steerQueuedSubmission(existingKey, {
+      id: "queue-unsupported",
+      clientUserMessageId: "message-unsupported",
+      input: [{ type: "text", text: "Keep this queued", text_elements: [] }],
+      createdAt: 1,
+      pausedReason: null,
+    }, asTurnId("turn-active")),
+    /does not support atomic steering/,
+  );
+  assert.equal(h.requests.some(request => request.method === "thread/queue/steer"), false);
   await h.close();
 });
 

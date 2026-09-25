@@ -142,7 +142,15 @@ export class SideChatService extends Service {
     const operation = (async () => {
       if (!owned.interrupted) {
         const active = owned.lease?.getSnapshot().activeTurn;
-        try { if (active) await owned.lease!.interrupt(active.turnId); owned.interrupted = true; }
+        try {
+          if (active) await owned.lease!.interrupt(active.turnId, {
+            source: "side-chat-close",
+            trigger: "programmatic",
+            isTrusted: null,
+            occurredAt: Date.now(),
+          });
+          owned.interrupted = true;
+        }
         catch (error) { owned.error = error; }
       }
       if (!owned.released) { owned.lease?.release(); owned.released = true; }

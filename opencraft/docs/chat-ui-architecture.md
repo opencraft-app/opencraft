@@ -128,6 +128,31 @@ produce neither a blank interval nor a duplicate row. This does not redefine
 steer as a hard interrupt: the current provider request and tool step remain
 owned by DSH and may finish before the next-step inbox is consumed.
 
+Queued-message steering is gated by the Host's
+`opencraft/thread-queue: { version: 2, atomicSteer: true }` declaration. DSH
+provides the one native `session.updateQueue(steer)` operation. Stock Codex
+AppServer 0.156.1 has `turn/steer` for fresh input and `thread/queue/start` for
+an idle Thread, but no `thread/queue/steer`; its queue also auto-dispatches at
+idle. Therefore a Codex queued message cannot safely be converted to an active
+steer by composing `turn/steer` and `thread/queue/delete` in the Client or Host.
+The Codex Host now owns queued input in its own durable SQLite store. It claims
+one item before sending the standard `turn/steer` to Codex, and reconciles by
+client-message ID against paged Codex user-message history. A crash or timeout
+with no conclusive acknowledgement leaves the claim delivery-unconfirmed,
+outside automatic dispatch; the Host never silently resends it. The user may
+explicitly discard an unresolved claim after reviewing the transcript. The
+Host delete request requires the original queue ID, target Turn ID and an
+acknowledgement flag, checks history and rejects while the Thread is active.
+This does not prove Codex never saw the input. `unconfirmedSteerDiscard` remains
+a separate Host capability; DSH's `atomicSteer` does not imply it. A failed
+history read also rejects discard. Ordinary direct steering and idle queue Send
+remain separate. At upgrade, native Codex queue rows migrate before AppServer
+starts so two independent dispatchers never own the same item.
+After a DSH Host restart, a durable local queue row without a matching native
+queue snapshot is marked `restored-after-host-restart`; that item cannot be
+started or steered until native reconciliation confirms its identity. The Host
+enforces this even if a client bypasses the disabled UI action.
+
 Attachment staging is a Host resource, not a Renderer filesystem convention.
 The `opencraft/attachment-staging` capability declares accepted source kinds,
 returned location kinds and the byte limit; Composer consumes only the shared

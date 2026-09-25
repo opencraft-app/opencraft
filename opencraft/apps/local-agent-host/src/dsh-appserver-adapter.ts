@@ -26,6 +26,7 @@ import {
   OPENCRAFT_PROFILE_SKILLS_EXTENSION,
   OPENCRAFT_RESUME_HISTORY_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
 } from "@opencraft/appserver-protocol";
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
@@ -1061,7 +1062,12 @@ export class DshAppServerAdapter {
     }
     if (/^thread\/queue\/(add|update|delete|reorder|start|steer)$/.test(method)) {
       return this.authority.withWriteLease(sessionId, owner, async () => {
-        const restored = this.authority!.queueStore.find(sessionId, string(value.queuedSubmissionId));
+        const requestedQueueItemId = typeof value.queuedSubmissionId === "string"
+          ? value.queuedSubmissionId
+          : method === "thread/queue/start" ? this.queue(sessionId)[0]?.id : undefined;
+        const restored = requestedQueueItemId
+          ? this.authority!.queueStore.find(sessionId, requestedQueueItemId)
+          : null;
         if (restored?.state === "queued" && !(this.queues.get(sessionId) ?? []).some(item => item.clientUserMessageId === restored.clientUserMessageId)) {
           if (method === "thread/queue/delete") return { deleted: this.authority!.queueStore.delete(sessionId, restored.id) };
           if (method === "thread/queue/update") {
@@ -1069,12 +1075,8 @@ export class DshAppServerAdapter {
             const row = this.authority!.queueStore.update(sessionId, restored.id, value.input);
             return { queuedSubmission: { id: row.id, input: row.input, clientUserMessageId: row.clientUserMessageId } };
           }
-          if (method === "thread/queue/start") {
-            const result = await this.dispatchOwned("turn/start", { threadId: sessionId, input: restored.input, clientUserMessageId: restored.clientUserMessageId }, owner, requestId);
-            this.authority!.queueStore.markDispatched(sessionId, restored.id);
-            this.admission!.removeQueuedMessage(sessionId, restored.clientUserMessageId);
-            this.emit("thread/queue/changed", { threadId: sessionId });
-            return result;
+          if (method === "thread/queue/start" || method === "thread/queue/steer") {
+            throw new Error("Queued submission is awaiting native reconciliation and cannot be dispatched yet");
           }
         }
         if (method === "thread/queue/delete") {
@@ -1211,7 +1213,7 @@ export class DshAppServerAdapter {
           userAgent: "opencraft-daemon/0.1.0",
           capabilities: {
             extensions: {
-              "opencraft/thread-lifecycle": { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true },
+              [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true },
               ...(this.hostCapabilities ? { "opencraft/host-capabilities": { version: 1 } } : {}),
               "opencraft/loopback-http": { version: 1 },
               [OPENCRAFT_PROFILE_SKILLS_EXTENSION]: OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,

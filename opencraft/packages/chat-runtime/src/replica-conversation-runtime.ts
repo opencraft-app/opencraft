@@ -39,6 +39,7 @@ import type {
   ConversationCommandPort,
   ConversationHistoryPort,
   ConversationReplicaReader,
+  TurnInterruptProvenance,
 } from "./ports";
 
 type JsonRecord = Readonly<Record<string, ReplicaJsonValue>>;
@@ -56,7 +57,7 @@ export interface ConversationRuntime {
   subscribe(listener: () => void): () => void;
   loadOlder(): Promise<void>;
   submit(intent: SubmitIntent): Promise<SubmissionReceipt>;
-  interrupt(turnId: TurnId): Promise<void>;
+  interrupt(turnId: TurnId, provenance?: TurnInterruptProvenance): Promise<void>;
   continueTurn(turnId: TurnId): Promise<SubmissionReceipt>;
   respond(response: InteractionResponse): Promise<void>;
   /** Replaces the AppServer-owned queue projection after list/change events. */
@@ -69,6 +70,7 @@ export interface ConversationRuntime {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
     queuedSubmissionIds: readonly string[],
   ): Promise<void>;
@@ -1160,6 +1162,7 @@ export function createReplicaConversationRuntime(
   const pendingSubmissions = new Map<string, OptimisticSubmissionState>();
   const confirmedSteers = new Map<string, OptimisticSubmissionState>();
   const authoritativeSteers = new Map<string, OptimisticSubmissionState>();
+  const steeringClaims = new Map<string, ProtocolSteeringSubmission>();
   const authoritativeQueue = new Map<string, QueuedSubmission>();
   let pendingQueueOrder: readonly string[] | null = null;
   let localRevision = 0;
@@ -1308,6 +1311,9 @@ export function createReplicaConversationRuntime(
             ),
         ),
       ],
+      unconfirmedSteers: [...steeringClaims.values()].filter(
+        (item) => item.pausedReason === "steer-delivery-unconfirmed",
+      ),
       history: {
         hasOlder:
           replica.authoritative &&
@@ -1493,7 +1499,7 @@ export function createReplicaConversationRuntime(
         publish();
       }
     },
-    async interrupt(turnId) {
+    async interrupt(turnId, provenance) {
       interruptingTurnId = turnId;
       interruptedByThisClient.add(turnId);
       localRevision += 1;
@@ -1510,7 +1516,7 @@ export function createReplicaConversationRuntime(
             config.commands.respond(config.key, response),
           ),
         );
-        await config.commands.interrupt(config.key, turnId);
+        await config.commands.interrupt(config.key, turnId, provenance);
       } catch (error) {
         interruptedByThisClient.delete(turnId);
         throw error;
@@ -1588,7 +1594,12 @@ export function createReplicaConversationRuntime(
           queued.delete(commandId);
       }
       authoritativeSteers.clear();
+      steeringClaims.clear();
       for (const submission of steeringSubmissions) {
+        steeringClaims.set(submission.id, submission);
+        const unconfirmedError = submission.pausedReason === null
+          ? null
+          : new Error(submission.pausedReason);
         const local = [...pendingSubmissions.entries()].find(
           ([, candidate]) => candidate.kind === "steer"
             && candidate.clientMessageId === submission.clientUserMessageId,
@@ -1599,8 +1610,8 @@ export function createReplicaConversationRuntime(
             ...candidate,
             turnId: asTurnId(submission.targetTurnId),
             targetTurnId: asTurnId(submission.targetTurnId),
-            state: "accepted",
-            error: null,
+            state: unconfirmedError === null ? "accepted" : "unknown",
+            error: unconfirmedError,
           });
           continue;
         }
@@ -1612,9 +1623,9 @@ export function createReplicaConversationRuntime(
           clientMessageId: submission.clientUserMessageId,
           turnId: asTurnId(submission.targetTurnId),
           preview: queuedInputPreview(submission.input),
-          state: "accepted",
+          state: unconfirmedError === null ? "accepted" : "unknown",
           createdAt: submission.createdAt,
-          error: null,
+          error: unconfirmedError,
           kind: "steer",
           targetTurnId: asTurnId(submission.targetTurnId),
           predecessorTurnId: null,
@@ -1702,6 +1713,25 @@ export function createReplicaConversationRuntime(
         localRevision += 1;
         publish();
       }
+    },
+    async discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId) {
+      const claim = steeringClaims.get(queuedSubmissionId);
+      if (claim?.pausedReason !== "steer-delivery-unconfirmed" ||
+          claim.targetTurnId !== expectedTurnId)
+        throw new Error("The unconfirmed steering claim changed; refresh before discarding it");
+      const deleted = await config.commands.discardUnconfirmedSteer(
+        config.key, queuedSubmissionId, expectedTurnId,
+      );
+      if (!deleted)
+        throw new Error("The steering claim was already reconciled or changed; refresh before continuing");
+      steeringClaims.delete(queuedSubmissionId);
+      authoritativeSteers.delete(queuedSubmissionId);
+      for (const [id, submission] of pendingSubmissions) {
+        if (submission.kind === "steer" && submission.clientMessageId === claim.clientUserMessageId)
+          pendingSubmissions.delete(id);
+      }
+      localRevision += 1;
+      publish();
     },
     async reorderQueuedSubmissions(queuedSubmissionIds) {
       const previous = [...authoritativeQueue.entries()];

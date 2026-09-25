@@ -157,6 +157,9 @@ function commands(
     async deleteQueuedSubmission() {
       return true;
     },
+    async discardUnconfirmedSteer() {
+      return true;
+    },
     async reorderQueuedSubmissions() {},
     async startQueuedSubmission() {
       return asTurnId("queued-turn");
@@ -1802,6 +1805,28 @@ test("authoritative steering baseline survives refresh and hands off once to dur
   runtime.dispose();
 });
 
+test("a restarted Codex steering claim is shown as unconfirmed, not sent", () => {
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"),
+    replica: new FakeReplica(threadView({ pendingInteractions: [] })),
+    commands: commands(),
+    history: { async loadOlder() {} },
+  });
+  runtime.replaceQueuedSubmissions([], [{
+    id: "uncertain-steer",
+    clientUserMessageId: "uncertain-client",
+    input: [{ type: "text", text: "Maybe delivered", text_elements: [] }],
+    createdAt: 101,
+    pausedReason: "steer-delivery-unconfirmed",
+    targetTurnId: "turn-one",
+  }]);
+  const message = runtime.getSnapshot().timeline.frames
+    .flatMap((frame) => frame.blocks)
+    .find((block) => block.type === "user-message" && block.message === "Maybe delivered");
+  assert.equal(message?.type === "user-message" && message.deliveryStatus, "unknown");
+  runtime.dispose();
+});
+
 test("explicit follow-up submission alone owns optimistic queue state", async () => {
   let resolveSubmission!: (receipt: SubmissionReceipt) => void;
   const pending = new Promise<SubmissionReceipt>((resolve) => {
@@ -1977,6 +2002,36 @@ test("queued submissions support optimistic edit, reorder, steer, pause, resume,
   runtime.dispose();
 });
 
+test("unconfirmed steer can only be explicitly discarded with its claimed turn", async () => {
+  const calls: string[] = [];
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"),
+    replica: new FakeReplica(threadView()),
+    commands: commands({
+      async discardUnconfirmedSteer(_key, id, turnId) {
+        calls.push(`${id}:${turnId}`);
+        return true;
+      },
+    }),
+    history: { async loadOlder() {} },
+  });
+  runtime.replaceQueuedSubmissions([], [{
+    id: "claim-one",
+    clientUserMessageId: "client-claim",
+    input: [{ type: "text", text: "Maybe delivered", text_elements: [] }],
+    createdAt: 1,
+    pausedReason: "steer-delivery-unconfirmed",
+    targetTurnId: "turn-one",
+  }]);
+  assert.deepEqual(runtime.getSnapshot().unconfirmedSteers.map((item) => item.id), ["claim-one"]);
+  await assert.rejects(runtime.discardUnconfirmedSteer("claim-one", asTurnId("wrong-turn")));
+  assert.deepEqual(calls, []);
+  await runtime.discardUnconfirmedSteer("claim-one", asTurnId("turn-one"));
+  assert.deepEqual(calls, ["claim-one:turn-one"]);
+  assert.deepEqual(runtime.getSnapshot().unconfirmedSteers, []);
+  runtime.dispose();
+});
+
 test("runtime rejects SubmitIntents for another Host or Thread", async () => {
   const runtime = createReplicaConversationRuntime({
     key: createConversationKey("local", "thread-one"),
@@ -2015,6 +2070,7 @@ test("runtime rejects SubmitIntents for another Host or Thread", async () => {
 test("interrupt exposes an interrupting transition around the command", async () => {
   let release!: () => void;
   const responses: unknown[] = [];
+  const provenances: unknown[] = [];
   const command = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -2025,17 +2081,27 @@ test("interrupt exposes an interrupting transition around the command", async ()
       respond: async (_key, response) => {
         responses.push(response);
       },
-      interrupt: async () => command,
+      interrupt: async (_key, _turnId, provenance) => {
+        provenances.push(provenance);
+        return command;
+      },
     }),
     history: { async loadOlder() {} },
   });
-  const operation = runtime.interrupt(asTurnId("turn-one"));
+  const provenance = {
+    source: "composer-stop" as const,
+    trigger: "keyboard" as const,
+    isTrusted: true,
+    occurredAt: 1_234,
+  };
+  const operation = runtime.interrupt(asTurnId("turn-one"), provenance);
   assert.equal(runtime.getSnapshot().activeTurn?.status, "interrupting");
   release();
   await operation;
   assert.deepEqual(responses, [
     { type: "command-approval", requestId: "request-one", decision: "decline" },
   ]);
+  assert.deepEqual(provenances, [provenance]);
   assert.equal(runtime.getSnapshot().activeTurn?.status, "streaming");
   runtime.dispose();
 });
