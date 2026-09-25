@@ -27,6 +27,7 @@ import { useCurrentLocale, useT, type TranslateFn } from "@/i18n/t";
 import { ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
+import { isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 import {
   AVATAR_SHAPES,
@@ -183,8 +184,8 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
 /*
  * changelog 条目。
  *
- * date 用结构化的 y/m/d 而不是「2026年9月10日」整串：
- * 日期格式各语言不同（en 是 "September 10, 2026"、ja 是「2026年9月10日」），
+ * date 用结构化的 y/m 而不是「2026年9月」整串；界面只显示年月：
+ * 日期格式各语言不同（en 是 "September 2026"、ja 是「2026年9月」），
  * 整串进词典等于每加一条动态都要翻 8 个语种。这里存数字，渲染时用
  * Intl.DateTimeFormat 按当前 locale 格式化。
  *
@@ -192,37 +193,56 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
  * 并随语言切换重新生成，避免动态 key 漏译或模块级翻译缓存旧语言。
  */
 type ChangelogEntry = {
-  date: { y: number; m: number; d: number };
+  date: { y: number; m: number };
   title: string;
   body: string;
   image: string;
   imageAlt: string;
 };
 
-/** TODO(demo): 接真实 changelog 数据源后替换 */
-const getChangelogEntries = (t: TranslateFn): ChangelogEntry[] => [
-  {
-    date: { y: 2026, m: 9, d: 10 },
-    title: t("定时任务新增通知任务和脚本任务"),
-    body: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
-    image: assetUrl("/agent-overview/changelog-task-types.jpg"),
-    imageAlt: t("定时任务新增通知任务和脚本任务"),
-  },
-  {
-    date: { y: 2026, m: 9, d: 2 },
-    title: t("支持创建和发布工作台"),
-    body: t("支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。"),
-    image: assetUrl("/agent-overview/changelog-workbench.jpg"),
-    imageAlt: t("支持创建和发布工作台"),
-  },
-  {
-    date: { y: 2026, m: 8, d: 28 },
-    title: t("实验室新增 DeepSeek Harness"),
-    body: t("在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。"),
-    image: assetUrl("/agent-overview/changelog-deepseek-harness.jpg"),
-    imageAlt: t("实验室新增 DeepSeek Harness"),
-  },
-];
+const zeroTokenGlobalImages: Record<string, string> = {
+  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
+  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
+  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.png",
+  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.png",
+  es: "/assets/changelog/scheduled-tasks-notification-es.png",
+  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
+  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
+};
+
+/** TODO(demo): 接真实 changelog 数据源后替换；顺序与 Changelog 页 2026 年 9 月前三条一致。 */
+const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] => {
+  const isChinese = locale.startsWith("zh");
+  return [
+    {
+      date: { y: 2026, m: 9 },
+      title: t("LightVela 支持创建多个 Bot"),
+      body: t("在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。"),
+      image: assetUrl(isGlobal && !isChinese
+        ? "/docs-images/bots-switching-create-en.webp"
+        : "/docs-images/bots-switching-create.webp"),
+      imageAlt: t("LightVela 支持创建多个 Bot"),
+    },
+    {
+      date: { y: 2026, m: 9 },
+      title: t("定时任务新增通知任务和脚本任务"),
+      body: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
+      image: assetUrl(isGlobal
+        ? zeroTokenGlobalImages[locale] ?? "/assets/changelog/scheduled-tasks-notification-en-US.png"
+        : "/assets/changelog/scheduled-tasks-notification-zh-CN.png"),
+      imageAlt: t("定时任务新增通知任务和脚本任务"),
+    },
+    {
+      date: { y: 2026, m: 9 },
+      title: t("LightVela 支持查看 Agent 实例存储空间"),
+      body: t("云存储页面现在会显示 Agent 实例的总容量、已用容量和可用容量，并将 Agent 运行环境、系统预留空间和云存储文件计入使用量计算。"),
+      image: assetUrl(isChinese
+        ? "/assets/changelog/lightvela-instance-storage-zh.png"
+        : "/assets/changelog/lightvela-instance-storage-en.png"),
+      imageAlt: t("LightVela 支持查看 Agent 实例存储空间"),
+    },
+  ];
+};
 
 /** 自动轮播间隔（毫秒） */
 const CAROUSEL_INTERVAL_MS = 5000;
@@ -233,7 +253,7 @@ const LatestNewsSection = () => {
   const [index, setIndex] = useState(0);
   /** 用户手动点过指示器后暂停自动轮播，避免和用户操作打架 */
   const [paused, setPaused] = useState(false);
-  const entries = getChangelogEntries(t);
+  const entries = getChangelogEntries(t, locale);
   const total = entries.length;
   const activeIndex = index >= 0 && index < total ? index : 0;
   const entry = entries[activeIndex];
@@ -261,8 +281,8 @@ const LatestNewsSection = () => {
         <div className="grid items-stretch sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
           {/*
             左：功能配图（撑满左侧，无左/上/下留白）。
-            比例跟随素材的 16:9 —— 这些信息图四周分布着卡片与连线元素，
-            用 16/10 容器配 object-cover 会把上下各裁掉约 5%，正好切到内容。
+            截图沿用 Changelog 页素材；竖向的任务截图从顶部裁切，
+            保留任务类型区域。
           */}
           <div className="aspect-[16/9] overflow-hidden bg-black/[0.015]">
             <img
@@ -272,7 +292,7 @@ const LatestNewsSection = () => {
               decoding="async"
               width={900}
               height={506}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover object-top"
             />
           </div>
 
@@ -280,13 +300,13 @@ const LatestNewsSection = () => {
           <div className="flex min-w-0 flex-col justify-center p-4">
             {/*
               日期按当前 locale 格式化，不进词典。
-              月份用 long 而不是数字：en 得到 "September 10, 2026"，
-              ja/zh 得到「2026年9月10日」，都是各自的习惯写法。
+              月份用 long 而不是数字：en 得到 "September 2026"，
+              ja/zh 得到「2026年9月」，都是各自的习惯写法。
             */}
             <p className="text-xs font-medium text-black/40">
               {new Intl.DateTimeFormat(locale, {
-                year: "numeric", month: "long", day: "numeric",
-              }).format(new Date(entry.date.y, entry.date.m - 1, entry.date.d))}
+                year: "numeric", month: "long",
+              }).format(new Date(entry.date.y, entry.date.m - 1, 1))}
             </p>
             <p className="mt-1.5 text-[15px] font-semibold leading-6 text-black/[0.88]">
               {entry.title}
