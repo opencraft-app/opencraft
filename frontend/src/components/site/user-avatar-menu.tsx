@@ -103,6 +103,18 @@ export const UserAvatarMenu = ({
   });
   const isSidebar = variant === "sidebar";
   const showModelEntry = isSidebar && shouldMoveModelEntryToAccountMenu(activePass);
+  const accountMenuItem = (
+    <a href="/account" onClick={() => setOpen(false)} className={menuItemClass}>
+      <User className={menuIconClass} />
+      {t("账号")}
+    </a>
+  );
+  const billingMenuItem = (
+    <a href={ACCOUNT_BILLING_PATH} onClick={() => setOpen(false)} className={menuItemClass}>
+      <CreditCard className={menuIconClass} />
+      {t("套餐与费用")}
+    </a>
+  );
 
   return (
     <div
@@ -228,22 +240,7 @@ export const UserAvatarMenu = ({
                   {t("我的智能体")}
                 </a>
               )}
-              <a
-                href="/account"
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <User className={menuIconClass} />
-                {t("账号")}
-              </a>
-              <a
-                href={ACCOUNT_BILLING_PATH}
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <CreditCard className={menuIconClass} />
-                {t("套餐与费用")}
-              </a>
+              {!isSidebar && accountMenuItem}
               {showModelEntry ? (
                 <a
                   href={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams)}
@@ -254,6 +251,8 @@ export const UserAvatarMenu = ({
                   {resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
                 </a>
               ) : null}
+              {billingMenuItem}
+              {isSidebar && accountMenuItem}
               {showWorkbenchEntry ? (
                 <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}

@@ -412,12 +412,14 @@ export function WorkspaceActionTooltip({
   side = "top",
   compact = false,
   focusable = true,
+  className,
 }: {
   children: ReactNode;
   content?: ReactNode;
   side?: WorkspaceActionTooltipSide;
   compact?: boolean;
   focusable?: boolean;
+  className?: string;
 }) {
   const tooltipId = useId();
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -491,7 +493,7 @@ export function WorkspaceActionTooltip({
   return (
     <span
       ref={triggerRef}
-      className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+      className={cn("inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30", className)}
       tabIndex={focusable ? 0 : undefined}
       aria-describedby={open ? tooltipId : undefined}
       onMouseEnter={showTooltip}
@@ -3240,7 +3242,6 @@ export const AgentSettingsPage = ({
   );
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
   const passExpiryTooltipId = useId();
-  const chatAvailabilityTooltipId = useId();
   /** 「对话」tab 禁用条件：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）。 */
   const isChatTabDisabled = !isActiveBotChatAvailable || showBuddyOnboarding;
   const handleRenewPassSuccess = useCallback(async () => {
@@ -6011,34 +6012,33 @@ export const AgentSettingsPage = ({
                       >
                         {t("探索")}
                       </button>
-                      {/* 「对话」入口：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）时禁用，
-                          统一复用上游的 lv-agent-action-tooltip 做悬浮提示。 */}
+                      {/* 「对话」入口不可用时，用 Portal 提示原因，避免被侧栏滚动容器裁切。 */}
                       <span
                         className={cn(
-                          "lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30",
+                          "flex-1 min-w-0 rounded-full",
                           showBuddyOnboarding && "cursor-not-allowed opacity-40",
                         )}
-                        tabIndex={isChatTabDisabled ? 0 : undefined}
-                        aria-describedby={isChatTabDisabled ? chatAvailabilityTooltipId : undefined}
                       >
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
-                          aria-disabled={isChatTabDisabled}
-                          aria-describedby={isActiveBotChatAvailable ? undefined : chatAvailabilityTooltipId}
-                          disabled={isChatTabDisabled}
-                          className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
-                          onClick={handleSidebarChatTabClick}
+                        <WorkspaceActionTooltip
+                          content={isChatTabDisabled
+                            ? (showBuddyOnboarding ? t("请先创建你的个人助手") : t("对话功能目前仅支持主 Bot"))
+                            : undefined}
+                          side="bottom"
+                          focusable={isChatTabDisabled}
+                          className="flex w-full rounded-full"
                         >
-                          {t("对话")}
-                        </button>
-                        {isChatTabDisabled && (
-                          <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
-                            {showBuddyOnboarding ? t("请先创建你的个人助手") : t("对话功能目前仅支持主 Bot")}
-                            <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
-                          </span>
-                        )}
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
+                            aria-disabled={isChatTabDisabled}
+                            disabled={isChatTabDisabled}
+                            className={cn("lv-agents-sidebar-tab w-full", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
+                            onClick={handleSidebarChatTabClick}
+                          >
+                            {t("对话")}
+                          </button>
+                        </WorkspaceActionTooltip>
                       </span>
                     </div>
 
