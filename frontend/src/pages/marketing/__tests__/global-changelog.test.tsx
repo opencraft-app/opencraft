@@ -56,14 +56,14 @@ afterEach(() => {
 describe("global changelog skill package entry", () => {
   it("localizes the subscription-upgrade entry for every public-site locale", async () => {
     const copies = {
-      "zh-CN": ["2026 年 9 月", "LightVela 支持订阅升配", "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。"],
-      "zh-SG": ["2026 年 9 月", "LightVela 支持订阅升配", "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。"],
-      "zh-Hant": ["2026 年 9 月", "LightVela 支援訂閱升級", "現有訂閱可升級至更高規格，實際應付價格以最終支付頁顯示為準。"],
-      "en-US": ["September 2026", "LightVela Now Supports Subscription Upgrades", "Upgrade an active subscription to a higher plan. The actual amount due is the final price shown at checkout."],
-      "id-ID": ["September 2026", "LightVela Kini Mendukung Peningkatan Paket Langganan", "Tingkatkan langganan aktif ke paket yang lebih tinggi. Jumlah yang harus dibayar mengikuti harga akhir di halaman pembayaran."],
-      es: ["Septiembre de 2026", "LightVela ya permite mejorar tu suscripción", "Puedes mejorar una suscripción activa a un plan superior. El importe a pagar será el precio final mostrado en la página de pago."],
-      "ja-JP": ["2026年9月", "LightVela でサブスクリプションのアップグレードに対応", "現在のサブスクリプションを上位プランにアップグレードできます。お支払い金額は最終決済ページに表示される価格をご確認ください。"],
-      "ko-KR": ["2026년 9월", "LightVela에서 구독 업그레이드 지원", "현재 구독을 상위 요금제로 업그레이드할 수 있습니다. 실제 결제 금액은 최종 결제 페이지에 표시된 가격을 기준으로 합니다."],
+      "zh-CN": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
+      "zh-SG": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
+      "zh-Hant": ["2026 年 9 月", "LightVela 支援套餐升級", "現有套餐可升級至更高規格，實際應付價格以最終支付頁顯示為準。"],
+      "en-US": ["September 2026", "LightVela Now Supports Plan Upgrades", "Upgrade your current plan to a higher tier. The actual amount due is the final price shown at checkout."],
+      "id-ID": ["September 2026", "LightVela Kini Mendukung Peningkatan Paket", "Tingkatkan paket saat ini ke paket yang lebih tinggi. Jumlah yang harus dibayar mengikuti harga akhir di halaman pembayaran."],
+      es: ["Septiembre de 2026", "LightVela ya permite mejorar tu plan", "Puedes mejorar tu plan actual a uno superior. El importe a pagar será el precio final mostrado en la página de pago."],
+      "ja-JP": ["2026年9月", "LightVela でプランのアップグレードに対応", "現在のプランを上位プランにアップグレードできます。お支払い金額は最終決済ページに表示される価格をご確認ください。"],
+      "ko-KR": ["2026년 9월", "LightVela에서 요금제 업그레이드 지원", "현재 요금제를 상위 요금제로 업그레이드할 수 있습니다. 실제 결제 금액은 최종 결제 페이지에 표시된 가격을 기준으로 합니다."],
     } satisfies Record<PublicSiteLocaleCode | "es" | "ja-JP" | "ko-KR", readonly [string, string, string]>;
 
     expect(Object.values(PUBLIC_SITE_LOCALES).every((locale) => locale in copies)).toBe(true);
@@ -72,8 +72,11 @@ describe("global changelog skill package entry", () => {
       render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
       const section = screen.getByText(month).closest("section");
       expect(section).not.toBeNull();
-      expect(within(section!).getByRole("heading", { name: title })).toBeInTheDocument();
+      expect(within(section!).getAllByRole("heading")[0]).toBe(within(section!).getByRole("heading", { name: title }));
       expect(within(section!).getByText(description)).toBeInTheDocument();
+      expect(within(section!).getByAltText(title)).toHaveAttribute(
+        "src", expect.stringContaining("/assets/changelog/lightvela-plan-upgrade-global-en.png"),
+      );
       expect(description).not.toMatch(/[¥￥$€]|\b(?:USD|CNY|SGD)\b/);
       cleanup();
     }
@@ -82,8 +85,8 @@ describe("global changelog skill package entry", () => {
   it("uses English rather than Chinese for an unrecognized global locale", async () => {
     await i18n.changeLanguage("fr-FR");
     render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
-    expect(screen.getByRole("heading", { name: "LightVela Now Supports Subscription Upgrades" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "LightVela 支持订阅升配" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela Now Supports Plan Upgrades" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "LightVela 支持套餐升配" })).not.toBeInTheDocument();
   });
 
   it("announces multi-Bot creation in every visible locale", async () => {
@@ -158,7 +161,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
-      expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(within(septemberSection!).getByAltText(copy.title)).toHaveAttribute(
         "src",
@@ -240,7 +243,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
-      expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
+      expect(within(septemberSection!).getAllByRole("heading")[2]).toBe(heading);
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute(
         "src",
@@ -322,7 +325,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const headings = within(septemberSection!).getAllByRole("heading");
-      expect(headings[2]).toHaveTextContent(copy.title);
+      expect(headings[3]).toHaveTextContent(copy.title);
       expect(within(septemberSection!).getByRole("heading", { name: copy.title })).toBeInTheDocument();
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));

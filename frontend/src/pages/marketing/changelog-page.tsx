@@ -16,6 +16,7 @@ import { useLocaleOverride, useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { isGlobal } from "@/lib/region";
+import { getChangelogUpgradeCopy } from "@/pages/marketing/changelog-upgrade-copy";
 
 /* ═══════════════════════════════════════════════════════════════
    Animation Variants
@@ -48,8 +49,8 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / multiBot=创建多个 Bot 图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
-  visual: "lobster" | "multiBot" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
+  /** 卡片视觉样式：lobster=上线图 / multiBot=创建多个 Bot 图 / planUpgrade=套餐升配页图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -72,9 +73,10 @@ const zeroTokenScheduledTasksGlobalAssets: Record<string, string> = {
   "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
 };
 
-export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
+  const locale = useLocaleOverride() ?? i18n.language;
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
   const useGlobalChineseAsset = i18n.language.startsWith("zh");
   const zeroTokenScheduledTasksAsset = isGlobal
@@ -82,7 +84,11 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "clo
     : "/assets/changelog/scheduled-tasks-notification-zh-CN.png";
   /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
-    variant === "multiBot"
+    variant === "planUpgrade"
+      ? isGlobal
+        ? "/assets/changelog/lightvela-plan-upgrade-global-en.png"
+        : "/assets/changelog/lightvela-plan-upgrade-cn.png"
+      : variant === "multiBot"
       ? isGlobal && !useGlobalChineseAsset
         ? "/docs-images/bots-switching-create-en.webp"
         : "/docs-images/bots-switching-create.webp"
@@ -192,7 +198,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "clo
           : "/assets/changelog/lightvela-launch-global-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
-    variant === "multiBot"
+    variant === "planUpgrade"
+      ? getChangelogUpgradeCopy(locale, isGlobal).title
+      : variant === "multiBot"
       ? t("LightVela 支持创建多个 Bot")
       : variant === "zeroTokenScheduledTasks"
       ? t("定时任务新增通知任务和脚本任务")
@@ -246,7 +254,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "clo
         ? t("Soul 人设能力上线")
         : t("LightVela 产品公测上线");
   const aspectRatio =
-    variant === "multiBot"
+    variant === "planUpgrade"
+      ? "2200 / 1240"
+      : variant === "multiBot"
       ? isGlobal && !useGlobalChineseAsset ? "1690 / 931" : "3408 / 1878"
       : variant === "zeroTokenScheduledTasks"
       ? "760 / 656"
@@ -346,53 +356,7 @@ function ChangelogContent() {
   const t = useT();
   const { i18n } = useTranslation();
   const locale = useLocaleOverride() ?? i18n.language;
-  // 穷举公开站语种；新增 PublicSiteLocale 时在编译期提示补齐，未知国际语种回退英文。
-  type UpgradeLocale = PublicSiteLocale | "es" | "ja-JP" | "ko-KR";
-  const upgradeCopies = {
-    "zh-CN": {
-      month: "2026 年 9 月",
-      title: "LightVela 支持订阅升配",
-      desc: "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。",
-    },
-    "zh-SG": {
-      month: "2026 年 9 月",
-      title: "LightVela 支持订阅升配",
-      desc: "现有订阅可升配至更高规格，实际应付价格以最终支付页显示为准。",
-    },
-    "zh-Hant": {
-      month: "2026 年 9 月",
-      title: "LightVela 支援訂閱升級",
-      desc: "現有訂閱可升級至更高規格，實際應付價格以最終支付頁顯示為準。",
-    },
-    "en-US": {
-      month: "September 2026",
-      title: "LightVela Now Supports Subscription Upgrades",
-      desc: "Upgrade an active subscription to a higher plan. The actual amount due is the final price shown at checkout.",
-    },
-    "id-ID": {
-      month: "September 2026",
-      title: "LightVela Kini Mendukung Peningkatan Paket Langganan",
-      desc: "Tingkatkan langganan aktif ke paket yang lebih tinggi. Jumlah yang harus dibayar mengikuti harga akhir di halaman pembayaran.",
-    },
-    es: {
-      month: "Septiembre de 2026",
-      title: "LightVela ya permite mejorar tu suscripción",
-      desc: "Puedes mejorar una suscripción activa a un plan superior. El importe a pagar será el precio final mostrado en la página de pago.",
-    },
-    "ja-JP": {
-      month: "2026年9月",
-      title: "LightVela でサブスクリプションのアップグレードに対応",
-      desc: "現在のサブスクリプションを上位プランにアップグレードできます。お支払い金額は最終決済ページに表示される価格をご確認ください。",
-    },
-    "ko-KR": {
-      month: "2026년 9월",
-      title: "LightVela에서 구독 업그레이드 지원",
-      desc: "현재 구독을 상위 요금제로 업그레이드할 수 있습니다. 실제 결제 금액은 최종 결제 페이지에 표시된 가격을 기준으로 합니다.",
-    },
-  } satisfies Record<UpgradeLocale, { month: string; title: string; desc: string }>;
-  const upgradeCopy = Object.prototype.hasOwnProperty.call(upgradeCopies, locale)
-    ? upgradeCopies[locale as UpgradeLocale]
-    : upgradeCopies[isGlobal ? "en-US" : "zh-CN"];
+  const upgradeCopy = getChangelogUpgradeCopy(locale, isGlobal);
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
      国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
@@ -424,7 +388,7 @@ function ChangelogContent() {
     id: "subscription-upgrade",
     title: upgradeCopy.title,
     desc: upgradeCopy.desc,
-    visual: "none",
+    visual: "planUpgrade",
   };
 
   const changelogGroups: ChangelogMonthGroup[] = [
@@ -434,6 +398,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: upgradeCopy.month,
             entries: [
+              upgradeEntry,
               multiBotEntry,
               zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
@@ -444,7 +409,6 @@ function ChangelogContent() {
                 badge: "Beta",
                 visual: "workbench" as const,
               },
-              upgradeEntry,
             ],
           },
           {
@@ -520,6 +484,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: upgradeCopy.month,
             entries: [
+              upgradeEntry,
               multiBotEntry,
               zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
@@ -530,7 +495,6 @@ function ChangelogContent() {
                 badge: "Beta",
                 visual: "workbench" as const,
               },
-              upgradeEntry,
             ],
           },
           {

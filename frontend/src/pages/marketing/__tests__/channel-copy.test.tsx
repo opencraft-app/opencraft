@@ -66,7 +66,7 @@ describe("marketing channel copy", () => {
     const heading = within(septemberSection!).getByRole("heading", {
       name: "LightVela 支持创建多个 Bot",
     });
-    expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+    expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
     expect(
       within(septemberSection!).getByText(
         "在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。",
@@ -90,7 +90,7 @@ describe("marketing channel copy", () => {
     const heading = within(septemberSection!).getByRole("heading", {
       name: "定时任务新增通知任务和脚本任务",
     });
-    expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
+    expect(within(septemberSection!).getAllByRole("heading")[2]).toBe(heading);
     expect(
       within(septemberSection!).getByText(
         "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
@@ -99,6 +99,23 @@ describe("marketing channel copy", () => {
     expect(screen.getByAltText("定时任务新增通知任务和脚本任务")).toHaveAttribute(
       "src",
       expect.stringContaining("/assets/changelog/scheduled-tasks-notification-zh-CN.png"),
+    );
+  });
+
+  it("uses plan upgrade wording in the domestic September changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    const septemberSection = screen.getByText("2026 年 9 月").closest("section");
+    expect(septemberSection).not.toBeNull();
+    const heading = within(septemberSection!).getByRole("heading", { name: "LightVela 支持套餐升配" });
+    expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+    expect(within(septemberSection!).getByText("现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。")).toBeInTheDocument();
+    expect(within(septemberSection!).getByAltText("LightVela 支持套餐升配")).toHaveAttribute(
+      "src", expect.stringContaining("/assets/changelog/lightvela-plan-upgrade-cn.png"),
     );
   });
 

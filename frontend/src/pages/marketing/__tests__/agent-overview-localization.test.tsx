@@ -27,14 +27,14 @@ const Progress = () => {
   return <CreatingLoadingView steps={steps.map((step, index) => ({ step, status: index === 0 ? "done" : "failed" }))} partialFailureCount={steps.length - 1} onRetry={vi.fn()} onContinue={vi.fn()} />;
 };
 
-const titles: Record<I18nDictKey, [string, string]> = {
-  "zh-CN": ["支持创建和发布工作台", "实验室新增 DeepSeek Harness"],
-  "zh-Hant": ["支持創建和發佈工作台", "實驗室新增 DeepSeek Harness"],
-  "en-US": ["Create and Publish Workbenches", "DeepSeek Harness Is Now in Labs"],
-  "id-ID": ["Buat dan Publikasikan Ruang Kerja", "DeepSeek Harness Kini Hadir di Labs"],
-  es: ["Crea y publica espacios de trabajo", "DeepSeek Harness ya está en Labs"],
-  "ja-JP": ["ワークベンチの作成と公開に対応", "Labs に DeepSeek Harness が登場"],
-  "ko-KR": ["워크벤치 생성 및 게시 지원", "Labs에 DeepSeek Harness 추가"],
+const titles: Record<I18nDictKey, [string, string, string]> = {
+  "zh-CN": ["LightVela 支持套餐升配", "LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务"],
+  "zh-Hant": ["LightVela 支援套餐升級", "LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務"],
+  "en-US": ["LightVela Now Supports Plan Upgrades", "LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks"],
+  "id-ID": ["LightVela Kini Mendukung Peningkatan Paket", "LightVela Kini Mendukung Beberapa Bot", "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip"],
+  es: ["LightVela ya permite mejorar tu plan", "LightVela Ahora Admite Varios Bots", "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script"],
+  "ja-JP": ["LightVela でプランのアップグレードに対応", "LightVela で複数の Bot を作成可能に", "スケジュールタスクに通知タスクとスクリプトタスクを追加"],
+  "ko-KR": ["LightVela에서 요금제 업그레이드 지원", "LightVela에서 여러 Bot 생성 지원", "예약 작업에 알림 작업 및 스크립트 작업 추가"],
 };
 const page = (locale: I18nDictKey) => (
   <LocaleOverrideProvider locale={locale}>
@@ -65,7 +65,7 @@ describe("overview language consistency", () => {
       render(page("en-US"));
       const initialTitle = screen.getByRole("img").getAttribute("alt");
       act(() => { vi.advanceTimersByTime(10000); });
-      expect(screen.getByRole("img", { name: titles["en-US"][1] })).toBeInTheDocument();
+      expect(screen.getByText(titles["en-US"][2], { selector: "p" })).toBeInTheDocument();
       act(() => { vi.advanceTimersByTime(5000); });
       expect(screen.getByRole("img").getAttribute("alt")).toBe(initialTitle);
       fireEvent.click(screen.getByRole("button", { name: titles["en-US"][0] }));
@@ -74,6 +74,41 @@ describe("overview language consistency", () => {
     } finally {
       cleanup();
       vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["en-US", "September 2026"],
+    ["zh-CN", "2026年9月"],
+    ["ja-JP", "2026年9月"],
+  ] as const)("shows only the year and month in the %s news card", async (locale, date) => {
+    await ensureLocaleDictionary(locale);
+    render(page(locale));
+    fireEvent.click(screen.getByRole("button", { name: titles[locale][2] }));
+    expect(screen.getByText(date)).toBeInTheDocument();
+  });
+
+  it("uses site-specific upgrade screenshots and localized images for the other updates", async () => {
+    await ensureLocaleDictionary("en-US");
+    await ensureLocaleDictionary("zh-CN");
+    for (const [locale, imagePaths] of [
+      ["en-US", [
+        "/assets/changelog/lightvela-plan-upgrade-global-en.png",
+        "/docs-images/bots-switching-create-en.webp",
+        "/assets/changelog/scheduled-tasks-notification-en-US.png",
+      ]],
+      ["zh-CN", [
+        "/assets/changelog/lightvela-plan-upgrade-global-en.png",
+        "/docs-images/bots-switching-create.webp",
+        "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
+      ]],
+    ] as const) {
+      render(page(locale));
+      for (const [index, title] of titles[locale].entries()) {
+        fireEvent.click(screen.getByRole("button", { name: title }));
+        expect(screen.getByRole("img", { name: title })).toHaveAttribute("src", imagePaths[index]);
+      }
+      cleanup();
     }
   });
 
@@ -109,7 +144,7 @@ describe("overview language consistency", () => {
     }
   });
 
-  it.each(Object.keys(titles) as I18nDictKey[])("localizes news titles, image descriptions and carousel controls in %s", async (locale) => {
+  it.each(Object.keys(titles) as I18nDictKey[])("localizes news titles, available image descriptions and carousel controls in %s", async (locale) => {
     await ensureLocaleDictionary(locale);
     const view = render(page(locale));
     for (const title of titles[locale]) {
