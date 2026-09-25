@@ -661,46 +661,6 @@ a {
   color: rgb(0 0 0 / 50%);
 }
 
-.lv-agent-action-tooltip {
-  pointer-events: auto;
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  z-index: 30;
-  margin-top: 6px;
-  transform: translateX(-50%);
-  user-select: text;
-  white-space: nowrap;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: white;
-  padding: 4px 10px;
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  opacity: 0;
-  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
-  transition: opacity 75ms ease;
-}
-
-.lv-agent-action-item:hover .lv-agent-action-tooltip,
-.lv-agent-action-item:focus-within .lv-agent-action-tooltip {
-  opacity: 1;
-}
-
-.lv-agent-action-tooltip-arrow {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  transform: translate(-50%, 50%) rotate(45deg);
-  border-left: 1px solid var(--border-subtle);
-  border-top: 1px solid var(--border-subtle);
-  background: white;
-}
-
 .lv-agents-nav {
   display: flex;
   width: var(--lv-agents-nav-width);
