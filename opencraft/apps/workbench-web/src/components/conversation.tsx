@@ -688,6 +688,8 @@ export interface ConversationProps {
   /** The host selects the policy; content growth must never select one implicitly. */
   readonly scrollPolicy: ConversationScrollPolicy;
   readonly timeline: TimelineSnapshot | null;
+  /** Only shown when the timeline has no visible rows; never replaces retained history. */
+  readonly emptyState?: ReactNode;
   /** Protocol-neutral prompt index. V3 cursors and V4 epochs remain behind this port. */
   readonly navigationSource?: ConversationNavigationSource | null;
   readonly footer?: ReactNode;
@@ -757,6 +759,7 @@ export type ConversationScrollPolicy = "natural" | "response-placement";
 
 export function Conversation({
   timeline,
+  emptyState,
   scrollPolicy,
   navigationSource = null,
   footer,
@@ -1014,6 +1017,8 @@ export function Conversation({
                         data-mcp-app-portal-target={surfaceCapabilities.embeddedPortalTarget || undefined}
                         data-thread-user-message-navigation-content="true"
                       >
+
+                        {entries.length === 0 ? emptyState : null}
 
                         {scrollPolicy === "response-placement" ? (
                           <ResponsePositionedTurns

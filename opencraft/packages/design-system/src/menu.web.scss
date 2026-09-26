@@ -1,3 +1,5 @@
+@use "./controls.web" as controls;
+
 // Shared menu geometry and interaction surface. Feature menus own only content
 // and width; typography must not inherit from the surrounding page or portal.
 @mixin surface {
@@ -43,9 +45,14 @@
   text-align: left;
   outline: none;
 
-  &:hover, &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
+  @include controls.hover-capable {
+    &:hover { background: var(--color-background-primary-ghost-hover); }
+  }
+  &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
   &[data-disabled] { opacity: 0.42; pointer-events: none; }
   > svg { flex: 0 0 14px; width: 14px; height: 14px; color: var(--color-text-secondary); }
+  @media (any-pointer: coarse), (hover: none) { min-height: 44px; }
+  :root[data-touch-interaction] & { min-height: 44px; }
 }
 
 @keyframes menu-surface-enter {

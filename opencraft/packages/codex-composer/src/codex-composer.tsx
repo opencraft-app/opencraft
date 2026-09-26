@@ -47,6 +47,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  Fragment,
   forwardRef,
   type ReactNode,
   useCallback,
@@ -127,6 +128,9 @@ export interface ComposerPermissionOption {
   readonly label: string;
   readonly description: string | null;
   readonly disabled: boolean;
+  /** Host-verified portable policy; null means an engine-native profile. */
+  readonly mode?: "read-only" | "accept-edits" | "auto" | "full" | null;
+  readonly nativeProfileId?: string | null;
 }
 
 export function hasPermissionProfileChoices(
@@ -233,16 +237,14 @@ function SelectionMenuItemContent({
   );
 }
 
-function permissionMenuLeadingIcon(permissionValue: string | null): ReactNode {
-  if (permissionValue === null) {
-    return <ShieldCheck size={18} strokeWidth={1.65} />;
-  }
-  if (permissionValue === ":danger-full-access") {
+function permissionMenuLeadingIcon(mode: ComposerPermissionOption["mode"]): ReactNode {
+  if (mode === "full") {
     return <Zap size={18} strokeWidth={1.65} />;
   }
-  if (/read[-_ ]?only|readonly/iu.test(permissionValue)) {
+  if (mode === "read-only") {
     return <FileText size={18} strokeWidth={1.65} />;
   }
+  if (mode == null) return <ShieldCheck size={18} strokeWidth={1.65} />;
   return <FileCode2 size={18} strokeWidth={1.65} />;
 }
 
@@ -260,17 +262,7 @@ function formatSelectionLabel(value: string): string {
 }
 
 function permissionLabel(value: string): string {
-  switch (value) {
-    case ":read-only":
-      return "Read only";
-    case ":workspace":
-    case ":workspace_roots":
-      return "Workspace";
-    case ":danger-full-access":
-      return "Full access";
-    default:
-      return formatSelectionLabel(value);
-  }
+  return formatSelectionLabel(value);
 }
 
 const localCommandSuggestions: Suggestion[] = [
@@ -897,9 +889,15 @@ export const CodexComposer = forwardRef<
   ) ?? null : null;
   // Null means inherit, including drafts saved by the former default option.
   // Display the resolved policy without writing it back as an explicit choice.
-  const selectedPermissionValue =
-    composerSnapshot.draft.selections.permissionProfile ??
-    effectiveSelections?.permissionProfile ?? null;
+  const effectivePermissionValue = effectiveSelections?.permissionProfile ?? null;
+  const effectiveDisplayPermissionValue = effectivePermissionValue === null ? null
+    : catalogPermissions.find(permission => permission.nativeProfileId === effectivePermissionValue)?.value
+      ?? effectivePermissionValue;
+  const requestedPermissionValue = composerSnapshot.draft.selections.permissionProfile
+    ?? effectivePermissionValue;
+  const selectedPermissionValue = requestedPermissionValue === null ? null
+    : catalogPermissions.find(permission => permission.nativeProfileId === requestedPermissionValue)?.value
+      ?? requestedPermissionValue;
   const selectedPermission =
     catalogPermissions.find(
       (permission) => permission.value === selectedPermissionValue,
@@ -1774,11 +1772,16 @@ export const CodexComposer = forwardRef<
   const intelligenceLabel = selectedModel?.efforts.length
     ? `${modelLabel}, ${reasoningLabel}: ${effortLabel}`
     : modelLabel;
-  const permissionTriggerLabel =
+  const permissionSelectionLabel =
     selectedPermission?.label ??
     (selectedPermissionValue === null
       ? "Permissions"
       : permissionLabel(selectedPermissionValue));
+  const permissionChangePending = composerSnapshot.draft.selections.permissionProfile != null
+    && selectedPermissionValue !== effectiveDisplayPermissionValue;
+  const permissionTriggerLabel = permissionChangePending
+    ? `${permissionSelectionLabel} · ${composerSnapshot.draft.target.type === "new-thread" ? "on send" : "next turn"}`
+    : permissionSelectionLabel;
   const modelPickerDisabled = disabled || catalogModels.length === 0;
 
   const primaryAction = resolveComposerPrimaryAction({
@@ -2318,22 +2321,26 @@ export const CodexComposer = forwardRef<
                       sideOffset={1}
                       collisionPadding={6}
                     >
-                      {catalogPermissions.map((permission) => {
+                      {catalogPermissions.map((permission, index) => {
                         const isSelected =
                           permission.value === selectedPermissionValue;
                         return (
+                          <Fragment key={permission.id}>
+                          {permission.mode == null && (index === 0 || catalogPermissions[index - 1]?.mode != null) ? (
+                            <div className="codex-composer-selection-menu__status">Engine profiles</div>
+                          ) : null}
                           <DropdownMenu.Item
-                            key={permission.id}
                             className={[
                               "codex-composer-selection-menu__item",
                               "has-leading",
-                              permission.value === ":danger-full-access"
+                              permission.mode === "full"
                                 ? "is-dangerous"
                                 : null,
                             ]
                               .filter(Boolean)
                               .join(" ")}
                             data-selected={isSelected ? "true" : undefined}
+                            data-permission-kind={permission.mode == null ? "native" : "standard"}
                             disabled={permission.disabled}
                             title={
                               permission.disabled
@@ -2346,11 +2353,12 @@ export const CodexComposer = forwardRef<
                               description={permission.description}
                               label={permission.label}
                               leading={permissionMenuLeadingIcon(
-                                permission.value,
+                                permission.mode,
                               )}
                               selected={isSelected}
                             />
                           </DropdownMenu.Item>
+                          </Fragment>
                         );
                       })}
                       {selectionCatalog?.isFetching &&

@@ -206,6 +206,15 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    capability lease, and a failed prewarm is retried there rather than
    invalidating already-restored history.
 
+The Web recovery presentation does not equate non-authoritative with invisible.
+When a Thread already has painted Timeline frames, reconnect and retry preserve
+those frames, their scroll position and Composer draft; a small local connection
+notice shows the pending or failed state while commands remain disabled until
+authority returns. Only a Thread without visible frames gets a delayed skeleton
+in the Timeline's empty slot. A definite restore failure replaces that slot with
+an inline retry action. Neither state mounts an opaque page overlay or changes
+the Conversation View identity.
+
 Host execution preparation is coordinated by the existing Thread lifecycle
 queue. Capability replacement and Turn admission share that queue; connection
 revocation is synchronous and invalidates pending commits before asynchronous

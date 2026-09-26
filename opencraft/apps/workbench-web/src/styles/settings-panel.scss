@@ -45,14 +45,22 @@
 }
 .settings-control-button.settings-control-button--quiet {
   width: auto; border-color: transparent; box-shadow: none; background: transparent; color: var(--color-text-secondary);
-  &:hover:not(:disabled) { background: var(--color-background-primary-ghost-hover); border-color: transparent; color: var(--color-text); }
+  @include controls.hover-capable {
+    &:hover:not(:disabled) { background: var(--color-background-primary-ghost-hover); border-color: transparent; color: var(--color-text); }
+  }
 }
 .settings-control-button.settings-icon-button {
   width: 28px; height: 28px; padding: 0; border: 0; box-shadow: none; background: transparent;
   color: var(--color-icon-secondary); flex: 0 0 auto;
   > span { display: grid; place-items: center; }
-  &:hover:not(:disabled) { background: var(--color-background-primary-ghost-hover); }
+  @include controls.hover-capable {
+    &:hover:not(:disabled) { background: var(--color-background-primary-ghost-hover); }
+  }
 }
+@media (any-pointer: coarse), (hover: none) {
+  .settings-control-button.settings-icon-button { width: 44px; height: 44px; }
+}
+:root[data-touch-interaction] .settings-control-button.settings-icon-button { width: 44px; height: 44px; }
 .settings-copy-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
 .settings-copy-control > .settings-control-button { @include typography.role(label, null); height: 26px; padding-inline: 0; }
 .settings-copy-control__status { color: var(--color-text-secondary); font-size: 11px; }

@@ -302,3 +302,115 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
   await host.close();
   assert.equal(transportClosed, true);
 });
+
+test("Web host terminates a half-open AppHost socket after missed heartbeat", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-apphost-heartbeat-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "index.html"), "<!doctype html><title>Heartbeat fixture</title>");
+  const appHost = new AppHostServer({
+    createTransport() { throw new Error("Host activation is not expected"); },
+  });
+  const web = await createWorkbenchWebServer({
+    root,
+    appServerTarget: null,
+    appHostServer: appHost,
+    webSocketHeartbeatIntervalMs: 10,
+  });
+  const address = await web.listen({ host: "127.0.0.1", port: 0 });
+  const origin = `http://127.0.0.1:${address.port}`;
+  const socket = new WebSocket(`${origin.replace(/^http/u, "ws")}/apphost`, { origin });
+  context.after(() => socket.terminate());
+  context.after(() => web.close());
+  context.after(() => appHost.close());
+  await new Promise((resolvePromise, reject) => {
+    socket.once("open", resolvePromise);
+    socket.once("error", reject);
+  });
+  await new Promise(resolvePromise => setTimeout(resolvePromise, 35));
+  assert.equal(socket.readyState, WebSocket.OPEN, "a healthy peer survives repeated heartbeats");
+  // Browsers answer protocol Ping frames below JavaScript. Replacing ws.pong
+  // gives the fixture the equivalent of a network path that silently vanished.
+  socket.pong = () => {};
+  const closeCode = await new Promise((resolvePromise, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Half-open AppHost socket was not terminated")), 500);
+    socket.once("close", code => { clearTimeout(timeout); resolvePromise(code); });
+  });
+  assert.equal(closeCode, 1006);
+});
+
+test("AppHost diagnostics correlate two browser sockets and reject payload fields", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-apphost-diagnostics-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "index.html"), "<!doctype html><title>Diagnostics fixture</title>");
+  const appHost = new AppHostServer({
+    createTransport() {
+      return {
+        status: { state: "idle" },
+        async connect() { this.status = { state: "open" }; },
+        async send() {},
+        subscribeMessage() { return () => undefined; },
+        subscribeStatus() { return () => undefined; },
+        async close() { this.status = { state: "closed" }; },
+      };
+    },
+  });
+  const diagnostics = [];
+  const web = await createWorkbenchWebServer({
+    root,
+    appServerTarget: null,
+    appHostServer: appHost,
+    onAppHostDiagnostic: diagnostic => diagnostics.push(diagnostic),
+  });
+  const address = await web.listen({ host: "127.0.0.1", port: 0 });
+  const origin = `http://127.0.0.1:${address.port}`;
+  context.after(() => web.close());
+  context.after(() => appHost.close());
+  const attempts = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"];
+  const sockets = attempts.map(attempt => new WebSocket(`${origin.replace(/^http/u, "ws")}/apphost?attempt=${attempt}`, { origin }));
+  context.after(() => sockets.forEach(socket => socket.terminate()));
+  await Promise.all(sockets.map((socket, index) => new Promise((resolvePromise, reject) => {
+    socket.once("open", () => {
+      socket.send(JSON.stringify({ type: "hello", protocolVersion: 1, rendererId: attempts[index] }));
+    });
+    socket.once("message", raw => {
+      try {
+        assert.equal(JSON.parse(raw.toString()).type, "ready");
+        resolvePromise();
+      } catch (error) { reject(error); }
+    });
+    socket.once("error", reject);
+  })));
+  assert.deepEqual(diagnostics.filter(item => item.event === "upgrade-accepted").map(item => item.active), [1, 2]);
+  assert.deepEqual(diagnostics.filter(item => item.event === "hello-accepted").map(item => item.attemptId).sort(), attempts);
+  await Promise.all(sockets.map((socket, index) => new Promise((resolvePromise, reject) => {
+    const requestId = `connect-${index}`;
+    socket.once("message", raw => {
+      try {
+        const response = JSON.parse(raw.toString());
+        assert.equal(response.requestId, requestId);
+        assert.equal(response.ok, true);
+        resolvePromise();
+      } catch (error) { reject(error); }
+    });
+    socket.send(JSON.stringify({ type: "host/connect", requestId, hostId: "local-codex", leaseId: `lease-${index}` }));
+  })));
+  assert.deepEqual(diagnostics.filter(item => item.event === "host-connect").map(item => item.attemptId).sort(), attempts);
+
+  const valid = { attemptId: attempts[1], failure: "socket-error", phase: "connecting", readyState: 0, ageMs: 43 };
+  const accepted = await fetch(`${origin}/__opencraft_apphost_diagnostic`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(valid),
+  });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(diagnostics.find(item => item.event === "client-failure"), { event: "client-failure", ...valid });
+  const rejected = await fetch(`${origin}/__opencraft_apphost_diagnostic`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...valid, conversation: "private-thread-content" }),
+  });
+  assert.equal(rejected.status, 400);
+  assert.equal(JSON.stringify(diagnostics).includes("private-thread-content"), false);
+  await Promise.all(sockets.map(socket => new Promise(resolvePromise => {
+    socket.once("close", resolvePromise);
+    socket.close();
+  })));
+  assert.deepEqual(diagnostics.filter(item => item.event === "closed").map(item => item.active).sort(), [0, 1]);
+});

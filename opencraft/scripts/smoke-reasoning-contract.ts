@@ -62,7 +62,12 @@ try{
  runtime=createAppServerWorkbenchRuntime({hostId:'reasoning-test',autoReconnect:false,transport:new WebSocketTransport({url:host.websocketUrl,createSocket:url=>new WebSocket(url) as unknown as AppServerWebSocket})});
  await runtime.connect();
  const catalog=await runtime.resources.composerCatalog.listModels();const model=catalog.data.find(m=>m.displayName==='plain-model')!;assert.ok(model);assert.equal(model.defaultReasoningEffort,null);assert.deepEqual(model.supportedReasoningEfforts,[]);
- const thread=await runtime.resources.threads.start({cwd:root,model:model.model});
+ const permissionCatalog=await runtime.resources.composerCatalog.listPermissionProfiles();
+ const creationPermission=(permissionCatalog.data as any[]).find(profile=>profile.openCraftMode==='accept-edits');
+ assert.ok(creationPermission,`DSH Host must advertise a verified workspace preset: ${JSON.stringify((permissionCatalog.data as any[]).map(profile=>({id:profile.id,mode:profile.mode,approval:profile.approval,sandboxMode:profile.sandbox?.mode,openCraftMode:profile.openCraftMode})))}`);
+ const thread=await runtime.resources.threads.start({cwd:root,model:model.model,permissions:creationPermission.id});
+ const initialPermissionHistory=await new DshClient(host.dshUrl).call<any>('session.history',{sessionId:thread.id,maxMessages:100});
+ assert.equal(initialPermissionHistory.events.filter((entry:any)=>entry.event.type==='permission/preset').at(-1)?.event.data.preset,creationPermission.openCraftNativeProfileId);
  // Exercise recovery from a legacy caller. The engine may reject the invalid
  // selection immediately, or retain it until call validation; neither may
  // cause the next correctly compiled request to inherit an invalid effort.
@@ -105,7 +110,9 @@ try{
    const permissionMenu=page.locator('.codex-composer-selection-menu--permissions[role="menu"]');
    assert.doesNotMatch(await permissionMenu.innerText(),/AppServer default|How should OpenCraft actions be approved/);
    assert.equal(await permissionMenu.getByRole('menuitem').count(),profileCatalog.data.length);
-   await page.getByRole('menuitem').filter({hasText:new RegExp(selectedProfile.id.replace(/[-_:]+/g,'[ -]+'),'i')}).click();
+   const displayedProfile=(profile:any)=>profile.openCraftLabel??profile.id.replace(/^:/,'').replace(/[-_]+/g,' ');
+   assert.match(await permissionMenu.innerText(),/Engine profiles|Read only|Accept edits|Full access/);
+   await page.getByRole('menuitem').filter({hasText:displayedProfile(selectedProfile)}).click();
    await editor.fill('Reply OK only.');
    await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.getAttribute('aria-label')==='Send message'&&!button.disabled),{},{timeout:15000});
    await editor.press('Enter');
@@ -113,7 +120,7 @@ try{
    while(Date.now()<secondDeadline && observed.getSnapshot().timeline.frames.filter(frame=>frame.type==='assistant'&&frame.status==='complete').length<2) await new Promise(resolve=>setTimeout(resolve,25));
    assert.equal(observed.getSnapshot().timeline.frames.filter(frame=>frame.type==='assistant'&&frame.status==='complete').length,2, await page.locator('body').innerText());
    const permissionHistory=await new DshClient(host.dshUrl).call<any>('session.history',{sessionId:thread.id,maxMessages:100});
-   assert.equal(permissionHistory.events.filter((entry:any)=>entry.event.type==='permission/preset').at(-1)?.event.data.preset,selectedProfile.id);
+   assert.equal(permissionHistory.events.filter((entry:any)=>entry.event.type==='permission/preset').at(-1)?.event.data.preset,(selectedProfile as any).openCraftNativeProfileId??selectedProfile.id);
    await page.getByText('OK',{exact:true}).first().waitFor();
    await page.reload();
    await page.getByText('OK',{exact:true}).first().waitFor();
@@ -121,8 +128,8 @@ try{
    await page.locator('.codex-composer-mode--permissions').first().click();
    const restoredSelection=permissionMenu.locator('[data-selected="true"]');
    assert.equal(await restoredSelection.count(),1);
-   assert.match(await restoredSelection.innerText(),new RegExp(selectedProfile.id.replace(/[-_:]+/g,'[ -]+'),'i'));
-   await page.getByRole('menuitem').filter({hasText:new RegExp(profileCatalog.data[0].id.replace(/[-_:]+/g,'[ -]+'),'i')}).click();
+   assert.match(await restoredSelection.innerText(),new RegExp(displayedProfile(selectedProfile),'i'));
+   await page.getByRole('menuitem').filter({hasText:displayedProfile(profileCatalog.data[0])}).click();
    if(process.env.OPENCRAFT_DSH_BROWSER_SMOKE==='1'){
      await editor.fill('BROWSER_BRIDGE_TEST: open the local fixture and list tabs.');
      await editor.press('Enter');

@@ -220,6 +220,8 @@ export interface StartThreadOptions {
   readonly model?: string;
   readonly historyMode?: "legacy" | "paginated";
   readonly agentId?: string;
+  /** Host-advertised native profile ID; applied at Thread creation. */
+  readonly permissions?: string;
 }
 
 export interface AppServerThreadResourcePort {
@@ -1386,6 +1388,9 @@ export function createAppServerWorkbenchRuntime(
             ...(options.projectId == null
               ? {}
               : { projectId: options.projectId }),
+            ...(options.permissions === undefined
+              ? {}
+              : { permissions: options.permissions }),
             ...(config.dynamicTools === undefined
               ? {}
               : { dynamicTools: [...config.dynamicTools] }),

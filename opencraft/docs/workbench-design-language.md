@@ -29,6 +29,16 @@ consume that primitive instead of choosing feature-local backgrounds. Menus keep
 the existing `menu.web.scss` geometry; dialogs retain their established surfaces
 rather than adopting navigation styling.
 
+Hover capability and the last input are separate facts. The Web document marks
+touch/pen contact until a real mouse move; shared controls and menus apply
+transient hover only when a fine pointer is active. This is document-level so
+Radix portals consume the same signal. Keyboard focus-visible and persistent
+selected/open states remain independent, including after touch input. Coarse
+or touch-only devices receive 44px Settings action and menu targets; theme
+identity changes semantic colors, not this interaction contract. The Codex
+account disclosure stays separate from its actions trigger: touch scrolling
+does not paint a mouse-hover row, while actions remain visible and reachable.
+
 Primary Sidebar routes also share one leading icon slot and text axis. A route
 group may retain its own accessible navigation landmark without rendering a
 visual heading; section separation comes from the Shell spacing tokens rather
@@ -80,7 +90,7 @@ toolbar geometry in feature CSS.
 - An Activity task owns the full row's hover/selection surface. Its independent
   ellipsis trigger has a transparent background and supplies only hit area,
   focus, and menu-open affordance; moving the pointer onto it must not split
-  or dismiss the row hover surface. Touch suppresses transient hover while
+  or dismiss the row hover surface. The shared document input signal suppresses transient touch hover while
   retaining the same selection surface and a visible menu trigger.
 - Thread status, unread state, pending navigation and row actions share a stable
   trailing rail so asynchronous changes do not shift title or metadata geometry.

@@ -65,10 +65,10 @@
   gap: 4px;
   padding: 6px 8px 6px 12px;
 
-  &:hover,
-  &:focus-within { background: var(--color-background-primary-ghost-hover); }
-
-  &:hover .codex-account__menu-trigger,
+  @include controls.hover-capable {
+    &:hover { background: var(--color-background-primary-ghost-hover); }
+    &:hover .codex-account__menu-trigger { opacity: 1; }
+  }
   &:focus-within .codex-account__menu-trigger { opacity: 1; }
 }
 
@@ -181,6 +181,8 @@
 
   &[data-state="open"] { opacity: 1; background: var(--color-background-primary-ghost-hover); }
 }
+
+:root[data-touch-interaction] .settings-icon-button.codex-account__menu-trigger { opacity: 1; }
 
 .codex-account__error {
   padding: 0 16px 10px 29px;
@@ -337,7 +339,7 @@
   .codex-account-list__empty > .settings-control-button { margin-left: 44px; }
 }
 
-@media (hover: none) {
+@media (any-pointer: coarse), (hover: none) {
   .settings-icon-button.codex-account__menu-trigger { opacity: 1; }
 }
 
