@@ -60,6 +60,8 @@ beforeEach(() => {
   regionMock.isGlobal = false;
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
+  openClawMock.bots = [];
+  openClawMock.isSubscribed = false;
 });
 
 afterEach(() => {
@@ -309,6 +311,23 @@ describe("international v2 homepage rendering", () => {
       expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("我的智能体伙伴");
     });
     expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/agents");
+  });
+
+  it.each([
+    [false, "zh-CN"], [true, "en-US"], [true, "zh-SG"], [true, "zh-Hant"],
+    [true, "id-ID"], [true, "es"], [true, "ja-JP"], [true, "ko-KR"],
+  ] as const)("opens first-bot creation from homepage CTAs (global=%s, locale=%s)", async (global, locale) => {
+    regionMock.isGlobal = global;
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = true;
+    openClawMock.bots = [];
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a class="btn-dark" href="/subscribe">Create</a></div><div class="cta__acts"><a class="btn-dark" href="/subscribe">Create</a></div></main>';
+
+    render(<InternationalHomeRuntime locale={locale} markup={markup} />);
+
+    for (const selector of [".hero__cta a", ".cta__acts a"]) {
+      await waitFor(() => expect(document.querySelector(selector)).toHaveAttribute("href", "/agents?create=1"));
+    }
   });
 
   it("sends anonymous CTA clicks straight to the subscribe page (plan A)", async () => {

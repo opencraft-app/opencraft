@@ -1,10 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useCallback, useMemo, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
 import type { User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
+import { journeyHref, resolveCtaRoute } from "@/lib/cta-journey";
 
 const addBot = vi.fn();
 let maxBots = 5;
@@ -131,6 +133,16 @@ const page = (search: string) => (
   </AppNavigationProvider>
 );
 
+function GlobalFirstBotJourney({ initialSearch }: { initialSearch: string }) {
+  const [search, setSearch] = useState(initialSearch);
+  const navigate = useCallback<AppNavigationValue["navigate"]>((to, options) => {
+    navigateMock(to, options);
+    setSearch(typeof to === "string" ? new URL(to, "https://lightvela.ai").search : to.search ?? "");
+  }, []);
+  const navigation = useMemo(() => ({ ...createNavigation(search), navigate }), [search, navigate]);
+  return <AppNavigationProvider value={navigation}><AgentSettingsPage showHeader={false} /></AppNavigationProvider>;
+}
+
 vi.mock("@/pages/marketing/agent-chat-panel", () => ({
   AgentChatPanel: () => null,
 }));
@@ -156,6 +168,32 @@ describe("international Bot onboarding", () => {
     execDebugCommand.mockResolvedValue({ status: "success", exitCode: 0, output: "" });
   });
   afterEach(cleanup);
+
+  it("creates and configures the first Bot from the international homepage entry", async () => {
+    bots = [];
+    // 国际站不依赖国内实名状态。
+    currentSessionUser.realnameVerified = false;
+    addBot.mockImplementationOnce(async ({ name }: { name: string }) => {
+      const created = { ...buildBot(), name, status: "provisioning" as const };
+      bots = [created];
+      return created;
+    });
+    const target = journeyHref(resolveCtaRoute({
+      isAuthenticated: true, isSubscribed: true, hasBots: false,
+    }), "en-US", { localized: true });
+    render(<GlobalFirstBotJourney initialSearch={new URL(target, "https://lightvela.ai").search} />);
+    expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
+    fireEvent.change(document.getElementById("lv-onboarding-name")!, { target: { value: "Global helper" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    await waitFor(() => expect(addBot).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      "/agents/overview?bot=ins-372", { replace: true },
+    ));
+    expect(execDebugCommand.mock.calls.some(([id, command]) =>
+      id === "ins-372" && command.includes("__CTL_SOUL_EOF__"),
+    )).toBe(true);
+  });
 
   it("opens the subscription return in the international template guide", async () => {
     bots = [];

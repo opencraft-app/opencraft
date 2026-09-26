@@ -14,12 +14,14 @@
  * 每条都验证：面板不被重挂载、配置流程真的跑起来、引导独占整页。
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useCallback, useMemo, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
 import type { User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
+import { journeyHref, resolveCtaRoute } from "@/lib/cta-journey";
 
 const navigateMock = vi.fn();
 const execDebugCommand = vi.fn();
@@ -153,6 +155,21 @@ const page = (search: string) => (
   </AppNavigationProvider>
 );
 
+// 首个 Bot 入口必须真正消费 create 参数；不能只记录 navigate 而让旧 URL 永远保留。
+function FirstBotJourney({ initialSearch }: { initialSearch: string }) {
+  const [search, setSearch] = useState(initialSearch);
+  const navigate = useCallback<AppNavigationValue["navigate"]>((to, options) => {
+    navigateMock(to, options);
+    setSearch(typeof to === "string" ? new URL(to, "https://lightvela.com").search : to.search ?? "");
+  }, []);
+  const navigation = useMemo(() => ({ ...createNavigation(search), navigate }), [search, navigate]);
+  return (
+    <AppNavigationProvider value={navigation}>
+      <AgentSettingsPage showHeader={false} />
+    </AppNavigationProvider>
+  );
+}
+
 /** 等引导表单出现（「换一批」是表单独有的头像操作） */
 const waitForForm = () => waitFor(() => {
   expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
@@ -221,6 +238,28 @@ describe("create bot: all entry paths", () => {
     };
   });
   afterEach(cleanup);
+
+  it("homepage first-bot entry creates an instance and reaches setup completion", async () => {
+    bots = [];
+    const target = journeyHref(resolveCtaRoute({
+      isAuthenticated: true, isSubscribed: true, hasBots: false,
+    }), "zh-CN");
+    render(<FirstBotJourney initialSearch={new URL(target, "https://lightvela.com").search} />);
+    await waitForForm();
+
+    const nameInput = document.getElementById("lv-onboarding-name")!;
+    fireEvent.change(nameInput, { target: { value: "首页小助手" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    await waitFor(() => expect(addBot).toHaveBeenCalledTimes(1));
+    expect(addBot).toHaveBeenCalledWith(expect.objectContaining({ name: "首页小助手" }));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      "/agents/overview?bot=ins-new-0", { replace: true },
+    ));
+    expect(execDebugCommand.mock.calls.some(([id, command]) =>
+      id === "ins-new-0" && command.includes("__CTL_SOUL_EOF__"),
+    )).toBe(true);
+  });
 
   it("A. subscribe redirect: template pick runs the setup flow", async () => {
     bots = [buildBot("ins-sub", { name: "育儿参谋", status: "running" })];

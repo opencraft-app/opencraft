@@ -3618,7 +3618,7 @@ export const SubscribePage = ({
        已有 Bot → /agents；已订阅但还没 Bot → 进 /agents 的创建流程（与首页 CTA、登录后分流落点一致）。 */
     if (isSubscribed || activePass || bots.length > 0) {
       void refreshPasses();
-      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
+      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreateBotPath());
       return;
     }
 

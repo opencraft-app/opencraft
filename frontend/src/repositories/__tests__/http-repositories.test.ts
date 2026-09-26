@@ -2440,6 +2440,61 @@ describe("http repositories auth token bootstrap", () => {
     }
   });
 
+  it.each([200, 500])("times out while reading a stalled debug response body (HTTP %s)", async (status) => {
+    vi.useFakeTimers();
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    try {
+      const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            bodyController = controller;
+            controller.enqueue(new TextEncoder().encode('{"data":'));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("Aborted", "AbortError"));
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, { status }));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const outcome = repositories.bots.execDebugCommand("bot-1", "true", { timeoutMs: 8_000 })
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(true);
+      expect(await outcome).toMatchObject({ message: "debug_exec_timeout:8000" });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      bodyController?.error(new DOMException("Test cleanup", "AbortError"));
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { status: 200, body: { data: { status: "SUCCESS", exit_code: 0, output: "ready" } }, exitCode: 0 },
+    { status: 500, body: { details: { status: "FAILED", exit_code: 1, output: "failed" } }, exitCode: 1 },
+  ])("keeps debug results and clears the timeout after reading HTTP $status", async ({ status, body, exitCode }) => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }));
+      vi.stubGlobal("fetch", fetchMock);
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+
+      await expect(repositories.bots.execDebugCommand("bot-1", "true", { timeoutMs: 8_000 }))
+        .resolves.toMatchObject({ exitCode });
+
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(8_000);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("loads a validated federation authorization context", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       client: {
