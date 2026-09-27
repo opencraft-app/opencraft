@@ -10,6 +10,13 @@ const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
+vi.mock("@/components/site/browser-language-suggestion", async () => {
+  const ReactRuntime = await import("react");
+  return {
+    BrowserLanguageSuggestion: () =>
+      ReactRuntime.createElement("div", { "data-testid": "browser-language-suggestion" }),
+  };
+});
 vi.mock("@/components/site/maintenance-announcement-banner", async () => {
   const ReactRuntime = await import("react");
   const { useLocaleOverride } = await import("@/i18n/t");
@@ -93,6 +100,14 @@ describe("international v2 homepage rendering", () => {
     render(<InternationalHomeRuntime locale="es" markup="<main />" />);
 
     expect(screen.getByTestId("maintenance-announcement-locale")).toHaveTextContent("es");
+  });
+  it("mounts the browser language suggestion only on the default English home", () => {
+    regionMock.isGlobal = true;
+    const { rerender } = render(<InternationalHomeRuntime locale="en-US" markup="<main />" />);
+    expect(screen.getByTestId("browser-language-suggestion")).toBeInTheDocument();
+
+    rerender(<InternationalHomeRuntime locale="zh-SG" markup="<main />" />);
+    expect(screen.queryByTestId("browser-language-suggestion")).not.toBeInTheDocument();
   });
   it("server-renders the approved homepage content and stylesheet", () => {
     (globalThis as { React?: typeof React }).React = React;
