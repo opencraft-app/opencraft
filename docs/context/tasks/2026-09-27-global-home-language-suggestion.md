@@ -90,4 +90,4 @@
 - 精确检索命中 `frontend/src/i18n/index.ts`、`frontend/src/lib/region.ts` 与 `frontend/next-site/international-home-runtime.tsx`。
 
 ## handoff
-- MR !4677 原提交的 CI 已通过；CR 指出的裸英文公开页自动写入误判已修复，并合入当前 master。待推送后复核新提交的 CI 和可合并状态；全量测试与首页性能预算在干净 master 上已有失败；不合并或发布。
+- MR !4677 原提交的 CI 已通过；CR 指出的裸英文公开页自动写入误判已修复，并合入当前 master。原 MR 已更新，工蜂显示 `can_be_merged`，新流水线为阻塞性 `pending`；全量测试与首页性能预算在干净 master 上已有失败；不合并或发布。

@@ -1,5 +1,5 @@
 ## stage
-MR !4677 的 CR 后续修复和当前 master 合并已完成本地验证，待提交生成物并推送原 MR。
+MR !4677 的 CR 后续修复和当前 master 合并已完成本地验证，原 MR 已更新；新 CI 仍在运行。
 
 ## verified
 - 独立 worktree 已合入 `origin/master` 的 `3d6077da7`，主工作区未修改。
@@ -16,7 +16,7 @@ MR !4677 的 CR 后续修复和当前 master 合并已完成本地验证，待�
 ## unverified
 - 未验证线上行为；没有发布。
 - 全量测试未完成；多处失败，其中一项在干净 master 复现。
-- CR 后续修复尚未推送，远端 CI 结果待核验。
+- 远端 CI 为 `pending` 且阻塞合并，尚未得到最终结果。
 
 ## discard
 - 无需保留干净 master 对比 worktree；已删除。
@@ -26,4 +26,4 @@ MR !4677 的 CR 后续修复和当前 master 合并已完成本地验证，待�
 - 修改集中在首页语言提示、i18n 显式选择标记、聚焦测试、正式设计文档和官方同步的 OpenCraft 副本。
 
 ## next_action
-- 更新本 Task Pack 的合并后验证记录，单独提交官方同步的 OpenCraft 生成物；推送 MR !4677 后核验远端源 SHA、可合并状态和 CI 快照。
+- 等待 MR !4677 新流水线结论；当前工蜂显示 `can_be_merged`，不合并或发布。
