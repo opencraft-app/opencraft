@@ -6,6 +6,7 @@ import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
+import { BrowserLanguageSuggestion } from '@/components/site/browser-language-suggestion';
 import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import {
@@ -16,6 +17,7 @@ import {
   type CtaCopyKey,
 } from '@/lib/cta-journey';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import { isGlobal } from '@/lib/region';
 
 export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
@@ -177,6 +179,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       <PublicSiteLocaleBridge locale={locale}>
         <MaintenanceAnnouncementBanner />
       </PublicSiteLocaleBridge>
+      {locale === PUBLIC_SITE_LOCALES.EN_US && <BrowserLanguageSuggestion />}
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
       <InternationalHomeMarkup markup={markup} />
       <div className="international-home-header-actions-layer">

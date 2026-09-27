@@ -29,6 +29,16 @@ describe("i18n initial locale", () => {
     const { default: i18n } = await loadI18n("global", "/");
 
     expect(i18n.language).toBe("en-US");
+    const { hadSavedLocaleBeforeInitialPage } = await import("@/i18n");
+    expect(hadSavedLocaleBeforeInitialPage).toBe(true);
+  });
+
+  it("captures a first visit before persisting the bare home's default English", async () => {
+    const { default: i18n, hadSavedLocaleBeforeInitialPage } = await loadI18n("global", "/");
+
+    expect(hadSavedLocaleBeforeInitialPage).toBe(false);
+    expect(i18n.language).toBe("en-US");
+    expect(window.localStorage.getItem("lw-locale")).toBe("en-US");
   });
 
   /**

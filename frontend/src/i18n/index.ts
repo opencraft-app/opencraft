@@ -105,6 +105,9 @@ const readOverride = (): LocaleCode | null => {
   }
 };
 
+/** Snapshot before a bare English page records its locale for console continuity. */
+export const hadSavedLocaleBeforeInitialPage = readOverride() !== null;
+
 /** `zh-SG` 等公开 locale 统一解析到实际字典 key。 */
 const dictKeyForLocale = (locale: LocaleCode): I18nDictKey =>
   localeDefinition(locale).i18nKey;
