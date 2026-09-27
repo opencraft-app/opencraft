@@ -66,6 +66,9 @@
 - OpenCraft `@opencraft/plugin-lightvela-hermes` 类型检查通过；`tests/lightvela-hermes-plugin.test.ts` 83 项通过。
 - CR 后续修复：前端 6 个聚焦测试文件 147 项通过，国际站配置下 3 个聚焦测试文件 90 项通过；`pnpm check` 为 171 current / 171 baseline、0 new；`build:global` 为 664 静态页及 42 条公开 SEO 路由，`build:cn` 为 106 静态页及 8 条公开 SEO 路由。
 - 本轮国际站首页性能预算仍未通过：28 个脚本（预算 22），raw 2,772,960、gzip 940,546 字节；相较上次 MR 构建分别增加 1,768 与 750 字节。
+- 合入当前 `origin/master` 的 `3d6077da7` 后：前端聚焦测试 92 项、国际站配置测试 90 项、OpenCraft 插件测试 83 项通过；`pnpm check` 为 171 current / 171 baseline、0 new；国际站构建 664 静态页、42 条公开 SEO 路由通过，国内站构建 107 静态页、8 条公开 SEO 路由通过。
+- 合并后使用官方脚本重新同步 OpenCraft 130 个文件并通过检查，插件类型检查通过；文档检查 0 条损坏的一方链接。
+- 合并后的国内站构建产物仍未通过首页性能预算：28 个脚本、raw 2,772,944、gzip 940,134 字节；该预算在干净 master 上也未通过。
 
 ## risks
 - 新增客户端组件增加首页脚本；运行首页性能预算。
@@ -87,4 +90,4 @@
 - 精确检索命中 `frontend/src/i18n/index.ts`、`frontend/src/lib/region.ts` 与 `frontend/next-site/international-home-runtime.tsx`。
 
 ## handoff
-- MR !4677 已提交且 OpenCraft vendored 漂移修复后的 CI 已通过；CR 指出的裸英文公开页自动写入误判正在修复。全量测试与首页性能预算在干净 master 上已有失败；不合并或发布。
+- MR !4677 原提交的 CI 已通过；CR 指出的裸英文公开页自动写入误判已修复，并合入当前 master。待推送后复核新提交的 CI 和可合并状态；全量测试与首页性能预算在干净 master 上已有失败；不合并或发布。
