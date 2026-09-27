@@ -1,5 +1,5 @@
 ## stage
-测试发送已切至 Hermes CLI；用户已授权提交 MR，正在核对暂存差异和远端状态。
+MR !4678 的 CI 因 OpenCraft vendored 副本漂移失败；正在验证同步产物并更新现有 MR。
 
 ## verified
 - 当前通道面板使用 `ChannelPanel` 与 `useChannelOperations`，测试命令由 `createHermesCommandBuilder` 按 Profile 构造。
@@ -22,6 +22,9 @@
 - 用户指出聊天软件收到的“请在聊天软件中确认收到”不合语境，随后指定最终测试消息正文为“叮咚！收到一条来自 LightVela 的测试消息。”；网页成功提示保留原文。已同步六种目标语言与繁体生成文案，聚焦发送测试 2 项、`pnpm check`、`pnpm build:cn`、`pnpm build:global`、`git diff --check` 通过。构建产生的字体差异已恢复；5274 国内站预览重启后 `/agents/channels/` 返回 HTTP 200。未再次向真实通道发送消息。
 - 用户要求失败提示同时提供检查连接和重新连接后再测试两条路径。统一失败文案改为“测试消息发送失败。请检查通道连接，或重新连接通道后再次测试。”，底层错误仍不展示。已同步六种目标语言与繁体生成文案；通道交互聚焦测试 3 项、`pnpm check`、`pnpm build:cn`、`pnpm build:global` 通过。构建生成的字体差异已恢复，5274 国内站预览已重启。
 
+- 2026-09-27 MR !4678 的失败日志指向 OpenCraft `i18n/generated/en-US.json` 漂移；本地重现后运行 `npm --prefix opencraft run sync:mono2-agent-console`，仅 13 个 vendored 文件变化，`check:mono2-agent-console` 已通过。
+- OpenCraft 插件 typecheck、`check:i18n` 和本地 `opencraft_guard.sh` 均通过；工蜂只读鉴权成功。
+
 ## unverified
 - QQ 客户端是否实际收到消息尚待用户确认；命名 Profile 发送尚未做真实实例验证。
 - 全量测试集未通过，多个无关测试失败且一个 worker 持续运行；需要单独的基线修复任务处理。
@@ -37,4 +40,4 @@
 - 主要文件：`frontend/src/pages/marketing/agent-channel-panel.tsx`、`frontend/src/pages/marketing/agent-config/hooks/useChannelOperations.ts`、`frontend/src/pages/marketing/agent-config/hermes-command-builder.ts`。
 
 ## next_action
-按用户授权提交、推送并创建 MR，核验远端分支与 MR 状态；不合并或发布。5274 开发服务器由 detached `screen` 会话 `lightvela-5274` 保持运行。预览结束后恢复 Whistle `lv` 规则原先的 5174 映射，并清理生成的 `frontend/next-env.d.ts` 差异。
+完成 OpenCraft 聚焦门禁，单独提交同步生成物并推送现有 MR !4678；核验新 SHA、合并状态和 CI。排除预览服务生成的 `frontend/next-env.d.ts` 差异，不合并或发布。

@@ -47,8 +47,13 @@
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@origin/master` | 前端邻接 | 检查相邻测试与 i18n |
 | `frontend/DESIGN.md@origin/master` | 现有按钮与布局规范 | 沿用卡片内胶囊按钮、保持操作区换行 |
 | `frontend/openspec/changes/2026-08-30-automation-test-send-error-copy-design.md@origin/master` | 既有发送失败文案约束 | 不展示原始 Hermes 错误 |
+| `opencraft/AGENTS.md`、`opencraft/MONO2_MIGRATION.md` | OpenCraft 生成边界与验证 | 由 frontend 真源同步 vendored 闭包 |
+| `docs/context/project/upstream-subtrees.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | 邻接与生成契约 | 核对生成脚本、翻译资源及检查入口 |
+| `docs/context/flows/tapd-gongfeng-delivery.md`、`.agents/skills/gongfeng/SKILL.md` | 现有 MR 交付 | 使用既有分支并核验远端状态 |
 
 ## evidence
+- MR !4678 的 `MR 占位检查` 在 OpenCraft guard 失败：`i18n/generated/en-US.json` 的前端源文件与 vendored 副本 SHA 不一致。下载的失败步骤日志为 737 行；本地 `npm --prefix opencraft run check:mono2-agent-console` 复现相同错误。按官方同步脚本生成 130 个文件的闭包，仅 13 个受本次前端提交影响的 vendored 文件出现差异；同步后闭包检查通过。
+- OpenCraft 依赖安装后，`@opencraft/plugin-lightvela-hermes` typecheck、`check:i18n` 与 `.ci/checks/opencraft_guard.sh` 均通过；CI guard 确认 130 个 vendored 文件一致。
 - ACLI 发布包 `2026.09.22-1` 的 Hermes LightVela spec `1.1.28` 含 `channel/send`；要求 `--platform` 和 `--message`，成功结果 `data.status = sent`，最低运行时 `0.15.0`。
 - 本地预览连接上海正式后端的 QQ 实例，两次失败的 debug/exec 回执均为 `unknown flag: --agent`；发布包的 `channel/send/capability.yaml` 确认没有 `agent` 参数。修正后浏览器显示“测试消息已发送”，代理记录 HTTP 200 且 ACLI 输出 `data.status = sent`；实际 QQ 客户端接收仍待用户确认。
 - 修正后的命令构造与 Hook 聚焦测试 2 文件、7 测试通过；`pnpm check` 通过（TypeScript 诊断 171，与基线相同，新增 0）。
