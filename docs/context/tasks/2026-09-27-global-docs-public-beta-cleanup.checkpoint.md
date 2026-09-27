@@ -16,7 +16,7 @@ derived: false
 ---
 
 ## stage
-国际站六种语言文案已修改，本地生成与门禁已完成，等待独立 MR 交付。
+国际站六种语言文案已修改，本地生成与门禁已完成，独立 MR !4687 已创建。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - requirement_ids: GLOBAL-DOCS-PUBLIC-BETA。
@@ -41,9 +41,10 @@ derived: false
 - 六种语言中相关整站公测说法已定位；功能级 Beta 和第三方比较页另行保留。
 - 文档同步、`pnpm check`、国际站构建、164 项聚焦测试及文档 validator 通过。
 - 生成的 en-us、zh-sg、zh-hant、id-id、es、ja-jp、ko-kr 文档中未发现整站公测口径。
+- 本轮变更见 MR !4687，目标为 `master`。
 
 ## unverified
-- 新 MR 的远端 source SHA、mergeability 与 CI 状态待核对。
+- 新 MR 的 CI 最终结果待流水线完成；远端 source SHA 和 mergeability 在交接前核对。
 
 ## discard
 - 公测转段时间线和内测用户延期承诺不再作为当前文档口径。
@@ -53,4 +54,4 @@ derived: false
 - 主 Task Pack：`docs/context/tasks/2026-09-27-global-docs-public-beta-cleanup.md`。
 
 ## next_action
-运行文档同步及必要门禁，复核多语言产物和提交范围，再创建 MR。
+跟踪 MR !4687 的 CI 与评审；合并及发布由后续流程处理。

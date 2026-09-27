@@ -66,6 +66,7 @@ derived: false
 - `pnpm docs:sync` 同步 549 篇，日期清单 477 篇通过；六种国际站源及生成的 `zh-hant` 对应内容不再包含整站公测口径。
 - `pnpm check` 新增 TypeScript 诊断 0；聚焦语言 parity、日期和 SEO 测试 164 项通过；`pnpm build:global` 生成 664 个静态页面并通过 SEO 检查。
 - 文档 validator 错误 0、断链 0；context catalog 仍有仓库既有错误，本次 Task Pack 无新增错误。
+- 本轮独立 MR !4687 已创建，目标分支为 `master`；远端最终状态以 MR 实时结果为准。
 
 ## risks
 - 首购活动与 AI 套餐可售状态会变化；当前文案指向订阅页，不从旧公测公告推断权益。
@@ -85,4 +86,4 @@ derived: false
 - 路径与行号清单及 `git diff`；不内联全量搜索结果。
 
 ## handoff
-- 本地验证完成，待提交独立 MR；生产发布不在本轮范围。
+- 本地验证完成，本轮变更见 MR !4687；生产发布不在本轮范围。
