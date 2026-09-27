@@ -57,7 +57,7 @@ describe("international connected channel card actions", () => {
     );
     const connectedButtonRule = getRuleBody(
       standardPanelStyles,
-      `${scope} :is(.lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn)`,
+      `${scope} :is(.lh-std-channel-panel__card-test, .lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn)`,
     );
 
     expect(connectedActionRule).toContain("flex-wrap: wrap;");
@@ -102,14 +102,14 @@ describe("channel card action button radius", () => {
     );
     for (const selector of [
       ".lh-std-channel-panel__guide-btn",
-      ".lh-std-channel-panel__card-unbind",
+      ".lh-std-channel-panel__card-test, .lh-std-channel-panel__card-unbind",
       ".lh-std-channel-panel__connect-btn",
     ]) {
       expect(getRuleBody(standardPanelStyles, selector)).toContain(
         "border-radius: 999px;",
       );
       expect(getRuleBody(standardPanelStyles, selector)).toContain(
-        "min-height: 36px;",
+        "min-height: 32px;",
       );
     }
   });
