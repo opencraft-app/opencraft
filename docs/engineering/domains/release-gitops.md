@@ -120,6 +120,10 @@ master 源码
 - LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
   产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
   通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。
+- OpenCraft headless Linux包的Web入口必须携带headless构建身份及`opencraft-server` Host配置；
+  普通`build:web`产物即使与Codex运行时装在同一包，也不会注册Web侧Codex扩展。打包、包级
+  smoke及服务启动都应拒绝这种混包；进程健康和Codex CLI存在不能替代Web入口校验。该本机包
+  的切换不等同于GitOps生产发布，仍需核对实际运行release与保留回滚点。
 - frontend Pages artifact在release matrix显式启用时，先构建OpenCraft独立Embedded Workbench
   target，再把无sourcemap、内容寻址的静态树放入Next导出的`/__opencraft/`子树；Next主chunk
   不导入OpenCraft，未执行rollout `show()`的页面也不请求该树。同源共包避免ES module CORS和

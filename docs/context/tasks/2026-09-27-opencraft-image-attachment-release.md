@@ -46,10 +46,12 @@ Publish the verified OpenCraft image-attachment Web implementation to the existi
 ## evidence
 - `npm run gate`: passed in the current checkout before isolation (includes concurrent unrelated source; release archive must come from clean commit).
 - Live service initially points to `/opt/opencraft-server/releases/20260926232644-eece21b2400b` and serves port 80 with its existing state directory.
+- A separately installed release `20260927001716-7bb36b3addfd` lacked the headless Web/Codex entry despite carrying the Codex runtime; the prior release was restored. Its Web assets contained no `vela.headless-codex`, `OpenCraft Server`, or `/apphost` markers, while an isolated build with the required flags restored them.
 
 ## risks
 - Restart briefly disconnects WebSocket clients, including this conversation; retain the old release pointer and verify recovery.
 - A dirty source build could include unrelated diagnostics; build only from a clean checkout at the image commit.
+- A generic `build:web` can produce a healthy headless server with no Codex UI. Reject it at build/package/startup boundaries using explicit release metadata, not a minified-string grep as the durable contract.
 - Existing port 80 is unauthenticated public access; this release must not widen that already-existing boundary.
 
 ## validation

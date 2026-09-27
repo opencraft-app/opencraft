@@ -13,6 +13,15 @@ import { parseHeadlessArguments, startHeadlessServer } from "../scripts/headless
 import { assertHeadlessBuildHost, buildHeadlessBundle, headlessWebHostDefinitions } from "../scripts/package-headless-linux.mjs";
 import { createWorkbenchWebServer } from "../scripts/serve-workbench-web.mjs";
 
+async function writeHeadlessVersion(webRoot) {
+  await writeFile(join(webRoot, "version.json"), JSON.stringify({
+    schemaVersion: 1,
+    buildId: "headless-test",
+    headlessServer: true,
+    headlessHostId: "opencraft-server",
+  }));
+}
+
 test("headless command accepts a private data root and rejects unsupported flags", () => {
   assert.deepEqual(parseHeadlessArguments(["--port", "10001", "--data-dir", "/tmp/opencraft-test"], {}), {
     help: false,
@@ -43,6 +52,7 @@ test("public headless mode requires explicit acknowledgement and keeps one HTTP 
   const webRoot = join(root, "web");
   await mkdir(webRoot);
   await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Public fixture</title>");
+  await writeHeadlessVersion(webRoot);
   const dataDirectory = join(root, "data");
   const startAgentHost = async () => ({ websocketUrl: "ws://127.0.0.1:9988/rpc", close: async () => undefined });
   let webOptions;
@@ -77,6 +87,26 @@ test("packaged Linux Web Host advertises the remote filesystem browse root", () 
   ]);
 });
 
+test("headless server refuses a generic Web artifact before claiming its data directory", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-generic-web-test-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const webRoot = join(root, "web");
+  await mkdir(webRoot);
+  await writeFile(join(webRoot, "index.html"), "<!doctype html><title>Generic Web</title>");
+  await writeFile(join(webRoot, "version.json"), JSON.stringify({
+    schemaVersion: 1,
+    buildId: "generic-test",
+    headlessServer: false,
+    headlessHostId: null,
+  }));
+  const dataDirectory = join(root, "data");
+  await assert.rejects(
+    startHeadlessServer({ root, webRoot, dataDirectory, startAgentHost: async () => { throw new Error("must not start"); } }),
+    /requires a Web build with its Codex and opencraft-server Host entry enabled/u,
+  );
+  await assert.rejects(access(dataDirectory), { code: "ENOENT" });
+});
+
 test("bundled headless help exits without starting the imported static gateway", async (context) => {
   const root = new URL("../.runtime/", import.meta.url);
   await mkdir(root, { recursive: true });
@@ -95,6 +125,7 @@ test("headless server serves WebUI through a loopback-only owned AppServer gatew
   const webRoot = join(root, "web");
   await mkdir(webRoot);
   await writeFile(join(webRoot, "index.html"), "<!doctype html><title>OpenCraft headless</title>");
+  await writeHeadlessVersion(webRoot);
   const upstream = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise((resolvePromise) => upstream.once("listening", resolvePromise));
   context.after(() => new Promise((resolvePromise) => upstream.close(resolvePromise)));
@@ -191,6 +222,7 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
   const root = await mkdtemp(join(tmpdir(), "opencraft-headless-codex-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "index.html"), "<!doctype html><title>Codex bridge</title>");
+  await writeHeadlessVersion(root);
   const messageListeners = new Set();
   const statusListeners = new Set();
   let transportCount = 0;
