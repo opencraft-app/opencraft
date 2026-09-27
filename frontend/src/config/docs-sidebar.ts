@@ -7,7 +7,7 @@
  * 区域差异：
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
- *   - 国内站（CN_SIDEBAR）：微信 / QQ / 企业微信 / 飞书
+ *   - 国内站（CN_SIDEBAR）：微信 / QQ / 企业微信 / 飞书 / 钉钉
  *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark
  */
 
@@ -26,7 +26,7 @@ export interface DocItem {
   availableLocales?: Array<"zh" | "en">;
   /**
    * 是否作为二级目录项（视觉上缩进）。
-   * 用于在"配置通道"下挂具体通道（国内：微信/QQ/企业微信/飞书；国际：Telegram/WhatsApp/...）。
+   * 用于在"配置通道"下挂具体通道（国内：微信/QQ/企业微信/飞书/钉钉；国际：Telegram/WhatsApp/...）。
    */
   indent?: boolean;
   /**
@@ -45,7 +45,7 @@ export interface DocGroup {
 /**
  * 国内站 sidebar：按用户任务组织（GEO 导航方案）。
  * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 问题排查 / 联系与支持。
- * 通道具体项（微信 / 飞书 / QQ）挂在「配置通道」表头下作为二级项。
+ * 通道具体项挂在「配置通道」表头下作为二级项。
  * 注：部分新增页面为占位（仅标题骨架），正文内容后续逐步补齐。
  */
 const CN_SIDEBAR: DocGroup[] = [
@@ -73,12 +73,13 @@ const CN_SIDEBAR: DocGroup[] = [
     items: [
       { slug: "configuration", title: "配置总览" },
       { slug: "configuration/model", title: "配置模型" },
-      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂四个具体 channel 作为二级项
+      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）
       { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
       { slug: "configuration/channel-wechat", title: "微信", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", indent: true },
       { slug: "configuration/channel-wecom", title: "企业微信", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", indent: true },
+      { slug: "configuration/channel-dingtalk", title: "钉钉", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
       { slug: "configuration/personality", title: "人设" },
       { slug: "configuration/memory", title: "记忆管理" },
@@ -388,6 +389,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/channel-wecom": "configuration/channel-wecom.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
+  "configuration/channel-dingtalk": "configuration/channel-dingtalk.md",
   "configuration/skill": "configuration/skill.md",
   "configuration/personality": "configuration/personality.md",
   "configuration/memory": "configuration/memory.md",

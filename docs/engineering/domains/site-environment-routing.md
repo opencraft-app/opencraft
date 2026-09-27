@@ -37,6 +37,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
 
+国内站新增配置指南时，`frontend/src/config/docs-sidebar.ts` 中的 `CN_SIDEBAR`、`CN_SLUG_TO_FILE` 与 `frontend/scripts/sync-fumadocs-content.mjs` 中的 `cnDocs` 必须同时注册同一 slug。钉钉指南使用 `configuration/channel-dingtalk`，仅进入国内站目录；国际站目录与映射单独维护。
+
 ## 官网首页展示产物
 
 - 双站首页的试用展示统一为「新用户免费体验1个月，送4500 AI 积分」，用一条文案表达，不分列标准版和 AI 积分版；静态多语言片段、导入脚本、共用页脚和 `llms.txt` 摘要同步维护。前端文案不决定实际权益期限，权益仍由服务端执行。
@@ -61,6 +63,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国内站和国际站可复用同一套公开营销页组件或静态 fragment，但必须在 `frontend/next-site/international-home-routing.ts`、`frontend/src/app/(site)/page.next.tsx` 和对应测试里显式区分站点入口、locale、CTA、文档链接和合规页脚。
 - 国内站 `lightvela.com/` 默认使用国内语境的 `zh-CN` 首页内容；可以复用国际站中文版的视觉结构，但链接必须落到国内裸路径，不输出国际站 locale 前缀或海外渠道主入口。
 - 国际站 `lightvela.ai/` 负责默认英文和多语言公开首页；权益文案、AI companion 语境和静态图片资源需要按 locale 同步验证，不能只改默认英文。
+- 国际站裸首页维持英文静态内容与现有 canonical。仅在首次访问、此前未明确选择语言且浏览器首选语言匹配已发布的非英文 locale 时，客户端以目标语言展示一次切换建议；提示已展示状态保存在浏览器，选择语言后进入对应国际站公开 URL，继续英文则保存英文选择。任何裸英文公开页为控制台语言连续性自动写入的默认英文都不算明确选择；手动切换与带语言前缀的 URL 会单独记录明确语言意图。旧存储中的非英文选择继续优先；无法辨认来源的旧版英文记录可能再收到一次建议。国内站和登录后路径不展示此建议。无痕模式关闭后可重新出现。
 - Blog 当前属于国际站公开内容入口；`/blog` 和本地化 Blog 路由在国内站构建下应保持不可访问，除非另有国内站 Blog 产品需求和路由设计。
 - 首页静态 fragment 的链接、图片版本参数、合规信息和客户端演示外壳属于站点路由责任面；修改后必须同步更新正式设计文档，并用静态链接检查、前端测试和本地/预览环境证明没有跨站点串链。
 
