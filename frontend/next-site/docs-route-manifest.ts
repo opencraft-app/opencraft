@@ -2248,12 +2248,12 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "": "2026-09-23"
   },
   "zh-cn": {
-    "overview": "2026-09-23",
+    "overview": "2026-09-27",
     "quickstart": "2026-09-27",
     "core-concepts": "2026-09-27",
-    "who-is-lightvela-for": "2026-09-23",
+    "who-is-lightvela-for": "2026-09-27",
     "account": "2026-09-20",
-    "announcements/public-beta": "2026-09-23",
+    "announcements/public-beta": "2026-09-27",
     "plans": "2026-09-23",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-09-27",
@@ -2296,7 +2296,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-ai-chatbot": "2026-08-12",
     "faq": "2026-09-27",
     "contact-us": "2026-08-20",
-    "": "2026-09-23"
+    "": "2026-09-27"
   },
   "zh-sg": {
     "overview": "2026-09-23",
