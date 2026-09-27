@@ -24,3 +24,4 @@ Headless OpenCraft 的入口校验先于运行时健康判断：包内 Web relea
 覆盖普通响应、流式分片、客户端取消、provider 超时/限流、fallback、渠道发送失败和重连。OpenCraft 还必须覆盖 steer/queue 可见性、断线恢复不重复投影、完成瞬间组件身份和滚动所有权；工具终态必须有结果证据，不可恢复的资源缺失不得自动重连，Web/Expo 消息折叠需在宽度变化后重新测量自然高度。Host 从失败恢复到 ready 时应在无消息提交条件下重载 Catalog，BFCache 往返不得销毁应用所有权图。跨 gateway/runtime artifact 的变更分别验证镜像 pin 与 runtime SHA。
 
 Web 图片附件的浏览器 `File` 与预览 URL 属于 Composer View/Controller 生命周期，不进入可序列化的 AppServer 请求或重放事件。异步图片处理必须按草稿和附件身份回写；切换目标不能串写，删除、清空或释放 Controller 后的迟到结果不能复活附件。发送后的图片只按已获准的会话媒体资源解析，并以可关闭、可恢复焦点的查看器呈现。
+HEIC/HEIF 相机照片在浏览器可解码时先转成 JPEG 再形成内联图片输入；转码是格式兼容步骤，即使 JPEG 较大也不能回退为原始 HEIC。转码失败保留原 `File` 供重试并阻止发送，输出字节仍在 Base64 分配前受大小上限约束。

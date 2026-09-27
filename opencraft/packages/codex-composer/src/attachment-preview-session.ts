@@ -53,7 +53,12 @@ export class AttachmentPreviewSession {
     const draftId = this.composer.getSnapshot().draft.id;
     for (const file of files) {
       const attachmentId = createClientId();
-      const image = file.type.startsWith("image/");
+      const mimeType = (file.type === "" || file.type === "application/octet-stream") && /\.heic$/iu.test(file.name)
+        ? "image/heic"
+        : (file.type === "" || file.type === "application/octet-stream") && /\.heif$/iu.test(file.name)
+          ? "image/heif"
+          : file.type || "application/octet-stream";
+      const image = mimeType.startsWith("image/");
       let previewUrl: string | null = null;
       if (image && typeof URL.createObjectURL === "function") {
         try { previewUrl = URL.createObjectURL(file); }
@@ -64,7 +69,7 @@ export class AttachmentPreviewSession {
       const pending: ComposerAttachment = {
         id: attachmentId,
         name: file.name,
-        mimeType: file.type || "application/octet-stream",
+        mimeType,
         size: file.size,
         uri: null,
         lifecycle: resolve === undefined ? "failed" : "pending",

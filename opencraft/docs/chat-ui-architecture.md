@@ -383,6 +383,12 @@ that initiated the work, and aborts/revokes on removal, clear or Controller
 disposal. A retry uses the retained original `File`. `processing` means local
 image preparation, not measured network upload progress. The existing
 `canSubmit` rule remains the admission gate for unresolved or failed assets.
+For iPhone camera HEIC/HEIF input, browser image decode and canvas encoding
+produce a JPEG upload derivative. This is required format conversion, so it is
+kept even if larger than the selected HEIC; the original File stays with the
+View-scoped session for retry. A browser without that decode/encode path leaves
+the attachment failed rather than sending HEIC under an unsupported MIME.
+The post-conversion inline byte cap still applies before base64 allocation.
 
 After acceptance, image presentation is derived from the authoritative
 Timeline. Sent-image thumbnails resolve direct image data or Host-backed media
