@@ -54,6 +54,20 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("puts channel test messages first in the English September changelog", async () => {
+    await i18n.changeLanguage("en-US");
+    render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+
+    const septemberSection = screen.getByText("September 2026").closest("section");
+    expect(septemberSection).not.toBeNull();
+    expect(within(septemberSection!).getAllByRole("heading")[0]).toHaveTextContent(
+      "Send Test Messages to Connected Chat Channels",
+    );
+    expect(within(septemberSection!).getByText(
+      "Send a test message from a connected channel, then check the chat app to confirm it arrived.",
+    )).toBeInTheDocument();
+  });
+
   it("localizes the subscription-upgrade entry for every public-site locale", async () => {
     const copies = {
       "zh-CN": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
@@ -72,7 +86,7 @@ describe("global changelog skill package entry", () => {
       render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
       const section = screen.getByText(month).closest("section");
       expect(section).not.toBeNull();
-      expect(within(section!).getAllByRole("heading")[0]).toBe(within(section!).getByRole("heading", { name: title }));
+      expect(within(section!).getAllByRole("heading")[1]).toBe(within(section!).getByRole("heading", { name: title }));
       expect(within(section!).getByText(description)).toBeInTheDocument();
       expect(within(section!).getByAltText(title)).toHaveAttribute(
         "src", expect.stringContaining("/assets/changelog/lightvela-plan-upgrade-global-en.png"),
@@ -161,7 +175,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
-      expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
+      expect(within(septemberSection!).getAllByRole("heading")[2]).toBe(heading);
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(within(septemberSection!).getByAltText(copy.title)).toHaveAttribute(
         "src",
@@ -243,7 +257,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
-      expect(within(septemberSection!).getAllByRole("heading")[2]).toBe(heading);
+      expect(within(septemberSection!).getAllByRole("heading")[3]).toBe(heading);
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute(
         "src",
@@ -325,7 +339,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const headings = within(septemberSection!).getAllByRole("heading");
-      expect(headings[3]).toHaveTextContent(copy.title);
+      expect(headings[4]).toHaveTextContent(copy.title);
       expect(within(septemberSection!).getByRole("heading", { name: copy.title })).toBeInTheDocument();
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));
