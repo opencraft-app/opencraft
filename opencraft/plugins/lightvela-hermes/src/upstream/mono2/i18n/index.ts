@@ -81,6 +81,7 @@ export type SupportedLocale = LocaleCode;
 
 /** 本地存储 key，用户手动切换语言时持久化 */
 const LOCALE_STORAGE_KEY = "lw-locale";
+const EXPLICIT_LOCALE_STORAGE_KEY = "lw-locale-explicit";
 
 const RUNTIME_LOCALE_OPTIONS = {
   region: isGlobal ? "global" : "cn",
@@ -106,8 +107,32 @@ const readOverride = (): LocaleCode | null => {
   }
 };
 
-/** Snapshot before a bare English page records its locale for console continuity. */
-export const hadSavedLocaleBeforeInitialPage = readOverride() !== null;
+const readExplicitLocaleChoice = (): boolean => {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(EXPLICIT_LOCALE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const savedLocaleBeforeInitialPage = readOverride();
+if (typeof window !== "undefined") {
+  try {
+    if (savedLocaleBeforeInitialPage && savedLocaleBeforeInitialPage !== DEFAULT_LOCALE) {
+      // Migrate legacy non-English choices before a bare page overwrites lw-locale.
+      window.localStorage.setItem(EXPLICIT_LOCALE_STORAGE_KEY, "1");
+    } else if (!savedLocaleBeforeInitialPage) {
+      window.localStorage.removeItem(EXPLICIT_LOCALE_STORAGE_KEY);
+    }
+  } catch {
+    /* 隐私模式等场景 localStorage 不可用，忽略 */
+  }
+}
+
+/** Bare public pages write English for console continuity; only explicit intent suppresses the hint. */
+export const hasExplicitLocalePreference = (): boolean =>
+  readOverride() !== null && readExplicitLocaleChoice();
 
 /** `zh-SG` 等公开 locale 统一解析到实际字典 key。 */
 const dictKeyForLocale = (locale: LocaleCode): I18nDictKey =>
@@ -171,7 +196,7 @@ async function loadDictionary(dictKey: I18nDictKey): Promise<TranslationDictiona
 }
 
 /**
- * 从「已明确表达语言意图的公开页」进入时，把该语言持久化下来。
+ * 从公开页进入时，把页面语言持久化下来供控制台使用。
  *
  * 原因：控制台等路径（/agents、/auth 等）刻意不做 URL 本地化
  * （见 PUBLIC_LOCALIZED_PATH_PREFIXES），因此无法从路径推断语言，
@@ -179,10 +204,10 @@ async function loadDictionary(dictKey: I18nDictKey): Promise<TranslationDictiona
  * 或残留了别的语言，控制台就会显示错误语种。这里把当前公开页已确定的语言
  * 写入存储，保证跨路径连续性。
  *
- * 两类「明确的语言意图」都要持久化：
- * 1. URL 带语言前缀（/ja-jp/subscribe 等）→ 写该前缀语言；
+ * 两类页面语言都要持久化：
+ * 1. URL 带语言前缀（/ja-jp/subscribe 等）→ 写该前缀语言，并记录明确选择；
  * 2. 国际站「裸公开页」（无前缀，如英文默认版 / 或 /subscribe）且判定为默认英文
- *    → 写 en-US。这一条不能漏：英文是默认语、走裸 URL，initialLocaleFromPath
+ *    → 写 en-US，但不记录明确选择。这一条不能漏：英文是默认语、走裸 URL，initialLocaleFromPath
  *    恒为空，若不在此处持久化，英文用户永远不会写 lw-locale，一旦存储里残留了
  *    旧的中文值（例如此前浏览过 /zh-sg/），点 CTA 进 /agents 就会显示成中文。
  */
@@ -191,6 +216,9 @@ const localeIntentFromPage =
   (shouldUseDefaultLocaleForBarePublicPath ? DEFAULT_LOCALE : null);
 if (localeIntentFromPage && typeof window !== "undefined") {
   try {
+    if (initialLocaleFromPath) {
+      window.localStorage.setItem(EXPLICIT_LOCALE_STORAGE_KEY, "1");
+    }
     if (window.localStorage.getItem(LOCALE_STORAGE_KEY) !== localeIntentFromPage) {
       window.localStorage.setItem(LOCALE_STORAGE_KEY, localeIntentFromPage);
     }
@@ -236,6 +264,7 @@ export const setLocale = (locale: SupportedLocale): void => {
   if (!runtimeLocale) return;
   try {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, runtimeLocale);
+    window.localStorage.setItem(EXPLICIT_LOCALE_STORAGE_KEY, "1");
   } catch {
     /* 隐私模式等场景 localStorage 不可用，忽略 */
   }
