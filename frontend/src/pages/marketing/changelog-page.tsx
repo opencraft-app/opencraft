@@ -390,6 +390,12 @@ function ChangelogContent() {
     desc: upgradeCopy.desc,
     visual: "planUpgrade",
   };
+  const channelTestEntry: ChangelogEntry = {
+    id: "channel-test-message",
+    title: t("聊天通道支持发送测试消息"),
+    desc: t("已连接的聊天通道可发送一条测试消息，在对应聊天软件中确认是否收到，快速验证消息是否送达。"),
+    visual: "none",
+  };
 
   const changelogGroups: ChangelogMonthGroup[] = [
     ...(isGlobal
@@ -398,6 +404,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: upgradeCopy.month,
             entries: [
+              channelTestEntry,
               upgradeEntry,
               multiBotEntry,
               zeroTokenScheduledTasksEntry,
@@ -484,6 +491,7 @@ function ChangelogContent() {
             id: "2026-09",
             month: upgradeCopy.month,
             entries: [
+              channelTestEntry,
               upgradeEntry,
               multiBotEntry,
               zeroTokenScheduledTasksEntry,
