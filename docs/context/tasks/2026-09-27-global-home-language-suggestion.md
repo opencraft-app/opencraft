@@ -43,6 +43,11 @@
 | `docs/engineering/domains/site-environment-routing.md@master` | 正式站点设计 | 同步本次 locale 决策 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@master` | i18n 邻接 | 检查注册表、实现与测试 |
 | `frontend/openspec/changes/2026-09-02-international-home-performance-v2-design.md@master` | 首页性能约束 | 保持静态首页与 SEO 输出 |
+| `docs/context/domains/site-environment-routing.md@master` | CI 修复时复核 locale 边界 | 保持生成物修复不改变站点行为 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@master` | MR 交付边界 | 核验远端源提交与检查状态 |
+| `opencraft/AGENTS.md@master` | OpenCraft 生成物契约 | 使用官方同步命令，不手改副本 |
+| `opencraft/MONO2_MIGRATION.md@master` | mono2 与 OpenCraft 真源关系 | 明确 frontend 为真源 |
+| `docs/context/project/upstream-subtrees.md@master` | OpenCraft 导入边界 | 不进行 subtree 操作 |
 
 ## evidence
 - `pnpm exec vitest run ... --api.host 127.0.0.1`：首页、语言切换、页头和新提示 6 个测试文件、139 个测试通过。
@@ -53,6 +58,8 @@
 - `pnpm check:homepage-performance`：本轮与干净 master 均未通过，脚本数同为 28；raw 从 2,768,651 增至 2,771,192 字节，gzip 从 938,977 增至 939,796 字节。
 - 全量 `vitest run --api.host 127.0.0.1` 出现多处非本次范围失败并长时间无进展后中断；其中 `scripts/intl-only-pages.test.ts` 失败已在干净 master 单独复现。
 - `validate_documentation.py`：0 broken first-party links；`validate_change_impact.py --staged`：通过。
+- MR !4677 的 CI 日志在 OpenCraft guard 报 `i18n/index.ts` vendored 副本漂移；本地 `check:mono2-agent-console` 复现相同 source/target SHA。运行 `sync:mono2-agent-console` 后，`check:mono2-agent-console` 校验 130 个文件通过；只变更生成副本与 `UPSTREAM.json`。
+- OpenCraft `@opencraft/plugin-lightvela-hermes` 类型检查通过；`tests/lightvela-hermes-plugin.test.ts` 83 项通过。
 
 ## risks
 - 新增客户端组件增加首页脚本；运行首页性能预算。
@@ -72,4 +79,4 @@
 - 精确检索命中 `frontend/src/i18n/index.ts`、`frontend/src/lib/region.ts` 与 `frontend/next-site/international-home-runtime.tsx`。
 
 ## handoff
-- 本地实现与聚焦验证完成；用户已授权提交 MR。全量测试与首页性能预算在干净 master 上已有失败，MR 中分别报告；不合并或发布。
+- MR !4677 已提交；针对 CI 中 OpenCraft vendored 漂移完成生成物同步和本地复验，待后续独立提交推送并核验远端 CI。全量测试与首页性能预算在干净 master 上已有失败；不合并或发布。
