@@ -47,7 +47,7 @@ const COPY = {
      * ⚠️ 价格与试用条件调整时，须与 docs/plans.md、公告页、subscribe-page.tsx 静态价表同步。
      */
     facts: [
-      { label: '当前状态', value: '公测中，已开启计费（2026 年 8 月 18 日起）' },
+      { label: '当前状态', value: '已开放订阅；套餐及活动以订阅页为准' },
       {
         label: '套餐与价格',
         value:
