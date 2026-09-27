@@ -522,7 +522,7 @@ describe("international docs publication inventory", () => {
 
     it("keeps the expected locale route inventories", () => {
       expect(docsRouteSlugs["en-us"]).toHaveLength(73);
-      expect(docsRouteSlugs["zh-cn"]).toHaveLength(48);
+      expect(docsRouteSlugs["zh-cn"]).toHaveLength(49);
       expect(docsRouteSlugs["zh-sg"]).toHaveLength(73);
       expect(docsRouteSlugs["zh-hant"]).toHaveLength(73);
       expect(docsRouteSlugs["id-id"]).toHaveLength(70);
