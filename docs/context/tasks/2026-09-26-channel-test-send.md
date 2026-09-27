@@ -56,6 +56,8 @@
 - OpenCraft 依赖安装后，`@opencraft/plugin-lightvela-hermes` typecheck、`check:i18n` 与 `.ci/checks/opencraft_guard.sh` 均通过；CI guard 确认 130 个 vendored 文件一致。
 - 同步提交推送后，工蜂 MR !4678 指向新 SHA 但因目标 `master@10491fb09` 前进而显示不可合并；`git merge-tree` 确认唯一冲突是生成的 `UPSTREAM.json`。将目标版本作为基线并重新执行同步脚本，合并提交 `88cbf3a6a` 后再次同步，使 `sourceRevision` 指向合并提交；闭包检查与插件 typecheck 通过。
 - 合并后前端 `pnpm check` 通过（TypeScript 当前 171、基线 171、新增 0），通道聚焦 Vitest 5 文件 19 项通过；OpenCraft `check:i18n`、插件 typecheck、vendored 闭包检查通过。
+- 用户提供的 MR !4678 CR 指出配置侧互斥测试使用了不支持手动配置的飞书，无法证明守卫有效；现改用列表内的钉钉和完整凭据，第二次命令 mock 可完成。补充绑定、断开在 `restartAndRefresh` 未完成时保持互斥，以及执行结果失败但输出声称成功的反例。通道聚焦测试 5 文件 22 项通过，`pnpm check` 新增 TypeScript 诊断 0。
+- 清理五本人工翻译字典中已无源码映射的 QQ、钉钉旧“推荐”文案键；与 `zh-CN` 的键集均为 3056 项且完全一致。
 - ACLI 发布包 `2026.09.22-1` 的 Hermes LightVela spec `1.1.28` 含 `channel/send`；要求 `--platform` 和 `--message`，成功结果 `data.status = sent`，最低运行时 `0.15.0`。
 - 本地预览连接上海正式后端的 QQ 实例，两次失败的 debug/exec 回执均为 `unknown flag: --agent`；发布包的 `channel/send/capability.yaml` 确认没有 `agent` 参数。修正后浏览器显示“测试消息已发送”，代理记录 HTTP 200 且 ACLI 输出 `data.status = sent`；实际 QQ 客户端接收仍待用户确认。
 - 修正后的命令构造与 Hook 聚焦测试 2 文件、7 测试通过；`pnpm check` 通过（TypeScript 诊断 171，与基线相同，新增 0）。
@@ -76,6 +78,7 @@
 ## decisions
 - 复用当前通道卡片和命令执行器，不增加后端接口。
 - 根据用户后续指示，测试发送改用 Hermes CLI `-p <profile> send --to <platform>`；消息通过 stdin 传入，JSON `success` 与执行结果共同判定成功。连接状态查询和通道配置命令仍走现有 ACLI 路径。
+- CR 提到的绑定、断开 loading 会持续到重启结束，这是为防止重启期间并发连接操作而保留的有意时序；通过 held-promise 测试固定，并在 MR 描述中提示 QA 回归。Task Pack frontmatter 建议不属于本次功能或现有模板正文要求，暂不扩展。
 
 ## scan_scope
 - `frontend/src/pages/marketing/agent-config/`、`agent-channel-panel.tsx` 和相邻测试、样式。

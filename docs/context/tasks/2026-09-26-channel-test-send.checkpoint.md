@@ -1,5 +1,5 @@
 ## stage
-MR !4678 的 CI 因 OpenCraft vendored 副本漂移失败；正在验证同步产物并更新现有 MR。
+根据 MR !4678 的 CR 修复测试覆盖与孤儿翻译键，随后同步 OpenCraft 并处理最新 `master` 的生成清单冲突。
 
 ## verified
 - 当前通道面板使用 `ChannelPanel` 与 `useChannelOperations`，测试命令由 `createHermesCommandBuilder` 按 Profile 构造。
@@ -26,6 +26,7 @@ MR !4678 的 CI 因 OpenCraft vendored 副本漂移失败；正在验证同步�
 - OpenCraft 插件 typecheck、`check:i18n` 和本地 `opencraft_guard.sh` 均通过；工蜂只读鉴权成功。
 - MR 更新后目标 `master` 前进到 `10491fb09`，生成清单是唯一冲突；已并入目标提交 `88cbf3a6a`，合并后重新同步使 `UPSTREAM.json.sourceRevision` 与前端源提交一致，闭包检查和插件 typecheck 通过。
 - 合并后 `pnpm check` 新增 TypeScript 诊断为 0；通道聚焦测试 5 文件 19 项、OpenCraft `check:i18n`、插件 typecheck 均通过。
+- CR 核查确认配置互斥断言原来走飞书无命令分支，现换成钉钉；补充重启期间配置/断开状态和执行失败 payload 测试。聚焦 5 文件 22 项通过，`pnpm check` 新增 TypeScript 诊断 0；五本人工字典清理两个孤儿键后与 `zh-CN` 各 3056 键对齐。
 
 ## unverified
 - QQ 客户端是否实际收到消息尚待用户确认；命名 Profile 发送尚未做真实实例验证。
@@ -42,4 +43,4 @@ MR !4678 的 CI 因 OpenCraft vendored 副本漂移失败；正在验证同步�
 - 主要文件：`frontend/src/pages/marketing/agent-channel-panel.tsx`、`frontend/src/pages/marketing/agent-config/hooks/useChannelOperations.ts`、`frontend/src/pages/marketing/agent-config/hermes-command-builder.ts`。
 
 ## next_action
-提交合并后重生成的清单并推送现有 MR !4678；核验新 SHA、合并状态和 CI。排除预览服务生成的 `frontend/next-env.d.ts` 差异，不合并或发布。
+提交 CR 聚焦修复、同步 OpenCraft、并入最新 `master` 后更新现有 MR !4678；核验新 SHA、合并状态和 CI。排除预览服务生成的 `frontend/next-env.d.ts` 差异，不合并或发布。
