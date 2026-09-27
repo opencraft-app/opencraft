@@ -244,7 +244,12 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('disabled={isChatTabDisabled}');
     expect(page).toContain('t("对话功能目前仅支持主 Bot")');
     expect(page).not.toContain('title={isActiveBotChatAvailable ? undefined');
-    expect(page).toContain('id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip"');
+    const chatTab = page.slice(page.indexOf('/* 「对话」入口不可用时'), page.indexOf('{sidebarTab === "chat" && isActiveBotChatAvailable ? ('));
+    expect(chatTab).toContain("<WorkspaceActionTooltip");
+    expect(chatTab).toContain("content={isChatTabDisabled");
+    expect(chatTab).toContain('side="bottom"');
+    expect(chatTab).not.toContain("lv-agent-action-tooltip");
+    expect(styles).not.toContain(".lv-agent-action-tooltip {");
     expect(page).toContain('!consoleShowStateReady || activeSection !== "chat" || !activeBot || isActiveBotChatAvailable');
     expect(page).toContain('{isActiveBotChatAvailable && (');
     expect(page).toContain('&& !showHiddenAgentTools');

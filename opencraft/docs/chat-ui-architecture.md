@@ -206,6 +206,15 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    capability lease, and a failed prewarm is retried there rather than
    invalidating already-restored history.
 
+The Web recovery presentation does not equate non-authoritative with invisible.
+When a Thread already has painted Timeline frames, reconnect and retry preserve
+those frames, their scroll position and Composer draft; a small local connection
+notice shows the pending or failed state while commands remain disabled until
+authority returns. Only a Thread without visible frames gets a delayed skeleton
+in the Timeline's empty slot. A definite restore failure replaces that slot with
+an inline retry action. Neither state mounts an opaque page overlay or changes
+the Conversation View identity.
+
 Host execution preparation is coordinated by the existing Thread lifecycle
 queue. Capability replacement and Turn admission share that queue; connection
 revocation is synchronous and invalidates pending commits before asynchronous
@@ -362,6 +371,33 @@ back to the embedding product's document body.
   manifest, a location-keyed display-metadata index, replay/content checks and
   bounded recursive removal. Images may continue to use the independent inline
   data-URL path.
+
+### Browser image attachment presentation
+
+The Web Composer displays a selected image immediately from a browser-owned
+object URL. The object URL and original `File` belong to the Composer
+Controller's View-scoped attachment session, keyed by Draft ID and attachment
+ID; neither enters the serializable Draft or AppServer input. The session owns
+compression/resolve work across React mount changes, updates only the Draft
+that initiated the work, and aborts/revokes on removal, clear or Controller
+disposal. A retry uses the retained original `File`. `processing` means local
+image preparation, not measured network upload progress. The existing
+`canSubmit` rule remains the admission gate for unresolved or failed assets.
+For iPhone camera HEIC/HEIF input, browser image decode and canvas encoding
+produce a JPEG upload derivative. This is required format conversion, so it is
+kept even if larger than the selected HEIC; the original File stays with the
+View-scoped session for retry. A browser without that decode/encode path leaves
+the attachment failed rather than sending HEIC under an unsupported MIME.
+The post-conversion inline byte cap still applies before base64 allocation.
+
+After acceptance, image presentation is derived from the authoritative
+Timeline. Sent-image thumbnails resolve direct image data or Host-backed media
+through the existing media source boundary; their click opens a modal image
+viewer rather than generic link navigation, which deliberately rejects `data:`
+URLs. No generic resource-policy exception is introduced. Full page reload
+does not preserve an unsent browser `File`; that requires a separate durable
+draft/blob storage contract. Native Expo has the same semantic Draft but not
+this Web-only picker/presentation implementation.
 
 ### Production hardening, not architecture blockers
 

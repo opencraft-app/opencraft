@@ -7,6 +7,10 @@ let nextTurnId = 1;
 const turns = new Map();
 const history = new Map();
 const loadedThreads = new Set();
+// stdio is one physical AppServer connection even when OpenCraft has many logical Clients.
+const subscribedThreads = new Set();
+const archivedThreads = new Set();
+const threadNames = new Map();
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 input.on("line", line => {
   const message = JSON.parse(line);
@@ -16,10 +20,44 @@ input.on("line", line => {
     return;
   }
   if (message.method === "initialized") return;
+  if (message.method === "thread/name/set") {
+    if (!loadedThreads.has(message.params.threadId)) {
+      send({ id: message.id, error: { code: -32600, message: "thread not found" } });
+      return;
+    }
+    threadNames.set(message.params.threadId, message.params.name);
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "thread/archive") {
+    archivedThreads.add(message.params.threadId);
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "thread/unarchive") {
+    archivedThreads.delete(message.params.threadId);
+    send({ id: message.id, result: { thread: { id: message.params.threadId, preview: "", ephemeral: false, turns: [] } } });
+    return;
+  }
+  if (message.method === "thread/list") {
+    const thread = { id: "codex-thread-1", name: threadNames.get("codex-thread-1") ?? null, preview: "", ephemeral: false, turns: [] };
+    const matchesArchiveFilter = message.params?.archived === true ? archivedThreads.has(thread.id) : !archivedThreads.has(thread.id);
+    send({ id: message.id, result: { data: loadedThreads.has(thread.id) && matchesArchiveFilter ? [thread] : [], nextCursor: null } });
+    return;
+  }
+  if (message.method === "permissionProfile/list") {
+    send({ id: message.id, result: { data: [
+      { id: ":read-only", description: "Inspect files", allowed: true },
+      { id: ":workspace", description: "Edit workspace", allowed: true },
+      { id: ":danger-full-access", description: "Unrestricted", allowed: true },
+      { id: "team-custom", description: "Team policy", allowed: true },
+    ], nextCursor: null } });
+    return;
+  }
   if (message.method === "thread/read") {
     const active = turns.get(message.params.threadId);
     const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : "idle";
-    send({ id: message.id, result: { thread: { id: message.params.threadId, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: [] } } });
+    send({ id: message.id, result: { thread: { id: message.params.threadId, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: [] } } });
     return;
   }
   if (message.method === "thread/items/list") {
@@ -37,6 +75,7 @@ input.on("line", line => {
     }
     const turnId = `turn-${nextTurnId++}`;
     turns.set(threadId, turnId);
+    subscribedThreads.add(threadId);
     if (message.params.clientUserMessageId) {
       const entries = history.get(threadId) ?? [];
       entries.push({ turnId, item: { type: "userMessage", id: `user-${entries.length}`, clientId: message.params.clientUserMessageId, content: message.params.input } });
@@ -74,10 +113,16 @@ input.on("line", line => {
     const turnId = turns.get(threadId);
     turns.delete(threadId);
     send({ id: message.id, result: {} });
-    if (turnId) {
+    if (turnId && subscribedThreads.has(threadId)) {
       send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed", items: [] } } });
       send({ method: "thread/status/changed", params: { threadId, status: { type: "idle" } } });
     }
+    return;
+  }
+  if (message.method === "test/emitThreadNotification") {
+    const threadId = message.params.threadId;
+    send({ id: message.id, result: { nativeSubscribed: subscribedThreads.has(threadId) } });
+    if (subscribedThreads.has(threadId)) send({ method: "thread/status/changed", params: { threadId, status: { type: "active" } } });
     return;
   }
   if (typeof message.method === "string" && message.method.startsWith("thread/queue/")) {
@@ -86,11 +131,22 @@ input.on("line", line => {
   }
   if (message.method === "thread/resume") {
     loadedThreads.add(message.params.threadId);
-    const respond = () => send({ id: message.id, result: {
-      thread: { id: message.params.testWrongThreadId ? "different-thread" : message.params.threadId, preview: "", ephemeral: false, turns: [] },
-    } });
+    subscribedThreads.add(message.params.threadId);
+    const respond = () => {
+      send({ id: message.id, result: {
+        thread: { id: message.params.testWrongThreadId ? "different-thread" : message.params.threadId, preview: "", ephemeral: false, turns: [] },
+      } });
+      if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
+    };
     if (message.params.testDelayMs) setTimeout(respond, message.params.testDelayMs);
     else respond();
+    return;
+  }
+  if (message.method === "thread/unsubscribe") {
+    const threadId = message.params.threadId;
+    const status = !loadedThreads.has(threadId) ? "notLoaded"
+      : subscribedThreads.delete(threadId) ? "unsubscribed" : "notSubscribed";
+    send({ id: message.id, result: { status } });
     return;
   }
   if (message.method === "test/emitServerRequest") {
@@ -108,19 +164,28 @@ input.on("line", line => {
     }
     const respond = () => {
       const thread = { id: message.params.testDelayMs ? "codex-fork-late" : "codex-fork-1", forkedFromId: message.params.threadId, preview: "", ephemeral: message.params.ephemeral === true, turns: [] };
+      loadedThreads.add(thread.id);
+      subscribedThreads.add(thread.id);
       send({ id: message.id, result: { thread, model: "gpt-test", modelProvider: "opencraft-account-pool", cwd: process.cwd() } });
       send({ method: "thread/started", params: { thread } });
+      if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
     };
     if (message.params.testDelayMs) setTimeout(respond, message.params.testDelayMs);
     else respond();
     return;
   }
   if (message.method === "thread/start") {
-    const thread = { id: "codex-thread-1", preview: "", ephemeral: false, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };
-    loadedThreads.add(thread.id);
-    send({ id: message.id, result: { thread, model: "gpt-test", modelProvider: "opencraft-account-pool", cwd: message.params.cwd, approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, serviceTier: null } });
-    send({ method: "thread/started", params: { thread } });
-    send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
+    const respond = () => {
+      const thread = { id: "codex-thread-1", preview: "", ephemeral: false, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };
+      loadedThreads.add(thread.id);
+      subscribedThreads.add(thread.id);
+      send({ id: message.id, result: { thread, model: "gpt-test", modelProvider: "opencraft-account-pool", cwd: message.params.cwd, approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, serviceTier: null, testNativePermission: message.params.permissions ?? null } });
+      send({ method: "thread/started", params: { thread } });
+      if (!message.params.testNoServerRequest) send({ id: 900, method: "item/tool/requestUserInput", params: { threadId: thread.id, turnId: null, itemId: "question-1", questions: [] } });
+      if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
+    };
+    if (message.params.testDelayMs) setTimeout(respond, message.params.testDelayMs);
+    else respond();
     return;
   }
   if (typeof message.id === "number" && (message.result || message.error)) {

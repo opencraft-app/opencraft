@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import WebSocket from "ws";
+import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const exec = promisify(execFile);
@@ -107,6 +108,9 @@ export async function smokeCodexAppHost(origin, projectPath = null) {
     assert.deepEqual(initializeResult.result.capabilities?.extensions?.["opencraft/thread-queue"], {
       version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false,
     });
+    const lifecycle = initializeResult.result.capabilities?.extensions?.["opencraft/thread-lifecycle"];
+    assert.equal(lifecycle?.rename, true);
+    assert.equal(lifecycle?.archive, true);
     send("codex-queue-list-send", "codex-queue-list", "thread/queue/list", {
       threadId: "00000000-0000-0000-0000-000000000000",
     });
@@ -152,7 +156,7 @@ export async function smokeHeadlessPackage(archive) {
     const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
     assert.equal(manifest.platform, "linux");
     assert.equal(manifest.architecture, "amd64");
-    assert.equal(manifest.buildId, JSON.parse(await readFile(join(root, "web/version.json"), "utf8")).buildId);
+    assert.equal(manifest.buildId, (await assertHeadlessWebRelease(join(root, "web"))).buildId);
     await verifyManifest(root, manifest);
     child = spawn(join(root, "bin/opencraft-server"), ["--port", "0", "--data-dir", join(directory, "data")], {
       cwd: root,

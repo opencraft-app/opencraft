@@ -20,6 +20,7 @@ class FakeSocket {
   close(): void { this.readyState = 3; this.emit("close"); }
   open(): void { this.readyState = FakeSocket.OPEN; this.emit("open"); }
   receive(message: unknown): void { this.emit("message", { data: JSON.stringify(message) }); }
+  fail(): void { this.emit("error"); }
   private emit(type: string, event: { data?: string } = {}): void {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
@@ -34,15 +35,18 @@ test("browser AppHost transport keeps its listeners and renews its lease after W
   const replacementSocket = new FakeSocket();
   const sockets = [socket, replacementSocket];
   const urls: string[] = [];
+  const diagnostics: Array<{ attemptId: string; failure: string; phase: string; readyState: number; ageMs: number }> = [];
   const client = connectWebSocketAppHost((url) => {
     urls.push(url);
     return sockets.shift() as unknown as WebSocket;
-  });
+  }, { reportFailure: diagnostic => diagnostics.push(diagnostic) });
   try {
     const transport = client.createTransport("local-codex");
     const connection = transport.connect();
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(urls, ["wss://example.test/apphost"]);
+    assert.equal(new URL(urls[0]!).origin, "wss://example.test");
+    assert.equal(new URL(urls[0]!).pathname, "/apphost");
+    assert.ok(new URL(urls[0]!).searchParams.get("attempt"));
     socket.open();
     const hello = JSON.parse(socket.sent[0]!);
     assert.equal(hello.type, "hello");
@@ -68,9 +72,14 @@ test("browser AppHost transport keeps its listeners and renews its lease after W
     socket.close();
     assert.equal(socket.readyState, 3);
     assert.equal(transport.status.state, "failed");
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0]?.attemptId, hello.rendererId);
+    assert.equal(diagnostics[0]?.failure, "socket-close");
+    assert.equal(diagnostics[0]?.phase, "ready");
     const reconnection = transport.connect();
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(urls, ["wss://example.test/apphost", "wss://example.test/apphost"]);
+    assert.equal(urls.length, 2);
+    assert.notEqual(new URL(urls[1]!).searchParams.get("attempt"), new URL(urls[0]!).searchParams.get("attempt"));
     replacementSocket.open();
     const replacementHello = JSON.parse(replacementSocket.sent[0]!);
     replacementSocket.receive({ type: "ready", protocolVersion: 1,
@@ -103,5 +112,59 @@ test("browser AppHost transport keeps its listeners and renews its lease after W
     else Reflect.deleteProperty(globalThis, "window");
     if (previousWebSocket) Object.defineProperty(globalThis, "WebSocket", previousWebSocket);
     else Reflect.deleteProperty(globalThis, "WebSocket");
+  }
+});
+
+test("browser AppHost transport fails a stalled handshake so Workbench can retry", async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousWebSocket = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test/chat" } } });
+  Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: class WrappedWebSocket {} });
+  const socket = new FakeSocket();
+  const diagnostics: Array<{ failure: string; phase: string }> = [];
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
+    handshakeTimeoutMs: 10,
+    reportFailure: diagnostic => diagnostics.push(diagnostic),
+  });
+  try {
+    const transport = client.createTransport("local-codex");
+    const connection = transport.connect();
+    await new Promise(resolve => setImmediate(resolve));
+    socket.open();
+    await assert.rejects(connection, /handshake timed out/u);
+    assert.equal(transport.status.state, "failed");
+    assert.deepEqual(diagnostics.map(({ failure, phase }) => ({ failure, phase })),
+      [{ failure: "handshake-timeout", phase: "socket-open" }]);
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+    if (previousWebSocket) Object.defineProperty(globalThis, "WebSocket", previousWebSocket);
+    else Reflect.deleteProperty(globalThis, "WebSocket");
+  }
+});
+
+test("browser AppHost reports a pre-upgrade WebSocket error without exposing the conversation", async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test/threads/private" } } });
+  const socket = new FakeSocket();
+  const diagnostics: Array<Record<string, unknown>> = [];
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
+    reportFailure: diagnostic => diagnostics.push(diagnostic),
+  });
+  try {
+    const connection = client.createTransport("local-codex").connect();
+    await new Promise(resolve => setImmediate(resolve));
+    socket.fail();
+    await assert.rejects(connection, /App Host connection failed/u);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0]?.failure, "socket-error");
+    assert.equal(diagnostics[0]?.phase, "connecting");
+    assert.equal(diagnostics[0]?.readyState, FakeSocket.CONNECTING);
+    assert.equal(JSON.stringify(diagnostics).includes("private"), false);
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else Reflect.deleteProperty(globalThis, "window");
   }
 });

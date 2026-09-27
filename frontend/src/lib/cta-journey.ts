@@ -5,7 +5,7 @@
  *
  * 红线（PRD：wiki/prd-docs/2026-09-14-user-journey-cta-login-redirect.md）：
  * - 订阅前统一走 /subscribe（未登录、已登录未订阅都一样）；
- * - 订阅后统一走 /agents（已订阅代表已有 Agent，直接进控制台）；
+ * - 订阅后统一走 /agents（已有 Agent 进控制台，无 Agent 时打开创建向导）；
  * - 登录成功后必须按订阅状态分流：未订阅去 /subscribe，已订阅去 /agents；
  * - Hero CTA 与 Footer CTA 必须一致：同状态下文案一致、路径一致；
  * - 国内站与国际站逻辑一致，只做语言差异，不做路径差异。
@@ -14,7 +14,7 @@
 import {
   AGENTS_HOME_PATH,
   SUBSCRIBE_PATH,
-  getAgentCreatingPath,
+  getAgentCreateBotPath,
 } from "@/lib/agent-routes";
 import {
   publicSiteHref,
@@ -31,7 +31,7 @@ export type JourneyState = {
 /** 已登录用户的订阅态（登录成功分流只取决于它）。 */
 export type SubscriptionState = Pick<JourneyState, "isSubscribed" | "hasBots">;
 
-/** 链路落点：订阅页 / 控制台 / 控制台创建中（已订阅但 Agent 尚未就绪的过渡态）。 */
+/** 链路落点：订阅页 / 控制台 / 首个 Bot 创建向导（已订阅但尚无 Agent）。 */
 export type JourneyRoute = "subscribe" | "agents" | "agents-creating";
 
 /**
@@ -81,7 +81,8 @@ export const journeyHref = (
     case JOURNEY_ROUTE.SUBSCRIBE:
       return publicSiteHref(SUBSCRIBE_PATH, locale, options);
     case JOURNEY_ROUTE.AGENTS_CREATING:
-      return publicSiteHref(getAgentCreatingPath(true), locale, options);
+      // 无 Bot 表示需要先创建；creating 只用于等待已经发起创建的实例。
+      return publicSiteHref(getAgentCreateBotPath(), locale, options);
     default:
       return publicSiteHref(AGENTS_HOME_PATH, locale, options);
   }

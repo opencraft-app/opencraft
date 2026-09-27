@@ -150,6 +150,13 @@ before distribution. GitHub's portable
 matrix produces and smoke-tests this archive as an Actions artifact; a PR build
 is not a published release.
 
+The headless archive must contain a Web release built with
+`OPENCRAFT_HEADLESS_SERVER_BUILD=true` and the `opencraft-server` `/appserver`
+Host profile. Its `web/version.json` records that delivery target; packaging,
+package smoke, and server startup reject a generic `build:web` artifact. A
+successful Codex process start alone does not prove the Web Codex entry was
+included. Do not copy an existing generic `dist` into a headless archive.
+
 ```sh
 tar -xzf OpenCraft-server-0.1.0-linux-amd64.tar.gz
 ./opencraft-server/bin/opencraft-server --port 10000 --data-dir /private/opencraft-data

@@ -249,8 +249,11 @@ Dynamic tool wire declarations are retained separately from normalized engine
 descriptors. Preflight precedes native creation; cold display registration accepts
 the declaration without mounting an Agent, and activation installs it idempotently.
 
-OpenCraft owns persisted Thread names, archive state and fork/subagent relation
-in `opencraft-threads.sqlite` under the Host product data directory. Engine
+For DSH-backed Threads, OpenCraft owns persisted Thread names, archive state
+and fork/subagent relation in `opencraft-threads.sqlite` under the Host product
+data directory. Codex uses its native AppServer name and archive state, with
+`thread/list` and `thread/read` projecting names, instead of duplicating them
+in the DSH catalog. Engine
 history remains behind the native execution port; metadata discovery never
 overwrites a user name or revives an archived Thread. Temporary metadata,
 native event logs and application history indexes remain in memory and are
@@ -263,6 +266,20 @@ sharing does not merge subscription or execution ownership. `thread/unsubscribe`
 detaches one logical subscriber; another subscriber is unaffected. Idle durable
 threads unload after a 30-minute no-subscriber activity grace; a temporary thread
 releases after its final subscriber. Unload and resume transitions serialize.
+
+The Codex Daemon has one physical AppServer stdio subscription per Thread, while
+each browser lease owns a separate logical read subscription. A logical
+`thread/unsubscribe` or lease disconnect removes only that Client; it never
+forwards a native unsubscribe. A pending `thread/resume` is a provisional read
+target so notifications arriving before its reply can enter that Client's
+resume buffer. Detach/disconnect invalidates the provisional target, and a late
+reply cannot reattach it or acquire the separate interaction-response owner.
+The Host keeps the physical subscription while any logical reader, admitted
+Turn, unsettled queue item or unanswered AppServer request still needs events.
+Only an idle, demand-free native Thread is released (30-minute grace for
+durable Threads, immediate for ephemeral Threads); release and new native work
+serialize per Thread. This is live fan-out plus snapshot/replay during resume,
+not a durable event log or multi-tenant authorization boundary.
 
 Native Fork copies a complete, validated event/context prefix with opaque
 provider state, not the currently loaded UI turns. Turn boundaries use logical
@@ -300,6 +317,15 @@ The SDK fences late unsubscribe responses, retains newly acquired views and
 actually reattaches them. Naming uses per-Host/Thread acknowledgement queues and
 optimistic-write generations; archive/unarchive modifies durable catalog state,
 never deletes a workspace. Catalog notifications invalidate shared queries.
+Codex Host exposes rename through `thread/name/set`; the native `thread.name`
+is readable from list/read and survives an AppServer restart. The Workbench
+title writer keeps optimistic edits scoped to the same Host/Thread until the
+native acknowledgement or failure arrives.
+Codex Host advertises archive only when its native AppServer path is wired:
+`thread/archive` and `thread/unarchive` pass through the logical-client adapter,
+and archived Settings reads native `thread/list {archived:true}`. A Codex Thread
+without a first accepted Turn has no rollout to archive; the existing
+first-Turn durability rule keeps that blank Thread out of the durable sidebar.
 The main sidebar offers only Host-declared operations for active Threads and
 does not retain archive-management or transient undo state. Archived browsing
 and restore belong to a capability-gated Settings page, scoped to the active
@@ -1373,7 +1399,23 @@ The browser Workbench retains one AppServer transport object per Host; if its
 lease inside that object. Existing Workbench listeners stay attached, while
 the new lease reinitializes the logical client. If the service and physical Host
 remain healthy, it keeps the same Host generation; service restart or physical
-failure produces a new generation. Thread state is re-read from AppServer.
+failure produces a new generation. Thread state is re-read from AppServer. The
+Web host uses protocol Ping/Pong to terminate a half-open socket, and the browser
+bounds the initial AppHost handshake; both mechanisms convert an otherwise
+indefinite mobile-network stall into the same retryable transport failure. The
+Codex Host logs payload-free logical initialize and Thread resume lifecycle
+events so reconnect failures can be separated from history projection failures.
+For each browser `/apphost` attempt, the Web client sends a new random diagnostic
+ID in the WebSocket query. The headless server logs that ID with upgrade,
+hello, Host-connect acknowledgement, heartbeat timeout and close stages; a
+legacy client without the query receives a server-generated ID. If the browser
+fails before it can read a WebSocket response, it posts only that ID, its
+connection phase, readyState, elapsed time and optional close code to the
+same-origin diagnostic endpoint. The endpoint rejects unknown fields and never
+records the page URL, Thread ID, messages, credentials, IP address, Origin,
+raw exception or close reason. These events locate the failing layer; a
+browser WebSocket `error` cannot itself reveal an HTTP upgrade status. No
+diagnostic event changes Host or Thread ownership or retries.
 
 The app-like iPhone Web surface requests a fixed viewport scale for embedded
 browsers and keeps focused editable text at a 16px minimum on coarse-pointer

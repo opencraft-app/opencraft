@@ -6,6 +6,7 @@ import { initializeAppearanceTheme } from "./appearance-theme";
 import { RuntimeErrorBoundary } from "./components/runtime-error-boundary";
 import { reportRuntimeError } from "./runtime-error-reporting";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
+import { bindTouchInteractionMode } from "./runtime/pointer-modality";
 import {
   openWorkbenchUiPreferences,
   UiPreferencesProvider,
@@ -42,6 +43,7 @@ type BootstrapState =
   | { readonly phase: "error"; readonly error: Error };
 
 initializeAppearanceTheme();
+const disposeTouchInteractionMode = bindTouchInteractionMode(document);
 
 const desktopWindowBridge = (
   globalThis as typeof globalThis & { readonly opencraftDesktop?: DesktopWindowBridge }
@@ -154,6 +156,7 @@ window.requestAnimationFrame(() => {
 
 if (import.meta.hot !== undefined) {
   import.meta.hot.dispose(() => disposeDesktopFullscreenSubscription?.());
+  import.meta.hot.dispose(disposeTouchInteractionMode);
   import.meta.hot.dispose(() => {
     retirePage();
   });

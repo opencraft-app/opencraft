@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { build } from "esbuild";
+import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -133,6 +134,7 @@ export async function packageHeadlessLinux() {
       VITE_APPSERVER_HOSTS_JSON: JSON.stringify(headlessWebHostDefinitions()),
     },
   });
+  await assertHeadlessWebRelease(join(repositoryRoot, "apps/workbench-web/dist"));
 
   const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
   const output = outputOverride

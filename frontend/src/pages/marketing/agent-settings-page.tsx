@@ -412,12 +412,14 @@ export function WorkspaceActionTooltip({
   side = "top",
   compact = false,
   focusable = true,
+  className,
 }: {
   children: ReactNode;
   content?: ReactNode;
   side?: WorkspaceActionTooltipSide;
   compact?: boolean;
   focusable?: boolean;
+  className?: string;
 }) {
   const tooltipId = useId();
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -491,7 +493,7 @@ export function WorkspaceActionTooltip({
   return (
     <span
       ref={triggerRef}
-      className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+      className={cn("inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30", className)}
       tabIndex={focusable ? 0 : undefined}
       aria-describedby={open ? tooltipId : undefined}
       onMouseEnter={showTooltip}
@@ -2733,6 +2735,17 @@ export const AgentSettingsPage = ({
   >[0] | null>(null);
   const legacySelectedChatIdRef = useRef<string | null>(null);
   const legacyChatSessionActionsRef = useRef<LightVelaSessionActions | null>(null);
+  /**
+   * sessionStorage key ref：在 sdkInstance 解析后由 useEffect 写入，callback 直接读取。
+   * 使用 ref 避免声明顺序问题（sdkInstance 在组件函数体后段才声明）。
+   */
+  const chatSessionStorageKeyRef = useRef<string | null>(null);
+  /**
+   * 待恢复的 chatId（从 sessionStorage 读出后写入）。
+   * SDK 首次推送 onSelectedChatIdChange 时若此 ref 非空，则忽略 SDK 的默认值，
+   * 改用恢复值并清空 ref，避免 SDK 默认会话覆盖用户上次的选择。
+   */
+  const pendingRestoredChatIdRef = useRef<string | null>(null);
   /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定（SDK 侧会驱动默认会话）。 */
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
   /** SDK 会话动作句柄（renameSession / deleteSession）。 */
@@ -2819,7 +2832,26 @@ export const AgentSettingsPage = ({
   >((chatId) => {
     // 注意事项 2：收到值必须无条件写回，否则受控状态与 SDK 失步。
     // 不要在此加真值守卫——空串是合法默认会话，会被误当成"无效值"丢弃。
+
+    // 恢复保护：若有待恢复的 chatId，则 SDK 第一次推送的默认会话会被忽略，
+    // 改用恢复值告知 SDK 切换到上次的对话，并清空 ref 进入正常模式。
+    const pending = pendingRestoredChatIdRef.current;
+    if (pending !== null) {
+      pendingRestoredChatIdRef.current = null;
+      if (pending !== chatId) {
+        setSelectedChatId(pending);
+        return;
+      }
+    }
+
     setSelectedChatId(chatId);
+    // 持久化到 sessionStorage（包括空串默认会话），刷新后原样传回 SDK 以恢复对话。
+    const storageKey = chatSessionStorageKeyRef.current;
+    if (storageKey) {
+      try {
+        sessionStorage.setItem(storageKey, chatId);
+      } catch { /* quota exceeded 等异常静默忽略 */ }
+    }
   }, []);
 
   const applyChatSessionActions = useCallback<
@@ -3240,7 +3272,6 @@ export const AgentSettingsPage = ({
   );
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
   const passExpiryTooltipId = useId();
-  const chatAvailabilityTooltipId = useId();
   /** 「对话」tab 禁用条件：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）。 */
   const isChatTabDisabled = !isActiveBotChatAvailable || showBuddyOnboarding;
   const handleRenewPassSuccess = useCallback(async () => {
@@ -4083,9 +4114,14 @@ export const AgentSettingsPage = ({
    * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
    * Why：切换 Agent 走 setActiveTabId，组件不重挂载；旧实例的会话列表/选中值/actions
    * 若不清理，会在新实例回调覆盖前闪现旧数据，且 rename 句柄可能指向旧实例。
-   * 重置后 selectedChatId 回到 undefined，SDK 按新实例重新下发默认会话。
+   * instanceId 为 undefined（activeBot 尚未加载）时跳过，避免多余重置。
+   * instanceId 首次就绪或切换时：更新 storageKey ref，并从 sessionStorage 恢复上次会话。
    */
   useEffect(() => {
+    const instanceId = sdkInstance?.InstanceId;
+    // activeBot 未加载完成时跳过，不做任何重置——避免覆盖后续恢复逻辑。
+    if (!instanceId) return;
+
     chatSurfaceOwnerRef.current = "legacy";
     legacyChatSessionStateRef.current = null;
     legacySelectedChatIdRef.current = null;
@@ -4093,7 +4129,21 @@ export const AgentSettingsPage = ({
     setChatSessions([]);
     setChatSessionsLoading(false);
     setChatSessionMutationState(null);
-    setSelectedChatId(undefined);
+    // 更新 storageKey ref，供 applyChatSelectedChatId 写入时使用。
+    const storageKey = `lv_chat_session_${instanceId}`;
+    chatSessionStorageKeyRef.current = storageKey;
+    // 尝试从 sessionStorage 恢复该实例上次选中的会话。
+    // 若有恢复值：写入 pendingRestoredChatIdRef 并设为受控值，
+    //   SDK 推送默认会话时 applyChatSelectedChatId 会用恢复值覆盖，确保不被 SDK 默认值抢占。
+    // 若无恢复值：保持 undefined，让 SDK 驱动默认会话。
+    let restoredChatId: string | undefined;
+    try {
+      restoredChatId = sessionStorage.getItem(storageKey) ?? undefined;
+    } catch {
+      restoredChatId = undefined;
+    }
+    pendingRestoredChatIdRef.current = restoredChatId ?? null;
+    setSelectedChatId(restoredChatId);
     setChatSessionActions(null);
     setRenamingChatId(null);
     setRenamingDraft("");
@@ -6011,34 +6061,33 @@ export const AgentSettingsPage = ({
                       >
                         {t("探索")}
                       </button>
-                      {/* 「对话」入口：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）时禁用，
-                          统一复用上游的 lv-agent-action-tooltip 做悬浮提示。 */}
+                      {/* 「对话」入口不可用时，用 Portal 提示原因，避免被侧栏滚动容器裁切。 */}
                       <span
                         className={cn(
-                          "lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30",
+                          "flex-1 min-w-0 rounded-full",
                           showBuddyOnboarding && "cursor-not-allowed opacity-40",
                         )}
-                        tabIndex={isChatTabDisabled ? 0 : undefined}
-                        aria-describedby={isChatTabDisabled ? chatAvailabilityTooltipId : undefined}
                       >
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
-                          aria-disabled={isChatTabDisabled}
-                          aria-describedby={isActiveBotChatAvailable ? undefined : chatAvailabilityTooltipId}
-                          disabled={isChatTabDisabled}
-                          className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
-                          onClick={handleSidebarChatTabClick}
+                        <WorkspaceActionTooltip
+                          content={isChatTabDisabled
+                            ? (showBuddyOnboarding ? t("请先创建你的个人助手") : t("对话功能目前仅支持主 Bot"))
+                            : undefined}
+                          side="bottom"
+                          focusable={isChatTabDisabled}
+                          className="flex w-full rounded-full"
                         >
-                          {t("对话")}
-                        </button>
-                        {isChatTabDisabled && (
-                          <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
-                            {showBuddyOnboarding ? t("请先创建你的个人助手") : t("对话功能目前仅支持主 Bot")}
-                            <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
-                          </span>
-                        )}
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
+                            aria-disabled={isChatTabDisabled}
+                            disabled={isChatTabDisabled}
+                            className={cn("lv-agents-sidebar-tab w-full", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
+                            onClick={handleSidebarChatTabClick}
+                          >
+                            {t("对话")}
+                          </button>
+                        </WorkspaceActionTooltip>
                       </span>
                     </div>
 
@@ -6114,7 +6163,16 @@ export const AgentSettingsPage = ({
                                         <AppLink
                                           to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
                                           aria-current={isSelected ? "page" : undefined}
-                                          onClick={() => setSelectedChatId(session.chatId)}
+                                          onClick={() => {
+                                            setSelectedChatId(session.chatId);
+                                            // 用户主动点击时持久化（包括空串默认会话），确保刷新后能恢复。
+                                            const storageKey = chatSessionStorageKeyRef.current;
+                                            if (storageKey) {
+                                              try {
+                                                sessionStorage.setItem(storageKey, session.chatId);
+                                              } catch { /* ignore */ }
+                                            }
+                                          }}
                                           className={cn(
                                             "lv-agents-session-item lv-agents-nav-item",
                                             isSelected && "is-active",

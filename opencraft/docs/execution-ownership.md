@@ -125,6 +125,13 @@ resume 回执不能恢复已断开的 owner。AppServer 独立发出 `serverRequ
 时删除对应路由。路由表有界且只存于 Host 进程；服务重启后的恢复仍由 AppServer
 与 Client ledger 的协议对账承担，不声称跨进程持久化或多租户授权。
 
+同一 Codex stdio 连接上的原生 Thread 订阅属于 Host，不属于任何单个 logical
+Client。Client 的 `thread/unsubscribe` 只撤销其读者身份；pending `thread/resume`
+在回执前是临时读者，取消或断线同步撤销，旧 Client incarnation 的回复既不能
+恢复读者/交互 owner，也不能投递给同 ID 的新连接。Host 的已接纳 Turn、未结
+队列和待答 server request 独立要求保留原生事件流；只有无读者、无这些需求且
+原生 Thread 空闲时才能回收物理订阅。回收与新原生工作按 Thread 串行化。
+
 ## 撤销、重连与释放
 
 断线首先同步撤销客户端 owner 与执行权限，再异步清理引擎挂载和待处理调用。所有在途操作在提交前重新验证 owner；旧请求不能恢复已撤销租约。

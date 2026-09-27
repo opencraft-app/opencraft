@@ -2,27 +2,69 @@ import { MessagePortAppHostClient } from "@opencraft/app-host-client";
 import type { RendererToAppHostMessage } from "@opencraft/app-host-protocol";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 
+type AppHostConnectionPhase = "connecting" | "socket-open" | "ready";
+type AppHostFailure = "socket-error" | "socket-close" | "handshake-timeout" | "invalid-response";
+
+interface AppHostConnectionDiagnostic {
+  attemptId: string;
+  failure: AppHostFailure;
+  phase: AppHostConnectionPhase;
+  readyState: number;
+  ageMs: number;
+  closeCode?: number;
+}
+
+function reportAppHostConnectionFailure(diagnostic: AppHostConnectionDiagnostic): void {
+  if (typeof globalThis.fetch !== "function") return;
+  try {
+    void globalThis.fetch("/__opencraft_apphost_diagnostic", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(diagnostic),
+      keepalive: true,
+    }).catch(() => undefined);
+  } catch { /* Diagnostics must never alter transport behavior. */ }
+}
+
 class WebSocketAppHostPort {
   private readonly socket: WebSocket;
   private readonly listeners = new Set<(event: MessageEvent<unknown>) => void>();
   private readonly queued: string[] = [];
+  private readonly handshakeTimer: ReturnType<typeof globalThis.setTimeout>;
+  private readonly startedAt = Date.now();
+  private phase: AppHostConnectionPhase = "connecting";
   private closed = false;
 
   get isClosed(): boolean { return this.closed; }
 
-  constructor(url: string, createSocket: (url: string) => WebSocket = value => new WebSocket(value)) {
+  constructor(
+    url: string,
+    private readonly attemptId: string,
+    createSocket: (url: string) => WebSocket = value => new WebSocket(value),
+    handshakeTimeoutMs = 10_000,
+    private readonly reportFailure = reportAppHostConnectionFailure,
+  ) {
     this.socket = createSocket(url);
+    this.handshakeTimer = globalThis.setTimeout(() => {
+      this.fail("App Host handshake timed out", "handshake-timeout");
+    }, handshakeTimeoutMs);
     this.socket.addEventListener("open", () => {
+      this.phase = "socket-open";
       for (const frame of this.queued.splice(0)) this.socket.send(frame);
     });
     this.socket.addEventListener("message", event => {
-      try { this.publish(JSON.parse(String(event.data))); }
-      catch { this.fail("Invalid App Host response"); }
+      try {
+        const message = JSON.parse(String(event.data));
+        if (message?.type === "ready") this.phase = "ready";
+        this.clearHandshakeTimer();
+        this.publish(message);
+      }
+      catch { this.fail("Invalid App Host response", "invalid-response"); }
     });
-    this.socket.addEventListener("close", () => {
-      if (!this.closed) this.fail("App Host connection closed");
+    this.socket.addEventListener("close", event => {
+      if (!this.closed) this.fail("App Host connection closed", "socket-close", event.code);
     });
-    this.socket.addEventListener("error", () => this.fail("App Host connection failed"));
+    this.socket.addEventListener("error", () => this.fail("App Host connection failed", "socket-error"));
   }
 
   postMessage(message: RendererToAppHostMessage): void {
@@ -46,6 +88,7 @@ class WebSocketAppHostPort {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.clearHandshakeTimer();
     this.queued.length = 0;
     this.listeners.clear();
     this.socket.close();
@@ -56,10 +99,24 @@ class WebSocketAppHostPort {
     for (const listener of this.listeners) listener(event);
   }
 
-  private fail(message: string): void {
+  private fail(message: string, failure: AppHostFailure, closeCode?: number): void {
     if (this.closed) return;
+    try {
+      this.reportFailure({
+        attemptId: this.attemptId,
+        failure,
+        phase: this.phase,
+        readyState: this.socket.readyState,
+        ageMs: Math.max(0, Date.now() - this.startedAt),
+        ...(closeCode === undefined ? {} : { closeCode }),
+      });
+    } catch { /* Diagnostics must never alter transport behavior. */ }
     this.publish({ type: "fatal", error: { code: "APP_HOST_DISCONNECTED", message, retryable: true } });
     this.close();
+  }
+
+  private clearHandshakeTimer(): void {
+    globalThis.clearTimeout(this.handshakeTimer);
   }
 }
 
@@ -156,6 +213,7 @@ class RenewableAppHostTransport implements DuplexTransport {
 
 export function connectWebSocketAppHost(
   createSocket?: (url: string) => WebSocket,
+  options: { readonly handshakeTimeoutMs?: number; readonly reportFailure?: (diagnostic: AppHostConnectionDiagnostic) => void } = {},
 ): { createTransport(hostId: string): DuplexTransport; close(): void } {
   let current: { port: WebSocketAppHostPort; client: MessagePortAppHostClient } | null = null;
   let disposed = false;
@@ -168,7 +226,14 @@ export function connectWebSocketAppHost(
           const url = new URL("/apphost", window.location.href);
           url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
           const id = globalThis.crypto?.randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-          const port = new WebSocketAppHostPort(url.href, createSocket);
+          url.searchParams.set("attempt", id);
+          const port = new WebSocketAppHostPort(
+            url.href,
+            id,
+            createSocket,
+            options.handshakeTimeoutMs ?? 10_000,
+            options.reportFailure ?? reportAppHostConnectionFailure,
+          );
           try { current = { port, client: new MessagePortAppHostClient(port, id) }; }
           catch (error) { port.close(); throw error; }
         }

@@ -165,15 +165,7 @@ export function Sidebar({
 
         <section className="sidebar-tasks" aria-label="Tasks">
           {activityGroups.length === 0 ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
-          <div
-            className="sidebar-activity-list"
-            onPointerDownCapture={(event) => {
-              if (event.pointerType === "touch") event.currentTarget.dataset.touchInteraction = "true";
-            }}
-            onPointerMoveCapture={(event) => {
-              if (event.pointerType === "mouse") delete event.currentTarget.dataset.touchInteraction;
-            }}
-          >
+          <div className="sidebar-activity-list">
             {activityGroups.map(group => (
               <section className="sidebar-activity-group" key={group.key} aria-label={group.label}>
                 <h2 className="sidebar-activity-group__heading">{group.label}</h2>

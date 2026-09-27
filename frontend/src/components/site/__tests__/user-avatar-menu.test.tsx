@@ -99,6 +99,17 @@ afterEach(() => {
 });
 
 describe("UserAvatarMenu", () => {
+  const siteLocales = [
+    ["domestic Chinese", "zh-CN", false],
+    ["international English", "en-US", true],
+    ["international Simplified Chinese", "zh-SG", true],
+    ["international Traditional Chinese", "zh-Hant", true],
+    ["international Indonesian", "id-ID", true],
+    ["international Spanish", "es", true],
+    ["international Japanese", "ja-JP", true],
+    ["international Korean", "ko-KR", true],
+  ] as const;
+
   const readGeneratedDictionary = (locale: string): Record<string, string> =>
     JSON.parse(
       readFileSync(join(process.cwd(), `src/i18n/generated/${locale}.json`), "utf8"),
@@ -229,15 +240,24 @@ describe("UserAvatarMenu", () => {
     expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
+    expect(screen.getByRole("link", { name: "套餐与费用" }).nextElementSibling).toBe(
+      screen.getByRole("link", { name: "账号" }),
+    );
 
     unmount();
     render(<UserAvatarMenu />);
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
     expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
+    expect(screen.getByRole("link", { name: "账号" }).nextElementSibling).toBe(
+      screen.getByRole("link", { name: "套餐与费用" }),
+    );
   });
 
-  it("places the Model link after Plans & billing for ai bundles", () => {
+  it.each(siteLocales)("orders the AI plan sidebar menu for %s", (_site, locale, global) => {
+    mockIsGlobal = global;
+    mockLanguage = locale;
+    stubLocation(global ? "lightvela.ai" : "lightvela.com");
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -255,18 +275,28 @@ describe("UserAvatarMenu", () => {
 
     render(
       <AppNavigationProvider value={{ ...createNavigationValue(), search: "?bot=bot%2Fsales+east" }}>
-        <UserAvatarMenu variant="sidebar" />
+        <UserAvatarMenu variant="sidebar" showLanguageSwitcher />
       </AppNavigationProvider>,
     );
     fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
 
+    const accountLink = screen.getByRole("link", { name: "账号" });
     const billingLink = screen.getByRole("link", { name: "套餐与费用" });
-    const modelLink = screen.getByRole("link", { name: "模型" });
+    const modelLink = screen.getByRole("link", { name: locale === "en-US" ? "Models" : "模型" });
     expect(modelLink).toHaveAttribute("href", "/agents/models?bot=bot%2Fsales+east");
-    expect(billingLink.compareDocumentPosition(modelLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(modelLink.nextElementSibling).toBe(billingLink);
+    expect(billingLink.nextElementSibling).toBe(accountLink);
+    if (global) {
+      expect(accountLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
+    } else {
+      expect(screen.queryByRole("button", { name: "语言" })).not.toBeInTheDocument();
+    }
   });
 
-  it("keeps Model out of the account menu for standard plans", () => {
+  it.each(siteLocales)("orders the standard plan sidebar menu for %s", (_site, locale, global) => {
+    mockIsGlobal = global;
+    mockLanguage = locale;
+    stubLocation(global ? "lightvela.ai" : "lightvela.com");
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -282,10 +312,18 @@ describe("UserAvatarMenu", () => {
       },
     });
 
-    render(<UserAvatarMenu variant="sidebar" />);
+    render(<UserAvatarMenu variant="sidebar" showLanguageSwitcher />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
 
-    expect(screen.queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^(Models|模型)$/ })).not.toBeInTheDocument();
+    const billingLink = screen.getByRole("link", { name: "套餐与费用" });
+    const accountLink = screen.getByRole("link", { name: "账号" });
+    expect(billingLink.nextElementSibling).toBe(accountLink);
+    if (global) {
+      expect(accountLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
+    } else {
+      expect(screen.queryByRole("button", { name: "语言" })).not.toBeInTheDocument();
+    }
   });
 
   it("uses the plural Models label in the English sidebar menu", () => {

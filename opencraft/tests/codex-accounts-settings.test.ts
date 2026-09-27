@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import * as React from "react";
@@ -8,6 +9,20 @@ import * as Dialog from "@radix-ui/react-dialog";
 import type { HostProtocolRequest } from "../plugins/builtin-agents/src/local-agent-settings-service.js";
 import { CodexAccountsService } from "../plugins/builtin-agents/src/codex-accounts/service.js";
 import { CodexDeviceLoginContent, createCodexAccountsView } from "../plugins/builtin-agents/src/codex-accounts/view.js";
+
+test("Codex account row shares touch-safe hover and a reachable actions target", () => {
+  const styles = readFileSync(new URL("../apps/workbench-web/src/styles/codex-accounts.scss", import.meta.url), "utf8");
+  const settings = readFileSync(new URL("../apps/workbench-web/src/styles/settings-panel.scss", import.meta.url), "utf8");
+  const controls = readFileSync(new URL("../packages/design-system/src/controls.web.scss", import.meta.url), "utf8");
+  const menu = readFileSync(new URL("../packages/design-system/src/menu.web.scss", import.meta.url), "utf8");
+  assert.match(styles, /\.codex-account__row\s*\{[\s\S]*?@include controls\.hover-capable/u);
+  assert.doesNotMatch(styles, /&:hover,\s*&:focus-within\s*\{\s*background/u);
+  assert.match(styles, /:root\[data-touch-interaction\] \.settings-icon-button\.codex-account__menu-trigger\s*\{\s*opacity: 1;/u);
+  assert.match(settings, /@media \(any-pointer: coarse\), \(hover: none\)[\s\S]*?\.settings-control-button\.settings-icon-button\s*\{ width: 44px; height: 44px; \}/u);
+  assert.match(controls, /@mixin hover-capable\s*\{\s*@media \(any-hover: hover\) and \(any-pointer: fine\)[\s\S]*?:root:not\(\[data-touch-interaction\]\) &/u);
+  assert.match(menu, /@include controls\.hover-capable/u);
+  assert.match(menu, /@media \(any-pointer: coarse\), \(hover: none\) \{ min-height: 44px; \}/u);
+});
 
 test("Codex account Settings renders only redacted account state and device code", async () => {
   Object.assign(globalThis, { React });

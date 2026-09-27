@@ -1375,6 +1375,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         ? setTimeout(() => abortController.abort(), timeoutMs)
         : undefined;
       let response: Response;
+      let body: unknown = null;
       try {
         response = await fetch(buildUrl(baseUrl, path), {
           method: "POST",
@@ -1383,6 +1384,14 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           body: JSON.stringify(createDebugExecRequestBody(command)),
           signal: abortController.signal,
         });
+        // fetch resolves at headers; keep the deadline through body consumption.
+        // Otherwise a stalled body can block onboarding beyond its probe budget.
+        try {
+          body = await response.json();
+        } catch (error) {
+          if (abortController.signal.aborted) throw error;
+          body = null;
+        }
       } catch (error) {
         if (abortController.signal.aborted) {
           throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
@@ -1390,13 +1399,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         throw createNetworkUnavailableError(error);
       } finally {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
-      }
-
-      let body: unknown = null;
-      try {
-        body = await response.json();
-      } catch {
-        body = null;
       }
 
       // 优先识别 details 字段：只要带 details.output / details.exit_code，

@@ -35,10 +35,11 @@ import {
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
   draftSubmissionOwnsNavigation,
+  equalWorkbenchLocation,
   findHostConnectionInterventionError,
   projectComposerModelChoices,
 } from "@opencraft/workbench-runtime";
-import { OPENCRAFT_THREAD_QUEUE_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
 import {
   lazy,
   Suspense,
@@ -72,6 +73,11 @@ import {
   type ConversationRestoreSnapshot,
   type ConversationScrollApi,
 } from "./components/conversation";
+import {
+  ConversationRecoveryNotice,
+  ConversationRecoverySkeleton,
+  conversationRecoveryPresentation,
+} from "./components/conversation-recovery";
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
@@ -164,20 +170,6 @@ function humanizeCatalogValue(value: string): string {
     .join(" ");
 }
 
-function permissionProfileLabel(id: string): string {
-  switch (id) {
-    case ":read-only":
-      return "Read only";
-    case ":workspace":
-    case ":workspace_roots":
-      return "Workspace";
-    case ":danger-full-access":
-      return "Full access";
-    default:
-      return humanizeCatalogValue(id);
-  }
-}
-
 function hostKindDescription(kind: string): string {
   switch (kind) {
     case "remote-ssh":
@@ -191,42 +183,6 @@ function hostKindDescription(kind: string): string {
     default:
       return "Local AppServer";
   }
-}
-
-function ConversationHydration({
-  detail,
-  errorMessage,
-  onRetry,
-  state,
-}: {
-  readonly detail: import("react").ReactNode;
-  readonly errorMessage?: string | null;
-  readonly onRetry?: (() => void) | null;
-  readonly state: "loading" | "error";
-}) {
-  const failed = state === "error";
-  return (
-    <div className="conversation-hydration-stage">
-      <section
-        aria-busy={!failed}
-        aria-live="polite"
-        className="conversation-hydration"
-        data-state={state}
-        role={failed ? "alert" : "status"}
-      >
-        <span className="conversation-hydration__indicator" aria-hidden="true">
-          <span />
-        </span>
-        <div className="conversation-hydration__copy">
-          <strong>{failed ? <FormattedMessage id="chat.restore.failed" defaultMessage="Could not restore this conversation" /> : <FormattedMessage id="chat.restore" defaultMessage="Restoring conversation" />}</strong>
-          <p>{failed ? errorMessage ?? <FormattedMessage id="chat.restore.error" defaultMessage="The conversation could not be loaded." /> : detail}</p>
-        </div>
-        {failed && onRetry != null ? (
-          <button type="button" onClick={onRetry}><FormattedMessage id="common.retry" defaultMessage="Try again" /></button>
-        ) : null}
-      </section>
-    </div>
-  );
 }
 
 export interface EmbeddedWorkbenchAppSession {
@@ -315,6 +271,12 @@ export function App({
   );
   const queueExtension = runtime.resources.host.getInitializeResult()
     ?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION];
+  const permissionModesExtension = runtime.resources.host.getInitializeResult()
+    ?.capabilities?.extensions?.[OPENCRAFT_PERMISSION_MODES_EXTENSION];
+  const supportsPermissionModes = typeof permissionModesExtension === "object"
+    && permissionModesExtension !== null
+    && "version" in permissionModesExtension
+    && permissionModesExtension.version === 1;
   const queueAtomicSteer = supportsAtomicQueuedSteer(queueExtension);
   const queueUnconfirmedSteerDiscard = supportsUnconfirmedSteerDiscard(queueExtension);
   const queueReorderable = !(
@@ -601,6 +563,31 @@ export function App({
     });
   }, [dispatchPanel, panelState.right.open, panelState.right.tabs.length]);
   const timeline = snapshot.conversation?.timeline ?? null;
+  const recoveryPresentation = conversationRecoveryPresentation({
+    authoritative: snapshot.conversation?.authoritative === true,
+    hasVisibleHistory: (timeline?.frames.length ?? 0) > 0,
+    failed: snapshot.phase === "error" || (activeThreadLease === null
+      ? conversationViewActivation.phase === "error"
+      : snapshot.conversation?.error != null),
+  });
+  const retryConversationRecovery = () => {
+    const operation = snapshot.phase === "error"
+      ? runtime.reconnect()
+      : activeThreadLease?.retryRestore();
+    void operation?.catch(() => undefined);
+  };
+  const retryColdActivation = (snapshot.phase === "error" || conversationViewActivation.phase === "error")
+    && hostCatalog.currentLocation.kind === "thread"
+    ? () => {
+        const location = hostCatalog.currentLocation;
+        const reconnect = snapshot.phase === "error" ? runtime.reconnect() : Promise.resolve();
+        void reconnect.then(() => {
+          if (equalWorkbenchLocation(hostCatalog.currentLocation, location)) {
+            return hostCatalog.navigate(location, "replace");
+          }
+        }).catch(() => undefined);
+      }
+    : undefined;
   const navigationSource = activeThreadLease?.getNavigation() ?? null;
   const pendingInteraction = useMemo(
     () => findPendingInteraction(timeline),
@@ -943,13 +930,21 @@ export function App({
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
       models: projectComposerModelChoices(composerCatalog.models),
-      permissionProfiles: composerCatalog.permissionProfiles.map((profile) => ({
-        id: profile.id,
-        value: profile.id,
-        label: permissionProfileLabel(profile.id),
-        description: profile.description,
-        disabled: !profile.allowed,
-      })),
+      permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
+        const profile = rawProfile as OpenCraftPermissionProfile;
+        return {
+          id: profile.id,
+          value: profile.id,
+          label: supportsPermissionModes ? profile.openCraftLabel ?? humanizeCatalogValue(profile.id) : humanizeCatalogValue(profile.id),
+          description: profile.description,
+          disabled: !profile.allowed,
+          mode: supportsPermissionModes ? profile.openCraftMode ?? null : null,
+          nativeProfileId: supportsPermissionModes ? profile.openCraftNativeProfileId ?? null : null,
+        };
+      }).sort((left, right) => {
+        const rank = { "read-only": 0, "accept-edits": 1, auto: 2, full: 3 } as const;
+        return (left.mode === null ? 4 : rank[left.mode]) - (right.mode === null ? 4 : rank[right.mode]);
+      }),
       isFetching: composerCatalog.isFetching,
       modelError: composerCatalog.modelError?.message ?? null,
       onModelMenuOpen: composerCatalog.onModelMenuOpen,
@@ -967,6 +962,7 @@ export function App({
       composerCatalog.models,
       composerCatalog.permissionProfileError,
       composerCatalog.permissionProfiles,
+      supportsPermissionModes,
     ],
   );
   const draftWorkspaceOptions = useMemo(() => {
@@ -1495,23 +1491,22 @@ export function App({
         ) : (
           <div className="local-conversation-page">
             {activeThreadLease === null ? (
-                <ConversationHydration
-                  detail={`Connecting to ${activeHost.label}…`}
-                  errorMessage={conversationViewActivation.error?.message}
-                  onRetry={conversationViewActivation.phase === "error" && hostCatalog.currentLocation.kind === "thread"
-                    ? () => {
-                        void hostCatalog.navigate(
-                          hostCatalog.currentLocation,
-                          "replace",
-                        );
-                      }
-                    : null}
-                  state={conversationViewActivation.phase === "error" ? "error" : "loading"}
-                />
+                <div className="conversation-recovery-cold-stage">
+                  <ConversationRecoverySkeleton
+                    failed={recoveryPresentation === "cold-error"}
+                    onRetry={retryColdActivation}
+                  />
+                </div>
             ) : (
               <>
                 <Conversation
                   scrollPolicy="natural"
+                  emptyState={recoveryPresentation === "cold-loading" || recoveryPresentation === "cold-error"
+                    ? <ConversationRecoverySkeleton
+                        failed={recoveryPresentation === "cold-error"}
+                        onRetry={retryConversationRecovery}
+                      />
+                    : undefined}
                   key={activeConversationRestoreKey ?? "empty"}
                   documentContext={{
                     conversationId: activeThreadId,
@@ -1642,14 +1637,11 @@ export function App({
                     </ThreadComposerPresentation>
                   }
                 />
-                {!snapshot.conversation?.authoritative ? (
-                  <ConversationHydration
-                    detail={<FormattedMessage id="chat.restore.loading" defaultMessage="Loading conversation history…" />}
-                    errorMessage={snapshot.conversation?.error?.message}
-                    onRetry={() => {
-                      void activeThreadLease.retryRestore().catch(() => undefined);
-                    }}
-                    state={snapshot.conversation?.error ? "error" : "loading"}
+                {recoveryPresentation === "warm-loading" || recoveryPresentation === "warm-error" ? (
+                  <ConversationRecoveryNotice
+                    failed={recoveryPresentation === "warm-error"}
+                    reconnecting={snapshot.phase === "reconnecting" || snapshot.conversation?.phase === "offline"}
+                    onRetry={retryConversationRecovery}
                   />
                 ) : null}
               </>

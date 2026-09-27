@@ -11,6 +11,7 @@ import { AppHostServer } from "../packages/app-host-server/src/index.ts";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.ts";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
+import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -79,6 +80,7 @@ export async function startHeadlessServer(options = {}) {
     throw new Error("Public headless listener requires explicit unauthenticated-public acknowledgement");
   }
   await access(join(webRoot, "index.html"));
+  await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
   const releaseLock = await lockfile.lock(join(dataDirectory, "server"), { realpath: false, retries: 0 });
   let agent;
