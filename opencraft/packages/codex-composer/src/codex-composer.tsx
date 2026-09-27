@@ -3,6 +3,7 @@
 import { baseKeymap, newlineInCode, splitBlock } from "prosemirror-commands";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { DictationFooter } from "./dictation-footer";
+import { attachmentPreviewSession } from "./attachment-preview-session";
 import { SkillIcon } from "./skill-icon";
 import { resolveDictationKeyAction } from "./dictation-keyboard";
 import { history, redo, undo } from "prosemirror-history";
@@ -36,11 +37,14 @@ import {
   Check,
   ChevronDown,
   CircleStop,
+  CircleAlert,
   FileCode2,
   FileText,
   Image,
+  LoaderCircle,
   Paperclip,
   Plus,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
   X,
@@ -776,15 +780,8 @@ export const CodexComposer = forwardRef<
   const placeholderRef = useRef(placeholder);
   placeholderRef.current = placeholder;
   const mountRef = useRef<HTMLDivElement>(null);
-  const attachmentJobs = useRef(new Map<string, AbortController>());
-  useEffect(() => {
-    const cancelRemoved = () => {
-      const ids = new Set(controller.getSnapshot().draft.attachments.map(attachment => attachment.id));
-      for (const [id, job] of attachmentJobs.current) if (!ids.has(id)) { job.abort(); attachmentJobs.current.delete(id); }
-    };
-    const unsubscribe = controller.subscribe(cancelRemoved);
-    return () => { unsubscribe(); for (const job of attachmentJobs.current.values()) job.abort(); attachmentJobs.current.clear(); };
-  }, [controller]);
+  const attachmentSession = attachmentPreviewSession(controller);
+  useSyncExternalStore(attachmentSession.subscribe, attachmentSession.getVersion, attachmentSession.getVersion);
   const editorViewRef = useRef<EditorView | null>(null);
   const editorControllerRef = useRef<ComposerController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1030,59 +1027,14 @@ export const CodexComposer = forwardRef<
       const view = editorViewRef.current;
       if (files.length === 0 || disabledRef.current || view === null ||
         view.isDestroyed || !view.dom.isConnected || editorControllerRef.current !== controller) return;
-      for (const file of files) {
-        const pending: ComposerAttachment = {
-          id: createClientId(),
-          name: file.name,
-          mimeType: file.type || "application/octet-stream",
-          size: file.size,
-          uri: null,
-          lifecycle: onResolveAttachment === undefined ? "failed" : "pending",
-          error:
-            onResolveAttachment === undefined
-              ? "No browser-to-AppServer attachment bridge is configured"
-              : null,
-        };
-        controller.dispatch({ type: "add-attachment", attachment: pending });
-        if (onResolveAttachment === undefined) continue;
-        const job = new AbortController();
-        attachmentJobs.current.set(pending.id, job);
-        void Promise.resolve().then(() => onResolveAttachment(file, pending, job.signal))
-          .then(
-            (resolved) => {
-              if (job.signal.aborted) return;
-              const { id: _resolvedId, ...patch } = resolved;
-              controller.dispatch({
-                type: "update-attachment",
-                id: pending.id,
-                patch,
-              });
-            },
-            (error: unknown) => {
-              if (job.signal.aborted) return;
-              controller.dispatch({
-                type: "update-attachment",
-                id: pending.id,
-                patch: {
-                  lifecycle: "failed",
-                  error: error instanceof Error ? error.message : String(error),
-                },
-              });
-            },
-          )
-          .catch(() => {
-            // The owning Conversation View may have been evicted while the host
-            // attachment resolver was still completing. Its disposed Controller
-            // deliberately rejects late writes.
-          }).finally(() => attachmentJobs.current.delete(pending.id));
-      }
+      attachmentSession.addFiles(files, onResolveAttachment);
       // Focus belongs to the initiating interaction, not upload completion.
       // Keep ProseMirror's selection; do not move the caret or schedule a late focus.
       if (editorViewRef.current === view && !view.isDestroyed && view.dom.isConnected) {
         view.focus();
       }
     },
-    [controller, onResolveAttachment],
+    [attachmentSession, controller, onResolveAttachment],
   );
 
   const openAttachmentPicker = () => {
@@ -1672,8 +1624,7 @@ export const CodexComposer = forwardRef<
     const attachment = controller.getSnapshot().draft.attachments.find(
       (candidate) => candidate.id === id,
     );
-    attachmentJobs.current.get(id)?.abort();
-    attachmentJobs.current.delete(id);
+    attachmentSession.remove(controller.getSnapshot().draft.id, id);
     controller.dispatch({ type: "remove-attachment", id });
     if (attachment !== undefined) {
       void Promise.resolve(onRemoveAttachment?.(attachment)).catch(() => {
@@ -1866,31 +1817,46 @@ export const CodexComposer = forwardRef<
         )}
         {attachments.length > 0 && (
           <div className="codex-composer-attachments" aria-label="Attachments" inert={voiceActive ? true : undefined}>
-            {attachments.map((attachment) => (
-              <div className="codex-composer-attachment" key={attachment.id}>
-                <span className="codex-composer-attachment__icon">
-                  {attachment.mimeType.startsWith("image/") ? (
-                    <Image size={15} />
-                  ) : (
-                    <FileText size={15} />
-                  )}
-                </span>
-                <span className="codex-composer-attachment__copy">
-                  <strong>{attachment.name}</strong>
-                  <small>
-                    {Math.max(1, Math.ceil(attachment.size / 1024))} KB
-                  </small>
-                  {attachment.error ? <small>{attachment.error}</small> : null}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${attachment.name}`}
-                  onClick={() => removeAttachment(attachment.id)}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
+            {attachments.map((attachment) => {
+              const image = attachment.mimeType.startsWith("image/");
+              const previewUrl = attachmentSession.previewUrl(composerSnapshot.draft.id, attachment.id)
+                ?? (attachment.uri !== null && /^data:image\//iu.test(attachment.uri) ? attachment.uri : null);
+              if (image) return (
+                <div aria-label={attachment.name} className="codex-composer-image-attachment" data-state={attachment.lifecycle} key={attachment.id} role="group" title={attachment.error ?? attachment.name}>
+                  {previewUrl === null
+                    ? <Image aria-hidden="true" className="codex-composer-image-attachment__fallback" size={24} />
+                    : <img alt="" draggable={false} src={previewUrl} />}
+                  {attachment.lifecycle === "pending" || attachment.lifecycle === "processing" || attachment.lifecycle === "uploading" ? (
+                    <span aria-label={`Preparing ${attachment.name}`} className="codex-composer-image-attachment__status" role="status">
+                      <LoaderCircle aria-hidden="true" size={22} />
+                    </span>
+                  ) : null}
+                  {attachment.lifecycle === "failed" ? (
+                    <span className="codex-composer-image-attachment__status is-failed">
+                      {attachmentSession.canRetry(composerSnapshot.draft.id, attachment.id) && onResolveAttachment !== undefined ? (
+                        <button aria-label={`Retry ${attachment.name}: ${attachment.error ?? "Image preparation failed"}`} onClick={() => attachmentSession.retry(composerSnapshot.draft.id, attachment.id, onResolveAttachment)} type="button">
+                          <RotateCcw aria-hidden="true" size={20} />
+                        </button>
+                      ) : <CircleAlert aria-label={attachment.error ?? "Image preparation failed"} role="img" size={20} />}
+                    </span>
+                  ) : null}
+                  <button className="codex-composer-image-attachment__remove" type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}>
+                    <X aria-hidden="true" size={14} />
+                  </button>
+                </div>
+              );
+              return (
+                <div className="codex-composer-attachment" key={attachment.id}>
+                  <span className="codex-composer-attachment__icon"><FileText size={15} /></span>
+                  <span className="codex-composer-attachment__copy">
+                    <strong>{attachment.name}</strong>
+                    <small>{Math.max(1, Math.ceil(attachment.size / 1024))} KB</small>
+                    {attachment.error ? <small>{attachment.error}</small> : null}
+                  </span>
+                  <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button>
+                </div>
+              );
+            })}
           </div>
         )}
 

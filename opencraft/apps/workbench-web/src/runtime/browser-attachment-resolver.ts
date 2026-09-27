@@ -14,10 +14,17 @@ import type {
  */
 export const MAX_INLINE_BROWSER_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_STAGED_BROWSER_FILE_BYTES = 32 * 1024 * 1024;
+const INLINE_IMAGE_EXTENSIONS = new Map([
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+  ["image/webp", "webp"],
+  ["image/gif", "gif"],
+]);
 
 export type BrowserAttachmentErrorCode =
   | "EMPTY_ATTACHMENT"
   | "IMAGE_TOO_LARGE"
+  | "UNSUPPORTED_IMAGE_TYPE"
   | "FILE_TOO_LARGE"
   | "HOST_FILE_STAGING_UNAVAILABLE";
 
@@ -87,8 +94,15 @@ export async function resolveBrowserAttachment(
   const processed = file.type.startsWith("image/") && images ? await images.compress(file, { signal }) : null;
   const upload = processed?.blob ?? file;
   const mimeType = processed?.changed ? upload.type : file.type;
-  const uploadName = processed?.changed
-    ? `${file.name.replace(/\.[^.]+$/u, "")}.${mimeType === "image/png" ? "png" : "jpg"}`
+  const imageExtension = INLINE_IMAGE_EXTENSIONS.get(mimeType);
+  if (file.type.startsWith("image/") && imageExtension === undefined) {
+    throw new BrowserAttachmentError(
+      "UNSUPPORTED_IMAGE_TYPE",
+      `Unsupported image type: ${mimeType || "unknown"}. Use PNG, JPEG, WebP, or GIF.`,
+    );
+  }
+  const uploadName = processed?.changed && imageExtension !== undefined
+    ? `${file.name.replace(/\.[^.]+$/u, "")}.${imageExtension}`
     : file.name;
   const bytes = new Uint8Array(await upload.arrayBuffer());
   signal?.throwIfAborted();

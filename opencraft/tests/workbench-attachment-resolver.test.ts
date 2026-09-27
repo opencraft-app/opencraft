@@ -48,6 +48,29 @@ test("browser images become host-independent Codex image URLs", async () => {
   });
 });
 
+test("unsupported image formats fail before the Composer marks them ready", async () => {
+  const file = new File(["vector"], "drawing.svg", { type: "image/svg+xml" });
+  await assert.rejects(
+    () => resolveBrowserAttachment(file, pending(file)),
+    (error: unknown) => error instanceof BrowserAttachmentError
+      && error.code === "UNSUPPORTED_IMAGE_TYPE",
+  );
+});
+
+test("compressed WebP keeps a filename extension that matches its MIME type", async () => {
+  const file = new File([new Uint8Array([1, 2])], "photo.webp", { type: "image/webp" });
+  const resolved = await resolveBrowserAttachment(file, pending(file), { stage: null }, {
+    compress: async () => ({
+      blob: new Blob([new Uint8Array([3])], { type: "image/webp" }),
+      changed: true,
+      reason: "compressed",
+    }),
+  });
+  assert.equal(resolved.name, "photo.webp");
+  assert.equal(resolved.mimeType, "image/webp");
+  assert.equal(resolved.uri, "data:image/webp;base64,Aw==");
+});
+
 test("the browser resolver stages non-image files through the semantic Host attachment port", async () => {
   const text = new File(["hello"], "note.txt", { type: "text/plain" });
   const stages: unknown[] = [];
