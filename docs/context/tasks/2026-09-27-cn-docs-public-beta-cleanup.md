@@ -64,6 +64,7 @@ derived: false
 - `pnpm docs:sync` 同步 549 篇、日期检查 477 篇通过；`pnpm check` 新增 TypeScript 诊断为 0；国内站 `pnpm build:cn` 成功生成 `/docs/overview`、`/docs/announcements/public-beta` 与 `/llms.txt`。
 - 相关 49 项渠道/文档 parity 测试及 20 项日期测试通过；文档 validator 错误 0、断链 0。
 - Gongfeng 查询证实第一批 MR !4679 已合并，因此本轮提交独立 MR。
+- 本轮 MR !4683 已创建，目标为 `master`；创建时状态为 `opened`、`can_be_merged`，CI 为 `pending` 且阻塞。
 
 ## risks
 - 首购优惠可能调整；文案引导以订阅页和支付页为准。
@@ -83,4 +84,4 @@ derived: false
 - 有界搜索结果与 `git diff`，不保存完整扫描输出。
 
 ## handoff
-- 本地门禁通过，待从最新 `master` 提交独立 MR；国际站不在本次范围。
+- 本地门禁通过，本轮变更见 MR !4683；国际站不在本次范围。CI 与合并状态以 MR 最新结果为准。

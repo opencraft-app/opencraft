@@ -16,7 +16,7 @@ derived: false
 ---
 
 ## stage
-国内站文案及本地门禁已完成；原 MR !4679 已合并，准备从最新 `master` 创建独立 MR。
+国内站文案及本地门禁已完成；原 MR !4679 已合并，本轮独立 MR !4683 已创建。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - requirement_ids: CN-DOCS-PUBLIC-BETA。
@@ -29,7 +29,7 @@ derived: false
 
 ## history_context
 - current_design_refs: `docs/engineering/domains/site-environment-routing.md`。
-- relevant_evolution: MR !4679 第一批国内站文档改动已合并；本轮需新 MR。
+- relevant_evolution: MR !4679 第一批国内站文档改动已合并；本轮改动提交至新 MR !4683。
 - superseded_refs: 旧公测转入时间线及延长权益仅供历史追溯。
 
 ## context_receipt
@@ -41,10 +41,10 @@ derived: false
 - 截图所示提示框对应 `01-overview.md`；国内站另有适用人群、付费公告与 `llms.txt` 产品级公测口径，均已清理。
 - DeepSeek Harness 与我的工作台当前产品入口仍显示 Beta。
 - `pnpm docs:sync`、`pnpm check`、国内站 `pnpm build:cn`、69 项聚焦测试和文档 validator 均通过。
-- 原 MR !4679 状态为 `merged`，需新建分支与 MR。
+- 原 MR !4679 状态为 `merged`；新 MR !4683 创建时状态为 `opened`、`can_be_merged`，远端分支 SHA 与本地一致。
 
 ## unverified
-- 新 MR 的远端 source SHA、mergeability 与 CI 状态待核对。
+- CI 创建时为 `pending` 且阻塞，最终结果待远端流水线完成。
 
 ## discard
 - 公测转入时间线不再用于当前使用指南。
@@ -54,4 +54,4 @@ derived: false
 - 主 Task Pack：`docs/context/tasks/2026-09-27-cn-docs-public-beta-cleanup.md`。
 
 ## next_action
-从最新 `origin/master` 创建新分支，复核并提交当前改动，再创建 MR。
+跟踪 MR !4683 的 CI 与评审；合并及发布由后续流程处理。
