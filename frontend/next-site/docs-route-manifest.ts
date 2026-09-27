@@ -340,6 +340,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "channel-dingtalk"
+    ],
+    [
+      "configuration",
       "skill"
     ],
     [
@@ -2245,20 +2249,21 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
   },
   "zh-cn": {
     "overview": "2026-09-23",
-    "quickstart": "2026-09-23",
-    "core-concepts": "2026-08-20",
+    "quickstart": "2026-09-27",
+    "core-concepts": "2026-09-27",
     "who-is-lightvela-for": "2026-09-23",
     "account": "2026-09-20",
     "announcements/public-beta": "2026-09-23",
     "plans": "2026-09-23",
     "credits": "2026-08-20",
-    "create-first-hermes": "2026-09-23",
-    "configuration": "2026-08-20",
-    "configuration/model": "2026-08-20",
+    "create-first-hermes": "2026-09-27",
+    "configuration": "2026-09-27",
+    "configuration/model": "2026-09-27",
     "configuration/channel-wechat": "2026-08-20",
     "configuration/channel-qq": "2026-08-20",
     "configuration/channel-wecom": "2026-08-20",
     "configuration/channel-feishu": "2026-08-20",
+    "configuration/channel-dingtalk": "2026-09-27",
     "configuration/skill": "2026-08-20",
     "configuration/personality": "2026-08-24",
     "configuration/memory": "2026-08-24",
@@ -2289,7 +2294,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-manus": "2026-08-12",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-12",
     "compare/lightvela-vs-ai-chatbot": "2026-08-12",
-    "faq": "2026-09-23",
+    "faq": "2026-09-27",
     "contact-us": "2026-08-20",
     "": "2026-09-23"
   },

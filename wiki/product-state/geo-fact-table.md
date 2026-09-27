@@ -78,7 +78,7 @@ AI 搜索引擎（ChatGPT / Perplexity / 豆包 / Gemini 等）抓取站点后�
 | 唯一来源 | 产品配置：`src/pages/marketing/agent-channel-panel.tsx` 的 `HERMES_CHANNEL_LIST` 与管理台通道卡片可选项 |
 | 负责人 | ⬜ 待指定 |
 | 镜像位置 | `frontend/src/content/docs/configuration/channel-*.md`（现 3 个，**缺企业微信**）、`global|en/configuration/channel-*.md`（现 8 个，**多 Slack**）、`plans.md:47`、`announcements/public-beta.md:23`、`01-overview.md:29,53,68,81`、`04-core-concepts.md:30`、`create-first-hermes.md:59`、`credits.md:46`、`who-is-lightvela-for.md:3,17,35`、`frontend/src/app/llms.txt/route.next.ts:30,45`、`frontend/src/config/docs-sidebar.ts:77-80,162-170`、`frontend/src/lib/seo-data.ts` |
-| 冲突 | ✅ **C4 已关闭**（渠道口径已统一为 5 个）｜✅ **C7 已关闭**（Slack 已确认支持，见 2.7）｜🟡 **C8 钉钉文档缺失**（见 2.8） |
+| 冲突 | ✅ **C4 已关闭**（渠道口径已统一为 5 个）｜✅ **C7 已关闭**（Slack 已确认支持，见 2.7）｜🟡 **C8 钉钉开放平台前置条件待确认**（基础指南见 2.8） |
 
 ### 1.6 是否实名
 
@@ -281,11 +281,11 @@ const freeGuideAllowed = !paidBillingEnabled && !realnamePhoneVerificationEnable
 
 ---
 
-### 2.8 C8 🟡 国内站钉钉已上线，但没有配置文档
+### 2.8 C8 🟡 国内站钉钉接入指南已补充，开放平台前置条件仍待确认
 
 master 提交 `35575bd19`（2026-08-19）在通道面板加入**钉钉**与 **Slack**，国内站通道数由 4 变 5。
 
-本轮已把 5 个渠道的口径同步到全部文档、`llms.txt` 与本表，但**钉钉的配置文档尚不存在**：
+国内站已新增以扫码为主、手动凭证为辅的基础接入指南 `src/content/docs/configuration/channel-dingtalk.md`，并在国内站侧边栏与文档生成清单注册。以下是旧缺口的历史记录：
 
 | 缺口 | 影响 |
 |---|---|
@@ -294,12 +294,9 @@ master 提交 `35575bd19`（2026-08-19）在通道面板加入**钉钉**与 **Sl
 | `agent-channel-panel.tsx:41` 指向 `https://lightvela.ai/docs/configuration/channel-dingtalk` | **死链**（该文件在 en / global 也不存在）；仅国际站显示「配置教程」按钮，故当前只影响国际站 |
 | `agent-channel-panel.tsx:37` feishu 指向 `.../channel-lark` | **死链**，实际文件名为 `channel-feishu.md`，同样只影响国际站 |
 
-**本轮未创建钉钉文档**：从代码只能确定「扫码，或填写 Client ID / Secret」，
-钉钉开放平台侧的具体创建步骤（应用类型、所需权限、回调配置）无法从代码推断，
-硬写会造出与实际不符的操作步骤 —— 这正是本表要消灭的问题。
+**仍待确认**：代码只能确定「扫码，或填写 Client ID / Secret」。钉钉开放平台侧的具体创建步骤（应用类型、所需权限、回调配置）无法从代码推断，基础指南不写这些步骤。
 
-`04-core-concepts.md` 的通道表已列出钉钉，但**刻意不加文档链接**，改为注明「配置文档待补充」，
-避免制造文档内死链。待产品侧提供步骤后补齐，并同步侧边栏、slug 映射与 `seo-data.ts`。
+`04-core-concepts.md` 已链接国内站钉钉指南。待产品侧确认开放平台操作要求后，再补充手动绑定的完整步骤。
 
 ---
 
@@ -430,7 +427,7 @@ offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD'|'CNY', availability
 | Q8 | 结构化数据对外披露的价格口径 | 4.1 JSON-LD | ✅ **已确认**：月付 + 季付 + 原价 + 首购价，已改为 AggregateOffer 价格区间 |
 | Q9 | 国内站企业微信接入步骤 | 2.4 缺口 | ✅ **已确认**：复用国际站 WeCom 文档改为国内站版本，已完成 |
 | Q10 | 国际站 **Slack** 处理方式 | C7，涉及 A/B/C 三层共 20+ 处 | ✅ **已确认（2026-08-20）**：Slack **正式支持**，国际站 8 渠道之一。站内 20+ 处全部保留，无需清理 —— 当初「代码里有但口径说没有」时选择先怀疑口径而非删代码，是正确处置 |
-| Q11 | 国内站**钉钉**接入步骤（钉钉开放平台侧：应用类型、所需权限、回调配置） | C8，阻塞 `channel-dingtalk.md` 创建 | 🔴 **待确认**：代码只能确定「扫码或填 Client ID / Secret」，其余无法从代码推断，硬写会造出与实际不符的步骤 |
+| Q11 | 国内站**钉钉**开放平台侧的应用类型、所需权限、回调配置 | C8；基础扫码指南已补 | 🔴 **待确认**：代码只能确定「扫码或填 Client ID / Secret」，其余无法从代码推断，手动绑定完整步骤暂不写入指南 |
 
 ---
 
@@ -450,7 +447,7 @@ offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD'|'CNY', availability
 | 项 | 状态 |
 |---|---|
 | 1 负责人填满 | ⬜ 全部待指定 |
-| 2 冲突关闭 | C1 ✅／C2 ✅（判断更正）／C3 ✅／C4 ✅（渠道口径已统一为 5 个）／C5 ⏸️（国际站冻结）／C6 🟡／C7 ✅（Slack 确认支持）／C8 🟡（钉钉文档缺失，待 Q11） |
+| 2 冲突关闭 | C1 ✅／C2 ✅（判断更正）／C3 ✅／C4 ✅（渠道口径已统一为 5 个）／C5 ⏸️（国际站冻结）／C6 🟡／C7 ✅（Slack 确认支持）／C8 🟡（钉钉基础指南已补，开放平台前置条件待 Q11） |
 | 3 缺口补齐 | ⏸️ 国际站冻结，待排期 |
 | 4 机器可读层 | 4.1 ✅／4.2 🟡（已缓解，`/subscribe` 仍不可见）／4.3 ✅／4.4 ⬜／4.5 ✅ |
 | 5 可追溯 | ✅ 本表已建立镜像位置索引 |
