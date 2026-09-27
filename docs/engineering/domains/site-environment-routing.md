@@ -37,6 +37,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
 
+国内站新增配置指南时，`frontend/src/config/docs-sidebar.ts` 中的 `CN_SIDEBAR`、`CN_SLUG_TO_FILE` 与 `frontend/scripts/sync-fumadocs-content.mjs` 中的 `cnDocs` 必须同时注册同一 slug。钉钉指南使用 `configuration/channel-dingtalk`，仅进入国内站目录；国际站目录与映射单独维护。
+
 ## 官网首页展示产物
 
 - 双站首页的试用展示统一为「新用户免费体验1个月，送4500 AI 积分」，用一条文案表达，不分列标准版和 AI 积分版；静态多语言片段、导入脚本、共用页脚和 `llms.txt` 摘要同步维护。前端文案不决定实际权益期限，权益仍由服务端执行。

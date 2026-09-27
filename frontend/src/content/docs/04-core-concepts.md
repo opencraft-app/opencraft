@@ -79,7 +79,7 @@ Hermes Agent 具有以下特性：
 
 > ⚠️ **单模型生效**
 >
-> 当前版本每个 Hermes Agent 仅支持配置并生效一个模型，切换模型需通过「添加为默认」覆盖原配置。
+> 一个 Agent 可以保存多个可用模型配置，但同一时间只有一个模型生效。切换方式见[模型切换](./configuration/multiple-models.md)。
 
 ---
 
@@ -97,7 +97,7 @@ Hermes Agent 具有以下特性：
 
 微信、企业微信与飞书选择通道后点击「连接」生成二维码，使用手机扫码完成授权即可；QQ 与钉钉除扫码外，也可在对应开放平台创建应用后，把获得的凭证（QQ 为 App ID / Secret，钉钉为 Client ID / Secret）填回 LightVela。
 
-各通道的详细接入步骤见 [配置通道 - 微信](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。钉钉通道的配置文档待补充。
+各通道的详细接入步骤见 [微信](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md) / [钉钉](./configuration/channel-dingtalk.md)。
 
 > 💡 **多通道并存**
 >
