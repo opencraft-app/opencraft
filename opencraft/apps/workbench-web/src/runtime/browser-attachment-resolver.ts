@@ -71,19 +71,26 @@ export async function resolveBrowserAttachment(
   images?: Pick<ImageProcessingService, "compress">,
   signal?: AbortSignal,
 ): Promise<ComposerAttachment> {
+  const sourceType = (file.type === "" || file.type === "application/octet-stream") && /\.heic$/iu.test(file.name)
+    ? "image/heic"
+    : (file.type === "" || file.type === "application/octet-stream") && /\.heif$/iu.test(file.name)
+      ? "image/heif"
+      : file.type;
+  const isImage = sourceType.startsWith("image/");
+  const isHeic = sourceType === "image/heic" || sourceType === "image/heif";
   if (file.size === 0) {
     throw new BrowserAttachmentError(
       "EMPTY_ATTACHMENT",
       "The attachment is empty",
     );
   }
-  if (file.type.startsWith("image/") && file.size > MAX_INLINE_BROWSER_IMAGE_BYTES) {
+  if (isImage && file.size > MAX_INLINE_BROWSER_IMAGE_BYTES) {
     throw new BrowserAttachmentError(
       "IMAGE_TOO_LARGE",
       `Image is too large (maximum ${MAX_INLINE_BROWSER_IMAGE_BYTES / 1024 / 1024} MB)`,
     );
   }
-  if (!file.type.startsWith("image/") && file.size > MAX_STAGED_BROWSER_FILE_BYTES) {
+  if (!isImage && file.size > MAX_STAGED_BROWSER_FILE_BYTES) {
     throw new BrowserAttachmentError(
       "FILE_TOO_LARGE",
       `File is too large (maximum ${MAX_STAGED_BROWSER_FILE_BYTES / 1024 / 1024} MB)`,
@@ -91,14 +98,23 @@ export async function resolveBrowserAttachment(
   }
 
   signal?.throwIfAborted();
-  const processed = file.type.startsWith("image/") && images ? await images.compress(file, { signal }) : null;
+  const source = sourceType === file.type ? file : file.slice(0, file.size, sourceType);
+  const processed = isImage && images ? await images.compress(source, { signal }) : null;
   const upload = processed?.blob ?? file;
-  const mimeType = processed?.changed ? upload.type : file.type;
+  const mimeType = processed?.changed ? upload.type : sourceType;
   const imageExtension = INLINE_IMAGE_EXTENSIONS.get(mimeType);
-  if (file.type.startsWith("image/") && imageExtension === undefined) {
+  if (isImage && imageExtension === undefined) {
     throw new BrowserAttachmentError(
       "UNSUPPORTED_IMAGE_TYPE",
-      `Unsupported image type: ${mimeType || "unknown"}. Use PNG, JPEG, WebP, or GIF.`,
+      isHeic
+        ? "This browser could not convert the HEIC photo. Choose a JPEG or PNG copy."
+        : `Unsupported image type: ${mimeType || "unknown"}. Use PNG, JPEG, WebP, or GIF.`,
+    );
+  }
+  if (isImage && upload.size > MAX_INLINE_BROWSER_IMAGE_BYTES) {
+    throw new BrowserAttachmentError(
+      "IMAGE_TOO_LARGE",
+      `Image is too large after processing (maximum ${MAX_INLINE_BROWSER_IMAGE_BYTES / 1024 / 1024} MB)`,
     );
   }
   const uploadName = processed?.changed && imageExtension !== undefined
@@ -107,7 +123,7 @@ export async function resolveBrowserAttachment(
   const bytes = new Uint8Array(await upload.arrayBuffer());
   signal?.throwIfAborted();
   const dataBase64 = bytesToBase64(bytes);
-  if (file.type.startsWith("image/")) {
+  if (isImage) {
     return {
       ...pending,
       name: uploadName,

@@ -81,3 +81,16 @@ test("a failed image remains visible and retries from the same selected File", a
   composer.dispose();
   assert.equal(session.previewUrl(draft.id, attachment.id), null);
 });
+
+test("a HEIC filename without browser MIME still enters image preparation with a preview", async () => {
+  const composer = createController();
+  const session = attachmentPreviewSession(composer);
+  const file = new File(["camera photo"], "IMG_0001.HEIC");
+  session.addFiles([file], () => new Promise<ComposerAttachment>(() => undefined));
+  const { draft } = composer.getSnapshot();
+  const attachment = draft.attachments[0]!;
+  assert.equal(attachment.mimeType, "image/heic");
+  assert.equal(attachment.lifecycle, "processing");
+  assert.match(session.previewUrl(draft.id, attachment.id) ?? "", /^blob:/u);
+  composer.dispose();
+});
