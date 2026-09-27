@@ -54,6 +54,8 @@
 ## evidence
 - MR !4678 的 `MR 占位检查` 在 OpenCraft guard 失败：`i18n/generated/en-US.json` 的前端源文件与 vendored 副本 SHA 不一致。下载的失败步骤日志为 737 行；本地 `npm --prefix opencraft run check:mono2-agent-console` 复现相同错误。按官方同步脚本生成 130 个文件的闭包，仅 13 个受本次前端提交影响的 vendored 文件出现差异；同步后闭包检查通过。
 - OpenCraft 依赖安装后，`@opencraft/plugin-lightvela-hermes` typecheck、`check:i18n` 与 `.ci/checks/opencraft_guard.sh` 均通过；CI guard 确认 130 个 vendored 文件一致。
+- 同步提交推送后，工蜂 MR !4678 指向新 SHA 但因目标 `master@10491fb09` 前进而显示不可合并；`git merge-tree` 确认唯一冲突是生成的 `UPSTREAM.json`。将目标版本作为基线并重新执行同步脚本，合并提交 `88cbf3a6a` 后再次同步，使 `sourceRevision` 指向合并提交；闭包检查与插件 typecheck 通过。
+- 合并后前端 `pnpm check` 通过（TypeScript 当前 171、基线 171、新增 0），通道聚焦 Vitest 5 文件 19 项通过；OpenCraft `check:i18n`、插件 typecheck、vendored 闭包检查通过。
 - ACLI 发布包 `2026.09.22-1` 的 Hermes LightVela spec `1.1.28` 含 `channel/send`；要求 `--platform` 和 `--message`，成功结果 `data.status = sent`，最低运行时 `0.15.0`。
 - 本地预览连接上海正式后端的 QQ 实例，两次失败的 debug/exec 回执均为 `unknown flag: --agent`；发布包的 `channel/send/capability.yaml` 确认没有 `agent` 参数。修正后浏览器显示“测试消息已发送”，代理记录 HTTP 200 且 ACLI 输出 `data.status = sent`；实际 QQ 客户端接收仍待用户确认。
 - 修正后的命令构造与 Hook 聚焦测试 2 文件、7 测试通过；`pnpm check` 通过（TypeScript 诊断 171，与基线相同，新增 0）。

@@ -24,6 +24,8 @@ MR !4678 的 CI 因 OpenCraft vendored 副本漂移失败；正在验证同步�
 
 - 2026-09-27 MR !4678 的失败日志指向 OpenCraft `i18n/generated/en-US.json` 漂移；本地重现后运行 `npm --prefix opencraft run sync:mono2-agent-console`，仅 13 个 vendored 文件变化，`check:mono2-agent-console` 已通过。
 - OpenCraft 插件 typecheck、`check:i18n` 和本地 `opencraft_guard.sh` 均通过；工蜂只读鉴权成功。
+- MR 更新后目标 `master` 前进到 `10491fb09`，生成清单是唯一冲突；已并入目标提交 `88cbf3a6a`，合并后重新同步使 `UPSTREAM.json.sourceRevision` 与前端源提交一致，闭包检查和插件 typecheck 通过。
+- 合并后 `pnpm check` 新增 TypeScript 诊断为 0；通道聚焦测试 5 文件 19 项、OpenCraft `check:i18n`、插件 typecheck 均通过。
 
 ## unverified
 - QQ 客户端是否实际收到消息尚待用户确认；命名 Profile 发送尚未做真实实例验证。
@@ -40,4 +42,4 @@ MR !4678 的 CI 因 OpenCraft vendored 副本漂移失败；正在验证同步�
 - 主要文件：`frontend/src/pages/marketing/agent-channel-panel.tsx`、`frontend/src/pages/marketing/agent-config/hooks/useChannelOperations.ts`、`frontend/src/pages/marketing/agent-config/hermes-command-builder.ts`。
 
 ## next_action
-完成 OpenCraft 聚焦门禁，单独提交同步生成物并推送现有 MR !4678；核验新 SHA、合并状态和 CI。排除预览服务生成的 `frontend/next-env.d.ts` 差异，不合并或发布。
+提交合并后重生成的清单并推送现有 MR !4678；核验新 SHA、合并状态和 CI。排除预览服务生成的 `frontend/next-env.d.ts` 差异，不合并或发布。
