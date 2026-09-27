@@ -39,6 +39,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 国内站文档的产品阶段口径与同区域 `llms.txt` 事实摘要保持一致。已开放订阅后，概览和套餐说明不再展示产品级公测提示；首购活动及价格以订阅页为准。单项功能的 Beta 标记仍按实际产品入口核对。
 
+国际站文档的英文、简体中文、印尼语、西语、日语和韩语源文件不再把整站公测转段或内测延期权益描述为当前状态；生成的繁体中文版本随简体中文源同步。套餐与首购活动以国际站订阅页为准，旧 `announcements/public-beta` 路由保留供已有链接访问。单项功能的 Beta 标记及第三方产品的阶段描述按各自事实核对。
+
 国内站新增配置指南时，`frontend/src/config/docs-sidebar.ts` 中的 `CN_SIDEBAR`、`CN_SLUG_TO_FILE` 与 `frontend/scripts/sync-fumadocs-content.mjs` 中的 `cnDocs` 必须同时注册同一 slug。钉钉指南使用 `configuration/channel-dingtalk`，仅进入国内站目录；国际站目录与映射单独维护。
 
 ## 官网首页展示产物

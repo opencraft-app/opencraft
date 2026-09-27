@@ -263,8 +263,8 @@ const globalDocs = [
     file: 'announcements/public-beta.md',
     group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
     description: {
-      'en-US': 'LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch or Launch AI free for 1 month on their first order.',
-      'zh-CN': 'LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测并开启计费；正式转入公测并开启计费后，内测用户现有套餐的有效期将额外延长 1 个月。',
+      'en-US': 'Compare LightVela plan resources and credits, and check Subscribe for current availability, introductory offers, prices, and entitlements.',
+      'zh-CN': '了解 LightVela 国际站套餐的资源与积分，并以订阅页为准查看当前可购买状态、首购优惠、价格和权益。',
     },
     hideDescription: true,
   },
@@ -932,8 +932,8 @@ const globalDocs = [
     file: 'contact-us.md',
     group: { 'en-US': 'Support', 'zh-CN': '联系与支持' },
     description: {
-      'en-US': 'Join the LightVela beta community, talk to the product team directly, and keep sending us your usage questions, product suggestions, and real-world feedback.',
-      'zh-CN': '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。',
+      'en-US': 'Join the LightVela community, talk to the product team directly, and share usage questions, product suggestions, and real-world feedback.',
+      'zh-CN': '加入 LightVela 用户社区，与产品团队交流使用问题、产品建议和真实场景反馈。',
     },
     hideDescription: true,
   },
@@ -966,7 +966,7 @@ const ES_DOC_METADATA = {
   },
   'announcements/public-beta': {
     title: 'Anuncio de la versión de pago de LightVela',
-    description: 'LightVela prevé iniciar la beta pública y la facturación el 18 de agosto de 2026, hora de Singapur, con beneficios específicos para usuarios actuales y nuevos.',
+    description: 'Compara los recursos y créditos de los planes de LightVela y consulta la disponibilidad, las ofertas y los precios actuales en la página de suscripción.',
   },
   credits: {
     title: 'Créditos',
@@ -1222,7 +1222,7 @@ const ES_DOC_METADATA = {
   },
   'contact-us': {
     title: 'Contacto',
-    description: 'Únete a la comunidad beta de LightVela, habla directamente con el equipo de producto y comparte preguntas, sugerencias y experiencias reales.',
+    description: 'Únete a la comunidad de LightVela, habla con el equipo de producto y comparte preguntas, sugerencias y experiencias reales.',
   },
 };
 
@@ -1369,7 +1369,7 @@ const ID_DOC_METADATA = {
   },
   'announcements/public-beta': {
     title: 'Pengumuman Versi Berbayar LightVela',
-    description: 'LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura).',
+    description: 'Bandingkan sumber daya dan kredit paket LightVela, lalu periksa halaman Subscribe untuk ketersediaan, penawaran, dan harga saat ini.',
   },
   'use-cases/personal-ai-assistant': {
     title: 'Membangun Asisten AI Pribadi dengan LightVela',
@@ -1513,7 +1513,7 @@ const ID_DOC_METADATA = {
   },
   'contact-us': {
     title: 'Hubungi Kami',
-    description: 'Bergabunglah dengan komunitas beta LightVela, bicara langsung dengan tim produk, dan kirimkan masukan dari penggunaan nyata.',
+    description: 'Bergabunglah dengan komunitas LightVela, bicara langsung dengan tim produk, dan kirimkan masukan dari penggunaan nyata.',
   },
 };
 
