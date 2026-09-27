@@ -75,11 +75,11 @@ describe("browser language suggestion", () => {
     expect(screen.queryByRole("link", { name: "切换到简体中文" })).not.toBeInTheDocument();
   });
 
-  it("continues in English and saves the choice", async () => {
+  it.each(["继续使用英语", "关闭并继续使用英语"])("%s saves the English choice", async (buttonLabel) => {
     prefer("zh-CN");
     const view = render(<BrowserLanguageSuggestion />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "继续使用英语" }));
+    fireEvent.click(await screen.findByRole("button", { name: buttonLabel }));
 
     expect(setLocaleMock).toHaveBeenCalledWith("en-US");
     expect(window.localStorage.getItem("lw-locale")).toBe("en-US");

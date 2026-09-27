@@ -8,6 +8,9 @@
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户本会话确认的方案：首次进入国际站英文首页时，浏览器首选简体中文应提示切换；用户继续英文或选择中文后记住选择；无痕模式关闭后选择消失。
 - 用户提供的 `CR-MR4677.md` 指出裸英文公开页自动写入会误判选择，并授权修复后更新原 MR。
+- 用户本轮截图反馈：提示弹窗应在浏览器窗口居中，两个按钮居中，右上角增加叉号；点击叉号等同于继续使用英语。
+- 用户后续反馈：弹窗高度在当前效果上再增加约 40%。
+- 用户再次反馈：加高后的弹窗内部布局显得不协调，按钮应下移并整体优化留白。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/i18n/index.ts`：`lw-locale` 与 `setLocale`。
@@ -24,6 +27,9 @@
 - 首次先进入裸英文 `/subscribe` 等公开页，再访问 `/` 时仍可收到提示；手动切换或访问带语言前缀的 URL 后不重复提示。
 - 明确语言 URL、已保存选择、英文或未支持浏览器语言、国内站均不提示。
 - 切换和继续英文均保存选择；无痕存储清除后可再次提示。
+- 提示弹窗水平与垂直居中，操作按钮居中；右上角关闭入口保留英文并保存明确选择。
+- 简体中文提示的弹窗高度约从 108px 增至 150px，内容仍垂直居中；较长语言文案可自然撑高。
+- 150px 弹窗中文案居中处于上半部，按钮行靠下；320px 窄屏换行时内容不溢出。
 - 前端聚焦测试、`pnpm check`、`pnpm build:global` 与 change-impact 门禁通过；全量测试及首页性能预算的基线问题单独记录。
 
 ## affected_paths
@@ -46,6 +52,8 @@
 | `frontend/DESIGN.md@master` | UI 规范 | 提示层样式和交互 |
 | `docs/engineering/domains/site-environment-routing.md@master` | 正式站点设计 | 同步本次 locale 决策 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@master` | i18n 邻接 | 检查注册表、实现与测试 |
+| `docs/context/tasks/TASK-TEMPLATE.md@c42acf642` | Task Pack 结构 | 记录本轮需求和证据 |
+| `docs/context/tasks/CHECKPOINT-TEMPLATE.md@c42acf642` | 交接结构 | 更新验证与下一步 |
 | `frontend/openspec/changes/2026-09-02-international-home-performance-v2-design.md@master` | 首页性能约束 | 保持静态首页与 SEO 输出 |
 | `docs/context/domains/site-environment-routing.md@master` | CI 修复时复核 locale 边界 | 保持生成物修复不改变站点行为 |
 | `docs/context/flows/tapd-gongfeng-delivery.md@master` | MR 交付边界 | 核验远端源提交与检查状态 |
@@ -69,10 +77,18 @@
 - 合入当前 `origin/master` 的 `3d6077da7` 后：前端聚焦测试 92 项、国际站配置测试 90 项、OpenCraft 插件测试 83 项通过；`pnpm check` 为 171 current / 171 baseline、0 new；国际站构建 664 静态页、42 条公开 SEO 路由通过，国内站构建 107 静态页、8 条公开 SEO 路由通过。
 - 合并后使用官方脚本重新同步 OpenCraft 130 个文件并通过检查，插件类型检查通过；文档检查 0 条损坏的一方链接。
 - 合并后的国内站构建产物仍未通过首页性能预算：28 个脚本、raw 2,772,944、gzip 940,134 字节；该预算在干净 master 上也未通过。
+- 本轮布局与关闭优化：`browser-language-suggestion.test.tsx` 21 项通过；`pnpm check` 通过，TypeScript 171 current / 171 baseline、0 new。
+- 本地 Chrome 在国际站英文首页、简体中文浏览器偏好下目视确认弹窗处于视口中心、按钮居中且右上角有关闭叉号；点击叉号后弹窗消失，刷新后仍不再显示。
+- 本轮 `pnpm build:global` 通过：664 个静态页、42 条公开路由 SEO 检查通过；`validate_documentation.py` 结果为 0 条损坏的一方链接。构建生成的字体文件已还原，未纳入改动。
+- 高度调整：浏览器实测简体中文提示高 150px，位于视口垂直中心；本地截图 `international-language-popup-taller.jpg`。组件测试 21 项与 `pnpm check` 通过，TypeScript 171 current / 171 baseline、0 new。
+- 高度调整后的 `pnpm build:global` 通过：664 个静态页、42 条公开路由 SEO 检查；构建生成的字体文件已还原。
+- 布局优化后本地 Chrome 桌面与 390px、320px 视口截图确认：文案和按钮有明确上下层次，按钮在窄屏自然换行且未溢出；桌面截图 `international-language-popup-balanced.jpg`。
+- 布局优化后的组件测试 21 项、`pnpm check` 和 `pnpm build:global` 通过；TypeScript 171 current / 171 baseline、0 new；国际站生成 664 个静态页并检查 42 条公开 SEO 路由。生成的字体文件已还原。
+- 英文和西语文案已在本地 Chrome 截图检查；截图专用触发代码已移除。原 MR !4677 已合并，本轮从最新 `origin/master` 的 `661d52da1` 开独立分支交付。
 
 ## risks
 - 新增客户端组件增加首页脚本；运行首页性能预算。
-- 提示与 Cookie 横幅同时出现；提示固定在顶部，横幅在底部。
+- 提示与 Cookie 横幅同时出现；提示在视口中心，横幅在底部。
 - 旧版仅存 `lw-locale=en-US` 的来源不可判定，可能再显示一次提示；`lw-language-suggestion-seen` 继续保证最多一次。
 
 ## validation
@@ -90,4 +106,4 @@
 - 精确检索命中 `frontend/src/i18n/index.ts`、`frontend/src/lib/region.ts` 与 `frontend/next-site/international-home-runtime.tsx`。
 
 ## handoff
-- MR !4677 原提交的 CI 已通过；CR 指出的裸英文公开页自动写入误判已修复，并合入当前 master。原 MR 已更新，工蜂显示 `can_be_merged`，新流水线为阻塞性 `pending`；全量测试与首页性能预算在干净 master 上已有失败；不合并或发布。
+- 用户已授权提交本轮布局与关闭优化的独立 MR；提交与远端状态以工蜂实时结果为准，未发布。
