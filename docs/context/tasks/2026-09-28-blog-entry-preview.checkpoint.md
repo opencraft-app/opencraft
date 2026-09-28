@@ -56,6 +56,7 @@ derived: false
 - `frontend/openspec/specs/blog.md` 与 PRD 已记录国际站恢复范围。
 
 ## next_action
+- 本轮合并提交为 00bb6f9db，之后重新同步 OpenCraft sourceRevision；130 个文件的 check 与真实 opencraft_guard 均通过。清单独立提交后推送 MR !4747，后续等待远程 CI 和评审，不执行合并或发布。
 本轮同步 origin/master 20cc5f347，OpenCraft 清单冲突通过生成脚本解决，并修正自动合并后首页页脚链接数量断言（Blog 与用户反馈同时保留）。check 通过（166 已有诊断、0 新增）；89 项聚焦测试 86 通过，3 项仍为已核对 master 的 PNG/WebP 历史问题。双站构建通过，国内 4 篇及国际 28 篇产物检查通过；文档与 staged 设计影响检查通过。日志 /tmp/blog-master-sync-*。准备提交合并、再次同步 OpenCraft 并推送原 MR !4747。预览 next-env.d.ts 改动在命名 stash blog-refresh-preserve-preview-next-env 中，交付前恢复；以下提交为历史状态。
 
 本轮新增四语种全文已通过独立 CR 和双站构建，功能提交 20f2abde0。其后同步 OpenCraft 清单，130 个源码副本不变；check:mono2-agent-console 与 .ci/checks/opencraft_guard.sh 均通过。清单作为后续独立提交，一并推送现有 MR !4747；后续等待评审与远程 CI，不合并或发布。以下先前提交和 CI 记录为历史证据。
