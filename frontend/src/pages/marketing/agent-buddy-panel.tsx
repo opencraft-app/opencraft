@@ -1355,7 +1355,7 @@ export function BuddyPanel({
           <InfoDialog
             key="info-apply-success"
             title={t("人设已注入")}
-            message={t("请在与 Hermes Agent 的对话中输入 /new 开启新会话，让新的人设生效。")}
+            message={t("请在与 Hermes Agent 的对话中输入 /new 开启新对话，让新的人设生效。")}
             buttonLabel={t("我知道了")}
             onClose={() => setConfirmState({ kind: "idle" })}
           />
@@ -1364,7 +1364,7 @@ export function BuddyPanel({
           <InfoDialog
             key="info-custom-save-success"
             title={t("人设已更新")}
-            message={t("人设已更新，请发送 /new 开始新会话以生效")}
+            message={t("人设已更新，请发送 /new 开始新对话以生效")}
             buttonLabel={t("我知道了")}
             onClose={() => setConfirmState({ kind: "idle" })}
           />

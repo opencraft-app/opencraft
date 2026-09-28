@@ -191,7 +191,7 @@ describe("日语翻译完成门禁", () => {
     expect(jaJP.k_d61247ca).toBe("ソウル");
     expect(jaJP.k_0a666759).toBe("オフライン");
     expect(jaJP.k_9c418985).toBe("ゴールド");
-    expect(jaJP.k_9905befc).toContain("Hermes Agent");
+    expect(jaJP.k_30bd0985).toContain("Hermes Agent");
   });
 
   it("首页高可见文案使用自然日语并保持英文产品名", () => {
