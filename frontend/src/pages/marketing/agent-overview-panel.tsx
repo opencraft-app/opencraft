@@ -98,28 +98,30 @@ const formatDays = (value: number | null): string => (value === null ? "\u2014" 
 /** 统计数字：拉不到按 0 显示（「还没有」本身就是有效信息） */
 const formatCount = (value: number | null): string => String(value ?? 0);
 
-const HeroBanner = ({ stats }: { stats: HeroStats }) => {
+export const HeroBanner = ({ stats, globalOverview = false }: { stats: HeroStats; globalOverview?: boolean }) => {
   const t = useT();
 
-  /* 每张卡都可点，跳到对应的管理入口 */
+  const count = (value: number | null) => globalOverview && value === null ? "—" : formatCount(value);
+
+  /* 全局统计跳回 Bot 列表选定目标；不能把汇总链接到任意当前 Bot。 */
   const statItems = [
     {
       id: "credits",
       label: t("剩余积分"),
-      value: formatCount(stats.credits),
+      value: count(stats.credits),
       to: ACCOUNT_PATH,
     },
     {
       id: "automations",
       label: t("定时任务"),
-      value: formatCount(stats.automations),
-      to: AGENT_SECTION_PATH_BY_ID.automations,
+      value: count(stats.automations),
+      to: globalOverview ? "#overview-bots" : AGENT_SECTION_PATH_BY_ID.automations,
     },
     {
       id: "sites",
       label: t("工作台"),
-      value: formatCount(stats.sites),
-      to: AGENT_SECTION_PATH_BY_ID.website,
+      value: count(stats.sites),
+      to: globalOverview ? "#overview-bots" : AGENT_SECTION_PATH_BY_ID.website,
     },
   ];
 
@@ -161,17 +163,18 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
         </div>
 
         {/* 右：三张数据卡 */}
-        <div className="grid shrink-0 grid-cols-3 gap-3">
+        <div className={globalOverview ? "grid min-w-0 grid-cols-3 gap-2 sm:shrink-0 sm:gap-3" : "grid shrink-0 grid-cols-3 gap-3"}>
           {statItems.map((stat) => (
             <AppLink
               key={stat.id}
               to={stat.to}
-              className="min-w-[104px] rounded-[10px] bg-white/70 px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.04)] backdrop-blur-sm transition hover:bg-white/90 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]"
+              className={cn(globalOverview ? "min-w-0 sm:min-w-[104px]" : "min-w-[104px]", "rounded-[10px] bg-white/70 px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.04)] backdrop-blur-sm transition hover:bg-white/90 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]")}
             >
-              <p className="text-xs font-medium text-black/45">{stat.label}</p>
+              <p className={cn("text-xs font-medium", globalOverview ? "text-black/60" : "text-black/45")}>{stat.label}</p>
               <p className="lw-font-din-num mt-1 text-[32px] leading-10 tracking-tight text-black/[0.88]">
                 {stat.value}
               </p>
+              {globalOverview && <p className="text-xs text-black/60">{stat.id === "automations" ? t("所有 Bot 合计") : t("账户共享")}</p>}
             </AppLink>
           ))}
         </div>
@@ -249,7 +252,7 @@ const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] =
 /** 自动轮播间隔（毫秒） */
 const CAROUSEL_INTERVAL_MS = 5000;
 
-const LatestNewsSection = () => {
+export const LatestNewsSection = () => {
   const t = useT();
   const locale = useCurrentLocale();
   const [index, setIndex] = useState(0);

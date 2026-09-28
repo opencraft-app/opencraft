@@ -220,6 +220,9 @@ const HermesAgentSkillsPanel = lazy(() =>
 const AchievementsPanel = lazy(() =>
   import("@/pages/marketing/agent-achievements-panel").then((module) => ({ default: module.AchievementsPanel })),
 );
+const AgentFleetOverview = lazy(() =>
+  import("@/pages/marketing/agent-fleet-overview").then((module) => ({ default: module.AgentFleetOverview })),
+);
 const AgentOverviewPanel = lazy(() =>
   import("@/pages/marketing/agent-overview-panel").then((module) => ({ default: module.AgentOverviewPanel })),
 );
@@ -2611,6 +2614,7 @@ export const AgentSettingsPage = ({
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
+  const fleetOverviewEnabled = isGlobal && multiBotEnabled && IS_BUDDY_ONBOARDING_ENABLED;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
@@ -3008,7 +3012,7 @@ export const AgentSettingsPage = ({
   const heroStats = useHeroStats({
     activePass,
     locale,
-    botId: activeBot?.id,
+    botId: fleetOverviewEnabled && activeSection === "overview" ? undefined : activeBot?.id,
     profileId: activeBot?.profileId,
     refreshKey: buddySetupRevision,
   });
@@ -4302,6 +4306,8 @@ export const AgentSettingsPage = ({
    */
   useEffect(() => {
     if (creatingParam || isCreating || botsLoading || !provisioningBot) return;
+    // Global overview keeps in-progress cards visible without taking over the page.
+    if (fleetOverviewEnabled && activeSection === "overview") return;
     /*
      * 引导进行中不要抢方向盘。
      *
@@ -4319,7 +4325,7 @@ export const AgentSettingsPage = ({
     setCreationError(null);
     setActiveTabId(provisioningBot.id);
     navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(provisioningBot.id)}`, { replace: true });
-  }, [creatingParam, isCreating, botsLoading, provisioningBot, navigate]);
+  }, [creatingParam, isCreating, botsLoading, provisioningBot, navigate, fleetOverviewEnabled, activeSection]);
 
   /*
    * 兜底退出 loading：只看 bots 列表证据主动 setIsCreating(false)，收敛 polling
@@ -4571,6 +4577,28 @@ export const AgentSettingsPage = ({
       setShowCreateConfirm(true);
     }
   };
+
+  const handleCreateFleetBot = (sourceBotId?: string) => {
+    if (createLimitMessage || (activeBot ? !canCreateAdditionalBot : !canCreateInitialAgent)) return;
+    if (sourceBotId && !visibleBots.some((bot) => bot.id === sourceBotId && bot.status === "running" && bot.profileId)) return;
+    handleCreateNew();
+    if (sourceBotId) setCloneSourceBotId(sourceBotId);
+  };
+  const handleOpenFleetBot = (botId: string, section: AgentSettingsSectionId = "channel") => {
+    setActiveTabId(botId);
+    setSidebarTab("settings");
+    navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID[section], botId));
+  };
+  const fleetOverview = (
+    <AgentFleetOverview
+      bots={bots}
+      canCreate={activeBot ? canCreateAdditionalBot : canCreateInitialAgent}
+      createLimitMessage={createLimitMessage || ""}
+      onCreate={handleCreateFleetBot}
+      onOpen={handleOpenFleetBot}
+      onChanged={buddyProfileState.reload}
+    />
+  );
 
   /**
    * 引导页里的「创建」：真正建实例。
@@ -5662,6 +5690,10 @@ export const AgentSettingsPage = ({
             分支就消失、渲染跳到订阅分支，面板被重挂载、配置流程被取消。
             互斥性改由订阅分支上的 !showMultiBotOnboarding 单向保证。
           */}
+          {fleetOverviewEnabled && activeSection === "overview" && !activeBot && !isCreating
+            && !isModifying && !passesLoading && !botsLoading && !showEarlyOnboarding && !showMultiBotOnboarding && isSubscribed && (
+              <Suspense fallback={<AgentSettingsDataLoading />}>{fleetOverview}</Suspense>
+          )}
           {showMultiBotOnboarding && !isModifying && (
             <div className="_lh-claw-bot-panel__cards min-w-0">
               <AgentOnboardingPanel
@@ -5816,6 +5848,19 @@ export const AgentSettingsPage = ({
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout ? (
                   <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
+                    {fleetOverviewEnabled && (
+                      <div className="mb-4 border-b border-black/[0.06] pb-4">
+                        <AppLink
+                          to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
+                          aria-current={activeSection === "overview" ? "page" : undefined}
+                          className={cn("lw-settings-nav-item lv-agents-nav-item", activeSection === "overview" && "is-active")}
+                        >
+                          <span className="lv-agents-nav-icon"><LayoutDashboard className="size-4" aria-hidden="true" /></span>
+                          <span>{t("总览")}</span>
+                        </AppLink>
+                      </div>
+                    )}
+                    {fleetOverviewEnabled && <p className="mb-3 px-4 text-xs text-black/60">{t("Bot 工作区")}</p>}
                     <div className="lv-agent-profile-wrap">
                       <Popover
                         open={visibleBots.length > 1 && isAgentMenuOpen}
@@ -6255,7 +6300,7 @@ export const AgentSettingsPage = ({
 
                              双站共用引导与总览开关；关闭时隐藏该入口，
                              否则会点进一个空白 section（见 IS_BUDDY_ONBOARDING_ENABLED）。 ── */}
-                        {IS_BUDDY_ONBOARDING_ENABLED ? (
+                        {IS_BUDDY_ONBOARDING_ENABLED && !fleetOverviewEnabled ? (
                         <div className="lv-agents-nav-group">
                           <ul className="lv-agents-nav-group-items">
                             <li>
@@ -6430,7 +6475,7 @@ export const AgentSettingsPage = ({
                       现在只保留一个挂载点，条件不含 activeBot，创建全程都是同一个
                       组件实例，不会重挂载。
                     */}
-                    <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
+                    <div key={fleetOverviewEnabled && activeSection === "overview" ? "fleet-overview" : `${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       {showBuddyOnboarding ? (
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           <AgentOnboardingPanel
@@ -6447,7 +6492,7 @@ export const AgentSettingsPage = ({
                         fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
-                          {activeSection === "overview" && (
+                          {activeSection === "overview" && (fleetOverviewEnabled ? fleetOverview : (
                             <AgentOverviewPanel
                               botId={activeBot.id}
                               profileId={activeBot.profileId ?? ""}
@@ -6460,7 +6505,7 @@ export const AgentSettingsPage = ({
                               hasCustomAvatar={buddyProfileState.hasBuddyConfig === true}
                               fallbackAvatarUrl={avatarUrl}
                             />
-                          )}
+                          ))}
                           {activeSection === "channel" && (
                             <TeaSdkSettingsPanel
                               kind="channel"
@@ -6673,7 +6718,8 @@ export const AgentSettingsPage = ({
           */}
           {
             !isModifying && !passesLoading && !isCreating && !botsLoading
-              && !showMultiBotOnboarding && visibleBots.length === 0 && (
+              && !showMultiBotOnboarding && visibleBots.length === 0
+              && !(fleetOverviewEnabled && activeSection === "overview") && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (

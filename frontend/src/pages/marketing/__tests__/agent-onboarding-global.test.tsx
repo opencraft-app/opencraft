@@ -149,6 +149,8 @@ vi.mock("@/pages/marketing/agent-chat-panel", () => ({
 
 vi.mock("@/pages/marketing/agent-overview-panel", () => ({
   AgentOverviewPanel: ({ heroStats }: { heroStats: { expiresAt: string | null } }) => <div>Bot overview {heroStats.expiresAt}</div>,
+  HeroBanner: ({ stats }: { stats: { expiresAt: string | null } }) => <div>Bot overview {stats.expiresAt}</div>,
+  LatestNewsSection: () => null,
 }));
 
 // isCN is false before module evaluation: a CN-only feature constant must fail here.
@@ -208,7 +210,7 @@ describe("international Bot onboarding", () => {
   it("opens the same guide when creating the first Bot from an empty account", async () => {
     bots = [];
     render(page(""));
-    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
   });
@@ -219,6 +221,26 @@ describe("international Bot onboarding", () => {
     expect(screen.getByRole("link", { name: "总览" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
     expect(addBot).not.toHaveBeenCalled();
+  });
+
+  it("shows in-progress Bots without redirecting away from the global overview", async () => {
+    bots = [{ ...buildBot(), status: "provisioning" }];
+    render(page(""));
+    expect(await screen.findByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
+    expect(screen.getByText("创建中")).toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+  });
+
+  it("keeps every Bot visible when the selected Bot changes", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    const view = render(page("?bot=ins-372"));
+    expect(await screen.findByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
+    view.rerender(page("?bot=bot-child"));
+    expect(screen.getByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "打开 Bot" })[1]!);
+    expect(navigateMock).toHaveBeenCalledWith("/agents/channels?bot=bot-child");
   });
 
   it("formats the overview expiry in the current language and updates on language switches", async () => {
@@ -235,7 +257,7 @@ describe("international Bot onboarding", () => {
 
   it("opens the international guide for an additional Bot and enforces quota on submit", async () => {
     const view = render(page("?bot=ins-372"));
-    fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("育儿参谋")).not.toBeInTheDocument();
     maxBots = 1;
