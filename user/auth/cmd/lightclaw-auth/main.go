@@ -82,6 +82,9 @@ func main() {
 	authService := service.NewWithStore(stores.auth, service.Options{
 		SessionTTL: sessionTTL,
 		SiteKind:   siteKind,
+		Verification: service.VerificationPolicy{
+			SendIPLimit: int(envInt64OrDefault("LIGHTCLAW_VERIFICATION_SEND_IP_LIMIT", 100)),
+		},
 		PhoneAuth: service.PhoneAuthConfig{
 			Enabled:   phoneAuthEnabled,
 			SMSSender: phoneAuthSMSSender,
