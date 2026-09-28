@@ -83,36 +83,39 @@ const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
  * 部分为占位页（仅标题骨架，正文后续补齐），源 md 已在 src/content/docs 下创建。
  */
 const cnDocs = [
-  // 产品入门
-  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '产品入门', description: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。', hideDescription: true },
-  { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '产品入门', description: '5 分钟跑通第一个 LightVela 对话。', hideDescription: true },
-  { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '产品入门', description: '理解 Hermes、模型、通道和技能。', hideDescription: true },
-  { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '产品入门', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。', hideDescription: true },
-  // 账号、套餐与开通
-  { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '账号、套餐与开通', description: '账号管理与实名认证流程。', hideDescription: true },
-  { slug: 'plans', title: '套餐管理', file: 'plans.md', group: '账号、套餐与开通', description: 'LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。', hideDescription: true },
-  { slug: 'credits', title: 'AI 积分说明', file: 'credits.md', group: '账号、套餐与开通', description: 'AI 积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、发放、消耗方式及与套餐的关系。', hideDescription: true },
-  { slug: 'create-first-hermes', title: '如何开通第一个 Hermes 智能体伙伴？', file: 'create-first-hermes.md', group: '账号、套餐与开通', description: '登录并实名认证、开通套餐、为首个 Bot 命名，然后按引导完成初始配置。', hideDescription: true },
-  // 功能与配置
-  { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: '功能与配置', description: 'LightVela 管理台配置流程。', hideDescription: true },
-  { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: '功能与配置', description: '接入和管理 Hermes 使用的大语言模型。', hideDescription: true },
-  { slug: 'configuration/channel-wechat', title: '配置通道 - 微信', file: 'configuration/channel-wechat.md', group: '功能与配置', description: '通过微信与 Hermes Agent 对话。', hideDescription: true },
-  { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。', hideDescription: true },
-  { slug: 'configuration/channel-wecom', title: '配置通道 - 企业微信', file: 'configuration/channel-wecom.md', group: '功能与配置', description: '通过企业微信与 Hermes Agent 对话。', hideDescription: true },
-  { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。', hideDescription: true },
-  { slug: 'configuration/channel-dingtalk', title: '配置通道 - 钉钉', file: 'configuration/channel-dingtalk.md', group: '功能与配置', description: '通过扫码或 Client ID / Secret 将钉钉接入 Hermes Agent。', hideDescription: true },
-  { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。', hideDescription: true },
-  { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: '功能与配置', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。', hideDescription: true },
-  { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '功能与配置', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。', hideDescription: true },
-  { slug: 'configuration/automation', title: '定时任务', file: 'configuration/automation.md', group: '功能与配置', description: '为 Hermes Agent 创建定时任务。', hideDescription: true },
-  { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '功能与配置', description: '管理 Agent 使用的云端文件和工作资料。', hideDescription: true },
-  { slug: 'configuration/agent-chat', title: '对话', file: 'configuration/agent-chat.md', group: '功能与配置', description: '通过聊天窗口与 Hermes Agent 交互。', hideDescription: true },
-  { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
-  { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '功能与配置', description: '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。', hideDescription: true },
-  { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
-  { slug: 'configuration/bots-switching', title: 'Bot 切换', file: 'configuration/bots-switching.md', group: '功能与配置', description: '在一个 LightVela 云端 Agent 中创建、配置并切换多个专用 Bot。', hideDescription: true },
-  { slug: 'configuration/deepseek-harness', title: 'DeepSeek Harness', file: 'configuration/deepseek-harness.md', group: '功能与配置', description: '在 LightVela 中安装和管理 DeepSeek Harness Labs 运行环境。', hideDescription: true },
-  { slug: 'configuration/workbench', title: '工作台', file: 'configuration/workbench.md', group: '功能与配置', description: '在 LightVela 中使用 AI Agent 创建、部署和管理静态网站。', hideDescription: true },
+  // 开始使用
+  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。', hideDescription: true },
+  { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '开始使用', description: '5 分钟跑通第一个 LightVela 对话。', hideDescription: true },
+  { slug: 'create-first-hermes', title: '开通第一个 Hermes Agent', file: 'create-first-hermes.md', group: '开始使用', description: '登录并实名认证、开通套餐、为首个 Bot 命名，然后按引导完成初始配置。', hideDescription: true },
+  { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '开始使用', description: '理解 Hermes、模型、通道和技能。', hideDescription: true },
+  { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '开始使用', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。', hideDescription: true },
+  { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '开始使用', description: '账号管理与实名认证流程。', hideDescription: true },
+  { slug: 'plans', title: '套餐管理', file: 'plans.md', group: '开始使用', description: 'LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。', hideDescription: true },
+  { slug: 'credits', title: 'AI 积分说明', file: 'credits.md', group: '开始使用', description: 'AI 积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、发放、消耗方式及与套餐的关系。', hideDescription: true },
+  // Bot 与模型
+  { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: 'Bot 与模型', description: 'LightVela 管理台配置流程。', hideDescription: true },
+  { slug: 'configuration/bots-switching', title: '管理与切换 Bot', file: 'configuration/bots-switching.md', group: 'Bot 与模型', description: '在一个 LightVela 云端 Agent 中管理、切换和按权限创建多个专用 Bot。', hideDescription: true },
+  { slug: 'configuration/agent-chat', title: '网页对话', file: 'configuration/agent-chat.md', group: 'Bot 与模型', description: '在网页中与主 Bot 对话、检查回复并排查不可用状态。', hideDescription: true },
+  { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: 'Bot 与模型', description: '接入和管理 Hermes 使用的大语言模型。', hideDescription: true },
+  { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: 'Bot 与模型', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
+  { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: 'Bot 与模型', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。', hideDescription: true },
+  // 通道与技能
+  { slug: 'configuration/channel-wechat', title: '配置通道 - 微信', file: 'configuration/channel-wechat.md', group: '通道与技能', description: '通过微信与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '通道与技能', description: '通过 QQ 与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-wecom', title: '配置通道 - 企业微信', file: 'configuration/channel-wecom.md', group: '通道与技能', description: '通过企业微信与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '通道与技能', description: '通过飞书与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-dingtalk', title: '配置通道 - 钉钉', file: 'configuration/channel-dingtalk.md', group: '通道与技能', description: '通过扫码或 Client ID / Secret 将钉钉接入 Hermes Agent。', hideDescription: true },
+  { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '通道与技能', description: '在国内站 SkillHub 技能市场搜索、安装和管理 Hermes 技能。', hideDescription: true },
+  // 自动化与资料
+  { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '自动化与资料', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。', hideDescription: true },
+  { slug: 'configuration/automation', title: '定时任务', file: 'configuration/automation.md', group: '自动化与资料', description: '为 Hermes Agent 创建定时任务。', hideDescription: true },
+  { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '自动化与资料', description: '管理 Agent 使用的云端文件和工作资料。', hideDescription: true },
+  // 管理与排障
+  { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '管理与排障', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
+  { slug: 'configuration/advanced-settings', title: '高级设置', file: 'configuration/advanced-settings.md', group: '管理与排障', description: '查看并调整 Hermes Agent 的安全、记忆和上下文管理配置。', hideDescription: true },
+  // 实验功能
+  { slug: 'configuration/deepseek-harness', title: 'DeepSeek Harness', file: 'configuration/deepseek-harness.md', group: '实验功能', description: '在 LightVela 中安装和管理 DeepSeek Harness Labs 运行环境。', hideDescription: true },
+  { slug: 'configuration/workbench', title: '我的工作台', file: 'configuration/workbench.md', group: '实验功能', description: '在 LightVela 中使用 AI Agent 创建、部署和管理静态网站。', hideDescription: true },
   { slug: 'use-cases/scheduled-task-agent', title: '使用 LightVela 自动化 Agent 任务', file: 'use-cases/scheduled-task-agent.md', group: '场景方案', description: '使用定时任务让 Agent 按计划整理信息并发送结果。', hideDescription: true },
   { slug: 'use-cases/scheduled-task-notifications', title: '在 LightVela 中设置通知任务', file: 'use-cases/scheduled-task-notifications.md', group: '场景方案', description: '使用固定消息和计划时间发送日常提醒。', hideDescription: true },
   { slug: 'use-cases/scheduled-task-script', title: '在 LightVela 中运行脚本任务', file: 'use-cases/scheduled-task-script.md', group: '场景方案', description: '使用 Bash 或 Python 脚本按计划执行可预测的系统检查。', hideDescription: true },
@@ -133,22 +136,22 @@ const cnDocs = [
   { slug: 'compare/lightvela-vs-manus', title: 'LightVela vs Manus：哪个更适合托管你的 AI Agent？', file: 'compare/lightvela-vs-manus.md', group: '对比与选型', description: '' },
   { slug: 'compare/lightvela-vs-localhost-ai-agent', title: 'LightVela vs 本地部署 Agent：哪个更好？', file: 'compare/lightvela-vs-localhost-ai-agent.md', group: '对比与选型', description: '' },
   { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '' },
-  // 问题排查
-  { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '问题排查', description: '', hideDescription: true },
-  // 联系与支持
-  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '联系与支持', description: '加入 LightVela 用户交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。', hideDescription: true },
+  // 管理与排障：问题和支持
+  { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '管理与排障', description: '', hideDescription: true },
+  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '管理与排障', description: '加入 LightVela 用户交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。', hideDescription: true },
 ];
 
-/** 国内站侧边栏分组顺序（GEO 导航方案的 9 大分组） */
+/** 国内站侧边栏分组顺序；与 CN_SIDEBAR 的可见任务路径一致。 */
 const CN_GROUP_ORDER = [
-  '产品入门',
-  '账号、套餐与开通',
-  '功能与配置',
+  '开始使用',
+  'Bot 与模型',
+  '通道与技能',
+  '自动化与资料',
+  '管理与排障',
+  '实验功能',
   '场景方案',
   '对比与选型',
   'Hermes Agent 解读',
-  '问题排查',
-  '联系与支持',
 ];
 
 /** 国际站侧边栏分组顺序（GEO 导航方案的 9 大分组） */
