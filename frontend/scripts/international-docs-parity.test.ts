@@ -25,16 +25,12 @@ const ACTIVE_SHARED_FILES = [
   "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7.md",
   "use-cases/im-agent-persona-soul-md.md",
-  "use-cases/im-agent-skill-scenarios.md",
   "use-cases/memory-and-knowledge.md",
   "use-cases/multi-channel-personality-memory.md",
   "use-cases/personal-ai-assistant.md",
   "use-cases/telegram-persona-agent.md",
   "use-cases/telegram-group-community-assistant.md",
-  "use-cases/whatsapp-24-7-customer-service.md",
   "use-cases/whatsapp-persona-agent.md",
-  "use-cases/lifelike-im-agent-rhythm-social-memory.md",
-  "use-cases/telegram-whatsapp-safety-boundaries.md",
   "who-is-lightvela-for.md",
 ] as const;
 
@@ -43,15 +39,11 @@ const LOCALE_SENSITIVE_USE_CASE_FILES = [
   "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7.md",
   "use-cases/im-agent-persona-soul-md.md",
-  "use-cases/im-agent-skill-scenarios.md",
   "use-cases/memory-and-knowledge.md",
   "use-cases/multi-channel-personality-memory.md",
   "use-cases/telegram-persona-agent.md",
   "use-cases/telegram-group-community-assistant.md",
-  "use-cases/whatsapp-24-7-customer-service.md",
   "use-cases/whatsapp-persona-agent.md",
-  "use-cases/lifelike-im-agent-rhythm-social-memory.md",
-  "use-cases/telegram-whatsapp-safety-boundaries.md",
 ] as const;
 
 const HERMES_DEEP_DIVE_FILES = [
@@ -273,11 +265,11 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
     });
 
-    it("generates the same 73-route inventory as English from Japanese sources", () => {
+    it("generates the same 68-route inventory as English from Japanese sources", () => {
       expect(docsRouteSlugs["ja-jp"]).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs["ja-jp"]).toHaveLength(73);
+      expect(docsRouteSlugs["ja-jp"]).toHaveLength(68);
       const generatedDocs = walkFiles(generatedJaRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(72);
+      expect(generatedDocs).toHaveLength(67);
       for (const path of generatedDocs) {
         expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
           /^src\/content\/docs\/ja\//,
@@ -377,11 +369,11 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
     });
 
-    it("generates the same 73-route inventory as English from Korean sources", () => {
+    it("generates the same 68-route inventory as English from Korean sources", () => {
       expect(docsRouteSlugs["ko-kr"]).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs["ko-kr"]).toHaveLength(73);
+      expect(docsRouteSlugs["ko-kr"]).toHaveLength(68);
       const generatedDocs = walkFiles(generatedKoRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(72);
+      expect(generatedDocs).toHaveLength(67);
       for (const path of generatedDocs) {
         expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
           /^src\/content\/docs\/ko\//,
@@ -512,28 +504,28 @@ describe("international docs publication inventory", () => {
   describe("Spanish docs source publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
-    it("publishes the same 73 routes as international English for every completed locale", () => {
+    it("publishes the same 68 routes as international English for every completed locale", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs.es).toHaveLength(73);
+      expect(docsRouteSlugs.es).toHaveLength(68);
       expect(docsRouteSlugs.es).toContainEqual([]);
       expect(Object.keys(docsRouteSlugs)).toContain("ja-jp");
       expect(Object.keys(docsRouteSlugs)).toContain("ko-kr");
     });
 
     it("keeps the expected locale route inventories", () => {
-      expect(docsRouteSlugs["en-us"]).toHaveLength(73);
-      expect(docsRouteSlugs["zh-cn"]).toHaveLength(49);
-      expect(docsRouteSlugs["zh-sg"]).toHaveLength(73);
-      expect(docsRouteSlugs["zh-hant"]).toHaveLength(73);
-      expect(docsRouteSlugs["id-id"]).toHaveLength(70);
+      expect(docsRouteSlugs["en-us"]).toHaveLength(68);
+      expect(docsRouteSlugs["zh-cn"]).toHaveLength(48);
+      expect(docsRouteSlugs["zh-sg"]).toHaveLength(68);
+      expect(docsRouteSlugs["zh-hant"]).toHaveLength(68);
+      expect(docsRouteSlugs["id-id"]).toHaveLength(65);
     });
 
-    it("generates 72 Spanish documents from explicit Spanish body sources", () => {
+    it("generates 67 Spanish documents from explicit Spanish body sources", () => {
       expect(existsSync(join(docsContentRoot, "es"))).toBe(true);
       expect(existsSync(esRoot)).toBe(true);
 
       const generatedDocs = walkFiles(esRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(72);
+      expect(generatedDocs).toHaveLength(67);
 
       for (const path of generatedDocs) {
         const content = readFileSync(path, "utf8");

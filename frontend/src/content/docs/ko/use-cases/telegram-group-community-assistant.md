@@ -66,7 +66,7 @@
 
 Group Privacy를 끄면 Telegram 그룹 메시지가 Bot에 전달될 수 있지만, 그것만으로 안전이 보장되지는 않습니다.
 그룹 규칙을 정하고 민감한 정보를 공유하지 않으며 고위험 외부 작업 전에 확인을 받는 절차가 필요합니다.
-누가 에이전트에 민감한 작업을 요청할 수 있는지는 [Telegram 및 WhatsApp 안전 경계 가이드](./telegram-whatsapp-safety-boundaries.md)를 참고해 정하세요.
+민감한 작업을 요청할 수 있는 구성원을 명확히 정하고, 에이전트가 실행하기 전에 권한을 확인하세요.
 
 ## FAQ
 
@@ -95,6 +95,5 @@ Telegram 그룹 메시지 지원이 WhatsApp까지 확장된다고 가정하지 
 
 - [채널 구성 - Telegram](../configuration/channel-telegram.md) - 봇을 연결하고 그룹 메시지 설정 단계를 반복합니다.
 
-- [스킬을 사용하여 IM 에이전트를 고객 서비스, 커뮤니티 또는 동반자 도우미로 전환하는 방법](./im-agent-skill-scenarios.md) - 그룹 Q&A 및 요약을 위한 스킬과 콘텐츠를 준비합니다.
 
 - [SOUL.md를 사용하여 IM 에이전트의 역할, 성격 및 음성을 정의하는 방법](./im-agent-persona-soul-md.md) - 보조자의 역할과 경계를 정의합니다.

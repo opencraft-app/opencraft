@@ -162,5 +162,3 @@ Telegramは、グループプライバシーを無効にし、ボットをグル
 - [チャンネルを設定 - Telegram](../configuration/channel-telegram.md)- Telegram ボットの設定を完了する。
 
 - [チャンネルを設定 - WhatsApp](../configuration/channel-whatsapp.md)- WhatsApp 認証を完了する。
-
-- [IMエージェントをスキルを使ってカスタマーサービス、コミュニティ、またはコンパニオンアシスタントに変える方法](./im-agent-skill-scenarios.md)- 実用的なワークフローで一貫したパーソナリティを拡張する。

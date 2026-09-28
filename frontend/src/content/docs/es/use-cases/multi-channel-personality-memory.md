@@ -163,5 +163,3 @@ Cuando cree o edite una tarea programada, confirme su método de notificación y
 - [Configurar Canal - Telegram](../configuration/channel-telegram.md) - Complete la configuración del Bot de Telegram.
 
 - [Configurar Canal - WhatsApp](../configuration/channel-whatsapp.md) - Complete la autorización de WhatsApp.
-
-- [Cómo convertir un Agent IM en un Asistente de Servicio al Cliente, Comunidad o Acompañante con Skills](./im-agent-skill-scenarios.md) - Extienda una personalidad consistente con flujos de trabajo prácticos.

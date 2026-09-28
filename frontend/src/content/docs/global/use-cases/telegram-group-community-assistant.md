@@ -69,7 +69,7 @@
 
 关闭 Group Privacy 会打开 Telegram 群消息的投递路径。
 它不能替代群规、敏感信息保护和高风险外部操作前的确认机制。
-定义谁可以要求 Agent 执行敏感操作时，请参考[Telegram 和 WhatsApp Agent 的安全边界指南](./telegram-whatsapp-safety-boundaries.md)。
+请明确哪些成员可以要求 Agent 执行敏感操作，并在执行前确认授权。
 
 ## 常见问题
 
@@ -98,6 +98,5 @@
 
 - [配置通道 - Telegram](../configuration/channel-telegram.md) - 连接机器人并完成群消息接入步骤。
 
-- [如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣](./im-agent-skill-scenarios.md) - 准备群内问答和摘要所需的 Skill 与内容。
 
 - [如何通过 SOUL.md 设定 IM Agent 的角色、性格与说话方式](./im-agent-persona-soul-md.md) - 定义助手的角色和边界。

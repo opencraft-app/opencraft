@@ -66,7 +66,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国内站 `lightvela.com/` 默认使用国内语境的 `zh-CN` 首页内容；可以复用国际站中文版的视觉结构，但链接必须落到国内裸路径，不输出国际站 locale 前缀或海外渠道主入口。
 - 国际站 `lightvela.ai/` 负责默认英文和多语言公开首页；权益文案、AI companion 语境和静态图片资源需要按 locale 同步验证，不能只改默认英文。
 - 国际站裸首页维持英文静态内容与现有 canonical。仅在首次访问、此前未明确选择语言且浏览器首选语言匹配已发布的非英文 locale 时，客户端以目标语言展示一次切换建议；提示已展示状态保存在浏览器，选择语言后进入对应国际站公开 URL，继续英文则保存英文选择。任何裸英文公开页为控制台语言连续性自动写入的默认英文都不算明确选择；手动切换与带语言前缀的 URL 会单独记录明确语言意图。旧存储中的非英文选择继续优先；无法辨认来源的旧版英文记录可能再收到一次建议。国内站和登录后路径不展示此建议。无痕模式关闭后可重新出现。
-- Blog 当前属于国际站公开内容入口；`/blog` 和本地化 Blog 路由在国内站构建下应保持不可访问，除非另有国内站 Blog 产品需求和路由设计。
+- 双站暂时隐藏 Blog 的站内导航、页脚和推广入口，包括共享 Footer 与首页各语言静态 fragment；现有 Blog 页面、文章和直接访问能力保持不变，不因入口隐藏调整其索引策略。
+- 双站 `announcements/public-beta` 以及国际站 `use-cases/telegram-whatsapp-safety-boundaries`、`use-cases/lifelike-im-agent-rhythm-social-memory`、`use-cases/im-agent-skill-scenarios`、`use-cases/whatsapp-24-7-customer-service` 暂时下线但保留源稿。下线需同时移除 sidebar、slug 映射与 Fumadocs 注册，并重新生成 route manifest、搜索与公开索引；旧 URL 返回 404，不跨语言回退，公开正文不得继续链接到这些页面。恢复时重新评审源稿并成套恢复注册和链接。
 - 首页静态 fragment 的链接、图片版本参数、合规信息和客户端演示外壳属于站点路由责任面；修改后必须同步更新正式设计文档，并用静态链接检查、前端测试和本地/预览环境证明没有跨站点串链。
 
 ## 订阅页交互边界

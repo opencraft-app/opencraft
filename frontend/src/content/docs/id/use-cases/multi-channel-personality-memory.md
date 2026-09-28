@@ -166,5 +166,3 @@ Ketika Anda membuat atau menyunting tugas terjadwal, pastikan metode notifikasi 
 - [Kanal Telegram](../configuration/channel-telegram.md) — Selesaikan penyiapan bot Telegram.
 
 - [Kanal WhatsApp](../configuration/channel-whatsapp.md) — Selesaikan otorisasi WhatsApp.
-
-- [Mengubah IM Agent Menjadi Asisten Layanan, Komunitas, atau Pendamping](./im-agent-skill-scenarios.md) — Perluas kepribadian yang konsisten dengan alur kerja yang praktis.

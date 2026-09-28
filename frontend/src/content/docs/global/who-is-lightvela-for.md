@@ -53,7 +53,7 @@ LightVela 特别适合这些场景：
 
 * 一个 Google 或 GitHub 账号，用于登录 LightVela；国际站不要求完成中国实名认证
 
-* 从[订阅页](/subscribe)选择并开通当前可用的套餐；公测计费后新用户可免费体验启航版 1 个月
+* 从[订阅页](/subscribe/)选择并开通当前可用的套餐；首购活动以页面展示为准
 
 * 至少一个可接入的聊天通道账号，例如 Telegram、WhatsApp、Discord、Slack 或 WeChat
 
