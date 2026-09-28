@@ -24,12 +24,16 @@ describe('Region-specific Blog metadata', () => {
         'zh-CN': `https://lightvela.com/blog/${post.slug}/`,
         'zh-SG': `https://lightvela.ai/zh-sg/blog/${post.slug}/`,
         'zh-Hant': `https://lightvela.ai/zh-hant/blog/${post.slug}/`,
+        'id-ID': `https://lightvela.ai/id-id/blog/${post.slug}/`,
+        es: `https://lightvela.ai/es/blog/${post.slug}/`,
+        'ja-JP': `https://lightvela.ai/ja-jp/blog/${post.slug}/`,
+        'ko-KR': `https://lightvela.ai/ko-kr/blog/${post.slug}/`,
       });
       expect(metadata.openGraph).toMatchObject({
         type: 'article',
         url: `https://${domain}/blog/${post.slug}/`,
         locale: post.language === 'zh-CN' ? 'zh_CN' : 'en_US',
-        alternateLocale: post.language === 'zh-CN' ? ['en_US', 'zh_TW'] : ['zh_CN', 'zh_TW'],
+        alternateLocale: expect.arrayContaining(['zh_SG', 'zh_TW', 'id_ID', 'es_ES', 'ja_JP', 'ko_KR']),
       });
       if (post.coverImage) expect(metadata.openGraph?.images).toEqual([
         { url: `https://${domain}${post.coverImage}`, alt: post.title },
@@ -39,7 +43,7 @@ describe('Region-specific Blog metadata', () => {
 });
 
 describe('Localized article metadata', () => {
-  it.each(['en-US', 'zh-SG', 'zh-Hant', 'es'] as const)('matches the rendered %s article and canonical', async (locale) => {
+  it.each(['en-US', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR'] as const)('matches the rendered %s article and canonical', async (locale) => {
     vi.resetModules();
     vi.stubEnv('NEXT_PUBLIC_REGION', 'global');
     const { blogArticleMetadata } = await import('./blog-seo');
@@ -50,7 +54,7 @@ describe('Localized article metadata', () => {
       expect(metadata.title).toBe(post.title);
       expect(metadata.description).toBe(post.excerpt);
       expect(metadata.alternates?.canonical).toBe(blogCanonicalPath(post.slug, locale));
-      expect(metadata.openGraph).toMatchObject({ locale: locale === 'zh-Hant' ? 'zh_TW' : locale === 'zh-SG' ? 'zh_CN' : 'en_US' });
+      expect(metadata.openGraph).toMatchObject({ locale: { 'en-US': 'en_US', 'zh-SG': 'zh_SG', 'zh-Hant': 'zh_TW', 'id-ID': 'id_ID', es: 'es_ES', 'ja-JP': 'ja_JP', 'ko-KR': 'ko_KR' }[locale] });
     }
   });
 });

@@ -39,7 +39,7 @@ derived: false
 ## acceptance
 - 国际站首页与共享 Footer 提供当前语言的 Blog 链接，国内站维持现状。
 - 本地国际站首页、Blog 列表及文章可访问；返回可用预览 URL。
-- 活跃目录仅四篇；首篇 Jasmin Zhao / Product，其余 Walker Cao / Use Cases。正文支持中文、繁体中文和英文，缺图可留空，旧稿归档且退出索引。
+- 活跃目录仅四篇；首篇 Jasmin Zhao / Product，其余 Walker Cao / Use Cases。正文支持中文（简繁体）、英文、印尼语、西班牙语、日语、韩语，缺图可留空，旧稿归档且退出索引。
 
 ## affected_paths
 - `frontend/src/components/site/lightvela-footer.tsx`
@@ -153,3 +153,10 @@ derived: false
 - 用户指出以往 MR 的 OpenCraft 兼容检查失败；本地运行 check:mono2-agent-console 复现 manifest drifted，原 sourceRevision 为 881d459d81bbea02ff08f21965702a703f47a533。
 - 读取 opencraft/AGENTS.md、MONO2_MIGRATION.md、docs/context/project/upstream-subtrees.md，以及同步脚本和 .ci/checks/opencraft_guard.sh。前端源码已提交后运行 sync:mono2-agent-console，机械更新 UPSTREAM.json 的 sourceRevision 至 c18f1ce3810ac3a92f1a43ba76c38dca996c9494；130 个同步源码文件内容未变化。
 - check:mono2-agent-console 与真实 opencraft_guard.sh 均通过。仅提交生成清单与本任务记录到已有 MR !4747，不更改同步校验规则、不触碰公开镜像或生产。
+
+## 2026-09-28 国际站完整六语种补齐
+- 用户明确要求全部六语种全文翻译，覆盖先前四语种英文回退策略；提供七套文本版本（中文包含简繁）。新增印尼语、西班牙语、日语、韩语各 130 条完整译文，涵盖四篇标题、摘要、章节、段落、列表、自然语言操作提示词与图片说明；图片语言与技术标识保留。
+- 社群引导同步翻译，渠道仍按区域。新增各语言独立 canonical、分享地址、sitemap 和双站互相对应的 hreflang。翻译完整性、同篇切换与区域渠道加入回归测试。
+- context_receipt：路由 `frontend blog language translation` 无匹配；随后对 frontend 的 blog-content、blog-community、blog-seo、sitemap 和 locale 注册表执行有界精确检索。读取这些源码与对应测试；沿用本任务已读 frontend-runtime-openspec-i18n 邻接卡，核对配置邻居 frontend/src/i18n/locales.json。
+- 独立 CR 对四语种 520 条译文及语言映射、metadata、索引、社群分流检查未发现阻塞问题；已采纳韩语技术标识分隔与 SEO keywords 按 locale 生成建议。
+- 本轮验证与提交结果以 checkpoint 顶部最新记录为准，历史英文回退记录不再适用。

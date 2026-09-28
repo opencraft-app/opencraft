@@ -1,18 +1,19 @@
 import type { Metadata } from 'next';
 
 import { absolutePageUrlForSeoRegion, createPublicMetadata, seoRegion } from './seo';
-import { blogCanonicalPath, getBlogPost, type BlogLocale, type BlogPost } from '@/pages/marketing/blog-content';
+import { localeDefinition, publishedLocaleDefinitions } from '@/i18n/locales.config';
+import { blogArticleLocale, blogCanonicalPath, getBlogPost, type BlogLocale, type BlogPost } from '@/pages/marketing/blog-content';
 
-/** Advertise only the English and Chinese versions actually available. */
+/** Every published international locale has a complete article translation. */
 export function blogContentAlternates(post: BlogPost): Record<string, string> {
   const path = `/blog/${post.slug}`;
-  const english = absolutePageUrlForSeoRegion('global', path);
   return {
-    'x-default': english,
-    'en-US': english,
+    'x-default': absolutePageUrlForSeoRegion('global', path),
+    ...Object.fromEntries(publishedLocaleDefinitions().filter(({ code }) => code !== 'zh-CN').map(({ code, urlLang }) => [
+      code,
+      absolutePageUrlForSeoRegion('global', code === 'en-US' ? path : `/${urlLang}${path}`),
+    ])),
     'zh-CN': absolutePageUrlForSeoRegion('cn', path),
-    'zh-SG': absolutePageUrlForSeoRegion('global', `/zh-sg${path}`),
-    'zh-Hant': absolutePageUrlForSeoRegion('global', `/zh-hant${path}`),
   };
 }
 
@@ -21,8 +22,14 @@ export function blogArticleMetadata(source: BlogPost, locale?: BlogLocale): Meta
   const path = blogCanonicalPath(post.slug, locale);
   const url = absolutePageUrlForSeoRegion(seoRegion(), path);
   const coverUrl = post.coverImage ? new URL(post.coverImage, url).href : undefined;
+  const ogLocale = localeDefinition(blogArticleLocale(locale)).ogLocale;
+  const alternateLocales = Object.keys(blogContentAlternates(post))
+    .filter((language) => language !== 'x-default')
+    .map((language) => localeDefinition(language as BlogLocale).ogLocale)
+    .filter((language) => language !== ogLocale);
   const metadata = createPublicMetadata({
     path,
+    locale: blogArticleLocale(locale),
     title: post.title,
     description: post.excerpt,
     alternates: blogContentAlternates(post),
@@ -35,8 +42,8 @@ export function blogArticleMetadata(source: BlogPost, locale?: BlogLocale): Meta
       ...metadata.openGraph,
       type: 'article',
       url,
-      locale: post.language === 'zh-Hant' ? 'zh_TW' : post.language === 'zh-CN' ? 'zh_CN' : 'en_US',
-      alternateLocale: ['en_US', 'zh_CN', 'zh_TW'].filter((language) => language !== (post.language === 'zh-Hant' ? 'zh_TW' : post.language === 'zh-CN' ? 'zh_CN' : 'en_US')),
+      locale: ogLocale,
+      alternateLocale: alternateLocales,
       publishedTime: post.publishedAt,
       authors: [post.author],
       ...(coverUrl ? { images: [{ url: coverUrl, alt: post.title }] } : {}),

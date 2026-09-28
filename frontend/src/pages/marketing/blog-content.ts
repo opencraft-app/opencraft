@@ -1,8 +1,15 @@
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+import { localeDefinition } from "@/i18n/locales.config";
 import { isGlobal } from "@/lib/region";
 import REGIONAL_TRANSLATIONS from "./blog-content-regional-translations.json";
 
 export type BlogLocale = PublicSiteLocale;
+export type BlogContentLanguage = keyof typeof REGIONAL_TRANSLATIONS;
+
+const CONTENT_LANGUAGE_BY_LOCALE = {
+  "en-US": "en", "zh-CN": "zh-CN", "zh-SG": "zh-CN", "zh-Hant": "zh-Hant",
+  "id-ID": "id-ID", es: "es", "ja-JP": "ja-JP", "ko-KR": "ko-KR",
+} satisfies Record<BlogLocale, BlogContentLanguage>;
 
 export type BlogInline =
   | string
@@ -54,8 +61,8 @@ export type BlogPost = {
   publishedAt: string;
   coverImage: string | null;
   coverPosition?: "left" | "center" | "right";
-  /** Language of this source or region-specific article version. */
-  language?: "zh-CN" | "zh-Hant" | "en";
+  /** Language of this source or translated article version. */
+  language?: BlogContentLanguage;
   content: readonly BlogBlock[];
 };
 
@@ -69,15 +76,18 @@ export function cleanBlogTrialUrl(value: string): string {
   return url.toString();
 }
 
-export function blogContentLanguage(locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): "zh-CN" | "zh-Hant" | "en" {
+export function blogArticleLocale(locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): BlogLocale {
   if (!isGlobal) return "zh-CN";
-  if (locale === "zh-Hant") return "zh-Hant";
-  return locale === "zh-CN" || locale === "zh-SG" ? "zh-CN" : "en";
+  return locale === "zh-CN" ? "zh-SG" : locale;
+}
+
+export function blogContentLanguage(locale?: BlogLocale): BlogContentLanguage {
+  return CONTENT_LANGUAGE_BY_LOCALE[blogArticleLocale(locale)];
 }
 
 export function blogCanonicalPath(slug: string, locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): string {
-  const language = blogContentLanguage(locale);
-  const prefix = !isGlobal || language === "en" ? "" : language === "zh-Hant" ? "/zh-hant" : "/zh-sg";
+  const articleLocale = blogArticleLocale(locale);
+  const prefix = !isGlobal || articleLocale === "en-US" ? "" : `/${localeDefinition(articleLocale).urlLang}`;
   return `${prefix}/blog/${slug}`;
 }
 

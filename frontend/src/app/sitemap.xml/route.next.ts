@@ -108,7 +108,7 @@ export function GET() {
   const publicEntries: SitemapEntry[] = [
     ...publicPaths.map((path) => ({ path, alternates: publicAlternates(path) })),
     ...localizedPublicLangs.flatMap((lang) =>
-      publicPaths.filter((path) => !path.startsWith('/blog/') || lang === 'zh-sg' || lang === 'zh-hant').map((path) => ({
+      publicPaths.map((path) => ({
         path: localizedPublicPath(path, lang),
         alternates: publicAlternates(path),
       })),

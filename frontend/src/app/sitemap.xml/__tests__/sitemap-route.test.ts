@@ -119,6 +119,10 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(locs).toContain('https://lightvela.ai/blog/lightvela-personal-ai-cloud-now-live/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/blog/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/blog/lightvela-personal-ai-cloud-now-live/');
+    for (const prefix of ['id-id', 'es', 'ja-jp', 'ko-kr']) {
+      expect(locs).toContain(`https://lightvela.ai/${prefix}/blog/lightvela-personal-ai-cloud-now-live/`);
+      expect(locs).toContain(`https://lightvela.ai/${prefix}/blog/hermes-dsh-pelican-cup/`);
+    }
     expect(locs.some((loc) => loc.includes('using-hermes-agent-as-a-discord-bot'))).toBe(false);
     expect(locs).not.toContain('https://lightvela.com/blog/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/docs/plans/');
@@ -151,8 +155,8 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(blogHreflangs.length).toBeGreaterThan(0);
     const chinese = hreflangs.filter((entry) => entry.href.includes('/blog/hermes-dsh-pelican-cup/'));
     const english = hreflangs.filter((entry) => entry.href.includes('/blog/lightvela-personal-ai-cloud-now-live/'));
-    expect(new Set(chinese.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant']));
-    expect(new Set(english.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant']));
+    expect(new Set(chinese.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR']));
+    expect(new Set(english.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR']));
     expect(new Set(blogHreflangs.map((entry) => entry.hreflang))).toEqual(new Set([
       'x-default',
       'en-US',

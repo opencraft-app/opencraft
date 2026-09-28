@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import translations from "../blog-content-regional-translations.json";
+import { LOCALE_DEFINITIONS } from "@/i18n/locales.config";
 
 import {
   BLOG_POSTS,
@@ -47,8 +49,8 @@ describe("Blog publishing dates", () => {
 
   it.each([true, false])("uses the selected language for complete article translations, global=%s", (global) => {
     region.isGlobal = global;
-    for (const locale of ["en-US", "zh-SG", "zh-Hant", "es", "ja-JP"] as const) {
-      const language = !global || locale === "zh-SG" ? "zh-CN" : locale === "zh-Hant" ? "zh-Hant" : "en";
+    for (const { code: locale } of LOCALE_DEFINITIONS) {
+      const language = !global || locale === "zh-SG" || locale === "zh-CN" ? "zh-CN" : locale === "en-US" ? "en" : locale;
       const posts = getBlogPosts(locale);
       expect(posts.map((post) => post.slug)).toEqual(BLOG_POSTS.map((post) => post.slug));
       for (const [index, post] of posts.entries()) {
@@ -56,13 +58,44 @@ describe("Blog publishing dates", () => {
         expect(post.coverImage).toBe(BLOG_POSTS[index]?.coverImage);
         expect(post.content.filter((block) => block.type === "image")).toEqual(BLOG_POSTS[index]?.content.filter((block) => block.type === "image"));
         const prose = JSON.stringify({title: post.title, excerpt: post.excerpt, content: post.content.filter((block) => block.type !== "image")});
-        if (language === "en") expect(prose).not.toMatch(/[\u4e00-\u9fff]/);
+        if (["en", "es", "id-ID"].includes(language)) expect(prose).not.toMatch(/[\u4e00-\u9fff]/);
+        else if (language === "ko-KR") expect(post.title).toMatch(/[\uac00-\ud7af]/);
         else expect(post.title).toMatch(/[\u4e00-\u9fff]/);
         expect(prose).not.toMatch(/[?&](from|utm_)/);
       }
     }
     const intro = getBlogPost("lightvela-personal-ai-cloud-now-live");
     expect(JSON.stringify(intro)).toContain(global ? "https://lightvela.ai/" : "https://lightvela.com/");
+  });
+
+  it.each(["es", "id-ID", "ja-JP", "ko-KR"] as const)("has complete %s translations without silently returning English or Chinese prose", (language) => {
+    const dictionary: Readonly<Record<string, string>> = translations[language];
+    const texts = BLOG_POSTS.flatMap((post) => [post.title, post.excerpt, ...post.content.flatMap((block) => {
+      const inline = (part: string | { label: string }) => typeof part === "string" ? part : part.label;
+      switch (block.type) {
+        case "image": return [];
+        case "heading": return [block.text];
+        case "code": return [block.content];
+        case "paragraph": return block.content.map(inline);
+        case "ordered-list": return [block.ariaLabel, ...block.items.flatMap((item) => item.map(inline))];
+        case "unordered-list": return block.items.flatMap((item) => item.map(inline));
+      }
+    })]);
+    const english: Readonly<Record<string, string>> = translations.en;
+    for (const source of texts) {
+      expect(dictionary, `${language}: ${source}`).toHaveProperty(source);
+      const translated = dictionary[source];
+      expect(translated?.trim()).not.toBe("");
+      if (/^https?:\/\//.test(source) || source === "Skills.sh") {
+        expect(translated).toBe(source);
+      } else {
+        expect(translated).not.toBe(source);
+        expect(translated).not.toBe(english[source] ?? source);
+      }
+      for (const identifier of source.match(/@user_\d+\/[a-z0-9-]+|\/home\/agentuser\/|state\.db|website-builder/g) ?? []) {
+        expect(translated).toContain(identifier);
+      }
+    }
   });
 
   it("cleans tracking fields in trial URL labels and destinations without changing external references", () => {

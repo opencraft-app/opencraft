@@ -18,13 +18,14 @@ derived: false
 # 国际站 Blog 本地走查交接
 
 ## stage
-四篇文章已完成中英文翻译和统一社群结尾；国际站默认英文、国内站默认中文。国际站正文随简体或繁体中文选择同步切换，其他未翻译语言回退英文。当前排序为 Jasmin Zhao 的 Product 在首位（用户最新指定分类），其后为 Walker Cao 的三篇 Use Cases。
+四篇文章已完成中文（简繁体）、英文、印尼语、西班牙语、日语、韩语全文翻译和统一社群结尾；国际站默认英文、国内站默认中文。国际站标题、摘要、完整正文与社群说明随全部已发布语言同步切换，各语言有独立 canonical 与索引；下文英文回退策略仅为历史记录。当前排序为 Jasmin Zhao 的 Product 在首位（用户最新指定分类），其后为 Walker Cao 的三篇 Use Cases。
 
 - 首篇分类调整：浏览器卡片与 Product 筛选验证通过；10 项内容和列表测试、check、国际站构建通过。日志 /tmp/jasminzhao-blog-category-*。
 
 - 最新语言切换修复：38 项聚焦测试、check（171 基线、0 新增）、国内与国际构建通过；实际菜单验证同篇英文→简体中文→英文，标题和正文一致。默认双站各四篇及国际简体、繁体各四篇静态产物均通过语言与 metadata 检查。进群方式继续按区域，图片语言不变。下文固定站点正文语言及旧 canonical 记录属于历史状态，以本条为准。日志 /tmp/jasminzhao-blog-language-*。
 
 ## verified
+- 本轮六语种补齐：49 项 Blog 聚焦测试通过；SEO locale 参数完善后 9 项 metadata 测试复验通过。check 通过（171 已有诊断，0 新增），build:cn 与 build:global 通过。国内 4 篇和国际 28 篇静态文章已核对正文 lang、标题、canonical、9 项 hreflang、二维码、图片路径和去追踪链接。浏览器通过实际菜单完成同篇英文→印尼语→西班牙语→日语→韩语切换，正文与标题均同步，韩语排版无溢出。日志 /tmp/blog-all-locales-*；结构化证据 /tmp/blog-all-locales-artifact-proof.json。
 - 封面比例后续更新：首篇使用用户新提供的英文 Your Personal AI 封面；所有列表和详情封面使用 16:9 容器与铺满裁剪，首篇靠左保留文字。正文图片比例不变。浏览器已核对新封面和其他卡片，18 项相关测试、check、国际站构建通过；日志 `/tmp/jasminzhao-blog-ratio-{tests,check,build}.log`。
 - 最新要求已完成：完整翻译正文、标题、摘要及自然语言提示词；图片和命令标识保留。统一 BlogCommunity 在分享区前提供国际 Discord / WhatsApp 二维码及链接，或国内微信二维码，替换原稿重复入群结尾。
 - 试用链接显示文本和 href 去除 from / utm_* / ref / source，首页试用与分享域名跟随站点；SEO 与 sitemap 声明国内 zh-CN 和国际 en-US 的真实文章版本。
@@ -55,6 +56,8 @@ derived: false
 - `frontend/openspec/specs/blog.md` 与 PRD 已记录国际站恢复范围。
 
 ## next_action
+本轮新增四语种全文已通过独立 CR 和双站构建，准备追加至现有 MR !4747；必须先提交前端，再同步 OpenCraft 生成清单并独立提交，通过 guard 后推送。以下先前提交和 CI 记录为历史证据。
+
 已快进合并 origin/master eda52dd93，独立 CR 无阻塞发现，PRD 已按最终范围重写。功能提交 c18f1ce38 已推送，MR [!4747](https://git.woa.com/wisp/mono2/merge_requests/4747) 已创建，源分支 jasminzhao-blog-0928、目标 master；等待评审，不合并 MR 或发布。平台创建时返回 opened / can_be_merged，异步 CI 最终状态以平台后续检查为准。
 
 - 合并后最终证据：frozen install、check（171 基线，0 新增）、双站构建与文章静态产物检查通过。212 项前端测试中 209 通过，3 项已证实为 master 首页 PNG/WebP 基线问题；文档与设计影响检查通过，context-audit 33 项单测通过，全库 context 4 项已有失败写入 MR。日志 /tmp/jasminzhao-blog-mr-*。

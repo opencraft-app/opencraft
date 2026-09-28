@@ -74,19 +74,24 @@ describe("BlogArticlePage", () => {
     expect(screen.getByRole("link", { name: "Share X" })).toHaveAttribute("href", expect.stringContaining(encodeURIComponent(`/blog/${post.slug}`)));
   });
 
-  it("switches the same article between English, simplified and traditional Chinese", () => {
+  it("switches the same article across every international language", () => {
     const slug = "lightvela-personal-ai-cloud-now-live";
     const { rerender } = render(<BlogArticlePage slug={slug} publicLocale="en-US" />);
     expect(screen.getByRole("article")).toHaveAttribute("lang", "en");
-    for (const locale of ["zh-SG", "zh-Hant", "en-US"] as const) {
+    for (const locale of ["zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR", "en-US"] as const) {
       rerender(<BlogArticlePage slug={slug} publicLocale={locale} publicLocalized={locale !== "en-US"} />);
       const post = blogContent.getBlogPost(slug, locale)!;
       expect(screen.getByRole("article")).toHaveAttribute("lang", post.language);
       expect(screen.getByRole("heading", { name: post.title })).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", locale === "en-US" ? "/blog" : locale === "zh-SG" ? "/zh-sg/blog" : "/zh-hant/blog");
+      expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", locale === "en-US" ? "/blog" : `/${locale.toLowerCase()}/blog`);
+      expect(screen.getByRole("link", { name: "Share X" })).toHaveAttribute("href", expect.stringContaining(encodeURIComponent(blogContent.blogCanonicalPath(slug, locale))));
       if (locale === "zh-SG") expect(screen.getByText("LightVela 的起点，是 OpenClaw 掀起的个人 AI 热潮。")).toBeInTheDocument();
       if (locale === "zh-Hant") expect(screen.getByText("LightVela 的起點，是 OpenClaw 掀起的個人 AI 熱潮。")).toBeInTheDocument();
       if (locale === "en-US") expect(screen.getByText("LightVela began with the wave of interest in personal AI sparked by OpenClaw.")).toBeInTheDocument();
+      if (locale === "id-ID") expect(screen.getByText("LightVela berawal dari gelombang minat terhadap AI pribadi yang dipicu oleh OpenClaw.")).toBeInTheDocument();
+      if (locale === "es") expect(screen.getByText("LightVela nació de la ola de interés por la IA personal que despertó OpenClaw.")).toBeInTheDocument();
+      if (locale === "ja-JP") expect(screen.getByText("LightVela の出発点は、OpenClaw が巻き起こしたパーソナル AI への関心の高まりでした。")).toBeInTheDocument();
+      if (locale === "ko-KR") expect(screen.getByText("LightVela는 OpenClaw가 일으킨 개인 AI에 대한 관심에서 출발했습니다.")).toBeInTheDocument();
     }
   });
 });
