@@ -459,7 +459,9 @@ CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testi
 环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
 `cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部
 变体的服务使用。任何 testing 发布若改动 primary 或 staging image pin，必须先恢复生产期望态，不能
-依赖“暂不执行 Argo Sync”作为长期隔离措施。
+依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段必须保留 `gitops` 中未选中的
+platform env；只有候选 source revision 相对第一父提交明确修改了某个未选中 platform env 时，才允许
+把该文件作为独立审查过的部署意图投影到 `gitops`，普通源码发布不得用 `master` 中的旧基线覆盖它。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
