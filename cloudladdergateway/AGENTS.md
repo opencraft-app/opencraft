@@ -12,4 +12,6 @@
 
 <!-- ci-retrigger: 2026-08-18 publish intl billing production internal endpoint -->
 
+<!-- ci-retrigger: 2026-09-28 reload MR !4735 primary promote configuration -->
+
 <!-- retrigger 2026-06-16: MR !1591 (4365404cf28a) 已合 master 把 jifei-callback base_url 切到 https://lightclaw.tech 并同步 jifei-prod / jifei-billing-apigw-prod backend，但 tkexgz / tkexsg 两条 promote 分支 (451ba8ae1 / eb294a85d) 未自动合入 gitops，gitops 上 tkexgz/tkexsg 镜像仍 pin 在旧 commit `cloudladdergateway:3c8ed5ec86d7` (06-04)；本 commit 无业务改动，仅命中 .ci/cloudladdergateway.yml paths 触发流水线基于最新 gitops 重新生成 promote 分支 + MR，让 https://lightclaw.tech base_url 真正生效到两站点 clgateway -->
