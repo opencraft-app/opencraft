@@ -228,13 +228,13 @@ export function DrawSoulModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      className="lv-persona-modal-scroll-lock fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
       onClick={handleClose}
     >
       {/* 弹窗主体：reveal 阶段切换为 soul.color 全屏渐变背景 */}
       <motion.div
-        className="relative w-full max-w-[412px] overflow-hidden rounded-2xl"
+        className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-[412px] flex-col overflow-hidden rounded-2xl"
         animate={{
           background: isRevealed && winnerSoul
             ? getSoulColor(winnerSoul)
@@ -249,80 +249,82 @@ export function DrawSoulModal({
           variant={isRevealed ? "light" : "default"}
         />
 
-        <AnimatePresence mode="wait">
-          {!isRevealed ? (
-            <motion.div
-              key="drawing"
-              initial={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="relative flex flex-col items-center gap-6 px-6 py-9"
-              style={{ perspective: 800 }}
-            >
-              <h3
-                className="relative z-20 text-lg font-semibold"
-                style={{ color: "rgba(0,0,0,0.90)" }}
+        <div className="lv-persona-dialog-scroll min-h-0 flex-1 overflow-y-auto">
+          <AnimatePresence mode="wait">
+            {!isRevealed ? (
+              <motion.div
+                key="drawing"
+                initial={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="relative flex flex-col items-center gap-6 px-6 py-9"
+                style={{ perspective: 800 }}
               >
-                {phase === "flipping"
-                  ? t("翻牌中…")
-                  : t("玄学开启！寻找独特灵魂…")}
-              </h3>
-
-              {/* 6 张卡牌 3×2 网格（绝对坐标，方便中奖卡 framer-motion 移动到中心 + 放大 + 翻转） */}
-              <div
-                className="relative"
-                style={{ width: GRID_W, height: GRID_H }}
-              >
-                {CARD_POSITIONS.map((pos, i) => (
-                  <DrawCard
-                    key={i}
-                    x={pos.x}
-                    y={pos.y}
-                    isActive={activeIdx === i}
-                    isWinner={i === winnerIdx}
-                    phase={phase}
-                    soul={winnerSoul ?? null}
-                    onStart={phase === "idle" && drawablePool.length > 0 ? handleStart : undefined}
-                  />
-                ))}
-              </div>
-
-              {phase === "idle" && (
-                <button
-                  type="button"
-                  onClick={handleStart}
-                  disabled={drawablePool.length === 0}
-                  className="rounded-full px-8 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{
-                    background: "rgba(0,0,0,0.90)",
-                    color: "#ffffff",
-                    fontSize: "16px",
-                    lineHeight: "1.35",
-                  }}
+                <h3
+                  className="relative z-20 text-lg font-semibold"
+                  style={{ color: "rgba(0,0,0,0.90)" }}
                 >
-                  {souls.length === 0
-                    ? t("加载中…")
-                    : drawablePool.length === 0
-                      ? t("已抽完所有人设")
-                      : t("开始抽卡")}
-                </button>
-              )}
-              {phase === "cycling" && (
-                <p className="text-sm" style={{ color: "rgba(0,0,0,0.55)" }}>
-                  {t("正在抽取…")}
-                </p>
-              )}
-            </motion.div>
-          ) : (
-            <RevealPanel
-              soul={winnerSoul!}
-              onConfirm={handleConfirm}
-              onInject={handleInject}
-              isInjecting={isInjecting}
-              soulDataLocale={activeSoulLocale}
-            />
-          )}
-        </AnimatePresence>
+                  {phase === "flipping"
+                    ? t("翻牌中…")
+                    : t("玄学开启！寻找独特灵魂…")}
+                </h3>
+
+                {/* 6 张卡牌 3×2 网格（绝对坐标，方便中奖卡 framer-motion 移动到中心 + 放大 + 翻转） */}
+                <div
+                  className="relative"
+                  style={{ width: GRID_W, height: GRID_H }}
+                >
+                  {CARD_POSITIONS.map((pos, i) => (
+                    <DrawCard
+                      key={i}
+                      x={pos.x}
+                      y={pos.y}
+                      isActive={activeIdx === i}
+                      isWinner={i === winnerIdx}
+                      phase={phase}
+                      soul={winnerSoul ?? null}
+                      onStart={phase === "idle" && drawablePool.length > 0 ? handleStart : undefined}
+                    />
+                  ))}
+                </div>
+
+                {phase === "idle" && (
+                  <button
+                    type="button"
+                    onClick={handleStart}
+                    disabled={drawablePool.length === 0}
+                    className="rounded-full px-8 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{
+                      background: "rgba(0,0,0,0.90)",
+                      color: "#ffffff",
+                      fontSize: "16px",
+                      lineHeight: "1.35",
+                    }}
+                  >
+                    {souls.length === 0
+                      ? t("加载中…")
+                      : drawablePool.length === 0
+                        ? t("已抽完所有人设")
+                        : t("开始抽卡")}
+                  </button>
+                )}
+                {phase === "cycling" && (
+                  <p className="text-sm" style={{ color: "rgba(0,0,0,0.55)" }}>
+                    {t("正在抽取…")}
+                  </p>
+                )}
+              </motion.div>
+            ) : (
+              <RevealPanel
+                soul={winnerSoul!}
+                onConfirm={handleConfirm}
+                onInject={handleInject}
+                isInjecting={isInjecting}
+                soulDataLocale={activeSoulLocale}
+              />
+            )}
+          </AnimatePresence>
+        </div>
       </motion.div>
     </div>
   );
@@ -584,7 +586,7 @@ function SoulInterpretModal({
   // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
   return createPortal(
     <motion.div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4 py-6"
+      className="lv-persona-modal-scroll-lock fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4 py-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -614,7 +616,7 @@ function SoulInterpretModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="lv-persona-dialog-scroll min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {loading && (
             <div className="flex items-center justify-center py-12 text-black/40">
               <Loader2 className="h-5 w-5 animate-spin" />
