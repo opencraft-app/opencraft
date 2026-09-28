@@ -19,7 +19,7 @@
 
 OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 的实际沙箱/审批组合投影为标准语义（只读、接受编辑、完全访问）；无法验证的原生/自定义 profile 仍以引擎档案呈现，不由 Renderer 猜测。`opencraft/permission-modes` v1 的标准档位使用稳定的 `opencraft:permission-mode:*` 提交 ID，由 Host 在提交时映射为当前引擎原生 profile；恢复后的原生生效 ID 经目录映射回产品档位。DSH 选定 preset 在 Thread 创建时应用并回读校验，Turn 与 Fork 入口也校验，避免首轮执行前权限状态不一致。完整 bb 式 Host ceiling、请求值与生效值的持久对账仍属后续设计边界，不得据此宣称已经生效。
 
-OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
+OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。清单漂移报错列出发生差异的字段、已记录与当前推导的 sourceRevision，区分源码内容漂移和 Git 历史差异；仍保持完整清单严格比较。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
 
 ## 稳定不变量
 

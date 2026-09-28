@@ -166,3 +166,9 @@ derived: false
 - fetch 得到 origin/master 20cc5f347，MR !4747 仍 opened，复用该 MR。唯一冲突为 OpenCraft UPSTREAM.json 的 sourceRevision，使用同步脚本再生成；合并提交后再次同步并执行 guard。
 - 自动合并保留 master 新增用户反馈入口与 Blog 入口，六语种翻译不变；不扩展 master 引入的后端功能或发布。
 - context_receipt：路由命中 tapd-gongfeng-delivery；读取该 flow、frontend/AGENTS.md、opencraft/AGENTS.md、工蜂与研发协作 Skill、opencraft/MONO2_MIGRATION.md、docs/context/project/upstream-subtrees.md。在 master 精确检索任务文件未命中，切回需求分支后定位成功。读取 frontend-runtime-openspec-i18n 邻接卡，核对 frontend/vitest.config.ts、OpenCraft guard 及自动合并的 Footer、首页导入脚本和测试。
+
+## 2026-09-28 远程 OpenCraft 清单失败排查
+- 用户构建链接对应 MR 占位检查 #6172，提交 2ca61451e。通过已登录 Chrome 读取实际日志：frontend check/i18n/build 通过，OpenCraft 在完整清单比较报 manifest drifted；并非已定位的文件字节比较报错。
+- 默认内置浏览器未登录；已切到用户打开的同 URL Chrome 标签，只读查询，没有重跑或修改流水线。
+- 本地、干净 depth=50 检出、与 runner 一致的 Git 2.43.7 均通过，暂不能断言具体差异字段。补充清单字段与 sourceRevision 诊断，保留严格检查；正向 check 与临时清单篡改负向验证通过。
+- context_receipt：读取 devops-pipeline Skill、build-status reference、CI service pack 与 .ci/AGENTS.md；进入 OpenCraft 边界后读取 agent-gateway-runtime、site-environment-routing、upstream-subtrees、service-opencraft 四份路由 must_read，复用最近的 OpenCraft/前端 AGENTS 与迁移契约。精确读取同步脚本、MR workflow、guard dispatcher 和 frontend guard，核对 checkout 及源目录隔离邻居。
