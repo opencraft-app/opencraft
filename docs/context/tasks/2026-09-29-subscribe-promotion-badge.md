@@ -81,7 +81,7 @@
 - 预览环境只完成页面可用性和分支产物核验；登录后的真实报价仍以聚焦回归测试为验证依据。
 
 ## mr_draft
-- 目标：`master`；源分支：`frontsandbox/subscribe-promotion-badge-20260929`；需求：OPT-001（暂无工蜂 issue 编号）。
+- 目标：`master`；源分支：`frontsandbox/subscribe-promotion-badge-20260929`；需求：OPT-001，[TAPD 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577)（暂无工蜂 issue 编号）。
 - 标题：`修正订阅页促销标签 / fix(subscribe): match displayed discount`
 - 描述：订阅页国内与国际站的免费及折扣角标改为依据卡片展示的原价、实付价和首购资格；真实无优惠、无报价或询价切换中隐藏促销角标。保留现有后端计费、下单和支付流程。
 - 验证：订阅页国内与国际站聚焦测试 106/106、前端 i18n、类型检查（0 new diagnostics）、Next.js 生产构建、文档与 change impact 检查通过。全量 Vitest 未取得最终汇总，需在 MR 中披露。
@@ -97,6 +97,6 @@
 ### discard
 - 国内站按套餐名/后端 `discount` 直接写死六折的旧逻辑。
 ### restore
-- 代码与队列记录均在 `frontsandbox/subscribe-promotion-badge-20260929`。
+- 代码与队列记录均在 `frontsandbox/subscribe-promotion-badge-20260929`；TAPD 卡片 `1070234090138685577` 位于「待确认」。
 ### next_action
 - 汇总预览、CR、验证、MR 草稿给用户；用户确认后创建指向 `master` 的 MR，再按规范发起 Fanny 与 owner CR。
