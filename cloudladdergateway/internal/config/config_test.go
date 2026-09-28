@@ -678,9 +678,10 @@ func TestExampleConfigLoads(t *testing.T) {
 	if cloudapi == nil || cloudapi.RouteID != "lightvela-cloudapi-sh" || cloudapi.UpstreamPath != "/cloudapi" {
 		t.Fatalf("example config missing LightVela cloud api external route: %+v", cfg.External)
 	}
-	if got := cloudapi.HeaderRoutes; len(got) != 2 ||
+	if got := cloudapi.HeaderRoutes; len(got) != 3 ||
 		got[0].Name != "X-TC-Region" || got[0].Value != "ap-beijing" || got[0].RouteID != "lightvela-cloudapi-bj" ||
-		got[1].Name != "X-TC-Region" || got[1].Value != "ap-shanghai" || got[1].RouteID != "lightvela-cloudapi-sh" {
+		got[1].Name != "X-TC-Region" || got[1].Value != "ap-guangzhou" || got[1].RouteID != "lightvela-cloudapi-bj" ||
+		got[2].Name != "X-TC-Region" || got[2].Value != "ap-shanghai" || got[2].RouteID != "lightvela-cloudapi-sh" {
 		t.Fatalf("example config missing cloud api region header routes: %+v", got)
 	}
 }

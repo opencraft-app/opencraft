@@ -23,7 +23,7 @@ LightVela 为 DSH 提供托管入口。
 ## 安装 DeepSeek Harness
 
 1. 打开 [LightVela Agent 页面](/agents/)。
-2. 在左侧导航的实验室下选择 DeepSeek Harness。
+2. 在左侧导航的「实验室」中选择 [DeepSeek Harness](/agents/labs/deepseek-harness)。
 3. 阅读 Beta 提示，然后选择立即安装体验。
 4. 安装运行期间保持页面打开。
    正常安装通常需要约一到三分钟。

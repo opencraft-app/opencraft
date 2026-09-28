@@ -72,6 +72,12 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams),
     label: resolveAgentConsoleCollectionLabel("model", i18n.language, t),
   });
+  entries.push({
+    id: "files",
+    kind: "files",
+    href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.files, searchParams),
+    label: t("云存储"),
+  });
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });
   if (!isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈"), external: true });
   return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}

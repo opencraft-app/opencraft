@@ -25,7 +25,6 @@ import {
   TerminalSquare,
   Trophy,
   Download,
-  Files,
   FlaskConical,
   Plus,
   RefreshCw,
@@ -5697,7 +5696,6 @@ export const AgentSettingsPage = ({
                   id: "manage",
                   label: t("管理"),
                   sections: [
-                    { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                     { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
                     { id: "settings", label: t("高级设置"), icon: <SlidersHorizontal className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.settings },
                   ],

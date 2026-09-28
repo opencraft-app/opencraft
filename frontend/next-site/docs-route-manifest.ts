@@ -274,6 +274,9 @@ export const DOCS_ROUTE_SLUGS = {
       "quickstart"
     ],
     [
+      "create-first-hermes"
+    ],
+    [
       "core-concepts"
     ],
     [
@@ -289,14 +292,27 @@ export const DOCS_ROUTE_SLUGS = {
       "credits"
     ],
     [
-      "create-first-hermes"
-    ],
-    [
       "configuration"
     ],
     [
       "configuration",
+      "bots-switching"
+    ],
+    [
+      "configuration",
+      "agent-chat"
+    ],
+    [
+      "configuration",
       "model"
+    ],
+    [
+      "configuration",
+      "multiple-models"
+    ],
+    [
+      "configuration",
+      "personality"
     ],
     [
       "configuration",
@@ -324,10 +340,6 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
-      "personality"
-    ],
-    [
-      "configuration",
       "memory"
     ],
     [
@@ -340,23 +352,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
-      "agent-chat"
-    ],
-    [
-      "configuration",
       "diagnostics"
     ],
     [
       "configuration",
       "advanced-settings"
-    ],
-    [
-      "configuration",
-      "multiple-models"
-    ],
-    [
-      "configuration",
-      "bots-switching"
     ],
     [
       "configuration",
@@ -2101,31 +2101,31 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
   "zh-cn": {
     "overview": "2026-09-27",
     "quickstart": "2026-09-27",
+    "create-first-hermes": "2026-09-27",
     "core-concepts": "2026-09-27",
     "who-is-lightvela-for": "2026-09-27",
     "account": "2026-09-20",
     "plans": "2026-09-28",
     "credits": "2026-08-20",
-    "create-first-hermes": "2026-09-27",
-    "configuration": "2026-09-27",
+    "configuration": "2026-09-28",
+    "configuration/bots-switching": "2026-09-28",
+    "configuration/agent-chat": "2026-09-28",
     "configuration/model": "2026-09-27",
+    "configuration/multiple-models": "2026-08-28",
+    "configuration/personality": "2026-09-28",
     "configuration/channel-wechat": "2026-08-20",
     "configuration/channel-qq": "2026-08-20",
     "configuration/channel-wecom": "2026-08-20",
     "configuration/channel-feishu": "2026-08-20",
     "configuration/channel-dingtalk": "2026-09-27",
-    "configuration/skill": "2026-08-20",
-    "configuration/personality": "2026-08-24",
-    "configuration/memory": "2026-08-24",
+    "configuration/skill": "2026-09-28",
+    "configuration/memory": "2026-09-28",
     "configuration/automation": "2026-08-24",
-    "configuration/files": "2026-08-24",
-    "configuration/agent-chat": "2026-08-24",
-    "configuration/diagnostics": "2026-08-24",
+    "configuration/files": "2026-09-28",
+    "configuration/diagnostics": "2026-09-28",
     "configuration/advanced-settings": "2026-08-25",
-    "configuration/multiple-models": "2026-08-28",
-    "configuration/bots-switching": "2026-09-22",
-    "configuration/deepseek-harness": "2026-08-28",
-    "configuration/workbench": "2026-09-02",
+    "configuration/deepseek-harness": "2026-09-28",
+    "configuration/workbench": "2026-09-28",
     "use-cases/scheduled-task-agent": "2026-09-14",
     "use-cases/scheduled-task-notifications": "2026-09-14",
     "use-cases/scheduled-task-script": "2026-09-14",

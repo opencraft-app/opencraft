@@ -251,6 +251,11 @@
   line-height: 1.5;
 }
 
+.lh-std-channel-panel__developer-console-link {
+  color: var(--lh-std-primary);
+  text-decoration: underline;
+}
+
 .lh-std-model-panel__modal-actions,
 .lh-std-channel-panel__modal-actions,
 .lh-std-skill-panel__modal-actions {

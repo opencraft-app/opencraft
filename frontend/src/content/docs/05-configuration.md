@@ -31,14 +31,14 @@
 |---|---|
 | 设置模型或切换当前模型 | [配置模型](./configuration/model.md)、[模型切换](./configuration/multiple-models.md) |
 | 扩展任务能力 | [配置技能](./configuration/skill.md) |
-| 在网页中对话 | [对话](./configuration/agent-chat.md) |
+| 在网页中与主 Bot 对话 | [网页对话](./configuration/agent-chat.md) |
 | 定时执行与通知 | [定时任务](./configuration/automation.md) |
 | 调整角色和长期上下文 | [人设](./configuration/personality.md)、[记忆管理](./configuration/memory.md) |
-| 管理文件 | [云存储](./configuration/files.md) |
+| 管理文件 | [云存储](./configuration/files.md)；当前侧栏没有独立菜单项，可从指南打开页面 |
 | 排查异常 | [诊断中心](./configuration/diagnostics.md) |
 | 调整高级选项 | [高级设置](./configuration/advanced-settings.md) |
-| 切换 Bot | [Bot 切换](./configuration/bots-switching.md) |
-| 使用实验功能 | [DeepSeek Harness](./configuration/deepseek-harness.md)、[工作台](./configuration/workbench.md) |
+| 管理和切换 Bot | [管理与切换 Bot](./configuration/bots-switching.md) |
+| 使用实验功能 | [DeepSeek Harness](./configuration/deepseek-harness.md)、[我的工作台](./configuration/workbench.md) |
 
 模型入口在不同套餐下可能显示在侧栏「使用」分组或左下角账号菜单中。实验功能及新增 Bot 的可用性受账户、套餐和功能开放状态限制。
 

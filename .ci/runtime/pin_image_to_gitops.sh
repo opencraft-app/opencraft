@@ -144,11 +144,16 @@ project_and_pin_gitops_state() {
   local service
   local services
 
-  python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py" \
-    --repo-root "$target_repo_root" \
-    --service "$BUNDLE_SERVICE" \
-    --env "$ENV_NAME" \
+  projection_args=(
+    --repo-root "$target_repo_root"
+    --service "$BUNDLE_SERVICE"
+    --env "$ENV_NAME"
     --source-ref "$SOURCE_REF"
+  )
+  if [[ -n "${GITOPS_IMAGE_PIN_VARIANT:-}" && "${GITOPS_IMAGE_PIN_VARIANT}" != "all" ]]; then
+    projection_args+=(--image-pin-variant "$GITOPS_IMAGE_PIN_VARIANT")
+  fi
+  python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py" "${projection_args[@]}"
 
   IFS=',' read -r -a services <<<"$SERVICE_ARG"
   for service in "${services[@]}"; do

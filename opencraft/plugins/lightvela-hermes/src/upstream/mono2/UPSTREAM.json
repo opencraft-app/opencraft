@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "2c34ab171743f7366963301ca8ac5b3ab3389a92",
+  "sourceRevision": "e1b64947838d56264d6c1834dc0194c65c467a8b",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -229,7 +229,7 @@
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
-      "sourceSha256": "1a56ae4022dc7db13864b4442fd288f9ad708dcf5694612c67e9ae1437e53d60"
+      "sourceSha256": "8d592b15d4938b6fd63b9d624a925bada64e635a87a1df887d8b69cc17705025"
     },
     {
       "file": "pages/marketing/agent-config/components/FeishuIcon.tsx",
@@ -297,7 +297,7 @@
     },
     {
       "file": "pages/marketing/agent-config/standard-panel.css",
-      "sourceSha256": "170b74bfe42e901a3b5857db56a5d312a0540271a8b450a1e8ff868d061be155"
+      "sourceSha256": "ad6d478c7cbb108b34960cf2936005a58619cefeffee30b6edd0507adfdcff9c"
     },
     {
       "file": "pages/marketing/agent-config/styles-index.css",
