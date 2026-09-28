@@ -1,3 +1,4 @@
+import { blogContentAlternates } from '@next-site/blog-seo';
 import {
   DOCS_ROUTE_LOCALES,
   DOCS_ROUTE_SLUGS,
@@ -71,6 +72,8 @@ function sameSlug(left: readonly string[], right: readonly string[]): boolean {
 }
 
 function publicAlternates(path: string): Record<string, string> {
+  const post = BLOG_POSTS.find((candidate) => path === `/blog/${candidate.slug}`);
+  if (post) return blogContentAlternates(post);
   return path === '/blog' || path.startsWith('/blog/')
     ? seoRegion() === 'global'
       ? buildGlobalPublicAlternates(path)
@@ -105,7 +108,7 @@ export function GET() {
   const publicEntries: SitemapEntry[] = [
     ...publicPaths.map((path) => ({ path, alternates: publicAlternates(path) })),
     ...localizedPublicLangs.flatMap((lang) =>
-      publicPaths.map((path) => ({
+      publicPaths.filter((path) => !path.startsWith('/blog/') || lang === 'zh-sg' || lang === 'zh-hant').map((path) => ({
         path: localizedPublicPath(path, lang),
         alternates: publicAlternates(path),
       })),

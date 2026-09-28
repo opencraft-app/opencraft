@@ -74,7 +74,7 @@ describe("LightVelaFooter", () => {
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
     expect(productSection).not.toBeNull();
     const product = within(productSection as HTMLElement);
-    expect(product.queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
+    expect(product.getByRole("link", { name: "博客" })).toHaveAttribute("href", "/blog");
     expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "1 个月免费试用" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "定价" })).toHaveAttribute("href", "/subscribe");
@@ -191,7 +191,7 @@ describe("LightVelaFooter", () => {
     );
 
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
-    expect(within(productSection as HTMLElement).queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
+    expect(within(productSection as HTMLElement).getByRole("link", { name: "博客" })).toHaveAttribute("href", "/zh-hant/blog");
     expect(within(productSection as HTMLElement).getByRole("link", { name: "定价" })).toHaveAttribute(
       "href",
       "/zh-hant/subscribe",
@@ -232,7 +232,7 @@ describe("LightVelaFooter", () => {
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/es/");
 
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
-    expect(within(productSection as HTMLElement).queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
+    expect(within(productSection as HTMLElement).getByRole("link", { name: "博客" })).toHaveAttribute("href", "/es/blog");
 
     const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
     const company = within(companySection as HTMLElement);

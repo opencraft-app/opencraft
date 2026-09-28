@@ -3,8 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { DEFAULT_PUBLIC_ROUTE_LOCALE } from '@next-site/public-locale';
 import { PublicBlogArticlePage } from '@next-site/public-pages';
-import { buildGlobalPublicAlternates, buildPublicAlternates, createPublicMetadata } from '@next-site/seo';
-import { isGlobal } from '@/lib/region';
+import { blogArticleMetadata } from '@next-site/blog-seo';
 import { BLOG_POSTS, getBlogPost } from '@/pages/marketing/blog-content';
 
 export function generateStaticParams(): { slug: string }[] {
@@ -16,15 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const post = getBlogPost(slug, DEFAULT_PUBLIC_ROUTE_LOCALE.locale);
   if (!post) notFound();
 
-  return createPublicMetadata({
-    path: `/blog/${slug}`,
-    locale: DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
-    title: post.title,
-    description: post.excerpt,
-    alternates: isGlobal
-      ? buildGlobalPublicAlternates(`/blog/${slug}`)
-      : buildPublicAlternates(`/blog/${slug}`),
-  });
+  return blogArticleMetadata(post);
 }
 
 export default async function BlogArticleRoute({ params }: { params: Promise<{ slug: string }> }) {

@@ -109,19 +109,26 @@ export function BlogPage({
                   href={href}
                   className="group block rounded-md border border-black/[0.08] bg-white p-3 text-left shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-2"
                 >
-                  <img
-                    src={post.coverImage}
-                    alt=""
-                    className="aspect-[16/9] w-full rounded-md bg-white object-cover transition-opacity group-hover:opacity-80"
-                  />
+                  {post.coverImage ? (
+                    <div className="aspect-video w-full overflow-hidden rounded-md bg-white">
+                      <img
+                        src={post.coverImage}
+                        alt=""
+                        style={{ objectPosition: post.coverPosition ?? "center" }}
+                        className="size-full object-cover transition-opacity group-hover:opacity-80"
+                      />
+                    </div>
+                  ) : <div aria-hidden="true" className="aspect-video w-full rounded-md bg-black/[0.025]" />}
                   <h2
-                    lang={publicLocale ?? "en-US"}
+                    lang={post.language ?? publicLocale ?? "en-US"}
                     className="mt-4 min-h-[2.5rem] px-1 line-clamp-2 text-pretty text-base font-medium leading-5 text-black"
                   >
                     {post.title}
                   </h2>
-                  <div className="mt-2 flex items-center gap-2 px-1 pb-1 text-sm text-black/50">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 px-1 pb-1 text-sm text-black/50">
                     <span>{blogCategoryLabel(t, post.category)}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{post.author}</span>
                     <span aria-hidden="true">·</span>
                     <time dateTime={post.publishedAt}>{formatBlogPublishedDate(post.publishedAt, publicLocale)}</time>
                   </div>

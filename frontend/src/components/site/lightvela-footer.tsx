@@ -5,7 +5,7 @@ import {
   CN_PRIVACY_POLICY_URL,
   CN_TERMS_OF_SERVICE_URL,
 } from "@/constants/legal";
-import { DISCORD_INVITE_URL } from "@/constants/community";
+import { DISCORD_INVITE_URL, WHATSAPP_INVITE_URL } from "@/constants/community";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { localeDefinition, parseLocaleCode } from "@/i18n/locales.config";
 import { useLocaleOverride, useT } from "@/i18n/t";
@@ -103,7 +103,7 @@ const getCommunityLinks = (t: (zh: string) => string): FooterLink[] =>
         { label: "Discord", href: DISCORD_INVITE_URL, external: true },
         {
           label: "WhatsApp",
-          href: "https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b",
+          href: WHATSAPP_INVITE_URL,
           external: true,
         },
         { label: "X / Twitter", href: "https://x.com/agentlightvela", external: true },
@@ -120,6 +120,7 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => {
         { label: t("1 个月免费试用"), to: SUBSCRIBE_PATH },
         { label: t("定价"), to: SUBSCRIBE_PATH },
         ...getChannelGuideLinks(t),
+        ...(isGlobal ? [{ label: t("博客"), to: "/blog" }] : []),
       ],
     },
     {
