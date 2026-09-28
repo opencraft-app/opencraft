@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "369f98b82eb65f13ebda941275f5999fe4b1fd31",
+  "sourceRevision": "53f274c81c780bc34ac033227b8ccd868be0a9f1",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -93,11 +93,11 @@
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "94eb37bbb548fe2046ea3860ed314de25a686d42536c76b2e071e17280ec7236"
+      "sourceSha256": "a47ad82d474c5d8106d289357e7e30efa55cc23bdb0d376a8a93fd20501945f7"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "27c0bb662533133fd3d2680b9dceba53766adf172316ab96eda63b8795ecf559"
+      "sourceSha256": "057451b737f30dacf74c3a6dd860bb46650f510d7457f373d6d09cee7f6395cd"
     },
     {
       "file": "i18n/generated/ja-JP.json",
@@ -113,7 +113,7 @@
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "28f514b7b974f21f5ae975a1dec6f4a863c99629ef0c20becb079038d5773771"
+      "sourceSha256": "a33a67c212cdfbe3e64cc70b51d2fe51baede9ca46899500f422069d74cb5c8d"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
