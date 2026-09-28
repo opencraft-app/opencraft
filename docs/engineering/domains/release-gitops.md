@@ -27,6 +27,8 @@ master 源码
 
 ## 不变量
 
+- 紧急恢复时若先在生产集群直改 Auth ConfigMap 或 Deployment，必须记录原值与镜像 digest，并在同一事件内把限流参数、可信代理地址和镜像 pin 固化到对应环境的 GitOps 声明；业务 429 恢复只证明临时热修生效，Argo 对齐到预期 revision 且 `Synced/Healthy` 才表示发布闭环。可信代理不得为省事扩大到整个 Pod 网段。
+
 - 统一 Argo CD 控制面运行在受控国内发布机时，必须使用宿主机原生 k0s systemd 服务；禁止使用
   k0s-in-Docker 承载生产 GitOps 控制面，因为嵌套网络命名空间会使部分跨地域 TKE TLS 流量被
   DevCloud 出口代理错误降级为明文响应。固定版本 k0s/Argo 基线、NodePort、repo-server
