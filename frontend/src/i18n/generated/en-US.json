@@ -2950,5 +2950,6 @@
   "k_ffc7ed1c": "Add time",
   "k_ffcbaabf": "Cloud storage",
   "k_ffdf78e6": "Model service provider",
-  "k_ffea1468": "Installed skills list"
+  "k_ffea1468": "Installed skills list",
+  "k_374c5c8a": "WhatsApp is connected by {{name}}. Only one Bot can connect WhatsApp in the same instance. Disconnect it from the original Bot first."
 }

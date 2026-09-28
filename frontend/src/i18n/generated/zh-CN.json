@@ -2950,5 +2950,6 @@
   "k_ffc7ed1c": "添加时间",
   "k_ffcbaabf": "云端存储",
   "k_ffdf78e6": "模型服务商",
-  "k_ffea1468": "已安装技能列表"
+  "k_ffea1468": "已安装技能列表",
+  "k_374c5c8a": "WhatsApp 已由 {{name}} 连接。同一实例内，WhatsApp 同时只能连接一个 Bot。请先在原 Bot 断开连接。"
 }
