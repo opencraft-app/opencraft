@@ -174,7 +174,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
-  it("opens the sidebar account menu on hover and still supports click", () => {
+  it("opens the sidebar account menu only when its trigger is clicked", () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -201,6 +201,10 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(trigger);
 
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(trigger);
+
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(document.querySelector(".lw-user-avatar-menu")).toHaveClass(
       "bottom-full",
@@ -208,16 +212,11 @@ describe("UserAvatarMenu", () => {
       "origin-bottom-left",
     );
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "云存储" })).toHaveAttribute("href", "/agents/files");
     expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
-    fireEvent.mouseLeave(trigger.parentElement!);
+    fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
-
-    fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
   it.each([
@@ -235,11 +234,15 @@ describe("UserAvatarMenu", () => {
     useOpenClaw.mockReturnValue({ activePass: null });
 
     const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "云存储" })).toHaveAttribute("href", "/agents/files");
     expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
+    expect(screen.getByRole("link", { name: "云存储" }).nextElementSibling).toBe(
+      screen.getByRole("link", { name: "套餐与费用" }),
+    );
     expect(screen.getByRole("link", { name: "套餐与费用" }).nextElementSibling).toBe(
       screen.getByRole("link", { name: "账号" }),
     );
@@ -278,13 +281,16 @@ describe("UserAvatarMenu", () => {
         <UserAvatarMenu variant="sidebar" showLanguageSwitcher />
       </AppNavigationProvider>,
     );
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     const accountLink = screen.getByRole("link", { name: "账号" });
     const billingLink = screen.getByRole("link", { name: "套餐与费用" });
+    const cloudStorageLink = screen.getByRole("link", { name: "云存储" });
     const modelLink = screen.getByRole("link", { name: locale === "en-US" ? "Models" : "模型" });
     expect(modelLink).toHaveAttribute("href", "/agents/models?bot=bot%2Fsales+east");
-    expect(modelLink.nextElementSibling).toBe(billingLink);
+    expect(modelLink.nextElementSibling).toBe(cloudStorageLink);
+    expect(cloudStorageLink).toHaveAttribute("href", "/agents/files?bot=bot%2Fsales+east");
+    expect(cloudStorageLink.nextElementSibling).toBe(billingLink);
     expect(billingLink.nextElementSibling).toBe(accountLink);
     if (global) {
       expect(accountLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
@@ -313,11 +319,13 @@ describe("UserAvatarMenu", () => {
     });
 
     render(<UserAvatarMenu variant="sidebar" showLanguageSwitcher />);
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.queryByRole("link", { name: /^(Models|模型)$/ })).not.toBeInTheDocument();
+    const cloudStorageLink = screen.getByRole("link", { name: "云存储" });
     const billingLink = screen.getByRole("link", { name: "套餐与费用" });
     const accountLink = screen.getByRole("link", { name: "账号" });
+    expect(cloudStorageLink.nextElementSibling).toBe(billingLink);
     expect(billingLink.nextElementSibling).toBe(accountLink);
     if (global) {
       expect(accountLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
@@ -344,7 +352,7 @@ describe("UserAvatarMenu", () => {
     });
 
     render(<UserAvatarMenu variant="sidebar" />);
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute(
       "href",
@@ -391,7 +399,7 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu showLanguageSwitcher variant="sidebar" />);
     const accountTrigger = screen.getByRole("button", { name: "打开用户菜单" });
-    fireEvent.mouseEnter(accountTrigger);
+    fireEvent.click(accountTrigger);
 
     const languageTrigger = screen.getByRole("button", { name: "语言" });
     expect(languageTrigger).toHaveAttribute("aria-haspopup", "dialog");
