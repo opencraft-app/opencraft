@@ -7,19 +7,20 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mysql"
-	_ "github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/golang-migrate/migrate/v4/source/iofs"
 
-	dbmysql "github.com/go-sql-driver/mysql"
 	stdsql "database/sql"
+	dbmysql "github.com/go-sql-driver/mysql"
 
 	"git.woa.com/wisp/mono/ticket/migrations"
 )
 
 // 用法:
-//   ticket-migrate up
-//   ticket-migrate down
-//   ticket-migrate version
+//
+//	ticket-migrate up
+//	ticket-migrate down
+//	ticket-migrate version
 //
 // 读取 TICKET_MYSQL_DSN。骨架期与 subscription 保持同风格。
 func main() {
@@ -32,11 +33,12 @@ func main() {
 	if dsn == "" {
 		log.Fatal("TICKET_MYSQL_DSN is required")
 	}
-	if _, err := dbmysql.ParseDSN(dsn); err != nil {
+	migrationConnectionDSN, err := migrationDSN(dsn)
+	if err != nil {
 		log.Fatalf("invalid dsn: %v", err)
 	}
 
-	db, err := stdsql.Open("mysql", dsn)
+	db, err := stdsql.Open("mysql", migrationConnectionDSN)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -77,4 +79,15 @@ func main() {
 	default:
 		log.Fatalf("unknown command: %s", cmd)
 	}
+}
+
+// migrationDSN enables multi-statement SQL only for the migration process.
+// The initial ticket schema contains several CREATE TABLE statements per file.
+func migrationDSN(dsn string) (string, error) {
+	cfg, err := dbmysql.ParseDSN(dsn)
+	if err != nil {
+		return "", err
+	}
+	cfg.MultiStatements = true
+	return cfg.FormatDSN(), nil
 }

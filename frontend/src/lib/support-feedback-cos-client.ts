@@ -1,24 +1,19 @@
 /**
- * 用户反馈 - COS 上传客户端（后端预签名模式）
+ * 用户反馈 - ticket MySQL 上传客户端
  * ──────────────────────────────────────────────────────────────
  * 架构变更（相比旧版）：
- *   - 旧版：浏览器直接用 cos-js-sdk-v5 + NEXT_PUBLIC_COS_SECRET_KEY 上传，
- *           永久密钥暴露在客户端 bundle，任何访客都能拿到。
- *   - 新版：上传/读取权限一律由 ticket 后端（持有私有密钥）通过预签名 URL 下发。
- *           浏览器只拿到「短时有效的上传/下载链接」，永远不接触 SecretKey。
- *
- * 流程：
- *   提交：POST /support/feedback/presign → 拿到 record + 各附件的预签名 PUT URL
- *        → 浏览器直接 PUT 内容到 COS（不经过后端流量）
- *   后台列表：GET /support/feedback/list（后端服务端聚合 COS 记录）
- *   后台附件：GET /support/feedback/sign?key= → 拿短期下载链接
+ * 反馈主记录与附件都由 ticket 写入 MySQL，避免浏览器篡改 accountId/site/status。
+ * 后台列表：GET /support/feedback/list
+ * 后台附件：GET /support/feedback/attachment/:id
  *
  * 鉴权：依赖登录态（cookie session），与 /tickets 一致。
  */
 
 import { resolveConfiguredAuthApiBaseUrl, resolveSupportAdminApiBaseUrl } from '@/lib/auth-api-base';
+import { isGlobal } from '@/lib/region';
 
 const SUPPORT_API_PREFIX = '/support';
+const SUPPORT_FEEDBACK_SUBMIT_TIMEOUT_MS = 30_000;
 
 export interface SupportCosConfig {
   bucket: string;
@@ -27,11 +22,11 @@ export interface SupportCosConfig {
 }
 
 export type FeedbackStatus = 'open' | 'reviewing' | 'resolved';
-// 本期仅上线国内站反馈，暂不支持 'global'。
-export type FeedbackSite = 'cn';
+export type FeedbackSite = 'cn' | 'global';
 
 /** 当前上线的反馈站点标识；避免魔法字符串直接散落在调用处。 */
 export const FEEDBACK_SITE_CN = 'cn' as const satisfies FeedbackSite;
+export const FEEDBACK_SITE_GLOBAL = 'global' as const satisfies FeedbackSite;
 
 export interface FeedbackAttachmentRecord {
   fileName: string;
@@ -106,9 +101,8 @@ export function getSupportCosConfig(): SupportCosConfig | null {
   return { bucket: '', region: '', prefix: 'support-feedback' };
 }
 
-// 本期仅上线国内站反馈，暂不做多语言/国际站支持。
 export function getCurrentFeedbackSite(): FeedbackSite {
-  return FEEDBACK_SITE_CN;
+  return isGlobal ? FEEDBACK_SITE_GLOBAL : FEEDBACK_SITE_CN;
 }
 
 function supportApiBase(): string {
@@ -128,23 +122,6 @@ function supportAdminApiBase(): string {
   return `${base}${SUPPORT_API_PREFIX}`;
 }
 
-function buildSubject(description: string): string {
-  const firstLine = description.trim().split(/\r?\n/, 1)[0] || description.trim();
-  return firstLine.slice(0, 80);
-}
-
-interface PresignTarget {
-  fileName?: string;
-  key: string;
-  uploadUrl: string;
-}
-
-interface PresignResponse {
-  id: string;
-  record: PresignTarget;
-  attachments: PresignTarget[];
-}
-
 export interface CreateSupportFeedbackInput {
   accountId: string;
   feedbackType: string;
@@ -158,83 +135,53 @@ export interface CreateSupportFeedbackInput {
 }
 
 /**
- * 提交反馈：向后端申请预签名 URL → 浏览器直传 COS。
- * 前端全程不持有 COS 密钥。
+ * 提交反馈：由 ticket 后端把主记录和附件一起写入 MySQL。
  */
 export async function createSupportFeedback(
   input: CreateSupportFeedbackInput,
 ): Promise<SupportFeedbackRecord> {
   const base = supportApiBase();
   const site = getCurrentFeedbackSite();
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), SUPPORT_FEEDBACK_SUBMIT_TIMEOUT_MS);
 
-  const presignRes = await fetch(`${base}/feedback/presign`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({
-      site,
-      attachmentFileNames: (input.files ?? []).map((file) => file.name),
-    }),
-  });
-  if (!presignRes.ok) {
-    throw new Error('获取上传签名失败，请稍后重试');
+  const body = new FormData();
+  body.set('site', site);
+  body.set('feedbackType', input.feedbackType.trim());
+  body.set('otherText', input.otherText?.trim() ? input.otherText.trim() : '');
+  body.set('description', input.description.trim());
+  body.set('contactInfo', input.contactInfo?.trim() ? input.contactInfo.trim() : '');
+  body.set('category', input.category ?? '');
+  if (input.profile && hasProfile(input.profile)) {
+    body.set('profile', JSON.stringify(input.profile));
   }
-  const presign = (await presignRes.json()) as PresignResponse;
+  if (input.bugInfo) {
+    body.set('bugInfo', JSON.stringify(input.bugInfo));
+  }
+  for (const file of input.files ?? []) {
+    body.append('attachments', file, file.name);
+  }
 
-  // 1) 上传附件（按文件名顺序对应后端返回的预签名 URL）
-  const attachments: FeedbackAttachmentRecord[] = [];
-  const files = input.files ?? [];
-  for (let i = 0; i < files.length; i += 1) {
-    const file = files[i];
-    const target = presign.attachments[i];
-    if (!target) continue;
-    const putRes = await fetch(target.uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
+  try {
+    const res = await fetch(`${base}/feedback/submit`, {
+      method: 'POST',
+      credentials: 'include',
+      body,
+      signal: controller.signal,
     });
-    if (!putRes.ok) {
-      throw new Error('附件上传失败，请重试');
+    if (!res.ok) {
+      throw new Error('反馈提交失败，请稍后重试');
     }
-    attachments.push({
-      fileName: file.name,
-      contentType: file.type || 'application/octet-stream',
-      size: file.size,
-      storageKey: target.key,
-    });
+
+    return (await res.json()) as SupportFeedbackRecord;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('反馈提交超时，请检查网络或稍后重试');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-
-  // 2) 组装并上传记录 JSON
-  const now = new Date().toISOString();
-  const record: SupportFeedbackRecord = {
-    id: presign.id,
-    accountId: input.accountId.trim(),
-    feedbackType: input.feedbackType.trim(),
-    otherText: input.otherText?.trim() ? input.otherText.trim() : null,
-    description: input.description.trim(),
-    subject: buildSubject(input.description),
-    status: 'open',
-    source: 'support-page',
-    site,
-    createdAt: now,
-    updatedAt: now,
-    attachments,
-    contactInfo: input.contactInfo?.trim() ? input.contactInfo.trim() : null,
-    profile: input.profile && hasProfile(input.profile) ? input.profile : null,
-    category: input.category ?? null,
-    bugInfo: input.bugInfo ?? null,
-  };
-
-  const recordRes = await fetch(presign.record.uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify(record, null, 2),
-  });
-  if (!recordRes.ok) {
-    throw new Error('反馈记录上传失败，请重试');
-  }
-
-  return record;
 }
 
 function hasProfile(p: SupportFeedbackProfile): boolean {
@@ -270,7 +217,7 @@ export async function listSupportFeedback(): Promise<SupportFeedbackRecord[]> {
 export async function getSignedAttachmentUrl(storageKey: string): Promise<string | null> {
   try {
     const base = supportAdminApiBase();
-    const res = await fetch(`${base}/feedback/sign?key=${encodeURIComponent(storageKey)}`, {
+    const res = await fetch(`${base}/feedback/sign?id=${encodeURIComponent(storageKey)}`, {
       credentials: 'include',
     });
     if (!res.ok) {

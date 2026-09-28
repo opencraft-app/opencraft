@@ -117,3 +117,39 @@ func TestSupportUserMiddlewareObservability(t *testing.T) {
 		t.Error("expected identity_via_gateway=false when X-Lightclaw-User-Email absent")
 	}
 }
+
+func TestSupportAgentMiddlewareRejectsEmptyAllowlist(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(supportAgentMiddleware(nil))
+	r.GET("/support/feedback/list", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/support/feedback/list", nil)
+	req.Header.Set("X-User-Id", "agent_1")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when support agent allowlist is empty, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSupportAgentMiddlewareAcceptsAllowlistedUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(supportAgentMiddleware([]string{"agent_1"}))
+	r.GET("/support/feedback/list", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/support/feedback/list", nil)
+	req.Header.Set("X-User-Id", "agent_1")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for allowlisted support agent, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

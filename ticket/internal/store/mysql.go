@@ -32,6 +32,58 @@ type TicketMessage struct {
 	CreatedAt  time.Time
 }
 
+type SupportFeedback struct {
+	ID           string
+	AccountID    string
+	Site         string
+	Category     string
+	FeedbackType string
+	OtherText    sql.NullString
+	Subject      string
+	Description  string
+	ContactInfo  sql.NullString
+	ProfileJSON  sql.NullString
+	BugInfoJSON  sql.NullString
+	Status       string
+	Source       string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	Attachments  []SupportFeedbackAttachment
+}
+
+type SupportFeedbackAttachment struct {
+	ID          string
+	FeedbackID  string
+	FileName    string
+	ContentType string
+	SizeBytes   int64
+	Content     []byte
+	CreatedAt   time.Time
+}
+
+type CreateSupportFeedbackInput struct {
+	ID           string
+	AccountID    string
+	Site         string
+	Category     string
+	FeedbackType string
+	OtherText    string
+	Subject      string
+	Description  string
+	ContactInfo  string
+	ProfileJSON  string
+	BugInfoJSON  string
+	Attachments  []CreateSupportFeedbackAttachmentInput
+}
+
+type CreateSupportFeedbackAttachmentInput struct {
+	ID          string
+	FileName    string
+	ContentType string
+	SizeBytes   int64
+	Content     []byte
+}
+
 type MySQLStore struct {
 	db *sql.DB
 }
@@ -236,6 +288,215 @@ func (s *MySQLStore) ListMessages(ctx context.Context, ticketID string) ([]Ticke
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate message rows: %w", err)
+	}
+	return out, nil
+}
+
+// --- Support feedback ---
+
+func (s *MySQLStore) CreateSupportFeedback(ctx context.Context, in CreateSupportFeedbackInput) (*SupportFeedback, error) {
+	now := time.Now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create support feedback: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var otherText sql.NullString
+	if in.OtherText != "" {
+		otherText = sql.NullString{String: in.OtherText, Valid: true}
+	}
+	var contactInfo sql.NullString
+	if in.ContactInfo != "" {
+		contactInfo = sql.NullString{String: in.ContactInfo, Valid: true}
+	}
+	var profileJSON sql.NullString
+	if in.ProfileJSON != "" {
+		profileJSON = sql.NullString{String: in.ProfileJSON, Valid: true}
+	}
+	var bugInfoJSON sql.NullString
+	if in.BugInfoJSON != "" {
+		bugInfoJSON = sql.NullString{String: in.BugInfoJSON, Valid: true}
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO support_feedback
+		 (id, account_id, site, category, feedback_type, other_text, subject, description, contact_info, profile_json, bug_info_json, status, source, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.ID, in.AccountID, in.Site, in.Category, in.FeedbackType, otherText, in.Subject, in.Description, contactInfo, profileJSON, bugInfoJSON, "open", "support-page", now, now,
+	); err != nil {
+		return nil, fmt.Errorf("insert support feedback: %w", err)
+	}
+
+	for _, a := range in.Attachments {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO support_feedback_attachment
+			 (id, feedback_id, file_name, content_type, size_bytes, content, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			a.ID, in.ID, a.FileName, a.ContentType, a.SizeBytes, a.Content, now,
+		); err != nil {
+			return nil, fmt.Errorf("insert support feedback attachment: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("create support feedback: commit tx: %w", err)
+	}
+	return s.GetSupportFeedback(ctx, in.ID)
+}
+
+func (s *MySQLStore) GetSupportFeedback(ctx context.Context, id string) (*SupportFeedback, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, account_id, site, category, feedback_type, other_text, subject, description, contact_info, profile_json, bug_info_json, status, source, created_at, updated_at
+		 FROM support_feedback WHERE id = ?`, id)
+	rec, err := scanSupportFeedback(row)
+	if err != nil {
+		return nil, fmt.Errorf("get support feedback %q: %w", id, err)
+	}
+	attachments, err := s.ListSupportFeedbackAttachments(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	rec.Attachments = attachments
+	return rec, nil
+}
+
+func (s *MySQLStore) ListSupportFeedback(ctx context.Context, site string) ([]SupportFeedback, error) {
+	q := `SELECT id, account_id, site, category, feedback_type, other_text, subject, description, contact_info, profile_json, bug_info_json, status, source, created_at, updated_at
+	      FROM support_feedback`
+	args := []any{}
+	if site == "cn" || site == "global" {
+		q += ` WHERE site = ?`
+		args = append(args, site)
+	}
+	q += ` ORDER BY created_at DESC LIMIT 1000`
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list support feedback: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]SupportFeedback, 0, 32)
+	for rows.Next() {
+		rec, err := scanSupportFeedback(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate support feedback rows: %w", err)
+	}
+
+	if len(out) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(out))
+	for _, rec := range out {
+		ids = append(ids, rec.ID)
+	}
+	attachments, err := s.listSupportFeedbackAttachmentsByFeedbackIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byFeedbackID := make(map[string][]SupportFeedbackAttachment, len(out))
+	for _, attachment := range attachments {
+		byFeedbackID[attachment.FeedbackID] = append(byFeedbackID[attachment.FeedbackID], attachment)
+	}
+	for i := range out {
+		out[i].Attachments = byFeedbackID[out[i].ID]
+	}
+	return out, nil
+}
+
+func (s *MySQLStore) ListSupportFeedbackAttachments(ctx context.Context, feedbackID string) ([]SupportFeedbackAttachment, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, feedback_id, file_name, content_type, size_bytes, NULL, created_at
+		 FROM support_feedback_attachment WHERE feedback_id = ? ORDER BY created_at ASC`, feedbackID)
+	if err != nil {
+		return nil, fmt.Errorf("list support feedback attachments for %q: %w", feedbackID, err)
+	}
+	defer rows.Close()
+	return scanSupportFeedbackAttachments(rows)
+}
+
+func (s *MySQLStore) GetSupportFeedbackAttachment(ctx context.Context, id string) (*SupportFeedbackAttachment, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, feedback_id, file_name, content_type, size_bytes, content, created_at
+		 FROM support_feedback_attachment WHERE id = ?`, id)
+	var content []byte
+	attachment := &SupportFeedbackAttachment{}
+	if err := row.Scan(&attachment.ID, &attachment.FeedbackID, &attachment.FileName, &attachment.ContentType, &attachment.SizeBytes, &content, &attachment.CreatedAt); err != nil {
+		return nil, fmt.Errorf("get support feedback attachment %q: %w", id, err)
+	}
+	attachment.Content = append([]byte(nil), content...)
+	return attachment, nil
+}
+
+func (s *MySQLStore) listSupportFeedbackAttachmentsByFeedbackIDs(ctx context.Context, feedbackIDs []string) ([]SupportFeedbackAttachment, error) {
+	if len(feedbackIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := "?"
+	args := make([]any, 0, len(feedbackIDs))
+	args = append(args, feedbackIDs[0])
+	for _, id := range feedbackIDs[1:] {
+		placeholders += ",?"
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, feedback_id, file_name, content_type, size_bytes, NULL, created_at
+		 FROM support_feedback_attachment WHERE feedback_id IN (`+placeholders+`) ORDER BY created_at ASC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list support feedback attachments: %w", err)
+	}
+	defer rows.Close()
+	return scanSupportFeedbackAttachments(rows)
+}
+
+type supportFeedbackScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSupportFeedback(scanner supportFeedbackScanner) (*SupportFeedback, error) {
+	rec := &SupportFeedback{}
+	if err := scanner.Scan(
+		&rec.ID,
+		&rec.AccountID,
+		&rec.Site,
+		&rec.Category,
+		&rec.FeedbackType,
+		&rec.OtherText,
+		&rec.Subject,
+		&rec.Description,
+		&rec.ContactInfo,
+		&rec.ProfileJSON,
+		&rec.BugInfoJSON,
+		&rec.Status,
+		&rec.Source,
+		&rec.CreatedAt,
+		&rec.UpdatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("scan support feedback row: %w", err)
+	}
+	return rec, nil
+}
+
+func scanSupportFeedbackAttachments(rows *sql.Rows) ([]SupportFeedbackAttachment, error) {
+	out := make([]SupportFeedbackAttachment, 0, 8)
+	for rows.Next() {
+		var content sql.RawBytes
+		var attachment SupportFeedbackAttachment
+		if err := rows.Scan(&attachment.ID, &attachment.FeedbackID, &attachment.FileName, &attachment.ContentType, &attachment.SizeBytes, &content, &attachment.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan support feedback attachment row: %w", err)
+		}
+		if content != nil {
+			attachment.Content = append([]byte(nil), content...)
+		}
+		out = append(out, attachment)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate support feedback attachment rows: %w", err)
 	}
 	return out, nil
 }

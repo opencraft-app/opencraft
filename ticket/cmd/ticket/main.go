@@ -31,20 +31,10 @@ func main() {
 		log.Printf("warn: TICKET_MYSQL_DSN not set, ticket system disabled (feedback-only mode)")
 	}
 
-	// 反馈系统 COS 客户端：凭证缺失仅记录告警，不阻断 ticket 主流程。
-	var supportCos *httpapi.SupportCosClient
-	supportCosClient, cosErr := httpapi.NewSupportCosClient(cfg.SupportCOS)
-	if cosErr != nil {
-		log.Printf("warn: support cos not configured: %v", cosErr)
-	} else {
-		supportCos = supportCosClient
-	}
-
 	router, err := httpapi.NewRouter(svc, httpapi.ServerConfig{
-		AllowedOrigins: cfg.AllowedOrigins,
-		AdminToken:     cfg.AdminToken,
+		AllowedOrigins:  cfg.AllowedOrigins,
+		AdminToken:      cfg.AdminToken,
 		SupportAgentIDs: cfg.SupportAgentIDs,
-		SupportCOS:     supportCos,
 	})
 	if err != nil {
 		// 常见情形：AdminToken 未配置 → 拒绝启动，避免运营接口被空口令绕过。

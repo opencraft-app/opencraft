@@ -298,6 +298,7 @@ const coreCopyByLocale = {
     Community: "社区",
     Company: "公司",
     "About Us": "关于我们",
+    "User Feedback": "用户反馈",
     "Related products": "相关产品",
     "Tencent CloudBase": "腾讯云开发 Tencent CloudBase",
     "Tencent EdgeOne": "Tencent EdgeOne",
@@ -364,6 +365,7 @@ const coreCopyByLocale = {
     Community: "社区",
     Company: "公司",
     "About Us": "关于我们",
+    "User Feedback": "用户反馈",
     "Related products": "相关产品",
     "Tencent CloudBase": "腾讯云开发 Tencent CloudBase",
     "Tencent EdgeOne": "Tencent EdgeOne",
@@ -431,6 +433,7 @@ const coreCopyByLocale = {
     Community: "社群",
     Company: "公司",
     "About Us": "關於我們",
+    "User Feedback": "用戶反饋",
     "Related products": "相關產品",
     "Tencent CloudBase": "騰訊雲開發 Tencent CloudBase",
     "Tencent EdgeOne": "Tencent EdgeOne",
@@ -598,6 +601,7 @@ const coreCopyByLocale = {
     Community: "Komunitas",
     Company: "Perusahaan",
     "About Us": "Tentang Kami",
+    "User Feedback": "Masukan Pengguna",
     "Privacy Policy": "Kebijakan Privasi",
     "Terms of Service": "Ketentuan Layanan",
     "Open Source Notice": "Pemberitahuan Open Source",
@@ -773,6 +777,7 @@ const coreCopyByLocale = {
     Community: "Comunidad",
     Company: "Empresa",
     "About Us": "Sobre nosotros",
+    "User Feedback": "Feedback de usuario",
     "Privacy Policy": "Política de privacidad",
     "Terms of Service": "Términos del servicio",
     "Open Source Notice": "Aviso de código abierto",
@@ -972,6 +977,7 @@ Object.assign(coreCopyByLocale, {
     Community: "コミュニティ",
     Company: "会社",
     "About Us": "会社概要",
+    "User Feedback": "ユーザーフィードバック",
     "Related products": "関連製品",
     "1-month free trial": "1か月間無料トライアル",
     "WhatsApp setup guide": "WhatsApp接続ガイド",
@@ -1167,6 +1173,7 @@ Object.assign(coreCopyByLocale, {
     Community: "커뮤니티",
     Company: "회사",
     "About Us": "회사 소개",
+    "User Feedback": "사용자 피드백",
     "Related products": "관련 제품",
     "1-month free trial": "1개월 무료 체험",
     "WhatsApp setup guide": "WhatsApp 연결 가이드",
@@ -4216,7 +4223,7 @@ function applyFooterLayout(document) {
     <div><h3>Product</h3><ul><li><a href="/subscribe">1-month free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Compare</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Compare with self-hosting</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Compare with Hostinger</a></li><li><a href="/docs/compare/lightvela-vs-manus">Compare with Manus</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">Compare with ChatGPT</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Compare with Genspark</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li></ul></div>
-    <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
+    <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/support">User Feedback</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
     <div><h3>Related products</h3><ul><li><a href="https://edgeone.ai/" target="_blank" rel="noreferrer">Tencent EdgeOne</a></li><li><a href="https://tcb.cloud.tencent.com/en/?from=lightvela" target="_blank" rel="noreferrer">Tencent CloudBase</a></li></ul></div>
   </div></div>
 `;
