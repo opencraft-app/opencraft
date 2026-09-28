@@ -7,7 +7,7 @@
 - 需求提出人：Jasmin Zhao。
 - 创建日期 / 最后更新时间：2026-09-28。
 - 需求来源：当前任务中用户提交的四项内容清理要求及后续确认。
-- 产品父单：未创建；工蜂 MR 以 jasminzhao-optimization-0928 → master 交付。
+- 产品父单：未创建；工蜂 MR：[!4689](https://git.woa.com/wisp/mono2/merge_requests/4689)，jasminzhao-optimization-0928 → master，待评审。
 
 ## 需求背景
 

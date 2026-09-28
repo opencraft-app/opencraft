@@ -68,3 +68,8 @@ derived: false
 - 正在交付 MR 到 master；最新目标 cd7b64cc4 已有相同的国际站旧口径修复，将保留上游文案并验证合并结果。
 - 修复遗漏的未来计费标题/表格，新增多语种回归断言。
 - 已完成合并后复核：check 无新增诊断、112 测试通过、双站 build 及导出检查通过、40 旧 URL 返回 404。下一步推送当前分支并创建 master MR；原始用户文件不纳入提交。
+
+## delivery_result
+- MR：[!4689](https://git.woa.com/wisp/mono2/merge_requests/4689)，jasminzhao-optimization-0928 → master，状态 opened。
+- 代码提交 aff81be002538b448b949a17fce4473248d58b8a 已验证与远程一致；创建后 CI 为 pending，未合并或发布。
+- 5180 国际站预览恢复且首页 HTTP 200。后续由评审人审查 MR 和 CI 结果。
