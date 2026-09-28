@@ -51,6 +51,13 @@ master 源码
   目标环境取得预期地址、同地域的 production/testing 等相邻 workload 未继承该覆盖；发布仍经
   `master` 源码 MR 和服务 CI 投影到 `gitops`，不得直接修改 live Pod 或 `gitops` 分支。
 
+- Sandbox 公网 `ingressproxy-router` 的既有 CLB 是地域级环境事实，不得跨地域复用：上海正式环境
+  `shprod` 绑定 `lb-ohkm8fm5`，新加坡正式环境 `sgprod` 绑定 `lb-8kenwgvc`。对应
+  `argocd/services/sandbox/<env>/patch-ingressproxy-router-service.yaml` 必须显式保存目标地域的
+  `service.kubernetes.io/loadbalance-id`，并由 release bundle 契约测试锁定环境与 CLB 的映射。
+  修复漂移时先更新 `master` 真源，再通过 GitOps 晋级和 Argo 收敛发布；不得用 live patch 代替真源，
+  也不得以另一地域已验证为由跳过目标环境的 CLB 地域核对。
+
 - 新加坡 Sandbox 扩展到新山时，云网络与现有 `llmgateway-sgprod-jhb` 支撑 VPC 分离。
   `infra_pulumi` 使用持久化 `sandbox-network` scope，只拥有 VPC、pool/support 子网、
   NAT/EIP、路由/SNAT 和 TAT-only Sandbox 安全组；不得借网络扩容创建第二套 TKE、数据库、

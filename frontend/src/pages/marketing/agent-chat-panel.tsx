@@ -177,13 +177,13 @@ export const AgentChatPanel = ({
       : "size-full overflow-hidden bg-white [&>*]:h-full"}>
       {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
         <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-          {t("正在获取 AgentChat 启动 token…")}
+          {t("正在获取对话启动 token…")}
         </div>
       )}
       {launchTokenStatus === "error" && (
         <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
           <p className="text-red-500">
-            {t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
+            {t("获取对话启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
           </p>
           <button
             type="button"
@@ -198,7 +198,7 @@ export const AgentChatPanel = ({
         <Suspense
           fallback={(
             <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-              {t("正在加载 AgentChat…")}
+              {t("正在加载对话…")}
             </div>
           )}
         >

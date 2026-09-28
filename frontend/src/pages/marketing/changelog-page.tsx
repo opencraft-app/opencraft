@@ -646,13 +646,13 @@ function ChangelogContent() {
         {
           id: "soul",
           title: t("Soul 人设能力上线"),
-          desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
+          desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新对话。"),
           visual: "soul",
         },
         {
           id: "web-chat",
           title: t("LightVela 支持网页内对话"),
-          desc: t("无需切换到外部通道，现在可以在 LightVela 网页内基于 AgentChat 直接与 Hermes Agent 对话。"),
+          desc: t("无需切换到外部通道，现在可以在 LightVela 网页内直接与 Hermes Agent 对话。"),
           visual: "chat",
         },
         {
