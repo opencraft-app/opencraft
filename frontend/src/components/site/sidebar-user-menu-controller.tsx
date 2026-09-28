@@ -62,22 +62,23 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   const credit: SidebarUserMenuProps["credit"] = summary.credits
     ? { state: "ready", label: t("已使用积分"), ...summary.credits }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
-  const entries: SidebarUserMenuProps["entries"][number][] = [
-    { id: "account", kind: "account", href: "/account", label: t("账号") },
-    { id: "billing", kind: "account", href: "/account/billing", label: t("套餐与费用") },
-  ];
+  const entries: SidebarUserMenuProps["entries"][number][] = [];
   if (shouldMoveModelEntryToAccountMenu(activePass)) entries.push({
     id: "model",
     kind: "model",
     href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams),
     label: resolveAgentConsoleCollectionLabel("model", i18n.language, t),
   });
-  entries.push({
-    id: "files",
-    kind: "files",
-    href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.files, searchParams),
-    label: t("云存储"),
-  });
+  entries.push(
+    {
+      id: "files",
+      kind: "files",
+      href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.files, searchParams),
+      label: t("云存储"),
+    },
+    { id: "billing", kind: "account", href: "/account/billing", label: t("套餐与费用") },
+    { id: "account", kind: "account", href: "/account", label: t("账号") },
+  );
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });
   if (hiddenEntriesRevealed && !isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈"), external: true });
   return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}

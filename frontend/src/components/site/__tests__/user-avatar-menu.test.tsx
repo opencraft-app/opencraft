@@ -238,7 +238,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
   });
 
-  it("places the Model link after Plans & billing for ai bundles", () => {
+  it("places the Model link before Plans & billing for ai bundles", () => {
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -264,7 +264,7 @@ describe("UserAvatarMenu", () => {
     const billingLink = screen.getByRole("link", { name: "套餐与费用" });
     const modelLink = screen.getByRole("link", { name: "模型" });
     expect(modelLink).toHaveAttribute("href", "/agents/models?bot=bot%2Fsales+east");
-    expect(billingLink.compareDocumentPosition(modelLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(modelLink.compareDocumentPosition(billingLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps Model out of the account menu for standard plans", () => {

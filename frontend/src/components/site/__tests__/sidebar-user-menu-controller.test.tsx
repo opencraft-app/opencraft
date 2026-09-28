@@ -62,6 +62,20 @@ describe("sidebar account controller boundary", () => {
     expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(0);
   });
 
+  it.each([
+    ["ordinary plans", undefined, ["云存储", "套餐与费用", "账号"]],
+    ["AI plans", "ai", ["模型", "云存储", "套餐与费用", "账号"]],
+  ] as const)("keeps the sidebar account menu order for %s", async (_name, bundleType, expected) => {
+    currentPass = pass(bundleType ? { bundle_type: bundleType } : {});
+    render(<UserAvatarMenu variant="sidebar" />);
+    await openSidebar();
+    const labels = within(screen.getByRole("dialog", { name: "账号管理" }))
+      .getAllByRole("link")
+      .map((link) => link.textContent?.trim())
+      .filter((label): label is string => expected.includes(label as (typeof expected)[number]));
+    expect(labels).toEqual(expected);
+  });
+
   it("does not mount billing or upgrade hooks for the unchanged header", () => {
     render(<UserAvatarMenu />);
     expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
