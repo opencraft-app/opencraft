@@ -134,6 +134,7 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => {
       title: t("公司"),
       links: [
         { label: t("关于我们"), to: "/about" },
+        { label: t("用户反馈"), to: "/support" },
         ...(
           isGlobal
             ? []

@@ -115,7 +115,14 @@
   5. 等 ticket Pod Ready 后，用户直接打开北京测试环境 `/support/` 提交带附件反馈，再在 gateway-dashboard「用户反馈」后台检查记录和附件下载。
 
 ## stage
-独立分支提交与 push 交接；不是部署完成。
+已合入最新远端 master `354ea8ea08`，5174 本地代理预览已切换到此独立副本；不是后端部署完成。
+
+## latest_validation
+- frozen-lockfile 依赖安装完成；前端 typecheck：166 current / 171 baseline / 0 new。
+- 入口、页脚、问卷与本地化聚焦测试：5 文件、56 测试通过；i18n check 通过。
+- 首页与 `/es/support/` HTTP 200；首页相对 master 仅新增问卷入口。
+- 首页全量测试仍有 3 项资源断言失败（automation panel、DeepSeek 图片名称和 wcard-cloud-runtime-v1.png）；没有据此变更主线视觉或宣称全量通过。
+- 本地国际预览显式使用 `https://api.lightvela.ai`，避免旧启动参数误指向北京 `lightclaw.tech`。
 
 ## verified
 - 2026-09-28 独立副本：ticket Go test / go vet 通过。
@@ -131,7 +138,9 @@
 - 原混合工作区的首页、自动化卡片、图片改动不纳入此次交接。
 
 ## restore
-- 独立副本基于本地已获取的 master `d7ccdbd04`；原工作区保持原状。
+- 独立副本已合入远端 master `354ea8ea08`；头像菜单保留主线新增的模型与云存储等入口，并追加用户反馈。
+- 三个问卷入口：头像菜单、通用页脚、官网 Company/About Us 下；国内保留腾讯问卷，国际不增加腾讯问卷。
+- 首页相对 master 仅追加反馈链接，不包含旧工作区的 Hermes 装饰或自动化展示改动。
 
 ## next_action
 - 后端接手分支后先在完整依赖的 CI 跑门禁，再按上述北京测试步骤部署与验收。

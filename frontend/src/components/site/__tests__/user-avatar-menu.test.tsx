@@ -293,7 +293,9 @@ describe("UserAvatarMenu", () => {
     expect(cloudStorageLink.nextElementSibling).toBe(billingLink);
     expect(billingLink.nextElementSibling).toBe(accountLink);
     if (global) {
-      expect(accountLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
+      const feedbackLink = screen.getByRole("link", { name: "用户反馈" });
+      expect(accountLink.nextElementSibling).toBe(feedbackLink);
+      expect(feedbackLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
     } else {
       expect(screen.queryByRole("button", { name: "语言" })).not.toBeInTheDocument();
     }
@@ -328,7 +330,9 @@ describe("UserAvatarMenu", () => {
     expect(cloudStorageLink.nextElementSibling).toBe(billingLink);
     expect(billingLink.nextElementSibling).toBe(accountLink);
     if (global) {
-      expect(accountLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
+      const feedbackLink = screen.getByRole("link", { name: "用户反馈" });
+      expect(accountLink.nextElementSibling).toBe(feedbackLink);
+      expect(feedbackLink.nextElementSibling).toBe(screen.getByRole("button", { name: "语言" }));
     } else {
       expect(screen.queryByRole("button", { name: "语言" })).not.toBeInTheDocument();
     }

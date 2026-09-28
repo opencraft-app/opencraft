@@ -327,7 +327,7 @@ describe("international v2 homepage artifact", () => {
       },
       {
         heading: "公司",
-        links: ["关于我们", "帮助与反馈", "隐私政策", "服务条款"],
+        links: ["关于我们", "用户反馈", "帮助与反馈", "隐私政策", "服务条款"],
       },
     ]);
     expect(
@@ -833,7 +833,7 @@ describe("international v2 homepage artifact", () => {
       "Related products",
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
-    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(19);
+    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(20);
     expect(
       Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:nth-child(4) a") ?? [], (anchor) =>
         anchor.textContent,
