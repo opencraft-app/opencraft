@@ -40,6 +40,8 @@ Restore Shanghai realname SMS delivery and set the send-IP ceiling to 600 per mi
 ## evidence
 - Before hotfix, 8h Auth logs: 1136 FaceID SMS send 429, 19 send 200; 429 client IPs were gateway Pods `10.2.8.51` and `10.2.8.176`.
 - After exact `/32` trusted-proxy hotfix and Auth rollout: 5m logs had 26 send 200, zero send 429.
+- Published image digest `sha256:415146adee7e4ebc701eab8950cfaaa2a5025fc0026680069203bb2acd5f6300`; Shanghai Auth and both Auth workers rolled out successfully. GitOps MR !4694 merged as `f3eb55b`; Argo `lightclaw-auth-shprod` is `Synced/Healthy` at that revision.
+- After GitOps sync, Auth Pod environment shows send-IP limit `600` and exact gateway `/32` trust; latest 5m sample had 2 send 200 and zero 429.
 
 ## risks
 - Gateway Pod IP rotation invalidates temporary `/32` trust; persist and later replace with an explicitly managed gateway address policy.
@@ -47,7 +49,7 @@ Restore Shanghai realname SMS delivery and set the send-IP ceiling to 600 per mi
 
 ## validation
 - `cd user/auth && go test ./...` using Go container: passed 2026-09-28.
-- Build, publish, rollout, and Argo verification pending.
+- Build, push, three Deployment rollouts, Pod environment and Argo sync/health verified.
 
 ## decisions
 - Temporary exact gateway Pod `/32` trust for immediate recovery; no whole Pod subnet trust.
@@ -57,4 +59,4 @@ Restore Shanghai realname SMS delivery and set the send-IP ceiling to 600 per mi
 - `user/auth`, `service-gateway/internal/gateway`, `argocd/services/lightclaw-auth/shprod`, `.ci/runtime`.
 
 ## handoff
-- Emergency production hotfix active; complete image publication and GitOps reconciliation.
+- Production and GitOps are reconciled. Source MR !4695 is open; CI passed but protected `master` rejected merge with `Review check not passed`, so owner review is required. Do not bypass review.
