@@ -49,3 +49,117 @@ derived: false
 
 ## next_action
 用户已明确授权“提交代码到远程”，本轮提交并推送 jasminzhao-zonglan-928。合并前处理或由维护者接受既有门禁失败，并在测试账号完成真实 CRUD 验收；没有 MR/发布授权。
+
+## 本轮布局反馈
+- 当前编辑目录为 `/Users/jasminzhao/Desktop/lightclaw-code/mono2`，分支 `jasminzhao-zonglan-928`；独立 worktree 已解除分支占用。
+- 用户要求桌面每行三个 Bot，删除空白创建卡片。实现为 lg 三列、md 两列、手机一列，只保留标题旁创建按钮。
+- 已同步 PRD 并调整既有组件测试；卡片内其他入口属于 Agent 扩展设计，已向用户说明，本轮不擅自移除。
+- 聚焦总览与国际站引导测试 2 文件 18 条通过；pnpm check 通过，0 新增类型诊断；本地国际站服务继续运行于 5174，当前内置浏览器页面未登录。
+- `frontend/next-env.d.ts` 是原有开发服务生成差异，不纳入本轮改动。未提交或推送本轮布局修改。
+
+## 卡片精简与资料编辑
+- 用户进一步明确：状态与名字同行，只保留头像、名字、简介和右上角三点菜单；移除卡片配置通道、定时任务、打开/修复 Bot 入口。
+- 菜单依次为“修改资料”“复制 Bot”“删除”；编辑弹窗预填所选 Bot 的名称和简介并一起保存。主 Bot 删除影响仍在确认框提示。
+- 显式清空 profile 简介后不再显示旧 SOUL 简介；旧 profile 未设置简介时保留兼容回落。
+- 35 条聚焦测试通过，pnpm check 通过（166 current / 171 baseline，0 new）。实际组件在模拟数据预览中验证三列卡片、状态同排、菜单顺序、资料表单预填。
+- 本轮未在真实账号写入资料，未重新执行全量测试或生产构建；此前已记录的全量基线失败仍适用。改动保留在本地，未提交推送。
+
+## 卡片样式与动态配图修复
+- Bot 卡片改为无阴影和显式 4px 圆角，与最新动态边框圆角一致；主题 rounded-md 实际为 1rem，因此未复用该类。
+- 定时任务图片因资源转为 WebP 后仍引用 PNG 而失效，已修正全部 8 个本地化路径和默认回退路径。
+- 3 个聚焦测试文件共 41 条通过；pnpm check 退出码 0，类型诊断 166 current / 171 baseline，0 new。日志为 `/tmp/zonglan-928-card-image-{test,check}.log`。
+- 8 张图片经本地 5174 服务验证 HTTP 200 及有效 WebP 文件头；实际组件模拟预览中已确认配图显示、卡片阴影移除和圆角对齐。
+- 本轮仍仅修改本地文件，未提交、推送或发布；5174 国际站开发服务继续运行。
+
+## 恢复原资料编辑弹窗
+- 用户指出资料弹窗被擅自重做；现直接复用 agent-overview-panel 中的 ProfileEditDialog，保留原布局、头像大预览、形状选择、换一批、名字、可选描述和操作按钮。
+- Fleet 只传入所选 Bot 资料并保存名称、描述及头像，不另写编辑表单。原单 Bot 入口也继续使用同一组件。
+- 48 条聚焦测试通过；pnpm check 通过（166 current / 171 baseline，0 new）。日志 `/tmp/zonglan-928-original-profile-{test,check}.log`。实际组件模拟预览确认与原弹窗一致并正确预填所选 Bot。
+- git diff --check 与 staged change-impact 通过。未提交推送，未真实账号写入，未重跑全量构建；既有全量门禁失败记录仍适用。
+
+## 卡片点击与侧栏标签
+- 整卡采用独立原生按钮覆盖点击区域，点击打开该 Bot 的原资料编辑弹窗；三点菜单按钮独立在上层，不触发卡片编辑。键盘可聚焦，沿用原资料可编辑条件。
+- 删除 agent-settings-page 侧栏 Bot 工作区标签，其余导航位置保持。
+- 21 条聚焦测试通过，pnpm check 通过（166 current / 171 baseline，0 new）；日志 `/tmp/zonglan-928-click-card-{test,check}.log`。实际组件模拟预览确认卡片打开正确目标与三点菜单独立。
+- git diff --check、staged change-impact 通过。本轮未提交推送，5174 开发服务保留。
+
+## 当前 Bot 角标与横向滚动（2026-09-29）
+- 由 agent-settings-page 注入 activeBot.id，当前卡片左上角显示黑底白字“当前 Bot”，随选择更新；翻译覆盖现有语种。
+- Bot 数量超过 3 时使用单排横向滚动，桌面可见 3 张、中屏 2 张、小屏 1 张，容器可键盘聚焦。3 张以内保持原网格。
+- 23 条聚焦测试通过，pnpm check 通过（166 current / 171 baseline，0 new）；日志 `/tmp/zonglan-928-current-scroll-{test,check}.log`。实际组件 5 Bot 模拟预览：968px 容器、卡宽 312px、内容宽 1624px，横向滑至 scrollLeft 656，后两张可见。
+- git diff --check 与 staged change-impact 通过；未提交推送，无真实账号写入；本地国际站 5174 服务保留。
+
+## 隐藏系统滚动条与滑动引导
+- 超过 3 张时隐藏标准及 WebKit 系统滚动条；标题提示“左右滑动查看更多 Bot”，创建按钮前增加左右翻页箭头，首尾禁用对应方向。3 张以内无提示和翻页按钮。
+- 滚动事件与 ResizeObserver 同步箭头状态，点击按当前可视宽度翻页，原触屏、触控板与键盘滚动保持可用。
+- 23 条聚焦测试通过；pnpm check 无新增类型诊断。日志 `/tmp/zonglan-928-scroll-hint-{test,check}.log`；模拟组件浏览器预览确认 scrollLeft 656 时右箭头禁用，scrollbar-width 与 WebKit scrollbar 均为 none。
+- git diff --check 和 staged change-impact 通过，未提交推送，5174 开发服务保留。
+
+## 改为底部分页圆点
+- 用户否定左右箭头并要求删除刷新按钮；右上角现仅保留创建 Bot，底部增加分页圆点，当前页黑色短条，其他页灰点。系统滚动条仍隐藏。
+- 根据可视宽度计算分页位置，末页按实际最大滚动距离对齐；点击圆点跳到对应页，手动滚动同步最近页。数量和 ResizeObserver 变化时重新计算。
+- 23 条聚焦测试通过，pnpm check 通过（166 current / 171 baseline，0 new）；日志 `/tmp/zonglan-928-pagination-{test,check}.log`。模拟组件预览验证点第二页和手动滑回第一页，aria-current 正确同步。
+- git diff --check 与 staged change-impact 通过；本轮未提交推送，5174 开发服务继续运行。
+
+## 恢复原顶部横幅、按钮圆角与分页点间距
+- 用户要求按原截图恢复顶部；HeroBanner 与 f349a7034 父提交的原组件代码一致，仅增加 export 供复用。移除额外标签、全局链接及汇总展示，恢复父页面原 heroStats 的当前 Bot 数据输入。
+- 创建 Bot 按钮 rounded-full；底部分页点移除 gap 并收紧按钮水平宽度。
+- 53 条聚焦测试通过，pnpm check 通过（166 current / 171 baseline，0 new）；日志 `/tmp/zonglan-928-restore-hero-{test,check}.log`。模拟预览核对原顶部三指标、胶囊按钮和收紧后的点。
+- git diff --check 与 staged change-impact 通过；未提交推送，无线上操作，5174 服务继续保留。
+
+## 收敛到原组件与原流程
+- 恢复原定时任务推荐板块、模板和查看全部入口。顶部标题恢复原 class。
+- 原资料保存逻辑提取为 useOverviewProfileEditor，单 Bot 和多 Bot 共用原 SOUL 读取、保留正文、setup plan、进度与错误视图；移除额外 rename/profile-meta 保存分支。
+- 默认头像共用原插画回落逻辑；删除操作转交页面原确认弹窗及 handler，仅增加显式目标快照，保留原风险文案、埋点、错误处理和主 Bot 限制。
+- 恢复创建中自动进入创建进度页；还原共享简介空值读取逻辑；删除不再使用的 fleet-stats 与对应测试。
+- 66 条聚焦组件测试和 74 条原 setup/runner 测试通过；pnpm check 通过（166 current / 171 baseline，0 new）。日志 `/tmp/zonglan-928-reuse-original-{test,check}.log`、`/tmp/zonglan-928-reuse-setup-test.log`。文档校验通过。浏览器模拟预览核对原推荐板块。
+- 资料保存返回列表后重新绑定分页监听，避免原进度视图卸载列表后分页失效。
+- 构建使用 `/tmp/zonglan-928-build-e5txn662/frontend` 隔离副本；仅副本调整 Turbopack 解析根以允许复用依赖，源码仓库配置和 5174 开发服务不变。最终国际站构建退出码 0，635 个静态页面生成完成，后处理与 SEO 检查通过；日志 `/tmp/zonglan-928-reuse-original-build.log`。复跑前移出首次导出的 out 目录，避免隔离副本缺少 Git 忽略上下文时样式扫描包含构建产物。
+- 未提交推送，未真实账号写入；之前全量基线失败记录仍适用。
+
+## 按 Bot 数量调整卡片宽度
+- 桌面仅 1 个时满宽、2 个时各半宽（扣除原 gap）、3 个及以上延续每行三个；超过 3 个保持原横向滑动。原中屏最多两列和手机单列不变。
+- 仅调整列表容器列数条件，并同步 PRD；12 条现有聚焦组件测试通过，pnpm check 通过（166 current / 171 baseline，0 new），国际站隔离构建退出码 0。日志 `/tmp/zonglan-928-card-width-{test,check,build}.log`。
+- 未提交推送，5174 开发服务保留。
+
+## 顶部改为 Bot 数量
+- 多 Bot 总览沿用 HeroBanner，顶部定时任务、工作台替换为 Bot 数量；保留剩余积分、陪伴天数、有效期与原视觉样式。Bot 数量链接到下方列表，同一份列表提供总数，加载或失败显示占位符。未提供 botCount 的旧单 Bot 页面维持原行为。
+- 补齐现有语言的 Bot 数量文案；45 条聚焦测试通过，覆盖真实数量、空列表、未知数量及原页面语言展示。pnpm check 通过（166 current / 171 baseline，0 new），国际站隔离构建退出码 0；日志 `/tmp/zonglan-928-bot-count-{test,check,build}.log`。
+- 未提交推送，5174 开发服务保留。
+
+## 顶部已邀请好友与跳转
+- 右侧新增已邀请好友指标，沿用原统计卡片样式及账号管理页 referralEnabled 开关；仅调用既有 auth.getReferralStats，使用 successfulReferrals，不创建邀请码。读取中或失败时显示占位符，真实零值显示 0。
+- 已邀请好友跳转 ACCOUNT_PATH；Bot 数量跳转 AGENT_SECTION_PATH_BY_ID.overview。多语言已补齐。
+- 63 条相关测试通过，覆盖统计读取、零值、失败、开关及两个跳转地址。pnpm check 通过（166 current / 171 baseline，0 new），国际站隔离构建退出码 0；日志 `/tmp/zonglan-928-invited-{test,check,build}.log`。
+- 未提交推送，5174 开发服务保留。
+
+## 邀请人数零值与六语言兼容
+- 用户明确要求已邀请好友无数据显示 0，已将 null 显示改为原 formatCount 回落，并规范缺少 successfulReferrals 字段时的零值；其他指标行为不变。
+- 六个翻译语种 en-US、zh-Hant、id-ID、es、ja-JP、ko-KR 的总览文案完整，复用已有译文。将多 Bot 组件加入文案完整性检查，并以六语言渲染核验邀请数零值与两个跳转。
+- 56 条聚焦测试通过，pnpm check 通过（166 current / 171 baseline，0 new），国际站隔离构建退出码 0。日志 `/tmp/zonglan-928-six-locales-{test,check,build}.log`。
+- 未提交推送，5174 开发服务保留。
+
+## 整体 CR 与 PRD 收敛
+- 审阅范围：`15236bf99` 到当前工作区全部需求改动，排除预先存在的 next-env.d.ts 生成变化；覆盖 context、导航/渲染、目标隔离、原保存/删除复用、分页、统计及六语言。
+- 未发现本次新增的阻塞问题。识别到原资料保存的 SOUL 读取失败仍继续新建写入风险；命令比对证明该保存实现与基点完全一致，作为遗留风险记录，未擅自更改保存行为。原 useHeroStats 保留了新横幅不展示的当前 Bot 统计请求，列为非阻塞冗余。
+- PRD 已重整为最终行为说明，补齐 1/2/3/>3 布局、菜单及编辑门禁、统计和跳转、邀请零值与开关、六语言、状态表、验收及真实环境验证边界；删除过期任务摘要与修复卡片承诺。
+- 16 文件 222 条聚焦测试通过；pnpm check 通过（166 current / 171 baseline，0 new）。日志 `/tmp/zonglan-928-cr-{test,check}.log`；业务代码本轮未改变，沿用上一轮 `/tmp/zonglan-928-six-locales-build.log` 的成功国际站构建证据。
+- 未执行真实账号写入、提交、推送、TAPD、MR 或发布；5174 服务保留。
+
+## 修复资料读取失败保护并启动国内站
+- 用户已明确授权修复上述遗留风险。共享编辑 hook 验证命令成功与 ready/missing 读取状态，网络异常、失败命令、无效/空/过大正文均不写入；在原弹窗保留草稿并提示重试，读取中禁用保存。正常读到正文仍使用原字段更新流程。
+- SOUL 内容读取命令不再把已有空文件或悬空符号链接当成缺失。加入实际 shell 空文件测试和失败/重试/正文保留回归，8 文件 187 条测试通过；pnpm check 通过（166 current / 171 baseline，0 new）。日志 `/tmp/zonglan-928-soul-safe-{regression,check}.log`。
+- 国内站隔离构建通过，日志 `/tmp/zonglan-928-soul-safe-cn-build.log`。PRD 已把遗留风险更新为修复后的规则。
+- 已停止原 Next 开发进程 55110（监听进程 55116），确认 5174 释放。新服务通过 `pnpm dev:cn` 启动，使用国内 local-proxy 目标 `https://lightclaw.tech`；运行会话 16138，监听进程 51408，日志 `/tmp/zonglan-928-cn-dev.log`。总览 HTTP 200、lang=zh-CN，国内页面标题正确。
+- 未执行真实账号写入、提交、推送或发布。后续保留国内 5174 服务，不恢复国际服务。
+
+
+## 最新 master 合并、CR 与远程交付（2026-09-29）
+- 当前目标：按最新用户授权合并 master，CR 后提交、推送 `jasminzhao-zonglan-928` 并创建目标为 master 的 MR；不合并 MR、不发布。
+- 已合入远程 master `939c01b03119530c22128205ba64ea73e6c7ca2a`，合并提交 `7da16f8e0`；本地需求改动恢复成功，无冲突。
+- 相关 18 文件 291 测试、check、国际/国内隔离构建均通过。全量测试有 24 文件/130 用例失败及 worker 异常；已用干净最新 master 对照，保留基线问题说明。
+- 文档校验、33 条 audit 单测通过；4 项 context 测试及 catalog 元数据失败在 master 同样复现。代码审阅未发现新增阻塞问题。
+- 验证日志：`/tmp/zonglan-928-merged-*.log`、`/tmp/zonglan-928-master-baseline-*.log`。PRD 已同步交付范围及证据。
+- 保留国内站 5174；排除 `next-env.d.ts` 本地生成差异；本轮没有真实用户资料写入、复制或删除操作。
+- 下一步：暂存本需求差异，运行 staged 影响检查，提交推送，创建并核对 MR。
+- 追加差异对照：续费提醒的 7 条失败在本分支与干净最新 master 完全一致，均为第三方 CSS 导入异常；支付超时测试单独复跑两边均通过。日志 `/tmp/zonglan-928-{merged,master-baseline}-variable-failures.log`。

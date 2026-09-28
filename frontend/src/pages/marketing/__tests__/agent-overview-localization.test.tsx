@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -5,7 +7,7 @@ import { LocaleOverrideProvider, useT } from "@/i18n/t";
 import { ensureLocaleDictionary } from "@/i18n";
 import type { I18nDictKey } from "@/i18n/locales.config";
 import zhToKey from "@/i18n/generated/zh-to-key.json";
-import { AgentOverviewPanel } from "@/pages/marketing/agent-overview-panel";
+import { AgentOverviewPanel, HeroBanner } from "@/pages/marketing/agent-overview-panel";
 import { AgentOnboardingPanel } from "@/pages/marketing/agent-onboarding-panel";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { buildBuddySetupPlan } from "@/pages/marketing/agent-buddy-setup";
@@ -16,7 +18,7 @@ import { AVATAR_SHAPES, getAvatarShapeLabel, type AvatarShapeId } from "@/pages/
 vi.mock("@/lib/region", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/region")>()), isCN: false, isGlobal: true, DEFAULT_LOCALE: "en-US" }));
 
 vi.mock("@/lib/app-navigation", () => ({
-  AppLink: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  AppLink: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
 }));
 afterEach(cleanup);
 
@@ -48,6 +50,37 @@ const page = (locale: I18nDictKey) => (
 );
 
 describe("overview language consistency", () => {
+  it.each([
+    ["en-US", "Friends invited", "Bots"],
+    ["zh-Hant", "已邀請好友", "Bot 數量"],
+    ["id-ID", "Teman yang diundang", "Jumlah Bot"],
+    ["es", "Amigos invitados", "Número de bots"],
+    ["ja-JP", "招待済みの友達", "Bot 数"],
+    ["ko-KR", "초대한 친구", "Bot 수"],
+  ] as const)("localizes account metrics and defaults missing invitations to zero in %s", async (locale, invitedLabel, botsLabel) => {
+    await ensureLocaleDictionary(locale);
+    const banner = (invitedFriends: number | null) => <LocaleOverrideProvider locale={locale}><HeroBanner
+      stats={{ servedDays: 3, expiresAt: null, credits: 4500, automations: 12, sites: 8 }}
+      botCount={4} invitedFriends={invitedFriends}
+    /></LocaleOverrideProvider>;
+    const view = render(banner(6));
+    expect(screen.getByRole("link", { name: `${invitedLabel} 6` })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: `${botsLabel} 4` })).toHaveAttribute("href", "/agents/overview");
+    view.rerender(banner(null));
+    expect(screen.getByRole("link", { name: `${invitedLabel} 0` })).toHaveAttribute("href", "/account");
+  });
+  it.each([[4, "4"], [0, "0"], [null, "—"]] as const)("shows the fleet Bot count %s instead of per-Bot metrics", async (botCount, count) => {
+    await ensureLocaleDictionary("en-US");
+    render(<LocaleOverrideProvider locale="en-US"><HeroBanner
+      stats={{ servedDays: 3, expiresAt: null, credits: 4500, automations: 12, sites: 8 }}
+      botCount={botCount}
+    /></LocaleOverrideProvider>);
+    expect(screen.getByText("Bots").parentElement).toHaveTextContent(count);
+    expect(screen.getByText("4500")).toBeInTheDocument();
+    expect(screen.queryByText("Scheduled Tasks")).not.toBeInTheDocument();
+    expect(screen.queryByText("Workbench")).not.toBeInTheDocument();
+  });
+
   it("uses a localized default accessible name for an unknown persisted avatar id", async () => {
     await ensureLocaleDictionary("en-US");
     const UnknownAvatar = () => {
@@ -95,18 +128,19 @@ describe("overview language consistency", () => {
       ["en-US", [
         "/assets/changelog/lightvela-plan-upgrade-global-en.png",
         "/docs-images/bots-switching-create-en.webp",
-        "/assets/changelog/scheduled-tasks-notification-en-US.png",
+        "/assets/changelog/scheduled-tasks-notification-en-US.webp",
       ]],
       ["zh-CN", [
         "/assets/changelog/lightvela-plan-upgrade-global-en.png",
         "/docs-images/bots-switching-create.webp",
-        "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
+        "/assets/changelog/scheduled-tasks-notification-global-zh-CN.webp",
       ]],
     ] as const) {
       render(page(locale));
       for (const [index, title] of titles[locale].entries()) {
         fireEvent.click(screen.getByRole("button", { name: title }));
         expect(screen.getByRole("img", { name: title })).toHaveAttribute("src", imagePaths[index]);
+        expect(existsSync(join(process.cwd(), "public", imagePaths[index]!))).toBe(true);
       }
       cleanup();
     }
@@ -172,7 +206,7 @@ describe("overview language consistency", () => {
 
   it("keeps every literal Chinese UI message in the overview and onboarding closure translated", async () => {
     const { readFileSync } = await import("node:fs");
-    const names = ["agent-overview-panel.tsx", "agent-onboarding-panel.tsx", "agent-template-detail.tsx", "agent-creating-loading.tsx", "agent-buddy-setup.ts", "agent-demo-templates.ts", "agent-avatar-shapes.tsx"];
+    const names = ["agent-fleet-overview.tsx", "agent-overview-panel.tsx", "agent-onboarding-panel.tsx", "agent-template-detail.tsx", "agent-creating-loading.tsx", "agent-buddy-setup.ts", "agent-demo-templates.ts", "agent-avatar-shapes.tsx"];
     const messages = names.flatMap((name) => Array.from(
       readFileSync(`src/pages/marketing/${name}`, "utf8").matchAll(/\bt\("([^"\n]*[\u4e00-\u9fff][^"\n]*)"/g),
       (match) => match[1]!,

@@ -9,6 +9,7 @@ import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 import { journeyHref, resolveCtaRoute } from "@/lib/cta-journey";
 
 const addBot = vi.fn();
+const deleteBot = vi.fn();
 let maxBots = 5;
 let currentLocale = "en-US";
 let activePass: { expired_time: string; created_time: string; credit_available: number; status: string } | null = null;
@@ -41,6 +42,7 @@ vi.mock("@/lib/region", () => ({
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
   useMultiBotEnabled: () => true,
+  useReferralEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -57,7 +59,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading: false,
-    deleteBot: vi.fn(),
+    deleteBot,
     user: {
       email: "user@example.com",
       plan: { name: "启航套餐", tier: "plus", trialDays: 7, aiCredits: 1000, usedCredits: 0, totalRequests: 0, maxBots },
@@ -151,6 +153,9 @@ vi.mock("@/pages/marketing/agent-overview-panel", () => ({
   AgentOverviewPanel: ({ heroStats }: { heroStats: { expiresAt: string | null } }) => <div>Bot overview {heroStats.expiresAt}</div>,
   HeroBanner: ({ stats }: { stats: { expiresAt: string | null } }) => <div>Bot overview {stats.expiresAt}</div>,
   LatestNewsSection: () => null,
+  RecommendedAutomationsSection: () => null,
+  BuddyProfileAvatar: () => null,
+  useOverviewProfileEditor: () => ({ steps: null, writeError: null, applyProfile: vi.fn() }),
 }));
 
 // isCN is false before module evaluation: a CN-only feature constant must fail here.
@@ -223,13 +228,25 @@ describe("international Bot onboarding", () => {
     expect(addBot).not.toHaveBeenCalled();
   });
 
-  it("shows in-progress Bots without redirecting away from the global overview", async () => {
+  it("preserves the original redirect to an in-progress Bot creation", async () => {
     bots = [{ ...buildBot(), status: "provisioning" }];
     render(page(""));
-    expect(await screen.findByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
-    expect(screen.getByText("创建中")).toBeInTheDocument();
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(expect.stringContaining("creating=ins-372"), { replace: true }));
+  });
+
+  it("opens the original delete dialog for the card target without changing the selected Bot", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    render(page("?bot=ins-372"));
+    await screen.findByRole("heading", { name: "Research Bot" });
+    // This test's translator returns source strings without interpolation.
+    fireEvent.click(screen.getAllByRole("button", { name: "管理 {{name}}" })[1]!);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(screen.getByText("风险提示：")).toBeInTheDocument();
+    expect(screen.getByText("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("请输入 {{name}}"), { target: { value: "Research Bot" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认删除 Bot" }));
+    await waitFor(() => expect(deleteBot).toHaveBeenCalledWith("bot-child"));
     expect(navigateMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
   });
 
   it("keeps every Bot visible when the selected Bot changes", async () => {
@@ -239,8 +256,7 @@ describe("international Bot onboarding", () => {
     view.rerender(page("?bot=bot-child"));
     expect(screen.getByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "打开 Bot" })[1]!);
-    expect(navigateMock).toHaveBeenCalledWith("/agents/channels?bot=bot-child");
+    expect(screen.queryByRole("button", { name: "打开 Bot" })).not.toBeInTheDocument();
   });
 
   it("formats the overview expiry in the current language and updates on language switches", async () => {

@@ -1,45 +1,43 @@
-import { ArrowUpRight, CalendarClock, Copy, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { Copy, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
+import { useReferralEnabled } from "@/contexts/runtime-config-context";
 import { resolveAgentDisplayName } from "@/pages/marketing/agent-provider-locale";
-import { useCurrentLocale, useT } from "@/i18n/t";
-import type { AgentSettingsSectionId } from "@/lib/agent-routes";
+import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
-import { buildProfileMetaWriteCommand } from "@/lib/hermes-profile-meta";
-import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
-import { useBuddyProfile } from "@/pages/marketing/agent-buddy-profile";
-import { isSetupCommandSucceeded } from "@/pages/marketing/agent-buddy-setup-runner";
-import { useHeroStats } from "@/pages/marketing/agent-hero-stats";
-import { HeroBanner, LatestNewsSection } from "@/pages/marketing/agent-overview-panel";
-import { sumBotAutomationCounts, useFleetAutomationCounts } from "@/pages/marketing/agent-fleet-stats";
+import { useBuddyProfile, type BuddyProfile } from "@/pages/marketing/agent-buddy-profile";
+import { HeroBanner, LatestNewsSection, RecommendedAutomationsSection, ProfileEditDialog, BuddyProfileAvatar, useOverviewProfileEditor, type HeroStats } from "@/pages/marketing/agent-overview-panel";
+
+import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 
 const compactButton = "cursor-pointer rounded-md transition-none hover:translate-y-0";
-type Action = { kind: "rename" | "delete"; bot: OpenClawBot };
+type Action = { bot: OpenClawBot; name: string; profile: BuddyProfile };
 
 export type FleetOverviewProps = {
   bots: OpenClawBot[];
+  currentBotId?: string;
+  heroStats: HeroStats;
   canCreate: boolean;
   createLimitMessage: string;
   onCreate: (sourceBotId?: string) => void;
-  onOpen: (botId: string, section?: AgentSettingsSectionId) => void;
   onChanged: () => void;
+  onDelete: (bot: OpenClawBot) => void;
+  getAvatarForBot: (botId: string) => string | undefined;
 };
 
-function FleetBotCard({ bot, count, busy, canCreate, onOpen, onCreate, onAction, onRepair }: {
+function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate, onCreate, onAction, onDelete }: {
   bot: OpenClawBot;
-  count: number | null | undefined;
-  busy: boolean;
+  isCurrent: boolean;
+  canDelete: boolean;
+  fallbackAvatarUrl: string;
+  onDelete: FleetOverviewProps["onDelete"];
   canCreate: boolean;
-  onOpen: FleetOverviewProps["onOpen"];
   onCreate: FleetOverviewProps["onCreate"];
   onAction: (action: Action) => void;
-  onRepair: (bot: OpenClawBot) => Promise<void>;
 }) {
   const t = useT();
   const repositories = useRepositories();
@@ -50,171 +48,180 @@ function FleetBotCard({ bot, count, busy, canCreate, onOpen, onCreate, onAction,
     exec: repositories.bots.execDebugCommand,
   });
   const [menuOpen, setMenuOpen] = useState(false);
-  const [repairError, setRepairError] = useState<string | null>(null);
   const name = profile.profile.name;
+  const description = profile.soulExists !== null ? profile.profile.description : bot.description || bot.intro || "";
   const status = {
     running: t("运行中"), paused: t("已暂停"), draft: t("草稿"),
     provisioning: t("创建中"), failed: t("创建失败"), deleting: t("删除中"),
   }[bot.status];
   const transitioning = bot.status === "provisioning" || bot.status === "deleting";
   const configurable = bot.status === "running" && Boolean(bot.profileId?.trim());
-  const menuAction = (kind: Action["kind"]) => { setMenuOpen(false); onAction({ kind, bot }); };
+  const canEdit = configurable && !profile.loading && profile.soulExists !== null;
+  const editProfile = () => { setMenuOpen(false); onAction({ bot, name, profile: { ...profile.profile, description } }); };
 
   return (
-    <Card className="min-w-0 rounded-md border border-black/[0.06] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start gap-3">
-        <GeometricAvatar shapeId={profile.profile.shapeId} color={profile.profile.color} size={48} />
+    <Card className="relative min-w-0 snap-start rounded-[4px] border border-black/[0.06] bg-white p-5 pt-8 shadow-none">
+      {isCurrent && <span className="pointer-events-none absolute left-0 top-0 rounded-br-[4px] rounded-tl-[3px] bg-black px-2 py-0.5 text-xs leading-4 text-white">{t("当前 Bot")}</span>}
+      <button
+        type="button"
+        aria-label={`${t("修改资料")}: ${name}`}
+        disabled={!canEdit}
+        onClick={() => editProfile()}
+        className="absolute inset-0 rounded-[4px] enabled:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+      />
+      <div className="pointer-events-none flex items-start gap-3">
+        <BuddyProfileAvatar profile={profile.profile} hasCustomAvatar={profile.hasBuddyConfig === true} fallbackAvatarUrl={fallbackAvatarUrl} size={48} />
         <div className="min-w-0 flex-1">
-          <h3 className="break-words text-balance text-base font-semibold text-[var(--text-primary)]">{name}</h3>
+          <div className="flex min-w-0 items-center gap-2 pr-5">
+            <h3 className="min-w-0 truncate text-base font-semibold text-[var(--text-primary)]" title={name}>{name}</h3>
+            <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-[var(--text-secondary)]">
+              <span className={cn("size-1.5 rounded-full", bot.status === "running" ? "bg-emerald-500" : bot.status === "failed" ? "bg-red-500" : "bg-amber-500")} aria-hidden="true" />{status}
+            </span>
+          </div>
           <p className="mt-1 line-clamp-2 text-pretty text-sm text-[var(--text-secondary)]">
-            {profile.profile.description || bot.description || bot.intro || t("你的智能助手")}
+            {description || t("你的智能助手")}
           </p>
         </div>
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className={cn(compactButton, "size-9 shrink-0 p-0")} aria-label={t("管理 {{name}}", { name })} disabled={busy || transitioning}>
+            <Button variant="ghost" size="sm" className={cn(compactButton, "pointer-events-auto absolute right-2 top-3 z-10 size-7 p-0")} aria-label={t("管理 {{name}}", { name })} disabled={transitioning}>
               <MoreHorizontal className="size-4" aria-hidden="true" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-48 rounded-md p-1.5" align="end">
-            <Button variant="ghost" size="sm" className={cn(compactButton, "w-full justify-start")} onClick={() => menuAction("rename")} disabled={!configurable}>
-              <Pencil className="size-4" aria-hidden="true" />{t("重命名")}
+          <PopoverContent className="pointer-events-auto w-48 rounded-md p-1.5" align="end">
+            <Button variant="ghost" size="sm" className={cn(compactButton, "w-full justify-start")} onClick={() => editProfile()} disabled={!canEdit}>
+              <Pencil className="size-4" aria-hidden="true" />{t("修改资料")}
             </Button>
             <Button variant="ghost" size="sm" className={cn(compactButton, "w-full justify-start")} disabled={!canCreate || !configurable} onClick={() => { setMenuOpen(false); onCreate(bot.id); }}>
               <Copy className="size-4" aria-hidden="true" />{t("复制 Bot")}
             </Button>
-            <Button variant="ghost" size="sm" className={cn(compactButton, "w-full justify-start")} onClick={() => menuAction("delete")}>
-              <Trash2 className="size-4" aria-hidden="true" />{bot.isDefault ? t("删除整个 Agent") : t("删除 Bot")}
+            <Button variant="ghost" size="sm" className={cn(compactButton, "w-full justify-start")} disabled={!canDelete} title={!canDelete ? t("请先删除其他 Bot，再删除主 Bot") : undefined} onClick={() => { setMenuOpen(false); onDelete(bot); }}>
+              <Trash2 className="size-4" aria-hidden="true" />{t("删除")}
             </Button>
           </PopoverContent>
         </Popover>
       </div>
-      <p className="mt-5 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-        <span className={cn("size-1.5 rounded-full", bot.status === "running" ? "bg-emerald-500" : bot.status === "failed" ? "bg-red-500" : "bg-amber-500")} aria-hidden="true" />{status}
-      </p>
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--text-secondary)]">
-        <Button variant="ghost" size="sm" className={cn(compactButton, "h-auto px-0")} disabled={!configurable} onClick={() => onOpen(bot.id, "channel")}>{t("配置通道")}</Button>
-        <Button variant="ghost" size="sm" className={cn(compactButton, "h-auto px-0 tabular-nums")} disabled={!configurable} onClick={() => onOpen(bot.id, "automations")}>
-          <CalendarClock className="size-3.5" aria-hidden="true" />{t("定时任务")} · {count ?? "—"}
-        </Button>
-      </div>
-      <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-black/[0.06] pt-3">
-        {bot.status === "failed" ? (
-          <Button variant="outline" size="sm" className={compactButton} disabled={busy} onClick={async () => {
-            setRepairError(null);
-            try { await onRepair(bot); } catch (error) { setRepairError(error instanceof Error ? error.message : t("Bot 修复失败，请稍后重试。")); }
-          }}><RefreshCw className="size-3.5" aria-hidden="true" />{t("修复 Bot")}</Button>
-        ) : (
-          <Button variant="ghost" size="sm" className={compactButton} disabled={transitioning || busy} onClick={() => onOpen(bot.id)}>
-            {bot.status === "draft" ? t("继续配置") : t("打开 Bot")}<ArrowUpRight className="size-3.5" aria-hidden="true" />
-          </Button>
-        )}
-      </div>
-      {repairError && <p role="alert" className="mt-2 text-pretty text-xs text-red-700">{repairError}</p>}
     </Card>
   );
 }
 
-export function AgentFleetOverview({ bots, canCreate, createLimitMessage, onCreate, onOpen, onChanged }: FleetOverviewProps) {
+export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, createLimitMessage, onCreate, onChanged, onDelete, getAvatarForBot }: FleetOverviewProps) {
   const t = useT();
-  const locale = useCurrentLocale();
   const repositories = useRepositories();
-  const { activePass, deleteBot, refreshBots, botsError, botsLoading } = useOpenClaw();
+  const { refreshBots, botsError, botsLoading } = useOpenClaw();
+  const referralEnabled = useReferralEnabled();
+  const [invitedFriends, setInvitedFriends] = useState<number | null>(null);
+  useEffect(() => {
+    setInvitedFriends(null);
+    if (!referralEnabled) return;
+    let cancelled = false;
+    void repositories.auth.getReferralStats().then((stats) => {
+      if (!cancelled) setInvitedFriends(stats.successfulReferrals ?? 0);
+    }).catch(() => {
+      if (!cancelled) setInvitedFriends(null);
+    });
+    return () => { cancelled = true; };
+  }, [referralEnabled, repositories.auth]);
   const [revision, setRevision] = useState(0);
   const [action, setAction] = useState<Action | null>(null);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
-  const [error, setError] = useState<string | null>(null);
-  const fieldId = useId();
-  const errorId = useId();
   const limitId = useId();
-  const accountStats = useHeroStats({ activePass, locale, botId: undefined, profileId: undefined });
-  const counts = useFleetAutomationCounts(bots, revision);
-  const siblingBlock = action?.kind === "delete" && action.bot.isDefault && bots.some((bot) => bot.id !== action.bot.id && (bot.instanceId ?? bot.id) === (action.bot.instanceId ?? action.bot.id));
-  const stats = { ...accountStats, automations: botsError ? null : sumBotAutomationCounts(bots, counts) };
-  const changed = async () => { await refreshBots(); setRevision((v) => v + 1); onChanged(); };
-  const begin = (next: Action) => { setInput(next.kind === "rename" ? next.bot.name : ""); setError(null); setAction(next); };
-  const run = async (operation: () => Promise<void>) => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    try { await operation(); } finally { busyRef.current = false; setBusy(false); }
-  };
-  const submit = async () => {
-    if (!action || siblingBlock || busyRef.current) return;
-    const target = action;
-    const name = input.trim();
-    if (target.kind === "rename" ? !name : input !== target.bot.name) return;
-    await run(async () => {
-      setError(null);
-      try {
-        if (target.kind === "rename") {
-          if (!target.bot.profileId?.trim()) return;
-          await repositories.bots.renameBot(target.bot.id, name);
-          // Profile metadata owns the display name. Preserve all other profile fields.
-          const result = await repositories.bots.execDebugCommand(
-            target.bot.id,
-            buildProfileMetaWriteCommand({ displayName: name }, target.bot.profileId),
-            { timeoutMs: 30_000 },
-          );
-          if (!isSetupCommandSucceeded(result) || !result.output?.includes("__LV_META_OK__")) {
-            throw new Error(t("Bot 名称已更新，资料同步失败，请重试。"));
-          }
-        }
-        else await deleteBot(target.bot.id);
-        await changed();
-        setAction(null);
-      } catch (err) { setError(err instanceof Error ? err.message : t("操作失败，请稍后重试。")); }
-    });
-  };
+  const changed = () => { void refreshBots(); setRevision((v) => v + 1); onChanged(); setAction(null); };
+  const { steps, writeError, isReadingSoul, applyProfile } = useOverviewProfileEditor({
+    botId: action?.bot.id ?? "",
+    profileId: action?.bot.profileId,
+    execDebugCommand: repositories.bots.execDebugCommand,
+    onProfileChanged: changed,
+  });
+  const savingProfile = steps !== null;
+  const scrollable = bots.length > 3;
+  const stripRef = useRef<HTMLDivElement>(null);
+  const stripId = useId();
+  const [pagination, setPagination] = useState<{ positions: number[]; active: number }>({ positions: [], active: 0 });
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip || !scrollable) return;
+    const updatePagination = () => {
+      if (!strip.clientWidth) return;
+      const gap = Number.parseFloat(getComputedStyle(strip).columnGap) || 0;
+      const step = strip.clientWidth + gap;
+      const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth);
+      const pageCount = Math.ceil(Math.max(0, maxScroll - 1) / step) + 1;
+      const positions = Array.from({ length: pageCount }, (_, index) => Math.min(index * step, maxScroll));
+      // The final page can overlap the previous one; select its nearest stop.
+      const active = positions.reduce((nearest, position, index) => (
+        Math.abs(position - strip.scrollLeft) < Math.abs(positions[nearest]! - strip.scrollLeft) ? index : nearest
+      ), 0);
+      setPagination((previous) => previous.active === active && previous.positions.length === positions.length
+        && previous.positions.every((position, index) => position === positions[index])
+        ? previous : { positions, active });
+    };
+    updatePagination();
+    strip.addEventListener("scroll", updatePagination, { passive: true });
+    const observer = new ResizeObserver(updatePagination);
+    observer.observe(strip);
+    return () => { strip.removeEventListener("scroll", updatePagination); observer.disconnect(); };
+  }, [scrollable, bots.length, savingProfile]);
+  if (steps) return <CreatingLoadingView errorMessage={writeError} steps={steps} />;
 
   return (
     <div className="flex min-w-0 flex-col gap-10">
-      <h2 className="-mb-4 text-balance text-lg font-semibold text-[var(--text-primary)]">{t("总览")}</h2>
-      <HeroBanner stats={stats} globalOverview />
+      <h2 className="-mb-4 text-[18px] font-semibold leading-6 tracking-normal text-black/[0.95]">{t("总览")}</h2>
+      <HeroBanner stats={heroStats} botCount={botsLoading || botsError ? null : bots.length} invitedFriends={referralEnabled ? invitedFriends : undefined} />
       <section id="overview-bots" aria-labelledby="overview-bots-title">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 id="overview-bots-title" className="flex items-center gap-2 text-balance text-base font-semibold">{t("我的 Bots")}<span className="rounded bg-black/[0.04] px-2 py-0.5 text-xs tabular-nums">{bots.length}</span></h3>
-            <p className="mt-1 text-pretty text-sm text-[var(--text-secondary)]">{t("在这里查看和管理你的所有 Bot")}</p>
+            <p className="mt-1 text-pretty text-sm text-[var(--text-secondary)]">{scrollable ? t("左右滑动查看更多 Bot") : t("在这里查看和管理你的所有 Bot")}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className={compactButton} disabled={busy} onClick={() => void run(async () => { try { await changed(); setError(null); } catch { setError(t("刷新失败，请稍后重试。")); } })} aria-label={t("刷新 Bot 列表")}><RefreshCw className="size-4" aria-hidden="true" /></Button>
-            <Button className={compactButton} disabled={!canCreate || busy || botsError || botsLoading} aria-describedby={createLimitMessage ? limitId : undefined} onClick={() => onCreate()}><Plus className="size-4" aria-hidden="true" />{t("创建 Bot")}</Button>
+            <Button className={cn(compactButton, "rounded-full")} disabled={!canCreate || botsError || botsLoading} aria-describedby={createLimitMessage ? limitId : undefined} onClick={() => onCreate()}><Plus className="size-4" aria-hidden="true" />{t("创建 Bot")}</Button>
           </div>
         </div>
         {createLimitMessage && <p id={limitId} className="mb-4 text-pretty text-sm text-[var(--text-secondary)]">{createLimitMessage}</p>}
-        {error && !action && <p className="mb-4 text-sm text-red-700" role="alert">{error}</p>}
         {botsError && <p role="alert" className="mb-4 text-sm text-red-700">{t("Bot 列表加载失败，请刷新重试。")}</p>}
         {bots.length === 0 && !botsError && <p className="mb-4 text-sm text-[var(--text-secondary)]">{t("还没有 Bot，创建你的第一个助手")}</p>}
-        <div className="grid min-w-0 gap-4 md:grid-cols-2">
-          {bots.map((bot) => <FleetBotCard key={`${bot.id}:${revision}`} bot={bot} count={counts[bot.id]} busy={busy} canCreate={canCreate} onOpen={onOpen} onCreate={onCreate} onAction={begin} onRepair={(target) => run(async () => { await repositories.bots.retryBot(target.id); await changed(); })} />)}
-          {bots.length > 0 && <button type="button" disabled={!canCreate || busy || botsError || botsLoading} aria-describedby={createLimitMessage ? limitId : undefined} className="flex min-h-52 cursor-pointer flex-col items-center justify-center gap-3 rounded-md border border-dashed border-black/15 bg-black/[0.01] p-6 text-center hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => onCreate()}>
-            <Plus className="size-6 text-[var(--text-secondary)]" aria-hidden="true" /><span className="text-sm font-medium">{t("再创建一个 Bot")}</span><span className="text-pretty text-xs text-[var(--text-secondary)]">{t("为不同的事情安排专属助手")}</span>
-          </button>}
+        <div
+          ref={stripRef}
+          id={stripId}
+          role={scrollable ? "region" : undefined}
+          aria-label={scrollable ? t("我的 Bots") : undefined}
+          tabIndex={scrollable ? 0 : undefined}
+          className={cn("grid min-w-0 gap-4", scrollable
+            ? "grid-flow-col auto-cols-[100%] overflow-x-auto overscroll-x-contain snap-x snap-proximity [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:auto-cols-[calc((100%-1rem)/2)] lg:auto-cols-[calc((100%-2rem)/3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30"
+            : bots.length <= 1
+              ? "grid-cols-1"
+              : bots.length === 2
+                ? "grid-cols-1 md:grid-cols-2"
+                : "md:grid-cols-2 lg:grid-cols-3")}
+        >
+          {bots.map((bot) => <FleetBotCard key={`${bot.id}:${revision}`} bot={bot} isCurrent={bot.id === currentBotId} canDelete={!bot.isDefault || !bots.some((other) => other.id !== bot.id && (other.instanceId ?? other.id) === (bot.instanceId ?? bot.id))} fallbackAvatarUrl={getAvatarForBot(bot.id) ?? ""} canCreate={canCreate} onCreate={onCreate} onAction={setAction} onDelete={onDelete} />)}
         </div>
+        {scrollable && pagination.positions.length > 1 && <div className="mt-2 flex items-center justify-center gap-0">
+          {pagination.positions.map((position, index) => (
+            <button
+              key={index}
+              type="button"
+              aria-label={t("第 {{page}} 页，共 {{total}} 页", { page: String(index + 1), total: String(pagination.positions.length) })}
+              aria-current={pagination.active === index ? "page" : undefined}
+              aria-controls={stripId}
+              className={cn("flex h-7 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30", pagination.active === index ? "w-6" : "w-3")}
+              onClick={() => stripRef.current?.scrollTo({ left: position, behavior: "auto" })}
+            >
+              <span aria-hidden="true" className={cn("h-1.5 rounded-full", pagination.active === index ? "w-5 bg-black" : "w-1.5 bg-black/20")} />
+            </button>
+          ))}
+        </div>}
       </section>
       <LatestNewsSection />
-      <Dialog open={action !== null} onOpenChange={(open) => { if (!open && !busyRef.current) setAction(null); }}>
-        <DialogContent role={action?.kind === "delete" ? "alertdialog" : "dialog"} closeLabel={t("关闭")} onInteractOutside={(event) => event.preventDefault()} onEscapeKeyDown={(event) => { if (busyRef.current) event.preventDefault(); }}>
-          <DialogHeader className="mb-5">
-            <DialogTitle>{action?.kind === "delete" ? (action.bot.isDefault ? t("删除整个 Agent") : t("删除 Bot")) : t("重命名")}</DialogTitle>
-            <DialogDescription>{action?.kind === "delete" ? t("此操作不可撤销，请输入 Bot 名称确认删除。") : t("修改所选 Bot 的名称")}</DialogDescription>
-          </DialogHeader>
-          {action && <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-            {action.kind === "delete" && <p className="mb-3 break-words text-sm font-semibold">{action.bot.name}</p>}
-            {siblingBlock && <p className="mb-3 text-sm text-amber-800" role="status">{t("请先删除其他 Bot，再删除主 Bot")}</p>}
-            <label htmlFor={fieldId} className="mb-2 block text-sm">{t("Bot 名称")}</label>
-            <Input id={fieldId} value={input} onChange={(event) => setInput(event.target.value)} disabled={busy || siblingBlock} required aria-describedby={error ? errorId : undefined} aria-invalid={Boolean(error)} />
-            {error && <p id={errorId} role="alert" className="mt-3 text-pretty text-sm text-red-700">{error}</p>}
-            <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" className={compactButton} type="button" disabled={busy} onClick={() => setAction(null)}>{t("取消")}</Button>
-              <Button variant={action.kind === "delete" ? "destructive" : "default"} className={compactButton} type="submit" disabled={busy || siblingBlock || (action.kind === "delete" ? input !== action.bot.name : !input.trim())}>{busy ? t("处理中...") : action.kind === "delete" ? t("确认删除") : t("保存")}</Button>
-            </div>
-          </form>}
-        </DialogContent>
-      </Dialog>
+      <RecommendedAutomationsSection />
+      {action && <ProfileEditDialog
+        key={action.bot.id}
+        profile={action.profile}
+        errorMessage={writeError}
+        saving={isReadingSoul}
+        onClose={() => setAction(null)}
+        onSave={(next) => void applyProfile(next)}
+      />}
     </div>
   );
 }
