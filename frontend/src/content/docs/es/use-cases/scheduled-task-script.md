@@ -1,5 +1,9 @@
 # Ejecutar tareas de script en LightVela
 
+## Resumen
+
+**Las Script Tasks ejecutan Bash o Python según un horario sin llamar a un modelo de IA ni gastar créditos de modelo.** Úsalas para revisar el disco o detectar archivos ausentes; configura el script, el horario, la ventana activa y el canal.
+
 Las tareas de Script son una aplicación práctica para los agentes alojados en la nube porque pueden ejecutar scripts de Bash o Python según una programación sin llamar a un modelo de IA.
 Úselas cuando tenga una comprobación de sistema recurrente con reglas claras y predecibles.
 Los usuarios las han utilizado para alertas de uso de disco y para comprobaciones que detectan archivos ausentes u obsoletos.

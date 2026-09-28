@@ -28,7 +28,7 @@ The WhatsApp channel uses QR-code access, similar to WeChat, and is suitable for
 
 ### 1. Enter the console
 
-Sign in to LightVela, click "My Hermes" in the upper-right corner to enter the console, and find the "Channel" button.
+Sign in to LightVela, open your Agent, and select **Channels** in the sidebar.
 
 ### 2. Select the WhatsApp channel
 
@@ -36,17 +36,9 @@ Find the WhatsApp card and click "+ Connect".
 
 Within one LightVela instance, WhatsApp can be connected to only one Bot at a time. If another Bot already owns it, open that Bot from the notice and disconnect WhatsApp before connecting here.
 
-### 3. Scan the QR code with WhatsApp on your phone
+### 3. Scan the QR code in WhatsApp
 
-1. Open WhatsApp on your phone
-
-2. Tap the "Camera" button in the upper-right corner
-
-3. Scan the QR code on your computer screen
-
-![](../images/whatsapp-1-global-en.webp)
-
-4. Follow the prompts on your phone to complete the connection
+Use WhatsApp on your phone to scan the code shown by LightVela, then follow the prompts in WhatsApp to authorize the linked session. If the QR code expires, generate a new one from the WhatsApp card. Return to **Channels** and confirm that WhatsApp shows as connected.
 
 ### 4. Find yourself in WhatsApp
 
@@ -99,18 +91,13 @@ After access succeeds, the WhatsApp bot can receive and reply to basic text mess
 
 ## FAQ
 
-| Issue | Possible cause | Solution |
+| Issue | What to check | Next step |
 |---|---|---|
-| Cannot connect to WhatsApp | Phone number format is incorrect, or WhatsApp Business configuration is incomplete | Use a complete international format such as +1 or +86, and check that WhatsApp Business / Meta configuration is complete |
-| Verification code not received | Phone number unavailable, network delay, or WhatsApp verification limits | Confirm the phone number can receive WhatsApp messages; wait a few minutes and retry |
-| Verification code shows as invalid after entering | Code expired or entered incorrectly | Request a new code and confirm there are no extra spaces |
-| No response in the console after access | Authorization or configuration has not finished syncing | Refresh the console to confirm status; if access did not succeed, try again |
-| Cannot find the bot contact in WhatsApp | The bot's number was not saved, or the chat has not started | Save the bot's number, or open the chat via the link / QR code provided by the console |
-| No reply after sending a message | Model is not configured, trial credits are exhausted, or the WhatsApp channel has not been connected successfully | Check the "Current model" status in the "1. Model" card and confirm the WhatsApp channel shows as connected |
-| Cannot receive images, files, or voice messages | Media permission, format, or channel capability limits | Confirm the file type is supported; if voice cannot be recognized, check whether speech-to-text / media processing is enabled |
-| Proactive messages fail | WhatsApp limits proactive messages via message templates and conversation windows | Confirm the user has started a conversation with the bot; if the conversation window has expired, use an approved message template |
-| How to unlink | — | Delete the corresponding WhatsApp record in the "Connected channels" list |
-| Can the same WhatsApp number connect to multiple Hermes Agent instances | Not recommended; one WhatsApp number should be bound to one Hermes Agent | If you need multiple Hermes Agent instances, use separate WhatsApp numbers |
+| QR code does not scan or has expired | Phone connection and current QR code | Generate a new code from the WhatsApp card and follow the current WhatsApp prompts. |
+| Connection does not appear | Whether authorization finished on the phone | Return to **Channels**, refresh once, and reconnect if it still shows disconnected. |
+| No reply after a message | Agent status, connected channel, and model credits | Check **Channels** and [Diagnostics](./diagnostics.md); review [credit options](../credits.md) if needed. |
+| Scheduled messages do not arrive | Channel connection and task run result | Check the task's recent run in [Scheduled Tasks](./automation.md) and its notification destination. |
+| Another Bot already owns WhatsApp | WhatsApp is limited to one Bot in this instance | Disconnect it from the current Bot before connecting it to another Bot. |
 
 ---
 

@@ -59,37 +59,14 @@ Hermes는 대화 컨텍스트에 따라 해당 스킬을 호출할지 여부를 
 
 ---
 
----
+## 방법 1: 콘솔에서 설치
 
-## 방법 1: 콘솔 패널을 통해 설치(곧 제공 예정)
+1. Agent를 열고 사이드바에서 **Skills**를 선택합니다.
+2. **Skills**에서 개별 스킬을 검색하거나 **Skill Packages**에서 패키지를 찾습니다. 콘솔은 [Skills.sh](https://skills.sh/)와 [ClawHub](https://clawhub.ai/) 소스를 지원합니다.
+3. 결과를 열어 출처와 설명을 확인한 다음 **Install**을 선택합니다. 경고가 표시되면 내용을 확인하고 승인합니다.
+4. **Installed**에서 설치 결과를 확인하고, 대화에서 Agent가 해당 작업에 사용할 수 있는지 시험합니다.
 
-LightVela 콘솔은 "스킬" 버튼에 시각적인 스킬 구성 항목을 제공합니다. Skills.sh 또는 ClawHub에서 찾은 스킬 이름을 입력하고 빠르게 설치할 수 있습니다.
-
-### 1. LightVela 콘솔 열기
-
-LightVela에 로그인하고 오른쪽 상단의 "My AI Partners"를 클릭하여 콘솔에 들어간 후 "스킬" 버튼을 찾으세요.
-
-### 2. 검색 및 설치
-
-검색창에 확인해 둔 스킬 이름(예: `gmail`)을 입력하고 **+** 버튼을 클릭하세요.
-
-![](../images/clawhub-install-global-en.webp)
-
-### 3. 대화 가능 여부 확인
-
-연결된 채널(Telegram / WhatsApp / Discord / Slack / WeChat)로 돌아갑니다. 먼저 Hermes에게 스킬 목록을 업데이트하도록 요청한 다음 현재 사용 가능한 스킬을 확인하세요.
-
-```
-Please update your skill list
-```
-
-```
-What skills are currently available?
-```
-
-새로 설치된 스킬이 목록에 나타나면 대화에서 사용할 수 있습니다.
-
----
+설치된 항목은 **Installed**에서 관리할 수 있습니다. 신뢰할 수 있는 출처와 권한의 스킬만 설치하세요.
 
 ## 방법 2: 대화를 통해 직접 설치
 

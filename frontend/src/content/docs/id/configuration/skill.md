@@ -59,37 +59,14 @@ Hermes secara otomatis menentukan apakah perlu memanggil Skill terkait berdasark
 
 ---
 
----
+## Metode 1: Pasang melalui konsol
 
-## Metode 1: Instalasi melalui panel konsol (segera tersedia)
+1. Buka Agent, lalu pilih **Skills** di sidebar.
+2. Cari Skill individual di tab **Skills**, atau lihat bundel di **Skill Packages**. Konsol mendukung sumber [Skills.sh](https://skills.sh/) dan [ClawHub](https://clawhub.ai/).
+3. Buka hasil untuk memeriksa sumber dan deskripsinya, lalu pilih **Install**. Baca dan konfirmasi setiap peringatan sebelum memasang.
+4. Buka tab **Installed** untuk memastikan hasilnya, lalu uji dalam percakapan apakah Agent dapat menggunakannya.
 
-Konsol LightVela menyediakan pintu masuk konfigurasi Skill visual di tombol "Skills". Anda dapat memasukkan nama Skill yang Anda temukan di Skills.sh atau ClawHub lalu memasangnya dengan cepat.
-
-### 1. Masuk ke konsol LightVela
-
-Masuk ke LightVela, klik "My AI Partners" di kanan atas untuk membuka konsol, lalu temukan tombol "Skills".
-
-### 2. Cari dan pasang
-
-Masukkan nama Skill yang sudah Anda catat di kotak pencarian (misalnya `gmail`) lalu klik tombol **+**.
-
-![](../images/clawhub-install-global-en.webp)
-
-### 3. Pastikan ketersediaannya dalam percakapan
-
-Kembali ke kanal yang terhubung (Telegram / WhatsApp / Discord / Slack / WeChat). Minta Hermes memperbarui daftar Skill-nya terlebih dahulu, lalu periksa Skill yang saat ini tersedia:
-
-```
-Tolong perbarui daftar Skill kamu
-```
-
-```
-Skill apa saja yang saat ini tersedia?
-```
-
-Jika Skill yang baru dipasang muncul di daftar, Anda dapat mulai memakainya dalam percakapan.
-
----
+Item terpasang juga dapat dikelola di tab **Installed**. Pasang hanya Skill dari sumber dan izin yang Anda percayai.
 
 ## Metode 2: Instalasi langsung melalui percakapan
 

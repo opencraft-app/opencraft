@@ -36,51 +36,25 @@ Visite [lightvela.ai](https://lightvela.ai) y haga clic en "Iniciar sesión" en 
 
 ## 2. Activar el plan Launch
 
-Vuelva a la página de inicio, haga clic en "Crear ahora" para entrar a la página del plan, seleccione "Launch" y haga clic en "Activar ahora".
+Abre la [página de suscripción](/subscribe), elige la opción **Launch de 100 créditos** de la serie Launch y sigue la tarjeta hasta completar la activación. Comprueba el precio y la oferta de primer pedido antes de confirmar.
 
-![](./images/2-2.webp)
 
 > ⚠️ **Ofertas para nuevos usuarios**
 >
 > Los nuevos usuarios que cumplan los requisitos pueden probar Launch gratis durante 1 mes. Consulta la [página de suscripción](/subscribe/) para conocer las condiciones y la disponibilidad actuales.
 
-Después de que el activación tenga éxito, la barra de navegación superior muestra "Mi Hermes" y la página se redirige automáticamente al consola. Para detalles del plan, consulte [¿Qué es LightVela - Sobre los planes](./01-overview.md#about-plans).
 
 ---
 
-## 3. Crear una instancia de Hermes
+## 3. Abrir Hermes Agent
 
-Cuando ingrese al consola, la página muestra un estado vacío porque aún no se ha creado ningún Hermes.
-
-![](./images/20260424-113103-70fi.webp)
-
-Haga clic en "Crear ahora". La página muestra la animación de transición de creación "Preparando café para Hermes y despertando su cerebro...". Espere aproximadamente una docena de segundos.
-
-![](./images/20260424-113120-qvlx.webp)
-
-Después de que la creación se complete, la parte superior del consola muestra la tarjeta de información básica de Hermes, el estado es ● En ejecución, y aparecen los tres botones de configuración para modelos, canales y Skills debajo.
-
-![](./images/2-5.webp)
-
-> 💡 **Renombrar Hermes**
->
-> Haga clic en el nombre o en el icono de lápiz al lado, ingrese un nuevo nombre y presione Enter para guardar. El nombre solo se utiliza como identificador y no afecta el comportamiento del Agent.
+Después de activar el plan, abre la [consola de Agent](/agents/overview/). LightVela prepara la instancia en la nube. Si la consola solicita crear el Agent, sigue las instrucciones y espera al estado **Running**. La barra lateral muestra **Channels**, **Models**, **Skills** y **Scheduled Tasks**. Puedes usar los créditos del plan sin introducir tu propia clave de API.
 
 ---
 
-## 4. Conectar el canal de WeChat
+## 4. Conectar WeChat
 
-Ingrese el botón "Canal", seleccione "WeChat" de la lista desplegable, haga clic en "Autorizar acceso" y aparecerá un código QR.
-
-![](./images/2-6.webp)
-
-Utilice "Escanear" en WeChat en su teléfono para escanear el código QR, luego siga las indicaciones en su teléfono para completar la autorización. Después de que la autorización tenga éxito, el diálogo se cierra automáticamente, aparece un registro de "WeChat" en el área de "Canales conectados" y se agrega automáticamente una cuenta de bot a sus contactos de WeChat.
-
-> ⚠️ **Después de escanear**
->
-> Después de escanear, WeChat le solicitará agregar una cuenta de bot. Después de agregarla, chatear con esa cuenta es equivalente a chatear con Hermes.
-
-Para más detalles, consulte [Configurar Canal - WeChat](./configuration/channel-wechat.md).
+Abre **Channels** en la barra lateral de Agent. En la tarjeta **WeChat**, selecciona **+ Connect** y sigue las instrucciones del código QR. Escanéalo con WeChat en el teléfono y termina la autorización. Confirma que WeChat aparece como conectado antes de enviar un mensaje. Consulta la [guía de WeChat](./configuration/channel-wechat.md) si caduca el código o falla la conexión.
 
 ---
 
@@ -98,32 +72,30 @@ Debería recibir una respuesta de Hermes en unos pocos segundos. Hermes ahora pu
 
 > 💡 **Facturación de mensajes**
 >
-> Por defecto, las llamadas de modelo utilizan los 100 créditos de prueba incluidos en el plan Launch, por lo que no se requiere configuración adicional. Después de que se agoten los créditos, configure su propia clave de API en la tarjeta "1. Modelo". Consulte [Configurar Modelos](./configuration/model.md) para el proceso completo.
+> Las llamadas al modelo usan por defecto los 100 créditos de la opción Launch. Si se agotan, puedes comprar un [paquete de créditos](./credits.md) admisible o añadir tu propia clave de API en **Models**.
 
 ---
 
 ## Avanzado: configure su propio modelo (opcional)
 
-Si necesita utilizar un modelo de un proveedor específico, o continuar utilizando Hermes después de que se agoten los créditos, abra la tarjeta "1. Modelos" en el consola, seleccione una fuente y un modelo, ingrese la clave de API y haga clic en "Agregar como predeterminado". Consulte [Configurar Modelos](./configuration/model.md) para el proceso completo.
+Si necesitas un proveedor específico, abre **Models** en la barra lateral de Agent, elige proveedor y modelo, añade la clave de API y establece el modelo principal. Consulta [Configurar modelos](./configuration/model.md).
 
 ---
 
 ## Preguntas frecuentes
 
-| Problema | Posible causa | Solución |
+| Problema | Qué revisar | Acción |
 |---|---|---|
-| No se puede activar el plan Launch | La oferta actual o el flujo de pago no está disponible | Consulte la [página de Suscripción](/subscribe) y siga las actualizaciones oficiales |
-| La creación de Hermes permanece en la página de transición durante mucho tiempo | La inicialización en la nube es lenta o la red es inestable | Refresque la página; si no hay respuesta después de 1 minuto, haga clic nuevamente en "+ Crear Hermes" |
-| No hay respuesta en el consola después de escanear el código QR de WeChat | El código QR ha expirado | Cierre el diálogo y haga clic nuevamente en "Autorizar acceso" para generar un nuevo código QR |
-| No hay respuesta después de enviar un mensaje | Se han agotado los créditos de prueba o el canal no está conectado | Verifique el estado de "Canales conectados"; configure su propia clave de API después de que se agoten los créditos |
-| El contacto del bot desaparece en WeChat | La autorización fue revocada o el acceso se desconectó | Vuelva al consola y autorice el acceso nuevamente en la tarjeta "Canal" |
-
+| No se puede activar Launch | Disponibilidad, elegibilidad y estado del pago | Revisa la [página de suscripción](/subscribe) y el mensaje final; evita repetir un pedido completado. |
+| La preparación del Agent tarda demasiado | Si la consola sigue aprovisionando o muestra un error | Actualiza una vez la vista general del Agent; si no cambia, consulta [Diagnostics](./configuration/diagnostics.md) o contacta con soporte. |
+| Caduca el código QR de WeChat | Si terminó la autorización en el teléfono | Vuelve a **Channels** e inicia una conexión nueva. |
+| No llega respuesta | Conexión del canal, estado del Agent y créditos | Revisa **Channels** y **Diagnostics**. Si no quedan créditos, consulta las [opciones de recarga](./credits.md). |
 ---
 
 ## Próximos pasos
 
-- [Conceptos fundamentales](./04-core-concepts.md) — Comprender los cuatro conceptos fundamentales: Hermes, modelos, canales y Skills
+- [Conceptos fundamentales](./04-core-concepts.md) — Comprender los cinco conceptos fundamentales: Hermes Agent, Bots, modelos, canales y Skills
 
 - [Resumen de configuración](./05-configuration.md) — Estructura general del consola
 
-- [Configurar Skills](./configuration/skill.md) — Extender Hermes a través de SkillHub
+- [Configurar Skills](./configuration/skill.md) — Instalar Skills de Skills.sh o ClawHub

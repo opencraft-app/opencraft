@@ -127,7 +127,7 @@ Baris keempat patut ditegaskan: **nilai sebuah perpustakaan Skill tidak sebandin
 Hermes sudah membuat pemisahan Memory / Skill siap secara rekayasa, tetapi ia masih menyasar orang yang menyunting Markdown secara langsung. LightVela menjalankan model berbasis cloud dan tidak mengekspos operasi sistem file kepada pengguna, sehingga kedua jenis akumulasi itu bekerja seperti ini:
 
 - **Skill berasal dari marketplace publik** — setiap skill berasal dari Skills.sh dan ClawHub, marketplace skill yang digunakan bersama oleh OpenClaw dan Hermes, sehingga Anda tidak menulisnya dari nol.
-- **Pasang dan hapus melalui percakapan** — beri tahu Hermes skill mana yang ingin dipasang lalu ia menanganinya; penghapusan bekerja dengan cara yang sama. Verifikasi ketersediaannya di chat setelahnya. Instalasi lewat panel konsol akan segera tersedia.
+- **Pasang dan kelola Skill di konsol** — jelajahi Skill atau Skill Packages dari Skills.sh dan ClawHub, pasang, lalu periksa tab Installed. Instalasi melalui percakapan tetap tersedia; verifikasi hasilnya sebelum dipakai.
 - **Memori dapat dilihat di konsol** — halaman memori menampilkan apa yang dipertahankan Agent dan memungkinkan Anda menyesuaikan batas kapasitasnya; penambahan dan penghapusan terjadi melalui percakapan.
 - **Stabil lintas model dan kanal** — mengganti model tidak menghapus skill maupun tugas terjadwal, dan setiap kanal yang terhubung berbagi skill serta memori yang sama.
 - **Kegagalan dapat dilacak** — ketika sebuah skill berperilaku salah, lihat dan ekspor log terbaru di Diagnostik (rentang 1, 3, 6, 12, atau 24 jam yang dapat dipilih) untuk menemukan masalahnya.

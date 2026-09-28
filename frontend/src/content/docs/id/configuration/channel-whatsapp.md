@@ -28,7 +28,7 @@ Kanal WhatsApp memakai akses kode QR, serupa dengan WeChat, dan cocok untuk meng
 
 ### 1. Masuk ke konsol
 
-Masuk ke LightVela, klik "My Hermes" di kanan atas untuk membuka konsol, lalu temukan tombol "Channel".
+Masuk ke LightVela, buka Agent yang dituju, lalu pilih **Channels** di sidebar.
 
 ### 2. Pilih kanal WhatsApp
 
@@ -36,17 +36,9 @@ Temukan kartu WhatsApp lalu klik "+ Connect".
 
 Dalam satu instance LightVela, WhatsApp hanya dapat terhubung ke satu Bot dalam satu waktu. Jika sudah terhubung ke Bot lain, buka Bot tersebut dari pemberitahuan dan putuskan WhatsApp sebelum menghubungkannya di sini.
 
-### 3. Pindai kode QR dengan WhatsApp di ponsel Anda
+### 3. Pindai kode QR di WhatsApp
 
-1. Buka WhatsApp di ponsel Anda
-
-2. Ketuk tombol "Camera" di kanan atas
-
-3. Pindai kode QR di layar komputer Anda
-
-![](../images/whatsapp-1-global-en.webp)
-
-4. Ikuti petunjuk di ponsel Anda untuk menyelesaikan koneksi
+Gunakan WhatsApp di ponsel untuk memindai kode yang ditampilkan LightVela, lalu ikuti petunjuk di WhatsApp untuk mengotorisasi sesi tertaut. Jika kode kedaluwarsa, buat kode baru dari kartu WhatsApp. Kembali ke **Channels** dan pastikan WhatsApp ditampilkan sebagai terhubung.
 
 ### 4. Temukan diri Anda sendiri di WhatsApp
 
@@ -99,18 +91,13 @@ Setelah akses berhasil, bot WhatsApp dapat menerima dan membalas pesan teks dasa
 
 ## FAQ
 
-| Masalah | Kemungkinan penyebab | Solusi |
+| Masalah | Periksa | Tindakan |
 |---|---|---|
-| Tidak dapat terhubung ke WhatsApp | Format nomor telepon salah, atau konfigurasi WhatsApp Business belum lengkap | Gunakan format internasional lengkap seperti +1 atau +86, dan periksa apakah konfigurasi WhatsApp Business / Meta sudah lengkap |
-| Kode verifikasi tidak diterima | Nomor telepon tidak tersedia, keterlambatan jaringan, atau batasan verifikasi WhatsApp | Pastikan nomor telepon tersebut dapat menerima pesan WhatsApp; tunggu beberapa menit lalu coba lagi |
-| Kode verifikasi dianggap tidak valid setelah dimasukkan | Kode kedaluwarsa atau dimasukkan dengan salah | Minta kode baru dan pastikan tidak ada spasi tambahan |
-| Tidak ada respons di konsol setelah akses | Otorisasi atau konfigurasi belum selesai disinkronkan | Segarkan konsol untuk memastikan status; jika akses belum berhasil, coba lagi |
-| Kontak bot tidak dapat ditemukan di WhatsApp | Nomor bot belum disimpan, atau percakapan belum dimulai | Simpan nomor bot tersebut, atau buka percakapan lewat tautan / kode QR yang diberikan konsol |
-| Tidak ada balasan setelah mengirim pesan | Model belum dikonfigurasi, kredit uji coba habis, atau kanal WhatsApp belum berhasil terhubung | Periksa status "Current model" di kartu "1. Model" dan pastikan kanal WhatsApp tampil sebagai terhubung |
-| Tidak dapat menerima gambar, file, atau pesan suara | Batasan izin media, format, atau kemampuan kanal | Pastikan jenis file tersebut didukung; jika suara tidak dapat dikenali, periksa apakah speech-to-text / pemrosesan media sudah diaktifkan |
-| Pesan proaktif gagal terkirim | WhatsApp membatasi pesan proaktif melalui templat pesan dan jendela percakapan | Pastikan pengguna sudah memulai percakapan dengan bot; jika jendela percakapan sudah berakhir, gunakan templat pesan yang sudah disetujui |
-| Cara memutuskan tautan | — | Hapus catatan WhatsApp terkait di daftar "Connected channels" |
-| Apakah satu nomor WhatsApp yang sama dapat terhubung ke beberapa instans Hermes Agent | Tidak disarankan; satu nomor WhatsApp sebaiknya terikat pada satu Hermes Agent | Jika Anda memerlukan beberapa instans Hermes Agent, gunakan nomor WhatsApp terpisah |
+| Kode QR gagal dipindai atau kedaluwarsa | Koneksi ponsel dan kode saat ini | Buat kode baru dari kartu WhatsApp dan ikuti petunjuk terbaru di aplikasinya. |
+| Koneksi tidak muncul | Apakah otorisasi selesai di ponsel | Kembali ke **Channels**, muat ulang sekali, lalu hubungkan kembali jika masih terputus. |
+| Pesan tidak dibalas | Status Agent, kanal, dan kredit model | Periksa **Channels** dan [Diagnostics](./diagnostics.md); lihat [opsi kredit](../credits.md) jika perlu. |
+| Pesan terjadwal tidak tiba | Koneksi kanal dan hasil tugas | Periksa eksekusi terakhir di [Scheduled Tasks](./automation.md) dan tujuan notifikasinya. |
+| WhatsApp dimiliki Bot lain | Satu instans hanya mengizinkan satu Bot terhubung ke WhatsApp | Putuskan dari Bot sebelumnya sebelum menghubungkan Bot lain. |
 
 ---
 

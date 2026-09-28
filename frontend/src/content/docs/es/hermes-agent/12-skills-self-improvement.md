@@ -127,7 +127,7 @@ La cuarta fila merece énfasis: **el valor de una biblioteca de Skills no es pro
 Hermes ha hecho que la separación Memoria/Skill sea lista para ingeniería, pero aún apunta a personas editando Markdown directamente. LightVela ejecuta un modelo alojado en la nube y no expone operaciones de sistema de archivos para usuarios, por lo que los dos tipos de acumulación funcionan así:
 
 - **Las Skills provienen de mercados públicos** — cada Skill proviene de Skills.sh y ClawHub, los mercados de Skills compartidos por OpenClaw y Hermes, por lo que no las escribe desde cero.
-- **Instalar y eliminar mediante conversación** — le diga a Hermes qué Skill instalar y lo maneja; la eliminación funciona de la misma manera. Verifique la disponibilidad en el chat después. La instalación desde el panel de consola llegará pronto.
+- **Instala y gestiona Skills en la consola** — explora Skills o Skill Packages de Skills.sh y ClawHub, instálalos y comprueba la pestaña Installed. También puedes instalarlos mediante una conversación; verifica el resultado antes de usarlos.
 - **La Memoria es visible en la consola** — la página de memoria muestra lo que el Agent ha retenido y le permite ajustar el límite de capacidad; las adiciones y eliminaciones ocurren mediante conversación.
 - **Estable a través de modelos y canales** — cambiar modelos no elimina Skills ni tareas programadas, y cada canal conectado comparte las mismas Skills y memoria.
 - **Los fallos son rastreables** — cuando una Skill se comporta mal, vea y exporte registros recientes en Diagnóstico (seleccionable rangos de 1, 3, 6, 12 o 24 horas) para localizar el problema.

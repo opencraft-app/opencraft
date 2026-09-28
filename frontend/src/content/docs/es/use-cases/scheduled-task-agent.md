@@ -1,5 +1,9 @@
 # Automatizar tareas de Agent con LightVela
 
+## Resumen
+
+**Las Agent Tasks ejecutan un flujo que usa el modelo según un horario y entregan el resultado por el canal elegido.** Sirven para un resumen matinal o una revisión semanal; configura las instrucciones, el horario, las Skills opcionales y el destino.
+
 Las tareas programadas son una aplicación ideal para los agentes alojados en la nube porque pueden ejecutarse 24/7 sin que usted tenga que intervenir.
 Úselas cuando tenga un problema de información recurrente que pueda mejorar con un flujo de trabajo repetible.
 Los usuarios las han utilizado para resúmenes matutinos que convierten actualizaciones dispersas en briefs cortos, y para revisiones semanales de proyectos que resumen la actividad reciente antes de reuniones de seguimiento.

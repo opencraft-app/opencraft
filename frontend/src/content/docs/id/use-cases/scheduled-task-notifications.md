@@ -1,5 +1,9 @@
 # Mengatur Tugas Notifikasi di LightVela
 
+## Ringkasan
+
+**Notification Task mengirim pesan tetap sesuai jadwal tanpa memanggil model AI atau memakai kredit model.** Gunakan untuk pengingat obat, tagihan, atau langganan; atur pesan, jadwal, rentang waktu aktif, dan kanal pengiriman.
+
 Tugas notifikasi adalah penerapan sederhana untuk Agent yang dihosting di cloud karena dapat mengirim pesan tetap sesuai jadwal tanpa memanggil model AI.
 Gunakan ketika Anda membutuhkan pengingat yang tiba pada waktu yang tepat, melalui kanal yang tepat, dengan kata-kata persis seperti yang Anda berikan.
 Pengguna memakainya untuk pengingat minum air dan obat, serta pengingat tagihan dan perpanjangan langganan.

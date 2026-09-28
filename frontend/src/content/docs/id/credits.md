@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Kredit model adalah satuan yang dipakai LightVela untuk menghitung konsumsi pemanggilan model oleh Hermes Agent, dengan input maupun output ikut dihitung. Kredit diberikan bersama paket setiap bulan, tidak dijual terpisah, dan direset tiap siklus bulanan: Launch mencakup 100 kredit per bulan, sedangkan Cruise menyediakan kuota lebih besar. Kredit terpakai saat Agent berbicara dengan Anda, menjalankan tugas otomatis, atau menjalankan skill — semuanya pada dasarnya memanggil model — dan percakapan yang lebih panjang dengan konteks lebih besar menghabiskannya lebih cepat. Jika kredit habis di tengah siklus, fitur yang bergantung pada model menjadi terbatas hingga alokasi berikutnya, atau Anda dapat beralih ke API key model sendiri di pengaturan model.**
+**Kredit model mengukur pemakaian panggilan model, termasuk input dan output. Launch, Launch AI, Cruise, dan Cruise AI masing-masing menyediakan 100, 4.500, 200, dan 10.000 kredit per bulan. Pengguna dengan paket aktif juga dapat membeli paket kredit satu kali; kredit tersebut berlaku satu bulan setelah diterima dan tidak diperpanjang otomatis. Percakapan dan Agent Task yang memanggil model memakai kredit, sedangkan Notification Task dan Script Task tidak. Jika kredit habis, beli paket yang memenuhi syarat, tunggu alokasi berikutnya, atau gunakan API key model Anda sendiri.**
 
 ---
 
@@ -22,7 +22,7 @@ Kredit model adalah satuan yang digunakan LightVela untuk mengukur penggunaan mo
 
 ## Apa itu kredit model?
 
-Kredit model adalah **satuan pengukuran** untuk pemanggilan language model oleh Hermes Agent. Setiap kali Agent Anda membalas dalam percakapan, menjalankan [tugas terjadwal](./configuration/automation.md), atau menggunakan Skill, ia mengirim permintaan ke model yang mendasarinya. Token yang digunakan oleh permintaan tersebut dikonversi menjadi kredit.
+Kredit model mengukur panggilan ke model bahasa. Percakapan, [Agent Task](./configuration/automation.md) yang memanggil model, dan Skill yang memakai model mengonsumsi kredit; Notification Task dan Script Task tidak memanggil model.
 
 Konversi perkiraannya adalah **1 kredit ≈ 10.000 token**. Token adalah satuan dasar teks yang diproses oleh model. Baik input—konten yang Anda kirim ke Agent Anda—maupun output—balasan yang dihasilkannya—dihitung sebagai penggunaan.
 
@@ -34,12 +34,18 @@ Konversi perkiraannya adalah **1 kredit ≈ 10.000 token**. Token adalah satuan 
 
 Kredit **dialokasikan setiap bulan bersama paket**, dan jumlah bulanannya berbeda untuk setiap tingkat:
 
-| Paket | Kredit model (alokasi standar) |
-|---|---|
-| Launch | 100 kredit / bulan |
-| Cruise | 200 kredit / bulan |
+| Paket | Kredit model per bulan |
+|---|---:|
+| Launch | 100 |
+| Cruise | 200 |
+| Launch AI | 4.500 |
+| Cruise AI | 10.000 |
 
-Beberapa paket dapat menawarkan **alokasi kredit yang lebih besar**. Periksa kartu paket di [halaman Subscribe](/subscribe) untuk opsi yang saat ini tersedia, dan lihat [Paket](./plans.md) untuk struktur sumber daya dan kredit tiap tingkat.
+Lihat [Paket](./plans.md) untuk sumber daya masing-masing dan [halaman Subscribe](/subscribe) untuk ketersediaan serta harga terkini.
+
+## Paket kredit tambahan
+
+Pengguna dengan paket aktif dapat membeli paket kredit model sekali bayar di [halaman Subscribe](/subscribe#subscribe-credits). Paket berlaku satu bulan sejak kredit diterima dan tidak diperpanjang otomatis. Kredit dengan tanggal kedaluwarsa lebih awal dipakai lebih dulu; jika tanggalnya sama, kredit yang lebih lama dipakai lebih dulu. Harga dan denominasi terkini ditampilkan saat pembayaran.
 
 ---
 
@@ -49,7 +55,7 @@ Kredit dikonsumsi dalam situasi berikut karena masing-masing membutuhkan Hermes 
 
 - **Mengobrol dengan Agent Anda** — Mengirim pesan melalui Telegram, WhatsApp, Discord, Slack, WeChat, atau kanal lain yang didukung
 
-- **Menjalankan tugas terjadwal** — Membiarkan Agent Anda mengeksekusi [tugas terjadwal](./configuration/automation.md)
+- **Menjalankan Agent Task** — Agent menjalankan [tugas terjadwal](./configuration/automation.md) yang memanggil model
 
 - **Menggunakan Skill** — Mengizinkan Skill memanggil model untuk melakukan reasoning saat eksekusi
 
@@ -73,7 +79,7 @@ Jika Anda menghabiskan seluruh kredit periode saat ini, fitur Agent yang bergant
 
 ### Bagaimana hubungan kredit dengan paket?
 
-Kredit adalah sumber daya yang termasuk dalam paket dan dialokasikan setiap bulan. Ketersediaan saat ini dan harga mendatang untuk opsi kredit berbeda ditampilkan di [halaman Subscribe](/subscribe).
+Kredit dialokasikan tiap bulan bersama paket. Pelanggan dengan paket aktif juga dapat membeli paket kredit sekali bayar. Lihat [halaman Subscribe](/subscribe) untuk opsi dan harga saat ini.
 
 ### Berapa lama satu kredit bertahan?
 
@@ -85,7 +91,7 @@ Tidak. Model memiliki biaya per token yang berbeda, sehingga tugas yang sama dap
 
 ### Bisakah saya melanjutkan setelah kredit saya habis?
 
-Fitur yang membutuhkan pemanggilan model akan dibatasi setelah alokasi habis. Kapan alokasi baru tersedia, atau apakah opsi lain ditawarkan, bergantung pada aturan platform saat ini.
+Anda dapat membeli paket kredit yang memenuhi syarat, menunggu alokasi berikutnya, atau mengatur API key model sendiri. Fitur yang memanggil model dibatasi jika tidak ada kredit atau key yang dapat digunakan.
 
 ---
 
