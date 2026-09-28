@@ -284,7 +284,11 @@ func (h *handler) postInternalTATInvoke(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid command_id"})
 		return
 	}
-	if h.allowedTATCommandID == "" || req.CommandID != h.allowedTATCommandID {
+	allowedID := h.allowedTATCommandID
+	if h.allowedTATCommandIDsByRegion != nil {
+		allowedID = strings.TrimSpace(h.allowedTATCommandIDsByRegion[strings.TrimSpace(sb.Region)])
+	}
+	if allowedID == "" || req.CommandID != allowedID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "command_id is not allowed"})
 		return
 	}

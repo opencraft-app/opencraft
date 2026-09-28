@@ -2325,3 +2325,25 @@ func TestDeleteSandboxesSandboxIDReleasesPausedInstance(t *testing.T) {
 		t.Fatalf("expected sandbox row deleted, got err=%v", err)
 	}
 }
+
+func TestPostInternalTATInvokeRegionAllowlist(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	invoker := &stubCommandInvoker{resp: provider.CommandInvocation{InvocationID: "inv-test"}}
+	h := &handler{svc: svc, invocations: invoker, allowedTATCommandID: "cmd-singapore", allowedTATCommandIDsByRegion: map[string]string{"ap-beijing": "cmd-beijing"}}
+	router := newInternalTATTestRouter(h)
+	for _, tc := range []struct {
+		command string
+		want    int
+	}{{"cmd-singapore", http.StatusForbidden}, {"cmd-beijing", http.StatusAccepted}} {
+		req := httptest.NewRequest(http.MethodPost, "/internal/sandboxes/"+sb.ID+"/tat/invocations", bytes.NewBufferString(`{"command_id":"`+tc.command+`","parameters":{"website_key":"vik_secret_value"}}`))
+		req.Header.Set("Content-Type", "application/json")
+		authorizeInternalTATRequest(req)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Fatalf("command=%s status=%d body=%s", tc.command, rec.Code, rec.Body.String())
+		}
+	}
+}

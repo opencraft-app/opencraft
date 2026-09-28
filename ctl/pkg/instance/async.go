@@ -1066,6 +1066,18 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 // create task here would strand a usable machine behind an optional feature.
 func (l *logic) deliverWebsiteCredentialOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) {
 	commandID := strings.TrimSpace(l.websiteCredentialTATCommandID)
+	if l.websiteCredentialTATCommandIDsByRegion != nil {
+		detail, err := l.sandboxAdapter.GetSandbox(ctx, sandboxID)
+		if err != nil || detail == nil || strings.TrimSpace(detail.Region) == "" {
+			l.logger.Warn("skip website credential delivery because sandbox region is unavailable", zap.Error(err), zap.String("sandbox_id", sandboxID))
+			return
+		}
+		commandID = strings.TrimSpace(l.websiteCredentialTATCommandIDsByRegion[strings.TrimSpace(detail.Region)])
+		if commandID == "" {
+			l.logger.Warn("skip website credential delivery because region has no TAT command", zap.String("region", detail.Region), zap.String("sandbox_id", sandboxID))
+			return
+		}
+	}
 	apiBase := strings.TrimSpace(l.websiteAgentAPIBase)
 	if commandID == "" || apiBase == "" {
 		return
