@@ -27,6 +27,8 @@
 - `frontend/src/pages/marketing/agent-config/standard-panel.css`
 - `frontend/src/pages/marketing/__tests__/agent-channel-dingtalk.test.ts`
 - `frontend/src/i18n/generated/*.json`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/{i18n/generated,pages/marketing}/**`
 
 ## required_context
 - `agent-gateway-runtime`、`frontend-product-surface`。
@@ -36,6 +38,8 @@
 |---|---|---|
 | `AGENTS.md` | 仓库边界 | 限定为前端源码与本地验证，不执行发布。 |
 | `frontend/AGENTS.md` | 最近服务规则 | 确认前端聚焦测试和 i18n 门禁。 |
+| `opencraft/AGENTS.md` | vendored 同步边界 | 确认前端真源改动必须同步 Agent Console 副本并复验。 |
+| `docs/context/flows/tapd-gongfeng-delivery.md` | MR 交付流程 | 确认本次以独立提交修复既有 MR 的 CI 生成物门禁。 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | i18n 相邻检查 | 确认生成入口和钉钉相邻测试。 |
 | `frontend/src/pages/marketing/agent-channel-panel.tsx` | 当前实现 | 只修改共享选择 CTA 与钉钉凭据页渲染。 |
 | `frontend/src/pages/marketing/__tests__/agent-channel-dingtalk.test.ts` | 相邻测试 | 扩充 QQ/钉钉 CTA、钉钉文案和链接断言。 |
@@ -45,10 +49,12 @@
 - `pnpm check`：通过；TypeScript 为 171 个当前诊断、171 个基线、0 个新增诊断。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：通过，错误和告警均为 0。
 - `git diff --check`：通过。
+- `npm --prefix opencraft run check:mono2-agent-console`：通过，已验证 130 个 Agent Console 副本；CI 中的 manifest 漂移已消除。
 
 ## risks
 - 通用凭据弹窗被多个通道复用。缓解：以 `tokenChannelKind === 'dingtalk'` 为唯一条件，并以回归测试固定钉钉特例。
 - 第三方 OAuth 参数冗长且易过期。缓解：链接至开发者后台根地址，由目标站维护登录跳转。
+- 前端真源改动会触发 OpenCraft vendored manifest 门禁。缓解：以独立提交运行官方同步脚本并提交生成副本与 `UPSTREAM.json`。
 
 ## validation
 - 聚焦 Vitest、i18n 提取/校验、`pnpm check`、文档检查与 `git diff --check`。
@@ -66,4 +72,4 @@
 - 有界精确搜索命中上述实现、钉钉回归测试与 i18n 提取脚本；未命中 change-impact 映射。
 
 ## handoff
-- 实现与本地验证完成；待创建提交并推送 MR。未发布。
+- 功能实现已在首个提交中交付；OpenCraft vendored manifest 已以独立同步提交修复并本地复验。未发布。
