@@ -2,6 +2,21 @@
 export const isLightVelaEdgeOnePreviewHostname = (hostname: string): boolean =>
   hostname.startsWith("lightvela-preview-") && hostname.endsWith(".edgeone.cool");
 
+const resolveLightVelaSiteFamilyApiBaseUrl = (hostname: string): string | null => {
+  if (
+    hostname === "lightvela.com"
+    || hostname === "www.lightvela.com"
+    || hostname === "lightvela.tencent.com"
+    || hostname === "www.lightvela.tencent.com"
+  ) {
+    return "https://api.lightvela.com";
+  }
+  if (hostname === "lightvela.ai" || hostname === "www.lightvela.ai") {
+    return "https://api.lightvela.ai";
+  }
+  return null;
+};
+
 /**
  * 已知的 lightclaw.pages.dev 前端子域到对应 sandbox 后端 host 的映射。
  *
@@ -43,8 +58,18 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     if (configured.toLowerCase() === "mock") {
       return null;
     }
-    // 本地开发通过 vite proxy 代理，请求发到当前域名
     if (configured.toLowerCase() === "local-proxy") {
+      const hostname = typeof window !== "undefined" && window.location
+        ? window.location.hostname.toLowerCase()
+        : "";
+      const lightVelaApiBase = resolveLightVelaSiteFamilyApiBaseUrl(hostname);
+      if (lightVelaApiBase) {
+        return lightVelaApiBase;
+      }
+      // 本地开发通过 Next rewrite 代理，请求发到当前域名；只适用于
+      // localhost/127.0.0.1 这类真正由 dev server 承接的地址。Whistle
+      // 把 lightvela.ai 代理到本机时，浏览器同源请求仍会进 Next 服务端
+      // rewrite，而 Node 进程不一定继承浏览器代理，容易出现 API DNS 失败。
       return "";
     }
     return configured.replace(/\/$/, "");
@@ -82,16 +107,9 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     if (hostname === "lightclaw.site" || hostname === "www.lightclaw.site") {
       return "https://api.lightclaw.site";
     }
-    if (
-      hostname === "lightvela.com"
-      || hostname === "www.lightvela.com"
-      || hostname === "lightvela.tencent.com"
-      || hostname === "www.lightvela.tencent.com"
-    ) {
-      return "https://api.lightvela.com";
-    }
-    if (hostname === "lightvela.ai") {
-      return "https://api.lightvela.ai";
+    const lightVelaApiBase = resolveLightVelaSiteFamilyApiBaseUrl(hostname);
+    if (lightVelaApiBase) {
+      return lightVelaApiBase;
     }
   }
 
