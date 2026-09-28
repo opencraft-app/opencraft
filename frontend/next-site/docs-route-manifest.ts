@@ -2029,13 +2029,13 @@ export const DOCS_ROUTE_SLUGS = {
  */
 export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | undefined>> = {
   "en-us": {
-    "overview": "2026-09-28",
-    "quickstart": "2026-09-28",
+    "overview": "2026-09-27",
+    "quickstart": "2026-09-27",
     "core-concepts": "2026-08-20",
-    "who-is-lightvela-for": "2026-09-28",
+    "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
     "credits": "2026-08-20",
-    "create-first-hermes": "2026-09-28",
+    "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
     "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
@@ -2096,7 +2096,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
     "contact-us": "2026-09-28",
-    "": "2026-09-28"
+    "": "2026-09-27"
   },
   "zh-cn": {
     "overview": "2026-09-27",
@@ -2149,13 +2149,13 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "": "2026-09-27"
   },
   "zh-sg": {
-    "overview": "2026-09-28",
-    "quickstart": "2026-09-28",
+    "overview": "2026-09-27",
+    "quickstart": "2026-09-27",
     "core-concepts": "2026-08-20",
-    "who-is-lightvela-for": "2026-09-28",
+    "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
     "credits": "2026-08-20",
-    "create-first-hermes": "2026-09-28",
+    "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
     "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
@@ -2216,16 +2216,16 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
     "contact-us": "2026-09-28",
-    "": "2026-09-28"
+    "": "2026-09-27"
   },
   "zh-hant": {
-    "overview": "2026-09-28",
-    "quickstart": "2026-09-28",
+    "overview": "2026-09-27",
+    "quickstart": "2026-09-27",
     "core-concepts": "2026-08-20",
-    "who-is-lightvela-for": "2026-09-28",
+    "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
     "credits": "2026-08-20",
-    "create-first-hermes": "2026-09-28",
+    "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
     "configuration/bots": "2026-09-21",
     "configuration/model": "2026-08-20",
@@ -2286,16 +2286,16 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
     "contact-us": "2026-09-28",
-    "": "2026-09-28"
+    "": "2026-09-27"
   },
   "id-id": {
-    "overview": "2026-09-28",
-    "quickstart": "2026-09-28",
+    "overview": "2026-09-27",
+    "quickstart": "2026-09-27",
     "core-concepts": "2026-08-20",
-    "who-is-lightvela-for": "2026-09-28",
-    "plans": "2026-09-28",
+    "who-is-lightvela-for": "2026-09-27",
+    "plans": "2026-09-27",
     "credits": "2026-08-20",
-    "create-first-hermes": "2026-09-28",
+    "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
     "configuration/model": "2026-08-20",
     "configuration/channel-telegram": "2026-08-20",
@@ -2353,16 +2353,16 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/workspace-context-storage": "2026-08-18",
     "hermes-agent/skills-self-improvement": "2026-08-18",
     "contact-us": "2026-09-28",
-    "": "2026-09-28"
+    "": "2026-09-27"
   },
   "es": {
-    "overview": "2026-09-28",
-    "quickstart": "2026-09-28",
+    "overview": "2026-09-27",
+    "quickstart": "2026-09-27",
     "core-concepts": "2026-08-26",
-    "who-is-lightvela-for": "2026-09-28",
+    "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
     "credits": "2026-08-26",
-    "create-first-hermes": "2026-09-28",
+    "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-22",
     "configuration/bots": "2026-09-22",
     "configuration/model": "2026-08-26",
@@ -2423,16 +2423,16 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/workspace-context-storage": "2026-08-26",
     "hermes-agent/skills-self-improvement": "2026-08-26",
     "contact-us": "2026-09-28",
-    "": "2026-09-28"
+    "": "2026-09-27"
   },
   "ja-jp": {
-    "overview": "2026-09-28",
-    "quickstart": "2026-09-28",
+    "overview": "2026-09-27",
+    "quickstart": "2026-09-27",
     "core-concepts": "2026-08-28",
-    "who-is-lightvela-for": "2026-09-28",
+    "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
     "credits": "2026-08-28",
-    "create-first-hermes": "2026-09-28",
+    "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-22",
     "configuration/bots": "2026-09-22",
     "configuration/model": "2026-08-28",
@@ -2493,16 +2493,16 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/workspace-context-storage": "2026-08-28",
     "hermes-agent/skills-self-improvement": "2026-08-28",
     "contact-us": "2026-09-28",
-    "": "2026-09-28"
+    "": "2026-09-27"
   },
   "ko-kr": {
-    "overview": "2026-09-28",
-    "quickstart": "2026-09-28",
+    "overview": "2026-09-27",
+    "quickstart": "2026-09-27",
     "core-concepts": "2026-08-31",
-    "who-is-lightvela-for": "2026-09-28",
+    "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
     "credits": "2026-08-31",
-    "create-first-hermes": "2026-09-28",
+    "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-22",
     "configuration/bots": "2026-09-22",
     "configuration/model": "2026-08-31",
@@ -2563,7 +2563,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/workspace-context-storage": "2026-08-31",
     "hermes-agent/skills-self-improvement": "2026-08-31",
     "contact-us": "2026-09-28",
-    "": "2026-09-28"
+    "": "2026-09-27"
   }
 };
 

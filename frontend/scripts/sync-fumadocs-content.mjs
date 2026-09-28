@@ -888,8 +888,8 @@ const globalDocs = [
     file: 'contact-us.md',
     group: { 'en-US': 'Support', 'zh-CN': '联系与支持' },
     description: {
-      'en-US': 'Join the LightVela community, talk to the product team directly, and keep sending us your usage questions, product suggestions, and real-world feedback.',
-      'zh-CN': '加入 LightVela 用户交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。',
+      'en-US': 'Join the LightVela community, talk to the product team directly, and share usage questions, product suggestions, and real-world feedback.',
+      'zh-CN': '加入 LightVela 用户社区，与产品团队交流使用问题、产品建议和真实场景反馈。',
     },
     hideDescription: true,
   },
@@ -1158,7 +1158,7 @@ const ES_DOC_METADATA = {
   },
   'contact-us': {
     title: 'Contacto',
-    description: 'Únete a la comunidad de LightVela, habla directamente con el equipo de producto y comparte preguntas, sugerencias y experiencias reales.',
+    description: 'Únete a la comunidad de LightVela, habla con el equipo de producto y comparte preguntas, sugerencias y experiencias reales.',
   },
 };
 

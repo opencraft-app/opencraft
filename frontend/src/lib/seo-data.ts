@@ -354,7 +354,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/credits":
       "Learn how LightVela model credits measure Hermes usage across conversations, Scheduled Tasks, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
     "/docs/create-first-hermes":
-      "Activate your first Hermes instance: sign in with Google or GitHub, choose an available plan on Subscribe, and let LightVela provision it. Check Subscribe for current pricing and trial benefits; no China real-name verification is required.",
+      "Activate your first Hermes instance: sign in with Google or GitHub, choose an available plan on Subscribe, and let LightVela provision it. No China real-name verification is required.",
     "/docs/core-concepts":
       "LightVela's four core concepts: Hermes, Models, Channels, and Skills. This page explains how they relate and what happens inside a single conversation.",
     "/docs/who-is-lightvela-for":
