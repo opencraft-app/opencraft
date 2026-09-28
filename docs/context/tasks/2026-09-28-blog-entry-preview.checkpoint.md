@@ -56,7 +56,7 @@ derived: false
 - `frontend/openspec/specs/blog.md` 与 PRD 已记录国际站恢复范围。
 
 ## next_action
-本轮新增四语种全文已通过独立 CR 和双站构建，准备追加至现有 MR !4747；必须先提交前端，再同步 OpenCraft 生成清单并独立提交，通过 guard 后推送。以下先前提交和 CI 记录为历史证据。
+本轮新增四语种全文已通过独立 CR 和双站构建，功能提交 20f2abde0。其后同步 OpenCraft 清单，130 个源码副本不变；check:mono2-agent-console 与 .ci/checks/opencraft_guard.sh 均通过。清单作为后续独立提交，一并推送现有 MR !4747；后续等待评审与远程 CI，不合并或发布。以下先前提交和 CI 记录为历史证据。
 
 已快进合并 origin/master eda52dd93，独立 CR 无阻塞发现，PRD 已按最终范围重写。功能提交 c18f1ce38 已推送，MR [!4747](https://git.woa.com/wisp/mono2/merge_requests/4747) 已创建，源分支 jasminzhao-blog-0928、目标 master；等待评审，不合并 MR 或发布。平台创建时返回 opened / can_be_merged，异步 CI 最终状态以平台后续检查为准。
 
