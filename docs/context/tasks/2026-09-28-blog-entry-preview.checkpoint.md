@@ -58,6 +58,7 @@ derived: false
 已快进合并 origin/master eda52dd93，独立 CR 无阻塞发现，PRD 已按最终范围重写。功能提交 c18f1ce38 已推送，MR [!4747](https://git.woa.com/wisp/mono2/merge_requests/4747) 已创建，源分支 jasminzhao-blog-0928、目标 master；等待评审，不合并 MR 或发布。平台创建时返回 opened / can_be_merged，异步 CI 最终状态以平台后续检查为准。
 
 - 合并后最终证据：frozen install、check（171 基线，0 新增）、双站构建与文章静态产物检查通过。212 项前端测试中 209 通过，3 项已证实为 master 首页 PNG/WebP 基线问题；文档与设计影响检查通过，context-audit 33 项单测通过，全库 context 4 项已有失败写入 MR。日志 /tmp/jasminzhao-blog-mr-*。
+- OpenCraft 补充：提交前端后同步生成清单，sourceRevision 更新为 c18f1ce38；130 个源码副本未改变，check:mono2-agent-console 与 .ci/checks/opencraft_guard.sh 均通过。此前遗漏的 drift 检查已补齐，修复追加到同一 MR；远程异步 CI 尚不能据本地成功宣布全绿。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户本轮：拉取 master 最新代码、本地运行国际站并放出 Blog 入口。

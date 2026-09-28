@@ -148,3 +148,8 @@ derived: false
 - 17 个测试文件共 212 项，209 通过；3 项首页测试失败已逐项确认在 origin/master 存在：PNG/WebP 断言不一致两处、CSS 引用缺失 PNG 一处。不修改这些本次范围外的问题。
 - 文档检查、staged 设计影响检查通过；context-audit 33 项单测通过；全库 context 26 项测试有 4 项因历史任务元信息、中文规则及预算校验失败，当前任务无错误。没有宣称全库全绿。
 - 校验记录：/tmp/jasminzhao-blog-mr-*。不相关 coffee-warmup 文档及其 catalog 项保留在本地，生成字体不提交。
+
+## OpenCraft 同步补充
+- 用户指出以往 MR 的 OpenCraft 兼容检查失败；本地运行 check:mono2-agent-console 复现 manifest drifted，原 sourceRevision 为 881d459d81bbea02ff08f21965702a703f47a533。
+- 读取 opencraft/AGENTS.md、MONO2_MIGRATION.md、docs/context/project/upstream-subtrees.md，以及同步脚本和 .ci/checks/opencraft_guard.sh。前端源码已提交后运行 sync:mono2-agent-console，机械更新 UPSTREAM.json 的 sourceRevision 至 c18f1ce3810ac3a92f1a43ba76c38dca996c9494；130 个同步源码文件内容未变化。
+- check:mono2-agent-console 与真实 opencraft_guard.sh 均通过。仅提交生成清单与本任务记录到已有 MR !4747，不更改同步校验规则、不触碰公开镜像或生产。
