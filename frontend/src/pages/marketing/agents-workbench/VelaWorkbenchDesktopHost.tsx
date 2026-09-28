@@ -450,7 +450,7 @@ function WorkbenchHostSurface({
           <button
             className={styles.iconButton}
             type="button"
-            aria-label={t("刷新会话")}
+            aria-label={t("刷新对话")}
             onClick={onRetry}
           >
             ↻

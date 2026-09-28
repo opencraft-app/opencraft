@@ -4,6 +4,7 @@ import test from "node:test";
 import { AppServerRpcError, JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import {
   createCordisThreadSessionRuntime,
+  reconcileHistoryTurns,
   type CordisThreadSessionRuntime,
 } from "@opencraft/appserver-session";
 import {
@@ -35,6 +36,7 @@ interface HarnessOptions {
   failResume?: boolean;
   malformedResume?: boolean;
   emitDuringResume?: boolean;
+  emitItemDuringResume?: boolean;
   requestDuringResume?: boolean;
   repeatItemCursor?: boolean;
   repeatTurnsCursor?: boolean;
@@ -42,6 +44,7 @@ interface HarnessOptions {
   hostKind?: "local" | "durable";
   useTailHydration?: boolean;
   drainTailHistory?: boolean;
+  historyModeHint?: "legacy" | "paginated" | "message-window";
 }
 
 const initializeResult = {
@@ -128,6 +131,15 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
             params: { threadId: "thread-one", status: { type: "active" } },
           }));
         }
+        if (options.emitItemDuringResume) {
+          peer.send(encodeJsonRpcMessage({
+            method: "item/completed",
+            params: {
+              threadId: "thread-one", turnId: "turn-ordered", completedAtMs: 30_000,
+              item: { id: "post-snapshot", type: "agentMessage", phase: "commentary", text: "Later activity" },
+            },
+          }));
+        }
         if (options.requestDuringResume) {
           peer.send(encodeJsonRpcMessage({
             id: "resume-approval",
@@ -186,6 +198,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
     hostKind: options.hostKind,
     useTailHydration: options.useTailHydration,
     drainTailHistory: options.drainTailHistory,
+    historyModeHint: options.historyModeHint,
     requestTimeoutMs: 1_000,
   });
   return {
@@ -276,6 +289,158 @@ test("ordinary tail hydration commits newest Turns then drains older history", a
   }
 });
 
+test("Resume orders hydrated Items before an already painted final answer and replays later notifications", async () => {
+  const historyItems = [
+    { id: "progress", type: "agentMessage", phase: "commentary", text: "Working" },
+    { id: "edit", type: "fileChange", changes: [] },
+    { id: "final", type: "agentMessage", phase: "final_answer", text: "Done" },
+  ];
+  const options: HarnessOptions = {
+    initialTurnsPage: {
+      data: [{ id: "turn-ordered", itemsView: "full", status: "completed", items: [historyItems[2]!] }],
+      nextCursor: null,
+    },
+  };
+  const harness = await createHarness(options);
+  try {
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.deepEqual(harness.runtime.views.get("thread-one")?.turns[0]?.items?.map((item) => item.id), ["final"]);
+    await harness.transport.close();
+    options.initialTurnsPage = {
+      data: [{ id: "turn-ordered", itemsView: "full", status: "completed", items: historyItems }],
+      nextCursor: null,
+    };
+    options.emitItemDuringResume = true;
+    await harness.client.connect({ clientInfo: { name: "session-test", version: "1" } });
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    const view = harness.runtime.views.get("thread-one");
+    assert.deepEqual(view?.turns[0]?.items?.map((item) => item.id), [
+      "progress", "edit", "final", "post-snapshot",
+    ]);
+    assert.equal(view?.turns[0]?.status, "completed");
+  } finally {
+    await harness.close();
+  }
+});
+
+test("paginated Resume respects the ordered Item page when the cached View contains final first", async () => {
+  const harness = await createHarness({
+    historyMode: "paginated",
+    turnsPages: {
+      "turns:head": {
+        data: [{ id: "turn-one", status: "completed", items: [] }], nextCursor: null,
+      },
+    },
+    itemsByTurnId: {
+      "turn-one": [
+        { id: "final", type: "agentMessage", phase: "final_answer", text: "Done" },
+        { id: "edit", type: "fileChange", changes: [] },
+        { id: "progress", type: "agentMessage", phase: "commentary", text: "Working" },
+      ],
+    },
+  });
+  try {
+    harness.runtime.views.update("thread-one", (view) => ({
+      ...view,
+      turns: [{ id: "turn-one", status: "completed", items: [{ id: "final", type: "agentMessage", text: "Done" }] }],
+    }));
+    const view = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.deepEqual(view.turns[0]?.items?.map((item) => item.id), ["progress", "edit", "final"]);
+    assert.equal(view.itemsPaginationByTurnId["turn-one"]?.hasLoadedOldest, true);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("ordered history repositions cached Turns and a partial Item window without discarding outside rows", () => {
+  const cached = [{
+    id: "turn-one", status: "completed", itemsView: "summary",
+    items: [
+      { id: "older", type: "agentMessage" },
+      { id: "final", type: "agentMessage", phase: "final_answer" },
+      { id: "newer", type: "agentMessage" },
+    ],
+  }, {
+    id: "turn-three", itemsView: "full", items: [],
+  }];
+  const history = [{
+    id: "turn-one", status: "completed", itemsView: "summary",
+    items: [
+      { id: "progress", type: "agentMessage" },
+      { id: "edit", type: "fileChange" },
+      { id: "final", type: "agentMessage", phase: "final_answer" },
+    ],
+  }, {
+    id: "turn-two", itemsView: "full", items: [],
+  }, {
+    id: "turn-three", itemsView: "full", items: [],
+  }];
+  const merged = reconcileHistoryTurns(cached, history, "latest");
+  assert.deepEqual(merged.map((turn) => turn.id), ["turn-one", "turn-two", "turn-three"]);
+  assert.deepEqual(merged[0]?.items?.map((item) => item.id), [
+    "older", "progress", "edit", "final", "newer",
+  ]);
+  assert.deepEqual(reconcileHistoryTurns(merged, history, "latest"), merged);
+});
+
+test("stale in-progress history cannot regress a completed Turn or its final Item", () => {
+  const cached = [{
+    id: "turn-one", status: "completed", completedAt: 30, itemsView: "full",
+    items: [{ id: "final", type: "agentMessage", text: "Complete", completed: true }],
+  }];
+  const history = [{
+    id: "turn-one", status: "inProgress", completedAt: null, itemsView: "full",
+    items: [
+      { id: "progress", type: "agentMessage", text: "Working" },
+      { id: "final", type: "agentMessage", text: "Partial" },
+    ],
+  }];
+  const merged = reconcileHistoryTurns(cached, history, "latest");
+  assert.equal(merged[0]?.status, "completed");
+  assert.equal(merged[0]?.completedAt, 30);
+  assert.deepEqual(merged[0]?.items?.map((item) => item.id), ["progress", "final"]);
+  assert.equal(merged[0]?.items?.[1]?.text, "Complete");
+});
+
+test("history replaces only the membership it actually covers", () => {
+  const cached = [{
+    id: "turn-one", status: "completed", itemsView: "full",
+    items: [
+      { id: "older", type: "agentMessage" },
+      { id: "removed", type: "agentMessage" },
+      { id: "stale-within-window", type: "agentMessage" },
+      { id: "final", type: "agentMessage" },
+      { id: "newer", type: "agentMessage" },
+    ],
+  }];
+  const partial = reconcileHistoryTurns(cached, [{
+    id: "turn-one", status: "completed", itemsView: "summary",
+    items: [{ id: "removed", type: "agentMessage" }, { id: "final", type: "agentMessage" }],
+  }], "latest");
+  assert.deepEqual(partial[0]?.items?.map((item) => item.id), ["older", "removed", "final", "newer"]);
+  assert.equal(partial[0]?.itemsView, "full");
+  const notLoaded = reconcileHistoryTurns(partial, [{
+    id: "turn-one", status: "completed", itemsView: "notLoaded", items: [],
+  }], "latest");
+  assert.deepEqual(notLoaded[0]?.items?.map((item) => item.id), ["older", "removed", "final", "newer"]);
+  assert.equal(notLoaded[0]?.itemsView, "full");
+  const full = reconcileHistoryTurns(notLoaded, [{
+    id: "turn-one", status: "completed", itemsView: "full",
+    items: [{ id: "older", type: "agentMessage" }, { id: "final", type: "agentMessage" }],
+  }], "latest");
+  assert.deepEqual(full[0]?.items?.map((item) => item.id), ["older", "final"]);
+  const settled = reconcileHistoryTurns([{
+    id: "turn-two", status: "inProgress", itemsView: "summary",
+    items: [{ id: "final", type: "agentMessage", text: "Partial", status: "inProgress", completed: false }],
+  }], [{
+    id: "turn-two", status: "completed", itemsView: "full",
+    items: [{ id: "final", type: "agentMessage", text: "Complete" }],
+  }], "latest");
+  assert.equal(settled[0]?.items?.[0]?.text, "Complete");
+  assert.equal(settled[0]?.items?.[0]?.status, undefined);
+  assert.equal(settled[0]?.items?.[0]?.completed, undefined);
+});
+
 test("tail hydration falls back to thread/read when the extension page is absent", async () => {
   const harness = await createHarness({
     fallbackTurns: [{ id: "turn-1", items: [] }],
@@ -321,6 +486,59 @@ test("paginated hydration follows Resume cursor heads and loads older pages on d
     assert.deepEqual(complete.turns.map((turn) => turn.id), ["turn-1", "turn-2", "turn-3"]);
     assert.deepEqual(complete.turns[0]?.items?.map((item) => item.id), ["item-1"]);
     assert.equal(complete.turnsPagination.hasLoadedOldest, true);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("catalog metadata selects paginated Resume without a redundant Thread read", async () => {
+  const harness = await createHarness({
+    historyMode: "paginated",
+    turnsPages: {
+      "turns:head": {
+        data: [{ id: "turn-1" }],
+        nextCursor: null,
+      },
+    },
+    itemsByTurnId: {
+      "turn-1": [{ id: "item-1", type: "agentMessage" }],
+    },
+  });
+  try {
+    const seeded = harness.runtime.views.seedMetadata(thread("thread-one", [{ id: "catalog-turn" }], "paginated"));
+    assert.equal(seeded.resumeState, "needs_resume");
+    assert.deepEqual(seeded.turns, []);
+    assert.deepEqual(seeded.thread?.turns, []);
+    const refreshed = harness.runtime.views.seedMetadata({
+      ...thread("thread-one", [{ id: "newer-catalog-turn" }], "paginated"),
+      name: "Refreshed catalog title",
+    });
+    assert.equal(refreshed.thread?.name, "Refreshed catalog title");
+    assert.deepEqual(refreshed.thread?.turns, []);
+
+    const resumed = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(resumed.historySource, "paginated");
+    assert.deepEqual(resumed.turns.map((turn) => turn.id), ["turn-1"]);
+    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("Host history capability removes metadata preflight for a deep link", async () => {
+  const harness = await createHarness({
+    historyMode: "paginated",
+    historyModeHint: "paginated",
+    turnsPages: {
+      "turns:head": { data: [], nextCursor: null },
+    },
+  });
+  try {
+    const resumed = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(resumed.historySource, "paginated");
+    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
   } finally {
     await harness.close();
   }

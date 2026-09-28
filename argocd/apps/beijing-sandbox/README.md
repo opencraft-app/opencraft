@@ -36,7 +36,6 @@ sandbox-family 当前统一生成：
 - `ctl`
 - `gateway-dashboard`
 - `lightclaw-auth`
-- `nextgen-dashboard`
 - `payment`
 - `sandbox`
 - `service-gateway`

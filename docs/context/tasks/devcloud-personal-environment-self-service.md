@@ -14,9 +14,9 @@ source_of_truth:
   - cloudladdergateway/internal/devroute
   - deploy/localstack/localstack.sh
 status: active
-reviewed_at: 2026-09-17
+reviewed_at: 2026-09-22
 review_due: 2026-12-16
-revision: 0.3.0
+revision: 0.4.0
 precedence: task
 derived: false
 ---
@@ -32,7 +32,7 @@ derived: false
 - 不修改、发布或同步任何生产/staging 工作负载。
 - 不把动态注册数据写回 Git、GitOps 或 Argo CD desired state。
 - 不允许客户端任意指定 UIN、URL 或任意内网端口。
-- 不默认触发支付或发货闭环；只有明确授权且询价确认 `real_total_cost=0` 的 testing mock 账号才能调用测试专用 `order-and-pay`。
+- 不默认触发支付、退款或销毁；只有用户明确授权、账号余额已确认且限定在 testing 时才调用测试专用 `order-and-pay`。金额大于零的 funded testing 账号允许用于验收，但不得调用生产账号或生产支付。
 - 不在本轮替代“一需求一共享集群环境”的 playground 克隆能力。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -78,6 +78,8 @@ derived: false
 - tkexgz/tkexsg 仅 testing 工作负载启用 HTTP registry；不新增 ServiceAccount/RBAC/Lease，prod/staging manifest 无变化。
 - DevCloud Linux 执行 Skill 脚本后可从 `http://<DevCloud-IP>:5173` 打开前端，API 指向 `http://<DevCloud-IP>:8085`，trade callback 监听 `0.0.0.0:18084`。
 - Skill 覆盖 doctor/bootstrap/up/register/status/heartbeat/unregister/down，以及真实询价、下单不支付和个人 DB 不变量验收。
+- `doctor` 在干净 shell 中复用本 Skill 私有目录已安装的 `kubectl/kind/kustomize`；Linux port-forward 子进程退出后自动重建，停止 supervisor 时不得遗留子进程。
+- 浏览器一次性 nonce 在并发请求下只能原子消费一次；半连接最多占用 2 秒，不能阻塞后续正常登录。
 
 ## affected_paths
 
@@ -123,7 +125,15 @@ derived: false
 - 2026-09-17（DevCloud 日志跨至 2026-09-18）：北京实时询价返回 `bundle_launch_01`、CNY、`real_total_cost=0`；testing `order-and-pay` HTTP 200、业务 `code=OK`。真实回调后终态为 `trade_order=provisioned`、`trade_flow(create_resource)=completed`、Pass `bundle_launch_01/active`、quota `1/1`、subscription 0。浏览器一次性 nonce 被消费，`session_token` fragment 被清除，登录态写入 localStorage，浏览器 `GET /v1/passes` 返回 1 条 active Launch Pass。
 - 浏览器可达性边界：当前办公网 Chrome 直接访问 DevCloud 5173/19050 会被终端代理返回 502；本轮通过 Codex 自动建立 SSH 本地转发完成真实 DOM、localStorage 和 API 验收。该证据证明 Skill 登录链路可用，但不证明所有办公网终端都能裸直连 `http://<DevCloud-IP>:<高位端口>`；Codex-managed tunnel 是必要 fallback。
 - 2026-09-17（DevCloud 日志跨至 2026-09-18）：北京 60 秒 TTL 自然过期后，generic callback 返回 HTTP 503 / `status=expired` 且个人 Trade/代理计数保持 `2->2 / 4->4`；`unregister` 后返回 HTTP 503 / `status=disabled` 且计数仍不变。随后标准 `down`，远端和本机转发端口、后台 PID、临时浏览器登录态与个人 kind 集群全部释放。
+- 2026-09-22：韩国国际站按短期 capability 新路径重新完成 Launch→Launch AI、Launch→Cruise AI、Cruise→Cruise AI 三条跨 SP 真实 testing 支付、`checkModify/modifyResource/queryResource`、Trade/Flow/Pass/Task/AI Gateway 终态，并逐笔只退款一次、只销毁一次。注销后旧 capability 探针返回 401，registration 保留 disabled tombstone，`down` 停止个人 workload 并保留 PVC。完整 Deal/event/Flow/Task/Pass/实例证据记录在 `2026-09-20-pass-cross-sp-modify.md`。
+- 2026-09-22：真实测试确认两个运行时坑。其一，三目标串行询价会叠加外部延迟并触碰 15 秒单目标边界；CTL 改为并行询价、单目标 20 秒、按策略顺序组装，配合 `ctl-passes=30s` 后公开网关连续三次 HTTP 200。其二，Pod rollout 会让裸 `kubectl port-forward` 永久退出；Linux localstack 改由 supervisor 自动重建。请求刚好落在重连窗口时仍可能失败，因此支付/退款/销毁必须先查计费回调和 DB 终态，不能按客户端错误盲目重试。
 - 双站原始请求/响应只保存在 DevCloud 私有状态目录中，权限为 0600；本 Pack 仅记录方法、路径、HTTP/业务状态和终态，不保存 session、capability、token、完整账号标识或 Deal/BigOrder 原值。
+- 2026-09-24：Skill 的“只验回调不支付”验收被判定为不足以证明可用，已把 `verify-checkmodify-no-pay` 改为 fail-closed 并指向新的 `verify-real-payment-loop`；该子命令由 `scripts/real-payment-loop.py` 驱动，覆盖新购、询价、变配下单支付、退款、销毁的完整真实计费闭环，并把每一次真实 request/response 落盘为 transcript。
+- 2026-09-24：`checkModify` 在个人环境长期返回 `409 PASS_MODIFY_CONFIG_MISMATCH` 的根因是 `curDeadline` 时区。计费协议层的时间字面值是北京时间 CST(UTC+8)（真源 `trade/internal/jifei/timezone.go::CurDeadlineLocation`），而 `ctl.pass.expired_time` 在 DB 里是 UTC 字面值，直接透传会与 CTL 基线差 8 小时，且 CTL 的 `modifyDeadlineTolerance` 只有 1 秒。Skill 侧已在 `real-payment-loop.py` 用 `utc_literal_to_cst()` 固化该换算，并由 contract test `test_cur_deadline_is_converted_to_cst` 防回归。询价 200 不能作为该字段正确的证据。
+- 2026-09-24：国内（北京池）个人环境已用该子命令真实跑通付费闭环：变配订单 `20260924995023769968301`（询价 `currency=CNY`、`real_total_cost=15800`），Pass 终态 `active / bundle_cruise_ai_01`，退款单 `20260924995023769933661` 后 `isolated`，销毁后 `ctl.history_pass=deleted`，`trade_flow` 的 `create / modify / isolate / destroy_resource` 全部 `completed`。真实 transcript 已脱敏后固化为 `tests/fixtures/real-payment-loop-cn.json` 并纳入 contract test。
+- 2026-09-24：国际（韩国池，uin `450860000023`）个人环境同样真实跑通付费闭环：新购 `bundle_launch_01` 询价 `currency=USD / price=650 / tax_price=59 / real_total_cost=709 / pid=1059132`，变配 `bundle_cruise_ai_01` 询价 `1650 / 149 / 1799 / pid=1060119`，Pass 终态 `active / bundle_cruise_ai_01`，退款后 `isolated`，销毁后 `ctl.history_pass=deleted`，`trade_flow` 四个阶段全部 `completed`。真实 transcript 已脱敏后固化为 `tests/fixtures/real-payment-loop-intl.json`。
+- 2026-09-24：Pass 的所有计费调用必须显式传 `payMode=1`（预付费）。真实探测中手工探针漏传该字段会退化成后付费询价，计费返回 `371009 no price found for this condition: 付费类型:后付费 ... 币种:美元`，网关表现为 502，极易被误判成个人环境或国际站链路不通。契约真源是 `trade/internal/jifeiclient/modifyresourcestatus.go` 的 `nPrepaid = 1`，以及 `onlinerefund.go` 中“后付费不能退费”的判定。
+- 2026-09-24：变配发货刚完成时，计费 order-center 侧的 deal/resource lock 还未释放，此刻发起 `qcloud.Deal.OnlineRefund` 会稳定返回 `returnCode=100151 deal lock error[[ERR_RESOURCE_LOCK]...exist locks]`，个人环境表现为退款接口 502。这是真实时序坑而非环境故障：等待后重放同一请求即 HTTP 200。`real-payment-loop.py` 已用 `call_after_deal_lock()` 对且仅对该错误码做退避重试，其余失败立即中止，避免把重复退费请求打到计费。
 
 ## risks
 
@@ -131,6 +141,7 @@ derived: false
 - 跨环境污染：已认领 UIN 的 expired/disabled 状态 fail closed；静态路由保留到动态迁移真实验证完成。
 - GitOps 误同步生产：TKEx 构建固定使用 `testing` image-pin variant，只允许修改 testing platform env；发布时仅精确同步 testing 资源，禁止 app 级 Sync。
 - callback 晚到：unregister 写 tombstone 而不是物理删除。
+- 请求结果不确定：testing `order-and-pay` 已出现客户端 504 后 `checkCreate/createResource` 继续成功的真实案例；付款、退款、销毁请求只能提交一次，超时后必须先按 transaction/event/deal 和业务库终态对账。
 - Session 泄露：Skill 只在本机内存中用一次性 nonce 把 session 交给浏览器，不写状态文件、shell argv、仓库或日志。
 - 浏览器网络：办公网代理或安全组可能阻止裸访问 DevCloud 高位端口；自动化验收和无直连终端应使用 agent-managed SSH local forwarding，且清理阶段必须停止转发。
 - 探针重定向：健康探针禁止跟随 3xx，避免允许的 DevCloud 第一跳扩展为任意内网 SSRF。
@@ -145,6 +156,7 @@ derived: false
 - `/usr/bin/python3 .ci/runtime/tests/gitops_tests/test_clgateway_sg_testing_callback.py`
 - `/usr/bin/python3 <skill-creator>/scripts/quick_validate.py .agents/skills/personal-devcloud-environment`
 - `bash .agents/skills/personal-devcloud-environment/tests/contract_test.sh`
+- `cd ctl && go test ./pkg/logic/pass ./main/api -count=1`
 - 双站 live testing：`up -> browser-login -> register -> inquiry -> testing order-and-pay -> callback/DB terminal state -> TTL expired 503 -> unregister disabled 503 -> down`。
 - 仓库 docs/change-impact 门禁按实际变更运行；未能运行的 live testing 验证明确标注。
 
@@ -170,7 +182,11 @@ derived: false
 
 ## handoff
 
-- 当前状态：北京国内与韩国国际均已用同一套个人 DevCloud state 串行完成浏览器登录、动态注册、真实询价、testing mock 下单支付、计费回调、Pass/quota 终态、TTL fail-closed、disabled tombstone 和 `down` 清理。两站当前均为 `stack_status=down / registration_status=disabled`，没有遗留固定端口或个人 kind 集群。
+- 2026-09-23 当前验收门禁（以本条为准；以下旧交接描述的是之前的实现阶段）：最新 `master@af54f3a4` 包含账号租约、Auth migration 21 和北京 Auth 的租号开关、候选账号池与受控来源 CIDR；最新 `gitops@e358c3ca` 的北京 Auth、Trade 镜像仍钉在来源 `master@c1875f2f`，该源码没有 migration 21，且 GitOps 中北京 `patch-shadowbinding.yaml` 尚未带上租号配置。韩国的对应配置已具备。故旧的个人环境付费证据不能证明北京从空状态执行新 `up` 自动领号成功。需先核实候选账号当前余额、实名和 active binding，再按正式受限 Playground 流水线构建北京 Auth/Trade、晋级北京配置，并经 GitOps、Argo 镜像及 `Synced/Healthy` 验证；之后执行 Auth migration 21、北京 `up/status`、真实新购/跨 SP 变配/回调发货/退款销毁终态和 `down`。不得以 GitOps commit 或单测代替运行态验证。
+- 2026-09-23 本地核验：在隔离 worktree `master@ee972615` 执行 personal-devcloud Skill contract 通过，Auth 租约配置定向 Go 测试通过；`validate_documentation.py` 错误/警告/断链均为 0。最新 `master@af54f3a4` 相比上述测试 SHA 的差异不涉及 Auth、该 Skill 或北京 Auth 配置。
+- 2026-09-23 自动构建状态：租约 MR !4487 合入后，Auth push 流水线 `p-05652d3819f24f589ac9e6931155aa08 / b-b9a6b82c27e44136b598c922261dbbc8` 在 `00:14:06Z` 失败（约 1 分 37 秒）；CI runtime pipeline 成功，但 Auth、东京 Auth、Service Gateway 等多个并行构建也快速失败。Gongfeng 状态 API 未返回失败日志；Stream UI 当前不可访问，根因待取证。此自动触发构建不等于北京 Playground 镜像发布，尚无 Argo 发布证据。
+- 2026-09-23 北京 GitOps 配置待交付：在隔离的 `codex/personal-devcloud-bj7-lease-gitops` 本地分支，把 `master` 已存在的四项租号配置精确补到 `gitops@e358c3ca` 的北京 Auth patch；与源码字段逐项一致，YAML 解析、受控 CIDR 检查和 `git diff --check` 已通过。该分支尚未提交、推送或合入；候选账号的当前余额/实名/active binding 和北京实际运行态仍须 live 核验。
+- 历史阶段状态（不代表 2026-09-23 新租号路径的北京验收）：北京国内与韩国国际曾用同一套个人 DevCloud state 串行完成浏览器登录、动态注册、真实询价、testing mock 下单支付、计费回调、Pass/quota 终态、TTL fail-closed、disabled tombstone 和 `down` 清理。当时两站均为 `stack_status=down / registration_status=disabled`，没有遗留固定端口或个人 kind 集群。
 - 本轮运行时暴露并修复三处 localstack 缺口：Trade Shadow binding resolver 改为真实 Auth 内部接口；共享内部 token 随机化覆盖 Auth 两个 token；CTL localstack migration 清单补齐 24-31。另同步更新 `validate.sh` 的 token patch-plan 精确期望和 migration 全覆盖断言。
-- 集成状态：修复将更新到既有 MR `!4218` 并在最新门禁通过后合入 `master`；用户已明确授权 commit、push 和 merge。
+- 历史阶段集成状态：修复当时计划更新到既有 MR `!4218` 后合入 `master`；不得据此推断本轮北京账号租约的镜像已经发布。
 - 发布权限边界：本轮只操作 testing 与个人 kind/localstack；没有修改 production/staging、GitOps desired state、Argo 或真实资金链路。后续仍禁止 App 级 Argo Sync、production/staging 变更或生产业务请求。

@@ -2,6 +2,7 @@ import type { FsReadDirectoryEntry } from "@opencraft/appserver-protocol/generat
 import { ChevronLeft, Folder, FolderOpen } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ModalSurface } from "./modal";
+import { Button } from "./ui/button";
 
 import {
   joinWorkspacePath,
@@ -100,6 +101,7 @@ export function WorkspaceDirectoryPicker({
 
   return (
     <ModalSurface
+      appearance="utility"
       className="workspace-picker-dialog"
       dismissOnOutsidePress={phase !== "choosing"}
       label={title}
@@ -129,7 +131,7 @@ export function WorkspaceDirectoryPicker({
           })}
         </nav>
 
-        <div className="workspace-picker-list" role="listbox" aria-busy={phase === "loading"}>
+        <div className="workspace-picker-list" role="group" aria-label={`Folders in ${currentPath}`} aria-busy={phase === "loading"}>
           {currentPath !== normalizedRoot ? (
             <button
               type="button"
@@ -149,9 +151,6 @@ export function WorkspaceDirectoryPicker({
               key={entry.fileName}
               type="button"
               className="workspace-picker-row"
-              role="option"
-              aria-selected="false"
-              onDoubleClick={() => setCurrentPath(joinWorkspacePath(currentPath, entry.fileName))}
               onClick={() => setCurrentPath(joinWorkspacePath(currentPath, entry.fileName))}
             >
               <Folder size={16} />
@@ -164,19 +163,20 @@ export function WorkspaceDirectoryPicker({
 
         <footer className="workspace-picker-footer">
           <code title={currentPath}>{currentPath}</code>
-          <div>
-            <button type="button" className="workspace-picker-secondary" onClick={onCancel} disabled={phase === "choosing"}>
+          <div className="workspace-picker-footer__actions">
+            <Button variant="outline" size="sm" onClick={onCancel} disabled={phase === "choosing"}>
               Cancel
-            </button>
-            <button
-              type="button"
-              className="workspace-picker-primary"
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void choose()}
-              disabled={phase !== "idle" || !canChooseCurrentFolder}
-              title={canChooseCurrentFolder ? undefined : "Choose a folder inside the projects directory"}
+              disabled={phase !== "idle" || error !== null || !canChooseCurrentFolder}
+              loading={phase === "choosing"}
+              title={error !== null ? "This folder could not be opened" : canChooseCurrentFolder ? undefined : "Choose a subfolder"}
             >
-              {phase === "choosing" ? "Selecting…" : confirmLabel}
-            </button>
+              {confirmLabel}
+            </Button>
           </div>
         </footer>
     </ModalSurface>

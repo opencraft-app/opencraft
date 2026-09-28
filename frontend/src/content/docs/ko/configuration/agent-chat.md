@@ -10,9 +10,9 @@
 
 > ℹ️ **안내**
 >
-> AgentChat 인터페이스 안내는 현재 주로 중국어로 제공됩니다. 전체 현지화는 준비 중입니다.
+> 채팅 인터페이스 안내는 현재 주로 중국어로 제공됩니다. 전체 현지화는 준비 중입니다.
 
-![LightVela 콘솔의 채팅 페이지](../images/chat-overview-en.png)
+![LightVela 콘솔의 채팅 페이지](../images/chat-overview-en.webp)
 
 ---
 

@@ -8,8 +8,17 @@ import type { BrowserPageId, BrowserUrl } from "@opencraft/browser-core";
 import {
   decodeHostProxyUrl,
   encodeHostProxyUrl,
+  HOST_PROXY_PATH_PREFIX,
+  HOST_PROXY_SERVICE_WORKER_SCOPE,
+  HOST_PROXY_SERVICE_WORKER_URL,
   isLoopbackHttpUrl,
 } from "../apps/workbench-web/src/browser/host-proxy-url";
+
+test("Host proxy Service Worker is scoped to the OpenCraft proxy namespace", () => {
+  assert.equal(HOST_PROXY_SERVICE_WORKER_URL, "/__opencraft/opencraft-host-proxy-sw.js");
+  assert.equal(HOST_PROXY_SERVICE_WORKER_SCOPE, "/__opencraft/host-proxy/");
+  assert.ok(`${HOST_PROXY_PATH_PREFIX}/`.startsWith(HOST_PROXY_SERVICE_WORKER_SCOPE));
+});
 import { WebBrowserPageRuntime } from "../apps/workbench-web/src/browser/web-browser-runtime";
 import {
   browserSurfaceSandboxForNavigation,

@@ -1,0 +1,53 @@
+# 进度
+
+- 2026-09-17：排除设置页原型，完成已有 owner/协议复核，开始平台级 Connector 实现。
+- 引入独立 ConnectorRuntime，借用 AuthenticationService epoch；准备/部分失败、显式 Thread 选择、scope-bound handle 与取消/撤销已覆盖。
+- Workbench 已注册两个稳定模型入口；ExtensionSupervisor 内部 contribution 负责 Provider 的事务注册/回收，不冻结新公共 manifest。
+- AppServer MCP adapter 复用已存在的原生 RPC，检查 host/generation、Thread 级目录与 schema，不修改 native MCP 配置。未支持 MCP 的 Host 明确失败。
+- 真实 DSH + AppServer + 扩展 + loopback HTTP smoke 通过；模型实际从工具返回中读到 handle 并调用，断开后旧 handle 被拒绝，HTTP 计数不增加。
+- 首轮类型检查暴露 Promise union 推断与未纳入本地 typed method map 的 MCP 方法，已改为显式 union 与 generated params + requestRaw/边界校验；类型检查通过。旧工具列表断言已同步两项新入口。
+- 复核补充只读边界：未知/写工具不进入首批执行面，MCP 必须明确 public 或借用认证 Provider；readOnlyHint 不冒充真实服务端权限隔离。
+- 工具 metadata 与执行函数固定到准备结果，原对象后续属性修改不能接管旧 handle。
+- Connector 聚焦测试、400 项 Chat 回归、扩展回归、平台边界、Web/Runtime 类型与 Electron Renderer 构建通过；现有大 chunk/i18n 缺失字典警告未作为本轮新功能扩展。
+- 正式设计见 docs/platform-connectors.md；普通用户 UI/OAuth/写审批/持久化/内置 Skill 安装器明确未交付。正文更新和 Hermes 自动热刷新仍取消。
+- 2026-09-18：最终 11 项 Connector 专项与真实 DSH/AppServer/HTTP smoke 通过。同步 Provider 异常也经过安全错误映射，不把底层凭据细节回传。
+- 完整 `npm run gate` 最终退出 0：全 workspace 类型、全部配置的回归、Web/Expo Web/iOS bundle 均通过。它不代表 Expo 已装配 Connector 功能。
+- 文档校验、21 个本地链接、显式源码变更影响检查及 git diff --check 通过；--staged 集为空，没有自动暂存、提交、推送或发布。
+- 第二阶段已获授权：OAuth、用户入口、写审批和持久化；同时更新正式设计。先读已有认证/Modal/存储边界，避免新建 token 或页面业务真源。
+- 第二阶段 checkpoint：领域/协议/持久化 17 项回归通过；真实 Chrome 组件与 loopback 授权服务完成弹窗授权、明确连接/选择、拒绝/Escape/一次允许、IndexedDB 页面重启和窄屏验收。完整 gate 正在执行，尚不宣称桌面 IPC/正式第三方授权完成。
+- 验证修正：本机无 Playwright 配套 Chromium，改用明确存在的系统 Chrome headless + 全新测试 context；异步 CAS checkbox 使用真实 click 后等待领域结果，不把同步 check 返回当完成。不存在的 hook/文件名查询已丢弃，后续使用源码精确路径。
+- 第二阶段隔离验收：`/tmp/opencraft-connector-controls/report.json` 和 light/dark/approval 截图记录真实 React/Radix + WebSocket/HTTP 授权链、一次拒绝、一次允许、Escape 和刷新后的待确认。只是原生 Host/OAuth authority 的模拟，不是真实第三方账号。
+- 实际 Electron 源码预览验收：`/tmp/oc-connector-desktop-nPEwlo/report.json`、`desktop-reopened.png`。真实 Main/Preload IPC、changed 通知、CAS 冲突、白名单拒绝及进程重启通过；真实 Composer 能打开保存但未连接的配置。两次测试进程均已关闭，不覆盖已有安装、profile 或签名包。
+- 最后复核发现 DSH 插件与 native tool envelope 仍有 10/12 秒期限，已通过内部注册 contract 传递 Host 计算的期限。`smoke:connectors` 真实 DSH 等待 13 秒后批准才调用 HTTP，撤销后旧 handle 不再触达服务；226 项 DSH 回归和 Host typecheck 通过。
+- 文档验证无错误/警告，16 个相关相对链接通过；显式源码路径与 `--staged` 变更影响检查通过（staged 为空）。根 context-audit 的 33 项测试通过，audit 仅为 discovery/not_assessed，不宣称完成治理评分。
+- 仓库级 context validation 未通过：旧 Task Pack 缺字段、治理历史引用等错误；根 context tests 26 项中 4 项失败。示例 `2026-09-04-fix-cn-home-cta.md`、`2026-09-16-appserver-transport-generation-reconnect.md`、`2026-09-17-opencraft-skills-scroll-ownership.md` 没有本轮 diff。保留问题，不扩大为全仓文档治理修复；正式文档 validator 仍通过。
+- 最终交接门禁：期限修复后完整 `npm run gate` 再次退出 0（平台边界、全部 workspace 类型和配置的测试集、Web/Expo Web/iOS bundle）。详细本地输出 `/tmp/opencraft-connector-final-gate.log`。没有新增发布、真实账号授权、Hermes/ref 修改或自动提交；已有 dirty 工作保留。
+- 第三阶段开始：落用户确认的 Octop 风格目录/引导、Skills Tab、Host 数据库凭据。已完成当前状态和 context 核对；原模型 credentials.json 不属于本轮迁移范围。
+- 新增 connector-core（目录/contract）和 connector-host（SQLite/OAuth/MCP/API）；凭据不会出现在客户端配置 store。SDK 采用已核对本地声明的 @modelcontextprotocol/sdk 1.30.0。首次类型检查纠正 SDK schema 导出名，不靠猜测保留不存在接口。
+- 当前源码已接 Skills header 的连接器 Tab（复用既有 Header portal，无需修改官网/shared 生成副本），新增平台内容 slot；Composer 生产入口收敛为会话选择。Host 显示名类型纠正为 displayName。
+- 隔离数据库/CAS/多实例、API 格式探测与调用、真实 loopback OAuth 交换/刷新/取消/重开测试通过，连同前两阶段共 20 项。首次 OAuth fixture 的 DCR 响应缺 redirect_uris，被 SDK 严格校验拒绝；已修 fixture，不降低生产协议校验。
+- 当前接通 10 个远端 MCP 目录 adapter 与 6 个 HTTP API 映射；其余服务保留目录说明但不允许保存成可用连接。后续继续补适配与真实组件/桌面验收。平台边界检查通过。
+- API 增加 IMA/元典/WeKnora，当前 19 个服务有 adapter。CLI 参考实现会落地凭据文件，与用户数据库约束冲突，未照搬；邮箱/飞猪尚未接执行。22 项 Connector 聚焦测试已包含所有已声明 API 工具的请求映射检查。
+- 浏览器 smoke 已通过实际保存、秘密字段清空、format-only 反馈。修正两处定位误差（IMA 搜索也匹配 IMAP；状态块包含工具子列表不能全文 exact）；继续定位会话写操作未显示审批的问题，未宣称最终验收通过。完整 gate 与原生桌面验收正在执行。
+- 会话 smoke 改为等待真实 checkbox 完成勾选再发现工具；之前“工具列表非空”的异步轮询没有可靠等待选择提交，导致过早触发。现已连续通过浏览器全链路，最后证据 `/tmp/oc-connector-library-LOw9vK/report.json`：配置写入真实 Host SQLite、密钥不回显、检测不执行真实查询、勾选后写审批拒绝/一次允许、刷新不自动授权、删除后凭据清理。
+- 当前源码 Electron 的 Main/Preload/Host/Skills Tab 实际验收通过（`/tmp/oc-connector-desktop-Qtml42/report.json`）。截图复核发现共享无图标 ListItem 保留图标列及表单 grid 压缩字段，已在共享 primitive 和弹窗本征高度处理，窄屏正文宽度增加断言并通过；修后截图在 `/tmp/oc-connector-library-8FoBK3/`。
+- 增补真实 MCP SDK→受控 HTTP 的 list/call、目录变化拒绝以及 DNS/redirect/metadata 网络边界测试；当前 24 项 Connector 测试通过。真实 DSH 13 秒延迟审批 smoke 再次通过。最终 build/gate、桌面复验和文档门禁收尾中。
+- 第三阶段最终完整 OpenCraft gate 退出 0，记录 `/tmp/opencraft-managed-connector-final-gate.log`；24 项 Connector 测试通过。最后目录说明按钮/原生 MCP 兼容入口微调后 Workbench typecheck、Web smoke 又通过（`/tmp/oc-connector-library-fswkDd/report.json`）。
+- 修后 Electron 实际 Skills Tab/字段完整性/真实 Host 保存和进程重启验收通过（`/tmp/oc-connector-desktop-T6qNBd/report.json`）；所有测试 profile 独立，未覆写正式安装。源码、当前测试制品和对外发布严格分开。
+- 正式文档 validator 无错误/警告，显式变更影响与 `--staged` 检查通过（staged 为空），git diff --check 通过。根 context 旧治理失败没有扩散修复，也未将它描述为本轮全仓通过。
+- 收尾结论：23 项目录、19 项已实现 adapter，经隔离协议/组件验收但没有真实第三方账号验收；个人邮箱/飞猪/两项 CLI 仍仅说明。新凭据只在 Host 数据库，旧借用原生 MCP 由其原 owner 保持原存储。
+- 第四阶段：基线 24 项测试与旧浏览器 smoke 通过后，替换目录为限宽品牌卡片/独立已配置视图，删除旧列表 CSS 和重复通用引导。提取唯一原生 MCP 发现组件，移除 Composer 中仅测试使用的管理分支，原生授权 smoke 已迁移到实际共用入口并通过。
+- 详情新增共享 Modal inspector variant，Native 使用 sheet 投影；业务不持有位置/遮罩/键盘。正文滚动、固定操作区、可展开工具结果、品牌资源和语义排版均已接入。新浏览器 smoke 已通过多列、Enter 打开、关闭焦点返回和查询保留、写审批/重启/删除；窄屏全屏详情继续补验。
+- 本轮只新增 23 个静态品牌资源；未导入 Octop runtime/CSS。apply_patch 两次格式错误没有写入半成品；修正为分别删除/新增后正常替换，未保留临时备份或旧组件。
+- 第四阶段验证：26 项 Connector 测试通过；新增守卫确认目录不再依赖 SettingsListItem、没有 Composer 备用发现分支或旧 CSS selector、23 项品牌资源齐全。原生 OAuth `smoke:connector-controls` 通过，共用生产 NativeServices 入口，不再用特供测试 UI。
+- Web 新 UI 实测 `/tmp/oc-connector-library-4vpJZ8/`：4 列品牌目录、Enter 打开、Escape/关闭焦点返回、查询保留、窄屏全屏详情与固定操作区、浅深主题、数据库不回显、拒绝/逐次写审批/删除均通过。实际 Electron 源码预览 `/tmp/oc-connector-desktop-nka0Fe/` 完成 Skills Tab、保存/检测和重启验证；截图已人工查看。
+- 文档 validator、显式变更影响及 git diff --check 通过。完整门禁日志：`/tmp/opencraft-connector-ui-cleanup-gate.log`。保持既有引擎/数据库机制和未接通服务边界，未提交或推送。
+- 第五阶段文案收敛：新增白名单错误映射，区分操作阶段与未知写入结果；API/MCP 检查按钮分开，凭据说明根据实际字段变化，授权轮询警告在恢复后清除。新增 4 项专项，连同既有 26 项共 30 项通过；浏览器已覆盖失败重试、Client ID 重填提示与授权轮询恢复，继续补验丢失保存回执后的“查看已配置”入口。
+- 第五阶段浏览器完整矩阵通过：`/tmp/oc-connector-library-KKfg0h/report.json` 覆盖检查失败/重试、真实 Client ID 重填提示、保存已提交但回执丢失时读取已配置列表且不重复创建/不误报 OAuth、轮询恢复清警告、取消不冒充撤销。原生 OAuth smoke 通过，实际 Electron 新文案与数据库重启验收通过：`/tmp/oc-connector-desktop-fPzKCR/report.json`。
+- 文档 validator 与显式影响检查通过；用户可见旧字符串扫描已清理（代码类型和注释仍可使用 Host）。最后两处设备选择器名称/tooltip 同步后重新构建 Renderer，不扩大为其他 Skills 标签的改名。
+- 第五阶段完整 OpenCraft gate 退出 0：`/tmp/opencraft-connector-copy-gate.log`。最后补充“取消回执丢失、查询确认后清理旧错误”的定向 UI 回归也通过：`/tmp/oc-connector-library-6WgEgA/report.json`；最终 Renderer 构建退出 0。旧预览检测到当前交互，未强制刷新或丢弃表单输入。未提交、未推送、无真实账号授权。
+- 第六阶段 Connector Capability Runtime：将模型发现从 `discover()` 全量 schema/handle 改为引擎中立的 scoped view → search/page → exact detail → call。初版将四个 `deferLoading` meta tools 错误摊平为全局函数；2026-09-22 收敛为唯一 `connectors` namespace 下的 `search_tools/get_tool/call_tool`，删除 list 兼容入口。DSH adapter 以 `connectors__*` 投影同一 identity，不新增产品级 DSH 分支。
+- 32 项 Connector 测试覆盖腾讯文档规模的 224 个大 schema：全集可分页、精确名称可搜索、search page 不含 schema/handle、detail 才签发 handle；selection generation、schema/连接变化、超大 schema 与输出预算均失败关闭。真实隔离 DSH/AppServer smoke 完成 search → detail → call、13 秒写审批和断开后的旧 handle 拒绝。
+- 第六阶段完整 `npm run gate` 退出 0：全 workspace 类型、平台边界、全部配置测试以及 Web、Expo Web、Expo iOS 构建通过。未读取真实凭据、未调用腾讯文档、未提交、未推送、未发布。
+- 第六阶段 macOS arm64 包已从当前 dirty 源码重新构建并使用 `Developer ID Application: jindong zhang (BF993VYGGF)` 签名，buildId `20260918080102-ce37d8741788`。独立输出 `release/signed-20260918-080053-connectors-runtime/` 的 App 深度/严格签名、DMG 签名/镜像、ZIP 完整性与隔离 profile/model/skills 启动通过；真实窗口打开 Composer 连接器面板。公证配置仍不存在，electron-builder 明确跳过公证，`spctl` 结果为 `Unnotarized Developer ID`；未安装或发布。
+- 腾讯文档执行失败续查：实例 enabled 且 token 已保存，224 项 inventory 可读取；连续 inventory 工具集合/字段相同但顺序不同，使顺序敏感 digest 误报 conflict，所有调用均在远端 `tools/call` 前被拒绝。Host 现按工具名排序并 canonicalize JSON key；反序 fixture 可执行而 description/schema 真实变化仍拒绝。完整 gate 通过，build `20260919153307-e2a9b6e63dc7` 已安装；真实 `check_skill_update` 与根目录 `manage.folder_list` 成功，后者返回 8 项。未复述或持久化用户文档内容。

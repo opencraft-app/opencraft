@@ -26,7 +26,7 @@ LightVela에서는 알림 작업에 메시지, 일정, 유효 시간 창, 전달
 
 > 물 한 잔을 마시고 잠깐 쉬어야 할 시간입니다.
 
-![매일 건강 알림용 반복 알림 작업 편집](../images/scheduled-task-notifications-1.png)
+![매일 건강 알림용 반복 알림 작업 편집](../images/scheduled-task-notifications-1.webp)
 
 핵심은 메시지를 짧고 실행 가능하게 유지하는 것입니다.
 모델을 거치지 않으므로 알림이 다시 작성되거나 추가 맥락이 제공되지 않습니다.
@@ -39,7 +39,7 @@ LightVela에서는 알림 작업에 메시지, 일정, 유효 시간 창, 전달
 
 > 월간 결제 확인: 이번 주에 만료되는 임대료, 공과금, 구독을 검토하세요.
 
-![결제 알림용 월간 알림 작업 편집](../images/scheduled-task-notifications-2.png)
+![결제 알림용 월간 알림 작업 편집](../images/scheduled-task-notifications-2.webp)
 
 알림은 각 결제를 마감일 전에 계속 보이게 합니다.
 청구서마다 마감일이 다르면 각 알림이 유용한 시점에 오도록 별도 작업을 만드세요.
@@ -50,7 +50,7 @@ LightVela에서는 Agent를 WhatsApp, Telegram, WeChat, Discord 등에 연결할
 하나 또는 여러 채널을 동시에 연결할 수 있습니다.
 예약 작업에서 구성된 각 채널을 전환하여 알림을 어디로 보낼지 결정할 수 있습니다.
 
-![예약된 알림이 Telegram으로 직접 전달됨](../images/scheduled-task-notifications-3.png)
+![예약된 알림이 Telegram으로 직접 전달됨](../images/scheduled-task-notifications-3.webp)
 
 전환한 뒤 Hermes는 정확한 알림을 IM으로 직접 보냅니다.
 알림을 확인하기 위해 LightVela나 다른 앱을 열 필요가 없습니다.
@@ -61,4 +61,4 @@ LightVela에서는 Agent를 WhatsApp, Telegram, WeChat, Discord 등에 연결할
 생성한 뒤에는 콘텐츠와 일정을 편집하고, 일시 중지하며, 이전 실행을 탐색할 수 있습니다.
 LightVela를 사용하면 개인 Hermes Agent가 다른 일에 집중하는 동안에도 중요한 루틴을 일정에 맞춰 유지합니다.
 
-![알림 작업이 있는 현재 작업 목록](../images/scheduled-task-notifications-4.png)
+![알림 작업이 있는 현재 작업 목록](../images/scheduled-task-notifications-4.webp)

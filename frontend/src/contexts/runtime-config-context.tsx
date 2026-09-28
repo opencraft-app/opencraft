@@ -233,14 +233,20 @@ export const useZeroTokenAutomationsEnabled = (): boolean => {
   return config.features.zeroTokenAutomationsEnabled === true;
 };
 
+const resolveMultiBotEnabled = (config: RuntimeConfig): boolean =>
+  config.features.multiBotEnabled === true;
+
 export const useMultiBotEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
-  return isCN && config.features.multiBotEnabled === true;
+  return resolveMultiBotEnabled(config);
 };
+
+const resolveReferralEnabled = (config: RuntimeConfig): boolean =>
+  config.features.referralEnabled === true;
 
 export const useReferralEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
-  return isCN && config.features.referralEnabled === true;
+  return resolveReferralEnabled(config);
 };
 
 export const __runtimeConfigTestHooks = {
@@ -250,8 +256,10 @@ export const __runtimeConfigTestHooks = {
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
   applyRuntimeOverrides,
   getEdgeOnePreviewRuntimeConfig,
+  resolveReferralEnabled,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
+  resolveMultiBotEnabled,
   shouldSkipRemoteRuntimeConfig,
 };

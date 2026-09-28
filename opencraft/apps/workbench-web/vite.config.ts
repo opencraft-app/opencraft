@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
 import react from "@vitejs/plugin-react";
@@ -11,15 +12,37 @@ const previewBridgeBundlePath = fileURLToPath(new URL(
   "../../packages/browser-preview-bridge/dist/preview-bridge.js",
   import.meta.url,
 ));
+const workbenchHtmlPath = fileURLToPath(new URL("./index.html", import.meta.url));
+const embeddedWorkbenchEntryPath = fileURLToPath(new URL(
+  "./src/embedded-chat-entry.ts",
+  import.meta.url,
+));
+const hostProxyServiceWorkerPath = fileURLToPath(new URL(
+  "./public/opencraft-host-proxy-sw.js",
+  import.meta.url,
+));
 const hyperNodeUser = process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "skipzhang";
 const buildTarget = process.env.OPENCRAFT_BUILD_TARGET?.trim() || "web";
 const product = process.env.OPENCRAFT_PRODUCT?.trim() || "opencraft";
 const isElectronRenderer = buildTarget === "electron";
+const isEmbeddedWorkbenchBuild = buildTarget === "embedded-workbench";
 const isLightVelaWeb = product === "lightvela-web";
 const includeHyperNodePlugin = !isLightVelaWeb && !isElectronRenderer
   && process.env.VITE_HYPERNODE_PLUGIN?.trim() !== "disabled";
 const includeBuiltinAgentsPlugin = isElectronRenderer;
+const includeHeadlessModelServices = process.env.OPENCRAFT_HEADLESS_SERVER_BUILD === "true";
 const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
+if (includeHeadlessModelServices) {
+  let hosts: unknown;
+  try { hosts = JSON.parse(process.env.VITE_APPSERVER_HOSTS_JSON ?? "null"); }
+  catch { throw new Error("Headless Web build requires valid VITE_APPSERVER_HOSTS_JSON"); }
+  if (!Array.isArray(hosts) || !hosts.some((host: unknown) =>
+    host !== null && typeof host === "object"
+      && "hostId" in host && host.hostId === "opencraft-server"
+      && "url" in host && host.url === "/appserver")) {
+    throw new Error("Headless Web build requires the opencraft-server /appserver Host profile");
+  }
+}
 
 // Vite's native import.meta.env projection is honored by both the dev module
 // server and production bundler. Keep product identity out of ad-hoc globals:
@@ -28,6 +51,8 @@ const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
 process.env.VITE_OPENCRAFT_PRODUCT_ID = product;
 process.env.VITE_INCLUDE_HYPERNODE_PLUGIN = includeHyperNodePlugin ? "true" : "false";
 process.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN = includeBuiltinAgentsPlugin ? "true" : "false";
+process.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES = includeHeadlessModelServices ? "true" : "false";
+process.env.VITE_INCLUDE_HEADLESS_CODEX = includeHeadlessModelServices ? "true" : "false";
 
 interface WebReleaseMetadata {
   readonly schemaVersion: 1;
@@ -35,6 +60,8 @@ interface WebReleaseMetadata {
   readonly builtAt: string;
   readonly sourceRevision: string | null;
   readonly appServerProtocolVersion: string | null;
+  readonly headlessServer: boolean;
+  readonly headlessHostId: string | null;
 }
 
 function createWebReleaseMetadata(): WebReleaseMetadata {
@@ -51,10 +78,120 @@ function createWebReleaseMetadata(): WebReleaseMetadata {
     builtAt,
     sourceRevision: process.env.OPENCRAFT_SOURCE_REVISION?.trim() || null,
     appServerProtocolVersion: process.env.OPENCRAFT_APPSERVER_PROTOCOL_VERSION?.trim() || null,
+    headlessServer: includeHeadlessModelServices,
+    headlessHostId: includeHeadlessModelServices ? "opencraft-server" : null,
   };
 }
 
 const webRelease = createWebReleaseMetadata();
+
+// Vendored mono2 sources (plugins/lightvela-hermes/src/upstream/mono2) read
+// Next-style `process.env.*` at module top level. Vite does not define
+// `process` in the browser, so every variable those sources reference must be
+// statically defined or the workbench fails with `ReferenceError: process is
+// not defined`. NEXT_PUBLIC_REGION defaults to 'cn' to match the Next.js
+// default; feature flags default to '' (falsy) exactly as unset Next env vars.
+const vendoredEnvKeys = [
+  "NEXT_PUBLIC_REGION",
+  "NEXT_PUBLIC_PREVIEW_LOCALES",
+  "NEXT_PUBLIC_LOCAL_PREVIEW_AUTH",
+  "NEXT_PUBLIC_AUTH_API_BASE_URL",
+  "NEXT_PUBLIC_ZERO_TOKEN_AUTOMATIONS_ENABLED",
+  "NEXT_PUBLIC_SUPPORT_ADMIN_API_BASE_URL",
+  "NEXT_PUBLIC_PAID_BILLING_ENABLED",
+  "NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL",
+  "NEXT_PUBLIC_MULTI_BOT_ENABLED",
+  "NEXT_PUBLIC_DATONG_ENABLED",
+  "NEXT_PUBLIC_DATONG_DEV_ENABLED",
+  "NEXT_PUBLIC_DATONG_APPKEY",
+  "NEXT_PUBLIC_APP_ENV",
+  "VITE_AUTH_API_BASE_URL",
+  "VITE_LOCAL_PREVIEW_AUTH",
+] as const;
+
+// URL-typed vars sit in `??` fallback chains (auth-api-base.ts falls through
+// to the region default https://api.lightvela.com); '' would terminate the
+// chain with a relative API base, so replace them with `undefined` instead.
+const unsetEnvKeys = new Set([
+  "NEXT_PUBLIC_AUTH_API_BASE_URL",
+  "NEXT_PUBLIC_SUPPORT_ADMIN_API_BASE_URL",
+  "NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL",
+  "VITE_AUTH_API_BASE_URL",
+]);
+
+function buildVendoredEnvDefines(mode: string): Record<string, string> {
+  const defines: Record<string, string> = {
+    "process.env.NODE_ENV": JSON.stringify(mode),
+    "process.env.PROD": JSON.stringify(mode === "production"),
+  };
+  for (const key of vendoredEnvKeys) {
+    if (unsetEnvKeys.has(key)) {
+      // Keep `??` chains alive: replace the whole lookup with `undefined`.
+      defines[`process.env.${key}`] = 'undefined';
+      continue;
+    }
+    const fallback = key === "NEXT_PUBLIC_REGION" ? "cn" : "";
+    defines[`process.env.${key}`] = JSON.stringify(process.env[key] ?? fallback);
+  }
+  return defines;
+}
+
+// With `optimizeDeps.noDiscovery` enabled, Vite never prebundles a dependency
+// unless it is listed here. Several runtime dependencies ship CJS only (no
+// `module`, no `exports` map with ESM entries, no `type: "module"`); serving
+// them raw makes the browser fail with `does not provide an export named ...`.
+// Instead of maintaining that list by hand, walk the workbench runtime
+// dependency tree (`dependencies` only — the devDependencies tree is
+// build-tooling like vite/babel and must stay out of the browser prebundle)
+// and include every CJS-only package automatically. Packages whose entry is
+// CSS (`@fontsource-*`) and type-only entries take no part in JS prebundling
+// and are skipped.
+function collectCjsOnlyDependencies(): string[] {
+  const workspaceRootDir = fileURLToPath(new URL("../..", import.meta.url));
+  const webPackage = JSON.parse(readFileSync(
+    fileURLToPath(new URL("./package.json", import.meta.url)),
+    "utf8",
+  )) as { dependencies?: Record<string, string> };
+  const visited = new Set<string>();
+  const cjsOnly = new Set<string>();
+  const queue = Object.keys(webPackage.dependencies ?? {});
+  while (queue.length > 0) {
+    const name = queue.shift() as string;
+    if (visited.has(name)) continue;
+    visited.add(name);
+    let info: {
+      main?: string;
+      module?: string;
+      type?: string;
+      exports?: unknown;
+      dependencies?: Record<string, string>;
+    };
+    try {
+      info = JSON.parse(readFileSync(
+        path.join(workspaceRootDir, "node_modules", name, "package.json"),
+        "utf8",
+      ));
+    } catch {
+      continue;
+    }
+    const main = typeof info.main === "string" ? info.main : "";
+    const hasEsm = Boolean(info.module)
+      || info.type === "module"
+      || JSON.stringify(info.exports ?? "").includes(".mjs");
+    const entryIsCss = main.endsWith(".css");
+    const entryIsTypes = main.endsWith(".d.ts") || main.endsWith(".d.mts");
+    if (!hasEsm && !entryIsCss && !entryIsTypes && main !== "") {
+      cjsOnly.add(name);
+    }
+    for (const dependency of Object.keys(info.dependencies ?? {})) {
+      if (!visited.has(dependency)) queue.push(dependency);
+    }
+  }
+  return [...cjsOnly].sort();
+}
+
+const cjsOnlyInclude = collectCjsOnlyDependencies();
+console.log(`[opencraft] optimizeDeps.include auto CJS packages (${cjsOnlyInclude.length}):`, cjsOnlyInclude.join(", "));
 
 const appServerProxy = {
   "/appserver": {
@@ -149,6 +286,13 @@ function releaseMetadata(metadata: WebReleaseMetadata): Plugin {
         fileName: "version.json",
         source: `${JSON.stringify(metadata, null, 2)}\n`,
       });
+      this.emitFile({
+        type: "asset",
+        fileName: isEmbeddedWorkbenchBuild
+          ? "opencraft-host-proxy-sw.js"
+          : "__opencraft/opencraft-host-proxy-sw.js",
+        source: readFileSync(hostProxyServiceWorkerPath, "utf8"),
+      });
     },
   };
 }
@@ -181,14 +325,74 @@ function previewBridgeAsset(): Plugin {
   };
 }
 
-export default defineConfig({
+function embeddedWorkbenchDevEntry(): Plugin {
+  return {
+    name: "opencraft-embedded-workbench-dev-entry",
+    configureServer(server) {
+      server.middlewares.use("/__opencraft/embedded-workbench.js", (_request, response) => {
+        response.setHeader("content-type", "text/javascript; charset=utf-8");
+        response.setHeader("cache-control", "no-store");
+        response.end(
+          'const base = new URL("/", import.meta.url);\n'
+          + 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = base.href;\n'
+          + 'globalThis.process ??= { env: {} };\n'
+          + 'globalThis.global ??= globalThis;\n'
+          + 'const RefreshRuntime = (await import(new URL("@react-refresh", base).href)).default;\n'
+          + 'RefreshRuntime.injectIntoGlobalHook(globalThis);\n'
+          + 'globalThis.$RefreshReg$ = () => {};\n'
+          + 'globalThis.$RefreshSig$ = () => (type) => type;\n'
+          + 'globalThis.__vite_plugin_react_preamble_installed__ = true;\n'
+          + 'await import(new URL("src/embedded-chat-entry.ts", base).href);\n',
+        );
+      });
+    },
+    generateBundle(_options, bundle) {
+      const entry = Object.values(bundle).find((item) => (
+        item.type === "chunk"
+        && item.isEntry
+        && item.facadeModuleId === embeddedWorkbenchEntryPath
+      ));
+      if (entry === undefined || entry.type !== "chunk") {
+        throw new Error("Embedded Workbench entry chunk was not generated");
+      }
+      this.emitFile({
+        type: "asset",
+        fileName: isEmbeddedWorkbenchBuild
+          ? "embedded-workbench.js"
+          : "__opencraft/embedded-workbench.js",
+        source: isEmbeddedWorkbenchBuild
+          ? 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = new URL("./", import.meta.url).href;\n'
+            + `await import("./${entry.fileName}");\n`
+          : 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = new URL("../", import.meta.url).href;\n'
+            + `await import("../${entry.fileName}");\n`,
+      });
+    },
+  };
+}
+
+// The conditional ternary yields a union of object literals with different key
+// sets. Inside `defineConfig(({ mode }) => ...)` the returned object loses
+// per-branch contextual typing, and TypeScript normalizes the missing
+// `workbench` key to `workbench?: undefined`, violating Rolldown's
+// `Record<string, string>` index signature. Declaring the constant with an
+// explicit type restores branch-by-branch assignability checks.
+const rolldownInput: Record<string, string> = isEmbeddedWorkbenchBuild
+  ? { "embedded-workbench": embeddedWorkbenchEntryPath }
+  : {
+      workbench: workbenchHtmlPath,
+      "embedded-workbench": embeddedWorkbenchEntryPath,
+    };
+
+export default defineConfig(({ mode }) => ({
   // Both targets are served at their origin root. Root-relative assets also
   // survive direct loading/reloading /views/:id and /settings/:id routes.
   // The Electron static server maps that root to the relocatable signed bundle.
-  base: "/",
+  base: isEmbeddedWorkbenchBuild ? "/__opencraft/" : "/",
+  define: buildVendoredEnvDefines(mode),
   plugins: [
     releaseMetadata(webRelease),
-    previewBridgeAsset(),
+    ...(!isEmbeddedWorkbenchBuild ? [previewBridgeAsset()] : []),
+    embeddedWorkbenchDevEntry(),
     runtimeErrorCapture(),
     react(),
   ],
@@ -201,9 +405,11 @@ export default defineConfig({
     // The workbench activates large optional workspace plugins at runtime.
     // Letting Vite discover every transitive ESM dependency after the server
     // has started publishes temporary hashes and causes 504 responses while
-    // the optimizer is still replacing its cache. Only React requires the
-    // compatibility prebundle; the remaining dependencies ship browser ESM
-    // and are served directly.
+    // the optimizer is still replacing its cache. React and the CJS-only
+    // packages reached through react-router require the compatibility
+    // prebundle; every other dependency ships browser ESM and is served
+    // directly. Adding a browser-reachable CJS dependency means adding it here
+    // as well, otherwise it is served as raw CJS and its named exports fail.
     noDiscovery: true,
     include: [
       "react",
@@ -211,6 +417,15 @@ export default defineConfig({
       "react-dom/client",
       "react/jsx-runtime",
       "react/jsx-dev-runtime",
+      // CJS-only runtime dependencies, collected automatically — see
+      // collectCjsOnlyDependencies(). Covers the packages the embedded
+      // workbench previously had to list by hand (cookie,
+      // set-cookie-parser, tim-upload-plugin, void-elements,
+      // @tencentcloud/chat) plus every other CJS-only package in the
+      // runtime dependency tree (dayjs, @xterm, cytoscape layouts, ...),
+      // so adding a new CJS dependency no longer requires editing this
+      // file.
+      ...cjsOnlyInclude,
     ],
     // `bson` is browser-native ESM and is reached through an optional
     // workspace plugin. Vite's discovery optimizer can encounter it after the
@@ -224,7 +439,7 @@ export default defineConfig({
     // The local LightVela HTTPS gateway preserves its public Host header while
     // proxying module requests to this development server. Keep the allowlist
     // explicit: `true` would also admit DNS-rebinding hosts.
-    allowedHosts: ["localhost.lightvela.ai"],
+    allowedHosts: ["localhost.lightvela.ai", "chat.lightvela.com"],
     port: 10000,
     strictPort: true,
     // ResizeObserver reports its delivery-loop warning through window.onerror.
@@ -238,7 +453,7 @@ export default defineConfig({
   },
   preview: {
     host: "0.0.0.0",
-    allowedHosts: ["localhost.lightvela.ai"],
+    allowedHosts: ["localhost.lightvela.ai", "chat.lightvela.com"],
     port: 10000,
     strictPort: true,
     proxy: appServerProxy,
@@ -258,16 +473,19 @@ export default defineConfig({
     // minifier; aggressive secondary compression/mangling has caused
     // renderer hangs and is intentionally not part of the release contract.
     minify: "oxc",
-    rolldownOptions: releaseMinification ? {
+    rolldownOptions: {
+      input: rolldownInput,
       output: {
+        entryFileNames: releaseMinification ? "assets/a-[hash].js" : "assets/[name]-[hash].js",
+        ...(releaseMinification ? {
         // Hardened releases expose only opaque content identities. Human
         // chunk/module names remain available in source builds and private
         // observability metadata, never in the public asset topology.
-        entryFileNames: "assets/a-[hash].js",
         chunkFileNames: "assets/a-[hash].js",
         assetFileNames: "assets/a-[hash][extname]",
+        } : {}),
       },
-    } : undefined,
+    },
     // Hidden maps remain available to an error collector, while the release
     // publisher deliberately excludes them from the public static tree.
     sourcemap: releaseMinification ? false : "hidden",
@@ -275,8 +493,11 @@ export default defineConfig({
     assetsDir: "assets",
     outDir: isElectronRenderer
       ? "dist-electron"
-      : isLightVelaWeb
-        ? "dist-lightvela-web"
-        : "dist",
+      : isEmbeddedWorkbenchBuild
+        ? "dist-embedded-workbench"
+        : isLightVelaWeb
+          ? "dist-lightvela-web"
+          : "dist",
+    copyPublicDir: !isEmbeddedWorkbenchBuild,
   },
-});
+}));

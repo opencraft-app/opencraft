@@ -83,6 +83,16 @@ func Load() (Config, error) {
 	if cfg.Enabled && cfg.MySQLDSN == "" {
 		return Config{}, fmt.Errorf("REFERRAL_MYSQL_DSN is required when referral is enabled")
 	}
+	if cfg.Enabled {
+		for key, value := range map[string]string{
+			"CTL_INTERNAL_BASE_URL":            cfg.CTLBaseURL,
+			"LIGHTCLAW_INTERNAL_SERVICE_TOKEN": cfg.CTLInternalToken,
+		} {
+			if value == "" {
+				return Config{}, fmt.Errorf("%s is required when referral is enabled", key)
+			}
+		}
+	}
 	if cfg.WorkerBatchSize <= 0 || cfg.WorkerBatchSize > 200 {
 		return Config{}, fmt.Errorf("REFERRAL_WORKER_BATCH_SIZE must be between 1 and 200")
 	}

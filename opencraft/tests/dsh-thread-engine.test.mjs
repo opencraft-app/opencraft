@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { forkSeed } from "../apps/local-agent-host/src/dsh-thread-engine.mjs";
+import { forkSeed, requireThreadWorkspaceCwd } from "../apps/local-agent-host/src/dsh-thread-engine.mjs";
+
+test("native Thread creation requires an explicit workspace cwd", () => {
+  assert.equal(requireThreadWorkspaceCwd("/workspace/project"), "/workspace/project");
+  assert.throws(() => requireThreadWorkspaceCwd(undefined), /explicit workspace cwd/);
+  assert.throws(() => requireThreadWorkspaceCwd("  "), /explicit workspace cwd/);
+});
 test("fork history keeps exact provider state, cuts at complete turns and balances only the child tail", () => {
   const events = [
     { type: "turn/start", seq: 0, data: { turn: 1 } },

@@ -8,7 +8,7 @@
 
 **同一个 Agent 同一时间只会有一个生效中的 Soul，修改后需要开启新会话，让新的规则被加载。**
 
-![LightVela 控制台中的人设卡片](../images/cn-soul-1.png)
+![LightVela 控制台中的人设卡片](../images/cn-soul-1.webp)
 
 ## 本页覆盖
 
@@ -54,7 +54,7 @@ Soul 是 LightVela 写入 Agent `SOUL.md` 的人设配置。
 使用 **随机抽取人设** 浏览可用的人设风格。
 如果想根据你的沟通和行为偏好获得建议，可以使用 **答题测试人设**。
 
-![随机抽取人设弹窗](../images/cn-soul-2.png)
+![随机抽取人设弹窗](../images/cn-soul-2.webp)
 
 在选择前，先查看每张 Soul 卡片中的角色、语气、行为说明和边界。
 优先选择符合准备说明的人设，而不是只按名称或语气挑选。
@@ -80,7 +80,7 @@ Soul 是 LightVela 写入 Agent `SOUL.md` 的人设配置。
 5. 如果 Agent 已经有人设，确认要覆盖当前内容。
 6. 回到已连接的对话通道并发送 `/new`。
 
-![上传人设文件弹窗](../images/cn-soul-3.png)
+![上传人设文件弹窗](../images/cn-soul-3.webp)
 
 文件名不必是 `soul.md`，但必须使用 `.md` 扩展名、采用 UTF-8 编码，并且不超过 20 KB。
 LightVela 会在注入前展示文件内容，方便你作最后检查或编辑。

@@ -418,6 +418,7 @@ func normalizePath(path string) string {
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete",
 		"/internal/ctl/passes/free-credit",
+		"/internal/ctl/passes/free-credit/revoke",
 		"/cloudapi":
 		return path
 	}
@@ -446,15 +447,6 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/order-url") {
 		return "/admin/api/ctl/passes/{passId}/renew/order-url"
-	}
-	// R-D-7c 续费一体化下单+支付入口路径归一（trade-pass-renew §3.3 / §4.4 / R-D-7）：
-	//   /v1/passes/{pass_id}/renew/order-and-pay             → /v1/passes/{passId}/renew/order-and-pay
-	//   /admin/api/ctl/passes/{pass_id}/renew/order-and-pay  → /admin/api/ctl/passes/{passId}/renew/order-and-pay
-	if strings.HasPrefix(path, "/v1/passes/") && strings.HasSuffix(path, "/renew/order-and-pay") {
-		return "/v1/passes/{passId}/renew/order-and-pay"
-	}
-	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/order-and-pay") {
-		return "/admin/api/ctl/passes/{passId}/renew/order-and-pay"
 	}
 	// 续费询价入口路径归一（v1.7.21 B16 / R-C-4）：
 	//   /v1/passes/{pass_id}/renew/price             → /v1/passes/{passId}/renew/price
@@ -986,7 +978,15 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+		var req struct {
+			ReservationID string `json:"reservation_id"`
+			Disconnect    bool   `json:"disconnect"`
+		}
+		if err := decodeOptionalJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err))
+			return
+		}
+		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4], req.ReservationID, req.Disconnect); err != nil {
 			writeHTTPError(w, r, err)
 			return
 		}
@@ -997,7 +997,14 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+		var req struct {
+			ReservationID string `json:"reservation_id"`
+		}
+		if err := decodeOptionalJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err))
+			return
+		}
+		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4], req.ReservationID); err != nil {
 			writeHTTPError(w, r, err)
 			return
 		}

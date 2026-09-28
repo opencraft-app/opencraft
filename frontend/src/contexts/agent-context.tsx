@@ -18,6 +18,9 @@ import {
 } from "@lightvela/agent-core";
 import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN_QUERY, UPGRADE_POLL_INTERVAL_MS, UPGRADE_RECOVERY_TIMEOUT_MS, type PaidUpgradeCheckout } from "@/lib/upgrade-checkout";
 import { isGlobal } from "@/lib/region";
+import { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
+
+export { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
 
 /* ─── Types ─── */
 
@@ -32,6 +35,7 @@ export interface OpenClawBot {
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;
   weixinOwner?: Bot["weixinOwner"];
+  whatsAppOwner?: Bot["whatsAppOwner"];
   name: string;
   personality: string;
   personalityEmoji: string;
@@ -123,6 +127,7 @@ const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClaw
     createdFrom: bot.createdFrom,
     sourceBotId: bot.sourceBotId,
     weixinOwner: bot.weixinOwner,
+    whatsAppOwner: bot.whatsAppOwner,
     name: bot.name,
     personality: bot.template || "默认设定",
     personalityEmoji: "✨",
@@ -176,20 +181,6 @@ const defaultPlan: OpenClawUser["plan"] = {
   usedCredits: 0,
   totalRequests: 0,
   maxBots: 1,
-};
-
-export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bundle_id"> | null): number => {
-  // 后端新增或调整付费套餐时，请同步更新此处 bundle_id 映射与对应测试。
-  switch (pass?.bundle_id) {
-    case "bundle_launch_01":
-    case "bundle_launch_ai_01":
-      return 5;
-    case "bundle_cruise_01":
-    case "bundle_cruise_ai_01":
-      return 10;
-    default:
-      return 1;
-  }
 };
 
 export const resolveBotQuotaForPassState = (

@@ -64,6 +64,7 @@ import {
 } from "@opencraft/chat-core";
 import type { Context } from "@deepseek-ai/cordis";
 import { NativeChatDocument } from "@opencraft/chat-render-native";
+import { workingShimmerMotion } from "@opencraft/design-system/tokens";
 import {
   TimelineBlockView,
   useWorkStatusLabel,
@@ -219,7 +220,7 @@ function useNativeActivityOpen(running: boolean, defaultExpanded = false): reado
   return [open, setOpen];
 }
 
-/** Native adaptation of Codex's readable-base, 600/1000/4000ms cadenced sweep. */
+/** Native adaptation of the shared readable-base, 600/1000/1500ms sweep. */
 function NativeCadencedText({
   active,
   children,
@@ -252,18 +253,21 @@ function NativeCadencedText({
       animationRef.current?.stop();
       progress.setValue(0);
       animationRef.current = Animated.timing(progress, {
-        duration: 1_000,
+        duration: workingShimmerMotion.sweepDurationMs,
         easing: (value) => Math.floor(value * 48) / 48,
         toValue: 1,
         useNativeDriver: true,
       });
       animationRef.current.start();
     };
-    const initialTimer = setTimeout(sweep, 600);
-    const interval = setInterval(sweep, 4_000);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const initialTimer = setTimeout(() => {
+      sweep();
+      interval = setInterval(sweep, workingShimmerMotion.cycleMs);
+    }, workingShimmerMotion.firstSweepDelayMs);
     return () => {
       clearTimeout(initialTimer);
-      clearInterval(interval);
+      if (interval !== undefined) clearInterval(interval);
       animationRef.current?.stop();
       animationRef.current = null;
       progress.setValue(0);
@@ -1914,6 +1918,12 @@ export function WorkbenchConversation({
     () => timeline === null ? [] : groupTimelineFramesByTurn(timeline),
     [timeline],
   );
+  const activeTodo = useMemo(() => {
+    const latest = entries.at(-1);
+    return latest === undefined
+      ? null
+      : createTimelineTurnPresentationPlan(latest, toolActivityPresenterRegistry, { isMostRecentTurn: true }).activeTodo;
+  }, [entries, toolActivityPresenterRegistry]);
   const historyKey = timeline === null
     ? null
     : JSON.stringify([timeline.key.hostId, timeline.key.threadId]);
@@ -1935,6 +1945,7 @@ export function WorkbenchConversation({
                         resolveSource: resolveInspectedImageSource ?? null,
                       }}>
                         <NativeInteractionContext.Provider value={onRespondInteraction ?? null}>
+                        <View style={styles.conversationRoot}>
                         <NativeResponsePositionedTurns
                           entries={entries}
                           historyKey={historyKey}
@@ -1975,6 +1986,12 @@ export function WorkbenchConversation({
                           scrollContentStyle={styles.scrollContent}
                           contentStyle={styles.content}
                         />
+                        {activeTodo === null ? null : (
+                          <View pointerEvents="box-none" style={[styles.todoDock, { bottom: footerScrollPaddingPx + 8 }]}>
+                            <NativeTodoTimelineRenderer block={activeTodo} richText={false} />
+                          </View>
+                        )}
+                        </View>
                         </NativeInteractionContext.Provider>
                       </NativeImageViewHostContext.Provider>
                     </NativeGeneratedImageHostContext.Provider>
@@ -1989,6 +2006,8 @@ export function WorkbenchConversation({
   );
 }
 const styles = StyleSheet.create((theme) => ({
+  conversationRoot: { flex: 1, minHeight: 0 },
+  todoDock: { position: "absolute", zIndex: 10, left: theme.metrics.conversation.horizontalInset, right: theme.metrics.conversation.horizontalInset, alignItems: "center" },
   scroll: { flex: 1, minHeight: 0, backgroundColor: theme.color.surface.main },
   scrollContent: { flexGrow: 1 },
   content: { width: "100%", maxWidth: theme.metrics.conversation.maximumWidth, flexGrow: 1, alignSelf: "center", paddingHorizontal: theme.metrics.conversation.horizontalInset, paddingTop: theme.metrics.conversation.topInset, paddingBottom: theme.metrics.conversation.bottomInset },
@@ -2032,7 +2051,7 @@ const styles = StyleSheet.create((theme) => ({
   thinkingPlaceholderText: { color: theme.color.text.secondary, ...theme.platformTypography.body },
   cadencedText: { position: "relative", minWidth: 0, flexShrink: 1, overflow: "hidden" },
   cadencedTextSweep: { position: "absolute", top: 0, bottom: 0, left: 0, overflow: "hidden" },
-  cadencedTextHighlight: { color: theme.color.text.primary, opacity: 0.72 },
+  cadencedTextHighlight: { color: theme.color.text.workingHighlight },
   reasoningDetail: { marginLeft: theme.spacing[4], color: theme.color.text.tertiary, ...theme.platformTypography.body },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
   activityDisclosure: { minWidth: 0, maxWidth: "100%" },

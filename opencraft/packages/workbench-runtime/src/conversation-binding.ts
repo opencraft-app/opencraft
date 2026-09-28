@@ -42,7 +42,11 @@ export interface ConversationBindingPersistence {
 export interface ConversationBindingStore {
   getSnapshot(): ConversationBindingSnapshot;
   subscribe(listener: () => void): () => void;
-  register(scopeId: ConversationScopeId, hostId: HostId): ConversationBinding;
+  register(
+    scopeId: ConversationScopeId,
+    hostId: HostId,
+    options?: { readonly persistent?: boolean },
+  ): ConversationBinding;
   bind(scopeId: ConversationScopeId, key: ConversationKey): ConversationBinding;
   resolve(scopeId: ConversationScopeId): ConversationBinding | null;
   findScope(key: ConversationKey): ConversationScopeId | null;
@@ -65,6 +69,7 @@ export function createConversationBindingStore(
   const listeners = new Set<() => void>();
   const byScope = new Map<ConversationScopeId, ConversationBinding>();
   const byConversation = new Map<string, ConversationScopeId>();
+  const transientScopes = new Set<ConversationScopeId>();
   let disposed = false;
   let revision = 0;
   let snapshot: ConversationBindingSnapshot = { revision, bindings: [] };
@@ -73,7 +78,7 @@ export function createConversationBindingStore(
     if (disposed) throw new Error("Conversation binding store is disposed");
   };
   const serialize = (): readonly PersistedConversationBinding[] =>
-    [...byScope.values()].map((binding) => ({
+    [...byScope.values()].filter((binding) => !transientScopes.has(binding.scopeId)).map((binding) => ({
       scopeId: binding.scopeId,
       hostId: binding.hostId,
       threadId: binding.conversationKey?.threadId ?? null,
@@ -119,6 +124,7 @@ export function createConversationBindingStore(
   const register = (
     scopeId: ConversationScopeId,
     hostId: HostId,
+    options: { readonly persistent?: boolean } = {},
   ): ConversationBinding => {
     ensureOpen();
     const existing = byScope.get(scopeId);
@@ -130,6 +136,7 @@ export function createConversationBindingStore(
     }
     const binding = Object.freeze({ scopeId, hostId, conversationKey: null });
     byScope.set(scopeId, binding);
+    if (options.persistent === false) transientScopes.add(scopeId);
     publish();
     return binding;
   };
@@ -172,6 +179,7 @@ export function createConversationBindingStore(
       const current = byScope.get(scopeId);
       if (current === undefined) return false;
       byScope.delete(scopeId);
+      transientScopes.delete(scopeId);
       if (current.conversationKey !== null) {
         byConversation.delete(encodeConversationKey(current.conversationKey));
       }

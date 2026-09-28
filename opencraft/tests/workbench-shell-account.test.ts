@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { LocaleRuntime } from "@opencraft/i18n";
+const intl = new LocaleRuntime([]).getSnapshot().intl;
 
 import {
   isAnonymousShellAccount,
@@ -29,10 +31,10 @@ function account(phase: "anonymous" | "authenticated", name: string | null = nul
 test("anonymous identity is an explicit Sign in action, not an Account identity", () => {
   const anonymous = account("anonymous");
   assert.equal(isAnonymousShellAccount(anonymous), true);
-  assert.equal(shellAccountEntranceLabel(anonymous), "Sign in");
-  assert.equal(shellAccountEntranceLabel(null), null);
-  assert.equal(shellAccountEntranceLabel(account("authenticated", "Ada")), "Ada");
-  assert.equal(shellAccountEntranceLabel(account("authenticated")), "Account");
+  assert.equal(shellAccountEntranceLabel(anonymous, intl), "Sign in");
+  assert.equal(shellAccountEntranceLabel(null, intl), null);
+  assert.equal(shellAccountEntranceLabel(account("authenticated", "Ada"), intl), "Ada");
+  assert.equal(shellAccountEntranceLabel(account("authenticated"), intl), "Account");
 });
 
 test("anonymous sign in uses an action glyph while authenticated accounts retain identity avatars", () => {
@@ -46,8 +48,8 @@ test("anonymous sign in uses an action glyph while authenticated accounts retain
 test("menu login progress and recoverable failure stay visible at the account entrance", () => {
   const anonymous = account("anonymous");
   const signIn = { options: [], pending: true, error: null, select() {}, cancel() {}, retry() {} };
-  assert.equal(shellAccountEntranceLabel({ ...anonymous, signIn }), "正在登录…");
-  assert.equal(shellAccountEntranceLabel({ ...anonymous, signIn: { ...signIn, pending: false, error: "Retry" } }), "登录未完成");
+  assert.equal(shellAccountEntranceLabel({ ...anonymous, signIn }, intl), "Signing in…");
+  assert.equal(shellAccountEntranceLabel({ ...anonymous, signIn: { ...signIn, pending: false, error: "Retry" } }, intl), "Sign-in incomplete");
 });
 
 test("anonymous sign-in menu exposes Settings without selecting a login provider", () => {

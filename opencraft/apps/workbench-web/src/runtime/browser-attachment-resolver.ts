@@ -1,5 +1,9 @@
 import type { ComposerAttachment } from "@opencraft/composer-core";
 import type { ImageProcessingService } from "@opencraft/image-processing";
+import type {
+  AttachmentStageParams,
+  AttachmentStageResponse,
+} from "@opencraft/appserver-protocol";
 
 /**
  * Inline images stay host-independent: the same payload works for a local,
@@ -10,16 +14,27 @@ import type { ImageProcessingService } from "@opencraft/image-processing";
  */
 export const MAX_INLINE_BROWSER_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_STAGED_BROWSER_FILE_BYTES = 32 * 1024 * 1024;
+const INLINE_IMAGE_EXTENSIONS = new Map([
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+  ["image/webp", "webp"],
+  ["image/gif", "gif"],
+]);
 
 export type BrowserAttachmentErrorCode =
   | "EMPTY_ATTACHMENT"
   | "IMAGE_TOO_LARGE"
+  | "UNSUPPORTED_IMAGE_TYPE"
   | "FILE_TOO_LARGE"
   | "HOST_FILE_STAGING_UNAVAILABLE";
 
 export interface BrowserAttachmentStagingOptions {
-  readonly directory: string | null;
-  readonly writeFile: ((path: string, dataBase64: string) => Promise<unknown>) | null;
+  readonly stage:
+    | ((
+        request: AttachmentStageParams,
+        signal?: AbortSignal,
+      ) => Promise<AttachmentStageResponse>)
+    | null;
 }
 
 export class BrowserAttachmentError extends Error {
@@ -41,17 +56,8 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-const safePathSegment = (value: string, fallback: string): string => {
-  const sanitized = value
-    .normalize("NFKC")
-    .replace(/[^\p{Letter}\p{Number}._-]+/gu, "-")
-    .replace(/^[-.]+|[-.]+$/gu, "")
-    .slice(0, 180);
-  return sanitized || fallback;
-};
-
-const joinAbsolutePath = (directory: string, fileName: string): string =>
-  `${directory.replace(/\/+$/u, "")}/${fileName}`;
+const hostFileUri = (path: string): string =>
+  `file://${path.split("/").map((part) => encodeURIComponent(part)).join("/")}`;
 
 /**
  * Resolves a browser-owned File into Codex AppServer's native `image` input.
@@ -61,23 +67,30 @@ const joinAbsolutePath = (directory: string, fileName: string): string =>
 export async function resolveBrowserAttachment(
   file: File,
   pending: ComposerAttachment,
-  staging: BrowserAttachmentStagingOptions = { directory: null, writeFile: null },
+  staging: BrowserAttachmentStagingOptions = { stage: null },
   images?: Pick<ImageProcessingService, "compress">,
   signal?: AbortSignal,
 ): Promise<ComposerAttachment> {
+  const sourceType = (file.type === "" || file.type === "application/octet-stream") && /\.heic$/iu.test(file.name)
+    ? "image/heic"
+    : (file.type === "" || file.type === "application/octet-stream") && /\.heif$/iu.test(file.name)
+      ? "image/heif"
+      : file.type;
+  const isImage = sourceType.startsWith("image/");
+  const isHeic = sourceType === "image/heic" || sourceType === "image/heif";
   if (file.size === 0) {
     throw new BrowserAttachmentError(
       "EMPTY_ATTACHMENT",
       "The attachment is empty",
     );
   }
-  if (file.type.startsWith("image/") && file.size > MAX_INLINE_BROWSER_IMAGE_BYTES) {
+  if (isImage && file.size > MAX_INLINE_BROWSER_IMAGE_BYTES) {
     throw new BrowserAttachmentError(
       "IMAGE_TOO_LARGE",
       `Image is too large (maximum ${MAX_INLINE_BROWSER_IMAGE_BYTES / 1024 / 1024} MB)`,
     );
   }
-  if (!file.type.startsWith("image/") && file.size > MAX_STAGED_BROWSER_FILE_BYTES) {
+  if (!isImage && file.size > MAX_STAGED_BROWSER_FILE_BYTES) {
     throw new BrowserAttachmentError(
       "FILE_TOO_LARGE",
       `File is too large (maximum ${MAX_STAGED_BROWSER_FILE_BYTES / 1024 / 1024} MB)`,
@@ -85,16 +98,32 @@ export async function resolveBrowserAttachment(
   }
 
   signal?.throwIfAborted();
-  const processed = file.type.startsWith("image/") && images ? await images.compress(file, { signal }) : null;
+  const source = sourceType === file.type ? file : file.slice(0, file.size, sourceType);
+  const processed = isImage && images ? await images.compress(source, { signal }) : null;
   const upload = processed?.blob ?? file;
-  const mimeType = processed?.changed ? upload.type : file.type;
-  const uploadName = processed?.changed
-    ? `${file.name.replace(/\.[^.]+$/u, "")}.${mimeType === "image/png" ? "png" : "jpg"}`
+  const mimeType = processed?.changed ? upload.type : sourceType;
+  const imageExtension = INLINE_IMAGE_EXTENSIONS.get(mimeType);
+  if (isImage && imageExtension === undefined) {
+    throw new BrowserAttachmentError(
+      "UNSUPPORTED_IMAGE_TYPE",
+      isHeic
+        ? "This browser could not convert the HEIC photo. Choose a JPEG or PNG copy."
+        : `Unsupported image type: ${mimeType || "unknown"}. Use PNG, JPEG, WebP, or GIF.`,
+    );
+  }
+  if (isImage && upload.size > MAX_INLINE_BROWSER_IMAGE_BYTES) {
+    throw new BrowserAttachmentError(
+      "IMAGE_TOO_LARGE",
+      `Image is too large after processing (maximum ${MAX_INLINE_BROWSER_IMAGE_BYTES / 1024 / 1024} MB)`,
+    );
+  }
+  const uploadName = processed?.changed && imageExtension !== undefined
+    ? `${file.name.replace(/\.[^.]+$/u, "")}.${imageExtension}`
     : file.name;
   const bytes = new Uint8Array(await upload.arrayBuffer());
   signal?.throwIfAborted();
   const dataBase64 = bytesToBase64(bytes);
-  if (file.type.startsWith("image/")) {
+  if (isImage) {
     return {
       ...pending,
       name: uploadName,
@@ -113,28 +142,36 @@ export async function resolveBrowserAttachment(
     };
   }
 
-  if (!staging.directory?.startsWith("/") || staging.writeFile === null) {
+  if (staging.stage === null) {
     throw new BrowserAttachmentError(
       "HOST_FILE_STAGING_UNAVAILABLE",
       "The selected Host is not ready to receive file attachments",
     );
   }
 
-  const attachmentId = safePathSegment(pending.id, "attachment");
-  const fileName = safePathSegment(file.name, "file");
-  const path = joinAbsolutePath(staging.directory, `${attachmentId}-${fileName}`);
-  await staging.writeFile(path, dataBase64);
+  const staged = await staging.stage({
+    clientAttachmentId: pending.id,
+    name: file.name,
+    mimeType: file.type || "application/octet-stream",
+    size: upload.size,
+    source: { kind: "client-bytes", dataBase64 },
+  }, signal);
+  const uri = staged.ref.location.kind === "host-file"
+    ? hostFileUri(staged.ref.location.path)
+    : staged.ref.location.url;
   return {
     ...pending,
-    mimeType: file.type || "application/octet-stream",
-    uri: `file://${path}`,
+    name: staged.ref.name,
+    size: staged.ref.size,
+    mimeType: staged.ref.mimeType,
+    uri,
     lifecycle: "ready",
     error: null,
     metadata: {
       ...pending.metadata,
       source: "browser-host-staged",
-      transport: "appserver-fs-write-file",
-      path,
+      transport: "opencraft-attachment-staging",
+      attachmentRef: staged.ref,
     },
   };
 }

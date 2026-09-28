@@ -74,6 +74,19 @@ func (f *fillCreditAdapterFactory) LLMGatewayAdapter() llmgateway.Adapter {
 	return f.llm
 }
 
+func TestFillBundleMetadataIncludesBundleType(t *testing.T) {
+	detail := &PassDetail{}
+	fillBundleMetadata(detail, &bundlelogic.BundleDetail{
+		BundleName: "Future AI",
+		BundleType: "ai",
+		Credit:     100,
+	})
+
+	if detail.BundleName != "Future AI" || detail.BundleType != "ai" || detail.CreditTotal != 100 {
+		t.Fatalf("unexpected bundle metadata: %+v", detail)
+	}
+}
+
 func TestFillCreditHidesPackageCreditWithoutActivePackageEntitlement(t *testing.T) {
 	originalDB := resource.GormDB
 	testutil.NewSQLiteDB(t, &userresourcequota.Entity{}, &modelgateway.Entity{})
@@ -104,6 +117,7 @@ func TestFillCreditHidesPackageCreditWithoutActivePackageEntitlement(t *testing.
 	l := &logic{bundleLogic: &fillCreditBundleLogicStub{bundle: &bundlelogic.BundleDetail{
 		BundleID:   "bundle_launch_01",
 		BundleName: "启航套餐",
+		BundleType: "general",
 		Credit:     100,
 	}}}
 
@@ -117,6 +131,10 @@ func TestFillCreditHidesPackageCreditWithoutActivePackageEntitlement(t *testing.
 			}
 
 			l.fillCredit(detail)
+
+			if detail.BundleType != "general" {
+				t.Fatalf("BundleType = %q, want general", detail.BundleType)
+			}
 
 			if detail.CreditTotal != 0 {
 				t.Fatalf("CreditTotal = %d, want 0", detail.CreditTotal)

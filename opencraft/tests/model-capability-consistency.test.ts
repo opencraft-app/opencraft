@@ -9,8 +9,8 @@ import type { SubmitIntent } from "@opencraft/composer-core";
 
 function fixture(defaultModel: { provider: string; model: string } | null = null, productOwned = false, currentModel = "text") {
   const catalog = { groups: [{ id: "custom", name: "Custom", models: [
-    { id: "text", name: "Text", input: ["text"] },
-    { id: "vision", name: "Vision", input: ["text", "image"] },
+    { id: "text", name: "Text", input: ["text"], contextWindow: 32768, maxTokens: 4096 },
+    { id: "vision", name: "Vision", input: ["text", "image"], contextWindow: 128000, maxTokens: 16384 },
     { id: "unknown", name: "Unknown" },
   ] }], failures: [] };
   const client = { call: async (method: string) => {
@@ -53,7 +53,39 @@ test("input capabilities are projected from the model, with unknown input conser
   try {
     const result = await adapter.dispatch("model/list", {}) as any;
     assert.deepEqual(result.data.map((model: any) => model.inputModalities), [["text"], ["text", "image"], ["text"]]);
+    assert.deepEqual(result.data.slice(0, 2).map((model: any) => [model.contextWindow, model.maxTokens]), [[32768, 4096], [128000, 16384]]);
+    const choices = projectComposerModelChoices(result.data);
+    assert.deepEqual(choices.slice(0, 2).map(model => [model.contextWindow, model.maxTokens]), [[32768, 4096], [128000, 16384]]);
   } finally { adapter.close(); }
+});
+test("composer choices preserve user-authored custom model metadata", () => {
+  const [choice] = projectComposerModelChoices([{
+    id: "custom-vision",
+    model: "custom-vision",
+    displayName: "My Vision Model",
+    description: "not rendered by the compact picker",
+    hidden: false,
+    isDefault: false,
+    inputModalities: ["text", "image"],
+    contextWindow: 128000,
+    maxTokens: 16384,
+    source: "custom",
+    supportedReasoningEfforts: [],
+    defaultReasoningEffort: null,
+  } as any]);
+  assert.deepEqual(choice && {
+    label: choice.label,
+    inputModalities: choice.inputModalities,
+    contextWindow: choice.contextWindow,
+    maxTokens: choice.maxTokens,
+    source: choice.source,
+  }, {
+    label: "My Vision Model",
+    inputModalities: ["text", "image"],
+    contextWindow: 128000,
+    maxTokens: 16384,
+    source: "custom",
+  });
 });
 test("the native resolved model capability takes precedence over stale catalog metadata", async () => {
   const adapter = fixture();

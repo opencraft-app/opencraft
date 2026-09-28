@@ -264,11 +264,11 @@ func runMainFlow(ctx context.Context, deps Deps, para *callbackPara, flowID int6
 // 分开两个码而不是都归 InvalidPara：排障时"配置对不上"和"DB 挂了"要走完全不同的处置，
 // 混成一个码会让值班先怀疑运营配置，浪费在真正的基础设施故障上。
 //
-// 检索域必须由计费带全 productCode + subProductCode：缺任一就只能全表反查，会把跨 SP
-// 的套餐纳入候选，违背本期"只做同 SP 变配"的边界。实测计费 modifyResource 回调这两个
-// 字段都带（2026-09-02），要求必填不会误伤真实流量。
+// 外层 productCode + subProductCode 必须带全并描述当前源资源；源、目标检索域分别由
+// oldConfig/newConfig 的内层身份给出。实测计费 modifyResource 回调两层身份都带，
+// 要求必填不会误伤真实流量。
 //
-// 这里不重复 checkModify 的业务对账（源 ≠ 目标、同 SP、PID 一致）：那些在下单前的
+// 这里复用 bundleresolve 的业务对账（源 ≠ 目标、同 product、双侧 PID、外层源身份）：
 // checkModify 已 fail-closed 过一轮，且 CTL 的 ModifyPass 会用 modify_policy 的升配
 // 边白名单再校一次。本 handler 只负责把协议字段翻译成套餐 ID。
 func resolveBundlePair(ctx context.Context, deps Deps, para *callbackPara) (string, string, int, string) {
@@ -282,11 +282,8 @@ func resolveBundlePair(ctx context.Context, deps Deps, para *callbackPara) (stri
 			para.ProductCode, para.SubProductCode)
 	}
 
-	oldConfig := jifeiproto.GoodsDetailSVMap(para.GoodsDetail, "oldConfig")
-	newConfig := jifeiproto.GoodsDetailSVMap(para.GoodsDetail, "newConfig")
-
 	res, err := bundleresolve.ModifyBundles(
-		ctx, deps.BundleStore, para.ProductCode, para.SubProductCode, oldConfig, newConfig)
+		ctx, deps.BundleStore, para.ProductCode, para.SubProductCode, para.GoodsDetail)
 	if err != nil {
 		return "", "", ReturnCodeUpstreamUnavailable,
 			fmt.Sprintf("list bundle definitions failed: %v", err)
@@ -404,6 +401,12 @@ func validatePara(p *callbackPara) error {
 	}
 	if len(jifeiproto.GoodsDetailSVMap(p.GoodsDetail, "newConfig")) == 0 {
 		return errors.New("goodsDetail.newConfig must carry at least one sv_* item")
+	}
+	if _, err := jifeiproto.GoodsDetailModifyConfigIdentity(p.GoodsDetail, "oldConfig"); err != nil {
+		return err
+	}
+	if _, err := jifeiproto.GoodsDetailModifyConfigIdentity(p.GoodsDetail, "newConfig"); err != nil {
+		return err
 	}
 	return nil
 }

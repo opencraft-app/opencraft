@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -493,7 +494,7 @@ func createRewardsIfQualified(ctx context.Context, tx *sql.Tx, campaignID, invit
 		{side: domain.RewardSideInviter, beneficiary: inviterUserID, amount: campaign.InviterCredit},
 		{side: domain.RewardSideInvitee, beneficiary: inviteeUserID, amount: campaign.InviteeCredit},
 	} {
-		idempotencyKey := fmt.Sprintf("referral:%s:%s:%s", campaign.ID, inviteeUserID, reward.side)
+		idempotencyKey := rewardIdempotencyKey(campaign.ID, inviteeUserID, registeredEventID, reward.side)
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO referral_reward (
 				reward_id, campaign_id, invitee_user_id, qualifying_pass_id, beneficiary_user_id,
@@ -507,9 +508,13 @@ func createRewardsIfQualified(ctx context.Context, tx *sql.Tx, campaignID, invit
 			return err
 		}
 	}
-	_ = registeredEventID
 	_ = registeredAt
 	return nil
+}
+
+func rewardIdempotencyKey(campaignID, inviteeUserID, registrationEventID, side string) string {
+	generation := sha256.Sum256([]byte(strings.TrimSpace(registrationEventID)))
+	return fmt.Sprintf("referral:%s:%s:%x:%s", campaignID, inviteeUserID, generation[:8], side)
 }
 
 const campaignSelect = `

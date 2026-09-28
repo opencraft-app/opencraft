@@ -4,7 +4,7 @@ import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const output = "/tmp/opencraft-shared-sidebar";
 const source = `
-import React,{useEffect,useState}from'react';import{createRoot}from'react-dom/client';
+import React,{useEffect,useState}from'react';import{createIntlTestRoot as createRoot}from'/tests/fixtures/intl-root.tsx';
 import{AppShell}from'/apps/workbench-web/src/components/app-shell.tsx';
 import{AppShellHeader}from'/apps/workbench-web/src/components/app-shell-header.tsx';
 import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src/appearance-theme.ts';

@@ -10,9 +10,9 @@
 
 > ℹ️ **お知らせ**
 >
-> AgentChatのインターフェースガイドは現在主に中国語です。完全なローカライズは進行中です。
+> チャットのインターフェースガイドは現在主に中国語です。完全なローカライズは進行中です。
 
-![LightVelaコンソールのチャットページ](../images/chat-overview-en.png)
+![LightVelaコンソールのチャットページ](../images/chat-overview-en.webp)
 
 ---
 

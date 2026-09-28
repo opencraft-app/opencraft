@@ -40,7 +40,7 @@ No hay un paso de verificación de identidad real en China en el sitio internaci
 
 ### 3. Activar el plan mediante el flujo de activación internacional actual
 
-Los planes de LightVela entrarán en beta pública y comenzarán la facturación el 18 de agosto de 2026 (hora de Singapur). Una vez que el beta pública y la facturación comiencen oficialmente, la validez del plan de los usuarios beta se extenderá por un mes adicional, y los nuevos usuarios pueden probar Launch gratis por 14 días. Siga las instrucciones en la tarjeta del plan para activarlo y consulte la página de Suscripción para la información actual.
+Elige un plan disponible en la [página de suscripción](/subscribe/) y sigue las indicaciones de la tarjeta para activarlo. Consulta la página para conocer las ofertas y los precios actuales.
 
 ### 4. Permita que LightVela provisione la instancia automáticamente
 
@@ -66,9 +66,9 @@ Su primer Agent de Hermes ya está listo para permanecer en línea en la nube la
 
 LightVela comienza a provisionar la instancia de Hermes automáticamente después de la activación del plan. Cuando la instancia esté lista, configure un modelo y un canal en el consuelo e inicie una conversación.
 
-### ¿Qué ocurre después de que comience la facturación?
+### ¿Dónde puedo consultar los planes y las ofertas actuales?
 
-Una vez que comience oficialmente la facturación, la validez del plan de los usuarios beta se extenderá por un mes adicional. Los nuevos usuarios pueden probar Launch gratis por 14 días. Consulte la [página de Suscripción](/subscribe) y [Anuncio de la Versión de Pago de LightVela](./announcements/public-beta.md) para la información más reciente.
+Consulta la [página de suscripción](/subscribe/) y [Planes](./plans.md) para conocer las condiciones, las ofertas para nuevos usuarios y las reglas de renovación actuales.
 
 ### ¿Cuántas instancias de Hermes puede activar una cuenta?
 

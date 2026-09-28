@@ -29,7 +29,7 @@ LightVela es especialmente útil para:
   A diferencia de un chatbot básico, Hermes puede retener el contexto de la conversación y memorías a largo plazo entre sesiones, por lo que no tienes que presentarte cada vez.
 
 * **Personas que desean un Agent que funciona de forma independiente y disponible 24/7**
-  Cada instancia de Hermes se ejecuta en un entorno de nube aislado y permanece disponible sin depender de si tu dispositivo local está en línea.
+  Cada instancia de Hermes se ejecuta en un entorno de nube dedicado y permanece disponible sin depender de si tu dispositivo local está en línea.
 
 ***
 
@@ -53,7 +53,7 @@ Antes de comenzar, necesitas:
 
 * Una cuenta de Google o GitHub para iniciar sesión en LightVela; el sitio internacional no requiere verificación de identidad en China
 
-* Un plan actualmente disponible seleccionado y activado desde la [página de suscripción](/subscribe); después de la beta pública y el inicio de facturación, los nuevos usuarios pueden probar Launch gratis por 14 días
+* Un plan disponible seleccionado y activado desde la [página de suscripción](/subscribe/); consulta esa página para conocer las ofertas para nuevos usuarios
 
 * Al menos una cuenta de mensajería compatible, como Telegram, WhatsApp, Discord, Slack o WeChat
 

@@ -60,6 +60,28 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         ):
             load_bundle(manifest, "demo", "beijing-sandbox")
 
+    def test_bundle_rejects_broad_or_unowned_preserve_target_paths(self) -> None:
+        base = {
+            "owner": "demo",
+            "source": "demo",
+            "reason": "Demo bundle",
+            "allowed_paths": ["demo/k8s/base"],
+            "exit_condition": "never",
+            "publish_paths_by_env": {
+                "beijing-sandbox": ["argocd/services/demo/beijing-sandbox/**"],
+            },
+        }
+        for path, message in (
+            ("argocd/services/demo/beijing-sandbox/**", "must name exact repository files"),
+            ("argocd/secrets/beijing-sandbox/demo.sops.yaml", "outside publish paths"),
+            ("../outside.yaml", "must stay within the repository"),
+        ):
+            with self.subTest(path=path):
+                bundle = dict(base)
+                bundle["preserve_target_paths_by_env"] = {"beijing-sandbox": [path]}
+                with self.assertRaisesRegex(ValueError, message):
+                    load_bundle({"bundles": {"demo": bundle}}, "demo", "beijing-sandbox")
+
     def test_vibebase_beijing_promotion_only_owns_vibebase_gitops_service(self) -> None:
         bundle = load_bundle(
             load_manifest(),
@@ -188,7 +210,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
                 self.assertIn("does not define docker build inputs", result.stderr)
 
     def test_resolve_release_bundle_supports_sandbox2_image_services(self) -> None:
-        for service in ["ai-gateway", "nextgen-dashboard"]:
+        for service in ["ai-gateway"]:
             with self.subTest(service=service):
                 result = run_command(
                     [
@@ -364,7 +386,7 @@ class SandboxCatalogTests(unittest.TestCase):
             self.assertIn("sourcePath: argocd/services/", content, msg=str(catalog_file))
             self.assertNotIn("\npath: argocd/services/", content, msg=str(catalog_file))
 
-    def test_beijing_service_common_is_component(self) -> None:
+    def test_beijing_services_reuse_common_component_or_explicit_root(self) -> None:
         service_root = REPO_ROOT / "argocd" / "services"
         common_files = sorted(service_root.glob("*/common/kustomization.yaml"))
         self.assertGreaterEqual(len(common_files), 1)
@@ -379,6 +401,18 @@ class SandboxCatalogTests(unittest.TestCase):
                 # Foundation is deliberately self-contained for Argo's default load restriction.
                 continue
             content = beijing_file.read_text()
+            if beijing_file == service_root / "service-gateway/beijing-sandbox/kustomization.yaml":
+                # The Beijing gateway must own the base and its Collaboration patch in one
+                # Kustomization; a Component patch cannot target resources introduced by a
+                # Component, including itself.
+                self.assertIn("kind: Kustomization", content, msg=str(beijing_file))
+                self.assertIn(
+                    "resources:\n- ../../../../service-gateway/k8s/base",
+                    content,
+                    msg=str(beijing_file),
+                )
+                self.assertNotIn("components:", content, msg=str(beijing_file))
+                continue
             self.assertIn("- ../common", content, msg=str(beijing_file))
             self.assertNotIn("resources:\n- ../common", content, msg=str(beijing_file))
 
@@ -476,6 +510,87 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             self.assertEqual((repo / "demo" / "k8s" / "base" / "manifests.yaml").read_text(), "source-manifest\n")
             self.assertTrue((repo / "argocd" / "services" / "other" / "beijing-sandbox" / "keep.yaml").exists())
 
+    def test_variant_projection_preserves_unselected_pins_unless_source_changed_them(self) -> None:
+        for explicit_prod_change in (False, True):
+            with self.subTest(explicit_prod_change=explicit_prod_change), tempfile.TemporaryDirectory() as tmp:
+                repo = Path(tmp)
+                git(repo, "init")
+                git(repo, "config", "user.email", "ci@example.com")
+                git(repo, "config", "user.name", "CI")
+
+                (repo / ".ci/runtime/bundles").mkdir(parents=True)
+                (repo / ".ci/runtime/bundles/demo.bundle").write_text(textwrap.dedent("""\
+                    bundles:
+                      demo:
+                        owner: demo
+                        source: demo
+                        reason: Demo bundle with workload variants
+                        allowed_paths:
+                          - demo
+                        exit_condition: never
+                        dockerfile: demo/Dockerfile
+                        build_context: demo
+                        image_repo:
+                          tkexgz: example.com/demo
+                        publish_paths:
+                          - argocd/services/demo/{env}/**
+                    """))
+                service_dir = repo / "argocd/services/demo/tkexgz"
+                service_dir.mkdir(parents=True)
+                prod_env = service_dir / "demo-platform.env"
+                testing_env = service_dir / "demo-platform-testing.env"
+                staging_env = service_dir / "demo-platform-staging.env"
+                config = service_dir / "config.yaml"
+                prod_env.write_text("DEMO_IMAGE=source-prod-old\n")
+                testing_env.write_text("DEMO_IMAGE=source-testing\n")
+                staging_env.write_text("DEMO_IMAGE=source-staging-old\n")
+                config.write_text("value: source-old\n")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "source base")
+                source_base = git_output(repo, "rev-parse", "HEAD")
+
+                config.write_text("value: source-new\n")
+                if explicit_prod_change:
+                    prod_env.write_text("DEMO_IMAGE=source-prod-explicit\n")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "source release")
+                source_ref = git_output(repo, "rev-parse", "HEAD")
+
+                git(repo, "checkout", "-b", "gitops", source_base)
+                prod_env.write_text("DEMO_IMAGE=gitops-prod\n")
+                testing_env.write_text("DEMO_IMAGE=gitops-testing\n")
+                staging_env.write_text("DEMO_IMAGE=gitops-staging\n")
+                config.write_text("value: gitops-old\n")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "gitops desired state")
+
+                result = run_command(
+                    [
+                        "python3",
+                        str(COMMAND_DIR / "project_release_bundle.py"),
+                        "--repo-root",
+                        str(repo),
+                        "--service",
+                        "demo",
+                        "--env",
+                        "tkexgz",
+                        "--source-ref",
+                        source_ref,
+                        "--image-pin-variant",
+                        "testing",
+                    ],
+                    cwd=repo,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                expected_prod = "source-prod-explicit\n" if explicit_prod_change else "gitops-prod\n"
+                self.assertEqual(prod_env.read_text(), f"DEMO_IMAGE={expected_prod}")
+                self.assertEqual(testing_env.read_text(), "DEMO_IMAGE=source-testing\n")
+                self.assertEqual(staging_env.read_text(), "DEMO_IMAGE=gitops-staging\n")
+                self.assertEqual(config.read_text(), "value: source-new\n")
+
     def test_playground_projection_preserves_gitops_only_environment_closure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -565,6 +680,82 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             )
             self.assertEqual((repo / "demo" / "k8s" / "base" / "manifests.yaml").read_text(), "source-manifest\n")
             self.assertIn("deleted 0 stale files", result.stdout)
+
+    def test_projection_preserves_declared_gitops_target_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init")
+            git(repo, "config", "user.email", "ci@example.com")
+            git(repo, "config", "user.name", "CI")
+
+            (repo / ".ci/runtime/bundles").mkdir(parents=True)
+            (repo / ".ci/runtime/bundles/demo.bundle").write_text(textwrap.dedent("""\
+                bundles:
+                  demo:
+                    owner: demo
+                    source: demo
+                    reason: Demo bundle with GitOps-owned activation inputs
+                    allowed_paths:
+                      - demo/k8s/base
+                    exit_condition: never
+                    publish_paths_by_env:
+                      beijing-sandbox:
+                        - demo/k8s/base/**
+                        - argocd/services/demo/beijing-sandbox/**
+                        - argocd/secrets/beijing-sandbox/demo-runtime.sops.yaml
+                    preserve_target_paths_by_env:
+                      beijing-sandbox:
+                        - argocd/secrets/beijing-sandbox/demo-runtime.sops.yaml
+                        - argocd/services/demo/beijing-sandbox/platform.env
+            """))
+            (repo / "demo/k8s/base").mkdir(parents=True)
+            (repo / "demo/k8s/base/deployment.yaml").write_text("source-deployment\n")
+            source_overlay = repo / "argocd/services/demo/beijing-sandbox"
+            source_overlay.mkdir(parents=True)
+            (source_overlay / "kustomization.yaml").write_text("source-overlay\n")
+            (source_overlay / "platform.env").write_text("IMAGE=REPLACE_IMAGE\nADMIN=REPLACE_ADMIN\n")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "source")
+            source_ref = git_output(repo, "rev-parse", "HEAD")
+
+            git(repo, "checkout", "-b", "gitops")
+            (repo / "demo/k8s/base/deployment.yaml").write_text("old-deployment\n")
+            (source_overlay / "kustomization.yaml").write_text("old-overlay\n")
+            (source_overlay / "platform.env").write_text("IMAGE=live-image\nADMIN=live-admin\n")
+            (source_overlay / "stale.yaml").write_text("stale\n")
+            secret = repo / "argocd/secrets/beijing-sandbox/demo-runtime.sops.yaml"
+            secret.parent.mkdir(parents=True)
+            secret.write_text("encrypted-live-secret\n")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "gitops")
+
+            result = run_command(
+                [
+                    "python3",
+                    str(COMMAND_DIR / "project_release_bundle.py"),
+                    "--repo-root",
+                    str(repo),
+                    "--service",
+                    "demo",
+                    "--env",
+                    "beijing-sandbox",
+                    "--source-ref",
+                    source_ref,
+                ],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual((repo / "demo/k8s/base/deployment.yaml").read_text(), "source-deployment\n")
+            self.assertEqual((source_overlay / "kustomization.yaml").read_text(), "source-overlay\n")
+            self.assertFalse((source_overlay / "stale.yaml").exists())
+            self.assertEqual(
+                (source_overlay / "platform.env").read_text(),
+                "IMAGE=live-image\nADMIN=live-admin\n",
+            )
+            self.assertEqual(secret.read_text(), "encrypted-live-secret\n")
 
 
 if __name__ == "__main__":

@@ -88,6 +88,9 @@ var (
 	// ErrDianshiActivityRequired 点石专用入口收到未配置活动映射的 bundle。
 	ErrDianshiActivityRequired = errors.New("placeorder: dianshi activity required")
 
+	// ErrUnsupportedSite 表示当前站点不开放对应业务能力。
+	ErrUnsupportedSite = errors.New("placeorder: unsupported site")
+
 	// ErrPassNotFoundForRenew 续费场景下 ctl 反查 pass 失败（pass_id 在用户名下找不到 / 已销毁）。
 	//
 	// 触发条件：trade.PlaceRenewOrder / PlaceRenewOrderAndPay 在拼装 jifei goodsDetail 前
@@ -177,7 +180,7 @@ type DianshiGrantCampaign struct {
 }
 
 type participationReader interface {
-	HasUserParticipated(ctx context.Context, uin string, activityID int64) (bool, error)
+	HasUserParticipated(ctx context.Context, uin string, activityID int64, scene store.ActivityScene) (bool, error)
 }
 
 const moveInGoodsCategoryID int64 = 176262
@@ -219,7 +222,8 @@ type Deps struct {
 	// CreatePayUrl calls. Callers can still override either field explicitly.
 	BillingPayRedirectURL string
 	OrderWriter           store.OrderWriter
-	OrderStore            store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
+	OrderStore            store.OrderStore // GeneratePayURL 反查 trade_order.pay_url 用
+	DianshiRenewWriter    store.DianshiRenewOrderWriter
 	ParticipationReader   participationReader // 专用赠送按请求 activity_id 做防重复检查
 	ShadowClient          shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
 	SiteKind              string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
@@ -233,7 +237,7 @@ type Deps struct {
 	//   - 非 nil：PlaceOrder / PlaceOrderAndPay 在反查 trade_bundle_definition 之后
 	//     插入分叉点判定；命中点石走 placeOrderDianshi 出向
 	//   - nil（默认）：完全不感知点石，走 jifei 原路径
-	// PlaceRenewOrder / PlaceRenewOrderAndPay 不读取本字段（设计稿 §5.5 续费写死走 jifei）。
+	// 国内 PlaceRenewOrder 读取 scene=renew；国际站和 PlaceRenewOrderAndPay 保持原 jifei 路径。
 	ActivityResolver activity.Resolver
 
 	// DianshiClient 是点石出向客户端（设计稿 §5.1）。仅在 ActivityResolver 也注入时
@@ -350,7 +354,7 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 	// 与询价侧不同：placeOrder 的 Resolver DB 错必须 5xx（不做 graceful-degrade），
 	// 否则会让用户绕过点石下单走 jifei 拿原价单 + 留下 participation 缺失的脏数据。
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin, req.Period, req.TimeUnit)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, store.ActivityScenePurchase, req.BundleID, req.Uin, req.Period, req.TimeUnit)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w",
 				req.BundleID, req.Uin, resolveErr)
@@ -644,6 +648,34 @@ func (s *Service) PlaceRenewOrder(ctx context.Context, req PlaceRenewOrderReques
 		return nil, fmt.Errorf("placeorder: get bundle definition (renew): %w", err)
 	}
 
+	// 国内站续费活动按 scene=renew 独立判定；国际站本期保持 jifei 原链路。
+	if !isIntlSite(s.deps.SiteKind) && s.deps.ActivityResolver != nil {
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(
+			ctx,
+			store.ActivitySceneRenew,
+			req.BundleID,
+			req.Uin,
+			req.Period,
+			req.TimeUnit,
+		)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("placeorder: resolve renew activity bundleId=%s uin=%s: %w",
+				req.BundleID, req.Uin, resolveErr)
+		}
+		if mapping != nil && mapping.Active && req.Period == 1 && strings.EqualFold(strings.TrimSpace(req.TimeUnit), "m") {
+			reused, hit, reuseErr := s.findReusableDianshiRenewOrder(ctx, req, mapping)
+			if reuseErr != nil {
+				return nil, reuseErr
+			}
+			if hit {
+				return reused, nil
+			}
+		}
+		if useDianshi {
+			return s.placeRenewOrderDianshi(ctx, req, def, mapping)
+		}
+	}
+
 	// scene="renew" 取 categoryId（与 inquiry.QuoteRenew 对偶；未命中报错）
 	categoryID := def.CategoryIDForScene("renew")
 	if categoryID == 0 {
@@ -881,7 +913,7 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 	// placeOrderDianshi 私有方法（jifei generateDealsAndPay 与 generateDeals 在点石路径下
 	// 都收敛到同一个点石 do_goods 出向调用，区别仅在 jifei 路径上的 SDK 拆分）。
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin, req.Period, req.TimeUnit)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, store.ActivityScenePurchase, req.BundleID, req.Uin, req.Period, req.TimeUnit)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w",
 				req.BundleID, req.Uin, resolveErr)
@@ -1032,6 +1064,131 @@ func (s *Service) PlaceDianshiOrderAndPay(ctx context.Context, req PlaceOrderReq
 	return s.placeOrderDianshiAndPay(ctx, preparedReq, def, mapping)
 }
 
+// PlaceDianshiRenewOrderAndPay 是仅供受信内部调用方使用的点石续费下单并支付入口。
+// 它要求有效的 renew 活动映射，但有意忽略用户参与记录，支持内部任务重复续费。
+func (s *Service) PlaceDianshiRenewOrderAndPay(ctx context.Context, req PlaceRenewOrderRequest) (*PlaceOrderResult, error) {
+	if err := s.validatePlaceRenewOrderRequest(&req); err != nil {
+		return nil, err
+	}
+	if isIntlSite(s.deps.SiteKind) {
+		return nil, fmt.Errorf("%w: dianshi renew is only supported for domestic site", ErrUnsupportedSite)
+	}
+	if s.deps.ActivityResolver == nil || s.deps.DianshiClient == nil {
+		return nil, fmt.Errorf("%w: renew activity dependencies are not configured", ErrDianshiActivityRequired)
+	}
+
+	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
+		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		if err != nil {
+			if errors.Is(err, shadowclient.ErrBindingNotFound) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+			}
+			return nil, fmt.Errorf("placeorder: shadow GetBindingByExternalUserID (dianshi renew): %w", err)
+		}
+		if strings.TrimSpace(binding.Uin) == "" {
+			return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+		}
+		req.Uin = binding.Uin
+		if req.AppID == "" {
+			req.AppID = binding.AppID
+		}
+	}
+
+	bundle, err := s.deps.CTLClient.GetBundleByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, ctlclient.ErrNotFound) {
+			return nil, fmt.Errorf("%w: ctl bundleId=%s", ErrBundleNotFound, req.BundleID)
+		}
+		return nil, fmt.Errorf("placeorder: ctl GetBundleByID (dianshi renew): %w", err)
+	}
+	if !strings.EqualFold(bundle.BundleState, "ONLINE") {
+		return nil, fmt.Errorf("%w: bundleId=%s state=%s", ErrBundleOffline, req.BundleID, bundle.BundleState)
+	}
+	def, err := s.deps.BundleStore.GetBundleDefinitionByID(ctx, req.BundleID)
+	if err != nil {
+		if errors.Is(err, store.ErrBundleDefinitionNotFound) {
+			return nil, fmt.Errorf("%w: trade_bundle_definition bundleId=%s", ErrBundleNotFound, req.BundleID)
+		}
+		return nil, fmt.Errorf("placeorder: get bundle definition (dianshi renew): %w", err)
+	}
+
+	mapping, err := s.deps.ActivityResolver.GetMapping(ctx, store.ActivitySceneRenew, req.BundleID)
+	if err != nil {
+		if errors.Is(err, store.ErrBundleActivityNotFound) {
+			return nil, fmt.Errorf("%w: no renew mapping for bundleId=%s", ErrDianshiActivityRequired, req.BundleID)
+		}
+		return nil, fmt.Errorf("placeorder: resolve dianshi renew activity bundleId=%s: %w", req.BundleID, err)
+	}
+	if mapping == nil || !mapping.Active || req.Period != 1 || !strings.EqualFold(strings.TrimSpace(req.TimeUnit), "m") {
+		return nil, fmt.Errorf("%w: no active renew mapping for bundleId=%s period=%d%s",
+			ErrDianshiActivityRequired, req.BundleID, req.Period, req.TimeUnit)
+	}
+
+	timeSpanUnit := strconv.Itoa(req.Period) + strings.ToLower(strings.TrimSpace(req.TimeUnit))
+	resp, err := s.deps.DianshiClient.DoGoodsAndPay(ctx, &dianshiclient.DoGoodsRequest{
+		Uin:        req.Uin,
+		ActivityID: mapping.ActivityID,
+		Preview:    1,
+		Originate:  dianshiclient.OriginateLightvelaTrade,
+		CheckSum:   dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey),
+		Goods: []dianshiclient.DoGoodsItem{{
+			ActID: mapping.ActID,
+			PreferenceParam: map[string]interface{}{
+				"regionId":     s.region.RegionID,
+				"resourceId":   req.ResourceID,
+				"timeSpanUnit": timeSpanUnit,
+				"bundleId":     mapping.BundleID,
+			},
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: dianshi DoGoodsAndPay renew bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
+			req.BundleID, req.ResourceID, mapping.ActivityID, mapping.ActID, err)
+	}
+	if resp == nil || len(resp.DealNames) == 0 || strings.TrimSpace(resp.DealNames[0]) == "" {
+		return nil, fmt.Errorf("%w: dianshi do_goods_and_pay renew returned empty deal_names bundleId=%s resourceId=%s",
+			ErrJifeiResponseInvalid, req.BundleID, req.ResourceID)
+	}
+
+	dealName := strings.TrimSpace(resp.DealNames[0])
+	goodsDetail := s.buildJifeiGoodsDetail(def, PlaceOrderRequest{
+		Period: req.Period, TimeUnit: req.TimeUnit, GoodsNum: req.GoodsNum,
+	})
+	goodsDetail["resourceId"] = req.ResourceID
+	goodsDetail["curDeadline"] = req.CurDeadline
+	goodsDetail["dianshi_activity_id"] = mapping.ActivityID
+	goodsDetail["dianshi_act_id"] = mapping.ActID
+	goodsDetail["dianshi_big_deal_no"] = resp.BigDealNo
+	if err := s.deps.OrderWriter.CreateOrder(ctx, store.CreateOrderInput{
+		BigOrderID:     resp.BigDealNo,
+		DealName:       dealName,
+		ExternalUserID: req.ExternalUserID,
+		Uin:            req.Uin,
+		AppID:          req.AppID,
+		SubProductCode: def.SubProductCode,
+		BundleID:       req.BundleID,
+		OrderType:      store.OrderTypeRenew,
+		Period:         req.Period,
+		TimeUnit:       req.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		RegionID:       s.region.RegionID,
+		PayMode:        req.PayMode,
+		GoodsDetail:    goodsDetail,
+		Status:         store.OrderStatusProvisioned,
+		ResourceType:   "pass",
+		ResourceID:     req.ResourceID,
+		Source:         store.OrderSourceDianshi,
+		ActivityID:     mapping.ActivityID,
+		ActID:          mapping.ActID,
+	}); err != nil {
+		if errors.Is(err, store.ErrTradeOrderDuplicate) {
+			return nil, fmt.Errorf("%w (dianshi renew and pay): dealName=%s", ErrDealNameDuplicate, dealName)
+		}
+		return nil, fmt.Errorf("placeorder: persist dianshi renew and pay order dealName=%s: %w", dealName, err)
+	}
+	return &PlaceOrderResult{DealName: dealName, BigOrderID: resp.BigDealNo}, nil
+}
+
 // GrantDianshiSubscription places a request-scoped campaign grant without
 // resolving trade_bundle_activity. Ordinary Dianshi purchase paths are unchanged.
 func (s *Service) GrantDianshiSubscription(ctx context.Context, req PlaceOrderRequest, campaign DianshiGrantCampaign) (*DianshiGrantResult, error) {
@@ -1060,7 +1217,7 @@ func (s *Service) GrantDianshiSubscription(ctx context.Context, req PlaceOrderRe
 	if s.deps.ParticipationReader == nil {
 		return nil, fmt.Errorf("placeorder: participation reader is not configured")
 	}
-	participated, err := s.deps.ParticipationReader.HasUserParticipated(ctx, preparedReq.Uin, campaign.ActivityID)
+	participated, err := s.deps.ParticipationReader.HasUserParticipated(ctx, preparedReq.Uin, campaign.ActivityID, store.ActivityScenePurchase)
 	if err != nil {
 		return nil, fmt.Errorf("placeorder: query participation uin=%s activityID=%d: %w", preparedReq.Uin, campaign.ActivityID, err)
 	}
@@ -1104,7 +1261,7 @@ func (s *Service) prepareDianshiOrderAndPay(
 		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("%w: resolver is not configured", ErrDianshiActivityRequired)
 	}
 	mapping, useDianshi, err := s.deps.ActivityResolver.ResolveForPlaceOrder(
-		ctx, preparedReq.BundleID, preparedReq.Uin, preparedReq.Period, preparedReq.TimeUnit,
+		ctx, store.ActivityScenePurchase, preparedReq.BundleID, preparedReq.Uin, preparedReq.Period, preparedReq.TimeUnit,
 	)
 	if err != nil {
 		return PlaceOrderRequest{}, nil, nil, false, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w", preparedReq.BundleID, preparedReq.Uin, err)
@@ -2172,6 +2329,147 @@ func (s *Service) placeOrderDianshiAndPay(
 	return s.placeOrderDianshiWith(ctx, req, def, mapping, "DoGoodsAndPay", dianshiclient.InterfaceNameDoGoodsAndPay, s.deps.DianshiClient.DoGoodsAndPay)
 }
 
+func (s *Service) findReusableDianshiRenewOrder(
+	ctx context.Context,
+	req PlaceRenewOrderRequest,
+	mapping *activity.Mapping,
+) (*PlaceOrderResult, bool, error) {
+	reusableStore, ok := s.deps.OrderStore.(store.ReusableDianshiOrderStore)
+	if !ok {
+		return nil, false, fmt.Errorf("placeorder: reusable dianshi order store not configured")
+	}
+	reuseHours := mapping.OrderExpiredTime
+	if reuseHours <= 0 {
+		reuseHours = 1
+	}
+	createdAfter := time.Now().UTC().Add(-time.Duration(reuseHours * float64(time.Hour)))
+	order, err := reusableStore.FindReusableDianshiOrder(
+		ctx,
+		req.ExternalUserID,
+		mapping.ActivityID,
+		store.OrderTypeRenew,
+		req.BundleID,
+		mapping.ActID,
+		req.ResourceID,
+		createdAfter,
+	)
+	if errors.Is(err, store.ErrTradeOrderNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("placeorder: find reusable dianshi renew order bundleId=%s activityId=%d externalUserId=%s: %w",
+			req.BundleID, mapping.ActivityID, req.ExternalUserID, err)
+	}
+	return &PlaceOrderResult{
+		DealName:   order.DealName,
+		BigOrderID: order.BigOrderID,
+		PayURL:     order.PayURL,
+		Reused:     true,
+	}, true, nil
+}
+
+// placeRenewOrderDianshi 创建国内站点石续费订单，并在同一 DB 事务中消费 renew 资格。
+func (s *Service) placeRenewOrderDianshi(
+	ctx context.Context,
+	req PlaceRenewOrderRequest,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+) (*PlaceOrderResult, error) {
+	if s.deps.DianshiClient == nil {
+		return nil, fmt.Errorf("placeorder: dianshi client not configured")
+	}
+	if s.deps.DianshiRenewWriter == nil {
+		return nil, fmt.Errorf("placeorder: dianshi renew writer not configured")
+	}
+
+	timeSpanUnit := strconv.Itoa(req.Period) + strings.ToLower(strings.TrimSpace(req.TimeUnit))
+	resp, err := s.deps.DianshiClient.DoGoods(ctx, &dianshiclient.DoGoodsRequest{
+		Uin:        req.Uin,
+		ActivityID: mapping.ActivityID,
+		Preview:    1,
+		Originate:  dianshiclient.OriginateLightvelaTrade,
+		CheckSum:   dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey),
+		Goods: []dianshiclient.DoGoodsItem{{
+			ActID: mapping.ActID,
+			PreferenceParam: map[string]interface{}{
+				"regionId":     s.region.RegionID,
+				"resourceId":   req.ResourceID,
+				"timeSpanUnit": timeSpanUnit,
+				"bundleId":     mapping.BundleID,
+			},
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: dianshi DoGoods renew bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
+			req.BundleID, req.ResourceID, mapping.ActivityID, mapping.ActID, err)
+	}
+	if resp == nil || len(resp.DealNames) == 0 || strings.TrimSpace(resp.DealNames[0]) == "" {
+		return nil, fmt.Errorf("%w: dianshi do_goods renew returned empty deal_names bundleId=%s resourceId=%s activityId=%d",
+			ErrJifeiResponseInvalid, req.BundleID, req.ResourceID, mapping.ActivityID)
+	}
+
+	dealName := strings.TrimSpace(resp.DealNames[0])
+	goodsDetail := s.buildJifeiGoodsDetail(def, PlaceOrderRequest{
+		Period: req.Period, TimeUnit: req.TimeUnit, GoodsNum: req.GoodsNum,
+	})
+	goodsDetail["resourceId"] = req.ResourceID
+	goodsDetail["curDeadline"] = req.CurDeadline
+	goodsDetail["dianshi_activity_id"] = mapping.ActivityID
+	goodsDetail["dianshi_act_id"] = mapping.ActID
+	goodsDetail["dianshi_big_deal_no"] = resp.BigDealNo
+
+	order := store.CreateOrderInput{
+		BigOrderID:     resp.BigDealNo,
+		DealName:       dealName,
+		ExternalUserID: req.ExternalUserID,
+		Uin:            req.Uin,
+		AppID:          req.AppID,
+		SubProductCode: def.SubProductCode,
+		BundleID:       req.BundleID,
+		OrderType:      store.OrderTypeRenew,
+		Period:         req.Period,
+		TimeUnit:       req.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		RegionID:       s.region.RegionID,
+		PayMode:        req.PayMode,
+		GoodsDetail:    goodsDetail,
+		Status:         store.OrderStatusPendingPay,
+		ResourceType:   "pass",
+		ResourceID:     req.ResourceID,
+		Source:         store.OrderSourceDianshi,
+		ActivityID:     mapping.ActivityID,
+		ActID:          mapping.ActID,
+	}
+	participation := store.UserActivityParticipation{
+		Uin:            req.Uin,
+		AppID:          req.AppID,
+		ExternalUserID: req.ExternalUserID,
+		ActivityID:     mapping.ActivityID,
+		Scene:          store.ActivitySceneRenew,
+		BundleID:       req.BundleID,
+		ActID:          mapping.ActID,
+		DealName:       dealName,
+		BigDealNo:      resp.BigDealNo,
+	}
+	if err := s.deps.DianshiRenewWriter.CreateDianshiRenewOrderWithParticipation(ctx, order, participation); err != nil {
+		if errors.Is(err, store.ErrActivityParticipationDuplicate) {
+			reused, hit, reuseErr := s.findReusableDianshiRenewOrder(ctx, req, mapping)
+			if reuseErr != nil {
+				return nil, reuseErr
+			}
+			if hit {
+				return reused, nil
+			}
+		}
+		if errors.Is(err, store.ErrTradeOrderDuplicate) {
+			return nil, fmt.Errorf("%w (dianshi renew): dealName=%s", ErrDealNameDuplicate, dealName)
+		}
+		return nil, fmt.Errorf("placeorder: persist dianshi renew order dealName=%s: %w", dealName, err)
+	}
+
+	return &PlaceOrderResult{DealName: dealName, BigOrderID: resp.BigDealNo}, nil
+}
+
 func (s *Service) placeOrderDianshiWith(
 	ctx context.Context,
 	req PlaceOrderRequest,
@@ -2194,7 +2492,7 @@ func (s *Service) placeOrderDianshiWith(
 	}
 	reuseWindow := time.Duration(reuseHours * float64(time.Hour))
 	createdAfter := time.Now().UTC().Add(-reuseWindow)
-	order, err := reusableStore.FindReusableDianshiOrder(ctx, req.ExternalUserID, mapping.ActivityID, req.BundleID, mapping.ActID, createdAfter)
+	order, err := reusableStore.FindReusableDianshiOrder(ctx, req.ExternalUserID, mapping.ActivityID, store.OrderTypeCreate, req.BundleID, mapping.ActID, "", createdAfter)
 	if err != nil && !errors.Is(err, store.ErrTradeOrderNotFound) {
 		return nil, fmt.Errorf("placeorder: find reusable dianshi order bundleId=%s activityId=%d externalUserId=%s: %w",
 			req.BundleID, mapping.ActivityID, req.ExternalUserID, err)

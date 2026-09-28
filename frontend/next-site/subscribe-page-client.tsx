@@ -16,7 +16,7 @@ export function SubscribePageClient({
     <AppRouteShell loadingFallback={<ProductSetupRouteLoading />} requireAuth={false}>
       <PublicSiteLocaleBridge locale={locale}>
         <SubscribePage
-          authControls={<PublicHeaderAuthIsland locale={locale} />}
+          authControls={<PublicHeaderAuthIsland locale={locale} loginOnly />}
           publicLocale={locale}
           publicLocalized={localized}
           renderLanguageSwitcher={renderNextLanguageSwitcher}

@@ -191,7 +191,7 @@ describe("日语翻译完成门禁", () => {
     expect(jaJP.k_d61247ca).toBe("ソウル");
     expect(jaJP.k_0a666759).toBe("オフライン");
     expect(jaJP.k_9c418985).toBe("ゴールド");
-    expect(jaJP.k_9905befc).toContain("Hermes Agent");
+    expect(jaJP.k_30bd0985).toContain("Hermes Agent");
   });
 
   it("首页高可见文案使用自然日语并保持英文产品名", () => {
@@ -282,9 +282,8 @@ describe("韩语翻译完成门禁", () => {
     expect(koKR.k_248f81e2).toBe("무료 체험");
     expect(koKR.k_d88baed5).toBe("무료 체험");
     expect(koKR.k_fc115671).toBe("무료 체험");
-    expect(koKR.k_310eb572).toBe("7일 무료 체험");
     expect(koKR.k_5a84204f).toBe("무료 체험 선택");
-    expect(koKR.k_e6dbe35f).toBe("14일 무료 체험");
+    expect(koKR.k_4bfe1ed1).toBe("1개월 무료 체험");
     expect(koKR.k_14833b0a).toBe(
       "© 2026 LightVela. All rights reserved. Tencent Lighthouse 제공.",
     );

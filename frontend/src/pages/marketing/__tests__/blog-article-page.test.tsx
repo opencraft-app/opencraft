@@ -9,6 +9,8 @@ vi.mock("@/lib/region", async (importOriginal) => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => {
     const translations: Record<string, string> = {
       "返回": "Back",
@@ -120,14 +122,14 @@ describe("BlogArticlePage", () => {
     const images = within(article).getAllByRole("img");
     expect(images).toHaveLength(8);
     expect(images.map((image) => image.getAttribute("src"))).toEqual([
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.png",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.png",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.png",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.png",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.png",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.png",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.png",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.png",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.webp",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.webp",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.webp",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.webp",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.webp",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.webp",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.webp",
+      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.webp",
     ]);
     expect(within(article).getByRole("heading", { name: "Share" })).toBeInTheDocument();
     expect(within(article).getByRole("button", { name: "Copy link" })).toBeInTheDocument();
@@ -155,25 +157,25 @@ describe("BlogArticlePage", () => {
     const images = within(article).getAllByRole("img");
     expect(images).toHaveLength(19);
     expect(images.map((image) => image.getAttribute("src"))).toEqual([
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.png",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.webp",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.webp",
     ]);
     expect(within(article).getByText("Cassidy Shi")).toBeInTheDocument();
     expect(within(article).getByText(/With a free trial on offer/)).toBeInTheDocument();

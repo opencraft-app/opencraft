@@ -61,6 +61,7 @@ export interface ComposerStoreSnapshot {
   readonly hasTransientText: boolean;
   readonly canSubmit: boolean;
   readonly hasProcessingAssets: boolean;
+  readonly hasUnavailableAssets: boolean;
 }
 
 export interface ComposerViewHandle {
@@ -113,6 +114,12 @@ export interface ComposerController {
   getInputInteractionSnapshot(): ComposerDictationInteraction | null;
   subscribeInputInteraction(listener: () => void): () => void;
   dispatch(action: ComposerAction): void;
+  /** Resolve an attachment in the active or target-cached Draft. */
+  getDraftAttachment(draftId: string, attachmentId: string): ComposerAttachment | null;
+  /** Late asset results may only update the Draft that initiated the work. */
+  updateDraftAttachment(draftId: string, attachmentId: string, patch: Partial<Omit<ComposerAttachment, "id">>): boolean;
+  /** View-owned browser resources follow the Controller, not a mounted editor. */
+  onDispose(listener: () => void): () => void;
   createSubmitIntent(): SubmitIntent;
   registerView(handle: ComposerViewHandle): () => void;
   focus(): void;
@@ -242,6 +249,9 @@ function snapshot(
       attachment.lifecycle === "uploading" ||
       attachment.lifecycle === "processing",
   );
+  const hasUnavailableAssets = draft.attachments.some(
+    (attachment) => attachment.lifecycle !== "ready" || attachment.uri === null,
+  );
   const hasContent =
     !isComposerDocumentEmpty(draft.document) ||
     draft.attachments.length > 0 ||
@@ -254,9 +264,10 @@ function snapshot(
     hasTransientText,
     canSubmit:
       hasContent &&
-      !hasProcessingAssets &&
+      !hasUnavailableAssets &&
       draft.lifecycle.phase !== "submitting",
     hasProcessingAssets,
+    hasUnavailableAssets,
   };
 }
 
@@ -271,6 +282,7 @@ export function createComposerController(
   const draftCache = new Map<string, ComposerDraft>();
   const listeners = new Set<() => void>();
   const interactionListeners = new Set<() => void>();
+  const disposeListeners = new Set<() => void>();
   const notifyInteraction = () => { for (const listener of interactionListeners) listener(); };
   let view: ComposerViewHandle | null = null;
   let transient: {
@@ -390,7 +402,33 @@ export function createComposerController(
         publish(restored ?? createDraft(action.target, services));
         return;
       }
+      if (action.type === "clear") draftCache.delete(encodeComposerTarget(draft.target));
       publish(reduce(draft, action, services));
+    },
+    getDraftAttachment(draftId, attachmentId) {
+      const owner = draft.id === draftId
+        ? draft
+        : [...draftCache.values()].find(candidate => candidate.id === draftId);
+      return owner?.attachments.find(attachment => attachment.id === attachmentId) ?? null;
+    },
+    updateDraftAttachment(draftId, attachmentId, patch) {
+      ensureOpen();
+      if (draft.id === draftId) {
+        if (!draft.attachments.some(attachment => attachment.id === attachmentId)) return false;
+        publish(reduce(draft, { type: "update-attachment", id: attachmentId, patch }, services));
+        return true;
+      }
+      for (const [key, cached] of draftCache) {
+        if (cached.id !== draftId || !cached.attachments.some(attachment => attachment.id === attachmentId)) continue;
+        draftCache.set(key, reduce(cached, { type: "update-attachment", id: attachmentId, patch }, services));
+        return true;
+      }
+      return false;
+    },
+    onDispose(listener) {
+      ensureOpen();
+      disposeListeners.add(listener);
+      return () => disposeListeners.delete(listener);
     },
     createSubmitIntent() {
       ensureOpen();
@@ -482,6 +520,8 @@ export function createComposerController(
       if (active !== null) finalizeTransient(active, "cancel", "dispose");
       submissionContinuation = null;
       disposed = true;
+      for (const listener of disposeListeners) listener();
+      disposeListeners.clear();
       interactionListeners.clear();
       listeners.clear();
       draftCache.clear();

@@ -172,7 +172,15 @@ function appendAttachment(
   attachment: ComposerAttachment,
   diagnostics: SubmitCompileDiagnostic[],
 ): void {
-  if (attachment.lifecycle !== "ready" || attachment.uri === null) {
+  if (attachment.lifecycle !== "ready") {
+    throw new SubmitCompileError("ASSET_NOT_READY", `Attachment ${attachment.name} is not ready`);
+  }
+  const codexFileId = attachment.metadata?.codexFileId;
+  if (attachment.mimeType.startsWith("image/") && typeof codexFileId === "string") {
+    input.push({ type: "image", fileId: codexFileId });
+    return;
+  }
+  if (attachment.uri === null) {
     throw new SubmitCompileError("ASSET_NOT_READY", `Attachment ${attachment.name} is not ready`);
   }
   const path = localPath(attachment.uri);

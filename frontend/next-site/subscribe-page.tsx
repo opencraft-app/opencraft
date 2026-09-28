@@ -1,6 +1,8 @@
 import { LegalFooter } from "@/components/site/legal-footer";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
+import { Card } from "@/components/ui/card";
+import { ModelActionTooltip as DisabledReasonTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
@@ -17,9 +19,10 @@ import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } from "@/domain/types";
 import { REALNAME_LEVEL } from "@/domain/types";
-import { useT } from "@/i18n/t";
+import { useCurrentLocale, useT, type I18nLocale } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { cn } from "@/lib/utils";
+import { BOT_QUOTA_BY_BUNDLE } from "@/lib/bot-quota";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -57,6 +60,7 @@ const colors = {
   border: "rgba(0,0,0,0.1)",
   badgeBg: "rgba(0,0,0,0.04)",
   badgeText: "rgba(0,0,0,0.75)",
+  recommendationText: "#B82E6B",
   /* Tooltip（免费试用提示等）配色，集中管理避免散落硬编码 */
   tooltipBg: "rgba(23,23,23,0.92)",
   tooltipShadow: "0 4px 16px rgba(0,0,0,0.18)",
@@ -68,8 +72,18 @@ const LAUNCH_BUNDLE_NAME_KEYWORDS = {
   zh: "启航",
   en: "launch",
 } as const;
-/** AI 增强版套餐类型标识（国际站启航 AI 对新用户提供 7 天免费，巡游 AI 为首购折扣） */
+/** AI 增强版套餐类型标识（启航 AI 对新用户提供 1 个月免费，巡游 AI 为首购折扣） */
 const BUNDLE_TYPE_AI = "ai";
+/** 套餐选项专用短标签，避免影响其他场景的完整“推荐”译文。 */
+const PLAN_RECOMMENDATION_BY_LOCALE: Record<I18nLocale, string> = {
+  "zh-CN": "推荐",
+  "zh-Hant": "推薦",
+  "en-US": "Top pick",
+  "id-ID": "Pilihan",
+  es: "Sugerido",
+  "ja-JP": "推奨",
+  "ko-KR": "추천",
+};
 /** 巡游版套餐名匹配关键字（后端可能返回「巡游」中文名或「cruise」英文名） */
 const CRUISE_BUNDLE_NAME_KEYWORDS = {
   zh: "巡游",
@@ -96,13 +110,13 @@ const matchBundleTier = (bundleName: string | undefined) => {
  * —— 该字段在本文件内存在两套单位口径（小数 `0<d<1` 与百分数 `50`），
  * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
  *
- * 站点口径差异（本次需求仅调整国际站，国内站维持现状）：
- *   - 国际站启航 AI：`首单免费 7 天`（**仅新用户**，见下方 isNewUser 门禁）
+ * 活动口径（国内 / 国际站均为 1 个月，按已确认的活动配置同步）：
+ *   - 国际站启航 AI：`首单免费 1 个月`（**仅新用户**，见下方 isNewUser 门禁）
  *   - 国际站巡游 AI：`首月 6 折`
- *   - 国内站启航 / 巡游 AI：`首月 6 折`（与改动前一致）
+ *   - 国内站启航 AI：`首单免费 1 个月`（仅零元新用户）；巡游 AI：`首月 6 折`
  *
  * 国际站标签必须同时匹配用户资格和真实询价：
- *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 7 天」；
+ *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 1 个月」；
  *   - 只有实付价低于原价时才展示折扣，避免后端异常全价询价仍承诺优惠。
  * 未登录静态 Bundle 也携带同样的原价 / 实付价，因此继续稳定展示既定免费与折扣信息。
  *
@@ -115,11 +129,11 @@ const aiPromoTagText = (
   isNewUser: boolean,
   price?: BundlePrice | null,
 ): string | undefined => {
-  /* 启航 AI 零元新用户「首单免费」标签（国内外统一门禁，天数不同）：
-     国际站 7 天、国内站 3 天。巡游 AI 无免费试用，走下方折扣分支。
+  /* 启航 AI 零元新用户「首单免费」标签（国内外均为 1 个月）：
+     实际下单时长由后端活动配置决定，前端不修改发放时长。巡游 AI 无免费试用，走下方折扣分支。
      注意 t() 必须直接消费字面量（i18n-extract 静态扫描，三元内联字符串扫不到）。 */
   if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
-    return isGlobal ? t("首单免费 7 天") : t("首单免费 3 天");
+    return t("首单免费 1 个月");
   }
   if (isGlobal) {
     const discountRate = actualDiscountRate(price);
@@ -244,9 +258,6 @@ interface PlanInfo {
   comingSoon?: boolean;
   /* 免费套餐：跳过支付弹窗，直接创建 */
   skipPayment?: boolean;
-  /* 当日剩余名额展示 */
-  availableCount?: number;
-  totalCount?: number;
   /**
    * 套餐分类（用于按 tab 分组展示），原始值来自后端 `bundle.bundle_type`。
    * 后端枚举：`free` / `general` / `ai`（migration 000023 拍板）。
@@ -379,8 +390,8 @@ const iconMap: Record<IconKey, React.ReactNode> = {
  * 将后端 Bundle 映射成前端 PlanInfo。
  * 接收 t 函数以确保所有用户可见文案都走 i18n。
  *
- * 后端 bundle_name / description.Key 目前返回的是中文（或中英混排）原文，
- * 这里一律交给 t() 按当前 locale 查字典：
+ * 后端 bundle_name / description.Key 可能返回中文、英文或中英混排原文。
+ * 已知资源与能力 Key 先按语义别名归一化，其余文案交给 t() 按当前 locale 查字典：
  *   - zh-CN：字典里中文翻译与原文一致，回显原文
  *   - en-US：字典里填入对应英文（如 `启航 Launch` → Launch）
  *   - 字典未命中：t() 内部会回显中文原文，不会白屏
@@ -402,13 +413,39 @@ const iconForKey = (key: string): React.ReactNode => {
  * 后端 description 里若也下发了同类项（最典型的是「7*24小时在线」），
  * 这里将其从 otherFeatures 中过滤掉，避免与固定能力点重复或打乱顺序。
  */
+const normalizePlanFeatureKey = (rawKey: string): string => rawKey.trim().toLowerCase();
+
+const ENVIRONMENT_DESC_KEYS = new Set<string>([
+  "独立环境",
+  "云端独立环境",
+  "专属云电脑",
+  "专属云端环境",
+  "standalone environment",
+  "cloud sandbox",
+  "dedicated cloud computer",
+  "dedicated cloud environment",
+].map(normalizePlanFeatureKey));
+const STORAGE_DESC_KEYS = new Set<string>([
+  "专属云端存储",
+  "dedicated cloud storage",
+].map(normalizePlanFeatureKey));
 const CAPABILITY_DESC_KEYS = new Set<string>([
   "7*24小时在线", "7×24小时在线", "7×24 在线", "7*24 在线",
   "极简配置面板", "定时任务", "技能安装", "技能包", "精选技能/技能包",
   "连接主流聊天通道", "接入主流模型 API", "长期记忆", "人设注入", "Agent 自主进化", "诊断中心",
-]);
+  "minimalist config panel", "simple configuration panel", "scheduled tasks",
+  "skill installation", "skill packs", "curated skills / skill packs",
+  "connect mainstream chat channels", "access mainstream model apis",
+  "long-term memory", "persona injection", "agent self-evolution", "diagnostics",
+].map(normalizePlanFeatureKey));
+const isEnvironmentDescKey = (rawKey: string): boolean => (
+  ENVIRONMENT_DESC_KEYS.has(normalizePlanFeatureKey(rawKey))
+);
+const isStorageDescKey = (rawKey: string): boolean => (
+  STORAGE_DESC_KEYS.has(normalizePlanFeatureKey(rawKey))
+);
 const isCapabilityDescKey = (rawKey: string): boolean => {
-  if (CAPABILITY_DESC_KEYS.has(rawKey)) return true;
+  if (CAPABILITY_DESC_KEYS.has(normalizePlanFeatureKey(rawKey))) return true;
   return /24/.test(rawKey) && /(在线|online)/i.test(rawKey);
 };
 
@@ -484,10 +521,10 @@ const mapBundleToPlan = (
   const nmLower = bundleNm.toLowerCase();
   const isLaunchTier = bundleNm.includes("启航") || nmLower.includes("launch");
   const isCruiseTier = bundleNm.includes("巡游") || nmLower.includes("cruise");
-  /* 独立环境规格：启航 2核4G；巡游升配 4核8G。 */
-  const envSpec = isLaunchTier ? t("2核 4G 内存") : t("4核 8G 内存");
-  /* 专属云端存储：启航 50G；巡游升配 80G。 */
-  const storageSpec = isLaunchTier ? "50G" : "80G";
+  /* 套餐卡用易懂的 CPU 核数表述；详细规格仍以文档中的 vCPU 为准。 */
+  const envSpec = isLaunchTier ? t("2 核 CPU · 8 GB 内存") : t("4 核 CPU · 16 GB 内存");
+  /* 专属云端存储：启航 50 GB；巡游升配 80 GB。 */
+  const storageSpec = isLaunchTier ? "50 GB" : "80 GB";
   /* 一句话文案按 tier 差异化（PRD 需求2）。命中 tier 时直接使用 tier 文案，不受 freeGuideAllowed 清空；
      未命中 tier（如免费试用卡）保持原有兜底逻辑。 */
   const tierTagline = isLaunchTier
@@ -496,9 +533,14 @@ const mapBundleToPlan = (
       ? t("日常主力，让智能化成为习惯")
       : "";
 
-  /* agent_quota 打头阵 */
-  if (bundle.agent_quota > 0) {
-    features.push({ icon: iconMap.user, label: "Agent", value: `${bundle.agent_quota} ${t("个")}` });
+  /* 双站四档展示每台实例内的 Bot 上限；agent_quota 仍决定可创建的 Hermes 实例数量。 */
+  const displayedBotCount = BOT_QUOTA_BY_BUNDLE[bundle.bundle_id] ?? bundle.agent_quota;
+  if (displayedBotCount > 0) {
+    features.push({
+      icon: iconMap.user,
+      label: t("Bot 数"),
+      value: isGlobal ? String(displayedBotCount) : `${displayedBotCount} ${t("个")}`,
+    });
   }
   /* description 里的其他卖点（已出现的 Agent/积分不重复添加）*/
   /* 「独立环境」「专属云端存储」前端统一规格并固定顺序展示，其余项顺延 */
@@ -507,25 +549,22 @@ const mapBundleToPlan = (
   const otherFeatures: PlanFeature[] = [];
   for (const entry of bundle.description ?? []) {
     const rawKey = entry.Key ?? "";
-    const k = rawKey.toLowerCase();
+    const k = normalizePlanFeatureKey(rawKey);
     if (k.includes("agent") || k.includes("积分") || k.includes("credit")) continue;
-    /* 统一走 i18n 字典：当前语言是 en-US 则查英文，zh-CN 则回显原文。
-       动态参数 extract 脚本扫不到，为此在 __markBundleBackendStringsForI18n 中静态列举。 */
-    const label = t(rawKey);
-    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅；
-       匹配 key 仍用后端下发的「独立环境」，展示文案统一为「云端独立环境」 */
-    if (rawKey === "独立环境") {
-      envFeature = { icon: iconForKey(rawKey), label: t("云端独立环境"), value: envSpec };
+    /* 云电脑与存储按语义别名识别，兼容后端中英文 Key，避免国际站重复展示。 */
+    if (isEnvironmentDescKey(rawKey)) {
+      envFeature = { icon: iconMap.monitor, label: t("专属云端环境"), value: envSpec };
       continue;
     }
-    /* 「专属云端存储」前端按 tier 统一展示容量，避免后端缺值 */
-    if (rawKey === "专属云端存储") {
-      storageFeature = { icon: iconMap.hardDrive, label, value: storageSpec };
+    if (isStorageDescKey(rawKey)) {
+      storageFeature = { icon: iconMap.hardDrive, label: t("专属云端存储"), value: storageSpec };
       continue;
     }
     /* 能力点（7*24小时在线 / 定时任务 / 技能 / 多通道 / 长期记忆 / 极简配置面板 / 人设注入 / 自主进化）
        统一在下方按固定顺序渲染，这里跳过后端 description 里的同类项，避免重复与乱序。 */
     if (isCapabilityDescKey(rawKey)) continue;
+    /* 其余后端描述统一走 i18n 字典；未命中时由 t() 回显原文。 */
+    const label = t(rawKey);
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
       otherFeatures.push({ icon: iconForKey(rawKey), label, hasCheck: true });
@@ -547,7 +586,7 @@ const mapBundleToPlan = (
   features.push(...otherFeatures);
   /* 规格项兜底：后端缺失「独立环境」「专属云端存储」时补齐，仍固定排在能力点上方 */
   if (!envFeature) {
-    features.push({ icon: iconMap.monitor, label: t("云端独立环境"), value: envSpec });
+    features.push({ icon: iconMap.monitor, label: t("专属云端环境"), value: envSpec });
   }
   if (!storageFeature) {
     features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: storageSpec });
@@ -614,8 +653,7 @@ const mapBundleToPlan = (
   let price = "";
   let originalPrice: string | undefined;
   let promoTag: string | undefined;
-  /* 需求4：是否可享受「免费 14 天 0 元下单」——命中即把 CTA 文案改为「免费开通」。
-     当前口径：国内付费启航标准版（非 AI 增强、无后端折扣）享 14 天免费试用、首单 0 元。 */
+  /* 是否可享受首单零元下单，供 CTA 展示使用；活动时长由各站点角标文案给出。 */
   let isZeroDownFreeTrial = false;
   if (paid) {
     const currency = bundle.price?.currency ?? "CNY";
@@ -645,7 +683,7 @@ const mapBundleToPlan = (
       if (durationKey === "quarterly") {
         /* 季付：静态 price 已内置折扣（标准版 8.5 折 / AI 增强版 9 折，见 STATIC_*_DISCOUNT），
            结构与登录后询价一致（total_cost=原价 / real_total_cost=折后价）。此处仅取原价展示删除线，
-           不套用月付促销（免费14天 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
+           不套用月付促销（首单免费 / 首月5折 / 首月6折）；折后价 realPriceYuan 直接展示，
            折扣角标（如「8.5折」）由后续 promoTag 分支按 price.discount 计算。标准版与 AI 增强版一致。 */
         if (isLaunch || isCruise) {
           const staticOriginalYuan = bundle.price
@@ -660,15 +698,15 @@ const mapBundleToPlan = (
           }
         }
       } else if (isLaunch && notAi) {
-        displayPriceYuan = 0; // 月付：免费 14 天 → ¥0
+        displayPriceYuan = 0; // 月付：首单免费 1 个月 → ¥0
         originalPriceYuan = realPriceYuan; // 原价展示
       } else if (isCruise && notAi) {
         displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 月付：首月 5 折
         originalPriceYuan = realPriceYuan; // 原价展示
       } else if (isLaunch && !notAi) {
-        /* 启航 AI 增强版月付：首单免费 3 天 → ¥0（2026-09-02 国内站口径，参考国际站启航 AI）。
+        /* 启航 AI 增强版月付：首单免费 1 个月 → ¥0（国内站活动角标口径）。
            静态构建时 real_total_cost 已置 0（见 buildStaticPriceWithAiTier），realPriceYuan 即 0；
-           原价走静态 total_cost 展示删除线。「首单免费 3 天」标签由 aiPromoTagText 免费门禁给出。 */
+           原价走静态 total_cost 展示删除线。「首单免费 1 个月」标签由 aiPromoTagText 免费门禁给出。 */
         displayPriceYuan = 0;
         originalPriceYuan =
           bundle.price?.total_cost != null ? centsToYuan(bundle.price.total_cost) : null;
@@ -694,7 +732,7 @@ const mapBundleToPlan = (
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
     if (durationKey === "quarterly") {
-      /* 季付：不展示月付首期促销（免费14天 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
+      /* 季付：不展示月付首期促销（首单免费 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
          折扣直接由「折后价 / 原价」比值算出（originalPriceYuan=原价、displayPriceYuan=折后价，前面价格逻辑已备好），
          登录取后端 total_cost/real_total_cost、未登录取静态价，口径一致，不依赖后端 discount 字段口径。
          无原价删除线（即无折扣）时不展示角标。 */
@@ -710,12 +748,12 @@ const mapBundleToPlan = (
       const isAi = bundle.bundle_type === BUNDLE_TYPE_AI;
       const discountRate = actualDiscountRate(bundle.price);
       if (isAi) {
-        /* AI 档位：启航零元新用户「首单免费 7 天」；有真实折扣时按询价展示。 */
+        /* AI 档位：启航零元新用户「首单免费 1 个月」；有真实折扣时按询价展示。 */
         promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
       } else if (tier.isLaunch) {
-        /* 启航标准版：只有新用户实付为零才承诺 14 天免费；其他状态只展示真实折扣。 */
+        /* 启航标准版：只有新用户实付为零才承诺 1 个月免费；其他状态只展示真实折扣。 */
         if (isNewUser && bundle.price?.real_total_cost === 0) {
-          promoTag = t("首单免费 14 天");
+          promoTag = t("首单免费 1 个月");
           isZeroDownFreeTrial = true;
         } else {
           promoTag = discountRate == null ? undefined : discountTagText(discountRate, t);
@@ -741,13 +779,13 @@ const mapBundleToPlan = (
         if (withToken) {
           /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
           /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
-             国际站启航 AI「首单免费 7 天」，国内站启航 AI 零元新用户「首单免费 3 天」。
+             国际站启航 AI「首单免费 1 个月」，国内站启航 AI 零元新用户「首单免费 1 个月」。
              改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
              已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
           promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
         } else if (!isLoggedIn || backendDiscount === 0) {
-          /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
-          promoTag = t("首单免费 14 天");
+          /* 启航01：未登录直接展示「首单免费 1 个月」；已登录需 discount=0 */
+          promoTag = t("首单免费 1 个月");
           isZeroDownFreeTrial = true;
         }
       } else if (tier.isCruise) {
@@ -795,7 +833,7 @@ const mapBundleToPlan = (
      防止登录态异常全价询价仍承诺免费；未登录静态价为零，既定展示不受影响。 */
   const bundleTier = matchBundleTier(bundle.bundle_name);
   const isLaunchStandard = bundleTier.isLaunch && bundle.bundle_type !== BUNDLE_TYPE_AI;
-  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 7 天」（见 aiPromoTagText）。
+  /* 国际站启航 AI 增强版档位：促销标签为「首单免费 1 个月」（见 aiPromoTagText）。
      国内站启航 AI 不进入本判定，CTA 维持「立即订阅」，与改动前一致。 */
   const isIntlLaunchAi =
     isGlobal && bundleTier.isLaunch && bundle.bundle_type === BUNDLE_TYPE_AI;
@@ -814,8 +852,7 @@ const mapBundleToPlan = (
    * 启航 AI 档位是否展示「免费订阅」CTA。
    *
    * 必须以**实付金额为 0** 为前提，不能只看档位 —— 否则会出现
-   * 「按钮承诺免费、点击后进入信用卡支付」的不一致（本次未实现 3 天试用能力，
-   * 权益与支付逻辑均未改动）。
+   * 「按钮承诺免费、点击后进入信用卡支付」的不一致。实际时长由后端活动配置决定。
    *
    * 金额为 0 时点击链路本身也是零元流程：`isDianshiZeroAmountPlan` 命中
    * `real_total_cost === 0` 走点石零元下单，不进入信用卡支付，与 CTA 语义一致。
@@ -835,7 +872,7 @@ const mapBundleToPlan = (
       ? t("询价中...")
       : priceUnavailable
         ? t("暂无报价")
-        : /* 可享免费 14 天的零元下单，或内测「免费订阅」引导态，显示「免费订阅」。
+        : /* 可享首单免费的零元下单，或内测「免费订阅」引导态，显示「免费订阅」。
              国际站启航标准版 / AI 版均须同时满足新用户、月付、实付为零。
              已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。
              季付无首期免费试用，freeTrialEligibleDuration=false 时统一收口为「立即订阅」。 */
@@ -899,6 +936,7 @@ const mapBundleToPlan = (
        featured（卡片描边 / 圆角强调）仍只由 tier 顺序决定，不随配色统一而变。 */
     ctaStyle: isGlobal || index === 0 ? "primary" : "outline",
     featured: index === 0,
+    // PlanInfo 的历史字段名：这里限制 Hermes 实例数量，不是实例内的 Bot 数。
     maxBots: bundle.agent_quota || 1,
     /* 真实缺价走 priceUnavailable（触发徽章 + CTA 禁用 + 点击拦截）；
        询价加载中走 pricingLoading（不触发徽章、保留旧价视觉，但 CTA 仍禁用 + 拦截点击）。
@@ -908,8 +946,6 @@ const mapBundleToPlan = (
     pricingLoading: showPricingPlaceholder,
     /* 国际站继续走免费试用；国内站走付费下单 */
     skipPayment: !paid,
-    availableCount: bundle.bundle_sales_available_count,
-    totalCount: bundle.bundle_sales_total_count,
     /* 后端联调期可能缺失：缺失时由后续 tabGroups 兜底到「未分类」分组 */
     bundleType: bundle.bundle_type,
     /**
@@ -1011,12 +1047,12 @@ const STATIC_INTL_PRICE_USD: Record<
   Record<"general" | "ai", Record<"monthly" | "quarterly", { original: number; real: number }>>
 > = {
   launch: {
-    /* 启航标准版：月付 $6.5，新用户 14 天免费（实付 $0）；季付 $19.5 → 8.5 折 $16.58 */
+    /* 启航标准版：月付 $6.5，新用户 1 个月免费（实付 $0）；季付 $19.5 → 8.5 折 $16.58 */
     general: {
       monthly: { original: 6.5, real: 0 },
       quarterly: { original: 19.5, real: 16.58 },
     },
-    /* 启航 AI 版：月付 $10，新用户 7 天免费（实付 $0）；季付 $30 → 9 折 $27.00 */
+    /* 启航 AI 版：月付 $10，新用户 1 个月免费（实付 $0）；季付 $30 → 9 折 $27.00 */
     ai: {
       monthly: { original: 10, real: 0 },
       quarterly: { original: 30, real: 27 },
@@ -1098,7 +1134,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       return buildIntlStaticPrice(STATIC_INTL_PRICE_USD[tier][kind][durationKey]);
     }
     if (kind === "ai") {
-      /* 月付：启航 AI 首单免费 3 天 → discount=0（real_total_cost=0，配合 mapBundleToPlan
+      /* 月付：启航 AI 首单免费 1 个月 → discount=0（real_total_cost=0，配合 mapBundleToPlan
          置 ¥0 与 aiPromoTagText 免费门禁）；巡游 AI 维持原价（real），由 mapBundleToPlan ×0.6。
          季付：统一 9 折不变。 */
       const monthlyDiscount = tier === "launch" ? 0 : 1.0;
@@ -1115,15 +1151,15 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
   const base = {
     bundle_state: "ONLINE" as const,
     time_unit: "m" as const,
-    /* 未登录纯静态展示不露出「今日剩余 N/M 份」名额提示：available === total 时，
-       PlanCard 的 `availableCount < totalCount` 条件不成立，名额行不渲染。 */
+    /* 保留 Bundle contract 的销售字段；页面不展示剩余名额。 */
     bundle_sales_available_count: 100,
     bundle_sales_total_count: 100,
     bundle_sales_state: "AVAILABLE" as const,
   };
   return [
     /* 免费试用：仅在计费开关关闭（paidBillingActive=false）时经 planList 过滤后展示；
-       开关开启的付费场景会被 planList 过滤掉，与登录后一致。 */
+       开关开启的付费场景会被 planList 过滤掉，与登录后一致。
+       bundle_id 保留历史 `bundle_free_7d` 以兼容免费链路识别，展示时长按当前权益使用 1 个月。 */
     {
       ...base,
       bundle_id: "bundle_free_7d",
@@ -1133,10 +1169,10 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       agent_quota: 1,
       credit: 0,
       price: null,
-      time_span: 7,
-      time_unit: "d",
+      time_span: 1,
+      time_unit: "m",
     },
-    /* 启航 Launch —— 标准版（可购买、露真实价，促销「免费 14 天」）+ AI 增强版（敬请期待） */
+    /* 启航 Launch —— 标准版（可购买、露真实价，促销「首单免费 1 个月」）+ AI 增强版（敬请期待） */
     {
       ...base,
       bundle_id: "bundle_launch_01",
@@ -1201,7 +1237,6 @@ interface PlaceholderPlanDef {
   price: string;
   priceGlobal: string;
   priceUnit: string;
-  priceUnitGlobal: string;
   description: string;
   features: PlaceholderFeatureDef[];
   ctaLabel: string;
@@ -1228,12 +1263,11 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     price: "¥99",
     priceGlobal: "$15",
     priceUnit: "/ 月",
-    priceUnitGlobal: "/ month",
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
-      { iconKey: "monitor", label: "云端独立环境", value: "4核 8G 内存" },
-      { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
+      { iconKey: "monitor", label: "专属云端环境", value: "4 核 CPU · 16 GB 内存" },
+      { iconKey: "hardDrive", label: "专属云端存储", value: "80 GB" },
       { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
       { iconKey: "clock", label: "7*24小时在线", hasCheck: true },
@@ -1262,12 +1296,11 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
  * 修改 PLACEHOLDER_PLAN_DEFS 时请同步更新此处。
  */
 const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
-  void t("免费试用 7天");
   void t("巡游 Cruise");
   void t("日常主力，让智能化成为习惯");
   void t("1 个");
-  void t("云端独立环境");
-  void t("4核 8G 内存");
+  void t("专属云端环境");
+  void t("4 核 CPU · 16 GB 内存");
   void t("极简配置面板");
   void t("定时任务");
   void t("精选技能/技能包");
@@ -1292,12 +1325,14 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
       id: def.id,
       name: t(def.name),
       price: isGlobal ? def.priceGlobal : def.price,
-      priceUnit: isGlobal ? t(def.priceUnitGlobal) : t(def.priceUnit),
+      priceUnit: t(def.priceUnit),
       description: t(def.description),
       features: def.features.map((f) => ({
         icon: iconMap[f.iconKey],
-        label: t(f.label),
-        value: f.value ? t(f.value) : undefined,
+        label: f.label === "Agent" ? t("Bot 数") : t(f.label),
+        value: f.label === "Agent"
+          ? isGlobal ? String(BOT_QUOTA_BY_BUNDLE.bundle_cruise_01) : `${BOT_QUOTA_BY_BUNDLE.bundle_cruise_01} ${t("个")}`
+          : f.value ? t(f.value) : undefined,
         hasCheck: f.hasCheck,
       })),
       ctaLabel: releasedForGlobal ? t("立即订阅") : t(def.ctaLabel),
@@ -1407,6 +1442,8 @@ const SubscribePageHeader = ({
 
 /* ─── Plan Card Component ─── */
 
+const MotionCard = motion.create(Card);
+
 const PlanCard = ({
   variants,
   index,
@@ -1415,10 +1452,11 @@ const PlanCard = ({
   currentBots,
   reserveCreditTabSpace,
   subscriptionLocked,
+  subscriptionLockReason,
   upgradeTargetIds,
+  preferredBundleId,
   upgradeQuotingPlanId,
   upgradeQuoteError,
-  selectedBundleId,
   onVariantChange,
 }: {
   /* 同一 tier 的档位列表（AI 增强版 / 标准版）；未命中 tier 时长度为 1 */
@@ -1431,20 +1469,31 @@ const PlanCard = ({
   reserveCreditTabSpace?: boolean;
   /* 用户已有生效订阅时锁定新购；仅后端确认的升级目标可启用。 */
   subscriptionLocked?: boolean;
+  /* 新购因已有权益或 Agent 锁定时展示的原因；升级目标不消费该提示。 */
+  subscriptionLockReason?: string;
   upgradeTargetIds?: ReadonlySet<string>;
+  preferredBundleId?: string;
   upgradeQuotingPlanId?: string | null;
   upgradeQuoteError?: { targetBundleId: string; message: string } | null;
-  selectedBundleId?: string;
   onVariantChange?: (bundleId: string) => void;
 }) => {
   const t = useT();
+  const locale = useCurrentLocale();
   /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
      价格 / 积分 / 折扣 / 下单套餐随之联动。国内外统一默认选 AI 增强版
      （启航 4500 / 巡游 10000）。 */
   const defaultVariantIdx = getDefaultVariantIndex(variants);
-  const [activeVariantIdx, setActiveVariantIdx] = useState(() => defaultVariantIdx);
-  const controlledIdx = variants.findIndex((v) => v.id === selectedBundleId);
-  const safeIdx = controlledIdx >= 0 ? controlledIdx : activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
+  const preferredVariantIdx = variants.findIndex((variant) => variant.id === preferredBundleId);
+  const [activeVariantIdx, setActiveVariantIdx] = useState(() => preferredVariantIdx >= 0 ? preferredVariantIdx : defaultVariantIdx);
+  const appliedPreferredBundleIdRef = useRef<string | undefined>(preferredVariantIdx >= 0 ? preferredBundleId : undefined);
+  useEffect(() => {
+    if (!preferredBundleId || appliedPreferredBundleIdRef.current === preferredBundleId) return;
+    const nextPreferredIdx = variants.findIndex((variant) => variant.id === preferredBundleId);
+    if (nextPreferredIdx < 0) return;
+    appliedPreferredBundleIdRef.current = preferredBundleId;
+    setActiveVariantIdx(nextPreferredIdx);
+  }, [preferredBundleId, variants]);
+  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
   const selectedVariant = variants[safeIdx]!;
   const isUpgradeTarget = upgradeTargetIds?.has(selectedVariant.id) === true;
   const plan = isUpgradeTarget ? { ...selectedVariant, ctaLabel: t("升级至此套餐") } : selectedVariant;
@@ -1466,23 +1515,31 @@ const PlanCard = ({
   const showCreditTabs = variants.length > 1;
   /* 售罄 / 未上线 / 暂无报价 / 询价加载中：按钮禁用。
      询价加载中虽然价格数字仍在展示（旧价），但为避免用户以旧价口径提交订单，CTA 必须 disabled。 */
+  /* 已有明确状态文案的禁用态不叠加订阅提示，升级目标也不展示新购锁定原因。 */
+  const disabledReason =
+    !isUpgradeTarget &&
+    subscriptionLocked === true &&
+    !isSoldOut &&
+    !isComingSoon &&
+    !isPriceUnavailable &&
+    plan.pricingLoading !== true &&
+    !subscribing
+      ? subscriptionLockReason
+      : undefined;
   /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
 
   return (
-    <motion.div
+    <MotionCard
+      variant={isFeatured ? "pricing-featured" : "pricing"}
+      role="group"
+      aria-label={plan.name}
       variants={fadeIn}
       custom={index}
+      className="relative flex min-w-0 flex-col overflow-hidden"
       style={{
-        position: "relative",
-        display: "flex",
-        flexDirection: "column",
         background: colors.white,
         border: isFeatured ? `1.5px solid ${colors.primary}` : `1px solid ${colors.border}`,
-        borderRadius: isFeatured ? 16 : 12,
-        /* 需求3：三张卡统一取消阴影，仅保留边框（主推卡为高亮描边） */
-        boxShadow: "none",
-        overflow: "hidden",
         transition: "transform 0.3s",
       }}
       onMouseEnter={(e) => {
@@ -1516,7 +1573,7 @@ const PlanCard = ({
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "32px 28px 28px" }}>
+      <div className="flex min-w-0 flex-1 flex-col p-5 md:px-7 md:pb-7 md:pt-8">
         {/* Header: Name + Description */}
         <div style={{ marginBottom: 16 }}>
           <div
@@ -1528,7 +1585,8 @@ const PlanCard = ({
               marginBottom: 12,
             }}
           >
-            <h3
+            <h2
+              className="text-balance"
               style={{
                 fontSize: 22,
                 fontWeight: 700,
@@ -1539,7 +1597,7 @@ const PlanCard = ({
               }}
             >
               {plan.name}
-            </h3>
+            </h2>
             {/* 促销小徐章：挪到套餐名右侧，粉色背景 + 深色文字，醒目告诉用户促销信息 */}
             {plan.promoTag && (
               <span
@@ -1581,6 +1639,7 @@ const PlanCard = ({
           {/* Description - 移到套餐名下方；为空时不渲染，避免留下空段落间距 */}
           {plan.description ? (
             <p
+              className="text-pretty"
               style={{
                 fontSize: 14,
                 fontWeight: 400,
@@ -1600,6 +1659,7 @@ const PlanCard = ({
           <div
             role="tablist"
             aria-label={t("模型积分")}
+            className="w-full max-w-full md:w-auto"
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -1622,12 +1682,15 @@ const PlanCard = ({
                   type="button"
                   role="tab"
                   aria-selected={active}
+                  className={cn(
+                    "min-h-11 justify-center py-1.5 tabular-nums md:normal-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:min-h-0 md:flex-none md:justify-start md:px-3.5 md:py-[5px]",
+                    isGlobal ? "min-w-max flex-auto px-2" : "min-w-0 flex-1 px-3",
+                  )}
                   onClick={() => { setActiveVariantIdx(vi); onVariantChange?.(v.id); }}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 4,
-                    padding: "5px 14px",
                     borderRadius: 9999,
                     border: "none",
                     background: active ? colors.white : "transparent",
@@ -1640,8 +1703,21 @@ const PlanCard = ({
                     transition: "all 0.2s ease",
                   }}
                 >
-                  <Zap style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
+                  <Zap aria-hidden="true" className="shrink-0" style={{ width: 13, height: 13, color: active ? "#D14081" : colors.warmGray300, strokeWidth: 2 }} />
                   <span>{v.raw.credit}</span>
+                  {v.raw.bundle_type === BUNDLE_TYPE_AI && tierOfPlan(v) !== null && (
+                    <span
+                      style={{
+                        color: colors.recommendationText,
+                        fontSize: 11,
+                        fontWeight: 500,
+                        lineHeight: 1.2,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {PLAN_RECOMMENDATION_BY_LOCALE[locale]}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1650,7 +1726,7 @@ const PlanCard = ({
 
         {/* 无积分切换的卡补一段与积分 tabs 等高的占位，使 CTA/分割线/功能点与其他卡对齐 */}
         {!showCreditTabs && reserveCreditTabSpace && (
-          <div aria-hidden style={{ height: 32, marginTop: 4, marginBottom: 16, order: 2 }} />
+          <div aria-hidden className="hidden md:block" style={{ height: 32, marginTop: 4, marginBottom: 16, order: 2 }} />
         )}
 
         {/* Price - 未上线占位卡：有价格时正常展示价格，无价格时显示「敬请期待」；售罄套餐用「已售罄」遮盖价格 */}
@@ -1711,7 +1787,7 @@ const PlanCard = ({
             </span>
           </div>
         ) : plan.price ? (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8, flexWrap: isGlobal ? "nowrap" : "wrap", rowGap: 6 }}>
+          <div className={cn("mb-2 flex flex-wrap items-baseline gap-x-1 gap-y-2 tabular-nums md:normal-nums md:gap-x-0.5 md:gap-y-1.5", isGlobal && "md:flex-nowrap")}>
             {(() => {
               /* 价格拆分：把前缀货币符号（¥ / $）与数字分离，符号用更小字号并顶端对齐，
                  让数字成为视觉主体（参考设计稿）。无符号时整体按数字大字号展示。 */
@@ -1733,8 +1809,8 @@ const PlanCard = ({
                     </span>
                   )}
                   <span
+                    className="text-4xl md:text-5xl"
                     style={{
-                      fontSize: 48,
                       fontWeight: 700,
                       letterSpacing: "-1.5px",
                       lineHeight: 1,
@@ -1747,6 +1823,7 @@ const PlanCard = ({
             })()}
             {(plan.priceUnit || plan.priceNote) && (
               <span
+                className="whitespace-nowrap"
                 style={{
                   fontSize: 14,
                   fontWeight: 400,
@@ -1784,20 +1861,7 @@ const PlanCard = ({
           /* 兜底：price 为空且非售罄非占位（理论上不会走到），保留占位高度避免塌陷 */
           <div style={{ minHeight: 48, marginBottom: 8 }} />
         )}
-        {/* 今日剩余名额提示：只在未售罄且剩余比例较低时显示，避免每张卡都出现 */}
-        {!isSoldOut && typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
-          <p
-            style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: plan.availableCount <= 5 ? "#C67B1E" : colors.warmGray500,
-              marginTop: isGlobal ? 6 : -20,
-              marginBottom: isGlobal ? 18 : 20,
-            }}
-          >
-            {t("今日剩余 {{available}}/{{total}} 份", { available: plan.availableCount, total: plan.totalCount })}
-          </p>
-        )}
+        {/* 暂不展示剩余名额；售罄与可订阅状态继续由后端销售状态决定。 */}
         {/* Divider */}
         <div style={{ height: 1, background: colors.border, marginTop: 4, marginBottom: 24, order: 4 }} />
 
@@ -1847,26 +1911,24 @@ const PlanCard = ({
             {plan.features.map((feature, idx) => (
               <li
                 key={idx}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:justify-between md:gap-0"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
                   fontSize: 14,
                   fontWeight: 400,
                   lineHeight: 1.43,
                   color: colors.warmGray500,
                 }}
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="flex min-w-0 items-center gap-2.5 text-pretty [&>svg]:shrink-0">
                   {feature.icon}
                   <span>{feature.label}</span>
                 </span>
                 {feature.value ? (
-                  <span style={{ fontSize: 14, fontWeight: 600, color: colors.primary }}>
+                  <span className="whitespace-nowrap text-right tabular-nums md:normal-nums md:whitespace-normal md:text-left" style={{ fontSize: 14, fontWeight: 600, color: colors.primary }}>
                     {feature.value}
                   </span>
                 ) : feature.hasCheck ? (
-                  <Check style={{ width: 16, height: 16, color: colors.warmGray500, strokeWidth: 2 }} />
+                  <Check aria-hidden="true" className="shrink-0" style={{ width: 16, height: 16, color: colors.warmGray500, strokeWidth: 2 }} />
                 ) : null}
               </li>
             ))}
@@ -1875,7 +1937,7 @@ const PlanCard = ({
 
         {/* CTA Button — 需求3：上移到功能点上方（积分切换与分割线之间），order=3 */}
         <div
-          style={{ position: "relative", marginTop: 4, marginBottom: 4, order: 3 }}
+          style={{ position: "relative", display: "flex", flexDirection: "column", marginTop: 4, marginBottom: 4, order: 3 }}
           onMouseEnter={() => {
             if (plan.freeTrialHint) setShowFreeTrialHint(true);
           }}
@@ -1923,8 +1985,10 @@ const PlanCard = ({
               />
             </div>
           )}
-          {isComingSoon && !isUpgradeTarget ? (
+          <DisabledReasonTooltip content={disabledReason} preserveWrapper>
+            {isComingSoon && !isUpgradeTarget ? (
             <button
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               disabled
               style={{
                 display: "flex",
@@ -1947,6 +2011,7 @@ const PlanCard = ({
             </button>
           ) : isUpgradeTarget || plan.ctaStyle === "primary" ? (
             <button
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               aria-busy={upgradeQuoting || undefined}
@@ -1984,6 +2049,7 @@ const PlanCard = ({
             </button>
           ) : (
             <button
+              className="min-h-11 md:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
               style={{
@@ -2019,11 +2085,12 @@ const PlanCard = ({
             >
               {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
-          )}
+            )}
+          </DisabledReasonTooltip>
           {quoteError && <p id={quoteErrorId} role="alert" className="mt-2 text-pretty text-sm text-[var(--danger)]">{quoteError}</p>}
         </div>
       </div>
-    </motion.div>
+    </MotionCard>
   );
 };
 
@@ -2725,29 +2792,17 @@ export const SubscribePage = ({
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
   const { isLoggedIn, isSubscribed, subscribe, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
+  const subscriptionLockReason =
+    isSubscribed || activePass !== null || bots.length > 0
+      ? t("你已订阅「{{plan}}」套餐。", {
+          plan: activePass?.bundle_name ?? latestPass?.bundle_name ?? "LightVela",
+        })
+      : undefined;
   void BUNDLE_TYPE_FALLBACK_KEY;
   void BUNDLE_TYPE_TABS;
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
-  /* 积分包区域可见性：默认显示（见 credit-pack-visibility.ts）。
-     挂载 show_credit_pack() 控制台助手，供内部验收开启。 */
-  const creditPackVisible = useCreditPackVisibility();
-  useEffect(() => installCreditPackVisibilityHelper(), []);
-
-  /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
-     依赖 creditPackVisible：区域未渲染时 getElementById 拿不到节点。 */
-  useEffect(() => {
-    if (!creditPackVisible) return;
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get(SECTION_QUERY_KEY) !== CREDIT_SECTION_QUERY_VALUE) return;
-    /* 等积分包区域完成首次渲染再滚动 */
-    const timer = window.setTimeout(() => {
-      document.getElementById(CREDIT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [creditPackVisible]);
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -2764,6 +2819,20 @@ export const SubscribePage = ({
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
+  const bundlesInitialLoading = bundles === null && !bundlesError;
+
+  /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
+     页面级套餐 Loading 结束后积分区才挂载，因此加载状态必须参与重试时机。 */
+  useEffect(() => {
+    if (bundlesInitialLoading) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(SECTION_QUERY_KEY) !== CREDIT_SECTION_QUERY_VALUE) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(CREDIT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [bundlesInitialLoading]);
 
   /* 付费时长（月付 / 季付）；切换时会触发 listBundles 用新时长重拉价格。默认月付。
      作用于所有可购买套餐（general / ai），与卡内积分档位切换正交。 */
@@ -2824,6 +2893,17 @@ export const SubscribePage = ({
   const selectedUpgradePass = upgradeSelection && upgrade.pass?.pass_id === upgradeSelection.passId
     && upgradeTargetIds.has(upgradeSelection.targetBundleId) ? upgrade.pass : null;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
+  const creditPackRealnameVerified = realnamePhoneVerificationEnabled
+    ? session.user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
+    : Boolean(session.user?.realnameVerified);
+  /* session/profile 当前只下发实名及同步状态；shadowBindingStatus 预留兼容未来字段。
+     前端门禁用于提前引导，用户真实影子绑定的权威校验仍在下单接口。 */
+  const creditPackBindingReady = isGlobal || (
+    creditPackRealnameVerified
+    && (!session.user?.shadowBindingStatus || session.user.shadowBindingStatus === "active")
+    && session.user?.realnameSyncStatus !== "pending"
+    && session.user?.realnameSyncStatus !== "failed"
+  );
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
      国际站已全量放开，付费开关只由后端 features 熔断；
      任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
@@ -2924,7 +3004,9 @@ export const SubscribePage = ({
           const code = getBillingErrorCode(err);
           const rawMessage = err instanceof Error ? err.message : "";
           const isUnauthorized = code === "unauthorized" || /unauthorized/i.test(rawMessage);
-          setBundlesError(isUnauthorized ? t("请先登录") : rawMessage || t("套餐列表加载失败"));
+          setBundlesError(isUnauthorized
+            ? t("请先登录")
+            : resolveBillingErrorMessage(err, t("套餐列表加载失败"), t));
         }
       } finally {
         if (!cancelled) {
@@ -3024,39 +3106,10 @@ export const SubscribePage = ({
     return groups;
   }, [planList, t]);
 
-  // Link only the source and targets returned by the backend. Card grouping is presentation,
-  // not an assumption about tier, credit count, or service-plan compatibility.
-  const upgradeLinkKey = JSON.stringify([upgrade.revisionKey, upgrade.pass?.bundle_id, [...upgradeTargetIds]]);
-  const [linkedVariants, setLinkedVariants] = useState<{ key: string; selected: Record<string, string> }>({ key: "", selected: {} });
-  const upgradeLinkEnabled = upgrade.pass != null && upgradeTargetIds.size > 0;
-  const initialLinkedVariant = (tier: PlanTierGroup) =>
-    tier.variants.find((v) => v.id === upgrade.pass?.bundle_id)?.id ??
-    tier.variants.find((v) => upgradeTargetIds.has(v.id))?.id;
-  const selectedLinkedVariant = (tier: PlanTierGroup) => upgradeLinkEnabled
-    ? (linkedVariants.key === upgradeLinkKey ? linkedVariants.selected[tier.key] : undefined) ?? initialLinkedVariant(tier)
-    : undefined;
-  const handleUpgradeVariantChange = (changedGroup: PlanTierGroup, bundleId: string) => {
-    if (!upgradeLinkEnabled || !upgrade.pass) return;
-    cancelUpgradeQuote();
-    const sourceBundleId = upgrade.pass.bundle_id;
-    setLinkedVariants((previous) => {
-      const selected = previous.key === upgradeLinkKey ? { ...previous.selected } : {};
-      selected[changedGroup.key] = bundleId;
-      for (const group of planTiers) {
-        // Same-card upgrades keep the user's exact choice instead of toggling it back.
-        if (group.key === changedGroup.key) continue;
-        if (bundleId === sourceBundleId) {
-          const targets = group.variants.filter((variant) => upgradeTargetIds.has(variant.id));
-          if (targets.length > 0 && !targets.some((target) => target.id === selected[group.key])) {
-            selected[group.key] = targets[0]!.id;
-          }
-        } else if (upgradeTargetIds.has(bundleId) && group.variants.some((variant) => variant.id === sourceBundleId)) {
-          selected[group.key] = sourceBundleId;
-        }
-      }
-      return { key: upgradeLinkKey, selected };
-    });
-  };
+  // 初次加载时只让源套餐所在卡选中当前套餐；其他卡保持原有默认展示。
+  // 后续套餐卡各自保留用户选择，按钮资格只由后端目标列表决定。
+  const preferredUpgradeVariant = (tier: PlanTierGroup) =>
+    tier.variants.find((variant) => variant.id === upgrade.pass?.bundle_id)?.id;
 
   /* 付费过程上下文：国内站走 bridge 中转页二维码方案；国际站走信用卡 hosted page 跳转。
      保存当前订单 deal_names + 已选套餐 + 支付页 URL，供 PaymentPendingModal 渲染。 */
@@ -3414,9 +3467,8 @@ export const SubscribePage = ({
           await finalizeBotRef.current(ctx.plan);
         } catch (err) {
           if (!cancelled) {
-            const fallbackMsg = err instanceof Error ? err.message : t("创建实例失败，请稍后重试。");
             console.error("[subscribe] poll finalize failed", err);
-            setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
+            setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, t("创建实例失败，请稍后重试。"), t) });
             setModalStep("closed");
             setSelectedPlan(null);
             setPaymentContext(null);
@@ -3530,7 +3582,7 @@ export const SubscribePage = ({
         return;
       }
       /* 其他错误：走统一映射 */
-      setError({ code, message: resolveBillingErrorMessage(err, fallbackMsg) });
+      setError({ code, message: resolveBillingErrorMessage(err, t("创建失败，请稍后重试。"), t) });
       setModalStep("closed");
       setSelectedPlan(null);
       setPaymentContext(null);
@@ -3566,7 +3618,7 @@ export const SubscribePage = ({
        已有 Bot → /agents；已订阅但还没 Bot → 进 /agents 的创建流程（与首页 CTA、登录后分流落点一致）。 */
     if (isSubscribed || activePass || bots.length > 0) {
       void refreshPasses();
-      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
+      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreateBotPath());
       return;
     }
 
@@ -3675,9 +3727,8 @@ export const SubscribePage = ({
     try {
       await startPaidPassOrder(ctx.plan);
     } catch (err) {
-      const fallbackMsg = err instanceof Error ? err.message : t("刷新二维码失败，请稍后重试。");
       console.error("[subscribe] refresh payment failed", err);
-      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
+      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, t("刷新二维码失败，请稍后重试。"), t) });
     } finally {
       setPaymentRefreshing(false);
     }
@@ -3689,19 +3740,37 @@ export const SubscribePage = ({
      原轮询 listMyPasses 的 useEffect 已删除，SDK callback / 用户手动确认均会走 finalizeBot 接棒。 */
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
+    <div className="flex min-h-dvh flex-col" style={{ background: colors.white, color: colors.black }}>
       {header}
 
-      <main style={{ flexGrow: 1, padding: "96px 24px 64px" }}>
+      <main className="flex-grow px-4 pb-12 pt-24 md:px-6 md:pb-16">
+        {bundlesInitialLoading ? (
+          <section
+            aria-labelledby="subscribe-bundles-loading-title"
+            data-testid="subscribe-bundles-loading"
+            role="status"
+            style={{ maxWidth: 1080, minHeight: 360, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <Loader2 style={{ width: 24, height: 24, color: colors.warmGray300 }} className="animate-spin" />
+              <h1 id="subscribe-bundles-loading-title" style={{ fontSize: 18, fontWeight: 600, color: colors.black, margin: 0 }}>
+                {t("订阅套餐")}
+              </h1>
+              <p style={{ fontSize: 14, color: colors.warmGray500, margin: 0 }}>{t("加载套餐中...")}</p>
+            </div>
+          </section>
+        ) : (
+          <>
         <section id={PLANS_SECTION_ID} style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* Page Header — Notion style */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            style={{ marginBottom: 48, textAlign: "center" }}
+            className="mb-6 text-center md:mb-12"
           >
             <h1
+              className="text-balance"
               style={{
                 fontSize: "clamp(1.625rem, 3vw, 2rem)",
                 fontWeight: 700,
@@ -3714,6 +3783,7 @@ export const SubscribePage = ({
               {t("选择适合你的套餐")}
             </h1>
             <p
+              className="text-pretty"
               style={{
                 fontSize: 16,
                 fontWeight: 400,
@@ -3819,13 +3889,7 @@ export const SubscribePage = ({
               切换后重新询价并影响所有可购买套餐的展示价格与下单参数。 */}
           {paidBillingActive && (
             <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                gap: 8,
-                marginBottom: 24,
-                marginTop: -16,
-              }}
+              className="mb-6 flex justify-center gap-2 md:-mt-4"
               role="tablist"
               aria-label={t("付费时长")}
             >
@@ -3837,6 +3901,7 @@ export const SubscribePage = ({
                     type="button"
                     role="tab"
                     aria-selected={active}
+                    className="min-h-11 min-w-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 md:min-h-0 md:min-w-0"
                     onClick={() => setAiDurationKey(tab.key)}
                     disabled={bundlesLoading}
                     style={{
@@ -3860,12 +3925,7 @@ export const SubscribePage = ({
           )}
 
           {/* Plan Cards */}
-          {bundlesLoading && !bundles ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-              <Loader2 style={{ width: 20, height: 20, color: colors.warmGray300 }} className="animate-spin" />
-              <span style={{ fontSize: 14, color: colors.warmGray300 }}>{t("加载套餐中...")}</span>
-            </div>
-          ) : bundlesError ? (
+          {bundlesError ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "32px 0" }}>
               <p style={{ fontSize: 14, color: "#cf3d4c", marginBottom: 12 }}>{bundlesError}</p>
               <button
@@ -3890,13 +3950,12 @@ export const SubscribePage = ({
                 variants={staggerContainer}
                 initial="hidden"
                 animate="visible"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: planTiers.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planTiers.length}, 1fr)`,
-                  gap: 24,
-                  maxWidth: 1080,
-                  margin: "0 auto",
-                }}
+                className={cn(
+                  "mx-auto grid max-w-lg grid-cols-1 gap-4 md:max-w-none md:gap-6",
+                  planTiers.length >= 3
+                    ? "md:grid-cols-3 md:gap-4 min-[1025px]:gap-6"
+                    : planTiers.length === 2 && "md:grid-cols-2",
+                )}
               >
                 {planTiers.map((tier, idx) => (
                   <PlanCard
@@ -3909,11 +3968,12 @@ export const SubscribePage = ({
                     reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
                     /* 已有权益时锁定新购，仅按后端返回的目标 ID 开放升级。 */
                     subscriptionLocked={isSubscribed || activePass !== null || bots.length > 0}
+                    subscriptionLockReason={subscriptionLockReason}
                     upgradeTargetIds={upgradeTargetIds}
+                    preferredBundleId={upgrade.pass ? preferredUpgradeVariant(tier) : undefined}
                     upgradeQuotingPlanId={upgradeQuotingPlanId}
                     upgradeQuoteError={upgradeQuoteError}
-                    selectedBundleId={selectedLinkedVariant(tier)}
-                    onVariantChange={upgradeLinkEnabled ? (bundleId) => handleUpgradeVariantChange(tier, bundleId) : undefined}
+                    onVariantChange={upgrade.pass ? () => cancelUpgradeQuote() : undefined}
                   />
                 ))}
               </motion.div>
@@ -3938,19 +3998,22 @@ export const SubscribePage = ({
           )}
         </section>
 
-        {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。
-            默认关闭；控制台执行 show_credit_pack() 可开启内部验收。 */}
-        {creditPackVisible && (
-          <CreditPackSection
-            sectionId={CREDIT_SECTION_ID}
-            isLoggedIn={isLoggedIn}
-            hasActivePlan={Boolean(activePass)}
-            onRequireLogin={() => setShowLoginModal(true)}
-            onRequirePlan={() => {
-              /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
-              document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
+        {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。 */}
+        <CreditPackSection
+          sectionId={CREDIT_SECTION_ID}
+          isLoggedIn={isLoggedIn}
+          hasActivePlan={Boolean(activePass)}
+          canPurchaseCreditPack={creditPackBindingReady}
+          onRequireLogin={() => setShowLoginModal(true)}
+          onRequireRealname={() => {
+            navigate(`${ACCOUNT_PATH}/?${REALNAME_REQUIRED_QUERY_KEY}=1&return_to=${encodeURIComponent(`${ACCOUNT_BILLING_PATH}?section=${CREDIT_SECTION_QUERY_VALUE}`)}`);
+          }}
+          onRequirePlan={() => {
+            /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
+            document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
+        </>
         )}
       </main>
 
@@ -4036,21 +4099,6 @@ export const SubscribePage = ({
         }}
         onSuccess={() => redirectAfterLogin()}
       />
-
-      {/* Responsive: collapse to single column on mobile */}
-      <style>{`
-        @media (max-width: 768px) {
-          [style*="grid-template-columns: repeat(3"] {
-            grid-template-columns: 1fr !important;
-            max-width: 400px !important;
-          }
-        }
-        @media (min-width: 769px) and (max-width: 1024px) {
-          [style*="grid-template-columns: repeat(3"] {
-            gap: 16px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 };

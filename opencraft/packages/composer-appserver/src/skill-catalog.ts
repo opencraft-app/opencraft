@@ -35,6 +35,14 @@ export function enabledSkills(response: SkillsListResponse): readonly SkillMetad
   return result;
 }
 
+/** Reject failed discovery before it can be cached as a successful empty list. */
+export function assertSkillDiscoveryAvailable(response: SkillsListResponse): void {
+  if (!response.data.some(group => group.skills.some(skill => skill.enabled))
+    && response.data.some(group => group.errors.length > 0)) {
+    throw new Error("Skill discovery failed for this workspace");
+  }
+}
+
 function subsequencePenalty(value: string, query: string): number | null {
   let valueIndex = 0;
   let first = -1;
@@ -50,8 +58,8 @@ function subsequencePenalty(value: string, query: string): number | null {
 }
 
 function searchScore(value: string, rawQuery: string): number | null {
-  const candidate = value.toLocaleLowerCase();
-  const query = rawQuery.toLocaleLowerCase();
+  const candidate = value.normalize("NFKC").replace(/\\/gu, "/").toLocaleLowerCase();
+  const query = rawQuery.normalize("NFKC").replace(/\\/gu, "/").toLocaleLowerCase();
   if (candidate === query) return 0;
   if (candidate.startsWith(query)) return 10 + candidate.length - query.length;
   const word = candidate.search(new RegExp(`(?:^|[\\s:_-])${escapeRegExp(query)}`, "u"));
@@ -62,12 +70,18 @@ function searchScore(value: string, rawQuery: string): number | null {
   return penalty === null ? null : 300 + penalty;
 }
 
+/** Match every query word against the same candidate identity fields. */
+function skillScore(fields: readonly string[], query: string): number {
+  const words = query.split(/\s+/u).filter(Boolean);
+  return words.reduce((total, word) => total + Math.min(...fields.map(field=>searchScore(field,word) ?? Number.POSITIVE_INFINITY)),0);
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 /**
- * Codex-shaped skill search: query-gated, path-stable, enabled-only and with
+ * Codex-shaped skill search: browse on empty query, path-stable, enabled-only and with
  * deterministic fuzzy ordering. Display metadata never replaces protocol
  * identity; canonical name and absolute path remain attached to the entry.
  */
@@ -77,19 +91,17 @@ export function searchAppServerSkills(
   limit = 50,
 ): readonly ComposerCatalogEntry[] {
   const query = rawQuery.trim();
-  if (query.length === 0 || limit <= 0) return [];
-  return enabledSkills(response)
+  if (limit <= 0) return [];
+  assertSkillDiscoveryAvailable(response);
+  const skills = enabledSkills(response);
+  return skills
     .map((skill, index) => {
       const label = displayName(skill);
-      const score = Math.min(
-        searchScore(skill.name, query) ?? Number.POSITIVE_INFINITY,
-        searchScore(label, query) ?? Number.POSITIVE_INFINITY,
-        searchScore(`@${label}`, query) ?? Number.POSITIVE_INFINITY,
-      );
+      const score = query.length === 0 ? 0 : skillScore([skill.name, label, skill.path], query);
       return { skill, index, label, score };
     })
     .filter((entry) => Number.isFinite(entry.score))
-    .sort((left, right) => left.score - right.score
+    .sort((left, right) => query.length === 0 ? left.index - right.index : left.score - right.score
       || left.label.localeCompare(right.label)
       || left.skill.name.localeCompare(right.skill.name)
       || left.index - right.index)

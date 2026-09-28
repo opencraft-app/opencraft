@@ -1,4 +1,7 @@
-import type { AppServerClient } from "@opencraft/appserver-client";
+import type {
+  AppServerClient,
+  ServerRequestResponseContext,
+} from "@opencraft/appserver-client";
 import type {
   AppServerServerMethod,
   AppServerServerRequestParams,
@@ -9,6 +12,7 @@ import type { ConversationKey } from "@opencraft/chat-core";
 import type { InteractionResponse, PendingInteraction } from "@opencraft/chat-runtime";
 
 import type { InteractionResponsePort } from "./command-port";
+import { AppServerInteractionLedger } from "./interaction-ledger";
 
 export interface PendingInteractionStore {
   upsertPendingInteraction(interaction: PendingInteraction & { readonly threadId: string }): unknown;
@@ -19,6 +23,7 @@ export interface AppServerInteractionBrokerConfig {
   readonly hostId: string;
   readonly client: Pick<AppServerClient, "handleServerRequest" | "interceptServerRequest" | "subscribeNotification" | "subscribeStatus">;
   readonly store: PendingInteractionStore;
+  readonly ledger?: AppServerInteractionLedger;
   readonly now?: () => number;
 }
 
@@ -27,6 +32,7 @@ interface DeferredServerRequest<TMethod extends AppServerServerMethod = AppServe
   readonly interaction: PendingInteraction & { readonly threadId: string };
   resolve(value: AppServerServerRequestResult<TMethod>): void;
   reject(error: Error): void;
+  readonly delivered: Promise<void>;
 }
 
 export class AppServerInteractionError extends Error {
@@ -88,7 +94,10 @@ function shouldCaptureDynamicTool(params: { readonly tool?: unknown; readonly ar
   return params.arguments.step === "role" || params.arguments.step === "task" || params.arguments.step === "context";
 }
 
-function responseResult(pending: DeferredServerRequest, response: InteractionResponse): unknown {
+function responseResult(
+  pending: Pick<DeferredServerRequest, "method" | "interaction">,
+  response: InteractionResponse,
+): unknown {
   switch (pending.method) {
     case "item/commandExecution/requestApproval":
       if (response.type === "command-approval") return { decision: response.decision };
@@ -195,6 +204,7 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
   private readonly hostId: string;
   private readonly store: PendingInteractionStore;
   private readonly now: () => number;
+  private readonly ledger: AppServerInteractionLedger;
   private readonly pending = new Map<string, DeferredServerRequest>();
   private readonly removeHandlers: (() => void)[];
   private readonly removeStatus: () => void;
@@ -205,25 +215,26 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
     this.hostId = config.hostId;
     this.store = config.store;
     this.now = config.now ?? Date.now;
+    this.ledger = config.ledger ?? new AppServerInteractionLedger();
     this.removeHandlers = [
-      config.client.handleServerRequest("item/commandExecution/requestApproval", (params, request) =>
-        this.capture(request.method, params, request.id)),
-      config.client.handleServerRequest("item/fileChange/requestApproval", (params, request) =>
-        this.capture(request.method, params, request.id)),
-      config.client.handleServerRequest("item/tool/requestUserInput", (params, request) =>
-        this.capture(request.method, params, request.id)),
-      config.client.handleServerRequest("mcpServer/elicitation/request", (params, request) =>
-        this.capture(request.method, params, request.id)),
-      config.client.handleServerRequest("item/permissions/requestApproval", (params, request) =>
-        this.capture(request.method, params, request.id)),
-      config.client.handleServerRequest("item/tool/requestOptionPicker", (params, request) =>
-        this.capture(request.method, params, request.id)),
-      config.client.handleServerRequest("item/tool/requestSetupCodexContextPicker", (params, request) =>
-        this.capture(request.method, params, request.id)),
-      config.client.interceptServerRequest((request, next) => {
+      config.client.handleServerRequest("item/commandExecution/requestApproval", (params, request, context) =>
+        this.capture(request.method, params, request.id, context)),
+      config.client.handleServerRequest("item/fileChange/requestApproval", (params, request, context) =>
+        this.capture(request.method, params, request.id, context)),
+      config.client.handleServerRequest("item/tool/requestUserInput", (params, request, context) =>
+        this.capture(request.method, params, request.id, context)),
+      config.client.handleServerRequest("mcpServer/elicitation/request", (params, request, context) =>
+        this.capture(request.method, params, request.id, context)),
+      config.client.handleServerRequest("item/permissions/requestApproval", (params, request, context) =>
+        this.capture(request.method, params, request.id, context)),
+      config.client.handleServerRequest("item/tool/requestOptionPicker", (params, request, context) =>
+        this.capture(request.method, params, request.id, context)),
+      config.client.handleServerRequest("item/tool/requestSetupCodexContextPicker", (params, request, context) =>
+        this.capture(request.method, params, request.id, context)),
+      config.client.interceptServerRequest((request, next, context) => {
         const params = request.params as { tool?: unknown; arguments?: unknown } | null;
         if (request.method !== "item/tool/call" || !shouldCaptureDynamicTool(params)) return next();
-        return this.capture("item/tool/call", request.params as AppServerServerRequestParams<"item/tool/call">, request.id);
+        return this.capture("item/tool/call", request.params as AppServerServerRequestParams<"item/tool/call">, request.id, context);
       }),
     ];
     this.removeStatus = config.client.subscribeStatus((status) => {
@@ -238,6 +249,7 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
       const requestId = encodeServerRequestId(params.requestId);
       const pending = this.pending.get(requestId);
       if (pending === undefined || pending.interaction.threadId !== params.threadId) return;
+      this.ledger.forget(pending.interaction);
       this.pending.delete(requestId);
       this.store.removePendingInteraction(pending.interaction.threadId, requestId);
       pending.resolve(cancelledResult(pending) as never);
@@ -253,9 +265,14 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
       throw new AppServerInteractionError("REQUEST_NOT_FOUND", `Pending interaction ${response.requestId} was not found`);
     }
     const result = responseResult(pending, response);
-    this.pending.delete(response.requestId);
-    this.store.removePendingInteraction(pending.interaction.threadId, response.requestId);
+    this.ledger.remember(pending.interaction, response);
     pending.resolve(result as never);
+    await pending.delivered;
+    this.ledger.markDelivered(pending.interaction, response);
+    if (this.pending.get(response.requestId) === pending) {
+      this.pending.delete(response.requestId);
+      this.store.removePendingInteraction(pending.interaction.threadId, response.requestId);
+    }
   }
 
   dispose(): void {
@@ -271,6 +288,7 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
     method: TMethod,
     params: AppServerServerRequestParams<TMethod>,
     id: JsonRpcId,
+    context: ServerRequestResponseContext,
   ): Promise<AppServerServerRequestResult<TMethod>> {
     if (this.disposed) return Promise.reject(new AppServerInteractionError("DISCONNECTED", "Interaction broker is disposed"));
     const requestId = encodeServerRequestId(id);
@@ -285,8 +303,23 @@ export class AppServerInteractionBroker implements InteractionResponsePort {
       receivedAtMs: this.now(),
       params,
     } as PendingInteraction & { readonly threadId: string };
+    const remembered = this.ledger.recall(interaction);
+    if (remembered !== null) {
+      const result = responseResult({ method, interaction }, remembered.response);
+      void context.delivered.then(
+        () => this.ledger.markDelivered(interaction, remembered.response),
+        () => undefined,
+      );
+      return Promise.resolve(result as AppServerServerRequestResult<TMethod>);
+    }
     return new Promise<AppServerServerRequestResult<TMethod>>((resolve, reject) => {
-      const deferred: DeferredServerRequest<TMethod> = { method, interaction, resolve, reject };
+      const deferred: DeferredServerRequest<TMethod> = {
+        method,
+        interaction,
+        resolve,
+        reject,
+        delivered: context.delivered,
+      };
       this.pending.set(requestId, deferred as DeferredServerRequest);
       try {
         this.store.upsertPendingInteraction(interaction);

@@ -3,6 +3,7 @@ import {
   DEFAULT_HERMES_AGENT_ID,
   getHermesProfileRootCommand,
 } from "../../../lib/hermes-agent-command";
+import { gzipSync, strToU8 } from "fflate";
 
 export const HERMES_MODEL_CONFIG_JSON_START = "__LIGHTVELA_HERMES_MODEL_CONFIG_JSON_START__";
 export const HERMES_MODEL_CONFIG_JSON_END = "__LIGHTVELA_HERMES_MODEL_CONFIG_JSON_END__";
@@ -85,7 +86,10 @@ export type HermesModelConfigAction =
   | { type: "remove"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string };
 
 function encodeBase64(value: string): string {
-  const bytes = new TextEncoder().encode(value);
+  return encodeBytesBase64(new TextEncoder().encode(value));
+}
+
+function encodeBytesBase64(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
@@ -1443,6 +1447,15 @@ except Exception:
     fail()
 `;
 
+const PYTHON_HELPER_BOOTSTRAP = "import base64,gzip,linecache,sys;path=\"<stdin>\";source=gzip.decompress(base64.b64decode(sys.argv[2])).decode(\"utf-8\");linecache.cache[path]=(len(source),None,source.splitlines(True),path);sys.argv=[sys.argv[0],sys.argv[1]];exec(compile(source,path,\"exec\"),{\"__name__\":\"__main__\"})";
+
+let encodedPythonHelper: string | undefined;
+
+function getEncodedPythonHelper(): string {
+  encodedPythonHelper ??= encodeBytesBase64(gzipSync(strToU8(PYTHON_HELPER), { level: 9 }));
+  return encodedPythonHelper;
+}
+
 export function buildHermesModelConfigCommand(
   action: HermesModelConfigAction,
   profileId: string = DEFAULT_HERMES_AGENT_ID,
@@ -1456,8 +1469,6 @@ export function buildHermesModelConfigCommand(
     'export HERMES_HOME="$HERMES_PROFILE_ROOT"',
     'HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"',
     'if [ ! -x "$HERMES_PYTHON" ]; then HERMES_PYTHON="python3"; fi',
-    `"$HERMES_PYTHON" - "${payload}" <<'PY'`,
-    PYTHON_HELPER,
-    "PY",
+    `printf '%s\n' '${PYTHON_HELPER_BOOTSTRAP}' | "$HERMES_PYTHON" - "${payload}" "${getEncodedPythonHelper()}"`,
   ].join("\n");
 }

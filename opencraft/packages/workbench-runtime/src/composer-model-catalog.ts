@@ -18,6 +18,9 @@ export interface WorkbenchComposerModelChoice {
   readonly description: string | null;
   readonly isDefault: boolean;
   readonly inputModalities: readonly ModelInputModality[];
+  readonly contextWindow: number | null;
+  readonly maxTokens: number | null;
+  readonly source: "builtin" | "custom" | null;
   readonly defaultEffort: string | null;
   readonly efforts: readonly WorkbenchReasoningEffortChoice[];
 }
@@ -59,6 +62,9 @@ export function projectComposerModelChoices(
       description: model.description || null,
       isDefault: model.isDefault,
       inputModalities: modelInputModalities(model.inputModalities),
+      contextWindow: model.contextWindow ?? null,
+      maxTokens: model.maxTokens ?? null,
+      source: model.source ?? null,
       defaultEffort: reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort).defaultEffort,
       efforts: model.supportedReasoningEfforts.map((effort) => Object.freeze({
         value: effort.reasoningEffort,

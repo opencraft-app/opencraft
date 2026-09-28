@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LightVelaFooter } from "@/components/site/lightvela-footer";
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => text,
   // 组件用 `useLocaleOverride() ?? i18n.language` 判定语言；
   // 这里返回 null 表示无覆盖，让用例继续通过 mockLanguage 控制语言。
@@ -72,9 +74,9 @@ describe("LightVelaFooter", () => {
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
     expect(productSection).not.toBeNull();
     const product = within(productSection as HTMLElement);
-    expect(product.getAllByRole("link")[0]).toHaveAccessibleName("博客");
-    expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/blog");
-    expect(product.getByRole("link", { name: "14 天免费试用" })).toHaveAttribute("href", "/subscribe");
+    expect(product.queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
+    expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/subscribe");
+    expect(product.getByRole("link", { name: "1 个月免费试用" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "定价" })).toHaveAttribute("href", "/subscribe");
     expect(product.getByRole("link", { name: "接入 WhatsApp 指引" })).toHaveAttribute(
       "href",
@@ -189,10 +191,7 @@ describe("LightVelaFooter", () => {
     );
 
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
-    expect(within(productSection as HTMLElement).getByRole("link", { name: "博客" })).toHaveAttribute(
-      "href",
-      "/zh-hant/blog",
-    );
+    expect(within(productSection as HTMLElement).queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
     expect(within(productSection as HTMLElement).getByRole("link", { name: "定价" })).toHaveAttribute(
       "href",
       "/zh-hant/subscribe",
@@ -217,8 +216,8 @@ describe("LightVelaFooter", () => {
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
     expect(productSection).not.toBeNull();
     const product = within(productSection as HTMLElement);
-    expect(product.getAllByRole("link")[0]).toHaveAccessibleName("博客");
-    expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/blog");
+    expect(product.queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
+    expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/subscribe");
     expect(screen.queryByRole("link", { name: "Tencent EdgeOne" })).not.toBeInTheDocument();
   });
 
@@ -233,10 +232,7 @@ describe("LightVelaFooter", () => {
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/es/");
 
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
-    expect(within(productSection as HTMLElement).getByRole("link", { name: "博客" })).toHaveAttribute(
-      "href",
-      "/es/blog",
-    );
+    expect(within(productSection as HTMLElement).queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
 
     const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
     const company = within(companySection as HTMLElement);

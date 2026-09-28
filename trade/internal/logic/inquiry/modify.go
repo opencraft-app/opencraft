@@ -13,23 +13,21 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
-// 同 SP 变配（升配）询价。需求：TAPD 1010132091137784162 §4.1 / §5.1
+// Pass 变配（升配）询价。需求：TAPD 1010132091137784162 §4.1 / §5.1
 //
 // 与续费询价的三点差异：
 //  1. 涉及两个 bundle：源套餐决定 goodsDetail 顶层的 sv_*，目标套餐决定 newConfig
 //  2. goodsCategoryId 取 scene="modify"
 //  3. 差价由 jifei 按 oldConfig/newConfig + curDeadline 剩余时长算，trade 不参与计算
 //
-// 同 SP 约束在这里体现为一条硬校验：源和目标的 subProductCode 必须一致。计费侧的变配
-// 接入单是按 SP 配的，跨 SP 送进来只会拿到一个语义不明的报价。这个校验放 trade 而不放 CTL，
-// 因为 SP 只存在于 trade_bundle_definition —— CTL 的 bundle 表没有这一列。
+// 跨 SP 允许，但源、目标必须仍属于同一个 productCode；oldConfig/newConfig 分别携带各自
+// 的 SP/PID/SV，目标 BundleDefinition 决定 goodsCategoryId 和顶层商品身份。
 //
 // 站点隔离：源、目标都从**当前部署**的 trade_bundle_definition 读。国内、国际可以共用
 // bundle_id，但 SP / PID / CategoryID / SV 各站独立（§3），所以只要不跨站读表就天然正确。
 
-// ErrModifyCrossSubProduct 源与目标 bundle 不属于同一个 SP。
-// 本期只做同 SP 变配（§2.2），跨 SP 需要计费侧另开接入单。
-var ErrModifyCrossSubProduct = errors.New("inquiry: modify across sub product codes is not supported")
+// ErrModifyCrossProduct 源与目标 bundle 不属于同一个产品一层。
+var ErrModifyCrossProduct = errors.New("inquiry: modify across product codes is not supported")
 
 // QuoteModifyRequest 是单次变配询价的入参。
 //
@@ -57,7 +55,7 @@ type QuoteModifyRequest struct {
 //  1. 校验入参（含 resource_id / source / target / cur_deadline 必填，source != target）
 //     1.5. Uin 空时从 shadow 反查回填
 //  2. 反查 ctl 目标 bundle（确认存在 + 在售；下架的套餐不能作为升配目标）
-//  3. 反查两份 trade_bundle_definition，校验同 SP，取 scene="modify" 的 categoryId
+//  3. 反查两份 trade_bundle_definition，校验同 productCode，取目标 scene="modify" categoryId
 //  4. 拼装 goodsDetail：源套餐字段集 + resourceId + curDeadline + oldConfig/newConfig
 //  5. 调 jifei GetPrice
 //  6. 拍平为 QuoteResult（BundleID 回显**目标** bundle —— 调用方问的是"升到巡游要多少钱"）
@@ -177,11 +175,11 @@ func (s *Service) QuoteModify(ctx context.Context, req QuoteModifyRequest) (*Quo
 // modifyGoodsNum 是变配的 goodsNum，协议固定 1（§5.3）。
 const modifyGoodsNum = jifei.ModifyGoodsNum
 
-// resolveModifyDefs 反查源、目标 BundleDefinition，校验同 SP 并取 modify categoryId。
+// resolveModifyDefs 反查源、目标 BundleDefinition，校验同 productCode 并取目标 modify categoryId。
 //
 // 三条硬失败（都 fail-closed，不猜不兜底）：
 //   - 任一 bundle 在 trade_bundle_definition 缺失 → ErrBundleNotFound
-//   - subProductCode 不一致 → ErrModifyCrossSubProduct
+//   - productCode 不一致 → ErrModifyCrossProduct
 //   - 目标 bundle 没配 category_ids[scene=modify] → 明确报错
 //
 // 最后一条是刻意的 fail-closed：本需求四个 SP 的 Modify CategoryID 都要以计费接入单最终
@@ -206,15 +204,14 @@ func (s *Service) resolveModifyDefs(
 			ErrBundleNotFound, targetBundleID)
 	}
 
-	if sourceDef.SubProductCode != targetDef.SubProductCode {
-		return nil, nil, 0, fmt.Errorf("%w: source=%s(sp=%s) target=%s(sp=%s)",
-			ErrModifyCrossSubProduct,
-			sourceBundleID, sourceDef.SubProductCode,
-			targetBundleID, targetDef.SubProductCode)
+	if sourceDef.ProductCode != targetDef.ProductCode {
+		return nil, nil, 0, fmt.Errorf("%w: source=%s(product=%s) target=%s(product=%s)",
+			ErrModifyCrossProduct,
+			sourceBundleID, sourceDef.ProductCode,
+			targetBundleID, targetDef.ProductCode)
 	}
 
-	// categoryId 取目标 bundle 的：同 SP 下源和目标共用同一个 modify category，
-	// 但以目标为准语义更清楚——"往哪儿变"决定计费场景。
+	// categoryId 必须取目标 bundle；跨二层变配由目标 type/category 描述商品。
 	categoryID = targetDef.CategoryIDForScene(sceneModify)
 	if categoryID == 0 {
 		return nil, nil, 0, fmt.Errorf(
@@ -237,17 +234,20 @@ func (s *Service) buildModifyGoodsDetail(
 	resourceID, curDeadline string,
 ) map[string]interface{} {
 	return jifei.BuildModifyGoodsDetail(jifei.ModifyGoodsDetailInput{
-		ProductCode:     sourceDef.ProductCode,
-		SubProductCode:  sourceDef.SubProductCode,
-		Pid:             sourceDef.Pid,
-		ResourceID:      resourceID,
-		CurDeadline:     curDeadline,
-		SourceBundleID:  sourceDef.BundleID,
-		TargetBundleID:  targetDef.BundleID,
-		SourceSVList:    sourceDef.SVList,
-		TargetSVList:    targetDef.SVList,
-		ProductInfo:     sourceDef.ProductInfo,
-		IntlPointOfSale: strings.EqualFold(strings.TrimSpace(s.deps.SiteKind), "intl"),
+		SourceProductCode:    sourceDef.ProductCode,
+		SourceSubProductCode: sourceDef.SubProductCode,
+		SourcePid:            sourceDef.Pid,
+		TargetProductCode:    targetDef.ProductCode,
+		TargetSubProductCode: targetDef.SubProductCode,
+		TargetPid:            targetDef.Pid,
+		ResourceID:           resourceID,
+		CurDeadline:          curDeadline,
+		SourceBundleID:       sourceDef.BundleID,
+		TargetBundleID:       targetDef.BundleID,
+		SourceSVList:         sourceDef.SVList,
+		TargetSVList:         targetDef.SVList,
+		ProductInfo:          targetDef.ProductInfo,
+		IntlPointOfSale:      strings.EqualFold(strings.TrimSpace(s.deps.SiteKind), "intl"),
 	})
 }
 

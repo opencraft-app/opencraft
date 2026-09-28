@@ -40,9 +40,9 @@ Kembali ke halaman utama, klik "Buat sekarang" untuk masuk ke halaman paket, pil
 
 ![](./images/2-2.webp)
 
-> ⚠️ **Launch memiliki uji coba gratis 14 hari untuk pengguna baru setelah penagihan dimulai**
+> ⚠️ **Penawaran awal untuk pengguna baru**
 >
-> LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah penagihan dimulai, pengguna baru dapat mencoba Launch gratis selama 14 hari. Lihat [Paket](./plans.md) untuk ringkasan paket dan manfaat terbaru.
+> Pengguna baru yang memenuhi syarat dapat mencoba Launch gratis selama 1 bulan. Periksa [halaman Subscribe](/subscribe/) untuk syarat dan ketersediaan terbaru.
 
 Setelah aktivasi berhasil, navigasi atas akan menampilkan "Hermes Saya" dan halaman otomatis diarahkan ke konsol. Untuk detail paket, lihat [Apa Itu LightVela - Tentang paket](./01-overview.md#tentang-paket).
 

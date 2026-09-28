@@ -25,6 +25,7 @@ import {
 } from './agent-config';
 
 const CLS = 'lh-std-channel-panel';
+const DINGTALK_DEVELOPER_CONSOLE_URL = 'https://open-dev.dingtalk.com/';
 
 /**
  * LightVela 通道配置教程链接
@@ -50,7 +51,7 @@ function getChannelDesc(channelType: string): string {
   if (channelType === 'discord') return t('通过 Bot Token 连接');
   if (channelType === 'slack') return t('通过 Bot Token 和 App Token 连接');
   if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 连接');
-  if (channelType === 'whatsapp') return t('使用手机 WhatsApp 扫码登录');
+  if (channelType === 'whatsapp') return t('使用手机 WhatsApp 扫码登录。同一实例内，WhatsApp 同时只能连接一个 Bot。');
   return t('扫码授权连接');
 }
 
@@ -122,10 +123,11 @@ function getTokenChannelMeta(kind: 'telegram' | 'discord' | 'slack' | 'dingtalk'
 
 type LightVelaChannelPanelProps = ChannelPanelProps & {
   afterDescription?: ReactNode;
+  whatsAppOccupiedByOther?: boolean;
 };
 
 export function ChannelPanel(props: LightVelaChannelPanelProps) {
-  const { className, afterDescription, ...baseProps } = props;
+  const { className, afterDescription, whatsAppOccupiedByOther = false, ...baseProps } = props;
   const { i18n } = useTranslation();
 
   const ops = useChannelOperations(baseProps);
@@ -164,6 +166,8 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
   // ── 处理连接 ──
   const handleConnect = useCallback(
     (channelValue: string) => {
+      if (ops.testingChannel) return;
+      if (channelValue === 'whatsapp' && whatsAppOccupiedByOther) return;
       // QQ / 钉钉 提供两种方式（扫码 / 手动填凭据）：先弹方式选择弹窗
       if (channelValue === 'qqbot' || channelValue === 'dingtalk') {
         setMethodChoice('qrcode');
@@ -199,12 +203,13 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
         hermesQrModalRef.current?.startQrCodeFlow();
       }, 0);
     },
-    [],
+    [ops.testingChannel, whatsAppOccupiedByOther],
   );
 
   // ── 连接方式选择（QQ / 钉钉共用） ──
   const handleMethodSelect = useCallback(
     (method: 'qrcode' | 'manual') => {
+      if (ops.testingChannel) return;
       const channelValue = methodPickerChannel;
       if (!channelValue) return;
       setMethodPickerChannel(null);
@@ -227,12 +232,12 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
         hermesQrModalRef.current?.startQrCodeFlow();
       }, 0);
     },
-    [methodPickerChannel],
+    [methodPickerChannel, ops.testingChannel],
   );
 
   // ── QQ 表单保存 ──
   const handleSaveQQ = useCallback(async () => {
-    if (!qqAppId.trim() || !qqSecret.trim()) return;
+    if (ops.testingChannel || !qqAppId.trim() || !qqSecret.trim()) return;
     const success = await ops.configureChannel({
       channelValue: 'qqbot',
       channelIdValue: qqAppId.trim(),
@@ -250,7 +255,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
 
   // ── Token 类通道（Telegram / Discord / Slack / 钉钉）保存 ──
   const handleSaveToken = useCallback(async () => {
-    if (!tokenChannelKind || !tokenInput.trim()) return;
+    if (ops.testingChannel || !tokenChannelKind || !tokenInput.trim()) return;
     const meta = getTokenChannelMeta(tokenChannelKind);
     // 双凭据通道（Slack / 钉钉）：第二凭据必填
     if (meta.secondaryTokenLabel && !secondaryTokenInput.trim()) return;
@@ -274,14 +279,15 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
 
   const handleDisconnect = useCallback(
     (channelValue: string) => {
+      if (ops.testingChannel) return;
       const ch = ops.currentChannelList.find((c) => c.value === channelValue);
       setPendingDisconnect({ value: channelValue, name: ch?.channel_name || channelValue });
     },
-    [ops.currentChannelList],
+    [ops.currentChannelList, ops.testingChannel],
   );
 
   const confirmDisconnect = useCallback(async () => {
-    if (!pendingDisconnect) return;
+    if (!pendingDisconnect || ops.testingChannel) return;
     const success = await ops.deleteChannel(pendingDisconnect.value);
     setPendingDisconnect(null);
     if (success) {
@@ -290,6 +296,16 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
       message.error({ content: t('断开失败') });
     }
   }, [pendingDisconnect, ops]);
+
+  const handleTest = useCallback(async (channelValue: string) => {
+    if (ops.testingChannel || ops.configuring || ops.deletingChannel) return;
+    const success = await ops.testChannel(channelValue);
+    message[success ? 'success' : 'error']({
+      content: success
+        ? t('测试消息已发送，请前往聊天软件确认是否收到。')
+        : t('测试消息发送失败。请检查通道连接，或重新连接通道后再次测试。'),
+    });
+  }, [ops]);
 
   if (ops.loading) {
     return (
@@ -352,9 +368,19 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
                     {isBound && (
                       <button
                         type="button"
+                        className={`${CLS}__card-test`}
+                        onClick={() => handleTest(channel.value)}
+                        disabled={!!ops.testingChannel || ops.configuring || !!ops.deletingChannel}
+                      >
+                        {ops.testingChannel === channel.value ? t('测试中...') : t('测试')}
+                      </button>
+                    )}
+                    {isBound && (
+                      <button
+                        type="button"
                         className={`${CLS}__card-unbind`}
                         onClick={() => handleDisconnect(channel.value)}
-                        disabled={ops.deletingChannel === channel.value}
+                        disabled={!!ops.testingChannel || ops.deletingChannel === channel.value}
                         aria-label={t('断开')}
                       >
                         {t('断开')}
@@ -364,8 +390,11 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
                       type="button"
                       className={`${CLS}__connect-btn ${isBound ? `${CLS}__connect-btn--reconnect` : ''}`}
                       onClick={() => handleConnect(channel.value)}
+                      disabled={!!ops.testingChannel || (channel.value === 'whatsapp' && whatsAppOccupiedByOther)}
                     >
-                      {isBound ? t('重新连接') : `+ ${t('连接')}`}
+                      {channel.value === 'whatsapp' && whatsAppOccupiedByOther
+                        ? t('已由其他 Bot 占用')
+                        : isBound ? t('重新连接') : `+ ${t('连接')}`}
                     </button>
                   </div>
                 </div>
@@ -381,13 +410,13 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
           const pickerText = isDingtalk
             ? {
                 title: t('选择钉钉连接方式'),
-                qrDesc: t('使用钉钉扫描二维码快速绑定，推荐'),
+                qrDesc: t('使用钉钉扫描二维码快速绑定'),
                 manualTitle: t('Client ID / Secret 绑定'),
                 manualDesc: t('填入钉钉机器人的 Client ID 与 Client Secret'),
               }
             : {
                 title: t('选择 QQ 连接方式'),
-                qrDesc: t('使用 QQ 扫描二维码快速绑定，推荐'),
+                qrDesc: t('使用 QQ 扫描二维码快速绑定'),
                 manualTitle: t('App ID / Secret 绑定'),
                 manualDesc: t('填入 QQ 机器人的 App ID 与 App Secret'),
               };
@@ -401,7 +430,6 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
               <div className={`${CLS}__modal`}>
                 <div className={`${CLS}__modal-header`}>
                   <h3 className={`${CLS}__modal-title`}>{pickerText.title}</h3>
-                  <p className={`${CLS}__modal-desc`}>{t('请选择适合你的连接方式')}</p>
                 </div>
                 <div className={`${CLS}__method-list`}>
                   <button
@@ -409,7 +437,10 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
                     className={`${CLS}__method-card${methodChoice === 'qrcode' ? ` ${CLS}__method-card--active` : ''}`}
                     onClick={() => setMethodChoice('qrcode')}
                   >
-                    <div className={`${CLS}__method-title`}>{t('扫码连接')}</div>
+                    <div className={`${CLS}__method-heading`}>
+                      <span className={`${CLS}__method-title`}>{t('扫码连接')}</span>
+                      <span className={`${CLS}__method-badge`}>{t('推荐')}</span>
+                    </div>
                     <div className={`${CLS}__method-desc`}>{pickerText.qrDesc}</div>
                   </button>
                   <button
@@ -430,7 +461,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
                     className={`${CLS}__btn-primary`}
                     onClick={() => handleMethodSelect(methodChoice)}
                   >
-                    {t('确认')}
+                    {t('下一步')}
                   </button>
                 </div>
               </div>
@@ -485,7 +516,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
               <button
                 type="button"
                 className={`${CLS}__btn-primary`}
-                disabled={ops.configuring || !qqAppId.trim() || !qqSecret.trim()}
+                disabled={!!ops.testingChannel || ops.configuring || !qqAppId.trim() || !qqSecret.trim()}
                 onClick={handleSaveQQ}
               >
                 {ops.configuring ? t('绑定中...') : t('绑定 QQ 机器人')}
@@ -499,9 +530,10 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
       {tokenChannelKind &&
         (() => {
           const meta = getTokenChannelMeta(tokenChannelKind);
+          const isDingtalk = tokenChannelKind === 'dingtalk';
           const hasSecondaryToken = !!meta.secondaryTokenLabel;
           const submitDisabled =
-            ops.configuring || !tokenInput.trim() || (hasSecondaryToken && !secondaryTokenInput.trim());
+            !!ops.testingChannel || ops.configuring || !tokenInput.trim() || (hasSecondaryToken && !secondaryTokenInput.trim());
           return (
             <div
               className={`${CLS}__modal-overlay`}
@@ -511,11 +543,28 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
             >
               <div className={`${CLS}__modal`}>
                 <div className={`${CLS}__modal-header`}>
-                  <h3 className={`${CLS}__modal-title`}>{t('连接 {{name}}', { name: meta.name })}</h3>
+                  <h3 className={`${CLS}__modal-title`}>
+                    {isDingtalk ? t('连接钉钉') : t('连接 {{name}}', { name: meta.name })}
+                  </h3>
                   <p className={`${CLS}__modal-desc`}>
-                    {hasSecondaryToken
+                    {isDingtalk
+                      ? t('填入钉钉机器人凭据完成绑定')
+                      : hasSecondaryToken
                       ? t('填入 {{name}} 凭据完成绑定', { name: meta.name })
                       : t('填入 {{label}} 完成绑定', { label: meta.tokenLabel })}
+                    {isDingtalk && (
+                      <>
+                        {' '}
+                        <a
+                          className={`${CLS}__developer-console-link`}
+                          href={DINGTALK_DEVELOPER_CONSOLE_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {t('钉钉开发者后台')}
+                        </a>
+                      </>
+                    )}
                   </p>
                 </div>
                 <div className={`${CLS}__modal-body`}>
@@ -598,7 +647,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
               <button
                 type="button"
                 className={`${CLS}__btn-primary ${CLS}__btn-danger`}
-                disabled={!!ops.deletingChannel}
+                disabled={!!ops.testingChannel || !!ops.deletingChannel}
                 onClick={confirmDisconnect}
               >
                 {ops.deletingChannel ? t('断开中...') : t('确认断开')}

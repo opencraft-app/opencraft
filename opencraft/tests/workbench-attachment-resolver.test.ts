@@ -48,27 +48,130 @@ test("browser images become host-independent Codex image URLs", async () => {
   });
 });
 
-test("the browser resolver stages non-image files through the active Host filesystem", async () => {
+test("unsupported image formats fail before the Composer marks them ready", async () => {
+  const file = new File(["vector"], "drawing.svg", { type: "image/svg+xml" });
+  await assert.rejects(
+    () => resolveBrowserAttachment(file, pending(file)),
+    (error: unknown) => error instanceof BrowserAttachmentError
+      && error.code === "UNSUPPORTED_IMAGE_TYPE",
+  );
+});
+
+test("HEIC camera photos use the converted JPEG even when conversion grows the file", async () => {
+  const file = new File(["heic"], "IMG_0001.HEIC", { type: "image/heic" });
+  const jpeg = new Blob(["larger jpeg derivative"], { type: "image/jpeg" });
+  const resolved = await resolveBrowserAttachment(file, pending(file), { stage: null }, {
+    compress: async () => ({ blob: jpeg, changed: true, reason: "transcoded" }),
+  });
+  assert.equal(resolved.lifecycle, "ready");
+  assert.equal(resolved.name, "IMG_0001.jpg");
+  assert.equal(resolved.mimeType, "image/jpeg");
+  assert.equal(resolved.size, jpeg.size);
+  assert.match(resolved.uri ?? "", /^data:image\/jpeg;base64,/u);
+  assert.equal(resolved.metadata?.compression, "transcoded");
+});
+
+test("HEIC without a browser codec fails with a specific recoverable error", async () => {
+  const file = new File(["heic"], "IMG_0001.HEIC", { type: "image/heic" });
+  await assert.rejects(
+    () => resolveBrowserAttachment(file, pending(file), { stage: null }, {
+      compress: async (source) => ({ blob: source, changed: false, reason: "codec-unavailable" }),
+    }),
+    (error: unknown) => error instanceof BrowserAttachmentError
+      && error.code === "UNSUPPORTED_IMAGE_TYPE"
+      && error.message.includes("could not convert the HEIC"),
+  );
+});
+
+test("HEIC filename recovers missing browser MIME before image processing", async () => {
+  const file = new File(["heic"], "IMG_0002.heif");
+  const resolved = await resolveBrowserAttachment(file, pending(file), { stage: null }, {
+    compress: async (source) => {
+      assert.equal(source.type, "image/heif");
+      return { blob: new Blob(["jpeg"], { type: "image/jpeg" }), changed: true, reason: "transcoded" };
+    },
+  });
+  assert.equal(resolved.name, "IMG_0002.jpg");
+  assert.equal(resolved.mimeType, "image/jpeg");
+});
+
+test("HEIC JPEG derivative over the inline cap is rejected before base64 allocation", async () => {
+  const file = new File(["heic"], "IMG_0003.HEIC", { type: "image/heic" });
+  let read = false;
+  const tooLarge = {
+    type: "image/jpeg",
+    size: MAX_INLINE_BROWSER_IMAGE_BYTES + 1,
+    arrayBuffer: async () => { read = true; return new ArrayBuffer(0); },
+  } as Blob;
+  await assert.rejects(
+    () => resolveBrowserAttachment(file, pending(file), { stage: null }, {
+      compress: async () => ({ blob: tooLarge, changed: true, reason: "transcoded" }),
+    }),
+    (error: unknown) => error instanceof BrowserAttachmentError && error.code === "IMAGE_TOO_LARGE",
+  );
+  assert.equal(read, false);
+});
+
+test("compressed WebP keeps a filename extension that matches its MIME type", async () => {
+  const file = new File([new Uint8Array([1, 2])], "photo.webp", { type: "image/webp" });
+  const resolved = await resolveBrowserAttachment(file, pending(file), { stage: null }, {
+    compress: async () => ({
+      blob: new Blob([new Uint8Array([3])], { type: "image/webp" }),
+      changed: true,
+      reason: "compressed",
+    }),
+  });
+  assert.equal(resolved.name, "photo.webp");
+  assert.equal(resolved.mimeType, "image/webp");
+  assert.equal(resolved.uri, "data:image/webp;base64,Aw==");
+});
+
+test("the browser resolver stages non-image files through the semantic Host attachment port", async () => {
   const text = new File(["hello"], "note.txt", { type: "text/plain" });
-  const writes: Array<{ path: string; dataBase64: string }> = [];
+  const stages: unknown[] = [];
   const resolved = await resolveBrowserAttachment(text, pending(text), {
-    directory: "/home/agentuser/.hermes/opencraft-attachments",
-    writeFile: async (path, dataBase64) => { writes.push({ path, dataBase64 }); },
+    stage: async (request) => {
+      stages.push(request);
+      return {
+        ref: {
+          id: request.clientAttachmentId,
+          name: request.name,
+          mimeType: request.mimeType,
+          size: request.size,
+          location: {
+            kind: "host-file" as const,
+            path: "/host-owned/attachments/attachment-1/note.txt",
+          },
+        },
+      };
+    },
   });
 
-  assert.deepEqual(writes, [{
-    path: "/home/agentuser/.hermes/opencraft-attachments/attachment-1-note.txt",
-    dataBase64: "aGVsbG8=",
+  assert.deepEqual(stages, [{
+    clientAttachmentId: "attachment-1",
+    name: "note.txt",
+    mimeType: "text/plain",
+    size: 5,
+    source: { kind: "client-bytes", dataBase64: "aGVsbG8=" },
   }]);
   assert.equal(
     resolved.uri,
-    "file:///home/agentuser/.hermes/opencraft-attachments/attachment-1-note.txt",
+    "file:///host-owned/attachments/attachment-1/note.txt",
   );
   assert.equal(resolved.lifecycle, "ready");
   assert.deepEqual(resolved.metadata, {
     source: "browser-host-staged",
-    transport: "appserver-fs-write-file",
-    path: "/home/agentuser/.hermes/opencraft-attachments/attachment-1-note.txt",
+    transport: "opencraft-attachment-staging",
+    attachmentRef: {
+      id: "attachment-1",
+      name: "note.txt",
+      mimeType: "text/plain",
+      size: 5,
+      location: {
+        kind: "host-file",
+        path: "/host-owned/attachments/attachment-1/note.txt",
+      },
+    },
   });
 });
 

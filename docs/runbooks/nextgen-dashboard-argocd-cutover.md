@@ -2,6 +2,8 @@
 
 这份 runbook 只覆盖 `nextgen-dashboard` 北京测试环境的首批迁移。
 
+> 历史记录：`nextgen-dashboard` 已在 2026-09-22 下线，本页仅保留迁移背景；文中 deploy-facing 路径与生成脚本已从当前仓库删除，不再可执行。
+
 ## Current State
 
 当前正式发布路径已经切到 `Argo`。  
@@ -56,7 +58,7 @@
 ## Suggested Migration Sequence
 
 1. 在腾讯云 `SSM` 创建 `mono-beijing-sandbox-nextgen-dashboard-runtime-secrets`
-2. 用 [ssm_manifest.nextgen-dashboard.beijing-sandbox.yaml](../../scripts/ssm_manifest.nextgen-dashboard.beijing-sandbox.yaml) 生成 `*.sops.yaml`
+2. 历史上使用 `scripts/ssm_manifest.nextgen-dashboard.beijing-sandbox.yaml` 生成 `*.sops.yaml`；该脚本已随服务下线删除
 3. 使用已提交的 `argocd/services/nextgen-dashboard/beijing-sandbox/nextgen-dashboard-platform.env` 作为 platform pin 基线
 4. 使用仓库中的 `argocd/apps/beijing-sandbox/nextgen-dashboard.yaml` 作为 live app 定义
 5. 通过 root app / Argo diff / sync 收敛，不再走 service-local apply

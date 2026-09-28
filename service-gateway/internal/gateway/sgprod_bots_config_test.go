@@ -66,6 +66,18 @@ func TestSGProdBotManagementDeploymentPolicy(t *testing.T) {
 		{http.MethodPost, "/v1/instances/ins_test/bots", `{"name":"Copy","create_mode":"clone","source_bot_id":"source"}`},
 		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test", `{"name":"Renamed"}`},
 		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test", ""},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/retry", ""},
+		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
+		// New FE sends tokenized rollback/explicit disconnect in DELETE bodies;
+		// cached old FE sends no body. The public gateway must preserve all three.
+		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", ""},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", `{"reservation_id":"lease-test"}`},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", ""},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", `{"reservation_id":"lease-test"}`},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", `{"disconnect":true}`},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/whatsapp", ""},
 	} {
 		t.Run(tc.method+tc.path+tc.body, func(t *testing.T) {
 			before := upstreamCalls
@@ -93,8 +105,7 @@ func TestSGProdBotManagementDeploymentPolicy(t *testing.T) {
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodDelete, "/v1/instances/ins_test/bots"},
 		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test"},
-		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/retry"},
-		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin"},
+		{http.MethodGet, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin"},
 		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/exec"},
 	} {
 		before := upstreamCalls

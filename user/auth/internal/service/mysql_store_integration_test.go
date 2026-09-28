@@ -5,11 +5,122 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	internalmigrations "github.com/openclaw/openclaw/mono/backend/auth/internal/migrations"
 )
+
+func TestMySQLDeveloperTestAccountLeaseConcurrencyAndRevocation(t *testing.T) {
+	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")
+	if dsn == "" {
+		t.Skip("LIGHTCLAW_AUTH_TEST_DSN is not set")
+	}
+	if err := internalmigrations.Run(dsn); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	store, err := NewMySQLStore(dsn, StoreOptions{Now: fixedNow})
+	if err != nil {
+		t.Fatalf("open mysql store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.db.Close() })
+
+	now := fixedNow().Add(time.Duration(time.Now().UnixNano()%1_000_000) * time.Nanosecond)
+	candidates := make([]string, 0, 2)
+	for index := 0; index < 2; index++ {
+		session, createErr := store.CreatePasswordSession(context.Background(), PasswordSignUpInput{
+			Name:  fmt.Sprintf("Developer Lease %d", index),
+			Email: fmt.Sprintf("developer-lease-mysql-%d-%d@example.com", time.Now().UnixNano(), index),
+		}, []byte("hash"), now, time.Hour)
+		if createErr != nil {
+			t.Fatalf("create lease candidate %d: %v", index, createErr)
+		}
+		candidates = append(candidates, session.User.ID)
+	}
+
+	type leaseResult struct {
+		owner   string
+		lease   DeveloperTestAccountLease
+		session *AuthSession
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan leaseResult, 3)
+	var workers sync.WaitGroup
+	ownerNamespace := fmt.Sprintf("sandbox-bj-7-test-%d", time.Now().UnixNano())
+	for index := 0; index < 3; index++ {
+		owner := fmt.Sprintf("%s:9.23.0.%d", ownerNamespace, index+1)
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			lease, session, acquireErr := store.AcquireDeveloperTestAccount(
+				context.Background(), candidates, owner, owner[len("sandbox-bj-7:"):], now, time.Hour, "", false,
+			)
+			results <- leaseResult{owner: owner, lease: lease, session: session, err: acquireErr}
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+
+	successes := make([]leaseResult, 0, 2)
+	busyCount := 0
+	leasedUsers := make(map[string]struct{}, 2)
+	for result := range results {
+		if result.err != nil {
+			var authErr *Error
+			if !errors.As(result.err, &authErr) || authErr.Code != "developer_test_account_busy" {
+				t.Fatalf("concurrent acquire returned unexpected error: %v", result.err)
+			}
+			busyCount++
+			continue
+		}
+		if result.session == nil || result.session.AuthMethod != AuthMethodDeveloperLease {
+			t.Fatalf("concurrent acquire returned invalid session: %+v", result.session)
+		}
+		if _, exists := leasedUsers[result.lease.UserID]; exists {
+			t.Fatalf("candidate leased to more than one owner: %s", result.lease.UserID)
+		}
+		leasedUsers[result.lease.UserID] = struct{}{}
+		successes = append(successes, result)
+	}
+	if len(successes) != 2 || busyCount != 1 {
+		t.Fatalf("unexpected concurrent lease result: successes=%d busy=%d", len(successes), busyCount)
+	}
+
+	for _, result := range successes {
+		if _, _, renewErr := store.AcquireDeveloperTestAccount(
+			context.Background(), candidates, result.owner, result.lease.TargetIP, now, time.Hour, "", false,
+		); renewErr == nil {
+			t.Fatalf("active owner renewed anonymously: %s", result.owner)
+		} else {
+			var authErr *Error
+			if !errors.As(renewErr, &authErr) || authErr.Code != "developer_test_account_renewal_requires_session" {
+				t.Fatalf("anonymous renewal returned unexpected error: %v", renewErr)
+			}
+		}
+
+		renewedLease, renewedSession, renewErr := store.AcquireDeveloperTestAccount(
+			context.Background(), candidates, result.owner, result.lease.TargetIP, now, time.Hour, result.lease.UserID, false,
+		)
+		if renewErr != nil {
+			t.Fatalf("renew lease for %s: %v", result.owner, renewErr)
+		}
+		if renewedLease.UserID != result.lease.UserID || renewedLease.LeaseVersion != result.lease.LeaseVersion+1 {
+			t.Fatalf("renewal moved or did not advance lease: before=%+v after=%+v", result.lease, renewedLease)
+		}
+		if _, releaseErr := store.ReleaseDeveloperTestAccount(context.Background(), result.lease.UserID, result.owner, now); releaseErr != nil {
+			t.Fatalf("release lease for %s: %v", result.owner, releaseErr)
+		}
+		for _, token := range []string{result.session.Token, renewedSession.Token} {
+			if _, sessionErr := store.CurrentSession(context.Background(), token, now); sessionErr == nil {
+				t.Fatalf("released developer lease session remained valid for %s", result.owner)
+			}
+		}
+	}
+}
 
 func TestMySQLStorePersistsWrongSMSAttempts(t *testing.T) {
 	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")

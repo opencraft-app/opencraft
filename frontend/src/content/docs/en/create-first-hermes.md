@@ -40,7 +40,7 @@ There is no China real-name verification step on the international site. After s
 
 ### 3. Activate the plan through the current international activation flow
 
-LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month, and new users can try Launch free for 14 days. Follow the prompt on the plan card to activate it, and refer to the Subscribe page for current information.
+Choose an available plan on the [Subscribe page](/subscribe/) and follow the plan card to activate it. Check the page for current introductory offers and prices.
 
 ### 4. Let LightVela provision the instance automatically
 
@@ -66,9 +66,9 @@ Your first Hermes Agent is now ready to stay online in the cloud 24/7.
 
 LightVela starts provisioning the Hermes instance automatically after plan activation. When the instance is ready, configure a model and channel in the console and begin a conversation.
 
-### What happens after billing starts?
+### Where can I check current plans and offers?
 
-After billing officially starts, beta users' existing plan validity will be extended by one additional month. New users can try Launch free for 14 days. Check the [Subscribe page](/subscribe) and [LightVela Paid Version Announcement](./announcements/public-beta.md) for the latest information.
+Check the [Subscribe page](/subscribe/) and [Plans](./plans.md) for current plan terms, introductory offers, and renewal rules.
 
 ### How many Hermes instances can one account activate?
 

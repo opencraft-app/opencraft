@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveShellSpace, shellSpaceMetrics, type ShellSpaceInput } from "../packages/workbench-runtime/src/shell-space";
+import { resolveShellSpace, shellSpaceMetrics, workbenchWindowMetrics, type ShellSpaceInput } from "../packages/workbench-runtime/src/shell-space";
 import { createShellNavigationState, projectShellNavigation } from "../packages/workbench-runtime/src/shell-navigation";
 import { getRightPanelWidthBounds, interpolateRightPanelWidth } from "../packages/workbench-panels/src/model";
 
@@ -8,6 +8,16 @@ const input: ShellSpaceInput = {
   width: 1500, navigationOpen: true, navigationDetent: "expanded", navigationWidth: 182,
   contextOpen: true, contextWidth: 275, rightOpen: true, rightFullWidth: false,
 };
+
+test("native window width and immersive shell fallback share the Codex minimum", () => {
+  assert.equal(workbenchWindowMetrics.minimumWidth, 480);
+  assert.equal(shellSpaceMetrics.mainMinimum, workbenchWindowMetrics.minimumWidth);
+  const minimum = resolveShellSpace({ ...input, width: workbenchWindowMetrics.minimumWidth });
+  assert.equal(minimum.level, 4);
+  assert.equal(minimum.navigationOpen, false);
+  assert.equal(minimum.contextOpen, false);
+  assert.equal(minimum.rightOpen, false);
+});
 
 test("width pressure reduces the extra application pane before tools and context", () => {
   const cases = [[1500, 0], [1200, 1], [1100, 2], [1000, 3], [700, 4]];

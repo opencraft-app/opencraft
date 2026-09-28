@@ -1,8 +1,0 @@
-service: nextgen-dashboard
-env: sandbox-bj-7
-project: beijing-playground
-destinationName: beijing-playground
-namespace: lightvela-playground-sandbox-bj-7
-sourcePath: argocd/services/nextgen-dashboard/sandbox-bj-7
-environmentModel: playground
-playgroundCluster: beijing-playground

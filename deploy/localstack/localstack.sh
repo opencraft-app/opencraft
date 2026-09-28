@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCALSTACK_ROOT="$REPO_ROOT/deploy/localstack"
 ENV_ROOT="$REPO_ROOT/deploy/envs/localstack"
+SECRET_OVERRIDE_ROOTS="${LOCALSTACK_SECRET_OVERRIDE_DIRS:-${LOCALSTACK_SECRET_OVERRIDE_DIR:-$ENV_ROOT/overrides}}"
 STATE_DIR="${LOCALSTACK_STATE_DIR:-$REPO_ROOT/.localstack}"
 SITE_SEED_ROOT="$LOCALSTACK_ROOT/seed-data"
 KUBECTL="${KUBECTL:-kubectl}"
@@ -78,8 +79,16 @@ else
   PUBLIC_BIND_ADDRESS="0.0.0.0"
 fi
 
-FRONTEND_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:5173"
-GATEWAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:8085"
+FRONTEND_PORT="${LOCALSTACK_FRONTEND_PORT:-5173}"
+GATEWAY_PORT="${LOCALSTACK_GATEWAY_PORT:-8085}"
+TRADE_CALLBACK_PORT="${LOCALSTACK_TRADE_CALLBACK_PORT:-18084}"
+TRADE_INTERNAL_PORT="${LOCALSTACK_TRADE_INTERNAL_PORT:-28084}"
+for _port in "$FRONTEND_PORT" "$GATEWAY_PORT" "$TRADE_CALLBACK_PORT" "$TRADE_INTERNAL_PORT"; do
+  [[ "$_port" =~ ^[0-9]+$ ]] || die "port overrides must be numeric, got '$_port'"
+done
+unset _port
+FRONTEND_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:$FRONTEND_PORT"
+GATEWAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:$GATEWAY_PORT"
 FAKE_QQ_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:19010"
 FAKE_WECHAT_PAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:19040"
 
@@ -189,9 +198,7 @@ wait_job() {
 
 apply_secret_override() {
   local component="$1"
-  local namespace secret override
-  override="$ENV_ROOT/overrides/$component.env"
-  [[ -f "$override" ]] || return 0
+  local namespace secret override override_root
 
   case "$component" in
     infrastructure)
@@ -239,20 +246,42 @@ apply_secret_override() {
       ;;
   esac
 
-  log "applying developer-local Secret override for $component"
-  "$KUBECTL" create secret generic "$secret" \
-    -n "$namespace" \
-    --from-env-file="$override" \
-    --dry-run=client \
-    -o yaml |
-    "$KUBECTL" apply -f -
-  "$KUBECTL" label secret "$secret" -n "$namespace" "$LABEL" --overwrite >/dev/null
+  while IFS= read -r override_root; do
+    [[ -n "$override_root" ]] || continue
+    override="$override_root/$component.env"
+    [[ -f "$override" ]] || continue
+    log "applying developer-local Secret override for $component from $override_root"
+    "$KUBECTL" create secret generic "$secret" \
+      -n "$namespace" \
+      --from-env-file="$override" \
+      --dry-run=client \
+      -o yaml |
+      "$KUBECTL" apply -f -
+    "$KUBECTL" label secret "$secret" -n "$namespace" "$LABEL" --overwrite >/dev/null
+  done < <(printf '%s' "$SECRET_OVERRIDE_ROOTS" | tr ':' '\n')
+}
+
+shadow_sdk_repository() {
+  local parent_remote=""
+  if [[ -n "${SHADOW_TENCENT_SDK_REPO:-}" ]]; then
+    printf '%s\n' "$SHADOW_TENCENT_SDK_REPO"
+    return 0
+  fi
+  parent_remote="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
+  case "$parent_remote" in
+    https://git.woa.com/* | http://git.woa.com/*)
+      printf 'https://git.woa.com/tencentcloud-internal/tencentcloud-sdk-go.git\n'
+      ;;
+    *)
+      printf 'git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git\n'
+      ;;
+  esac
 }
 
 prepare_shadow_sdk() {
   local sdk_dir repo ref tracked_ref
   sdk_dir="$REPO_ROOT/shadow/tencentcloud-sdk-go"
-  repo="${SHADOW_TENCENT_SDK_REPO:-git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git}"
+  repo="$(shadow_sdk_repository)"
   tracked_ref="$(
     git -C "$REPO_ROOT" ls-files --stage shadow/tencentcloud-sdk-go |
       awk '$1 == "160000" { print $2; exit }'
@@ -265,14 +294,70 @@ prepare_shadow_sdk() {
   if [[ -d "$sdk_dir" ]] && [[ -z "$(find "$sdk_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
     rmdir "$sdk_dir"
   fi
-  [[ ! -e "$sdk_dir" ]] || die "shadow SDK directory exists but is incomplete: $sdk_dir"
   require_command git
-  log "preparing Shadow Tencent Cloud SDK dependency at tracked ref $ref"
-  git init -q "$sdk_dir"
-  git -C "$sdk_dir" remote add origin "$repo"
+  if [[ -e "$sdk_dir" ]]; then
+    git -C "$sdk_dir" rev-parse --git-dir >/dev/null 2>&1 \
+      || die "shadow SDK directory exists but is incomplete: $sdk_dir"
+    log "repairing incomplete Shadow Tencent Cloud SDK checkout at tracked ref $ref"
+  else
+    log "preparing Shadow Tencent Cloud SDK dependency at tracked ref $ref"
+    git init -q "$sdk_dir"
+  fi
+  if git -C "$sdk_dir" remote get-url origin >/dev/null 2>&1; then
+    git -C "$sdk_dir" remote set-url origin "$repo"
+  else
+    git -C "$sdk_dir" remote add origin "$repo"
+  fi
   git -C "$sdk_dir" fetch -q --depth 1 origin "$ref"
   git -C "$sdk_dir" checkout -q --detach FETCH_HEAD
+  [[ -f "$sdk_dir/tencentcloud/common/go.mod" ]] \
+    || die "Shadow Tencent Cloud SDK checkout is incomplete after fetch: $sdk_dir"
 }
+
+snapshot_dangling_image_ids() {
+  "$DOCKER" image ls --filter dangling=true --quiet --no-trunc 2>/dev/null |
+    LC_ALL=C sort -u
+}
+
+cleanup_new_dangling_images() {
+  local before_file="$1"
+  local after_file="$2"
+  local image_id removed=0
+
+  snapshot_dangling_image_ids >"$after_file"
+  while IFS= read -r image_id; do
+    [[ -n "$image_id" ]] || continue
+    if "$DOCKER" image rm "$image_id" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+    fi
+  done < <(comm -13 "$before_file" "$after_file")
+
+  if ((removed > 0)); then
+    log "removed $removed dangling image(s) created by the $3 build"
+  fi
+}
+
+build_component_with_cleanup() (
+  local component="$1"
+  local before_file after_file
+  mkdir -p "$STATE_DIR"
+  before_file="$(mktemp "$STATE_DIR/dangling-before.XXXXXX")"
+  after_file="$(mktemp "$STATE_DIR/dangling-after.XXXXXX")"
+  snapshot_dangling_image_ids >"$before_file"
+
+  cleanup_build_artifacts() {
+    local rc=$?
+    trap - EXIT
+    if [[ "${LOCALSTACK_PRUNE_NEW_DANGLING_IMAGES:-1}" == "1" ]]; then
+      cleanup_new_dangling_images "$before_file" "$after_file" "$component" || true
+    fi
+    rm -f "$before_file" "$after_file"
+    exit "$rc"
+  }
+  trap cleanup_build_artifacts EXIT
+
+  build_image "$component"
+)
 
 build_image() {
   local component="$1"
@@ -358,9 +443,9 @@ build_image() {
     all)
       local item
       for item in "${app_components[@]}"; do
-        build_image "$item"
+        build_component_with_cleanup "$item"
       done
-      build_image mock-control
+      build_component_with_cleanup mock-control
       ;;
     *)
       die "unknown build component: $component"
@@ -403,8 +488,8 @@ stop_legacy_compose() {
 }
 
 exposure_specs=(
-  "frontend|localstack-frontend|service/frontend|5173:8080|$PUBLIC_BIND_ADDRESS|required"
-  "gateway|lightclaw-gateway|service/service-gateway|8085:80|$PUBLIC_BIND_ADDRESS|required"
+  "frontend|localstack-frontend|service/frontend|$FRONTEND_PORT:8080|$PUBLIC_BIND_ADDRESS|required"
+  "gateway|lightclaw-gateway|service/service-gateway|$GATEWAY_PORT:80|$PUBLIC_BIND_ADDRESS|required"
   "auth|user-auth|service/lightclaw-auth|28081:80|127.0.0.1|debug"
   "payment|user-auth|service/payment|18082:80|127.0.0.1|debug"
   "subscription|user-auth|service/subscription|8086:80|127.0.0.1|debug"
@@ -414,8 +499,8 @@ exposure_specs=(
   "shadow|shadow|service/shadow|18083:80|127.0.0.1|debug"
   # Only this callback proxy is reachable from the DevCloud network. The full
   # Trade listener contains privileged order/payment RPCs and stays loopback-only.
-  "trade-callback|trade|service/trade-callback-proxy|18084:80|$PUBLIC_BIND_ADDRESS|required"
-  "trade-internal|trade|service/trade|28084:80|127.0.0.1|required"
+  "trade-callback|trade|service/trade-callback-proxy|$TRADE_CALLBACK_PORT:80|$PUBLIC_BIND_ADDRESS|required"
+  "trade-internal|trade|service/trade|$TRADE_INTERNAL_PORT:80|127.0.0.1|required"
   "ctl|ctl|service/ctl-api|19590:80|127.0.0.1|debug"
   "fake-qq|localstack-system|service/fake-qq-oauth|19010:19010|$PUBLIC_BIND_ADDRESS|required"
   "fake-jifei|localstack-system|service/fake-jifei|19020:19020|127.0.0.1|debug"
@@ -430,6 +515,100 @@ exposure_enabled() {
   [[ "$profile" == "required" ]] ||
     [[ "${LOCALSTACK_EXPOSE_INTERNAL_ENDPOINTS:-}" == "1" ]] ||
     [[ "$PUBLIC_BIND_ADDRESS" == "127.0.0.1" ]]
+}
+
+# 列出监听某个 TCP 端口的进程 pid。
+#
+# 端口被别的 stack 占住时，kubectl port-forward 会立刻退出，而 supervisor 只会无限重启，
+# 外层却仍然把 `up` 判成成功。调用方必须能拿到真实占用者才能 fail fast。
+port_listener_pids() {
+  local port="$1"
+  case "$(uname -s)" in
+    Linux)
+      if command -v ss >/dev/null 2>&1; then
+        ss -ltnpH "sport = :$port" 2>/dev/null |
+          grep -o 'pid=[0-9]\+' | cut -d= -f2 | sort -u
+        return 0
+      fi
+      ;;
+  esac
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u
+  fi
+}
+
+process_cmdline() {
+  local pid="$1"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    tr '\0' ' ' <"/proc/$pid/cmdline"
+    return 0
+  fi
+  ps -o command= -p "$pid" 2>/dev/null || true
+}
+
+# 判断某个监听进程是否属于当前 kube context 的 port-forward。
+listener_belongs_to_context() {
+  local pid="$1" context="$2" cmdline
+  cmdline="$(process_cmdline "$pid")"
+  [[ "$cmdline" == *"port-forward"* && "$cmdline" == *"--context $context "* ]]
+}
+
+exposure_port_conflicts() {
+  local context="$1" spec name mapping profile host_port pid cmdline
+  for spec in "${exposure_specs[@]}"; do
+    IFS='|' read -r name _ _ mapping _ profile <<<"$spec"
+    exposure_enabled "$profile" || continue
+    host_port="${mapping%%:*}"
+    while read -r pid; do
+      [[ -n "$pid" ]] || continue
+      listener_belongs_to_context "$pid" "$context" && continue
+      cmdline="$(process_cmdline "$pid")"
+      printf '  %s port %s is held by pid %s: %s\n' \
+        "$name" "$host_port" "$pid" "${cmdline:-unknown process}"
+    done < <(port_listener_pids "$host_port")
+  done
+}
+
+ensure_exposure_ports_free() {
+  local context="$1" conflicts="" attempt
+  for attempt in 1 2 3 4 5; do
+    conflicts="$(exposure_port_conflicts "$context")"
+    [[ -n "$conflicts" ]] || return 0
+    sleep 1
+  done
+  printf '%s\n' "$conflicts" >&2
+  die "another stack already owns the ports above; stop it (for personal DevCloud: run the other site/checkout's personal-devcloud.sh down) before bringing this one up"
+}
+
+# 端口转发真正生效才算暴露成功。
+#
+# supervisor 进程活着并不代表 kubectl 绑上了端口：端口冲突时 kubectl 秒退，supervisor 会一直
+# 重启，日志里刷 `address already in use`，但外层看不到任何失败。这里按端口逐个确认归属。
+wait_exposure_ready() {
+  local context="$1" spec name mapping profile host_port attempt owned pid
+  for spec in "${exposure_specs[@]}"; do
+    IFS='|' read -r name _ _ mapping _ profile <<<"$spec"
+    exposure_enabled "$profile" || continue
+    host_port="${mapping%%:*}"
+    owned=0
+    for attempt in $(seq 1 30); do
+      while read -r pid; do
+        [[ -n "$pid" ]] || continue
+        if listener_belongs_to_context "$pid" "$context"; then
+          owned=1
+          break
+        fi
+      done < <(port_listener_pids "$host_port")
+      ((owned == 1)) && break
+      sleep 1
+    done
+    if ((owned != 1)); then
+      tail -n 20 "$STATE_DIR/logs/$name.log" >&2 2>/dev/null || true
+      stop_exposure
+      die "$name did not bind port $host_port for context $context"
+    fi
+  done
 }
 
 print_exposure_plan() {
@@ -482,6 +661,7 @@ start_exposure_macos() {
   mkdir -p "$STATE_DIR/launchd" "$STATE_DIR/logs"
   stop_exposure
   mkdir -p "$STATE_DIR/launchd" "$STATE_DIR/logs"
+  ensure_exposure_ports_free "$context"
 
   for spec in "${exposure_specs[@]}"; do
     IFS='|' read -r name namespace resource mapping address profile <<<"$spec"
@@ -526,23 +706,28 @@ EOF
   done
 
   sleep 1
+  wait_exposure_ready "$context"
   log "endpoint exposure is managed by macOS launchd"
 }
 
 start_exposure_linux() {
-  local kubectl_path context spec name namespace resource mapping address profile log_file pid_file pid
+  local kubectl_path context supervisor spec name namespace resource mapping address profile log_file pid_file pid
   kubectl_path="$(command -v "$KUBECTL")"
   context="$(current_context)"
+  supervisor="$LOCALSTACK_ROOT/port-forward-supervisor.sh"
+  [[ -x "$supervisor" ]] || die "missing executable port-forward supervisor: $supervisor"
   stop_exposure
   mkdir -p "$STATE_DIR/exposure" "$STATE_DIR/logs"
+  ensure_exposure_ports_free "$context"
 
   for spec in "${exposure_specs[@]}"; do
     IFS='|' read -r name namespace resource mapping address profile <<<"$spec"
     exposure_enabled "$profile" || continue
     log_file="$STATE_DIR/logs/$name.log"
     pid_file="$STATE_DIR/exposure/$name.pid"
-    nohup "$kubectl_path" --context "$context" port-forward -n "$namespace" \
-      --address "$address" "$resource" "$mapping" >"$log_file" 2>&1 </dev/null &
+    nohup "$supervisor" "$log_file" \
+      "$kubectl_path" --context "$context" port-forward -n "$namespace" \
+      --address "$address" "$resource" "$mapping" >/dev/null 2>&1 </dev/null &
     pid=$!
     printf '%s\n' "$pid" >"$pid_file"
     chmod 600 "$pid_file"
@@ -560,6 +745,7 @@ start_exposure_linux() {
       die "failed to expose $name"
     fi
   done
+  wait_exposure_ready "$context"
   log "endpoint exposure is managed by Linux background processes under $STATE_DIR/exposure"
 }
 
@@ -674,6 +860,17 @@ up() {
   apply_secret_override infrastructure
   "$KUBECTL" rollout status -n localstack-system statefulset/mysql --timeout=300s
   "$KUBECTL" rollout status -n localstack-system deployment/redis --timeout=180s
+  # A previous interrupted `up` can leave the infrastructure Deployments with
+  # ProgressDeadlineExceeded while MySQL was unavailable. Kubernetes keeps
+  # that stale rollout condition even after the database recovers, so make the
+  # dependency boundary explicit and start a fresh rollout before waiting.
+  "$KUBECTL" rollout restart -n localstack-system \
+    deployment/mock-control \
+    deployment/fake-qq-oauth \
+    deployment/fake-jifei \
+    deployment/fake-tencentcloud \
+    deployment/fake-wechat-pay-bridge \
+    deployment/fake-envd
   "$KUBECTL" rollout status -n localstack-system deployment/mock-control --timeout=180s
   "$KUBECTL" rollout status -n localstack-system deployment/fake-qq-oauth --timeout=180s
   "$KUBECTL" rollout status -n localstack-system deployment/fake-jifei --timeout=180s
@@ -720,7 +917,7 @@ up() {
   restart_app_deployments
   wait_rollouts
   start_exposure
-  log "frontend=$FRONTEND_URL gateway=$GATEWAY_URL trade=http://$LOCALSTACK_PUBLIC_HOST:18084 fake-qq=$FAKE_QQ_URL fake-wechat-pay=$FAKE_WECHAT_PAY_URL"
+  log "frontend=$FRONTEND_URL gateway=$GATEWAY_URL trade=http://$LOCALSTACK_PUBLIC_HOST:$TRADE_CALLBACK_PORT fake-qq=$FAKE_QQ_URL fake-wechat-pay=$FAKE_WECHAT_PAY_URL"
   status
 }
 
@@ -805,19 +1002,32 @@ Commands:
 EOF
 }
 
-command="${1:-}"
-case "$command" in
-  doctor) doctor ;;
-  build) doctor; build_image "${2:-all}" ;;
-  render) render_all ;;
-  up) up ;;
-  expose) require_local_context; start_exposure ;;
-  exposure-plan) print_exposure_plan ;;
-  internal-token-patch-plan) internal_service_token_patch_plan ;;
-  stop-expose) stop_exposure ;;
-  status) status ;;
-  logs) logs ;;
-  down) down ;;
-  reset) reset ;;
-  *) usage; [[ -z "$command" ]] || exit 1 ;;
-esac
+main() {
+  local command="${1:-}"
+  case "$command" in
+    doctor) doctor ;;
+    build)
+      doctor
+      if [[ "${2:-all}" == "all" ]]; then
+        build_image all
+      else
+        build_component_with_cleanup "$2"
+      fi
+      ;;
+    render) render_all ;;
+    up) up ;;
+    expose) require_local_context; start_exposure ;;
+    exposure-plan) print_exposure_plan ;;
+    internal-token-patch-plan) internal_service_token_patch_plan ;;
+    stop-expose) stop_exposure ;;
+    status) status ;;
+    logs) logs ;;
+    down) down ;;
+    reset) reset ;;
+    *) usage; [[ -z "$command" ]] || return 1 ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

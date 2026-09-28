@@ -12,6 +12,7 @@
 | `待补` | 该区域可以写这篇文档，但尚未上线 |
 | `N/A` | 该区域产品不支持此功能，不适用，不应写 |
 | `待核实` | 无法从文档配置判断该区域产品是否支持，需向用户确认后再定 |
+| `待下线` | 已移除本地公开注册并验证，保留源稿，等待发布后确认线上下线 |
 
 维护规则：
 
@@ -30,24 +31,28 @@
 # 账号、套餐与开通
 
 - 【CN ✓ | GLOBAL N/A】账号与实名认证（国内专属，不进国际站）
-- 【CN ✓ | GLOBAL ✓】LightVela 付费版本公告
+- 【CN 待下线 | GLOBAL 待下线】LightVela 付费版本公告
 - 【CN ✓ | GLOBAL ✓】套餐
 - 【CN ✓ | GLOBAL ✓】模型积分
 - 【CN ✓ | GLOBAL ✓】如何开通第一个 Hermes 实例？
 
 2026-09-20 账号/套餐费用拆分文档维护：国内账号、快速开始、套餐及首次开通文案已在开发分支更新；国际套餐文案同步中文、英文、印尼语、西班牙语、日语和韩语，繁体由同步器生成。经用户确认，使用本地新版界面与演示数据替换 4 张旧账号/实名截图，新增 5 张账号及套餐费用配图，并标注演示状态。文档同步与 64 项日期/多语言一致性测试通过。整项尚未提交、发布；上述上线状态标记不代表本次改动已上线。
 
+2026-09-23 首单试用文案维护：按用户确认，国内及国际 Launch / Launch AI 首单免费统一为 1 个月。国内 7 份、国际 global/en/id/es/ja/ko 各 6 份源文档同步更新，繁体由同步器生成；本轮为开发分支内容更新，不改变上述上线状态。
+
 # 功能与配置
 
 - 【CN ✓ | GLOBAL ✓】配置总览
+- 【CN 待补 | GLOBAL ✓】管理 Bots
 - 【CN ✓ | GLOBAL ✓】配置模型
 - 【CN N/A | GLOBAL ✓】Telegram
 - 【CN N/A | GLOBAL ✓】WhatsApp
 - 【CN N/A | GLOBAL ✓】Discord
 - 【CN ✓ | GLOBAL ✓】微信
 - 【CN ✓ | GLOBAL ✓】QQ
-- 【CN N/A | GLOBAL ✓】企业微信
+- 【CN ✓ | GLOBAL ✓】企业微信
 - 【CN ✓ | GLOBAL ✓】飞书
+- 【CN ✓ | GLOBAL N/A】钉钉
 - 【CN 待核实 | GLOBAL 待核实】Slack（配置不一致：`CN_SLUG_TO_FILE` 有映射但 `CN_SIDEBAR` 与 `cnDocs` 未暴露；`GLOBAL_SIDEBAR` 已暴露但 `GLOBAL_SLUG_TO_FILE` 无映射，需先修配置）
 - 【CN ✓ | GLOBAL ✓】配置技能
 - 【CN 待核实 | GLOBAL ✓】记忆管理
@@ -57,6 +62,7 @@
 - 【CN 待核实 | GLOBAL ✓】诊断
 - 【CN ✓ | GLOBAL ✓】高级设置
 - 【CN 待核实 | GLOBAL ✓】模型切换
+- 【CN ✓ | GLOBAL ✓】Bots Switching
 - 【CN ✓ | GLOBAL ✓】DeepSeek Harness
 
 # Hermes Agent 科普
@@ -81,12 +87,12 @@
 - 【CN N/A | GLOBAL ✓】如何在 Telegram 中配置一个具有独立人格的 Hermes Agent
 - 【CN N/A | GLOBAL ✓】如何在 WhatsApp 中配置一个具有独立人格的 Hermes Agent
 - 【CN 待补 | GLOBAL ✓】如何通过 SOUL.md 设定 IM Agent 的角色、性格与说话方式
-- 【CN 待补 | GLOBAL ✓】如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣
+- 【CN 待补 | GLOBAL 待下线】如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣
 - 【CN N/A | GLOBAL ✓】如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆
 - 【CN N/A | GLOBAL ✓】如何在 Telegram 群组中配置 AI 社群助手：入群欢迎、FAQ、摘要与提醒
-- 【CN N/A | GLOBAL ✓】如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化
-- 【CN 待补 | GLOBAL ✓】如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆
-- 【CN N/A | GLOBAL ✓】如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作
+- 【CN N/A | GLOBAL 待下线】如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化
+- 【CN 待补 | GLOBAL 待下线】如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆
+- 【CN N/A | GLOBAL 待下线】如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作
 - 【CN 待补 | GLOBAL ✓】如何使用 Hermes Agent 创建每日摘要
 - 【CN 待补 | GLOBAL ✓】如何让 Hermes Agent 保持 24 小时在线
 - 【CN 待补 | GLOBAL ✓】如何使用 Agent 管理长期记忆和个人知识

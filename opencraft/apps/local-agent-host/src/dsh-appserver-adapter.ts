@@ -15,12 +15,19 @@ import { userContent } from "./dsh-content.js";
 import { DshExecutionAuthority, type DshExecutionOwner } from "./dsh-execution-authority.js";
 import { DshNativeAdmission } from "./dsh-native-admission.js";
 import { projectDshPermissions, type DshPermissionPort } from "./dsh-permission-projection.js";
+import { dshPermissionMode, parsePermissionModeProfileId, projectPermissionProfileCatalog, OPENCRAFT_PERMISSION_MODES_CAPABILITY, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
 import { DshPresentationQueue } from "./dsh-presentation-queue.js";
 import { projectDshGoal } from "./dsh-goal-projection.js";
+import type {
+  LocalWorkspaceResolution,
+  LocalWorkspaceResolutionInput,
+} from "./projectless-workspace.js";
 import {
   OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,
   OPENCRAFT_PROFILE_SKILLS_EXTENSION,
+  OPENCRAFT_RESUME_HISTORY_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
 } from "@opencraft/appserver-protocol";
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
@@ -83,11 +90,27 @@ interface QueuedSubmission {
   pausedReason: string | null;
 }
 
+interface SteeringSubmission extends QueuedSubmission {
+  targetTurnId: string;
+}
+
 const object = (value: unknown): RecordValue => (
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as RecordValue : {}
 );
 const number = (value: unknown, fallback = 0): number => typeof value === "number" && Number.isFinite(value) ? value : fallback;
 const string = (value: unknown, fallback = ""): string => typeof value === "string" ? value : fallback;
+
+function permissionSelection(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== "string" || value.length === 0) throw new Error("Invalid permission profile selection");
+  return value;
+}
+
+function rejectUnsupportedPolicyOverrides(value: RecordValue, sandboxField: "sandbox" | "sandboxPolicy"): void {
+  if (value[sandboxField] != null || value.approvalPolicy != null || value.approvalsReviewer != null) {
+    throw new Error("Use a runtime-supported named permission profile; arbitrary policy overrides are not supported");
+  }
+}
 
 function appTimestamp(value: number): number {
   if (value <= 0) return Math.floor(Date.now() / 1_000);
@@ -103,11 +126,29 @@ const IMAGE_MEDIA_TYPES = new Map([
   [".gif", "image/gif"],
 ]);
 
-async function promptContent(input: unknown): Promise<RecordValue[]> {
+export interface ExplicitSkillReference { readonly name: string; readonly path: string }
+export async function promptContent(input: unknown, validateSkills?: (skills: readonly ExplicitSkillReference[]) => Promise<void>): Promise<RecordValue[]> {
   if (!Array.isArray(input)) return [];
+  const skills = input.filter(raw => object(raw).type === "skill").map(raw => {
+    const part = object(raw);
+    if (typeof part.name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(part.name)
+      || typeof part.path !== "string" || part.path.length === 0) throw new Error("Invalid explicit Skill reference");
+    return { name: part.name, path: part.path };
+  });
+  if (skills.length) {
+    if (!validateSkills) throw new Error("This DSH host cannot validate explicit Skill invocations");
+    await validateSkills(skills);
+  }
   const content: RecordValue[] = [];
   for (const raw of input) {
     const part = object(raw);
+    if (part.type === "skill") {
+      // Native dsh-tool-skill scans each direct-user text block for /name and
+      // loads the full instructions during agent/pre-step. Never ask the model
+      // to infer a Skill from a display label or read an arbitrary input path.
+      content.push({ type: "text", text: ` /${part.name} ` });
+      continue;
+    }
     if (part.type === "text" && typeof part.text === "string") {
       content.push({ type: "text", text: part.text });
       continue;
@@ -264,6 +305,9 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
     })),
     defaultReasoningEffort: reasoningCapability((model.reasoning?.efforts ?? []).map(e=>e.id),model.reasoning?.defaultEffort).defaultEffort,
     inputModalities: modelInputModalities(model.input),
+    ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+    ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
+    ...(model.source === undefined ? {} : { source: model.source }),
     supportsPersonality: false,
     multiAgentVersion: null,
     additionalSpeedTiers: [],
@@ -276,6 +320,17 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  private workspaceResolver?: {
+    resolve(input: LocalWorkspaceResolutionInput): Promise<LocalWorkspaceResolution>;
+  };
+  setWorkspaceResolver(resolver: {
+    resolve(input: LocalWorkspaceResolutionInput): Promise<LocalWorkspaceResolution>;
+  }): void { this.workspaceResolver = resolver; }
+  private skillInvocationValidator?: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>;
+  setSkillInvocationValidator(validate: (threadId: string, skills: readonly ExplicitSkillReference[]) => Promise<void>): void { this.skillInvocationValidator = validate; }
+  private promptContent(threadId: string, input: unknown) {
+    return promptContent(input, this.skillInvocationValidator ? refs => this.skillInvocationValidator!(threadId, refs) : undefined);
+  }
   setModelInfoReader(reader: RuntimeModelInfoReader): void { this.providers.setModelInfoReader(reader); }
   private threadEngine: DshThreadEnginePort | null = null;
   private readonly activations = new Map<string, Promise<unknown>>();
@@ -326,6 +381,11 @@ export class DshAppServerAdapter {
     this.activations.set(sessionId, operation);
     return operation;
   }
+  /** Execution admission hook; display-only resume deliberately stays cold. */
+  activateThread(sessionId: string): Promise<unknown> {
+    if (!this.engineReady) return Promise.reject(new Error("DSH runtime is unavailable"));
+    return this.ensureRuntime(sessionId);
+  }
   setThreadEngine(port: DshThreadEnginePort): void { this.threadEngine = port; }
   private readonly summaries = new Map<string, DshSessionSummary>();
   private readonly abort = new AbortController();
@@ -341,9 +401,9 @@ export class DshAppServerAdapter {
   private readonly nextTurnWaiters = new Map<string, Set<(turn: number) => void>>();
   /** Read-through projection of DSH's authoritative session/queue snapshots. */
   private readonly queues = new Map<string, QueuedSubmission[]>();
+  private readonly steering = new Map<string, SteeringSubmission[]>();
   private readonly nativeQueueIds = new Map<string, string>();
   private readonly queueItemWaiters = new Map<string, Map<string, Set<(item: QueuedSubmission) => void>>>();
-  private readonly queueRemovalWaiters = new Map<string, Map<string, Set<() => void>>>();
   private readonly queueConsumptionTailBySession = new Map<string, Promise<void>>();
   private streamsReady: Promise<void> | null = null;
   private streamGeneration: AbortController | null = null;
@@ -433,8 +493,12 @@ export class DshAppServerAdapter {
         this.abort.signal.removeEventListener("abort", stopGeneration);
         // DSH omits empty queues from a reconnect baseline. Invalidate the
         // old generation immediately so absence cannot leave stale rows.
-        const projectedSessions = [...this.queues.keys()];
+        const projectedSessions = new Set([
+          ...this.queues.keys(),
+          ...this.steering.keys(),
+        ]);
         this.queues.clear();
+        this.steering.clear();
         for (const threadId of projectedSessions) {
           this.emit("thread/queue/changed", { threadId });
         }
@@ -547,27 +611,52 @@ export class DshAppServerAdapter {
       const sessionId = string(frame.sessionId);
       if (sessionId === "") return;
       const previousById = new Map(this.queue(sessionId).map((submission) => [submission.id, submission]));
-      const submissions = (Array.isArray(frame.items) ? frame.items : []).flatMap<QueuedSubmission>((raw) => {
+      const previousSteering = this.steering.get(sessionId) ?? [];
+      const previousByNativeId = new Map<string, QueuedSubmission>();
+      for (const submission of [...previousById.values(), ...previousSteering]) {
+        previousByNativeId.set(submission.id, submission);
+        const nativeId = this.nativeQueueIds.get(submission.id);
+        if (nativeId !== undefined) previousByNativeId.set(nativeId, submission);
+      }
+      const submissions: QueuedSubmission[] = [];
+      const steering: SteeringSubmission[] = [];
+      for (const raw of Array.isArray(frame.items) ? frame.items : []) {
         const item = object(raw);
-        if (item.placement !== "queued") return [];
+        if (item.placement !== "queued" && item.placement !== "steering") continue;
         const message = object(item.message);
         const id = string(item.id) || string(message.id);
-        if (id === "") return [];
+        if (id === "") continue;
         const source = object(message.source);
-        const clientMessageId = this.admission?.queuedClientId(sessionId, string(source.rpcId, id)) ?? string(source.rpcId, id);
+        const previous = previousByNativeId.get(id);
+        const clientMessageId = previous?.clientUserMessageId
+          ?? this.admission?.queuedClientId(sessionId, string(source.rpcId, id))
+          ?? string(source.rpcId, id);
         const durable = this.authority?.queueStore.findByClientId(sessionId, clientMessageId);
-        const logicalId = durable?.id ?? id;
+        const logicalId = previous?.id ?? durable?.id ?? id;
         this.nativeQueueIds.set(logicalId, id);
-        return [{
+        const submission = {
           id: logicalId,
           input: userContent(message.content),
           clientUserMessageId: clientMessageId,
-          createdAt: previousById.get(logicalId)?.createdAt
+          createdAt: previous?.createdAt
             ?? number(item.createdAt, number(message.createdAt, Date.now())),
           pausedReason: null,
-        }];
-      });
+        } satisfies QueuedSubmission;
+        if (item.placement === "queued") {
+          submissions.push(submission);
+          continue;
+        }
+        const liveTurn = this.livePosition.get(sessionId)?.turn;
+        const targetTurnId = liveTurn === undefined
+          ? this.latestTurns.get(sessionId)?.turnId
+            ?? previousSteering.find((submission) => submission.id === logicalId)?.targetTurnId
+          : turnId(sessionId, liveTurn);
+        if (targetTurnId !== undefined) {
+          steering.push({ ...submission, targetTurnId });
+        }
+      }
       this.queues.set(sessionId, submissions);
+      this.steering.set(sessionId, steering);
       const waiters = this.queueItemWaiters.get(sessionId);
       if (waiters !== undefined) {
         for (const submission of submissions) {
@@ -577,16 +666,6 @@ export class DshAppServerAdapter {
           waiters.delete(submission.clientUserMessageId);
         }
         if (waiters.size === 0) this.queueItemWaiters.delete(sessionId);
-      }
-      const removalWaiters = this.queueRemovalWaiters.get(sessionId);
-      if (removalWaiters !== undefined) {
-        const presentIds = new Set(submissions.map((submission) => submission.id));
-        for (const [itemId, matching] of removalWaiters) {
-          if (presentIds.has(itemId)) continue;
-          for (const resolve of matching) resolve();
-          removalWaiters.delete(itemId);
-        }
-        if (removalWaiters.size === 0) this.queueRemovalWaiters.delete(sessionId);
       }
       this.emit("thread/queue/changed", { threadId: sessionId });
       return;
@@ -719,52 +798,13 @@ export class DshAppServerAdapter {
 
   private queue(sessionId: string): QueuedSubmission[] {
     const native = this.queues.get(sessionId) ?? [];
-    const restored = (this.authority?.queueStore.pending(sessionId) ?? []).filter(row => !native.some(item => item.clientUserMessageId === row.clientUserMessageId));
+    const steeringClientIds = new Set(
+      (this.steering.get(sessionId) ?? []).map((item) => item.clientUserMessageId),
+    );
+    const restored = (this.authority?.queueStore.pending(sessionId) ?? []).filter(row =>
+      !native.some(item => item.clientUserMessageId === row.clientUserMessageId)
+      && !steeringClientIds.has(row.clientUserMessageId));
     return [...native, ...restored.map(row => ({ id: row.id, input: row.input, clientUserMessageId: row.clientUserMessageId, createdAt: row.createdAtMs, pausedReason: "restored-after-host-restart" }))];
-  }
-
-  private waitForQueueRemoval(
-    sessionId: string,
-    itemId: string,
-    timeoutMs = 5_000,
-  ): { promise: Promise<void>; cancel(): void } {
-    if (!this.queue(sessionId).some((submission) => submission.id === itemId)) {
-      return { promise: Promise.resolve(), cancel() {} };
-    }
-    let cancel = () => {};
-    const promise = new Promise<void>((resolve, reject) => {
-      const byItem = this.queueRemovalWaiters.get(sessionId) ?? new Map();
-      const waiters = byItem.get(itemId) ?? new Set();
-      let settled = false;
-      const cleanup = () => {
-        waiters.delete(finish);
-        if (waiters.size === 0) byItem.delete(itemId);
-        if (byItem.size === 0) this.queueRemovalWaiters.delete(sessionId);
-      };
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        cleanup();
-        resolve();
-      };
-      waiters.add(finish);
-      byItem.set(itemId, waiters);
-      this.queueRemovalWaiters.set(sessionId, byItem);
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(new Error(`DSH accepted queue consumption but did not remove ${itemId} from session/queue`));
-      }, timeoutMs);
-      cancel = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        cleanup();
-      };
-    });
-    return { promise, cancel };
   }
 
   private async consumeQueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
@@ -982,6 +1022,25 @@ export class DshAppServerAdapter {
     return projectDshPermissions({ sandbox: { mode, workspaceRoot: (await this.summary(sessionId)).cwd },
       approval, preset: preset ?? "custom", networkPolicy: "not-managed-by-file-sandbox" });
   }
+  private async requirePermissionPreset(selection: string): Promise<string> {
+    if (!this.permissions) throw new Error("Runtime permission changes are unavailable");
+    const catalog = await this.permissions.read();
+    if (!Array.isArray(catalog?.presets)) throw new Error("Runtime permission catalog is unavailable");
+    const mode = parsePermissionModeProfileId(selection);
+    const preset = mode === null
+      ? catalog.presets.find((entry: { id?: unknown }) => entry.id === selection)
+      : catalog.presets.find((entry: unknown) => dshPermissionMode(entry) === mode);
+    if (typeof preset?.id !== "string") throw new Error(`Permission profile is unavailable on this Host: ${selection}`);
+    return preset.id;
+  }
+  private async setPermissionPreset(sessionId: string, selection: string): Promise<void> {
+    const preset = await this.requirePermissionPreset(selection);
+    await this.permissions!.set(sessionId, preset);
+    const effective = await this.effectivePermissions(sessionId);
+    if (effective.activePermissionProfile.id !== preset) {
+      throw new Error(`Permission profile was not applied by the engine: ${preset}`);
+    }
+  }
   async dispatch(method: string, params: unknown): Promise<unknown> {
     if (!this.engineReady) throw Object.assign(new Error("DSH runtime is restarting or unavailable; retry after recovery"), { rpcCode: -32001 });
     if (/^runtime\/(settings\/mutate|providers\/(apply|setEnabled)|models\/(setEnabled|delete))$/.test(method)) {
@@ -1005,17 +1064,18 @@ export class DshAppServerAdapter {
       await this.ensureRuntime(sessionId);
       const pending = this.admission.begin(sessionId, owner, requestId, string(value.clientUserMessageId) || undefined);
       try {
-        if (value.sandboxPolicy != null || value.approvalPolicy != null) throw new Error("Use a runtime-supported named permission profile; arbitrary policy overrides are not supported");
-        if (typeof value.permissions === "string") {
-          if (!this.permissions) throw new Error("Runtime permission changes are unavailable");
-          await this.permissions.set(sessionId, value.permissions);
+        rejectUnsupportedPolicyOverrides(value, "sandboxPolicy");
+        const selectedPermission = permissionSelection(value.permissions);
+        if (selectedPermission !== undefined) {
+          await this.setPermissionPreset(sessionId, selectedPermission);
         }
         if (this.modelConfiguration) {
           await this.modelConfiguration.config.synchronize();
           if (this.modelConfiguration.config.application.state !== "applied") throw new Error("模型配置尚未应用");
         }
-        const content = await promptContent(value.input);
+        const content = await this.promptContent(sessionId, value.input);
         await this.selectModel(sessionId, value.model, value.effort);
+        this.authority.assertConnected(owner);
         await this.client.call("session.prompt", {
           sessionId, mode: "queue", content, clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }, undefined, pending.rpcId);
@@ -1034,7 +1094,12 @@ export class DshAppServerAdapter {
     }
     if (/^thread\/queue\/(add|update|delete|reorder|start|steer)$/.test(method)) {
       return this.authority.withWriteLease(sessionId, owner, async () => {
-        const restored = this.authority!.queueStore.find(sessionId, string(value.queuedSubmissionId));
+        const requestedQueueItemId = typeof value.queuedSubmissionId === "string"
+          ? value.queuedSubmissionId
+          : method === "thread/queue/start" ? this.queue(sessionId)[0]?.id : undefined;
+        const restored = requestedQueueItemId
+          ? this.authority!.queueStore.find(sessionId, requestedQueueItemId)
+          : null;
         if (restored?.state === "queued" && !(this.queues.get(sessionId) ?? []).some(item => item.clientUserMessageId === restored.clientUserMessageId)) {
           if (method === "thread/queue/delete") return { deleted: this.authority!.queueStore.delete(sessionId, restored.id) };
           if (method === "thread/queue/update") {
@@ -1042,12 +1107,8 @@ export class DshAppServerAdapter {
             const row = this.authority!.queueStore.update(sessionId, restored.id, value.input);
             return { queuedSubmission: { id: row.id, input: row.input, clientUserMessageId: row.clientUserMessageId } };
           }
-          if (method === "thread/queue/start") {
-            const result = await this.dispatchOwned("turn/start", { threadId: sessionId, input: restored.input, clientUserMessageId: restored.clientUserMessageId }, owner, requestId);
-            this.authority!.queueStore.markDispatched(sessionId, restored.id);
-            this.admission!.removeQueuedMessage(sessionId, restored.clientUserMessageId);
-            this.emit("thread/queue/changed", { threadId: sessionId });
-            return result;
+          if (method === "thread/queue/start" || method === "thread/queue/steer") {
+            throw new Error("Queued submission is awaiting native reconciliation and cannot be dispatched yet");
           }
         }
         if (method === "thread/queue/delete") {
@@ -1184,7 +1245,7 @@ export class DshAppServerAdapter {
           userAgent: "opencraft-daemon/0.1.0",
           capabilities: {
             extensions: {
-              "opencraft/thread-lifecycle": { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true },
+              [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true },
               ...(this.hostCapabilities ? { "opencraft/host-capabilities": { version: 1 } } : {}),
               "opencraft/loopback-http": { version: 1 },
               [OPENCRAFT_PROFILE_SKILLS_EXTENSION]: OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,
@@ -1194,6 +1255,8 @@ export class DshAppServerAdapter {
                 atomicSteer: true,
                 perItemPause: false,
               },
+              [OPENCRAFT_RESUME_HISTORY_EXTENSION]: { version: 1, mode: "paginated" },
+              ...(this.permissions ? { [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY } : {}),
             },
           },
         };
@@ -1267,8 +1330,13 @@ export class DshAppServerAdapter {
           ? projectedItemsPage({ id: threadId, turns }, params)
           : { ...projectedTurnsPage({ id: threadId, turns }, params), itemsPaginationByTurnId: {} };
       }
-      case "thread/queue/list":
-        return page(this.queue(string(value.threadId)), value.cursor, value.limit);
+      case "thread/queue/list": {
+        const sessionId = string(value.threadId);
+        return {
+          ...page(this.queue(sessionId), value.cursor, value.limit),
+          ...(value.cursor == null ? { steering: this.steering.get(sessionId) ?? [] } : {}),
+        };
+      }
       case "thread/queue/add": {
         const sessionId = string(value.threadId);
         const clientUserMessageId = string(value.clientUserMessageId);
@@ -1281,7 +1349,7 @@ export class DshAppServerAdapter {
             {
               sessionId,
               mode: "queue",
-              content: await promptContent(value.input),
+              content: await this.promptContent(sessionId, value.input),
               clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             },
             undefined,
@@ -1299,7 +1367,7 @@ export class DshAppServerAdapter {
         const previous = this.queue(sessionId).find((item) => item.id === queuedSubmissionId);
         if (previous === undefined) return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is no longer pending`));
         await this.assertInput(sessionId, value.input);
-        const content = await promptContent(value.input);
+        const content = await this.promptContent(sessionId, value.input);
         const input = userContent(content);
         await this.client.call("session.updateQueue", {
           sessionId,
@@ -1338,18 +1406,11 @@ export class DshAppServerAdapter {
           if (target === undefined) throw new Error("Queued submission is no longer pending");
           const liveTurn = this.livePosition.get(sessionId)?.turn ?? -1;
           if (liveTurn >= 0) {
-            const removed = this.waitForQueueRemoval(sessionId, target.id);
-            try {
-              await this.client.call("session.updateQueue", {
-                sessionId,
-                itemId: this.nativeQueueIds.get(target.id) ?? target.id,
-                action: { kind: "steer" },
-              });
-              await removed.promise;
-            } catch (error) {
-              removed.cancel();
-              throw error;
-            }
+            await this.client.call("session.updateQueue", {
+              sessionId,
+              itemId: this.nativeQueueIds.get(target.id) ?? target.id,
+              action: { kind: "steer" },
+            });
             return { turn: this.inProgressTurn(sessionId, liveTurn) };
           }
           if (target !== queue[0]) throw new Error("DeepSeek Harness resumes queued work in FIFO order");
@@ -1383,25 +1444,21 @@ export class DshAppServerAdapter {
           if (!this.queue(sessionId).some((item) => item.id === queuedSubmissionId)) {
             throw new Error(`Queued submission ${queuedSubmissionId} is no longer pending`);
           }
-          const removed = this.waitForQueueRemoval(sessionId, queuedSubmissionId);
-          try {
-            await this.client.call("session.updateQueue", {
-              sessionId,
-              itemId: this.nativeQueueIds.get(queuedSubmissionId) ?? queuedSubmissionId,
-              action: { kind: "steer" },
-            });
-            await removed.promise;
-          } catch (error) {
-            removed.cancel();
-            throw error;
-          }
+          await this.client.call("session.updateQueue", {
+            sessionId,
+            itemId: this.nativeQueueIds.get(queuedSubmissionId) ?? queuedSubmissionId,
+            action: { kind: "steer" },
+          });
           return { turnId: actualTurnId };
         });
       }
       case "thread/fork": {
+        rejectUnsupportedPolicyOverrides(value, "sandbox");
         if (!this.threadEngine) throw new Error("This engine does not expose native thread forks");
         if (value.path) throw new Error("Use a thread identity, not a backend-owned rollout path");
         const sourceId = string(value.threadId);
+        const selectedPermission = permissionSelection(value.permissions);
+        const requestedPreset = selectedPermission === undefined ? undefined : await this.requirePermissionPreset(selectedPermission);
         await this.ensureRuntime(sourceId);
         const source = await this.summary(sourceId);
         const sourceModel = (await this.sessionModels(sourceId)).current;
@@ -1413,11 +1470,12 @@ export class DshAppServerAdapter {
           return Number(id.slice(prefix.length));
         };
         const created = await this.threadEngine.fork({ sourceSessionId: sourceId,
+          dynamicTools: value.dynamicTools,
           cwd: typeof value.cwd === "string" ? value.cwd : source.cwd ?? homedir(),
           ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions,
           provider: selection?.provider, model: selection?.model,
           lastTurn: boundary(value.lastTurnId), beforeTurn: boundary(value.beforeTurnId),
-          permissionPreset: value.permissions,
+          permissionPreset: requestedPreset,
         });
         this.summaries.set(created.sessionId, { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: false,
           cwd: created.cwd, agentPreset: created.agentPreset, parentSessionId: sourceId, ephemeral: created.ephemeral === true });
@@ -1425,9 +1483,14 @@ export class DshAppServerAdapter {
           const effort = object(value.config).model_reasoning_effort
             ?? (selection?.provider === sourceModel?.provider && selection?.model === sourceModel?.model ? sourceModel?.reasoningEffort : undefined);
           if (selection) await this.selectModel(created.sessionId, encodeModel(selection.provider, selection.model), effort);
-          return await this.dispatchCommand("thread/resume", { threadId: created.sessionId,
+          const resumed = await this.dispatchCommand("thread/resume", { threadId: created.sessionId,
             ...(selection ? { model: encodeModel(selection.provider, selection.model) } : {}),
             excludeTurns: value.excludeTurns === true });
+          if (requestedPreset !== undefined
+            && object(object(resumed).activePermissionProfile).id !== requestedPreset) {
+            throw new Error(`Permission profile was not applied by the engine: ${value.permissions}`);
+          }
+          return resumed;
         } catch (error) {
           try { await this.threadEngine.release({ sessionId: created.sessionId }); } catch { /* Native owner still owns the failed child's teardown. */ }
           throw error;
@@ -1440,34 +1503,69 @@ export class DshAppServerAdapter {
         return this.threadEngine.inject({ sessionId: string(value.threadId), items: value.items });
       }
       case "thread/start": {
+        rejectUnsupportedPolicyOverrides(value, "sandbox");
+        const selectedPermission = permissionSelection(value.permissions);
+        const requestedPreset = selectedPermission === undefined ? undefined : await this.requirePermissionPreset(selectedPermission);
         const selection = value.model == null || value.model === "" ? await this.defaultModel() : decodeModel(value.model);
         if (!selection) throw new Error("请先选择模型或在设置中指定默认模型");
         const selectedModel = encodeModel(selection.provider, selection.model);
         const catalog = await this.providers.models();
         if (!catalog.groups.some(group => group.id === selection.provider && group.models.some(model => model.id === selection.model)))
           throw new Error("所选模型已停用或不可用，请重新选择");
+        const workspace = this.workspaceResolver === undefined
+          ? null
+          : await this.workspaceResolver.resolve({
+            cwd: value.cwd,
+            runtimeWorkspaceRoots: value.runtimeWorkspaceRoots,
+          });
         const creation = {
-          ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
+          dynamicTools: value.dynamicTools,
+          ...(workspace !== null
+            ? { cwd: workspace.cwd }
+            : typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
           ...(typeof value.agentId === "string" && value.agentId !== "dsh" ? { agentPreset: value.agentId } : {}),
+          ...(requestedPreset === undefined ? {} : { permissionPreset: requestedPreset }),
           ...(this.threadEngine ? { ...selection, ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions } : {}),
         };
-        const created = this.threadEngine ? await this.threadEngine.create(creation)
-          : await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", creation);
-        const models = await this.selectModel(created.sessionId, selectedModel);
+        let created: { sessionId: string; agentPreset?: string; cwd?: string; ephemeral?: boolean } | null = null;
+        try {
+        const started = this.threadEngine ? await this.threadEngine.create(creation)
+          : await this.client.call<{ sessionId: string; agentPreset?: string; cwd?: string; ephemeral?: boolean }>("session.create", creation);
+        created = started;
+        if (!this.threadEngine && requestedPreset !== undefined) {
+          await this.setPermissionPreset(started.sessionId, requestedPreset);
+        }
+        const models = await this.selectModel(started.sessionId, selectedModel);
         if (!models.current) throw new Error("Engine did not acknowledge the selected model");
         const currentModel = encodeModel(models.current.provider, models.current.model);
-        const summary: DshSessionSummary = { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: true, cwd: created.cwd ?? string(value.cwd, homedir()), agentPreset: created.agentPreset, ephemeral: created.ephemeral === true };
+        const summary: DshSessionSummary = { sessionId: started.sessionId, updatedAt: Date.now(), running: false, blank: true,
+          cwd: started.cwd ?? workspace?.cwd ?? string(value.cwd, homedir()), agentPreset: started.agentPreset, ephemeral: started.ephemeral === true };
         this.summaries.set(summary.sessionId, summary);
         const thread = makeThread(summary);
         const permissionState = await this.effectivePermissions(summary.sessionId);
+        if (requestedPreset !== undefined && permissionState.activePermissionProfile.id !== requestedPreset) {
+          throw new Error(`Permission profile was not applied by the engine: ${value.permissions}`);
+        }
         return {
-          thread, model: currentModel, modelProvider: "dsh", serviceTier: null, cwd: thread.cwd, runtimeWorkspaceRoots: [thread.cwd], instructionSources: [],
+          thread, model: currentModel, modelProvider: "dsh", serviceTier: null, cwd: thread.cwd,
+          runtimeWorkspaceRoots: workspace?.runtimeWorkspaceRoots ?? [thread.cwd], instructionSources: [],
           approvalsReviewer: "user",
           reasoningEffort: null, multiAgentMode: "explicitRequestOnly", ...permissionState,
         };
+        } catch (error) {
+          if (created !== null) {
+            this.summaries.delete(created.sessionId);
+            await this.threadEngine?.release({ sessionId: created.sessionId }).catch(() => undefined);
+          }
+          await workspace?.rollback().catch(() => undefined);
+          throw error;
+        }
       }
       case "turn/start": {
         await this.ensureRuntime(string(value.threadId));
+        rejectUnsupportedPolicyOverrides(value, "sandboxPolicy");
+        const selectedPermission = permissionSelection(value.permissions);
+        if (selectedPermission !== undefined) await this.setPermissionPreset(string(value.threadId), selectedPermission);
         if (this.modelConfiguration) {
           await this.modelConfiguration.config.synchronize();
           if (this.modelConfiguration.config.application.state !== "applied") throw new Error("模型配置尚未应用，请检查配置后重试");
@@ -1475,7 +1573,7 @@ export class DshAppServerAdapter {
         const sessionId = string(value.threadId);
         await this.selectModel(sessionId, value.model, value.effort);
         await this.assertInput(sessionId, value.input);
-        const content = await promptContent(value.input);
+        const content = await this.promptContent(sessionId, value.input);
         const nextTurn = this.waitForNextTurn(sessionId);
         try {
           await this.client.call(
@@ -1506,7 +1604,7 @@ export class DshAppServerAdapter {
           {
             sessionId,
             mode: "steer",
-            content: await promptContent(value.input),
+            content: await this.promptContent(sessionId, value.input),
             clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
           undefined,
@@ -1539,7 +1637,10 @@ export class DshAppServerAdapter {
       case "permissionProfile/list": {
         if (!this.permissions) return { data: [], nextCursor: null };
         const value = await this.permissions.read();
-        return { data: value.presets.map((preset: any) => ({ id: preset.id, label: preset.name, description: preset.description ?? "", allowed: true })), nextCursor: null };
+        const presets = value.presets.map((preset: any) => ({ id: preset.id,
+          description: preset.description ?? "", allowed: true, openCraftLabel: preset.name }));
+        const policies = new Map(value.presets.map((preset: any) => [preset.id, preset]));
+        return { data: projectPermissionProfileCatalog(presets, profile => dshPermissionMode(policies.get(profile.id))), nextCursor: null };
       }
       case "skills/list": throw new Error("Scoped skills require the connected host capability metadata service");
       default: throw new Error(`Method not supported by OpenCraft DSH host: ${method}`);

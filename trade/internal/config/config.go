@@ -77,8 +77,8 @@ type Config struct {
 	JifeiBillingAppSecret string // jifei 计费网关分配的 appSecret（HMAC-SHA256 签名密钥；通过 SSM + sops 注入）
 
 	// CloudLadderHMACSecret authenticates every trade -> CloudLadder route.
-	// TRADE_CLOUDLADDER_HMAC_SECRET is preferred; the historical Billing-only
-	// variable remains a compatibility fallback during migration.
+	// It must only come from the general TRADE_CLOUDLADDER_HMAC_SECRET. The
+	// Billing-only secret below must not make unrelated jifei routes signed.
 	CloudLadderHMACSecret string
 
 	// 国际站获取支付链接走计费 CloudAPI CreatePayUrl；请求密钥由 user/auth
@@ -90,6 +90,9 @@ type Config struct {
 	BillingCloudAPICloudLadderHMACSecret string
 	BillingCloudAPIXQCloudUserID         string
 	BillingCloudAPIPayRedirectURL        string
+	PersonalDevBillingProxyEnabled       bool
+	PersonalDevBillingProxyURL           string
+	PersonalDevBillingCapability         string
 
 	// Q58 出口 framework 双层结构必填项；Q60 dispatcher 入参三段式校验前缀。
 	JifeiComponentName      string
@@ -197,10 +200,7 @@ func Load() (Config, error) {
 			os.Getenv("TRADE_BILLING_CLOUDLADDER_ROUTE_ID"),
 			"tcapi-billing-trade-intl-test",
 		),
-		CloudLadderHMACSecret: firstNonEmpty(
-			os.Getenv("TRADE_CLOUDLADDER_HMAC_SECRET"),
-			os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"),
-		),
+		CloudLadderHMACSecret: strings.TrimSpace(os.Getenv("TRADE_CLOUDLADDER_HMAC_SECRET")),
 		BillingCloudAPICloudLadderHMACSecret: firstNonEmpty(
 			os.Getenv("TRADE_CLOUDLADDER_HMAC_SECRET"),
 			os.Getenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"),
@@ -209,7 +209,10 @@ func Load() (Config, error) {
 			os.Getenv("TRADE_BILLING_X_QCLOUD_USER_ID"),
 			os.Getenv("JIFEI_CGW_X_QCLOUD_USER_ID"),
 		),
-		BillingCloudAPIPayRedirectURL: strings.TrimSpace(os.Getenv("TRADE_BILLING_PAY_REDIRECT_URL")),
+		BillingCloudAPIPayRedirectURL:  strings.TrimSpace(os.Getenv("TRADE_BILLING_PAY_REDIRECT_URL")),
+		PersonalDevBillingProxyEnabled: parseBoolEnv("PERSONAL_DEV_BILLING_PROXY_ENABLED"),
+		PersonalDevBillingProxyURL:     strings.TrimRight(strings.TrimSpace(os.Getenv("PERSONAL_DEV_BILLING_PROXY_URL")), "/"),
+		PersonalDevBillingCapability:   strings.TrimSpace(os.Getenv("PERSONAL_DEV_BILLING_CAPABILITY")),
 
 		// Q58 / Q60 dispatcher + builder 默认值（联调期按 jifei align 后再 override）
 		JifeiComponentName:      envOrDefault("TRADE_JIFEI_COMPONENT_NAME", "trade"),
@@ -257,6 +260,9 @@ func Load() (Config, error) {
 	}
 	if cfg.AccountBindingInternalBaseURL == "" {
 		return Config{}, fmt.Errorf("ACCOUNT_BINDING_INTERNAL_BASE_URL is required")
+	}
+	if (cfg.PersonalDevBillingProxyURL == "") != (cfg.PersonalDevBillingCapability == "") {
+		return Config{}, fmt.Errorf("PERSONAL_DEV_BILLING_PROXY_URL and PERSONAL_DEV_BILLING_CAPABILITY must be configured together")
 	}
 	if cfg.CreditRegionOverride == "" {
 		cfg.CreditRegionOverride = cfg.RegionOverride

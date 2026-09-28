@@ -42,6 +42,13 @@ Route configs can set `rewrite_prefix` to rewrite the matched public prefix
 before proxying to an upstream. Existing routes without `rewrite_prefix` keep
 the original request path.
 
+The built-in Collaboration bridge terminates credentialed browser CORS at
+`service-gateway`. After an Origin passes the route-specific allowlist, the
+Gateway removes that browser `Origin` from the private Collaboration hop,
+replaces the user credential with the internal Bearer, and injects the verified
+LightVela subject. This prevents the private service's direct-browser CORS
+policy from becoming a second, conflicting public policy.
+
 Logging:
 - access logs are emitted as one JSON line per request to container `stdout`
 - CLB healthcheck noise is skipped

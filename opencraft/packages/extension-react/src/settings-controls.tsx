@@ -142,7 +142,7 @@ export function SettingsListItem({
   ...props
 }: SettingsListItemProps) {
   return (
-    <div {...props} className={classes("settings-control-list-item", className)}>
+    <div {...props} data-has-icon={icon !== undefined} className={classes("settings-control-list-item", className)}>
       {icon === undefined ? null : (
         <span className="settings-control-list-item__icon" aria-hidden="true">{icon}</span>
       )}

@@ -8,6 +8,8 @@ export interface WorkbenchThread {
   project: string;
   lineage: "root" | "fork" | "subagent";
   time: string;
+  /** Canonical AppServer recency timestamp in seconds. */
+  updatedAt: number;
   status: ThreadStatus;
   unread?: boolean;
 }

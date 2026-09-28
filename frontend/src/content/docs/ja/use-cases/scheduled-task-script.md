@@ -32,7 +32,7 @@ if [ "$used" -ge 80 ]; then
 fi
 ```
 
-![ディスク使用量アラート用の繰り返しスクリプトタスクを作成する](../images/scheduled-task-script-1.png)
+![ディスク使用量アラート用の繰り返しスクリプトタスクを作成する](../images/scheduled-task-script-1.webp)
 
 ディスク使用量がしきい値を下回る場合、スクリプトは何も出力せず、通知も送信されません。
 これにより、注意が必要な場合を除き、定期チェックを静かに保てます。
@@ -53,7 +53,7 @@ if not file.exists() or time() - file.stat().st_mtime > 86400:
     print("Export alert: the latest file is missing or over 24 hours old.")
 ```
 
-![欠落または古いエクスポートを確認する繰り返しスクリプトタスクを編集する](../images/scheduled-task-script-2.png)
+![欠落または古いエクスポートを確認する繰り返しスクリプトタスクを編集する](../images/scheduled-task-script-2.webp)
 
 例のパスを実際のエクスポート場所に置き換えてください。
 ファイルが存在して新しい場合、スクリプトは不要なメッセージを送らずに静かに完了します。
@@ -64,7 +64,7 @@ LightVelaでは、[チャンネル設定](https://lightvela.ai/docs/configuratio
 一つまたは複数のチャンネルを同時に接続できます。
 スケジュールタスクでは、設定済みの各チャンネルを切り替え、スクリプトアラートをどこに配信するかを決められます。
 
-![スクリプトタスクがディスク使用量チェック結果をTelegramに直接送信する](../images/scheduled-task-script-3.png)
+![スクリプトタスクがディスク使用量チェック結果をTelegramに直接送信する](../images/scheduled-task-script-3.webp)
 
 スクリプトが空でない標準出力を生成すると、Hermesはその出力をIMに直接送信します。
 スクリプトが何も出力しない場合、タスクは通知を送らずに完了します。
@@ -75,6 +75,6 @@ LightVelaでは、[チャンネル設定](https://lightvela.ai/docs/configuratio
 作成後は、スクリプトとスケジュールを編集し、一時停止し、過去の実行を閲覧できます。
 特に重要なファイルにアクセスする場合は、スケジュールする前にすべてのスクリプトをテストしてください。
 
-![スクリプトタスクを含む現在のジョブ一覧](../images/scheduled-task-script-4.png)
+![スクリプトタスクを含む現在のジョブ一覧](../images/scheduled-task-script-4.webp)
 
 LightVelaを使うと、個人用Hermes Agentが他の作業に集中している間も予測可能なチェックを継続的に処理できます。

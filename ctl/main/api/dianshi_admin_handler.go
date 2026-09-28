@@ -112,8 +112,12 @@ func parseDianshiRecordFilter(r *http.Request) (tradeadapter.DianshiRecordFilter
 	filter := tradeadapter.DianshiRecordFilter{
 		ExternalUserID: strings.TrimSpace(query.Get("external_user_id")),
 		Uin:            strings.TrimSpace(query.Get("uin")),
+		Scene:          strings.TrimSpace(query.Get("scene")),
 		BundleID:       strings.TrimSpace(query.Get("bundle_id")),
 		DealName:       strings.TrimSpace(query.Get("deal_name")),
+	}
+	if filter.Scene != "" && filter.Scene != "purchase" && filter.Scene != "renew" {
+		return filter, errcode.Wrap(errcode.ErrInvalidParam, "scene must be purchase or renew")
 	}
 	if raw := strings.TrimSpace(query.Get("activity_id")); raw != "" {
 		activityID, err := strconv.ParseInt(raw, 10, 64)

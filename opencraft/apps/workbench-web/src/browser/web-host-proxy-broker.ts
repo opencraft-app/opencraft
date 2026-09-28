@@ -3,12 +3,12 @@ import type { BrowserUrl } from "@opencraft/browser-core";
 import {
   decodeHostProxyUrl,
   encodeHostProxyUrl,
+  HOST_PROXY_SERVICE_WORKER_SCOPE,
+  HOST_PROXY_SERVICE_WORKER_URL,
   isLoopbackHttpUrl,
 } from "./host-proxy-url";
 
 const PROTOCOL_VERSION = 1;
-const SERVICE_WORKER_URL = "/opencraft-host-proxy-sw.js";
-
 interface ProxyFetchMessage {
   readonly type: "opencraft-host-proxy:fetch";
   readonly version: 1;
@@ -62,8 +62,8 @@ export class WebHostProxyBroker {
   async start(): Promise<boolean> {
     if (this.disposed) throw new Error("Host proxy broker is disposed");
     if (!("serviceWorker" in navigator) || globalThis.isSecureContext !== true) return false;
-    const registration = await navigator.serviceWorker.register(SERVICE_WORKER_URL, {
-      scope: "/",
+    const registration = await navigator.serviceWorker.register(HOST_PROXY_SERVICE_WORKER_URL, {
+      scope: HOST_PROXY_SERVICE_WORKER_SCOPE,
       updateViaCache: "none",
     });
     const readyRegistration = await Promise.race([

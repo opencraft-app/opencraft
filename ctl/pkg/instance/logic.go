@@ -73,8 +73,8 @@ type Logic interface {
 	DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error)
 	RetryInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error)
 	ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) (*transport.InstanceChannelBindingResponse, error)
-	ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error
-	ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error
+	ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string) error
+	ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string, disconnect bool) error
 	DestroyInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	PauseInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	ResumeInstance(ctx pctx.Context, instanceID string, req *transport.ResumeInstanceRequest) (*transport.InstanceResponse, error)
@@ -1851,7 +1851,7 @@ func (l *logic) prepareDebugCommand(ctx pctx.Context, instanceID string, command
 	if err := l.requireActivePass(ctx); err != nil {
 		return nil, "", "", "", nil, 0, activePassGuardError("execute debug command", err)
 	}
-	return entity, commandKind, spec.bash, normalizedRunAsUser, nil, spec.timeoutSec, nil
+	return entity, commandKind, guardWhatsAppDebugCommand(spec.bash, instanceID), normalizedRunAsUser, nil, spec.timeoutSec, nil
 }
 
 func (e *debugExecError) Error() string {
@@ -2317,7 +2317,7 @@ func (l *logic) configureHermesProfileChannel(
 	if !ok || strings.TrimSpace(appID) == "" || strings.TrimSpace(clientSecret) == "" {
 		return nil, errcode.ErrChannelInvalidParam
 	}
-	configured, err := l.ExecDebugCommand(
+	configured, err := l.execHermesProfileCommand(
 		ctx,
 		instanceID,
 		fmt.Sprintf(
@@ -2326,7 +2326,6 @@ func (l *logic) configureHermesProfileChannel(
 			shellQuoteArg(strings.TrimSpace(clientSecret)),
 			shellQuoteArg(profileID),
 		),
-		"agentuser",
 	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel: %v", err)
@@ -2334,11 +2333,10 @@ func (l *logic) configureHermesProfileChannel(
 	if configured == nil || configured.ExitCode != 0 {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel failed")
 	}
-	restarted, err := l.ExecDebugCommand(
+	restarted, err := l.execHermesProfileCommand(
 		ctx,
 		instanceID,
 		fmt.Sprintf("acli gateway restart --agent %s", shellQuoteArg(profileID)),
-		"agentuser",
 	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "restart profile gateway: %v", err)

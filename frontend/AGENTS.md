@@ -19,6 +19,21 @@ LightVela 的 Next.js（App Router）+ React 19 + TypeScript + Tailwind v4 前�
 - 圆角、阴影、弹窗结构、下拉菜单、Tooltip 等可复用视觉/交互细节，目标规范见 [DESIGN.md](./DESIGN.md)（非现状快照，历史代码可能未完全对齐，勿以附近旧代码模式为参照）；新增可复用模式时补充该文档，而非在页面里各自定义一套。
 - 确认已有组件无法满足需求，才新增组件；新增的可复用基础/业务组件应放入对应目录，不要内联在页面文件里。
 
+## 图片资产约定（vibecoding 新增/替换图片前必读）
+
+新增或替换页面/文档/博客位图（截图、插画、封面等）时，**默认必须用 `.webp`，不要新增 `.png`/`.jpg`**：
+
+- **为什么**：png/jpg 在 `next build` 与 gzip 后收益极小，是首屏与仓库体积膨胀的主因；同一张图转 webp 通常再省 70%~95% 且肉眼无损。历史 png 已批量治理为 webp，勿再引入新 png 让其退化。
+- **开发时先确认**：动手加图前，先问自己「这张图能不能直接产出 webp？」——能就直接以 webp 落盘并在代码/MDX 中引用 `.webp`。仅当确有透明+无损或逐帧动画等 webp 无法满足的硬需求时，才保留 png/gif，并在 PR 描述里说明原因。
+- **资产清理/压缩**：`scripts/optimize-source-assets.mjs` 负责删孤儿图 + 对存量 png/jpg 做**无损压缩**（保持原格式，不转 webp）。清理无用资产时先 dry-run 再 `--apply`：
+  ```bash
+  cd frontend
+  node scripts/optimize-source-assets.mjs                    # dry-run，先看报告
+  node scripts/optimize-source-assets.mjs --apply            # 无损压缩存量 png/jpg
+  node scripts/optimize-source-assets.mjs --apply --delete-unused  # 附带删除孤儿图
+  ```
+- **png→webp 格式转换**：该脚本不做格式转换。存量 png 转 webp 是破坏性且需同步改引用的变更，须显式处理：用 sharp 生成同名 `.webp`（`sharp(src).webp({ quality: 82 })`），删除原 png，再全量搜索旧文件名（含 `src/imports/*/assets.ts`、MDX、CSS）改为 `.webp` 引用，避免死链。转换后务必跑 `pnpm check`/`pnpm build` 复核无死链。
+
 ## 命令
 
 ```bash
@@ -37,3 +52,4 @@ pnpm build
 - 保留生成的 API 和 Domain contract 类型。
 - 当后端或网关拥有执行权时，不得只在 UI 实现站点、计费或实名门禁。
 - 视觉变更若可能回归行为或布局，须提供聚焦截图或组件测试。
+- 新增位图资产默认用 `.webp`，不得随意新增 `.png`/`.jpg`；确有 webp 无法满足的硬需求（如透明无损、逐帧动画）才例外，并在 PR 说明原因。

@@ -15,9 +15,11 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `electron-macos-arm64-dmg` | Electron host + renderer | Apple Silicon DMG | macOS |
 | `electron-macos-x64-zip` | Electron host + renderer | Intel `.app` ZIP | Linux/macOS |
 | `electron-macos-x64-dmg` | Electron host + renderer | Intel DMG | macOS |
+| `electron-macos-universal-release` | Native arm64 + native x64 Electron apps | Signed, notarized Universal DMG and ZIP | GitHub Actions macOS arm64 + Intel |
 | `electron-linux-x64-appimage` | Electron host + renderer | Portable x86_64 AppImage | Linux |
 | `electron-linux-x64-rpm` | Electron host + renderer | TencentOS/RHEL/Fedora RPM | Linux |
 | `electron-linux-x64-deb` | Electron host + renderer | Debian/Ubuntu amd64 package | Linux |
+| `headless-linux-amd64-tar` | Node Local Agent Host + Vite WebUI | Self-contained private server `.tar.gz` | Native Linux amd64 |
 | `expo-web` | Expo Router + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
 
@@ -38,8 +40,24 @@ OPENCRAFT_WEB_RELEASE_ROOT=/explicit/static/root npm run publish:lightvela-web
 npm run matrix:build -- electron-linux-x64-appimage
 npm run matrix:build -- electron-linux-x64-rpm
 npm run matrix:build -- electron-linux-x64-deb
+npm run matrix:build -- headless-linux-amd64-tar
 npm run package:electron:mac:arm64:preview
 ```
+
+`electron-macos-universal-release` is an orchestrated delivery target rather
+than a single-host matrix command. `.github/workflows/macos-universal-release.yml`
+assembles arm64 on `macos-15` and x64 on `macos-15-intel`, merges only after both
+native packages pass, then enters the `macos-release` Environment for signing,
+notarization and final packaging. Manual runs are accepted only from `main`;
+version tags matching `v*` additionally publish a GitHub Release.
+
+The standalone GitHub mirror cannot resolve mono2-parent `file:` dependencies.
+`packages/lightvela-agent-core` and `packages/vela-chat-client-core` are
+mechanical snapshots of their `shared/` authorities. Run
+`npm run sync:shared-packages` in mono2 when either source changes and
+`npm run check:shared-packages` in both mono2 and the exported repository.
+The check validates the committed snapshot manifest even when the parent
+`shared/` directory is intentionally absent.
 
 `deploy:lightvela-web` builds the LightVela product and publishes only
 `apps/workbench-web/dist-lightvela-web`, after its product boundary check.
@@ -63,11 +81,25 @@ artifact and separately compiled Electron host.
 The explicit macOS preview command is a local QA contract, not a distribution
 artifact. It writes below `release/preview`, uses product name `OpenCraft
 Preview`, Bundle ID `ai.lightvela.vela.preview`, and the independent
-`@vela/workbench-electron-preview` profile. It disables certificate discovery,
+`OpenCraft Preview` application-state profile. It disables certificate discovery,
 prunes foreign-platform `node-pty` prebuilds from both packaged runtime trees,
 and applies one consistent ad-hoc hardened-runtime signature and entitlements
 to the Electron helpers and outer app before ZIP creation. Release ZIP/DMG
 commands retain their Developer ID and notarization responsibilities.
+
+The GitHub `macos-release` Environment owns these secrets; values must never be
+committed or printed:
+
+- `MACOS_CERTIFICATE_P12_BASE64`
+- `MACOS_CERTIFICATE_PASSWORD`
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+
+The release job imports the Developer ID into an ephemeral keychain, deletes it
+in an `always()` cleanup step, verifies the Universal slices,
+Developer ID signature, stapled notarization ticket, Gatekeeper assessment,
+DMG signature/image and ZIP integrity, then emits SHA-256 checksums.
 
 The Electron host never loads the application with `file://`, but its loopback
 server is only a static asset owner. Renderer App Host frames cross a transferred
@@ -76,10 +108,111 @@ the separately bundled OpenCraft Daemon. Only the daemon starts the pinned DSH
 runtime, local Agent AppServer and physical transports. The desktop build has no
 `/appserver` proxy or `OPENCRAFT_APPSERVER_URL` fallback.
 
+For isolated Skills acceptance, set `OPENCRAFT_SKILLS_DIRECTORY` alongside
+`OPENCRAFT_MODEL_STORAGE_DIRECTORY` and a fresh `--user-data-dir`. Main forwards
+the Skills root through the daemon's `--skills-directory` option to the local
+Host. Omission retains `~/.opencraft/skills`; changing the model/profile directory
+alone does not isolate Skill writes. `scripts/skills-desktop-fixture.ts` seeds
+only a synthetic loopback model and temporary roots for manual desktop QA.
+
 The `web-browser` artifact does not contain the local Host, DSH, Node APIs, or
 their extension entry. Its `/appserver` endpoint is owned by the deployment
 gateway and may route to a cloud Host. This is a packaging boundary: desktop
 ships the Agent next to the application; Web ships only the AppServer client.
+
+### Headless Linux server archive
+
+`headless-linux-amd64-tar` builds a separate single-owner server artifact from
+the same OpenCraft sources. It bundles a pinned Node executable, the DSH runtime,
+an exact-version Linux amd64 Codex CLI, native Linux PTY module, Web renderer
+and a Node launcher. It does not contain
+Electron Main, Preload or window dependencies. The Web renderer seeds one
+same-origin `OpenCraft Server` Host profile; the launcher starts the actual
+Local Agent Host and proxies `/appserver` to its private loopback endpoint.
+The same loopback gateway exposes `/apphost` for a leased Codex Host, backed by
+the existing OpenCraft Codex stdio adapter and account pool. Web Settings
+reuses Model Services for DSH and Codex Accounts for user-initiated device-code
+sign-in. Credentials stay in the server data directory, not browser storage.
+Neither engine logs in automatically; a fresh installation needs a configured
+DSH model or a permitted Codex account before it can submit a task.
+
+Codex queued-message Steer is implemented in the Host-owned durable queue and
+uses stock Codex `turn/steer`; no patched Codex binary is bundled. The server
+data-directory lock is the single-owner boundary for queue migration and
+dispatch. Do not share its Codex data directory with another independent
+AppServer process. The package smoke checks the Host queue capability rather
+than a native patch marker.
+
+Build on a native Linux amd64 machine with the checked-in Node version and
+installed dependencies. `release/OpenCraft-server-0.1.0-linux-amd64.tar.gz`
+must pass `npm run smoke:headless:linux` for both DSH and Codex initialization
+before distribution. GitHub's portable
+matrix produces and smoke-tests this archive as an Actions artifact; a PR build
+is not a published release.
+
+The headless archive must contain a Web release built with
+`OPENCRAFT_HEADLESS_SERVER_BUILD=true` and the `opencraft-server` `/appserver`
+Host profile. Its `web/version.json` records that delivery target; packaging,
+package smoke, and server startup reject a generic `build:web` artifact. A
+successful Codex process start alone does not prove the Web Codex entry was
+included. Do not copy an existing generic `dist` into a headless archive.
+
+```sh
+tar -xzf OpenCraft-server-0.1.0-linux-amd64.tar.gz
+./opencraft-server/bin/opencraft-server --port 10000 --data-dir /private/opencraft-data
+```
+
+The startup command prints the local WebUI URL. The listener defaults to
+`127.0.0.1`; browser WebSockets must have the matching Origin, and the gateway
+never exposes its upstream Host token in health output. For a browser on your
+own computer, use a trusted SSH tunnel, for example
+`ssh -L 10000:127.0.0.1:10000 user@server`, then open
+`http://127.0.0.1:10000`. The data directory must be private (mode `0700`).
+Public binding requires both `--host 0.0.0.0` and
+`--allow-unauthenticated-public`; static WebUI and `/appserver`/`/apphost`
+WebSockets then share the chosen port with same-origin checks. This is one
+single-user Host, not multi-user authorization, HTTPS termination or a secure
+cloud deployment. LightVela account login is not a substitute for
+server access control. Two server processes cannot own the same data directory.
+For a restricted systemd preview, set a private `StateDirectory` and its
+`HOME` to that directory for the service user; the launcher puts its single-
+writer lock inside the data root so `ProtectSystem=strict` can remain enabled.
+
+For an operator-requested persistent, unauthenticated HTTP installation, run
+the separate repository tool `scripts/install-headless-linux.sh` on the Linux
+host. It consumes a newly built tar and its trusted SHA-256, installs a
+`DynamicUser` systemd service with `Restart=on-failure` and `enable --now`,
+binding OpenCraft directly to `0.0.0.0:80` by default. The static WebUI and both
+WebSocket paths run on that same port: there is no Nginx or second proxy.
+The tool is not part of the desktop executable; the server runtime retains its
+private default. It refuses occupied ports, an existing installer unit,
+checksum mismatch and unsafe archive entries. It never
+stops an existing preview or copies account data automatically.
+
+```sh
+sha256sum release/OpenCraft-server-0.1.0-linux-amd64.tar.gz
+sudo ./scripts/install-headless-linux.sh \
+  --archive release/OpenCraft-server-0.1.0-linux-amd64.tar.gz \
+  --sha256 '<verified 64-character digest>' \
+  --port 80 \
+  --state-name opencraft-server \
+  --allow-unauthenticated-public
+```
+
+The danger flag is an acknowledgement, **not access control**: every client
+that can reach that port can use the shared Codex accounts and Host file/
+terminal capabilities. There is no TLS or login, so do not treat this as a
+public multi-user deployment. To reuse an existing state directory, pass its
+exact `StateDirectory` name and stop its current owning service first; the
+single-writer lock prevents concurrent owners. Use `--render-dir <empty-dir>`
+to inspect the unit without root or server changes. A previous tar
+does not acquire source fixes merely because a running preview bundle has them.
+For ports below 1024, the unit grants only `CAP_NET_BIND_SERVICE` so its
+DynamicUser can bind without root or a system-wide sysctl change.
+Ordinary remote HTTP is not a browser [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Secure_Contexts). The Web entry installs a
+[`getRandomValues`](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues)-backed UUID fallback for core drafts and conversations;
+secure-context-only browser features such as Service Worker-backed browser
+proxying, microphone and modern clipboard are not promised in this mode.
 
 ## macOS Developer ID 签名包运行手册
 

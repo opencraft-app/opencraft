@@ -37,35 +37,92 @@ type Result struct {
 // OK 是 Outcome == ResolveOK 的语法糖，省掉调用方各自 import 协议层常量。
 func (r Result) OK() bool { return r.Outcome == jifeiproto.ResolveOK }
 
-// ModifyBundles 在 (productCode, subProductCode) 检索域内，按 oldConfig / newConfig
-// 的 SV 集合反查源与目标套餐。
+// ModifyBundles 按 oldConfig/newConfig 各自声明的计费域反查源与目标套餐，并校验
+// 跨 SP 变配所需的不变量。outerProductCode/outerSubProductCode 描述当前资源，必须
+// 与 oldConfig 的源商品一致；目标商品只由 newConfig 自描述。跨二层下单虽然使用
+// 目标 goodsCategoryId，但 2026-09-20 国际 testing 的真实 checkModify 回调证明计费
+// 会把 para.productCode/subProductCode 规范化为源资源身份。
 //
-// 检索域必须由调用方给全：缺任一就只能全表反查，会把跨 SP 的套餐纳入候选，
-// 违背本期"只做同 SP 变配"的边界。
+// 检索域必须由 oldConfig/newConfig 各自给全；缺任一都不能安全反查对应套餐。
 //
 // 返回的 error 只表示 DB 故障（调用方应按"上游不可用"处理并让计费重试）；
 // 业务性的反查失败走 Result.Outcome，不走 error。
 func ModifyBundles(
 	ctx context.Context,
 	bundleStore store.BundleDefinitionStore,
-	productCode, subProductCode string,
-	oldConfig, newConfig map[string]int64,
+	outerProductCode, outerSubProductCode string,
+	goodsDetail map[string]interface{},
 ) (Result, error) {
-	defs, err := bundleStore.ListBundleDefsBySubProductCode(ctx, productCode, subProductCode)
+	sourceIdentity, err := jifeiproto.GoodsDetailModifyConfigIdentity(goodsDetail, "oldConfig")
+	if err != nil {
+		return Result{Outcome: jifeiproto.ResolveConfigMismatch, Detail: err.Error()}, nil
+	}
+	targetIdentity, err := jifeiproto.GoodsDetailModifyConfigIdentity(goodsDetail, "newConfig")
+	if err != nil {
+		return Result{Outcome: jifeiproto.ResolveConfigMismatch, Detail: err.Error()}, nil
+	}
+	if sourceIdentity.ProductCode != targetIdentity.ProductCode {
+		return Result{Outcome: jifeiproto.ResolveConfigMismatch, Detail: fmt.Sprintf(
+			"cross product modify is not supported: source productCode=%q target productCode=%q",
+			sourceIdentity.ProductCode, targetIdentity.ProductCode)}, nil
+	}
+	if outerProductCode != sourceIdentity.ProductCode || outerSubProductCode != sourceIdentity.SubProductCode {
+		return Result{Outcome: jifeiproto.ResolveConfigMismatch, Detail: fmt.Sprintf(
+			"outer billing identity must match source config: outer=%q/%q source=%q/%q",
+			outerProductCode, outerSubProductCode, sourceIdentity.ProductCode, sourceIdentity.SubProductCode)}, nil
+	}
+
+	source, outcome, detail, err := resolveBundle(
+		ctx, bundleStore, sourceIdentity, jifeiproto.GoodsDetailSVMap(goodsDetail, "oldConfig"), "oldConfig")
 	if err != nil {
 		return Result{}, err
 	}
-	if len(defs) == 0 {
-		return Result{
-			Outcome: jifeiproto.ResolveBundleNotFound,
-			Detail: fmt.Sprintf("no bundle definition for productCode=%q subProductCode=%q",
-				productCode, subProductCode),
-		}, nil
+	if outcome != jifeiproto.ResolveOK {
+		return Result{Outcome: outcome, Detail: detail}, nil
 	}
+	target, outcome, detail, err := resolveBundle(
+		ctx, bundleStore, targetIdentity, jifeiproto.GoodsDetailSVMap(goodsDetail, "newConfig"), "newConfig")
+	if err != nil {
+		return Result{}, err
+	}
+	if outcome != jifeiproto.ResolveOK {
+		return Result{Outcome: outcome, Detail: detail}, nil
+	}
+	if source.BundleID == target.BundleID {
+		return Result{Outcome: jifeiproto.ResolveConfigMismatch,
+			Detail: fmt.Sprintf("source and target bundle are identical: %q", source.BundleID)}, nil
+	}
+	if source.Pid != sourceIdentity.Pid {
+		return Result{Outcome: jifeiproto.ResolveConfigMismatch, Detail: fmt.Sprintf(
+			"oldConfig pid mismatch: config=%d bundle definition=%d", sourceIdentity.Pid, source.Pid)}, nil
+	}
+	if target.Pid != targetIdentity.Pid {
+		return Result{Outcome: jifeiproto.ResolveConfigMismatch, Detail: fmt.Sprintf(
+			"newConfig pid mismatch: config=%d bundle definition=%d", targetIdentity.Pid, target.Pid)}, nil
+	}
+	return Result{
+		Source:  source,
+		Target:  target,
+		Outcome: jifeiproto.ResolveOK,
+	}, nil
+}
 
-	// byID 把协议层反查回来的 BundleID 还原成完整 BundleDefinition：调用方的后续
-	// 对账（PID / SP / categoryId）要用 def 上的其它列，协议层的 SVBundle 只带
-	// ID 和 SV 集合。
+func resolveBundle(
+	ctx context.Context,
+	bundleStore store.BundleDefinitionStore,
+	identity jifeiproto.ModifyConfigIdentity,
+	sv map[string]int64,
+	label string,
+) (*store.BundleDefinition, jifeiproto.ResolveOutcome, string, error) {
+	defs, err := bundleStore.ListBundleDefsBySubProductCode(ctx, identity.ProductCode, identity.SubProductCode)
+	if err != nil {
+		return nil, jifeiproto.ResolveOK, "", err
+	}
+	if len(defs) == 0 {
+		return nil, jifeiproto.ResolveBundleNotFound, fmt.Sprintf(
+			"no bundle definition for %s productCode=%q subProductCode=%q",
+			label, identity.ProductCode, identity.SubProductCode), nil
+	}
 	byID := make(map[string]*store.BundleDefinition, len(defs))
 	candidates := make([]jifeiproto.SVBundle, 0, len(defs))
 	for _, def := range defs {
@@ -75,14 +132,9 @@ func ModifyBundles(
 		byID[def.BundleID] = def
 		candidates = append(candidates, jifeiproto.SVBundle{BundleID: def.BundleID, SVList: def.SVList})
 	}
-
-	source, target, outcome, detail := jifeiproto.ResolveModifyBundlesBySV(candidates, oldConfig, newConfig)
+	hit, outcome, detail := jifeiproto.MatchBundleBySV(candidates, sv, label)
 	if outcome != jifeiproto.ResolveOK {
-		return Result{Outcome: outcome, Detail: detail}, nil
+		return nil, outcome, detail, nil
 	}
-	return Result{
-		Source:  byID[source.BundleID],
-		Target:  byID[target.BundleID],
-		Outcome: jifeiproto.ResolveOK,
-	}, nil
+	return byID[hit.BundleID], jifeiproto.ResolveOK, "", nil
 }

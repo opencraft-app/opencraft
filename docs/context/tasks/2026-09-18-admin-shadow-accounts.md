@@ -9,10 +9,10 @@ source_of_truth:
   - shadow/AGENTS.md
   - docs/engineering/domains/identity-access.md
   - docs/context/tasks/2026-09-18-admin-shadow-accounts.md
-status: active
-reviewed_at: 2026-09-18
+status: retired
+reviewed_at: 2026-09-21
 review_due: 2026-12-17
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -110,5 +110,5 @@ derived: false
 - Shadow 当前无管理查询接口；现有 SQLite `users` 与 `bindings` 足以形成只读视图。
 
 ## handoff
-- 当前状态：Shadow 只读管理 API、Dashboard BFF、认证用户页 Tab、source-facing 配置模板与正式文档已实现并通过门禁。
-- 发布前置：经单独授权后，在目标环境配置同环境 `SHADOW_API_URL`，并把同值 `SHADOW_INTERNAL_TOKEN` 写入 Shadow 与 Gateway Dashboard 的加密 runtime secret；未部署 Shadow 的环境不配置该入口。
+- 当前状态：本方案已被 `2026-09-21-admin-credit-shadow-routing-fix.md` 取代。
+- 原因：实际影子账号运行边界和权威存储位于 `lightclaw-auth`，不应依赖 standalone Shadow 服务。

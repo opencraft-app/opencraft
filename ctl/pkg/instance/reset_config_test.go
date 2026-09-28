@@ -245,16 +245,16 @@ func TestResetInstanceConfigRejectsInstanceOwnedByAnotherUser(t *testing.T) {
 }
 
 func singleProfileResetSandbox() *commandSandboxAdapterStub {
-	return &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
-		{Stdout: `{"items":[{"native_id":"default","is_default":true}]}`},
-		{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+	return &commandSandboxAdapterStub{ptyEvents: []psandbox.PtyExecStreamEvent{
+		{Type: "output", Chunk: `{"items":[{"native_id":"default","is_default":true}]}`},
+		{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
 	}}
 }
 
 func multiProfileResetSandbox() *commandSandboxAdapterStub {
-	return &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
-		{Stdout: `{"items":[{"native_id":"default","is_default":true},{"native_id":"sales","is_default":false}]}`},
-		{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+	return &commandSandboxAdapterStub{ptyEvents: []psandbox.PtyExecStreamEvent{
+		{Type: "output", Chunk: `{"items":[{"native_id":"default","is_default":true},{"native_id":"sales","is_default":false}]}`},
+		{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
 	}}
 }
 
@@ -329,11 +329,11 @@ func TestResetInstanceConfigRejectsUnsafeProfileInventoryBeforeKeyChanges(t *tes
 				Id: 1, InstanceId: "ins-reset", UserId: "user-reset", SandboxId: "sbx-reset",
 				Status: modelinstance.InstanceStatusRunning, AiGatewayKeyID: "old-key", CreatedAt: time.Now().UTC(),
 			}}
-			sandbox := &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
-				{Stdout: tc.output}, {Ended: true, ExitCode: 0, Status: "SUCCESS"},
+			sandbox := &commandSandboxAdapterStub{ptyEvents: []psandbox.PtyExecStreamEvent{
+				{Type: "output", Chunk: tc.output}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"},
 			}}
 			if tc.failed {
-				sandbox.processErr = errors.New("profile inventory unavailable")
+				sandbox.ptyErr = errors.New("profile inventory unavailable")
 			}
 			legacy := &migrationLegacyGatewayStub{active: &paigateway.Subscription{ID: "legacy-sub", PlanID: "legacy-plan"}}
 			l := &logic{instanceDao: dao, sandboxAdapter: sandbox, aiGatewayAdapter: legacy, logger: zap.NewNop()}

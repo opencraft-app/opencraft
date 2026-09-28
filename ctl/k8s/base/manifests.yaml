@@ -130,6 +130,12 @@ spec:
                   name: ctl-platform-values
                   key: LIGHTVELA_SITE_KIND
                   optional: true
+            - name: MULTI_BOT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: MULTI_BOT_ENABLED
+                  optional: true
             - name: SHADOW_BASE_URL
               valueFrom:
                 configMapKeyRef:

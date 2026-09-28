@@ -21,7 +21,7 @@ var ErrTradeOrderNotFound = errors.New("trade_order: not found")
 //
 //   - OrderTypeCreate = "create"  新购订单（兼容历史数据，DEFAULT 'create'）
 //   - OrderTypeRenew  = "renew"   续费订单（R-A 新增）
-//   - OrderTypeModify = "modify"  变配订单（同 SP 升配，TAPD 1010132091137784162 §7.1）
+//   - OrderTypeModify = "modify"  变配订单（含产品允许的跨 SP 升配，TAPD 1010132091137784162 §7.1）
 //   - 预留 OrderTypeRefund = "refund"（本期暂不实现）
 //
 // 与 trade_flow.flow_type（jifei 协议长事务流水类型）维度不同：trade_order.order_type
@@ -39,8 +39,8 @@ const (
 //   - OrderSourceDianshi = "dianshi"  点石活动链路（设计稿 .tmp/dianshi-activity-bundle-design.md §3.3）
 //
 // 由 trade.placeorder.Service.placeOrderDianshi 在落 trade_order 时显式写 'dianshi'；
-// 其他写入路径（PlaceOrder / PlaceOrderAndPay / PlaceRenewOrder*）默认走 'jifei' 不传值，
-// DAO 层在 in.Source=="" 时回填 OrderSourceJifei。
+// 普通计费写入路径默认不传值，DAO 层在 in.Source=="" 时回填 OrderSourceJifei；
+// 点石新购和续费路径显式写 OrderSourceDianshi。
 const (
 	OrderSourceJifei   = "jifei"
 	OrderSourceDianshi = "dianshi"
@@ -178,7 +178,7 @@ type ReusableDianshiOrderStore interface {
 	//   - 命中 → (*TradeOrder, nil)
 	//   - 无可复用订单 → (nil, ErrTradeOrderNotFound)
 	//   - DB 错误 / JSON 解码错误 → (nil, err)
-	FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*TradeOrder, error)
+	FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, orderType, bundleID string, actID int64, resourceID string, createdAfter time.Time) (*TradeOrder, error)
 }
 
 // ProvisionedCreateOrderStore 提供存量 Pass 迁移所需的原始购买快照。
@@ -245,43 +245,57 @@ func (s *MySQLStore) FindReusableDianshiOrder(
 	ctx context.Context,
 	externalUserID string,
 	activityID int64,
+	orderType string,
 	bundleID string,
 	actID int64,
+	resourceID string,
 	createdAfter time.Time,
 ) (*TradeOrder, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("trade_order: store is nil")
 	}
-	const q = selectTradeOrderColumns + `
+	resourcePredicate := " AND (resource_id IS NULL OR resource_id = '')"
+	resourceArgs := []interface{}{}
+	if orderType == OrderTypeRenew {
+		resourcePredicate = " AND resource_id = ?"
+		resourceArgs = append(resourceArgs, resourceID)
+	}
+	q := selectTradeOrderColumns + `
 		 WHERE external_user_id = ?
 		   AND activity_id = ?
+		   AND order_type = ?
 		   AND bundle_id = ?
 		   AND act_id = ?
 		   AND source = ?
 		   AND resource_type = 'pass'
-		   AND (resource_id IS NULL OR resource_id = '')
+	` + resourcePredicate + `
 		   AND status IN (?, ?, ?)
 		   AND created_time >= ?
 		 ORDER BY created_time DESC
 		 LIMIT 1
 	`
-	order, err := scanTradeOrder(s.db.QueryRowContext(ctx, q,
+	args := []interface{}{
 		externalUserID,
 		activityID,
+		orderType,
 		bundleID,
 		actID,
 		OrderSourceDianshi,
+	}
+	args = append(args, resourceArgs...)
+	args = append(args,
 		OrderStatusCreated,
 		OrderStatusPendingPay,
 		OrderStatusPaidPendingProvision,
 		createdAfter,
-	))
+	)
+	order, err := scanTradeOrder(s.db.QueryRowContext(ctx, q, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTradeOrderNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("trade_order: query reusable dianshi externalUserID=%s activityID=%d bundleID=%s actID=%d: %w",
-			externalUserID, activityID, bundleID, actID, err)
+		return nil, fmt.Errorf("trade_order: query reusable dianshi externalUserID=%s activityID=%d orderType=%s bundleID=%s actID=%d: %w",
+			externalUserID, activityID, orderType, bundleID, actID, err)
 	}
 	return order, nil
 }

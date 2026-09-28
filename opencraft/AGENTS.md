@@ -21,6 +21,7 @@
 
 - DSH 是可替换的执行引擎，不是 Bot、模型、会话、凭据或产品配置的唯一真源。先确认对象身份、生命周期和唯一写入者，再修改页面或 adapter。
 - 宿主只声明并呈现已接通的能力；不得用开关、菜单项或前端状态冒充协议、运行时或后端能力。
+- 分布式工作台的顶层协议对象是 Client / Hub / Server：Hub 是多租户 attachment、route、subscription 与 lease owner，Client 和 Server 通过 Hub 多对多连接并可经 Hub 级联。Renderer 只是 Client 的呈现机制（包括静态 Web），Host 只是 Server 的部署和资源载体；二者不得进入 Server/Thread 的稳定身份。完整不变量见 [执行所有权](docs/execution-ownership.md#client--hub--server-拓扑)。
 
 ## 按需加载
 
@@ -40,6 +41,7 @@
 - Optional/nullable 字段必须表示真实缺失。默认值只在 authority 边界填充；声明但忽略的 capability、route、command 或 wire 字段必须删除或端到端实现。
 - 协议变化必须同时检查声明、生成类型、Host/provider adapter、持久化/恢复、失败语义和兼容测试。共享 TypeScript 能编译不等于已部署 Host 兼容。
 - UI Preferences 统一消费 `UiPreferencesRuntime`；React 不直接选择 localStorage、IndexedDB、SQLite 或远端存储。scope、adapter、CAS 和正式 key 以 [UI preference authority](docs/platform-architecture.md#ui-preference-authority) 为准。
+- Desktop 路径必须消费 [Directory identity charter](docs/architecture/product-identity.md#directory-identity-charter) 的唯一 resolver：生产数据根不得含 `vela`，旧 `@vela/*` 只允许作为幂等迁移输入；Main/Daemon/DSH 显式使用 runtime cwd，Thread workspace cwd 必须来自 Project/Thread，禁止回退 `process.cwd()`。
 - `plugins/lightvela-hermes/src/upstream/mono2/` 是机械生成层，不得直接编辑。修改 `frontend/` 真源后运行 `npm run sync:mono2-agent-console`，并提交生成副本与 `UPSTREAM.json`；只读漂移检查使用 `npm run check:mono2-agent-console`。
 
 ## UI 与设计系统
@@ -60,6 +62,8 @@
 | Design System | 高度、圆角、间距、排版、颜色、图标尺度、菜单密度、状态和 motion |
 
 - 按正确抽象层统一视觉，不按截图逐页补 CSS。发现参考产品差异时，先补缺失的语义 token、variant 或共享 primitive，再迁移消费者并删除旧局部实现。
+- 文件夹等复合选择控件拆分三层：Host/Provider 声明可浏览范围并读取资源，Feature 只提交选择意图及业务写入，平台 Modal 与共享控件拥有焦点、键盘、按钮状态和呈现。组件样式留在组件边界；不得在 `app.scss` 为单个功能重造主按钮或把客户端目录误当成远端 Workspace。
+- 主题色必须按语义成对消费（如主按钮背景与主按钮文字），不能拿正文色和页面背景色自行反推“反色”。修改复合控件时，在浅色、深色和至少一个扩展主题检查真实 computed 前景/背景及对比度，并覆盖正常、hover、键盘焦点、禁用、处理中和错误状态；变量未定义时不能依赖浏览器继承得到可读文字。
 - 跨扩展边界传递 `value/options/action`、`local/remote` 等稳定语义，不传具体图标组件、像素尺寸或 Feature CSS class。Web、Electron、Expo 可有不同物理实现，但消费同一 contract。
 - 局部 loading、retry、badge 和错误反馈优先在既有槽位原位替换，不改变窗口、标题栏、正文起点或相邻布局；确需改变宿主几何时先说明影响并取得用户确认。
 - Mutation 的状态与反馈作用域必须和用户操作一致：行级/控件级操作使用独立 pending key，并在原控件槽位反馈；不得借用父级表单的 `dirty`、全页 `busy` 或路由 loading，导致无关编辑区展开、折叠、禁用、滚动或焦点变化。只有用户实际编辑父级表单字段时，父级 draft 才能变脏；用 held-promise 测试断言请求进行中布局与 draft 不变。

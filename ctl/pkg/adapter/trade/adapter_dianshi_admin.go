@@ -15,6 +15,7 @@ type DianshiRecordFilter struct {
 	ExternalUserID string
 	Uin            string
 	ActivityID     int64
+	Scene          string
 	BundleID       string
 	DealName       string
 	Limit          int
@@ -56,6 +57,7 @@ type DianshiParticipation struct {
 	AppID          string    `json:"app_id"`
 	ExternalUserID string    `json:"external_user_id"`
 	ActivityID     int64     `json:"activity_id"`
+	Scene          string    `json:"scene"`
 	BundleID       string    `json:"bundle_id"`
 	ActID          int64     `json:"act_id"`
 	DealName       string    `json:"deal_name"`
@@ -81,6 +83,9 @@ func (a *adapter) ListDianshiRecords(ctx context.Context, filter DianshiRecordFi
 	}
 	if filter.ActivityID > 0 {
 		query.Set("activity_id", strconv.FormatInt(filter.ActivityID, 10))
+	}
+	if v := strings.TrimSpace(filter.Scene); v != "" {
+		query.Set("scene", v)
 	}
 	if v := strings.TrimSpace(filter.BundleID); v != "" {
 		query.Set("bundle_id", v)

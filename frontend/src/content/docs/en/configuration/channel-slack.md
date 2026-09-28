@@ -44,16 +44,16 @@ Sign in to the LightVela international site, open **My Hermes → Channel**, fin
 1. Open [Slack API Apps](https://api.slack.com/apps) and sign in.
 2. Click **Create New App**.
 
-![Create a new app from Slack API Apps](../images/slack-create-app.png)
+![Create a new app from Slack API Apps](../images/slack-create-app.webp)
 
 3. Select **From scratch**.
 
-![Select From scratch to create the Slack app](../images/slack-create-from-scratch.png)
+![Select From scratch to create the Slack app](../images/slack-create-from-scratch.webp)
 
 4. Enter an app name such as `Hermes Agent`.
 5. Select the workspace where Hermes Agent should run, then click **Create App**.
 
-![Name the Slack app and select a workspace](../images/slack-select-workspace.png)
+![Name the Slack app and select a workspace](../images/slack-select-workspace.webp)
 
 If the workspace is missing, verify that the current Slack account belongs to it and can create apps.
 
@@ -63,28 +63,28 @@ The App Token establishes the Socket Mode WebSocket connection. It must include 
 
 1. In the Slack app sidebar, open **Settings → Basic Information**.
 
-![Open Basic Information in the Slack app](../images/slack-basic-information.png)
+![Open Basic Information in the Slack app](../images/slack-basic-information.webp)
 
 2. Scroll to **App-Level Tokens** and click **Generate Token and Scopes**.
 
-![Generate an app-level token](../images/slack-generate-app-token.png)
+![Generate an app-level token](../images/slack-generate-app-token.webp)
 
 3. Enter a recognizable token name, such as `HermesSocket`.
 4. Click **Add Scope**.
 
-![Add a scope to the App Token](../images/slack-add-connection-scope.png)
+![Add a scope to the App Token](../images/slack-add-connection-scope.webp)
 
 5. Search for and select `connections:write`.
 
-![Select the connections write scope](../images/slack-select-connections-write.png)
+![Select the connections write scope](../images/slack-select-connections-write.webp)
 
 6. Confirm the scope is listed, then click **Generate**.
 
-![Generate the App Token with connections write](../images/slack-generate-token.png)
+![Generate the App Token with connections write](../images/slack-generate-token.webp)
 
 7. Copy the generated `xapp-...` token and store it securely. Click **Done** after copying it.
 
-![Copy the Slack App Token](../images/slack-copy-app-token.png)
+![Copy the Slack App Token](../images/slack-copy-app-token.webp)
 
 Do not paste the App Token into the Bot Token field. A Client Secret or Signing Secret is not a replacement for this token.
 
@@ -95,7 +95,7 @@ Do not paste the App Token into the Bot Token field. A Client Secret or Signing 
 1. Open **Settings → Socket Mode**.
 2. Turn on **Enable Socket Mode**.
 
-![Enable Slack Socket Mode](../images/slack-enable-socket-mode.png)
+![Enable Slack Socket Mode](../images/slack-enable-socket-mode.webp)
 
 Socket Mode sends Slack events to Hermes Agent over WebSocket. This setup does not require an Event Subscriptions Request URL or an OAuth Redirect URL.
 
@@ -105,7 +105,7 @@ Socket Mode sends Slack events to Hermes Agent over WebSocket. This setup does n
 2. Scroll to **Scopes → Bot Token Scopes**.
 3. Click **Add an OAuth Scope**.
 
-![Add a bot scope in OAuth and Permissions](../images/slack-add-oauth-scope.png)
+![Add a bot scope in OAuth and Permissions](../images/slack-add-oauth-scope.webp)
 
 Add scopes for the interaction modes you need:
 
@@ -121,7 +121,7 @@ Add scopes for the interaction modes you need:
 | `groups:read` | Optional private channels | Read private-channel information |
 | `groups:history` | Optional private channels | Read messages in private channels the bot has joined |
 
-![Review the Slack Bot Token Scopes](../images/slack-bot-token-scopes.png)
+![Review the Slack Bot Token Scopes](../images/slack-bot-token-scopes.webp)
 
 Only add the two `groups:*` scopes when private-channel access is required. The app must still be invited to each target channel.
 
@@ -145,7 +145,7 @@ If you only use channel mentions, you can skip this section and omit the `im:*` 
 5. Add `message.im` if direct messages are enabled.
 6. Click **Save Changes**.
 
-![Configure Slack bot event subscriptions](../images/slack-event-subscriptions.png)
+![Configure Slack bot event subscriptions](../images/slack-event-subscriptions.webp)
 
 > If you change scopes or events after installation, return to **OAuth & Permissions** and click **Reinstall to Workspace**. New permissions do not take effect until the app is reinstalled.
 
@@ -154,16 +154,16 @@ If you only use channel mentions, you can skip this section and omit the `im:*` 
 1. Return to **Features → OAuth & Permissions**.
 2. Click **Install to Workspace**. If the app is already installed, click **Reinstall to Workspace**.
 
-![Install the Slack app to the workspace](../images/slack-install-workspace.png)
+![Install the Slack app to the workspace](../images/slack-install-workspace.webp)
 
 3. Review the requested permissions and click **Allow**.
 
-![Authorize the Slack app permissions](../images/slack-authorize-workspace.png)
+![Authorize the Slack app permissions](../images/slack-authorize-workspace.webp)
 
 4. After Slack returns to **OAuth & Permissions**, find **OAuth Tokens for Your Workspace**.
 5. Copy the **Bot User OAuth Token** that starts with `xoxb-`.
 
-![Copy the Slack Bot User OAuth Token](../images/slack-copy-bot-token.png)
+![Copy the Slack Bot User OAuth Token](../images/slack-copy-bot-token.webp)
 
 Do not use a Signing Secret, Client Secret, Verification Token, or an `xoxp-...` User OAuth Token. LightVela requires one `xapp-...` App Token and one `xoxb-...` Bot Token.
 
@@ -200,7 +200,7 @@ The bot only receives channel messages after it has joined that channel.
 2. Select the **Messages** tab.
 3. Send a short message such as `Hello`.
 
-![Test a direct message in Slack App Home](../images/slack-direct-message-test.png)
+![Test a direct message in Slack App Home](../images/slack-direct-message-test.webp)
 
 ---
 

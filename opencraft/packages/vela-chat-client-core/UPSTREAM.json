@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "source": "shared/vela-chat-client-core",
+  "digest": "a59b3b36c601ff4026357be1cd3a787eacbfcdfa0bc9b99670f08512ed88b224",
+  "files": [
+    {
+      "file": "README.md",
+      "sha256": "8b11152ee0c52ccf615f9dfd9ddad067b6d0058b16f74f8e1a21387da3c905cf"
+    },
+    {
+      "file": "contracts/README.md",
+      "sha256": "a4efff9f97856cb82ff3336ef41f689648aade61e0466b83ef821f6bf04ef8ce"
+    },
+    {
+      "file": "contracts/platform-v1.openapi.yaml",
+      "sha256": "399d3cc0e0f6dcd98f4037b52943c07ec946894b0a3e92de17a09ae942ae088b"
+    },
+    {
+      "file": "package.json",
+      "sha256": "fef93a4b4eade729ed039254c78089e76ba4d5a2c07c7afbbeb7b0320913631d"
+    },
+    {
+      "file": "src/domain/resources.ts",
+      "sha256": "47315a73db6a53ea79e0d47d26c2e58d2d509cfb19bc958088786b262109bbf4"
+    },
+    {
+      "file": "src/generated/openapi-lock.ts",
+      "sha256": "d766b294b752a067689950d8f878ec941efed3f05528324155b248c746ddd868"
+    },
+    {
+      "file": "src/generated/openapi.ts",
+      "sha256": "64b3c4adce8083ef132e2c61e74e821eb5f339d2cbd4f370f1c92bcca1c4873b"
+    },
+    {
+      "file": "src/index.ts",
+      "sha256": "c2c2410971854a37e146eb471b8cdcc8bb7723d7423f9cf9fd04ea9f6dabcc4d"
+    },
+    {
+      "file": "src/messaging/composer.ts",
+      "sha256": "d659ae3832ec0d47e340ace23d1178b36692d95b3c91031791c0a9c228a6b91e"
+    },
+    {
+      "file": "src/messaging/conversation.ts",
+      "sha256": "3369f548f7f67e7c2cae59dea9b86f3324672b4e342f950ae2859f5c41890260"
+    },
+    {
+      "file": "src/messaging/direct-conversation.ts",
+      "sha256": "8a5d70726ad75fdcd7652a9c518bdc181675e2a09fdd66f13d3a172f2ac20908"
+    },
+    {
+      "file": "src/messaging/model.ts",
+      "sha256": "bea6569f74dfcb8c35f934cf25b4866a9ac1c3d5775123ecb4ab8a88199429e9"
+    },
+    {
+      "file": "src/messaging/port.ts",
+      "sha256": "214e329833aebb2dd5fc359f57db69e6e9884ef06788e9c34ffda300f0e6ce26"
+    },
+    {
+      "file": "src/platform/api.ts",
+      "sha256": "36eee0bdc31a0a36717ece30722174a6b72688f54b4bfa5f374e9ca037489304"
+    },
+    {
+      "file": "src/platform/base-url.ts",
+      "sha256": "690094d9eaf096d4c2d2c33811fa697d8c37cb7295ece50ef620733933870eba"
+    },
+    {
+      "file": "src/platform/errors.ts",
+      "sha256": "8b10d02e334468617a5e031aafca2c23ff33994688a9fd31376a90d3ba98ff3b"
+    },
+    {
+      "file": "src/platform/operation-poller.ts",
+      "sha256": "6a1b94117ab4b9d4fb02f123072a97f6dda4101235e27ea7ade217e2ea482b5a"
+    },
+    {
+      "file": "src/platform/thread.ts",
+      "sha256": "7573d15376d69de9cef6152504820efcdf499d64b93ee710433b2a2c4e4b30af"
+    },
+    {
+      "file": "src/terminal/controller.ts",
+      "sha256": "289a591bc7c280437abd789c6cca165fa425f8026e1438201be765c4af2e9aa6"
+    },
+    {
+      "file": "src/terminal/tat-pty.ts",
+      "sha256": "7c2519677c05e5ee07304069a8c4c4e126756a525a24034ac7444e9472e05960"
+    },
+    {
+      "file": "src/tui-runtime.ts",
+      "sha256": "0a62f5a28ae3b547fa4e7a5e198c9b6ea2aeca0d006847640537c50117991ec9"
+    },
+    {
+      "file": "tsconfig.json",
+      "sha256": "76276e2ed587da381922383a5f46e0a598f7bfecc573c60b5bef60953e353bc4"
+    }
+  ]
+}

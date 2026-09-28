@@ -2,7 +2,7 @@ import type { Socket } from "node:net";
 
 export const OPENCRAFT_DAEMON_PROTOCOL_VERSION = 1 as const;
 // Stable handshake identity; branding alone does not change the wire contract.
-export const OPENCRAFT_DAEMON_BUILD_ID = "vela-daemon-v1" as const;
+export const OPENCRAFT_DAEMON_BUILD_ID = "opencraft-daemon-v2" as const;
 export const MAX_DAEMON_FRAME_BYTES = 64 * 1024 * 1024;
 
 export type DaemonClientMessage =

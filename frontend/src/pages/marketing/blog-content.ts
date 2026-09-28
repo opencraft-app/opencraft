@@ -115,11 +115,11 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "When a broken state database left Hermes Agent unable to reply, DeepSeek Harness repaired it from inside the same LightVela environment.",
     publishedAt: "2026-09-15T16:34:36+08:00",
-    coverImage: "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
+    coverImage: "/assets/blog/dsh-revived-broken-hermes-agent/cover.webp",
     content: [
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/cover.webp",
         alt: "Hermes Agent and DeepSeek Harness repairing a broken agent",
       },
       {
@@ -153,7 +153,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/01-hermes-repair-hero.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/01-hermes-repair-hero.webp",
         alt: "Illustration of an agent repairing a Hermes Agent in a hospital-like monitoring environment",
       },
       {
@@ -164,7 +164,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/02-community-error.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/02-community-error.webp",
         alt: "LightVela community messages showing repeated Hermes Agent session storage errors",
       },
       {
@@ -203,7 +203,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/03-dsh-running-config.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/03-dsh-running-config.webp",
         alt: "LightVela DeepSeek Harness page showing the running service and configured model",
       },
       {
@@ -215,7 +215,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/04-workspace-directory.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/04-workspace-directory.webp",
         alt: "DeepSeek Harness workspace directory selector showing /home/agentuser/",
       },
       {
@@ -230,7 +230,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/05-skill-install-complete.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/05-skill-install-complete.webp",
         alt: "DeepSeek Harness confirming that the Hermes Agent DSH Skill was installed",
       },
       {
@@ -244,7 +244,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/06-hermes-location.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/06-hermes-location.webp",
         alt: "DeepSeek Harness locating the Hermes Agent installation and loading the installed skill",
       },
       {
@@ -276,7 +276,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/07-repair-plan.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/07-repair-plan.webp",
         alt: "DeepSeek Harness showing a repair plan for Hermes Agent state database corruption",
       },
       {
@@ -285,7 +285,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/08-repair-verification.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/08-repair-verification.webp",
         alt: "DeepSeek Harness verification results showing Hermes Agent state database repair passed",
       },
       {
@@ -302,7 +302,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/09-hermes-restored.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/09-hermes-restored.webp",
         alt: "Hermes Agent responding normally after its state database was repaired",
       },
       {
@@ -317,7 +317,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/10-community-qr.png",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/10-community-qr.webp",
         alt: "QR code for the LightVela community group",
       },
     ],
@@ -330,11 +330,11 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "A hands-on guide to pairing Hermes Agent with DeepSeek Harness in LightVela, giving one agent the navigator role and the other the driver role.",
     publishedAt: "2026-09-15T16:22:02+08:00",
-    coverImage: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.png",
+    coverImage: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.webp",
     content: [
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.webp",
         alt: "DeepSeek Harness whale logo representing a driver agent",
       },
       {
@@ -346,7 +346,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/01-pair-programming.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/01-pair-programming.webp",
         alt: "Two people pair programming in front of a code editor",
       },
       {
@@ -357,7 +357,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/02-rally-co-driver.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/02-rally-co-driver.webp",
         alt: "A rally driver and co-driver reviewing notes inside a race car",
       },
       {
@@ -418,7 +418,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/03-subscription-plan.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/03-subscription-plan.webp",
         alt: "LightVela pricing page showing Launch AI and Cruise AI plans",
       },
       {
@@ -429,12 +429,12 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/04-dsh-install.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/04-dsh-install.webp",
         alt: "LightVela DeepSeek Harness installation page with the Install now action highlighted",
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-install-progress.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-install-progress.webp",
         alt: "LightVela DeepSeek Harness installation progress at 49 percent",
       },
       {
@@ -451,7 +451,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-running-config.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-running-config.webp",
         alt: "LightVela DeepSeek Harness page showing the running service and model configuration",
       },
       {
@@ -476,7 +476,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/06-personal-site-confirmation.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/06-personal-site-confirmation.webp",
         alt: "LightVela personal site confirmation dialog showing a dedicated lightvela.site URL",
       },
       {
@@ -509,7 +509,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/07-dsh-pilot-install-request.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/07-dsh-pilot-install-request.webp",
         alt: "Hermes Agent asking to install the DSH pilot Skill from SkillHub",
       },
       {
@@ -520,7 +520,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/08-dsh-pilot-install-complete.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/08-dsh-pilot-install-complete.webp",
         alt: "Hermes Agent confirming installation of the DSH pilot Skill",
       },
       {
@@ -531,7 +531,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/09-dsh-enable-tool.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/09-dsh-enable-tool.webp",
         alt: "Hermes Agent asking for confirmation before enabling DeepSeek Harness",
       },
       {
@@ -540,7 +540,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/10-dsh-tool-enabled.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/10-dsh-tool-enabled.webp",
         alt: "Hermes Agent confirming that the DeepSeek Harness tool is enabled",
       },
       {
@@ -571,7 +571,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/11-dsh-collaboration.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/11-dsh-collaboration.webp",
         alt: "Hermes Agent delegating a static blog page task to DeepSeek Harness",
       },
       {
@@ -580,7 +580,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/12-dsh-task-complete.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/12-dsh-task-complete.webp",
         alt: "Hermes Agent showing the completed task and saved DeepSeek Harness output files",
       },
       {
@@ -589,7 +589,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/13-dsh-live-site.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/13-dsh-live-site.webp",
         alt: "A live static blog page created and deployed through the DeepSeek Harness workflow",
       },
       {
@@ -610,7 +610,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/14-community-qr.png",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/14-community-qr.webp",
         alt: "QR code for the LightVela community group",
       },
     ],
@@ -623,11 +623,11 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "A hands-on look at LightVela, Tencent's cloud-hosted Hermes Agent, after Meta Muse put always-on personal agents back in the spotlight.",
     publishedAt: "2026-09-15T16:06:45+08:00",
-    coverImage: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.png",
+    coverImage: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.webp",
     content: [
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.webp",
         alt: "Meta Muse logo on a glowing pastel cover",
       },
       {
@@ -639,7 +639,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.webp",
         alt: "Mark Zuckerberg's X post introducing Meta Muse as a personal agent that works 24/7",
       },
       {
@@ -650,7 +650,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.webp",
         alt: "Meta stock chart showing a 6.55 percent rise to 653.69 dollars",
       },
       {
@@ -659,7 +659,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.webp",
         alt: "Meta Muse signup screen showing that the user is on the waitlist",
         size: "narrow",
       },
@@ -675,7 +675,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.webp",
         alt: "LightVela home page describing an always-on AI companion in the cloud",
       },
       {
@@ -702,7 +702,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.webp",
         alt: "LightVela About page describing the Tencent Lighthouse team and OpenClaw installation campaign",
       },
       {
@@ -733,7 +733,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.webp",
         alt: "LightVela subscription panel showing 4,500 trial credits and current usage",
       },
       {
@@ -742,7 +742,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.webp",
         alt: "LightVela Chat page greeting the user with Hermes Agent",
       },
       {
@@ -753,7 +753,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.webp",
         alt: "LightVela Hermes Agent researching and analyzing Meta's stock performance",
       },
       {
@@ -764,7 +764,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.webp",
         alt: "LightVela chat showing a token count of 31,615 input and 743 output tokens",
       },
       {
@@ -797,7 +797,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.webp",
         alt: "LightVela Scheduled Tasks dashboard with templates and current tasks",
       },
       {
@@ -808,7 +808,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.webp",
         alt: "LightVela Scheduled Tasks interface showing a stock monitoring task",
       },
       {
@@ -819,7 +819,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.webp",
         alt: "LightVela chat showing the setup of Meta pre-market and intraday scheduled tasks",
       },
       {
@@ -830,17 +830,17 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.webp",
         alt: "LightVela scheduled task definitions for Meta pre-market and intraday updates",
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.webp",
         alt: "LightVela scheduled task result with positive and negative Meta market factors",
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.webp",
         alt: "LightVela scheduled task result with technical indicators and intraday market updates",
       },
       {
@@ -855,7 +855,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.webp",
         alt: "LightVela Channels page showing WeChat and Telegram connected",
       },
       {
@@ -866,13 +866,13 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.webp",
         alt: "WeixinClawBot asking the user to clarify what satellite means",
         size: "narrow",
       },
       {
         type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.png",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.webp",
         alt: "WeixinClawBot confirming that Meta scheduled task results are pushed to the WeChat chat",
         size: "narrow",
       },
@@ -905,11 +905,11 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela, from a starter template or a blank workbench to a published site.",
     publishedAt: "2026-09-03T12:11:11+08:00",
-    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover-light.png",
+    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover-light.webp",
     content: [
       {
         type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.png",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.webp",
         alt: "LightVela My Workbench interface with starter templates",
       },
       {
@@ -943,7 +943,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/workbench-overview.png",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/workbench-overview.webp",
         alt: "LightVela My Workbench page showing templates and the workbench list",
       },
       {
@@ -997,7 +997,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/starter-templates.png",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/starter-templates.webp",
         alt: "LightVela Workbench starter templates for utility tools, dashboards, campaigns, and showcases",
       },
       {
@@ -1029,7 +1029,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/agent-chat.png",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/agent-chat.webp",
         alt: "LightVela Agent chat clarifying requirements for a utility dashboard",
       },
       {
@@ -1060,7 +1060,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/status-dashboard.png",
+        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/status-dashboard.webp",
         alt: "DataHub dashboard showing revenue, users, orders, and conversion metrics",
       },
       {
@@ -1229,11 +1229,11 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "I used LightVela Workbench’s Campaign Hub template to turn a basketball shoe launch idea into a premium storefront with a clear product story, guided comparisons, and a focused path to purchase.",
     publishedAt: "2026-09-03T11:31:46+08:00",
-    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.png",
+    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.webp",
     content: [
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.webp",
         alt: "A basketball shoe beside the LightVela Workbench interface",
       },
       {
@@ -1261,7 +1261,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.webp",
         alt: "A collection of colorful basketball shoes",
       },
       {
@@ -1284,7 +1284,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
       },
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.webp",
         alt: "LightVela Workbench with Campaign Hub starter templates",
       },
       {
@@ -1302,7 +1302,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.webp",
         alt: "LightVela Agent chat showing the storefront build request",
       },
       {
@@ -1329,7 +1329,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.webp",
         alt: "LightVela Cloud Storage with the storefront project files",
       },
       {
@@ -1360,7 +1360,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.webp",
         alt: "Dark basketball shoe storefront built with LightVela Workbench",
       },
       {
@@ -1391,7 +1391,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.webp",
         alt: "HOOP ELITE basketball shoe collection with a performance comparison",
       },
       {
@@ -1412,7 +1412,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.png",
+        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.webp",
         alt: "HOOP ELITE product purchase modal with size and checkout details",
       },
       {
@@ -1492,11 +1492,11 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "Anthropic’s Claude Tag points to a new way of working in Slack, so I recreated the idea with LightVela and built a digital employee for my team...",
     publishedAt: "2026-09-01T20:35:43+08:00",
-    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover-light.png",
+    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover-light.webp",
     content: [
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/cover.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/cover.webp",
         alt: "Colorful Slack-inspired LightVela illustration",
       },
       {
@@ -1570,7 +1570,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/pricing.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/pricing.webp",
         alt: "LightVela pricing page with Launch and Cruise plans",
       },
       {
@@ -1585,7 +1585,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/slack-channel.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/slack-channel.webp",
         alt: "LightVela Channel page with Slack connected",
       },
       {
@@ -1608,7 +1608,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/slack-lightvela-english.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/slack-lightvela-english.webp",
         alt: "Slack conversation with LightVela in a direct message",
       },
       {
@@ -1623,7 +1623,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/skills.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/skills.webp",
         alt: "LightVela Skills page with featured Skills",
       },
       {
@@ -1640,7 +1640,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/daily-report-english.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/daily-report-english.webp",
         alt: "Slack message list showing a LightVela daily report",
       },
       {
@@ -1669,7 +1669,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/automations-english.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/automations-english.webp",
         alt: "LightVela Scheduled Tasks page showing recent daily report runs",
       },
       {
@@ -1698,7 +1698,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/notion-mcp-english.png",
+        src: "/assets/blog/lightvela-slack-digital-employee/notion-mcp-english.webp",
         alt: "Slack and Notion MCP overview shared by LightVela",
       },
       {
@@ -1723,11 +1723,11 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "I host my mega Discord server with over 600 users, revolving around DWS, Minecraft, and Palworld...",
     publishedAt: "2026-09-01T18:28:41+08:00",
-    coverImage: "/assets/blog/discord-hermes/cover-light.png",
+    coverImage: "/assets/blog/discord-hermes/cover-light.webp",
     content: [
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/cover.png",
+        src: "/assets/blog/discord-hermes/cover.webp",
         alt: "A LightVela agent relaxing beside a Discord workspace illustration",
       },
       {
@@ -1745,7 +1745,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/server-overview.png",
+        src: "/assets/blog/discord-hermes/server-overview.webp",
         alt: "The Krakhourse Discord server overview showing its members and activity",
       },
       {
@@ -1770,7 +1770,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/existing-bots.png",
+        src: "/assets/blog/discord-hermes/existing-bots.webp",
         alt: "A Discord member list showing several existing bots in the server",
         size: "narrow",
       },
@@ -1802,7 +1802,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/channel-configuration.png",
+        src: "/assets/blog/discord-hermes/channel-configuration.webp",
         alt: "LightVela channel configuration showing Discord and other messaging channels",
       },
       {
@@ -1819,7 +1819,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/model-configuration.png",
+        src: "/assets/blog/discord-hermes/model-configuration.webp",
         alt: "LightVela model configuration showing a DeepSeek model selection",
       },
       {
@@ -1860,7 +1860,7 @@ Keep all product content editable and do not use fake business data.`,
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/discord-oauth.png",
+        src: "/assets/blog/discord-hermes/discord-oauth.webp",
         alt: "Discord OAuth screen asking which server should receive the bot",
       },
       {
@@ -1894,7 +1894,7 @@ Keep the message short and energetic. Use only the information above. If any eve
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/automation-settings.png",
+        src: "/assets/blog/discord-hermes/automation-settings.webp",
         alt: "LightVela Scheduled Tasks screen showing a weekly Palworld event reminder",
       },
       {
@@ -1911,7 +1911,7 @@ Keep the message short and energetic. Use only the information above. If any eve
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/discord-tournament-chat.png",
+        src: "/assets/blog/discord-hermes/discord-tournament-chat.webp",
         alt: "A Discord tournament chat where the agent posts a reminder and answers questions",
       },
       {
@@ -1928,7 +1928,7 @@ Keep the message short and energetic. Use only the information above. If any eve
       },
       {
         type: "image",
-        src: "/assets/blog/discord-hermes/soul-settings.png",
+        src: "/assets/blog/discord-hermes/soul-settings.webp",
         alt: "LightVela Soul settings with persona cards and an upload persona file action",
       },
       {

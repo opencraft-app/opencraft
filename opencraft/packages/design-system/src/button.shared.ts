@@ -1,3 +1,5 @@
+import { typographyRole } from "./typography/typography.shared";
+
 /**
  * Platform-neutral button contract.
  *
@@ -23,15 +25,22 @@ export type ButtonSize = (typeof buttonSizeNames)[number];
 export const defaultButtonVariant: ButtonVariant = "primary";
 export const defaultButtonSize: ButtonSize = "md";
 
+export const buttonTypography = {
+  sm: typographyRole("controlSmall", "native"),
+  md: typographyRole("control", "native"),
+  lg: typographyRole("controlLarge", "native"),
+  toolbar: typographyRole("controlCompact", "native"),
+} as const;
+
 /**
  * Shared visual geometry. Native renderers retain a 44pt hit target even when
  * the visible control is compact.
  */
 export const buttonSizeMetrics = {
-  sm: { height: 32, horizontalPadding: 12, fontSize: 12, lineHeight: 16 },
-  md: { height: 40, horizontalPadding: 16, fontSize: 14, lineHeight: 20 },
-  lg: { height: 44, horizontalPadding: 24, fontSize: 16, lineHeight: 22 },
-  toolbar: { height: 32, horizontalPadding: 8, fontSize: 13, lineHeight: 18 },
+  sm: { ...buttonTypography.sm, height: 32, horizontalPadding: 12 },
+  md: { ...buttonTypography.md, height: 40, horizontalPadding: 16 },
+  lg: { ...buttonTypography.lg, height: 44, horizontalPadding: 24 },
+  toolbar: { ...buttonTypography.toolbar, height: 32, horizontalPadding: 8 },
 } as const satisfies Record<
   ButtonSize,
   { readonly height: number; readonly horizontalPadding: number; readonly fontSize: number; readonly lineHeight: number }

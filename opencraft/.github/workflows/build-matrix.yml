@@ -39,3 +39,20 @@ jobs:
         with:
           name: electron-macos-native
           path: apps/workbench-electron/release/OpenCraft-*
+
+  linux-headless:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run test:headless-server
+      - run: npm run matrix:build -- headless-linux-amd64-tar
+      - run: npm run smoke:headless:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: headless-linux-amd64-tar
+          path: release/OpenCraft-server-*-linux-amd64.tar.gz

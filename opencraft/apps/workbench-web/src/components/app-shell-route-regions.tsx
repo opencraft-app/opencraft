@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from "react";
 import type { PlatformViewRegions } from "@opencraft/extension-react";
+import { WorkbenchConnectorLibrary } from "./connectors/connector-library";
+import { WorkbenchExtensionLibrary } from "./extensions/extension-library";
 import { createPortal } from "react-dom";
 
 import { AppShellToolbarSelect } from "./app-shell-toolbar-select";
@@ -94,4 +96,6 @@ export function AppShellRouteHeaderRegion({ children }: { readonly children: Rea
 export const appShellPlatformViewRegions: PlatformViewRegions = Object.freeze({
   Header: AppShellRouteHeaderRegion,
   ToolbarSelect: AppShellToolbarSelect,
+  ConnectorLibrary: WorkbenchConnectorLibrary,
+  ExtensionLibrary: WorkbenchExtensionLibrary,
 });

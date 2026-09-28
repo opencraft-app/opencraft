@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import i18n from "@/i18n";
-import { isGlobal } from "@/lib/region";
 import {
   AUTH_SERVICE_UNAVAILABLE_MESSAGE,
   AUTH_UNAUTHORIZED_EVENT,
@@ -544,7 +543,7 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it.skipIf(isGlobal)("loads nested product bots and routes unique channels by stable bot id", async () => {
+  it("loads nested product bots and routes unique channels by stable bot id", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: Array<{ url: string; method: string }> = [];
     const jsonResponse = (data: unknown) => new Response(
@@ -581,6 +580,12 @@ describe("http repositories auth token bootstrap", () => {
             created_at: "2026-09-09T00:00:00Z",
             updated_at: "2026-09-09T00:00:00Z",
             weixin_owner: {
+              bot_id: "bot_sales",
+              profile_id: "sales-123",
+              bot_name: "销售 Bot",
+              status: "connected",
+            },
+            whatsapp_owner: {
               bot_id: "bot_sales",
               profile_id: "sales-123",
               bot_name: "销售 Bot",
@@ -638,6 +643,9 @@ describe("http repositories auth token bootstrap", () => {
       if (url.includes("/channel-bindings/weixin")) {
         return jsonResponse({});
       }
+      if (url.includes("/channel-bindings/whatsapp")) {
+        return jsonResponse(method === "PUT" ? { reservation_id: "test-reservation" } : {});
+      }
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -651,6 +659,7 @@ describe("http repositories auth token bootstrap", () => {
         profileId: "main",
         isDefault: true,
         weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
+        whatsAppOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
       }),
       expect.objectContaining({
         id: "bot_sales",
@@ -672,6 +681,21 @@ describe("http repositories auth token bootstrap", () => {
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
     ]);
+    const reservationId = await repositories.bots.claimUniqueChannel("bot_sales", "whatsapp");
+    expect(reservationId).toBe("test-reservation");
+    await repositories.bots.confirmUniqueChannel("bot_sales", "whatsapp", reservationId);
+    await repositories.bots.releaseUniqueChannel("bot_sales", "whatsapp", reservationId);
+    await repositories.bots.releaseUniqueChannel("bot_sales", "whatsapp");
+    const whatsappCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/channel-bindings/whatsapp"));
+    expect(whatsappCalls.map(([, init]) => ({
+      method: init?.method,
+      body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+    }))).toEqual([
+      { method: "PUT", body: undefined },
+      { method: "POST", body: { reservation_id: "test-reservation" } },
+      { method: "DELETE", body: { reservation_id: "test-reservation" } },
+      { method: "DELETE", body: { disconnect: true } },
+    ]);
     await repositories.bots.destroyBot("bot_sales");
     expect(calls[calls.length - 1]).toEqual({
       url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",
@@ -684,7 +708,7 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
-  it.skipIf(isGlobal)("creates an additional Bot on the running instance instead of a stale deleted instance", async () => {
+  it("creates an additional Bot on the running instance instead of a stale deleted instance", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: Array<{ url: string; method: string }> = [];
     let createBody: Record<string, unknown> | undefined;
@@ -767,7 +791,7 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
-  it.skipIf(isGlobal)("does not read Hermes profiles while an instance is provisioning", async () => {
+  it("does not read Hermes profiles while an instance is provisioning", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -805,7 +829,7 @@ describe("http repositories auth token bootstrap", () => {
     expect(calls).toEqual(["https://lightclaw.tech/v1/instances"]);
   });
 
-  it.skipIf(isGlobal)("marks siblings as unknown when the Bot list falls back to the instance projection", async () => {
+  it("marks siblings as unknown when the Bot list falls back to the instance projection", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -843,7 +867,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal).each([
+  it.each([
     { status: 404, code: "NOT_FOUND", message: "not found" },
     { status: 500, code: INSTANCE_BOT_ERROR_CODE.profileFailed, message: "Hermes profile operation failed" },
   ])("marks siblings as unavailable rather than stopped when a running instance cannot list Bots: $code", async ({ status, code, message }) => {
@@ -887,7 +911,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal)("does not hide an unrelated Bot list server failure", async () => {
+  it("does not hide an unrelated Bot list server failure", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -931,7 +955,7 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
-  it.skipIf(isGlobal)("does not mark siblings as unknown when the Bot list came from /bots", async () => {
+  it("does not mark siblings as unknown when the Bot list came from /bots", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -988,7 +1012,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal)("keeps the root bot visible while its pass is modifying", async () => {
+  it("keeps the root bot visible while its pass is modifying", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(
@@ -1028,7 +1052,7 @@ describe("http repositories auth token bootstrap", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
+  it("replaces a leaked default profile id with the localized root bot name", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const jsonResponse = (data: unknown) => new Response(
       JSON.stringify({ code: "OK", message: "success", data }),
@@ -1078,7 +1102,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal)("does not hide nested bot authorization failures behind the legacy fallback", async () => {
+  it("does not hide nested bot authorization failures behind the legacy fallback", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(
@@ -1105,18 +1129,6 @@ describe("http repositories auth token bootstrap", () => {
       status: 403,
       code: "FORBIDDEN",
     });
-  });
-
-  it.skipIf(!isGlobal)("keeps unique channel coordination on the legacy global path", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const repositories = createHttpRepositories("https://lightclaw.tech");
-    await repositories.bots.claimUniqueChannel("ins-global", "weixin");
-    await repositories.bots.confirmUniqueChannel("ins-global", "weixin");
-    await repositories.bots.releaseUniqueChannel("ins-global", "weixin");
-
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses ctl instance name before stale local bot drafts", async () => {
@@ -1876,12 +1888,10 @@ describe("http repositories auth token bootstrap", () => {
     await repositories.bots.destroyBot("ins_delete_me");
 
     // Without a prior listBots() the scope cache is empty, so the caller is treated as an
-    // unhydrated main-Bot delete. Domestic builds must still go through the Bot guard —
+    // unhydrated main-Bot delete. Both builds must still go through the Bot guard —
     // sibling Bots may exist server-side even though this client never listed them.
     expect(fetchMock).toHaveBeenCalledWith(
-      isGlobal
-        ? "https://lightclaw.tech/v1/instances/ins_delete_me"
-        : "https://lightclaw.tech/v1/instances/ins_delete_me?require_single_bot=true",
+      "https://lightclaw.tech/v1/instances/ins_delete_me?require_single_bot=true",
       expect.objectContaining({
         method: "DELETE",
       }),
@@ -2415,6 +2425,20 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
+  it.each([new TypeError("Failed to fetch"), "CORS request blocked"])(
+    "keeps debug transport details in cause rather than the user message (%s)", async (cause) => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(cause));
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const error = await repositories.bots.execDebugCommand("bot-1", "true").catch((value: unknown) => value);
+      expect(error).toMatchObject({
+        message: AUTH_SERVICE_UNAVAILABLE_MESSAGE,
+        status: 0,
+        code: "network_error",
+      });
+      expect((error as Error).cause).toBe(cause);
+    },
+  );
+
   it("aborts a debug command after the requested timeout", async () => {
     vi.useFakeTimers();
     try {
@@ -2433,6 +2457,61 @@ describe("http repositories auth token bootstrap", () => {
       await rejection;
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(init.signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([200, 500])("times out while reading a stalled debug response body (HTTP %s)", async (status) => {
+    vi.useFakeTimers();
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    try {
+      const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            bodyController = controller;
+            controller.enqueue(new TextEncoder().encode('{"data":'));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("Aborted", "AbortError"));
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, { status }));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const outcome = repositories.bots.execDebugCommand("bot-1", "true", { timeoutMs: 8_000 })
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(true);
+      expect(await outcome).toMatchObject({ message: "debug_exec_timeout:8000" });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      bodyController?.error(new DOMException("Test cleanup", "AbortError"));
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { status: 200, body: { data: { status: "SUCCESS", exit_code: 0, output: "ready" } }, exitCode: 0 },
+    { status: 500, body: { details: { status: "FAILED", exit_code: 1, output: "failed" } }, exitCode: 1 },
+  ])("keeps debug results and clears the timeout after reading HTTP $status", async ({ status, body, exitCode }) => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }));
+      vi.stubGlobal("fetch", fetchMock);
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+
+      await expect(repositories.bots.execDebugCommand("bot-1", "true", { timeoutMs: 8_000 }))
+        .resolves.toMatchObject({ exitCode });
+
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(8_000);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(false);
     } finally {
       vi.useRealTimers();
     }

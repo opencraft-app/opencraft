@@ -45,9 +45,45 @@ describe("Hermes agent command routing", () => {
       .toBe("hermes -p 'team'\\''s-bot' config get approvals.mode");
   });
 
+  /*
+   * 探测分支两侧都必须带 ACLI 运行时变量。
+   *
+   * 原来 else 分支跑的是裸命令（既无 --agent 也无运行时变量）。旧版 ACLI
+   * 靠 ACLI_RUNTIME_HOME 定位 profile，裸命令会落到实例默认 profile ——
+   * 也就是主 bot：在新建 bot 里装 skills.sh 技能，创建流程显示成功，
+   * 但新 bot 技能页是空的，技能实际进了主 bot。
+   */
   it("keeps an explicit capability fallback for partially rolled out commands", () => {
-    expect(withHermesAgentCompatibility("acli skills batch-install 'one two'", "acli skills batch-install", "profile-2"))
-      .toBe("if acli skills batch-install --help 2>&1 | grep -q -- '--agent'; then acli skills batch-install 'one two' --agent 'profile-2'; else acli skills batch-install 'one two'; fi");
+    const command = withHermesAgentCompatibility(
+      "acli skills batch-install 'one two'",
+      "acli skills batch-install",
+      "profile-2",
+    );
+
+    // 运行时定向必须在 if 之外，两个分支都能继承
+    expect(command.startsWith(
+      'HERMES_BASE="${HERMES_HOME:-$HOME/.hermes}";'
+      + ' export ACLI_SYS_RUNTIME_HOME="$HERMES_BASE";'
+      + ' export ACLI_RUNTIME_HOME="$HERMES_BASE/profiles/profile-2";',
+    )).toBe(true);
+    /*
+     * 必须用 export 而不是 `VAR=x cmd` 前缀：前缀形式只对简单命令生效，
+     * 后面跟的是 if/then/fi 复合命令，写成前缀是 shell 语法错误。
+     */
+    expect(command).not.toMatch(/ACLI_RUNTIME_HOME="[^"]*" if /);
+    // 探测与回退逻辑本身不变
+    expect(command).toContain(
+      "if acli skills batch-install --help 2>&1 | grep -q -- '--agent';"
+      + " then acli skills batch-install 'one two' --agent 'profile-2';"
+      + " else acli skills batch-install 'one two'; fi",
+    );
+  });
+
+  it("scopes the compatibility wrapper to the main profile by default", () => {
+    // 不传 agentId 时指向实例根目录，而不是某个子 profile
+    const command = withHermesAgentCompatibility("acli skills list", "acli skills");
+    expect(command).toContain('export ACLI_RUNTIME_HOME="$HERMES_BASE";');
+    expect(command).not.toContain("/profiles/");
   });
 
   it("routes cron and notification commands to the selected profile", () => {

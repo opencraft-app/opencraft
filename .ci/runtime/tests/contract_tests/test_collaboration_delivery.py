@@ -34,9 +34,13 @@ class CollaborationDeliveryTests(unittest.TestCase):
 
         kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
         self.assertIn("ksops-collaboration-gateway-token-generator.yaml", kustomization["generators"])
-        self.assertNotIn(
+        self.assertNotIn("components", kustomization)
+        self.assertEqual(kustomization["resources"], [
+            "../../../../service-gateway/k8s/base",
+        ])
+        self.assertIn(
             "collaboration-gateway-token-env-patch.yaml",
-            [patch.get("path") for patch in kustomization.get("patches", [])],
+            [patch.get("path") for patch in kustomization["patches"]],
         )
 
         generator = yaml.safe_load(
@@ -47,12 +51,13 @@ class CollaborationDeliveryTests(unittest.TestCase):
         ])
         source_overlay = REPO_ROOT / "service-gateway/k8s/overlays/beijing-sandbox"
         source_kustomization = yaml.safe_load((source_overlay / "kustomization.yaml").read_text())
-        self.assertIn(
+        self.assertNotIn(
             "collaboration-gateway-token-env-patch.yaml",
             [patch.get("path") for patch in source_kustomization["patches"]],
         )
+
         patch = yaml.safe_load(
-            (source_overlay / "collaboration-gateway-token-env-patch.yaml").read_text()
+            (overlay / "collaboration-gateway-token-env-patch.yaml").read_text()
         )
         env = patch["spec"]["template"]["spec"]["containers"][0]["env"][0]
         self.assertEqual(env["name"], "COLLABORATION_GATEWAY_TOKEN")
@@ -69,6 +74,47 @@ class CollaborationDeliveryTests(unittest.TestCase):
             "argocd/secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
             bundle["publish_paths_by_env"]["beijing-sandbox"],
         )
+
+    def test_beijing_gateway_overlay_renders_base_and_collaboration_patch_together(self):
+        kustomize = shutil.which("kustomize")
+        if not kustomize:
+            self.skipTest("kustomize is not installed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            shutil.copytree(
+                REPO_ROOT / "service-gateway/k8s/base",
+                repo / "service-gateway/k8s/base",
+            )
+            overlay = repo / "argocd/services/service-gateway/beijing-sandbox"
+            shutil.copytree(
+                REPO_ROOT / "argocd/services/service-gateway/beijing-sandbox",
+                overlay,
+            )
+            kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+            kustomization.pop("generators")
+            (overlay / "kustomization.yaml").write_text(yaml.safe_dump(kustomization, sort_keys=False))
+
+            result = subprocess.run(
+                [kustomize, "build", str(overlay), "--enable-alpha-plugins", "--enable-exec"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            resources = list(yaml.safe_load_all(result.stdout))
+            deployment = next(
+                item
+                for item in resources
+                if item and item.get("kind") == "Deployment" and item["metadata"]["name"] == "service-gateway"
+            )
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            env = next(item for item in container["env"] if item["name"] == "COLLABORATION_GATEWAY_TOKEN")
+            self.assertEqual(env["valueFrom"]["secretKeyRef"], {
+                "name": "collaboration-gateway-token",
+                "key": "COLLABORATION_GATEWAY_TOKEN",
+                "optional": False,
+            })
 
     def test_runtime_promotion_rejects_catalog_still_pointing_to_foundation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -105,16 +151,20 @@ class CollaborationDeliveryTests(unittest.TestCase):
                                         bundle_manifest=manifest, pin_targets="collaboration", env="beijing-sandbox")
                     run.assert_not_called()
 
-    def test_beijing_build_pipeline_and_materialized_bundle_do_not_auto_publish(self):
+    def test_beijing_build_pipeline_uses_standard_runtime_auto_pin(self):
         workflow = yaml.safe_load((REPO_ROOT / ".ci/collaboration.yml").read_text())
         params = workflow["extends"]["parameters"]
         trigger = workflow.get("on", workflow.get(True))
         self.assertEqual(trigger["push"]["branches"], ["master"])
         self.assertEqual(params["MASTER_BUILD_ENVS"], "beijing-sandbox")
-        self.assertEqual(params["MASTER_AUTO_PIN_ENVS"], "none")
+        self.assertEqual(params["MASTER_AUTO_PIN_ENVS"], "beijing-sandbox")
         self.assertIs(params["ENABLE_MASTER_PROD_PROMOTE"], False)
         manifest = load_manifest()
         bundle = require_build_metadata(load_bundle(manifest, "collaboration", "beijing-sandbox"))
+        self.assertEqual(bundle.preserve_target_paths, [
+            "argocd/secrets/beijing-sandbox/collaboration-runtime-secrets.sops.yaml",
+            "argocd/services/collaboration/beijing-sandbox/collaboration-platform.env",
+        ])
         self.assertEqual(bundle.build_context, "collaboration")
         for env in ("shprod", "sgprod", "sandbox-bj-7", "sandbox-kr-1", "sandbox-jp-1"):
             with self.assertRaises(ValueError):
@@ -129,6 +179,8 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(trigger, {"manual": "enabled"})
         self.assertEqual(workflow["variables"]["BOOTSTRAP_PHASE"]["value"], "foundation")
         self.assertEqual(workflow["variables"]["COLLABORATION_IM_SDK_APP_ID"]["value"], "1600137234")
+        self.assertEqual(workflow["variables"]["ALLOW_IM_SECRET_ROTATION"]["value"], "false")
+        self.assertTrue(workflow["variables"]["ALLOW_IM_SECRET_ROTATION"]["allow-modify-at-startup"])
         self.assertIn("@sha256:", workflow["variables"]["COLLABORATION_IMAGE"]["value"])
         self.assertEqual(len(workflow["stages"]), 3)
         self.assertIn("check-in", workflow["stages"][1])
@@ -161,9 +213,13 @@ class CollaborationDeliveryTests(unittest.TestCase):
             "promote_collaboration_bootstrap_to_gitops.sh",
             "DB_JOB_KUBECONFIG_B64",
             "COLLABORATION_IM_CREDENTIAL.password",
+            "ALLOW_IM_SECRET_ROTATION",
         ):
             self.assertIn(required, text)
-        for forbidden in ("--allow-database-password-reset", "--allow-im-secret-rotation", "--env shprod", "--env sgprod"):
+        self.assertEqual(text.count('bootstrap_args+=(--allow-im-secret-rotation)'), 2)
+        self.assertEqual(text.count('ALLOW_IM_SECRET_ROTATION must be true or false'), 2)
+        self.assertEqual(text.count('IM Secret rotation requires BOOTSTRAP_PHASE=runtime'), 2)
+        for forbidden in ("--allow-database-password-reset", "--env shprod", "--env sgprod"):
             self.assertNotIn(forbidden, text)
 
     def test_collaboration_recovery_jobs_use_native_fail_closed_cli(self):

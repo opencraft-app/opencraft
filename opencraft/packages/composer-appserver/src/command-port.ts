@@ -17,6 +17,7 @@ import {
 import type {
   ConversationCommandPort,
   InteractionResponse,
+  TurnInterruptProvenance,
 } from "@opencraft/chat-runtime";
 import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
@@ -35,6 +36,9 @@ export interface AppServerConversationCommandPortConfig {
   readonly hostId: HostId;
   readonly client: Pick<AppServerClient, "hostId" | "request">;
   readonly interactions: InteractionResponsePort;
+  /** Only a Host with one queue-to-active-Turn operation may consume a queued steer. */
+  readonly queueAtomicSteer?: boolean;
+  readonly queueUnconfirmedSteerDiscard?: boolean;
   readonly compiler?: SubmitCompilerOptions;
   readonly resolveCompilerOptions?: (intent: SubmitIntent) => Promise<SubmitCompilerOptions>;
   /** Product-owned tools installed on every newly-created Thread. */
@@ -46,6 +50,12 @@ export interface AppServerConversationCommandPortConfig {
     diagnostic: SubmitCompileDiagnostic,
     intent: SubmitIntent,
   ) => void;
+  readonly onInterrupt?: (event: {
+    readonly hostId: HostId;
+    readonly threadId: string;
+    readonly turnId: TurnId;
+    readonly provenance: TurnInterruptProvenance;
+  }) => void;
 }
 
 export class AppServerConversationCommandError extends Error {
@@ -332,13 +342,24 @@ export function createAppServerConversationCommandPort(
         throw cause;
       }
     },
-    async interrupt(key, turnId) {
+    async interrupt(key, turnId, provenance) {
       if (key.hostId !== config.hostId) {
         throw new AppServerConversationCommandError(
           "HOST_MISMATCH",
           "Conversation belongs to a different Host",
         );
       }
+      config.onInterrupt?.({
+        hostId: key.hostId,
+        threadId: key.threadId,
+        turnId,
+        provenance: provenance ?? {
+          source: "unknown",
+          trigger: "programmatic",
+          isTrusted: null,
+          occurredAt: now(),
+        },
+      });
       await config.client.request("turn/interrupt", {
         threadId: key.threadId,
         turnId,
@@ -388,6 +409,18 @@ export function createAppServerConversationCommandPort(
       });
       return response.deleted;
     },
+    async discardUnconfirmedSteer(key, queuedSubmissionId, expectedTurnId) {
+      assertConversationHost(key);
+      if (config.queueUnconfirmedSteerDiscard !== true)
+        throw new Error("This Host cannot discard a native steering claim");
+      const response = await config.client.request("thread/queue/delete", {
+        threadId: key.threadId,
+        queuedSubmissionId,
+        expectedTurnId,
+        acknowledgeUnknownDelivery: true,
+      });
+      return response.deleted;
+    },
     async reorderQueuedSubmissions(key, queuedSubmissionIds) {
       assertConversationHost(key);
       await config.client.request("thread/queue/reorder", {
@@ -405,6 +438,9 @@ export function createAppServerConversationCommandPort(
     },
     async steerQueuedSubmission(key, queuedSubmission, activeTurnId) {
       assertConversationHost(key);
+      if (config.queueAtomicSteer !== true) {
+        throw new Error("This Host does not support atomic steering of queued messages");
+      }
       const request = (expectedTurnId: string) => config.client.request("thread/queue/steer", {
         threadId: key.threadId,
         queuedSubmissionId: queuedSubmission.id,

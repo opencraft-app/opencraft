@@ -34,7 +34,6 @@ import {
 } from "@/lib/billing-flow";
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
-import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { useCreditSources, formatCreditDate } from "@/lib/use-credit-sources";
 import { isCN, isGlobal } from "@/lib/region";
 import { publicSiteHref } from "@/lib/public-site-navigation";
@@ -42,7 +41,6 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
@@ -881,9 +879,7 @@ const SubscriptionSection = ({
     };
   }, [operablePass, subscription, plan.trialDays]);
 
-  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。
-     积分包区域未开启时（feature flag 默认关闭）退化为仅套餐积分，
-     与改造前行为一致。挂载 show_credit_pack() 控制台助手（两页任一挂载即可生效）。 */
+  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。 */
   const planCreditInput = useMemo(
     () =>
       operablePass
@@ -895,25 +891,38 @@ const SubscriptionSection = ({
         : null,
     [operablePass, t],
   );
+  const freeCreditInput = useMemo(() => {
+    const creditTotal = Math.max(0, operablePass?.free_credit_total ?? 0);
+    if (creditTotal <= 0) return null;
+    return {
+      displayName: t("额外积分"),
+      creditTotal,
+      creditAvailable: Math.min(creditTotal, Math.max(0, operablePass?.free_credit_available ?? 0)),
+    };
+  }, [operablePass, t]);
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
-    useCreditSources(planCreditInput);
-  const creditPackVisible = useCreditPackVisibility();
-  useEffect(() => installCreditPackVisibilityHelper(), []);
+    useCreditSources(planCreditInput, freeCreditInput);
 
-  /* flag 关闭时只认套餐积分，避免未上线的积分包数据影响既有展示 */
-  const creditsTotal = creditPackVisible ? creditSummary.total : (operablePass ? operablePass.credit_total : 0);
-  const creditsAvailable = creditPackVisible
-    ? creditSummary.available
-    : (operablePass ? operablePass.credit_available : 0);
-  const creditsUsed = Math.max(0, creditsTotal - creditsAvailable);
-  const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
-  const creditsExhausted = Boolean(creditsTotal > 0 && creditsAvailable <= 0);
-  const showCreditPrompt = creditsExhausted || usedPercent > 95;
-  const creditUsageColor = usedPercent > 95
+  /* 套餐进度保持独立；汇总和告警计算所有积分来源。 */
+  const planCreditsTotal = operablePass ? operablePass.credit_total : 0;
+  const planCreditsAvailable = operablePass ? operablePass.credit_available : 0;
+  const freeCreditsTotal = freeCreditInput?.creditTotal ?? 0;
+  const planCreditsUsed = Math.max(0, planCreditsTotal - planCreditsAvailable);
+  const planUsedPercent = planCreditsTotal > 0
+    ? Math.min(100, Math.round((planCreditsUsed / planCreditsTotal) * 100))
+    : 0;
+  const allCreditsTotal = creditSummary.total;
+  const allCreditsAvailable = creditSummary.available;
+  const allCreditsUsedPercent = allCreditsTotal > 0
+    ? Math.min(100, Math.round(((allCreditsTotal - allCreditsAvailable) / allCreditsTotal) * 100))
+    : 0;
+  const creditsExhausted = Boolean(allCreditsTotal > 0 && allCreditsAvailable <= 0);
+  const showCreditPrompt = creditsExhausted || allCreditsUsedPercent > 95;
+  const creditUsageColor = planUsedPercent > 95
     ? "#991B1B"
-    : usedPercent >= 80
+    : planUsedPercent >= 80
       ? "#CF3D4C"
-      : usedPercent >= 50
+      : planUsedPercent >= 50
         ? "#C67B1E"
         : "var(--lw-accent)";
 
@@ -973,6 +982,7 @@ const SubscriptionSection = ({
   return (
     <motion.div
       variants={fadeIn}
+      id="account-credit-section"
       className="overflow-hidden bg-white"
       style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
     >
@@ -1079,33 +1089,36 @@ const SubscriptionSection = ({
         </div>
 
         {/* Credits progress and usage prompt */}
-        {(creditsTotal > 0 || showCreditPrompt) && (
+        {(allCreditsTotal > 0 || showCreditPrompt) && (
           <>
             {/* Divider */}
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
             <div>
-              {creditsTotal > 0 && (
+              {planCreditsTotal > 0 && (
                 <>
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
+                    <span className="text-sm font-semibold" style={{ color: "#333" }}>
+                      {freeCreditsTotal > 0 || creditSummary.sourceCount > 1
+                        ? t("套餐积分")
+                        : t("已使用积分")}
+                    </span>
                     {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
-                    {creditPackVisible && (
-                      <AppLink
-                        to="/subscribe?section=credits"
-                        className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
-                        style={{ color: "var(--lw-accent)" }}
-                      >
-                        {t("购买积分包")}
-                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
-                      </AppLink>
-                    )}
-                  </div>                  <div className="flex items-center justify-between mb-2">
+                    <AppLink
+                      to="/subscribe?section=credits"
+                      className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                      style={{ color: "var(--lw-accent)" }}
+                    >
+                      {t("购买积分包")}
+                      <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                    </AppLink>
+                  </div>
+                  <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
-                      {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
+                      {planCreditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {planCreditsTotal.toLocaleString()}</span>
                     </p>
                     <span className="text-xs font-semibold" style={{ color: creditUsageColor }}>
-                      {usedPercent}%
+                      {planUsedPercent}%
                     </span>
                   </div>
                   {/* Progress bar */}
@@ -1113,15 +1126,14 @@ const SubscriptionSection = ({
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
-                        width: `${usedPercent}%`,
+                        width: `${planUsedPercent}%`,
                         background: creditUsageColor,
                       }}
                     />
                   </div>
 
-                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。
-                      仅在积分包功能开启后展示，未开启时保持原有单套餐视图。 */}
-                  {creditPackVisible && creditSources.length > 0 && (
+                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。 */}
+                  {creditSources.length > 0 && (
                     <div className="mt-4">
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-sm font-semibold" style={{ color: "#333" }}>
@@ -1298,14 +1310,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const [nameSaveError, setNameSaveError] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
-  const [referralRevealed, setReferralRevealed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const revealReferral = () => setReferralRevealed(true);
-    window.addEventListener(CONSOLE_SHOW_EVENT, revealReferral);
-    return () => window.removeEventListener(CONSOLE_SHOW_EVENT, revealReferral);
-  }, []);
 
   // Unauthenticated view state
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1426,6 +1431,14 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
     setEmailBindError(message);
     setEmailBindSuccess(null);
   }, [isBillingView, refreshProfile, searchParams, setSearchParams, t]);
+
+  useEffect(() => {
+    if (!isBillingView || searchParams.get("section") !== "credits") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("account-credit-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isBillingView, searchParams]);
 
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {
@@ -2064,7 +2077,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
             {/* ── Section 2: Subscription ── */}
             {isBillingView && <SubscriptionSection subscription={subscription} pass={activePass} />}
 
-            {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
+            {!isBillingView && referralEnabled && <ReferralSection />}
 
             {isBillingView && isGlobal && <SavedCardsSection />}
           </motion.div>

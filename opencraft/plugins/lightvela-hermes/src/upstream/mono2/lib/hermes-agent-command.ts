@@ -32,13 +32,34 @@ export function withHermesSkillsProfile(command: string, profileId?: string): st
   return `HERMES_BASE="\${HERMES_HOME:-$HOME/.hermes}"; ACLI_SYS_RUNTIME_HOME="$HERMES_BASE" ACLI_RUNTIME_HOME=${runtimeHome} ${withHermesAgent(command, id)}`;
 }
 
+/**
+ * 探测 CLI 是否支持 --agent，支持就带上；两个分支都注入 ACLI 运行时变量。
+ *
+ * 之前 else 分支跑的是**裸命令**（既无 --agent 也无运行时变量）。旧版 ACLI
+ * 正是靠 ACLI_RUNTIME_HOME 定位 profile 的，裸命令会落到实例的默认 profile
+ * ——也就是主 bot。表现为：在新建 bot 里装 skills.sh 技能，创建流程显示成功，
+ * 但新 bot 的技能页是空的，技能实际装进了主 bot。
+ *
+ * 国内站的 SkillHub 分支早前踩过同一个坑（改用 withHermesSkillsProfile 修
+ * 好了），这条 skills.sh 分支当时没一起改。
+ */
 export function withHermesAgentCompatibility(
   command: string,
   capabilityHelpCommand: string,
   agentId: string = DEFAULT_HERMES_AGENT_ID,
 ): string {
+  const runtimeHome = agentId === DEFAULT_HERMES_AGENT_ID
+    ? '"$HERMES_BASE"'
+    : `"$HERMES_BASE/profiles/${agentId}"`;
+  /*
+   * 用 export 而不是 `VAR=x cmd` 前缀：后者只对**简单命令**生效，
+   * 下面跟的是 if/then/fi 复合命令，写成前缀是语法错误。
+   */
+  const runtimeEnv = `HERMES_BASE="\${HERMES_HOME:-$HOME/.hermes}";`
+    + ` export ACLI_SYS_RUNTIME_HOME="$HERMES_BASE";`
+    + ` export ACLI_RUNTIME_HOME=${runtimeHome};`;
   const scopedCommand = withHermesAgent(command, agentId);
-  return `if ${capabilityHelpCommand} --help 2>&1 | grep -q -- '--agent'; then ${scopedCommand}; else ${command}; fi`;
+  return `${runtimeEnv} if ${capabilityHelpCommand} --help 2>&1 | grep -q -- '--agent'; then ${scopedCommand}; else ${command}; fi`;
 }
 
 export function getHermesChannelStatusCommand(

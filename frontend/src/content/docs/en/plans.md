@@ -4,17 +4,17 @@
 
 **The avatar menu at the bottom of the Agent console's left sidebar has two separate entries: Account for your profile and user ID, and Plans & billing for subscriptions, credit usage, renewals, and payment methods.**
 
-**LightVela offers four plans—Launch, Cruise, Launch AI, and Cruise AI—covering everything from a light first try to high-frequency use. Each plan activates a Hermes Agent in a dedicated cloud runtime with its own CPU, memory, and storage, where the agent stays online 24/7 without a server to buy or a local deployment to maintain. Plans differ in runtime resources, storage capacity, and monthly AI credits, while core capabilities such as self-improvement, multi-channel access, skills, scheduled tasks, and long-term memory remain available across tiers. This page also explains refund rules and the email-based application process. Live pricing and availability are shown on the subscribe page.**
+**LightVela offers four plans—Launch, Cruise, Launch AI, and Cruise AI—covering everything from a light first try to high-frequency use. Each plan activates a Hermes Agent in a dedicated cloud environment with its own CPU, memory, and storage, where the agent stays online 24/7 without a server to buy or a local deployment to maintain. Plans differ in environment resources, storage capacity, and monthly AI credits, while core capabilities such as self-improvement, multi-channel access, skills, scheduled tasks, and long-term memory remain available across tiers. This page also explains refund rules and the email-based application process. Live pricing and availability are shown on the subscribe page.**
 
 ---
 
-LightVela offers four plan tiers—**Launch, Cruise, Launch AI, and Cruise AI**—for needs ranging from a lightweight starting point to high-frequency Agent use. Each plan provides an isolated cloud environment for a Hermes Agent and a monthly AI-credit allocation. This page explains the positioning, resources, benefits, refund rules, and application steps so you can choose the right fit.
+LightVela offers four plan tiers—**Launch, Cruise, Launch AI, and Cruise AI**—for needs ranging from a lightweight starting point to high-frequency Agent use. Each plan provides a dedicated cloud environment for a Hermes Agent and a monthly AI-credit allocation. This page explains the positioning, resources, benefits, refund rules, and application steps so you can choose the right fit.
 
 ## What this page covers
 
 - Who each plan is designed for
 
-- Isolated runtime resources, storage, and AI credits by tier
+- Dedicated cloud environment resources, storage, and AI credits by tier
 
 - Core Agent capabilities shared by every plan
 
@@ -45,7 +45,7 @@ Check the page title to confirm you are in the right place. If a purchased plan 
 
 ### Plans and resources
 
-A plan is the resource package that activates a Hermes Agent on LightVela. After you activate any currently available plan, LightVela assigns you a **dedicated cloud runtime** with its own CPU, memory, and storage. Your Hermes Agent can stay online 24/7 without requiring you to buy a server or deploy anything locally.
+A plan is the resource package that activates a Hermes Agent on LightVela. After you activate any currently available plan, LightVela assigns you a **dedicated cloud environment** with its own CPU, memory, and storage. Your Hermes Agent can stay online 24/7 without requiring you to buy a server or deploy anything locally.
 
 The main differences between tiers are the **runtime resources, dedicated storage, and monthly AI-credit allocation**. Core Agent capabilities—including adaptive behavior, multiple channels, skills, scheduled tasks, and long-term memory—remain available across tiers.
 
@@ -59,16 +59,25 @@ Four plans are currently available: **Launch, Cruise, Launch AI, and Cruise AI**
 
 Real-time prices, inventory, discounts, and purchase availability are shown on the [Subscribe page](/subscribe). The table below lists only the current standard list prices.
 
+> ℹ️ **Cloud environment specification upgrade**
+>
+> Effective **September 23, 2026**, LightVela plan environments have the following specifications:
+>
+> - Launch and Launch AI: upgraded from **2 vCPU · 4 GB RAM** to **2 vCPU · 8 GB RAM**
+> - Cruise and Cruise AI: upgraded from **4 vCPU · 8 GB RAM** to **4 vCPU · 16 GB RAM**
+>
+> This upgrade changes only the memory allocation. Plan prices, storage capacity, and AI-credit benefits remain unchanged. Check the Subscribe page for the latest plan specifications and purchase availability.
+
 ### Plan benefits
 
 <div className="lv-plan-benefits-table">
 
-| Plan | Best for | Agent allowance | Isolated cloud runtime | Dedicated cloud storage | AI credits |
+| Plan | Best for | Agent allowance | Dedicated cloud environment | Dedicated cloud storage | AI credits |
 |---|---|---|---|---|---|
-| Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 2 CPU cores, 4 GB memory | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
-| Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 4 CPU cores, 8 GB memory | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
-| Launch AI | Lightweight usage with more AI credits | 1 | 2 CPU cores, 4 GB memory | 50 GB | 4,500 credits / month |
-| Cruise AI | High-frequency conversations, skills, and scheduled tasks | 1 | 4 CPU cores, 8 GB memory | 80 GB | 10,000 credits / month |
+| Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 2 vCPU · 8 GB RAM | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 4 vCPU · 16 GB RAM | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Launch AI | Lightweight usage with more AI credits | 1 | 2 vCPU · 8 GB RAM | 50 GB | 4,500 credits / month |
+| Cruise AI | High-frequency conversations, skills, and scheduled tasks | 1 | 4 vCPU · 16 GB RAM | 80 GB | 10,000 credits / month |
 
 </div>
 
@@ -83,7 +92,7 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 
 > ℹ️ **New-user offer**
 >
-> New users can try Launch free for 14 days on their first order and Launch AI free for 7 days on their first order. The offer shown on the Subscribe page takes precedence.
+> New users can try Launch free for 1 month on their first order and Launch AI free for 1 month on their first order. The offer shown on the Subscribe page takes precedence.
 
 > ℹ️ **Price note**
 >
@@ -111,7 +120,9 @@ For how AI credits are allocated and consumed, see [Credits](./credits.md).
 
 ### Plan change rules
 
-Direct upgrades, switches, or downgrades on an active plan are not currently supported. When an existing plan is active, the Subscribe page prioritizes marking your current plan. To continue using the same plan, renew it to extend the validity period. To change plans, refer to the actual options currently available on the Plans & billing page and Subscribe page.
+Active plans support eligible upgrades. Check your current plan and available upgrade options in the console or on the [Subscribe page](/subscribe), select a listed target plan, and follow the checkout instructions to confirm the order and pay. Depending on eligibility, options may include upgrades within the same plan family or across plan families. Only options actually offered for your plan are available.
+
+The amount due for an upgrade depends on factors such as the remaining validity of your current plan, the target plan, and the rules at checkout. There is no fixed upgrade price: **the actual price on the final payment page is authoritative**. After payment, return to the console to check the updated plan status and benefits. If no upgrade option is offered for your target, you cannot upgrade to that target from your current plan. To keep your current tier and extend its validity, renew your plan instead.
 
 ### Plan lifecycle
 
@@ -153,7 +164,7 @@ Real-time prices, inventory, discounts, taxes, and purchase availability are sho
 
 ### Can I upgrade or switch plans?
 
-Direct upgrades and plan changes are not currently supported for an active plan. Refer to the options shown in the console and on the Subscribe page.
+You can upgrade an active plan using the eligible options shown in the console or on the Subscribe page, including cross-family upgrades when offered. Choose only a listed eligible target. The actual amount due is shown on the final payment page.
 
 ### How many Agents does one plan include?
 

@@ -4,7 +4,6 @@ Narrow public gateway for Lightclaw admin traffic.
 
 Responsibilities:
 - own the public `admin.lightclaw.tech` entrypoint
-- proxy `/admin/ops` to `nextgen-dashboard`
 - proxy `/admin/gateway` to `gateway-dashboard`
 - proxy `/admin/api/*` to the `gateway-dashboard` BFF module routes
 - terminate and proxy websocket upgrades for admin workloads
@@ -22,7 +21,6 @@ This deployment intentionally reuses the same gateway binary as `service-gateway
 but runs as an independent workload with its own config, service, and ingress target.
 
 Current upstreams:
-- `/admin/ops/*` -> `nextgen-dashboard.user-auth.svc.cluster.local` with `rewrite_prefix: /admin`
 - `/admin/gateway/*` -> `gateway-dashboard-internal.ai-gateway.svc.cluster.local`
 - `/admin/api/ai-gateway/*` -> `gateway-dashboard-internal.ai-gateway.svc.cluster.local` with `rewrite_prefix: /admin/gateway/api/ai-gateway`
 - `/admin/api/auth/*` -> `gateway-dashboard-internal.ai-gateway.svc.cluster.local` with `rewrite_prefix: /admin/gateway/api/auth`
@@ -30,6 +28,7 @@ Current upstreams:
 - `/admin/api/sandbox/*` -> `gateway-dashboard-internal.ai-gateway.svc.cluster.local` with `rewrite_prefix: /admin/gateway/api/sandbox`
 - `/admin/api/ctl/bundles/*` -> `ctl-api.ctl.svc.cluster.local` (direct, no rewrite)
 - `/admin/api/ctl/passes/*` -> `ctl-api.ctl.svc.cluster.local` (direct, no rewrite)
+- `/admin/api/referral/*` -> `referral.referral.svc.cluster.local` (direct, no rewrite; attribution reset only)
 - `/admin/api/ctl/*` -> `gateway-dashboard-internal.ai-gateway.svc.cluster.local` with `rewrite_prefix: /admin/gateway/api/ctl`
 
 There is no `/` or `/admin` catch-all route in the standard public admin entrypoint.

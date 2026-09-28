@@ -43,3 +43,5 @@ Secret 键：
 北京试点后，这个 deploy-facing 目录只保留环境值、配置输入和 secret 输入；
 共享 namespace / serviceaccount 删除逻辑以及其它结构性 patch 已下沉到 `service-gateway/k8s/overlays/beijing-sandbox/`。
 `COLLABORATION_GATEWAY_TOKEN` 的 Deployment 注入同样由该 source-facing overlay 持有，确保 patch 与基准 Deployment 在同一 Component 中组合。
+北京主 sandbox 使用一个普通 Kustomization 直接拥有 base resource、平台值 replacements、Secret generators
+和北京专用 patches；这些对象不能拆进 Component，因为 Component 的 patch 不能修改 Component 引入的资源。

@@ -251,6 +251,11 @@
   line-height: 1.5;
 }
 
+.lh-std-channel-panel__developer-console-link {
+  color: var(--lh-std-primary);
+  text-decoration: underline;
+}
+
 .lh-std-model-panel__modal-actions,
 .lh-std-channel-panel__modal-actions,
 .lh-std-skill-panel__modal-actions {
@@ -411,7 +416,7 @@
   text-align: left;
   background: var(--lh-std-bg);
   border: 1px solid var(--lh-std-border-color);
-  border-radius: var(--lh-std-radius);
+  border-radius: var(--radius-md, 1rem);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -427,10 +432,29 @@
   box-shadow: 0 0 0 2px rgba(51, 112, 255, 0.15);
 }
 
+.lh-std-channel-panel__method-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .lh-std-channel-panel__method-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--lh-std-text);
+}
+
+.lh-std-channel-panel__method-badge {
+  padding: 2px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .lh-std-channel-panel__method-desc {
@@ -1288,8 +1312,8 @@ input.lh-std-input::placeholder {
 .lh-std-channel-panel__guide-btn {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
-  padding: 0 18px;
+  min-height: 32px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 500;
   color: #1f2937;
@@ -1309,9 +1333,10 @@ input.lh-std-input::placeholder {
   text-decoration: none;
 }
 
+.lh-std-channel-panel__card-test,
 .lh-std-channel-panel__card-unbind {
-  min-height: 36px;
-  padding: 0 18px;
+  min-height: 32px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 500;
   color: var(--lh-std-text-secondary);
@@ -1322,20 +1347,27 @@ input.lh-std-input::placeholder {
   transition: all 0.15s ease;
 }
 
+.lh-std-channel-panel__card-test:hover:not(:disabled) {
+  color: var(--lh-std-text);
+  border-color: var(--lh-std-text-secondary);
+  background: var(--lh-std-bg-hover);
+}
+
 .lh-std-channel-panel__card-unbind:hover:not(:disabled) {
   color: var(--lh-std-danger);
   border-color: var(--lh-std-danger);
   background: #fef2f2;
 }
 
+.lh-std-channel-panel__card-test:disabled,
 .lh-std-channel-panel__card-unbind:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
 .lh-std-channel-panel__connect-btn {
-  min-height: 36px;
-  padding: 0 18px;
+  min-height: 32px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 500;
   color: #fff;
@@ -1395,7 +1427,7 @@ input.lh-std-input::placeholder {
 
 .lh-std-channel-panel--i18n
   .lh-std-channel-panel__card--bound
-  :is(.lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn) {
+  :is(.lh-std-channel-panel__card-test, .lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn) {
   flex: 0 0 auto;
   min-width: 0;
   padding-inline: 10px;
@@ -1500,12 +1532,37 @@ input.lh-std-input::placeholder {
 
 .lh-std-channel-panel__btn-outline,
 .lh-std-channel-panel__btn-primary {
-  border-radius: var(--lh-std-radius-lg);
+  padding: 8px 16px;
+  line-height: 20px;
+  border-radius: var(--radius-lg, 1.35rem);
+}
+
+.lh-std-channel-panel__modal-actions {
+  gap: 8px;
+}
+
+.lh-std-channel-panel__btn-outline {
+  color: rgba(0, 0, 0, 0.7);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.lh-std-channel-panel__btn-outline:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.lh-std-channel-panel__btn-primary {
+  background: #000;
+  border-color: #000;
 }
 
 .lh-std-channel-panel__btn-primary:hover:not(:disabled),
 .lh-std-skill-panel__btn-primary:hover:not(:disabled) {
   background: #111827;
+}
+
+.lh-std-channel-panel__btn-primary:hover:not(:disabled) {
+  background: #262626;
+  border-color: #262626;
 }
 
 .lh-std-channel-panel__btn-primary:disabled,

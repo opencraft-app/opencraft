@@ -222,17 +222,31 @@ func TestListPoolsAndPoolInstances(t *testing.T) {
 }
 
 func TestPauseSandbox(t *testing.T) {
+	getCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/sandboxes/sbx-123/pause" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/sandboxes/sbx-123/pause":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/sandboxes/sbx-123":
+			getCalls++
+			state := "running"
+			if getCalls >= 2 {
+				state = "paused"
+			}
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(psandbox.SandboxDetail{State: state})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
 	adapter := newTestAdapter(server.URL)
 	if err := adapter.PauseSandbox(testContext(), "sbx-123"); err != nil {
 		t.Fatalf("PauseSandbox error: %v", err)
+	}
+	if getCalls != 2 {
+		t.Fatalf("GetSandbox calls=%d, want 2 before pause completes", getCalls)
 	}
 }
 
@@ -355,7 +369,6 @@ func TestMaxRetriesCanBeDisabled(t *testing.T) {
 		atomic.AddInt32(&attempts, 1)
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(psandbox.APIError{
-			Code:    http.StatusBadGateway,
 			Message: "temporary",
 		})
 	}))
@@ -482,7 +495,6 @@ func TestErrorHandling(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tc.statusCode)
 				_ = json.NewEncoder(w).Encode(psandbox.APIError{
-					Code:    tc.statusCode,
 					Message: "upstream error",
 				})
 			}))

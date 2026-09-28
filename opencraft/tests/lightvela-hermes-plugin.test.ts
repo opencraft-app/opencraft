@@ -6,7 +6,7 @@ import test from "node:test";
 import { Context } from "@deepseek-ai/cordis";
 import { AuthenticationService } from "@opencraft/workbench-runtime";
 import { authenticationProviderAdapter } from "../apps/workbench-web/src/runtime/authentication-contributions";
-import type { AppServerThread, AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
+import type { AppServerThread, AppServerTurn, HermesMessage } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
 import { deserialize, serialize } from "bson";
 import { IDBFactory } from "fake-indexeddb";
 
@@ -29,6 +29,7 @@ import {
   LightVelaHermesTransport,
   LIGHTVELA_TOKEN_KEY,
   lightVelaBotCreationUrl,
+  nativeHermesProfileId,
   projectLightVelaBotOnboarding,
 } from "@opencraft/plugin-lightvela-hermes";
 import { EnvironmentDirectory, preflightHostConnection, type HostConnectionProvider } from "@opencraft/workbench-runtime";
@@ -42,7 +43,12 @@ import {
   TencentTatSessionMultiplexer,
 } from "../plugins/lightvela-hermes/src/lib/tencent-tat-session-multiplexer";
 import { createTatWebSocketConstructor } from "../plugins/lightvela-hermes/src/lib/tat-websocket";
-import { HermesAppServerAdapter, isUnmaterializedHermesHistory, mapMessages } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
+import {
+  HermesAppServerAdapter,
+  isUnmaterializedHermesHistory,
+  mapMessages,
+  type AttachmentMetadataResolver,
+} from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
 import { HermesBotAppServerHandler } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/bot-protocol-handler";
 import { BrowserHermesAppServerBridge } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/index";
 import { encodeHermesModelSelection } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/model-catalog";
@@ -843,6 +849,13 @@ test("Hermes Host creates one TAT bootstrap and shares its proxy owner", () => {
   assert.match(lightOpenCraftTransportSource, /sessionToken = await ensureHermesDashboard\(proxy\)/u);
   assert.match(lightOpenCraftTransportSource, /\{ proxyClient: proxy, sessionToken \}/u);
   assert.match(lightOpenCraftTransportSource, /createTatWebSocketConstructor\(proxy/u);
+  assert.match(lightOpenCraftTransportSource, /logicalHostKey.*options\.profile/su);
+  assert.match(lightOpenCraftTransportSource, /sessionTokenCache\?\.get\(physicalCacheKey\)/u);
+});
+
+test("LightVela control-plane Bot profiles map to native Hermes identities", () => {
+  assert.equal(nativeHermesProfileId("main"), "default");
+  assert.equal(nativeHermesProfileId("sales-123"), "sales-123");
 });
 
 test("Hermes transport resolves the current Bot before every physical TAT connection", async () => {
@@ -892,7 +905,11 @@ test("Hermes transport resolves the current Bot before every physical TAT connec
   await transport.close();
 });
 
-function createHermesHistoryHarness() {
+function createHermesHistoryHarness(options: {
+  readonly messages?: readonly HermesMessage[];
+  readonly attachmentMetadata?: AttachmentMetadataResolver;
+  readonly profileScope?: string;
+} = {}) {
   const calls: Array<{ method: string; params: unknown }> = [];
   const historyCalls: Array<{ sessionId: string; limit: number; offset: number; order: string }> = [];
   const client: HermesRpcClient = {
@@ -905,6 +922,15 @@ function createHermesHistoryHarness() {
           message_count: 2,
           messages: [],
           info: { cwd: "/workspace/projects/demo", reasoning_effort: "high" },
+        } as T;
+      }
+      if (method === "session.create") {
+        return {
+          session_id: "live-new",
+          stored_session_id: "stored-new",
+          message_count: 0,
+          messages: [],
+          info: { cwd: String((params as { cwd?: unknown })?.cwd ?? "/workspace/projects") },
         } as T;
       }
       if (method === "session.list") {
@@ -928,6 +954,13 @@ function createHermesHistoryHarness() {
           }],
         } as T;
       }
+      if (method === "session.title") {
+        return { title: String((params as { title?: unknown })?.title ?? "") } as T;
+      }
+      if (method === "session.close") return { closed: true } as T;
+      if (method === "session.delete") {
+        return { deleted: String((params as { session_id?: unknown })?.session_id ?? "") } as T;
+      }
       throw new Error(`Unexpected Hermes call: ${method}`);
     },
     onEvent: () => () => undefined,
@@ -937,7 +970,7 @@ function createHermesHistoryHarness() {
       historyCalls.push({ sessionId, ...request });
       return {
         session_id: sessionId,
-        messages: [
+        messages: options.messages ?? [
           { role: "user", text: "hello", row_id: 1 },
           { role: "assistant", text: "world", row_id: 2 },
         ],
@@ -947,11 +980,89 @@ function createHermesHistoryHarness() {
     dispose() {},
   };
   return {
-    adapter: new HermesAppServerAdapter(client, "/workspace/projects", history),
+    adapter: new HermesAppServerAdapter(
+      client,
+      "/workspace/projects",
+      history,
+      undefined,
+      undefined,
+      undefined,
+      options.attachmentMetadata,
+      options.profileScope,
+    ),
     calls,
     historyCalls,
   };
 }
+
+test("Hermes Thread lifecycle maps rename and delete to native session RPC", async () => {
+  const harness = createHermesHistoryHarness();
+  const notifications: Array<{ method: string; params: unknown }> = [];
+  harness.adapter.subscribeNotification((method, params) => notifications.push({ method, params }));
+
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 1,
+    method: "thread/list",
+    params: {},
+  });
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 2,
+    method: "thread/name/set",
+    params: { threadId: "stored-1", name: "Renamed thread" },
+  });
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 3,
+    method: "thread/delete",
+    params: { threadId: "stored-1" },
+  });
+
+  assert.deepEqual(harness.calls.filter(({ method }) => [
+    "session.title",
+    "session.close",
+    "session.delete",
+  ].includes(method)), [
+    {
+      method: "session.title",
+      params: { session_id: "live-1", profile: "default", title: "Renamed thread" },
+    },
+    {
+      method: "session.close",
+      params: { session_id: "live-1", profile: "default" },
+    },
+    {
+      method: "session.delete",
+      params: { session_id: "stored-1", profile: "default" },
+    },
+  ]);
+  assert.deepEqual(notifications.slice(-2), [
+    { method: "thread/name/updated", params: { threadId: "stored-1", threadName: "Renamed thread" } },
+    { method: "thread/deleted", params: { threadId: "stored-1" } },
+  ]);
+});
+
+test("Hermes scoped Host applies one Profile to Thread listing and creation", async () => {
+  const harness = createHermesHistoryHarness({ profileScope: "sales-123" });
+
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 1,
+    method: "thread/list",
+    params: {},
+  });
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 2,
+    method: "thread/start",
+    params: { cwd: "/workspace/sales" },
+  });
+
+  assert.deepEqual(harness.calls.filter(({ method }) => method === "session.list"), [{
+    method: "session.list",
+    params: { limit: 1000, profile: "sales-123" },
+  }]);
+  assert.deepEqual(harness.calls.filter(({ method }) => method === "session.create"), [{
+    method: "session.create",
+    params: { cwd: "/workspace/sales", source: "desktop", profile: "sales-123" },
+  }]);
+});
 
 test("Hermes paginated resume exposes a cursor and hydrates stored history", async () => {
   const harness = createHermesHistoryHarness();
@@ -987,6 +1098,50 @@ test("Hermes paginated resume exposes a cursor and hydrates stored history", asy
   assert.equal(harness.calls.filter(({ method }) => method === "session.history").length, 0);
   assert.deepEqual(harness.historyCalls.map(({ offset, order }) => ({ offset, order })), [
     { offset: 0, order: "latest" },
+  ]);
+});
+
+test("Hermes history hydration resolves attachment display metadata by opaque location", async () => {
+  const path = "/opaque/host/location/7f";
+  const resolvedLocations: unknown[] = [];
+  const harness = createHermesHistoryHarness({
+    messages: [
+      { role: "user", content: `看看 @file:${path}`, row_id: 1 },
+      { role: "assistant", content: "这是脚本。", row_id: 2 },
+    ],
+    attachmentMetadata: {
+      async resolve(location) {
+        resolvedLocations.push(location);
+        return {
+          id: "attachment-a",
+          name: "a.py",
+          mimeType: "text/x-python",
+          size: 1,
+          location,
+        };
+      },
+    },
+  });
+
+  const page = await dispatchAppServerRequest(harness.adapter, {
+    id: 1,
+    method: "thread/turns/list",
+    params: {
+      threadId: "stored-1",
+      cursor: "hermes-messages:0",
+      limit: 5,
+      itemsView: "full",
+      sortDirection: "desc",
+    },
+  }) as { data: Array<{ items: AppServerTurn["items"] }> };
+
+  assert.deepEqual(resolvedLocations, [{ kind: "host-file", path }]);
+  const userMessage = page.data[0]?.items.find((item) => item.type === "userMessage");
+  assert.equal(userMessage?.type, "userMessage");
+  if (userMessage?.type !== "userMessage") throw new Error("Expected projected user message");
+  assert.deepEqual(userMessage.content, [
+    { type: "text", text: "看看", text_elements: [] },
+    { type: "mention", name: "a.py", path },
   ]);
 });
 
@@ -1094,12 +1249,12 @@ test("Hermes model-switch markers remain runtime metadata instead of user transc
   assert.equal(turns.flatMap((turn) => turn.items).some((item) => item.type === "userMessage" && item.content.some((part) => part.type === "text" && part.text === marker)), false);
 });
 
-test("Hermes durable projection restores staged file attachments as typed mentions instead of @file text", () => {
-  const path = "/home/agentuser/.hermes/opencraft-attachments/e3a8d764-afc4-4a38-afa3-4aacf3bad0f9-1-1-3-构建-Hermes-CVM-镜像-3.log";
+test("Hermes durable projection uses attachment metadata instead of interpreting Host paths", () => {
+  const path = "/opaque/host/location/7f";
   const turns = mapMessages("stored-file-attachment", [
     { role: "user", content: `这是啥 @file:${path}`, id: 1 },
     { role: "assistant", content: "这是构建日志。", id: 2 },
-  ]);
+  ], false, new Map([[path, "1-1-3-构建-Hermes-CVM-镜像-3.log"]]));
 
   assert.deepEqual(turns[0]?.items[0], {
     type: "userMessage",
@@ -1124,7 +1279,7 @@ test("Hermes durable projection restores ordinary quoted @file references as typ
 
   assert.deepEqual(turns[0]?.items[0]?.content, [
     { type: "text", text: "review please", text_elements: [] },
-    { type: "mention", name: "/workspace/My File.log", path: "/workspace/My File.log" },
+    { type: "mention", name: "My File.log", path: "/workspace/My File.log" },
   ]);
 });
 
@@ -2067,11 +2222,19 @@ test("Hermes browser Handler keeps the dormant Bot protocol out of its public ca
       pageRows: 120,
       previewNotification: "thread/history/preview",
     },
+    "opencraft/resume-history": { version: 1, mode: "message-window" },
     "opencraft/thread-queue": {
       version: 2,
       reorder: true,
       atomicSteer: true,
       perItemPause: true,
+    },
+    "opencraft/thread-lifecycle": {
+      version: 1,
+      fork: false,
+      rename: true,
+      archive: false,
+      delete: true,
     },
     "opencraft/scoped-model-catalog": { version: 1 },
   });
@@ -2084,6 +2247,47 @@ test("Hermes browser Handler keeps the dormant Bot protocol out of its public ca
   });
   assert.equal("error" in response && response.error.code, -32601);
   assert.equal(socket.requests.length, 0);
+  bridge.dispose();
+});
+
+test("Hermes scoped browser Host fences Thread RPCs to one Profile", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const bridge = new BrowserHermesAppServerBridge(socket, {
+    profileScope: "sales-123",
+    enableBotConversations: true,
+    resolveProfileBots: async () => [],
+  });
+
+  const initialized = await bridge.request("initialize", {}) as {
+    capabilities: { extensions: Record<string, unknown> };
+  };
+  assert.equal("vela/bot-conversations" in initialized.capabilities.extensions, false);
+
+  const listing = bridge.request("thread/list", {});
+  await flush();
+  const listRequest = socket.requests.at(-1)!;
+  assert.equal(listRequest.method, "session.list");
+  assert.deepEqual(listRequest.params, { limit: 1000, profile: "sales-123" });
+  socket.receive({ jsonrpc: "2.0", id: listRequest.id, result: { sessions: [] } });
+  await listing;
+
+  const starting = bridge.request("thread/start", { cwd: "/workspace/sales" });
+  await flush();
+  const createRequest = socket.requests.at(-1)!;
+  assert.equal(createRequest.method, "session.create");
+  assert.deepEqual(createRequest.params, {
+    cwd: "/workspace/sales",
+    source: "desktop",
+    profile: "sales-123",
+  });
+  socket.receive({ jsonrpc: "2.0", id: createRequest.id, result: {
+    session_id: "live-sales",
+    stored_session_id: "stored-sales",
+    message_count: 0,
+    messages: [],
+    info: { cwd: "/workspace/sales" },
+  } });
+  await starting;
   bridge.dispose();
 });
 
@@ -3377,6 +3581,9 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
       if (pathText === "/api/files/upload") {
         return { path: "/home/agentuser/.hermes/opencraft-attachments/a.txt" } as T;
       }
+      if (pathText === "/api/files" && init.method === "DELETE") {
+        return { ok: true } as T;
+      }
       throw new Error(`Unexpected HTTP request: ${pathText}`);
     },
     close() { closed = true; },
@@ -3406,6 +3613,7 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
       dataBase64: "aGVsbG8=",
     },
   }, { fileSystem });
+  const removed = await fileSystem.remove("/home/agentuser/.hermes/opencraft-attachments/a.txt");
 
   assert.deepEqual(metadata, {
     isDirectory: false,
@@ -3416,8 +3624,17 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
   });
   assert.deepEqual(file, { dataBase64: "aGVsbG8=" });
   assert.equal((initialized as { codexHome: string }).codexHome, "/home/agentuser/.hermes");
+  assert.deepEqual((initialized as {
+    capabilities: { extensions: Record<string, unknown> };
+  }).capabilities.extensions["opencraft/attachment-staging"], {
+    version: 1,
+    sources: ["client-bytes"],
+    locations: ["host-file"],
+    maxBytes: 32 * 1024 * 1024,
+  });
   assert.deepEqual(written, {});
-  assert.deepEqual(requests.at(-1), {
+  assert.equal(removed, true);
+  assert.deepEqual(requests.find(({ path }) => path === "/api/files/upload"), {
     path: "/api/files/upload",
     token: "dashboard-secret",
     method: "POST",
@@ -3425,6 +3642,15 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
       path: "/home/agentuser/.hermes/opencraft-attachments/a.txt",
       data_url: "data:application/octet-stream;base64,aGVsbG8=",
       overwrite: true,
+    },
+  });
+  assert.deepEqual(requests.at(-1), {
+    path: "/api/files",
+    token: "dashboard-secret",
+    method: "DELETE",
+    json: {
+      path: "/home/agentuser/.hermes/opencraft-attachments/a.txt",
+      recursive: false,
     },
   });
   assert.equal(requests.every(({ token }) => token === "dashboard-secret"), true);

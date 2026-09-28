@@ -23,6 +23,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
+	"git.woa.com/wisp/mono/trade/internal/personaldevbilling"
 	"git.woa.com/wisp/mono/trade/internal/region"
 	"git.woa.com/wisp/mono/trade/internal/resourcebillingclient"
 	"git.woa.com/wisp/mono/trade/internal/shadowclient"
@@ -85,10 +86,13 @@ func main() {
 		cfg.JifeiCGWGatewayURL,
 		cfg.JifeiCGWXQCloudUserID,
 		jifeiclient.Options{
-			BillingAPIGWBaseURL:   cfg.JifeiBillingAPIGWURL,
-			BillingAppID:          cfg.JifeiBillingAppID,
-			BillingAppSecret:      cfg.JifeiBillingAppSecret,
-			CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
+			BillingAPIGWBaseURL:          cfg.JifeiBillingAPIGWURL,
+			BillingAppID:                 cfg.JifeiBillingAppID,
+			BillingAppSecret:             cfg.JifeiBillingAppSecret,
+			CloudLadderHMACSecret:        cfg.CloudLadderHMACSecret,
+			BillingCloudLadderHMACSecret: cfg.BillingCloudAPICloudLadderHMACSecret,
+			PersonalDevBillingProxyURL:   cfg.PersonalDevBillingProxyURL,
+			PersonalDevBillingCapability: cfg.PersonalDevBillingCapability,
 			// v1.7.x 国际站接入 A3：出向 envelope.interface.extraPara 按 site 注入
 			// site / language（intl → site="2" language="en"；cn / 空 / 非法 → 不注入）。
 			SiteKind: cfg.SiteKind,
@@ -101,10 +105,10 @@ func main() {
 			Region:        cfg.BillingCloudAPIRegion,
 			Endpoint:      cfg.BillingCloudAPIEndpoint,
 			XQCloudUserID: cfg.BillingCloudAPIXQCloudUserID,
-			CloudLadder: cloudbillingclient.CloudLadderConfig{
-				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
-				RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
-				Secret:         cfg.CloudLadderHMACSecret,
+			CloudLadder:   billingCloudLadderConfig(cfg),
+			PersonalDev: cloudbillingclient.PersonalDevProxyConfig{
+				BaseURL:    cfg.PersonalDevBillingProxyURL,
+				Capability: cfg.PersonalDevBillingCapability,
 			},
 		})
 		if billingErr != nil {
@@ -171,6 +175,7 @@ func main() {
 		BillingPayRedirectURL:  cfg.BillingCloudAPIPayRedirectURL,
 		OrderWriter:            mysqlStore,
 		OrderStore:             mysqlStore,
+		DianshiRenewWriter:     mysqlStore,
 		ParticipationReader:    mysqlStore,
 		ShadowClient:           shadowClient,
 		// v1.7.x 国际站接入 A6.1：出向 envelope.resInfo.region/zone + trade_order.region_id
@@ -190,6 +195,8 @@ func main() {
 		ShadowClient:          shadowClient,
 		SiteKind:              cfg.SiteKind,
 		RegionOverride:        cfg.CreditRegionOverride,
+		InquiryFallbackUin:    cfg.InquiryFallbackUin,
+		InquiryFallbackAppID:  cfg.InquiryFallbackAppID,
 	})
 	var creditUsageSvc *creditusage.Service
 	if cfg.CreditSendResourceURL != "" {
@@ -231,8 +238,29 @@ func main() {
 		JifeiClient: jifeiClient,
 	})
 
+	var personalDevBillingProxy *personaldevbilling.Proxy
+	if cfg.PersonalDevBillingProxyEnabled {
+		personalDevBillingProxy, err = personaldevbilling.New(personaldevbilling.Config{
+			JifeiURL:                  cfg.JifeiBillingAPIGWURL,
+			JifeiAppID:                cfg.JifeiBillingAppID,
+			JifeiAppSecret:            cfg.JifeiBillingAppSecret,
+			JifeiXQCloudUserID:        cfg.JifeiCGWXQCloudUserID,
+			JifeiCloudLadderSecret:    cfg.BillingCloudAPICloudLadderHMACSecret,
+			CloudAPIEndpoint:          cfg.BillingCloudAPIEndpoint,
+			CloudAPIGatewayURL:        cfg.BillingCloudAPICloudLadderGatewayURL,
+			CloudAPIRouteID:           cfg.BillingCloudAPICloudLadderRouteID,
+			CloudAPICloudLadderSecret: cfg.BillingCloudAPICloudLadderHMACSecret,
+			CloudAPIXQCloudUserID:     cfg.BillingCloudAPIXQCloudUserID,
+		})
+		if err != nil {
+			log.Fatalf("init personal DevCloud billing proxy: %v", err)
+		}
+		log.Printf("[personal-dev-billing-proxy] activated")
+	}
+
 	router := httpapi.NewRouter(httpapi.ServerConfig{
 		InternalServiceToken:    cfg.InternalServiceToken,
+		PersonalDevBillingProxy: personalDevBillingProxy,
 		JifeiComponentName:      cfg.JifeiComponentName,
 		JifeiProtocolVersion:    cfg.JifeiProtocolVersion,
 		JifeiOurInterfacePrefix: cfg.JifeiOurInterfacePrefix,
@@ -326,4 +354,12 @@ func main() {
 		log.Fatalf("listen and serve: %v", err)
 	}
 	cancelRoot()
+}
+
+func billingCloudLadderConfig(cfg config.Config) cloudbillingclient.CloudLadderConfig {
+	return cloudbillingclient.CloudLadderConfig{
+		GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
+		RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
+		Secret:         cfg.BillingCloudAPICloudLadderHMACSecret,
+	}
 }

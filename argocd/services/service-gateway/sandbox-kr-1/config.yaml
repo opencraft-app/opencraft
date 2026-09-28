@@ -202,6 +202,14 @@ routes:
     path: /auth/internal/dev-environments/registration
   - method: DELETE
     path: /auth/internal/dev-environments/registration
+  - method: POST
+    path: /auth/dev-environments/account-lease
+  - method: DELETE
+    path: /auth/dev-environments/account-lease
+  - method: POST
+    path: /auth/dev-environments/billing-proxy/jifei/resource-center/interface
+  - method: POST
+    path: /auth/dev-environments/billing-proxy/cloudapi/
   - method: GET
     path: /auth/oauth/qq/start
   - method: GET

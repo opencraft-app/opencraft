@@ -108,6 +108,23 @@ type adminShadowBindingResponse struct {
 	UpdatedAt                 string  `json:"updatedAt"`
 }
 
+type adminShadowAccountResponse struct {
+	UserID           string `json:"userId"`
+	Phone            string `json:"phone"`
+	RealnameVerified bool   `json:"realnameVerified"`
+	ShadowUserName   string `json:"shadowUserName"`
+	Uin              string `json:"uin"`
+	OwnerUin         string `json:"ownerUin"`
+	AppID            string `json:"appId"`
+	BindingStatus    string `json:"bindingStatus"`
+	BasicAuthStatus  string `json:"basicAuthStatus"`
+	LastErrorCode    string `json:"lastErrorCode,omitempty"`
+	LastErrorMessage string `json:"lastErrorMessage,omitempty"`
+	UserCreatedAt    string `json:"userCreatedAt"`
+	BindingCreatedAt string `json:"bindingCreatedAt"`
+	BindingUpdatedAt string `json:"bindingUpdatedAt"`
+}
+
 func registerAdminRoutes(group *gin.RouterGroup, authService *service.Service, avatarStore AvatarStore) {
 	handler := &adminHandler{service: authService, avatarStore: avatarStore}
 	group.GET("/users", handler.listUsers)
@@ -118,9 +135,44 @@ func registerAdminRoutes(group *gin.RouterGroup, authService *service.Service, a
 	group.GET("/invites", handler.listInvites)
 	group.POST("/invites", handler.createInvite)
 	group.POST("/invites/:code/disable", handler.disableInvite)
+	group.GET("/shadow-accounts", handler.listShadowAccounts)
 	group.GET("/shadow-bindings/:userID", handler.getShadowBinding)
 	group.POST("/shadow-bindings", handler.upsertShadowBinding)
 	group.DELETE("/shadow-bindings/:userID", handler.disableShadowBinding)
+}
+
+func (h *adminHandler) listShadowAccounts(ctx *gin.Context) {
+	page := queryPage(ctx)
+	pageSize := queryPageSize(ctx)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	items, total, err := h.service.ListAdminShadowAccountsPage(ctx.Request.Context(), ctx.Query("search"), page, pageSize)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "list_shadow_accounts_failed"})
+		return
+	}
+
+	resp := make([]adminShadowAccountResponse, 0, len(items))
+	for _, item := range items {
+		resp = append(resp, adminShadowAccountResponse{
+			UserID:           item.UserID,
+			Phone:            item.Phone,
+			RealnameVerified: item.RealnameVerified,
+			ShadowUserName:   item.ShadowUserName,
+			Uin:              item.Uin,
+			OwnerUin:         item.OwnerUin,
+			AppID:            item.AppID,
+			BindingStatus:    item.BindingStatus,
+			BasicAuthStatus:  item.BasicAuthStatus,
+			LastErrorCode:    item.LastErrorCode,
+			LastErrorMessage: item.LastErrorMessage,
+			UserCreatedAt:    item.UserCreatedAt.UTC().Format(timeRFC3339Milli),
+			BindingCreatedAt: item.BindingCreatedAt.UTC().Format(timeRFC3339Milli),
+			BindingUpdatedAt: item.BindingUpdatedAt.UTC().Format(timeRFC3339Milli),
+		})
+	}
+	ctx.JSON(http.StatusOK, adminListResponse[adminShadowAccountResponse]{Items: resp, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *adminHandler) getShadowBinding(ctx *gin.Context) {

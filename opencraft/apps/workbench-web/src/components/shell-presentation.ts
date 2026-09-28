@@ -7,7 +7,6 @@ export const ShellPresentationContext = createContext<{
   rightPanelFullWidth: boolean;
   toggleSidebar(): void;
   toggleRightPanel(): void;
-  restoreRightPanel?: () => void;
 } | null>(null);
 
 export const useShellPresentation = () => useContext(ShellPresentationContext);

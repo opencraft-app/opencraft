@@ -13,29 +13,30 @@ import (
 )
 
 type MemoryStore struct {
-	mu                        sync.Mutex
-	now                       func() time.Time
-	nextID                    int
-	usersByID                 map[string]User
-	usersByEmail              map[string]string
-	usersByPhone              map[string]string
-	oauthUsers                map[string]string
-	subscriptions             map[string]PlanSelection
-	passwordHashes            map[string][]byte
-	smsChallenges             map[string]smsChallenge
-	phoneAuthChallenges       map[string]PhoneAuthChallenge
-	verificationRateLimits    map[string]verificationRateLimitState
-	sessions                  map[string]sessionRecord
-	invites                   map[string]memoryInviteRecord
-	realnames                 map[string]UpdateRealnameInput
-	realnameHistory           map[string][]UpdateRealnameInput
-	realnameFaceIDAttempts    map[string]RealnameFaceIDAttempt
-	realnameFaceIDAuditEvents []RealnameFaceIDAuditEvent
-	nextAuditTaskID           int64
-	auditTasks                map[int64]*ContentAuditTask
-	emailBindTokens           map[string]memoryEmailBindToken
-	emailBindByToken          map[string]string
-	referralClaims            []referralClaimPayload
+	mu                         sync.Mutex
+	now                        func() time.Time
+	nextID                     int
+	usersByID                  map[string]User
+	usersByEmail               map[string]string
+	usersByPhone               map[string]string
+	oauthUsers                 map[string]string
+	subscriptions              map[string]PlanSelection
+	passwordHashes             map[string][]byte
+	smsChallenges              map[string]smsChallenge
+	phoneAuthChallenges        map[string]PhoneAuthChallenge
+	verificationRateLimits     map[string]verificationRateLimitState
+	sessions                   map[string]sessionRecord
+	invites                    map[string]memoryInviteRecord
+	realnames                  map[string]UpdateRealnameInput
+	realnameHistory            map[string][]UpdateRealnameInput
+	realnameFaceIDAttempts     map[string]RealnameFaceIDAttempt
+	realnameFaceIDAuditEvents  []RealnameFaceIDAuditEvent
+	nextAuditTaskID            int64
+	auditTasks                 map[int64]*ContentAuditTask
+	emailBindTokens            map[string]memoryEmailBindToken
+	emailBindByToken           map[string]string
+	referralClaims             []referralClaimPayload
+	developerTestAccountLeases map[string]DeveloperTestAccountLease
 }
 
 type memoryInviteRecord struct {
@@ -56,24 +57,25 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 	}
 
 	store := &MemoryStore{
-		now:                    now,
-		usersByID:              make(map[string]User),
-		usersByEmail:           make(map[string]string),
-		usersByPhone:           make(map[string]string),
-		oauthUsers:             make(map[string]string),
-		subscriptions:          make(map[string]PlanSelection),
-		passwordHashes:         make(map[string][]byte),
-		smsChallenges:          make(map[string]smsChallenge),
-		phoneAuthChallenges:    make(map[string]PhoneAuthChallenge),
-		verificationRateLimits: make(map[string]verificationRateLimitState),
-		sessions:               make(map[string]sessionRecord),
-		invites:                make(map[string]memoryInviteRecord),
-		realnames:              make(map[string]UpdateRealnameInput),
-		realnameHistory:        make(map[string][]UpdateRealnameInput),
-		realnameFaceIDAttempts: make(map[string]RealnameFaceIDAttempt),
-		auditTasks:             make(map[int64]*ContentAuditTask),
-		emailBindTokens:        make(map[string]memoryEmailBindToken),
-		emailBindByToken:       make(map[string]string),
+		now:                        now,
+		usersByID:                  make(map[string]User),
+		usersByEmail:               make(map[string]string),
+		usersByPhone:               make(map[string]string),
+		oauthUsers:                 make(map[string]string),
+		subscriptions:              make(map[string]PlanSelection),
+		passwordHashes:             make(map[string][]byte),
+		smsChallenges:              make(map[string]smsChallenge),
+		phoneAuthChallenges:        make(map[string]PhoneAuthChallenge),
+		verificationRateLimits:     make(map[string]verificationRateLimitState),
+		sessions:                   make(map[string]sessionRecord),
+		invites:                    make(map[string]memoryInviteRecord),
+		realnames:                  make(map[string]UpdateRealnameInput),
+		realnameHistory:            make(map[string][]UpdateRealnameInput),
+		realnameFaceIDAttempts:     make(map[string]RealnameFaceIDAttempt),
+		auditTasks:                 make(map[int64]*ContentAuditTask),
+		emailBindTokens:            make(map[string]memoryEmailBindToken),
+		emailBindByToken:           make(map[string]string),
+		developerTestAccountLeases: make(map[string]DeveloperTestAccountLease),
 	}
 	if opts.SeedDefaultInvites {
 		store.seedDefaultInvites()

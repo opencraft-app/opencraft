@@ -123,6 +123,54 @@ func TestTencentTerminalCommandStreamUsesPtyExecCmdStreamAndOrdersChunks(t *test
 	}
 }
 
+func TestMockTerminalCommandStreamAcknowledgesValidatedCommand(t *testing.T) {
+	p := NewMockCloudProvider()
+	var events []TerminalCommandStreamEvent
+
+	result, err := p.StreamTerminalCommand(context.Background(), TerminalCommandStreamRequest{
+		Region:           "ap-seoul",
+		InstanceID:       "cvm-mock-1",
+		Command:          "acli models set --default",
+		Username:         terminalCommandUsername,
+		WorkingDirectory: terminalCommandWorkingDirectory,
+		TimeoutSeconds:   60,
+	}, func(event TerminalCommandStreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamTerminalCommand returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one started event, got %+v", events)
+	}
+	if events[0].Type != TerminalCommandEventStarted || events[0].ExecutionID == "" {
+		t.Fatalf("unexpected started event: %+v", events[0])
+	}
+	if result.ExecutionID != events[0].ExecutionID || result.ExitCode != 0 {
+		t.Fatalf("unexpected command result: %+v", result)
+	}
+}
+
+func TestMockTerminalCommandStreamRejectsCanceledContext(t *testing.T) {
+	p := NewMockCloudProvider()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := p.StreamTerminalCommand(ctx, TerminalCommandStreamRequest{
+		Region:           "ap-seoul",
+		InstanceID:       "cvm-mock-1",
+		Command:          "true",
+		Username:         terminalCommandUsername,
+		WorkingDirectory: terminalCommandWorkingDirectory,
+		TimeoutSeconds:   60,
+	}, func(TerminalCommandStreamEvent) error { return nil })
+	var streamErr *TerminalCommandStreamError
+	if !errors.As(err, &streamErr) || streamErr.Code != TerminalCommandErrorCanceled {
+		t.Fatalf("expected canceled stream error, got %v", err)
+	}
+}
+
 func TestTencentTerminalCommandStreamStartsPtyWithoutFixedAuthDelay(t *testing.T) {
 	t.Parallel()
 

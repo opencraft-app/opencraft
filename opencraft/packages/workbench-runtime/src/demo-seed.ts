@@ -3,10 +3,10 @@ import type { TimelineSourceTurn } from "@opencraft/chat-core";
 import type { WorkbenchFileChange, WorkbenchThread } from "./models";
 
 export const demoThreads: readonly WorkbenchThread[] = [
-  { id: "codex-frame", title: "Restore the desktop frame", project: "OpenCraft", lineage: "root", time: "Now", status: "running" },
-  { id: "replica", title: "Implement Replica synchronization", project: "OpenCraft", lineage: "root", time: "12m", status: "review", unread: true },
-  { id: "composer", title: "Port the ProseMirror composer", project: "OpenCraft", lineage: "root", time: "Yesterday", status: "ready" },
-  { id: "multi-host", title: "Model the multi-host transport", project: "Daemon", lineage: "root", time: "Tue", status: "ready" },
+  { id: "codex-frame", title: "Restore the desktop frame", project: "OpenCraft", lineage: "root", time: "Now", updatedAt: 1_725_724_800, status: "running" },
+  { id: "replica", title: "Implement Replica synchronization", project: "OpenCraft", lineage: "root", time: "12m", updatedAt: 1_725_724_080, status: "review", unread: true },
+  { id: "composer", title: "Port the ProseMirror composer", project: "OpenCraft", lineage: "root", time: "Yesterday", updatedAt: 1_725_638_400, status: "ready" },
+  { id: "multi-host", title: "Model the multi-host transport", project: "Daemon", lineage: "root", time: "Tue", updatedAt: 1_725_379_200, status: "ready" },
 ];
 
 export const demoChangedFiles: readonly WorkbenchFileChange[] = [

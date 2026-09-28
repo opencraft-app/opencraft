@@ -52,6 +52,8 @@ const createMemoryStorage = (): Storage => {
 };
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => text,
 }));
 
@@ -385,8 +387,9 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage("billing");
 
-    expect(screen.getByText("当前套餐")).toBeInTheDocument();
-    expect(screen.getByText("启航套餐")).toBeInTheDocument();
+    const currentPlan = screen.getByText("当前套餐").parentElement?.parentElement;
+    expect(currentPlan).not.toBeNull();
+    expect(within(currentPlan!).getByText("启航套餐")).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();
     expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
     const planDetailsLink = screen.getByRole("link", { name: "套餐说明" });
@@ -475,6 +478,34 @@ describe("AccountPage nickname audit state", () => {
     expect(percentage).toHaveStyle({ color: expectedColor });
     expect(progressFill).not.toBeNull();
     expect(progressFill).toHaveStyle({ background: expectedColor });
+  });
+
+  it("shows referral credits separately from the package quota", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 4500,
+      credit_available: 4500,
+      free_credit_total: 500,
+      free_credit_available: 500,
+    };
+
+    renderAccountPage("billing");
+
+    expect(screen.getByText("套餐积分")).toBeInTheDocument();
+    const creditDetails = screen.getByText("额度明细").parentElement?.parentElement;
+    expect(creditDetails).not.toBeNull();
+    const sources = within(creditDetails!).getAllByRole("listitem");
+    expect(sources).toHaveLength(2);
+    expect(sources[0]).toHaveTextContent("启航套餐");
+    expect(sources[0]).toHaveTextContent("4,500 / 4,500");
+    expect(sources[1]).toHaveTextContent("额外积分");
+    expect(sources[1]).toHaveTextContent("500 / 500");
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === "P" &&
+        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 4,500"
+      )
+    ).toBeInTheDocument();
   });
 
   it("shows no model prompt at 95% credit usage", () => {

@@ -385,8 +385,8 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
 	}
-	if cfg.CloudLadderHMACSecret != "trade-hmac" {
-		t.Fatalf("CloudLadderHMACSecret fallback = %q", cfg.CloudLadderHMACSecret)
+	if cfg.CloudLadderHMACSecret != "" {
+		t.Fatalf("CloudLadderHMACSecret = %q, want empty for Billing-only secret", cfg.CloudLadderHMACSecret)
 	}
 	if cfg.BillingCloudAPIXQCloudUserID != "800000294207" {
 		t.Fatalf("BillingCloudAPIXQCloudUserID = %q", cfg.BillingCloudAPIXQCloudUserID)
@@ -408,5 +408,58 @@ func TestLoad_CloudLadderHMACSecretPrefersGeneralName(t *testing.T) {
 	}
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "general-secret" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+}
+
+func TestLoad_BillingCloudLadderHMACSecretDoesNotSignOtherRoutes(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("TRADE_CLOUDLADDER_HMAC_SECRET", "")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "billing-only-secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.CloudLadderHMACSecret != "" {
+		t.Fatalf("CloudLadderHMACSecret = %q, want empty", cfg.CloudLadderHMACSecret)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "billing-only-secret" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
+	}
+}
+
+func TestLoad_PersonalDevBillingProxyRequiresURLAndCapabilityTogether(t *testing.T) {
+	tests := []struct {
+		name       string
+		proxyURL   string
+		capability string
+		wantErr    bool
+	}{
+		{name: "disabled when both empty"},
+		{name: "enabled as a pair", proxyURL: "https://auth.testing/auth/dev-environments/billing-proxy/", capability: "lvdt1.450860000023.test"},
+		{name: "url only rejected", proxyURL: "https://auth.testing/auth/dev-environments/billing-proxy", wantErr: true},
+		{name: "capability only rejected", capability: "lvdt1.450860000023.test", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequiredLoadEnv(t)
+			t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+			t.Setenv("PERSONAL_DEV_BILLING_PROXY_URL", tc.proxyURL)
+			t.Setenv("PERSONAL_DEV_BILLING_CAPABILITY", tc.capability)
+			cfg, err := Load()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "must be configured together") {
+					t.Fatalf("Load() err=%v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.PersonalDevBillingProxyURL != strings.TrimRight(tc.proxyURL, "/") || cfg.PersonalDevBillingCapability != tc.capability {
+				t.Fatalf("proxy config url=%q capability=%q", cfg.PersonalDevBillingProxyURL, cfg.PersonalDevBillingCapability)
+			}
+		})
 	}
 }

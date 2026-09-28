@@ -97,7 +97,7 @@ type PublicHeaderAuthIslandProps = {
    * 未登录点击直接跳转订阅套餐页（而非弹出登录框）。仅首页启用。
    */
   promoteFreeTrial?: boolean;
-  /** 仅显示黑色登录主按钮，供国际站首页的精简导航使用。 */
+  /** 精简未登录导航：隐藏创建入口，仅显示黑色登录主按钮。 */
   loginOnly?: boolean;
 };
 

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { BlogPage } from "@/pages/marketing/blog-page";
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => text,
 }));
 
@@ -70,7 +72,7 @@ describe("BlogPage", () => {
     expect(latestCard).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-3", "shadow-sm");
     expect(latestCard.querySelector("img")).toHaveAttribute(
       "src",
-      "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
+      "/assets/blog/dsh-revived-broken-hermes-agent/cover.webp",
     );
     expect(latestCard.querySelector("img")).toHaveClass("rounded-md", "bg-white", "object-cover");
     expect(latestCard.querySelector("h2")).toHaveClass("line-clamp-2", "min-h-[2.5rem]", "px-1", "text-pretty");

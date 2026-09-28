@@ -3,7 +3,11 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { executeBuildReleaseArtifacts, runFrontendArtifactBuildCommand } from "./build-release-artifacts.mjs";
+import {
+  executeBuildReleaseArtifacts,
+  runFrontendArtifactBuildCommand,
+  stageOpenCraftEmbeddedWorkbench,
+} from "./build-release-artifacts.mjs";
 
 const baseEnv = {
   FRONTEND_ARTIFACT_MODE: "required",
@@ -115,6 +119,43 @@ describe("build release artifacts", () => {
       expect(existsSync(outsideNext)).toBe(true);
       // 产物仍正常拷贝
       expect(existsSync(join(root, "artifact", "index.html"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("stages the reviewed OpenCraft embed tree without publishing its private manifest", () => {
+    const root = mkdtempSync(join(tmpdir(), "frontend-opencraft-embed-"));
+    const source = join(root, "source");
+    const output = join(root, "out");
+    mkdirSync(join(source, ".vite"), { recursive: true });
+    mkdirSync(join(source, "assets"), { recursive: true });
+    writeFileSync(join(source, "embedded-workbench.js"), "await import('./assets/a-test.js');\n");
+    writeFileSync(join(source, "version.json"), '{"schemaVersion":1,"buildId":"test"}');
+    writeFileSync(join(source, ".vite", "manifest.json"), "{}");
+    writeFileSync(join(source, "assets", "a-test.js"), "export {};\n");
+    writeFileSync(join(source, "assets", "a-test.js.map"), "private source map");
+
+    try {
+      expect(stageOpenCraftEmbeddedWorkbench(output, {
+        NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL: "/__opencraft/embedded-workbench.js",
+        OPENCRAFT_EMBED_DIST_DIR: source,
+      })).toBe(true);
+      expect(existsSync(join(output, "__opencraft", "embedded-workbench.js"))).toBe(true);
+      expect(existsSync(join(output, "__opencraft", "assets", "a-test.js"))).toBe(true);
+      expect(existsSync(join(output, "__opencraft", "assets", "a-test.js.map"))).toBe(false);
+      expect(existsSync(join(output, "__opencraft", ".vite"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when an enabled artifact build has no OpenCraft embed input", () => {
+    const root = mkdtempSync(join(tmpdir(), "frontend-opencraft-missing-"));
+    try {
+      expect(() => stageOpenCraftEmbeddedWorkbench(root, {
+        NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL: "/__opencraft/embedded-workbench.js",
+      })).toThrow("OPENCRAFT_EMBED_DIST_DIR is required");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

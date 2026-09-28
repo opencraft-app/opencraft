@@ -58,32 +58,32 @@ function ShadowAccountsPanel() {
   const columns = useMemo<ColumnDef<AdminShadowAccount>[]>(
     () => [
       {
-        accessorKey: "user_id",
+        accessorKey: "userId",
         header: "用户 ID",
         cell: ({ row }) => (
           <code className="block max-w-48 truncate font-mono text-xs">
-            {row.original.user_id}
+            {row.original.userId}
           </code>
         ),
       },
       {
-        accessorKey: "shadow_user_name",
+        accessorKey: "shadowUserName",
         header: "影子用户名",
         cell: ({ row }) =>
-          row.original.shadow_user_name ? (
+          row.original.shadowUserName ? (
             <code className="block max-w-40 truncate font-mono text-xs">
-              {row.original.shadow_user_name}
+              {row.original.shadowUserName}
             </code>
           ) : (
             "—"
           ),
       },
       {
-        accessorKey: "phone_number",
+        accessorKey: "phone",
         header: "手机号",
         cell: ({ row }) => (
           <span className="whitespace-nowrap tabular-nums">
-            {row.original.country_code} {row.original.phone_number}
+            {row.original.phone || "—"}
           </span>
         ),
       },
@@ -94,53 +94,40 @@ function ShadowAccountsPanel() {
           <div className="space-y-1 font-mono text-[11px] tabular-nums">
             <div>{row.original.uin || "—"}</div>
             <div className="text-muted-foreground">
-              {row.original.owner_uin || "—"}
+              {row.original.ownerUin || "—"}
             </div>
             <div className="text-muted-foreground">
-              {row.original.appid || "—"}
+              {row.original.appId || "—"}
             </div>
           </div>
         ),
-      },
-      {
-        accessorKey: "instance_id",
-        header: "实例 ID",
-        cell: ({ row }) =>
-          row.original.instance_id ? (
-            <code className="block max-w-40 truncate font-mono text-xs">
-              {row.original.instance_id}
-            </code>
-          ) : (
-            "—"
-          ),
       },
       {
         id: "states",
         header: "认证状态",
         cell: ({ row }) => (
           <div className="flex min-w-28 flex-col items-start gap-1">
-            <Badge variant={row.original.is_register_shadow_account ? "default" : "outline"}>
-              {row.original.is_register_shadow_account ? "已注册" : "注册中"}
+            <Badge variant={row.original.bindingStatus === "active" ? "default" : "outline"}>
+              {row.original.bindingStatus || "未知"}
             </Badge>
-            <Badge variant={row.original.is_shadow_account_basic_auth ? "secondary" : "outline"}>
-              {row.original.is_shadow_account_basic_auth ? "基础认证" : "未基础认证"}
+            <Badge variant={row.original.basicAuthStatus === "succeeded" ? "secondary" : "outline"}>
+              {row.original.basicAuthStatus === "succeeded" ? "基础认证" : "未基础认证"}
             </Badge>
-            <Badge variant={row.original.is_standard_realname_auth ? "secondary" : "outline"}>
-              {row.original.is_standard_realname_auth ? "标准实名" : "未标准实名"}
+            <Badge variant={row.original.realnameVerified ? "secondary" : "outline"}>
+              {row.original.realnameVerified ? "已实名" : "未实名"}
             </Badge>
           </div>
         ),
       },
       {
-        accessorKey: "created_at",
-        header: "创建时间",
-        cell: ({ row }) => formatDateTime(row.original.created_at),
+        accessorKey: "bindingCreatedAt",
+        header: "绑定时间",
+        cell: ({ row }) => formatDateTime(row.original.bindingCreatedAt),
       },
       {
-        accessorKey: "bound_at",
-        header: "绑定时间",
-        cell: ({ row }) =>
-          row.original.bound_at ? formatDateTime(row.original.bound_at) : "—",
+        accessorKey: "bindingUpdatedAt",
+        header: "更新时间",
+        cell: ({ row }) => formatDateTime(row.original.bindingUpdatedAt),
       },
     ],
     []
@@ -156,7 +143,7 @@ function ShadowAccountsPanel() {
         </Label>
         <Input
           id="shadow-account-search"
-          placeholder="按用户 ID、影子用户名、手机号、UIN、AppID 或实例 ID 搜索"
+          placeholder="按用户 ID、影子用户名、UIN、OwnerUIN 或 AppID 搜索"
           value={search}
           onChange={(event) => {
             setSearch(event.target.value);

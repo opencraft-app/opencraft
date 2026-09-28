@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Cara menghubungi tim LightVela adalah bergabung dengan komunitas resmi, tempat Anda dapat berbicara langsung dengan tim produk serta menyampaikan kendala pemakaian, saran produk, dan skenario penggunaan Agent Anda yang sebenarnya. Jika pertanyaan Anda berkaitan dengan paket, penagihan, atau pesanan, mulailah dari dokumentasi paket dan pengumuman versi berbayar untuk ketentuan yang berlaku saat ini. Produk dan dokumentasi terus diperbarui selama tahap public beta, sehingga sebagian deskripsi dapat berubah antar versi.**
+**Bergabunglah dengan komunitas resmi LightVela untuk berbicara langsung dengan tim produk dan berbagi pertanyaan, saran, serta pengalaman penggunaan Agent. Untuk pertanyaan tentang paket, penagihan, atau pesanan, baca [dokumentasi paket](./plans.md); manfaat yang berlaku tercantum di halaman langganan.**
 
 ---
 

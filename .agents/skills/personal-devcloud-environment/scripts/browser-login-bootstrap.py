@@ -9,6 +9,7 @@ import os
 import re
 import signal
 import stat
+import threading
 import time
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -17,16 +18,27 @@ from urllib.parse import quote, urlsplit
 class BootstrapState:
     def __init__(self, token: str) -> None:
         self._token = token
+        self._lock = threading.Lock()
         self.used = False
 
     def take(self) -> str:
-        token = self._token
-        self._token = ""
-        return token
+        with self._lock:
+            token = self._token
+            self._token = ""
+            return token
+
+    def consume(self) -> bool:
+        with self._lock:
+            if self.used:
+                return False
+            self.used = True
+            self._token = ""
+            return True
 
 
-class ReusableHTTPServer(http.server.HTTPServer):
+class ReusableHTTPServer(http.server.ThreadingHTTPServer):
     allow_reuse_address = True
+    daemon_threads = True
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,6 +102,10 @@ def main() -> None:
     redirect_url = f"{args.frontend_url}#session_token={quote(token, safe='')}"
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def setup(self) -> None:
+            super().setup()
+            self.request.settimeout(2)
+
         def log_message(self, _format: str, *_args: object) -> None:
             return
 
@@ -99,13 +115,11 @@ def main() -> None:
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 return
-            if state.used:
+            if not state.consume():
                 self.send_response(http.HTTPStatus.GONE)
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 return
-            state.used = True
-            state.take()
             self.send_response(http.HTTPStatus.SEE_OTHER)
             self.send_header("Location", redirect_url)
             self.send_header("Cache-Control", "no-store, max-age=0")

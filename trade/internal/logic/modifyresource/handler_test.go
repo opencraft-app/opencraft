@@ -685,15 +685,18 @@ func TestInstallRegistersModifyResourceHandler(t *testing.T) {
 func TestModifyResourceAcceptsGoodsDetailBuiltByOrderPath(t *testing.T) {
 	para := stdParaMap()
 	para["goodsDetail"] = jifeiproto.BuildModifyGoodsDetail(jifeiproto.ModifyGoodsDetailInput{
-		ProductCode:    "p_lighthouse",
-		SubProductCode: "sp_lightvela_cn",
-		Pid:            4001,
-		ResourceID:     testPassID,
-		CurDeadline:    "2026-06-15 10:30:00",
-		SourceBundleID: testSourceBundleID,
-		TargetBundleID: testTargetBundleID,
-		SourceSVList:   map[string]int64{"sv_cpu": 2, "sv_mem": 4, "sv_disk": 60},
-		TargetSVList:   map[string]int64{"sv_cpu": 4, "sv_mem": 8, "sv_disk": 80},
+		SourceProductCode:    "p_lighthouse",
+		SourceSubProductCode: "sp_lightvela_cn",
+		SourcePid:            4001,
+		TargetProductCode:    "p_lighthouse",
+		TargetSubProductCode: "sp_lightvela_cn",
+		TargetPid:            4001,
+		ResourceID:           testPassID,
+		CurDeadline:          "2026-06-15 10:30:00",
+		SourceBundleID:       testSourceBundleID,
+		TargetBundleID:       testTargetBundleID,
+		SourceSVList:         map[string]int64{"sv_cpu": 2, "sv_mem": 4, "sv_disk": 60},
+		TargetSVList:         map[string]int64{"sv_cpu": 4, "sv_mem": 8, "sv_disk": 80},
 	})
 
 	deps, _, ctl := stdDeps()
@@ -711,6 +714,32 @@ func TestModifyResourceAcceptsGoodsDetailBuiltByOrderPath(t *testing.T) {
 	}
 	if req.CurDeadline == nil {
 		t.Fatal("CurDeadline is nil, want the built literal parsed back")
+	}
+}
+
+func TestModifyResourceAcceptsCrossSubProductConfig(t *testing.T) {
+	defs := stdDefs()
+	source := defs[testSourceBundleID]
+	target := defs[testTargetBundleID]
+	target.SubProductCode = "sp_lightvela_ai_cn"
+	target.Pid = 5002
+	para := stdParaMap()
+	gd := para["goodsDetail"].(map[string]any)
+	gd["pid"] = target.Pid
+	gd["newConfig"].(map[string]any)["subProductCode"] = target.SubProductCode
+	gd["newConfig"].(map[string]any)["pid"] = target.Pid
+
+	deps, _, ctl := stdDeps()
+	deps.BundleStore = &fakeBundleStore{defs: defs}
+	resp := invokeHandler(t, deps, para)
+	if resp.ReturnCode != 0 {
+		t.Fatalf("returnCode = %d, want 0 (msg=%q)", resp.ReturnCode, resp.ReturnMessage)
+	}
+	if ctl.lastReq == nil || ctl.lastReq.SourceBundleID != testSourceBundleID || ctl.lastReq.TargetBundleID != testTargetBundleID {
+		t.Fatalf("ctl request = %+v", ctl.lastReq)
+	}
+	if ctl.lastReq.SubProductCode != source.SubProductCode {
+		t.Fatalf("ctl source subProductCode = %q, want %q", ctl.lastReq.SubProductCode, source.SubProductCode)
 	}
 }
 
@@ -739,15 +768,18 @@ func jifeiCallbackFilter(goodsDetail map[string]any) map[string]any {
 func TestModifyResourceResolvesBundlesAfterJifeiDropsCustomKeys(t *testing.T) {
 	para := stdParaMap()
 	built := jifeiproto.BuildModifyGoodsDetail(jifeiproto.ModifyGoodsDetailInput{
-		ProductCode:    testProductCode,
-		SubProductCode: testSubProductCode,
-		Pid:            4001,
-		ResourceID:     testPassID,
-		CurDeadline:    "2026-06-15 10:30:00",
-		SourceBundleID: testSourceBundleID,
-		TargetBundleID: testTargetBundleID,
-		SourceSVList:   map[string]int64{"sv_cpu": 2, "sv_mem": 4, "sv_disk": 60},
-		TargetSVList:   map[string]int64{"sv_cpu": 4, "sv_mem": 8, "sv_disk": 80},
+		SourceProductCode:    testProductCode,
+		SourceSubProductCode: testSubProductCode,
+		SourcePid:            4001,
+		TargetProductCode:    testProductCode,
+		TargetSubProductCode: testSubProductCode,
+		TargetPid:            4001,
+		ResourceID:           testPassID,
+		CurDeadline:          "2026-06-15 10:30:00",
+		SourceBundleID:       testSourceBundleID,
+		TargetBundleID:       testTargetBundleID,
+		SourceSVList:         map[string]int64{"sv_cpu": 2, "sv_mem": 4, "sv_disk": 60},
+		TargetSVList:         map[string]int64{"sv_cpu": 4, "sv_mem": 8, "sv_disk": 80},
 	})
 	filtered := jifeiCallbackFilter(built)
 	if _, ok := filtered["bundleId"]; ok {
@@ -781,11 +813,60 @@ func TestModifyResourceResolveFailures(t *testing.T) {
 			name: "newConfig matches no bundle",
 			mutate: func(_ *Deps, para map[string]any) {
 				para["goodsDetail"].(map[string]any)["newConfig"] = map[string]any{
+					"productCode": testProductCode, "subProductCode": testSubProductCode, "pid": 4001,
 					"sv_cpu": 16, "sv_mem": 32, "sv_disk": 500,
 				}
 			},
 			wantCode: ReturnCodeInvalidPara,
-			wantMsg:  "newConfig",
+			wantMsg:  "matches no bundle definition",
+		},
+		{
+			name: "source and target belong to different products",
+			mutate: func(_ *Deps, para map[string]any) {
+				para["goodsDetail"].(map[string]any)["oldConfig"].(map[string]any)["productCode"] = "p_other"
+			},
+			wantCode: ReturnCodeInvalidPara,
+			wantMsg:  "cross product modify",
+		},
+		{
+			name: "outer identity is not the source identity",
+			mutate: func(_ *Deps, para map[string]any) {
+				para["subProductCode"] = "sp_other"
+			},
+			wantCode: ReturnCodeInvalidPara,
+			wantMsg:  "outer billing identity",
+		},
+		{
+			name: "oldConfig pid differs from source definition",
+			mutate: func(_ *Deps, para map[string]any) {
+				para["goodsDetail"].(map[string]any)["oldConfig"].(map[string]any)["pid"] = 9999
+			},
+			wantCode: ReturnCodeInvalidPara,
+			wantMsg:  "oldConfig pid mismatch",
+		},
+		{
+			name: "newConfig pid differs from target definition",
+			mutate: func(_ *Deps, para map[string]any) {
+				para["goodsDetail"].(map[string]any)["newConfig"].(map[string]any)["pid"] = 9999
+			},
+			wantCode: ReturnCodeInvalidPara,
+			wantMsg:  "newConfig pid mismatch",
+		},
+		{
+			name: "oldConfig missing billing identity",
+			mutate: func(_ *Deps, para map[string]any) {
+				delete(para["goodsDetail"].(map[string]any)["oldConfig"].(map[string]any), "subProductCode")
+			},
+			wantCode: ReturnCodeInvalidPara,
+			wantMsg:  "oldConfig.subProductCode",
+		},
+		{
+			name: "newConfig missing billing identity",
+			mutate: func(_ *Deps, para map[string]any) {
+				delete(para["goodsDetail"].(map[string]any)["newConfig"].(map[string]any), "productCode")
+			},
+			wantCode: ReturnCodeInvalidPara,
+			wantMsg:  "newConfig.productCode",
 		},
 		{
 			// 同 SP 内两个套餐共用同一份 SV：任何选择都是猜，fail-closed。
@@ -814,7 +895,7 @@ func TestModifyResourceResolveFailures(t *testing.T) {
 			wantMsg:  "db down",
 		},
 		{
-			// 检索域缺失会让候选集跨 SP，违背本期同 SP 边界。
+			// 外层源资源身份缺失，无法校验回调是否属于当前资源的计费域。
 			name: "missing subProductCode",
 			mutate: func(_ *Deps, para map[string]any) {
 				para["subProductCode"] = ""

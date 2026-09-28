@@ -13,7 +13,7 @@ Apply a target cluster definition with:
 python3 .ci/runtime/commands/onboard_argocd_target_cluster.py \
   --cluster-manifest argocd/clusters/beijing-sandbox-2.yaml \
   --kubeconfig .secret/cls-ftjhqdjt-config \
-  --argocd-base-url https://9.208.245.238:30547 \
+  --argocd-base-url https://9.135.92.56:30547 \
   --argocd-username admin \
   --argocd-password "$ARGOCD_PASSWORD" \
   --argocd-insecure-skip-verify

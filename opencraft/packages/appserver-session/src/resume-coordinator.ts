@@ -3,7 +3,7 @@ import type { AppServerClient } from "@opencraft/appserver-client";
 import { buildResumeHistoryRequest, type AppServerThread, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
 
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
-import { mergeTurns, reconcileHistoryWindow } from "./merge-turns";
+import { mergeTurns, reconcileHistoryTurns, reconcileHistoryWindow } from "./merge-turns";
 import type { ThreadStreamRole, ThreadView } from "./models";
 import { resolveThreadId } from "./notification-buffer";
 
@@ -18,6 +18,7 @@ export type AppServerHostKind = "local" | "remote-ssh" | "durable" | "remote-con
 export interface ThreadResumeCoordinatorConfig {
   client: AppServerClient;
   hostKind?: AppServerHostKind;
+  historyModeHint?: "legacy" | "paginated" | "message-window" | null;
   useTailHydration?: boolean;
   supportsPaginatedHistory?: boolean;
   pageSize?: number;
@@ -87,6 +88,7 @@ export class ThreadResumeCoordinatorService extends Service {
   private readonly hostKind: AppServerHostKind;
   private readonly useTailHydration: boolean;
   private readonly supportsPaginatedHistory: boolean;
+  private readonly historyModeHint: "legacy" | "paginated" | "message-window" | null;
   private readonly pageSize: number;
   private readonly requestTimeoutMs: number;
   private readonly drainTailHistory: boolean;
@@ -104,6 +106,7 @@ export class ThreadResumeCoordinatorService extends Service {
     this.hostKind = config.hostKind ?? (config.client.hostId === "durable" ? "durable" : "local");
     this.useTailHydration = config.useTailHydration ?? true;
     this.supportsPaginatedHistory = config.supportsPaginatedHistory ?? true;
+    this.historyModeHint = config.historyModeHint ?? null;
     this.pageSize = config.pageSize ?? 5;
     this.requestTimeoutMs = config.requestTimeoutMs ?? 30_000;
     this.drainTailHistory = config.drainTailHistory ?? true;
@@ -229,17 +232,19 @@ export class ThreadResumeCoordinatorService extends Service {
     }));
     this.ctx.resumeNotificationBuffer.begin(threadId);
     const generation = this.client.connectionGeneration;
-    let metadata: AppServerThread | null = null;
+    let metadata: AppServerThread | null = initial.thread;
     let provisionalOwner = false;
     try {
-      try {
-        const read = await this.client.request("thread/read", {
-          threadId,
-          includeTurns: false,
-        }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible" });
-        metadata = requireThread(read.thread, "thread/read");
-      } catch {
-        metadata = null;
+      if (metadata === null && this.historyModeHint === null) {
+        try {
+          const read = await this.client.request("thread/read", {
+            threadId,
+            includeTurns: false,
+          }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible" });
+          metadata = requireThread(read.thread, "thread/read");
+        } catch {
+          metadata = null;
+        }
       }
 
       const roleAfterRead = this.ctx.threadStreamOwnership.get(threadId);
@@ -247,7 +252,7 @@ export class ThreadResumeCoordinatorService extends Service {
         const followerView = this.ctx.threadViews.update(threadId, (current) => ({
           ...current,
           thread: metadata ?? current.thread,
-          historyMode: metadata?.historyMode ?? current.historyMode,
+          historyMode: metadata?.historyMode ?? this.historyModeHint ?? current.historyMode,
           connectionGeneration: generation,
           resumeState: "resumed",
           streamRole: roleAfterRead,
@@ -261,7 +266,7 @@ export class ThreadResumeCoordinatorService extends Service {
         this.ctx.threadStreamOwnership.set(threadId, { role: "owner" });
       }
 
-      const historyMode = metadata?.historyMode ?? initial.historyMode;
+      const historyMode = metadata?.historyMode ?? this.historyModeHint ?? initial.historyMode;
       const supportsPaginatedHistory = this.useTailHydration
         && this.hostKind !== "durable"
         && historyMode === "paginated"
@@ -335,7 +340,7 @@ export class ThreadResumeCoordinatorService extends Service {
         const projected = this.ctx.threadResumeProjectors.project(current, { metadata, response });
         const turns = history.source === "message-window"
           ? reconcileHistoryWindow(projected.turns, history.turns, initial.turns)
-          : mergeTurns(projected.turns, history.turns, { placement: "prepend" });
+          : reconcileHistoryTurns(projected.turns, history.turns, "latest");
         const oldestLoadedTurnId = turns[0]?.id ?? null;
         return {
           ...projected,
@@ -394,7 +399,7 @@ export class ThreadResumeCoordinatorService extends Service {
       ) return;
       views.update(threadId, (current) => ({
         ...current,
-        turns: mergeTurns(current.turns, olderTurns, { placement: "prepend" }),
+        turns: reconcileHistoryTurns(current.turns, olderTurns, "older"),
         tailHydrationComplete: true,
         turnsPagination: {
           olderCursor: null,
@@ -445,7 +450,7 @@ export class ThreadResumeCoordinatorService extends Service {
         ...view,
         turns: page.source === "message-window"
           ? reconcileHistoryWindow(view.turns, page.turns)
-          : mergeTurns(view.turns, page.turns, { placement: "prepend" }),
+          : reconcileHistoryTurns(view.turns, page.turns, "older"),
         tailHydrationComplete: page.complete,
         turnsPagination: {
           olderCursor: page.olderCursor,

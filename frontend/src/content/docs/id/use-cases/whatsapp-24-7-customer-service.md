@@ -6,7 +6,7 @@ Di sini, 24/7 berarti Agent dapat merespons kapan pun layanannya berjalan, model
 
 Pesan proaktif WhatsApp tetap dipengaruhi jendela percakapan, templat pesan, dan konfigurasi kanal, sehingga pengingat otomatis harus dirancang secara terpisah dari percakapan yang dimulai pelanggan.
 
-![Mengonfigurasi layanan pelanggan AI 24/7 di WhatsApp](../images/use-case-09-whatsapp-24-7-customer-service.png)
+![Mengonfigurasi layanan pelanggan AI 24/7 di WhatsApp](../images/use-case-09-whatsapp-24-7-customer-service.webp)
 
 ## Ringkasan
 

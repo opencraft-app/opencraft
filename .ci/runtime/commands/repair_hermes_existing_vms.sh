@@ -5,6 +5,7 @@ set -euo pipefail
 ENV_SPEC="${HERMES_REPAIR_ENV_SPEC:-${HERMES_ROLLOUT_ENV_SPEC:-}}"
 OUTPUT_ROOT="${HERMES_REPAIR_OUTPUT_ROOT:-${HERMES_ROLLOUT_OUTPUT_ROOT:-.ci/.runtime-state/hermes-rollout}}"
 TAT_SCRIPT_FILE="${HERMES_TAT_SCRIPT_FILE:-images/helpers/config-hermes-python-mirrors.sh}"
+CHECKPOINT_ROOT="${HERMES_TAT_CHECKPOINT_ROOT:-/tmp/lightclaw-ci/hermes-tat-checkpoints}"
 
 usage() {
   cat <<'EOF'
@@ -58,9 +59,11 @@ require_cmd python3
 require_cmd tccli
 
 safe_env="$(safe_name "$env_name")"
+checkpoint_scope="$(safe_name "${HERMES_TAT_CHECKPOINT_SCOPE:-${BK_CI_BUILD_ID:-manual}}")"
 output_dir="${OUTPUT_ROOT}/${safe_env}"
 tat_output_dir="${output_dir}/hermes-tat"
-mkdir -p "$tat_output_dir" /tmp/lightclaw-ci
+checkpoint_dir="${CHECKPOINT_ROOT}/${checkpoint_scope}/${safe_env}"
+mkdir -p "$tat_output_dir" "$checkpoint_dir" /tmp/lightclaw-ci
 
 [[ -r "$TAT_SCRIPT_FILE" ]] || fail "TAT script file is not readable: ${TAT_SCRIPT_FILE}"
 bash -n "$TAT_SCRIPT_FILE"
@@ -80,6 +83,14 @@ python3 .ci/runtime/commands/split_hermes_pool_vms_by_region.py "$VM_LIST" "$tat
 
 while IFS=$'\t' read -r tat_region region_file count; do
   [[ -n "$tat_region" ]] || continue
+  skip_invoked_files="$(
+    find "$checkpoint_dir" -maxdepth 1 -type f -name "hermes-tat-invoke-${tat_region}-*.jsonl" -print |
+      sort |
+      paste -sd, -
+  )"
+  if [[ -n "$skip_invoked_files" ]]; then
+    log "resuming from TAT checkpoints env=${env_name} region=${tat_region} files=${skip_invoked_files}"
+  fi
   command_env_file="${tat_output_dir}/command-${tat_region}.env"
   HERMES_TAT_REGION="$tat_region" \
     HERMES_TAT_SCRIPT_FILE="$TAT_SCRIPT_FILE" \
@@ -93,11 +104,13 @@ while IFS=$'\t' read -r tat_region region_file count; do
   HERMES_TAT_REGION="$tat_region" \
     HERMES_TAT_COMMAND_ID="$HERMES_TAT_COMMAND_ID" \
     HERMES_TAT_INPUT_FILE="$region_file" \
-    HERMES_TAT_OUTPUT_DIR="$tat_output_dir" \
+    HERMES_TAT_OUTPUT_DIR="$checkpoint_dir" \
+    HERMES_TAT_SKIP_INVOKED_FILE="$skip_invoked_files" \
     HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}" \
     HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}" \
     bash .ci/runtime/commands/invoke_hermes_tat_command.sh
 done <"$REGION_MANIFEST"
 
+find "$checkpoint_dir" -maxdepth 1 -type f -exec cp -f {} "$tat_output_dir"/ \;
 cp -R "$tat_output_dir" "/tmp/lightclaw-ci/hermes-tat-${safe_env}-${BK_CI_BUILD_ID:-manual}"
 find "$tat_output_dir" -maxdepth 1 -type f -name '*.summary.json' -print -exec cat {} \;

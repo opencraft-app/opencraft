@@ -33,6 +33,7 @@ type Store interface {
 	// Sandbox mapping
 	CreateSandbox(ctx context.Context, sb core.Sandbox) (core.Sandbox, error)
 	GetSandbox(ctx context.Context, id string) (core.Sandbox, error)
+	GetSandboxByInstanceID(ctx context.Context, instanceID string) (core.Sandbox, error)
 	ListSandboxes(ctx context.Context) ([]core.Sandbox, error)
 	DeleteSandbox(ctx context.Context, id string) error
 

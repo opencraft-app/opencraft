@@ -147,23 +147,24 @@ test("buildModuleAdminProxyRequest maps credit module and keeps the internal tok
   assert.equal(built.usedBrowserToken, false);
 });
 
-test("buildModuleAdminProxyRequest maps shadow module and keeps the internal token server-side", async () => {
-  const req = new Request("https://admin.example.com/admin/api/shadow/accounts?search=330500000005", {
-    headers: { authorization: "Bearer browser-token" },
-  });
+test("buildModuleAdminProxyRequest maps referral module without forwarding the browser token", async () => {
+  const req = new Request(
+    "https://admin.example.com/admin/gateway/api/referral/attributions/usr_1?attribution_id=rattr_1",
+    { headers: { authorization: "Bearer browser-token" } }
+  );
 
   const built = await buildModuleAdminProxyRequest(req, {
-    module: "shadow",
-    path: ["accounts"],
-    upstreamBaseURL: "http://shadow.internal",
-    upstreamToken: "shadow-internal-token",
+    module: "referral",
+    path: ["attributions", "usr_1"],
+    upstreamBaseURL: "http://referral.internal",
+    forwardBrowserToken: false,
   });
 
   assert.equal(
     built.url.toString(),
-    "http://shadow.internal/internal/shadow/admin/accounts?search=330500000005",
+    "http://referral.internal/admin/api/referral/attributions/usr_1?attribution_id=rattr_1"
   );
-  assert.equal(built.init.headers.get("authorization"), "Bearer shadow-internal-token");
+  assert.equal(built.init.headers.get("authorization"), null);
   assert.equal(built.usedBrowserToken, false);
 });
 

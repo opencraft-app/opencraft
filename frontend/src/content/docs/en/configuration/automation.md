@@ -4,7 +4,7 @@
 
 **Scheduled Tasks let Hermes Agent start work without a manual prompt. Choose an Agent Task when the work needs AI reasoning, a Notification Task when the same message should be sent as written, or a Script Task when a Bash or Python script should make a deterministic check. All three types use the same one-time, recurring, and interval schedules, effective window, and notification settings.**
 
-![Scheduled Tasks page showing task templates and current jobs](../images/st-en-1.png)
+![Scheduled Tasks page showing task templates and current jobs](../images/st-en-1.webp)
 
 ## Choose a Task Type
 
@@ -23,7 +23,7 @@ Every type can run once, on a recurring daily, weekly, or monthly cadence, or at
 
 Make sure Hermes Agent is active, choose a notification channel if needed, and review any Script Task code before saving.
 
-![Notification channel options showing Telegram and WeChat](../images/notification-channels-en.png)
+![Notification channel options showing Telegram and WeChat](../images/notification-channels-en.webp)
 
 ## Create an Agent Task
 
@@ -43,7 +43,7 @@ Set the following fields:
 At the scheduled time, Hermes Agent creates an Agent task and calls the selected model.
 The result can be delivered to the selected notification channels and is recorded in Recent Runs.
 
-![Create Scheduled Task dialog showing the Agent Task type](../images/st-en-2.png)
+![Create Scheduled Task dialog showing the Agent Task type](../images/st-en-2.webp)
 
 ## Create a Notification Task
 
@@ -60,7 +60,7 @@ That means model-token usage is 0 Token for the task.
 If you do not select a notification channel, the task runs in the background and writes a record instead of sending a message.
 Notification-channel formatting may still affect how line breaks and characters appear to recipients.
 
-![Create Scheduled Task dialog showing the Notification Task type](../images/st-en-3.png)
+![Create Scheduled Task dialog showing the Notification Task type](../images/st-en-3.webp)
 
 ## Create a Script Task
 
@@ -83,14 +83,14 @@ They have 0 Token model usage, but they do use cloud Agent runtime resources.
 Do not rely on a Script Task to repair, explain, or summarize a failure with AI.
 It stays deterministic: an empty output remains silent, and a failing script does not trigger a model fallback.
 
-![Create Scheduled Task dialog showing the Script Task type](../images/st-en-4.png)
+![Create Scheduled Task dialog showing the Script Task type](../images/st-en-4.webp)
 
 ## Link an Upstream Agent Task
 
 Use an upstream task when one Agent Task should prepare context for another.
 The downstream task receives the upstream task's latest completed output while keeping its own schedule, instructions, effective window, and notification settings.
 
-![Create Scheduled Task dialog showing the upstream task option](../images/st-en-5.png)
+![Create Scheduled Task dialog showing the upstream task option](../images/st-en-5.webp)
 
 Schedule dependent tasks with enough time between them, and explain in the downstream instructions how to use the upstream output.
 Upstream context, model execution, and Skills apply only to Agent Tasks.

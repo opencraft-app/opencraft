@@ -42,6 +42,8 @@ pnpm-lock.yaml
 .env.*.local
 secrets.local.sh
 .local/
+# Agent 本地验证截图与 fixture 保留在本地，不入库
+/docs/context/tasks/evidence/
 
 # ─── 本地开发运行时 ──────────────────────────────────
 logs/
@@ -58,6 +60,7 @@ dist-global/
 build/
 .next/
 out/
+test-results/
 frontend/.fumadocs-content/
 frontend/.source/
 _research-output

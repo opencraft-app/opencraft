@@ -3,6 +3,7 @@ FROM node:22-alpine AS build
 WORKDIR /frontend
 
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
+COPY shared/lightvela-agent-core /shared/lightvela-agent-core
 COPY velalink /velalink
 
 COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/next-env.d.ts frontend/next.config.mjs frontend/postcss.config.mjs frontend/source.config.ts frontend/mdx-components.tsx ./

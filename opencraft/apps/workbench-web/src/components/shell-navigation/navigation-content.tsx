@@ -1,4 +1,6 @@
 import { Gauge, LogIn, LogOut, Settings, User } from "lucide-react";
+import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
+import type { IntlShape } from "@opencraft/i18n";
 import { useEffect, useState } from "react";
 import type { PlatformAccountSnapshot } from "@opencraft/extension-react";
 import { NavigationIcon, type NavigationAction } from "./navigation-action";
@@ -32,14 +34,14 @@ export function isAnonymousShellAccount(account: ShellAccount | null): boolean {
   return account?.snapshot.phase === "anonymous";
 }
 
-export function shellAccountEntranceLabel(account: ShellAccount | null): string | null {
+export function shellAccountEntranceLabel(account: ShellAccount | null, intl: IntlShape): string | null {
   if (account === null) return null;
   if (isAnonymousShellAccount(account)) {
-    if (account.signIn?.pending) return "正在登录…";
-    if (account.signIn?.error) return "登录未完成";
-    return "Sign in";
+    if (account.signIn?.pending) return intl.formatMessage({ id: "account.signingIn", defaultMessage: "Signing in…" });
+    if (account.signIn?.error) return intl.formatMessage({ id: "account.signInIncomplete", defaultMessage: "Sign-in incomplete" });
+    return intl.formatMessage({ id: "account.signIn", defaultMessage: "Sign in" });
   }
-  return account.snapshot.name || "Account";
+  return account.snapshot.name || intl.formatMessage({ id: "account.title", defaultMessage: "Account" });
 }
 
 export function AccountAvatar({ account }: { account: ShellAccount | null }) {
@@ -63,12 +65,13 @@ export function NavigationContent({ config, surface, compact = false, onInvoke }
   compact?: boolean;
   onInvoke: (action: () => void) => void;
 }) {
+  const intl = useIntl();
   return surface === "applications" ? <nav aria-label="Applications" className="shell-navigation__items">
     {config.actions.map(action => <button type="button" key={action.id}
       aria-current={action.active ? "page" : undefined} title={compact ? action.title : undefined} onClick={() => onInvoke(action.onInvoke)}>
       <NavigationIcon name={action.icon} /><span className="shell-navigation__item-label">{action.title}</span>
     </button>)}
-    <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? "Settings" : undefined} onClick={() => onInvoke(config.onOpenSettings)}><Settings size={16} /><span className="shell-navigation__item-label">Settings</span></button>
+    <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><Settings size={16} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
   </nav> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;
 }
 
@@ -77,6 +80,7 @@ function AccountContent({ config, compact, onInvoke }: {
   compact: boolean;
   onInvoke: (action: () => void) => void;
 }) {
+  const intl = useIntl();
   const account = config.account;
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +91,7 @@ function AccountContent({ config, compact, onInvoke }: {
   if (isAnonymousShellAccount(account)) {
     return <div className="shell-navigation__items">
       <button type="button" onClick={() => onInvoke(account.onOpen)}>
-        <LogIn size={16} /><span>Sign in to LightVela</span>
+        <LogIn size={16} /><span><FormattedMessage id="account.signInLightVela" defaultMessage="Sign in to LightVela" /></span>
       </button>
     </div>;
   }
@@ -100,18 +104,18 @@ function AccountContent({ config, compact, onInvoke }: {
         </span>
       </button>
       {account.snapshot.usageRemainingPercent === null ? null : <button type="button" onClick={() => onInvoke(account.onOpen)}>
-        <Gauge size={16} /><span>Usage</span><small>{account.snapshot.usageRemainingPercent}% left</small>
+        <Gauge size={16} /><span><FormattedMessage id="account.usage" defaultMessage="Usage" /></span><small><FormattedMessage id="account.remaining" defaultMessage="{remaining, number, percent} left" values={{ remaining: account.snapshot.usageRemainingPercent / 100 }} /></small>
       </button>}
-      <button type="button" onClick={() => onInvoke(account.onOpen)}><User size={16} /><span>Account</span></button>
+      <button type="button" onClick={() => onInvoke(account.onOpen)}><User size={16} /><span><FormattedMessage id="account.title" defaultMessage="Account" /></span></button>
     </>
-    <button type="button" onClick={() => onInvoke(config.onOpenSettings)}><Settings size={16} /><span>Settings</span></button>
+    <button type="button" onClick={() => onInvoke(config.onOpenSettings)}><Settings size={16} /><span><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
     <button type="button" disabled={signingOut} onClick={async () => {
       setSigningOut(true);
       setError(null);
       try { await account.onSignOut(); onInvoke(() => undefined); }
       catch { setError("Could not sign out. Please try again."); }
       finally { setSigningOut(false); }
-    }}><LogOut size={16} /><span>{signingOut ? "Signing out…" : "Sign out"}</span></button>
+    }}><LogOut size={16} /><span>{intl.formatMessage(signingOut ? { id: "account.signingOut", defaultMessage: "Signing out…" } : { id: "account.signOut", defaultMessage: "Sign out" })}</span></button>
     {error ? <p role="alert">{error}</p> : null}
   </div>;
 }

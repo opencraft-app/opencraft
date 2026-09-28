@@ -6,8 +6,9 @@ import {
   ExtensionContributionStore,
   ExtensionSettingsStore,
   MemoryExtensionSettingsStorage,
+  createPersistentExtensionSettingsStorage,
 } from "@opencraft/extension-runtime";
-import { IndexedDbExtensionSettingsStorage } from "../apps/workbench-web/src/runtime/indexeddb-extension-settings-storage.ts";
+import { openIndexedDbExtensionPersistence } from "../apps/workbench-web/src/runtime/indexeddb-extension-persistence.ts";
 
 const settingsId = "vela.settings-test.preferences";
 
@@ -132,23 +133,21 @@ test("IndexedDB adapter restores settings after application restart", async () =
   const databaseName = "vela-extension-settings-test";
   const firstContributions = new ExtensionContributionStore();
   registerSettings(firstContributions, "activation-1");
-  const firstStorage = await IndexedDbExtensionSettingsStorage.open({
-    factory,
-    databaseName,
-  });
+  const firstBackend = await openIndexedDbExtensionPersistence(databaseName, factory);
+  const firstStorage = await createPersistentExtensionSettingsStorage(firstBackend);
   const first = await ExtensionSettingsStore.open(firstContributions, firstStorage);
   await first.set(settingsId, "port", 8899);
   await first.close();
+  await firstBackend.close();
   firstContributions.close();
 
   const secondContributions = new ExtensionContributionStore();
   registerSettings(secondContributions, "activation-2");
-  const secondStorage = await IndexedDbExtensionSettingsStorage.open({
-    factory,
-    databaseName,
-  });
+  const secondBackend = await openIndexedDbExtensionPersistence(databaseName, factory);
+  const secondStorage = await createPersistentExtensionSettingsStorage(secondBackend);
   const second = await ExtensionSettingsStore.open(secondContributions, secondStorage);
   assert.equal(second.get(settingsId, "port"), 8899);
   await second.close();
+  await secondBackend.close();
   secondContributions.close();
 });

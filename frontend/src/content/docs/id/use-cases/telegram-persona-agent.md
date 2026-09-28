@@ -5,7 +5,7 @@ Kepribadian, gaya kerja, dan batasan Agent berasal dari persona serta konteks ta
 
 Panduan ini menunjukkan cara menghubungkan Hermes Agent ke Telegram dan memakai fitur kepribadian LightVela untuk memberinya peran, suara, dan kumpulan batas perilaku yang stabil.
 
-![Hermes Agent dengan kepribadian yang khas di Telegram](../images/use-case-03-telegram-persona-agent.png)
+![Hermes Agent dengan kepribadian yang khas di Telegram](../images/use-case-03-telegram-persona-agent.webp)
 
 ## Ringkasan
 

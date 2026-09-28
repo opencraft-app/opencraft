@@ -4,7 +4,7 @@ Skill memperluas apa yang dapat dilakukan Hermes Agent, sementara SOUL.md mendef
 
 Bersama-sama, keduanya dapat membuat IM Agent yang sama lebih sesuai untuk dukungan pelanggan, operasional komunitas, atau pendampingan pribadi jangka panjang.
 
-![Mengubah IM Agent menjadi asisten layanan, komunitas, atau pendamping dengan Skill](../images/use-case-06-im-agent-skill-scenarios.png)
+![Mengubah IM Agent menjadi asisten layanan, komunitas, atau pendamping dengan Skill](../images/use-case-06-im-agent-skill-scenarios.webp)
 
 ## Ringkasan
 

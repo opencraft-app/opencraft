@@ -5,6 +5,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Menu, X } from 'lucide-react';
 import { PUBLIC_SITE_NAV_ITEMS, publicSiteHref, type PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
+import { NextLanguageSwitcher } from './language-switcher';
 
 const menuCopy: Record<PublicSiteLocale, [string, string]> = {
   'en-US': ['Open menu', 'Close menu'],
@@ -15,6 +16,17 @@ const menuCopy: Record<PublicSiteLocale, [string, string]> = {
   es: ['Abrir menú', 'Cerrar menú'],
   'ja-JP': ['メニューを開く', 'メニューを閉じる'],
   'ko-KR': ['메뉴 열기', '메뉴 닫기'],
+};
+
+const languageLabel: Record<PublicSiteLocale, string> = {
+  'en-US': 'Language',
+  'zh-CN': '语言',
+  'zh-SG': '语言',
+  'zh-Hant': '語言',
+  'id-ID': 'Bahasa',
+  es: 'Idioma',
+  'ja-JP': '言語',
+  'ko-KR': '언어',
 };
 
 export function HomeMobileNavigation({ locale }: { locale: PublicSiteLocale }) {
@@ -51,6 +63,10 @@ export function HomeMobileNavigation({ locale }: { locale: PublicSiteLocale }) {
               </Dialog.Close>
             ))}
           </nav>
+          <section className="home-mobile-menu-language" aria-label={languageLabel[locale]}>
+            <h2>{languageLabel[locale]}</h2>
+            <NextLanguageSwitcher activeLocale={locale} reloadAfterSwitch={false} variant="inline" />
+          </section>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

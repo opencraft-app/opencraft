@@ -30,6 +30,7 @@ const AGENT_SECTION_PGID: Record<AgentSectionId, DatongPageId> = {
   terminal: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   website: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   settings: DATONG_PAGE_IDS.AGENT_WORKBENCH,
+  overview: DATONG_PAGE_IDS.AGENT_WORKBENCH,
 };
 
 /** 顶级路径前缀 → pgid，命中后立即返回。 */

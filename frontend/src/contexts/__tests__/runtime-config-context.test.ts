@@ -7,8 +7,10 @@ const {
   normalizeRuntimeConfig,
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
+  resolveMultiBotEnabled,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
+  resolveReferralEnabled,
   shouldSkipRemoteRuntimeConfig,
 } = __runtimeConfigTestHooks;
 
@@ -35,11 +37,21 @@ describe("runtime config normalization", () => {
     expect(normalizeRuntimeConfig({ features: { referralEnabled: "true" } }).features.referralEnabled).toBe(false);
   });
 
+  it("uses the runtime referral flag without a regional override", () => {
+    expect(resolveReferralEnabled(normalizeRuntimeConfig({ features: { referralEnabled: true } }))).toBe(true);
+    expect(resolveReferralEnabled(normalizeRuntimeConfig({ features: { referralEnabled: false } }))).toBe(false);
+  });
+
   it("defaults multi-bot on but accepts an explicit runtime rollback", () => {
     expect(normalizeRuntimeConfig({}).features.multiBotEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { multiBotEnabled: true } }).features.multiBotEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { multiBotEnabled: false } }).features.multiBotEnabled).toBe(false);
     expect(normalizeRuntimeConfig({ features: { multiBotEnabled: "true" } }).features.multiBotEnabled).toBe(true);
+  });
+
+  it("uses the runtime multi-bot flag without a regional override", () => {
+    expect(resolveMultiBotEnabled(normalizeRuntimeConfig({ features: { multiBotEnabled: true } }))).toBe(true);
+    expect(resolveMultiBotEnabled(normalizeRuntimeConfig({ features: { multiBotEnabled: false } }))).toBe(false);
   });
 
   it("defaults zero-token automations on unless explicitly disabled", () => {
