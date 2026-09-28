@@ -73,3 +73,7 @@ derived: false
 - MR：[!4689](https://git.woa.com/wisp/mono2/merge_requests/4689)，jasminzhao-optimization-0928 → master，状态 opened。
 - 代码提交 aff81be002538b448b949a17fce4473248d58b8a 已验证与远程一致；创建后 CI 为 pending，未合并或发布。
 - 5180 国际站预览恢复且首页 HTTP 200。后续由评审人审查 MR 和 CI 结果。
+
+## CI follow-up
+- MR !4689 报 OpenCraft vendored manifest drift；本地复现并运行官方同步脚本修复，仅 UPSTREAM.json 的 sourceRevision 变化。
+- npm --prefix opencraft run check:mono2-agent-console 通过（130 文件）。与 CI 相同的 .ci/checks/opencraft_guard.sh 也已通过，作为独立提交推送原 MR；生产和镜像操作不在本次范围。

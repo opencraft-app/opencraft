@@ -116,3 +116,10 @@ derived: false
 - 保留本次指定文档下线策略；公告源稿保留，但不再保留公开路由。
 - 合并 cd7b64cc4 并解决注册、元数据与正文冲突后，pnpm check、112 项聚焦测试、双站完整 build 再次通过；214 / 1256 份导出 HTML、搜索及公开索引检查通过，40 个国际旧 URL 再次返回 404。合并结果无待解决 CR 问题；全量测试限制仍如 validation 所述。
 - 已推送代码提交 aff81be002538b448b949a17fce4473248d58b8a，并创建 [MR !4689](https://git.woa.com/wisp/mono2/merge_requests/4689) 到 master；创建后 CI pending，未合并或发布。
+
+## CI follow-up：OpenCraft 同步清单
+- 用户反馈流水线 `b-9eca23b1fc9b4a99b01d7e01ab75611f` 的 OpenCraft guard 失败。路由查询 `opencraft sync-mono2-agent-console vendored manifest drift CI guard` 无 Pack 命中；在 opencraft/scripts 与 .ci/checks 精确定位。
+- context_receipt 补充：读取 opencraft/AGENTS.md、opencraft/MONO2_MIGRATION.md、docs/context/project/upstream-subtrees.md；核对同步脚本、opencraft/package.json 及相邻 .ci/checks/opencraft_guard.sh。已读 devops-pipeline/SKILL.md；本轮使用用户提供日志及本地 guard 复现，没有查询蓝盾 API。
+- 本地 check:mono2-agent-console 复现 manifest drift。前端源码已提交且同步输入目录无未提交改动；运行官方 sync 脚本后，仅 UPSTREAM.json 的 sourceRevision 从 4301c7eaa 更新到 aff81be00，130 个共享源文件及静态资源未变化。
+- 不修改生成文件内容或绕过检查；同步清单作为源码提交后的独立后续提交交付到原 MR。翻译空白与 MDX deprecation 为非阻断既有告警，本次不扩大修改范围。
+- 验证：同步检查通过（130 文件）；与 CI 相同的 .ci/checks/opencraft_guard.sh 返回 all checks passed。仅清单来源版本变化，按 OpenCraft 的 Agent Console 同步验证规则执行，不需要重建客户端。
