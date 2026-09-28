@@ -1060,7 +1060,7 @@ export const AgentOnboardingPanel = ({
                             {t("继承模型、人设、技能、用户偏好和长期记忆")}
                           </span>
                           <span className="mt-1.5 block text-white/55">
-                            {t("不继承当前对话、历史会话、定时任务、运行状态或通道连接")}
+                            {t("不继承当前对话、历史对话、定时任务、运行状态或通道连接")}
                           </span>
                         </>
                       )}

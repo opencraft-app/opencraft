@@ -613,7 +613,7 @@ function CommonSessionErrorPopover() {
         onBlurCapture={scheduleClose}
       >
         <p>{t("抱歉，我遇到了意外错误。")}</p>
-        <p>{t("请重试或使用 /reset 开始新会话。")}</p>
+        <p>{t("请重试或使用 /reset 开始新对话。")}</p>
       </PopoverContent>
     </Popover>
   );

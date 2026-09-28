@@ -5248,10 +5248,10 @@ export const AgentSettingsPage = ({
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除会话")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除对话")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("确定要删除会话「{{name}}」吗？此操作不可撤销。", { name: sessionToDelete.title || t("默认会话") })}
+              {t("确定要删除对话「{{name}}」吗？此操作不可撤销。", { name: sessionToDelete.title || t("默认对话") })}
             </p>
             <div className="flex flex-col gap-2">
               <button
@@ -5519,7 +5519,7 @@ export const AgentSettingsPage = ({
                       <dt className="whitespace-nowrap font-medium text-black/70">{t("继承")}</dt>
                       <dd className="min-w-0 text-pretty">{t("模型、人设、技能、用户偏好和长期记忆")}</dd>
                       <dt className="whitespace-nowrap font-medium text-black/70">{t("不继承")}</dt>
-                      <dd className="min-w-0 text-pretty">{t("当前对话、历史会话、定时任务、运行状态或通道连接")}</dd>
+                      <dd className="min-w-0 text-pretty">{t("当前对话、历史对话、定时任务、运行状态或通道连接")}</dd>
                     </dl>
                   )}
                 </>
@@ -6092,12 +6092,12 @@ export const AgentSettingsPage = ({
                     </div>
 
                     {sidebarTab === "chat" && isActiveBotChatAvailable ? (
-                      <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
+                      <nav className="lv-agents-nav" aria-label={t("对话列表导航")}>
                         <div className="lv-agents-nav-group" role="group">
-                          <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
+                          <span className="lv-agents-nav-group-label">{t("最近对话")}</span>
                           <ul className="lv-agents-nav-group-items">
                             {chatSessionsLoading && chatSessions.length === 0 ? (
-                              <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
+                              <li className="lv-agents-session-hint">{t("正在加载对话…")}</li>
                             ) : chatSessions.length === 0 ? (
                               /*
                                * 列表为空是正常状态，不做异常处理，只给默认对话入口。
@@ -6135,7 +6135,7 @@ export const AgentSettingsPage = ({
                                 const sessionDisplayTitle = resolveAgentSessionTitle(
                                   session.title,
                                   i18n.language,
-                                  t("默认会话"),
+                                  t("默认对话"),
                                 );
                                 return (
                                   <li key={session.chatId} className="lv-agents-session-item-wrap">
@@ -6144,7 +6144,7 @@ export const AgentSettingsPage = ({
                                         className="lv-agents-session-rename-input"
                                         value={renamingDraft}
                                         autoFocus
-                                        aria-label={t("会话名称")}
+                                        aria-label={t("对话名称")}
                                         title={t("回车确认，Esc 取消")}
                                         onChange={(event) => setRenamingDraft(event.target.value)}
                                         onBlur={() => commitSessionRename()}
@@ -6187,7 +6187,7 @@ export const AgentSettingsPage = ({
                                           <button
                                             type="button"
                                             className="lv-agents-session-menu-btn"
-                                            aria-label={t("会话操作")}
+                                            aria-label={t("对话操作")}
                                             aria-expanded={isMenuOpen}
                                             onClick={(event) => {
                                               event.preventDefault();
@@ -6213,7 +6213,7 @@ export const AgentSettingsPage = ({
                                                 role="menuitem"
                                                 className="lv-agents-session-menu-item lv-agents-session-menu-item--danger"
                                                 disabled={!chatSessionActions || chatSessionMutationState?.pending === true || !isDeletable}
-                                                title={isDeletable ? undefined : t("默认会话不支持删除")}
+                                                title={isDeletable ? undefined : t("默认对话不支持删除")}
                                                 onClick={() => openSessionDeleteConfirm(session)}
                                               >
                                                 {t("删除")}
@@ -6238,10 +6238,10 @@ export const AgentSettingsPage = ({
                             >
                               {chatSessionMutationState.error ?? (
                                 chatSessionMutationState.operation === "create"
-                                  ? t("正在创建新会话…")
+                                  ? t("正在创建新对话…")
                                   : chatSessionMutationState.operation === "rename"
-                                    ? t("正在重命名会话…")
-                                    : t("正在删除会话…")
+                                    ? t("正在重命名对话…")
+                                    : t("正在删除对话…")
                               )}
                             </p>
                           ) : null}
