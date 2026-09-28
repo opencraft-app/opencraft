@@ -6,7 +6,7 @@
 
 違いは単にどちらのAIが賢いかではありません。エージェントがどこに存在し、誰に属し、どの種類の仕事を担うよう設計されているかが判断軸です。
 
-![個人用AIエージェントを動かすためのLightVelaとViktor.comの比較](../images/lightvela-vs-viktor.png)
+![個人用AIエージェントを動かすためのLightVelaとViktor.comの比較](../images/lightvela-vs-viktor.webp)
 
 ## ひと目で比較
 

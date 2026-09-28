@@ -59,7 +59,7 @@ LightVela 也会为其他受支持的通道提供配置页面。
 不要把它们粘贴到群聊、公开文档或发给其他人的消息中。
 如果凭据已经泄露，请先在签发凭据的平台中轮换凭据，再重新连接 Hermes。
 
-![LightVela 中的通道连接页面](../images/use-case-messaging-connection.png)
+![LightVela 中的通道连接页面](../images/use-case-messaging-connection.webp)
 
 ### 3. 通过简单对话验证连接
 
@@ -80,7 +80,7 @@ LightVela 也会为其他受支持的通道提供配置页面。
 使用[记忆管理](../configuration/memory.md)查看你希望 Hermes 长期保留的上下文。
 如果某个通道面向不同受众，或需要完全不同的角色定位，可以考虑把它作为独立使用场景，而不是把无关的预期混入同一段对话历史。
 
-![不同通道之间共享同一个 Hermes Agent 的上下文](../images/use-case-messaging-memory.png)
+![不同通道之间共享同一个 Hermes Agent 的上下文](../images/use-case-messaging-memory.webp)
 
 如果你希望使用 Discord 服务社群，可以继续阅读 [Meet LightVela for Discord：服务你所在频道的 AI Agent Discord Bot](./discord-community-agent.md)。
 

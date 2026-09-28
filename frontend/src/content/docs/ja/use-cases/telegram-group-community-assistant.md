@@ -5,7 +5,7 @@
 **LightVelaは、BotFatherでBotのグループプライバシーを無効にし、Botをグループに追加し、`@bot_username`を使ってメンションして会話を開始すると、Telegramグループメッセージをサポートします。**
 このガイドでは、その認証済みの設定をカバーし、未認証のメンバー参加イベントや受動的なグループ返信を設定済み機能として扱わずに、同じHermes AgentをグループQ&A、要約、リマインダーに使用する方法を示します。
 
-![グループQ&A、要約、リマインダーのためのTelegramグループAIコミュニティアシスタント](../images/use-case-08-telegram-group-community-assistant.png)
+![グループQ&A、要約、リマインダーのためのTelegramグループAIコミュニティアシスタント](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## 始める前に
 

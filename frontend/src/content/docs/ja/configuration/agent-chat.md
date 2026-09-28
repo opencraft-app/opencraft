@@ -12,7 +12,7 @@
 >
 > AgentChatのインターフェースガイドは現在主に中国語です。完全なローカライズは進行中です。
 
-![LightVelaコンソールのチャットページ](../images/chat-overview-en.png)
+![LightVelaコンソールのチャットページ](../images/chat-overview-en.webp)
 
 ---
 

@@ -22,6 +22,8 @@ class PublishFrontendPreviewTests(unittest.TestCase):
         self.assertIn('mv out "$artifact_dir"', source)
         self.assertIn('verify_frontend_preview_artifact "$variant" out', source)
         self.assertIn("self\\.__next_f\\.push|</script><script>", source)
+        self.assertIn('rm -rf out/.edgeone', source)
+        self.assertLess(source.index('rm -rf out/.edgeone'), source.index('mv out "$artifact_dir"'))
         self.assertIn('rm -rf "$workspace"', source)
         self.assertLess(source.index('mv out "$artifact_dir"'), source.index('rm -rf "$workspace"'))
         self.assertIn(

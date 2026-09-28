@@ -44,16 +44,16 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 1. [Slack API 앱](https://api.slack.com/apps)을 열고 로그인하세요.
 2. **새 앱 만들기**를 클릭합니다.
 
-![Slack API 앱에서 새 앱 만들기](../images/slack-create-app.png)
+![Slack API 앱에서 새 앱 만들기](../images/slack-create-app.webp)
 
 3. **처음부터**를 선택합니다.
 
-![Slack 앱을 생성하려면 처음부터 선택](../images/slack-create-from-scratch.png)
+![Slack 앱을 생성하려면 처음부터 선택](../images/slack-create-from-scratch.webp)
 
 4. `Hermes Agent`와 같은 앱 이름을 입력하세요.
 5. Hermes Agent가 실행되어야 하는 작업 공간을 선택한 다음 **앱 만들기**를 클릭합니다.
 
-![Slack 앱 이름을 지정하고 작업 공간을 선택하세요](../images/slack-select-workspace.png)
+![Slack 앱 이름을 지정하고 작업 공간을 선택하세요](../images/slack-select-workspace.webp)
 
 작업 영역이 누락된 경우 현재 Slack 계정이 해당 계정에 속해 있고 앱을 생성할 수 있는지 확인하세요.
 
@@ -63,28 +63,28 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 
 1. Slack 앱 사이드바에서 **설정 → 기본 정보**를 엽니다.
 
-![Slack 앱에서 기본 정보 열기](../images/slack-basic-information.png)
+![Slack 앱에서 기본 정보 열기](../images/slack-basic-information.webp)
 
 2. **앱 수준 토큰**으로 스크롤하고 **토큰 및 범위 생성**을 클릭합니다.
 
-![앱 수준 토큰 생성](../images/slack-generate-app-token.png)
+![앱 수준 토큰 생성](../images/slack-generate-app-token.webp)
 
 3. `HermesSocket`과 같이 알아보기 쉬운 토큰 이름을 입력하세요.
 4. **범위 추가**를 클릭합니다.
 
-![앱 토큰에 범위 추가](../images/slack-add-connection-scope.png)
+![앱 토큰에 범위 추가](../images/slack-add-connection-scope.webp)
 
 5. `connections:write`를 검색하여 선택합니다.
 
-![연결 쓰기 범위 선택](../images/slack-select-connections-write.png)
+![연결 쓰기 범위 선택](../images/slack-select-connections-write.webp)
 
 6. 범위가 나열되어 있는지 확인한 다음 **생성**을 클릭하세요.
 
-![연결 쓰기로 앱 토큰 생성](../images/slack-generate-token.png)
+![연결 쓰기로 앱 토큰 생성](../images/slack-generate-token.webp)
 
 7. 생성된 `xapp-...` 토큰을 복사하여 안전하게 저장하세요. 복사한 후 **완료**를 클릭하세요.
 
-![Slack 앱 토큰 복사](../images/slack-copy-app-token.png)
+![Slack 앱 토큰 복사](../images/slack-copy-app-token.webp)
 
 앱 토큰을 봇 토큰 필드에 붙여넣지 마세요. 클라이언트 비밀 또는 서명 비밀은 이 토큰을 대체하지 않습니다.
 
@@ -95,7 +95,7 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 1. **설정 → 소켓 모드**를 엽니다.
 2. **소켓 모드 활성화**를 켭니다.
 
-![Slack 소켓 모드 활성화](../images/slack-enable-socket-mode.png)
+![Slack 소켓 모드 활성화](../images/slack-enable-socket-mode.webp)
 
 소켓 모드는 WebSocket을 통해 Slack 이벤트를 Hermes Agent로 보냅니다. 이 설정에는 이벤트 구독 요청 URL 또는 OAuth 리디렉션 URL이 필요하지 않습니다.
 
@@ -105,7 +105,7 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 2. **범위 → 봇 토큰 범위**로 스크롤합니다.
 3. **OAuth 범위 추가**를 클릭합니다.
 
-![OAuth 및 권한에 봇 범위 추가](../images/slack-add-oauth-scope.png)
+![OAuth 및 권한에 봇 범위 추가](../images/slack-add-oauth-scope.webp)
 
 필요한 상호 작용 모드에 대한 범위를 추가합니다.
 
@@ -121,7 +121,7 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 | `groups:read` | 선택적 개인 채널 | private-채널 정보 읽기 |
 | `groups:history` | 선택적 개인 채널 | 봇이 참여한 비공개 채널의 메시지 읽기 |
 
-![Slack 봇 토큰 범위 검토](../images/slack-bot-token-scopes.png)
+![Slack 봇 토큰 범위 검토](../images/slack-bot-token-scopes.webp)
 
 개인 채널 액세스가 필요한 경우에만 2개의 `groups:*` 범위를 추가하세요. 앱은 여전히 각 대상 채널에 초대되어야 합니다.
 
@@ -145,7 +145,7 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 5. 다이렉트 메시지가 활성화된 경우 `message.im`을 추가하세요.
 6. **변경사항 저장**을 클릭합니다.
 
-![Slack 봇 이벤트 구독 구성](../images/slack-event-subscriptions.png)
+![Slack 봇 이벤트 구독 구성](../images/slack-event-subscriptions.webp)
 
 > 설치 후 범위나 이벤트를 변경하는 경우 **OAuth 및 권한**으로 돌아가서 **작업공간에 다시 설치**를 클릭하세요. 새로운 권한은 앱을 다시 설치할 때까지 적용되지 않습니다.
 
@@ -154,16 +154,16 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 1. **기능 → OAuth 및 권한**으로 돌아갑니다.
 2. **작업공간에 설치**를 클릭합니다. 앱이 이미 설치되어 있는 경우 **Workspace에 다시 설치**를 클릭합니다.
 
-![워크스페이스에 Slack 앱 설치](../images/slack-install-workspace.png)
+![워크스페이스에 Slack 앱 설치](../images/slack-install-workspace.webp)
 
 3. 요청된 권한을 검토하고 **허용**을 클릭하세요.
 
-![Slack 앱 권한 승인](../images/slack-authorize-workspace.png)
+![Slack 앱 권한 승인](../images/slack-authorize-workspace.webp)
 
 4. Slack이 **OAuth & Permissions**로 돌아가면 **작업공간용 OAuth 토큰**을 찾으세요.
 5. `xoxb-`로 시작하는 **봇 사용자 OAuth 토큰**을 복사합니다.
 
-![Slack 봇 사용자 OAuth 토큰 복사](../images/slack-copy-bot-token.png)
+![Slack 봇 사용자 OAuth 토큰 복사](../images/slack-copy-bot-token.webp)
 
 서명 비밀, 클라이언트 비밀, 확인 토큰 또는 `xoxp-...` 사용자 OAuth 토큰을 사용하지 마십시오. LightVela에는 `xapp-...` 앱 토큰 1개와 `xoxb-...` 봇 토큰 1개가 필요합니다.
 
@@ -200,7 +200,7 @@ LightVela 국제 사이트에 로그인하고 **My Hermes → 채널**를 열고
 2. **메시지** 탭을 선택합니다.
 3. `Hello`와 같은 짧은 메시지를 보내세요.
 
-![Slack 앱 홈에서 직접 메시지 테스트](../images/slack-direct-message-test.png)
+![Slack 앱 홈에서 직접 메시지 테스트](../images/slack-direct-message-test.webp)
 
 ---
 

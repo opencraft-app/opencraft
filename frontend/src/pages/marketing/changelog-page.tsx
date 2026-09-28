@@ -64,13 +64,13 @@ type ChangelogMonthGroup = {
    ═══════════════════════════════════════════════════════════════ */
 
 const zeroTokenScheduledTasksGlobalAssets: Record<string, string> = {
-  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
-  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
-  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.png",
-  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.png",
-  es: "/assets/changelog/scheduled-tasks-notification-es.png",
-  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
-  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
+  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.webp",
+  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.webp",
+  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.webp",
+  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.webp",
+  es: "/assets/changelog/scheduled-tasks-notification-es.webp",
+  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.webp",
+  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.webp",
 };
 
 export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
@@ -80,8 +80,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "pla
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
   const useGlobalChineseAsset = i18n.language.startsWith("zh");
   const zeroTokenScheduledTasksAsset = isGlobal
-    ? zeroTokenScheduledTasksGlobalAssets[i18n.language] ?? "/assets/changelog/scheduled-tasks-notification-en-US.png"
-    : "/assets/changelog/scheduled-tasks-notification-zh-CN.png";
+    ? zeroTokenScheduledTasksGlobalAssets[i18n.language] ?? "/assets/changelog/scheduled-tasks-notification-en-US.webp"
+    : "/assets/changelog/scheduled-tasks-notification-zh-CN.webp";
   /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
     variant === "planUpgrade"
@@ -96,21 +96,21 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "pla
       ? zeroTokenScheduledTasksAsset
       : variant === "instanceStorage"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-instance-storage-zh.png"
-        : "/assets/changelog/lightvela-instance-storage-en.png"
+        ? "/assets/changelog/lightvela-instance-storage-zh.webp"
+        : "/assets/changelog/lightvela-instance-storage-en.webp"
       : variant === "cloudStorage"
       ? useGlobalAssets
-        ? "/assets/changelog/lightvela-cloud-storage-en.png"
+        ? "/assets/changelog/lightvela-cloud-storage-en.webp"
         : "/assets/changelog/lightvela-cloud-storage.webp"
       : variant === "workbench"
       ? isGlobal && !useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-workbench-global-en.png"
-        : "/assets/changelog/lightvela-workbench-zh.png"
+        ? "/assets/changelog/lightvela-workbench-global-en.webp"
+        : "/assets/changelog/lightvela-workbench-zh.webp"
       : variant === "skillPackages"
-      ? "/assets/changelog/skill-packages.png"
+      ? "/assets/changelog/skill-packages.webp"
       : variant === "achievements"
       ? useGlobalAssets
-        ? "/assets/changelog/lightvela-achievements-en.png"
+        ? "/assets/changelog/lightvela-achievements-en.webp"
         : "/assets/changelog/lightvela-achievements.webp"
       : variant === "skillsRevamp"
       ? isGlobal
@@ -126,22 +126,22 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "pla
         : "/assets/changelog/lightvela-skill-package-cn.webp"
       : variant === "skillsBulkInstall"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.png"
-        : "/assets/changelog/lightvela-skills-bulk-install-global-en.png"
+        ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.webp"
+        : "/assets/changelog/lightvela-skills-bulk-install-global-en.webp"
       : variant === "automationUpstream"
       ? isGlobal && useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-automation-upstream-task-global-zh.png"
-        : "/assets/changelog/lightvela-automation-upstream-task.png"
+        ? "/assets/changelog/lightvela-automation-upstream-task-global-zh.webp"
+        : "/assets/changelog/lightvela-automation-upstream-task.webp"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-automation-templates-global-zh.png"
-        : "/assets/changelog/lightvela-automation-templates-global-en.png"
+        ? "/assets/changelog/lightvela-automation-templates-global-zh.webp"
+        : "/assets/changelog/lightvela-automation-templates-global-en.webp"
       : variant === "qqGroupMentions"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-qq-group-mentions-global-zh.png"
-        : "/assets/changelog/lightvela-qq-group-mentions-global-en.png"
+        ? "/assets/changelog/lightvela-qq-group-mentions-global-zh.webp"
+        : "/assets/changelog/lightvela-qq-group-mentions-global-en.webp"
       : variant === "traditionalChinese"
-      ? "/assets/changelog/lightvela-traditional-chinese-global-all.png"
+      ? "/assets/changelog/lightvela-traditional-chinese-global-all.webp"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset
@@ -151,39 +151,39 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "pla
       : variant === "advancedSettings"
       ? isGlobal
         ? useGlobalChineseAsset
-          ? "/assets/changelog/lightvela-advanced-settings-cn.png"
-          : "/assets/changelog/lightvela-advanced-settings-en.png"
-        : "/assets/changelog/lightvela-advanced-settings-cn.png"
+          ? "/assets/changelog/lightvela-advanced-settings-cn.webp"
+          : "/assets/changelog/lightvela-advanced-settings-en.webp"
+        : "/assets/changelog/lightvela-advanced-settings-cn.webp"
       : variant === "deepseekHarness"
       ? isGlobal && !useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-deepseek-harness-global.png"
-        : "/assets/changelog/lightvela-deepseek-harness-cn.png"
+        ? "/assets/changelog/lightvela-deepseek-harness-global.webp"
+        : "/assets/changelog/lightvela-deepseek-harness-cn.webp"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "dingtalk"
-      ? "/assets/changelog/lightvela-dingtalk-channel.png"
+      ? "/assets/changelog/lightvela-dingtalk-channel.webp"
       : variant === "personaUpload"
       ? isGlobal
         ? useGlobalChineseAsset
-          ? "/assets/changelog/lightvela-persona-upload-global-zh.png"
-          : "/assets/changelog/lightvela-persona-upload-global-en.png"
-        : "/assets/changelog/lightvela-persona-upload.png"
+          ? "/assets/changelog/lightvela-persona-upload-global-zh.webp"
+          : "/assets/changelog/lightvela-persona-upload-global-en.webp"
+        : "/assets/changelog/lightvela-persona-upload.webp"
       : variant === "chat"
       ? useGlobalAssets
-        ? "/assets/changelog/agentchat-web-chat-en.png"
+        ? "/assets/changelog/agentchat-web-chat-en.webp"
         : "/assets/changelog/agentchat-web-chat.webp"
       : variant === "memory"
       ? useGlobalAssets
-        ? "/assets/changelog/hermes-memory-en.png"
+        ? "/assets/changelog/hermes-memory-en.webp"
         : "/assets/changelog/hermes-memory.webp"
       : variant === "schedule"
       ? useGlobalAssets
-        ? "/assets/changelog/scheduled-tasks-en.png"
+        ? "/assets/changelog/scheduled-tasks-en.webp"
         : "/assets/changelog/scheduled-tasks.webp"
       : variant === "automationSkill"
       ? useGlobalAssets
-        ? "/assets/changelog/automation-skill-invocation-en.png"
-        : "/assets/changelog/automation-skill-invocation.png"
+        ? "/assets/changelog/automation-skill-invocation-en.webp"
+        : "/assets/changelog/automation-skill-invocation.webp"
       : variant === "skill-package"
       ? "/assets/changelog/lightvela-skill-package-cn.webp"
       : variant === "soul"

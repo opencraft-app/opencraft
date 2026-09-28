@@ -48,7 +48,7 @@ Hermes hanya dapat merangkum informasi yang dapat ia terima atau akses melalui k
 
 Jika Anda memerlukan sumber data eksternal, pilih Skill yang sesuai dari sumber terpercaya dan pastikan perilakunya sebelum memakainya. [Konfigurasi Skill](../configuration/skill.md) menjelaskan cara Skill memperluas Hermes melampaui percakapan biasa.
 
-![Sumber Cloud Storage untuk ringkasan harian](../images/use-case-daily-summary-storage.png)
+![Sumber Cloud Storage untuk ringkasan harian](../images/use-case-daily-summary-storage.webp)
 
 ### 3. Uji keluarannya dalam percakapan normal lebih dulu
 
@@ -82,7 +82,7 @@ tindakan berikutnya yang paling penting. Kirim sebagai poin-poin yang ringkas.
 
 Siapkan ini di [Tugas Terjadwal](../configuration/automation.md). Tinjau beberapa eksekusi pertama lalu sesuaikan kalimatnya jika ringkasannya terlalu luas, terlalu panjang, atau kehilangan konteks yang tepat.
 
-![Tugas Terjadwal ringkasan harian yang terjadwal](../images/use-case-daily-summary-automation.png)
+![Tugas Terjadwal ringkasan harian yang terjadwal](../images/use-case-daily-summary-automation.webp)
 
 ## FAQ
 

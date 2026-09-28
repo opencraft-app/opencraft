@@ -44,7 +44,7 @@ Hermes는 사용자가 구성한 기능을 통해 받거나 접근할 수 있는
 
 외부 데이터 소스가 필요하다면 신뢰할 수 있는 출처에서 적합한 스킬을 선택하고 사용 전에 동작을 확인하세요. [스킬 구성](../configuration/skill.md)은 일반적인 채팅을 넘어 Hermes를 확장하는 방법을 설명합니다.
 
-![일일 요약을 위한 클라우드 스토리지 자료](../images/use-case-daily-summary-storage.png)
+![일일 요약을 위한 클라우드 스토리지 자료](../images/use-case-daily-summary-storage.webp)
 
 ### 3. 먼저 일반 대화에서 출력 테스트
 
@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 [예약 작업](../configuration/automation.md)에서 설정하세요. 처음 몇 차례 실행 결과를 검토하고 요약이 너무 광범위하거나 길거나 필요한 컨텍스트가 빠졌다면 지침 문구를 조정하세요.
 
-![예약된 일일 요약 예약 작업](../images/use-case-daily-summary-automation.png)
+![예약된 일일 요약 예약 작업](../images/use-case-daily-summary-automation.webp)
 
 ## FAQ
 

@@ -36,7 +36,7 @@
 
 你可以查看 [Telegram](../configuration/channel-telegram.md)、[WhatsApp](../configuration/channel-whatsapp.md)、[Discord](../configuration/channel-discord.md)、[Slack](../configuration/channel-slack.md) 和 [WeChat](../configuration/channel-wechat.md) 的详细说明。
 
-![运行中的 Hermes Agent 与已连接通道](../images/use-case-hermes-online-channel.png)
+![运行中的 Hermes Agent 与已连接通道](../images/use-case-hermes-online-channel.webp)
 
 ### 2. 让工作配置保持简单且容易查看
 
@@ -71,7 +71,7 @@
 在[定时任务](../configuration/automation.md)中创建时间安排，如果合适，可以选择一个通知通道。
 检查前几次执行结果，如果范围太大，应让指令更具体，而不是立即添加另一个定时任务。
 
-![Hermes Agent 最近的定时任务执行记录](../images/use-case-hermes-online-automation.png)
+![Hermes Agent 最近的定时任务执行记录](../images/use-case-hermes-online-automation.webp)
 
 ## 常见问题
 

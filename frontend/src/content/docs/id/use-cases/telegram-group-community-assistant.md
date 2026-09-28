@@ -6,7 +6,7 @@
 Panduan ini menjelaskan penyiapan yang telah diverifikasi serta penggunaan Hermes Agent yang sama untuk tanya jawab, ringkasan, dan draf pengingat di grup.
 Panduan ini tidak menganggap event anggota bergabung, sambutan otomatis, atau balasan pasif tanpa penyebutan Bot sebagai fitur yang sudah dikonfigurasi.
 
-![Asisten komunitas AI grup Telegram untuk tanya jawab, ringkasan, dan pengingat](../images/use-case-08-telegram-group-community-assistant.png)
+![Asisten komunitas AI grup Telegram untuk tanya jawab, ringkasan, dan pengingat](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## Sebelum memulai
 

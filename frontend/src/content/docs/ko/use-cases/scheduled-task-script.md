@@ -32,7 +32,7 @@ if [ "$used" -ge 80 ]; then
 fi
 ```
 
-![디스크 사용량 알림용 반복 스크립트 작업 만들기](../images/scheduled-task-script-1.png)
+![디스크 사용량 알림용 반복 스크립트 작업 만들기](../images/scheduled-task-script-1.webp)
 
 디스크 사용량이 임계값보다 낮으면 스크립트는 아무것도 출력하지 않으며 알림도 전송되지 않습니다.
 이렇게 하면 주의가 필요한 경우를 제외하고 일상 점검을 조용하게 유지할 수 있습니다.
@@ -53,7 +53,7 @@ if not file.exists() or time() - file.stat().st_mtime > 86400:
     print("Export alert: the latest file is missing or over 24 hours old.")
 ```
 
-![누락되거나 오래된 내보내기를 확인하는 반복 스크립트 작업 편집](../images/scheduled-task-script-2.png)
+![누락되거나 오래된 내보내기를 확인하는 반복 스크립트 작업 편집](../images/scheduled-task-script-2.webp)
 
 예시 경로를 실제 내보내기 위치로 바꾸세요.
 파일이 존재하고 최신 상태라면 스크립트는 불필요한 메시지를 보내지 않고 조용히 완료됩니다.
@@ -64,7 +64,7 @@ LightVela에서는 [채널 구성](https://lightvela.ai/docs/configuration?from=
 하나 또는 여러 채널을 동시에 연결할 수 있습니다.
 예약 작업에서 구성된 각 채널을 전환하여 스크립트 알림을 어디로 보낼지 결정할 수 있습니다.
 
-![스크립트 작업이 디스크 사용량 점검 결과를 Telegram으로 직접 전송](../images/scheduled-task-script-3.png)
+![스크립트 작업이 디스크 사용량 점검 결과를 Telegram으로 직접 전송](../images/scheduled-task-script-3.webp)
 
 스크립트가 비어 있지 않은 표준 출력을 생성하면 Hermes가 그 출력을 IM으로 직접 보냅니다.
 스크립트가 아무것도 출력하지 않으면 작업은 알림을 보내지 않고 완료됩니다.
@@ -75,6 +75,6 @@ LightVela에서는 [채널 구성](https://lightvela.ai/docs/configuration?from=
 생성한 뒤에는 스크립트와 일정을 편집하고, 일시 중지하며, 이전 실행을 탐색할 수 있습니다.
 특히 중요한 파일에 접근하는 경우에는 예약하기 전에 모든 스크립트를 테스트하세요.
 
-![스크립트 작업이 있는 현재 작업 목록](../images/scheduled-task-script-4.png)
+![스크립트 작업이 있는 현재 작업 목록](../images/scheduled-task-script-4.webp)
 
 LightVela를 사용하면 개인 Hermes Agent가 다른 일에 집중하는 동안에도 예측 가능한 점검을 계속 처리할 수 있습니다.

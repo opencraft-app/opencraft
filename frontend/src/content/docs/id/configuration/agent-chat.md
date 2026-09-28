@@ -12,7 +12,7 @@ Buka halaman "Chat" untuk berinteraksi dengan Hermes Agent Anda melalui jendela 
 >
 > Panduan antarmuka AgentChat saat ini masih sebagian besar berbahasa Tiongkok; pelokalan penuh sedang dikerjakan.
 
-![Halaman Chat di konsol LightVela](../images/chat-overview-en.png)
+![Halaman Chat di konsol LightVela](../images/chat-overview-en.webp)
 
 ---
 

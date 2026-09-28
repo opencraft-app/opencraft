@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![Una carpeta de Almacenamiento en la Nube con archivos de proyecto](../images/use-case-memory-knowledge-storage.png)
+![Una carpeta de Almacenamiento en la Nube con archivos de proyecto](../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. Revisa la memoria en lugar de asumir que es correcta para siempre
 
@@ -69,7 +69,7 @@ Usa la página [Chat](../configuration/agent-chat.md) o un canal conectado para 
 
 Si tu revisión sigue un ritmo recurrente, una [Tarea programada](../configuration/automation.md) puede recordarte para revisar una carpeta o preparar un resumen regular. Comienza con un recordatorio o resumen simple en lugar de conceder una tarea amplia y sin límites.
 
-![Una conversación del Agent Hermes usando conocimiento de proyecto organizado](../images/use-case-memory-knowledge-automation.png)
+![Una conversación del Agent Hermes usando conocimiento de proyecto organizado](../images/use-case-memory-knowledge-automation.webp)
 
 ## Preguntas frecuentes
 

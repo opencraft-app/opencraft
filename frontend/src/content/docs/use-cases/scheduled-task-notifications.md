@@ -29,7 +29,7 @@
 
 > 该喝一杯水并休息一下了。
 
-![编辑每日健康提醒通知任务](../images/scheduled-task-notifications-zh-1.png)
+![编辑每日健康提醒通知任务](../images/scheduled-task-notifications-zh-1.webp)
 
 关键是让消息保持简短并且可执行。
 由于消息不会经过模型处理，通知不会被改写，也不会增加额外上下文。
@@ -45,7 +45,7 @@
 
 > 每月付款检查：查看本周到期的房租、水电费和订阅费用。
 
-![编辑每月付款提醒通知任务](../images/scheduled-task-notifications-zh-2.png)
+![编辑每月付款提醒通知任务](../images/scheduled-task-notifications-zh-2.webp)
 
 通知会让每笔付款在截止日期前保持可见。
 如果不同账单的到期日期不同，请创建多个任务，让每条提醒在有用的时间送达。
@@ -59,7 +59,7 @@ LightVela 支持将 Agent 接入微信、飞书和 QQ。
 你可以同时接入一个或多个通道。
 在定时任务中，你可以切换每个已配置的通道，决定通知应该发送到哪里。
 
-![通过微信直接发送定时通知](../images/scheduled-task-notifications-zh-3.png)
+![通过微信直接发送定时通知](../images/scheduled-task-notifications-zh-3.webp)
 
 切换设置后，Agent 会将完整通知直接发送到你的即时通信应用。
 你不需要打开 LightVela 或其他应用查看提醒。
@@ -72,7 +72,7 @@ LightVela 支持将 Agent 接入微信、飞书和 QQ。
 你可以根据需要设置任意数量的定时任务。
 创建后，你可以编辑任务内容和执行时间，暂停任务，并浏览历史运行记录。
 
-![Scheduled Tasks 中包含通知任务的当前任务列表](../images/scheduled-task-notifications-zh-4.png)
+![Scheduled Tasks 中包含通知任务的当前任务列表](../images/scheduled-task-notifications-zh-4.webp)
 
 当提醒内容或时间发生变化时，直接编辑原任务可以避免重复创建相同提醒。
 暂时不需要的提醒可以暂停，之后再恢复，不必删除历史配置。

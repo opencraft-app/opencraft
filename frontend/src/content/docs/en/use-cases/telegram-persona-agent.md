@@ -4,7 +4,7 @@
 
 **Telegram is only an entry point. What determines how the Agent speaks, how it works, and what it will not do is its persona and long-term context.** The flow has two halves: first connect the Hermes Agent to Telegram following the channel guide (create a bot with BotFather to obtain a token, connect in the console, and confirm it shows as connected), then use the Persona section on the Agent's settings page to select a stable role, tone, and set of limits and inject it. Keep the three layers distinct: the persona holds durable behavioural principles, user preferences hold how you want to be treated, and long-term memory holds confirmed facts and project background. Telegram supports group messages after you disable Group Privacy in BotFather, add the bot to the group, and start the conversation with `@bot_username`.
 
-![A Hermes Agent with a distinct personality in Telegram](../images/use-case-03-telegram-persona-agent.png)
+![A Hermes Agent with a distinct personality in Telegram](../images/use-case-03-telegram-persona-agent.webp)
 
 ## Who this is for
 

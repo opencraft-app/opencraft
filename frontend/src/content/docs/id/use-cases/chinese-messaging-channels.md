@@ -54,7 +54,7 @@ Buka area Channel di konsol, pilih platformnya, lalu ikuti alur otorisasi atau k
 
 Perlakukan bot token, application ID, dan secret seperti kata sandi. Jangan menempelkannya ke grup chat, dokumen publik, atau pesan kepada orang lain. Jika sebuah kredensial terekspos, ganti kredensial itu di platform yang menerbitkannya sebelum menghubungkan Hermes kembali.
 
-![Halaman koneksi kanal LightVela](../images/use-case-messaging-connection.png)
+![Halaman koneksi kanal LightVela](../images/use-case-messaging-connection.webp)
 
 ### 3. Verifikasi koneksinya dengan percakapan sederhana
 
@@ -72,7 +72,7 @@ Ketika lebih dari satu kanal terhubung ke Hermes Agent yang sama, semuanya adala
 
 Gunakan [Pengelolaan Memori](../configuration/memory.md) untuk meninjau konteks jangka panjang yang ingin Anda pertahankan oleh Hermes. Jika satu kanal ditujukan untuk audiens yang berbeda atau membutuhkan peran yang sangat berbeda, pertimbangkan memisahkan kasus penggunaannya alih-alih mencampur ekspektasi yang tak berkaitan ke dalam satu riwayat percakapan.
 
-![Konteks Hermes Agent yang sama dibagikan lintas kanal](../images/use-case-messaging-memory.png)
+![Konteks Hermes Agent yang sama dibagikan lintas kanal](../images/use-case-messaging-memory.webp)
 
 ## FAQ
 

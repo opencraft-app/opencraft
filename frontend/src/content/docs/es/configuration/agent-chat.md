@@ -12,7 +12,7 @@ Abra la página "Chat" para interactuar con su Hermes Agent a través de una ven
 >
 > La guía de interfaz de AgentChat está actualmente principalmente en chino; la localización completa está en camino.
 
-![La página de Chat en la consola de LightVela](../images/chat-overview-en.png)
+![La página de Chat en la consola de LightVela](../images/chat-overview-en.webp)
 
 ---
 

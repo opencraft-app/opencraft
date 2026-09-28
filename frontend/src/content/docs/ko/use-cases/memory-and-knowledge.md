@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![프로젝트 파일이 있는 클라우드 스토리지 폴더](../images/use-case-memory-knowledge-storage.png)
+![프로젝트 파일이 있는 클라우드 스토리지 폴더](../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. 메모리가 항상 정확하다고 가정하지 말고 검토합니다
 
@@ -69,7 +69,7 @@ and keep weekly summaries to five bullets.
 
 검토가 반복되는 리듬을 따르는 경우 [예약 작업](../configuration/automation.md)를 통해 폴더를 다시 방문하거나 정기적인 요약을 준비하도록 상기시켜 줄 수 있습니다. 광범위하고 개방형 작업을 부여하기보다는 간단한 알림이나 요약으로 시작하십시오.
 
-![정리된 프로젝트 지식을 활용한 Hermes Agent 대화](../images/use-case-memory-knowledge-automation.png)
+![정리된 프로젝트 지식을 활용한 Hermes Agent 대화](../images/use-case-memory-knowledge-automation.webp)
 
 ## FAQ
 

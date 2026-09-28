@@ -4,7 +4,7 @@
 
 **My Workbench를 사용하면 LightVela에서 AI Agent로 정적 웹사이트를 만들고 배포하고 관리할 수 있습니다. 시작 템플릿을 선택하거나 사이트를 처음부터 설명한 다음 Agent와 함께 결과를 다듬어 게시할 수 있습니다.**
 
-![My Workbench 개요](../images/workbench-01.png)
+![My Workbench 개요](../images/workbench-01.webp)
 
 배포가 끝나면 공개 주소와 현재 상태를 확인하고 기존 워크벤치를 한곳에서 관리할 수 있습니다.
 
@@ -15,7 +15,7 @@ Beta 안내: My Workbench는 Beta 기능이므로 기능이 발전하면서 생�
 My Workbench는 Agent 채팅과 관리형 정적 웹사이트 작업 흐름을 연결합니다.
 직접 워크벤치 "worksite"를 시작하거나 제공된 템플릿 중 하나를 선택하고, Agent와 대화하며 내용을 다듬은 뒤 전용 링크로 사이트를 미리 볼 수 있습니다.
 
-![My Workbench 페이지](../images/workbench-02.png)
+![My Workbench 페이지](../images/workbench-02.webp)
 
 LightVela가 호스팅 과정을 관리하므로 별도의 호스팅 서버나 클라우드 계정을 설정할 필요가 없습니다.
 
@@ -38,7 +38,7 @@ Workbench 페이지에는 현재 사용량, 이용 가능한 템플릿, 기존 �
 
 템플릿을 선택하면 준비된 요청이 포함된 Agent 채팅이 열립니다.
 
-![시작 템플릿](../images/workbench-03.png)
+![시작 템플릿](../images/workbench-03.webp)
 
 빈 옵션을 선택하고 Agent가 단계별로 요구 사항을 확인하도록 할 수도 있습니다.
 
@@ -52,7 +52,7 @@ Workbench 페이지에는 현재 사용량, 이용 가능한 템플릿, 기존 �
 
 현재 작업 흐름은 생성된 웹사이트에 React, TypeScript, Tailwind CSS 및 일반적인 UI 라이브러리를 사용합니다.
 
-![Agent 채팅으로 Workbench 만들기](../images/workbench-04.png)
+![Agent 채팅으로 Workbench 만들기](../images/workbench-04.webp)
 
 Agent는 콘텐츠를 편집 가능하게 유지하고 미리 입력된 가상 비즈니스 데이터를 사용하지 않으며, 임시 로컬 데이터가 적절한 경우 브라우저 로컬 저장소를 사용하도록 안내됩니다.
 
@@ -70,7 +70,7 @@ Agent는 콘텐츠를 편집 가능하게 유지하고 미리 입력된 가상 �
 
 워크벤치가 Online 상태이고 공개 주소가 있으면 Visit을 선택해 엽니다.
 
-![Workbench 상태와 웹사이트 미리 보기](../images/workbench-05.png)
+![Workbench 상태와 웹사이트 미리 보기](../images/workbench-05.webp)
 
 워크벤치가 아직 Building 또는 Publishing 상태라면 처리가 끝날 때까지 기다리고 필요하면 페이지를 새로 고칩니다.
 

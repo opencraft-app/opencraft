@@ -5,7 +5,7 @@
 **LightVela admite mensajes de grupos de Telegram cuando desactiva Group Privacy para el bot en BotFather, añade el bot al grupo e inicia la conversación mencionándolo con `@bot_username`.**
 Esta guía explica esa configuración verificada y muestra cómo usar el mismo Hermes Agent para preguntas y respuestas, resúmenes y recordatorios en grupos, sin presentar los eventos de incorporación de miembros ni las respuestas pasivas no verificadas como funciones configuradas.
 
-![Un asistente de IA para comunidades en grupos de Telegram para preguntas y respuestas, resúmenes y recordatorios](../images/use-case-08-telegram-group-community-assistant.png)
+![Un asistente de IA para comunidades en grupos de Telegram para preguntas y respuestas, resúmenes y recordatorios](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## Antes de empezar
 

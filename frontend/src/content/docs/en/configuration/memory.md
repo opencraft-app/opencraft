@@ -8,7 +8,7 @@
 
 Memory helps Hermes retain important information across conversations and devices—your preferences, identity, work in progress, and the experience it develops through long-term collaboration. It is what turns Hermes from a one-off question-answering tool into a long-term assistant that understands you better over time.
 
-![The Memory and User Profile page in the LightVela console](../images/memory-management-overview-en.png)
+![The Memory and User Profile page in the LightVela console](../images/memory-management-overview-en.webp)
 
 LightVela is cloud-hosted, so these memories are stored with your Hermes instance in the cloud. They are not lost when you change devices or switch between Telegram, WhatsApp, Discord, Slack, and WeChat. If you tell Hermes something in Telegram today, it can still remember it when you continue the conversation in WhatsApp tomorrow.
 

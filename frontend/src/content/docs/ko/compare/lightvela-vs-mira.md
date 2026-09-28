@@ -6,7 +6,7 @@
 
 두 제품 모두 채팅 창을 넘어선 지원을 지향하지만 출발점은 다릅니다. Mira는 Telegram 중심의 비서이고, LightVela는 더 넓은 워크플로 시스템으로 발전할 수 있는 구성형 개인 에이전트입니다.
 
-![개인 AI 에이전트 운영을 위한 LightVela와 Mira 비교](../images/lightvela-vs-mira.png)
+![개인 AI 에이전트 운영을 위한 LightVela와 Mira 비교](../images/lightvela-vs-mira.webp)
 
 ## 한눈에 비교하기
 

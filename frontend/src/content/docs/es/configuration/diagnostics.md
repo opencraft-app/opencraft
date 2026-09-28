@@ -30,7 +30,7 @@ El diagnóstico te ayuda a investigar un Agent que no se comporta como se espera
 3. Selecciona un rango de tiempo para los registros recientes: 1, 3, 6, 12 o 24 horas.
 4. Selecciona **Actualizar** para cargar los registros.
 
-![Diagnóstico en la consola de LightVela](../images/diagnostics-overview-en.png)
+![Diagnóstico en la consola de LightVela](../images/diagnostics-overview-en.webp)
 
 Empieza con el período más corto útil. Una ventana de registro más estrecha facilita conectar un error con la acción que lo provocó.
 

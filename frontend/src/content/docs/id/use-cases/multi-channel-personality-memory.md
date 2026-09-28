@@ -4,7 +4,7 @@ Telegram dan WhatsApp dapat menjadi pintu masuk yang berbeda ke Hermes Agent yan
 
 Ketika kedua kanal terhubung ke Agent yang sama, keduanya dapat berbagi persona, Skill, tugas terjadwal, dan memori jangka panjang di tingkat Agent, sementara tiap kanal mempertahankan otorisasi dan batas pesannya sendiri.
 
-![Satu Agent terhubung ke Telegram dan WhatsApp dengan satu kepribadian dan memori jangka panjang](../images/use-case-07-multi-channel-personality-memory.png)
+![Satu Agent terhubung ke Telegram dan WhatsApp dengan satu kepribadian dan memori jangka panjang](../images/use-case-07-multi-channel-personality-memory.webp)
 
 ## Ringkasan
 

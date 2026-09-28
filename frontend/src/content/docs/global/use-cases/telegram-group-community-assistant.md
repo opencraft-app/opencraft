@@ -7,7 +7,7 @@
 本文说明这条已验证的接入路径，以及如何用同一个 Hermes Agent 完成群内问答、讨论摘要和提醒草稿。
 本文不把尚未验证的入群事件、自动欢迎或未提及机器人的被动回复写成已配置功能。
 
-![Telegram 群组 AI 社群助手的问答、摘要与提醒方案](../images/use-case-08-telegram-group-community-assistant.png)
+![Telegram 群组 AI 社群助手的问答、摘要与提醒方案](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## 开始前的准备
 
