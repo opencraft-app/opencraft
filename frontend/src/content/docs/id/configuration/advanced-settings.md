@@ -7,7 +7,7 @@ Anda dapat memilih cara Agent meminta persetujuan untuk operasi berisiko tinggi,
 Setelah Mode Persetujuan disimpan, LightVela membaca kembali konfigurasi untuk memastikan nilai baru sudah berlaku.
 Setelah pengaturan Memori atau Manajemen Konteks disimpan, LightVela memulai ulang layanan terkait dan membaca kembali konfigurasi untuk memastikan nilai baru sudah berlaku.
 
-![Pengaturan Lanjutan di konsol LightVela](../images/setting-1-en.png)
+![Pengaturan Lanjutan di konsol LightVela](../images/setting-1-en.webp)
 
 ## Yang dibahas di halaman ini
 

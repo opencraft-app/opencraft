@@ -326,6 +326,27 @@ func TestVerificationSendRateLimitUsesClientIPAcrossRecipients(t *testing.T) {
 	}
 }
 
+func TestVerificationSendRateLimitHonorsConfiguredCeiling(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow,
+		Verification: VerificationPolicy{
+			SendIPLimit: 600,
+		},
+	})
+	for i := 0; i < 600; i++ {
+		phone := fmt.Sprintf("138%08d", i)
+		if _, err := svc.SendVerificationCodeForClient(context.Background(), phone, "203.0.113.10"); err != nil {
+			t.Fatalf("send %d failed: %v", i+1, err)
+		}
+	}
+	_, err := svc.SendVerificationCodeForClient(context.Background(), "13900000000", "203.0.113.10")
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "verification_rate_limited" || authErr.Status != http.StatusTooManyRequests {
+		t.Fatalf("expected configured ceiling to return 429 on request 601, got %#v", err)
+	}
+}
+
 func TestVerificationCheckRateLimitUsesRecipientAndClientIP(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{Now: fixedNow})
 	svc := NewWithStore(store, Options{Now: fixedNow})

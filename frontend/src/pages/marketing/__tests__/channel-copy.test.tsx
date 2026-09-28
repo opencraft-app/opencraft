@@ -54,6 +54,17 @@ afterEach(() => {
 });
 
 describe("marketing channel copy", () => {
+  it("puts channel test messages first in the domestic September changelog", () => {
+    render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+
+    const septemberSection = screen.getByText("2026 年 9 月").closest("section");
+    expect(septemberSection).not.toBeNull();
+    expect(within(septemberSection!).getAllByRole("heading")[0]).toHaveTextContent("聊天通道支持发送测试消息");
+    expect(within(septemberSection!).getByText(
+      "已连接的聊天通道可发送一条测试消息，在对应聊天软件中确认是否收到，快速验证消息是否送达。",
+    )).toBeInTheDocument();
+  });
+
   it("announces multi-Bot creation in the September changelog", () => {
     render(
       <MemoryRouter>
@@ -66,7 +77,7 @@ describe("marketing channel copy", () => {
     const heading = within(septemberSection!).getByRole("heading", {
       name: "LightVela 支持创建多个 Bot",
     });
-    expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+    expect(within(septemberSection!).getAllByRole("heading")[2]).toBe(heading);
     expect(
       within(septemberSection!).getByText(
         "在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。",
@@ -90,7 +101,7 @@ describe("marketing channel copy", () => {
     const heading = within(septemberSection!).getByRole("heading", {
       name: "定时任务新增通知任务和脚本任务",
     });
-    expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
+    expect(within(septemberSection!).getAllByRole("heading")[3]).toBe(heading);
     expect(
       within(septemberSection!).getByText(
         "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
@@ -98,7 +109,24 @@ describe("marketing channel copy", () => {
     ).toBeInTheDocument();
     expect(screen.getByAltText("定时任务新增通知任务和脚本任务")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/scheduled-tasks-notification-zh-CN.png"),
+      expect.stringContaining("/assets/changelog/scheduled-tasks-notification-zh-CN.webp"),
+    );
+  });
+
+  it("uses plan upgrade wording in the domestic September changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    const septemberSection = screen.getByText("2026 年 9 月").closest("section");
+    expect(septemberSection).not.toBeNull();
+    const heading = within(septemberSection!).getByRole("heading", { name: "LightVela 支持套餐升配" });
+    expect(within(septemberSection!).getAllByRole("heading")[1]).toBe(heading);
+    expect(within(septemberSection!).getByText("现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。")).toBeInTheDocument();
+    expect(within(septemberSection!).getByAltText("LightVela 支持套餐升配")).toHaveAttribute(
+      "src", expect.stringContaining("/assets/changelog/lightvela-plan-upgrade-cn.png"),
     );
   });
 
@@ -120,7 +148,7 @@ describe("marketing channel copy", () => {
     expect(within(heading.closest("article")!).getByText("Beta")).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 支持创建和发布工作台")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-workbench-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-workbench-zh.webp"),
     );
   });
 
@@ -175,7 +203,7 @@ describe("marketing channel copy", () => {
     ).toBeInTheDocument();
     expect(screen.getByAltText("定时任务调用技能设置")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/automation-skill-invocation.png"),
+      expect.stringContaining("/assets/changelog/automation-skill-invocation.webp"),
     );
 
     const julySection = monthText.closest("section");
@@ -209,7 +237,7 @@ describe("marketing channel copy", () => {
     const deepSeekHarnessImage = screen.getByAltText("LightVela 实验室新增 DeepSeek Harness");
     expect(deepSeekHarnessImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.webp"),
     );
     expect(deepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2172 / 1286" });
     expect(screen.getByRole("heading", { name: "LightVela 新增 Hermes Agent 高级设置" })).toBeInTheDocument();
@@ -217,7 +245,7 @@ describe("marketing channel copy", () => {
     const advancedSettingsImage = screen.getByAltText("LightVela 新增 Hermes Agent 高级设置");
     expect(advancedSettingsImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.webp"),
     );
     expect(advancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1282" });
     expect(
@@ -231,7 +259,7 @@ describe("marketing channel copy", () => {
     const personaImage = screen.getByAltText("LightVela 支持上传自定义人设文件");
     expect(personaImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-persona-upload.png"),
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload.webp"),
     );
     expect(personaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(screen.getByRole("heading", { name: "定时任务支持关联上游任务" })).toBeInTheDocument();
@@ -243,7 +271,7 @@ describe("marketing channel copy", () => {
     const upstreamImage = screen.getByAltText("定时任务支持关联上游任务");
     expect(upstreamImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.webp"),
     );
     expect(upstreamImage.parentElement).toHaveStyle({ aspectRatio: "816 / 356" });
     expect(screen.getByRole("heading", { name: "LightVela 支持钉钉通道" })).toBeInTheDocument();
@@ -253,7 +281,7 @@ describe("marketing channel copy", () => {
     const dingtalkImage = screen.getByAltText("LightVela 支持钉钉通道");
     expect(dingtalkImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-dingtalk-channel.png"),
+      expect.stringContaining("/assets/changelog/lightvela-dingtalk-channel.webp"),
     );
     expect(dingtalkImage.parentElement).toHaveStyle({ aspectRatio: "816 / 356" });
     const augustHeadings = screen.getAllByRole("heading").map((heading) => heading.textContent);
@@ -273,7 +301,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByText("将 Hermes Agent 添加到 QQ 群后，@ 机器人即可开始对话。")).toBeInTheDocument();
     expect(screen.getByAltText("支持在 QQ 群聊中 @ 机器人")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.webp"),
     );
     expect(screen.queryByRole("heading", { name: "技能页面支持批量安装与来源查看" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "支持繁体中文" })).not.toBeInTheDocument();
@@ -412,14 +440,14 @@ describe("marketing channel copy", () => {
         "When creating or editing a scheduled task, you can choose the Skill it should use. The Agent loads the Skill before running the scheduled task to make Skill invocation more reliable.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByAltText("LightVela Supports Cloud Storage Management")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-cloud-storage-en.png"));
-    expect(screen.getByAltText("LightVela Now Supports Achievements")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-achievements-en.png"));
-    expect(screen.getByAltText("LightVela Now Supports Web Chat")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/agentchat-web-chat-en.png"));
-    expect(screen.getByAltText("LightVela Now Supports Viewing Hermes Agent Memory")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/hermes-memory-en.png"));
-    expect(screen.getByAltText("LightVela Now Supports Scheduled Tasks")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/scheduled-tasks-en.png"));
+    expect(screen.getByAltText("LightVela Supports Cloud Storage Management")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-cloud-storage-en.webp"));
+    expect(screen.getByAltText("LightVela Now Supports Achievements")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-achievements-en.webp"));
+    expect(screen.getByAltText("LightVela Now Supports Web Chat")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/agentchat-web-chat-en.webp"));
+    expect(screen.getByAltText("LightVela Now Supports Viewing Hermes Agent Memory")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/hermes-memory-en.webp"));
+    expect(screen.getByAltText("LightVela Now Supports Scheduled Tasks")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/scheduled-tasks-en.webp"));
     expect(screen.getByAltText("Scheduled Task Skill Invocation Settings")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/automation-skill-invocation-en.png"),
+      expect.stringContaining("/assets/changelog/automation-skill-invocation-en.webp"),
     );
     expect(document.body).not.toHaveTextContent("Automations");
   });

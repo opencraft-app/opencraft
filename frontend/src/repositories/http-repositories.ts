@@ -226,6 +226,12 @@ interface CtlInstanceBotPayload {
     bot_name?: string;
     status: string;
   };
+  whatsapp_owner?: {
+    bot_id: string;
+    profile_id: string;
+    bot_name?: string;
+    status: string;
+  };
 }
 
 interface CtlListInstanceBotsPayload {
@@ -797,6 +803,12 @@ const projectInstanceBotToBot = (
       botName: instanceBot.weixin_owner.bot_name,
       status: instanceBot.weixin_owner.status,
     } : undefined,
+    whatsAppOwner: instanceBot.whatsapp_owner ? {
+      botId: instanceBot.whatsapp_owner.bot_id,
+      profileId: instanceBot.whatsapp_owner.profile_id,
+      botName: instanceBot.whatsapp_owner.bot_name,
+      status: instanceBot.whatsapp_owner.status,
+    } : undefined,
     sandboxId: instance.sandbox_id,
     name: displayName || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
     type: draft?.type || "ops",
@@ -1212,22 +1224,25 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async claimUniqueChannel(botId, channel) {
       const { instanceId } = await resolveBotScope(botId);
-      await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
+      const binding = await requestEnvelope<{ reservation_id?: string }>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "PUT",
       });
+      return binding.reservation_id;
     },
 
-    async confirmUniqueChannel(botId, channel) {
+    async confirmUniqueChannel(botId, channel, reservationId) {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "POST",
+        body: reservationId ? { reservation_id: reservationId } : undefined,
       });
     },
 
-    async releaseUniqueChannel(botId, channel) {
+    async releaseUniqueChannel(botId, channel, reservationId) {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "DELETE",
+        body: channel === "whatsapp" ? (reservationId ? { reservation_id: reservationId } : { disconnect: true }) : undefined,
       });
     },
 
@@ -1360,6 +1375,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         ? setTimeout(() => abortController.abort(), timeoutMs)
         : undefined;
       let response: Response;
+      let body: unknown = null;
       try {
         response = await fetch(buildUrl(baseUrl, path), {
           method: "POST",
@@ -1368,6 +1384,14 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           body: JSON.stringify(createDebugExecRequestBody(command)),
           signal: abortController.signal,
         });
+        // fetch resolves at headers; keep the deadline through body consumption.
+        // Otherwise a stalled body can block onboarding beyond its probe budget.
+        try {
+          body = await response.json();
+        } catch (error) {
+          if (abortController.signal.aborted) throw error;
+          body = null;
+        }
       } catch (error) {
         if (abortController.signal.aborted) {
           throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
@@ -1375,13 +1399,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         throw createNetworkUnavailableError(error);
       } finally {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
-      }
-
-      let body: unknown = null;
-      try {
-        body = await response.json();
-      } catch {
-        body = null;
       }
 
       // 优先识别 details 字段：只要带 details.output / details.exit_code，

@@ -3,6 +3,17 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_SCRIPT="${ROOT_DIR}/images/build.sh"
+HERMES_VERSION_LIB="${ROOT_DIR}/images/lib/hermes-version.sh"
+
+# shellcheck source=/dev/null
+source "${HERMES_VERSION_LIB}"
+
+HERMES_VERSION_RETRY_OUTPUT='Connection closed by 43.128.150.116 port 22
+WARN: ssh transport failed (attempt 1/4), retrying in 5s
+Hermes Agent v0.21.3 (2026.9.14)
+Install directory: /home/agentuser/.hermes/hermes-agent'
+test "$(printf '%s\n' "${HERMES_VERSION_RETRY_OUTPUT}" | parse_hermes_cli_version)" = "0.21.3"
+test -z "$(printf '%s\n' 'Connection closed by 43.128.150.116 port 22' | parse_hermes_cli_version)"
 
 if grep -Fq 'install_deepseek_harness_installer' "${BUILD_SCRIPT}"; then
   echo "Hermes image must not preload the DeepSeek Harness installer" >&2

@@ -48,6 +48,84 @@ test("browser images become host-independent Codex image URLs", async () => {
   });
 });
 
+test("unsupported image formats fail before the Composer marks them ready", async () => {
+  const file = new File(["vector"], "drawing.svg", { type: "image/svg+xml" });
+  await assert.rejects(
+    () => resolveBrowserAttachment(file, pending(file)),
+    (error: unknown) => error instanceof BrowserAttachmentError
+      && error.code === "UNSUPPORTED_IMAGE_TYPE",
+  );
+});
+
+test("HEIC camera photos use the converted JPEG even when conversion grows the file", async () => {
+  const file = new File(["heic"], "IMG_0001.HEIC", { type: "image/heic" });
+  const jpeg = new Blob(["larger jpeg derivative"], { type: "image/jpeg" });
+  const resolved = await resolveBrowserAttachment(file, pending(file), { stage: null }, {
+    compress: async () => ({ blob: jpeg, changed: true, reason: "transcoded" }),
+  });
+  assert.equal(resolved.lifecycle, "ready");
+  assert.equal(resolved.name, "IMG_0001.jpg");
+  assert.equal(resolved.mimeType, "image/jpeg");
+  assert.equal(resolved.size, jpeg.size);
+  assert.match(resolved.uri ?? "", /^data:image\/jpeg;base64,/u);
+  assert.equal(resolved.metadata?.compression, "transcoded");
+});
+
+test("HEIC without a browser codec fails with a specific recoverable error", async () => {
+  const file = new File(["heic"], "IMG_0001.HEIC", { type: "image/heic" });
+  await assert.rejects(
+    () => resolveBrowserAttachment(file, pending(file), { stage: null }, {
+      compress: async (source) => ({ blob: source, changed: false, reason: "codec-unavailable" }),
+    }),
+    (error: unknown) => error instanceof BrowserAttachmentError
+      && error.code === "UNSUPPORTED_IMAGE_TYPE"
+      && error.message.includes("could not convert the HEIC"),
+  );
+});
+
+test("HEIC filename recovers missing browser MIME before image processing", async () => {
+  const file = new File(["heic"], "IMG_0002.heif");
+  const resolved = await resolveBrowserAttachment(file, pending(file), { stage: null }, {
+    compress: async (source) => {
+      assert.equal(source.type, "image/heif");
+      return { blob: new Blob(["jpeg"], { type: "image/jpeg" }), changed: true, reason: "transcoded" };
+    },
+  });
+  assert.equal(resolved.name, "IMG_0002.jpg");
+  assert.equal(resolved.mimeType, "image/jpeg");
+});
+
+test("HEIC JPEG derivative over the inline cap is rejected before base64 allocation", async () => {
+  const file = new File(["heic"], "IMG_0003.HEIC", { type: "image/heic" });
+  let read = false;
+  const tooLarge = {
+    type: "image/jpeg",
+    size: MAX_INLINE_BROWSER_IMAGE_BYTES + 1,
+    arrayBuffer: async () => { read = true; return new ArrayBuffer(0); },
+  } as Blob;
+  await assert.rejects(
+    () => resolveBrowserAttachment(file, pending(file), { stage: null }, {
+      compress: async () => ({ blob: tooLarge, changed: true, reason: "transcoded" }),
+    }),
+    (error: unknown) => error instanceof BrowserAttachmentError && error.code === "IMAGE_TOO_LARGE",
+  );
+  assert.equal(read, false);
+});
+
+test("compressed WebP keeps a filename extension that matches its MIME type", async () => {
+  const file = new File([new Uint8Array([1, 2])], "photo.webp", { type: "image/webp" });
+  const resolved = await resolveBrowserAttachment(file, pending(file), { stage: null }, {
+    compress: async () => ({
+      blob: new Blob([new Uint8Array([3])], { type: "image/webp" }),
+      changed: true,
+      reason: "compressed",
+    }),
+  });
+  assert.equal(resolved.name, "photo.webp");
+  assert.equal(resolved.mimeType, "image/webp");
+  assert.equal(resolved.uri, "data:image/webp;base64,Aw==");
+});
+
 test("the browser resolver stages non-image files through the semantic Host attachment port", async () => {
   const text = new File(["hello"], "note.txt", { type: "text/plain" });
   const stages: unknown[] = [];

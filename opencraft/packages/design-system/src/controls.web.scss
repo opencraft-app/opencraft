@@ -17,8 +17,19 @@
   @media (forced-colors: active) { border-color: Mark; }
 }
 
+// A hybrid device can report hover capability even after a touch contact.
+// The document's current-input signal suppresses synthetic/sticky hover while
+// focus-visible and persistent selected/open states remain independent.
+@mixin hover-capable {
+  @media (any-hover: hover) and (any-pointer: fine) {
+    :root:not([data-touch-interaction]) & { @content; }
+  }
+}
+
 // Shared quiet controls. Layout belongs to the consumer, interaction to here.
-@mixin quiet-control {
+// An input-adaptive consumer may own its hover rule while retaining the same
+// open, keyboard-focus, and disabled states from this mixin.
+@mixin quiet-control($hover: true) {
   appearance: none;
   border: 0;
   background: transparent;
@@ -26,7 +37,14 @@
   color: inherit;
   border-radius: var(--radius-control);
   cursor: pointer;
-  &:hover:not(:disabled), &[data-state="open"] {
+  @if $hover {
+    @include hover-capable {
+      &:hover:not(:disabled) {
+        background: var(--color-background-button-tertiary-hover);
+      }
+    }
+  }
+  &[data-state="open"] {
     background: var(--color-background-button-tertiary-hover);
   }
   &:focus-visible {
@@ -48,8 +66,10 @@
   padding: 0 var(--padding-navigation-row-inline);
   text-align: left;
 
-  &:hover:not(:disabled) {
-    background: var(--color-background-navigation-hover);
+  @include hover-capable {
+    &:hover:not(:disabled) {
+      background: var(--color-background-navigation-hover);
+    }
   }
 
   &.is-selected, &[aria-current="page"] {

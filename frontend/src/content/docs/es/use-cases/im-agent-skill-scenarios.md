@@ -4,7 +4,7 @@
 
 **Convertir un solo Agent de IM en un Agent de soporte, asistente de comunidad o compañero de IA se reduce a la división entre Skills y personalidad: las Skills extienden lo que puede hacer, mientras que `SOUL.md` define quién es y dentro de qué límites actúa.** Ambos son necesarios — las Skills sin una personalidad producen respuestas inconsistentes, y una personalidad sin Skills carece de métodos reutilizables. En LightVela, las Skills provienen de los mercados públicos Skills.sh y ClawHub; hoy, las instalas o eliminas diciéndoselo a Hermes en la conversación (la instalación por consola-pannel llegará pronto), y luego verificas la disponibilidad en el chat. Los tres escenarios difieren principalmente en el diseño de límites: el soporte necesita condiciones de escalación explícitas, los asistentes de comunidad necesitan saber cuándo mantenerse en silencio, y el uso de compañeros necesita temas claros fuera de límites. Trabaja a través de la lista de verificación de seguridad antes de ponerlo en producción.
 
-![Conversión de un Agent de IM en un asistente de servicio al cliente, comunidad o compañero con Skills](../images/use-case-06-im-agent-skill-scenarios.png)
+![Conversión de un Agent de IM en un asistente de servicio al cliente, comunidad o compañero con Skills](../images/use-case-06-im-agent-skill-scenarios.webp)
 
 ## Para quién es este documento
 

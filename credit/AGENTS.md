@@ -207,6 +207,12 @@ SSM `mono-beijing-sandbox-credit-runtime-secrets`，通过
 
 各环境的 `credit-platform.env` 必须提供 `CREDIT_REGION` 和 `CREDIT_OBJECT_ID_PASSWORD_SUFFIX`，并由公共 Kustomize component 注入运行时 `credit-config`；Credit API 启动时会校验这两个资源 ID 生成参数。
 
+生产环境的 `LLMGATEWAY_INTERNAL_BASE_URL` 必须与该地域用户模型流量使用同一套 LLMGateway：
+上海使用 `https://token-admin.lightvela.com`，新加坡使用 `https://token-admin.lightvela.ai`。不得把
+生产 Credit 指向北京共享管理面 `https://llmgw-control.lightvela.com`。`credit_product` 中的 plan
+也必须创建于同一个地域控制面；跨地域同名 plan 的 ID 不可复用，否则商品能发货但用户流量无法
+消费对应订阅。切换控制面时还要同步迁移 active package 的精确订阅和快照，不能只更新商品表。
+
 Credit API 还需要 `CREDIT_REDIS_ADDR`、`CREDIT_REDIS_PASSWORD`、`CREDIT_REDIS_DB` 和
 `CREDIT_AUTH_CODE_TTL` 初始化一次性支付 ticket store；默认 DB 为 0、TTL 为 10 分钟。Redis
 只属于 API 支付链路，usage/lifecycle worker 不校验也不连接 Redis。Service Gateway 只对

@@ -60,6 +60,28 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         ):
             load_bundle(manifest, "demo", "beijing-sandbox")
 
+    def test_bundle_rejects_broad_or_unowned_preserve_target_paths(self) -> None:
+        base = {
+            "owner": "demo",
+            "source": "demo",
+            "reason": "Demo bundle",
+            "allowed_paths": ["demo/k8s/base"],
+            "exit_condition": "never",
+            "publish_paths_by_env": {
+                "beijing-sandbox": ["argocd/services/demo/beijing-sandbox/**"],
+            },
+        }
+        for path, message in (
+            ("argocd/services/demo/beijing-sandbox/**", "must name exact repository files"),
+            ("argocd/secrets/beijing-sandbox/demo.sops.yaml", "outside publish paths"),
+            ("../outside.yaml", "must stay within the repository"),
+        ):
+            with self.subTest(path=path):
+                bundle = dict(base)
+                bundle["preserve_target_paths_by_env"] = {"beijing-sandbox": [path]}
+                with self.assertRaisesRegex(ValueError, message):
+                    load_bundle({"bundles": {"demo": bundle}}, "demo", "beijing-sandbox")
+
     def test_vibebase_beijing_promotion_only_owns_vibebase_gitops_service(self) -> None:
         bundle = load_bundle(
             load_manifest(),
@@ -577,6 +599,82 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             )
             self.assertEqual((repo / "demo" / "k8s" / "base" / "manifests.yaml").read_text(), "source-manifest\n")
             self.assertIn("deleted 0 stale files", result.stdout)
+
+    def test_projection_preserves_declared_gitops_target_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init")
+            git(repo, "config", "user.email", "ci@example.com")
+            git(repo, "config", "user.name", "CI")
+
+            (repo / ".ci/runtime/bundles").mkdir(parents=True)
+            (repo / ".ci/runtime/bundles/demo.bundle").write_text(textwrap.dedent("""\
+                bundles:
+                  demo:
+                    owner: demo
+                    source: demo
+                    reason: Demo bundle with GitOps-owned activation inputs
+                    allowed_paths:
+                      - demo/k8s/base
+                    exit_condition: never
+                    publish_paths_by_env:
+                      beijing-sandbox:
+                        - demo/k8s/base/**
+                        - argocd/services/demo/beijing-sandbox/**
+                        - argocd/secrets/beijing-sandbox/demo-runtime.sops.yaml
+                    preserve_target_paths_by_env:
+                      beijing-sandbox:
+                        - argocd/secrets/beijing-sandbox/demo-runtime.sops.yaml
+                        - argocd/services/demo/beijing-sandbox/platform.env
+            """))
+            (repo / "demo/k8s/base").mkdir(parents=True)
+            (repo / "demo/k8s/base/deployment.yaml").write_text("source-deployment\n")
+            source_overlay = repo / "argocd/services/demo/beijing-sandbox"
+            source_overlay.mkdir(parents=True)
+            (source_overlay / "kustomization.yaml").write_text("source-overlay\n")
+            (source_overlay / "platform.env").write_text("IMAGE=REPLACE_IMAGE\nADMIN=REPLACE_ADMIN\n")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "source")
+            source_ref = git_output(repo, "rev-parse", "HEAD")
+
+            git(repo, "checkout", "-b", "gitops")
+            (repo / "demo/k8s/base/deployment.yaml").write_text("old-deployment\n")
+            (source_overlay / "kustomization.yaml").write_text("old-overlay\n")
+            (source_overlay / "platform.env").write_text("IMAGE=live-image\nADMIN=live-admin\n")
+            (source_overlay / "stale.yaml").write_text("stale\n")
+            secret = repo / "argocd/secrets/beijing-sandbox/demo-runtime.sops.yaml"
+            secret.parent.mkdir(parents=True)
+            secret.write_text("encrypted-live-secret\n")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "gitops")
+
+            result = run_command(
+                [
+                    "python3",
+                    str(COMMAND_DIR / "project_release_bundle.py"),
+                    "--repo-root",
+                    str(repo),
+                    "--service",
+                    "demo",
+                    "--env",
+                    "beijing-sandbox",
+                    "--source-ref",
+                    source_ref,
+                ],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual((repo / "demo/k8s/base/deployment.yaml").read_text(), "source-deployment\n")
+            self.assertEqual((source_overlay / "kustomization.yaml").read_text(), "source-overlay\n")
+            self.assertFalse((source_overlay / "stale.yaml").exists())
+            self.assertEqual(
+                (source_overlay / "platform.env").read_text(),
+                "IMAGE=live-image\nADMIN=live-admin\n",
+            )
+            self.assertEqual(secret.read_text(), "encrypted-live-secret\n")
 
 
 if __name__ == "__main__":

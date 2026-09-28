@@ -90,10 +90,9 @@ const cnDocs = [
   { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '产品入门', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。', hideDescription: true },
   // 账号、套餐与开通
   { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '账号、套餐与开通', description: '账号管理与实名认证流程。', hideDescription: true },
-  { slug: 'announcements/public-beta', title: 'LightVela 付费版本公告', file: 'announcements/public-beta.md', group: '账号、套餐与开通', description: '', hideDescription: true },
   { slug: 'plans', title: '套餐管理', file: 'plans.md', group: '账号、套餐与开通', description: 'LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。', hideDescription: true },
   { slug: 'credits', title: 'AI 积分说明', file: 'credits.md', group: '账号、套餐与开通', description: 'AI 积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、发放、消耗方式及与套餐的关系。', hideDescription: true },
-  { slug: 'create-first-hermes', title: '如何开通第一个 Hermes 智能体伙伴？', file: 'create-first-hermes.md', group: '账号、套餐与开通', description: '开通第一个 Hermes 智能体伙伴的完整流程：登录账号、完成实名认证、选择并开通套餐、平台自动创建，再配置模型与通道让 Agent 7×24 小时在线运行。', hideDescription: true },
+  { slug: 'create-first-hermes', title: '如何开通第一个 Hermes 智能体伙伴？', file: 'create-first-hermes.md', group: '账号、套餐与开通', description: '登录并实名认证、开通套餐、为首个 Bot 命名，然后按引导完成初始配置。', hideDescription: true },
   // 功能与配置
   { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: '功能与配置', description: 'LightVela 管理台配置流程。', hideDescription: true },
   { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: '功能与配置', description: '接入和管理 Hermes 使用的大语言模型。', hideDescription: true },
@@ -101,6 +100,7 @@ const cnDocs = [
   { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '功能与配置', description: '通过 QQ 与 Hermes Agent 对话。', hideDescription: true },
   { slug: 'configuration/channel-wecom', title: '配置通道 - 企业微信', file: 'configuration/channel-wecom.md', group: '功能与配置', description: '通过企业微信与 Hermes Agent 对话。', hideDescription: true },
   { slug: 'configuration/channel-feishu', title: '配置通道 - 飞书', file: 'configuration/channel-feishu.md', group: '功能与配置', description: '通过飞书与 Hermes Agent 对话。', hideDescription: true },
+  { slug: 'configuration/channel-dingtalk', title: '配置通道 - 钉钉', file: 'configuration/channel-dingtalk.md', group: '功能与配置', description: '通过扫码或 Client ID / Secret 将钉钉接入 Hermes Agent。', hideDescription: true },
   { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。', hideDescription: true },
   { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: '功能与配置', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。', hideDescription: true },
   { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '功能与配置', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。', hideDescription: true },
@@ -251,19 +251,8 @@ const globalDocs = [
     file: 'plans.md',
     group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
     description: {
-      'en-US': 'Compare LightVela plans, isolated cloud resources, monthly AI credits, refund rules, and email-based refund application steps.',
-      'zh-CN': '对比 LightVela 套餐、独立云端资源、每月 AI 积分，并了解退款规则与邮件申请步骤。',
-    },
-    hideDescription: true,
-  },
-  {
-    slug: 'announcements/public-beta',
-    title: { 'en-US': 'LightVela Paid Version Announcement', 'zh-CN': 'LightVela 付费版本公告' },
-    file: 'announcements/public-beta.md',
-    group: { 'en-US': 'Plans & Activation', 'zh-CN': '套餐与开通' },
-    description: {
-      'en-US': 'LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users can try Launch or Launch AI free for 1 month on their first order.',
-      'zh-CN': 'LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测并开启计费；正式转入公测并开启计费后，内测用户现有套餐的有效期将额外延长 1 个月。',
+      'en-US': 'Compare LightVela plans, dedicated cloud environments, monthly AI credits, refund rules, and email-based refund application steps.',
+      'zh-CN': '对比 LightVela 套餐、专属云端环境、每月 AI 积分，并了解退款规则与邮件申请步骤。',
     },
     hideDescription: true,
   },
@@ -574,14 +563,6 @@ const globalDocs = [
     hideDescription: true,
   },
   {
-    slug: 'use-cases/im-agent-skill-scenarios',
-    title: { 'en-US': 'How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills', 'zh-CN': '如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣？' },
-    file: 'use-cases/im-agent-skill-scenarios.md',
-    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
-    description: { 'en-US': '', 'zh-CN': '' },
-    hideDescription: true,
-  },
-  {
     slug: 'use-cases/multi-channel-personality-memory',
     title: { 'en-US': 'How to Connect One Agent to Telegram and WhatsApp While Keeping One Personality and Long-Term Memory', 'zh-CN': '如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆？' },
     file: 'use-cases/multi-channel-personality-memory.md',
@@ -593,30 +574,6 @@ const globalDocs = [
     slug: 'use-cases/telegram-group-community-assistant',
     title: { 'en-US': 'How to Use a Telegram Group AI Community Assistant: Q&A, Summaries, and Reminders', 'zh-CN': '如何使用 Telegram 群组 AI 社群助手：问答、摘要与提醒？' },
     file: 'use-cases/telegram-group-community-assistant.md',
-    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
-    description: { 'en-US': '', 'zh-CN': '' },
-    hideDescription: true,
-  },
-  {
-    slug: 'use-cases/whatsapp-24-7-customer-service',
-    title: { 'en-US': 'How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Scheduled Tasks', 'zh-CN': '如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？' },
-    file: 'use-cases/whatsapp-24-7-customer-service.md',
-    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
-    description: { 'en-US': '', 'zh-CN': '' },
-    hideDescription: true,
-  },
-  {
-    slug: 'use-cases/lifelike-im-agent-rhythm-social-memory',
-    title: { 'en-US': 'How to Design a More Natural IM Agent: Conversation Rhythm, Group Norms, and Long-Term Social Memory', 'zh-CN': '如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆？' },
-    file: 'use-cases/lifelike-im-agent-rhythm-social-memory.md',
-    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
-    description: { 'en-US': '', 'zh-CN': '' },
-    hideDescription: true,
-  },
-  {
-    slug: 'use-cases/telegram-whatsapp-safety-boundaries',
-    title: { 'en-US': 'How to Design Safety Boundaries for Telegram and WhatsApp Agents: Authorization, Group Rules, and Sensitive Actions', 'zh-CN': '如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作？' },
-    file: 'use-cases/telegram-whatsapp-safety-boundaries.md',
     group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
     description: { 'en-US': '', 'zh-CN': '' },
     hideDescription: true,
@@ -931,8 +888,8 @@ const globalDocs = [
     file: 'contact-us.md',
     group: { 'en-US': 'Support', 'zh-CN': '联系与支持' },
     description: {
-      'en-US': 'Join the LightVela beta community, talk to the product team directly, and keep sending us your usage questions, product suggestions, and real-world feedback.',
-      'zh-CN': '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。',
+      'en-US': 'Join the LightVela community, talk to the product team directly, and share usage questions, product suggestions, and real-world feedback.',
+      'zh-CN': '加入 LightVela 用户社区，与产品团队交流使用问题、产品建议和真实场景反馈。',
     },
     hideDescription: true,
   },
@@ -961,11 +918,7 @@ const ES_DOC_METADATA = {
   },
   plans: {
     title: 'Planes',
-    description: 'Compara los planes de LightVela, los recursos aislados en la nube, los créditos de IA mensuales y las reglas y pasos de reembolso por correo electrónico.',
-  },
-  'announcements/public-beta': {
-    title: 'Anuncio de la versión de pago de LightVela',
-    description: 'LightVela prevé iniciar la beta pública y la facturación el 18 de agosto de 2026, hora de Singapur, con beneficios específicos para usuarios actuales y nuevos.',
+    description: 'Compara los planes de LightVela, los entornos de nube dedicados, los créditos de IA mensuales y las reglas y pasos de reembolso por correo electrónico.',
   },
   credits: {
     title: 'Créditos',
@@ -1079,10 +1032,6 @@ const ES_DOC_METADATA = {
     title: 'Cómo definir el rol, la personalidad y la voz de un Agent de mensajería con SOUL.md',
     description: 'Aprende a estructurar la personalidad del Agent para que responda de forma coherente en las aplicaciones de mensajería.',
   },
-  'use-cases/im-agent-skill-scenarios': {
-    title: 'Cómo convertir un Agent de mensajería en asistente de servicio, comunidad o compañía mediante Skills',
-    description: 'Usa Skills para ampliar el Agent en escenarios de atención al cliente, comunidad y acompañamiento personal.',
-  },
   'use-cases/multi-channel-personality-memory': {
     title: 'Cómo usar un solo Agent en Telegram y WhatsApp con la misma personalidad y memoria',
     description: 'Mantén coherentes la personalidad y la memoria del Agent cuando lo utilizas en varios canales.',
@@ -1090,18 +1039,6 @@ const ES_DOC_METADATA = {
   'use-cases/telegram-group-community-assistant': {
     title: 'Cómo configurar un asistente de comunidad con IA para un grupo de Telegram',
     description: 'Diseña mensajes de bienvenida, preguntas frecuentes, resúmenes y recordatorios con límites claros para el uso en grupos.',
-  },
-  'use-cases/whatsapp-24-7-customer-service': {
-    title: 'Cómo configurar atención al cliente con IA 24/7 en WhatsApp',
-    description: 'Configura personalidad, conocimiento, Skills y automatizaciones para un flujo de atención al cliente en WhatsApp.',
-  },
-  'use-cases/lifelike-im-agent-rhythm-social-memory': {
-    title: 'Cómo diseñar un Agent de mensajería más natural',
-    description: 'Ajusta el ritmo de conversación, las normas del grupo y la memoria social a largo plazo para lograr interacciones más naturales.',
-  },
-  'use-cases/telegram-whatsapp-safety-boundaries': {
-    title: 'Cómo diseñar límites de seguridad para Agents de Telegram y WhatsApp',
-    description: 'Define autorización, reglas de grupo y protección de acciones sensibles para Agents en aplicaciones de mensajería.',
   },
   'use-cases/daily-summary': {
     title: 'Cómo crear resúmenes diarios con Hermes Agent',
@@ -1221,7 +1158,7 @@ const ES_DOC_METADATA = {
   },
   'contact-us': {
     title: 'Contacto',
-    description: 'Únete a la comunidad beta de LightVela, habla directamente con el equipo de producto y comparte preguntas, sugerencias y experiencias reales.',
+    description: 'Únete a la comunidad de LightVela, habla con el equipo de producto y comparte preguntas, sugerencias y experiencias reales.',
   },
 };
 
@@ -1256,7 +1193,7 @@ const ID_DOC_METADATA = {
   },
   plans: {
     title: 'Paket',
-    description: 'Bandingkan paket LightVela, sumber daya cloud terisolasi, kredit model bulanan, dan alur aktivasi internasional saat ini.',
+    description: 'Bandingkan paket LightVela, lingkungan cloud khusus, kredit model bulanan, dan alur aktivasi internasional saat ini.',
   },
   'create-first-hermes': {
     title: 'Cara Mengaktifkan Instans Hermes Pertama',
@@ -1366,10 +1303,6 @@ const ID_DOC_METADATA = {
     title: 'Kredit',
     description: 'Pelajari cara kredit model LightVela dialokasikan, digunakan berdasarkan token, dan terkait dengan paket serta model.',
   },
-  'announcements/public-beta': {
-    title: 'Pengumuman Versi Berbayar LightVela',
-    description: 'LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura).',
-  },
   'use-cases/personal-ai-assistant': {
     title: 'Membangun Asisten AI Pribadi dengan LightVela',
     description: 'Gunakan LightVela sebagai asisten AI pribadi untuk pengingat, ringkasan, dan percakapan harian.',
@@ -1390,10 +1323,6 @@ const ID_DOC_METADATA = {
     title: 'Menentukan Peran, Kepribadian, dan Suara IM Agent',
     description: 'Pahami cara menyusun persona Agent agar responsnya terasa konsisten di aplikasi chat.',
   },
-  'use-cases/im-agent-skill-scenarios': {
-    title: 'Mengubah IM Agent Menjadi Asisten Layanan, Komunitas, atau Pendamping',
-    description: 'Gunakan Skill untuk memperluas kemampuan Agent dalam skenario layanan pelanggan, komunitas, dan pendamping pribadi.',
-  },
   'use-cases/multi-channel-personality-memory': {
     title: 'Satu Agent di Telegram dan WhatsApp dengan Persona dan Memori yang Sama',
     description: 'Pelajari cara menjaga kepribadian dan memori Agent tetap konsisten saat digunakan di beberapa kanal.',
@@ -1401,18 +1330,6 @@ const ID_DOC_METADATA = {
   'use-cases/telegram-group-community-assistant': {
     title: 'Cara Menggunakan Asisten Komunitas AI Grup Telegram: Tanya Jawab, Ringkasan, dan Pengingat',
     description: 'Siapkan pesan grup Telegram dengan Group Privacy, @mention, tanya jawab, ringkasan, dan draf pengingat.',
-  },
-  'use-cases/whatsapp-24-7-customer-service': {
-    title: 'Layanan Pelanggan AI 24/7 di WhatsApp',
-    description: 'Siapkan persona, pengetahuan, Skill, dan otomasi untuk alur layanan pelanggan WhatsApp.',
-  },
-  'use-cases/lifelike-im-agent-rhythm-social-memory': {
-    title: 'Merancang IM Agent yang Lebih Natural',
-    description: 'Atur ritme percakapan, norma grup, dan memori sosial jangka panjang agar Agent terasa lebih manusiawi.',
-  },
-  'use-cases/telegram-whatsapp-safety-boundaries': {
-    title: 'Batas Keamanan untuk Agent Telegram dan WhatsApp',
-    description: 'Rancang otorisasi, aturan grup, dan perlindungan tindakan sensitif untuk Agent di aplikasi chat.',
   },
   'use-cases/daily-summary': {
     title: 'Membuat Ringkasan Harian dengan Hermes Agent',
@@ -1512,7 +1429,7 @@ const ID_DOC_METADATA = {
   },
   'contact-us': {
     title: 'Hubungi Kami',
-    description: 'Bergabunglah dengan komunitas beta LightVela, bicara langsung dengan tim produk, dan kirimkan masukan dari penggunaan nyata.',
+    description: 'Bergabunglah dengan komunitas LightVela, bicara langsung dengan tim produk, dan kirimkan masukan dari penggunaan nyata.',
   },
 };
 

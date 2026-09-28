@@ -64,7 +64,7 @@ describe("DingTalk channel QR binding", () => {
 
     expect(channelButtonRule).toBeDefined();
     expect(channelButtonRule).toMatch(
-      /border-radius\s*:\s*var\(--lh-std-radius-lg\)\s*;/,
+      /border-radius\s*:\s*var\(--radius-lg, 1\.35rem\)\s*;/,
     );
     expect(channelButtonRule).not.toContain("--lh-std-skill-radius");
   });

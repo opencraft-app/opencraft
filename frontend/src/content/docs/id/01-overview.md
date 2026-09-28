@@ -2,19 +2,11 @@
 
 ## Ringkasan
 
-**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Agent Anda melalui aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba paket Launch gratis selama 1 bulan. Status terkini mengacu pada halaman langganan.**
+**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Agent Anda melalui aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. Paket dan penawaran pengguna baru saat ini dapat dilihat di [halaman Subscribe](/subscribe/).**
 
 ---
 
 > Hermes Agent berbasis cloud yang makin memahami Anda seiring waktu.
-
-> ℹ️ **Info beta publik dan penagihan**
->
-> LightVela akan memasuki beta publik dan mulai menerapkan penagihan. Dokumentasi dan fitur produk masih akan terus diperbarui, sehingga beberapa penjelasan dapat berubah mengikuti rilis berikutnya.
->
-> * **Beta publik dan penagihan**: LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan. Lihat [Paket](./plans.md) untuk ringkasan paket dan manfaat terbaru.
->
-> * **Manfaat pengguna baru setelah beta publik dan penagihan dimulai**: Pengguna baru dapat mencoba paket Launch gratis selama 1 bulan.
 
 LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse. Tujuannya sederhana: membantu setiap orang memiliki **pendamping AI yang benar-benar terasa milik sendiri**. Bukan alat yang setiap kali harus diajak berkenalan dari awal, melainkan kehadiran jangka panjang yang **mengenal Anda, mengingat Anda, dan makin memahami kebutuhan Anda seiring waktu**.
 
@@ -52,7 +44,7 @@ Produk LightVela saat ini adalah **Hermes Agent**, AI Agent yang didukung large 
 
 * **Deployment terkelola penuh**: Cloud menangani penyiapan lingkungan dan pengelolaan runtime secara otomatis. Tidak perlu operasional server, image container, atau pengetahuan infrastruktur
 
-* **Runtime terisolasi**: Setiap instans Hermes Agent memiliki runtime sendiri, sumber daya terisolasi, tersedia 24/7, dan tidak bergantung pada perangkat lokal
+* **Lingkungan cloud khusus**: Setiap instans Hermes Agent memiliki lingkungan cloud sendiri, sumber daya terisolasi, tersedia 24/7, dan tidak bergantung pada perangkat lokal
 
 * **Dukungan multi-model**: Hubungkan model besar arus utama dari Tiongkok, langganan Coding Plan penyedia model, atau endpoint yang kompatibel dengan OpenAI. Lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model)
 
@@ -100,14 +92,10 @@ Paket yang saat ini tersedia:
 
 | Paket | Harga asli | Status saat ini |
 | --------- | ------- | ---- |
-| Launch | $7,5 / bulan | Uji coba gratis 1 bulan untuk pengguna baru setelah beta publik dan penagihan dimulai |
+| Launch | $7,5 / bulan | Penawaran awal: lihat halaman Subscribe |
 | Cruise | $15 / bulan | Paket berbayar |
 
-Paket Launch mencakup: 1 instans Hermes Agent, runtime terisolasi 2-core 8G, penyimpanan cloud khusus 50G, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
-
-> ℹ️ **Catatan paket beta**
->
-> LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba Launch gratis selama 1 bulan. Lihat [Paket](./plans.md) untuk detail ringkasnya.
+Paket Launch mencakup: 1 instans Hermes Agent, lingkungan cloud khusus dengan 2 vCPU · 8 GB RAM, penyimpanan cloud khusus 50 GB, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
 
 ***
 

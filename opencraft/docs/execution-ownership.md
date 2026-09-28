@@ -4,20 +4,56 @@
 
 会话存在、历史可读、运行实例已加载、工具访问权有效、某轮正在执行是不同事实。不得用一个 `ready` 或 `loading` 同时表达它们。
 
+## Client / Hub / Server 拓扑
+
+顶层协议参与者是 Client、Hub 与 Server，不是 Renderer、Host 与引擎：
+
+```text
+Client ── ClientAttachment ── Hub ── ServerAttachment ── Server
+                               │
+                               └── HubLink ── Hub
+```
+
+- Client 是有身份和 incarnation 的交互参与者。一个 Client 可以承载零个或多个
+  Renderer；Renderer 只是 Electron、静态 Web、React Native 或其他呈现机制，
+  不进入 Thread、Server 或租约的持久身份。
+- Hub 是多租户的目录、鉴权、路由、订阅、扇出和租约边界。tenant 是 attachment
+  与 route 的必填作用域，不从 socket、Renderer 或默认账号猜测。
+- Server 是 Thread、历史、执行状态与能力状态的权威。Server 可以同时注册到多个
+  Hub；Client 也可以同时连接多个 Hub。双方通过 attachment 形成多对多关系，
+  不互存一个单值对端 ID。
+- Host 是 Server 的部署与资源载体，拥有进程、文件、PTY 和引擎实例；更换 Host
+  不改变 Server 或 Thread 身份。当前代码中的 `hostId` 仍压缩了 transport route、
+  Server namespace 与 Host placement，迁移期只能在
+  `legacyDirectServerProjectionFromHost()` 这一处按一对一直连拓扑投影。
+
+同一 Server 经不同 Hub 可达仍是同一个 Server；Thread 的稳定身份是
+`(serverId, threadId)`，Hub route、tenant authorization、Host placement 和连接健康
+均为正交事实。级联 Hub 逐跳验证授权并携带 route epoch、幂等执行键和有界 hop
+信息；必须拒绝环路、旧 epoch、跨 tenant 帧与重复执行。
+
 ## 对象与唯一所有者
 
 | 对象 | 唯一 Owner | 身份与寿命 |
 |---|---|---|
-| Draft | 客户端草稿服务 | 本地输入意图；不是服务端 Thread |
-| Thread 与产品目录 | 执行 Host 的 ThreadLifecycle/ThreadCatalog | `(hostId, threadId)`；跨连接保留 |
+| Draft | Client 草稿服务 | 本地输入意图；不是 Server Thread |
+| Thread 与产品目录 | Server 的 ThreadLifecycle/ThreadCatalog | `(serverId, threadId)`；换 Hub、Renderer 或 Host 后仍保留 |
 | 历史 | 对应引擎的持久化服务 | 原生日志是历史真源；目录、Replica 和 UI 不另存权威副本 |
 | 引擎运行实例 | Host 的引擎 adapter | DSH Agent 是内存执行对象，可加载、空闲保留、卸载 |
-| Capability 声明与访问租约 | Host capability broker | 绑定 Thread 和具体 logical client incarnation；可撤销 |
+| Client/Server attachment | Hub | 绑定 tenant、lease 与 incarnation；可撤销、可多对多 |
+| Capability 声明与访问租约 | Server capability broker | 绑定 Thread 和具体 Client attachment；可撤销 |
 | 引擎内工具挂载 | 引擎插件 | 绑定当前 native Agent 实例；不等于访问权限本身 |
 | Turn 执行权 | Host execution authority | 连接 owner、执行 epoch、Turn 身份；直到明确终态 |
-| View 与导航 | 客户端 Shell | 页面呈现、焦点、订阅；不拥有引擎资源的最终执行权 |
+| Codex 待处理交互的投递路由 | Host 的 Codex adapter | 绑定物理 AppServer request ID、Thread 与当前 logical Client；断线撤销答复权但不删除请求 |
+| View 与导航 | Client Shell | 页面呈现、焦点、订阅；Renderer 不是协议 owner |
 
 同一个 Thread 可以存在且可读取，但没有活跃引擎实例。关闭 View 不等于停止 Turn；连接撤销不等于删除历史。原生 preset 属于引擎 composition，外部 Browser/Terminal/Connector 工具通过可撤销 scope 接入，不能把客户端回调权限固化进 preset。
+
+## Workspace 解析与 Projectless Thread
+
+Workspace 是执行 Host 的本地资源身份，不属于 Client 或 Renderer。新 Draft 没有选择 Project 时仍可提交；Local Host 在用户 Home 下的 `OpenCraft/` 根目录为该 Thread 创建独享的 `thread-<id>/`，再把确定的 `cwd` 与 `runtimeWorkspaceRoots` 交给引擎。macOS 和 Windows 分别由 Host 的 `homedir()` 投影为原生绝对路径，Client 不构造 `/Users/<name>` 或 `C:\\Users\\<name>`。
+
+显式 Project 不得静默降级为 Projectless。Host 在引擎创建前解析、规范化并验证 Project cwd 与 sandbox roots；缺失、非目录、相对路径和不可访问分别返回稳定的 Workspace fault。Projectless 目录只在 Thread 创建失败且仍为空时回收；一旦成功，它是用户工作空间而不是运行时临时目录，关闭 View、卸载 Agent 或退出应用都不得删除。
 
 ## Readiness 的含义
 
@@ -59,6 +95,43 @@ Workbench 在同一 Draft 提交事务内依次完成 `thread/start` 与首个
 
 停止任务、审批回复、撤销与队列删除不等待 capability 初始化；仍需验证各自对应的 Thread、Turn、请求身份和权限。控制操作应在故障时保持可达。
 
+## Interaction 响应与重连对账
+
+Server 发起的 approval、question、option picker 与 MCP elicitation 仍由 Server
+拥有 pending/resolved 真相。Client 点击 Skip、允许或提交只产生一个响应意图，
+不能在 JSON-RPC response 写入物理 transport 前宣称请求已经结束。Renderer 只呈现
+`pending/submitting/error`，不保存重放墓碑，也不因按钮点击自行删除权威请求。
+
+每个 Client 的 Host-scoped Workbench runtime 持有有界的 response delivery ledger，
+跨同一 runtime 的 physical client generation 保留 exact response。Ledger identity
+绑定 Thread、server-request method 与 Turn，并优先使用稳定 Item/call ID；缺少 Item
+时才回退类型保真的 request ID。同 identity
+复用不同请求 payload 或不同 response 必须拒绝。response 写入 transport 后进入
+短期 delivered tombstone；结果未知时保留 resolving response。Server 在重连后重发
+同一请求时，Client 自动回放完全相同的 response，不重新发布 pending View。
+
+delivery receipt 只证明本次 JSON-RPC response 已交给 transport，不能证明 Provider
+已经执行。Server 若通过 `serverRequest/resolved` 宣布独立终结，Client 删除对应
+ledger entry。当前 ledger 是 Client runtime 内存状态，用于跨 transport generation
+对账；跨 Client/应用重启的 pending/resolving/resolved 持久化仍应由 Server 实现，
+不得把 localStorage、React state 或 Client ledger 升格为 Server authority。
+
+Codex stdio adapter 在同一物理 Host generation 内另持有投递路由表，不取代
+AppServer 的 pending 真相：它保留待答复请求的原始帧与 Thread ID，并只接受当前
+Thread 交互 owner 的 response。logical Client 断线或取消订阅时，adapter 撤销其
+答复权但保留请求；其他在线 Client 不因订阅或连接存在而自动取得请求。新的
+logical Client 成功 `thread/resume` 后才能认领无主请求并收到原始帧；迟到的旧
+resume 回执不能恢复已断开的 owner。AppServer 独立发出 `serverRequest/resolved`
+时删除对应路由。路由表有界且只存于 Host 进程；服务重启后的恢复仍由 AppServer
+与 Client ledger 的协议对账承担，不声称跨进程持久化或多租户授权。
+
+同一 Codex stdio 连接上的原生 Thread 订阅属于 Host，不属于任何单个 logical
+Client。Client 的 `thread/unsubscribe` 只撤销其读者身份；pending `thread/resume`
+在回执前是临时读者，取消或断线同步撤销，旧 Client incarnation 的回复既不能
+恢复读者/交互 owner，也不能投递给同 ID 的新连接。Host 的已接纳 Turn、未结
+队列和待答 server request 独立要求保留原生事件流；只有无读者、无这些需求且
+原生 Thread 空闲时才能回收物理订阅。回收与新原生工作按 Thread 串行化。
+
 ## 撤销、重连与释放
 
 断线首先同步撤销客户端 owner 与执行权限，再异步清理引擎挂载和待处理调用。所有在途操作在提交前重新验证 owner；旧请求不能恢复已撤销租约。
@@ -83,6 +156,13 @@ Logical client incarnation 与 physical socket、客户端提供的 logical ID �
 | EXO-08 | 相同工具挂载幂等；完整挂载、释放和清理必须遵循同一资源顺序 |
 | EXO-09 | Bridge 只返回允许列表中的错误码；截断任意异常文字不构成脱敏 |
 | EXO-10 | 预热复用正常准备流程，不改变身份、权限或持久化语义 |
+| EXO-11 | 未选择 Project 时由 Host 创建 Projectless Workspace；Renderer 不猜 Home，显式 Project 失败不得静默换目录 |
+| EXO-12 | Client、Hub、Server 是顶层协议身份；Renderer 与 Host 只分别描述呈现机制和部署载体 |
+| EXO-13 | Hub 是唯一多租户关系 owner；所有 attachment/route 显式携带 tenant、lease 和 incarnation |
+| EXO-14 | Server 身份不随 Hub route 或 Host placement 改变；相同 Server 经多条 route 不复制 Thread |
+| EXO-15 | 级联 Hub 拒绝环路、旧 route epoch、跨 tenant 帧和重复执行；断开 route 不删除 Server 状态 |
+| EXO-16 | Interaction 的 Server 真相与 Client delivery ledger 分离；点击不等于送达，重连只可回放同一 identity 的 exact response |
+| EXO-17 | Renderer/Client attachment 消失只撤销该连接的路由与访问权；进程级 Host transport 和已接纳 Turn 不因最后一个页面关闭而结束。服务进程关闭与显式 Stop 仍可结束执行。 |
 
 ## 已有复用与 warm 的边界
 

@@ -44,7 +44,7 @@ Hermesは、あなたが設定した機能を通じて受け取ることがで�
 
 外部データソースが必要な場合は、信頼できるソースから適切なスキルを選択し、使用前にその動作を確認してください。[スキルを設定する](../configuration/skill.md)は、スキルが通常のチャットを超えてHermesを拡張する方法を説明します。
 
-![日次要約のためのクラウドストレージソース](../images/use-case-daily-summary-storage.png)
+![日次要約のためのクラウドストレージソース](../images/use-case-daily-summary-storage.webp)
 
 ### 3. まず通常の会話で出力をテストする
 
@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 これを[スケジュールタスク](../configuration/automation.md)で設定してください。最初の数回の実行を確認し、要約が広すぎる、長すぎる、または適切な文脈が欠けている場合は文言を調整します。
 
-![毎日の定期要約スケジュールタスク](../images/use-case-daily-summary-automation.png)
+![毎日の定期要約スケジュールタスク](../images/use-case-daily-summary-automation.webp)
 
 ## FAQ
 

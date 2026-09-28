@@ -390,8 +390,8 @@ const iconMap: Record<IconKey, React.ReactNode> = {
  * 将后端 Bundle 映射成前端 PlanInfo。
  * 接收 t 函数以确保所有用户可见文案都走 i18n。
  *
- * 后端 bundle_name / description.Key 目前返回的是中文（或中英混排）原文，
- * 这里一律交给 t() 按当前 locale 查字典：
+ * 后端 bundle_name / description.Key 可能返回中文、英文或中英混排原文。
+ * 已知资源与能力 Key 先按语义别名归一化，其余文案交给 t() 按当前 locale 查字典：
  *   - zh-CN：字典里中文翻译与原文一致，回显原文
  *   - en-US：字典里填入对应英文（如 `启航 Launch` → Launch）
  *   - 字典未命中：t() 内部会回显中文原文，不会白屏
@@ -413,13 +413,39 @@ const iconForKey = (key: string): React.ReactNode => {
  * 后端 description 里若也下发了同类项（最典型的是「7*24小时在线」），
  * 这里将其从 otherFeatures 中过滤掉，避免与固定能力点重复或打乱顺序。
  */
+const normalizePlanFeatureKey = (rawKey: string): string => rawKey.trim().toLowerCase();
+
+const ENVIRONMENT_DESC_KEYS = new Set<string>([
+  "独立环境",
+  "云端独立环境",
+  "专属云电脑",
+  "专属云端环境",
+  "standalone environment",
+  "cloud sandbox",
+  "dedicated cloud computer",
+  "dedicated cloud environment",
+].map(normalizePlanFeatureKey));
+const STORAGE_DESC_KEYS = new Set<string>([
+  "专属云端存储",
+  "dedicated cloud storage",
+].map(normalizePlanFeatureKey));
 const CAPABILITY_DESC_KEYS = new Set<string>([
   "7*24小时在线", "7×24小时在线", "7×24 在线", "7*24 在线",
   "极简配置面板", "定时任务", "技能安装", "技能包", "精选技能/技能包",
   "连接主流聊天通道", "接入主流模型 API", "长期记忆", "人设注入", "Agent 自主进化", "诊断中心",
-]);
+  "minimalist config panel", "simple configuration panel", "scheduled tasks",
+  "skill installation", "skill packs", "curated skills / skill packs",
+  "connect mainstream chat channels", "access mainstream model apis",
+  "long-term memory", "persona injection", "agent self-evolution", "diagnostics",
+].map(normalizePlanFeatureKey));
+const isEnvironmentDescKey = (rawKey: string): boolean => (
+  ENVIRONMENT_DESC_KEYS.has(normalizePlanFeatureKey(rawKey))
+);
+const isStorageDescKey = (rawKey: string): boolean => (
+  STORAGE_DESC_KEYS.has(normalizePlanFeatureKey(rawKey))
+);
 const isCapabilityDescKey = (rawKey: string): boolean => {
-  if (CAPABILITY_DESC_KEYS.has(rawKey)) return true;
+  if (CAPABILITY_DESC_KEYS.has(normalizePlanFeatureKey(rawKey))) return true;
   return /24/.test(rawKey) && /(在线|online)/i.test(rawKey);
 };
 
@@ -495,10 +521,10 @@ const mapBundleToPlan = (
   const nmLower = bundleNm.toLowerCase();
   const isLaunchTier = bundleNm.includes("启航") || nmLower.includes("launch");
   const isCruiseTier = bundleNm.includes("巡游") || nmLower.includes("cruise");
-  /* 两地活动规格：启航 2核8G；巡游 4核16G。 */
-  const envSpec = isLaunchTier ? t("2核 8G 内存") : t("4核 16G 内存");
-  /* 专属云端存储：启航 50G；巡游升配 80G。 */
-  const storageSpec = isLaunchTier ? "50G" : "80G";
+  /* 套餐卡用易懂的 CPU 核数表述；详细规格仍以文档中的 vCPU 为准。 */
+  const envSpec = isLaunchTier ? t("2 核 CPU · 8 GB 内存") : t("4 核 CPU · 16 GB 内存");
+  /* 专属云端存储：启航 50 GB；巡游升配 80 GB。 */
+  const storageSpec = isLaunchTier ? "50 GB" : "80 GB";
   /* 一句话文案按 tier 差异化（PRD 需求2）。命中 tier 时直接使用 tier 文案，不受 freeGuideAllowed 清空；
      未命中 tier（如免费试用卡）保持原有兜底逻辑。 */
   const tierTagline = isLaunchTier
@@ -523,25 +549,22 @@ const mapBundleToPlan = (
   const otherFeatures: PlanFeature[] = [];
   for (const entry of bundle.description ?? []) {
     const rawKey = entry.Key ?? "";
-    const k = rawKey.toLowerCase();
+    const k = normalizePlanFeatureKey(rawKey);
     if (k.includes("agent") || k.includes("积分") || k.includes("credit")) continue;
-    /* 统一走 i18n 字典：当前语言是 en-US 则查英文，zh-CN 则回显原文。
-       动态参数 extract 脚本扫不到，为此在 __markBundleBackendStringsForI18n 中静态列举。 */
-    const label = t(rawKey);
-    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅；
-       匹配 key 仍用后端下发的「独立环境」，展示文案统一为「云端独立环境」 */
-    if (rawKey === "独立环境") {
-      envFeature = { icon: iconForKey(rawKey), label: t("云端独立环境"), value: envSpec };
+    /* 云电脑与存储按语义别名识别，兼容后端中英文 Key，避免国际站重复展示。 */
+    if (isEnvironmentDescKey(rawKey)) {
+      envFeature = { icon: iconMap.monitor, label: t("专属云端环境"), value: envSpec };
       continue;
     }
-    /* 「专属云端存储」前端按 tier 统一展示容量，避免后端缺值 */
-    if (rawKey === "专属云端存储") {
-      storageFeature = { icon: iconMap.hardDrive, label, value: storageSpec };
+    if (isStorageDescKey(rawKey)) {
+      storageFeature = { icon: iconMap.hardDrive, label: t("专属云端存储"), value: storageSpec };
       continue;
     }
     /* 能力点（7*24小时在线 / 定时任务 / 技能 / 多通道 / 长期记忆 / 极简配置面板 / 人设注入 / 自主进化）
        统一在下方按固定顺序渲染，这里跳过后端 description 里的同类项，避免重复与乱序。 */
     if (isCapabilityDescKey(rawKey)) continue;
+    /* 其余后端描述统一走 i18n 字典；未命中时由 t() 回显原文。 */
+    const label = t(rawKey);
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
       otherFeatures.push({ icon: iconForKey(rawKey), label, hasCheck: true });
@@ -563,7 +586,7 @@ const mapBundleToPlan = (
   features.push(...otherFeatures);
   /* 规格项兜底：后端缺失「独立环境」「专属云端存储」时补齐，仍固定排在能力点上方 */
   if (!envFeature) {
-    features.push({ icon: iconMap.monitor, label: t("云端独立环境"), value: envSpec });
+    features.push({ icon: iconMap.monitor, label: t("专属云端环境"), value: envSpec });
   }
   if (!storageFeature) {
     features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: storageSpec });
@@ -1214,7 +1237,6 @@ interface PlaceholderPlanDef {
   price: string;
   priceGlobal: string;
   priceUnit: string;
-  priceUnitGlobal: string;
   description: string;
   features: PlaceholderFeatureDef[];
   ctaLabel: string;
@@ -1241,12 +1263,11 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     price: "¥99",
     priceGlobal: "$15",
     priceUnit: "/ 月",
-    priceUnitGlobal: "/ month",
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
-      { iconKey: "monitor", label: "云端独立环境", value: "4核 16G 内存" },
-      { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
+      { iconKey: "monitor", label: "专属云端环境", value: "4 核 CPU · 16 GB 内存" },
+      { iconKey: "hardDrive", label: "专属云端存储", value: "80 GB" },
       { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
       { iconKey: "clock", label: "7*24小时在线", hasCheck: true },
@@ -1278,9 +1299,8 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("巡游 Cruise");
   void t("日常主力，让智能化成为习惯");
   void t("1 个");
-  void t("云端独立环境");
-  void t("4核 8G 内存");
-  void t("4核 16G 内存");
+  void t("专属云端环境");
+  void t("4 核 CPU · 16 GB 内存");
   void t("极简配置面板");
   void t("定时任务");
   void t("精选技能/技能包");
@@ -1305,7 +1325,7 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
       id: def.id,
       name: t(def.name),
       price: isGlobal ? def.priceGlobal : def.price,
-      priceUnit: isGlobal ? t(def.priceUnitGlobal) : t(def.priceUnit),
+      priceUnit: t(def.priceUnit),
       description: t(def.description),
       features: def.features.map((f) => ({
         icon: iconMap[f.iconKey],
@@ -2984,7 +3004,9 @@ export const SubscribePage = ({
           const code = getBillingErrorCode(err);
           const rawMessage = err instanceof Error ? err.message : "";
           const isUnauthorized = code === "unauthorized" || /unauthorized/i.test(rawMessage);
-          setBundlesError(isUnauthorized ? t("请先登录") : rawMessage || t("套餐列表加载失败"));
+          setBundlesError(isUnauthorized
+            ? t("请先登录")
+            : resolveBillingErrorMessage(err, t("套餐列表加载失败"), t));
         }
       } finally {
         if (!cancelled) {
@@ -3445,9 +3467,8 @@ export const SubscribePage = ({
           await finalizeBotRef.current(ctx.plan);
         } catch (err) {
           if (!cancelled) {
-            const fallbackMsg = err instanceof Error ? err.message : t("创建实例失败，请稍后重试。");
             console.error("[subscribe] poll finalize failed", err);
-            setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
+            setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, t("创建实例失败，请稍后重试。"), t) });
             setModalStep("closed");
             setSelectedPlan(null);
             setPaymentContext(null);
@@ -3561,7 +3582,7 @@ export const SubscribePage = ({
         return;
       }
       /* 其他错误：走统一映射 */
-      setError({ code, message: resolveBillingErrorMessage(err, fallbackMsg) });
+      setError({ code, message: resolveBillingErrorMessage(err, t("创建失败，请稍后重试。"), t) });
       setModalStep("closed");
       setSelectedPlan(null);
       setPaymentContext(null);
@@ -3597,7 +3618,7 @@ export const SubscribePage = ({
        已有 Bot → /agents；已订阅但还没 Bot → 进 /agents 的创建流程（与首页 CTA、登录后分流落点一致）。 */
     if (isSubscribed || activePass || bots.length > 0) {
       void refreshPasses();
-      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
+      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreateBotPath());
       return;
     }
 
@@ -3706,9 +3727,8 @@ export const SubscribePage = ({
     try {
       await startPaidPassOrder(ctx.plan);
     } catch (err) {
-      const fallbackMsg = err instanceof Error ? err.message : t("刷新二维码失败，请稍后重试。");
       console.error("[subscribe] refresh payment failed", err);
-      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
+      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, t("刷新二维码失败，请稍后重试。"), t) });
     } finally {
       setPaymentRefreshing(false);
     }

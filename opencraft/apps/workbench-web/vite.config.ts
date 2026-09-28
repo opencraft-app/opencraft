@@ -30,7 +30,19 @@ const isLightVelaWeb = product === "lightvela-web";
 const includeHyperNodePlugin = !isLightVelaWeb && !isElectronRenderer
   && process.env.VITE_HYPERNODE_PLUGIN?.trim() !== "disabled";
 const includeBuiltinAgentsPlugin = isElectronRenderer;
+const includeHeadlessModelServices = process.env.OPENCRAFT_HEADLESS_SERVER_BUILD === "true";
 const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
+if (includeHeadlessModelServices) {
+  let hosts: unknown;
+  try { hosts = JSON.parse(process.env.VITE_APPSERVER_HOSTS_JSON ?? "null"); }
+  catch { throw new Error("Headless Web build requires valid VITE_APPSERVER_HOSTS_JSON"); }
+  if (!Array.isArray(hosts) || !hosts.some((host: unknown) =>
+    host !== null && typeof host === "object"
+      && "hostId" in host && host.hostId === "opencraft-server"
+      && "url" in host && host.url === "/appserver")) {
+    throw new Error("Headless Web build requires the opencraft-server /appserver Host profile");
+  }
+}
 
 // Vite's native import.meta.env projection is honored by both the dev module
 // server and production bundler. Keep product identity out of ad-hoc globals:
@@ -39,6 +51,8 @@ const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
 process.env.VITE_OPENCRAFT_PRODUCT_ID = product;
 process.env.VITE_INCLUDE_HYPERNODE_PLUGIN = includeHyperNodePlugin ? "true" : "false";
 process.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN = includeBuiltinAgentsPlugin ? "true" : "false";
+process.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES = includeHeadlessModelServices ? "true" : "false";
+process.env.VITE_INCLUDE_HEADLESS_CODEX = includeHeadlessModelServices ? "true" : "false";
 
 interface WebReleaseMetadata {
   readonly schemaVersion: 1;
@@ -46,6 +60,8 @@ interface WebReleaseMetadata {
   readonly builtAt: string;
   readonly sourceRevision: string | null;
   readonly appServerProtocolVersion: string | null;
+  readonly headlessServer: boolean;
+  readonly headlessHostId: string | null;
 }
 
 function createWebReleaseMetadata(): WebReleaseMetadata {
@@ -62,6 +78,8 @@ function createWebReleaseMetadata(): WebReleaseMetadata {
     builtAt,
     sourceRevision: process.env.OPENCRAFT_SOURCE_REVISION?.trim() || null,
     appServerProtocolVersion: process.env.OPENCRAFT_APPSERVER_PROTOCOL_VERSION?.trim() || null,
+    headlessServer: includeHeadlessModelServices,
+    headlessHostId: includeHeadlessModelServices ? "opencraft-server" : null,
   };
 }
 

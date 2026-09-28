@@ -26,7 +26,7 @@ import {
   AGENT_SECTION_PATH_BY_ID,
   AGENTS_HOME_PATH,
   SUBSCRIBE_PATH,
-  getAgentCreatingPath,
+  getAgentCreateBotPath,
 } from "@/lib/agent-routes";
 
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
@@ -109,7 +109,7 @@ export const LandingPageView = ({
         ? SUBSCRIBE_PATH
         : bots.length > 0
           ? AGENTS_HOME_PATH
-          : getAgentCreatingPath(true);
+          : getAgentCreateBotPath();
     trackDatongClick(`${origin}_create_now_btn`, {
       pgid: DATONG_PAGE_IDS.HOME,
       params: {
@@ -131,7 +131,7 @@ export const LandingPageView = ({
     }
     // 已登录且已订阅：有智能体则进 agent 默认页（/agents），
     // 没有智能体则进入创建流程，而不是直接跳到人设设置页。
-    navigateTo(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
+    navigateTo(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreateBotPath());
   }, [navigateTo, isAuthenticated, isSubscribed, bots.length]);
 
   // 首页主按钮文案：

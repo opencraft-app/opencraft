@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**La forma de contactar al equipo de LightVela es unirse a la comunidad oficial, donde puede hablar directamente con el equipo de producto y compartir problemas, sugerencias de producto y cómo realmente utiliza su Agent. Si su pregunta es sobre planes, facturación o pedidos, comience con la documentación de planes y el anuncio de la versión de pago para las disposiciones actuales. Tanto el producto como su documentación están iterando durante la beta pública, por lo que algunas descripciones pueden cambiar entre versiones.**
+**Únete a la comunidad oficial de LightVela para hablar directamente con el equipo de producto y compartir preguntas, sugerencias y experiencias con tu Agent. Para preguntas sobre planes, facturación o pedidos, consulta la [documentación de planes](./plans.md); los beneficios vigentes se muestran en la página de suscripción.**
 
 ---
 

@@ -16,6 +16,7 @@
 - 会话、实名和权限结果来自服务 API/权威存储，不从 UI 状态或用户名推断。
 - 一次性 `auth_code`、临时凭据和回调 token 必须保持最小暴露与明确过期语义。
 - 公共行为至少验证网关路径；直连 `user/auth` 只证明内部 API。
+- 实名短信发送的 IP 级限流只可使用可信代理链计算出的客户端 IP。Service Gateway 会重写 `X-Forwarded-For`；Auth 的 `LIGHTCLAW_TRUSTED_PROXY_CIDRS` 必须覆盖其实际直接对端，否则所有用户会按网关 Pod IP 共享限额。`LIGHTCLAW_VERIFICATION_SEND_IP_LIMIT` 配置每分钟发送上限，默认 100；上海生产按 600 配置，收件人冷却和供应商限流保持独立。
 - 外部 IdP、腾讯云账号/CAM/STS 的实时契约通过登记来源校验，不把凭据或完整响应复制进文档。
 - Frontend 的复用 OAuth 登录入口只负责呈现既有身份 Owner 构造的 authorize URL；无 URL 时不展示，也不在组件内签发 state、拼接 callback、交换 code 或保存 token。路由适配器只能在权威兑换完成后恢复站内路径，不能成为并行认证协议。
 - `service-gateway` 必须先完成会话、实名门禁和 Bot 所有权校验，再启动后台 Worker Action；认证完成后的 TAT 执行超时、重试和清理策略属于运行控制，不得改变或绕过身份判定。
@@ -80,6 +81,13 @@ method/path 做精确公开放行，并覆盖客户端可伪造的 forwarding he
 首次领取在受控 DevCloud 网络内无需账号凭据；如果该 `lease_owner` 已存在有效租约，POST 必须携带当前
 `developer_lease` bearer session，Auth 校验 session 用户与租约用户一致后才续租。仅知道或伪造另一台
 DevCloud 的 `targetIp` 不能签发新 session。
+
+同一台 DevCloud 可能在重新 checkout、清空私有 state 或 `down` 中断后丢失本地 session，从而既不能续租
+也不能释放自己的租约，最长被自己的 TTL 锁死 24 小时。为此 POST 支持可选 `force`：只有在请求**没有**
+携带续租 session 时才生效，续租 token 始终优先。服务端在同一事务内作废该账号全部陈旧 `developer_lease`
+sessions、推进租约版本并签发新 session，因此被接管的旧 token 立即失效。`force` 不改变信任边界：owner
+身份仍然只由通过 CIDR 校验的来源与 `lease_owner` 决定，其他 DevCloud 携带 `force` 仍返回
+`developer_test_account_busy`，也不能跳过来源网段校验或访问其他站点的账号池。
 
 当前入口的组织信任边界是 sandbox-only 配置、Gateway 规范化的 DevCloud 出口 allowlist，以及脚本校验的
 公司 DevCloud `9.0.0.0/8`、`21.0.0.0/8` 目标地址，不是独立的 WOA 员工 OAuth 证明。因此它只能服务

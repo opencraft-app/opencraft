@@ -16,6 +16,7 @@ func (s *MemoryStore) AcquireDeveloperTestAccount(
 	now time.Time,
 	ttl time.Duration,
 	renewalUserID string,
+	forceSameOwnerTakeover bool,
 ) (DeveloperTestAccountLease, *AuthSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -37,7 +38,15 @@ func (s *MemoryStore) AcquireDeveloperTestAccount(
 			return DeveloperTestAccountLease{}, nil, newError("developer_test_account_unavailable", "没有可租用的 testing 账号。", http.StatusServiceUnavailable)
 		}
 		if lease.LeaseUntil.After(now) {
-			if renewalUserID == "" || renewalUserID != userID {
+			switch {
+			case renewalUserID != "" && renewalUserID == userID:
+			case renewalUserID == "" && forceSameOwnerTakeover:
+				for token, session := range s.sessions {
+					if session.UserID == userID && session.AuthMethod == AuthMethodDeveloperLease {
+						delete(s.sessions, token)
+					}
+				}
+			default:
 				return DeveloperTestAccountLease{}, nil, newError("developer_test_account_renewal_requires_session", "续租 testing 账号需要当前租约会话。", http.StatusUnauthorized)
 			}
 		} else if renewalUserID != "" {

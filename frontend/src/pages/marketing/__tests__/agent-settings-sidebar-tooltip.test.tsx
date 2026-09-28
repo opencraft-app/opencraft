@@ -22,6 +22,47 @@ afterEach(() => {
 });
 
 describe("Agent sidebar action tooltip", () => {
+  it("shows a disabled Chat tab explanation outside the clipped sidebar", async () => {
+    vi.stubGlobal("innerWidth", 320);
+    const sidebar = document.createElement("div");
+    sidebar.style.overflow = "hidden";
+    document.body.appendChild(sidebar);
+
+    let trigger: HTMLElement | null = null;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this === trigger) return rect(130, 280, 110, 35);
+      if (this.getAttribute("role") === "tooltip") return rect(0, 0, 288, 48);
+      return rect(0, 0, 0, 0);
+    });
+
+    const { unmount } = render(
+      <WorkspaceActionTooltip content="Chat is currently available only for the main Bot" side="bottom" className="flex w-full rounded-full">
+        <button type="button" role="tab" disabled>Chat</button>
+      </WorkspaceActionTooltip>,
+      { container: sidebar },
+    );
+
+    const button = screen.getByRole("tab", { name: "Chat" });
+    trigger = button.parentElement;
+    expect(button).toBeDisabled();
+    expect(trigger).toHaveClass("w-full", "rounded-full");
+
+    fireEvent.mouseEnter(trigger!);
+    const tooltip = await screen.findByRole("tooltip");
+    await waitFor(() => expect(tooltip).toHaveStyle({ left: "160px", top: "323px" }));
+    expect(tooltip.parentElement).toBe(document.body);
+    expect(tooltip).toHaveTextContent("Chat is currently available only for the main Bot");
+    expect(trigger).toHaveAttribute("aria-describedby", tooltip.id);
+
+    fireEvent.keyDown(trigger!, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(trigger!);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+
+    unmount();
+    sidebar.remove();
+  });
+
   it("escapes the clipping sidebar and stays inside the viewport", async () => {
     vi.stubGlobal("innerWidth", 320);
     const sidebar = document.createElement("div");

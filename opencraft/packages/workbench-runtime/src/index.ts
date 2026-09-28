@@ -22,6 +22,7 @@ export * from "./adaptive-navigation";
 export * from "./shell-navigation";
 export * from "./shell-space";
 export * from "./window-metrics";
+export * from "./client-hub-server";
 export * from "./side-chat/service";
 export * from "./adaptive-panel";
 export * from "./abort-signal";

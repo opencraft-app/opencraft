@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1280,6 +1281,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "shprod": {
                 "region": "ap-shanghai",
                 "suffix": "test_env",
+                "llmgateway_url": "https://token-admin.lightvela.com",
                 "image": "lightclaw-shprod.tencentcloudcr.com/lightclaw/credit",
                 "app": "argocd/apps/shprod/credit.yaml",
                 "project": "argocd/projects/shprod-credit.yaml",
@@ -1294,6 +1296,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "sgprod": {
                 "region": "ap-singapore",
                 "suffix": "test_env",
+                "llmgateway_url": "https://token-admin.lightvela.ai",
                 "image": "lightclaw-sgprod.tencentcloudcr.com/lightclaw/credit",
                 "app": "argocd/apps/sgprod/credit.yaml",
                 "project": "argocd/projects/sgprod-credit.yaml",
@@ -1330,6 +1333,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertIn(f"CREDIT_REGION={contract['region']}", platform)
                 self.assertIn(f"CREDIT_OBJECT_ID_PASSWORD_SUFFIX={contract['suffix']}", platform)
                 self.assertIn(f"CREDIT_IMAGE={contract['image']}:", platform)
+                if llmgateway_url := contract.get("llmgateway_url"):
+                    self.assertIn(f"LLMGATEWAY_INTERNAL_BASE_URL={llmgateway_url}", platform)
 
                 for key in ("catalog", "app", "project", "trade_patch", "gateway", "ssm"):
                     if path := contract.get(key):
@@ -3068,6 +3073,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("create_hermes_tat_command.sh", repair_vm_script_text)
         self.assertIn("invoke_hermes_tat_command.sh", repair_vm_script_text)
         self.assertIn("Repair existing Hermes VM inventory", repair_vm_script_text)
+        self.assertIn("HERMES_TAT_CHECKPOINT_ROOT", repair_vm_script_text)
+        self.assertIn('HERMES_TAT_SKIP_INVOKED_FILE="$skip_invoked_files"', repair_vm_script_text)
+        self.assertIn('HERMES_TAT_OUTPUT_DIR="$checkpoint_dir"', repair_vm_script_text)
         self.assertIn("Refresh then repair one Hermes sandbox environment", rollout_script_text)
         self.assertIn(">&2", rollout_script_text)
         self.assertIn("refresh_hermes_sandbox_env.sh", rollout_script_text)
@@ -3080,6 +3088,60 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("acli bundle-update", repair_script_text)
         self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
+
+    def test_hermes_tat_resume_skips_invoked_and_tolerates_truncated_checkpoint(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            output_dir = root / "output"
+            bin_dir.mkdir()
+            output_dir.mkdir()
+            tccli = bin_dir / "tccli"
+            tccli.write_text('#!/usr/bin/env bash\nprintf \'%s\\n\' \'{"InvocationId":"inv-test"}\'\n')
+            tccli.chmod(0o755)
+            input_file = root / "input.jsonl"
+            input_file.write_text(
+                '\n'.join(
+                    [
+                        json.dumps({"cloud_id": "ins-done", "instance_id": "vm-done"}),
+                        json.dumps({"cloud_id": "ins-pending", "instance_id": "vm-pending"}),
+                    ]
+                )
+                + "\n"
+            )
+            checkpoint = root / "checkpoint.jsonl"
+            checkpoint.write_text(
+                json.dumps({"cloud_id": "ins-done", "invoke_status": "INVOKED"})
+                + "\n"
+                + '{"cloud_id":"truncated"\n'
+            )
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{bin_dir}:{env['PATH']}",
+                    "HERMES_TAT_REGION": "ap-shanghai",
+                    "HERMES_TAT_COMMAND_ID": "cmd-test",
+                    "HERMES_TAT_INPUT_FILE": str(input_file),
+                    "HERMES_TAT_OUTPUT_DIR": str(output_dir),
+                    "HERMES_TAT_SKIP_INVOKED_FILE": str(checkpoint),
+                }
+            )
+            result = subprocess.run(
+                ["bash", str(script)],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            summary_path = next(output_dir.glob("*.summary.json"))
+            summary = json.loads(summary_path.read_text())
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["counts"], {"INVOKED": 1})
+            self.assertIn('"targets": 1, "skipped": 1', result.stderr)
+            self.assertIn("ignoring malformed TAT checkpoint row", result.stderr)
 
     def test_hermes_pool_refresh_selects_only_target_region(self) -> None:
         script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
@@ -3237,7 +3299,7 @@ jq() {
   printf '%s\n' 'jq must not be required before the multi-region early return' >&2
   return 127
 }
-refresh_skus http://unused img-jhb "$pools_json"
+refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
 '''
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
             source_file.write(source_text)
@@ -3251,6 +3313,73 @@ refresh_skus http://unused img-jhb "$pools_json"
             )
 
         self.assertNotIn("updating SKU", result.stdout)
+
+    def test_hermes_pool_refresh_updates_region_local_sku_without_touching_shared_sku(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg-shared",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb-shared",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+                {
+                    "id": "pool-jhb-local",
+                    "template_class_id": "openclaw-2c8g50g",
+                    "sku_id": "sku-hermes-2c8g50g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+source "$script_path"
+api_get() {
+  printf '%s' '[{"id":"sku-hermes-2c4g","template_class_id":"hermes","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"},{"id":"sku-hermes-2c8g50g","template_class_id":"openclaw-2c8g50g","base_image":"img-old","desired_image_id":"img-old","stable_image_id":"img-old","rollout_state":"stable"}]'
+}
+api_post_json() {
+  printf '%s' "$3"
+}
+jq() {
+  if [[ "$1" == "-r" && "$2" == "--arg" && "$3" == "ids" ]]; then
+    cat >/dev/null
+    printf '%s\n' 'sku-hermes-2c8g50g'
+    return
+  fi
+  if [[ "$1" == "-c" && "$2" == "--arg" && "$3" == "id" ]]; then
+    cat >/dev/null
+    printf '%s\n' '{"id":"sku-hermes-2c8g50g","template_class_id":"openclaw-2c8g50g","base_image":"img-jhb","desired_image_id":"img-jhb","stable_image_id":"img-old","rollout_state":"rolling","last_rollout_error":""}'
+    return
+  fi
+  cat >/dev/null
+  printf '%s\n' $'sku-hermes-2c8g50g\timg-jhb\timg-jhb\timg-old\trolling\t'
+}
+refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertIn("updating SKU sku-hermes-2c8g50g desired image -> img-jhb", result.stdout)
+        self.assertNotIn("updating SKU sku-hermes-2c4g", result.stdout)
+        self.assertIn("skipping cross-region SKU sku-hermes-2c4g", result.stderr)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()

@@ -17,11 +17,21 @@
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
-OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
+OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 的实际沙箱/审批组合投影为标准语义（只读、接受编辑、完全访问）；无法验证的原生/自定义 profile 仍以引擎档案呈现，不由 Renderer 猜测。`opencraft/permission-modes` v1 的标准档位使用稳定的 `opencraft:permission-mode:*` 提交 ID，由 Host 在提交时映射为当前引擎原生 profile；恢复后的原生生效 ID 经目录映射回产品档位。DSH 选定 preset 在 Thread 创建时应用并回读校验，Turn 与 Fork 入口也校验，避免首轮执行前权限状态不一致。完整 bb 式 Host ceiling、请求值与生效值的持久对账仍属后续设计边界，不得据此宣称已经生效。
+
+OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
 
 ## 稳定不变量
 
 - OpenCraft macOS 分发由下游 GitHub 镜像的 `macos-release` Environment 承载，但不取得源码权威。arm64 与 x64 必须在对应原生 Runner 组装，最终 job 才可读取 Developer ID 与 Apple 公证凭据；Universal 合并后依次完成签名、公证、staple、DMG/ZIP 封包和完整性验证。手工主分支运行只生成 Actions artifact，只有 `v*` tag 创建 GitHub Release；源码进入 mono2、镜像导出和公开制品发布仍是三个独立状态。镜像依赖的 mono2-parent shared package 使用带哈希清单的机械 workspace 快照，`shared/` 保持唯一真源，禁止用 Vite external 掩盖缺包。详细运行契约见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md)。
+
+- OpenCraft 独立 headless Linux Server 以一个端口托管静态 WebUI、`/appserver` 和 `/apphost` WebSocket。默认回环模式要求有效的回环 Host，检查显式 HTTP Origin 且要求 WebSocket Origin 同源；显式 `--allow-unauthenticated-public` 公开模式不检查 HTTP 或 WebSocket Origin，以允许 HTTPS 终止代理转发到直连 HTTP listener。这是单用户调试部署，不提供认证或跨站隔离；任何可访问该地址的浏览器都可尝试建立 AppHost 连接。浏览器断线重连必须在同一个 Workbench transport 对象内换新 AppHost lease，不能复用已关闭的 WebSocket 代次。Web Host 以 Ping/Pong 主动终止半开连接，浏览器限制初次 AppHost 握手时间；两者只能产生可重试 transport failure，不得销毁 Daemon 持有的物理 Host。Web 会话呈现保留已绘制的历史与 View/草稿身份，以局部状态提示重连；只有无可见历史时才在时间线空槽显示骨架，恢复权威前继续禁止执行命令。Codex Host 的 logical initialize / Thread resume 诊断只记录标识与结果，不记录消息、凭据或响应 payload。见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。
+
+- Headless Linux 的 Web 目录选择器浏览的是远端 Server 文件系统，而非访问它的 Mac。服务器 DSH 与 Codex 节点消费同一打包 Host 定义中的 `/` browse root，选中的目录经该节点的 `fs/readDirectory` 与 `project/create` 链路处理；系统服务用户的文件权限仍是实际边界。已持久化的旧 Host profile 若仍是打包 WebSocket 端点且 browse root 为空，只补齐该字段并递增 revision，不覆盖自定义非空 root 或其它配置。
+
+- 目录选择器的路径导航/加载/错误是短暂 View 状态，目录读取失败清除旧列表并禁用确认；Project 创建与 Draft 绑定仍由 Application 负责，远端目录来自所选 Server 而不是浏览器客户端。弹窗、确认/取消按钮分别复用平台 Modal 和共享 Button 的主题语义色与状态，不把正文色和页面背景色反推为主按钮反色。浅深及扩展主题必须检查已启用按钮的真实计算前景/背景和对比度，再声明视觉验收完成。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md#folder-picker-ownership-and-themes)。
+
+- OpenCraft 的 iPhone 内置浏览器 Web 界面按伪 App 定位限制页面手势缩放，同时在粗指针手机视口将可编辑文字字号保持至少 16px，以避免聚焦时的 WebKit 自动放大；桌面 Composer 字号不随之改变。该策略不禁用输入焦点或键盘交互，微信、企业微信的实际 WKWebView 行为仍须分别在设备上验收。
 
 - OpenCraft 显式 Skill 引用在 Local DSH 提交边界按当前 Agent registry 校验名称、路径、userInvocable 和原生加载器，再转换为 DSH 原生 `/name` 手势；不再静默丢弃。远程 Profile Host 从 Hermes 内容接口读取真实路径并在执行前复核，不猜目录。打开的候选列表订阅变更，按 Host/roots/revision 隔离旧结果，完整浏览不固定截断到 50 项。见 [Skill 输入与执行契约](../../../opencraft/docs/chat-ui-architecture.md#non-negotiable-boundaries)。
 
@@ -31,6 +41,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 - OpenCraft 模型回复中的 URL 按资源语义渲染：Markdown compiler 保留 heading/list/table 和原始 label，`chat-render-react` 负责安全分类与 tracking 清洗，Web renderer 负责 favicon/地球兜底、tooltip、流式 500ms 稳定期以及 Radix 右键菜单。打开动作只提交 `ChatResourceOpenIntent`，由 Workbench Browser owner 决定 in-app/external surface 和 tab disposition；Renderer 不持有 Browser Session，restricted/unsafe URL 不加载 favicon 或获得 href。见 [ChatUI integration architecture](../../../opencraft/docs/chat-ui-architecture.md#non-negotiable-boundaries)与 [Browser URL policy](../../../opencraft/docs/browser-workbench-architecture.md#72-url-必须通过构造器)。
 - OpenCraft Host 的 `fs/readDirectory`、`fs/getMetadata` 等文件系统 RPC 必须在 Host 边界投影为生成的 AppServer v2 contract；Workbench 资源面板不得兼容或猜测旧版 `{name,path,type}` 私有结构。
+- OpenCraft 新 Thread 未选择 Project 时不阻断 Composer；Local Host 在自身用户 Home 的 `OpenCraft/` 下创建 Thread 独享的 Projectless Workspace，并把解析后的 cwd/roots 交给引擎。显式 Project 路径由 Host 规范化和验证，失效时返回稳定 Workspace fault，禁止 Renderer 拼接 macOS/Windows 用户路径或静默切换目录。
+- OpenCraft 的 AppServer server-request 仍由 Server 持有 pending/resolved 真相；Renderer 点击 Skip/审批只提交响应意图。AppServer Client 提供物理 response delivery receipt，Host-scoped Workbench runtime 用有界内存 ledger 跨 transport generation 保留 exact response 与短期 tombstone：送达前不移除 pending，结果未知时同一请求自动回放而不重新弹窗，请求 payload 或 response 漂移则拒绝。该 ledger 不是跨应用重启的 Server 持久化，也不证明 Provider 已执行。
 
 - OpenCraft 的 ZenCode 是可选内置 Web/Electron 主题，使用同一语义色和材质契约，不修改默认主题、字体或控件密度。设置卡片按当前明暗模式投影真实色板，不维护按主题 ID 写死的第二份预览配色。见 [主题表面与原生外观](../../../opencraft/docs/platform-architecture.md#theme-surfaces-and-native-appearance)。
 
@@ -41,7 +53,9 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - OpenCraft 平台级 Connector 是应用级服务，不是 Hermes 设置页原型。第一方扩展通过事务注册，借用 Authentication epoch 与 Host 客户端；稳定发现/调用入口绑定 Host/Thread/代次，撤销后旧 handle 不可复用。Composer 入口、Host 原生 MCP OAuth 适配、逐次写审批和独立 CAS 配置存储已接通；OAuth 完成不自动连接或授予会话访问，重启只恢复意图并要求明确确认。凭据仍归 Host；验证使用隔离授权服务，不代表真实第三方账号或 DSH/Hermes 新增原生方法。见 [平台 Connector](../../../opencraft/docs/platform-connectors.md)。
 - 后续托管 Connector 接入在 Skills 的独立 Tab，采用 OpenCraft 控件/token，目录和引导参考 Octop。`connector-core` 负责目录/contract，`connector-host` 在执行 Host 的 SQLite 分表保存配置、凭据与临时 OAuth 事务，Renderer 只拿脱敏投影；与借用的原生 MCP 适配并存，不改 Hermes 引擎。目录 23 项中 19 项有 MCP/API adapter，其余仅接入说明，不能视为已完成真实服务验收。
 
-- OpenCraft Account Pool 是执行 Host 内的 provider credential routing policy，不是 Host、Engine、Thread、模型或客户端登录。`account-pool-host` 分离账号元数据与 0600 凭据，按 `(provider, hostId, providerThreadId)` 持久化亲和与额度状态；Codex AppServer 只接收 loopback 虚拟 Provider 地址和 Host-scoped token，真实 OAuth 仅在最终上游 HTTP 边界注入。已绑定 Thread 在账号可用时保持亲和，短 hold 返回 `Retry-After`；只有明确的成功前额度/认证拒绝才按持久游标切换后继账号，成功、网络失败与不确定流结果不得自动重放。Thread pin 空闲 30 分钟失效且仅保留最近 4096 条。Host 主动同步 ChatGPT 套餐、主次额度窗口、重置时间及账户状态，Renderer 只消费脱敏投影。Electron 已贡献 `local-codex` Host，Daemon `CodexEngineAdapter` 通过 stdio 持有单物理 AppServer 并恢复 logical-client/Thread 路由；内置 Settings 提供脱敏账户管理、官方 Device Login、显式只读导入本机 Codex 登录、订阅额度刷新与隔离的真实 OAuth refresh。Codex Host 额外声明 `opencraft/thread-start-durability`：`thread/start` 在首轮前可能没有可恢复 rollout，Workbench 必须先取得首个 `turn/start` 接纳回执再把 Draft 导航升级为 Thread；确定性失败保留原 Draft，且该策略不扩散到 DSH/Hermes。账户页面以一个添加入口承接登录与导入，以紧凑资源行投影身份、状态和额度；Device Login 使用独立受焦点约束的 Dialog，启停、排序、刷新和移除通过渐进披露操作，不能把凭据或 Host 内部状态提升为 Renderer 可写字段。真实 Codex + 本地合成 Responses smoke 验证执行链，真实账号授权和付费推理仍单独验收。见 [Host-side provider account pooling](../../../opencraft/docs/platform-architecture.md#host-side-provider-account-pooling)。
+- OpenCraft Account Pool 是执行 Host 内的 provider credential routing policy，不是 Host、Engine、Thread、模型或客户端登录。`account-pool-host` 分离账号元数据与 0600 凭据，按 `(provider, hostId, providerThreadId)` 持久化亲和与额度状态；Codex AppServer 只接收 loopback 虚拟 Provider 地址和 Host-scoped token，真实 OAuth 仅在最终上游 HTTP 边界注入。虚拟 Provider 的 `/v1/responses`、`/v1/models` 在上游分别映射到 ChatGPT Codex 的 `/responses`、`/models`，保留请求参数与 Codex 元数据；不同 Host 各自生成安装身份，不随账号凭据复制。已绑定 Thread 在账号可用时保持亲和，短 hold 返回 `Retry-After`；只有明确的成功前额度/认证拒绝才按持久游标切换后继账号，成功、网络失败与不确定流结果不得自动重放。Thread pin 空闲 30 分钟失效且仅保留最近 4096 条。Host 主动同步 ChatGPT 套餐、主次额度窗口、重置时间及账户状态，Renderer 只消费脱敏投影。Electron 已贡献 `local-codex` Host，Daemon `CodexEngineAdapter` 通过 stdio 持有单物理 AppServer 并恢复 logical-client/Thread 路由；内置 Settings 提供脱敏账户管理、官方 Device Login、显式只读导入本机 Codex 登录、订阅额度刷新与隔离的真实 OAuth refresh。Codex Host 额外声明 `opencraft/thread-start-durability`：`thread/start` 在首轮前可能没有可恢复 rollout，Workbench 必须先取得首个 `turn/start` 接纳回执再把 Draft 导航升级为 Thread；确定性失败保留原 Draft，且该策略不扩散到 DSH/Hermes。账户页面以一个添加入口承接登录与导入，以紧凑资源行投影身份、状态和额度；Device Login 使用独立受焦点约束的 Dialog，启停、排序、刷新和移除通过渐进披露操作，不能把凭据或 Host 内部状态提升为 Renderer 可写字段。真实 Codex + 本地合成 Responses smoke 验证执行链，真实账号授权和付费推理仍单独验收。见 [Host-side provider account pooling](../../../opencraft/docs/platform-architecture.md#host-side-provider-account-pooling)。
+
+- OpenCraft Account Pool 的 loopback HTTP 入口必须持有流式响应直到结束：Web/Codex 客户端断开时撤销上游请求、接收流错误，不让异步 `Readable` 错误逃逸杀死整个 Host；断线和结果不确定时均不得自动重放模型请求。
 
 - OpenCraft Skills 目录刷新必须区分“不支持”和“暂时失败”：外部引擎没有刷新桥时，文件操作只报告安装事实与能力限制，不创建阻断聊天的 pending；已接入桥的暂时失败才在下次执行前重试。Skills 通知订阅由 Workbench Runtime 持有，可先于连接建立；初始化失败/重连不丢订阅，销毁后解绑。已取消的正文版本与 Hermes 自动热刷新不作为后续交付项。
 
@@ -70,13 +84,17 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
   所有权整改：Host 的 capability 替换与执行准入复用 ThreadLifecycle 队列；断线先撤销 owner，迟到操作不得重新提交。新 Agent 的首次工具挂载进入 native setup，产品目录在准备后发布；持久历史不作为附件失败的清理对象。停止/审批回复不等待工具准备。上述“错误摘要”收紧为允许列表错误码，禁止任意异常正文透传。详见 [ChatUI 所有权](../../../opencraft/docs/chat-ui-architecture.md#non-negotiable-boundaries)。
 
-- OpenCraft 的 DSH HTTP deadline 由 `DshClient` 按请求拥有；调用方 lifecycle signal 只能进一步取消，不能替换 deadline。History routed client 只合并有界窗口请求且必须在任意结束路径释放 flight，Thread lifecycle 只串行化，不再叠加超时。Workbench 仅投影 AppServer 状态：`notLoaded/idle` 中立、`active` 运行、`systemError` 错误；只有真实 attention source 才能显示待审阅。见 [DSH / AppServer 边界](../../../opencraft/docs/dsh-appserver-boundaries.md)。
+- OpenCraft 的 DSH HTTP deadline 由 `DshClient` 按请求拥有；调用方 lifecycle signal 只能进一步取消，不能替换 deadline。History routed client 只合并有界窗口请求且必须在任意结束路径释放 flight，Thread lifecycle 只串行化，不再叠加超时。Workbench 仅投影 AppServer 状态：`notLoaded/idle` 中立、`active` 运行、`systemError` 错误；只有真实 attention source 才能显示待审阅。运行中文字的扫光频率由 Web/Native renderer 的共享设计 token 控制，高光色由主题完整 ink 拥有，底层文字保持原语义颜色；这些呈现属性不参与 AppServer 状态、执行租约或恢复判定。见 [DSH / AppServer 边界](../../../opencraft/docs/dsh-appserver-boundaries.md)与 [ChatUI 视觉账本](../../../opencraft/docs/codex-chatui-fidelity.md)。
+
+- OpenCraft 的 AppServer 历史恢复以有序 Turn/Item 页面为快照权威：完整 Item 快照决定成员与顺序，分页窗口只决定其覆盖区间的顺序；恢复期间的新通知在历史提交后重放。稳定 ID 仅用于对账，不能让先到的 final 永久占据较早进度之前的位置；旧的 in-progress 历史也不能回退已经确认的完成状态。此规则由共享 `appserver-session` 负责，Renderer 不另行按时间戳排序。
 
 - OpenCraft 的 DSH steer 按 `queued → steering → user/message` 交接所有权：unary RPC accepted 即完成命令回执，`session/queue` 的用户 `steering` placement 负责刷新/重连恢复，匹配的 durable message 最终接管 transcript。Workbench 不等待后续 queue snapshot 才返回，也不把 next-step steer 宣称为对当前 provider 请求或工具 step 的硬中断。见 [ChatUI 集成架构](../../../opencraft/docs/chat-ui-architecture.md#non-negotiable-boundaries)。
 
 - OpenCraft 附件暂存由目标 Host 所有：`opencraft/attachment-staging` 明确 source/location/大小能力，Composer 只消费统一 lifecycle 与 `AttachmentRef`。首个 Local adapter 在产品 data root 下原子落盘 `client-bytes` 并返回 `host-file`；Renderer 不再拼接 `codexHome` 或借通用 `fs/writeFile` 冒充附件服务。Remote/Cloud 只有实际 adapter 声明 capability 后才可用。见 [ChatUI 集成架构](../../../opencraft/docs/chat-ui-architecture.md#non-negotiable-boundaries)。
 
-- OpenCraft 本机会话生命周期由持久目录、原生上下文、逻辑订阅和视图分别拥有；Fork 新身份而重启 generation 保留身份，临时历史及缓存不落盘。共享物理 Host 不合并逻辑客户端，unsubscribe 不影响其他订阅者，迟到回复不清新视图。命名/归档通知统一失效查询，归档不删除用户目录。主 Sidebar 只投影活跃会话；归档列表与恢复按 Host 能力归 Settings 所有，不在主界面保留入口或临时撤销状态。见 [会话所有权](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
+- OpenCraft 本机会话生命周期由持久目录、原生上下文、逻辑订阅和视图分别拥有；Fork 新身份而重启 generation 保留身份，临时历史及缓存不落盘。共享物理 Host 不合并逻辑客户端，unsubscribe 不影响其他订阅者，迟到回复不清新视图。命名/归档通知统一失效查询，归档不删除用户目录。DSH 的名称与归档状态由 OpenCraft 持久目录拥有；Codex Host 复用原生 AppServer 的 `thread/name/set`、归档、恢复及列表，并通过 `opencraft/thread-lifecycle` 声明能力，不另建 Renderer 状态。主 Sidebar 只投影活跃会话；归档列表与恢复按 Host 能力归 Settings 所有，不在主界面保留入口或临时撤销状态。见 [会话所有权](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
+
+- Codex Daemon 的单条 stdio 物理 Thread 订阅不等于某个浏览器的逻辑订阅：`thread/unsubscribe` 和 lease 断开只撤销对应 Client 的读者身份；恢复回执未到的 Client 是可接收通知的临时读者，退出后迟到回执不得重新认领。审批/工具交互回复权单独归属。后台 Turn、未结队列和未答 server request 均是 Host 继续持有物理订阅的需求；只有原生 Thread 空闲且无上述需求时才能按持久/临时 Thread 的 grace 回收，并与新原生操作按 Thread 串行化。此机制不提供持久事件日志或多租户鉴权。见 [会话所有权](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
 
 - OpenCraft Desktop 目录身份与显示品牌、Bundle ID、进程 cwd、Thread workspace 分离：macOS 平台状态归 `Application Support/OpenCraft`，便携产品配置归 `OPENCRAFT_HOME`/`~/.opencraft`，Main/Daemon/DSH 统一显式使用平台状态下的 runtime cwd，Agent 执行只接受 Project/Thread cwd。旧 `@vela/workbench-electron` 仅作为锁感知、可回滚的原子迁移输入；显式测试 profile 不触发迁移。见 [目录身份章程](../../../opencraft/docs/architecture/product-identity.md#directory-identity-charter)。
 
@@ -94,7 +112,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 - OpenCraft Sidebar 的 Start、Skills/Storage、扩展入口与 Footer action 是同一种 `SidebarNavigationItem`，差异仅为 action、icon 和 active 状态。Design System 统一拥有 leading slot、inline padding、content gap、row gap 与 section gap；分组容器只保留 landmark/分隔语义，不显示额外的 “Work” 标题或复制 Item 几何。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md)。
 
-- OpenCraft Sidebar 的活跃会话目录采用 Activity 投影：Thread 规范 `recencyAt/updatedAt` 决定倒序与本地日期分组，Host 只作为任务 provenance，不再拥有视觉分组。共享两行任务项固定呈现标题、Project/可选远端 Host metadata 与尾部状态轨；pending、unread、运行状态和菜单不得推动正文。原 Host 标题上的目标新建/设置能力迁入既有 Radix 任务上下文菜单，Thread/Host 运行时 owner 不变。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-24](../../../opencraft/design/invariants.md)。
+- OpenCraft Sidebar 的活跃会话目录采用 Activity 投影：Thread 规范 `recencyAt/updatedAt` 决定倒序与本地日期分组，Host 只作为任务 provenance，不再拥有视觉分组。共享两行任务项固定呈现标题、Project/可选远端 Host metadata 与尾部状态轨；pending、unread、运行状态和菜单不得推动正文。主行独占选中/悬停底色，独立“…”入口保持透明并消费同一行的视觉状态，触屏不通过伪 hover 制造额外色块。当前输入方式由 Web 文档统一记录，Activity、共享 Settings/菜单与 Codex 账户行消费同一触控抑制条件和主题语义 token；这不代表其他尚未迁移的功能局部控件已完成触控验收。原 Host 标题上的目标新建/设置能力迁入既有 Radix 任务上下文菜单，Thread/Host 运行时 owner 不变。菜单 Fork 的 Host 请求期间显示进行中状态，成功回执后立即打开 child，目录刷新在后台进行；route scope 已变化时不抢回导航。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-12/24/33](../../../opencraft/design/invariants.md)。
 
 - OpenCraft Desktop 的 titlebar Write 是 Sidebar Start 的收起态投影，不是第二个 Thread 创建器。仅 persistent Header 在 Sidebar hidden 时将 Write 注册到 Sidebar toggle 后，并复用 Router 的 `navigateToHome`；浮动 Sidebar 的 transient Header 不复制。动态 rail 宽度与 macOS safe area 由 Window Chrome / Header 测量共同拥有。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-25](../../../opencraft/design/invariants.md)。
 
@@ -154,6 +172,9 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - Pass 升配 checkout 每次明确确认支付都由 CTL 校验本人归属、当前状态和合法目标后新建订单，不以历史未付款订单复用或查询作为前置条件。支付票据重签及兼容的订单恢复接口仍须校验本人归属；匿名微信桥仅接受精确绑定的支付票据，不得开放建单或恢复查询。不同订单争用同一 Pass 仍由现有 flow/CAS 保护，已交付订单仅凭匹配的持久化回执幂等重放。具体契约见[订阅购买与续费](../journeys/subscription-purchase-renewal.md#pass-升配-web-checkout)。
 - Pass 升配目标由服务端策略表确定；CTL 对同一请求中的独立目标并行向 Trade 询价，再按策略顺序组装响应，不能让外部计费延迟按目标数量线性叠加，也不能把单个目标的临时询价失败降级成“无可升级套餐”。单目标询价预算为 20 秒，公共 `ctl-passes` 上游预算为 30 秒；任一目标失败时整条列表请求失败并保留可诊断错误。
 - Pass 新购和续费的微信桥请求携带 `auth_code` 时，CTL 必须以票据绑定的原下单用户为准，即使扫码 OAuth 或既有 Cookie 同时注入了另一用户会话；只有请求未携带票据时才允许回退到会话身份。票据仍须一次性消费，并校验绑定的订单和续费 Pass。
+- 点石自动续费的 `do_goods_and_pay` 只能由 Trade 的受信内部接口承载；CTL 不暴露用户端、管理端或
+  internal 转发入口。CTL 的 Pass 生命周期接口不得成为绕过 Trade 活动配置、站点限制和订单幂等校验的
+  点石调用通道；控制台普通续费仍调用 Trade 的普通续费建单流程。
 - CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，线上协议按字符串传输并校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
@@ -218,7 +239,11 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - OpenCraft 扩展目录在 Skills“扩展”Tab 由 Application 提供，Skills 仅选择内容槽；安装/运行/贡献投影沿用原 owner，操作走 Manager。内建与用户扩展统一可见，安装目标选择器不影响扩展目录，开发者 URL 安装与普通用户列表管理分开。
 - OpenCraft 扩展由现有 Supervisor 持有 Activation：合法 manifest 与执行兼容分别校验，不兼容保留安装意图；加载/激活/内部贡献/清理有界，退休撤销公开 API 并通知 AbortSignal。Manager 不得认领内建实例。可信 module-url 安装固定自包含 ESM 与 SHA-256，产物独立持久化，恢复不联网替换版本；显式更新成功后切换安装指针，失败保留旧版本。公开契约、作用域及未建设的生态能力见 [Extension Platform](../../../opencraft/docs/plugin-architecture.md)。
 - OpenCraft Electron 原生窗口与 Renderer Shell 共享同一份窗口几何：当前最小宽度为 480px，由 `workbench-runtime` 统一投影到 BrowserWindow 限制与 Shell 降级阈值。宽度压力下先收敛侧栏、上下文与详情面板，保留用户偏好；路由顶栏内容须在窄态滚动或折叠，不得用业务页私有最小宽度重新撑宽窗口。
+- OpenCraft Sidebar Activity 把 `executionOwner` 与 Thread 状态分开：Thread/Conversation binding 持有 hostId，Host Directory 提供 kind/label，Sidebar 为远程 Host 投影按 hostId 稳定着色的地球。本机默认省略来源图标；改名、断线、重连、引擎或运行状态不得改变该身份颜色。运行/待审/错误/未读使用相邻独立状态槽，颜色不作为唯一身份信号。
 - OpenCraft Web 发布器以 Vite manifest 判定构建所有权：manifest 引用的 `assets/**` 必须内容寻址并按 immutable 追加；Vite 从 `public/` 原样复制的非哈希资源即使位于 `assets/**`，仍按可重验证公共文件原子覆盖。发布入口只能在两类资源全部落盘后切换。
+- OpenCraft 的 `headless-linux-amd64-tar` 是独立单用户服务器制品：Node 启动器在私有数据根下持有唯一 Local Agent Host，托管同源 WebUI 并把 `/appserver` 转发给本机 DSH；同源 `/apphost` 通过租约和代次连接 Server 拥有的 Codex stdio adapter，不让浏览器持有 Codex 凭据。Web 模型服务与 Codex 账户页复用 Host 配置能力，不另建浏览器配置真源。默认仅监听 loopback，远端浏览器须通过受控隧道。显式危险模式允许主体直接绑定 `0.0.0.0:80`，静态 WebUI、`/appserver`、`/apphost` 共用端口，公开模式不检查 HTTP 或 WebSocket Origin；仓库 Linux 安装脚本只负责校验 tar 和安装常驻 systemd unit，不套 Nginx；特权端口仅授予 `CAP_NET_BIND_SERVICE`，也不提供 TLS 或访问控制。任何可达客户端都会共享该 Host 的账户和执行权，绝非多租户或安全公网模式。脚本不得自动停掉现有预览、覆盖持久状态或把旧 tar 当作新构建。此包不包含 Electron Main/Preload，不提供多租户 Hub 或公开服务鉴权；不能把静态网页可访问或 tar 生成等同于 Linux 原生执行验收。详见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md#headless-linux-server-archive)。
+- OpenCraft Codex 排队消息由 Daemon Host 的私有 SQLite 唯一持有，Codex AppServer 只执行标准 `turn/start`/`turn/steer`。Host 先持久认领再投递；明确拒绝才放回队列，超时/断线一律保留未确认认领并阻止后续自动派发。Host 以 Codex 历史 user-message client ID 对账，确认丢弃前要求空闲 Thread、匹配目标和成功的历史核查；丢弃不等于证明模型未见消息。旧原生队列在物理 AppServer 启动前迁移，冲突或坏数据失败关闭。`atomicSteer`/`unconfirmedSteerDiscard` 来自 Host 实现，不依赖 Codex 二进制补丁；Headless 只打包官方 Codex。DSH 的 Host/原生队列路径独立，不继承 Codex 的恢复能力。单数据目录仍只允许一个物理 AppServer/Host owner。详见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。
+- OpenCraft Headless Web 的 `/apphost` 连接诊断按物理连接生成随机 attempt ID；浏览器失败报告与服务端升级、hello、Host 认领、心跳和关闭事件以该 ID 对账，只记录阶段、数值关闭码、耗时与并发连接数，不记录会话内容、URL、凭据、Origin、IP 或原始异常。浏览器 WebSocket `error` 不提供握手 HTTP 状态，因此诊断用于定位失败层，不把通用“connection failed”当作多客户端被拒绝的证据；它不改变 Client/Host/Thread 所有权或重试策略。详见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。
 - OpenCraft 的客户端 Turn、queue、steer、工具活动和滚动投影遵循 Codex 生命周期；Hermes 事件游标、durable history 与投影状态遵循 Hermes Desktop 生命周期。断线恢复不得只保留 replay 游标却重建空投影状态。
 - OpenCraft 的 Hermes 工具完成状态只能来自明确结果证据：终端退出、结构化结果或后端失败。Turn 完成本身不得制造工具成功；后台命令保留运行中进程句柄，缺失结果保持未确认。实时与历史恢复必须复用同一工具身份和终态归并规则。
 - AppServer 传输失败必须保留结构化恢复策略。瞬态失败可由既有策略重连；远端资源已删除等不可恢复错误标记为手动恢复，Workbench 不得自动重建同一失效传输并形成重连循环。
@@ -242,6 +267,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - Workflow 必须在提交 TAT 前持有 Multipart Upload ID。TAT 提交、上传或结果确认失败时，通过 disconnected cleanup context 执行 Abort 并删除可能已经 Complete 的残留对象。
 - 修改救援 Workflow 的 Activity 序列时使用 Temporal version marker 保证旧 History 继续 replay，不能让存量执行产生 nondeterminism。
 - `ctl.user_subscription_gateway` 是已分配用户的网关归属真源；Pass 续费只延长当前归属网关的权益，不隐式迁移网关。active Pass 续费完成前必须确保套餐权益存在：VelaGW 使用稳定幂等键和唯一订阅语义直接补齐，旧 AI-Gateway 则先探测 active subscription，仅在明确缺失时补建；探测失败必须保持任务可重试，不能用补建覆盖未知状态的旧订阅。
+- CTL 的 `IsolatePass` 父任务按当前 `instance_id` 收敛隔离子任务。同一实例重派产生多条历史记录时，任一 `SUCCESS` 覆盖该实例的历史 `FAILED`；`CREATED/RUNNING` 阻止重复派发，仅有失败记录时才重派。父任务不得按历史失败行数阻塞，且只有当前非终态实例全部成功后，才能继续撤销模型权益、隔离站点并将 Pass 推进为 `isolated`。
 - VelaGW 中套餐、免费积分与独立购买的积分包是可并存的订阅。Pass 到期清理只能按名称前缀删除 `package:`、`free-credit:` 及历史空名称套餐订阅，必须保留 `credit-package:`；单个积分包退款或隔离则按完整订阅名删除目标订阅，不得清理 Pass 周期元数据或其他积分包。旧 AI-Gateway 不具备定向删除能力，仍沿用用户级全量取消语义。
 - 邀请返利复用 `free-credit:referral:*` named subscription，但发放权在 Referral 状态机，CTL 提供强鉴权
   的幂等送积分包装。调用方只传积分额度和资格标识，不传 Plan ID；CTL 将积分换算成 token，
@@ -329,7 +355,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - 每个存量实例幂等拥有一个不能作为 Profile 单独删除的默认 Bot，公开 `profile_id` 为 `main`。`main` 始终解析到原 `$HERMES_HOME`，不得创建命名 `profiles/main` 或迁移根 Profile 数据。Hermes 内部根 Profile ID `default` 不得作为产品展示名；根 Profile 没有显式名称或存量实例名称时，由客户端使用本地化默认名称，命名 Profile 才可使用 Profile ID 作为名称兜底。实例内只剩默认 Bot 时，产品删除动作销毁整个 Agent 实例；存在其他命名 Bot 时必须先逐一删除。
 - Provider、模型、通道、Gateway、Skills、自动任务、Memory、User Profile 和 SOUL 等 Profile 级操作必须携带后端返回的 `profile_id`；bootstrap、升级、重装、实例健康、资源、账单和套餐仍按 `instance_id` 执行。产品/API 层默认 Bot 的公开标识保持 `main`，但直接调用原生 Hermes CLI 时必须转换为内建根 Profile `default`；命名 Profile ID 原样透传。
 - Home channel 是 Profile 下按平台保存的映射，不是实例全局值。创建或克隆 Bot 默认不复制 Home channel；通道认证同样不得静默共享。
-- 通道是否允许多个 Bot 同时连接由 capability 决定。双站微信在一期按实例级唯一资源处理；占用信息写入实例 `$HERMES_HOME/.lightvela/channel-bindings/weixin.json` 并通过文件锁原子更新，非占用 Bot 不得覆盖或复用该通道凭据。
+- 通道是否允许多个 Bot 同时连接由 capability 决定。双站微信与国际站 WhatsApp 按实例级唯一资源处理；占用信息分别写入实例 `$HERMES_HOME/.lightvela/channel-bindings/weixin.json` 和 `whatsapp.json`，并通过对应文件锁原子更新。扫码前认领，成功后确认，断开后释放；非占用 Bot 不得覆盖或复用该通道凭据。此约束不判断同一 WhatsApp 号码在其他实例或用户下的连接。
+- WhatsApp 的认领返回有时限的 `reservation_id`，新版页面确认或失败回滚必须使用同一租约；回滚只能释放匹配的 `reserved`，不能删除已确认的 `connected`。CTL 按 Hermes Profile 实际运行目录的 `whatsapp/session/creds.json` 校验确认与断开，不能沿用旧的 `platforms/whatsapp` 路径。旧浏览器无 token 确认仅能确认本 Bot 当前认领且凭据已落盘；旧版无请求体 release 仅在已连接凭据确实消失且没有在途扫码/删除时清理，不能凭一次旧请求删除成功连接。旧/新页面经 CTL `debug/exec` 执行的标准 WhatsApp 扫码和删除命令由实例内 `whatsapp-qr.lock` 覆盖实际命令执行期，以阻止同 Bot 旧页面跳过前端认领而并发改写占用。该锁不声称约束任意手工 shell 命令；生产发布须先完成 CTL 滚动与旧请求排空，再发布前端，且新前端仍可能被缓存时不能单独回滚 CTL。
 - 命名 Bot 创建前必须同时通过服务端功能开关和目标实例的 Hermes Profile 能力预检。克隆完成后要移除消息通道配置、消息通道环境变量和 Home channel；配置键本就不存在应视为已完成清理，除此之外的清理失败仍须终止并回滚创建，无法证明清理完成时不得把 Bot 标记为可用。
 - Profile 创建、更新和删除为同步操作；失败直接返回稳定错误码且不得留下伪 Bot 记录。创建失败时应尽力删除未完成的命名 Profile，后续列表只展示 Hermes 当前真实存在的 Profile。
 - 桌面 Bot 管理在 POST/PUT/DELETE 的响应不确定时不得自动重发；如已收到 HTTP 错误响应，可展示状态码与符合稳定错误码格式的上游 code 用于诊断，但不能回显原始服务端错误文本或将 5xx 错认成可安全重试。刷新实例 Bot 列表仍是判断实际结果的必要步骤。
@@ -392,6 +419,8 @@ Context Pane 的 frame/viewport 共用 useContextPaneGeometry 的同一个实时
 LightVela 的环境目录与实例创建服务继续保持独立 owner，既有 Host 绑定和进行中记录不得因页面删除而迁移或清空；但当前 Shell 不投影环境列表、虚线添加入口或创建窗口。任何未来重新引入的调用方仍须遵守资格校验、稳定 Host ID、未知 POST 结果不自动重发和不切换当前聊天等既有服务约束，不能把保留的服务代码解释为当前可见能力。
 
 OpenCraft 账户界面复用 utility Modal 与 SettingsPanel/Row/Group、头像编辑、Radix 名称编辑、复制反馈和语义用量条。宿主拥有 Dialog 焦点、关闭、滚动和主题材质，账户扩展只提供业务值与动作；不使用账户专属固定大画布。主题引擎补齐警告、错误、用量轨道及工具弹窗材质。模型配置通过宿主设置导航，外部订阅管理返回后刷新详情。匿名 Footer 的登录入口使用同一套 Radix 菜单：提供方贡献国内／国际选项，选中直接提交 Cordis `menu` 流程并打开系统浏览器，不经过中间登录弹窗。通用层只传递 optionId，区域校验和切换在旧事务取消完成后由提供方执行；入口反映等待/错误，菜单提供重试/取消，关闭菜单本身不取消已启动的登录。匿名登录是 action，使用无头像表面的共享 `LogIn` glyph；认证后账户才是 identity，使用真实头像、首字母或中性 User fallback。固定与浮动 Sidecar 共用同一 leading-visual helper、入口和主题。
+
+Codex 账户池的用量与额度重置时间由 Host 观察并持久化，管理页只读取去敏投影。每个额度窗口有报告的重置时刻时，桌面与触屏均直接显示本地时间，展开账户可看完整时刻；上游未报告时明确显示未知，不从窗口长度或账户状态推算，也不将额度重置误称为付费充值。
 
 OpenCraft 桌面 LightVela 登录通过系统浏览器和既有 native OIDC client/callback 完成，Electron Main 拥有 PKCE、单次交换、取消和超时；只向可信顶层 renderer 提供窄 IPC。跨 profile 回调按随机 state 摘要路由到发起登录的本地进程，传输不含会话。会话按 profile 使用上述 Main PrivateStorage 保存，renderer 只在内存持有；重启恢复不依赖静态回环服务端口。网页继续使用 Web 登录流程，后端 allowlist 保持精确匹配。
 

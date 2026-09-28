@@ -75,3 +75,14 @@ test("compact filter Selects consume the shared control-token contract", () => {
   assert.match(skills, /<SelectContent[\s\S]*variant="filter"/u);
   assert.doesNotMatch(skills, /INSTALLED_FILTER_(?:TRIGGER|CONTENT|ITEM)/u);
 });
+
+test("iPhone Web keeps editable text legible without focus zoom and locks app viewport scaling", () => {
+  const html = read("../apps/workbench-web/index.html");
+  const app = read("../apps/workbench-web/src/styles/app.scss");
+  assert.match(html, /name="viewport"[^>]*maximum-scale=1[^>]*user-scalable=no/u);
+  assert.match(app, /\.codex-composer-editor\s*\{[\s\S]*?font-size:\s*14px/u,
+    "desktop Composer typography remains unchanged");
+  assert.match(app, /@media\s*\(max-width:\s*767px\)\s*and\s*\(any-pointer:\s*coarse\)/u);
+  assert.match(app, /\[contenteditable="true"\][\s\S]*?font-size:\s*max\(16px,\s*1rem\)\s*!important/u);
+  assert.match(app, /\.codex-composer-editor\s*\{[\s\S]*?pre\s*\{\s*font-size:\s*16px/u);
+});

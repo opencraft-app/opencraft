@@ -30,7 +30,7 @@
 3. 최근 로그의 시간 범위를 1, 3, 6, 12, 24시간 중에서 선택합니다.
 4. **Refresh**를 선택해 로그를 불러옵니다.
 
-![LightVela 콘솔의 진단](../images/diagnostics-overview-en.png)
+![LightVela 콘솔의 진단](../images/diagnostics-overview-en.webp)
 
 필요한 내용이 포함된 가장 짧은 기간부터 확인하세요. 로그 범위를 좁히면 오류와 해당 오류를 유발한 작업을 연결해 파악하기가 쉬워집니다.
 

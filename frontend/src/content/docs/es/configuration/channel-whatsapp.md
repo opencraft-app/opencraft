@@ -33,6 +33,8 @@ Inicie sesión en LightVela, haga clic en "Mi Hermes" en la esquina superior der
 
 Busque la tarjeta de WhatsApp y haga clic en "+ Conectar".
 
+En una misma instancia de LightVela, WhatsApp solo puede estar conectado a un Bot a la vez. Si ya está conectado a otro Bot, abra ese Bot desde el aviso y desconecte WhatsApp antes de conectarlo aquí.
+
 ### 3. Escanear el código QR con WhatsApp en su teléfono
 
 1. Abra WhatsApp en su teléfono

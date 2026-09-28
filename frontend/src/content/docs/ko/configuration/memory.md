@@ -8,7 +8,7 @@
 
 메모리는 사용자의 선호도, 정체성, 진행 중인 작업, 장기간 협업하며 쌓인 경험 등 중요한 정보를 Hermes가 대화와 기기가 바뀌어도 유지할 수 있게 합니다. 메모리 덕분에 Hermes는 일회성 질의응답 도구가 아니라 시간이 지날수록 사용자를 더 잘 이해하는 장기 어시스턴트가 됩니다.
 
-![LightVela 콘솔의 메모리 및 사용자 프로필 페이지](../images/memory-management-overview-en.png)
+![LightVela 콘솔의 메모리 및 사용자 프로필 페이지](../images/memory-management-overview-en.webp)
 
 LightVela는 클라우드에서 호스팅되므로 이러한 메모리는 클라우드의 Hermes 인스턴스에 저장됩니다. 기기를 바꾸거나 Telegram, WhatsApp, Discord, Slack, WeChat 사이에서 채널을 전환해도 사라지지 않습니다. 오늘 Telegram에서 Hermes에게 알려 준 내용을 다음 날 WhatsApp에서 대화를 이어 갈 때도 기억할 수 있습니다.
 

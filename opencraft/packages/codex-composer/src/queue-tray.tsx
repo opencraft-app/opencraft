@@ -15,7 +15,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import React from "react";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import React, { useState } from "react";
 import {
   CircleAlert,
   CornerDownRight,
@@ -36,17 +37,21 @@ export interface ComposerQueueTrayItem {
   readonly editing: boolean;
   readonly pausedReason?: string | null;
   readonly error?: string | null;
+  readonly unconfirmedTargetTurnId?: string;
 }
 
 export interface ComposerQueueTrayProps {
   readonly items: readonly ComposerQueueTrayItem[];
   readonly isResponseInProgress: boolean;
+  readonly atomicSteer?: boolean;
   readonly onEdit?: (id: string) => void;
   readonly onCancelEdit?: () => void;
   readonly onDelete?: (id: string) => Promise<void>;
+  readonly onDiscardUnconfirmed?: (id: string, expectedTurnId: string) => Promise<void>;
   readonly onReorder?: (ids: readonly string[]) => Promise<void>;
   readonly onSteer?: (id: string) => Promise<void>;
   readonly onResume?: () => Promise<void>;
+  readonly portalContainer?: HTMLElement | null;
 }
 
 function ignoreRejected(operation: Promise<void> | undefined): void {
@@ -56,19 +61,24 @@ function ignoreRejected(operation: Promise<void> | undefined): void {
 function SortableQueueItem({
   item,
   isResponseInProgress,
+  atomicSteer,
   onEdit,
   onCancelEdit,
   onDelete,
+  onDiscardUnconfirmed,
   onSteer,
 }: {
   readonly item: ComposerQueueTrayItem;
   readonly isResponseInProgress: boolean;
+  readonly atomicSteer: boolean;
   readonly onEdit?: ComposerQueueTrayProps["onEdit"];
   readonly onCancelEdit?: ComposerQueueTrayProps["onCancelEdit"];
   readonly onDelete?: ComposerQueueTrayProps["onDelete"];
+  readonly onDiscardUnconfirmed?: ComposerQueueTrayProps["onDiscardUnconfirmed"];
   readonly onSteer?: ComposerQueueTrayProps["onSteer"];
 }) {
   const busy = item.operation !== "idle";
+  const awaitingNativeReconciliation = item.pausedReason === "restored-after-host-restart";
   const sortable = useSortable({
     id: item.id,
     disabled:
@@ -122,7 +132,11 @@ function SortableQueueItem({
       <span className="codex-composer-queue-item__preview">{item.preview}</span>
 
       <div className="codex-composer-queue-item__actions">
-        {item.editing ? (
+        {item.unconfirmedTargetTurnId ? (
+          <button type="button" className="is-labelled" onClick={() => ignoreRejected(onDiscardUnconfirmed?.(item.id, item.unconfirmedTargetTurnId!))}>
+            <Trash2 size={12} /><span>Review &amp; discard</span>
+          </button>
+        ) : item.editing ? (
           <button
             type="button"
             aria-label="Cancel editing queued message"
@@ -140,7 +154,12 @@ function SortableQueueItem({
                   ? "Steer with queued message"
                   : "Start queued message"
               }
-              disabled={!item.actionable || busy}
+              disabled={!item.actionable || busy || awaitingNativeReconciliation || (isResponseInProgress && !atomicSteer)}
+              title={awaitingNativeReconciliation
+                ? "This queued message is awaiting native reconciliation before it can be sent"
+                : isResponseInProgress && !atomicSteer
+                  ? "This Host cannot steer a queued message; it will remain queued until the turn finishes"
+                  : undefined}
               onClick={() => ignoreRejected(onSteer?.(item.id))}
             >
               {isResponseInProgress ? (
@@ -176,32 +195,40 @@ function SortableQueueItem({
 export function ComposerQueueTray({
   items,
   isResponseInProgress,
+  atomicSteer = false,
   onEdit,
   onCancelEdit,
   onDelete,
+  onDiscardUnconfirmed,
   onReorder,
   onSteer,
   onResume,
+  portalContainer,
 }: ComposerQueueTrayProps) {
+  const [discardCandidate, setDiscardCandidate] = useState<{ id: string; turnId: string } | null>(null);
+  const [discardBusy, setDiscardBusy] = useState(false);
+  const [discardError, setDiscardError] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
-  const ids = items.map((item) => item.id);
-  const pausedReason = items.find((item) => item.pausedReason)?.pausedReason ?? null;
+  const sortableIds = items.map((item) => item.id);
+  const reorderableIds = items.filter((item) => !item.unconfirmedTargetTurnId).map((item) => item.id);
+  const pausedReason = items.find((item) => !item.unconfirmedTargetTurnId && item.pausedReason)?.pausedReason ?? null;
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (over === null || active.id === over.id) return;
-    const from = ids.indexOf(String(active.id));
-    const to = ids.indexOf(String(over.id));
+    const from = reorderableIds.indexOf(String(active.id));
+    const to = reorderableIds.indexOf(String(over.id));
     if (from < 0 || to < 0) return;
-    ignoreRejected(onReorder?.(arrayMove(ids, from, to)));
+    ignoreRejected(onReorder?.(arrayMove(reorderableIds, from, to)));
   };
 
   if (items.length === 0) return null;
   return (
+    <>
     <div
       className="codex-composer-queue-tray"
       data-queue-size={items.length}
@@ -225,14 +252,20 @@ export function ComposerQueueTray({
         collisionDetection={closestCenter}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
           <div className="codex-composer-queue-tray__items">
             {items.map((item) => (
-              <SortableQueueItem
+          <SortableQueueItem
                 key={item.id}
                 item={item}
                 isResponseInProgress={isResponseInProgress}
-                onDelete={onDelete}
+                atomicSteer={atomicSteer}
+            onDelete={onDelete}
+            onDiscardUnconfirmed={(id, expectedTurnId) => {
+              setDiscardError(null);
+              setDiscardCandidate({ id, turnId: expectedTurnId });
+              return Promise.resolve();
+            }}
                 onSteer={onSteer}
                 onEdit={onEdit}
                 onCancelEdit={onCancelEdit}
@@ -242,5 +275,29 @@ export function ComposerQueueTray({
         </SortableContext>
       </DndContext>
     </div>
+    <AlertDialog.Root open={discardCandidate !== null} onOpenChange={(open) => { if (!open && !discardBusy) { setDiscardCandidate(null); setDiscardError(null); } }}>
+      <AlertDialog.Portal container={portalContainer ?? undefined}>
+        <AlertDialog.Overlay className="modal-surface__scrim" data-layer="confirmation" data-appearance="utility" />
+        <AlertDialog.Content className="modal-surface modal-confirmation codex-composer-steer-discard-dialog" data-size="compact" data-layer="confirmation" data-appearance="utility">
+          <div className="codex-composer-steer-discard-dialog__body">
+            <AlertDialog.Title>Discard message with unconfirmed delivery?</AlertDialog.Title>
+            <AlertDialog.Description>Delivery may already have happened. Review the conversation before discarding. This only removes the unresolved claim; it will not resend the message.</AlertDialog.Description>
+            {discardError ? <p role="alert">{discardError}</p> : null}
+          </div>
+          <div className="modal-confirmation__actions">
+            <AlertDialog.Cancel className="ui-button" data-variant="secondary" data-size="sm" disabled={discardBusy}>Cancel</AlertDialog.Cancel>
+            <button className="ui-button" data-variant="primary" data-size="sm" type="button" disabled={discardBusy} onClick={() => {
+              if (discardCandidate === null) return;
+              setDiscardBusy(true);
+              void (onDiscardUnconfirmed?.(discardCandidate.id, discardCandidate.turnId) ?? Promise.reject(new Error("Discard is unavailable on this Host")))
+                .then(() => { setDiscardCandidate(null); setDiscardError(null); })
+                .catch((error: unknown) => setDiscardError(error instanceof Error ? error.message : String(error)))
+                .finally(() => setDiscardBusy(false));
+            }}>{discardBusy ? "Discarding…" : "Discard claim"}</button>
+          </div>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+    </>
   );
 }

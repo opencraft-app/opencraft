@@ -5,7 +5,7 @@
 **LightVela supports Telegram group messages when you disable Group Privacy for the Bot in BotFather, add the Bot to the group, and start the conversation by mentioning it with `@bot_username`.**
 This guide covers that verified setup and shows how to use the same Hermes Agent for group Q&A, summaries, and reminders without treating unverified member-join events or passive group replies as configured features.
 
-![A Telegram group AI community assistant for group Q&A, summaries, and reminders](../images/use-case-08-telegram-group-community-assistant.png)
+![A Telegram group AI community assistant for group Q&A, summaries, and reminders](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## Before you start
 
@@ -66,7 +66,7 @@ Validate a scheduled task separately in a supported target channel before relyin
 
 Disabling Group Privacy enables the Telegram message-delivery path.
 It does not replace your responsibility to set group rules, avoid sharing sensitive information, and require confirmation before high-risk external actions.
-Use the [Telegram and WhatsApp safety-boundaries guide](./telegram-whatsapp-safety-boundaries.md) when defining who can ask the Agent to perform sensitive actions.
+Define which members may request sensitive actions, and confirm authorization before the Agent carries them out.
 
 ## FAQ
 
@@ -95,6 +95,5 @@ Do not assume Telegram group-message support extends to WhatsApp.
 
 - [Configure Channel - Telegram](../configuration/channel-telegram.md) - Connect the Bot and repeat the group-message setup steps.
 
-- [How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills](./im-agent-skill-scenarios.md) - Prepare skills and content for group Q&A and summaries.
 
 - [How to Define an IM Agent's Role, Personality, and Voice with SOUL.md](./im-agent-persona-soul-md.md) - Define the assistant's role and boundaries.

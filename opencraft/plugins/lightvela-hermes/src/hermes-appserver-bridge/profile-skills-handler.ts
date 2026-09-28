@@ -256,7 +256,7 @@ export class HermesDashboardProfileSkillsHandler {
         const index = next++, entry = entries[index]!;
         try {
           const path = await this.composerSkillPath(scope, entry.name);
-          results[index] = { name: entry.name, description: entry.description, path, enabled: true, scope: entry.provenance === "bundled" ? "system" : "user" };
+          results[index] = { name: entry.name, description: entry.description, path, enabled: true, scope: entry.provenance === "bundled" ? "system" : "user", pluginId: null };
         } catch { errors.push({ path: cwd, message: `Skill metadata unavailable: ${entry.name}` }); }
       }
     }));

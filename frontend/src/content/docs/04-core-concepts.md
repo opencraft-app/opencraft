@@ -2,7 +2,7 @@
 
 ## 摘要
 
-**LightVela 有四个核心概念。Hermes Agent 是云端运行的对话主体，每个实例拥有独立运行环境、跨会话持续记忆、7×24 小时在线；模型是它调用的大语言模型，可选模型 Coding Plan（包月）、模型 API（按量）或自定义 OpenAI 兼容端点，当前每个 Agent 仅一个模型生效；通道是你与它对话的聊天平台入口，国内站支持微信、QQ、企业微信、飞书、钉钉，多个通道可同时接入同一个 Agent 并共享记忆；技能是来自 SkillHub 的能力扩展包，按名称安装。一次完整对话的流程是：通道收到消息 → Agent 判断是否调用技能 → 调用模型生成响应 → 经原通道返回。**
+**LightVela 有四个核心概念。Hermes Agent 是云端运行的对话主体，每个实例拥有专属云端环境、跨会话持续记忆、7×24 小时在线；模型是它调用的大语言模型，可选模型 Coding Plan（包月）、模型 API（按量）或自定义 OpenAI 兼容端点，当前每个 Agent 仅一个模型生效；通道是你与它对话的聊天平台入口，国内站支持微信、QQ、企业微信、飞书、钉钉，多个通道可同时接入同一个 Agent 并共享记忆；技能是来自 SkillHub 的能力扩展包，按名称安装。一次完整对话的流程是：通道收到消息 → Agent 判断是否调用技能 → 调用模型生成响应 → 经原通道返回。**
 
 ---
 
@@ -53,7 +53,7 @@ Hermes Agent 是 LightVela 中的 AI Agent 实例，创建一个 Hermes Agent �
 
 Hermes Agent 具有以下特性：
 
-- **独立运行环境**：每个 Hermes Agent 运行在专属环境中，与其他实例资源隔离
+- **专属云端环境**：每个 Hermes Agent 运行在专属环境中，与其他实例资源隔离
 
 - **持续记忆**：对话内容跨会话保存，Agent 响应时会综合历史上下文
 
@@ -79,7 +79,7 @@ Hermes Agent 具有以下特性：
 
 > ⚠️ **单模型生效**
 >
-> 当前版本每个 Hermes Agent 仅支持配置并生效一个模型，切换模型需通过「添加为默认」覆盖原配置。
+> 一个 Agent 可以保存多个可用模型配置，但同一时间只有一个模型生效。切换方式见[模型切换](./configuration/multiple-models.md)。
 
 ---
 
@@ -97,7 +97,7 @@ Hermes Agent 具有以下特性：
 
 微信、企业微信与飞书选择通道后点击「连接」生成二维码，使用手机扫码完成授权即可；QQ 与钉钉除扫码外，也可在对应开放平台创建应用后，把获得的凭证（QQ 为 App ID / Secret，钉钉为 Client ID / Secret）填回 LightVela。
 
-各通道的详细接入步骤见 [配置通道 - 微信](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。钉钉通道的配置文档待补充。
+各通道的详细接入步骤见 [微信](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md) / [钉钉](./configuration/channel-dingtalk.md)。
 
 > 💡 **多通道并存**
 >

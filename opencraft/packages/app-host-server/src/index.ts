@@ -17,6 +17,8 @@ export interface AppHostServerPort {
 
 export interface AppHostServerOptions {
   readonly logicalClientRouting?: boolean;
+  /** A process-owned Host outlives every Renderer claim and closes with this server. */
+  readonly physicalHostLifetime?: "last-claim" | "server";
   readonly createTransport: (
     hostId: string,
     signal?: AbortSignal,
@@ -341,6 +343,7 @@ export class AppHostServer {
   }
 
   private async stopSlot(slot: HostSlot, force: boolean): Promise<void> {
+    if (!force && this.options.physicalHostLifetime === "server") return;
     if (!force && slot.claims.size > 0) return;
     if (slot.phase === "closing") {
       await slot.closeOperation;

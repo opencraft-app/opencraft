@@ -58,6 +58,30 @@ const richDocument: ComposerDocument = {
   ],
 };
 
+test("late attachment results update only their owning cached Draft and clear releases it", () => {
+  const controller = createComposerController(existing("image-a"), services());
+  const draftId = controller.getSnapshot().draft.id;
+  controller.dispatch({ type: "add-attachment", attachment: {
+    id: "photo", name: "photo.png", mimeType: "image/png", size: 3,
+    uri: null, lifecycle: "processing", error: null,
+  } });
+  controller.dispatch({ type: "switch-target", target: existing("image-b") });
+  assert.equal(controller.updateDraftAttachment(draftId, "photo", {
+    uri: "data:image/png;base64,AQID", lifecycle: "ready",
+  }), true);
+  assert.equal(controller.getSnapshot().draft.attachments.length, 0);
+  controller.dispatch({ type: "switch-target", target: existing("image-a") });
+  assert.equal(controller.getSnapshot().draft.attachments[0]?.lifecycle, "ready");
+  assert.equal(controller.getSnapshot().draft.attachments[0]?.uri, "data:image/png;base64,AQID");
+  controller.dispatch({ type: "clear" });
+  assert.equal(controller.getDraftAttachment(draftId, "photo"), null);
+  let disposed = 0;
+  controller.onDispose(() => { disposed++; });
+  controller.dispose();
+  controller.dispose();
+  assert.equal(disposed, 1);
+});
+
 test("dictation presentation is owned by its transient input and never by a replaced draft", () => {
   const controller = createComposerController(existing("voice-owner"), services());
   const unregister = controller.registerView({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {},

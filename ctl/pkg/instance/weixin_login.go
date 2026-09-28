@@ -703,7 +703,7 @@ func (l *logic) finishWeixinLoginSuccess(ctx pctx.Context, sandboxID string, ses
 		}, transport.WeixinLoginSessionEvent{Type: "finished", Status: channelloginsession.StatusFailed, Error: restartErr.Error()})
 		return restartErr
 	}
-	binding, err := l.runChannelBindingAction(ctx, session.InstanceID, "confirm", botID, profileID)
+	binding, err := l.runChannelBindingAction(ctx, session.InstanceID, uniqueChannelWeixin, "confirm", botID, profileID)
 	if err != nil || !binding.OK {
 		if err == nil {
 			err = errcode.Wrap(errcode.ErrInstanceBotConflict, "confirm channel: %s", binding.Reason)

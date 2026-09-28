@@ -124,21 +124,21 @@ describe('渠道口径一致性', () => {
     }
   });
 
-  it('04-core-concepts 通道表包含钉钉，但不链到尚不存在的文档', async () => {
+  it('04-core-concepts 通道表包含钉钉，并链接到国内站指南', async () => {
     const markdown = readDoc('src/content/docs/04-core-concepts.md');
 
     expect(markdown).toMatch(/\|\s*钉钉\s*\|/);
-    // channel-dingtalk.md 尚未创建（见 geo-fact-table.md 的 C8 / Q11），
-    // 提前加链接会造成文档内死链
-    expect(markdown).not.toContain('channel-dingtalk');
+    expect(markdown).toContain('./configuration/channel-dingtalk.md');
   });
 
-  it('钉钉文档一旦创建，就必须同时注册进侧边栏（防止只建文件、没入口）', async () => {
+  it('钉钉文档在国内站侧边栏、slug 映射和同步清单中都有入口', async () => {
     const docExists = allDocs.includes('src/content/docs/configuration/channel-dingtalk.md');
     const sidebar = readDoc('src/config/docs-sidebar.ts');
-    const registered = sidebar.includes('configuration/channel-dingtalk');
+    const sync = readDoc('scripts/sync-fumadocs-content.mjs');
 
-    // 两者必须同时存在或同时不存在
-    expect(registered).toBe(docExists);
+    expect(docExists).toBe(true);
+    expect(sidebar).toContain('{ slug: "configuration/channel-dingtalk", title: "钉钉", indent: true }');
+    expect(sidebar).toContain('"configuration/channel-dingtalk": "configuration/channel-dingtalk.md"');
+    expect(sync).toContain("{ slug: 'configuration/channel-dingtalk', title: '配置通道 - 钉钉'");
   });
 });

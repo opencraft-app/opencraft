@@ -4,11 +4,11 @@
 
 **El menú del avatar al pie de la barra lateral izquierda de la consola del Agent tiene dos entradas: Cuenta para el perfil y el ID de usuario, y Planes y facturación para las suscripciones, los créditos, las renovaciones y los métodos de pago.**
 
-**LightVela ofrece cuatro planes—Launch, Cruise, Launch AI y Cruise AI—que cubren todo, desde un primer intento ligero hasta un uso de alta frecuencia. Cada plan activa un Hermes Agent en un entorno de ejecución en la nube dedicado con su propio CPU, memoria y almacenamiento, donde el Agent permanece en línea 24/7 sin necesidad de comprar un servidor ni realizar una implementación local. Los planes difieren en los recursos de ejecución, la capacidad de almacenamiento y los créditos de IA mensuales, mientras que las capacidades centrales como la mejora autónoma, el acceso multi-canal, las Skills, tareas automatizadas y la memoria a largo plazo permanecen disponibles en todos los niveles. Esta página también explica las reglas de reembolso y el proceso de solicitud basado en correo electrónico. Los precios en vivo y la disponibilidad se muestran en la página de suscripción.**
+**LightVela ofrece cuatro planes—Launch, Cruise, Launch AI y Cruise AI—que cubren todo, desde un primer intento ligero hasta un uso de alta frecuencia. Cada plan activa un Hermes Agent en un entorno de nube dedicado con su propio CPU, memoria y almacenamiento, donde el Agent permanece en línea 24/7 sin necesidad de comprar un servidor ni realizar una implementación local. Los planes difieren en los recursos del entorno, la capacidad de almacenamiento y los créditos de IA mensuales, mientras que las capacidades centrales como la mejora autónoma, el acceso multi-canal, las Skills, tareas automatizadas y la memoria a largo plazo permanecen disponibles en todos los niveles. Esta página también explica las reglas de reembolso y el proceso de solicitud basado en correo electrónico. Los precios en vivo y la disponibilidad se muestran en la página de suscripción.**
 
 ---
 
-LightVela ofrece cuatro niveles de planes—**Launch, Cruise, Launch AI y Cruise AI**—para necesidades que van desde un punto de partida ligero hasta un uso frecuente de Agent. Cada plan proporciona un entorno en la nube aislado para un Hermes Agent y una asignación mensual de créditos de IA. Esta página explica la posición, los recursos, los beneficios, las reglas de reembolso y los pasos de solicitud para que elijas la opción adecuada.
+LightVela ofrece cuatro niveles de planes—**Launch, Cruise, Launch AI y Cruise AI**—para necesidades que van desde un punto de partida ligero hasta un uso frecuente de Agent. Cada plan proporciona un entorno de nube dedicado para un Hermes Agent y una asignación mensual de créditos de IA. Esta página explica la posición, los recursos, los beneficios, las reglas de reembolso y los pasos de solicitud para que elijas la opción adecuada.
 
 ## ¿Qué cubre esta página?
 
@@ -45,7 +45,7 @@ Comprueba el título de la página para confirmar que estás en el lugar correct
 
 ### Planes y recursos
 
-Un plan es el paquete de recursos que activa un Hermes Agent en LightVela. Después de activar cualquier plan actualmente disponible, LightVela te asigna un **entorno de ejecución en la nube dedicado** con su propio CPU, memoria y almacenamiento. Tu Hermes Agent puede permanecer en línea 24/7 sin que requieras comprar un servidor ni implementar nada localmente.
+Un plan es el paquete de recursos que activa un Hermes Agent en LightVela. Después de activar cualquier plan actualmente disponible, LightVela te asigna un **entorno de nube dedicado** con su propio CPU, memoria y almacenamiento. Tu Hermes Agent puede permanecer en línea 24/7 sin que requieras comprar un servidor ni implementar nada localmente.
 
 Las principales diferencias entre los niveles son los **recursos de ejecución, almacenamiento dedicado y asignación mensual de créditos de IA**. Las capacidades centrales del Agent, incluyendo comportamiento adaptativo, múltiples canales, Skills, tareas programadas y memoria a largo plazo, permanecen disponibles en todos los niveles.
 
@@ -59,12 +59,12 @@ Cuatro planes están actualmente disponibles: **Launch, Cruise, Launch AI y Crui
 
 Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de compra se muestran en la [página de suscripción](/subscribe). La tabla a continuación lista solo los precios estándar de lista actuales.
 
-> ℹ️ **Actualización de las especificaciones del entorno de ejecución en la nube**
+> ℹ️ **Actualización de las especificaciones del entorno de nube**
 >
-> Desde el **23 de septiembre de 2026**, los entornos de ejecución de los planes de LightVela tienen las siguientes especificaciones:
+> Desde el **23 de septiembre de 2026**, los entornos de nube de los planes de LightVela tienen las siguientes especificaciones:
 >
-> - Launch y Launch AI: de **2 núcleos de CPU y 4 GB de memoria** a **2 núcleos de CPU y 8 GB de memoria**
-> - Cruise y Cruise AI: de **4 núcleos de CPU y 8 GB de memoria** a **4 núcleos de CPU y 16 GB de memoria**
+> - Launch y Launch AI: de **2 vCPU · 4 GB de RAM** a **2 vCPU · 8 GB de RAM**
+> - Cruise y Cruise AI: de **4 vCPU · 8 GB de RAM** a **4 vCPU · 16 GB de RAM**
 >
 > Esta actualización solo modifica la asignación de memoria. Los precios de los planes, la capacidad de almacenamiento y los beneficios de créditos de IA no cambian. Consulta la página de suscripción para conocer las especificaciones y la disponibilidad de compra más recientes.
 
@@ -72,12 +72,12 @@ Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de
 
 <div className="lv-plan-benefits-table">
 
-| Plan | Ideal para | Cuota de Agent | Entorno de ejecución en la nube aislado | Almacenamiento en la nube dedicado | Créditos de IA |
+| Plan | Ideal para | Cuota de Agent | Entorno de nube dedicado | Almacenamiento en la nube dedicado | Créditos de IA |
 |---|---|---|---|---|---|
-| Launch | Usuarios que ya tienen su propia llave de API de modelo grande y desean tener un Agent funcionando a un costo menor | 1 | 2 núcleos de CPU, 8 GB de memoria | 50 GB | 100 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
-| Cruise | Usuarios que ya tienen su propia llave de API de modelo grande y desean más recursos para el uso diario regular | 1 | 4 núcleos de CPU, 16 GB de memoria | 80 GB | 200 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
-| Launch AI | Uso ligero con más créditos de IA | 1 | 2 núcleos de CPU, 8 GB de memoria | 50 GB | 4,500 créditos / mes |
-| Cruise AI | Conversaciones frecuentes, Skills y tareas programadas | 1 | 4 núcleos de CPU, 16 GB de memoria | 80 GB | 10,000 créditos / mes |
+| Launch | Usuarios que ya tienen su propia llave de API de modelo grande y desean tener un Agent funcionando a un costo menor | 1 | 2 vCPU · 8 GB de RAM | 50 GB | 100 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
+| Cruise | Usuarios que ya tienen su propia llave de API de modelo grande y desean más recursos para el uso diario regular | 1 | 4 vCPU · 16 GB de RAM | 80 GB | 200 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
+| Launch AI | Uso ligero con más créditos de IA | 1 | 2 vCPU · 8 GB de RAM | 50 GB | 4,500 créditos / mes |
+| Cruise AI | Conversaciones frecuentes, Skills y tareas programadas | 1 | 4 vCPU · 16 GB de RAM | 80 GB | 10,000 créditos / mes |
 
 </div>
 
@@ -120,7 +120,9 @@ Para saber cómo se asignan y consumen los créditos de IA, consulta [Créditos]
 
 ### Reglas de cambio de plan
 
-Las actualizaciones directas, cambios o degradaciones en un plan activo no están actualmente soportados. Cuando un plan existente está activo, la página de suscripción prioriza marcar tu plan actual. Para continuar usando el mismo plan, renuévalo para extender el período de validez. Para cambiar de planes, consulta las opciones actualmente disponibles en la página de Planes y facturación y la página de suscripción.
+Un plan activo se puede mejorar a otro plan si cumple los requisitos. Consulta los planes superiores disponibles en Planes y facturación o en la [página de suscripción](/subscribe), elige una opción ofrecida para tu plan y sigue las indicaciones para confirmar el pedido y pagar. Según los requisitos aplicables, puede haber opciones dentro de la misma familia de planes o entre familias distintas. Elige únicamente las opciones de mejora que se muestran para tu plan.
+
+El importe de la mejora depende, entre otros factores, del tiempo de vigencia restante y del plan de destino. No hay un importe fijo para mejorar el plan: **el precio real que aparece en la página final de pago es el que prevalece**. Tras pagar, comprueba el estado y los beneficios del plan en la consola. Si no aparece el plan de destino entre las opciones disponibles, no puedes mejorarlo a ese plan desde el actual. Para conservar el mismo plan y ampliar su vigencia, renuévalo.
 
 ### Ciclo de vida del plan
 
@@ -162,7 +164,7 @@ Los precios en tiempo real, el inventario, los impuestos, los descuentos y la di
 
 ### ¿Puedo actualizar o cambiar planes?
 
-Las actualizaciones directas y cambios de plan no están actualmente soportados para un plan activo. Consulta las opciones mostradas en la consola y en la página de suscripción.
+Puedes mejorar un plan activo a uno de los planes superiores ofrecidos en la consola o en la página de suscripción, incluso entre familias distintas si esa opción está disponible. Elige únicamente una opción de mejora disponible para tu plan. El importe real se confirma en la página final de pago.
 
 ### ¿Cuántos Agents incluye un plan?
 

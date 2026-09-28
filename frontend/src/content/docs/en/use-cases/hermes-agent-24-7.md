@@ -30,7 +30,7 @@ Choose one channel as your default way to contact Hermes. For personal use, the 
 
 Detailed instructions are available for [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md), and [WeChat](../configuration/channel-wechat.md).
 
-![A running Hermes Agent with connected channels](../images/use-case-hermes-online-channel.png)
+![A running Hermes Agent with connected channels](../images/use-case-hermes-online-channel.webp)
 
 ### 2. Keep the working configuration simple and visible
 
@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 Create the schedule in [Scheduled Tasks](../configuration/automation.md), select a notification channel if appropriate, and check the first few runs. If the result is too broad, make the instruction more specific rather than adding another scheduled task immediately.
 
-![Recent scheduled task runs from a Hermes Agent](../images/use-case-hermes-online-automation.png)
+![Recent scheduled task runs from a Hermes Agent](../images/use-case-hermes-online-automation.webp)
 
 ## FAQ
 

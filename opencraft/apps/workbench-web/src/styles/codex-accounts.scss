@@ -65,10 +65,10 @@
   gap: 4px;
   padding: 6px 8px 6px 12px;
 
-  &:hover,
-  &:focus-within { background: var(--color-background-primary-ghost-hover); }
-
-  &:hover .codex-account__menu-trigger,
+  @include controls.hover-capable {
+    &:hover { background: var(--color-background-primary-ghost-hover); }
+    &:hover .codex-account__menu-trigger { opacity: 1; }
+  }
   &:focus-within .codex-account__menu-trigger { opacity: 1; }
 }
 
@@ -157,13 +157,14 @@
 
 .codex-account__quota {
   display: grid;
-  width: 48px;
+  min-width: 96px;
   justify-items: end;
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
 
   small { color: var(--color-text-tertiary); font-size: 9px; line-height: 12px; text-transform: uppercase; }
   strong { font-size: 11px; font-weight: 500; line-height: 16px; }
+  .codex-account__reset { color: var(--color-text-tertiary); font-size: 9px; line-height: 12px; white-space: nowrap; }
   &[data-tone="unknown"] strong { color: var(--color-text-tertiary); }
   &[data-tone="warning"] strong { color: var(--color-text-warning); }
   &[data-tone="danger"] strong { color: var(--color-text-danger); }
@@ -180,6 +181,8 @@
 
   &[data-state="open"] { opacity: 1; background: var(--color-background-primary-ghost-hover); }
 }
+
+:root[data-touch-interaction] .settings-icon-button.codex-account__menu-trigger { opacity: 1; }
 
 .codex-account__error {
   padding: 0 16px 10px 29px;
@@ -336,7 +339,7 @@
   .codex-account-list__empty > .settings-control-button { margin-left: 44px; }
 }
 
-@media (hover: none) {
+@media (any-pointer: coarse), (hover: none) {
   .settings-icon-button.codex-account__menu-trigger { opacity: 1; }
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -408,9 +409,9 @@ func TestChannelBindingScriptUsesLockAndInstanceLocalHermesMetadata(t *testing.T
 
 func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *testing.T) {
 	home := t.TempDir()
-	run := func(action, botID, profileID string) channelBindingPayload {
+	run := func(channel, action, botID, profileID string) channelBindingPayload {
 		t.Helper()
-		command := exec.Command("python3", "-c", manageChannelBindingScript, action, botID, profileID)
+		command := exec.Command("python3", "-c", manageChannelBindingScript, action, channel, botID, profileID, "default-bot")
 		command.Env = append(os.Environ(), "HERMES_HOME="+home)
 		output, err := command.Output()
 		if err != nil {
@@ -423,22 +424,381 @@ func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *tes
 		return payload
 	}
 
-	if claim := run("claim", "bot-1", "profile-1"); !claim.OK || claim.Status != "reserved" {
+	if claim := run("weixin", "claim", "bot-1", "profile-1"); !claim.OK || claim.Status != "reserved" {
 		t.Fatalf("unexpected first claim: %+v", claim)
 	}
-	if occupied := run("claim", "bot-2", "profile-2"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-1" {
+	if occupied := run("weixin", "claim", "bot-2", "profile-2"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-1" {
 		t.Fatalf("expected occupied binding, got %+v", occupied)
 	}
-	if confirmed := run("confirm", "bot-1", "profile-1"); !confirmed.OK || confirmed.Status != "connected" {
+	if claim := run("whatsapp", "claim", "bot-2", "profile-2"); !claim.OK || claim.Channel != "whatsapp" || claim.BotID != "bot-2" {
+		t.Fatalf("independent WhatsApp claim failed: %+v", claim)
+	}
+	if occupied := run("whatsapp", "claim", "bot-1", "profile-1"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-2" {
+		t.Fatalf("expected WhatsApp to be occupied by bot-2, got %+v", occupied)
+	}
+	if confirmed := run("weixin", "confirm", "bot-1", "profile-1"); !confirmed.OK || confirmed.Status != "connected" {
 		t.Fatalf("unexpected confirmation: %+v", confirmed)
 	}
-	run("release_reserved", "bot-1", "profile-1")
-	if current := run("get", "", ""); current.BotID != "bot-1" || current.Status != "connected" {
+	run("weixin", "release_reserved", "bot-1", "profile-1")
+	if current := run("weixin", "get", "", ""); current.BotID != "bot-1" || current.Status != "connected" {
 		t.Fatalf("connected owner must survive reserved cleanup: %+v", current)
 	}
-	run("release", "bot-1", "profile-1")
-	if current := run("get", "", ""); current.BotID != "" {
+	run("weixin", "release", "bot-1", "profile-1")
+	if current := run("weixin", "get", "", ""); current.BotID != "" {
 		t.Fatalf("expected released binding, got %+v", current)
+	}
+	if current := run("whatsapp", "get", "", ""); current.BotID != "bot-2" {
+		t.Fatalf("Weixin release changed WhatsApp owner: %+v", current)
+	}
+}
+
+func TestWhatsAppBindingAdoptsLegacyDefaultSessionOnce(t *testing.T) {
+	home := t.TempDir()
+	session := filepath.Join(home, "whatsapp", "session")
+	if err := os.MkdirAll(session, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(session, "creds.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(home, ".lightvela", "channel-bindings")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Earlier versions checked the wrong path and may have already written this marker.
+	if err := os.WriteFile(filepath.Join(root, "whatsapp-legacy-checked"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(action, botID string) channelBindingPayload {
+		t.Helper()
+		command := exec.Command("python3", "-c", manageChannelBindingScript, action, "whatsapp", botID, "default", "default-bot")
+		command.Env = append(os.Environ(), "HERMES_HOME="+home)
+		output, err := command.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload channelBindingPayload
+		if err := json.Unmarshal(output, &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+	if current := run("get", ""); current.BotID != "default-bot" || current.Status != "connected" {
+		t.Fatalf("legacy session should belong to default bot: %+v", current)
+	}
+	if occupied := run("claim", "another-bot"); occupied.OK || occupied.Reason != "occupied" {
+		t.Fatalf("legacy session must block another bot: %+v", occupied)
+	}
+	if err := os.Remove(filepath.Join(session, "creds.json")); err != nil {
+		t.Fatal(err)
+	}
+	run("disconnect", "default-bot")
+	if current := run("get", ""); current.BotID != "" {
+		t.Fatalf("legacy session should not be adopted again after release: %+v", current)
+	}
+}
+
+func runWhatsAppBindingForTest(t *testing.T, home, action, botID, reservationID string) channelBindingPayload {
+	t.Helper()
+	command := exec.Command("python3", "-c", manageChannelBindingScript, action, "whatsapp", botID, "profile-1", "default-bot", reservationID)
+	command.Env = append(os.Environ(), "HERMES_HOME="+home)
+	output, err := command.Output()
+	if err != nil {
+		t.Fatalf("binding %s: %v", action, err)
+	}
+	var payload channelBindingPayload
+	if err := json.Unmarshal(output, &payload); err != nil {
+		t.Fatalf("decode binding %s: %v", action, err)
+	}
+	return payload
+}
+
+func writeWhatsAppCredentialsForTest(t *testing.T, home string) string {
+	t.Helper()
+	path := filepath.Join(home, "profiles", "profile-1", "whatsapp", "session", "creds.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"me":{"id":"test@s.whatsapp.net"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestWhatsAppMixedOldFrontendAndTokenClient(t *testing.T) {
+	home := t.TempDir()
+	claim := runWhatsAppBindingForTest(t, home, "claim", "bot-1", "")
+	if !claim.OK || claim.ReservationID == "" {
+		t.Fatalf("first scan must reserve: %+v", claim)
+	}
+	if confirmed := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", ""); confirmed.OK {
+		t.Fatalf("legacy confirm without actual credentials must fail: %+v", confirmed)
+	}
+	if confirmed := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", claim.ReservationID); confirmed.OK {
+		t.Fatalf("token confirm without actual credentials must fail: %+v", confirmed)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", "")
+	if concurrent := runWhatsAppBindingForTest(t, home, "claim", "bot-1", ""); concurrent.OK {
+		t.Fatalf("legacy rollback must not release an in-flight scan: %+v", concurrent)
+	}
+	credentials := writeWhatsAppCredentialsForTest(t, home)
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", "")
+	if current := runWhatsAppBindingForTest(t, home, "get", "", ""); current.Status != "reserved" || current.ReservationID != claim.ReservationID {
+		t.Fatalf("ambiguous legacy rollback must not alter a scanned-but-unconfirmed lease: %+v", current)
+	}
+	if wrong := runWhatsAppBindingForTest(t, home, "confirm", "bot-2", ""); wrong.OK {
+		t.Fatalf("another bot confirmed a legacy scan: %+v", wrong)
+	}
+	if wrong := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", "bad-token"); wrong.OK {
+		t.Fatalf("token client bypassed lease ownership: %+v", wrong)
+	}
+	if confirmed := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", ""); !confirmed.OK || confirmed.Status != "connected" {
+		t.Fatalf("legacy scan with same-bot credentials could not confirm: %+v", confirmed)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", "")
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", claim.ReservationID)
+	if disconnect := runWhatsAppBindingForTest(t, home, "disconnect", "bot-1", ""); disconnect.OK {
+		t.Fatalf("explicit disconnect must not release present credentials: %+v", disconnect)
+	}
+	if occupied := runWhatsAppBindingForTest(t, home, "claim", "bot-2", ""); occupied.OK {
+		t.Fatalf("legacy release or premature disconnect lost an active owner: %+v", occupied)
+	}
+	if err := os.Remove(credentials); err != nil {
+		t.Fatal(err)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", "")
+	if current := runWhatsAppBindingForTest(t, home, "get", "", ""); current.BotID != "" {
+		t.Fatalf("legacy disconnect with missing credentials did not clear owner: %+v", current)
+	}
+	if next := runWhatsAppBindingForTest(t, home, "claim", "bot-2", ""); !next.OK || next.ReservationID == "" {
+		t.Fatalf("disconnected binding did not clear safely: %+v", next)
+	}
+}
+
+func TestWhatsAppRollbackAfterCredentialWriteKeepsOwner(t *testing.T) {
+	home := t.TempDir()
+	claim := runWhatsAppBindingForTest(t, home, "claim", "bot-1", "")
+	writeWhatsAppCredentialsForTest(t, home)
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", claim.ReservationID)
+	if current := runWhatsAppBindingForTest(t, home, "get", "", ""); current.BotID != "bot-1" || current.Status != "connected" {
+		t.Fatalf("late rollback removed actual connected credentials: %+v", current)
+	}
+	if next := runWhatsAppBindingForTest(t, home, "claim", "bot-2", ""); next.OK {
+		t.Fatalf("another bot claimed a connected session: %+v", next)
+	}
+}
+
+func TestWhatsAppLegacyDisconnectAllowsSameBotReconnect(t *testing.T) {
+	home := t.TempDir()
+	claim := runWhatsAppBindingForTest(t, home, "claim", "bot-1", "")
+	credentials := writeWhatsAppCredentialsForTest(t, home)
+	if confirmed := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", ""); !confirmed.OK {
+		t.Fatalf("initial old-browser scan did not confirm: %+v", confirmed)
+	}
+	if err := os.Remove(credentials); err != nil {
+		t.Fatal(err)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", "")
+	if reconnect := runWhatsAppBindingForTest(t, home, "claim", "bot-1", ""); !reconnect.OK || reconnect.Status != "reserved" || reconnect.ReservationID == claim.ReservationID {
+		t.Fatalf("same Bot could not safely resume after old-browser disconnect: %+v", reconnect)
+	}
+	if blocked := runWhatsAppBindingForTest(t, home, "claim", "bot-2", ""); blocked.OK {
+		t.Fatalf("another Bot bypassed reconnect reservation: %+v", blocked)
+	}
+}
+
+func TestWhatsAppLegacyRequestsReachBindingAndDisconnectRejectsPresentCredentials(t *testing.T) {
+	batch := func(body string) []psandbox.PtyExecStreamEvent {
+		return []psandbox.PtyExecStreamEvent{
+			{Type: "output", Chunk: body},
+			{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
+		}
+	}
+	adapter := &commandSandboxAdapterStub{ptyBatches: [][]psandbox.PtyExecStreamEvent{
+		batch(`{"items":[{"native_id":"default","display_name":"Main","is_default":true}]}`),
+		batch(`{"ok":true,"channel":"whatsapp","bot_id":"ins-1","status":"connected"}`),
+		batch(`{"items":[{"native_id":"default","display_name":"Main","is_default":true}]}`),
+		batch(`{"ok":true}`),
+		batch(`{"items":[{"native_id":"default","display_name":"Main","is_default":true}]}`),
+		batch(`{"ok":false,"reason":"credentials_present"}`),
+	}}
+	l := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+	if err := l.ConfirmInstanceBotChannel(ctx, "ins-1", "ins-1", "whatsapp", ""); err != nil {
+		t.Fatalf("old frontend no-body confirm rejected before state machine: %v", err)
+	}
+	if err := l.ReleaseInstanceBotChannel(ctx, "ins-1", "ins-1", "whatsapp", "", false); err != nil {
+		t.Fatalf("old frontend no-body release rejected before state machine: %v", err)
+	}
+	if err := l.ReleaseInstanceBotChannel(ctx, "ins-1", "ins-1", "whatsapp", "", true); !errors.Is(err, errcode.ErrInstanceBotConflict) {
+		t.Fatalf("explicit disconnect must surface credentials-present conflict: %v", err)
+	}
+	if got := len(adapter.ptyCalls); got != 6 {
+		t.Fatalf("expected all 3 legacy/mixed actions to reach CTL, got %d calls", got)
+	}
+}
+
+func TestWhatsAppBindingConcurrentClaimsAndStaleRelease(t *testing.T) {
+	home := t.TempDir()
+	first := runWhatsAppBindingForTest(t, home, "claim", "bot-1", "")
+	if !first.OK || first.ReservationID == "" || first.Status != "reserved" {
+		t.Fatalf("first claim must issue an owned reservation: %+v", first)
+	}
+	if concurrent := runWhatsAppBindingForTest(t, home, "claim", "bot-1", ""); concurrent.OK {
+		t.Fatalf("second scan for same bot must not replace active reservation: %+v", concurrent)
+	}
+	if wrong := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", "wrong"); wrong.OK {
+		t.Fatalf("wrong reservation must not confirm: %+v", wrong)
+	}
+	credentials := writeWhatsAppCredentialsForTest(t, home)
+	if confirmed := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", first.ReservationID); !confirmed.OK || confirmed.Status != "connected" {
+		t.Fatalf("first scan could not confirm: %+v", confirmed)
+	}
+	reconnect := runWhatsAppBindingForTest(t, home, "claim", "bot-1", "")
+	if !reconnect.OK || reconnect.ReservationID == "" || reconnect.ReservationID == first.ReservationID || reconnect.Status != "reserved" {
+		t.Fatalf("re-scan must be serialized by a fresh lease: %+v", reconnect)
+	}
+	if old := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", ""); old.OK {
+		t.Fatalf("stale no-token confirm consumed a newer scan using old credentials: %+v", old)
+	}
+	if concurrent := runWhatsAppBindingForTest(t, home, "claim", "bot-1", ""); concurrent.OK {
+		t.Fatalf("another re-scan bypassed the active lease: %+v", concurrent)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", first.ReservationID)
+	if current := runWhatsAppBindingForTest(t, home, "get", "", ""); current.BotID != "bot-1" || current.Status != "reserved" || current.ReservationID != reconnect.ReservationID {
+		t.Fatalf("stale failed scan replaced new lease: %+v", current)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", reconnect.ReservationID)
+	if current := runWhatsAppBindingForTest(t, home, "get", "", ""); current.BotID != "bot-1" || current.Status != "connected" {
+		t.Fatalf("rollback with existing credentials must restore connected owner: %+v", current)
+	}
+	if occupied := runWhatsAppBindingForTest(t, home, "claim", "bot-2", ""); occupied.OK {
+		t.Fatalf("different bot claimed an active session: %+v", occupied)
+	}
+	if err := os.Remove(credentials); err != nil {
+		t.Fatal(err)
+	}
+	runWhatsAppBindingForTest(t, home, "disconnect", "bot-1", "")
+	if next := runWhatsAppBindingForTest(t, home, "claim", "bot-2", ""); !next.OK || next.ReservationID == "" {
+		t.Fatalf("disconnected owner still blocked another bot: %+v", next)
+	}
+}
+
+func TestWhatsAppConcurrentClaimsSerializeAcrossProcesses(t *testing.T) {
+	home := t.TempDir()
+	start := make(chan struct{})
+	results := make(chan channelBindingPayload, 2)
+	for _, botID := range []string{"bot-1", "bot-2"} {
+		go func(botID string) {
+			<-start
+			command := exec.Command("python3", "-c", manageChannelBindingScript, "claim", "whatsapp", botID, botID, "default-bot", "")
+			command.Env = append(os.Environ(), "HERMES_HOME="+home)
+			output, err := command.Output()
+			var result channelBindingPayload
+			if err == nil {
+				err = json.Unmarshal(output, &result)
+			}
+			if err != nil {
+				result.Reason = err.Error()
+			}
+			results <- result
+		}(botID)
+	}
+	close(start)
+	first, second := <-results, <-results
+	if first.OK == second.OK {
+		t.Fatalf("exactly one concurrent claim should succeed: %+v %+v", first, second)
+	}
+	winner, loser := first, second
+	if !winner.OK {
+		winner, loser = loser, winner
+	}
+	if winner.ReservationID == "" || loser.Reason != "occupied" || loser.BotID != winner.BotID {
+		t.Fatalf("concurrent claim lost exclusive ownership: winner=%+v loser=%+v", winner, loser)
+	}
+}
+
+func TestWhatsAppAbandonedReservationExpires(t *testing.T) {
+	home := t.TempDir()
+	first := runWhatsAppBindingForTest(t, home, "claim", "bot-1", "")
+	if !first.OK || first.ReservationID == "" {
+		t.Fatalf("missing initial reservation: %+v", first)
+	}
+	path := filepath.Join(home, ".lightvela", "channel-bindings", "whatsapp.json")
+	value, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding map[string]any
+	if err := json.Unmarshal(value, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding["updated_at"] = "2000-01-01T00:00:00+00:00"
+	value, err = json.Marshal(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, value, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next := runWhatsAppBindingForTest(t, home, "claim", "bot-2", "")
+	if !next.OK || next.BotID != "bot-2" || next.ReservationID == "" {
+		t.Fatalf("abandoned reservation did not recover: %+v", next)
+	}
+	if old := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", first.ReservationID); old.OK {
+		t.Fatalf("expired scanner confirmed over new owner: %+v", old)
+	}
+	if old := runWhatsAppBindingForTest(t, home, "confirm", "bot-1", ""); old.OK {
+		t.Fatalf("expired legacy scanner confirmed over new owner: %+v", old)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", "")
+	if current := runWhatsAppBindingForTest(t, home, "get", "", ""); current.BotID != "bot-2" || current.ReservationID != next.ReservationID {
+		t.Fatalf("expired legacy rollback altered new reservation: %+v", current)
+	}
+}
+
+func TestWhatsAppAbandonedAfterScanKeepsConnectedOwner(t *testing.T) {
+	home := t.TempDir()
+	claim := runWhatsAppBindingForTest(t, home, "claim", "bot-1", "")
+	if !claim.OK || claim.ReservationID == "" {
+		t.Fatalf("missing initial reservation: %+v", claim)
+	}
+	session := filepath.Join(home, "profiles", "profile-1", "whatsapp", "session")
+	if err := os.MkdirAll(session, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(session, "creds.json"), []byte(`{"me":{"id":"test@s.whatsapp.net"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".lightvela", "channel-bindings", "whatsapp.json")
+	value, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding map[string]any
+	if err := json.Unmarshal(value, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding["updated_at"] = "2000-01-01T00:00:00+00:00"
+	value, err = json.Marshal(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, value, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if current := runWhatsAppBindingForTest(t, home, "get", "", ""); current.BotID != "bot-1" || current.Status != "connected" || current.ReservationID != "" {
+		t.Fatalf("abandoned successful scan must preserve owner: %+v", current)
+	}
+	runWhatsAppBindingForTest(t, home, "release", "bot-1", claim.ReservationID)
+	if occupied := runWhatsAppBindingForTest(t, home, "claim", "bot-2", ""); occupied.OK {
+		t.Fatalf("another bot took a connected session: %+v", occupied)
 	}
 }
 
@@ -493,6 +853,30 @@ func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
 	}
 	if len(adapter.ptyCalls) != 2 || len(adapter.processCalls) != 0 {
 		t.Fatalf("connected Weixin owner rejection must only use TAT lookups, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
+	}
+}
+
+func TestDeleteInstanceBotRejectsWhatsAppOwner(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		ptyBatches: [][]psandbox.PtyExecStreamEvent{
+			{{Type: "output", Chunk: `{"items":[{"native_id":"sales-123","display_name":"Sales","is_default":false}]}`}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+			{{Type: "output", Chunk: `{"ok":true}`}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+			{{Type: "output", Chunk: `{"ok":true,"channel":"whatsapp","bot_id":"sales-123","profile_id":"sales-123","status":"connected"}`}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	_, err := logic.DeleteInstanceBot(pctx.NewContext(nil).WithUserID("user-1"), "ins-1", "sales-123")
+	if !errors.Is(err, errcode.ErrChannelOccupied) {
+		t.Fatalf("expected connected WhatsApp owner rejection, got %v", err)
+	}
+	if len(adapter.ptyCalls) != 3 {
+		t.Fatalf("expected profile and both channel binding lookups, got %d", len(adapter.ptyCalls))
 	}
 }
 

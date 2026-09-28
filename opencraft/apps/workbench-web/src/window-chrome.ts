@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 export type WindowChromeKind = "browser" | "electron";
 export type WindowPlatform = "darwin" | "win32" | "linux";
 export type HeaderNavigationAction =
-  | "home"
   | "sidebar-toggle"
   | "new-task"
   | "back"
@@ -58,16 +57,12 @@ const HEADER_ACTION_HORIZONTAL_PADDING = 16;
 const WINDOW_CHROME_POLICIES = {
   browser: {
     leadingNavigationActions: [
-      "home",
       "sidebar-toggle",
       "back",
       "forward",
     ],
   },
   electron: {
-    // A desktop window already owns app-level navigation through its sidebar
-    // and native shell. The browser-only Home affordance is intentionally not
-    // part of this distribution's titlebar contract.
     leadingNavigationActions: ["sidebar-toggle", "back", "forward"],
   },
 } as const satisfies Record<WindowChromeKind, WindowChromePolicy>;
@@ -195,7 +190,7 @@ export function getHeaderStartMinimumWidth(
 ): number {
   const policy = getWindowChromePolicy(snapshot);
   const actionCount = policy.leadingNavigationActions.length
-    + Number(snapshot.kind === "electron" && !sidebarOpen);
+    + Number(!sidebarOpen);
   const actionRailWidth = HEADER_ACTION_HORIZONTAL_PADDING
     + actionCount * HEADER_ACTION_SIZE
     + Math.max(0, actionCount - 1) * HEADER_ACTION_GAP;

@@ -50,12 +50,12 @@ const models=[
 ];
 initializeAppearanceTheme();
 setThemePreference('light');
-window.fixture={controller,theme:setThemePreference};
+window.fixture={controller,theme:setThemePreference,remembered:[]};
 createRoot(document.getElementById('root')).render(
   <div style={{width:'min(720px, calc(100vw - 32px))',margin:'80px auto'}}>
     <CodexComposer
       controller={controller}
-      selectionCatalog={{models,permissionProfiles:[]}}
+      selectionCatalog={{models,permissionProfiles:[],onRememberModelDefaults:(value)=>window.fixture.remembered.push(value)}}
       onSubmit={async()=>{}}
       onCancel={()=>{}}
     />
@@ -136,11 +136,14 @@ try {
     await menu.getByRole("menuitemradio").evaluateAll(items => items.map(item => item.getAttribute("aria-label"))),
     ["Light", "High", "Max"],
   );
-  assert.equal(await menu.locator(".codex-composer-reasoning-track").count(), 1);
-  assert.equal(await menu.locator(".codex-composer-reasoning-value").innerText(), "High");
-  const track = await menu.locator(".codex-composer-reasoning-track").boundingBox();
-  const fill = await menu.locator(".codex-composer-reasoning-track__fill").boundingBox();
-  assert.ok(track && fill && fill.width / track.width > 0.45 && fill.width / track.width < 0.55);
+  assert.deepEqual(
+    await menu.locator(".codex-composer-reasoning-option").allTextContents(),
+    ["Light", "High", "Max"],
+  );
+  assert.equal(
+    await menu.getByRole("menuitemradio", { name: "High" }).getAttribute("data-state"),
+    "checked",
+  );
   const modelRow = menu.getByRole("menuitem", { name: "glm-5.3-flash", exact: true });
   await modelRow.hover();
   assert.equal(await modelRow.evaluate(element => getComputedStyle(element).outlineStyle), "none");
@@ -216,6 +219,10 @@ try {
       () => (window as any).fixture.controller.getSnapshot().draft.selections.effort,
     ),
     "max",
+  );
+  assert.deepEqual(
+    await page.evaluate(() => (window as any).fixture.remembered.at(-1)),
+    { model: "glm-5.3-flash", effort: "max" },
   );
   assert.equal(
     await page.locator(".codex-composer-editor.ProseMirror").evaluate(

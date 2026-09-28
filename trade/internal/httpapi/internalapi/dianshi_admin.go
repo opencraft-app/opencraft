@@ -44,6 +44,7 @@ type dianshiParticipationDTO struct {
 	AppID          string    `json:"app_id"`
 	ExternalUserID string    `json:"external_user_id"`
 	ActivityID     int64     `json:"activity_id"`
+	Scene          string    `json:"scene"`
 	BundleID       string    `json:"bundle_id"`
 	ActID          int64     `json:"act_id"`
 	DealName       string    `json:"deal_name"`
@@ -127,6 +128,13 @@ func parseDianshiRecordFilter(c *gin.Context) (store.DianshiRecordFilter, bool) 
 		Uin:            strings.TrimSpace(c.Query("uin")),
 		BundleID:       strings.TrimSpace(c.Query("bundle_id")),
 		DealName:       strings.TrimSpace(c.Query("deal_name")),
+	}
+	if raw := strings.TrimSpace(c.Query("scene")); raw != "" {
+		filter.Scene = store.ActivityScene(raw)
+		if !filter.Scene.Valid() {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "scene must be purchase or renew"})
+			return filter, false
+		}
 	}
 	if raw := strings.TrimSpace(c.Query("activity_id")); raw != "" {
 		activityID, err := strconv.ParseInt(raw, 10, 64)
@@ -224,6 +232,7 @@ func mapDianshiParticipations(rows []*store.UserActivityParticipation) []*diansh
 			AppID:          row.AppID,
 			ExternalUserID: row.ExternalUserID,
 			ActivityID:     row.ActivityID,
+			Scene:          string(row.Scene),
 			BundleID:       row.BundleID,
 			ActID:          row.ActID,
 			DealName:       row.DealName,

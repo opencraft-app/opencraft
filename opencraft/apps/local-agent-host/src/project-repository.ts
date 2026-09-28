@@ -30,12 +30,19 @@ export class ProjectRepository {
       || doc.projects.some(p => !p || typeof p.id !== "string" || typeof p.name !== "string"
         || !Array.isArray(p.roots) || !p.roots.length || p.roots.some(r => typeof r?.path !== "string" || !isAbsolute(r.path))
         || !p.metadata || typeof p.metadata !== "object" || Array.isArray(p.metadata) || Object.values(p.metadata).some(v => typeof v !== "string")
-        || !Number.isFinite(p.createdAt) || !Number.isFinite(p.updatedAt) || !Number.isFinite(p.position))
+        || !Number.isFinite(p.createdAt) || !Number.isFinite(p.updatedAt) || !Number.isFinite(p.position)
+        || (p.recencyAt !== undefined && p.recencyAt !== null && !Number.isFinite(p.recencyAt)))
       || new Set(doc.projects.map(p => p.id)).size !== doc.projects.length
       || Object.values(doc.requests).some(r => !r || typeof r.fingerprint !== "string" || !doc.projects.some(p => p.id === r.projectId))) {
       throw new Error("Project storage is invalid; original file was not overwritten");
     }
-    return doc;
+    return {
+      ...doc,
+      projects: doc.projects.map(project => ({
+        ...project,
+        recencyAt: project.recencyAt ?? null,
+      })),
+    };
   }
 
   async list(params: ProjectListParams = {}) {
@@ -67,7 +74,7 @@ export class ProjectRepository {
       if (!project) {
         const now = Math.floor(Date.now() / 1000);
         project = { id: randomUUID(), name: params.name.trim() || basename(roots[0]!.path), roots,
-          metadata: { ...params.metadata }, position: doc.projects.length, createdAt: now, updatedAt: now };
+          metadata: { ...params.metadata }, position: doc.projects.length, createdAt: now, updatedAt: now, recencyAt: null };
         doc.projects.push(project);
       }
       Object.defineProperty(doc.requests, params.idempotencyKey, { value: { projectId: project.id, fingerprint }, enumerable: true, configurable: true, writable: true });

@@ -1,12 +1,13 @@
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import { workingShimmerMotion } from "@opencraft/design-system/tokens";
 import {
   useCallback,
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 
@@ -25,7 +26,7 @@ export function useCodexActivityOpen(
   return [open, setOpen];
 }
 
-/** Readable base text plus one 1s sweep every 4s. */
+/** Readable base text plus a 1s sweep every 1.5s. */
 export function CadencedShimmer({
   active,
   children,
@@ -37,37 +38,16 @@ export function CadencedShimmer({
   readonly className?: string;
   readonly id?: string;
 }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!active || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const element = ref.current;
-    if (element === null) return;
-    let clearActiveTimer: number | undefined;
-    const clearActive = () => {
-      if (clearActiveTimer !== undefined) window.clearTimeout(clearActiveTimer);
-      clearActiveTimer = undefined;
-    };
-    const sweep = () => {
-      clearActive();
-      element.classList.remove("is-shimmer-active");
-      element.classList.add("is-shimmer-active");
-      clearActiveTimer = window.setTimeout(() => {
-        element.classList.remove("is-shimmer-active");
-        clearActiveTimer = undefined;
-      }, 1_000);
-    };
-    const initialTimer = window.setTimeout(sweep, 600);
-    const interval = window.setInterval(sweep, 4_000);
-    return () => {
-      clearActive();
-      window.clearTimeout(initialTimer);
-      window.clearInterval(interval);
-      element.classList.remove("is-shimmer-active");
-    };
-  }, [active]);
   const classes = [className, active ? "is-shimmering" : null].filter(Boolean).join(" ");
   return (
-    <span className={classes || undefined} id={id} ref={active ? ref : undefined}>
+    <span
+      className={classes || undefined}
+      id={id}
+      style={active ? {
+        "--working-shimmer-cycle-duration": `${workingShimmerMotion.cycleMs}ms`,
+        "--working-shimmer-first-delay": `${workingShimmerMotion.firstSweepDelayMs}ms`,
+      } as CSSProperties : undefined}
+    >
       {children}
       {active ? <span aria-hidden="true" className="is-shimmering__sweep"><span className="is-shimmering__highlight">{children}</span></span> : null}
     </span>
