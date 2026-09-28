@@ -19,6 +19,9 @@ parameters:
   - name: IMAGE_PIN_VARIANT
     type: string
     default: all
+  - name: MANUAL_PROMOTE_IMAGE_PIN_VARIANT
+    type: string
+    default: ""
   - name: ENABLE_MASTER_PROD_PROMOTE
     type: boolean
     default: true
@@ -412,7 +415,19 @@ stages:
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
-              export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
+              MANUAL_PROMOTE_IMAGE_PIN_VARIANT="${{ parameters.MANUAL_PROMOTE_IMAGE_PIN_VARIANT }}"
+              if [[ -z "$MANUAL_PROMOTE_IMAGE_PIN_VARIANT" ]]; then
+                MANUAL_PROMOTE_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
+              fi
+              case "$MANUAL_PROMOTE_IMAGE_PIN_VARIANT" in
+                all|primary|testing|staging)
+                  ;;
+                *)
+                  echo "unsupported manual promote image pin variant: $MANUAL_PROMOTE_IMAGE_PIN_VARIANT" >&2
+                  exit 1
+                  ;;
+              esac
+              export GITOPS_IMAGE_PIN_VARIANT="$MANUAL_PROMOTE_IMAGE_PIN_VARIANT"
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash "$REPO_ROOT/.ci/runtime/promote_bundle_image_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"

@@ -469,6 +469,8 @@ CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testi
 依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段必须保留 `gitops` 中未选中的
 platform env；只有候选 source revision 相对第一父提交明确修改了某个未选中 platform env 时，才允许
 把该文件作为独立审查过的部署意图投影到 `gitops`，普通源码发布不得用 `master` 中的旧基线覆盖它。
+CloudLadder 的手动 `PIPELINE_MODE=promote` 使用 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary`，只在明确
+发起正式发布时更新 primary pin；不得把自动 master 发布改成 `all` 来绕过正式发布入口。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、

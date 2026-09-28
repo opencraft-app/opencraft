@@ -61,7 +61,7 @@
 - `.ci/cloudladdergateway.yml`
   - 内网 TKEx 专用 release 入口，复用 `.ci/templates/service-release.yml` 构建国内站 `tkexgz` 和国际站 `tkexsg` 镜像。
   - 目标镜像仓库为 `csighub.tencentyun.com/skipzhang/cloudladdergateway`；构建机从 `/etc/lightclaw-ci/csighub_username` 和 `/etc/lightclaw-ci/csighub_password` 读取发布凭据。
-  - 该服务不进入现有 `beijing-sandbox/shprod/sgprod` 自动 pin / 生产 promote 流程；需要发布时使用模板的 `PIPELINE_MODE=promote` 手动创建对应 TKEx GitOps MR。
+  - master 自动发布固定只更新 testing；正式实例使用 `PIPELINE_MODE=promote` 手动创建 TKEx GitOps MR，并由 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary` 只更新 primary pin。
 - `.ci/hermes-image.yml`
   - 用 `images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify` 构建、验证并同步 Hermes CVM 镜像。
   - 腾讯云凭据只从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取，不通过流水线启动变量传入。
