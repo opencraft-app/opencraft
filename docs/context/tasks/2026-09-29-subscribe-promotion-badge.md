@@ -66,16 +66,30 @@
 - 有界 `rg` 输出已用于上述证据，无隔离产物。
 
 ## handoff
-- OPT-001 本地实现和聚焦验证完成；全量测试未得到最终汇总。按新队列交付规则，此项先完成预览、提交前 CR 和 MR 准备，再等待用户确认创建 MR。OPT-002 在此期间保持排队。
+- OPT-001 本地实现和聚焦验证完成；全量测试未得到最终汇总。预览分支与双站地址已验证、提交前 CR 和 MR 草稿已准备，等待用户确认创建 MR。OPT-002 在此期间保持排队。
 
 ## code_review
 - 对照 `origin/master` 审查了订阅价格与标签映射、询价切换渲染、回归测试。促销标签只由卡片展示的原价、实付价及首购资格决定；询价切换时渲染层隐藏旧标签。
 - 检查新增代码未引入 `any`、密钥、外部依赖或新的网络调用；未发现阻断性问题。
-- 仍需预览验证国内和国际站；全量 Vitest 未取得最终汇总，见上方证据。
+- 双站分支预览均已发布且页面资源与 `master` 不同；全量 Vitest 未取得最终汇总，见上方证据。
+
+## preview
+- 推送分支：`frontsandbox/subscribe-promotion-badge-20260929`，首个提交 `339c5ee73b5a235f35f1c05f061551d3d2a13007`；远端 ref 已核实。
+- 国内预览：`https://subscribe-promotion-badge-20260929.preview.lightclaw.tech/subscribe`。
+- 国际预览：`https://intl-subscribe-promotion-badge-20260929.preview.lightclaw.tech/subscribe`。
+- 2026-09-29 首次检查两站均返回 404；仓库 `.ci/frontend-preview.yml` 会在 `frontsandbox/*` 的 `frontend/**` push 后自动构建。随后国内、国际 `/subscribe` 均返回 200，且两站页面引用的 chunk 均与 `master` 不同，证实分支产物已发布。
+- 预览环境只完成页面可用性和分支产物核验；登录后的真实报价仍以聚焦回归测试为验证依据。
+
+## mr_draft
+- 目标：`master`；源分支：`frontsandbox/subscribe-promotion-badge-20260929`；需求：OPT-001（暂无工蜂 issue 编号）。
+- 标题：`修正订阅页促销标签 / fix(subscribe): match displayed discount`
+- 描述：订阅页国内与国际站的免费及折扣角标改为依据卡片展示的原价、实付价和首购资格；真实无优惠、无报价或询价切换中隐藏促销角标。保留现有后端计费、下单和支付流程。
+- 验证：订阅页国内与国际站聚焦测试 106/106、前端 i18n、类型检查（0 new diagnostics）、Next.js 生产构建、文档与 change impact 检查通过。全量 Vitest 未取得最终汇总，需在 MR 中披露。
+- 评审：提交前自检未发现阻断项；MR 创建后按规范请 Fanny 和前端 owner 继续 CR。
 
 ## checkpoint
 ### stage
-- OPT-001 本地修复和必要聚焦验证完成，正在推进预览交付；OPT-002 等待本项 MR 确认。
+- OPT-001 本地修复、必要聚焦验证和双站预览发布完成，等待用户确认创建 MR；OPT-002 等待本项交付。
 ### verified
 - 双站订阅页聚焦测试 106/106、类型检查 0 new、构建与 i18n 检查通过。
 ### unverified
@@ -83,6 +97,6 @@
 ### discard
 - 国内站按套餐名/后端 `discount` 直接写死六折的旧逻辑。
 ### restore
-- 代码在 `frontsandbox/subscribe-promotion-badge-20260929`；队列记录在 `codex/optimization-queue-20260929`。
+- 代码与队列记录均在 `frontsandbox/subscribe-promotion-badge-20260929`。
 ### next_action
-- 推送预览分支并验证预览地址，准备指向 `master` 的 MR 草稿，等待用户确认后创建 MR。
+- 汇总预览、CR、验证、MR 草稿给用户；用户确认后创建指向 `master` 的 MR，再按规范发起 Fanny 与 owner CR。
