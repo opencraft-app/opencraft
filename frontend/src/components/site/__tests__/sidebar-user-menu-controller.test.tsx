@@ -7,7 +7,7 @@ import { isGlobal } from "@/lib/region";
 import { CONSOLE_SHOW_EVENT, setConsoleShowEnabled } from "@/lib/console-show-event";
 
 const mocks = vi.hoisted(() => ({ listMyPasses: vi.fn(), listModifyBundles: vi.fn(), repositories: vi.fn(), paidBilling: vi.fn(), navigate: vi.fn(), signOut: vi.fn() }));
-const pass = (overrides: Partial<Pass> = {}): Pass => ({ pass_id: "p/a", user_id: "a", status: "active", bundle_id: "source", bundle_name: "Pro A", created_time: "2026-01-01", expired_time: "2099-01-01", credit_total: 1000, credit_available: 750, ...overrides });
+const pass = (overrides: Partial<Pass> & { bundle_type?: string } = {}): Pass & { bundle_type?: string } => ({ pass_id: "p/a", user_id: "a", status: "active", bundle_id: "source", bundle_name: "Pro A", created_time: "2026-01-01", expired_time: "2099-01-01", credit_total: 1000, credit_available: 750, ...overrides });
 let currentPass: Pass | null = pass();
 let modifyingPass: Pass | null = null;
 let userId: string | undefined = "a";
@@ -62,17 +62,18 @@ describe("sidebar account controller boundary", () => {
     expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(0);
   });
 
-  it.each([
+  const menuOrderCases: Array<[string, string | undefined, string[]]> = [
     ["ordinary plans", undefined, ["云存储", "套餐与费用", "账号"]],
     ["AI plans", "ai", ["模型", "云存储", "套餐与费用", "账号"]],
-  ] as const)("keeps the sidebar account menu order for %s", async (_name, bundleType, expected) => {
+  ];
+  it.each(menuOrderCases)("keeps the sidebar account menu order for %s", async (_name, bundleType, expected) => {
     currentPass = pass(bundleType ? { bundle_type: bundleType } : {});
     render(<UserAvatarMenu variant="sidebar" />);
     await openSidebar();
     const labels = within(screen.getByRole("dialog", { name: "账号管理" }))
       .getAllByRole("link")
       .map((link) => link.textContent?.trim())
-      .filter((label): label is string => expected.includes(label as (typeof expected)[number]));
+      .filter((label): label is string => expected.includes(label));
     expect(labels).toEqual(expected);
   });
 
