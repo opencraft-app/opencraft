@@ -55,7 +55,7 @@ derived: false
 - `frontend/openspec/specs/blog.md` 与 PRD 已记录国际站恢复范围。
 
 ## next_action
-用户已授权拉取并合并 master、CR、提交、推送与创建 MR。已快进合并 origin/master eda52dd93，独立 CR 无阻塞发现，PRD 已按最终范围重写；验证已完成，提交当前 77 个任务文件并创建目标 master 的 MR，不合并 MR 或发布。
+已快进合并 origin/master eda52dd93，独立 CR 无阻塞发现，PRD 已按最终范围重写。功能提交 c18f1ce38 已推送，MR [!4747](https://git.woa.com/wisp/mono2/merge_requests/4747) 已创建，源分支 jasminzhao-blog-0928、目标 master；等待评审，不合并 MR 或发布。平台创建时返回 opened / can_be_merged，异步 CI 最终状态以平台后续检查为准。
 
 - 合并后最终证据：frozen install、check（171 基线，0 新增）、双站构建与文章静态产物检查通过。212 项前端测试中 209 通过，3 项已证实为 master 首页 PNG/WebP 基线问题；文档与设计影响检查通过，context-audit 33 项单测通过，全库 context 4 项已有失败写入 MR。日志 /tmp/jasminzhao-blog-mr-*。
 
