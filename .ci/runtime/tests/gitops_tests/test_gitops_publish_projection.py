@@ -510,6 +510,87 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             self.assertEqual((repo / "demo" / "k8s" / "base" / "manifests.yaml").read_text(), "source-manifest\n")
             self.assertTrue((repo / "argocd" / "services" / "other" / "beijing-sandbox" / "keep.yaml").exists())
 
+    def test_variant_projection_preserves_unselected_pins_unless_source_changed_them(self) -> None:
+        for explicit_prod_change in (False, True):
+            with self.subTest(explicit_prod_change=explicit_prod_change), tempfile.TemporaryDirectory() as tmp:
+                repo = Path(tmp)
+                git(repo, "init")
+                git(repo, "config", "user.email", "ci@example.com")
+                git(repo, "config", "user.name", "CI")
+
+                (repo / ".ci/runtime/bundles").mkdir(parents=True)
+                (repo / ".ci/runtime/bundles/demo.bundle").write_text(textwrap.dedent("""\
+                    bundles:
+                      demo:
+                        owner: demo
+                        source: demo
+                        reason: Demo bundle with workload variants
+                        allowed_paths:
+                          - demo
+                        exit_condition: never
+                        dockerfile: demo/Dockerfile
+                        build_context: demo
+                        image_repo:
+                          tkexgz: example.com/demo
+                        publish_paths:
+                          - argocd/services/demo/{env}/**
+                    """))
+                service_dir = repo / "argocd/services/demo/tkexgz"
+                service_dir.mkdir(parents=True)
+                prod_env = service_dir / "demo-platform.env"
+                testing_env = service_dir / "demo-platform-testing.env"
+                staging_env = service_dir / "demo-platform-staging.env"
+                config = service_dir / "config.yaml"
+                prod_env.write_text("DEMO_IMAGE=source-prod-old\n")
+                testing_env.write_text("DEMO_IMAGE=source-testing\n")
+                staging_env.write_text("DEMO_IMAGE=source-staging-old\n")
+                config.write_text("value: source-old\n")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "source base")
+                source_base = git_output(repo, "rev-parse", "HEAD")
+
+                config.write_text("value: source-new\n")
+                if explicit_prod_change:
+                    prod_env.write_text("DEMO_IMAGE=source-prod-explicit\n")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "source release")
+                source_ref = git_output(repo, "rev-parse", "HEAD")
+
+                git(repo, "checkout", "-b", "gitops", source_base)
+                prod_env.write_text("DEMO_IMAGE=gitops-prod\n")
+                testing_env.write_text("DEMO_IMAGE=gitops-testing\n")
+                staging_env.write_text("DEMO_IMAGE=gitops-staging\n")
+                config.write_text("value: gitops-old\n")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "gitops desired state")
+
+                result = run_command(
+                    [
+                        "python3",
+                        str(COMMAND_DIR / "project_release_bundle.py"),
+                        "--repo-root",
+                        str(repo),
+                        "--service",
+                        "demo",
+                        "--env",
+                        "tkexgz",
+                        "--source-ref",
+                        source_ref,
+                        "--image-pin-variant",
+                        "testing",
+                    ],
+                    cwd=repo,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                expected_prod = "source-prod-explicit\n" if explicit_prod_change else "gitops-prod\n"
+                self.assertEqual(prod_env.read_text(), f"DEMO_IMAGE={expected_prod}")
+                self.assertEqual(testing_env.read_text(), "DEMO_IMAGE=source-testing\n")
+                self.assertEqual(staging_env.read_text(), "DEMO_IMAGE=gitops-staging\n")
+                self.assertEqual(config.read_text(), "value: source-new\n")
+
     def test_playground_projection_preserves_gitops_only_environment_closure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
