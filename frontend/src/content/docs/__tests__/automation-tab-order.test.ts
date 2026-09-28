@@ -9,37 +9,37 @@ const AUTOMATION_DOCS = [
   {
     path: "src/content/docs/configuration/automation.md",
     tabs: ["当前任务", "已结束任务", "最近执行"],
-    validationHeading: "## 结果校验",
+    validationHeading: "## 验证新建任务",
   },
   {
     path: "src/content/docs/global/configuration/automation.md",
     tabs: ["当前任务", "已结束任务", "最近执行"],
-    validationHeading: "## 结果校验",
+    validationHeading: "## 验证新建任务",
   },
   {
     path: "src/content/docs/en/configuration/automation.md",
     tabs: ["Current Jobs", "Ended Jobs", "Recent Runs"],
-    validationHeading: "## Validation",
+    validationHeading: "## Validate a New Task",
   },
   {
     path: "src/content/docs/id/configuration/automation.md",
     tabs: ["Job Saat Ini", "Job Berakhir", "Eksekusi terbaru"],
-    validationHeading: "## Validasi",
+    validationHeading: "## Memvalidasi Tugas Baru",
   },
   {
     path: "src/content/docs/es/configuration/automation.md",
-    tabs: ["Jobs actuales", "Jobs finalizados", "Ejecuciones recientes"],
-    validationHeading: "## Validación",
+    tabs: ["Tareas actuales", "Tareas finalizadas", "Ejecuciones recientes"],
+    validationHeading: "## Validar una tarea nueva",
   },
   {
     path: "src/content/docs/ja/configuration/automation.md",
     tabs: ["現在のタスク", "終了したタスク", "最近の実行"],
-    validationHeading: "## 結果の確認",
+    validationHeading: "## 新しいタスクを確認する",
   },
   {
     path: "src/content/docs/ko/configuration/automation.md",
     tabs: ["현재 작업", "종료된 작업", "최근 실행"],
-    validationHeading: "## 결과 확인",
+    validationHeading: "## 새 작업 확인",
   },
 ] as const;
 

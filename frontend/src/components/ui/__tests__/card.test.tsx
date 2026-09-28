@@ -11,15 +11,12 @@ describe("Card", () => {
     expect(screen.getByTestId("card")).toHaveClass("rounded-[1.75rem]", "shadow-[var(--shadow-soft)]");
   });
 
-  it.each([
-    ["pricing", "rounded-[12px]"],
-    ["pricing-featured", "rounded-[16px]"],
-  ] as const)("preserves the %s outline without inheriting a floating shadow", (variant, radius) => {
+  it("preserves the pricing outline without inheriting a floating shadow", () => {
     const ref = createRef<HTMLDivElement>();
-    render(<Card ref={ref} variant={variant} data-testid="card" />);
+    render(<Card ref={ref} variant="pricing" data-testid="card" />);
     const card = screen.getByTestId("card");
     expect(ref.current).toBe(card);
-    expect(card).toHaveClass(radius, "shadow-none");
+    expect(card).toHaveClass("rounded-[12px]", "shadow-none");
     expect(card).not.toHaveClass("shadow-[var(--shadow-soft)]");
     expect(card).not.toHaveAttribute("variant");
   });

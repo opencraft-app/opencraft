@@ -430,6 +430,13 @@ Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与
 `https://api-sandbox-jp-1.lightclaw.tech`。映射变更必须同步更新逐地域 GitOps 契约测试，不能通过
 修改共享路由默认值或 Pass 回调配置实现。
 
+`tkexgz` 的 `/cloudapi` 入向路由按腾讯云 API 的 `X-TC-Region` 分流 `DescribePass`。北京预发布
+当前使用广州计费地域，因此 `ap-guangzhou` 必须显式映射到北京预发布 upstream，并与该环境 CTL
+的 `CTL_CLOUDAPI_ALLOWED_REGIONS` 同批发布；`ap-beijing` 作为未来切回北京地域的兼容项保留，
+`ap-shanghai` 继续映射上海正式。配置契约必须同时验证 CloudLadder header route 和 CTL allowlist，
+不能只验证其中一层。源码合入后仍由 CloudLadder 与 CTL 各自 CI 投影到 `gitops`，不得直接修改
+`gitops` 或 live workload。
+
 ## 个人 DevCloud testing-only 发布门禁（2026-09-17）
 
 个人环境能力分三层发布：`master` 中的 Auth/CloudLadder/Skill 源码、`sandbox-bj-7` 与
@@ -464,6 +471,8 @@ CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testi
 依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段必须保留 `gitops` 中未选中的
 platform env；只有候选 source revision 相对第一父提交明确修改了某个未选中 platform env 时，才允许
 把该文件作为独立审查过的部署意图投影到 `gitops`，普通源码发布不得用 `master` 中的旧基线覆盖它。
+CloudLadder 的手动 `PIPELINE_MODE=promote` 使用 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary`，只在明确
+发起正式发布时更新 primary pin；不得把自动 master 发布改成 `all` 来绕过正式发布入口。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、

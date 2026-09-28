@@ -94,6 +94,12 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 在 `billing_auth` 算法和真实样本尚未完成一致性验证前，不得猜测实现并直接拒绝生产回调。
 匿名豁免只解决兼容性，不代表回调来源已经可信。
 
+点石通过腾讯云 API `DescribePass` 回查资源时，`X-TC-Region` 表示计费资源地域，不表示 LightVela
+控制面的部署地域。北京预发布的 Pass 计费资源使用 `ap-guangzhou`（`regionId=1`），CloudLadder
+必须将 `ap-guangzhou` 和兼容保留的 `ap-beijing` 都转发到北京预发布 CTL；上海正式的
+`ap-shanghai` 转发到上海 CTL。目标 CTL 的 `CTL_CLOUDAPI_ALLOWED_REGIONS` 必须与入口映射一致，
+避免入口已正确分流但 handler 仍以地域不支持拒绝请求。
+
 新加坡生产可独立于 testing 和国内环境切换 `required`。其生产计费路由
 `jifei-prod`、点石和 Billing CloudAPI 必须验签；计费/账号回调继续使用上述明确豁免。
 韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名
