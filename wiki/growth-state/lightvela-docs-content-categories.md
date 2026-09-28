@@ -43,7 +43,7 @@
 # 功能与配置
 
 - 【CN ✓ | GLOBAL ✓】配置总览
-- 【CN 待补 | GLOBAL ✓】管理 Bots
+- 【CN ✓ | GLOBAL ✓】管理与切换 Bot
 - 【CN ✓ | GLOBAL ✓】配置模型
 - 【CN N/A | GLOBAL ✓】Telegram
 - 【CN N/A | GLOBAL ✓】WhatsApp
@@ -55,15 +55,16 @@
 - 【CN ✓ | GLOBAL N/A】钉钉
 - 【CN 待核实 | GLOBAL 待核实】Slack（配置不一致：`CN_SLUG_TO_FILE` 有映射但 `CN_SIDEBAR` 与 `cnDocs` 未暴露；`GLOBAL_SIDEBAR` 已暴露但 `GLOBAL_SLUG_TO_FILE` 无映射，需先修配置）
 - 【CN ✓ | GLOBAL ✓】配置技能
-- 【CN 待核实 | GLOBAL ✓】记忆管理
-- 【CN 待核实 | GLOBAL ✓】自动化任务
-- 【CN 待核实 | GLOBAL ✓】云存储
-- 【CN 待核实 | GLOBAL ✓】聊天
-- 【CN 待核实 | GLOBAL ✓】诊断
+- 【CN ✓ | GLOBAL ✓】记忆管理
+- 【CN ✓ | GLOBAL ✓】自动化任务
+- 【CN ✓ | GLOBAL ✓】云存储
+- 【CN ✓ | GLOBAL ✓】网页对话
+- 【CN ✓ | GLOBAL ✓】诊断
 - 【CN ✓ | GLOBAL ✓】高级设置
-- 【CN 待核实 | GLOBAL ✓】模型切换
-- 【CN ✓ | GLOBAL ✓】Bots Switching
+- 【CN ✓ | GLOBAL ✓】模型切换
 - 【CN ✓ | GLOBAL ✓】DeepSeek Harness
+
+2026-09-28 国内站第二批：现有 Bot 管理与切换合并为一个条目；网页对话、技能、记忆、云存储、诊断和实验功能指南按当前控制台入口修订。上述 `✓` 以生产站已可见页面、master 中的注册源和产品入口为依据；本轮修改仍需通过 MR 合并与发布才会上线。
 
 # Hermes Agent 科普
 

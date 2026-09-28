@@ -43,35 +43,37 @@ export interface DocGroup {
 }
 
 /**
- * 国内站 sidebar：按用户任务组织（GEO 导航方案）。
- * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 问题排查 / 联系与支持。
- * 通道具体项挂在「配置通道」表头下作为二级项。
- * 注：部分新增页面为占位（仅标题骨架），正文内容后续逐步补齐。
+ * 国内站 sidebar：优先展示从开通到使用、排障的任务路径。
+ * 通道具体项挂在「配置通道」表头下作为二级项；原理与场景长文保留独立分类。
  */
 const CN_SIDEBAR: DocGroup[] = [
   {
-    title: "产品入门",
+    title: "开始使用",
     items: [
       { slug: "overview", title: "LightVela 是什么" },
       { slug: "quickstart", title: "快速开始" },
+      { slug: "create-first-hermes", title: "开通第一个 Hermes Agent" },
       { slug: "core-concepts", title: "核心概念" },
       { slug: "who-is-lightvela-for", title: "LightVela 适合哪些人使用？" },
-    ],
-  },
-  {
-    title: "账号、套餐与开通",
-    items: [
       { slug: "account", title: "账号与实名认证" },
       { slug: "plans", title: "套餐管理" },
       { slug: "credits", title: "AI 积分说明" },
-      { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
     ],
   },
   {
-    title: "功能与配置",
+    title: "Bot 与模型",
     items: [
       { slug: "configuration", title: "配置总览" },
+      { slug: "configuration/bots-switching", title: "管理与切换 Bot" },
+      { slug: "configuration/agent-chat", title: "网页对话" },
       { slug: "configuration/model", title: "配置模型" },
+      { slug: "configuration/multiple-models", title: "模型切换" },
+      { slug: "configuration/personality", title: "人设" },
+    ],
+  },
+  {
+    title: "通道与技能",
+    items: [
       // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）
       { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
       { slug: "configuration/channel-wechat", title: "微信", indent: true },
@@ -80,25 +82,30 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-feishu", title: "飞书", indent: true },
       { slug: "configuration/channel-dingtalk", title: "钉钉", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
-      { slug: "configuration/personality", title: "人设" },
-      { slug: "configuration/memory", title: "记忆管理" },
-      { slug: "configuration/automation", title: "定时任务" },
-      { slug: "configuration/files", title: "云存储" },
-      { slug: "configuration/agent-chat", title: "对话" },
-      { slug: "configuration/diagnostics", title: "诊断中心" },
-      { slug: "configuration/advanced-settings", title: "高级设置" },
-      { slug: "configuration/multiple-models", title: "模型切换" },
-      { slug: "configuration/bots-switching", title: "Bot 切换" },
-      { slug: "configuration/deepseek-harness", title: "DeepSeek Harness" },
-      { slug: "configuration/workbench", title: "工作台" },
     ],
   },
   {
-    title: "对比与选型",
+    title: "自动化与资料",
     items: [
-      { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus" },
-      { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent" },
-      { slug: "compare/lightvela-vs-ai-chatbot", title: "LightVela vs AI Chatbot" },
+      { slug: "configuration/memory", title: "记忆管理" },
+      { slug: "configuration/automation", title: "定时任务" },
+      { slug: "configuration/files", title: "云存储" },
+    ],
+  },
+  {
+    title: "管理与排障",
+    items: [
+      { slug: "configuration/diagnostics", title: "诊断中心" },
+      { slug: "configuration/advanced-settings", title: "高级设置" },
+      { slug: "faq", title: "常见问题 FAQ" },
+      { slug: "contact-us", title: "联系我们" },
+    ],
+  },
+  {
+    title: "实验功能",
+    items: [
+      { slug: "configuration/deepseek-harness", title: "DeepSeek Harness" },
+      { slug: "configuration/workbench", title: "我的工作台" },
     ],
   },
   {
@@ -107,6 +114,14 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "use-cases/scheduled-task-agent", title: "使用 LightVela 自动化 Agent 任务" },
       { slug: "use-cases/scheduled-task-notifications", title: "在 LightVela 中设置通知任务" },
       { slug: "use-cases/scheduled-task-script", title: "在 LightVela 中运行脚本任务" },
+    ],
+  },
+  {
+    title: "对比与选型",
+    items: [
+      { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus" },
+      { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent" },
+      { slug: "compare/lightvela-vs-ai-chatbot", title: "LightVela vs AI Chatbot" },
     ],
   },
   {
@@ -124,18 +139,6 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "hermes-agent/persona-user-memory", title: "Hermes Agent 的性格从哪里来？" },
       { slug: "hermes-agent/workspace-context-storage", title: "Hermes Agent 把文件放在哪里？" },
       { slug: "hermes-agent/skills-self-improvement", title: "Agent 为什么会越用越顺手？" },
-    ],
-  },
-  {
-    title: "问题排查",
-    items: [
-      { slug: "faq", title: "常见问题 FAQ" },
-    ],
-  },
-  {
-    title: "联系与支持",
-    items: [
-      { slug: "contact-us", title: "联系我们" },
     ],
   },
 ];
@@ -345,17 +348,17 @@ export const SIDEBAR: DocGroup[] = isGlobal ? GLOBAL_SIDEBAR : CN_SIDEBAR;
 
 /** slug 到 markdown 文件路径（相对于 `@/content/docs/`）的映射 */
 const CN_SLUG_TO_FILE: Record<string, string> = {
-  // 产品入门
+  // 开始使用
   overview: "01-overview.md",
   quickstart: "02-quickstart.md",
   "core-concepts": "04-core-concepts.md",
   "who-is-lightvela-for": "who-is-lightvela-for.md",
-  // 账号、套餐与开通
+  // 开始使用：账号与开通
   account: "03-account.md",
   plans: "plans.md",
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
-  // 功能与配置
+  // Bot 与模型、通道与技能、自动化与资料、管理与排障、实验功能
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
@@ -378,9 +381,9 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/scheduled-task-agent": "use-cases/scheduled-task-agent.md",
   "use-cases/scheduled-task-notifications": "use-cases/scheduled-task-notifications.md",
   "use-cases/scheduled-task-script": "use-cases/scheduled-task-script.md",
-  // 问题排查
+  // 管理与排障
   faq: "07-faq.md",
-  // 联系与支持
+  // 管理与排障：支持
   "contact-us": "contact-us.md",
   // 对比与选型
   "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
