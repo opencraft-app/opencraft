@@ -352,11 +352,11 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/plans":
       "Compare LightVela's Launch, Cruise, Launch AI, and Cruise AI plans for isolated Hermes runtime resources, storage, monthly AI credits, refund rules, and the email-based refund application process.",
     "/docs/announcements/public-beta":
-      "LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). Beta users get one additional month on their existing plan, and new users get 1 month free and 4,500 AI credits.",
+      "Compare LightVela plan resources and credits, and check Subscribe for current availability, introductory offers, prices, and entitlements.",
     "/docs/credits":
       "Learn how LightVela model credits measure Hermes usage across conversations, Scheduled Tasks, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
     "/docs/create-first-hermes":
-      "Activate your first Hermes instance: sign in with Google or GitHub, choose an available plan on Subscribe, and let LightVela provision it. International beta access is limited and free while available, with no China real-name verification required.",
+      "Activate your first Hermes instance: sign in with Google or GitHub, choose an available plan on Subscribe, and let LightVela provision it. No China real-name verification is required.",
     "/docs/core-concepts":
       "LightVela's four core concepts: Hermes, Models, Channels, and Skills. This page explains how they relate and what happens inside a single conversation.",
     "/docs/who-is-lightvela-for":
