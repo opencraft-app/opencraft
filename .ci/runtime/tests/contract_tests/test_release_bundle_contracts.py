@@ -155,6 +155,28 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_sandbox_public_load_balancers_match_their_regions(self) -> None:
+        expected_load_balancers = {
+            "shprod": "lb-ohkm8fm5",
+            "sgprod": "lb-8kenwgvc",
+        }
+
+        for env, expected_load_balancer in expected_load_balancers.items():
+            with self.subTest(env=env):
+                patch = yaml.safe_load(
+                    (
+                        REPO_ROOT
+                        / "argocd/services/sandbox"
+                        / env
+                        / "patch-ingressproxy-router-service.yaml"
+                    ).read_text()
+                )
+                annotations = patch["metadata"]["annotations"]
+                self.assertEqual(
+                    annotations["service.kubernetes.io/loadbalance-id"],
+                    expected_load_balancer,
+                )
+
     def test_production_release_checkouts_do_not_fetch_unneeded_submodules(self) -> None:
         for path, expected_count in (
             (".ci/templates/service-release.yml", 4),
