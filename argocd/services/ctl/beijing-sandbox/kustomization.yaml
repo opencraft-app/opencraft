@@ -25,7 +25,7 @@ patches:
       path: /spec/template/spec/containers/0/env/-
       value:
         name: CTL_CLOUDAPI_ALLOWED_REGIONS
-        value: ap-beijing
+        value: ap-guangzhou,ap-beijing
     - op: add
       path: /spec/template/spec/containers/0/env/-
       value:
