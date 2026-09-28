@@ -79,8 +79,16 @@ else
   PUBLIC_BIND_ADDRESS="0.0.0.0"
 fi
 
-FRONTEND_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:5173"
-GATEWAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:8085"
+FRONTEND_PORT="${LOCALSTACK_FRONTEND_PORT:-5173}"
+GATEWAY_PORT="${LOCALSTACK_GATEWAY_PORT:-8085}"
+TRADE_CALLBACK_PORT="${LOCALSTACK_TRADE_CALLBACK_PORT:-18084}"
+TRADE_INTERNAL_PORT="${LOCALSTACK_TRADE_INTERNAL_PORT:-28084}"
+for _port in "$FRONTEND_PORT" "$GATEWAY_PORT" "$TRADE_CALLBACK_PORT" "$TRADE_INTERNAL_PORT"; do
+  [[ "$_port" =~ ^[0-9]+$ ]] || die "port overrides must be numeric, got '$_port'"
+done
+unset _port
+FRONTEND_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:$FRONTEND_PORT"
+GATEWAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:$GATEWAY_PORT"
 FAKE_QQ_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:19010"
 FAKE_WECHAT_PAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:19040"
 
@@ -480,8 +488,8 @@ stop_legacy_compose() {
 }
 
 exposure_specs=(
-  "frontend|localstack-frontend|service/frontend|5173:8080|$PUBLIC_BIND_ADDRESS|required"
-  "gateway|lightclaw-gateway|service/service-gateway|8085:80|$PUBLIC_BIND_ADDRESS|required"
+  "frontend|localstack-frontend|service/frontend|$FRONTEND_PORT:8080|$PUBLIC_BIND_ADDRESS|required"
+  "gateway|lightclaw-gateway|service/service-gateway|$GATEWAY_PORT:80|$PUBLIC_BIND_ADDRESS|required"
   "auth|user-auth|service/lightclaw-auth|28081:80|127.0.0.1|debug"
   "payment|user-auth|service/payment|18082:80|127.0.0.1|debug"
   "subscription|user-auth|service/subscription|8086:80|127.0.0.1|debug"
@@ -491,8 +499,8 @@ exposure_specs=(
   "shadow|shadow|service/shadow|18083:80|127.0.0.1|debug"
   # Only this callback proxy is reachable from the DevCloud network. The full
   # Trade listener contains privileged order/payment RPCs and stays loopback-only.
-  "trade-callback|trade|service/trade-callback-proxy|18084:80|$PUBLIC_BIND_ADDRESS|required"
-  "trade-internal|trade|service/trade|28084:80|127.0.0.1|required"
+  "trade-callback|trade|service/trade-callback-proxy|$TRADE_CALLBACK_PORT:80|$PUBLIC_BIND_ADDRESS|required"
+  "trade-internal|trade|service/trade|$TRADE_INTERNAL_PORT:80|127.0.0.1|required"
   "ctl|ctl|service/ctl-api|19590:80|127.0.0.1|debug"
   "fake-qq|localstack-system|service/fake-qq-oauth|19010:19010|$PUBLIC_BIND_ADDRESS|required"
   "fake-jifei|localstack-system|service/fake-jifei|19020:19020|127.0.0.1|debug"
@@ -507,6 +515,100 @@ exposure_enabled() {
   [[ "$profile" == "required" ]] ||
     [[ "${LOCALSTACK_EXPOSE_INTERNAL_ENDPOINTS:-}" == "1" ]] ||
     [[ "$PUBLIC_BIND_ADDRESS" == "127.0.0.1" ]]
+}
+
+# 列出监听某个 TCP 端口的进程 pid。
+#
+# 端口被别的 stack 占住时，kubectl port-forward 会立刻退出，而 supervisor 只会无限重启，
+# 外层却仍然把 `up` 判成成功。调用方必须能拿到真实占用者才能 fail fast。
+port_listener_pids() {
+  local port="$1"
+  case "$(uname -s)" in
+    Linux)
+      if command -v ss >/dev/null 2>&1; then
+        ss -ltnpH "sport = :$port" 2>/dev/null |
+          grep -o 'pid=[0-9]\+' | cut -d= -f2 | sort -u
+        return 0
+      fi
+      ;;
+  esac
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u
+  fi
+}
+
+process_cmdline() {
+  local pid="$1"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 0
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    tr '\0' ' ' <"/proc/$pid/cmdline"
+    return 0
+  fi
+  ps -o command= -p "$pid" 2>/dev/null || true
+}
+
+# 判断某个监听进程是否属于当前 kube context 的 port-forward。
+listener_belongs_to_context() {
+  local pid="$1" context="$2" cmdline
+  cmdline="$(process_cmdline "$pid")"
+  [[ "$cmdline" == *"port-forward"* && "$cmdline" == *"--context $context "* ]]
+}
+
+exposure_port_conflicts() {
+  local context="$1" spec name mapping profile host_port pid cmdline
+  for spec in "${exposure_specs[@]}"; do
+    IFS='|' read -r name _ _ mapping _ profile <<<"$spec"
+    exposure_enabled "$profile" || continue
+    host_port="${mapping%%:*}"
+    while read -r pid; do
+      [[ -n "$pid" ]] || continue
+      listener_belongs_to_context "$pid" "$context" && continue
+      cmdline="$(process_cmdline "$pid")"
+      printf '  %s port %s is held by pid %s: %s\n' \
+        "$name" "$host_port" "$pid" "${cmdline:-unknown process}"
+    done < <(port_listener_pids "$host_port")
+  done
+}
+
+ensure_exposure_ports_free() {
+  local context="$1" conflicts="" attempt
+  for attempt in 1 2 3 4 5; do
+    conflicts="$(exposure_port_conflicts "$context")"
+    [[ -n "$conflicts" ]] || return 0
+    sleep 1
+  done
+  printf '%s\n' "$conflicts" >&2
+  die "another stack already owns the ports above; stop it (for personal DevCloud: run the other site/checkout's personal-devcloud.sh down) before bringing this one up"
+}
+
+# 端口转发真正生效才算暴露成功。
+#
+# supervisor 进程活着并不代表 kubectl 绑上了端口：端口冲突时 kubectl 秒退，supervisor 会一直
+# 重启，日志里刷 `address already in use`，但外层看不到任何失败。这里按端口逐个确认归属。
+wait_exposure_ready() {
+  local context="$1" spec name mapping profile host_port attempt owned pid
+  for spec in "${exposure_specs[@]}"; do
+    IFS='|' read -r name _ _ mapping _ profile <<<"$spec"
+    exposure_enabled "$profile" || continue
+    host_port="${mapping%%:*}"
+    owned=0
+    for attempt in $(seq 1 30); do
+      while read -r pid; do
+        [[ -n "$pid" ]] || continue
+        if listener_belongs_to_context "$pid" "$context"; then
+          owned=1
+          break
+        fi
+      done < <(port_listener_pids "$host_port")
+      ((owned == 1)) && break
+      sleep 1
+    done
+    if ((owned != 1)); then
+      tail -n 20 "$STATE_DIR/logs/$name.log" >&2 2>/dev/null || true
+      stop_exposure
+      die "$name did not bind port $host_port for context $context"
+    fi
+  done
 }
 
 print_exposure_plan() {
@@ -559,6 +661,7 @@ start_exposure_macos() {
   mkdir -p "$STATE_DIR/launchd" "$STATE_DIR/logs"
   stop_exposure
   mkdir -p "$STATE_DIR/launchd" "$STATE_DIR/logs"
+  ensure_exposure_ports_free "$context"
 
   for spec in "${exposure_specs[@]}"; do
     IFS='|' read -r name namespace resource mapping address profile <<<"$spec"
@@ -603,6 +706,7 @@ EOF
   done
 
   sleep 1
+  wait_exposure_ready "$context"
   log "endpoint exposure is managed by macOS launchd"
 }
 
@@ -614,6 +718,7 @@ start_exposure_linux() {
   [[ -x "$supervisor" ]] || die "missing executable port-forward supervisor: $supervisor"
   stop_exposure
   mkdir -p "$STATE_DIR/exposure" "$STATE_DIR/logs"
+  ensure_exposure_ports_free "$context"
 
   for spec in "${exposure_specs[@]}"; do
     IFS='|' read -r name namespace resource mapping address profile <<<"$spec"
@@ -640,6 +745,7 @@ start_exposure_linux() {
       die "failed to expose $name"
     fi
   done
+  wait_exposure_ready "$context"
   log "endpoint exposure is managed by Linux background processes under $STATE_DIR/exposure"
 }
 
@@ -811,7 +917,7 @@ up() {
   restart_app_deployments
   wait_rollouts
   start_exposure
-  log "frontend=$FRONTEND_URL gateway=$GATEWAY_URL trade=http://$LOCALSTACK_PUBLIC_HOST:18084 fake-qq=$FAKE_QQ_URL fake-wechat-pay=$FAKE_WECHAT_PAY_URL"
+  log "frontend=$FRONTEND_URL gateway=$GATEWAY_URL trade=http://$LOCALSTACK_PUBLIC_HOST:$TRADE_CALLBACK_PORT fake-qq=$FAKE_QQ_URL fake-wechat-pay=$FAKE_WECHAT_PAY_URL"
   status
 }
 

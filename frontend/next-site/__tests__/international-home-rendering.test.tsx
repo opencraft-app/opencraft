@@ -10,6 +10,13 @@ const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
+vi.mock("@/components/site/browser-language-suggestion", async () => {
+  const ReactRuntime = await import("react");
+  return {
+    BrowserLanguageSuggestion: () =>
+      ReactRuntime.createElement("div", { "data-testid": "browser-language-suggestion" }),
+  };
+});
 vi.mock("@/components/site/maintenance-announcement-banner", async () => {
   const ReactRuntime = await import("react");
   const { useLocaleOverride } = await import("@/i18n/t");
@@ -60,6 +67,8 @@ beforeEach(() => {
   regionMock.isGlobal = false;
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
+  openClawMock.bots = [];
+  openClawMock.isSubscribed = false;
 });
 
 afterEach(() => {
@@ -92,11 +101,19 @@ describe("international v2 homepage rendering", () => {
 
     expect(screen.getByTestId("maintenance-announcement-locale")).toHaveTextContent("es");
   });
+  it("mounts the browser language suggestion only on the default English home", () => {
+    regionMock.isGlobal = true;
+    const { rerender } = render(<InternationalHomeRuntime locale="en-US" markup="<main />" />);
+    expect(screen.getByTestId("browser-language-suggestion")).toBeInTheDocument();
+
+    rerender(<InternationalHomeRuntime locale="zh-SG" markup="<main />" />);
+    expect(screen.queryByTestId("browser-language-suggestion")).not.toBeInTheDocument();
+  });
   it("server-renders the approved homepage content and stylesheet", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260919-capability-sync-v82"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260924-mobile-locale-demo-v83"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -309,6 +326,23 @@ describe("international v2 homepage rendering", () => {
       expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("我的智能体伙伴");
     });
     expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/agents");
+  });
+
+  it.each([
+    [false, "zh-CN"], [true, "en-US"], [true, "zh-SG"], [true, "zh-Hant"],
+    [true, "id-ID"], [true, "es"], [true, "ja-JP"], [true, "ko-KR"],
+  ] as const)("opens first-bot creation from homepage CTAs (global=%s, locale=%s)", async (global, locale) => {
+    regionMock.isGlobal = global;
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = true;
+    openClawMock.bots = [];
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a class="btn-dark" href="/subscribe">Create</a></div><div class="cta__acts"><a class="btn-dark" href="/subscribe">Create</a></div></main>';
+
+    render(<InternationalHomeRuntime locale={locale} markup={markup} />);
+
+    for (const selector of [".hero__cta a", ".cta__acts a"]) {
+      await waitFor(() => expect(document.querySelector(selector)).toHaveAttribute("href", "/agents?create=1"));
+    }
   });
 
   it("sends anonymous CTA clicks straight to the subscribe page (plan A)", async () => {

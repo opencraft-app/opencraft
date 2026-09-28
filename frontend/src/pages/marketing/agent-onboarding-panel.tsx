@@ -32,6 +32,7 @@ import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import {
   AVATAR_SHAPES,
+  getAvatarShapeLabel,
   DEFAULT_AVATAR_COLOR,
   DEFAULT_AVATAR_SHAPE,
   GeometricAvatar,
@@ -39,14 +40,22 @@ import {
   type AvatarShapeId,
 } from "@/pages/marketing/agent-avatar-shapes";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
-import { buildBuddySetupPlan } from "@/pages/marketing/agent-buddy-setup";
+import {
+  buildBuddySetupPlan,
+  buildSandboxWarmupStep,
+  SANDBOX_PROBE_INTERVAL_MS,
+  SANDBOX_PROBE_TIMEOUT_MS,
+  SANDBOX_READY_TIMEOUT_MS,
+} from "@/pages/marketing/agent-buddy-setup";
 import {
   buildHermesSoulContentReadCommand,
   parseHermesSoulContent,
 } from "@/pages/marketing/agent-buddy-command";
 import {
+  classifySandboxProbeFailure,
   isSetupCommandSucceeded,
   runBuddySetupPlan,
+  truncateSetupError,
   type SetupExec,
   type SetupStepState,
 } from "@/pages/marketing/agent-buddy-setup-runner";
@@ -175,10 +184,12 @@ const TemplateRecommendations = ({
 
 /* ──────────────────────────────── 引导面板 ──────────────────────────────── */
 
-/** 沙箱就绪探测：最多等这么久（毫秒） */
-const SANDBOX_READY_TIMEOUT_MS = 180_000;
-/** 探测间隔 */
-const SANDBOX_PROBE_INTERVAL_MS = 5_000;
+/*
+ * 沙箱预热的超时 / 间隔常量已移到 agent-buddy-setup.ts，与
+ * buildSandboxWarmupStep 放在一起 —— 那个步骤的 timeoutMs 就取自
+ * SANDBOX_READY_TIMEOUT_MS，两者必须同源，分开放很容易改一个忘一个。
+ */
+
 /** 等 botId 的轮询间隔：路由导航很快，探密一点即可 */
 const BOT_ID_PROBE_INTERVAL_MS = 200;
 
@@ -289,8 +300,16 @@ export const AgentOnboardingPanel = ({
     preserveSoul?: boolean;
     resume?: boolean;
   } | null>(null);
-  /** 步骤进度 */
+  /** 配置计划的步骤进度（不含预热，预热见 warmupState） */
   const [steps, setSteps] = useState<SetupStepState[]>([]);
+  /**
+   * 预热步骤的状态，与 steps 分开存。
+   *
+   * 不能塞进 steps：runBuddySetupPlan 的 onProgress 回传的是**全量**快照，
+   * setSteps(states) 会整体替换，混在一起的预热状态会被当场冲掉。分开存、
+   * 渲染时再拼成一份清单，两边互不干扰。
+   */
+  const [warmupState, setWarmupState] = useState<SetupStepState | null>(null);
   /** 阻断性错误（沙箱超时 / SOUL 写入失败） */
   const [fatalError, setFatalError] = useState<string | null>(null);
   /** 非阻断失败数，仅用于完成后提示 */
@@ -353,20 +372,52 @@ export const AgentOnboardingPanel = ({
     [],
   );
 
+  /**
+   * 轮询探测沙箱是否已能执行命令。
+   *
+   * bot.status === "active" 不代表沙箱容器已起好，直接写配置会失败，
+   * 所以用一条无副作用的 `true` 命令探活。
+   *
+   * 返回 `{ ready: false, reason }`（而不是裸 false）：调用方要把真实原因
+   * 显示出来。原先这里 `catch {}` 吞掉一切异常、只返回 true/false，导致
+   * 401/403/404 这类永不自愈的错误也被当成「还没起好」空转满超时，最后统一
+   * 报「实例尚未就绪」—— 用户和排障的人都拿不到任何线索。
+   *
+   * `fatal` 为真表示已判定为永久失败、提前跳出了轮询，没有等满超时。
+   */
   const waitForSandbox = useCallback(
-    async (targetBotId: string, isCancelled: () => boolean): Promise<boolean> => {
+    async (
+      targetBotId: string,
+      isCancelled: () => boolean,
+    ): Promise<{ ready: boolean; reason?: string; fatal?: boolean }> => {
       const deadline = Date.now() + SANDBOX_READY_TIMEOUT_MS;
+      /** 最后一次探活为什么没成功，超时兜底时带给用户 */
+      let lastReason = "";
       while (Date.now() < deadline) {
-        if (isCancelled()) return false;
+        if (isCancelled()) return { ready: false };
         try {
-          const result = await execDebugCommand(targetBotId, "true", { timeoutMs: 15_000 });
-          if (result.exitCode === 0) return true;
-        } catch {
-          // 沙箱尚未就绪，继续等
+          const result = await execDebugCommand(targetBotId, "true", {
+            timeoutMs: SANDBOX_PROBE_TIMEOUT_MS,
+          });
+          if (result.exitCode === 0) return { ready: true };
+          // 命令跑了但没成功：沙箱可能还在初始化，记下原因继续等
+          lastReason = truncateSetupError(result.output, result.status || `exit ${result.exitCode}`, 160);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          lastReason = message;
+          /*
+           * 永久性失败立刻中止。
+           *
+           * 鉴权失效、无权限、实例已被回收都属于「再等三分钟也是同样的
+           * 响应」，继续轮询只是让用户白等，还会把真实原因埋掉。
+           */
+          if (classifySandboxProbeFailure(error) === "fatal") {
+            return { ready: false, reason: message, fatal: true };
+          }
         }
         await new Promise((resolve) => window.setTimeout(resolve, SANDBOX_PROBE_INTERVAL_MS));
       }
-      return false;
+      return { ready: false, reason: lastReason };
     },
     [execDebugCommand],
   );
@@ -455,8 +506,9 @@ export const AgentOnboardingPanel = ({
       preserveSoul: snapshot.preserveSoul,
       resume: true,
     });
+    setWarmupState({ step: buildSandboxWarmupStep(t), status: "running" });
     setPhase("creating");
-  }, [botId, profileId, pendingSetup]);
+  }, [botId, profileId, pendingSetup, t]);
 
   const protectUnload = phase === "creating" && !fatalError && !createdBotId
     && Boolean(pendingSetup);
@@ -565,6 +617,14 @@ export const AgentOnboardingPanel = ({
           t,
         }).map((step) => ({ step, status: "pending" as const })),
       );
+      /*
+       * 预热直接进 running，而不是先 pending。
+       *
+       * 「确保实例存在 + 等它能执行命令」这一整段本来就是从这一刻开始的，
+       * 清单上必须立刻有一行在转 —— 否则用户看到的还是全灰的 0/N，跟原来
+       * 那个「卡在喂咖啡」的表象一模一样。
+       */
+      setWarmupState({ step: buildSandboxWarmupStep(t), status: "running" });
       setPhase("creating");
     },
     [name, shapeId, color, description],
@@ -621,6 +681,7 @@ export const AgentOnboardingPanel = ({
             setPhase("form");
             setPendingSetup(null);
             setSteps([]);
+            setWarmupState(null);
             setupTokenRef.current = null;
             return;
           }
@@ -630,7 +691,7 @@ export const AgentOnboardingPanel = ({
           targetBotId = await waitForBotId(cancelled);
           if (cancelled()) return;
           if (!targetBotId) {
-            throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
+            throw new Error(t("等不到 Bot 实例，请返回列表后重新进入配置"));
           }
         }
 
@@ -648,11 +709,30 @@ export const AgentOnboardingPanel = ({
         });
 
         // 1. 等实例真正可执行命令 —— status 变 active 不等于沙箱就绪
-        const ready = await waitForSandbox(targetBotId, cancelled);
+        const probe = await waitForSandbox(targetBotId, cancelled);
         if (cancelled()) return;
-        if (!ready) {
-          throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
+        if (!probe.ready) {
+          /*
+           * 把真实原因带出去，分两种口径：
+           *   - fatal：已明确判定为永久失败（401/403/404 等），没有等满超时，
+           *     所以不能说「稍后重试」—— 直接把服务端给的原因摆出来。
+           *   - 超时：确实等满了，沿用原文案，但补上最后一次探测的失败原因，
+           *     让用户和客服至少知道是网络、鉴权还是实例侧的问题。
+           */
+          setWarmupState((prev) => (prev
+            ? { ...prev, status: "failed", error: probe.reason }
+            : prev));
+          if (probe.fatal && probe.reason) {
+            throw new Error(probe.reason);
+          }
+          throw new Error(probe.reason
+            ? t("实例尚未就绪，请稍后在设置页重试配置（最后一次探测：{{reason}}）", {
+              reason: probe.reason,
+            })
+            : t("实例尚未就绪，请稍后在设置页重试配置"));
         }
+        // 实例已可执行命令：预热这一行落成，进度从此开始往前走
+        setWarmupState((prev) => (prev ? { ...prev, status: "done", error: undefined } : prev));
 
         // 2. 按计划写 SOUL / 用户画像 / 技能 / 定时任务
         //    profileId 决定写进哪个 bot，拿不到就停 —— 猜错会串写到别的 bot。
@@ -662,7 +742,7 @@ export const AgentOnboardingPanel = ({
           if (cancelled()) return;
         }
         if (!targetProfileId) {
-          throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
+          throw new Error(t("等不到 Bot 的人设档案，请返回列表后重新进入配置"));
         }
         createdRef.current = { token: pendingSetup, botId: targetBotId, profileId: targetProfileId };
 
@@ -810,6 +890,17 @@ export const AgentOnboardingPanel = ({
   /** 卡片上不重复展示当前选中的模板 */
   const templates = useMemo(() => DEMO_TEMPLATES, []);
 
+  /*
+   * 渲染用的完整清单：预热行 + 配置计划。
+   *
+   * 合并只发生在渲染层，两份状态各自独立更新 —— runner 的 onProgress 回传
+   * 全量快照，混存会把预热状态冲掉（见 warmupState 的声明处）。
+   */
+  const visibleSteps = useMemo(
+    () => (warmupState ? [warmupState, ...steps] : steps),
+    [warmupState, steps],
+  );
+
   if (phase === "creating") {
     return (
       <CreatingLoadingView
@@ -820,9 +911,15 @@ export const AgentOnboardingPanel = ({
             createdRef.current = { ...createdRef.current, token: next };
           }
           setFatalError(null);
+          /*
+           * 预热必须重新探。它是一次实时探测，不是幂等的配置写入 ——
+           * 沿用上一轮的 failed/done 会让用户以为没重试，或者更糟：
+           * 顶着一个未就绪的实例直接往下写配置。
+           */
+          setWarmupState({ step: buildSandboxWarmupStep(t), status: "running" });
           setPendingSetup(next);
         } : undefined}
-        steps={steps}
+        steps={visibleSteps}
         partialFailureCount={partialFailureCount}
         onContinue={createdBotId
           ? () => runtimeRef.current.onCreated(createdBotId)
@@ -848,7 +945,7 @@ export const AgentOnboardingPanel = ({
             <button
               key={shape.id}
               type="button"
-              aria-label={shape.label}
+              aria-label={getAvatarShapeLabel(shape.id, t)}
               aria-pressed={shape.id === shapeId}
               onClick={() => setShapeId(shape.id)}
               className={cn(

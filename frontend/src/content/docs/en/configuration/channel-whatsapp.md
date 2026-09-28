@@ -34,6 +34,8 @@ Sign in to LightVela, click "My Hermes" in the upper-right corner to enter the c
 
 Find the WhatsApp card and click "+ Connect".
 
+Within one LightVela instance, WhatsApp can be connected to only one Bot at a time. If another Bot already owns it, open that Bot from the notice and disconnect WhatsApp before connecting here.
+
 ### 3. Scan the QR code with WhatsApp on your phone
 
 1. Open WhatsApp on your phone

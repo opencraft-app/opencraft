@@ -1010,6 +1010,17 @@ test("narrow desktop header preserves the thread identity icon", () => {
   );
 });
 
+test("narrow header keeps the thread identity next to its navigation rail", () => {
+  assert.match(
+    workbenchStyles,
+    /@media \(max-width: 620px\)\s*\{[\s\S]*?\.app-shell-header__context\s*\{\s*padding-left:\s*0;/u,
+  );
+  assert.match(
+    workbenchStyles,
+    /\.app-shell-header__window-controls-rail\s*\{[\s\S]*?gap:\s*4px;[\s\S]*?padding:\s*0 8px 0 max\(/u,
+  );
+});
+
 test("Electron titlebar subtracts only real controls from its native drag surface", () => {
   assert.match(
     workbenchStyles,

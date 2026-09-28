@@ -495,31 +495,16 @@ type BrowserUseInput =
 失效并返回 `STALE_ELEMENT_REFERENCE`。v1 不提供任意 JavaScript eval；后续若开放必须是单独
 高权限能力，不能暗藏在 `inspect` 中。
 
-## 10. Ambient context 的精确语义
+## 10. 浏览器状态与提交边界
 
-Codex 当前会在 prompt 构建阶段生成严格结构块。OpenCraft 使用同样的免责声明，只替换品牌描述：
+OpenCraft 的 Browser Runtime 保存页面及 Tab 状态，Browser tool 在需要时通过
+`list_tabs`、`inspect` 等操作读取。普通 Composer 提交、Turn steer 与页面重连不从
+Browser Runtime 自动构造 `additionalContext`；标签状态不会作为用户输入或可见的
+`<external_vela.browser.tabs>` 消息出现。页面恢复只重建 Client attachment 与
+Thread 订阅，不创建新 Turn。
 
-```xml
-<in-app-browser-context source="ambient-ui-state">
-This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
-# In app browser:
-- The user has the in-app browser open with 2 tabs.
-- Current URLs:
-  - http://127.0.0.1:5173/
-  - https://example.test/docs
-</in-app-browser-context>
-```
-
-只有一个 Tab 时使用 `Current URL`。没有打开 Tab 时不产生该块。
-
-实现要求：
-
-- 由 Composer/context builder 在发送时读取 Browser Runtime snapshot；
-- 不允许 UI 组件直接拼 prompt；
-- 必须有严格 parser/validator，拒绝额外尾随文本和畸形嵌套；
-- 当前活动 Tab 排第一；
-- ambient block 不进入用户可编辑正文；
-- ReplayTransport 录制最终发送请求后应能重放相同 block。
+如果未来增加显式“附加当前标签”操作，应由用户选择产生独立的上下文引用，并在
+提交边界校验来源、页面身份和信任等级；不能把页面存在本身当成用户请求。
 
 ## 11. Tool surface 与 ChatUI
 

@@ -54,7 +54,7 @@
     "@rollup/rollup-darwin-arm64": "^4.60.0",
     "@tanstack/react-virtual": "^3.14.3",
     "@tencent/agentchat-claw-panel": "1.5.15",
-    "@tencent/agentchat-lightvela-panel": "1.5.15",
+    "@tencent/agentchat-lightvela-panel": "1.5.24",
     "@tencent/i18n": "^2.0.30",
     "@tencent/tcb-jssdk": "2.0.27",
     "@tencent/universal-report": "4.7.6",

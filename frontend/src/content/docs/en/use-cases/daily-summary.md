@@ -44,7 +44,7 @@ Hermes can only summarize information it can receive or access through the capab
 
 If you need an outside data source, choose a suitable skill from a trusted source and confirm its behavior before using it. [Configure Skills](../configuration/skill.md) explains how skills extend Hermes beyond ordinary chat.
 
-![Cloud Storage sources for a daily summary](../images/use-case-daily-summary-storage.png)
+![Cloud Storage sources for a daily summary](../images/use-case-daily-summary-storage.webp)
 
 ### 3. Test the output in a normal conversation first
 
@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 Set this up in [Scheduled Tasks](../configuration/automation.md). Review the first few runs and adjust the wording if the summary is too broad, too long, or missing the right context.
 
-![A scheduled daily summary scheduled task](../images/use-case-daily-summary-automation.png)
+![A scheduled daily summary scheduled task](../images/use-case-daily-summary-automation.webp)
 
 ## FAQ
 

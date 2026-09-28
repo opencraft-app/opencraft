@@ -4,7 +4,7 @@
 
 **DeepSeek Harness es un framework de AI Agent con una arquitectura basada en plugins que puede instalar junto a Hermes Agent en LightVela. La página de Labs gestiona la instalación, el estado, el reinicio, el acceso a WebUI, las claves de los proveedores de modelos compatibles y un perfil con SkillHub, sin cambiar la configuración, los canales, las Skills ni la memoria existentes de Hermes. Para configurar los proveedores de modelos utilizados por Hermes Agent, consulte [Configurar modelos](./model.md).**
 
-![Resumen de DeepSeek Harness](../images/deepseek-harness-01.png)
+![Resumen de DeepSeek Harness](../images/deepseek-harness-01.webp)
 
 Aviso de Beta: DeepSeek Harness es una función de Labs en acceso anticipado.
 Las actualizaciones futuras pueden introducir cambios de compatibilidad a medida que evolucionen el framework upstream y su ecosistema de plugins.
@@ -14,7 +14,7 @@ Las actualizaciones futuras pueden introducir cambios de compatibilidad a medida
 DeepSeek Harness (DSH) es un agent harness de código abierto que proporciona a los modelos de IA el entorno y las herramientas que necesitan para trabajar en tareas reales.
 En LightVela, DSH se ejecuta como un entorno gestionado independiente junto a Hermes Agent, donde puede trabajar con archivos del proyecto, usar herramientas y Skills, administrar sesiones e interactuar con el Agent mediante su WebUI.
 
-![Página de DeepSeek Harness en Labs](../images/deepseek-harness-02.png)
+![Página de DeepSeek Harness en Labs](../images/deepseek-harness-02.webp)
 
 LightVela proporciona un punto de entrada gestionado para DSH.
 No necesita instalar paquetes manualmente, configurar una dirección de servidor pública ni operar el servicio DSH desde un terminal.
@@ -28,7 +28,7 @@ Desde la página de DeepSeek Harness en Labs, puede instalar el runtime gestiona
 4. Mantenga la página abierta mientras se ejecuta la instalación.
    Una instalación normal suele tardar entre uno y tres minutos.
 
-![Instalar DeepSeek Harness](../images/deepseek-harness-03.png)
+![Instalar DeepSeek Harness](../images/deepseek-harness-03.webp)
 
 ## Configurar un proveedor de modelos
 
@@ -52,24 +52,24 @@ Para añadir un proveedor:
 3. Seleccione Save.
 4. Confirme que el proveedor aparece en la lista de proveedores configurados.
 
-![Formulario de proveedor de modelos de DeepSeek Harness](../images/deepseek-harness-04.png)
+![Formulario de proveedor de modelos de DeepSeek Harness](../images/deepseek-harness-04.webp)
 
 Para eliminar un proveedor, seleccione la acción de eliminación y confirme la operación.
 Después de eliminarlo, puede volver a añadir el mismo proveedor más adelante con una API key nueva.
 
-![Proveedor de DeepSeek Harness configurado](../images/deepseek-harness-05.png)
+![Proveedor de DeepSeek Harness configurado](../images/deepseek-harness-05.webp)
 
 ## Abrir la WebUI de DeepSeek Harness
 
 Cuando el estado del servicio sea running, seleccione Access WebUI en la tarjeta de DeepSeek Harness.
 
-![Botón Access WebUI](../images/deepseek-harness-06.png)
+![Botón Access WebUI](../images/deepseek-harness-06.webp)
 
 LightVela proporciona un dominio de acceso dedicado y autenticación de identidad integrada para la WebUI de DeepSeek Harness, de modo que solo usted pueda acceder a ella.
 Una vez autenticado, puede abrir la WebUI de su instancia de Agent actual y comenzar con una prueba sencilla usando un proveedor que ya haya configurado.
 Si necesita probar Hermes Agent por separado, use [Chat](./agent-chat.md).
 
-![WebUI de DeepSeek Harness](../images/deepseek-harness-07.png)
+![WebUI de DeepSeek Harness](../images/deepseek-harness-07.webp)
 
 ## Entender los plugins
 
@@ -81,7 +81,7 @@ Puede visitar Plugin Plaza haciendo clic en Plugin Plaza en la esquina inferior 
 
 Desde Plugin Plaza, puede explorar capacidades adicionales para su entorno de DeepSeek Harness, como herramientas de navegador, memoria, tarea programada, mejoras de UI e integraciones externas.
 
-![Búsqueda de Plugin Plaza](../images/deepseek-harness-08.png)
+![Búsqueda de Plugin Plaza](../images/deepseek-harness-08.webp)
 
 Abra un plugin para revisar lo que añade y, después, instale los que quiera usar.
 Después de instalar un plugin, puede utilizarlo directamente en el workspace sin mencionarlo explícitamente.
@@ -91,19 +91,19 @@ Para consultar las Skills de Hermes gestionadas por LightVela, vea [Configurar S
 
 Puede ver la lista de plugins en DSH WebUI > Plugin Plaza > Installed.
 
-![Plugins instalados de DeepSeek Harness](../images/deepseek-harness-09.png)
+![Plugins instalados de DeepSeek Harness](../images/deepseek-harness-09.webp)
 
 ## Usar un workspace
 
 Un workspace es el directorio del proyecto con el que DeepSeek Harness trabaja durante sus sesiones.
 En la WebUI, haga clic en el icono Add Workspace para abrir el directorio del workspace.
 
-![Icono Add Workspace](../images/deepseek-harness-10.png)
+![Icono Add Workspace](../images/deepseek-harness-10.webp)
 
 Después de seleccionarlo, puede crear una carpeta nueva o elegir una carpeta existente de su entorno DSH alojado en la nube y establecerla como workspace del proyecto.
 El Agent podrá usar los archivos de ese workspace para comprender el proyecto, editar archivos, ejecutar comandos y realizar tareas dentro de ese workspace en la nube.
 
-![Diálogo Select Workspace Directory](../images/deepseek-harness-11.png)
+![Diálogo Select Workspace Directory](../images/deepseek-harness-11.webp)
 
 Los workspaces también ayudan a mantener organizados los proyectos y las sesiones.
 Las sesiones creadas para un workspace se asocian a ese directorio, por lo que puede volver al mismo proyecto y continuar trabajando con su historial de sesiones relacionado.
@@ -116,7 +116,7 @@ Use Restart cuando DSH esté instalado pero necesite volver a cargar después de
 La acción de reinicio solo se aplica al servicio DeepSeek Harness.
 Hermes Agent continúa ejecutándose de forma independiente.
 
-![Botón Restart de DeepSeek Harness](../images/deepseek-harness-12.png)
+![Botón Restart de DeepSeek Harness](../images/deepseek-harness-12.webp)
 
 ## Problemas comunes
 

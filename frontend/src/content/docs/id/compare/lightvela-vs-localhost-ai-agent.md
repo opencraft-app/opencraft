@@ -14,7 +14,7 @@ Hermes dapat berjalan secara lokal di macOS, Windows, Linux, WSL2, dan lainnya. 
 
 | Yang penting bagi Anda | Menjalankan Hermes di komputer Anda | Memakai LightVela |
 | - | - | - |
-| **Di mana Hermes berjalan** | Mesin Anda sendiri | Runtime cloud khusus |
+| **Di mana Hermes berjalan** | Mesin Anda sendiri | Lingkungan cloud khusus |
 | **Kendali sehari-hari** | Anda memilih penyiapan dan lingkungan lokalnya | Anda mengelola Agent melalui konsol yang di-hosting |
 | **Ketersediaan** | Anda menjaga komputer dan prosesnya tetap tersedia | Dirancang untuk tetap online secara independen dari perangkat lokal Anda |
 | **Tanggung jawab penyiapan** | Anda mengonfigurasi runtime, model, tool, dan kanalnya | Lingkungan Agent intinya di-hosting untuk Anda |

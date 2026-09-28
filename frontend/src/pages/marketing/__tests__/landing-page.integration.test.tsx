@@ -22,6 +22,7 @@ const sessionState = vi.hoisted((): {
   session: { stage: "anonymous", user: null },
 }));
 const prepareReferralCode = vi.hoisted(() => vi.fn());
+const agentState = vi.hoisted(() => ({ bots: [] as Array<{ id: string }>, isSubscribed: false }));
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionState,
@@ -32,10 +33,7 @@ vi.mock("@/contexts/repository-context", () => ({
 }));
 
 vi.mock("@/contexts/agent-context", () => ({
-  useOpenClaw: () => ({
-    bots: [],
-    isSubscribed: false,
-  }),
+  useOpenClaw: () => agentState,
 }));
 
 vi.mock("@/components/site/login-modal", () => ({
@@ -48,12 +46,14 @@ vi.mock("@/components/site/public-site-header", () => ({
   PublicSiteHeader: ({
     authSnapshot,
     onLoginClick,
+    onCreateClick,
   }: {
     authSnapshot?: { authReady: boolean; isAuthenticated: boolean };
     onLoginClick?: () => void;
+    onCreateClick?: () => void;
   }) =>
     authSnapshot?.isAuthenticated ? (
-      <div>avatar menu</div>
+      <div>avatar menu<button type="button" onClick={onCreateClick}>header create</button></div>
     ) : (
       <button type="button" onClick={onLoginClick}>
         登录
@@ -61,7 +61,7 @@ vi.mock("@/components/site/public-site-header", () => ({
     ),
 }));
 vi.mock("@/imports/Frame2147230025/sections/HeroSection", () => ({
-  default: () => <div>hero</div>,
+  default: ({ onCreateClick }: { onCreateClick: () => void }) => <button onClick={onCreateClick}>hero create</button>,
 }));
 vi.mock("@/imports/Frame2147230025/sections/BrandIconsSection", () => ({
   default: () => <div>brand icons</div>,
@@ -74,7 +74,7 @@ vi.mock("@/imports/Frame2147230025/sections/ProcessSection", () => ({
   default: () => <div>process</div>,
 }));
 vi.mock("@/imports/Frame2147230025/sections/CtaSection", () => ({
-  default: () => <div>cta</div>,
+  default: ({ onCreateClick }: { onCreateClick: () => void }) => <button onClick={onCreateClick}>footer create</button>,
 }));
 vi.mock("@/components/site/product-chrome", () => ({
   ProductFooter: () => <div>footer</div>,
@@ -98,12 +98,25 @@ afterEach(async () => {
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
   sessionState.session = { stage: "anonymous", user: null };
+  agentState.bots = [];
+  agentState.isSubscribed = false;
   prepareReferralCode.mockReset().mockResolvedValue(undefined);
   await i18n.changeLanguage("zh-CN");
   cleanup();
 });
 
 describe("LandingPage", () => {
+  it.each(["hero", "header", "footer"])("opens creation from the %s CTA for subscribed users without bots", (origin) => {
+    sessionState.isAuthenticated = true;
+    agentState.isSubscribed = true;
+    const navigateTo = vi.fn();
+    render(<LandingPageView navigateTo={navigateTo} authSnapshot={{ authReady: true, isAuthenticated: true }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: `${origin} create` }));
+
+    expect(navigateTo).toHaveBeenCalledWith("/agents?create=1");
+  });
+
   it("renders the overview automations on the public home page", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>

@@ -358,3 +358,28 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
     });
   });
 });
+
+describe("套餐文档云端环境规格", () => {
+  it.each([
+    ["src/content/docs/plans.md", "专属云端环境", "2 vCPU · 8 GB 内存", "4 vCPU · 16 GB 内存"],
+    ["src/content/docs/global/plans.md", "专属云端环境", "2 vCPU · 8 GB 内存", "4 vCPU · 16 GB 内存"],
+    ["src/content/docs/en/plans.md", "Dedicated cloud environment", "2 vCPU · 8 GB RAM", "4 vCPU · 16 GB RAM"],
+    ["src/content/docs/es/plans.md", "Entorno de nube dedicado", "2 vCPU · 8 GB de RAM", "4 vCPU · 16 GB de RAM"],
+    ["src/content/docs/ja/plans.md", "専用クラウド環境", "2 vCPU · 8 GB メモリ", "4 vCPU · 16 GB メモリ"],
+    ["src/content/docs/ko/plans.md", "전용 클라우드 환경", "2 vCPU · 8 GB RAM", "4 vCPU · 16 GB RAM"],
+  ] as const)("%s keeps technical specs for all four tiers", (path, environment, launchSpec, cruiseSpec) => {
+    const rows = parseTableRows(read(path));
+    const headerIndex = rows.findIndex((row) => row[3] === environment);
+    expect(headerIndex, `${path} 的环境规格表头`).toBeGreaterThanOrEqual(0);
+    expect(rows.slice(headerIndex + 2, headerIndex + 6).map((row) => row[3])).toEqual([
+      launchSpec, cruiseSpec, launchSpec, cruiseSpec,
+    ]);
+  });
+
+  it("Indonesian plan tables keep technical specs for both tiers", () => {
+    const rows = parseTableRows(read("src/content/docs/id/plans.md"));
+    expect(rows.filter((row) => row[0] === "Lingkungan cloud khusus").map((row) => row[1])).toEqual([
+      "2 vCPU · 8 GB RAM", "4 vCPU · 16 GB RAM",
+    ]);
+  });
+});

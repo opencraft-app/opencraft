@@ -383,6 +383,7 @@ interface SemanticThemeColors {
   textForeground: string;
   textForegroundSecondary: string;
   textForegroundTertiary: string;
+  textWorkingHighlight: string;
 }
 
 function lightSemanticColors(theme: ThemeVariant): SemanticThemeColors {
@@ -434,6 +435,7 @@ function lightSemanticColors(theme: ThemeVariant): SemanticThemeColors {
     textForeground: theme.theme.ink,
     textForegroundSecondary: rgba(theme.ink, 0.65 + theme.contrast * 0.1),
     textForegroundTertiary: rgba(theme.ink, 0.45 + theme.contrast * 0.1),
+    textWorkingHighlight: theme.theme.ink,
   };
 }
 
@@ -489,6 +491,7 @@ function darkSemanticColors(theme: ThemeVariant): SemanticThemeColors {
         : theme.theme.ink,
     textForegroundSecondary: rgba(theme.ink, 0.65 + theme.contrast * 0.1),
     textForegroundTertiary: rgba(theme.ink, 0.42 + theme.contrast * 0.13),
+    textWorkingHighlight: theme.theme.ink,
   };
 }
 
@@ -585,6 +588,7 @@ export function buildCodexThemeCssProperties(
     "--color-text-foreground": semantic.textForeground,
     "--color-text-foreground-secondary": semantic.textForegroundSecondary,
     "--color-text-foreground-tertiary": semantic.textForegroundTertiary,
+    "--color-text-working-highlight": semantic.textWorkingHighlight,
     "--color-surface": definition.surface,
     "--color-surface-secondary": semantic.elevatedSecondaryOpaque,
     // Codex maps this token to the editor surface. The Electron shell mixes it

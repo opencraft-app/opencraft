@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![プロジェクトファイルを含むクラウドストレージフォルダ](../images/use-case-memory-knowledge-storage.png)
+![プロジェクトファイルを含むクラウドストレージフォルダ](../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. 記憶を永遠に正しいと仮定するのではなく、レビューする
 
@@ -69,7 +69,7 @@ and keep weekly summaries to five bullets.
 
 レビューが定期的なリズムに従う場合、[スケジュールタスク](../configuration/automation.md)フォルダを再訪することや定期的なまとめを準備することを思い出させることができます。広範で自由なタスクを与えるのではなく、まずは簡単なリマインダーや要約から始めましょう。
 
-![整理されたプロジェクト知識を使用したHermes Agent会話](../images/use-case-memory-knowledge-automation.png)
+![整理されたプロジェクト知識を使用したHermes Agent会話](../images/use-case-memory-knowledge-automation.webp)
 
 ## FAQ
 

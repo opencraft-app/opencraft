@@ -72,7 +72,7 @@ describe("BlogPage", () => {
     expect(latestCard).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-3", "shadow-sm");
     expect(latestCard.querySelector("img")).toHaveAttribute(
       "src",
-      "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
+      "/assets/blog/dsh-revived-broken-hermes-agent/cover.webp",
     );
     expect(latestCard.querySelector("img")).toHaveClass("rounded-md", "bg-white", "object-cover");
     expect(latestCard.querySelector("h2")).toHaveClass("line-clamp-2", "min-h-[2.5rem]", "px-1", "text-pretty");

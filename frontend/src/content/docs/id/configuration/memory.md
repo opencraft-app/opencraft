@@ -8,7 +8,7 @@
 
 Memori membantu Hermes mempertahankan informasi penting lintas percakapan dan lintas perangkat—preferensi Anda, identitas, pekerjaan yang sedang berjalan, dan pengalaman yang terbentuk melalui kolaborasi jangka panjang. Inilah yang mengubah Hermes dari alat tanya-jawab sekali pakai menjadi asisten jangka panjang yang makin memahami Anda seiring waktu.
 
-![Halaman Memory dan User Profile di konsol LightVela](../images/memory-management-overview-en.png)
+![Halaman Memory dan User Profile di konsol LightVela](../images/memory-management-overview-en.webp)
 
 LightVela berjalan di cloud, sehingga memori ini disimpan bersama instans Hermes Anda di cloud. Memori tidak hilang saat Anda berganti perangkat atau berpindah antara Telegram, WhatsApp, Discord, Slack, dan WeChat. Jika hari ini Anda memberi tahu Hermes sesuatu di Telegram, besok ia tetap dapat mengingatnya saat Anda melanjutkan percakapan di WhatsApp.
 

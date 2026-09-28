@@ -128,6 +128,31 @@ produce neither a blank interval nor a duplicate row. This does not redefine
 steer as a hard interrupt: the current provider request and tool step remain
 owned by DSH and may finish before the next-step inbox is consumed.
 
+Queued-message steering is gated by the Host's
+`opencraft/thread-queue: { version: 2, atomicSteer: true }` declaration. DSH
+provides the one native `session.updateQueue(steer)` operation. Stock Codex
+AppServer 0.156.1 has `turn/steer` for fresh input and `thread/queue/start` for
+an idle Thread, but no `thread/queue/steer`; its queue also auto-dispatches at
+idle. Therefore a Codex queued message cannot safely be converted to an active
+steer by composing `turn/steer` and `thread/queue/delete` in the Client or Host.
+The Codex Host now owns queued input in its own durable SQLite store. It claims
+one item before sending the standard `turn/steer` to Codex, and reconciles by
+client-message ID against paged Codex user-message history. A crash or timeout
+with no conclusive acknowledgement leaves the claim delivery-unconfirmed,
+outside automatic dispatch; the Host never silently resends it. The user may
+explicitly discard an unresolved claim after reviewing the transcript. The
+Host delete request requires the original queue ID, target Turn ID and an
+acknowledgement flag, checks history and rejects while the Thread is active.
+This does not prove Codex never saw the input. `unconfirmedSteerDiscard` remains
+a separate Host capability; DSH's `atomicSteer` does not imply it. A failed
+history read also rejects discard. Ordinary direct steering and idle queue Send
+remain separate. At upgrade, native Codex queue rows migrate before AppServer
+starts so two independent dispatchers never own the same item.
+After a DSH Host restart, a durable local queue row without a matching native
+queue snapshot is marked `restored-after-host-restart`; that item cannot be
+started or steered until native reconciliation confirms its identity. The Host
+enforces this even if a client bypasses the disabled UI action.
+
 Attachment staging is a Host resource, not a Renderer filesystem convention.
 The `opencraft/attachment-staging` capability declares accepted source kinds,
 returned location kinds and the byte limit; Composer consumes only the shared
@@ -180,6 +205,15 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    can execute Agent work still awaits the binding's generation-scoped
    capability lease, and a failed prewarm is retried there rather than
    invalidating already-restored history.
+
+The Web recovery presentation does not equate non-authoritative with invisible.
+When a Thread already has painted Timeline frames, reconnect and retry preserve
+those frames, their scroll position and Composer draft; a small local connection
+notice shows the pending or failed state while commands remain disabled until
+authority returns. Only a Thread without visible frames gets a delayed skeleton
+in the Timeline's empty slot. A definite restore failure replaces that slot with
+an inline retry action. Neither state mounts an opaque page overlay or changes
+the Conversation View identity.
 
 Host execution preparation is coordinated by the existing Thread lifecycle
 queue. Capability replacement and Turn admission share that queue; connection
@@ -337,6 +371,33 @@ back to the embedding product's document body.
   manifest, a location-keyed display-metadata index, replay/content checks and
   bounded recursive removal. Images may continue to use the independent inline
   data-URL path.
+
+### Browser image attachment presentation
+
+The Web Composer displays a selected image immediately from a browser-owned
+object URL. The object URL and original `File` belong to the Composer
+Controller's View-scoped attachment session, keyed by Draft ID and attachment
+ID; neither enters the serializable Draft or AppServer input. The session owns
+compression/resolve work across React mount changes, updates only the Draft
+that initiated the work, and aborts/revokes on removal, clear or Controller
+disposal. A retry uses the retained original `File`. `processing` means local
+image preparation, not measured network upload progress. The existing
+`canSubmit` rule remains the admission gate for unresolved or failed assets.
+For iPhone camera HEIC/HEIF input, browser image decode and canvas encoding
+produce a JPEG upload derivative. This is required format conversion, so it is
+kept even if larger than the selected HEIC; the original File stays with the
+View-scoped session for retry. A browser without that decode/encode path leaves
+the attachment failed rather than sending HEIC under an unsupported MIME.
+The post-conversion inline byte cap still applies before base64 allocation.
+
+After acceptance, image presentation is derived from the authoritative
+Timeline. Sent-image thumbnails resolve direct image data or Host-backed media
+through the existing media source boundary; their click opens a modal image
+viewer rather than generic link navigation, which deliberately rejects `data:`
+URLs. No generic resource-policy exception is introduced. Full page reload
+does not preserve an unsent browser `File`; that requires a separate durable
+draft/blob storage contract. Native Expo has the same semantic Draft but not
+this Web-only picker/presentation implementation.
 
 ### Production hardening, not architecture blockers
 

@@ -95,6 +95,13 @@
       "description": "DEB package for Debian and Ubuntu Linux x64 systems"
     },
     {
+      "id": "headless-linux-amd64-tar",
+      "platforms": ["linux"],
+      "command": ["npm", "run", "package:headless:linux:amd64"],
+      "artifacts": ["release/OpenCraft-server-0.1.0-linux-amd64.tar.gz"],
+      "description": "Headless Linux amd64 DSH/Codex Hosts and browser Workbench server archive"
+    },
+    {
       "id": "expo-web",
       "platforms": ["linux", "darwin", "win32"],
       "command": ["npm", "run", "build:expo:web"],

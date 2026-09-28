@@ -1,5 +1,35 @@
-import type { WorkbenchThread } from "@opencraft/workbench-runtime";
-import { Folder } from "lucide-react";
+import { stableIdentityColor } from "@opencraft/design-system/identity-color";
+import type { ServerRouteLocality, ThreadServerOrigin, WorkbenchThread } from "@opencraft/workbench-runtime";
+import { useIntl } from "@opencraft/i18n/react";
+import { Folder, Globe2 } from "lucide-react";
+
+function ServerOriginBadge({
+  origin,
+  routeLocality,
+}: {
+  readonly origin: ThreadServerOrigin;
+  readonly routeLocality: ServerRouteLocality;
+}) {
+  const intl = useIntl();
+  const remote = routeLocality === "remote";
+  const label = remote ? intl.formatMessage({
+    id: "sidebar.serverOrigin",
+    defaultMessage: "From {server}",
+    description: "Accessible label for the remote Server that owns a sidebar task",
+  }, { server: origin.label }) : undefined;
+  return (
+    <span
+      className="sidebar-activity-item__server-origin"
+      data-route-locality={routeLocality}
+      role={remote ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={remote ? undefined : true}
+      title={label}
+    >
+      {remote ? <Globe2 size={14} strokeWidth={1.75} style={{ color: stableIdentityColor(origin.serverId) }} /> : null}
+    </span>
+  );
+}
 
 function ThreadActivity({
   pending,
@@ -34,7 +64,8 @@ function ThreadActivity({
 
 export function SidebarActivityItem({
   active,
-  host,
+  serverOrigin,
+  serverRouteLocality,
   onInvoke,
   pending,
   project,
@@ -45,7 +76,8 @@ export function SidebarActivityItem({
   unread,
 }: {
   readonly active: boolean;
-  readonly host: string | null;
+  readonly serverOrigin: ThreadServerOrigin;
+  readonly serverRouteLocality: ServerRouteLocality;
   readonly onInvoke: () => void;
   readonly pending: boolean;
   readonly project: string;
@@ -74,10 +106,10 @@ export function SidebarActivityItem({
         <span className="sidebar-activity-item__metadata">
           <Folder size={12} aria-hidden="true" />
           <span>{project}</span>
-          {host === null ? null : <><span aria-hidden="true">·</span><span>{host}</span></>}
         </span>
       </span>
       <span className="sidebar-activity-item__trailing">
+        <ServerOriginBadge origin={serverOrigin} routeLocality={serverRouteLocality} />
         <ThreadActivity pending={pending} status={status} unread={unread} />
       </span>
     </button>

@@ -5,7 +5,7 @@
 **LightVela admite mensajes de grupos de Telegram cuando desactiva Group Privacy para el bot en BotFather, añade el bot al grupo e inicia la conversación mencionándolo con `@bot_username`.**
 Esta guía explica esa configuración verificada y muestra cómo usar el mismo Hermes Agent para preguntas y respuestas, resúmenes y recordatorios en grupos, sin presentar los eventos de incorporación de miembros ni las respuestas pasivas no verificadas como funciones configuradas.
 
-![Un asistente de IA para comunidades en grupos de Telegram para preguntas y respuestas, resúmenes y recordatorios](../images/use-case-08-telegram-group-community-assistant.png)
+![Un asistente de IA para comunidades en grupos de Telegram para preguntas y respuestas, resúmenes y recordatorios](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## Antes de empezar
 
@@ -66,7 +66,7 @@ Valide una tarea programada por separado en un canal de destino compatible antes
 
 Desactivar Group Privacy habilita la entrega de mensajes de Telegram.
 No sustituye la responsabilidad de establecer reglas para el grupo, evitar compartir información sensible y exigir confirmación antes de ejecutar acciones externas de alto riesgo.
-Consulte la [guía de límites de seguridad de Telegram y WhatsApp](./telegram-whatsapp-safety-boundaries.md) al definir quién puede pedir al Agent que realice acciones sensibles.
+Define qué miembros pueden solicitar acciones sensibles y confirma la autorización antes de que el Agent las ejecute.
 
 ## Preguntas frecuentes
 
@@ -95,6 +95,5 @@ No presuponga que la compatibilidad con mensajes de grupo de Telegram se extiend
 
 - [Configurar canal - Telegram](../configuration/channel-telegram.md) - Conecte el bot y repita los pasos de configuración de mensajes de grupo.
 
-- [Cómo convertir un Agent de IM en un asistente de atención al cliente, comunidad o compañía con Skills](./im-agent-skill-scenarios.md) - Prepare Skills y contenido para preguntas y respuestas y resúmenes en grupos.
 
 - [Cómo definir el rol, la personalidad y la voz de un Agent de IM con SOUL.md](./im-agent-persona-soul-md.md) - Defina el rol y los límites del asistente.

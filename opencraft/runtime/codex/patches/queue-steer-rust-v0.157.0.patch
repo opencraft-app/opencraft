@@ -1,0 +1,2985 @@
+diff --git a/codex-rs/Cargo.lock b/codex-rs/Cargo.lock
+index 9af76ee..dcb9c50 100644
+--- a/codex-rs/Cargo.lock
++++ b/codex-rs/Cargo.lock
+@@ -268,7 +268,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
+
+ [[package]]
+ name = "app_test_support"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -1893,7 +1893,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-agent-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-core",
+@@ -1905,7 +1905,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-agent-graph-store"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-state",
+@@ -1920,7 +1920,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-agent-identity"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -1940,7 +1940,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-agent-message-board-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "caseless",
+@@ -1963,7 +1963,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-agent-roles"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-config",
+  "codex-file-system",
+@@ -1976,7 +1976,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-analytics"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-app-server-protocol",
+  "codex-git-utils",
+@@ -1998,7 +1998,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-ansi-escape"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "ansi-to-tui",
+  "ratatui",
+@@ -2007,7 +2007,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-api"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "assert_matches",
+@@ -2045,7 +2045,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-app-server"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -2153,7 +2153,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-app-server-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-app-server",
+  "codex-app-server-protocol",
+@@ -2180,7 +2180,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-app-server-daemon"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "blake3",
+@@ -2205,7 +2205,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-app-server-protocol"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-app-server-protocol-noop-macros",
+@@ -2239,11 +2239,11 @@ dependencies = [
+
+ [[package]]
+ name = "codex-app-server-protocol-noop-macros"
+-version = "0.0.0"
++version = "0.157.0"
+
+ [[package]]
+ name = "codex-app-server-test-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2265,7 +2265,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-app-server-transport"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -2311,7 +2311,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-apply-patch"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+@@ -2331,7 +2331,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-arg0"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-apply-patch",
+@@ -2353,7 +2353,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-async-utils"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+  "rand 0.9.3",
+@@ -2363,7 +2363,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-attachment-store"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+  "serde",
+@@ -2373,7 +2373,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-aws-auth"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "aws-config",
+  "aws-credential-types",
+@@ -2399,7 +2399,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-backend-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-api",
+@@ -2419,7 +2419,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-backend-openapi-models"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "serde",
+  "serde_json",
+@@ -2428,7 +2428,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-build-info"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-install-context",
+  "pretty_assertions",
+@@ -2441,7 +2441,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-bwrap"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "cc",
+  "libc",
+@@ -2450,7 +2450,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-chatgpt"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2472,7 +2472,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-cli"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -2568,7 +2568,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-http-client",
+  "eventsource-stream",
+@@ -2581,7 +2581,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-cloud-config"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "chrono",
+@@ -2607,7 +2607,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-cloud-tasks"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -2640,7 +2640,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-cloud-tasks-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -2655,7 +2655,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-cloud-tasks-mock-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "chrono",
+  "codex-cloud-tasks-client",
+@@ -2664,7 +2664,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-code-mode"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-code-mode-protocol",
+  "codex-http-client",
+@@ -2687,7 +2687,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-code-mode-host"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -2716,7 +2716,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-code-mode-protocol"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+  "glob",
+@@ -2734,7 +2734,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-code-mode-runtime"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-code-mode-protocol",
+@@ -2752,11 +2752,11 @@ dependencies = [
+
+ [[package]]
+ name = "codex-collaboration-mode-templates"
+-version = "0.0.0"
++version = "0.157.0"
+
+ [[package]]
+ name = "codex-config"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -2806,7 +2806,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-config-schema"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -2815,7 +2815,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-connectors"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -2837,7 +2837,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-connectors-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-connectors",
+  "codex-core-plugins",
+@@ -2851,7 +2851,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-context-fragments"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-string",
+@@ -2861,7 +2861,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-core"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -2998,7 +2998,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-core-api"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-analytics",
+  "codex-app-server-protocol",
+@@ -3021,7 +3021,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-core-plugins"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3076,7 +3076,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-diagnostics"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "libc",
+  "pretty_assertions",
+@@ -3084,7 +3084,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-exec"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+@@ -3136,7 +3136,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-exec-server"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -3197,7 +3197,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-exec-server-protocol"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-file-system",
+@@ -3213,7 +3213,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-exec-server-test-support"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-exec-server",
+@@ -3228,7 +3228,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-execpolicy"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -3246,7 +3246,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-experimental-api-macros"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "proc-macro2",
+  "quote",
+@@ -3255,7 +3255,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-extension-api"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-config",
+  "codex-context-fragments",
+@@ -3274,7 +3274,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-extension-items"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "pretty_assertions",
+@@ -3286,7 +3286,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-external-agent-migration"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "chrono",
+  "codex-analytics",
+@@ -3316,7 +3316,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-features"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-network-proxy",
+  "codex-otel",
+@@ -3330,7 +3330,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-feedback"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "bytes",
+@@ -3354,7 +3354,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-file-search"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -3370,7 +3370,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-file-system"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "bytes",
+  "codex-protocol",
+@@ -3382,7 +3382,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-file-watcher"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "notify",
+  "pretty_assertions",
+@@ -3393,7 +3393,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-git-attribution"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-backend-client",
+  "codex-extension-api",
+@@ -3406,7 +3406,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-git-utils"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3432,7 +3432,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-goal-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3457,7 +3457,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-guardian-context"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-context-fragments",
+  "codex-history",
+@@ -3468,7 +3468,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-guardian-reviewer"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-analytics",
+@@ -3493,7 +3493,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-guardian-v2"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-analytics",
+@@ -3526,7 +3526,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-history"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-protocol",
+@@ -3538,7 +3538,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-history-notes-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-analytics",
+  "codex-api",
+@@ -3563,7 +3563,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-home"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-extension-api",
+  "codex-utils-absolute-path",
+@@ -3575,7 +3575,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-hooks"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "async-channel",
+@@ -3601,7 +3601,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-http-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "bytes",
+  "codex-utils-cargo-bin",
+@@ -3636,7 +3636,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-image-generation-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-api",
+@@ -3663,7 +3663,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-install-context"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "codex-utils-home-dir",
+@@ -3676,7 +3676,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-keyring-store"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "keyring",
+  "tracing",
+@@ -3684,7 +3684,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-linux-sandbox"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "clap",
+  "codex-core",
+@@ -3712,7 +3712,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-lmstudio"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-core",
+  "codex-http-client",
+@@ -3726,7 +3726,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-login"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -3769,7 +3769,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-mcp"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "arc-swap",
+@@ -3809,7 +3809,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-mcp-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -3842,7 +3842,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-memories-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-core",
+  "codex-extension-api",
+@@ -3864,7 +3864,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-memories-read"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-shell-command",
+@@ -3874,7 +3874,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-memories-write"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -3911,7 +3911,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-mermaid"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "insta",
+  "pretty_assertions",
+@@ -3920,7 +3920,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-message-history"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-config",
+  "memchr",
+@@ -3934,7 +3934,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-model-provider"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "chrono",
+@@ -3966,7 +3966,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-model-provider-info"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-api",
+  "codex-protocol",
+@@ -3984,7 +3984,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-models-manager"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "chrono",
+  "codex-http-client",
+@@ -4003,7 +4003,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-mxc-sandbox"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "appcontainer_common",
+@@ -4025,7 +4025,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-network-proxy"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -4074,7 +4074,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-ollama"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "assert_matches",
+  "async-stream",
+@@ -4094,7 +4094,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-otel"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "bytes",
+  "chrono",
+@@ -4130,7 +4130,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-otel-trace-websocket"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -4141,7 +4141,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-plugin"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-config",
+  "codex-protocol",
+@@ -4155,7 +4155,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-process-hardening"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "libc",
+  "pretty_assertions",
+@@ -4163,7 +4163,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-prompts"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-collaboration-mode-templates",
+@@ -4180,7 +4180,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-protocol"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chardetng",
+@@ -4224,11 +4224,12 @@ dependencies = [
+
+ [[package]]
+ name = "codex-queue-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-core",
+  "codex-extension-api",
++ "codex-history",
+  "codex-protocol",
+  "codex-state",
+  "codex-thread-store",
+@@ -4245,7 +4246,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-realtime-webrtc"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-build-info",
+@@ -4263,7 +4264,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-response-debug-context"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-api",
+@@ -4274,7 +4275,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-responses-api-proxy"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -4291,7 +4292,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-rmcp-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "axum",
+@@ -4340,7 +4341,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-rollout"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -4367,7 +4368,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-rollout-trace"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-code-mode",
+@@ -4383,7 +4384,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-sandboxing"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-mxc-sandbox",
+@@ -4410,7 +4411,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-secrets"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "age",
+  "anyhow",
+@@ -4431,7 +4432,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-shell-command"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -4454,7 +4455,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-shell-escalation"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -4474,7 +4475,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-skills"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-shell-command",
+@@ -4491,7 +4492,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-skills-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "assert_matches",
+  "codex-analytics",
+@@ -4527,7 +4528,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-state"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "chrono",
+@@ -4553,7 +4554,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-stdio-to-uds"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-uds",
+@@ -4565,7 +4566,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-tcp-tunnel"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "bytes",
+@@ -4586,7 +4587,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-terminal-detection"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+  "tracing",
+@@ -4594,7 +4595,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-test-binary-support"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-arg0",
+  "tempfile",
+@@ -4602,7 +4603,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-thread-manager-sample"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "clap",
+@@ -4613,7 +4614,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-thread-store"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "chrono",
+  "codex-app-server-protocol",
+@@ -4644,7 +4645,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-tools"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "bitflags 2.13.1",
+  "codex-code-mode",
+@@ -4670,7 +4671,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-tui"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "app_test_support",
+@@ -4796,7 +4797,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-uds"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "async-io",
+  "libc",
+@@ -4810,7 +4811,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-user-verification"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "core-foundation 0.10.1",
+@@ -4830,7 +4831,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-absolute-path"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "dirs",
+  "dunce",
+@@ -4844,14 +4845,14 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-approval-presets"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+ ]
+
+ [[package]]
+ name = "codex-utils-audio"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-protocol",
+@@ -4865,7 +4866,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-cache"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "lru",
+  "sha1 0.10.6",
+@@ -4874,7 +4875,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-cargo-bin"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "assert_cmd",
+  "runfiles",
+@@ -4883,7 +4884,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-cli"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "clap",
+  "codex-protocol",
+@@ -4895,15 +4896,15 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-elapsed"
+-version = "0.0.0"
++version = "0.157.0"
+
+ [[package]]
+ name = "codex-utils-fuzzy-match"
+-version = "0.0.0"
++version = "0.157.0"
+
+ [[package]]
+ name = "codex-utils-git-discovery"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-git-utils",
+  "codex-utils-absolute-path",
+@@ -4916,7 +4917,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-home-dir"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "dirs",
+@@ -4926,7 +4927,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-image"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-utils-cache",
+@@ -4939,7 +4940,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-json-to-toml"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+  "serde_json",
+@@ -4948,7 +4949,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-oss"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-core",
+  "codex-lmstudio",
+@@ -4958,7 +4959,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-output-truncation"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-string",
+@@ -4967,7 +4968,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-path"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-utils-absolute-path",
+  "dunce",
+@@ -4978,7 +4979,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-path-uri"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "base64 0.22.1",
+  "codex-utils-absolute-path",
+@@ -4994,7 +4995,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-plugins"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-exec-server",
+  "codex-exec-server-protocol",
+@@ -5008,7 +5009,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-pty"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "filedescriptor",
+@@ -5025,7 +5026,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-readiness"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "assert_matches",
+  "thiserror 2.0.18",
+@@ -5035,7 +5036,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-redacted-string"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "schemars 0.8.22",
+  "serde",
+@@ -5043,14 +5044,14 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-rustls-provider"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "rustls",
+ ]
+
+ [[package]]
+ name = "codex-utils-sandbox-summary"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-protocol",
+  "codex-utils-absolute-path",
+@@ -5060,7 +5061,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-sleep-inhibitor"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "core-foundation 0.9.4",
+  "libc",
+@@ -5070,14 +5071,14 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-stream-parser"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+ ]
+
+ [[package]]
+ name = "codex-utils-string"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+  "regex-lite",
+@@ -5087,14 +5088,14 @@ dependencies = [
+
+ [[package]]
+ name = "codex-utils-template"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+ ]
+
+ [[package]]
+ name = "codex-v8-poc"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "pretty_assertions",
+  "v8",
+@@ -5102,7 +5103,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-voice-host"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-install-context",
+@@ -5129,7 +5130,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-web-search-extension"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-api",
+  "codex-core",
+@@ -5151,7 +5152,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-websocket-client"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-http-client",
+  "codex-utils-rustls-provider",
+@@ -5167,7 +5168,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-windows-sandbox"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "base64 0.22.1",
+@@ -5194,7 +5195,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-windows-sandbox-service"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-cloud-config",
+@@ -5211,7 +5212,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-workload-identity"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "codex-http-client",
+  "pretty_assertions",
+@@ -5226,7 +5227,7 @@ dependencies = [
+
+ [[package]]
+ name = "codex-worktree"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "codex-git-utils",
+@@ -5466,7 +5467,7 @@ dependencies = [
+
+ [[package]]
+ name = "core_test_support"
+-version = "0.0.0"
++version = "0.157.0"
+ dependencies = [
+  "anyhow",
+  "assert_cmd",
+diff --git a/codex-rs/app-server-protocol/src/protocol/common.rs b/codex-rs/app-server-protocol/src/protocol/common.rs
+index 8ddf160..bd92610 100644
+--- a/codex-rs/app-server-protocol/src/protocol/common.rs
++++ b/codex-rs/app-server-protocol/src/protocol/common.rs
+@@ -656,6 +656,12 @@ client_request_definitions! {
+         serialization: thread_id(params.thread_id),
+         response: v2::ThreadQueueStartResponse,
+     },
++    #[experimental("thread/queue/steer")]
++    ThreadQueueSteer => "thread/queue/steer" {
++        params: v2::ThreadQueueSteerParams,
++        serialization: thread_id(params.thread_id),
++        response: v2::ThreadQueueSteerResponse,
++    },
+     ThreadMetadataUpdate => "thread/metadata/update" {
+         params: v2::ThreadMetadataUpdateParams,
+         inspect_params: true,
+diff --git a/codex-rs/app-server-protocol/src/protocol/v1.rs b/codex-rs/app-server-protocol/src/protocol/v1.rs
+index 7d05fb1..6a44853 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v1.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v1.rs
+@@ -73,6 +73,11 @@ pub struct InitializeCapabilities {
+ #[serde(rename_all = "camelCase")]
+ pub struct InitializeResponse {
+     pub user_agent: String,
++    /// Present only in OpenCraft's queue-steer build; never infer support from
++    /// a Codex version string because upstream may have a different protocol.
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    #[ts(optional)]
++    pub opencraft_queue_steer_version: Option<u32>,
+     /// Absolute path to the server's $CODEX_HOME directory.
+     pub codex_home: AbsolutePathBuf,
+     /// Platform family for the running app-server target, for example
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
+index a137684..9ed29f9 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
+@@ -902,6 +902,20 @@ pub struct QueuedSubmission {
+     pub id: String,
+     pub input: Vec<UserInput>,
+     pub client_user_message_id: String,
++    pub created_at: i64,
++    pub paused_reason: Option<String>,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct SteeringSubmission {
++    pub id: String,
++    pub input: Vec<UserInput>,
++    pub client_user_message_id: String,
++    pub target_turn_id: String,
++    pub created_at: i64,
++    pub paused_reason: Option<String>,
+ }
+
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+@@ -938,6 +952,8 @@ pub struct ThreadQueueListParams {
+ #[ts(export_to = "v2/")]
+ pub struct ThreadQueueListResponse {
+     pub data: Vec<QueuedSubmission>,
++    #[serde(default, skip_serializing_if = "Vec::is_empty")]
++    pub steering: Vec<SteeringSubmission>,
+     /// Opaque cursor for the next page, or `null` when no submissions remain.
+     pub next_cursor: Option<String>,
+ }
+@@ -964,6 +980,11 @@ pub struct ThreadQueueUpdateResponse {
+ pub struct ThreadQueueDeleteParams {
+     pub thread_id: String,
+     pub queued_submission_id: String,
++    /// Only for an explicit abandonment of an unresolved steering claim.
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub expected_turn_id: Option<String>,
++    #[serde(default)]
++    pub acknowledge_unknown_delivery: bool,
+ }
+
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+@@ -1002,6 +1023,22 @@ pub struct ThreadQueueStartResponse {
+     pub turn: Turn,
+ }
+
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct ThreadQueueSteerParams {
++    pub thread_id: String,
++    pub queued_submission_id: String,
++    pub expected_turn_id: String,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct ThreadQueueSteerResponse {
++    pub turn_id: String,
++}
++
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+ #[serde(rename_all = "camelCase")]
+ #[ts(export_to = "v2/")]
+diff --git a/codex-rs/app-server/src/message_processor.rs b/codex-rs/app-server/src/message_processor.rs
+index 9e9a904..fd9125f 100644
+--- a/codex-rs/app-server/src/message_processor.rs
++++ b/codex-rs/app-server/src/message_processor.rs
+@@ -325,11 +325,14 @@ impl MessageProcessor {
+         let mut queue_service = None;
+         let thread_manager = Arc::new_cyclic(|thread_manager| {
+             queue_service = queue_store.map(|queue| {
+-                Arc::new(QueuedItemService::new(
+-                    queue,
+-                    thread_manager.clone(),
+-                    Arc::clone(&extension_event_sink),
+-                ))
++                Arc::new(
++                    QueuedItemService::new(
++                        queue,
++                        thread_manager.clone(),
++                        Arc::clone(&extension_event_sink),
++                    )
++                    .with_thread_store(Arc::clone(&thread_store)),
++                )
+             });
+             let manager = ThreadManager::new(
+                 config.as_ref(),
+@@ -461,6 +464,7 @@ impl MessageProcessor {
+             config_warnings.clone(),
+             rpc_transport,
+             Arc::clone(&user_verification),
++            queue_service.is_some(),
+         );
+         let marketplace_processor = MarketplaceRequestProcessor::new(
+             Arc::clone(&config),
+@@ -999,6 +1003,7 @@ impl MessageProcessor {
+             | ClientRequest::ThreadCompactStart { .. }
+             | ClientRequest::ThreadShellCommand { .. }
+             | ClientRequest::ThreadQueueStart { .. }
++            | ClientRequest::ThreadQueueSteer { .. }
+             | ClientRequest::ThreadRealtimeStart { .. } => {
+                 (Some(self.turn_admission.admit()?), true)
+             }
+@@ -1385,6 +1390,11 @@ impl MessageProcessor {
+                 .start(&request_id, params)
+                 .await
+                 .map(|response| Some(response.into())),
++            ClientRequest::ThreadQueueSteer { params, .. } => self
++                .thread_queue_processor
++                .steer(&request_id, params)
++                .await
++                .map(|response| Some(response.into())),
+             ClientRequest::ThreadMetadataUpdate { params, .. } => {
+                 self.thread_processor.thread_metadata_update(params).await
+             }
+diff --git a/codex-rs/app-server/src/request_processors/initialize_processor.rs b/codex-rs/app-server/src/request_processors/initialize_processor.rs
+index 9ee058a..a989b36 100644
+--- a/codex-rs/app-server/src/request_processors/initialize_processor.rs
++++ b/codex-rs/app-server/src/request_processors/initialize_processor.rs
+@@ -28,6 +28,7 @@ pub(crate) struct InitializeRequestProcessor {
+     config_warnings: Arc<Vec<ConfigWarningNotification>>,
+     rpc_transport: AppServerRpcTransport,
+     user_verification: Arc<crate::user_verification::Service>,
++    queue_steer_available: bool,
+ }
+
+ impl InitializeRequestProcessor {
+@@ -39,6 +40,7 @@ impl InitializeRequestProcessor {
+         config_warnings: Vec<ConfigWarningNotification>,
+         rpc_transport: AppServerRpcTransport,
+         user_verification: Arc<crate::user_verification::Service>,
++        queue_steer_available: bool,
+     ) -> Self {
+         Self {
+             gateway_login_control,
+@@ -49,6 +51,7 @@ impl InitializeRequestProcessor {
+             config_warnings: Arc::new(config_warnings),
+             rpc_transport,
+             user_verification,
++            queue_steer_available,
+         }
+     }
+
+@@ -211,6 +214,7 @@ impl InitializeRequestProcessor {
+         let user_agent = get_codex_user_agent();
+         let response = InitializeResponse {
+             user_agent,
++            opencraft_queue_steer_version: self.queue_steer_available.then_some(2),
+             codex_home,
+             platform_family: std::env::consts::FAMILY.to_string(),
+             platform_os: std::env::consts::OS.to_string(),
+diff --git a/codex-rs/app-server/src/request_processors/thread_queue_processor.rs b/codex-rs/app-server/src/request_processors/thread_queue_processor.rs
+index ea6ec7d..cb8d4fc 100644
+--- a/codex-rs/app-server/src/request_processors/thread_queue_processor.rs
++++ b/codex-rs/app-server/src/request_processors/thread_queue_processor.rs
+@@ -7,6 +7,7 @@ use crate::outgoing_message::ConnectionRequestId;
+ use crate::outgoing_message::OutgoingMessageSender;
+ use codex_app_server_protocol::JSONRPCErrorError;
+ use codex_app_server_protocol::QueuedSubmission;
++use codex_app_server_protocol::SteeringSubmission;
+ use codex_app_server_protocol::ThreadQueueAddParams;
+ use codex_app_server_protocol::ThreadQueueAddResponse;
+ use codex_app_server_protocol::ThreadQueueDeleteParams;
+@@ -17,6 +18,8 @@ use codex_app_server_protocol::ThreadQueueReorderParams;
+ use codex_app_server_protocol::ThreadQueueReorderResponse;
+ use codex_app_server_protocol::ThreadQueueStartParams;
+ use codex_app_server_protocol::ThreadQueueStartResponse;
++use codex_app_server_protocol::ThreadQueueSteerParams;
++use codex_app_server_protocol::ThreadQueueSteerResponse;
+ use codex_app_server_protocol::ThreadQueueUpdateParams;
+ use codex_app_server_protocol::ThreadQueueUpdateResponse;
+ use codex_app_server_protocol::Turn;
+@@ -32,8 +35,10 @@ use codex_protocol::ThreadId;
+ use codex_protocol::protocol::SessionSource;
+ use codex_protocol::protocol::SubAgentSource;
+ use codex_queue_extension::QueueServiceError;
++use codex_queue_extension::QueueSteerSubmission;
+ use codex_queue_extension::QueuedItem;
+ use codex_queue_extension::QueuedItemService;
++use codex_queue_extension::SteeringItem;
+ use codex_thread_store::ReadThreadParams;
+ use codex_thread_store::ThreadStore;
+ use codex_thread_store::ThreadStoreError;
+@@ -127,6 +132,14 @@ impl ThreadQueueRequestProcessor {
+                 .into_iter()
+                 .map(api_queued_submission)
+                 .collect::<Result<Vec<_>, _>>()?,
++            steering: self
++                .service()?
++                .list_steering(thread_id)
++                .await
++                .map_err(queue_error)?
++                .into_iter()
++                .map(api_steering_submission)
++                .collect::<Result<Vec<_>, _>>()?,
+             next_cursor,
+         })
+     }
+@@ -163,6 +176,24 @@ impl ThreadQueueRequestProcessor {
+         params: ThreadQueueDeleteParams,
+     ) -> Result<ThreadQueueDeleteResponse, JSONRPCErrorError> {
+         let (thread_id, _, _) = self.require_thread(&params.thread_id).await?;
++        if let Some(expected_turn_id) = params.expected_turn_id {
++            if !params.acknowledge_unknown_delivery || expected_turn_id.is_empty() {
++                return Err(invalid_request(
++                    "discarding an unconfirmed steer requires an explicit acknowledgement and target turn",
++                ));
++            }
++            let deleted = self
++                .service()?
++                .discard_unconfirmed_steer(thread_id, params.queued_submission_id, expected_turn_id)
++                .await
++                .map_err(queue_error)?;
++            return Ok(ThreadQueueDeleteResponse { deleted });
++        }
++        if params.acknowledge_unknown_delivery {
++            return Err(invalid_request(
++                "expectedTurnId is required to discard an unconfirmed steer",
++            ));
++        }
+         let deleted = self
+             .service()?
+             .delete(thread_id, params.queued_submission_id)
+@@ -240,6 +271,60 @@ impl ThreadQueueRequestProcessor {
+         })
+     }
+
++    pub(crate) async fn steer(
++        &self,
++        request_id: &ConnectionRequestId,
++        params: ThreadQueueSteerParams,
++    ) -> Result<ThreadQueueSteerResponse, JSONRPCErrorError> {
++        if params.expected_turn_id.is_empty() {
++            return Err(invalid_request("expectedTurnId must not be empty"));
++        }
++        let (_, loaded_thread, source) = self.require_thread(&params.thread_id).await?;
++        ensure_direct_input_allowed(loaded_thread.as_deref(), &source)?;
++        let thread = loaded_thread
++            .ok_or_else(|| invalid_request("resume the thread before steering a queued message"))?;
++        self.config_manager
++            .check_thread_model_provider(thread.config().await.as_ref())
++            .await
++            .map_err(|error| config_load_error(&error))?;
++        let submission = self
++            .service()?
++            .steer(
++                thread.as_ref(),
++                params.queued_submission_id,
++                params.expected_turn_id,
++            )
++            .await
++            .map_err(queue_error)?;
++        let turn_id = match submission {
++            QueueSteerSubmission::Steered { turn_id } => turn_id,
++            QueueSteerSubmission::NotSubmitted {
++                reason: NotSubmittedReason::ServerDraining,
++            } => return Err(crate::error_code::server_draining_error()),
++            QueueSteerSubmission::NotSubmitted {
++                reason: NotSubmittedReason::ExpectedTurnMismatch { expected, actual },
++            } => {
++                let mut error = invalid_request(format!(
++                    "expected active turn id `{expected}` but found `{actual}`"
++                ));
++                error.data = Some(serde_json::json!({
++                    "code": "EXPECTED_TURN_MISMATCH",
++                    "actualTurnId": actual,
++                }));
++                return Err(error);
++            }
++            QueueSteerSubmission::NotSubmitted { reason } => {
++                return Err(invalid_request(format!(
++                    "Core declined queued steering: {reason:?}"
++                )));
++            }
++        };
++        self.outgoing
++            .record_request_turn_id(request_id, &turn_id)
++            .await;
++        Ok(ThreadQueueSteerResponse { turn_id })
++    }
++
+     fn service(&self) -> Result<&QueuedItemService, JSONRPCErrorError> {
+         self.service
+             .as_deref()
+@@ -344,5 +429,19 @@ fn api_queued_submission(value: QueuedItem) -> Result<QueuedSubmission, JSONRPCE
+         input: content.into_iter().map(Into::into).collect(),
+         client_user_message_id: client_id
+             .ok_or_else(|| internal_error("queued submission is missing its client message id"))?,
++        created_at: value.created_at_ms,
++        paused_reason: None,
++    })
++}
++
++fn api_steering_submission(value: SteeringItem) -> Result<SteeringSubmission, JSONRPCErrorError> {
++    let queued_submission = api_queued_submission(value.item.clone())?;
++    Ok(SteeringSubmission {
++        id: queued_submission.id,
++        input: queued_submission.input,
++        client_user_message_id: queued_submission.client_user_message_id,
++        target_turn_id: value.target_turn_id,
++        created_at: queued_submission.created_at,
++        paused_reason: value.paused_reason,
+     })
+ }
+diff --git a/codex-rs/app-server/tests/suite/v2/initialize.rs b/codex-rs/app-server/tests/suite/v2/initialize.rs
+index 1ba0f26..a324a21 100644
+--- a/codex-rs/app-server/tests/suite/v2/initialize.rs
++++ b/codex-rs/app-server/tests/suite/v2/initialize.rs
+@@ -59,12 +59,43 @@ async fn initialize_uses_client_info_name_as_originator() -> Result<()> {
+         codex_home: response_codex_home,
+         platform_family,
+         platform_os,
++        opencraft_queue_steer_version,
+     } = to_response::<InitializeResponse>(response)?;
+
+     assert!(user_agent.starts_with("codex_vscode/"));
+     assert_eq!(response_codex_home, expected_codex_home);
+     assert_eq!(platform_family, std::env::consts::FAMILY);
+     assert_eq!(platform_os, std::env::consts::OS);
++    assert_eq!(opencraft_queue_steer_version, Some(2));
++    Ok(())
++}
++
++#[tokio::test]
++async fn initialize_does_not_advertise_queue_steer_without_sqlite_queue() -> Result<()> {
++    let codex_home = TempDir::new()?;
++    let mut mcp = TestAppServer::builder()
++        .with_codex_home(codex_home.path())
++        .with_args(&[
++            "-c",
++            "experimental_thread_store={type=\"in_memory\",id=\"queue-steer-capability-test\"}",
++        ])
++        .build()
++        .await?;
++
++    let message = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.initialize_with_client_info(ClientInfo {
++            name: "queue-steer-capability-test".to_string(),
++            title: None,
++            version: "1".to_string(),
++        }),
++    )
++    .await??;
++    let JSONRPCMessage::Response(response) = message else {
++        anyhow::bail!("expected initialize response, got {message:?}");
++    };
++    let initialized = to_response::<InitializeResponse>(response)?;
++    assert_eq!(initialized.opencraft_queue_steer_version, None);
+     Ok(())
+ }
+
+@@ -171,12 +202,14 @@ async fn initialize_respects_originator_override_env_var() -> Result<()> {
+         codex_home: response_codex_home,
+         platform_family,
+         platform_os,
++        opencraft_queue_steer_version,
+     } = to_response::<InitializeResponse>(response)?;
+
+     assert!(user_agent.starts_with("codex_originator_via_env_var/"));
+     assert_eq!(response_codex_home, expected_codex_home);
+     assert_eq!(platform_family, std::env::consts::FAMILY);
+     assert_eq!(platform_os, std::env::consts::OS);
++    assert_eq!(opencraft_queue_steer_version, Some(2));
+     Ok(())
+ }
+
+diff --git a/codex-rs/app-server/tests/suite/v2/model_provider_enforcement_tests.rs b/codex-rs/app-server/tests/suite/v2/model_provider_enforcement_tests.rs
+index 15bd32e..f9fa555 100644
+--- a/codex-rs/app-server/tests/suite/v2/model_provider_enforcement_tests.rs
++++ b/codex-rs/app-server/tests/suite/v2/model_provider_enforcement_tests.rs
+@@ -211,6 +211,7 @@ base_url = "{}/v1"
+         queue,
+         ThreadQueueListResponse {
+             data: vec![queued.queued_submission.clone()],
++            steering: vec![],
+             next_cursor: None,
+         }
+     );
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_queue.rs b/codex-rs/app-server/tests/suite/v2/thread_queue.rs
+index caaf4f7..367a9f2 100644
+--- a/codex-rs/app-server/tests/suite/v2/thread_queue.rs
++++ b/codex-rs/app-server/tests/suite/v2/thread_queue.rs
+@@ -33,6 +33,8 @@ use codex_app_server_protocol::ThreadQueueReorderParams;
+ use codex_app_server_protocol::ThreadQueueReorderResponse;
+ use codex_app_server_protocol::ThreadQueueStartParams;
+ use codex_app_server_protocol::ThreadQueueStartResponse;
++use codex_app_server_protocol::ThreadQueueSteerParams;
++use codex_app_server_protocol::ThreadQueueSteerResponse;
+ use codex_app_server_protocol::ThreadQueueUpdateParams;
+ use codex_app_server_protocol::ThreadQueueUpdateResponse;
+ use codex_app_server_protocol::ThreadReadParams;
+@@ -225,6 +227,8 @@ async fn queue_crud_preserves_identity_order_and_notifications() -> Result<()> {
+             params: ThreadQueueDeleteParams {
+                 thread_id: thread_id.clone(),
+                 queued_submission_id: second.id,
++                expected_turn_id: None,
++                acknowledge_unknown_delivery: false,
+             },
+         })
+         .await?;
+@@ -771,6 +775,208 @@ async fn queue_start_while_active_returns_busy_and_preserves_the_queue() -> Resu
+     Ok(())
+ }
+
++#[tokio::test]
++async fn queued_steer_claims_before_core_and_settles_after_durable_user_message() -> Result<()> {
++    skip_if_remote!(
++        Ok(()),
++        "uses a host-local command and cwd fixture unavailable to remote executors"
++    );
++
++    let (mut app, _codex_home, _server) = queue_app(vec![
++        blocked_turn_response()?,
++        create_final_assistant_message_sse_response("steered turn done")?,
++    ])
++    .await?;
++    let thread_id = app
++        .start_thread(ThreadStartParams::default())
++        .await?
++        .thread
++        .id;
++    let (turn_id, approval_id) = start_blocked_turn(&mut app, &thread_id).await?;
++    let queued = queue_item(&mut app, submission(&thread_id, "steered input")).await?;
++
++    let mismatch_id = app
++        .send_raw_request(
++            "thread/queue/steer",
++            Some(json!({
++                "threadId": thread_id,
++                "queuedSubmissionId": queued.id,
++                "expectedTurnId": "wrong-turn",
++            })),
++        )
++        .await?;
++    let mismatch: JSONRPCError = timeout(
++        READ_TIMEOUT,
++        app.read_stream_until_error_message(RequestId::Integer(mismatch_id)),
++    )
++    .await??;
++    assert_eq!(mismatch.error.data.unwrap()["actualTurnId"], turn_id);
++    let after_rejection = list_queue(&mut app, &thread_id).await?;
++    assert_eq!(after_rejection.data, vec![queued.clone()]);
++    assert!(after_rejection.steering.is_empty());
++
++    let steered: ThreadQueueSteerResponse = app
++        .request(|request_id| ClientRequest::ThreadQueueSteer {
++            request_id,
++            params: ThreadQueueSteerParams {
++                thread_id: thread_id.clone(),
++                queued_submission_id: queued.id.clone(),
++                expected_turn_id: turn_id.clone(),
++            },
++        })
++        .await?;
++    assert_eq!(steered.turn_id, turn_id);
++    let claimed = list_queue(&mut app, &thread_id).await?;
++    assert!(claimed.data.is_empty());
++    assert_eq!(claimed.steering.len(), 1);
++    assert_eq!(claimed.steering[0].id, queued.id);
++    assert_eq!(claimed.steering[0].target_turn_id, turn_id);
++    assert_eq!(claimed.steering[0].paused_reason, None);
++
++    let active_discard_id = app
++        .send_raw_request(
++            "thread/queue/delete",
++            Some(json!({
++                "threadId": thread_id,
++                "queuedSubmissionId": queued.id,
++                "expectedTurnId": turn_id,
++                "acknowledgeUnknownDelivery": true,
++            })),
++        )
++        .await?;
++    let _: JSONRPCError = timeout(
++        READ_TIMEOUT,
++        app.read_stream_until_error_message(RequestId::Integer(active_discard_id)),
++    )
++    .await??;
++    assert_eq!(list_queue(&mut app, &thread_id).await?.steering.len(), 1);
++
++    decline_approval(&mut app, approval_id).await?;
++    loop {
++        let started: ItemStartedNotification =
++            timeout(READ_TIMEOUT, app.read_notification("item/started")).await??;
++        if matches!(
++            &started.item,
++            ThreadItem::UserMessage { client_id, .. }
++                if client_id.as_deref() == Some(queued.client_user_message_id.as_str())
++        ) {
++            break;
++        }
++    }
++    timeout(READ_TIMEOUT, async {
++        loop {
++            let queue = list_queue(&mut app, &thread_id).await?;
++            if queue.data.is_empty() && queue.steering.is_empty() {
++                return Ok::<(), anyhow::Error>(());
++            }
++            tokio::time::sleep(Duration::from_millis(25)).await;
++        }
++    })
++    .await??;
++    let completed: TurnCompletedNotification =
++        timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
++    assert_eq!(completed.turn.id, turn_id);
++    Ok(())
++}
++
++#[tokio::test]
++async fn queued_steer_claim_survives_appserver_restart_before_rollout_commit() -> Result<()> {
++    skip_if_remote!(
++        Ok(()),
++        "uses a host-local command and cwd fixture unavailable to remote executors"
++    );
++
++    let (mut app, codex_home, _server) = queue_app(vec![blocked_turn_response()?]).await?;
++    let thread_id = app
++        .start_thread(ThreadStartParams::default())
++        .await?
++        .thread
++        .id;
++    let (turn_id, _approval_id) = start_blocked_turn(&mut app, &thread_id).await?;
++    let queued = queue_item(&mut app, submission(&thread_id, "pending at restart")).await?;
++    let _: ThreadQueueSteerResponse = app
++        .request(|request_id| ClientRequest::ThreadQueueSteer {
++            request_id,
++            params: ThreadQueueSteerParams {
++                thread_id: thread_id.clone(),
++                queued_submission_id: queued.id.clone(),
++                expected_turn_id: turn_id.clone(),
++            },
++        })
++        .await?;
++    assert_eq!(list_queue(&mut app, &thread_id).await?.steering.len(), 1);
++    drop(app);
++
++    let mut restarted = TestAppServer::builder()
++        .with_codex_home(codex_home.path())
++        .without_managed_config()
++        .build_initialized()
++        .await?;
++    let restored = list_queue(&mut restarted, &thread_id).await?;
++    assert!(
++        restored.data.is_empty(),
++        "uncertain input must not re-enter the automatic queue"
++    );
++    assert_eq!(restored.steering.len(), 1);
++    assert_eq!(restored.steering[0].id, queued.id);
++    assert_eq!(restored.steering[0].target_turn_id, turn_id);
++    assert_eq!(
++        restored.steering[0].paused_reason.as_deref(),
++        Some("steer-delivery-unconfirmed")
++    );
++    let no_ack_id = restarted
++        .send_raw_request(
++            "thread/queue/delete",
++            Some(json!({
++                "threadId": thread_id,
++                "queuedSubmissionId": queued.id,
++                "expectedTurnId": turn_id,
++            })),
++        )
++        .await?;
++    let _: JSONRPCError = timeout(
++        READ_TIMEOUT,
++        restarted.read_stream_until_error_message(RequestId::Integer(no_ack_id)),
++    )
++    .await??;
++    assert_eq!(
++        list_queue(&mut restarted, &thread_id).await?.steering.len(),
++        1
++    );
++    let stale: ThreadQueueDeleteResponse = restarted
++        .request(|request_id| ClientRequest::ThreadQueueDelete {
++            request_id,
++            params: ThreadQueueDeleteParams {
++                thread_id: thread_id.clone(),
++                queued_submission_id: queued.id.clone(),
++                expected_turn_id: Some("wrong-turn".to_string()),
++                acknowledge_unknown_delivery: true,
++            },
++        })
++        .await?;
++    assert!(!stale.deleted);
++    assert_eq!(
++        list_queue(&mut restarted, &thread_id).await?.steering.len(),
++        1
++    );
++    let discarded: ThreadQueueDeleteResponse = restarted
++        .request(|request_id| ClientRequest::ThreadQueueDelete {
++            request_id,
++            params: ThreadQueueDeleteParams {
++                thread_id: thread_id.clone(),
++                queued_submission_id: queued.id.clone(),
++                expected_turn_id: Some(turn_id),
++                acknowledge_unknown_delivery: true,
++            },
++        })
++        .await?;
++    assert!(discarded.deleted);
++    let final_queue = list_queue(&mut restarted, &thread_id).await?;
++    assert!(final_queue.data.is_empty());
++    assert!(final_queue.steering.is_empty());
++    Ok(())
++}
++
+ #[tokio::test]
+ async fn queue_start_without_id_starts_the_head_when_idle() -> Result<()> {
+     skip_if_remote!(
+@@ -1034,6 +1240,7 @@ async fn list_queue(app: &mut TestAppServer, thread_id: &str) -> Result<ThreadQu
+         if cursor.is_none() {
+             return Ok(ThreadQueueListResponse {
+                 data,
++                steering: page.steering,
+                 next_cursor: None,
+             });
+         }
+diff --git a/codex-rs/ext/queue/Cargo.toml b/codex-rs/ext/queue/Cargo.toml
+index 4b5e5d0..f364d4d 100644
+--- a/codex-rs/ext/queue/Cargo.toml
++++ b/codex-rs/ext/queue/Cargo.toml
+@@ -16,6 +16,7 @@ workspace = true
+ [dependencies]
+ codex-core = { workspace = true }
+ codex-extension-api = { workspace = true }
++codex-history = { workspace = true }
+ codex-protocol = { workspace = true }
+ codex-thread-store = { workspace = true }
+ serde_json = { workspace = true }
+diff --git a/codex-rs/ext/queue/src/lib.rs b/codex-rs/ext/queue/src/lib.rs
+index 47fa504..64b978a 100644
+--- a/codex-rs/ext/queue/src/lib.rs
++++ b/codex-rs/ext/queue/src/lib.rs
+@@ -7,8 +7,10 @@ use codex_extension_api::ExtensionRegistryBuilder;
+ mod service;
+
+ pub use service::QueueServiceError;
++pub use service::QueueSteerSubmission;
+ pub use service::QueuedItem;
+ pub use service::QueuedItemService;
++pub use service::SteeringItem;
+
+ /// Registers the caller-owned queue before lower-priority idle contributors.
+ pub fn install<C>(registry: &mut ExtensionRegistryBuilder<C>, service: Arc<QueuedItemService>)
+diff --git a/codex-rs/ext/queue/src/service.rs b/codex-rs/ext/queue/src/service.rs
+index 06aeb63..755cd22 100644
+--- a/codex-rs/ext/queue/src/service.rs
++++ b/codex-rs/ext/queue/src/service.rs
+@@ -6,7 +6,9 @@ use std::sync::Weak;
+ use std::time::Duration;
+
+ use codex_core::CodexThread;
++use codex_core::NotSubmittedReason;
+ use codex_core::StartIfIdleSubmission;
++use codex_core::SteerSubmission;
+ use codex_core::ThreadManager;
+ use codex_core::TurnInput;
+ use codex_core::TurnInputRequest;
+@@ -17,8 +19,10 @@ use codex_extension_api::ThreadIdleCause;
+ use codex_extension_api::ThreadIdleInput;
+ use codex_extension_api::ThreadLifecycleContributor;
+ use codex_extension_api::ThreadResumeInput;
++use codex_history::RolloutItem;
+ use codex_protocol::ThreadId;
+ use codex_protocol::error::CodexErr;
++use codex_protocol::items::TurnItem;
+ use codex_protocol::models::snapshot_local_user_input;
+ use codex_protocol::protocol::AgentStatus;
+ use codex_protocol::protocol::Event;
+@@ -27,9 +31,14 @@ use codex_protocol::protocol::ThreadQueueChangedEvent;
+ use codex_protocol::protocol::W3cTraceContext;
+ use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
+ use codex_protocol::user_input::UserInput;
++use codex_thread_store::ItemSortKey;
++use codex_thread_store::ListItemsParams;
++use codex_thread_store::LoadThreadHistoryParams;
+ use codex_thread_store::MAX_QUEUE_ITEMS;
+ use codex_thread_store::QueueStore;
+ use codex_thread_store::QueuedUserSubmissionRecord;
++use codex_thread_store::SortDirection;
++use codex_thread_store::ThreadStore;
+ use codex_thread_store::ThreadStoreError;
+ use thiserror::Error;
+ use tokio::sync::Mutex;
+@@ -42,6 +51,23 @@ use uuid::Uuid;
+ pub struct QueuedItem {
+     pub id: String,
+     pub input: TurnInput,
++    pub created_at_ms: i64,
++}
++
++/// A durable claim hidden from the ordinary queue until rollout reconciliation.
++#[derive(Clone, Debug, PartialEq)]
++pub struct SteeringItem {
++    pub item: QueuedItem,
++    pub target_turn_id: String,
++    /// A claim from an earlier process, or a failed/ended turn without durable
++    /// evidence, must be shown as unconfirmed rather than accepted.
++    pub paused_reason: Option<String>,
++}
++
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub enum QueueSteerSubmission {
++    Steered { turn_id: String },
++    NotSubmitted { reason: NotSubmittedReason },
+ }
+
+ #[derive(Debug, Error)]
+@@ -65,10 +91,12 @@ pub enum QueueServiceError {
+ #[derive(Clone)]
+ pub struct QueuedItemService {
+     queue: Arc<dyn QueueStore>,
++    thread_store: Option<Arc<dyn ThreadStore>>,
+     thread_manager: Weak<ThreadManager>,
+     event_sink: Arc<dyn ExtensionEventSink>,
+     dispatch_locks: Arc<StdMutex<HashMap<ThreadId, Weak<Mutex<()>>>>>,
+     resumed_threads: Arc<StdMutex<HashSet<ThreadId>>>,
++    accepted_claims: Arc<StdMutex<HashSet<(ThreadId, String)>>>,
+ }
+
+ impl QueuedItemService {
+@@ -79,13 +107,20 @@ impl QueuedItemService {
+     ) -> Self {
+         Self {
+             queue,
++            thread_store: None,
+             thread_manager,
+             event_sink,
+             dispatch_locks: Arc::new(StdMutex::new(HashMap::new())),
+             resumed_threads: Arc::new(StdMutex::new(HashSet::new())),
++            accepted_claims: Arc::new(StdMutex::new(HashSet::new())),
+         }
+     }
+
++    pub fn with_thread_store(mut self, thread_store: Arc<dyn ThreadStore>) -> Self {
++        self.thread_store = Some(thread_store);
++        self
++    }
++
+     // Check SQLite's inexpensive data version every 10 seconds, then use the
+     // durable revision index to discover only changed threads. Independent
+     // dispatch tasks keep a blocked or failed thread from starving other queues.
+@@ -298,6 +333,306 @@ impl QueuedItemService {
+             .collect()
+     }
+
++    pub async fn list_steering(
++        &self,
++        thread_id: ThreadId,
++    ) -> Result<Vec<SteeringItem>, QueueServiceError> {
++        self.reconcile_steering(thread_id).await?;
++        let records = self.queue.list_steering(thread_id).await?;
++        let accepted = self
++            .accepted_claims
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner);
++        records
++            .into_iter()
++            .map(|record| {
++                let mut item = steering_item_from_record(record)?;
++                if accepted.contains(&(thread_id, item.item.id.clone())) {
++                    item.paused_reason = None;
++                }
++                Ok(item)
++            })
++            .collect()
++    }
++
++    /// Claims first so an app-server crash cannot return this input to the
++    /// automatic queue dispatcher. An ambiguous Core error deliberately leaves
++    /// the claim for history-based reconciliation instead of re-sending it.
++    pub async fn steer(
++        &self,
++        thread: &CodexThread,
++        queued_item_id: String,
++        expected_turn_id: String,
++    ) -> Result<QueueSteerSubmission, QueueServiceError> {
++        let thread_id = thread.startup_metadata().thread_id;
++        let _dispatch_guard = self.dispatch_guard(thread_id).await;
++        let record = self
++            .queue
++            .claim_steer(thread_id, queued_item_id.clone(), expected_turn_id.clone())
++            .await?
++            .ok_or_else(|| ThreadStoreError::InvalidRequest {
++                message: format!(
++                    "queued submission is missing or already claimed: {queued_item_id}"
++                ),
++            })?;
++        self.emit_changed(thread_id);
++        let item = queued_item_from_record(record)?;
++        let input @ TurnInput::UserInput { .. } = item.input else {
++            return Err(QueueServiceError::InvalidInput);
++        };
++
++        match thread
++            .steer_turn(TurnInputRequest::new(input), expected_turn_id.clone())
++            .await
++        {
++            Ok(SteerSubmission::Steered { turn_id }) => {
++                self.accepted_claims
++                    .lock()
++                    .unwrap_or_else(std::sync::PoisonError::into_inner)
++                    .insert((thread_id, queued_item_id));
++                // Core replies before rollout persistence. The claim remains
++                // until a later list/idle pass observes the durable client ID.
++                Ok(QueueSteerSubmission::Steered { turn_id })
++            }
++            Ok(SteerSubmission::NotSubmitted { reason }) => {
++                self.queue
++                    .release_steer(thread_id, queued_item_id, expected_turn_id)
++                    .await?;
++                self.emit_changed(thread_id);
++                Ok(QueueSteerSubmission::NotSubmitted { reason })
++            }
++            Err(error) => Err(QueueServiceError::CoreSubmissionError(error)),
++        }
++    }
++
++    /// Only a durable user-message marker can settle a steering claim. A
++    /// missing marker is ambiguous (including after restart), so it stays
++    /// claimed and cannot be dispatched as a new turn.
++    pub async fn reconcile_steering(&self, thread_id: ThreadId) -> Result<(), QueueServiceError> {
++        let _dispatch_guard = self.dispatch_guard(thread_id).await;
++        self.reconcile_steering_locked(thread_id, false).await
++    }
++
++    /// Never retries the input. Only an explicit user acknowledgement may
++    /// remove an unresolved claim after a successful durable-history check.
++    pub async fn discard_unconfirmed_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> Result<bool, QueueServiceError> {
++        let _dispatch_guard = self.dispatch_guard(thread_id).await;
++        self.reconcile_steering_locked(thread_id, true).await?;
++        if self
++            .accepted_claims
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .contains(&(thread_id, item_id.clone()))
++        {
++            return Err(QueueServiceError::Storage(
++                ThreadStoreError::InvalidRequest {
++                    message: "steering delivery was accepted in this process".to_string(),
++                },
++            ));
++        }
++        if let Some(manager) = self.thread_manager.upgrade()
++            && let Ok(thread) = manager.get_thread(thread_id).await
++            && !matches!(
++                thread.agent_status().await,
++                AgentStatus::Completed(_) | AgentStatus::Errored(_)
++            )
++        {
++            return Err(QueueServiceError::Storage(
++                ThreadStoreError::InvalidRequest {
++                    message:
++                        "wait for the active turn to finish before discarding an unconfirmed steer"
++                            .to_string(),
++                },
++            ));
++        }
++        let deleted = self
++            .queue
++            .discard_steer(thread_id, item_id, target_turn_id)
++            .await?;
++        if deleted {
++            self.emit_changed(thread_id);
++        }
++        Ok(deleted)
++    }
++
++    async fn reconcile_steering_locked(
++        &self,
++        thread_id: ThreadId,
++        strict: bool,
++    ) -> Result<(), QueueServiceError> {
++        let claims = self.queue.list_steering(thread_id).await?;
++        if claims.is_empty() {
++            return Ok(());
++        }
++        let Some(thread_store) = &self.thread_store else {
++            if strict {
++                return Err(QueueServiceError::Storage(
++                    ThreadStoreError::InvalidRequest {
++                        message: "durable steering history is unavailable".to_string(),
++                    },
++                ));
++            }
++            return Ok(());
++        };
++        if let Some(manager) = self.thread_manager.upgrade()
++            && let Ok(thread) = manager.get_thread(thread_id).await
++            && let Err(error) = thread.flush_rollout().await
++        {
++            tracing::warn!(%thread_id, %error, "could not flush steering rollout; preserving claims");
++            if strict {
++                return Err(QueueServiceError::CoreSubmissionError(error.into()));
++            }
++            return Ok(());
++        }
++        let mut durable_client_ids = HashSet::new();
++        let target_turn_ids = claims
++            .iter()
++            .filter_map(|claim| claim.steering_turn_id.clone())
++            .collect::<HashSet<_>>();
++        let mut paginated_supported = true;
++        for target_turn_id in target_turn_ids {
++            let mut cursor = None;
++            loop {
++                let page = match thread_store
++                    .list_items(ListItemsParams {
++                        thread_id,
++                        turn_id: Some(target_turn_id.clone()),
++                        include_archived: true,
++                        cursor: cursor.clone(),
++                        page_size: 200,
++                        sort_direction: SortDirection::Asc,
++                        sort_key: ItemSortKey::CreatedAtOrdinal,
++                        after_updated_at_ordinal: None,
++                    })
++                    .await
++                {
++                    Ok(page) => page,
++                    Err(ThreadStoreError::Unsupported { .. }) => {
++                        paginated_supported = false;
++                        break;
++                    }
++                    Err(error) => {
++                        tracing::warn!(%thread_id, %error, "could not page steering items; preserving claims");
++                        if strict {
++                            return Err(QueueServiceError::Storage(error));
++                        }
++                        return Ok(());
++                    }
++                };
++                for item in page.items {
++                    let value = match serde_json::from_slice::<serde_json::Value>(&item.item_json) {
++                        Ok(value) => value,
++                        Err(error) if strict => {
++                            return Err(QueueServiceError::InvalidPayload(error));
++                        }
++                        Err(_) => continue,
++                    };
++                    if value.get("type").and_then(serde_json::Value::as_str) == Some("userMessage")
++                    {
++                        match value.get("clientId").and_then(serde_json::Value::as_str) {
++                            Some(client_id) => { durable_client_ids.insert(client_id.to_string()); }
++                            None if strict => return Err(QueueServiceError::Storage(ThreadStoreError::InvalidRequest {
++                                message: "steering history contains a user message without a client ID".to_string(),
++                            })),
++                            None => {},
++                        }
++                    }
++                }
++                let Some(next_cursor) = page.next_cursor else {
++                    break;
++                };
++                if cursor.as_ref() == Some(&next_cursor) {
++                    tracing::warn!(%thread_id, "repeated steering history cursor; preserving claims");
++                    if strict {
++                        return Err(QueueServiceError::Storage(
++                            ThreadStoreError::InvalidRequest {
++                                message: "repeated steering history cursor".to_string(),
++                            },
++                        ));
++                    }
++                    return Ok(());
++                }
++                cursor = Some(next_cursor);
++            }
++            if !paginated_supported {
++                break;
++            }
++        }
++        if !paginated_supported {
++            let history = match thread_store
++                .load_history(LoadThreadHistoryParams {
++                    thread_id,
++                    include_archived: true,
++                })
++                .await
++            {
++                Ok(history) => history,
++                Err(error) => {
++                    tracing::warn!(%thread_id, %error, "could not read steering rollout; preserving claims");
++                    if strict {
++                        return Err(QueueServiceError::Storage(error));
++                    }
++                    return Ok(());
++                }
++            };
++            for item in &history.items {
++                let client_id = match item {
++                    RolloutItem::EventMsg(EventMsg::UserMessage(event)) => Some(&event.client_id),
++                    RolloutItem::EventMsg(EventMsg::ItemCompleted(event)) => match &event.item {
++                        TurnItem::UserMessage(message) => Some(&message.client_id),
++                        _ => None,
++                    },
++                    _ => None,
++                };
++                if let Some(client_id) = client_id {
++                    match client_id {
++                        Some(client_id) => {
++                            durable_client_ids.insert(client_id.clone());
++                        }
++                        None if strict => return Err(QueueServiceError::Storage(
++                            ThreadStoreError::InvalidRequest {
++                                message:
++                                    "steering rollout contains a user message without a client ID"
++                                        .to_string(),
++                            },
++                        )),
++                        None => {}
++                    }
++                }
++            }
++        }
++        for record in claims {
++            let claim = steering_item_from_record(record)?;
++            let TurnInput::UserInput {
++                client_id: Some(client_id),
++                ..
++            } = &claim.item.input
++            else {
++                tracing::warn!(item_id = %claim.item.id, "claimed item is missing client ID");
++                continue;
++            };
++            let claim_item_id = claim.item.id.clone();
++            if durable_client_ids.contains(client_id)
++                && self
++                    .queue
++                    .settle_steer(thread_id, claim_item_id.clone(), claim.target_turn_id)
++                    .await?
++            {
++                self.accepted_claims
++                    .lock()
++                    .unwrap_or_else(std::sync::PoisonError::into_inner)
++                    .remove(&(thread_id, claim_item_id));
++                self.emit_changed(thread_id);
++            }
++        }
++        Ok(())
++    }
++
+     pub async fn update(
+         &self,
+         thread_id: ThreadId,
+@@ -314,6 +649,7 @@ impl QueuedItemService {
+                     QueuedItem {
+                         id,
+                         input: TurnInput::UserInput { client_id, .. },
++                        ..
+                     } if id == queued_item_id => client_id,
+                     _ => None,
+                 });
+@@ -548,9 +884,6 @@ where
+
+     fn on_thread_idle<'a>(&'a self, input: ThreadIdleInput<'a>) -> ExtensionFuture<'a, ()> {
+         Box::pin(async move {
+-            if input.cause == ThreadIdleCause::Interrupted {
+-                return;
+-            }
+             let Ok(thread_id) = ThreadId::from_string(input.thread_store.level_id()) else {
+                 tracing::warn!(
+                     level_id = input.thread_store.level_id(),
+@@ -559,6 +892,16 @@ where
+                 return;
+             };
+             let _guard = self.dispatch_guard(thread_id).await;
++            if let Err(error) = self.reconcile_steering_locked(thread_id, false).await {
++                tracing::warn!(%thread_id, %error, "failed to reconcile steering claims");
++            }
++            self.accepted_claims
++                .lock()
++                .unwrap_or_else(std::sync::PoisonError::into_inner)
++                .retain(|(claimed_thread_id, _)| *claimed_thread_id != thread_id);
++            if input.cause == ThreadIdleCause::Interrupted {
++                return;
++            }
+             if let Err(error) = self.dispatch_if_idle(thread_id).await {
+                 tracing::warn!(%thread_id, %error, "failed to dispatch queued user input");
+             }
+@@ -572,5 +915,23 @@ fn queued_item_from_record(
+     Ok(QueuedItem {
+         id: record.id,
+         input: serde_json::from_str::<TurnInput>(&record.payload)?,
++        created_at_ms: record.created_at_ms,
++    })
++}
++
++fn steering_item_from_record(
++    record: QueuedUserSubmissionRecord,
++) -> Result<SteeringItem, QueueServiceError> {
++    let target_turn_id =
++        record
++            .steering_turn_id
++            .clone()
++            .ok_or_else(|| ThreadStoreError::InvalidRequest {
++                message: format!("queued submission is not claimed: {}", record.id),
++            })?;
++    Ok(SteeringItem {
++        item: queued_item_from_record(record)?,
++        target_turn_id,
++        paused_reason: Some("steer-delivery-unconfirmed".to_string()),
+     })
+ }
+diff --git a/codex-rs/state/queue_migrations/0003_queued_steering.sql b/codex-rs/state/queue_migrations/0003_queued_steering.sql
+new file mode 100644
+index 0000000..e36fd42
+--- /dev/null
++++ b/codex-rs/state/queue_migrations/0003_queued_steering.sql
+@@ -0,0 +1,7 @@
++-- A steering claim is durable before Core sees the input. Claimed items are
++-- excluded from automatic queue dispatch until their rollout is reconciled.
++ALTER TABLE queued_items ADD COLUMN steering_turn_id TEXT;
++
++CREATE INDEX queued_items_steering_idx
++    ON queued_items(thread_id, steering_turn_id)
++    WHERE steering_turn_id IS NOT NULL;
+diff --git a/codex-rs/state/src/model/queued_item.rs b/codex-rs/state/src/model/queued_item.rs
+index ae7ec0c..a065905 100644
+--- a/codex-rs/state/src/model/queued_item.rs
++++ b/codex-rs/state/src/model/queued_item.rs
+@@ -9,6 +9,8 @@ pub struct QueuedUserSubmissionRecord {
+     pub id: String,
+     pub thread_id: ThreadId,
+     pub payload: String,
++    pub created_at_ms: i64,
++    pub steering_turn_id: Option<String>,
+ }
+
+ impl QueuedUserSubmissionRecord {
+@@ -17,6 +19,8 @@ impl QueuedUserSubmissionRecord {
+             id: row.try_get("id")?,
+             thread_id: ThreadId::try_from(row.try_get::<String, _>("thread_id")?)?,
+             payload: row.try_get("payload_json")?,
++            created_at_ms: row.try_get("created_at_ms")?,
++            steering_turn_id: row.try_get("steering_turn_id")?,
+         })
+     }
+ }
+diff --git a/codex-rs/state/src/runtime/queued_items.rs b/codex-rs/state/src/runtime/queued_items.rs
+index 3cbf32b..8cd06bf 100644
+--- a/codex-rs/state/src/runtime/queued_items.rs
++++ b/codex-rs/state/src/runtime/queued_items.rs
+@@ -89,7 +89,7 @@ impl SqliteQueueStore {
+                     COALESCE((SELECT MAX(queue_order) FROM queued_items WHERE thread_id = ?), -1) + 1,
+                     ?, ?
+              WHERE (SELECT COUNT(*) FROM queued_items WHERE thread_id = ?) < ?
+-             RETURNING id, thread_id, payload_json",
++             RETURNING id, thread_id, payload_json, created_at_ms, steering_turn_id",
+         )
+         .bind(Uuid::now_v7().to_string())
+         .bind(thread_id.to_string())
+@@ -111,9 +111,9 @@ impl SqliteQueueStore {
+         limit: usize,
+     ) -> anyhow::Result<Vec<QueuedUserSubmissionRecord>> {
+         let rows = sqlx::query(
+-            "SELECT id, thread_id, payload_json
++            "SELECT id, thread_id, payload_json, created_at_ms, steering_turn_id
+              FROM queued_items
+-             WHERE thread_id = ?
++             WHERE thread_id = ? AND steering_turn_id IS NULL
+              ORDER BY queue_order LIMIT ? OFFSET ?",
+         )
+         .bind(thread_id.to_string())
+@@ -126,6 +126,100 @@ impl SqliteQueueStore {
+             .collect()
+     }
+
++    pub async fn list_steering(
++        &self,
++        thread_id: ThreadId,
++    ) -> anyhow::Result<Vec<QueuedUserSubmissionRecord>> {
++        let rows = sqlx::query(
++            "SELECT id, thread_id, payload_json, created_at_ms, steering_turn_id
++             FROM queued_items
++             WHERE thread_id = ? AND steering_turn_id IS NOT NULL
++             ORDER BY queue_order",
++        )
++        .bind(thread_id.to_string())
++        .fetch_all(self.pool.as_ref())
++        .await?;
++        rows.iter()
++            .map(QueuedUserSubmissionRecord::try_from_row)
++            .collect()
++    }
++
++    /// Compare-and-set the durable claim before handing input to Core.
++    pub async fn claim_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: &str,
++        target_turn_id: &str,
++    ) -> anyhow::Result<Option<QueuedUserSubmissionRecord>> {
++        let row = sqlx::query(
++            "UPDATE queued_items
++             SET steering_turn_id = ?, updated_at_ms = ?
++             WHERE thread_id = ? AND id = ? AND steering_turn_id IS NULL
++             RETURNING id, thread_id, payload_json, created_at_ms, steering_turn_id",
++        )
++        .bind(target_turn_id)
++        .bind(datetime_to_epoch_millis(Utc::now()))
++        .bind(thread_id.to_string())
++        .bind(item_id)
++        .fetch_optional(self.pool.as_ref())
++        .await?;
++        row.as_ref()
++            .map(QueuedUserSubmissionRecord::try_from_row)
++            .transpose()
++    }
++
++    /// Release only a claim that Core explicitly rejected without accepting input.
++    pub async fn release_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: &str,
++        target_turn_id: &str,
++    ) -> anyhow::Result<bool> {
++        Ok(sqlx::query(
++            "UPDATE queued_items SET steering_turn_id = NULL, updated_at_ms = ?
++             WHERE thread_id = ? AND id = ? AND steering_turn_id = ?",
++        )
++        .bind(datetime_to_epoch_millis(Utc::now()))
++        .bind(thread_id.to_string())
++        .bind(item_id)
++        .bind(target_turn_id)
++        .execute(self.pool.as_ref())
++        .await?
++        .rows_affected()
++            > 0)
++    }
++
++    /// Settle only after the client message ID is observed in durable history.
++    pub async fn settle_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: &str,
++        target_turn_id: &str,
++    ) -> anyhow::Result<bool> {
++        Ok(sqlx::query(
++            "DELETE FROM queued_items
++             WHERE thread_id = ? AND id = ? AND steering_turn_id = ?",
++        )
++        .bind(thread_id.to_string())
++        .bind(item_id)
++        .bind(target_turn_id)
++        .execute(self.pool.as_ref())
++        .await?
++        .rows_affected()
++            > 0)
++    }
++
++    /// Explicitly abandon an unresolved claim. The target turn is part of the
++    /// compare-and-set so a stale client cannot discard a different delivery.
++    pub async fn discard_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: &str,
++        target_turn_id: &str,
++    ) -> anyhow::Result<bool> {
++        self.settle_steer(thread_id, item_id, target_turn_id).await
++    }
++
+     pub async fn update(
+         &self,
+         thread_id: ThreadId,
+@@ -135,8 +229,8 @@ impl SqliteQueueStore {
+         let row = sqlx::query(
+             "UPDATE queued_items
+              SET payload_json = ?, updated_at_ms = ?
+-             WHERE thread_id = ? AND id = ?
+-             RETURNING id, thread_id, payload_json",
++             WHERE thread_id = ? AND id = ? AND steering_turn_id IS NULL
++             RETURNING id, thread_id, payload_json, created_at_ms, steering_turn_id",
+         )
+         .bind(payload_json)
+         .bind(datetime_to_epoch_millis(Utc::now()))
+@@ -150,22 +244,22 @@ impl SqliteQueueStore {
+     }
+
+     pub async fn delete(&self, thread_id: ThreadId, item_id: &str) -> anyhow::Result<bool> {
+-        Ok(
+-            sqlx::query("DELETE FROM queued_items WHERE thread_id = ? AND id = ?")
+-                .bind(thread_id.to_string())
+-                .bind(item_id)
+-                .execute(self.pool.as_ref())
+-                .await?
+-                .rows_affected()
+-                > 0,
++        Ok(sqlx::query(
++            "DELETE FROM queued_items WHERE thread_id = ? AND id = ? AND steering_turn_id IS NULL",
+         )
++        .bind(thread_id.to_string())
++        .bind(item_id)
++        .execute(self.pool.as_ref())
++        .await?
++        .rows_affected()
++            > 0)
+     }
+
+     pub async fn reorder(&self, thread_id: ThreadId, ordered_ids: &[String]) -> anyhow::Result<()> {
+         let mut transaction = self.pool.begin().await?;
+         let rows: Vec<(String, i64)> = sqlx::query_as(
+             "SELECT id, queue_order FROM queued_items
+-             WHERE thread_id = ? ORDER BY queue_order",
++             WHERE thread_id = ? AND steering_turn_id IS NULL ORDER BY queue_order",
+         )
+         .bind(thread_id.to_string())
+         .fetch_all(transaction.as_mut())
+@@ -183,11 +277,18 @@ impl SqliteQueueStore {
+             .into());
+         }
+         let now_ms = datetime_to_epoch_millis(Utc::now());
+-        let max_queue_order = rows.last().map_or(-1, |(_, queue_order)| *queue_order);
++        // Claimed rows retain their unique queue_order. A reorder must move
++        // visible rows past every row, not only past other visible rows.
++        let max_queue_order: Option<i64> =
++            sqlx::query_scalar("SELECT MAX(queue_order) FROM queued_items WHERE thread_id = ?")
++                .bind(thread_id.to_string())
++                .fetch_one(transaction.as_mut())
++                .await?;
++        let max_queue_order = max_queue_order.unwrap_or(-1);
+         for (index, item_id) in ordered_ids.iter().enumerate() {
+             sqlx::query(
+                 "UPDATE queued_items SET queue_order = ?, updated_at_ms = ?
+-                 WHERE thread_id = ? AND id = ?",
++                 WHERE thread_id = ? AND id = ? AND steering_turn_id IS NULL",
+             )
+             .bind(max_queue_order + i64::try_from(index)? + 1)
+             .bind(now_ms)
+diff --git a/codex-rs/state/src/runtime/queued_items_tests.rs b/codex-rs/state/src/runtime/queued_items_tests.rs
+index 3f97eb3..4dbbf3e 100644
+--- a/codex-rs/state/src/runtime/queued_items_tests.rs
++++ b/codex-rs/state/src/runtime/queued_items_tests.rs
+@@ -65,6 +65,8 @@ async fn migrating_existing_queue_backfills_thread_revisions() {
+         id: Uuid::now_v7().to_string(),
+         thread_id,
+         payload: r#"{"existing":true}"#.to_string(),
++        created_at_ms: 0,
++        steering_turn_id: None,
+     };
+     sqlx::query(
+         "INSERT INTO queued_items
+@@ -194,6 +196,104 @@ async fn fifo_dispatch_preserves_edits_reordering_and_pagination() {
+     );
+ }
+
++#[tokio::test]
++async fn steering_claim_is_hidden_and_cannot_be_edited_or_dispatched() {
++    let (runtime, thread_id) = runtime_with_thread().await;
++    let queue = runtime.thread_queue();
++    let first = queue.enqueue(thread_id, r#"{"n":1}"#).await.unwrap();
++    let second = queue.enqueue(thread_id, r#"{"n":2}"#).await.unwrap();
++    let third = queue.enqueue(thread_id, r#"{"n":3}"#).await.unwrap();
++
++    let claimed = queue
++        .claim_steer(thread_id, &second.id, "active-turn")
++        .await
++        .unwrap()
++        .unwrap();
++    assert_eq!(claimed.steering_turn_id.as_deref(), Some("active-turn"));
++    assert!(
++        queue
++            .claim_steer(thread_id, &second.id, "other-turn")
++            .await
++            .unwrap()
++            .is_none()
++    );
++    assert!(
++        queue
++            .update(thread_id, &second.id, r#"{"n":4}"#)
++            .await
++            .unwrap()
++            .is_none()
++    );
++    assert!(!queue.delete(thread_id, &second.id).await.unwrap());
++    assert_eq!(
++        vec![first.clone(), third.clone()],
++        queue.list_page(thread_id, 0, 10).await.unwrap()
++    );
++    assert_eq!(
++        vec![claimed.clone()],
++        queue.list_steering(thread_id).await.unwrap()
++    );
++    let reopened = StateRuntime::init(runtime.sqlite().clone(), "test-provider".to_string())
++        .await
++        .unwrap();
++    assert_eq!(
++        vec![claimed.clone()],
++        reopened
++            .thread_queue()
++            .list_steering(thread_id)
++            .await
++            .unwrap()
++    );
++
++    // Reordering visible rows must not collide with the hidden row's unique order.
++    queue
++        .reorder(thread_id, &[third.id.clone(), first.id.clone()])
++        .await
++        .unwrap();
++    assert!(
++        !queue
++            .settle_steer(thread_id, &second.id, "wrong-turn")
++            .await
++            .unwrap()
++    );
++    assert!(
++        queue
++            .release_steer(thread_id, &second.id, "active-turn")
++            .await
++            .unwrap()
++    );
++    assert!(queue.list_steering(thread_id).await.unwrap().is_empty());
++    assert_eq!(3, queue.list_page(thread_id, 0, 10).await.unwrap().len());
++
++    assert!(
++        queue
++            .claim_steer(thread_id, &second.id, "active-turn")
++            .await
++            .unwrap()
++            .is_some()
++    );
++    assert!(
++        !queue
++            .discard_steer(thread_id, &second.id, "wrong-turn")
++            .await
++            .unwrap()
++    );
++    assert_eq!(1, queue.list_steering(thread_id).await.unwrap().len());
++    assert!(
++        queue
++            .discard_steer(thread_id, &second.id, "active-turn")
++            .await
++            .unwrap()
++    );
++    assert!(
++        !queue
++            .discard_steer(thread_id, &second.id, "active-turn")
++            .await
++            .unwrap()
++    );
++    assert_eq!(2, queue.list_page(thread_id, 0, 10).await.unwrap().len());
++}
++
+ #[tokio::test]
+ async fn queue_operations_cannot_mutate_another_threads_messages() {
+     let (runtime, thread_id) = runtime_with_thread().await;
+diff --git a/codex-rs/thread-store/src/queue_store.rs b/codex-rs/thread-store/src/queue_store.rs
+index 74fc2fc..c980ae8 100644
+--- a/codex-rs/thread-store/src/queue_store.rs
++++ b/codex-rs/thread-store/src/queue_store.rs
+@@ -35,6 +35,39 @@ pub trait QueueStore: Send + Sync {
+         limit: usize,
+     ) -> ThreadStoreFuture<'_, Vec<QueuedUserSubmissionRecord>>;
+
++    fn list_steering(
++        &self,
++        thread_id: ThreadId,
++    ) -> ThreadStoreFuture<'_, Vec<QueuedUserSubmissionRecord>>;
++
++    fn claim_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, Option<QueuedUserSubmissionRecord>>;
++
++    fn release_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, bool>;
++
++    fn settle_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, bool>;
++
++    fn discard_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, bool>;
++
+     fn update(
+         &self,
+         thread_id: ThreadId,
+@@ -125,6 +158,65 @@ impl QueueStore for LocalQueueStore {
+         queue_future(self.queue().list_page(thread_id, offset, limit))
+     }
+
++    fn list_steering(
++        &self,
++        thread_id: ThreadId,
++    ) -> ThreadStoreFuture<'_, Vec<QueuedUserSubmissionRecord>> {
++        queue_future(self.queue().list_steering(thread_id))
++    }
++
++    fn claim_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, Option<QueuedUserSubmissionRecord>> {
++        queue_future(async move {
++            self.queue()
++                .claim_steer(thread_id, &item_id, &target_turn_id)
++                .await
++        })
++    }
++
++    fn release_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, bool> {
++        queue_future(async move {
++            self.queue()
++                .release_steer(thread_id, &item_id, &target_turn_id)
++                .await
++        })
++    }
++
++    fn settle_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, bool> {
++        queue_future(async move {
++            self.queue()
++                .settle_steer(thread_id, &item_id, &target_turn_id)
++                .await
++        })
++    }
++
++    fn discard_steer(
++        &self,
++        thread_id: ThreadId,
++        item_id: String,
++        target_turn_id: String,
++    ) -> ThreadStoreFuture<'_, bool> {
++        queue_future(async move {
++            self.queue()
++                .discard_steer(thread_id, &item_id, &target_turn_id)
++                .await
++        })
++    }
++
+     fn update(
+         &self,
+         thread_id: ThreadId,

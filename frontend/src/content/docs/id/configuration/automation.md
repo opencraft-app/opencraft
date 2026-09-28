@@ -4,7 +4,7 @@
 
 **Tugas Terjadwal membuat Hermes Agent mulai bekerja tanpa prompt manual. Pilih Tugas Agent saat pekerjaan memerlukan penalaran AI, Tugas Notifikasi saat pesan harus dikirim persis seperti ditulis, atau Tugas Skrip saat skrip Bash atau Python harus menjalankan pemeriksaan yang deterministik. Ketiga jenis ini memakai jadwal sekali jalan, berulang, dan interval yang sama, serta periode berlaku dan pengaturan notifikasi yang sama.**
 
-![Halaman Tugas Terjadwal yang menampilkan templat tugas dan tugas saat ini](../images/st-en-1.png)
+![Halaman Tugas Terjadwal yang menampilkan templat tugas dan tugas saat ini](../images/st-en-1.webp)
 
 ## Memilih Jenis Tugas
 
@@ -23,7 +23,7 @@ Setiap jenis dapat berjalan sekali, berulang setiap hari, minggu, atau bulan, at
 
 Pastikan Hermes Agent aktif, pilih kanal notifikasi bila diperlukan, dan periksa kode Tugas Skrip sebelum menyimpannya.
 
-![Opsi kanal notifikasi yang menampilkan Telegram dan WeChat](../images/notification-channels-en.png)
+![Opsi kanal notifikasi yang menampilkan Telegram dan WeChat](../images/notification-channels-en.webp)
 
 ## Membuat Tugas Agent
 
@@ -43,7 +43,7 @@ Atur bidang berikut:
 Pada waktu yang dijadwalkan, Hermes Agent membuat tugas Agent dan memanggil model yang dipilih.
 Hasilnya dapat dikirim ke kanal notifikasi yang dipilih dan dicatat di Eksekusi terbaru.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Agent](../images/st-en-2.png)
+![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Agent](../images/st-en-2.webp)
 
 ## Membuat Tugas Notifikasi
 
@@ -60,7 +60,7 @@ Karena itu, penggunaan token model untuk tugas ini adalah 0 Token.
 Jika tidak memilih kanal notifikasi, tugas tetap berjalan di latar belakang dan menulis catatan tanpa mengirim pesan.
 Setiap kanal notifikasi tetap dapat merender baris baru dan karakter sesuai protokol teksnya sendiri.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Notifikasi](../images/st-en-3.png)
+![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Notifikasi](../images/st-en-3.webp)
 
 ## Membuat Tugas Skrip
 
@@ -83,14 +83,14 @@ Penggunaan token modelnya adalah 0 Token, tetapi tugas ini tetap memakai sumber 
 Jangan mengandalkan Tugas Skrip untuk memperbaiki, menjelaskan, atau merangkum kegagalan dengan AI.
 Tugas ini tetap deterministik: output kosong tetap senyap, dan skrip yang gagal tidak memicu fallback model.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Skrip](../images/st-en-4.png)
+![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Skrip](../images/st-en-4.webp)
 
 ## Menautkan Tugas Agent Upstream
 
 Gunakan tugas upstream saat satu Tugas Agent perlu menyiapkan konteks untuk Tugas Agent lain.
 Tugas downstream menerima output selesai terbaru dari tugas upstream sambil tetap memakai jadwal, instruksi, periode berlaku, dan pengaturan notifikasinya sendiri.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan opsi tugas upstream](../images/st-en-5.png)
+![Dialog Buat Tugas Terjadwal yang menampilkan opsi tugas upstream](../images/st-en-5.webp)
 
 Beri jeda waktu yang cukup di antara tugas yang bergantung satu sama lain, lalu jelaskan dalam instruksi downstream cara memakai output upstream.
 Konteks upstream, eksekusi model, dan Skill hanya berlaku untuk Tugas Agent.

@@ -3,6 +3,8 @@ import test from "node:test";
 import { indexedDB } from "fake-indexeddb";
 
 import { ExtensionSupervisor } from "@opencraft/extension-runtime";
+import { PlatformViewRendererRegistry } from "@opencraft/extension-react";
+import { createHeadlessCodexExtension } from "@opencraft/plugin-builtin-agents";
 import { createHyperNodeExtension } from "@opencraft/plugin-hypernode";
 import {
   HOST_PROFILE_CONTRIBUTION_CHANNEL,
@@ -11,6 +13,7 @@ import {
 } from "@opencraft/workbench-runtime";
 import { IndexedDbHostConnectionProfileStore } from "../apps/workbench-web/src/runtime/indexeddb-host-profile-store";
 import { HostProfileContributionRegistry } from "../apps/workbench-web/src/runtime/host-profile-contributions";
+import { createPlatformViewRendererContributionAdapter } from "../apps/workbench-web/src/runtime/platform-view-renderers";
 import {
   BuiltinWebSocketHostConnectionExtension,
   createHostConnectionProviderContributionAdapter,
@@ -25,6 +28,7 @@ Object.defineProperty(globalThis, "window", {
 const {
   createWebHostId,
   parseWebHostDefinitions,
+  refreshBundledHostBrowseRoots,
   productDatabaseName,
   productStorageKey,
 } = await import(
@@ -105,6 +109,18 @@ test("browser Host definitions preserve identity and reject ambiguous or credent
   assert.throws(() => parseWebHostDefinitions(JSON.stringify([
     { hostId: "http", label: "HTTP", kind: "remote-control", url: "https://node.example/rpc" },
   ]), "wss://fallback.example/rpc"), /must use ws: or wss:/u);
+});
+
+test("packaged Web Host resolves its same-origin AppServer endpoint at runtime", () => {
+  const [host] = parseWebHostDefinitions(JSON.stringify([{
+    hostId: "opencraft-server",
+    label: "OpenCraft Server",
+    kind: "durable",
+    executionLocation: "This server",
+    url: "/appserver",
+  }]), "wss://ui.example/appserver");
+  assert.equal(host?.url, "wss://ui.example/appserver");
+  assert.equal(host?.executionLocation, "This server");
 });
 
 test("WebSocket connection provider enforces the browser security boundary", () => {
@@ -188,6 +204,74 @@ test("HyperNode owns both its transport provider and ephemeral Host profile", as
   assert.deepEqual(profiles.list(), []);
   await extensions.dispose();
   await providers.close();
+});
+
+test("headless Codex inherits the packaged Linux browse root instead of claiming a Mac folder", async () => {
+  const providers = new HostConnectionProviderRegistry();
+  const profiles = new HostProfileContributionRegistry();
+  const renderers = new PlatformViewRendererRegistry();
+  const extensions = new ExtensionSupervisor({
+    platform: "web",
+    createActivationId: () => "headless-codex-activation",
+    internalContributions: {
+      hostConnectionProvider: createHostConnectionProviderContributionAdapter(providers),
+      [HOST_PROFILE_CONTRIBUTION_CHANNEL]: profiles.createAdapter(),
+      platformViewRenderer: createPlatformViewRendererContributionAdapter(renderers),
+    },
+  });
+  try {
+    await extensions.activate(createHeadlessCodexExtension({
+      requestHost: async () => { throw new Error("No Host requests during activation"); },
+      createTransport: () => { throw new Error("No transport during activation"); },
+      workspaceBrowseRoots: ["/"],
+    }));
+    assert.deepEqual(profiles.list().find(({ hostId }) => hostId === "local-codex")?.workspaceBrowseRoots, ["/"]);
+  } finally {
+    await extensions.dispose();
+    await providers.close();
+  }
+});
+
+test("an older bundled Host gains its Linux root without overwriting user profile fields", async () => {
+  const [definition] = parseWebHostDefinitions(JSON.stringify([{
+    hostId: "opencraft-server", label: "OpenCraft Server", kind: "durable", url: "/appserver",
+    workspaceBrowseRoots: ["/"],
+  }]), "wss://node.example/appserver");
+  const databaseName = `headless-browse-root-${crypto.randomUUID()}`;
+  const oldProfile: HostConnectionProfile = {
+    hostId: definition!.hostId,
+    displayName: "My Linux node",
+    providerId: "vela.websocket",
+    providerConfig: { url: definition!.url },
+    providerConfigVersion: 1,
+    hostKind: "durable",
+    enabled: true,
+    autoConnect: false,
+    includeInSidebar: true,
+    credentialRef: null,
+    transportEndpoint: null,
+    executionLocation: "This server",
+    workspaceBrowseRoots: [],
+    revision: 2,
+  };
+  const initial = await IndexedDbHostConnectionProfileStore.open({ databaseName, factory: indexedDB });
+  await initial.put(oldProfile);
+  initial.close();
+  const reopened = await IndexedDbHostConnectionProfileStore.open({ databaseName, factory: indexedDB });
+  try {
+    await refreshBundledHostBrowseRoots(reopened, [definition!]);
+    const updated = reopened.getSnapshot().profiles[0]!;
+    assert.deepEqual(updated.workspaceBrowseRoots, ["/"]);
+    assert.equal(updated.displayName, "My Linux node");
+    assert.equal(updated.revision, 3);
+    await refreshBundledHostBrowseRoots(reopened, [definition!]);
+    assert.equal(reopened.getSnapshot().profiles[0]?.revision, 3);
+    await reopened.put({ ...updated, workspaceBrowseRoots: ["/srv/projects"], revision: 4 });
+    await refreshBundledHostBrowseRoots(reopened, [definition!]);
+    assert.deepEqual(reopened.getSnapshot().profiles[0]?.workspaceBrowseRoots, ["/srv/projects"]);
+  } finally {
+    reopened.close();
+  }
 });
 
 test("Host profiles seed once, publish after durable writes, and enforce revision order", async () => {

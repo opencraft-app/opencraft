@@ -290,14 +290,13 @@ func TestGetActivityPrice_DefaultPreviewOmitted(t *testing.T) {
 	c := New(srv.URL, "")
 	request := &GetPriceRequest{
 		ActivityID: 1,
-		Preview:    1,
 		Goods:      []GetPriceGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
 	}
 	if _, err := c.GetActivityPrice(context.Background(), request); err != nil {
 		t.Fatalf("GetActivityPrice err=%v", err)
 	}
-	if request.Preview != 1 {
-		t.Fatalf("request Preview=%d, want 1", request.Preview)
+	if request.Preview != 0 {
+		t.Fatalf("request Preview=%d, want 0", request.Preview)
 	}
 
 	var sent envelope
@@ -313,6 +312,41 @@ func TestGetActivityPrice_DefaultPreviewOmitted(t *testing.T) {
 	}
 	if _, ok := para["uin"]; ok {
 		t.Fatalf("uin unexpectedly present without preview: %s", sent.Interface.Para)
+	}
+}
+
+func TestGetActivityPrice_RequestPreviewOverridesDefault(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"returnCode":0,"returnMessage":"ok","data":[]}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	request := &GetPriceRequest{
+		ActivityID: 1,
+		Preview:    1,
+		Uin:        "450860000002",
+		Goods:      []GetPriceGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
+	}
+	if _, err := c.GetActivityPrice(context.Background(), request); err != nil {
+		t.Fatalf("GetActivityPrice err=%v", err)
+	}
+
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode sent body: %v", err)
+	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if got := para["preview"]; got != float64(1) {
+		t.Fatalf("preview = %#v, want 1", got)
+	}
+	if got := para["uin"]; got != "450860000002" {
+		t.Fatalf("uin = %#v, want 450860000002", got)
 	}
 }
 
@@ -365,14 +399,13 @@ func TestDoGoods_DefaultPreviewOmitted(t *testing.T) {
 	request := &DoGoodsRequest{
 		Uin:        "1",
 		ActivityID: 1,
-		Preview:    1,
 		Goods:      []DoGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
 	}
 	if _, err := c.DoGoods(context.Background(), request); err != nil {
 		t.Fatalf("DoGoods err=%v", err)
 	}
-	if request.Preview != 1 {
-		t.Fatalf("request Preview=%d, want 1", request.Preview)
+	if request.Preview != 0 {
+		t.Fatalf("request Preview=%d, want 0", request.Preview)
 	}
 
 	var sent envelope
@@ -385,6 +418,38 @@ func TestDoGoods_DefaultPreviewOmitted(t *testing.T) {
 	}
 	if _, ok := para["preview"]; ok {
 		t.Fatalf("preview unexpectedly present: %s", sent.Interface.Para)
+	}
+}
+
+func TestDoGoods_RequestPreviewOverridesDefault(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"returnCode":0,"returnMessage":"ok","data":{"deal_names":["d"],"big_deal_no":"b"}}`))
+	}))
+	defer srv.Close()
+
+	c := New("", srv.URL)
+	request := &DoGoodsRequest{
+		Uin:        "1",
+		ActivityID: 1,
+		Preview:    1,
+		Goods:      []DoGoodsItem{{ActID: 1, PreferenceParam: map[string]interface{}{}}},
+	}
+	if _, err := c.DoGoods(context.Background(), request); err != nil {
+		t.Fatalf("DoGoods err=%v", err)
+	}
+
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode sent body: %v", err)
+	}
+	var para map[string]interface{}
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if got := para["preview"]; got != float64(1) {
+		t.Fatalf("preview = %#v, want 1", got)
 	}
 }
 

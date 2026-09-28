@@ -30,7 +30,7 @@ Diagnostik membantu Anda menyelidiki Agent yang tidak berperilaku seperti yang d
 3. Pilih rentang waktu untuk log terbaru: 1, 3, 6, 12, atau 24 jam.
 4. Pilih **Refresh** untuk memuat log.
 
-![Diagnostik di konsol LightVela](../images/diagnostics-overview-en.png)
+![Diagnostik di konsol LightVela](../images/diagnostics-overview-en.webp)
 
 Mulailah dari periode terpendek yang masih berguna. Jendela log yang lebih sempit memudahkan Anda menghubungkan sebuah error dengan tindakan yang memicunya.
 

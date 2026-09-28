@@ -2,8 +2,8 @@
 // 共用 helper（设计稿 .tmp/dianshi-activity-bundle-design.md §5.2）。
 //
 // inquiry.Service.Quote 与 placeorder.Service.PlaceOrder 在分叉点都需要这 2 步反查：
-//  1. trade_bundle_activity 表查 bundle_id 是否为活动 bundle
-//  2. trade_user_activity_participation 表查 (uin, activity_id) 是否已参与
+//  1. trade_bundle_activity 表按 (bundle_id, scene) 查活动配置
+//  2. trade_user_activity_participation 表按 (uin, activity_id, scene) 查是否已参与
 //
 // 两者决策真值表：
 //
@@ -33,6 +33,7 @@ import (
 //   - 便于 Resolver 的调用方（inquiry / placeorder）拿 Mapping 做日志 / metric 透传
 type Mapping struct {
 	BundleID   string
+	Scene      store.ActivityScene
 	ActivityID int64
 	ActID      int64
 	SecretKey  string
@@ -47,11 +48,14 @@ type Mapping struct {
 
 // Resolver 决定某一次询价 / 下单是否走点石活动通道。
 type Resolver interface {
+	// GetMapping 只读取活动配置，不查询用户参与记录。用于有意绕过普通活动资格的受信内部链路。
+	GetMapping(ctx context.Context, scene store.ActivityScene, bundleID string) (*Mapping, error)
+
 	// ResolveForInquiry 在询价分叉点调用。
-	ResolveForInquiry(ctx context.Context, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error)
+	ResolveForInquiry(ctx context.Context, scene store.ActivityScene, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error)
 
 	// ResolveForPlaceOrder 在下单分叉点调用。
-	ResolveForPlaceOrder(ctx context.Context, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error)
+	ResolveForPlaceOrder(ctx context.Context, scene store.ActivityScene, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error)
 }
 
 // resolver 是 Resolver 的默认实现。
@@ -64,37 +68,68 @@ func NewResolver(s store.ActivityStore) Resolver {
 	return &resolver{store: s}
 }
 
+// GetMapping 读取指定 Bundle 和场景的活动配置，不触碰参与资格表。
+func (r *resolver) GetMapping(ctx context.Context, scene store.ActivityScene, bundleID string) (*Mapping, error) {
+	if r == nil || r.store == nil {
+		return nil, fmt.Errorf("activity resolver: store is nil")
+	}
+	if bundleID == "" {
+		return nil, fmt.Errorf("activity resolver: bundleID is required")
+	}
+	if !scene.Valid() {
+		return nil, fmt.Errorf("activity resolver: invalid scene %q", scene)
+	}
+
+	ba, err := r.store.GetBundleActivity(ctx, bundleID, scene)
+	if err != nil {
+		return nil, err
+	}
+	return &Mapping{
+		BundleID:         ba.BundleID,
+		Scene:            ba.Scene,
+		ActivityID:       ba.ActivityID,
+		ActID:            ba.ActID,
+		SecretKey:        ba.SecretKey,
+		Active:           ba.Active,
+		TimeSpanUnit:     ba.TimeSpanUnit,
+		OrderExpiredTime: ba.OrderExpiredTime,
+	}, nil
+}
+
 // ResolveForInquiry 实现 Resolver 接口。
-func (r *resolver) ResolveForInquiry(ctx context.Context, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error) {
-	return r.resolve(ctx, bundleID, uin, timeSpan, timeUnit)
+func (r *resolver) ResolveForInquiry(ctx context.Context, scene store.ActivityScene, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error) {
+	return r.resolve(ctx, scene, bundleID, uin, timeSpan, timeUnit)
 }
 
 // ResolveForPlaceOrder 实现 Resolver 接口。
 //
 // 与 ResolveForInquiry 共用同一份反查路径——错误处理差异由调用方（上层 service）决定，
 // 不在 Resolver 内分叉。
-func (r *resolver) ResolveForPlaceOrder(ctx context.Context, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error) {
-	return r.resolve(ctx, bundleID, uin, timeSpan, timeUnit)
+func (r *resolver) ResolveForPlaceOrder(ctx context.Context, scene store.ActivityScene, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error) {
+	return r.resolve(ctx, scene, bundleID, uin, timeSpan, timeUnit)
 }
 
 // resolve 是 ResolveForInquiry / ResolveForPlaceOrder 共享的核心反查路径（设计稿 §5.2）。
 //
 // 步骤：
-//  1. 查 trade_bundle_activity（按 bundle_id）
+//  1. 查 trade_bundle_activity（按 bundle_id + scene）
 //     - 无记录 → (nil, false, nil)，非活动 bundle 直接走 jifei
 //     - DB 错误 → (nil, false, err)
 //  2. mapping.Active == false → (mapping, false, nil)，活动已下线，走 jifei
 //  3. 本次请求不是 1 个月 → (mapping, false, nil)，走 jifei
-//  4. 查 trade_user_activity_participation (uin, activity_id) 是否存在
+//  4. 查 trade_user_activity_participation (uin, activity_id, scene) 是否存在
 //     - 已参与 → (mapping, false, nil)，每用户一次约束生效，走 jifei
 //     - 未参与 → (mapping, true, nil)，走点石活动通道
 //     - DB 错误 → (mapping, false, err)（mapping 非 nil 便于上层日志透传）
-func (r *resolver) resolve(ctx context.Context, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error) {
+func (r *resolver) resolve(ctx context.Context, scene store.ActivityScene, bundleID, uin string, timeSpan int, timeUnit string) (*Mapping, bool, error) {
 	if r == nil || r.store == nil {
 		return nil, false, fmt.Errorf("activity resolver: store is nil")
 	}
 	if bundleID == "" {
 		return nil, false, fmt.Errorf("activity resolver: bundleID is required")
+	}
+	if !scene.Valid() {
+		return nil, false, fmt.Errorf("activity resolver: invalid scene %q", scene)
 	}
 	if uin == "" {
 		// uin 必须由 shadow 反查回填后传入。Resolver 不做 shadow 兜底——若 uin 为空
@@ -102,23 +137,13 @@ func (r *resolver) resolve(ctx context.Context, bundleID, uin string, timeSpan i
 		return nil, false, fmt.Errorf("activity resolver: uin is required (must be back-filled by shadow lookup)")
 	}
 
-	ba, err := r.store.GetBundleActivityByBundleID(ctx, bundleID)
+	mapping, err := r.GetMapping(ctx, scene, bundleID)
 	if errors.Is(err, store.ErrBundleActivityNotFound) {
 		// 非活动 bundle，直接走 jifei
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, fmt.Errorf("activity resolver: get bundle_activity bundleID=%s: %w", bundleID, err)
-	}
-
-	mapping := &Mapping{
-		BundleID:         ba.BundleID,
-		ActivityID:       ba.ActivityID,
-		ActID:            ba.ActID,
-		SecretKey:        ba.SecretKey,
-		Active:           ba.Active,
-		TimeSpanUnit:     ba.TimeSpanUnit,
-		OrderExpiredTime: ba.OrderExpiredTime,
 	}
 
 	if !mapping.Active {
@@ -130,11 +155,11 @@ func (r *resolver) resolve(ctx context.Context, bundleID, uin string, timeSpan i
 		return mapping, false, nil
 	}
 
-	hit, err := r.store.HasUserParticipated(ctx, uin, mapping.ActivityID)
+	hit, err := r.store.HasUserParticipated(ctx, uin, mapping.ActivityID, scene)
 	if err != nil {
 		return mapping, false, fmt.Errorf(
-			"activity resolver: query participation uin=%s activityID=%d: %w",
-			uin, mapping.ActivityID, err,
+			"activity resolver: query participation uin=%s activityID=%d scene=%s: %w",
+			uin, mapping.ActivityID, scene, err,
 		)
 	}
 	if hit {

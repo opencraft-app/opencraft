@@ -68,12 +68,15 @@ def sync_publish_subset(
     patterns: list[str],
     *,
     preserve_target_only: bool = False,
+    preserve_target_paths: list[str] | None = None,
 ) -> tuple[int, int]:
     source_files = select_matching_files(list_tracked_files(repo_root, source_ref), patterns)
     target_files = select_matching_files(list_tracked_files(repo_root, target_ref), patterns)
+    preserve_paths = set(preserve_target_paths or [])
+    preserved = target_files & preserve_paths
 
-    to_delete = [] if preserve_target_only else sorted(target_files - source_files)
-    to_checkout = sorted(source_files)
+    to_delete = [] if preserve_target_only else sorted(target_files - source_files - preserved)
+    to_checkout = sorted(source_files - preserve_paths)
 
     for chunk in batched(to_delete):
         git_run(repo_root, "rm", "-f", "--ignore-unmatch", "--", *chunk)
@@ -116,6 +119,7 @@ def main() -> int:
         target_ref=args.target_ref,
         patterns=bundle.publish_paths,
         preserve_target_only=is_playground_env(args.env),
+        preserve_target_paths=bundle.preserve_target_paths,
     )
     print(f"projected {projected} files, deleted {deleted} stale files")
     return 0

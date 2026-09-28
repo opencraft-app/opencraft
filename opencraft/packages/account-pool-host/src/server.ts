@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 import type { CodexAccountPoolProxy } from "./codex-proxy.js";
 
@@ -36,8 +37,9 @@ export async function startCodexAccountPoolServer(options: {
   const server = createServer(async (incoming, outgoing) => {
     const abort = new AbortController();
     const onAborted = () => abort.abort(new Error("Account Pool client disconnected"));
+    const onOutgoingClose = () => { if (!outgoing.writableEnded) onAborted(); };
     incoming.once("aborted", onAborted);
-    outgoing.once("close", () => { if (!outgoing.writableEnded) onAborted(); });
+    outgoing.once("close", onOutgoingClose);
     try {
       const body = ["GET", "HEAD"].includes(incoming.method ?? "GET") ? undefined : await requestBody(incoming);
       const authority = incoming.headers.host ?? `${host}:${options.port ?? 0}`;
@@ -51,15 +53,24 @@ export async function startCodexAccountPoolServer(options: {
       outgoing.statusMessage = response.statusText;
       for (const [name, value] of response.headers) outgoing.setHeader(name, value);
       if (response.body === null) outgoing.end();
-      else Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream).pipe(outgoing);
+      else await pipeline(
+        Readable.fromWeb(response.body as unknown as import("node:stream/web").ReadableStream),
+        outgoing,
+        { signal: abort.signal },
+      );
     } catch (error) {
-      if (outgoing.headersSent) {
-        outgoing.destroy(error instanceof Error ? error : new Error(String(error)));
+      if (abort.signal.aborted || outgoing.destroyed) {
+        if (!outgoing.destroyed) outgoing.destroy();
+      } else if (outgoing.headersSent) {
+        outgoing.destroy();
       } else {
         const status = error instanceof RangeError ? 413 : 502;
         outgoing.writeHead(status, { "content-type": "application/json" });
         outgoing.end(JSON.stringify({ error: { message: status === 413 ? "Request too large" : "Account Pool request failed" } }));
       }
+    } finally {
+      incoming.off("aborted", onAborted);
+      outgoing.off("close", onOutgoingClose);
     }
   });
   await new Promise<void>((resolve, reject) => {

@@ -3,7 +3,7 @@ import type { AppServerClient } from "@opencraft/appserver-client";
 import { buildResumeHistoryRequest, type AppServerThread, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
 
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
-import { mergeTurns, reconcileHistoryWindow } from "./merge-turns";
+import { mergeTurns, reconcileHistoryTurns, reconcileHistoryWindow } from "./merge-turns";
 import type { ThreadStreamRole, ThreadView } from "./models";
 import { resolveThreadId } from "./notification-buffer";
 
@@ -340,7 +340,7 @@ export class ThreadResumeCoordinatorService extends Service {
         const projected = this.ctx.threadResumeProjectors.project(current, { metadata, response });
         const turns = history.source === "message-window"
           ? reconcileHistoryWindow(projected.turns, history.turns, initial.turns)
-          : mergeTurns(projected.turns, history.turns, { placement: "prepend" });
+          : reconcileHistoryTurns(projected.turns, history.turns, "latest");
         const oldestLoadedTurnId = turns[0]?.id ?? null;
         return {
           ...projected,
@@ -399,7 +399,7 @@ export class ThreadResumeCoordinatorService extends Service {
       ) return;
       views.update(threadId, (current) => ({
         ...current,
-        turns: mergeTurns(current.turns, olderTurns, { placement: "prepend" }),
+        turns: reconcileHistoryTurns(current.turns, olderTurns, "older"),
         tailHydrationComplete: true,
         turnsPagination: {
           olderCursor: null,
@@ -450,7 +450,7 @@ export class ThreadResumeCoordinatorService extends Service {
         ...view,
         turns: page.source === "message-window"
           ? reconcileHistoryWindow(view.turns, page.turns)
-          : mergeTurns(view.turns, page.turns, { placement: "prepend" }),
+          : reconcileHistoryTurns(view.turns, page.turns, "older"),
         tailHydrationComplete: page.complete,
         turnsPagination: {
           olderCursor: page.olderCursor,

@@ -38,7 +38,7 @@ function SideChatContent({ session, service }: { session: SideChatSession; servi
               throw cause;
             });
           }}
-          onCancel={() => { const active = session.lease.getSnapshot().activeTurn; if (active) void session.lease.interrupt(active.turnId).catch(cause => setError(String(cause))); }} />
+          onCancel={(context) => { const active = session.lease.getSnapshot().activeTurn; if (active) void session.lease.interrupt(active.turnId, { source: "side-chat-stop", ...context }).catch(cause => setError(String(cause))); }} />
       </div>} />
   </div>;
 }

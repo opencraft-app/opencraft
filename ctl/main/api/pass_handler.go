@@ -612,7 +612,6 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-
 	writeHTTPError(w, r, errcode.ErrNotFound)
 }
 
@@ -1230,7 +1229,6 @@ func parsePageParams(r *http.Request, pageSizeMax int) (int, int, error) {
 //
 // 当前承载：
 //   - R-D-5b 续费支付 URL：{pass_id}/renew/order-url
-//   - R-D-7c 续费一体化下单+支付（测试用）：{pass_id}/renew/order-and-pay
 //   - D-2.3 主动销毁触发：{pass_id}/delete（trade-pass-destroy §4.5.1）
 //
 // 未来如新增其他 per-pass 用户侧动作（如 cancel / transfer 等），在本 handler 内
@@ -1248,7 +1246,7 @@ func (h *passHandler) handleUserPassesByID(w http.ResponseWriter, r *http.Reques
 		h.userDeletePass(w, r, parts[0])
 		return
 	}
-	// 3 段路径：{pass_id}/renew/{order | order-url | order-and-pay | price}
+	// 3 段路径：{pass_id}/renew/{order | order-url | price}
 	if len(parts) == 3 && parts[1] == "renew" {
 		switch parts[2] {
 		case "order":
@@ -1256,9 +1254,6 @@ func (h *passHandler) handleUserPassesByID(w http.ResponseWriter, r *http.Reques
 			return
 		case "order-url":
 			h.userRenewPassOrderUrl(w, r, parts[0])
-			return
-		case "order-and-pay":
-			h.userRenewPassOrderAndPay(w, r, parts[0])
 			return
 		case "price":
 			h.userRenewPassPrice(w, r, parts[0])
@@ -1457,7 +1452,6 @@ func decodeModifyOrderRequest(w http.ResponseWriter, r *http.Request) (*transpor
 //
 // 当前承载（与 handleUserPassesByID 对偶）：
 //   - R-D-5b 续费支付 URL：{pass_id}/renew/order-url
-//   - R-D-7c 续费一体化下单+支付（测试用）：{pass_id}/renew/order-and-pay
 //   - D-2.3 后台代销毁触发：{pass_id}/delete（trade-pass-destroy §4.5.1）
 //   - trade-pass-refund v0.5 后台代退款触发：{pass_id}/refund
 func (h *passHandler) handleAdminPassesByID(w http.ResponseWriter, r *http.Request) {
@@ -1478,7 +1472,7 @@ func (h *passHandler) handleAdminPassesByID(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	// 3 段路径：{pass_id}/renew/{order | order-url | order-and-pay | price}
+	// 3 段路径：{pass_id}/renew/{order | order-url | price}
 	if len(parts) == 3 && parts[1] == "renew" {
 		switch parts[2] {
 		case "order":
@@ -1486,9 +1480,6 @@ func (h *passHandler) handleAdminPassesByID(w http.ResponseWriter, r *http.Reque
 			return
 		case "order-url":
 			h.adminRenewPassOrderUrl(w, r, parts[0])
-			return
-		case "order-and-pay":
-			h.adminRenewPassOrderAndPay(w, r, parts[0])
 			return
 		case "price":
 			h.adminRenewPassPrice(w, r, parts[0])
@@ -1727,110 +1718,6 @@ func (h *passHandler) adminRenewPassPrice(w http.ResponseWriter, r *http.Request
 	}
 
 	result, err := h.logic.RenewPassPrice(body.UserID, passID, &body.RenewPassPriceRequest)
-	if err != nil {
-		writeHTTPError(w, r, err)
-		return
-	}
-	writeSuccess(w, r, http.StatusOK, result)
-}
-
-// ============================================================================
-// R-D-7c 续费一体化下单+支付对外路由（trade-pass-renew §3.3 / §4.4 / R-D-7）
-//
-// **仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露此入口给真实用户。**
-//
-// 路径设计（与 R-D-5b RenewPassOrderUrl 同 prefix + 与 CreatePassOrderAndPay 对偶后缀）：
-//   - 前端：POST /v1/passes/{pass_id}/renew/order-and-pay             鉴权 X-User-Id
-//   - 后台：POST /admin/api/ctl/passes/{pass_id}/renew/order-and-pay  鉴权 admin
-//
-// 入参：transport.RenewPassOrderUrlRequest 复用（与 R-D-5b 同 schema：period + time_unit；
-//       pass_id 走 path param；v1.7.22 B17 起 bundle_id 不在 body 中，由 ctl 内部从 pass 取）
-// 出参：transport.RenewPassOrderAndPayResult (deal_name + big_order_id; 不返 pay_url)
-//
-// 与 R-D-5b 的差异（与 CreatePassOrderAndPay vs CreatePassOrder 同范式）：
-//   - R-D-5b 调 trade.PlaceRenewOrder + trade.GeneratePayURL 双段返支付 URL
-//   - R-D-7c 调 trade.PlaceRenewOrderAndPay 一次完成下单+支付，跳过支付 URL
-// ============================================================================
-
-// userRenewPassOrderAndPay POST /v1/passes/{pass_id}/renew/order-and-pay — 用户侧续费一体化下单+支付（R-D-7c）
-//
-// ⚠️ **仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露此入口给真实用户。**
-// 现网用户续费链路：userRenewPassOrderUrl → 拿支付 URL → 跳转计费支付页 → 计费回调推进续费。
-//
-// 用途（R-D-7）：
-//   - e2e 测试时直接以"当前登录用户"身份触发 jifei 一体化续费下单+支付，不走支付 URL
-//   - user_id 自动取当前登录用户（请求 header X-User-Id）
-//   - 入参：period + time_unit（v1.7.22 B17：bundle_id 由 ctl 内部从 pass 取，前端不传）
-//   - 出参：deal_name + big_order_id
-//
-// 错误语义（与 userRenewPassOrderUrl 一致）：
-//   - 200 + result：成功
-//   - 400 PASS_INVALID_PARAM：缺 period / time_unit 或 time_unit ∉ {m,d,y}
-//   - 401 UNAUTHORIZED：缺 X-User-Id
-//   - 404 PASS_NOT_FOUND：pass_id 不存在或不属于当前用户（防越权续费）
-//   - 403 PASS_SHADOW_BINDING_REQUIRED：用户尚未实名 / 未绑云账号
-//   - 5xx：trade / shadow / DB 异常
-//
-// 注：v1.7.22 B17 后已废弃 409 PASS_BUNDLE_OFFLINE（套餐下架不阻断续费，仅阻断新购）
-func (h *passHandler) userRenewPassOrderAndPay(w http.ResponseWriter, r *http.Request, passID string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
-		return
-	}
-
-	ctx, ok := newRequestContext(r)
-	if !ok {
-		writeHTTPError(w, r, errcode.ErrUnauthorized)
-		return
-	}
-
-	var req transport.RenewPassOrderRequest
-	if err := decodeJSONBody(r, &req); err != nil {
-		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
-		return
-	}
-
-	result, err := h.logic.RenewPassOrderAndPay(ctx.GetUserID(), passID, &req)
-	if err != nil {
-		writeHTTPError(w, r, err)
-		return
-	}
-	writeSuccess(w, r, http.StatusOK, result)
-}
-
-// adminRenewPassOrderAndPay POST /admin/api/ctl/passes/{pass_id}/renew/order-and-pay — 后台代续费一体化下单+支付（R-D-7c）
-//
-// ⚠️ **仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露此入口给真实用户。**
-//
-// 用途（与 adminRenewPassOrderUrl 对偶 + 一体化区分）：
-//   - 后台管理员代用户触发续费一体化下单+支付，便于联调 / 客服 e2e 验证
-//   - body 中 user_id 必填；与 adminRenewPassOrderUrl 入参结构对齐
-//
-// 鉴权：复用 admin 路由（与 handleAdminPasses 一致；当前 mux 注册在同一前缀下，
-// 未来如有 admin 中间件可统一加挂）。
-func (h *passHandler) adminRenewPassOrderAndPay(w http.ResponseWriter, r *http.Request, passID string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
-		return
-	}
-
-	// 后台路径：必须显式带 user_id；与 adminRenewPassOrderUrl 入参结构对齐
-	var body struct {
-		UserID                          string `json:"user_id"`
-		transport.RenewPassOrderRequest        // 内嵌：period / time_unit
-	}
-	if err := decodeJSONBody(r, &body); err != nil {
-		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
-		return
-	}
-	if strings.TrimSpace(body.UserID) == "" {
-		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "user_id is required"))
-		return
-	}
-
-	result, err := h.logic.RenewPassOrderAndPay(body.UserID, passID, &body.RenewPassOrderRequest)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return

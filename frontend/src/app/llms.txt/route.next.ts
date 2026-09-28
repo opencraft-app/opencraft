@@ -47,7 +47,7 @@ const COPY = {
      * ⚠️ 价格与试用条件调整时，须与 docs/plans.md、公告页、subscribe-page.tsx 静态价表同步。
      */
     facts: [
-      { label: '当前状态', value: '公测中，已开启计费（2026 年 8 月 18 日起）' },
+      { label: '当前状态', value: '已开放订阅；套餐及活动以订阅页为准' },
       {
         label: '套餐与价格',
         value:
@@ -83,8 +83,8 @@ const COPY = {
       { title: 'Changelog', path: '/changelog' },
     ],
     /**
-     * 国际站事实摘要。计费状态本轮按要求冻结（见事实表 1.1），
-     * 仅陈述已确认的价格档位与「无中国实名要求」等稳定事实，不改动公测/计费时态口径。
+     * 国际站事实摘要。仅陈述已确认的价格档位与「无中国实名要求」等稳定事实，
+     * 套餐活动及可售状态以订阅页为准，避免写入会过期的产品阶段口径。
      */
     facts: [
       { label: 'Plans & pricing', value: 'Launch $7.5/month; Cruise $15/month' },

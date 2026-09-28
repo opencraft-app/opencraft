@@ -2,7 +2,7 @@
 //
 // 设计稿：.tmp/bundle-instance-spec-design.md
 //   - Q1=a：抽象层采用代码常量字典，不新建 DB 字典表
-//   - Q-NAMING-1=a：spec_id 命名规则 spec-{cpu}c{memory_gb}g{system_disk_size}g
+//   - 规格 ID 是兼容期路由键；活动调整内存时沿用既有 ID，不按 ID 推断实际内存。
 //   - Q-FRONT-1=b：cpu / memory / system_disk_size 三字段在 user-facing /
 //     internal-facing / admin 三处出参都暴露
 //
@@ -16,20 +16,19 @@ import "strings"
 
 // SpecID 已知的实例规格 ID（业务键）。
 //
-// 命名规则（Q-NAMING-1=a）：spec-{cpu}c{memory_gb}g{system_disk_size}g
-//   - 数字直接编码 CPU 核数 / 内存 GB / 系统盘 GB
-//   - 全小写、短横线分隔，方便运营和研发肉眼识别
+// 历史 ID 保持不变，以兼容已绑定的套餐和 CTL spec_pools 配置。
+// 活动后实际交付规格以本字典的 CPU/Memory 与 Sandbox 池配置为准，不解析 ID 中的旧内存数字。
 const (
-	// SpecID2C4G50G 现网默认规格（兼容期 NULL 落到此规格）
+	// SpecID2C4G50G 历史路由键；NULL 的兼容期 fallback 仍落到此 ID
 	SpecID2C4G50G = "spec-2c4g50g"
-	// SpecID4C8G80G 本期新增的中阶规格
+	// SpecID4C8G80G 历史中阶路由键，不能因活动调整而更名
 	SpecID4C8G80G = "spec-4c8g80g"
 )
 
 // DefaultSpecID 兼容期默认规格 ID（bundle.instance_spec_id 为空时回落到此规格）。
 const DefaultSpecID = SpecID2C4G50G
 
-// SpecDefinition 实例规格定义（不可变常量字典；运营增减规格需要发版）。
+// SpecDefinition 实例规格展示定义（常量字典；调整展示数值需要发版）。
 type SpecDefinition struct {
 	// SpecID 规格业务键，对应 bundle.instance_spec_id 列
 	SpecID string
@@ -40,8 +39,8 @@ type SpecDefinition struct {
 	// Memory 内存大小，单位 GB（user-facing / internal-facing / admin 三端都暴露）
 	//
 	// 单位约定（前端联调文档 codesign/ctl-frontend-billing-api.md）：
-	//   - 与 Q-NAMING-1=a 命名规则 spec-{cpu}c{memory_gb}g{system_disk_size}g 中的
-	//     memory_gb 同源（如 spec-2c4g50g 的 memory=4，spec-4c8g80g 的 memory=8）。
+	//   - 活动期间历史 spec_id 不改名，不能从其名称推断实际内存；
+	//     展示值应与新交付池的 CPU/内存一致。
 	//   - 与 sandbox openapi 的 memoryMB（MB 单位）字段无关；ctl bundle DTO 的 memory
 	//     是面向 user-facing / admin / internal RPC 的纯展示字段，统一按 GB 报。
 	Memory int
@@ -49,7 +48,7 @@ type SpecDefinition struct {
 	SystemDiskSize int
 }
 
-// knownSpecs 已知规格字典；新增规格在此表追加并发版。
+// knownSpecs 已知规格字典；旧 ID 继续作为路由键，活动规格在这里按实际交付更新。
 //
 // 注：候选池清单不在此处维护，由 InstanceAPIConfig.SpecPools 持有（设计稿 §3.3 候选 A）。
 var knownSpecs = []SpecDefinition{

@@ -32,6 +32,7 @@ export interface AppHostErrorPayload {
 export interface ConnectAppHostMessage {
   readonly type: typeof CONNECT_APP_HOST_MESSAGE;
   readonly protocolVersion: typeof APP_HOST_PROTOCOL_VERSION;
+  /** Version-1 wire name for a logical Client incarnation, not a rendering surface identity. */
   readonly rendererId: string;
 }
 
@@ -39,6 +40,7 @@ export type RendererToAppHostMessage =
   | {
       readonly type: "hello";
       readonly protocolVersion: typeof APP_HOST_PROTOCOL_VERSION;
+      /** Version-1 wire name for a logical Client incarnation. */
       readonly rendererId: string;
     }
   | {

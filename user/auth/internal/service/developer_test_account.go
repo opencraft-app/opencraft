@@ -19,6 +19,7 @@ func (s *Service) AcquireDeveloperTestAccount(
 	targetIP string,
 	ttl time.Duration,
 	renewalToken string,
+	forceSameOwnerTakeover bool,
 ) (DeveloperTestAccountLease, *AuthSession, error) {
 	if s == nil || s.store == nil || s.shadowBinding == nil {
 		return DeveloperTestAccountLease{}, nil, newError("developer_test_account_pool_disabled", "个人测试账号池未启用。", http.StatusServiceUnavailable)
@@ -72,7 +73,14 @@ func (s *Service) AcquireDeveloperTestAccount(
 		}
 		renewalUserID = session.User.ID
 	}
-	lease, session, err := s.store.AcquireDeveloperTestAccount(ctx, eligible, owner, ip, s.now(), ttl, renewalUserID)
+	// A DevCloud host can legitimately lose its lease session (fresh checkout, wiped
+	// private state, interrupted `down`) while its own lease is still inside the TTL.
+	// Without a takeover path the owner would be locked out of its own lease for up to
+	// 24h, so allow it to reclaim the lease it already owns. The owner identity is the
+	// approved-CIDR source plus the target IP, which the transport layer already
+	// verified, and renewal tokens still take precedence when present.
+	forceTakeover := forceSameOwnerTakeover && renewalUserID == ""
+	lease, session, err := s.store.AcquireDeveloperTestAccount(ctx, eligible, owner, ip, s.now(), ttl, renewalUserID, forceTakeover)
 	if err != nil {
 		return DeveloperTestAccountLease{}, nil, err
 	}

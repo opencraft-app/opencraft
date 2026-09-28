@@ -4,7 +4,7 @@
 
 **¿Siente un Agent IM como "la misma persona"?** Depende de su personalidad, no de por qué canal se ejecute. `SOUL.md` lleva el rol, el tono, las prioridades, el comportamiento y los límites, y es el archivo de personalidad central en el runtime Hermes. En LightVela nunca tocas el sistema de archivos de la nube directamente; la sección de Personalidad en la página de configuración de un Agent ofrece dos puntos de entrada: dibujar una personalidad al azar o responder a un cuestionario breve. Revisa el rol, el tono y las notas de comportamiento de una tarjeta de personalidad, luego elige Inyectar Personalidad para aplicarla. Escribe principios juzgables en lugar de hechos específicos: "lidera con la conclusión", "establece la incertidumbre explícitamente" y "confirma antes de enviar mensajes externos" son reglas de personalidad, mientras que los nombres de proyectos y puertos pertenecen a la memoria a largo plazo. Después de la inyección, verifica el tono y los límites con una conversación real.
 
-![Definición del rol, la personalidad y la voz de un Agent IM con SOUL.md](../images/use-case-05-im-agent-persona-soul-md.png)
+![Definición del rol, la personalidad y la voz de un Agent IM con SOUL.md](../images/use-case-05-im-agent-persona-soul-md.webp)
 
 ## Para quién es este documento
 

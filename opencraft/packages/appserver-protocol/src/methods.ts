@@ -69,6 +69,10 @@ import type {
   CommandExecResizeResponse as GeneratedCommandExecResizeResponse,
   CommandExecTerminateParams as GeneratedCommandExecTerminateParams,
   CommandExecTerminateResponse as GeneratedCommandExecTerminateResponse,
+  ConfigBatchWriteParams,
+  ConfigReadParams,
+  ConfigReadResponse,
+  ConfigWriteResponse,
 } from "./generated/v2";
 import type {
   FuzzyFileSearchParams,
@@ -254,7 +258,12 @@ export type ThreadQueueUpdateParams = GeneratedThreadQueueUpdateParams;
 export interface ThreadQueueUpdateResponse {
   readonly queuedSubmission: QueuedSubmission;
 }
-export type ThreadQueueDeleteParams = GeneratedThreadQueueDeleteParams;
+export type ThreadQueueDeleteParams = GeneratedThreadQueueDeleteParams & {
+  /** Native extension: CAS target for an unresolved steering claim. */
+  readonly expectedTurnId?: string;
+  /** Required when abandoning a claim whose delivery outcome is unknown. */
+  readonly acknowledgeUnknownDelivery?: boolean;
+};
 export interface ThreadQueueDeleteResponse {
   readonly deleted: boolean;
 }
@@ -368,6 +377,14 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCode
   initialize: {
     params: AppServerInitializeParams;
     result: AppServerInitializeResponse;
+  };
+  "config/read": {
+    params: ConfigReadParams;
+    result: ConfigReadResponse;
+  };
+  "config/batchWrite": {
+    params: ConfigBatchWriteParams;
+    result: ConfigWriteResponse;
   };
   "thread/resume": {
     params: ThreadResumeParams;

@@ -308,7 +308,6 @@ describe("international v2 homepage artifact", () => {
       {
         heading: "产品",
         links: [
-          "博客",
           "1 个月免费试用",
           "产品定价",
           "接入微信指引",
@@ -333,7 +332,7 @@ describe("international v2 homepage artifact", () => {
     ]);
     expect(
       document.querySelector<HTMLAnchorElement>('.foot__links-grid a[href="/blog"]')?.textContent?.trim(),
-    ).toBe("博客");
+    ).toBeUndefined();
     expect(
       document
         .querySelector<HTMLAnchorElement>('.foot__links-grid a[href="/docs/compare/lightvela-vs-ai-chatbot"]')
@@ -369,7 +368,7 @@ describe("international v2 homepage artifact", () => {
     expect(footerText).not.toContain("WhatsApp");
     expect(footerText).not.toContain("X / Twitter");
     expect(footerText).not.toContain("YouTube");
-    expect(footerText).toContain("博客");
+    expect(footerText).not.toContain("博客");
     expect(footerText).not.toContain("Hostinger");
     expect(footerText).not.toContain("Genspark");
     expect(footerText).not.toContain("开源声明");
@@ -834,7 +833,7 @@ describe("international v2 homepage artifact", () => {
       "Related products",
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
-    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(20);
+    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(19);
     expect(
       Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:nth-child(4) a") ?? [], (anchor) =>
         anchor.textContent,
@@ -849,8 +848,8 @@ describe("international v2 homepage artifact", () => {
       ["Tencent EdgeOne", "https://edgeone.ai/"],
       ["Tencent CloudBase", "https://tcb.cloud.tencent.com/en/?from=lightvela"],
     ]);
-    expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
-    expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
+    expect(footer?.querySelector('a[href$="/blog"]')).toBeNull();
+    expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/subscribe");
     expect(footer?.textContent).toContain("1-month free trial");
     expect(footer?.textContent).toContain("Compare with self-hosting");
     expect(footer?.textContent).not.toContain("Comparison");

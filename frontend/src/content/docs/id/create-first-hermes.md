@@ -40,7 +40,7 @@ Situs internasional tidak memiliki langkah verifikasi nama asli Tiongkok. Setela
 
 ### 3. Aktifkan paket lewat alur internasional saat ini
 
-LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba Launch gratis selama 1 bulan. Ikuti instruksi pada kartu paket untuk mengaktifkannya, lalu jadikan halaman Subscribe sebagai acuan informasi terbaru.
+Pilih paket yang tersedia di [halaman Subscribe](/subscribe/) dan ikuti petunjuk pada kartu paket untuk mengaktifkannya. Periksa halaman tersebut untuk penawaran dan harga terbaru.
 
 ### 4. Biarkan LightVela menyiapkan instans secara otomatis
 
@@ -66,9 +66,9 @@ Hermes Agent pertama Anda kini siap online di cloud 24/7.
 
 LightVela mulai menyiapkan instans Hermes secara otomatis setelah paket aktif. Saat instans siap, atur model dan kanal di konsol, lalu mulai percakapan.
 
-### Apa yang terjadi setelah penagihan dimulai?
+### Di mana melihat paket dan penawaran saat ini?
 
-Setelah penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan. Pengguna baru dapat mencoba Launch gratis selama 1 bulan. Periksa [halaman Subscribe](/subscribe) dan [Paket](./plans.md) untuk informasi terbaru.
+Periksa [halaman Subscribe](/subscribe/) dan [Paket](./plans.md) untuk ketentuan paket, penawaran pengguna baru, dan aturan perpanjangan terbaru.
 
 ### Berapa banyak instans Hermes yang dapat diaktifkan satu akun?
 

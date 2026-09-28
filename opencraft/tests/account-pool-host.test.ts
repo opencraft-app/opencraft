@@ -229,11 +229,15 @@ test("Codex proxy authenticates the Host and injects only the selected account c
     const response = await proxy.handle(request);
     assert.equal(response.status, 200);
     assert.deepEqual(upstream, [{
-      url: "https://chatgpt.example.test/backend-api/codex/v1/responses",
+      url: "https://chatgpt.example.test/backend-api/codex/responses",
       authorization: "Bearer access-a",
       accountId: "chatgpt-a",
       leaked: null,
     }]);
+    assert.equal((await proxy.handle(new Request("http://127.0.0.1/v1/models?client_version=test", {
+      headers: { "x-opencraft-account-pool-token": hostToken },
+    }))).status, 200);
+    assert.equal(upstream[1]?.url, "https://chatgpt.example.test/backend-api/codex/models?client_version=test");
     assert.equal((await proxy.handle(new Request("http://127.0.0.1/v1/models", {
       headers: { "x-opencraft-account-pool-token": "wrong" },
     }))).status, 401);
@@ -406,6 +410,54 @@ test("loopback server exposes the proxy over a bounded local HTTP endpoint", asy
     }
     pool.close();
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("disconnecting a streaming Account Pool client does not crash the server", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-disconnect-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  pool.addAccount({ id: "account-a", provider: "codex", label: "A", upstreamAccountId: "chatgpt-a", priority: 1, enabled: true },
+    { accessToken: "fixture-access", refreshToken: null, expiresAt: null });
+  const token = pool.issueHostToken("local");
+  let upstreamAborts = 0;
+  let calls = 0;
+  const server = await startCodexAccountPoolServer({
+    proxy: new CodexAccountPoolProxy({
+      store: pool,
+      upstreamBaseUrl: "https://chatgpt.example.test/backend-api/codex",
+      fetch: async (_input, init) => {
+        if (++calls > 1) return Response.json({ ok: true });
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from("data: first\n\n"));
+            init?.signal?.addEventListener("abort", () => {
+              upstreamAborts++;
+              controller.error(init.signal?.reason);
+            }, { once: true });
+          },
+        }), { headers: { "content-type": "text/event-stream" } });
+      },
+    }),
+  });
+  try {
+    const clientAbort = new AbortController();
+    const first = await fetch(`${server.url}/v1/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "thread-id": "thread-disconnect", "x-opencraft-account-pool-token": token },
+      body: JSON.stringify({ model: "gpt-test", input: [] }),
+      signal: clientAbort.signal,
+    });
+    assert.equal(first.status, 200);
+    await first.body?.getReader().read();
+    clientAbort.abort();
+    const next = await fetch(`${server.url}/v1/models`, { headers: { "x-opencraft-account-pool-token": token } });
+    assert.equal(next.status, 200);
+    assert.deepEqual(await next.json(), { ok: true });
+    assert.equal(upstreamAborts, 1);
+  } finally {
+    await server.close();
+    pool.close();
     await rm(root, { recursive: true, force: true });
   }
 });

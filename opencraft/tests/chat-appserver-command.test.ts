@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
+import {
+  JsonRpcAppServerClient,
+  type AppServerClient,
+  type DuplexTransport,
+  type ServerRequestHandler,
+  type ServerRequestResponseContext,
+} from "@opencraft/appserver-client";
 import {
   AppServerInteractionBroker,
+  AppServerInteractionLedger,
   AppServerConversationCommandError,
   compileSubmitIntent,
   createAppServerConversationCommandPort,
@@ -23,7 +30,7 @@ import {
   type JsonRpcRequest,
 } from "@opencraft/appserver-protocol";
 import { asHostId, asTurnId, createConversationKey } from "@opencraft/chat-core";
-import type { PendingInteraction } from "@opencraft/chat-runtime";
+import type { PendingInteraction, TurnInterruptProvenance } from "@opencraft/chat-runtime";
 import type { ComposerDocument, SubmitIntent } from "@opencraft/composer-core";
 
 const hostId = asHostId("ssh:9988");
@@ -203,6 +210,7 @@ test("queued native input restores into the Composer without flattening typed re
     { type: "skill", name: "review", path: "/skills/review/SKILL.md" },
     { type: "localImage", path: "/tmp/shot.png" },
     { type: "image", url: "https://assets.example/shot.png" },
+    { type: "image", fileId: "uploaded-image-1" },
     { type: "localAudio", path: "/tmp/note.wav" },
     { type: "audio", url: "https://assets.example/note.wav" },
   ] as const;
@@ -366,18 +374,25 @@ function commandPort(
   dynamicTools?: Parameters<
     typeof createAppServerConversationCommandPort
   >[0]["dynamicTools"],
+  interrupts: Array<{ turnId: string; provenance: TurnInterruptProvenance }> = [],
 ) {
   let retryId = 0;
   return createAppServerConversationCommandPort({
     hostId,
     client: h.client,
     interactions: { respond: async () => undefined },
+    queueAtomicSteer: true,
+    queueUnconfirmedSteerDiscard: true,
     compiler: { historyMode: "paginated" },
     dynamicTools,
     now: () => 1_000 + retryId,
     createCommandId: () => `retry-command-${++retryId}`,
     createClientMessageId: () => `retry-message-${retryId}`,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic.code),
+    onInterrupt: (event) => interrupts.push({
+      turnId: event.turnId,
+      provenance: event.provenance,
+    }),
   });
 }
 
@@ -576,13 +591,29 @@ test("new, fork, steer, queue and interrupt targets use their native Codex metho
   assert.equal(queued.turnId, null);
   assert.equal(h.requests[5]?.method, "thread/queue/add");
 
-  await port.interrupt(existingKey, asTurnId("turn-active"));
+  const interrupts: Array<{ turnId: string; provenance: TurnInterruptProvenance }> = [];
+  const attributedPort = commandPort(h, [], undefined, interrupts);
+  await attributedPort.interrupt(existingKey, asTurnId("turn-active"), {
+    source: "composer-stop",
+    trigger: "pointer",
+    isTrusted: true,
+    occurredAt: 1_234,
+  });
   assert.deepEqual(h.requests[6], {
     jsonrpc: "2.0",
     id: h.requests[6]?.id,
     method: "turn/interrupt",
     params: { threadId: "thread-existing", turnId: "turn-active" },
   });
+  assert.deepEqual(interrupts, [{
+    turnId: "turn-active",
+    provenance: {
+      source: "composer-stop",
+      trigger: "pointer",
+      isTrusted: true,
+      occurredAt: 1_234,
+    },
+  }]);
   assert.deepEqual(diagnostics, [
     "TARGET_OPTION_NOT_SUPPORTED",
     "TARGET_OPTION_NOT_SUPPORTED",
@@ -693,6 +724,7 @@ test("queued-message command port preserves the AppServer queue ABI", async () =
     asTurnId("turn-active"),
   );
   await port.deleteQueuedSubmission(key, "queue-1");
+  await port.discardUnconfirmedSteer(key, "claim-1", asTurnId("turn-active"));
   assert.deepEqual(
     h.requests.map((request) => request.method),
     [
@@ -701,12 +733,54 @@ test("queued-message command port preserves the AppServer queue ABI", async () =
       "thread/queue/start",
       "thread/queue/steer",
       "thread/queue/delete",
+      "thread/queue/delete",
     ],
   );
   assert.deepEqual(h.requests[1]?.params, {
     threadId: "thread-existing",
     queuedSubmissionIds: ["queue-2", "queue-1"],
   });
+  assert.deepEqual(h.requests.at(-1)?.params, {
+    threadId: "thread-existing",
+    queuedSubmissionId: "claim-1",
+    expectedTurnId: "turn-active",
+    acknowledgeUnknownDelivery: true,
+  });
+  await h.close();
+});
+
+test("manual claim discard fails before transport without the dedicated recovery capability", async () => {
+  const h = await harness();
+  const port = createAppServerConversationCommandPort({
+    hostId: existingKey.hostId,
+    client: h.client,
+    interactions: { async respond() {} },
+    queueAtomicSteer: true,
+    queueUnconfirmedSteerDiscard: false,
+  });
+  await assert.rejects(port.discardUnconfirmedSteer(existingKey, "claim-1", asTurnId("turn-active")));
+  assert.deepEqual(h.requests, []);
+  await h.close();
+});
+
+test("queued steer fails before transport when Host does not declare atomic queue steering", async () => {
+  const h = await harness();
+  const port = createAppServerConversationCommandPort({
+    hostId,
+    client: h.client,
+    interactions: { respond: async () => undefined },
+  });
+  await assert.rejects(
+    port.steerQueuedSubmission(existingKey, {
+      id: "queue-unsupported",
+      clientUserMessageId: "message-unsupported",
+      input: [{ type: "text", text: "Keep this queued", text_elements: [] }],
+      createdAt: 1,
+      pausedReason: null,
+    }, asTurnId("turn-active")),
+    /does not support atomic steering/,
+  );
+  assert.equal(h.requests.some(request => request.method === "thread/queue/steer"), false);
   await h.close();
 });
 
@@ -1176,4 +1250,210 @@ test("server-initiated approvals and questions remain pending until an exact typ
 
   broker.dispose();
   await client.close();
+});
+
+test("interaction response remains pending until its server-response frame is delivered", async () => {
+  let triggeringRequestId: string | number | null = null;
+  const server: InMemoryAppServer = {
+    receive(frame, peer) {
+      const message = parseJsonRpcMessage(frame);
+      if (isJsonRpcSuccess(message) && message.id === "delivery-option-rpc") {
+        peer.send(encodeJsonRpcMessage({
+          id: triggeringRequestId,
+          result: { interactionResult: message.result },
+        }));
+        return;
+      }
+      if (!isJsonRpcRequest(message)) return;
+      if (message.method === "initialize") {
+        peer.send(encodeJsonRpcMessage({
+          id: message.id,
+          result: {
+            codexHome: "/tmp",
+            platformFamily: "unix",
+            platformOs: "linux",
+            userAgent: "test",
+          },
+        }));
+        return;
+      }
+      triggeringRequestId = message.id;
+      peer.send(encodeJsonRpcMessage({
+        id: "delivery-option-rpc",
+        method: "item/tool/call",
+        params: {
+          threadId: "thread-existing",
+          turnId: "turn-live",
+          callId: "delivery-option-call",
+          namespace: null,
+          tool: "request_option_picker",
+          arguments: {
+            question: "Skip this?",
+            options: [{ label: "Yes" }, { label: "No" }],
+          },
+        },
+      }));
+    },
+  };
+  const memory = new MemoryTransport(server);
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  const transport: DuplexTransport = {
+    get status() { return memory.status; },
+    connect: (signal) => memory.connect(signal),
+    subscribeMessage: (listener) => memory.subscribeMessage(listener),
+    subscribeStatus: (listener) => memory.subscribeStatus(listener),
+    close: () => memory.close(),
+    async send(frame, signal) {
+      const message = parseJsonRpcMessage(frame);
+      if (isJsonRpcSuccess(message) && message.id === "delivery-option-rpc") {
+        await responseGate;
+      }
+      await memory.send(frame, signal);
+    },
+  };
+  const client = new JsonRpcAppServerClient({ hostId, transport });
+  await client.connect({
+    clientInfo: { name: "interaction-delivery-tests", version: "1" },
+    capabilities: { experimentalApi: true },
+  });
+  const pending = new Map<string, PendingInteraction & { readonly threadId: string }>();
+  const broker = new AppServerInteractionBroker({
+    hostId,
+    client,
+    store: {
+      upsertPendingInteraction(interaction) { pending.set(interaction.requestId, interaction); },
+      removePendingInteraction(_threadId, requestId) { pending.delete(requestId); },
+    },
+  });
+  const operation = client.requestRaw<{ interactionResult: unknown }>("trigger", {});
+  const requestId = encodeServerRequestId("delivery-option-rpc");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(pending.has(requestId), true);
+
+  let responseSettled = false;
+  const response = broker.respond(existingKey, {
+    type: "option-picker",
+    requestId,
+    action: "skip",
+    selectedOptions: [],
+    freeformAnswer: null,
+  }).finally(() => { responseSettled = true; });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(responseSettled, false);
+    assert.equal(pending.has(requestId), true);
+    releaseResponse();
+    await response;
+    assert.equal(pending.has(requestId), false);
+    assert.deepEqual(await operation, {
+      interactionResult: {
+        contentItems: [{ type: "inputText", text: JSON.stringify({
+          action: "skip",
+          selectedOptions: [],
+          freeformAnswer: null,
+        }) }],
+        success: true,
+      },
+    });
+  } finally {
+    releaseResponse();
+    await operation.catch(() => undefined);
+    broker.dispose();
+    await client.close();
+  }
+});
+
+test("interaction ledger replays an unresolved Skip across client generations without reopening UI", async () => {
+  type Handler = (
+    params: unknown,
+    request: { id: string; method: string; params: unknown },
+    context: ServerRequestResponseContext,
+  ) => unknown | Promise<unknown>;
+  const createClient = () => {
+    const handlers = new Map<string, Handler>();
+    const client = {
+      handleServerRequest(method: string, handler: ServerRequestHandler) {
+        handlers.set(method, handler as Handler);
+        return () => { handlers.delete(method); };
+      },
+      interceptServerRequest() { return () => {}; },
+      subscribeNotification() { return () => {}; },
+      subscribeStatus() { return () => {}; },
+    } as unknown as AppServerClient;
+    return {
+      client,
+      emit(delivered: Promise<void>, id = "replayed-option-rpc") {
+        const method = "item/tool/requestOptionPicker";
+        const params = {
+          threadId: "thread-existing",
+          turnId: "turn-live",
+          itemId: "replayed-option-call",
+          question: "Skip this?",
+          options: [{ label: "Yes" }, { label: "No" }],
+        };
+        const handler = handlers.get(method);
+        assert.notEqual(handler, undefined);
+        return Promise.resolve(handler!(params, {
+          id,
+          method,
+          params,
+        }, { delivered }));
+      },
+    };
+  };
+  const ledger = new AppServerInteractionLedger();
+  const first = createClient();
+  const firstPending = new Map<string, PendingInteraction & { readonly threadId: string }>();
+  const firstBroker = new AppServerInteractionBroker({
+    hostId,
+    client: first.client,
+    ledger,
+    store: {
+      upsertPendingInteraction(interaction) { firstPending.set(interaction.requestId, interaction); },
+      removePendingInteraction(_threadId, requestId) { firstPending.delete(requestId); },
+    },
+  });
+  let rejectDelivery!: (error: Error) => void;
+  const failedDelivery = new Promise<void>((_resolve, reject) => { rejectDelivery = reject; });
+  const firstOperation = first.emit(failedDelivery);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const requestId = encodeServerRequestId("replayed-option-rpc");
+  assert.equal(firstPending.has(requestId), true);
+  const firstResponse = firstBroker.respond(existingKey, {
+    type: "option-picker",
+    requestId,
+    action: "skip",
+    selectedOptions: [],
+    freeformAnswer: null,
+  });
+  rejectDelivery(new Error("transport closed"));
+  await assert.rejects(firstResponse, /transport closed/);
+  await firstOperation;
+  firstBroker.dispose();
+
+  const second = createClient();
+  let reopened = 0;
+  const secondBroker = new AppServerInteractionBroker({
+    hostId,
+    client: second.client,
+    ledger,
+    store: {
+      upsertPendingInteraction() { reopened += 1; },
+      removePendingInteraction() {},
+    },
+  });
+  const replayedOperation = second.emit(Promise.resolve(), "replayed-option-rpc-2");
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(reopened, 0, "a remembered response must not reopen the interaction UI");
+    assert.deepEqual(await replayedOperation, {
+      action: "skip",
+      selectedOptions: [],
+      freeformAnswer: null,
+    });
+  } finally {
+    secondBroker.dispose();
+    await replayedOperation.catch(() => undefined);
+  }
 });

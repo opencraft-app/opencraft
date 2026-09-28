@@ -25,11 +25,16 @@ test("permissions use only declared options within the existing accessible menu"
   assert.doesNotMatch(menu, /DropdownMenu\.Label|AppServer default|selectPermission\(null\)/);
   assert.match(menu, /Loading permission profiles/);
   assert.match(menu, /Current permissions remain unchanged/);
+  assert.match(menu, /data-permission-kind=\{permission\.mode == null \? "native" : "standard"\}/);
+  assert.match(menu, /Engine profiles/);
 });
 
 test("inherited permission presentation reads the effective value without inventing a default", () => {
-  const selection = source.slice(source.indexOf("  const selectedPermissionValue ="), source.indexOf("  const catalogQueryKind ="));
-  assert.match(selection, /draft\.selections\.permissionProfile\s*\?\?\s*effectiveSelections\?\.permissionProfile\s*\?\? null/);
+  const selection = source.slice(source.indexOf("  const requestedPermissionValue ="), source.indexOf("  const catalogQueryKind ="));
+  assert.match(selection, /draft\.selections\.permissionProfile\s*\?\? effectivePermissionValue/);
+  assert.match(selection, /requestedPermissionValue === null \? null/);
+  assert.match(selection, /permission\.nativeProfileId === requestedPermissionValue/);
   assert.doesNotMatch(selection, /catalogPermissions\[0\]|dispatch|useEffect|isDefault/);
   assert.doesNotMatch(source, /"Default permissions"/);
+  assert.match(source, /permissionChangePending[\s\S]*"next turn"/);
 });

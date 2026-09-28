@@ -128,8 +128,9 @@
 
 如果要在一套新的 Argo CD 上恢复北京环境，顺序固定如下：
 
-1. 安装固定版本的单节点 k0s 与 Argo CD 基线
+1. 在宿主机安装固定版本的原生单节点 k0s 与 Argo CD 基线
    - 使用 [bootstrap_argocd_control_plane.sh](../scripts/bootstrap_argocd_control_plane.sh)
+   - 不使用 k0s-in-Docker；嵌套容器网络会让 DevCloud 出口代理错误接管部分 TKE TLS 流量
    - 该脚本不读取或生成业务 Secret
 2. 准备 repo 凭据
    - `git.woa.com` 的 repo creds

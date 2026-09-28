@@ -81,7 +81,7 @@
     },
     {
       "file": "domain/types.ts",
-      "sourceSha256": "ff651859d882345e8e223c5d4d411c4f6353ca76139575a3b1aa2d0c509bd063"
+      "sourceSha256": "c761a3edbadaeb048154a3ddfedf4777ebad5bf3602b6062c1fbb7f540a4dc41"
     },
     {
       "file": "i18n/default-agent-name.ts",
@@ -89,39 +89,39 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "97b12cdc95ed4f37e185398078788b3609e0b0a227351d1649cb5616136b5da3"
+      "sourceSha256": "ead4b7eef8edfaebd6c7f45426ab137a5ddd5a136c7f49ce8262fccdbb07e92b"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "da173bb38452c8fa515e9b75b08bc5152499c252a7d52363e98c0c1fc83d04e2"
+      "sourceSha256": "a1e02fcaddb2b78a540377e4a9e1b4469dcc3098a0d176a63d582ae0f8b290ab"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "f6aac6c8cb07d81a7436ab953f34f96d543135b052449fac5f7889e4c9175167"
+      "sourceSha256": "6440377e24ef2e5ac8f447179e52d3e8aa8e49cdeacc818fefbf3e64f656d7d7"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "deb04c9ee6ecdcf45d3d7075e73b581b6573389dd1865a1ba44672d64cfcbb98"
+      "sourceSha256": "c444d626e1c2e585c80cf7fec6e572ae0dc55a0d0730e7850943f169ba4a3a4b"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "764acc139fcd57a5044adfbd421fd85e214aa62590dc867c7fd50592b74f014e"
+      "sourceSha256": "781de6737bd0223a47d266ffdd7015fd2786f5caa6708137d937bb3eafc5d8d8"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "2499c97df73f7b60d1ca04045f6b2bf203f043f0088a98c525946c91011af2f7"
+      "sourceSha256": "04e0c86b5ab51b06ef9f3e40d3e9b2dab0e5150d0261b09d10e99a5abb1f6e67"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "89e04936f5b8ebc0fb01b9fc19647edcaa496fcc9abcb0fc3e09acfcdd27b2bc"
+      "sourceSha256": "4c4b7c1006a5ad670183fe787840beea992b18b16aef98abe7172096ca72125e"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "f56a0f9a8d337782a9148625d336ee03e0785e2a131e50d813891d7817501be8"
+      "sourceSha256": "7cf3fb9d2dd014508cc6f146ab5ec1f36112b03aa7e56f5291887e4cd5384db1"
     },
     {
       "file": "i18n/index.ts",
-      "sourceSha256": "a4041cc19335643c2e34d3e16b737367278ef463da9102488a4513c9accaa5e5"
+      "sourceSha256": "f6b181faa0062a43d5d63cda11088a09ae3d6391e4f295c9c78d102a42e3d891"
     },
     {
       "file": "i18n/locales.config.ts",
@@ -229,7 +229,7 @@
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
-      "sourceSha256": "4c9f0bf3664d62e2a37a69f4b2a0854c8c45e4ccef882cb8bd924e691503cda2"
+      "sourceSha256": "1a56ae4022dc7db13864b4442fd288f9ad708dcf5694612c67e9ae1437e53d60"
     },
     {
       "file": "pages/marketing/agent-config/components/FeishuIcon.tsx",
@@ -249,7 +249,7 @@
     },
     {
       "file": "pages/marketing/agent-config/hermes-command-builder.ts",
-      "sourceSha256": "18acd6e9a592e03608259127885ae34395d370cf82661a690bac7279f5cb4cbc"
+      "sourceSha256": "7060cc28c581339afaaa42e50bff310983eeabe218eae3d794f79eea3aa3f336"
     },
     {
       "file": "pages/marketing/agent-config/hooks/useAgentConfig.ts",
@@ -261,7 +261,7 @@
     },
     {
       "file": "pages/marketing/agent-config/hooks/useChannelOperations.ts",
-      "sourceSha256": "4c9d95a2a2452dce2e394f2318bd0d5ec2a0cecb6e7d33153bee621854b927c1"
+      "sourceSha256": "3af8481565adac0c4f58acbaddf17704110ccb90f4eab06c10cf64e6e668a744"
     },
     {
       "file": "pages/marketing/agent-config/hooks/useGatewayCommand.ts",
@@ -297,7 +297,7 @@
     },
     {
       "file": "pages/marketing/agent-config/standard-panel.css",
-      "sourceSha256": "36e5b5adfa61a56a33cd8ec2e5574ec6ac7eacd19b0065b1f14955f93ed1c644"
+      "sourceSha256": "170b74bfe42e901a3b5857db56a5d312a0540271a8b450a1e8ff868d061be155"
     },
     {
       "file": "pages/marketing/agent-config/styles-index.css",
@@ -509,15 +509,15 @@
     },
     {
       "file": "repositories/fake-repositories.ts",
-      "sourceSha256": "316639ce00e0c24e6d5d9a9b90c396b2a3bf20578a02cc4d9386acfea3b97621"
+      "sourceSha256": "e607d48136718a9d39f40acfe5bd0bd297d22f75e871f7c71f00e18aae28968a"
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "27803c9f587321363ab1540d8d6499424409abe5d3854a45414adbff3ba48232"
+      "sourceSha256": "52d7ba0ffe9cae3a840efc3faf926fb381f64df49bab419e790fad2900de9211"
     },
     {
       "file": "repositories/types.ts",
-      "sourceSha256": "eca4a064127d471c062e757842897c6c6cab527c3915be25eaf0a5abc6468277"
+      "sourceSha256": "d838c26429e4b699221034e75073d07825e7dfd9c90beb1d1def1f4bae47e70b"
     },
     {
       "file": "services/use-async-resource.ts",

@@ -34,6 +34,7 @@ import { DshProfileSkillsHandler } from "./dsh-profile-skills.js";
 import { SkillCatalogRefresh } from "./skills/catalog-refresh.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
 import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
+import { LocalWorkspaceResolver } from "./projectless-workspace.js";
 
 type JsonRpcMessage = Record<string, unknown>;
 const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
@@ -131,6 +132,8 @@ export async function startLocalAgentHost(options: {
   readonly dataDirectory?: string;
   readonly modelStorageDirectory?: string;
   readonly projectStorageDirectory?: string;
+  /** Host-owned root for Projectless Threads; defaults to ~/OpenCraft. */
+  readonly projectlessWorkspaceDirectory?: string;
   /** Test/embedding override; desktop defaults to ~/.opencraft/skills. */
   readonly skillsDirectory?: string;
 } = {}) {
@@ -237,6 +240,13 @@ export async function startLocalAgentHost(options: {
       return capabilityLink.permissions(threadId, preset);
     },
   } : undefined);
+  const projectlessWorkspaceRoot = (
+    options.projectlessWorkspaceDirectory
+    ?? process.env.OPENCRAFT_PROJECTLESS_WORKSPACE_DIRECTORY
+  )?.trim() || undefined;
+  adapter.setWorkspaceResolver(new LocalWorkspaceResolver({
+    projectlessRoot: projectlessWorkspaceRoot,
+  }));
   const capabilities = new DshCapabilityBroker();
   try { if (patches.length) {
     capabilityLink = new DshCapabilityLink(bridgeToken, capabilities, authority, routing, () => {

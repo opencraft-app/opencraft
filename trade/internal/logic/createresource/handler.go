@@ -716,7 +716,7 @@ func insertDianshiParticipation(
 		actID = int64(extractIntFromGoodsDetail(para.GoodsDetail, "dianshi_act_id"))
 	}
 	if activityID <= 0 || actID <= 0 {
-		mapping, err := deps.ActivityStore.GetBundleActivityByBundleID(ctx, bundleID)
+		mapping, err := deps.ActivityStore.GetBundleActivity(ctx, bundleID, store.ActivityScenePurchase)
 		if err != nil {
 			return fmt.Errorf("get bundle_activity bundleID=%s: %w", bundleID, err)
 		}
@@ -751,6 +751,7 @@ func insertDianshiParticipation(
 		AppID:          strconv.FormatInt(para.AppID, 10),
 		ExternalUserID: externalUserID,
 		ActivityID:     activityID,
+		Scene:          store.ActivityScenePurchase,
 		BundleID:       bundleID,
 		ActID:          actID,
 		DealName:       para.DealName,

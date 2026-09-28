@@ -6,7 +6,7 @@
 
 両製品ともチャット画面を超えた支援を目指しますが、出発点は異なります。MiraはTelegram中心のアシスタントで、LightVelaはより広いワークフローへ成長できる設定可能な個人用エージェントです。
 
-![個人用AIエージェントを動かすためのLightVelaとMiraの比較](../images/lightvela-vs-mira.png)
+![個人用AIエージェントを動かすためのLightVelaとMiraの比較](../images/lightvela-vs-mira.webp)
 
 ## ひと目で比較
 

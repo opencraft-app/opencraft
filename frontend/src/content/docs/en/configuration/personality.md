@@ -8,7 +8,7 @@
 
 **Only one Soul is active for an Agent at a time, and you should start a new conversation after changing it so the updated rules are loaded.**
 
-![Soul personality cards in the LightVela console](../images/soul-1.png)
+![Soul personality cards in the LightVela console](../images/soul-1.webp)
 
 ## This page covers
 
@@ -54,7 +54,7 @@ Switch to another Agent before configuring it if you want a different role or vo
 Use **Draw random soul** to explore available persona styles.
 Use **Soul personality test** when you want a recommendation based on your communication and behavior preferences.
 
-![Draw random soul dialog](../images/soul-2.png)
+![Draw random soul dialog](../images/soul-2.webp)
 
 Review the role, voice, behavior description, and boundaries on each Soul card before making a choice.
 Choose a Soul that matches the brief you prepared rather than selecting only by its name or tone.
@@ -80,7 +80,7 @@ Use this option when you already have a Markdown Soul that you want to apply ins
 5. If the Agent already has a Soul, confirm that you want to replace it.
 6. Return to a connected conversation channel and send `/new`.
 
-![Upload persona file dialog](../images/soul-3.png)
+![Upload persona file dialog](../images/soul-3.webp)
 
 The file name does not need to be `soul.md`, but it must use the `.md` extension, be UTF-8 encoded, and be no larger than 20 KB.
 LightVela shows the file contents before injection so you can make final edits.

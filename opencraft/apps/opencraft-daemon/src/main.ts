@@ -56,6 +56,7 @@ export async function startOpenCraftDaemon(options: {
   let closing: Promise<void> | null = null;
   const appHost = new AppHostServer({
     logicalClientRouting: true,
+    physicalHostLifetime: "server",
     async createTransport(hostId) {
       if (hostId === "local") {
         localAgent ??= await startLocalAgentHost({

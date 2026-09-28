@@ -30,7 +30,7 @@
 
 詳細な手順は[Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md)および[WeChat](../configuration/channel-wechat.md)。
 
-![接続されたチャネルを持つ実行中の Hermes Agent](../images/use-case-hermes-online-channel.png)
+![接続されたチャネルを持つ実行中の Hermes Agent](../images/use-case-hermes-online-channel.webp)
 
 ### 2. 動作中の構成はシンプルで目に見える状態に保つ
 
@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 でスケジュールを作成し[スケジュールタスク](../configuration/automation.md)、適切であれば通知チャネルを選択し、最初の数回の実行を確認します。結果があまりにも広範囲であれば、すぐに別のスケジュールタスクを追加するのではなく、指示をより具体的にしてください。
 
-![Hermes Agentからの最近のスケジュールタスク実行](../images/use-case-hermes-online-automation.png)
+![Hermes Agentからの最近のスケジュールタスク実行](../images/use-case-hermes-online-automation.webp)
 
 ## FAQ
 

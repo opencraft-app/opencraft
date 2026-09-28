@@ -4,7 +4,7 @@
 
 **Telegram과 WhatsApp을 같은 Hermes Agent에 연결하면 두 채널을 하나의 에이전트로 들어가는 진입점으로 사용할 수 있습니다. 플랫폼마다 설정을 복제할 필요 없이 에이전트의 페르소나, 스킬, 예약 작업, 장기 메모리를 공유합니다.** 다만 "통합"의 범위는 에이전트 레이어에 한정됩니다. 각 채널의 인증 절차와 메시지 제한은 별도로 유지되므로 Telegram과 WhatsApp을 각각 인증해야 합니다. 공유 여부를 가장 확실히 확인하려면 한 채널에서 사실을 알려 준 뒤 다른 채널에서 그 내용을 물어보세요. 올바르게 답한다면 두 진입점이 같은 에이전트에 연결된 것입니다. 연결 후에는 답변이 다른 대화가 아니라 메시지를 보낸 바로 그 대화로 돌아오는지도 확인하세요.
 
-![하나의 성격으로 Telegram 및 WhatsApp에 연결된 하나의 에이전트 및 장기 메모리](../images/use-case-07-multi-channel-personality-memory.png)
+![하나의 성격으로 Telegram 및 WhatsApp에 연결된 하나의 에이전트 및 장기 메모리](../images/use-case-07-multi-channel-personality-memory.webp)
 
 ## 대상 독자
 
@@ -162,5 +162,3 @@ Telegram은 그룹 개인 정보 보호를 비활성화하고 봇을 그룹에 �
 - [채널 구성 - Telegram](../configuration/channel-telegram.md) - Telegram 봇 설정을 완료합니다.
 
 - [채널 구성 - WhatsApp](../configuration/channel-whatsapp.md) - WhatsApp 인증을 완료합니다.
-
-- [스킬을 사용하여 IM 에이전트를 고객 서비스, 커뮤니티 또는 동반자 도우미로 전환하는 방법](./im-agent-skill-scenarios.md) - 실용적인 워크플로를 통해 일관된 개성을 확장합니다.

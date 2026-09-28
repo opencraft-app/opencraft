@@ -151,30 +151,43 @@ refresh_skus() {
   local api_base="$1"
   local image_id="$2"
   local pools_json="$3"
-  local region_count skus_json sku_ids sku_id body
+  local target_region="$4"
+  local skus_json sku_ids sku_id body
 
-  region_count="$(
+  sku_ids="$(
     python3 -c '
+import collections
 import json
 import re
 import sys
 
-template = sys.argv[1]
+template, target_region = sys.argv[1:3]
 pools = json.load(sys.stdin)
-regions = set()
+regions_by_sku = collections.defaultdict(set)
 for pool in pools:
     sku_id = str(pool.get("sku_id") or "")
-    if pool.get("template_class_id") != template and not sku_id.startswith("sku-hermes-"):
+    if not sku_id or (pool.get("template_class_id") != template and not sku_id.startswith("sku-hermes-")):
         continue
     zone = str(pool.get("zone") or "").strip()
     match = re.match(r"^(.*)-[0-9]+$", zone)
     if match:
-        regions.add(match.group(1))
-print(len(regions))
-    ' "$TEMPLATE_CLASS_ID" <<<"$pools_json"
+        regions_by_sku[sku_id].add(match.group(1))
+
+for sku_id in sorted(regions_by_sku):
+    regions = regions_by_sku[sku_id]
+    if regions == {target_region}:
+        print(sku_id)
+    elif target_region in regions:
+        region_list = ",".join(sorted(regions))
+        print(
+            f"[refresh-hermes-pools] skipping cross-region SKU {sku_id}; "
+            f"Pool base_image remains authoritative (regions={region_list})",
+            file=sys.stderr,
+        )
+    ' "$TEMPLATE_CLASS_ID" "$target_region" <<<"$pools_json"
   )"
-  if [[ "$region_count" -gt 1 ]]; then
-    log "multi-region Hermes Pools detected; Pool base_image remains authoritative and global SKU image update is skipped"
+  if [[ -z "$sku_ids" ]]; then
+    log "no region-local Hermes SKU found for ${target_region}; pool patch will continue"
     return
   fi
 
@@ -183,9 +196,11 @@ print(len(regions))
     return
   fi
   sku_ids="$(
-    jq -r --arg template "$TEMPLATE_CLASS_ID" '
+    jq -r --arg ids "$sku_ids" '
+      ($ids | split("\n") | map(select(length > 0))) as $region_local_ids
+      |
       .[]
-      | select((.template_class_id == $template) or ((.id // "") | startswith("sku-hermes-")))
+      | select(.id as $id | $region_local_ids | index($id))
       | .id
     ' <<<"$skus_json"
   )"
@@ -418,7 +433,7 @@ refresh_env() {
   fi
   log "target pools for ${env_name}: ${pool_ids//$'\n'/ }"
 
-  refresh_skus "$api_base" "$image_id" "$pools_json"
+  refresh_skus "$api_base" "$image_id" "$pools_json" "$region"
   patch_pools "$api_base" "$image_id" "$pool_ids"
   verify_refresh "$api_base" "$image_id" "$region" || fail "pool image verification failed for ${env_name}"
   print_summary "$api_base" "$image_id" "$region"

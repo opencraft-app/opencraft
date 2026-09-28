@@ -44,16 +44,16 @@ LightVelaの国際サイトにサインインし、**My Hermes → Channel**を�
 1. オープン[Slack APIアプリ](https://api.slack.com/apps)にサインインしてください。
 2. **新しいアプリを作成**をクリックします。
 
-![Slack APIアプリから新しいアプリを作成します](../images/slack-create-app.png)
+![Slack APIアプリから新しいアプリを作成します](../images/slack-create-app.webp)
 
 3. **最初から作成**を選択します。
 
-![Slackアプリを作成するには「最初から作成」を選択します](../images/slack-create-from-scratch.png)
+![Slackアプリを作成するには「最初から作成」を選択します](../images/slack-create-from-scratch.webp)
 
 4. `Hermes Agent` のようなアプリ名を入力します。
 5. Hermes Agent が実行されるワークスペースを選択し、**アプリを作成**をクリックします。
 
-![Slackアプリに名前を付け、ワークスペースを選択します](../images/slack-select-workspace.png)
+![Slackアプリに名前を付け、ワークスペースを選択します](../images/slack-select-workspace.webp)
 
 ワークスペースが見つからない場合は、現在のSlackアカウントがそのワークスペースに属しており、アプリを作成できるか確認してください。
 
@@ -63,28 +63,28 @@ LightVelaの国際サイトにサインインし、**My Hermes → Channel**を�
 
 1. Slackアプリのサイドバーで、**設定 → 基本情報** を開きます。
 
-![Slackアプリで基本情報を開きます](../images/slack-basic-information.png)
+![Slackアプリで基本情報を開きます](../images/slack-basic-information.webp)
 
 2. **アプリレベルのトークン**までスクロールし、**トークンとスコープを生成** をクリックします。
 
-![アプリレベルのトークンを生成する](../images/slack-generate-app-token.png)
+![アプリレベルのトークンを生成する](../images/slack-generate-app-token.webp)
 
 3. 認識できるトークン名を入力します。例：`HermesSocket`。
 4. **スコープを追加**をクリックします。
 
-![アプリトークンにスコープを追加する](../images/slack-add-connection-scope.png)
+![アプリトークンにスコープを追加する](../images/slack-add-connection-scope.webp)
 
 5. `connections:write` を検索して選択します。
 
-![connections書き込みスコープを選択する](../images/slack-select-connections-write.png)
+![connections書き込みスコープを選択する](../images/slack-select-connections-write.webp)
 
 6. スコープが一覧に表示されていることを確認し、**生成**をクリックします。
 
-![connections書き込みでアプリトークンを生成する](../images/slack-generate-token.png)
+![connections書き込みでアプリトークンを生成する](../images/slack-generate-token.webp)
 
 7. 生成された `xapp-...` トークンをコピーして安全に保管します。コピー後、**完了**をクリックします。
 
-![Slack アプリトークンをコピーする](../images/slack-copy-app-token.png)
+![Slack アプリトークンをコピーする](../images/slack-copy-app-token.webp)
 
 App トークンを Bot トークンのフィールドに貼り付けないでください。クライアントシークレットやサイニングシークレットは、このトークンの代わりにはなりません。
 
@@ -95,7 +95,7 @@ App トークンを Bot トークンのフィールドに貼り付けないで�
 1. **設定 → ソケットモード** を開きます。
 2. **ソケットモードを有効にする** をオンにします。
 
-![Slack ソケットモードを有効にする](../images/slack-enable-socket-mode.png)
+![Slack ソケットモードを有効にする](../images/slack-enable-socket-mode.webp)
 
 ソケットモードは WebSocket を通じて Slack イベントを Hermes Agent に送信します。この設定では、イベント購読のリクエスト URL や OAuth リダイレクト URL は必要ありません。
 
@@ -105,7 +105,7 @@ App トークンを Bot トークンのフィールドに貼り付けないで�
 2. **スコープ → ボットトークンスコープ** までスクロールします。
 3. **OAuthスコープを追加** をクリックします。
 
-![OAuthと権限でボットスコープを追加する](../images/slack-add-oauth-scope.png)
+![OAuthと権限でボットスコープを追加する](../images/slack-add-oauth-scope.webp)
 
 必要なインタラクションモードのスコープを追加します:
 
@@ -121,7 +121,7 @@ App トークンを Bot トークンのフィールドに貼り付けないで�
 | `groups:read` | オプションのプライベートチャンネル | プライベートチャンネル情報を読む |
 | `groups:history` | オプションのプライベートチャンネル | ボットが参加しているプライベートチャンネルのメッセージを読む |
 
-![Slack ボットトークンスコープを確認する](../images/slack-bot-token-scopes.png)
+![Slack ボットトークンスコープを確認する](../images/slack-bot-token-scopes.webp)
 
 プライベートチャンネルへのアクセスが必要な場合のみ、2つの `groups:*` スコープを追加してください。アプリはそれぞれの対象チャンネルにも招待される必要があります。
 
@@ -145,7 +145,7 @@ App トークンを Bot トークンのフィールドに貼り付けないで�
 5. ダイレクトメッセージが有効になっている場合は`message.im`を追加します。
 6. **変更を保存**をクリックします。
 
-![Slack ボットイベント購読を設定する](../images/slack-event-subscriptions.png)
+![Slack ボットイベント購読を設定する](../images/slack-event-subscriptions.webp)
 
 > インストール後にスコープやイベントを変更した場合は、**OAuth & 権限**に戻り、**ワークスペースに再インストール**をクリックします。新しい権限はアプリを再インストールするまで有効になりません。
 
@@ -154,16 +154,16 @@ App トークンを Bot トークンのフィールドに貼り付けないで�
 1. **機能 → OAuth & 権限**に戻ります。
 2. **ワークスペースにインストール**をクリックします。アプリがすでにインストールされている場合は、**ワークスペースに再インストール**をクリックします。
 
-![Slack アプリをワークスペースにインストールする](../images/slack-install-workspace.png)
+![Slack アプリをワークスペースにインストールする](../images/slack-install-workspace.webp)
 
 3. 要求される権限を確認して、**許可**をクリックします。
 
-![Slack アプリの権限を承認する](../images/slack-authorize-workspace.png)
+![Slack アプリの権限を承認する](../images/slack-authorize-workspace.webp)
 
 4. Slackが**OAuth & Permissions**に戻ったら、**ワークスペース用のOAuthトークン**を探します。
 5. `xoxb-`で始まる**BotユーザーOAuthトークン**をコピーします。
 
-![Slack ボットユーザーOAuthトークンをコピー](../images/slack-copy-bot-token.png)
+![Slack ボットユーザーOAuthトークンをコピー](../images/slack-copy-bot-token.webp)
 
 署名シークレット、クライアントシークレット、検証トークン、または`xoxp-...`ユーザーOAuthトークンを使用しないでください。LightVelaには1つの`xapp-...`アプリトークンと1つの`xoxb-...`ボットトークンが必要です。
 
@@ -200,7 +200,7 @@ App トークンを Bot トークンのフィールドに貼り付けないで�
 2. **メッセージ** タブを選択します。
 3. `Hello` のような短いメッセージを送信します。
 
-![Slack アプホームでダイレクトメッセージをテスト](../images/slack-direct-message-test.png)
+![Slack アプホームでダイレクトメッセージをテスト](../images/slack-direct-message-test.webp)
 
 ---
 

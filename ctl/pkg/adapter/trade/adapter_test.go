@@ -143,6 +143,28 @@ func TestListDianshiRecords_AllowsEmptyFilter(t *testing.T) {
 	}
 }
 
+func TestListDianshiRecords_ForwardsAndDecodesScene(t *testing.T) {
+	var gotScene string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotScene = r.URL.Query().Get("scene")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"orders":[],"participations":[{"id":1,"scene":"renew"}]}`)
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.ListDianshiRecords(context.Background(), DianshiRecordFilter{Scene: "renew"})
+	if err != nil {
+		t.Fatalf("ListDianshiRecords scene filter: %v", err)
+	}
+	if gotScene != "renew" {
+		t.Fatalf("scene query=%q want renew", gotScene)
+	}
+	if len(result.Participations) != 1 || result.Participations[0].Scene != "renew" {
+		t.Fatalf("participations=%+v", result.Participations)
+	}
+}
+
 func TestPlaceOrder_NilRequest(t *testing.T) {
 	adp := newTestAdapter(t, "http://example.invalid", "")
 	_, err := adp.PlaceOrder(context.Background(), nil)

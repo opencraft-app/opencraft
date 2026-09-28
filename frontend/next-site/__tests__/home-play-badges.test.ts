@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = path.resolve('public/lightvela-intl-home');
 const fragments = readdirSync(root).filter((file) => /^index-fragment(?:\.[\w-]+)?\.html$/.test(file));
+// Keep these expected strings aligned with the importer copy and checked-in locale fragments.
 const introByLocale = {
   "en-US": "Install templates directly from the library. Notification and script tasks consume no tokens.",
   "zh-CN": "有模版库，直接装。通知任务&脚本任务无需消耗任何token。",
@@ -12,7 +13,7 @@ const introByLocale = {
   "id-ID": "Pasang template langsung dari pustaka. Tugas notifikasi dan skrip tidak mengonsumsi token.",
   "es": "Instala plantillas directamente desde la biblioteca. Las tareas de notificación y de scripts no consumen tokens.",
   "ja-JP": "ライブラリからテンプレートを直接インストール。通知タスクとスクリプトタスクはトークンを消費しません。",
-  "ko-KR": "라이브러리에서 템플릿을 바로 설치하세요. 알림 및 스크립트 작업은 토큰을 소비하지 않습니다."
+  "ko-KR": "라이브러리에서 템플릿을 바로 설치하세요. 알림과 스크립트 작업은 토큰을 쓰지 않습니다."
 };
 
 describe('homepage play tab badges', () => {

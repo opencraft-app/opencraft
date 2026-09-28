@@ -30,7 +30,7 @@ Elija un canal como su método predeterminado de contacto con Hermes. Para uso p
 
 Las instrucciones detalladas están disponibles para [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md) y [WeChat](../configuration/channel-wechat.md).
 
-![Un Hermes Agent en ejecución con canales conectados](../images/use-case-hermes-online-channel.png)
+![Un Hermes Agent en ejecución con canales conectados](../images/use-case-hermes-online-channel.webp)
 
 ### 2. Mantener la configuración funcional simple y visible
 
@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 Cree el horario en [Tareas programadas](../configuration/automation.md), seleccione un canal de notificación si es apropiado y verifique los primeros ejecuciones. Si el resultado es demasiado amplio, haga la instrucción más específica en lugar de agregar otra tarea programada inmediatamente.
 
-![Ejecuciones recientes de tarea programada desde un Hermes Agent](../images/use-case-hermes-online-automation.png)
+![Ejecuciones recientes de tarea programada desde un Hermes Agent](../images/use-case-hermes-online-automation.webp)
 
 ## Preguntas frecuentes
 

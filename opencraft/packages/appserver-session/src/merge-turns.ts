@@ -38,10 +38,10 @@ function mergeTurn(
 }
 
 /**
- * Stable-ID merge used when buffered streaming notifications race hydration.
+ * Stable-ID merge for incremental streaming notifications.
  * Callers may explicitly replace Item membership only for an authoritative
- * full snapshot such as `turn/completed`; ordinary hydration remains additive
- * so a stale response cannot erase newer buffered stream Items.
+ * full notification such as `turn/completed`. Ordered history hydration uses
+ * reconcileHistoryTurns instead, before buffered notifications are replayed.
  */
 export function mergeTurns(
   existing: readonly AppServerTurn[],
@@ -61,6 +61,99 @@ export function mergeTurns(
   if (options.placement === "prepend") result.unshift(...uniqueIncoming);
   else result.push(...uniqueIncoming);
   return result;
+}
+
+/** Reconcile a contiguous, chronologically ordered history span. Stable IDs
+ * identify rows, but cannot establish their order: a cached final Item may
+ * have arrived before older Items were hydrated. The incoming window owns the
+ * order between its first and last shared anchors. Rows outside those anchors
+ * remain visible until a complete snapshot or a later notification settles
+ * them. */
+function mergeOrderedWindow<T extends { id: string }>(
+  existing: readonly T[], incoming: readonly T[],
+  noOverlap: "before" | "after",
+  merge: (previous: T, history: T) => T,
+): readonly T[] {
+  if (incoming.length === 0) return existing;
+  const existingById = new Map(existing.map((row) => [row.id, row]));
+  const incomingIds = new Set(incoming.map((row) => row.id));
+  const ordered = incoming.map((row) => {
+    const previous = existingById.get(row.id);
+    return previous === undefined ? row : merge(previous, row);
+  });
+  const firstAnchor = existing.findIndex((row) => incomingIds.has(row.id));
+  if (firstAnchor < 0) {
+    return noOverlap === "before" ? [...ordered, ...existing] : [...existing, ...ordered];
+  }
+  let lastAnchor = firstAnchor;
+  for (let index = firstAnchor + 1; index < existing.length; index += 1) {
+    if (incomingIds.has(existing[index]!.id)) lastAnchor = index;
+  }
+  return [
+    ...existing.slice(0, firstAnchor).filter((row) => !incomingIds.has(row.id)),
+    ...ordered,
+    ...existing.slice(lastAnchor + 1).filter((row) => !incomingIds.has(row.id)),
+  ];
+}
+
+function isTerminalTurn(turn: AppServerTurn): boolean {
+  return turn.status === "completed" || turn.status === "interrupted" || turn.status === "failed";
+}
+
+function mergeHistoryTurn(existing: AppServerTurn, history: AppServerTurn): AppServerTurn {
+  const historyIsOlder = isTerminalTurn(existing) && history.status === "inProgress";
+  const existingItems = existing.items ?? [];
+  const historyItems = history.items ?? [];
+  const existingById = new Map(existingItems.map((item) => [item.id, item]));
+  const mergeItem = (previous: AppServerThreadItem, item: AppServerThreadItem): AppServerThreadItem => {
+    // A terminal observation can be newer than an in-progress history page.
+    // Preserve its content and lifecycle while accepting history's position.
+    const keepObserved = historyIsOlder || (history.status === "inProgress"
+      && previous.completed === true && item.completed !== true);
+    return keepObserved ? { ...item, ...previous } : {
+      ...(history.itemsView === "full" ? {} : previous),
+      ...item,
+      ...(item.startedAtMs == null && previous.startedAtMs != null ? { startedAtMs: previous.startedAtMs } : {}),
+      ...(item.completedAtMs == null && previous.completedAtMs != null ? { completedAtMs: previous.completedAtMs } : {}),
+    };
+  };
+  const items = history.itemsView === "full" && !historyIsOlder
+    ? historyItems.map((item) => {
+        const previous = existingById.get(item.id);
+        return previous === undefined ? item : mergeItem(previous, item);
+      })
+    : history.itemsView === "notLoaded"
+      ? existingItems
+      : mergeOrderedWindow(existingItems, historyItems,
+        historyIsOlder ? "before" : "after", mergeItem);
+  let itemsView = history.itemsView ?? existing.itemsView;
+  if (historyIsOlder) itemsView = existing.itemsView ?? "summary";
+  else if (history.itemsView === "notLoaded" && existing.itemsView) itemsView = existing.itemsView;
+  else if (existing.itemsView === "full" && history.itemsView !== "full") itemsView = "full";
+  return {
+    ...existing,
+    ...history,
+    ...(historyIsOlder ? {
+      status: existing.status,
+      error: existing.error,
+      completedAt: existing.completedAt,
+      durationMs: existing.durationMs,
+    } : {}),
+    ...Object.fromEntries(["turnStartedAtMs", "firstTurnWorkItemStartedAtMs", "finalAssistantStartedAtMs"]
+      .flatMap((key) => history[key] == null && existing[key] != null ? [[key, existing[key]]] : [])),
+    itemsView,
+    items,
+  };
+}
+
+/** Ordered AppServer history is authoritative for its covered window; live
+ * notifications use mergeTurns instead. `latest` is a tail hydration, while
+ * `older` is a backward page or background drain. */
+export function reconcileHistoryTurns(
+  existing: readonly AppServerTurn[], history: readonly AppServerTurn[],
+  historyPosition: "latest" | "older",
+): readonly AppServerTurn[] {
+  return mergeOrderedWindow(existing, history, historyPosition === "older" ? "before" : "after", mergeHistoryTurn);
 }
 
 /** A row-window refresh owns only previously projected history membership.

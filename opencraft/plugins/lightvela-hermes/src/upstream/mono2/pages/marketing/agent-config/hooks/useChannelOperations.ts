@@ -8,7 +8,8 @@
  * mono2 仅承载单一 Hermes 业务，命令路径固定走 Hermes（acli）通路。
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { t } from '../../../../i18n/t';
 import { useAgentConfig } from './useAgentConfig';
 import { useAgentInternals } from './useAgentInternals';
 import type { IAgentComponentBaseProps } from './useAgentInternals';
@@ -45,6 +46,8 @@ export interface IUseChannelOperationsResult {
   configureChannel: (params: IConfigureChannelParams) => Promise<boolean>;
   /** 删除通道 */
   deleteChannel: (channelValue: string) => Promise<boolean>;
+  /** 向已连接通道发送测试消息 */
+  testChannel: (channelValue: string) => Promise<boolean>;
   /** 刷新配置 */
   refresh: () => Promise<void>;
 
@@ -54,6 +57,8 @@ export interface IUseChannelOperationsResult {
   configuring: boolean;
   /** 正在删除的通道 value */
   deletingChannel: string | null;
+  /** 正在测试的通道 value */
+  testingChannel: string | null;
 
   // ─── SDK 能力（供扫码弹窗使用） ───
   scriptCommands: any;
@@ -87,6 +92,8 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
 
   const [configuring, setConfiguring] = useState(false);
   const [deletingChannel, setDeletingChannel] = useState<string | null>(null);
+  const [testingChannel, setTestingChannel] = useState<string | null>(null);
+  const channelOperationRef = useRef<'configure' | 'delete' | 'test' | null>(null);
 
   // 命令引用（Hermes / acli）
   const hermesChannelCmds = scriptCommands.hermes.channel;
@@ -96,8 +103,9 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
     async (channelParams: IConfigureChannelParams): Promise<boolean> => {
       const { channelValue, channelIdValue, channelKeyValue } = channelParams;
       const channelInfo = currentChannelList.find((c) => c.value === channelValue);
-      if (!channelInfo) return false;
+      if (!channelInfo || channelOperationRef.current) return false;
 
+      channelOperationRef.current = 'configure';
       setConfiguring(true);
       setCurrentAction('configure_channel');
 
@@ -141,27 +149,23 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
         }
 
         if (!channelConfigCommand) {
-          setConfiguring(false);
-          setCurrentAction('');
           return false;
         }
 
         const result = await executor.run({ command: channelConfigCommand });
 
         if (result.success) {
-          setConfiguring(false);
-          setCurrentAction('');
           await restartAndRefresh();
           return true;
         }
 
-        setConfiguring(false);
-        setCurrentAction('');
         return false;
       } catch {
+        return false;
+      } finally {
+        channelOperationRef.current = null;
         setConfiguring(false);
         setCurrentAction('');
-        return false;
       }
     },
     [currentChannelList, executor, hermesChannelCmds, restartAndRefresh, setCurrentAction],
@@ -170,6 +174,8 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
   // ── 操作：删除通道 ──
   const deleteChannel = useCallback(
     async (channelValue: string): Promise<boolean> => {
+      if (channelOperationRef.current) return false;
+      channelOperationRef.current = 'delete';
       setDeletingChannel(channelValue);
       setCurrentAction('delete_channel');
       try {
@@ -178,8 +184,6 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
         );
 
         const result = await executor.run({ command });
-        setDeletingChannel(null);
-        setCurrentAction('');
 
         if (result.success) {
           await restartAndRefresh();
@@ -187,12 +191,45 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
         }
         return false;
       } catch {
+        return false;
+      } finally {
+        channelOperationRef.current = null;
         setDeletingChannel(null);
         setCurrentAction('');
-        return false;
       }
     },
     [currentChannelList, executor, hermesChannelCmds, restartAndRefresh, setCurrentAction],
+  );
+
+  // ── 操作：发送测试消息（仅证明 Hermes 已接受发送，不证明对方收到） ──
+  const testChannel = useCallback(
+    async (channelValue: string): Promise<boolean> => {
+      const channelInfo = currentChannelList.find((channel) => channel.value === channelValue);
+      const connected = configData.channels.some((channel) => channel.enabled && channel.value === channelValue);
+      if (!channelInfo || !connected || channelOperationRef.current) return false;
+
+      channelOperationRef.current = 'test';
+      setTestingChannel(channelValue);
+      setCurrentAction('test_channel');
+      try {
+        const command = hermesChannelCmds.getSendCommand(
+          channelInfo.channel,
+          t('叮咚！收到一条来自 LightVela 的测试消息。'),
+        );
+        const result = await executor.run({ command });
+        if (!result.success) return false;
+        const response: unknown = JSON.parse(result.output);
+        return typeof response === 'object' && response !== null
+          && 'success' in response && response.success === true;
+      } catch {
+        return false;
+      } finally {
+        channelOperationRef.current = null;
+        setTestingChannel(null);
+        setCurrentAction('');
+      }
+    },
+    [configData.channels, currentChannelList, executor, hermesChannelCmds, setCurrentAction],
   );
 
   const handleRefresh = useCallback(async () => {
@@ -206,11 +243,13 @@ export function useChannelOperations(params: IUseChannelOperationsParams): IUseC
 
     configureChannel,
     deleteChannel,
+    testChannel,
     refresh: handleRefresh,
 
     currentAction,
     configuring,
     deletingChannel,
+    testingChannel,
 
     scriptCommands,
     executor,

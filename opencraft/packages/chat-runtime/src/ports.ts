@@ -37,11 +37,26 @@ export interface ConversationHistoryPort {
   loadOlder(key: ConversationKey): Promise<void>;
 }
 
+export interface TurnInterruptProvenance {
+  readonly source:
+    | "composer-stop"
+    | "side-chat-stop"
+    | "side-chat-close"
+    | "unknown";
+  readonly trigger: "pointer" | "keyboard" | "programmatic";
+  readonly isTrusted: boolean | null;
+  readonly occurredAt: number;
+}
+
 export interface ConversationCommandPort {
   /** Creates the authoritative Thread without starting its first Turn. */
   createThread(intent: SubmitIntent): Promise<SubmissionReceipt>;
   submit(intent: SubmitIntent): Promise<SubmissionReceipt>;
-  interrupt(key: ConversationKey, turnId: TurnId): Promise<void>;
+  interrupt(
+    key: ConversationKey,
+    turnId: TurnId,
+    provenance?: TurnInterruptProvenance,
+  ): Promise<void>;
   continueTurn(key: ConversationKey, turnId: TurnId): Promise<SubmissionReceipt>;
   respond(key: ConversationKey, response: InteractionResponse): Promise<void>;
   updateQueuedSubmission(
@@ -52,6 +67,11 @@ export interface ConversationCommandPort {
   deleteQueuedSubmission(
     key: ConversationKey,
     queuedSubmissionId: string,
+  ): Promise<boolean>;
+  discardUnconfirmedSteer(
+    key: ConversationKey,
+    queuedSubmissionId: string,
+    expectedTurnId: TurnId,
   ): Promise<boolean>;
   reorderQueuedSubmissions(
     key: ConversationKey,

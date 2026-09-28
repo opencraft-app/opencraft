@@ -40,9 +40,14 @@ import type {
 } from "@opencraft/appserver-protocol";
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
+  OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
   parseAttachmentStagingCapability,
+  parseThreadLifecycleCapability,
+  supportsAtomicQueuedSteer,
+  supportsUnconfirmedSteerDiscard,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_RESUME_HISTORY_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
@@ -84,10 +89,12 @@ import {
   type ConversationRuntime,
   type ConversationRuntimeSnapshot,
   type InteractionResponse,
+  type TurnInterruptProvenance,
 } from "@opencraft/chat-runtime";
 import {
   AppServerFuzzyFileSearchController,
   AppServerInteractionBroker,
+  AppServerInteractionLedger,
   createAppServerConversationCommandPort,
   type FuzzyFileSearchSession,
   type FuzzyFileSearchSessionOptions,
@@ -213,6 +220,8 @@ export interface StartThreadOptions {
   readonly model?: string;
   readonly historyMode?: "legacy" | "paginated";
   readonly agentId?: string;
+  /** Host-advertised native profile ID; applied at Thread creation. */
+  readonly permissions?: string;
 }
 
 export interface AppServerThreadResourcePort {
@@ -231,6 +240,14 @@ export interface AppServerThreadResourcePort {
 
 export interface AppServerComposerCatalogResourcePort {
   listModels(params?: Partial<ModelListParams>): Promise<ModelListResponse>;
+  readNewThreadDefaults(cwd?: string | null): Promise<{
+    readonly model: string | null;
+    readonly effort: string | null;
+  }>;
+  writeNewThreadDefaults(defaults: {
+    readonly model: string;
+    readonly effort: string | null;
+  }): Promise<void>;
   listPermissionProfiles(
     params?: Partial<PermissionProfileListParams>,
   ): Promise<PermissionProfileListResponse>;
@@ -343,7 +360,7 @@ export interface AppServerThreadRuntimeLease {
   /** Retry this Thread's baseline without navigating or reconnecting its Host. */
   retryRestore(): Promise<void>;
   submit(intent: SubmitIntent): Promise<SubmissionReceipt>;
-  interrupt(turnId: TurnId): Promise<void>;
+  interrupt(turnId: TurnId, provenance?: TurnInterruptProvenance): Promise<void>;
   continueTurn(turnId: TurnId): Promise<SubmissionReceipt>;
   respond(response: InteractionResponse): Promise<void>;
   updateQueuedSubmission(
@@ -351,6 +368,7 @@ export interface AppServerThreadRuntimeLease {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
     queuedSubmissionIds: readonly string[],
   ): Promise<void>;
@@ -441,7 +459,10 @@ export function createAppServerWorkbenchRuntime(
   const listeners = new Set<() => void>();
   const skillsChangedListeners = new Set<() => void>();
   const bindings = new Map<string, ConversationBinding>();
+  const interactionLedger = new AppServerInteractionLedger();
   const ephemeralThreadIds = new Set<string>();
+  // Acknowledged durable forks can precede Codex's first child-Turn catalog entry.
+  const unlistedForks = new Map<string, ProtocolThread>();
   const bindingOperations = new Map<string, Promise<ConversationBinding>>();
   let revision = 0;
   let phase: AppServerWorkbenchPhase = "idle";
@@ -757,7 +778,9 @@ export function createAppServerWorkbenchRuntime(
       const baselineGatedCommands: ConversationCommandPort = {
         ...currentCommandPort,
         submit: (intent) => afterAuthoritativeBaseline(() => currentCommandPort.submit(intent), true),
-        interrupt: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.interrupt(key, turnId)),
+        interrupt: (key, turnId, provenance) => afterAuthoritativeBaseline(
+          () => currentCommandPort.interrupt(key, turnId, provenance),
+        ),
         continueTurn: (key, turnId) => afterAuthoritativeBaseline(() => currentCommandPort.continueTurn(key, turnId), true),
         respond: (key, response) => afterAuthoritativeBaseline(() => currentCommandPort.respond(key, response)),
         updateQueuedSubmission: (key, id, input) => afterAuthoritativeBaseline(
@@ -1149,6 +1172,7 @@ export function createAppServerWorkbenchRuntime(
       interactions = new AppServerInteractionBroker({
         hostId,
         client,
+        ledger: interactionLedger,
         store: session.views,
       });
       fuzzyFileSearch = new AppServerFuzzyFileSearchController(client);
@@ -1156,6 +1180,12 @@ export function createAppServerWorkbenchRuntime(
         hostId,
         client,
         interactions,
+        queueAtomicSteer: supportsAtomicQueuedSteer(
+          client.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION],
+        ),
+        queueUnconfirmedSteerDiscard: supportsUnconfirmedSteerDiscard(
+          client.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION],
+        ),
         compiler: { historyMode: "paginated" },
         resolveCompilerOptions: async (intent) => {
           const followUp = intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up";
@@ -1176,6 +1206,7 @@ export function createAppServerWorkbenchRuntime(
           throw new Error(modelId ? "所选模型已不可用，请重新选择" : "请先选择模型或在设置中指定默认模型");
         },
         dynamicTools: config.dynamicTools,
+        onInterrupt: (event) => console.info("[turn-interrupt] client request", event),
       });
     })()
       .catch(async (cause) => {
@@ -1275,7 +1306,7 @@ export function createAppServerWorkbenchRuntime(
       },
       threads: {
         capabilities() {
-          const capability = client?.initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; rename?: boolean; archive?: boolean; delete?: boolean } | undefined;
+          const capability = parseThreadLifecycleCapability(client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]);
           return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true, delete: capability?.delete === true };
         },
         async rename(threadId, name) { await requireClient().request("thread/name/set", { threadId, name }); },
@@ -1283,8 +1314,8 @@ export function createAppServerWorkbenchRuntime(
         async archive(threadId) { await requireClient().request("thread/archive", { threadId }); },
         async unarchive(threadId) { return (await requireClient().request("thread/unarchive", { threadId })).thread as ProtocolThread; },
         supportsSideChat() {
-          const capability = requireClient().initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; ephemeral?: boolean; injectItems?: boolean } | undefined;
-          return capability?.fork !== false && capability?.ephemeral !== false && capability?.injectItems !== false;
+          const capability = parseThreadLifecycleCapability(requireClient().initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]);
+          return capability?.fork === true && capability.ephemeral === true && capability.injectItems === true && capability.unsubscribe === true;
         },
         async injectItems(threadId, items) {
           await requireClient().request("thread/inject_items", { threadId, items: [...items] });
@@ -1292,9 +1323,12 @@ export function createAppServerWorkbenchRuntime(
         async fork(params) {
           const generation = requireClient().connectionGeneration;
           const response = await requireClient().request("thread/fork", params);
+          if (generation !== requireClient().connectionGeneration) throw new Error("Fork response belongs to an earlier Host generation");
           if (params.ephemeral === true) {
             requireSession().resume.adoptFork(response, generation);
             ephemeralThreadIds.add(response.thread.id);
+          } else {
+            unlistedForks.set(response.thread.id, { ...response.thread, turns: [] });
           }
           return response.thread;
         },
@@ -1326,6 +1360,17 @@ export function createAppServerWorkbenchRuntime(
             sortKey: "updated_at",
             ...params,
           });
+          const defaultCatalog = Object.keys(params).every(key => key === "cursor" || key === "limit")
+            && params.cursor == null;
+          if (defaultCatalog && unlistedForks.size > 0) {
+            const listed = new Set(response.data.map(thread => thread.id));
+            for (const id of listed) unlistedForks.delete(id);
+            const missing = [...unlistedForks.values()];
+            if (missing.length > 0) {
+              response.data = [...missing, ...response.data]
+                .sort((left, right) => right.updatedAt - left.updatedAt);
+            }
+          }
           const views = requireSession().views;
           for (const thread of response.data) views.seedMetadata(thread);
           return response;
@@ -1343,6 +1388,9 @@ export function createAppServerWorkbenchRuntime(
             ...(options.projectId == null
               ? {}
               : { projectId: options.projectId }),
+            ...(options.permissions === undefined
+              ? {}
+              : { permissions: options.permissions }),
             ...(config.dynamicTools === undefined
               ? {}
               : { dynamicTools: [...config.dynamicTools] }),
@@ -1443,6 +1491,28 @@ export function createAppServerWorkbenchRuntime(
             limit: 100,
             includeHidden: false,
             ...params,
+          });
+        },
+        async readNewThreadDefaults(cwd = null) {
+          const response = await requireClient().request("config/read", {
+            includeLayers: false,
+            ...(cwd === null ? {} : { cwd }),
+          });
+          return {
+            model: typeof response.config.model === "string"
+              ? response.config.model
+              : null,
+            effort: typeof response.config.model_reasoning_effort === "string"
+              ? response.config.model_reasoning_effort
+              : null,
+          };
+        },
+        async writeNewThreadDefaults(defaults) {
+          await requireClient().request("config/batchWrite", {
+            edits: [
+              { keyPath: "model", value: defaults.model, mergeStrategy: "replace" },
+              { keyPath: "model_reasoning_effort", value: defaults.effort, mergeStrategy: "replace" },
+            ],
           });
         },
         async listPermissionProfiles(params = {}) {
@@ -1630,8 +1700,8 @@ export function createAppServerWorkbenchRuntime(
               retainAcceptedTurn(binding, receipt.turnId);
             return receipt;
           }),
-        interrupt: (turnId) =>
-          runBindingCommand(binding, () => binding.runtime.interrupt(turnId)),
+        interrupt: (turnId, provenance) =>
+          runBindingCommand(binding, () => binding.runtime.interrupt(turnId, provenance)),
         continueTurn: (turnId) =>
           runBindingCommand(binding, async () => {
             const receipt = await binding.runtime.continueTurn(turnId);
@@ -1648,6 +1718,10 @@ export function createAppServerWorkbenchRuntime(
         deleteQueuedSubmission: (queuedSubmissionId) =>
           runBindingCommand(binding, () =>
             binding.runtime.deleteQueuedSubmission(queuedSubmissionId),
+          ),
+        discardUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
+          runBindingCommand(binding, () =>
+            binding.runtime.discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId),
           ),
         reorderQueuedSubmissions: (queuedSubmissionIds) =>
           runBindingCommand(binding, () =>
@@ -1742,6 +1816,7 @@ export function createAppServerWorkbenchRuntime(
 
         interactions?.dispose();
         interactions = null;
+        interactionLedger.clear();
         fuzzyFileSearch?.dispose();
         fuzzyFileSearch = null;
         fileSystemWatches.clear();

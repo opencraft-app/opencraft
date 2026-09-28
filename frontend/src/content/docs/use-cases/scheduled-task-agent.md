@@ -25,7 +25,7 @@
 
 > 收集最多 5 条重要更新，进行总结，附上链接，并发送结果。
 
-![创建用于晨间 AI 简报的重复 AI 任务](../images/scheduled-task-agent-zh-1.png)
+![创建用于晨间 AI 简报的重复 AI 任务](../images/scheduled-task-agent-zh-1.webp)
 
 关键是要求一份聚焦的简报，而不是总结“所有内容”。
 如果信息收集和总结是两个独立任务，请先安排收集任务。
@@ -38,7 +38,7 @@
 
 > 使用上游任务收集的笔记，找出已完成的工作、阻塞事项和接下来的 3 个优先事项。
 
-![创建带有上游任务的每周 AI 任务](../images/scheduled-task-agent-zh-2.png)
+![创建带有上游任务的每周 AI 任务](../images/scheduled-task-agent-zh-2.webp)
 
 请在复盘前运行收集任务，并预留一小段缓冲时间。
 Agent 不能替代项目管理。
@@ -50,7 +50,7 @@ LightVela 支持将 Agent 接入微信、飞书和 QQ。
 你可以只接入一个，也可以同时接入多个通道。
 在定时任务中，你可以切换对应通道的通知设置，决定是否将任务结果通知到即时通信应用。
 
-![AI Agent 通过微信直接发送定时简报](../images/scheduled-task-agent-zh-3.png)
+![AI Agent 通过微信直接发送定时简报](../images/scheduled-task-agent-zh-3.webp)
 
 切换设置后，Agent 会完成任务并直接在即时通信应用中更新你，不需要你直接打开 LightVela 或其他应用。
 
@@ -60,4 +60,4 @@ LightVela 支持将 Agent 接入微信、飞书和 QQ。
 创建后，你可以编辑、暂停任务，并浏览已经完成的历史任务。
 使用 LightVela，让你的个人 Hermes Agent 变成一台高效运行的机器，在你离开时继续执行任务。
 
-![Scheduled Tasks 中包含多个重复 Agent 任务的当前任务列表](../images/scheduled-task-agent-zh-4.png)
+![Scheduled Tasks 中包含多个重复 Agent 任务的当前任务列表](../images/scheduled-task-agent-zh-4.webp)

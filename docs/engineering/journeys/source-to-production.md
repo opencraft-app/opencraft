@@ -13,6 +13,13 @@
 5. 运行态：Pod/服务健康，版本/selfcheck 与预期一致。
 6. 业务：通过公共入口完成最小关键路径；必要时执行灰度、监控和回滚演练。
 
+## 前端预览制品（StaticPages）
+
+`.ci/runtime/commands/publish_frontend_preview.sh` 构建双站（cn/intl）Next 产物并经 `staticpages_pack.py` 以 packs 分卷（target 32MB / max 48MB）直传对象存储，不经 API 网关。两个边界决策：
+
+- 产物冻结与打包阶段均排除 `out/.edgeone`（EdgeOne Pages 部署目录，内容是 `out/` 的完整副本）：它是构建内部部署格式而非站点资源，进入上传包会把体积翻倍。预览发布器取自 `origin/master`、frontend 源码取自触发分支，老分支的构建链路可能仍写出该目录，因此 runtime 侧删除与 `iter_files()` 的 `EXCLUDED_DIR_NAMES` 兜底双保险。
+- 预览产物压缩体积以 ≤50MB 为预算（`tar -czf - --exclude='./.edgeone' -C frontend/out . | wc -c` 口径）：超预算直接推高上传耗时（1800s×3 次重试）、对象存储成本与预览站首屏加载。图片资源一律 webp 化（quality 82），新增 public 图片资产必须先转 webp 再入库。
+
 ## 回滚
 
 回滚目标是上一已知健康的 GitOps pin 或应用 revision，不用本地未审阅 manifest 覆盖集群。数据库变更必须预先声明向前/向后兼容与独立恢复方式。

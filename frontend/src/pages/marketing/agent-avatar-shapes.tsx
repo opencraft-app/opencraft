@@ -36,6 +36,23 @@ type ShapeDef = {
   eyeDx: number;
 };
 
+/** Resolve labels at render time so language changes also update accessible names. */
+export const getAvatarShapeLabel = (id: AvatarShapeId, t: (message: string) => string): string => {
+  switch (id) {
+    case "circle": return t("圆形");
+    case "squircle": return t("圆角方");
+    case "square": return t("方形");
+    case "teardrop": return t("水滴");
+    case "hexagon": return t("六边形");
+    case "burst": return t("齿轮");
+    case "triangle": return t("三角");
+    case "egg": return t("蛋形");
+    // Match GeometricAvatar's default shape if persisted data has an unknown id.
+    case "blob":
+    default: return t("水母");
+  }
+};
+
 export const AVATAR_SHAPES: ShapeDef[] = [
   {
     id: "blob",

@@ -56,7 +56,7 @@ func TestMySQLDeveloperTestAccountLeaseConcurrencyAndRevocation(t *testing.T) {
 			defer workers.Done()
 			<-start
 			lease, session, acquireErr := store.AcquireDeveloperTestAccount(
-				context.Background(), candidates, owner, owner[len("sandbox-bj-7:"):], now, time.Hour, "",
+				context.Background(), candidates, owner, owner[len("sandbox-bj-7:"):], now, time.Hour, "", false,
 			)
 			results <- leaseResult{owner: owner, lease: lease, session: session, err: acquireErr}
 		}()
@@ -92,7 +92,7 @@ func TestMySQLDeveloperTestAccountLeaseConcurrencyAndRevocation(t *testing.T) {
 
 	for _, result := range successes {
 		if _, _, renewErr := store.AcquireDeveloperTestAccount(
-			context.Background(), candidates, result.owner, result.lease.TargetIP, now, time.Hour, "",
+			context.Background(), candidates, result.owner, result.lease.TargetIP, now, time.Hour, "", false,
 		); renewErr == nil {
 			t.Fatalf("active owner renewed anonymously: %s", result.owner)
 		} else {
@@ -103,7 +103,7 @@ func TestMySQLDeveloperTestAccountLeaseConcurrencyAndRevocation(t *testing.T) {
 		}
 
 		renewedLease, renewedSession, renewErr := store.AcquireDeveloperTestAccount(
-			context.Background(), candidates, result.owner, result.lease.TargetIP, now, time.Hour, result.lease.UserID,
+			context.Background(), candidates, result.owner, result.lease.TargetIP, now, time.Hour, result.lease.UserID, false,
 		)
 		if renewErr != nil {
 			t.Fatalf("renew lease for %s: %v", result.owner, renewErr)

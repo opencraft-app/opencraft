@@ -1,6 +1,6 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
+import { LoaderCircle, MoreHorizontal } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -39,21 +39,21 @@ export function ThreadRowMenu({ target, capabilities, children, hostActions, onR
   hostActions?: ThreadHostActionCallbacks;
 }) {
   const portalContainer = useWorkbenchPresentationRoot();
-  const [renaming, setRenaming] = useState(false), [draft, setDraft] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false), [draft, setDraft] = useState(""), [busy, setBusy] = useState(false), [forking, setForking] = useState(false), [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ThreadActionTarget | null>(null);
   const mounted = useRef(true), formId = useId();
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const run = async (operation: () => Promise<void>) => {
-    setBusy(true); setError(null);
+  const run = async (operation: () => Promise<void>, action: "fork" | "other" = "other") => {
+    setBusy(true); setForking(action === "fork"); setError(null);
     try { await operation(); if (mounted.current) setRenaming(false); }
     catch (error) { if (mounted.current) setError(error instanceof Error ? error.message : String(error)); }
-    finally { if (mounted.current) setBusy(false); }
+    finally { if (mounted.current) { setBusy(false); setForking(false); } }
   };
   // Shared item model for both the right-click context menu and the row
   // "..." dropdown, mirroring the actions(entry).map pattern in bot-management.
   const menuItems = [
     capabilities.rename ? { key: "rename", label: "重命名", onSelect: () => { setDraft(target.title); setError(null); setRenaming(true); } } : null,
-    capabilities.fork ? { key: "fork", label: "新建分支", onSelect: () => { void run(() => onFork(target)); } } : null,
+    capabilities.fork ? { key: "fork", label: "新建分支", onSelect: () => { void run(() => onFork(target), "fork"); } } : null,
     capabilities.archive ? { key: "archive", label: "归档", onSelect: () => { void run(() => onArchive(target)); } } : null,
     capabilities.delete ? { key: "delete", label: "删除", onSelect: () => { setError(null); setDeleting(target); } } : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
@@ -74,8 +74,8 @@ export function ThreadRowMenu({ target, capabilities, children, hostActions, onR
           {children}
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <button type="button" className="sidebar-activity-item__menu-trigger" aria-label={`${target.title} 的操作`}>
-                <MoreHorizontal size={14} aria-hidden="true" />
+              <button type="button" className="sidebar-activity-item__menu-trigger" aria-label={forking ? `${target.title} 正在新建分支` : `${target.title} 的操作`} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={busy}>
+                {forking ? <LoaderCircle size={14} aria-hidden="true" /> : <MoreHorizontal size={14} aria-hidden="true" />}
               </button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal container={portalContainer}>
