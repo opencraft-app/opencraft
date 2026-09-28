@@ -351,8 +351,6 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
       "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord / Slack) and have your first AI conversation.",
     "/docs/plans":
       "Compare LightVela's Launch, Cruise, Launch AI, and Cruise AI plans for isolated Hermes runtime resources, storage, monthly AI credits, refund rules, and the email-based refund application process.",
-    "/docs/announcements/public-beta":
-      "Compare LightVela plan resources and credits, and check Subscribe for current availability, introductory offers, prices, and entitlements.",
     "/docs/credits":
       "Learn how LightVela model credits measure Hermes usage across conversations, Scheduled Tasks, skills, and supported messaging channels. Credits are included with plans; check Subscribe for current availability and the latest options.",
     "/docs/create-first-hermes":
@@ -527,7 +525,6 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/deepseek-harness": "DeepSeek Harness",
     "/docs/configuration/workbench": "工作台",
     "/docs/plans": "套餐管理",
-    "/docs/announcements/public-beta": "LightVela 付费版本公告",
     "/docs/faq": "常见问题 FAQ",
   },
   global: {
@@ -556,7 +553,6 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/agent-chat": "Chat",
     "/docs/faq": "FAQ",
     "/docs/plans": "Plans",
-    "/docs/announcements/public-beta": "LightVela Paid Version Announcement",
     "/docs/credits": "Credits",
     "/docs/create-first-hermes": "How Do I Activate My First Hermes Instance?",
     "/docs/who-is-lightvela-for": "Who Is LightVela For?",

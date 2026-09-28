@@ -21,10 +21,6 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "credits"
     ],
     [
@@ -143,27 +139,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
-      "im-agent-skill-scenarios"
-    ],
-    [
-      "use-cases",
       "multi-channel-personality-memory"
     ],
     [
       "use-cases",
       "telegram-group-community-assistant"
-    ],
-    [
-      "use-cases",
-      "whatsapp-24-7-customer-service"
-    ],
-    [
-      "use-cases",
-      "lifelike-im-agent-rhythm-social-memory"
-    ],
-    [
-      "use-cases",
-      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",
@@ -301,10 +281,6 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "account"
-    ],
-    [
-      "announcements",
-      "public-beta"
     ],
     [
       "plans"
@@ -487,10 +463,6 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "credits"
     ],
     [
@@ -609,27 +581,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
-      "im-agent-skill-scenarios"
-    ],
-    [
-      "use-cases",
       "multi-channel-personality-memory"
     ],
     [
       "use-cases",
       "telegram-group-community-assistant"
-    ],
-    [
-      "use-cases",
-      "whatsapp-24-7-customer-service"
-    ],
-    [
-      "use-cases",
-      "lifelike-im-agent-rhythm-social-memory"
-    ],
-    [
-      "use-cases",
-      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",
@@ -769,10 +725,6 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "credits"
     ],
     [
@@ -891,27 +843,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
-      "im-agent-skill-scenarios"
-    ],
-    [
-      "use-cases",
       "multi-channel-personality-memory"
     ],
     [
       "use-cases",
       "telegram-group-community-assistant"
-    ],
-    [
-      "use-cases",
-      "whatsapp-24-7-customer-service"
-    ],
-    [
-      "use-cases",
-      "lifelike-im-agent-rhythm-social-memory"
-    ],
-    [
-      "use-cases",
-      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",
@@ -1051,10 +987,6 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "credits"
     ],
     [
@@ -1169,27 +1101,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
-      "im-agent-skill-scenarios"
-    ],
-    [
-      "use-cases",
       "multi-channel-personality-memory"
     ],
     [
       "use-cases",
       "telegram-group-community-assistant"
-    ],
-    [
-      "use-cases",
-      "whatsapp-24-7-customer-service"
-    ],
-    [
-      "use-cases",
-      "lifelike-im-agent-rhythm-social-memory"
-    ],
-    [
-      "use-cases",
-      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",
@@ -1321,10 +1237,6 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "credits"
     ],
     [
@@ -1443,27 +1355,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
-      "im-agent-skill-scenarios"
-    ],
-    [
-      "use-cases",
       "multi-channel-personality-memory"
     ],
     [
       "use-cases",
       "telegram-group-community-assistant"
-    ],
-    [
-      "use-cases",
-      "whatsapp-24-7-customer-service"
-    ],
-    [
-      "use-cases",
-      "lifelike-im-agent-rhythm-social-memory"
-    ],
-    [
-      "use-cases",
-      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",
@@ -1603,10 +1499,6 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "credits"
     ],
     [
@@ -1725,27 +1617,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
-      "im-agent-skill-scenarios"
-    ],
-    [
-      "use-cases",
       "multi-channel-personality-memory"
     ],
     [
       "use-cases",
       "telegram-group-community-assistant"
-    ],
-    [
-      "use-cases",
-      "whatsapp-24-7-customer-service"
-    ],
-    [
-      "use-cases",
-      "lifelike-im-agent-rhythm-social-memory"
-    ],
-    [
-      "use-cases",
-      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",
@@ -1885,10 +1761,6 @@ export const DOCS_ROUTE_SLUGS = {
       "plans"
     ],
     [
-      "announcements",
-      "public-beta"
-    ],
-    [
       "credits"
     ],
     [
@@ -2007,27 +1879,11 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "use-cases",
-      "im-agent-skill-scenarios"
-    ],
-    [
-      "use-cases",
       "multi-channel-personality-memory"
     ],
     [
       "use-cases",
       "telegram-group-community-assistant"
-    ],
-    [
-      "use-cases",
-      "whatsapp-24-7-customer-service"
-    ],
-    [
-      "use-cases",
-      "lifelike-im-agent-rhythm-social-memory"
-    ],
-    [
-      "use-cases",
-      "telegram-whatsapp-safety-boundaries"
     ],
     [
       "use-cases",
@@ -2178,7 +2034,6 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
-    "announcements/public-beta": "2026-09-27",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
@@ -2209,12 +2064,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/telegram-persona-agent": "2026-08-17",
     "use-cases/whatsapp-persona-agent": "2026-08-17",
     "use-cases/im-agent-persona-soul-md": "2026-08-17",
-    "use-cases/im-agent-skill-scenarios": "2026-08-17",
-    "use-cases/multi-channel-personality-memory": "2026-08-17",
-    "use-cases/telegram-group-community-assistant": "2026-08-17",
-    "use-cases/whatsapp-24-7-customer-service": "2026-08-17",
-    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-17",
-    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-17",
+    "use-cases/multi-channel-personality-memory": "2026-09-28",
+    "use-cases/telegram-group-community-assistant": "2026-09-28",
     "use-cases/daily-summary": "2026-08-17",
     "use-cases/hermes-agent-24-7": "2026-08-18",
     "use-cases/memory-and-knowledge": "2026-08-17",
@@ -2244,7 +2095,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-12",
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
-    "contact-us": "2026-09-27",
+    "contact-us": "2026-09-28",
     "": "2026-09-27"
   },
   "zh-cn": {
@@ -2253,8 +2104,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-09-27",
     "who-is-lightvela-for": "2026-09-27",
     "account": "2026-09-20",
-    "announcements/public-beta": "2026-09-27",
-    "plans": "2026-09-23",
+    "plans": "2026-09-28",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-27",
@@ -2304,7 +2154,6 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
-    "announcements/public-beta": "2026-09-27",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
@@ -2335,12 +2184,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/telegram-persona-agent": "2026-08-17",
     "use-cases/whatsapp-persona-agent": "2026-08-17",
     "use-cases/im-agent-persona-soul-md": "2026-08-17",
-    "use-cases/im-agent-skill-scenarios": "2026-08-17",
-    "use-cases/multi-channel-personality-memory": "2026-08-17",
-    "use-cases/telegram-group-community-assistant": "2026-08-17",
-    "use-cases/whatsapp-24-7-customer-service": "2026-08-17",
-    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-17",
-    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-17",
+    "use-cases/multi-channel-personality-memory": "2026-09-28",
+    "use-cases/telegram-group-community-assistant": "2026-09-28",
     "use-cases/daily-summary": "2026-08-17",
     "use-cases/hermes-agent-24-7": "2026-08-18",
     "use-cases/memory-and-knowledge": "2026-08-17",
@@ -2370,7 +2215,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-12",
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
-    "contact-us": "2026-09-27",
+    "contact-us": "2026-09-28",
     "": "2026-09-27"
   },
   "zh-hant": {
@@ -2379,7 +2224,6 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
-    "announcements/public-beta": "2026-09-27",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
@@ -2410,12 +2254,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/telegram-persona-agent": "2026-08-17",
     "use-cases/whatsapp-persona-agent": "2026-08-17",
     "use-cases/im-agent-persona-soul-md": "2026-08-17",
-    "use-cases/im-agent-skill-scenarios": "2026-08-17",
-    "use-cases/multi-channel-personality-memory": "2026-08-17",
-    "use-cases/telegram-group-community-assistant": "2026-08-17",
-    "use-cases/whatsapp-24-7-customer-service": "2026-08-17",
-    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-17",
-    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-17",
+    "use-cases/multi-channel-personality-memory": "2026-09-28",
+    "use-cases/telegram-group-community-assistant": "2026-09-28",
     "use-cases/daily-summary": "2026-08-17",
     "use-cases/hermes-agent-24-7": "2026-08-18",
     "use-cases/memory-and-knowledge": "2026-08-17",
@@ -2445,7 +2285,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-12",
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
-    "contact-us": "2026-09-27",
+    "contact-us": "2026-09-28",
     "": "2026-09-27"
   },
   "id-id": {
@@ -2454,7 +2294,6 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-27",
-    "announcements/public-beta": "2026-09-27",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",
@@ -2484,12 +2323,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/telegram-persona-agent": "2026-08-18",
     "use-cases/whatsapp-persona-agent": "2026-08-18",
     "use-cases/im-agent-persona-soul-md": "2026-08-18",
-    "use-cases/im-agent-skill-scenarios": "2026-08-18",
-    "use-cases/multi-channel-personality-memory": "2026-08-18",
-    "use-cases/telegram-group-community-assistant": "2026-08-18",
-    "use-cases/whatsapp-24-7-customer-service": "2026-08-18",
-    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-18",
-    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-18",
+    "use-cases/multi-channel-personality-memory": "2026-09-28",
+    "use-cases/telegram-group-community-assistant": "2026-09-28",
     "use-cases/daily-summary": "2026-08-18",
     "use-cases/hermes-agent-24-7": "2026-08-18",
     "use-cases/memory-and-knowledge": "2026-08-18",
@@ -2517,7 +2352,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-18",
     "hermes-agent/workspace-context-storage": "2026-08-18",
     "hermes-agent/skills-self-improvement": "2026-08-18",
-    "contact-us": "2026-09-27",
+    "contact-us": "2026-09-28",
     "": "2026-09-27"
   },
   "es": {
@@ -2526,7 +2361,6 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-08-26",
     "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
-    "announcements/public-beta": "2026-09-27",
     "credits": "2026-08-26",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-22",
@@ -2557,12 +2391,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/telegram-persona-agent": "2026-08-26",
     "use-cases/whatsapp-persona-agent": "2026-08-26",
     "use-cases/im-agent-persona-soul-md": "2026-08-26",
-    "use-cases/im-agent-skill-scenarios": "2026-08-26",
-    "use-cases/multi-channel-personality-memory": "2026-08-26",
-    "use-cases/telegram-group-community-assistant": "2026-08-26",
-    "use-cases/whatsapp-24-7-customer-service": "2026-08-26",
-    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-26",
-    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-26",
+    "use-cases/multi-channel-personality-memory": "2026-09-28",
+    "use-cases/telegram-group-community-assistant": "2026-09-28",
     "use-cases/daily-summary": "2026-08-26",
     "use-cases/hermes-agent-24-7": "2026-08-26",
     "use-cases/memory-and-knowledge": "2026-08-26",
@@ -2592,7 +2422,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-26",
     "hermes-agent/workspace-context-storage": "2026-08-26",
     "hermes-agent/skills-self-improvement": "2026-08-26",
-    "contact-us": "2026-09-27",
+    "contact-us": "2026-09-28",
     "": "2026-09-27"
   },
   "ja-jp": {
@@ -2601,7 +2431,6 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-08-28",
     "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
-    "announcements/public-beta": "2026-09-27",
     "credits": "2026-08-28",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-22",
@@ -2632,12 +2461,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/telegram-persona-agent": "2026-08-28",
     "use-cases/whatsapp-persona-agent": "2026-08-28",
     "use-cases/im-agent-persona-soul-md": "2026-08-28",
-    "use-cases/im-agent-skill-scenarios": "2026-08-28",
-    "use-cases/multi-channel-personality-memory": "2026-08-28",
-    "use-cases/telegram-group-community-assistant": "2026-08-28",
-    "use-cases/whatsapp-24-7-customer-service": "2026-08-28",
-    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-28",
-    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-28",
+    "use-cases/multi-channel-personality-memory": "2026-09-28",
+    "use-cases/telegram-group-community-assistant": "2026-09-28",
     "use-cases/daily-summary": "2026-08-28",
     "use-cases/hermes-agent-24-7": "2026-08-28",
     "use-cases/memory-and-knowledge": "2026-08-28",
@@ -2667,7 +2492,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-28",
     "hermes-agent/workspace-context-storage": "2026-08-28",
     "hermes-agent/skills-self-improvement": "2026-08-28",
-    "contact-us": "2026-09-27",
+    "contact-us": "2026-09-28",
     "": "2026-09-27"
   },
   "ko-kr": {
@@ -2676,7 +2501,6 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "core-concepts": "2026-08-31",
     "who-is-lightvela-for": "2026-09-27",
     "plans": "2026-09-23",
-    "announcements/public-beta": "2026-09-27",
     "credits": "2026-08-31",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-22",
@@ -2707,12 +2531,8 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/telegram-persona-agent": "2026-08-31",
     "use-cases/whatsapp-persona-agent": "2026-08-31",
     "use-cases/im-agent-persona-soul-md": "2026-08-31",
-    "use-cases/im-agent-skill-scenarios": "2026-08-31",
-    "use-cases/multi-channel-personality-memory": "2026-08-31",
-    "use-cases/telegram-group-community-assistant": "2026-08-31",
-    "use-cases/whatsapp-24-7-customer-service": "2026-08-31",
-    "use-cases/lifelike-im-agent-rhythm-social-memory": "2026-08-31",
-    "use-cases/telegram-whatsapp-safety-boundaries": "2026-08-31",
+    "use-cases/multi-channel-personality-memory": "2026-09-28",
+    "use-cases/telegram-group-community-assistant": "2026-09-28",
     "use-cases/daily-summary": "2026-08-31",
     "use-cases/hermes-agent-24-7": "2026-08-31",
     "use-cases/memory-and-knowledge": "2026-08-31",
@@ -2742,7 +2562,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-31",
     "hermes-agent/workspace-context-storage": "2026-08-31",
     "hermes-agent/skills-self-improvement": "2026-08-31",
-    "contact-us": "2026-09-27",
+    "contact-us": "2026-09-28",
     "": "2026-09-27"
   }
 };

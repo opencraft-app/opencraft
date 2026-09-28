@@ -162,5 +162,3 @@ Telegram 支持群消息，但需要先关闭 Group Privacy，将机器人加入
 - [配置通道 - Telegram](../configuration/channel-telegram.md) - 完成 Telegram Bot 接入。
 
 - [配置通道 - WhatsApp](../configuration/channel-whatsapp.md) - 完成 WhatsApp 授权接入。
-
-- [如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣](./im-agent-skill-scenarios.md) - 为统一人格扩展具体工作能力。

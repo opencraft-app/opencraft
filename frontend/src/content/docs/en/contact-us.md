@@ -2,7 +2,7 @@
 
 ## Summary
 
-**The way to reach the LightVela team is to join the official community, where you can talk to the product team directly and share issues, product suggestions, and how you actually use your agent. If your question is about plans, billing, or orders, start with the plan documentation and the paid-version announcement for the current arrangements.**
+**Join the official LightVela community to talk directly with the product team and share usage questions, product suggestions, and real Agent scenarios. For questions about plans, billing, or orders, start with the [plan documentation](./plans.md); current benefits are shown on the Subscribe page.**
 
 ---
 

@@ -162,5 +162,3 @@ When you create or edit a scheduled task, confirm its notification method and ta
 - [Configure Channel - Telegram](../configuration/channel-telegram.md) - Complete Telegram Bot setup.
 
 - [Configure Channel - WhatsApp](../configuration/channel-whatsapp.md) - Complete WhatsApp authorization.
-
-- [How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills](./im-agent-skill-scenarios.md) - Extend a consistent personality with practical workflows.

@@ -62,7 +62,6 @@ const CN_SIDEBAR: DocGroup[] = [
     title: "账号、套餐与开通",
     items: [
       { slug: "account", title: "账号与实名认证" },
-      { slug: "announcements/public-beta", title: "LightVela 付费版本公告" },
       { slug: "plans", title: "套餐管理" },
       { slug: "credits", title: "AI 积分说明" },
       { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
@@ -161,11 +160,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     titleEn: "Plans & Activation",
     items: [
       { slug: "plans", title: "套餐说明", titleEn: "Plans" },
-      {
-        slug: "announcements/public-beta",
-        title: "LightVela 付费版本公告",
-        titleEn: "LightVela Paid Version Announcement",
-      },
       { slug: "credits", title: "体验积分说明", titleEn: "Credits" },
       {
         slug: "create-first-hermes",
@@ -250,11 +244,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         titleEn: "How to Define an IM Agent's Role, Personality, and Voice with SOUL.md",
       },
       {
-        slug: "use-cases/im-agent-skill-scenarios",
-        title: "如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣？",
-        titleEn: "How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills",
-      },
-      {
         slug: "use-cases/multi-channel-personality-memory",
         title: "如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆？",
         titleEn: "How to Connect One Agent to Telegram and WhatsApp While Keeping One Personality and Long-Term Memory",
@@ -263,21 +252,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         slug: "use-cases/telegram-group-community-assistant",
         title: "如何使用 Telegram 群组 AI 社群助手：问答、摘要与提醒？",
         titleEn: "How to Use a Telegram Group AI Community Assistant: Q&A, Summaries, and Reminders",
-      },
-      {
-        slug: "use-cases/whatsapp-24-7-customer-service",
-        title: "如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？",
-        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Scheduled Tasks",
-      },
-      {
-        slug: "use-cases/lifelike-im-agent-rhythm-social-memory",
-        title: "如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆？",
-        titleEn: "How to Design a More Natural IM Agent: Conversation Rhythm, Group Norms, and Long-Term Social Memory",
-      },
-      {
-        slug: "use-cases/telegram-whatsapp-safety-boundaries",
-        title: "如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作？",
-        titleEn: "How to Design Safety Boundaries for Telegram and WhatsApp Agents: Authorization, Group Rules, and Sensitive Actions",
       },
       {
         slug: "use-cases/daily-summary",
@@ -378,7 +352,6 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "who-is-lightvela-for": "who-is-lightvela-for.md",
   // 账号、套餐与开通
   account: "03-account.md",
-  "announcements/public-beta": "announcements/public-beta.md",
   plans: "plans.md",
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
@@ -434,7 +407,6 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "core-concepts": "04-core-concepts.md",
   "who-is-lightvela-for": "who-is-lightvela-for.md",
   plans: "plans.md",
-  "announcements/public-beta": "announcements/public-beta.md",
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
   configuration: "05-configuration.md",
@@ -465,12 +437,8 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/telegram-persona-agent": "use-cases/telegram-persona-agent.md",
   "use-cases/whatsapp-persona-agent": "use-cases/whatsapp-persona-agent.md",
   "use-cases/im-agent-persona-soul-md": "use-cases/im-agent-persona-soul-md.md",
-  "use-cases/im-agent-skill-scenarios": "use-cases/im-agent-skill-scenarios.md",
   "use-cases/multi-channel-personality-memory": "use-cases/multi-channel-personality-memory.md",
   "use-cases/telegram-group-community-assistant": "use-cases/telegram-group-community-assistant.md",
-  "use-cases/whatsapp-24-7-customer-service": "use-cases/whatsapp-24-7-customer-service.md",
-  "use-cases/lifelike-im-agent-rhythm-social-memory": "use-cases/lifelike-im-agent-rhythm-social-memory.md",
-  "use-cases/telegram-whatsapp-safety-boundaries": "use-cases/telegram-whatsapp-safety-boundaries.md",
   "use-cases/daily-summary": "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",

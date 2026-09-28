@@ -162,5 +162,3 @@ Telegram은 그룹 개인 정보 보호를 비활성화하고 봇을 그룹에 �
 - [채널 구성 - Telegram](../configuration/channel-telegram.md) - Telegram 봇 설정을 완료합니다.
 
 - [채널 구성 - WhatsApp](../configuration/channel-whatsapp.md) - WhatsApp 인증을 완료합니다.
-
-- [스킬을 사용하여 IM 에이전트를 고객 서비스, 커뮤니티 또는 동반자 도우미로 전환하는 방법](./im-agent-skill-scenarios.md) - 실용적인 워크플로를 통해 일관된 개성을 확장합니다.
