@@ -19,6 +19,7 @@
 - [OPT-001 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577)：`1070234090138685577`，当前「待确认」。
 - [OPT-002 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685578)：`1070234090138685578`，当前「待优化」。
 - [OPT-003 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610)：`1070234090138685610`，当前「待优化」。
+- [OPT-004 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615)：`1070234090138685615`，当前「待优化」。
 
 ## 需求清单
 
@@ -27,6 +28,7 @@
 | OPT-001 | Review `/subscribe` 页“首月 6 折”等优惠标签展示逻辑 | `pending_user` | `frontsandbox/subscribe-promotion-badge-20260929` | 有真实适用优惠时显示“免费”或实际折扣；无适用优惠时不显示促销标签 | 双站预览、提交前 CR、MR 草稿就绪；等待用户确认创建 MR |
 | OPT-002 | 微信快捷登录在弹窗内完成授权，展示快捷登录按钮或待扫描二维码 | `queued` | `codex/wechat-login-in-modal-20260929` | 弹窗内嵌微信授权；确认后允许当前页回跳 | 本地实现与验证已完成；处理槽位空闲，可按顺序继续预览、CR 和 MR 准备；真实微信客户端验收需 Auth 预览部署 |
 | OPT-003 | `/subscribe` 套餐卡强调外框随 Hover 移动 | `queued` | `frontsandbox/subscribe-card-hover-border` | 鼠标移入任一卡片时强调该卡；移出全部卡片后不固定强调某张卡 | 排在 OPT-002 后；独立本地分支已从最新 `master` 创建，轮到本项时核对双站与响应式交互 |
+| OPT-004 | `/account/billing/` 展示已有订单列表 | `queued` | `frontsandbox/account-billing-order-list` | 将目前隐藏的订单列表作为独立区块展示在「订阅套餐」整个大卡片下方，与其纵向排列 | 排在 OPT-003 后；独立本地分支已创建，轮到本项时核实现有实现和隐藏条件 |
 
 ## 当前处理项
 
@@ -46,6 +48,7 @@
 |---|---|---|---|---|---|
 | 1 | OPT-002 | 微信快捷登录弹窗 | `queued` | `codex/wechat-login-in-modal-20260929` | 处理槽位空闲即可取出，OPT-001 可继续待确认 |
 | 2 | OPT-003 | `/subscribe` 套餐卡 Hover 外框 | `queued` | `frontsandbox/subscribe-card-hover-border` | OPT-002 取出并完成其当前处理阶段后按顺序取出 |
+| 3 | OPT-004 | `/account/billing/` 订单列表显露与布局 | `queued` | `frontsandbox/account-billing-order-list` | OPT-003 取出并完成其当前处理阶段后按顺序取出 |
 
 ## 处理记录
 
@@ -61,3 +64,4 @@
 - 2026-09-29：按用户补充要求，OPT-001 的「待确认」流转评论 `1070234090217529305` 写入 MR 提交准备详情；OPT-002 的「待优化」评论 `1070234090217529319` 写入入队与依赖信息。此后每次流转都在对应卡片评论留痕。
 - 2026-09-29：用户允许需确认的需求暂存在看板「待确认」，释放处理槽位；统一从看板回溯。OPT-001 保持待确认且未创建 MR，OPT-002 仍排队但可作为下一项继续。
 - 2026-09-29：用户追加 OPT-003 套餐卡 Hover 外框需求。创建 TAPD 卡片 `1070234090138685610`，放入「待优化」并写入入队评论 `1070234090217529420`；按 FIFO 排在 OPT-002 之后。独立本地分支 `frontsandbox/subscribe-card-hover-border` 已从 `origin/master` 提交 `63d1850f6` 创建，卡片补充评论 `1070234090217529426` 已记录；尚未实施或推送。
+- 2026-09-29：用户追加 OPT-004 账单页订单列表需求。创建 TAPD 卡片 `1070234090138685615`，放入「待优化」并写入入队评论 `1070234090217529445`；按 FIFO 排在 OPT-003 之后。独立本地分支 `frontsandbox/account-billing-order-list` 已从 `origin/master` 提交 `63d1850f6` 创建，卡片补充评论 `1070234090217529448` 已记录；尚未实施或推送。
