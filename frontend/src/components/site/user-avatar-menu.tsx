@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, BrainCircuit, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
+import { Bot, BrainCircuit, CreditCard, Files, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
 import { useTranslation } from "react-i18next";
@@ -115,21 +115,21 @@ export const UserAvatarMenu = ({
       {t("套餐与费用")}
     </a>
   );
+  const cloudStorageMenuItem = isSidebar ? (
+    <a
+      href={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.files, searchParams)}
+      onClick={() => setOpen(false)}
+      className={menuItemClass}
+    >
+      <Files className={menuIconClass} />
+      {t("云存储")}
+    </a>
+  ) : null;
 
   return (
     <div
       ref={containerRef}
       className={cn("relative", isSidebar && "lv-agent-account-menu")}
-      onMouseEnter={() => {
-        if (!isSidebar) return;
-        accountHoveredRef.current = true;
-        setOpen(true);
-      }}
-      onMouseLeave={() => {
-        if (!isSidebar) return;
-        accountHoveredRef.current = false;
-        if (!languageMenuOpen) setOpen(false);
-      }}
     >
       {/* Avatar trigger */}
       {isSidebar ? (
@@ -139,7 +139,7 @@ export const UserAvatarMenu = ({
           aria-label={t("打开用户菜单")}
           aria-expanded={open}
           aria-haspopup="true"
-          onClick={() => setOpen(true)}
+          onClick={() => setOpen((value) => !value)}
         >
           <img
             src={avatarSrc}
@@ -251,6 +251,7 @@ export const UserAvatarMenu = ({
                   {resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
                 </a>
               ) : null}
+              {cloudStorageMenuItem}
               {billingMenuItem}
               {isSidebar && accountMenuItem}
               {showWorkbenchEntry ? (
