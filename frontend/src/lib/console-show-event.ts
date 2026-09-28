@@ -44,7 +44,11 @@ export const subscribeConsoleShow = (
   host?: ConsoleShowHost | null,
 ): (() => void) => state.subscribe(listener, resolveHost(host));
 
-/** Backward-compatible event entry; it now toggles durable state. */
+/**
+ * Legacy toggle entry. New callers should use `toggleConsoleShow` or the
+ * installed shared command; subscribers observe the resulting state and must
+ * not toggle again.
+ */
 export const emitConsoleShowEvent = (host?: ConsoleShowHost | null): boolean =>
   toggleConsoleShow(host);
 

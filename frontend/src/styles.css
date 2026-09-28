@@ -559,6 +559,10 @@ a {
 /* ── /agents 左侧导航视觉升级 ───────────────────────────────────────────── */
 .lv-agents-sidebar {
   --lv-agents-nav-width: 220px;
+  --lv-agents-nav-item-height: 32px;
+  --lv-agents-nav-item-gap: 2px;
+  --lv-agents-nav-group-gap: 8px;
+  --lv-agents-sidebar-middle-padding-block: 16px;
   gap: 12px;
 
   min-height: calc(100dvh - 178px);
@@ -966,7 +970,7 @@ a {
 .lv-agents-nav-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--lv-agents-nav-group-gap);
 }
 
 .lv-agents-nav-group-label {
@@ -980,7 +984,7 @@ a {
 .lv-agents-nav-group-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--lv-agents-nav-item-gap);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -993,7 +997,7 @@ a {
 .lv-agents-nav-item {
   display: flex;
   width: var(--lv-agents-nav-width);
-  height: 32px;
+  height: var(--lv-agents-nav-item-height);
   align-items: center;
   gap: 14px;
   padding: 0 12px;
@@ -1122,8 +1126,8 @@ a {
     flex: 1 1 auto;
     min-height: 0;
     min-width: 0;
-    padding-top: 16px;
-    padding-bottom: 16px;
+    padding-top: var(--lv-agents-sidebar-middle-padding-block);
+    padding-bottom: var(--lv-agents-sidebar-middle-padding-block);
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1150,6 +1154,22 @@ a {
     line-height: 20px;
   }
 
+}
+
+@media (min-width: 1024px) and (max-height: 860px) {
+  .lv-agents-sidebar {
+    --lv-agents-nav-item-height: 30px;
+    --lv-agents-nav-group-gap: 6px;
+    --lv-agents-sidebar-middle-padding-block: 12px;
+  }
+
+  .lv-agent-profile {
+    min-height: 40px;
+  }
+
+  .lv-agent-account-trigger {
+    min-height: 48px;
+  }
 }
 
 @media (max-width: 1023px) {

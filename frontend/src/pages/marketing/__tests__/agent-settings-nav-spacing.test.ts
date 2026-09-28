@@ -200,11 +200,15 @@ describe("Agent settings navigation spacing", () => {
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
     expect(desktopSidebar).toContain("padding-right: 12px;");
     expect(desktopNavigation).toContain("gap: 8px;");
-    expect(desktopItem).toContain("height: 32px;");
+    expect(desktopSidebar).toContain("--lv-agents-nav-item-height: 32px;");
+    expect(desktopItem).toContain("height: var(--lv-agents-nav-item-height);");
     expect(profileName).toContain("font-size: 14px;");
     expect(profileName).toContain("line-height: 20px;");
     expect(mobileNavigation).toContain("gap: 12px;");
     expect(mobileItem).toContain("height: 36px;");
+    expect(styles).toContain("@media (min-width: 1024px) and (max-height: 860px)");
+    expect(styles).toContain("--lv-agents-nav-item-height: 30px;");
+    expect(styles).toContain("min-height: 48px;");
   });
 
   it("moves the desktop account menu to the bottom of the Agent sidebar", () => {
@@ -254,7 +258,7 @@ describe("Agent settings navigation spacing", () => {
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
     expect(controls).toContain("padding-top: 16px;");
-    expect(middle).toContain("padding-top: 16px;");
+    expect(middle).toContain("padding-top: var(--lv-agents-sidebar-middle-padding-block);");
     expect(styles).toContain('.lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-controls::after');
     for (const source of [page, loadingView, styles]) {
       expect(source).not.toContain("lv-agent-feedback-link");
