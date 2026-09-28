@@ -253,6 +253,14 @@ export const UserAvatarMenu = ({
                 <CreditCard className={menuIconClass} />
                 {t("套餐与费用")}
               </a>
+              <a
+                href="/support"
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <MessageSquare className={menuIconClass} />
+                {t("用户反馈")}
+              </a>
               {showWorkbenchEntry ? (
                 <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}

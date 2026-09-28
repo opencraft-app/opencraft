@@ -41,10 +41,6 @@ type ServerConfig struct {
 	// SupportAgentIDs 是反馈后台（/support/feedback/list、/sign）允许的运营用户
 	// 白名单（lightclaw 用户 ID）。空则反馈后台接口恒 401。
 	SupportAgentIDs []string
-
-	// SupportCOS 是反馈系统 COS 客户端（服务端私有凭证）。
-	// 允许为 nil：为 nil 时反馈相关接口返回 503。
-	SupportCOS *SupportCosClient
 }
 
 // NewRouter 组装完整的 HTTP handler。
@@ -83,6 +79,6 @@ func NewRouter(svc *service.Service, cfg ServerConfig) (http.Handler, error) {
 		r.POST("/admin/tickets/:id/reply", ticketUnavailable)
 		r.PATCH("/admin/tickets/:id/status", ticketUnavailable)
 	}
-	registerSupportRoutes(r, svc, cfg.SupportCOS, cfg.SupportAgentIDs)
+	registerSupportRoutes(r, svc, cfg.SupportAgentIDs)
 	return r, nil
 }

@@ -405,7 +405,7 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "用户反馈" })).toHaveAttribute("href", "/support");
 
     act(() => {
       (window as Window & { show?: () => boolean }).show?.();
@@ -415,6 +415,25 @@ describe("UserAvatarMenu", () => {
     expect(feedbackLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
     expect(feedbackLink).toHaveAttribute("target", "_blank");
     expect(feedbackLink).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("shows the in-site user feedback entry in the account menu", () => {
+    mockIsGlobal = false;
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(<UserAvatarMenu />);
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.getByRole("link", { name: "用户反馈" })).toHaveAttribute("href", "/support");
   });
 
   it("removes the product feedback menu item on the international site", () => {

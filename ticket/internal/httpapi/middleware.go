@@ -195,7 +195,7 @@ func supportUserMiddleware() gin.HandlerFunc {
 // 与 adminAuthMiddleware 的区别：不依赖共享 X-Admin-Token，而是按具体用户
 // ID 做白名单判定，从而支持「按个体运营用户」授权与审计。
 //
-// agentIDs 为空时仅校验登录态（有 X-User-Id 即放行），由上游鉴权网关保证身份可信；
+// agentIDs 为空时拒绝访问，避免部署时漏配白名单导致反馈后台误开；
 // 非空时按白名单判定，仅允许指定运营用户访问。
 func supportAgentMiddleware(agentIDs []string) gin.HandlerFunc {
 	allow := make(map[string]struct{}, len(agentIDs))
@@ -213,11 +213,13 @@ func supportAgentMiddleware(agentIDs []string) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
-		if len(allow) > 0 {
-			if _, ok := allow[uid]; !ok {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
-				return
-			}
+		if len(allow) == 0 {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		if _, ok := allow[uid]; !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
 		}
 		c.Set("user_id", uid)
 		c.Next()
