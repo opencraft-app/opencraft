@@ -5,7 +5,7 @@
 **LightVelaは、BotFatherでBotのグループプライバシーを無効にし、Botをグループに追加し、`@bot_username`を使ってメンションして会話を開始すると、Telegramグループメッセージをサポートします。**
 このガイドでは、その認証済みの設定をカバーし、未認証のメンバー参加イベントや受動的なグループ返信を設定済み機能として扱わずに、同じHermes AgentをグループQ&A、要約、リマインダーに使用する方法を示します。
 
-![グループQ&A、要約、リマインダーのためのTelegramグループAIコミュニティアシスタント](../images/use-case-08-telegram-group-community-assistant.png)
+![グループQ&A、要約、リマインダーのためのTelegramグループAIコミュニティアシスタント](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## 始める前に
 
@@ -66,7 +66,7 @@
 
 グループプライバシーを無効にすると、Telegram のメッセージ配信経路が有効になります。
 グループのルールを設定する責任、機密情報の共有を避ける責任、高リスクの外部アクション前に確認を求める責任を置き換えるものではありません。
-次の[TelegramおよびWhatsApp安全境界ガイド](./telegram-whatsapp-safety-boundaries.md)エージェントに敏感な操作を実行させることができる人を定義するときに。
+機密性の高い操作を依頼できるメンバーを明確にし、Agent が実行する前に権限を確認してください。
 
 ## FAQ
 
@@ -95,6 +95,5 @@ Telegram のグループメッセージサポートが WhatsApp にまで拡張�
 
 - [チャンネルを設定 - Telegram](../configuration/channel-telegram.md)- ボットを接続し、グループメッセージ設定手順を繰り返します。
 
-- [IMエージェントをスキルを使ってカスタマーサービス、コミュニティ、またはコンパニオンアシスタントに変える方法](./im-agent-skill-scenarios.md)- グループQ&Aや要約のためのスキルとコンテンツを準備します。
 
 - [IMエージェントの役割、性格、声をSOUL.mdで定義する方法](./im-agent-persona-soul-md.md)- アシスタントの役割と境界を定義します。

@@ -4,7 +4,7 @@
 
 **일상에 맞춰 구성하고, 재사용 가능한 스킬과 예약 작업을 추가하며, 원하는 채널에서 계속 사용할 하나의 Hermes Agent가 필요하다면 LightVela가 적합합니다.** 여러 앱을 오가고 클라우드 컴퓨터를 사용하며 위임받은 작업을 병렬로 처리하는 지속형 AI 팀원이 필요하다면 Grok Bot이 적합합니다. 두 제품 모두 일반적인 챗봇을 넘어가지만, 중심으로 삼는 업무가 다릅니다.
 
-![개인 AI 에이전트 운영을 위한 LightVela와 Grok Bot 비교](../images/lightvela-vs-grok-bot.png)
+![개인 AI 에이전트 운영을 위한 LightVela와 Grok Bot 비교](../images/lightvela-vs-grok-bot.webp)
 
 ## 한눈에 비교하기
 

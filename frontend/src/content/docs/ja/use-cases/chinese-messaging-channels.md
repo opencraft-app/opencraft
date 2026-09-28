@@ -50,7 +50,7 @@ LightVela は、他のサポートされているチャネル用のセットア�
 
 ボットトークン、アプリケーションID、およびシークレットはパスワードのように扱ってください。それらをグループチャット、公共のドキュメント、または他の人へのメッセージに貼り付けないでください。認証情報が漏洩した場合は、Hermesを再接続する前に、それを発行したプラットフォームで回転させてください。
 
-![LightVela チャネル接続ページ](../images/use-case-messaging-connection.png)
+![LightVela チャネル接続ページ](../images/use-case-messaging-connection.webp)
 
 ### 3. 簡単な会話で接続を確認する
 
@@ -68,7 +68,7 @@ Hi Hermes. Please reply with the channel you received this from.
 
 で収集してください。[メモリ管理](../configuration/memory.md)でアクティブなモデルを確認して、Hermesに保持してほしい長期的なコンテキストを見直してください。もしあるチャンネルが別の対象者向けであったり、非常に異なる役割が必要な場合は、関連性のない期待を1つの会話履歴に混ぜるのではなく、ユースケースを分けて考えることを検討してください。
 
-![チャンネル間で共有される同じ Hermes Agent コンテキスト](../images/use-case-messaging-memory.png)
+![チャンネル間で共有される同じ Hermes Agent コンテキスト](../images/use-case-messaging-memory.webp)
 
 もし Discord がコミュニティ用に使用したいチャンネルであれば、続けて[LightVelaとDiscordを体験：あなたのAIエージェント Discord Bot があなたのチャンネルにサービスを提供します](./discord-community-agent.md)。
 

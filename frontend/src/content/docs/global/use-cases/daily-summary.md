@@ -52,7 +52,7 @@ Hermes 只能总结它收到的内容，或者通过你配置的能力访问到�
 如果需要外部数据源，请从可信来源选择合适的技能，并在使用前确认它的行为。
 [配置技能](../configuration/skill.md)会介绍技能如何扩展 Hermes 的普通对话能力。
 
-![每日总结使用的云存储来源](../images/use-case-daily-summary-storage.png)
+![每日总结使用的云存储来源](../images/use-case-daily-summary-storage.webp)
 
 ### 3. 先在普通对话中测试结果
 
@@ -89,7 +89,7 @@ Hermes 只能总结它收到的内容，或者通过你配置的能力访问到�
 在[定时任务](../configuration/automation.md)中完成设置。
 检查前几次执行结果，如果总结范围太大、太长或缺少正确上下文，再调整指令内容。
 
-![定时发送每日总结的定时任务](../images/use-case-daily-summary-automation.png)
+![定时发送每日总结的定时任务](../images/use-case-daily-summary-automation.webp)
 
 ## 常见问题
 

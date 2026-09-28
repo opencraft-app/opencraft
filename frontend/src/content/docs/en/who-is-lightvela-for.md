@@ -53,7 +53,7 @@ Before you begin, you need:
 
 * A Google or GitHub account to sign in to LightVela; the international site does not require China real-name verification
 
-* A currently available plan selected and activated from the [Subscribe page](/subscribe); after public beta and billing start, new users can try Launch free for 1 month
+* A currently available plan selected and activated from the [Subscribe page](/subscribe/); check that page for introductory offers
 
 * At least one supported messaging account, such as Telegram, WhatsApp, Discord, Slack, or WeChat
 

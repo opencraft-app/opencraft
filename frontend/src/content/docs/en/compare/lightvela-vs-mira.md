@@ -6,7 +6,7 @@
 
 Both products go beyond a chat window, but they start from different centers of gravity: Mira is a Telegram-first assistant, while LightVela is a configurable personal Agent that can grow into a wider workflow system.
 
-![LightVela compared with Mira for running a personal AI agent](../images/lightvela-vs-mira.png)
+![LightVela compared with Mira for running a personal AI agent](../images/lightvela-vs-mira.webp)
 
 ## At a glance
 

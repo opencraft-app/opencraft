@@ -177,6 +177,12 @@ build_next_preview_variant() {
     echo "frontend next build did not produce out/: variant=${variant}" >&2
     return 1
   fi
+  # 正常路径下上面的 NEXT_WRITE_EDGEONE_BUILD_OUTPUT=0 已让 build:next 跳过写出
+  # out/.edgeone（EdgeOne Pages 部署目录，内容为 out/ 的完整副本，~150MB，仅供
+  # `pnpm deploy:eo` 使用，不属于 StaticPages 预览资源）。这里的删除是防御性冗余：
+  # 即便未来构建链路在开关之外的环节重新生成该目录，也保证预览产物不携带它。
+  # 与 staticpages_pack.py 的 EXCLUDED_DIR_NAMES 形成构建层 + 打包层的双重兜底。
+  rm -rf out/.edgeone
   verify_frontend_preview_artifact "$variant" out
   mv out "$artifact_dir"
   echo "frontend next 预览产物已冻结：variant=${variant} artifact=${artifact_dir}"

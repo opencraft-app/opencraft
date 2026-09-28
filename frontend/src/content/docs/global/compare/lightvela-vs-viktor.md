@@ -6,7 +6,7 @@
 
 差异不只是“哪个 AI 更聪明”，而在于 Agent 位于哪里、属于谁，以及它被设计来负责什么类型的工作。
 
-![LightVela 与 Viktor.com 运行个人 AI Agent 的对比](../images/lightvela-vs-viktor.png)
+![LightVela 与 Viktor.com 运行个人 AI Agent 的对比](../images/lightvela-vs-viktor.webp)
 
 ## 快速对比
 

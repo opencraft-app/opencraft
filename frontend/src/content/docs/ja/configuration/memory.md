@@ -8,7 +8,7 @@
 
 メモリは、会話やデバイスを超えて重要な情報をヘルメスが保持するのに役立ちます—あなたの好み、身元、進行中の作業、そして長期的な協力を通じて形成される体験です。これにより、ヘルメスは一度きりの質問応答ツールから、時間と共にあなたをよりよく理解する長期的なアシスタントへと変わります。
 
-![LightVelaコンソールのメモリとユーザープロフィールページ](../images/memory-management-overview-en.png)
+![LightVelaコンソールのメモリとユーザープロフィールページ](../images/memory-management-overview-en.webp)
 
 LightVelaはクラウド上でホストされているため、これらのメモリはクラウド内のあなたのHermesインスタンスに保存されます。デバイスを変更したり、Telegram、WhatsApp、Discord、Slack、WeChatの間を切り替えても、それらは失われません。今日TelegramでHermesに何かを伝えた場合でも、明日WhatsAppで会話を続けるときに、Hermesはそれを覚えています。
 

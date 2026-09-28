@@ -4,7 +4,7 @@
 
 **Pilih LightVela jika Anda menginginkan satu Hermes Agent pribadi yang dapat dikonfigurasi sesuai rutinitas, diperluas dengan Skill yang dapat digunakan kembali, dan terus bekerja melalui Tugas Terjadwal serta kanal yang Anda pilih.** Pilih Grok Bot jika Anda menginginkan rekan AI berbasis cloud yang persisten, dapat bekerja lintas aplikasi, menggunakan komputer cloud, dan menjalankan tugas yang didelegasikan secara paralel. Keduanya melampaui chatbot biasa, tetapi keduanya dirancang untuk jenis pekerjaan yang berbeda.
 
-![Perbandingan LightVela dan Grok Bot untuk menjalankan AI Agent pribadi](../images/lightvela-vs-grok-bot.png)
+![Perbandingan LightVela dan Grok Bot untuk menjalankan AI Agent pribadi](../images/lightvela-vs-grok-bot.webp)
 
 ## Sekilas perbandingan
 

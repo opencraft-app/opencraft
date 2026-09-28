@@ -18,36 +18,36 @@ if (!sourceArgument) {
 const sourceRoot = path.resolve(sourceArgument);
 const targetRoot = path.join(frontendRoot, "public/lightvela-intl-home");
 const preservedHarnessAssetNames = [
-  "wcard-cloud-runtime-v2.png",
-  "wcard-skills-atlas-v1.png",
-  "wcard-cloud-runtime-v1.png",
-  "automation-templates-panel-en.png",
-  "automation-templates-panel.png",
-  "automation-templates-panel-zh-Hant.png",
-  "automation-templates-panel-id.png",
-  "automation-templates-panel-es.png",
-  "automation-templates-panel-ja.png",
-  "automation-templates-panel-ko.png",
-  "workspace-carousel/anniversary.png",
-  "workspace-carousel/anniversary.zh-CN.png",
-  "workspace-carousel/resume.png",
-  "workspace-carousel/resume.zh-CN.png",
-  "workspace-carousel/thesis.png",
-  "workspace-carousel/thesis.zh-CN.png",
-  "workspace-carousel/event.png",
-  "workspace-carousel/event.zh-CN.png",
-  "workspace-carousel/product.png",
-  "workspace-carousel/product.zh-CN.png",
-  "workspace-carousel/travel.png",
-  "workspace-carousel/travel.zh-CN.png",
-  "deepseek-harness-en-us.png",
-  "deepseek-harness-zh-cn.png",
-  "deepseek-harness-zh-sg.png",
-  "deepseek-harness-zh-hant.png",
-  "deepseek-harness-id-id.png",
-  "deepseek-harness-es.png",
-  "deepseek-harness-ja-jp.png",
-  "deepseek-harness-ko-kr.png",
+  "wcard-cloud-runtime-v2.webp",
+  "wcard-skills-atlas-v1.webp",
+  "wcard-cloud-runtime-v1.webp",
+  "automation-templates-panel-en.webp",
+  "automation-templates-panel.webp",
+  "automation-templates-panel-zh-Hant.webp",
+  "automation-templates-panel-id.webp",
+  "automation-templates-panel-es.webp",
+  "automation-templates-panel-ja.webp",
+  "automation-templates-panel-ko.webp",
+  "workspace-carousel/anniversary.webp",
+  "workspace-carousel/anniversary.zh-CN.webp",
+  "workspace-carousel/resume.webp",
+  "workspace-carousel/resume.zh-CN.webp",
+  "workspace-carousel/thesis.webp",
+  "workspace-carousel/thesis.zh-CN.webp",
+  "workspace-carousel/event.webp",
+  "workspace-carousel/event.zh-CN.webp",
+  "workspace-carousel/product.webp",
+  "workspace-carousel/product.zh-CN.webp",
+  "workspace-carousel/travel.webp",
+  "workspace-carousel/travel.zh-CN.webp",
+  "deepseek-harness-en-us.webp",
+  "deepseek-harness-zh-cn.webp",
+  "deepseek-harness-zh-sg.webp",
+  "deepseek-harness-zh-hant.webp",
+  "deepseek-harness-id-id.webp",
+  "deepseek-harness-es.webp",
+  "deepseek-harness-ja-jp.webp",
+  "deepseek-harness-ko-kr.webp",
 ];
 const preservedHarnessAssetNameSet = new Set(preservedHarnessAssetNames);
 const zhHantConverter = OpenCC.Converter({ from: "cn", to: "hk" });
@@ -3670,49 +3670,49 @@ function localizePublicHref(href, locale) {
 function applyLocalizedAssets(document, locale) {
   const localeKey = locale === "zh-Hant" ? "zh-Hant" : locale === "id-ID" ? "id" : locale === "es" ? "es" : locale === "ja-JP" ? "ja" : locale === "ko-KR" ? "ko" : locale === "en-US" ? "en" : "zh-Hans";
   const automationPanelByLocale = {
-    en: "automation-templates-panel-en.png",
-    "zh-Hans": "automation-templates-panel.png",
-    "zh-Hant": "automation-templates-panel-zh-Hant.png",
-    id: "automation-templates-panel-id.png",
-    es: "automation-templates-panel-es.png",
-    ja: "automation-templates-panel-ja.png",
-    ko: "automation-templates-panel-ko.png",
+    en: "automation-templates-panel-en.webp",
+    "zh-Hans": "automation-templates-panel.webp",
+    "zh-Hant": "automation-templates-panel-zh-Hant.webp",
+    id: "automation-templates-panel-id.webp",
+    es: "automation-templates-panel-es.webp",
+    ja: "automation-templates-panel-ja.webp",
+    ko: "automation-templates-panel-ko.webp",
   };
   const workbenchPanelByLocale = {
-    en: "workbench-panel-en.png",
-    "zh-Hans": "workbench-panel-en.png",
+    en: "workbench-panel-en.webp",
+    "zh-Hans": "workbench-panel-en.webp",
     "zh-Hant": "workbench-panel-zh-Hant.png",
-    id: "workbench-panel-id.png",
-    es: "workbench-panel-es.png",
-    ja: "workbench-panel-ja.png",
-    ko: "workbench-panel-ko.png",
+    id: "workbench-panel-id.webp",
+    es: "workbench-panel-es.webp",
+    ja: "workbench-panel-ja.webp",
+    ko: "workbench-panel-ko.webp",
   };
   const appsCardByLocale = {
-    en: "wcard-apps-en.png",
-    "zh-Hans": "wcard-apps-zh-Hans.png",
-    "zh-Hant": "wcard-apps-zh-Hant.png",
-    id: "wcard-apps-id.png",
-    es: "wcard-apps-es.png",
-    ja: "wcard-apps-ja.png",
-    ko: "wcard-apps-ko.png",
+    en: "wcard-apps-en.webp",
+    "zh-Hans": "wcard-apps-zh-Hans.webp",
+    "zh-Hant": "wcard-apps-zh-Hant.webp",
+    id: "wcard-apps-id.webp",
+    es: "wcard-apps-es.webp",
+    ja: "wcard-apps-ja.webp",
+    ko: "wcard-apps-ko.webp",
   };
   const folderCardByLocale = {
-    en: "wcard-folder-en.png",
-    "zh-Hans": "wcard-folder-zh-Hans.png",
-    "zh-Hant": "wcard-folder-zh-Hant.png",
-    id: "wcard-folder-id.png",
-    es: "wcard-folder-es.png",
-    ja: "wcard-folder-ja.png",
-    ko: "wcard-folder-ko.png",
+    en: "wcard-folder-en.webp",
+    "zh-Hans": "wcard-folder-zh-Hans.webp",
+    "zh-Hant": "wcard-folder-zh-Hant.webp",
+    id: "wcard-folder-id.webp",
+    es: "wcard-folder-es.webp",
+    ja: "wcard-folder-ja.webp",
+    ko: "wcard-folder-ko.webp",
   };
   const hubCardByLocale = {
-    en: "wcard-hub-v3-en.png",
-    "zh-Hans": "wcard-hub-v3-zh-Hans.png",
-    "zh-Hant": "wcard-hub-v3-zh-Hant.png",
-    id: "wcard-hub-v3-id.png",
-    es: "wcard-hub-v3-es.png",
-    ja: "wcard-hub-v3-ja.png",
-    ko: "wcard-hub-v3-ko.png",
+    en: "wcard-hub-v3-en.webp",
+    "zh-Hans": "wcard-hub-v3-zh-Hans.webp",
+    "zh-Hant": "wcard-hub-v3-zh-Hant.webp",
+    id: "wcard-hub-v3-id.webp",
+    es: "wcard-hub-v3-es.webp",
+    ja: "wcard-hub-v3-ja.webp",
+    ko: "wcard-hub-v3-ko.webp",
   };
   const replacements = new Map([
     ["automation-templates-panel-en.png", automationPanelByLocale[localeKey]],
@@ -3900,14 +3900,14 @@ const deepSeekHarnessPlayByLocale = {
 };
 
 const deepSeekHarnessVisualByLocale = {
-  "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.png?v=20260901-deepseek-ui",
-  "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.png?v=20260901-deepseek-ui",
-  "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-sg.png?v=20260901-deepseek-ui",
-  "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-hant.png?v=20260901-deepseek-ui",
-  "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.png?v=20260901-deepseek-ui",
-  es: "/lightvela-intl-home/assets/deepseek-harness-es.png?v=20260901-deepseek-ui",
-  "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.png?v=20260901-deepseek-ui",
-  "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.png?v=20260901-deepseek-ui",
+  "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.webp?v=20260901-deepseek-ui",
+  "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260901-deepseek-ui",
+  "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260901-deepseek-ui",
+  "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-hant.webp?v=20260901-deepseek-ui",
+  "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.webp?v=20260901-deepseek-ui",
+  es: "/lightvela-intl-home/assets/deepseek-harness-es.webp?v=20260901-deepseek-ui",
+  "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.webp?v=20260901-deepseek-ui",
+  "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.webp?v=20260901-deepseek-ui",
 };
 
 const automationIntroByLocale = {
@@ -3922,14 +3922,14 @@ const automationIntroByLocale = {
 };
 
 const automationPanelImageByLocale = {
-  "en-US": "automation-templates-panel-en.png",
-  "zh-CN": "automation-templates-panel.png",
-  "zh-SG": "automation-templates-panel.png",
-  "zh-Hant": "automation-templates-panel-zh-Hant.png",
-  "id-ID": "automation-templates-panel-id.png",
-  es: "automation-templates-panel-es.png",
-  "ja-JP": "automation-templates-panel-ja.png",
-  "ko-KR": "automation-templates-panel-ko.png",
+  "en-US": "automation-templates-panel-en.webp",
+  "zh-CN": "automation-templates-panel.webp",
+  "zh-SG": "automation-templates-panel.webp",
+  "zh-Hant": "automation-templates-panel-zh-Hant.webp",
+  "id-ID": "automation-templates-panel-id.webp",
+  es: "automation-templates-panel-es.webp",
+  "ja-JP": "automation-templates-panel-ja.webp",
+  "ko-KR": "automation-templates-panel-ko.webp",
 };
 
 function addDeepSeekHarnessPlay(document, locale) {
@@ -4213,7 +4213,7 @@ function applyFooterLayout(document) {
   </div>
   <div class="foot__links"><div class="foot__links-grid">
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.</p></div>
-    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">1-month free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
+    <div><h3>Product</h3><ul><li><a href="/subscribe">1-month free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Compare</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Compare with self-hosting</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Compare with Hostinger</a></li><li><a href="/docs/compare/lightvela-vs-manus">Compare with Manus</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">Compare with ChatGPT</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Compare with Genspark</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li></ul></div>
     <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
@@ -4369,13 +4369,13 @@ const domesticBrandIcons = Array.from(
 );
 if (
   domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书"
-  || domesticBrandIcons.join(",") !== "wechat.png,qq.png,wecom.png,dingtalk.png,feishu.png"
+  || domesticBrandIcons.join(",") !== "wechat.webp,qq.webp,wecom.webp,dingtalk.webp,feishu.webp"
   || domesticFragment.includes('href="/zh-cn')
-  || !domesticFragment.includes('<a href="/blog">博客</a>')
+  || domesticDocument.querySelector('a[href="/blog"]') !== null
   || domesticFragment.includes("Copyright © 2026 LightVela 版权所有")
   || domesticFragment.includes("© 2026 LightVela 版权所有")
 ) {
-  throw new Error("Domestic homepage must retain its approved Blog link, channels, brand icons, unprefixed routes, and concise copyright before international import");
+  throw new Error("Domestic homepage must hide Blog and retain its approved channels, brand icons, unprefixed routes, and concise copyright before international import");
 }
 
 const preservedHarnessAssets = await Promise.all(
@@ -4494,37 +4494,37 @@ for (const locale of supportedLocales) {
 }
 
 for (const assetName of [
-  "automation-templates-panel.png",
-  "automation-templates-panel-zh-Hant.png",
-  "automation-templates-panel-id.png",
-  "automation-templates-panel-es.png",
-  "automation-templates-panel-ja.png",
-  "automation-templates-panel-ko.png",
-  "workbench-panel-id.png",
-  "workbench-panel-es.png",
-  "workbench-panel-ja.png",
-  "workbench-panel-ko.png",
-  "wcard-apps-en.png",
-  "wcard-apps-zh-Hans.png",
-  "wcard-apps-zh-Hant.png",
-  "wcard-apps-id.png",
-  "wcard-apps-es.png",
-  "wcard-apps-ja.png",
-  "wcard-apps-ko.png",
-  "wcard-folder-en.png",
-  "wcard-folder-zh-Hans.png",
-  "wcard-folder-zh-Hant.png",
-  "wcard-folder-id.png",
-  "wcard-folder-es.png",
-  "wcard-folder-ja.png",
-  "wcard-folder-ko.png",
-  "wcard-hub-v3-en.png",
-  "wcard-hub-v3-zh-Hans.png",
-  "wcard-hub-v3-zh-Hant.png",
-  "wcard-hub-v3-id.png",
-  "wcard-hub-v3-es.png",
-  "wcard-hub-v3-ja.png",
-  "wcard-hub-v3-ko.png",
+  "automation-templates-panel.webp",
+  "automation-templates-panel-zh-Hant.webp",
+  "automation-templates-panel-id.webp",
+  "automation-templates-panel-es.webp",
+  "automation-templates-panel-ja.webp",
+  "automation-templates-panel-ko.webp",
+  "workbench-panel-id.webp",
+  "workbench-panel-es.webp",
+  "workbench-panel-ja.webp",
+  "workbench-panel-ko.webp",
+  "wcard-apps-en.webp",
+  "wcard-apps-zh-Hans.webp",
+  "wcard-apps-zh-Hant.webp",
+  "wcard-apps-id.webp",
+  "wcard-apps-es.webp",
+  "wcard-apps-ja.webp",
+  "wcard-apps-ko.webp",
+  "wcard-folder-en.webp",
+  "wcard-folder-zh-Hans.webp",
+  "wcard-folder-zh-Hant.webp",
+  "wcard-folder-id.webp",
+  "wcard-folder-es.webp",
+  "wcard-folder-ja.webp",
+  "wcard-folder-ko.webp",
+  "wcard-hub-v3-en.webp",
+  "wcard-hub-v3-zh-Hans.webp",
+  "wcard-hub-v3-zh-Hant.webp",
+  "wcard-hub-v3-id.webp",
+  "wcard-hub-v3-es.webp",
+  "wcard-hub-v3-ja.webp",
+  "wcard-hub-v3-ko.webp",
 ]) {
   assetPaths.add(`assets/${assetName}`);
 }
@@ -5201,7 +5201,7 @@ function applyAboutCapabilityCards(document, locale) {
     // ② 云端运行主卡：运行核心 + 三条轨道 + 5 个任务卡
     () => `          <div class="wcard__demo wcard__demo--cloud" aria-hidden="true" data-dur="5000" data-replay="1800">
             <svg class="cld__flow" viewBox="0 0 1923 817" preserveAspectRatio="xMidYMid slice">
-              <image href="/lightvela-intl-home/assets/wcard-cloud-runtime-v2.png" width="1923" height="817" preserveAspectRatio="none"></image>
+              <image href="/lightvela-intl-home/assets/wcard-cloud-runtime-v2.webp" width="1923" height="817" preserveAspectRatio="none"></image>
               <path class="cld__wire" d="M625 215 C 754 215, 775 335, 908 335 M730 475 C 835 475, 817 400, 908 400 M1028 232 C 1028 179, 1050 154, 1070 154 M1146 412 C 1250 412, 1200 526, 1300 526 M1148 342 C 1370 342, 1380 329, 1603 329"></path>
               <path class="cld__flow-line cld__flow-line--green" pathLength="100" d="M625 215 C 754 215, 775 335, 908 335"></path>
               <path class="cld__flow-line cld__flow-line--purple" pathLength="100" d="M1148 342 C 1370 342, 1380 329, 1603 329"></path>
@@ -7646,7 +7646,7 @@ const aboutCapabilityCardCss = `/* =============================================
   #lightvela-intl-home .about__cards .wcard { position: relative; z-index: 1; }
   #lightvela-intl-home .wcard:nth-child(2) .wcard__demo--cloud {
     position: relative;
-    background: #fff url("/lightvela-intl-home/assets/wcard-cloud-runtime-v1.png") center 35% / cover no-repeat;
+    background: #fff url("/lightvela-intl-home/assets/wcard-cloud-runtime-v1.webp") center 35% / cover no-repeat;
   }
   #lightvela-intl-home .cld__flow { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
   #lightvela-intl-home .cld__flow-line { fill: none; stroke-width: 7; stroke-linecap: round; stroke-dasharray: 12 54; opacity: 0.9; animation: cld-flow 2.8s linear infinite; animation-play-state: paused; }
@@ -7728,7 +7728,7 @@ const cloudRefinedCss = `
   #lightvela-intl-home .wcard:nth-child(6) .wcard__body h4 { font-size: 15px; line-height: 1.3; }
 }
 #lightvela-intl-home .skwall__tile { grid-template-columns: 38px minmax(0,1fr); column-gap: 7px; }
-#lightvela-intl-home .skwall__tile i { width: 38px; height: 42px; border-radius: 7px; background-image: url('/lightvela-intl-home/assets/wcard-skills-atlas-v1.png'); background-size: 400% 300%; background-color: #fff; background-repeat: no-repeat; }
+#lightvela-intl-home .skwall__tile i { width: 38px; height: 42px; border-radius: 7px; background-image: url('/lightvela-intl-home/assets/wcard-skills-atlas-v1.webp'); background-size: 400% 300%; background-color: #fff; background-repeat: no-repeat; }
 #lightvela-intl-home .skwall__tile i .icon { visibility: hidden; }
 #lightvela-intl-home .skwall__col:nth-child(1) .skwall__tile:nth-child(4n+1) i { background-position: 0% 0%; }
 #lightvela-intl-home .skwall__col:nth-child(1) .skwall__tile:nth-child(4n+2) i { background-position: 33.333333333333336% 0%; }

@@ -30,7 +30,7 @@
 3. 选择近期日志的时间范围：1、3、6、12 或 24 小时。
 4. 选择 **Refresh** 加载日志。
 
-![LightVela 管理台中的诊断中心](../images/diagnostics-overview.png)
+![LightVela 管理台中的诊断中心](../images/diagnostics-overview.webp)
 
 优先选择刚好覆盖异常发生时间的最短范围。时间窗口更小，通常更容易将错误和触发它的操作对应起来。
 

@@ -8,7 +8,7 @@ LightVela’s documented product model centers on a cloud-hosted Hermes Agent, w
 LightVela is the more immediately understandable choice for persistent Agent hosting and explicit control.
 Today.AI represents the more experimental vision: an assistant that builds a living picture of your life and acts before you ask.
 
-![LightVela compared with Today.AI for an always-on personal AI assistant](../images/lightvela-vs-today-ai.png)
+![LightVela compared with Today.AI for an always-on personal AI assistant](../images/lightvela-vs-today-ai.webp)
 
 ## At a glance
 

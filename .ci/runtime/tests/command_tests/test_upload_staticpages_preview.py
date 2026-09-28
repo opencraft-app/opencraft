@@ -148,6 +148,38 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symbolic link"):
                 build_release_packs(artifact_dir, root / "packs")
 
+    def test_iter_files_excludes_edgeone_deploy_directory(self) -> None:
+        from support.staticpages_pack import iter_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_dir = root / "dist"
+            (artifact_dir / "assets").mkdir(parents=True)
+            (artifact_dir / ".edgeone" / "assets").mkdir(parents=True)
+            (artifact_dir / "index.html").write_text("<html></html>")
+            (artifact_dir / "assets" / "app.js").write_text("console.log('ok')")
+            (artifact_dir / ".edgeone" / "edgeone.json").write_text("{}")
+            (artifact_dir / ".edgeone" / "assets" / "index.html").write_text("<html>copy</html>")
+
+            relative_paths = [path.relative_to(artifact_dir).as_posix() for path in iter_files(artifact_dir)]
+
+            self.assertEqual(relative_paths, ["assets/app.js", "index.html"])
+
+    def test_release_packs_exclude_edgeone_deploy_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_dir = root / "dist"
+            (artifact_dir / "assets").mkdir(parents=True)
+            (artifact_dir / "index.html").write_text("<html></html>")
+            (artifact_dir / ".edgeone" / "assets").mkdir(parents=True)
+            (artifact_dir / ".edgeone" / "assets" / "index.html").write_text("<html>copy</html>")
+
+            bundle = build_release_packs(artifact_dir, root / "packs")
+
+            file_paths = [entry["path"] for entry in bundle.manifest["files"]]
+            self.assertEqual(file_paths, ["index.html"])
+            self.assertFalse(any(path.startswith(".edgeone/") for path in file_paths))
+
     def test_pack_protocol_retries_only_failed_pack_before_commit(self) -> None:
         class Response:
             def __init__(self, body: dict[str, object]) -> None:

@@ -27,6 +27,8 @@ master 源码
 
 ## 不变量
 
+- 紧急恢复时若先在生产集群直改 Auth ConfigMap 或 Deployment，必须记录原值与镜像 digest，并在同一事件内把限流参数、可信代理地址和镜像 pin 固化到对应环境的 GitOps 声明；业务 429 恢复只证明临时热修生效，Argo 对齐到预期 revision 且 `Synced/Healthy` 才表示发布闭环。可信代理不得为省事扩大到整个 Pod 网段。
+
 - 统一 Argo CD 控制面运行在受控国内发布机时，必须使用宿主机原生 k0s systemd 服务；禁止使用
   k0s-in-Docker 承载生产 GitOps 控制面，因为嵌套网络命名空间会使部分跨地域 TKE TLS 流量被
   DevCloud 出口代理错误降级为明文响应。固定版本 k0s/Argo 基线、NodePort、repo-server
@@ -44,6 +46,10 @@ master 源码
 - CloudLadder testing 的 DevCloud 来源 CIDR 必须在 data-plane proxy 与 devtunnel 两套 workload 中保持
   一致，并由 GitOps 契约测试校验；扩大 testing allowlist 不能扩散到 production manifests。北京允许
   Skill 探测并提交受限 `9/8` 或 `21/8` 目标，韩国仍以服务端观测 NAT 来源为准。
+- CloudLadder 共用镜像需要把某个上游切到环境专属联调地址时，保持镜像内 backend 默认值不变，
+  只在目标 workload 通过 `CLOUDLADDERGATEWAY_BACKEND_<ALIAS>_BASE_URL` 覆盖。配置契约必须同时断言
+  目标环境取得预期地址、同地域的 production/testing 等相邻 workload 未继承该覆盖；发布仍经
+  `master` 源码 MR 和服务 CI 投影到 `gitops`，不得直接修改 live Pod 或 `gitops` 分支。
 
 - 新加坡 Sandbox 扩展到新山时，云网络与现有 `llmgateway-sgprod-jhb` 支撑 VPC 分离。
   `infra_pulumi` 使用持久化 `sandbox-network` scope，只拥有 VPC、pool/support 子网、

@@ -6,7 +6,7 @@
 
 Keduanya melampaui jendela chat biasa, tetapi berangkat dari pusat yang berbeda: Mira adalah asisten yang berfokus pada Telegram, sedangkan LightVela adalah Agent pribadi yang dapat dikonfigurasi dan berkembang menjadi sistem alur kerja yang lebih luas.
 
-![Perbandingan LightVela dan Mira untuk menjalankan AI Agent pribadi](../images/lightvela-vs-mira.png)
+![Perbandingan LightVela dan Mira untuk menjalankan AI Agent pribadi](../images/lightvela-vs-mira.webp)
 
 ## Perbandingan singkat
 

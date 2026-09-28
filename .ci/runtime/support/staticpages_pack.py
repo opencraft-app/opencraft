@@ -12,6 +12,14 @@ from pathlib import Path
 DEFAULT_PACK_TARGET_BYTES = 32 * 1024 * 1024
 DEFAULT_PACK_MAX_BYTES = 48 * 1024 * 1024
 
+# EdgeOne Pages 部署目录（out/.edgeone）是 `pnpm deploy:eo` 的上传源
+# （deploy-edgeone-pages.mjs 的 resolveDeployDir 优先取它），内部 assets 与站点内容
+# 等价，是 out/ 的一份完整副本。它只服务 EdgeOne 部署链路，不属于 StaticPages 预览
+# 资源；若混入预览上传包会把体积直接翻倍。iter_files 是 packs 打包唯一的文件来源，
+# 而 rglob("*") 会匹配点开头的隐藏目录，故在此显式排除（打包层兜底，与预览脚本
+# 构建层的 rm -rf out/.edgeone 双重保障，且不影响 deploy:eo 自身链路）。
+EXCLUDED_DIR_NAMES = frozenset({".edgeone"})
+
 
 @dataclass(frozen=True)
 class ReleaseBundle:
@@ -34,7 +42,12 @@ def iter_files(artifact_dir: Path) -> list[Path]:
     symlinks = [path for path in candidates if path.is_symlink()]
     if symlinks:
         raise ValueError(f"artifact directory contains a symbolic link: {symlinks[0]}")
-    files = [path for path in candidates if path.is_file()]
+    files = [
+        path
+        for path in candidates
+        if path.is_file()
+        and not EXCLUDED_DIR_NAMES.intersection(path.relative_to(artifact_dir).parts)
+    ]
     if not files:
         raise ValueError(f"artifact directory is empty: {artifact_dir}")
     return sorted(files)

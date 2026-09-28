@@ -68,7 +68,7 @@ describe("Blog publishing dates", () => {
 
     expect(localized).toBeDefined();
     expect(localized?.title).not.toBe("For Just $0.03, DSH Brought a Broken Hermes Agent Back to Life");
-    expect(localized?.coverImage).toBe("/assets/blog/dsh-revived-broken-hermes-agent/cover.png");
+    expect(localized?.coverImage).toBe("/assets/blog/dsh-revived-broken-hermes-agent/cover.webp");
   });
 
   it.each([

@@ -40,9 +40,9 @@ Vuelva a la página de inicio, haga clic en "Crear ahora" para entrar a la pági
 
 ![](./images/2-2.webp)
 
-> ⚠️ **Launch tiene una prueba gratuita de 1 mes para nuevos usuarios después de que comience la facturación**
+> ⚠️ **Ofertas para nuevos usuarios**
 >
-> Los planes de LightVela entrarán en beta pública y comenzarán la facturación el 18 de agosto de 2026 (Hora de Singapur). Después de que comience la facturación, los nuevos usuarios pueden probar Launch gratis durante 1 mes. Consulte [Anuncio de la versión pagada de LightVela](./announcements/public-beta.md).
+> Los nuevos usuarios que cumplan los requisitos pueden probar Launch gratis durante 1 mes. Consulta la [página de suscripción](/subscribe/) para conocer las condiciones y la disponibilidad actuales.
 
 Después de que el activación tenga éxito, la barra de navegación superior muestra "Mi Hermes" y la página se redirige automáticamente al consola. Para detalles del plan, consulte [¿Qué es LightVela - Sobre los planes](./01-overview.md#about-plans).
 
