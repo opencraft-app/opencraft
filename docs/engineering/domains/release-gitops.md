@@ -428,6 +428,13 @@ Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与
 `https://api-sandbox-jp-1.lightclaw.tech`。映射变更必须同步更新逐地域 GitOps 契约测试，不能通过
 修改共享路由默认值或 Pass 回调配置实现。
 
+`tkexgz` 的 `/cloudapi` 入向路由按腾讯云 API 的 `X-TC-Region` 分流 `DescribePass`。北京预发布
+当前使用广州计费地域，因此 `ap-guangzhou` 必须显式映射到北京预发布 upstream，并与该环境 CTL
+的 `CTL_CLOUDAPI_ALLOWED_REGIONS` 同批发布；`ap-beijing` 作为未来切回北京地域的兼容项保留，
+`ap-shanghai` 继续映射上海正式。配置契约必须同时验证 CloudLadder header route 和 CTL allowlist，
+不能只验证其中一层。源码合入后仍由 CloudLadder 与 CTL 各自 CI 投影到 `gitops`，不得直接修改
+`gitops` 或 live workload。
+
 ## 个人 DevCloud testing-only 发布门禁（2026-09-17）
 
 个人环境能力分三层发布：`master` 中的 Auth/CloudLadder/Skill 源码、`sandbox-bj-7` 与
