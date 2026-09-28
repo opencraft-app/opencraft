@@ -26,6 +26,7 @@ import {
 } from './agent-config';
 
 const CLS = 'lh-std-channel-panel';
+const DINGTALK_DEVELOPER_CONSOLE_URL = 'https://open-dev.dingtalk.com/';
 
 /**
  * LightVela 通道配置教程链接
@@ -461,7 +462,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
                     className={`${CLS}__btn-primary`}
                     onClick={() => handleMethodSelect(methodChoice)}
                   >
-                    {t('确认')}
+                    {t('下一步')}
                   </button>
                 </div>
               </div>
@@ -530,6 +531,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
       {tokenChannelKind &&
         (() => {
           const meta = getTokenChannelMeta(tokenChannelKind);
+          const isDingtalk = tokenChannelKind === 'dingtalk';
           const hasSecondaryToken = !!meta.secondaryTokenLabel;
           const submitDisabled =
             !!ops.testingChannel || ops.configuring || !tokenInput.trim() || (hasSecondaryToken && !secondaryTokenInput.trim());
@@ -542,11 +544,28 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
             >
               <div className={`${CLS}__modal`}>
                 <div className={`${CLS}__modal-header`}>
-                  <h3 className={`${CLS}__modal-title`}>{t('连接 {{name}}', { name: meta.name })}</h3>
+                  <h3 className={`${CLS}__modal-title`}>
+                    {isDingtalk ? t('连接钉钉') : t('连接 {{name}}', { name: meta.name })}
+                  </h3>
                   <p className={`${CLS}__modal-desc`}>
-                    {hasSecondaryToken
+                    {isDingtalk
+                      ? t('填入钉钉机器人凭据完成绑定')
+                      : hasSecondaryToken
                       ? t('填入 {{name}} 凭据完成绑定', { name: meta.name })
                       : t('填入 {{label}} 完成绑定', { label: meta.tokenLabel })}
+                    {isDingtalk && (
+                      <>
+                        {' '}
+                        <a
+                          className={`${CLS}__developer-console-link`}
+                          href={DINGTALK_DEVELOPER_CONSOLE_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {t('钉钉开发者后台')}
+                        </a>
+                      </>
+                    )}
                   </p>
                 </div>
                 <div className={`${CLS}__modal-body`}>
