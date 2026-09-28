@@ -2250,6 +2250,28 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("routes OAuth start to the live API host when local-proxy runs under the lightvela.ai site host", () => {
+    stubLocation({
+      hostname: "lightvela.ai",
+      host: "lightvela.ai",
+      protocol: "https:",
+      pathname: "/es/support/",
+    });
+
+    const repositories = createHttpRepositories("");
+
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("google"),
+      "https://api.lightvela.ai/auth/oauth/google/start",
+      "https://lightvela.ai/es/support/",
+    );
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("github"),
+      "https://api.lightvela.ai/auth/oauth/github/start",
+      "https://lightvela.ai/es/support/",
+    );
+  });
+
   it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
     stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");

@@ -97,11 +97,11 @@ export function SoulTestModal({
 
   useEffect(() => {
     if (!open) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previousOverflow;
-      if (autoAdvanceTimer.current) window.clearTimeout(autoAdvanceTimer.current);
+      if (autoAdvanceTimer.current) {
+        window.clearTimeout(autoAdvanceTimer.current);
+        autoAdvanceTimer.current = null;
+      }
     };
   }, [open]);
 
@@ -194,7 +194,7 @@ export function SoulTestModal({
   return createPortal(
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-[2px]"
+        className="lv-persona-modal-scroll-lock fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-[2px]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -284,7 +284,7 @@ function QuestionStep({
   const progress = (index / total) * 100;
 
   return (
-    <div className="relative flex min-h-[620px] flex-col overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
+    <div className="lv-persona-dialog-scroll relative flex min-h-[min(620px,88vh)] flex-col overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
       <div className="mb-8 text-center">
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/70 px-3 py-1 text-xs font-medium text-black/55">
           <Sparkles className="h-3.5 w-3.5 text-[#FFA600]" />
@@ -389,7 +389,7 @@ function ResultStep({
   }, [soul?.slug]);
 
   return (
-    <div className="relative max-h-[88vh] overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
+    <div className="lv-persona-dialog-scroll relative min-h-0 max-h-[88vh] overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
       <div className="mb-6 text-center">
         <h3 className="text-2xl font-semibold tracking-normal text-black/90">
           {t("为你推荐的智能体伙伴 Soul 是")}

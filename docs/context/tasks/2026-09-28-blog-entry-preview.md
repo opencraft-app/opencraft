@@ -160,3 +160,9 @@ derived: false
 - context_receipt：路由 `frontend blog language translation` 无匹配；随后对 frontend 的 blog-content、blog-community、blog-seo、sitemap 和 locale 注册表执行有界精确检索。读取这些源码与对应测试；沿用本任务已读 frontend-runtime-openspec-i18n 邻接卡，核对配置邻居 frontend/src/i18n/locales.json。
 - 独立 CR 对四语种 520 条译文及语言映射、metadata、索引、社群分流检查未发现阻塞问题；已采纳韩语技术标识分隔与 SEO keywords 按 locale 生成建议。
 - 本轮验证与提交结果以 checkpoint 顶部最新记录为准，历史英文回退记录不再适用。
+
+## 2026-09-28 最新 master 再同步
+- 用户再次授权切换 jasminzhao-blog-0928、同步 master、解决冲突并提交 MR。起始在 master，仅 frontend/next-env.d.ts 有预览路径生成改动，已用命名 stash 保存，交付前恢复。
+- fetch 得到 origin/master 20cc5f347，MR !4747 仍 opened，复用该 MR。唯一冲突为 OpenCraft UPSTREAM.json 的 sourceRevision，使用同步脚本再生成；合并提交后再次同步并执行 guard。
+- 自动合并保留 master 新增用户反馈入口与 Blog 入口，六语种翻译不变；不扩展 master 引入的后端功能或发布。
+- context_receipt：路由命中 tapd-gongfeng-delivery；读取该 flow、frontend/AGENTS.md、opencraft/AGENTS.md、工蜂与研发协作 Skill、opencraft/MONO2_MIGRATION.md、docs/context/project/upstream-subtrees.md。在 master 精确检索任务文件未命中，切回需求分支后定位成功。读取 frontend-runtime-openspec-i18n 邻接卡，核对 frontend/vitest.config.ts、OpenCraft guard 及自动合并的 Footer、首页导入脚本和测试。

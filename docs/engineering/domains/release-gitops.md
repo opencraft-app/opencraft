@@ -8,6 +8,8 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
+问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试交接不自动恢复已下线的 ticket 发布合同：由后端负责人确认测试发布路径，使用同一版本镜像迁移后验证提交、后台列表与附件下载。占位镜像和待配置的运营身份不能作为可用证明；生产配置源码准备不等于生产晋级。
+
 ```text
 master 源码
   → .ci 构建与制品可见性

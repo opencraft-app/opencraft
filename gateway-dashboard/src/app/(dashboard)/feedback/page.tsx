@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { apiClient, ApiError, buildApiURL } from "@/lib/api-client";
 import { cn, formatDateTime } from "@/lib/utils";
 
 interface FeedbackAttachment {
@@ -108,6 +108,14 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORY_FILTER_ALL = "all";
 const TYPE_FILTER_ALL = "all";
+const SITE_FILTER_ALL = "all";
+const SITE_FILTER_CN = "cn";
+const SITE_FILTER_GLOBAL = "global";
+
+const SITE_LABELS: Record<string, string> = {
+  [SITE_FILTER_CN]: "国内站",
+  [SITE_FILTER_GLOBAL]: "国际站",
+};
 
 function feedbackTypeLabel(type: string, otherText?: string | null): string {
   const label = FEEDBACK_TYPE_LABELS[type] ?? type;
@@ -280,11 +288,10 @@ function formatBytes(n: number): string {
 }
 
 export default function FeedbackPage() {
-  // 本期仅上线国内站反馈；国际站暂未在后台暴露（后端数据已按 cn/global 隔离）。
-  const SITE = "cn" as const;
   const [records, setRecords] = useState<FeedbackRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [detail, setDetail] = useState<FeedbackRecord | null>(null);
+  const [siteFilter, setSiteFilter] = useState<string>(SITE_FILTER_CN);
   const [categoryFilter, setCategoryFilter] = useState<string>(CATEGORY_FILTER_ALL);
   const [typeFilter, setTypeFilter] = useState<string>(TYPE_FILTER_ALL);
   // 通用筛选器：每条规则形如「字段 · 操作 · 值」，规则之间是 AND。
@@ -298,7 +305,9 @@ export default function FeedbackPage() {
     setIsLoading(true);
     try {
       const data = await apiClient<{ items: FeedbackRecord[] }>(
-        `support-feedback/list?site=${SITE}`
+        siteFilter === SITE_FILTER_ALL
+          ? "support-feedback/list"
+          : `support-feedback/list?site=${siteFilter}`
       );
       setRecords(data.items ?? []);
       setPage(1);
@@ -311,15 +320,14 @@ export default function FeedbackPage() {
   }
 
   async function handleDownload(attachment: FeedbackAttachment) {
-    try {
-      const data = await apiClient<{ url: string }>(
-        `support-feedback/sign?key=${encodeURIComponent(attachment.storageKey)}`
-      );
-      window.open(data.url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "获取下载链接失败";
-      toast.error(msg);
-    }
+    window.open(
+      buildApiURL(
+        `support-feedback/attachment/${encodeURIComponent(attachment.storageKey)}`,
+        window.location.origin,
+      ).toString(),
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   const filteredRecords = useMemo(() => {
@@ -528,7 +536,7 @@ export default function FeedbackPage() {
             return <span className="text-xs text-muted-foreground">-</span>;
           }
           // 附件列点击行为：
-          //   - 恰好 1 个附件：直接触发下载（预签名 URL 在新标签打开）；
+          //   - 恰好 1 个附件：直接触发下载；
           //   - 多个附件：打开详情弹窗，在弹窗内逐个下载（避免在表格里堆按钮）。
           const handleClick = () => {
             if (count === 1) {
@@ -575,7 +583,29 @@ export default function FeedbackPage() {
           <Button onClick={load} disabled={isLoading}>
             {isLoading ? "加载中..." : "加载反馈"}
           </Button>
-          <span className="text-sm text-muted-foreground">国内站反馈</span>
+          <Select
+            value={siteFilter}
+            items={[
+              { value: SITE_FILTER_CN, label: "国内站" },
+              { value: SITE_FILTER_GLOBAL, label: "国际站" },
+              { value: SITE_FILTER_ALL, label: "全部站点" },
+            ]}
+            onValueChange={(value: string | null) => {
+              if (value) {
+                setSiteFilter(value);
+                setPage(1);
+              }
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue>{siteFilter === SITE_FILTER_ALL ? "全部站点" : SITE_LABELS[siteFilter]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SITE_FILTER_CN}>国内站</SelectItem>
+              <SelectItem value={SITE_FILTER_GLOBAL}>国际站</SelectItem>
+              <SelectItem value={SITE_FILTER_ALL}>全部站点</SelectItem>
+            </SelectContent>
+          </Select>
 
           <Select
             value={categoryFilter}
@@ -736,6 +766,7 @@ export default function FeedbackPage() {
           <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
             <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
               <span>账号：<span className="font-mono">{detail?.accountId}</span></span>
+              <span>站点：{detail ? (SITE_LABELS[detail.site] ?? detail.site) : ""}</span>
               <span>大类：{detail ? categoryLabel(detail.category) : ""}</span>
               <span>类型：{detail ? feedbackTypeLabel(detail.feedbackType, detail.otherText) : ""}</span>
               <span>创建：{detail ? formatDateTime(detail.createdAt) : ""}</span>

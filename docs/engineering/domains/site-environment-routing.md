@@ -16,6 +16,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## 稳定身份
 
+问卷反馈通过国内 `/support` 与国际本地化 `/[lang]/support` 进入，登录用户头像菜单的“用户反馈”指向站内问卷；既有腾讯问卷入口继续保留。提交使用所属站点 API 的 `/support/feedback/submit` multipart 接口，用户身份由服务端认证获取。运营后台经 BFF 访问 ticket，按 `site=cn|global` 筛选并下载 MySQL 附件。Whistle 代理站点域名时，OAuth start 使用对应 API 域名以匹配回调 Cookie 域。
+
 - 国内生产：`lightvela.com`
 - 国际生产：`lightvela.ai`
 - 源码分支：`master`

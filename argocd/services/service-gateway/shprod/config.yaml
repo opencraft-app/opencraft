@@ -239,6 +239,14 @@ routes:
       - { method: POST, path: "/oauth2/token" }
     response_header_timeout: 10s
 
+  - name: support-feedback
+    prefix: /support/feedback
+    methods: [GET, POST, OPTIONS]
+    upstream: http://ticket.ticket.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
+    response_header_timeout: 60s
+
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]

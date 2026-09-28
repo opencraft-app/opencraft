@@ -26,6 +26,10 @@ const localProxyRewrites = isLocalProxy
         destination: `${localProxyTarget}/subscriptions/:path*`,
       },
       {
+        source: '/support/feedback/:path*',
+        destination: `${localProxyTarget}/support/feedback/:path*`,
+      },
+      {
         source: '/v1/:path*',
         destination: `${localProxyTarget}/v1/:path*`,
       },
