@@ -1,12 +1,10 @@
+import { blogArticleMetadata } from '@next-site/blog-seo';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { PublicBlogArticlePage } from '@next-site/public-pages';
 import {
-  buildGlobalPublicAlternates,
-  createPublicMetadata,
-  localizedPublicPath,
   prefixedPublicRouteLocale,
   SEO_PREFIXED_PUBLIC_URL_LANGS,
 } from '@next-site/seo';
@@ -29,13 +27,7 @@ export async function generateMetadata({
   const post = routeLocale ? getBlogPost(slug, routeLocale.locale) : undefined;
   if (!isGlobal || !routeLocale || !post) notFound();
 
-  return createPublicMetadata({
-    path: localizedPublicPath(`/blog/${slug}`, lang as PublicUrlLang),
-    locale: routeLocale.locale,
-    title: post.title,
-    description: post.excerpt,
-    alternates: buildGlobalPublicAlternates(`/blog/${slug}`),
-  });
+  return blogArticleMetadata(post, routeLocale.locale);
 }
 
 export default async function LocalizedBlogArticleRoute({

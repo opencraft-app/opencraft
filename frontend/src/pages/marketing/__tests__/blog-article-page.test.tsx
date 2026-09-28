@@ -1,5 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import * as blogContent from "@/pages/marketing/blog-content";
 
 import { BlogArticlePage } from "@/pages/marketing/blog-article-page";
 
@@ -30,156 +32,66 @@ vi.mock("@/components/site/public-site-header", () => ({
   PublicSiteHeader: () => <header>header</header>,
 }));
 
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
 describe("BlogArticlePage", () => {
-  it("renders the formatted English article and its supplied images", () => {
-    render(<BlogArticlePage slug="using-hermes-agent-as-a-discord-bot" />);
-
-    expect(
-      screen.getByRole("heading", { name: "Using Hermes Agent as a Discord bot to drive my 600-user server engagement" }),
-    ).toHaveClass("font-bold", "text-3xl", "sm:text-4xl");
-    expect(screen.queryByRole("heading", { name: "Summary" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", "/blog");
-    expect(screen.getByRole("heading", { name: "Connecting the bot" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Areas of improvement" })).toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "Discord bot setup steps" })).toBeInTheDocument();
-    expect(screen.getByText(/Every Friday at 18:00, send a short reminder/)).toBeInTheDocument();
-    const images = screen.getAllByRole("img");
-    expect(images).toHaveLength(9);
-    const coverImage = images[0];
-    expect(coverImage).toBeDefined();
-    if (!coverImage) throw new Error("Expected the article cover image to be rendered");
-    expect(screen.getByRole("link", { name: "Back" }).compareDocumentPosition(coverImage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const backLink = screen.getByRole("link", { name: "Back" });
-    expect(backLink.querySelector("span")?.className).toContain("no-underline");
-    expect(coverImage.compareDocumentPosition(screen.getByRole("heading", { name: /Using Hermes Agent/ })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(coverImage).toHaveClass("aspect-video", "object-cover");
-    expect(screen.getByRole("img", { name: /existing bots/ })).toHaveClass("max-w-[220px]");
-    expect(screen.getByText(/Hermes Agent gave my 600-user Discord server/).closest("p")).toHaveClass("leading-[1.75rem]");
-    expect(screen.getByRole("heading", { name: "Share" })).toBeInTheDocument();
+  it("preserves source language and leaves missing images blank without broken requests", () => {
+    const source = blogContent.BLOG_POSTS[0];
+    if (!source) throw new Error("Expected an existing article fixture");
+    vi.spyOn(blogContent, "getBlogPost").mockReturnValueOnce({
+      ...source,
+      language: "zh-CN",
+      title: "中文原稿",
+      coverImage: null,
+      content: [
+        { type: "image", src: null, alt: "待补封面" },
+        { type: "paragraph", content: ["保留中文正文"] },
+        { type: "image", src: null, alt: "待补截图" },
+      ],
+    });
+    const { container } = render(<BlogArticlePage slug={source.slug} publicLocale="en-US" />);
+    expect(screen.getByRole("article")).toHaveAttribute("lang", "zh-CN");
+    expect(screen.getByText("保留中文正文")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelectorAll("div.aspect-video")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Share X" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("https%3A%2F%2Flightvela.ai%2Fblog%2Fusing-hermes-agent-as-a-discord-bot"),
-    );
-    expect(screen.getByRole("link", { name: "Share LinkedIn" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Share Facebook" })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Discord Developer Portal" })[0]).toHaveAttribute(
-      "href",
-      "https://discord.com/developers/home",
-    );
   });
 
-  it("renders the Slack digital employee use case article", () => {
-    render(<BlogArticlePage slug="recreated-claude-tag-with-lightvela" />);
-
-    expect(
-      screen.getByRole("heading", { name: "I Recreated Claude Tag with LightVela and Set Up a \“Digital Employee\” in Slack" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Step 1: Activate a LightVela plan" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Step 5: Connect Notion and turn chat into a knowledge base" })).toBeInTheDocument();
-    expect(screen.getByText(/hermes mcp add/)).toBeInTheDocument();
-    const article = screen.getAllByRole("article").find((candidate) =>
-      candidate.textContent?.includes("I Recreated Claude Tag with LightVela"),
+  it.each(blogContent.getBlogPosts())("renders $slug with source language, author, ordered images and sharing", (post) => {
+    render(<BlogArticlePage slug={post.slug} publicLocale="en-US" />);
+    const article = screen.getByRole("article");
+    expect(article).toHaveAttribute("lang", post.language);
+    expect(within(article).getByRole("heading", { name: post.title })).toBeInTheDocument();
+    expect(within(article).getByText(post.author)).toBeInTheDocument();
+    expect(Array.from(article.querySelectorAll("img")).map((image) => image.getAttribute("src"))).toEqual(
+      post.content.flatMap((block) => block.type === "image" && block.src ? [block.src] : []),
     );
-    if (!article) throw new Error("Expected the Slack digital employee article to be rendered");
-    expect(article).toHaveAttribute("lang", "en");
-    expect(within(article).getByRole("link", { name: "Anthropic's official Claude Tag announcement" })).toHaveAttribute(
-      "href",
-      "https://www.anthropic.com/news/introducing-claude-tag",
-    );
-    expect(within(article).getByRole("img", { name: "Colorful Slack-inspired LightVela illustration" })).toBeInTheDocument();
-    expect(within(article).getAllByRole("img")).toHaveLength(8);
-    expect(within(article).getByRole("img", { name: /Slack conversation with LightVela/ })).toHaveAttribute(
-      "src",
-      expect.stringContaining("english"),
-    );
+    expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", "/blog");
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Share X" })).toHaveAttribute("href", expect.stringContaining(encodeURIComponent(`/blog/${post.slug}`)));
   });
 
-  it("renders the Workbench basketball shoe storefront article with its supplied images in order", () => {
-    render(<BlogArticlePage slug="basketball-shoe-storefront-with-lightvela-workbench" />);
-
-    expect(
-      screen.getByRole("heading", {
-        name: "I Vibe-Coded My Own Basketball Shoe Storefront with LightVela Workbench",
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "My Expectations for the Site" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Why I Started with the Campaign Hub Template" })).toBeInTheDocument();
-    expect(screen.getByText(/Build a premium ecommerce campaign hub/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "The Larger Lesson" })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "LightVela’s Workbench is designed for static websites, so I treated the project as the storefront and campaign layer rather than the complete commerce backend.",
-      ),
-    ).toBeInTheDocument();
-
-    const article = screen.getAllByRole("article").find((candidate) =>
-      candidate.textContent?.includes("I Vibe-Coded My Own Basketball Shoe Storefront"),
-    );
-    if (!article) throw new Error("Expected the Workbench basketball shoe storefront article to be rendered");
-    expect(within(article).getByText("Sep 3, 2026, 11:31 AM")).toBeInTheDocument();
-    expect(within(article).getByText("Cassidy Shi")).toBeInTheDocument();
-    const images = within(article).getAllByRole("img");
-    expect(images).toHaveLength(8);
-    expect(images.map((image) => image.getAttribute("src"))).toEqual([
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.webp",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.webp",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.webp",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.webp",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.webp",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.webp",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.webp",
-      "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.webp",
-    ]);
-    expect(within(article).getByRole("heading", { name: "Share" })).toBeInTheDocument();
-    expect(within(article).getByRole("button", { name: "Copy link" })).toBeInTheDocument();
-    expect(within(article).getByRole("link", { name: "Share X" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("https%3A%2F%2Flightvela.ai%2Fblog%2Fbasketball-shoe-storefront-with-lightvela-workbench"),
-    );
-  });
-
-  it("renders the Meta Muse article with the temporary cover and ordered screenshots", () => {
-    render(<BlogArticlePage slug="tencent-cloud-agent-early-taste-of-meta-muse" />);
-
-    expect(
-      screen.getByRole("heading", { name: "Tencent's Cloud Agent Gave an Early Taste of Meta's Muse" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "A Discovery: Tencent LightVela" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "First Hands-On with LightVela" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Scheduled tasks" })).toBeInTheDocument();
-
-    const article = screen.getAllByRole("article").find((candidate) =>
-      candidate.textContent?.includes("Tencent's Cloud Agent Gave an Early Taste of Meta's Muse"),
-    );
-    if (!article) throw new Error("Expected the Meta Muse article to be rendered");
-
-    const images = within(article).getAllByRole("img");
-    expect(images).toHaveLength(19);
-    expect(images.map((image) => image.getAttribute("src"))).toEqual([
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.webp",
-      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.webp",
-    ]);
-    expect(within(article).getByText("Cassidy Shi")).toBeInTheDocument();
-    expect(within(article).getByText(/With a free trial on offer/)).toBeInTheDocument();
-    expect(article.querySelector('a[href*="doc.weixin.qq.com"]')).toBeNull();
-    expect(within(article).getByRole("heading", { name: "Share" })).toBeInTheDocument();
+  it("switches the same article across every international language", () => {
+    const slug = "lightvela-personal-ai-cloud-now-live";
+    const { rerender } = render(<BlogArticlePage slug={slug} publicLocale="en-US" />);
+    expect(screen.getByRole("article")).toHaveAttribute("lang", "en");
+    for (const locale of ["zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR", "en-US"] as const) {
+      rerender(<BlogArticlePage slug={slug} publicLocale={locale} publicLocalized={locale !== "en-US"} />);
+      const post = blogContent.getBlogPost(slug, locale)!;
+      expect(screen.getByRole("article")).toHaveAttribute("lang", post.language);
+      expect(screen.getByRole("heading", { name: post.title })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", locale === "en-US" ? "/blog" : `/${locale.toLowerCase()}/blog`);
+      expect(screen.getByRole("link", { name: "Share X" })).toHaveAttribute("href", expect.stringContaining(encodeURIComponent(blogContent.blogCanonicalPath(slug, locale))));
+      if (locale === "zh-SG") expect(screen.getByText("LightVela 的起点，是 OpenClaw 掀起的个人 AI 热潮。")).toBeInTheDocument();
+      if (locale === "zh-Hant") expect(screen.getByText("LightVela 的起點，是 OpenClaw 掀起的個人 AI 熱潮。")).toBeInTheDocument();
+      if (locale === "en-US") expect(screen.getByText("LightVela began with the wave of interest in personal AI sparked by OpenClaw.")).toBeInTheDocument();
+      if (locale === "id-ID") expect(screen.getByText("LightVela berawal dari gelombang minat terhadap AI pribadi yang dipicu oleh OpenClaw.")).toBeInTheDocument();
+      if (locale === "es") expect(screen.getByText("LightVela nació de la ola de interés por la IA personal que despertó OpenClaw.")).toBeInTheDocument();
+      if (locale === "ja-JP") expect(screen.getByText("LightVela の出発点は、OpenClaw が巻き起こしたパーソナル AI への関心の高まりでした。")).toBeInTheDocument();
+      if (locale === "ko-KR") expect(screen.getByText("LightVela는 OpenClaw가 일으킨 개인 AI에 대한 관심에서 출발했습니다.")).toBeInTheDocument();
+    }
   });
 });

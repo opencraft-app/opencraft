@@ -403,7 +403,10 @@ const manifestContents = `${JSON.stringify({
 
 if (checkOnly) {
   if (!existsSync(manifestPath) || readFileSync(manifestPath, "utf8") !== manifestContents) {
-    throw new Error("vendored mono2 manifest drifted; run npm run sync:mono2-agent-console");
+    const expected = JSON.parse(manifestContents);
+    const recorded = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {};
+    const changedFields = Object.keys(expected).filter((key) => JSON.stringify(recorded[key]) !== JSON.stringify(expected[key]));
+    throw new Error(`vendored mono2 manifest drifted; run npm run sync:mono2-agent-console (fields=${changedFields.join(",") || "formatting"}, recordedSourceRevision=${recorded.sourceRevision ?? "missing"}, expectedSourceRevision=${sourceRevision})`);
   }
   const actualFiles = [];
   const visit = (directory) => {

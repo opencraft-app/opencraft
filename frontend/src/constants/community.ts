@@ -10,6 +10,9 @@
 /** Discord 邀请链接（页脚社区入口、二维码点击跳转共用）。 */
 export const DISCORD_INVITE_URL = "https://discord.gg/Myh58xEMe2";
 
+/** WhatsApp community invite, shared by the footer and Blog QR code. */
+export const WHATSAPP_INVITE_URL = "https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b";
+
 /** Discord 入群二维码（扫码结果与 DISCORD_INVITE_URL 一致）。 */
 export const DISCORD_QR_IMAGE = "/assets/landing/about/disc_LV.png";
 

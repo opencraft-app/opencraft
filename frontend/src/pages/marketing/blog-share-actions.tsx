@@ -4,7 +4,6 @@ import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 
 // Share controls always use the production canonical URL so preview domains are never shared publicly.
-const BLOG_ORIGIN = "https://lightvela.ai";
 
 type BlogShareActionsProps = {
   path: string;
@@ -15,7 +14,7 @@ type SharePlatform = "X" | "LinkedIn" | "Facebook";
 
 export function canonicalBlogUrl(path: string): string {
   const relativePath = path.startsWith("/") ? path : `/${path}`;
-  return new URL(relativePath, BLOG_ORIGIN).toString();
+  return new URL(relativePath, isGlobal ? "https://lightvela.ai" : "https://lightvela.com").toString();
 }
 
 function PlatformIcon({ platform }: { platform: SharePlatform }) {
