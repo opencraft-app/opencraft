@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 const cardVariants = {
   default: cn("rounded-[1.75rem]", floatingPanelClass),
   pricing: "rounded-[12px] border bg-white shadow-none",
-  "pricing-featured": "rounded-[16px] border bg-white shadow-none",
 };
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
