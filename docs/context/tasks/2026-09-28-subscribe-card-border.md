@@ -2,7 +2,7 @@
 id: 2026-09-28-subscribe-card-border
 type: task
 scope: Remove the misleading featured border from public subscribe plan cards.
-status: active
+status: complete
 owner: wisp/mono2-maintainers
 authority: derived
 source_of_truth:
@@ -95,4 +95,4 @@ derived: true
 
 ## handoff
 
-- 已完成本地实现与验证；未执行 commit、push、MR、发布或生产操作。
+- 已提交 `76a481bd8f20953bf45eb42bcf72db9167b64f8a` 并推送至 `codex/subscribe-card-border`；已创建 MR !4738。未合并、发布或操作生产环境。
