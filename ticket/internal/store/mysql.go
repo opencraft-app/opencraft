@@ -424,7 +424,7 @@ func (s *MySQLStore) GetSupportFeedbackAttachment(ctx context.Context, id string
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, feedback_id, file_name, content_type, size_bytes, content, created_at
 		 FROM support_feedback_attachment WHERE id = ?`, id)
-	var content sql.RawBytes
+	var content []byte
 	attachment := &SupportFeedbackAttachment{}
 	if err := row.Scan(&attachment.ID, &attachment.FeedbackID, &attachment.FileName, &attachment.ContentType, &attachment.SizeBytes, &content, &attachment.CreatedAt); err != nil {
 		return nil, fmt.Errorf("get support feedback attachment %q: %w", id, err)
