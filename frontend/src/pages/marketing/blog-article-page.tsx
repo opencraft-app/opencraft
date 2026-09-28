@@ -7,8 +7,9 @@ import { useT } from "@/i18n/t";
 import { publicSiteHref, type PublicSiteLocale } from "@/lib/public-site-navigation";
 import { cn } from "@/lib/utils";
 
-import { formatBlogPublishedAt, getBlogPost, type BlogBlock, type BlogInline } from "./blog-content";
+import { blogCanonicalPath, formatBlogPublishedAt, getBlogPost, type BlogBlock, type BlogInline } from "./blog-content";
 import { BlogShareActions } from "./blog-share-actions";
+import { BlogCommunity } from "./blog-community";
 
 type BlogArticlePageProps = {
   authControls?: ReactNode;
@@ -80,14 +81,17 @@ function renderBlock(
     case "image":
       return (
         <figure key={index} className="my-6">
-          <img
-            src={block.src}
-            alt={block.alt}
-            className={cn(
-              "h-auto object-contain",
-              block.size === "narrow" ? "mx-auto w-full max-w-[220px]" : "w-full",
-            )}
-          />
+          {block.src ? (
+            <img
+              src={block.src}
+              alt={block.alt}
+              loading="lazy"
+              className={cn(
+                "h-auto object-contain",
+                block.size === "narrow" ? "mx-auto w-full max-w-[220px]" : "w-full",
+              )}
+            />
+          ) : <div aria-hidden="true" className="aspect-video w-full rounded-md bg-black/[0.025]" />}
         </figure>
       );
     case "ordered-list":
@@ -132,10 +136,10 @@ export function BlogArticlePage({
   const blogHref = publicLocale
     ? publicSiteHref("/blog", publicLocale, { localized: publicLocalized })
     : "/blog";
-  const articlePath = currentPath?.startsWith("/") ? currentPath : `/blog/${post.slug}`;
+  const articlePath = blogCanonicalPath(post.slug, publicLocale);
   const coverBlock = post.content[0];
   const coverAlt = coverBlock?.type === "image" ? coverBlock.alt : post.title;
-  const articleLang = publicLocale === "en-US" || !publicLocale ? "en" : publicLocale;
+  const articleLang = post.language ?? (publicLocale === "en-US" || !publicLocale ? "en" : publicLocale);
 
   return (
     <div className="landing-page flex min-h-screen flex-col bg-white text-black">
@@ -160,11 +164,16 @@ export function BlogArticlePage({
             </span>
             <span className="underline decoration-black/20 underline-offset-4">{t("返回")}</span>
           </a>
-          <img
-            src={post.coverImage}
-            alt={coverAlt}
-            className="mt-8 aspect-video w-full rounded-md object-cover"
-          />
+          {post.coverImage ? (
+            <div className="mt-8 aspect-video w-full overflow-hidden rounded-md">
+              <img
+                src={post.coverImage}
+                alt={coverAlt}
+                style={{ objectPosition: post.coverPosition ?? "center" }}
+                className="size-full object-cover"
+              />
+            </div>
+          ) : <div aria-hidden="true" className="mt-8 aspect-video w-full rounded-md bg-black/[0.025]" />}
           <h1 className="mt-8 text-pretty text-3xl font-bold leading-tight text-black sm:text-4xl">{post.title}</h1>
           <div className="mt-5 text-sm text-black/45">
             <time dateTime={post.publishedAt}>{formatBlogPublishedAt(post.publishedAt, publicLocale)}</time>
@@ -174,6 +183,7 @@ export function BlogArticlePage({
           <div className="mt-8 space-y-4">
             {post.content.slice(1).map((block, index) => renderBlock(block, index, publicLocale, publicLocalized))}
           </div>
+          <BlogCommunity locale={publicLocale} />
           <BlogShareActions path={articlePath} title={post.title} />
         </article>
       </main>

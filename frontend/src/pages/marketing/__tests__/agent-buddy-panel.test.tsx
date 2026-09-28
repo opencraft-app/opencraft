@@ -754,7 +754,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(await screen.findByText("人设已更新")).toBeInTheDocument();
     expect(screen.getByText((_text, element) => (
       element?.tagName === "P"
-      && element.textContent === "人设已更新，请发送 /new 开始新会话以生效"
+      && element.textContent === "人设已更新，请发送 /new 开始新对话以生效"
     ))).toBeInTheDocument();
   });
 

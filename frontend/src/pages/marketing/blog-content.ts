@@ -1,8 +1,15 @@
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-
-import BLOG_TEXT_TRANSLATIONS from "./blog-content-translations.json";
+import { localeDefinition } from "@/i18n/locales.config";
+import { isGlobal } from "@/lib/region";
+import REGIONAL_TRANSLATIONS from "./blog-content-regional-translations.json";
 
 export type BlogLocale = PublicSiteLocale;
+export type BlogContentLanguage = keyof typeof REGIONAL_TRANSLATIONS;
+
+const CONTENT_LANGUAGE_BY_LOCALE = {
+  "en-US": "en", "zh-CN": "zh-CN", "zh-SG": "zh-CN", "zh-Hant": "zh-Hant",
+  "id-ID": "id-ID", es: "es", "ja-JP": "ja-JP", "ko-KR": "ko-KR",
+} satisfies Record<BlogLocale, BlogContentLanguage>;
 
 export type BlogInline =
   | string
@@ -24,7 +31,7 @@ export type BlogBlock =
     }
   | {
       type: "image";
-      src: string;
+      src: string | null;
       alt: string;
       size?: "narrow";
     }
@@ -52,1923 +59,1025 @@ export type BlogPost = {
   title: string;
   excerpt: string;
   publishedAt: string;
-  coverImage: string;
+  coverImage: string | null;
+  coverPosition?: "left" | "center" | "right";
+  /** Language of this source or translated article version. */
+  language?: BlogContentLanguage;
   content: readonly BlogBlock[];
 };
 
-type BlogTranslationTable = Readonly<Record<string, string>>;
-
-function translationTable(locale: BlogLocale): BlogTranslationTable {
-  const sourceLocale = locale === "zh-SG" ? "zh-CN" : locale;
-  if (sourceLocale === "en-US") return {};
-  return BLOG_TEXT_TRANSLATIONS[sourceLocale as keyof typeof BLOG_TEXT_TRANSLATIONS] ?? {};
-}
-
-function translateInline(inline: BlogInline, table: BlogTranslationTable): BlogInline {
-  if (typeof inline === "string") return table[inline] ?? inline;
-  return { ...inline, label: table[inline.label] ?? inline.label };
-}
-
-function localizeBlock(block: BlogBlock, table: BlogTranslationTable): BlogBlock {
-  switch (block.type) {
-    case "paragraph":
-      return { ...block, content: block.content.map((inline) => translateInline(inline, table)) };
-    case "heading":
-      return { ...block, text: table[block.text] ?? block.text };
-    case "image":
-      return { ...block, alt: table[block.alt] ?? block.alt };
-    case "ordered-list":
-      return {
-        ...block,
-        ariaLabel: table[block.ariaLabel] ?? block.ariaLabel,
-        items: block.items.map((item) => item.map((inline) => translateInline(inline, table))),
-      };
-    case "unordered-list":
-      return {
-        ...block,
-        items: block.items.map((item) => item.map((inline) => translateInline(inline, table))),
-      };
-    case "code":
-      return block;
+export function cleanBlogTrialUrl(value: string): string {
+  if (!/^https?:\/\/(?:www\.)?lightvela\.(?:ai|com)(?:[/?#]|$)/i.test(value)) return value;
+  const url = new URL(value);
+  for (const key of [...url.searchParams.keys()]) {
+    if (/^(from|ref|source|utm_.+)$/i.test(key)) url.searchParams.delete(key);
   }
+  if (url.pathname === "/") url.hostname = isGlobal ? "lightvela.ai" : "lightvela.com";
+  return url.toString();
 }
 
-export function localizeBlogPost(post: BlogPost, locale: BlogLocale = "en-US"): BlogPost {
-  if (locale === "en-US") return post;
-  const table = translationTable(locale);
+export function blogArticleLocale(locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): BlogLocale {
+  if (!isGlobal) return "zh-CN";
+  return locale === "zh-CN" ? "zh-SG" : locale;
+}
+
+export function blogContentLanguage(locale?: BlogLocale): BlogContentLanguage {
+  return CONTENT_LANGUAGE_BY_LOCALE[blogArticleLocale(locale)];
+}
+
+export function blogCanonicalPath(slug: string, locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): string {
+  const articleLocale = blogArticleLocale(locale);
+  const prefix = !isGlobal || articleLocale === "en-US" ? "" : `/${localeDefinition(articleLocale).urlLang}`;
+  return `${prefix}/blog/${slug}`;
+}
+
+export function localizeBlogPost(post: BlogPost, locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): BlogPost {
+  const language = blogContentLanguage(locale);
+  const translations: Readonly<Record<string, string>> = REGIONAL_TRANSLATIONS[language];
+  const translate = (text: string) => (translations[text] ?? text).replace(
+    /https?:\/\/(?:www\.)?lightvela\.(?:ai|com)[^\s"<>，。；）]*/gi,
+    cleanBlogTrialUrl,
+  );
+  const inline = (part: BlogInline): BlogInline => {
+    if (typeof part === "string") return translate(part);
+    return { ...part, label: translate(part.label), href: cleanBlogTrialUrl(part.href) };
+  };
   return {
     ...post,
-    title: table[post.title] ?? post.title,
-    excerpt: table[post.excerpt] ?? post.excerpt,
-    content: post.content.map((block) => localizeBlock(block, table)),
+    language,
+    title: translate(post.title),
+    excerpt: translate(post.excerpt),
+    content: post.content.map((block): BlogBlock => {
+      switch (block.type) {
+        case "paragraph": return { ...block, content: block.content.map(inline) };
+        case "heading": return { ...block, text: translate(block.text) };
+        case "code": return { ...block, content: translate(block.content) };
+        case "ordered-list": return { ...block, ariaLabel: translate(block.ariaLabel), items: block.items.map((item) => item.map(inline)) };
+        case "unordered-list": return { ...block, items: block.items.map((item) => item.map(inline)) };
+        case "image": return block;
+      }
+    }),
   };
 }
 
-const link = (label: string, href: string): BlogInline => ({ type: "link", label, href });
-
 export const BLOG_POSTS: readonly BlogPost[] = [
   {
-    slug: "dsh-revived-broken-hermes-agent",
-    category: "use-case",
-    author: "Cassidy Shi",
-    title: "For Just $0.03, DSH Brought a Broken Hermes Agent Back to Life",
-    excerpt:
-      "When a broken state database left Hermes Agent unable to reply, DeepSeek Harness repaired it from inside the same LightVela environment.",
-    publishedAt: "2026-09-15T16:34:36+08:00",
-    coverImage: "/assets/blog/dsh-revived-broken-hermes-agent/cover.webp",
-    content: [
+    "slug": "lightvela-personal-ai-cloud-now-live",
+    "language": "en",
+    "title": "LightVela: Your Personal AI in the Cloud Is Now Live",
+    "excerpt": "LightVela is a personal AI assistant that runs independently in the cloud, stays online, remembers your habits, and takes initiative.",
+    "coverImage": "/assets/blog/lightvela-personal-ai-cloud-now-live/cover.webp",
+    "coverPosition": "left",
+    "content": [
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/cover.webp",
-        alt: "Hermes Agent and DeepSeek Harness repairing a broken agent",
+        "type": "image",
+        "src": "/assets/blog/lightvela-personal-ai-cloud-now-live/cover.webp",
+        "alt": "LightVela: Your Personal AI"
       },
       {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "In the previous post, we tried getting two agents to work together inside the same cloud environment: Hermes Agent as the navigator - understanding requirements, designing the plan, and reviewing results - and DeepSeek Harness (DSH) as the driver - entering the actual workspace to write and verify code.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "LightVela began with the wave of interest in personal AI sparked by OpenClaw."
+        ]
       },
       {
-        type: "paragraph",
-        content: ["A new problem gave this combo a new purpose."],
+        "type": "paragraph",
+        "content": [
+          "In March this year, we hosted our first free OpenClaw installation event at Tencent Tower in Shenzhen, quickly drawing attention from across China."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Recently, several members of our community ran into errors like these from their Hermes Agent:",
-        ],
+        "type": "paragraph",
+        "content": [
+          "In April, based on cloud agent, we launched LightVela, built on Hermes Agent, with Chinese and international sites going live simultaneously. We took care of deployment, configuration, and maintenance, making it possible for anyone to create an always-on personal AI assistant in just 10 seconds."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Type one: No reply: the turn was stopped because session storage could not be written (the transcript would have been lost on restart). Check the state database health (hermes doctor), then send your message again.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "New users now get:"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Type two: Session storage was temporarily unavailable, so this turn was stopped to protect your conversation history. Your message should already be saved. Please send it again in a moment.",
-        ],
+        "type": "unordered-list",
+        "items": [
+          [
+            "1 month free trial"
+          ],
+          [
+            "A dedicated cloud computer with at least 2 vCPU + 8GB RAM"
+          ],
+          [
+            "Includes 4,500 AI credits"
+          ]
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/01-hermes-repair-hero.webp",
-        alt: "Illustration of an agent repairing a Hermes Agent in a hospital-like monitoring environment",
+        "type": "paragraph",
+        "content": [
+          "Invite a friend to sign up and activate LightVela, and you’ll both receive 500 AI credits. No limit on referral rewards!"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Both trace back to the same root cause: a Hermes Agent file, state.db, becoming unwritable or unreadable for various reasons. To protect existing data, the agent then refuses further conversations. The really painful part: rebuilding the agent from LightVela's Diagnostic Center didn't fix it either.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "You can assign tasks to LightVela anytime through the messaging apps you already use. It keeps running in the cloud, remembers your preferences, and gathers news, tracks updates, and sends reminders on schedule."
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/02-community-error.webp",
-        alt: "LightVela community messages showing repeated Hermes Agent session storage errors",
+        "type": "image",
+        "src": "/assets/blog/lightvela-personal-ai-cloud-now-live/homepage.webp",
+        "alt": "LightVela homepage showing its always-on AI companion and messaging channels"
       },
       {
-        type: "paragraph",
-        content: [
-          "This used to be a genuinely tricky situation, until there was a DeepSeek Harness running in the same environment.",
-        ],
+        "type": "heading",
+        "text": "Not Sure What AI Can Do for You? Start with a Bot"
       },
       {
-        type: "heading",
-        text: "Why Can DSH Fix It?",
+        "type": "paragraph",
+        "content": [
+          "When you create your LightVela agent, you can choose from ready-made Bot templates designed around everyday needs, including a parenting advisor, a health manager, an industry researcher, and a growth experimenter."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "The repair itself uses Hermes Agent's native recovery mechanism. The tricky part is that this repair has to be initiated from inside the Hermes Agent's runtime environment.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "We selected and combined popular skills from ",
+          {
+            "type": "link",
+            "label": "Skills.sh",
+            "href": "https://skills.sh"
+          },
+          " or Github into practical templates, with personas, skills, memory, and scheduled tasks already configured. No additional setup is needed. Just click to get started."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "DSH runs in that same environment. It can reach Hermes' processes, logs, configuration, and files, and it can execute commands. So we can simply hand the repair job to it.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/lightvela-personal-ai-cloud-now-live/create-agent.webp",
+        "alt": "LightVela agent creation screen with suggested Bot templates"
       },
       {
-        type: "heading",
-        text: "How, Exactly?",
+        "type": "heading",
+        "text": "Every Agent Has Its Own Cloud Environment"
       },
       {
-        type: "paragraph",
-        content: [
-          "First, install and configure DSH in LightVela. See the ",
-          link("DeepSeek Harness documentation", "https://lightvela.ai/docs/configuration/deepseek-harness/"),
-          ".",
-        ],
+        "type": "paragraph",
+        "content": [
+          "LightVela is built on the open-source agent framework Hermes Agent. Each agent also gets its own independent cloud environment, allowing it to carry out recurring tasks such as:"
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/03-dsh-running-config.webp",
-        alt: "LightVela DeepSeek Harness page showing the running service and configured model",
+        "type": "unordered-list",
+        "items": [
+          [
+            "Putting together an industry news briefing every morning."
+          ],
+          [
+            "Checking stocks, websites, or competitor updates on a schedule."
+          ],
+          [
+            "Reminding you to log your meals and exercise in the evening."
+          ]
+        ]
       },
       {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "Important: when DSH works on this problem, make sure it's operating in the /home/agentuser/ directory.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "Background tasks keep running even when your computer is turned off. This is supported by Tencent Cloud’s established cloud server infrastructure and its experience operating cloud-based Agent CPU clusters spanning millions of cores."
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/04-workspace-directory.webp",
-        alt: "DeepSeek Harness workspace directory selector showing /home/agentuser/",
+        "type": "image",
+        "src": "/assets/blog/lightvela-personal-ai-cloud-now-live/hermes-meetup.webp",
+        "alt": "Online meetup co-hosted by LightVela with universities in Singapore and Hermes core team member Tommy"
       },
       {
-        type: "paragraph",
-        content: [
-          "There's also an optional but recommended enhancement: give DSH a Hermes Agent operations manual first, so it doesn't have to spend time discovering how Hermes is configured on its own. To install it, send this in DSH's chat box:",
-        ],
+        "type": "paragraph",
+        "content": [
+          "LightVela co-hosted an online meetup with universities in Singapore, joined by Hermes core team member Tommy."
+        ]
       },
       {
-        type: "code",
-        content: "given https://skillhub.cn/install/skillhub.md, install @user_70854421/hermes-agent-skill-for-dsh.",
+        "type": "heading",
+        "text": "Use It Your Way, with Support for Multiple Bots"
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/05-skill-install-complete.webp",
-        alt: "DeepSeek Harness confirming that the Hermes Agent DSH Skill was installed",
+        "type": "paragraph",
+        "content": [
+          "LightVela lets you customize your agent’s soul, memory, skills, and scheduled tasks. It continuously adapts to your preferences, habits, and communication style, getting to know you better the more you use it."
+        ]
       },
       {
-        type: "paragraph",
-        content: ["Once installed, give it the first instruction:"],
+        "type": "paragraph",
+        "content": [
+          "When there is more to do, you can create multiple Bots: one for industry research, one for travel planning, and another for everyday errands. Each maintains its own memory, skills, and tasks, keeping their contexts separate."
+        ]
       },
       {
-        type: "code",
-        content:
-          "There is a Hermes Agent running in your current environment; please locate its installation directory. I need your help troubleshooting and resolving an issue by referencing the skill that was just installed.",
+        "type": "paragraph",
+        "content": [
+          "Different Bots can connect to channels such as Telegram, Discord and so on. They can also join the same group chat, forming your own AI team."
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/06-hermes-location.webp",
-        alt: "DeepSeek Harness locating the Hermes Agent installation and loading the installed skill",
+        "type": "image",
+        "src": "/assets/blog/lightvela-personal-ai-cloud-now-live/telegram.webp",
+        "alt": "LightVela responding in Telegram with recent local news about Sicily"
       },
       {
-        type: "paragraph",
-        content: [
-          "If you'd rather play it safe, phrase it this way:",
-        ],
+        "type": "heading",
+        "text": "Build a website and Share It Directly"
       },
       {
-        type: "code",
-        content: [
-          "There is a Hermes Agent running in your current environment. Please locate its installation directory. I need you to help me troubleshoot and resolve my issue, referencing the skill that was just installed, regarding:",
-          "{Describe your issue here}.",
-          "",
-          "Please first identify the cause of the problem and design a fix, but do not execute it yet.",
-        ].join("\n"),
+        "type": "paragraph",
+        "content": [
+          "Beyond conversations and task execution, LightVela also provides a workbench."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "When it comes back with a repair plan and you're not sure about it, ask in the community group first. The QR code is at the end.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "Choose a template or build a page from scratch, then publish, preview, update, and manage it. Travel plans, personal homepages, project pages, and information dashboards can all be shared through publicly accessible links."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "In our case it went smoothly: right after locating the Hermes Agent, our DSH had already identified the state.db corruption, planned out the repair steps, and got to work:",
-        ],
+        "type": "image",
+        "src": "/assets/blog/lightvela-personal-ai-cloud-now-live/workbench.webp",
+        "alt": "LightVela Workbench with starter templates and published web projects"
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/07-repair-plan.webp",
-        alt: "DeepSeek Harness showing a repair plan for Hermes Agent state database corruption",
+        "type": "heading",
+        "text": "Try LightVela Today"
       },
       {
-        type: "paragraph",
-        content: ["Within a few minutes, the repair was complete:"],
+        "type": "paragraph",
+        "content": [
+          "LightVela is a personal AI assistant that runs independently in the cloud, stays online, remembers your habits, and takes initiative."
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/08-repair-verification.webp",
-        alt: "DeepSeek Harness verification results showing Hermes Agent state database repair passed",
+        "type": "paragraph",
+        "content": [
+          "New users currently receive a one-month free trial, including a cloud computer with 2 CPU cores and 8 GB of RAM, plus 4,500 AI credits. Invite a friend to sign up and activate their account, and you will each receive an additional 500 AI credits. There is no limit to referral rewards."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Token consumption for the whole run: about 2.6M input tokens and 31.3K output tokens, with a 97% cache hit rate, a very high level. We were running DeepSeek-V4 Flash, so the total cost came to roughly ¥0.25, about four US cents. Compared to hiring an expert or grinding through it yourself, that's about as cheap as fixing things gets.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "One last step, of course: go back to the Hermes Agent chat window and confirm it's actually alive again:",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/09-hermes-restored.webp",
-        alt: "Hermes Agent responding normally after its state database was repaired",
-      },
-      {
-        type: "heading",
-        text: "Final Words",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Adventurers welcome: join the LightVela community group and let's explore what cloud agents can do together.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/dsh-revived-broken-hermes-agent/10-community-qr.webp",
-        alt: "QR code for the LightVela community group",
-      },
+        "type": "paragraph",
+        "content": [
+          "Visit the official website to get started: ",
+          {
+            "type": "link",
+            "label": "https://lightvela.ai/",
+            "href": "https://lightvela.ai/"
+          }
+        ]
+      }
     ],
+    "author": "Jasmin Zhao",
+    "category": "product",
+    "publishedAt": "2026-09-28T16:28:57+08:00"
   },
   {
-    slug: "hermes-deepseek-harness-10x-efficiency",
-    category: "use-case",
-    author: "Cassidy Shi",
-    title: "Stop Letting Your Agent Work Alone: After Teaming Up Hermes and DSH, My Efficiency Went Up 10x",
-    excerpt:
-      "A hands-on guide to pairing Hermes Agent with DeepSeek Harness in LightVela, giving one agent the navigator role and the other the driver role.",
-    publishedAt: "2026-09-15T16:22:02+08:00",
-    coverImage: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.webp",
-    content: [
+    "slug": "dsh-revived-broken-hermes-agent",
+    "language": "zh-CN",
+    "title": "只花 0.25 元，就让 DSH 救活了 Hermes Agent",
+    "excerpt": "上一篇文章里，我尝试让两个 Agent 在同一个云端环境中配合工作：",
+    "coverImage": "/assets/blog/dsh-revived-broken-hermes-agent/cover-source.webp",
+    "content": [
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.webp",
-        alt: "DeepSeek Harness whale logo representing a driver agent",
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/cover-source.webp",
+        "alt": "DSH 修复 Hermes Agent 的文章封面"
       },
       {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "Early software engineering textbooks teach us that pair programming tends to produce better designs and better code than a programmer working alone. In pair programming, the person typing is the driver; the one reviewing is the navigator.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "上一篇文章里，我尝试让两个 Agent 在同一个云端环境中配合工作："
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/01-pair-programming.webp",
-        alt: "Two people pair programming in front of a code editor",
+        "type": "paragraph",
+        "content": [
+          "Hermes Agent 担任领航员，负责理解需求、设计方案和检查结果；DeepSeek Harness（后文简称 DSH）担任驾驶员，进入具体工作区完成代码编写与验证。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "The same pattern shows up in rally racing: every car carries a driver and a co-driver, working together off the pace notes to navigate complex stages.",
-        ],
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "link",
+            "label": "别再让Agent单干了！我让Hermes和DSH组队后，效率提升了10倍",
+            "href": "/blog/hermes-deepseek-harness-10x-efficiency"
+          }
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/02-rally-co-driver.webp",
-        alt: "A rally driver and co-driver reviewing notes inside a race car",
+        "type": "paragraph",
+        "content": [
+          "一个新问题的出现，让这套组合给了我一个新的灵感。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Pair programming and rally racing share one idea: one role focuses on immediate execution while the other keeps watching the bigger picture, anticipating what's next and correcting course early. Both share the same situation and stay in constant sync, which lowers cognitive load and the cost of mistakes on complex tasks.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "问题的起因是近来有数位社群内小伙伴的 Hermes Agent 出现了如下的一些报错："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Following that logic: when a Hermes Agent and DeepSeek Harness share context inside the same LightVela task environment, dividing the work and handing off control, two agents can form exactly this kind of duo.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "第一种：No reply: the turn was stopped because session storage could not be written (the transcript would have been lost on restart). Check the state database health (hermes doctor), then send your message again."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "LightVela now supports running Hermes Agent and DeepSeek Harness (DSH for short) side by side in the same cloud environment, and we've been exploring this collaboration pattern ourselves:",
-        ],
+        "type": "paragraph",
+        "content": [
+          "第二种：Session storage was temporarily unavailable, so this turn was stopped to protect yourconversation history. Your message should already be saved - please send it again in amoment."
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Hermes Agent's clear strength is continuously understanding a person and a project. It retains your preferences and project knowledge, distills working methods into Skills, and keeps receiving tasks from your chat channels. That makes it the natural navigator.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-02.webp",
+        "alt": "Hermes Agent 会话存储异常报错"
       },
       {
-        type: "paragraph",
-        content: [
-          "DSH's clear strength is owning a concrete workspace, reading and modifying files, running tests, and handling errors. That makes it the natural driver.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "究其原因都是因为 Hermes Agent 的一个文件（state.db）因为种种原因导致无法写入或读取，Hermes Agent 为了确保已有的数据不受影响，由此会限制后续的对话。更蛋疼的是，LightVela 诊断中心中的重建 Agent 也无法解决这个问题。"
+        ]
       },
       {
-        type: "heading",
-        text: "How to Set It Up: Preparation",
+        "type": "paragraph",
+        "content": [
+          "这个情况在此之前是非常棘手的，直到有了同一个环境下的 DeepSeek Harness（后文简称 DSH）。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Full disclosure first: making this collaboration work requires installing a Skill and a tool. It's an exploratory setup for AI-era adventurers who enjoy tinkering. A polished, productized version is still being designed.",
-        ],
+        "type": "heading",
+        "text": "为什么 DSH 可以？"
       },
       {
-        type: "paragraph",
-        content: [
-          "If you're still reading, you probably want to try it. One honest warning: AI is probabilistic, so even if you follow every step, there's a chance it won't work on the first try. When that happens, get good at letting your AI help you fix it. You're part of the collaboration too.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "要解决前面的问题，使用 Hermes Agent 原生的修复机制即可完成，棘手的地方是需要在 Hermes Agent 的运行环境中发起这个修复流程。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "First, create your own agent in LightVela. The barrier is low: the China site supports WeChat, QQ, and phone login, the international site supports Google and GitHub, and there's a free trial so you can start painlessly.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "DSH 与 Hermes Agent 运行在同一个环境下，它能够接触 Hermes 的进程、日志、配置和文件，当然也可以执行命令。所以我们可以直接把修复任务交给它。"
+        ]
       },
       {
-        type: "paragraph",
-        content: ["Our personal recommendation: go straight for the 4,500-credit plan. It's been tested and it lasts."],
+        "type": "heading",
+        "text": "具体怎么做？"
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/03-subscription-plan.webp",
-        alt: "LightVela pricing page showing Launch AI and Cruise AI plans",
+        "type": "paragraph",
+        "content": [
+          "你可以参考上一篇推文，先在 LightVela 中安装并配置好 DSH："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "After subscribing, head to the Explore page, where you'll find the DeepSeek Harness entry. Open it and install.",
-        ],
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "link",
+            "label": "别再让Agent单干了！我让Hermes和DSH组队后，效率提升了10倍",
+            "href": "/blog/hermes-deepseek-harness-10x-efficiency"
+          }
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/04-dsh-install.webp",
-        alt: "LightVela DeepSeek Harness installation page with the Install now action highlighted",
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-03.webp",
+        "alt": "LightVela 中已经安装并配置的 DeepSeek Harness"
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-install-progress.webp",
-        alt: "LightVela DeepSeek Harness installation progress at 49 percent",
+        "type": "paragraph",
+        "content": [
+          "注意，这里让 DSH 解决问题时，需要确保在 /home/agentuser/ 这个目录中。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Installation takes about 1-3 minutes. In our testing it was closer to one. Once installed, you can configure DSH's model and access its WebUI from the same page.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-04.webp",
+        "alt": "将 DSH 工作目录设置为 home agentuser"
       },
       {
-        type: "paragraph",
-        content: [
-          "Editor's note: this part of the experience isn't good enough yet. DSH needs its own model configuration, and we haven't found an elegant way to sync model settings between the two agents. It's on the fix list.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "这里有一步可选的增强配置，就是先给 DSH 一本 Hermes Agent 的操作手册，这样可以省去很多 DSH 自己挖掘 Hermes Agent 如何配置的过程。如果需要安装的话，在 DSH 的对话框中输入以下内容即可："
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-running-config.webp",
-        alt: "LightVela DeepSeek Harness page showing the running service and model configuration",
+        "type": "code",
+        "content": "请根据 https://skillhub.cn/install/skillhub.md，安装 @user_70854421/hermes-agent-skill-for-dsh。"
       },
       {
-        type: "paragraph",
-        content: [
-          "We went with DeepSeek's official model, the new DeepSeek V4.1 Flash, natively multimodal and reasonably priced. Steps are straightforward, so we'll just leave the link: ",
-          link("DeepSeek API Platform", "https://platform.deepseek.com/api_keys"),
-          ".",
-        ],
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-05.webp",
+        "alt": "在 DSH 中安装 Hermes Agent 操作技能"
       },
       {
-        type: "paragraph",
-        content: [
-          "If you want more models, you can also configure them in the WebUI, equally simply.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "安装完成之后，先让它来做第一步："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "On WebUI access: no need to worry about someone else getting your URL. Every user gets a dedicated domain with an authentication layer on top, so only you can use yours.",
-        ],
+        "type": "code",
+        "content": "你当前的运行环境中，存在一个 Hermes Agent，你先找到它的安装位置，我需要你帮我参考刚刚安装的技能，排查并解决一个问题。"
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/06-personal-site-confirmation.webp",
-        alt: "LightVela personal site confirmation dialog showing a dedicated lightvela.site URL",
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-06.webp",
+        "alt": "让 DSH 查找 Hermes Agent 安装位置并开始排查"
       },
       {
-        type: "heading",
-        text: "How to Set It Up: The Key Step",
+        "type": "paragraph",
+        "content": [
+          "当然，如果你想要稍微稳一点，可以这样告诉它："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "In short, this step installs a Skill. The installation does two things: registers DSH as a tool of your Hermes Agent, and teaches the Hermes Agent how to call it.",
-        ],
+        "type": "code",
+        "content": "你当前的运行环境中，存在一个 Hermes Agent，你先找到它的安装位置，我需要你帮我参考刚刚安装的技能，排查并解决我的问题：\n{在这里描述你的问题}。\n\n你先帮我排查问题原因，然后设计修复方案，先不要执行。"
       },
       {
-        type: "paragraph",
-        content: [
-          "This approach is just one of several designs we're exploring on top of Hermes Agent's existing mechanisms. The Skill and tool were vibe-coded on our side. If you hit usability issues or have better ideas, join the LightVela community group and let's discuss.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "等它告诉你实际的修复方案，如果拿不准可以在交流群里问问群友（文末扫码可以加入）。"
+        ]
       },
       {
-        type: "paragraph",
-        content: ["Copy the following line and send it to your Hermes Agent in LightVela to initialize everything:"],
+        "type": "paragraph",
+        "content": [
+          "我这里进行得比较顺利，我的 DSH 在查找 Hermes Agent 之后就已经发现了 state.db 损坏的问题，并且已经规划出了修复的方案及步骤，然后继续开干了："
+        ]
       },
       {
-        type: "code",
-        content: "given https://skillhub.cn/install/skillhub.md, install @user_70854421/dsh-pilot",
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-07.webp",
+        "alt": "DSH 识别 state db 损坏并规划修复步骤"
       },
       {
-        type: "paragraph",
-        content: ["If you haven't set up a chat channel yet, you can send it directly on the Chat page:"],
+        "type": "paragraph",
+        "content": [
+          "并且在数分钟内已经最终修复完了："
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/07-dsh-pilot-install-request.webp",
-        alt: "Hermes Agent asking to install the DSH pilot Skill from SkillHub",
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-08.webp",
+        "alt": "DSH 完成 Hermes Agent 状态数据库修复"
       },
       {
-        type: "paragraph",
-        content: [
-          "Once installed, it looks roughly like this. The agent will usually check DSH's status; just confirm when it asks:",
-        ],
+        "type": "paragraph",
+        "content": [
+          "Token 消耗的情况大概是，全程消耗了 2.6M Token（输入）、31.3K Token（输出），缓存命中率 97%（非常高的水平了），这里我用的是DeepSeek-V4 Flash，所以最后大概只花了 0.25 元左右，相比于找其他大佬或者自己死磕，成本是非常低的。"
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/08-dsh-pilot-install-complete.webp",
-        alt: "Hermes Agent confirming installation of the DSH pilot Skill",
+        "type": "paragraph",
+        "content": [
+          "当然，最后我们还是要回到 Hermes Agent 的对话窗口内，来确定问题是否真的修复："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "After registration, one more step: have the Hermes Agent enable the newly registered tool.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/09-dsh-enable-tool.webp",
-        alt: "Hermes Agent asking for confirmation before enabling DeepSeek Harness",
-      },
-      {
-        type: "paragraph",
-        content: ["The agent will confirm when it's on:"],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/10-dsh-tool-enabled.webp",
-        alt: "Hermes Agent confirming that the DeepSeek Harness tool is enabled",
-      },
-      {
-        type: "heading",
-        text: "How to Use It: Each Playing to Its Strengths",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Our suggestion: pair this with the Workbench in LightVela. Workbench provides static site hosting, so agent-generated projects can be deployed straight to the cloud. Backend service deployment is on the way.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: ["Here's a minimal demo. Copy and send this to your Hermes Agent:"],
-      },
-      {
-        type: "code",
-        content: [
-          "Using the newly installed skill, help me create a simple static blog page. You will design the plan, DeepSeek Harness will write the code, and then you will review it.",
-          "",
-          "Once implementation is complete, use the `website-builder` skill to deploy it.",
-        ].join("\n"),
-      },
-      {
-        type: "paragraph",
-        content: ["When things go normally, the two of them collaborating looks like this:"],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/11-dsh-collaboration.webp",
-        alt: "Hermes Agent delegating a static blog page task to DeepSeek Harness",
-      },
-      {
-        type: "paragraph",
-        content: ["A successfully completed task looks like this:"],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/12-dsh-task-complete.webp",
-        alt: "Hermes Agent showing the completed task and saved DeepSeek Harness output files",
-      },
-      {
-        type: "paragraph",
-        content: ["And yes, the site is live, a bit plain, but live:"],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/13-dsh-live-site.webp",
-        alt: "A live static blog page created and deployed through the DeepSeek Harness workflow",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "We'll leave the rest of the scenarios for you to explore. This post is just a starting brick thrown out to attract jade.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Final Words",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Adventurers welcome: join the LightVela community group and let's explore what cloud agents can do together.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/14-community-qr.webp",
-        alt: "QR code for the LightVela community group",
-      },
+        "type": "image",
+        "src": "/assets/blog/dsh-revived-broken-hermes-agent/source-09.webp",
+        "alt": "回到 Hermes Agent 对话窗口验证修复结果"
+      }
     ],
+    "author": "Walker Cao",
+    "category": "use-case",
+    "publishedAt": "2026-09-28T16:28:57+08:00"
   },
   {
-    slug: "tencent-cloud-agent-early-taste-of-meta-muse",
-    category: "use-case",
-    author: "Cassidy Shi",
-    title: "Tencent's Cloud Agent Gave an Early Taste of Meta's Muse",
-    excerpt:
-      "A hands-on look at LightVela, Tencent's cloud-hosted Hermes Agent, after Meta Muse put always-on personal agents back in the spotlight.",
-    publishedAt: "2026-09-15T16:06:45+08:00",
-    coverImage: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.webp",
-    content: [
+    "slug": "hermes-dsh-pelican-cup",
+    "language": "zh-CN",
+    "title": "我的两个 Agent，结伴参与了“鹈鹕杯”",
+    "excerpt": "我在 LightVela 中让 Hermes Agent 与 DSH 组队，生成并提交鹈鹕骑自行车的动画作品。",
+    "coverImage": "/assets/blog/hermes-dsh-pelican-cup/cover-source.webp",
+    "content": [
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.webp",
-        alt: "Meta Muse logo on a glowing pastel cover",
+        "type": "image",
+        "src": "/assets/blog/hermes-dsh-pelican-cup/cover-source.webp",
+        "alt": "Hermes Agent 与 DSH 共同制作鹈鹕作品"
       },
       {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "On September 8 (local time), Mark Zuckerberg announced Meta Muse on X, a personal agent that can complete tasks for you 24/7. It was a notable pivot: with Meta still chasing a top position in foundation models, Muse is its flanking move into the agent market.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "图源：Codex 生成"
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.webp",
-        alt: "Mark Zuckerberg's X post introducing Meta Muse as a personal agent that works 24/7",
+        "type": "paragraph",
+        "content": [
+          "鹈鹕测试最初是由社区开发者针对可能存在的大模型“降智”问题，提出的一个非正式模型能力测试方法，核心任务是让 Agent 纯靠代码来画出一只正在骑自行车的鹈鹕，以最终实现的细节来判定大模型是否被“降智”。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Meta's stock got a nice bump over the following two days, with analysts framing Muse as the start of a new product cycle and a key step toward returns on Meta's AI spending.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "在 OpenAI 发布 GPT-6 Astra 之后，鹈鹕测试最近又火起来了，更有开发者在社区里发起了鹈鹕杯比赛，被各大科技媒体争相报道。"
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.webp",
-        alt: "Meta stock chart showing a 6.55 percent rise to 653.69 dollars",
+        "type": "paragraph",
+        "content": [
+          "不过看了一圈好像也没有教大家怎么样具体参与，于是想到了前几天在 LightVela 里给 Hermes Agent 和 DSH 组了个队，在这个用代码参加比赛的场景下更合适。"
+        ]
       },
       {
-        type: "paragraph",
-        content: ["But as of this writing, Muse is still behind a waitlist."],
+        "type": "paragraph",
+        "content": [
+          "如果你也想按照我的思路参加鹈鹕杯，不妨先参考这篇推文，来组起这个队伍来："
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.webp",
-        alt: "Meta Muse signup screen showing that the user is on the waitlist",
-        size: "narrow",
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "link",
+            "label": "别再让Agent单干了！我让Hermes和DSH组队后，效率提升了10倍",
+            "href": "/blog/hermes-deepseek-harness-10x-efficiency"
+          }
+        ]
       },
       {
-        type: "heading",
-        text: "A Discovery: Tencent LightVela",
+        "type": "paragraph",
+        "content": [
+          "当然，如果你嫌麻烦，只在 LightVela 里创建一个 Hermes Agent，然后跟它对话来参与也完全 OK。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Judging from what's public, Muse works by spinning up an agent in the cloud for each user to get that 24/7 execution. One curious user, let's call him our kind of person, took that exact keyword, \"cloud agent,\" and asked his AI about it. Among the results, the one that caught his eye was Tencent's LightVela, which runs a Hermes Agent in the cloud.",
-        ],
+        "type": "heading",
+        "text": "准备工作"
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.webp",
-        alt: "LightVela home page describing an always-on AI companion in the cloud",
+        "type": "paragraph",
+        "content": [
+          "你在这里，你可以先安装我的skill，我把LightVela参与鹈鹕杯提交作品的过程整理成了一个skill，方便大家使用，把下面的话发给自己的 Agent 就行："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Hermes is an old acquaintance at this point, known for agent self-learning, self-evolution, and memory augmentation, with a community profile that has overtaken OpenClaw. Compared to OpenClaw, Hermes emphasizes autonomous learning and complex task execution: it distills task experience into continuously improving Skills, parallelizes work through sub-agents, and is optimized for always-on cloud operation and token efficiency.",
-        ],
+        "type": "code",
+        "content": "请根据 https://skillhub.cn/install/skillhub.md，安装 @user_70854421/pelican-cup-for-vela。"
       },
       {
-        type: "paragraph",
-        content: ["(His words - well, his AI's words.)"],
+        "type": "image",
+        "src": "/assets/blog/hermes-dsh-pelican-cup/source-02.webp",
+        "alt": "Hermes Agent 正在安装 Pelican Cup For Vela 技能"
       },
       {
-        type: "paragraph",
-        content: [
-          "Either way, a Hermes Agent under the hood means the fundamentals of the agent experience are in good hands.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "当然，这里为了确保比赛的公平性，本身SVG的打磨还是由模型自己来决断，技能中就没有包含这部分了。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "How did he know it was Tencent? The \"About Us\" page. We're the same team that ran the free OpenClaw installation campaign back in March.",
-        ],
+        "type": "heading",
+        "text": "关键一步"
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.webp",
-        alt: "LightVela About page describing the Tencent Lighthouse team and OpenClaw installation campaign",
+        "type": "paragraph",
+        "content": [
+          "其实我的提示词很简单，完全让模型发挥自己的水准和审美："
+        ]
       },
       {
-        type: "heading",
-        text: "First Hands-On with LightVela",
+        "type": "code",
+        "content": "调用 DSH 创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画（可基于题面自由创作、多轮打磨，满意后由你使用Pelican Cup For Vela这个技能，来帮我提交到https://codexradar.com/cup/）"
       },
       {
-        type: "paragraph",
-        content: [
-          "With a free trial on offer, he signed up - why not. Registration is simple (WeChat, QQ, or phone number on the China site), and when he spotted the international site at a different domain - lightvela.ai - he went straight there. If you know, you know.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-dsh-pelican-cup/source-03.webp",
+        "alt": "Hermes Agent 调用 DSH 创建鹈鹕骑自行车动画"
       },
       {
-        type: "heading",
-        text: "First contact",
+        "type": "paragraph",
+        "content": [
+          "在它俩精妙的配合下，大概用了 20 分钟左右，花了 5 块钱左右的 Token，一共打磨两轮之后，提交了作品。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Cloud agents usually make you configure models, channels, and Skills yourself, which is a bit of a chore. LightVela turned out to be lighter on setup than expected.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-dsh-pelican-cup/source-04.webp",
+        "alt": "Hermes Agent 完成鹈鹕杯作品提交、打磨与部署"
       },
       {
-        type: "paragraph",
-        content: [
-          "His trial plan came with 4,500 AI credits, so he didn't need to configure a model at all to start.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-dsh-pelican-cup/source-05.webp",
+        "alt": "鹈鹕杯作品提交成功后生成的参赛凭证"
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.webp",
-        alt: "LightVela subscription panel showing 4,500 trial credits and current usage",
+        "type": "paragraph",
+        "content": [
+          "emm 并没有我想象得那么好，但距离网络上的一些大师作品还是相去甚远，看来我有必要以后换更好的模型了哈哈。"
+        ]
       },
       {
-        type: "paragraph",
-        content: ["The built-in Chat page handled simple Q&A just fine."],
+        "type": "paragraph",
+        "content": [
+          "我的作品：",
+          {
+            "type": "link",
+            "label": "https://ws-870756eab22a4c27.lightvela.site/",
+            "href": "https://ws-870756eab22a4c27.lightvela.site/"
+          }
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.webp",
-        alt: "LightVela Chat page greeting the user with Hermes Agent",
+        "type": "paragraph",
+        "content": [
+          "为了方便大家真实地感受我的参赛作品，我在 LightVela 上也把它发布出来了，可以通过域名来访问。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "On a whim, he asked the agent to analyze why Meta's stock had been climbing those two days, a simple task. The reply started streaming in under two seconds, and the analysis itself held up.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "要实现起来也很简单，给你的 Agent 发送以下内容即可 Get 同款："
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.webp",
-        alt: "LightVela Hermes Agent researching and analyzing Meta's stock performance",
+        "type": "code",
+        "content": "使用 website-builder Skill 帮我部署下刚刚这个鹈鹕的 HTML。"
       },
       {
-        type: "paragraph",
-        content: [
-          "What caught his attention was the token counter at the bottom: this round consumed 31,615 input tokens and 743 output tokens, yet only 1 credit.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "不得不说这就是云端的好处之一，有一些前端生成的小项目，随时随地就能放在云上让大家都来访问。"
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.webp",
-        alt: "LightVela chat showing a token count of 31,615 input and 743 output tokens",
+        "type": "paragraph",
+        "content": [
+          "不过需要提醒大家，如果大家是 LightVela 国内版，那么这个链接是只有你自己可以访问的，dddd。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Doing the math on simple Q&A alone, his trial credits worked out to roughly 140 million input tokens and 3.3 million output tokens, all usable within the trial period.",
-        ],
+        "type": "heading",
+        "text": "奇思妙想"
       },
       {
-        type: "paragraph",
-        content: [
-          "His one complaint: the chat page has to reconnect every time you refresh it. Noted, that's on our list.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "鹈鹕测试的初衷是为了长期观测对比模型的生成效果，社区中有玩家甚至会每天生成一份留存下来，然后看哪天的效果会有明显的波动，则证明模型的智慧在这天受到了影响。"
+        ]
       },
       {
-        type: "heading",
-        text: "Scheduled tasks",
+        "type": "paragraph",
+        "content": [
+          "那我是不是可以创建一个定时任务，让我的 Agent 小分队每天都生成一次，过一段时间没准就能窥见一斑我日常用的模型水平究竟怎么样了。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "He'd run plenty of automations locally on Codex before, but they die the moment the laptop closes or the network changes, which is painful for someone who doesn't want to open a computer on weekends. A cloud agent should solve exactly this; we suspect that's the same reasoning behind Meta's pitch.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "先埋个坑，过段时间发出来看看效果。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "The LightVela dashboard does have a Scheduled Tasks page with templates, fairly basic ones, admittedly.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-dsh-pelican-cup/source-06.webp",
+        "alt": "GPT-6 与 GPT-5.6 不同推理强度下的 SVG 鹈鹕生成效果对比"
       },
       {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.webp",
-        alt: "LightVela Scheduled Tasks dashboard with templates and current tasks",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "So he set up a monitor for Meta's stock price, partly to see whether Muse really would usher in another glorious run.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.webp",
-        alt: "LightVela Scheduled Tasks interface showing a stock monitoring task",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Creating that task cost over 40,000 tokens, but only 2 credits. From a free-trial standpoint, that's remarkably durable.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.webp",
-        alt: "LightVela chat showing the setup of Meta pre-market and intraday scheduled tasks",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "It was around 8:30 PM and he didn't want to wait for the 10:30 PM schedule, so he triggered a manual run to see the output:",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.webp",
-        alt: "LightVela scheduled task definitions for Meta pre-market and intraday updates",
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.webp",
-        alt: "LightVela scheduled task result with positive and negative Meta market factors",
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.webp",
-        alt: "LightVela scheduled task result with technical indicators and intraday market updates",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The results met expectations, though he had one gripe: reading them on the web page was a bit of a chore. Better to connect the agent to his WeChat and have results pushed there, with no daily website visits needed.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: ["He'd worried the international site might not support WeChat integration. It does."],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.webp",
-        alt: "LightVela Channels page showing WeChat and Telegram connected",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "As for how to get task results pushed to WeChat, he just told the agent in WeChat. His first attempt was a 7-second voice message that took nearly a minute to send, and the speech recognition heard \"WeChat\" (微信) as \"satellite\" (卫星). We'll take the note on that one too.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.webp",
-        alt: "WeixinClawBot asking the user to clarify what satellite means",
-        size: "narrow",
-      },
-      {
-        type: "image",
-        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.webp",
-        alt: "WeixinClawBot confirming that Meta scheduled task results are pushed to the WeChat chat",
-        size: "narrow",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The final setup worked well, and the whole exercise cost him under 10 credits, enough runway to push it hard for days. He also spotted the Workbench and DeepSeek Harness in the dashboard and plans to play with those next.",
-        ],
-      },
-      {
-        type: "paragraph",
-        emphasis: true,
-        content: ["His closing recommendation after the full run-through: worth a try."],
-      },
-      {
-        type: "paragraph",
-        content: ["China site: ", link("https://lightvela.com", "https://lightvela.com")],
-      },
-      {
-        type: "paragraph",
-        content: ["International site: ", link("https://lightvela.ai", "https://lightvela.ai")],
-      },
+        "type": "paragraph",
+        "content": [
+          "图源社区，侵删"
+        ]
+      }
     ],
+    "author": "Walker Cao",
+    "category": "use-case",
+    "publishedAt": "2026-09-28T16:28:57+08:00"
   },
   {
-    slug: "lightvela-workbench-ai-vibe-your-own-website",
-    category: "product",
-    author: "Cassidy Shi",
-    title: "LightVela Introduces Workbench to AI-Vibe Your Own Website",
-    excerpt:
-      "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela, from a starter template or a blank workbench to a published site.",
-    publishedAt: "2026-09-03T12:11:11+08:00",
-    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover-light.webp",
-    content: [
+    "slug": "hermes-deepseek-harness-10x-efficiency",
+    "language": "zh-CN",
+    "title": "别再让Agent单干了！我让Hermes和DSH组队后，效率提升了10倍",
+    "excerpt": "结对编程让一个人写代码、另一个人审阅，从而提升设计质量。我尝试把同样的协作方式用在 Agent 身上。",
+    "coverImage": "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover-supplied.webp",
+    "content": [
       {
-        type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.webp",
-        alt: "LightVela My Workbench interface with starter templates",
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover-supplied.webp",
+        "alt": "两位协作者在同一台电脑前结对编程"
       },
       {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela. Choose a starter template or describe a website from scratch, then work with the Agent to refine and publish it.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "刚开始学习软件工程的时候，课本中的概念告诉我们结对编程相比于程序员独立工作，往往能够提升设计的质量，以写出更好的程序。在结对编程中，输入代码的人一般被称作驾驶员，审查代码的人被称作观察员。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "After deployment, you can view the public address, check the current status, and manage your existing workbenches from one place.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-01.webp",
+        "alt": "结对编程"
       },
       {
-        type: "paragraph",
-        content: [
-          "Beta notice: My Workbench is a Beta feature, so the generation and deployment workflow may change as the feature evolves.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "图源：Codex生成"
+        ]
       },
       {
-        type: "heading",
-        text: "What My Workbench Does",
+        "type": "paragraph",
+        "content": [
+          "这种协作模式在拉力比赛中同样存在，每辆赛车内有一名驾驶员和一名领航员，相互配合，并且基于路书来完成复杂赛道的导航。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "My Workbench connects your agent chat with a managed static website workflow. You can start your own workbench or choose one of the provided templates, interact with the Agent to refine it, and preview your site with your own dedicated link.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-02.webp",
+        "alt": "拉力赛车中的领航员与驾驶员"
       },
       {
-        type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/workbench-overview.webp",
-        alt: "LightVela My Workbench page showing templates and the workbench list",
+        "type": "paragraph",
+        "content": [
+          "图源：Codex生成"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "LightVela manages the hosting process, so you do not need to configure a separate hosting server or cloud account.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "结对编程和拉力赛展现了相似的协作思路：让一个角色专注眼前执行，另一个角色持续观察全局、预判下一步并及时纠偏；双方共享现场、持续同步，从而降低复杂任务中的认知负担与失误成本。"
+        ]
       },
       {
-        type: "heading",
-        text: "Open My Workbench",
+        "type": "paragraph",
+        "content": [
+          "沿着这个思路，当 Hermes Agent 和 DeepSeek Harness能够在 LightVela 的同一任务环境中共享上下文、分工协作并交接控制时，Agent 也可以形成类似的双角色配合。"
+        ]
       },
       {
-        type: "ordered-list",
-        ariaLabel: "Steps to open My Workbench",
-        items: [
-          ["Open ", link("LightVela Agents", "https://lightvela.ai/agents/"), "."],
-          ["In the left navigation, open My Workbench."],
-        ],
+        "type": "paragraph",
+        "content": [
+          "LightVela 现已提供了在同一云端环境下同时运行 Hermes Agent 和 DeepSeek Harness （后文简写为DSH）的能力，以期探索上述的协作模式："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "The Workbench page shows your current usage, available templates, and existing workbenches.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "Hermes Agent 的明显优势是“持续理解一个人和一件事”。它可以保留用户偏好与项目知识，通过 Skills 沉淀工作方法，并能够从聊天通道中持续接收任务。相较而言 Hermes Agent 适合扮演“领航员”的角色。"
+        ]
       },
       {
-        type: "heading",
-        text: "Choose a Starter Template",
+        "type": "paragraph",
+        "content": [
+          "DSH 的明显特点是对具体的工作区负责，并在此基础上可以读取和修改文件、修改文件、运行测试、处理异常等等，那么它更适合作为“驾驶员”的角色。"
+        ]
       },
       {
-        type: "paragraph",
-        content: ["Starter templates help you begin with a clear direction."],
+        "type": "heading",
+        "text": "如何实现：准备工作"
       },
       {
-        type: "paragraph",
-        content: ["You can choose a template based on the type of website you want to build:"],
+        "type": "paragraph",
+        "content": [
+          "先叠个甲，实现协作需要安装一个技能和工具来完成，属于一种探索型的方案，适用于 AI 时代的探险家们，愿意折腾的可以玩玩，成熟的产品方案还在设计当中。"
+        ]
       },
       {
-        type: "unordered-list",
-        items: [
-          ["Clean Utility Dashboard: Forms, information lookup, or lightweight internal tools."],
-          ["Data Dashboard: Core metrics, trends, business overviews, or daily reports."],
-          ["Campaign Landing Page: Activity pages, sign-up pages, or redemption entries."],
-          ["Personal Showcase: Portfolios, personal homepages, or service introductions."],
-        ],
+        "type": "paragraph",
+        "content": [
+          "如果你接着往下看，那么我认为你会想要试试它的效果，不过丑话说在前面，因为 AI 本身的不确定性，所以即使从头到尾做完了，还是有概率不成功，这个时候善于让自己的 AI 来解决就好了，你也是协作的一份子～"
+        ]
       },
       {
-        type: "paragraph",
-        content: ["Select a template to open Agent chat with a prepared request."],
+        "type": "paragraph",
+        "content": [
+          "首先你需要在 LightVela 中首先建一个自己的 Agent，不过不需要担心有太高的门槛，中国站支持微信/QQ/手机登录，国际站支持Google邮箱和GitHub登录，并且拥有免费的体验期，可以无痛上手。"
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/starter-templates.webp",
-        alt: "LightVela Workbench starter templates for utility tools, dashboards, campaigns, and showcases",
+        "type": "paragraph",
+        "content": [
+          "这里个人推荐直接选 4500 积分的版本，亲测很耐蹬。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "You can also select the blank option and let the Agent clarify the requirements with you step by step.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-03.webp",
+        "alt": "LightVela 套餐选择页面"
       },
       {
-        type: "heading",
-        text: "Create a Workbench with Agent Chat",
+        "type": "paragraph",
+        "content": [
+          "订阅完成后，来到探索页面，可以看到 DeepSeek Harness 的入口，进入页面后直接安装即可。"
+        ]
       },
       {
-        type: "ordered-list",
-        ariaLabel: "Steps to create a Workbench with Agent chat",
-        items: [
-          ["Select a starter template, or start with a blank workbench."],
-          ["Describe the website’s purpose, audience, content, and visual direction."],
-          ["Answer the Agent’s questions as it clarifies the requirements."],
-          ["Review the generated result and ask the Agent to make changes."],
-          ["When the website is ready, ask the Agent to publish the latest version."],
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-04.webp",
+        "alt": "LightVela 探索页中的 DeepSeek Harness 安装入口"
       },
       {
-        type: "paragraph",
-        content: [
-          "The current workflow uses React, TypeScript, Tailwind CSS, and common UI libraries for generated websites.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "安装过程大概1-3分钟，实测很快，大概1分钟左右："
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/agent-chat.webp",
-        alt: "LightVela Agent chat clarifying requirements for a utility dashboard",
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-05.webp",
+        "alt": "DeepSeek Harness 安装进度"
       },
       {
-        type: "paragraph",
-        content: [
-          "The Agent is also instructed to keep content editable, avoid preset mock business data, and use browser local storage when temporary local data is appropriate.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "安装完成后，可以在同一页面内给 DSH 配置模型、访问 WebUI 等："
+        ]
       },
       {
-        type: "heading",
-        text: "Check the Workbench Status",
+        "type": "paragraph",
+        "content": [
+          "编者按：这里的产品体验还不足够好，需要给 DSH 配置自己的模型，目前我们还没找到太优雅的方案能够同步模型配置，亟待优化。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Each workbench has a deployment status so you can see whether it is ready to visit.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-06.webp",
+        "alt": "DeepSeek Harness 模型配置与 WebUI 入口"
       },
       {
-        type: "unordered-list",
-        items: [
-          ["Building: The website is being generated or prepared."],
-          ["Publishing: The latest version is being published."],
-          ["Online: The website is available at its public address."],
-          ["Update failed: The latest generation or publishing attempt failed."],
-          ["Offline: The website is unavailable or has been removed."],
-        ],
+        "type": "paragraph",
+        "content": [
+          "这里我就直接配 DeepSeek 的官方模型了，新出的 DeepSeek V4.1 Flash，原生支持多模态，成本也还 OK ，很不错，具体方法不赘述，链接贴这儿了："
+        ]
       },
       {
-        type: "image",
-        src: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/status-dashboard.webp",
-        alt: "DataHub dashboard showing revenue, users, orders, and conversion metrics",
+        "type": "paragraph",
+        "content": [
+          "DeepSeek API Platform：",
+          {
+            "type": "link",
+            "label": "https://platform.deepseek.com/api_keys",
+            "href": "https://platform.deepseek.com/api_keys"
+          }
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "When a workbench is online and has a public address, select Visit to open it. If the workbench is still building or publishing, wait for the process to finish and refresh the page if necessary.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "如果想配置更多模型的话，也可以直接去 WebUI 里配置，也很简单。"
+        ]
       },
       {
-        type: "heading",
-        text: "Manage Existing Workbenches",
+        "type": "paragraph",
+        "content": [
+          "访问 WebUI，这里的地址也不需要担心别人拿到了可以访问，我们给大家分配了一个专属的域名，然后也做了一层鉴权，只有你自己能用："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "The existing workbench list shows the website name, public address, creation date, and current status.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-07.webp",
+        "alt": "DeepSeek Harness Personal Site 鉴权确认页"
       },
       {
-        type: "paragraph",
-        content: [
-          "To update a workbench, return to Agent chat and describe the changes you want. After reviewing the changes, ask the Agent to publish the updated version.",
-        ],
+        "type": "heading",
+        "text": "如何实现：关键一步"
       },
       {
-        type: "paragraph",
-        content: ["To remove a workbench:"],
+        "type": "paragraph",
+        "content": [
+          "简单来说，这一步是要安装一个技能，安装动作会完成两件事情：把 DSH 注册为一个 Hermes Agent 的工具、告诉 Hermes Agent 如何调用 DSH。"
+        ]
       },
       {
-        type: "ordered-list",
-        ariaLabel: "Steps to remove a Workbench",
-        items: [
-          ["Find the workbench in the list."],
-          ["Select the delete action."],
-          ["Confirm the deletion."],
-        ],
+        "type": "paragraph",
+        "content": [
+          "这个方案只是目前基于 Hermes Agent 已有机制的设想之一，技能和工具是我自己 Vibe 出来的，如果有可用性相关的问题，或者有更好的方案建议，欢迎加入 LightVela 的交流群一起探讨。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Deleting a workbench immediately takes it offline and removes its related files. This action cannot be undone.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "将以下这段话复制并发给 LightVela 里的 Hermes Agent，即可完成初始化："
+        ]
       },
       {
-        type: "heading",
-        text: "Workbench Quota and Hosting Limits",
+        "type": "code",
+        "content": "请根据 https://skillhub.cn/install/skillhub.md，安装 @user_70854421/dsh-pilot。"
       },
       {
-        type: "paragraph",
-        content: ["Your Workbench limit depends on your plan:"],
+        "type": "paragraph",
+        "content": [
+          "如果你懒得配聊天通道，那也可以在“对话”页面直接发送给 Hermes Agent："
+        ]
       },
       {
-        type: "unordered-list",
-        items: [
-          ["Launch plan: Create 1 workbench."],
-          ["Higher-tier plans: Create up to 5 workbenches."],
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-08.webp",
+        "alt": "DeepSeek Harness Personal Site 鉴权确认页"
       },
       {
-        type: "paragraph",
-        content: [
-          "If you reach your limit, delete an existing workbench before creating a new one or upgrade your plan.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "安装完成后的效果大致如下，一般会需要检查一下 DSH 的状态，Agent 问的话回复确认或者需要就行："
+        ]
       },
       {
-        type: "heading",
-        text: "Common Problems",
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-09.webp",
+        "alt": "DeepSeek Harness Personal Site 鉴权确认页"
       },
       {
-        type: "unordered-list",
-        items: [
-          ["The Workbench page asks you to sign in: Your session has expired. Sign in again and reopen My Workbench."],
-          ["You cannot create another workbench: You may have reached your plan limit. Check your usage or remove an unused workbench."],
-          ["The status remains Building or Publishing: The deployment is still processing. Wait briefly, then refresh the page."],
-          ["The Visit action is unavailable: The workbench is not online yet. Wait until the status changes to Online."],
-          ["The status changes to Update failed: Review the Agent response, make the required changes, and try again."],
-          ["Website data disappears in another browser: The data was stored in browser local storage. Use a backend service if the website requires shared or persistent data."],
-          ["A deleted workbench still appears in the list: Deletion is still being processed. Wait for cleanup to finish and refresh the page."],
-        ],
+        "type": "paragraph",
+        "content": [
+          "然后注册完成后，还需要让 Hermes Agent 把新注册的工具设置为可用状态："
+        ]
       },
       {
-        type: "heading",
-        text: "Current Boundaries",
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-10.webp",
+        "alt": "DeepSeek Harness Personal Site 鉴权确认页"
       },
       {
-        type: "paragraph",
-        content: [
-          "My Workbench is intended for creating and hosting static websites through Agent chat. It does not provide server-side storage, managed databases, persistent form handling, shared accounts, or arbitrary backend services.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "开启完成后 Agent 也会告诉你："
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "Workbench count, traffic, storage, package size, and file count depend on your active plan.",
-        ],
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-11.webp",
+        "alt": "别再让Agent单干了！我让Hermes和DSH组队后，效率提升了10倍：步骤截图 11"
       },
       {
-        type: "heading",
-        text: "FAQ",
+        "type": "heading",
+        "text": "如何使用：各显其能"
       },
       {
-        type: "heading",
-        text: "What types of websites can I create?",
+        "type": "paragraph",
+        "content": [
+          "个人建议可以搭配 LightVela 里的工作台使用。工作台提供了一个静态网页托管的能力，支持把 Agent 生成的项目直接部署在云端，后续也会拓展部署后端服务的能力。"
+        ]
       },
       {
-        type: "paragraph",
-        content: [
-          "You can create dashboards, internal tools, campaign pages, portfolios, landing pages, and other static front-end websites.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "这里仅作简单演示，你可以尝试把下面的话复制并发给你的 Hermes Agent："
+        ]
       },
       {
-        type: "heading",
-        text: "Do I need coding experience?",
+        "type": "code",
+        "content": "使用刚刚安装的技能，帮我实现一个简单的静态博客页面，你来设计方案，由 DeepSeek Harness 完成代码编写，然后由你来审阅。\n\n实现完成后，使用 website-builder Skill 进行部署。"
       },
       {
-        type: "paragraph",
-        content: [
-          "No. You can describe what you want in natural language and let the Agent guide you through the requirements, generation, and publishing process.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "按正常的情况，它俩开始协作的效果类似这样："
+        ]
       },
       {
-        type: "heading",
-        text: "Can I update an existing workbench?",
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-12.webp",
+        "alt": "DeepSeek Harness Personal Site 鉴权确认页"
       },
       {
-        type: "paragraph",
-        content: [
-          "Yes. Return to Agent chat, describe the changes, review the result, and ask the Agent to publish the updated version.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "成功完成一次任务后应该是这样的："
+        ]
       },
       {
-        type: "heading",
-        text: "Can my website save data?",
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-13.webp",
+        "alt": "DeepSeek Harness Personal Site 鉴权确认页"
       },
       {
-        type: "paragraph",
-        content: [
-          "Static websites can temporarily save data in the current browser with local storage. LightVela does not provide server-side persistent storage for Workbench websites.",
-        ],
+        "type": "paragraph",
+        "content": [
+          "它当然是可以访问的，只是略显简陋："
+        ]
       },
       {
-        type: "heading",
-        text: "Do I need a separate hosting account?",
+        "type": "image",
+        "src": "/assets/blog/hermes-deepseek-harness-10x-efficiency/source-14.webp",
+        "alt": "DeepSeek Harness Personal Site 鉴权确认页"
       },
       {
-        type: "paragraph",
-        content: ["No. LightVela provides the hosting workflow for your static workbench."],
-      },
-      {
-        type: "heading",
-        text: "Why is my workbench not immediately available?",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Generation and publishing can take some time. Check the current status and wait until it changes to Online before opening the public address.",
-        ],
-      },
+        "type": "paragraph",
+        "content": [
+          "更多的场景玩法就留给大家来探索吧，本文仅作为思路上的抛砖引玉。"
+        ]
+      }
     ],
-  },
-  {
-    slug: "basketball-shoe-storefront-with-lightvela-workbench",
-    category: "use-case",
-    author: "Cassidy Shi",
-    title: "I Vibe-Coded My Own Basketball Shoe Storefront with LightVela Workbench",
-    excerpt:
-      "I used LightVela Workbench’s Campaign Hub template to turn a basketball shoe launch idea into a premium storefront with a clear product story, guided comparisons, and a focused path to purchase.",
-    publishedAt: "2026-09-03T11:31:46+08:00",
-    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.webp",
-    content: [
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.webp",
-        alt: "A basketball shoe beside the LightVela Workbench interface",
-      },
-      {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "I used LightVela’s Campaign Hub template to turn a basketball shoe launch idea into a premium ecommerce hub. The Agent helped structure the product story, organize the shoe lineup, explain performance features, and create a focused path from discovery to purchase.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The goal was not to create another generic product grid. I wanted a storefront that made the collection feel considered, gave each shoe a reason to exist, and helped shoppers move from curiosity to a confident decision.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "My Expectations for the Site",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "I wanted the site to feel fast, technical, and premium while still being easy to scan. It needed a strong hero section, featured shoe cards, performance comparisons, a size guide, player recommendations, and clear purchase calls to action.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/shoe-collection.webp",
-        alt: "A collection of colorful basketball shoes",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The collection itself was the starting point. I had several different silhouettes and design directions to bring together, so the site needed to explain what made each model distinct instead of making shoppers compare a wall of nearly identical cards.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Why I Started with the Campaign Hub Template",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "I opened ",
-          link("LightVela Workbench", "https://lightvela.ai/agents/websites?from=social_x"),
-          " and selected the Campaign Hub template. It gave me a useful foundation for a launch page, with enough structure to move quickly and enough flexibility to shape the experience around the shoe collection.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/workbench.webp",
-        alt: "LightVela Workbench with Campaign Hub starter templates",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "I started the build with a concise brief:",
-        ],
-      },
-      {
-        type: "code",
-        content: `Build a premium ecommerce campaign hub for a collection of top-tier basketball shoes.
-Make the experience feel fast, technical, and premium.
-Include a strong hero section, featured shoe cards, performance comparisons, a size guide, player recommendations, and clear purchase calls to action.
-Keep all product content editable and do not use fake business data.`,
-      },
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/agent-chat.webp",
-        alt: "LightVela Agent chat showing the storefront build request",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "That prompt established the visual direction and the core information architecture. From there, I could use the conversation to refine the story, adjust the hierarchy, and ask the Agent to turn broad ideas into concrete sections.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Upload the Product Data",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "A product-focused page is only useful when the details are easy to maintain. I used the Workbench environment to keep the product content, images, and supporting files together so the collection could evolve without rebuilding the whole page from scratch.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The product data needed to cover both the practical buying questions and the emotional side of the collection. That meant combining performance details with the design story behind each model.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cloud-storage.webp",
-        alt: "LightVela Cloud Storage with the storefront project files",
-      },
-      {
-        type: "heading",
-        text: "Building the Product Story",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The most important shift was treating the storefront as a product story rather than a list of inventory. I organized the page around a few ideas that could help a shopper understand the collection quickly:",
-        ],
-      },
-      {
-        type: "unordered-list",
-        items: [
-          ["Six performance-focused basketball models"],
-          ["Speed, cushioning, traction, and court control"],
-          ["Athlete trust, ratings, and risk-free returns"],
-          ["Design principles such as performance, durability, and fit"],
-          ["A collection journey from concept and prototyping to court testing and final release"],
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "This gave the page a natural rhythm. The hero introduced the promise, the feature cards explained the collection, and the timeline showed how the products moved from an idea to a finished release.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront.webp",
-        alt: "Dark basketball shoe storefront built with LightVela Workbench",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The dark visual system helped the orange calls to action and performance details stand out. It also made the red, black, and white shoe palette feel consistent across the collection.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Making Premium Products Easier to Compare",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "A premium product page should answer the questions that usually stop a purchase. I used the comparison experience to make those questions explicit:",
-        ],
-      },
-      {
-        type: "unordered-list",
-        items: [
-          ["Which shoe fits my playing style?"],
-          ["How does the cushioning feel compared with the other models?"],
-          ["Which silhouette gives me the traction and stability I need?"],
-          ["What size should I choose?"],
-          ["Can I make a confident purchase if I need to return or exchange it?"],
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/storefront-story.webp",
-        alt: "HOOP ELITE basketball shoe collection with a performance comparison",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The result is a more guided decision path. Shoppers can inspect a specific model, choose a size, review the key details, and move toward the purchase action without losing the context of the larger collection.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Keeping the Storefront Ready for Checkout",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "LightVela’s Workbench is designed for static websites, so I treated the project as the storefront and campaign layer rather than the complete commerce backend.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/checkout-modal.webp",
-        alt: "HOOP ELITE product purchase modal with size and checkout details",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "It presents the products, captures a shopper’s selection, and makes the next step obvious. The checkout connection can be wired to the commerce system used by the business, while the storefront content stays editable in the Workbench.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Iterating with the Agent",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The first generated version was a starting point, not the finished page. I used follow-up instructions to sharpen the experience:",
-        ],
-      },
-      {
-        type: "unordered-list",
-        items: [
-          ["Make the hero section feel more premium and strengthen the contrast between shoe models."],
-          ["Reduce the text density so the most important product details are easier to scan."],
-          ["Create a more focused mobile layout for shoppers browsing on smaller screens."],
-        ],
-      },
-      {
-        type: "heading",
-        text: "What Changed",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Once the main story and visual system were in place, the storefront became much easier to evaluate as a complete customer journey:",
-        ],
-      },
-      {
-        type: "ordered-list",
-        ariaLabel: "Basketball shoe storefront customer journey",
-        items: [
-          ["A shopper arrives at the hero and understands the collection’s performance promise."],
-          ["They scan the featured models and find the shoes that match their needs."],
-          ["They compare performance, fit, and design details across the collection."],
-          ["They open a product view, choose a size, and review the purchase information."],
-          ["They continue to checkout with enough context to feel confident about the selection."],
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The page now has a clear point of view. It feels like a real product launch experience, but its core content can still be edited and extended as the collection grows.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "The Larger Lesson",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The useful part of Workbench was not simply generating a polished page. It was having an Agent that could help translate a product idea into a structured, editable experience, then keep iterating as the brief became more specific.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "For a campaign hub, that means I can move from a rough collection concept to a credible storefront quickly, while keeping the product story, comparison logic, and next steps under my control.",
-        ],
-      },
-    ],
-  },
-  {
-    slug: "recreated-claude-tag-with-lightvela",
-    category: "use-case",
-    author: "Cassidy Shi",
-    title: "I Recreated Claude Tag with LightVela and Set Up a “Digital Employee” in Slack",
-    excerpt:
-      "Anthropic’s Claude Tag points to a new way of working in Slack, so I recreated the idea with LightVela and built a digital employee for my team...",
-    publishedAt: "2026-09-01T20:35:43+08:00",
-    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover-light.webp",
-    content: [
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/cover.webp",
-        alt: "Colorful Slack-inspired LightVela illustration",
-      },
-      {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "Recently, Anthropic launched Claude Tag. In any Slack thread, you can @Claude and it will continue the discussion from there. It can read channel context, use tools from the organization, remember work-related information, and proactively @ you when a task is complete or a human decision is needed.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Anthropic is building this feature internally as its next breakout product. Borrowing Andrej Karpathy’s framing, Claude Tag suggests that AI products are entering a third stage: Chat, then local coding agents, then AI coworkers. For a deeper look, see ",
-          link("Anthropic's official Claude Tag announcement", "https://www.anthropic.com/news/introducing-claude-tag"),
-          ".",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "In the past, we often had to leave the place where work was happening, open a separate AI chat, explain the project context again, and copy the result back into the group. Claude Tag puts an agent inside the communication tool the team already uses every day. Tasks start in the discussion, and the results return to the same thread, where everyone can see them and continue the work.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Claude Tag is still in beta, is available to Claude Team and Enterprise plans, and requires an organization owner to complete the setup. It may not be the right fit for every small team yet, but the idea is worth borrowing.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "I work on growth products at LightVela, so I usually keep a close eye on metrics such as registrations, activations, and active users. Another kind of friction is just as common: project progress, product ideas that appear unexpectedly, and who agreed to follow up on what are scattered across chat history. A few days later, the information has already been buried by newer messages. So I used Slack and LightVela to build a workflow that is closer to how our team works.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: ["This tutorial will walk through three things:"],
-      },
-      {
-        type: "unordered-list",
-        items: [
-          ["Send the latest data to Slack on a daily schedule."],
-          ["Regularly summarize key progress and action items from group chats."],
-          ["Sync those summaries to Notion as an always-growing team knowledge base."],
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Here is the configuration process I went through. The steps are not complicated. Permissions and output format usually take the most thought, so it helps to decide those two things before you begin.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Step 1: Activate a LightVela plan",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "LightVela is a cloud-hosted Agent product that lets you deploy Hermes Agent quickly, with memory management, scheduled tasks, Skills, and persona settings. Alongside its built-in chat entry point, it can connect to Slack, WhatsApp, Telegram, Discord, and other channels.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Open the plan page, choose a version that fits your needs, and start the trial. Trial duration and plan details may change, so use the information shown on the page as the source of truth. The current activation flow supports Google or GitHub sign-in, and the trial does not require a credit card. Visit ",
-          link("LightVela", "/"),
-          " to get started.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/pricing.webp",
-        alt: "LightVela pricing page with Launch and Cruise plans",
-      },
-      {
-        type: "heading",
-        text: "Step 2: Connect LightVela to Slack",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "After activation, open the My Agent configuration page, choose Slack under Channel, and follow the Guide to complete the Slack-side setup. There are several permissions to configure, so it is worth completing them in one pass and checking each item. Missing even one permission to read or send messages can block later group-chat workflows.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/slack-channel.webp",
-        alt: "LightVela Channel page with Slack connected",
-      },
-      {
-        type: "paragraph",
-        content: ["My setup is not limited to private conversations. I also add the Agent to work groups and let it read the conversation history. During configuration, confirm that three types of capability are available:"],
-      },
-      {
-        type: "unordered-list",
-        items: [
-          ["Read message history in the target channels and group chats."],
-          ["Send messages in channels and respond to @ mentions."],
-          ["Access the data sources or tools needed for later tasks, with permissions limited to the minimum scope."],
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Once the connection is complete, return to Slack and start a conversation with the Agent. You can customize its name to match your team’s habits. I named mine lightvela. Send a simple message first to confirm that it can reply normally before continuing with the rest of the setup.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/slack-lightvela-english.webp",
-        alt: "Slack conversation with LightVela in a direct message",
-      },
-      {
-        type: "heading",
-        text: "Step 3: Install a data-monitoring Skill",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "LightVela provides two ways to install a Skill. Public Skills can be searched directly from the Skills tab, with sources including skills.sh and ClawHub. For common use cases, installing from there is the simplest option.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/skills.webp",
-        alt: "LightVela Skills page with featured Skills",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "For this workflow, I needed lightvela to read internal team data, and I wanted to standardize the daily report format. I packaged the data interface and output requirements into a private Skill. Because the API data is only for team members, I did not upload the Skill to a public community. Instead, I sent it to lightvela in the conversation and asked it to install the Skill.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "After installation, do not jump straight to a scheduled task. Run it manually first. Ask the Agent to fetch a daily report for a specific date, then check whether the numbers are correct, the fields are complete, and the format is easy to read in Slack. A successful one-off run confirms that the Skill and permissions are configured correctly.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/daily-report-english.webp",
-        alt: "Slack message list showing a LightVela daily report",
-      },
-      {
-        type: "heading",
-        text: "Step 4: Set up daily delivery",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Once the one-off report works, turn it into a scheduled task. You can configure it from LightVela’s Scheduled Tasks page, or tell the Agent the execution time, data range, destination channel, and failure behavior directly in chat. After that, return to Scheduled Tasks to review each execution record.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: ["You can say:"],
-      },
-      {
-        type: "code",
-        content: `Every day at 10:00 AM, fetch the complete data from yesterday and send it to the specified Slack channel using the “LightVela Usage Daily Report” template. If the fetch fails, notify me in the same channel and explain the reason.`,
-      },
-      {
-        type: "paragraph",
-        content: [
-          "There is one easy-to-miss detail here. If the task only says “send a daily report,” the Agent still has to guess the data date, format, and destination. State all three explicitly and scheduled delivery will be much more reliable.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/automations-english.webp",
-        alt: "LightVela Scheduled Tasks page showing recent daily report runs",
-      },
-      {
-        type: "heading",
-        text: "Step 5: Connect Notion and turn chat into a knowledge base",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Once the Agent is in the work group, it can help organize the conversation history. I want it to capture three types of information: progress on product issues, newly surfaced feature ideas, and action items that someone needs to continue. A summary posted in the group is not enough because the messages will keep moving upward, so I connected Notion as well.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: ["Notion provides an MCP that the Agent can call. In the conversation with lightvela, run the following command:"],
-      },
-      {
-        type: "code",
-        content: ["hermes mcp add \\", "  --url https://mcp.notion.com/mcp \\", "  --auth oauth \\", "  notion"].join("\\n"),
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Follow the returned prompts to complete OAuth authorization. I recommend authorizing only the page or database intended for group-chat summaries instead of opening the entire workspace at once. After authorization, restart MCP. Other channels can use /reload-mcp; Slack disables slash commands, so use !reload-mcp there.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/lightvela-slack-digital-employee/notion-mcp-english.webp",
-        alt: "Slack and Notion MCP overview shared by LightVela",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "After confirming that lightvela can read the target page, give it a fixed instruction such as: Before the weekly meeting, summarize the specified channel and organize it into “Key progress, Open questions, Owners, and Next steps,” then append it to the corresponding Notion page. This means the team no longer has to scroll through the conversation from the beginning during a meeting. Everyone can start with the unfinished items and continue from there.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Today, lightvela has a specific role in our Slack: it sends the daily data report, regularly organizes group conversations, and writes the parts worth preserving into Notion. It has not replaced the team’s judgment, but it has taken over the work that is easy to forget and tedious to move between tools. For me, this is already the outline of a digital employee. As we use it more deeply, we can keep adding Skills so that it understands the business and the way the team collaborates better over time.",
-        ],
-      },
-    ],
-  },
-  {
-    slug: "using-hermes-agent-as-a-discord-bot",
-    category: "use-case",
-    author: "Cassidy Shi",
-    title: "Using Hermes Agent as a Discord bot to drive my 600-user server engagement",
-    excerpt:
-      "I host my mega Discord server with over 600 users, revolving around DWS, Minecraft, and Palworld...",
-    publishedAt: "2026-09-01T18:28:41+08:00",
-    coverImage: "/assets/blog/discord-hermes/cover-light.webp",
-    content: [
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/cover.webp",
-        alt: "A LightVela agent relaxing beside a Discord workspace illustration",
-      },
-      {
-        type: "paragraph",
-        emphasis: true,
-        content: [
-          "Hermes Agent gave my 600-user Discord server a more flexible way to handle engagement, recurring announcements, and everyday questions, while LightVela removed most of the VPS and terminal work needed to keep it online.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "I host my mega Discord server with over 600 users, revolving around DWS, Minecraft, and Palworld. Two issues have always been the most daunting: engagement and moderation. If only an AI agent could live in my Discord server to drive both of these things...",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/server-overview.webp",
-        alt: "The Krakhourse Discord server overview showing its members and activity",
-      },
-      {
-        type: "heading",
-        text: "From fixed-rule bots to an agentic bot",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "In the past, I downloaded pre-packaged Discord bots from sites like ",
-          link("MEE6", "https://mee6.xyz/en"),
-          " and ",
-          link("Dyno", "https://dyno.gg/"),
-          ", or even started a VPS on Tencent Lighthouse to code my own bot instance. Recently, however, I have been yearning for a Discord bot that is not limited by fixed-coded rules, but instead powered by an LLM. My hope was for my bot to become an engaging digital staff member in my server: something that could send messages on its own, help answer questions, and still stay bounded by the context and fixed rules I implemented.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "I have been testing with more than 20 bots now, each with its own strengths and weaknesses. I kept wondering whether there could be a bot that was all-inclusive, online 24/7, and empowered with an actual brain.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/existing-bots.webp",
-        alt: "A Discord member list showing several existing bots in the server",
-        size: "narrow",
-      },
-      {
-        type: "heading",
-        text: "An agentic bot?",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "A bot is just a set of rules, so what about an agent? Obviously, I could not just ship Claude Code or Codex into my server because those are proprietary. The best starting point seemed to be the two tools that have been making waves in 2026: OpenClaw and Hermes Agent.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Although OpenClaw is well known for its mature ecosystem and high customization, I ultimately chose Hermes Agent because I was drawn to its persistent and evolving memory feature, Scheduled Tasks, and Bot Mode designed around agents operating inside group chats. From my point of view, I wanted to create a bot that could emulate a real human, and I was comfortable with it growing and evolving over time.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Hosting the agent",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Hosting really comes down to two options: localhost or a VPS. Running Hermes locally would give me full control, but my computer would need to stay online. A VPS would mean managing deployment, updates, tokens, and connection issues myself. I personally do not fancy chatting with the terminal, despite all the AI tools around.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/channel-configuration.webp",
-        alt: "LightVela channel configuration showing Discord and other messaging channels",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "I then checked out a product everyone was talking about recently in the Discord community: ",
-          link("LightVela", "/"),
-          ". Having delved into its product documents, I found it was essentially a Hermes VPS that bypassed the complicated cloud-tooling and terminal-chatting steps. The site has a workspace where I can connect the bot to Discord, connect it with an LLM, and set up Scheduled Tasks.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Choosing the bot brain",
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/model-configuration.webp",
-        alt: "LightVela model configuration showing a DeepSeek model selection",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The next step was choosing which model should power the agent. LightVela lets me toggle between available models and enter the model I want to use, so I tested a few instead of assuming the most expensive option was necessary. For my Discord use case, DeepSeek V4 Flash was the cheapest model that still handled the server's Q&A, context, and routine messages well enough.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Connecting the bot",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The site still requires you to visit the ",
-          link("Discord Developer Portal", "https://discord.com/developers/home"),
-          ". I recommend reading the ",
-          link("LightVela Discord channel guide", "/docs/configuration/channel-discord/"),
-          " for the specifics. The rough steps are summarized below:",
-        ],
-      },
-      {
-        type: "ordered-list",
-        ariaLabel: "Discord bot setup steps",
-        items: [
-          ["Create a Discord application in the ", link("Discord Developer Portal", "https://discord.com/developers/home"), "."],
-          ["Add a bot, generate its token, and paste it into LightVela."],
-          ["Enable Message Content Intent. Add Server Members Intent only if member or role information is needed."],
-          ["Invite the bot with minimum permissions: View Channels, Send Messages, and Read Message History."],
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Overall, the connection appears more difficult than with the other channels, and some configuration around bot permissions and specific channel integration must be done directly in the portal. Hopefully LightVela can smooth the process and build it in-house soon, like MEE6 and Dyno have done.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/discord-oauth.webp",
-        alt: "Discord OAuth screen asking which server should receive the bot",
-      },
-      {
-        type: "heading",
-        text: "Giving it tasks",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "A feature I found useful was the ability to set Scheduled Tasks for my agent without delving into code. Since my server revolves around Palworld and we host a server-side tournament every Friday for all users, I used Scheduled Tasks to quickly enter the prompt and the time of operation.",
-        ],
-      },
-      {
-        type: "code",
-        content: `Every Friday at 18:00, send a short reminder for the upcoming Palpagos Clash Cup.
+    "author": "Walker Cao",
+    "category": "use-case",
+    "publishedAt": "2026-09-28T16:28:57+08:00"
+  }
+];
 
-Include:
-
-Event: Palpagos Clash Cup
-Start time: Saturday at 20:00 UTC
-Registration: React with ⚔️ in #tournament-signups before Saturday 16:00 UTC
-Questions: #tournament-help
-
-Keep the message short and energetic. Use only the information above. If any event details are missing or outdated, notify a moderator instead of posting.`,
-      },
-      {
-        type: "paragraph",
-        content: [
-          "There are options to set the time of a task at fixed intervals or on specific dates. I set this one specifically for Friday on a weekly basis, triggered at 18:00.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/automation-settings.webp",
-        alt: "LightVela Scheduled Tasks screen showing a weekly Palworld event reminder",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The scheduled task then appears in my chat without consulting the bot to do so. Apart from that, I can @ the bot to engage with it directly. To manage token usage, I can limit the agent to specific chats. The bot is like an LLM that does the homework I set and lives in my chat as a personal assistant that can talk with me.",
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Sometimes I wonder whether I can set up multiple agents and have them converse with one another. That assumes I have an infinite token budget to spend, but given that I am using DeepSeek V4 Flash rather than Opus 5.0, it would still be quite affordable.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/discord-tournament-chat.webp",
-        alt: "A Discord tournament chat where the agent posts a reminder and answers questions",
-      },
-      {
-        type: "heading",
-        text: "Bot personalities!?",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "Bot personalities sounded fun, especially in the form of a soul. It is essentially a ",
-          link("soul.md", "https://soul.md"),
-          " file that guides the agent to behave as instructed. The choices offered were fairly rudimentary, akin to a replica of the MBTI system. LightVela does have the option to upload my own persona files, which gives me more room to personalize the bot.",
-        ],
-      },
-      {
-        type: "image",
-        src: "/assets/blog/discord-hermes/soul-settings.webp",
-        alt: "LightVela Soul settings with persona cards and an upload persona file action",
-      },
-      {
-        type: "heading",
-        text: "My thoughts on LightVela",
-      },
-      {
-        type: "paragraph",
-        content: [
-          "The product delivers a more sandboxed environment for customizing agents that are supposed to live in an instant messaging app, whether that means conversing with me or acting as a support buddy in a group chat. The group chat feature is, in my opinion, the real selling point. If an agent is purely one-to-one, I would rather use ChatGPT.",
-        ],
-      },
-      {
-        type: "heading",
-        text: "Areas of improvement",
-      },
-      {
-        type: "unordered-list",
-        items: [
-          ["A context-uploading space where I can easily customize the knowledge base of my agent."],
-          ["Build the bot-development steps in-house, such as inviting Vela directly into Discord and customizing it in the workspace, instead of requiring a separate Discord Developer Portal setup."],
-          ["Build more non-LLM-based rules customized for the Discord use case, such as polling, word monitoring, and punishment rules. Engaging with the bot through an LLM is fun, but some moderation steps are better handled without one."],
-          ["Add the ability to spin up more mini-bots, each with independent contexts, that can converse with each other in one Discord server."],
-        ],
-      },
-      {
-        type: "paragraph",
-        content: [
-          "In the end, after some playtesting, I feel there will ultimately be limits to LLMs and agents. The master bot I envy would be a mixture of generative AI power to drive natural conversations, with room for fixed rules to drive actionable tasks. Perhaps the combination of LightVela and MEE6 would be the ultimate golden goose.",
-        ],
-      },
-    ],
-  },
-] as const;
-
-export function getBlogPosts(locale: BlogLocale = "en-US"): readonly BlogPost[] {
+export function getBlogPosts(locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): readonly BlogPost[] {
   return BLOG_POSTS.map((post) => localizeBlogPost(post, locale));
 }
 
-export function getBlogPost(slug: string, locale: BlogLocale = "en-US"): BlogPost | undefined {
+export function getBlogPost(slug: string, locale: BlogLocale = isGlobal ? "en-US" : "zh-CN"): BlogPost | undefined {
   const post = BLOG_POSTS.find((candidate) => candidate.slug === slug);
   return post ? localizeBlogPost(post, locale) : undefined;
 }
