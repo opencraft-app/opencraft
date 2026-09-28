@@ -369,6 +369,16 @@ describe("SubscribePage", () => {
 
     await screen.findByRole("tab", { name: /^4500/ });
 
+    /* 套餐卡不表达“已选中”：两张卡共用中性外框，购买仍由各自 CTA 进入。 */
+    const launchCard = screen.getByRole("group", { name: "启航 Launch" });
+    const cruiseCard = screen.getByRole("group", { name: "巡游 Cruise" });
+    expect(launchCard).toHaveClass("rounded-[12px]");
+    expect(cruiseCard).toHaveClass("rounded-[12px]");
+    expect(launchCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    expect(launchCard).not.toHaveAttribute("aria-selected");
+    expect(cruiseCard).not.toHaveAttribute("aria-selected");
+
     await waitFor(() => {
       expect(getCreditTabs().map(getCreditValue)).toEqual([
         "4500",

@@ -244,7 +244,6 @@ interface PlanInfo {
   /* 免费试用提示：新用户启航版按钮展示「免费订阅」时，hover 到按钮上方显示的提示文案。
      非新用户 / 非启航版 / 非免费订阅态时为 undefined（不展示提示）。 */
   freeTrialHint?: string;
-  featured?: boolean;
   maxBots: number;
   /* 售罄：按钮禁用，展示「当日名额已满 / 明天再试」 */
   soldOut?: boolean;
@@ -932,10 +931,8 @@ const mapBundleToPlan = (
     ctaLabel,
     freeTrialHint,
     /* 国际站两张卡 CTA 统一黑底白字（primary），视觉权重一致；
-       国内站维持原样（仅主推卡 index===0 为 primary，其余 outline），本次不改国内站。
-       featured（卡片描边 / 圆角强调）仍只由 tier 顺序决定，不随配色统一而变。 */
+       国内站维持原样（仅主推卡 index===0 为 primary，其余 outline），本次不改国内站。 */
     ctaStyle: isGlobal || index === 0 ? "primary" : "outline",
-    featured: index === 0,
     // PlanInfo 的历史字段名：这里限制 Hermes 实例数量，不是实例内的 Bot 数。
     maxBots: bundle.agent_quota || 1,
     /* 真实缺价走 priceUnavailable（触发徽章 + CTA 禁用 + 点击拦截）；
@@ -1504,8 +1501,6 @@ const PlanCard = ({
   /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
   const [showFreeTrialHint, setShowFreeTrialHint] = useState(false);
   const quotaWouldExceed = currentBots >= plan.maxBots;
-  /* 主推卡由 tier 顺序决定（启航，index===0），不随积分切换变化 */
-  const isFeatured = index === 0;
   const isSoldOut = plan.soldOut === true;
   const isComingSoon = plan.comingSoon === true;
   const isPriceUnavailable = plan.priceUnavailable === true;
@@ -1531,7 +1526,7 @@ const PlanCard = ({
 
   return (
     <MotionCard
-      variant={isFeatured ? "pricing-featured" : "pricing"}
+      variant="pricing"
       role="group"
       aria-label={plan.name}
       variants={fadeIn}
@@ -1539,18 +1534,14 @@ const PlanCard = ({
       className="relative flex min-w-0 flex-col overflow-hidden"
       style={{
         background: colors.white,
-        border: isFeatured ? `1.5px solid ${colors.primary}` : `1px solid ${colors.border}`,
+        border: `1px solid ${colors.border}`,
         transition: "transform 0.3s",
       }}
       onMouseEnter={(e) => {
-        if (!isFeatured) {
-          e.currentTarget.style.transform = "translateY(-2px)";
-        }
+        e.currentTarget.style.transform = "translateY(-2px)";
       }}
       onMouseLeave={(e) => {
-        if (!isFeatured) {
-          e.currentTarget.style.transform = "translateY(0)";
-        }
+        e.currentTarget.style.transform = "translateY(0)";
       }}
     >
       {/* Popular Badge */}
