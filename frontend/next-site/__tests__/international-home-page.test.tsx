@@ -833,7 +833,7 @@ describe("international v2 homepage artifact", () => {
       "Related products",
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
-    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(20);
+    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(21);
     expect(
       Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:nth-child(4) a") ?? [], (anchor) =>
         anchor.textContent,
@@ -848,7 +848,8 @@ describe("international v2 homepage artifact", () => {
       ["Tencent EdgeOne", "https://edgeone.ai/"],
       ["Tencent CloudBase", "https://tcb.cloud.tencent.com/en/?from=lightvela"],
     ]);
-    expect(footer?.querySelector('a[href$="/blog"]')).toBeNull();
+    expect(footer?.querySelector('a[href="/blog"]')?.textContent).toBe("Blog");
+    expect(footer?.querySelector('a[href="/support"]')?.textContent).toBe("User Feedback");
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/subscribe");
     expect(footer?.textContent).toContain("1-month free trial");
     expect(footer?.textContent).toContain("Compare with self-hosting");

@@ -49,11 +49,19 @@ describe("temporary public content retirement", () => {
     }
   });
 
-  it("hides Blog navigation in every checked-in homepage locale", () => {
+  it("restores international Blog navigation while keeping the domestic entry hidden", () => {
     const directory = join(root, "public/lightvela-intl-home");
     for (const file of readdirSync(directory).filter((name) => /^index-fragment.*\.html$/.test(name))) {
       const markup = readFileSync(join(directory, file), "utf8");
-      expect(markup, file).not.toMatch(/href="(?:\/[^/" ]+)?\/blog\/?"/);
+      const document = new DOMParser().parseFromString(markup, "text/html");
+      const locale = document.querySelector("#lightvela-intl-home")?.getAttribute("data-locale");
+      const blogLink = document.querySelector('footer a[href$="/blog"]');
+      if (locale === "zh-CN") {
+        expect(blogLink, file).toBeNull();
+      } else {
+        const prefix = locale === "en-US" ? "" : `/${locale?.toLowerCase()}`;
+        expect(blogLink?.getAttribute("href"), file).toBe(`${prefix}/blog`);
+      }
       expect(markup, file).toContain("/subscribe");
     }
   });
