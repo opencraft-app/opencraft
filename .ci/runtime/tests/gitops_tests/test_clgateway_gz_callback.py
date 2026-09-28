@@ -6,6 +6,9 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CALLBACK_BASE_URL_ENV = "CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL"
+DIANSHI_ORDER_BASE_URL_ENV = (
+    "CLOUDLADDERGATEWAY_BACKEND_DIANSHI_ORDER_BASE_URL"
+)
 
 
 class CloudLadderGZCallbackTests(unittest.TestCase):
@@ -68,6 +71,18 @@ class CloudLadderGZCallbackTests(unittest.TestCase):
             self.callback_base_url("statefulsetplus-testing.yaml"),
             "https://api-sandbox-bj-7.lightclaw.tech",
         )
+
+    def test_only_staging_routes_dianshi_order_to_pre_release(self) -> None:
+        prod = self.workload_env("statefulsetplus.yaml")
+        staging = self.workload_env("statefulsetplus-staging.yaml")
+        testing = self.workload_env("statefulsetplus-testing.yaml")
+
+        self.assertEqual(
+            staging[DIANSHI_ORDER_BASE_URL_ENV],
+            "http://opc-dianshi-activity.pre-release.polaris:80",
+        )
+        self.assertNotIn(DIANSHI_ORDER_BASE_URL_ENV, prod)
+        self.assertNotIn(DIANSHI_ORDER_BASE_URL_ENV, testing)
 
 
 if __name__ == "__main__":

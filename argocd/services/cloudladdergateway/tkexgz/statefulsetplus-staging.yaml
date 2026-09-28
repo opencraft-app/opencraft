@@ -93,6 +93,10 @@ spec:
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_NJ_BASE_URL
           value: https://lightclaw.tech
+        # 国内站续费活动联调仅在 staging 走点石预发布环境。
+        # prod/testing 未设置该覆盖，继续使用镜像内的 production.polaris 后端。
+        - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_ORDER_BASE_URL
+          value: http://opc-dianshi-activity.pre-release.polaris:80
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:3c8ed5ec86d7
         imagePullPolicy: Always
         name: gateway
