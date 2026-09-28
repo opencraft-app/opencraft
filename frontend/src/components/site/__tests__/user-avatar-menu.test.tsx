@@ -536,7 +536,6 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
 
     act(() => {
       (window as Window & { show?: () => boolean }).show?.();

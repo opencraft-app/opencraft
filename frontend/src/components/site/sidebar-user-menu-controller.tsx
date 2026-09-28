@@ -79,7 +79,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     label: t("云存储"),
   });
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });
-  if (!isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈"), external: true });
+  if (hiddenEntriesRevealed && !isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈"), external: true });
   return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
     name={session.user?.name || t("用户")} email={session.user?.email || undefined} avatarSrc={avatarImageUrl(session.user?.avatarUrl ?? null)}
     planLabel={planLabel} credit={credit} status={statusText} entries={entries}

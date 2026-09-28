@@ -177,7 +177,7 @@ export function PersonaUploadModal({
         }}
       >
         <DialogContent
-          className="max-h-[calc(100dvh-2rem)] overflow-y-auto md:w-[42rem]"
+          className="lv-persona-dialog-scroll max-h-[calc(100dvh-2rem)] overflow-y-auto md:w-[42rem]"
           onEscapeKeyDown={(event) => {
             if (injecting) event.preventDefault();
           }}

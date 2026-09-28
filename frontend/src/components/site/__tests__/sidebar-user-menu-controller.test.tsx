@@ -52,14 +52,14 @@ describe("sidebar account controller boundary", () => {
     }
   });
 
-  it("keeps one domestic feedback entry in the account menu independently of show()", async () => {
+  it("reveals one domestic feedback entry only after show()", async () => {
     render(<UserAvatarMenu variant="sidebar" />);
     await userEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
-    expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(isGlobal ? 0 : 1);
-    act(() => host().show?.());
-    expect(screen.queryByRole("link", { name: "产品反馈" }) !== null).toBe(!isGlobal);
+    expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(0);
     act(() => host().show?.());
     expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(isGlobal ? 0 : 1);
+    act(() => host().show?.());
+    expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(0);
   });
 
   it("does not mount billing or upgrade hooks for the unchanged header", () => {

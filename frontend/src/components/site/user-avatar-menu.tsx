@@ -261,6 +261,14 @@ const HeaderUserAvatarMenu = ({
               {cloudStorageMenuItem}
               {billingMenuItem}
               {isSidebar && accountMenuItem}
+              <a
+                href="/support"
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <MessageSquare className={menuIconClass} />
+                {t("用户反馈")}
+              </a>
               {showWorkbenchEntry ? (
                 <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}

@@ -24,6 +24,9 @@ type Store interface {
 	UpdateTicketStatus(ctx context.Context, id, status, actorID, note string) (*store.Ticket, error)
 	AppendMessage(ctx context.Context, ticketID, authorType, authorID, body string) (*store.TicketMessage, error)
 	ListMessages(ctx context.Context, ticketID string) ([]store.TicketMessage, error)
+	CreateSupportFeedback(ctx context.Context, in store.CreateSupportFeedbackInput) (*store.SupportFeedback, error)
+	ListSupportFeedback(ctx context.Context, site string) ([]store.SupportFeedback, error)
+	GetSupportFeedbackAttachment(ctx context.Context, id string) (*store.SupportFeedbackAttachment, error)
 }
 
 type Service struct {
@@ -159,4 +162,42 @@ func validStatus(s string) bool {
 		return true
 	}
 	return false
+}
+
+// --- Support feedback ---
+
+func (s *Service) CreateSupportFeedback(ctx context.Context, in store.CreateSupportFeedbackInput) (*store.SupportFeedback, error) {
+	if strings.TrimSpace(in.AccountID) == "" ||
+		strings.TrimSpace(in.Site) == "" ||
+		strings.TrimSpace(in.Category) == "" ||
+		strings.TrimSpace(in.FeedbackType) == "" ||
+		strings.TrimSpace(in.Subject) == "" ||
+		strings.TrimSpace(in.Description) == "" {
+		return nil, ErrInvalidInput
+	}
+	if in.Site != "cn" && in.Site != "global" {
+		return nil, ErrInvalidInput
+	}
+	if in.Category != "suggestion" && in.Category != "bug" {
+		return nil, ErrInvalidInput
+	}
+	return s.store.CreateSupportFeedback(ctx, in)
+}
+
+func (s *Service) ListSupportFeedback(ctx context.Context, site string) ([]store.SupportFeedback, error) {
+	if site != "" && site != "cn" && site != "global" {
+		return nil, ErrInvalidInput
+	}
+	return s.store.ListSupportFeedback(ctx, site)
+}
+
+func (s *Service) GetSupportFeedbackAttachment(ctx context.Context, id string) (*store.SupportFeedbackAttachment, error) {
+	attachment, err := s.store.GetSupportFeedbackAttachment(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("load support feedback attachment %q: %w", id, err)
+	}
+	return attachment, nil
 }

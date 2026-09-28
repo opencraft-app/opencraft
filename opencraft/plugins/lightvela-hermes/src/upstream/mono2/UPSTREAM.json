@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "5b3255c87d57ea1ac601c9121c0feda0a6fa483722471a985f27452d334b7fe2"
+      "sourceSha256": "a590078952296ad3e38f0df96b0e3a588dbcb64b1ae48cc3955ee93c652f390b"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "56133429addf268cf7d7b6a6705a0327e0a2b0bed3a9df9cebd09ab302a44b32"
+      "sourceSha256": "352ebac96a5880d9d2d9f861cf2abeab77802a066cacfe1221eeb58837092bd8"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "d25273ca6e2b7b380e1817195e8a1d654c87e5dc5ee674487d7337d28adc0d3e"
+      "sourceSha256": "4e00c886696b4b14b985ae576592b3d2a8135911dc37d2ec54ed61dd1b9962ea"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "9097d33aa21e4e08c21bc94d2acf2a43b84d69de7051d7a726cfd5498f6f709f"
+      "sourceSha256": "fc7b6146b4b847923bb678f5a76e0fb666f078be417cc14d0f743915869a4c3b"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "2f970de38d58b87f972430f7bdabee14b25717047bc71ec237a0103d0b404bc2"
+      "sourceSha256": "74889cbd36b5807ea49f10b635b5d26b5c7a5552a1f1d0e8883d709553a6c78f"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "e3b9791ca43d01db6b94e4dbae31edd5463cb9198c6b4da57cceaef319da794d"
+      "sourceSha256": "645ef3725efc873bc7906c7b8be14081d11046e21c22eb7eaa2e70ad57073b77"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "d706c0eb022e1a54aad7470edad0fb96ad831d06fb286c934722559060ff9d81"
+      "sourceSha256": "095cb3c11b44526ab62d983bcb950447402ebd95b0cb65a106a71e990c9d6930"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "7b2c43980a410b2ad0c0de9dd80cf69ce84e6989934e674d8fac1602b7151b73"
+      "sourceSha256": "57a5fdf0e4906fd9cd5dd107e2d5473522053e5d94a2369900320ef31c2284c8"
     },
     {
       "file": "i18n/index.ts",
@@ -141,7 +141,7 @@
     },
     {
       "file": "lib/auth-api-base.ts",
-      "sourceSha256": "c154dae2a964529ca0743bc6dd714e6093d0a7b51af1e39e7227d8c83125c2f6"
+      "sourceSha256": "be54d0bd937d532d4d4413aa365e08652207537fc094a55a81964a6172ee747c"
     },
     {
       "file": "lib/cookie-consent.ts",
@@ -513,7 +513,7 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "52d7ba0ffe9cae3a840efc3faf926fb381f64df49bab419e790fad2900de9211"
+      "sourceSha256": "8e26ffe7a1c75cd7507257cf7ddd42561c8463f524f0b1c8de9973cbbb62b8e4"
     },
     {
       "file": "repositories/types.ts",

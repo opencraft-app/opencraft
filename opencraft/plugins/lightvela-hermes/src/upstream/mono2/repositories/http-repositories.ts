@@ -398,9 +398,34 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
 
 const resolveOAuthStartBaseURL = (baseUrl: string) => {
-  // local-proxy keeps OAuth start/callback on the dev server origin so the
-  // state cookie and returned session token survive the browser redirect flow.
-  return baseUrl === "" ? "" : baseUrl;
+  if (baseUrl !== "") {
+    return baseUrl;
+  }
+
+  // local-proxy is safe for JSON APIs, but OAuth is a browser redirect flow
+  // whose state cookie must be scoped to the same host as the provider
+  // callback. When developers proxy the production site host (for example
+  // lightvela.ai -> localhost:5174 via Whistle), keeping OAuth on the current
+  // site origin writes the state cookie to lightvela.ai while Google/GitHub
+  // callback to api.lightvela.ai, causing *_state_mismatch. Route OAuth start
+  // directly to the matching live auth host in that setup.
+  const hostname =
+    typeof window !== "undefined" && window.location
+      ? window.location.hostname.toLowerCase()
+      : "";
+  if (hostname === "lightvela.ai" || hostname === "www.lightvela.ai") {
+    return "https://api.lightvela.ai";
+  }
+  if (
+    hostname === "lightvela.com"
+    || hostname === "www.lightvela.com"
+    || hostname === "lightvela.tencent.com"
+    || hostname === "www.lightvela.tencent.com"
+  ) {
+    return "https://api.lightvela.com";
+  }
+
+  return "";
 };
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {

@@ -595,7 +595,9 @@ export function SupportPage({
     });
   }, [userId]);
 
-  const MAX_FILE_SIZE = 300 * 1024 * 1024; // 300MB
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+  const MAX_TOTAL_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+  const MAX_FILE_COUNT = 5;
 
   const feedbackOptions: { value: FeedbackType; label: string }[] = [
     { value: 'experience_issue', label: t('体验问题反馈') },
@@ -782,10 +784,14 @@ export function SupportPage({
     const selected = e.target.files;
     if (!selected) return;
     const newFiles: UploadedFile[] = [];
+    let nextTotalSize = files.reduce((sum, uploaded) => sum + uploaded.size, 0);
     for (let i = 0; i < selected.length; i++) {
       const f = selected[i];
       if (!f) continue;
+      if (files.length + newFiles.length >= MAX_FILE_COUNT) continue;
       if (f.size > MAX_FILE_SIZE) continue; // skip oversized
+      if (nextTotalSize + f.size > MAX_TOTAL_FILE_SIZE) continue;
+      nextTotalSize += f.size;
       newFiles.push({
         name: f.name,
         size: f.size,
@@ -1257,7 +1263,7 @@ export function SupportPage({
                 />
                 <p className="text-xs text-[var(--text-tertiary)]">
                   ⓘ {isAuthenticated && userId
-                    ? t('单个图片/文件大小不超过300MB')
+                    ? t('最多上传 5 个附件，单个不超过 50MB，总计不超过 100MB')
                     : t('登录跳转会刷新页面，为避免文件丢失，请先登录后再上传附件')}
                 </p>
 
