@@ -25,6 +25,25 @@ export function lightVelaSiteTabForUrl(raw: string, region: LightVelaRegion): Li
 }
 const WEB_TOKEN_KEY = "lightclaw-auth-token-v1";
 
+/** Set the website's own locale keys before its i18n module initializes. */
+export function createLightVelaLocaleBootstrap(region: LightVelaRegion, locale: string): string {
+  const siteOrigin = LIGHTVELA_REGIONS[region].frontendBase;
+  return `(() => {
+    if (window.location.origin !== ${JSON.stringify(siteOrigin)}) return;
+    try {
+      window.localStorage.setItem("lw-locale", ${JSON.stringify(locale)});
+      window.localStorage.setItem("lw-locale-explicit", "1");
+    } catch { /* The website will use its own fallback. */ }
+  })(); true;`;
+}
+
+/** Apply a changed native choice to the already open website. */
+export function createLightVelaLocaleChange(region: LightVelaRegion, locale: string): string {
+  const bootstrap = createLightVelaLocaleBootstrap(region, locale);
+  const siteOrigin = LIGHTVELA_REGIONS[region].frontendBase;
+  return `${bootstrap}\nif (window.location.origin === ${JSON.stringify(siteOrigin)}) window.location.reload(); true;`;
+}
+
 /** Runs only in the first-party page before its application JavaScript starts. */
 export function createLightVelaSiteBootstrap(token: string, region: LightVelaRegion = "intl"): string {
   const siteOrigin = LIGHTVELA_REGIONS[region].frontendBase;

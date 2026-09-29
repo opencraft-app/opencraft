@@ -1,8 +1,8 @@
 import { View, StyleSheet } from "react-native";
-import { Bot, CircleUserRound, CreditCard } from "lucide-react-native";
+import { Bot, CircleUserRound, CreditCard, Settings2 } from "lucide-react-native";
 import { Button } from "heroui-native";
-import type { LightVelaRegion } from "@opencraft/plugin-lightvela-hermes/account-contract";
 import type { LightVelaSiteTab } from "../runtime/lightvela-site-webview";
+import { mobileLanguageCopy, type MobileLanguage } from "../runtime/mobile-language";
 
 const styles = StyleSheet.create({
   bar: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#e9e5ef", backgroundColor: "#fff", paddingHorizontal: 8, paddingTop: 5, paddingBottom: 2 },
@@ -14,17 +14,18 @@ const styles = StyleSheet.create({
   activeLabel: { fontWeight: "600", color: "#672ad4" },
 });
 
-export function LightVelaSiteTabs({ region, language, activeTab, onSelect }: {
-  readonly region: LightVelaRegion;
-  readonly language: string | null;
-  readonly activeTab: LightVelaSiteTab | null;
+export function LightVelaSiteTabs({ language, activeTab, onSelect, onSettings }: {
+  readonly language: MobileLanguage;
+  readonly activeTab: LightVelaSiteTab | "settings" | null;
   readonly onSelect: (tab: LightVelaSiteTab) => void;
+  readonly onSettings: () => void;
 }) {
-  const chinese = language ? language.toLowerCase().startsWith("zh") : region === "cn";
+  const copy = mobileLanguageCopy(language);
   const items = [
-    { id: "agents", label: chinese ? "我的智能体" : "My agents", Icon: Bot },
-    { id: "account", label: chinese ? "账号" : "Account", Icon: CircleUserRound },
-    { id: "billing", label: chinese ? "套餐与费用" : "Billing", Icon: CreditCard },
+    { id: "agents", label: copy.agents, Icon: Bot },
+    { id: "account", label: copy.account, Icon: CircleUserRound },
+    { id: "billing", label: copy.billing, Icon: CreditCard },
+    { id: "settings", label: copy.settings, Icon: Settings2 },
   ] as const;
   return (
     <View style={styles.bar}>
@@ -39,7 +40,7 @@ export function LightVelaSiteTabs({ region, language, activeTab, onSelect }: {
           accessibilityRole="tab"
           accessibilityState={{ selected }}
           accessibilityLabel={label}
-          onPress={() => onSelect(id)}
+          onPress={() => id === "settings" ? onSettings() : onSelect(id)}
         >
           <View style={styles.content}>
             <View style={[styles.icon, selected && styles.activeIcon]}>
