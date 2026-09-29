@@ -4,11 +4,11 @@
 
 **Menu avatar di bagian bawah sidebar kiri konsol Agent memiliki dua pilihan terpisah: Akun untuk profil dan ID pengguna, serta Paket & tagihan untuk langganan, penggunaan kredit, perpanjangan, dan metode pembayaran.**
 
-**LightVela menyediakan dua paket, Launch dan Cruise, mencakup kebutuhan dari percobaan ringan hingga pemakaian utama harian. Paket adalah bundel sumber daya untuk mengaktifkan Hermes Agent: setelah aktif, platform mengalokasikan lingkungan cloud khusus (CPU, memori, dan penyimpanan tersendiri) tempat Agent Anda daring 24/7, tanpa perlu membeli server atau melakukan deployment lokal. Perbedaan antar paket hanya pada spesifikasi lingkungan, kapasitas penyimpanan, dan kredit model bulanan — Launch memberi 2 vCPU · 8 GB RAM, penyimpanan 50 GB, dan 100 kredit per bulan, sementara Cruise menawarkan 4 vCPU · 16 GB RAM dengan penyimpanan serta kuota bulanan lebih besar. Kemampuan inti Agent (evolusi mandiri, akses multi-kanal, skill, tugas otomatis, dan memori jangka panjang) sama di semua paket. Harga dan ketersediaan terkini mengacu pada [halaman Subscribe](/subscribe/).**
+**LightVela menawarkan Launch, Cruise, Launch AI, dan Cruise AI. Setiap opsi mengaktifkan satu instans Hermes Agent dalam lingkungan cloud khusus. Seri Launch mencakup hingga 5 Bot dan seri Cruise hingga 10 Bot; tiap Bot adalah profil dalam instans yang sama. Sumber daya, penyimpanan, dan kredit model bulanan berbeda menurut paket. Periksa harga dan ketersediaan terkini di [halaman Subscribe](/subscribe/).**
 
 ---
 
-LightVela menyediakan dua tingkat paket, **Launch** dan **Cruise**, untuk kebutuhan mulai dari percobaan ringan sampai penggunaan Agent harian. Setiap paket menyediakan lingkungan cloud khusus untuk satu Hermes Agent dan alokasi kredit model bulanan. Halaman ini menjelaskan posisi, sumber daya, dan manfaat tiap paket agar Anda bisa memilih yang paling sesuai.
+LightVela menyediakan dua seri paket, **Launch** dan **Cruise**, masing-masing dengan pilihan kredit standar dan AI, untuk kebutuhan mulai dari percobaan ringan sampai penggunaan Agent harian. Setiap paket menyediakan lingkungan cloud khusus untuk satu Hermes Agent dan alokasi kredit model bulanan. Halaman ini menjelaskan posisi, sumber daya, dan manfaat tiap paket agar Anda bisa memilih yang paling sesuai.
 
 ## Yang dibahas di halaman ini
 
@@ -45,7 +45,7 @@ Periksa judul halaman untuk memastikan Anda berada di tempat yang tepat. Jika pa
 
 Paket adalah kumpulan sumber daya yang mengaktifkan Hermes Agent di LightVela. Setelah Anda mengaktifkan salah satu paket yang tersedia, LightVela memberi Anda **lingkungan cloud khusus** dengan CPU, memori, dan penyimpanan sendiri. Hermes Agent Anda dapat tetap online 24/7 tanpa perlu membeli server atau melakukan deployment lokal.
 
-Perbedaan utama antar paket ada pada **sumber daya runtime, penyimpanan khusus, dan alokasi kredit model bulanan**. Kemampuan inti Agent, termasuk perilaku adaptif, multi-kanal, Skill, tugas terjadwal, dan memori jangka panjang, tetap tersedia di semua tingkat paket.
+Perbedaan utama antar paket ada pada **sumber daya runtime, penyimpanan khusus, batas Bot, dan alokasi kredit model bulanan**. Kemampuan inti Agent, termasuk perilaku adaptif, multi-kanal, Skill, tugas terjadwal, dan memori jangka panjang, tetap tersedia di semua tingkat paket.
 
 Periksa [halaman Subscribe](/subscribe/) untuk ketersediaan, harga, dan penawaran pengguna baru saat ini. Nilai di bawah menjelaskan struktur sumber daya dan kredit tiap paket.
 
@@ -60,33 +60,18 @@ Periksa [halaman Subscribe](/subscribe/) untuk ketersediaan, harga, dan penawara
 >
 > Peningkatan ini hanya menyesuaikan alokasi memori. Harga paket, kapasitas penyimpanan, dan manfaat kredit AI tidak berubah. Periksa halaman Subscribe untuk spesifikasi paket dan ketersediaan pembelian terbaru.
 
-## Dua paket yang tersedia
+## Pilihan paket dan kuota
 
-### Launch — Mulai ringan dan jalankan Agent Anda
+Setiap opsi mencakup satu instans Hermes Agent. Seri Launch memiliki batas 5 Bot dan seri Cruise 10 Bot; Bot adalah profil di dalam instans yang sama.
 
-Launch ditujukan untuk **pengguna yang baru mencoba Agent cloud** dan menyediakan sumber daya dasar yang diperlukan untuk merasakan pengalaman Agent secara lengkap.
+| Opsi | Lingkungan cloud | Penyimpanan | Kredit model per bulan | Bot |
+|---|---|---|---:|---:|
+| Launch | 2 vCPU · 8 GB RAM | 50 GB | 100 | 5 |
+| Launch AI | 2 vCPU · 8 GB RAM | 50 GB | 4.500 | 5 |
+| Cruise | 4 vCPU · 16 GB RAM | 80 GB | 200 | 10 |
+| Cruise AI | 4 vCPU · 16 GB RAM | 80 GB | 10.000 | 10 |
 
-| Item | Spesifikasi |
-|---|---|
-| Jumlah Agent | 1 |
-| Lingkungan cloud khusus | 2 vCPU · 8 GB RAM |
-| Penyimpanan cloud khusus | 50 GB |
-| Kredit model | 100 kredit / bulan |
-| Akses saat ini | Penawaran pengguna baru: lihat Subscribe |
-
-Launch adalah cara praktis untuk mencoba produk secara penuh sebelum memutuskan tingkat sumber daya yang dibutuhkan.
-
-### Cruise — Paket harian untuk penggunaan Agent rutin
-
-Cruise ditujukan untuk pengguna yang menjadikan Agent sebagai **bagian rutin dari aktivitas harian** dan membutuhkan kapasitas runtime, penyimpanan, serta kredit bulanan yang lebih besar.
-
-| Item | Spesifikasi |
-|---|---|
-| Jumlah Agent | 1 |
-| Lingkungan cloud khusus | 4 vCPU · 16 GB RAM |
-| Penyimpanan cloud khusus | 80 GB |
-| Kredit model | 200 kredit / bulan |
-| Status saat ini | Ketersediaan ditampilkan di halaman Subscribe |
+Harga dan promo mengikuti [halaman Subscribe](/subscribe). Kredit tambahan tersedia sebagai paket sekali bayar bagi pengguna dengan paket aktif; lihat [Kredit](./credits.md).
 
 ## Kemampuan Agent yang termasuk di semua paket
 
@@ -128,7 +113,7 @@ Setiap Hermes Agent memiliki kemampuan inti yang sama; perbedaan paket hanya ada
 
 ### Berapa harga tiap paket?
 
-Harga standar Launch adalah $7,5 / bulan dan Cruise $15 / bulan. Periksa [halaman Subscribe](/subscribe/) untuk harga, penawaran pengguna baru, dan ketersediaan terbaru.
+Harga standar dan promo setiap opsi ditampilkan langsung di halaman Subscribe. Periksa [halaman Subscribe](/subscribe/) untuk harga, penawaran pengguna baru, dan ketersediaan terbaru.
 
 ### Bisakah saya upgrade atau mengganti paket?
 
@@ -136,7 +121,7 @@ Paket aktif dapat di-upgrade jika memenuhi syarat. Lihat pilihan upgrade untuk p
 
 ### Berapa banyak Agent yang termasuk dalam satu paket?
 
-Launch dan Cruise masing-masing mencakup satu Agent. Kuota Agent adalah jumlah instans Hermes yang dapat berjalan pada waktu yang sama.
+Setiap opsi mencakup satu instans Hermes Agent; seri Launch mendukung hingga 5 Bot dan seri Cruise hingga 10 Bot. Kuota Agent adalah jumlah instans Hermes yang dapat berjalan pada waktu yang sama.
 
 ### Apa yang terjadi jika kredit saya habis?
 

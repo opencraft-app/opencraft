@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Los créditos de modelo son la unidad que LightVela utiliza para medir cuánto gasta tu Hermes Agent en llamadas a modelos, contando tanto la entrada como la salida. Los créditos se incluyen en tu plan mensualmente, no se venden por separado y se reinician cada ciclo de facturación: Launch incluye 100 créditos al mes, y Cruise ofrece una cantidad mayor. Los créditos se consumen cada vez que el Agent habla contigo, ejecuta una tarea automatizada o utiliza una Skill — todo lo cual termina llamando al modelo — y las conversaciones más largas con más contexto las agotan más rápido. Si te quedas sin créditos a mitad de ciclo, las funciones dependientes del modelo se limitan hasta la siguiente asignación, o puedes cambiar a tu propia clave de API de modelo en la configuración del modelo y continuar.**
+**Los créditos de modelo miden las llamadas al modelo, tanto la entrada como la salida. Launch, Launch AI, Cruise y Cruise AI incluyen 100, 4500, 200 y 10 000 créditos al mes, respectivamente. Los usuarios con un plan activo también pueden comprar paquetes de créditos de pago único, válidos durante un mes desde su entrega y sin renovación automática. Las conversaciones y las Agent Tasks que usan el modelo consumen créditos; las Notification Tasks y Script Tasks no lo llaman. Si se agotan, puedes comprar un paquete admisible, esperar la siguiente asignación o configurar tu propia clave de API.**
 
 ---
 
@@ -22,7 +22,7 @@ Los créditos de modelo son las unidades que LightVela utiliza para medir el uso
 
 ## ¿Qué son los créditos de modelo?
 
-Los créditos de modelo son la **unidad de medida** para las llamadas a modelos de lenguaje realizadas por un Hermes Agent. Cada vez que tu Agent responde en una conversación, ejecuta una [tarea programada](./configuration/automation.md) o utiliza una Skill, envía solicitudes al modelo subyacente. Los tokens utilizados por esas solicitudes se convierten en créditos.
+Los créditos miden las llamadas a un modelo de lenguaje. Las conversaciones, las [Agent Tasks](./configuration/automation.md) que llaman al modelo y las Skills que lo usan consumen créditos; las Notification Tasks y Script Tasks no llaman al modelo.
 
 La conversión aproximada es **1 crédito ≈ 10,000 tokens**. Un token es la unidad básica de texto procesada por un modelo. Tanto la entrada —el contenido que envías a tu Agent— como la salida —la respuesta que genera— cuentan hacia el uso.
 
@@ -34,12 +34,18 @@ La conversión aproximada es **1 crédito ≈ 10,000 tokens**. Un token es la un
 
 Los créditos se **asignan mensualmente con un plan**, y la cantidad mensual difiere según el nivel:
 
-| Plan | Créditos de modelo (asignación estándar) |
-|---|---|
-| Launch | 100 créditos / mes |
-| Cruise | 200 créditos / mes |
+| Plan | Créditos de modelo al mes |
+|---|---:|
+| Launch | 100 |
+| Cruise | 200 |
+| Launch AI | 4500 |
+| Cruise AI | 10 000 |
 
-Algunos planes pueden ofrecer una **asignación de créditos más alta**. Consulta las tarjetas de plan en la [página Suscribirse](/subscribe) para las opciones actualmente disponibles, y ve [Planes](./plans.md) para la estructura de recursos y créditos de cada nivel.
+Consulta [Planes](./plans.md) para ver los recursos y la [página de suscripción](/subscribe) para conocer la disponibilidad y el precio actuales.
+
+## Paquetes de créditos adicionales
+
+Los usuarios con un plan activo pueden comprar un paquete de créditos de modelo de pago único en la [página de suscripción](/subscribe#subscribe-credits). El paquete es válido durante un mes desde su entrega y no se renueva automáticamente. Se consumen primero los créditos que vencen antes; si la fecha es la misma, se usan primero los más antiguos. Consulta el precio y las cantidades disponibles al pagar.
 
 ---
 
@@ -49,7 +55,7 @@ Los créditos se consumen en las siguientes situaciones porque cada una requiere
 
 - **Hablar con tu Agent** — Mensajeo a través de Telegram, WhatsApp, Discord, Slack, WeChat o otro canal soportado
 
-- **Ejecutar tareas programadas** — Permitir que tu Agent ejecute [tareas programadas](./configuration/automation.md)
+- **Ejecutar Agent Tasks** — El Agent ejecuta [tareas programadas](./configuration/automation.md) que llaman al modelo
 
 - **Utilizar Skills** — Permitir que una Skill llame a un modelo para razonar durante la ejecución
 
@@ -73,7 +79,7 @@ Si utilizas todos los créditos del periodo actual, las funciones del Agent que 
 
 ### ¿Cómo se relacionan los créditos con un plan?
 
-Los créditos son recursos incluidos con un plan y se asignan mensualmente. La disponibilidad actual y cualquier precio futuro para diferentes opciones de créditos se muestra en la [página Suscribirse](/subscribe).
+Los créditos se asignan cada mes con el plan. Los suscriptores con un plan activo también pueden comprar paquetes de pago único. Consulta las opciones y precios actuales en la [página de suscripción](/subscribe).
 
 ### ¿Cuánto dura un crédito?
 
@@ -85,7 +91,7 @@ No. Los modelos tienen diferentes costos por token, por lo que la misma tarea pu
 
 ### ¿Puedo continuar después de usar todos mis créditos?
 
-Las funciones que requieren llamadas a modelos se limitan después de agotar la asignación. Cuando se hace disponible una nueva asignación, o si se ofrece otra opción, depende de las reglas actuales de la plataforma.
+Puedes comprar un paquete admisible, esperar la siguiente asignación del plan o configurar tu propia clave de API. Las funciones que llaman al modelo se limitan si no hay créditos ni clave disponibles.
 
 ---
 

@@ -1,5 +1,9 @@
 # Menjalankan Tugas Skrip di LightVela
 
+## Ringkasan
+
+**Script Task menjalankan Bash atau Python sesuai jadwal tanpa memanggil model AI atau memakai kredit model.** Gunakan untuk pemeriksaan disk atau file ekspor yang hilang; atur skrip, jadwal, rentang waktu aktif, dan kanal pengiriman.
+
 Tugas Skrip adalah penerapan praktis untuk Agent yang dihosting di cloud karena dapat menjalankan skrip Bash atau Python sesuai jadwal tanpa memanggil model AI.
 Gunakan ketika Anda memiliki pemeriksaan sistem berulang dengan aturan yang jelas dan dapat diprediksi.
 Pengguna memakainya untuk peringatan penggunaan disk dan pemeriksaan yang mendeteksi file hilang atau kedaluwarsa.

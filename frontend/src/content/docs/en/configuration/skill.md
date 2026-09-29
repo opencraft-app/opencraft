@@ -59,37 +59,14 @@ Hermes automatically determines whether to call the corresponding skill based on
 
 ---
 
----
+## Method 1: Install in the console
 
-## Method 1: Install through the console panel (coming soon)
+1. Open your Agent and select **Skills** in the sidebar.
+2. Use **Skills** to search individual skills, or **Skill Packages** to browse curated bundles. The console supports [Skills.sh](https://skills.sh/) and [ClawHub](https://clawhub.ai/).
+3. Open a result to review its source and description, then select **Install**. Confirm any warning shown before installation.
+4. Open **Installed** to verify that the item appears. Use a conversation to confirm that the Agent can call it for the intended task.
 
-The LightVela console provides a visual skill configuration entry in the "Skills" button. You can enter a skill name found on Skills.sh or ClawHub and install it quickly.
-
-### 1. Enter the LightVela console
-
-Sign in to LightVela, click "My AI Partners" in the upper-right corner to enter the console, and find the "Skills" button.
-
-### 2. Search and install
-
-Enter the recorded skill name in the search box (such as `gmail`) and click the **+** button.
-
-![](../images/clawhub-install-global-en.webp)
-
-### 3. Confirm availability in conversation
-
-Return to a connected channel (Telegram / WhatsApp / Discord / Slack / WeChat). First ask Hermes to update its skill list, then check the currently available skills:
-
-```
-Please update your skill list
-```
-
-```
-What skills are currently available?
-```
-
-If the newly installed skill appears in the list, you can start using it in conversation.
-
----
+Installed items can also be managed from the **Installed** tab. Install only sources and permissions you trust.
 
 ## Method 2: Install directly through conversation
 

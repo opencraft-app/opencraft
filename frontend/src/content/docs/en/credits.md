@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Model credits are the unit LightVela uses to meter how much your Hermes Agent spends on model calls, counting both input and output. Credits come with your plan on a monthly basis, are not sold separately, and reset each billing cycle: Launch includes 100 credits per month, and Cruise offers a larger allowance. Credits are consumed whenever the agent talks with you, runs a scheduled task, or executes a skill — all of which ultimately call the model — and longer conversations with more context burn through them faster. If you run out mid-cycle, model-dependent features are limited until the next allocation, or you can switch to your own model API key in the model settings and keep going.**
+**Model credits measure usage of model calls, including input and output. Launch, Launch AI, Cruise, and Cruise AI include 100, 4,500, 200, and 10,000 credits per month respectively. Users with an active plan can also buy one-time credit packs; those credits expire one month after delivery and do not auto-renew. Conversations and model-backed Agent tasks consume credits, while Notification and Script Tasks do not call a model. If credits run out, you can buy an eligible pack, wait for the next plan allocation, or configure your own model API key.**
 
 ---
 
@@ -22,7 +22,7 @@ Model credits are the units LightVela uses to measure model usage by a Hermes Ag
 
 ## What are model credits?
 
-Model credits are the **measurement unit** for language-model calls made by a Hermes Agent. Every time your Agent responds in a conversation, runs a [scheduled task](./configuration/automation.md), or uses a skill, it sends requests to the underlying model. The tokens used by those requests are converted into credits.
+Model credits measure calls to a language model. Conversations, model-backed [Agent Tasks](./configuration/automation.md), and Skills that invoke a model use credits; Notification and Script Tasks do not call a model.
 
 The approximate conversion is **1 credit ≈ 10,000 tokens**. A token is a basic unit of text processed by a model. Both input—the content you send to your Agent—and output—the response it generates—count toward usage.
 
@@ -34,12 +34,18 @@ The approximate conversion is **1 credit ≈ 10,000 tokens**. A token is a basic
 
 Credits are **allocated monthly with a plan**, and the monthly amount differs by tier:
 
-| Plan | Model credits (standard allocation) |
-|---|---|
-| Launch | 100 credits / month |
-| Cruise | 200 credits / month |
+| Plan | Monthly model credits |
+|---|---:|
+| Launch | 100 |
+| Cruise | 200 |
+| Launch AI | 4,500 |
+| Cruise AI | 10,000 |
 
-Some plans may offer a **higher credit allocation**. Check the plan cards on the [Subscribe page](/subscribe) for currently available options, and see [Plans](./plans.md) for the resource and credit structure of each tier.
+See [Plans](./plans.md) for the corresponding resources and the [Subscribe page](/subscribe) for current availability and pricing.
+
+## Additional credit packs
+
+Users with an active plan can buy a one-time model credit pack on the [Subscribe page](/subscribe#subscribe-credits). Each pack is valid for one month from delivery and does not auto-renew. Credits with earlier expiration dates are used first; when dates match, the older credits are used first. Check the checkout page for the current price and available denominations.
 
 ---
 
@@ -49,7 +55,7 @@ Credits are consumed in the following situations because each one requires Herme
 
 - **Talking to your Agent** — Messaging through Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel
 
-- **Running scheduled tasks** — Letting your Agent execute [scheduled tasks](./configuration/automation.md)
+- **Running Agent Tasks** — Letting your Agent run model-backed [scheduled tasks](./configuration/automation.md)
 
 - **Using skills** — Allowing a skill to call a model for reasoning during execution
 
@@ -73,7 +79,7 @@ If you use all of the credits for the current period, Agent features that depend
 
 ### How are credits related to a plan?
 
-Credits are resources included with a plan and allocated monthly. Current availability and any future pricing for different credit options are shown on the [Subscribe page](/subscribe).
+Credits are allocated monthly with a plan. Active subscribers can also buy one-time credit packs. Check the [Subscribe page](/subscribe) for available options and prices.
 
 ### How long does one credit last?
 
@@ -85,7 +91,7 @@ No. Models have different per-token costs, so the same task may consume a differ
 
 ### Can I continue after using all my credits?
 
-Features that require model calls become limited after the allocation is exhausted. When a new allocation becomes available, or whether another option is offered, depends on the platform's current rules.
+You can buy an eligible one-time credit pack, wait for the next plan allocation, or configure your own model API key. Model-backed features are limited while no usable credits or key are available.
 
 ---
 

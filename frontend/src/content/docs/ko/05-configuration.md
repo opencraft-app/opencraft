@@ -2,19 +2,11 @@
 
 ## 요약
 
-**LightVela의 모든 설정은 로그인 후 오른쪽 상단에서 여는 "My Hermes" 콘솔에 모여 있습니다. 상단에는 현재 Hermes Agent의 Bot 탭이 있고, 그 아래에 모델·채널·스킬의 세 가지 설정 버튼이 있습니다. 모델에서는 모델 Coding Plan, 모델 API, 사용자 지정 OpenAI 호환 엔드포인트를 선택합니다. 채널은 메시징 플랫폼과 연결하는 진입점으로, QR 코드나 토큰 또는 앱 ID가 필요합니다. 스킬에서는 재사용 가능한 기능 팩을 설치합니다. 콘솔에서는 채팅, 작업, 메모리 관리, 클라우드 스토리지, 모델 전환, 진단 센터도 이용할 수 있습니다. 기본 설정을 마치면 Bot이 연결된 메시징 채널에서 대화할 준비가 됩니다.**
+**Agent 콘솔 사이드바에는 Channels, Models, Skills, Scheduled Tasks가 각각 별도 페이지로 있습니다. 설정을 바꾸기 전에 대상 Bot을 선택하세요. 채널 카드에서 메시징 앱을 연결하고 모델을 선택하거나 플랜 크레딧을 사용하며, 필요하면 Skills.sh 또는 ClawHub의 스킬을 설치합니다. Soul, Memory, Diagnostics, Advanced Settings, Labs는 다른 섹션에 있고 Cloud Storage는 사용자 메뉴에서 엽니다.**
 
 ---
 
-모든 LightVela 구성은 "My Hermes" 콘솔에 집중되어 있으며 세 가지 구성 버튼으로 구성됩니다.
-
-1. 모델
-
-2. 채널
-
-3. 스킬
-
-이 페이지에서는 콘솔의 전체 구조와 각 버튼의 기능을 소개합니다. 자세한 작업은 해당 하위 페이지를 참조하세요.
+Agent 콘솔은 사이드바의 **Channels**, **Models**, **Skills**, **Scheduled Tasks** 페이지에서 주요 설정을 제공합니다. 구성할 Bot을 선택한 뒤 해당 페이지를 여세요. 이 가이드는 진입점과 결과 확인 방법을 설명합니다.
 
 ## 이 페이지에서는 다음을 다루고 있습니다.
 
@@ -22,7 +14,7 @@
 
 - Bot 전환기와 선택한 Bot 정보
 
-- 세 가지 구성 버튼의 기능 및 진입점
+- Channels, Models, Skills, Cloud Storage의 진입점
 
 - 구성 후 성공 상태
 
@@ -32,7 +24,7 @@
 
 ## 콘솔에 들어가세요
 
-로그인 후 오른쪽 상단의 "My Hermes"를 클릭하여 콘솔에 들어갑니다. 페이지 상단에는 "홈으로 돌아가기" 버튼이 있습니다.
+로그인한 뒤 [Agent 콘솔](/agents/overview/)을 열고 설정할 Hermes Agent와 Bot을 선택하세요.
 
 ---
 
@@ -58,66 +50,19 @@ Hermes Agent를 선택하면 기본 정보가 아래와 같이 표시됩니다.
 
 ---
 
-## 구성 버튼 3개
+## 채널, 모델, 스킬 구성
 
-세 개의 버튼은 왼쪽에서 오른쪽으로 배열되어 있습니다. 권장 구성 순서는 1 → 2 → 3입니다.
+### Channels
 
-### 1. 채널
+Agent 사이드바에서 **Channels**를 엽니다. Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark 카드에서 대상 채널의 **+ Connect**를 선택하세요. WhatsApp, WeChat, WeCom, Lark는 QR 코드 인증을 사용하고 Telegram, Discord, Slack은 자격 증명을 사용합니다. QQ는 QR 코드 또는 App ID / Secret을 사용할 수 있습니다. [WhatsApp 가이드](./configuration/channel-whatsapp.md)를 참고하세요.
 
-![](./images/4-2.webp)
+### Models
 
-**목적**: Hermes Agent를 메시징 플랫폼에 연결하고 사용자에게 대화 진입점을 제공합니다.
+**Models**에서 활성 모델을 확인하거나 공급자를 설정합니다. 자체 API 키 없이 플랜의 모델 크레딧을 사용할 수 있으며 필요할 때 공급자를 추가할 수 있습니다. 각 Bot은 한 번에 하나의 기본 모델을 사용하고 별도 대체 모델을 구성할 수도 있습니다. [모델 구성](./configuration/model.md)과 [모델 전환](./configuration/multiple-models.md)을 참고하세요.
 
-**채널별 연결 방법**:
+### Skills
 
-| 채널 | 액세스 방법 | 요구 사항 |
-|---|---|---|
-| WeChat | QR 코드 인증 | WeChat이 설치된 전화기 |
-| Telegram | 봇 토큰 액세스 | BotFather를 통해 Telegram 봇을 생성하고 봇 토큰을 얻습니다. |
-| WhatsApp | WhatsApp Business API 연결 | Meta 개발자 계정, WhatsApp Business 계정, 기본 Cloud API 설정 |
-| Discord | 봇 토큰 액세스 | Discord 개발자 포털에서 애플리케이션을 생성하고 봇을 추가한 후 서버에 초대합니다. |
-| Slack | 봇 토큰/앱 토큰 액세스 | Slack 앱을 생성하고, 소켓 모드를 활성화하고, 봇/앱 토큰을 얻습니다. |
-| QQ | AppID / AppSecret 연결 | QQ 계정, QQ Open Platform에서 생성한 봇의 AppID / AppSecret |
-| WeCom | QR 코드 인증 | WeCom이 설치된 전화기 |
-| Lark | QR 코드 인증 | Lark가 설치된 휴대폰(또는 데스크톱 Lark가 이미 로그인되어 있음) |
-
-**버튼에서 제공하는 항목**: 채널 드롭다운, "액세스 승인" 버튼, 선택한 채널 소개, "세부 정보 보기" 링크, "연결된 채널" 목록.
-
-자세한 내용은 [WeChat](./configuration/channel-wechat.md), [Telegram](./configuration/channel-telegram.md), [WhatsApp](./configuration/channel-whatsapp.md), [Discord](./configuration/channel-discord.md), [Slack](./configuration/channel-slack.md), [QQ](./configuration/channel-qq.md), [WeCom](./configuration/channel-wecom.md), [Lark](./configuration/channel-feishu.md) 채널 구성 문서를 참조하세요.
-
----
-
-### 2. 모델
-
-![](./images/4-1.webp)
-
-**목적**: Hermes Agent에 대한 대형 언어 모델을 구성합니다. Launch 플랜에는 100개의 체험 크레딧이 포함되어 있으므로 처음에는 이 단계를 건너뛰고 크레딧이 소진된 후 모델을 구성할 수 있습니다.
-
-**버튼에서 제공하는 항목**: 소스 드롭다운(모델 Coding Plan / 모델 API / 사용자 지정 모델), 모델 드롭다운, API 키 입력란, 프로바이더 소개, API 키 발급 링크, "현재 모델" 목록.
-
-> ⚠️ **하나의 모델만 활성화됩니다**
->
-> 현재 각 Hermes Agent에는 활성 모델 구성이 하나만 있을 수 있습니다. 새로운 "기본값으로 추가" 작업은 기존 구성을 덮어씁니다.
-
-자세한 내용은 [모델 구성](./configuration/model.md)을 참조하세요.
-
----
-
-### 3. 스킬
-
-![](./images/4-3.webp)
-
-**목적**: 할 일 정리, 일일 보고서 생성, 웹 검색 등 Hermes Agent 기능을 확장합니다.
-
-**버튼에서 제공하는 항목**: 스킬 이름 검색창, "스킬 설치" 버튼, "SkillHub로 이동" 링크, "설치된 스킬" 목록. 설치 전에 [SkillHub](https://skillhub.tencent.com)에서 정확한 스킬 이름을 확인하세요.
-
-> ⚠️ **신뢰할 수 있는 스킬만 설치**
->
-> 스킬에는 런타임 시 Hermes Agent 기능을 호출할 수 있는 권한이 있습니다. 신뢰할 수 있는 소스에서만 스킬을 설치하세요.
-
-자세한 내용은 [스킬 구성](./configuration/skill.md)을 참조하세요.
-
----
+**Skills**에서 개별 스킬을 검색하거나 [Skills.sh](https://skills.sh/)와 [ClawHub](https://clawhub.ai/)의 **Skill Packages**를 둘러봅니다. **Install**을 선택하고 **Installed**에서 결과를 확인하세요. [스킬 구성](./configuration/skill.md)을 참고하세요.
 
 ## 구성 후 성공 상태
 
@@ -135,17 +80,10 @@ Hermes Agent를 선택하면 기본 정보가 아래와 같이 표시됩니다.
 
 ## 일반적인 작업
 
-### 모델 전환
-
-"모델" 버튼에서 소스와 모델을 다시 선택하고 API 키를 입력한 후 "기본값으로 추가"를 클릭합니다. 새 구성이 이전 구성을 덮어쓰지만 대화 메모리에는 영향을 주지 않습니다.
-
-### 여러 채널 연결
-
-"채널" 버튼에서 드롭다운 옵션을 하나씩 전환하고 "액세스 승인"을 클릭하세요. 같은 Bot에 연결된 여러 채널은 해당 Bot의 메모리와 동작을 공유합니다.
-
-### 여러 Bot 관리
-
-Bot 탭을 사용해 프로필을 전환합니다. 생성 진입점을 사용할 수 있으면 현재 Bot이나 기본 Bot을 복사하거나 Basic setup을 선택할 수 있습니다. 상속 범위와 삭제 규칙은 [Bot 관리](./configuration/bots.md)를 참조하세요.
+- **모델 전환:** 선택한 Bot의 **Models**에서 구성된 사용 가능한 모델을 선택합니다. Bot의 메모리는 유지됩니다. [모델 전환](./configuration/multiple-models.md)을 참고하세요.
+- **여러 채널 연결:** **Channels**에서 필요한 카드의 **+ Connect**를 선택합니다. 같은 Bot에 연결된 채널은 해당 Bot의 페르소나와 메모리를 공유합니다.
+- **Bot 관리:** 설정을 변경하기 전에 Bot 탭을 선택합니다. 생성 기능을 사용할 수 있다면 [Bot 관리](./configuration/bots.md)를 참고하세요.
+- **Cloud Storage 열기:** Agent 사이드바가 아닌 사용자 메뉴에서 엽니다.
 
 ---
 
@@ -159,7 +97,7 @@ Bot 탭을 사용해 프로필을 전환합니다. 생성 진입점을 사용할
 
 - [채널 구성 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)
 
-- [스킬 구성](./configuration/skill.md) — SkillHub 사용 및 스킬 설치
+- [스킬 구성](./configuration/skill.md) — Skills.sh / ClawHub 사용 및 스킬 설치
 
 관련 참고자료:
 

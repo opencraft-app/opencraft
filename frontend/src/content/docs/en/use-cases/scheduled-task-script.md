@@ -1,5 +1,9 @@
 # Running Script Task in LightVela
 
+## Summary
+
+**Script Tasks run Bash or Python on a schedule without calling an AI model or using model credits.** Use them for predictable checks such as disk usage or missing export files; set the script, schedule, effective time window, and delivery channel.
+
 Script tasks are a practical application for cloud-hosted agents because they can run Bash or Python scripts on schedule without calling an AI model.
 They can be used when you have a recurring system check with clear, predictable rules.
 Users have used them for disk usage alerts; some also created checks that detect missing or outdated files.

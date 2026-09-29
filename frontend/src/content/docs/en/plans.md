@@ -72,12 +72,12 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 
 <div className="lv-plan-benefits-table">
 
-| Plan | Best for | Agent allowance | Dedicated cloud environment | Dedicated cloud storage | AI credits |
-|---|---|---|---|---|---|
-| Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 2 vCPU · 8 GB RAM | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
-| Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 4 vCPU · 16 GB RAM | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
-| Launch AI | Lightweight usage with more AI credits | 1 | 2 vCPU · 8 GB RAM | 50 GB | 4,500 credits / month |
-| Cruise AI | High-frequency conversations, skills, and scheduled tasks | 1 | 4 vCPU · 16 GB RAM | 80 GB | 10,000 credits / month |
+| Plan | Best for | Agent allowance | Bots | Dedicated cloud environment | Dedicated cloud storage | AI credits |
+|---|---|---|---|---|---|---|
+| Launch | Users who already have their own large-model API Key and want to get an Agent running at a lower cost | 1 | 5 | 2 vCPU · 8 GB RAM | 50 GB | 100 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Cruise | Users who already have their own large-model API Key and want more resources for regular daily use | 1 | 10 | 4 vCPU · 16 GB RAM | 80 GB | 200 credits / month, for trial usage only. After the AI credits are used up, you can configure your own large-model API Key. |
+| Launch AI | Lightweight usage with more AI credits | 1 | 5 | 2 vCPU · 8 GB RAM | 50 GB | 4,500 credits / month |
+| Cruise AI | High-frequency conversations, skills, and scheduled tasks | 1 | 10 | 4 vCPU · 16 GB RAM | 80 GB | 10,000 credits / month |
 
 </div>
 
@@ -87,7 +87,7 @@ Real-time prices, inventory, discounts, and purchase availability are shown on t
 |---|---|
 | Launch | $6.5 / month |
 | Cruise | $14 / month |
-| Launch AI | $12 / month |
+| Launch AI | $10 / month |
 | Cruise AI | $23 / month |
 
 > ℹ️ **New-user offer**

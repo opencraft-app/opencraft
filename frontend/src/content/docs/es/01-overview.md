@@ -50,7 +50,7 @@ El producto actual de LightVela es **Hermes Agent**, un Agent de IA impulsado po
 
 * **Acceso multi-canal**: Chatea con Hermes Agent a través de Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom y Lark
 
-* **Extensiones de Skills**: Instala paquetes de Skills desde [SkillHub](https://skillhub.tencent.com) para extender las capacidades de Hermes Agent
+* **Extensiones de Skills**: Busca e instala Skills o paquetes de Skills de [Skills.sh](https://skills.sh/) y [ClawHub](https://clawhub.ai/) en la consola
 
 * **Listo para usar**: El plan Launch incluye créditos de prueba, por lo que puedes comenzar a chatear después de la activación sin configurar un modelo por separado
 
@@ -86,17 +86,16 @@ Un ciclo de conversación completo requiere tres configuraciones:
 
 ## Sobre los planes
 
-LightVela utiliza facturación basada en planes. Activar un plan te otorga una instancia disponible de Hermes Agent y los recursos y créditos incluidos en ese plan.
+Cada plan proporciona una instancia en la nube de Hermes Agent. La serie Launch admite hasta 5 Bots dentro de esa instancia y la serie Cruise, hasta 10. Los Bots son perfiles independientes, no instancias adicionales de Hermes.
 
-Planes actualmente disponibles:
+| Opción del plan | Créditos de modelo al mes | Bots |
+|---|---:|---:|
+| Launch | 100 | 5 |
+| Launch AI | 4500 | 5 |
+| Cruise | 200 | 10 |
+| Cruise AI | 10 000 | 10 |
 
-| Plan | Precio original | Estado actual |
-| --------- | ------- | ---- |
-| Launch | $7.5 / mes | Ofertas de bienvenida: consulta Suscripción |
-| Cruise | $15 / mes | Plan pagado |
-
-El plan Launch incluye: 1 instancia de Hermes Agent, un entorno de nube dedicado con 2 vCPU · 8 GB de RAM, 50 GB de almacenamiento en la nube dedicado, 100 créditos de prueba, disponibilidad 24/7 y acceso a la consola.
-
+Los precios, las ofertas de bienvenida y la disponibilidad pueden cambiar. Consulta la [página de suscripción](/subscribe) antes de comprar. Si tienes un plan activo, también puedes adquirir [paquetes de créditos](./credits.md) de pago único.
 ***
 
 ## Relación con Lighthouse (opcional)
@@ -111,6 +110,6 @@ Si eres nuevo en los Agents en la nube, puedes omitir esta sección.
 
 * **[Inicio rápido](./02-quickstart.md)** — Completa tu primera conversación en 5 minutos
 
-* **[Conceptos centrales](./04-core-concepts.md)** — Entiende los cuatro conceptos centrales: Hermes Agent, modelos, canales y Skills
+* **[Conceptos centrales](./04-core-concepts.md)** — Entiende los cinco conceptos centrales: Hermes Agent, Bots, modelos, canales y Skills
 
 * **[Resumen de configuración](./05-configuration.md)** — Características de la consola y flujo de configuración
