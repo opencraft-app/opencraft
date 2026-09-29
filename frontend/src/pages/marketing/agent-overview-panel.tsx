@@ -24,7 +24,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useCurrentLocale, useT, type TranslateFn } from "@/i18n/t";
-import { ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
+import { ACCOUNT_BILLING_PATH, ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
@@ -108,7 +108,7 @@ export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroSta
       id: "credits",
       label: t("剩余积分"),
       value: formatCount(stats.credits),
-      to: ACCOUNT_PATH,
+      to: ACCOUNT_BILLING_PATH,
     },
     ...(botCount !== undefined ? [{
       id: "bots",

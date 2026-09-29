@@ -64,6 +64,7 @@ describe("overview language consistency", () => {
       botCount={4} invitedFriends={invitedFriends}
     /></LocaleOverrideProvider>;
     const view = render(banner(6));
+    expect(screen.getByText("4500").closest("a")).toHaveAttribute("href", "/account/billing");
     expect(screen.getByRole("link", { name: `${invitedLabel} 6` })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("link", { name: `${botsLabel} 4` })).toHaveAttribute("href", "/agents/overview");
     view.rerender(banner(null));

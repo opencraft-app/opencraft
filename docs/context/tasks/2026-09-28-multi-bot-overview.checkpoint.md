@@ -192,3 +192,11 @@ derived: false
 - check 通过：166 当前/171 基线，0 新增；六语言校验通过。国内隔离构建通过，包含静态导出及 SEO 检查。
 - 日志 `/tmp/zonglan-928-cn-fleet-{test-final,check-final,build}.log`。PRD 改为国内/国际双站，沿用已有 context receipt、frontend 邻接卡及 runtime-config 邻居。
 - 按既有授权提交推送同一分支，另行机械同步 OpenCraft 清单并复验 CI guard；MR !4760 更新为双站描述。不改变生产部署。
+
+
+## 双站剩余积分跳转修正（2026-09-29）
+- 用户要求剩余积分进入「套餐与费用」。共享 HeroBanner 改用既有 ACCOUNT_BILLING_PATH（/account/billing），覆盖国内与国际；Bot 数量和邀请指标保持原跳转。PRD 对应表格同步更新。
+- 沿用 frontend/站点路由 context receipt；精确搜索 agent-routes 与 user-avatar-menu，确认现有「套餐与费用」入口使用相同常量。
+- 2 文件 40 条测试通过，包含国际六语言积分链接断言；pnpm check 通过（166 current / 171 baseline，0 new），国内隔离构建通过。日志 /tmp/zonglan-928-credit-link-{tests,check,build}.log。
+- 真实国内代理页面点击剩余积分已进入 https://lightvela.com/account/billing/，显示「套餐与费用」标题；验证后返回原总览，未执行付费操作。
+- 按此前授权继续推送原 MR !4760；前端提交后单独刷新 OpenCraft 同步清单并校验。
