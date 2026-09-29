@@ -1053,7 +1053,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .foot__cta a span { position: static; flex: 0 0 42px; width: 42px; height: 42px; background: #17151a; color: #fff; transform: none; }
 #lightvela-intl-home .home-footer-boundary { position: relative; width: 100%; aspect-ratio: 1440 / 400; background: white; overflow: hidden; }
 #lightvela-intl-home .home-footer-boundary svg { display: block; width: 100%; height: 100%; }
-#lightvela-intl-home .home-door-note { position: absolute; top: 28%; left: 76%; max-width: 16%; margin: 0; color: #29252e; font-family: 'Kaiti SC', 'STKaiti', Georgia, serif; font-style: italic; font-size: clamp(13px, 1.4vw, 22px); line-height: 1.35; text-wrap: pretty; }
 #lightvela-intl-home .foot__links { margin-top: 0 !important; padding: 40px 24px 0; box-sizing: border-box; }
 /* Layout-only correction: preserve existing handwriting, CTA and white/black artwork. */
 @media (min-width: 900px) {
@@ -1063,7 +1062,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .foot__cta { justify-content: flex-start; }
   #lightvela-intl-home .foot > .home-footer-boundary { grid-column: 2; grid-row: 1; height: 440px; aspect-ratio: auto; background: #111; }
   #lightvela-intl-home .home-footer-boundary svg { width: 1584px; max-width: none; position: absolute; right: 0; }
-  #lightvela-intl-home .home-door-note { left: auto; right: 5%; top: 28%; max-width: 30%; color: white; }
   #lightvela-intl-home .foot > .foot__links { grid-column: 1 / -1; }
   #lightvela-intl-home .foot > .foot__links { width: calc(100% - 48px) !important; max-width: 1280px !important; padding-inline: 0; }
   #lightvela-intl-home .hero__rotator-wrap { width: max-content !important; min-width: 5.2em; }
@@ -1075,7 +1073,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 @media (max-width: 600px) {
   #lightvela-intl-home .foot__top { padding-top: 64px !important; }
   #lightvela-intl-home .home-footer-boundary { aspect-ratio: auto; height: 200px; }
-  #lightvela-intl-home .home-door-note { left: auto; right: 4%; top: 20%; max-width: 24%; font-size: 13px; }
 }
 
 /* Responsive audit: keep typography and the companion tied to the text, not a viewport offset. */

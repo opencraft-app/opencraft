@@ -74,7 +74,7 @@ test('hero decoration has one approved asset and size in the importer', () => {
 test('footer has no obsolete mascot rule, injection or note asset', () => {
   const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');
   const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(css, /home-footer-mascot|hermes-door-note/);
+  assert.doesNotMatch(css, /home-footer-mascot|hermes-door-note|home-door-note/);
   assert.doesNotMatch(importer, /home-footer-mascot|hermes-door-note/);
   assert.ok(!existsSync(new URL('../public/lightvela-intl-home/assets/hermes-door-note.webp', import.meta.url)));
 });
