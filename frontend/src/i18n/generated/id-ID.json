@@ -2951,5 +2951,6 @@
   "k_ffcbaabf": "Penyimpanan cloud",
   "k_ffdf78e6": "Penyedia model",
   "k_ffea1468": "Daftar Skill terpasang",
-  "k_374c5c8a": "WhatsApp terhubung ke {{name}}. Dalam satu instans, hanya satu Bot yang dapat menghubungkan WhatsApp. Putuskan koneksi dari Bot asli terlebih dahulu."
+  "k_374c5c8a": "WhatsApp terhubung ke {{name}}. Dalam satu instans, hanya satu Bot yang dapat menghubungkan WhatsApp. Putuskan koneksi dari Bot asli terlebih dahulu.",
+  "k_fff0e138": "ID akun: {{id}}"
 }

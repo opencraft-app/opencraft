@@ -325,7 +325,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.getByText("id: usr_visible_account_id")).toBeInTheDocument();
+    expect(screen.getByText("账号 ID：usr_visible_account_id")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "复制" }));
 

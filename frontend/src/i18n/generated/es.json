@@ -2951,5 +2951,6 @@
   "k_ffcbaabf": "Almacenamiento en la nube",
   "k_ffdf78e6": "Proveedor de modelos",
   "k_ffea1468": "Lista de Skills instaladas",
-  "k_374c5c8a": "WhatsApp está conectado por {{name}}. Solo un Bot puede conectar WhatsApp en la misma instancia. Desconéctalo primero del Bot original."
+  "k_374c5c8a": "WhatsApp está conectado por {{name}}. Solo un Bot puede conectar WhatsApp en la misma instancia. Desconéctalo primero del Bot original.",
+  "k_fff0e138": "ID de la cuenta: {{id}}"
 }
