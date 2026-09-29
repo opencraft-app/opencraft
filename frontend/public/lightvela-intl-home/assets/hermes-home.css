@@ -286,8 +286,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .track::before { left: 16px; transform: rotate(3deg); transform-origin: right top; }
 #lightvela-intl-home .track::after { left: 49%; right: auto; top: -58px; transform: rotate(-3deg); transform-origin: left top; }
 #lightvela-intl-home .home-cta-mascot { top: 70px; right: auto; left: max(20px, calc((100% - var(--shell)) / 2)); width: 74px; transform: scaleX(-1); }
-#lightvela-intl-home .home-cta-mascot img,
-#lightvela-intl-home .home-footer-mascot img { display: block; width: 100%; height: auto; }
+#lightvela-intl-home .home-cta-mascot img { display: block; width: 100%; height: auto; }
 #lightvela-intl-home .foot { padding: 104px 24px 64px; background: #111 !important; color: #f7f5fa; }
 #lightvela-intl-home .foot__top {
   position: relative;
@@ -321,23 +320,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   margin: 72px auto 0;
   padding: 0;
   background: transparent;
-}
-#lightvela-intl-home .home-footer-mascot {
-  position: absolute;
-  width: 400px;
-  top: -40px;
-  right: 0;
-  pointer-events: none;
-}
-#lightvela-intl-home .home-footer-mascot::after {
-  content: '';
-  position: absolute;
-  top: 88px;
-  right: 10px;
-  width: 84px;
-  height: 48px;
-  border-left: 1px solid #ffffff40;
-  background: url('/lightvela-intl-home/assets/hermes-door-note.webp') right center / 70px auto no-repeat;
 }
 #lightvela-intl-home .foot__links h3 { color: #f7f5fa !important; }
 #lightvela-intl-home .foot__links a { color: rgba(247, 245, 250, 0.72) !important; }
@@ -651,8 +633,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .foot { padding: 64px 24px 40px; }
   #lightvela-intl-home .foot__top { padding: 0 0 230px; }
   #lightvela-intl-home .foot__links { padding: 0; margin-top: 40px; }
-  #lightvela-intl-home .home-footer-mascot { width: 270px; right: 0; top: auto; bottom: -18px; }
-  #lightvela-intl-home .home-footer-mascot::after { top: 58px; right: -8px; width: 68px; height: 40px; background-size: 56px auto; }
 }
 
 /* Final override must stay last: normalize the desktop page after legacy homepage effects. */

@@ -51,6 +51,12 @@ function formatFeatureMarkup(markup) {
   }).join('\n');
 }
 export function localizeFeatureCards(html, locale) {
+  // Snapshot widths depend on the capture viewport/font. CSS owns the fallback;
+  // feature-motion.js reserves the widest localized phrase at runtime.
+  html = html.replace(/(<span class="hero__rotator-wrap"[^>]*\bstyle=")([^"]*)(")/g, (_match, before, style, after) => {
+    const delay = style.match(/(?:^|;)\s*--rotator-delay\s*:\s*([^;]+)/)?.[1];
+    return `${before}${delay ? `--rotator-delay: ${delay.trim()};` : ''}${after}`;
+  });
   html = html.replace(/(?:\\n\s*)+$/, '\n');
   html = restoreFooterBoundary(html, locale);
   html = addFeatureMotion(html, locale);

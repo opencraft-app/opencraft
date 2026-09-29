@@ -19,6 +19,25 @@ test('hero decoration has one approved asset and size in the importer', () => {
   assert.ok(localizeFeatureCards(original, 'en-US').includes(original));
 });
 
+test('footer has no obsolete mascot rule, injection or note asset', () => {
+  const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');
+  const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /home-footer-mascot|hermes-door-note/);
+  assert.doesNotMatch(importer, /home-footer-mascot|hermes-door-note/);
+  assert.ok(!existsSync(new URL('../public/lightvela-intl-home/assets/hermes-door-note.webp', import.meta.url)));
+});
+
+test('generated hero styles discard captured widths but preserve reveal timing', () => {
+  for (const width of [94, 160, 999]) {
+    const source = `<span class="hero__rotator-wrap" style="width: ${width}px; --rotator-delay: 1150ms; --hero-rotator-width: 777px;">`;
+    assert.equal(localizeFeatureCards(source, 'en-US'), '<span class="hero__rotator-wrap" style="--rotator-delay: 1150ms;">');
+  }
+  for (const locale of ['', ...FEATURE_LOCALES]) {
+    const html = readFileSync(new URL(`../public/lightvela-intl-home/index-fragment${locale ? `.${locale}` : ''}.html`, import.meta.url), 'utf8');
+    assert.match(html, /class="hero__rotator-wrap" style="--rotator-delay: [^;"]+;"/);
+  }
+});
+
 test('footer display font is defined and its local font asset exists', () => {
   const css = readFileSync(new URL('../public/lightvela-intl-home/style.css', import.meta.url), 'utf8');
   assert.match(css, /--font-footer-display:\s*'Allura'/);
@@ -109,6 +128,13 @@ for (const locale of FEATURE_LOCALES) {
     const confirmation = document.querySelector('.wcard--confirm .feature-copy-preview');
     assert.ok(confirmation);
     assert.equal(confirmation.closest('[aria-hidden="true"]'), null, 'confirmation copy must be readable');
+    for (const selector of ['.home-cover-mascot', '.home-step-mascot', '.home-cta-mascot']) {
+      const decoration = document.querySelector(selector);
+      assert.ok(decoration, `${locale}: missing ${selector}`);
+      assert.equal(decoration.getAttribute('aria-hidden'), 'true');
+      assert.equal(decoration.querySelector('img')?.getAttribute('alt'), '');
+    }
+    assert.equal(document.querySelector('.home-footer-boundary svg')?.getAttribute('aria-hidden'), 'true');
     for (const icon of document.querySelectorAll('.feature-motion-channel img')) {
       assert.equal(icon.getAttribute('alt'), '', 'duplicate decorative channel icon');
       assert.ok(icon.closest('[aria-hidden="true"]'));

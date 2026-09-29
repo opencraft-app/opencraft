@@ -44,7 +44,6 @@ const preservedHarnessAssetNames = [
   "figma-feature-scheduled.webp",
   "figma-feature-chat-orbit.webp",
   "hermes-door.webp",
-  "hermes-door-note.webp",
   "wcard-cloud-runtime-v2.webp",
   "wcard-skills-atlas-v1.webp",
   "wcard-cloud-runtime-v1.webp",
@@ -4524,7 +4523,6 @@ for (const locale of supportedLocales) {
     [".hero__rotator-line", "afterend", "home-cover-mascot", "lv-cover-lavender.webp", 528, 410],
     [".track", "beforebegin", "home-step-mascot", "hermes-black-companion.webp", 460, 500],
     [".cta", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
-    [".foot__top", "afterbegin", "home-footer-mascot", "hermes-door.webp", 672, 512],
   ];
   for (const [selector, position, className, asset, width, height] of companionDecorations) {
     if (!document.querySelector(`.${className}`)) {
