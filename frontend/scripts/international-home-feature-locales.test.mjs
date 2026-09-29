@@ -108,6 +108,45 @@ test('step mascot uses only original artwork sizing, without superseded backgrou
   }
 });
 
+test('fresh and legacy step imports converge on one artwork and foot anchor', (t) => {
+  const track = '<ol class="track sr sr--d1 is-in" data-test="preserved"></ol>';
+  const fresh = localizeFeatureCards(track, 'en-US');
+  const legacy = localizeFeatureCards('<span class="home-step-mascot" aria-hidden="true"><img src="hermes-black-companion.webp" width="460" height="500"></span>' + track, 'en-US');
+  assert.equal(legacy, fresh);
+  assert.equal(localizeFeatureCards(fresh, 'en-US'), fresh);
+  const dom = new JSDOM(fresh);
+  t.after(() => dom.window.close());
+  const mascot = dom.window.document.querySelector('.home-step-mascot');
+  const image = mascot.querySelector('img');
+  assert.equal(image.getAttribute('src'), '/lightvela-intl-home/assets/figma-steps-user-original.webp');
+  assert.equal(image.getAttribute('width'), '676');
+  assert.equal(image.getAttribute('height'), '591');
+  assert.equal(mascot.dataset.footY, '520');
+  assert.equal(mascot.nextElementSibling.getAttribute('data-test'), 'preserved');
+  const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(importer, /"home-step-mascot"/);
+});
+
+test('step placement scales the generated foot anchor using the rendered artwork', (t) => {
+  const html = localizeFeatureCards('<div class="deploy"><div class="track"></div></div>', 'en-US');
+  const dom = new JSDOM(`<div id="lightvela-intl-home">${html}</div>`, { runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  dom.window.matchMedia = (query) => ({ matches: query === '(min-width: 900px)', addEventListener() {}, removeEventListener() {} });
+  const document = dom.window.document;
+  document.querySelector('.deploy').getBoundingClientRect = () => ({ left: 10, top: 100 });
+  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 300, width: 1000 });
+  const mascot = document.querySelector('.home-step-mascot');
+  let renderedWidth = 112;
+  mascot.querySelector('img').getBoundingClientRect = () => ({ width: renderedWidth });
+  dom.window.eval(readFileSync(new URL('../public/lightvela-intl-home/assets/feature-motion.js', import.meta.url), 'utf8'));
+  assert.equal(parseFloat(mascot.style.getPropertyValue('--step-left')), 764);
+  assert.equal(parseFloat(mascot.style.getPropertyValue('--step-top')), 200 - 112 + 132 * 70 / 170 - 112 * 520 / 676);
+  renderedWidth = 224;
+  dom.window.dispatchEvent(new dom.window.Event('resize'));
+  assert.equal(parseFloat(mascot.style.getPropertyValue('--step-left')), 708);
+  assert.equal(parseFloat(mascot.style.getPropertyValue('--step-top')), 200 - 112 + 132 * 70 / 170 - 224 * 520 / 676);
+});
+
 test('shared hero centers phrases without moving the companion and separates mobile rows', () => {
   const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');
   assert.match(css, /\.hero__line--dynamic \.hero__rotator-wrap\s*\{[^}]*width: var\(--hero-rotator-width, 12em\)[^}]*text-align: center;/);

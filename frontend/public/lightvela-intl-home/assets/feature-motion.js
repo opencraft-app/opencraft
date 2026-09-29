@@ -13,12 +13,18 @@
     var track = root.querySelector('.track');
     var mascot = root.querySelector('.home-step-mascot');
     if (!deploy || !track || !mascot || !window.matchMedia('(min-width: 900px)').matches) return;
+    var artwork = mascot.querySelector('img');
+    if (!artwork) return;
+    var sourceWidth = Number(artwork.getAttribute('width'));
+    var footY = Number(mascot.dataset.footY);
+    var renderedWidth = artwork.getBoundingClientRect().width;
+    if (!(sourceWidth > 0 && footY > 0 && renderedWidth > 0)) return;
     var base = deploy.getBoundingClientRect();
     var line = track.getBoundingClientRect();
     // Curve crest: x=80%, y=70/170 of its 132px rendered height.
-    // Original artwork's feet are at y=520 of 591px, not the image box bottom.
-    mascot.style.setProperty('--step-left', (line.left - base.left + line.width * 0.8 - 56) + 'px');
-    mascot.style.setProperty('--step-top', (line.top - base.top - 112 + 132 * 70 / 170 - 112 * 520 / 676) + 'px');
+    // Artwork dimensions and foot anchor come from the sole markup generator.
+    mascot.style.setProperty('--step-left', (line.left - base.left + line.width * 0.8 - renderedWidth / 2) + 'px');
+    mascot.style.setProperty('--step-top', (line.top - base.top - 112 + 132 * 70 / 170 - renderedWidth * footY / sourceWidth) + 'px');
   }
   function sizeRotator() {
     if (!rotator || !rotatorWrap) return;

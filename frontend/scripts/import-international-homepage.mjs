@@ -4521,7 +4521,6 @@ for (const locale of supportedLocales) {
 
   const companionDecorations = [
     [".hero__rotator-line", "afterend", "home-cover-mascot", "lv-cover-lavender.webp", 528, 410],
-    [".track", "beforebegin", "home-step-mascot", "hermes-black-companion.webp", 460, 500],
     [".cta", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
   ];
   for (const [selector, position, className, asset, width, height] of companionDecorations) {

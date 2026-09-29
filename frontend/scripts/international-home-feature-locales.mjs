@@ -5,6 +5,7 @@ const SIMPLIFIED_CHINESE = 'zh-CN';
 const SINGAPORE_CHINESE = 'zh-SG';
 const TRADITIONAL_CHINESE = 'zh-Hant';
 const CHINESE_LOCALES = new Set([SIMPLIFIED_CHINESE, SINGAPORE_CHINESE, TRADITIONAL_CHINESE]);
+const STEP_ARTWORK = Object.freeze({ asset: 'figma-steps-user-original.webp', width: 676, height: 591, footY: 520 });
 const copy = {
   'en-US': ['Confirm important actions first', 'Your approval comes before external actions.', 'Send this update?', 'Confirmed. Go ahead.', 'Every weekday at 9 AM', 'Your daily briefing is ready.', 'Remind me to drink water', 'Reminder scheduled.'],
   'zh-CN': ['重要动作先确认', '涉及发送、修改或其他外部操作时，先等你授权。', '彻底删除旧记忆和草稿文件。', '这会永久删除长期记忆和一个工作台文件。请回复「确认删除」继续；其他回复均不会执行。', '每个工作日早上 9 点', '今日简报已准备好。', '提醒我喝水', '提醒已设置。'],
@@ -77,7 +78,11 @@ export function localizeFeatureCards(html, locale) {
     const caption = index === 1 ? `<p>${sentences[index]}</p>` : '';
     return `<div class="wcard__body">${heading}${caption}</div>`;
   });
-  return html.replace(/<span class="home-step-mascot"[\s\S]*?<\/span>/, `<span class="home-step-mascot" aria-hidden="true"><img src="/lightvela-intl-home/assets/figma-steps-user-original.webp" alt="" width="676" height="591" loading="lazy"><em>${notes[locale] ?? notes[DEFAULT_LOCALE]} →</em></span>`);
+  const step = `<span class="home-step-mascot" aria-hidden="true" data-foot-y="${STEP_ARTWORK.footY}"><img src="/lightvela-intl-home/assets/${STEP_ARTWORK.asset}" alt="" width="${STEP_ARTWORK.width}" height="${STEP_ARTWORK.height}" loading="lazy"><em>${notes[locale] ?? notes[DEFAULT_LOCALE]} →</em></span>`;
+  const existingStep = /<span class="home-step-mascot"[^>]*>[\s\S]*?<\/span>/g;
+  // This is the sole owner of the step artwork, for both fresh and legacy imports.
+  if (existingStep.test(html)) return html.replace(existingStep, () => step);
+  return html.replace(/<(?:ol|div)\b[^>]*\bclass="[^"]*\btrack\b[^"]*"[^>]*>/, (track) => step + track);
 }
 
 function addFeatureMotion(html, locale) {
