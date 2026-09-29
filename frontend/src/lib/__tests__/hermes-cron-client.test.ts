@@ -1728,8 +1728,9 @@ describe("runCronJobAsTest", () => {
     // 原任务 id 全程不应出现在任何 `cron remove` 命令里
     expect(allCommands.some((c) => c === `hermes cron remove 'job-1'`)).toBe(false);
     expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
-    // 临时任务的 schedule 必须是具体的一次性时间点（once 语义），而不是原任务的 interval
+    // Hermes 将裸时长 2m 解析为周期任务；显式的 in 2m 才是一次性延迟。
     const createCommand = allCommands.find((c) => c.includes("hermes cron create")) ?? "";
+    expect(createCommand).toContain("hermes cron create 'in 2m'");
     expect(createCommand).not.toContain("every 2h");
   });
 

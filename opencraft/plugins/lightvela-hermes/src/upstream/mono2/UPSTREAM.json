@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "19c26f5186661e2f764be93416937ef08d932323",
+  "sourceRevision": "0d0dcb4ef6c85a9c76bc1340807cc5e3a60f81ce",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "file": "components/domain/tat-file-manager-panel.tsx",
-      "sourceSha256": "fac6990707006c467ab8aef6ab155556fda8aa4400c9de1744cf5f2e59e47d42"
+      "sourceSha256": "9733f9d2ee4ae9e901068d32967920d19ee570380f5ab2c41f4976380c817742"
     },
     {
       "file": "components/ui/badge.tsx",
@@ -161,7 +161,7 @@
     },
     {
       "file": "lib/hermes-cron-client.ts",
-      "sourceSha256": "317dfb3e9ca03f660c38d678241a3ccdfd95c18f574299d8851af7862a61d2ee"
+      "sourceSha256": "39d112dcef5870b0960c18aef184348b816c5cbca171352270fdd8e1cd6cd681"
     },
     {
       "file": "lib/hermes-skills-client.ts",
