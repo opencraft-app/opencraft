@@ -9,7 +9,9 @@ import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 import { journeyHref, resolveCtaRoute } from "@/lib/cta-journey";
 
 const addBot = vi.fn();
+const deleteBot = vi.fn();
 let maxBots = 5;
+let multiBotEnabled = true;
 let currentLocale = "en-US";
 let activePass: { expired_time: string; created_time: string; credit_available: number; status: string } | null = null;
 const navigateMock = vi.fn();
@@ -40,7 +42,8 @@ vi.mock("@/lib/region", () => ({
 
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
-  useMultiBotEnabled: () => true,
+  useMultiBotEnabled: () => multiBotEnabled,
+  useReferralEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -57,7 +60,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading: false,
-    deleteBot: vi.fn(),
+    deleteBot,
     user: {
       email: "user@example.com",
       plan: { name: "启航套餐", tier: "plus", trialDays: 7, aiCredits: 1000, usedCredits: 0, totalRequests: 0, maxBots },
@@ -72,6 +75,8 @@ vi.mock("@/contexts/agent-context", () => ({
   }),
 }));
 
+const listMyPasses = vi.fn().mockResolvedValue([]);
+
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     bots: {
@@ -85,7 +90,7 @@ vi.mock("@/contexts/repository-context", () => ({
       })),
       getDashboardSnapshot: vi.fn().mockResolvedValue({ bots }),
     },
-    plans: { getRenewPrice: vi.fn(), createRenewOrder: vi.fn(), listMyPasses: vi.fn() },
+    plans: { getRenewPrice: vi.fn(), createRenewOrder: vi.fn(), listMyPasses },
   }),
 }));
 
@@ -149,6 +154,11 @@ vi.mock("@/pages/marketing/agent-chat-panel", () => ({
 
 vi.mock("@/pages/marketing/agent-overview-panel", () => ({
   AgentOverviewPanel: ({ heroStats }: { heroStats: { expiresAt: string | null } }) => <div>Bot overview {heroStats.expiresAt}</div>,
+  HeroBanner: ({ stats }: { stats: { expiresAt: string | null } }) => <div>Bot overview {stats.expiresAt}</div>,
+  LatestNewsSection: () => null,
+  RecommendedAutomationsSection: () => null,
+  BuddyProfileAvatar: () => null,
+  useOverviewProfileEditor: () => ({ steps: null, writeError: null, applyProfile: vi.fn() }),
 }));
 
 // isCN is false before module evaluation: a CN-only feature constant must fail here.
@@ -157,6 +167,9 @@ describe("international Bot onboarding", () => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
     maxBots = 5;
+    multiBotEnabled = true;
+    testRegion.isCN = false;
+    testRegion.isGlobal = true;
     currentLocale = "en-US";
     activePass = null;
     bots = [buildBot()];
@@ -168,6 +181,54 @@ describe("international Bot onboarding", () => {
     execDebugCommand.mockResolvedValue({ status: "success", exitCode: 0, output: "" });
   });
   afterEach(cleanup);
+
+  describe("domestic multi-Bot overview", () => {
+    beforeEach(() => {
+      testRegion.isCN = true;
+      testRegion.isGlobal = false;
+      currentLocale = "zh-CN";
+    });
+
+    it("shows all Bots and places overview above the Bot selector", async () => {
+      bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+      render(page("?bot=ins-372"));
+      expect(await screen.findByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
+      const overview = screen.getByRole("link", { name: "总览" });
+      expect(overview).toHaveAttribute("aria-current", "page");
+      const selector = document.querySelector(".lv-agent-profile-wrap");
+      expect(selector).not.toBeNull();
+      expect(overview.compareDocumentPosition(selector!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByRole("button", { name: "创建 Bot" })).toBeEnabled();
+    });
+
+    it("opens the original creation guide from the domestic overview", async () => {
+      render(page(""));
+      fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
+      expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "创建" })).toBeInTheDocument();
+      expect(addBot).not.toHaveBeenCalled();
+    });
+
+    it("keeps the creation quota restriction", async () => {
+      maxBots = 1;
+      render(page(""));
+      expect(await screen.findByRole("button", { name: "创建 Bot" })).toBeDisabled();
+      expect(addBot).not.toHaveBeenCalled();
+    });
+
+    it("retains the original overview when multi-Bot is disabled", async () => {
+      multiBotEnabled = false;
+      render(page(""));
+      expect(await screen.findByText("Bot overview")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "创建 Bot" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "我的 Bots" })).not.toBeInTheDocument();
+      const overview = screen.getByRole("link", { name: "总览" });
+      const selector = document.querySelector(".lv-agent-profile-wrap");
+      expect(selector).not.toBeNull();
+      expect(overview.compareDocumentPosition(selector!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    });
+  });
 
   it("creates and configures the first Bot from the international homepage entry", async () => {
     bots = [];
@@ -208,7 +269,7 @@ describe("international Bot onboarding", () => {
   it("opens the same guide when creating the first Bot from an empty account", async () => {
     bots = [];
     render(page(""));
-    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
   });
@@ -219,6 +280,37 @@ describe("international Bot onboarding", () => {
     expect(screen.getByRole("link", { name: "总览" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
     expect(addBot).not.toHaveBeenCalled();
+  });
+
+  it("preserves the original redirect to an in-progress Bot creation", async () => {
+    bots = [{ ...buildBot(), status: "provisioning" }];
+    render(page(""));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(expect.stringContaining("creating=ins-372"), { replace: true }));
+  });
+
+  it("opens the original delete dialog for the card target without changing the selected Bot", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    render(page("?bot=ins-372"));
+    await screen.findByRole("heading", { name: "Research Bot" });
+    // This test's translator returns source strings without interpolation.
+    fireEvent.click(screen.getAllByRole("button", { name: "管理 {{name}}" })[1]!);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(screen.getByText("风险提示：")).toBeInTheDocument();
+    expect(screen.getByText("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("请输入 {{name}}"), { target: { value: "Research Bot" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认删除 Bot" }));
+    await waitFor(() => expect(deleteBot).toHaveBeenCalledWith("bot-child"));
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps every Bot visible when the selected Bot changes", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    const view = render(page("?bot=ins-372"));
+    expect(await screen.findByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
+    view.rerender(page("?bot=bot-child"));
+    expect(screen.getByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开 Bot" })).not.toBeInTheDocument();
   });
 
   it("formats the overview expiry in the current language and updates on language switches", async () => {
@@ -235,7 +327,7 @@ describe("international Bot onboarding", () => {
 
   it("opens the international guide for an additional Bot and enforces quota on submit", async () => {
     const view = render(page("?bot=ins-372"));
-    fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("育儿参谋")).not.toBeInTheDocument();
     maxBots = 1;

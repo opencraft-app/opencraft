@@ -84,7 +84,7 @@ export function buildHermesSoulContentReadCommand(profileId = "main"): string {
     "set +e",
     getHermesProfileRootCommand(profileId, "HERMES_ROOT"),
     'TARGET="$HERMES_ROOT/SOUL.md"',
-    'if [ ! -s "$TARGET" ]; then',
+    'if [ ! -e "$TARGET" ] && [ ! -L "$TARGET" ]; then',
     "  printf '%s\\n' 'Exists: no'",
     "  exit 0",
     "fi",

@@ -22,16 +22,17 @@ import (
 
 // handler implements the generated ServerInterface.
 type handler struct {
-	svc                 *service.Service
-	routes              route.Store
-	commands            provider.CommandRunner
-	invocations         provider.CommandInvoker
-	terminals           provider.TerminalSessionStarter
-	terminalCommands    provider.TerminalCommandStreamer
-	tatSessionTimeout   time.Duration
-	cloud               provider.CloudProvider
-	metrics             *observability.APIMetrics
-	allowedTATCommandID string
+	svc                          *service.Service
+	routes                       route.Store
+	commands                     provider.CommandRunner
+	invocations                  provider.CommandInvoker
+	terminals                    provider.TerminalSessionStarter
+	terminalCommands             provider.TerminalCommandStreamer
+	tatSessionTimeout            time.Duration
+	cloud                        provider.CloudProvider
+	metrics                      *observability.APIMetrics
+	allowedTATCommandID          string
+	allowedTATCommandIDsByRegion map[string]string
 
 	// cloudPauseResume controls Stop/Start based pause/resume semantics. It
 	// defaults on because billing/pass lifecycle isolation needs real cloud

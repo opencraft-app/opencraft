@@ -92,6 +92,14 @@ master 源码
   重试时只跳过已有 `INVOKED` 的 cloud instance，继续失败和未处理项。checkpoint JSONL 的中断尾行
   可以忽略，但不得因读取失败退化成全量 `--force=true` 重复升级。
 
+- Website Builder 的存量凭据补发与新购自动下发分开验收。逐实例凭据 TAT Command 的
+  `website_key` 必须是 hidden parameter，不能写入 Command content、日志或 Git；默认安装器
+  对同一 CVM 的多个 gateway unit 保持失败关闭。仅对已经核对 CTL、Sandbox、CVM、Pool
+  身份且确认多 unit 的单台旧实例，可创建显式 `HERMES_TAT_MULTI_GATEWAY=true` 的专用命令，
+  让同一实例凭据注入所有选中 unit。安装器须备份原凭据与 drop-in，在每个 unit 重启并完成
+  验证前保留回滚材料；可捕获的 TERM/INT、部分重启或校验失败须回滚；SIGKILL/断电无法捕获，超时等不确定终态必须先核对机器文件和受保护账本，不得盲目重签。此专用命令不能替换新购地域
+  命令映射，也不能对整个地域批量执行；TAT 成功后仍须核查机器侧 Skill、文件元数据和认证能力。
+
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
   `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；
@@ -631,3 +639,7 @@ auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forward
   0 个 403，验收通过。
 
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。
+
+## 建站凭据跨地域发布门禁
+
+`ctl` 与 `sandbox-api` 的地域 CommandId 映射须同时进入目标地域 GitOps，并与每个目标地域实际存在的 TAT Command 对账。先发布两端映射并验收新购机器的文件状态与真实建站能力请求，再按生产实例快照运行可断点续跑的存量补发；Skill 可以按 TAT 单次目标上限共享命令批量下发，凭据必须逐实例签发、调用、确认终态，失败与未确认结果不可盲重试。核验镜像、Argo revision、`Synced/Healthy`、TAT 终态与真实能力请求分别留证。
