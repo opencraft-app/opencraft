@@ -35,6 +35,25 @@ func TestLaunchTokenRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDefaultLaunchTokenTTLIsTenMinutes(t *testing.T) {
+	cfg := testConfig()
+	cfg.LaunchTokenTTL = 0
+	now := time.Unix(1_800_000_000, 0)
+	token, expiresAt, err := IssueLaunchToken(cfg, "user-1", "ins-1", now)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	if expiresAt != now.Add(10*time.Minute).Unix() {
+		t.Fatalf("unexpected expiry: %d", expiresAt)
+	}
+	if _, err := VerifyLaunchToken(cfg, token, now.Add(9*time.Minute)); err != nil {
+		t.Fatalf("token should remain valid before ten minutes: %v", err)
+	}
+	if _, err := VerifyLaunchToken(cfg, token, now.Add(10*time.Minute)); err != ErrExpiredToken {
+		t.Fatalf("token should expire at ten minutes, got %v", err)
+	}
+}
+
 func TestLaunchTokenRejectsTamperAndExpiry(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	token, _, err := IssueLaunchToken(testConfig(), "user-1", "ins-1", now)

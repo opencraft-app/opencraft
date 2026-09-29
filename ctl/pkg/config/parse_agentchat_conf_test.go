@@ -25,7 +25,7 @@ func TestParseAgentChatConfDefaultsAndDecryptsSecrets(t *testing.T) {
 	if ServerConf.AgentChat.BusinessCode != "lightvela" {
 		t.Fatalf("unexpected business code: %q", ServerConf.AgentChat.BusinessCode)
 	}
-	if ServerConf.AgentChat.LaunchTokenTTLSeconds != 300 || ServerConf.AgentChat.TimestampSkewSeconds != 300 {
+	if ServerConf.AgentChat.LaunchTokenTTLSeconds != 600 || ServerConf.AgentChat.TimestampSkewSeconds != 300 {
 		t.Fatalf("unexpected ttl/skew: %+v", ServerConf.AgentChat)
 	}
 	if ServerConf.AgentChat.SecretKey != "lightvela_ai_A6zP39qL" {
