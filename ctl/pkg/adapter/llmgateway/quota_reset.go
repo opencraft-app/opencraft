@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type UserQuotaResetter interface {
@@ -34,6 +35,7 @@ type UserQuotaResetResult struct {
 
 type quotaSubscription struct {
 	ID            int    `json:"id"`
+	Name          string `json:"name"`
 	Status        string `json:"status"`
 	PlanID        int    `json:"plan_id"`
 	AmountUsed    int64  `json:"amount_used"`
@@ -46,8 +48,8 @@ func (a *LLMGatewayAdapter) ResetUserQuota(ctx context.Context, userID string, d
 	if userID == "" {
 		return nil, fmt.Errorf("user_id is required")
 	}
-	if a.baseURL == "" || a.adminToken == "" {
-		return nil, fmt.Errorf("llmgateway admin endpoint is not configured")
+	if a.baseURL == "" || a.adminToken == "" || a.internalToken == "" {
+		return nil, fmt.Errorf("llmgateway quota reset endpoints are not configured")
 	}
 
 	target, err := a.resolveQuotaResetTarget(ctx, userID)
@@ -129,7 +131,6 @@ func (a *LLMGatewayAdapter) resolveQuotaResetTarget(ctx context.Context, userID 
 				Values struct {
 					SetID          string `json:"set_id"`
 					UpstreamUserID int    `json:"upstream_user_id"`
-					LastPlanID     string `json:"last_plan_id"`
 				} `json:"values"`
 			} `json:"row"`
 		} `json:"data"`
@@ -140,32 +141,8 @@ func (a *LLMGatewayAdapter) resolveQuotaResetTarget(ctx context.Context, userID 
 	}
 	values := bindingResponse.Data.Row.Values
 	values.SetID = strings.TrimSpace(values.SetID)
-	values.LastPlanID = strings.TrimSpace(values.LastPlanID)
-	if values.SetID == "" || values.UpstreamUserID <= 0 || values.LastPlanID == "" {
+	if values.SetID == "" || values.UpstreamUserID <= 0 {
 		return nil, fmt.Errorf("llmgateway user binding is incomplete")
-	}
-
-	var mappingsResponse struct {
-		Data []struct {
-			SetID          string `json:"set_id"`
-			Status         string `json:"status"`
-			UpstreamPlanID int    `json:"upstream_plan_id"`
-		} `json:"data"`
-	}
-	if err := a.doQuotaAdminJSON(ctx, http.MethodGet,
-		"/api/plans/"+url.PathEscape(values.LastPlanID)+"/sets", nil, &mappingsResponse); err != nil {
-		return nil, fmt.Errorf("get llmgateway plan mappings: %w", err)
-	}
-	upstreamPlanID := 0
-	readyCount := 0
-	for _, mapping := range mappingsResponse.Data {
-		if mapping.SetID == values.SetID && strings.EqualFold(mapping.Status, "ready") && mapping.UpstreamPlanID > 0 {
-			upstreamPlanID = mapping.UpstreamPlanID
-			readyCount++
-		}
-	}
-	if readyCount != 1 {
-		return nil, fmt.Errorf("expected exactly one ready plan mapping for set %s, found %d", values.SetID, readyCount)
 	}
 
 	listPath := fmt.Sprintf(
@@ -180,26 +157,87 @@ func (a *LLMGatewayAdapter) resolveQuotaResetTarget(ctx context.Context, userID 
 	if err := a.doQuotaAdminJSON(ctx, http.MethodGet, listPath, nil, &subscriptionsResponse); err != nil {
 		return nil, fmt.Errorf("list llmgateway user subscriptions: %w", err)
 	}
-	activeCount := 0
-	matchingCount := 0
+	baseCount := 0
 	var matched quotaSubscription
+	now := time.Now().Unix()
 	for _, item := range subscriptionsResponse.Data {
 		sub := item.Subscription
-		if !strings.EqualFold(sub.Status, "active") {
+		if !strings.EqualFold(sub.Status, "active") || sub.EndTime <= now {
 			continue
 		}
-		activeCount++
-		if sub.PlanID == upstreamPlanID {
-			matchingCount++
-			matched = sub
+		name := strings.TrimSpace(sub.Name)
+		if strings.HasPrefix(name, "credit-package:") || strings.HasPrefix(name, "free-credit:") {
+			continue
+		}
+		if name != "" && !strings.HasPrefix(name, "package:") {
+			return nil, fmt.Errorf("unknown active subscription kind for subscription %d", sub.ID)
+		}
+		baseCount++
+		matched = sub
+	}
+	if baseCount != 1 || matched.ID <= 0 || matched.PlanID <= 0 || matched.NextResetTime <= 0 {
+		return nil, fmt.Errorf("expected exactly one active, periodically resettable package subscription, found %d", baseCount)
+	}
+	// The current new-api endpoint resets every active subscription for a plan.
+	// Refuse a shared plan even when the other subscription is additive.
+	samePlanCount := 0
+	for _, item := range subscriptionsResponse.Data {
+		sub := item.Subscription
+		if strings.EqualFold(sub.Status, "active") && sub.EndTime > now && sub.PlanID == matched.PlanID {
+			samePlanCount++
 		}
 	}
-	if activeCount != 1 || matchingCount != 1 || matched.ID <= 0 || matched.NextResetTime <= 0 || matched.EndTime <= 0 {
-		return nil, fmt.Errorf("expected exactly one active subscription and one matching plan")
+	if samePlanCount != 1 {
+		return nil, fmt.Errorf("package plan is shared by %d active subscriptions", samePlanCount)
+	}
+
+	active, err := a.ListActiveSubscriptions(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve llmgateway package plan: %w", err)
+	}
+	planID := ""
+	projectionCount := 0
+	for _, sub := range active.Subscriptions {
+		if sub.ID != strconv.Itoa(matched.ID) {
+			continue
+		}
+		projectionCount++
+		planID = strings.TrimSpace(sub.PlanID)
+		projectedName := strings.TrimSpace(sub.Name)
+		if sub.UserID != userID || !strings.EqualFold(sub.Status, "active") ||
+			(projectedName != "" && !strings.HasPrefix(projectedName, "package:")) {
+			return nil, fmt.Errorf("package subscription projection is not an active package for this user")
+		}
+		if projectedName != "" && matched.Name != "" && projectedName != strings.TrimSpace(matched.Name) {
+			return nil, fmt.Errorf("package subscription name differs from llmgateway projection")
+		}
+	}
+	if projectionCount != 1 || planID == "" {
+		return nil, fmt.Errorf("expected exactly one package subscription plan projection, found %d", projectionCount)
+	}
+	var mappingsResponse struct {
+		Data []struct {
+			SetID          string `json:"set_id"`
+			Status         string `json:"status"`
+			UpstreamPlanID int    `json:"upstream_plan_id"`
+		} `json:"data"`
+	}
+	if err := a.doQuotaAdminJSON(ctx, http.MethodGet,
+		"/api/plans/"+url.PathEscape(planID)+"/sets", nil, &mappingsResponse); err != nil {
+		return nil, fmt.Errorf("get llmgateway package plan mappings: %w", err)
+	}
+	readyCount := 0
+	for _, mapping := range mappingsResponse.Data {
+		if mapping.SetID == values.SetID && strings.EqualFold(mapping.Status, "ready") && mapping.UpstreamPlanID == matched.PlanID {
+			readyCount++
+		}
+	}
+	if readyCount != 1 {
+		return nil, fmt.Errorf("expected exactly one ready mapping for package subscription plan, found %d", readyCount)
 	}
 	return &quotaResetTarget{
 		setID: values.SetID, upstreamUserID: values.UpstreamUserID,
-		planID: values.LastPlanID, upstreamPlanID: upstreamPlanID, subscription: matched,
+		planID: planID, upstreamPlanID: matched.PlanID, subscription: matched,
 	}, nil
 }
 
