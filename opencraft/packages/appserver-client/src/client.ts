@@ -195,6 +195,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
   private readonly removeStatusListener: () => void;
   private requestSequence = 0;
   private generation = 0;
+  private transportRevision = 0;
   private closed = false;
   private initialized: AppServerInitializeResponse | null = null;
   private initializePromise: Promise<AppServerInitializeResponse> | null = null;
@@ -234,7 +235,11 @@ export class JsonRpcAppServerClient implements AppServerClient {
     if (this.initializePromise !== null) return this.initializePromise;
     this.initializePromise = (async () => {
       await this.transport.connect(signal);
+      const revision = this.transportRevision;
       const result = await this.request("initialize", params, { signal, priority: "user-blocking" });
+      if (this.closed || revision !== this.transportRevision || this.transport.status.state !== "open") {
+        throw new AppServerClientError("TRANSPORT_ERROR", "AppServer initialization belongs to a lost connection");
+      }
       this.initialized = result;
       this.generation += 1;
       return result;
@@ -603,6 +608,7 @@ export class JsonRpcAppServerClient implements AppServerClient {
 
   private handleTransportStatus(status: TransportStatus): void {
     if (status.state !== "closed" && status.state !== "failed") return;
+    this.transportRevision += 1;
     this.initialized = null;
     const reason = status.reason == null ? "AppServer transport closed" : `AppServer transport closed: ${status.reason}`;
     this.rejectAllPending(new AppServerClientError("TRANSPORT_ERROR", reason), "failed");

@@ -9,6 +9,7 @@ import { HostProcessService } from "../apps/local-agent-host/src/process-service
 import { createWorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
 import {
   createTerminalWorkbenchPanelPlugin,
+  pasteIntoActiveTerminal,
   terminalBoxIsVisible,
   terminalGridSizeChanged,
   WorkbenchTerminalSessionRegistry,
@@ -22,6 +23,18 @@ test("terminal grid helpers reject hidden boxes and duplicate PTY sizes", () => 
   assert.equal(terminalGridSizeChanged(null, { cols: 80, rows: 24 }), true);
   assert.equal(terminalGridSizeChanged({ cols: 80, rows: 24 }, { cols: 80, rows: 24 }), false);
   assert.equal(terminalGridSizeChanged({ cols: 80, rows: 24 }, { cols: 79, rows: 24 }), true);
+});
+
+test("pasting uses xterm's paste path and never sends a late clipboard result to another terminal", () => {
+  const calls: string[] = [];
+  const first = { paste(text: string) { calls.push(`first:${text}`); }, focus() { calls.push("focus:first"); } };
+  const second = { paste(text: string) { calls.push(`second:${text}`); }, focus() { calls.push("focus:second"); } };
+  assert.equal(pasteIntoActiveTerminal(first, first, "echo one\necho two", true), true);
+  assert.deepEqual(calls, ["first:echo one\necho two", "focus:first"]);
+  assert.equal(pasteIntoActiveTerminal(first, second, "stale", true), false);
+  assert.equal(pasteIntoActiveTerminal(second, second, "", true), false);
+  assert.equal(pasteIntoActiveTerminal(second, second, "offline", false), false);
+  assert.deepEqual(calls, ["first:echo one\necho two", "focus:first"]);
 });
 
 test("terminal visual inset is outside the measured xterm host", () => {

@@ -238,7 +238,7 @@ export function isAgentActivityBlock(block: TimelineBlock): boolean {
     || (block.type === "image" && block.generated
       && (block.status === "pending" || block.status === "running"))
     || (block.type === "user-message" && (block.steeringStatus !== null || block.hookFeedback))
-    || (block.type === "text" && block.phase === "commentary");
+    || (block.type === "text" && block.phase === "commentary" && (block.asyncQuestions?.length ?? 0) === 0);
 }
 
 /** Codex classifies each activity Item before building the collapsible group. */

@@ -55,9 +55,9 @@ export function createSideChatPanelPlugin(service: SideChatService, bindings: Co
         kind: "sidechat",
         restoreTabs: ownerId => {
           const parent = bindings.resolve(ownerId as ConversationScopeId)?.conversationKey;
-          return parent ? service.list(parent).map(session => ({ id: `sidechat:${session.key.threadId}`, resource: session.id, kind: "sidechat", region: "right", title: "Side chat", icon: "chat", preview: false, closable: true })) : [];
+          return parent ? service.list(parent).map(session => ({ id: `sidechat:${session.key.threadId}`, resource: session.id, kind: "sidechat", region: "right", title: "Side chat", icon: "chat", showTabIcon: true, preview: false, closable: true })) : [];
         },
-        createTab: params => ({ id: params.id, resource: params.resource, kind: "sidechat", region: "right", title: params.title, icon: "chat", preview: false, closable: !params.pending }),
+        createTab: params => ({ id: params.id, resource: params.resource, kind: "sidechat", region: "right", title: params.title, icon: "chat", showTabIcon: true, preview: false, closable: !params.pending }),
         disposeTab: (tab, _owner, reason) => {
           if (!tab.resource) return;
           if (tab.id.startsWith("sidechat-loading:")) { service.cancel(tab.resource); return; }

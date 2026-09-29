@@ -414,6 +414,53 @@ test("loopback server exposes the proxy over a bounded local HTTP endpoint", asy
   }
 });
 
+test("loopback Codex proxy accepts a request above 10 MiB and reports its 32 MiB limit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-limit-"));
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  pool.addAccount({ id: "account-a", provider: "codex", label: "A", upstreamAccountId: "chatgpt-a", priority: 1, enabled: true },
+    { accessToken: "fixture-access", refreshToken: null, expiresAt: null });
+  const token = pool.issueHostToken("local");
+  let upstreamCalls = 0;
+  const server = await startCodexAccountPoolServer({
+    proxy: new CodexAccountPoolProxy({
+      store: pool,
+      upstreamBaseUrl: "https://chatgpt.example.test/backend-api/codex",
+      fetch: async (_input, init) => {
+        upstreamCalls++;
+        return Response.json({ bytes: init?.body ? (init.body as Uint8Array).byteLength : 0 });
+      },
+    }),
+  });
+  try {
+    const acceptedBytes = 10 * 1024 * 1024 + 1;
+    const accepted = await fetch(`${server.url}/v1/responses`, {
+      method: "POST",
+      headers: { "x-opencraft-account-pool-token": token },
+      body: "x".repeat(acceptedBytes),
+    });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(await accepted.json(), { bytes: acceptedBytes });
+
+    const rejected = await fetch(`${server.url}/v1/responses`, {
+      method: "POST",
+      headers: { "x-opencraft-account-pool-token": token },
+      body: "x".repeat(32 * 1024 * 1024 + 1),
+    });
+    assert.equal(rejected.status, 413);
+    assert.deepEqual(await rejected.json(), { error: { message: "Request too large" } });
+    assert.equal(upstreamCalls, 1);
+
+    const next = await fetch(`${server.url}/v1/models`, { headers: { "x-opencraft-account-pool-token": token } });
+    assert.equal(next.status, 200);
+    assert.deepEqual(await next.json(), { bytes: 0 });
+    assert.equal(upstreamCalls, 2);
+  } finally {
+    await server.close();
+    pool.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("disconnecting a streaming Account Pool client does not crash the server", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-disconnect-"));
   const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });

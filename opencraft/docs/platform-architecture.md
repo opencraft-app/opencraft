@@ -9,7 +9,19 @@ Application Supervisor owns multiple lifecycle-scoped runtimes: Host
 connections, browser resources, renderer services, extensions, panels and Query clients.
 The Vite renderer is the precision desktop surface used by browsers and
 Electron. The Expo Router app owns iOS, Android, and an independent Expo Web
-build. Neither renderer is a wrapper around the other.
+build. Android and Expo Web use native-shaped workbench views; iOS signs in
+natively, then presents the first-party `lightvela.ai/agents` site in a WebView.
+The iOS site shell does not create a native Host or duplicate the site's chat
+state. Its native account owns the sign-in token, and the WebView receives it
+only on the `https://lightvela.ai` origin.
+Expo Go skips the custom-scheme native login gate and opens the website's own
+login flow. The site Service Worker caches only versioned static assets for the
+iOS shell; it never caches authenticated API or chat responses.
+The Expo Metro server gzips JavaScript bundle responses for clients that accept
+gzip. Physical iOS Expo Go tests require the CLI and phone to use the same Expo
+account; an HTTPS reverse proxy uses an `exps://` launch URL. For remote Expo
+Go discovery, the Expo tunnel can retain the manifest and list entry while
+redirecting bundle downloads to a faster HTTPS origin for the same Metro server.
 
 The distributed product model is `Client / Hub / Server`. A Client is a
 protocol participant and may use an Electron renderer, a static Web page or
@@ -74,6 +86,18 @@ add explicit Hub, tenant and Server coordinates without changing the domain
 contract or Sidebar presentation again.
 
 ## Package ownership
+
+### Workspace file Explorer ownership
+
+Workbench Web's workspace resource panel owns the selected Host/path, the
+filesystem query, and unsaved drafts. A query result is only a server snapshot:
+refreshing or switching files must not replace a dirty draft. Draft identity is
+Host plus path; saving captures that identity and submitted text before the
+asynchronous write, and a changed server snapshot blocks saving until the user
+reconciles the draft. The extension registry in the resource model supplies
+both file-type cues and the CodeMirror language choice. The code editor owns
+only its document view and edit events; it does not write files or own drafts.
+Binary and oversized files remain outside the text-editor path.
 
 ### Typography ownership
 
@@ -297,6 +321,12 @@ visible pending state while that acknowledgment is outstanding;
 once acknowledged, it opens the child without waiting for a background thread
 catalog refresh. A changed route scope prevents the late result from stealing
 navigation, while the catalog refresh still runs for eventual list freshness.
+Ordinary Fork keeps the native AppServer parameter semantics and has no
+Workbench request deadline; unlike short reads, a large-history Fork must not
+be declared failed after the generic 30 seconds. A transport loss still leaves
+the outcome unknown, so the UI warns against blind retry rather than claiming
+that the child was not created. Identical concurrent durable Fork intents
+share one pending AppServer request within the Host runtime.
 Temporary Side Chat requires explicit fork, ephemeral, inject-items and
 unsubscribe support. Codex
 Fork is only recoverable after the source's first Turn has been accepted;
@@ -321,6 +351,10 @@ Codex Host exposes rename through `thread/name/set`; the native `thread.name`
 is readable from list/read and survives an AppServer restart. The Workbench
 title writer keeps optimistic edits scoped to the same Host/Thread until the
 native acknowledgement or failure arrives.
+The application shell alone projects the current page title to `document.title`
+as `<page title> · OpenCraft`, sharing the header's task/extension title rather
+than introducing a second title cache. Draft and Settings pages use `OpenCraft`;
+background conversations and panels cannot overwrite the document title.
 Codex Host advertises archive only when its native AppServer path is wired:
 `thread/archive` and `thread/unarchive` pass through the logical-client adapter,
 and archived Settings reads native `thread/list {archived:true}`. A Codex Thread
@@ -735,6 +769,9 @@ priority order; recovery of an earlier account does not pull new Threads back.
 The loopback HTTP bridge owns each response stream until completion. When its
 client disconnects, it aborts the upstream request and consumes the resulting
 stream error without terminating the Host process or replaying the request.
+The bridge accepts request bodies up to 32 MiB. It drains an oversized body
+without forwarding it and returns HTTP 413, so a large Codex history produces
+an explicit size error instead of a disconnected stream.
 Account order, enablement, quota and accepted affinity survive Host restart.
 Affinity expires after 30 idle minutes and storage retains only the 4,096 most
 recent bindings, matching the bounded BB scheduling contract.
@@ -925,6 +962,17 @@ replaced, exercises DPR 1/2, hostile body tracking, widths, wide cells, font cha
 and visibility, and includes the old inheritance as a failing control. Its
 rounding budget accounts for pinned xterm's 32-glyph integer-width measurement;
 it does not add layout padding or silently remove columns.
+
+Terminal paste belongs to the panel's input presentation. Desktop keyboard paste
+continues through xterm's helper textarea; the explicit paste action uses the
+browser clipboard only while the current terminal is running. If clipboard
+reading is unavailable or denied, a native text field lets touch users invoke
+the system paste menu and confirm before sending. Both paths call xterm's
+`paste()` so line-ending and bracketed-paste handling remain with xterm, then
+flow through the existing `onData`/PTY writer. A late clipboard result must
+not be delivered after the panel changes terminal or the session stops. The
+entry field is View-scoped, cleared on cancellation or terminal change, and
+never persists clipboard contents.
 
 ### Conversation terminal semantics
 
@@ -1171,6 +1219,17 @@ application actions or overwriting saved widths. Its Applications entrance chang
 the in-overlay rail (or opens the existing drawer on very narrow widths), never
 implicitly docks the entire Sidecar. Docking remains a separate header action.
 Escape/outside dismissal retires both explicit peek and pointer-hover intent.
+While floating, AppShell owns a transparent outside hit surface behind the
+sidebar and above the conversation. A tap dismisses the transient presentation
+without dispatching the same activation to the covered conversation; it does
+not change the saved dock intent. Because this hit surface covers the viewport,
+its touch highlight must remain transparent rather than flashing the whole
+screen. Touch movement does not acquire hover intent.
+Dismissal changes the requested presentation first, but the floating panel
+continues to own its shared content, navigation projection and outside hit
+surface until its exit animation completes. Only then may those portals move
+back to the docked slots. Docking is a separate transaction and transfers the
+owner immediately because the floating presence owner itself is removed.
 
 The primary pane has three semantic detents: `expanded`, `compact` and `hidden`.
 Expanded width remains a separately persisted preference; compact is
@@ -1419,6 +1478,35 @@ records the page URL, Thread ID, messages, credentials, IP address, Origin,
 raw exception or close reason. These events locate the failing layer; a
 browser WebSocket `error` cannot itself reveal an HTTP upgrade status. No
 diagnostic event changes Host or Thread ownership or retries.
+
+Weak-network recovery separates shared connection reachability, per-Host protocol
+readiness and per-resource restoration. Web foreground, pageshow and online hints
+are coalesced by the shared AppHost socket owner. A negotiated `connectionProbe`
+capability enables a bounded, correlated `connection/probe` exchange; old peers
+receive no unknown probe message. The server answers probes outside its business
+queues. Probe success proves bridge reachability, not engine or Thread readiness.
+Hidden pages cancel probe deadlines; old sockets and cancelled probe replies
+cannot affect successor connections. The server's protocol Ping/Pong remains a
+fallback for detecting half-open connections. Failed probes revoke only Client
+attachments, never service-owned execution.
+
+AppHost ready and Host claim waits have finite control deadlines. Timed-out claim
+acknowledgements release their original lease; each subsequent attempt uses a new
+lease. Business envelopes serialize per Host, allowing another Host on the same
+socket and connection probes to progress during a slow activation. Local send
+cancellation releases its pending acknowledgement without cancelling or replaying
+remote execution. AppServer initialization rejects results from a revoked transport.
+
+Workbench Host readiness ends at lease acquisition plus AppServer initialize.
+Thread restoration uses bounded concurrency with retained Views first; a semantic
+Thread failure stays local, while transient failures retry locally. PTY and file
+watch recovery do not gate Host readiness. The application binds Host readiness to
+host-scoped read-query cancellation and invalidation: active queries refresh,
+inactive queries become stale, and existing data remains visible. Stable resource
+query keys are retained across connections. This coordination is independent of
+menu mounting; late cancelled reads cannot overwrite recovered catalog data.
+Execution requests keep their existing admission and reconciliation policies and
+are not replayed by connection or cache recovery.
 
 The app-like iPhone Web surface requests a fixed viewport scale for embedded
 browsers and keeps focused editable text at a 16px minimum on coarse-pointer

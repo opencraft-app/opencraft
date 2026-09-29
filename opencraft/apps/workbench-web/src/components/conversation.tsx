@@ -1,6 +1,7 @@
 import { ResponsePositionedTurns, type ResponsePositionedTurnsApi } from "./conversation/response-positioned-turns";
 import {
   createTimelineTurnPresentationPlan,
+  deriveAsyncQuestionStates,
   groupTimelineFramesByTurn,
   presentAutomationUpdate,
   type AssistantTurnPresentationPlan,
@@ -8,6 +9,7 @@ import {
   type TimelineBlock,
   type TimelineFrame,
   type TimelineSnapshot,
+  type AsyncQuestion,
   type ToolActivityPresentation,
   type ToolActivityPresenterRegistry,
   type TimelineTurnView,
@@ -46,8 +48,6 @@ import {
   ChevronDown,
   FileCode2,
   RotateCcw,
-  Undo2,
-  Redo2,
 } from "lucide-react";
 import {
   motion,
@@ -78,6 +78,7 @@ import {
   type ConversationDocumentContextValue,
 } from "./conversation/document-context";
 import { UserMessageBlock } from "./conversation/user-message";
+import { AsyncQuestionCard } from "./conversation/async-question-card";
 import { UnifiedDiffPreview } from "./conversation-renderers/unified-diff-preview";
 import {
   ActivityDisclosure,
@@ -86,6 +87,7 @@ import {
 } from "./conversation-renderers/activity/activity-disclosure";
 import {
   ConversationInteractionContext,
+  AsyncQuestionContext,
   ConversationDetailContext,
   DEFAULT_TOOL_ACTIVITY_PRESENTERS,
   SubagentNavigationContext,
@@ -95,6 +97,8 @@ import {
   useToolActivityPresentation,
   type ConversationInteractionAction,
   type ConversationInteractionContextValue,
+  type AsyncQuestionContextValue,
+  type AsyncQuestionDraft,
   type SubagentNavigationContextValue,
   type ToolCallContentRenderer,
   type ToolCallIconRenderer,
@@ -238,13 +242,9 @@ function TurnDiffStats({ additions, deletions }: { readonly additions: number; r
 function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock }) {
   const documentContext = useContext(ConversationDocumentContext);
   const [expandedFiles, setExpandedFiles] = useState(false);
-  const [lastAction, setLastAction] = useState<"undo" | "reapply" | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
   const inProgress = block.status === "pending" || block.status === "running";
   const files = expandedFiles ? block.files : block.files.slice(0, 3);
   const hiddenFileCount = block.files.length - files.length;
-  const nextAction = lastAction === "undo" ? "reapply" : "undo";
 
   const openPath = useCallback((path: string) => {
     const decision = resolveStandardChatResource(path, {
@@ -259,19 +259,6 @@ function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock }) {
     if (documentContext.onReviewTurnDiff !== undefined) documentContext.onReviewTurnDiff(block, path);
     else if (path !== undefined) openPath(path);
   }, [block, documentContext, openPath]);
-  const apply = useCallback(async (action: "undo" | "reapply") => {
-    if (documentContext.onApplyTurnDiff === undefined || submitting) return;
-    setSubmitting(true);
-    setActionError(null);
-    try {
-      await documentContext.onApplyTurnDiff(block, action);
-      setLastAction(action);
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [block, documentContext, submitting]);
 
   if (block.files.length === 0) return null;
   if (inProgress) {
@@ -280,6 +267,7 @@ function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock }) {
         animate={{ opacity: 1 }}
         className="thread-turn-diff-live"
         initial={{ opacity: 0 }}
+        disabled={documentContext.onReviewTurnDiff === undefined}
         onClick={() => review()}
         transition={{ duration: 0.18, ease: "easeOut" }}
         type="button"
@@ -300,6 +288,7 @@ function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock }) {
         <button
           aria-label="Review changed files"
           className="thread-turn-diff__header-target"
+          disabled={documentContext.onReviewTurnDiff === undefined}
           onClick={() => review(singleFile?.path)}
           type="button"
         />
@@ -312,15 +301,7 @@ function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock }) {
           </span>
         </span>
         <span className="thread-turn-diff__actions">
-          <button
-            disabled={documentContext.onApplyTurnDiff === undefined || submitting}
-            onClick={(event) => { event.stopPropagation(); void apply(nextAction); }}
-            type="button"
-          >
-            {nextAction === "undo" ? "Undo" : "Reapply"}
-            {nextAction === "undo" ? <Undo2 aria-hidden="true" size={12} /> : <Redo2 aria-hidden="true" size={12} />}
-          </button>
-          <button className="is-review" onClick={(event) => { event.stopPropagation(); review(singleFile?.path); }} type="button">Review</button>
+          {documentContext.onReviewTurnDiff === undefined ? null : <button className="is-review" onClick={(event) => { event.stopPropagation(); review(singleFile?.path); }} type="button">Review</button>}
         </span>
       </div>
       {block.files.length > 1 ? (
@@ -338,7 +319,6 @@ function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock }) {
           {expandedFiles && block.files.length > 3 ? <button className="thread-turn-diff__more" onClick={() => setExpandedFiles(false)} type="button">Collapse files<ChevronDown className="is-expanded" size={12} /></button> : null}
         </div>
       ) : null}
-      {actionError === null ? null : <p className="thread-turn-diff__error" role="alert">{actionError}</p>}
     </section>
   );
 }
@@ -373,8 +353,12 @@ function UserMessageTimelineRenderer({ block }: TimelineBlockRendererProps) {
 function TextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
   const documentContext = useContext(ConversationDocumentContext);
   if (block.type !== "text") return null;
-  return richText
-    ? <WebChatDocument
+  // Codex serializes the question titles/options into AgentMessage.content as
+  // a plain-text fallback. The cards below own that same content on Web.
+  const showText = (block.asyncQuestions?.length ?? 0) === 0;
+  return <>
+    {showText && (richText
+      ? <WebChatDocument
         conversationId={documentContext.conversationId}
         cwd={documentContext.cwd}
         documentId={block.id}
@@ -386,7 +370,9 @@ function TextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
         streaming={block.streaming}
         theme={documentContext.theme}
       />
-    : <p>{block.text}</p>;
+      : <p>{block.text}</p>)}
+    {block.asyncQuestions?.map((question) => <AsyncQuestionCard key={question.id} question={question} />)}
+  </>;
 }
 
 function RealtimeTranscriptTimelineRenderer({ block }: TimelineBlockRendererProps) {
@@ -679,6 +665,7 @@ function Turn({
 
 export interface ConversationRestoreSnapshot {
   readonly agentActivityCollapsedById?: Readonly<Record<string, boolean>>;
+  readonly asyncQuestionDrafts?: Readonly<Record<string, AsyncQuestionDraft>>;
   readonly distanceFromBottomPx: number;
   readonly virtualizedTurnList: VirtualizedTurnRestoreState | null;
   readonly turnFollow?: TurnFollowRestoreState | null;
@@ -702,6 +689,8 @@ export interface ConversationProps {
   /** Opens a child/background-agent thread when the host exposes it. */
   readonly onOpenSubagent?: (threadId: string, displayName: string) => void;
   readonly onRespondInteraction?: (requestId: string, action: ConversationInteractionAction) => Promise<void>;
+  readonly onAnswerAsyncQuestion?: (question: AsyncQuestion, answer: string) => Promise<void>;
+  readonly queuedAsyncQuestionIds?: readonly string[];
   readonly onConversationScrollApiChange?: (api: ConversationScrollApi | null) => void;
   /** Local-submit intent is owned above the renderer and consumed exactly once. */
   readonly consumePendingLatestTurnSubmitPlacement?: () => LatestTurnPlacementSnapshot | null;
@@ -771,6 +760,8 @@ export function Conversation({
   onContinueTurn,
   continuableTurnId = null,
   onRespondInteraction,
+  onAnswerAsyncQuestion,
+  queuedAsyncQuestionIds = [],
   onConversationScrollApiChange,
   consumePendingLatestTurnSubmitPlacement,
   onVisibleContentReady,
@@ -795,6 +786,49 @@ export function Conversation({
   );
   const activityCollapsedByIdRef = useRef(activityCollapsedById);
   activityCollapsedByIdRef.current = activityCollapsedById;
+  const [asyncQuestionDrafts, setAsyncQuestionDrafts] = useState<Readonly<Record<string, AsyncQuestionDraft>>>(
+    () => initialRestoreSnapshot?.asyncQuestionDrafts ?? {},
+  );
+  const asyncQuestionDraftsRef = useRef(asyncQuestionDrafts);
+  asyncQuestionDraftsRef.current = asyncQuestionDrafts;
+  const asyncQuestionStates = useMemo(() => deriveAsyncQuestionStates(timeline ?? { frames: [] }), [timeline]);
+  const [asyncQuestionSubmitting, setAsyncQuestionSubmitting] = useState<ReadonlySet<string>>(() => new Set());
+  const asyncQuestionSubmittingRef = useRef(new Set<string>());
+  const [asyncQuestionErrors, setAsyncQuestionErrors] = useState<Readonly<Record<string, string>>>({});
+  const updateAsyncQuestionDraft = useCallback((questionId: string, draft: AsyncQuestionDraft) => {
+    setAsyncQuestionDrafts((current) => ({ ...current, [questionId]: draft }));
+  }, []);
+  const answerAsyncQuestion = useCallback(async (question: AsyncQuestion, answer: string) => {
+    if (onAnswerAsyncQuestion === undefined || asyncQuestionSubmittingRef.current.has(question.id)) return;
+    asyncQuestionSubmittingRef.current.add(question.id);
+    setAsyncQuestionSubmitting(new Set(asyncQuestionSubmittingRef.current));
+    setAsyncQuestionErrors((current) => {
+      const next = { ...current };
+      delete next[question.id];
+      return next;
+    });
+    try {
+      await onAnswerAsyncQuestion(question, answer);
+    } catch (error) {
+      setAsyncQuestionErrors((current) => ({
+        ...current,
+        [question.id]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      asyncQuestionSubmittingRef.current.delete(question.id);
+      setAsyncQuestionSubmitting(new Set(asyncQuestionSubmittingRef.current));
+    }
+  }, [onAnswerAsyncQuestion]);
+  const asyncQuestionQueuedIds = useMemo(() => new Set(queuedAsyncQuestionIds), [queuedAsyncQuestionIds]);
+  const asyncQuestionContext = useMemo<AsyncQuestionContextValue>(() => ({
+    states: asyncQuestionStates,
+    queuedIds: asyncQuestionQueuedIds,
+    drafts: asyncQuestionDrafts,
+    submittingIds: asyncQuestionSubmitting,
+    errors: asyncQuestionErrors,
+    answer: onAnswerAsyncQuestion === undefined ? null : answerAsyncQuestion,
+    updateDraft: updateAsyncQuestionDraft,
+  }), [asyncQuestionStates, asyncQuestionQueuedIds, asyncQuestionDrafts, asyncQuestionSubmitting, asyncQuestionErrors, onAnswerAsyncQuestion, answerAsyncQuestion, updateAsyncQuestionDraft]);
   const handleActivityCollapsedChange = useCallback((id: string, collapsed: boolean) => {
     setActivityCollapsedById((current) => current[id] === collapsed
       ? current
@@ -923,6 +957,7 @@ export function Conversation({
       : null;
     restoreCallbackRef.current?.({
       agentActivityCollapsedById: activityCollapsedByIdRef.current,
+      asyncQuestionDrafts: asyncQuestionDraftsRef.current,
       distanceFromBottomPx: responseRestore?.distanceFromBottomPx
         ?? scrollController.getLastScrollDistanceFromBottomPx(),
       virtualizedTurnList: virtualizerApiRef.current?.captureRestoreState() ?? virtualizerRestoreStateRef.current,
@@ -989,6 +1024,7 @@ export function Conversation({
     <ToolActivityPresenterContext.Provider value={toolActivityPresenterRegistry}>
       <ToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
         <ToolCallContentRendererContext.Provider value={renderToolCallContent ?? null}>
+          <AsyncQuestionContext.Provider value={asyncQuestionContext}>
           <ConversationInteractionContext.Provider value={interactionContext}>
             <SubagentNavigationContext.Provider value={subagentNavigation}>
               <ConversationDocumentContext.Provider value={presentedDocumentContext}>
@@ -1063,6 +1099,7 @@ export function Conversation({
               </ConversationDocumentContext.Provider>
             </SubagentNavigationContext.Provider>
           </ConversationInteractionContext.Provider>
+          </AsyncQuestionContext.Provider>
         </ToolCallContentRendererContext.Provider>
       </ToolCallIconRendererContext.Provider>
     </ToolActivityPresenterContext.Provider>
