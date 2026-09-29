@@ -1,0 +1,31 @@
+// Opt-in mirrors for development networks where Maven Central is rate limited.
+// Repository declarations in generated projects follow these entries.
+beforeSettings { settings ->
+  settings.pluginManagement.repositories {
+    maven { url = uri('https://maven.aliyun.com/repository/gradle-plugin') }
+    maven { url = uri('https://mirrors.cloud.tencent.com/nexus/repository/maven-public') }
+    maven { url = uri('https://maven.aliyun.com/repository/public') }
+    maven { url = uri('https://maven.aliyun.com/repository/google') }
+  }
+}
+
+gradle.beforeProject { project ->
+  project.buildscript.repositories {
+    maven { url = uri('https://mirrors.cloud.tencent.com/nexus/repository/maven-public') }
+    maven { url = uri('https://maven.aliyun.com/repository/public') }
+    maven { url = uri('https://maven.aliyun.com/repository/google') }
+  }
+  project.repositories {
+    maven { url = uri('https://mirrors.cloud.tencent.com/nexus/repository/maven-public') }
+    maven { url = uri('https://maven.aliyun.com/repository/public') }
+    maven { url = uri('https://maven.aliyun.com/repository/google') }
+  }
+}
+
+gradle.afterProject { project ->
+  project.repositories.findAll { repository ->
+    repository.hasProperty('url') && repository.url.host in [
+      'repo.maven.apache.org', 'dl.google.com', 'maven.google.com'
+    ]
+  }.each { repository -> project.repositories.remove(repository) }
+}
