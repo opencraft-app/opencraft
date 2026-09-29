@@ -21,10 +21,20 @@ interface ActionTooltipProps {
 }
 
 const ActionTooltip = ({ children, label }: ActionTooltipProps) => {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(min-width: 640px)");
+    const update = () => setWide(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
   return (
     <span
       className="group relative inline-flex"
-      tabIndex={label ? 0 : undefined}
+      tabIndex={label && wide ? 0 : undefined}
     >
       {children}
       {label ? (
