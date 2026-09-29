@@ -14,6 +14,7 @@ import type {
 import type { ReactNode } from "react";
 import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
 import { ThreadRowMenu, type ThreadActionCallbacks, type ThreadActionCapabilities } from "./thread-management";
+import { updateOpenSidebarThreadMenu, type OpenSidebarThreadMenu, type SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import { groupThreadsByActivityDate, sidebarActivityMetadata } from "../sidebar-activity";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { SidebarActivityItem } from "./sidebar-activity-item";
@@ -108,6 +109,7 @@ export function Sidebar({
   const intl = useIntl();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
+  const [openThreadMenu, setOpenThreadMenu] = useState<OpenSidebarThreadMenu | null>(null);
   const selectedThreadKey =
     pendingThreadId === null
       ? `${activeHostId}:${activeThreadId}`
@@ -184,7 +186,7 @@ export function Sidebar({
                       active={active}
                       serverOrigin={thread.serverOrigin}
                       serverRouteLocality={thread.serverRouteLocality}
-                      onInvoke={() => onSelectThread(thread.connectionHostId, thread.id)}
+                      onInvoke={() => { setOpenThreadMenu(null); onSelectThread(thread.connectionHostId, thread.id); }}
                       pending={pending}
                       project={metadata.project}
                       selected={selected}
@@ -203,6 +205,14 @@ export function Sidebar({
                           onNewTask: onNewTaskForTarget,
                           onOpenSettings: onOpenTargetSettings,
                         }}
+                        openMenuKind={openThreadMenu?.hostId === thread.connectionHostId && openThreadMenu.threadId === thread.id
+                          ? openThreadMenu.kind
+                          : null}
+                        onOpenMenuChange={(kind: SidebarThreadMenuKind, open) => setOpenThreadMenu(current => updateOpenSidebarThreadMenu(
+                          current,
+                          { hostId: thread.connectionHostId, threadId: thread.id, kind },
+                          open,
+                        ))}
                         {...threadActions}
                       >
                         {button}

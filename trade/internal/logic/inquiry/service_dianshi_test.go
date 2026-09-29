@@ -49,19 +49,27 @@ func (f *fakeResolver) GetMapping(_ context.Context, scene store.ActivityScene, 
 
 // fakeDianshi 是 dianshiclient.Client 的测试替身。
 type fakeDianshi struct {
-	priceResp      *dianshiclient.GetPriceResponse
-	priceErr       error
-	priceCalls     int
-	doGoodsResp    *dianshiclient.DoGoodsResponse
-	doGoodsErr     error
-	doGoodsCalls   int
-	lastPriceReq   *dianshiclient.GetPriceRequest
-	lastDoGoodsReq *dianshiclient.DoGoodsRequest
+	priceResp         *dianshiclient.GetPriceResponse
+	priceErr          error
+	priceCalls        int
+	renewPriceCalls   int
+	doGoodsResp       *dianshiclient.DoGoodsResponse
+	doGoodsErr        error
+	doGoodsCalls      int
+	lastPriceReq      *dianshiclient.GetPriceRequest
+	lastRenewPriceReq *dianshiclient.GetRenewPriceRequest
+	lastDoGoodsReq    *dianshiclient.DoGoodsRequest
 }
 
 func (f *fakeDianshi) GetActivityPrice(_ context.Context, req *dianshiclient.GetPriceRequest) (*dianshiclient.GetPriceResponse, error) {
 	f.priceCalls++
 	f.lastPriceReq = req
+	return f.priceResp, f.priceErr
+}
+
+func (f *fakeDianshi) GetRenewPrice(_ context.Context, req *dianshiclient.GetRenewPriceRequest) (*dianshiclient.GetPriceResponse, error) {
+	f.renewPriceCalls++
+	f.lastRenewPriceReq = req
 	return f.priceResp, f.priceErr
 }
 
@@ -73,6 +81,10 @@ func (f *fakeDianshi) DoGoods(_ context.Context, req *dianshiclient.DoGoodsReque
 
 func (f *fakeDianshi) DoGoodsAndPay(context.Context, *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
 	return nil, errors.New("DoGoodsAndPay not used in inquiry tests")
+}
+
+func (f *fakeDianshi) DoGoodsRenew(context.Context, *dianshiclient.DoGoodsRenewRequest) (*dianshiclient.DoGoodsResponse, error) {
+	return nil, errors.New("DoGoodsRenew not used in inquiry tests")
 }
 
 func newFakeDianshiSuccess() *fakeDianshi {
@@ -461,29 +473,24 @@ func TestQuoteRenew_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 	if r.lastScene != store.ActivitySceneRenew {
 		t.Errorf("Resolver scene=%q, want %q", r.lastScene, store.ActivitySceneRenew)
 	}
-	if dc.priceCalls != 1 {
-		t.Fatalf("dianshi calls=%d, want 1", dc.priceCalls)
+	if dc.renewPriceCalls != 1 || dc.priceCalls != 0 {
+		t.Fatalf("dianshi renew calls=%d purchase calls=%d, want 1/0", dc.renewPriceCalls, dc.priceCalls)
 	}
-	if dc.lastPriceReq.Preview != 1 {
-		t.Fatalf("renew preview=%d, want 1", dc.lastPriceReq.Preview)
+	if dc.lastRenewPriceReq.Preview != 1 || dc.lastRenewPriceReq.Uin != "815836472" {
+		t.Fatalf("renew request=%+v", dc.lastRenewPriceReq)
+	}
+	if got := dc.lastRenewPriceReq.ClientInfo; got["uin"] != "815836472" || got["ownerUin"] != "815836472" {
+		t.Fatalf("client_info=%v", got)
 	}
 	if jc.getPriceCalls.Load() != 0 {
 		t.Errorf("jifei calls=%d, want 0", jc.getPriceCalls.Load())
 	}
-	preference := dc.lastPriceReq.Goods[0].PreferenceParam
-	if len(preference) != 4 {
-		t.Fatalf("preference_param=%v, want exactly 4 fields", preference)
+	if len(dc.lastRenewPriceReq.GoodsRenew) != 1 {
+		t.Fatalf("goods_renew=%v, want 1 item", dc.lastRenewPriceReq.GoodsRenew)
 	}
-	want := map[string]interface{}{
-		"regionId":     1,
-		"resourceId":   "pass_xxx",
-		"timeSpanUnit": "1m",
-		"bundleId":     "bundle_launch_01",
-	}
-	for key, wantValue := range want {
-		if got := preference[key]; got != wantValue {
-			t.Errorf("preference_param[%q]=%v, want %v", key, got, wantValue)
-		}
+	goods := dc.lastRenewPriceReq.GoodsRenew[0]
+	if goods.GoodsID != 1862147936410255 || goods.RegionID != 1 || goods.ResourceID != "pass_xxx" || goods.TimeSpanUnit != "1m" || goods.BundleID != "bundle_launch_01" {
+		t.Fatalf("goods_renew item=%+v", goods)
 	}
 }
 
@@ -517,10 +524,45 @@ func TestQuoteRenew_InternationalKeepsJifei(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QuoteRenew err=%v", err)
 	}
-	if r.calls != 0 || dc.priceCalls != 0 {
-		t.Errorf("intl renewal must not enter dianshi: resolver=%d dianshi=%d", r.calls, dc.priceCalls)
+	if r.calls != 0 || dc.priceCalls != 0 || dc.renewPriceCalls != 0 {
+		t.Errorf("intl renewal must not enter dianshi: resolver=%d purchase=%d renew=%d", r.calls, dc.priceCalls, dc.renewPriceCalls)
 	}
 	if jc.getPriceCalls.Load() != 1 {
 		t.Errorf("jifei calls=%d, want 1", jc.getPriceCalls.Load())
+	}
+}
+
+func TestQuoteRenew_WithoutRenewActivityUsesJifei(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		resolveErr error
+	}{
+		{name: "no renew activity configured"},
+		{name: "renew activity lookup failed", resolveErr: errors.New("activity table unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			jc := &fakeJifei{getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+				return stdJifeiPriceResp(), nil
+			}}
+			dc := newFakeDianshiSuccess()
+			r := &fakeResolver{err: tc.resolveErr}
+			def := stdDef()
+			def.CategoryIDs = append(def.CategoryIDs, store.CategoryIDEntry{Scene: "renew", Category: 100060})
+			svc := New(Deps{
+				CTLClient:   &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+				BundleStore: &fakeBundleStore{def: def}, JifeiClient: jc,
+				ActivityResolver: r, DianshiClient: dc, SiteKind: "cn",
+			})
+			_, err := svc.QuoteRenew(context.Background(), QuoteRenewRequest{
+				BundleID: "bundle_launch_01", ResourceID: "pass_xxx", Uin: "815836472",
+				CurDeadline: "2026-12-01 00:00:00", TimeSpan: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+			})
+			if err != nil {
+				t.Fatalf("QuoteRenew: %v", err)
+			}
+			if r.calls != 1 || jc.getPriceCalls.Load() != 1 || dc.renewPriceCalls != 0 {
+				t.Fatalf("resolver=%d billing=%d dianshi=%d", r.calls, jc.getPriceCalls.Load(), dc.renewPriceCalls)
+			}
+		})
 	}
 }

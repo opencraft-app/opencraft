@@ -125,6 +125,76 @@ class ControlledTransport extends TestTransport {
   }
 }
 
+test("probe and another Host remain responsive during a slow Host activation", async () => {
+  const ports = createPortPair();
+  const slow = new ControlledTransport();
+  const healthy = new TestTransport();
+  const server = new AppHostServer({ createTransport: host => host === "slow" ? slow : healthy });
+  const connection = server.accept(ports.host, "probe-owner");
+  const client = new MessagePortAppHostClient(ports.browser, "probe-owner");
+  await client.waitUntilReady();
+  const first = client.createTransport("slow");
+  const waiting = first.connect();
+  await new Promise(resolve => setImmediate(resolve));
+  let probeReturned = false;
+  ports.browser.addEventListener("message", event => {
+    const message = event.data as { requestId?: string; ok?: boolean };
+    if (message.requestId === "probe-1" && message.ok) probeReturned = true;
+  });
+  ports.browser.postMessage({ type: "connection/probe", requestId: "probe-1" });
+  const second = client.createTransport("healthy");
+  let connected = false;
+  const secondWait = second.connect().then(() => { connected = true; });
+  for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(probeReturned, true);
+  assert.equal(connected, true);
+  slow.connectGate.resolve();
+  await Promise.all([waiting, secondWait]);
+  client.close(); connection.close(); await server.close();
+});
+
+test("a timed-out Host claim releases its late grant without releasing a successor lease", async () => {
+  const ports = createPortPair();
+  const physical = new ControlledTransport();
+  const server = new AppHostServer({ createTransport: () => physical });
+  const connection = server.accept(ports.host, "deadline-owner");
+  const client = new MessagePortAppHostClient(ports.browser, "deadline-owner", { controlTimeoutMs: 30 });
+  const channel = client.createTransport("local");
+  await assert.rejects(channel.connect(), /host\/connect timed out/);
+  const successor = channel.connect();
+  physical.connectGate.resolve();
+  await successor;
+  for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(physical.closeCount, 0);
+  await channel.send("successor remains attached");
+  assert.deepEqual(physical.sent, ["successor remains attached"]);
+  await channel.close();
+  assert.equal(physical.closeCount, 1);
+  client.close(); connection.close(); await server.close();
+});
+
+test("local forwarding cancellation clears pending acknowledgements without replaying remote work", async () => {
+  const ports = createPortPair();
+  const gate = deferred<void>();
+  const physical = new TestTransport();
+  physical.send = async frame => { physical.sent.push(frame); await gate.promise; };
+  const server = new AppHostServer({ createTransport: () => physical });
+  const connection = server.accept(ports.host, "cancel-send");
+  const client = new MessagePortAppHostClient(ports.browser, "cancel-send", { maxPendingRequests: 1 });
+  const channel = client.createTransport("local");
+  await channel.connect();
+  const abort = new AbortController();
+  const sent = channel.send("admitted work", abort.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  abort.abort();
+  await assert.rejects(sent, /aborted/);
+  // Capacity is free even while the remote forwarding acknowledgement is pending.
+  const next = channel.send("independent next request");
+  gate.resolve(); await next;
+  assert.deepEqual(physical.sent, ["admitted work", "independent next request"]);
+  client.close(); connection.close(); await server.close();
+});
+
 test("App Host multiplexes AppServer frames without exposing the physical transport", async () => {
   const ports = createPortPair();
   const physical = new TestTransport();

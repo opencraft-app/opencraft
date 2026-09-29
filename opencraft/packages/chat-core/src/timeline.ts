@@ -20,11 +20,18 @@ export interface TimelineBlockBase<TType extends string> {
 export interface TextTimelineBlock extends TimelineBlockBase<"text"> {
   readonly text: string;
   readonly streaming: boolean;
+  readonly asyncQuestions?: readonly AsyncQuestion[];
   readonly completed?: boolean;
   readonly hasStructuredOutput?: boolean;
   readonly sentAtMs?: number | null;
   /** Codex keeps commentary inside Agent Activity and renders final_answer separately. */
   readonly phase?: "commentary" | "final_answer" | null;
+}
+
+export interface AsyncQuestion {
+  readonly id: string;
+  readonly title: string;
+  readonly options: readonly string[];
 }
 
 /** Renderer-neutral copy of the AppServer text-element ABI. */

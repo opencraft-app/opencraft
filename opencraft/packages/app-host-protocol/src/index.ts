@@ -37,6 +37,7 @@ export interface ConnectAppHostMessage {
 }
 
 export type RendererToAppHostMessage =
+  | { readonly type: "connection/probe"; readonly requestId: string }
   | {
       readonly type: "hello";
       readonly protocolVersion: typeof APP_HOST_PROTOCOL_VERSION;
@@ -71,6 +72,7 @@ export type AppHostToRendererMessage =
       readonly protocolVersion: typeof APP_HOST_PROTOCOL_VERSION;
       readonly connectionId: string;
       readonly services: readonly ["appserver"];
+      readonly capabilities?: { readonly connectionProbe?: boolean };
     }
   | {
       readonly type: "fatal";

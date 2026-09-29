@@ -1840,6 +1840,11 @@ export const CodexComposer = forwardRef<
                       ) : <CircleAlert aria-label={attachment.error ?? "Image preparation failed"} role="img" size={20} />}
                     </span>
                   ) : null}
+                  {attachment.lifecycle === "failed" ? (
+                    <span className="codex-composer-image-attachment__error" role="alert">
+                      {attachment.error ?? "Image preparation failed"}
+                    </span>
+                  ) : null}
                   <button className="codex-composer-image-attachment__remove" type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}>
                     <X aria-hidden="true" size={14} />
                   </button>
@@ -2335,7 +2340,7 @@ export const CodexComposer = forwardRef<
                       ) : null}
                       {selectionCatalog?.permissionProfileError ? (
                         <div className="codex-composer-selection-menu__status is-error">
-                          Permission profiles are unavailable on this host.
+                          Could not refresh permission profiles. Try again when connected.
                           Current permissions remain unchanged.
                         </div>
                       ) : null}

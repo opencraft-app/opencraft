@@ -1848,6 +1848,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
 
+    def test_sandbox_steady_state_excludes_migration_job(self) -> None:
+        for env in ("beijing-sandbox", "shprod", "sgprod"):
+            with self.subTest(env=env):
+                root = REPO_ROOT / "argocd/services/sandbox" / env
+                kustomization = yaml.safe_load((root / "kustomization.yaml").read_text())
+                self.assertTrue((root / "delete-migration-job.yaml").is_file())
+                self.assertIn({"path": "delete-migration-job.yaml"}, kustomization["patches"])
+                self.assertFalse(
+                    any(
+                        patch.get("target", {}).get("kind") == "Job"
+                        for patch in kustomization["patches"]
+                    )
+                )
+
     def test_sgprod_multi_bot_runtime_flag_is_wired(self) -> None:
         sgprod_values = {
             key: value
@@ -4195,8 +4209,50 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
 
         self.assertEqual(
             parameters.get("PROD_REVIEWERS"),
-            '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "xinqishang"]',
+            '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "xinqishang", "mingyuxiao"]',
         )
+
+    def test_support_feedback_prod_approval_covers_release_owner(self) -> None:
+        owner = "mingyuxiao"
+        for workflow_path in (".ci/ticket.yml", ".ci/gateway-dashboard.yml"):
+            with self.subTest(workflow=workflow_path):
+                workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                params = workflow["extends"]["parameters"]
+                self.assertIn(owner, json.loads(params["PROD_REVIEWERS"]))
+
+        # Other release gates were already granted; keep the complete check-in matrix covered.
+        service_template = yaml.safe_load((REPO_ROOT / ".ci/templates/service-release.yml").read_text())
+        self.assertIn(owner, json.loads(next(
+            param["default"] for param in service_template["parameters"]
+            if param["name"] == "PROD_REVIEWERS"
+        )))
+        for path in (
+            ".ci/templates/db-migration.yml",
+            ".ci/db-migration-apply.yml",
+            ".ci/frontend.yml",
+            ".ci/templates/frontend-edgeone-release.yml",
+        ):
+            with self.subTest(workflow=path):
+                workflow = yaml.safe_load((REPO_ROOT / path).read_text())
+                approval_stages = [stage for stage in workflow["stages"] if "check-in" in stage]
+                self.assertTrue(approval_stages)
+                for stage in approval_stages:
+                    for flow in stage["check-in"]["reviews"]["flows"]:
+                        self.assertIn(owner, flow["reviewers"])
+        for path in (".ci/OWNERS", "argocd/OWNERS"):
+            with self.subTest(owners=path):
+                self.assertIn(owner, (REPO_ROOT / path).read_text().splitlines())
+
+        gitops_template = yaml.safe_load((REPO_ROOT / ".ci/templates/gitops-promotion-prod.yml").read_text())
+        approval = next(stage for stage in gitops_template["stages"] if "check-in" in stage)
+        flows = approval["check-in"]["reviews"]["flows"]
+        self.assertEqual(len(flows), 1)
+        self.assertIn(owner, flows[0]["reviewers"])
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                workflow = yaml.safe_load((REPO_ROOT / f".ci/gitops-promotion-{env}.yml").read_text())
+                self.assertEqual(workflow["extends"]["template"], "gitops-promotion-prod.yml")
+                self.assertEqual(workflow["extends"]["parameters"]["TARGET_ENV"], env)
 
     def test_db_contract_workflows_enable_prod_db_migration_child_pipelines(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):

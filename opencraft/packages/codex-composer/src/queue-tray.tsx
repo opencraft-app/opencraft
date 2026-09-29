@@ -62,6 +62,7 @@ function SortableQueueItem({
   item,
   isResponseInProgress,
   atomicSteer,
+  blockedByUnconfirmedDelivery,
   onEdit,
   onCancelEdit,
   onDelete,
@@ -71,6 +72,7 @@ function SortableQueueItem({
   readonly item: ComposerQueueTrayItem;
   readonly isResponseInProgress: boolean;
   readonly atomicSteer: boolean;
+  readonly blockedByUnconfirmedDelivery: boolean;
   readonly onEdit?: ComposerQueueTrayProps["onEdit"];
   readonly onCancelEdit?: ComposerQueueTrayProps["onCancelEdit"];
   readonly onDelete?: ComposerQueueTrayProps["onDelete"];
@@ -82,7 +84,7 @@ function SortableQueueItem({
   const sortable = useSortable({
     id: item.id,
     disabled:
-      item.reorderable === false || !item.actionable || busy || item.editing,
+      blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing,
   });
 
   return (
@@ -105,7 +107,7 @@ function SortableQueueItem({
         className="codex-composer-queue-item__drag"
         type="button"
         aria-label={item.reorderable === false ? "Queued message" : "Reorder queued message"}
-        disabled={item.reorderable === false || !item.actionable || busy || item.editing}
+        disabled={blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing}
         {...sortable.attributes}
         {...sortable.listeners}
       >
@@ -154,8 +156,10 @@ function SortableQueueItem({
                   ? "Steer with queued message"
                   : "Start queued message"
               }
-              disabled={!item.actionable || busy || awaitingNativeReconciliation || (isResponseInProgress && !atomicSteer)}
-              title={awaitingNativeReconciliation
+              disabled={!item.actionable || busy || awaitingNativeReconciliation || blockedByUnconfirmedDelivery || (isResponseInProgress && !atomicSteer)}
+              title={blockedByUnconfirmedDelivery
+                ? "An earlier message has unconfirmed delivery; review it before sending another message"
+                : awaitingNativeReconciliation
                 ? "This queued message is awaiting native reconciliation before it can be sent"
                 : isResponseInProgress && !atomicSteer
                   ? "This Host cannot steer a queued message; it will remain queued until the turn finishes"
@@ -217,8 +221,10 @@ export function ComposerQueueTray({
   const sortableIds = items.map((item) => item.id);
   const reorderableIds = items.filter((item) => !item.unconfirmedTargetTurnId).map((item) => item.id);
   const pausedReason = items.find((item) => !item.unconfirmedTargetTurnId && item.pausedReason)?.pausedReason ?? null;
+  const hasUnconfirmedDelivery = items.some((item) => item.unconfirmedTargetTurnId !== undefined);
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (hasUnconfirmedDelivery) return;
     if (over === null || active.id === over.id) return;
     const from = reorderableIds.indexOf(String(active.id));
     const to = reorderableIds.indexOf(String(over.id));
@@ -238,13 +244,15 @@ export function ComposerQueueTray({
         <div className="codex-composer-queue-tray__heading">
           <CircleAlert size={13} aria-hidden="true" />
           <span>{pausedReason}</span>
-          <button
-            className="codex-composer-queue-tray__resume"
-            type="button"
-            onClick={() => ignoreRejected(onResume?.())}
-          >
-            <Play size={11} /> Resume
-          </button>
+          {hasUnconfirmedDelivery ? null : (
+            <button
+              className="codex-composer-queue-tray__resume"
+              type="button"
+              onClick={() => ignoreRejected(onResume?.())}
+            >
+              <Play size={11} /> Resume
+            </button>
+          )}
         </div>
       ) : null}
       <DndContext
@@ -260,6 +268,7 @@ export function ComposerQueueTray({
                 item={item}
                 isResponseInProgress={isResponseInProgress}
                 atomicSteer={atomicSteer}
+                blockedByUnconfirmedDelivery={hasUnconfirmedDelivery}
             onDelete={onDelete}
             onDiscardUnconfirmed={(id, expectedTurnId) => {
               setDiscardError(null);

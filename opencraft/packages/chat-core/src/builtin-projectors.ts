@@ -1,4 +1,5 @@
 import { asItemId } from "./identity";
+import { displayAsyncQuestionReply, projectAsyncQuestions } from "./async-questions";
 import { normalizeMcpElicitationMetadata } from "./mcp-elicitation";
 import type {
   ApprovalTimelineBlock,
@@ -275,7 +276,9 @@ function userMessageMetadata(
   const hookBlocked = leadingUserMessage && (context.turn.hookStats?.blockedSources.length ?? 0) > 0;
   const comments = Array.isArray(source.comments) ? source.comments.length : 0;
   return {
-    message: string(source.displayMessage) ?? semantics.message,
+    message: string(source.displayMessage)
+      ?? (attachments.length === 0 && content.length === 1 ? displayAsyncQuestionReply(rawMessage) : null)
+      ?? semantics.message,
     sentAtMs: explicitSentAtMs ?? (leadingUserMessage ? context.turn.startedAtMs ?? null : null),
     deliveryStatus: userMessageDeliveryStatus(source.deliveryStatus) ?? (hookBlocked ? "not-sent" as const : null),
     referencesPriorConversation: boolean(source.referencesPriorConversation) ?? semantics.referencesPriorConversation,
@@ -766,6 +769,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         ...blockBase(item, "text"),
         text: textFrom(source.content ?? source.text ?? source.message),
         streaming: !isDisplayItemCompleted(source, context),
+        asyncQuestions: source.delivery === "async" ? projectAsyncQuestions(item.id, source.questions) : [],
         completed: isDisplayItemCompleted(source, context),
         sentAtMs: number(source.sentAtMs) ?? number(source.startedAtMs) ??
           (context.itemIndex === context.turn.items.map((candidate) => candidate.type === "agentMessage" || candidate.type === "assistantMessage").lastIndexOf(true)

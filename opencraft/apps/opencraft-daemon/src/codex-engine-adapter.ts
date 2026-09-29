@@ -978,7 +978,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     const queue = this.queueStore();
     const unsettled = queue.list(threadId).filter(row => row.state === "unknown" || row.state === "steering");
     for (const row of unsettled) {
-      if (await this.historyHasClientMessage(threadId, row.clientUserMessageId, row.targetTurnId)) {
+      if (await this.historyHasClientMessage(threadId, row.clientUserMessageId,
+        row.targetTurnId === "unknown" ? null : row.targetTurnId)) {
         queue.settle(threadId, row.id, "delivered");
         this.emitQueueChanged(threadId);
       } else if (row.state === "steering" && await this.queueThreadIsIdle(threadId)) {
@@ -991,7 +992,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async maintainQueue(threadId: string): Promise<void> {
     const queue = this.queueStore();
     await this.reconcileQueue(threadId);
-    const first = queue.firstUnsettled(threadId);
+    const first = queue.firstAwaitingAdmission(threadId);
     if (!first || first.state !== "queued") return;
     if ([...this.pending.values()].some(pending => pending.method === "turn/start" && pending.params.threadId === threadId)) return;
     if (this.activeTurns.has(threadId) || !(await this.queueThreadIsIdle(threadId))) return;
@@ -1000,8 +1001,9 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async dispatchQueuedStart(threadId: string, id: string): Promise<RpcRecord> {
     const queue = this.queueStore();
-    const head = queue.firstUnsettled(threadId);
-    if (head && head.state !== "queued") throw new CodexQueueRpcError(-32600, "An earlier delivery must be reconciled first");
+    const head = queue.firstAwaitingAdmission(threadId);
+    if (head?.state === "unknown") throw new CodexQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "dispatching") throw new CodexQueueRpcError(-32600, "Earlier delivery is still being sent");
     const row = queue.claim(threadId, id, "unknown");
     if (!row) throw new CodexQueueRpcError(-32600, "Queued message is already being dispatched");
     this.emitQueueChanged(threadId);
@@ -1032,8 +1034,10 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async dispatchQueuedSteer(threadId: string, id: string, expectedTurnId: string): Promise<RpcRecord> {
     const queue = this.queueStore();
-    const head = queue.firstUnsettled(threadId);
-    if (head && head.state !== "queued") throw new CodexQueueRpcError(-32600, "An earlier delivery must be reconciled first");
+    if (queue.firstAwaitingAdmission(threadId)?.state === "unknown") await this.reconcileQueue(threadId);
+    const head = queue.firstAwaitingAdmission(threadId);
+    if (head?.state === "unknown") throw new CodexQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "dispatching") throw new CodexQueueRpcError(-32600, "Earlier delivery is still being sent");
     const row = queue.claim(threadId, id, expectedTurnId);
     if (!row) throw new CodexQueueRpcError(-32600, "Queued message is already being dispatched");
     this.emitQueueChanged(threadId);
@@ -1117,9 +1121,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       } else if (method === "thread/queue/start") {
         result = await this.withThreadOperation(threadId, async () => {
           if (!(await this.queueThreadIsIdle(threadId))) throw new CodexQueueRpcError(-32600, "Thread is not idle");
+          await this.reconcileQueue(threadId);
           const row = string(params.queuedSubmissionId)
             ? queue.find(threadId, string(params.queuedSubmissionId))
-            : queue.firstUnsettled(threadId);
+            : queue.firstAwaitingAdmission(threadId);
+          if (row?.state === "unknown") throw new CodexQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
           if (!row || row.state !== "queued") throw new CodexQueueRpcError(-32600, "Queued message is unavailable");
           return this.dispatchQueuedStart(threadId, row.id);
         });

@@ -659,8 +659,9 @@ func (s *Service) PlaceRenewOrder(ctx context.Context, req PlaceRenewOrderReques
 			req.TimeUnit,
 		)
 		if resolveErr != nil {
-			return nil, fmt.Errorf("placeorder: resolve renew activity bundleId=%s uin=%s: %w",
+			log.Printf("[activity-resolver] renew order resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
 				req.BundleID, req.Uin, resolveErr)
+			mapping, useDianshi = nil, false
 		}
 		if mapping != nil && mapping.Active && req.Period == 1 && strings.EqualFold(strings.TrimSpace(req.TimeUnit), "m") {
 			reused, hit, reuseErr := s.findReusableDianshiRenewOrder(ctx, req, mapping)
@@ -1125,28 +1126,24 @@ func (s *Service) PlaceDianshiRenewOrderAndPay(ctx context.Context, req PlaceRen
 	}
 
 	timeSpanUnit := strconv.Itoa(req.Period) + strings.ToLower(strings.TrimSpace(req.TimeUnit))
-	resp, err := s.deps.DianshiClient.DoGoodsAndPay(ctx, &dianshiclient.DoGoodsRequest{
+	resp, err := s.deps.DianshiClient.DoGoodsRenew(ctx, &dianshiclient.DoGoodsRenewRequest{
 		Uin:        req.Uin,
 		ActivityID: mapping.ActivityID,
 		Preview:    1,
-		Originate:  dianshiclient.OriginateLightvelaTrade,
+		AutoPay:    "1",
 		CheckSum:   dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey),
-		Goods: []dianshiclient.DoGoodsItem{{
-			ActID: mapping.ActID,
-			PreferenceParam: map[string]interface{}{
-				"regionId":     s.region.RegionID,
-				"resourceId":   req.ResourceID,
-				"timeSpanUnit": timeSpanUnit,
-				"bundleId":     mapping.BundleID,
-			},
+		ClientInfo: map[string]string{"uin": req.Uin, "ownerUin": req.Uin},
+		GoodsRenew: []dianshiclient.RenewPriceGoodsItem{{
+			GoodsID: mapping.ActID, RegionID: int64(s.region.RegionID),
+			ResourceID: req.ResourceID, TimeSpanUnit: timeSpanUnit, BundleID: mapping.BundleID,
 		}},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("placeorder: dianshi DoGoodsAndPay renew bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
+		return nil, fmt.Errorf("placeorder: dianshi DoGoodsRenew auto_pay=1 bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
 			req.BundleID, req.ResourceID, mapping.ActivityID, mapping.ActID, err)
 	}
 	if resp == nil || len(resp.DealNames) == 0 || strings.TrimSpace(resp.DealNames[0]) == "" {
-		return nil, fmt.Errorf("%w: dianshi do_goods_and_pay renew returned empty deal_names bundleId=%s resourceId=%s",
+		return nil, fmt.Errorf("%w: dianshi do_goods_renew auto_pay=1 returned empty deal_names bundleId=%s resourceId=%s",
 			ErrJifeiResponseInvalid, req.BundleID, req.ResourceID)
 	}
 
@@ -2383,28 +2380,23 @@ func (s *Service) placeRenewOrderDianshi(
 	}
 
 	timeSpanUnit := strconv.Itoa(req.Period) + strings.ToLower(strings.TrimSpace(req.TimeUnit))
-	resp, err := s.deps.DianshiClient.DoGoods(ctx, &dianshiclient.DoGoodsRequest{
+	resp, err := s.deps.DianshiClient.DoGoodsRenew(ctx, &dianshiclient.DoGoodsRenewRequest{
 		Uin:        req.Uin,
 		ActivityID: mapping.ActivityID,
 		Preview:    1,
-		Originate:  dianshiclient.OriginateLightvelaTrade,
 		CheckSum:   dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey),
-		Goods: []dianshiclient.DoGoodsItem{{
-			ActID: mapping.ActID,
-			PreferenceParam: map[string]interface{}{
-				"regionId":     s.region.RegionID,
-				"resourceId":   req.ResourceID,
-				"timeSpanUnit": timeSpanUnit,
-				"bundleId":     mapping.BundleID,
-			},
+		ClientInfo: map[string]string{"uin": req.Uin, "ownerUin": req.Uin},
+		GoodsRenew: []dianshiclient.RenewPriceGoodsItem{{
+			GoodsID: mapping.ActID, RegionID: int64(s.region.RegionID),
+			ResourceID: req.ResourceID, TimeSpanUnit: timeSpanUnit, BundleID: mapping.BundleID,
 		}},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("placeorder: dianshi DoGoods renew bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
+		return nil, fmt.Errorf("placeorder: dianshi DoGoodsRenew bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
 			req.BundleID, req.ResourceID, mapping.ActivityID, mapping.ActID, err)
 	}
 	if resp == nil || len(resp.DealNames) == 0 || strings.TrimSpace(resp.DealNames[0]) == "" {
-		return nil, fmt.Errorf("%w: dianshi do_goods renew returned empty deal_names bundleId=%s resourceId=%s activityId=%d",
+		return nil, fmt.Errorf("%w: dianshi do_goods_renew returned empty deal_names bundleId=%s resourceId=%s activityId=%d",
 			ErrJifeiResponseInvalid, req.BundleID, req.ResourceID, mapping.ActivityID)
 	}
 

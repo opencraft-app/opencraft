@@ -188,6 +188,7 @@ master 源码
   通过 Makers SDK 获取签名 URL；不得依赖 runner 出口地域绕过 Preview 认证，也不得记录签名 query
   或认证 Cookie。
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
+- Sandbox 的 `beijing-sandbox`、`shprod`、`sgprod` 常驻 Argo Kustomization 必须删除 base 中的固定名 migration Job；schema 变更只由发布流水线的一次性 DB Job 执行并校验版本。更新迁移镜像 pin 时不能重命名或 patch 常驻 Job，否则已存在 Job 的 Pod template 不可变会阻断 Argo 收敛，完成后的 TTL 重建还会反复执行迁移。
 - migration version 一旦被任一长期环境记入 `schema_migrations` 即视为已占用；后续把该 SQL
   合并进较早版本或从源码删除，都不能再次复用这个编号。新 schema 变更使用未占用的新版本，
   版本号允许不连续；环境已紧急补过同一 DDL 时，forward migration 应幂等收敛并正常推进版本，
@@ -532,6 +533,12 @@ CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直�
 网关匹配，并已在 optional 阶段观察到签名请求成功。广州生产不追加 `jifei-test` 例外，
 sandbox-bj-7 继续使用独立 testing 入口。
 
+北京测试 Trade 的点石续费联调使用独立 `DIANSHI_RENEW_BASE_URL`，通过 tkexgz staging
+`dianshi-order` 路由访问点石预发布的 `get_price_renew` / `do_goods_renew`；新购仍使用
+`DIANSHI_ORDER_BASE_URL`。该环境覆盖只进入北京测试的 source-facing/deploy-facing 配置，
+不改上海生产和新加坡生产的点石入口。ConfigMap 更新后应核对 Trade Pod 实际环境变量与镜像，
+并验证无续费活动配置时普通续费仍走计费。
+
 ## OpenCraft 第一方 OIDC 配置与镜像门禁
 
 原生与 Web 客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境登记
@@ -649,3 +656,5 @@ auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forward
 ## 建站凭据跨地域发布门禁
 
 `ctl` 与 `sandbox-api` 的地域 CommandId 映射须同时进入目标地域 GitOps，并与每个目标地域实际存在的 TAT Command 对账。先发布两端映射并验收新购机器的文件状态与真实建站能力请求，再按生产实例快照运行可断点续跑的存量补发；Skill 可以按 TAT 单次目标上限共享命令批量下发，凭据必须逐实例签发、调用、确认终态，失败与未确认结果不可盲重试。核验镜像、Argo revision、`Synced/Healthy`、TAT 终态与真实能力请求分别留证。
+
+- Referral 活动总预算由各环境 overlay 的 `REFERRAL_BUDGET_CREDIT` 经 `referral-campaign` PostSync Job 写入独立数据库；调高 ConfigMap 值本身不等于活动 DB 已更新。两地生产须分别核对 Argo revision、Job 成功及 `referral_campaign.budget_credit`。已因预算被跳过且事件已入 inbox 的历史归因/付费记录不会自动补发；任何补发须另走可审计的资格核验和幂等流程。

@@ -52,7 +52,7 @@ stages:
       reviews:
         flows:
           - name: ${{ parameters.DISPLAY_NAME }} 发布确认
-            reviewers: [ "skipzhang", "xinqishang" ]
+            reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]
         description: |
           本阶段只确认 ${{ parameters.DISPLAY_NAME }} 单个环境。
 

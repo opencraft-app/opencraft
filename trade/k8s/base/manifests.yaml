@@ -131,6 +131,7 @@ data:
   # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7 / §5.8
   DIANSHI_PRICE_BASE_URL: ""
   DIANSHI_ORDER_BASE_URL: ""
+  DIANSHI_RENEW_BASE_URL: ""
   DIANSHI_PREVIEW: "0"
 
   # --- DB ---

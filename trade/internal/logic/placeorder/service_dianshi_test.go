@@ -92,6 +92,8 @@ type fakeDianshi struct {
 	doGoodsAndPayErr   error
 	doGoodsAndPayCalls atomic.Int32
 	lastDoGoodsAndPay  *dianshiclient.DoGoodsRequest
+	doGoodsRenewCalls  atomic.Int32
+	lastDoGoodsRenew   *dianshiclient.DoGoodsRenewRequest
 	priceResp          *dianshiclient.GetPriceResponse
 	priceErr           error
 	priceCalls         atomic.Int32
@@ -100,6 +102,10 @@ type fakeDianshi struct {
 func (f *fakeDianshi) GetActivityPrice(_ context.Context, _ *dianshiclient.GetPriceRequest) (*dianshiclient.GetPriceResponse, error) {
 	f.priceCalls.Add(1)
 	return f.priceResp, f.priceErr
+}
+
+func (f *fakeDianshi) GetRenewPrice(_ context.Context, _ *dianshiclient.GetRenewPriceRequest) (*dianshiclient.GetPriceResponse, error) {
+	return nil, errors.New("GetRenewPrice not used in placeorder tests")
 }
 
 func (f *fakeDianshi) DoGoods(_ context.Context, req *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
@@ -114,6 +120,12 @@ func (f *fakeDianshi) DoGoodsAndPay(_ context.Context, req *dianshiclient.DoGood
 	if f.doGoodsAndPayResp != nil || f.doGoodsAndPayErr != nil {
 		return f.doGoodsAndPayResp, f.doGoodsAndPayErr
 	}
+	return f.doGoodsResp, f.doGoodsErr
+}
+
+func (f *fakeDianshi) DoGoodsRenew(_ context.Context, req *dianshiclient.DoGoodsRenewRequest) (*dianshiclient.DoGoodsResponse, error) {
+	f.doGoodsRenewCalls.Add(1)
+	f.lastDoGoodsRenew = req
 	return f.doGoodsResp, f.doGoodsErr
 }
 
@@ -682,26 +694,15 @@ func TestPlaceRenewOrder_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 		t.Fatalf("resolver place calls=%d scene=%q, want 1/%q",
 			r.resolvePlaceCalls.Load(), r.lastPlaceScene, store.ActivitySceneRenew)
 	}
-	if dc.doGoodsCalls.Load() != 1 {
-		t.Fatalf("dianshi do_goods calls=%d, want 1", dc.doGoodsCalls.Load())
+	if dc.doGoodsRenewCalls.Load() != 1 || dc.doGoodsCalls.Load() != 0 {
+		t.Fatalf("renew calls=%d purchase calls=%d", dc.doGoodsRenewCalls.Load(), dc.doGoodsCalls.Load())
 	}
-	if dc.lastDoGoodsReq.Preview != 1 {
-		t.Fatalf("renew preview=%d, want 1", dc.lastDoGoodsReq.Preview)
+	if dc.lastDoGoodsRenew.Preview != 1 || dc.lastDoGoodsRenew.AutoPay != "" {
+		t.Fatalf("renew request=%+v", dc.lastDoGoodsRenew)
 	}
-	pref := dc.lastDoGoodsReq.Goods[0].PreferenceParam
-	if len(pref) != 4 {
-		t.Fatalf("preference_param=%v, want exactly 4 fields", pref)
-	}
-	wantPref := map[string]interface{}{
-		"regionId":     1,
-		"resourceId":   "pass_xxx",
-		"timeSpanUnit": "1m",
-		"bundleId":     "bundle_launch_01",
-	}
-	for key, want := range wantPref {
-		if got := pref[key]; got != want {
-			t.Errorf("preference_param[%q]=%v, want %v", key, got, want)
-		}
+	goods := dc.lastDoGoodsRenew.GoodsRenew[0]
+	if goods.RegionID != 1 || goods.ResourceID != "pass_xxx" || goods.TimeSpanUnit != "1m" || goods.BundleID != "bundle_launch_01" {
+		t.Fatalf("goods_renew=%+v", goods)
 	}
 	if renewWriter.calls.Load() != 1 {
 		t.Fatalf("atomic renew writer calls=%d, want 1", renewWriter.calls.Load())
@@ -775,6 +776,42 @@ func TestPlaceRenewOrder_AlreadyParticipatedFallsBackToJifei(t *testing.T) {
 	}
 }
 
+func TestPlaceRenewOrder_WithoutRenewActivityUsesJifei(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		resolveErr error
+	}{
+		{name: "no renew activity configured"},
+		{name: "renew activity lookup failed", resolveErr: errors.New("activity table unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newStdDeps()
+			d.bundle = &fakeBundleStore{def: stdRenewDef()}
+			r := &fakeResolver{err: tc.resolveErr}
+			dc := newFakeDianshiSuccess()
+			d.service = New(Deps{
+				CTLClient: d.ctl, BundleStore: d.bundle, JifeiClient: d.jifei,
+				OrderWriter: d.writer, OrderStore: d.store,
+				ActivityResolver: r, DianshiClient: dc, SiteKind: "cn",
+			})
+			_, err := d.service.PlaceRenewOrder(context.Background(), PlaceRenewOrderRequest{
+				ExternalUserID: "user-1", Uin: "1000123456", AppID: "10001",
+				BundleID: "bundle_launch_01", ResourceID: "pass_xxx", CurDeadline: "2026-12-01 00:00:00",
+				Period: 1, TimeUnit: "m", GoodsNum: 1, PayMode: 1,
+			})
+			if err != nil {
+				t.Fatalf("PlaceRenewOrder: %v", err)
+			}
+			if r.resolvePlaceCalls.Load() != 1 || d.jifei.generateDealsCalls.Load() != 1 || dc.doGoodsRenewCalls.Load() != 0 {
+				t.Fatalf("resolver=%d billing=%d dianshi=%d", r.resolvePlaceCalls.Load(), d.jifei.generateDealsCalls.Load(), dc.doGoodsRenewCalls.Load())
+			}
+			if d.writer.lastCreateOrderInput.Source == store.OrderSourceDianshi {
+				t.Fatalf("unexpected dianshi order: %+v", d.writer.lastCreateOrderInput)
+			}
+		})
+	}
+}
+
 func TestPlaceDianshiRenewOrderAndPay_BypassesParticipation(t *testing.T) {
 	d := newStdDeps()
 	d.bundle = &fakeBundleStore{def: stdRenewDef()}
@@ -818,15 +855,15 @@ func TestPlaceDianshiRenewOrderAndPay_BypassesParticipation(t *testing.T) {
 		t.Fatalf("resolver participation calls=%d mapping calls=%d scene=%q",
 			r.resolvePlaceCalls.Load(), r.getMappingCalls.Load(), r.lastPlaceScene)
 	}
-	if dc.doGoodsAndPayCalls.Load() != 1 || dc.doGoodsCalls.Load() != 0 {
-		t.Fatalf("dianshi calls andPay=%d goods=%d", dc.doGoodsAndPayCalls.Load(), dc.doGoodsCalls.Load())
+	if dc.doGoodsRenewCalls.Load() != 1 || dc.doGoodsAndPayCalls.Load() != 0 || dc.doGoodsCalls.Load() != 0 {
+		t.Fatalf("dianshi calls renew=%d andPay=%d goods=%d", dc.doGoodsRenewCalls.Load(), dc.doGoodsAndPayCalls.Load(), dc.doGoodsCalls.Load())
 	}
-	if dc.lastDoGoodsAndPay.Preview != 1 {
-		t.Fatalf("internal renew preview=%d, want 1", dc.lastDoGoodsAndPay.Preview)
+	if dc.lastDoGoodsRenew.Preview != 1 || dc.lastDoGoodsRenew.AutoPay != "1" {
+		t.Fatalf("internal renew request=%+v", dc.lastDoGoodsRenew)
 	}
-	pref := dc.lastDoGoodsAndPay.Goods[0].PreferenceParam
-	if len(pref) != 4 || pref["resourceId"] != "pass_xxx" || pref["timeSpanUnit"] != "1m" {
-		t.Fatalf("preference_param=%v", pref)
+	goods := dc.lastDoGoodsRenew.GoodsRenew[0]
+	if goods.ResourceID != "pass_xxx" || goods.TimeSpanUnit != "1m" {
+		t.Fatalf("goods_renew=%+v", goods)
 	}
 	if d.writer.createOrderCalls.Load() != 1 {
 		t.Fatalf("order writer calls=%d, want 1", d.writer.createOrderCalls.Load())

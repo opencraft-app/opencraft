@@ -60,6 +60,7 @@ const (
 
 	// InterfaceNameDoGoodsAndPay 是 0 元活动下单并支付接口名。
 	InterfaceNameDoGoodsAndPay = "do_goods_and_pay"
+	InterfaceNameDoGoodsRenew  = "do_goods_renew"
 
 	// ComponentNamePrice 是询价 envelope.componentName。
 	ComponentNamePrice = "opc-restriction-strategy"
@@ -121,6 +122,23 @@ type GetPriceRequest struct {
 	Goods      []GetPriceGoodsItem    `json:"goods"`
 	Preview    int                    `json:"preview,omitempty"`
 	Uin        string                 `json:"uin,omitempty"`
+}
+
+// GetRenewPriceRequest follows the activity_web renewal pricing protocol.
+type GetRenewPriceRequest struct {
+	Uin        string                `json:"uin"`
+	ActivityID int64                 `json:"activity_id"`
+	ClientInfo map[string]string     `json:"client_info,omitempty"`
+	GoodsRenew []RenewPriceGoodsItem `json:"goods_renew"`
+	Preview    int                   `json:"preview,omitempty"`
+}
+
+type RenewPriceGoodsItem struct {
+	GoodsID      int64  `json:"goods_id"`
+	ResourceID   string `json:"resourceId"`
+	TimeSpanUnit string `json:"timeSpanUnit"`
+	BundleID     string `json:"bundleId"`
+	RegionID     int64  `json:"regionId"`
 }
 
 // GetPriceGoodsItem 是询价 goods[] 元素。
@@ -203,6 +221,18 @@ type DoGoodsItem struct {
 	PreferenceParam map[string]interface{} `json:"preference_param"`
 }
 
+// DoGoodsRenewRequest is the renewal order para for both order and order-and-pay.
+// The latter sets auto_pay to "1" on the same do_goods_renew endpoint.
+type DoGoodsRenewRequest struct {
+	Uin        string                `json:"uin"`
+	ActivityID int64                 `json:"activity_id"`
+	GoodsRenew []RenewPriceGoodsItem `json:"goods_renew"`
+	ClientInfo map[string]string     `json:"client_info,omitempty"`
+	CheckSum   string                `json:"check_sum,omitempty"`
+	Preview    int                   `json:"preview,omitempty"`
+	AutoPay    string                `json:"auto_pay,omitempty"`
+}
+
 // DoGoodsResponse 是下单响应 envelope.data 反序列化目标。
 //
 // 协议样例 data 是对象（不是数组）：
@@ -218,6 +248,7 @@ type DoGoodsResponse struct {
 type Client interface {
 	// GetActivityPrice 调用点石 `activity_price.activity.get_price` 询价接口。
 	GetActivityPrice(ctx context.Context, req *GetPriceRequest) (*GetPriceResponse, error)
+	GetRenewPrice(ctx context.Context, req *GetRenewPriceRequest) (*GetPriceResponse, error)
 
 	// DoGoods 调用点石 `/activity_web/activity/do_goods` 下单接口。
 	//
@@ -226,6 +257,7 @@ type Client interface {
 
 	// DoGoodsAndPay 调用点石 `/activity_web/activity/do_goods_and_pay` 下单并支付接口。
 	DoGoodsAndPay(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResponse, error)
+	DoGoodsRenew(ctx context.Context, req *DoGoodsRenewRequest) (*DoGoodsResponse, error)
 }
 
 // Options 是 Client 可选构造参数。
@@ -234,12 +266,14 @@ type Options struct {
 	EventIDProvider       func() int64
 	NowProvider           func() time.Time
 	Preview               int
+	RenewBaseURL          string
 	CloudLadderHMACSecret string
 }
 
 type client struct {
 	priceBaseURL          string
 	orderBaseURL          string
+	renewBaseURL          string
 	httpClient            *http.Client
 	eventIDProvider       func() int64
 	nowProvider           func() time.Time
@@ -276,6 +310,7 @@ func New(priceBaseURL, orderBaseURL string, opts ...Options) Client {
 			c.nowProvider = o.NowProvider
 		}
 		c.cloudLadderHMACSecret = strings.TrimSpace(o.CloudLadderHMACSecret)
+		c.renewBaseURL = strings.TrimRight(strings.TrimSpace(o.RenewBaseURL), "/")
 	}
 	return c
 }
@@ -329,6 +364,29 @@ func (c *client) GetActivityPrice(ctx context.Context, req *GetPriceRequest) (*G
 	return out, nil
 }
 
+func (c *client) GetRenewPrice(ctx context.Context, req *GetRenewPriceRequest) (*GetPriceResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("dianshiclient: GetRenewPrice nil request")
+	}
+	var targetURL string
+	var err error
+	if c.renewBaseURL != "" {
+		targetURL, err = neturl.JoinPath(c.renewBaseURL, "get_price_renew")
+	} else {
+		targetURL, err = renewPriceURL(c.orderBaseURL)
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := &GetPriceResponse{}
+	outbound := *req
+	outbound.Preview = effectivePreview(c.preview, req.Preview)
+	if err := c.do(ctx, targetURL, InterfaceNameActivityGetPrice, ComponentNamePrice, &outbound, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DoGoods 调用点石 `/activity_web/activity/do_goods`。
 func (c *client) DoGoods(ctx context.Context, req *DoGoodsRequest) (*DoGoodsResponse, error) {
 	if req == nil {
@@ -364,6 +422,29 @@ func (c *client) DoGoodsAndPay(ctx context.Context, req *DoGoodsRequest) (*DoGoo
 	return out, nil
 }
 
+func (c *client) DoGoodsRenew(ctx context.Context, req *DoGoodsRenewRequest) (*DoGoodsResponse, error) {
+	if req == nil {
+		return nil, fmt.Errorf("dianshiclient: DoGoodsRenew nil request")
+	}
+	var targetURL string
+	var err error
+	if c.renewBaseURL != "" {
+		targetURL, err = neturl.JoinPath(c.renewBaseURL, "do_goods_renew")
+	} else {
+		targetURL, err = renewalURL(c.orderBaseURL, "do_goods_renew")
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := &DoGoodsResponse{}
+	outbound := *req
+	outbound.Preview = effectivePreview(c.preview, req.Preview)
+	if err := c.do(ctx, targetURL, InterfaceNameDoGoodsRenew, ComponentNameOrder, &outbound, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // effectivePreview 允许单次请求开启 preview，但不允许请求关闭客户端级预览开关。
 // 这样续费联调可独立启用 preview=1，同时保持新购和既有 DIANSHI_PREVIEW 行为不变。
 func effectivePreview(clientPreview, requestPreview int) int {
@@ -386,6 +467,26 @@ func doGoodsAndPayURL(orderBaseURL string) (string, error) {
 		return "", fmt.Errorf("dianshiclient: orderBaseURL path must end with %s", doGoodsPath)
 	}
 	u.Path = strings.TrimSuffix(u.Path, doGoodsPath) + "/do_goods_and_pay"
+	return u.String(), nil
+}
+
+func renewPriceURL(orderBaseURL string) (string, error) {
+	return renewalURL(orderBaseURL, "get_price_renew")
+}
+
+func renewalURL(orderBaseURL, endpoint string) (string, error) {
+	if orderBaseURL == "" {
+		return "", fmt.Errorf("dianshiclient: orderBaseURL is required")
+	}
+	u, err := neturl.Parse(orderBaseURL)
+	if err != nil {
+		return "", fmt.Errorf("dianshiclient: parse orderBaseURL: %w", err)
+	}
+	const doGoodsPath = "/do_goods"
+	if !strings.HasSuffix(u.Path, doGoodsPath) {
+		return "", fmt.Errorf("dianshiclient: orderBaseURL path must end with %s", doGoodsPath)
+	}
+	u.Path = strings.TrimSuffix(u.Path, doGoodsPath) + "/" + endpoint
 	return u.String(), nil
 }
 
