@@ -282,7 +282,7 @@ describe("multi-bot creation goes through the onboarding panel", () => {
    */
   it("keeps a single onboarding mount point that never remounts mid-flight", () => {
     const page = readPageSource();
-    const keyedContainer = 'key={`${activeBot.id}-${activeSection}`}';
+    const keyedContainer = 'key={fleetOverviewEnabled && activeSection === "overview" ? "fleet-overview" : `${activeBot.id}-${activeSection}`}';
     const mountCondition = "{showMultiBotOnboarding && !isModifying && (";
     expect(page).toContain(keyedContainer);
     expect(page).toContain(mountCondition);

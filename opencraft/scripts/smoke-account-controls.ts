@@ -96,7 +96,7 @@ try {
   assert.equal(await page.evaluate(()=> (window as any).copiedValue), "account-fixture-id");
   await page.getByText("Copied", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Manage subscription", exact: true }).click();
-  assert.equal(await page.evaluate(()=> (window as any).externalURL), "https://lightvela.ai/account?tab=billing#renew");
+  assert.equal(await page.evaluate(()=> (window as any).externalURL), "https://lightvela.ai/account/billing");
   const refreshCount = await page.evaluate(()=> (window as any).fixture.refreshCount());
   await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
   assert.ok(await page.evaluate(()=> (window as any).fixture.refreshCount()) > refreshCount);

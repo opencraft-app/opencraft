@@ -257,6 +257,20 @@ describe("Hermes persona commands", () => {
     },
   );
 
+  it("does not report an existing empty Soul file as missing", async () => {
+    const hermesHome = await mkdtemp(join(tmpdir(), "lightvela-empty-soul-"));
+    try {
+      await writeFile(join(hermesHome, "SOUL.md"), "");
+      const { stdout } = await execFileAsync("/bin/bash", ["-c", buildHermesSoulContentReadCommand()], {
+        env: { ...process.env, HERMES_HOME: hermesHome },
+      });
+      expect(stdout).toContain("Exists: yes");
+      expect(parseHermesSoulContent(stdout).status).toBe("invalid");
+    } finally {
+      await rm(hermesHome, { recursive: true, force: true });
+    }
+  });
+
   it("reads the current Soul through a bounded single-line Base64 protocol", async () => {
     const hermesHome = await mkdtemp(join(tmpdir(), "lightvela-persona-read-"));
     const markdown = "# Soul\nName: 冷静的项目搭档\n\n## Identity\n先给结论。\n";

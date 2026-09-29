@@ -51,7 +51,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
-import { useT, t as rawT } from "@/i18n/t";
+import { useCurrentLocale, useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
@@ -220,6 +220,9 @@ const HermesAgentSkillsPanel = lazy(() =>
 );
 const AchievementsPanel = lazy(() =>
   import("@/pages/marketing/agent-achievements-panel").then((module) => ({ default: module.AchievementsPanel })),
+);
+const AgentFleetOverview = lazy(() =>
+  import("@/pages/marketing/agent-fleet-overview").then((module) => ({ default: module.AgentFleetOverview })),
 );
 const AgentOverviewPanel = lazy(() =>
   import("@/pages/marketing/agent-overview-panel").then((module) => ({ default: module.AgentOverviewPanel })),
@@ -2600,6 +2603,7 @@ export const AgentSettingsPage = ({
   showHeader?: boolean;
 } = {}) => {
   const t = useT();
+  const locale = useCurrentLocale();
   const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
@@ -2614,6 +2618,7 @@ export const AgentSettingsPage = ({
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
+  const fleetOverviewEnabled = multiBotEnabled && IS_BUDDY_ONBOARDING_ENABLED;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
@@ -2993,6 +2998,7 @@ export const AgentSettingsPage = ({
   const [buddySetupRevision, setBuddySetupRevision] = useState(0);
   const heroStats = useHeroStats({
     activePass,
+    locale,
     botId: activeBot?.id,
     profileId: activeBot?.profileId,
     refreshKey: buddySetupRevision,
@@ -3647,6 +3653,8 @@ export const AgentSettingsPage = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteTargetBot, setDeleteTargetBot] = useState<OpenClawBot | null>(null);
+  const deleteDialogBot = deleteTargetBot ?? activeBot;
   const [repairingBotIds, setRepairingBotIds] = useState<Set<string>>(new Set());
 
   const handleRetryBot = async () => {
@@ -3675,15 +3683,16 @@ export const AgentSettingsPage = ({
   };
 
   const handleDelete = async () => {
-    if (!activeBot || deleteInput !== activeBot.name) return;
+    if (!deleteDialogBot || deleteInput !== deleteDialogBot.name) return;
     trackDatongClick("agent_delete_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
-      params: { bot_id: activeBot.id },
+      params: { bot_id: deleteDialogBot.id },
     });
     setDeleteError(null);
     try {
-      await deleteBot(activeBot.id);
+      await deleteBot(deleteDialogBot.id);
       setShowDeleteConfirm(false);
+      setDeleteTargetBot(null);
       setDeleteInput("");
     } catch (err) {
       const errorCode = err && typeof err === "object" && "code" in err
@@ -4539,6 +4548,32 @@ export const AgentSettingsPage = ({
     }
   };
 
+  const handleCreateFleetBot = (sourceBotId?: string) => {
+    if (createLimitMessage || (activeBot ? !canCreateAdditionalBot : !canCreateInitialAgent)) return;
+    if (sourceBotId && !visibleBots.some((bot) => bot.id === sourceBotId && bot.status === "running" && bot.profileId)) return;
+    handleCreateNew();
+    if (sourceBotId) setCloneSourceBotId(sourceBotId);
+  };
+  const fleetOverview = (
+    <AgentFleetOverview
+      bots={bots}
+      currentBotId={activeBot?.id}
+      heroStats={heroStats}
+      canCreate={activeBot ? canCreateAdditionalBot : canCreateInitialAgent}
+      createLimitMessage={createLimitMessage || ""}
+      onCreate={handleCreateFleetBot}
+      onChanged={buddyProfileState.reload}
+      getAvatarForBot={getAvatarForBot}
+      onDelete={(bot) => {
+        if (resettingInstanceIds.has(bot.instanceId ?? bot.id)) return;
+        setDeleteTargetBot(bot);
+        setDeleteInput("");
+        setDeleteError(null);
+        setShowDeleteConfirm(true);
+      }}
+    />
+  );
+
   /**
    * 引导页里的「创建」：真正建实例。
    *
@@ -5118,7 +5153,7 @@ export const AgentSettingsPage = ({
       </Dialog>
 
       {/* Delete Confirm Dialog */}
-      {showDeleteConfirm && activeBot && createPortal(
+      {showDeleteConfirm && deleteDialogBot && createPortal(
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => setShowDeleteConfirm(false)}
@@ -5135,40 +5170,40 @@ export const AgentSettingsPage = ({
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>
-                {activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot")}
+                {deleteDialogBot.isDefault ? t("删除整个 Agent") : t("删除 Bot")}
               </h3>
             </div>
             <p className="rounded-xl border border-red-100 bg-red-50/70 px-3.5 py-3 text-sm leading-relaxed text-red-700" style={{ marginBottom: "6px" }}>
               <span className="block font-semibold">{t("风险提示：")}</span>
               <span className="mt-1 block">
-                {activeBot.isDefault
+                {deleteDialogBot.isDefault
                   ? t("删除后，整个 Agent 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")
                   : t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")}
               </span>
             </p>
-            {activeBot.isDefault && activeBot.siblingsUnknown && (
+            {deleteDialogBot.isDefault && deleteDialogBot.siblingsUnknown && (
               <p
                 data-testid="delete-siblings-unknown-warning"
                 className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-sm leading-relaxed text-amber-800"
                 style={{ marginBottom: "6px" }}
               >
-                {activeBot.siblingsUnknown === "instance_stopped"
+                {deleteDialogBot.siblingsUnknown === "instance_stopped"
                   ? t("实例未运行，当前无法列出这个 Agent 下的其他 Bot。继续删除会一并销毁实例上的全部 Bot 及其数据。")
                   : t("暂时无法获取这个 Agent 的 Bot 列表。继续删除会一并销毁实例上的全部 Bot 及其数据。")}
               </p>
             )}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
               <span className="block">
-                {activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
+                {deleteDialogBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
                 <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
-                  {activeBot.name}
+                  {deleteDialogBot.name}
                 </span>
                 。
               </span>
             </p>
             <input
               type="text"
-              placeholder={t("请输入 {{name}}", { name: activeBot.name })}
+              placeholder={t("请输入 {{name}}", { name: deleteDialogBot.name })}
               value={deleteInput}
               onChange={(e) => setDeleteInput(e.target.value)}
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]"
@@ -5178,15 +5213,15 @@ export const AgentSettingsPage = ({
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => void handleDelete()}
-                disabled={deleteInput !== activeBot.name}
+                disabled={deleteInput !== deleteDialogBot.name}
                 className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
-                  backgroundColor: deleteInput === activeBot.name ? "#DC2626" : "#E5E7EB",
-                  cursor: deleteInput === activeBot.name ? "pointer" : "not-allowed",
+                  backgroundColor: deleteInput === deleteDialogBot.name ? "#DC2626" : "#E5E7EB",
+                  cursor: deleteInput === deleteDialogBot.name ? "pointer" : "not-allowed",
                   fontSize: "16px",
                 }}
               >
-                {activeBot.isDefault ? t("确认删除 Agent") : t("确认删除 Bot")}
+                {deleteDialogBot.isDefault ? t("确认删除 Agent") : t("确认删除 Bot")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
@@ -5629,6 +5664,10 @@ export const AgentSettingsPage = ({
             分支就消失、渲染跳到订阅分支，面板被重挂载、配置流程被取消。
             互斥性改由订阅分支上的 !showMultiBotOnboarding 单向保证。
           */}
+          {fleetOverviewEnabled && activeSection === "overview" && !activeBot && !isCreating
+            && !isModifying && !passesLoading && !botsLoading && !showEarlyOnboarding && !showMultiBotOnboarding && isSubscribed && (
+              <Suspense fallback={<AgentSettingsDataLoading />}>{fleetOverview}</Suspense>
+          )}
           {showMultiBotOnboarding && !isModifying && (
             <div className="_lh-claw-bot-panel__cards min-w-0">
               <AgentOnboardingPanel
@@ -5784,6 +5823,18 @@ export const AgentSettingsPage = ({
                   {hasSidebarLayout ? (
                   <AgentSidebar>
                     <div className="lv-agents-sidebar-profile">
+                    {fleetOverviewEnabled && (
+                      <div className="mb-4 border-b border-black/[0.06] pb-4">
+                        <AppLink
+                          to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
+                          aria-current={activeSection === "overview" ? "page" : undefined}
+                          className={cn("lw-settings-nav-item lv-agents-nav-item", activeSection === "overview" && "is-active")}
+                        >
+                          <span className="lv-agents-nav-icon"><LayoutDashboard className="size-4" aria-hidden="true" /></span>
+                          <span>{t("总览")}</span>
+                        </AppLink>
+                      </div>
+                    )}
                       <div className="lv-agent-profile-wrap">
                         <Popover
                           open={visibleBots.length > 1 && isAgentMenuOpen}
@@ -5961,6 +6012,7 @@ export const AgentSettingsPage = ({
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       if (deleteDisabled) return;
+                                      setDeleteTargetBot(null);
                                       setDeleteInput("");
                                       setShowDeleteConfirm(true);
                                     }}
@@ -6231,7 +6283,7 @@ export const AgentSettingsPage = ({
 
                                  分区域上线：国际站尚未上线总览页与引导，隐藏该入口，
                                  否则会点进一个空白 section（见 IS_BUDDY_ONBOARDING_ENABLED）。 ── */}
-                            {IS_BUDDY_ONBOARDING_ENABLED ? (
+                            {IS_BUDDY_ONBOARDING_ENABLED && !fleetOverviewEnabled ? (
                             <div className="lv-agents-nav-group">
                               <ul className="lv-agents-nav-group-items">
                                 <li>
@@ -6398,7 +6450,7 @@ export const AgentSettingsPage = ({
                       现在只保留一个挂载点，条件不含 activeBot，创建全程都是同一个
                       组件实例，不会重挂载。
                     */}
-                    <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
+                    <div key={fleetOverviewEnabled && activeSection === "overview" ? "fleet-overview" : `${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       {showBuddyOnboarding ? (
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           <AgentOnboardingPanel
@@ -6415,7 +6467,7 @@ export const AgentSettingsPage = ({
                         fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
-                          {activeSection === "overview" && (
+                          {activeSection === "overview" && (fleetOverviewEnabled ? fleetOverview : (
                             <AgentOverviewPanel
                               botId={activeBot.id}
                               profileId={activeBot.profileId ?? ""}
@@ -6428,7 +6480,7 @@ export const AgentSettingsPage = ({
                               hasCustomAvatar={buddyProfileState.hasBuddyConfig === true}
                               fallbackAvatarUrl={avatarUrl}
                             />
-                          )}
+                          ))}
                           {activeSection === "channel" && (
                             <TeaSdkSettingsPanel
                               kind="channel"
@@ -6642,7 +6694,8 @@ export const AgentSettingsPage = ({
           */}
           {
             !isModifying && !passesLoading && !isCreating && !botsLoading
-              && !showMultiBotOnboarding && visibleBots.length === 0 && (
+              && !showMultiBotOnboarding && visibleBots.length === 0
+              && !(fleetOverviewEnabled && activeSection === "overview") && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (
