@@ -286,7 +286,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .track::before { left: 16px; transform: rotate(3deg); transform-origin: right top; }
 #lightvela-intl-home .track::after { left: 49%; right: auto; top: -58px; transform: rotate(-3deg); transform-origin: left top; }
 #lightvela-intl-home .home-cta-mascot { top: 70px; right: auto; left: max(20px, calc((100% - var(--shell)) / 2)); width: 74px; transform: scaleX(-1); }
-#lightvela-intl-home .home-step-mascot img,
 #lightvela-intl-home .home-cta-mascot img,
 #lightvela-intl-home .home-footer-mascot img { display: block; width: 100%; height: auto; }
 #lightvela-intl-home .foot { padding: 104px 24px 64px; background: #111 !important; color: #f7f5fa; }
@@ -875,8 +874,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo::after { width: 100% !important; height: auto !important; aspect-ratio: 531 / 159; }
   #lightvela-intl-home .scenes { padding: 56px 0 64px; }
   #lightvela-intl-home .deploy { padding: 64px 20px; }
-  #lightvela-intl-home .home-step-mascot { top: 58px; right: max(12%, calc((100vw - 1280px) / 2 + 24px)); width: clamp(160px, 16vw, 220px); height: auto; aspect-ratio: 300 / 139; background: url('/lightvela-intl-home/assets/figma-steps-companion.webp?v=3') center / contain no-repeat; }
-  #lightvela-intl-home .home-step-mascot img { display: none; }
   #lightvela-intl-home .track::before { inset: -112px 0 auto; width: 100%; height: 132px; border: 0; border-radius: 0; transform: none; background: url('/lightvela-intl-home/assets/figma-steps-curve.webp?v=2') center / 100% 100% no-repeat; }
   #lightvela-intl-home .track::after { display: none; }
   #lightvela-intl-home .track { gap: 40px; }
@@ -952,8 +949,9 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .feature-copy-preview span:nth-child(even) { align-self: flex-end; border-radius: 14px 14px 4px 14px; }
 #lightvela-intl-home .wcard--confirm .feature-copy-preview span:first-child { align-self: flex-end; }
 #lightvela-intl-home .wcard--confirm .feature-copy-preview span:last-child { align-self: flex-start; background: #111; color: white; }
-#lightvela-intl-home .home-step-mascot { display: flex; align-items: center; gap: 8px; background: none !important; aspect-ratio: auto !important; }
-#lightvela-intl-home .home-step-mascot img { display: block !important; visibility: visible !important; width: 48% !important; height: auto; flex-shrink: 0; }
+#lightvela-intl-home .home-step-mascot { display: flex; align-items: center; gap: 8px; }
+/* Original 676×591 artwork; keep its 112px width aligned with placeStepCompanion(). */
+#lightvela-intl-home .home-step-mascot img { display: block; visibility: visible; width: 112px; height: auto; flex-shrink: 0; object-fit: contain; object-position: center; }
 #lightvela-intl-home .home-step-mascot em { font-family: Georgia, 'Kaiti SC', 'STKaiti', serif; font-size: clamp(12px, 1vw, 17px); line-height: 1.3; color: #17151a; font-weight: 400; }
 #lightvela-intl-home .track__badge { position: relative; z-index: 2; background: #fff; padding-inline: 12px; margin-left: -12px; }
 @media (min-width: 900px) {
@@ -1196,9 +1194,8 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .plays .play__screen { align-self: center; height: auto; min-height: 0; aspect-ratio: 16 / 10; }
 #lightvela-intl-home .plays .play__screen img { width: 100%; height: 100%; object-fit: contain; }
 #lightvela-intl-home .foot { margin-top: 96px; }
-#lightvela-intl-home .home-step-mascot img { width: 112px !important; height: auto !important; object-fit: contain; object-position: center; }
 @media (min-width: 900px) {
-  #lightvela-intl-home .home-step-mascot { left: var(--step-left); top: var(--step-top, 80px); right: auto; }
+  #lightvela-intl-home .home-step-mascot { width: clamp(160px, 16vw, 220px); height: auto; left: var(--step-left); top: var(--step-top, 80px); right: auto; }
 }
 /* One intrinsic caption and one shared card boundary across every locale. */
 #lightvela-intl-home .about .about__cards .wcard:nth-child(6) .wcard__demo {

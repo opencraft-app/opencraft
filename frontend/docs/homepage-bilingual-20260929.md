@@ -73,3 +73,9 @@
 - 资源疑问不成立：`git ls-tree origin/master` 确认 automation/workbench/deepseek/workspace-carousel 所列 WebP 已被跟踪，来自 `27c0afb5b`（!4554），不是依赖本地未提交文件。
 - 字体疑问不成立：`style.css` 的 Allura `@font-face` 引用 `assets/fonts/allura-latin.woff2`，同文件定义 `--font-footer-display`；字体文件已被 Git 跟踪。补充变量/字体资产回归断言。
 - 检查点：生成器 16/16、首页相关 Vitest 72/72；`pnpm check` 0 新增类型错误；双站构建及 SEO 路由检查 8/42 通过；文档、JS 语法、staged change-impact、diff 检查通过。本轮只修复评审问题，不变更视觉方案，不合并发布。
+
+## 第三轮评审核验
+- 移除无引用的 `hermes-cover-companion.webp`，并同步移除失效背景图 `figma-steps-companion.webp` 及其导入保留项。文件可从历史提交恢复。
+- 部署角色唯一渲染方案为 `figma-steps-user-original.webp`（676×591），显示宽度 112px；沿用 `placeStepCompanion()` 计算的脚底落点。删除旧 300/139 背景方案和隐藏 img 的规则，将图片尺寸合并到一处；桌面容器宽度保持不变。
+- 回归覆盖唯一图片样式、定位变量与旧素材不存在；资源缓存版本升至 v99。
+- 检查点：生成器 17/17、首页相关测试 72/72，check 无新增类型错误，双站构建及 SEO 路由检查 8/42 通过，文档/变更影响/diff 检查通过；追加原 MR，不合并发布。

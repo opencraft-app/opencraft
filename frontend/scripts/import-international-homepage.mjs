@@ -38,7 +38,6 @@ const preservedHarnessAssetNames = [
   "figma-feature-workspace.webp",
   "figma-feature-memory-wave.webp",
   "figma-feature-memory-landscape.webp",
-  "figma-steps-companion.webp",
   "figma-steps-user-original.webp",
   "figma-steps-curve.webp",
   "figma-feature-skills-orbit.webp",

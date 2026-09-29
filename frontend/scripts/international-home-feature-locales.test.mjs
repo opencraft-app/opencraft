@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { localizeFeatureCards, restoreFooterBoundary } from './international-home-feature-locales.mjs';
@@ -24,6 +24,17 @@ test('footer display font is defined and its local font asset exists', () => {
   assert.match(css, /--font-footer-display:\s*'Allura'/);
   assert.match(css, /font-family:\s*'Allura';[^}]*assets\/fonts\/allura-latin\.woff2/s);
   assert.ok(readFileSync(new URL('../public/lightvela-intl-home/assets/fonts/allura-latin.woff2', import.meta.url)).length > 0);
+});
+
+test('step mascot uses only original artwork sizing, without superseded background assets', () => {
+  const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');
+  assert.equal((css.match(/\.home-step-mascot img\s*\{/g) ?? []).length, 1);
+  assert.match(css, /\.home-step-mascot img\s*\{[^}]*display: block;[^}]*width: 112px;/);
+  assert.match(css, /\.home-step-mascot\s*\{[^}]*left: var\(--step-left\);[^}]*top: var\(--step-top, 80px\)/);
+  for (const asset of ['hermes-cover-companion.webp', 'figma-steps-companion.webp']) {
+    assert.ok(!css.includes(asset));
+    assert.ok(!existsSync(new URL(`../public/lightvela-intl-home/assets/${asset}`, import.meta.url)));
+  }
 });
 
 test('shared hero centers phrases without moving the companion and separates mobile rows', () => {
