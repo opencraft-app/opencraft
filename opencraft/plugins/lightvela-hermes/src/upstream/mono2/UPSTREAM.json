@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "78111d4855a3680eab4c88ffe3e6ae5954aa9cf6",
+  "sourceRevision": "0d0dcb4ef6c85a9c76bc1340807cc5e3a60f81ce",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -161,7 +161,7 @@
     },
     {
       "file": "lib/hermes-cron-client.ts",
-      "sourceSha256": "317dfb3e9ca03f660c38d678241a3ccdfd95c18f574299d8851af7862a61d2ee"
+      "sourceSha256": "39d112dcef5870b0960c18aef184348b816c5cbca171352270fdd8e1cd6cd681"
     },
     {
       "file": "lib/hermes-skills-client.ts",
