@@ -21,16 +21,39 @@ const descriptions = {
 };
 descriptions['zh-SG'] = descriptions['zh-CN'];
 const notes = { 'en-US': 'On to greater things', 'zh-CN': '一起，走向更多可能', 'zh-SG': '一起，走向更多可能', 'zh-Hant': '一起，走向更多可能', 'id-ID': 'Menuju hal-hal hebat', es: 'Hacia nuevas posibilidades', 'ja-JP': 'もっと大きな可能性へ', 'ko-KR': '더 큰 가능성을 향해' };
+// Clockwise orbit coordinates, paired with their icons to avoid parallel-array drift.
+const SKILL_ORBIT_ITEMS = [
+  { icon: 'search', x: 0, y: -85 },
+  { icon: 'pen', x: 75, y: -55 },
+  { icon: 'globe', x: 95, y: 20 },
+  { icon: 'file', x: 45, y: 80 },
+  { icon: 'bolt', x: -45, y: 80 },
+  { icon: 'book', x: -95, y: 20 },
+  { icon: 'plug', x: -75, y: -55 },
+];
+const SKILL_ORBIT_STAGGER_SECONDS = 1.2;
+
+// Format only generated decorative blocks, never page prose or script contents.
+function formatFeatureMarkup(markup) {
+  let depth = 0;
+  return markup.split(/(?<=>)\s*(?=<)/).map((token) => {
+    if (/^<\//.test(token)) depth = Math.max(0, depth - 1);
+    const line = `${'  '.repeat(depth)}${token}`;
+    if (/^<[a-z]/i.test(token) && !/<\//.test(token) && !/\/\s*>$/.test(token)
+      && !/^<(?:img|br|hr|input|meta|link)\b/i.test(token)) depth++;
+    return line;
+  }).join('\n');
+}
 export function localizeFeatureCards(html, locale) {
-  html = html.replace(/(<span class="home-cover-mascot"[^>]*>)<img[^>]*>/g, '$1<img src="/lightvela-intl-home/assets/lv-cover-lavender.webp" alt="" width="528" height="410" decoding="async">');
+  html = html.replace(/(<span class="home-cover-mascot"[^>]*>)\s*<img[^>]*>/g, '$1<img src="/lightvela-intl-home/assets/lv-cover-lavender.webp" alt="" width="528" height="410" decoding="async">');
   html = html.replace(/(?:\\n\s*)+$/, '\n');
   html = restoreFooterBoundary(html, locale);
   html = addFeatureMotion(html, locale);
   const words = copy[locale] ?? copy['en-US'];
   const bubbles = (items) => `<div class="feature-copy-preview">${items.map((text) => `<span>${text}</span>`).join('')}</div>`;
   const confirm = `<article class="wcard wcard--confirm"><div class="wcard__inner"><div class="wcard__demo" aria-hidden="true">${bubbles(words.slice(2, 4))}</div><div class="wcard__body"><h4>${words[0]}</h4><p>${words[1]}</p></div></div></article>`;
-  if (html.includes('wcard--confirm')) html = html.replace(/<article class="wcard wcard--confirm">[\s\S]*?<\/article>/, confirm);
-  else html = html.replace(/(<div class="wcard__demo wcard__demo--mem"[\s\S]*?<\/article>)/, `$1\n${confirm}`);
+  if (html.includes('wcard--confirm')) html = html.replace(/<article class="wcard wcard--confirm">[\s\S]*?<\/article>/, formatFeatureMarkup(confirm));
+  else html = html.replace(/(<div class="wcard__demo wcard__demo--mem"[\s\S]*?<\/article>)/, `$1\n${formatFeatureMarkup(confirm)}`);
   html = html.replace(/<div class="feature-copy-preview feature-copy-preview--scheduled">[\s\S]*?<\/div>/g, '');
   html = html.replace(/<div class="feature-motion-tasks"[\s\S]*?<!-- \/feature-motion -->/g, '');
   const cases = [...html.matchAll(/<div class="aut__case aut__case--\d+">[\s\S]*?<\/div>/g)].map(([markup]) => markup.replaceAll('aut__', 'feature-task__').replace(/(<p class="feature-task__bubble feature-task__bubble--agent">)(?!<b>)/, '$1<b>LightVela</b>'));
@@ -39,8 +62,8 @@ export function localizeFeatureCards(html, locale) {
   const sentences = descriptions[locale] ?? descriptions['en-US'];
   html = html.replace(/<div class="wcard__body">([\s\S]*?)<\/div>/g, (match, body) => {
     const index = cardIndex++;
-    const heading = index === 3 ? '' : (body.match(/<h4>[\s\S]*?<\/h4>/)?.[0] ?? '');
-    const caption = [0, 2, 4, 5, 6].includes(index) ? '' : `<p>${sentences[index]}</p>`;
+    const heading = index === 3 ? `<h4 class="wcard__workspace-title">${sentences[index]}</h4>` : (body.match(/<h4>[\s\S]*?<\/h4>/)?.[0] ?? '');
+    const caption = index === 1 ? `<p>${sentences[index]}</p>` : '';
     return `<div class="wcard__body">${heading}${caption}</div>`;
   });
   return html.replace(/<span class="home-step-mascot"[\s\S]*?<\/span>/, `<span class="home-step-mascot" aria-hidden="true"><img src="/lightvela-intl-home/assets/figma-steps-user-original.webp" alt="" width="676" height="591" loading="lazy"><em>${notes[locale] ?? notes['en-US']} →</em></span>`);
@@ -54,11 +77,11 @@ function addFeatureMotion(html, locale) {
   const domestic = [['wechat.webp', chinese ? '微信' : 'WeChat'], ['qq.webp', 'QQ'], ['feishu.webp', chinese ? (traditional ? '飛書' : '飞书') : 'Feishu'], ['dingtalk.webp', chinese ? (traditional ? '釘釘' : '钉钉') : 'DingTalk']];
   const page = (channels) => `<div class="feature-motion-page">${channels.map(([asset, name]) => `<div class="feature-motion-channel"><img src="/lightvela-intl-home/assets/${asset}" alt="" width="28" height="28" loading="lazy"><span>${name}<small>17:25</small></span></div>`).join('')}</div>`;
   const chat = `<div class="feature-motion-chat" aria-hidden="true"><div class="feature-motion-pages">${page(international)}${page(domestic)}${page(international)}</div></div><!-- /feature-motion -->`;
-  const skills = `<div class="feature-motion-skills" aria-hidden="true">${['search', 'pen', 'globe', 'file', 'bolt', 'book', 'plug'].map((name, i) => `<span class="feature-skill" style="--x:${[0, 75, 95, 45, -45, -95, -75][i]}px;--y:${[-85, -55, 20, 80, 80, 20, -55][i]}px;--delay:-${i * 1.2}s"><svg class="icon"><use href="#i-${name}"></use></svg></span>`).join('')}</div><!-- /feature-motion -->`;
+  const skills = `<div class="feature-motion-skills" aria-hidden="true">${SKILL_ORBIT_ITEMS.map(({ icon, x, y }, index) => `<span class="feature-skill" style="--x:${x}px;--y:${y}px;--delay:-${index * SKILL_ORBIT_STAGGER_SECONDS}s"><svg class="icon"><use href="#i-${icon}"></use></svg></span>`).join('')}</div><!-- /feature-motion -->`;
   const workspace = '<div class="feature-motion-workspace" aria-hidden="true"><svg viewBox="0 0 320 100"><path d="M20 80 Q160 -15 300 80" fill="none" stroke="#ccc" stroke-width="2" stroke-dasharray="5 5"/><circle cx="20" cy="80" r="7" fill="#4825ff"/><circle cx="300" cy="80" r="7" fill="#00c875"/><g class="feature-workspace-arrow"><path d="M-10 -11 L12 0 L-10 11 L-5 0Z" fill="#111" stroke="white" stroke-width="2" stroke-linejoin="round"/></g></svg></div><!-- /feature-motion -->';
   const wave = '<div class="feature-motion-wave" aria-hidden="true"><img src="/lightvela-intl-home/assets/figma-feature-memory-wave.webp" alt="" loading="lazy"></div><!-- /feature-motion -->';
   for (const [demo, content] of [['chat', chat], ['skills', skills], ['mem', wave], ['workspace', workspace]]) {
-    html = html.replace(new RegExp(`(<div class="wcard__demo wcard__demo--${demo}"[^>]*>)`), `$1${content}`);
+    html = html.replace(new RegExp(`(<div class="wcard__demo wcard__demo--${demo}"[^>]*>)`), `$1${formatFeatureMarkup(content)}`);
   }
   return html;
 }

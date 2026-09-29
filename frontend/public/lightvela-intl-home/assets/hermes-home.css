@@ -1252,6 +1252,19 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 #lightvela-intl-home .about .about__cards .wcard .wcard__body p { margin-bottom: 0 !important; }
 #lightvela-intl-home .about .about__cards .wcard:nth-child(4) .wcard__body p { color: #17151a !important; }
+/* Retain the approved one-sentence appearance while exposing a native heading. */
+#lightvela-intl-home .about .about__cards .wcard .wcard__body h4.wcard__workspace-title {
+  font-size: 14px !important;
+  line-height: 1.55 !important;
+  font-weight: 400 !important;
+  color: #17151a !important;
+  margin: 10px 0 0 !important;
+  letter-spacing: normal !important;
+  max-width: 36em !important;
+}
+@media (min-width: 900px) {
+  #lightvela-intl-home .about .about__cards .wcard .wcard__body h4.wcard__workspace-title { margin-top: 6px !important; }
+}
 /* Japanese and Korean endings share the reserved phrase width, not mascot space. */
 #lightvela-intl-home[data-locale='ko-KR'] .hero .hero__line--main,
 #lightvela-intl-home[data-locale='ko-KR'] .hero .hero__rotator { word-break: keep-all; }

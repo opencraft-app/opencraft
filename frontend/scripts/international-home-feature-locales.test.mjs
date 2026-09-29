@@ -59,9 +59,11 @@ for (const locale of ['en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-J
     assert.equal(localizeFeatureCards(html, locale), html);
     const document = new JSDOM(html).window.document;
     const captions = [...document.querySelectorAll('.wcard__body > p')];
-    assert.equal(captions.length, 2);
+    assert.equal(captions.length, 1);
     const bodies = [...document.querySelectorAll('.wcard__body')];
-    assert.equal(bodies[3].querySelector('h4'), null);
+    assert.ok(bodies[3].querySelector('h4.wcard__workspace-title'));
+    assert.equal(document.querySelectorAll('.wcard__body > h4').length, 7);
+    assert.match(html, /feature-motion-skills[^>]*>\n/);
     for (const index of [0, 2, 4, 5, 6]) assert.equal(bodies[index].querySelector('p'), null);
     for (const caption of captions) {
       assert.equal(caption.children.length, 0, `${locale}: concise caption has no forced break or partial bold phrase`);

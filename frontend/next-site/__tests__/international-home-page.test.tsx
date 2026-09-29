@@ -980,7 +980,7 @@ describe("international v2 homepage artifact", () => {
     expect(document.querySelectorAll('.feature-motion-workspace svg circle')).toHaveLength(2);
     expect(document.querySelector('.feature-motion-wave img')?.getAttribute('src')).toContain('figma-feature-memory-wave.webp');
     expect(document.querySelectorAll('.wcard--confirm .feature-copy-preview span')).toHaveLength(2);
-    expect(document.querySelectorAll('.wcard__body > p')).toHaveLength(2);
+    expect(document.querySelectorAll('.wcard__body > p')).toHaveLength(1);
     expect(document.querySelector('.home-cover-mascot img')?.getAttribute('src')).toContain('lv-cover-lavender.webp');
     expect(cards.slice(0,6).map(card => card.querySelector('.wcard__more')?.getAttribute('href'))).toEqual([
       '/agents/channels', '/', '/agents/automations', '/agents/websites/', '/agents/skills', '/agents/memory',
@@ -1235,6 +1235,17 @@ describe("international v2 homepage artifact", () => {
       ],
     } as const;
 
+    const workspaceTitles: Record<string, string> = {
+      "index-fragment.html": "Create, publish, and edit web pages in chat.",
+      "index-fragment.en-US.html": "Create, publish, and edit web pages in chat.",
+      "index-fragment.zh-CN.html": "在对话中创建、发布和修改网页。",
+      "index-fragment.zh-SG.html": "在对话中创建、发布和修改网页。",
+      "index-fragment.zh-Hant.html": "在對話中建立、發布和修改網頁。",
+      "index-fragment.id-ID.html": "Buat, terbitkan, dan edit web lewat chat.",
+      "index-fragment.es.html": "Crea, publica y edita páginas desde el chat.",
+      "index-fragment.ja-JP.html": "チャットでWebページを作成・公開・編集。",
+      "index-fragment.ko-KR.html": "채팅으로 웹페이지를 만들고 게시·수정하세요.",
+    };
     const confirmationTitles: Record<string, string> = {
       "index-fragment.html": "Confirm important actions first",
       "index-fragment.en-US.html": "Confirm important actions first",
@@ -1255,7 +1266,7 @@ describe("international v2 homepage artifact", () => {
       expect(
         Array.from(document.querySelectorAll(".about__cards .wcard h4"), (heading) => heading.textContent?.trim()),
         `${fragmentName} capability titles`,
-      ).toEqual([...titles.slice(0, 3), ...titles.slice(4), confirmationTitles[fragmentName]]);
+      ).toEqual([...titles.slice(0, 3), workspaceTitles[fragmentName], ...titles.slice(4), confirmationTitles[fragmentName]]);
     }
   });
 
