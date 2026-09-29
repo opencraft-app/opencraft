@@ -23,7 +23,7 @@ derived: false
 
 ## history_context
 - current_design_refs: `docs/engineering/domains/agent-gateway-runtime.md` and `docs/engineering/domains/release-gitops.md`.
-- relevant_evolution: Shanghai remains manually synced and currently runs the old image.
+- relevant_evolution: Shanghai uses manual Argo sync; the diagnostic image was promoted and synced after source and GitOps review gates.
 - superseded_refs: none.
 
 ## context_receipt
@@ -32,7 +32,7 @@ derived: false
 | `docs/context/tasks/2026-09-29-velagw-proxy-error-diagnostics.md@working-tree` | Active task state | Restore exact scope and validation |
 
 ## stage
-Safe proxy diagnostics implemented and locally validated; source MR !4842 is blocked by required human review before Shanghai release.
+Shanghai VelaGW diagnostic release completed; post-release 502 samples exposed 30/60-second cancellation clusters. The timing extension is in source MR !4845, pending review and release.
 
 ## verified
 - Complete Docker image build passed full VelaGW Go tests, binary compilation, 50 Web tests, and TypeScript/Web build; `go vet ./...` passed.
@@ -40,10 +40,13 @@ Safe proxy diagnostics implemented and locally validated; source MR !4842 is blo
 - Staged change-impact validation passed and requires owner review.
 - Shanghai Argo application was `Synced/Healthy` on the old image digest; traffic Deployment was 2/2.
 - User authorized Shanghai production release; the source MR was pushed from an isolated latest-master branch, and Gongfeng returned `Review check not passed` (409) on merge.
+- Source MR !4842 was reviewed and merged as `728f32f22`; Shanghai candidate image tag `velagw-728f32f227c4` resolved to digest beginning `sha256:3431dfeedb8a`.
+- GitOps MR !4844 changed only the Shanghai image pin and deployment timestamp, then merged as `bb25ebd74`.
+- Manual Argo sync of `velagw-shprod` completed successfully at `bb25ebd74`; the Application is `Synced/Healthy`, all ten VelaGW Deployments are on the new digest with 2/2 Ready, and the PostSync bootstrap Job succeeded.
+- Old traffic Pods drained and disappeared; the new traffic Pods are both Ready. The first 20 observed access logs had 19 responses with status 200 and one upstream 429; no proxy 502 sample yet.
 
 ## unverified
-- A non-author VelaGW owner review is required for source MR !4842.
-- No CI build from master, registry digest, GitOps promotion, Argo sync, or post-release logs exist for this patch.
+- Need timing-extension deployment and fresh proxy failure samples before attributing the first disconnecting hop.
 - Repository-wide context catalog has pre-existing errors; scoped baseline comparison remains if needed.
 
 ## discard
@@ -56,4 +59,9 @@ Safe proxy diagnostics implemented and locally validated; source MR !4842 is blo
 - Task pack: `docs/context/tasks/2026-09-29-velagw-proxy-error-diagnostics.md`.
 
 ## next_action
-After non-author owner review passes, merge MR !4842, follow the service CI build and Shanghai GitOps promotion, then verify Shanghai image, Argo sync, traffic health, and safe diagnostic logs.
+Wait for non-author owner review and commit checks on timing MR !4845; then merge, build, promote and manually sync Shanghai. Verify the actual image and fresh timing fields before attributing the first disconnecting hop.
+
+## 2026-09-30 timing extension
+- Shanghai post-release logs showed 30/60-second `context_canceled` clusters with no upstream response status. The existing access log cannot prove when the upstream request was attempted or whether response headers/body bytes arrived.
+- Added elapsed milliseconds from the first upstream RoundTrip attempt through return, final response headers, and first response-body byte. The latter is not necessarily a model token; missing fields mean the milestone was not observed.
+- `go test ./...` and `go vet ./...` passed under `velagw/`, including on the latest-master branch. Commit `c44ac564c` is pushed as MR !4845. The extension has not been merged or published; production continues to run the preceding diagnostic image.

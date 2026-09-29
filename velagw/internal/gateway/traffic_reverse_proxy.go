@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type trafficProxyPlanContextKey struct{}
@@ -24,6 +25,7 @@ type trafficProxyPlan struct {
 	accessLog     *AccessLog
 	requestBody   *observedTrafficRequestBody
 	contentLength int64
+	upstreamStart time.Time
 
 	fallbackAttempted       bool
 	fallbackRoundTripFailed bool
@@ -70,8 +72,16 @@ func newTrafficReverseProxy() *httputil.ReverseProxy {
 
 type trafficProxyRoundTripper struct{}
 
-func (trafficProxyRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+func (trafficProxyRoundTripper) RoundTrip(request *http.Request) (result *http.Response, roundTripErr error) {
 	plan := trafficProxyPlanFromRequest(request)
+	plan.upstreamStart = time.Now()
+	defer func() {
+		elapsed := time.Since(plan.upstreamStart).Milliseconds()
+		plan.accessLog.UpstreamRoundTripMS = &elapsed
+		if roundTripErr == nil && result != nil {
+			plan.accessLog.UpstreamResponseHeaderMS = &elapsed
+		}
+	}()
 	if plan.transport == nil {
 		return nil, fmt.Errorf("traffic transport unavailable")
 	}
@@ -118,12 +128,17 @@ func attachResponseRequest(response *http.Response, request *http.Request) {
 
 type observedTrafficResponseBody struct {
 	io.ReadCloser
-	request   *http.Request
-	accessLog *AccessLog
+	request       *http.Request
+	accessLog     *AccessLog
+	upstreamStart time.Time
 }
 
 func (b *observedTrafficResponseBody) Read(buffer []byte) (int, error) {
 	n, err := b.ReadCloser.Read(buffer)
+	if n > 0 && b.accessLog.UpstreamFirstByteMS == nil {
+		elapsed := time.Since(b.upstreamStart).Milliseconds()
+		b.accessLog.UpstreamFirstByteMS = &elapsed
+	}
 	if err != nil &&
 		!errors.Is(err, io.EOF) &&
 		!errors.Is(err, context.Canceled) &&
@@ -136,9 +151,10 @@ func (b *observedTrafficResponseBody) Read(buffer []byte) (int, error) {
 func observeTrafficResponseBody(response *http.Response, plan *trafficProxyPlan) *http.Response {
 	if response != nil && response.Body != nil {
 		response.Body = &observedTrafficResponseBody{
-			ReadCloser: response.Body,
-			request:    response.Request,
-			accessLog:  plan.accessLog,
+			ReadCloser:    response.Body,
+			request:       response.Request,
+			accessLog:     plan.accessLog,
+			upstreamStart: plan.upstreamStart,
 		}
 	}
 	return response

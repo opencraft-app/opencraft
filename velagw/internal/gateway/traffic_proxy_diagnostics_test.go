@@ -32,9 +32,46 @@ func TestProxyFailureDiagnosticsDistinguishCanceledClient(t *testing.T) {
 
 	if entry.Status != http.StatusBadGateway || entry.ErrorType != "upstream_roundtrip_error" ||
 		entry.ProxyErrorKind != "context_canceled" || entry.RequestContextError != "context_canceled" ||
+		entry.UpstreamRoundTripMS == nil || entry.UpstreamResponseHeaderMS != nil || entry.UpstreamFirstByteMS != nil ||
 		entry.RequestBodyErrorKind != "" || entry.RequestContentLength == nil || *entry.RequestContentLength != 5 ||
 		entry.RequestBodyBytesRead == nil || *entry.RequestBodyBytesRead != 5 || entry.RequestBodyReadWaitMS == nil {
 		t.Fatalf("unexpected cancellation diagnostics: %+v", entry)
+	}
+}
+
+func TestProxyDiagnosticsRecordResponseHeaderAndFirstByte(t *testing.T) {
+	var entry AccessLog
+	svc, key := diagnosticProxyService(t, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: hello\n\n")),
+		}, nil
+	}), &entry)
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("hello"))
+	request.Header.Set("Authorization", "Bearer "+key)
+	svc.ProxyHTTP(httptest.NewRecorder(), request)
+
+	if entry.Status != http.StatusOK || entry.UpstreamStatus != http.StatusOK ||
+		entry.UpstreamRoundTripMS == nil || entry.UpstreamResponseHeaderMS == nil || entry.UpstreamFirstByteMS == nil ||
+		*entry.UpstreamFirstByteMS < *entry.UpstreamResponseHeaderMS {
+		t.Fatalf("unexpected response timing diagnostics: %+v", entry)
+	}
+}
+
+func TestProxyDiagnosticsDoNotInventFirstByteForEmptyResponse(t *testing.T) {
+	var entry AccessLog
+	svc, key := diagnosticProxyService(t, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: http.NoBody}, nil
+	}), &entry)
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	request.Header.Set("Authorization", "Bearer "+key)
+	svc.ProxyHTTP(httptest.NewRecorder(), request)
+
+	if entry.UpstreamRoundTripMS == nil || entry.UpstreamResponseHeaderMS == nil || entry.UpstreamFirstByteMS != nil {
+		t.Fatalf("unexpected empty-response timing diagnostics: %+v", entry)
 	}
 }
 
