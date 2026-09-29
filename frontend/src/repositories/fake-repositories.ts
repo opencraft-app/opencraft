@@ -258,6 +258,8 @@ const defaultTools: ToolBinding[] = [
 
 const botStore = new Map<string, Bot>();
 const messageStore = new Map<string, WorkspaceMessage[]>();
+// fake 云桌面按需装图形层进度：POST 置 0，GET 逐步 +25 直至 100 转 Ready。
+const desktopInstallProgress = new Map<string, number>();
 
 const seedMessagesFor = (botId: string) => {
   if (messageStore.has(botId)) {
@@ -1739,6 +1741,49 @@ const createBotRepository = (): BotRepository => {
         timeoutSeconds: 3600,
         username: "agentuser",
         workingDirectory: "/home/agentuser",
+      };
+    },
+
+    async ensureDesktopSession(botId) {
+      await wait(NETWORK_DELAY_MS / 2);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      // fake 环境：首次 POST 进入 Installing（模拟按需装图形层），后续 GET 递进进度直至 Ready，
+      // 便于本地预览 Installing 进度 UI；本地 mock 无法真正代理 VNC 流，故用无效 wsUrl。
+      desktopInstallProgress.set(botId, 0);
+      return {
+        status: "Installing" as const,
+        installProgress: 0,
+        message: "正在安装桌面环境（约 2-4 分钟）…",
+      };
+    },
+
+    async getDesktopSession(botId) {
+      await wait(NETWORK_DELAY_MS / 2);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      const progress = desktopInstallProgress.get(botId);
+      if (progress !== undefined && progress < 100) {
+        const next = Math.min(100, progress + 25);
+        desktopInstallProgress.set(botId, next);
+        if (next < 100) {
+          return {
+            status: "Installing" as const,
+            installProgress: next,
+            message: "正在安装桌面环境（约 2-4 分钟）…",
+          };
+        }
+      }
+      return {
+        status: "Ready" as const,
+        wsUrl: "wss://example.invalid/websockify",
+        password: "deadbeef",
+        width: 1440,
+        height: 900,
       };
     },
 

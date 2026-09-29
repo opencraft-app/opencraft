@@ -25,6 +25,8 @@ const AGENT_SECTION_PGID: Record<AgentSectionId, DatongPageId> = {
   workbench: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   achievement: DATONG_PAGE_IDS.AGENT_ACHIEVEMENT,
   "deepseek-harness": DATONG_PAGE_IDS.AGENTS_HOME,
+  // 云桌面暂无独立 pgid，与 deepseek-harness 一致归到 AGENTS_HOME。
+  "cloud-desktop": DATONG_PAGE_IDS.AGENTS_HOME,
   // 以下页面方案文档中尚无独立 pgid，统一归到 workbench，避免上报到未定义的 pgid。
   browser: DATONG_PAGE_IDS.AGENT_WORKBENCH,
   terminal: DATONG_PAGE_IDS.AGENT_WORKBENCH,

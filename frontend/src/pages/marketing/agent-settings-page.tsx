@@ -26,6 +26,7 @@ import {
   Trophy,
   Download,
   FlaskConical,
+  Monitor,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -50,7 +51,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
+import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useCloudDesktopEnabled } from "@/contexts/runtime-config-context";
 import { useCurrentLocale, useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
@@ -180,6 +181,7 @@ import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renew
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
+import { AgentCloudDesktopPanel } from "@/pages/marketing/agent-cloud-desktop-panel";
 import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -2618,6 +2620,7 @@ export const AgentSettingsPage = ({
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
+  const cloudDesktopEnabled = useCloudDesktopEnabled();
   const fleetOverviewEnabled = multiBotEnabled && IS_BUDDY_ONBOARDING_ENABLED;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
@@ -5767,6 +5770,19 @@ export const AgentSettingsPage = ({
                       path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
                       badge: "Beta",
                     },
+                    // 云桌面入口守卫：仅在后端下发 cloudDesktopEnabled 的环境（已配置
+                    // DESKTOP_INGRESS_DOMAIN，如 sandbox-bj-7）显示，现网隐藏避免死入口。
+                    ...(cloudDesktopEnabled
+                      ? [
+                          {
+                            id: "cloud-desktop",
+                            label: t("云桌面"),
+                            icon: <Monitor className="h-4 w-4" />,
+                            path: AGENT_SECTION_PATH_BY_ID["cloud-desktop"],
+                            badge: "Beta",
+                          } as SettingsSectionLink,
+                        ]
+                      : []),
                   ],
                 },
               ];
@@ -6665,6 +6681,9 @@ export const AgentSettingsPage = ({
                           )}
                           {activeSection === "deepseek-harness" && (
                             <AgentDeepSeekHarnessPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "cloud-desktop" && cloudDesktopEnabled && (
+                            <AgentCloudDesktopPanel botId={activeBot.id} />
                           )}
                           {activeSection === "website" && (
                             <AgentWebsitePanel />

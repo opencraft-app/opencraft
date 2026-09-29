@@ -369,7 +369,7 @@ OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区�
 - 控制台无法证明实例上只有一个 Bot 时，不得据此禁用主 Bot 的删除入口。后端已为非运行实例保留删除通道，前端堵死会让暂停或修复失败的实例失去清理路径，而控制台并不提供启动实例的操作。此时必须在删除确认中区分原因：实例非运行归因为实例未运行，实例运行但 Profile 列表暂时不可用归因为列表不可用，不得把后者提示为需要先启动实例；并沿用输入名称的二次确认，明确告知将一并销毁实例上的全部 Bot 及其数据。
 - Bot 的网关运行状态是三态：运行、未运行、未知。Hermes `GET /api/profiles` 未返回该字段，或实例非运行导致只能退回实例投影时，必须端到端保持“未知”，不得在提取、DTO 或客户端任何一层压成“未运行”。只有明确的“未运行”才允许触发面向用户的告警。
 - Hermes 的 cron ticker 由 Profile 自身的 gateway 进程承载，未连接消息通道的 Bot 不会常驻该进程。此时定时任务定义写入成功但不会执行，产品必须就地告知该边界，不得让它表现为静默失败；网关恢复后界面状态需随之收敛，不依赖整页刷新。
-- 公开 API 使用 `/v1/instances/{instance_id}/bots` 表达实例作用域；新增 method/path 必须同步 `service-gateway` allowlist，并分别验证 CTL 直连与公共入口路由。
+- 公开 API 使用 `/v1/instances/{instance_id}/bots` 表达实例作用域；新增 method/path 必须同步 `service-gateway` allowlist，并分别验证 CTL 直连与公共入口路由。云桌面会话 `POST/GET /v1/instances/{instance_id}/desktop/session` 已纳入该放行集合：会话复用实例主 sandbox，CTL 经 TAT 拉起桌面服务（脚本内显式 sudo，不走 envd/debug-exec 的用户切换包装），空闲回收只停桌面服务不停主机，`ws_url` 由 CTL 基于 `DESKTOP_INGRESS_DOMAIN` 组装，前端入口由 `CLOUD_DESKTOP_ENABLED` 随 runtime-config 下发的 `cloudDesktopEnabled` 控制，未开启环境不渲染入口。
 - 国内站和国际站 Bot 管理精确放行集合 GET/POST、单 Bot PUT/DELETE、失败 Bot retry，以及唯一通道绑定 PUT/POST/DELETE；实例 method 集合同步包含 PUT。
   克隆继续使用 POST 创建载荷的 `create_mode` / `source_bot_id`，不新增路径；鉴权、实名策略和 CTL 归属保护保持生效。源码配置不等于生产已发布。
 - CTL 的多 Bot 服务端开关由 `ctl-api` 从环境级 `ctl-platform-values.MULTI_BOT_ENABLED` 可选注入；缺省继续使用服务自身默认值，各环境需要显式开放或回滚时必须在对应 deploy-facing platform env 中设置。该开关同时约束前端运行时配置与新增 Bot，不替代 Gateway 精确路由、身份归属或 Hermes Profile 能力检查。

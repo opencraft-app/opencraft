@@ -7,6 +7,7 @@ const {
   normalizeRuntimeConfig,
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
+  CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY,
   resolveMultiBotEnabled,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
@@ -40,6 +41,28 @@ describe("runtime config normalization", () => {
   it("uses the runtime referral flag without a regional override", () => {
     expect(resolveReferralEnabled(normalizeRuntimeConfig({ features: { referralEnabled: true } }))).toBe(true);
     expect(resolveReferralEnabled(normalizeRuntimeConfig({ features: { referralEnabled: false } }))).toBe(false);
+  });
+
+  it("enables cloud desktop only for an explicit runtime true", () => {
+    expect(normalizeRuntimeConfig(null).features.cloudDesktopEnabled).toBe(false);
+    expect(normalizeRuntimeConfig({}).features.cloudDesktopEnabled).toBe(false);
+    expect(normalizeRuntimeConfig({ features: { cloudDesktopEnabled: true } }).features.cloudDesktopEnabled).toBe(true);
+    expect(normalizeRuntimeConfig({ features: { cloudDesktopEnabled: false } }).features.cloudDesktopEnabled).toBe(false);
+    expect(normalizeRuntimeConfig({ features: { cloudDesktopEnabled: "true" } }).features.cloudDesktopEnabled).toBe(false);
+  });
+
+  it("allows a local override to toggle the cloud desktop entry for debugging", () => {
+    window.localStorage.setItem(CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY, "true");
+    expect(
+      applyRuntimeOverrides(normalizeRuntimeConfig({ features: { cloudDesktopEnabled: false } }))
+        .features.cloudDesktopEnabled,
+    ).toBe(true);
+    window.localStorage.setItem(CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY, "false");
+    expect(
+      applyRuntimeOverrides(normalizeRuntimeConfig({ features: { cloudDesktopEnabled: true } }))
+        .features.cloudDesktopEnabled,
+    ).toBe(false);
+    window.localStorage.removeItem(CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY);
   });
 
   it("defaults multi-bot on but accepts an explicit runtime rollback", () => {

@@ -54,6 +54,7 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
   useReferralEnabled: () => false,
