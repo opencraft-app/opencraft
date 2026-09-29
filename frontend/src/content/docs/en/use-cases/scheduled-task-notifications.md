@@ -1,5 +1,9 @@
 # Setting Notification Task in LightVela
 
+## Summary
+
+**Notification Tasks send your fixed message on a schedule without calling an AI model or using model credits.** Use them for reminders such as medication, bills, and subscription renewals; set the message, schedule, effective time window, and delivery channel.
+
 Notification tasks are a simple application for cloud-hosted agents because they can send a fixed message on schedule without calling an AI model.
 They can be used when you need a reminder to arrive at the right time, through the right channel, using the exact wording you provided.
 Users have used them for water and medication reminders; some also created reminders for bills and subscription renewals.

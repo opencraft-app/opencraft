@@ -1,5 +1,9 @@
 # Mengotomatiskan Tugas Agent dengan LightVela
 
+## Ringkasan
+
+**Agent Task menjalankan alur kerja yang memakai model sesuai jadwal dan mengirim hasilnya ke kanal yang dipilih.** Gunakan untuk brief pagi atau ulasan proyek mingguan; atur instruksi, jadwal, Skill opsional, dan tujuan pengiriman.
+
 Tugas terjadwal adalah penerapan yang tepat untuk Agent yang dihosting di cloud karena dapat berjalan 24/7 tanpa mengharuskan Anda terus terlibat.
 Gunakan ketika Anda memiliki masalah informasi berulang yang dapat diperbaiki dengan alur kerja yang dapat diulang.
 Pengguna memakainya untuk ringkasan pagi yang mengubah pembaruan tersebar menjadi brief singkat, serta ulasan proyek mingguan yang merangkum aktivitas terbaru untuk rapat tindak lanjut.

@@ -290,8 +290,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(profile.indexOf('aria-label={t("新建 Bot")}')).toBeLessThan(profile.indexOf("<RestartIcon"));
     expect(profile.indexOf("<RestartIcon")).toBeLessThan(profile.indexOf("<Trash2"));
     expect(profile).not.toContain("<MoreHorizontal");
-    expect(page).toContain('{visibleBots.length > 1 && (\n                              <ChevronDown');
-    expect(page.indexOf("<Trash2")).toBeLessThan(page.indexOf('<ChevronDown\n                                aria-hidden="true"'));
+    expect(page).toMatch(/\{visibleBots.length > 1 && \(\s*<ChevronDown/);
+    const switcherChevron = page.search(/<ChevronDown\s+aria-hidden="true"/);
+    expect(switcherChevron).toBeGreaterThan(page.indexOf("<Trash2"));
   });
 
   it("renders the Bot switcher as an overlay popover instead of in sidebar flow", () => {

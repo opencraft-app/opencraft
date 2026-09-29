@@ -50,7 +50,7 @@ Produk LightVela saat ini adalah **Hermes Agent**, AI Agent yang didukung large 
 
 * **Akses multi-kanal**: Chat dengan Hermes Agent lewat Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, dan Lark
 
-* **Ekstensi Skill**: Instal paket Skill dari [SkillHub](https://skillhub.tencent.com) untuk memperluas kemampuan Hermes Agent
+* **Ekstensi Skill**: Cari dan pasang Skill atau Paket Skill dari [Skills.sh](https://skills.sh/) dan [ClawHub](https://clawhub.ai/) di konsol
 
 * **Siap dipakai**: Paket Launch menyertakan kredit uji coba, sehingga Anda bisa mulai chat setelah aktivasi tanpa perlu mengatur model secara terpisah
 
@@ -86,17 +86,16 @@ Satu alur percakapan lengkap membutuhkan tiga konfigurasi:
 
 ## Tentang paket
 
-LightVela menggunakan penagihan berbasis paket. Saat mengaktifkan sebuah paket, Anda mendapat satu instans Hermes Agent beserta sumber daya dan kredit yang termasuk di dalam paket tersebut.
+Satu paket menyediakan satu instans cloud Hermes Agent. Seri Launch mendukung hingga 5 Bot di dalam instans tersebut, sedangkan seri Cruise mendukung hingga 10. Bot adalah profil terpisah, bukan instans Hermes tambahan.
 
-Paket yang saat ini tersedia:
+| Opsi paket | Kredit model per bulan | Bot |
+|---|---:|---:|
+| Launch | 100 | 5 |
+| Launch AI | 4.500 | 5 |
+| Cruise | 200 | 10 |
+| Cruise AI | 10.000 | 10 |
 
-| Paket | Harga asli | Status saat ini |
-| --------- | ------- | ---- |
-| Launch | $7,5 / bulan | Penawaran awal: lihat halaman Subscribe |
-| Cruise | $15 / bulan | Paket berbayar |
-
-Paket Launch mencakup: 1 instans Hermes Agent, lingkungan cloud khusus dengan 2 vCPU · 8 GB RAM, penyimpanan cloud khusus 50 GB, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
-
+Harga, promo pengguna baru, dan ketersediaan dapat berubah. Periksa [halaman Subscribe](/subscribe) sebelum membeli. Pengguna dengan paket aktif juga dapat membeli [paket kredit model](./credits.md) sekali bayar.
 ***
 
 ## Hubungan dengan Lighthouse (opsional)
@@ -111,6 +110,6 @@ Jika Anda baru mengenal Agent cloud, bagian ini boleh dilewati.
 
 * **[Panduan Cepat](./02-quickstart.md)** — Selesaikan percakapan pertama Anda dalam 5 menit
 
-* **[Konsep Inti](./04-core-concepts.md)** — Pahami empat konsep utama: Hermes Agent, model, kanal, dan Skill
+* **[Konsep Inti](./04-core-concepts.md)** — Pahami lima konsep utama: Hermes Agent, Bot, model, kanal, dan Skill
 
 * **[Ringkasan Konfigurasi](./05-configuration.md)** — Fitur konsol dan alur konfigurasi

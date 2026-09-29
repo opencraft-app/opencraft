@@ -2,15 +2,15 @@
 
 ## Resumen
 
-**LightVela tiene cuatro conceptos fundamentales. Un Hermes Agent es la entidad conversacional ejecutada en la nube, con su propio entorno de nube dedicado, memoria que persiste entre conversaciones y disponibilidad 24/7. El modelo es el modelo de lenguaje grande que invoca —ya sea un Plan de Codificación de Modelo (mensual), API de Modelo (pago por uso) o un punto de extremo personalizado compatible con OpenAI. Los canales son las plataformas de mensajería a través de las cuales interactúas con él; múltiples canales pueden conectarse al mismo Agent y compartir una sola personalidad y memoria. Las Skills son paquetes de capacidades instalables que extienden lo que puede hacer. Una conversación completa fluye de la siguiente manera: un canal recibe tu mensaje, el Agent decide si invocar una Skill, llama al modelo para generar una respuesta y la respuesta regresa por el mismo canal.**
+**LightVela tiene cinco conceptos fundamentales: Hermes Agent es la instancia en la nube; los Bots son perfiles independientes dentro de ella; cada Bot tiene ajustes de modelo, canales de mensajería y Skills, además de su propia personalidad, memoria y tareas programadas. Los canales de un mismo Bot comparten su comportamiento, pero los ajustes no se comparten automáticamente entre Bots. Un mensaje llega por un canal, el Bot puede usar una Skill y un modelo, y la respuesta vuelve por el mismo canal.**
 
 ---
 
-LightVela involucra cuatro conceptos fundamentales: Hermes Agent, modelos, canales y Skills. Esta página explica sus roles. Para pasos de configuración detallados, consulta las páginas de configuración correspondientes.
+Los cinco conceptos de LightVela son Hermes Agent, Bots, modelos, canales y Skills. Esta página explica su relación.
 
 ## Esta página cubre
 
-- La relación entre los cuatro conceptos
+- La relación entre los cinco conceptos
 - Características de una instancia de Hermes Agent
 - La posición y los puntos de entrada de configuración de modelos, canales y Skills
 - El flujo interno de una conversación completa
@@ -19,28 +19,22 @@ LightVela involucra cuatro conceptos fundamentales: Hermes Agent, modelos, canal
 
 ## Relación de conceptos
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                         Hermes Agent                         │
-│              (Agent running in the LightVela cloud)           │
-└──────────────────────────────────────────────────────────────┘
-      │                          │                        │
-┌─────┘                          │                        └──────┐
-▼                                ▼                               ▼
-┌───────┐                   ┌────────┐                   ┌────────┐
-│ Model │                   │Channel │                   │ Skill  │
-└───────┘                   └────────┘                   └────────┘
- Model provider    Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
+```text
+Hermes Agent (cloud instance)
+  └─ Bot profiles (main Bot and optional additional Bots)
+       ├─ Primary model and optional fallbacks
+       ├─ Connected channels
+       └─ Skills, Soul, memory, scheduled tasks
 ```
 
 | Concepto | Rol | Descripción |
 |---|---|---|
 | Hermes Agent | Sujeto de conversación | La instancia del Agent de IA en sí |
+| Bot | Perfil independiente | Tiene sus propios modelos, canales, Skills, personalidad, memoria y tareas programadas |
 | Modelo | Capacidad de lenguaje | El modelo de lenguaje grande invocado por Hermes Agent |
 | Canal | Punto de entrada de interacción | La plataforma donde los usuarios chatean con Hermes Agent |
 | Skill | Extensión de capacidad | Paquetes de capacidades adicionales invocables por Hermes Agent |
 
-![](./images/3-1.webp)
 
 ---
 
@@ -58,6 +52,12 @@ El plan actual de lanzamiento soporta la creación de hasta 1 instancia de Herme
 
 ---
 
+## Bots
+
+Cada Hermes Agent tiene un Bot principal y puede admitir Bots adicionales según el cupo del plan y la disponibilidad. Todos están en la misma instancia en la nube, pero mantienen separados sus ajustes y datos. Selecciona el Bot adecuado antes de cambiar modelos, canales, Skills o memoria. Consulta [Gestionar Bots](./configuration/bots.md).
+
+---
+
 ## Modelos
 
 Un modelo es el modelo de lenguaje grande (LLM) que impulsa el pensamiento y las respuestas de Hermes Agent. LightVela no entrena modelos por sí misma. En cambio, los usuarios seleccionan un método de invocación en la tarjeta "Modelo" del console:
@@ -72,9 +72,7 @@ Además, el plan de lanzamiento incluye 100 créditos de prueba, por lo que pued
 
 Para modelos soportados, adquisición de API Key y orientación para selección de modelos, consulta [Configurar Modelos](./configuration/model.md).
 
-> ⚠️ **Solo un modelo activo**
->
-> Actualmente, cada Hermes Agent puede tener solo una configuración de modelo activa. Para cambiar modelos, usa "Agregar como predeterminado" para sobrescribir la configuración anterior.
+> Cada Bot usa un modelo principal a la vez. Puede tener otros modelos o alternativas configurados; cambiar el modelo activo no exige borrar la configuración anterior. Consulta [Cambio de modelo](./configuration/multiple-models.md).
 
 ---
 
@@ -86,17 +84,17 @@ Los canales son los puntos de entrada de plataforma de mensajería donde los usu
 |---|---|---|
 | WeChat | Autorización mediante código QR | Uso personal diario, adecuado para usuarios en China |
 | Telegram | Acceso mediante Token de Bot | Mensajería personal o de equipo, configuración simple, adecuado para tarea programada ligera |
-| WhatsApp | Acceso mediante API de WhatsApp Business | Comunicación con usuarios internacionales, servicio al cliente, notificaciones y recordatorios |
+| WhatsApp | Escanear código QR con WhatsApp | Comunicación con usuarios internacionales, servicio al cliente, notificaciones y recordatorios |
 | Discord | Acceso mediante Token de Bot | Operaciones comunitarias, comunidades de desarrolladores, grupos de juego o de intereses |
 | Slack | Acceso mediante Token de Bot / Token de Aplicación | Colaboración de equipo, notificaciones de espacio de trabajo y flujos basados en canales |
 
-Para WeChat, selecciona el canal y haz clic en "Autorizar acceso" para generar un código QR. Escáñalo con tu teléfono para completar la autorización.
+En la tarjeta **WeChat** de **Channels**, selecciona **+ Connect** y escanea el código QR con el teléfono.
 
 Pasos de acceso detallados para cada canal: [Configurar Canal - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md).
 
 > 💡 **Múltiples canales pueden coexistir**
 >
-> Múltiples canales pueden conectarse a la misma instancia de Hermes Agent y compartir memoria y comportamiento del Agent. No importa por qué canal se envíe un mensaje, el objetivo de la conversación es el mismo Hermes Agent.
+> Los canales conectados al mismo Bot comparten su personalidad y memoria. Los ajustes de otros Bots no se comparten automáticamente.
 
 ---
 
@@ -104,9 +102,9 @@ Pasos de acceso detallados para cada canal: [Configurar Canal - WeChat](./config
 
 Las Skills son paquetes de capacidades adicionales invocables por Hermes Agent. Extienden a Hermes Agent más allá de la conversación básica para tareas específicas como organizar tareas pendientes, generar informes diarios, navegar por la web, generar imágenes y más.
 
-Todas las Skills provienen de [SkillHub](https://skillhub.tencent.com), un mercado independiente de Skills lanzado por Tencent. En SkillHub, puedes navegar por Skills listadas y ver sus descripciones de características y ejemplos.
+Las Skills del sitio internacional proceden de [Skills.sh](https://skills.sh/) y [ClawHub](https://clawhub.ai/). Explora estas fuentes en la página **Skills** de la consola y revisa la descripción antes de instalar.
 
-Introduce el nombre de la Skill registrada en SkillHub en la tarjeta "3. Skills" del console y haz clic en "Instalar Skill" para instalarla. También puedes pedir a Hermes Agent directamente en la conversación para instalar o eliminar Skills. Consulta [Configurar Skills](./configuration/skill.md).
+Abre **Skills** en la consola, busca una Skill o explora **Skill Packages** y selecciona **Install**. Comprueba el resultado en **Installed**. Consulta [Configurar Skills](./configuration/skill.md).
 
 > ⚠️ **Verificación de seguridad antes de instalar**
 >

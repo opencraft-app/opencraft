@@ -50,7 +50,7 @@ LightVela는 Tencent Lighthouse 팀의 클라우드 에이전트 호스팅 제�
 
 * **다중 채널 액세스**: Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark에서 Hermes Agent와 대화할 수 있습니다
 
-* **스킬 확장**: [SkillHub](https://skillhub.tencent.com)에서 스킬 패키지를 설치하여 Hermes Agent 기능을 확장합니다.
+* **스킬 확장**: 콘솔에서 [Skills.sh](https://skills.sh/) 및 [ClawHub](https://clawhub.ai/)의 스킬이나 스킬 패키지를 검색하고 설치합니다.
 
 * **사용 준비 완료**: Launch 플랜에는 체험 크레딧이 포함되어 있으므로 모델을 별도로 구성하지 않고도 활성화 후 채팅을 시작할 수 있습니다.
 
@@ -86,17 +86,16 @@ Response returns through the original channel
 
 ## 플랜에 대하여
 
-LightVela는 플랜 기반으로 요금을 청구합니다. 플랜을 활성화하면 Hermes Agent 인스턴스 1개와 해당 플랜에 포함된 리소스 및 크레딧을 사용할 수 있습니다.
+플랜 하나로 Hermes Agent 클라우드 인스턴스 하나를 이용합니다. 해당 인스턴스 안에서 Launch 계열은 Bot을 최대 5개, Cruise 계열은 최대 10개 지원합니다. Bot은 독립된 프로필이며 추가 Hermes 인스턴스가 아닙니다.
 
-현재 이용 가능한 플랜:
+| 플랜 옵션 | 월별 모델 크레딧 | Bot 수 |
+|---|---:|---:|
+| Launch | 100 | 5 |
+| Launch AI | 4,500 | 5 |
+| Cruise | 200 | 10 |
+| Cruise AI | 10,000 | 10 |
 
-| 플랜 | 정가 | 현재 상태 |
-| --------- | ------- | ---- |
-| Launch | $7.5/월 | 첫 구매 혜택은 구독 페이지 참조 |
-| Cruise | $15/월 | 유료 플랜 |
-
-Launch 플랜에는 다음이 포함됩니다: Hermes Agent 인스턴스 1개, 2 vCPU · 8 GB RAM의 전용 클라우드 환경, 50 GB 전용 클라우드 스토리지, 100 체험 크레딧, 24/7 가용성 및 콘솔 액세스.
-
+가격, 첫 구매 혜택 및 판매 여부는 달라질 수 있습니다. 구매 전 [구독 페이지](/subscribe)를 확인하세요. 활성 플랜 사용자라면 일회성 [추가 크레딧 팩](./credits.md)도 구매할 수 있습니다.
 ***
 
 ## 등대와의 관계(선택)
@@ -111,6 +110,6 @@ Cloud 에이전트를 처음 사용하는 경우 이 섹션을 건너뛸 수 있
 
 * **[빠른 시작](./02-quickstart.md)** — 5분 안에 첫 번째 대화를 완료하세요.
 
-* **[핵심 개념](./04-core-concepts.md)** — 네 가지 핵심 개념 이해: Hermes Agent, 모델, 채널 및 스킬
+* **[핵심 개념](./04-core-concepts.md)** — 다섯 가지 핵심 개념 이해: Hermes Agent, Bot, 모델, 채널 및 스킬
 
 * **[구성 개요](./05-configuration.md)** — 콘솔 기능 및 구성 흐름

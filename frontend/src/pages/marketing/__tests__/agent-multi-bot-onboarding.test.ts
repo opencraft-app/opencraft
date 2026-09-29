@@ -226,7 +226,7 @@ describe("multi-bot creation goes through the onboarding panel", () => {
      */
     expect(page).toContain("}) && !showBuddyOnboarding && !showMultiBotOnboarding;");
     // 侧边栏本体与它占的栅格列都要跟着条件走，只藏一个会留下空白列
-    expect(page).toContain("{hasSidebarLayout ? (\n                  <aside");
+    expect(page).toMatch(/\{hasSidebarLayout \? \(\s*<AgentSidebar>/);
     expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
     // 没有侧边栏时内容区自己居中
     expect(page).toContain('hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
@@ -282,7 +282,7 @@ describe("multi-bot creation goes through the onboarding panel", () => {
    */
   it("keeps a single onboarding mount point that never remounts mid-flight", () => {
     const page = readPageSource();
-    const keyedContainer = 'key={`${activeBot.id}-${activeSection}`}';
+    const keyedContainer = 'key={fleetOverviewEnabled && activeSection === "overview" ? "fleet-overview" : `${activeBot.id}-${activeSection}`}';
     const mountCondition = "{showMultiBotOnboarding && !isModifying && (";
     expect(page).toContain(keyedContainer);
     expect(page).toContain(mountCondition);

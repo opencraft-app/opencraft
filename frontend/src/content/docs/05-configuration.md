@@ -8,7 +8,7 @@
 
 1. 进入「我的 Hermes」，选择要配置的 Bot。
 2. 检查套餐内模型积分，或在[配置模型](./configuration/model.md)中添加自有模型；需要比较多个模型时参见[模型切换](./configuration/multiple-models.md)。
-3. 在[配置通道](#连接聊天通道)中接入一个聊天软件，发送测试消息。
+3. 在[配置通道](#连接聊天通道)中接入一个聊天软件，使用已连接通道的 **测试** 按钮，并在聊天软件确认收到消息；再向 Agent 发消息，确认能得到回复。
 4. 需要进一步扩展能力时，再安装技能、设置人设或定时任务。
 
 ## 连接聊天通道
@@ -23,7 +23,7 @@
 | 飞书 | 扫码授权 | [配置飞书](./configuration/channel-feishu.md) |
 | 钉钉 | 扫码或 Client ID / Secret | [配置钉钉](./configuration/channel-dingtalk.md) |
 
-多个通道可以连接到同一个 Agent。连接成功后，先在目标聊天软件中发送简短消息验证。
+多个通道可以连接到同一个 Agent。连接成功后，可以在已连接通道卡片点击 **测试**；“测试消息已发送”只表示发送命令被接受，需要到目标聊天软件确认实际收到。随后从聊天软件发送简短消息，确认 Agent 能回复。
 
 ## 管理台功能地图
 
@@ -34,7 +34,7 @@
 | 在网页中与主 Bot 对话 | [网页对话](./configuration/agent-chat.md) |
 | 定时执行与通知 | [定时任务](./configuration/automation.md) |
 | 调整角色和长期上下文 | [人设](./configuration/personality.md)、[记忆管理](./configuration/memory.md) |
-| 管理文件 | [云存储](./configuration/files.md)；当前侧栏没有独立菜单项，可从指南打开页面 |
+| 管理文件 | 在左下角账号菜单选择 **云存储**；操作见[云存储](./configuration/files.md) |
 | 排查异常 | [诊断中心](./configuration/diagnostics.md) |
 | 调整高级选项 | [高级设置](./configuration/advanced-settings.md) |
 | 管理和切换 Bot | [管理与切换 Bot](./configuration/bots-switching.md) |
@@ -44,4 +44,4 @@
 
 ## 没有收到回复
 
-先确认通道已连接、模型积分或自有模型额度可用，再用简单文本消息重试。仍无法回复时，到[诊断中心](./configuration/diagnostics.md)查看近期日志；常见问题也可在 [FAQ](./07-faq.md) 中查找。
+先确认通道已连接，并用 **测试** 按钮检查测试消息是否到达对应聊天软件；再核对模型积分或自有模型额度，从聊天软件发送简单文本消息重试。仍无法回复时，到[诊断中心](./configuration/diagnostics.md)查看近期日志；常见问题也可在 [FAQ](./07-faq.md) 中查找。

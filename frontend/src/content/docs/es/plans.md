@@ -72,12 +72,12 @@ Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de
 
 <div className="lv-plan-benefits-table">
 
-| Plan | Ideal para | Cuota de Agent | Entorno de nube dedicado | Almacenamiento en la nube dedicado | Créditos de IA |
-|---|---|---|---|---|---|
-| Launch | Usuarios que ya tienen su propia llave de API de modelo grande y desean tener un Agent funcionando a un costo menor | 1 | 2 vCPU · 8 GB de RAM | 50 GB | 100 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
-| Cruise | Usuarios que ya tienen su propia llave de API de modelo grande y desean más recursos para el uso diario regular | 1 | 4 vCPU · 16 GB de RAM | 80 GB | 200 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
-| Launch AI | Uso ligero con más créditos de IA | 1 | 2 vCPU · 8 GB de RAM | 50 GB | 4,500 créditos / mes |
-| Cruise AI | Conversaciones frecuentes, Skills y tareas programadas | 1 | 4 vCPU · 16 GB de RAM | 80 GB | 10,000 créditos / mes |
+| Plan | Ideal para | Cuota de Agent | Bots | Entorno de nube dedicado | Almacenamiento en la nube dedicado | Créditos de IA |
+|---|---|---|---|---|---|---|
+| Launch | Usuarios que ya tienen su propia llave de API de modelo grande y desean tener un Agent funcionando a un costo menor | 1 | 5 | 2 vCPU · 8 GB de RAM | 50 GB | 100 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
+| Cruise | Usuarios que ya tienen su propia llave de API de modelo grande y desean más recursos para el uso diario regular | 1 | 10 | 4 vCPU · 16 GB de RAM | 80 GB | 200 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
+| Launch AI | Uso ligero con más créditos de IA | 1 | 5 | 2 vCPU · 8 GB de RAM | 50 GB | 4,500 créditos / mes |
+| Cruise AI | Conversaciones frecuentes, Skills y tareas programadas | 1 | 10 | 4 vCPU · 16 GB de RAM | 80 GB | 10,000 créditos / mes |
 
 </div>
 
@@ -87,7 +87,7 @@ Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de
 |---|---|
 | Launch | $6.5 / mes |
 | Cruise | $14 / mes |
-| Launch AI | $12 / mes |
+| Launch AI | $10 / mes |
 | Cruise AI | $23 / mes |
 
 > ℹ️ **Oferta para nuevos usuarios**

@@ -8,9 +8,9 @@
 # Actions:
 #   1. Validate the token format (vik_<key_id>_<secret>)
 #   2. Atomically write /etc/vela/website-credential.env (root:agentuser 0440)
-#   3. Discover the single Hermes gateway systemd user unit
-#   4. Add a drop-in with EnvironmentFile= pointing to the credential file
-#   5. Reload and restart the user service
+#   3. Discover one gateway unit (or all units with an explicit opt-in)
+#   4. Add a drop-in with EnvironmentFile= to every selected unit
+#   5. Reload and restart selected user services, rolling back on failure
 #   6. Verify VELA_WEBSITE_KEY is present (without printing its value)
 
 set -euo pipefail
@@ -86,7 +86,7 @@ get_user_home() {
   getent passwd "$user" 2>/dev/null | cut -d: -f6 || true
 }
 
-discover_gateway_unit() {
+list_gateway_units() {
   local user_home
   user_home="$(get_user_home "$RUNTIME_USER")"
   [[ -n "$user_home" ]] || return 1
@@ -103,15 +103,14 @@ discover_gateway_unit() {
     done < <(find "$systemd_dir" -maxdepth 1 -type f -name "$pattern" 2>/dev/null || true)
   done
 
-  # Also check loaded units via systemctl
-  if [[ ${#found[@]} -eq 0 ]]; then
-    local listed
-    listed="$(run_systemctl_user list-units --type=service --no-legend 2>/dev/null \
-      | grep -oE '(hermes-gateway|openclaw-gateway)[^ ]*\.service' || true)"
-    while IFS= read -r line; do
-      [[ -n "$line" ]] && found+=("$line")
-    done <<<"$listed"
-  fi
+  # Include loaded units even if unit files exist. Otherwise an additional
+  # runtime unit can be silently skipped in explicit all-gateway mode.
+  local listed
+  listed="$(run_systemctl_user list-units --type=service --no-legend 2>/dev/null \
+    | grep -oE '(hermes-gateway|openclaw-gateway)[^ ]*\.service' || true)"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && found+=("$line")
+  done <<<"$listed"
 
   # Deduplicate
   local unique=()
@@ -126,9 +125,18 @@ discover_gateway_unit() {
     [[ $seen -eq 0 ]] && unique+=("$u")
   done
 
+  ((${#unique[@]} > 0)) || return 1
+  printf '%s\n' "${unique[@]}"
+}
+
+discover_gateway_unit() {
+  local -a unique=()
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && unique+=("$candidate")
+  done < <(list_gateway_units)
   if [[ ${#unique[@]} -eq 1 ]]; then
     printf '%s\n' "${unique[0]}"
-    return 0
   elif [[ ${#unique[@]} -gt 1 ]]; then
     log "Multiple gateway units found: ${unique[*]}"
     log "Set HERMES_GATEWAY_UNIT to select one explicitly"
@@ -151,20 +159,13 @@ add_dropin() {
   chown -R "$RUNTIME_USER":"$RUNTIME_USER" "$dropin_dir" 2>/dev/null || return 1
 }
 
-restart_service() {
-  local unit="$1"
-  run_systemctl_user daemon-reload || return 1
-  run_systemctl_user restart "$unit" || return 1
-  run_systemctl_user is-active --quiet "$unit" || return 1
-}
-
 verify_credential() {
   [[ -f "$CREDENTIAL_FILE" ]] || return 1
   grep -q '^VELA_WEBSITE_KEY=' "$CREDENTIAL_FILE" || return 1
   grep -q '^VELA_API_BASE=' "$CREDENTIAL_FILE" || return 1
 }
 
-main() {
+main() (
   local token="${WEBSITE_KEY:-}"
   local api_base="${API_BASE:-}"
 
@@ -173,81 +174,141 @@ main() {
 
   validate_token "$token" || fail "invalid token format (expected vik_<key_id>_<secret>)"
 
-  local unit="$HERMES_GATEWAY_UNIT"
-  if [[ -z "$unit" ]]; then
-    local discover_rc=0
-    local discover_out
-    discover_out="$(discover_gateway_unit 2>/dev/null)" || discover_rc=$?
-    case "$discover_rc" in
-      0)
-        unit="$discover_out"
-        ;;
-      2)
-        fail "multiple gateway units found; set HERMES_GATEWAY_UNIT to pick one"
-        ;;
-      *)
-        fail "no gateway unit found"
-        ;;
-    esac
-  fi
+  local -a units=()
+  case "${HERMES_GATEWAY_MODE:-}" in
+    all)
+      [[ -z "$HERMES_GATEWAY_UNIT" ]] || fail "gateway unit override conflicts with all mode"
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && units+=("$candidate")
+      done < <(list_gateway_units)
+      ((${#units[@]} > 0)) || fail "no gateway unit found"
+      ((${#units[@]} <= 16)) || fail "too many gateway units"
+      ;;
+    '')
+      local unit="$HERMES_GATEWAY_UNIT"
+      if [[ -z "$unit" ]]; then
+        local discover_rc=0
+        unit="$(discover_gateway_unit 2>/dev/null)" || discover_rc=$?
+        case "$discover_rc" in
+          0) ;;
+          2) fail "multiple gateway units found; set HERMES_GATEWAY_UNIT to pick one" ;;
+          *) fail "no gateway unit found" ;;
+        esac
+      fi
+      units=("$unit")
+      ;;
+    *) fail "unsupported gateway mode" ;;
+  esac
+  local unit
+  for unit in "${units[@]}"; do
+    [[ "$unit" =~ ^(hermes-gateway|openclaw-gateway)[A-Za-z0-9@_.-]*\.service$ ]] || fail "invalid gateway unit"
+  done
 
   local user_home
   user_home="$(get_user_home "$RUNTIME_USER")"
   [[ -n "$user_home" ]] || fail "cannot resolve home directory for $RUNTIME_USER"
+  [[ ! -L "$CREDENTIAL_FILE" ]] || fail "credential path must not be a symlink"
 
-  local dropin_dir="${user_home}/.config/systemd/user/${unit}.d"
-  local dropin_file="${dropin_dir}/vela-website-credential.conf"
   local backup_dir
   backup_dir="$(mktemp -d "${TMPDIR:-/tmp}/website-credential-backup.XXXXXX")"
-  local had_credential=false
-  local had_dropin=false
+  local had_credential=false transaction_started=false transaction_committed=false
+  local -a dropin_files=() had_dropin=()
+  CREDENTIAL_DIR="$(dirname "$CREDENTIAL_FILE")"
+
+  # Keep the backups until verification completes. This trap also handles a
+  # TAT timeout or an unexpected exit between writing and restarting units.
+  # main is a subshell so its local backup metadata remains available at EXIT.
+  cleanup_transaction() {
+    local exit_status="$1" restore_failed=false restore_tmp="" index unit
+    trap - EXIT INT TERM
+    set +e
+    if [[ "$transaction_started" == "true" && "$transaction_committed" != "true" ]]; then
+      if [[ "$had_credential" == "true" ]]; then
+        mkdir -p "$CREDENTIAL_DIR" || restore_failed=true
+        if [[ "$restore_failed" == "false" ]]; then
+          restore_tmp="$(mktemp "${CREDENTIAL_DIR}/.website-credential.rollback.XXXXXX")" || restore_failed=true
+        fi
+        if [[ "$restore_failed" == "false" ]]; then
+          cp -p "${backup_dir}/credential.env" "$restore_tmp" && mv -f "$restore_tmp" "$CREDENTIAL_FILE" || restore_failed=true
+        fi
+        [[ -z "$restore_tmp" ]] || rm -f "$restore_tmp"
+      else
+        rm -f "$CREDENTIAL_FILE" || restore_failed=true
+      fi
+      for ((index=0; index<${#units[@]}; index++)); do
+        if [[ "${had_dropin[$index]}" == "true" ]]; then
+          mkdir -p "$(dirname "${dropin_files[$index]}")" &&
+            cp -p "${backup_dir}/dropin-${index}.conf" "${dropin_files[$index]}" || restore_failed=true
+        else
+          rm -f "${dropin_files[$index]}" || restore_failed=true
+        fi
+      done
+      run_systemctl_user daemon-reload >/dev/null 2>&1 || restore_failed=true
+      for unit in "${units[@]}"; do
+        run_systemctl_user restart "$unit" >/dev/null 2>&1 || restore_failed=true
+      done
+      if [[ "$restore_failed" == "false" ]]; then
+        log "credential installation failed; previous configuration restored"
+      else
+        log "credential installation failed; rollback incomplete, protected backup retained for recovery"
+      fi
+    fi
+    if [[ "$restore_failed" == "false" ]]; then
+      rm -rf -- "$backup_dir" || restore_failed=true
+    fi
+    if [[ "$restore_failed" == "true" ]]; then
+      exit 1
+    fi
+    exit "$exit_status"
+  }
+  trap 'cleanup_transaction "$?"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
   if [[ -f "$CREDENTIAL_FILE" ]]; then
     cp -p "$CREDENTIAL_FILE" "${backup_dir}/credential.env"
     had_credential=true
   fi
-  if [[ -f "$dropin_file" ]]; then
-    cp -p "$dropin_file" "${backup_dir}/dropin.conf"
-    had_dropin=true
-  fi
+  local index=0
+  for unit in "${units[@]}"; do
+    local dropin_file="${user_home}/.config/systemd/user/${unit}.d/vela-website-credential.conf"
+    [[ ! -L "$dropin_file" ]] || fail "gateway drop-in path must not be a symlink"
+    dropin_files+=("$dropin_file")
+    if [[ -f "$dropin_file" ]]; then
+      cp -p "$dropin_file" "${backup_dir}/dropin-${index}.conf"
+      had_dropin+=(true)
+    else
+      had_dropin+=(false)
+    fi
+    index=$((index + 1))
+  done
 
+  transaction_started=true
   local apply_ok=true
   write_credential_file "$token" "$api_base" || apply_ok=false
   if [[ "$apply_ok" == "true" ]]; then
-    add_dropin "$unit" || apply_ok=false
+    for unit in "${units[@]}"; do
+      add_dropin "$unit" || { apply_ok=false; break; }
+    done
   fi
   if [[ "$apply_ok" == "true" ]]; then
-    restart_service "$unit" || apply_ok=false
+    run_systemctl_user daemon-reload || apply_ok=false
+  fi
+  if [[ "$apply_ok" == "true" ]]; then
+    for unit in "${units[@]}"; do
+      run_systemctl_user restart "$unit" && run_systemctl_user is-active --quiet "$unit" || { apply_ok=false; break; }
+    done
   fi
 
-  if [[ "$apply_ok" != "true" ]]; then
-    if [[ "$had_credential" == "true" ]]; then
-      local restore_tmp
-      restore_tmp="$(mktemp "${CREDENTIAL_DIR}/.website-credential.rollback.XXXXXX")"
-      cp -p "${backup_dir}/credential.env" "$restore_tmp"
-      mv -f "$restore_tmp" "$CREDENTIAL_FILE"
-    else
-      rm -f "$CREDENTIAL_FILE"
-    fi
-    if [[ "$had_dropin" == "true" ]]; then
-      mkdir -p "$dropin_dir"
-      cp -p "${backup_dir}/dropin.conf" "$dropin_file"
-    else
-      rm -f "$dropin_file"
-    fi
-    run_systemctl_user daemon-reload >/dev/null 2>&1 || true
-    run_systemctl_user restart "$unit" >/dev/null 2>&1 || true
-    rm -rf "$backup_dir"
-    fail "credential installation failed; previous configuration restored"
-  fi
-
-  rm -rf "$backup_dir"
-  log "service restarted and active: $unit"
-
+  [[ "$apply_ok" == "true" ]] || fail "credential installation failed"
   verify_credential || fail "credential verification failed"
+  transaction_committed=true
+  log "gateway services restarted and active: ${#units[@]}"
 
   echo "OK: website credential installed"
   # Never print the token value
-}
+)
 
 # Run main only when executed directly (not sourced for testing)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

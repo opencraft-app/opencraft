@@ -21,6 +21,8 @@ OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 
 
 OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。清单漂移报错列出发生差异的字段、已记录与当前推导的 sourceRevision，区分源码内容漂移和 Git 历史差异；仍保持完整清单严格比较。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
 
+OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区域打开官网 `/account/billing`（国内 `lightvela.com`、国际 `lightvela.ai`），不再使用旧的 `/account?tab=billing`；外部套餐页返回后仍刷新账户资料。此兼容不新增桌面总览、不改变实例创建权限或执行归属。
+
 ## 稳定不变量
 
 - OpenCraft macOS 分发由下游 GitHub 镜像的 `macos-release` Environment 承载，但不取得源码权威。arm64 与 x64 必须在对应原生 Runner 组装，最终 job 才可读取 Developer ID 与 Apple 公证凭据；Universal 合并后依次完成签名、公证、staple、DMG/ZIP 封包和完整性验证。手工主分支运行只生成 Actions artifact，只有 `v*` tag 创建 GitHub Release；源码进入 mono2、镜像导出和公开制品发布仍是三个独立状态。镜像依赖的 mono2-parent shared package 使用带哈希清单的机械 workspace 快照，`shared/` 保持唯一真源，禁止用 Vite external 掩盖缺包。详细运行契约见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md)。
@@ -437,3 +439,7 @@ OpenCraft 的窗口空间由 `shell-space` 统一分配：Applications、上下�
 共享 UI 仅在本机 Electron 使用系统选择器；远端/Web 保留 Host 隔离的文件系统浏览。
 草稿、Host 或导航变化会使迟到选择失效，连接未就绪时添加入口不可用并说明原因。
 见 [平台所有权](../../../opencraft/docs/platform-architecture.md)。
+
+## Hermes 建站凭据的跨地域 TAT 下发
+
+CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `region`，按 `WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION` 精确选择对应地域创建的凭据安装 CommandId；地域缺失、未配置或映射无效时 fail-closed，不签发新 Key。Sandbox 内部 TAT 端点以自身持久化的 Sandbox region 再次验证该地域 CommandId，拒绝跨地域 ID。sgprod 同时容纳 `ap-singapore` 和 `ap-johorbahru` 时，两端必须配置一致的映射；旧单值仅供未配置地域映射的环境兼容。TAT 终态成功且退出码为 0 后 CTL 才激活临时 Key；失败时撤销。存量补发须先按 CTL↔Sandbox↔CVM 对账，分别验证 Skill 安装、每实例独立 Key、TAT 终态和建站能力请求，不以实例 `Running` 代替验收。

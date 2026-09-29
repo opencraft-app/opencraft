@@ -2,15 +2,15 @@
 
 ## Ringkasan
 
-**LightVela memiliki empat konsep inti. Hermes Agent adalah entitas percakapan yang berjalan di cloud, dengan lingkungan cloud khusus, memori yang bertahan lintas percakapan, dan ketersediaan 24/7. Model adalah model bahasa besar yang dipanggilnya — bisa Model Coding Plan (bulanan), Model API (bayar sesuai pemakaian), atau endpoint kustom yang kompatibel dengan OpenAI. Kanal adalah pintu masuk platform pesan tempat Anda berbicara dengannya; beberapa kanal dapat terhubung ke Agent yang sama dan berbagi satu persona serta memori. Skill adalah paket kemampuan yang dapat dipasang untuk memperluas penanganan tugas tertentu. Alur satu percakapan lengkap: kanal menerima pesan → Agent menentukan perlu memanggil skill atau tidak → memanggil model untuk menghasilkan respons → balasan dikirim kembali melalui kanal yang sama.**
+**LightVela memiliki lima konsep inti: Hermes Agent adalah instans cloud; Bot adalah profil terpisah di dalamnya; setiap Bot memiliki pengaturan model, kanal pesan, dan Skill, serta dapat menyimpan persona, memori, dan tugas terjadwal sendiri. Kanal milik Bot yang sama berbagi perilakunya, sedangkan pengaturan antar-Bot tidak otomatis sama. Pesan masuk melalui kanal, Bot tujuan dapat memakai Skill dan model, lalu membalas lewat kanal asal.**
 
 ---
 
-LightVela memiliki empat konsep utama: Hermes Agent, model, kanal, dan Skill. Halaman ini menjelaskan peran masing-masing. Untuk langkah konfigurasi detail, lihat halaman konfigurasi terkait.
+Lima konsep LightVela adalah Hermes Agent, Bot, model, kanal, dan Skill. Halaman ini menjelaskan hubungan di antaranya.
 
 ## Yang dibahas di halaman ini
 
-- Hubungan antara empat konsep utama
+- Hubungan antara lima konsep
 
 - Karakteristik satu instans Hermes Agent
 
@@ -22,28 +22,22 @@ LightVela memiliki empat konsep utama: Hermes Agent, model, kanal, dan Skill. Ha
 
 ## Hubungan konsep
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                         Hermes Agent                         │
-│              (Agent yang berjalan di cloud LightVela)         │
-└──────────────────────────────────────────────────────────────┘
-      │                          │                        │
-┌─────┘                          │                        └──────┐
-▼                                ▼                               ▼
-┌───────┐                   ┌────────┐                   ┌────────┐
-│ Model │                   │ Kanal  │                   │ Skill  │
-└───────┘                   └────────┘                   └────────┘
- Penyedia model      Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
+```text
+Hermes Agent (cloud instance)
+  └─ Bot profiles (main Bot and optional additional Bots)
+       ├─ Primary model and optional fallbacks
+       ├─ Connected channels
+       └─ Skills, Soul, memory, scheduled tasks
 ```
 
 | Konsep | Peran | Deskripsi |
 |---|---|---|
 | Hermes Agent | Subjek percakapan | Instans AI Agent itu sendiri |
+| Bot | Profil terpisah | Memiliki model, kanal, Skill, persona, memori, dan tugas terjadwal sendiri |
 | Model | Kemampuan bahasa | Large language model yang dipanggil Hermes Agent |
 | Kanal | Pintu masuk interaksi | Platform tempat pengguna chat dengan Hermes Agent |
 | Skill | Ekstensi kemampuan | Paket kemampuan tambahan yang dapat dipanggil Hermes Agent |
 
-![](./images/3-1.webp)
 
 ---
 
@@ -63,6 +57,12 @@ Paket Launch saat ini mendukung pembuatan maksimal 1 instans Hermes Agent.
 
 ---
 
+## Bot
+
+Setiap Hermes Agent memiliki Bot utama dan, bergantung pada kuota paket serta ketersediaan, dapat memiliki Bot tambahan. Semua Bot berada dalam instans cloud yang sama, tetapi pengaturan dan datanya terpisah. Pilih Bot tujuan sebelum mengubah model, kanal, Skill, atau memori. Lihat [cara beralih antar-Bot](./configuration/bots-switching.md).
+
+---
+
 ## Model
 
 Model adalah large language model (LLM) yang menggerakkan cara Hermes Agent berpikir dan merespons. LightVela tidak melatih model sendiri. Pengguna memilih cara pemanggilan model di kartu "Model" pada konsol:
@@ -77,9 +77,7 @@ Selain itu, paket Launch menyertakan 100 kredit uji coba. Anda bisa langsung cha
 
 Untuk model yang didukung, cara mendapatkan API Key, dan panduan memilih model, lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model).
 
-> ⚠️ **Hanya satu model yang aktif**
->
-> Saat ini, setiap Hermes Agent hanya dapat memiliki satu konfigurasi model aktif. Untuk mengganti model, gunakan "Jadikan default" agar konfigurasi sebelumnya ditimpa.
+> Setiap Bot memakai satu model utama pada satu waktu. Model lain atau fallback dapat dikonfigurasi; berpindah model aktif tidak perlu menghapus pengaturan sebelumnya. Lihat [Penggantian Model](./configuration/multiple-models.md).
 
 ---
 
@@ -89,9 +87,9 @@ Kanal adalah pintu masuk dari platform chat tempat pengguna berbicara dengan Her
 
 | Kanal | Cara akses | Cocok untuk |
 |---|---|---|
-| WeChat | Otorisasi kode QR | Penggunaan pribadi sehari-hari, terutama untuk pengguna di Tiongkok |
+Pada kartu **WeChat** di **Channels**, pilih **+ Connect** lalu pindai kode QR dengan ponsel.
 | Telegram | Akses Bot Token | Pesan pribadi atau tim, setup sederhana, cocok untuk tugas terjadwal ringan |
-| WhatsApp | Akses WhatsApp Business API | Komunikasi pengguna internasional, layanan pelanggan, notifikasi, dan pengingat |
+| WhatsApp | Pindai kode QR dengan WhatsApp | Komunikasi pengguna internasional, layanan pelanggan, notifikasi, dan pengingat |
 | Discord | Akses Bot Token | Operasi komunitas, komunitas developer, gim, atau grup minat |
 | Slack | Akses Bot Token / App Token | Kolaborasi tim, notifikasi workspace, dan workflow berbasis channel |
 
@@ -101,7 +99,7 @@ Ringkasan cara akses tiap kanal tersedia di [Ringkasan Konfigurasi](./05-configu
 
 > 💡 **Beberapa kanal bisa dipakai bersamaan**
 >
-> Beberapa kanal dapat terhubung ke instans Hermes Agent yang sama dan berbagi memori serta perilaku Agent. Dari kanal mana pun pesan dikirim, target percakapannya tetap Hermes Agent yang sama.
+> Kanal yang terhubung ke Bot yang sama berbagi persona dan memorinya. Pengaturan Bot lain tidak otomatis ikut berubah.
 
 ---
 
@@ -109,9 +107,9 @@ Ringkasan cara akses tiap kanal tersedia di [Ringkasan Konfigurasi](./05-configu
 
 Skill adalah paket kemampuan tambahan yang dapat dipanggil oleh Hermes Agent. Skill memperluas Hermes Agent di luar percakapan dasar, misalnya untuk menyusun to-do, membuat laporan harian, menjelajah web, membuat gambar, dan lainnya.
 
-Semua Skill berasal dari [SkillHub](https://skillhub.tencent.com), marketplace Skill independen dari Tencent. Di SkillHub, Anda dapat melihat Skill yang tersedia, deskripsi fitur, dan contoh penggunaannya.
+Skill di situs internasional tersedia dari [Skills.sh](https://skills.sh/) dan [ClawHub](https://clawhub.ai/). Jelajahi sumber tersebut di halaman **Skills** pada konsol dan periksa deskripsinya sebelum memasang.
 
-Masukkan nama Skill yang tertera di SkillHub ke kartu "3. Skill" pada konsol, lalu klik "Instal Skill" untuk menginstalnya. Anda juga bisa meminta Hermes Agent langsung lewat percakapan untuk menginstal atau menghapus Skill. Lihat [Ringkasan Konfigurasi](./05-configuration.md#3-skill).
+Buka **Skills** di konsol, cari Skill atau jelajahi **Skill Packages**, lalu pilih **Install**. Periksa hasilnya di tab **Installed**. Lihat [Konfigurasi Skill](./configuration/skill.md).
 
 > ⚠️ **Periksa keamanan sebelum instalasi**
 >

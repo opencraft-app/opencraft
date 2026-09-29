@@ -50,7 +50,7 @@ LightVela 目前提供的产品是 **Hermes Agent**，一个基于大语言模�
 
 * **多通道接入**：支持通过 Telegram、WhatsApp、Discord、Slack、WeChat、QQ、企业微信、飞书与 Hermes Agent 进行对话
 
-* **技能扩展**：通过 [SkillHub](https://skillhub.tencent.com) 安装技能包，扩展 Hermes Agent 的能力边界
+* **技能扩展**：在管理台搜索并安装来自 [Skills.sh](https://skills.sh/) 与 [ClawHub](https://clawhub.ai/) 的技能或技能包
 
 * **开箱即用**：启航套餐预置体验积分，开通后无需额外配置模型即可对话
 
@@ -86,17 +86,16 @@ LightVela 云端的 Hermes Agent 实例（用户专属）
 
 ## 关于套餐
 
-LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Hermes Agent 实例，并附带该套餐规定的资源与积分。
+一个套餐提供一个 Hermes Agent 云端实例。启航系列在该实例内支持最多 5 个 Bot，巡游系列支持最多 10 个；Bot 是独立配置档案，不是额外的 Hermes 实例。
 
-当前上线套餐：
+| 套餐选项 | 每月模型积分 | Bot 数量 |
+|---|---:|---:|
+| 启航 Launch | 100 | 5 |
+| 启航 Launch AI | 4,500 | 5 |
+| 巡游 Cruise | 200 | 10 |
+| 巡游 Cruise AI | 10,000 | 10 |
 
-| 套餐        | 原价      | 当前状态 |
-| --------- | ------- | ---- |
-| 启航 Launch | $7.5 / 月 | 首购优惠以订阅页为准 |
-| 巡游 Cruise | $15 / 月 | 付费套餐 |
-
-启航套餐包含：1 个 Hermes Agent 实例、2 vCPU · 8 GB 内存的专属云端环境、50 GB 专属云端存储、100 体验积分、7×24 小时在线、管理面板访问权限。
-
+价格、首购优惠和可售状态可能变化，下单前以[订阅页](/subscribe)为准。有效套餐用户也可购买一次性的[模型积分包](./credits.md)。
 ***
 
 ## 与 Lighthouse 的关系（可选了解）
@@ -111,6 +110,6 @@ LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Her
 
 * **[快速开始](./02-quickstart.md)** — 5 分钟跑通第一个对话
 
-* **[核心概念](./04-core-concepts.md)** — Hermes Agent、模型、通道、技能四项核心概念说明
+* **[核心概念](./04-core-concepts.md)** — Hermes Agent、Bot、模型、通道、技能五项核心概念说明
 
 * **[配置总览](./05-configuration.md)** — 管理台功能与配置流程

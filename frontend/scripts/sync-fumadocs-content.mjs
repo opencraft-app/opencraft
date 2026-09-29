@@ -90,8 +90,8 @@ const cnDocs = [
   { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '开始使用', description: '理解 Hermes、模型、通道和技能。', hideDescription: true },
   { slug: 'who-is-lightvela-for', title: 'LightVela 适合哪些人使用？', file: 'who-is-lightvela-for.md', group: '开始使用', description: 'LightVela 适合想拥有长期在线、越聊越懂你的专属 AI 伙伴，却不想碰服务器、容器和 API 鉴权的用户。本页梳理目标用户画像、典型使用场景与前置条件，帮你判断是否适合。', hideDescription: true },
   { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '开始使用', description: '账号管理与实名认证流程。', hideDescription: true },
-  { slug: 'plans', title: '套餐管理', file: 'plans.md', group: '开始使用', description: 'LightVela 套餐管理文档：查看启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Cruise AI 的权益与标准原价，了解续费流程、套餐生命周期和腾讯云智能客服退款规则。', hideDescription: true },
-  { slug: 'credits', title: 'AI 积分说明', file: 'credits.md', group: '开始使用', description: 'AI 积分是 LightVela 计量 Hermes Agent 模型调用消耗的额度单位，随套餐按月发放、按 Token 消耗。本页说明积分定义、发放、消耗方式及与套餐的关系。', hideDescription: true },
+  { slug: 'plans', title: '套餐管理', file: 'plans.md', group: '开始使用', description: '对照启航 Launch 与巡游 Cruise 的云端资源、Bot 数和模型积分档位，了解积分包、续费、套餐生命周期与退款规则；实时价格以订阅页为准。', hideDescription: true },
+  { slug: 'credits', title: 'AI 积分说明', file: 'credits.md', group: '开始使用', description: '区分随套餐提供的模型积分与有效期为一个月的额外积分包，了解购买条件、消耗场景、抵扣顺序和额度用尽后的处理。', hideDescription: true },
   // Bot 与模型
   { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: 'Bot 与模型', description: 'LightVela 管理台配置流程。', hideDescription: true },
   { slug: 'configuration/bots-switching', title: '管理与切换 Bot', file: 'configuration/bots-switching.md', group: 'Bot 与模型', description: '在一个 LightVela 云端 Agent 中管理、切换和按权限创建多个专用 Bot。', hideDescription: true },
@@ -133,9 +133,9 @@ const cnDocs = [
   { slug: 'hermes-agent/workspace-context-storage', title: 'Hermes Agent 把文件放在哪里？工作目录、上下文文件与存储机制', file: 'hermes-agent/11-workspace-context-storage.md', group: 'Hermes Agent 解读', description: '区分工作目录、上下文文件与云存储三类位置的职责与边界，并说明敏感信息不应写入长期上下文的原因。', hideDescription: true },
   { slug: 'hermes-agent/skills-self-improvement', title: 'Agent 为什么会越用越顺手？技能沉淀、自我改进与复用机制', file: 'hermes-agent/12-skills-self-improvement.md', group: 'Hermes Agent 解读', description: '解释 Memory 与 Skill 两类积累的差异，以及一份合格 Skill 必须写清的四件事：何时使用、执行步骤、成功标准、不可越过的边界。', hideDescription: true },
   // 对比与选型
-  { slug: 'compare/lightvela-vs-manus', title: 'LightVela vs Manus：哪个更适合托管你的 AI Agent？', file: 'compare/lightvela-vs-manus.md', group: '对比与选型', description: '' },
-  { slug: 'compare/lightvela-vs-localhost-ai-agent', title: 'LightVela vs 本地部署 Agent：哪个更好？', file: 'compare/lightvela-vs-localhost-ai-agent.md', group: '对比与选型', description: '' },
-  { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '' },
+  { slug: 'compare/lightvela-vs-manus', title: 'LightVela vs Manus：哪个更适合托管你的 AI Agent？', file: 'compare/lightvela-vs-manus.md', group: '对比与选型', description: '比较长期在线的 Hermes Agent 与任务型 Agent：从消息通道、云端浏览器、任务交付和实际试运行选择 LightVela 或 Manus。', hideDescription: true },
+  { slug: 'compare/lightvela-vs-localhost-ai-agent', title: 'LightVela vs 本地部署 Agent：哪个更好？', file: 'compare/lightvela-vs-localhost-ai-agent.md', group: '对比与选型', description: '比较 LightVela 云端托管与本地运行 Hermes 的配置责任、在线状态、数据边界和长期维护成本。', hideDescription: true },
+  { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '比较托管 Hermes Agent 与通用 AI Chatbot 的日常入口、记忆、定时任务、模型积分和重复任务体验。', hideDescription: true },
   // 管理与排障：问题和支持
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '管理与排障', description: '', hideDescription: true },
   { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '管理与排障', description: '加入 LightVela 用户交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。', hideDescription: true },

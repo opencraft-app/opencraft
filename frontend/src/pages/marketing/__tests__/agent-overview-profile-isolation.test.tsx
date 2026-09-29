@@ -15,6 +15,46 @@ const base = {
 };
 
 describe("overview profile editing", () => {
+  it.each([
+    ["network failure", new Error("timeout")],
+    ["failed command", { status: "FAILED", exitCode: 0, output: "Exists: no" }],
+    ["nonzero exit", { status: "success", exitCode: 1, output: "Exists: no" }],
+    ["empty response", { ...ok, output: "" }],
+    ["invalid content", { ...ok, output: "Exists: yes\nByteLength: 5\nContentBase64: !bad" }],
+    ["empty file", { ...ok, output: "Exists: yes\nByteLength: 0\nContentBase64: " }],
+    ["oversized file", { ...ok, output: "Exists: yes\nTooLarge: yes\nByteLength: 99999" }],
+  ] as const)("does not write after %s and preserves the draft for retry", async (_, readResult) => {
+    const exec = vi.fn<SetupExec>().mockResolvedValue(ok);
+    if (readResult instanceof Error) exec.mockRejectedValueOnce(readResult);
+    else exec.mockResolvedValueOnce(readResult);
+    const changed = vi.fn();
+    render(<AgentOverviewPanel {...base} profileId="worker" execDebugCommand={exec} onProfileChanged={changed} />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.change(screen.getByLabelText("名字"), { target: { value: "Draft name" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(exec).toHaveBeenCalledOnce();
+    expect(changed).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("名字")).toHaveValue("Draft name");
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+    expect(exec.mock.calls[1]?.[1]).toBe(buildHermesSoulContentReadCommand("worker"));
+  });
+
+  it("preserves an existing Soul body after a successful read", async () => {
+    const soul = "# Soul\nName: Worker\nSummary: Old\n\n## Identity\nKeep this custom body exactly.\n";
+    const exec = vi.fn<SetupExec>().mockResolvedValue(ok).mockResolvedValueOnce({
+      ...ok, output: `Exists: yes\nByteLength: ${Buffer.byteLength(soul)}\nContentBase64: ${Buffer.from(soul).toString("base64")}`,
+    });
+    const changed = vi.fn();
+    render(<AgentOverviewPanel {...base} profileId="worker" execDebugCommand={exec} onProfileChanged={changed} />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.change(screen.getByLabelText("名字"), { target: { value: "Renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+    expect(exec.mock.calls.some(([, command]) => command.includes(Buffer.from(soul.replace("Name: Worker", "Name: Renamed")).toString("base64")))).toBe(true);
+  });
+
   it.each([undefined, "", "  "])("disables editing until profile is known (%s)", (profileId) => {
     const exec = vi.fn<SetupExec>();
     const { rerender } = render(<AgentOverviewPanel {...base} profileId={profileId} execDebugCommand={exec} onProfileChanged={vi.fn()} />);

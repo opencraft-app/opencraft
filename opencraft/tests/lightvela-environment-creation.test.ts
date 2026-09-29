@@ -58,6 +58,9 @@ test("explicit confirmation rechecks quota; blocked state never posts", async ()
   try { await service.check(f.host); assert.equal(service.getSnapshot().phase, "ready");
     f.setPasses([]); await service.create("Cloud", f.host);
     assert.equal(service.getSnapshot().phase, "blocked"); assert.equal(f.requests.some(r => r.method === "POST"), false);
+    assert.equal(service.getSnapshot().websiteUrl, "https://lightvela.ai/account/billing");
+    f.changeRegion(); await service.check(f.host);
+    assert.equal(service.getSnapshot().websiteUrl, "https://lightvela.com/account/billing");
   } finally { service.dispose(); }
 });
 test("single-flight creation publishes progress and installs a distinct non-active Host", async () => {
