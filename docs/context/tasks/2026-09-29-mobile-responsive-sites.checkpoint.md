@@ -16,7 +16,7 @@ derived: true
 ---
 
 ## stage
-MR !4829 的 CR 问题已在本地修复，准备推送复核。
+MR !4829 已推送；继续处理 CR 中窄屏隐藏提示后的空 Tab 焦点。
 
 ## verified
 - 独立工作树 `codex/mobile-responsive-sites` 基于 `4a3b49a`；主工作区未触碰。
@@ -30,6 +30,7 @@ MR !4829 的 CR 问题已在本地修复，准备推送复核。
 - 合入当前 master 后，相关聚焦测试 47/47 通过，`pnpm check` 为 0 个新增 TypeScript 诊断。
 - Opencraft 同步后只改动生成清单和文件页副本，`check:mono2-agent-console` 输出 `Verified 130`。
 - 最新代码的国内与国际站构建通过，分别生成 105、616 个静态路由。
+- 文件页外层提示焦点按 640px 断点启用，聚焦测试覆盖从窄屏到宽屏再返回窄屏，33/33 通过。
 
 ## unverified
 - 国际站登录后的控制台布局：本地认证 API 暂不可用。
@@ -43,4 +44,4 @@ MR !4829 的 CR 问题已在本地修复，准备推送复核。
 - 改动路径见 Task Pack `affected_paths`。
 
 ## next_action
-- 单独提交生成物与验证记录，推送 MR !4829，并核对远端 SHA、合并状态和 CI 快照。
+- 提交焦点修复，按脚本同步 Opencraft，重跑服务门禁，推送 MR !4829，并核对远端 SHA、合并状态和 CI 快照。

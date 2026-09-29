@@ -44,6 +44,7 @@ derived: false
 - `frontend/src/pages/marketing/changelog-page.tsx`
 - `frontend/src/pages/marketing/open-source-licenses-page.tsx`
 - `frontend/src/components/domain/tat-file-manager-panel.tsx`
+- `frontend/src/components/domain/__tests__/tat-file-manager-panel.test.tsx`
 - `frontend/scripts/import-international-homepage.mjs`
 - `frontend/src/pages/marketing/__tests__/lightvela-intl-home-style.test.ts`
 - `opencraft/plugins/lightvela-hermes/src/upstream/mono2/`
@@ -94,6 +95,7 @@ derived: false
 - 先实测再改动；以页面级溢出和操作可达性作为优先级。
 - 首页保留操作入口，仅在 359px 以下压缩品牌图与菜单间距；中文长轮播词完整换行。
 - 文件页移动端不显示悬浮提示；按钮已有 `aria-label`，避免不可见提示撑宽页面。
+- 文件页提示仅在 640px 及以上保留外层键盘焦点，避免窄屏隐藏提示后产生空 Tab 停靠点；切换视口时同步更新焦点属性。
 - 360px 已无溢出，保留 359px 断点；日文、韩文已有换行效果，不扩大语言选择器。
 
 ## scan_scope
@@ -103,4 +105,4 @@ derived: false
 - 相关源码和邻接测试已做有界检索；后续记录浏览器矩阵。
 
 ## handoff
-- MR !4829 已打开；CR 指出的 Opencraft 同步与生成态 CSS 持久性问题已在本地修复并通过门禁，待推送后核对远端状态。发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。
+- MR !4829 已打开；CR 指出的 Opencraft 同步与生成态 CSS 持久性问题已推送。补充修复窄屏提示空 Tab 焦点后，需重新验证、同步 Opencraft 并核对远端状态。发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。
