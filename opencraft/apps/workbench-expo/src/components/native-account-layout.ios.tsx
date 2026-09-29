@@ -4,7 +4,6 @@ import { HeroUINativeProvider } from "heroui-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import "../../global.css";
 import { LightVelaAccountGate } from "./lightvela-account-gate";
 import { mobileAccount } from "../runtime/mobile-account-instance";
 

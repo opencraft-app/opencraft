@@ -76,6 +76,7 @@
 .ci/runtime/bundles/session.bundle
 .ci/runtime/bundles/staticpages.bundle
 .ci/runtime/bundles/subscription.bundle
+.ci/runtime/bundles/ticket.bundle
 .ci/runtime/bundles/trade.bundle
 .ci/runtime/bundles/user-auth.bundle
 .ci/runtime/bundles/velagw.bundle

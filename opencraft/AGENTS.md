@@ -31,10 +31,16 @@
 | 工作区、工具面板、浮动聊天、Side Chat | [design](design/README.md)；实现变更同步维护 `design/invariants.md` |
 | OpenCraft 架构、交互、布局、平台适配或预览 | [opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)，按任务读取其验证清单 |
 | 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
+| iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先核对外网 manifest 和完整 bundle，再给 `exps://` 链接，提醒用 Safari 打开。手机操作见 [Expo README](apps/workbench-expo/README.md#iphone-真机快速体验) |
 | mono2 Agent Console 共享实现 | [MONO2_MIGRATION](MONO2_MIGRATION.md)、`frontend/AGENTS.md`；同步边界还读 `../docs/context/project/upstream-subtrees.md` |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/build-matrix.md) |
 
 - 根 `ref/` 是固定版本参考，只读。借鉴前核对版本和真实运行入口，说明借鉴的是交互、状态模型、组件 contract 还是视觉 token；参考代码和截图都不是产品事实。
+
+## 手机端入口
+
+- iOS 当前是 HeroUI Native 登录与底栏，加 LightVela 网站 WebView；真机可用 Expo Go 打开开发预览。Android 当前是独立 React Native 工作台，内测 APK 的安装步骤见 [Expo README](apps/workbench-expo/README.md#android-internal-apk)。
+- iPhone 外网预览以已核验的 `exps://` 链接为入口，在 Safari 打开并跳转 Expo Go；不要让使用者依赖 Expo Go 的开发服务器列表。预览依赖持续运行的 Metro 与 Cloudflare Tunnel，链接过期或进程退出后须重新生成并核验。
 
 ## 代码与 Contract
 

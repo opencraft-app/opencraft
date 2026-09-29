@@ -1,5 +1,8 @@
 const PROXY_PREFIX = "/__tat_hermes_proxy/";
 const FILE_DOWNLOAD_PREFIX = "/__tat_file_download/";
+const OPENCRAFT_STATIC_CACHE = "opencraft-versioned-static-v1";
+const OPENCRAFT_STATIC_CACHE_LIMIT = 96;
+const OPENCRAFT_STATIC_PATH = /^\/__releases\/[^/]+\/_next\/static\//;
 const SERVICE_WORKER_VERSION = "tat-file-download-v6";
 const REQUEST_TIMEOUT_MS = 45_000;
 const PROXY_ACCEPT_TIMEOUT_MS = 1500;
@@ -17,6 +20,11 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
+  if (event.data?.type === "OPENCRAFT_PREFETCH_STATIC") {
+    event.ports?.[0]?.postMessage({ type: "OPENCRAFT_STATIC_PREFETCH_ACCEPTED" });
+    event.waitUntil(prefetchOpenCraftStatic(event.data.urls));
+    return;
+  }
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
     return;
@@ -39,6 +47,10 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
+  if (event.request.method === "GET" && isOpenCraftStaticUrl(url)) {
+    event.respondWith(cachedOpenCraftStatic(event.request));
+    return;
+  }
   if (url.pathname.startsWith(FILE_DOWNLOAD_PREFIX)) {
     event.respondWith(handleFileDownloadFetch(event.request, event.clientId));
     return;
@@ -48,6 +60,40 @@ self.addEventListener("fetch", (event) => {
   }
   event.respondWith(handleProxyFetch(event.request, event.clientId));
 });
+
+const isOpenCraftStaticUrl = (url) =>
+  url.origin === self.location.origin && OPENCRAFT_STATIC_PATH.test(url.pathname);
+
+const trimOpenCraftStaticCache = async (cache) => {
+  const keys = await cache.keys();
+  for (const key of keys.slice(0, Math.max(0, keys.length - OPENCRAFT_STATIC_CACHE_LIMIT))) {
+    await cache.delete(key);
+  }
+};
+
+const cachedOpenCraftStatic = async (request) => {
+  const cache = await caches.open(OPENCRAFT_STATIC_CACHE).catch(() => null);
+  if (!cache) return fetch(request);
+  const cached = await cache.match(request).catch(() => null);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response.ok && response.type !== "opaque") {
+    await cache.put(request, response.clone()).catch(() => undefined);
+    await trimOpenCraftStaticCache(cache).catch(() => undefined);
+  }
+  return response;
+};
+
+const prefetchOpenCraftStatic = async (rawUrls) => {
+  if (!Array.isArray(rawUrls)) return;
+  for (const rawUrl of rawUrls.slice(0, 16)) {
+    if (typeof rawUrl !== "string") continue;
+    let url;
+    try { url = new URL(rawUrl, self.location.origin); } catch { continue; }
+    if (!isOpenCraftStaticUrl(url)) continue;
+    await cachedOpenCraftStatic(new Request(url.href, { credentials: "omit" })).catch(() => undefined);
+  }
+};
 
 const parseFileDownloadRequest = (request) => {
   const url = new URL(request.url);

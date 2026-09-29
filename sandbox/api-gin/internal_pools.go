@@ -20,6 +20,7 @@ type patchPoolRequest struct {
 	SystemDiskSize *int             `json:"system_disk_size"`
 	Status         *core.PoolStatus `json:"status"`
 	PauseReason    *string          `json:"pause_reason"`
+	RefillPaused   *bool            `json:"refill_paused"`
 	VpcID          *string          `json:"vpc_id"`
 	SubnetID       *string          `json:"subnet_id"`
 	Zone           *string          `json:"zone"`
@@ -138,6 +139,15 @@ func (h *handler) patchPool(c *gin.Context) {
 	}
 	if req.PauseReason != nil {
 		pool.PauseReason = *req.PauseReason
+	}
+	if req.RefillPaused != nil {
+		pool.RefillPaused = *req.RefillPaused
+		if !pool.RefillPaused {
+			pool.PauseReason = ""
+			pool.ConsecutiveRefillFailures = 0
+			pool.LastRefillErrorCode = ""
+			pool.LastRefillError = ""
+		}
 	}
 	if req.VpcID != nil {
 		pool.VpcID = *req.VpcID

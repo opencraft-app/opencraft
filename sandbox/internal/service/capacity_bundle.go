@@ -102,7 +102,7 @@ func SKUNeedsCapacityGrowth(policy core.PoolAutoscalePolicy, sku core.SKU, pools
 	activePools := 0
 	currentDesired := 0
 	for _, pool := range pools {
-		if !PoolEligibleForRollout(pool) {
+		if !PoolEligibleForRollout(pool) && !(pool.Status == core.PoolStatusActive && pool.CapacityState == core.PoolCapacityStateWarming) {
 			continue
 		}
 		activePools++

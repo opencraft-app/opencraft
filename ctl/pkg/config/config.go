@@ -411,7 +411,7 @@ func parseAgentChatConf() {
 		ServerConf.AgentChat.BusinessCode = "lightvela"
 	}
 	if ServerConf.AgentChat.LaunchTokenTTLSeconds <= 0 {
-		ServerConf.AgentChat.LaunchTokenTTLSeconds = 300
+		ServerConf.AgentChat.LaunchTokenTTLSeconds = 600
 	}
 	if ServerConf.AgentChat.TimestampSkewSeconds <= 0 {
 		ServerConf.AgentChat.TimestampSkewSeconds = 300

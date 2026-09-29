@@ -143,6 +143,14 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
             'export CREDIT_MYSQL_DSN="${CREDIT_DB_USER}:${CREDIT_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${CREDIT_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/credit-migrate',
         ],
     },
+    ("ticket", "migration"): {
+        "namespace": "ticket",
+        "deployment": "ticket",
+        "platform_env_file": "argocd/services/ticket/{env}/ticket-platform.env",
+        "image_env_key": "TICKET_IMAGE",
+        "dynamic_builder": "ticket",
+        "command": ["/usr/local/bin/ticket-migrate", "up"],
+    },
     ("referral", "migration"): {
         "namespace": "referral",
         "deployment": "referral",
@@ -777,6 +785,62 @@ def build_referral_dynamic_resources(
     return dynamic, [secret]
 
 
+def build_ticket_dynamic_resources(
+    *,
+    job_name: str,
+    namespace: str,
+    env_name: str,
+    deploy_root: Path,
+    service_platform_env: dict[str, str],
+    db_contract: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    required_platform_keys = (
+        "TICKET_MYSQL_HOST",
+        "TICKET_MYSQL_PORT",
+        "TICKET_DB",
+        "TICKET_DB_USER",
+        "TICKET_NODE_POOL",
+    )
+    missing = [key for key in required_platform_keys if not service_platform_env.get(key, "").strip()]
+    if missing:
+        raise ValueError(f"missing Ticket DB job platform values: {', '.join(missing)}")
+
+    resolver_name = str(db_contract.get("db_job_secret_resolver") or "").strip()
+    if not resolver_name:
+        raise ValueError("ticket db_contract.db_job_secret_resolver is required")
+    resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
+    password = resolved_secrets.get(resolver_name, "").strip()
+    if not password:
+        raise ValueError(f"missing Ticket DB password from secret resolver {resolver_name}")
+
+    secret_name = f"{job_name}-secrets"
+    secret = build_secret_manifest(
+        namespace,
+        secret_name,
+        {"TICKET_DB_PASSWORD": password},
+        labels={
+            "gitops.clawhub.dev/service": "ticket",
+            "gitops.clawhub.dev/operation": "migration",
+            "gitops.clawhub.dev/managed-by": "run_gitops_db_job.py",
+        },
+    )
+    dynamic = {
+        "env": [
+            {"name": "MYSQL_HOST", "value": service_platform_env["TICKET_MYSQL_HOST"].strip()},
+            {"name": "MYSQL_PORT", "value": service_platform_env["TICKET_MYSQL_PORT"].strip()},
+            {"name": "TICKET_DB", "value": service_platform_env["TICKET_DB"].strip()},
+            {"name": "TICKET_DB_USER", "value": service_platform_env["TICKET_DB_USER"].strip()},
+            {
+                "name": "TICKET_DB_PASSWORD",
+                "valueFrom": secret_env_ref(secret_name, "TICKET_DB_PASSWORD"),
+            },
+        ],
+        "nodeSelector": {"pool": service_platform_env["TICKET_NODE_POOL"].strip()},
+        "secretValues": {"TICKET_DB_PASSWORD": password},
+    }
+    return dynamic, [secret]
+
+
 def default_ctl_database(env_name: str) -> str:
     if re.fullmatch(r"sandbox-(bj|kr)-\d+", env_name):
         return f"ctl_{env_name.replace('-', '_')}"
@@ -1003,6 +1067,15 @@ def main() -> int:
             )
         elif spec.get("dynamic_builder") == "credit":
             dynamic, extra_resources = build_credit_dynamic_resources(
+                job_name=job_name,
+                namespace=spec["namespace"],
+                env_name=args.env,
+                deploy_root=deploy_root,
+                service_platform_env=service_platform_env,
+                db_contract=db_contract,
+            )
+        elif spec.get("dynamic_builder") == "ticket":
+            dynamic, extra_resources = build_ticket_dynamic_resources(
                 job_name=job_name,
                 namespace=spec["namespace"],
                 env_name=args.env,

@@ -19,6 +19,7 @@ export interface MobileLightVelaSnapshot {
 export interface MobileLightVelaAccount extends LightVelaAccountPort {
   getSnapshot(): MobileLightVelaSnapshot;
   initialize(): Promise<void>;
+  selectRegion(region: LightVelaRegion): Promise<void>;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
   retry(): Promise<void>;

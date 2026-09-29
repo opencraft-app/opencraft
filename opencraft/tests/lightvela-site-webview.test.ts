@@ -4,7 +4,7 @@ import test from "node:test";
 
 import * as webviewModule from "../apps/workbench-expo/src/runtime/lightvela-site-webview";
 
-const { createLightVelaSiteBootstrap, isExpoGoAuthNavigation, isExpoGoGoogleAuthStart, LIGHTVELA_STATIC_PREFETCH } =
+const { createLightVelaMobileShellBootstrap, createLightVelaSiteBootstrap, createLightVelaStaticPrefetch, lightVelaSiteTabForUrl, lightVelaSiteTabUrl, lightVelaSiteUrl, LIGHTVELA_STATIC_PREFETCH } =
   ("default" in webviewModule ? webviewModule.default : webviewModule) as typeof import("../apps/workbench-expo/src/runtime/lightvela-site-webview");
 
 test("iOS site session is written only on the first-party origin and cleared on web sign-out", () => {
@@ -35,6 +35,78 @@ test("iOS site session is written only on the first-party origin and cleared on 
   assert.equal(stored.has("lightclaw-auth-token-v1"), false);
 });
 
+test("domestic site bootstrap and static cache stay on lightvela.com", () => {
+  const stored = new Map<string, string>();
+  const window = {
+    location: { origin: "https://lightvela.ai" },
+    localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
+    sessionStorage: { getItem: () => null },
+    setInterval: () => undefined,
+    addEventListener: () => undefined,
+  };
+  assert.equal(lightVelaSiteUrl("cn"), "https://lightvela.com/agents");
+  runInNewContext(createLightVelaSiteBootstrap("cn-session", "cn"), { window });
+  assert.equal(stored.size, 0);
+  window.location.origin = "https://lightvela.com";
+  runInNewContext(createLightVelaSiteBootstrap("cn-session", "cn"), { window });
+  assert.equal(stored.get("lightclaw-auth-token-v1"), "cn-session");
+  assert.match(createLightVelaStaticPrefetch("cn"), /https:\/\/lightvela\.com/);
+  assert.doesNotMatch(createLightVelaStaticPrefetch("cn"), /lightvela\.ai/);
+});
+
+test("native bottom tabs follow the site's three exact first-party destinations", () => {
+  assert.equal(lightVelaSiteTabUrl("cn", "agents"), "https://lightvela.com/agents");
+  assert.equal(lightVelaSiteTabUrl("cn", "account"), "https://lightvela.com/account");
+  assert.equal(lightVelaSiteTabUrl("intl", "billing"), "https://lightvela.ai/account/billing");
+  assert.equal(lightVelaSiteTabForUrl("https://lightvela.ai/agents/settings", "intl"), "agents");
+  assert.equal(lightVelaSiteTabForUrl("https://lightvela.ai/account/orders", "intl"), "account");
+  assert.equal(lightVelaSiteTabForUrl("https://lightvela.ai/account/billing/", "intl"), "billing");
+  assert.equal(lightVelaSiteTabForUrl("https://lightvela.com/account", "intl"), null);
+  assert.equal(lightVelaSiteTabForUrl("https://evil.example/account/billing", "intl"), null);
+});
+
+test("mobile shell hides only the selected site's duplicate header", () => {
+  const appended: Array<{ id: string; textContent: string }> = [];
+  const document = {
+    documentElement: { appendChild: (value: { id: string; textContent: string }) => appended.push(value) },
+    getElementById: () => null,
+    createElement: () => ({ id: "", textContent: "" }),
+    addEventListener: () => undefined,
+  };
+  const window = { location: { origin: "https://lightvela.ai" } };
+  runInNewContext(createLightVelaMobileShellBootstrap("cn"), { window, document });
+  assert.equal(appended.length, 0);
+  window.location.origin = "https://lightvela.com";
+  runInNewContext(createLightVelaMobileShellBootstrap("cn"), { window, document });
+  assert.match(appended[0]?.textContent ?? "", /\.lw-public-site-header \{ display: none !important/);
+  assert.match(appended[0]?.textContent ?? "", /\.lw-app-top-pad \{ padding-top: 0 !important/);
+});
+
+test("native tabs observe in-site history changes without remounting the WebView", () => {
+  const messages: Array<{ type: string; href?: string; lang?: string }> = [];
+  let tick: (() => void) | undefined;
+  const stored = new Map([["lightclaw-auth-token-v1", "session"]]);
+  const document = { documentElement: { lang: "en-US" } };
+  const window = {
+    location: { origin: "https://lightvela.ai", href: "https://lightvela.ai/agents" },
+    localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
+    sessionStorage: { getItem: () => null },
+    ReactNativeWebView: { postMessage: (raw: string) => messages.push(JSON.parse(raw) as { type: string; href?: string; lang?: string }) },
+    setInterval: (callback: () => void) => { tick = callback; },
+    addEventListener: () => undefined,
+  };
+  runInNewContext(createLightVelaSiteBootstrap("session"), { window, document });
+  window.location.href = "https://lightvela.ai/account/billing";
+  tick?.();
+  document.documentElement.lang = "zh-CN";
+  tick?.();
+  assert.deepEqual(messages, [
+    { type: "site-location", href: "https://lightvela.ai/agents", lang: "en-US" },
+    { type: "site-location", href: "https://lightvela.ai/account/billing", lang: "en-US" },
+    { type: "site-location", href: "https://lightvela.ai/account/billing", lang: "zh-CN" },
+  ]);
+});
+
 test("static prefetch requests anonymous route HTML and caches only first-party assets", async () => {
   const requests: Array<{ url: string; cache: string; credentials: string }> = [];
   const fetch = async (url: string, init: { cache: string; credentials: string }) => {
@@ -58,18 +130,6 @@ test("static prefetch requests anonymous route HTML and caches only first-party 
     { url: "/agents/files", cache: "no-store", credentials: "omit" },
     { url: "https://lightvela.ai/__releases/v1/_next/static/chunks/files.js", cache: "force-cache", credentials: "omit" },
   ]);
-});
-
-test("Expo Go keeps only the known GitHub authorization hops inside the WebView", () => {
-  assert.equal(isExpoGoAuthNavigation("https://api.lightvela.ai/auth/oauth/github/start?return_to=https%3A%2F%2Flightvela.ai%2Fagents"), true);
-  assert.equal(isExpoGoAuthNavigation("https://github.com/login/oauth/authorize?client_id=example"), true);
-  assert.equal(isExpoGoAuthNavigation("https://sites-auth.lightvela.site/auth/oauth/github/callback?code=example"), true);
-  assert.equal(isExpoGoAuthNavigation("https://sites-auth.lightvela.site/auth/lightvela/callback?code=example"), true);
-  assert.equal(isExpoGoAuthNavigation("https://api.lightvela.ai/v1/instances"), false);
-  assert.equal(isExpoGoAuthNavigation("https://github.com.evil.example/login"), false);
-  assert.equal(isExpoGoAuthNavigation("http://github.com/login"), false);
-  assert.equal(isExpoGoGoogleAuthStart("https://api.lightvela.ai/auth/oauth/google/start"), true);
-  assert.equal(isExpoGoGoogleAuthStart("https://github.com/login/oauth/authorize"), false);
 });
 
 test("static prefetch hands versioned assets to the site's existing worker", async () => {

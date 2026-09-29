@@ -1,4 +1,5 @@
 import { LightVelaAccountService } from "@opencraft/plugin-lightvela-hermes";
+import type { LightVelaRegion } from "@opencraft/plugin-lightvela-hermes/account-contract";
 import type { MobileLightVelaAccount } from "./lightvela-account-types";
 
 export function createMobileLightVelaAccount(): MobileLightVelaAccount {
@@ -21,6 +22,7 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       account.bootstrapOAuthFragment();
       if (account.hasStoredSession()) await account.refreshBots();
     },
+    async selectRegion(region: LightVelaRegion) { account.selectRegion(region); },
     async signIn() { account.signIn(); },
     async signOut() { account.signOut(); },
     async retry() { await account.refreshBots(); },

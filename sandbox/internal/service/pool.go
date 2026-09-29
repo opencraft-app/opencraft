@@ -250,12 +250,12 @@ func (s *Service) UpdatePool(ctx context.Context, pool core.Pool) (core.Pool, er
 	return s.store.UpdatePool(ctx, pool)
 }
 
-func (s *Service) PausePool(ctx context.Context, id, reason, code, detail string) (core.Pool, error) {
+func (s *Service) PausePoolRefill(ctx context.Context, id, reason, code, detail string) (core.Pool, error) {
 	pool, err := s.store.GetPool(ctx, id)
 	if err != nil {
 		return core.Pool{}, err
 	}
-	pool.Status = core.PoolStatusPaused
+	pool.RefillPaused = true
 	pool.PauseReason = strings.TrimSpace(reason)
 	pool.ConsecutiveRefillFailures++
 	pool.LastRefillErrorCode = strings.TrimSpace(code)
@@ -273,7 +273,7 @@ func (s *Service) RecordPoolRefillFailure(ctx context.Context, id, code, detail 
 	pool.LastRefillError = strings.TrimSpace(detail)
 	paused := false
 	if threshold > 0 && pool.ConsecutiveRefillFailures >= threshold {
-		pool.Status = core.PoolStatusPaused
+		pool.RefillPaused = true
 		pool.PauseReason = fmt.Sprintf("refill circuit breaker opened after %d consecutive failures", pool.ConsecutiveRefillFailures)
 		paused = true
 	}
@@ -286,20 +286,57 @@ func (s *Service) ResetPoolRefillFailures(ctx context.Context, id string) (core.
 	if err != nil {
 		return core.Pool{}, err
 	}
-	if pool.Status != core.PoolStatusActive &&
+	if !pool.RefillPaused &&
 		pool.ConsecutiveRefillFailures == 0 &&
 		pool.LastRefillErrorCode == "" &&
 		pool.LastRefillError == "" &&
 		pool.PauseReason == "" {
 		return pool, nil
 	}
-	if pool.Status == core.PoolStatusActive {
+	if pool.Status == core.PoolStatusActive || pool.RefillPaused {
 		pool.PauseReason = ""
 	}
+	pool.RefillPaused = false
 	pool.ConsecutiveRefillFailures = 0
 	pool.LastRefillErrorCode = ""
 	pool.LastRefillError = ""
 	return s.UpdatePool(ctx, pool)
+}
+
+// ActivateWarmingPool admits an auto-derived pool only after verified CLEAN inventory exists.
+// A manually paused pool is never activated by this reconciliation.
+func (s *Service) ActivateWarmingPool(ctx context.Context, id string) (core.Pool, bool, error) {
+	activated, err := s.store.ActivatePoolIfWarmingWithClean(ctx, id)
+	if err != nil {
+		return core.Pool{}, false, err
+	}
+	pool, err := s.store.GetPool(ctx, id)
+	return pool, activated, err
+}
+
+// ReconcilePoolBindingAdmission updates only this pool's derived binding, so a
+// broken binding for an unrelated pool cannot interrupt its refill loop.
+func (s *Service) ReconcilePoolBindingAdmission(ctx context.Context, poolID string) (bool, error) {
+	pool, err := s.store.GetPool(ctx, poolID)
+	if err != nil || pool.TemplateClassID == "" {
+		return false, err
+	}
+	bindings, err := s.store.ListTemplatePoolBindings(ctx, pool.TemplateClassID)
+	if err != nil {
+		return false, err
+	}
+	for _, binding := range bindings {
+		if binding.PoolID != poolID {
+			continue
+		}
+		nextState, nextReason, shouldApply := reconciledBindingAdmission(binding, pool)
+		if !shouldApply {
+			return false, nil
+		}
+		_, err := s.store.UpdateTemplatePoolBindingAdmission(ctx, binding.TemplateClassID, poolID, nextState, nextReason)
+		return err == nil, err
+	}
+	return false, nil
 }
 
 func normalizePool(pool core.Pool) (core.Pool, error) {
@@ -343,6 +380,7 @@ func normalizePool(pool core.Pool) (core.Pool, error) {
 	}
 	switch pool.CapacityState {
 	case core.PoolCapacityStateActive,
+		core.PoolCapacityStateWarming,
 		core.PoolCapacityStateDraining,
 		core.PoolCapacityStatePaused,
 		core.PoolCapacityStateQuarantined,
@@ -1591,6 +1629,8 @@ func desiredBindingAdmissionFromPool(pool core.Pool) (core.BindingAdmissionState
 		return core.BindingAdmissionStateDraining, autoAdmissionReason("pool draining")
 	case core.PoolCapacityStatePaused:
 		return core.BindingAdmissionStatePaused, autoAdmissionReason("pool capacity paused")
+	case core.PoolCapacityStateWarming:
+		return core.BindingAdmissionStatePaused, autoAdmissionReason("pool warming")
 	case core.PoolCapacityStateQuarantined:
 		return core.BindingAdmissionStateQuarantined, autoAdmissionReason("pool quarantined")
 	default:
@@ -1737,6 +1777,7 @@ func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.
 			return core.Pool{}, false, err
 		}
 		bindingItem := templatePoolBindingFromSKU(binding, existing.ID)
+		bindingItem.AdmissionState, bindingItem.Reason = desiredBindingAdmissionFromPool(existing)
 		if _, err := s.UpsertTemplatePoolBinding(ctx, bindingItem); err != nil {
 			return core.Pool{}, false, err
 		}
@@ -1765,7 +1806,7 @@ func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.
 		TemplateClassID:     binding.TemplateClassID,
 		SKUID:               sku.ID,
 		SystemDiskSize:      sku.SystemDiskSize,
-		CapacityState:       core.PoolCapacityStateActive,
+		CapacityState:       core.PoolCapacityStateWarming,
 		CapacityBundleID:    bundle.ID,
 		LastAutoscaleAction: "sku_capacity_growth",
 		CreatedAt:           now,
@@ -1779,6 +1820,7 @@ func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.
 		return core.Pool{}, false, err
 	}
 	bindingItem := templatePoolBindingFromSKU(binding, createdPool.ID)
+	bindingItem.AdmissionState, bindingItem.Reason = desiredBindingAdmissionFromPool(createdPool)
 	if _, err := s.UpsertTemplatePoolBinding(ctx, bindingItem); err != nil {
 		return core.Pool{}, false, err
 	}

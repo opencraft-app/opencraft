@@ -800,9 +800,21 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 		pools = append(pools, all...)
 	}
 	for _, pool := range pools {
-		if pool.Status == core.PoolStatusPaused {
+		if pool.CapacityState == core.PoolCapacityStateWarming {
+			updated, activated, err := svc.ActivateWarmingPool(ctx, pool.ID)
+			if err != nil {
+				return err
+			}
+			pool = updated
+			if activated {
+				if _, err := svc.ReconcilePoolBindingAdmission(ctx, pool.ID); err != nil {
+					return err
+				}
+			}
+		}
+		if pool.Status == core.PoolStatusPaused || pool.RefillPaused {
 			if shouldEmitRefillSkipped(pool) {
-				observability.EmitEvent(ctx, "sandbox.refill.skipped", "当前 pool 处于暂停状态，因此 worker 跳过了这次补货，不会为它继续创建新实例。", attribute.String("pool_id", pool.ID), attribute.String("reason", pool.PauseReason))
+				observability.EmitEvent(ctx, "sandbox.refill.skipped", "当前 pool 已暂停补货，因此 worker 跳过本次云实例创建；现有 CLEAN 库存的接流量状态独立决定。", attribute.String("pool_id", pool.ID), attribute.String("reason", pool.PauseReason))
 			}
 			continue
 		}
@@ -864,8 +876,19 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 			if metrics != nil {
 				metrics.ObserveRefillCreated(pool.ID, len(result.created))
 			}
-			if _, err := svc.ResetPoolRefillFailures(ctx, pool.ID); err != nil {
-				return err
+			if !result.terminalFailure {
+				if _, err := svc.ResetPoolRefillFailures(ctx, pool.ID); err != nil {
+					return err
+				}
+			}
+			if pool.CapacityState == core.PoolCapacityStateWarming {
+				if _, activated, err := svc.ActivateWarmingPool(ctx, pool.ID); err != nil {
+					return err
+				} else if activated {
+					if _, err := svc.ReconcilePoolBindingAdmission(ctx, pool.ID); err != nil {
+						return err
+					}
+				}
 			}
 			createdSample, truncated := refillCreatedSummaries(result.created)
 			observability.EmitEvent(ctx, "sandbox.refill.created", "本轮补货已经成功创建实例并补回到目标 pool；事件里会给出补货数量，以及新建实例的摘要信息。",
@@ -877,7 +900,9 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 				attribute.Bool("created_instances_truncated", truncated),
 				observability.AttrJSON("created_instances_sample", createdSample),
 			)
-			continue
+			if !result.terminalFailure {
+				continue
+			}
 		}
 		if result.terminalFailure {
 			if metrics != nil {
@@ -898,10 +923,10 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 			if result.firstCreateCode != "" {
 				reason = "terminal create error: " + result.firstCreateCode
 			}
-			if _, err := svc.PausePool(ctx, pool.ID, reason, result.firstCreateCode, result.firstCreateDetail); err != nil {
+			if _, err := svc.PausePoolRefill(ctx, pool.ID, reason, result.firstCreateCode, result.firstCreateDetail); err != nil {
 				return err
 			}
-			observability.EmitEvent(ctx, "sandbox.refill.pool_paused", "补货失败被判定为终局性错误，控制器已自动暂停该 pool，避免后续流量或补货继续打到有问题的池子。", attribute.String("pool_id", pool.ID), attribute.String("template_class_id", pool.TemplateClassID), attribute.String("sku_id", pool.SKUID), attribute.String("error_code", result.firstCreateCode), attribute.String("pause_reason", reason))
+			observability.EmitEvent(ctx, "sandbox.refill.pool_paused", "补货失败被判定为终局性错误，控制器已暂停该 pool 的补货；已验证 CLEAN 库存仍按接流量状态分配。", attribute.String("pool_id", pool.ID), attribute.String("template_class_id", pool.TemplateClassID), attribute.String("sku_id", pool.SKUID), attribute.String("error_code", result.firstCreateCode), attribute.String("pause_reason", reason))
 			continue
 		}
 		if result.createFailures > 0 {
@@ -918,7 +943,7 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 				if metrics != nil {
 					metrics.ObservePoolPaused(updated.ID, "threshold")
 				}
-				observability.EmitEvent(ctx, "sandbox.refill.pool_paused", "该 pool 在连续多次补货失败后触发了阈值熔断，控制器已自动暂停它，等待人工排查或后续恢复。", attribute.String("pool_id", updated.ID), attribute.String("template_class_id", updated.TemplateClassID), attribute.String("sku_id", updated.SKUID), attribute.String("error_code", updated.LastRefillErrorCode), attribute.String("pause_reason", updated.PauseReason))
+				observability.EmitEvent(ctx, "sandbox.refill.pool_paused", "该 pool 连续补货失败触发阈值熔断，控制器仅暂停补货；已验证 CLEAN 库存继续按接流量状态分配。", attribute.String("pool_id", updated.ID), attribute.String("template_class_id", updated.TemplateClassID), attribute.String("sku_id", updated.SKUID), attribute.String("error_code", updated.LastRefillErrorCode), attribute.String("pause_reason", updated.PauseReason))
 			}
 		}
 	}

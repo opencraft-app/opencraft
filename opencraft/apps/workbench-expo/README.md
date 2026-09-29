@@ -8,12 +8,26 @@ The `workbench-frame.web.tsx` and `workbench-frame.native.tsx` files are host
 adapters with a shared semantic component underneath. DOM-only packages such as
 ProseMirror and the Codex SCSS frame are intentionally unavailable here.
 
+## iPhone 真机快速体验
+
+当前 iOS 版是 HeroUI Native 登录页和底栏，登录后在 App 内打开所选站点的网页。Android 版仍是独立的 React Native 工作台；它的内测 APK 见下文。
+
+1. 在 iPhone 上从[美区 App Store 安装 Expo Go](https://apps.apple.com/us/app/expo-go/id982107779)。
+2. 让开发者按 [Cloudflare Expo Go 预览 skill](../../.agents/skills/opencraft-expo-cf-preview/SKILL.md)启动并核验预览，然后取得本次的 `exps://…trycloudflare.com` 链接。链接每次可能变化；Metro 和 Cloudflare Tunnel 必须保持运行。
+3. 把完整链接粘贴到 **Safari 地址栏**，允许跳转 Expo Go。不要用聊天软件内置浏览器，也不必等待项目出现在 Expo Go 的开发服务器列表。
+4. 在 App 登录页选择“中国大陆”或“International”，再登录 LightVela。登录后进入“我的智能体”；底栏可切换“账号”和“套餐与费用”。切换站点需先退出当前账号。
+
+如果出现红屏或一直加载，请把手机画面发给开发者，并让其重新核验外网 manifest、完整 bundle 和正在运行的 Metro 日志。此预览是临时开发服务，不能当作已安装的独立 IPA。
+
 ## iOS site shell and simulator
 
-The iOS site shell uses HeroUI Native and can open in Expo Go. On a physical
-iPhone, Expo Go and the Expo CLI serving the project must be signed in to the
-same Expo account. Sign in on the development computer first, then sign in to
-Expo Go on the phone. Check the CLI account with `npx expo whoami`.
+The iOS shell uses HeroUI Native. Expo Go and installed builds use the same App
+login flow and website shell. On iOS, `expo-web-browser` uses
+`ASWebAuthenticationSession`, which returns the registered
+`opencraft://auth/lightvela` callback to the active auth session. For Expo
+account discovery, sign in to the same Expo account in the CLI and Expo Go;
+check the CLI account with `npx expo whoami`. The verified `exps://` link above
+is the direct entry when the server list does not show the project.
 
 From the repository root, start Metro and scan its QR code with the iPhone
 Camera:
@@ -36,12 +50,10 @@ set `OPENCRAFT_EXPO_BUNDLE_ORIGIN` to a separate HTTPS proxy for the same Metro
 server. Requests for `.bundle` through `exp.direct` then redirect to that proxy;
 the manifest and list entry remain on the Expo tunnel.
 
-Expo Go opens `https://lightvela.ai/agents` as a website and lets the website
-handle its own sign-in. GitHub authorization stays inside the WebView so its
-cookie and callback can return to the site. Google rejects embedded browsers;
-Expo Go prompts for GitHub or guest access instead. Expo Go cannot register
-the custom `opencraft://` native OAuth callback. Use a development build for
-the native login flow and Google sign-in.
+Open the Expo Go link in Safari on iPhone. Install Expo Go from the US App
+Store if it is unavailable in your current storefront. The Expo Go route opens
+the App login gate and then the site shell. Test the callback on a physical
+iPhone; bundle delivery alone does not prove the auth session completes.
 
 On a Mac with Xcode and CocoaPods installed, build the native development app:
 
@@ -55,11 +67,19 @@ development client, starts Metro, and opens the iOS Simulator. The default
 theme is explicitly light. Expo no longer depends on Unistyles or NitroModules;
 the Android workbench uses React Native styles, while iOS uses HeroUI Native.
 
-After the native LightVela sign-in, iOS opens `https://lightvela.ai/agents` in
-an embedded WebView. The native session is copied into the first-party page's
+After the native LightVela sign-in, iOS verifies the session and opens the
+selected region's `/agents` page in an embedded WebView. The native session is
+copied into the first-party page's
 existing browser token store before its scripts run; other origins are opened
 outside the WebView and never receive that session. Web sign-out clears the
 native session. Android and Expo Web keep their existing workbench renderer.
+
+The iOS shell uses a HeroUI Native bottom bar for My agents, Account, and
+Plans & billing. These open the selected region's `/agents`, `/account`, and
+`/account/billing` pages in the same WebView. The App hides the website's
+duplicate top header and keeps the Agent sidebar scrollable within a shorter
+mobile area. Navigation within the website updates the active native tab, and
+its document language controls the tab labels.
 
 The WebView warms a small set of first-party, versioned static assets for nearby
 `/agents/` pages without requesting private API data. It registers the site's
@@ -86,8 +106,13 @@ verified on Linux.
 
 ## Native LightVela login
 
-The native build uses the existing `GET https://api.lightvela.ai/oauth2/authorize` page and
+The iOS app uses the existing `GET https://api.lightvela.ai/oauth2/authorize` page and
 `POST /auth/session/exchange`, with the fixed callback `opencraft://auth/lightvela`.
+The branded login gate lets the user choose 中国大陆 or International before
+sign-in. It saves the choice in SecureStore and uses the matching
+`api.lightvela.com` or `api.lightvela.ai` authorization/session service and
+`lightvela.com/agents` or `lightvela.ai/agents` website. Switching a signed-in
+session requires signing out first; tokens never cross regions.
 Explicitly register OIDC client `opencraft-native-v1` with that exact callback alongside the existing site-gateway client. The shared login page owns provider selection; native never selects Google directly. The server must support these endpoints and the API gateway must allow them
 without an existing session. Updating this app alone cannot enable that backend
 contract; an unavailable backend must not fall back to session tokens in URLs.

@@ -324,6 +324,8 @@ func (f *fakeActivityResolver) GetMapping(context.Context, store.ActivityScene, 
 type fakeDianshiClient struct {
 	doGoodsAndPayCalls atomic.Int32
 	lastRequest        *dianshiclient.DoGoodsRequest
+	doGoodsRenewCalls  atomic.Int32
+	lastRenewRequest   *dianshiclient.DoGoodsRenewRequest
 }
 
 type fakeCreditUsageReporter struct {
@@ -339,6 +341,10 @@ func (f *fakeDianshiClient) GetActivityPrice(context.Context, *dianshiclient.Get
 	return nil, errors.New("GetActivityPrice not used in internalapi handler test")
 }
 
+func (f *fakeDianshiClient) GetRenewPrice(context.Context, *dianshiclient.GetRenewPriceRequest) (*dianshiclient.GetPriceResponse, error) {
+	return nil, errors.New("GetRenewPrice not used in internalapi handler test")
+}
+
 func (f *fakeDianshiClient) DoGoods(context.Context, *dianshiclient.DoGoodsRequest) (*dianshiclient.DoGoodsResponse, error) {
 	return nil, errors.New("DoGoods must not be used by dedicated order-and-pay route")
 }
@@ -349,6 +355,15 @@ func (f *fakeDianshiClient) DoGoodsAndPay(_ context.Context, req *dianshiclient.
 	return &dianshiclient.DoGoodsResponse{
 		DealNames:   []string{"dianshi-deal-1"},
 		BigDealNo:   "dianshi-big-1",
+		ResourceIDs: map[string][]string{"dianshi-deal-1": {"pass-dianshi-paid-1"}},
+	}, nil
+}
+
+func (f *fakeDianshiClient) DoGoodsRenew(_ context.Context, req *dianshiclient.DoGoodsRenewRequest) (*dianshiclient.DoGoodsResponse, error) {
+	f.doGoodsRenewCalls.Add(1)
+	f.lastRenewRequest = req
+	return &dianshiclient.DoGoodsResponse{
+		DealNames: []string{"dianshi-deal-1"}, BigDealNo: "dianshi-big-1",
 		ResourceIDs: map[string][]string{"dianshi-deal-1": {"pass-dianshi-paid-1"}},
 	}, nil
 }
@@ -974,6 +989,9 @@ func TestPlaceDianshiRenewOrderAndPay_HappyPath(t *testing.T) {
 	got := env.orderWriter.lastCreateOrderInput
 	if got.OrderType != store.OrderTypeRenew || got.ResourceID != "lhpass-r1" || got.Source != store.OrderSourceDianshi {
 		t.Fatalf("persisted renew order=%+v", got)
+	}
+	if env.dianshi.doGoodsRenewCalls.Load() != 1 || env.dianshi.lastRenewRequest.AutoPay != "1" || env.dianshi.doGoodsAndPayCalls.Load() != 0 {
+		t.Fatalf("renew calls=%d autoPay=%q purchase-and-pay calls=%d", env.dianshi.doGoodsRenewCalls.Load(), env.dianshi.lastRenewRequest.AutoPay, env.dianshi.doGoodsAndPayCalls.Load())
 	}
 }
 
