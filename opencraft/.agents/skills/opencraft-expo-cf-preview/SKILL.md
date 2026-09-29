@@ -14,3 +14,5 @@ Use this for a temporary development preview of this repository's `apps/workbenc
 5. Give the user the `exps://` form of the origin. For iOS, explicitly say to install [Expo Go from the US App Store](https://apps.apple.com/us/app/expo-go/id982107779), paste the `exps://` link into **Safari or another standard browser**, and allow the jump to Expo Go. An in-app chat browser may intercept the link.
 
 Keep both PTYs running while the user tests. If either exits, check its status and issue a fresh URL when the Cloudflare origin changes. Ask for the device screen only after the external manifest and bundle pass; server checks alone cannot prove iOS rendering.
+
+For ordinary JS/TS or style edits, keep the same Metro and Cloudflare Tunnel processes: Metro serves the updated bundle, and the `exps://` URL stays the same while the tunnel is alive. Reload the app in Expo Go and rerun `scripts/verify_preview.sh <HTTPS origin>` before reporting the update; restart only the process that has stopped or needs a changed configuration or port. Native dependency changes still require a compatible app build, beyond a bundle reload.

@@ -27,7 +27,7 @@ checkout 构建并验证成品；构建成功本身不代表已经安装、上�
 1. 在 iPhone 上从[美区 App Store 安装 Expo Go](https://apps.apple.com/us/app/expo-go/id982107779)。
 2. 让开发者按 [Cloudflare Expo Go 预览 skill](../../.agents/skills/opencraft-expo-cf-preview/SKILL.md)启动并核验预览，然后取得本次的 `exps://…trycloudflare.com` 链接。链接每次可能变化；Metro 和 Cloudflare Tunnel 必须保持运行。
 3. 把完整链接粘贴到 **Safari 地址栏**，允许跳转 Expo Go。不要用聊天软件内置浏览器，也不必等待项目出现在 Expo Go 的开发服务器列表。
-4. 在 App 登录页选择“中国大陆”或“International”，再登录 LightVela。登录后进入“我的智能体”；底栏可切换“账号”和“套餐与费用”。切换站点需先退出当前账号。
+4. 在 App 登录页选择“中国大陆”或“International”，再登录 LightVela。登录后进入“我的智能体”；底栏可切换“账号”“套餐与费用”和“设置”。登录前也能从右上角打开设置，选择语言、查看开源授权。切换站点需先退出当前账号。
 
 如果出现红屏或一直加载，请把手机画面发给开发者，并让其重新核验外网 manifest、完整 bundle 和正在运行的 Metro 日志。此预览是临时开发服务，不能当作已安装的独立 IPA。
 
@@ -86,12 +86,34 @@ existing browser token store before its scripts run; other origins are opened
 outside the WebView and never receive that session. Web sign-out clears the
 native session. Android and Expo Web keep their existing workbench renderer.
 
-The iOS shell uses a HeroUI Native bottom bar for My agents, Account, and
-Plans & billing. These open the selected region's `/agents`, `/account`, and
-`/account/billing` pages in the same WebView. The App hides the website's
+The iOS shell uses a HeroUI Native bottom bar for My agents, Account,
+Plans & billing, and Settings. The first three open the selected region's
+`/agents`, `/account`, and `/account/billing` pages in the same WebView. Settings
+is a native screen inside the tab content area, so the bottom bar remains
+visible while Settings or open-source notices are open. The website page stays
+mounted beneath that screen. Settings is also
+available before sign-in from the login gate. The App hides the website's
 duplicate top header and keeps the Agent sidebar scrollable within a shorter
-mobile area. Navigation within the website updates the active native tab, and
-its document language controls the tab labels.
+mobile area. Navigation within the website updates the active native tab.
+
+The native Settings screen offers Follow device, Simplified Chinese, and
+English. The choice is saved locally and translates the App shell. Before a
+first-party WebView page starts its JavaScript, the App writes the selected
+locale to the website's existing `lw-locale` and `lw-locale-explicit` keys;
+changing it reloads the current page so the website's own i18n can apply it.
+International Simplified Chinese maps to the site's published `zh-SG` locale.
+The mainland China website currently remains Chinese even if the App shell is
+English. No session token or language value is sent to another origin. Add
+future native translations in `src/runtime/mobile-language.ts` and expose a
+locale only after both App and website have a complete dictionary.
+
+Settings also contains an offline list of this Expo app's direct open-source
+dependencies, with their versions and license identifiers from the workspace
+lockfile. Each row opens the upstream package page for full terms; a separate
+button opens LightVela's complete open-source notice. Run
+`npm run licenses:generate --workspace @opencraft/workbench-expo` after changing
+app dependencies and `npm run licenses:check --workspace @opencraft/workbench-expo`
+to verify the bundled list.
 
 The WebView warms a small set of first-party, versioned static assets for nearby
 `/agents/` pages without requesting private API data. It registers the site's
