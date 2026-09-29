@@ -2,6 +2,18 @@ version: v2.0
 name: 构建 ticket
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - ticket/**
+      - argocd/services/ticket/**
+      - argocd/apps/*/ticket.yaml
+      - argocd/secrets/*/ticket-runtime-secrets.sops.yaml
+      - scripts/ssm_manifest.ticket.*.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
   manual: enabled
 
 concurrency:
@@ -10,17 +22,17 @@ concurrency:
   queue-length: 20
   queue-timeout-minutes: 480
 
-jobs:
-  disabled:
-    runs-on:
-      self-hosted: true
-      pool-name: cn-pool
-    steps:
-      - checkout: self
-        name: 拉取代码
-        with:
-          fetchDepth: 1
-      - name: ticket release bundle contract disabled
-        shell: bash
-        run: |
-          echo "ticket release bundle contract is temporarily disabled."
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: ticket
+    BUNDLE: ticket
+    DISPLAY_NAME: ticket
+    DEFAULT_TARGET_ENV: shprod
+    MASTER_BUILD_ENVS: shprod,sgprod
+    MASTER_AUTO_PIN_ENVS: none
+    ENABLE_MASTER_PROD_PROMOTE: true
+    ENABLE_MASTER_PROD_DB_MIGRATION: true
+    ENABLE_MASTER_SHPROD_DB_MIGRATION: true
+    ENABLE_MASTER_SGPROD_DB_MIGRATION: true
+    PROD_REVIEWERS: '["skipzhang", "xinqishang", "pablozhong"]'
