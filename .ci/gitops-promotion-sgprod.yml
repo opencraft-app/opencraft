@@ -6,6 +6,7 @@ on:
     branches:
       - promote-sgprod-*
 
+# Refresh the compiled Stream pipeline when production check-in reviewers change.
 extends:
   template: gitops-promotion-prod.yml
   parameters:

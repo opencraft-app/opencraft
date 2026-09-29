@@ -35,4 +35,4 @@ extends:
     ENABLE_MASTER_PROD_DB_MIGRATION: true
     ENABLE_MASTER_SHPROD_DB_MIGRATION: true
     ENABLE_MASTER_SGPROD_DB_MIGRATION: true
-    PROD_REVIEWERS: '["skipzhang", "xinqishang", "pablozhong"]'
+    PROD_REVIEWERS: '["skipzhang", "xinqishang", "pablozhong", "mingyuxiao"]'
