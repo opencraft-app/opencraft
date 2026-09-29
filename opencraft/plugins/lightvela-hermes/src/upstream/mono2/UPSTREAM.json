@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "cd21578d54a72636715768d4feba87821a6dfc2f",
+  "sourceRevision": "38d3379647b76f7eaa2458a6a99056f714bb173d",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
