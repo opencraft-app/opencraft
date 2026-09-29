@@ -166,7 +166,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
-  it("keeps the sidebar account menu click-only and preserves identity and account navigation", () => {
+  it("opens the sidebar account menu on hover and preserves identity and account navigation", () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -195,7 +195,8 @@ describe("UserAvatarMenu", () => {
     expect(screen.queryByRole("link", { name: "avatar" })).not.toBeInTheDocument();
 
     fireEvent.mouseEnter(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("dialog", { name: "账号管理" })).toBeVisible();
 
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");

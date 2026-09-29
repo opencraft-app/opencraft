@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  FileCode2,
   Folder,
   FolderOpen,
   Image as ImageIcon,
@@ -18,6 +17,8 @@ import {
   Search,
 } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -36,12 +37,20 @@ import {
   encodeBase64Text,
   joinWorkspacePath,
   parseWorkspaceResource,
+  reconcileWorkspaceSave,
+  updateWorkspaceDraft,
+  workspaceDraftConflicted,
+  workspaceDraftKey,
+  type WorkspaceDraft,
   workspaceFileLanguage,
   workspaceImageMime,
   workspacePathParent,
   workspaceResourceBasename,
   workspaceRootsForResource,
 } from "./workspace-resource-model";
+import { WorkspaceFileIcon } from "./workspace-file-icon";
+
+const WorkspaceCodeEditor = lazy(() => import("./workspace-code-editor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 
 interface LoadedWorkspaceResource {
   readonly blob: Blob | null;
@@ -133,7 +142,7 @@ function DirectoryNode({
                 title={childPath}
                 type="button"
               >
-                <FileCode2 size={13} />
+                <WorkspaceFileIcon path={childPath} size={13} />
                 <span>{entry.fileName}</span>
               </button>
             );
@@ -240,14 +249,13 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   const queryClient = useQueryClient();
   const [selectedPath, setSelectedPath] = useState(initialLocation.path);
   const [searchQuery, setSearchQuery] = useState("");
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [savedText, setSavedText] = useState("");
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, WorkspaceDraft>>({});
   const [readProgress, setReadProgress] = useState<{ path: string; progress: BlobProgress } | null>(null);
 
   useEffect(() => {
     setSelectedPath(initialLocation.path);
-    setEditing(false);
+    setEditingKey(null);
   }, [initialLocation.path]);
 
   const execution = snapshot.conversation?.execution;
@@ -310,27 +318,39 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
     return handle.release;
   }, [resource.data?.blob, selectedPath]);
 
-  useEffect(() => {
-    if (resource.data?.text === null || resource.data?.text === undefined) return;
-    setDraft(resource.data.text);
-    setSavedText(resource.data.text);
-    setEditing(false);
-  }, [resource.data?.text, selectedPath]);
+  const fileKey = workspaceDraftKey(snapshot.hostId, selectedPath);
+  const fileDraft = drafts[fileKey];
+  const serverText = resource.data?.text ?? null;
+  const text = fileDraft?.text ?? serverText ?? "";
+  const dirty = fileDraft !== undefined && fileDraft.text !== fileDraft.baseText;
+  const conflicted = dirty && workspaceDraftConflicted(fileDraft, serverText);
+  const editing = editingKey === fileKey || dirty;
+  const updateDraft = (nextText: string) => {
+    if (serverText === null) return;
+    setDrafts((current) => updateWorkspaceDraft(current, fileKey, serverText, nextText));
+  };
+  const revertDraft = () => {
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[fileKey];
+      return next;
+    });
+    setEditingKey(null);
+  };
 
   const save = useMutation({
-    mutationFn: async () => {
-      await runtime.resources.fileSystem.writeFile(selectedPath, encodeBase64Text(draft));
-      await blobs.invalidate(fileBlobResource(runtime, snapshot.hostId, selectedPath));
+    mutationFn: async (target: { hostId: string; path: string; key: string; text: string }) => {
+      await runtime.resources.fileSystem.writeFile(target.path, encodeBase64Text(target.text));
+      await blobs.invalidate(fileBlobResource(runtime, target.hostId, target.path));
     },
-    onSuccess: async () => {
-      setSavedText(draft);
-      setEditing(false);
+    onSuccess: async (_result, target) => {
       await queryClient.invalidateQueries({
-        queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath],
+        queryKey: ["appserver-fs", target.hostId, "resource", target.path],
       });
+      setDrafts((current) => reconcileWorkspaceSave(current, target.key, target.text));
+      setEditingKey((current) => current === target.key ? null : current);
     },
   });
-  const dirty = draft !== savedText;
   const imageMime = workspaceImageMime(selectedPath);
   const language = workspaceFileLanguage(selectedPath);
 
@@ -359,11 +379,12 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
                   key={`${result.root}:${result.path}`}
                   onClick={() => {
                     setSelectedPath(path);
+                    setEditingKey(null);
                     setSearchQuery("");
                   }}
                   type="button"
                 >
-                  {result.match_type === "directory" ? <Folder size={14} /> : <FileCode2 size={14} />}
+                  {result.match_type === "directory" ? <Folder size={14} /> : <WorkspaceFileIcon path={path} size={14} />}
                   <span><strong>{result.file_name}</strong><small>{result.path}</small></span>
                 </button>
               );
@@ -373,7 +394,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
               depth={0}
               initialExpanded
               key={root}
-              onSelect={setSelectedPath}
+              onSelect={(path) => { setSelectedPath(path); setEditingKey(null); }}
               path={root}
               selectedPath={selectedPath}
               title={workspaceResourceBasename(root)}
@@ -383,7 +404,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
       </aside>
       <section className="workspace-file-viewer">
         <header className="workspace-file-viewer__header">
-          <FileCode2 size={15} />
+          <WorkspaceFileIcon path={selectedPath} size={15} />
           <span>
             <strong>{workspaceResourceBasename(selectedPath)}</strong>
             <small>{selectedPath}</small>
@@ -393,20 +414,20 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
               {editing ? (
                 <>
                   <button
-                    disabled={!dirty || save.isPending}
-                    onClick={() => void save.mutateAsync()}
+                    disabled={!dirty || conflicted || save.isPending}
+                    onClick={() => void save.mutateAsync({ hostId: snapshot.hostId, path: selectedPath, key: fileKey, text })}
                     title="Save file"
                     type="button"
                   ><Save size={14} /> Save</button>
                   <button
                     disabled={!dirty || save.isPending}
-                    onClick={() => setDraft(savedText)}
+                    onClick={revertDraft}
                     title="Revert unsaved changes"
                     type="button"
                   ><RotateCcw size={14} /></button>
                 </>
               ) : (
-                <button onClick={() => setEditing(true)} title="Edit file" type="button">
+                <button onClick={() => setEditingKey(fileKey)} title="Edit file" type="button">
                   <Pencil size={14} /> Edit
                 </button>
               )}
@@ -429,20 +450,21 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
             <small><ImageIcon size={12} /> {resource.data.size.toLocaleString()} bytes</small>
           </div>
         ) : resource.data?.text !== null && resource.data?.text !== undefined ? (
-          editing ? (
-            <textarea
-              aria-label={`Edit ${workspaceResourceBasename(selectedPath)}`}
-              className="workspace-file-editor"
-              onChange={(event) => setDraft(event.currentTarget.value)}
-              spellCheck={false}
-              value={draft}
+          <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />Loading editor…</div>}>
+            <WorkspaceCodeEditor
+              editable={editing}
+              hasDraft={dirty}
+              key={fileKey}
+              label={`${editing ? "Edit" : "View"} ${workspaceResourceBasename(selectedPath)}`}
+              language={language}
+              onChange={updateDraft}
+              value={text}
             />
-          ) : (
-            <pre className="workspace-file-source" data-language={language ?? "text"}><code>{resource.data.text}</code></pre>
-          )
+          </Suspense>
         ) : (
           <div className="workspace-file-viewer__state"><AlertTriangle size={18} />Binary or oversized file ({resource.data?.size.toLocaleString() ?? 0} bytes)</div>
         )}
+        {conflicted ? <div className="workspace-file-save-error">File changed on disk. Revert your draft before saving.</div> : null}
         {save.isError ? <div className="workspace-file-save-error">{save.error.message}</div> : null}
       </section>
     </div>

@@ -46,6 +46,22 @@ func TestLoad_DianshiPreview(t *testing.T) {
 	}
 }
 
+func TestLoadDianshiRenewBaseURL(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.local")
+	t.Setenv("DIANSHI_PRICE_BASE_URL", "http://gateway.local/dianshi-price/get_price")
+	t.Setenv("DIANSHI_ORDER_BASE_URL", "http://gateway.local/dianshi-order/do_goods")
+	t.Setenv("DIANSHI_RENEW_BASE_URL", "http://staging-gateway.local/dianshi-order/activity_web/activity")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DianshiRenewBaseURL != "http://staging-gateway.local/dianshi-order/activity_web/activity" {
+		t.Fatalf("DianshiRenewBaseURL = %q", cfg.DianshiRenewBaseURL)
+	}
+}
+
 func TestLoadUsesAccountBindingInternalBaseURL(t *testing.T) {
 	setRequiredLoadEnv(t)
 	t.Setenv("ACCOUNT_BINDING_INTERNAL_BASE_URL", "http://auth.local")

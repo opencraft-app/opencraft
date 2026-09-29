@@ -27,6 +27,8 @@ type Event struct {
 	RequestID         string        `json:"request_id"`
 	Caller            string        `json:"caller"`
 	Operation         string        `json:"operation"`
+	TCAction          string        `json:"tc_action,omitempty"`
+	TCRegion          string        `json:"tc_region,omitempty"`
 	Method            string        `json:"method"`
 	Path              string        `json:"path"`
 	Query             string        `json:"query,omitempty"`
@@ -162,6 +164,8 @@ func (a otlpAuditor) Record(ctx context.Context, event Event) {
 		otellog.String("request.id", event.RequestID),
 		otellog.String("caller", event.Caller),
 		otellog.String("operation", event.Operation),
+		otellog.String("tencentcloud.action", event.TCAction),
+		otellog.String("tencentcloud.region", event.TCRegion),
 		otellog.String("http.request.method", event.Method),
 		otellog.String("url.path", event.Path),
 		otellog.String("url.query", event.Query),

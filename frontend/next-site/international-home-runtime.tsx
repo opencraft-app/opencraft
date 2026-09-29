@@ -24,9 +24,10 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/runtime.js',
   '/lightvela-intl-home/hero-chat.js',
   '/lightvela-intl-home/scene-wheel.js',
+  '/lightvela-intl-home/assets/feature-motion.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260924-mobile-locale-demo-v83';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260929-responsive-v102';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -175,6 +176,11 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
         rel="stylesheet"
         href={versionedInternationalHomeAsset('/lightvela-intl-home/style.css')}
         precedence="lightvela-intl-home"
+      />
+      <link
+        rel="stylesheet"
+        href={versionedInternationalHomeAsset('/lightvela-intl-home/assets/hermes-home.css')}
+        precedence="lightvela-intl-home-companions"
       />
       <PublicSiteLocaleBridge locale={locale}>
         <MaintenanceAnnouncementBanner />

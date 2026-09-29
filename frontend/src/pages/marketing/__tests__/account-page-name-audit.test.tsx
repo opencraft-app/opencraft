@@ -58,6 +58,7 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
   useReferralEnabled: () => false,
@@ -325,7 +326,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.getByText("id: usr_visible_account_id")).toBeInTheDocument();
+    expect(screen.getByText("账号 ID：usr_visible_account_id")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "复制" }));
 

@@ -13,7 +13,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../../styles/workbench-styles";
 import { IconButton } from "./button";
 
 export interface ModalSurfaceProps extends ModalDescriptor {
@@ -37,7 +37,7 @@ export function ModalSurface({
   size = "default",
   visible,
 }: ModalSurfaceProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const fullscreen = presentation === "fullscreen";
   const sheet = presentation === "sheet" || presentation === "inspector";
 

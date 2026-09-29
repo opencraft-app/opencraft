@@ -17,11 +17,17 @@
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
+OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
+
+OpenCraft 的弱网恢复分开拥有共享 AppHost 连接、各 Host 的协议就绪、Thread/资源恢复和查询缓存重新验证。页面重新可见或网络恢复时的主动探测只验证通路，不激活或重启执行引擎；Host 的 lease 与 initialize 就绪后，其它慢资源不应阻塞会话。旧连接的迟到响应不得覆盖新连接结果，已接纳的 Turn 仍由服务端持有，不因浏览器重连重新投递。详见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。
+
 OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 的实际沙箱/审批组合投影为标准语义（只读、接受编辑、完全访问）；无法验证的原生/自定义 profile 仍以引擎档案呈现，不由 Renderer 猜测。`opencraft/permission-modes` v1 的标准档位使用稳定的 `opencraft:permission-mode:*` 提交 ID，由 Host 在提交时映射为当前引擎原生 profile；恢复后的原生生效 ID 经目录映射回产品档位。DSH 选定 preset 在 Thread 创建时应用并回读校验，Turn 与 Fork 入口也校验，避免首轮执行前权限状态不一致。完整 bb 式 Host ceiling、请求值与生效值的持久对账仍属后续设计边界，不得据此宣称已经生效。
 
 OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。清单漂移报错列出发生差异的字段、已记录与当前推导的 sourceRevision，区分源码内容漂移和 Git 历史差异；仍保持完整清单严格比较。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
 
 OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区域打开官网 `/account/billing`（国内 `lightvela.com`、国际 `lightvela.ai`），不再使用旧的 `/account?tab=billing`；外部套餐页返回后仍刷新账户资料。此兼容不新增桌面总览、不改变实例创建权限或执行归属。
+
+OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网站 WebView。App 验证并保存本区域会话，仅向同源页面的既有浏览器 token store 注入凭据；外部站点交给系统浏览器，切换区域前须退出当前会话。底栏在同一 WebView 中导航智能体、账号和套餐页，网页自身的路由与语言决定当前标签。预热仅限同源版本化 `/_next/static/` 资源；站点 Service Worker 可缓存这类静态资源，不缓存私有 API、对话或其他站点内容。Android 内测 APK 仍承载独立原生工作台。运行与真机预览步骤见 [Expo README](../../../opencraft/apps/workbench-expo/README.md)。
 
 ## 稳定不变量
 
@@ -177,10 +183,11 @@ OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区�
 - 点石自动续费的 `do_goods_and_pay` 只能由 Trade 的受信内部接口承载；CTL 不暴露用户端、管理端或
   internal 转发入口。CTL 的 Pass 生命周期接口不得成为绕过 Trade 活动配置、站点限制和订单幂等校验的
   点石调用通道；控制台普通续费仍调用 Trade 的普通续费建单流程。
-- CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，线上协议按字符串传输并校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
+- CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，请求和成功响应的 `Uin` 均按字符串传输，请求值校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
 - Sandbox Pool 是云地域归属的生命周期 owner：Pool 创建后不得跨 region 修改；同 region 内可调整 zone、VPC 与 subnet。实例仍通过 `pool_id` 归属 Pool，CVM、CBS、TAT 交付校验、停启、销毁与同 SP 升配必须携带由 Pool zone 严格推导的 region，禁止以进程级 `TENCENT_REGION` 覆盖存量实例归属或在 region 缺失时静默回退。
+- Sandbox Pool 的补货熔断与接流量是两个独立状态：终局云创建错误或连续失败仅设置持久化 `refill_paused`，worker 不再补货，但 `status=active` 且 `capacity_state=active` 的已验收 CLEAN 库存仍可分配；显式 Pool 暂停仍挡住两者。运营可通过 Pool PATCH 清除 `refill_paused` 恢复补货。由容量 bundle 自动派生的 Pool 初始为 `capacity_state=warming`、绑定 admission paused；worker 通过数据库条件更新仅在 Pool 仍 active 且存在已验证 CLEAN 实例时切为 active，并只同步目标 Pool 的绑定。warming Pool 计入扩容目标，避免补货期间重复派生；没有 CLEAN 或手工暂停时不得自动开放。
 - Sandbox 实例隔离必须先通过 `DescribeInstancesStatus` 读取 CVM 状态：`STOPPED` 按幂等成功处理，`STOPPING` 不重复调用 `StopInstances` 而进入状态轮询，仅 `RUNNING` 调用 `StopInstances(STOP_CHARGING)`；其他状态必须明确失败。停机请求后的状态竞态仍须回到状态轮询，只有确认 `STOPPED` 后才能推进 `PAUSING → PAUSED`。CTL 提交暂停后必须在有界时间内轮询 Sandbox，确认其真实进入 `PAUSED` 才完成隔离任务；Sandbox 不存在、状态未知或轮询超时均须保留失败并允许任务重试。异步停机提交失败时，仅在云端明确回到 `RUNNING` 后回滚为 `ALLOCATED`，`STOPPING`、`STOPPED` 或无法确认的状态继续保留 `PAUSING` 以便后续对账。
 - 本轮活动保留既有 `spec-2c4g50g` / `spec-4c8g80g` 作为套餐兼容路由键，不由名称推断内存。CTL 规格字典对外返回的实际展示为 2 核 8G 50G 盘 / 4 核 16G 80G 盘，定价页与之保持一致；实际新建和升配落池仍以生产 `spec_pools` 对应的 class + SKU 及 Sandbox 有效池为准，不从规格展示字典推断 Pool ID。
 - 同 SP 升配只允许在同一 region 的 Pool 之间重绑；CTL 必须按每台实例当前 Sandbox 所属 Pool 的 region 筛选目标规格 Pool，不能从全局候选中直接取首项；同 region 可跨 zone。该流程不迁移 CVM、IP、系统盘或网络。跨 region 交付必须新建目标地域实例并走独立迁移/切流方案，不能直接改 Pool 元数据伪装迁移。
@@ -283,12 +290,18 @@ OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区�
   名称新增第二个容器，也不得丢失原容器的镜像、挂载、探针或资源限制。
 - 运行中实例从 `ai_gateway` 迁移到 VelaGW 必须同时完成权益补发、固定用途 Key 签发、Hermes Provider 切换、实例 Key ID 持久化和旧 Key 撤销。该操作只通过强鉴权内部接口按 `user_id + instance_id` 执行，默认先 dry-run；用户存在多个非终态 Bot 时拒绝迁移，避免用户级网关路由产生半迁移。
 - 迁移采用可重入、最终一致语义：用户、订阅和固定用途 Key 均幂等复用，Hermes 配置可重复收敛，路由和实例 Key ID 可重复写入；任一步失败后允许从头重试，不引入跨服务伪事务。
-- VelaGW 人工额度重置只能调用用户加 Plan 维度的接口，并固定保留自然重置时间；禁止用 Plan 全量重置接口代替单用户操作。CTL 对该能力提供用户级包装，隐藏 Set、上游用户和 new-api Plan ID。
+- VelaGW 人工额度重置只能调用用户加 Plan 维度的接口，并固定保留自然重置时间；禁止用 Plan 全量重置接口代替单用户操作。CTL 对该能力提供用户级包装，隐藏 Set、上游用户和 new-api Plan ID。目标必须来自唯一有效、可周期重置的 Pass 基础订阅（`package:` 或满足周期与 Plan 映射校验的无名称旧订阅），不能用会被积分包购买覆盖的 `last_plan_id` 推断；`credit-package:` 和 `free-credit:` 叠加订阅不参与重置。由于现有 new-api 接口会清零该用户同 Plan 的所有有效订阅，CTL 在调用前还必须确认目标 Plan 下恰好只有目标一条有效订阅；同 Plan 叠加订阅、多个基础订阅或未知订阅类型均拒绝，不能靠响应的重置数量事后补救。此预检不能消除跨服务并发窗口，要求严格单订阅原子重置时需扩展 new-api 契约。
 - `gateway-dashboard` 只能通过服务端 BFF 调用迁移和额度重置，两个操作均先 dry-run 并要求完整用户 ID 二次确认；`CTL_INTERNAL_TOKEN` 不得进入浏览器。
 
 - OpenCraft 两版旧模型设置界面已移除。新 LobeChat 风格模型服务页已按用户确认设计接入 DSH，提供商与模型目录来源于运行时；发现模型的保存与初始禁用属于同一次 CAS，不隐式切换默认模型。输入合并保存保留原始配置版本，文本检查只使用用户新输入的 Key。
 - DSH 是执行引擎，不给予 DeepSeek 提供商特殊管理地位。原生 DeepSeek 与其他提供商共享真实启停与默认模型保护；停用释放路由、保留配置和凭据，并在重启后保持。补丁仅扩展固定版本适配器的生命周期，不改协议实现或自动迁移用户默认模型。
 - Settings Shell 承载本机模型服务的分类入口与 master-detail 容器；模型服务内部目录按实际容器空间适配。该呈现不建立环境面包屑、概览或连接管理页，不改变 Chat location；原生启用生命周期或协议不支持的操作不伪装成可用控件。
+
+## 云桌面（CTL Desktop）provision 语义
+
+- 桌面 provision/probe/install 脚本与上层判定之间以 stdout marker 传递状态（`DESKTOP_LAYER_MISSING`、`DESKTOP_PROBE_OK`/`DESKTOP_PROBE_PENDING`、`DESKTOP_PROVISION_FAILED`、install STARTED/进度/DONE/FAIL）。provision 脚本不得使用 errexit 选项：PTY 流式执行下检测行里 `systemctl` 等非零返回会污染会话最终退出码，导致上层误判命令失败、永远走不到按需安装分支（现网 bj-7 复现）。上层判定顺序必须是 marker 优先于 `sandboxCommandSucceeded`：stdout 含 `DESKTOP_LAYER_MISSING` 时无论退出码一律触发按需安装；只有图形层缺失（Missing）和探测未就绪（Pending）是正常业务信号可返回成功——密码写入、服务启动等关键步骤失败必须输出 `DESKTOP_PROVISION_FAILED <reason>` 并 exit 非零，不得用 `|| true` 吞掉，否则会被当成 Pending 反复轮询、永久卡 Provisioning 且无可见原因（旧 noVNC 甚至可能误报 Ready）。
+- 桌面 systemd units（`vela-xvfb`/`vela-desktop-wm`/`vela-x11vnc`/`vela-novnc`）以 agent 运行用户（`agentuser`）运行：镜像预装（`images/build.sh --with-desktop`）与按需 apt 安装（`renderDesktopInstallCommand` 生成的脚本）两套 unit 必须保持一致——`User=agentuser`、显式注入 `HOME` 与 `DISPLAY=:1`、WM 用 `dbus-run-session` 包裹 `startxfce4`、`Requires/After` 补齐依赖链、`Restart=on-failure`。`images/build.sh --with-desktop` 在 `install_desktop_layer` 入口强制校验 `RUNTIME_USER` 必须与 CTL 契约（`desktopRuntimeUser=agentuser`）一致，不一致直接失败；这防止 openclaw 默认 `lightclaw` 用户跑 `--with-desktop` 生成错配镜像（unit 属 lightclaw 而 CTL 往 agentuser home 写密码，导致 x11vnc 读不到密码、桌面起不来且无报错）。不允许回退为 root 会话：root 会话会造成"桌面里创建的文件属主 root、agent 读不了"的错配，并放大公网 noVNC 暴露 root 的风险。
+- 品牌壁纸采用"随镜像打包"方式预置：壁纸文件由 `images/build.sh` 打进镜像，不在 provision/install 脚本中网络下发；脚本只负责激活桌面环境。
 
 ## 定时任务执行模式
 
@@ -369,7 +382,7 @@ OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区�
 - 控制台无法证明实例上只有一个 Bot 时，不得据此禁用主 Bot 的删除入口。后端已为非运行实例保留删除通道，前端堵死会让暂停或修复失败的实例失去清理路径，而控制台并不提供启动实例的操作。此时必须在删除确认中区分原因：实例非运行归因为实例未运行，实例运行但 Profile 列表暂时不可用归因为列表不可用，不得把后者提示为需要先启动实例；并沿用输入名称的二次确认，明确告知将一并销毁实例上的全部 Bot 及其数据。
 - Bot 的网关运行状态是三态：运行、未运行、未知。Hermes `GET /api/profiles` 未返回该字段，或实例非运行导致只能退回实例投影时，必须端到端保持“未知”，不得在提取、DTO 或客户端任何一层压成“未运行”。只有明确的“未运行”才允许触发面向用户的告警。
 - Hermes 的 cron ticker 由 Profile 自身的 gateway 进程承载，未连接消息通道的 Bot 不会常驻该进程。此时定时任务定义写入成功但不会执行，产品必须就地告知该边界，不得让它表现为静默失败；网关恢复后界面状态需随之收敛，不依赖整页刷新。
-- 公开 API 使用 `/v1/instances/{instance_id}/bots` 表达实例作用域；新增 method/path 必须同步 `service-gateway` allowlist，并分别验证 CTL 直连与公共入口路由。
+- 公开 API 使用 `/v1/instances/{instance_id}/bots` 表达实例作用域；新增 method/path 必须同步 `service-gateway` allowlist，并分别验证 CTL 直连与公共入口路由。云桌面会话 `POST/GET /v1/instances/{instance_id}/desktop/session` 已纳入该放行集合：会话复用实例主 sandbox，CTL 经 TAT 拉起桌面服务（脚本内显式 sudo，不走 envd/debug-exec 的用户切换包装），空闲回收只停桌面服务不停主机，`ws_url` 由 CTL 基于 `DESKTOP_INGRESS_DOMAIN` 组装，前端入口由 `CLOUD_DESKTOP_ENABLED` 随 runtime-config 下发的 `cloudDesktopEnabled` 控制，未开启环境不渲染入口。
 - 国内站和国际站 Bot 管理精确放行集合 GET/POST、单 Bot PUT/DELETE、失败 Bot retry，以及唯一通道绑定 PUT/POST/DELETE；实例 method 集合同步包含 PUT。
   克隆继续使用 POST 创建载荷的 `create_mode` / `source_bot_id`，不新增路径；鉴权、实名策略和 CTL 归属保护保持生效。源码配置不等于生产已发布。
 - CTL 的多 Bot 服务端开关由 `ctl-api` 从环境级 `ctl-platform-values.MULTI_BOT_ENABLED` 可选注入；缺省继续使用服务自身默认值，各环境需要显式开放或回滚时必须在对应 deploy-facing platform env 中设置。该开关同时约束前端运行时配置与新增 Bot，不替代 Gateway 精确路由、身份归属或 Hermes Profile 能力检查。

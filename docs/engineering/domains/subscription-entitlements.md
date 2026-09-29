@@ -50,6 +50,10 @@
   `para.productCode/subProductCode` 描述当前源资源，因此必须拒绝外层不是源身份、
   双侧 PID 不一致或缺失内层身份的请求；目标身份只信任 `newConfig`。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
+- 国内 Pass 续费由 CTL 调用 Trade 通用续费询价/下单接口；Trade 仅在存在已启用的
+  `scene=renew` 活动且用户符合资格时调用点石 `get_price_renew` / `do_goods_renew`。
+  未配置续费活动、活动未启用或活动查询失败时，普通续费询价与下单均保持原计费链路；
+  点石专用内部下单并支付接口仍要求有效活动配置，不做计费回退。
 - 2026-09-23 确认的对外首购展示口径为：新用户 Launch 与 Launch AI 首单均免费体验 1 个月。
   Launch 标准版与 Launch AI 的积分额度仍分别按套餐定义展示，不能因首页合并文案而互相推导。
   前端只在新用户且真实询价为零时展示免费标签；实际发放时长仍由服务端活动配置决定，源码、文档
@@ -99,6 +103,9 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 必须将 `ap-guangzhou` 和兼容保留的 `ap-beijing` 都转发到北京预发布 CTL；上海正式的
 `ap-shanghai` 转发到上海 CTL。目标 CTL 的 `CTL_CLOUDAPI_ALLOWED_REGIONS` 必须与入口映射一致，
 避免入口已正确分流但 handler 仍以地域不支持拒绝请求。
+
+CloudLadder 审计事件必须记录规范化后的 `tc_action` 和 `tc_region`，以便将实际入向地域与最终
+`operation`、upstream 对照排障；不得为此记录完整请求头或 `Authorization` 等签名凭据。
 
 新加坡生产可独立于 testing 和国内环境切换 `required`。其生产计费路由
 `jifei-prod`、点石和 Billing CloudAPI 必须验签；计费/账号回调继续使用上述明确豁免。

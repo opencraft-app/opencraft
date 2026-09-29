@@ -6,7 +6,7 @@ import {
 } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Text, View } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../styles/workbench-styles";
 import { IconButton } from "./ui/button";
 
 interface WorkbenchHeaderProps {
@@ -44,7 +44,7 @@ export function WorkbenchHeader({
   topInset,
   onToggleSidebar,
 }: WorkbenchHeaderProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const secondary = theme.color.icon.secondary;
   const metrics = theme.metrics;
 

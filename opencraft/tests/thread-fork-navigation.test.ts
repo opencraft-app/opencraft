@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { AppServerClientError } from "@opencraft/appserver-client";
 import { forkAndOpenThread } from "../apps/workbench-web/src/runtime/thread-fork-navigation.js";
 
 function deferred<T>() {
@@ -61,5 +62,18 @@ test("failed fork never refreshes or navigates", async () => {
     openThread: async () => { opens += 1; },
   }), /fork rejected/u);
   assert.equal(refreshes, 0);
+  assert.equal(opens, 0);
+});
+
+test("transport loss preserves an unknown fork outcome and never retries", async () => {
+  let attempts = 0;
+  let opens = 0;
+  await assert.rejects(forkAndOpenThread({
+    routeScopeId: () => "parent-route",
+    fork: async () => { attempts += 1; throw new AppServerClientError("TRANSPORT_ERROR", "link lost"); },
+    refreshThreads: async () => { throw new Error("must not refresh"); },
+    openThread: async () => { opens += 1; },
+  }), /可能已经创建/u);
+  assert.equal(attempts, 1);
   assert.equal(opens, 0);
 });

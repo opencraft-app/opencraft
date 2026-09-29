@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { connectWebSocketAppHost } from "../apps/workbench-web/src/runtime/websocket-app-host";
+import { connectWebSocketAppHost, type AppHostRecoveryEvents } from "../apps/workbench-web/src/runtime/websocket-app-host";
 
 class FakeSocket {
   static readonly CONNECTING = 0;
@@ -25,6 +25,91 @@ class FakeSocket {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 }
+
+class RecoveryEvents implements AppHostRecoveryEvents {
+  visible = true;
+  listeners = new Set<() => void>();
+  isVisible = () => this.visible;
+  subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  fire(visible = true) { this.visible = visible; for (const listener of this.listeners) listener(); }
+}
+const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("foreground probes share the socket, pause in background, and cannot affect a successor", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  const events = new RecoveryEvents();
+  const first = new FakeSocket(), next = new FakeSocket();
+  const sockets = [first, next];
+  const client = connectWebSocketAppHost(() => sockets.shift() as unknown as WebSocket, {
+    recoveryEvents: events, probeTimeoutMs: 5_000, reportFailure: () => undefined,
+  });
+  const accept = async (socket: FakeSocket, initial: boolean) => {
+    await flush();
+    if (initial) {
+      socket.open();
+      const hello = JSON.parse(socket.sent[0]!);
+      socket.receive({ type: "ready", protocolVersion: 1, connectionId: hello.rendererId, services: ["appserver"], capabilities: { connectionProbe: true } });
+      await flush();
+    }
+    const request = socket.sent.map(frame => JSON.parse(frame)).filter(message => message.type === "host/connect").at(-1)!;
+    socket.receive({ type: "response", requestId: request.requestId, ok: true, result: { hostId: request.hostId, generation: 1 } });
+  };
+  try {
+    const a = client.createTransport("a"), b = client.createTransport("b");
+    const ca = a.connect(); await accept(first, true); await ca;
+    const cb = b.connect(); await accept(first, false); await cb;
+    events.fire(); events.fire();
+    const probes = () => first.sent.map(frame => JSON.parse(frame)).filter(message => message.type === "connection/probe");
+    assert.equal(probes().length, 1);
+    const oldProbe = probes()[0];
+    events.fire(false);
+    context.mock.timers.tick(20_000);
+    assert.equal(a.status.state, "open");
+    events.fire();
+    assert.equal(probes().length, 2);
+    // A late reply to the cancelled background probe cannot satisfy the new one.
+    first.receive({ type: "response", requestId: oldProbe.requestId, ok: true, result: null });
+    context.mock.timers.tick(5_000);
+    assert.equal(a.status.state, "failed");
+    assert.equal(b.status.state, "failed");
+    const reconnect = a.connect(); await accept(next, true); await reconnect;
+    first.receive({ type: "response", requestId: probes()[1].requestId, ok: true, result: null });
+    context.mock.timers.tick(5_000);
+    assert.equal(a.status.state, "open");
+    assert.equal(sockets.length, 0);
+  } finally {
+    client.close();
+    assert.equal(events.listeners.size, 0);
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else delete (globalThis as { window?: unknown }).window;
+  }
+});
+
+test("legacy AppHost gets no unknown probe, while foreground wakes the retry owner", async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
+  const events = new RecoveryEvents(), socket = new FakeSocket();
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { recoveryEvents: events, reportFailure: () => undefined });
+  try {
+    const transport = client.createTransport("local");
+    let hints = 0;
+    transport.subscribeRecoveryHint?.(() => { hints++; });
+    const connecting = transport.connect(); await flush(); socket.open();
+    socket.receive({ type: "ready", protocolVersion: 1, services: ["appserver"] }); await flush();
+    const request = JSON.parse(socket.sent[1]!);
+    socket.receive({ type: "response", requestId: request.requestId, ok: true, result: { hostId: "local", generation: 1 } });
+    await connecting;
+    events.fire();
+    assert.equal(hints, 1);
+    assert.equal(socket.sent.length, 2);
+    socket.fail(); events.fire();
+    assert.equal(hints, 2);
+  } finally {
+    client.close();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else delete (globalThis as { window?: unknown }).window;
+  }
+});
 
 test("browser AppHost transport keeps its listeners and renews its lease after WebSocket close", async () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");

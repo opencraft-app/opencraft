@@ -44,6 +44,17 @@ test("native login exchanges PKCE once and clears pending material", async () =>
   assert.equal(f.calls, 1);
 });
 
+test("native login opens the selected region's authorization service", async () => {
+  const f = fixture();
+  const originalOpen = f.ports.open;
+  f.ports.open = async (raw, redirect) => {
+    assert.equal(new URL(raw).origin, "https://api.lightvela.com");
+    return originalOpen(raw, redirect);
+  };
+  const flow = createNativeLogin(f.ports, () => "https://api.lightvela.com");
+  assert.equal(await flow.signIn(), "test-session");
+});
+
 test("retiring login cannot erase the next owner's transaction", async () => {
   const f = fixture();
   let next = 0;

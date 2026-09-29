@@ -363,6 +363,73 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("maps a Ready desktop session from snake_case ctl payload to camelCase", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            status: "Ready",
+            ws_url: "wss://6080-sb-xxx.ingress.example.com/websockify",
+            password: "a1b2c3d4",
+            width: 1440,
+            height: 900,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const session = await repositories.bots.ensureDesktopSession("ins-1");
+
+    // 回归：ctl 返回 ws_url（snake_case），若直接透传前端读 wsUrl 会得到 undefined，
+    // noVNC 永远拿不到连接地址。此处必须完成 snake→camel 映射。
+    expect(session.status).toBe("Ready");
+    expect(session.wsUrl).toBe("wss://6080-sb-xxx.ingress.example.com/websockify");
+    expect(session.password).toBe("a1b2c3d4");
+    expect(session.width).toBe(1440);
+    expect(session.height).toBe(900);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances/ins-1/desktop/session",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("maps an Installing desktop session with install_progress to installProgress", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            status: "Installing",
+            install_progress: 40,
+            message: "正在安装桌面环境（约 2-4 分钟）",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const session = await repositories.bots.getDesktopSession("ins-1");
+
+    expect(session.status).toBe("Installing");
+    expect(session.installProgress).toBe(40);
+    expect(session.message).toBe("正在安装桌面环境（约 2-4 分钟）");
+    expect(session.wsUrl).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances/ins-1/desktop/session",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("starts a FaceID attempt with the new contract", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(

@@ -29,6 +29,8 @@ export interface PanelTabDescriptor {
   readonly region: PanelRegionId;
   readonly title: string;
   readonly icon?: string;
+  /** Explicitly opt in to showing the icon in the panel tab strip. */
+  readonly showTabIcon?: boolean;
   readonly resource?: string;
   readonly closable: boolean;
   readonly preview: boolean;

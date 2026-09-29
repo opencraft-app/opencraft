@@ -221,6 +221,7 @@ export function createBrowserWorkbenchPanelPlugin(
       region: "right" as const,
       title: page?.title ?? "Browser",
       icon: "browser",
+      showTabIcon: true,
       resource: tabId,
       closable: true,
       preview: false,

@@ -58,7 +58,7 @@ func (c Config) normalized() Config {
 	c.SecretKey = strings.TrimSpace(c.SecretKey)
 	c.LaunchTokenSecret = strings.TrimSpace(c.LaunchTokenSecret)
 	if c.LaunchTokenTTL <= 0 {
-		c.LaunchTokenTTL = 5 * time.Minute
+		c.LaunchTokenTTL = 10 * time.Minute
 	}
 	if c.TimestampSkew <= 0 {
 		c.TimestampSkew = 5 * time.Minute

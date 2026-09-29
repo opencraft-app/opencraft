@@ -1,0 +1,57 @@
+bundles:
+  ticket:
+    owner: ticket
+    source: ticket
+    db_contract:
+      mode: migration
+      bootstrap_namespace: true
+      db_job_service: ticket
+      migration_operation: migration
+      migration_paths:
+      - ticket/migrations/**
+      expected_migration_source: ticket/migrations
+      db_job_secret_resolver: ticket_db_password
+      secret_resolvers:
+        ticket_db_password:
+          type: sops_yaml
+          file: argocd/secrets/{env}/ticket-runtime-secrets.sops.yaml
+          yaml_path: stringData.TICKET_DB_PASSWORD
+      verifier:
+        namespace: ticket
+        image: mysql:8.0
+        service_platform_env_file: argocd/services/ticket/{env}/ticket-platform.env
+        env_from_service_platform:
+          MYSQL_HOST: TICKET_MYSQL_HOST
+          MYSQL_PORT: TICKET_MYSQL_PORT
+          TICKET_DB: TICKET_DB
+          TICKET_DB_USER: TICKET_DB_USER
+        env_from_secret_resolver:
+          TICKET_DB_PASSWORD: ticket_db_password
+        node_selector_from_service_platform:
+          pool: TICKET_NODE_POOL
+        database_env: TICKET_DB
+        user_env: TICKET_DB_USER
+        password_env: TICKET_DB_PASSWORD
+    reason: Ticket support feedback API and MySQL migrations for both production sites.
+    allowed_paths:
+    - ticket/k8s/base
+    - ticket/Dockerfile
+    - ticket/migrations
+    - argocd/secrets/shprod/ticket-runtime-secrets.sops.yaml
+    - argocd/secrets/sgprod/ticket-runtime-secrets.sops.yaml
+    - scripts/ssm_manifest.ticket.shprod.yaml
+    - scripts/ssm_manifest.ticket.sgprod.yaml
+    exit_condition: Remove only when feedback storage and API move to another managed service.
+    publish_paths:
+    - argocd/services/ticket/{env}/**
+    - argocd/services/ticket/common/**
+    - argocd/apps/{env}/ticket.yaml
+    - argocd/projects/{env}-ticket.yaml
+    - argocd/secrets/{env}/ticket-runtime-secrets.sops.yaml
+    - ticket/k8s/base/**
+    - scripts/ssm_manifest.ticket.{env}.yaml
+    dockerfile: ticket/Dockerfile
+    build_context: ticket
+    image_repo:
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ticket
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/ticket

@@ -12,7 +12,4 @@ configMapGenerator:
   envs:
   - sandbox-platform.env
 patches:
-- target:
-    kind: Job
-    name: sandbox-db-migrate-v2
-  patch: "- op: replace\n  path: /metadata/name\n  value: sandbox-db-migrate-v4"
+- path: delete-migration-job.yaml

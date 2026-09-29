@@ -1,7 +1,8 @@
 ---
 name: gongfeng
 description: gongfeng(工蜂)，提供代码仓库管理、分支操作、合并请求、议题管理、代码审查、文件操作、提交查询等, 工蜂域名：https://git.woa.com
-homepage: https://git.woa.com/api/mcp/mcp
+metadata:
+  homepage: https://git.woa.com/api/mcp/mcp
 ---
 
 ## ⚠️ 重要提醒：必须通过 mcporter-internal 调用
@@ -25,9 +26,20 @@ mcporter-internal call gongfeng.create_branch project_id="xxx" branch_name="feat
 
 ---
 
+## 连接发现与历史配置复用（先做，避免重复要求用户登录）
+
+在新建连接、安装客户端或向用户索要令牌之前，先检查现有 `mcporter-internal` 可执行文件和已配置连接。默认配置没有 `gongfeng`，不代表本机没有可用工蜂认证。
+
+- 有界检查本机 mcporter 与宿主配置（例如 `~/.mcporter/mcporter.json`、`~/.codebuddy/mcp.json`，以及当前宿主明确提供的配置位置）；仅输出服务器名称、传输类型和非敏感地址，不输出 env/header/令牌值。
+- 用户说“之前做过”时，检查相关任务记录及已有配置，优先复用，不先要求重新创建令牌。
+- 可以用 `mcporter-internal --config <已确认的配置文件> list gongfeng --schema` 发现实际工具。旧适配器可能提供 `get_project` / `list_merge_requests` / `create_merge_request` 和 camelCase 参数；本文下方官方工具参考不一定适用于旧适配器。
+- 对实际支持的工具做只读认证验证：优先 `get_current_user`；若不存在，用已授权项目的 `get_project` 等只读接口。`Unknown tool` 是接口差异，不是认证失败；仅新建的无认证 HTTP 连接返回 `Unauthorized`，也不能推断所有现有连接都失效。
+- 复用现有本机配置调用，不把凭据复制进仓库、临时脚本、命令参数或日志。认证有效后继续用户已授权的流程，不反复让用户引导。
+- 只有现有配置缺失或其认证明确失败才请用户处理认证。用户选择浏览器登录时，打开工蜂项目页供其登录，完成后验证页面；浏览器会话与 MCP 令牌独立，不能把浏览器登录成功当作 API 认证成功。新建令牌或扩大权限须单独确认，不自动抓取 Cookie。
+
 ## 访问令牌缺失/过期时的处理
 
-调用工蜂 MCP 前，先用只读接口做一次鉴权探测：
+完成上述连接发现后，用实际适配器支持的只读接口做一次鉴权探测。官方接口示例：
 
 ```bash
 mcporter-internal call gongfeng.get_current_user --args '{}'

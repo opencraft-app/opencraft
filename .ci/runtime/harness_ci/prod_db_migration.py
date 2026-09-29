@@ -103,6 +103,7 @@ SUPPORTED_SERVICES = {
     "sandbox",
     "credit",
     "referral",
+    "ticket",
     "user-auth",
     "lightclaw-auth",
 }
@@ -151,13 +152,13 @@ def run(command: list[str], *, cwd: Path = REPO_ROOT, capture: bool = False) -> 
 
 
 def map_service(service: str) -> tuple[str, str]:
-    if service in {"payment", "subscription", "trade", "ai-gateway", "ctl", "sandbox", "credit", "referral"}:
+    if service in {"payment", "subscription", "trade", "ai-gateway", "ctl", "sandbox", "credit", "referral", "ticket"}:
         return service, service
     if service in {"user-auth", "lightclaw-auth"}:
         return "user-auth", "lightclaw-auth"
     raise ValueError(
         "SERVICE must be one of: payment, subscription, trade, user-auth, "
-        f"lightclaw-auth, ai-gateway, ctl, sandbox, credit, referral; got: {service}"
+        f"lightclaw-auth, ai-gateway, ctl, sandbox, credit, referral, ticket; got: {service}"
     )
 
 

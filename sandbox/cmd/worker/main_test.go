@@ -792,8 +792,8 @@ func TestDoRefillPausesPoolAfterTencentDocumentedTerminalCreateErrors(t *testing
 			if err != nil {
 				t.Fatalf("get pool: %v", err)
 			}
-			if got.Status != core.PoolStatusPaused {
-				t.Fatalf("expected pool to be paused after terminal error, got %q", got.Status)
+			if got.Status != core.PoolStatusActive || !got.RefillPaused {
+				t.Fatalf("expected only refill to be paused after terminal error, got status=%q refill_paused=%t", got.Status, got.RefillPaused)
 			}
 			if got.LastRefillErrorCode != tt.wantCode {
 				t.Fatalf("expected refill error code %q, got %q", tt.wantCode, got.LastRefillErrorCode)
@@ -829,6 +829,55 @@ func TestDoRefillDoesNotPausePoolAfterRetryableTencentCreateError(t *testing.T) 
 	}
 	if got.LastRefillErrorCode != "RequestLimitExceeded" {
 		t.Fatalf("expected refill error code RequestLimitExceeded, got %q", got.LastRefillErrorCode)
+	}
+}
+
+func TestDoRefillTerminalFailureKeepsVerifiedInventoryAdmitted(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "terminal-with-stock", "", "img", 2, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, nil, func(context.Context, provider.CloudInstanceRef) error { return nil }); err != nil {
+		t.Fatalf("seed verified inventory: %v", err)
+	}
+	cp := &stubProvider{createErrs: []error{errors.New("[TencentCloudSDKException] code:InstancesQuotaLimitExceeded message:quota exceeded")}}
+	if err := doRefill(ctx, svc, cp, nil, pool.ID, 0, 1); err != nil {
+		t.Fatalf("first refill: %v", err)
+	}
+	got, err := svc.GetPool(ctx, pool.ID)
+	if err != nil || got.Status != core.PoolStatusActive || !got.RefillPaused {
+		t.Fatalf("refill should be stopped without pausing admission: pool=%+v err=%v", got, err)
+	}
+	if _, err := svc.Allocate(ctx, pool.ID); err != nil {
+		t.Fatalf("verified CLEAN inventory should remain allocatable: %v", err)
+	}
+	if err := doRefill(ctx, svc, cp, nil, pool.ID, 0, 1); err != nil {
+		t.Fatalf("second refill: %v", err)
+	}
+	if cp.createCalls != 1 {
+		t.Fatalf("refill breaker should prevent repeated cloud creates, got %d", cp.createCalls)
+	}
+}
+
+func TestDoRefillPartialSuccessStillOpensTerminalBreaker(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "partial-terminal", "", "img", 2, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	cp := &stubProvider{createErrs: []error{nil, errors.New("[TencentCloudSDKException] code:InstancesQuotaLimitExceeded message:quota exceeded")}}
+	if err := doRefill(ctx, svc, cp, nil, pool.ID, 0, 1); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	got, err := svc.GetPool(ctx, pool.ID)
+	if err != nil || !got.RefillPaused || got.Status != core.PoolStatusActive {
+		t.Fatalf("partial success must still trip refill breaker: pool=%+v err=%v", got, err)
+	}
+	if _, err := svc.Allocate(ctx, pool.ID); err != nil {
+		t.Fatalf("successful instance must remain allocatable: %v", err)
 	}
 }
 
@@ -913,8 +962,8 @@ func TestDoRefillAutoProvisionsNewShardPoolOnSecurityGroupLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get source pool: %v", err)
 	}
-	if got.Status != core.PoolStatusPaused {
-		t.Fatalf("expected source pool to be paused after sg limit, got %q", got.Status)
+	if got.Status != core.PoolStatusActive || !got.RefillPaused {
+		t.Fatalf("expected source pool refill to be paused after sg limit, got status=%q refill_paused=%t", got.Status, got.RefillPaused)
 	}
 	if got.LastAutoscaleAction != "sg_shard_recovery_pending" {
 		t.Fatalf("expected sg shard recovery lease to be recorded, got %q", got.LastAutoscaleAction)
@@ -1235,8 +1284,8 @@ func TestDoRefillLiveDBFaultInjectionAutoProvisionsNewShardPool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get source pool: %v", err)
 	}
-	if got.Status != core.PoolStatusPaused {
-		t.Fatalf("expected source pool to be paused after sg limit, got %q", got.Status)
+	if got.Status != core.PoolStatusActive || !got.RefillPaused {
+		t.Fatalf("expected source pool refill to be paused after sg limit, got status=%q refill_paused=%t", got.Status, got.RefillPaused)
 	}
 }
 

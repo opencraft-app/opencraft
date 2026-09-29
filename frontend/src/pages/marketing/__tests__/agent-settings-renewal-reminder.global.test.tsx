@@ -55,6 +55,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => paidBillingEnabled,
   useMultiBotEnabled: () => true,
   useRealnamePhoneVerificationEnabled: () => false,

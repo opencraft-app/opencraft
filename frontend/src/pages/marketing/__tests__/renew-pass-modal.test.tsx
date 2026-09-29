@@ -48,6 +48,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
 }));

@@ -129,7 +129,7 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle as SvgCircle, Path as SvgPath } from "react-native-svg";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../styles/workbench-styles";
 
 import {
   NativeResponsePositionedTurns,
@@ -326,7 +326,7 @@ function NativeActivityDisclosure({
   readonly summary: string;
   readonly trailing?: ReactNode;
 }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const expandable = children !== null && children !== undefined && onOpenChange !== undefined;
   const header = <>
     <View style={styles.activityDisclosureTitleRow}>
@@ -363,7 +363,7 @@ function elicitationDraftText(value: McpElicitationDraftValue | undefined): stri
 
 function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reasoning" }> }) {
   const [open, setOpen] = useState(false);
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const expandable = block.detail !== null && block.detail.trim() !== "";
   const header = <>
     <View style={[styles.reasoningDot, block.streaming ? styles.reasoningActive : styles.reasoningDone]} />
@@ -381,7 +381,7 @@ function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reas
 }
 
 function NativeAutomaticApprovalReviewRow({ review }: { readonly review: AutomaticApprovalReview }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [open, setOpen] = useState(false);
   const warning = isAutomaticApprovalReviewWarning(review);
   return (
@@ -405,7 +405,7 @@ function NativeAutomaticApprovalReviewList({ reviews }: { readonly reviews: read
 }
 
 function NativeAutomaticApprovalReviewBlock({ block }: { readonly block: Extract<TimelineBlock, { type: "automatic-approval-review" }> }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [open, setOpen] = useState(block.review.status === "inProgress");
   const state: ToolActivityPresentation["state"] = block.review.status === "inProgress" ? "running"
     : isAutomaticApprovalReviewWarning(block.review) ? "failed" : "completed";
@@ -423,7 +423,7 @@ function NativeAutomaticApprovalReviewBlock({ block }: { readonly block: Extract
 }
 
 function NativeAutoReviewInterruptionWarningBlock({ block }: { readonly block: Extract<TimelineBlock, { type: "auto-review-interruption-warning" }> }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   return (
     <View accessibilityHint={block.detail} style={styles.eventDivider}>
       <View style={styles.eventLine} />
@@ -436,7 +436,7 @@ function NativeAutoReviewInterruptionWarningBlock({ block }: { readonly block: E
 }
 
 function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: "command-execution" }> }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const presentation = useToolActivityPresentation(block);
   const detailLevel = useContext(NativeConversationDetailContext);
   const skill = skillReadPresentation(block, detailLevel);
@@ -476,7 +476,7 @@ function NativeFileChangeActivity({
   readonly block: Extract<TimelineBlock, { type: "patch" }>;
   readonly change: Extract<TimelineBlock, { type: "patch" }>["changes"][number];
 }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [open, setOpen] = useState(false);
   const presentation = useToolActivityPresentation(block);
   const hasDiff = change.unifiedDiff !== null && change.unifiedDiff.trim() !== "";
@@ -513,7 +513,7 @@ function PatchBlock({ block }: { block: Extract<TimelineBlock, { type: "patch" }
 }
 
 function TurnDiffBlock({ block }: { block: Extract<TimelineBlock, { type: "turn-diff" }> }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const documentHost = useContext(NativeDocumentHostContext);
   const [expanded, setExpanded] = useState(false);
   if (block.files.length === 0) return null;
@@ -544,7 +544,7 @@ function TurnDiffBlock({ block }: { block: Extract<TimelineBlock, { type: "turn-
 const NativeAutomationNavigationContext = createContext<((block: AutomationUpdateTimelineBlock) => void) | null>(null);
 
 function AutomationUpdateBlock({ block }: { readonly block: AutomationUpdateTimelineBlock }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const openAutomation = useContext(NativeAutomationNavigationContext);
   const presentation = presentAutomationUpdate(block);
   const canOpen = presentation.canOpen && openAutomation !== null;
@@ -591,7 +591,7 @@ function nativeSentenceCaseToolName(value: string): string {
 }
 
 function NativeWebMcpToolActivity({ call }: { readonly call: WebMcpToolSurfaceCall }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [open, setOpen] = useState(false);
   const summary = call.kind === "listTools" ? "Listed website tools" : call.title ?? nativeSentenceCaseToolName(call.name);
   const input = call.kind === "invokeTool" ? parseNativeWebMcpJson(call.inputJson, call.inputTruncated) : null;
@@ -628,7 +628,7 @@ function NativeWebMcpToolActivity({ call }: { readonly call: WebMcpToolSurfaceCa
 function NativeCreatedThreadToolCard({ result }: {
   readonly result: NonNullable<ReturnType<typeof createdThreadToolResult>>;
 }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const openThread = useContext(NativeThreadNavigationContext);
   const content = <>
     <View style={styles.createdThreadIcon}>
@@ -656,7 +656,7 @@ function NativeCodexAppThreadToolRow({ block, presentation }: {
   readonly block: Extract<TimelineBlock, { type: "tool-call" }>;
   readonly presentation: ToolActivityPresentation;
 }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const openThread = useContext(NativeThreadNavigationContext);
   const target = codexAppThreadNavigationTarget(block);
   const canOpen = target !== null && openThread !== null;
@@ -718,7 +718,7 @@ function defaultNativeImageSource(path: string): string | null {
 }
 
 function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineBlock, { type: "tool-call" }> }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const presentation = useToolActivityPresentation(block);
   const host = useContext(NativeImageViewHostContext);
   const paths = block.imagePaths ?? [];
@@ -797,7 +797,7 @@ function NativeGeneratedImageBlock({ block }: { readonly block: Extract<Timeline
 }
 
 function ToolCallBlock({ block }: { readonly block: Extract<TimelineBlock, { type: "tool-call" }> }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const presentation = useToolActivityPresentation(block);
   const parts = extractToolCallContentParts(block);
   const displayParts = block.kind === "mcp" ? parts.filter((part) => part.role !== "input") : parts;
@@ -848,7 +848,7 @@ function ToolCallBlock({ block }: { readonly block: Extract<TimelineBlock, { typ
 }
 
 function NativeSubagentActivity({ unit }: { readonly unit: SubagentActivityRenderUnit }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const presentation = useMemo(() => deriveSubagentActivityGroupPresentation(unit.blocks), [unit.blocks]);
   const [open, setOpen] = useState(unit.blocks.some((block) => block.status === "running" || block.status === "pending"));
   const header = <>
@@ -869,7 +869,7 @@ function NativeSubagentActivity({ unit }: { readonly unit: SubagentActivityRende
 }
 
 function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupContentUnit }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const registry = useContext(NativeToolActivityPresenterContext);
   const detailLevel = useContext(NativeConversationDetailContext);
   const version = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
@@ -960,7 +960,7 @@ function NativeActivityContent({ units }: { readonly units: readonly AgentActivi
 }
 
 function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [persistedCollapsed, setPersistedCollapsed] = useState<boolean>();
   // Native consumes the same disclosure/partition authority as Web. A local
   // `open` initialized once cannot own completion-triggered auto-collapse.
@@ -1036,7 +1036,7 @@ function NativeApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: 
 
 function NativeQuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "question" }> }) {
   const respond = useContext(NativeInteractionContext);
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [questionIndex, setQuestionIndex] = useState(0);
   const [drafts, setDrafts] = useState<readonly UserInputQuestionDraft[]>(() => createUserInputQuestionDrafts(block.questions));
   const [submitting, setSubmitting] = useState(false);
@@ -1111,7 +1111,7 @@ function NativeQuestionBlock({ block }: { block: Extract<TimelineBlock, { type: 
 
 function NativeOptionPickerBlock({ block }: { block: Extract<TimelineBlock, { type: "option-picker" }> }) {
   const respond = useContext(NativeInteractionContext);
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [selectedOptions, setSelectedOptions] = useState<readonly string[]>([]);
   const [freeformText, setFreeformText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1246,7 +1246,7 @@ function NativeSetupContextPickerBlock({ block }: { block: Extract<TimelineBlock
 
 function NativeMcpToolApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: "elicitation" }> }) {
   const respond = useContext(NativeInteractionContext);
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [submitting, setSubmitting] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [expanded, setExpanded] = useState<Readonly<Record<string, boolean>>>({});
@@ -1447,7 +1447,7 @@ export function WorkbenchPendingInteractionPanel({
   readonly setupContextLoading?: boolean;
   readonly onConnectSetupContextSource?: (source: SetupCodexContextSource) => Promise<void>;
 }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   return (
     <NativeInteractionContext.Provider value={onRespondInteraction}>
       <NativeSetupContextCatalog.Provider value={{ sources: setupContextSources, loading: setupContextLoading, connect: onConnectSetupContextSource ?? null }}>
@@ -1495,7 +1495,7 @@ function openNativeUserMessageResource(source: string, host: NativeImageViewHost
 
 function NativeUserMessageAttachments({ block }: { readonly block: UserMessageTimelineBlock }) {
   const host = useContext(NativeImageViewHostContext);
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const attachments = block.content.filter((part) => part.type !== "text");
   if (attachments.length === 0) return null;
   return (
@@ -1524,7 +1524,7 @@ function NativeUserMessageAttachments({ block }: { readonly block: UserMessageTi
 }
 
 function NativeUserMessageBlock({ block }: { readonly block: UserMessageTimelineBlock }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const collapsedHeight = theme.platformTypography.chat.lineHeight * (NATIVE_USER_MESSAGE_COLLAPSED_LINES - 1);
   const {
     collapseState,
@@ -1579,7 +1579,7 @@ function NativePlanTimelineRenderer({ block }: TimelineBlockRendererProps) {
 }
 
 function NativeTodoTimelineRenderer({ block }: TimelineBlockRendererProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [open, setOpen] = useState(false);
   if (block.type !== "todo") return null;
   if (block.entries.length === 0) return null;
@@ -1591,7 +1591,7 @@ function NativeCompactionBlock({ block }: { block: Extract<TimelineBlock, { type
 }
 
 function NativeSubagentTimelineRenderer({ block }: TimelineBlockRendererProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   if (block.type !== "subagent") return null;
   return <SemanticCard icon={<Bot color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} />} title={block.label} status={block.status}><Text style={styles.semanticBody}>{block.action}</Text></SemanticCard>;
 }
@@ -1603,7 +1603,7 @@ function NativeInteractionTimelineRenderer({ block }: TimelineBlockRendererProps
 }
 
 function NativeErrorTimelineRenderer({ block }: TimelineBlockRendererProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   if (block.type !== "error") return null;
   return <SemanticCard icon={<AlertCircle color={theme.color.accent.negative} size={theme.metrics.control.iconSmall} />} title={block.code ?? "Error"}><Text style={styles.semanticBody}>{block.message}</Text></SemanticCard>;
 }
@@ -1709,7 +1709,7 @@ function NativeHookStatsSummary({
 }
 
 function NativeResponseCopyButton({ text, label = "Copy response" }: { text: string; label?: string }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const copyText = useContext(NativeCopyTextContext);
   const [copied, setCopied] = useState(false);
   useEffect(() => { setCopied(false); }, [text]);
@@ -1740,7 +1740,7 @@ function Frame({
   showActions: boolean;
   threadDetailLevel: NativeConversationDetailLevel;
 }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const [showHookStats, setShowHookStats] = useState(false);
   const actions = frame.type === "assistant" ? assistantMessageActions(frame) : null;
   const visibleBlocks = frame.blocks;
@@ -1845,7 +1845,7 @@ function AnimatedTurn({
 }
 
 function EmptyConversation({ onSuggestion }: { onSuggestion(text: string): void }) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const suggestions = [
     { icon: FileSearch, label: "Explore this codebase", prompt: "Explore this codebase and explain its architecture." },
     { icon: WandSparkles, label: "Implement a feature", prompt: "Help me implement a new feature in this project." },

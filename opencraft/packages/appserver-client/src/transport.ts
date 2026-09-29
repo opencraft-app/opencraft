@@ -30,5 +30,7 @@ export interface DuplexTransport {
   send(frame: string, signal?: AbortSignal): Promise<void>;
   subscribeMessage(listener: (frame: string) => void): () => void;
   subscribeStatus(listener: (status: TransportStatus) => void): () => void;
+  /** Platform hint (foreground/network return); connection owner decides whether to retry. */
+  subscribeRecoveryHint?(listener: () => void): () => void;
   close(): Promise<void>;
 }

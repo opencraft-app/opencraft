@@ -1,7 +1,7 @@
 import type { WorkbenchFileChange } from "@opencraft/workbench-runtime";
 import { Check, FileCode2, X } from "lucide-react-native";
 import { ScrollView, Text, View } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../styles/workbench-styles";
 import { Button, IconButton } from "./ui/button";
 
 interface WorkbenchRightPanelProps {
@@ -11,7 +11,7 @@ interface WorkbenchRightPanelProps {
 }
 
 export function WorkbenchRightPanel({ files, topInset, onClose }: WorkbenchRightPanelProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   return (
     <View style={[styles.panel, { paddingTop: topInset }]}> 
       <View style={styles.header}>

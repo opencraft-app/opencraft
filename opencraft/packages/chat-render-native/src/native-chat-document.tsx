@@ -1,7 +1,7 @@
 import { ChatDocumentSessionView, type ChatRenderContext, type ChatRenderTheme } from "@opencraft/chat-render-react";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet } from "./styles";
 
 import type { ChatRenderRuntime } from "@opencraft/chat-render-react";
 

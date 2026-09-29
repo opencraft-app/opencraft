@@ -118,6 +118,9 @@ type Logic interface {
 	CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, error)
 	SubscribeWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, <-chan transport.WeixinLoginSessionEvent, func(), error)
 	ConfigureChannel(ctx pctx.Context, instanceID string, req *transport.ConfigureChannelRequest) (*transport.ConfigureChannelResponse, error)
+	// 云桌面（VNC）：POST 触发（幂等 provision）/ GET 轮询（Provisioning→Ready 状态机）。
+	EnsureDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
+	GetDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
 }
 
 type logic struct {

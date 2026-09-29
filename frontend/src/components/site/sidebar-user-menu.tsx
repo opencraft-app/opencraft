@@ -45,11 +45,17 @@ function SidebarLanguagePopover({ label, children }: { label: string; children: 
 /** Presentation only; account identity, requests, routes and localization belong to the controller. */
 export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, status, credit, upgrade, entries, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const triggerHoveredRef = useRef(false);
   const close = () => onOpenChange(false);
+  useEffect(() => {
+    if (!open) triggerHoveredRef.current = false;
+  }, [open]);
   return <div className="lv-agent-account-menu">
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button type="button" className="lv-agent-account-trigger" aria-label={labels.trigger}>
+        <button type="button" className="lv-agent-account-trigger" aria-label={labels.trigger}
+          onMouseEnter={() => { triggerHoveredRef.current = true; onOpenChange(true); }}
+          onClickCapture={(event) => { if (triggerHoveredRef.current) event.stopPropagation(); }}>
           <img src={avatarSrc} alt="" className="size-9 shrink-0 rounded-full border border-[var(--border-subtle)] object-cover" />
           <span className="min-w-0 flex-1 text-left">
             <span className="block truncate text-sm font-semibold text-[var(--text-primary)]">{name}</span>

@@ -10,6 +10,7 @@ import {
   Globe2,
   LayoutDashboard,
   MessageCircle,
+  Plug,
   MessageSquare,
   Loader2,
   MoreVertical,
@@ -26,6 +27,7 @@ import {
   Trophy,
   Download,
   FlaskConical,
+  Monitor,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -50,10 +52,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
+import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useCloudDesktopEnabled } from "@/contexts/runtime-config-context";
 import { useCurrentLocale, useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
+import { isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
@@ -100,7 +103,6 @@ import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-swi
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
-import { subscribeConsoleShow } from "@/lib/console-show-event";
 import {
   resolveAgentConsoleCollectionLabel,
   resolveAgentDisplayName,
@@ -180,6 +182,7 @@ import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renew
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
+import { AgentCloudDesktopPanel } from "@/pages/marketing/agent-cloud-desktop-panel";
 import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -238,6 +241,11 @@ const AgentChannelPanel = lazy(() =>
   import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
 );
 
+// 连接器面板（P1）：列表/授权/断开全走 ai-server 连接器平台。
+// lazy 与其他面板一致；instanceId 取 TeaSdk 实例标识。
+const AgentConnectorsPanel = lazy(() =>
+  import("@/pages/marketing/agent-connectors-panel").then((module) => ({ default: module.ConnectorsPanel })),
+);
 type Translate = (text: string, options?: Record<string, unknown>) => string;
 
 function getPassExpiryReminderCopy(reminder: PassExpiryReminder, t: Translate) {
@@ -2618,6 +2626,7 @@ export const AgentSettingsPage = ({
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
+  const cloudDesktopEnabled = useCloudDesktopEnabled();
   const fleetOverviewEnabled = multiBotEnabled && IS_BUDDY_ONBOARDING_ENABLED;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
@@ -2733,6 +2742,15 @@ export const AgentSettingsPage = ({
   /* ── 侧边栏「探索/对话」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
   /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
   const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
+  /**
+   * 连接器入口默认隐藏（灰度）：控制台执行 show() 后显示（与工作台 reveal
+   * 同款机制——window.show 劫持 toggle 持久化状态并广播）。初始读持久化值
+   * （show 过的用户刷新后保持显示），订阅跟随开关（再次 show 收起）。
+   * 且仅国内站显示（国际站走独立计费体系，连接器域名后续单独接入）。
+   */
+  const [connectorsRevealed, setConnectorsRevealed] = useState(() => isConsoleShowEnabled());
+  useEffect(() => subscribeConsoleShow(setConnectorsRevealed), []);
+  const showConnectorsEntry = connectorsRevealed && !isGlobal;
   const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
   const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
@@ -5725,6 +5743,9 @@ export const AgentSettingsPage = ({
                   label: t("使用"),
                   sections: [
                     { id: "channel", label: resolveAgentConsoleCollectionLabel("channel", i18n.language, t), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    ...(showConnectorsEntry
+                      ? [{ id: "connectors" as const, label: t("连接器"), icon: <Plug className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.connectors }]
+                      : []),
                     ...(!moveModelEntryToAccountMenu
                       ? [{ id: "model" as const, label: resolveAgentConsoleCollectionLabel("model", i18n.language, t), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model }]
                       : []),
@@ -5767,6 +5788,19 @@ export const AgentSettingsPage = ({
                       path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
                       badge: "Beta",
                     },
+                    // 云桌面入口守卫：仅在后端下发 cloudDesktopEnabled 的环境（已配置
+                    // DESKTOP_INGRESS_DOMAIN，如 sandbox-bj-7）显示，现网隐藏避免死入口。
+                    ...(cloudDesktopEnabled
+                      ? [
+                          {
+                            id: "cloud-desktop",
+                            label: t("云桌面"),
+                            icon: <Monitor className="h-4 w-4" />,
+                            path: AGENT_SECTION_PATH_BY_ID["cloud-desktop"],
+                            badge: "Beta",
+                          } as SettingsSectionLink,
+                        ]
+                      : []),
                   ],
                 },
               ];
@@ -6527,6 +6561,14 @@ export const AgentSettingsPage = ({
                               )}
                             />
                           )}
+                          {activeSection === "connectors" && showConnectorsEntry && (
+                            <AgentConnectorsPanel
+                              instanceId={sdkInstance.InstanceId}
+                              execCommand={activeBot ? (command, options) =>
+                                repositories.bots.execDebugCommand(activeBot.id, command, options)
+                              : undefined}
+                            />
+                          )}
                           {activeSection === "model" && (
                             <TeaSdkSettingsPanel
                               kind="model"
@@ -6665,6 +6707,9 @@ export const AgentSettingsPage = ({
                           )}
                           {activeSection === "deepseek-harness" && (
                             <AgentDeepSeekHarnessPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "cloud-desktop" && cloudDesktopEnabled && (
+                            <AgentCloudDesktopPanel botId={activeBot.id} />
                           )}
                           {activeSection === "website" && (
                             <AgentWebsitePanel />

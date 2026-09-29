@@ -113,7 +113,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260924-mobile-locale-demo-v83"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260929-responsive-v102"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -151,6 +151,7 @@ describe("international v2 homepage rendering", () => {
       "/lightvela-intl-home/runtime.js",
       "/lightvela-intl-home/hero-chat.js",
       "/lightvela-intl-home/scene-wheel.js",
+      "/lightvela-intl-home/assets/feature-motion.js",
     ]);
   });
 
@@ -390,6 +391,24 @@ describe("international v2 homepage rendering", () => {
     expect(document.querySelector(".hero__cta a")).toHaveAttribute("href", "/subscribe");
     // 兜底表里的 "Empieza gratis" 不应出现，证明用的是片段译文
     expect(document.body.textContent).not.toContain("Empieza gratis");
+  });
+
+  it.each([
+    { authenticated: false, subscribed: false, label: "免费试用", href: "/subscribe" },
+    { authenticated: true, subscribed: false, label: "免费试用", href: "/subscribe" },
+    { authenticated: true, subscribed: true, label: "我的智能体伙伴", href: "/agents" },
+  ])("keeps the real domestic footer CTA consistent with its journey: $authenticated/$subscribed", async (state) => {
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = state.authenticated;
+    openClawMock.isSubscribed = state.subscribed;
+    openClawMock.bots = state.subscribed ? [{ id: "bot-1" }] : [];
+    const markup = readFileSync(path.join(process.cwd(), "public/lightvela-intl-home/index-fragment.zh-CN.html"), "utf8");
+    render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => {
+      expect(document.querySelector(".foot__cta a")).toHaveTextContent(state.label);
+      expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", state.href);
+    });
   });
 
   it("takes the subscribed CTA copy from the localized fragment as well", async () => {

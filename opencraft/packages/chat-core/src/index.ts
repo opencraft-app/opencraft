@@ -6,6 +6,7 @@ export * from "./approval-request";
 export * from "./builtin-projectors";
 export * from "./codex-app-tools";
 export * from "./automatic-approval-review";
+export * from "./async-questions";
 export * from "./automation-update";
 export * from "./identity";
 export * from "./hook-stats";

@@ -1,12 +1,12 @@
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import * as Linking from "expo-linking";
 import { AppState, Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet } from "../styles/workbench-styles";
 import { projectLightVelaBotOnboarding } from "@opencraft/plugin-lightvela-hermes/onboarding";
 import type { MobileLightVelaAccount } from "../runtime/lightvela-account";
 import { Button } from "./ui/button";
 
-export function LightVelaAccountGate({ account, children }: { readonly account: MobileLightVelaAccount; readonly children: ReactNode }) {
+export function LightVelaAccountGate({ account, children, allowWithoutBot = false }: { readonly account: MobileLightVelaAccount; readonly children: ReactNode; readonly allowWithoutBot?: boolean }) {
   const snapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
   useEffect(() => { void account.initialize().catch(() => undefined); }, [account]);
   const onboarding = projectLightVelaBotOnboarding({
@@ -16,13 +16,13 @@ export function LightVelaAccountGate({ account, children }: { readonly account: 
     error: snapshot.error,
   });
   useEffect(() => {
-    if (onboarding.kind !== "bot-required") return;
+    if (allowWithoutBot || onboarding.kind !== "bot-required") return;
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void account.retry().catch(() => undefined);
     });
     return () => subscription.remove();
-  }, [account, onboarding.kind]);
-  if (onboarding.kind === "ready") return children;
+  }, [account, allowWithoutBot, onboarding.kind]);
+  if (onboarding.kind === "ready" || (allowWithoutBot && snapshot.phase === "authenticated")) return children;
   const busy = onboarding.kind === "loading";
   const botRequired = onboarding.kind === "bot-required";
   const error = onboarding.kind === "error" || onboarding.kind === "sign-in-required"

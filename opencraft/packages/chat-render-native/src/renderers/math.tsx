@@ -1,6 +1,6 @@
 import type { ChatNodeRendererProps } from "@opencraft/chat-render-react";
 import { ScrollView, Text } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet } from "../styles";
 
 export function NativeMathFallback({ node }: ChatNodeRendererProps) {
   if (node.kind !== "math") return null;
