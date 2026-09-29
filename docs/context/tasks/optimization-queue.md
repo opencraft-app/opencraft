@@ -16,7 +16,7 @@
 
 - [统一回溯入口：TAPD 优化看板](https://tapd.woa.com/tapd_fe/t/index/70234090)；进入「待确认」分组查看所有需用户回复的需求（用户提供的带 `query_token` 链接仅用于访问，不写入仓库）。
 - 分组：「待优化」「进行中」「待确认」「待验收」「已完成」。看板原生状态只有 `open`/`done`，中间阶段由分组表达。
-- [OPT-001 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577)：`1070234090138685577`，当前「待确认」。
+- [OPT-001 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577)：`1070234090138685577`，当前「待验收」，MR [!4775](https://git.woa.com/wisp/mono2/-/merge_requests/4775)。
 - [OPT-002 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685578)：`1070234090138685578`，当前「待确认」。
 - [OPT-003 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610)：`1070234090138685610`，当前「待确认」。
 - [OPT-004 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615)：`1070234090138685615`，当前「待确认」，等待数据范围决定。
@@ -27,7 +27,7 @@
 
 | ID | 需求 | 状态 | 独立分支 | 验收目标 | 下一步 |
 |---|---|---|---|---|---|
-| OPT-001 | Review `/subscribe` 页“首月 6 折”等优惠标签展示逻辑 | `pending_user` | `frontsandbox/subscribe-promotion-badge-20260929` | 有真实适用优惠时显示“免费”或实际折扣；无适用优惠时不显示促销标签 | 双站预览、提交前 CR、MR 草稿就绪；等待用户确认创建 MR |
+| OPT-001 | Review `/subscribe` 页“首月 6 折”等优惠标签展示逻辑 | `awaiting_review` | `frontsandbox/subscribe-promotion-badge-20260929` | 有真实适用优惠时显示“免费”或实际折扣；无适用优惠时不显示促销标签 | 已提交 [MR !4775](https://git.woa.com/wisp/mono2/-/merge_requests/4775)，等待 Fanny、前端负责人 CR 和真实报价验收 |
 | OPT-002 | 微信快捷登录在弹窗内完成授权，展示快捷登录按钮或待扫描二维码 | `pending_user` | `frontsandbox/wechat-login-in-modal-20260929` | 弹窗内嵌微信授权；确认后允许当前页回跳 | 已提交推送，双站预览 200、CR 与 MR 草稿就绪；真实微信客户端验收需同站部署 Auth 后端；待确认创建 MR |
 | OPT-003 | `/subscribe` 套餐卡强调外框随 Hover 移动 | `pending_user` | `frontsandbox/subscribe-card-hover-border` | 鼠标移入任一卡片时强调该卡；移出全部卡片后不固定强调某张卡 | 已提交推送、CR 与 MR 草稿就绪；双站预览 200，待确认创建 MR |
 | OPT-004 | `/account/billing/` 展示已有订单列表 | `pending_user` | `frontsandbox/account-billing-order-list` | 将当前账号真实订单或真实空态作为独立区块置于「订阅套餐」大卡片下方 | 现有隐藏页是演示数据，真实历史 API 缺失；调查记录已推送，等待用户决定真实接口或先做真实空态；尚无实现/预览/MR |
@@ -44,7 +44,6 @@
 
 | ID | 卡片 | 需用户决定 | 恢复条件 |
 |---|---|---|---|
-| OPT-001 | [订阅页促销标签](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577) | 是否创建已准备好的 `frontsandbox/subscribe-promotion-badge-20260929` → `master` MR | 用户确认后创建 MR，进入「待验收」；完整提交信息见卡片评论 |
 | OPT-002 | [微信登录弹窗](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685578) | 是否创建 `frontsandbox/wechat-login-in-modal-20260929` → `master` MR | 双站预览已返回 200；用户确认后创建 MR；真实扫码验收需同站 Auth 部署与微信客户端 |
 | OPT-003 | [套餐卡 Hover 外框](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610) | 是否创建 `frontsandbox/subscribe-card-hover-border` → `master` MR | 双站预览已返回 200；用户确认后创建 MR |
 | OPT-004 | [账单页订单列表](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615) | 本次接真实订单查询接口，还是先做列表结构与真实空态？ | 用户选定范围后恢复实现、测试、预览、CR 和 MR 准备；不能展示演示订单 |
@@ -54,6 +53,7 @@
 
 | ID | 卡片 | MR | 后续 |
 |---|---|---|---|
+| OPT-001 | [订阅页促销标签](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577) | [!4775](https://git.woa.com/wisp/mono2/-/merge_requests/4775) | Fanny 与前端负责人 CR、登录后真实报价验收；尚未合并或发布 |
 | OPT-006 | [移动端首页转义符](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138690655) | [!4774](https://git.woa.com/wisp/mono2/-/merge_requests/4774) | Fanny 自动 CR、负责人 CR、移动端视觉验收；尚未合并或发布 |
 
 ## 等待队列（FIFO）
@@ -88,3 +88,4 @@
 - 2026-09-29：OPT-006 提交前 CR 无阻断，变更影响检查通过，MR 草稿已写入 Task Pack；独立分支提交 `dacd70543` 已推送。预览地址为 `https://mobile-stray-escape-20260929.preview.lightclaw.tech/` 与 `https://intl-mobile-stray-escape-20260929.preview.lightclaw.tech/`，首次检查均返回 404，继续等待预览发布并核对移动端。
 - 2026-09-29：OPT-006 双站预览随后均返回 HTTP 200；各自首页 HTML 的字面量 `\\n` 计数为 0，master 预览均为 1。分支最新 `fd47e50af` 已推送，卡片移至「待确认」，流转评论 `1070234090217553648` 写明 MR 标题、分支、预览、CR、测试和剩余验收条件；尚未创建 MR。
 - 2026-09-29：用户授权提交 OPT-006 MR。分支已合入最新 master `c1df25f86`，聚焦测试复验通过，最新 `2e01ff7d0` 推送；工蜂创建 [MR !4774](https://git.woa.com/wisp/mono2/-/merge_requests/4774)，状态 `opened`、可合并、提交检查成功。TAPD 移至「待验收」，评论 `1070234090217557669` 记录真实 MR 与剩余 CR/验收；尚未合并或发布。
+- 2026-09-29：用户授权提交 OPT-001 和 OPT-003 MR。先处理 OPT-001：合入最新 master，国内与国际订阅页聚焦测试复验 106/106，分支提交 `17977dd6c` 推送；工蜂创建 [MR !4775](https://git.woa.com/wisp/mono2/-/merge_requests/4775)，状态 `opened`、可合并、提交检查成功。TAPD 移至「待验收」，评论 `1070234090217561584` 记录真实 MR 与剩余评审；尚未合并或发布。随后处理 OPT-003。
