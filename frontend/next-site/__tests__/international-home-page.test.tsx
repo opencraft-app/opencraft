@@ -1258,6 +1258,11 @@ describe("international v2 homepage artifact", () => {
       "index-fragment.ko-KR.html": "중요한 작업은 먼저 확인",
     };
     for (const [fragmentName, titles] of Object.entries(expectedCapabilityTitles)) {
+      const workspaceTitle = workspaceTitles[fragmentName];
+      const confirmationTitle = confirmationTitles[fragmentName];
+      if (!workspaceTitle || !confirmationTitle) {
+        throw new Error(`Missing capability title fixture: ${fragmentName}`);
+      }
       const document = new DOMParser().parseFromString(
         readFileSync(path.join(homeRoot, fragmentName), "utf8"),
         "text/html",
@@ -1266,7 +1271,7 @@ describe("international v2 homepage artifact", () => {
       expect(
         Array.from(document.querySelectorAll(".about__cards .wcard h4"), (heading) => heading.textContent?.trim()),
         `${fragmentName} capability titles`,
-      ).toEqual([...titles.slice(0, 3), workspaceTitles[fragmentName], ...titles.slice(4), confirmationTitles[fragmentName]]);
+      ).toEqual([...titles.slice(0, 3), workspaceTitle, ...titles.slice(4), confirmationTitle]);
     }
   });
 

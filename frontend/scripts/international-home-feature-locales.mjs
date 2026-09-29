@@ -1,4 +1,10 @@
 // Editable, localized text for the Figma capability illustrations.
+const DEFAULT_LOCALE = 'en-US';
+export const FEATURE_LOCALES = Object.freeze([DEFAULT_LOCALE, 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR']);
+const SIMPLIFIED_CHINESE = 'zh-CN';
+const SINGAPORE_CHINESE = 'zh-SG';
+const TRADITIONAL_CHINESE = 'zh-Hant';
+const CHINESE_LOCALES = new Set([SIMPLIFIED_CHINESE, SINGAPORE_CHINESE, TRADITIONAL_CHINESE]);
 const copy = {
   'en-US': ['Confirm important actions first', 'Your approval comes before external actions.', 'Send this update?', 'Confirmed. Go ahead.', 'Every weekday at 9 AM', 'Your daily briefing is ready.', 'Remind me to drink water', 'Reminder scheduled.'],
   'zh-CN': ['重要动作先确认', '涉及发送、修改或其他外部操作时，先等你授权。', '彻底删除旧记忆和草稿文件。', '这会永久删除长期记忆和一个工作台文件。请回复「确认删除」继续；其他回复均不会执行。', '每个工作日早上 9 点', '今日简报已准备好。', '提醒我喝水', '提醒已设置。'],
@@ -8,7 +14,7 @@ const copy = {
   'ja-JP': ['重要な操作は先に確認', '送信や変更などの外部操作は、承認を待ってから実行します。', 'この更新を送信しますか？', 'はい、送信してください。', '平日の午前9時に', '今日のまとめができました。', '水分補給を知らせて', 'リマインダーを設定しました。'],
   'ko-KR': ['중요한 작업은 먼저 확인', '전송이나 변경 등 외부 작업은 승인을 받은 뒤 실행합니다.', '이 업데이트를 보낼까요?', '네, 보내 주세요.', '평일마다 오전 9시에', '오늘의 요약이 준비됐어요.', '물 마시라고 알려 줘', '알림을 예약했어요.'],
 };
-copy['zh-SG'] = copy['zh-CN'];
+copy[SINGAPORE_CHINESE] = copy[SIMPLIFIED_CHINESE];
 // One concise sentence per card; the shared generator keeps both sites in sync.
 const descriptions = {
   'zh-CN': ['在常用聊天软件里直接交办任务。', '即使你离开，任务也会继续完成。', '定时或按条件自动执行任务。', '在对话中创建、发布和修改网页。', '安装技能，让智能体能做更多事。', '记住你的偏好，越用越懂你。', '发送、修改等外部操作先征得你同意。'],
@@ -19,7 +25,7 @@ const descriptions = {
   'ja-JP': ['いつものチャットからタスクを依頼。', '離れていてもタスクは進みます。', '時刻や条件に合わせてタスクを自動実行。', 'チャットでWebページを作成・公開・編集。', 'スキルを追加してできることを拡張。', '好みを覚えて、あなたに合った働き方へ。', '送信や変更などの外部操作は承認後に実行。'],
   'ko-KR': ['평소 쓰는 채팅 앱에서 작업을 맡기세요.', '자리를 비워도 작업은 계속됩니다.', '시간이나 조건에 맞춰 작업을 실행합니다.', '채팅으로 웹페이지를 만들고 게시·수정하세요.', '스킬을 설치해 에이전트의 기능을 넓히세요.', '선호하는 작업 방식을 기억합니다.', '외부 작업은 먼저 승인을 받습니다.'],
 };
-descriptions['zh-SG'] = descriptions['zh-CN'];
+descriptions[SINGAPORE_CHINESE] = descriptions[SIMPLIFIED_CHINESE];
 const notes = { 'en-US': 'On to greater things', 'zh-CN': '一起，走向更多可能', 'zh-SG': '一起，走向更多可能', 'zh-Hant': '一起，走向更多可能', 'id-ID': 'Menuju hal-hal hebat', es: 'Hacia nuevas posibilidades', 'ja-JP': 'もっと大きな可能性へ', 'ko-KR': '더 큰 가능성을 향해' };
 // Clockwise orbit coordinates, paired with their icons to avoid parallel-array drift.
 const SKILL_ORBIT_ITEMS = [
@@ -48,9 +54,9 @@ export function localizeFeatureCards(html, locale) {
   html = html.replace(/(?:\\n\s*)+$/, '\n');
   html = restoreFooterBoundary(html, locale);
   html = addFeatureMotion(html, locale);
-  const words = copy[locale] ?? copy['en-US'];
+  const words = copy[locale] ?? copy[DEFAULT_LOCALE];
   const bubbles = (items) => `<div class="feature-copy-preview">${items.map((text) => `<span>${text}</span>`).join('')}</div>`;
-  const confirm = `<article class="wcard wcard--confirm"><div class="wcard__inner"><div class="wcard__demo" aria-hidden="true">${bubbles(words.slice(2, 4))}</div><div class="wcard__body"><h4>${words[0]}</h4><p>${words[1]}</p></div></div></article>`;
+  const confirm = `<article class="wcard wcard--confirm"><div class="wcard__inner"><div class="wcard__demo">${bubbles(words.slice(2, 4))}</div><div class="wcard__body"><h4>${words[0]}</h4><p>${words[1]}</p></div></div></article>`;
   if (html.includes('wcard--confirm')) html = html.replace(/<article class="wcard wcard--confirm">[\s\S]*?<\/article>/, formatFeatureMarkup(confirm));
   else html = html.replace(/(<div class="wcard__demo wcard__demo--mem"[\s\S]*?<\/article>)/, `$1\n${formatFeatureMarkup(confirm)}`);
   html = html.replace(/<div class="feature-copy-preview feature-copy-preview--scheduled">[\s\S]*?<\/div>/g, '');
@@ -58,20 +64,20 @@ export function localizeFeatureCards(html, locale) {
   const cases = [...html.matchAll(/<div class="aut__case aut__case--\d+">[\s\S]*?<\/div>/g)].map(([markup]) => markup.replaceAll('aut__', 'feature-task__').replace(/(<p class="feature-task__bubble feature-task__bubble--agent">)(?!<b>)/, '$1<b>LightVela</b>'));
   if (cases.length) html = html.replace(/(<div class="wcard__demo wcard__demo--auto"[^>]*>)/, `$1<div class="feature-motion-tasks" aria-hidden="true">${cases.join('')}</div><!-- /feature-motion -->`);
   let cardIndex = 0;
-  const sentences = descriptions[locale] ?? descriptions['en-US'];
+  const sentences = descriptions[locale] ?? descriptions[DEFAULT_LOCALE];
   html = html.replace(/<div class="wcard__body">([\s\S]*?)<\/div>/g, (match, body) => {
     const index = cardIndex++;
     const heading = index === 3 ? `<h4 class="wcard__workspace-title">${sentences[index]}</h4>` : (body.match(/<h4>[\s\S]*?<\/h4>/)?.[0] ?? '');
     const caption = index === 1 ? `<p>${sentences[index]}</p>` : '';
     return `<div class="wcard__body">${heading}${caption}</div>`;
   });
-  return html.replace(/<span class="home-step-mascot"[\s\S]*?<\/span>/, `<span class="home-step-mascot" aria-hidden="true"><img src="/lightvela-intl-home/assets/figma-steps-user-original.webp" alt="" width="676" height="591" loading="lazy"><em>${notes[locale] ?? notes['en-US']} →</em></span>`);
+  return html.replace(/<span class="home-step-mascot"[\s\S]*?<\/span>/, `<span class="home-step-mascot" aria-hidden="true"><img src="/lightvela-intl-home/assets/figma-steps-user-original.webp" alt="" width="676" height="591" loading="lazy"><em>${notes[locale] ?? notes[DEFAULT_LOCALE]} →</em></span>`);
 }
 
 function addFeatureMotion(html, locale) {
   html = html.replace(/<div class="feature-motion-(?:chat|skills|wave|workspace)"[\s\S]*?<!-- \/feature-motion -->/g, '');
-  const chinese = locale.startsWith('zh');
-  const traditional = locale === 'zh-Hant';
+  const chinese = CHINESE_LOCALES.has(locale);
+  const traditional = locale === TRADITIONAL_CHINESE;
   const international = [['whatsapp.svg', 'WhatsApp'], ['telegram.svg', 'Telegram'], ['discord.svg', 'Discord'], ['slack.svg', 'Slack']];
   const domestic = [['wechat.webp', chinese ? '微信' : 'WeChat'], ['qq.webp', 'QQ'], ['feishu.webp', chinese ? (traditional ? '飛書' : '飞书') : 'Feishu'], ['dingtalk.webp', chinese ? (traditional ? '釘釘' : '钉钉') : 'DingTalk']];
   const page = (channels) => `<div class="feature-motion-page">${channels.map(([asset, name]) => `<div class="feature-motion-channel"><img src="/lightvela-intl-home/assets/${asset}" alt="" width="28" height="28" loading="lazy"><span>${name}<small>17:25</small></span></div>`).join('')}</div>`;

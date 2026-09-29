@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { localizeFeatureCards, restoreFooterBoundary } from './international-home-feature-locales.mjs';
+import { FEATURE_LOCALES, localizeFeatureCards, restoreFooterBoundary } from './international-home-feature-locales.mjs';
 
 test('footer decoration preserves both CTA states and their localized source copy', () => {
   for (const href of ['/agents', '/subscribe']) {
@@ -85,19 +85,34 @@ test('all Figma assets referenced by homepage CSS are retained during import', (
   }
 });
 
-for (const locale of ['en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR']) {
-  test(`${locale}: footer boundary and localized artwork survive reimport`, () => {
+for (const locale of FEATURE_LOCALES) {
+  test(`${locale}: footer boundary and localized artwork survive reimport`, (t) => {
     const html = readFileSync(new URL(`../public/lightvela-intl-home/index-fragment.${locale}.html`, import.meta.url), 'utf8');
     assert.doesNotMatch(html, /\\n\s*$/);
     assert.equal(localizeFeatureCards(html, locale), html);
-    const document = new JSDOM(html).window.document;
+    const dom = new JSDOM(html);
+    t.after(() => dom.window.close());
+    const document = dom.window.document;
     const captions = [...document.querySelectorAll('.wcard__body > p')];
     assert.equal(captions.length, 1);
     const bodies = [...document.querySelectorAll('.wcard__body')];
+    assert.equal(bodies.length, 7, `${locale}: all capability bodies must exist`);
+    assert.ok(bodies[3]);
     assert.ok(bodies[3].querySelector('h4.wcard__workspace-title'));
     assert.equal(document.querySelectorAll('.wcard__body > h4').length, 7);
     assert.match(html, /feature-motion-skills[^>]*>\n/);
-    for (const index of [0, 2, 4, 5, 6]) assert.equal(bodies[index].querySelector('p'), null);
+    for (const index of [0, 2, 4, 5, 6]) {
+      const body = bodies[index];
+      assert.ok(body, `${locale}: missing card ${index}`);
+      assert.equal(body.querySelector('p'), null);
+    }
+    const confirmation = document.querySelector('.wcard--confirm .feature-copy-preview');
+    assert.ok(confirmation);
+    assert.equal(confirmation.closest('[aria-hidden="true"]'), null, 'confirmation copy must be readable');
+    for (const icon of document.querySelectorAll('.feature-motion-channel img')) {
+      assert.equal(icon.getAttribute('alt'), '', 'duplicate decorative channel icon');
+      assert.ok(icon.closest('[aria-hidden="true"]'));
+    }
     for (const caption of captions) {
       assert.equal(caption.children.length, 0, `${locale}: concise caption has no forced break or partial bold phrase`);
       assert.ok(caption.textContent.trim().length > 0);
