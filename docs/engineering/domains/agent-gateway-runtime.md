@@ -183,7 +183,7 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 - 点石自动续费的 `do_goods_and_pay` 只能由 Trade 的受信内部接口承载；CTL 不暴露用户端、管理端或
   internal 转发入口。CTL 的 Pass 生命周期接口不得成为绕过 Trade 活动配置、站点限制和订单幂等校验的
   点石调用通道；控制台普通续费仍调用 Trade 的普通续费建单流程。
-- CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，线上协议按字符串传输并校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
+- CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，请求和成功响应的 `Uin` 均按字符串传输，请求值校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
 - Sandbox Pool 是云地域归属的生命周期 owner：Pool 创建后不得跨 region 修改；同 region 内可调整 zone、VPC 与 subnet。实例仍通过 `pool_id` 归属 Pool，CVM、CBS、TAT 交付校验、停启、销毁与同 SP 升配必须携带由 Pool zone 严格推导的 region，禁止以进程级 `TENCENT_REGION` 覆盖存量实例归属或在 region 缺失时静默回退。
@@ -296,6 +296,12 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 - OpenCraft 两版旧模型设置界面已移除。新 LobeChat 风格模型服务页已按用户确认设计接入 DSH，提供商与模型目录来源于运行时；发现模型的保存与初始禁用属于同一次 CAS，不隐式切换默认模型。输入合并保存保留原始配置版本，文本检查只使用用户新输入的 Key。
 - DSH 是执行引擎，不给予 DeepSeek 提供商特殊管理地位。原生 DeepSeek 与其他提供商共享真实启停与默认模型保护；停用释放路由、保留配置和凭据，并在重启后保持。补丁仅扩展固定版本适配器的生命周期，不改协议实现或自动迁移用户默认模型。
 - Settings Shell 承载本机模型服务的分类入口与 master-detail 容器；模型服务内部目录按实际容器空间适配。该呈现不建立环境面包屑、概览或连接管理页，不改变 Chat location；原生启用生命周期或协议不支持的操作不伪装成可用控件。
+
+## 云桌面（CTL Desktop）provision 语义
+
+- 桌面 provision/probe/install 脚本与上层判定之间以 stdout marker 传递状态（`DESKTOP_LAYER_MISSING`、`DESKTOP_PROBE_OK`/`DESKTOP_PROBE_PENDING`、`DESKTOP_PROVISION_FAILED`、install STARTED/进度/DONE/FAIL）。provision 脚本不得使用 errexit 选项：PTY 流式执行下检测行里 `systemctl` 等非零返回会污染会话最终退出码，导致上层误判命令失败、永远走不到按需安装分支（现网 bj-7 复现）。上层判定顺序必须是 marker 优先于 `sandboxCommandSucceeded`：stdout 含 `DESKTOP_LAYER_MISSING` 时无论退出码一律触发按需安装；只有图形层缺失（Missing）和探测未就绪（Pending）是正常业务信号可返回成功——密码写入、服务启动等关键步骤失败必须输出 `DESKTOP_PROVISION_FAILED <reason>` 并 exit 非零，不得用 `|| true` 吞掉，否则会被当成 Pending 反复轮询、永久卡 Provisioning 且无可见原因（旧 noVNC 甚至可能误报 Ready）。
+- 桌面 systemd units（`vela-xvfb`/`vela-desktop-wm`/`vela-x11vnc`/`vela-novnc`）以 agent 运行用户（`agentuser`）运行：镜像预装（`images/build.sh --with-desktop`）与按需 apt 安装（`renderDesktopInstallCommand` 生成的脚本）两套 unit 必须保持一致——`User=agentuser`、显式注入 `HOME` 与 `DISPLAY=:1`、WM 用 `dbus-run-session` 包裹 `startxfce4`、`Requires/After` 补齐依赖链、`Restart=on-failure`。`images/build.sh --with-desktop` 在 `install_desktop_layer` 入口强制校验 `RUNTIME_USER` 必须与 CTL 契约（`desktopRuntimeUser=agentuser`）一致，不一致直接失败；这防止 openclaw 默认 `lightclaw` 用户跑 `--with-desktop` 生成错配镜像（unit 属 lightclaw 而 CTL 往 agentuser home 写密码，导致 x11vnc 读不到密码、桌面起不来且无报错）。不允许回退为 root 会话：root 会话会造成"桌面里创建的文件属主 root、agent 读不了"的错配，并放大公网 noVNC 暴露 root 的风险。
+- 品牌壁纸采用"随镜像打包"方式预置：壁纸文件由 `images/build.sh` 打进镜像，不在 provision/install 脚本中网络下发；脚本只负责激活桌面环境。
 
 ## 定时任务执行模式
 
