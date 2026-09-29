@@ -393,6 +393,24 @@ describe("international v2 homepage rendering", () => {
     expect(document.body.textContent).not.toContain("Empieza gratis");
   });
 
+  it.each([
+    { authenticated: false, subscribed: false, label: "免费试用", href: "/subscribe" },
+    { authenticated: true, subscribed: false, label: "免费试用", href: "/subscribe" },
+    { authenticated: true, subscribed: true, label: "我的智能体伙伴", href: "/agents" },
+  ])("keeps the real domestic footer CTA consistent with its journey: $authenticated/$subscribed", async (state) => {
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = state.authenticated;
+    openClawMock.isSubscribed = state.subscribed;
+    openClawMock.bots = state.subscribed ? [{ id: "bot-1" }] : [];
+    const markup = readFileSync(path.join(process.cwd(), "public/lightvela-intl-home/index-fragment.zh-CN.html"), "utf8");
+    render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => {
+      expect(document.querySelector(".foot__cta a")).toHaveTextContent(state.label);
+      expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", state.href);
+    });
+  });
+
   it("takes the subscribed CTA copy from the localized fragment as well", async () => {
     (globalThis as { React?: typeof React }).React = React;
     regionMock.isGlobal = false;

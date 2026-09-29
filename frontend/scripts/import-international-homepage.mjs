@@ -19,7 +19,6 @@ if (!sourceArgument) {
 const sourceRoot = path.resolve(sourceArgument);
 const targetRoot = path.join(frontendRoot, "public/lightvela-intl-home");
 const preservedHarnessAssetNames = [
-  "hermes-cover-companion.webp",
   "lv-cover-lavender.webp",
   "hermes-black-companion.webp",
   "hermes-home.css",
@@ -4523,7 +4522,7 @@ for (const locale of supportedLocales) {
   }
 
   const companionDecorations = [
-    [".hero__rotator-line", "afterend", "home-cover-mascot", "hermes-cover-companion.webp", 1541, 1020],
+    [".hero__rotator-line", "afterend", "home-cover-mascot", "lv-cover-lavender.webp", 528, 410],
     [".track", "beforebegin", "home-step-mascot", "hermes-black-companion.webp", 460, 500],
     [".cta", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
     [".foot__top", "afterbegin", "home-footer-mascot", "hermes-door.webp", 672, 512],

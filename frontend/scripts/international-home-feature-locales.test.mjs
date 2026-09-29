@@ -2,7 +2,29 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { localizeFeatureCards } from './international-home-feature-locales.mjs';
+import { localizeFeatureCards, restoreFooterBoundary } from './international-home-feature-locales.mjs';
+
+test('footer decoration preserves both CTA states and their localized source copy', () => {
+  for (const href of ['/agents', '/subscribe']) {
+    const cta = `<div class="foot__cta"><a href="${href}">Approved localized label <span>→</span></a></div>`;
+    assert.ok(restoreFooterBoundary(`<footer class="foot">${cta}</footer>`, 'en-US').includes(cta));
+  }
+});
+
+test('hero decoration has one approved asset and size in the importer', () => {
+  const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
+  assert.ok(importer.includes('"home-cover-mascot", "lv-cover-lavender.webp", 528, 410'));
+  assert.ok(!importer.includes('hermes-cover-companion.webp'));
+  const original = '<span class="home-cover-mascot"><img src="approved.webp" width="528" height="410"></span>';
+  assert.ok(localizeFeatureCards(original, 'en-US').includes(original));
+});
+
+test('footer display font is defined and its local font asset exists', () => {
+  const css = readFileSync(new URL('../public/lightvela-intl-home/style.css', import.meta.url), 'utf8');
+  assert.match(css, /--font-footer-display:\s*'Allura'/);
+  assert.match(css, /font-family:\s*'Allura';[^}]*assets\/fonts\/allura-latin\.woff2/s);
+  assert.ok(readFileSync(new URL('../public/lightvela-intl-home/assets/fonts/allura-latin.woff2', import.meta.url)).length > 0);
+});
 
 test('shared hero centers phrases without moving the companion and separates mobile rows', () => {
   const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');

@@ -834,7 +834,7 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("Hand your ideas to Hermes Agent,");
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("keep them moving in the cloud.");
     // Static fallback follows the approved trial CTA; the session runtime remains authoritative.
-    expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("Free trial");
+    expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("My AI Companion");
     expect(footer?.querySelector(".foot__cta a span")).not.toBeNull();
     expect(footer?.querySelectorAll(".foot__links-grid > div")).toHaveLength(6);
     expect(footer?.querySelectorAll(".foot__brand-copy")).toHaveLength(0);
@@ -889,13 +889,13 @@ describe("international v2 homepage artifact", () => {
     const expectedByLocale = {
       "zh-SG": {
         title: ["把想法交给 Hermes Agent，", "让它们在云端持续推进。"],
-        cta: "免费试用",
+        cta: "我的智能体伙伴",
         headings: ["产品", "对比", "社区", "公司", "相关产品"],
         links: ["1 个月免费试用", "定价", "接入 WhatsApp 指引", "与本地部署对比", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
       },
       "zh-Hant": {
         title: ["把想法交給 Hermes Agent，", "讓它們在雲端持續推進。"],
-        cta: "免費試用",
+        cta: "我的智能體夥伴",
         headings: ["產品", "對比", "社群", "公司", "相關產品"],
         links: ["1 個月免費試用", "定價", "接入 WhatsApp 指引", "與本地部署對比", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
       },

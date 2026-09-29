@@ -45,7 +45,6 @@ function formatFeatureMarkup(markup) {
   }).join('\n');
 }
 export function localizeFeatureCards(html, locale) {
-  html = html.replace(/(<span class="home-cover-mascot"[^>]*>)\s*<img[^>]*>/g, '$1<img src="/lightvela-intl-home/assets/lv-cover-lavender.webp" alt="" width="528" height="410" decoding="async">');
   html = html.replace(/(?:\\n\s*)+$/, '\n');
   html = restoreFooterBoundary(html, locale);
   html = addFeatureMotion(html, locale);
@@ -96,11 +95,11 @@ const doorNotes = {
   'ja-JP': 'もっと明るい働き方へ。',
   'ko-KR': '더 밝은 업무 방식을 열어 보세요.',
 };
-const trialLabels = { 'en-US': 'Free trial', 'zh-CN': '免费试用', 'zh-SG': '免费试用', 'zh-Hant': '免費試用', 'id-ID': 'Coba gratis', es: 'Prueba gratis', 'ja-JP': '無料で試す', 'ko-KR': '무료 체험' };
 export function restoreFooterBoundary(html, locale) {
   html = html.replace(/<span class="home-footer-mascot"[\s\S]*?<\/span>/g, '');
   html = html.replace(/<div class="home-footer-boundary"[\s\S]*?<\/div>/g, '');
   const boundary = `<div class="home-footer-boundary"><svg viewBox="0 0 1440 400" preserveAspectRatio="xMaxYMax slice" aria-hidden="true"><defs><clipPath id="home-door-silhouette"><polygon points="1003.1,42 1045.9,12.6 1045.9,214.8 1003.1,211.4"/></clipPath></defs><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4 L1440 400 L0 400Z" fill="#111"/><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4" fill="none" stroke="#696969" stroke-width="1"/><image href="/lightvela-intl-home/assets/hermes-door.webp" x="830" y="0" width="340" height="268.6" preserveAspectRatio="none" clip-path="url(#home-door-silhouette)"/></svg><p class="home-door-note">${doorNotes[locale] ?? doorNotes['en-US']}</p></div>`;
   html = html.replace(/(<footer class="foot(?: foot--domestic)?">)/, `$1${boundary.replace(/<p class="home-door-note">[\s\S]*?<\/p>/, '')}`);
-  return html.replace(/(<div class="foot__cta"><a[^>]*>)[^<]+/, `$1${trialLabels[locale] ?? trialLabels['en-US']} `);
+  // CTA text and href form a state-machine input; decoration must preserve both.
+  return html;
 }

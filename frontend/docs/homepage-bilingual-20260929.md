@@ -66,3 +66,10 @@
 - 验证：生成器 13/13；首页相关 Vitest 独立重跑 69/69（并行构建时曾有一项超时，未提高测试时限）；`pnpm check` 0 新增类型错误、0 i18n 错误；国内/国际构建与 SEO 路由检查 8/42 均通过。
 - 对比原提交的 9 份 DOM，卡片文字、图片路径及轨道坐标一致；文档检查、JS 语法、staged change-impact 与 diff 检查通过。
 - 交接检查点：追加到原 MR !4800，等待远端检查与人工复审。不合并、不发布。
+
+## 第二轮评审核验
+- 确认并修复页脚 CTA：装饰生成器不再改写按钮文案，9 份片段恢复 master 中与 `/agents` 匹配的原始译文；新增真实中文片段在未登录、未订阅、已订阅状态下的运行时测试。
+- 确认并修复 hero 双重注入：导入器直接使用 `lv-cover-lavender.webp`、528×410；本地化生成器不再覆盖形象，移除旧图的保留名单项。
+- 资源疑问不成立：`git ls-tree origin/master` 确认 automation/workbench/deepseek/workspace-carousel 所列 WebP 已被跟踪，来自 `27c0afb5b`（!4554），不是依赖本地未提交文件。
+- 字体疑问不成立：`style.css` 的 Allura `@font-face` 引用 `assets/fonts/allura-latin.woff2`，同文件定义 `--font-footer-display`；字体文件已被 Git 跟踪。补充变量/字体资产回归断言。
+- 检查点：生成器 16/16、首页相关 Vitest 72/72；`pnpm check` 0 新增类型错误；双站构建及 SEO 路由检查 8/42 通过；文档、JS 语法、staged change-impact、diff 检查通过。本轮只修复评审问题，不变更视觉方案，不合并发布。
