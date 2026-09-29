@@ -20,20 +20,26 @@ describe("connectors-client", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          items: [
+          builtin: [
             {
-              key: "tencent-meeting",
+              connectorKey: "tencent-meeting",
               name: "腾讯会议",
               connectorType: "local_cli",
-              status: "connected",
+              authType: "instance_local",
+              authStatus: "not_required",
+              bindingStatus: "active",
+              bindingVersion: 1,
+              enableStatus: "enabled",
+              deliverStatus: "delivered",
             },
           ],
+          customMcp: [],
         }),
         { status: 200 },
       ),
     );
-    const items = await listInstanceConnectors("launch-token-1", "ins-1");
-    expect(items[0]?.key).toBe("tencent-meeting");
+    const data = await listInstanceConnectors("launch-token-1", "ins-1");
+    expect(data.builtin[0]?.connectorKey).toBe("tencent-meeting");
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain(
       "https://ai-server.example.com/api/connectors/mcp/instance/list",
