@@ -427,6 +427,35 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertNotIn("configmap", db_job.SERVICE_SPECS[("referral", "migration")])
         self.assertNotIn("secret", db_job.SERVICE_SPECS[("referral", "migration")])
 
+    def test_ticket_migration_builds_self_contained_runtime_resources(self) -> None:
+        with mock.patch.object(
+            db_job,
+            "resolve_contract_secret_values",
+            return_value={"ticket_db_password": "test-db-password"},
+        ):
+            dynamic, resources = db_job.build_ticket_dynamic_resources(
+                job_name="gitops-ticket-migration-test",
+                namespace="ticket",
+                env_name="shprod",
+                deploy_root=Path("/tmp/gitops"),
+                service_platform_env={
+                    "TICKET_MYSQL_HOST": "mysql.internal",
+                    "TICKET_MYSQL_PORT": "3306",
+                    "TICKET_DB": "lightvela_ticket",
+                    "TICKET_DB_USER": "ticket",
+                    "TICKET_NODE_POOL": "general-shprod",
+                },
+                db_contract={"db_job_secret_resolver": "ticket_db_password"},
+            )
+        self.assertEqual(dynamic["nodeSelector"], {"pool": "general-shprod"})
+        self.assertIn({"name": "MYSQL_HOST", "value": "mysql.internal"}, dynamic["env"])
+        self.assertIn({"name": "TICKET_DB", "value": "lightvela_ticket"}, dynamic["env"])
+        self.assertEqual(resources[0]["kind"], "Secret")
+        self.assertEqual(resources[0]["stringData"]["TICKET_DB_PASSWORD"], "test-db-password")
+        self.assertEqual(db_job.SERVICE_SPECS[("ticket", "migration")]["command"], ["/usr/local/bin/ticket-migrate", "up"])
+        self.assertNotIn("configmap", db_job.SERVICE_SPECS[("ticket", "migration")])
+        self.assertNotIn("secret", db_job.SERVICE_SPECS[("ticket", "migration")])
+
     def test_kubectl_command_adds_request_timeout(self) -> None:
         command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
 

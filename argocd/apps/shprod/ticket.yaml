@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ticket-shprod
+  namespace: argocd
+spec:
+  project: shprod-ticket
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/ticket/shprod
+  destination:
+    namespace: ticket
+    name: shprod
