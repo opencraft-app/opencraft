@@ -1,7 +1,7 @@
 ---
 id: multi-bot-overview-checkpoint-2026-09-28
 type: task
-scope: 国际站多 Bot 总览改版的本地验证交接快照。
+scope: 双站多 Bot 总览改版的本地验证交接快照。
 triggers: ["多 Bot 总览", "multi-bot overview", "jasminzhao-zonglan-928"]
 owner: jasminzhao
 authority: primary
@@ -34,7 +34,7 @@ derived: false
 - 全量前端测试暴露多项失败并有 worker 未结束，已结束本次测试进程；在干净 master 对照相同失败 suites。
 
 ## unverified
-- 站点同步未收到回复，目前按国际站截图实施；国内入口保持旧逻辑。
+- 双站总览已同步；国内代理页面完成只读交互验证，真实写入未验证。
 - 未验证真实账号的线上 CRUD，不进行生产操作。
 - 全量测试和 context 门禁未全绿，不能视为可直接合并/发布。
 
@@ -183,3 +183,12 @@ derived: false
 - 变更属于同步生成物，沿用此前前端 326 条相关测试、check 和双站构建记录；不将本地 guard 通过表述为远程整条流水线通过。
 - 新增 context receipt：`opencraft/AGENTS.md`、`opencraft/MONO2_MIGRATION.md`、`docs/context/domains/agent-gateway-runtime.md`、`docs/context/domains/site-environment-routing.md`、`docs/context/project/upstream-subtrees.md`、`docs/context/project/services/opencraft.md`；检查 frontend 邻接卡、同步脚本、opencraft/package.json 与 CI guard。
 - 用户已授权 Browser Use 获取日志/令牌；本次提供的日志足以定位，未读取或保存令牌。按既有授权将合并提交和生成物修复推送到原 MR !4760，不手动发布或合并 MR。
+
+
+## 双站同步范围纠正（2026-09-29）
+- 用户明确要求国内站一起改；移除 fleetOverviewEnabled 的 isGlobal 限定，继续尊重多 Bot 及原 onboarding 开关。双站共用同一总览组件，不变更国内实名/配额/后端执行权限。
+- 真实浏览器国内代理页面 `https://lightvela.com/agents/` 已热更新并在刷新后复验：总览置顶，顶部 Bot 数量/邀请数，单卡满宽与当前角标，原资料弹窗及修改资料/复制 Bot/删除菜单；创建入口展示国内模板。验证仅打开/关闭 UI，未保存资料、创建或删除 Bot。
+- 5 文件 87 条相关回归通过；新增国内列表/导航、创建入口、配额和开关关闭回退覆盖。国内模板另由真实浏览器确认，避免国际 fixture 的模块级模板缓存造成误判。
+- check 通过：166 当前/171 基线，0 新增；六语言校验通过。国内隔离构建通过，包含静态导出及 SEO 检查。
+- 日志 `/tmp/zonglan-928-cn-fleet-{test-final,check-final,build}.log`。PRD 改为国内/国际双站，沿用已有 context receipt、frontend 邻接卡及 runtime-config 邻居。
+- 按既有授权提交推送同一分支，另行机械同步 OpenCraft 清单并复验 CI guard；MR !4760 更新为双站描述。不改变生产部署。

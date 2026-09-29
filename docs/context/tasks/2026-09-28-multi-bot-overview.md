@@ -1,7 +1,7 @@
 ---
 id: multi-bot-overview-2026-09-28
 type: task
-scope: 国际站多 Bot 总览与管理改版的实施任务。
+scope: 双站多 Bot 总览与管理改版的实施任务。
 triggers: ["多 Bot 总览", "multi-bot overview", "jasminzhao-zonglan-928"]
 owner: jasminzhao
 authority: primary
@@ -85,7 +85,7 @@ derived: false
 
 ## decisions
 - 用户已通过“整理 PRD 并启动修改”授权实施已展示方案，不重复申请方案批准。
-- 开发范围暂按截图国际站推断，国内保留；询问站点范围尚待回复。
+- 用户已明确要求双站同步，国内站与国际站共用新总览；各站权限规则保持。
 
 ## scan_scope
 - 前端总览/settings/profile/路由/Repository 邻居，禁止全仓扫描。
@@ -106,7 +106,7 @@ derived: false
 
 ## handoff
 - 前端实现与 PRD 已完成本地评审准备；当前 workflow 保留 verify。用户最新已明确授权合并 master、整体 CR、提交并推送指定分支及创建 MR；不执行 MR 合并或发布。
-- 站点范围暂按国际站，国内同步待用户确认；真实账号操作仍待测试环境验收。
+- 站点范围已明确为双站同步；真实账号写入仍待测试环境验收。
 
 ## 后续用户反馈
 - 用户授权修复 SOUL 读取失败覆盖正文风险并切换国内站。共享保存流程现校验命令结果与读取协议，仅 ready/missing 可继续；其他状态停止写入并在原弹窗保留草稿、显示已有多语言错误，读取中禁用保存。读取命令区分不存在与已有空文件。187 条相关测试、check 及国内隔离构建通过。原国际开发进程已停止，国内 dev:cn 在 5174 启动并返回 HTTP 200。
@@ -164,3 +164,12 @@ derived: false
 - 变更属于同步生成物，沿用此前前端 326 条相关测试、check 和双站构建记录；不将本地 guard 通过表述为远程整条流水线通过。
 - 新增 context receipt：`opencraft/AGENTS.md`、`opencraft/MONO2_MIGRATION.md`、`docs/context/domains/agent-gateway-runtime.md`、`docs/context/domains/site-environment-routing.md`、`docs/context/project/upstream-subtrees.md`、`docs/context/project/services/opencraft.md`；检查 frontend 邻接卡、同步脚本、opencraft/package.json 与 CI guard。
 - 用户已授权 Browser Use 获取日志/令牌；本次提供的日志足以定位，未读取或保存令牌。按既有授权将合并提交和生成物修复推送到原 MR !4760，不手动发布或合并 MR。
+
+
+## 双站同步范围纠正（2026-09-29）
+- 用户明确要求国内站一起改；移除 fleetOverviewEnabled 的 isGlobal 限定，继续尊重多 Bot 及原 onboarding 开关。双站共用同一总览组件，不变更国内实名/配额/后端执行权限。
+- 真实浏览器国内代理页面 `https://lightvela.com/agents/` 已热更新并在刷新后复验：总览置顶，顶部 Bot 数量/邀请数，单卡满宽与当前角标，原资料弹窗及修改资料/复制 Bot/删除菜单；创建入口展示国内模板。验证仅打开/关闭 UI，未保存资料、创建或删除 Bot。
+- 5 文件 87 条相关回归通过；新增国内列表/导航、创建入口、配额和开关关闭回退覆盖。国内模板另由真实浏览器确认，避免国际 fixture 的模块级模板缓存造成误判。
+- check 通过：166 当前/171 基线，0 新增；六语言校验通过。国内隔离构建通过，包含静态导出及 SEO 检查。
+- 日志 `/tmp/zonglan-928-cn-fleet-{test-final,check-final,build}.log`。PRD 改为国内/国际双站，沿用已有 context receipt、frontend 邻接卡及 runtime-config 邻居。
+- 按既有授权提交推送同一分支，另行机械同步 OpenCraft 清单并复验 CI guard；MR !4760 更新为双站描述。不改变生产部署。
