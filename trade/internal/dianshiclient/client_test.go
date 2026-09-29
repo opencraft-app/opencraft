@@ -131,6 +131,137 @@ func TestGetActivityPrice_Success(t *testing.T) {
 	}
 }
 
+func TestGetRenewPrice_UsesStagingOrderRouteAndRenewPayload(t *testing.T) {
+	var gotPath string
+	var gotBody []byte
+	purchaseCalls := 0
+	purchase := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		purchaseCalls++
+		http.Error(w, "renew request reached purchase upstream", http.StatusBadGateway)
+	}))
+	defer purchase.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"returnCode":0,"data":[{"act_id":1975812517099088,"price":100,"total_cost":100,"real_cost":50,"currency":"CNY","time_span":1,"time_unit":"m"}]}`))
+	}))
+	defer srv.Close()
+
+	c := New("", purchase.URL+"/v1/proxy/dianshi-order/activity_web/activity/do_goods", Options{
+		EventIDProvider: newFixedEventID(123),
+		NowProvider:     newFixedClock(),
+		RenewBaseURL:    srv.URL + "/v1/proxy/dianshi-order/activity_web/activity",
+	})
+	resp, err := c.GetRenewPrice(context.Background(), &GetRenewPriceRequest{
+		Uin:        "330500000004",
+		ActivityID: 166165503931688,
+		Preview:    1,
+		ClientInfo: map[string]string{"uin": "330500000004", "ownerUin": "330500000004"},
+		GoodsRenew: []RenewPriceGoodsItem{{
+			GoodsID:      1975812517099088,
+			ResourceID:   "pass-90qg3c8q",
+			TimeSpanUnit: "1m",
+			BundleID:     "bundle_launch_01",
+			RegionID:     8,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("GetRenewPrice: %v", err)
+	}
+	if len(resp.PriceItems) != 1 || resp.PriceItems[0].RealCost != 50 {
+		t.Fatalf("response=%+v", resp)
+	}
+	if gotPath != "/v1/proxy/dianshi-order/activity_web/activity/get_price_renew" {
+		t.Fatalf("path=%q", gotPath)
+	}
+	if purchaseCalls != 0 {
+		t.Fatalf("purchase upstream calls=%d, want 0", purchaseCalls)
+	}
+	var sent envelope
+	if err := json.Unmarshal(gotBody, &sent); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if sent.ComponentName != ComponentNamePrice || sent.Interface == nil || sent.Interface.InterfaceName != InterfaceNameActivityGetPrice {
+		t.Fatalf("envelope=%+v", sent)
+	}
+	var para map[string]json.RawMessage
+	if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+		t.Fatalf("decode para: %v", err)
+	}
+	if _, ok := para["goods"]; ok {
+		t.Fatalf("renew request must not include purchase goods: %s", sent.Interface.Para)
+	}
+	var goods []map[string]any
+	if err := json.Unmarshal(para["goods_renew"], &goods); err != nil {
+		t.Fatalf("decode goods_renew: %v", err)
+	}
+	if len(goods) != 1 || goods[0]["goods_id"] != float64(1975812517099088) || goods[0]["resourceId"] != "pass-90qg3c8q" || goods[0]["timeSpanUnit"] != "1m" || goods[0]["bundleId"] != "bundle_launch_01" || goods[0]["regionId"] != float64(8) {
+		t.Fatalf("goods_renew=%v", goods)
+	}
+	if _, ok := para["client_info"]; !ok {
+		t.Fatalf("missing client_info: %s", sent.Interface.Para)
+	}
+}
+
+func TestDoGoodsRenew_UsesRenewEndpointAndAutoPayOnlyWhenRequested(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		autoPay string
+	}{
+		{name: "console order"},
+		{name: "internal order and pay", autoPay: "1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var path string
+			var body []byte
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path = r.URL.Path
+				body, _ = io.ReadAll(r.Body)
+				_, _ = w.Write([]byte(`{"returnCode":0,"data":{"deal_names":["202609290001"],"big_deal_no":"202609290001"}}`))
+			}))
+			defer srv.Close()
+			c := New("", "http://example.invalid/activity_web/activity/do_goods", Options{
+				RenewBaseURL: srv.URL + "/v1/proxy/dianshi-order/activity_web/activity",
+			})
+			_, err := c.DoGoodsRenew(context.Background(), &DoGoodsRenewRequest{
+				Uin: "330500000004", ActivityID: 166165503931688, Preview: 1, AutoPay: tc.autoPay,
+				ClientInfo: map[string]string{"uin": "330500000004", "ownerUin": "330500000004"},
+				GoodsRenew: []RenewPriceGoodsItem{{GoodsID: 1975812517099088, ResourceID: "pass-90qg3c8q", TimeSpanUnit: "1m", BundleID: "bundle_launch_01", RegionID: 8}},
+			})
+			if err != nil {
+				t.Fatalf("DoGoodsRenew: %v", err)
+			}
+			if path != "/v1/proxy/dianshi-order/activity_web/activity/do_goods_renew" {
+				t.Fatalf("path=%q", path)
+			}
+			var sent envelope
+			if err := json.Unmarshal(body, &sent); err != nil {
+				t.Fatal(err)
+			}
+			if sent.Interface == nil || sent.Interface.InterfaceName != "do_goods_renew" {
+				t.Fatalf("interface=%+v", sent.Interface)
+			}
+			var para map[string]json.RawMessage
+			if err := json.Unmarshal(sent.Interface.Para, &para); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := para["goods"]; ok {
+				t.Fatalf("unexpected new-purchase goods: %s", sent.Interface.Para)
+			}
+			if _, ok := para["goods_renew"]; !ok {
+				t.Fatalf("missing goods_renew: %s", sent.Interface.Para)
+			}
+			if tc.autoPay == "" {
+				if _, ok := para["auto_pay"]; ok {
+					t.Fatalf("unexpected auto_pay: %s", sent.Interface.Para)
+				}
+			} else if string(para["auto_pay"]) != `"1"` {
+				t.Fatalf("auto_pay=%s", para["auto_pay"])
+			}
+		})
+	}
+}
+
 func TestDoGoods_Success(t *testing.T) {
 	const sampleResp = `{
 		"version":1,"componentName":"qcact-logic","eventId":966200587,

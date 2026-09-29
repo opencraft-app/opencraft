@@ -145,6 +145,7 @@ type Config struct {
 	// 两者部分缺失（只配一个）会被 Load 期列为配置错误（避免只能询价却不能下单的跳脚状态）。
 	DianshiPriceBaseURL string
 	DianshiOrderBaseURL string
+	DianshiRenewBaseURL string
 	DianshiPreview      int
 }
 
@@ -238,6 +239,7 @@ func Load() (Config, error) {
 		// 点石活动接入（设计稿 §8）：两个 env 同进同退；都为空时 main.go 不装配 Resolver/DianshiClient。
 		DianshiPriceBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_PRICE_BASE_URL")),
 		DianshiOrderBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_ORDER_BASE_URL")),
+		DianshiRenewBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_RENEW_BASE_URL")),
 	}
 	switch raw := strings.TrimSpace(os.Getenv("DIANSHI_PREVIEW")); raw {
 	case "", "0":
@@ -301,6 +303,9 @@ func Load() (Config, error) {
 			"DIANSHI_PRICE_BASE_URL and DIANSHI_ORDER_BASE_URL must be configured together "+
 				"(price=%q, order=%q)",
 			cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)
+	}
+	if cfg.DianshiRenewBaseURL != "" && cfg.DianshiOrderBaseURL == "" {
+		return Config{}, fmt.Errorf("DIANSHI_RENEW_BASE_URL requires DIANSHI_ORDER_BASE_URL")
 	}
 	// JifeiCGWGatewayURL / JifeiCGWHostHeader / JifeiCallbackSignatureKey 在迭代 3 / 5 真正接入
 	// jifei CGW 适配层时再做强校验；当前迭代 1 骨架阶段允许为空，避免本地起服失败。
