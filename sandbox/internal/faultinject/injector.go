@@ -54,18 +54,19 @@ type SGLimitRequest struct {
 }
 
 type SGLimitResult struct {
-	RunID                string   `json:"run_id"`
-	TemplateClassID      string   `json:"template_class_id"`
-	SKUID                string   `json:"sku_id"`
-	SourcePoolID         string   `json:"source_pool_id"`
-	NewPoolID            string   `json:"new_pool_id,omitempty"`
-	CapacityBundleID     string   `json:"capacity_bundle_id,omitempty"`
-	ClonedSecurityGroups []string `json:"cloned_security_groups,omitempty"`
-	SourcePoolPaused     bool     `json:"source_pool_paused"`
-	SandboxID            string   `json:"sandbox_id,omitempty"`
-	AllocatedPoolID      string   `json:"allocated_pool_id,omitempty"`
-	AllocatedInstanceID  string   `json:"allocated_instance_id,omitempty"`
-	AutoCleanup          bool     `json:"auto_cleanup"`
+	RunID                  string   `json:"run_id"`
+	TemplateClassID        string   `json:"template_class_id"`
+	SKUID                  string   `json:"sku_id"`
+	SourcePoolID           string   `json:"source_pool_id"`
+	NewPoolID              string   `json:"new_pool_id,omitempty"`
+	CapacityBundleID       string   `json:"capacity_bundle_id,omitempty"`
+	ClonedSecurityGroups   []string `json:"cloned_security_groups,omitempty"`
+	SourcePoolPaused       bool     `json:"source_pool_paused"`
+	SourcePoolRefillPaused bool     `json:"source_pool_refill_paused"`
+	SandboxID              string   `json:"sandbox_id,omitempty"`
+	AllocatedPoolID        string   `json:"allocated_pool_id,omitempty"`
+	AllocatedInstanceID    string   `json:"allocated_instance_id,omitempty"`
+	AutoCleanup            bool     `json:"auto_cleanup"`
 }
 
 func (i *Injector) InjectSGLimit(ctx context.Context, req SGLimitRequest) (SGLimitResult, error) {
@@ -148,7 +149,7 @@ func (i *Injector) InjectSGLimit(ctx context.Context, req SGLimitRequest) (SGLim
 		return SGLimitResult{}, fmt.Errorf("trigger sg limit recovery: %w", err)
 	}
 	emitInjectEvent(ctx, "sandbox.faultinject.sg_limit_recovery_triggered", "故障注入已成功触发 SG limit 自动恢复链。", runID, attribute.Bool("recovery_triggered", recovery.Triggered), attribute.String("source_pool_id", sourcePool.ID))
-	if _, err := i.svc.PausePool(ctx, sourcePool.ID, "terminal create error: LimitExceeded.CvmsVifsPerSecGroupLimitExceeded", "LimitExceeded.CvmsVifsPerSecGroupLimitExceeded", "fault injection"); err != nil {
+	if _, err := i.svc.PausePoolRefill(ctx, sourcePool.ID, "terminal create error: LimitExceeded.CvmsVifsPerSecGroupLimitExceeded", "LimitExceeded.CvmsVifsPerSecGroupLimitExceeded", "fault injection"); err != nil {
 		emitInjectEvent(ctx, "sandbox.faultinject.sg_limit.failed", "故障注入在暂停 source pool 时失败。", runID, attribute.String("stage", "pause_source_pool"), attribute.String("error", err.Error()))
 		return SGLimitResult{}, fmt.Errorf("pause source pool: %w", err)
 	}
@@ -159,12 +160,13 @@ func (i *Injector) InjectSGLimit(ctx context.Context, req SGLimitRequest) (SGLim
 	}
 
 	result := SGLimitResult{
-		RunID:            runID,
-		TemplateClassID:  templateClass.ID,
-		SKUID:            sku.ID,
-		SourcePoolID:     sourcePool.ID,
-		SourcePoolPaused: updatedPool.Status == core.PoolStatusPaused,
-		AutoCleanup:      req.AutoCleanup,
+		RunID:                  runID,
+		TemplateClassID:        templateClass.ID,
+		SKUID:                  sku.ID,
+		SourcePoolID:           sourcePool.ID,
+		SourcePoolPaused:       updatedPool.RefillPaused, // legacy response field
+		SourcePoolRefillPaused: updatedPool.RefillPaused,
+		AutoCleanup:            req.AutoCleanup,
 	}
 	if recovery.Triggered {
 		result.NewPoolID = recovery.NewPool.ID
@@ -386,6 +388,12 @@ func (i *Injector) waitForRecoveredPoolClean(ctx context.Context, runID string, 
 			return core.Instance{}, err
 		}
 		if len(insts) > 0 {
+			if _, _, err := i.svc.ActivateWarmingPool(waitCtx, poolID); err != nil {
+				return core.Instance{}, err
+			}
+			if _, err := i.svc.ReconcilePoolBindingAdmission(waitCtx, poolID); err != nil {
+				return core.Instance{}, err
+			}
 			emitInjectEvent(waitCtx, "sandbox.faultinject.clean_inventory_observed", "故障注入已观察到恢复出的新 pool 具备 CLEAN 库存，后续将继续走真实分配链。", runID,
 				attribute.String("new_pool_id", poolID),
 				attribute.String("instance_id", insts[0].ID),

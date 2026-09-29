@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mysql"
@@ -29,11 +31,7 @@ func main() {
 	}
 	cmd := os.Args[1]
 
-	dsn := os.Getenv("TICKET_MYSQL_DSN")
-	if dsn == "" {
-		log.Fatal("TICKET_MYSQL_DSN is required")
-	}
-	migrationConnectionDSN, err := migrationDSN(dsn)
+	migrationConnectionDSN, err := migrationDSNFromEnv()
 	if err != nil {
 		log.Fatalf("invalid dsn: %v", err)
 	}
@@ -88,6 +86,31 @@ func migrationDSN(dsn string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	cfg.MultiStatements = true
+	return cfg.FormatDSN(), nil
+}
+
+// migrationDSNFromEnv uses a full DSN when supplied, otherwise the same split
+// environment inputs as the ticket server. This keeps bootstrap jobs secret-safe.
+func migrationDSNFromEnv() (string, error) {
+	if dsn := strings.TrimSpace(os.Getenv("TICKET_MYSQL_DSN")); dsn != "" {
+		return migrationDSN(dsn)
+	}
+	user := strings.TrimSpace(os.Getenv("TICKET_DB_USER"))
+	password := os.Getenv("TICKET_DB_PASSWORD")
+	host := strings.TrimSpace(os.Getenv("MYSQL_HOST"))
+	port := strings.TrimSpace(os.Getenv("MYSQL_PORT"))
+	database := strings.TrimSpace(os.Getenv("TICKET_DB"))
+	if user == "" || password == "" || host == "" || port == "" || database == "" {
+		return "", fmt.Errorf("TICKET_MYSQL_DSN or complete ticket DB environment is required")
+	}
+	cfg := dbmysql.NewConfig()
+	cfg.User = user
+	cfg.Passwd = password
+	cfg.Net = "tcp"
+	cfg.Addr = host + ":" + port
+	cfg.DBName = database
+	cfg.ParseTime = true
 	cfg.MultiStatements = true
 	return cfg.FormatDSN(), nil
 }

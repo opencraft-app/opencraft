@@ -8,7 +8,11 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
-问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试交接不自动恢复已下线的 ticket 发布合同：由后端负责人确认测试发布路径，使用同一版本镜像迁移后验证提交、后台列表与附件下载。占位镜像和待配置的运营身份不能作为可用证明；生产配置源码准备不等于生产晋级。
+问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试已走独立测试发布路径，不能作为生产迁移、Argo 或公网验收证据。上海/新加坡恢复 ticket 正式 release bundle 后，`master` 仅构建两区镜像，`MASTER_AUTO_PIN_ENVS=none`，不得自动 pin 生产；流水线生产候选、数据库实际迁移以及 GitOps 镜像晋级分别受人工审核保护，生产 leaf Application 保持手动同步。
+
+首次生产上线按地域独立准备 `lightvela_ticket` 逻辑库、ticket 专用账号、SSM 真源与 SOPS 加密的 `ticket-runtime-secrets`（DB 密码、admin token），不得把后台 Basic Auth 密码用作服务密钥。迁移器优先使用完整 `TICKET_MYSQL_DSN`，否则从 `MYSQL_HOST`、`MYSQL_PORT`、`TICKET_DB`、`TICKET_DB_USER`、Secret 引用的 `TICKET_DB_PASSWORD` 构造 DSN；一次性 Job 不打印密钥。先用同地域候选镜像和库内 `schema_migrations` 探测版本/dirty，初始库无表记为 0，显式批准后将版本推进到 2 并验证 `dirty=false`、两张反馈表和 DB 权限。不可将 `up` 成功等同于可用，也不得靠回退 DDL 清除生产反馈。
+
+然后按 shprod、sgprod 分别晋级 ticket GitOps Application/Project/overlay 和实际镜像 digest，确认 Argo revision/image `Synced/Healthy`、Pod/Service 健康；再依次开放既有 Service Gateway 路由和 Dashboard 内部代理身份 `admin`（仅在原有 Basic Auth/后台鉴权保护下），最后检查两站前端。必须用真实登录态完成提交、后台列表和附件下载，并验证匿名/越权拒绝；国内/国际逐区验收。占位镜像、仅创建密钥或准备源码都不算生产发布。
 
 ```text
 master 源码

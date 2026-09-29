@@ -103,6 +103,10 @@ class ProdDbMigrationTests(unittest.TestCase):
         self.assertIn("credit", prod_db_migration.SUPPORTED_SERVICES)
         self.assertEqual(prod_db_migration.map_service("credit"), ("credit", "credit"))
 
+    def test_ticket_uses_its_registered_migration_job_runner(self) -> None:
+        self.assertIn("ticket", prod_db_migration.SUPPORTED_SERVICES)
+        self.assertEqual(prod_db_migration.map_service("ticket"), ("ticket", "ticket"))
+
     def test_referral_uses_its_registered_migration_job_runner(self) -> None:
         self.assertIn("referral", prod_db_migration.SUPPORTED_SERVICES)
         self.assertEqual(prod_db_migration.map_service("referral"), ("referral", "referral"))

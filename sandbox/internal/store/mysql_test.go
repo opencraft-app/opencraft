@@ -25,6 +25,25 @@ func TestNullStringValue(t *testing.T) {
 	}
 }
 
+func TestActivatePoolIfWarmingWithCleanUsesConditionalUpdate(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+	mock.ExpectExec("UPDATE pools SET capacity_state").
+		WithArgs(core.PoolCapacityStateActive, "pool-1", core.PoolStatusActive, core.PoolCapacityStateWarming, "pool-1", core.StateClean).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	store := &MySQLStore{db: db}
+	activated, err := store.ActivatePoolIfWarmingWithClean(context.Background(), "pool-1")
+	if err != nil || !activated {
+		t.Fatalf("expected conditional activation, activated=%t err=%v", activated, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
 func TestVerifySchemaRequiresExpectedTables(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -85,6 +104,8 @@ func TestSandboxMigrationsPresent(t *testing.T) {
 		"000010_enforce_single_running_modify_operation.down.sql",
 		"000011_add_modify_instance_type_candidates.up.sql",
 		"000011_add_modify_instance_type_candidates.down.sql",
+		"000012_add_pool_refill_paused.up.sql",
+		"000012_add_pool_refill_paused.down.sql",
 	} {
 		path := filepath.Join("..", "..", "migrations", name)
 		if _, err := os.Stat(path); err != nil {

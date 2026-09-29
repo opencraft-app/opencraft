@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -1282,7 +1283,8 @@ func TestAllocateForRequestLegacyModeRequiresLegacyTemplateID(t *testing.T) {
 
 func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	ctx := context.Background()
-	svc := NewService(store.NewMemoryStore())
+	memoryStore := store.NewMemoryStore()
+	svc := NewService(memoryStore)
 	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
 		ID:             "openclaw-default",
 		ResolutionMode: core.ResolutionModeSandboxPrimary,
@@ -1349,6 +1351,9 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	if pool.DesiredCap != 2 {
 		t.Fatalf("expected desired capacity 2, got %d", pool.DesiredCap)
 	}
+	if pool.CapacityState != core.PoolCapacityStateWarming || poolEligibleForAdmission(pool) {
+		t.Fatalf("new derived pool must warm before admission, got %+v", pool)
+	}
 	bindings, err := svc.ListTemplatePoolBindings(ctx, "openclaw-default")
 	if err != nil {
 		t.Fatalf("list template pool bindings: %v", err)
@@ -1356,12 +1361,72 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	if len(bindings) != 1 || bindings[0].PoolID != pool.ID {
 		t.Fatalf("expected derived pool binding, got %+v", bindings)
 	}
+	if bindings[0].AdmissionState != core.BindingAdmissionStatePaused {
+		t.Fatalf("expected derived binding paused while warming, got %+v", bindings[0])
+	}
+	if _, activated, err := svc.ActivateWarmingPool(ctx, pool.ID); err != nil || activated {
+		t.Fatalf("empty pool must not activate, activated=%t err=%v", activated, err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, nil, func(context.Context, provider.CloudInstanceRef) error { return nil }); err != nil {
+		t.Fatalf("create verified clean inventory: %v", err)
+	}
+	if _, err := memoryStore.UpsertTemplatePoolBinding(ctx, core.TemplatePoolBinding{
+		TemplateClassID: "openclaw-default", PoolID: "missing-unrelated-pool",
+		AdmissionState: core.BindingAdmissionStateActive,
+	}); err != nil {
+		t.Fatalf("seed unrelated broken binding: %v", err)
+	}
+	if _, activated, err := svc.ActivateWarmingPool(ctx, pool.ID); err != nil || !activated {
+		t.Fatalf("verified pool should activate, activated=%t err=%v", activated, err)
+	}
+	if changed, err := svc.ReconcilePoolBindingAdmission(ctx, pool.ID); err != nil || !changed {
+		t.Fatalf("sync only target binding admission: changed=%t err=%v", changed, err)
+	}
+	bindings, err = svc.ListTemplatePoolBindings(ctx, "openclaw-default")
+	if err != nil || !slices.ContainsFunc(bindings, func(item core.TemplatePoolBinding) bool {
+		return item.PoolID == pool.ID && item.AdmissionState == core.BindingAdmissionStateActive
+	}) {
+		t.Fatalf("verified pool binding should admit, bindings=%+v err=%v", bindings, err)
+	}
 	bundle, err := svc.GetCapacityBundle(ctx, "bundle-a")
 	if err != nil {
 		t.Fatalf("get bundle: %v", err)
 	}
 	if bundle.LineageTags["pool_id"] != pool.ID {
 		t.Fatalf("expected bundle reserved to pool %s, got %+v", pool.ID, bundle.LineageTags)
+	}
+}
+
+func TestWarmingPoolCountsTowardCapacityGrowthWithoutAdmission(t *testing.T) {
+	policy := core.PoolAutoscalePolicy{MinPoolCount: 1, SlowHorizonTarget: 50}
+	sku := core.SKU{ID: "sku-test"}
+	pool := core.Pool{Status: core.PoolStatusActive, CapacityState: core.PoolCapacityStateWarming, DesiredCap: 50}
+	if PoolEligibleForRollout(pool) || poolEligibleForAdmission(pool) {
+		t.Fatal("warming pool must not accept traffic or rollout")
+	}
+	if SKUNeedsCapacityGrowth(policy, sku, []core.Pool{pool}) {
+		t.Fatal("warming pool should count toward planned capacity to avoid duplicate derivation")
+	}
+}
+
+func TestActivateWarmingPoolDoesNotOverrideManualPause(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "manually-paused-warming", "", "img", 1, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, nil, func(context.Context, provider.CloudInstanceRef) error { return nil }); err != nil {
+		t.Fatalf("seed clean inventory: %v", err)
+	}
+	pool.CapacityState = core.PoolCapacityStateWarming
+	pool.Status = core.PoolStatusPaused
+	if _, err := svc.UpdatePool(ctx, pool); err != nil {
+		t.Fatalf("pause pool: %v", err)
+	}
+	got, activated, err := svc.ActivateWarmingPool(ctx, pool.ID)
+	if err != nil || activated || got.Status != core.PoolStatusPaused || got.CapacityState != core.PoolCapacityStateWarming {
+		t.Fatalf("manual pause must win over activation: pool=%+v activated=%t err=%v", got, activated, err)
 	}
 }
 
