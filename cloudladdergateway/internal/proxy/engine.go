@@ -503,6 +503,8 @@ func (e *Engine) recordAudit(
 		RequestID:         req.RequestID,
 		Caller:            req.Caller,
 		Operation:         operation,
+		TCAction:          strings.TrimSpace(req.Headers.Get("X-TC-Action")),
+		TCRegion:          strings.TrimSpace(req.Headers.Get("X-TC-Region")),
 		Method:            req.Method,
 		Path:              req.Path,
 		Query:             req.Query,

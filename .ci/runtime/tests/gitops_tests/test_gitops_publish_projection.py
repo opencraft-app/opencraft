@@ -577,7 +577,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
                         "--source-ref",
                         source_ref,
                         "--image-pin-variant",
-                        "testing",
+                        "testing,staging",
                     ],
                     cwd=repo,
                     capture_output=True,
@@ -588,7 +588,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
                 expected_prod = "source-prod-explicit\n" if explicit_prod_change else "gitops-prod\n"
                 self.assertEqual(prod_env.read_text(), f"DEMO_IMAGE={expected_prod}")
                 self.assertEqual(testing_env.read_text(), "DEMO_IMAGE=source-testing\n")
-                self.assertEqual(staging_env.read_text(), "DEMO_IMAGE=gitops-staging\n")
+                self.assertEqual(staging_env.read_text(), "DEMO_IMAGE=source-staging-old\n")
                 self.assertEqual(config.read_text(), "value: source-new\n")
 
     def test_playground_projection_preserves_gitops_only_environment_closure(self) -> None:

@@ -34,7 +34,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-pin-variant",
         default="all",
-        help="Preserve unselected GitOps platform env variants during projection",
+        help=(
+            "Comma-separated platform env variants selected for projection; "
+            "preserve all unselected GitOps variants"
+        ),
     )
     return parser.parse_args()
 
@@ -74,13 +77,16 @@ def batched(paths: list[str], size: int = 200) -> list[list[str]]:
     return [paths[index:index + size] for index in range(0, len(paths), size)]
 
 
-def normalize_platform_variant(variant: str) -> str | None:
-    normalized = variant.strip().lower()
-    if normalized in ("", "all"):
+def normalize_platform_variants(variant: str) -> set[str] | None:
+    normalized = [item.strip().lower() for item in variant.split(",") if item.strip()]
+    if not normalized or normalized == ["all"]:
         return None
-    if normalized in ("primary", "prod", "production"):
-        return ""
-    return normalized
+    if "all" in normalized:
+        raise ValueError("platform env variant 'all' cannot be combined with named variants")
+    return {
+        "" if item in ("primary", "prod", "production") else item
+        for item in normalized
+    }
 
 
 def platform_env_variant(path: str) -> str | None:
@@ -115,8 +121,8 @@ def unselected_platform_envs_to_preserve(
     patterns: list[str],
     image_pin_variant: str,
 ) -> set[str]:
-    selected_variant = normalize_platform_variant(image_pin_variant)
-    if selected_variant is None:
+    selected_variants = normalize_platform_variants(image_pin_variant)
+    if selected_variants is None:
         return set()
 
     target_files = select_matching_files(list_tracked_files(repo_root, target_ref), patterns)
@@ -124,7 +130,7 @@ def unselected_platform_envs_to_preserve(
         path
         for path in target_files
         if platform_env_variant(path) is not None
-        and platform_env_variant(path) != selected_variant
+        and platform_env_variant(path) not in selected_variants
         and not source_commit_changed_path(repo_root, source_ref, path)
     }
 

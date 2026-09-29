@@ -472,20 +472,20 @@ CloudLadder HMAC；个人 Trade 只配置 Auth proxy URL 与短期 capability。
 发布验证除 Pod Ready 外，还要证明有效 capability 的拒绝探针为 `403`、注销后的同一 token 为 `401`，
 并分别保存国内和国际真实支付、回调与业务终态。任何长期 Secret 都不得进入 Skill、个人 kind 状态或日志。
 
-CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
-环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
-`cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部
-变体的服务使用。任何 testing 发布若改动 primary 或 staging image pin，必须先恢复生产期望态，不能
-依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段必须保留 `gitops` 中未选中的
-platform env；只有候选 source revision 相对第一父提交明确修改了某个未选中 platform env 时，才允许
+CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。master
+构建必须显式使用 `IMAGE_PIN_VARIANT=testing,staging`，自动更新 testing 与 staging 的镜像 pin；通用
+发布模板的默认值仍为 `all`，供确实需要同步晋级全部变体的服务使用。自动发布若改动 primary image
+pin，必须先恢复生产期望态，不能依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段
+必须保留 `gitops` 中未选中的 platform env；只有候选 source revision 相对第一父提交明确修改了某个
+未选中 platform env 时，才允许
 把该文件作为独立审查过的部署意图投影到 `gitops`，普通源码发布不得用 `master` 中的旧基线覆盖它。
 CloudLadder 的手动 `PIPELINE_MODE=promote` 使用 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary`，只在明确
 发起正式发布时更新 primary pin；不得把自动 master 发布改成 `all` 来绕过正式发布入口。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
-发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
-Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
-namespace、name、目标 revision 与镜像。
+发布前必须先按精确资源查看 diff/dry-run；计划中只要出现 primary workload、共享生产 ConfigMap、
+Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing/staging 资源，并逐个核对
+kind、namespace、name、目标 revision 与镜像。
 
 Shadow Binding 自助管理沿用既有 Auth `shadow_bindings` 表，不新增 migration。管理接口的代码即使进入
 `master` 也必须默认关闭；GitOps 只允许在 `argocd/services/lightclaw-auth/sandbox-bj-7/` 同时设置
