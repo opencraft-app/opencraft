@@ -58,7 +58,7 @@ export function localizeFeatureCards(html, locale) {
     return `${before}${delay ? `--rotator-delay: ${delay.trim()};` : ''}${after}`;
   });
   html = html.replace(/(?:\\n\s*)+$/, '\n');
-  html = restoreFooterBoundary(html, locale);
+  html = restoreFooterBoundary(html);
   html = addFeatureMotion(html, locale);
   const words = copy[locale] ?? copy[DEFAULT_LOCALE];
   const bubbles = (items) => `<div class="feature-copy-preview">${items.map((text) => `<span>${text}</span>`).join('')}</div>`;
@@ -97,21 +97,20 @@ function addFeatureMotion(html, locale) {
   return html;
 }
 
-const doorNotes = {
-  'en-US': 'Open a brighter way of working.',
-  'zh-CN': '开启更明亮的工作方式。',
-  'zh-SG': '开启更明亮的工作方式。',
-  'zh-Hant': '開啟更明亮的工作方式。',
-  'id-ID': 'Buka cara kerja yang lebih cerah.',
-  es: 'Abre una forma más luminosa de trabajar.',
-  'ja-JP': 'もっと明るい働き方へ。',
-  'ko-KR': '더 밝은 업무 방식을 열어 보세요.',
-};
-export function restoreFooterBoundary(html, locale) {
+export function restoreFooterBoundary(html) {
   html = html.replace(/<span class="home-footer-mascot"[\s\S]*?<\/span>/g, '');
   html = html.replace(/<div class="home-footer-boundary"[\s\S]*?<\/div>/g, '');
-  const boundary = `<div class="home-footer-boundary"><svg viewBox="0 0 1440 400" preserveAspectRatio="xMaxYMax slice" aria-hidden="true"><defs><clipPath id="home-door-silhouette"><polygon points="1003.1,42 1045.9,12.6 1045.9,214.8 1003.1,211.4"/></clipPath></defs><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4 L1440 400 L0 400Z" fill="#111"/><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4" fill="none" stroke="#696969" stroke-width="1"/><image href="/lightvela-intl-home/assets/hermes-door.webp" x="830" y="0" width="340" height="268.6" preserveAspectRatio="none" clip-path="url(#home-door-silhouette)"/></svg><p class="home-door-note">${doorNotes[locale] ?? doorNotes['en-US']}</p></div>`;
-  html = html.replace(/(<footer class="foot(?: foot--domestic)?">)/, `$1${boundary.replace(/<p class="home-door-note">[\s\S]*?<\/p>/, '')}`);
+  const boundary = `<div class="home-footer-boundary"><svg viewBox="0 0 1440 400" preserveAspectRatio="xMaxYMax slice" aria-hidden="true"><defs><clipPath id="home-door-silhouette"><polygon points="1003.1,42 1045.9,12.6 1045.9,214.8 1003.1,211.4"/></clipPath></defs><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4 L1440 400 L0 400Z" fill="#111"/><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4" fill="none" stroke="#696969" stroke-width="1"/><image href="/lightvela-intl-home/assets/hermes-door.webp" x="830" y="0" width="340" height="268.6" preserveAspectRatio="none" clip-path="url(#home-door-silhouette)"/></svg></div>`;
+  html = html.replace(/(<footer class="foot(?: foot--domestic)?">)/, `$1${boundary}`);
   // CTA text and href form a state-machine input; decoration must preserve both.
   return html;
+}
+
+// The approved source includes per-word measuring; only feature-motion.js owns
+// hero sizing now. Keep this normalization shared by import and regression tests.
+export function normalizeHeroRuntime(source) {
+  return source
+    .replace(/^[ \t]*var measurer = el\.cloneNode\(false\);\n[\s\S]*?^[ \t]*function measure\(word\) \{[^\n]*\}\n/m, '')
+    .replace(/^[ \t]*wrap\.style\.width = measure\(words\[index\]\) \+ 'px';\n/gm, '')
+    .replace(/^[ \t]*var width = measure\(word\);\n[ \t]*if \(width > 0\) wrap\.style\.width = width \+ 'px';\n/gm, '');
 }

@@ -2,13 +2,65 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { FEATURE_LOCALES, localizeFeatureCards, restoreFooterBoundary } from './international-home-feature-locales.mjs';
+import { FEATURE_LOCALES, localizeFeatureCards, normalizeHeroRuntime, restoreFooterBoundary } from './international-home-feature-locales.mjs';
+
+test('hero runtime normalization removes all legacy measurements and keeps word updates', () => {
+  const old = `    var measurer = el.cloneNode(false);
+    measurer.removeAttribute('id');
+    el.parentNode.appendChild(measurer);
+    function measure(word) { measurer.textContent = word; return measurer.offsetWidth; }
+    el.textContent = words[index];
+    wrap.style.width = measure(words[index]) + 'px';
+    function applyWord(word) {
+      el.textContent = word;
+      el.setAttribute('data-word', word);
+      var width = measure(word);
+      if (width > 0) wrap.style.width = width + 'px';
+    }
+`;
+  const normalized = normalizeHeroRuntime(old);
+  assert.doesNotMatch(normalized, /measurer|measure\(|style\.width/);
+  assert.ok(normalized.includes("el.setAttribute('data-word', word)"));
+  assert.equal(normalizeHeroRuntime(normalized), normalized);
+  const runtime = readFileSync(new URL('../public/lightvela-intl-home/runtime.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(runtime, /wrap\.style\.width|var measurer = el\.cloneNode/);
+  assert.equal(normalizeHeroRuntime(runtime), runtime);
+  const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
+  assert.ok(importer.includes('const runtimeSource = normalizeHeroRuntime('));
+});
 
 test('footer decoration preserves both CTA states and their localized source copy', () => {
   for (const href of ['/agents', '/subscribe']) {
     const cta = `<div class="foot__cta"><a href="${href}">Approved localized label <span>→</span></a></div>`;
     assert.ok(restoreFooterBoundary(`<footer class="foot">${cta}</footer>`, 'en-US').includes(cta));
   }
+});
+
+test('hero still rotates words without changing its reserved width', (t) => {
+  const dom = new JSDOM('<div id="lightvela-intl-home" data-rotator-words=\'["short","a longer phrase"]\'><span class="hero__rotator-wrap" style="--hero-rotator-width: 240px"><em id="hero-rotator">short</em></span></div>', { runScripts: 'outside-only', pretendToBeVisual: true });
+  t.after(() => dom.window.close());
+  dom.window.matchMedia = () => ({ matches: false });
+  const timers = new Map();
+  let nextId = 0;
+  dom.window.setTimeout = (callback, delay) => { timers.set(++nextId, { callback, delay }); return nextId; };
+  dom.window.clearTimeout = (id) => timers.delete(id);
+  dom.window.requestAnimationFrame = (callback) => { callback(); return 1; };
+  dom.window.cancelAnimationFrame = () => {};
+  const runtime = readFileSync(new URL('../public/lightvela-intl-home/runtime.js', import.meta.url), 'utf8');
+  const hero = runtime.match(/\(function \(\) \{\s+var el = document\.getElementById\('hero-rotator'\);[\s\S]*?\}\)\(\);/)?.[0];
+  assert.ok(hero);
+  dom.window.eval(hero);
+  for (const delay of [0, 2200, 260]) {
+    const entry = [...timers].find(([, timer]) => timer.delay === delay);
+    assert.ok(entry, `missing timer ${delay}`);
+    timers.delete(entry[0]);
+    entry[1].callback();
+  }
+  const wrap = dom.window.document.querySelector('.hero__rotator-wrap');
+  assert.equal(wrap.querySelector('#hero-rotator').textContent, 'a longer phrase');
+  assert.equal(wrap.style.width, '');
+  assert.equal(wrap.style.getPropertyValue('--hero-rotator-width'), '240px');
+  assert.equal(wrap.children.length, 1, 'no legacy measurement node');
 });
 
 test('hero decoration has one approved asset and size in the importer', () => {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { polishCapabilityCards } from "./international-home-capability-polish.mjs";
-import { localizeFeatureCards } from "./international-home-feature-locales.mjs";
+import { localizeFeatureCards, normalizeHeroRuntime } from "./international-home-feature-locales.mjs";
 import * as OpenCC from "opencc-js";
 
 import { initializeInternationalHomeFragmentAccessibility } from "./international-home-fragment-accessibility.mjs";
@@ -7862,7 +7862,7 @@ text-wrap: balance;
 }
 `;
 const css = [localizedBaseCss, headerActionsLayerCss, playTabsExpansionCss, heroIntegrationLinkCss, plainHeroEyebrowCss, heroRotatorSweepCss, domesticStableHeroPrefixCss, longLocaleDesktopHeadingCss, footerRefreshCss, voiceSectionRestoreCss, internationalHeroChannelChromeCss, internationalHeroChannelParityCss, homepageReadingCss, automationPanelCss, domesticBrandIconCss, aboutCapabilityCardCss, cloudRefinedCss, capabilityPolishCss, capabilityTitleWrapCss].join("\n");
-const runtimeSource = inlineScripts.join("\n\n").replace(
+const runtimeSource = normalizeHeroRuntime(inlineScripts.join("\n\n").replace(
   "var words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
   "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
 ).replace(
@@ -8005,7 +8005,7 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
         btn.addEventListener('click', activate);
         btn.addEventListener('keydown', activateFromKeyboard);
       });`,
-);
+));
 if (
   !runtimeSource.includes("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');")
   || !runtimeSource.includes("btn.addEventListener('click', activate);")
@@ -8022,7 +8022,8 @@ if (
   || !runtimeSource.includes("document.addEventListener('visibilitychange'")
   || !runtimeSource.includes("window.addEventListener('pageshow'")
   || !runtimeSource.includes("rotatorVisible = !document.hidden")
-  || !runtimeSource.includes("if (width > 0) wrap.style.width = width + 'px';")
+  || runtimeSource.includes("wrap.style.width")
+  || runtimeSource.includes("var measurer = el.cloneNode(false)")
 ) {
   throw new Error("Unable to add accessible activation to homepage scene buttons");
 }
