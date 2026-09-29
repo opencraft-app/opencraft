@@ -712,12 +712,11 @@ function ChangelogContent() {
           </motion.h1>
           <motion.p
             variants={fadeInUp}
-            className="mt-4 text-base"
+            className="mt-4 text-base whitespace-normal md:whitespace-nowrap"
             style={{
               color: "rgba(0,0,0,0.5)",
               lineHeight: 1.5,
               maxWidth: "none",
-              whiteSpace: "nowrap",
             }}
           >
             {t("记录每一次产品迭代与功能上线，让你清晰了解 LightVela 的持续进化。")}
