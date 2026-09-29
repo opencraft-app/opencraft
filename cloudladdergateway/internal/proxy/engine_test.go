@@ -392,7 +392,12 @@ func TestEngineEmitsAuditEvent(t *testing.T) {
 		RouteID:   "billing.query_bill",
 		Method:    http.MethodPost,
 		Path:      "/bill/query",
-		Body:      []byte(`{"account_id":"redacted-in-audit"}`),
+		Headers: http.Header{
+			"X-Tc-Action":   {" DescribePass "},
+			"X-Tc-Region":   {" ap-guangzhou "},
+			"Authorization": {"must-not-be-recorded"},
+		},
+		Body: []byte(`{"account_id":"redacted-in-audit"}`),
 	})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
@@ -409,6 +414,9 @@ func TestEngineEmitsAuditEvent(t *testing.T) {
 	}
 	if event.RequestBodyBytes == 0 || event.RequestBodySHA256 == "" {
 		t.Fatalf("expected request body summary, got %+v", event)
+	}
+	if event.TCAction != "DescribePass" || event.TCRegion != "ap-guangzhou" {
+		t.Fatalf("expected normalized Tencent Cloud routing headers, got %+v", event)
 	}
 	if event.Error != "" {
 		t.Fatalf("unexpected audit error %q", event.Error)
