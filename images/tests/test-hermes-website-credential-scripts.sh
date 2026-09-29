@@ -99,6 +99,22 @@ STUB
   assert "create: no DefaultParameters" \
     '! echo "$args" | grep -qi "DefaultParameters"'
 
+  : >"${tccli_log}"
+  local multi_output
+  multi_output="$(TCCLI_LOG="${tccli_log}" \
+    HERMES_TAT_REGION=ap-johorbahru \
+    HERMES_TAT_MULTI_GATEWAY=true \
+    bash "${ROOT_DIR}/.ci/runtime/commands/create_hermes_website_credential_command.sh" 2>/dev/null)" || true
+  local multi_args multi_content
+  multi_args="$(tr '\0' '\n' <"${tccli_log}")"
+  multi_content="$(echo "$multi_args" | sed -n '/--Content/{n;p;}' | base64 -d 2>/dev/null || true)"
+  assert "create: opt-in command enables transactional multi-gateway delivery" \
+    'echo "$multi_content" | grep -q "export HERMES_GATEWAY_MODE=all"'
+  assert "create: opt-in command still uses hidden credential parameter" \
+    'echo "$multi_content" | grep -q "{{tat-hidden:website_key}}"'
+  assert "create: opt-in command contains no credential value" \
+    '! grep -q "vik_" "${tccli_log}"'
+
   cat >"${TEST_TMP}/bin/tccli" <<'STUB'
 #!/usr/bin/env bash
 printf '{"CommandId":"cmd-test-cred-top-level","RequestId":"req-create-top-level"}'
@@ -303,8 +319,18 @@ STUB
 #!/usr/bin/env bash
 printf 'XDG_RUNTIME_DIR=%s DBUS_SESSION_BUS_ADDRESS=%s %s\n' \
   "${XDG_RUNTIME_DIR:-}" "${DBUS_SESSION_BUS_ADDRESS:-}" "$*" >>"$SYSTEMCTL_LOG"
+if [[ "$*" == *"list-units"* && -n "${SYSTEMCTL_LIST_UNITS:-}" ]]; then
+  printf '%s\n' "$SYSTEMCTL_LIST_UNITS"
+fi
 if [[ "${SYSTEMCTL_FAIL_RESTART:-false}" == "true" && "$*" == *"restart"* ]]; then
   exit 1
+fi
+if [[ -n "${SYSTEMCTL_FAIL_RESTART_UNIT:-}" && "$*" == *"restart ${SYSTEMCTL_FAIL_RESTART_UNIT}" ]]; then
+  exit 1
+fi
+if [[ -n "${SYSTEMCTL_TERMINATE_ON_RESTART_UNIT:-}" && "$*" == *"restart ${SYSTEMCTL_TERMINATE_ON_RESTART_UNIT}" && ! -e "${SYSTEMCTL_TERMINATE_MARKER}" ]]; then
+  : >"${SYSTEMCTL_TERMINATE_MARKER}"
+  kill -TERM "$PPID"
 fi
 exit 0
 STUB
@@ -329,6 +355,15 @@ fi
 exit 0
 STUB
   chmod +x "${TEST_TMP}/bin/chown"
+
+  cat >"${TEST_TMP}/bin/grep" <<'STUB'
+#!/usr/bin/env bash
+if [[ "${GREP_FAIL_VERIFY:-false}" == "true" && "$*" == *"^VELA_WEBSITE_KEY="* ]]; then
+  exit 1
+fi
+exec /usr/bin/grep "$@"
+STUB
+  chmod +x "${TEST_TMP}/bin/grep"
 
   # Stub getent: return fake home dir for agentuser
   cat >"${TEST_TMP}/bin/getent" <<'STUB'
@@ -474,6 +509,87 @@ SVC
   assert "install: multiple gateway units are a hard failure" \
     '[[ $multiple_result -ne 0 && ! -e "$multiple_root/etc/vela/website-credential.env" ]]'
 
+  # A file-backed unit must not hide a second loaded-only gateway.
+  local loaded_only_result=0
+  DESTDIR="$fake_root" \
+  WEBSITE_KEY="$valid_token" \
+  API_BASE="$api_base" \
+  RUNTIME_USER="agentuser" \
+  SYSTEMCTL_LIST_UNITS="hermes-gateway-loaded.service loaded active running" \
+  SYSTEMCTL_USER_CMD="systemctl --user" \
+  SYSTEMCTL_LOG="${TEST_TMP}/loaded-only-systemctl.log" \
+  FAKE_HOME_ROOT="${fake_root}/home" \
+    bash "$script" >"${TEST_TMP}/loaded-only.stdout" 2>"${TEST_TMP}/loaded-only.stderr" || loaded_only_result=$?
+  assert "install: file-backed and loaded-only units still fail closed by default" \
+    '[[ $loaded_only_result -ne 0 && ! -e "$user_systemd/hermes-gateway-loaded.service.d/vela-website-credential.conf" ]]'
+
+  local multi_install_result=0
+  DESTDIR="$multiple_root" \
+  WEBSITE_KEY="$valid_token" \
+  API_BASE="$api_base" \
+  RUNTIME_USER="agentuser" \
+  HERMES_GATEWAY_MODE=all \
+  SYSTEMCTL_USER_CMD="systemctl --user" \
+  SYSTEMCTL_LOG="${TEST_TMP}/multiple-systemctl.log" \
+  FAKE_HOME_ROOT="${multiple_root}/home" \
+    bash "$script" >"${TEST_TMP}/multiple-opt-in.stdout" 2>"${TEST_TMP}/multiple-opt-in.stderr" || multi_install_result=$?
+  assert "install: opt-in delivers one credential to every gateway unit" \
+    '[[ $multi_install_result -eq 0 && -f "$multiple_root/etc/vela/website-credential.env" && -f "$multiple_systemd/hermes-gateway-a.service.d/vela-website-credential.conf" && -f "$multiple_systemd/hermes-gateway-b.service.d/vela-website-credential.conf" ]]'
+  assert "install: opt-in restarts both gateway units" \
+    'grep -q "restart hermes-gateway-a.service" "${TEST_TMP}/multiple-systemctl.log" && grep -q "restart hermes-gateway-b.service" "${TEST_TMP}/multiple-systemctl.log"'
+  assert "install: opt-in logs do not expose the token" \
+    '! grep -q "vik_AAAA" "${TEST_TMP}/multiple-opt-in.stdout" "${TEST_TMP}/multiple-opt-in.stderr" "${TEST_TMP}/multiple-systemctl.log"'
+
+  local previous_multi_credential multi_rollback_result=0
+  printf '# preserved first unit config\n' >>"${multiple_systemd}/hermes-gateway-a.service.d/vela-website-credential.conf"
+  previous_multi_credential="$(cat "$multiple_root/etc/vela/website-credential.env" 2>/dev/null || true)"
+  DESTDIR="$multiple_root" \
+  WEBSITE_KEY="vik_CCCCCCCCCCCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD" \
+  API_BASE="$api_base" \
+  RUNTIME_USER="agentuser" \
+  HERMES_GATEWAY_MODE=all \
+  SYSTEMCTL_USER_CMD="systemctl --user" \
+  SYSTEMCTL_FAIL_RESTART_UNIT="hermes-gateway-b.service" \
+  SYSTEMCTL_LOG="${TEST_TMP}/multiple-failed-systemctl.log" \
+  FAKE_HOME_ROOT="${multiple_root}/home" \
+    bash "$script" >"${TEST_TMP}/multiple-rollback.stdout" 2>"${TEST_TMP}/multiple-rollback.stderr" || multi_rollback_result=$?
+  assert "install: partial multi-gateway restart failure is reported" \
+    '[[ $multi_rollback_result -ne 0 ]]'
+  assert "install: partial failure restores the previous credential" \
+    '[[ "$(cat "$multiple_root/etc/vela/website-credential.env" 2>/dev/null || true)" == "$previous_multi_credential" ]]'
+  assert "install: partial failure restores each unit drop-in" \
+    'grep -q "preserved first unit config" "$multiple_systemd/hermes-gateway-a.service.d/vela-website-credential.conf" && grep -q "EnvironmentFile=" "$multiple_systemd/hermes-gateway-b.service.d/vela-website-credential.conf"'
+
+  local verify_failure_result=0
+  DESTDIR="$multiple_root" \
+  WEBSITE_KEY="vik_CCCCCCCCCCCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD" \
+  API_BASE="$api_base" \
+  RUNTIME_USER="agentuser" \
+  HERMES_GATEWAY_MODE=all \
+  GREP_FAIL_VERIFY=true \
+  SYSTEMCTL_USER_CMD="systemctl --user" \
+  SYSTEMCTL_LOG="${TEST_TMP}/multiple-verify-systemctl.log" \
+  FAKE_HOME_ROOT="${multiple_root}/home" \
+    bash "$script" >"${TEST_TMP}/multiple-verify.stdout" 2>"${TEST_TMP}/multiple-verify.stderr" || verify_failure_result=$?
+  assert "install: post-restart verification failure is reported" \
+    '[[ $verify_failure_result -ne 0 ]]'
+  assert "install: post-restart verification failure rolls back every gateway" \
+    '[[ "$(cat "$multiple_root/etc/vela/website-credential.env")" == "$previous_multi_credential" ]] && grep -q "preserved first unit config" "$multiple_systemd/hermes-gateway-a.service.d/vela-website-credential.conf" && grep -q "EnvironmentFile=" "$multiple_systemd/hermes-gateway-b.service.d/vela-website-credential.conf"'
+
+  local conflicting_mode_result=0
+  DESTDIR="$multiple_root" \
+  WEBSITE_KEY="$valid_token" \
+  API_BASE="$api_base" \
+  RUNTIME_USER="agentuser" \
+  HERMES_GATEWAY_MODE=all \
+  HERMES_GATEWAY_UNIT=hermes-gateway-a.service \
+  SYSTEMCTL_USER_CMD="systemctl --user" \
+  SYSTEMCTL_LOG="${TEST_TMP}/multiple-conflict-systemctl.log" \
+  FAKE_HOME_ROOT="${multiple_root}/home" \
+    bash "$script" >"${TEST_TMP}/multiple-conflict.stdout" 2>"${TEST_TMP}/multiple-conflict.stderr" || conflicting_mode_result=$?
+  assert "install: all mode rejects a conflicting single-unit override before mutation" \
+    '[[ $conflicting_mode_result -ne 0 && "$(cat "$multiple_root/etc/vela/website-credential.env")" == "$previous_multi_credential" && ! -e "${TEST_TMP}/multiple-conflict-systemctl.log" ]]'
+
   local old_credential
   old_credential="$(cat "${fake_root}/etc/vela/website-credential.env")"
   local replacement_token="vik_CCCCCCCCCCCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
@@ -493,6 +609,20 @@ SVC
     '[[ "$(cat "${fake_root}/etc/vela/website-credential.env")" == "$old_credential" ]]'
   assert "install: failed replacement token is not retained" \
     '! grep -q '"'"'vik_CCCC'"'"' "${fake_root}/etc/vela/website-credential.env"'
+
+  local terminated_result=0
+  DESTDIR="$fake_root" \
+  WEBSITE_KEY="$replacement_token" \
+  API_BASE="$api_base" \
+  RUNTIME_USER="agentuser" \
+  SYSTEMCTL_USER_CMD="systemctl --user" \
+  SYSTEMCTL_TERMINATE_ON_RESTART_UNIT="hermes-gateway-test.service" \
+  SYSTEMCTL_TERMINATE_MARKER="${TEST_TMP}/terminate-once" \
+  SYSTEMCTL_LOG="${TEST_TMP}/terminate-systemctl.log" \
+  FAKE_HOME_ROOT="${fake_root}/home" \
+    bash "$script" >"${TEST_TMP}/terminate.stdout" 2>"${TEST_TMP}/terminate.stderr" || terminated_result=$?
+  assert "install: TAT termination fails without retaining the new token" \
+    '[[ $terminated_result -ne 0 && "$(cat "$fake_root/etc/vela/website-credential.env")" == "$old_credential" ]]'
 
   local chown_failure_result=0
   DESTDIR="$fake_root" \
