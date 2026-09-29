@@ -27,6 +27,7 @@ Update the first batch of international LightVela product docs so purchase, cred
 - `frontend/src/content/docs/{en,global,id,es,ja,ko}/` for selected published pages.
 - `frontend/src/content/docs/{en,global,id,es,ja,ko}/use-cases/scheduled-task-*.md` for summary gate repair (16 sources; the other two `global` pages already had summaries).
 - `wiki/growth-state/lightvela-docs-content-categories.md` for content status history.
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json` for the post-source-commit generated manifest sync.
 - This Task Pack.
 
 ## required_context
@@ -40,12 +41,17 @@ Update the first batch of international LightVela product docs so purchase, cred
 | `docs/context/flows/tapd-gongfeng-delivery.md@939c01b03` | MR delivery | Verify remote evidence |
 | `frontend/AGENTS.md@939c01b03` | Service gates | Run frontend checks |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@939c01b03` | Locale and generated docs neighbor | Inspect docs sync and locale output |
+| `opencraft/AGENTS.md@3b62229f4` | Generated mono2 boundary | Use the official sync and drift check |
+| `opencraft/MONO2_MIGRATION.md@3b62229f4` | Source and generated target ownership | Keep frontend as the only write source |
+| `docs/context/project/upstream-subtrees.md@3b62229f4` | OpenCraft import boundary | Avoid copying or hand-editing generated files |
 
 ## evidence
 - 2026-09-29 live international Subscribe shows Launch/Cruise with 100/200-credit low tiers, Launch AI/Cruise AI with 4500/10000-credit tiers, 5/10 Bots, and one-time additional credit packs.
 - Live Skills supports marketplace search, installation, Skill Packages, and Installed tab; live Channels shows WhatsApp QR connection.
 - `pnpm docs:sync` produced 513 docs; generated `zh-sg` and `zh-hant` Credits both include the four plan allocations and credit-pack rule. Generated output is not staged.
 - Checked 525 relative links and image references across changed pages; zero unresolved after accounting for shared `frontend/src/content/docs/images/`.
+- MR !4756 source `3b62229f49e5146efde3af66b9ab383b1323def8` failed the OpenCraft guard: the generated manifest recorded `00bb6f9db7f0627154a471526bc01867c5a2370d`; the guard expected the source commit. Translation warnings and MDX deprecation output were not the fatal error.
+- After `npm --prefix opencraft run sync:mono2-agent-console`, the generated diff is exactly one `UPSTREAM.json.sourceRevision` line. No vendored source copy changed.
 
 ## risks
 - Live prices and offers are dynamic: retain Subscribe/checkout as authority and avoid hard-coded promotional prices.
@@ -60,6 +66,7 @@ Update the first batch of international LightVela product docs so purchase, cred
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`: passed with zero errors, warnings, and broken first-party links.
 - `python3 .agents/context/scripts/validate_context.py --build-catalog`: passed; reverted generated catalog and font-subset noise afterward.
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`: passed, no matched impact rules.
+- `npm --prefix opencraft run check:mono2-agent-console`: reproduced the CI `sourceRevision` mismatch before sync; passed afterward, verifying 130 Agent Console files.
 
 ## decisions
 - Scope is `global` because the user named lightvela.ai and international docs.
@@ -72,19 +79,20 @@ Update the first batch of international LightVela product docs so purchase, cred
 - Bounded `rg`, focused source reads, and `scripts/international-docs-parity.test.ts` identified and resolved locale structure drift. The first docs-summary test found 16 missing international task summaries, now repaired.
 
 ## handoff
-- Source changes and focused validation complete. Next: commit and push the staged files, then verify MR !4756 remote SHA and CI snapshot.
+- First-batch docs source is committed as `3b62229f4`. CI identified a generated OpenCraft manifest mismatch. The official sync and focused check passed locally; next commit the generated manifest repair and verify MR !4756 remote SHA and CI snapshot.
 
 ## checkpoint
 
 ### stage
-Local source, build, and staged impact validation complete; delivery gate remains.
+First-batch source was delivered; CI repair is locally validated and awaits a follow-up commit.
 
 ### verified
 - Six international source locales cover the first-batch pages; 16 scheduled-task summaries close the existing docs-summary test failure.
 - `pnpm check`, international build, and 62 focused tests passed; generated docs/link checks passed.
+- The CI failure is `UPSTREAM.json.sourceRevision` drift; the official sync changed only that field and the check now passes.
 
 ### unverified
-- Remote MR SHA and CI state after push.
+- Remote MR SHA and CI state after the follow-up push.
 - Full Vitest suite, which showed unrelated baseline failures and was interrupted.
 
 ### discard
@@ -95,4 +103,4 @@ Local source, build, and staged impact validation complete; delivery gate remain
 - Worktree `/Users/pablozhong/.codex/worktrees/cn-docs-batch-one/lightvela`, branch `codex/cn-docs-batch-three`, MR !4756.
 
 ### next_action
-- Commit the staged files, push, and verify MR.
+- Commit the generated manifest repair, push, and verify MR.
