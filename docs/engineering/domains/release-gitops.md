@@ -481,6 +481,10 @@ platform env；只有候选 source revision 相对第一父提交明确修改了
 把该文件作为独立审查过的部署意图投影到 `gitops`，普通源码发布不得用 `master` 中的旧基线覆盖它。
 CloudLadder 的手动 `PIPELINE_MODE=promote` 使用 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary`，只在明确
 发起正式发布时更新 primary pin；不得把自动 master 发布改成 `all` 来绕过正式发布入口。
+staging 发生经批准的 live 热修后，必须在下一次 source MR 中显式更新
+`cloudladdergateway-platform-staging.env`，再由正常 CI 投影到 `gitops`；在 source 与 live 收敛前不得执行
+Argo Sync，避免把热修回滚。该回写只代表一次明确审查的 staging 发布意图，不改变 testing 自动 pin 和
+primary 手动 promote 的边界。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
