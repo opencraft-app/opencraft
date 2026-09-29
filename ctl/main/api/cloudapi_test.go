@@ -70,7 +70,7 @@ func TestCloudAPIDescribePassAcceptsCloudAPIRequestWithoutSecretKey(t *testing.T
 				PassID         string `json:"PassId"`
 				ExternalUserID string `json:"ExternalUserId"`
 				BundleID       string `json:"BundleId"`
-				Uin            int64  `json:"Uin"`
+				Uin            string `json:"Uin"`
 				AppID          int64  `json:"AppId"`
 				Status         string `json:"Status"`
 				ExpiredTime    string `json:"ExpiredTime"`
@@ -85,6 +85,7 @@ func TestCloudAPIDescribePassAcceptsCloudAPIRequestWithoutSecretKey(t *testing.T
 	}
 	if payload.Response.Pass.PassID != "pass_cloudapi_1" ||
 		payload.Response.Pass.ExternalUserID != "usr_cloudapi_1" ||
+		payload.Response.Pass.Uin != "330500000004" ||
 		payload.Response.Pass.ExpiredTime != expired.Format(time.RFC3339) {
 		t.Fatalf("unexpected pass response: %+v", payload.Response.Pass)
 	}
@@ -185,6 +186,7 @@ func TestCloudAPIDescribePassAcceptsRequestWithoutAppID(t *testing.T) {
 			} `json:"Error"`
 			Pass struct {
 				PassID string `json:"PassId"`
+				Uin    string `json:"Uin"`
 			} `json:"Pass"`
 		} `json:"Response"`
 	}
@@ -194,7 +196,7 @@ func TestCloudAPIDescribePassAcceptsRequestWithoutAppID(t *testing.T) {
 	if payload.Response.Error != nil {
 		t.Fatalf("unexpected cloud api error: %+v body=%s", payload.Response.Error, rec.Body.String())
 	}
-	if payload.Response.Pass.PassID != "pass_cloudapi_by_uin" {
+	if payload.Response.Pass.PassID != "pass_cloudapi_by_uin" || payload.Response.Pass.Uin != "330500000004" {
 		t.Fatalf("unexpected pass response: %+v", payload.Response.Pass)
 	}
 }
