@@ -15,13 +15,15 @@ import (
 type trafficProxyPlanContextKey struct{}
 
 type trafficProxyPlan struct {
-	target      *url.URL
-	transport   http.RoundTripper
-	upstreamKey string
-	platformKey string
-	replayBody  []byte
-	replayable  bool
-	accessLog   *AccessLog
+	target        *url.URL
+	transport     http.RoundTripper
+	upstreamKey   string
+	platformKey   string
+	replayBody    []byte
+	replayable    bool
+	accessLog     *AccessLog
+	requestBody   *observedTrafficRequestBody
+	contentLength int64
 
 	fallbackAttempted       bool
 	fallbackRoundTripFailed bool
@@ -52,6 +54,9 @@ func newTrafficReverseProxy() *httputil.ReverseProxy {
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			plan := trafficProxyPlanFromRequest(r)
 			plan.accessLog.Status = http.StatusBadGateway
+			plan.accessLog.ProxyErrorKind = trafficErrorKind(err)
+			plan.accessLog.ProxyErrorOp = trafficErrorOp(err)
+			recordTrafficRequestFailure(plan.accessLog, r, plan.requestBody, plan.contentLength)
 			if plan.fallbackRoundTripFailed {
 				plan.accessLog.ErrorType = "platform_fallback_roundtrip_error"
 			} else {

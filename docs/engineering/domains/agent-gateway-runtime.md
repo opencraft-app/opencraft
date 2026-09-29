@@ -270,6 +270,7 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 - VelaGW 公网 control、traffic 与 all-in-one HTTP listener 必须对 `/metrics` 稳定返回 404，不能暴露
   Set、Shard、租户 Key 标识、升级状态或流量错误标签。指标可以继续在进程内聚合；如需 Prometheus
   抓取，必须新增独立的内部监听端口和 ClusterIP Service，不得复用公网 CLB listener。
+- VelaGW `upstream_roundtrip_error` 的 502 是代理尝试写出的状态，不证明客户端实际收到 502，也不证明 NewAPI 或模型渠道返回 5xx。失败访问日志只记录固定分类的代理错误、请求上下文取消状态、入站 body 已读字节、声明长度和累计读取等待耗时；不得记录原始错误文本、请求体或凭据。结合这些字段区分下游先断开与上游传输失败，不能仅凭 `unexpected EOF` 给某一跳定责。
 - VelaGW 镜像 promote 默认只能改动目标环境的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT`。如果投影同时改变 NewAPI release pin、Kustomize 结构或其他 deploy-facing 配置，发布必须关闭自动合并与自动同步，先把目标配置回填到 `master` 真源并重新生成候选。
 - 大体积救援导出由 VM 流式生成归档并使用 COS Multipart Upload，不能先把完整归档写入救援系统盘，也不能退回未知长度的单次 `PUT Object`。
 - 腾讯云永久密钥只存在于 Worker runtime Secret。救援 VM 只接收短期、精确到目标对象且仅允许上传 Part 与 Complete 的 STS 凭据；STS 和含凭据的 TAT 脚本不得进入 Temporal Workflow History。
