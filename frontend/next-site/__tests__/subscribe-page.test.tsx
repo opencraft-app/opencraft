@@ -197,6 +197,33 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  it("shows domestic promotion tags only when the quoted price supports them", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    const quotedBundle = (id: string, name: string, type: string, credit: number, realCost: number, discount: number) => ({
+      ...buildBundle(id, name),
+      bundle_type: type,
+      credit,
+      price: { price: 10000, total_cost: 10000, real_total_cost: realCost, currency: "CNY", discount },
+    });
+    listBundlesMock.mockResolvedValue([
+      quotedBundle("launch", "启航 Launch", "general", 100, 10000, 0),
+      quotedBundle("launch-ai", "启航 Launch", "ai", 4500, 0, 100),
+      quotedBundle("cruise", "巡游 Cruise", "general", 200, 10000, 50),
+      quotedBundle("cruise-ai", "巡游 Cruise", "ai", 10000, 10000, 0.6),
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await screen.findByRole("tab", { name: /^4500/ });
+    expect(within(screen.getByRole("group", { name: "启航 Launch" })).getByText("首单免费 1 个月")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "巡游 Cruise" })).queryByText("首月 6 折")).not.toBeInTheDocument();
+
+    await userEvent.click(getCreditTab("100"));
+    expect(within(screen.getByRole("group", { name: "启航 Launch" })).queryByText("首单免费 1 个月")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "巡游 Cruise" })).queryByText("首月 5 折")).not.toBeInTheDocument();
+  });
+
   it("shows the Shanghai campaign memory on the domestic pricing card", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
@@ -375,6 +402,22 @@ describe("SubscribePage", () => {
     expect(launchCard).toHaveClass("rounded-[12px]");
     expect(cruiseCard).toHaveClass("rounded-[12px]");
     expect(launchCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    fireEvent.pointerEnter(launchCard, { pointerType: "mouse" });
+    expect(launchCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.95)");
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    fireEvent.pointerLeave(launchCard, { pointerType: "mouse" });
+    fireEvent.pointerEnter(cruiseCard, { pointerType: "mouse" });
+    expect(launchCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.95)");
+    fireEvent.pointerLeave(cruiseCard, { pointerType: "mouse" });
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    fireEvent.pointerEnter(cruiseCard, { pointerType: "touch" });
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    const cruiseButton = within(cruiseCard).getByRole("button", { name: /订阅|开通/ });
+    fireEvent.focus(cruiseButton);
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.95)");
+    fireEvent.blur(cruiseButton, { relatedTarget: null });
     expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
     expect(launchCard).not.toHaveAttribute("aria-selected");
     expect(cruiseCard).not.toHaveAttribute("aria-selected");

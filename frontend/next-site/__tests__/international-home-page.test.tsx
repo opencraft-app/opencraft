@@ -91,6 +91,19 @@ describe("international v2 homepage selection", () => {
 });
 
 describe("international v2 homepage artifact", () => {
+  it("does not render a literal newline escape below the footer in any locale", () => {
+    for (const name of generatedFragmentNames) {
+      const document = new DOMParser().parseFromString(readFileSync(path.join(homeRoot, name), "utf8"), "text/html");
+      const root = document.querySelector("#lightvela-intl-home");
+      expect(root, name).not.toBeNull();
+      const strayText = Array.from(root?.childNodes ?? [])
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent?.trim())
+        .filter(Boolean);
+      expect(strayText, name).not.toContain(String.raw`\n`);
+    }
+  });
+
   it("keeps the domestic zh-CN homepage fragment on domestic routes and channels", () => {
     const html = readFileSync(path.join(homeRoot, "index-fragment.zh-CN.html"), "utf8");
     const document = new DOMParser().parseFromString(html, "text/html");

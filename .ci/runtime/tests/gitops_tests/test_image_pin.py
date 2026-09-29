@@ -171,6 +171,93 @@ class ImagePinTests(unittest.TestCase):
             self.assertIn("CLOUDLADDERGATEWAY_IMAGE=example.com/clgw:new", testing)
             self.assertIn("CLOUDLADDERGATEWAY_DEPLOYED_AT=2026-09-17T00:00:00Z", testing)
 
+    def test_updates_multiple_selected_platform_variants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            env_dir = repo / "argocd/services/cloudladdergateway/tkexgz"
+            env_dir.mkdir(parents=True)
+            variants = {
+                "cloudladdergateway-platform.env": env_dir / "cloudladdergateway-platform.env",
+                "cloudladdergateway-platform-testing.env": env_dir / "cloudladdergateway-platform-testing.env",
+                "cloudladdergateway-platform-staging.env": env_dir / "cloudladdergateway-platform-staging.env",
+            }
+            original = (
+                "CLOUDLADDERGATEWAY_DEPLOYED_AT=2026-06-08T12:00:00Z\n"
+                "CLOUDLADDERGATEWAY_IMAGE=example.com/clgw:old\n"
+            )
+            for path in variants.values():
+                path.write_text(original)
+
+            exit_code = self.run_main([
+                "update_image_pin.py",
+                "--repo-root", str(repo),
+                "--service", "cloudladdergateway",
+                "--env", "tkexgz",
+                "--variant", "testing,staging",
+                "--image", "example.com/clgw:new",
+                "--deployed-at", "2026-09-29T00:00:00Z",
+            ])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(variants["cloudladdergateway-platform.env"].read_text(), original)
+            for variant in ("testing", "staging"):
+                content = variants[
+                    f"cloudladdergateway-platform-{variant}.env"
+                ].read_text()
+                self.assertIn("CLOUDLADDERGATEWAY_IMAGE=example.com/clgw:new", content)
+                self.assertIn(
+                    "CLOUDLADDERGATEWAY_DEPLOYED_AT=2026-09-29T00:00:00Z", content
+                )
+
+    def test_multiple_variants_update_the_available_subset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            env_dir = repo / "argocd/services/cloudladdergateway/tkexsg"
+            env_dir.mkdir(parents=True)
+            primary = env_dir / "cloudladdergateway-platform.env"
+            testing = env_dir / "cloudladdergateway-platform-testing.env"
+            original = (
+                "CLOUDLADDERGATEWAY_DEPLOYED_AT=2026-06-08T12:00:00Z\n"
+                "CLOUDLADDERGATEWAY_IMAGE=example.com/clgw:old\n"
+            )
+            primary.write_text(original)
+            testing.write_text(original)
+
+            exit_code = self.run_main([
+                "update_image_pin.py",
+                "--repo-root", str(repo),
+                "--service", "cloudladdergateway",
+                "--env", "tkexsg",
+                "--variant", "testing,staging",
+                "--image", "example.com/clgw:new",
+                "--deployed-at", "2026-09-29T00:00:00Z",
+            ])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(primary.read_text(), original)
+            self.assertIn("CLOUDLADDERGATEWAY_IMAGE=example.com/clgw:new", testing.read_text())
+
+    def test_multiple_variants_fail_when_none_are_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            env_dir = repo / "argocd/services/cloudladdergateway/tkexsg"
+            env_dir.mkdir(parents=True)
+            (env_dir / "cloudladdergateway-platform.env").write_text(
+                "CLOUDLADDERGATEWAY_IMAGE=example.com/clgw:old\n"
+            )
+
+            exit_code = self.run_main([
+                "update_image_pin.py",
+                "--repo-root", str(repo),
+                "--service", "cloudladdergateway",
+                "--env", "tkexsg",
+                "--variant", "testing,staging",
+                "--image", "example.com/clgw:new",
+                "--deployed-at", "2026-09-29T00:00:00Z",
+            ])
+
+            self.assertEqual(exit_code, 1)
+
     def test_multi_variant_does_not_inject_foreign_keys(self) -> None:
         """有多份 platform env 时，不要把某个工作负载的键写进不含该键的文件。"""
         with tempfile.TemporaryDirectory() as tmp:

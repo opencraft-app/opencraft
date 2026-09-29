@@ -106,19 +106,17 @@ const matchBundleTier = (bundleName: string | undefined) => {
 /**
  * AI 增强版档位的促销标签文案。
  *
- * 前端按「档位 + bundle_type」直接判定，不依赖后端 `bundle.price.discount`
- * —— 该字段在本文件内存在两套单位口径（小数 `0<d<1` 与百分数 `50`），
- * 依赖它会让国际站 AI 档位在后端下发百分数时丢标签。
+ * 以展示给用户的原价 / 实付价判定，不依赖口径不一致的 `bundle.price.discount`。
  *
  * 活动口径（国内 / 国际站均为 1 个月，按已确认的活动配置同步）：
  *   - 国际站启航 AI：`首单免费 1 个月`（**仅新用户**，见下方 isNewUser 门禁）
  *   - 国际站巡游 AI：`首月 6 折`
  *   - 国内站启航 AI：`首单免费 1 个月`（仅零元新用户）；巡游 AI：`首月 6 折`
  *
- * 国际站标签必须同时匹配用户资格和真实询价：
+ * 标签必须同时匹配用户资格和真实询价：
  *   - 只有新用户且实付为 0，启航 AI 才展示「首单免费 1 个月」；
  *   - 只有实付价低于原价时才展示折扣，避免后端异常全价询价仍承诺优惠。
- * 未登录静态 Bundle 也携带同样的原价 / 实付价，因此继续稳定展示既定免费与折扣信息。
+ * 未登录静态 Bundle 的展示价经本页首购规则换算后传入，继续展示对应优惠。
  *
  * 仅返回文案，不改价格、不改 CTA、不改计费链路。
  */
@@ -127,26 +125,21 @@ const aiPromoTagText = (
   t: (zh: string, opts?: Record<string, unknown>) => string,
   /* 新用户（未订阅任何套餐）。已订阅用户不展示「首单」类文案。 */
   isNewUser: boolean,
-  price?: BundlePrice | null,
+  displayPriceYuan?: number | null,
+  originalPriceYuan?: number | null,
 ): string | undefined => {
   /* 启航 AI 零元新用户「首单免费」标签（国内外均为 1 个月）：
      实际下单时长由后端活动配置决定，前端不修改发放时长。巡游 AI 无免费试用，走下方折扣分支。
      注意 t() 必须直接消费字面量（i18n-extract 静态扫描，三元内联字符串扫不到）。 */
-  if (tier.isLaunch && isNewUser && price?.real_total_cost === 0) {
+  if (tier.isLaunch && isNewUser && displayPriceYuan === 0 && originalPriceYuan != null && originalPriceYuan > 0) {
     return t("首单免费 1 个月");
   }
-  if (isGlobal) {
-    const discountRate = actualDiscountRate(price);
-    if ((tier.isLaunch || tier.isCruise) && discountRate != null) {
-      /* 既有月付 AI 活动仍使用「首月 6 折」专属文案；异常的其他折扣率按真实比值展示。 */
-      return Math.abs(discountRate - 0.6) < 0.0001
-        ? t("首月 6 折")
-        : discountTagText(discountRate, t);
-    }
-    return undefined;
+  const discountRate = displayedDiscountRate(displayPriceYuan, originalPriceYuan);
+  if ((tier.isLaunch || tier.isCruise) && discountRate != null) {
+    return Math.abs(discountRate - 0.6) < 0.0001
+      ? t("首月 6 折")
+      : discountTagText(discountRate, t);
   }
-  /* 国内站：启航 AI 未命中免费门禁（已订阅 / 询价非零）与巡游 AI 均展示「首月 6 折」。 */
-  if (tier.isLaunch || tier.isCruise) return t("首月 6 折");
   return undefined;
 };
 
@@ -174,13 +167,10 @@ const discountTagText = (
     percent: Math.round((1 - rate) * 100),
   });
 
-/** 只接受后端可计费的正数折扣价；零元权益只由新用户资格分支处理，已订阅零元询价视为异常且不展示促销。 */
-const actualDiscountRate = (price?: BundlePrice | null): number | undefined =>
-  price &&
-  price.total_cost > 0 &&
-  price.real_total_cost > 0 &&
-  price.real_total_cost < price.total_cost
-    ? price.real_total_cost / price.total_cost
+/** 零元权益由新用户资格分支处理；其余标签仅在卡片确有正数折后价时展示。 */
+const displayedDiscountRate = (displayPrice: number | null | undefined, originalPrice: number | null | undefined): number | undefined =>
+  displayPrice != null && originalPrice != null && displayPrice > 0 && originalPrice > displayPrice
+    ? displayPrice / originalPrice
     : undefined;
 
 const shadows = {
@@ -728,77 +718,25 @@ const mapBundleToPlan = (
     }
     price = displayPriceYuan != null ? formatYuan(displayPriceYuan, currency) : "";
     originalPrice = originalPriceYuan != null ? formatYuan(originalPriceYuan, currency) : undefined;
-    /* 国内站不再展示"限时免费"标签 */
-    const backendDiscount = bundle.price?.discount;
+    const tier = matchBundleTier(bundle.bundle_name);
+    const discountRate = displayedDiscountRate(displayPriceYuan, originalPriceYuan);
     if (durationKey === "quarterly") {
       /* 季付：不展示月付首期促销（首单免费 / 首月5折 / 首月6折），改为按实际折扣显示「8.5折」这类角标。
          折扣直接由「折后价 / 原价」比值算出（originalPriceYuan=原价、displayPriceYuan=折后价，前面价格逻辑已备好），
          登录取后端 total_cost/real_total_cost、未登录取静态价，口径一致，不依赖后端 discount 字段口径。
          无原价删除线（即无折扣）时不展示角标。 */
-      promoTag =
-        originalPriceYuan != null && displayPriceYuan != null && originalPriceYuan > displayPriceYuan
-          ? discountTagText(displayPriceYuan / originalPriceYuan, t)
-          : undefined;
-    } else if (isGlobal) {
-      /* 国际站月付：标签统一按「档位 + bundle_type + 原价 / 实付价」判定，不依赖后端 discount 字段
-         （该字段在本文件内存在小数 `0<d<1` 与百分数 `50` 两套口径，依赖它会丢标签）。
-         未登录静态 Bundle 也携带既定原价 / 实付价，因此展示不变；登录态异常全价询价不承诺优惠。 */
-      const tier = matchBundleTier(bundle.bundle_name);
-      const isAi = bundle.bundle_type === BUNDLE_TYPE_AI;
-      const discountRate = actualDiscountRate(bundle.price);
-      if (isAi) {
-        /* AI 档位：启航零元新用户「首单免费 1 个月」；有真实折扣时按询价展示。 */
-        promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
-      } else if (tier.isLaunch) {
-        /* 启航标准版：只有新用户实付为零才承诺 1 个月免费；其他状态只展示真实折扣。 */
-        if (isNewUser && bundle.price?.real_total_cost === 0) {
-          promoTag = t("首单免费 1 个月");
-          isZeroDownFreeTrial = true;
-        } else {
-          promoTag = discountRate == null ? undefined : discountTagText(discountRate, t);
-        }
-      } else if (tier.isCruise) {
-        /* 巡游标准版：新用户且真实五折时使用首购文案；其余真实折扣使用通用折扣标签。 */
-        promoTag =
-          discountRate == null
-            ? undefined
-            : isNewUser && Math.abs(discountRate - 0.5) < 0.0001
-              ? t("首月 5 折")
-              : discountTagText(discountRate, t);
-      } else {
-        promoTag = undefined;
-      }
-    } else if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
-      /* 国内站：有真实折扣（小数口径）时按比值展示「X折」，与改动前一致。 */
-      promoTag = discountTagText(backendDiscount, t);
+      promoTag = discountRate == null ? undefined : discountTagText(discountRate, t);
+    } else if (bundle.bundle_type === BUNDLE_TYPE_AI) {
+      promoTag = aiPromoTagText(tier, t, isNewUser, displayPriceYuan, originalPriceYuan);
+    } else if (tier.isLaunch && isNewUser && displayPriceYuan === 0 && originalPriceYuan != null && originalPriceYuan > 0) {
+      promoTag = t("首单免费 1 个月");
+      isZeroDownFreeTrial = true;
+    } else if (tier.isCruise && isNewUser && discountRate != null && Math.abs(discountRate - 0.5) < 0.0001) {
+      promoTag = t("首月 5 折");
+    } else if (tier.isLaunch || tier.isCruise) {
+      promoTag = discountRate == null ? undefined : discountTagText(discountRate, t);
     } else {
-      const tier = matchBundleTier(bundle.bundle_name);
-      const withToken = bundle.bundle_type === BUNDLE_TYPE_AI;
-      if (tier.isLaunch) {
-        if (withToken) {
-          /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          /* AI 增强版档位促销标签由 aiPromoTagText 统一给出，不再依赖后端 discount：
-             国际站启航 AI「首单免费 1 个月」，国内站启航 AI 零元新用户「首单免费 1 个月」。
-             改动前此处被 `if (!isGlobal)` 拦截，导致国际站启航 AI 档位无任何标签。
-             已订阅用户由 aiPromoTagText 内部降级为「首月 6 折」，不展示首单权益。 */
-          promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
-        } else if (!isLoggedIn || backendDiscount === 0) {
-          /* 启航01：未登录直接展示「首单免费 1 个月」；已登录需 discount=0 */
-          promoTag = t("首单免费 1 个月");
-          isZeroDownFreeTrial = true;
-        }
-      } else if (tier.isCruise) {
-        if (withToken) {
-          /* 季付已在前面 durationKey === "quarterly" 分支清空 promoTag，此处必为非季付 */
-          /* 巡游 AI 档位国内外一致展示「首月 6 折」（无免费试用，不受启航 AI 免费门禁影响）。 */
-          promoTag = aiPromoTagText(tier, t, isNewUser, bundle.price);
-        } else if (!isLoggedIn || backendDiscount === 50) {
-          /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
-          promoTag = t("首月 5 折");
-        }
-      } else {
-        promoTag = undefined;
-      }
+      promoTag = undefined;
     }
   } else {
     /* 计费开关整体关闭（paidBillingEnabled=false）时的限时免费视觉，国内外一致。
@@ -1500,6 +1438,8 @@ const PlanCard = ({
   const quoteErrorId = React.useId();
   /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
   const [showFreeTrialHint, setShowFreeTrialHint] = useState(false);
+  const [pointerHovered, setPointerHovered] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   const quotaWouldExceed = currentBots >= plan.maxBots;
   const isSoldOut = plan.soldOut === true;
   const isComingSoon = plan.comingSoon === true;
@@ -1523,6 +1463,7 @@ const PlanCard = ({
       : undefined;
   /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
+  const emphasizeBorder = pointerHovered || focusWithin;
 
   return (
     <MotionCard
@@ -1534,14 +1475,23 @@ const PlanCard = ({
       className="relative flex min-w-0 flex-col overflow-hidden"
       style={{
         background: colors.white,
-        border: `1px solid ${colors.border}`,
-        transition: "transform 0.3s",
+        border: `1px solid ${emphasizeBorder ? colors.black : colors.border}`,
+        boxShadow: emphasizeBorder ? `inset 0 0 0 1px ${colors.black}` : "none",
+        transition: "transform 0.3s, border-color 0.2s, box-shadow 0.2s",
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = "translateY(-2px)";
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "mouse") return;
+        setPointerHovered(true);
+        event.currentTarget.style.transform = "translateY(-2px)";
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "translateY(0)";
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "mouse") return;
+        setPointerHovered(false);
+        event.currentTarget.style.transform = "translateY(0)";
+      }}
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false);
       }}
     >
       {/* Popular Badge */}

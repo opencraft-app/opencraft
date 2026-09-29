@@ -100,6 +100,9 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 `ap-shanghai` 转发到上海 CTL。目标 CTL 的 `CTL_CLOUDAPI_ALLOWED_REGIONS` 必须与入口映射一致，
 避免入口已正确分流但 handler 仍以地域不支持拒绝请求。
 
+CloudLadder 审计事件必须记录规范化后的 `tc_action` 和 `tc_region`，以便将实际入向地域与最终
+`operation`、upstream 对照排障；不得为此记录完整请求头或 `Authorization` 等签名凭据。
+
 新加坡生产可独立于 testing 和国内环境切换 `required`。其生产计费路由
 `jifei-prod`、点石和 Billing CloudAPI 必须验签；计费/账号回调继续使用上述明确豁免。
 韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名

@@ -136,6 +136,18 @@ spec:
                   name: ctl-platform-values
                   key: MULTI_BOT_ENABLED
                   optional: true
+            - name: CLOUD_DESKTOP_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: CLOUD_DESKTOP_ENABLED
+                  optional: true
+            - name: DESKTOP_INGRESS_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: DESKTOP_INGRESS_DOMAIN
+                  optional: true
             - name: SHADOW_BASE_URL
               valueFrom:
                 configMapKeyRef:

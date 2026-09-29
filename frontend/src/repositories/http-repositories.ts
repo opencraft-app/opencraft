@@ -9,6 +9,7 @@ import type {
   Bot,
   BotChannelConfigResult,
   BotTerminalSession,
+  CloudDesktopSession,
   BotRuntime,
   BotSiblingsUnknownReason,
   BotVersion,
@@ -596,6 +597,41 @@ const booleanField = (payload: Record<string, unknown>, ...keys: string[]) => {
     }
   }
   return undefined;
+};
+
+const numberField = (payload: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * 把 ctl `DesktopSessionResponse`（snake_case，如 ws_url / install_progress）归一化为
+ * 前端 camelCase `CloudDesktopSession`。requestEnvelope 只剥壳不改字段名，若直接透传，
+ * ws_url 会读不到，导致 noVNC 永远拿不到连接地址。此处显式映射修正该问题。
+ */
+const mapDesktopSession = (raw: Record<string, unknown>): CloudDesktopSession => {
+  const status = (stringField(raw, "status") ?? "Provisioning") as CloudDesktopSession["status"];
+  const session: CloudDesktopSession = { status };
+  const installProgress = numberField(raw, "install_progress", "installProgress");
+  if (installProgress !== undefined) session.installProgress = installProgress;
+  const message = stringField(raw, "message");
+  if (message !== undefined) session.message = message;
+  const wsUrl = stringField(raw, "ws_url", "wsUrl");
+  if (wsUrl !== undefined) session.wsUrl = wsUrl;
+  const password = stringField(raw, "password");
+  if (password !== undefined) session.password = password;
+  const width = numberField(raw, "width");
+  if (width !== undefined) session.width = width;
+  const height = numberField(raw, "height");
+  if (height !== undefined) session.height = height;
+  const reason = stringField(raw, "reason");
+  if (reason !== undefined) session.reason = reason;
+  return session;
 };
 
 const normalizeWorkerActionLogs = (value: unknown): WorkerActionStatusLog[] => {
@@ -1213,6 +1249,22 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/tat/session`, {
         method: "POST",
       });
+    },
+
+    async ensureDesktopSession(botId) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/session`, {
+        method: "POST",
+      });
+      return mapDesktopSession(raw);
+    },
+
+    async getDesktopSession(botId) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/session`, {
+        method: "GET",
+      });
+      return mapDesktopSession(raw);
     },
 
     async configureQQChannel(botId, input) {

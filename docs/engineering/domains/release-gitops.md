@@ -8,7 +8,11 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
-问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试交接不自动恢复已下线的 ticket 发布合同：由后端负责人确认测试发布路径，使用同一版本镜像迁移后验证提交、后台列表与附件下载。占位镜像和待配置的运营身份不能作为可用证明；生产配置源码准备不等于生产晋级。
+问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试已走独立测试发布路径，不能作为生产迁移、Argo 或公网验收证据。上海/新加坡恢复 ticket 正式 release bundle 后，`master` 仅构建两区镜像，`MASTER_AUTO_PIN_ENVS=none`，不得自动 pin 生产；流水线生产候选、数据库实际迁移以及 GitOps 镜像晋级分别受人工审核保护，生产 leaf Application 保持手动同步。
+
+首次生产上线按地域独立准备 `lightvela_ticket` 逻辑库、ticket 专用账号、SSM 真源与 SOPS 加密的 `ticket-runtime-secrets`（DB 密码、admin token），不得把后台 Basic Auth 密码用作服务密钥。迁移器优先使用完整 `TICKET_MYSQL_DSN`，否则从 `MYSQL_HOST`、`MYSQL_PORT`、`TICKET_DB`、`TICKET_DB_USER`、Secret 引用的 `TICKET_DB_PASSWORD` 构造 DSN；一次性 Job 不打印密钥。先用同地域候选镜像和库内 `schema_migrations` 探测版本/dirty，初始库无表记为 0，显式批准后将版本推进到 2 并验证 `dirty=false`、两张反馈表和 DB 权限。不可将 `up` 成功等同于可用，也不得靠回退 DDL 清除生产反馈。
+
+然后按 shprod、sgprod 分别晋级 ticket GitOps Application/Project/overlay 和实际镜像 digest，确认 Argo revision/image `Synced/Healthy`、Pod/Service 健康；再依次开放既有 Service Gateway 路由和 Dashboard 内部代理身份 `admin`（仅在原有 Basic Auth/后台鉴权保护下），最后检查两站前端。必须用真实登录态完成提交、后台列表和附件下载，并验证匿名/越权拒绝；国内/国际逐区验收。占位镜像、仅创建密钥或准备源码都不算生产发布。
 
 ```text
 master 源码
@@ -200,7 +204,7 @@ master 源码
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
-- 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，并由 CTL base 将该可选键注入 `ctl-api`。回滚时只把目标环境值切为 `false`，仍需独立审查 Gateway Bot 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实国际站回归；源码中的 `true` 不代表运行态已启用。
+- 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，云桌面（VNC）会话由 `argocd/services/ctl/sandbox-bj-7/ctl-platform.env` 显式设置 `CLOUD_DESKTOP_ENABLED=true`（runtime-config 下发 `cloudDesktopEnabled`、控制前端入口）与 `DESKTOP_INGRESS_DOMAIN=sandbox-bj-7.lightclaw.tech`（`ws_url` 拼为 `wss://6080-<sandboxID>.<domain>/websockify`，泛域名解析与证书须覆盖 ingressproxy router）；两者都由 CTL base 将可选键注入 `ctl-api`（新键须同步 `ctl/k8s/base/manifests.yaml` 的 configMapKeyRef 白名单，仅设 env 文件不生效）。回滚时只把目标环境值切为 `false`（云桌面无需回滚镜像，已建立会话按空闲回收收敛），仍需独立审查 Gateway 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实环境回归；源码中的 `true` 不代表运行态已启用，网关放行 `desktop/session` 路由也不等于能力开启。
 - 个人 DevCloud 动态注册只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启。客户端只提交 callback port 与 TTL；UIN 必须由 Auth session 的 active shadow binding 派生，来源 IP 必须由 Auth 从可信代理链确认，不能接受客户端自报 `targetIp`。CloudLadder 与 devtunnel 的 testing allowlist 只加入真实观测到的最小 DevCloud/NAT 网段，两个工作负载必须保持一致；不要用页面访问 IP 代替服务端观测值，也不要放开整段公网 CIDR。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
 - 个人 DevCloud testing 账号租约依赖 Auth migration 创建持久化租约表。北京、韩国发布必须按
   `migration readiness → Auth workload → Service Gateway 精确公开路由 → 一条全空 state up 验收`
@@ -472,20 +476,22 @@ CloudLadder HMAC；个人 Trade 只配置 Auth proxy URL 与短期 capability。
 发布验证除 Pod Ready 外，还要证明有效 capability 的拒绝探针为 `403`、注销后的同一 token 为 `401`，
 并分别保存国内和国际真实支付、回调与业务终态。任何长期 Secret 都不得进入 Skill、个人 kind 状态或日志。
 
-CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
-环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
-`cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部
-变体的服务使用。任何 testing 发布若改动 primary 或 staging image pin，必须先恢复生产期望态，不能
-依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段必须保留 `gitops` 中未选中的
-platform env；只有候选 source revision 相对第一父提交明确修改了某个未选中 platform env 时，才允许
+CloudLadder 的 `tkexgz` 目录包含 primary、staging、testing 三份 platform env，`tkexsg` 只包含 primary
+与 testing。master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing,staging`，自动更新测试用途的镜像 pin；通用
+发布模板的默认值仍为 `all`，供确实需要同步晋级全部变体的服务使用。自动发布若改动 primary image
+pin，必须先恢复生产期望态，不能依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段
+必须保留 `gitops` 中未选中的 platform env；只有候选 source revision 相对第一父提交明确修改了某个
+未选中 platform env 时，才允许
 把该文件作为独立审查过的部署意图投影到 `gitops`，普通源码发布不得用 `master` 中的旧基线覆盖它。
+多 variant 参数按目标环境取实际存在的子集：`tkexgz` 更新 testing 与 staging，未部署 staging workload
+的 `tkexsg` 只更新 testing；若一个指定 variant 都不存在则发布失败，避免拼写错误被静默忽略。
 CloudLadder 的手动 `PIPELINE_MODE=promote` 使用 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary`，只在明确
 发起正式发布时更新 primary pin；不得把自动 master 发布改成 `all` 来绕过正式发布入口。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
-发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
-Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
-namespace、name、目标 revision 与镜像。
+发布前必须先按精确资源查看 diff/dry-run；计划中只要出现 primary workload、共享生产 ConfigMap、
+Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing/staging 资源，并逐个核对
+kind、namespace、name、目标 revision 与镜像。
 
 Shadow Binding 自助管理沿用既有 Auth `shadow_bindings` 表，不新增 migration。管理接口的代码即使进入
 `master` 也必须默认关闭；GitOps 只允许在 `argocd/services/lightclaw-auth/sandbox-bj-7/` 同时设置

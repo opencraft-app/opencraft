@@ -305,6 +305,14 @@ func (s *stubLogic) StartTerminalSession(ctx pctx.Context, instanceID string) (*
 	return nil, errors.New("unexpected call")
 }
 
+func (s *stubLogic) EnsureDesktopSession(_ pctx.Context, _ string) (*transport.DesktopSessionResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) GetDesktopSession(_ pctx.Context, _ string) (*transport.DesktopSessionResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
 func (s *stubLogic) ListInstances(ctx pctx.Context, page, pageSize int) (*transport.ListInstancesResponse, error) {
 	return nil, errors.New("unexpected call")
 }
