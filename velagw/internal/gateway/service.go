@@ -2950,21 +2950,33 @@ func (s *Service) proxyWithTrafficRouteSnapshot(w http.ResponseWriter, r *http.R
 		http.Error(w, "traffic transport unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	contentLength := r.ContentLength
+	var requestBody *observedTrafficRequestBody
+	if r.Body != nil && r.Body != http.NoBody {
+		requestBody = &observedTrafficRequestBody{ReadCloser: r.Body}
+		r.Body = requestBody
+	}
 	replayBody, replayable, err := prepareReplayBodyForPlatformFallback(r, snapshot)
 	if err != nil {
 		accessLog.Status = http.StatusBadRequest
 		accessLog.ErrorType = "request_body_read_error"
+		recordTrafficRequestFailure(accessLog, r, requestBody, contentLength)
+		if accessLog.RequestBodyErrorKind == "" {
+			accessLog.RequestBodyErrorKind = trafficErrorKind(err)
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	plan := &trafficProxyPlan{
-		target:      target,
-		transport:   trafficTransport,
-		upstreamKey: snapshot.UpstreamKey,
-		platformKey: snapshot.PlatformKey,
-		replayBody:  replayBody,
-		replayable:  replayable,
-		accessLog:   accessLog,
+		target:        target,
+		transport:     trafficTransport,
+		upstreamKey:   snapshot.UpstreamKey,
+		platformKey:   snapshot.PlatformKey,
+		replayBody:    replayBody,
+		replayable:    replayable,
+		accessLog:     accessLog,
+		requestBody:   requestBody,
+		contentLength: contentLength,
 	}
 	request := r.WithContext(context.WithValue(r.Context(), trafficProxyPlanContextKey{}, plan))
 	s.trafficProxy.ServeHTTP(w, request)
