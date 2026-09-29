@@ -1875,7 +1875,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
                               }}
                               title={user.id}
                             >
-                              {t("id: {{id}}").replace("{{id}}", user.id)}
+                              {t("账号 ID：{{id}}").replace("{{id}}", user.id)}
                             </span>
                             <button
                               type="button"
