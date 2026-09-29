@@ -97,7 +97,7 @@ master 源码
   对同一 CVM 的多个 gateway unit 保持失败关闭。仅对已经核对 CTL、Sandbox、CVM、Pool
   身份且确认多 unit 的单台旧实例，可创建显式 `HERMES_TAT_MULTI_GATEWAY=true` 的专用命令，
   让同一实例凭据注入所有选中 unit。安装器须备份原凭据与 drop-in，在每个 unit 重启并完成
-  验证前保留回滚材料；命令超时或部分重启失败不得留下新凭据。此专用命令不能替换新购地域
+  验证前保留回滚材料；可捕获的 TERM/INT、部分重启或校验失败须回滚；SIGKILL/断电无法捕获，超时等不确定终态必须先核对机器文件和受保护账本，不得盲目重签。此专用命令不能替换新购地域
   命令映射，也不能对整个地域批量执行；TAT 成功后仍须核查机器侧 Skill、文件元数据和认证能力。
 
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。

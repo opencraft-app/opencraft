@@ -29,7 +29,7 @@
 | `docs/context/project/adjacency/README.md` | 已读相邻边界索引，无本任务匹配的卡；回到精确源码与测试 | 限定实施范围 |
 
 ## risks / rollback
-客户机可能有多个 Bot，默认不猜测唯一 unit。仅在逐实例身份一致且多个目标 unit 均确认后创建专用 TAT Command；脚本在原文件和各 drop-in 全部备份后修改，异常退出回滚并重启原 unit，回滚不完整保留 root-only 备份。任何不确定的 TAT 状态先对账、禁止重签；失败的临时 Key 撤销。禁止读取/输出凭据值。
+客户机可能有多个 Bot，默认不猜测唯一 unit。仅在逐实例身份一致且多个目标 unit 均确认后创建专用 TAT Command；脚本在原文件和各 drop-in 全部备份后修改，可捕获退出时回滚并重启原 unit，回滚不完整保留 root-only 备份；SIGKILL/断电不在 trap 保证范围，先按机器文件与受保护账本核对。任何不确定的 TAT 状态禁止重签；失败的临时 Key 撤销。禁止读取/输出凭据值。
 
 ## validation
 `bash -n` 两个脚本；`bash images/tests/test-hermes-website-credential-scripts.sh`；`git diff --check`；`python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`。生产仅在命令与账本真实终态核对后判断，且不能由局部脚本测试代替机器验收。
