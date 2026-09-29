@@ -42,7 +42,7 @@ type cloudAPIPass struct {
 	PassID         string `json:"PassId"`
 	ExternalUserID string `json:"ExternalUserId"`
 	BundleID       string `json:"BundleId"`
-	Uin            int64  `json:"Uin"`
+	Uin            string `json:"Uin"`
 	AppID          int64  `json:"AppId"`
 	Status         string `json:"Status"`
 	CreatedTime    string `json:"CreatedTime,omitempty"`
@@ -175,7 +175,7 @@ func detailToCloudAPIPass(d *passlogic.PassDetail) *cloudAPIPass {
 		PassID:         d.PassID,
 		ExternalUserID: d.UserID,
 		BundleID:       d.BundleID,
-		Uin:            d.Uin,
+		Uin:            strconv.FormatInt(d.Uin, 10),
 		AppID:          d.AppID,
 		Status:         d.Status,
 		ExpiredTime:    d.ExpiredTime.UTC().Format(time.RFC3339),
