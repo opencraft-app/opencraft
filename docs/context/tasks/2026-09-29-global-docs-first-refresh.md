@@ -52,6 +52,7 @@ Update the first batch of international LightVela product docs so purchase, cred
 - Checked 525 relative links and image references across changed pages; zero unresolved after accounting for shared `frontend/src/content/docs/images/`.
 - MR !4756 source `3b62229f49e5146efde3af66b9ab383b1323def8` failed the OpenCraft guard: the generated manifest recorded `00bb6f9db7f0627154a471526bc01867c5a2370d`; the guard expected the source commit. Translation warnings and MDX deprecation output were not the fatal error.
 - After `npm --prefix opencraft run sync:mono2-agent-console`, the generated diff is exactly one `UPSTREAM.json.sourceRevision` line. No vendored source copy changed.
+- The first manifest repair was committed as `b15087d80`; then `master` advanced to `9dd39f190`, making the MR unmergeable through one generated `UPSTREAM.json` conflict. Merged that target as `3cc47ed85`, temporarily selecting its generated manifest, then reran the official sync. The remaining diff is again one `sourceRevision` line, now pointing at merge commit `3cc47ed8580d23d1cbca605d45bbb4f3aabe953b`.
 
 ## risks
 - Live prices and offers are dynamic: retain Subscribe/checkout as authority and avoid hard-coded promotional prices.
@@ -67,6 +68,7 @@ Update the first batch of international LightVela product docs so purchase, cred
 - `python3 .agents/context/scripts/validate_context.py --build-catalog`: passed; reverted generated catalog and font-subset noise afterward.
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`: passed, no matched impact rules.
 - `npm --prefix opencraft run check:mono2-agent-console`: reproduced the CI `sourceRevision` mismatch before sync; passed afterward, verifying 130 Agent Console files.
+- After the target merge: `pnpm install --frozen-lockfile`, `pnpm check`, the same 62 focused docs tests, `pnpm build:global`, and `npm --prefix opencraft run check:mono2-agent-console` passed. Build-generated `next-env.d.ts` and font-subset noise was restored to HEAD.
 
 ## decisions
 - Scope is `global` because the user named lightvela.ai and international docs.
@@ -79,20 +81,21 @@ Update the first batch of international LightVela product docs so purchase, cred
 - Bounded `rg`, focused source reads, and `scripts/international-docs-parity.test.ts` identified and resolved locale structure drift. The first docs-summary test found 16 missing international task summaries, now repaired.
 
 ## handoff
-- First-batch docs source is committed as `3b62229f4`. CI identified a generated OpenCraft manifest mismatch. The official sync and focused check passed locally; next commit the generated manifest repair and verify MR !4756 remote SHA and CI snapshot.
+- First-batch docs source is committed as `3b62229f4`. The initial manifest repair is `b15087d80`, and current `master` was merged as `3cc47ed85`. Official sync and relevant gates passed after the merge; next commit the final one-line generated manifest and verify MR !4756 remote SHA, mergeability, and CI snapshot.
 
 ## checkpoint
 
 ### stage
-First-batch source was delivered; CI repair is locally validated and awaits a follow-up commit.
+First-batch source was delivered; the latest target merge and final generated manifest sync are locally validated, with one follow-up commit remaining.
 
 ### verified
 - Six international source locales cover the first-batch pages; 16 scheduled-task summaries close the existing docs-summary test failure.
 - `pnpm check`, international build, and 62 focused tests passed; generated docs/link checks passed.
 - The CI failure is `UPSTREAM.json.sourceRevision` drift; the official sync changed only that field and the check now passes.
+- The latest target merge had a single generated manifest conflict; it was resolved from target output and regenerated from the merged frontend source. International build and 62 focused tests passed again.
 
 ### unverified
-- Remote MR SHA and CI state after the follow-up push.
+- Remote MR SHA, mergeability, and CI state after the final push.
 - Full Vitest suite, which showed unrelated baseline failures and was interrupted.
 
 ### discard
@@ -103,4 +106,4 @@ First-batch source was delivered; CI repair is locally validated and awaits a fo
 - Worktree `/Users/pablozhong/.codex/worktrees/cn-docs-batch-one/lightvela`, branch `codex/cn-docs-batch-three`, MR !4756.
 
 ### next_action
-- Commit the generated manifest repair, push, and verify MR.
+- Commit the post-merge generated manifest, push, and verify MR.
