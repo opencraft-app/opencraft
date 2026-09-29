@@ -765,14 +765,15 @@ func TestPlatformAPIWithoutTATBuildsCollaborationSurfaceOnly(t *testing.T) {
 	handler, err := NewPlatformAPIHandler(PlatformAPIConfig{
 		Human: HumanAPIConfig{
 			Auth: AuthAPIConfig{
-				Database:          handle,
-				AccessTokenKey:    bytes.Repeat([]byte{0x62}, 32),
-				GatewayHumanToken: []byte("service-gateway-internal-token"),
-				Password:          credentialsadapter.TestArgon2idConfig(),
-				AccessTTL:         15 * time.Minute,
-				RefreshTTL:        30 * 24 * time.Hour,
-				RequestTimeout:    5 * time.Second,
-				MaxBodyBytes:      16 * 1024,
+				Database:                       handle,
+				AccessTokenKey:                 bytes.Repeat([]byte{0x62}, 32),
+				GatewayHumanToken:              []byte("service-gateway-internal-token"),
+				ExternalHumanProvisioningEpoch: "credential_epoch_test",
+				Password:                       credentialsadapter.TestArgon2idConfig(),
+				AccessTTL:                      15 * time.Minute,
+				RefreshTTL:                     30 * 24 * time.Hour,
+				RequestTimeout:                 5 * time.Second,
+				MaxBodyBytes:                   16 * 1024,
 			},
 			SDKAppID:      1600000000,
 			UserSigTTL:    time.Hour,

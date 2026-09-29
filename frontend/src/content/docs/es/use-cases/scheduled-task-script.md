@@ -1,5 +1,9 @@
 # Ejecutar tareas de script en LightVela
 
+## Resumen
+
+**Las Script Tasks ejecutan Bash o Python según un horario sin llamar a un modelo de IA ni gastar créditos de modelo.** Úsalas para revisar el disco o detectar archivos ausentes; configura el script, el horario, la ventana activa y el canal.
+
 Las tareas de Script son una aplicación práctica para los agentes alojados en la nube porque pueden ejecutar scripts de Bash o Python según una programación sin llamar a un modelo de IA.
 Úselas cuando tenga una comprobación de sistema recurrente con reglas claras y predecibles.
 Los usuarios las han utilizado para alertas de uso de disco y para comprobaciones que detectan archivos ausentes u obsoletos.
@@ -32,7 +36,7 @@ if [ "$used" -ge 80 ]; then
 fi
 ```
 
-![Crear una tarea de script recurrente para una alerta de uso de disco](../images/scheduled-task-script-1.png)
+![Crear una tarea de script recurrente para una alerta de uso de disco](../images/scheduled-task-script-1.webp)
 
 Si el uso de disco está por debajo del umbral, el script no imprime nada y no se envía ninguna notificación.
 Esto mantiene las comprobaciones rutinarias silenciosas salvo que algo requiera atención.
@@ -53,7 +57,7 @@ if not file.exists() or time() - file.stat().st_mtime > 86400:
     print("Export alert: the latest file is missing or over 24 hours old.")
 ```
 
-![Editar una tarea de script recurrente para comprobar una exportación ausente u obsoleta](../images/scheduled-task-script-2.png)
+![Editar una tarea de script recurrente para comprobar una exportación ausente u obsoleta](../images/scheduled-task-script-2.webp)
 
 Sustituya la ruta de ejemplo por la ubicación real de la exportación.
 Si el archivo existe y es reciente, el script termina sin enviar un mensaje innecesario.
@@ -64,7 +68,7 @@ LightVela le permite conectar su Agent a WhatsApp, Telegram, WeChat, Discord y m
 Puede conectar uno o varios canales al mismo tiempo.
 En Tareas programadas, puede activar cada canal configurado para decidir dónde deben entregarse las alertas del script.
 
-![Una tarea de script envía directamente en Telegram el resultado de una comprobación de uso de disco](../images/scheduled-task-script-3.png)
+![Una tarea de script envía directamente en Telegram el resultado de una comprobación de uso de disco](../images/scheduled-task-script-3.webp)
 
 Cuando el script produce una salida estándar no vacía, Hermes envía esa salida directamente a su IM.
 Si el script no imprime nada, la tarea termina sin enviar una notificación.
@@ -75,6 +79,6 @@ Puede crear tantas tareas programadas como necesite.
 Después de crearlas, puede editar sus scripts y programaciones, pausarlas y consultar ejecuciones anteriores.
 Pruebe cada script antes de programarlo, especialmente si accede a archivos importantes.
 
-![Lista de trabajos actuales con tareas de script](../images/scheduled-task-script-4.png)
+![Lista de trabajos actuales con tareas de script](../images/scheduled-task-script-4.webp)
 
 Con LightVela, su Hermes Agent personal puede encargarse continuamente de comprobaciones predecibles mientras usted se concentra en otro trabajo.

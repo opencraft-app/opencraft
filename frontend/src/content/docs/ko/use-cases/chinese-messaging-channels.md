@@ -50,7 +50,7 @@ LightVela는 그 밖의 지원 채널에도 설정 페이지를 제공합니다.
 
 봇 토큰, 애플리케이션 ID, 비밀 정보는 비밀번호처럼 취급하세요. 그룹 채팅, 공개 문서 또는 다른 사람에게 보내는 메시지에 붙여넣지 마세요. 자격 증명이 노출되었다면 Hermes를 다시 연결하기 전에 해당 자격 증명을 발급한 플랫폼에서 교체하세요.
 
-![LightVela 채널 연결 페이지](../images/use-case-messaging-connection.png)
+![LightVela 채널 연결 페이지](../images/use-case-messaging-connection.webp)
 
 ### 3. 간단한 대화로 연결 확인
 
@@ -68,7 +68,7 @@ Hi Hermes. Please reply with the channel you received this from.
 
 [메모리 관리](../configuration/memory.md)에서 Hermes가 유지할 장기 컨텍스트를 확인하세요. 특정 채널의 대상이 다르거나 매우 다른 역할이 필요하다면 서로 무관한 기대를 하나의 대화 기록에 섞지 말고 활용 사례를 분리하는 편을 고려하세요.
 
-![채널 간 공유되는 동일한 Hermes Agent 컨텍스트](../images/use-case-messaging-memory.png)
+![채널 간 공유되는 동일한 Hermes Agent 컨텍스트](../images/use-case-messaging-memory.webp)
 
 커뮤니티에 Discord 채널을 사용하려면 [Discord용 LightVela: 채널을 지원하는 AI 에이전트 Discord 봇](./discord-community-agent.md)을 계속 읽어 보세요.
 

@@ -128,13 +128,14 @@ type ListPassesResponse struct {
 //   - deleted_time：DB 字段后期会删除（pass 销毁后会迁到 history_pass 表）
 //   - renew_flag：内部计费状态，不在用户面响应中暴露
 //
-// 保留：pass_id / user_id / bundle_id / bundle_name / 时间字段（除 deleted_time）/
+// 保留：pass_id / user_id / bundle_id / bundle_name / bundle_type / 时间字段（除 deleted_time）/
 // agent_quota_total / agent_quota_available / credit_total / credit_available
 type UserPassResponse struct {
 	PassID       string     `json:"pass_id"`
 	UserID       string     `json:"user_id"`
 	BundleID     string     `json:"bundle_id"`
 	BundleName   string     `json:"bundle_name"`
+	BundleType   string     `json:"bundle_type"`
 	CreatedTime  time.Time  `json:"created_time"`
 	ExpiredTime  time.Time  `json:"expired_time"`
 	IsolatedTime *time.Time `json:"isolated_time"`
@@ -181,6 +182,16 @@ type GrantFreeCreditResponse struct {
 	SubscriptionID   string    `json:"subscription_id"`
 	SubscriptionName string    `json:"subscription_name"`
 	PeriodEnd        time.Time `json:"period_end"`
+}
+
+type RevokeFreeCreditRequest struct {
+	UserID            string   `json:"user_id"`
+	SubscriptionNames []string `json:"subscription_names"`
+}
+
+type RevokeFreeCreditResponse struct {
+	UserID                   string   `json:"user_id"`
+	RevokedSubscriptionNames []string `json:"revoked_subscription_names"`
 }
 
 // === jifei 反查接口三件套 transport DTOs（billing-integration B11A 新增）===
@@ -426,10 +437,7 @@ type RenewPassOrderUrlResult struct {
 
 // === trade-pass-renew transport DTO 一体化变体（设计稿 §3.3 / §4.4 / R-D-7）===
 //
-// 入口：POST /v1/passes/{pass_id}/renew/order-and-pay         前端 e2e
-//       POST /admin/api/ctl/passes/{pass_id}/renew/order-and-pay 后台 e2e
-//
-// **仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露此入口给真实用户。**
+// CTL 不再注册该能力的 HTTP 路由；该类型仅由遗留 logic 接口保留以兼容现有代码。
 //
 // 与 RenewPassOrderUrl 的差异（与 CreatePassOrderAndPay vs CreatePassOrder 同范式）：
 //   - RenewPassOrderUrl     → trade.PlaceRenewOrder      + trade.GeneratePayURL
@@ -626,7 +634,7 @@ type RenewPassResponse struct {
 	TaskID string `json:"task_id"`
 }
 
-// === 同 SP 变配（升配）内部接口 DTO ===
+// === Pass 变配（升配，含产品允许的跨 SP 路径）内部接口 DTO ===
 // 需求：TAPD 1010132091137784162 §5.2
 //
 // trade → ctl 两个内部端点共用请求体的公共部分：

@@ -10,6 +10,8 @@ describe("Hermes command builder", () => {
     expect(commands.model.getModelSwitchCommand("openai/gpt-5"))
       .toBe("acli model switch --model 'openai/gpt-5' --agent 'main'");
     expect(commands.channel.getListCommand()).toBe("acli channel status --agent 'main'");
+    expect(commands.channel.getSendCommand('feishu', "It's a test"))
+      .toBe("printf '%s' 'It'\\''s a test' | hermes -p 'default' send --to 'feishu' --json --file -");
     expect(commands.gateway.getRestartCommand()).toBe("acli gateway restart --agent 'main'");
   });
 
@@ -46,6 +48,8 @@ describe("Hermes command builder", () => {
     expect(commands.model.getDeleteCommand({ providerName: "custom" })).toContain("--agent 'team'\\''s-bot'");
     expect(commands.channel.getSlackConfigCommand({ botToken: "bot", appToken: "app" }))
       .toContain("--agent 'team'\\''s-bot'");
+    expect(commands.channel.getSendCommand('qqbot', 'test'))
+      .toBe("printf '%s' 'test' | hermes -p 'team'\\''s-bot' send --to 'qqbot' --json --file -");
   });
 
   it("preserves every credential-based channel command", () => {

@@ -119,22 +119,30 @@ api_get() {
 target_pools_jsonl() {
   local api_base="$1"
   local pools_json="$2"
+  local target_region="$3"
   python3 -c '
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
 
-api_base, template, legacy_raw = sys.argv[1:4]
+api_base, template, legacy_raw, target_region = sys.argv[1:5]
 legacy_ids = [item.strip() for item in legacy_raw.split(",") if item.strip()]
 pools = json.load(sys.stdin)
 resolved_pool_ids = []
+
+def pool_region(pool):
+    zone = str(pool.get("zone") or "").strip()
+    match = re.match(r"^(.*)-[0-9]+$", zone)
+    return match.group(1) if match else ""
+
 def add_pool(pool_id, pools_by_id, output):
     pool_id = str(pool_id or "")
     if not pool_id or pool_id in output:
         return
     pool = pools_by_id.get(pool_id)
-    if pool:
+    if pool and pool_region(pool) == target_region:
         output[pool_id] = pool
 
 by_id = {str(pool.get("id") or ""): pool for pool in pools}
@@ -168,7 +176,8 @@ if selected:
 
 direct_pools = [
     pool for pool in pools
-    if pool.get("template_class_id") == template or str(pool.get("sku_id") or "").startswith("sku-hermes-")
+    if pool_region(pool) == target_region
+    and (pool.get("template_class_id") == template or str(pool.get("sku_id") or "").startswith("sku-hermes-"))
 ]
 if direct_pools:
     for pool in direct_pools:
@@ -178,9 +187,9 @@ if direct_pools:
 by_id = {str(pool.get("id") or ""): pool for pool in pools}
 for pool_id in legacy_ids:
     pool = by_id.get(pool_id)
-    if pool:
+    if pool and pool_region(pool) == target_region:
         print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
-  ' "$api_base" "$TEMPLATE_CLASS_ID" "$LEGACY_POOL_IDS" <<<"$pools_json"
+  ' "$api_base" "$TEMPLATE_CLASS_ID" "$LEGACY_POOL_IDS" "$target_region" <<<"$pools_json"
 }
 
 emit_tsv_header() {
@@ -290,7 +299,7 @@ list_env() {
     count="$(count_instances "$instances_json")"
     log "pool ${pool_id}: ${count} VM rows"
     total=$((total + count))
-  done < <(target_pools_jsonl "$api_base" "$pools_json")
+  done < <(target_pools_jsonl "$api_base" "$pools_json" "$region")
 
   log "${env_name}: emitted ${total} VM rows"
   kill "$pf_pid" >/dev/null 2>&1 || true

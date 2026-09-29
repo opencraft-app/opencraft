@@ -1,4 +1,5 @@
 import type { AppServerProcessMethodMap } from "./process";
+import type { AppServerAttachmentMethodMap } from "./attachments";
 import type { ThreadUnsubscribeParams, ThreadUnsubscribeResponse } from "./generated/v2";
 import type {
   ThreadResumeHistoryRequest,
@@ -68,6 +69,10 @@ import type {
   CommandExecResizeResponse as GeneratedCommandExecResizeResponse,
   CommandExecTerminateParams as GeneratedCommandExecTerminateParams,
   CommandExecTerminateResponse as GeneratedCommandExecTerminateResponse,
+  ConfigBatchWriteParams,
+  ConfigReadParams,
+  ConfigReadResponse,
+  ConfigWriteResponse,
 } from "./generated/v2";
 import type {
   FuzzyFileSearchParams,
@@ -80,6 +85,7 @@ import type {
   FuzzyFileSearchSessionUpdateResponse,
 } from "./generated";
 import type { AppServerBotMethodMap } from "./bot-conversations";
+import type { AppServerCodexAccountMethodMap } from "./codex-accounts";
 import type { ProfileSkillsMethodMap } from "./profile-skills";
 import type {
   RuntimeCredentialSetParams,
@@ -191,6 +197,10 @@ export type ModelListParams = GeneratedModelListParams & {
 /** OpenCraft can explicitly represent a model without configurable reasoning. */
 export type CatalogModel = Omit<GeneratedModelListResponse["data"][number], "defaultReasoningEffort"> & {
   defaultReasoningEffort: GeneratedModelListResponse["data"][number]["defaultReasoningEffort"] | null;
+  /** OpenCraft-owned model metadata that the generated Codex catalog omits. */
+  contextWindow?: number;
+  maxTokens?: number;
+  source?: "builtin" | "custom";
 };
 export type ModelListResponse = Omit<GeneratedModelListResponse, "data"> & { data: CatalogModel[] };
 export type PermissionProfileListParams = GeneratedPermissionProfileListParams;
@@ -230,6 +240,10 @@ export interface QueuedSubmission {
   readonly createdAt: number;
   readonly pausedReason: string | null;
 }
+/** Host-accepted user input waiting for the active Turn's next step boundary. */
+export interface SteeringSubmission extends QueuedSubmission {
+  readonly targetTurnId: string;
+}
 export interface ThreadQueueAddResponse {
   readonly queuedSubmission: QueuedSubmission;
 }
@@ -237,12 +251,19 @@ export type ThreadQueueListParams = GeneratedThreadQueueListParams;
 export interface ThreadQueueListResponse {
   readonly data: readonly QueuedSubmission[];
   readonly nextCursor: string | null;
+  /** Optional Host extension; omitted by an unextended Codex AppServer. */
+  readonly steering?: readonly SteeringSubmission[];
 }
 export type ThreadQueueUpdateParams = GeneratedThreadQueueUpdateParams;
 export interface ThreadQueueUpdateResponse {
   readonly queuedSubmission: QueuedSubmission;
 }
-export type ThreadQueueDeleteParams = GeneratedThreadQueueDeleteParams;
+export type ThreadQueueDeleteParams = GeneratedThreadQueueDeleteParams & {
+  /** Native extension: CAS target for an unresolved steering claim. */
+  readonly expectedTurnId?: string;
+  /** Required when abandoning a claim whose delivery outcome is unknown. */
+  readonly acknowledgeUnknownDelivery?: boolean;
+};
 export interface ThreadQueueDeleteResponse {
   readonly deleted: boolean;
 }
@@ -284,7 +305,7 @@ export interface ThreadArchiveParams {
  * packages can add protocol methods without introducing an untyped index
  * signature into the core client.
  */
-export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProcessMethodMap, ProfileSkillsMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap {
   "runtime/status/read": {
     params: Record<string, never>;
     result: RuntimeStatusResponse;
@@ -357,6 +378,14 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
     params: AppServerInitializeParams;
     result: AppServerInitializeResponse;
   };
+  "config/read": {
+    params: ConfigReadParams;
+    result: ConfigReadResponse;
+  };
+  "config/batchWrite": {
+    params: ConfigBatchWriteParams;
+    result: ConfigWriteResponse;
+  };
   "thread/resume": {
     params: ThreadResumeParams;
     result: ThreadResumeResponse;
@@ -409,6 +438,10 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
   "thread/name/set": {
     params: { threadId: string; name: string };
     result: Record<string, never>;
+  };
+  "thread/delete": {
+    params: import("./generated/v2").ThreadDeleteParams;
+    result: import("./generated/v2").ThreadDeleteResponse;
   };
   "turn/start": {
     params: TurnStartParams;

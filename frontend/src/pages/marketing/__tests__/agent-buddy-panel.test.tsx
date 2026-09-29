@@ -60,6 +60,8 @@ vi.mock("@/contexts/repository-context", () => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string, options?: Record<string, unknown>) => text.replace(
     /\{\{\s*([\w$]+)\s*\}\}/g,
     (raw, key: string) => options?.[key] === undefined ? raw : String(options[key]),
@@ -752,7 +754,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(await screen.findByText("人设已更新")).toBeInTheDocument();
     expect(screen.getByText((_text, element) => (
       element?.tagName === "P"
-      && element.textContent === "人设已更新，请发送 /new 开始新会话以生效"
+      && element.textContent === "人设已更新，请发送 /new 开始新对话以生效"
     ))).toBeInTheDocument();
   });
 

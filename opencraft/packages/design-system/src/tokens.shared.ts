@@ -44,6 +44,13 @@ export const menuGeometry = {
   listMaximumHeight: 250,
 } as const;
 
+/** Active Workbench text: a one-way sweep followed by a brief readable rest. */
+export const workingShimmerMotion = {
+  firstSweepDelayMs: 600,
+  sweepDurationMs: 1_000,
+  cycleMs: 1_500,
+} as const;
+
 export const frame = {
   applicationMenuHeight: 36,
   toolbarHeight: 46,
@@ -178,6 +185,7 @@ export const codexColorTokens = {
       primary: "#1a1c1f",
       secondary: lightAlpha[70],
       tertiary: lightAlpha[50],
+      workingHighlight: "#1a1c1f",
       onAccent: grayScale[0],
     },
     icon: {
@@ -230,6 +238,7 @@ export const codexColorTokens = {
       primary: grayScale[150],
       secondary: darkAlpha[70],
       tertiary: darkAlpha[50],
+      workingHighlight: grayScale[0],
       onAccent: grayScale[1000],
     },
     icon: {

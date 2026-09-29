@@ -2,9 +2,13 @@ import type { HTMLAttributes, ReactNode } from "react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
+import {
+  CONSOLE_SHOW_EVENT,
+  CONSOLE_SHOW_STORAGE_KEY,
+  setConsoleShowEnabled,
+} from "@/lib/console-show-event";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 
 vi.mock("framer-motion", () => ({
@@ -17,6 +21,11 @@ vi.mock("framer-motion", () => ({
 const useSession = vi.fn();
 const useOpenClaw = vi.fn();
 let mockIsGlobal = true;
+let mockLanguage = "zh-CN";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ i18n: { language: mockLanguage } }),
+}));
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => useSession(),
@@ -27,6 +36,8 @@ vi.mock("@/contexts/agent-context", () => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (value: string) => value,
 }));
 
@@ -46,6 +57,9 @@ vi.mock("@/components/site/language-switcher", () => ({
 vi.mock("@/lib/region", () => ({
   get isGlobal() {
     return mockIsGlobal;
+  },
+  get DEFAULT_LOCALE() {
+    return "zh-CN";
   },
 }));
 
@@ -70,12 +84,20 @@ const createNavigationValue = (navigate = vi.fn()): AppNavigationValue => ({
   setSearchParams: vi.fn(),
 });
 
+beforeEach(() => {
+  setConsoleShowEnabled(false);
+  window.localStorage.removeItem(CONSOLE_SHOW_STORAGE_KEY);
+});
+
 afterEach(() => {
   cleanup();
   useSession.mockReset();
   useOpenClaw.mockReset();
   mockIsGlobal = true;
+  mockLanguage = "zh-CN";
   delete (window as Window & { show?: unknown }).show;
+  delete (window as Window & { __LIGHTVELA_CONSOLE_SHOW_CONTROLLER__?: unknown })
+    .__LIGHTVELA_CONSOLE_SHOW_CONTROLLER__;
   stubLocation("localhost");
 });
 
@@ -144,7 +166,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
-  it("opens the sidebar account menu on hover and still supports click", () => {
+  it("keeps the sidebar account menu click-only and preserves identity and account navigation", () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -163,30 +185,28 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu variant="sidebar" />);
 
     const trigger = screen.getByRole("button", { name: "打开用户菜单" });
+    expect(trigger.closest(".lv-agent-account-menu")).toBeInTheDocument();
     expect(trigger).toHaveClass("lv-agent-account-trigger");
+    const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
+    expect(styles).toMatch(/\.lv-agent-account-trigger\s*\{[\s\S]*?width:\s*100%\s*;/);
     expect(trigger).toHaveTextContent("海盐小猫");
-    expect(trigger).toHaveTextContent("cat@example.com");
+    expect(trigger).toHaveTextContent("套餐：launch");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("link", { name: "avatar" })).not.toBeInTheDocument();
 
     fireEvent.mouseEnter(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
 
+    fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(document.querySelector(".lw-user-avatar-menu")).toHaveClass(
-      "bottom-full",
-      "left-0",
-      "origin-bottom-left",
+    expect(screen.getByRole("dialog", { name: "账号管理" })).toHaveClass(
+      "lv-sidebar-user-menu",
+      "w-72",
     );
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
     fireEvent.mouseLeave(trigger.parentElement!);
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
-
-    fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
@@ -205,7 +225,7 @@ describe("UserAvatarMenu", () => {
     useOpenClaw.mockReturnValue({ activePass: null });
 
     const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
-    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
@@ -216,6 +236,106 @@ describe("UserAvatarMenu", () => {
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
     expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
+  });
+
+  it("places the Model link before Plans & billing for ai bundles", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: null,
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: {
+        bundle_id: "bundle_future_ai_01",
+        bundle_type: "ai",
+        bundle_name: "Launch AI",
+      },
+    });
+
+    render(
+      <AppNavigationProvider value={{ ...createNavigationValue(), search: "?bot=bot%2Fsales+east" }}>
+        <UserAvatarMenu variant="sidebar" />
+      </AppNavigationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    const billingLink = screen.getByRole("link", { name: "套餐与费用" });
+    const modelLink = screen.getByRole("link", { name: "模型" });
+    expect(modelLink).toHaveAttribute("href", "/agents/models?bot=bot%2Fsales+east");
+    expect(modelLink.compareDocumentPosition(billingLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps Model out of the account menu for standard plans", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: null,
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: {
+        bundle_id: "bundle_launch_01",
+        bundle_type: "general",
+        bundle_name: "Launch",
+      },
+    });
+
+    render(<UserAvatarMenu variant="sidebar" />);
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
+  });
+
+  it("uses the plural Models label in the English sidebar menu", () => {
+    mockLanguage = "en-US";
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "Sea Salt Cat", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: null,
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: {
+        bundle_id: "bundle_launch_ai_01",
+        bundle_type: "ai",
+        bundle_name: "Launch AI",
+      },
+    });
+
+    render(<UserAvatarMenu variant="sidebar" />);
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute(
+      "href",
+      "/agents/models",
+    );
+    expect(screen.queryByRole("link", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("does not expose the AI-plan Model entry in the public header menu", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: null,
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: {
+        bundle_id: "bundle_launch_ai_01",
+        bundle_type: "ai",
+        bundle_name: "Launch AI",
+      },
+    });
+
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+
+    expect(screen.queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
   });
 
   it("opens the international language picker beside the account menu", () => {
@@ -234,13 +354,13 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu showLanguageSwitcher variant="sidebar" />);
     const accountTrigger = screen.getByRole("button", { name: "打开用户菜单" });
-    fireEvent.mouseEnter(accountTrigger);
+    fireEvent.click(accountTrigger);
 
     const languageTrigger = screen.getByRole("button", { name: "语言" });
     expect(languageTrigger).toHaveAttribute("aria-haspopup", "dialog");
     expect(screen.queryByLabelText("International site languages")).not.toBeInTheDocument();
 
-    fireEvent.mouseEnter(languageTrigger);
+    fireEvent.click(languageTrigger);
 
     expect(screen.getByLabelText("International site languages")).toBeVisible();
     expect(document.querySelector('[data-lv-agent-language-menu="true"]')).toBeInTheDocument();
@@ -357,7 +477,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
   });
 
-  it("reveals the agents workbench menu item after show() on public hosts", () => {
+  it("reveals the agents workbench menu item after show() on public hosts", async () => {
     stubLocation("lightclaw.tech");
     useSession.mockReturnValue({
       session: {
@@ -370,7 +490,7 @@ describe("UserAvatarMenu", () => {
       activePass: null,
     });
 
-    render(<UserAvatarMenu />);
+    const view = render(<UserAvatarMenu />);
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
     expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
@@ -383,9 +503,20 @@ describe("UserAvatarMenu", () => {
     });
     expect(shown).toBe(true);
     expect(onConsoleShow).toHaveBeenCalledTimes(1);
-    window.removeEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
-
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
+
+    view.unmount();
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(await screen.findByRole("link", { name: "工作台" })).toBeInTheDocument();
+
+    act(() => {
+      shown = (window as Window & { show?: () => boolean }).show?.();
+    });
+    expect(shown).toBe(false);
+    expect(onConsoleShow).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
+    window.removeEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
   });
 
   it("keeps the product feedback menu item hidden until show() reveals it", () => {
@@ -405,7 +536,6 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
 
     act(() => {
       (window as Window & { show?: () => boolean }).show?.();

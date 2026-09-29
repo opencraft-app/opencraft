@@ -76,9 +76,8 @@ type IsolatePassTaskPayload struct {
 
 // IsolateInstanceTaskPayload 是子 task 的 payload
 //   - 子 task 负责：
-//     1. CAS 拿 instance status → Pausing（Q22-I-D）
-//     2. 调 sandbox.PauseSandbox 走关机语义（Q26-D 修订版 / Q29=E5 / Q32=b）
-//     3. CAS Pausing → Paused（成功）或 Pausing → Running 回滚（finalizeFailure）
+//     1. 调 sandbox.PauseSandbox 提交关机并轮询到 Sandbox PAUSED
+//     2. CAS ctl instance Running/Resuming → Paused
 //   - interval=60s, max_execute_count=60 → 1h 重试窗口
 //   - finalizeFailure 行为：CAS Pausing → Running，让 user 后续可以正常使用
 type IsolateInstanceTaskPayload struct {
@@ -301,7 +300,7 @@ type DestroyInstanceForPassTaskPayload struct {
 	SnapshotsDone bool `json:"snapshots_done,omitempty"`
 }
 
-// === 同 SP 变配（升配）父子 task payload ===
+// === Pass 变配（升配）父子 task payload ===
 // 需求：TAPD 1010132091137784162 §6 执行顺序 / §8 幂等
 //
 // ModifyPassTaskPayload 是变配父 task 的 payload。入口 logic.AcceptPassModify 已 CAS
@@ -407,7 +406,7 @@ const (
 	//   - interval=60s × max=60 = 1h 重试窗口（与 IsolateInstance 同范式）
 	TaskNameDestroyInstanceWithSnapshot = "DestroyInstanceWithSnapshot"
 
-	// 同 SP 变配父子 task（TAPD 1010132091137784162 §6）
+	// Pass 变配父子 task（TAPD 1010132091137784162 §6）
 	//
 	// 父 task ModifyPass：max=1<<30「永不放弃」，因为磁盘扩容不可逆，只能前滚收敛。
 	// 子 task ModifyInstance：interval=60s × max=60 = 1h；单台机器停机→改配→扩盘→开机

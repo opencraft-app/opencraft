@@ -14,6 +14,7 @@ import type { SubmissionReceipt } from "@opencraft/composer-core";
 import {
   createApplicationNavigation,
   createRouteScopeId,
+  type ApplicationRouterOptions,
   type ApplicationNavigation,
   type ApplicationNavigationSnapshot,
 } from "./workbench-navigation";
@@ -54,8 +55,9 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
   initialLocation: WorkbenchLocation,
   activation: ConversationActivationCoordinator<TRuntime>,
   scopes: ConversationScopeRegistry,
+  routerOptions: ApplicationRouterOptions = {},
 ): WorkbenchNavigationTransaction<TRuntime> {
-  const navigation = createApplicationNavigation(initialLocation);
+  const navigation = createApplicationNavigation(initialLocation, routerOptions);
   const listeners = new Set<() => void>();
   let snapshot = navigation.getSnapshot();
   let committed = snapshot;

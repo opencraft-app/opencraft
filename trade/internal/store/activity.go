@@ -11,14 +11,31 @@ import (
 
 // ErrBundleActivityNotFound 是 trade_bundle_activity 查无记录的哨兵错误。
 //
-// 由 GetBundleActivityByBundleID 在 sql.ErrNoRows 时返回，让上层 ActivityResolver
+// 由 GetBundleActivity 在 sql.ErrNoRows 时返回，让上层 ActivityResolver
 // 据此区分"非活动 bundle"（直接 fallback 走 jifei）与"DB 错误"（5xx）。
 var ErrBundleActivityNotFound = errors.New("trade_bundle_activity: not found")
+
+// ErrActivityParticipationDuplicate 表示同一用户已消费同一活动场景资格。
+var ErrActivityParticipationDuplicate = errors.New("trade_user_activity_participation: duplicate")
+
+// ActivityScene 区分点石活动发生在 Pass 新购还是续费链路。
+type ActivityScene string
+
+const (
+	ActivityScenePurchase ActivityScene = "purchase"
+	ActivitySceneRenew    ActivityScene = "renew"
+)
+
+// Valid 判断场景是否属于当前支持的稳定枚举。
+func (s ActivityScene) Valid() bool {
+	return s == ActivityScenePurchase || s == ActivitySceneRenew
+}
 
 // BundleActivity 是 trade_bundle_activity 表的领域对象（设计稿 §3.1）。
 type BundleActivity struct {
 	ID         int64
 	BundleID   string
+	Scene      ActivityScene
 	ActivityID int64
 	ActID      int64
 	// SecretKey 为空表示该活动在点石后台未开鉴权，下单时不带 check_sum 字段。
@@ -36,8 +53,8 @@ type BundleActivity struct {
 
 // UserActivityParticipation 是 trade_user_activity_participation 表的领域对象（设计稿 §3.2）。
 //
-// 写入路径：仅 createResource 同事务（§5.6.1 step 4）。
-// 读取路径：Resolver 仅做 (uin, activity_id) 是否存在判断、不消费具体字段值；
+// 写入路径：新购由 createResource 同事务写入，续费由点石续费下单事务写入。
+// 读取路径：Resolver 仅做 (uin, activity_id, scene) 是否存在判断、不消费具体字段值；
 // 单测断言时偶尔需要拿到完整字段集做行为校验。
 type UserActivityParticipation struct {
 	ID             int64
@@ -45,6 +62,7 @@ type UserActivityParticipation struct {
 	AppID          string
 	ExternalUserID string
 	ActivityID     int64
+	Scene          ActivityScene
 	BundleID       string
 	ActID          int64
 	DealName       string
@@ -57,6 +75,7 @@ type DianshiRecordFilter struct {
 	ExternalUserID string
 	Uin            string
 	ActivityID     int64
+	Scene          ActivityScene
 	BundleID       string
 	DealName       string
 	Limit          int
@@ -66,17 +85,17 @@ type DianshiRecordFilter struct {
 
 // ActivityStore 抽象点石活动相关的 DAO 接口，便于 logic/activity Resolver 单测 mock。
 type ActivityStore interface {
-	// GetBundleActivityByBundleID 反查 trade_bundle_activity 行；无记录返
+	// GetBundleActivity 反查指定 bundle 和场景的 trade_bundle_activity 行；无记录返
 	// ErrBundleActivityNotFound（业务语义"非活动 bundle"）。
-	GetBundleActivityByBundleID(ctx context.Context, bundleID string) (*BundleActivity, error)
+	GetBundleActivity(ctx context.Context, bundleID string, scene ActivityScene) (*BundleActivity, error)
 
-	// HasUserParticipated 判定 (uin, activity_id) 是否已存在参与记录。
+	// HasUserParticipated 判定 (uin, activity_id, scene) 是否已存在参与记录。
 	//
 	// 返回值：
 	//   - 已存在 → (true, nil)
 	//   - 不存在 → (false, nil)
 	//   - DB 错误 → (false, err)
-	HasUserParticipated(ctx context.Context, uin string, activityID int64) (bool, error)
+	HasUserParticipated(ctx context.Context, uin string, activityID int64, scene ActivityScene) (bool, error)
 
 	// InsertUserParticipation 插入用户活动领取事实记录（§5.6 createResource 同事务调用）。
 	//
@@ -85,7 +104,7 @@ type ActivityStore interface {
 	//
 	// 行为：
 	//   - 成功插入 → (id, nil)
-	//   - 唯一约束冲突 (uk_uin_activity) → (0, err)（调用方按 §6.2 / §11 Q6 处理）
+	//   - 唯一约束冲突 (uk_uin_activity_scene) → wrap ErrActivityParticipationDuplicate
 	//   - 其他 DB 错误 → (0, err)
 	InsertUserParticipation(
 		ctx context.Context,
@@ -105,36 +124,39 @@ type DianshiAdminStore interface {
 var _ ActivityStore = (*MySQLStore)(nil)
 var _ DianshiAdminStore = (*MySQLStore)(nil)
 
-// GetBundleActivityByBundleID 实现 ActivityStore 接口。
+// GetBundleActivity 实现 ActivityStore 接口。
 //
 // SQL：
 //
-//	SELECT id, bundle_id, activity_id, act_id, secret_key, active, time_span_unit, order_expired_time
+//	SELECT id, bundle_id, scene, activity_id, act_id, secret_key, active, time_span_unit, order_expired_time
 //	  FROM trade_bundle_activity
-//	 WHERE bundle_id = ?
-func (s *MySQLStore) GetBundleActivityByBundleID(ctx context.Context, bundleID string) (*BundleActivity, error) {
+//	 WHERE bundle_id = ? AND scene = ?
+func (s *MySQLStore) GetBundleActivity(ctx context.Context, bundleID string, scene ActivityScene) (*BundleActivity, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("trade_bundle_activity: store is nil")
 	}
+	if !scene.Valid() {
+		return nil, fmt.Errorf("trade_bundle_activity: invalid scene %q", scene)
+	}
 	const q = `
-		SELECT id, bundle_id, activity_id, act_id, secret_key, active, time_span_unit, order_expired_time
+		SELECT id, bundle_id, scene, activity_id, act_id, secret_key, active, time_span_unit, order_expired_time
 		  FROM trade_bundle_activity
-		 WHERE bundle_id = ?
+		 WHERE bundle_id = ? AND scene = ?
 	`
 	var (
 		row       BundleActivity
 		secretKey sql.NullString
 		active    int
 	)
-	err := s.db.QueryRowContext(ctx, q, bundleID).Scan(
-		&row.ID, &row.BundleID, &row.ActivityID, &row.ActID,
+	err := s.db.QueryRowContext(ctx, q, bundleID, scene).Scan(
+		&row.ID, &row.BundleID, &row.Scene, &row.ActivityID, &row.ActID,
 		&secretKey, &active, &row.TimeSpanUnit, &row.OrderExpiredTime,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrBundleActivityNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("trade_bundle_activity: query bundleID=%s: %w", bundleID, err)
+		return nil, fmt.Errorf("trade_bundle_activity: query bundleID=%s scene=%s: %w", bundleID, scene, err)
 	}
 	if secretKey.Valid {
 		row.SecretKey = secretKey.String
@@ -148,27 +170,30 @@ func (s *MySQLStore) GetBundleActivityByBundleID(ctx context.Context, bundleID s
 // SQL：
 //
 //	SELECT 1 FROM trade_user_activity_participation
-//	 WHERE uin = ? AND activity_id = ? LIMIT 1
+//	 WHERE uin = ? AND activity_id = ? AND scene = ? LIMIT 1
 //
-// 命中 uk_uin_activity (uin, activity_id) 唯一索引，O(1)。
-func (s *MySQLStore) HasUserParticipated(ctx context.Context, uin string, activityID int64) (bool, error) {
+// 命中 uk_uin_activity_scene (uin, activity_id, scene) 唯一索引，O(1)。
+func (s *MySQLStore) HasUserParticipated(ctx context.Context, uin string, activityID int64, scene ActivityScene) (bool, error) {
 	if s == nil || s.db == nil {
 		return false, fmt.Errorf("trade_user_activity_participation: store is nil")
+	}
+	if !scene.Valid() {
+		return false, fmt.Errorf("trade_user_activity_participation: invalid scene %q", scene)
 	}
 	const q = `
 		SELECT 1
 		  FROM trade_user_activity_participation
-		 WHERE uin = ? AND activity_id = ?
+		 WHERE uin = ? AND activity_id = ? AND scene = ?
 		 LIMIT 1
 	`
 	var dummy int
-	err := s.db.QueryRowContext(ctx, q, uin, activityID).Scan(&dummy)
+	err := s.db.QueryRowContext(ctx, q, uin, activityID, scene).Scan(&dummy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("trade_user_activity_participation: query uin=%s activityID=%d: %w",
-			uin, activityID, err)
+		return false, fmt.Errorf("trade_user_activity_participation: query uin=%s activityID=%d scene=%s: %w",
+			uin, activityID, scene, err)
 	}
 	return true, nil
 }
@@ -194,17 +219,24 @@ func (s *MySQLStore) InsertUserParticipation(
 	if tx == nil {
 		return 0, fmt.Errorf("trade_user_activity_participation: nil tx (must be called within a transaction)")
 	}
+	if !row.Scene.Valid() {
+		return 0, fmt.Errorf("trade_user_activity_participation: invalid scene %q", row.Scene)
+	}
 	const q = `
 		INSERT INTO trade_user_activity_participation
-		  (uin, app_id, external_user_id, activity_id, bundle_id, act_id,
+		  (uin, app_id, external_user_id, activity_id, scene, bundle_id, act_id,
 		   deal_name, big_deal_no, created_time)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(6))
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6))
 	`
 	res, err := tx.ExecContext(ctx, q,
-		row.Uin, row.AppID, row.ExternalUserID, row.ActivityID, row.BundleID, row.ActID,
+		row.Uin, row.AppID, row.ExternalUserID, row.ActivityID, row.Scene, row.BundleID, row.ActID,
 		row.DealName, row.BigDealNo,
 	)
 	if err != nil {
+		if isMySQLDuplicateError(err) {
+			return 0, fmt.Errorf("%w: uin=%s activityID=%d scene=%s: %v",
+				ErrActivityParticipationDuplicate, row.Uin, row.ActivityID, row.Scene, err)
+		}
 		return 0, fmt.Errorf("trade_user_activity_participation: insert uin=%s activityID=%d: %w",
 			row.Uin, row.ActivityID, err)
 	}
@@ -229,7 +261,7 @@ func (s *MySQLStore) ListUserActivityParticipations(ctx context.Context, filter 
 	}
 
 	q := `
-		SELECT id, uin, app_id, external_user_id, activity_id, bundle_id, act_id,
+		SELECT id, uin, app_id, external_user_id, activity_id, scene, bundle_id, act_id,
 		       deal_name, big_deal_no, created_time
 		  FROM trade_user_activity_participation
 	` + where + `
@@ -247,7 +279,7 @@ func (s *MySQLStore) ListUserActivityParticipations(ctx context.Context, filter 
 	for rows.Next() {
 		var row UserActivityParticipation
 		if err := rows.Scan(
-			&row.ID, &row.Uin, &row.AppID, &row.ExternalUserID, &row.ActivityID,
+			&row.ID, &row.Uin, &row.AppID, &row.ExternalUserID, &row.ActivityID, &row.Scene,
 			&row.BundleID, &row.ActID, &row.DealName, &row.BigDealNo, &row.CreatedTime,
 		); err != nil {
 			return nil, 0, fmt.Errorf("trade_user_activity_participation: scan: %w", err)
@@ -294,6 +326,10 @@ func buildDianshiFilterWhere(filter DianshiRecordFilter, includeSource bool) (st
 	if filter.ActivityID > 0 {
 		clauses = append(clauses, "activity_id = ?")
 		args = append(args, filter.ActivityID)
+	}
+	if filter.Scene.Valid() {
+		clauses = append(clauses, "scene = ?")
+		args = append(args, filter.Scene)
 	}
 	if v := strings.TrimSpace(filter.BundleID); v != "" {
 		clauses = append(clauses, "bundle_id = ?")

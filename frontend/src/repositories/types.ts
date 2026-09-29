@@ -15,6 +15,7 @@ import type {
   Bot,
   BotChannelConfigResult,
   BotTerminalSession,
+  CloudDesktopSession,
   BotRuntime,
   BotVersion,
   BundleTimeUnit,
@@ -472,10 +473,14 @@ export interface BotRepository {
   sendWorkspaceMessage(botId: string, text: string): Promise<WorkspaceMessage[]>;
   getSettingsSnapshot(botId: string, mode?: DataMode): Promise<SettingsSnapshot>;
   getTerminalSession(botId: string): Promise<BotTerminalSession>;
+  /** 云桌面（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。 */
+  ensureDesktopSession(botId: string): Promise<CloudDesktopSession>;
+  /** 云桌面（VNC）：GET 轮询会话状态；Ready 时兼作 idle 回收心跳。 */
+  getDesktopSession(botId: string): Promise<CloudDesktopSession>;
   configureQQChannel(botId: string, input: { appId: string; appSecret: string; account?: string }): Promise<BotChannelConfigResult>;
-  claimUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
-  confirmUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
-  releaseUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
+  claimUniqueChannel(botId: string, channel: "weixin" | "whatsapp"): Promise<string | undefined>;
+  confirmUniqueChannel(botId: string, channel: "weixin" | "whatsapp", reservationId?: string): Promise<void>;
+  releaseUniqueChannel(botId: string, channel: "weixin" | "whatsapp", reservationId?: string): Promise<void>;
   createWeixinLoginSession(botId: string): Promise<{ sessionId: string; status: string }>;
   getWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;
   cancelWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;

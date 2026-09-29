@@ -28,6 +28,7 @@ function attachment(
   id: string,
   uri: string,
   mediaKind: "image" | "audio",
+  metadata?: Readonly<Record<string, unknown>>,
 ): ComposerAttachment {
   return {
     id,
@@ -37,6 +38,7 @@ function attachment(
     uri,
     lifecycle: "ready",
     error: null,
+    ...(metadata === undefined ? {} : { metadata }),
   };
 }
 
@@ -77,9 +79,14 @@ export function restoreQueuedInput(
         });
         break;
       case "image":
-        attachments.push(
-          attachment(`queued-image-${index}`, entry.url, "image"),
-        );
+        attachments.push("url" in entry
+          ? attachment(`queued-image-${index}`, entry.url, "image")
+          : attachment(
+              `queued-image-${index}`,
+              `codex-file:${encodeURIComponent(entry.fileId)}`,
+              "image",
+              { codexFileId: entry.fileId },
+            ));
         break;
       case "localImage":
         attachments.push(

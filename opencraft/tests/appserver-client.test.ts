@@ -6,6 +6,8 @@ import {
   createCordisAppServerClient,
   createCordisAppServerRegistry,
   JsonRpcAppServerClient,
+  type DuplexTransport,
+  type ServerRequestResponseContext,
 } from "@opencraft/appserver-client";
 import { MemoryTransport, type InMemoryAppServer } from "@opencraft/appserver-transport-memory";
 import {
@@ -109,6 +111,51 @@ test("client answers AppServer-initiated requests", async () => {
     approved: { decision: "accept", observed: { command: "pwd" } },
   });
   await client.close();
+});
+
+test("server request handlers receive a receipt for physical response delivery", async () => {
+  const memory = new MemoryTransport(createTestServer());
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  const transport: DuplexTransport = {
+    get status() { return memory.status; },
+    connect: (signal) => memory.connect(signal),
+    subscribeMessage: (listener) => memory.subscribeMessage(listener),
+    subscribeStatus: (listener) => memory.subscribeStatus(listener),
+    close: () => memory.close(),
+    async send(frame, signal) {
+      const message = parseJsonRpcMessage(frame);
+      if (isJsonRpcSuccess(message) && message.id === "server-approval") {
+        await responseGate;
+      }
+      await memory.send(frame, signal);
+    },
+  };
+  const client = new JsonRpcAppServerClient({ hostId: "approval-receipt", transport });
+  let responseContext: ServerRequestResponseContext | null = null;
+  client.handleServerRequest("item/commandExecution/requestApproval", (_params, _request, context) => {
+    responseContext = context;
+    return { decision: "accept" };
+  });
+
+  await client.connect(initializeParams);
+  const result = client.requestRaw("needs-approval", {});
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(typeof responseContext?.delivered?.then, "function");
+    let delivered = false;
+    void responseContext!.delivered.then(() => { delivered = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(delivered, false, "handler completion is not response delivery");
+
+    releaseResponse();
+    await responseContext!.delivered;
+    assert.deepEqual(await result, { approved: { decision: "accept" } });
+  } finally {
+    releaseResponse();
+    await result.catch(() => undefined);
+    await client.close();
+  }
 });
 
 test("notification interceptors can defer delivery until hydration commits", async () => {

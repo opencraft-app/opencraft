@@ -1,7 +1,35 @@
 @use "./typography.web" as typography;
 
+// State-only primitives: never own geometry or domain pending state.
+@mixin focus-indicator {
+  outline: var(--width-control-focus-ring) solid var(--color-border-focus);
+  outline-offset: var(--offset-control-focus-ring);
+  @media (forced-colors: active) { outline-color: Highlight; }
+}
+
+@mixin disabled-feedback {
+  opacity: var(--opacity-control-disabled);
+  cursor: default;
+}
+
+@mixin invalid-feedback {
+  border-color: var(--color-text-danger);
+  @media (forced-colors: active) { border-color: Mark; }
+}
+
+// A hybrid device can report hover capability even after a touch contact.
+// The document's current-input signal suppresses synthetic/sticky hover while
+// focus-visible and persistent selected/open states remain independent.
+@mixin hover-capable {
+  @media (any-hover: hover) and (any-pointer: fine) {
+    :root:not([data-touch-interaction]) & { @content; }
+  }
+}
+
 // Shared quiet controls. Layout belongs to the consumer, interaction to here.
-@mixin quiet-control {
+// An input-adaptive consumer may own its hover rule while retaining the same
+// open, keyboard-focus, and disabled states from this mixin.
+@mixin quiet-control($hover: true) {
   appearance: none;
   border: 0;
   background: transparent;
@@ -9,14 +37,20 @@
   color: inherit;
   border-radius: var(--radius-control);
   cursor: pointer;
-  &:hover:not(:disabled), &[data-state="open"] {
+  @if $hover {
+    @include hover-capable {
+      &:hover:not(:disabled) {
+        background: var(--color-background-button-tertiary-hover);
+      }
+    }
+  }
+  &[data-state="open"] {
     background: var(--color-background-button-tertiary-hover);
   }
   &:focus-visible {
-    outline: 2px solid var(--color-border-focus);
-    outline-offset: 2px;
+    @include focus-indicator;
   }
-  &:disabled { opacity: 0.45; cursor: default; }
+  &:disabled { @include disabled-feedback; }
 }
 
 // Navigation rows share the sidebar's quiet typography and state treatment.
@@ -28,12 +62,14 @@
   width: 100%;
   min-height: var(--height-navigation-row);
   align-items: center;
-  gap: 9px;
-  padding: 0 8px;
+  gap: var(--gap-navigation-row-content);
+  padding: 0 var(--padding-navigation-row-inline);
   text-align: left;
 
-  &:hover:not(:disabled) {
-    background: var(--color-background-navigation-hover);
+  @include hover-capable {
+    &:hover:not(:disabled) {
+      background: var(--color-background-navigation-hover);
+    }
   }
 
   &.is-selected, &[aria-current="page"] {

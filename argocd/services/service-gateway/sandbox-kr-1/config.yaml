@@ -148,6 +148,16 @@ routes:
     path: /auth/payment-methods/{contract_code}/default
   - method: DELETE
     path: /auth/payment-methods/{contract_code}
+- name: support-feedback
+  prefix: /support/feedback
+  methods:
+  - GET
+  - POST
+  - OPTIONS
+  upstream: http://ticket.lightvela-playground-sandbox-kr-1.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+  response_header_timeout: 60s
 - name: auth
   prefix: /auth
   methods:
@@ -192,6 +202,14 @@ routes:
     path: /auth/internal/dev-environments/registration
   - method: DELETE
     path: /auth/internal/dev-environments/registration
+  - method: POST
+    path: /auth/dev-environments/account-lease
+  - method: DELETE
+    path: /auth/dev-environments/account-lease
+  - method: POST
+    path: /auth/dev-environments/billing-proxy/jifei/resource-center/interface
+  - method: POST
+    path: /auth/dev-environments/billing-proxy/cloudapi/
   - method: GET
     path: /auth/oauth/qq/start
   - method: GET

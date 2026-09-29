@@ -2,6 +2,7 @@ import { normalizeHermesApi } from "./utils/hermes-parsers";
 import {
   DEFAULT_HERMES_AGENT_ID,
   withHermesAgent,
+  withHermesProfile,
 } from "@/lib/hermes-agent-command";
 
 const ACLI_INSTALL_SCRIPT_URL = "https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh";
@@ -98,6 +99,10 @@ export function createHermesCommandBuilder(agentId: string = DEFAULT_HERMES_AGEN
   const channel = {
     getListCommand() {
       return scoped("acli channel status");
+    },
+    getSendCommand(platform: string, message: string) {
+      return `printf '%s' ${shellQuote(message)} | `
+        + withHermesProfile(`send --to ${shellQuote(platform)} --json --file -`, agentId);
     },
     getQQBotConfigCommand(params: { appId: string; clientSecret: string }) {
       return scoped([

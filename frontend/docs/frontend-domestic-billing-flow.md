@@ -88,7 +88,7 @@ sequenceDiagram
 
 - 国内站 + 开关开启：消费后端真实价 `bundle.price.real_total_cost`（单位分，`centsToYuan` 转元）。
   - 无价（trade 故障 / 未登录）→ CTA 显示「暂无报价」并禁用。
-  - 折扣：后端 `discount` 优先；无则按套餐名兜底文案（启航「首单免费 14 天」/ 巡游「首月 5 折」/ AI「首月 6 折」）。
+  - 折扣：后端 `discount` 优先；无则按套餐名兜底文案（启航 / 启航 AI 零元新用户「首单免费 1 个月」/ 巡游「首月 5 折」/ 巡游 AI「首月 6 折」）。
 - 远航（voyage）：强制「敬请期待」，屏蔽价格与下单。
 - AI 增强版：登录后月付 / 季付均已放开（`aiReleased = isLoggedIn`）；未登录统一「敬请期待」。
 
@@ -328,6 +328,7 @@ closed ──选套餐下单──▶ paying ──轮询到 pass──▶ final
 | 字段 | 含义 |
 |---|---|
 | `pass_id` / `user_id` / `bundle_id` / `bundle_name` | 权益 / 用户 / 套餐标识 |
+| `bundle_type` | 套餐类型：`free` / `general` / `ai`；来自 Bundle 真源，不从 `bundle_id` 或套餐名推断 |
 | `created_time` / `expired_time` | 生效 / 到期时间 |
 | `isolated_time` | 进入隔离态时间（销毁前置） |
 | `agent_quota_total` / `agent_quota_available` | Agent 席位总数 / 剩余（已扣运行中实例占用） |

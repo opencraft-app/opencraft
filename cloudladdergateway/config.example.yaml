@@ -556,6 +556,9 @@ external_routes:
         value: ap-beijing
         route_id: lightvela-cloudapi-bj
       - name: X-TC-Region
+        value: ap-guangzhou
+        route_id: lightvela-cloudapi-bj
+      - name: X-TC-Region
         value: ap-shanghai
         route_id: lightvela-cloudapi-sh
 
@@ -991,7 +994,7 @@ routes:
       allowed_methods: ["POST"]
 
   - id: lightvela-cloudapi-bj
-    description: "LightVela 通用云 API 入向入口，北京地域按 X-TC-Region=ap-beijing 路由"
+    description: "LightVela 通用云 API 入向入口，北京预发布按 X-TC-Region=ap-beijing/ap-guangzhou 路由"
     callers: ["tencentcloud"]
     condition: 'request.method == "POST"'
     upstream:

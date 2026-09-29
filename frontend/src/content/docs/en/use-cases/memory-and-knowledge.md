@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![A Cloud Storage folder with project files](../images/use-case-memory-knowledge-storage.png)
+![A Cloud Storage folder with project files](../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. Review memory instead of assuming it is correct forever
 
@@ -69,7 +69,7 @@ Use the [Chat](../configuration/agent-chat.md) page or a connected channel to tu
 
 If your review follows a recurring rhythm, a [Scheduled Task](../configuration/automation.md) can remind you to revisit a folder or prepare a regular recap. Begin with a simple reminder or summary rather than granting a broad, open-ended task.
 
-![A Hermes Agent conversation using organized project knowledge](../images/use-case-memory-knowledge-automation.png)
+![A Hermes Agent conversation using organized project knowledge](../images/use-case-memory-knowledge-automation.webp)
 
 ## FAQ
 

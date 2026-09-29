@@ -68,7 +68,7 @@ func TestClassifyStopInstanceError(t *testing.T) {
 	}
 }
 
-func TestStopInstanceChecksStatusBeforeStopping(t *testing.T) {
+func TestStopInstanceChecksStatusBeforeSubmitting(t *testing.T) {
 	tests := []struct {
 		name          string
 		initialState  string
@@ -82,14 +82,14 @@ func TestStopInstanceChecksStatusBeforeStopping(t *testing.T) {
 			wantActions:  []string{"DescribeInstancesStatus"},
 		},
 		{
-			name:         "stopping skips stop and polls",
+			name:         "stopping is already accepted",
 			initialState: "STOPPING",
-			wantActions:  []string{"DescribeInstancesStatus", "DescribeInstancesStatus"},
+			wantActions:  []string{"DescribeInstancesStatus"},
 		},
 		{
-			name:         "running stops and polls",
+			name:         "running submits asynchronous stop",
 			initialState: "RUNNING",
-			wantActions:  []string{"DescribeInstancesStatus", "StopInstances", "DescribeInstancesStatus"},
+			wantActions:  []string{"DescribeInstancesStatus", "StopInstances"},
 		},
 		{
 			name:         "unsupported transitional state fails",
@@ -98,17 +98,16 @@ func TestStopInstanceChecksStatusBeforeStopping(t *testing.T) {
 			wantError:    true,
 		},
 		{
-			name:          "running race to stopped mode polls",
+			name:          "running race to stopping is accepted",
 			initialState:  "RUNNING",
 			stopErrorCode: "UnsupportedOperation.StoppedModeStopCharging",
-			wantActions:   []string{"DescribeInstancesStatus", "StopInstances", "DescribeInstancesStatus"},
+			wantActions:   []string{"DescribeInstancesStatus", "StopInstances"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			actions := []string{}
-			statusCalls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				action := r.Header.Get("X-TC-Action")
 				actions = append(actions, action)
@@ -119,14 +118,9 @@ func TestStopInstanceChecksStatusBeforeStopping(t *testing.T) {
 						response["Error"] = map[string]any{"Code": test.stopErrorCode, "Message": "test stop state"}
 					}
 				case "DescribeInstancesStatus":
-					state := "STOPPED"
-					if statusCalls == 0 {
-						state = test.initialState
-					}
-					statusCalls++
 					response["InstanceStatusSet"] = []any{map[string]any{
 						"InstanceId":    "ins-test",
-						"InstanceState": state,
+						"InstanceState": test.initialState,
 					}}
 				default:
 					t.Errorf("unexpected CVM action %s", action)
@@ -153,5 +147,55 @@ func TestStopInstanceChecksStatusBeforeStopping(t *testing.T) {
 				t.Fatalf("actions=%v want=%v", actions, test.wantActions)
 			}
 		})
+	}
+}
+
+func TestStopInstanceWithModeWaitsForStopped(t *testing.T) {
+	actions := []string{}
+	statusCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.Header.Get("X-TC-Action")
+		actions = append(actions, action)
+		response := map[string]any{"RequestId": "req-test"}
+		switch action {
+		case "StopInstances":
+		case "DescribeInstancesStatus":
+			state := "RUNNING"
+			if statusCalls > 0 {
+				state = "STOPPED"
+			}
+			statusCalls++
+			response["InstanceStatusSet"] = []any{map[string]any{
+				"InstanceId":    "ins-test",
+				"InstanceState": state,
+			}}
+		default:
+			t.Errorf("unexpected CVM action %s", action)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"Response": response})
+	}))
+	t.Cleanup(server.Close)
+
+	cp := profile.NewClientProfile()
+	cp.HttpProfile.Endpoint = strings.TrimPrefix(server.URL, "http://")
+	cp.HttpProfile.Scheme = "http"
+	client, err := cvm.NewClient(common.NewCredential("test-only-id", "test-only-key"), "ap-seoul", cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloud := &TencentCloudProvider{client: client, cfg: TencentConfig{Region: "ap-seoul"}}
+
+	err = cloud.stopInstanceWithMode(
+		context.Background(),
+		CloudInstanceRef{CloudID: "ins-test", Region: "ap-seoul"},
+		"KEEP_CHARGING",
+	)
+	if err != nil {
+		t.Fatalf("stopInstanceWithMode() error=%v", err)
+	}
+	want := []string{"DescribeInstancesStatus", "StopInstances", "DescribeInstancesStatus"}
+	if !reflect.DeepEqual(actions, want) {
+		t.Fatalf("actions=%v want=%v", actions, want)
 	}
 }

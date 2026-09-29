@@ -49,7 +49,6 @@
 - `.ci/ctl.yml`
 - `.ci/gateway-dashboard.yml`
 - `.ci/lightclaw-auth.yml`
-- `.ci/nextgen-dashboard.yml`
 - `.ci/payment.yml`
 - `.ci/sandbox.yml`
 - `.ci/service-gateway.yml`
@@ -62,7 +61,7 @@
 - `.ci/cloudladdergateway.yml`
   - 内网 TKEx 专用 release 入口，复用 `.ci/templates/service-release.yml` 构建国内站 `tkexgz` 和国际站 `tkexsg` 镜像。
   - 目标镜像仓库为 `csighub.tencentyun.com/skipzhang/cloudladdergateway`；构建机从 `/etc/lightclaw-ci/csighub_username` 和 `/etc/lightclaw-ci/csighub_password` 读取发布凭据。
-  - 该服务不进入现有 `beijing-sandbox/shprod/sgprod` 自动 pin / 生产 promote 流程；需要发布时使用模板的 `PIPELINE_MODE=promote` 手动创建对应 TKEx GitOps MR。
+  - master 自动发布固定只更新 testing；正式实例使用 `PIPELINE_MODE=promote` 手动创建 TKEx GitOps MR，并由 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary` 只更新 primary pin。
 - `.ci/hermes-image.yml`
   - 用 `images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify` 构建、验证并同步 Hermes CVM 镜像。
   - 腾讯云凭据只从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取，不通过流水线启动变量传入。
@@ -288,6 +287,8 @@ frontend 容器镜像必须单独确认：
 - 只有当同 registry 中已经存在同 source sha 的等价 frontend 镜像，且只是缺少目标 env tag 时，才允许把已有 tag retag 成目标 tag 来解锁 live。
 - retag 必须记录来源 tag、目标 tag、digest 和“不重新构建”的理由；它只解决 registry tag 缺失，不替代长期 CI 构建入口。
 - 如果 frontend 源码、Dockerfile、lockfile、`VITE_*` 构建参数或静态资源入口有任何差异，必须重新构建，不能 retag。
+- 当目标 Playground 分支长期落后于 `master`、又不能安全整体合并时，使用 `构建 frontend` 的受限手动模式：`PIPELINE_MODE=playground-build`、`TARGET_ENV=sandbox-bj-*|sandbox-kr-*`、`SOURCE_SHA=<当前 master 精确 SHA>`。该模式要求流水线 material、checkout HEAD 与 `SOURCE_SHA` 三者一致，只构建并自动 pin 指定 Playground 镜像，跳过共享 Pages artifact、Cloudflare 预发和 EdgeOne 正式候选。
+- CTL、Trade 等采用 `service-release.yml` 的服务也支持同一组 `playground-build` 参数与三方 SHA 校验；该模式只构建并 auto-pin 单个北京或韩国 Playground，不进入 master 的生产镜像矩阵、DB migration 或生产 promote 审批阶段。
 
 受控检查/retag 入口：
 
@@ -927,7 +928,6 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `gitops-promotion.yml`
 - `lightclaw-auth.yml`
 - `mr-placeholder.yml`
-- `nextgen-dashboard.yml`
 - `payment.yml`
 - `sandbox.yml`
 - `service-gateway.yml`

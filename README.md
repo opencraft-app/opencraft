@@ -14,7 +14,7 @@
 - 用户实例 / bot 生命周期编排：`ctl`
 - sandbox 资源池、实例库存与 ingress proxy：`sandbox`
 - 对外统一 API / 管理 API 入口：`service-gateway`、`admin-gateway`
-- 管理后台与运维面板：`gateway-dashboard`、`nextgen-dashboard`
+- 管理后台与运维面板：`gateway-dashboard`
 - AI 兼容代理能力：`ai-gateway`
 - 浏览器、macOS 桌面与 Expo 共用的 Agent 工作台：`opencraft`
 - 云资源、集群、仓库、监控等基础设施：`infra_pulumi`
@@ -43,7 +43,6 @@
 - 用户与订阅：`user/auth`
 - 外网统一入口：`service-gateway`
 - 沙箱资源池：`sandbox`
-- 管理终端：`nextgen-dashboard`
 - 环境与云资源：`infra_pulumi`
 
 ## 本地 Kubernetes 开发环境
@@ -794,15 +793,9 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 
 ### 3. 运维侧
 
-- [nextgen-dashboard](nextgen-dashboard)
-  - `/admin` 对应的 shell-first 管理台
-  - Go 托管静态前端，浏览器里是终端
 - [gateway-dashboard](gateway-dashboard)
   - 当前主线管理后台
   - 负责 auth users、providers/routing、sandbox pools、ctl bots 等后台管理页
-- [nextgen-dashboard-client](nextgen-dashboard-client)
-  - 本地终端客户端
-  - 通过 websocket + Basic Auth 连接 `nextgen-dashboard`
 
 ### 4. 基础设施
 
@@ -834,10 +827,6 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
   - 多端 Agent 工作台与桌面 Local Agent；独立 npm workspace
 - [service-gateway](service-gateway)
   - 公网服务网关
-- [nextgen-dashboard](nextgen-dashboard)
-  - 浏览器终端式管理台
-- [nextgen-dashboard-client](nextgen-dashboard-client)
-  - 管理台的本地客户端
 - [images](images)
   - 镜像辅助内容、envd daemon 源码、agent/helper、小工具镜像
 - [ctl](ctl)
@@ -854,7 +843,7 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 
 一句话：
 
-`frontend + user/auth + service-gateway + sandbox + nextgen-dashboard + infra_pulumi`
+`frontend + user/auth + service-gateway + sandbox + infra_pulumi`
 
 构成了当前线上主链路。
 

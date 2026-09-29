@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import sys
@@ -38,7 +39,6 @@ PLAYGROUND_BUILDABLE_BUNDLES = {
     "credit",
     "frontend",
     "gateway-dashboard",
-    "nextgen-dashboard",
     "payment",
     "sandbox",
     "service-gateway",
@@ -55,7 +55,6 @@ AUTO_RELEASE_WORKFLOWS = {
     "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod,sgprod", "ctl"),
     "credit": (".ci/credit.yml", "beijing-sandbox,shprod,sgprod", "credit"),
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod,sgprod", "gateway-dashboard"),
-    "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod,sgprod", "nextgen-dashboard"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod,sgprod", "payment"),
     "sandbox": (".ci/sandbox.yml", "beijing-sandbox,shprod,sgprod", "sandbox"),
     "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod,sgprod", "service-gateway"),
@@ -76,12 +75,6 @@ TOKYO_RELEASE_WORKFLOWS = {
         "env",
     ),
     "user-auth": (".ci/tokyo-lightclaw-auth.yml", ".ci/lightclaw-auth.yml", "lightclaw-auth", "env"),
-    "nextgen-dashboard": (
-        ".ci/tokyo-nextgen-dashboard.yml",
-        ".ci/nextgen-dashboard.yml",
-        "nextgen-dashboard",
-        "env",
-    ),
     "payment": (".ci/tokyo-payment.yml", ".ci/payment.yml", "payment", "env"),
     "sandbox": (".ci/tokyo-sandbox.yml", ".ci/sandbox.yml", "sandbox", "env"),
     "service-gateway": (
@@ -105,7 +98,6 @@ BUSINESS_WORKFLOWS = {
     ".ci/frontend.yml",
     ".ci/gateway-dashboard.yml",
     ".ci/lightclaw-auth.yml",
-    ".ci/nextgen-dashboard.yml",
     ".ci/payment.yml",
     ".ci/sandbox.yml",
     ".ci/service-gateway.yml",
@@ -121,6 +113,7 @@ PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/credit.yml",
     ".ci/lightclaw-auth.yml",
     ".ci/payment.yml",
+    ".ci/referral.yml",
     ".ci/sandbox.yml",
     ".ci/subscription.yml",
     ".ci/trade.yml",
@@ -162,6 +155,28 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_sandbox_public_load_balancers_match_their_regions(self) -> None:
+        expected_load_balancers = {
+            "shprod": "lb-ohkm8fm5",
+            "sgprod": "lb-8kenwgvc",
+        }
+
+        for env, expected_load_balancer in expected_load_balancers.items():
+            with self.subTest(env=env):
+                patch = yaml.safe_load(
+                    (
+                        REPO_ROOT
+                        / "argocd/services/sandbox"
+                        / env
+                        / "patch-ingressproxy-router-service.yaml"
+                    ).read_text()
+                )
+                annotations = patch["metadata"]["annotations"]
+                self.assertEqual(
+                    annotations["service.kubernetes.io/loadbalance-id"],
+                    expected_load_balancer,
+                )
+
     def test_production_release_checkouts_do_not_fetch_unneeded_submodules(self) -> None:
         for path, expected_count in (
             (".ci/templates/service-release.yml", 4),
@@ -1288,6 +1303,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "shprod": {
                 "region": "ap-shanghai",
                 "suffix": "test_env",
+                "llmgateway_url": "https://token-admin.lightvela.com",
                 "image": "lightclaw-shprod.tencentcloudcr.com/lightclaw/credit",
                 "app": "argocd/apps/shprod/credit.yaml",
                 "project": "argocd/projects/shprod-credit.yaml",
@@ -1302,6 +1318,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "sgprod": {
                 "region": "ap-singapore",
                 "suffix": "test_env",
+                "llmgateway_url": "https://token-admin.lightvela.ai",
                 "image": "lightclaw-sgprod.tencentcloudcr.com/lightclaw/credit",
                 "app": "argocd/apps/sgprod/credit.yaml",
                 "project": "argocd/projects/sgprod-credit.yaml",
@@ -1338,6 +1355,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertIn(f"CREDIT_REGION={contract['region']}", platform)
                 self.assertIn(f"CREDIT_OBJECT_ID_PASSWORD_SUFFIX={contract['suffix']}", platform)
                 self.assertIn(f"CREDIT_IMAGE={contract['image']}:", platform)
+                if llmgateway_url := contract.get("llmgateway_url"):
+                    self.assertIn(f"LLMGATEWAY_INTERNAL_BASE_URL={llmgateway_url}", platform)
 
                 for key in ("catalog", "app", "project", "trade_patch", "gateway", "ssm"):
                     if path := contract.get(key):
@@ -1379,14 +1398,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 item = next(item for item in ssm["items"] if item["id"] == "credit-runtime-secrets")
                 self.assertEqual(set(item["required_keys"]), required_secret_keys)
 
-    def test_referral_pipeline_keeps_manual_release_and_environment_boundaries(self) -> None:
+    def test_referral_pipeline_uses_standard_prod_orchestration_and_environment_boundaries(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
-        self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SHPROD_DB_MIGRATION"), True)
+        self.assertIs(parameters.get("ENABLE_MASTER_SGPROD_DB_MIGRATION"), True)
 
         manifest = load_manifest()
         referral = load_bundle(manifest, "referral", "beijing-sandbox")
@@ -1740,8 +1762,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(manifest["defaults"]["region"], "ap-tokyo")
         self.assertEqual(manifest["defaults"]["version_id"], "SSM_Current")
         items = manifest["items"]
-        self.assertEqual(len(items), 16)
-        self.assertEqual(len({item["id"] for item in items}), 16)
+        self.assertEqual(len(items), 15)
+        self.assertEqual(len({item["id"] for item in items}), 15)
         for item in items:
             with self.subTest(item=item["id"]):
                 self.assertTrue(item["secret_name"].startswith("mono-sandbox-jp-1-"))
@@ -1760,7 +1782,6 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "ctl-conf-rewrite.sops.yaml",
             "ctl-runtime-secrets.sops.yaml",
             "gateway-dashboard-runtime-secrets.sops.yaml",
-            "nextgen-dashboard-runtime-secrets.sops.yaml",
             "payment-runtime-secrets.sops.yaml",
             "sandbox-runtime-secrets.sops.yaml",
             "service-gateway-runtime-secrets.sops.yaml",
@@ -2759,6 +2780,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_workflow_supports_exact_master_playground_build(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+
+        self.assertIn('PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"', workflow_text)
+        self.assertIn('if [[ "$PIPELINE_MODE_VALUE" == "playground-build" ]]', workflow_text)
+        self.assertIn('SOURCE_SHA="${{ variables.SOURCE_SHA }}"', workflow_text)
+        self.assertIn('TARGET_ENV="${{ variables.TARGET_ENV }}"', workflow_text)
+        self.assertIn('if [[ "$SOURCE_BRANCH" != "master" ]]', workflow_text)
+        self.assertIn('SOURCE_BRANCH="${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"', workflow_text)
+        self.assertIn('"$(git rev-parse HEAD)" != "$SOURCE_SHA"', workflow_text)
+        self.assertIn('sandbox-bj-*|sandbox-kr-*)', workflow_text)
+        self.assertIn('BUILD_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('AUTO_PIN_ENVS="$TARGET_ENV"', workflow_text)
+        self.assertIn('frontend-${TARGET_ENV}-${SHORT_SHA}', workflow_text)
+        self.assertEqual(
+            workflow_text.count('|| "${{ variables.PIPELINE_MODE }}" == "playground-build"'),
+            2,
+        )
+        self.assertIn('if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"', workflow_text)
+
     def test_frontend_checkouts_disable_virtual_merge(self) -> None:
         for workflow_path in (".ci/frontend.yml", ".ci/frontend-preview.yml"):
             with self.subTest(workflow=workflow_path):
@@ -2890,6 +2931,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         singapore_approval_stage = stage_by_name["确认刷新并修补新加坡生产 Hermes"]
         singapore_refresh_stage = stage_by_name["刷新新加坡生产 Hermes pools"]
         singapore_repair_stage = stage_by_name["升级存量新加坡生产 Hermes VM"]
+        johor_preflight_stage = stage_by_name["预检新山生产 Hermes 更新目标"]
+        johor_approval_stage = stage_by_name["确认刷新并修补新山生产 Hermes"]
+        johor_refresh_stage = stage_by_name["刷新新山生产 Hermes pools"]
+        johor_repair_stage = stage_by_name["升级存量新山生产 Hermes VM"]
         shanghai_approval_stage = stage_by_name["确认刷新并修补上海生产 Hermes"]
         shanghai_refresh_stage = stage_by_name["刷新上海生产 Hermes pools"]
         shanghai_repair_stage = stage_by_name["升级存量上海生产 Hermes VM"]
@@ -2897,6 +2942,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         reviewers = ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]
         beijing_reviews = (((beijing_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         singapore_reviews = (((singapore_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        johor_reviews = (((johor_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         shanghai_reviews = (((shanghai_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
 
         self.assertEqual(beijing_approval_stage.get("if"), prod_if)
@@ -2907,11 +2953,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(singapore_preflight_stage.get("if"), prod_if)
         self.assertEqual(singapore_refresh_stage.get("if"), prod_if)
         self.assertEqual(singapore_repair_stage.get("if"), prod_if)
+        self.assertEqual(johor_preflight_stage.get("if"), prod_if)
+        self.assertEqual(johor_approval_stage.get("if"), prod_if)
+        self.assertEqual(johor_refresh_stage.get("if"), prod_if)
+        self.assertEqual(johor_repair_stage.get("if"), prod_if)
         self.assertEqual(shanghai_approval_stage.get("if"), prod_if)
         self.assertEqual(shanghai_refresh_stage.get("if"), prod_if)
         self.assertEqual(shanghai_repair_stage.get("if"), prod_if)
         self.assertEqual(beijing_reviews.get("reviewers"), reviewers)
         self.assertEqual(singapore_reviews.get("reviewers"), reviewers)
+        self.assertEqual(johor_reviews.get("reviewers"), reviewers)
         self.assertEqual(shanghai_reviews.get("reviewers"), reviewers)
         self.assertLess(stages.index(build_stage), stages.index(beijing_preflight_stage))
         self.assertLess(stages.index(beijing_preflight_stage), stages.index(beijing_approval_stage))
@@ -2921,7 +2972,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertLess(stages.index(singapore_preflight_stage), stages.index(singapore_approval_stage))
         self.assertLess(stages.index(singapore_approval_stage), stages.index(singapore_refresh_stage))
         self.assertLess(stages.index(singapore_refresh_stage), stages.index(singapore_repair_stage))
-        self.assertLess(stages.index(singapore_repair_stage), stages.index(shanghai_approval_stage))
+        self.assertLess(stages.index(singapore_repair_stage), stages.index(johor_preflight_stage))
+        self.assertLess(stages.index(johor_preflight_stage), stages.index(johor_approval_stage))
+        self.assertLess(stages.index(johor_approval_stage), stages.index(johor_refresh_stage))
+        self.assertLess(stages.index(johor_refresh_stage), stages.index(johor_repair_stage))
+        self.assertLess(stages.index(johor_repair_stage), stages.index(shanghai_approval_stage))
         self.assertLess(stages.index(shanghai_approval_stage), stages.index(shanghai_refresh_stage))
         self.assertLess(stages.index(shanghai_refresh_stage), stages.index(shanghai_repair_stage))
 
@@ -2943,10 +2998,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("HERMES_SKIP_IMAGE_BUILD", workflow_text)
         self.assertIn("--image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
         self.assertIn(
-            "--target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo",
+            "--target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo,ap-johorbahru",
             workflow_text,
         )
         self.assertIn("HERMES_IMAGE_ID_AP_TOKYO", workflow_text + refresh_env_script_text)
+        self.assertIn(
+            "for region in ap-beijing ap-shanghai ap-singapore ap-tokyo ap-johorbahru",
+            workflow_text,
+        )
         self.assertIn("resolve_hermes_image_id.py --region \"$region\" --image-name \"$HERMES_IMAGE_NAME\"", workflow_and_runtime_text)
         self.assertIn("split_hermes_pool_vms_by_region.py", workflow_and_runtime_text)
         self.assertIn("HERMES_REFRESH_ENV_SPEC", workflow_text)
@@ -2962,14 +3021,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("No Singapore Hermes VM rows found; abort before manual approval", workflow_text)
         self.assertIn("resolve_hermes_image_id.py --region ap-singapore --image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
         self.assertIn("确认刷新并修补新加坡生产 Hermes", workflow_text)
+        self.assertIn("预检新山生产 Hermes 更新目标", workflow_text)
+        self.assertIn("hermes-sgprod-johor-preflight-vms", workflow_text)
+        self.assertIn("No Johor Hermes VM rows found; abort before manual approval", workflow_text)
+        self.assertIn("resolve_hermes_image_id.py --region ap-johorbahru --image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
+        self.assertIn("确认刷新并修补新山生产 Hermes", workflow_text)
         self.assertIn("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox", workflow_text)
         self.assertIn("HERMES_BEIJING_HERMES_LEGACY_POOL_IDS", workflow_text)
         self.assertIn("pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
+        self.assertIn("sgprod:ap-johorbahru:kubeconfig_sgprod", workflow_text)
+        self.assertIn("HERMES_JOHOR_HERMES_LEGACY_POOL_IDS", workflow_text)
+        self.assertIn("pool-1789611181051332051-1", workflow_text)
         self.assertIn("shprod:ap-shanghai:kubeconfig_shprod", workflow_text)
         self.assertIn("HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS", workflow_text)
         self.assertIn("pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
         self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"))
-        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
+        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("sgprod:ap-johorbahru:kubeconfig_sgprod"))
+        self.assertLess(workflow_text.index("sgprod:ap-johorbahru:kubeconfig_sgprod"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
         self.assertNotIn("<<'PY'", workflow_text)
         self.assertNotIn("默认目标：shprod", workflow_text)
         self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
@@ -3027,6 +3095,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("create_hermes_tat_command.sh", repair_vm_script_text)
         self.assertIn("invoke_hermes_tat_command.sh", repair_vm_script_text)
         self.assertIn("Repair existing Hermes VM inventory", repair_vm_script_text)
+        self.assertIn("HERMES_TAT_CHECKPOINT_ROOT", repair_vm_script_text)
+        self.assertIn('HERMES_TAT_SKIP_INVOKED_FILE="$skip_invoked_files"', repair_vm_script_text)
+        self.assertIn('HERMES_TAT_OUTPUT_DIR="$checkpoint_dir"', repair_vm_script_text)
         self.assertIn("Refresh then repair one Hermes sandbox environment", rollout_script_text)
         self.assertIn(">&2", rollout_script_text)
         self.assertIn("refresh_hermes_sandbox_env.sh", rollout_script_text)
@@ -3039,6 +3110,60 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("acli bundle-update", repair_script_text)
         self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
+
+    def test_hermes_tat_resume_skips_invoked_and_tolerates_truncated_checkpoint(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            output_dir = root / "output"
+            bin_dir.mkdir()
+            output_dir.mkdir()
+            tccli = bin_dir / "tccli"
+            tccli.write_text('#!/usr/bin/env bash\nprintf \'%s\\n\' \'{"InvocationId":"inv-test"}\'\n')
+            tccli.chmod(0o755)
+            input_file = root / "input.jsonl"
+            input_file.write_text(
+                '\n'.join(
+                    [
+                        json.dumps({"cloud_id": "ins-done", "instance_id": "vm-done"}),
+                        json.dumps({"cloud_id": "ins-pending", "instance_id": "vm-pending"}),
+                    ]
+                )
+                + "\n"
+            )
+            checkpoint = root / "checkpoint.jsonl"
+            checkpoint.write_text(
+                json.dumps({"cloud_id": "ins-done", "invoke_status": "INVOKED"})
+                + "\n"
+                + '{"cloud_id":"truncated"\n'
+            )
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{bin_dir}:{env['PATH']}",
+                    "HERMES_TAT_REGION": "ap-shanghai",
+                    "HERMES_TAT_COMMAND_ID": "cmd-test",
+                    "HERMES_TAT_INPUT_FILE": str(input_file),
+                    "HERMES_TAT_OUTPUT_DIR": str(output_dir),
+                    "HERMES_TAT_SKIP_INVOKED_FILE": str(checkpoint),
+                }
+            )
+            result = subprocess.run(
+                ["bash", str(script)],
+                cwd=REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            summary_path = next(output_dir.glob("*.summary.json"))
+            summary = json.loads(summary_path.read_text())
+            self.assertEqual(summary["total"], 1)
+            self.assertEqual(summary["counts"], {"INVOKED": 1})
+            self.assertIn('"targets": 1, "skipped": 1', result.stderr)
+            self.assertIn("ignoring malformed TAT checkpoint row", result.stderr)
 
     def test_hermes_pool_refresh_selects_only_target_region(self) -> None:
         script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
@@ -3082,6 +3207,86 @@ target_pool_ids http://unused "$pools_json" ap-johorbahru
 
         self.assertEqual(result.stdout.splitlines(), ["pool-jhb"])
 
+    def test_hermes_vm_inventory_selects_only_target_region(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        resolved = json.dumps({"pools": []})
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+resolved_json="$3"
+source "$script_path"
+api_get() { printf '%s' "$resolved_json"; }
+target_pools_jsonl http://unused "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools, resolved],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        selected = [json.loads(line)["id"] for line in result.stdout.splitlines()]
+        self.assertEqual(selected, ["pool-jhb"])
+
+    def test_hermes_vm_inventory_rejects_cross_region_legacy_pool(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg-legacy",
+                    "template_class_id": "openclaw",
+                    "sku_id": "sku-openclaw-2c4g",
+                    "zone": "ap-singapore-1",
+                }
+            ]
+        )
+        resolved = json.dumps({"pools": []})
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+resolved_json="$3"
+source "$script_path"
+LEGACY_POOL_IDS="pool-sg-legacy"
+api_get() { printf '%s' "$resolved_json"; }
+target_pools_jsonl http://unused "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools, resolved],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertEqual(result.stdout, "")
+
     def test_hermes_pool_refresh_does_not_publish_one_global_image_for_multi_region_sku(self) -> None:
         script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
         pools = json.dumps(
@@ -3116,7 +3321,7 @@ jq() {
   printf '%s\n' 'jq must not be required before the multi-region early return' >&2
   return 127
 }
-refresh_skus http://unused img-jhb "$pools_json"
+refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
 '''
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
             source_file.write(source_text)
@@ -3130,6 +3335,73 @@ refresh_skus http://unused img-jhb "$pools_json"
             )
 
         self.assertNotIn("updating SKU", result.stdout)
+
+    def test_hermes_pool_refresh_updates_region_local_sku_without_touching_shared_sku(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg-shared",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb-shared",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+                {
+                    "id": "pool-jhb-local",
+                    "template_class_id": "openclaw-2c8g50g",
+                    "sku_id": "sku-hermes-2c8g50g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+source "$script_path"
+api_get() {
+  printf '%s' '[{"id":"sku-hermes-2c4g","template_class_id":"hermes","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"},{"id":"sku-hermes-2c8g50g","template_class_id":"openclaw-2c8g50g","base_image":"img-old","desired_image_id":"img-old","stable_image_id":"img-old","rollout_state":"stable"}]'
+}
+api_post_json() {
+  printf '%s' "$3"
+}
+jq() {
+  if [[ "$1" == "-r" && "$2" == "--arg" && "$3" == "ids" ]]; then
+    cat >/dev/null
+    printf '%s\n' 'sku-hermes-2c8g50g'
+    return
+  fi
+  if [[ "$1" == "-c" && "$2" == "--arg" && "$3" == "id" ]]; then
+    cat >/dev/null
+    printf '%s\n' '{"id":"sku-hermes-2c8g50g","template_class_id":"openclaw-2c8g50g","base_image":"img-jhb","desired_image_id":"img-jhb","stable_image_id":"img-old","rollout_state":"rolling","last_rollout_error":""}'
+    return
+  fi
+  cat >/dev/null
+  printf '%s\n' $'sku-hermes-2c8g50g\timg-jhb\timg-jhb\timg-old\trolling\t'
+}
+refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertIn("updating SKU sku-hermes-2c8g50g desired image -> img-jhb", result.stdout)
+        self.assertNotIn("updating SKU sku-hermes-2c4g", result.stdout)
+        self.assertIn("skipping cross-region SKU sku-hermes-2c4g", result.stderr)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
@@ -3233,6 +3505,20 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
+    def test_frontend_artifact_build_stages_the_opencraft_embed_release(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        workflow = yaml.safe_load(workflow_text)
+        trigger_paths = (workflow.get("on") or workflow[True])["push"]["paths"]
+
+        self.assertIn("opencraft/apps/workbench-web/**", trigger_paths)
+        self.assertIn("opencraft/packages/**", trigger_paths)
+        self.assertIn("opencraft/plugins/**", trigger_paths)
+        self.assertIn('cd "$REPO_ROOT/opencraft"', workflow_text)
+        self.assertIn('"$NPM_BIN" ci', workflow_text)
+        self.assertIn('"$NPM_BIN" run build:embedded-workbench:release', workflow_text)
+        self.assertIn('export OPENCRAFT_EMBED_DIST_DIR=', workflow_text)
+        self.assertIn('test -f "$OPENCRAFT_EMBED_DIST_DIR/embedded-workbench.js"', workflow_text)
+
 
     def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
         guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
@@ -3304,12 +3590,19 @@ refresh_skus http://unused img-jhb "$pools_json"
             ["Dry-run 生产 DB migration", "人工确认生产 DB migration", "执行生产 DB migration"],
         )
         self.assertTrue(all("if" not in stage for stage in explicit_stages))
+        self.assertEqual(((explicit.get("variables") or {}).get("MIGRATION_DECISION") or {}).get("value"), "run_migration")
+        self.assertEqual(((explicit.get("variables") or {}).get("SKIP_IF_NO_MIGRATION_CHANGE") or {}).get("value"), "true")
         self.assertIn("check-in", explicit_stages[1])
         explicit_reviews = explicit_stages[1]["check-in"]["reviews"]
         self.assertIn("description", explicit_reviews)
         self.assertNotIn("description", explicit_stages[1]["check-in"])
         for stage_index, job_name in ((0, "dry_run"), (2, "apply")):
-            steps = explicit_stages[stage_index]["jobs"][job_name]["steps"]
+            job = explicit_stages[stage_index]["jobs"][job_name]
+            self.assertEqual(
+                (job.get("env") or {}).get("MIGRATION_DECISION"),
+                "${{ variables.MIGRATION_DECISION }}",
+            )
+            steps = job["steps"]
             checkout = next(step for step in steps if step.get("checkout") == "self")
             self.assertIs(checkout["with"]["enableSubmodule"], False)
         self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
@@ -3435,6 +3728,24 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("ci-triggers/trade", self.push_paths(workflow))
         self.assertIn("ci-triggers/trade", self.push_paths(tokyo_workflow))
         self.assertTrue((REPO_ROOT / "ci-triggers/trade").is_file())
+
+    def test_sgprod_trade_exports_general_cloudladder_hmac(self) -> None:
+        manifest_path = REPO_ROOT / "scripts/ssm_manifest.trade.sgprod.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        items = {item["id"]: item for item in manifest["items"]}
+        item = items["trade-runtime-secrets"]
+
+        self.assertEqual(item["secret_name"], "mono-sgprod-trade-runtime-secrets")
+        self.assertEqual(item["output_path"], "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml")
+        self.assertIn("TRADE_CLOUDLADDER_HMAC_SECRET", item["required_keys"])
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", item["required_keys"])
+
+        encrypted_secret = yaml.safe_load(
+            (REPO_ROOT / item["output_path"]).read_text()
+        )
+        runtime_keys = set(encrypted_secret["stringData"])
+        self.assertIn("TRADE_CLOUDLADDER_HMAC_SECRET", runtime_keys)
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", runtime_keys)
 
     def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
         env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
@@ -3613,6 +3924,7 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("IMAGE_PIN_VARIANT"), "testing")
+        self.assertEqual(parameters.get("MANUAL_PROMOTE_IMAGE_PIN_VARIANT"), "primary")
         self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
         self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
         self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
@@ -3701,6 +4013,24 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn('PLAYGROUND_ENV="$SOURCE_BRANCH"', template_text)
         self.assertIn('unsupported source branch for release: ${SOURCE_BRANCH:-unknown}', template_text)
 
+    def test_service_release_supports_exact_master_playground_build(self) -> None:
+        template_text = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+
+        self.assertEqual(template_text.count('if [[ "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]'), 2)
+        self.assertEqual(template_text.count('SOURCE_SHA="${{ variables.SOURCE_SHA }}"'), 3)
+        self.assertEqual(template_text.count('CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"'), 2)
+        self.assertEqual(template_text.count('if [[ "$SOURCE_BRANCH" != "master" ]]'), 2)
+        self.assertEqual(template_text.count('"$(git rev-parse HEAD)" != "$SOURCE_SHA"'), 2)
+        self.assertEqual(template_text.count('sandbox-bj-*|sandbox-kr-*)'), 2)
+        self.assertEqual(template_text.count('BUILD_ENVS="$TARGET_ENV"'), 2)
+        self.assertEqual(template_text.count('AUTO_PIN_ENVS="$TARGET_ENV"'), 2)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 构建', template_text)
+        self.assertIn('Playground 发布决策：master 精确提交 $SOURCE_SHA 校验', template_text)
+        self.assertIn(
+            '${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master',
+            template_text,
+        )
+
     def test_service_release_creates_independent_prod_promote_candidates(self) -> None:
         template_path = REPO_ROOT / ".ci/templates/service-release.yml"
         template_text = template_path.read_text()
@@ -3774,6 +4104,7 @@ refresh_skus http://unused img-jhb "$pools_json"
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
         self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao"]')
         self.assertEqual(template_parameters.get("IMAGE_PIN_VARIANT", {}).get("default"), "all")
+        self.assertEqual(template_parameters.get("MANUAL_PROMOTE_IMAGE_PIN_VARIANT", {}).get("default"), "")
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
@@ -3785,7 +4116,19 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
         self.assertEqual(
             template_text.count('GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"'),
-            4,
+            3,
+        )
+        self.assertIn(
+            'MANUAL_PROMOTE_IMAGE_PIN_VARIANT="${{ parameters.MANUAL_PROMOTE_IMAGE_PIN_VARIANT }}"',
+            template_text,
+        )
+        self.assertIn(
+            'MANUAL_PROMOTE_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"',
+            template_text,
+        )
+        self.assertIn(
+            'export GITOPS_IMAGE_PIN_VARIANT="$MANUAL_PROMOTE_IMAGE_PIN_VARIANT"',
+            template_text,
         )
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("若本服务启用生产 DB migration，会先发起 shprod / sgprod DB 子流水线", template_text)
@@ -3816,7 +4159,10 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertEqual(template_text.count(release_image_dir), 2)
         self.assertNotIn('RELEASE_IMAGE_DIR=".ci/.release-images/', template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
-        self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
+        self.assertEqual(template_text.count('targetPathFromUrl: "${{ steps.plan.outputs.pipeline_path }}"'), 2)
+        self.assertEqual(template_text.count('PIPELINE_PATH=".ci/db-migration-apply.yml"'), 2)
+        self.assertEqual(template_text.count('PIPELINE_PATH=".ci/db-migration.yml"'), 2)
+        self.assertEqual(template_text.count('echo "::set-output name=pipeline_path::$PIPELINE_PATH"'), 2)
         self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)
         self.assertIn('buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)
         self.assertIn('key: "SERVICE"', template_text)
@@ -3833,8 +4179,6 @@ refresh_skus http://unused img-jhb "$pools_json"
     def test_frontend_template_consumers_keep_frontend_prod_reviewers(self) -> None:
         frontend_reviewers = '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
         workflows = [
-            ".ci/nextgen-dashboard.yml",
-            ".ci/tokyo-nextgen-dashboard.yml",
             ".ci/tokyo-gateway-dashboard.yml",
             ".ci/tokyo-frontend.yml",
         ]

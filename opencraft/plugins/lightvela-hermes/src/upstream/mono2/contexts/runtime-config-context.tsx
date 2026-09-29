@@ -17,6 +17,7 @@ export interface RuntimeFeatureFlags {
   zeroTokenAutomationsEnabled: boolean;
   multiBotEnabled: boolean;
   referralEnabled: boolean;
+  cloudDesktopEnabled: boolean;
 }
 
 export interface RuntimeConfig {
@@ -65,12 +66,14 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     zeroTokenAutomationsEnabled: readBuildTimeZeroTokenAutomationsDefault(),
     multiBotEnabled: readBuildTimeMultiBotDefault(),
     referralEnabled: false,
+    cloudDesktopEnabled: false,
   },
 };
 
 const PAID_BILLING_OVERRIDE_STORAGE_KEY = "lightclaw:features.paidBillingEnabled";
 const REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY = "lightclaw:features.realnamePhoneVerificationEnabled";
 const ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY = "lightclaw:features.zeroTokenAutomationsEnabled";
+const CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY = "lightclaw:features.cloudDesktopEnabled";
 
 const RuntimeConfigContext = createContext<RuntimeConfigState>({
   config: DEFAULT_RUNTIME_CONFIG,
@@ -91,6 +94,7 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
     (features as { zeroTokenAutomationsEnabled?: unknown }).zeroTokenAutomationsEnabled;
   const multiBotEnabled = (features as { multiBotEnabled?: unknown }).multiBotEnabled;
   const referralEnabled = (features as { referralEnabled?: unknown }).referralEnabled;
+  const cloudDesktopEnabled = (features as { cloudDesktopEnabled?: unknown }).cloudDesktopEnabled;
   return {
     features: {
       paidBillingEnabled:
@@ -106,6 +110,7 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
           ? multiBotEnabled
           : DEFAULT_RUNTIME_CONFIG.features.multiBotEnabled,
       referralEnabled: referralEnabled === true,
+      cloudDesktopEnabled: cloudDesktopEnabled === true,
     },
   };
 };
@@ -125,9 +130,11 @@ const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
   const paidBillingOverride = readBooleanOverride(PAID_BILLING_OVERRIDE_STORAGE_KEY);
   const realnamePhoneVerificationOverride = readBooleanOverride(REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY);
   const zeroTokenAutomationsOverride = readBooleanOverride(ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY);
+  const cloudDesktopOverride = readBooleanOverride(CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY);
   if (paidBillingOverride == null
     && realnamePhoneVerificationOverride == null
-    && zeroTokenAutomationsOverride == null) return config;
+    && zeroTokenAutomationsOverride == null
+    && cloudDesktopOverride == null) return config;
   return {
     ...config,
     features: {
@@ -137,6 +144,7 @@ const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
         realnamePhoneVerificationOverride ?? config.features.realnamePhoneVerificationEnabled,
       zeroTokenAutomationsEnabled:
         zeroTokenAutomationsOverride === false ? false : config.features.zeroTokenAutomationsEnabled,
+      cloudDesktopEnabled: cloudDesktopOverride ?? config.features.cloudDesktopEnabled,
     },
   };
 };
@@ -242,9 +250,25 @@ export const useMultiBotEnabled = (): boolean => {
   return resolveMultiBotEnabled(config);
 };
 
+const resolveReferralEnabled = (config: RuntimeConfig): boolean =>
+  config.features.referralEnabled === true;
+
 export const useReferralEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
-  return isCN && config.features.referralEnabled === true;
+  return resolveReferralEnabled(config);
+};
+
+/**
+ * 云桌面入口守卫：仅在后端下发 `features.cloudDesktopEnabled === true` 的环境显示
+ * 「云桌面」菜单。后端据 DESKTOP_INGRESS_DOMAIN 是否配置决定该值——已就绪环境
+ * （如 sandbox-bj-7）为 true，现网未配置时为 false，避免暴露无后端支撑的死入口。
+ */
+const resolveCloudDesktopEnabled = (config: RuntimeConfig): boolean =>
+  config.features.cloudDesktopEnabled === true;
+
+export const useCloudDesktopEnabled = (): boolean => {
+  const { config } = useRuntimeConfig();
+  return resolveCloudDesktopEnabled(config);
 };
 
 export const __runtimeConfigTestHooks = {
@@ -252,8 +276,11 @@ export const __runtimeConfigTestHooks = {
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
   REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
+  CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY,
   applyRuntimeOverrides,
   getEdgeOnePreviewRuntimeConfig,
+  resolveReferralEnabled,
+  resolveCloudDesktopEnabled,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,

@@ -2,23 +2,13 @@
 
 ## Summary
 
-**LightVela plans to enter public beta with billing enabled on August 18, 2026 (Singapore time). Once that happens, existing closed-beta plans will be extended by one additional month, and new users can try Launch free for 14 days or Launch AI free for 7 days on their first order. Two plans are currently offered, Launch and Cruise, differing in cloud runtime specs, dedicated storage, and monthly model credits; core agent capabilities are identical across tiers. Live pricing, availability, and exact entitlements are whatever the subscribe page shows.**
+**LightVela documents Launch, Cruise, and AI-credit plan options with different cloud resources, storage, and model credits. Core Agent capabilities are shared across tiers. Check the [Subscribe page](/subscribe/) for current availability, introductory offers, prices, and entitlements.**
 
 ---
 
-LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month.
+LightVela offers subscription plans with different resource and credit allocations. Check the [Subscribe page](/subscribe/) for current availability, prices, and introductory offers.
 
 We launched LightVela to make it easier for everyone to own a long-running personal AI Agent. You do not need to manage servers, runtime environments, or daily operations, and you do not need to keep a local device online. LightVela lets you create a 24/7 cloud Agent that can keep memory, run tasks, and stay ready for conversation.
-
-Since beta access opened, we have received many suggestions and real usage reports from users. To give beta users more time to evaluate the product, we will help extend eligible beta resources that are approaching expiration.
-
-## Key information
-
-| Item | Details |
-| --- | --- |
-| Planned public beta and billing date | August 18, 2026 (Singapore Time) |
-| Beta user benefit | After public beta and billing officially start, beta users' existing plan validity will be extended by one additional month |
-| New-user benefit after public beta and billing start | First-order Launch free for 14 days; first-order Launch AI free for 7 days |
 
 ## Product capabilities we are continuing to build
 
@@ -36,28 +26,26 @@ If you run into problems or have suggestions about product capabilities, interac
 
 ## Paid plans
 
-LightVela plans to enter public beta and start billing on August 18, 2026 (Singapore Time). After billing officially starts, we will provide monthly subscription plans without bundled AI credits. Subscription plans with AI credits are coming later.
+The tables below describe plan resources and credits. Check the [Subscribe page](/subscribe/) for current availability and entitlements.
 
 ### Plans without bundled AI credits
 
-| Plan | Monthly price | Agent | Isolated runtime | Dedicated cloud storage | Credits | Other benefits |
+| Plan | Monthly price | Agent | Dedicated cloud environment | Dedicated cloud storage | Credits | Other benefits |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch | $7.5 / month | 1 | 2-core 4GB | 50GB | 100 trial credits | 24/7 availability, simple configuration console |
-| Cruise | $15 / month | 1 | 4-core 8GB | 80GB | 200 trial credits | 24/7 availability, simple configuration console |
+| Launch | $7.5 / month | 1 | 2 vCPU · 8 GB RAM | 50 GB | 100 trial credits | 24/7 availability, simple configuration console |
+| Cruise | $15 / month | 1 | 4 vCPU · 16 GB RAM | 80 GB | 200 trial credits | 24/7 availability, simple configuration console |
 
 ### Plans with AI credits
 
-| Plan | Monthly price | Agent | Isolated runtime | Dedicated cloud storage | Credits | Other benefits |
+| Plan | Monthly price | Agent | Dedicated cloud environment | Dedicated cloud storage | Credits | Other benefits |
 | --- | --- | --- | --- | --- | --- | --- |
-| Launch AI | Coming soon | Coming soon | 2-core 4GB | 50GB | 4500 AI credits | 24/7 availability, simple configuration console |
-| Cruise AI | Coming soon | Coming soon | 4-core 8GB | 80GB | 10000 AI credits | 24/7 availability, simple configuration console |
+| Launch AI | Coming soon | Coming soon | 2 vCPU · 8 GB RAM | 50 GB | 4500 AI credits | 24/7 availability, simple configuration console |
+| Cruise AI | Coming soon | Coming soon | 4 vCPU · 16 GB RAM | 80 GB | 10000 AI credits | 24/7 availability, simple configuration console |
 
-## New-user benefits after public beta and billing start
+## New-user offers
 
-We also hope to keep hearing from beta users.
-
-- Launch free trial for 14 days: new users can try Launch for free, including 1 cloud Agent, a 2-core 4GB isolated runtime, 50GB dedicated cloud storage, a small amount of trial credits, 24/7 availability, and the simple configuration console.
-- Launch AI free trial for 7 days: new users who want more AI credits can try Launch AI free for 7 days on their first order.
+- Launch free trial for 1 month: new users can try Launch for free, including 1 cloud Agent, a dedicated cloud environment with 2 vCPU · 8 GB RAM, 50 GB dedicated cloud storage, a small amount of trial credits, 24/7 availability, and the simple configuration console.
+- Launch AI free trial for 1 month: new users who want more AI credits can try Launch AI free for 1 month on their first order.
 - More purchase benefits are coming later.
 
 ## Next product iteration directions

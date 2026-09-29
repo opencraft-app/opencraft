@@ -46,6 +46,7 @@ fi
     --gateway-url "$gateway_url" \
     --fake-qq-url "$fake_qq_url" \
     --jifei-gateway "${PERSONAL_DEV_RUNTIME_JIFEI_GATEWAY:?PERSONAL_DEV_RUNTIME_JIFEI_GATEWAY is required}" \
+    --billing-apigw-url "${PERSONAL_DEV_RUNTIME_BILLING_APIGW_URL:?PERSONAL_DEV_RUNTIME_BILLING_APIGW_URL is required}" \
     --jifei-user-id "$jifei_user_id" \
     --trade-region "$trade_region" \
     --shadow-platform "$shadow_platform"

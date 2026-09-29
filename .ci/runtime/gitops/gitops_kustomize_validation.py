@@ -209,7 +209,6 @@ def source_service_for_path(path: str) -> str:
         "ctl",
         "frontend",
         "gateway-dashboard",
-        "nextgen-dashboard",
         "payment",
         "sandbox",
         "service-gateway",

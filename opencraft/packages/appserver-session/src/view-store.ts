@@ -1,4 +1,5 @@
 import { Context, Service } from "@deepseek-ai/cordis";
+import type { AppServerThread } from "@opencraft/appserver-protocol";
 
 import {
   createEmptyThreadView,
@@ -61,6 +62,25 @@ export class ThreadViewStoreService extends Service {
 
   getAll(): readonly ThreadView[] {
     return [...this.views.values()];
+  }
+
+  /**
+   * Seeds catalog metadata without claiming that history has been restored.
+   * Resume remains the only authority allowed to publish Turns or execution
+   * readiness. Once a View has authoritative Thread metadata, catalog refreshes
+   * must not overwrite its newer projection.
+   */
+  seedMetadata(thread: AppServerThread): ThreadView {
+    if (thread.id.trim().length === 0 || !Array.isArray(thread.turns)) {
+      throw new TypeError("Thread catalog returned invalid metadata");
+    }
+    const existing = this.get(thread.id);
+    if (existing !== null && existing.historySource !== null) return existing;
+    return this.update(thread.id, (current) => ({
+      ...current,
+      thread: { ...thread, turns: [] },
+      historyMode: thread.historyMode ?? current.historyMode,
+    }));
   }
 
   upsertPendingInteraction(interaction: ThreadPendingInteraction): ThreadView {

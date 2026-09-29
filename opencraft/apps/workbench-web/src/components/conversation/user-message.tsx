@@ -3,7 +3,9 @@ import { WebUserMessageDocument, resolveStandardChatResource, writeTextToClipboa
 import {
   AlertCircle,
   Check,
+  ChevronLeft,
   ChevronDown,
+  ChevronRight,
   Circle,
   Copy,
   FileText,
@@ -22,6 +24,7 @@ import {
 
 import { useConversationMediaSource } from "./conversation-media-source";
 import { ConversationDocumentContext } from "./document-context";
+import { ModalSurface } from "../modal/modal-surface";
 import { deriveUserMessageWebLayout } from "./user-message-layout";
 import { useWebUserMessageCollapse } from "./use-web-user-message-collapse";
 
@@ -137,7 +140,7 @@ function UserMessageImage({
 }: {
   readonly documentId: string;
   readonly local: boolean;
-  readonly onOpen: () => void;
+  readonly onOpen: (trigger: HTMLButtonElement) => void;
   readonly source: string;
 }) {
   const documentContext = useContext(ConversationDocumentContext);
@@ -151,7 +154,7 @@ function UserMessageImage({
       aria-label="Open attached image"
       className="thread-user-message__image"
       data-state={media.status}
-      onClick={onOpen}
+      onClick={(event) => onOpen(event.currentTarget)}
       type="button"
     >
       {media.source === null
@@ -167,9 +170,62 @@ function UserMessageImage({
   );
 }
 
+function UserMessageImageViewer({
+  documentId,
+  imageCount,
+  index,
+  local,
+  onClose,
+  onNext,
+  onPrevious,
+  returnFocus,
+  source,
+}: {
+  readonly documentId: string;
+  readonly imageCount: number;
+  readonly index: number;
+  readonly local: boolean;
+  readonly onClose: () => void;
+  readonly onNext: () => void;
+  readonly onPrevious: () => void;
+  readonly returnFocus: () => HTMLElement | null;
+  readonly source: string;
+}) {
+  const documentContext = useContext(ConversationDocumentContext);
+  const media = useConversationMediaSource(source, documentId, local ? documentContext.resolveImageSource : undefined);
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft" && imageCount > 1) { event.preventDefault(); onPrevious(); }
+      if (event.key === "ArrowRight" && imageCount > 1) { event.preventDefault(); onNext(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [imageCount, onNext, onPrevious]);
+  const label = `Attached image ${index + 1} of ${imageCount}`;
+  return (
+    <ModalSurface className="thread-user-image-lightbox" label={label} layer="nested" onDismiss={onClose} returnFocus={returnFocus} size="workspace">
+      {media.source !== null && failedSource !== media.source
+        ? <img alt={label} draggable={false} onError={() => setFailedSource(media.source)} src={media.source} />
+        : <div className="thread-user-image-lightbox__unavailable" role="status">{media.status === "loading" ? "Loading image…" : "Image unavailable"}</div>}
+      {imageCount > 1 ? (
+        <div className="thread-user-image-lightbox__navigation">
+          <button aria-label="Previous image" onClick={onPrevious} type="button"><ChevronLeft aria-hidden="true" size={20} /></button>
+          <span aria-hidden="true">{index + 1} / {imageCount}</span>
+          <button aria-label="Next image" onClick={onNext} type="button"><ChevronRight aria-hidden="true" size={20} /></button>
+        </div>
+      ) : null}
+    </ModalSurface>
+  );
+}
+
 function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimelineBlock }) {
   const documentContext = useContext(ConversationDocumentContext);
   const { images, audio, contexts, files, mcpContexts } = deriveUserMessageWebLayout(block);
+  const [expandedImageIndex, setExpandedImageIndex] = useState<number | null>(null);
+  const imageTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const nextImage = () => setExpandedImageIndex(current => current === null ? null : (current + 1) % images.length);
+  const previousImage = () => setExpandedImageIndex(current => current === null ? null : (current + images.length - 1) % images.length);
   if (images.length === 0 && audio.length === 0 && contexts.length === 0 && files.length === 0 && mcpContexts.length === 0 && !block.referencesPriorConversation) return null;
   const openPath = (path: string) => {
     const decision = resolveStandardChatResource(path, { cwd: documentContext.cwd, externalResourcePolicy: "allow" });
@@ -183,14 +239,27 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
             {images.map((part, index) => (
               <UserMessageImage
                 documentId={`${block.id}:user-attachment:${index}`}
-                key={`${part.type}:${part.source}:${index}`}
+                key={`${block.id}:user-attachment:${index}`}
                 local={part.type === "local-image"}
-                onOpen={() => openPath(part.source)}
+                onOpen={(trigger) => { imageTriggerRef.current = trigger; setExpandedImageIndex(index); }}
                 source={part.source}
               />
             ))}
           </div>
         </div>
+      )}
+      {expandedImageIndex === null || images[expandedImageIndex] === undefined ? null : (
+        <UserMessageImageViewer
+          documentId={`${block.id}:user-attachment-viewer:${expandedImageIndex}`}
+          imageCount={images.length}
+          index={expandedImageIndex}
+          local={images[expandedImageIndex].type === "local-image"}
+          onClose={() => setExpandedImageIndex(null)}
+          onNext={nextImage}
+          onPrevious={previousImage}
+          returnFocus={() => imageTriggerRef.current}
+          source={images[expandedImageIndex].source}
+        />
       )}
       {audio.length === 0 && files.length === 0 ? null : (
         <div className="thread-user-message__file-attachments" data-user-message-file-row="">

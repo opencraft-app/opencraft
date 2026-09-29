@@ -101,7 +101,7 @@ export class LightVelaEnvironmentService {
     const existing = this.load(details.profile.id, region);
     if (existing) return { existing, accountId: details.profile.id, region, blocked: null };
     const blocked = creationBlock(result.passes);
-    this.publish(blocked ? "blocked" : "ready", blocked, blocked ? this.website("/account?tab=billing") : null, null);
+    this.publish(blocked ? "blocked" : "ready", blocked, blocked ? this.website("/account/billing") : null, null);
     return { existing: null, accountId: details.profile.id, region, blocked };
   }
   check(host: EnvironmentHost): Promise<void> {
@@ -135,7 +135,7 @@ export class LightVelaEnvironmentService {
             : error.code === "INSTANCE_NO_ACTIVE_PASS" ? "当前账号没有可用套餐，请先前往官网开通。"
             : error.status === 401 ? "登录已过期，请重新登录。" : blocked ? "当前账号不满足创建条件，请前往官网查看。"
             : error.status === 429 ? "创建过于频繁，请稍后重新检查。" : "请求未被接受，请重新检查后重试。";
-          this.publish(blocked ? "blocked" : "error", message, blocked ? this.website(error.code === "INSTANCE_SHADOW_BINDING_REQUIRED" ? "/agents" : "/account?tab=billing") : null, null);
+          this.publish(blocked ? "blocked" : "error", message, blocked ? this.website(error.code === "INSTANCE_SHADOW_BINDING_REQUIRED" ? "/agents" : "/account/billing") : null, null);
         } else this.publish("unknown", "请求结果尚未确认。为避免重复创建，请先前往官网检查。", this.website(), record);
         return;
       }

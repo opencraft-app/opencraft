@@ -1,5 +1,6 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
 export type AgentSettingsSectionId =
+  | "overview"
   | "channel"
   | "model"
   | "skill"
@@ -14,10 +15,11 @@ export type AgentSettingsSectionId =
   | "browser"
   | "terminal"
   | "deepseek-harness"
+  | "cloud-desktop"
   | "website";
 
 export type AgentWorkbenchSectionId = "workbench";
-export type AgentLabSectionId = "deepseek-harness";
+export type AgentLabSectionId = "deepseek-harness" | "cloud-desktop";
 
 export type AgentSectionId = AgentSettingsSectionId | AgentWorkbenchSectionId;
 
@@ -56,6 +58,7 @@ export const shouldShowWorkbenchEntry = ({
 
 export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   workbench: `${AGENTS_HOME_PATH}/workbench`,
+  overview: `${AGENTS_HOME_PATH}/overview`,
   channel: `${AGENTS_HOME_PATH}/channels`,
   model: `${AGENTS_HOME_PATH}/models`,
   skill: `${AGENTS_HOME_PATH}/skills`,
@@ -70,10 +73,12 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   chat: `${AGENTS_HOME_PATH}/chat`,
   terminal: `${AGENTS_HOME_PATH}/terminal`,
   "deepseek-harness": `${AGENTS_HOME_PATH}/labs/deepseek-harness`,
+  "cloud-desktop": `${AGENTS_HOME_PATH}/labs/cloud-desktop`,
   website: `${AGENTS_HOME_PATH}/websites`,
 };
 
 export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
+  overview: "overview",
   channels: "channel",
   models: "model",
   skills: "skill",
@@ -96,6 +101,7 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
 
 export const AGENT_LAB_SECTION_ID_BY_SLUG: Record<string, AgentLabSectionId> = {
   "deepseek-harness": "deepseek-harness",
+  "cloud-desktop": "cloud-desktop",
 };
 
 export const getAgentSectionFromSlug = (slug?: string): AgentSectionId | null => {

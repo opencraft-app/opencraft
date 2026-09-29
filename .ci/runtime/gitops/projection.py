@@ -6,14 +6,22 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import re
+import subprocess
 import sys
 from pathlib import PurePosixPath
 
 from contracts.bundles import is_playground_env, load_bundle, parse_manifest_text
 from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source_documents
 from gitops.git import list_files as git_list_files
+from gitops.git import output as git_output
 from gitops.git import run as git_run
 from gitops.git import show_text as git_show_text
+
+
+PLATFORM_ENV_PATTERN = re.compile(
+    r"^.+?-platform(?:-(?P<variant>[A-Za-z0-9]+))?\.env$"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,6 +31,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env", required=True, help="Target env, e.g. beijing-sandbox")
     parser.add_argument("--source-ref", required=True, help="Source git ref or sha to project from")
     parser.add_argument("--target-ref", default="HEAD", help="Target ref to diff against; defaults to current HEAD")
+    parser.add_argument(
+        "--image-pin-variant",
+        default="all",
+        help="Preserve unselected GitOps platform env variants during projection",
+    )
     return parser.parse_args()
 
 
@@ -61,6 +74,61 @@ def batched(paths: list[str], size: int = 200) -> list[list[str]]:
     return [paths[index:index + size] for index in range(0, len(paths), size)]
 
 
+def normalize_platform_variant(variant: str) -> str | None:
+    normalized = variant.strip().lower()
+    if normalized in ("", "all"):
+        return None
+    if normalized in ("primary", "prod", "production"):
+        return ""
+    return normalized
+
+
+def platform_env_variant(path: str) -> str | None:
+    match = PLATFORM_ENV_PATTERN.match(PurePosixPath(path).name)
+    if not match:
+        return None
+    return (match.group("variant") or "").lower()
+
+
+def source_commit_changed_path(repo_root: str, source_ref: str, path: str) -> bool:
+    try:
+        parent = git_output(repo_root, "rev-parse", f"{source_ref}^1", strip=True)
+    except subprocess.CalledProcessError:
+        return True
+    changed = git_output(
+        repo_root,
+        "diff",
+        "--name-only",
+        parent,
+        source_ref,
+        "--",
+        path,
+        strip=True,
+    )
+    return bool(changed)
+
+
+def unselected_platform_envs_to_preserve(
+    repo_root: str,
+    source_ref: str,
+    target_ref: str,
+    patterns: list[str],
+    image_pin_variant: str,
+) -> set[str]:
+    selected_variant = normalize_platform_variant(image_pin_variant)
+    if selected_variant is None:
+        return set()
+
+    target_files = select_matching_files(list_tracked_files(repo_root, target_ref), patterns)
+    return {
+        path
+        for path in target_files
+        if platform_env_variant(path) is not None
+        and platform_env_variant(path) != selected_variant
+        and not source_commit_changed_path(repo_root, source_ref, path)
+    }
+
+
 def sync_publish_subset(
     repo_root: str,
     source_ref: str,
@@ -68,12 +136,15 @@ def sync_publish_subset(
     patterns: list[str],
     *,
     preserve_target_only: bool = False,
+    preserve_target_paths: list[str] | None = None,
 ) -> tuple[int, int]:
     source_files = select_matching_files(list_tracked_files(repo_root, source_ref), patterns)
     target_files = select_matching_files(list_tracked_files(repo_root, target_ref), patterns)
+    preserve_paths = set(preserve_target_paths or [])
+    preserved = target_files & preserve_paths
 
-    to_delete = [] if preserve_target_only else sorted(target_files - source_files)
-    to_checkout = sorted(source_files)
+    to_delete = [] if preserve_target_only else sorted(target_files - source_files - preserved)
+    to_checkout = sorted(source_files - preserve_paths)
 
     for chunk in batched(to_delete):
         git_run(repo_root, "rm", "-f", "--ignore-unmatch", "--", *chunk)
@@ -110,12 +181,24 @@ def main() -> int:
         print(f"bundle {args.service} does not define publish_paths", file=sys.stderr)
         return 1
 
+    preserve_target_paths = set(bundle.preserve_target_paths)
+    preserve_target_paths.update(
+        unselected_platform_envs_to_preserve(
+            repo_root=args.repo_root,
+            source_ref=args.source_ref,
+            target_ref=args.target_ref,
+            patterns=bundle.publish_paths,
+            image_pin_variant=args.image_pin_variant,
+        )
+    )
+
     projected, deleted = sync_publish_subset(
         repo_root=args.repo_root,
         source_ref=args.source_ref,
         target_ref=args.target_ref,
         patterns=bundle.publish_paths,
         preserve_target_only=is_playground_env(args.env),
+        preserve_target_paths=sorted(preserve_target_paths),
     )
     print(f"projected {projected} files, deleted {deleted} stale files")
     return 0

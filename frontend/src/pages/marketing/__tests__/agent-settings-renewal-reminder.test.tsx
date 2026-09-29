@@ -26,6 +26,8 @@ let bots: OpenClawBot[] = [];
 let currentSessionUser: User;
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   t: (text: string, options?: Record<string, unknown>) => text.replace(/\{\{\s*(\w+)\s*\}\}/g, (raw, name: string) => {
     const value = options?.[name];
     return value === undefined || value === null ? raw : String(value);
@@ -49,6 +51,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => true,
   useMultiBotEnabled: () => true,
   useRealnamePhoneVerificationEnabled: () => false,
@@ -304,6 +307,12 @@ describe("AgentSettingsPage renewal reminder", () => {
     expect(sidebar).toHaveClass("lv-agents-sidebar-scroll-isolated");
     expect(sidebar).not.toHaveClass("lg:sticky", "lg:top-[84px]");
     expect(sidebar?.nextElementSibling).toHaveClass("lg:col-start-2");
+    const tabs = screen.getByRole("tablist", { name: "侧边栏视图切换" });
+    const middle = sidebar?.querySelector(".lv-agents-sidebar-middle");
+    expect(sidebar).toContainElement(tabs);
+    expect(middle).not.toContainElement(tabs);
+    expect(middle).toContainElement(screen.getByRole("navigation", { name: "实例配置导航" }));
+    expect(within(sidebar as HTMLElement).queryByRole("link", { name: "有建议？提交反馈" })).not.toBeInTheDocument();
   });
 
   it("shows an orange renewal reminder near the active agent status and opens the renewal modal", async () => {

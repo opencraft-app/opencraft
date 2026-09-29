@@ -27,21 +27,17 @@ El canal de WhatsApp utiliza acceso mediante código QR, similar a WeChat, y es 
 
 ### 1. Ingresar a la consola
 
-Inicie sesión en LightVela, haga clic en "Mi Hermes" en la esquina superior derecha para ingresar a la consola y busque el botón "Canales".
+Inicia sesión en LightVela, abre el Agent deseado y selecciona **Channels** en la barra lateral.
 
 ### 2. Seleccionar el canal de WhatsApp
 
 Busque la tarjeta de WhatsApp y haga clic en "+ Conectar".
 
-### 3. Escanear el código QR con WhatsApp en su teléfono
+En una misma instancia de LightVela, WhatsApp solo puede estar conectado a un Bot a la vez. Si ya está conectado a otro Bot, abra ese Bot desde el aviso y desconecte WhatsApp antes de conectarlo aquí.
 
-1. Abra WhatsApp en su teléfono
-2. Toca el botón "Cámara" en la esquina superior derecha
-3. Escanee el código QR en su pantalla de computadora
+### 3. Escanear el código QR en WhatsApp
 
-![](../images/whatsapp-1-global-en.webp)
-
-4. Siga las indicaciones en su teléfono para completar la conexión
+Usa WhatsApp en el teléfono para escanear el código que muestra LightVela y sigue las instrucciones de la aplicación para autorizar la sesión vinculada. Si caduca, genera otro desde la tarjeta de WhatsApp. Vuelve a **Channels** y comprueba que WhatsApp aparece conectado.
 
 ### 4. Encuentre a sí mismo en WhatsApp
 
@@ -92,18 +88,13 @@ Después de que el acceso sea exitoso, el bot de WhatsApp puede recibir y respon
 
 ## Preguntas frecuentes
 
-| Problema | Posible causa | Solución |
+| Problema | Qué revisar | Acción |
 |---|---|---|
-| No se puede conectar a WhatsApp | El formato del número de teléfono es incorrecto, o la configuración de WhatsApp Business es incompleta | Utilice un formato internacional completo como +1 o +86, y verifique que la configuración de WhatsApp Business / Meta sea completa |
-| El código de verificación no se recibe | El número de teléfono no está disponible, retraso de red o límites de verificación de WhatsApp | Confirme que el número de teléfono pueda recibir mensajes de WhatsApp; espere unos minutos e intente de nuevo |
-| El código de verificación muestra como inválido después de ingresar | El código expiró o se ingresó incorrectamente | Solicite un nuevo código y confirme que no haya espacios extra |
-| No hay respuesta en la consola después del acceso | La autorización o la configuración no se ha sincronizado aún | Actualice la consola para confirmar el estado; si el acceso no fue exitoso, intente de nuevo |
-| No se puede encontrar el contacto del bot en WhatsApp | El número del bot no se guardó, o la conversación no se ha iniciado | Guarde el número del bot, o abra la conversación mediante el enlace / código QR proporcionado por la consola |
-| No hay respuesta después de enviar un mensaje | El modelo no está configurado, los créditos de prueba se han agotado, o el canal de WhatsApp no se ha conectado exitosamente | Verifique el estado de "Modelo actual" en la tarjeta "1. Modelo" y confirme que el canal de WhatsApp muestre como conectado |
-| No se pueden recibir imágenes, archivos o mensajes de voz | Permiso de medios, formato o límites de capacidad del canal | Confirme que el tipo de archivo sea soportado; si el reconocimiento de voz no funciona, verifique si el reconocimiento de voz a texto / procesamiento de medios está habilitado |
-| Los mensajes proactivos fallan | WhatsApp limita los mensajes proactivos mediante plantillas de mensajes y ventanas de conversación | Confirme que el usuario haya iniciado una conversación con el bot; si la ventana de conversación ha expirado, utilice una plantilla de mensaje aprobada |
-| Cómo desconectar | — | Elimine el registro de WhatsApp correspondiente en la lista de "Canales conectados" |
-| ¿Puede el mismo número de WhatsApp conectarse a múltiples instancias de Hermes Agent | No se recomienda; un número de WhatsApp debe estar vinculado a un Hermes Agent | Si necesita múltiples instancias de Hermes Agent, utilice números de WhatsApp separados |
+| El código QR no se escanea o ha caducado | Conexión del teléfono y código actual | Genera otro desde la tarjeta de WhatsApp y sigue las instrucciones de la aplicación. |
+| No aparece la conexión | Si terminó la autorización en el teléfono | Vuelve a **Channels**, actualiza una vez y reconecta si sigue desconectado. |
+| No hay respuesta | Estado del Agent, canal y créditos | Revisa **Channels** y [Diagnostics](./diagnostics.md); consulta las [opciones de créditos](../credits.md) si hace falta. |
+| No llegan mensajes programados | Conexión del canal y ejecución de la tarea | Revisa la última ejecución en [Scheduled Tasks](./automation.md) y el destino de la notificación. |
+| Otro Bot usa WhatsApp | Solo un Bot por instancia puede conectarse a WhatsApp | Desconéctalo del Bot anterior antes de conectarlo al nuevo. |
 
 ---
 

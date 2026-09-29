@@ -10,7 +10,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-09-14
 review_due: 2026-11-23
-revision: 2.1.0
+revision: 2.2.0
 precedence: project
 derived: false
 ---
@@ -42,3 +42,15 @@ Server/Member/腾讯 IM 映射控制面，后者是下发到托管 Computer 的 
 ## 2026-09-16 应用：OpenCraft 工作台入口
 
 根 `AGENTS.md` 只登记 OpenCraft 的路径和局部入口，不承载桌面运行手册；根 `README.md` 给人类可执行的本地与隔离预览步骤，`opencraft/AGENTS.md` 仅补充服务内所有权、参考仓库和验收约束。完整平台契约仍由 OpenCraft 正式文档与构建矩阵拥有。这保持了根路由、服务局部规则与人类操作说明的单一权威关系。
+
+## 2026-09-22 应用：nextgen-dashboard 服务下线
+
+`nextgen-dashboard` 一级服务废弃，按新增一级服务的原子登记契约做逆向收敛：源码目录与本地 catalog 随之删除，中央 Service Catalog 条目、派生 service Context Pack、`service-nextgen-dashboard` 路由与冒烟用例、change-impact 命中路径、校验器 `PRIMARY_SERVICES` 集合及测试同步移除。deploy-facing 清单、SOPS secrets、SSM manifest、CI 流水线与 `nextgen-dashboard-client` 客户端已在同日下线变更中一并移除；admin-gateway 各环境配置中的 `/admin` upstream 路由已先行摘除。历史 runbook 与分析快照不回写。
+
+## 2026-09-22 应用：OpenCraft 单向公开镜像
+
+根 `AGENTS.md` 明确 `mono2/opencraft` 是唯一写入真源，并将 GitHub
+`opencraft-app/opencraft` 定位为单向公开镜像。详细的导出前提、历史邮箱重写、敏感信息扫描、
+tree 一致性和 fast-forward 约束只由 `opencraft/MONO2_MIGRATION.md` 维护；根入口仅路由并声明
+不可双写、不可反向 pull、外部贡献须先回到 mono2 评审。这避免把一次公开导出误解为新的上游
+或第二套开发流程，也保持根 Team 指令、Project Pack 和服务迁移文档之间的权威层次。

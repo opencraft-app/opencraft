@@ -3,13 +3,8 @@ import test from "node:test";
 
 import type { BrowserPageSnapshot, BrowserTabSnapshot } from "@opencraft/browser-core";
 import { createConversationKey } from "@opencraft/chat-core";
-import type { SubmitIntent } from "@opencraft/composer-core";
 import { asConversationScopeId, createConversationBindingStore } from "@opencraft/workbench-runtime";
 
-import {
-  createBrowserAmbientContext,
-  withBrowserAmbientContext,
-} from "../apps/workbench-web/src/browser/browser-ambient-context";
 import { WebBrowserDynamicToolHost } from "../apps/workbench-web/src/browser/web-browser-tool-host";
 import { BrowserWorkbenchCoordinator, type BrowserTabWithPage } from "../apps/workbench-web/src/browser/browser-workbench-coordinator";
 
@@ -38,38 +33,6 @@ function browser(overrides: Partial<BrowserPageSnapshot> = {}): BrowserTabWithPa
   };
   return { tab, page };
 }
-
-function intent(target: SubmitIntent["target"]): SubmitIntent {
-  return {
-    commandId: "command-1",
-    clientMessageId: "message-1",
-    target,
-    document: { version: 1, blocks: [{ id: "text-1", type: "text", text: "verify" }] },
-    attachments: [],
-    context: [],
-    selections: {},
-    options: { autoContext: true },
-    createdAt: 1,
-  };
-}
-
-test("ambient browser metadata is untrusted, escaped, and does not inline page contents", () => {
-  const context = createBrowserAmbientContext([browser()]);
-  assert.notEqual(context, null);
-  assert.equal(context!.metadata?.additionalContextKind, "untrusted");
-  const value = String(context!.metadata?.value);
-  assert.match(value, /tab-1/u);
-  assert.match(value, /Preview &lt;unsafe&gt;/u);
-  assert.doesNotMatch(value, /password|body content/u);
-});
-
-test("ambient browser state is injected only for auto-context targets that accept it", () => {
-  const existing = intent({ type: "existing-thread", key: createConversationKey("host-1", "thread-1") });
-  assert.equal(withBrowserAmbientContext(existing, [browser()]).context.length, 1);
-  const queued = intent({ type: "enqueue-follow-up", key: createConversationKey("host-1", "thread-1") });
-  assert.equal(withBrowserAmbientContext(queued, [browser()]).context.length, 0);
-  assert.equal(withBrowserAmbientContext({ ...existing, options: { autoContext: false } }, [browser()]).context.length, 0);
-});
 
 test("dynamic browser tools authorize logical Tab IDs, then operate their Pages", async () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");

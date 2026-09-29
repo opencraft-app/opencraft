@@ -3,3 +3,6 @@
 !frontend/**
 !velalink/
 !velalink/**
+!shared/
+!shared/lightvela-agent-core/
+!shared/lightvela-agent-core/**

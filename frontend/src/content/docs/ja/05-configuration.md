@@ -2,43 +2,35 @@
 
 ## 概要
 
-**すべてのLightVela設定は「My Hermes」コンソールにあり、サインイン後に右上隅から開くことができます。エージェントインスタンスのタブは上部にあり、その下には3つの設定ボタンがあります：Models（モデルコーディングプラン、Model API、またはカスタムOpenAI互換エンドポイントを選択）、Channels（各メッセージングプラットフォームの入り口—一部はQRコードで接続、他はトークンやアプリIDが必要）、およびSkills（再利用可能な機能パックをインストール）。これら3つのボタン以外にも、コンソールではChat、Tasks、メモリ管理、クラウドストレージ、モデル切り替え、診断センターも提供しています。3つの基本設定が完了すれば、エージェントはあなたのメッセージングチャネルで話す準備が整います。**
+**AgentコンソールのサイドバーにはChannels、Models、Skills、Scheduled Tasksがそれぞれ独立したページとして表示されます。設定を変える前に対象のBotを選び、チャネルのカードから接続し、モデルを選ぶかプランのクレジットを利用します。必要に応じてSkills.shまたはClawHubのスキルを追加できます。Soul、Memory、Diagnostics、Advanced Settings、Labsは別のセクションにあり、Cloud Storageはユーザーメニューから開きます。**
 
 ---
 
-すべてのLightVela設定は「My Hermes」コンソールに集中しており、3つの設定ボタンで構成されています：
-
-1. モデル
-
-2. チャンネル
-
-3. スキル
-
-このページでは、コンソールの全体構造と各ボタンの機能を紹介します。詳細な操作については、対応するサブページを参照してください。
+Agentコンソールのサイドバーには日常的な設定用の**Channels**、**Models**、**Skills**、**Scheduled Tasks**があります。対象のBotを選んでから該当ページを開きます。このページでは入口と結果の確認方法を説明します。
 
 ## このページの内容
 
 - コンソールへの入り方
 
-- Hermes Agent インスタンス情報ボタン
+- Botの切り替えと選択中Botの情報
 
-- 3つの設定ボタンの機能とエントリーポイント
+- Channels、Models、Skills、Cloud Storageの入口
 
 - 設定後の成功状態
 
-- モデルの切り替え、複数チャネルの接続、Hermes Agent の再作成などの共通操作
+- Botの管理、モデルの切り替え、複数チャネルの接続などの共通操作
 
 ---
 
 ## コンソールに入る
 
-サインイン後、右上の「My Hermes」をクリックしてコンソールに入ります。ページ上部には「ホームに戻る」ボタンがあります。
+サインイン後、[Agent コンソール](/agents/overview/)を開き、設定する Hermes Agent と Bot を選択します。
 
 ---
 
-## Hermes Agent インスタンス情報
+## Botと選択中Botの情報
 
-コンソールの上部にはHermes Agentタブが含まれています。各タブは1つのHermes Agentインスタンスを表します（Launchプランでは1つのみサポートされています）。右側の「+ 作成」ボタンは、インスタンスの上限に達すると使用できなくなります。
+コンソール上部には、現在のHermes Agentに属するBotタブがあります。最初のタブがメインBotで、追加の各タブは独立したBotプロフィールです。メインBotを含む作成可能数はプランによって決まります。国際サイトでの段階的な提供中は、作成入口はデフォルトで表示されません。作成方法と継承ルールは[Botの管理](./configuration/bots.md)を参照してください。
 
 Hermes Agentを選択すると、基本情報が下に表示されます:
 
@@ -54,70 +46,23 @@ Hermes Agentを選択すると、基本情報が下に表示されます:
 
 > ⚠️ **削除は元に戻せません**
 >
-> ゴミ箱アイコンをクリックすると、すべての会話履歴、接続されたチャンネル、およびインストールされたスキルを含むHermes Agentインスタンスが永久に削除されます。もしLaunchプランのクォータがまだ許可していれば、その後に新しいHermes Agentを作成できます。
+> 追加Botを削除すると、そのBotのプロフィールとデータが完全に削除されます。メインBotを削除するとHermes Agent全体と関連データが削除されるため、先にほかのBotをすべて削除する必要があります。
 
 ---
 
-## 3つの設定ボタン
+## チャネル・モデル・スキルを設定する
 
-3つのボタンは左から右に配置されています。推奨設定順序は1 → 2 → 3です。
+### Channels
 
-### 1. チャンネル
+Agentのサイドバーで**Channels**を開きます。Telegram、WhatsApp、Discord、Slack、WeChat、QQ、WeCom、Larkのカードがあり、対象の**+ Connect**から接続します。WhatsApp、WeChat、WeCom、LarkはQRコード認証、Telegram、Discord、Slackは認証情報を使用します。QQはQRコードまたはApp ID / Secretを利用できます。[WhatsAppガイド](./configuration/channel-whatsapp.md)も参照してください。
 
-![](./images/4-2.webp)
+### Models
 
-**目的**: Hermes Agentをメッセージングプラットフォームに接続し、ユーザーに対して会話の入り口を提供します。
+**Models**で現在のモデルを確認し、必要に応じてプロバイダーを設定します。プランのモデルクレジットは自分のAPIキーを入力せずに使えます。各Botが同時に使用するプライマリモデルは1つで、別途フォールバックモデルを設定できる場合があります。[モデルの設定](./configuration/model.md)と[モデル切り替え](./configuration/multiple-models.md)を参照してください。
 
-**チャンネルごとのアクセス方法**:
+### Skills
 
-| チャネル | アクセス方法 | 必要条件 |
-|---|---|---|
-| WeChat | QRコード認証 | WeChatがインストールされた携帯電話 |
-| Telegram | Botトークンアクセス | BotFatherを通じてTelegramボットを作成し、ボットトークンを取得する |
-| WhatsApp | WhatsApp ビジネスAPIアクセス | Meta開発者アカウント、WhatsApp ビジネスアカウント、および基本的なクラウドAPIの設定 |
-| Discord | Botトークンアクセス | Discord 開発者ポータルでアプリケーションを作成し、ボットを追加してサーバーに招待する |
-| Slack | ボットトークン / アプルトークンアクセス | Slack アプリを作成し、ソケットモードを有効にしてボット/App トークンを取得する |
-| QQ | AppID / AppSecret へのアクセス | QQアカウント；QQオープンプラットフォームでボットを作成し、AppID / AppSecret を取得する |
-| WeCom | QRコード認証 | WeCom がインストールされている電話 |
-| Lark | QRコード認証 | Larkがインストールされている電話（またはデスクトップLarkですでにサインインしているもの） |
-
-**ボタンが提供するもの**: チャンネルドロップダウン、「アクセスを認可」ボタン、選択されたチャンネルの紹介、「詳細を表示」リンク、および「接続されたチャンネル」リスト。
-
-詳細については、次をご覧ください[チャンネルの設定 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)。
-
----
-
-### 2. モデル
-
-![](./images/4-1.webp)
-
-**目的**: Hermes Agent 用の大規模言語モデルを設定すること。Launch プランには 100 のトライアルクレジットが含まれているため、最初はこのステップをスキップし、クレジットがなくなった後にモデルを設定できます。
-
-**ボタンが提供するもの**: ソースドロップダウン（モデルコーディングプラン / モデル API / カスタムモデル）、モデルドロップダウン、API キー入力、提供者の紹介、API キー取得リンク、「現在のモデル」リスト。
-
-> ⚠️ **アクティブなモデルは1つのみ**
->
-> 現在、それぞれのHermes Agentは1つのアクティブなモデル構成しか持つことができません。「デフォルトとして追加」の新しい操作は、既存の構成を上書きします。
-
-詳細については、次をご覧ください[モデルの設定](./configuration/model.md)。
-
----
-
-### 3. スキル
-
-![](./images/4-3.webp)
-
-**目的**：タスク整理、日次レポートの生成、ウェブ検索など、Hermes Agentの機能を拡張します。
-
-**ボタンが提供するもの**: スキル名検索ボックス、「スキルをインストール」ボタン、「SkillHubへ移動」リンク、および「インストール済みスキル」リスト。インストール前に、[SkillHub](https://skillhub.tencent.com)。
-
-> ⚠️ **信頼できるスキルのみをインストールしてください**
->
-> スキルは実行時にHermes Agentの機能を呼び出す権限を持っています。信頼できるソースのスキルのみをインストールしてください。
-
-詳細については、次をご覧ください[スキルを設定する](./configuration/skill.md)。
-
----
+**Skills**で個別のスキルを検索するか、[Skills.sh](https://skills.sh/)と[ClawHub](https://clawhub.ai/)の**Skill Packages**を閲覧します。**Install**を選び、**Installed**で確認してください。[スキルの設定](./configuration/skill.md)も参照してください。
 
 ## 設定後の成功状態
 
@@ -133,19 +78,12 @@ Hermes Agentを選択すると、基本情報が下に表示されます:
 
 ---
 
-## 一般操作
+## よく使う操作
 
-### モデルの切り替え
-
-「モデル」ボタンで、ソースとモデルを再度選択し、APIキーを入力して「デフォルトとして追加」をクリックします。新しい設定は以前の設定を上書きします。モデルの切り替えは会話の記憶に影響を与えません。
-
-### 複数のチャネルを接続する
-
-「チャネル」ボタンで、ドロップダウンオプションを1つずつ切り替え、「アクセスを承認」をクリックします。複数のチャネルは同じHermes Agentを指し、記憶とエージェントの動作を共有します。
-
-### Hermes Agentを再作成
-
-基本情報ボタンの右側にあるゴミ箱アイコンをクリックして現在のHermes Agentを削除し、その後「+ Hermes Agentを作成」をクリックして再度作成してください。**すべての会話履歴が失われます**。
+- **モデルを切り替える**：対象のBotの**Models**で設定済みの利用可能なモデルを選びます。Botのメモリは保持されます。[モデル切り替え](./configuration/multiple-models.md)を参照してください。
+- **複数のチャネルを接続する**：**Channels**で必要なカードの**+ Connect**を選びます。同じBotに接続したチャネルは人設とメモリを共有します。
+- **Botを管理する**：設定を変える前にBotタブを選択します。作成機能が利用できる場合は[Botの管理](./configuration/bots.md)を参照してください。
+- **Cloud Storageを開く**：Agentのサイドバーではなくユーザーメニューから開きます。
 
 ---
 
@@ -153,11 +91,13 @@ Hermes Agentを選択すると、基本情報が下に表示されます:
 
 各モジュールの詳細設定：
 
+- [Botの管理](./configuration/bots.md)— Botの作成、コピー、切り替え、名前変更、削除
+
 - [モデルの設定](./configuration/model.md)— モデルソース、APIキー取得、および選択のガイダンス
 
 - [チャンネルの設定 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)
 
-- [スキルを設定する](./configuration/skill.md)— SkillHub の使用方法とスキルのインストール
+- [スキルを設定する](./configuration/skill.md)— Skills.sh / ClawHub の使用方法とスキルのインストール
 
 関連参考資料:
 

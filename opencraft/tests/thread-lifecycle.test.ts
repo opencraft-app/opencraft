@@ -2,6 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ThreadCatalog } from "../apps/local-agent-host/src/thread-catalog.js";
 import { ThreadLifecycle } from "../apps/local-agent-host/src/thread-lifecycle.js";
+test("revocation during preparation prevents late catalog publication", async () => {
+  const catalog = new ThreadCatalog(); const events: string[] = [];
+  const service = new ThreadLifecycle(catalog, async () => ({ released: true }), method => events.push(method));
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const creating = service.dispatch("thread/start", {}, "client", async () => {
+    await hold; return { thread: { id: "late", turns: [] } };
+  });
+  service.revokeClient("client");
+  release();
+  await assert.rejects(creating, /disconnected/u);
+  assert.equal(catalog.get("late"), null);
+  assert.deepEqual(events, []);
+  await service.close();
+});
+
+test("capability preparation and execution admission share the thread queue", async () => {
+  const service = new ThreadLifecycle(new ThreadCatalog(), async () => ({ released: true }), () => {});
+  const order: string[] = [];
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const registration = service.enqueue("s", async () => { order.push("validate"); await hold; order.push("mounted"); });
+  const execution = service.dispatch("turn/start", { threadId: "s" }, "client", async () => { order.push("execute"); return {}; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(order, ["validate"]);
+  release(); await Promise.all([registration, execution]);
+  assert.deepEqual(order, ["validate", "mounted", "execute"]);
+  await service.close();
+});
 test("thread names survive stale engine summaries and publish only after persistence", async () => {
   const catalog = new ThreadCatalog(); const events: string[] = [];
   const service = new ThreadLifecycle(catalog, async () => ({ released: true }), (method) => events.push(method));

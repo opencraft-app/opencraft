@@ -2,15 +2,15 @@
 
 ## 요약
 
-**LightVela의 핵심 개념은 Hermes Agent, 모델, 채널, 스킬의 네 가지입니다. Hermes Agent는 클라우드에서 실행되는 대화형 에이전트로, 격리된 자체 런타임과 대화 간에 유지되는 메모리, 24/7 가용성을 갖습니다. 모델은 Hermes Agent가 호출하는 대형 언어 모델이며 모델 Coding Plan(월간), 모델 API(종량제), 사용자 지정 OpenAI 호환 엔드포인트 중에서 선택할 수 있습니다. 채널은 사용자와 에이전트가 대화하는 메시징 플랫폼입니다. 여러 채널을 같은 에이전트에 연결하면 하나의 페르소나와 메모리를 공유합니다. 스킬은 에이전트가 수행할 수 있는 작업을 확장하는 설치형 기능 팩입니다. 대화는 채널이 메시지를 수신하고, 에이전트가 스킬 호출 여부를 판단한 뒤 모델로 응답을 생성하고, 같은 채널로 답장을 보내는 순서로 진행됩니다.**
+**LightVela에는 다섯 가지 핵심 개념이 있습니다. Hermes Agent는 클라우드 인스턴스이고 Bot은 그 안의 독립된 프로필입니다. 각 Bot은 모델 설정, 연결 채널, 스킬과 별도의 페르소나, 메모리, 예약 작업을 가질 수 있습니다. 같은 Bot에 연결된 채널은 설정을 공유하지만 서로 다른 Bot의 설정은 자동으로 공유되지 않습니다. 메시지는 채널을 통해 대상 Bot에 전달되고, Bot은 필요하면 스킬과 모델을 사용한 뒤 같은 채널로 답합니다.**
 
 ---
 
-LightVela에는 Hermes Agent, 모델, 채널 및 스킬의 네 가지 핵심 개념이 포함됩니다. 이 페이지에서는 해당 역할을 설명합니다. 자세한 구성 단계는 해당 구성 페이지를 참조하세요.
+LightVela의 다섯 가지 핵심 개념은 Hermes Agent, Bot, 모델, 채널, 스킬입니다. 이 페이지에서는 관계를 설명합니다.
 
 ## 이 페이지에서는 다음을 다루고 있습니다.
 
-- 네 가지 개념의 관계
+- 다섯 가지 개념의 관계
 
 - Hermes Agent 인스턴스의 특성
 
@@ -22,28 +22,22 @@ LightVela에는 Hermes Agent, 모델, 채널 및 스킬의 네 가지 핵심 개
 
 ## 개념 간 관계
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                         Hermes Agent                         │
-│              (Agent running in the LightVela cloud)           │
-└──────────────────────────────────────────────────────────────┘
-      │                          │                        │
-┌─────┘                          │                        └──────┐
-▼                                ▼                               ▼
-┌───────┐                   ┌────────┐                   ┌────────┐
-│ Model │                   │Channel │                   │ Skill  │
-└───────┘                   └────────┘                   └────────┘
- Model provider    Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
+```text
+Hermes Agent (cloud instance)
+  └─ Bot profiles (main Bot and optional additional Bots)
+       ├─ Primary model and optional fallbacks
+       ├─ Connected channels
+       └─ Skills, Soul, memory, scheduled tasks
 ```
 
 | 개념 | 역할 | 설명 |
 |---|---|---|
 | Hermes Agent | 대화 주제 | AI 에이전트 인스턴스 자체 |
+| Bot | 독립된 프로필 | 자체 모델, 채널, 스킬, 페르소나, 메모리, 예약 작업을 가짐 |
 | 모델 | 언어 능력 | Hermes Agent가 호출하는 대형 언어 모델 |
 | 채널 | 상호작용 진입점 | 사용자가 Hermes Agent와 채팅하는 플랫폼 |
 | 스킬 | 기능 확장 | Hermes Agent로 호출 가능한 추가 기능 패키지 |
 
-![](./images/3-1.webp)
 
 ---
 
@@ -53,13 +47,19 @@ Hermes Agent는 LightVela의 AI 에이전트 인스턴스입니다. Hermes Agent
 
 Hermes Agent에는 다음과 같은 특성이 있습니다.
 
-- **격리된 런타임 환경**: 각 Hermes Agent는 다른 인스턴스와 격리된 전용 환경에서 실행됩니다.
+- **전용 클라우드 환경**: 각 Hermes Agent는 전용 환경에서 실행되며 다른 인스턴스와 리소스가 격리됩니다.
 
 - **영구적 메모리**: 대화 내용은 여러 세션에 걸쳐 저장되며 에이전트는 응답할 때 과거 컨텍스트를 사용합니다.
 
 - **항상 온라인**: 24/7로 실행되며 사용자의 로컬 장치에 의존하지 않습니다.
 
 현재 Launch 플랜은 최대 1개의 Hermes Agent 인스턴스 생성을 지원합니다.
+
+---
+
+## Bot
+
+각 Hermes Agent에는 기본 Bot이 있으며 플랜 한도와 기능 제공 상태에 따라 추가 Bot을 사용할 수 있습니다. Bot은 같은 클라우드 인스턴스에 있지만 설정과 데이터는 분리됩니다. 모델, 채널, 스킬, 메모리를 바꾸기 전에 대상 Bot을 선택하세요. [Bot 관리](./configuration/bots.md)를 참고하세요.
 
 ---
 
@@ -77,9 +77,7 @@ Hermes Agent에는 다음과 같은 특성이 있습니다.
 
 지원되는 모델, API 키 획득 및 모델 선택 지침은 [모델 구성](./configuration/model.md)을 참조하세요.
 
-> ⚠️ **하나의 모델만 활성화됩니다**
->
-> 현재 각 Hermes Agent에는 활성 모델 구성이 하나만 있을 수 있습니다. 모델을 전환하려면 "기본값으로 추가"를 사용하여 이전 구성을 덮어씁니다.
+> Bot은 한 번에 하나의 기본 모델을 사용합니다. 다른 모델이나 대체 모델도 구성할 수 있으며 활성 모델을 바꿀 때 이전 설정을 삭제할 필요가 없습니다. [모델 전환](./configuration/multiple-models.md)을 참고하세요.
 
 ---
 
@@ -91,17 +89,17 @@ Hermes Agent에는 다음과 같은 특성이 있습니다.
 |---|---|---|
 | WeChat | QR 코드 인증 | 매일 개인 사용, 중국 사용자에게 적합 |
 | Telegram | 봇 토큰 액세스 | 개인 또는 팀 메시징, 간단한 설정, 경량 예약 작업에 적합 |
-| WhatsApp | WhatsApp 비즈니스 API 액세스 | 국제 사용자 통신, 고객 서비스, 알림 및 미리 알림 |
+| WhatsApp | WhatsApp으로 QR 코드 스캔 | 국제 사용자 통신, 고객 서비스, 알림 및 미리 알림 |
 | Discord | 봇 토큰 액세스 | 커뮤니티 운영, 개발자 커뮤니티, 게임 또는 관심 그룹 |
 | Slack | 봇 토큰/앱 토큰 액세스 | 팀 협업, 작업 공간 알림 및 채널 기반 워크플로우 |
 
-WeChat의 경우 채널을 선택하고 "액세스 승인"을 클릭하여 QR 코드를 생성하세요. 휴대폰으로 스캔하시면 인증이 완료됩니다.
+**Channels**의 **WeChat** 카드에서 **+ Connect**를 선택하고 휴대폰으로 QR 코드를 스캔하세요.
 
 각 채널에 대한 자세한 액세스 단계: [채널 구성 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md).
 
 > 💡 **여러 개의 채널이 공존할 수 있습니다**
 >
-> 여러 채널을 동일한 Hermes Agent 인스턴스에 연결하고 메모리 및 에이전트 동작을 공유할 수 있습니다. 어떤 채널이 메시지를 보내든 대화 대상은 동일한 Hermes Agent입니다.
+> 같은 Bot에 연결된 채널은 해당 Bot의 페르소나와 메모리를 공유합니다. 다른 Bot의 설정은 자동으로 공유되지 않습니다.
 
 ---
 
@@ -109,9 +107,9 @@ WeChat의 경우 채널을 선택하고 "액세스 승인"을 클릭하여 QR �
 
 스킬은 Hermes Agent에서 호출할 수 있는 추가 기능 패키지입니다. Hermes Agent는 할 일 정리, 일일 보고서 생성, 웹 검색, 이미지 생성 등과 같은 특정 작업을 위한 기본 대화 이상으로 확장됩니다.
 
-모든 스킬은 Tencent가 출시한 독립적인 스킬 마켓플레이스인 [SkillHub](https://skillhub.tencent.com)에서 제공됩니다. SkillHub에서는 나열된 스킬을 찾아보고 해당 기능 설명과 예를 볼 수 있습니다.
+국제 사이트의 스킬은 [Skills.sh](https://skills.sh/)와 [ClawHub](https://clawhub.ai/)에서 제공됩니다. 콘솔의 **Skills** 페이지에서 출처와 설명을 확인한 뒤 설치하세요.
 
-콘솔의 "3. 스킬" 카드에 SkillHub에 기록된 스킬 이름을 입력하고 "스킬 설치"를 클릭하여 설치합니다. Hermes Agent에게 직접 대화를 통해 스킬을 설치하거나 삭제하도록 요청할 수도 있습니다. [스킬 구성](./configuration/skill.md)을 참조하세요.
+콘솔에서 **Skills**를 열고 개별 스킬을 검색하거나 **Skill Packages**를 둘러본 뒤 **Install**을 선택합니다. **Installed**에서 결과를 확인하세요. [스킬 구성](./configuration/skill.md)을 참고하세요.
 
 > ⚠️ **설치 전 보안 점검**
 >

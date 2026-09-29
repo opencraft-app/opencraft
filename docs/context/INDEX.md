@@ -57,7 +57,7 @@ derived: true
 | `cloudladdergateway` | [cloudladdergateway](project/services/cloudladdergateway.md) | `codesign` | [codesign](project/services/codesign.md) |
 | `ctl` | [ctl](project/services/ctl.md) | `frontend` | [frontend](project/services/frontend.md) |
 | `gateway-dashboard` | [gateway-dashboard](project/services/gateway-dashboard.md) | `infra_pulumi` | [infra-pulumi](project/services/infra-pulumi.md) |
-| `new-api` | [new-api](project/services/new-api.md) | `nextgen-dashboard` | [nextgen-dashboard](project/services/nextgen-dashboard.md) |
+| `new-api` | [new-api](project/services/new-api.md) | | |
 | `opencraft` | [opencraft](project/services/opencraft.md) | `credit` | [credit](project/services/credit.md) |
 | `payment` | [payment](project/services/payment.md) | `sandbox` | [sandbox](project/services/sandbox.md) |
 | `service-gateway` | [service-gateway](project/services/service-gateway.md) | `shadow` | [shadow](project/services/shadow.md) |

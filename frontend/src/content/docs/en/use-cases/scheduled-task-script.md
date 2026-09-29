@@ -1,5 +1,9 @@
 # Running Script Task in LightVela
 
+## Summary
+
+**Script Tasks run Bash or Python on a schedule without calling an AI model or using model credits.** Use them for predictable checks such as disk usage or missing export files; set the script, schedule, effective time window, and delivery channel.
+
 Script tasks are a practical application for cloud-hosted agents because they can run Bash or Python scripts on schedule without calling an AI model.
 They can be used when you have a recurring system check with clear, predictable rules.
 Users have used them for disk usage alerts; some also created checks that detect missing or outdated files.
@@ -32,7 +36,7 @@ if [ "$used" -ge 80 ]; then
 fi
 ```
 
-![Create a recurring script task for a disk usage alert](../images/scheduled-task-script-1.png)
+![Create a recurring script task for a disk usage alert](../images/scheduled-task-script-1.webp)
 
 If disk usage is below the threshold, the script prints nothing and no notification is sent.
 This keeps routine checks quiet unless something needs attention.
@@ -53,7 +57,7 @@ if not file.exists() or time() - file.stat().st_mtime > 86400:
     print("Export alert: the latest file is missing or over 24 hours old.")
 ```
 
-![Edit a recurring script task for a missing or outdated export check](../images/scheduled-task-script-2.png)
+![Edit a recurring script task for a missing or outdated export check](../images/scheduled-task-script-2.webp)
 
 Replace the example path with the real export location.
 If the file exists and is recent, the script completes quietly without sending an unnecessary message.
@@ -64,7 +68,7 @@ LightVela allows you to connect your agent to WhatsApp, Telegram, WeChat, Discor
 You can connect to one or multiple channels at the same time.
 In Scheduled Tasks, you can toggle each configured channel to decide where script alerts should be delivered.
 
-![A script task sends a disk usage check result directly in Telegram](../images/scheduled-task-script-3.png)
+![A script task sends a disk usage check result directly in Telegram](../images/scheduled-task-script-3.webp)
 
 When the script produces non-empty standard output, Hermes sends that output directly to your IM.
 If the script prints nothing, the task completes without sending a notification.
@@ -75,6 +79,6 @@ You can set as many scheduled tasks as you need.
 After creating them, you can edit their scripts and schedules, pause them, and browse previous runs.
 Test every script before scheduling it, especially when it accesses important files.
 
-![Scheduled Tasks current jobs list with script tasks](../images/scheduled-task-script-4.png)
+![Scheduled Tasks current jobs list with script tasks](../images/scheduled-task-script-4.webp)
 
 With LightVela, your personal Hermes agent can continuously handle predictable checks while you focus on other work.

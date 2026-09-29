@@ -2,8 +2,10 @@ package instance
 
 import (
 	stdctx "context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -73,8 +75,8 @@ type Logic interface {
 	DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error)
 	RetryInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error)
 	ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) (*transport.InstanceChannelBindingResponse, error)
-	ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error
-	ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error
+	ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string) error
+	ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string, disconnect bool) error
 	DestroyInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	PauseInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	ResumeInstance(ctx pctx.Context, instanceID string, req *transport.ResumeInstanceRequest) (*transport.InstanceResponse, error)
@@ -116,33 +118,37 @@ type Logic interface {
 	CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, error)
 	SubscribeWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, <-chan transport.WeixinLoginSessionEvent, func(), error)
 	ConfigureChannel(ctx pctx.Context, instanceID string, req *transport.ConfigureChannelRequest) (*transport.ConfigureChannelResponse, error)
+	// 云桌面（VNC）：POST 触发（幂等 provision）/ GET 轮询（Provisioning→Ready 状态机）。
+	EnsureDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
+	GetDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
 }
 
 type logic struct {
-	instanceDao                   modelinstance.Dao
-	passLister                    userPassLister
-	taskDao                       taskmodel.Dao
-	channelLoginSessionDao        channelloginsession.Dao
-	quotaDao                      quota.Dao
-	sandboxAdapter                psandbox.Adapter
-	aiGatewayAdapter              paigateway.Adapter
-	llmGatewayAdapter             pllmgateway.Adapter
-	openclawGatewayAdapter        popenclawgateway.Adapter
-	producer                      mq.Producer
-	operationHistoryDao           operationhistory.Dao
-	objectIdLogic                 objectid.Logic
-	logger                        *zap.Logger
-	defaultTemplateClass          string
-	defaultTemplate               string
-	defaultSKUID                  string
-	candidateTemplates            []string
-	executeTasksInline            bool
-	weixinHub                     *weixinLoginHub
-	churnGuard                    *createChurnGuard
-	legacyPassEntitlementEnsurer  func(stdctx.Context, string, time.Time) error
-	websiteCredentialStore        websiteauth.Store
-	websiteCredentialTATCommandID string
-	websiteAgentAPIBase           string
+	instanceDao                            modelinstance.Dao
+	passLister                             userPassLister
+	taskDao                                taskmodel.Dao
+	channelLoginSessionDao                 channelloginsession.Dao
+	quotaDao                               quota.Dao
+	sandboxAdapter                         psandbox.Adapter
+	aiGatewayAdapter                       paigateway.Adapter
+	llmGatewayAdapter                      pllmgateway.Adapter
+	openclawGatewayAdapter                 popenclawgateway.Adapter
+	producer                               mq.Producer
+	operationHistoryDao                    operationhistory.Dao
+	objectIdLogic                          objectid.Logic
+	logger                                 *zap.Logger
+	defaultTemplateClass                   string
+	defaultTemplate                        string
+	defaultSKUID                           string
+	candidateTemplates                     []string
+	executeTasksInline                     bool
+	weixinHub                              *weixinLoginHub
+	churnGuard                             *createChurnGuard
+	legacyPassEntitlementEnsurer           func(stdctx.Context, string, time.Time) error
+	websiteCredentialStore                 websiteauth.Store
+	websiteCredentialTATCommandID          string
+	websiteCredentialTATCommandIDsByRegion map[string]string
+	websiteAgentAPIBase                    string
 }
 
 func NewLogic() Logic {
@@ -154,29 +160,30 @@ func NewLogic() Logic {
 	defaultTemplateClass := defaultTemplateClassIDFromConfig(instanceConf)
 	defaultTemplate := defaultTemplateIDFromConfig(instanceConf)
 	return &logic{
-		instanceDao:                   modelfactory.DefaultDaoFactory.InstanceDao(nil),
-		passLister:                    modelfactory.DefaultDaoFactory.PassDao(nil),
-		channelLoginSessionDao:        modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
-		taskDao:                       modelfactory.DefaultDaoFactory.TaskDao(nil),
-		quotaDao:                      modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
-		sandboxAdapter:                adapterfactory.DefaultAdapterFactory.SandboxAdapter(),
-		aiGatewayAdapter:              adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(),
-		llmGatewayAdapter:             adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
-		openclawGatewayAdapter:        adapterfactory.DefaultAdapterFactory.OpenClawGatewayAdapter(),
-		producer:                      defaultProducer(),
-		operationHistoryDao:           modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
-		objectIdLogic:                 objectid.NewLogic(),
-		logger:                        logger,
-		defaultTemplateClass:          defaultTemplateClass,
-		defaultTemplate:               defaultTemplate,
-		defaultSKUID:                  defaultSKUIDFromConfig(instanceConf),
-		candidateTemplates:            candidateTemplateIDsFromConfig(instanceConf, defaultTemplateClass, defaultTemplate),
-		executeTasksInline:            false,
-		weixinHub:                     newWeixinLoginHub(),
-		churnGuard:                    newCreateChurnGuard(instanceConf, logger),
-		websiteCredentialStore:        websiteauth.New(resource.RedisMainClient),
-		websiteCredentialTATCommandID: websiteCredentialTATCommandIDFromConfig(),
-		websiteAgentAPIBase:           websiteAgentAPIBaseFromConfig(),
+		instanceDao:                            modelfactory.DefaultDaoFactory.InstanceDao(nil),
+		passLister:                             modelfactory.DefaultDaoFactory.PassDao(nil),
+		channelLoginSessionDao:                 modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
+		taskDao:                                modelfactory.DefaultDaoFactory.TaskDao(nil),
+		quotaDao:                               modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
+		sandboxAdapter:                         adapterfactory.DefaultAdapterFactory.SandboxAdapter(),
+		aiGatewayAdapter:                       adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(),
+		llmGatewayAdapter:                      adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
+		openclawGatewayAdapter:                 adapterfactory.DefaultAdapterFactory.OpenClawGatewayAdapter(),
+		producer:                               defaultProducer(),
+		operationHistoryDao:                    modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
+		objectIdLogic:                          objectid.NewLogic(),
+		logger:                                 logger,
+		defaultTemplateClass:                   defaultTemplateClass,
+		defaultTemplate:                        defaultTemplate,
+		defaultSKUID:                           defaultSKUIDFromConfig(instanceConf),
+		candidateTemplates:                     candidateTemplateIDsFromConfig(instanceConf, defaultTemplateClass, defaultTemplate),
+		executeTasksInline:                     false,
+		weixinHub:                              newWeixinLoginHub(),
+		churnGuard:                             newCreateChurnGuard(instanceConf, logger),
+		websiteCredentialStore:                 websiteauth.New(resource.RedisMainClient),
+		websiteCredentialTATCommandID:          websiteCredentialTATCommandIDFromConfig(),
+		websiteCredentialTATCommandIDsByRegion: websiteCredentialTATCommandIDsByRegionFromEnv(),
+		websiteAgentAPIBase:                    websiteAgentAPIBaseFromConfig(),
 	}
 }
 
@@ -185,6 +192,20 @@ func websiteCredentialTATCommandIDFromConfig() string {
 		return ""
 	}
 	return strings.TrimSpace(config.ServerConf.AdapterConfig.Sandbox.WebsiteCredentialTATCommandID)
+}
+
+// A configured region map is authoritative: unknown/invalid regions never fall back
+// to a command created in another Tencent Cloud region.
+func websiteCredentialTATCommandIDsByRegionFromEnv() map[string]string {
+	raw := strings.TrimSpace(os.Getenv("WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION"))
+	if raw == "" {
+		return nil
+	}
+	ids := make(map[string]string)
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return map[string]string{}
+	}
+	return ids
 }
 
 func websiteAgentAPIBaseFromConfig() string {
@@ -1851,7 +1872,7 @@ func (l *logic) prepareDebugCommand(ctx pctx.Context, instanceID string, command
 	if err := l.requireActivePass(ctx); err != nil {
 		return nil, "", "", "", nil, 0, activePassGuardError("execute debug command", err)
 	}
-	return entity, commandKind, spec.bash, normalizedRunAsUser, nil, spec.timeoutSec, nil
+	return entity, commandKind, guardWhatsAppDebugCommand(spec.bash, instanceID), normalizedRunAsUser, nil, spec.timeoutSec, nil
 }
 
 func (e *debugExecError) Error() string {
@@ -2317,7 +2338,7 @@ func (l *logic) configureHermesProfileChannel(
 	if !ok || strings.TrimSpace(appID) == "" || strings.TrimSpace(clientSecret) == "" {
 		return nil, errcode.ErrChannelInvalidParam
 	}
-	configured, err := l.ExecDebugCommand(
+	configured, err := l.execHermesProfileCommand(
 		ctx,
 		instanceID,
 		fmt.Sprintf(
@@ -2326,7 +2347,6 @@ func (l *logic) configureHermesProfileChannel(
 			shellQuoteArg(strings.TrimSpace(clientSecret)),
 			shellQuoteArg(profileID),
 		),
-		"agentuser",
 	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel: %v", err)
@@ -2334,11 +2354,10 @@ func (l *logic) configureHermesProfileChannel(
 	if configured == nil || configured.ExitCode != 0 {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "configure profile channel failed")
 	}
-	restarted, err := l.ExecDebugCommand(
+	restarted, err := l.execHermesProfileCommand(
 		ctx,
 		instanceID,
 		fmt.Sprintf("acli gateway restart --agent %s", shellQuoteArg(profileID)),
-		"agentuser",
 	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrChannelConfigFailed, "restart profile gateway: %v", err)

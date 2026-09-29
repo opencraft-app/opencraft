@@ -135,6 +135,24 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_POSTHOG_HOST).toBeUndefined();
   });
 
+  it("injects only the reviewed same-origin OpenCraft embed loader", () => {
+    const enabled = createComboEnvironment({
+      ...globalCfCombo,
+      embeddedWorkbench: {
+        enabled: true,
+        scriptPath: "/__opencraft/embedded-workbench.js",
+      },
+    }, "lightvela-intl", {});
+    const disabled = createComboEnvironment(globalCfCombo, "lightvela-intl", {
+      NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL: "https://ambient.example.com/embed.js",
+    });
+
+    expect(enabled.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL).toBe(
+      "/__opencraft/embedded-workbench.js",
+    );
+    expect(disabled.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL).toBeUndefined();
+  });
+
   it("injects Aegis environment from combo observability config", () => {
     const comboEnv = createComboEnvironment({
       ...cnCfCombo,
@@ -448,6 +466,10 @@ describe("release matrix helpers", () => {
       authApiBaseUrl: "https://api.lightvela.com",
       siteUrl: "https://lightvela.com",
       outputDir: "out",
+      embeddedWorkbench: {
+        enabled: true,
+        scriptPath: "/__opencraft/embedded-workbench.js",
+      },
       observability: {
         aegis: {
           enabled: "true",
@@ -488,6 +510,10 @@ describe("release matrix helpers", () => {
       authApiBaseUrl: "https://api.lightvela.ai",
       siteUrl: "https://lightvela.ai",
       outputDir: "out",
+      embeddedWorkbench: {
+        enabled: true,
+        scriptPath: "/__opencraft/embedded-workbench.js",
+      },
       observability: {
         aegis: {
           enabled: "true",

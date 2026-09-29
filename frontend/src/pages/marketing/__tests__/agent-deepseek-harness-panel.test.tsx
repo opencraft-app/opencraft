@@ -28,7 +28,9 @@ vi.mock("@/pages/marketing/agent-deepseek-harness-model-card", () => ({
     <section role="region" aria-label="模型配置" data-bot-id={botId} data-region={region} />
   ),
 }));
-vi.mock("@/i18n/t", () => ({ useT: () => translate }));
+vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN", useT: () => translate }));
 
 const INTRO =
   "DeepSeek Harness（简称：dsh）是由 DeepSeek 开发的一款采用一切皆插件架构的开源智能体框架（Agent Harness）。安装完成后即可通过 LightVela 访问专属 WebUI。";

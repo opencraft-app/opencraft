@@ -14,7 +14,7 @@ Hermes puede ejecutarse localmente en macOS, Windows, Linux, WSL2 y más. Su ins
 
 | Lo que importa para ti | Ejecutar Hermes en tu equipo | Usar LightVela |
 | - | - | - |
-| **Dónde se ejecuta Hermes** | Tu propia máquina | Un tiempo de ejecución en la nube dedicado |
+| **Dónde se ejecuta Hermes** | Tu propia máquina | Un entorno de nube dedicado |
 | **Control día a día** | Tú eliges la configuración local y el entorno | Gestionas el Agent a través de una consola alojada |
 | **Disponibilidad** | Mantienes el equipo y el proceso disponibles | Diseñado para permanecer en línea independientemente de tu dispositivo local |
 | **Responsabilidad de configuración** | Tú configuras el tiempo de ejecución, el modelo, las herramientas y los canales | El entorno del Agent principal se aloja por ti |

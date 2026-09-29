@@ -1,5 +1,9 @@
 # Automatizar tareas de Agent con LightVela
 
+## Resumen
+
+**Las Agent Tasks ejecutan un flujo que usa el modelo según un horario y entregan el resultado por el canal elegido.** Sirven para un resumen matinal o una revisión semanal; configura las instrucciones, el horario, las Skills opcionales y el destino.
+
 Las tareas programadas son una aplicación ideal para los agentes alojados en la nube porque pueden ejecutarse 24/7 sin que usted tenga que intervenir.
 Úselas cuando tenga un problema de información recurrente que pueda mejorar con un flujo de trabajo repetible.
 Los usuarios las han utilizado para resúmenes matutinos que convierten actualizaciones dispersas en briefs cortos, y para revisiones semanales de proyectos que resumen la actividad reciente antes de reuniones de seguimiento.
@@ -25,7 +29,7 @@ Prompt:
 
 > Recopila hasta 5 actualizaciones importantes, resúmelas, incluye enlaces y envía el resultado.
 
-![Crear una tarea de IA recurrente para un resumen matutino](../images/scheduled-task-agent-1.png)
+![Crear una tarea de IA recurrente para un resumen matutino](../images/scheduled-task-agent-1.webp)
 
 La clave es pedir un brief enfocado, no un resumen de “todo”.
 Si la recopilación de información y el resumen son tareas separadas, programe primero la recopilación.
@@ -38,7 +42,7 @@ Prompt:
 
 > Usa las notas recopiladas por una tarea anterior e identifica el trabajo completado, los bloqueos y las próximas 3 prioridades.
 
-![Crear una tarea de IA semanal con una tarea anterior](../images/scheduled-task-agent-2.png)
+![Crear una tarea de IA semanal con una tarea anterior](../images/scheduled-task-agent-2.webp)
 
 Ejecute la tarea de recopilación antes de la revisión, con un pequeño margen de tiempo.
 El Agent no sustituye la gestión de proyectos.
@@ -50,7 +54,7 @@ LightVela le permite conectar su Agent a WhatsApp, Telegram, WeChat, Discord y m
 Puede conectar uno o todos los canales al mismo tiempo.
 En las tareas programadas, puede activar la configuración de notificaciones de cada IM para decidir si la tarea debe avisarle en su IM.
 
-![Un Agent de IA envía un brief programado directamente en Telegram](../images/scheduled-task-agent-3.png)
+![Un Agent de IA envía un brief programado directamente en Telegram](../images/scheduled-task-agent-3.webp)
 
 Después de activarla, su Agent completará la tarea y le actualizará directamente en su IM, sin necesidad de abrir LightVela ni ninguna otra aplicación.
 
@@ -60,4 +64,4 @@ Puede crear tantas tareas programadas como necesite.
 Después de crearlas, puede editarlas, pausarlas y consultar los trabajos anteriores.
 Con LightVela, su Hermes Agent personal puede ejecutar sus trabajos de forma eficiente mientras usted está ausente.
 
-![Lista de trabajos actuales con tareas de Agent recurrentes](../images/scheduled-task-agent-4.png)
+![Lista de trabajos actuales con tareas de Agent recurrentes](../images/scheduled-task-agent-4.webp)

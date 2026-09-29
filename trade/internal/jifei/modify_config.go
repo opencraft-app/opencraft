@@ -2,7 +2,7 @@ package jifei
 
 import "sort"
 
-// 同 SP 变配的 goodsDetail 构造（含 oldConfig / newConfig）。
+// 变配 goodsDetail 构造（含 oldConfig / newConfig）。
 // 需求：TAPD 1010132091137784162 §4.1（Trade 负责构造询价/下单所需的 oldConfig/newConfig）
 //
 // jifei 用这两个集合算差价：oldConfig 是用户当前持有的计费资源集合，newConfig 是目标集合；
@@ -16,15 +16,18 @@ import "sort"
 
 // ModifyGoodsDetailInput 是变配 goodsDetail 的构造入参。
 //
-// 顶层字段（ProductCode / SubProductCode / Pid / SourceSVList）来自**源**套餐，描述
-// "现在是什么"；TargetSVList 进 newConfig，描述"要变成什么"。同 SP 变配下
-// productCode / subProductCode / pid 源和目标一致，取源侧没有额外含义。
+// 顶层计费身份与 SV 使用**目标**套餐，和目标 goodsCategoryId/type 保持一致；源、目标
+// 的完整计费身份分别放在 oldConfig/newConfig。这样同 SP 报文形状不变，跨 SP 时也不会
+// 出现"目标 category + 源 type"的不一致。
 //
 // 不含 timeSpan / timeUnit：变配不改到期时间，时长语义完全由 CurDeadline 承载。
 type ModifyGoodsDetailInput struct {
-	ProductCode    string
-	SubProductCode string
-	Pid            int64
+	SourceProductCode    string
+	SourceSubProductCode string
+	SourcePid            int64
+	TargetProductCode    string
+	TargetSubProductCode string
+	TargetPid            int64
 	// ResourceID 是变配目标 pass_id（jifei goodsDetail.resourceId）。
 	ResourceID string
 	// CurDeadline 是 pass 当前到期时间的 jifei 字面值（CurDeadlineLayout）。
@@ -55,20 +58,20 @@ type ModifyGoodsDetailInput struct {
 // BuildModifyGoodsDetail 拼装变配的 jifei goodsDetail。
 func BuildModifyGoodsDetail(in ModifyGoodsDetailInput) map[string]interface{} {
 	goodsDetail := map[string]interface{}{
-		"productCode":    in.ProductCode,
-		"subProductCode": in.SubProductCode,
-		"pid":            in.Pid,
+		"productCode":    in.TargetProductCode,
+		"subProductCode": in.TargetSubProductCode,
+		"pid":            in.TargetPid,
 		"goodsNum":       ModifyGoodsNum,
 		"resourceId":     in.ResourceID,
 		"curDeadline":    in.CurDeadline,
 		"bundleId":       in.SourceBundleID,
 		"newBundleId":    in.TargetBundleID,
-		"oldConfig":      buildModifyConfig(in.ProductCode, in.SubProductCode, in.Pid, in.SourceSVList),
-		"newConfig":      buildModifyConfig(in.ProductCode, in.SubProductCode, in.Pid, in.TargetSVList),
+		"oldConfig":      buildModifyConfig(in.SourceProductCode, in.SourceSubProductCode, in.SourcePid, in.SourceSVList),
+		"newConfig":      buildModifyConfig(in.TargetProductCode, in.TargetSubProductCode, in.TargetPid, in.TargetSVList),
 	}
-	// 顶层同样展平源套餐的 sv_*：与新购/续费的 goodsDetail 形状保持一致，
-	// jifei 侧对"当前配置"有两处可读（顶层 + oldConfig）且必然同值。
-	for key, value := range in.SourceSVList {
+	// 顶层展平目标套餐的 sv_*，与目标 category/type 保持同一商品身份；旧配置只在
+	// oldConfig 中表达。
+	for key, value := range in.TargetSVList {
 		goodsDetail[key] = value
 	}
 	if len(in.ProductInfo) > 0 {
@@ -120,8 +123,8 @@ func copySVList(svList map[string]int64) map[string]int64 {
 // `returnCode=371008 / "get price error:pid not found"`。同一份报文换成新购 categoryId 反而
 // 只抱怨缺 timeSpan，正是因为新购读顶层 pid、变配读内层 pid，两个场景取值位置不同。
 //
-// 同 SP 变配下源和目标共用同一套 productCode / subProductCode / pid，所以两次调用传同值；
-// 未来做跨 SP 变配时，这里换成分别传源侧、目标侧的三元组即可，调用方无须改动其他逻辑。
+// 同 SP 变配下源和目标传入相同三元组；跨 SP 变配分别传源侧、目标侧三元组。
+// buildModifyConfig 只负责保持每份配置自描述，不推断两侧是否属于同一 SP。
 func buildModifyConfig(productCode, subProductCode string, pid int64, svList map[string]int64) map[string]interface{} {
 	config := map[string]interface{}{
 		"pid":            pid,

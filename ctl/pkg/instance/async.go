@@ -1066,6 +1066,18 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 // create task here would strand a usable machine behind an optional feature.
 func (l *logic) deliverWebsiteCredentialOnCreate(ctx pctx.Context, entity *modelinstance.Entity, sandboxID string) {
 	commandID := strings.TrimSpace(l.websiteCredentialTATCommandID)
+	if l.websiteCredentialTATCommandIDsByRegion != nil {
+		detail, err := l.sandboxAdapter.GetSandbox(ctx, sandboxID)
+		if err != nil || detail == nil || strings.TrimSpace(detail.Region) == "" {
+			l.logger.Warn("skip website credential delivery because sandbox region is unavailable", zap.Error(err), zap.String("sandbox_id", sandboxID))
+			return
+		}
+		commandID = strings.TrimSpace(l.websiteCredentialTATCommandIDsByRegion[strings.TrimSpace(detail.Region)])
+		if commandID == "" {
+			l.logger.Warn("skip website credential delivery because region has no TAT command", zap.String("region", detail.Region), zap.String("sandbox_id", sandboxID))
+			return
+		}
+	}
 	apiBase := strings.TrimSpace(l.websiteAgentAPIBase)
 	if commandID == "" || apiBase == "" {
 		return
@@ -1279,9 +1291,6 @@ func (l *logic) FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *De
 //  1. 反查 instance；NotFound / 已 Paused / 已 Deleted/Failed → 直接成功（幂等）
 //  2. 校验 sandbox_id；空 / pending → 跳过 sandbox 调用，仅 CAS 状态
 //  3. 调 sandbox.PauseSandbox：
-//     - sandbox not_found        → 视为成功，继续 CAS（与 RenewInstance / DestroyInstance 容错对偶；
-//     I-MR-1 修复：sandbox 已不存在意味着 "instance 已无可暂停目标"，业务目标天然达成，
-//     不能让 sandbox 偶发缺失阻塞父 IsolatePass 收尾）
 //     - sandbox already-paused   → 视为成功，继续 CAS
 //     - 其它错误                 → 冒泡，触发父 task 重试
 //  4. CAS Running/Resuming → Paused（同时接管用户恢复流程的中间态）
@@ -1321,15 +1330,6 @@ func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.Isolate
 	if entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
 		if err := l.sandboxAdapter.PauseSandbox(ctx, entity.SandboxId); err != nil {
 			switch {
-			case isSandboxNotFound(err):
-				// I-MR-1 修复：sandbox 已不存在（被人工或异常流程删除）→ instance 已无可暂停的 sandbox。
-				// 业务上 IsolateInstance 子 task 的语义是"让 instance 回到 Paused 终态"，
-				// 与 RenewInstance / DestroyInstance 的 sandbox 容错保持一致：
-				// 视为幂等成功，继续走 CAS Running→Paused，不阻塞隔离父 task 收尾。
-				logger.Warn("isolate task: sandbox not found, treating as success and continuing CAS",
-					zap.String("sandbox_id", entity.SandboxId),
-					zap.Error(err),
-				)
 			case isExpectedSandboxConflict(err, expectedPauseConflictMessages):
 				logger.Warn("isolate task: sandbox already paused, treating as success",
 					zap.String("sandbox_id", entity.SandboxId),

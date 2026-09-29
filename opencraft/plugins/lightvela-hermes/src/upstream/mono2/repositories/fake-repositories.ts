@@ -259,6 +259,8 @@ const defaultTools: ToolBinding[] = [
 
 const botStore = new Map<string, Bot>();
 const messageStore = new Map<string, WorkspaceMessage[]>();
+// fake 云桌面按需装图形层进度：POST 置 0，GET 逐步 +25 直至 100 转 Ready。
+const desktopInstallProgress = new Map<string, number>();
 
 const seedMessagesFor = (botId: string) => {
   if (messageStore.has(botId)) {
@@ -351,8 +353,9 @@ const buildFakePrice = (yuan: number): BundlePrice => {
 
 const FAKE_BUNDLES: Bundle[] = [
   {
+    // bundle_id 为历史兼容标识；mock 的展示名和时长按当前 1 个月免费权益维护。
     bundle_id: "bundle_free_7d",
-    bundle_name: "免费试用 7天",
+    bundle_name: "启航 Launch",
     description: [
       { Key: "Agent", Value: "1个" },
     ],
@@ -361,8 +364,8 @@ const FAKE_BUNDLES: Bundle[] = [
     credit: 0,
     // 免费试用套餐，price = null 表示不走付费架构
     price: null,
-    time_span: 7,
-    time_unit: "d",
+    time_span: 1,
+    time_unit: "m",
     bundle_sales_available_count: 99,
     bundle_sales_total_count: 100,
     bundle_sales_state: "AVAILABLE",
@@ -1279,6 +1282,7 @@ const createCreditRepository = (): CreditRepository => ({
     const centsStr = cents.toFixed(0);
     return {
       product_id: productId,
+      price: centsStr,
       real_total_cost: centsStr,
       total_cost: centsStr,
       currency: isGlobal ? ("USD" as const) : ("CNY" as const),
@@ -1741,6 +1745,49 @@ const createBotRepository = (): BotRepository => {
       };
     },
 
+    async ensureDesktopSession(botId) {
+      await wait(NETWORK_DELAY_MS / 2);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      // fake 环境：首次 POST 进入 Installing（模拟按需装图形层），后续 GET 递进进度直至 Ready，
+      // 便于本地预览 Installing 进度 UI；本地 mock 无法真正代理 VNC 流，故用无效 wsUrl。
+      desktopInstallProgress.set(botId, 0);
+      return {
+        status: "Installing" as const,
+        installProgress: 0,
+        message: "正在安装桌面环境（约 2-4 分钟）…",
+      };
+    },
+
+    async getDesktopSession(botId) {
+      await wait(NETWORK_DELAY_MS / 2);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      const progress = desktopInstallProgress.get(botId);
+      if (progress !== undefined && progress < 100) {
+        const next = Math.min(100, progress + 25);
+        desktopInstallProgress.set(botId, next);
+        if (next < 100) {
+          return {
+            status: "Installing" as const,
+            installProgress: next,
+            message: "正在安装桌面环境（约 2-4 分钟）…",
+          };
+        }
+      }
+      return {
+        status: "Ready" as const,
+        wsUrl: "wss://example.invalid/websockify",
+        password: "deadbeef",
+        width: 1440,
+        height: 900,
+      };
+    },
+
     async configureQQChannel(botId, input) {
       await wait(NETWORK_DELAY_MS);
       const bot = botStore.get(botId);
@@ -1768,7 +1815,7 @@ const createBotRepository = (): BotRepository => {
       return { sessionId: `wxlogin_fake_${Date.now()}`, status: "starting" };
     },
 
-    async claimUniqueChannel() {},
+    async claimUniqueChannel() { return undefined; },
 
     async confirmUniqueChannel() {},
 

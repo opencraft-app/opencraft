@@ -7,3 +7,9 @@ OpenAPI 的 strict handler 生成。原生客户端只接收 PKCE 一次性授�
 `/auth/session/exchange`（`/auth/native/token` 仅为已发布客户端保留兼容别名）；详见[身份与访问设计](../../docs/engineering/domains/identity-access.md)。
 
 CI trigger note: 2026-07-21 rebuild after GitOps validation fix.
+
+CI trigger note: 2026-09-23 recompile pipeline definition onto cn-pool runner (see MR !4562).
+
+CI trigger note: 2026-09-24 recompile pipeline definition to pick up the playground-build
+pin fallback fix (see MR !4569), so Openapi-triggered `playground-build` runs can pin a
+master commit for `sandbox-bj-7`.

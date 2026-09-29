@@ -1,0 +1,8 @@
+service: ticket
+env: sandbox-kr-1
+project: seoul-sandbox
+destinationName: seoul-sandbox
+namespace: lightvela-playground-sandbox-kr-1
+sourcePath: argocd/services/ticket/sandbox-kr-1
+environmentModel: playground
+playgroundCluster: seoul-sandbox

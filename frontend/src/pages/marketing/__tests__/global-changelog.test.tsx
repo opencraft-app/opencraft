@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import i18n, { ensureLocaleDictionary } from "@/i18n";
+import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from "@/lib/public-site-routing";
 import { ChangelogPage } from "@/pages/marketing/changelog-page";
 
 vi.mock("@/lib/region", async (importOriginal) => ({
@@ -53,6 +54,137 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("puts channel test messages first in the English September changelog", async () => {
+    await i18n.changeLanguage("en-US");
+    render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+
+    const septemberSection = screen.getByText("September 2026").closest("section");
+    expect(septemberSection).not.toBeNull();
+    expect(within(septemberSection!).getAllByRole("heading")[0]).toHaveTextContent(
+      "Send Test Messages to Connected Chat Channels",
+    );
+    expect(within(septemberSection!).getByText(
+      "Send a test message from a connected channel, then check the chat app to confirm it arrived.",
+    )).toBeInTheDocument();
+  });
+
+  it("localizes the subscription-upgrade entry for every public-site locale", async () => {
+    const copies = {
+      "zh-CN": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
+      "zh-SG": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
+      "zh-Hant": ["2026 年 9 月", "LightVela 支援套餐升級", "現有套餐可升級至更高規格，實際應付價格以最終支付頁顯示為準。"],
+      "en-US": ["September 2026", "LightVela Now Supports Plan Upgrades", "Upgrade your current plan to a higher tier. The actual amount due is the final price shown at checkout."],
+      "id-ID": ["September 2026", "LightVela Kini Mendukung Peningkatan Paket", "Tingkatkan paket saat ini ke paket yang lebih tinggi. Jumlah yang harus dibayar mengikuti harga akhir di halaman pembayaran."],
+      es: ["Septiembre de 2026", "LightVela ya permite mejorar tu plan", "Puedes mejorar tu plan actual a uno superior. El importe a pagar será el precio final mostrado en la página de pago."],
+      "ja-JP": ["2026年9月", "LightVela でプランのアップグレードに対応", "現在のプランを上位プランにアップグレードできます。お支払い金額は最終決済ページに表示される価格をご確認ください。"],
+      "ko-KR": ["2026년 9월", "LightVela에서 요금제 업그레이드 지원", "현재 요금제를 상위 요금제로 업그레이드할 수 있습니다. 실제 결제 금액은 최종 결제 페이지에 표시된 가격을 기준으로 합니다."],
+    } satisfies Record<PublicSiteLocaleCode | "es" | "ja-JP" | "ko-KR", readonly [string, string, string]>;
+
+    expect(Object.values(PUBLIC_SITE_LOCALES).every((locale) => locale in copies)).toBe(true);
+    for (const [locale, [month, title, description]] of Object.entries(copies)) {
+      await i18n.changeLanguage(locale);
+      render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+      const section = screen.getByText(month).closest("section");
+      expect(section).not.toBeNull();
+      expect(within(section!).getAllByRole("heading")[1]).toBe(within(section!).getByRole("heading", { name: title }));
+      expect(within(section!).getByText(description)).toBeInTheDocument();
+      expect(within(section!).getByAltText(title)).toHaveAttribute(
+        "src", expect.stringContaining("/assets/changelog/lightvela-plan-upgrade-global-en.png"),
+      );
+      expect(description).not.toMatch(/[¥￥$€]|\b(?:USD|CNY|SGD)\b/);
+      cleanup();
+    }
+  });
+
+  it("uses English rather than Chinese for an unrecognized global locale", async () => {
+    await i18n.changeLanguage("fr-FR");
+    render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+    expect(screen.getByRole("heading", { name: "LightVela Now Supports Plan Upgrades" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "LightVela 支持套餐升配" })).not.toBeInTheDocument();
+  });
+
+  it("announces multi-Bot creation in every visible locale", async () => {
+    const multiBotCopies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 9 月",
+        title: "LightVela 支持创建多个 Bot",
+        description:
+          "在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。",
+        image: "/docs-images/bots-switching-create.webp",
+      },
+      {
+        locale: "zh-Hant",
+        month: "2026 年 9 月",
+        title: "LightVela 支持創建多個 Bot",
+        description:
+          "在同一個 Agent 中創建多個 Bot，讓它們各司其職；每個 Bot 的記憶、技能、定時任務、模型和通道配置相互隔離。",
+        image: "/docs-images/bots-switching-create.webp",
+      },
+      {
+        locale: "en-US",
+        month: "September 2026",
+        title: "LightVela Now Supports Multiple Bots",
+        description:
+          "Create multiple Bots in a single Agent, give each one a distinct role, and keep their memory, Skills, scheduled tasks, models, and channel settings isolated from one another.",
+        image: "/docs-images/bots-switching-create-en.webp",
+      },
+      {
+        locale: "id-ID",
+        month: "September 2026",
+        title: "LightVela Kini Mendukung Beberapa Bot",
+        description:
+          "Buat beberapa Bot dalam satu Agent agar masing-masing menjalankan perannya sendiri, dengan memori, Skills, tugas terjadwal, model, dan konfigurasi channel yang saling terisolasi.",
+        image: "/docs-images/bots-switching-create-en.webp",
+      },
+      {
+        locale: "es",
+        month: "Septiembre de 2026",
+        title: "LightVela Ahora Admite Varios Bots",
+        description:
+          "Crea varios Bots en un solo Agent para que cada uno cumpla su función, manteniendo aisladas entre sí la memoria, las Skills, las tareas programadas y las configuraciones de modelos y canales.",
+        image: "/docs-images/bots-switching-create-en.webp",
+      },
+      {
+        locale: "ja-JP",
+        month: "2026年9月",
+        title: "LightVela で複数の Bot を作成可能に",
+        description:
+          "1 つの Agent に複数の Bot を作成して役割を分担し、各 Bot のメモリ、Skills、スケジュールタスク、モデル、チャンネル設定を相互に分離できます。",
+        image: "/docs-images/bots-switching-create-en.webp",
+      },
+      {
+        locale: "ko-KR",
+        month: "2026년 9월",
+        title: "LightVela에서 여러 Bot 생성 지원",
+        description:
+          "하나의 Agent에 여러 Bot을 만들어 각자의 역할을 맡기고, Bot별 메모리, Skills, 예약 작업, 모델 및 채널 설정을 서로 분리할 수 있습니다.",
+        image: "/docs-images/bots-switching-create-en.webp",
+      },
+    ] as const;
+
+    for (const copy of multiBotCopies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(
+        <MemoryRouter>
+          <ChangelogPage />
+        </MemoryRouter>,
+      );
+
+      const septemberSection = screen.getByText(copy.month).closest("section");
+      expect(septemberSection).not.toBeNull();
+      const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
+      expect(within(septemberSection!).getAllByRole("heading")[2]).toBe(heading);
+      expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(within(septemberSection!).getByAltText(copy.title)).toHaveAttribute(
+        "src",
+        expect.stringContaining(copy.image),
+      );
+      cleanup();
+    }
+  });
+
   it("announces zero-token notification and script tasks in every visible locale", async () => {
     const scheduledTaskCopies = [
       {
@@ -61,7 +193,7 @@ describe("global changelog skill package entry", () => {
         title: "定时任务新增通知任务和脚本任务",
         description:
           "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
-        image: "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
+        image: "/assets/changelog/scheduled-tasks-notification-global-zh-CN.webp",
       },
       {
         locale: "zh-Hant",
@@ -69,7 +201,7 @@ describe("global changelog skill package entry", () => {
         title: "定時任務新增通知任務和腳本任務",
         description:
           "支持創建通知任務和腳本任務：按原文發送通知，或按計劃運行預設腳本。兩種任務均不調用模型，模型 Token 消耗為 0。",
-        image: "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
+        image: "/assets/changelog/scheduled-tasks-notification-zh-Hant.webp",
       },
       {
         locale: "en-US",
@@ -77,7 +209,7 @@ describe("global changelog skill package entry", () => {
         title: "Scheduled Tasks Now Support Notification and Script Tasks",
         description:
           "Create Notification Tasks to send text exactly as written or Script Tasks to run preset scripts on a schedule. Neither task type calls a model, so model token usage is zero.",
-        image: "/assets/changelog/scheduled-tasks-notification-en-US.png",
+        image: "/assets/changelog/scheduled-tasks-notification-en-US.webp",
       },
       {
         locale: "id-ID",
@@ -85,7 +217,7 @@ describe("global changelog skill package entry", () => {
         title: "Tugas Terjadwal Kini Mendukung Tugas Notifikasi dan Skrip",
         description:
           "Buat Tugas Notifikasi untuk mengirim teks persis seperti yang ditulis, atau Tugas Skrip untuk menjalankan skrip siap pakai sesuai jadwal. Keduanya tidak memanggil model, sehingga penggunaan token model adalah nol.",
-        image: "/assets/changelog/scheduled-tasks-notification-id-ID.png",
+        image: "/assets/changelog/scheduled-tasks-notification-id-ID.webp",
       },
       {
         locale: "es",
@@ -93,7 +225,7 @@ describe("global changelog skill package entry", () => {
         title: "Las Tareas Programadas Ahora Admiten Tareas de Notificación y de Script",
         description:
           "Crea Tareas de Notificación para enviar texto exactamente como está escrito o Tareas de Script para ejecutar scripts predefinidos según una programación. Ninguno de los dos tipos llama a un modelo, por lo que el consumo de tokens del modelo es cero.",
-        image: "/assets/changelog/scheduled-tasks-notification-es.png",
+        image: "/assets/changelog/scheduled-tasks-notification-es.webp",
       },
       {
         locale: "ja-JP",
@@ -101,7 +233,7 @@ describe("global changelog skill package entry", () => {
         title: "スケジュールタスクに通知タスクとスクリプトタスクを追加",
         description:
           "通知タスクでは入力したテキストをそのまま送信し、スクリプトタスクではプリセットスクリプトをスケジュール実行できます。どちらもモデルを呼び出さないため、モデルのトークン消費はゼロです。",
-        image: "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
+        image: "/assets/changelog/scheduled-tasks-notification-ja-JP.webp",
       },
       {
         locale: "ko-KR",
@@ -109,7 +241,7 @@ describe("global changelog skill package entry", () => {
         title: "예약 작업에 알림 작업 및 스크립트 작업 추가",
         description:
           "알림 작업은 작성한 텍스트를 그대로 전송하고, 스크립트 작업은 사전 설정된 스크립트를 일정에 따라 실행합니다. 두 유형 모두 모델을 호출하지 않으므로 모델 토큰 사용량은 0입니다.",
-        image: "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
+        image: "/assets/changelog/scheduled-tasks-notification-ko-KR.webp",
       },
     ] as const;
 
@@ -125,7 +257,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const heading = within(septemberSection!).getByRole("heading", { name: copy.title });
-      expect(within(septemberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(septemberSection!).getAllByRole("heading")[3]).toBe(heading);
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute(
         "src",
@@ -143,7 +275,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela 支持查看 Agent 实例存储空间",
         description:
           "云存储页面现在会显示 Agent 实例的总容量、已用容量和可用容量，并将 Agent 运行环境、系统预留空间和云存储文件计入使用量计算。",
-        image: "/assets/changelog/lightvela-instance-storage-zh.png",
+        image: "/assets/changelog/lightvela-instance-storage-zh.webp",
       },
       {
         locale: "zh-Hant",
@@ -151,7 +283,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela 支持查看 Agent 實例存儲空間",
         description:
           "雲存儲頁面現在會顯示 Agent 實例的總容量、已用容量和可用容量，並將 Agent 運行環境、系統預留空間和雲存儲文件計入使用量計算。",
-        image: "/assets/changelog/lightvela-instance-storage-zh.png",
+        image: "/assets/changelog/lightvela-instance-storage-zh.webp",
       },
       {
         locale: "en-US",
@@ -159,7 +291,7 @@ describe("global changelog skill package entry", () => {
         title: "View Your Agent Instance Storage at a Glance",
         description:
           "The Cloud Storage page now shows your Agent instance's total, used, and available storage, including the Agent runtime environment, system-reserved space, and cloud storage files in the usage calculation.",
-        image: "/assets/changelog/lightvela-instance-storage-en.png",
+        image: "/assets/changelog/lightvela-instance-storage-en.webp",
       },
       {
         locale: "id-ID",
@@ -167,7 +299,7 @@ describe("global changelog skill package entry", () => {
         title: "Lihat Penyimpanan Instans Agent Anda Sekilas",
         description:
           "Halaman Cloud Storage kini menampilkan total, penggunaan, dan ketersediaan penyimpanan instans Agent Anda, termasuk lingkungan runtime Agent, ruang yang dicadangkan sistem, dan file penyimpanan cloud dalam perhitungan penggunaan.",
-        image: "/assets/changelog/lightvela-instance-storage-en.png",
+        image: "/assets/changelog/lightvela-instance-storage-en.webp",
       },
       {
         locale: "es",
@@ -175,7 +307,7 @@ describe("global changelog skill package entry", () => {
         title: "Consulta de un Vistazo el Almacenamiento de tu Instancia de Agent",
         description:
           "La página de almacenamiento en la nube ahora muestra el almacenamiento total, usado y disponible de tu instancia de Agent, e incluye el entorno de ejecución de Agent, el espacio reservado del sistema y los archivos del almacenamiento en la nube en el cálculo del uso.",
-        image: "/assets/changelog/lightvela-instance-storage-en.png",
+        image: "/assets/changelog/lightvela-instance-storage-en.webp",
       },
       {
         locale: "ja-JP",
@@ -183,7 +315,7 @@ describe("global changelog skill package entry", () => {
         title: "Agent インスタンスのストレージをひと目で確認",
         description:
           "クラウドストレージページで、Agent インスタンスの合計、使用済み、利用可能なストレージを確認できるようになりました。使用量にはAgentの実行環境、システム予約領域、クラウドストレージファイルが含まれます。",
-        image: "/assets/changelog/lightvela-instance-storage-en.png",
+        image: "/assets/changelog/lightvela-instance-storage-en.webp",
       },
       {
         locale: "ko-KR",
@@ -191,7 +323,7 @@ describe("global changelog skill package entry", () => {
         title: "Agent 인스턴스 저장 공간을 한눈에 확인",
         description:
           "이제 클라우드 스토리지 페이지에서 Agent 인스턴스의 전체, 사용 중, 사용 가능한 저장 공간을 확인할 수 있으며, 사용량 계산에는 Agent 런타임 환경, 시스템 예약 공간 및 클라우드 스토리지 파일이 포함됩니다.",
-        image: "/assets/changelog/lightvela-instance-storage-en.png",
+        image: "/assets/changelog/lightvela-instance-storage-en.webp",
       },
     ] as const;
 
@@ -207,7 +339,7 @@ describe("global changelog skill package entry", () => {
       const septemberSection = screen.getByText(copy.month).closest("section");
       expect(septemberSection).not.toBeNull();
       const headings = within(septemberSection!).getAllByRole("heading");
-      expect(headings[1]).toHaveTextContent(copy.title);
+      expect(headings[4]).toHaveTextContent(copy.title);
       expect(within(septemberSection!).getByRole("heading", { name: copy.title })).toBeInTheDocument();
       expect(within(septemberSection!).getByText(copy.description)).toBeInTheDocument();
       expect(screen.getByAltText(copy.title)).toHaveAttribute("src", expect.stringContaining(copy.image));
@@ -223,7 +355,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela 支持创建和发布工作台",
         description:
           "支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。",
-        image: "/assets/changelog/lightvela-workbench-zh.png",
+        image: "/assets/changelog/lightvela-workbench-zh.webp",
       },
       {
         locale: "zh-Hant",
@@ -231,7 +363,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela 支持創建和發佈工作台",
         description:
           "支持在 LightVela 中選擇模板或從零開始創建個人工作台，並以靜態網站的形式直接發佈、預覽、更新和管理自己的工作台。",
-        image: "/assets/changelog/lightvela-workbench-zh.png",
+        image: "/assets/changelog/lightvela-workbench-zh.webp",
       },
       {
         locale: "en-US",
@@ -239,7 +371,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela Supports Building and Publishing Workbenches",
         description:
           "Build a personal workbench in LightVela from a template or from scratch, then publish, preview, update, and manage it directly as a static website.",
-        image: "/assets/changelog/lightvela-workbench-global-en.png",
+        image: "/assets/changelog/lightvela-workbench-global-en.webp",
       },
       {
         locale: "id-ID",
@@ -247,7 +379,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela Mendukung Pembuatan dan Publikasi Workbench",
         description:
           "Buat workbench pribadi di LightVela dari templat atau dari nol, lalu publikasikan, pratinjau, perbarui, dan kelola langsung sebagai situs web statis.",
-        image: "/assets/changelog/lightvela-workbench-global-en.png",
+        image: "/assets/changelog/lightvela-workbench-global-en.webp",
       },
       {
         locale: "es",
@@ -255,7 +387,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela Permite Crear y Publicar Workbenches",
         description:
           "Crea un workbench personal en LightVela a partir de una plantilla o desde cero, y publícalo, previsualízalo, actualízalo y gestiónalo directamente como un sitio web estático.",
-        image: "/assets/changelog/lightvela-workbench-global-en.png",
+        image: "/assets/changelog/lightvela-workbench-global-en.webp",
       },
       {
         locale: "ja-JP",
@@ -263,7 +395,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVelaでワークベンチの作成と公開に対応",
         description:
           "LightVelaでテンプレートを選ぶかゼロから個人用ワークベンチを作成し、静的Webサイトとして直接公開、プレビュー、更新、管理できます。",
-        image: "/assets/changelog/lightvela-workbench-global-en.png",
+        image: "/assets/changelog/lightvela-workbench-global-en.webp",
       },
       {
         locale: "ko-KR",
@@ -271,7 +403,7 @@ describe("global changelog skill package entry", () => {
         title: "LightVela에서 워크벤치 생성 및 게시 지원",
         description:
           "LightVela에서 템플릿을 선택하거나 처음부터 개인 워크벤치를 만들고, 정적 웹사이트 형태로 직접 게시, 미리보기, 업데이트 및 관리할 수 있습니다.",
-        image: "/assets/changelog/lightvela-workbench-global-en.png",
+        image: "/assets/changelog/lightvela-workbench-global-en.webp",
       },
     ] as const;
 
@@ -408,7 +540,7 @@ describe("global changelog skill package entry", () => {
     const zhDeepSeekHarnessImage = screen.getByAltText("LightVela 实验室新增 DeepSeek Harness");
     expect(zhDeepSeekHarnessImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.webp"),
     );
     expect(zhDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2172 / 1286" });
     const zhAugustSection = screen.getByText("2026 年 8 月").closest("section");
@@ -432,7 +564,7 @@ describe("global changelog skill package entry", () => {
     const zhAdvancedSettingsImage = screen.getByAltText("LightVela 新增 Hermes Agent 高级设置");
     expect(zhAdvancedSettingsImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.webp"),
     );
     expect(zhAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1043 / 1282" });
     expect(
@@ -446,7 +578,7 @@ describe("global changelog skill package entry", () => {
     const zhPersonaImage = screen.getByAltText("LightVela 支持上传自定义人设文件");
     expect(zhPersonaImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.webp"),
     );
     expect(zhPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1282 / 644" });
     expect(screen.getByRole("heading", { name: "定时任务支持关联上游任务" })).toBeInTheDocument();
@@ -466,24 +598,24 @@ describe("global changelog skill package entry", () => {
     expect(screen.getByText("现在可以使用繁体中文浏览 LightVela 的公开页面、产品文档和账号流程。")).toBeInTheDocument();
     expect(screen.getByAltText("定时任务支持关联上游任务")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.webp"),
     );
     expect(screen.getByAltText("定时任务支持关联上游任务").parentElement).toHaveStyle({ aspectRatio: "718 / 234" });
     expect(screen.getByAltText("技能页面支持批量安装与来源查看")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.webp"),
     );
     expect(screen.getByAltText("定时任务模板")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.webp"),
     );
     expect(screen.getByAltText("支持在 QQ 群聊中 @ 机器人")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.webp"),
     );
     expect(screen.getByAltText("支持繁体中文")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
+      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.webp"),
     );
     const zhTestRunHeading = within(zhAugustSection!).getByRole("heading", {
       name: "定时任务支持测试运行",
@@ -528,7 +660,7 @@ describe("global changelog skill package entry", () => {
     );
     expect(enDeepSeekHarnessImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.webp"),
     );
     expect(enDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
     expect(
@@ -558,13 +690,13 @@ describe("global changelog skill package entry", () => {
     const enAdvancedSettingsImage = screen.getByAltText("LightVela Adds Advanced Settings for Hermes Agent");
     expect(enAdvancedSettingsImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.webp"),
     );
     expect(enAdvancedSettingsImage.parentElement).toHaveStyle({ aspectRatio: "1055 / 1285" });
     const enPersonaImage = screen.getByAltText("LightVela Now Supports Custom Persona File Uploads");
     expect(enPersonaImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.webp"),
     );
     expect(enPersonaImage.parentElement).toHaveStyle({ aspectRatio: "1410 / 642" });
     expect(
@@ -586,23 +718,23 @@ describe("global changelog skill package entry", () => {
     expect(screen.queryByRole("heading", { name: "Pricing Is Now Available with More Flexible Billing" })).not.toBeInTheDocument();
     expect(screen.getByAltText("Scheduled Tasks Can Now Link to Upstream Scheduled Tasks")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task.webp"),
     );
     expect(screen.getByAltText("Skills Page Gets Faster Installs and Clearer Sources")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-en.webp"),
     );
     expect(screen.getByAltText("Scheduled Task Templates")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-en.webp"),
     );
     expect(screen.getByAltText("QQ Group @Mentions Are Now Supported")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-en.webp"),
     );
     expect(screen.getByAltText("Traditional Chinese Is Now Available")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
+      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.webp"),
     );
     const enTestRunHeading = within(augustSection!).getByRole("heading", {
       name: "Scheduled Tasks Now Support Test Runs",
@@ -633,14 +765,14 @@ describe("global changelog skill package entry", () => {
     expect(within(zhHantDeepSeekHarnessHeading).getByText("Beta")).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 實驗室新增 DeepSeek Harness")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.png"),
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-cn.webp"),
     );
     expect(screen.getByAltText("LightVela 實驗室新增 DeepSeek Harness").parentElement).toHaveStyle({
       aspectRatio: "2172 / 1286",
     });
     expect(screen.getByAltText("LightVela 新增 Hermes Agent 高級設置")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.png"),
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-cn.webp"),
     );
     expect(
       screen.getByRole("heading", { name: "LightVela 支持上傳自定義人設文件" }),
@@ -652,7 +784,7 @@ describe("global changelog skill package entry", () => {
     ).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 支持上傳自定義人設文件")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-zh.webp"),
     );
     expect(screen.getByAltText("LightVela 支持上傳自定義人設文件").parentElement).toHaveStyle({
       aspectRatio: "1282 / 644",
@@ -660,7 +792,7 @@ describe("global changelog skill package entry", () => {
     expect(screen.getByRole("heading", { name: "定時任務支持關聯上游任務" })).toBeInTheDocument();
     expect(screen.getByAltText("定時任務支持關聯上游任務")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-upstream-task-global-zh.webp"),
     );
     expect(screen.getByAltText("定時任務支持關聯上游任務").parentElement).toHaveStyle({
       aspectRatio: "718 / 234",
@@ -672,19 +804,19 @@ describe("global changelog skill package entry", () => {
     expect(screen.queryByRole("heading", { name: "定價支持更多套餐與訂閲方式" })).not.toBeInTheDocument();
     expect(screen.getByAltText("技能頁面支持批量安裝與來源查看")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-skills-bulk-install-global-zh.webp"),
     );
     expect(screen.getByAltText("定時任務模板")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-automation-templates-global-zh.webp"),
     );
     expect(screen.getByAltText("支持在 QQ 群聊中 @ 機器人")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-qq-group-mentions-global-zh.webp"),
     );
     expect(screen.getByAltText("支持繁體中文")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.png"),
+      expect.stringContaining("/assets/changelog/lightvela-traditional-chinese-global-all.webp"),
     );
 
     cleanup();
@@ -712,7 +844,7 @@ describe("global changelog skill package entry", () => {
     );
     expect(idDeepSeekHarnessImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.webp"),
     );
     expect(idDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
     expect(
@@ -722,7 +854,7 @@ describe("global changelog skill package entry", () => {
     ).toBeInTheDocument();
     expect(screen.getByAltText("LightVela Menambahkan Pengaturan Lanjutan untuk Hermes Agent")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-advanced-settings-en.webp"),
     );
     expect(
       screen.getByRole("heading", { name: "LightVela kini mendukung unggahan file persona kustom" }),
@@ -734,7 +866,7 @@ describe("global changelog skill package entry", () => {
     ).toBeInTheDocument();
     expect(screen.getByAltText("LightVela kini mendukung unggahan file persona kustom")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-persona-upload-global-en.webp"),
     );
     expect(
       screen.getByRole("heading", { name: "Tugas Terjadwal Kini Dapat Ditautkan ke Tugas Terjadwal Upstream" }),
@@ -763,7 +895,7 @@ describe("global changelog skill package entry", () => {
     );
     expect(esDeepSeekHarnessImage).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.png"),
+      expect.stringContaining("/assets/changelog/lightvela-deepseek-harness-global.webp"),
     );
     expect(esDeepSeekHarnessImage.parentElement).toHaveStyle({ aspectRatio: "2168 / 1287" });
   });

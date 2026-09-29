@@ -9,6 +9,7 @@ import type {
   Bot,
   BotChannelConfigResult,
   BotTerminalSession,
+  CloudDesktopSession,
   BotRuntime,
   BotSiblingsUnknownReason,
   BotVersion,
@@ -226,6 +227,12 @@ interface CtlInstanceBotPayload {
     bot_name?: string;
     status: string;
   };
+  whatsapp_owner?: {
+    bot_id: string;
+    profile_id: string;
+    bot_name?: string;
+    status: string;
+  };
 }
 
 interface CtlListInstanceBotsPayload {
@@ -282,7 +289,12 @@ class RepositoryError extends Error {
   }
 }
 
-const createNetworkUnavailableError = () => new RepositoryError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 0, "network_error");
+const createNetworkUnavailableError = (cause?: unknown) => {
+  // message 会进入终端用户的 toast；诊断细节仅保留在 cause。
+  const error = new RepositoryError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 0, "network_error");
+  if (cause !== undefined) (error as RepositoryError & { cause?: unknown }).cause = cause;
+  return error;
+};
 
 const isNestedBotsUnavailable = (error: unknown) => {
   if (error instanceof RepositoryError) {
@@ -386,9 +398,34 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
 
 const resolveOAuthStartBaseURL = (baseUrl: string) => {
-  // local-proxy keeps OAuth start/callback on the dev server origin so the
-  // state cookie and returned session token survive the browser redirect flow.
-  return baseUrl === "" ? "" : baseUrl;
+  if (baseUrl !== "") {
+    return baseUrl;
+  }
+
+  // local-proxy is safe for JSON APIs, but OAuth is a browser redirect flow
+  // whose state cookie must be scoped to the same host as the provider
+  // callback. When developers proxy the production site host (for example
+  // lightvela.ai -> localhost:5174 via Whistle), keeping OAuth on the current
+  // site origin writes the state cookie to lightvela.ai while Google/GitHub
+  // callback to api.lightvela.ai, causing *_state_mismatch. Route OAuth start
+  // directly to the matching live auth host in that setup.
+  const hostname =
+    typeof window !== "undefined" && window.location
+      ? window.location.hostname.toLowerCase()
+      : "";
+  if (hostname === "lightvela.ai" || hostname === "www.lightvela.ai") {
+    return "https://api.lightvela.ai";
+  }
+  if (
+    hostname === "lightvela.com"
+    || hostname === "www.lightvela.com"
+    || hostname === "lightvela.tencent.com"
+    || hostname === "www.lightvela.tencent.com"
+  ) {
+    return "https://api.lightvela.com";
+  }
+
+  return "";
 };
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {
@@ -560,6 +597,41 @@ const booleanField = (payload: Record<string, unknown>, ...keys: string[]) => {
     }
   }
   return undefined;
+};
+
+const numberField = (payload: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * 把 ctl `DesktopSessionResponse`（snake_case，如 ws_url / install_progress）归一化为
+ * 前端 camelCase `CloudDesktopSession`。requestEnvelope 只剥壳不改字段名，若直接透传，
+ * ws_url 会读不到，导致 noVNC 永远拿不到连接地址。此处显式映射修正该问题。
+ */
+const mapDesktopSession = (raw: Record<string, unknown>): CloudDesktopSession => {
+  const status = (stringField(raw, "status") ?? "Provisioning") as CloudDesktopSession["status"];
+  const session: CloudDesktopSession = { status };
+  const installProgress = numberField(raw, "install_progress", "installProgress");
+  if (installProgress !== undefined) session.installProgress = installProgress;
+  const message = stringField(raw, "message");
+  if (message !== undefined) session.message = message;
+  const wsUrl = stringField(raw, "ws_url", "wsUrl");
+  if (wsUrl !== undefined) session.wsUrl = wsUrl;
+  const password = stringField(raw, "password");
+  if (password !== undefined) session.password = password;
+  const width = numberField(raw, "width");
+  if (width !== undefined) session.width = width;
+  const height = numberField(raw, "height");
+  if (height !== undefined) session.height = height;
+  const reason = stringField(raw, "reason");
+  if (reason !== undefined) session.reason = reason;
+  return session;
 };
 
 const normalizeWorkerActionLogs = (value: unknown): WorkerActionStatusLog[] => {
@@ -791,6 +863,12 @@ const projectInstanceBotToBot = (
       profileId: instanceBot.weixin_owner.profile_id,
       botName: instanceBot.weixin_owner.bot_name,
       status: instanceBot.weixin_owner.status,
+    } : undefined,
+    whatsAppOwner: instanceBot.whatsapp_owner ? {
+      botId: instanceBot.whatsapp_owner.bot_id,
+      profileId: instanceBot.whatsapp_owner.profile_id,
+      botName: instanceBot.whatsapp_owner.bot_name,
+      status: instanceBot.whatsapp_owner.status,
     } : undefined,
     sandboxId: instance.sandbox_id,
     name: displayName || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
@@ -1173,6 +1251,22 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       });
     },
 
+    async ensureDesktopSession(botId) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/session`, {
+        method: "POST",
+      });
+      return mapDesktopSession(raw);
+    },
+
+    async getDesktopSession(botId) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/session`, {
+        method: "GET",
+      });
+      return mapDesktopSession(raw);
+    },
+
     async configureQQChannel(botId, input) {
       const appId = input.appId.trim();
       const appSecret = input.appSecret.trim();
@@ -1207,22 +1301,25 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async claimUniqueChannel(botId, channel) {
       const { instanceId } = await resolveBotScope(botId);
-      await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
+      const binding = await requestEnvelope<{ reservation_id?: string }>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "PUT",
       });
+      return binding.reservation_id;
     },
 
-    async confirmUniqueChannel(botId, channel) {
+    async confirmUniqueChannel(botId, channel, reservationId) {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "POST",
+        body: reservationId ? { reservation_id: reservationId } : undefined,
       });
     },
 
-    async releaseUniqueChannel(botId, channel) {
+    async releaseUniqueChannel(botId, channel, reservationId) {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "DELETE",
+        body: channel === "whatsapp" ? (reservationId ? { reservation_id: reservationId } : { disconnect: true }) : undefined,
       });
     },
 
@@ -1355,6 +1452,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         ? setTimeout(() => abortController.abort(), timeoutMs)
         : undefined;
       let response: Response;
+      let body: unknown = null;
       try {
         response = await fetch(buildUrl(baseUrl, path), {
           method: "POST",
@@ -1363,20 +1461,21 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           body: JSON.stringify(createDebugExecRequestBody(command)),
           signal: abortController.signal,
         });
-      } catch {
+        // fetch resolves at headers; keep the deadline through body consumption.
+        // Otherwise a stalled body can block onboarding beyond its probe budget.
+        try {
+          body = await response.json();
+        } catch (error) {
+          if (abortController.signal.aborted) throw error;
+          body = null;
+        }
+      } catch (error) {
         if (abortController.signal.aborted) {
           throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
         }
-        throw createNetworkUnavailableError();
+        throw createNetworkUnavailableError(error);
       } finally {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
-      }
-
-      let body: unknown = null;
-      try {
-        body = await response.json();
-      } catch {
-        body = null;
       }
 
       // 优先识别 details 字段：只要带 details.output / details.exit_code，

@@ -30,7 +30,7 @@ Diagnostics helps you investigate an Agent that is not behaving as expected. Fro
 3. Select a time range for recent logs: 1, 3, 6, 12, or 24 hours.
 4. Select **Refresh** to load the logs.
 
-![Diagnostics in the LightVela console](../images/diagnostics-overview-en.png)
+![Diagnostics in the LightVela console](../images/diagnostics-overview-en.webp)
 
 Start with the shortest useful period. A narrower log window makes it easier to connect an error with the action that triggered it.
 

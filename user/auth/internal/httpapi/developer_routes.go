@@ -29,7 +29,10 @@ type developerRouteRequest struct {
 
 const personalDeveloperRouteCallbackPort = 18084
 
-var personalDeveloperRouteTargetPrefix = netip.MustParsePrefix("9.0.0.0/8")
+var personalDeveloperRouteTargetPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("9.0.0.0/8"),
+	netip.MustParsePrefix("21.0.0.0/8"),
+}
 
 func registerDeveloperRouteRoutes(router gin.IRoutes, handler *Handler) {
 	router.POST("/auth/dev-environments/registration", handler.registerPersonalDevEnvironment)
@@ -80,10 +83,20 @@ func (h *Handler) personalDeveloperRouteExplicitTargetIP(requested *string) (str
 		return "", &api.ErrorResponse{Code: "explicit_target_ip_disabled", Message: "explicit targetIp is unavailable in this environment"}, http.StatusBadRequest
 	}
 	address, err := netip.ParseAddr(strings.TrimSpace(*requested))
-	if err != nil || !address.Is4() || !personalDeveloperRouteTargetPrefix.Contains(address) {
-		return "", &api.ErrorResponse{Code: "invalid_target_ip", Message: "targetIp must be an IPv4 address in the DevCloud 9.0.0.0/8 network"}, http.StatusBadRequest
+	if err != nil || !address.Is4() || !personalDeveloperRouteTargetAllowed(address) {
+		return "", &api.ErrorResponse{Code: "invalid_target_ip", Message: "targetIp must be an IPv4 address in a supported DevCloud network"}, http.StatusBadRequest
 	}
 	return address.String(), nil, 0
+}
+
+func personalDeveloperRouteTargetAllowed(address netip.Addr) bool {
+	address = address.Unmap()
+	for _, prefix := range personalDeveloperRouteTargetPrefixes {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) getPersonalDevEnvironment(ctx *gin.Context) {

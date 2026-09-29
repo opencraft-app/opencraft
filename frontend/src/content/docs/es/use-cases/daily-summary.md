@@ -44,7 +44,7 @@ Hermes solo puede resumir información que pueda recibir o acceder a través de 
 
 Si necesitas una fuente de datos externa, elige una Skill adecuada de una fuente confiable y confirma su comportamiento antes de usarla. [Configurar Skills](../configuration/skill.md) explica cómo las Skills extienden a Hermes más allá del chat ordinario.
 
-![Fuentes de Cloud Storage para un resumen diario](../images/use-case-daily-summary-storage.png)
+![Fuentes de Cloud Storage para un resumen diario](../images/use-case-daily-summary-storage.webp)
 
 ### 3. Prueba la salida en una conversación normal primero
 
@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 Configura esto en [Tareas programadas](../configuration/automation.md). Revisa los primeros varios ejecuciones y ajusta la redacción si el resumen es demasiado amplio, demasiado largo o falta el contexto correcto.
 
-![Una tarea programada de resumen diario programada](../images/use-case-daily-summary-automation.png)
+![Una tarea programada de resumen diario programada](../images/use-case-daily-summary-automation.webp)
 
 ## Preguntas frecuentes
 

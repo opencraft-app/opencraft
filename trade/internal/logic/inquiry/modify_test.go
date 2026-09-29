@@ -11,7 +11,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
-// 变配询价（同 SP 升配）。需求：TAPD 1010132091137784162 §4.1 / §5.1
+// 变配询价（含产品允许的跨 SP 升配）。需求：TAPD 1010132091137784162 §4.1 / §5.1
 
 const (
 	modifySourceBundleID = "bundle_sail"
@@ -129,9 +129,9 @@ func TestQuoteModifyBuildsOldAndNewConfig(t *testing.T) {
 		t.Errorf("bundleId/newBundleId = %v/%v, want %q/%q",
 			gd["bundleId"], gd["newBundleId"], modifySourceBundleID, modifyTargetBundleID)
 	}
-	// 顶层 sv_* 来自源套餐
-	if gd["sv_cpu"] != int64(2) || gd["sv_mem"] != int64(4) {
-		t.Errorf("top-level sv_* should mirror source bundle, got cpu=%v mem=%v", gd["sv_cpu"], gd["sv_mem"])
+	// 顶层商品身份与 SV 跟目标 category/type 对齐。
+	if gd["sv_cpu"] != int64(4) || gd["sv_mem"] != int64(8) {
+		t.Errorf("top-level sv_* should mirror target bundle, got cpu=%v mem=%v", gd["sv_cpu"], gd["sv_mem"])
 	}
 	oldConfig, ok := gd["oldConfig"].(map[string]interface{})
 	if !ok {
@@ -464,15 +464,39 @@ func TestQuoteModifyInvalidInput(t *testing.T) {
 	}
 }
 
-// 跨 SP 变配本期不支持：计费的变配接入单是按 SP 配的，跨 SP 询价只会拿到语义不明的报价。
-func TestQuoteModifyRejectsCrossSubProduct(t *testing.T) {
+func TestQuoteModifySupportsCrossSubProduct(t *testing.T) {
 	defs := modifyDefs()
-	defs[modifyTargetBundleID].SubProductCode = "sp_lightvela_ai_cn"
+	target := defs[modifyTargetBundleID]
+	target.SubProductCode = "sp_lightvela_ai_cn"
+	target.Pid = 5002
+	target.ProductInfo = []map[string]interface{}{{"target": "ai"}}
+	svc, jc := newModifySvc(t, "cn", defs)
+
+	if _, err := svc.QuoteModify(context.Background(), stdQuoteModifyReq()); err != nil {
+		t.Fatalf("QuoteModify cross SP: %v", err)
+	}
+	gd := jc.lastGetPriceArgs.ResInfo[0].GoodsDetail
+	if gd["subProductCode"] != "sp_lightvela_ai_cn" || gd["pid"] != int64(5002) {
+		t.Fatalf("top-level billing identity = %v/%v, want target AI identity", gd["subProductCode"], gd["pid"])
+	}
+	oldConfig := gd["oldConfig"].(map[string]interface{})
+	newConfig := gd["newConfig"].(map[string]interface{})
+	if oldConfig["subProductCode"] != modifySubProductCode || oldConfig["pid"] != modifyPid {
+		t.Fatalf("oldConfig identity = %+v, want source", oldConfig)
+	}
+	if newConfig["subProductCode"] != "sp_lightvela_ai_cn" || newConfig["pid"] != int64(5002) {
+		t.Fatalf("newConfig identity = %+v, want target", newConfig)
+	}
+}
+
+func TestQuoteModifyRejectsCrossProduct(t *testing.T) {
+	defs := modifyDefs()
+	defs[modifyTargetBundleID].ProductCode = "p_other"
 	svc, _ := newModifySvc(t, "cn", defs)
 
 	_, err := svc.QuoteModify(context.Background(), stdQuoteModifyReq())
-	if !errors.Is(err, ErrModifyCrossSubProduct) {
-		t.Fatalf("err = %v, want ErrModifyCrossSubProduct", err)
+	if !errors.Is(err, ErrModifyCrossProduct) {
+		t.Fatalf("err = %v, want ErrModifyCrossProduct", err)
 	}
 }
 

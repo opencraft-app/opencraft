@@ -29,6 +29,56 @@ describe("i18n initial locale", () => {
     const { default: i18n } = await loadI18n("global", "/");
 
     expect(i18n.language).toBe("en-US");
+    const { hasExplicitLocalePreference } = await import("@/i18n");
+    expect(hasExplicitLocalePreference()).toBe(true);
+  });
+
+  it("captures a first visit before persisting the bare home's default English", async () => {
+    const { default: i18n, hasExplicitLocalePreference } = await loadI18n("global", "/");
+
+    expect(hasExplicitLocalePreference()).toBe(false);
+    expect(i18n.language).toBe("en-US");
+    expect(window.localStorage.getItem("lw-locale")).toBe("en-US");
+    expect(window.localStorage.getItem("lw-locale-explicit")).toBeNull();
+  });
+
+  it("does not count English saved by an earlier bare public page as a choice", async () => {
+    await loadI18n("global", "/subscribe");
+    expect(window.localStorage.getItem("lw-locale")).toBe("en-US");
+    expect(window.localStorage.getItem("lw-locale-explicit")).toBeNull();
+
+    const { hasExplicitLocalePreference } = await loadI18n("global", "/");
+    expect(hasExplicitLocalePreference()).toBe(false);
+  });
+
+  it("keeps a manual English choice after visiting another bare public page", async () => {
+    const { hasExplicitLocalePreference, setLocale } = await loadI18n("global", "/subscribe");
+    expect(hasExplicitLocalePreference()).toBe(false);
+    setLocale("en-US");
+    expect(window.localStorage.getItem("lw-locale-explicit")).toBe("1");
+    expect(hasExplicitLocalePreference()).toBe(true);
+
+    const { hasExplicitLocalePreference: hasExplicitAfterReload } = await loadI18n("global", "/");
+    expect(hasExplicitAfterReload()).toBe(true);
+  });
+
+  it("keeps a prefixed URL choice after a bare English page overwrites its locale", async () => {
+    await loadI18n("global", "/zh-sg/");
+    expect(window.localStorage.getItem("lw-locale-explicit")).toBe("1");
+    await loadI18n("global", "/subscribe");
+    expect(window.localStorage.getItem("lw-locale")).toBe("en-US");
+
+    const { hasExplicitLocalePreference } = await loadI18n("global", "/");
+    expect(hasExplicitLocalePreference()).toBe(true);
+  });
+
+  it("preserves a legacy non-English choice before a bare page overwrites it", async () => {
+    window.localStorage.setItem("lw-locale", "ja-JP");
+    await loadI18n("global", "/subscribe");
+    expect(window.localStorage.getItem("lw-locale-explicit")).toBe("1");
+
+    const { hasExplicitLocalePreference } = await loadI18n("global", "/");
+    expect(hasExplicitLocalePreference()).toBe(true);
   });
 
   /**

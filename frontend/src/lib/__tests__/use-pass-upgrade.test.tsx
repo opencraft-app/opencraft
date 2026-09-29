@@ -15,7 +15,19 @@ beforeEach(() => { vi.resetAllMocks(); const entries = new Map<string, string>()
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("upgrade eligibility", () => {
-  it.each(["lightvela.com", "www.lightvela.com", "lightvela.ai", "www.lightvela.ai"])("loads eligible targets on %s without console opt-in or order recovery", async (hostname) => {
+  it.each([
+    ["bundle_launch_01", "bundle_cruise_01"],
+    ["bundle_launch_ai_01", "bundle_cruise_ai_01"],
+  ])("offers backend-approved same-SP and cross-SP upgrades %s -> %s on production", async (source, destination) => {
+    vi.stubGlobal("location", { hostname: "lightvela.com" });
+    listMyPasses.mockResolvedValue([{ ...pass, bundle_id: source }]);
+    const sameSP = { ...target, target_bundle_id: destination, bundle: { ...target.bundle, bundle_id: destination } };
+    listModifyBundles.mockResolvedValue({ source_bundle_id: source, modify_bundle_set: [sameSP, target] });
+    const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
+    await waitFor(() => expect(result.current.options).toEqual([sameSP, target]));
+    expect(listModifyBundles).toHaveBeenCalledWith("p1");
+  });
+  it.each(["lightvela.com", "www.lightvela.com", "lightvela.ai", "www.lightvela.ai"])('offers a backend-approved cross-SP upgrade on %s without show()', async (hostname) => {
     vi.stubGlobal("location", { hostname });
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "other-sp", phase: "ordered", dealName: "old-order" });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));

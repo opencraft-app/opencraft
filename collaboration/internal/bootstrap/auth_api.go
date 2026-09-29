@@ -56,15 +56,16 @@ import (
 
 // AuthAPIConfig 是四个认证 operation 的装配配置。
 type AuthAPIConfig struct {
-	Database          *database.Handle
-	AccessTokenKey    []byte
-	GatewayHumanToken []byte
-	Password          credentialsadapter.Argon2idConfig
-	AccessTTL         time.Duration
-	RefreshTTL        time.Duration
-	RequestTimeout    time.Duration
-	MaxBodyBytes      int64
-	AllowedOrigins    []string
+	Database                       *database.Handle
+	AccessTokenKey                 []byte
+	GatewayHumanToken              []byte
+	ExternalHumanProvisioningEpoch string
+	Password                       credentialsadapter.Argon2idConfig
+	AccessTTL                      time.Duration
+	RefreshTTL                     time.Duration
+	RequestTimeout                 time.Duration
+	MaxBodyBytes                   int64
+	AllowedOrigins                 []string
 }
 
 // HumanAPIConfig 在认证 API 上增加 /me 与 Human IM Session。
@@ -504,6 +505,9 @@ func newAuthAndMeAPIHandler(
 			externalRepository,
 			idport.UUIDv7{},
 			clock,
+			appexternalhuman.Config{
+				ProvisioningEpoch: config.ExternalHumanProvisioningEpoch,
+			},
 		)
 		if err != nil {
 			return nil, err

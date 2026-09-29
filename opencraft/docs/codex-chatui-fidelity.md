@@ -35,7 +35,7 @@
 | 流式解析 | 未闭合 fence 临时闭合但保留 open；隐藏不完整 image/link/control suffix；不破坏 canonical source | `chat-document/preprocess.ts` | 已落地，有测试 |
 | 流式身份 | 仅相同或向后追加的同位置 token 复用 key；移动的同内容 token 可找回 key | `chat-document/streaming/identity.ts` | 已落地 |
 | 字词淡入 | 每段 16ms，最大 96ms；Codex easing；reduced motion 关闭 | prose renderer/style | 已落地 |
-| Thinking shimmer | 600ms 后首次出现，1s 扫过，4s cadence；普通工具完成但 Turn 仍运行时显示独立 Thinking，`list_threads/read_thread` 完成后可跨下一次调用的短间隙维持 live summary、禁止 Thinking 闪烁 | `chat-core/agent-activity.ts`、Web/Expo Thinking surface | 已落地，有状态矩阵和浏览器差分门 |
+| Thinking shimmer | Codex 基线为 600ms 后首次出现、1s 扫过、4s cadence；OpenCraft 按产品选择将 Web/Expo 运行中文本缩短为 1.5s 周期（1s 单向扫光、0.5s 静止）。底层文字保持原语义颜色，移动高光使用主题完整 ink（深色接近白、浅色接近黑），不再叠加半透明衰减；保留 reduced-motion 降级。普通工具完成但 Turn 仍运行时显示独立 Thinking，`list_threads/read_thread` 完成后可跨下一次调用的短间隙维持 live summary、禁止 Thinking 闪烁 | `design-system/tokens.shared.ts`、`design-system/theme-engine.ts`、`chat-core/agent-activity.ts`、Web/Expo Thinking surface | 状态所有权已落地；高光色与节奏待真实 Web/Expo 视觉验收 |
 | Turn 呈现所有权 | AppServer Item 可以跨 interaction/event 被投影为多个 assistant Frame，但 Frame 只是 provenance 边界；完整 Turn 只分类一次，并且只拥有一个 assistant surface、一个 Activity disclosure、一个 final-answer action row 和至多一个 transient Thinking。只有最新 Turn 可以显示瞬态 live chrome；pending Composer interaction 接管等待状态 | `chat-core/createTimelineTurnPresentationPlan`，Web/Expo 只消费计划 | 已落地；split-frame、latest-only、pending interaction 与 final-answer 所有权均有测试 |
 | 代码高亮 | 120ms 节流；高亮旧前缀并原样追加新 tail | Shiki renderer | 已落地 |
 | 代码懒加载 | 600px 邻近视口才加载重能力 | Web extension boundary | 已落地；浏览器门覆盖 open fence 不暴露完成态 action、进入视口后 Shiki 加载与 Turn 高度收敛 |

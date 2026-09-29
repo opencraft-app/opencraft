@@ -2,7 +2,7 @@
 
 ## 摘要
 
-**云存储是 Hermes Agent 的文件工作区。你可以在 Agent 控制台中集中保存任务资料、上传和整理文件，或把需要的文件下载到本地，无需离开 LightVela。它的容量由套餐决定——启航 Launch 提供 50G 专属云端存储，巡游 Cruise 更高。Agent 执行任务时读写的文件也存放在这里，因此它既是你的资料库，也是 Agent 的工作目录。**
+**云存储是 Hermes Agent 的文件工作区。你可以在 Agent 控制台中集中保存任务资料、上传和整理文件，或把需要的文件下载到本地，无需离开 LightVela。它的容量由套餐决定——启航 Launch 提供 50 GB 专属云端存储，巡游 Cruise 更高。Agent 执行任务时读写的文件也存放在这里，因此它既是你的资料库，也是 Agent 的工作目录。**
 
 ---
 
@@ -35,7 +35,7 @@
 2. 打开它的 **Cloud Storage** 或 **Files** 区域。
 3. 等待文件列表加载完成，再开始上传或新建操作。
 
-![LightVela 管理台中的云存储文件列表](../images/cloud-storage-overview.png)
+![LightVela 管理台中的云存储文件列表](../images/cloud-storage-overview.webp)
 
 如果列表未能加载，先刷新页面后重试。问题持续出现时，可先在[诊断中心](./diagnostics.md)查看 Agent 的近期日志，再进行更大范围的操作。
 

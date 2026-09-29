@@ -68,6 +68,10 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
                   <a href={openSourceLicensesPath} className={footerLinkClass}>
                     {t("开源声明")}
                   </a>
+                  <span aria-hidden="true">·</span>
+                  <a href={localizedPath("/support", currentLocale)} className={footerLinkClass}>
+                    {t("用户反馈")}
+                  </a>
                 </span>
                 <a
                   href={DISCORD_INVITE_URL}
@@ -152,6 +156,10 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
                 </a>
               </>
             ) : null}
+            ·
+            <a href={localizedPath("/support", currentLocale)} className={footerLinkClass}>
+              {t("用户反馈")}
+            </a>
             {isGlobal ? (
               <>
                 ·

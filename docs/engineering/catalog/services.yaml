@@ -14,7 +14,6 @@
     {"id": "gateway-dashboard", "path": "gateway-dashboard", "catalog": "gateway-dashboard/catalog-info.yaml"},
     {"id": "infra-pulumi", "path": "infra_pulumi", "catalog": "infra_pulumi/catalog-info.yaml"},
     {"id": "new-api", "path": "new-api", "catalog": "new-api/catalog-info.yaml"},
-    {"id": "nextgen-dashboard", "path": "nextgen-dashboard", "catalog": "nextgen-dashboard/catalog-info.yaml"},
     {"id": "opencraft", "path": "opencraft", "catalog": "opencraft/catalog-info.yaml"},
     {"id": "payment", "path": "payment", "catalog": "payment/catalog-info.yaml"},
     {"id": "sandbox", "path": "sandbox", "catalog": "sandbox/catalog-info.yaml"},

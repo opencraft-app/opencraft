@@ -529,6 +529,11 @@ function Frame({
   const actions = visibleFrame.type === "assistant" ? assistantMessageActions(visibleFrame) : null;
   const assistantCopyText = actions?.completed ? actions.copyText : "";
   const hasMessageActions = assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null;
+  if (visibleFrame.type === "assistant"
+    && units.length === 0
+    && thinkingId === null
+    && !hasMessageActions
+    && actions?.sentAtMs == null) return null;
   const virtualizeSingleSlot = allowSingleSlotVirtualization;
   return (
     <div ref={frameRef} className={`thread-frame thread-frame--${visibleFrame.type}`} data-frame-key={visibleFrame.id}>
@@ -683,6 +688,8 @@ export interface ConversationProps {
   /** The host selects the policy; content growth must never select one implicitly. */
   readonly scrollPolicy: ConversationScrollPolicy;
   readonly timeline: TimelineSnapshot | null;
+  /** Only shown when the timeline has no visible rows; never replaces retained history. */
+  readonly emptyState?: ReactNode;
   /** Protocol-neutral prompt index. V3 cursors and V4 epochs remain behind this port. */
   readonly navigationSource?: ConversationNavigationSource | null;
   readonly footer?: ReactNode;
@@ -752,6 +759,7 @@ export type ConversationScrollPolicy = "natural" | "response-placement";
 
 export function Conversation({
   timeline,
+  emptyState,
   scrollPolicy,
   navigationSource = null,
   footer,
@@ -776,6 +784,12 @@ export function Conversation({
   const entries = useMemo(() => timeline === null ? [] : groupTimelineFramesByTurn(timeline), [timeline]);
   const latestTurn = entries.length === 0 ? null : entries[entries.length - 1] ?? null;
   const isLatestTurnInProgress = latestTurn?.status === "pending" || latestTurn?.status === "streaming";
+  const activeTodo = useMemo(
+    () => latestTurn === null
+      ? null
+      : createTimelineTurnPresentationPlan(latestTurn, toolActivityPresenterRegistry, { isMostRecentTurn: true }).activeTodo,
+    [latestTurn, toolActivityPresenterRegistry],
+  );
   const [activityCollapsedById, setActivityCollapsedById] = useState<Readonly<Record<string, boolean>>>(
     () => initialRestoreSnapshot?.agentActivityCollapsedById ?? {},
   );
@@ -942,7 +956,7 @@ export function Conversation({
     ...documentContext,
     onMeasurementRequest: viewportOwner.requestLayoutMeasurement,
   }), [documentContext, viewportOwner]);
-  const footerElement = footer === undefined ? null : (
+  const footerElement = footer === undefined && activeTodo === null ? null : (
     <div
       className="thread-scroll-footer"
       data-thread-scroll-footer="true"
@@ -961,6 +975,11 @@ export function Conversation({
             showWorkingDots={showScrollToBottom && isLatestTurnInProgress}
           />
         </div>
+        {activeTodo === null ? null : (
+          <div className="thread-in-progress-fixed-content" data-in-progress-fixed-content="true">
+            <TodoBlock block={activeTodo} />
+          </div>
+        )}
         {footer}
       </div>
     </div>
@@ -998,6 +1017,8 @@ export function Conversation({
                         data-mcp-app-portal-target={surfaceCapabilities.embeddedPortalTarget || undefined}
                         data-thread-user-message-navigation-content="true"
                       >
+
+                        {entries.length === 0 ? emptyState : null}
 
                         {scrollPolicy === "response-placement" ? (
                           <ResponsePositionedTurns

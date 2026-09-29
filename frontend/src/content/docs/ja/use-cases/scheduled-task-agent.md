@@ -1,5 +1,9 @@
 # LightVelaでAgentタスクを自動化する
 
+## 概要
+
+**Agent Task は、スケジュールに沿ってモデルを使う処理を実行し、結果を指定チャネルへ送ります。**朝の要約や週次プロジェクトレビューに適しています。指示、実行時刻、任意のスキル、配信先を設定します。
+
 スケジュールタスクは、常時操作しなくても24時間365日実行できるため、クラウドでホストされるAgentに最適です。
 繰り返し可能なワークフローで改善できる定期的な情報の課題があるときに使用できます。
 ユーザーは、散在する更新を短いブリーフに変える朝のダイジェストや、フォローアップ会議に向けて最近の活動をまとめる週次プロジェクトレビューに利用しています。
@@ -25,7 +29,7 @@ LightVelaでは、Agentタスクに指示、スケジュール、任意のSkill�
 
 > 重要な更新を最大5件収集し、要約、リンクを含めて結果を送信してください。
 
-![朝のAIダイジェスト用の繰り返しAIタスクを作成する](../images/scheduled-task-agent-1.png)
+![朝のAIダイジェスト用の繰り返しAIタスクを作成する](../images/scheduled-task-agent-1.webp)
 
 重要なのは、「すべて」の要約ではなく、焦点を絞ったブリーフを求めることです。
 情報の収集と要約が別のタスクなら、先に収集をスケジュールしてください。
@@ -38,7 +42,7 @@ LightVelaでは、Agentタスクに指示、スケジュール、任意のSkill�
 
 > 上流タスクが収集したメモを使用し、完了した作業、ブロッカー、次の3つの優先事項を特定してください。
 
-![上流タスクを使用する週次AIタスクを作成する](../images/scheduled-task-agent-2.png)
+![上流タスクを使用する週次AIタスクを作成する](../images/scheduled-task-agent-2.webp)
 
 レビューの前に収集タスクを実行し、少し時間の余裕を設けてください。
 Agentはプロジェクト管理の代わりにはなりません。
@@ -50,7 +54,7 @@ LightVelaでは、AgentをWhatsApp、Telegram、WeChat、Discordなどに接続�
 一つだけでも、すべてのチャンネルでも同時に接続できます。
 スケジュールタスクでは、各IMの通知設定を切り替え、タスクをIMに通知するかどうかを決められます。
 
-![AI AgentがTelegramでスケジュールされたブリーフを直接送信する](../images/scheduled-task-agent-3.png)
+![AI AgentがTelegramでスケジュールされたブリーフを直接送信する](../images/scheduled-task-agent-3.webp)
 
 切り替え後、Agentはタスクを完了し、LightVelaや他のアプリを開かなくてもIMで直接更新します。
 
@@ -60,4 +64,4 @@ LightVelaでは、AgentをWhatsApp、Telegram、WeChat、Discordなどに接続�
 作成後は、編集、一時停止、過去のジョブの閲覧が可能です。
 LightVelaを使うと、個人用Hermes Agentが不在時にも効率的に仕事を実行します。
 
-![繰り返しAgentタスクを含む現在のジョブ一覧](../images/scheduled-task-agent-4.png)
+![繰り返しAgentタスクを含む現在のジョブ一覧](../images/scheduled-task-agent-4.webp)

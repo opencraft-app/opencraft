@@ -39,4 +39,5 @@ patches:
   - path: delete-shared-namespace.yaml
   - path: delete-shared-serviceaccount.yaml
   - path: patch-playground-db.yaml
+  - path: patch-personal-dev-billing-proxy.yaml
   - path: patch-runtime-secrets-rollout.yaml

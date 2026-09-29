@@ -46,6 +46,7 @@ const purePackageRules = [
 
 for (const directory of [
   "packages/appserver-protocol/src",
+  "packages/document-storage/src/contract.ts",
   "packages/browser-core/src",
   "packages/chat-core/src",
   "packages/chat-document/src",

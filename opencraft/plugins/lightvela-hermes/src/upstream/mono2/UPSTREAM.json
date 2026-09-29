@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "ed193bc3c0d2866aed3cbb734c66f8d47e564622",
+  "sourceRevision": "d0f768369f201253d368efca81123e5b9297a358",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -65,11 +65,11 @@
     },
     {
       "file": "contexts/runtime-config-context.tsx",
-      "sourceSha256": "61e0846c69eee7782296df57a8e912ee8aaea8444a857b5d792a17beb2f2ba11"
+      "sourceSha256": "8d1bed3325cb8cb3b5eac6870579db6726b145148b7d4f572773bfd9fef4e2bf"
     },
     {
       "file": "domain/credit-pack.ts",
-      "sourceSha256": "077fef7df539f06a89a30d63e48654f1858c5dbc2433fbe5bf2ced8721078a75"
+      "sourceSha256": "fb5a49f8aeaa5c09a537a96b76fb5b28b03644d469012509a861aff9dad327d0"
     },
     {
       "file": "domain/instance-bot-errors.ts",
@@ -81,7 +81,7 @@
     },
     {
       "file": "domain/types.ts",
-      "sourceSha256": "d836480d5abd1eb58520a148c08d8748335afd88427484c2b6792f2ef0830987"
+      "sourceSha256": "e09684faebc5ebf9c4267bb6c537629276f9bf4327bf5480a68e531087d8b98d"
     },
     {
       "file": "i18n/default-agent-name.ts",
@@ -89,39 +89,39 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "c1ced905d56a0e2196a469712b5ac5f66d5e046e5fcbdc357ba277dfba162d5c"
+      "sourceSha256": "de49603c7158a73cda362e16145fbc6f46960a6d8f81d794222f9fb1f110ae84"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "dcb2faef20c78d532c929b82c70362341c59a3466d03d4d03e6b44977e3d7bcf"
+      "sourceSha256": "3ff7a3a9160e694b86dcc9b2d98dee4f58246f26cdebb0591d8d44f06ecadd51"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "b95050b2f4b7754a534a1b4dab16efd56aa5d95dd8708988e1adcb332318c68e"
+      "sourceSha256": "363e148c97322daa4db40c19dfdfeadfec8e34a3a40c85b0fdeff794493e7738"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "14b41afcf8d3a78aa33557ba0f5934543d1f23f813071669ecda4637bf59ba4e"
+      "sourceSha256": "308188862def8155ca38662d1e2505471e41ac87df8c0ce2bab96bfaaaa8b259"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "994345f99e81c3234845da3194866174122f08e4fa8ef0410130c83bac43a632"
+      "sourceSha256": "610c59c1d032d8954fa4bd94a9d8de057f7eeea121784e1b4498fca8dfad33fe"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "96a3514bd02447fbca04ece758bf66f14ee0eb324e56071c09cbc300a487cf20"
+      "sourceSha256": "71d4c03d18a173728f0e48c75cc0a349a8d9f2585787ca2a54716266e0cd8917"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "6df39eb0aa3784550316e895d915c3175ccea74e1f328c6d1dd7f7cc80d92427"
+      "sourceSha256": "bd8fe8c588c20b651429806af5024f3c5a82857b05aa586d8bd6f915769c377c"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "d7b5430fbe25b31404171e6e9ee284eb393d17efb0c0974754085012a2b0534f"
+      "sourceSha256": "a568098e7c57b2272ae9318aaf1effbacf2d40d55044b84c8cd5391a1b04ba0b"
     },
     {
       "file": "i18n/index.ts",
-      "sourceSha256": "a4041cc19335643c2e34d3e16b737367278ef463da9102488a4513c9accaa5e5"
+      "sourceSha256": "f6b181faa0062a43d5d63cda11088a09ae3d6391e4f295c9c78d102a42e3d891"
     },
     {
       "file": "i18n/locales.config.ts",
@@ -133,15 +133,15 @@
     },
     {
       "file": "i18n/t.ts",
-      "sourceSha256": "98057be5bf9d30e76aa1d68f24ff9e8c589bd981b968e0d916756b02321cb394"
+      "sourceSha256": "9110c89965b4487d49ec03ca2adb35332902aa7fc9d73de2658c5d1526d0048f"
     },
     {
       "file": "lib/agent-routes.ts",
-      "sourceSha256": "a973f227e8347780308901e2a2da2943ed4c75667f3eeea1a2b07feefecde353"
+      "sourceSha256": "ff41cce199438b470f4cbad37ad36bb04f4e464afb74a1602bf7c68299c7fb7d"
     },
     {
       "file": "lib/auth-api-base.ts",
-      "sourceSha256": "c154dae2a964529ca0743bc6dd714e6093d0a7b51af1e39e7227d8c83125c2f6"
+      "sourceSha256": "be54d0bd937d532d4d4413aa365e08652207537fc094a55a81964a6172ee747c"
     },
     {
       "file": "lib/cookie-consent.ts",
@@ -157,7 +157,7 @@
     },
     {
       "file": "lib/hermes-agent-command.ts",
-      "sourceSha256": "0d6f44c0c95b80879a45f74c1f5b50382d7888003d3a31416b800faa40ab424f"
+      "sourceSha256": "4979d4997fa8d8d51c434bf95130fa991752f36790195d9c29a63444422156cb"
     },
     {
       "file": "lib/hermes-cron-client.ts",
@@ -165,7 +165,7 @@
     },
     {
       "file": "lib/hermes-skills-client.ts",
-      "sourceSha256": "cc53a891c9704d6d82cddae90c1c3510aafc35bad56c9ef6bee979bf39540c46"
+      "sourceSha256": "16803fbb34da2691e65312447e8d2bc2a0d81e0256d6cead3c28edb31080313a"
     },
     {
       "file": "lib/oauth.ts",
@@ -225,11 +225,11 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "6242bbcb7018c63c888957cd7b60542be90840387fdef9ab74646ff95431c14f"
+      "sourceSha256": "38e695e32209f0bc72d4ef899b2f577f3f67c98f9b2f16c7c1fef75575079acc"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
-      "sourceSha256": "4c9f0bf3664d62e2a37a69f4b2a0854c8c45e4ccef882cb8bd924e691503cda2"
+      "sourceSha256": "8d592b15d4938b6fd63b9d624a925bada64e635a87a1df887d8b69cc17705025"
     },
     {
       "file": "pages/marketing/agent-config/components/FeishuIcon.tsx",
@@ -249,7 +249,7 @@
     },
     {
       "file": "pages/marketing/agent-config/hermes-command-builder.ts",
-      "sourceSha256": "18acd6e9a592e03608259127885ae34395d370cf82661a690bac7279f5cb4cbc"
+      "sourceSha256": "7060cc28c581339afaaa42e50bff310983eeabe218eae3d794f79eea3aa3f336"
     },
     {
       "file": "pages/marketing/agent-config/hooks/useAgentConfig.ts",
@@ -261,7 +261,7 @@
     },
     {
       "file": "pages/marketing/agent-config/hooks/useChannelOperations.ts",
-      "sourceSha256": "4c9d95a2a2452dce2e394f2318bd0d5ec2a0cecb6e7d33153bee621854b927c1"
+      "sourceSha256": "3af8481565adac0c4f58acbaddf17704110ccb90f4eab06c10cf64e6e668a744"
     },
     {
       "file": "pages/marketing/agent-config/hooks/useGatewayCommand.ts",
@@ -297,7 +297,7 @@
     },
     {
       "file": "pages/marketing/agent-config/standard-panel.css",
-      "sourceSha256": "36e5b5adfa61a56a33cd8ec2e5574ec6ac7eacd19b0065b1f14955f93ed1c644"
+      "sourceSha256": "ad6d478c7cbb108b34960cf2936005a58619cefeffee30b6edd0507adfdcff9c"
     },
     {
       "file": "pages/marketing/agent-config/styles-index.css",
@@ -345,7 +345,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-panel.tsx",
-      "sourceSha256": "1360730b0ba479c3a5c5e621771e2372ef5f562a9f80279ecc137a30972dbcd8"
+      "sourceSha256": "8051d1ad0f31742dd35197a952a86b8beb03c69ef8ec590558f476a1d6b7aab9"
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",
@@ -369,11 +369,11 @@
     },
     {
       "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
-      "sourceSha256": "611fe016ba4d65b326725bd99de6abaaa5514321cbce71efabc3fd1e2cb325e0"
+      "sourceSha256": "d1124b4e02ae90a004f9232669ad336cb44b80fd27de30b7c80c5685f7f1a72d"
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
-      "sourceSha256": "c5e946a309f3bbff8588e7e91b9d7d421842cecc0172b86f3d41f714f9f01cb6"
+      "sourceSha256": "46fbe6f5753e01316a5be5c608ef484c074391cc0dbffeae917cc24c4f48953e"
     },
     {
       "file": "pages/marketing/agent-model-config/model-config-client.ts",
@@ -509,15 +509,15 @@
     },
     {
       "file": "repositories/fake-repositories.ts",
-      "sourceSha256": "4d59fb5acdd4bd4a4128e23b3bb5462e349240864bdbfe4577846b719490a8c1"
+      "sourceSha256": "70665237c15ef9ce446a465d81af98908c2cc51cbded1151d883e00ddd357f25"
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "6652548ad79bd46cd4e1862a9037054f9366461ccad53968288740c49c1241c8"
+      "sourceSha256": "b274d9d97e07c418d0036c551bf118daa49f4eba5c7fa1882c64d41c37b6b8c0"
     },
     {
       "file": "repositories/types.ts",
-      "sourceSha256": "eca4a064127d471c062e757842897c6c6cab527c3915be25eaf0a5abc6468277"
+      "sourceSha256": "16d7c6b014fa3f4e7e7773339d3375e0ecf0a173de18655fca7ff5999e27da75"
     },
     {
       "file": "services/use-async-resource.ts",

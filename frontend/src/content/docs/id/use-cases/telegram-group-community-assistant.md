@@ -6,7 +6,7 @@
 Panduan ini menjelaskan penyiapan yang telah diverifikasi serta penggunaan Hermes Agent yang sama untuk tanya jawab, ringkasan, dan draf pengingat di grup.
 Panduan ini tidak menganggap event anggota bergabung, sambutan otomatis, atau balasan pasif tanpa penyebutan Bot sebagai fitur yang sudah dikonfigurasi.
 
-![Asisten komunitas AI grup Telegram untuk tanya jawab, ringkasan, dan pengingat](../images/use-case-08-telegram-group-community-assistant.png)
+![Asisten komunitas AI grup Telegram untuk tanya jawab, ringkasan, dan pengingat](../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## Sebelum memulai
 
@@ -67,7 +67,7 @@ Validasi tugas terjadwal secara terpisah di kanal tujuan yang didukung sebelum m
 
 Menonaktifkan Group Privacy membuka jalur pengiriman pesan grup Telegram.
 Hal itu tidak menggantikan aturan grup, perlindungan informasi sensitif, atau konfirmasi sebelum tindakan eksternal berisiko tinggi.
-Gunakan [panduan batas keamanan Telegram dan WhatsApp](./telegram-whatsapp-safety-boundaries.md) saat menentukan siapa yang dapat meminta Agent melakukan tindakan sensitif.
+Tentukan anggota yang boleh meminta tindakan sensitif, lalu konfirmasikan otorisasi sebelum Agent menjalankannya.
 
 ## FAQ
 
@@ -96,6 +96,5 @@ Jangan menganggap dukungan pesan grup Telegram juga berlaku untuk WhatsApp.
 
 - [Kanal Telegram](../configuration/channel-telegram.md) - Hubungkan Bot dan ulangi langkah penyiapan pesan grup.
 
-- [Mengubah IM Agent Menjadi Asisten Layanan, Komunitas, atau Pendamping](./im-agent-skill-scenarios.md) - Siapkan Skill dan konten untuk tanya jawab serta ringkasan di grup.
 
 - [Menentukan Peran, Kepribadian, dan Suara IM Agent](./im-agent-persona-soul-md.md) - Tentukan peran dan batas asisten.

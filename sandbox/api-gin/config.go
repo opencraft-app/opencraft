@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"strconv"
@@ -14,19 +15,20 @@ import (
 
 // Config holds runtime configuration for the gin API adapter.
 type Config struct {
-	Addr                 string        // listen address, e.g. :8081
-	ReadTimeout          time.Duration // server read timeout
-	WriteTimeout         time.Duration // server write timeout
-	MySQLDSN             string        // optional DSN; if empty falls back to in-memory store
-	RedisAddr            string        // redis address for route rules
-	RedisPassword        string        // redis password for route rules
-	RedisDB              int           // redis db index
-	RedisRoutePrefix     string        // redis key prefix for routes
-	AuthServiceURL       string        // user-auth base url for session introspection
-	InternalAPIKey       string        // shared key required by privileged internal TAT routes
-	AllowedTATCommandID  string        // only pre-created website credential command allowed on the internal invoke route
-	InternalServiceToken string        // trusted CTL-to-sandbox identity token
-	CloudPauseResume     bool          // when true, pause/resume call cloud Stop/Start; defaults on for billing lifecycle isolation
+	Addr                         string            // listen address, e.g. :8081
+	ReadTimeout                  time.Duration     // server read timeout
+	WriteTimeout                 time.Duration     // server write timeout
+	MySQLDSN                     string            // optional DSN; if empty falls back to in-memory store
+	RedisAddr                    string            // redis address for route rules
+	RedisPassword                string            // redis password for route rules
+	RedisDB                      int               // redis db index
+	RedisRoutePrefix             string            // redis key prefix for routes
+	AuthServiceURL               string            // user-auth base url for session introspection
+	InternalAPIKey               string            // shared key required by privileged internal TAT routes
+	AllowedTATCommandID          string            // legacy single-region command
+	AllowedTATCommandIDsByRegion map[string]string // exact region-to-command allowlist
+	InternalServiceToken         string            // trusted CTL-to-sandbox identity token
+	CloudPauseResume             bool              // when true, pause/resume call cloud Stop/Start; defaults on for billing lifecycle isolation
 }
 
 func loadConfig() Config {
@@ -45,19 +47,20 @@ func loadConfig() Config {
 	redisDB := getenvInt("REDIS_DB", 0)
 	redisPrefix := getenv("REDIS_ROUTE_PREFIX", "route:sandbox:")
 	return Config{
-		Addr:                 addr,
-		ReadTimeout:          rt,
-		WriteTimeout:         wt,
-		MySQLDSN:             dsn,
-		RedisAddr:            redisAddr,
-		RedisPassword:        redisPassword,
-		RedisDB:              redisDB,
-		RedisRoutePrefix:     redisPrefix,
-		AuthServiceURL:       getenv("AUTH_SERVICE_URL", "http://lightclaw-auth.user-auth.svc.cluster.local"),
-		InternalAPIKey:       strings.TrimSpace(os.Getenv("SANDBOX_API_KEY")),
-		AllowedTATCommandID:  strings.TrimSpace(os.Getenv("WEBSITE_CREDENTIAL_TAT_COMMAND_ID")),
-		InternalServiceToken: getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", ""),
-		CloudPauseResume:     getenvBool("SANDBOX_ENABLE_CLOUD_PAUSE_RESUME", true),
+		Addr:                         addr,
+		ReadTimeout:                  rt,
+		WriteTimeout:                 wt,
+		MySQLDSN:                     dsn,
+		RedisAddr:                    redisAddr,
+		RedisPassword:                redisPassword,
+		RedisDB:                      redisDB,
+		RedisRoutePrefix:             redisPrefix,
+		AuthServiceURL:               getenv("AUTH_SERVICE_URL", "http://lightclaw-auth.user-auth.svc.cluster.local"),
+		InternalAPIKey:               strings.TrimSpace(os.Getenv("SANDBOX_API_KEY")),
+		AllowedTATCommandID:          strings.TrimSpace(os.Getenv("WEBSITE_CREDENTIAL_TAT_COMMAND_ID")),
+		AllowedTATCommandIDsByRegion: allowedTATCommandIDsByRegionFromEnv(),
+		InternalServiceToken:         getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", ""),
+		CloudPauseResume:             getenvBool("SANDBOX_ENABLE_CLOUD_PAUSE_RESUME", true),
 	}
 }
 
@@ -105,4 +108,18 @@ func getenvBool(k string, def bool) bool {
 	default:
 		return def
 	}
+}
+
+// Invalid nonempty configuration fails closed rather than falling back to a
+// command ID from a different region.
+func allowedTATCommandIDsByRegionFromEnv() map[string]string {
+	raw := strings.TrimSpace(os.Getenv("WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION"))
+	if raw == "" {
+		return nil
+	}
+	ids := make(map[string]string)
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return map[string]string{}
+	}
+	return ids
 }

@@ -152,6 +152,7 @@ items:
     required_keys:
       - ADMIN_TOKEN
       - AUTH_ADMIN_TOKEN
+      - CTL_INTERNAL_TOKEN
       - SUBSCRIPTION_ADMIN_TOKEN
     namespace: lightvela-playground-sandbox-jp-1
     kubernetes_resource_name: gateway-dashboard-runtime-secrets
@@ -160,26 +161,6 @@ items:
     secret_type: Opaque
     labels:
       app.kubernetes.io/name: gateway-dashboard
-      app.kubernetes.io/managed-by: argocd
-    annotations:
-      managed-by: export_ssm_to_sops.py
-
-  - id: nextgen-dashboard-runtime-secrets
-    secret_name: mono-sandbox-jp-1-nextgen-dashboard-runtime-secrets
-    required_keys:
-      - NEXTGEN_DASHBOARD_BASIC_AUTH_USER
-      - NEXTGEN_DASHBOARD_BASIC_AUTH_PASSWORD
-      - NEXTGEN_DASHBOARD_RUNNER_TOKEN
-      - NEXTGEN_DASHBOARD_PROXY_TOKEN_SECRET
-      - NEXTGEN_DASHBOARD_AUTH_MYSQL_DSN
-      - NEXTGEN_DASHBOARD_SANDBOX_MYSQL_DSN
-    namespace: lightvela-playground-sandbox-jp-1
-    kubernetes_resource_name: nextgen-dashboard-secrets
-    kubernetes_resource_kind: Secret
-    output_path: argocd/secrets/sandbox-jp-1/nextgen-dashboard-runtime-secrets.sops.yaml
-    secret_type: Opaque
-    labels:
-      app.kubernetes.io/name: nextgen-dashboard
       app.kubernetes.io/managed-by: argocd
     annotations:
       managed-by: export_ssm_to_sops.py

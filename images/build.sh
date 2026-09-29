@@ -15,6 +15,8 @@
 #   --base-only                仅安装基础层（Node/Python/Playwright/系统依赖）
 #   --app-only                 仅安装应用层（OpenClaw/plugins/skills/gateway）
 #   --only-plugins <list>      仅安装指定插件（逗号分隔）
+#   --with-desktop             加装云桌面(VNC)图形层：Xvfb/xfce4/x11vnc/noVNC/websockify
+#                              （4 个 vela-desktop-*.systemd unit 装好不启动，运行时由 TAT 注入密码后拉起）
 #   --qqbot-version <ver>      指定 qqbot 插件版本；默认从 build-manifest.json 读取
 #   --weixin-version <ver>     指定 weixin 插件版本；默认从 build-manifest.json 读取
 #   --skills <mode>            essential | all | custom
@@ -75,6 +77,14 @@ HERMES_ENV_PROFILE_PATH="${HERMES_ENV_PROFILE_PATH:-/etc/profile.d/hermes-env.sh
 ENVD_ONLY=false
 BASE_ONLY=false
 APP_ONLY=false
+# 云桌面(VNC)图形层开关：--with-desktop 时在 app layer 之后加装
+# Xvfb/xfce4/x11vnc/noVNC/websockify + 4 个 systemd unit（unit 装好不启动，
+# 运行时由 ctl 经 TAT 注入 VNC 密码后 systemctl enable --now，见方案 §3/§4.1）
+WITH_DESKTOP=false
+DESKTOP_XVFB_SCREEN="${DESKTOP_XVFB_SCREEN:-1440x900x24}"
+DESKTOP_VNC_PORT="${DESKTOP_VNC_PORT:-5900}"
+DESKTOP_NOVNC_PORT="${DESKTOP_NOVNC_PORT:-6080}"
+DESKTOP_VNC_PASSWD_FILE="${DESKTOP_VNC_PASSWD_FILE:-}" # 默认 /home/${RUNTIME_USER}/.vnc/passwd，运行时解析
 RUNTIME_KIND="${RUNTIME_KIND:-openclaw}"
 OPTIONAL_PLUGINS="${OPTIONAL_PLUGINS:-}"
 ONLY_PLUGINS="${ONLY_PLUGINS:-}"
@@ -263,6 +273,10 @@ parse_args() {
         ;;
       --app-only)
         APP_ONLY=true
+        shift
+        ;;
+      --with-desktop)
+        WITH_DESKTOP=true
         shift
         ;;
       --optional-plugins)
@@ -1843,6 +1857,121 @@ EOF
   return 1
 }
 
+install_desktop_layer() {
+  log_info "installing cloud desktop (VNC) graphics layer"
+
+  # 显示服务器 + 轻量桌面 + VNC server + WS 网关 + 中文字体（避免豆腐块）
+  apt_install \
+    xvfb \
+    xfce4 \
+    xfce4-terminal \
+    dbus-x11 \
+    x11-utils \
+    x11vnc \
+    novnc \
+    websockify \
+    fonts-noto-cjk \
+    fonts-wqy-zenhei
+
+  local runtime_home
+  runtime_home="$(getent passwd "${RUNTIME_USER}" | cut -d: -f6)"
+  if [ -z "${runtime_home}" ]; then
+    log_error "cannot resolve runtime user home for desktop layer"
+    return 1
+  fi
+  local vnc_passwd_file="${DESKTOP_VNC_PASSWD_FILE:-${runtime_home}/.vnc/passwd}"
+  local novnc_web_root="/usr/share/novnc"
+  if [ ! -d "${novnc_web_root}" ]; then
+    log_error "novnc web root not found: ${novnc_web_root}"
+    return 1
+  fi
+
+  mkdir -p "${runtime_home}/.vnc"
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${runtime_home}/.vnc"
+  chmod 700 "${runtime_home}/.vnc"
+
+  # ---- 4 个 systemd unit：装好但【不】enable/start ----
+  # 密码文件由运行时经 TAT 注入（x11vnc -storepasswd），见方案 §4.1；
+  # 控制面拉起命令：systemctl enable --now vela-xvfb vela-desktop-wm vela-x11vnc vela-novnc
+  cat >/etc/systemd/system/vela-xvfb.service <<EOF
+[Unit]
+Description=Vela cloud desktop virtual framebuffer (Xvfb)
+After=network.target
+
+[Service]
+Type=simple
+User=${RUNTIME_USER}
+ExecStart=/usr/bin/Xvfb :1 -screen 0 ${DESKTOP_XVFB_SCREEN} -nolisten tcp
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat >/etc/systemd/system/vela-desktop-wm.service <<EOF
+[Unit]
+Description=Vela cloud desktop window manager (xfce4)
+Requires=vela-xvfb.service
+After=vela-xvfb.service
+
+[Service]
+Type=simple
+User=${RUNTIME_USER}
+Environment=DISPLAY=:1
+Environment=HOME=${runtime_home}
+ExecStart=/usr/bin/dbus-run-session -- /usr/bin/startxfce4
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat >/etc/systemd/system/vela-x11vnc.service <<EOF
+[Unit]
+Description=Vela cloud desktop VNC server (x11vnc)
+Requires=vela-xvfb.service
+After=vela-xvfb.service vela-desktop-wm.service
+
+[Service]
+Type=simple
+User=${RUNTIME_USER}
+Environment=DISPLAY=:1
+Environment=HOME=${runtime_home}
+ExecStart=/usr/bin/x11vnc -display :1 -rfbport ${DESKTOP_VNC_PORT} -rfbauth ${vnc_passwd_file} -forever -shared -noxdamage -wait 5 -defer 5
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat >/etc/systemd/system/vela-novnc.service <<EOF
+[Unit]
+Description=Vela cloud desktop noVNC websocket gateway
+After=network.target vela-x11vnc.service
+Requires=vela-x11vnc.service
+
+[Service]
+Type=simple
+User=${RUNTIME_USER}
+ExecStart=/usr/bin/websockify --web=${novnc_web_root} ${DESKTOP_NOVNC_PORT} localhost:${DESKTOP_VNC_PORT}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # 构建容器里可能没有 systemd（无 PID 1 systemd 时该命令必失败）；脚本开了 set -e，
+  # 裸调用会直接中断 --with-desktop 镜像构建。unit 文件已落盘，拉起由运行时
+  # provision 负责，此处失败可安全忽略。
+  systemctl daemon-reload >/dev/null 2>&1 || true
+
+  log_info "cloud desktop layer installed (units registered, not started; screen=${DESKTOP_XVFB_SCREEN}, vnc=:${DESKTOP_VNC_PORT}, novnc=:${DESKTOP_NOVNC_PORT})"
+}
+
 configure_sshd_defaults() {
   local sshd_config_file="/etc/ssh/sshd_config"
   local sftp_server="/usr/lib/openssh/sftp-server"
@@ -2288,12 +2417,18 @@ main() {
 
   if [ "${APP_ONLY}" = true ]; then
     build_app_layer
+    if [ "${WITH_DESKTOP}" = true ]; then
+      install_desktop_layer
+    fi
     log_info "app layer build completed"
     return 0
   fi
 
   build_base_layer
   build_app_layer
+  if [ "${WITH_DESKTOP}" = true ]; then
+    install_desktop_layer
+  fi
   log_info "full build completed"
 }
 

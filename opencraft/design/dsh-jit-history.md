@@ -10,13 +10,14 @@
 6. 历史投影复用稳定 Item 语义；不广播历史 delta，不跳过未经等价性验证的 chunk。只有请求页包含的 Turn 才投影。显式全历史导出/兼容 read 允许遍历，但普通恢复不触发它。
 7. 首次执行时懒激活；同 session 并发激活共享 flight，失败后可重试，失败不使已经显示的历史消失。权限修改、注入和 fork 等需要 runtime 的路径同样遵守该边界。
 8. 保持现有 AppServer 外部协议和超时；不通过扩大/关闭超时作为性能修复。原生 DSH 冷 inspect 可能读取整个日志，需单独计时，不能称为严格存储分页。
+9. Host 通过 `opencraft/resume-history` initialize capability 声明 `legacy/paginated/message-window` 恢复模式，使冷启动深链可直接构造首次 Resume；旧 Host 未声明时才补做 metadata read。`thread/list` 已返回的零 Turn metadata 也可预填 Session View。两者都只是策略提示，不是历史权威，不得携带或展示 catalog 中的 Turns，也不得覆盖已经恢复的 View；`thread/resume` 仍是唯一 authoritative 展示基线。
 
 ## 会话绑定与工具声明
 
 - 当前模型不等于最后一次请求模型。显式请求/ThreadCatalog 的持久绑定优先；未绑定的原生会话读取已加载 Agent 的当前选择，再使用历史记录或明确配置的默认模型。没有真实模型时返回空选择，不制造 `dsh` 模型。旧 Catalog 中的 `dsh` 占位值不能阻止重新解析。
 - fork 先得到有效选择，再创建并返回同一选择；内部 resume 必须携带刚确认的选择，不能被父历史或空历史覆盖。Catalog 保存响应确认值，不用 nullable 请求字段覆盖它。恢复、fork 和省略 model 的执行都消费同一保存绑定。
 - DynamicToolSpec 是协议声明；DshHostCapability 是引擎调用投影。Broker 保留声明快照用于 fork，父子共享声明语义但不共享请求回调。原父连接之外的客户端不能继承其工具所有权。
-- 协议形状与引擎 JSON Schema 预检在 native create/fork 前完成。Host 接受声明不等于激活 Agent；冷恢复只绑定 Broker，首次执行激活后幂等挂载工具。释放 Agent 撤销挂载，断开连接撤销 Broker owner。重启不为闲置工具声明唤醒全部会话。
+- 协议形状与引擎 JSON Schema 预检在 native create/fork 前完成。Host 接受声明不等于激活 Agent；冷恢复只绑定 Broker，Engine 可以明确回执 `registered: 0, deferred: true`，该回执不得阻断历史显示，也不得伪装成已可执行。首次执行必须先激活 Agent，再严格完成全部工具的 N/N 挂载，只有成功后 prompt 才能进入 DSH；部分注册或执行前再次 deferred 均失败关闭。释放 Agent 撤销挂载，断开连接撤销 Broker owner。重启不为闲置工具声明唤醒全部会话。
 - 参考是 pinned DSH 0.1.1-rc.2 的 ModelDirectory/selectionFor 与 recovered Codex 的 fork-conversation/updateThreadSettingsAndSyncModel；复用状态分层，不宣称 recovered renderer 证明 Codex Rust server 的持久化实现。
 
 完整迁移与验收记录见 [thread bindings](dsh-thread-bindings/task_plan.md)。

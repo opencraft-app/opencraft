@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ChannelPanel } from "@/pages/marketing/agent-channel-panel";
@@ -12,6 +12,8 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   t: (text: string) => text,
 }));
 
@@ -22,6 +24,7 @@ vi.mock("@/pages/marketing/agent-config", () => ({
     configData: { channels: [] },
     currentChannelList: [
       { value: "weixin", channel: "weixin", channel_name: "微信", primaryLabel: "微信" },
+      { value: "whatsapp", channel: "whatsapp", channel_name: "WhatsApp", primaryLabel: "WhatsApp" },
     ],
     configureChannel: vi.fn(),
     deleteChannel: vi.fn(),
@@ -64,13 +67,17 @@ describe("Agent channel contextual notice", () => {
     expect(notice.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("passes the occupied-Weixin notice through the channel description slot", () => {
-    expect(settingsSource).toContain(
-      "channelAfterDescription={weixinOccupiedByOther && activeBot.weixinOwner ? (",
-    );
+  it("passes occupied channel notices through the channel description slot", () => {
+    expect(settingsSource).toContain("{weixinOccupiedByOther && activeBot.weixinOwner && (");
+    expect(settingsSource).toContain("{whatsAppOccupiedByOther && activeBot.whatsAppOwner && (");
+    expect(settingsSource).toContain("whatsAppOccupiedByOther={whatsAppOccupiedByOther}");
     expect(settingsSource).toContain("afterDescription={channelAfterDescription}");
-    expect(settingsSource).not.toContain(
-      '<>\n                              {weixinOccupiedByOther && activeBot.weixinOwner && (',
-    );
+  });
+
+  it("explains WhatsApp ownership and disables connecting from another Bot", () => {
+    const { container } = render(<ChannelPanel {...panelProps} whatsAppOccupiedByOther />);
+
+    expect(within(container).getByText("使用手机 WhatsApp 扫码登录。同一实例内，WhatsApp 同时只能连接一个 Bot。")).toBeTruthy();
+    expect(within(container).getByRole("button", { name: "已由其他 Bot 占用" })).toBeDisabled();
   });
 });

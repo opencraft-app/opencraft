@@ -23,7 +23,16 @@ func NewRouter(enabled bool, svc *service.Service) http.Handler {
 	mux.HandleFunc("POST /v1/referrals/me/code", server.issueCode)
 	mux.HandleFunc("GET /v1/referrals/me", server.me)
 	mux.HandleFunc("GET /v1/referrals/me/stats", server.stats)
+	mux.HandleFunc("GET /admin/api/referral/attributions/{invitee_user_id}", server.adminPreviewAttribution)
+	mux.HandleFunc("POST /admin/api/referral/attributions/{invitee_user_id}/reset", server.adminResetAttribution)
 	return mux
+}
+
+type resetAttributionRequest struct {
+	ExpectedAttributionID string `json:"expected_attribution_id"`
+	IdempotencyKey        string `json:"idempotency_key"`
+	Operator              string `json:"operator"`
+	Reason                string `json:"reason"`
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -100,6 +109,54 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": result})
+}
+
+func (s *Server) adminPreviewAttribution(w http.ResponseWriter, r *http.Request) {
+	if !s.requireEnabled(w) {
+		return
+	}
+	result, err := s.svc.PreviewAttributionReset(r.Context(), r.PathValue("invitee_user_id"), r.URL.Query().Get("attribution_id"))
+	if err != nil {
+		writeAdminResetError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": result})
+}
+
+func (s *Server) adminResetAttribution(w http.ResponseWriter, r *http.Request) {
+	if !s.requireEnabled(w) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	var request resetAttributionRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "请求格式不正确。")
+		return
+	}
+	result, err := s.svc.ResetAttribution(r.Context(), service.AttributionResetInput{
+		InviteeUserID: r.PathValue("invitee_user_id"), ExpectedAttributionID: request.ExpectedAttributionID,
+		IdempotencyKey: request.IdempotencyKey, Operator: request.Operator, Reason: request.Reason,
+	})
+	if err != nil {
+		writeAdminResetError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "data": result})
+}
+
+func writeAdminResetError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrAttributionNotFound):
+		writeError(w, http.StatusNotFound, "referral_attribution_not_found", "邀请关系不存在。")
+	case errors.Is(err, domain.ErrAttributionResetConflict):
+		writeError(w, http.StatusConflict, "referral_attribution_reset_conflict", err.Error())
+	case strings.Contains(err.Error(), "required"), strings.Contains(err.Error(), "maximum length"):
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, "internal_error", "邀请关系重置失败。")
+	}
 }
 
 func (s *Server) requireEnabled(w http.ResponseWriter) bool {

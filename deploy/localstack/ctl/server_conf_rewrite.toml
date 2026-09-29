@@ -22,7 +22,7 @@ default_template_id = "pool-local-default"
 candidate_template_ids = ["pool-local-default"]
 
 [bypass]
-specify_names = ["checkUserAbuse", "checkPoolPressure"]
+specify_names = ["checkTasks", "checkUserAbuse", "checkPoolPressure"]
 
 [db]
 host = "mysql.localstack-system.svc.cluster.local"

@@ -1,17 +1,26 @@
 import {
   formatWorkDuration,
-  workStatusLabelText,
   type WorkStatusItem,
 } from "@opencraft/chat-core";
 import { useWorkStatusLabel } from "@opencraft/timeline-render-react";
+import { useIntl } from "@opencraft/i18n/react";
+import { defineMessages } from "@opencraft/i18n";
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 
+const statusMessages = defineMessages({
+  working: { id: "chat.working", defaultMessage: "Working" },
+  workingFor: { id: "chat.workingFor", defaultMessage: "Working for {time}" },
+  workedFor: { id: "chat.workedFor", defaultMessage: "Worked for {time}" },
+  stoppedAfter: { id: "chat.stoppedAfter", defaultMessage: "You stopped after {time}" },
+});
+
 export function WorkStatusLabel({ item }: { readonly item: WorkStatusItem }) {
-  const label = useWorkStatusLabel(item);
+  const intl = useIntl();
+  const label = useWorkStatusLabel(item, intl.locale);
   return (
     <span className="thread-work-status__label" data-work-status={item.status}>
-      {workStatusLabelText(label)}
+      {intl.formatMessage(statusMessages[label.messageId], { time: label.time })}
     </span>
   );
 }
@@ -25,12 +34,13 @@ export function ActivityDisclosureLabel({
   readonly durationMs: number | null;
   readonly count: number;
 }) {
+  const intl = useIntl();
   if (item !== null) return <WorkStatusLabel item={item} />;
   return (
     <span>
       {durationMs !== null
-        ? `Worked for ${formatWorkDuration(durationMs)}`
-        : `${count} previous message${count === 1 ? "" : "s"}`}
+        ? intl.formatMessage(statusMessages.workedFor, { time: formatWorkDuration(durationMs, intl.locale) })
+        : intl.formatMessage({ id: "chat.previousMessages", defaultMessage: "{count, plural, one {# previous message} other {# previous messages}}" }, { count })}
     </span>
   );
 }

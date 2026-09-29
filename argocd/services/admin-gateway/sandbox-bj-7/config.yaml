@@ -14,17 +14,6 @@ routes:
   - OPTIONS
   upstream: http://gateway-dashboard-internal.lightvela-playground-sandbox-bj-7.svc.cluster.local
   access: admin
-- name: admin
-  prefix: /admin
-  methods:
-  - GET
-  - POST
-  - PUT
-  - PATCH
-  - DELETE
-  - OPTIONS
-  upstream: http://nextgen-dashboard.lightvela-playground-sandbox-bj-7.svc.cluster.local
-  access: admin
 - name: ai-gateway-dashboard
   prefix: /
   methods:

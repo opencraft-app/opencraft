@@ -18,6 +18,25 @@
   font-display: swap;
 }
 
+/* DIN Alternate Bold —— 仅用于总览页数字展示（陪伴天数 / 统计数值）。
+ * 已子集化为数字与少量符号（U+0030-0039 等），体积 ~4.5KB。
+ * 注：该字体源自 macOS 系统字体，随站点分发前请确认授权范围。 */
+@font-face {
+  font-family: "DIN Alternate Subset";
+  src: url("/fonts/din-alternate-bold.subset.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/** 数字展示字体：DIN Alternate 优先，回落系统 DIN，再回落无衬线 */
+.lw-font-din-num {
+  font-family: "DIN Alternate Subset", "DIN Alternate", "DIN Condensed",
+    -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .lw-font-hyruiyisong {
   font-family: "HYRuiYiSong:45J", sans-serif !important;
 }
@@ -164,6 +183,125 @@ html.lw-settings-scrollbar-stable {
   margin-right: auto;
 }
 
+/* Sidebar account Portals opt in independently from the unchanged public header. */
+.lv-sidebar-user-menu {
+  --lw-user-menu-text: var(--text-secondary);
+  --lw-user-menu-text-hover: var(--text-primary);
+  --lw-user-menu-hover-bg: var(--surface-muted);
+  max-width: calc(100vw - 16px);
+  max-height: min(var(--radix-popover-content-available-height), calc(100dvh - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lv-sidebar-user-menu-item,
+.lv-sidebar-user-menu-upgrade {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+.lv-sidebar-user-menu-item:hover,
+.lv-sidebar-user-menu-item:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-muted);
+}
+
+.lv-sidebar-user-menu-item:focus-visible,
+.lv-sidebar-user-menu-upgrade:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.lv-sidebar-user-menu-upgrade {
+  justify-content: space-between;
+  color: var(--surface-base);
+  background: var(--text-primary);
+  font-weight: 600;
+}
+
+.lv-sidebar-user-menu-status[data-tone="warning"] { color: #92400e; }
+.lv-sidebar-user-menu-status[data-tone="danger"] { color: #b91c1c; }
+
+.lv-agents-sidebar .lv-agent-profile-wrap,
+.lv-agents-sidebar .lv-agents-nav,
+.lv-agents-sidebar .lv-agents-nav-item {
+  width: 100%;
+  min-width: 0;
+}
+
+
+.lv-agents-sidebar .lv-agents-nav-item {
+  height: auto;
+  min-height: 36px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  overflow-wrap: anywhere;
+  transition: none;
+  /* Preserve the local palette over the link's text/hover utilities. */
+  color: var(--text-secondary) !important;
+  background: #fff;
+}
+
+.lv-agents-sidebar .lv-agents-nav-item.is-active {
+  background: #f2f2ef !important;
+  color: #171717 !important;
+  font-weight: 600;
+}
+
+.lv-agents-sidebar .lv-agents-nav-item:not(.is-active):hover {
+  background: #f7f7f5 !important;
+}
+
+.lv-agents-sidebar .lv-agents-nav-item .lv-agents-nav-icon {
+  color: inherit;
+}
+
+.lv-agents-sidebar .lv-agents-session-item-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.lv-agents-sidebar .lv-agents-session-item-wrap:has(.is-active) {
+  background: #f2f2ef;
+}
+
+.lv-agents-sidebar .lv-agents-session-item-wrap:not(:has(.is-active)):hover {
+  background: #f7f7f5;
+}
+
+.lv-agents-sidebar .lv-agents-session-item-wrap .lv-agents-session-item,
+.lv-agents-sidebar .lv-agents-session-item-wrap .lv-agents-session-menu-btn {
+  background: transparent !important;
+}
+
+.lv-agents-sidebar .lv-agents-session-item-wrap:has(.is-active) .lv-agents-session-item {
+  color: #171717 !important;
+  font-weight: 600;
+}
+
+.lv-agents-sidebar .lv-agents-session-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.lv-agents-sidebar .lv-agents-session-menu-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  opacity: 1;
+  transition: none;
+}
+
 @media (min-width: 768px) {
   .lw-settings-shell {
     width: min(1440px, calc(100vw - 160px));
@@ -171,12 +309,15 @@ html.lw-settings-scrollbar-stable {
 }
 
 @media (min-width: 1024px) {
+  /* header 占住侧边栏那一列的表头位置，边框与侧边栏的分隔线对齐。 */
   header.lv-agent-sidebar-header {
     right: auto;
     width: 264px;
     height: 68px;
     border-right: 1px solid #e9ecf1;
+    border-right-color: #e9ecf1 !important;
     border-bottom-color: #e9ecf1 !important;
+    background: #fff !important;
   }
 
   .lw-settings-shell.lv-agent-settings-shell {
@@ -229,6 +370,36 @@ html.lw-settings-scrollbar-stable {
     max-width: none;
     padding-left: 16px !important;
     padding-right: 16px !important;
+  }
+}
+
+/* 创建 / 引导态的 header 去边框：左上角只留 LightVela logo。
+ *
+ * 那时右侧没有侧边栏，header 的右边框和下边框会把 logo 框成一个孤立的
+ * 小方块。常规 agent 页必须保留边框 —— 它和侧边栏的分隔线是连着的。
+ *
+ * 由 <html class="lv-agent-onboarding"> 把守：这条路由的 header 由
+ * next-site/agents-page-client.tsx 渲染，它是路由层组件、拿不到引导状态，
+ * 所以 agent-settings-page 用根节点 class 把信号传出来（同 in-page 的
+ * lw-settings-scrollbar-stable 做法）。
+ *
+ * 同时覆盖两种挂法：路由层那个无条件的 lv-agent-sidebar-header，以及
+ * 页面内 showHeader 为真时才会用到的 --borderless 标记。
+ *
+ * 放在媒体查询外：引导态在窄屏同样没有侧边栏，各断点都该去掉。
+ * border-bottom 来自 PublicSiteHeader 的 Tailwind 类，需 !important 压过。 */
+.lv-agent-onboarding header.lv-agent-sidebar-header,
+header.lv-agent-sidebar-header--borderless {
+  border-right: 0 !important;
+  border-bottom-color: transparent !important;
+}
+
+/* 引导态的 header 不需要占住 264px 那一列（没有侧边栏要对齐），
+ * 让 logo 回到正常的内容左边距上，而不是缩在一个窄条里。 */
+@media (min-width: 1024px) {
+  .lv-agent-onboarding header.lv-agent-sidebar-header {
+    width: auto;
+    right: 0;
   }
 }
 
@@ -287,6 +458,24 @@ html.lv-curated-skill-dialog-open body {
 
 .lv-learn-skill-dialog-scroll::-webkit-scrollbar-thumb:hover {
   background-color: rgba(15, 23, 42, 0.34);
+}
+
+/* Persona dialogs keep scrolling without drawing a track against rounded edges. */
+.lv-persona-dialog-scroll {
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.lv-persona-dialog-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Custom persona dialogs can be nested; the page stays locked until the last one closes. */
+html:has(.lv-persona-modal-scroll-lock),
+body:has(.lv-persona-modal-scroll-lock) {
+  overflow: hidden;
 }
 
 .lw-settings-topbar-inner {
@@ -388,6 +577,11 @@ a {
 /* ── /agents 左侧导航视觉升级 ───────────────────────────────────────────── */
 .lv-agents-sidebar {
   --lv-agents-nav-width: 220px;
+  --lv-agents-nav-item-height: 32px;
+  --lv-agents-nav-item-gap: 2px;
+  --lv-agents-nav-group-gap: 8px;
+  --lv-agents-sidebar-middle-padding-block: 16px;
+  gap: 12px;
 
   min-height: calc(100dvh - 178px);
   padding-bottom: 24px;
@@ -406,7 +600,7 @@ a {
 }
 
 .lv-agent-account-menu {
-  width: var(--lv-agents-nav-width);
+  width: 100%;
 }
 
 .lv-agent-account-trigger {
@@ -483,12 +677,14 @@ a {
 
 .lv-agent-status {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
   margin-top: 2px;
   color: rgb(0 0 0 / 40%);
   font-size: 12px;
   line-height: 20px;
+  white-space: nowrap;
 }
 
 .lv-agent-status-row {
@@ -566,6 +762,7 @@ a {
   display: inline-flex;
   width: 24px;
   height: 24px;
+  flex: 0 0 24px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -609,46 +806,6 @@ a {
 
 .lv-agent-action-button.is-danger:disabled {
   color: rgb(0 0 0 / 50%);
-}
-
-.lv-agent-action-tooltip {
-  pointer-events: auto;
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  z-index: 30;
-  margin-top: 6px;
-  transform: translateX(-50%);
-  user-select: text;
-  white-space: nowrap;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: white;
-  padding: 4px 10px;
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  opacity: 0;
-  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
-  transition: opacity 75ms ease;
-}
-
-.lv-agent-action-item:hover .lv-agent-action-tooltip,
-.lv-agent-action-item:focus-within .lv-agent-action-tooltip {
-  opacity: 1;
-}
-
-.lv-agent-action-tooltip-arrow {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  transform: translate(-50%, 50%) rotate(45deg);
-  border-left: 1px solid var(--border-subtle);
-  border-top: 1px solid var(--border-subtle);
-  background: white;
 }
 
 .lv-agents-nav {
@@ -831,7 +988,7 @@ a {
 .lv-agents-nav-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--lv-agents-nav-group-gap);
 }
 
 .lv-agents-nav-group-label {
@@ -845,7 +1002,7 @@ a {
 .lv-agents-nav-group-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--lv-agents-nav-item-gap);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -858,7 +1015,7 @@ a {
 .lv-agents-nav-item {
   display: flex;
   width: var(--lv-agents-nav-width);
-  height: 32px;
+  height: var(--lv-agents-nav-item-height);
   align-items: center;
   gap: 14px;
   padding: 0 12px;
@@ -898,46 +1055,19 @@ a {
   stroke-width: 1.8;
 }
 
-.lv-agent-feedback-link {
-  display: flex;
-  width: calc(100% + 12px);
-  align-items: center;
-  gap: 8px;
-  margin-top: 16px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  color: rgb(0 0 0 / 40%);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 20px;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.lv-agent-feedback-link:hover {
-  color: rgb(0 0 0 / 70%);
-  background: rgb(0 0 0 / 2.5%);
-}
-
-.lv-agent-feedback-link:focus-visible {
-  color: rgb(0 0 0 / 70%);
-  background: rgb(0 0 0 / 2.5%);
-  outline: 2px solid rgb(0 0 0 / 30%);
-  outline-offset: 2px;
-}
-
 @media (min-width: 1024px) {
   .lv-agents-sidebar-scroll-isolated {
-    position: sticky;
+    position: fixed;
     top: 68px;
+    left: 0;
     width: 264px;
     max-height: calc(100dvh - 68px);
-    margin-left: -16px;
+    margin-left: 0;
     padding-left: 16px;
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: hidden;
     overscroll-behavior: contain;
+    background: #fff;
   }
 
   .lv-agents-sidebar {
@@ -946,19 +1076,125 @@ a {
     min-height: 0;
     flex-direction: column;
     padding-top: 20px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    gap: 0;
   }
 
-  .lv-agent-feedback-link {
-    margin-top: auto;
+  .lv-agents-sidebar-profile,
+  .lv-agents-sidebar-controls,
+  .lv-agents-sidebar-footer {
+    position: relative;
+    width: calc(100% + 28px);
+    margin-left: -16px;
+    padding-right: 12px;
+    z-index: 1;
+    flex-shrink: 0;
+    min-width: 0;
+    background: #fff;
   }
 
-  .lv-agent-feedback-link + .lv-agent-account-footer {
-    margin-top: 8px;
+  .lv-agents-sidebar-profile {
+    padding-left: 16px;
+    border-bottom: 1px solid #e9ecf1;
+  }
+
+  .lv-agents-sidebar-controls {
+    padding-top: 16px;
+    padding-left: 16px;
+  }
+
+  .lv-agents-sidebar-controls .lv-agents-sidebar-tabs {
+    margin-top: 0;
+  }
+
+  .lv-agents-sidebar-footer {
+    padding-left: 16px;
+    border-top: 1px solid #e9ecf1;
+  }
+
+  .lv-agents-sidebar-footer .lv-agent-account-footer {
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    border-top: 0;
+  }
+
+  .lv-agents-sidebar-controls::after,
+  .lv-agents-sidebar-footer::before {
+    position: absolute;
+    right: 0;
+    left: 0;
+    height: 8px;
+    pointer-events: none;
+  }
+
+  .lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-controls::after {
+    content: "";
+    top: 100%;
+    box-shadow: inset 0 8px 8px -8px rgb(0 0 0 / 20%);
+  }
+
+  .lv-agents-sidebar[data-scroll-below="true"] .lv-agents-sidebar-footer::before {
+    content: "";
+    bottom: 100%;
+    box-shadow: inset 0 -8px 8px -8px rgb(0 0 0 / 20%);
+  }
+
+  .lv-agents-sidebar-middle {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    padding-top: var(--lv-agents-sidebar-middle-padding-block);
+    padding-bottom: var(--lv-agents-sidebar-middle-padding-block);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    scroll-padding-block: 4px;
+  }
+
+  .lv-agents-sidebar-middle::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lv-agents-sidebar-middle .lv-agents-nav {
+    margin-top: 0;
+    gap: 12px;
+  }
+
+  .lv-agents-sidebar-middle .lv-agents-nav-group-items {
+    gap: 4px;
+  }
+
+  .lv-agents-sidebar-middle .lv-agents-nav-item {
+    gap: 10px;
+    font-size: 12px;
+    line-height: 20px;
+  }
+
+}
+
+@media (min-width: 1024px) and (max-height: 860px) {
+  .lv-agents-sidebar {
+    --lv-agents-nav-item-height: 30px;
+    --lv-agents-nav-group-gap: 6px;
+    --lv-agents-sidebar-middle-padding-block: 12px;
+  }
+
+  .lv-agent-profile {
+    min-height: 40px;
+  }
+
+  .lv-agent-account-trigger {
+    min-height: 48px;
   }
 }
 
 @media (max-width: 1023px) {
   .lv-agents-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     min-height: auto;
     padding-right: 0;
     border-right: 0;
@@ -966,8 +1202,7 @@ a {
 
   .lv-agent-profile-wrap,
   .lv-agent-profile,
-  .lv-agents-nav,
-  .lv-agent-feedback-link {
+  .lv-agents-nav {
     width: 100%;
   }
 
@@ -1057,6 +1292,103 @@ code {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ──────────────────── 几何体头像动效（GeometricAvatar） ────────────────────
+ * 分三层，各管一件事，互不干扰：
+ *   .lv-avatar__body  形体缩放（hover 弹跳 / alive 呼吸）
+ *   .lv-avatar__eyes  眼珠横向游移（左右看）
+ *   .lv-avatar__eye   单眼纵向压缩（眨眼）
+ * 眼睛放在 body 内部，所以形体缩放时眼睛跟着走，不会错位。
+ *
+ * 循环动画只在 .lv-avatar--alive（当前选中的大头像）上开；
+ * 列表里的小头像仅 hover 时有反馈，避免一屏头像集体乱动。
+ * prefers-reduced-motion 由上方全局规则统一关闭。
+ */
+
+.lv-avatar__body {
+  /* transform-box 让 transformOrigin 的 px 值相对 viewBox 而非整个 SVG 画布 */
+  transform-box: view-box;
+  transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.lv-avatar__eyes,
+.lv-avatar__eye {
+  transform-box: view-box;
+}
+
+/* ── hover：轻微放大 + 回弹，给列表里的小头像用 ── */
+@keyframes lv-avatar-pop {
+  0% { transform: scale(1) rotate(0deg); }
+  40% { transform: scale(1.12) rotate(-4deg); }
+  70% { transform: scale(1.04) rotate(2deg); }
+  100% { transform: scale(1.08) rotate(0deg); }
+}
+
+/* 头像通常放在 button 里，所以同时接受父级 hover */
+.lv-avatar:hover .lv-avatar__body,
+button:hover > .lv-avatar .lv-avatar__body,
+button:hover .lv-avatar .lv-avatar__body {
+  animation: lv-avatar-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* hover 时眨一下眼，像被戳到的反应 */
+@keyframes lv-avatar-blink-once {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.12); }
+}
+
+.lv-avatar:hover .lv-avatar__eye,
+button:hover > .lv-avatar .lv-avatar__eye,
+button:hover .lv-avatar .lv-avatar__eye {
+  animation: lv-avatar-blink-once 260ms ease-in-out 60ms;
+}
+
+/* ── alive：选中的大头像持续「活着」 ── */
+
+/* 呼吸：幅度刻意很小，长时间看不腻 */
+@keyframes lv-avatar-breathe {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.025) translateY(-1.2px); }
+}
+
+.lv-avatar--alive .lv-avatar__body {
+  animation: lv-avatar-breathe 3.6s ease-in-out infinite;
+}
+
+/*
+ * 眨眼：一个周期里大部分时间睁着，只在末尾快速闭合两下。
+ * 5.2s 周期内 92% 都是睁眼，所以看起来是「偶尔眨一下」而不是一直在闪。
+ */
+@keyframes lv-avatar-blink-loop {
+  0%, 91%, 100% { transform: scaleY(1); }
+  93.5% { transform: scaleY(0.1); }
+  95.5% { transform: scaleY(1); }
+  97% { transform: scaleY(0.1); }
+  98.5% { transform: scaleY(1); }
+}
+
+.lv-avatar--alive .lv-avatar__eye {
+  animation: lv-avatar-blink-loop 5.2s ease-in-out infinite;
+}
+
+/* 眼珠左右看：与眨眼周期不同（7.4s vs 5.2s），错开后显得随机而非机械 */
+@keyframes lv-avatar-look {
+  0%, 24% { transform: translateX(0); }
+  32%, 44% { transform: translateX(2.2px); }
+  52%, 64% { transform: translateX(0); }
+  72%, 84% { transform: translateX(-2.2px); }
+  92%, 100% { transform: translateX(0); }
+}
+
+.lv-avatar--alive .lv-avatar__eyes {
+  animation: lv-avatar-look 7.4s ease-in-out infinite;
+}
+
+/* hover 选中的大头像时，呼吸让位给 pop，避免两个 scale 打架 */
+.lv-avatar--alive:hover .lv-avatar__body,
+button:hover .lv-avatar--alive .lv-avatar__body {
+  animation: lv-avatar-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 /* ── Landing page 可复用工具类 ── */

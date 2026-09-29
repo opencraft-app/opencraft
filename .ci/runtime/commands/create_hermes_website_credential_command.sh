@@ -23,6 +23,7 @@
 #   HERMES_TAT_COMMAND_TIMEOUT      Default: 300
 #   HERMES_TAT_COMMAND_USER        Default: root
 #   HERMES_TAT_COMMAND_WORKDIR     Default: /tmp
+#   HERMES_TAT_MULTI_GATEWAY       true creates an opt-in all-gateway command
 #   HERMES_TAT_COMMAND_ENV_FILE    Optional path to write shell exports
 
 set -euo pipefail
@@ -34,6 +35,7 @@ COMMAND_TIMEOUT="${HERMES_TAT_COMMAND_TIMEOUT:-300}"
 COMMAND_USER="${HERMES_TAT_COMMAND_USER:-root}"
 COMMAND_WORKDIR="${HERMES_TAT_COMMAND_WORKDIR:-/tmp}"
 OUTPUT_ENV_FILE="${HERMES_TAT_COMMAND_ENV_FILE:-}"
+MULTI_GATEWAY="${HERMES_TAT_MULTI_GATEWAY:-false}"
 
 usage() {
   cat <<'EOF'
@@ -65,6 +67,8 @@ Environment:
       Default: /tmp.
   HERMES_TAT_COMMAND_ENV_FILE
       Optional path to write shell exports for the created command.
+  HERMES_TAT_MULTI_GATEWAY
+      Set true only for a validated multi-gateway CVM; default false.
 EOF
 }
 
@@ -96,6 +100,8 @@ fi
 
 [[ "$COMMAND_TIMEOUT" =~ ^[0-9]+$ && "$COMMAND_TIMEOUT" -gt 0 ]] || \
   fail "HERMES_TAT_COMMAND_TIMEOUT must be a positive integer"
+[[ "$MULTI_GATEWAY" == "true" || "$MULTI_GATEWAY" == "false" ]] || \
+  fail "HERMES_TAT_MULTI_GATEWAY must be true or false"
 
 require_cmd base64
 require_cmd date
@@ -114,6 +120,9 @@ content_b64="$(
     printf '#!/usr/bin/env bash\n'
     printf 'export WEBSITE_KEY="%s"\n' '{{tat-hidden:website_key}}'
     printf 'export API_BASE="%s"\n' '{{api_base}}'
+    if [[ "$MULTI_GATEWAY" == "true" ]]; then
+      printf 'export HERMES_GATEWAY_MODE=all\n'
+    fi
     sed '1{/^#!/d;}' "$SCRIPT_PATH"
   } | base64 | tr -d '\n'
 )"

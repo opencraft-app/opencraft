@@ -103,6 +103,8 @@ routes:
       - { method: DELETE, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
       - { method: POST, path: "/v1/instances/{instance_id}/debug/exec" }
       - { method: POST, path: "/v1/instances/{instance_id}/tat/session" }
+      - { method: POST, path: "/v1/instances/{instance_id}/desktop/session" }
+      - { method: GET, path: "/v1/instances/{instance_id}/desktop/session" }
       - { method: POST, path: "/v1/instances/{instance_id}/config/reset" }
       - { method: POST, path: "/v1/instances/{instance_id}/agentchat/launch-token" }
       - { method: POST, path: "/v1/instances/{instance_id}/channels/config" }
@@ -164,6 +166,7 @@ routes:
     require_realname: true
     auth_strategy: session
     optional_auth_allow:
+      - { method: POST, path: "/v1/credit/inquiry" }
       - { method: POST, path: "/v1/credit/packages/order-url" }
     path_policy: allowlist
     path_allow:
@@ -237,6 +240,14 @@ routes:
       - { method: POST, path: "/oauth2/authorize" }
       - { method: POST, path: "/oauth2/token" }
     response_header_timeout: 10s
+
+  - name: support-feedback
+    prefix: /support/feedback
+    methods: [GET, POST, OPTIONS]
+    upstream: http://ticket.ticket.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
+    response_header_timeout: 60s
 
   - name: auth
     prefix: /auth

@@ -1,9 +1,16 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BlogPage } from "@/pages/marketing/blog-page";
 
+vi.mock("@/lib/region", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/region")>()),
+  isGlobal: true,
+}));
+
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => text,
 }));
 
@@ -17,93 +24,43 @@ vi.mock("@/components/site/public-site-header", () => ({
   ),
 }));
 
-describe("BlogPage", () => {
-  it("renders article cards with accessible category switches", () => {
-    render(<BlogPage />);
+afterEach(cleanup);
 
+describe("BlogPage", () => {
+  it("shows only the replacement articles and filters by their categories", () => {
+    render(<BlogPage />);
     expect(screen.getByRole("heading", { name: "博客" })).toBeInTheDocument();
-    expect(screen.getByRole("banner")).toHaveAttribute("data-appearance", "immersive");
-    expect(screen.getByRole("main")).toHaveClass("bg-white");
-    const gridBackdrop = screen.getByRole("main").querySelector("[aria-hidden='true']");
-    expect(gridBackdrop).toHaveClass(
-      "[background:repeating-linear-gradient(90deg,var(--border-strong)_0_1px,transparent_1px_16px)]",
-    );
-    expect(gridBackdrop?.getAttribute("class")).not.toContain("rgba(17,24,39");
-    expect(screen.getByRole("region", { name: "博客" })).toHaveClass("pb-96");
-    expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "公告" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).toHaveAttribute(
-      "href",
-      "/blog/using-hermes-agent-as-a-discord-bot",
-    );
-    expect(screen.getByRole("link", { name: /I Recreated Claude Tag with LightVela/ })).toHaveAttribute(
-      "href",
-      "/blog/recreated-claude-tag-with-lightvela",
-    );
-    expect(screen.getByRole("link", { name: /I Vibe-Coded My Own Basketball Shoe Storefront/ })).toHaveAttribute(
-      "href",
-      "/blog/basketball-shoe-storefront-with-lightvela-workbench",
-    );
-    expect(screen.getByRole("link", { name: /LightVela Introduces Workbench/ })).toHaveAttribute(
-      "href",
-      "/blog/lightvela-workbench-ai-vibe-your-own-website",
-    );
-    expect(screen.getByRole("link", { name: /Tencent's Cloud Agent Gave an Early Taste of Meta's Muse/ })).toHaveAttribute(
-      "href",
-      "/blog/tencent-cloud-agent-early-taste-of-meta-muse",
-    );
-    expect(screen.getByRole("link", { name: /Stop Letting Your Agent Work Alone/ })).toHaveAttribute(
-      "href",
-      "/blog/hermes-deepseek-harness-10x-efficiency",
-    );
-    expect(screen.getByRole("link", { name: /For Just \$0\.03, DSH Brought a Broken Hermes Agent Back to Life/ })).toHaveAttribute(
-      "href",
-      "/blog/dsh-revived-broken-hermes-agent",
-    );
-    const workbenchCard = screen.getByRole("link", { name: /I Vibe-Coded My Own Basketball Shoe Storefront/ });
-    expect(workbenchCard.querySelector("time")).toHaveTextContent("September 3, 2026");
-    expect(within(workbenchCard).queryByText("Cassidy Shi")).not.toBeInTheDocument();
-    expect(screen.queryAllByText("Cassidy Shi")).toHaveLength(0);
-    const latestCard = screen.getAllByRole("link", { name: /For Just \$0\.03, DSH Brought a Broken Hermes Agent Back to Life/ }).at(-1);
-    if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
-    expect(screen.queryByText(/I host my mega Discord server with over 600 users/)).not.toBeInTheDocument();
-    expect(latestCard).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-3", "shadow-sm");
-    expect(latestCard.querySelector("img")).toHaveAttribute(
-      "src",
-      "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
-    );
-    expect(latestCard.querySelector("img")).toHaveClass("rounded-md", "bg-white", "object-cover");
-    expect(latestCard.querySelector("h2")).toHaveClass("line-clamp-2", "min-h-[2.5rem]", "px-1", "text-pretty");
-    expect(latestCard.querySelector("div")).toHaveClass("px-1", "pb-1");
-    expect(latestCard.querySelector("time")).toHaveTextContent("September 15, 2026");
-    expect(latestCard.parentElement).toHaveClass("lg:grid-cols-3");
+    const cards = screen.getAllByRole("link");
+    expect(cards).toHaveLength(4);
+    expect(screen.getAllByText("Walker Cao")).toHaveLength(3);
+    expect(screen.getByText("Jasmin Zhao")).toBeInTheDocument();
+    expect(cards[0]?.querySelector("h2")).toHaveAttribute("lang", "en");
+    expect(cards[0]).toHaveAttribute("href", "/blog/lightvela-personal-ai-cloud-now-live");
+    expect(cards[1]?.querySelector("h2")).toHaveAttribute("lang", "en");
+    expect(cards[3]?.querySelector("img")).toHaveAttribute("src", "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover-supplied.webp");
+    expect(screen.queryByText("Cassidy Shi")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "产品" }));
-
     expect(screen.getByRole("button", { name: "产品" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("link", { name: /LightVela Introduces Workbench/ })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Tencent's Cloud Agent Gave an Early Taste of Meta's Muse/ })).not.toBeInTheDocument();
-
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: /Personal AI in the Cloud/ })).toHaveAttribute("href", "/blog/lightvela-personal-ai-cloud-now-live");
     fireEvent.click(screen.getByRole("button", { name: "使用场景" }));
-
-    expect(screen.getByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Tencent's Cloud Agent Gave an Early Taste of Meta's Muse/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Stop Letting Your Agent Work Alone/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /For Just \$0\.03, DSH Brought a Broken Hermes Agent Back to Life/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("link")).toHaveLength(3);
+    expect(screen.queryByText("Jasmin Zhao")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "公告" }));
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "全部" }));
+    expect(screen.getAllByRole("link")).toHaveLength(4);
   });
 
-  it("formats listing dates for the active public locale in Beijing time", () => {
-    render(<BlogPage publicLocale="zh-Hant" />);
-
-    const expectedDate = new Intl.DateTimeFormat("zh-Hant", {
-      dateStyle: "long",
-      timeZone: "Asia/Shanghai",
-    }).format(new Date("2026-09-15T16:34:36+08:00"));
-    const latestCard = screen.getAllByRole("link", { name: /只花 0\.03 美元，DSH 讓損壞的 Hermes Agent 重獲新生/ }).at(-1);
-    if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
-
-    expect(latestCard.querySelector("time")).toHaveTextContent(expectedDate);
+  it("preserves source titles while localizing article links and dates", () => {
+    render(<BlogPage publicLocale="zh-Hant" publicLocalized />);
+    const card = screen.getByRole("link", { name: /只花 0.25/ });
+    expect(card).toHaveAttribute("href", "/zh-hant/blog/dsh-revived-broken-hermes-agent");
+    const time = card.querySelector("time");
+    expect(time).toHaveTextContent(new Intl.DateTimeFormat("zh-Hant", {
+      dateStyle: "long", timeZone: "Asia/Shanghai",
+    }).format(new Date(time?.getAttribute("datetime") ?? "")));
+    expect(within(card).getByText("Walker Cao")).toBeInTheDocument();
   });
 });

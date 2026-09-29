@@ -78,6 +78,10 @@
 - `GET /v1/credit/packages`
 - `POST /v1/credit/packages/{package_id}/refund`
 
+`POST /v1/credit/inquiry` 支持可选登录态：已登录时透传可信 `X-User-Id` 并优先使用用户自己的
+影子账号；未登录或用户尚未绑定影子账号时，Trade 仅在询价链路使用环境配置的
+`TRADE_INQUIRY_FALLBACK_UIN/APP_ID`。该兜底不得用于下单，下单相关接口仍必须校验用户身份。
+
 `order` 返回 Trade 的 `bigOrderId/dealName` 和 `auth_code`。ticket 由 Credit 自己的 Redis store
 保存，绑定 `user_id + deal_name`，默认 10 分钟过期；消费使用 Lua `GET + DEL` 保证多 Pod 下
 严格一次性。签发失败不回滚已经创建的 Trade 订单，返回空 `auth_code`，登录态链路仍可继续。
@@ -202,6 +206,12 @@ SSM `mono-beijing-sandbox-credit-runtime-secrets`，通过
 已经创建在同一 LLMGateway 控制面的五个 plan。
 
 各环境的 `credit-platform.env` 必须提供 `CREDIT_REGION` 和 `CREDIT_OBJECT_ID_PASSWORD_SUFFIX`，并由公共 Kustomize component 注入运行时 `credit-config`；Credit API 启动时会校验这两个资源 ID 生成参数。
+
+生产环境的 `LLMGATEWAY_INTERNAL_BASE_URL` 必须与该地域用户模型流量使用同一套 LLMGateway：
+上海使用 `https://token-admin.lightvela.com`，新加坡使用 `https://token-admin.lightvela.ai`。不得把
+生产 Credit 指向北京共享管理面 `https://llmgw-control.lightvela.com`。`credit_product` 中的 plan
+也必须创建于同一个地域控制面；跨地域同名 plan 的 ID 不可复用，否则商品能发货但用户流量无法
+消费对应订阅。切换控制面时还要同步迁移 active package 的精确订阅和快照，不能只更新商品表。
 
 Credit API 还需要 `CREDIT_REDIS_ADDR`、`CREDIT_REDIS_PASSWORD`、`CREDIT_REDIS_DB` 和
 `CREDIT_AUTH_CODE_TTL` 初始化一次性支付 ticket store；默认 DB 为 0、TTL 为 10 分钟。Redis

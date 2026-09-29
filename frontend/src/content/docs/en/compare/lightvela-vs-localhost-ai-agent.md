@@ -14,7 +14,7 @@ Hermes can run locally on macOS, Windows, Linux, WSL2, and more. Its official in
 
 | What matters to you | Run Hermes on your computer | Use LightVela |
 | - | - | - |
-| **Where Hermes runs** | Your own machine | A dedicated cloud runtime |
+| **Where Hermes runs** | Your own machine | A dedicated cloud environment |
 | **Day-to-day control** | You choose the local setup and environment | You manage the agent through a hosted console |
 | **Availability** | You keep the computer and process available | Designed to stay online independently of your local device |
 | **Setup responsibility** | You configure the runtime, model, tools, and channels | The core agent environment is hosted for you |

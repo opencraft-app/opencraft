@@ -1,10 +1,12 @@
 package pass
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	passmodel "ctl/pkg/model/pass"
+	"ctl/pkg/transport"
 )
 
 // 升配用户侧入口的入参构造。需求：TAPD 1010132091137784162 §5.1
@@ -19,6 +21,54 @@ func modifyTestPass() *passmodel.Entity {
 		BundleID:    "bundle_launch_01",
 		Status:      passmodel.StatusActive,
 		ExpiredTime: time.Date(2026, 6, 15, 10, 30, 0, 0, time.Local),
+	}
+}
+
+func TestQuoteModifyTargetsRunsConcurrentlyAndPreservesPolicyOrder(t *testing.T) {
+	targets := []string{"bundle_cruise_01", "bundle_launch_ai_01", "bundle_cruise_ai_01"}
+	started := make(chan string, len(targets))
+	release := make(chan struct{})
+	type result struct {
+		options []transport.ModifyBundleOption
+		err     error
+	}
+	done := make(chan result, 1)
+
+	go func() {
+		options, err := quoteModifyTargets(context.Background(), targets,
+			func(ctx context.Context, targetBundleID string) (*transport.ModifyBundleOption, bool, error) {
+				started <- targetBundleID
+				select {
+				case <-release:
+					return &transport.ModifyBundleOption{TargetBundleID: targetBundleID}, true, nil
+				case <-ctx.Done():
+					return nil, false, ctx.Err()
+				}
+			})
+		done <- result{options: options, err: err}
+	}()
+
+	for range targets {
+		select {
+		case <-started:
+		case <-time.After(500 * time.Millisecond):
+			close(release)
+			t.Fatal("modify target inquiries did not start concurrently")
+		}
+	}
+	close(release)
+
+	got := <-done
+	if got.err != nil {
+		t.Fatalf("quoteModifyTargets: %v", got.err)
+	}
+	if len(got.options) != len(targets) {
+		t.Fatalf("options = %d, want %d", len(got.options), len(targets))
+	}
+	for i, targetBundleID := range targets {
+		if got.options[i].TargetBundleID != targetBundleID {
+			t.Fatalf("options[%d] = %q, want %q", i, got.options[i].TargetBundleID, targetBundleID)
+		}
 	}
 }
 
@@ -88,8 +138,11 @@ func TestModifyAllowedRejectsTargetsFrontendMightReplay(t *testing.T) {
 		{name: "AI 升配", source: "bundle_launch_ai_01", target: "bundle_cruise_ai_01", want: true},
 		// 降配：本期明确不支持，放过去会让计费按负差价退钱。
 		{name: "降配", source: "bundle_cruise_01", target: "bundle_launch_01"},
-		// 跨 SP：通用与 AI 的计费定义、积分额度都不同，串了会算错钱。
-		{name: "通用跨到 AI", source: "bundle_launch_01", target: "bundle_cruise_ai_01"},
+		// 跨 SP：只允许产品明确列出的通用 → AI 有向边，反向或越级降配仍拒绝。
+		{name: "Launch 跨到 Launch AI", source: "bundle_launch_01", target: "bundle_launch_ai_01", want: true},
+		{name: "Cruise 跨到 Cruise AI", source: "bundle_cruise_01", target: "bundle_cruise_ai_01", want: true},
+		{name: "Launch 跨到 Cruise AI", source: "bundle_launch_01", target: "bundle_cruise_ai_01", want: true},
+		{name: "Cruise 不可降到 Launch AI", source: "bundle_cruise_01", target: "bundle_launch_ai_01"},
 		{name: "AI 跨到通用", source: "bundle_launch_ai_01", target: "bundle_cruise_01"},
 		// 同档原地变配：没有差价，属于无意义订单。
 		{name: "同档", source: "bundle_launch_01", target: "bundle_launch_01"},

@@ -304,7 +304,7 @@ func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string
 	return nil, errors.New("fakeOrderStore: GetOrderByDealName not implemented")
 }
 
-func (f *fakeOrderStore) FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, actID int64, createdAfter time.Time) (*store.TradeOrder, error) {
+func (f *fakeOrderStore) FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, orderType, bundleID string, actID int64, resourceID string, createdAfter time.Time) (*store.TradeOrder, error) {
 	f.lastReusableCreatedAfter = createdAfter
 	if f.findReusableFn != nil {
 		return f.findReusableFn(ctx, externalUserID, activityID, bundleID, actID, createdAfter)

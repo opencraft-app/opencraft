@@ -78,7 +78,7 @@ func TestModifyCheckoutRetryAndTicketRefreshUseExistingOrder(t *testing.T) {
 	if err != nil || result.NeedCharge != 0 {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if stub.calls != 2 || stub.opts.ExternalUserID != "usr_test" || stub.opts.ResourceID != "lhpass-r1" || stub.opts.OrderType != "modify" || len(stub.opts.AllowedBundleIDs) != 1 || stub.opts.AllowedBundleIDs[0] != "bundle_cruise_01" || stub.opts.WxOpenID != "openid" {
+	if stub.calls != 2 || stub.opts.ExternalUserID != "usr_test" || stub.opts.ResourceID != "lhpass-r1" || stub.opts.OrderType != "modify" || len(stub.opts.AllowedBundleIDs) != 3 || stub.opts.AllowedBundleIDs[0] != "bundle_cruise_01" || stub.opts.AllowedBundleIDs[1] != "bundle_launch_ai_01" || stub.opts.AllowedBundleIDs[2] != "bundle_cruise_ai_01" || stub.opts.WxOpenID != "openid" {
 		t.Fatalf("lost binding: %+v", stub.opts)
 	}
 	refresh, err := l.ModifyPassPaymentAuthorization("usr_test", "lhpass-r1", req)

@@ -4,7 +4,7 @@
 
 **에이전트의 안전 경계는 모델 하나로 정해지지 않습니다. 채널 자격 증명, 대화 범위, 메모리 정책, 외부 작업 규칙이라는 네 레이어가 함께 경계를 만듭니다.** 경계를 명확히 정하면 누가 에이전트에 접근할 수 있는지, 어떤 메시지를 처리할지, 어떤 내용을 보내면 안 되는지, 어떤 작업 전에 확인을 받아야 하는지 답할 수 있습니다. 자격 증명은 장기 맥락에 넣거나 채팅에 붙여 넣지 마세요. 메모리 정책은 민감한 데이터가 영구 기록으로 남지 않게 해야 하며, 외부로 전송하거나 되돌릴 수 없는 작업에는 확인 단계가 필요합니다. Telegram 그룹 메시지를 사용하려면 BotFather에서 Group Privacy를 끄고 Bot을 그룹에 추가한 뒤 `@bot_username`을 멘션해 대화를 시작합니다. WhatsApp 그룹 지원 범위는 해당 채널 문서를 따릅니다. 실제 운영 전에 출시 전 안전 체크리스트를 모두 확인하세요.
 
-![Telegram 및 WhatsApp 에이전트의 권한, 그룹 규칙, 민감한 작업 경계 설계](../images/use-case-11-telegram-whatsapp-safety-boundaries.png)
+![Telegram 및 WhatsApp 에이전트의 권한, 그룹 규칙, 민감한 작업 경계 설계](../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
 
 ## 대상 독자
 

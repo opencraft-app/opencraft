@@ -4,7 +4,7 @@
 
 **Las tareas programadas permiten que Hermes Agent empiece a trabajar sin un prompt manual. Elija una tarea de Agent cuando el trabajo necesite razonamiento de IA, una tarea de notificación cuando el mismo mensaje deba enviarse tal como está escrito, o una tarea de script cuando un script de Bash o Python deba realizar una comprobación determinista. Los tres tipos usan los mismos horarios de una sola vez, recurrentes y por intervalos, además de la ventana de validez y la configuración de notificaciones.**
 
-![Página de tareas programadas con plantillas y tareas actuales](../images/st-en-1.png)
+![Página de tareas programadas con plantillas y tareas actuales](../images/st-en-1.webp)
 
 ## Elegir un tipo de tarea
 
@@ -23,7 +23,7 @@ Todos los tipos pueden ejecutarse una vez, con una cadencia diaria, semanal o me
 
 Asegúrese de que Hermes Agent esté activo, elija un canal de notificación si lo necesita y revise el código de cualquier tarea de script antes de guardarla.
 
-![Opciones de canales de notificación con Telegram y WeChat](../images/notification-channels-en.png)
+![Opciones de canales de notificación con Telegram y WeChat](../images/notification-channels-en.webp)
 
 ## Crear una tarea de Agent
 
@@ -43,7 +43,7 @@ Configure los siguientes campos:
 A la hora programada, Hermes Agent crea una tarea de Agent y llama al modelo seleccionado.
 El resultado puede enviarse a los canales seleccionados y queda registrado en Ejecuciones recientes.
 
-![Diálogo Crear tarea programada con el tipo Tarea de Agent](../images/st-en-2.png)
+![Diálogo Crear tarea programada con el tipo Tarea de Agent](../images/st-en-2.webp)
 
 ## Crear una tarea de notificación
 
@@ -60,7 +60,7 @@ Por eso, el uso de tokens del modelo para la tarea es de 0 Token.
 Si no selecciona un canal, la tarea se ejecuta en segundo plano y escribe un registro en lugar de enviar un mensaje.
 El formato de cada canal todavía puede afectar a los saltos de línea y a los caracteres que reciben los destinatarios.
 
-![Diálogo Crear tarea programada con el tipo Tarea de notificación](../images/st-en-3.png)
+![Diálogo Crear tarea programada con el tipo Tarea de notificación](../images/st-en-3.webp)
 
 ## Crear una tarea de script
 
@@ -83,14 +83,14 @@ Usan 0 Token de modelo, pero siguen usando recursos de ejecución de Agent en la
 No use una tarea de script para reparar, explicar o resumir un fallo con IA.
 La ejecución sigue siendo determinista: una salida vacía permanece silenciosa y un script fallido no activa un fallback de modelo.
 
-![Diálogo Crear tarea programada con el tipo Tarea de script](../images/st-en-4.png)
+![Diálogo Crear tarea programada con el tipo Tarea de script](../images/st-en-4.webp)
 
 ## Vincular una tarea de Agent upstream
 
 Use una tarea upstream cuando una tarea de Agent deba preparar el contexto para otra.
 La tarea downstream recibe la salida completada más reciente de la tarea upstream y conserva su propia programación, instrucciones, ventana de validez y configuración de notificaciones.
 
-![Diálogo Crear tarea programada con la opción de tarea upstream](../images/st-en-5.png)
+![Diálogo Crear tarea programada con la opción de tarea upstream](../images/st-en-5.webp)
 
 Deje suficiente tiempo entre tareas dependientes y explique en las instrucciones downstream cómo usar la salida upstream.
 El contexto upstream, la ejecución del modelo y los Skills solo se aplican a las tareas de Agent.

@@ -469,6 +469,20 @@ func (s *MySQLStore) CreateSandbox(ctx context.Context, sb core.Sandbox) (core.S
 }
 
 func (s *MySQLStore) GetSandbox(ctx context.Context, id string) (core.Sandbox, error) {
+	return s.getSandbox(ctx, `
+		SELECT id, instance_id, pool_id, template_class_id, resolution_mode, resolution_source, resolution_divergence, region, metadata, env_vars, timeout_seconds, auto_pause, secure, allow_internet, created_at, updated_at
+		FROM sandboxes WHERE id = ? LIMIT 1
+	`, "id", id)
+}
+
+func (s *MySQLStore) GetSandboxByInstanceID(ctx context.Context, instanceID string) (core.Sandbox, error) {
+	return s.getSandbox(ctx, `
+		SELECT id, instance_id, pool_id, template_class_id, resolution_mode, resolution_source, resolution_divergence, region, metadata, env_vars, timeout_seconds, auto_pause, secure, allow_internet, created_at, updated_at
+		FROM sandboxes WHERE instance_id = ? LIMIT 1
+	`, "instance_id", instanceID)
+}
+
+func (s *MySQLStore) getSandbox(ctx context.Context, query string, lookupName string, value string) (core.Sandbox, error) {
 	var (
 		sb                core.Sandbox
 		metaStr           sql.NullString
@@ -478,11 +492,8 @@ func (s *MySQLStore) GetSandbox(ctx context.Context, id string) (core.Sandbox, e
 		secure            sql.NullBool
 		allowNet          sql.NullBool
 	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, instance_id, pool_id, template_class_id, resolution_mode, resolution_source, resolution_divergence, region, metadata, env_vars, timeout_seconds, auto_pause, secure, allow_internet, created_at, updated_at
-		FROM sandboxes WHERE id = ?
-	`, id).Scan(&sb.ID, &sb.InstanceID, &sb.PoolID, &sb.TemplateClassID, &sb.ResolutionMode, &sb.ResolutionSource, &resolutionDiverge, &sb.Region, &metaStr, &envStr, &sb.TimeoutSeconds, &autoPause, &secure, &allowNet, &sb.CreatedAt, &sb.UpdatedAt)
-	s.logf("GetSandbox id=%s err=%v", id, err)
+	err := s.db.QueryRowContext(ctx, query, value).Scan(&sb.ID, &sb.InstanceID, &sb.PoolID, &sb.TemplateClassID, &sb.ResolutionMode, &sb.ResolutionSource, &resolutionDiverge, &sb.Region, &metaStr, &envStr, &sb.TimeoutSeconds, &autoPause, &secure, &allowNet, &sb.CreatedAt, &sb.UpdatedAt)
+	s.logf("GetSandbox lookup=%s value=%s err=%v", lookupName, value, err)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.Sandbox{}, core.ErrSandboxNotFound
 	}

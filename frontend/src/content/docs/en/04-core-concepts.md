@@ -2,15 +2,15 @@
 
 ## Summary
 
-**LightVela has four core concepts. A Hermes Agent is the cloud-run conversational entity, with its own isolated runtime, memory that persists across conversations, and 24/7 availability. The model is the large language model it calls — either a Model Coding Plan (monthly), Model API (pay as you go), or a custom OpenAI-compatible endpoint. Channels are the messaging platforms you talk to it through; multiple channels can connect to the same agent and share one persona and memory. Skills are installable capability packs that extend what it can do. A full conversation flows like this: a channel receives your message, the agent decides whether to invoke a skill, it calls the model to generate a response, and the reply comes back through the same channel.**
+**LightVela has five core concepts: a Hermes Agent is the cloud instance; Bots are separate profiles inside it; each Bot has model settings, connected messaging channels, and installable Skills. Bots can keep separate personas, memory, and scheduled tasks. Channels connected to the same Bot share its behavior, while different Bots do not automatically share their settings. A message arrives through a channel, the selected Bot may use a Skill and a model, and the reply returns through that channel.**
 
 ---
 
-LightVela involves four core concepts: Hermes Agent, models, channels, and skills. This page explains their roles. For detailed configuration steps, see the corresponding configuration pages.
+LightVela has five related concepts: Hermes Agent, Bots, models, channels, and Skills. This page explains how they fit together.
 
 ## This page covers
 
-- The relationship between the four concepts
+- The relationship among five concepts
 
 - Characteristics of a Hermes Agent instance
 
@@ -22,28 +22,22 @@ LightVela involves four core concepts: Hermes Agent, models, channels, and skill
 
 ## Concept relationship
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                         Hermes Agent                         │
-│              (Agent running in the LightVela cloud)           │
-└──────────────────────────────────────────────────────────────┘
-      │                          │                        │
-┌─────┘                          │                        └──────┐
-▼                                ▼                               ▼
-┌───────┐                   ┌────────┐                   ┌────────┐
-│ Model │                   │Channel │                   │ Skill  │
-└───────┘                   └────────┘                   └────────┘
- Model provider    Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
+```text
+Hermes Agent (cloud instance)
+  └─ Bot profiles (main Bot and optional additional Bots)
+       ├─ Primary model and optional fallbacks
+       ├─ Connected channels
+       └─ Skills, Soul, memory, scheduled tasks
 ```
 
 | Concept | Role | Description |
 |---|---|---|
-| Hermes Agent | Conversation subject | The AI Agent instance itself |
-| Model | Language capability | The large language model called by Hermes Agent |
-| Channel | Interaction entry point | The platform where users chat with Hermes Agent |
-| Skill | Capability extension | Additional capability packages callable by Hermes Agent |
+| Hermes Agent | Cloud instance | The environment that hosts the Bot profiles |
+| Bot | Independent profile | Has its own model, channels, Skills, persona, memory, and scheduled tasks |
+| Model | Language capability | The language model used by a Bot |
+| Channel | Interaction entry point | The platform where users chat with a Bot |
+| Skill | Capability extension | An additional capability package a Bot can call |
 
-![](./images/3-1.webp)
 
 ---
 
@@ -53,13 +47,19 @@ Hermes Agent is the AI Agent instance in LightVela. Creating a Hermes Agent is e
 
 Hermes Agent has the following characteristics:
 
-- **Isolated runtime environment**: Each Hermes Agent runs in a dedicated environment isolated from other instances
+- **Dedicated cloud environment**: Each Hermes Agent runs in its own environment, with resources isolated from other instances
 
 - **Persistent memory**: Conversation content is saved across sessions, and the Agent uses historical context when responding
 
 - **Always online**: Runs 24/7 and does not depend on the user's local device
 
 The current Launch plan supports creating up to 1 Hermes Agent instance.
+
+---
+
+## Bots
+
+Each Hermes Agent has a main Bot and may support additional Bots, depending on plan allowance and availability. Bots live inside the same cloud instance but keep their settings and data separate. Select the intended Bot before changing a model, channel, Skill, or memory. See [Manage Bots](./configuration/bots.md).
 
 ---
 
@@ -77,9 +77,7 @@ In addition, the Launch plan includes 100 trial credits, so you can chat out of 
 
 For supported models, API Key acquisition, and model selection guidance, see [Configure Models](./configuration/model.md).
 
-> ⚠️ **Only one model is active**
->
-> Currently, each Hermes Agent can have only one active model configuration. To switch models, use "Add as default" to overwrite the previous configuration.
+> A Bot uses one primary model at a time. Additional configured models or fallbacks can be available; switching the active model does not require deleting the previous configuration. See [Model Switching](./configuration/multiple-models.md).
 
 ---
 
@@ -91,17 +89,17 @@ Channels are the messaging platform entry points where users chat with Hermes Ag
 |---|---|---|
 | WeChat | QR-code authorization | Daily personal use, suitable for users in China |
 | Telegram | Bot Token access | Personal or team messaging, simple setup, suitable for lightweight automation |
-| WhatsApp | WhatsApp Business API access | International user communication, customer service, notifications, and reminders |
+| WhatsApp | QR-code scan | International user communication, customer service, notifications, and reminders |
 | Discord | Bot Token access | Community operations, developer communities, gaming or interest groups |
 | Slack | Bot Token / App Token access | Team collaboration, workspace notifications, and channel-based workflows |
 
-For WeChat, choose the channel and click "Authorize Access" to generate a QR code. Scan it with your phone to complete authorization.
+On the **WeChat** card in **Channels**, select **+ Connect** and scan the QR code with your phone.
 
 Detailed access steps for each channel: [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md).
 
 > 💡 **Multiple channels can coexist**
 >
-> Multiple channels can be connected to the same Hermes Agent instance and share memory and Agent behavior. No matter which channel sends a message, the conversation target is the same Hermes Agent.
+> Channels connected to the same Bot share that Bot's persona and memory. Channels attached to different Bots do not automatically share those settings.
 
 ---
 
@@ -109,9 +107,9 @@ Detailed access steps for each channel: [Configure Channel - WeChat](./configura
 
 Skills are additional capability packages callable by Hermes Agent. They extend Hermes Agent beyond basic conversation for specific tasks such as organizing to-dos, generating daily reports, browsing the web, generating images, and more.
 
-All skills come from [SkillHub](https://skillhub.tencent.com), an independent skill marketplace launched by Tencent. In SkillHub, you can browse listed skills and view their feature descriptions and examples.
+Skills are available from [Skills.sh](https://skills.sh/) and [ClawHub](https://clawhub.ai/). Browse these sources in the console **Skills** page and review a result before installing.
 
-Enter the skill name recorded on SkillHub in the "3. Skills" card of the console and click "Install Skill" to install it. You can also ask Hermes Agent directly in conversation to install or delete skills. See [Configure Skills](./configuration/skill.md).
+Open **Skills** in the console, search for an individual Skill or browse **Skill Packages**, then select **Install**. Check the **Installed** tab to verify the result. See [Configure Skills](./configuration/skill.md).
 
 > ⚠️ **Security check before installation**
 >

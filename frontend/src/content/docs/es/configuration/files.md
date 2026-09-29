@@ -35,7 +35,7 @@ Es diferente del contexto guardado del Agent. Para gestionar lo que un Agent rec
 2. Abra su sección de **Cloud Storage** o **Files**.
 3. Espere a que la lista de archivos cargue antes de comenzar una subida o una acción de carpeta.
 
-![La lista de archivos de Almacenamiento en la nube en la consola de LightVela](../images/cloud-storage-overview-en.png)
+![La lista de archivos de Almacenamiento en la nube en la consola de LightVela](../images/cloud-storage-overview-en.webp)
 
 Si la lista no carga, refresque la página e intente de nuevo. Si el problema persiste, utilice [Diagnostics](./diagnostics.md) para revisar los registros recientes del Agent antes de realizar un cambio mayor.
 

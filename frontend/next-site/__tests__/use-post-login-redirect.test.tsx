@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from "@/lib/agent-routes";
@@ -33,10 +33,10 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => openClawState,
 }));
 
-/* 国内站：localized=false，落点即规范路径，便于断言。 */
+const regionState = vi.hoisted(() => ({ isGlobal: false }));
 vi.mock("@/lib/region", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/region")>()),
-  isGlobal: false,
+  get isGlobal() { return regionState.isGlobal; },
 }));
 
 /* 被测 hook 在上面 mock 之后再导入，确保 mock 生效。 */
@@ -47,6 +47,7 @@ import {
 } from "../use-post-login-redirect";
 
 const resetState = () => {
+  regionState.isGlobal = false;
   routerPushMock.mockClear();
   openClawState.refreshPasses.mockClear();
   sessionState.authReady = true;
@@ -63,6 +64,23 @@ beforeEach(resetState);
 afterEach(resetState);
 
 describe("usePostLoginRedirect — OAuth 整页跳转回跳分流", () => {
+  it.each(["en-US", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"] as const)(
+    "global %s: both login paths open first-bot creation without a locale prefix",
+    async (locale) => {
+      regionState.isGlobal = true;
+      sessionState.isAuthenticated = true;
+      openClawState.isSubscribed = true;
+      armPostLoginRedirect();
+      const { result } = renderHook(() => usePostLoginRedirect({ locale }));
+      await waitFor(() => expect(routerPushMock).toHaveBeenCalledWith("/agents?create=1"));
+      expect(sessionStorage.getItem("lc_post_login_redirect")).toBeNull();
+
+      routerPushMock.mockClear();
+      act(() => result.current());
+      await waitFor(() => expect(routerPushMock).toHaveBeenCalledWith("/agents?create=1"));
+    },
+  );
+
   it("armed + 已登录已订阅：回跳后自动分流到控制台 /agents", async () => {
     // 用户点登录前 arm（OAuth 整页跳转），回跳后已是登录态且已订阅
     armPostLoginRedirect();

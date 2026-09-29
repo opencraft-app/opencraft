@@ -2,19 +2,11 @@
 
 ## Ringkasan
 
-**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Agent Anda melalui aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. LightVela berencana masuk tahap public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta akan diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba paket Launch gratis selama 14 hari. Status terkini mengacu pada halaman langganan.**
+**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Agent Anda melalui aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. Paket dan penawaran pengguna baru saat ini dapat dilihat di [halaman Subscribe](/subscribe/).**
 
 ---
 
 > Hermes Agent berbasis cloud yang makin memahami Anda seiring waktu.
-
-> ℹ️ **Info beta publik dan penagihan**
->
-> LightVela akan memasuki beta publik dan mulai menerapkan penagihan. Dokumentasi dan fitur produk masih akan terus diperbarui, sehingga beberapa penjelasan dapat berubah mengikuti rilis berikutnya.
->
-> * **Beta publik dan penagihan**: LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan. Lihat [Paket](./plans.md) untuk ringkasan paket dan manfaat terbaru.
->
-> * **Manfaat pengguna baru setelah beta publik dan penagihan dimulai**: Pengguna baru dapat mencoba paket Launch gratis selama 14 hari.
 
 LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse. Tujuannya sederhana: membantu setiap orang memiliki **pendamping AI yang benar-benar terasa milik sendiri**. Bukan alat yang setiap kali harus diajak berkenalan dari awal, melainkan kehadiran jangka panjang yang **mengenal Anda, mengingat Anda, dan makin memahami kebutuhan Anda seiring waktu**.
 
@@ -52,13 +44,13 @@ Produk LightVela saat ini adalah **Hermes Agent**, AI Agent yang didukung large 
 
 * **Deployment terkelola penuh**: Cloud menangani penyiapan lingkungan dan pengelolaan runtime secara otomatis. Tidak perlu operasional server, image container, atau pengetahuan infrastruktur
 
-* **Runtime terisolasi**: Setiap instans Hermes Agent memiliki runtime sendiri, sumber daya terisolasi, tersedia 24/7, dan tidak bergantung pada perangkat lokal
+* **Lingkungan cloud khusus**: Setiap instans Hermes Agent memiliki lingkungan cloud sendiri, sumber daya terisolasi, tersedia 24/7, dan tidak bergantung pada perangkat lokal
 
 * **Dukungan multi-model**: Hubungkan model besar arus utama dari Tiongkok, langganan Coding Plan penyedia model, atau endpoint yang kompatibel dengan OpenAI. Lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model)
 
 * **Akses multi-kanal**: Chat dengan Hermes Agent lewat Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, dan Lark
 
-* **Ekstensi Skill**: Instal paket Skill dari [SkillHub](https://skillhub.tencent.com) untuk memperluas kemampuan Hermes Agent
+* **Ekstensi Skill**: Cari dan pasang Skill atau Paket Skill dari [Skills.sh](https://skills.sh/) dan [ClawHub](https://clawhub.ai/) di konsol
 
 * **Siap dipakai**: Paket Launch menyertakan kredit uji coba, sehingga Anda bisa mulai chat setelah aktivasi tanpa perlu mengatur model secara terpisah
 
@@ -94,21 +86,16 @@ Satu alur percakapan lengkap membutuhkan tiga konfigurasi:
 
 ## Tentang paket
 
-LightVela menggunakan penagihan berbasis paket. Saat mengaktifkan sebuah paket, Anda mendapat satu instans Hermes Agent beserta sumber daya dan kredit yang termasuk di dalam paket tersebut.
+Satu paket menyediakan satu instans cloud Hermes Agent. Seri Launch mendukung hingga 5 Bot di dalam instans tersebut, sedangkan seri Cruise mendukung hingga 10. Bot adalah profil terpisah, bukan instans Hermes tambahan.
 
-Paket yang saat ini tersedia:
+| Opsi paket | Kredit model per bulan | Bot |
+|---|---:|---:|
+| Launch | 100 | 5 |
+| Launch AI | 4.500 | 5 |
+| Cruise | 200 | 10 |
+| Cruise AI | 10.000 | 10 |
 
-| Paket | Harga asli | Status saat ini |
-| --------- | ------- | ---- |
-| Launch | $7,5 / bulan | Uji coba gratis 14 hari untuk pengguna baru setelah beta publik dan penagihan dimulai |
-| Cruise | $15 / bulan | Paket berbayar |
-
-Paket Launch mencakup: 1 instans Hermes Agent, runtime terisolasi 2-core 4G, penyimpanan cloud khusus 50G, 100 kredit uji coba, ketersediaan 24/7, dan akses konsol.
-
-> ℹ️ **Catatan paket beta**
->
-> LightVela berencana masuk beta publik dan mulai menagih pada 18 Agustus 2026 (Waktu Singapura). Setelah beta publik dan penagihan resmi dimulai, masa berlaku paket pengguna beta yang sudah ada akan diperpanjang satu bulan, dan pengguna baru dapat mencoba Launch gratis selama 14 hari. Lihat [Paket](./plans.md) untuk detail ringkasnya.
-
+Harga, promo pengguna baru, dan ketersediaan dapat berubah. Periksa [halaman Subscribe](/subscribe) sebelum membeli. Pengguna dengan paket aktif juga dapat membeli [paket kredit model](./credits.md) sekali bayar.
 ***
 
 ## Hubungan dengan Lighthouse (opsional)
@@ -123,6 +110,6 @@ Jika Anda baru mengenal Agent cloud, bagian ini boleh dilewati.
 
 * **[Panduan Cepat](./02-quickstart.md)** — Selesaikan percakapan pertama Anda dalam 5 menit
 
-* **[Konsep Inti](./04-core-concepts.md)** — Pahami empat konsep utama: Hermes Agent, model, kanal, dan Skill
+* **[Konsep Inti](./04-core-concepts.md)** — Pahami lima konsep utama: Hermes Agent, Bot, model, kanal, dan Skill
 
 * **[Ringkasan Konfigurasi](./05-configuration.md)** — Fitur konsol dan alur konfigurasi

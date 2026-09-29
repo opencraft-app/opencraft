@@ -34,7 +34,6 @@ import {
 } from "@/lib/billing-flow";
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
-import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { useCreditSources, formatCreditDate } from "@/lib/use-credit-sources";
 import { isCN, isGlobal } from "@/lib/region";
 import { publicSiteHref } from "@/lib/public-site-navigation";
@@ -42,7 +41,6 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
@@ -881,9 +879,7 @@ const SubscriptionSection = ({
     };
   }, [operablePass, subscription, plan.trialDays]);
 
-  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。
-     积分包区域未开启时（feature flag 默认关闭）退化为仅套餐积分，
-     与改造前行为一致。挂载 show_credit_pack() 控制台助手（两页任一挂载即可生效）。 */
+  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。 */
   const planCreditInput = useMemo(
     () =>
       operablePass
@@ -906,22 +902,17 @@ const SubscriptionSection = ({
   }, [operablePass, t]);
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
     useCreditSources(planCreditInput, freeCreditInput);
-  const creditPackVisible = useCreditPackVisibility();
-  useEffect(() => installCreditPackVisibilityHelper(), []);
 
-  /* 套餐进度保持独立；汇总和告警才计算所有已开放的积分来源。 */
+  /* 套餐进度保持独立；汇总和告警计算所有积分来源。 */
   const planCreditsTotal = operablePass ? operablePass.credit_total : 0;
   const planCreditsAvailable = operablePass ? operablePass.credit_available : 0;
   const freeCreditsTotal = freeCreditInput?.creditTotal ?? 0;
-  const freeCreditsAvailable = freeCreditInput?.creditAvailable ?? 0;
   const planCreditsUsed = Math.max(0, planCreditsTotal - planCreditsAvailable);
   const planUsedPercent = planCreditsTotal > 0
     ? Math.min(100, Math.round((planCreditsUsed / planCreditsTotal) * 100))
     : 0;
-  const allCreditsTotal = creditPackVisible ? creditSummary.total : planCreditsTotal + freeCreditsTotal;
-  const allCreditsAvailable = creditPackVisible
-    ? creditSummary.available
-    : planCreditsAvailable + freeCreditsAvailable;
+  const allCreditsTotal = creditSummary.total;
+  const allCreditsAvailable = creditSummary.available;
   const allCreditsUsedPercent = allCreditsTotal > 0
     ? Math.min(100, Math.round(((allCreditsTotal - allCreditsAvailable) / allCreditsTotal) * 100))
     : 0;
@@ -991,6 +982,7 @@ const SubscriptionSection = ({
   return (
     <motion.div
       variants={fadeIn}
+      id="account-credit-section"
       className="overflow-hidden bg-white"
       style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
     >
@@ -1107,21 +1099,19 @@ const SubscriptionSection = ({
                 <>
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-semibold" style={{ color: "#333" }}>
-                      {freeCreditsTotal > 0 || (creditPackVisible && creditSummary.sourceCount > 1)
+                      {freeCreditsTotal > 0 || creditSummary.sourceCount > 1
                         ? t("套餐积分")
                         : t("已使用积分")}
                     </span>
                     {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
-                    {creditPackVisible && (
-                      <AppLink
-                        to="/subscribe?section=credits"
-                        className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
-                        style={{ color: "var(--lw-accent)" }}
-                      >
-                        {t("购买积分包")}
-                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
-                      </AppLink>
-                    )}
+                    <AppLink
+                      to="/subscribe?section=credits"
+                      className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                      style={{ color: "var(--lw-accent)" }}
+                    >
+                      {t("购买积分包")}
+                      <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                    </AppLink>
                   </div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
@@ -1142,30 +1132,8 @@ const SubscriptionSection = ({
                     />
                   </div>
 
-                  {freeCreditsTotal > 0 && !creditPackVisible && (
-                    <div className="mt-3 space-y-2 border-t border-black/[0.06] pt-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span style={{ color: "#666" }}>{t("额外积分")}</span>
-                        <span className="font-semibold tabular-nums" style={{ color: "#333" }}>
-                          {freeCreditsAvailable.toLocaleString()}
-                          <span className="font-normal" style={{ color: "#999" }}>
-                            {" / "}
-                            {freeCreditsTotal.toLocaleString()}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span style={{ color: "#666" }}>{t("当前可用")}</span>
-                        <span className="font-semibold tabular-nums" style={{ color: "var(--lw-accent)" }}>
-                          {allCreditsAvailable.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。
-                      仅在积分包功能开启后展示，未开启时保持原有单套餐视图。 */}
-                  {creditPackVisible && creditSources.length > 0 && (
+                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。 */}
+                  {creditSources.length > 0 && (
                     <div className="mt-4">
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-sm font-semibold" style={{ color: "#333" }}>
@@ -1342,14 +1310,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const [nameSaveError, setNameSaveError] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
-  const [referralRevealed, setReferralRevealed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const revealReferral = () => setReferralRevealed(true);
-    window.addEventListener(CONSOLE_SHOW_EVENT, revealReferral);
-    return () => window.removeEventListener(CONSOLE_SHOW_EVENT, revealReferral);
-  }, []);
 
   // Unauthenticated view state
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1470,6 +1431,14 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
     setEmailBindError(message);
     setEmailBindSuccess(null);
   }, [isBillingView, refreshProfile, searchParams, setSearchParams, t]);
+
+  useEffect(() => {
+    if (!isBillingView || searchParams.get("section") !== "credits") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("account-credit-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isBillingView, searchParams]);
 
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {
@@ -1906,7 +1875,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
                               }}
                               title={user.id}
                             >
-                              {t("id: {{id}}").replace("{{id}}", user.id)}
+                              {t("账号 ID：{{id}}").replace("{{id}}", user.id)}
                             </span>
                             <button
                               type="button"
@@ -2108,7 +2077,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
             {/* ── Section 2: Subscription ── */}
             {isBillingView && <SubscriptionSection subscription={subscription} pass={activePass} />}
 
-            {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
+            {!isBillingView && referralEnabled && <ReferralSection />}
 
             {isBillingView && isGlobal && <SavedCardsSection />}
           </motion.div>

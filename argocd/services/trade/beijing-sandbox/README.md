@@ -131,7 +131,7 @@ trade-platform.env 里两个 jifei URL 走的是 `jifei-prod` / `jifei-billing-a
 
 验证：
 ```bash
-sshpass -p '<jumpbox-pwd>' ssh -p 36000 root@9.208.245.238 \
+sshpass -p '<jumpbox-pwd>' ssh -p 36000 root@9.135.92.56 \
   'KUBECONFIG=/etc/lightclaw-ci/kubeconfig_tkexgz \
    kubectl -n ns-prjqt8dd-867795-production rollout status sts/lightvela-proxy'
 ```

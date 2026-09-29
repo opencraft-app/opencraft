@@ -25,6 +25,10 @@ import (
 )
 
 type stubLogic struct {
+	channelBindingClaimResponse            *transport.InstanceChannelBindingResponse
+	channelBindingReservation              string
+	channelBindingDisconnect               bool
+	channelBindingAction                   string
 	listInstanceBotsResp                   *transport.ListInstanceBotsResponse
 	listInstanceBotsErr                    error
 	getInstanceResp                        *transport.InstanceResponse
@@ -184,15 +188,27 @@ func (s *stubLogic) RetryInstanceBot(ctx pctx.Context, instanceID, botID string)
 }
 
 func (s *stubLogic) ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) (*transport.InstanceChannelBindingResponse, error) {
-	return nil, errors.New("unexpected call")
+	if s.channelBindingClaimResponse == nil {
+		return nil, errors.New("unexpected call")
+	}
+	s.channelBindingAction = "claim"
+	return s.channelBindingClaimResponse, nil
 }
 
-func (s *stubLogic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
-	return errors.New("unexpected call")
+func (s *stubLogic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string) error {
+	if s.channelBindingClaimResponse == nil {
+		return errors.New("unexpected call")
+	}
+	s.channelBindingAction, s.channelBindingReservation = "confirm", reservationID
+	return nil
 }
 
-func (s *stubLogic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
-	return errors.New("unexpected call")
+func (s *stubLogic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel, reservationID string, disconnect bool) error {
+	if s.channelBindingClaimResponse == nil {
+		return errors.New("unexpected call")
+	}
+	s.channelBindingAction, s.channelBindingReservation, s.channelBindingDisconnect = "release", reservationID, disconnect
+	return nil
 }
 
 type stubRetryAfterError struct {
@@ -286,6 +302,14 @@ func (s *stubLogic) StartTerminalSession(ctx pctx.Context, instanceID string) (*
 		s.terminalSessionUserID = ctx.GetUserID()
 		return s.terminalSessionResp, s.terminalSessionErr
 	}
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) EnsureDesktopSession(_ pctx.Context, _ string) (*transport.DesktopSessionResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) GetDesktopSession(_ pctx.Context, _ string) (*transport.DesktopSessionResponse, error) {
 	return nil, errors.New("unexpected call")
 }
 
@@ -740,6 +764,48 @@ func TestListInstanceBotsUsesNestedInstanceRoute(t *testing.T) {
 	}
 	if len(payload.Data.Items) != 1 || payload.Data.Items[0].ProfileID != "main" {
 		t.Fatalf("unexpected payload: %s", rec.Body.String())
+	}
+}
+
+func TestWhatsAppBindingRoutePassesReservationBody(t *testing.T) {
+	stub := &stubLogic{channelBindingClaimResponse: &transport.InstanceChannelBindingResponse{
+		Channel: "whatsapp", BotID: "bot-1", Status: "reserved", ReservationID: "reservation-test",
+	}}
+	router := newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{})
+	path := "/v1/instances/ins-1/bots/bot-1/channel-bindings/whatsapp"
+	request := func(method, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set(headerUserID, "user-1")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", method, rec.Code, rec.Body.String())
+		}
+		return rec
+	}
+	claim := request(http.MethodPut, "")
+	if !strings.Contains(claim.Body.String(), `"reservation_id":"reservation-test"`) {
+		t.Fatalf("claim omitted reservation: %s", claim.Body.String())
+	}
+	request(http.MethodPost, `{"reservation_id":"reservation-test"}`)
+	if stub.channelBindingAction != "confirm" || stub.channelBindingReservation != "reservation-test" {
+		t.Fatalf("confirm token not forwarded: %+v", stub)
+	}
+	request(http.MethodPost, "")
+	if stub.channelBindingAction != "confirm" || stub.channelBindingReservation != "" {
+		t.Fatalf("legacy no-body confirm not forwarded: %+v", stub)
+	}
+	request(http.MethodDelete, `{"reservation_id":"reservation-test"}`)
+	if stub.channelBindingReservation != "reservation-test" || stub.channelBindingDisconnect {
+		t.Fatalf("rollback token not forwarded: %+v", stub)
+	}
+	request(http.MethodDelete, "")
+	if stub.channelBindingReservation != "" || stub.channelBindingDisconnect {
+		t.Fatalf("legacy no-body release not forwarded: %+v", stub)
+	}
+	request(http.MethodDelete, `{"disconnect":true}`)
+	if !stub.channelBindingDisconnect || stub.channelBindingReservation != "" {
+		t.Fatalf("disconnect intent not forwarded: %+v", stub)
 	}
 }
 

@@ -9,6 +9,11 @@ on:
       - playground/sandbox-kr-*
     paths:
       - frontend/**
+      - opencraft/apps/workbench-web/**
+      - opencraft/packages/**
+      - opencraft/plugins/**
+      - opencraft/package.json
+      - opencraft/package-lock.json
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
     paths-ignore:
@@ -60,6 +65,42 @@ stages:
             with:
               fetchDepth: 50
               enableVirtualMergeBranch: false
+          - name: 固定 Playground 构建提交
+            shell: bash
+            env:
+              PIN_MODE: ${{ variables.PIPELINE_MODE }}
+              PIN_SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+              PIN_CI_SHA: ${{ ci.sha }}
+              PIN_BRANCH: ${{ ci.branch }}
+            run: |
+              if [[ "$PIN_MODE" != "playground-build" ]]; then
+                exit 0
+              fi
+              if [[ -z "$PIN_CI_SHA" || "$PIN_CI_SHA" == *'${{'* ]]; then
+                PIN_CI_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              if [[ -z "$PIN_BRANCH" || "$PIN_BRANCH" == *'${{'* ]]; then
+                PIN_BRANCH="${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"
+              fi
+              if [[ ! "$PIN_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "playground-build requires an exact selected master commit" >&2
+                exit 1
+              fi
+              if [[ -n "$PIN_CI_SHA" && "$PIN_SOURCE_SHA" != "$PIN_CI_SHA" ]]; then
+                echo "playground-build requires an exact selected master commit" >&2
+                exit 1
+              fi
+              if [[ -n "$PIN_BRANCH" && "$PIN_BRANCH" != "master" ]]; then
+                echo "playground-build requires an exact selected master commit" >&2
+                exit 1
+              fi
+              git fetch --no-tags origin master
+              if ! git merge-base --is-ancestor "$PIN_SOURCE_SHA" FETCH_HEAD; then
+                echo "playground-build source commit is not on origin/master: $PIN_SOURCE_SHA" >&2
+                exit 1
+              fi
+              git -c advice.detachedHead=false checkout --detach --quiet "$PIN_SOURCE_SHA"
+              test "$(git rev-parse HEAD)" = "$PIN_SOURCE_SHA"
           - name: 打印 frontend 构建上下文
             shell: bash
             run: |
@@ -74,13 +115,37 @@ stages:
             name: 准备 frontend 构建标签
             shell: bash
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
-                echo "skip build tag step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+              PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"
+              if [[ "$PIPELINE_MODE_VALUE" == "promote" || "$PIPELINE_MODE_VALUE" == "edgeone-release" ]]; then
+                echo "skip build tag step because PIPELINE_MODE=${PIPELINE_MODE_VALUE}"
                 exit 0
               fi
               SHORT_SHA='${{ ci.sha }}'
               if [[ -z "$SHORT_SHA" || "$SHORT_SHA" == *'${{'* ]]; then
                 SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              if [[ "$PIPELINE_MODE_VALUE" == "playground-build" ]]; then
+                SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+                TARGET_ENV="${{ variables.TARGET_ENV }}"
+                if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" != "$SHORT_SHA" ]]; then
+                  echo "playground-build requires SOURCE_SHA to equal the checked-out master commit: source=${SOURCE_SHA:-empty} checkout=${SHORT_SHA:-empty}" >&2
+                  exit 1
+                fi
+                if [[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+                  echo "playground-build checkout mismatch: HEAD=$(git rev-parse HEAD) source=$SOURCE_SHA" >&2
+                  exit 1
+                fi
+                case "$TARGET_ENV" in
+                  sandbox-bj-*|sandbox-kr-*)
+                    ;;
+                  *)
+                    echo "playground-build only supports sandbox-bj-* or sandbox-kr-*: ${TARGET_ENV:-empty}" >&2
+                    exit 1
+                    ;;
+                esac
+                SHORT_SHA="$(printf '%.12s' "$SOURCE_SHA")"
+                echo "::set-output name=tag::frontend-${TARGET_ENV}-${SHORT_SHA}"
+                exit 0
               fi
               SHORT_SHA="$(printf '%.12s' "$SHORT_SHA")"
               case "${{ ci.branch }}" in
@@ -104,7 +169,7 @@ stages:
               FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
               FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" || "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]; then
                 echo "skip artifact build step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
@@ -138,6 +203,17 @@ stages:
               "$NODE_BIN" --version
               "$NPM_BIN" --version
 
+              OPENCRAFT_SOURCE_REVISION="${FRONTEND_ARTIFACT_SOURCE_SHA}"
+              OPENCRAFT_SHORT_SHA="$(printf '%.12s' "$OPENCRAFT_SOURCE_REVISION")"
+              cd "$REPO_ROOT/opencraft"
+              "$NPM_BIN" ci
+              OPENCRAFT_BUILD_ID="embedded-${OPENCRAFT_SHORT_SHA}" \
+                OPENCRAFT_SOURCE_REVISION="$OPENCRAFT_SOURCE_REVISION" \
+                "$NPM_BIN" run build:embedded-workbench:release
+              export OPENCRAFT_EMBED_DIST_DIR="$REPO_ROOT/opencraft/apps/workbench-web/dist-embedded-workbench"
+              test -f "$OPENCRAFT_EMBED_DIST_DIR/embedded-workbench.js"
+              test -f "$OPENCRAFT_EMBED_DIST_DIR/.vite/manifest.json"
+
               cd "$REPO_ROOT/frontend"
               rm -rf node_modules
               "$PNPM_BIN" --version
@@ -156,7 +232,7 @@ stages:
               FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
               FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" || "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]; then
                 echo "skip Cloudflare artifact release step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
@@ -220,7 +296,8 @@ stages:
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+              PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"
+              if [[ "$PIPELINE_MODE_VALUE" == "promote" || "$PIPELINE_MODE_VALUE" == "edgeone-release" ]]; then
                 echo "skip GitOps image build step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
@@ -243,6 +320,37 @@ stages:
                     ;;
                 esac
               }
+              if [[ "$PIPELINE_MODE_VALUE" == "playground-build" ]]; then
+                SOURCE_BRANCH='${{ ci.branch }}'
+                if [[ -z "$SOURCE_BRANCH" || "$SOURCE_BRANCH" == *'${{'* ]]; then
+                  SOURCE_BRANCH="${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"
+                fi
+                SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+                CI_SHA_VALUE='${{ ci.sha }}'
+                if [[ -z "$CI_SHA_VALUE" || "$CI_SHA_VALUE" == *'${{'* ]]; then
+                  CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+                fi
+                TARGET_ENV="${{ variables.TARGET_ENV }}"
+                if [[ "$SOURCE_BRANCH" != "master" ]]; then
+                  echo "playground-build must run from master, got ${SOURCE_BRANCH:-empty}" >&2
+                  exit 1
+                fi
+                if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" != "$CI_SHA_VALUE" || "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+                  echo "playground-build source mismatch: source=${SOURCE_SHA:-empty} ci=${CI_SHA_VALUE:-empty} head=$(git rev-parse HEAD)" >&2
+                  exit 1
+                fi
+                case "$TARGET_ENV" in
+                  sandbox-bj-*|sandbox-kr-*)
+                    ;;
+                  *)
+                    echo "playground-build only supports sandbox-bj-* or sandbox-kr-*: ${TARGET_ENV:-empty}" >&2
+                    exit 1
+                    ;;
+                esac
+                BUILD_ENVS="$TARGET_ENV"
+                AUTO_PIN_ENVS="$TARGET_ENV"
+                echo "Playground 发布决策：master 精确提交 $SOURCE_SHA 构建并自动 pin ${TARGET_ENV}"
+              else
               case "${{ ci.branch }}" in
                 master)
                   echo "skip GitOps image build for master: frontend production uses archived EdgeOne artifacts"
@@ -260,6 +368,7 @@ stages:
                   exit 1
                   ;;
               esac
+              fi
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
               bash .ci/runtime/build_and_promote_to_gitops.sh frontend frontend "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"

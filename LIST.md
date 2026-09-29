@@ -49,7 +49,6 @@
 ### Namespace `user-auth`
 
 - `lightclaw-auth` `3/3`
-- `nextgen-dashboard` `2/2`
 - `payment` `2/2`
 - `subscription` `2/2`
 
@@ -88,7 +87,6 @@
 
 ### Namespace `user-auth`
 
-- `nextgen-dashboard-ingress`
   - 类型: `NodePort`
   - 端口: `80:32310`
 - `lightclaw-auth-internal`

@@ -1,0 +1,134 @@
+@use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/typography.web" as typography;
+
+.modal-surface.workspace-picker-dialog {
+  display: flex;
+  width: min(560px, calc(100vw - 32px));
+  min-height: min(390px, calc(100dvh - 48px));
+  max-height: min(620px, calc(100dvh - 48px));
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace-picker-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 16px 48px 13px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+
+  h2,
+  p { margin: 0; }
+  h2 { @include typography.role(settings-section-title, primary); }
+  p { @include typography.role(caption, tertiary); margin-top: 1px; }
+}
+
+.workspace-picker-header__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-control, 9px);
+  background: var(--color-background-button-tertiary-hover);
+  color: var(--color-icon-secondary);
+}
+
+.workspace-picker-breadcrumbs {
+  display: flex;
+  min-height: 43px;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border-subtle);
+  scrollbar-width: none;
+
+  span { display: flex; align-items: center; gap: 4px; }
+  i { color: var(--color-text-tertiary); font-style: normal; }
+  button {
+    @include typography.role(control-small, secondary);
+    flex: 0 0 auto;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: var(--radius-control, 6px);
+    background: transparent;
+    cursor: pointer;
+
+    &:hover { background: var(--color-background-button-tertiary-hover); color: var(--color-text); }
+    &:focus-visible { @include controls.focus-indicator; }
+  }
+}
+
+.workspace-picker-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.workspace-picker-row {
+  @include typography.role(body, primary);
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-control, 8px);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+
+  > svg { flex: 0 0 auto; color: var(--color-icon-secondary); }
+  &:hover,
+  &:focus-visible { background: var(--color-background-button-tertiary-hover); }
+  &:focus-visible { @include controls.focus-indicator; }
+}
+
+.workspace-picker-row--parent { color: var(--color-text-secondary); }
+
+.workspace-picker-state,
+.workspace-picker-error {
+  @include typography.role(caption, tertiary);
+  margin: 0;
+  padding: 18px 12px;
+  text-align: center;
+}
+
+.workspace-picker-error {
+  padding: 8px 16px;
+  color: var(--color-text-danger);
+  text-align: left;
+}
+
+.workspace-picker-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--color-border-subtle);
+
+  code {
+    @include typography.role(code, tertiary);
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.workspace-picker-footer__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7px;
+}

@@ -218,6 +218,10 @@ func newRouterWithWebsiteAuth(
 				"realnamePhoneVerificationEnabled": true,
 				"multiBotEnabled":                  readRuntimeFeatureFlag("MULTI_BOT_ENABLED", true),
 				"referralEnabled":                  readRuntimeFeatureFlag("REFERRAL_ENABLED", false),
+				// 云桌面入口开关：默认 false，仅在显式配置 CLOUD_DESKTOP_ENABLED=true 的
+				// 环境（如 sandbox-bj-7）下发 true，前端据此显示「云桌面」菜单。现网不设该
+				// 环境变量即保持关闭，对存量逻辑零影响；前端另有 localStorage override 便于联调。
+				"cloudDesktopEnabled": readRuntimeFeatureFlag("CLOUD_DESKTOP_ENABLED", false),
 			},
 		})
 	})
@@ -305,6 +309,10 @@ func (gs *apiServer) run() error {
 	bundlelogic.StartDailyAvailCountRefresh(resource.ZapLogger, 10, cronDone) // 每天 10:00 (UTC+8)
 	// trade-pass-destroy snapshot 清理 cron（设计稿 §4.10 / Q7 拍板，默认凌晨 03:00 UTC+8 低峰期跑）
 	snapshotlogic.StartDailyExpiredSnapshotCleanup(resource.ZapLogger, 3, cronDone)
+	// 云桌面 idle 回收（cloud-desktop-vnc-plan §4.5 / CR-1）：默认 30 分钟无活跃即
+	// PauseSandbox 关机省费；阈值由 DESKTOP_IDLE_TIMEOUT_MINUTES 控制（<=0 禁用）。
+	// 扫描间隔由 DESKTOP_REAP_INTERVAL_MINUTES 控制，默认 5 分钟（CR-D）。
+	instancelogic.StartDesktopIdleReaper(resource.ZapLogger, instancelogic.DesktopReapInterval(), cronDone)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -418,11 +426,16 @@ func normalizePath(path string) string {
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete",
 		"/internal/ctl/passes/free-credit",
+		"/internal/ctl/passes/free-credit/revoke",
 		"/cloudapi":
 		return path
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {
 		return "/internal/instances/{id}/chatclaw/runtime-bootstrap"
+	}
+	// 云桌面（VNC）会话：POST 触发 / GET 轮询共用一个归一化路径，避免高基数。
+	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/session") {
+		return "/v1/instances/{id}/desktop/session"
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/gateway/migrate") {
 		return "/internal/instances/{id}/gateway/migrate"
@@ -446,15 +459,6 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/order-url") {
 		return "/admin/api/ctl/passes/{passId}/renew/order-url"
-	}
-	// R-D-7c 续费一体化下单+支付入口路径归一（trade-pass-renew §3.3 / §4.4 / R-D-7）：
-	//   /v1/passes/{pass_id}/renew/order-and-pay             → /v1/passes/{passId}/renew/order-and-pay
-	//   /admin/api/ctl/passes/{pass_id}/renew/order-and-pay  → /admin/api/ctl/passes/{passId}/renew/order-and-pay
-	if strings.HasPrefix(path, "/v1/passes/") && strings.HasSuffix(path, "/renew/order-and-pay") {
-		return "/v1/passes/{passId}/renew/order-and-pay"
-	}
-	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/order-and-pay") {
-		return "/admin/api/ctl/passes/{passId}/renew/order-and-pay"
 	}
 	// 续费询价入口路径归一（v1.7.21 B16 / R-C-4）：
 	//   /v1/passes/{pass_id}/renew/price             → /v1/passes/{passId}/renew/price
@@ -708,6 +712,32 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		resp, err := h.logic.UpdateInstance(ctx, instanceID, &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "session" && r.Method == http.MethodPost:
+		// 云桌面（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.EnsureDesktopSession(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "session" && r.Method == http.MethodGet:
+		// 云桌面（VNC）：GET 轮询就绪状态；Ready 返回 ws_url/password，并刷新活跃时间（idle 回收心跳）。
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.GetDesktopSession(ctx, instanceID)
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return
@@ -986,7 +1016,15 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+		var req struct {
+			ReservationID string `json:"reservation_id"`
+			Disconnect    bool   `json:"disconnect"`
+		}
+		if err := decodeOptionalJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err))
+			return
+		}
+		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4], req.ReservationID, req.Disconnect); err != nil {
 			writeHTTPError(w, r, err)
 			return
 		}
@@ -997,7 +1035,14 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+		var req struct {
+			ReservationID string `json:"reservation_id"`
+		}
+		if err := decodeOptionalJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err))
+			return
+		}
+		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4], req.ReservationID); err != nil {
 			writeHTTPError(w, r, err)
 			return
 		}

@@ -363,6 +363,73 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("maps a Ready desktop session from snake_case ctl payload to camelCase", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            status: "Ready",
+            ws_url: "wss://6080-sb-xxx.ingress.example.com/websockify",
+            password: "a1b2c3d4",
+            width: 1440,
+            height: 900,
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const session = await repositories.bots.ensureDesktopSession("ins-1");
+
+    // 回归：ctl 返回 ws_url（snake_case），若直接透传前端读 wsUrl 会得到 undefined，
+    // noVNC 永远拿不到连接地址。此处必须完成 snake→camel 映射。
+    expect(session.status).toBe("Ready");
+    expect(session.wsUrl).toBe("wss://6080-sb-xxx.ingress.example.com/websockify");
+    expect(session.password).toBe("a1b2c3d4");
+    expect(session.width).toBe(1440);
+    expect(session.height).toBe(900);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances/ins-1/desktop/session",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("maps an Installing desktop session with install_progress to installProgress", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            status: "Installing",
+            install_progress: 40,
+            message: "正在安装桌面环境（约 2-4 分钟）",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const session = await repositories.bots.getDesktopSession("ins-1");
+
+    expect(session.status).toBe("Installing");
+    expect(session.installProgress).toBe(40);
+    expect(session.message).toBe("正在安装桌面环境（约 2-4 分钟）");
+    expect(session.wsUrl).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances/ins-1/desktop/session",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("starts a FaceID attempt with the new contract", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(
@@ -585,6 +652,12 @@ describe("http repositories auth token bootstrap", () => {
               bot_name: "销售 Bot",
               status: "connected",
             },
+            whatsapp_owner: {
+              bot_id: "bot_sales",
+              profile_id: "sales-123",
+              bot_name: "销售 Bot",
+              status: "connected",
+            },
           },
           {
             bot_id: "bot_sales",
@@ -637,6 +710,9 @@ describe("http repositories auth token bootstrap", () => {
       if (url.includes("/channel-bindings/weixin")) {
         return jsonResponse({});
       }
+      if (url.includes("/channel-bindings/whatsapp")) {
+        return jsonResponse(method === "PUT" ? { reservation_id: "test-reservation" } : {});
+      }
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -650,6 +726,7 @@ describe("http repositories auth token bootstrap", () => {
         profileId: "main",
         isDefault: true,
         weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
+        whatsAppOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
       }),
       expect.objectContaining({
         id: "bot_sales",
@@ -670,6 +747,21 @@ describe("http repositories auth token bootstrap", () => {
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "PUT" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
+    ]);
+    const reservationId = await repositories.bots.claimUniqueChannel("bot_sales", "whatsapp");
+    expect(reservationId).toBe("test-reservation");
+    await repositories.bots.confirmUniqueChannel("bot_sales", "whatsapp", reservationId);
+    await repositories.bots.releaseUniqueChannel("bot_sales", "whatsapp", reservationId);
+    await repositories.bots.releaseUniqueChannel("bot_sales", "whatsapp");
+    const whatsappCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("/channel-bindings/whatsapp"));
+    expect(whatsappCalls.map(([, init]) => ({
+      method: init?.method,
+      body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+    }))).toEqual([
+      { method: "PUT", body: undefined },
+      { method: "POST", body: { reservation_id: "test-reservation" } },
+      { method: "DELETE", body: { reservation_id: "test-reservation" } },
+      { method: "DELETE", body: { disconnect: true } },
     ]);
     await repositories.bots.destroyBot("bot_sales");
     expect(calls[calls.length - 1]).toEqual({
@@ -2225,6 +2317,28 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("routes OAuth start to the live API host when local-proxy runs under the lightvela.ai site host", () => {
+    stubLocation({
+      hostname: "lightvela.ai",
+      host: "lightvela.ai",
+      protocol: "https:",
+      pathname: "/es/support/",
+    });
+
+    const repositories = createHttpRepositories("");
+
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("google"),
+      "https://api.lightvela.ai/auth/oauth/google/start",
+      "https://lightvela.ai/es/support/",
+    );
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("github"),
+      "https://api.lightvela.ai/auth/oauth/github/start",
+      "https://lightvela.ai/es/support/",
+    );
+  });
+
   it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
     stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
@@ -2378,6 +2492,20 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
+  it.each([new TypeError("Failed to fetch"), "CORS request blocked"])(
+    "keeps debug transport details in cause rather than the user message (%s)", async (cause) => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(cause));
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const error = await repositories.bots.execDebugCommand("bot-1", "true").catch((value: unknown) => value);
+      expect(error).toMatchObject({
+        message: AUTH_SERVICE_UNAVAILABLE_MESSAGE,
+        status: 0,
+        code: "network_error",
+      });
+      expect((error as Error).cause).toBe(cause);
+    },
+  );
+
   it("aborts a debug command after the requested timeout", async () => {
     vi.useFakeTimers();
     try {
@@ -2396,6 +2524,61 @@ describe("http repositories auth token bootstrap", () => {
       await rejection;
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(init.signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([200, 500])("times out while reading a stalled debug response body (HTTP %s)", async (status) => {
+    vi.useFakeTimers();
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    try {
+      const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            bodyController = controller;
+            controller.enqueue(new TextEncoder().encode('{"data":'));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("Aborted", "AbortError"));
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, { status }));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const outcome = repositories.bots.execDebugCommand("bot-1", "true", { timeoutMs: 8_000 })
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(true);
+      expect(await outcome).toMatchObject({ message: "debug_exec_timeout:8000" });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      bodyController?.error(new DOMException("Test cleanup", "AbortError"));
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { status: 200, body: { data: { status: "SUCCESS", exit_code: 0, output: "ready" } }, exitCode: 0 },
+    { status: 500, body: { details: { status: "FAILED", exit_code: 1, output: "failed" } }, exitCode: 1 },
+  ])("keeps debug results and clears the timeout after reading HTTP $status", async ({ status, body, exitCode }) => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }));
+      vi.stubGlobal("fetch", fetchMock);
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+
+      await expect(repositories.bots.execDebugCommand("bot-1", "true", { timeoutMs: 8_000 }))
+        .resolves.toMatchObject({ exitCode });
+
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(8_000);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.signal?.aborted).toBe(false);
     } finally {
       vi.useRealTimers();
     }

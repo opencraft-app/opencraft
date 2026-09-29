@@ -54,6 +54,40 @@ INSERT INTO bundle (
     0,
     1000,
     1000
+  ),
+  (
+    'bundle_launch_ai_01',
+    'ai',
+    'Launch AI',
+    '[{"Key":"Runtime","Value":"International billing test"},{"Key":"Tier","Value":"Launch AI"}]',
+    'ONLINE',
+    1,
+    1000,
+    1,
+    'm',
+    '00000000-0000-4000-8000-000000000004',
+    NULL,
+    'spec-2c4g50g',
+    0,
+    1000,
+    1000
+  ),
+  (
+    'bundle_cruise_ai_01',
+    'ai',
+    'Cruise AI',
+    '[{"Key":"Runtime","Value":"International billing test"},{"Key":"Tier","Value":"Cruise AI"}]',
+    'ONLINE',
+    3,
+    5000,
+    1,
+    'm',
+    '00000000-0000-4000-8000-000000000005',
+    NULL,
+    'spec-4c8g80g',
+    0,
+    1000,
+    1000
   )
 ON DUPLICATE KEY UPDATE
   bundle_type = VALUES(bundle_type),

@@ -4,10 +4,16 @@ import type {
   LightVelaMultiSessionOptions,
   LightVelaSession,
   LightVelaSessionActions,
+  LightVelaSessionState,
 } from "@tencent/agentchat-lightvela-panel";
 // SDK 多会话类型单一事实源：宿主页面（agent-settings-page）统一从本模块导入，
 // 避免多处直接依赖 SDK 包导出（SDK 为 lazy chunk，此处仅 type re-export，编译后擦除）。
-export type { LightVelaMultiSessionOptions, LightVelaSession, LightVelaSessionActions };
+export type {
+  LightVelaMultiSessionOptions,
+  LightVelaSession,
+  LightVelaSessionActions,
+  LightVelaSessionState,
+};
 
 import i18n from "@/i18n";
 import { useT } from "@/i18n/t";
@@ -37,6 +43,8 @@ type AgentChatPanelProps = {
    * SDK 只回传状态并消费 selectedChatId。类型自 SDK 1.4.0-beta.0。
    */
   multiSession?: LightVelaMultiSessionOptions;
+  /** Host-owned frame for dual-run migration surfaces. */
+  framed?: boolean;
 };
 
 /**
@@ -55,6 +63,7 @@ export const AgentChatPanel = ({
   onRetryLaunchToken,
   onRefreshLaunchToken,
   multiSession,
+  framed = true,
 }: AgentChatPanelProps) => {
   const t = useT();
 
@@ -163,16 +172,18 @@ export const AgentChatPanel = ({
   };
 
   return (
-    <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full [&>*]:h-full">
+    <div className={framed
+      ? "h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full [&>*]:h-full"
+      : "size-full overflow-hidden bg-white [&>*]:h-full"}>
       {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
         <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-          {t("正在获取 AgentChat 启动 token…")}
+          {t("正在获取对话启动 token…")}
         </div>
       )}
       {launchTokenStatus === "error" && (
         <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
           <p className="text-red-500">
-            {t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
+            {t("获取对话启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
           </p>
           <button
             type="button"
@@ -187,7 +198,7 @@ export const AgentChatPanel = ({
         <Suspense
           fallback={(
             <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-              {t("正在加载 AgentChat…")}
+              {t("正在加载对话…")}
             </div>
           )}
         >

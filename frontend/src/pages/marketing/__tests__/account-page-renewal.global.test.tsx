@@ -55,6 +55,8 @@ vi.mock("@tencent/universal-report", () => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => {
     const translations: Record<string, string> = {
       "敬请期待": "Coming Soon",
@@ -67,6 +69,7 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
   useReferralEnabled: () => false,
@@ -281,6 +284,13 @@ describe("AccountPage global renewal action", () => {
     expect(listModifyBundles).toHaveBeenCalledWith("pass_global_renew");
     expect(screen.getByRole("button", { name: "立即续费" })).toBeEnabled();
   });
+
+  it("shows the credit-pack purchase link on the global account page without the reveal helper", async () => {
+    renderAccountPage();
+
+    expect(await screen.findByRole("link", { name: "购买积分包" })).toHaveAttribute("href", "/subscribe?section=credits");
+  });
+
   it("does not expose a progress button or reopen payment automatically", async () => {
     activePass = { ...buildActivePass(), status: "modifying" };
     listMyPasses.mockResolvedValue([activePass]);
@@ -297,7 +307,9 @@ describe("AccountPage global renewal action", () => {
     renderAccountPage();
 
     expect(screen.getByRole("status")).toHaveTextContent("套餐升级中");
-    expect(screen.getByText(activePass.bundle_name)).toBeInTheDocument();
+    const currentPlan = screen.getByText("当前套餐").parentElement?.parentElement;
+    expect(currentPlan).not.toBeNull();
+    expect(within(currentPlan as HTMLElement).getByText(activePass.bundle_name)).toBeInTheDocument();
     expect(screen.getByText("订阅有效期")).toBeInTheDocument();
     expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "立即续费" })).not.toBeInTheDocument();

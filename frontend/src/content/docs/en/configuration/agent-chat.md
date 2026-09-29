@@ -10,9 +10,9 @@ Open the "Chat" page to interact with your Hermes Agent through a chat window.
 
 > ℹ️ **Heads-up**
 >
-> AgentChat's interface guide is currently primarily in Chinese; full localization is on the way.
+> The Chat interface guide is currently primarily in Chinese; full localization is on the way.
 
-![The Chat page in the LightVela console](../images/chat-overview-en.png)
+![The Chat page in the LightVela console](../images/chat-overview-en.webp)
 
 ---
 

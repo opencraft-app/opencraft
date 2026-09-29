@@ -1,3 +1,5 @@
+import { ExtensionCompatibilityError } from "@opencraft/extension-contract";
+import type { ExtensionArtifact } from "./artifact";
 import {
   type ExtensionInstallationRecord,
   type ExtensionInstallationRepository,
@@ -5,15 +7,16 @@ import {
   type ModuleUrlExtensionSource,
 } from "./installation-repository";
 import { ExtensionSupervisor, type TrustedExtensionDefinition } from "./runtime";
+import { extensionTimeout, withExtensionDeadline } from "./deadline";
 
 export interface ExtensionModuleLoader {
   load(
     source: ExtensionInstallationSource,
-    options?: { readonly fresh?: boolean },
+    options?: { readonly fresh?: boolean; readonly artifact?: ExtensionArtifact },
   ): Promise<TrustedExtensionDefinition>;
 }
 
-export type ManagedExtensionStatus = "disabled" | "loading" | "active" | "failed";
+export type ManagedExtensionStatus = "disabled" | "loading" | "active" | "failed" | "incompatible";
 
 export interface ManagedExtensionDescriptor {
   readonly installation: ExtensionInstallationRecord;
@@ -32,6 +35,7 @@ export interface ExtensionManagerOptions {
   readonly loader: ExtensionModuleLoader;
   readonly supervisor: ExtensionSupervisor;
   readonly now?: () => number;
+  readonly loadTimeoutMs?: number;
 }
 
 function message(error: unknown): string {
@@ -47,9 +51,11 @@ export class ExtensionManager {
   private readonly loader: ExtensionModuleLoader;
   private readonly supervisor: ExtensionSupervisor;
   private readonly now: () => number;
+  private readonly loadTimeoutMs: number;
   private readonly statuses = new Map<string, ManagedExtensionStatus>();
   private readonly errors = new Map<string, string>();
   private readonly managed = new Set<string>();
+  private readonly activeDefinitions = new Map<string, TrustedExtensionDefinition>();
   private readonly listeners = new Set<() => void>();
   private operation: Promise<unknown> = Promise.resolve();
   private revision = 0;
@@ -66,6 +72,7 @@ export class ExtensionManager {
     this.loader = options.loader;
     this.supervisor = options.supervisor;
     this.now = options.now ?? Date.now;
+    this.loadTimeoutMs = extensionTimeout(options.loadTimeoutMs, 15000);
     this.unsubscribeInstallations = this.installations.subscribe(() => this.publish());
     this.publish();
   }
@@ -81,7 +88,6 @@ export class ExtensionManager {
   restore(): Promise<void> {
     return this.enqueue(async () => {
       for (const installation of this.installations.getSnapshot().records) {
-        this.managed.add(installation.extensionId);
         if (!installation.enabled) {
           this.setState(installation.extensionId, "disabled");
           continue;
@@ -90,7 +96,9 @@ export class ExtensionManager {
         try {
           const definition = await this.loadAndCheck(installation);
           this.assertAvailable(installation.extensionId);
+          this.managed.add(installation.extensionId);
           await this.supervisor.activate(definition);
+          this.activeDefinitions.set(installation.extensionId, definition);
           this.setState(installation.extensionId, "active");
         } catch (error) {
           this.setState(installation.extensionId, "failed", error);
@@ -102,25 +110,29 @@ export class ExtensionManager {
   installModuleUrl(url: string): Promise<ExtensionInstallationRecord> {
     return this.enqueue(async () => {
       const source = Object.freeze({ kind: "module-url" as const, url: url.trim() });
-      const definition = await this.loader.load(source, { fresh: true });
+      const definition = await this.load(source, true);
       const extensionId = definition.manifest.id;
       const previous = this.installations.getSnapshot().records.find((item) => item.extensionId === extensionId);
-      if (previous === undefined) this.assertAvailable(extensionId);
+      if (previous !== undefined) {
+        return this.replace(previous, definition, source);
+      }
+      this.assertAvailable(extensionId);
       const timestamp = this.now();
       const disabled = await this.installations.put(Object.freeze({
         extensionId,
         source,
         enabled: false,
-        installedAt: previous?.installedAt ?? timestamp,
+        installedAt: timestamp,
         updatedAt: timestamp,
         lastResolvedManifest: definition.manifest,
+        ...(definition.artifact === undefined ? {} : { artifact: definition.artifact }),
       }));
       this.managed.add(extensionId);
       this.setState(extensionId, "loading");
-      if (previous?.enabled) await this.supervisor.deactivate(extensionId);
       try {
         await this.supervisor.activate(definition);
         const enabled = await this.installations.put(Object.freeze({ ...disabled, enabled: true }));
+        this.activeDefinitions.set(extensionId, definition);
         this.setState(extensionId, "active");
         return enabled;
       } catch (error) {
@@ -134,6 +146,7 @@ export class ExtensionManager {
   setEnabled(extensionId: string, enabled: boolean): Promise<void> {
     return this.enqueue(async () => {
       const installation = this.requireInstallation(extensionId);
+      this.assertAvailable(extensionId);
       this.managed.add(extensionId);
       if (enabled) {
         if (installation.enabled && this.statuses.get(extensionId) === "active") return;
@@ -147,7 +160,9 @@ export class ExtensionManager {
             enabled: true,
             updatedAt: this.now(),
             lastResolvedManifest: definition.manifest,
+            ...(definition.artifact === undefined ? {} : { artifact: definition.artifact }),
           }));
+          this.activeDefinitions.set(extensionId, definition);
           this.setState(extensionId, "active");
         } catch (error) {
           await this.supervisor.deactivate(extensionId).catch(() => false);
@@ -160,7 +175,8 @@ export class ExtensionManager {
       // Obsidian-style asymmetric transaction: disabled intent survives unload failure.
       await this.installations.put(Object.freeze({ ...installation, enabled: false, updatedAt: this.now() }));
       try {
-        await this.supervisor.deactivate(extensionId);
+        await this.retire(extensionId);
+        this.activeDefinitions.delete(extensionId);
         this.setState(extensionId, "disabled");
       } catch (error) {
         this.setState(extensionId, "failed", error);
@@ -173,43 +189,68 @@ export class ExtensionManager {
     return this.enqueue(async () => {
       const installation = this.requireInstallation(extensionId);
       const definition = await this.loadAndCheck(installation, true);
-      if (!installation.enabled) {
-        await this.installations.put(Object.freeze({
-          ...installation,
-          updatedAt: this.now(),
-          lastResolvedManifest: definition.manifest,
-        }));
-        this.setState(extensionId, "disabled");
-        return;
-      }
-      await this.installations.put(Object.freeze({ ...installation, enabled: false, updatedAt: this.now() }));
-      await this.supervisor.deactivate(extensionId);
-      this.setState(extensionId, "loading");
-      try {
-        await this.supervisor.activate(definition);
-        await this.installations.put(Object.freeze({
-          ...installation,
-          enabled: true,
-          updatedAt: this.now(),
-          lastResolvedManifest: definition.manifest,
-        }));
-        this.setState(extensionId, "active");
-      } catch (error) {
-        await this.supervisor.deactivate(extensionId).catch(() => false);
-        this.setState(extensionId, "failed", error);
-        throw error;
-      }
+      await this.replace(installation, definition, installation.source);
     });
+  }
+
+  private async replace(
+    previous: ExtensionInstallationRecord,
+    definition: TrustedExtensionDefinition,
+    source: ExtensionInstallationSource,
+  ): Promise<ExtensionInstallationRecord> {
+    this.supervisor.checkCompatibility(definition.manifest);
+    const id = previous.extensionId;
+    this.assertAvailable(id);
+    const candidate = Object.freeze({
+      ...previous, source, updatedAt: this.now(), lastResolvedManifest: definition.manifest,
+      artifact: definition.artifact,
+      artifactRef: definition.artifact?.sha256,
+    });
+    if (!previous.enabled) {
+      const saved = await this.installations.put(candidate);
+      this.setState(id, "disabled");
+      return saved;
+    }
+    const fallback = this.activeDefinitions.get(id);
+    // A dependency can refuse retirement. Keep its current instance untouched.
+    await this.retire(id);
+    this.activeDefinitions.delete(id);
+    this.setState(id, "loading");
+    try {
+      await this.supervisor.activate(definition);
+      const saved = await this.installations.put(candidate);
+      this.activeDefinitions.set(id, definition);
+      this.setState(id, "active");
+      return saved;
+    } catch (error) {
+      try {
+        await this.supervisor.deactivate(id);
+        if (fallback !== undefined) {
+          await this.supervisor.activate(fallback);
+          this.activeDefinitions.set(id, fallback);
+          this.setState(id, "active", error);
+        } else {
+          this.setState(id, "failed", error);
+        }
+      } catch (recoveryError) {
+        const failure = new AggregateError([error, recoveryError], `Extension ${id} update and recovery failed`);
+        this.setState(id, "failed", failure);
+        throw failure;
+      }
+      throw error;
+    }
   }
 
   remove(extensionId: string): Promise<void> {
     return this.enqueue(async () => {
+      this.assertAvailable(extensionId);
       const installation = this.requireInstallation(extensionId);
       if (installation.enabled) {
         await this.installations.put(Object.freeze({ ...installation, enabled: false, updatedAt: this.now() }));
       }
-      await this.supervisor.deactivate(extensionId);
+      await this.retire(extensionId);
       await this.installations.remove(extensionId);
+      this.activeDefinitions.delete(extensionId);
       this.managed.delete(extensionId);
       this.statuses.delete(extensionId);
       this.errors.delete(extensionId);
@@ -220,19 +261,34 @@ export class ExtensionManager {
   async dispose(): Promise<void> {
     if (this.closed) return;
     await this.operation.catch(() => undefined);
-    for (const extensionId of [...this.managed].reverse()) {
+    for (const extensionId of [...this.activeDefinitions.keys()].reverse()) {
       await this.supervisor.deactivate(extensionId).catch(() => false);
     }
     this.closed = true;
+    this.activeDefinitions.clear();
     this.unsubscribeInstallations();
     this.listeners.clear();
+  }
+
+  private async retire(extensionId: string): Promise<void> {
+    try {
+      await this.supervisor.deactivate(extensionId);
+    } catch (error) {
+      const remainsActive = this.supervisor.getSnapshot().extensions.some(item => item.id === extensionId && item.status === "active");
+      if (!remainsActive) this.activeDefinitions.delete(extensionId);
+      this.setState(extensionId, remainsActive ? "active" : "failed", error);
+      throw error;
+    }
   }
 
   private loadAndCheck(
     installation: ExtensionInstallationRecord,
     fresh = false,
   ): Promise<TrustedExtensionDefinition> {
-    return this.loader.load(installation.source, { fresh }).then((definition) => {
+    if (!fresh && installation.artifactRef !== undefined && installation.artifact === undefined) {
+      return Promise.reject(new Error("Installed extension artifact is missing; explicitly reload to repair"));
+    }
+    return this.load(installation.source, fresh, fresh ? undefined : installation.artifact).then((definition) => {
       if (definition.manifest.id !== installation.extensionId) {
         throw new Error(
           `Extension source resolved ${definition.manifest.id}, expected ${installation.extensionId}`,
@@ -242,11 +298,17 @@ export class ExtensionManager {
     });
   }
 
+  private load(source: ExtensionInstallationSource, fresh: boolean, artifact?: ExtensionArtifact): Promise<TrustedExtensionDefinition> {
+    return withExtensionDeadline(
+      Promise.resolve().then(() => this.loader.load(source, { fresh, artifact })), "module load", this.loadTimeoutMs,
+    );
+  }
+
   private assertAvailable(extensionId: string): void {
     const active = this.supervisor.getSnapshot().extensions.find(
       (candidate) => candidate.id === extensionId && candidate.status === "active",
     );
-    if (active !== undefined && !this.managed.has(extensionId)) {
+    if (active !== undefined && !this.activeDefinitions.has(extensionId)) {
       throw new Error(`Extension ID ${extensionId} is owned by a built-in extension`);
     }
   }
@@ -267,7 +329,8 @@ export class ExtensionManager {
   }
 
   private setState(extensionId: string, status: ManagedExtensionStatus, error?: unknown): void {
-    this.statuses.set(extensionId, status);
+    this.statuses.set(extensionId, status === "failed" && error instanceof ExtensionCompatibilityError
+      ? "incompatible" : status);
     if (error === undefined) this.errors.delete(extensionId);
     else this.errors.set(extensionId, message(error));
     this.publish();

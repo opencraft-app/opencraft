@@ -2,45 +2,37 @@
 
 ## 摘要
 
-**LightVela 的所有配置集中在「我的 Hermes」管理台，登录后点击右上角进入。管理台顶部是 Hermes Agent 实例页签，下方由三个配置按键组成：模型（选择模型 Coding Plan 包月、模型 API 按量或自定义 OpenAI 兼容端点）、通道（各聊天平台的接入入口，部分扫码授权、部分需填 Token 或 AppID）、技能（安装可复用的能力扩展包）。除三项基础配置外，管理台还提供对话、定时任务、记忆管理、云存储、模型切换与诊断中心。三项配置完成后 Agent 即可在聊天通道中对话。**
+**Agent 管理台在侧边栏分别提供 Channels、Models、Skills 和 Scheduled Tasks 页面。修改配置前应先选中目标 Bot；在通道卡片接入聊天平台，配置模型或使用套餐积分，再按需安装来自 Skills.sh 或 ClawHub 的技能。Soul、Memory、Diagnostics、Advanced Settings 和 Labs 分别位于其他分区；Cloud Storage 从用户菜单进入。**
 
 ---
 
-LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配置按键组成：
-
-1. 模型（Models）
-
-2. 通道（Channels）
-
-3. 技能（Skills）
-
-本页介绍管理台的整体结构与各按键的功能，各模块的详细操作请参见对应子页。
+Agent 管理台通过侧边栏的 **Channels**、**Models**、**Skills** 和 **Scheduled Tasks** 页面组织常用配置。先选择要配置的 Bot，再打开对应页面。本页说明入口与结果验证。
 
 ## 本页覆盖
 
 - 进入管理台的方式
 
-- Hermes Agent 实例信息按键
+- Bot 切换与当前 Bot 信息
 
-- 三个配置按键的功能与配置入口
+- Channels、Models、Skills 和 Cloud Storage 的入口
 
 - 完成配置后的成功状态
 
-- 切换模型、接入多个通道、重建 Hermes Agent 等常用操作
+- 管理 Bot、切换模型、接入多个通道等常用操作
 
 ---
 
 ## 进入管理台
 
-登录后，点击页面右上角「我的 Hermes」进入管理台。顶部提供「返回首页」按钮。
+登录后打开 [Agent 管理台](/agents/overview/)，选择要配置的 Hermes Agent 与 Bot。
 
 ---
 
-## Hermes Agent 实例信息
+## Bot 切换与当前 Bot 信息
 
-管理台顶部为 Hermes Agent 切换页签，每个页签代表一个 Hermes Agent 实例（启航套餐仅支持 1 个），右侧「+ 创建」按钮在达到实例上限后不可用。
+管理台顶部为当前 Hermes Agent 下的 Bot 页签。第一个页签是主 Bot，其他页签分别对应独立的 Bot Profile。套餐决定可创建的 Bot 总数，主 Bot 也计入数量。国际站分阶段开放期间，新建入口默认不显示。创建方式与继承规则详见[管理 Bots](./configuration/bots.md)。
 
-选中某个 Hermes Agent 后，下方显示其基本信息：
+选中某个 Bot 后，下方显示其基本信息：
 
 - 头像
 
@@ -54,70 +46,23 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 > ⚠️ **删除为不可逆操作**
 >
-> 点击垃圾桶将永久删除该 Hermes Agent 实例，包括所有对话记忆、已接入通道与已安装技能。启航套餐删除后若仍在配额内可重新创建。
+> 删除其他 Bot 会永久删除该 Bot 的 Profile 和数据；删除主 Bot 会删除整个 Hermes Agent 及其全部相关数据，并且必须先删除其他 Bot。
 
 ---
 
-## 三个配置按键
+## 配置通道、模型与技能
 
-三个按键自左向右排列，建议按 1 → 2 → 3 的顺序配置。
+### 通道（Channels）
 
-### 1. 通道（Channels）
+在 Agent 侧边栏进入 **Channels**。页面分别展示 Telegram、WhatsApp、Discord、Slack、WeChat、QQ、WeCom 和 Lark 卡片；在目标通道上点击 **+ Connect** 并按指南操作。WhatsApp、WeChat、WeCom、Lark 使用扫码授权；Telegram、Discord、Slack 使用凭据；QQ 可扫码或使用 App ID / Secret。扫码示例见 [WhatsApp 指南](./configuration/channel-whatsapp.md)。
 
-![](./images/4-2.webp)
+### 模型（Models）
 
-**用途**：将 Hermes Agent 接入聊天平台，为用户提供对话入口。
+进入 **Models** 查看当前模型或配置服务商。使用套餐模型积分无需填写自己的 API Key；需要时可以新增服务商。每个 Bot 同时使用一个主模型，也可能配置回退模型。详见[配置模型](./configuration/model.md)和[模型切换](./configuration/multiple-models.md)。
 
-**各通道接入方式**：
+### 技能（Skills）
 
-| 通道 | 接入方式 | 所需条件 |
-|---|---|---|
-| WeChat | 扫码授权 | 一台装有微信的手机 |
-| Telegram | Bot Token 接入 | 通过 BotFather 创建 Telegram Bot，并获取 Bot Token |
-| WhatsApp | WhatsApp Business API 接入 | 需要 Meta 开发者账号、WhatsApp Business Account，并完成 Cloud API 基础配置 |
-| Discord | Bot Token 接入 | 在 Discord Developer Portal 创建 Application，添加 Bot，并邀请到服务器 |
-| Slack | Bot Token / App Token 接入 | 创建 Slack App，开启 Socket Mode，并获取 Bot/App Token |
-| QQ | AppID / AppSecret 接入 | 一个 QQ 账号；在 QQ 开放平台创建机器人并获取 AppID / AppSecret |
-| 企业微信（WeCom） | 扫码授权 | 一台装有企业微信的手机 |
-| 飞书（Lark） | 扫码授权 | 一台装有飞书的手机或已登录飞书的桌面端 |
-
-**按键提供**：通道下拉、「授权接入」按钮、所选通道的介绍与「查看详情」链接、「已接入通道」列表。
-
-详细操作请参见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。
-
----
-
-### 2. 模型（Models）
-
-![](./images/4-1.webp)
-
-**用途**：为 Hermes Agent 配置大语言模型。启航套餐预置 100 体验积分，也可跳过此步骤直接使用，待积分耗尽后再配置。
-
-**按键提供**：来源下拉（模型 Coding Plan / 模型 API / 自定义模型）、具体模型下拉、API Key 输入框、服务商介绍与获取 API Key 的外链、「当前模型」列表。
-
-> ⚠️ **单模型生效**
->
-> 当前版本每个 Hermes Agent 仅支持配置并生效一个模型，新的「添加为默认」将覆盖原有配置。
-
-详细操作请参见 [配置模型](./configuration/model.md)。
-
----
-
-### 3. 技能（Skills）
-
-![](./images/4-3.webp)
-
-**用途**：扩展 Hermes Agent 的能力，例如整理待办、生成日报、联网搜索等。
-
-**按键提供**：技能名称搜索框、「安装技能」按钮、「前往 SkillHub」外链、「已安装技能」列表。安装前需先在 [SkillHub](https://skillhub.tencent.com) 确定目标技能的准确名称。
-
-> ⚠️ **仅安装可信来源的技能**
->
-> 技能运行时具有调用 Hermes Agent 能力的权限，请只安装可信来源的技能。
-
-详细操作请参见 [配置技能](./configuration/skill.md)。
-
----
+进入 **Skills** 搜索单个技能，或浏览来自 [Skills.sh](https://skills.sh/) 与 [ClawHub](https://clawhub.ai/) 的 **Skill Packages**。点击 **Install** 后在 **Installed** 中确认。详见[配置技能](./configuration/skill.md)。
 
 ## 配置完成的状态
 
@@ -135,17 +80,10 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 ## 常用操作
 
-### 切换模型
-
-在「模型」按键重新选择来源与模型，填入 API Key 并点击「添加为默认」，新的配置将覆盖原有记录。切换模型不会影响对话记忆。
-
-### 接入多个通道
-
-在「通道」按键依次切换下拉选项并点击「授权接入」。多个通道指向同一 Hermes Agent，共享记忆与 Agent 行为。
-
-### 重建 Hermes Agent
-
-点击基本信息按键右侧的垃圾桶删除当前 Hermes Agent，再点击「+ 创建 Hermes Agent」重新创建。**所有对话记忆将丢失**。
+- **切换模型**：选中目标 Bot 后进入 **Models**，选择已配置且可用的模型。Bot 记忆会保留；详见[模型切换](./configuration/multiple-models.md)。
+- **接入多个通道**：在 **Channels** 中逐一点击目标卡片的 **+ Connect**。属于同一 Bot 的通道共享该 Bot 的人设与记忆。
+- **管理 Bot**：修改配置前选中 Bot 页签；新建入口可用时，按[管理 Bots](./configuration/bots.md)中的复制与删除规则操作。
+- **打开云存储**：从用户菜单进入 **Cloud Storage**，而不是在 Agent 侧边栏中寻找。
 
 ---
 
@@ -153,11 +91,13 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 各模块的详细配置：
 
+- [管理 Bots](./configuration/bots.md) — 创建、复制、切换、重命名和删除 Bot
+
 - [配置模型](./configuration/model.md) — 模型来源、API Key 获取、选型建议
 
 - [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)
 
-- [配置技能](./configuration/skill.md) — SkillHub 使用与技能安装
+- [配置技能](./configuration/skill.md) — Skills.sh / ClawHub 使用与技能安装
 
 相关参考：
 

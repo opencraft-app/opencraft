@@ -451,6 +451,13 @@ export interface BrowserUrlPolicy {
 默认允许 `https:` 和显式开发环境的 `http:`。`javascript:`、`data:`、`file:`、自定义
 scheme、popup 和顶层外部跳转由独立 policy 决定。
 
+Chat 中的 HTTP(S) 链接先经过 Chat resource policy 得到清洗后的目标，再以
+`ChatResourceOpenIntent` 请求 Browser：普通点击默认当前产品选择，Command/Ctrl/中键
+只声明 `new-tab` disposition，右键菜单可明确选择 in-app 或 external browser。Chat
+Renderer 不创建 `BrowserSession`、不保存 URL，也不把 DOM Event 传入 Browser Domain；
+Browser Runtime 继续拥有具体 Session、tab 与 surface。favicon/tooltip 属于 Chat Web
+presentation，不是 Browser snapshot 或 history。
+
 ### 7.3 能力只暴露有效结果
 
 ```ts

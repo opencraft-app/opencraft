@@ -35,6 +35,7 @@ const seoSource = read("next-site/seo.tsx");
 const plansDoc = read("src/content/docs/plans.md");
 const overviewDoc = read("src/content/docs/01-overview.md");
 const announcementDoc = read("src/content/docs/announcements/public-beta.md");
+const geoFactTable = read("../wiki/product-state/geo-fact-table.md");
 
 /* ── 基准解析：从 subscribe-page.tsx 提取静态价表与折扣常量 ── */
 
@@ -204,10 +205,10 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
     // 列序：套餐 | 月付首购价 | 月付优惠说明 | 季付折后价 | 季付折扣
     const rows = parseTableRows(sectionOf(plansDoc, "### 优惠与首购价"));
 
-    it("启航 Launch 首购价为 ¥0（首单免费 14 天）", () => {
+    it("启航 Launch 首购价为 ¥0（首单免费 1 个月）", () => {
       const row = rowByLabel(rows, "启航 Launch");
       expect(yuanIn(row[1] ?? "")).toBe(0);
-      expect(row[2] ?? "").toContain("首单免费");
+      expect(row[2] ?? "").toContain("首单免费体验 1 个月");
     });
 
     it("巡游 Cruise 首购价 = 月付原价 × 首月 5 折", () => {
@@ -217,18 +218,17 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
       );
     });
 
-    it("AI 版首购价 = 月付原价 × 首月 6 折", () => {
-      const aiCases = [
-        ["启航 Launch AI", BASELINE.launchAi],
-        ["巡游 Cruise AI", BASELINE.cruiseAi],
-      ] as const;
+    it("启航 Launch AI 首购价为 ¥0（首单免费 1 个月）", () => {
+      const row = rowByLabel(rows, "启航 Launch AI");
+      expect(yuanIn(row[1] ?? "")).toBe(0);
+      expect(row[2] ?? "").toContain("首单免费体验 1 个月");
+    });
 
-      for (const [label, price] of aiCases) {
-        const row = rowByLabel(rows, label);
-        expect(yuanIn(row[1] ?? ""), `${label} 首购价`).toBe(
-          round2(price.monthly * AI_MONTHLY_DISCOUNT),
-        );
-      }
+    it("巡游 Cruise AI 首购价 = 月付原价 × 首月 6 折", () => {
+      const row = rowByLabel(rows, "巡游 Cruise AI");
+      expect(yuanIn(row[1] ?? "")).toBe(
+        round2(BASELINE.cruiseAi.monthly * AI_MONTHLY_DISCOUNT),
+      );
     });
 
     it("季付折后价 = 季付原价 × 对应折扣（标准版 8.5 折 / AI 版 9 折）", () => {
@@ -245,6 +245,31 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
           round2(price.quarterly * discount),
         );
       }
+    });
+  });
+
+  describe("免费试用权益口径", () => {
+    it("GEO 主事实表与套餐页统一为 Launch / Launch AI 首单免费 1 个月", () => {
+      const pricingFacts = sectionOf(geoFactTable, "### 1.2 Launch 价格");
+      const trialFacts = sectionOf(geoFactTable, "### 1.3 免费试用");
+
+      expect(pricingFacts).toContain("启航 ¥0（首单免费 1 个月）");
+      expect(pricingFacts).toContain("启航 AI ¥0（首单免费 1 个月）");
+      expect(trialFacts).toContain("Launch / Launch AI 首单免费体验 **1 个月**");
+      expect(trialFacts).not.toMatch(/免费体验\s*\*\*(?:14|7|3)\s*天\*\*/);
+    });
+
+    it("订阅页不再保留旧 7 天试用的 i18n 占位标记", () => {
+      expect(subscribeSource).not.toContain('t("免费试用 7天")');
+    });
+
+    it("关闭计费开关时的兼容免费 Bundle 也使用 1 个月时长", () => {
+      const legacyIdIndex = subscribeSource.indexOf('bundle_id: "bundle_free_7d"');
+      expect(legacyIdIndex).toBeGreaterThan(-1);
+      const freeBundleBlock = subscribeSource.slice(legacyIdIndex, legacyIdIndex + 320);
+      expect(freeBundleBlock).toContain('time_span: 1');
+      expect(freeBundleBlock).toContain('time_unit: "m"');
+      expect(freeBundleBlock).not.toContain('time_span: 7');
     });
   });
 
@@ -331,5 +356,30 @@ describe("套餐价格一致性（防止价格事实在多处漂移）", () => {
     it("币种为 CNY", () => {
       expect(fieldIn(cnBlock, "priceCurrency")).toBe("CNY");
     });
+  });
+});
+
+describe("套餐文档云端环境规格", () => {
+  it.each([
+    ["src/content/docs/plans.md", "专属云端环境", "2 vCPU · 8 GB 内存", "4 vCPU · 16 GB 内存"],
+    ["src/content/docs/global/plans.md", "专属云端环境", "2 vCPU · 8 GB 内存", "4 vCPU · 16 GB 内存"],
+    ["src/content/docs/en/plans.md", "Dedicated cloud environment", "2 vCPU · 8 GB RAM", "4 vCPU · 16 GB RAM"],
+    ["src/content/docs/es/plans.md", "Entorno de nube dedicado", "2 vCPU · 8 GB de RAM", "4 vCPU · 16 GB de RAM"],
+    ["src/content/docs/ja/plans.md", "専用クラウド環境", "2 vCPU · 8 GB メモリ", "4 vCPU · 16 GB メモリ"],
+    ["src/content/docs/ko/plans.md", "전용 클라우드 환경", "2 vCPU · 8 GB RAM", "4 vCPU · 16 GB RAM"],
+  ] as const)("%s keeps technical specs for all four tiers", (path, environment, launchSpec, cruiseSpec) => {
+    const rows = parseTableRows(read(path));
+    const headerIndex = rows.findIndex((row) => row[3] === environment);
+    expect(headerIndex, `${path} 的环境规格表头`).toBeGreaterThanOrEqual(0);
+    expect(rows.slice(headerIndex + 2, headerIndex + 6).map((row) => row[3])).toEqual([
+      launchSpec, cruiseSpec, launchSpec, cruiseSpec,
+    ]);
+  });
+
+  it("Indonesian plan tables keep technical specs for both tiers", () => {
+    const rows = parseTableRows(read("src/content/docs/id/plans.md"));
+    expect(rows.filter((row) => row[0] === "Lingkungan cloud khusus").map((row) => row[1])).toEqual([
+      "2 vCPU · 8 GB RAM", "4 vCPU · 16 GB RAM",
+    ]);
   });
 });

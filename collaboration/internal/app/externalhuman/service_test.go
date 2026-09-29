@@ -31,7 +31,12 @@ func (clock fixedClock) Now() time.Time { return clock.now }
 func TestServiceResolvesLightVelaSubjectThroughStableRegistryHash(t *testing.T) {
 	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 	repository := &fakeRepository{}
-	service, err := NewService(repository, fixedID{}, fixedClock{now: now})
+	service, err := NewService(
+		repository,
+		fixedID{},
+		fixedClock{now: now},
+		Config{ProvisioningEpoch: "credential_epoch_a"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,6 +55,7 @@ func TestServiceResolvesLightVelaSubjectThroughStableRegistryHash(t *testing.T) 
 	if repository.input.Subject != "usr_0123456789abcdef01234567" ||
 		repository.input.Kind != "lightvela" ||
 		repository.input.ProposedAccountID != externalHumanAccountID ||
+		repository.input.ProvisioningEpoch != "credential_epoch_a" ||
 		repository.input.OccurredAt != now ||
 		len(repository.input.SubjectHash) != 64 {
 		t.Fatalf("ensure input = %#v", repository.input)

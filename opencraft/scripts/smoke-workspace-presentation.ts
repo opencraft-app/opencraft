@@ -4,7 +4,7 @@ import { createServer } from "vite";
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const output = "/tmp/opencraft-workspace-presentation";
 const source = `
-import React,{useSyncExternalStore,useState} from 'react';import{createRoot}from'react-dom/client';
+import React,{useSyncExternalStore,useState} from 'react';import{createIntlTestRoot as createRoot}from'/tests/fixtures/intl-root.tsx';
 import{Context}from'@deepseek-ai/cordis';import{WorkbenchPanelService}from'@opencraft/workbench-panels';
 import{WorkbenchPanelRendererRegistryService}from'@opencraft/workbench-panels-react';
 import{createConversationBindingStore}from'@opencraft/workbench-runtime';

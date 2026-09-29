@@ -50,7 +50,7 @@ Abra el área de Canal en la consola, seleccione la plataforma y siga su flujo d
 
 Trate los tokens de bot, IDs de aplicación y secretos como contraseñas. No peguéslos en un chat de grupo, documento público o mensaje dirigido a otra persona. Si una credencial se expone, rotéela en la plataforma que la emitió antes de reconectar Hermes.
 
-![La página de conexión de canal de LightVela](../images/use-case-messaging-connection.png)
+![La página de conexión de canal de LightVela](../images/use-case-messaging-connection.webp)
 
 ### 3. Verifique la conexión con una conversación simple
 
@@ -68,7 +68,7 @@ Cuando más de un canal se conecta al mismo Hermes Agent, son diferentes puertas
 
 Utilice [Gestión de Memoria](../configuration/memory.md) para revisar el contexto a largo plazo que desea que Hermes retenga. Si un canal es para una audiencia diferente o necesita un rol muy diferente, considere mantener el caso de uso separado en lugar de mezclar expectativas no relacionadas en un historial de conversación.
 
-![El mismo contexto de Hermes Agent compartido entre canales](../images/use-case-messaging-memory.png)
+![El mismo contexto de Hermes Agent compartido entre canales](../images/use-case-messaging-memory.webp)
 
 Si Discord es el canal que desea utilizar para una comunidad, continúe con [Conozca a LightVela para Discord: Su Agent de IA Discord Bot que Sientra su Canal](./discord-community-agent.md).
 

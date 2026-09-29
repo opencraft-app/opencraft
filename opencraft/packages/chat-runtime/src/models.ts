@@ -86,6 +86,8 @@ export interface ConversationRuntimeSnapshot {
   readonly pendingInteractions: readonly PendingInteraction[];
   readonly pendingSubmissions: readonly PendingSubmission[];
   readonly queuedSubmissions: readonly QueuedSubmission[];
+  /** Native claims whose delivery could not be established after recovery. */
+  readonly unconfirmedSteers: readonly import("@opencraft/appserver-protocol").SteeringSubmission[];
   readonly history: {
     readonly hasOlder: boolean;
     readonly loading: boolean;

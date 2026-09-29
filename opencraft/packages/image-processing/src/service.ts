@@ -76,8 +76,14 @@ export class ImageProcessingService extends Service {
               progress,
             );
             controller.signal.throwIfAborted();
+            // HEIC must become a supported transport image even when JPEG is
+            // larger than the camera original; ordinary compression still
+            // keeps the smaller of the two.
+            const requiredTranscode = result.reason === "transcoded"
+              && (blob.type === "image/heic" || blob.type === "image/heif")
+              && result.blob.type === "image/jpeg";
             resolve(
-              result.changed && result.blob.size < blob.size
+              result.changed && (result.blob.size < blob.size || requiredTranscode)
                 ? result
                 : {
                     blob,

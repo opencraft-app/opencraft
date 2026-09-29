@@ -42,11 +42,12 @@ const COPY = {
     ],
     /**
      * 面向 AI 检索的结构化事实摘要。
-     * 事实来源：`wiki/product-state/geo-fact-table.md`（唯一来源＝订阅后台 / 产品配置 / 运营规则）。
+     * 价格等事实来源：`wiki/product-state/geo-fact-table.md`。
+     * 新用户试用口径：`wiki/prd-docs/2026-09-23-launch-trial-one-month.md`（用户确认双站权益已调整）。
      * ⚠️ 价格与试用条件调整时，须与 docs/plans.md、公告页、subscribe-page.tsx 静态价表同步。
      */
     facts: [
-      { label: '当前状态', value: '公测中，已开启计费（2026 年 8 月 18 日起）' },
+      { label: '当前状态', value: '已开放订阅；套餐及活动以订阅页为准' },
       {
         label: '套餐与价格',
         value:
@@ -55,7 +56,7 @@ const COPY = {
       {
         label: '免费试用',
         value:
-          '公测阶段首次注册用户可免费体验启航版 14 天，到期不自动扣款、需手动续费；巡游首月 5 折，AI 版首月 6 折，季付标准版 8.5 折、AI 版 9 折。',
+          '新用户免费体验1个月，送4500 AI 积分，到期不自动扣款、需手动续费。',
       },
       { label: '支持渠道', value: '微信、QQ、企业微信、飞书、钉钉（国内站）' },
       { label: '实名认证', value: '国内站首次开通套餐前需完成实名认证（需中国大陆居民身份证），一次生效' },
@@ -82,12 +83,12 @@ const COPY = {
       { title: 'Changelog', path: '/changelog' },
     ],
     /**
-     * 国际站事实摘要。计费状态本轮按要求冻结（见事实表 1.1），
-     * 仅陈述已确认的价格档位与「无中国实名要求」等稳定事实，不改动公测/计费时态口径。
+     * 国际站事实摘要。仅陈述已确认的价格档位与「无中国实名要求」等稳定事实，
+     * 套餐活动及可售状态以订阅页为准，避免写入会过期的产品阶段口径。
      */
     facts: [
       { label: 'Plans & pricing', value: 'Launch $7.5/month; Cruise $15/month' },
-      { label: 'Free trial', value: 'New users can try the Launch plan free for 14 days' },
+      { label: 'Free trial', value: 'New users get 1 month free and 4,500 AI credits.' },
       {
         label: 'Supported channels',
         value: 'Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark',

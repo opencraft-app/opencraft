@@ -18,6 +18,9 @@ import {
 } from "@lightvela/agent-core";
 import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN_QUERY, UPGRADE_POLL_INTERVAL_MS, UPGRADE_RECOVERY_TIMEOUT_MS, type PaidUpgradeCheckout } from "@/lib/upgrade-checkout";
 import { isGlobal } from "@/lib/region";
+import { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
+
+export { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
 
 /* ─── Types ─── */
 
@@ -32,6 +35,7 @@ export interface OpenClawBot {
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;
   weixinOwner?: Bot["weixinOwner"];
+  whatsAppOwner?: Bot["whatsAppOwner"];
   name: string;
   personality: string;
   personalityEmoji: string;
@@ -65,6 +69,8 @@ interface OpenClawContextValue {
   user: OpenClawUser;
   bots: OpenClawBot[];
   botsLoading: boolean;
+  /** Latest list read failed; an empty array is not proof of an empty account. */
+  botsError: boolean;
   /** 当前用户的权益最新快照（来自 GET /v1/passes） */
   activePass: Pass | null;
   /** 升级中的权益；直到服务端恢复 active 且 Bot 快照刷新后才清除。 */
@@ -123,6 +129,7 @@ const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClaw
     createdFrom: bot.createdFrom,
     sourceBotId: bot.sourceBotId,
     weixinOwner: bot.weixinOwner,
+    whatsAppOwner: bot.whatsAppOwner,
     name: bot.name,
     personality: bot.template || "默认设定",
     personalityEmoji: "✨",
@@ -176,20 +183,6 @@ const defaultPlan: OpenClawUser["plan"] = {
   usedCredits: 0,
   totalRequests: 0,
   maxBots: 1,
-};
-
-export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bundle_id"> | null): number => {
-  // 后端新增或调整付费套餐时，请同步更新此处 bundle_id 映射与对应测试。
-  switch (pass?.bundle_id) {
-    case "bundle_launch_01":
-    case "bundle_launch_ai_01":
-      return 5;
-    case "bundle_cruise_01":
-    case "bundle_cruise_ai_01":
-      return 10;
-    default:
-      return 1;
-  }
 };
 
 export const resolveBotQuotaForPassState = (
@@ -253,6 +246,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const [hasResolvedPasses, setHasResolvedPasses] = useState(false);
   const [bots, setBots] = useState<OpenClawBot[]>([]);
   const [botsLoading, setBotsLoading] = useState(false);
+  const [botsError, setBotsError] = useState(false);
   const fetchedRef = useRef(false);
 
   const clearUpgradeIssue = useCallback(() => {
@@ -511,6 +505,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       const mappedBots = projectBotCatalog(snapshot.bots)
         .map(({ source }) => mapBotToOpenClawBot(source));
       setBots(mappedBots);
+      setBotsError(false);
 
       /* 对每个 bot 尝试获取 openclaw 配置，恢复通道状态 */
       /* 目前代码适配hermes， openclaw_config暂不进行查询 */
@@ -541,6 +536,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       //   }
       // }
     } catch {
+      if (generation === botRefreshGeneration.current) setBotsError(true);
       if (generation === botRefreshGeneration.current && LOCAL_PREVIEW_AUTH_ENABLED) {
         setBots((prev) => (prev.length > 0 ? prev : [buildLocalPreviewBot()]));
       }
@@ -570,6 +566,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setHasResolvedPasses(false);
     setIsSubscribed(false);
     setBots([]);
+    setBotsError(false);
     setPassesLoading(Boolean(session.user));
     fetchedRef.current = false;
   }, [session.user?.id, clearUpgradeIssue]);
@@ -604,6 +601,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setLatestPass(null);
       setHasResolvedPasses(false);
       setBots([]);
+      setBotsError(false);
       fetchedRef.current = false;
     }
   }, [isAuthenticated, session.authReady, session.user, refreshBots, refreshPasses, clearUpgradeIssue]);
@@ -630,6 +628,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setLatestPass(null);
     setHasResolvedPasses(false);
     setBots([]);
+    setBotsError(false);
     fetchedRef.current = false;
     void sessionSignOut();
   }, [sessionSignOut, clearUpgradeIssue]);
@@ -707,6 +706,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       user,
       bots,
       botsLoading,
+      botsError,
       activePass,
       modifyingPass,
       passUpgradeFailed,
@@ -729,7 +729,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, botsError, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

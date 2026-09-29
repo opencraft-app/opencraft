@@ -5,7 +5,7 @@ const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "pl
 // Mount the real Shell and its production CSS, without connecting a Host.
 const source = `
 import React, {useState} from 'react';
-import {createRoot} from 'react-dom/client';
+import {createIntlTestRoot as createRoot} from '/tests/fixtures/intl-root.tsx';
 import {AppShell} from '/apps/workbench-web/src/components/app-shell.tsx';
 import {AppShellHeader} from '/apps/workbench-web/src/components/app-shell-header.tsx';
 import {SettingsNavigation} from '/apps/workbench-web/src/components/settings-page.tsx';

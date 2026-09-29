@@ -18,39 +18,39 @@ if (!sourceArgument) {
 const sourceRoot = path.resolve(sourceArgument);
 const targetRoot = path.join(frontendRoot, "public/lightvela-intl-home");
 const preservedHarnessAssetNames = [
-  "wcard-cloud-runtime-v2.png",
-  "wcard-skills-atlas-v1.png",
-  "wcard-cloud-runtime-v1.png",
-  "automation-templates-panel-en.png",
-  "automation-templates-panel.png",
-  "automation-templates-panel-zh-Hant.png",
-  "automation-templates-panel-id.png",
-  "automation-templates-panel-es.png",
-  "automation-templates-panel-ja.png",
-  "automation-templates-panel-ko.png",
-  "workspace-carousel/anniversary.png",
-  "workspace-carousel/anniversary.zh-CN.png",
-  "workspace-carousel/resume.png",
-  "workspace-carousel/resume.zh-CN.png",
-  "workspace-carousel/thesis.png",
-  "workspace-carousel/thesis.zh-CN.png",
-  "workspace-carousel/event.png",
-  "workspace-carousel/event.zh-CN.png",
-  "workspace-carousel/product.png",
-  "workspace-carousel/product.zh-CN.png",
-  "workspace-carousel/travel.png",
-  "workspace-carousel/travel.zh-CN.png",
-  "deepseek-harness-en-us.png",
-  "deepseek-harness-zh-cn.png",
-  "deepseek-harness-zh-sg.png",
-  "deepseek-harness-zh-hant.png",
-  "deepseek-harness-id-id.png",
-  "deepseek-harness-es.png",
-  "deepseek-harness-ja-jp.png",
-  "deepseek-harness-ko-kr.png",
+  "wcard-cloud-runtime-v2.webp",
+  "wcard-skills-atlas-v1.webp",
+  "wcard-cloud-runtime-v1.webp",
+  "automation-templates-panel-en.webp",
+  "automation-templates-panel.webp",
+  "automation-templates-panel-zh-Hant.webp",
+  "automation-templates-panel-id.webp",
+  "automation-templates-panel-es.webp",
+  "automation-templates-panel-ja.webp",
+  "automation-templates-panel-ko.webp",
+  "workspace-carousel/anniversary.webp",
+  "workspace-carousel/anniversary.zh-CN.webp",
+  "workspace-carousel/resume.webp",
+  "workspace-carousel/resume.zh-CN.webp",
+  "workspace-carousel/thesis.webp",
+  "workspace-carousel/thesis.zh-CN.webp",
+  "workspace-carousel/event.webp",
+  "workspace-carousel/event.zh-CN.webp",
+  "workspace-carousel/product.webp",
+  "workspace-carousel/product.zh-CN.webp",
+  "workspace-carousel/travel.webp",
+  "workspace-carousel/travel.zh-CN.webp",
+  "deepseek-harness-en-us.webp",
+  "deepseek-harness-zh-cn.webp",
+  "deepseek-harness-zh-sg.webp",
+  "deepseek-harness-zh-hant.webp",
+  "deepseek-harness-id-id.webp",
+  "deepseek-harness-es.webp",
+  "deepseek-harness-ja-jp.webp",
+  "deepseek-harness-ko-kr.webp",
 ];
 const preservedHarnessAssetNameSet = new Set(preservedHarnessAssetNames);
-const zhHantConverter = OpenCC.Converter({ from: "cn", to: "tw" });
+const zhHantConverter = OpenCC.Converter({ from: "cn", to: "hk" });
 const supportedLocales = ["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"];
 const sourceFileByLocale = {
   "en-US": "index-en.html",
@@ -94,14 +94,15 @@ const rotatorWordsByLocale = {
   "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "相場ウォッチャー", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
   "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "시세 관찰자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
 };
-const tokenTrialCopyByLocale = {
-  "en-US": "Try an AI token plan free for 7 days.",
-  "zh-SG": "AI Token 套餐免费体验 7 天",
-  "zh-Hant": "AI Token 套餐免費體驗 7 天",
-  "id-ID": "Coba paket AI Token gratis selama 7 hari.",
-  es: "Prueba un plan de tokens de IA gratis durante 7 días.",
-  "ja-JP": "AI Tokenプランを7日間無料でお試しいただけます。",
-  "ko-KR": "AI Token 플랜을 7일 동안 무료로 사용해 보세요.",
+const trialOfferCopyByLocale = {
+  "en-US": "New users get 1 month free and 4,500 AI credits.",
+  "zh-CN": "新用户免费体验1个月，送4500 AI 积分",
+  "zh-SG": "新用户免费体验1个月，送4500 AI 积分",
+  "zh-Hant": "新使用者免費體驗1個月，送4500 AI 積分",
+  "id-ID": "Pengguna baru mendapat uji coba gratis 1 bulan dan 4.500 kredit AI.",
+  "es": "Los nuevos usuarios reciben 1 mes gratis y 4500 créditos de IA.",
+  "ja-JP": "新規ユーザーは1か月間無料、4,500 AIクレジット付き。",
+  "ko-KR": "신규 사용자에게 1개월 무료 체험과 AI 크레딧 4,500점을 드립니다."
 };
 const trialTitleCopyByLocale = {
   "en-US": "Try it free, activate in 10 seconds",
@@ -271,7 +272,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已连接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版权所有。由 Tencent Lighthouse 构建。",
     Product: "产品",
-    "14-day free trial": "14 天免费试用",
+    "1-month free trial": "1 个月免费试用",
     Pricing: "定价",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -297,6 +298,7 @@ const coreCopyByLocale = {
     Community: "社区",
     Company: "公司",
     "About Us": "关于我们",
+    "User Feedback": "用户反馈",
     "Related products": "相关产品",
     "Tencent CloudBase": "腾讯云开发 Tencent CloudBase",
     "Tencent EdgeOne": "Tencent EdgeOne",
@@ -337,7 +339,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已连接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版权所有。由 Tencent Lighthouse 构建。",
     Product: "产品",
-    "14-day free trial": "14 天免费试用",
+    "1-month free trial": "1 个月免费试用",
     Pricing: "定价",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -363,6 +365,7 @@ const coreCopyByLocale = {
     Community: "社区",
     Company: "公司",
     "About Us": "关于我们",
+    "User Feedback": "用户反馈",
     "Related products": "相关产品",
     "Tencent CloudBase": "腾讯云开发 Tencent CloudBase",
     "Tencent EdgeOne": "Tencent EdgeOne",
@@ -404,7 +407,7 @@ const coreCopyByLocale = {
     "Supported channels connected.": "支持的通道已連接。",
     "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.": "© 2026 LightVela. 版權所有。由 Tencent Lighthouse 構建。",
     Product: "產品",
-    "14-day free trial": "14 天免費試用",
+    "1-month free trial": "1 個月免費試用",
     Pricing: "定價",
     "WhatsApp setup guide": "接入 WhatsApp 指引",
     "Telegram setup guide": "接入 Telegram 指引",
@@ -430,6 +433,7 @@ const coreCopyByLocale = {
     Community: "社群",
     Company: "公司",
     "About Us": "關於我們",
+    "User Feedback": "用戶反饋",
     "Related products": "相關產品",
     "Tencent CloudBase": "騰訊雲開發 Tencent CloudBase",
     "Tencent EdgeOne": "Tencent EdgeOne",
@@ -597,11 +601,12 @@ const coreCopyByLocale = {
     Community: "Komunitas",
     Company: "Perusahaan",
     "About Us": "Tentang Kami",
+    "User Feedback": "Masukan Pengguna",
     "Privacy Policy": "Kebijakan Privasi",
     "Terms of Service": "Ketentuan Layanan",
     "Open Source Notice": "Pemberitahuan Open Source",
     "Related products": "Produk terkait",
-    "14-day free trial": "Uji coba gratis 14 hari",
+    "1-month free trial": "Uji coba gratis 1 bulan",
     "WhatsApp setup guide": "Panduan setup WhatsApp",
     "Telegram setup guide": "Panduan setup Telegram",
     "Discord setup guide": "Panduan setup Discord",
@@ -772,11 +777,12 @@ const coreCopyByLocale = {
     Community: "Comunidad",
     Company: "Empresa",
     "About Us": "Sobre nosotros",
+    "User Feedback": "Feedback de usuario",
     "Privacy Policy": "Política de privacidad",
     "Terms of Service": "Términos del servicio",
     "Open Source Notice": "Aviso de código abierto",
     "Related products": "Productos relacionados",
-    "14-day free trial": "Prueba gratis de 14 días",
+    "1-month free trial": "Prueba gratis de 1 mes",
     "WhatsApp setup guide": "Guía de conexión de WhatsApp",
     "Telegram setup guide": "Guía de conexión de Telegram",
     "Discord setup guide": "Guía de conexión de Discord",
@@ -971,8 +977,9 @@ Object.assign(coreCopyByLocale, {
     Community: "コミュニティ",
     Company: "会社",
     "About Us": "会社概要",
+    "User Feedback": "ユーザーフィードバック",
     "Related products": "関連製品",
-    "14-day free trial": "14日間無料トライアル",
+    "1-month free trial": "1か月間無料トライアル",
     "WhatsApp setup guide": "WhatsApp接続ガイド",
     "Telegram setup guide": "Telegram接続ガイド",
     "Discord setup guide": "Discord接続ガイド",
@@ -1166,8 +1173,9 @@ Object.assign(coreCopyByLocale, {
     Community: "커뮤니티",
     Company: "회사",
     "About Us": "회사 소개",
+    "User Feedback": "사용자 피드백",
     "Related products": "관련 제품",
-    "14-day free trial": "14일 무료 체험",
+    "1-month free trial": "1개월 무료 체험",
     "WhatsApp setup guide": "WhatsApp 연결 가이드",
     "Telegram setup guide": "Telegram 연결 가이드",
     "Discord setup guide": "Discord 연결 가이드",
@@ -1812,6 +1820,18 @@ const demoExactCopyByLocale = {
   "id-ID": Object.fromEntries(demoExactCopyTriples.map(([from, id]) => [from, id])),
   es: Object.fromEntries(demoExactCopyTriples.map(([from, , es]) => [from, es])),
 };
+const currentHeroCopyTriples = [
+  ["Nasdaq Brief Assistant", "Asisten Ringkasan Nasdaq", "Asistente del Nasdaq"],
+  ["Hermes Agent: Nasdaq sector brief is ready", "Hermes Agent: ringkasan sektor Nasdaq sudah siap", "Hermes Agent: el resumen sectorial del Nasdaq está listo"],
+  ["Hermes updated the weekly draft.", "Hermes memperbarui draf mingguan.", "Hermes actualizó el borrador semanal."],
+  ["@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.", "@LightVela minta DSH memperbaiki Hermes: penyedia memori terkadang menulis data ganda. Reproduksi dulu, lalu perbaiki.", "@LightVela pide a DSH que arregle Hermes: el proveedor de memoria a veces duplica registros. Primero reproduce el error y luego corrígelo."],
+  ["memory-dedupe pushed", "perbaikan duplikasi memori sudah dikirim", "corrección de duplicados de memoria enviada"],
+  ["patch · tests passed", "perbaikan · tes lulus", "corrección · pruebas superadas"],
+];
+for (const [from, id, es] of currentHeroCopyTriples) {
+  demoExactCopyByLocale["id-ID"][from] = id;
+  demoExactCopyByLocale.es[from] = es;
+}
 Object.assign(demoExactCopyByLocale, {
   "ja-JP": {
     "@LightVela are you ready? Help me start my AI companion.": "@LightVela 準備できていますか？私のAIパートナーを始めるのを手伝って。",
@@ -2383,6 +2403,38 @@ Object.assign(demoExactCopyByLocale, {
     "Preparing for Computer Science and tech certifications means handling a lot of information. With LightVela, I can automate daily documentation summaries, coding exercises, and knowledge reviews so I always stay on track with my technical goals.": "컴퓨터 과학과 기술 자격증을 준비하려면 많은 정보를 다뤄야 합니다. LightVela로 매일 문서 요약, 코딩 연습, 지식 복습을 자동화해 기술 목표를 계속 따라갈 수 있습니다.",
     "It keeps my class notes, coding practice, and exam reviews in one rhythm. I know what to read, what to code, and what to revisit.": "수업 노트, 코딩 연습, 시험 복습을 하나의 리듬으로 유지해 줍니다. 무엇을 읽고, 무엇을 코딩하고, 무엇을 다시 봐야 할지 알 수 있습니다.",
   },
+});
+Object.assign(demoExactCopyByLocale["ja-JP"], {
+  "Nasdaq Brief Assistant": "Nasdaq市場アシスタント",
+  "Hermes Agent: Nasdaq sector brief is ready": "Hermes Agent：Nasdaqのセクター速報ができました",
+  "Hermes updated the weekly draft.": "Hermesが週次ドラフトを更新しました。",
+  "DSH finished the patch.": "DSHが修正を完了しました。",
+  "CI Alerts": "CI通知",
+  "Release Notes": "リリースノート",
+  "Ops Monitor": "運用モニター",
+  "API latency is back to normal.": "APIの応答速度が正常に戻りました。",
+  "Design Review": "デザインレビュー",
+  "Support Digest": "サポート要約",
+  "API Changes": "API変更",
+  "@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.": "@LightVela Hermesのメモリに重複レコードが書き込まれる問題をDSHに修正してもらって。まず再現してから直して。",
+  "DSH reproduced it in an isolated branch. It happens when provider sync and session end fire together.": "DSHが隔離ブランチで再現しました。プロバイダーの同期とセッション終了が同時に起きると発生します。",
+  "The minimal fix is ready with a regression test. Unit, integration, and CI all pass. Review only provider sync and the session-end hook.": "最小限の修正と回帰テストを用意しました。単体・結合・CIテストはすべて通過しています。プロバイダーの同期とセッション終了処理を確認してください。",
+});
+Object.assign(demoExactCopyByLocale["ko-KR"], {
+  "Nasdaq Brief Assistant": "나스닥 시장 브리핑 도우미",
+  "Hermes Agent: Nasdaq sector brief is ready": "Hermes Agent: 나스닥 섹터 브리핑이 준비되었습니다",
+  "Hermes updated the weekly draft.": "Hermes가 주간 초안을 업데이트했습니다.",
+  "DSH finished the patch.": "DSH가 수정을 완료했습니다.",
+  "CI Alerts": "CI 알림",
+  "Release Notes": "릴리스 노트",
+  "Ops Monitor": "운영 모니터",
+  "API latency is back to normal.": "API 지연 시간이 정상으로 돌아왔습니다.",
+  "Design Review": "디자인 검토",
+  "Support Digest": "지원 요약",
+  "API Changes": "API 변경",
+  "@LightVela ask DSH to fix Hermes: memory provider occasionally writes duplicate records. Reproduce first, then patch.": "@LightVela Hermes 메모리에 중복 기록이 생기는 문제를 DSH에게 수정해 달라고 해 줘. 먼저 재현한 뒤 고쳐 줘.",
+  "DSH reproduced it in an isolated branch. It happens when provider sync and session end fire together.": "DSH가 격리된 브랜치에서 재현했습니다. 제공자 동기화와 세션 종료가 동시에 실행될 때 발생합니다.",
+  "The minimal fix is ready with a regression test. Unit, integration, and CI all pass. Review only provider sync and the session-end hook.": "최소 수정과 회귀 테스트가 준비되었습니다. 단위·통합·CI 테스트가 모두 통과했습니다. 제공자 동기화와 세션 종료 처리만 검토해 주세요.",
 });
 const headerActionsLayerCss = `
 #lightvela-intl-home .nav {
@@ -3482,6 +3534,35 @@ function sourceLocaleFor(locale) {
   return locale;
 }
 
+const heroReportFragmentsByLocale = {
+  "id-ID": [
+    ["Main chain:", "Rantai utama:"],
+    ["chips → equipment / EDA → optical → AI software / security", "chip → peralatan / EDA → optik → perangkat lunak AI / keamanan"],
+    ["breadth", "cakupan pasar"],
+    ["risk appetite", "selera risiko"],
+    ["Software aplikasi AI", "Perangkat lunak aplikasi AI"],
+    ["Optical /", "Optik /"],
+    ["outlook NVDA", "prospek NVDA"],
+    ["healthcare", "layanan kesehatan"],
+    ["equipment and software", "peralatan dan perangkat lunak"],
+    ["laporan earnings", "laporan keuangan"],
+  ],
+  es: [
+    ["Main chain:", "Cadena principal:"],
+    ["chips → equipment / EDA → optical → AI software / security", "chips → equipos / EDA → óptica → software de IA / seguridad"],
+    ["outlook de NVDA", "pronóstico de NVDA"],
+    ["equipment and software", "equipos y software"],
+  ],
+  "ja-JP": [
+    ["Main chain:", "主な流れ："],
+    ["chips → equipment / EDA → optical → AI software / security", "チップ → 装置 / EDA → 光通信 → AIソフトウェア / セキュリティ"],
+  ],
+  "ko-KR": [
+    ["Main chain:", "주요 흐름:"],
+    ["chips → equipment / EDA → optical → AI software / security", "칩 → 장비 / EDA → 광통신 → AI 소프트웨어 / 보안"],
+  ],
+};
+
 function localizeText(value, locale) {
   if (!value) return value;
   const exact = coreCopyByLocale[locale]?.[value];
@@ -3496,6 +3577,14 @@ function localizeText(value, locale) {
   if (locale === "zh-Hant") return zhHantConverter(value);
   let localized = value;
   for (const [from, to] of textFragmentsByLocale[locale] ?? []) {
+    localized = localized.replaceAll(from, to);
+  }
+  return localized;
+}
+
+function localizeHeroText(value, locale) {
+  let localized = localizeText(value, locale);
+  for (const [from, to] of heroReportFragmentsByLocale[locale] ?? []) {
     localized = localized.replaceAll(from, to);
   }
   return localized;
@@ -3521,12 +3610,12 @@ function localizeElementText(element, locale) {
   const textNodes = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode);
   for (const node of textNodes) {
-    node.nodeValue = localizeText(node.nodeValue, locale);
+    node.nodeValue = localizeHeroText(node.nodeValue, locale);
   }
   for (const node of element.querySelectorAll("[aria-label], [alt], [placeholder], [data-full-html]")) {
     for (const attribute of ["aria-label", "alt", "placeholder", "data-full-html"]) {
       const value = node.getAttribute(attribute);
-      if (value) node.setAttribute(attribute, localizeText(value, locale));
+      if (value) node.setAttribute(attribute, localizeHeroText(value, locale));
     }
   }
 }
@@ -3588,49 +3677,49 @@ function localizePublicHref(href, locale) {
 function applyLocalizedAssets(document, locale) {
   const localeKey = locale === "zh-Hant" ? "zh-Hant" : locale === "id-ID" ? "id" : locale === "es" ? "es" : locale === "ja-JP" ? "ja" : locale === "ko-KR" ? "ko" : locale === "en-US" ? "en" : "zh-Hans";
   const automationPanelByLocale = {
-    en: "automation-templates-panel-en.png",
-    "zh-Hans": "automation-templates-panel.png",
-    "zh-Hant": "automation-templates-panel-zh-Hant.png",
-    id: "automation-templates-panel-id.png",
-    es: "automation-templates-panel-es.png",
-    ja: "automation-templates-panel-ja.png",
-    ko: "automation-templates-panel-ko.png",
+    en: "automation-templates-panel-en.webp",
+    "zh-Hans": "automation-templates-panel.webp",
+    "zh-Hant": "automation-templates-panel-zh-Hant.webp",
+    id: "automation-templates-panel-id.webp",
+    es: "automation-templates-panel-es.webp",
+    ja: "automation-templates-panel-ja.webp",
+    ko: "automation-templates-panel-ko.webp",
   };
   const workbenchPanelByLocale = {
-    en: "workbench-panel-en.png",
-    "zh-Hans": "workbench-panel-en.png",
+    en: "workbench-panel-en.webp",
+    "zh-Hans": "workbench-panel-en.webp",
     "zh-Hant": "workbench-panel-zh-Hant.png",
-    id: "workbench-panel-id.png",
-    es: "workbench-panel-es.png",
-    ja: "workbench-panel-ja.png",
-    ko: "workbench-panel-ko.png",
+    id: "workbench-panel-id.webp",
+    es: "workbench-panel-es.webp",
+    ja: "workbench-panel-ja.webp",
+    ko: "workbench-panel-ko.webp",
   };
   const appsCardByLocale = {
-    en: "wcard-apps-en.png",
-    "zh-Hans": "wcard-apps-zh-Hans.png",
-    "zh-Hant": "wcard-apps-zh-Hant.png",
-    id: "wcard-apps-id.png",
-    es: "wcard-apps-es.png",
-    ja: "wcard-apps-ja.png",
-    ko: "wcard-apps-ko.png",
+    en: "wcard-apps-en.webp",
+    "zh-Hans": "wcard-apps-zh-Hans.webp",
+    "zh-Hant": "wcard-apps-zh-Hant.webp",
+    id: "wcard-apps-id.webp",
+    es: "wcard-apps-es.webp",
+    ja: "wcard-apps-ja.webp",
+    ko: "wcard-apps-ko.webp",
   };
   const folderCardByLocale = {
-    en: "wcard-folder-en.png",
-    "zh-Hans": "wcard-folder-zh-Hans.png",
-    "zh-Hant": "wcard-folder-zh-Hant.png",
-    id: "wcard-folder-id.png",
-    es: "wcard-folder-es.png",
-    ja: "wcard-folder-ja.png",
-    ko: "wcard-folder-ko.png",
+    en: "wcard-folder-en.webp",
+    "zh-Hans": "wcard-folder-zh-Hans.webp",
+    "zh-Hant": "wcard-folder-zh-Hant.webp",
+    id: "wcard-folder-id.webp",
+    es: "wcard-folder-es.webp",
+    ja: "wcard-folder-ja.webp",
+    ko: "wcard-folder-ko.webp",
   };
   const hubCardByLocale = {
-    en: "wcard-hub-v3-en.png",
-    "zh-Hans": "wcard-hub-v3-zh-Hans.png",
-    "zh-Hant": "wcard-hub-v3-zh-Hant.png",
-    id: "wcard-hub-v3-id.png",
-    es: "wcard-hub-v3-es.png",
-    ja: "wcard-hub-v3-ja.png",
-    ko: "wcard-hub-v3-ko.png",
+    en: "wcard-hub-v3-en.webp",
+    "zh-Hans": "wcard-hub-v3-zh-Hans.webp",
+    "zh-Hant": "wcard-hub-v3-zh-Hant.webp",
+    id: "wcard-hub-v3-id.webp",
+    es: "wcard-hub-v3-es.webp",
+    ja: "wcard-hub-v3-ja.webp",
+    ko: "wcard-hub-v3-ko.webp",
   };
   const replacements = new Map([
     ["automation-templates-panel-en.png", automationPanelByLocale[localeKey]],
@@ -3818,14 +3907,14 @@ const deepSeekHarnessPlayByLocale = {
 };
 
 const deepSeekHarnessVisualByLocale = {
-  "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.png?v=20260901-deepseek-ui",
-  "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.png?v=20260901-deepseek-ui",
-  "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-sg.png?v=20260901-deepseek-ui",
-  "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-hant.png?v=20260901-deepseek-ui",
-  "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.png?v=20260901-deepseek-ui",
-  es: "/lightvela-intl-home/assets/deepseek-harness-es.png?v=20260901-deepseek-ui",
-  "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.png?v=20260901-deepseek-ui",
-  "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.png?v=20260901-deepseek-ui",
+  "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.webp?v=20260901-deepseek-ui",
+  "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260901-deepseek-ui",
+  "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260901-deepseek-ui",
+  "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-hant.webp?v=20260901-deepseek-ui",
+  "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.webp?v=20260901-deepseek-ui",
+  es: "/lightvela-intl-home/assets/deepseek-harness-es.webp?v=20260901-deepseek-ui",
+  "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.webp?v=20260901-deepseek-ui",
+  "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.webp?v=20260901-deepseek-ui",
 };
 
 const automationIntroByLocale = {
@@ -3840,14 +3929,14 @@ const automationIntroByLocale = {
 };
 
 const automationPanelImageByLocale = {
-  "en-US": "automation-templates-panel-en.png",
-  "zh-CN": "automation-templates-panel.png",
-  "zh-SG": "automation-templates-panel.png",
-  "zh-Hant": "automation-templates-panel-zh-Hant.png",
-  "id-ID": "automation-templates-panel-id.png",
-  es: "automation-templates-panel-es.png",
-  "ja-JP": "automation-templates-panel-ja.png",
-  "ko-KR": "automation-templates-panel-ko.png",
+  "en-US": "automation-templates-panel-en.webp",
+  "zh-CN": "automation-templates-panel.webp",
+  "zh-SG": "automation-templates-panel.webp",
+  "zh-Hant": "automation-templates-panel-zh-Hant.webp",
+  "id-ID": "automation-templates-panel-id.webp",
+  es: "automation-templates-panel-es.webp",
+  "ja-JP": "automation-templates-panel-ja.webp",
+  "ko-KR": "automation-templates-panel-ko.webp",
 };
 
 function addDeepSeekHarnessPlay(document, locale) {
@@ -4091,9 +4180,11 @@ function prepareDocumentForLocale(document, locale) {
   ensureSoulStripSecondaryStates(document, locale);
   highlightHeroLightVelaMentions(document);
   revealHeroDemoMessages(document);
-  const tokenTrial = document.querySelector(".cta__copy li:nth-child(2)");
-  if (tokenTrial && tokenTrialCopyByLocale[locale]) {
-    tokenTrial.textContent = tokenTrialCopyByLocale[locale];
+  const trialCopy = document.querySelector(".cta__copy");
+  if (trialCopy && trialOfferCopyByLocale[locale]) {
+    const offer = document.createElement("li");
+    offer.textContent = trialOfferCopyByLocale[locale];
+    trialCopy.replaceChildren(offer);
   }
   const trialTitle = document.querySelector(".cta__title");
   if (trialTitle && trialTitleCopyByLocale[locale]) {
@@ -4129,10 +4220,10 @@ function applyFooterLayout(document) {
   </div>
   <div class="foot__links"><div class="foot__links-grid">
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.</p></div>
-    <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
+    <div><h3>Product</h3><ul><li><a href="/subscribe">1-month free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li><li><a href="/blog">Blog</a></li></ul></div>
     <div><h3>Compare</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Compare with self-hosting</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Compare with Hostinger</a></li><li><a href="/docs/compare/lightvela-vs-manus">Compare with Manus</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">Compare with ChatGPT</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Compare with Genspark</a></li></ul></div>
     <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li></ul></div>
-    <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
+    <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/support">User Feedback</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
     <div><h3>Related products</h3><ul><li><a href="https://edgeone.ai/" target="_blank" rel="noreferrer">Tencent EdgeOne</a></li><li><a href="https://tcb.cloud.tencent.com/en/?from=lightvela" target="_blank" rel="noreferrer">Tencent CloudBase</a></li></ul></div>
   </div></div>
 `;
@@ -4164,6 +4255,26 @@ function emphasizeFooterHermes(document) {
     node.replaceWith(fragment);
     return;
   }
+}
+
+if (sourceArgument === "--refresh-hero-locales") {
+  // Refresh the checked-in hero fragments without the separately approved source bundle.
+  // The full import path below uses the same localizeElementText function.
+  for (const locale of supportedLocales.filter((value) => value !== "en-US" && value !== "zh-CN")) {
+    const fragmentPath = path.join(targetRoot, `index-fragment.${locale}.html`);
+    let fragment = await readFile(fragmentPath, "utf8");
+    const document = new JSDOM(fragment).window.document;
+    for (const id of ["panel-wa", "panel-tg", "panel-dc", "panel-sl"]) {
+      const panel = document.getElementById(id);
+      if (!panel) throw new Error(`Missing hero surface panel: ${id} (${locale})`);
+      const original = panel.outerHTML;
+      localizeElementText(panel, locale);
+      if (!fragment.includes(original)) throw new Error(`Hero panel markup drifted: ${id} (${locale})`);
+      fragment = fragment.replace(original, panel.outerHTML);
+    }
+    await writeFile(fragmentPath, fragment);
+  }
+  process.exit(0);
 }
 
 if (!process.argv[2]) {
@@ -4265,13 +4376,13 @@ const domesticBrandIcons = Array.from(
 );
 if (
   domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书"
-  || domesticBrandIcons.join(",") !== "wechat.png,qq.png,wecom.png,dingtalk.png,feishu.png"
+  || domesticBrandIcons.join(",") !== "wechat.webp,qq.webp,wecom.webp,dingtalk.webp,feishu.webp"
   || domesticFragment.includes('href="/zh-cn')
-  || !domesticFragment.includes('<a href="/blog">博客</a>')
+  || domesticDocument.querySelector('a[href="/blog"]') !== null
   || domesticFragment.includes("Copyright © 2026 LightVela 版权所有")
   || domesticFragment.includes("© 2026 LightVela 版权所有")
 ) {
-  throw new Error("Domestic homepage must retain its approved Blog link, channels, brand icons, unprefixed routes, and concise copyright before international import");
+  throw new Error("Domestic homepage must hide Blog and retain its approved channels, brand icons, unprefixed routes, and concise copyright before international import");
 }
 
 const preservedHarnessAssets = await Promise.all(
@@ -4390,37 +4501,37 @@ for (const locale of supportedLocales) {
 }
 
 for (const assetName of [
-  "automation-templates-panel.png",
-  "automation-templates-panel-zh-Hant.png",
-  "automation-templates-panel-id.png",
-  "automation-templates-panel-es.png",
-  "automation-templates-panel-ja.png",
-  "automation-templates-panel-ko.png",
-  "workbench-panel-id.png",
-  "workbench-panel-es.png",
-  "workbench-panel-ja.png",
-  "workbench-panel-ko.png",
-  "wcard-apps-en.png",
-  "wcard-apps-zh-Hans.png",
-  "wcard-apps-zh-Hant.png",
-  "wcard-apps-id.png",
-  "wcard-apps-es.png",
-  "wcard-apps-ja.png",
-  "wcard-apps-ko.png",
-  "wcard-folder-en.png",
-  "wcard-folder-zh-Hans.png",
-  "wcard-folder-zh-Hant.png",
-  "wcard-folder-id.png",
-  "wcard-folder-es.png",
-  "wcard-folder-ja.png",
-  "wcard-folder-ko.png",
-  "wcard-hub-v3-en.png",
-  "wcard-hub-v3-zh-Hans.png",
-  "wcard-hub-v3-zh-Hant.png",
-  "wcard-hub-v3-id.png",
-  "wcard-hub-v3-es.png",
-  "wcard-hub-v3-ja.png",
-  "wcard-hub-v3-ko.png",
+  "automation-templates-panel.webp",
+  "automation-templates-panel-zh-Hant.webp",
+  "automation-templates-panel-id.webp",
+  "automation-templates-panel-es.webp",
+  "automation-templates-panel-ja.webp",
+  "automation-templates-panel-ko.webp",
+  "workbench-panel-id.webp",
+  "workbench-panel-es.webp",
+  "workbench-panel-ja.webp",
+  "workbench-panel-ko.webp",
+  "wcard-apps-en.webp",
+  "wcard-apps-zh-Hans.webp",
+  "wcard-apps-zh-Hant.webp",
+  "wcard-apps-id.webp",
+  "wcard-apps-es.webp",
+  "wcard-apps-ja.webp",
+  "wcard-apps-ko.webp",
+  "wcard-folder-en.webp",
+  "wcard-folder-zh-Hans.webp",
+  "wcard-folder-zh-Hant.webp",
+  "wcard-folder-id.webp",
+  "wcard-folder-es.webp",
+  "wcard-folder-ja.webp",
+  "wcard-folder-ko.webp",
+  "wcard-hub-v3-en.webp",
+  "wcard-hub-v3-zh-Hans.webp",
+  "wcard-hub-v3-zh-Hant.webp",
+  "wcard-hub-v3-id.webp",
+  "wcard-hub-v3-es.webp",
+  "wcard-hub-v3-ja.webp",
+  "wcard-hub-v3-ko.webp",
 ]) {
   assetPaths.add(`assets/${assetName}`);
 }
@@ -4618,6 +4729,18 @@ const homepageReadingCss = `
   text-decoration: none;
   color: inherit;
   border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu-language {
+  padding: 20px 8px 4px;
+  border-top: 1px solid #f2f2f2;
+}
+.home-mobile-menu-language h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-mobile-menu-language button {
+  min-height: 44px;
 }
 .home-mobile-menu :focus-visible,
 .home-mobile-menu-trigger:focus-visible {
@@ -5050,8 +5173,8 @@ function applyAboutCapabilityCards(document, locale) {
         ["slack.svg", "Slack"],
         ["qq.png", "QQ"],
         ["wechat.png", "微信"],
-        ["feishu.png", "飞书"],
-        ["dingtalk.png", "钉钉"],
+        ["feishu.png", locale === "zh-Hant" ? "飛書" : "飞书"],
+        ["dingtalk.png", locale === "zh-Hant" ? "釘釘" : "钉钉"],
       ];
       const logoItems = channelLogos
         .map(([src, name]) => `<li class="chnloop__item"><span class="chnloop__logo"><img src="/lightvela-intl-home/assets/${src}" alt="" draggable="false"></span><span>${name}</span></li>`)
@@ -5085,7 +5208,7 @@ function applyAboutCapabilityCards(document, locale) {
     // ② 云端运行主卡：运行核心 + 三条轨道 + 5 个任务卡
     () => `          <div class="wcard__demo wcard__demo--cloud" aria-hidden="true" data-dur="5000" data-replay="1800">
             <svg class="cld__flow" viewBox="0 0 1923 817" preserveAspectRatio="xMidYMid slice">
-              <image href="/lightvela-intl-home/assets/wcard-cloud-runtime-v2.png" width="1923" height="817" preserveAspectRatio="none"></image>
+              <image href="/lightvela-intl-home/assets/wcard-cloud-runtime-v2.webp" width="1923" height="817" preserveAspectRatio="none"></image>
               <path class="cld__wire" d="M625 215 C 754 215, 775 335, 908 335 M730 475 C 835 475, 817 400, 908 400 M1028 232 C 1028 179, 1050 154, 1070 154 M1146 412 C 1250 412, 1200 526, 1300 526 M1148 342 C 1370 342, 1380 329, 1603 329"></path>
               <path class="cld__flow-line cld__flow-line--green" pathLength="100" d="M625 215 C 754 215, 775 335, 908 335"></path>
               <path class="cld__flow-line cld__flow-line--purple" pathLength="100" d="M1148 342 C 1370 342, 1380 329, 1603 329"></path>
@@ -7530,7 +7653,7 @@ const aboutCapabilityCardCss = `/* =============================================
   #lightvela-intl-home .about__cards .wcard { position: relative; z-index: 1; }
   #lightvela-intl-home .wcard:nth-child(2) .wcard__demo--cloud {
     position: relative;
-    background: #fff url("/lightvela-intl-home/assets/wcard-cloud-runtime-v1.png") center 35% / cover no-repeat;
+    background: #fff url("/lightvela-intl-home/assets/wcard-cloud-runtime-v1.webp") center 35% / cover no-repeat;
   }
   #lightvela-intl-home .cld__flow { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
   #lightvela-intl-home .cld__flow-line { fill: none; stroke-width: 7; stroke-linecap: round; stroke-dasharray: 12 54; opacity: 0.9; animation: cld-flow 2.8s linear infinite; animation-play-state: paused; }
@@ -7612,7 +7735,7 @@ const cloudRefinedCss = `
   #lightvela-intl-home .wcard:nth-child(6) .wcard__body h4 { font-size: 15px; line-height: 1.3; }
 }
 #lightvela-intl-home .skwall__tile { grid-template-columns: 38px minmax(0,1fr); column-gap: 7px; }
-#lightvela-intl-home .skwall__tile i { width: 38px; height: 42px; border-radius: 7px; background-image: url('/lightvela-intl-home/assets/wcard-skills-atlas-v1.png'); background-size: 400% 300%; background-color: #fff; background-repeat: no-repeat; }
+#lightvela-intl-home .skwall__tile i { width: 38px; height: 42px; border-radius: 7px; background-image: url('/lightvela-intl-home/assets/wcard-skills-atlas-v1.webp'); background-size: 400% 300%; background-color: #fff; background-repeat: no-repeat; }
 #lightvela-intl-home .skwall__tile i .icon { visibility: hidden; }
 #lightvela-intl-home .skwall__col:nth-child(1) .skwall__tile:nth-child(4n+1) i { background-position: 0% 0%; }
 #lightvela-intl-home .skwall__col:nth-child(1) .skwall__tile:nth-child(4n+2) i { background-position: 33.333333333333336% 0%; }

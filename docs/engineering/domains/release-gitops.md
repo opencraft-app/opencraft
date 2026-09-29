@@ -8,6 +8,8 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
+问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试交接不自动恢复已下线的 ticket 发布合同：由后端负责人确认测试发布路径，使用同一版本镜像迁移后验证提交、后台列表与附件下载。占位镜像和待配置的运营身份不能作为可用证明；生产配置源码准备不等于生产晋级。
+
 ```text
 master 源码
   → .ci 构建与制品可见性
@@ -27,6 +29,37 @@ master 源码
 
 ## 不变量
 
+- 紧急恢复时若先在生产集群直改 Auth ConfigMap 或 Deployment，必须记录原值与镜像 digest，并在同一事件内把限流参数、可信代理地址和镜像 pin 固化到对应环境的 GitOps 声明；业务 429 恢复只证明临时热修生效，Argo 对齐到预期 revision 且 `Synced/Healthy` 才表示发布闭环。可信代理不得为省事扩大到整个 Pod 网段。
+
+- 统一 Argo CD 控制面运行在受控国内发布机时，必须使用宿主机原生 k0s systemd 服务；禁止使用
+  k0s-in-Docker 承载生产 GitOps 控制面，因为嵌套网络命名空间会使部分跨地域 TKE TLS 流量被
+  DevCloud 出口代理错误降级为明文响应。固定版本 k0s/Argo 基线、NodePort、repo-server
+  ksops patch 和跨地域客户端超时必须保存在 Git；repo SSH 私钥、目标集群 kubeconfig、管理员密码和
+  `sops-age` 私钥继续只存在于受保护的 Git 外存储。控制面重建顺序固定为
+  `base install -> repo credential -> sops-age -> target clusters -> projects/runtime -> root apps`。
+  root app 恢复只负责重新创建 Application；生产 leaf app 仍保持 manual sync，不能因控制面迁移而
+  自动同步生产漂移。跨地域 API Server 受出口网络限制时应保留明确的 comparison error，不得通过
+  放开公网网段或未审查的转发通道伪造恢复。
+- 个人 DevCloud 计费能力只部署到北京 `sandbox-bj-7` 和韩国 `sandbox-kr-1` testing。临时验证镜像需要
+  暂停 Argo 自动同步时，必须记录并只操作对应环境的 Auth、Trade、Service Gateway 应用；不修改生产
+  应用。若同一 Argo Application 已有无关 `OutOfSync` 资源，禁止 App 级全量 Sync，只能精确同步目标
+  资源。源码、镜像和 GitOps 期望合入后，先基于最新 master 完成注册、readiness、真实业务终态、注销
+  401 与 down 验收，再恢复原 `automated + prune + selfHeal` 策略并确认 `Synced/Healthy`。
+- CloudLadder testing 的 DevCloud 来源 CIDR 必须在 data-plane proxy 与 devtunnel 两套 workload 中保持
+  一致，并由 GitOps 契约测试校验；扩大 testing allowlist 不能扩散到 production manifests。北京允许
+  Skill 探测并提交受限 `9/8` 或 `21/8` 目标，韩国仍以服务端观测 NAT 来源为准。
+- CloudLadder 共用镜像需要把某个上游切到环境专属联调地址时，保持镜像内 backend 默认值不变，
+  只在目标 workload 通过 `CLOUDLADDERGATEWAY_BACKEND_<ALIAS>_BASE_URL` 覆盖。配置契约必须同时断言
+  目标环境取得预期地址、同地域的 production/testing 等相邻 workload 未继承该覆盖；发布仍经
+  `master` 源码 MR 和服务 CI 投影到 `gitops`，不得直接修改 live Pod 或 `gitops` 分支。
+
+- Sandbox 公网 `ingressproxy-router` 的既有 CLB 是地域级环境事实，不得跨地域复用：上海正式环境
+  `shprod` 绑定 `lb-ohkm8fm5`，新加坡正式环境 `sgprod` 绑定 `lb-8kenwgvc`。对应
+  `argocd/services/sandbox/<env>/patch-ingressproxy-router-service.yaml` 必须显式保存目标地域的
+  `service.kubernetes.io/loadbalance-id`，并由 release bundle 契约测试锁定环境与 CLB 的映射。
+  修复漂移时先更新 `master` 真源，再通过 GitOps 晋级和 Argo 收敛发布；不得用 live patch 代替真源，
+  也不得以另一地域已验证为由跳过目标环境的 CLB 地域核对。
+
 - 新加坡 Sandbox 扩展到新山时，云网络与现有 `llmgateway-sgprod-jhb` 支撑 VPC 分离。
   `infra_pulumi` 使用持久化 `sandbox-network` scope，只拥有 VPC、pool/support 子网、
   NAT/EIP、路由/SNAT 和 TAT-only Sandbox 安全组；不得借网络扩容创建第二套 TKE、数据库、
@@ -34,6 +67,38 @@ master 源码
   不回写 TKE deploy 输出或 kubeconfig，并且必须在精确资源 diff 审阅后单独获得付费授权。
   首个 pool 使用 `ap-johorbahru-1`，但网络预留 1/2 区 pool 子网；新加坡存量 pool 的生命周期
   继续由原 region 维护，网络创建本身不改变 CTL admission。
+
+- CTL 的生产 `spec_pools` 是业务 Spec ID 到 Sandbox 实际供给的环境级路由。业务 Spec ID 属于
+  Bundle/Pass 稳定契约，不因底层扩容改名；上海与新山可以分别把历史 `spec-2c4g50g`、
+  `spec-4c8g80g` 路由到更高内存的 2C8G 50G、4C16G 80G 供给。当前选池以
+  `template_class_id + sku_id` 实时发现 active Pool，`default_template_id` 和
+  `candidate_template_ids` 只保留兼容元数据，不能作为目标库存已就绪的证据。发布映射前必须在
+  各环境独立确认对应 Template Class、SKU 和至少一个 active/CLEAN Pool；上海验证不能替代新山。
+  回滚只恢复上一组 class/SKU 映射，不删除新旧 Pool，也不改变已分配实例的规格。
+
+- Hermes CVM 镜像流水线在构建开始时解析 COS `latest.json`，完成构建验证后把同一镜像复制到
+  北京、上海、新加坡、东京和新山；东京当前只接收地域镜像，不进入 Pool/存量 VM rollout。
+  Pool 和存量 VM 的发布顺序固定为北京主沙箱、新加坡、新山、上海，每个生产地域必须经过独立
+  只读预检和人工确认后，才能刷新 Pool 并通过 TAT 修补存量 VM。新加坡与新山共享 `sgprod`
+  控制面时，Pool/VM 发现必须按 `pool.zone` 对应的 region 隔离；不得把新加坡目标带入新山阶段，
+  也不得用跨地域共享 SKU 的单一全局镜像字段代替各 Pool 的地域权威 `base_image`。
+  仅存在于单一地域的 SKU 则必须同步更新 `desired_image_id`，避免 SKU rollout controller 将该地域
+  Pool 回写到旧的 stable image；是否更新 SKU 必须按每个 SKU 的 Pool 地域集合判断，不能按全部
+  Hermes Pool 是否跨地域进行一次性全局跳过。
+  `images/hermes-image-trigger` 用于显式触发新版本构建，不能以仅同步镜像冒充新山 Pool 和存量 VM
+  已完成发布。Runtime 验证只能从规范的 `Hermes Agent vX.Y.Z` 输出行提取版本，SSH 重试诊断、IP
+  地址和传输错误不得参与版本匹配。
+  存量 VM 的 TAT 修补必须以 build ID 和环境为作用域持久化逐台派发 checkpoint；runner 重启或阶段
+  重试时只跳过已有 `INVOKED` 的 cloud instance，继续失败和未处理项。checkpoint JSONL 的中断尾行
+  可以忽略，但不得因读取失败退化成全量 `--force=true` 重复升级。
+
+- Website Builder 的存量凭据补发与新购自动下发分开验收。逐实例凭据 TAT Command 的
+  `website_key` 必须是 hidden parameter，不能写入 Command content、日志或 Git；默认安装器
+  对同一 CVM 的多个 gateway unit 保持失败关闭。仅对已经核对 CTL、Sandbox、CVM、Pool
+  身份且确认多 unit 的单台旧实例，可创建显式 `HERMES_TAT_MULTI_GATEWAY=true` 的专用命令，
+  让同一实例凭据注入所有选中 unit。安装器须备份原凭据与 drop-in，在每个 unit 重启并完成
+  验证前保留回滚材料；可捕获的 TERM/INT、部分重启或校验失败须回滚；SIGKILL/断电无法捕获，超时等不确定终态必须先核对机器文件和受保护账本，不得盲目重签。此专用命令不能替换新购地域
+  命令映射，也不能对整个地域批量执行；TAT 成功后仍须核查机器侧 Skill、文件元数据和认证能力。
 
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
@@ -43,6 +108,13 @@ master 源码
 - Collaboration 北京 Runtime 的 `DB_JOB_KUBECONFIG_B64` 在 Stream 中使用 `PASSWORD` 类型 protected
   credential；流水线必须引用 `.password` 字段，不能把 credential 对象本身传给 Base64 解码器。
   kubeconfig 来源保持在受控 DevCloud/Stream 边界，不写入仓库或普通日志。
+- Collaboration 北京完成首次 foundation/runtime 激活后，普通源码发布必须复用标准 service-release：
+  为 `beijing-sandbox` 构建候选镜像，始终运行 MySQL migration/verify，再创建一个不自动合并的 GitOps MR。
+  日常发布不得重跑 `bootstrap-collaboration`、写 SSM 或重新加密 SOPS。投影必须显式保留 `gitops` 中的
+  runtime SOPS Secret 与已激活 `collaboration-platform.env`，随后只更新镜像 digest 和部署时间；其他
+  source-facing base/overlay 文件仍以目标源码 revision 为权威，未声明保留的 stale 文件继续删除。
+  保留路径必须是 bundle publish closure 内的精确文件，禁止通配符或越出仓库。缺少保留输入时配置 gate
+  必须 fail closed。首次 foundation、显式 IM Secret rotation 和灾难恢复仍使用独立 bootstrap 审批链。
 
 - Stream V2流水线的触发入口使用顶层普通`on:`。其预处理按行首文本映射到`triggerOn`，
   带引号的入口虽然符合YAML语法，却会丢失触发限制并落入默认通配规则；候选制品契约测试须覆盖此预处理差异。
@@ -71,6 +143,19 @@ master 源码
 - LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
   产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
   通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。
+- OpenCraft headless Linux包的Web入口必须携带headless构建身份及`opencraft-server` Host配置；
+  普通`build:web`产物即使与Codex运行时装在同一包，也不会注册Web侧Codex扩展。打包、包级
+  smoke及服务启动都应拒绝这种混包；进程健康和Codex CLI存在不能替代Web入口校验。该本机包
+  的切换不等同于GitOps生产发布，仍需核对实际运行release与保留回滚点。
+- frontend Pages artifact在release matrix显式启用时，先构建OpenCraft独立Embedded Workbench
+  target，再把无sourcemap、内容寻址的静态树放入Next导出的`/__opencraft/`子树；Next主chunk
+  不导入OpenCraft，未执行rollout `show()`的页面也不请求该树。同源共包避免ES module CORS和
+  两个独立发布版本漂移，但artifact构建必须在缺少loader输入时失败，不能静默回退成只含前端代码。
+  Embedded staging 必须先于 EdgeOne Build Output 投影脚本执行，确保实际上传的
+  `.edgeone/assets/__opencraft/` 同样包含 loader、version 与 hashed assets；仅检查 `out/__opencraft/`
+  不能作为正式站产物验收。回归用例执行真实投影脚本并通过 `resolveDeployDir` 检查上传树。
+  Embedded artifact 还必须携带 namespaced Host Proxy Service Worker；该稳定路径需要
+  `no-cache`，同时其注册 scope 必须限制在 `/__opencraft/host-proxy/`，不能扩大到站点根。
 - `vela-computer`客户端候选CI只构建原生Linux AMD64、校验并归档到流水线制品库，不下发
   实例、不接自动更新、不上传公共COS。候选带`schemaVersion=1`、完整源码SHA、dirty标记、
   平台、版本和SHA256SUMS；`deploymentQualified=false`不能用作正式可用证明。
@@ -115,8 +200,13 @@ master 源码
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
-- 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，并由 CTL base 将该可选键注入 `ctl-api`。回滚时只把目标环境值切为 `false`，仍需独立审查 Gateway Bot 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实国际站回归；源码中的 `true` 不代表运行态已启用。
-- 个人 DevCloud 动态注册的显式 `targetIp` 只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启，用于跨地域 testing 入口 NAT 后仍能登记自动探测的 `9.0.0.0/8:18084`；UIN 必须继续由 Auth session 的 active shadow binding 派生。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
+- 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，云桌面（VNC）会话由 `argocd/services/ctl/sandbox-bj-7/ctl-platform.env` 显式设置 `CLOUD_DESKTOP_ENABLED=true`（runtime-config 下发 `cloudDesktopEnabled`、控制前端入口）与 `DESKTOP_INGRESS_DOMAIN=sandbox-bj-7.lightclaw.tech`（`ws_url` 拼为 `wss://6080-<sandboxID>.<domain>/websockify`，泛域名解析与证书须覆盖 ingressproxy router）；两者都由 CTL base 将可选键注入 `ctl-api`（新键须同步 `ctl/k8s/base/manifests.yaml` 的 configMapKeyRef 白名单，仅设 env 文件不生效）。回滚时只把目标环境值切为 `false`（云桌面无需回滚镜像，已建立会话按空闲回收收敛），仍需独立审查 Gateway 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实环境回归；源码中的 `true` 不代表运行态已启用，网关放行 `desktop/session` 路由也不等于能力开启。
+- 个人 DevCloud 动态注册只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启。客户端只提交 callback port 与 TTL；UIN 必须由 Auth session 的 active shadow binding 派生，来源 IP 必须由 Auth 从可信代理链确认，不能接受客户端自报 `targetIp`。CloudLadder 与 devtunnel 的 testing allowlist 只加入真实观测到的最小 DevCloud/NAT 网段，两个工作负载必须保持一致；不要用页面访问 IP 代替服务端观测值，也不要放开整段公网 CIDR。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
+- 个人 DevCloud testing 账号租约依赖 Auth migration 创建持久化租约表。北京、韩国发布必须按
+  `migration readiness → Auth workload → Service Gateway 精确公开路由 → 一条全空 state up 验收`
+  顺序执行；在 schema readiness 成功前不得启用账号池配置或公开租约路径。回滚时先从 Gateway 移除公开
+  路由并关闭 Auth 账号池，让已有租约按显式 release 或 TTL 收敛，再回滚 workload；仍有租约/session 时
+  不得先执行 down migration。production、staging 和其他 sandbox 不得继承该配置。
 - 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
 - 生产镜像 promote 只有在 staged diff 符合该服务的 pin-only 合约时才允许自动合并或自动同步。VelaGW 的 pin-only 合约仅允许目标环境 `velagw-platform.env` 中的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT` 变化；Kustomize 结构、NewAPI release pin 或任何其他 deploy-facing 配置变化必须关闭自动合并和自动同步，先审查差异并回填 `master` 真源后重新生成候选。
 - Service Gateway 为独立 chat 前端开放浏览器能力时，应使用精确 method/path 的 `cors_allow`，
@@ -155,6 +245,11 @@ master 源码
   Redis 地址、凭据和连通性；只有 API 与精确的 Service Gateway `optional_auth_allow` 同时收敛后，
   才允许无主站 session 的支付中转页流量进入。Redis 地址、DB 与 ticket TTL 属于环境级 API 配置，
   必须留在各环境的 Deployment patch，不能提升到 Credit shared base/common。
+- Credit 的 LLMGateway 管理面、internal token、商品 Plan 和用户模型流量必须属于同一地域控制面；
+  上海固定使用 `token-admin.lightvela.com`，新加坡固定使用 `token-admin.lightvela.ai`，不得复用北京
+  `llmgw-control.lightvela.com` 的 token 或同名 Plan ID。切换控制面时先暂停商品购买，再按
+  SSM/SOPS、URL、active package 精确订阅与快照、商品 Plan 映射的顺序收敛，最后恢复商品；必须用
+  现有用户模型 key 做真实数据面请求，不能用管理面余额查询代替验收。
 - 各环境通过 patch 独立设置 `LIGHTVELA_CREDIT_REGION`：北京 `ap-beijing`、东京 `ap-seoul`、上海
   `ap-shanghai`、新加坡 `ap-singapore`。Pass/default 的 `LIGHTVELA_TRADE_REGION` 保持原值；单独
   发布 Credit 不得改变存量 Pass 地域。
@@ -182,6 +277,14 @@ master 源码
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
   `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成
   接线后启用该路由；共享源码或策略测试不能替代目标地域的独立发布验收。
+- 匿名积分包询价必须按 Trade → Credit → Service Gateway 的顺序发布：Trade 先支持仅询价使用的
+  环境级 fallback UIN/AppID，Credit 再接受可选用户身份，最后才将精确的
+  `POST /v1/credit/inquiry` 加入 `optional_auth_allow`。下单、支付、退款和资源查询不得随该入口放宽；
+  国内与国际各环境必须分别验证 fallback 配置、最终 Kustomize 渲染和真实未登录询价。
+- Trade 通过 CloudLadder 推送 Credit 资源用量时必须使用通用的
+  `TRADE_CLOUDLADDER_HMAC_SECRET`；不得回退到 Billing 专用键。每个启用 sendResource 的生产地域必须
+  在发布新镜像前先完成 SSM 真源、SOPS Secret 和 release contract 的同批迁移，避免新 Pod 因缺密钥
+  CrashLoop。Secret 变更只经受保护发布链路生效，不以 live patch 或手工删除 Pod 代替。
 
 ### Referral 北京与上海交付
 
@@ -230,6 +333,15 @@ master 源码
 - 上海 foundation 使用独立 `lightvela_referral` 数据库和 `referral` 用户。激活时必须使用上海独立 Campaign、
   Pulsar producer/consumer Token 和精确 Gateway 路由，同时把 worker 恢复到 2 副本；不得复用北京 campaign ID、
   Token 或 endpoint。上海 Campaign 双方各 500 积分、`vesting_days=0`，资格仍是首次成功开通且 0 元 dianshi 订单也算。
+- Referral Attribution 运营重置依赖 schema `000003_attribution_reset_audit`、Referral API、CTL 精确免费积分撤销
+  和 Admin Gateway `/admin/api/referral` 路由同时就绪。发布顺序必须是 migration → CTL → Referral → Admin Gateway；
+  缺任一阶段时管理入口保持不可用，不能退化为直接 SQL 删除。
+- Referral 已纳入标准 `service-release` 生产编排。`master` 构建进入生产候选后，由 Referral 主流水线先对
+  `shprod` / `sgprod` 执行真实 schema 探测并创建相应 DB migration 子流水线，migration/readiness 通过后再创建
+  各环境 GitOps promote；生产审批和 Argo Sync 仍保持人工，不得绕过主流水线长期直接触发通用 migration。
+- 标准 `service-release` 的 DB 父编排必须按真实探测决策选择子入口：`run_migration` 调用无运行时条件阶段的
+  `.ci/db-migration-apply.yml`，由其完成二次 dry-run、人工审批、apply 和 readiness；`skip_migration` / `block`
+  才调用 `.ci/db-migration.yml`。不得把 `run_migration` 交给 Stream 会跳过条件阶段的旧入口。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
@@ -248,6 +360,11 @@ master 源码
 - 现有 CynosDB 集群 ID、内部 endpoint、独立 DB/账号、SSM 名、namespace 和 node pool 进入
   `infra_pulumi` inventory。`infractl bootstrap-collaboration` 默认只读，显式 `--apply` 后按
   SSM → 账号 → 逻辑库 → DB 级权限幂等执行；任何失败都可重入，默认拒绝密码或 IM Secret 轮换。
+- 已运行环境只有在确认 Tencent IM 返回 `70009` 或以等价证据证明 SDKAppID/SecretKey 不匹配后，
+  才能在人工启动时设置 `ALLOW_IM_SECRET_ROTATION=true`。dry-run 与 apply 必须同时显式传递
+  `--allow-im-secret-rotation`，由受保护的 `COLLABORATION_IM_CREDENTIAL` 更新 SSM，再导出 SOPS；
+  该开关不得隐式允许数据库密码重置。runtime 投影必须同时刷新 `COLLABORATION_DEPLOYED_AT`，
+  使 Deployment 滚动重启并重新读取 Secret，不能只修改 live Secret 或手工重启 Pod。
 - 首次创建账号的密码须符合目标 CynosDB 的复杂度约束，同时能安全写入受管 DSN。若 SSM 已创建而
   账号尚未创建，且其中旧 DSN 密码不合规，重入 bootstrap 仅重新生成并更新该受管 DSN 密码，
   保留其他 Secret 字段后再创建账号；账号已经存在时不得借此隐式轮换密码，仍需显式恢复授权。
@@ -268,8 +385,9 @@ master 源码
   应在创建 promote MR 前 fail closed。Deployment 的 bridge Secret 注入 patch 必须由
   `service-gateway/k8s/overlays/beijing-sandbox` source-facing Component 持有，与基准 Deployment 同层组合；
   deploy-facing 目录只保留环境配置和 Secret generator，不能对仅由 Component 引入的资源做顶层 patch。
-  北京主 sandbox 必须将该 source-facing Component 直接排在 common Component 后，不能经 sandbox profile
-  再嵌套一层；嵌套 Component 使用隔离累计器，仍会让结构性 patch 看不到 common 引入的 Deployment。
+  北京主 sandbox 必须使用一个普通 Kustomization，直接拥有 base resource、平台值 replacements、
+  Secret generators 和北京专用 patches；禁止使用 Component 注入内部 token，因为 Component 的 patch
+  不能修改 Component 自己或其他 Component 引入的资源。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
@@ -320,6 +438,13 @@ Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与
 `https://api-sandbox-jp-1.lightclaw.tech`。映射变更必须同步更新逐地域 GitOps 契约测试，不能通过
 修改共享路由默认值或 Pass 回调配置实现。
 
+`tkexgz` 的 `/cloudapi` 入向路由按腾讯云 API 的 `X-TC-Region` 分流 `DescribePass`。北京预发布
+当前使用广州计费地域，因此 `ap-guangzhou` 必须显式映射到北京预发布 upstream，并与该环境 CTL
+的 `CTL_CLOUDAPI_ALLOWED_REGIONS` 同批发布；`ap-beijing` 作为未来切回北京地域的兼容项保留，
+`ap-shanghai` 继续映射上海正式。配置契约必须同时验证 CloudLadder header route 和 CTL allowlist，
+不能只验证其中一层。源码合入后仍由 CloudLadder 与 CTL 各自 CI 投影到 `gitops`，不得直接修改
+`gitops` 或 live workload。
+
 ## 个人 DevCloud testing-only 发布门禁（2026-09-17）
 
 个人环境能力分三层发布：`master` 中的 Auth/CloudLadder/Skill 源码、`sandbox-bj-7` 与
@@ -336,11 +461,26 @@ capability，不能让 TKEx Pod 直连任意 DevCloud。该开关只有在 sandb
 才生效，不能进入 production、staging 或其他环境的 Auth 配置。已有静态 UIN 路由可以继续保留原落点，
 动态注册的 delivery mode 变化不得顺带改写静态测试账号。
 
+个人计费 capability proxy 只在 `sandbox-bj-7` 与 `sandbox-kr-1` 成对开启：Auth 配置固定指向同 namespace
+的中央 Trade internal endpoint，中央 Trade server 复用既有内部服务 Bearer、testing Jifei AppSecret 和
+CloudLadder HMAC；个人 Trade 只配置 Auth proxy URL 与短期 capability。客户端配置两项必须同进同退，
+中央 server 开关与客户端 URL/capability 不能混用。production、staging 及其他 sandbox 不设置
+`PERSONAL_DEV_BILLING_PROXY_ENABLED`，个人客户端变量默认空；因此源码合入不自动改变现网出向路径。
+这两个 playground 的 `trade-config` 来自 shared base 的 `trade` namespace；环境层 strategic merge patch
+必须保留该原始 `metadata.namespace: trade`，不能只依赖 overlay 的 namespace transformer。否则 Kustomize
+在 namespace 变换前无法定位 patch 目标，GitOps promote 必须在写回镜像或创建 MR 前 fail closed。
+发布验证除 Pod Ready 外，还要证明有效 capability 的拒绝探针为 `403`、注销后的同一 token 为 `401`，
+并分别保存国内和国际真实支付、回调与业务终态。任何长期 Secret 都不得进入 Skill、个人 kind 状态或日志。
+
 CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
 环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
 `cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部
 变体的服务使用。任何 testing 发布若改动 primary 或 staging image pin，必须先恢复生产期望态，不能
-依赖“暂不执行 Argo Sync”作为长期隔离措施。
+依赖“暂不执行 Argo Sync”作为长期隔离措施。variant 发布在投影阶段必须保留 `gitops` 中未选中的
+platform env；只有候选 source revision 相对第一父提交明确修改了某个未选中 platform env 时，才允许
+把该文件作为独立审查过的部署意图投影到 `gitops`，普通源码发布不得用 `master` 中的旧基线覆盖它。
+CloudLadder 的手动 `PIPELINE_MODE=promote` 使用 `MANUAL_PROMOTE_IMAGE_PIN_VARIANT=primary`，只在明确
+发起正式发布时更新 primary pin；不得把自动 master 发布改成 `all` 来绕过正式发布入口。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
@@ -423,13 +563,83 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
 - SSM manifest 应声明运行时必填键。重新导出时缺少 required key 必须失败，避免后续 promotion 静默删除 live 已有凭据。
+
+## nextgen-dashboard 下线的 GitOps 处置（2026-09-22）
+
+- admin-gateway 五个环境（`shprod`、`sgprod`、`beijing-sandbox`、`beijing-sandbox-2`、`sandbox-bj-7`）的
+  deploy-facing `config.yaml` 已移除 `/admin` → `nextgen-dashboard` 的 upstream 路由；`/admin/gateway` 与
+  `/` 兜底仍指向 gateway-dashboard，未知 `/admin` 子路径改由 gateway-dashboard 应答。该变更在
+  admin-gateway 的 Argo Application 同步后才生效，源码合入不等于发布。
+- `nextgen-dashboard` 源码与 `nextgen-dashboard-client/` 客户端均已删除；deploy-facing 的
+  `argocd/services/nextgen-dashboard/`、4 个 catalog 描述符、6 个环境的 SOPS secrets、
+  SSM manifest（含 sandbox-jp-1 runtime 清单段）、`.ci/nextgen-dashboard.yml` CI 流水线与
+  guards manifest 条目已在同日下线变更中移除。
+- 合入生效后 ApplicationSet 不再生成 nextgen-dashboard Application，Argo 将移除对应 workload；
+  必须确认 `user-auth` 与各 playground namespace 中 nextgen-dashboard 的 workload、Ingress 与
+  Secret 消失。BK-CI 侧同名流水线如仍存在应停用或删除；SSM 中的
+  `mono-*-nextgen-dashboard-runtime-secrets` 在确认无消费后按 Secret 交付顺序清理。
 - SOPS 每次加密的密文可以不同。判断 Secret 是否一致必须在受控环境中比较解密后的键集合和值，或比较逐键安全摘要；仅看到密文 diff、MR 已合入或 Argo `Healthy` 都不能证明语义一致。
 - live hotfix 后，即使业务已经恢复，也必须补齐 SSM、`master` 和 `gitops`。执行 Argo Sync 前先确认 deploy-facing 明文语义与 live 一致，否则 Sync 可能把正确的 live Secret 覆盖成旧值。
 - Secret 只更新对象数据时，Pod 不会自动重启。需要运行进程读取新值时应单独执行受控 rollout，并分别验证 Secret、Pod 环境和业务请求；不要把 Secret `Synced` 等同于进程已生效。
 - 跨服务运营 BFF Token 必须在同一环境内从服务端真源复制到消费方 SSM，并由 manifest 固定明确版本、声明 required key 后生成 SOPS；禁止跨地域复用或只在 live Secret 中临时补键。
+- Gateway Dashboard 调用 Credit 时，`CREDIT_INTERNAL_TOKEN` 必须由 Dashboard 自有 Secret 的
+  `CTL_INTERNAL_TOKEN` 显式映射，不能只依赖 `envFrom`；北京 sandbox、上海、新加坡和东京分别使用
+  本地域 Credit 内部 token。东京的 Credit 地址和消费方 SSM/SOPS 必须随 `sandbox-jp-1` overlay 一起交付。
 
 VelaGW subtree 更新时，北京 workload 的 `OTEL_SERVICE_VERSION` 以及 `shprod`、`sgprod` 的
 `VELAGW_OTEL_SERVICE_VERSION` 必须同步指向 subtree 源码短版本；这些字段只描述构建源码，
 不得借此修改镜像 pin 或触发生产 Argo sync。
 
+## playground 环境的 DB migration job
+
+playground（`sandbox-*`）环境的应用镜像不在启动时执行 migration；`lightclaw-auth` Deployment 的
+`wait-db-schema` initContainer 也只校验历史核心表，不覆盖新增 migration。因此新 migration 要在
+playground 生效，必须显式落一个 GitOps job：
+
+- 在 `argocd/services/<service>/<env>/` 下新增 `*-migration-job.yaml`，并在同目录
+  `kustomization.yaml` 的 `resources` 中挂载。参考实现：
+  `argocd/services/credit/sandbox-bj-7/credit-migration-job.yaml` 与
+  `argocd/services/lightclaw-auth/sandbox-bj-7/auth-migration-job.yaml`。
+- job 复用该环境当前已部署的镜像 digest 与 `envFrom`（服务 ConfigMap + Secret），执行镜像内置的
+  migrate 二进制。migration 必须幂等（`CREATE TABLE IF NOT EXISTS`、容忍 `ErrNoChange`），
+  因此补建表不需要重新构建镜像或发布服务。
+- Kubernetes Job spec 不可变。需要重跑同一 migration 时改 job `metadata.name`（例如追加用途后缀），
+  不要原地修改已存在的 job。
+- 该改动必须同时落到 `master`（源）与 `gitops`（Argo 实际读取分支）。Argo 自动 Sync 后，以 job
+  完成状态和接口真实行为为验收依据；manifest 合入本身不是证据。
+- 只新增 job，不改 Deployment 镜像、副本，也不触碰生产环境目录。
+
+## 个人 DevCloud 租约来源网段（PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS）
+
+`sandbox-bj-7`、`sandbox-kr-1` 的 `lightclaw-auth` 通过 `PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS`
+限制 `POST /auth/dev-environments/account-lease` 的调用来源。网关在
+`service-gateway/internal/gateway/client_ip.go` 里由右向左剥离可信跳后写入 `X-Lightclaw-Client-IP`，
+auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forwarded-For` 无法绕过，
+因此网段配置错误会直接表现为 `403 developer_test_account_source_forbidden`。
+
+- DevCloud 开发机的公网出口确实是**多 IP NAT 轮换**（实测 `21.214.48.147` 覆盖
+  `14.22.11.160-180` 与 `14.116.239.33-42`），因此网段必须按实测出口池放宽为 `/27`，
+  即 `14.22.11.160/27` 与 `14.116.239.32/27`；原先的 `/29` 只覆盖 `.160-.167` 与 `.32-.39`。
+- 但**出口轮换不是偶发 403 的直接原因**。`PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS`
+  只在进程启动时解析成 `h.sourceCIDRs`（`user/auth/internal/httpapi/developer_test_account.go`），
+  ConfigMap 更新**不会**触发 Deployment 滚动，旧 Pod 会继续按旧网段判定。
+  副本数为 1~2 时新旧 Pod 并存，请求随机落到旧 Pod 即 403、落到新 Pod 即 401/200，
+  表现为"概率性 403"。实测同一出口 IP `14.116.239.40` 既出现 403 也出现 401，可证明
+  403 与出口 IP 无关。
+- 因此凡是修改 `lightclaw-auth` 这类**启动期读取配置**的 ConfigMap，必须在同一次变更里
+  同步更新 Deployment pod template 的 `lightclaw.tech/config-revision` 注解强制滚动，
+  否则配置不会生效。
+- 判断这类来源问题必须**多次采样**（建议 ≥ 12 次），并且采样方式要能区分变量：
+  `curl ifconfig.me` 与业务请求是两条独立连接，不能用前者归因后者；HTTP 连接复用会让
+  连续请求固定落在同一 Pod，需要同时跑"复用单连接"与"每次新建连接"两组对照。
+- 该配置只作用于 playground/sandbox overlay，用于个人开发环境自助领号，不涉及任何生产目录；
+  变更后需分别在 bj-7 与 kr-1 连续调用租约接口，以 0 个 403 作为验收证据。
+  2026-09-24 实测：bj-7 与 kr-1 各连续 12 次调用，24/24 返回
+  `401 developer_test_account_renewal_requires_session`（已有租约需带 session 续租的正常分支），
+  0 个 403，验收通过。
+
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。
+
+## 建站凭据跨地域发布门禁
+
+`ctl` 与 `sandbox-api` 的地域 CommandId 映射须同时进入目标地域 GitOps，并与每个目标地域实际存在的 TAT Command 对账。先发布两端映射并验收新购机器的文件状态与真实建站能力请求，再按生产实例快照运行可断点续跑的存量补发；Skill 可以按 TAT 单次目标上限共享命令批量下发，凭据必须逐实例签发、调用、确认终态，失败与未确认结果不可盲重试。核验镜像、Argo revision、`Synced/Healthy`、TAT 终态与真实能力请求分别留证。

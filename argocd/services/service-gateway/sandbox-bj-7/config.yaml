@@ -100,6 +100,10 @@ routes:
   - method: POST
     path: /v1/instances/{instance_id}/tat/session
   - method: POST
+    path: /v1/instances/{instance_id}/desktop/session
+  - method: GET
+    path: /v1/instances/{instance_id}/desktop/session
+  - method: POST
     path: /v1/instances/{instance_id}/config/reset
   - method: POST
     path: /v1/instances/{instance_id}/agentchat/launch-token
@@ -166,6 +170,8 @@ routes:
   require_realname: true
   auth_strategy: session
   optional_auth_allow:
+  - method: POST
+    path: /v1/credit/inquiry
   - method: POST
     path: /v1/credit/packages/order-url
   path_policy: allowlist
@@ -256,6 +262,14 @@ routes:
     path: /auth/internal/dev-environments/registration
   - method: DELETE
     path: /auth/internal/dev-environments/registration
+  - method: POST
+    path: /auth/dev-environments/account-lease
+  - method: DELETE
+    path: /auth/dev-environments/account-lease
+  - method: POST
+    path: /auth/dev-environments/billing-proxy/jifei/resource-center/interface
+  - method: POST
+    path: /auth/dev-environments/billing-proxy/cloudapi/
   - method: GET
     path: /auth/oauth/qq/start
   - method: GET

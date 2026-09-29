@@ -10,7 +10,7 @@ LightVela 是多语言 monorepo。国内生产站为 `lightvela.com`，国际生
 
 | 区域 | 目录 |
 |---|---|
-| 前端 | `frontend/`, `frontend-ds/`, `nextgen-dashboard/`, `gateway-dashboard/` |
+| 前端 | `frontend/`, `frontend-ds/`, `gateway-dashboard/` |
 | 身份与商业化 | `user/auth/`, `shadow/`, `subscription/`, `payment/`, `trade/` |
 | Agent 与网关运行时 | `cloudagent/`, `ai-gateway/`, `velagw/`, `velalink/`, gateway services |
 | 多端 Agent 工作台 | `opencraft/` |
@@ -21,6 +21,8 @@ LightVela 是多语言 monorepo。国内生产站为 `lightvela.com`，国际生
 仅当任务需要跨服务定位时，读取[仓库地图](docs/context/project/repository-map.md)。
 
 OpenCraft 任务先读 [局部 Agent 入口](opencraft/AGENTS.md)；本地开发与隔离预览从 [根 README 的 OpenCraft 入口](README.md#opencraft-本地工作台与预览) 和 [构建矩阵](opencraft/docs/build-matrix.md) 进入。根入口不复制其平台运行手册。
+
+`https://github.com/opencraft-app/opencraft` 是 `mono2/opencraft` 的单向公开镜像，不是第二写入源。OpenCraft 变更必须先进入 mono2；只允许从干净、已提交且通过敏感信息扫描的 `opencraft/` tree 做 `subtree split`，按 [迁移与镜像契约](opencraft/MONO2_MIGRATION.md#public-github-mirror) 将 `skipzhang@tencent.com` 的公开 Author/Committer 邮箱重写为 `beordle@gmail.com` 后推送 GitHub `main`。禁止从该镜像 `subtree pull`、在两边并行开发或把 GitHub 提交直接当作 mono2 已接收变更；外部贡献须回到 mono2 重新评审、验证并提交后再镜像。镜像 push 仍受 P0 的显式授权约束。
 
 面向研发、产品和运维的人读正式知识从 [Vela 工程文档](docs/engineering/README.md) 进入；服务责任和共置文档由 [Service Catalog](docs/engineering/catalog/services.yaml) 路由。`docs/context/` 是它们的短派生消费层，不是另一套平行真相。
 

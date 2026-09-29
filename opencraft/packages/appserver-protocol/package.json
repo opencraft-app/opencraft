@@ -9,8 +9,10 @@
     "./generated/v2": "./src/generated/v2/index.ts",
     "./generated/source": "./src/generated/SOURCE.json",
     "./resume-history": "./src/resume-history.ts",
-    "./transport": "./src/transport.ts"
+    "./transport": "./src/transport.ts",
+    "./host-storage": "./src/host-storage.ts"
   },
+  "dependencies": { "@opencraft/document-storage": "0.1.0" },
   "scripts": {
     "typecheck": "tsc --noEmit"
   }

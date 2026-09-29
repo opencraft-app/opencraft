@@ -26,7 +26,6 @@ PRIMARY_SERVICES = {
     "gateway-dashboard": "gateway-dashboard",
     "infra-pulumi": "infra_pulumi",
     "new-api": "new-api",
-    "nextgen-dashboard": "nextgen-dashboard",
     "opencraft": "opencraft",
     "payment": "payment",
     "sandbox": "sandbox",

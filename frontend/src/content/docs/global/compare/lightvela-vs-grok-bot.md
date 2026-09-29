@@ -4,7 +4,7 @@
 
 **如果你想要一个围绕日常习惯配置、可以安装可复用技能，并通过定时任务和常用通道持续工作的个人 Hermes Agent，可以选择 LightVela。** 如果你想把跨应用、云端电脑和并行执行的工作交给持久化的 AI 同事，可以选择 Grok Bot。两者都超越了普通聊天机器人，但它们服务的是不同的工作方式。
 
-![LightVela 与 Grok Bot 运行个人 AI Agent 的对比](../images/lightvela-vs-grok-bot.png)
+![LightVela 与 Grok Bot 运行个人 AI Agent 的对比](../images/lightvela-vs-grok-bot.webp)
 
 ## 快速对比
 

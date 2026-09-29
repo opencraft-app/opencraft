@@ -12,10 +12,11 @@ import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
-import { useT } from "@/i18n/t";
+import { useLocaleOverride, useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { isGlobal } from "@/lib/region";
+import { getChangelogUpgradeCopy } from "@/pages/marketing/changelog-upgrade-copy";
 
 /* ═══════════════════════════════════════════════════════════════
    Animation Variants
@@ -48,8 +49,8 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
+  /** 卡片视觉样式：lobster=上线图 / multiBot=创建多个 Bot 图 / planUpgrade=套餐升配页图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -63,44 +64,53 @@ type ChangelogMonthGroup = {
    ═══════════════════════════════════════════════════════════════ */
 
 const zeroTokenScheduledTasksGlobalAssets: Record<string, string> = {
-  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
-  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
-  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.png",
-  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.png",
-  es: "/assets/changelog/scheduled-tasks-notification-es.png",
-  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
-  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
+  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.webp",
+  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.webp",
+  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.webp",
+  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.webp",
+  es: "/assets/changelog/scheduled-tasks-notification-es.webp",
+  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.webp",
+  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.webp",
 };
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
+  const locale = useLocaleOverride() ?? i18n.language;
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
   const useGlobalChineseAsset = i18n.language.startsWith("zh");
   const zeroTokenScheduledTasksAsset = isGlobal
-    ? zeroTokenScheduledTasksGlobalAssets[i18n.language] ?? "/assets/changelog/scheduled-tasks-notification-en-US.png"
-    : "/assets/changelog/scheduled-tasks-notification-zh-CN.png";
+    ? zeroTokenScheduledTasksGlobalAssets[i18n.language] ?? "/assets/changelog/scheduled-tasks-notification-en-US.webp"
+    : "/assets/changelog/scheduled-tasks-notification-zh-CN.webp";
   /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
-    variant === "zeroTokenScheduledTasks"
+    variant === "planUpgrade"
+      ? isGlobal
+        ? "/assets/changelog/lightvela-plan-upgrade-global-en.png"
+        : "/assets/changelog/lightvela-plan-upgrade-cn.png"
+      : variant === "multiBot"
+      ? isGlobal && !useGlobalChineseAsset
+        ? "/docs-images/bots-switching-create-en.webp"
+        : "/docs-images/bots-switching-create.webp"
+      : variant === "zeroTokenScheduledTasks"
       ? zeroTokenScheduledTasksAsset
       : variant === "instanceStorage"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-instance-storage-zh.png"
-        : "/assets/changelog/lightvela-instance-storage-en.png"
+        ? "/assets/changelog/lightvela-instance-storage-zh.webp"
+        : "/assets/changelog/lightvela-instance-storage-en.webp"
       : variant === "cloudStorage"
       ? useGlobalAssets
-        ? "/assets/changelog/lightvela-cloud-storage-en.png"
+        ? "/assets/changelog/lightvela-cloud-storage-en.webp"
         : "/assets/changelog/lightvela-cloud-storage.webp"
       : variant === "workbench"
       ? isGlobal && !useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-workbench-global-en.png"
-        : "/assets/changelog/lightvela-workbench-zh.png"
+        ? "/assets/changelog/lightvela-workbench-global-en.webp"
+        : "/assets/changelog/lightvela-workbench-zh.webp"
       : variant === "skillPackages"
-      ? "/assets/changelog/skill-packages.png"
+      ? "/assets/changelog/skill-packages.webp"
       : variant === "achievements"
       ? useGlobalAssets
-        ? "/assets/changelog/lightvela-achievements-en.png"
+        ? "/assets/changelog/lightvela-achievements-en.webp"
         : "/assets/changelog/lightvela-achievements.webp"
       : variant === "skillsRevamp"
       ? isGlobal
@@ -116,22 +126,22 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         : "/assets/changelog/lightvela-skill-package-cn.webp"
       : variant === "skillsBulkInstall"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.png"
-        : "/assets/changelog/lightvela-skills-bulk-install-global-en.png"
+        ? "/assets/changelog/lightvela-skills-bulk-install-global-zh.webp"
+        : "/assets/changelog/lightvela-skills-bulk-install-global-en.webp"
       : variant === "automationUpstream"
       ? isGlobal && useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-automation-upstream-task-global-zh.png"
-        : "/assets/changelog/lightvela-automation-upstream-task.png"
+        ? "/assets/changelog/lightvela-automation-upstream-task-global-zh.webp"
+        : "/assets/changelog/lightvela-automation-upstream-task.webp"
       : variant === "automationTemplates"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-automation-templates-global-zh.png"
-        : "/assets/changelog/lightvela-automation-templates-global-en.png"
+        ? "/assets/changelog/lightvela-automation-templates-global-zh.webp"
+        : "/assets/changelog/lightvela-automation-templates-global-en.webp"
       : variant === "qqGroupMentions"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-qq-group-mentions-global-zh.png"
-        : "/assets/changelog/lightvela-qq-group-mentions-global-en.png"
+        ? "/assets/changelog/lightvela-qq-group-mentions-global-zh.webp"
+        : "/assets/changelog/lightvela-qq-group-mentions-global-en.webp"
       : variant === "traditionalChinese"
-      ? "/assets/changelog/lightvela-traditional-chinese-global-all.png"
+      ? "/assets/changelog/lightvela-traditional-chinese-global-all.webp"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset
@@ -141,39 +151,39 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "advancedSettings"
       ? isGlobal
         ? useGlobalChineseAsset
-          ? "/assets/changelog/lightvela-advanced-settings-cn.png"
-          : "/assets/changelog/lightvela-advanced-settings-en.png"
-        : "/assets/changelog/lightvela-advanced-settings-cn.png"
+          ? "/assets/changelog/lightvela-advanced-settings-cn.webp"
+          : "/assets/changelog/lightvela-advanced-settings-en.webp"
+        : "/assets/changelog/lightvela-advanced-settings-cn.webp"
       : variant === "deepseekHarness"
       ? isGlobal && !useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-deepseek-harness-global.png"
-        : "/assets/changelog/lightvela-deepseek-harness-cn.png"
+        ? "/assets/changelog/lightvela-deepseek-harness-global.webp"
+        : "/assets/changelog/lightvela-deepseek-harness-cn.webp"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "dingtalk"
-      ? "/assets/changelog/lightvela-dingtalk-channel.png"
+      ? "/assets/changelog/lightvela-dingtalk-channel.webp"
       : variant === "personaUpload"
       ? isGlobal
         ? useGlobalChineseAsset
-          ? "/assets/changelog/lightvela-persona-upload-global-zh.png"
-          : "/assets/changelog/lightvela-persona-upload-global-en.png"
-        : "/assets/changelog/lightvela-persona-upload.png"
+          ? "/assets/changelog/lightvela-persona-upload-global-zh.webp"
+          : "/assets/changelog/lightvela-persona-upload-global-en.webp"
+        : "/assets/changelog/lightvela-persona-upload.webp"
       : variant === "chat"
       ? useGlobalAssets
-        ? "/assets/changelog/agentchat-web-chat-en.png"
+        ? "/assets/changelog/agentchat-web-chat-en.webp"
         : "/assets/changelog/agentchat-web-chat.webp"
       : variant === "memory"
       ? useGlobalAssets
-        ? "/assets/changelog/hermes-memory-en.png"
+        ? "/assets/changelog/hermes-memory-en.webp"
         : "/assets/changelog/hermes-memory.webp"
       : variant === "schedule"
       ? useGlobalAssets
-        ? "/assets/changelog/scheduled-tasks-en.png"
+        ? "/assets/changelog/scheduled-tasks-en.webp"
         : "/assets/changelog/scheduled-tasks.webp"
       : variant === "automationSkill"
       ? useGlobalAssets
-        ? "/assets/changelog/automation-skill-invocation-en.png"
-        : "/assets/changelog/automation-skill-invocation.png"
+        ? "/assets/changelog/automation-skill-invocation-en.webp"
+        : "/assets/changelog/automation-skill-invocation.webp"
       : variant === "skill-package"
       ? "/assets/changelog/lightvela-skill-package-cn.webp"
       : variant === "soul"
@@ -188,7 +198,11 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
           : "/assets/changelog/lightvela-launch-global-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
-    variant === "zeroTokenScheduledTasks"
+    variant === "planUpgrade"
+      ? getChangelogUpgradeCopy(locale, isGlobal).title
+      : variant === "multiBot"
+      ? t("LightVela 支持创建多个 Bot")
+      : variant === "zeroTokenScheduledTasks"
       ? t("定时任务新增通知任务和脚本任务")
       : variant === "instanceStorage"
       ? t("LightVela 支持查看 Agent 实例存储空间")
@@ -240,7 +254,11 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
         ? t("Soul 人设能力上线")
         : t("LightVela 产品公测上线");
   const aspectRatio =
-    variant === "zeroTokenScheduledTasks"
+    variant === "planUpgrade"
+      ? "2200 / 1240"
+      : variant === "multiBot"
+      ? isGlobal && !useGlobalChineseAsset ? "1690 / 931" : "3408 / 1878"
+      : variant === "zeroTokenScheduledTasks"
       ? "760 / 656"
       : variant === "instanceStorage"
       ? useGlobalChineseAsset ? "2372 / 1262" : "2367 / 1259"
@@ -317,7 +335,13 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       <img
         src={assetUrl(imgPath)}
         alt={altText}
-        className={`absolute inset-0 h-full w-full rounded-[inherit] ${variant === "lobster" ? "object-cover" : "object-contain"}`}
+        className={`absolute inset-0 h-full w-full rounded-[inherit] ${
+          variant === "lobster"
+            ? "object-cover"
+            : variant === "multiBot"
+              ? "translate-y-[10%] scale-150 object-contain"
+              : "object-contain"
+        }`}
         loading="lazy"
       />
     </div>
@@ -330,6 +354,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
 
 function ChangelogContent() {
   const t = useT();
+  const { i18n } = useTranslation();
+  const locale = useLocaleOverride() ?? i18n.language;
+  const upgradeCopy = getChangelogUpgradeCopy(locale, isGlobal);
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
      国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
@@ -350,14 +377,36 @@ function ChangelogContent() {
     desc: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
     visual: "zeroTokenScheduledTasks",
   };
+  const multiBotEntry: ChangelogEntry = {
+    id: "multi-bot-creation",
+    title: t("LightVela 支持创建多个 Bot"),
+    desc: t("在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。"),
+    visual: "multiBot",
+  };
+
+  const upgradeEntry: ChangelogEntry = {
+    id: "subscription-upgrade",
+    title: upgradeCopy.title,
+    desc: upgradeCopy.desc,
+    visual: "planUpgrade",
+  };
+  const channelTestEntry: ChangelogEntry = {
+    id: "channel-test-message",
+    title: t("聊天通道支持发送测试消息"),
+    desc: t("已连接的聊天通道可发送一条测试消息，在对应聊天软件中确认是否收到，快速验证消息是否送达。"),
+    visual: "none",
+  };
 
   const changelogGroups: ChangelogMonthGroup[] = [
     ...(isGlobal
       ? [
           {
             id: "2026-09",
-            month: t("2026 年 9 月"),
+            month: upgradeCopy.month,
             entries: [
+              channelTestEntry,
+              upgradeEntry,
+              multiBotEntry,
               zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
               {
@@ -440,8 +489,11 @@ function ChangelogContent() {
       : [
           {
             id: "2026-09",
-            month: t("2026 年 9 月"),
+            month: upgradeCopy.month,
             entries: [
+              channelTestEntry,
+              upgradeEntry,
+              multiBotEntry,
               zeroTokenScheduledTasksEntry,
               instanceStorageEntry,
               {
@@ -594,13 +646,13 @@ function ChangelogContent() {
         {
           id: "soul",
           title: t("Soul 人设能力上线"),
-          desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
+          desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新对话。"),
           visual: "soul",
         },
         {
           id: "web-chat",
           title: t("LightVela 支持网页内对话"),
-          desc: t("无需切换到外部通道，现在可以在 LightVela 网页内基于 AgentChat 直接与 Hermes Agent 对话。"),
+          desc: t("无需切换到外部通道，现在可以在 LightVela 网页内直接与 Hermes Agent 对话。"),
           visual: "chat",
         },
         {

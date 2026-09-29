@@ -8,7 +8,7 @@
 
 记忆（Memory）让 Hermes 记住跨对话、跨设备的关键信息——你的偏好、身份、正在推进的事项，以及它在长期协作中沉淀下来的经验。它是 Hermes 从“一次性问答”变成“越用越懂你的长期助理”的基础。
 
-![LightVela 管理台中的记忆与用户画像页面](../images/memory-management-overview.png)
+![LightVela 管理台中的记忆与用户画像页面](../images/memory-management-overview.webp)
 
 LightVela 采用云端托管：这些记忆保存在你的 Hermes 云端实例中，不会因为你更换手机或切换通道（Telegram、WhatsApp、Discord、Slack、WeChat）而丢失。今天在 Telegram 告诉它的事，明天在 WhatsApp 对话时它依然记得。
 

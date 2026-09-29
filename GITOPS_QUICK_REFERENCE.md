@@ -497,8 +497,7 @@ Project: shprod-service-gateway
 |------|-----|
 | Git 仓库 | git@git.woa.com:wisp/mono2.git |
 | GitLab Web | https://git.woa.com/wisp/mono2 |
-| Argo Beijing | http://9.208.245.238:32059 |
+| Argo Beijing | http://9.135.92.56:32059 |
 | Argo Shanghai | [See README.md] |
 | TCR Beijing | lightclaw-bj8.tencentcloudcr.com |
 | TCR Shanghai | lightclaw-shprod.tencentcloudcr.com |
-

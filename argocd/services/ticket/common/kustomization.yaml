@@ -37,16 +37,6 @@ replacements:
 - source:
     kind: ConfigMap
     name: ticket-platform-values
-    fieldPath: data.TICKET_SUPPORT_COS_BUCKET_URL
-  targets:
-  - select:
-      kind: ConfigMap
-      name: ticket-runtime-config
-    fieldPaths:
-    - data.SUPPORT_COS_BUCKET_URL
-- source:
-    kind: ConfigMap
-    name: ticket-platform-values
     fieldPath: data.TICKET_SUPPORT_AGENT_IDS
   targets:
   - select:

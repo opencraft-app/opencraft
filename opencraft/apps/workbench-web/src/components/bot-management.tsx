@@ -24,6 +24,7 @@ import {
 import "../styles/context-menu.scss";
 import "../styles/bot-management.scss";
 import { connectCloudHermesBotHost, resolveCloudHermesBotHost } from "../runtime/bot-management-host";
+import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 
 type Directory = Pick<AppServerBotDirectory, "subscribe" | "getSnapshot" | "refresh" | "create" | "update" | "delete">;
 type BotMutationAction = { kind: "create"; hostId: string } | { kind: "clone" | "rename" | "delete"; entry: AppServerBotDirectoryEntry };
@@ -33,6 +34,7 @@ function GroupOperation({ hostId, entries, conversations, onClose, onCreated }: 
   hostId: string; entries: readonly AppServerBotDirectoryEntry[]; conversations: AppServerBotConversationService;
   onClose(): void; onCreated(conversationId: string): void;
 }) {
+  const portalContainer = useWorkbenchPresentationRoot();
   const formId = useId();
   const [title, setTitle] = useState("");
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -58,7 +60,7 @@ function GroupOperation({ hostId, entries, conversations, onClose, onCreated }: 
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally { setBusy(false); }
   };
-  return <ModalSurface label="新建群聊" size="compact" appearance="utility" dismissOnOutsidePress={!busy} onDismiss={onClose}>
+  return <ModalSurface portalContainer={portalContainer} label="新建群聊" size="compact" appearance="utility" dismissOnOutsidePress={!busy} onDismiss={onClose}>
     <SettingsPanel title="新建群聊" footer={<><SettingsButton disabled={busy} onClick={onClose}>取消</SettingsButton>
       <SettingsButton variant="primary" type="submit" form={formId} disabled={busy || selected.size < 2}>{busy ? "创建中…" : "创建"}</SettingsButton></>}>
       <form id={formId} className="bot-management__group-form" onSubmit={event => { event.preventDefault(); void submit(); }}>
@@ -81,6 +83,7 @@ function GroupOperation({ hostId, entries, conversations, onClose, onCreated }: 
 function BotOperation({ action, directory, onClose, onComplete }: {
   action: BotMutationAction; directory: Directory; onClose(): void; onComplete(): void;
 }) {
+  const portalContainer = useWorkbenchPresentationRoot();
   const entry = action.kind === "create" ? null : action.entry;
   const hostId = action.kind === "create" ? action.hostId : action.entry.hostId;
   const [name, setName] = useState(action.kind === "rename" ? entry!.bot.name : action.kind === "clone" ? `${entry!.bot.name} 副本` : "");
@@ -108,7 +111,7 @@ function BotOperation({ action, directory, onClose, onComplete }: {
     } finally { submitting.current = false; if (mounted.current) setBusy(false); }
   };
   if (action.kind === "delete") return <AlertDialog.Root open onOpenChange={open => { if (!open && !busy) onClose(); }}>
-    <AlertDialog.Portal><AlertDialog.Overlay className="modal-surface__scrim" data-layer="confirmation" data-appearance="utility" />
+    <AlertDialog.Portal container={portalContainer ?? undefined}><AlertDialog.Overlay className="modal-surface__scrim" data-layer="confirmation" data-appearance="utility" />
       <AlertDialog.Content className="modal-surface" data-layer="confirmation" data-appearance="utility" data-size="compact">
         <SettingsPanel title={<AlertDialog.Title asChild><span>{title}</span></AlertDialog.Title>} footer={<>
           <AlertDialog.Cancel asChild><SettingsButton disabled={busy}>取消</SettingsButton></AlertDialog.Cancel>
@@ -120,7 +123,7 @@ function BotOperation({ action, directory, onClose, onComplete }: {
       </AlertDialog.Content>
     </AlertDialog.Portal>
   </AlertDialog.Root>;
-  return <ModalSurface label={title} size="compact" appearance="utility" dismissOnOutsidePress={!busy}
+  return <ModalSurface portalContainer={portalContainer} label={title} size="compact" appearance="utility" dismissOnOutsidePress={!busy}
     onDismiss={() => { if (!busy) onClose(); }}>
     <SettingsPanel title={title} footer={<><SettingsButton disabled={busy} onClick={onClose}>取消</SettingsButton>
       <SettingsButton variant="primary" type="submit" form={formId} disabled={busy || !validName}>{busy ? "处理中…" : action.kind === "rename" ? "保存" : "创建"}</SettingsButton></>}>
@@ -143,6 +146,7 @@ function BotConfigurationOperation({ entry, conversations, directory, onClose, o
   onClose(): void;
   onComplete(): void;
 }) {
+  const portalContainer = useWorkbenchPresentationRoot();
   const formId = useId();
   const [options, setOptions] = useState<AppServerBotConfigurationOptions | null>(null);
   const [provider, setProvider] = useState(entry.bot.model?.provider ?? "");
@@ -245,7 +249,7 @@ function BotConfigurationOperation({ entry, conversations, directory, onClose, o
       if (mounted.current) setBusy(false);
     }
   };
-  return <ModalSurface label={`${entry.bot.name} 模型设置`} size="compact" appearance="utility"
+  return <ModalSurface portalContainer={portalContainer} label={`${entry.bot.name} 模型设置`} size="compact" appearance="utility"
     dismissOnOutsidePress={!busy} onDismiss={() => { if (!busy) onClose(); }}>
     <SettingsPanel title="模型设置" actions={<span className="bot-management__configuration-status">
       {headerState === "loading" ? <LoaderCircle aria-label="正在读取模型配置" className="is-spinning" size={16} />
@@ -282,6 +286,7 @@ function BotConfigurationOperation({ entry, conversations, directory, onClose, o
 export function createBotManagementView(directory: Directory, conversations: AppServerBotConversationService,
   connect: (hostId: string) => Promise<void>) {
   return function BotManagement({ host, activation }: ExtensionSettingsViewProps) {
+    const portalContainer = useWorkbenchPresentationRoot();
     const snapshot = useSyncExternalStore(directory.subscribe, directory.getSnapshot, directory.getSnapshot);
     const [action, setAction] = useState<Action | null>(null);
     const [creatingGroup, setCreatingGroup] = useState(false);
@@ -365,11 +370,11 @@ export function createBotManagementView(directory: Directory, conversations: App
               <Bot aria-hidden="true" size={18} /><span>{entry.bot.name}</span>
             </SettingsButton>
             <DropdownMenu.Root><DropdownMenu.Trigger asChild><SettingsIconButton label={`${entry.bot.name} 的操作`}><MoreHorizontal size={18} /></SettingsIconButton></DropdownMenu.Trigger>
-              <DropdownMenu.Portal><DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4}>
+              <DropdownMenu.Portal container={portalContainer}><DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4}>
                 {actions(entry).map(item => <DropdownMenu.Item key={item.kind} disabled={!item.enabled} onSelect={() => setAction({ kind: item.kind, entry })}>{item.label}</DropdownMenu.Item>)}
               </DropdownMenu.Content></DropdownMenu.Portal>
             </DropdownMenu.Root>
-          </div></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content className="workbench-context-menu">
+          </div></ContextMenu.Trigger><ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu">
             {actions(entry).map(item => <ContextMenu.Item key={item.kind} disabled={!item.enabled} onSelect={() => setAction({ kind: item.kind, entry })}>{item.label}</ContextMenu.Item>)}
           </ContextMenu.Content></ContextMenu.Portal></ContextMenu.Root>
         </li>)}</ul>

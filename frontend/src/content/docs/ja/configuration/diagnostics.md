@@ -30,7 +30,7 @@
 3. 最近のログの時間範囲を選択します: 1、3、6、12、または24時間。
 4. **更新**を選択してログを読み込みます。
 
-![LightVelaコンソールの診断](../images/diagnostics-overview-en.png)
+![LightVelaコンソールの診断](../images/diagnostics-overview-en.webp)
 
 最も短い有用な期間から始めます。ログの時間範囲が狭いほど、エラーを引き起こした操作と結びつけやすくなります。
 

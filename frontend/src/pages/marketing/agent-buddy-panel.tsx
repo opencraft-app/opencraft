@@ -1355,7 +1355,7 @@ export function BuddyPanel({
           <InfoDialog
             key="info-apply-success"
             title={t("人设已注入")}
-            message={t("请在与 Hermes Agent 的对话中输入 /new 开启新会话，让新的人设生效。")}
+            message={t("请在与 Hermes Agent 的对话中输入 /new 开启新对话，让新的人设生效。")}
             buttonLabel={t("我知道了")}
             onClose={() => setConfirmState({ kind: "idle" })}
           />
@@ -1364,7 +1364,7 @@ export function BuddyPanel({
           <InfoDialog
             key="info-custom-save-success"
             title={t("人设已更新")}
-            message={t("人设已更新，请发送 /new 开始新会话以生效")}
+            message={t("人设已更新，请发送 /new 开始新对话以生效")}
             buttonLabel={t("我知道了")}
             onClose={() => setConfirmState({ kind: "idle" })}
           />
@@ -1769,7 +1769,7 @@ function PreviewModal({
   // 创建的 containing block —— 否则 fixed 会相对该祖先定位，导致弹窗被裁。
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="lv-persona-modal-scroll-lock fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
       onClick={onClose}
     >
@@ -1797,7 +1797,7 @@ function PreviewModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
+        <div className="lv-persona-dialog-scroll min-h-0 flex-1 overflow-y-auto px-6 py-4">{children}</div>
       </div>
     </div>,
     document.body,
@@ -1881,7 +1881,7 @@ function ConfirmDialog({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="lv-persona-modal-scroll-lock fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{
         backgroundColor: "rgba(0,0,0,0.6)",
         backdropFilter: "blur(8px)",
@@ -1896,7 +1896,7 @@ function ConfirmDialog({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
+        className="lv-persona-dialog-scroll relative flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col items-center overflow-y-auto rounded-[1.75rem] border p-8 shadow-2xl"
         style={{
           background: "rgba(255,255,255,0.98)",
           borderColor: "rgba(0,0,0,0.06)",
@@ -1963,7 +1963,7 @@ function InfoDialog({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="lv-persona-modal-scroll-lock fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{
         backgroundColor: "rgba(0,0,0,0.6)",
         backdropFilter: "blur(8px)",
@@ -1978,7 +1978,7 @@ function InfoDialog({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.95 }}
         transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full max-w-sm flex-col rounded-[1.5rem] border p-6 shadow-2xl"
+        className="lv-persona-dialog-scroll relative flex max-h-[calc(100dvh-2rem)] w-full max-w-sm flex-col overflow-y-auto rounded-[1.5rem] border p-6 shadow-2xl"
         style={{
           background: "rgba(255,255,255,0.98)",
           borderColor: "rgba(0,0,0,0.06)",

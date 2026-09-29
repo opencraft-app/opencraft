@@ -33,6 +33,20 @@ describe("resolveConfiguredAuthApiBaseUrl", () => {
     expect(resolveConfiguredAuthApiBaseUrl()).toBe("");
   });
 
+  it("uses the live API when local-proxy is running under the lightvela.ai site host", () => {
+    vi.stubEnv("NEXT_PUBLIC_AUTH_API_BASE_URL", "local-proxy");
+    stubLocation("lightvela.ai");
+
+    expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://api.lightvela.ai");
+  });
+
+  it("uses the live API when local-proxy is running under the domestic LightVela site host", () => {
+    vi.stubEnv("NEXT_PUBLIC_AUTH_API_BASE_URL", "local-proxy");
+    stubLocation("lightvela.com");
+
+    expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://api.lightvela.com");
+  });
+
   it("routes lightclaw.pages.dev (production preview) to the main lightclaw.tech backend", () => {
     stubLocation("lightclaw.pages.dev");
 

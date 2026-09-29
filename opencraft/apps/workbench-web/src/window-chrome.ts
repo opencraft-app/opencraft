@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 export type WindowChromeKind = "browser" | "electron";
 export type WindowPlatform = "darwin" | "win32" | "linux";
 export type HeaderNavigationAction =
-  | "home"
   | "sidebar-toggle"
+  | "new-task"
   | "back"
   | "forward";
 
@@ -57,16 +57,12 @@ const HEADER_ACTION_HORIZONTAL_PADDING = 16;
 const WINDOW_CHROME_POLICIES = {
   browser: {
     leadingNavigationActions: [
-      "home",
       "sidebar-toggle",
       "back",
       "forward",
     ],
   },
   electron: {
-    // A desktop window already owns app-level navigation through its sidebar
-    // and native shell. The browser-only Home affordance is intentionally not
-    // part of this distribution's titlebar contract.
     leadingNavigationActions: ["sidebar-toggle", "back", "forward"],
   },
 } as const satisfies Record<WindowChromeKind, WindowChromePolicy>;
@@ -128,10 +124,8 @@ export function resolveWindowChrome(input: WindowChromeInput): WindowChromeSnaps
   if (hostInsets !== null) return { kind, platform, safeArea: hostInsets };
   if (overlayInsets !== null) return { kind, platform, safeArea: overlayInsets };
 
-  // Electron's macOS traffic lights are native interactive window chrome. We
-  // reserve their hit region. AppShell additionally paints a non-interactive
-  // inactive underlay because stock Electron removes its native container
-  // while AppKit captures minimize animation frames.
+  // Electron's macOS traffic lights are native interactive window chrome. The
+  // Renderer reserves their hit region but never paints a second copy.
   if (kind === "electron" && platform === "darwin") {
     return {
       kind,
@@ -190,8 +184,13 @@ function readWindowChrome(): WindowChromeSnapshot {
   return snapshot;
 }
 
-export function getHeaderStartMinimumWidth(snapshot: WindowChromeSnapshot): number {
-  const actionCount = getWindowChromePolicy(snapshot).leadingNavigationActions.length;
+export function getHeaderStartMinimumWidth(
+  snapshot: WindowChromeSnapshot,
+  sidebarOpen = true,
+): number {
+  const policy = getWindowChromePolicy(snapshot);
+  const actionCount = policy.leadingNavigationActions.length
+    + Number(!sidebarOpen);
   const actionRailWidth = HEADER_ACTION_HORIZONTAL_PADDING
     + actionCount * HEADER_ACTION_SIZE
     + Math.max(0, actionCount - 1) * HEADER_ACTION_GAP;

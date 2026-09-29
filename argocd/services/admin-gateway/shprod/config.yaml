@@ -6,15 +6,15 @@ allowed_origins:
   - https://admin.lightclaw.site
 
 routes:
+  - name: referral-admin
+    prefix: /admin/api/referral
+    methods: [GET, POST, OPTIONS]
+    upstream: http://referral.referral.svc.cluster.local
+    access: admin
   - name: gateway-dashboard
     prefix: /admin/gateway
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
     upstream: http://gateway-dashboard-internal.ai-gateway.svc.cluster.local
-    access: admin
-  - name: admin
-    prefix: /admin
-    methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-    upstream: http://nextgen-dashboard.user-auth.svc.cluster.local
     access: admin
   - name: ai-gateway-dashboard
     prefix: /

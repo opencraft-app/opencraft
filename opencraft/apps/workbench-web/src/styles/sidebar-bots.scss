@@ -1,3 +1,5 @@
+@use "@opencraft/design-system/controls.web" as controls;
+
 .sidebar-bots {
   display: grid;
   min-width: 0;
@@ -78,7 +80,9 @@
   width: 100%;
   border-radius: 10px;
 
-  &:hover,
+  @include controls.hover-capable {
+    &:hover { background: var(--color-background-button-tertiary-hover); }
+  }
   &:focus-visible {
     background: var(--color-background-button-tertiary-hover);
   }
@@ -101,7 +105,9 @@
   border-radius: 8px;
   text-align: left;
 
-  &:hover,
+  @include controls.hover-capable {
+    &:hover { background: var(--color-background-button-tertiary-hover); }
+  }
   &:focus-visible {
     background: var(--color-background-button-tertiary-hover);
   }

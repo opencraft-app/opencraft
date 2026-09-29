@@ -7,7 +7,7 @@
 Perbedaannya bukan sekadar AI mana yang lebih pintar.
 Perbedaannya adalah di mana Agent berada, siapa yang memilikinya, dan jenis pekerjaan apa yang dirancang untuk ditangani.
 
-![Perbandingan LightVela dan Viktor.com untuk menjalankan AI Agent pribadi](../images/lightvela-vs-viktor.png)
+![Perbandingan LightVela dan Viktor.com untuk menjalankan AI Agent pribadi](../images/lightvela-vs-viktor.webp)
 
 ## Perbandingan singkat
 

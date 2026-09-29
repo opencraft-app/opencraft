@@ -7,7 +7,7 @@
  * 区域差异：
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
- *   - 国内站（CN_SIDEBAR）：微信 / QQ / 企业微信 / 飞书
+ *   - 国内站（CN_SIDEBAR）：微信 / QQ / 企业微信 / 飞书 / 钉钉
  *   - 国际站（GLOBAL_SIDEBAR）：Telegram / WhatsApp / Discord / Slack / WeChat / QQ / WeCom / Lark
  */
 
@@ -26,7 +26,7 @@ export interface DocItem {
   availableLocales?: Array<"zh" | "en">;
   /**
    * 是否作为二级目录项（视觉上缩进）。
-   * 用于在"配置通道"下挂具体通道（国内：微信/QQ/企业微信/飞书；国际：Telegram/WhatsApp/...）。
+   * 用于在"配置通道"下挂具体通道（国内：微信/QQ/企业微信/飞书/钉钉；国际：Telegram/WhatsApp/...）。
    */
   indent?: boolean;
   /**
@@ -43,61 +43,69 @@ export interface DocGroup {
 }
 
 /**
- * 国内站 sidebar：按用户任务组织（GEO 导航方案）。
- * 分组：产品入门 / 账号、套餐与开通 / 功能与配置 / 问题排查 / 联系与支持。
- * 通道具体项（微信 / 飞书 / QQ）挂在「配置通道」表头下作为二级项。
- * 注：部分新增页面为占位（仅标题骨架），正文内容后续逐步补齐。
+ * 国内站 sidebar：优先展示从开通到使用、排障的任务路径。
+ * 通道具体项挂在「配置通道」表头下作为二级项；原理与场景长文保留独立分类。
  */
 const CN_SIDEBAR: DocGroup[] = [
   {
-    title: "产品入门",
+    title: "开始使用",
     items: [
       { slug: "overview", title: "LightVela 是什么" },
       { slug: "quickstart", title: "快速开始" },
+      { slug: "create-first-hermes", title: "开通第一个 Hermes Agent" },
       { slug: "core-concepts", title: "核心概念" },
       { slug: "who-is-lightvela-for", title: "LightVela 适合哪些人使用？" },
-    ],
-  },
-  {
-    title: "账号、套餐与开通",
-    items: [
       { slug: "account", title: "账号与实名认证" },
-      { slug: "announcements/public-beta", title: "LightVela 付费版本公告" },
       { slug: "plans", title: "套餐管理" },
       { slug: "credits", title: "AI 积分说明" },
-      { slug: "create-first-hermes", title: "如何开通第一个 Hermes 智能体伙伴？" },
     ],
   },
   {
-    title: "功能与配置",
+    title: "Bot 与模型",
     items: [
       { slug: "configuration", title: "配置总览" },
+      { slug: "configuration/bots-switching", title: "管理与切换 Bot" },
+      { slug: "configuration/agent-chat", title: "网页对话" },
       { slug: "configuration/model", title: "配置模型" },
-      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂四个具体 channel 作为二级项
+      { slug: "configuration/multiple-models", title: "模型切换" },
+      { slug: "configuration/personality", title: "人设" },
+    ],
+  },
+  {
+    title: "通道与技能",
+    items: [
+      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）
       { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
       { slug: "configuration/channel-wechat", title: "微信", indent: true },
       { slug: "configuration/channel-qq", title: "QQ", indent: true },
       { slug: "configuration/channel-wecom", title: "企业微信", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", indent: true },
+      { slug: "configuration/channel-dingtalk", title: "钉钉", indent: true },
       { slug: "configuration/skill", title: "配置技能" },
-      { slug: "configuration/personality", title: "人设" },
-      { slug: "configuration/memory", title: "记忆管理" },
-      { slug: "configuration/automation", title: "定时任务" },
-      { slug: "configuration/files", title: "云存储" },
-      { slug: "configuration/agent-chat", title: "对话" },
-      { slug: "configuration/diagnostics", title: "诊断中心" },
-      { slug: "configuration/advanced-settings", title: "高级设置" },
-      { slug: "configuration/multiple-models", title: "模型切换" },
-      { slug: "configuration/deepseek-harness", title: "DeepSeek Harness" },
-      { slug: "configuration/workbench", title: "工作台" },
     ],
   },
   {
-    title: "对比与选型",
+    title: "自动化与资料",
     items: [
-      { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus" },
-      { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent" },
-      { slug: "compare/lightvela-vs-ai-chatbot", title: "LightVela vs AI Chatbot" },
+      { slug: "configuration/memory", title: "记忆管理" },
+      { slug: "configuration/automation", title: "定时任务" },
+      { slug: "configuration/files", title: "云存储" },
+    ],
+  },
+  {
+    title: "管理与排障",
+    items: [
+      { slug: "configuration/diagnostics", title: "诊断中心" },
+      { slug: "configuration/advanced-settings", title: "高级设置" },
+      { slug: "faq", title: "常见问题 FAQ" },
+      { slug: "contact-us", title: "联系我们" },
+    ],
+  },
+  {
+    title: "实验功能",
+    items: [
+      { slug: "configuration/deepseek-harness", title: "DeepSeek Harness" },
+      { slug: "configuration/workbench", title: "我的工作台" },
     ],
   },
   {
@@ -106,6 +114,14 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "use-cases/scheduled-task-agent", title: "使用 LightVela 自动化 Agent 任务" },
       { slug: "use-cases/scheduled-task-notifications", title: "在 LightVela 中设置通知任务" },
       { slug: "use-cases/scheduled-task-script", title: "在 LightVela 中运行脚本任务" },
+    ],
+  },
+  {
+    title: "对比与选型",
+    items: [
+      { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus" },
+      { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent" },
+      { slug: "compare/lightvela-vs-ai-chatbot", title: "LightVela vs AI Chatbot" },
     ],
   },
   {
@@ -123,18 +139,6 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "hermes-agent/persona-user-memory", title: "Hermes Agent 的性格从哪里来？" },
       { slug: "hermes-agent/workspace-context-storage", title: "Hermes Agent 把文件放在哪里？" },
       { slug: "hermes-agent/skills-self-improvement", title: "Agent 为什么会越用越顺手？" },
-    ],
-  },
-  {
-    title: "问题排查",
-    items: [
-      { slug: "faq", title: "常见问题 FAQ" },
-    ],
-  },
-  {
-    title: "联系与支持",
-    items: [
-      { slug: "contact-us", title: "联系我们" },
     ],
   },
 ];
@@ -159,11 +163,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     titleEn: "Plans & Activation",
     items: [
       { slug: "plans", title: "套餐说明", titleEn: "Plans" },
-      {
-        slug: "announcements/public-beta",
-        title: "LightVela 付费版本公告",
-        titleEn: "LightVela Paid Version Announcement",
-      },
       { slug: "credits", title: "体验积分说明", titleEn: "Credits" },
       {
         slug: "create-first-hermes",
@@ -177,6 +176,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
     titleEn: "Features & Configuration",
     items: [
       { slug: "configuration", title: "配置总览", titleEn: "Configuration Overview" },
+      { slug: "configuration/bots", title: "管理 Bots", titleEn: "Manage Bots" },
       { slug: "configuration/model", title: "配置模型", titleEn: "Configure Models" },
       { slug: null, title: "配置通道", titleEn: "Configure Channels", defaultChildSlug: "configuration/channel-telegram" },
       { slug: "configuration/channel-telegram", title: "Telegram", titleEn: "Telegram", indent: true },
@@ -199,6 +199,11 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         slug: "configuration/multiple-models",
         title: "模型切换",
         titleEn: "Model Switching",
+      },
+      {
+        slug: "configuration/bots-switching",
+        title: "Bot 切换",
+        titleEn: "Bots Switching",
       },
       {
         slug: "configuration/deepseek-harness",
@@ -242,11 +247,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         titleEn: "How to Define an IM Agent's Role, Personality, and Voice with SOUL.md",
       },
       {
-        slug: "use-cases/im-agent-skill-scenarios",
-        title: "如何通过 Skill 把 IM Agent 变成客服、社群助手或 AI 伴侣？",
-        titleEn: "How to Turn an IM Agent into a Customer-Service, Community, or Companion Assistant with Skills",
-      },
-      {
         slug: "use-cases/multi-channel-personality-memory",
         title: "如何让一个 Agent 同时接入 Telegram 和 WhatsApp，并保持统一人格与长期记忆？",
         titleEn: "How to Connect One Agent to Telegram and WhatsApp While Keeping One Personality and Long-Term Memory",
@@ -255,21 +255,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         slug: "use-cases/telegram-group-community-assistant",
         title: "如何使用 Telegram 群组 AI 社群助手：问答、摘要与提醒？",
         titleEn: "How to Use a Telegram Group AI Community Assistant: Q&A, Summaries, and Reminders",
-      },
-      {
-        slug: "use-cases/whatsapp-24-7-customer-service",
-        title: "如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？",
-        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Scheduled Tasks",
-      },
-      {
-        slug: "use-cases/lifelike-im-agent-rhythm-social-memory",
-        title: "如何设计更像真人的 IM Agent：对话节奏、群体规范与长期社交记忆？",
-        titleEn: "How to Design a More Natural IM Agent: Conversation Rhythm, Group Norms, and Long-Term Social Memory",
-      },
-      {
-        slug: "use-cases/telegram-whatsapp-safety-boundaries",
-        title: "如何为 Telegram 和 WhatsApp Agent 设计安全边界：授权、群聊规则与敏感操作？",
-        titleEn: "How to Design Safety Boundaries for Telegram and WhatsApp Agents: Authorization, Group Rules, and Sensitive Actions",
       },
       {
         slug: "use-cases/daily-summary",
@@ -363,24 +348,24 @@ export const SIDEBAR: DocGroup[] = isGlobal ? GLOBAL_SIDEBAR : CN_SIDEBAR;
 
 /** slug 到 markdown 文件路径（相对于 `@/content/docs/`）的映射 */
 const CN_SLUG_TO_FILE: Record<string, string> = {
-  // 产品入门
+  // 开始使用
   overview: "01-overview.md",
   quickstart: "02-quickstart.md",
   "core-concepts": "04-core-concepts.md",
   "who-is-lightvela-for": "who-is-lightvela-for.md",
-  // 账号、套餐与开通
+  // 开始使用：账号与开通
   account: "03-account.md",
-  "announcements/public-beta": "announcements/public-beta.md",
   plans: "plans.md",
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
-  // 功能与配置
+  // Bot 与模型、通道与技能、自动化与资料、管理与排障、实验功能
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/channel-wecom": "configuration/channel-wecom.md",
   "configuration/channel-feishu": "configuration/channel-feishu.md",
+  "configuration/channel-dingtalk": "configuration/channel-dingtalk.md",
   "configuration/skill": "configuration/skill.md",
   "configuration/personality": "configuration/personality.md",
   "configuration/memory": "configuration/memory.md",
@@ -390,14 +375,15 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/diagnostics": "configuration/diagnostics.md",
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
+  "configuration/bots-switching": "configuration/bots-switching.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   "configuration/workbench": "configuration/workbench.md",
   "use-cases/scheduled-task-agent": "use-cases/scheduled-task-agent.md",
   "use-cases/scheduled-task-notifications": "use-cases/scheduled-task-notifications.md",
   "use-cases/scheduled-task-script": "use-cases/scheduled-task-script.md",
-  // 问题排查
+  // 管理与排障
   faq: "07-faq.md",
-  // 联系与支持
+  // 管理与排障：支持
   "contact-us": "contact-us.md",
   // 对比与选型
   "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",
@@ -424,10 +410,10 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "core-concepts": "04-core-concepts.md",
   "who-is-lightvela-for": "who-is-lightvela-for.md",
   plans: "plans.md",
-  "announcements/public-beta": "announcements/public-beta.md",
   credits: "credits.md",
   "create-first-hermes": "create-first-hermes.md",
   configuration: "05-configuration.md",
+  "configuration/bots": "configuration/bots.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-telegram": "configuration/channel-telegram.md",
   "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",
@@ -445,6 +431,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/diagnostics": "configuration/diagnostics.md",
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
+  "configuration/bots-switching": "configuration/bots-switching.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   "configuration/workbench": "configuration/workbench.md",
   "configuration/agent-chat": "configuration/agent-chat.md",
@@ -453,12 +440,8 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/telegram-persona-agent": "use-cases/telegram-persona-agent.md",
   "use-cases/whatsapp-persona-agent": "use-cases/whatsapp-persona-agent.md",
   "use-cases/im-agent-persona-soul-md": "use-cases/im-agent-persona-soul-md.md",
-  "use-cases/im-agent-skill-scenarios": "use-cases/im-agent-skill-scenarios.md",
   "use-cases/multi-channel-personality-memory": "use-cases/multi-channel-personality-memory.md",
   "use-cases/telegram-group-community-assistant": "use-cases/telegram-group-community-assistant.md",
-  "use-cases/whatsapp-24-7-customer-service": "use-cases/whatsapp-24-7-customer-service.md",
-  "use-cases/lifelike-im-agent-rhythm-social-memory": "use-cases/lifelike-im-agent-rhythm-social-memory.md",
-  "use-cases/telegram-whatsapp-safety-boundaries": "use-cases/telegram-whatsapp-safety-boundaries.md",
   "use-cases/daily-summary": "use-cases/daily-summary.md",
   "use-cases/hermes-agent-24-7": "use-cases/hermes-agent-24-7.md",
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",

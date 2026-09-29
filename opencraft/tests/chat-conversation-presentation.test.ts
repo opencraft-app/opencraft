@@ -4,10 +4,12 @@ import {
   assistantMessageActions,
   compactionLabel,
   createAssistantTurnPresentationPlan,
+  createTimelineTurnPresentationPlan,
   createConversationKey,
   createDefaultTimelineProjectorRegistry,
   createAgentActivityContentUnits,
   deriveAgentActivityHeaderPresentation,
+  groupTimelineFramesByTurn,
   projectTimeline,
   skillReadPresentation,
   shouldRenderAgentThinkingPlaceholder,
@@ -93,7 +95,22 @@ test("plan observations retain separate identities and use the original todo ABI
     ],
   );
   const activity = createAssistantTurnPresentationPlan(result).slots[0];
-  assert.equal(activity?.type, "agent-activity");
+  assert.equal(activity, undefined, "todo observations never become transcript Activity rows");
+
+  const timeline = projectTimeline({
+    key: createConversationKey("fixture", "thread"),
+    revision: 2,
+    phase: "live",
+    authoritative: true,
+    turns: [{ id: "turn", status: "streaming", items: items.map((item) => ({ id: item.id, type: item.type, payload: item })) }],
+  }, createDefaultTimelineProjectorRegistry());
+  const turn = groupTimelineFramesByTurn(timeline)[0];
+  if (turn === undefined) throw new Error("Missing Turn");
+  const live = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
+  assert.equal(live.activeTodo?.entries[0]?.status, "complete");
+  assert.equal(live.activeTodo?.id, `todo:${items.at(-1)?.id}`);
+  assert.equal(live.assistant?.slots.some((slot) => slot.type === "assistant-content" && slot.block.type === "todo"), false);
+  assert.equal(createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: false }).activeTodo, null);
 });
 
 test("implementation records cannot claim completion or replace the proposal", () => {

@@ -40,6 +40,8 @@ export interface User {
   realnameAssuranceMode?: "legacy" | "faceless" | "observe" | "face_required";
   /** 实名信息同步状态：pending / failed / succeeded */
   realnameSyncStatus?: "pending" | "failed" | "succeeded";
+  /** 影子绑定状态，供后端未来扩展 session/profile 时透传；当前 User 契约未下发，缺省时仍由下单接口校验绑定。 */
+  shadowBindingStatus?: "active" | "pending" | "failed" | "disabled";
   /** 邮箱是否已验证（Magic Link 绑定），后端 /auth/session /auth/profile 下发 */
   emailVerified?: boolean;
   createdAt: string;
@@ -77,6 +79,12 @@ export interface Bot {
     botName?: string;
     status: string;
   };
+  whatsAppOwner?: {
+    botId: string;
+    profileId: string;
+    botName?: string;
+    status: string;
+  };
   sandboxId?: string;
   name: string;
   type: "sales" | "support" | "ops" | "research";
@@ -102,6 +110,24 @@ export interface BotTerminalSession {
   timeoutSeconds?: number;
   username?: string;
   workingDirectory?: string;
+}
+
+/**
+ * 云桌面（VNC）会话。对应 ctl `DesktopSessionResponse`：
+ * 异步状态机 [图形层未装] Installing(带进度) → Provisioning → Ready；
+ * 仅 Ready 时携带 wsUrl / password / 分辨率；Installing 时携带 installProgress / message。
+ */
+export interface CloudDesktopSession {
+  status: "Installing" | "Provisioning" | "Ready" | "Paused" | "Failed";
+  /** 按需安装图形层进度（0-100），仅 Installing 时返回（ctl §12 TB.2） */
+  installProgress?: number;
+  /** 安装/当前阶段人类可读提示，Installing 时展示给用户 */
+  message?: string;
+  wsUrl?: string;
+  password?: string;
+  width?: number;
+  height?: number;
+  reason?: string;
 }
 
 export interface BotChannelConfigResult {

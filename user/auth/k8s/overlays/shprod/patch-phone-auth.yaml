@@ -4,6 +4,7 @@ metadata:
   name: lightclaw-auth-config
   namespace: user-auth
 data:
+  LIGHTCLAW_VERIFICATION_SEND_IP_LIMIT: "600"
   LIGHTCLAW_PHONE_AUTH_ENABLED: "true"
   LIGHTCLAW_SMS_REGION: "ap-guangzhou"
   LIGHTCLAW_SMS_ENDPOINT: "sms.internal.tencentcloudapi.com"

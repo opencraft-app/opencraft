@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadDefaultsBothReferralRewardsToFiveHundredCredits(t *testing.T) {
 	t.Setenv("REFERRAL_ENABLED", "false")
@@ -18,5 +21,21 @@ func TestLoadDefaultsBothReferralRewardsToFiveHundredCredits(t *testing.T) {
 	}
 	if cfg.Campaign.VestingDays != 0 {
 		t.Fatalf("default campaign must not delay rewards: %d", cfg.Campaign.VestingDays)
+	}
+}
+
+func TestEnabledReferralRequiresCTLForAttributionReset(t *testing.T) {
+	t.Setenv("REFERRAL_ENABLED", "true")
+	t.Setenv("REFERRAL_MYSQL_DSN", "referral:secret@tcp(mysql:3306)/referral")
+	t.Setenv("CTL_INTERNAL_BASE_URL", "")
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "required when referral is enabled") {
+		t.Fatalf("expected missing CTL dependency error, got %v", err)
+	}
+
+	t.Setenv("CTL_INTERNAL_BASE_URL", "http://ctl-api.ctl.svc.cluster.local")
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "internal-token")
+	if _, err := Load(); err != nil {
+		t.Fatalf("complete enabled config rejected: %v", err)
 	}
 }

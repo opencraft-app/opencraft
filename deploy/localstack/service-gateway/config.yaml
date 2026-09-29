@@ -127,6 +127,7 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     auth_strategy: session
+    response_header_timeout: 30s
     optional_auth_allow:
       - method: POST
         path: /v1/passes/order-url

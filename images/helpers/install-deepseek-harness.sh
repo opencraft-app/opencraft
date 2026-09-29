@@ -1034,6 +1034,50 @@ print(len(targets))
 PY
 }
 
+# DSH 0.1.1-rc.2 can finish creating the HMR plugin without providing its
+# service. The patch layers were applied during boot; only live reloading needs
+# HMR. Keep WebUI usable instead of crashing on every startup in that case.
+patch_missing_hmr_fallback() {
+  local runtime_dir="$1"
+  python3 - "${runtime_dir}" <<'PY_HMR'
+import os
+import pathlib
+import sys
+import tempfile
+
+runtime_dir = pathlib.Path(sys.argv[1])
+old = 'if (hmr === void 0) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`);'
+new = 'if (hmr === void 0) { console.warn("dsh: Cordis HMR unavailable; patch-layer live watching disabled"); return () => {}; }'
+targets = sorted(
+    path for path in (runtime_dir / "node_modules").rglob("index.js")
+    if path.parts[-5:] == (
+        "node_modules", "@deepseek-ai", "dsh-app-boot", "lib", "index.js"
+    )
+)
+if not targets:
+    raise SystemExit("DeepSeek Harness app boot was not found")
+for path in targets:
+    source = path.read_text(encoding="utf-8")
+    if source.count(old) != 1 or new in source:
+        raise SystemExit(f"unexpected DeepSeek Harness app boot source: {path}")
+for path in targets:
+    source = path.read_text(encoding="utf-8")
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(source.replace(old, new, 1))
+        os.chmod(temporary, path.stat().st_mode & 0o777)
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+print(len(targets))
+PY_HMR
+}
+
 validate_browser_connection_patch() {
   local runtime_dir="$1"
   local manifest_path="$2"
@@ -1180,6 +1224,7 @@ prepare_candidate() {
     CURRENT_STAGE="browser_trust_patch"
     write_task running browser_trust_patch 52 "正在配置 WebUI 访问" "" "${manifest_path}"
     patch_browser_connection "${runtime_dir}" "${manifest_path}" >/dev/null
+    patch_missing_hmr_fallback "${runtime_dir}" >/dev/null
   fi
   CURRENT_STAGE="profile_lockfile"
   write_task running profile_lockfile 56 "正在生成插件依赖锁" "" "${manifest_path}"
@@ -1221,7 +1266,7 @@ Environment=GIT_CONFIG_VALUE_0=git@github.com:
 Environment=GIT_CONFIG_KEY_1=url.https://github.com/.insteadOf
 Environment=GIT_CONFIG_VALUE_1=ssh://git@github.com/
 WorkingDirectory=/home/${RUNTIME_USER}
-ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --host 127.0.0.1 --port ${DSH_PORT}
+ExecStart=/opt/lightvela/dsh/current/node_modules/.bin/dsh web --no-open --host 127.0.0.1 --port ${DSH_PORT}
 Restart=always
 RestartSec=5
 TimeoutStopSec=30

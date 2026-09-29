@@ -28,13 +28,15 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/renewresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/resourcequery"
 	"git.woa.com/wisp/mono/trade/internal/logic/transferresource"
+	"git.woa.com/wisp/mono/trade/internal/personaldevbilling"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
 // ServerConfig 是 NewRouter 的输入参数。
 type ServerConfig struct {
 	// InternalServiceToken 用于校验 ctl → trade 内部接口调用方身份。
-	InternalServiceToken string
+	InternalServiceToken    string
+	PersonalDevBillingProxy *personaldevbilling.Proxy
 
 	// JifeiComponentName / JifeiProtocolVersion / JifeiOurInterfacePrefix 是
 	// jifei callback dispatcher（Q60）+ 出口 framework builder（Q58）的协议层配置；
@@ -265,7 +267,8 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 		Builder:   builder,
 	})
 
-	// 10. 注册同 SP 变配的两个 handler（TAPD 1010132091137784162 §4.1 / §7.1）。
+	// 10. 注册 Pass 变配的两个 handler（含产品允许的跨 SP 路径，
+	// TAPD 1010132091137784162 §4.1 / §7.1）。
 	//     checkModify 无状态：trade 对账 SP/PID/newConfig ↔ trade_bundle_definition，
 	//     再反向调 ctl check-modify 校验 pass 层。
 	//     modifyResource 抢占式 trade_flow 幂等（flow_type='modify_resource'）+
@@ -313,14 +316,15 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 	if cfg.InquiryService != nil && cfg.PlaceOrderService != nil {
 		provisionedOrderStore, _ := cfg.OrderStore.(store.ProvisionedCreateOrderStore)
 		internalapi.Install(router, internalapi.Deps{
-			InternalServiceToken:  cfg.InternalServiceToken,
-			Inquiry:               cfg.InquiryService,
-			PlaceOrder:            cfg.PlaceOrderService,
-			CreditOrder:           cfg.CreditOrderService,
-			CreditUsage:           cfg.CreditUsageService,
-			CreditDefinitionStore: cfg.CreditDefinitionStore,
-			FlowStore:             cfg.FlowStore,
-			OrderUpdater:          cfg.OrderUpdater,
+			InternalServiceToken:    cfg.InternalServiceToken,
+			PersonalDevBillingProxy: cfg.PersonalDevBillingProxy,
+			Inquiry:                 cfg.InquiryService,
+			PlaceOrder:              cfg.PlaceOrderService,
+			CreditOrder:             cfg.CreditOrderService,
+			CreditUsage:             cfg.CreditUsageService,
+			CreditDefinitionStore:   cfg.CreditDefinitionStore,
+			FlowStore:               cfg.FlowStore,
+			OrderUpdater:            cfg.OrderUpdater,
 			// D-2 销毁链路用户主动入口（设计稿 §3.5 + §11-A Q26）：BundleStore + JifeiClient
 			// 任一 nil 时 internalapi 不挂载 /internal/trade/resources/:resourceID/delete 路由。
 			BundleStore: cfg.BundleStore,

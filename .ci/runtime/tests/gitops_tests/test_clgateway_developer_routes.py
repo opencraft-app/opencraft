@@ -31,10 +31,18 @@ def container_env(manifest: dict, prefix: str = "") -> dict[str, object]:
 class CloudLadderDeveloperRouteTests(unittest.TestCase):
     def test_only_testing_workloads_enable_dynamic_registration(self) -> None:
         environments = {
-            "tkexgz": ("devtunnel", "https://api-sandbox-bj-7.lightclaw.tech"),
-            "tkexsg": ("devtunnel", "https://api-sandbox-kr-1.lightclaw.tech"),
+            "tkexgz": (
+                "devtunnel",
+                "https://api-sandbox-bj-7.lightclaw.tech",
+                "9.0.0.0/8,21.0.0.0/8",
+            ),
+            "tkexsg": (
+                "devtunnel",
+                "https://api-sandbox-kr-1.lightclaw.tech",
+                "9.0.0.0/8,21.0.0.0/8,14.22.11.160/29,14.116.239.32/29",
+            ),
         }
-        for region, (delivery_mode, registry_base_url) in environments.items():
+        for region, (delivery_mode, registry_base_url, allowed_cidrs) in environments.items():
             with self.subTest(region=region):
                 testing = load(CLGATEWAY / region / "statefulsetplus-testing.yaml")
                 pod_spec = testing["spec"]["template"]["spec"]
@@ -73,7 +81,10 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                     "lightclaw-auth",
                 )
                 self.assertNotIn("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_LEASE_NAMESPACE", env)
-                self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_CIDRS"], "9.0.0.0/8")
+                self.assertEqual(
+                    env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_CIDRS"],
+                    allowed_cidrs,
+                )
                 self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS"], "18084")
 
                 production = load(CLGATEWAY / region / "statefulsetplus.yaml")
@@ -164,6 +175,13 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                 config = next(doc for doc in auth_docs if doc["kind"] == "ConfigMap")["data"]
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CONTROL_ENABLED"], "true")
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT"], environment)
+                self.assertEqual(config["PERSONAL_DEV_ACCOUNT_LEASE_ENABLED"], "true")
+                self.assertEqual(config["PERSONAL_DEV_ACCOUNT_LEASE_ENVIRONMENT"], environment)
+                self.assertRegex(config["PERSONAL_DEV_ACCOUNT_POOL_USER_IDS"], r"^usr_[a-z0-9]+(?:,usr_[a-z0-9]+)*$")
+                self.assertEqual(
+                    config["PERSONAL_DEV_ACCOUNT_LEASE_SOURCE_CIDRS"],
+                    "9.0.0.0/8,21.0.0.0/8,14.22.11.160/27,14.116.239.32/27",
+                )
                 self.assertEqual(
                     config["PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED"],
                     "true",
@@ -185,6 +203,8 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                         ("GET", "/auth/internal/dev-environments/registration"),
                         ("PUT", "/auth/internal/dev-environments/registration"),
                         ("DELETE", "/auth/internal/dev-environments/registration"),
+                        ("POST", "/auth/dev-environments/account-lease"),
+                        ("DELETE", "/auth/dev-environments/account-lease"),
                     }.issubset(public)
                 )
 

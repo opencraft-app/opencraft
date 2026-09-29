@@ -2,15 +2,15 @@
 
 ## 摘要
 
-**LightVela 有四个核心概念。Hermes Agent 是云端运行的对话主体，拥有独立运行环境、跨会话持续记忆、7×24 小时在线；模型是它调用的大语言模型，可选模型 Coding Plan（包月）、模型 API（按量）或自定义 OpenAI 兼容端点；通道是你与它对话的聊天平台入口，多个通道可同时接入同一个 Agent 并共享同一份人格与记忆；技能是可安装的能力扩展包，用于扩展具体任务的处理能力。一次完整对话的流程是：通道收到消息 → Agent 判断是否调用技能 → 调用模型生成响应 → 经原通道返回。**
+**LightVela 有五个核心概念：Hermes Agent 是云端实例；Bot 是其中的独立配置档案；每个 Bot 可配置模型、消息通道与技能，并拥有自己的人设、记忆和定时任务。同一 Bot 接入的通道共享其行为，不同 Bot 的设置不会自动共享。消息从通道进入后，目标 Bot 可调用技能与模型，再经原通道回复。**
 
 ---
 
-LightVela 涉及四个核心概念：Hermes Agent、模型、通道、技能。本页对四者进行说明，具体的配置流程请参见对应的配置子页。
+LightVela 的五个核心概念是 Hermes Agent、Bot、模型、通道与技能。本页说明它们如何协作。
 
 ## 本页覆盖
 
-- 四者之间的概念关系
+- 五个概念之间的关系
 
 - Hermes Agent 实例的特性
 
@@ -22,28 +22,22 @@ LightVela 涉及四个核心概念：Hermes Agent、模型、通道、技能。�
 
 ## 概念关系
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                         Hermes Agent                         │
-│                （LightVela 云端运行的 Agent）                   │
-└──────────────────────────────────────────────────────────────┘
-      │                          │                        │
-┌─────┘                          │                        └──────┐
-▼                                ▼                               ▼
-┌───────┐                   ┌────────┐                   ┌────────┐
-│  模型  │                   │  通道  │                   │  技能   │
-└───────┘                   └────────┘                   └────────┘
- 模型服务商       Telegram/WhatsApp/Discord/Slack/WeChat      SkillHub
+```text
+Hermes Agent (cloud instance)
+  └─ Bot profiles (main Bot and optional additional Bots)
+       ├─ Primary model and optional fallbacks
+       ├─ Connected channels
+       └─ Skills, Soul, memory, scheduled tasks
 ```
 
 | 概念 | 角色 | 说明 |
 |---|---|---|
 | Hermes Agent | 对话主体 | AI Agent 实例本身 |
+| Bot | 独立配置档案 | 拥有自己的模型、通道、技能、人设、记忆和定时任务 |
 | 模型 | 语言能力 | Hermes Agent 调用的大语言模型 |
 | 通道 | 交互入口 | 用户与 Hermes Agent 对话的平台 |
 | 技能 | 能力扩展 | Hermes Agent 可调用的附加能力包 |
 
-![](./images/3-1.webp)
 
 ---
 
@@ -53,13 +47,19 @@ Hermes Agent 是 LightVela 中的 AI Agent 实例，创建一个 Hermes Agent �
 
 Hermes Agent 具有以下特性：
 
-- **独立运行环境**：每个 Hermes Agent 运行在专属环境中，与其他实例资源隔离
+- **专属云端环境**：每个 Hermes Agent 运行在专属环境中，与其他实例资源隔离
 
 - **持续记忆**：对话内容跨会话保存，Agent 响应时会综合历史上下文
 
 - **持续在线**：7×24 小时运行，不依赖用户本地设备
 
 当前启航套餐最多支持创建 1 个 Hermes Agent 实例。
+
+---
+
+## Bot
+
+每个 Hermes Agent 有一个主 Bot，也可能按套餐配额与开放状态创建其他 Bot。多个 Bot 位于同一云端实例，但设置和数据相互独立。修改模型、通道、技能或记忆前先选中目标 Bot。详见[管理 Bots](./configuration/bots.md)。
 
 ---
 
@@ -77,9 +77,7 @@ Hermes Agent 具有以下特性：
 
 具体支持的模型列表、API Key 获取方式、选型建议等详见 [配置模型](./configuration/model.md)。
 
-> ⚠️ **单模型生效**
->
-> 当前版本每个 Hermes Agent 仅支持配置并生效一个模型，切换模型需通过「添加为默认」覆盖原配置。
+> 每个 Bot 同时使用一个主模型，也可以有其他已配置模型或回退模型；切换生效模型无需删除先前配置。详见[模型切换](./configuration/multiple-models.md)。
 
 ---
 
@@ -91,17 +89,17 @@ Hermes Agent 具有以下特性：
 |---|---|---|
 | WeChat | 扫码自动绑定 | 日常个人使用，适合国内用户 |
 | Telegram | Bot Token 接入 | 个人或团队消息场景，配置简单，适合轻量自动化 |
-| WhatsApp | WhatsApp Business API 接入 | 海外用户沟通、客户服务、通知提醒等场景 |
+| WhatsApp | WhatsApp 手机扫码授权 | 海外用户沟通、客户服务、通知提醒等场景 |
 | Discord | Bot Token 接入 | 社群运营、开发者社区、游戏/兴趣群组互动 |
 | Slack | Bot Token / App Token 接入 | 团队协作、工作区通知、频道内任务流转 |
 
-WeChat 选择通道后点击「授权接入」生成二维码，使用手机扫码完成授权即可。
+在 **Channels** 的 **WeChat** 卡片点击 **+ Connect**，再用手机扫描二维码。
 
 各通道的详细接入步骤见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md)。
 
 > 💡 **多通道并存**
 >
-> 多个通道可同时接入同一个 Hermes Agent 实例，共享记忆与 Agent 行为。无论从哪个通道发送消息，对话对象均为同一 Hermes Agent。
+> 接入同一 Bot 的多个通道共享该 Bot 的人设与记忆；不同 Bot 的设置不会自动共享。
 
 ---
 
@@ -109,9 +107,9 @@ WeChat 选择通道后点击「授权接入」生成二维码，使用手机扫�
 
 技能是 Hermes Agent 可调用的附加能力包，在基础对话之外扩展 Hermes Agent 处理具体任务的能力，例如自动整理待办、生成日报、浏览网页、图像生成等。
 
-所有技能均来自 [SkillHub](https://skillhub.tencent.com)——腾讯推出的独立技能市场。在 SkillHub 可以浏览已上架的技能，查看其功能说明与使用示例。
+国际站的技能来自 [Skills.sh](https://skills.sh/) 与 [ClawHub](https://clawhub.ai/)。在管理台的 **Skills** 页面浏览来源，安装前先核对技能说明。
 
-在管理台「3. 技能 (Skills)」卡片中输入 SkillHub 上记录的技能名称，点击「安装技能」即可完成安装；也可以直接通过对话让 Hermes Agent 代为安装或删除。详见 [配置技能](./configuration/skill.md)。
+在管理台进入 **Skills**，搜索单个技能或浏览 **Skill Packages**，点击**安装**后到 **Installed** 核对结果。详见[配置技能](./configuration/skill.md)。
 
 > ⚠️ **安装前的安全确认**
 >

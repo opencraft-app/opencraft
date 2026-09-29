@@ -52,7 +52,7 @@ Bantu saya bersiap untuk tinjauan proyek ini. Pakai arahan terbaru dan
 catatan rapat saya, lalu daftarkan keputusan dan pertanyaan yang belum tuntas.
 ```
 
-![Folder Cloud Storage dengan file proyek](../images/use-case-memory-knowledge-storage.png)
+![Folder Cloud Storage dengan file proyek](../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. Tinjau memori alih-alih mengasumsikannya benar selamanya
 
@@ -73,7 +73,7 @@ Gunakan halaman [Chat](../configuration/agent-chat.md) atau kanal terhubung untu
 
 Jika peninjauan Anda mengikuti ritme berulang, sebuah [Tugas Terjadwal](../configuration/automation.md) dapat mengingatkan Anda untuk mengunjungi kembali sebuah folder atau menyiapkan rekap berkala. Mulai dari pengingat atau ringkasan sederhana alih-alih memberikan tugas yang luas dan terbuka.
 
-![Percakapan Hermes Agent memakai pengetahuan proyek yang tertata](../images/use-case-memory-knowledge-automation.png)
+![Percakapan Hermes Agent memakai pengetahuan proyek yang tertata](../images/use-case-memory-knowledge-automation.webp)
 
 ## FAQ
 

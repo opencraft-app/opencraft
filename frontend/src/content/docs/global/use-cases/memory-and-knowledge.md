@@ -54,7 +54,7 @@
 请使用最新简报和会议记录，然后列出尚未解决的决定和问题。
 ```
 
-![包含项目文件的云存储文件夹](../images/use-case-memory-knowledge-storage.png)
+![包含项目文件的云存储文件夹](../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. 定期复查记忆，不要假设它永远正确
 
@@ -80,7 +80,7 @@
 如果你的复查有固定节奏，可以使用一个[定时任务](../configuration/automation.md)提醒你重新查看文件夹，或准备定期回顾。
 建议先从简单的提醒或总结开始，不要直接授予一个范围很大的开放式任务。
 
-![使用整理后的项目知识进行 Hermes Agent 对话](../images/use-case-memory-knowledge-automation.png)
+![使用整理后的项目知识进行 Hermes Agent 对话](../images/use-case-memory-knowledge-automation.webp)
 
 ## 常见问题
 

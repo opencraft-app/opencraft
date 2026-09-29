@@ -194,14 +194,16 @@ type InstanceBotResponse struct {
 	CreatedAt      time.Time                       `json:"created_at"`
 	UpdatedAt      time.Time                       `json:"updated_at"`
 	WeixinOwner    *InstanceChannelBindingResponse `json:"weixin_owner,omitempty"`
+	WhatsAppOwner  *InstanceChannelBindingResponse `json:"whatsapp_owner,omitempty"`
 }
 
 type InstanceChannelBindingResponse struct {
-	Channel   string `json:"channel"`
-	BotID     string `json:"bot_id"`
-	ProfileID string `json:"profile_id"`
-	BotName   string `json:"bot_name,omitempty"`
-	Status    string `json:"status"`
+	Channel       string `json:"channel"`
+	BotID         string `json:"bot_id"`
+	ProfileID     string `json:"profile_id"`
+	BotName       string `json:"bot_name,omitempty"`
+	Status        string `json:"status"`
+	ReservationID string `json:"reservation_id,omitempty"`
 }
 
 type ListInstanceBotsResponse struct {
@@ -644,4 +646,39 @@ type WeixinLoginSessionEvent struct {
 	Output  string                      `json:"output,omitempty"`
 	Error   string                      `json:"error,omitempty"`
 	Data    *WeixinLoginSessionResponse `json:"data,omitempty"`
+}
+
+// DesktopSessionStatus 云桌面会话状态机：
+//
+//	[图形层未装] Installing(带进度) → Provisioning → Ready
+//	              ↑ 首次按需装图形层（§12 TB.2，后台安装分钟级）
+//	Provisioning → Ready → (idle 超时) Paused → (再次访问) Provisioning → Ready
+//	任意阶段出错 → Failed（前端可重新 POST 触发重试）
+const (
+	DesktopSessionStatusInstalling   = "Installing"
+	DesktopSessionStatusProvisioning = "Provisioning"
+	DesktopSessionStatusReady        = "Ready"
+	DesktopSessionStatusPaused       = "Paused"
+	DesktopSessionStatusFailed       = "Failed"
+)
+
+// DesktopSessionResponse 云桌面会话响应（POST 触发 / GET 轮询共用）。
+// 异步模型：首次触发返回 Provisioning；前端轮询 GET 直到 Ready 才拿 ws_url/password。
+type DesktopSessionResponse struct {
+	// 会话状态：Installing / Provisioning / Ready / Paused / Failed
+	Status string `json:"status" example:"Provisioning"`
+	// 按需安装图形层进度（0-100），仅 Installing 时返回（§12 TB.2）
+	InstallProgress int `json:"install_progress,omitempty" example:"40"`
+	// 安装/当前阶段人类可读提示，Installing 时展示给用户（如「正在安装桌面环境…」）
+	Message string `json:"message,omitempty" example:"正在安装桌面环境（约 2-4 分钟）"`
+	// noVNC WebSocket 地址，仅 Ready 时返回；形如 wss://6080-<sandboxID>.<domain>/websockify
+	WsURL string `json:"ws_url,omitempty" example:"wss://6080-sb-xxx.ingress.example.com/websockify"`
+	// VNC 连接密码，仅 Ready 时返回（每次 provision 生成，ctl 内存缓存）
+	Password string `json:"password,omitempty" example:"a1b2c3d4"`
+	// 桌面分辨率宽（px），仅 Ready 时返回
+	Width int `json:"width,omitempty" example:"1440"`
+	// 桌面分辨率高（px），仅 Ready 时返回
+	Height int `json:"height,omitempty" example:"900"`
+	// Failed 时的原因摘要
+	Reason string `json:"reason,omitempty" example:"desktop provision command failed"`
 }
