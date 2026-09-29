@@ -1848,6 +1848,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
 
+    def test_sandbox_steady_state_excludes_migration_job(self) -> None:
+        for env in ("beijing-sandbox", "shprod", "sgprod"):
+            with self.subTest(env=env):
+                root = REPO_ROOT / "argocd/services/sandbox" / env
+                kustomization = yaml.safe_load((root / "kustomization.yaml").read_text())
+                self.assertTrue((root / "delete-migration-job.yaml").is_file())
+                self.assertIn({"path": "delete-migration-job.yaml"}, kustomization["patches"])
+                self.assertFalse(
+                    any(
+                        patch.get("target", {}).get("kind") == "Job"
+                        for patch in kustomization["patches"]
+                    )
+                )
+
     def test_sgprod_multi_bot_runtime_flag_is_wired(self) -> None:
         sgprod_values = {
             key: value

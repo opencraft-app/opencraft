@@ -188,6 +188,7 @@ master 源码
   通过 Makers SDK 获取签名 URL；不得依赖 runner 出口地域绕过 Preview 认证，也不得记录签名 query
   或认证 Cookie。
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
+- Sandbox 的 `beijing-sandbox`、`shprod`、`sgprod` 常驻 Argo Kustomization 必须删除 base 中的固定名 migration Job；schema 变更只由发布流水线的一次性 DB Job 执行并校验版本。更新迁移镜像 pin 时不能重命名或 patch 常驻 Job，否则已存在 Job 的 Pod template 不可变会阻断 Argo 收敛，完成后的 TTL 重建还会反复执行迁移。
 - migration version 一旦被任一长期环境记入 `schema_migrations` 即视为已占用；后续把该 SQL
   合并进较早版本或从源码删除，都不能再次复用这个编号。新 schema 变更使用未占用的新版本，
   版本号允许不连续；环境已紧急补过同一 DDL 时，forward migration 应幂等收敛并正常推进版本，
