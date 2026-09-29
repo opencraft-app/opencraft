@@ -7860,7 +7860,29 @@ text-wrap: balance;
   -webkit-line-clamp: 2;
 }
 `;
-const css = [localizedBaseCss, headerActionsLayerCss, playTabsExpansionCss, heroIntegrationLinkCss, plainHeroEyebrowCss, heroRotatorSweepCss, domesticStableHeroPrefixCss, longLocaleDesktopHeadingCss, footerRefreshCss, voiceSectionRestoreCss, internationalHeroChannelChromeCss, internationalHeroChannelParityCss, homepageReadingCss, automationPanelCss, domesticBrandIconCss, aboutCapabilityCardCss, cloudRefinedCss, capabilityPolishCss, capabilityTitleWrapCss].join("\n");
+const narrowMobileCss = `
+@media (max-width: 359px) {
+  #lightvela-intl-home .nav__brand img {
+    width: 92px;
+  }
+
+  .home-mobile-menu-trigger {
+    margin-left: 4px;
+  }
+
+  #lightvela-intl-home:is([data-locale='zh-CN'], [data-locale='zh-SG'], [data-locale='zh-Hant']) .hero__line--dynamic {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  #lightvela-intl-home:is([data-locale='zh-CN'], [data-locale='zh-SG'], [data-locale='zh-Hant']) .hero__line--dynamic .hero__prefix,
+  #lightvela-intl-home:is([data-locale='zh-CN'], [data-locale='zh-SG'], [data-locale='zh-Hant']) .hero__rotator-wrap {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+`;
+const css = [localizedBaseCss, headerActionsLayerCss, playTabsExpansionCss, heroIntegrationLinkCss, plainHeroEyebrowCss, heroRotatorSweepCss, domesticStableHeroPrefixCss, longLocaleDesktopHeadingCss, footerRefreshCss, voiceSectionRestoreCss, internationalHeroChannelChromeCss, internationalHeroChannelParityCss, homepageReadingCss, automationPanelCss, domesticBrandIconCss, aboutCapabilityCardCss, cloudRefinedCss, capabilityPolishCss, capabilityTitleWrapCss, narrowMobileCss].join("\n");
 const runtimeSource = normalizeHeroRuntime(inlineScripts.join("\n\n").replace(
   "var words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
   "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
