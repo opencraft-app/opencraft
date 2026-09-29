@@ -31,3 +31,4 @@ configMapGenerator:
 patches:
   - path: patch-account-binding.yaml
   - path: patch-credit.yaml
+  - path: patch-dianshi-renew.yaml

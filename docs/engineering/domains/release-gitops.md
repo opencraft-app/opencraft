@@ -532,6 +532,12 @@ CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直�
 网关匹配，并已在 optional 阶段观察到签名请求成功。广州生产不追加 `jifei-test` 例外，
 sandbox-bj-7 继续使用独立 testing 入口。
 
+北京测试 Trade 的点石续费联调使用独立 `DIANSHI_RENEW_BASE_URL`，通过 tkexgz staging
+`dianshi-order` 路由访问点石预发布的 `get_price_renew` / `do_goods_renew`；新购仍使用
+`DIANSHI_ORDER_BASE_URL`。该环境覆盖只进入北京测试的 source-facing/deploy-facing 配置，
+不改上海生产和新加坡生产的点石入口。ConfigMap 更新后应核对 Trade Pod 实际环境变量与镜像，
+并验证无续费活动配置时普通续费仍走计费。
+
 ## OpenCraft 第一方 OIDC 配置与镜像门禁
 
 原生与 Web 客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境登记

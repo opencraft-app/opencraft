@@ -1140,7 +1140,7 @@ func (s *Service) quoteDianshi(
 	return result, nil
 }
 
-// quoteDianshiRenew 使用续费协议要求的四个 preference_param 字段询价。
+// quoteDianshiRenew 使用续费协议的 goods_renew 字段询价。
 // 续费活动按 resourceId 回调查询资源，因此不能复用新购的 subProductCode 参数结构。
 func (s *Service) quoteDianshiRenew(
 	ctx context.Context,
@@ -1153,33 +1153,32 @@ func (s *Service) quoteDianshiRenew(
 		return nil, fmt.Errorf("inquiry: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
 
-	resp, err := s.deps.DianshiClient.GetActivityPrice(ctx, &dianshiclient.GetPriceRequest{
+	resp, err := s.deps.DianshiClient.GetRenewPrice(ctx, &dianshiclient.GetRenewPriceRequest{
+		Uin:        req.Uin,
 		ActivityID: mapping.ActivityID,
 		Preview:    1,
-		Uin:        req.Uin,
-		Goods: []dianshiclient.GetPriceGoodsItem{{
-			ActID: mapping.ActID,
-			PreferenceParam: map[string]interface{}{
-				"regionId":     s.region.RegionID,
-				"resourceId":   req.ResourceID,
-				"timeSpanUnit": strconv.Itoa(req.TimeSpan) + strings.ToLower(strings.TrimSpace(req.TimeUnit)),
-				"bundleId":     mapping.BundleID,
-			},
+		ClientInfo: map[string]string{"uin": req.Uin, "ownerUin": req.Uin},
+		GoodsRenew: []dianshiclient.RenewPriceGoodsItem{{
+			GoodsID:      mapping.ActID,
+			RegionID:     int64(s.region.RegionID),
+			ResourceID:   req.ResourceID,
+			TimeSpanUnit: strconv.Itoa(req.TimeSpan) + strings.ToLower(strings.TrimSpace(req.TimeUnit)),
+			BundleID:     mapping.BundleID,
 		}},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice renew bundleId=%s resourceId=%s activityId=%d actId=%d: %w",
+		return nil, fmt.Errorf("inquiry: dianshi GetRenewPrice bundleId=%s resourceId=%s activityId=%d goodsId=%d: %w",
 			req.BundleID, req.ResourceID, mapping.ActivityID, mapping.ActID, err)
 	}
 	if resp == nil || len(resp.PriceItems) == 0 {
-		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice renew returned empty data bundleId=%s resourceId=%s activityId=%d",
+		return nil, fmt.Errorf("inquiry: dianshi GetRenewPrice returned empty data bundleId=%s resourceId=%s activityId=%d",
 			req.BundleID, req.ResourceID, mapping.ActivityID)
 	}
 
 	d := resp.PriceItems[0]
 	price, totalCost, realTotalCost, err := dianshiAmountFields(d)
 	if err != nil {
-		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice renew bundleId=%s resourceId=%s: %w",
+		return nil, fmt.Errorf("inquiry: dianshi GetRenewPrice bundleId=%s resourceId=%s: %w",
 			req.BundleID, req.ResourceID, err)
 	}
 	result := &QuoteResult{
