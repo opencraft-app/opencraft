@@ -67,6 +67,8 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 - Hover interaction: `pnpm exec vitest run src/components/site/__tests__/sidebar-user-menu.test.tsx src/components/site/__tests__/user-avatar-menu.test.tsx src/pages/marketing/__tests__/agent-settings-nav-spacing.test.ts --api.host 127.0.0.1` passed 54/54. It verifies hover opening, click and keyboard entry, nested-language Escape handling, and focus return.
 - Final `pnpm check` passed with 166 current diagnostics, 171 baseline, and 0 new diagnostics; `git diff --check` passed.
 - CI repair: `npm --prefix opencraft run sync:mono2-agent-console` synchronized the generated manifest to `a235443ec`; `npm --prefix opencraft run check:mono2-agent-console` verified all 130 vendored files.
+- Conflict repair: after `origin/master` advanced to `c1df25f86`, the only merge conflict was the mechanical `UPSTREAM.json`. The target snapshot was used as the merge baseline, then the closure was regenerated from merge commit `b7da9f628`; `check:mono2-agent-console` again verified all 130 files.
+- Post-merge regression: the three focused sidebar suites passed 54/54; `pnpm check` passed with 166 current diagnostics, 171 baseline, and 0 new diagnostics.
 
 ## risks
 - Reducing desktop spacing could affect compact desktop viewports. Existing max-height variables remain the source of truth for that variant.
@@ -88,4 +90,4 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 - Bounded symbol search and `git blame` identify `222a2cc511` as the source of the desktop overrides.
 
 ## handoff
-- Ready for merge-request delivery. The desktop account trigger opens its existing menu on hover; the first mouse click after hover leaves it open, while keyboard and touch click behavior remain available. Only the CSS overrides, account-menu interaction, their focused regression assertions, and this required Task Pack are modified. Merge, deployment, and production actions remain out of scope.
+- Ready for merge-request delivery. The desktop account trigger opens its existing menu on hover; the first mouse click after hover leaves it open, while keyboard and touch click behavior remain available. The branch also contains the latest master merge and its mechanically regenerated OpenCraft snapshot. Merge, deployment, and production actions remain out of scope.
