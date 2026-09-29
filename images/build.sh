@@ -1860,6 +1860,18 @@ EOF
 install_desktop_layer() {
   log_info "installing cloud desktop (VNC) graphics layer"
 
+  # 桌面运行用户契约校验（CR-P1）：
+  # CTL 侧 provision/按需安装把 4 个 vela-desktop-* unit 与 VNC passwd 固定挂在
+  # ctl/pkg/instance/desktop.go 的 desktopRuntimeUser=agentuser 上（往
+  # /home/agentuser/.vnc/passwd 写密码、unit User=agentuser）。若预置镜像这里用了
+  # 不同的 RUNTIME_USER（例如 openclaw 默认的 lightclaw），会造成 unit 已存在但
+  # 密码/属主挂在另一个 home 下 —— CTL 不会触发按需安装，x11vnc 又读不到密码，
+  # 桌面永远起不来且无可见错误。故在此显式校验并强制对齐，宁可构建期失败也不出错配镜像。
+  if [ "${RUNTIME_USER}" != "agentuser" ]; then
+    log_error "desktop layer requires RUNTIME_USER=agentuser to match CTL contract (desktopRuntimeUser); got RUNTIME_USER=${RUNTIME_USER}. Build cloud-desktop images with the hermes runtime (runtime_user=agentuser)."
+    return 1
+  fi
+
   # 显示服务器 + 轻量桌面 + VNC server + WS 网关 + 中文字体（避免豆腐块）
   apt_install \
     xvfb \
@@ -1964,12 +1976,84 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+  # ---- 预置桌面壁纸（品牌化）----
+  # 把壁纸图安装到系统级 backgrounds 目录，并为 RUNTIME_USER 预写 xfconf 的
+  # xfce4-desktop 配置，使 XFCE session 一启动就使用该壁纸（无需运行时干预）。
+  # 壁纸源随镜像打包在 ${RUNTIME_ASSETS_DIR}/desktop/ 下。
+  install_desktop_wallpaper "${runtime_home}" || log_warn "desktop wallpaper setup skipped"
+
   # 构建容器里可能没有 systemd（无 PID 1 systemd 时该命令必失败）；脚本开了 set -e，
   # 裸调用会直接中断 --with-desktop 镜像构建。unit 文件已落盘，拉起由运行时
   # provision 负责，此处失败可安全忽略。
   systemctl daemon-reload >/dev/null 2>&1 || true
 
   log_info "cloud desktop layer installed (units registered, not started; screen=${DESKTOP_XVFB_SCREEN}, vnc=:${DESKTOP_VNC_PORT}, novnc=:${DESKTOP_NOVNC_PORT})"
+}
+
+# install_desktop_wallpaper 预置 XFCE 桌面壁纸（方式 A：图随镜像打包）。
+#   $1 = runtime_home（RUNTIME_USER 的 home 目录）
+# 逻辑：
+#   1. 把 ${RUNTIME_ASSETS_DIR}/desktop/vela-wallpaper.png 安装到
+#      /usr/share/backgrounds/vela/vela-wallpaper.png（系统级、所有用户可读）。
+#   2. 预写 ${home}/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml，
+#      把 backdrop 的 last-image 指向该图、image-style=5（缩放填充）。
+#      XFCE 4.18 的 monitor 名在无真实显示器时为 "monitorscreen"（已在 sandbox 验证），
+#      为兼容不同环境同时写入 monitorscreen 与 monitor0 两组属性。
+#   3. chown 给 RUNTIME_USER，确保 session 起来后可读写。
+# 缺图/写失败均不致命（返回非 0，由调用方降级为默认壁纸）。
+install_desktop_wallpaper() {
+  local home_dir="$1"
+  local src="${RUNTIME_ASSETS_DIR}/desktop/vela-wallpaper.png"
+  local sys_dir="/usr/share/backgrounds/vela"
+  local sys_img="${sys_dir}/vela-wallpaper.png"
+
+  if [ ! -f "${src}" ]; then
+    log_warn "desktop wallpaper asset not found: ${src}"
+    return 1
+  fi
+
+  install -D -m 0644 "${src}" "${sys_img}" || return 1
+
+  local xfconf_dir="${home_dir}/.config/xfce4/xfconf/xfce-perchannel-xml"
+  mkdir -p "${xfconf_dir}" || return 1
+
+  # image-style=5 → Zoomed（缩放填充铺满屏幕）。
+  cat >"${xfconf_dir}/xfce4-desktop.xml" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitorscreen" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="${sys_img}"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+        <property name="workspace1" type="empty">
+          <property name="last-image" type="string" value="${sys_img}"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+        <property name="workspace2" type="empty">
+          <property name="last-image" type="string" value="${sys_img}"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+        <property name="workspace3" type="empty">
+          <property name="last-image" type="string" value="${sys_img}"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="${sys_img}"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+    </property>
+  </property>
+</channel>
+EOF
+
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${home_dir}/.config" 2>/dev/null || true
+  log_info "desktop wallpaper preset: ${sys_img}"
 }
 
 configure_sshd_defaults() {

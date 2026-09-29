@@ -57,6 +57,11 @@ const (
 	desktopProbeOKMarker          = "DESKTOP_PROBE_OK"
 	desktopProbePendingMarker     = "DESKTOP_PROBE_PENDING"
 	desktopMissingLayerMarker     = "DESKTOP_LAYER_MISSING"
+	// desktopProvisionFailedMarker：provision 关键步骤（写 VNC 密码 / 拉起桌面服务）
+	// 真失败时输出并 exit 非零（CR-P1#2）。只有「图形层缺失(Missing)」和「探测未就绪
+	// (Pending)」是正常业务信号可返回成功；密码写入/服务启动失败必须显式暴露，否则会被
+	// 当成 Pending 反复轮询、永久卡在 Provisioning 且无可见原因（旧 noVNC 甚至可能误报 Ready）。
+	desktopProvisionFailedMarker = "DESKTOP_PROVISION_FAILED"
 	desktopDefaultIdleMinutes     = 30
 	desktopDefaultReapIntervalMin = 5
 
@@ -378,15 +383,28 @@ func (l *logic) provisionDesktop(ctx pctx.Context, session *desktopSession, enti
 		session.setStatus(transport.DesktopSessionStatusProvisioning, fmt.Sprintf("provision command dispatch: %v", err))
 		return l.desktopSessionResponse(session)
 	}
-	if !sandboxCommandSucceeded(result) {
-		session.setStatus(transport.DesktopSessionStatusFailed, sandboxCommandFailureDetail(result))
-		return l.desktopSessionResponse(session)
-	}
 	out := desktopCommandOutput(result)
 	// 图形层未预装（范式 A 检测）：触发按需 apt 安装（§12 TB.2，范式 C）。
+	//
+	// 【标记优先于退出码】此判定必须在 sandboxCommandSucceeded 之前：
+	// provision 脚本对"图形层缺失"是正常业务信号（echo DESKTOP_LAYER_MISSING; exit 0），
+	// 但 PTY 流式执行 + set -e 下，检测行里 systemctl 非零返回可能污染会话最终退出码
+	// 使其变为 1，导致 sandboxCommandSucceeded 误判失败、直接 Failed，永远走不到安装分支
+	// （现网 bj-7 表现：status=FAILED exit_code=1 stdout=DESKTOP_LAYER_MISSING）。
+	// 因此只要 stdout 含该标记，无论退出码，一律走按需安装。
 	// 启动后台安装 goroutine，本次请求立即返回 Installing，前端轮询看进度。
 	if strings.Contains(out, desktopMissingLayerMarker) {
 		l.startDesktopInstall(session, sandboxID)
+		return l.desktopSessionResponse(session)
+	}
+	// 【标记优先】provision 关键步骤失败（写密码/拉起服务）显式暴露：置 Failed 并带原因，
+	// 避免被下面的 Pending 分支当成"还在启动"而永久轮询（CR-P1#2）。marker 里带了失败原因。
+	if strings.Contains(out, desktopProvisionFailedMarker) {
+		session.setStatus(transport.DesktopSessionStatusFailed, desktopProvisionFailureDetail(out))
+		return l.desktopSessionResponse(session)
+	}
+	if !sandboxCommandSucceeded(result) {
+		session.setStatus(transport.DesktopSessionStatusFailed, sandboxCommandFailureDetail(result))
 		return l.desktopSessionResponse(session)
 	}
 	// provision 命令自带一次探测：若已就绪直接置 Ready，省一次 GET 探测往返。
@@ -540,24 +558,35 @@ func generateDesktopPassword() (string, error) {
 // 这样密码字符集未来即使扩展也无需再改注入方式。
 func renderDesktopProvisionCommand(password string) string {
 	pwB64 := base64.StdEncoding.EncodeToString([]byte(password))
-	return fmt.Sprintf(`set -e
-# 范式 A：检测图形层 systemd unit 是否已预装
+	// 【不用 set -e】范式与 renderDesktopProbeCommand 一致：脚本靠输出 marker 区分状态，
+	// 始终尽量 exit 0，把"图形层缺失/就绪/pending"作为正常业务信号用 stdout 传递。
+	// 早期用 set -e 会让检测行里 systemctl 的非零返回污染 PTY 会话退出码（→ exit 1），
+	// 使上层误判命令失败、走不到 DESKTOP_LAYER_MISSING 分支（现网 bj-7 复现）。
+	// 故去掉 set -e，改用显式错误处理：关键步骤失败 echo 明确 marker 并 exit 0。
+	return fmt.Sprintf(`# 范式 A：检测图形层 systemd unit 是否已预装
+# 注意：这里刻意不开启 errexit 选项 —— 该检测行里 systemctl 的非零返回不能污染 PTY 会话退出码，
+# 否则上层会误判命令失败、走不到 DESKTOP_LAYER_MISSING 分支（现网 bj-7 复现）。
 if ! systemctl list-unit-files vela-novnc.service >/dev/null 2>&1 || ! systemctl cat vela-novnc.service >/dev/null 2>&1; then
   echo %s
   exit 0
 fi
+# 图形层已就位：以下是关键步骤（写 VNC 密码 / 拉起服务），失败必须显式暴露而非吞掉（CR-P1#2）。
+# fail() 输出明确 marker + 原因并 exit 非零，让上层置 Failed 而不是被当成 Pending 永久轮询。
+fail() { echo "%s $1"; exit 1; }
 VNC_PASSWD_FILE="$HOME/.vnc/passwd"
-mkdir -p "$HOME/.vnc"
+mkdir -p "$HOME/.vnc" || fail "mkdir .vnc"
 VNC_PW_B64=%q
-VNC_PW="$(printf %%s "$VNC_PW_B64" | base64 -d)"
-x11vnc -storepasswd "$VNC_PW" "$VNC_PASSWD_FILE" >/dev/null 2>&1
-chmod 600 "$VNC_PASSWD_FILE"
-sudo systemctl enable --now %s >/dev/null 2>&1 || systemctl enable --now %s >/dev/null 2>&1
+VNC_PW="$(printf %%s "$VNC_PW_B64" | base64 -d)" || fail "decode password"
+x11vnc -storepasswd "$VNC_PW" "$VNC_PASSWD_FILE" >/dev/null 2>&1 || fail "store vnc password"
+chmod 600 "$VNC_PASSWD_FILE" 2>/dev/null || fail "chmod passwd"
+sudo systemctl enable --now %s >/dev/null 2>&1 || systemctl enable --now %s >/dev/null 2>&1 || fail "enable desktop services"
+# 探测非关键：未就绪是正常 Pending（服务刚拉起需要时间），返回成功让上层继续轮询探测。
 if curl -fsS -o /dev/null --max-time 5 http://127.0.0.1:%d/ 2>/dev/null; then
   echo %s
 else
   echo %s
-fi`, desktopMissingLayerMarker, pwB64, desktopSystemdUnits, desktopSystemdUnits, desktopNoVNCPort, desktopProbeOKMarker, desktopProbePendingMarker)
+fi
+exit 0`, desktopMissingLayerMarker, desktopProvisionFailedMarker, pwB64, desktopSystemdUnits, desktopSystemdUnits, desktopNoVNCPort, desktopProbeOKMarker, desktopProbePendingMarker)
 }
 
 // renderDesktopProbeCommand 快速探测命令：总是 exit 0，靠输出 marker 区分，
@@ -663,45 +692,68 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   xvfb x11vnc novnc websockify xfce4 xfce4-terminal dbus-x11 \
   fonts-wqy-zenhei fonts-noto-cjk curl >>"$LOG" 2>&1 || fail "apt install"
 say 70 "write systemd units"
-# 阻塞 2 修复：4 个 unit 统一 DISPLAY :1（与镜像预装对齐）
+# 阻塞 2 修复：4 个 unit 统一 DISPLAY :1（与镜像预装对齐）。
+# agentuser 对齐（与 images/build.sh --with-desktop 预装版本一致）：
+#   - User=agentuser：桌面进程以 agent 运行用户跑，避免 root 会话（与 agent 本体一致，
+#     修掉「桌面里创建的文件属主 root、agent 读不了」的错配，并降低公网 noVNC 暴露 root 的风险）。
+#   - HOME/DISPLAY 显式注入；WM 用 dbus-run-session 包裹 startxfce4（非 root 下起 XFCE 会话的关键）。
+#   - Requires/After 补齐依赖链，与预装 unit 对齐。
 sudo tee /etc/systemd/system/vela-xvfb.service >/dev/null <<'U1'
 [Unit]
 Description=vela Xvfb
+After=network.target
 [Service]
-ExecStart=/usr/bin/Xvfb :1 -screen 0 1440x900x24
-Restart=always
+Type=simple
+User=%s
+ExecStart=/usr/bin/Xvfb :1 -screen 0 1440x900x24 -nolisten tcp
+Restart=on-failure
+RestartSec=2
 [Install]
 WantedBy=multi-user.target
 U1
 sudo tee /etc/systemd/system/vela-desktop-wm.service >/dev/null <<'U2'
 [Unit]
 Description=vela WM
+Requires=vela-xvfb.service
 After=vela-xvfb.service
 [Service]
+Type=simple
+User=%s
 Environment=DISPLAY=:1
-ExecStart=/usr/bin/startxfce4
-Restart=always
+Environment=HOME=%s
+ExecStart=/usr/bin/dbus-run-session -- /usr/bin/startxfce4
+Restart=on-failure
+RestartSec=3
 [Install]
 WantedBy=multi-user.target
 U2
 sudo tee /etc/systemd/system/vela-x11vnc.service >/dev/null <<'U3'
 [Unit]
 Description=vela x11vnc
-After=vela-xvfb.service
+Requires=vela-xvfb.service
+After=vela-xvfb.service vela-desktop-wm.service
 [Service]
+Type=simple
+User=%s
 Environment=DISPLAY=:1
-ExecStart=/usr/bin/x11vnc -display :1 -rfbauth %s/.vnc/passwd -forever -shared -rfbport 5900
-Restart=always
+Environment=HOME=%s
+ExecStart=/usr/bin/x11vnc -display :1 -rfbport 5900 -rfbauth %s/.vnc/passwd -forever -shared -noxdamage -wait 5 -defer 5
+Restart=on-failure
+RestartSec=3
 [Install]
 WantedBy=multi-user.target
 U3
 sudo tee /etc/systemd/system/vela-novnc.service >/dev/null <<'U4'
 [Unit]
 Description=vela noVNC
-After=vela-x11vnc.service
+After=network.target vela-x11vnc.service
+Requires=vela-x11vnc.service
 [Service]
+Type=simple
+User=%s
 ExecStart=/usr/bin/websockify --web=/usr/share/novnc %d localhost:5900
-Restart=always
+Restart=on-failure
+RestartSec=3
 [Install]
 WantedBy=multi-user.target
 U4
@@ -714,13 +766,19 @@ chmod +x /tmp/vela-desktop-install.sh
 echo "%s"
 nohup bash /tmp/vela-desktop-install.sh >>"$LOG" 2>&1 &
 exit 0`,
-		desktopInstallProgressFile,
-		desktopInstallProgressFile,
-		desktopInstallFailMarker,
-		"/home/"+desktopRuntimeUser,
-		desktopNoVNCPort,
-		desktopInstallDoneMarker,
-		desktopInstallStartedMark,
+		desktopInstallProgressFile, // 外层 PF=%q
+		desktopInstallProgressFile, // heredoc 内 PF=%q
+		desktopInstallFailMarker,   // fail(){ echo "%s" }
+		desktopRuntimeUser,         // vela-xvfb   User=%s
+		desktopRuntimeUser,         // vela-desktop-wm User=%s
+		"/home/"+desktopRuntimeUser, // vela-desktop-wm HOME=%s
+		desktopRuntimeUser,         // vela-x11vnc User=%s
+		"/home/"+desktopRuntimeUser, // vela-x11vnc HOME=%s
+		"/home/"+desktopRuntimeUser, // vela-x11vnc -rfbauth %s/.vnc/passwd
+		desktopRuntimeUser,         // vela-novnc  User=%s
+		desktopNoVNCPort,           // vela-novnc  websockify %d
+		desktopInstallDoneMarker,   // 尾部 DONE marker
+		desktopInstallStartedMark,  // echo "%s"（STARTED）
 	)
 }
 
@@ -762,6 +820,24 @@ func desktopCommandOutput(result *psandbox.ExecCommandResult) string {
 		return result.Output
 	}
 	return result.Stdout
+}
+
+// desktopProvisionFailureDetail 从 provision 输出里提取失败原因（CR-P1#2）。
+// provision 脚本 fail() 输出形如 "DESKTOP_PROVISION_FAILED <reason>"；这里取含该
+// marker 的那一行、剥掉 marker 前缀返回原因，供上层写进 Failed 状态的可诊断消息。
+func desktopProvisionFailureDetail(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		idx := strings.Index(line, desktopProvisionFailedMarker)
+		if idx < 0 {
+			continue
+		}
+		reason := strings.TrimSpace(line[idx+len(desktopProvisionFailedMarker):])
+		if reason == "" {
+			return "desktop provision failed"
+		}
+		return "desktop provision failed: " + reason
+	}
+	return "desktop provision failed"
 }
 
 // defaultDesktopSandboxAdapter reaper 与 server 启动期共用全局工厂，
