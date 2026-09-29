@@ -155,3 +155,12 @@ derived: false
 - 当前没有 `BK_CI_ACCESS_TOKEN`；按 devops-pipeline 技能，尚未调用蓝盾 API，没有该构建失败日志证据，不把本地发现直接当作流水线根因。待用户提供 token 或授权从已登录浏览器获取后继续排查。
 - 本轮 context 首次 query 未匹配；更换源码路径后读取 frontend 服务、站点路由、frontend/AGENTS，检查 frontend 邻接卡及 vitest 配置。另读取 devops-pipeline/SKILL.md、reference/build-status.md、.ci/checks/frontend_guard.sh。
 - 本地开发生成 next-env.d.ts 已专门 stash 备份，合并后恢复；国内预览服务保持。未操作生产或手动触发流水线。
+
+
+## OpenCraft 同步漂移修复（2026-09-29）
+- 用户提供的失败日志确认 `opencraft guard` 因 `i18n/generated/en-US.json` 的源/副本哈希不一致而退出；MDX deprecated option 提示不是该次退出的直接原因。本地 `check:mono2-agent-console` 复现同类错误。
+- 前端源码已提交于 `03683dcd5`；按要求运行 `npm --prefix opencraft run sync:mono2-agent-console`，机械生成八份词典和 UPSTREAM.json，不手工修改生成物，不变更业务 UI。
+- `npm --prefix opencraft run check:mono2-agent-console` 校验 130 个文件通过；使用实际 `.ci/checks/opencraft_guard.sh` 复验通过。
+- 变更属于同步生成物，沿用此前前端 326 条相关测试、check 和双站构建记录；不将本地 guard 通过表述为远程整条流水线通过。
+- 新增 context receipt：`opencraft/AGENTS.md`、`opencraft/MONO2_MIGRATION.md`、`docs/context/domains/agent-gateway-runtime.md`、`docs/context/domains/site-environment-routing.md`、`docs/context/project/upstream-subtrees.md`、`docs/context/project/services/opencraft.md`；检查 frontend 邻接卡、同步脚本、opencraft/package.json 与 CI guard。
+- 用户已授权 Browser Use 获取日志/令牌；本次提供的日志足以定位，未读取或保存令牌。按既有授权将合并提交和生成物修复推送到原 MR !4760，不手动发布或合并 MR。
