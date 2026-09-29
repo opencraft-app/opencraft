@@ -53,10 +53,17 @@ def resolve_platform_envs(repo_root: Path, service: str, env: str, variant: str 
             )
             selected = service_dir / f"{service}-platform{suffix}.env"
             if not selected.is_file() or not PLATFORM_ENV_PATTERN.match(selected.name):
-                raise FileNotFoundError(
-                    f"expected platform env variant {normalized_variant!r} at {selected}"
-                )
+                if len(normalized_variants) == 1:
+                    raise FileNotFoundError(
+                        f"expected platform env variant {normalized_variant!r} at {selected}"
+                    )
+                continue
             selected_paths.append(selected)
+        if not selected_paths:
+            raise FileNotFoundError(
+                f"none of the requested platform env variants exist under {service_dir}: "
+                f"{','.join(normalized_variants)}"
+            )
         return selected_paths
     candidates = sorted(
         path for path in service_dir.glob("*-platform*.env") if PLATFORM_ENV_PATTERN.match(path.name)
