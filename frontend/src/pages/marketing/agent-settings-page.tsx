@@ -55,7 +55,7 @@ import { useRepositories } from "@/contexts/repository-context";
 import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useCloudDesktopEnabled } from "@/contexts/runtime-config-context";
 import { useCurrentLocale, useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
-import { isCN, isGlobal } from "@/lib/region";
+import { isGlobal } from "@/lib/region";
 import { isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
@@ -103,7 +103,6 @@ import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-swi
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
-import { subscribeConsoleShow } from "@/lib/console-show-event";
 import {
   resolveAgentConsoleCollectionLabel,
   resolveAgentDisplayName,

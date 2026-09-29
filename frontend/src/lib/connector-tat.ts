@@ -51,7 +51,8 @@ export function parseConnectorRuntimeScript(url: string): ConnectorRuntimeScript
     if (parsed.protocol !== "https:") return null;
     const filename = parsed.pathname.split("/").pop() || "";
     const match = filename.match(/^connector-runtime\.([a-f0-9]{8,64})\.sh$/);
-    return match ? { url: parsed.toString(), filename, hash: match[1] } : null;
+    const hash = match?.[1];
+    return match && hash ? { url: parsed.toString(), filename, hash } : null;
   } catch {
     return null;
   }
@@ -198,15 +199,16 @@ const TAT_OP_DIR = "/tmp/agentchat-connectors";
 
 function parseResultOutput(output: string, exitFailed: boolean): ConnectorTatReport & { tatTaskId: string } {
   const match = output.match(/CONNECTOR_RESULT_JSON=(\{.*\})/);
+  const raw = match?.[1];
   let parsed: { status?: string; message?: string; authUrl?: string } | null = null;
-  if (match) {
+  if (raw) {
     try {
-      parsed = JSON.parse(match[1]);
+      parsed = JSON.parse(raw);
     } catch {
       parsed = null;
     }
   }
-  if (!match || exitFailed) {
+  if (!raw || exitFailed) {
     return {
       status: "failed",
       // 失败时给日志尾部（截断），比静默 failed 更可诊断
@@ -214,8 +216,15 @@ function parseResultOutput(output: string, exitFailed: boolean): ConnectorTatRep
       tatTaskId: "",
     };
   }
+  // 脚本侧约定 status ∈ {success, success_with_warning, failed}；非法/缺失值
+  // 一律按 success_with_warning 处理（命令退出码 0 但报告不可信）。
+  const reported = parsed?.status;
+  const status =
+    reported === "success" || reported === "failed" || reported === "success_with_warning"
+      ? reported
+      : "success_with_warning";
   return {
-    status: parsed?.status || "success_with_warning",
+    status,
     message: parsed?.message || "",
     authUrl: parsed?.authUrl,
     tatTaskId: "",
