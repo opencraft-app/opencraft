@@ -56,7 +56,7 @@ import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerification
 import { useCurrentLocale, useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
+import { isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
@@ -2745,15 +2745,12 @@ export const AgentSettingsPage = ({
   const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
   /**
    * 连接器入口默认隐藏（灰度）：控制台执行 show() 后显示（与工作台 reveal
-   * 同款机制——window.show 劫持方广播 CONSOLE_SHOW_EVENT）。且仅国内站
-   * 显示（国际站走独立计费体系，连接器域名后续单独接入）。
+   * 同款机制——window.show 劫持 toggle 持久化状态并广播）。初始读持久化值
+   * （show 过的用户刷新后保持显示），订阅跟随开关（再次 show 收起）。
+   * 且仅国内站显示（国际站走独立计费体系，连接器域名后续单独接入）。
    */
-  const [connectorsRevealed, setConnectorsRevealed] = useState(false);
-  useEffect(() => {
-    const handler = () => setConnectorsRevealed(true);
-    window.addEventListener(CONSOLE_SHOW_EVENT, handler);
-    return () => window.removeEventListener(CONSOLE_SHOW_EVENT, handler);
-  }, []);
+  const [connectorsRevealed, setConnectorsRevealed] = useState(() => isConsoleShowEnabled());
+  useEffect(() => subscribeConsoleShow(setConnectorsRevealed), []);
   const showConnectorsEntry = connectorsRevealed && !isGlobal;
   const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
   const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
