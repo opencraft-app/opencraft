@@ -82,6 +82,8 @@ derived: false
 - 本 Task Pack 与 checkpoint 在 `validate_context.py` 中无新增条目；仓库其他历史 context 错误仍存在。
 - 源码补充提交 `19c26f518` 后运行 `sync:mono2-agent-console`，仅更新生成清单与 `tat-file-manager-panel.tsx` 副本；`check:mono2-agent-console` 输出 `Verified 130`。
 - 最终代码上 `build:cn` 与 `build:global` 分别生成 105、616 个路由，均通过 SEO/静态资源检查。
+- CR 追加修复后的文件页测试 33/33 通过；`pnpm check` 为 0 个新增 TypeScript 诊断，国内和国际站构建分别生成 105、616 个路由，Opencraft 校验 `Verified 130`。
+- 全量 `pnpm test` 初次因本机 `localhost` 解析失败未启动；改用 `--api.host 127.0.0.1` 后，多组非文件页测试失败并触发 Node heap OOM，已中止。文件页专项测试独立通过。
 
 ## risks
 - 首页静态片段含多种 locale，样式修复须验证至少中英文及长文案语言。
@@ -105,4 +107,4 @@ derived: false
 - 相关源码和邻接测试已做有界检索；后续记录浏览器矩阵。
 
 ## handoff
-- MR !4829 已打开；CR 指出的 Opencraft 同步与生成态 CSS 持久性问题已推送。补充修复窄屏提示空 Tab 焦点后，需重新验证、同步 Opencraft 并核对远端状态。发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。
+- MR !4829 已打开；CR 指出的 Opencraft 同步与生成态 CSS 持久性问题已推送。窄屏提示空 Tab 焦点已修复并通过专项测试、双站构建和 Opencraft 校验，待推送并核对远端状态。发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。
