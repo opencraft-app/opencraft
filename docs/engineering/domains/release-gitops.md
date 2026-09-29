@@ -656,3 +656,5 @@ auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forward
 ## 建站凭据跨地域发布门禁
 
 `ctl` 与 `sandbox-api` 的地域 CommandId 映射须同时进入目标地域 GitOps，并与每个目标地域实际存在的 TAT Command 对账。先发布两端映射并验收新购机器的文件状态与真实建站能力请求，再按生产实例快照运行可断点续跑的存量补发；Skill 可以按 TAT 单次目标上限共享命令批量下发，凭据必须逐实例签发、调用、确认终态，失败与未确认结果不可盲重试。核验镜像、Argo revision、`Synced/Healthy`、TAT 终态与真实能力请求分别留证。
+
+- Referral 活动总预算由各环境 overlay 的 `REFERRAL_BUDGET_CREDIT` 经 `referral-campaign` PostSync Job 写入独立数据库；调高 ConfigMap 值本身不等于活动 DB 已更新。两地生产须分别核对 Argo revision、Job 成功及 `referral_campaign.budget_credit`。已因预算被跳过且事件已入 inbox 的历史归因/付费记录不会自动补发；任何补发须另走可审计的资格核验和幂等流程。
