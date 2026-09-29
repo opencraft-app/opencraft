@@ -50,7 +50,7 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 
 * **Multi-channel access**: Chat with Hermes Agent through Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, and Lark
 
-* **Skill extensions**: Install skill packages from [SkillHub](https://skillhub.tencent.com) to extend Hermes Agent capabilities
+* **Skill extensions**: Search and install Skills or Skill Packages from [Skills.sh](https://skills.sh/) and [ClawHub](https://clawhub.ai/) in the console
 
 * **Ready to use**: The Launch plan includes trial credits, so you can start chatting after activation without configuring a model separately
 
@@ -86,17 +86,16 @@ A complete conversation loop requires three configurations:
 
 ## About plans
 
-LightVela uses plan-based billing. Activating a plan gives you one available Hermes Agent instance and the resources and credits included in that plan.
+A plan provides one Hermes Agent cloud instance. The Launch series supports up to 5 Bots inside that instance; the Cruise series supports up to 10. Bots are separate profiles, not additional Hermes instances.
 
-Currently available plans:
+| Plan option | Model credits per month | Bots |
+|---|---:|---:|
+| Launch | 100 | 5 |
+| Launch AI | 4,500 | 5 |
+| Cruise | 200 | 10 |
+| Cruise AI | 10,000 | 10 |
 
-| Plan | Original price | Current status |
-| --------- | ------- | ---- |
-| Launch | $7.5 / month | Introductory offers: see Subscribe |
-| Cruise | $15 / month | Paid plan |
-
-The Launch plan includes: 1 Hermes Agent instance, a dedicated cloud environment with 2 vCPU · 8 GB RAM, 50 GB dedicated cloud storage, 100 trial credits, 24/7 availability, and console access.
-
+Prices, introductory offers, and availability change. Check the [Subscribe page](/subscribe) before ordering; active subscribers can also buy one-time [model credit packs](./credits.md).
 ***
 
 ## Relationship with Lighthouse (optional)
@@ -111,6 +110,6 @@ If you are new to cloud Agents, you can skip this section.
 
 * **[Quickstart](./02-quickstart.md)** — Complete your first conversation in 5 minutes
 
-* **[Core Concepts](./04-core-concepts.md)** — Understand the four core concepts: Hermes Agent, models, channels, and skills
+* **[Core Concepts](./04-core-concepts.md)** — Understand the five core concepts: Hermes Agent, Bots, models, channels, and skills
 
 * **[Configuration Overview](./05-configuration.md)** — Console features and configuration flow

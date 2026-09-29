@@ -1,5 +1,9 @@
 # Automating Agent Task with LightVela
 
+## Summary
+
+**Agent Tasks run a model-backed workflow on a schedule and deliver the result through a connected channel.** Use them for recurring work such as a morning brief or weekly project review. Configure an instruction, schedule, optional Skills, and delivery destination.
+
 Scheduled tasks is the perfect application for cloud-hosted agents as it can run 24/7 without requiring you in the loop.
 It can be used when you have a recurring information problem that can be improved with a repeatable workflow.
 Users have used it for morning digests, which turns scattered updates into a short briefs; some also created weekly project reviews that summarizes recent activities for follow-up meetings.

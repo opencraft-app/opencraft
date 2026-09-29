@@ -46,37 +46,14 @@ Hermes determina automáticamente si debe llamar a la Skill correspondiente basa
 
 ---
 
----
+## Método 1: Instalar desde la consola
 
-## Método 1: Instalar a través del panel de consola (próximamente)
+1. Abre tu Agent y selecciona **Skills** en la barra lateral.
+2. Busca una Skill en **Skills** o explora los paquetes en **Skill Packages**. La consola admite [Skills.sh](https://skills.sh/) y [ClawHub](https://clawhub.ai/).
+3. Abre el resultado para revisar su origen y descripción; luego selecciona **Install**. Lee y confirma cualquier aviso antes de instalar.
+4. Comprueba el resultado en **Installed** y prueba en una conversación que el Agent pueda utilizarlo para la tarea prevista.
 
-La consola LightVela proporciona una entrada visual de configuración de Skills en el botón "Skills". Puede ingresar el nombre de una Skill encontrada en Skills.sh o ClawHub e instalarla rápidamente.
-
-### 1. Iniciar sesión en la consola LightVela
-
-Inicie sesión en LightVela, haga clic en "Mis socios de IA" en la esquina superior derecha para entrar a la consola y encuentre el botón "Skills".
-
-### 2. Buscar e instalar
-
-Ingrese el nombre de la Skill registrada en la caja de búsqueda (como `gmail`) y haga clic en el botón **+**.
-
-![](../images/clawhub-install-global-en.webp)
-
-### 3. Confirmar disponibilidad en la conversación
-
-Vuelva a un canal conectado (Telegram / WhatsApp / Discord / Slack / WeChat). Primero pida a Hermes que actualice su lista de Skills, luego verifique las Skills actualmente disponibles:
-
-```
-Please update your skill list
-```
-
-```
-What skills are currently available?
-```
-
-Si la Skill recién instalada aparece en la lista, puede comenzar a utilizarla en la conversación.
-
----
+También puedes gestionar los elementos desde **Installed**. Instala únicamente Skills de fuentes y con permisos de confianza.
 
 ## Método 2: Instalar directamente a través de la conversación
 

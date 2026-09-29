@@ -127,7 +127,7 @@ Row four deserves emphasis: **the value of a Skill library is not proportional t
 Hermes has made the Memory / Skill split engineering-ready, but it still targets people editing Markdown directly. LightVela runs a cloud-hosted model and does not expose user-facing filesystem operations, so the two kinds of accumulation work like this:
 
 - **Skills come from public marketplaces** — every skill comes from Skills.sh and ClawHub, the skill marketplaces shared by OpenClaw and Hermes, so you do not write them from scratch.
-- **Install and remove through conversation** — tell Hermes which skill to install and it handles it; removal works the same way. Verify availability in chat afterwards. Console-panel installation is coming soon.
+- **Install and manage Skills in the console** — browse Skills or Skill Packages from Skills.sh and ClawHub, install them, and check the Installed tab. Conversation-based installation remains another option; verify the result before use.
 - **Memory is viewable in the console** — the memory page shows what the Agent has retained and lets you adjust the capacity limit; additions and removals happen through conversation.
 - **Stable across models and channels** — switching models does not clear skills or scheduled tasks, and every connected channel shares the same skills and memory.
 - **Failures are traceable** — when a skill misbehaves, view and export recent logs in Diagnostics (selectable 1, 3, 6, 12, or 24-hour ranges) to locate the problem.

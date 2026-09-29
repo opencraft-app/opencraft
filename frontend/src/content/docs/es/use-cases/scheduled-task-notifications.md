@@ -1,5 +1,9 @@
 # Configurar tareas de notificación en LightVela
 
+## Resumen
+
+**Las Notification Tasks envían un mensaje fijo según un horario sin llamar a un modelo de IA ni gastar créditos de modelo.** Úsalas para recordar medicación, facturas o renovaciones; configura el mensaje, el horario, la ventana activa y el canal.
+
 Las tareas de notificación son una aplicación sencilla para los agentes alojados en la nube porque pueden enviar un mensaje fijo según una programación sin llamar a un modelo de IA.
 Úselas cuando necesite que un recordatorio llegue en el momento adecuado, por el canal adecuado y con las palabras exactas que proporcionó.
 Los usuarios las han utilizado para recordatorios de agua y medicación, así como para avisos de facturas y renovaciones de suscripciones.

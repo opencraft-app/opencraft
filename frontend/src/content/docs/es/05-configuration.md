@@ -2,19 +2,11 @@
 
 ## Resumen
 
-**Toda la configuración de LightVela se encuentra en la consola "Mi Hermes", que se abre desde la esquina superior derecha después de iniciar sesión. Las pestañas de Bot del Agent de Hermes actual aparecen en la parte superior, seguidas de tres botones de configuración: Modelos, Canales y Skills. Modelos permite elegir un Plan de Codificación de Modelo, una API de Modelo o un endpoint personalizado compatible con OpenAI. Canales conecta plataformas de mensajería mediante código QR, token o ID de aplicación. Skills instala paquetes de capacidades reutilizables. La consola también ofrece Chat, Tareas, gestión de memoria, almacenamiento en la nube, cambio de modelos y un centro de diagnóstico. Después de completar la configuración básica, el Bot puede conversar en sus canales conectados.**
+**La consola de Agent separa Channels, Models, Skills y Scheduled Tasks en páginas de la barra lateral. Selecciona el Bot adecuado antes de cambiar sus ajustes. Conecta un canal desde su tarjeta, elige un modelo o usa los créditos del plan y, cuando lo necesites, instala Skills de Skills.sh o ClawHub. Soul, Memory, Diagnostics, Advanced Settings y Labs aparecen en otras secciones; Cloud Storage se abre desde el menú de usuario.**
 
 ---
 
-La configuración de LightVela está centralizada en el consola "Mi Hermes" y consta de tres botones de configuración:
-
-1. Modelos
-
-2. Canales
-
-3. Skills
-
-Esta página introduce la estructura general del consola y la función de cada botón. Para operaciones detalladas, consulte las subpáginas correspondientes.
+La consola de Agent organiza la configuración cotidiana en las páginas **Channels**, **Models**, **Skills** y **Scheduled Tasks** de la barra lateral. Selecciona el Bot que quieras configurar y abre la página correspondiente. Esta guía explica las entradas y la comprobación del resultado.
 
 ## Esta página cubre
 
@@ -22,7 +14,7 @@ Esta página introduce la estructura general del consola y la función de cada b
 
 - Selector de Bots e información del Bot seleccionado
 
-- Funciones y puntos de entrada de los tres botones de configuración
+- Dónde encontrar Channels, Models, Skills y Cloud Storage
 
 - Estado de éxito después de la configuración
 
@@ -32,7 +24,7 @@ Esta página introduce la estructura general del consola y la función de cada b
 
 ## Ingresar al consola
 
-Después de iniciar sesión, haga clic en "Mi Hermes" en la esquina superior derecha para ingresar al consola. La parte superior de la página proporciona un botón "Volver al Inicio".
+Después de iniciar sesión, abre la [consola del Agent](/agents/overview/) y selecciona el Hermes Agent y el Bot que quieres configurar.
 
 ---
 
@@ -58,66 +50,19 @@ Después de seleccionar un Agent de Hermes, se muestran sus información básica
 
 ---
 
-## Tres botones de configuración
+## Configurar canales, modelos y Skills
 
-Los tres botones están dispuestos de izquierda a derecha. El orden de configuración recomendado es 1 → 2 → 3.
+### Channels
 
-### 1. Canales
+Abre **Channels** en la barra lateral de Agent. Hay tarjetas para Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom y Lark. Selecciona **+ Connect** en el canal deseado. WhatsApp, WeChat, WeCom y Lark usan códigos QR; Telegram, Discord y Slack requieren credenciales. QQ admite código QR o App ID / Secret. Consulta la [guía de WhatsApp](./configuration/channel-whatsapp.md).
 
-![](./images/4-2.webp)
+### Models
 
-**Propósito**: Conectar a Agent de Hermes con plataformas de mensajería y proporcionar puntos de entrada de conversación para los usuarios.
+Abre **Models** para ver el modelo activo o configurar un proveedor. Puedes usar los créditos del plan sin introducir tu propia clave de API y añadir un proveedor cuando lo necesites. Cada Bot usa un modelo principal a la vez y puede tener modelos alternativos configurados. Consulta [Configurar modelos](./configuration/model.md) y [Cambio de modelo](./configuration/multiple-models.md).
 
-**Métodos de acceso por canal**:
+### Skills
 
-| Canal | Método de acceso | Requisito |
-|---|---|---|
-| WeChat | Autorización mediante código QR | Un teléfono con WeChat instalado |
-| Telegram | Acceso mediante Bot Token | Cree un Bot de Telegram a través de BotFather y obtenga un Bot Token |
-| WhatsApp | Acceso mediante WhatsApp Business API | Cuenta de desarrollador de Meta, Cuenta de WhatsApp Business y configuración básica de Cloud API |
-| Discord | Acceso mediante Bot Token | Cree una Aplicación en el Portal de Desarrolladores de Discord, agregue un Bot e invítelo a un servidor |
-| Slack | Acceso mediante Bot Token / App Token | Cree una Aplicación de Slack, habilita el Modo Socket y obtenga los tokens de Bot/App |
-| QQ | Acceso mediante AppID / AppSecret | Una cuenta de QQ; cree un bot en la Plataforma Abierta de QQ y obtenga AppID / AppSecret |
-| WeCom | Autorización mediante código QR | Un teléfono con WeCom instalado |
-| Lark | Autorización mediante código QR | Un teléfono con Lark instalado (o Lark de escritorio ya iniciado sesión) |
-
-**Proporciona el botón**: Selector de canal, botón "Autorizar Acceso", introducción del canal seleccionado y enlace "Ver detalles", y lista de "Canales conectados".
-
-Para más detalles, consulte [Configurar Canal - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md).
-
----
-
-### 2. Modelos
-
-![](./images/4-1.webp)
-
-**Propósito**: Configurar un modelo de lenguaje grande para Agent de Hermes. El plan Launch incluye 100 créditos de prueba, por lo que puede omitir este paso inicialmente y configurar un modelo después de que se agoten los créditos.
-
-**Proporciona el botón**: Selector de origen (Plan de Codificación de Modelo / API de Modelo / Modelo Personalizado), selector de modelo, entrada de Clave de API, introducción del proveedor, enlace para obtener Clave de API y lista de "Modelo actual".
-
-> ⚠️ **Solo un modelo está activo**
->
-> Actualmente, cada Agent de Hermes puede tener solo una configuración de modelo activa. Una nueva acción "Agregar como predeterminado" sobrescribe la configuración existente.
-
-Para más detalles, consulte [Configurar Modelos](./configuration/model.md).
-
----
-
-### 3. Skills
-
-![](./images/4-3.webp)
-
-**Propósito**: Extender las capacidades de Agent de Hermes, como organizar tareas pendientes, generar informes diarios y buscar en la web.
-
-**Proporciona el botón**: Caja de búsqueda de nombre de Skill, botón "Instalar Skill", enlace "Ir a SkillHub" y lista de "Skills instaladas". Antes de la instalación, confirme el nombre exacto de la Skill en [SkillHub](https://skillhub.tencent.com).
-
-> ⚠️ **Instale solo Skills confiables**
->
-> Las Skills tienen permiso para llamar capacidades de Agent de Hermes en tiempo de ejecución. Instale solo Skills de fuentes confiables.
-
-Para más detalles, consulte [Configurar Skills](./configuration/skill.md).
-
----
+Abre **Skills** para buscar Skills o explorar **Skill Packages** de [Skills.sh](https://skills.sh/) y [ClawHub](https://clawhub.ai/). Selecciona **Install** y comprueba el resultado en **Installed**. Consulta [Configurar Skills](./configuration/skill.md).
 
 ## Estado de éxito después de la configuración
 
@@ -135,17 +80,10 @@ Una vez que "Canales conectados" tenga al menos un registro, puede encontrar el 
 
 ## Operaciones comunes
 
-### Cambiar modelos
-
-En el botón "Modelo", elija el origen y el modelo nuevamente, ingrese la Clave de API y haga clic en "Agregar como predeterminado". La nueva configuración sobrescribe la anterior. Cambiar modelos no afecta la memoria de conversación.
-
-### Conectar múltiples canales
-
-En el botón "Canal", cambie las opciones del selector una por una y haga clic en "Autorizar Acceso". Los canales conectados al mismo Bot comparten la memoria y el comportamiento de ese Bot.
-
-### Gestionar varios Bots
-
-Use las pestañas de Bot para cambiar de perfil. Cuando la entrada de creación esté disponible, puede copiar el Bot actual o principal, o utilizar Basic setup. Consulte [Gestionar Bots](./configuration/bots.md) para conocer las reglas de herencia y eliminación.
+- **Cambiar de modelo:** Abre **Models** en el Bot seleccionado y elige un modelo disponible que ya esté configurado. La memoria del Bot se conserva; consulta [Cambio de modelo](./configuration/multiple-models.md).
+- **Conectar varios canales:** Abre **Channels** y usa **+ Connect** en cada tarjeta necesaria. Los canales de un mismo Bot comparten su personalidad y memoria.
+- **Gestionar Bots:** Selecciona la pestaña del Bot antes de cambiar ajustes. Si está disponible la creación, sigue [Gestionar Bots](./configuration/bots.md).
+- **Abrir Cloud Storage:** Entra desde el menú de usuario, no desde la barra lateral del Agent.
 
 ---
 
@@ -159,7 +97,7 @@ Configuración detallada para cada módulo:
 
 - [Configurar Canal - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)
 
-- [Configurar Skills](./configuration/skill.md) — Uso de SkillHub e instalación de Skills
+- [Configurar Skills](./configuration/skill.md) — Uso de Skills.sh / ClawHub e instalación de Skills
 
 Referencias relacionadas:
 

@@ -72,12 +72,12 @@ LightVela 提供**启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Crui
 
 <div className="lv-plan-benefits-table">
 
-| 套餐 | 适合场景 | Agent 配额 | 专属云端环境 | 专属云端存储 | AI 积分 |
-|---|---|---|---|---|---|
-| 启航 Launch | 已准备自有大模型 API Key，希望低成本先让 Agent 跑起来 | 1 个 | 2 vCPU · 8 GB 内存 | 50 GB | 100 积分 / 月，仅作为体验使用；AI 积分耗尽后，可以配置自己的大模型 API Key 进行使用 |
-| 巡游 Cruise | 已准备自有大模型 API Key，希望获得更充裕资源用于日常主力使用 | 1 个 | 4 vCPU · 16 GB 内存 | 80 GB | 200 积分 / 月，仅作为体验使用；AI 积分耗尽后，可以配置自己的大模型 API Key 进行使用 |
-| 启航 Launch AI | 轻量使用，但希望获得更多 AI 积分 | 1 个 | 2 vCPU · 8 GB 内存 | 50 GB | 4500 积分 / 月 |
-| 巡游 Cruise AI | 高频对话、技能和定时任务的主力套餐 | 1 个 | 4 vCPU · 16 GB 内存 | 80 GB | 10000 积分 / 月 |
+| 套餐 | 适合场景 | Agent 配额 | Bot 数量 | 专属云端环境 | 专属云端存储 | AI 积分 |
+|---|---|---|---|---|---|---|
+| 启航 Launch | 已准备自有大模型 API Key，希望低成本先让 Agent 跑起来 | 1 个 | 5 | 2 vCPU · 8 GB 内存 | 50 GB | 100 积分 / 月，仅作为体验使用；AI 积分耗尽后，可以配置自己的大模型 API Key 进行使用 |
+| 巡游 Cruise | 已准备自有大模型 API Key，希望获得更充裕资源用于日常主力使用 | 1 个 | 10 | 4 vCPU · 16 GB 内存 | 80 GB | 200 积分 / 月，仅作为体验使用；AI 积分耗尽后，可以配置自己的大模型 API Key 进行使用 |
+| 启航 Launch AI | 轻量使用，但希望获得更多 AI 积分 | 1 个 | 5 | 2 vCPU · 8 GB 内存 | 50 GB | 4500 积分 / 月 |
+| 巡游 Cruise AI | 高频对话、技能和定时任务的主力套餐 | 1 个 | 10 | 4 vCPU · 16 GB 内存 | 80 GB | 10000 积分 / 月 |
 
 </div>
 
@@ -87,7 +87,7 @@ LightVela 提供**启航 Launch、巡游 Cruise、启航 Launch AI、巡游 Crui
 |---|---|
 | 启航 Launch | $6.5 / 月 |
 | 巡游 Cruise | $14 / 月 |
-| 启航 Launch AI | $12 / 月 |
+| 启航 Launch AI | $10 / 月 |
 | 巡游 Cruise AI | $23 / 月 |
 
 > ℹ️ **新用户权益**

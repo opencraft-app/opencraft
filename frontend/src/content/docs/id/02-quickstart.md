@@ -36,51 +36,25 @@ Buka [lightvela.ai](https://lightvela.ai), lalu klik "Masuk" di kanan atas. Di d
 
 ## 2. Aktifkan paket Launch
 
-Kembali ke halaman utama, klik "Buat sekarang" untuk masuk ke halaman paket, pilih "Launch", lalu klik "Aktifkan sekarang".
+Buka [halaman Subscribe](/subscribe), pilih opsi **Launch dengan 100 kredit** dalam seri Launch, lalu ikuti kartu paket sampai selesai. Periksa harga dan promo pesanan pertama sebelum mengonfirmasi.
 
-![](./images/2-2.webp)
 
 > ⚠️ **Penawaran awal untuk pengguna baru**
 >
 > Pengguna baru yang memenuhi syarat dapat mencoba Launch gratis selama 1 bulan. Periksa [halaman Subscribe](/subscribe/) untuk syarat dan ketersediaan terbaru.
 
-Setelah aktivasi berhasil, navigasi atas akan menampilkan "Hermes Saya" dan halaman otomatis diarahkan ke konsol. Untuk detail paket, lihat [Apa Itu LightVela - Tentang paket](./01-overview.md#tentang-paket).
 
 ---
 
-## 3. Buat instans Hermes
+## 3. Buka Hermes Agent
 
-Saat masuk ke konsol, halaman menampilkan keadaan kosong karena belum ada Hermes yang dibuat.
-
-![](./images/20260424-113103-70fi.webp)
-
-Klik "Buat sekarang". Halaman akan menampilkan animasi persiapan Hermes. Tunggu sekitar belasan detik.
-
-![](./images/20260424-113120-qvlx.webp)
-
-Setelah proses selesai, bagian atas konsol menampilkan kartu informasi dasar Hermes, statusnya ● Berjalan, dan tiga tombol konfigurasi untuk model, kanal, dan Skill muncul di bawahnya.
-
-![](./images/2-5.webp)
-
-> 💡 **Mengganti nama Hermes**
->
-> Klik nama atau ikon pensil di sebelahnya, masukkan nama baru, lalu tekan Enter untuk menyimpan. Nama ini hanya dipakai sebagai penanda dan tidak memengaruhi perilaku Agent.
+Setelah paket aktif, buka [konsol Agent](/agents/overview/). LightVela menyiapkan instans cloud untuk paket Anda. Jika konsol meminta Anda membuat Agent, ikuti petunjuk di layar dan tunggu hingga statusnya **Running**. Sidebar kemudian menyediakan **Channels**, **Models**, **Skills**, dan **Scheduled Tasks**. Kredit model paket dapat dipakai tanpa API key sendiri.
 
 ---
 
-## 4. Hubungkan kanal WeChat
+## 4. Hubungkan WeChat
 
-Masuk ke tombol "Kanal", pilih "WeChat" dari dropdown, lalu klik "Izinkan akses". Kode QR akan muncul.
-
-![](./images/2-6.webp)
-
-Gunakan fitur "Pindai" di WeChat pada ponsel Anda untuk memindai kode QR, lalu ikuti instruksi di ponsel sampai otorisasi selesai. Setelah berhasil, dialog akan tertutup otomatis, catatan "WeChat" muncul di area "Kanal terhubung", dan akun bot otomatis ditambahkan ke kontak WeChat Anda.
-
-> ⚠️ **Setelah memindai**
->
-> Setelah pemindaian, WeChat akan meminta Anda menambahkan akun bot. Setelah ditambahkan, chat dengan akun tersebut sama dengan chat dengan Hermes.
-
-Untuk detail lebih lanjut, lihat [Ringkasan Konfigurasi](./05-configuration.md#1-kanal).
+Buka **Channels** di sidebar Agent. Pada kartu **WeChat**, pilih **+ Connect** dan ikuti petunjuk kode QR. Pindai dengan WeChat di ponsel dan selesaikan otorisasi. Pastikan WeChat ditampilkan sebagai terhubung sebelum mengirim pesan. Lihat [panduan WeChat](./configuration/channel-wechat.md) jika kode kedaluwarsa atau koneksi gagal.
 
 ---
 
@@ -98,32 +72,30 @@ Anda seharusnya menerima balasan dari Hermes dalam beberapa detik. Sekarang Herm
 
 > 💡 **Penagihan pesan**
 >
-> Secara default, panggilan model memakai 100 kredit uji coba yang termasuk dalam paket Launch, jadi tidak perlu konfigurasi tambahan. Setelah kredit habis, atur API Key Anda sendiri di kartu "1. Model". Lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model).
+> Panggilan model menggunakan 100 kredit dalam opsi Launch secara bawaan. Jika habis, beli [paket kredit](./credits.md) yang memenuhi syarat atau atur API key sendiri di **Models**.
 
 ---
 
 ## Lanjutan: atur model sendiri (opsional)
 
-Jika Anda perlu memakai model dari penyedia tertentu, atau ingin terus memakai Hermes setelah kredit habis, buka kartu "1. Model" di konsol, pilih sumber dan model, masukkan API Key, lalu klik "Jadikan default". Lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model) untuk alur lengkapnya.
+Jika Anda memerlukan penyedia tertentu, buka **Models** di sidebar Agent, pilih penyedia dan model, tambahkan API key, lalu tetapkan model utama. Lihat [Konfigurasi Model](./configuration/model.md).
 
 ---
 
 ## FAQ
 
-| Masalah | Kemungkinan penyebab | Solusi |
+| Masalah | Periksa | Tindakan |
 |---|---|---|
-| Tidak bisa mengaktifkan paket Launch | Promo atau alur pembayaran saat ini belum tersedia | Periksa [halaman Subscribe](/subscribe) dan ikuti pembaruan resmi |
-| Pembuatan Hermes tertahan lama di halaman transisi | Inisialisasi cloud lambat atau jaringan tidak stabil | Muat ulang halaman; jika belum ada respons setelah 1 menit, klik "+ Buat Hermes" lagi |
-| Tidak ada respons di konsol setelah memindai kode QR WeChat | Kode QR sudah kedaluwarsa | Tutup dialog, lalu klik "Izinkan akses" lagi untuk membuat kode QR baru |
-| Tidak ada balasan setelah mengirim pesan | Kredit uji coba habis atau kanal belum terhubung | Periksa status "Kanal terhubung"; atur API Key sendiri setelah kredit habis |
-| Kontak bot hilang dari WeChat | Otorisasi dicabut atau akses terputus | Kembali ke konsol dan lakukan otorisasi ulang di kartu "Kanal" |
-
+| Opsi Launch tidak dapat diaktifkan | Ketersediaan, kelayakan promo, dan status pembayaran | Periksa [halaman Subscribe](/subscribe) dan pesan akhir pembayaran; jangan membuat pesanan ganda. |
+| Penyiapan Agent lama | Apakah konsol masih melakukan provisioning atau menampilkan error | Muat ulang ringkasan Agent sekali; jika tidak berubah, buka [Diagnostics](./configuration/diagnostics.md) atau hubungi dukungan. |
+| Kode QR WeChat kedaluwarsa | Apakah otorisasi selesai di ponsel | Kembali ke **Channels** dan mulai koneksi baru. |
+| Pesan tidak dibalas | Koneksi kanal, status Agent, dan kredit model | Periksa **Channels** dan **Diagnostics**. Jika kredit habis, lihat [opsi kredit](./credits.md). |
 ---
 
 ## Langkah berikutnya
 
-- [Konsep Inti](./04-core-concepts.md) — Pahami empat konsep utama: Hermes, model, kanal, dan Skill
+- [Konsep Inti](./04-core-concepts.md) — Pahami lima konsep utama: Hermes Agent, Bot, model, kanal, dan Skill
 
 - [Ringkasan Konfigurasi](./05-configuration.md) — Struktur umum konsol
 
-- [Ringkasan Konfigurasi](./05-configuration.md#3-skill) — Perluas kemampuan Hermes lewat SkillHub
+- [Konfigurasi Skill](./configuration/skill.md) — Pasang Skill dari Skills.sh atau ClawHub

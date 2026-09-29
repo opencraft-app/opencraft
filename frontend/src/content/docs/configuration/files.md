@@ -32,7 +32,7 @@
 ## 打开云存储
 
 1. 打开「我的 Hermes」，选择需要管理文件的 Agent。
-2. 打开[云存储页面](/agents/files)。当前侧栏没有独立的云存储菜单项，可从本文档链接直接进入。
+2. 在 Agent 侧栏左下角打开账号菜单，选择 **云存储**；也可以直接打开[云存储页面](/agents/files)。
 3. 等待文件列表加载完成，再开始上传或新建操作。
 
 ![LightVela 管理台中的云存储文件列表](../images/cn-cloud-storage-overview.webp)
