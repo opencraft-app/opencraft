@@ -631,3 +631,7 @@ auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forward
   0 个 403，验收通过。
 
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。
+
+## 建站凭据跨地域发布门禁
+
+`ctl` 与 `sandbox-api` 的地域 CommandId 映射须同时进入目标地域 GitOps，并与每个目标地域实际存在的 TAT Command 对账。先发布两端映射并验收新购机器的文件状态与真实建站能力请求，再按生产实例快照运行可断点续跑的存量补发；Skill 可以按 TAT 单次目标上限共享命令批量下发，凭据必须逐实例签发、调用、确认终态，失败与未确认结果不可盲重试。核验镜像、Argo revision、`Synced/Healthy`、TAT 终态与真实能力请求分别留证。

@@ -32,3 +32,17 @@ func TestLoadConfigReadsInternalTATSecuritySettings(t *testing.T) {
 		t.Fatalf("AllowedTATCommandID = %q", cfg.AllowedTATCommandID)
 	}
 }
+
+func TestLoadConfigRegionAllowlistFailsClosedOnInvalidJSON(t *testing.T) {
+	t.Setenv("WEBSITE_CREDENTIAL_TAT_COMMAND_ID", "cmd-singapore")
+	t.Setenv("WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION", "not-json")
+	cfg := loadConfig()
+	if cfg.AllowedTATCommandIDsByRegion == nil || len(cfg.AllowedTATCommandIDsByRegion) != 0 {
+		t.Fatalf("invalid region map must fail closed: %v", cfg.AllowedTATCommandIDsByRegion)
+	}
+	t.Setenv("WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION", `{"ap-johorbahru":"cmd-johor"}`)
+	cfg = loadConfig()
+	if cfg.AllowedTATCommandIDsByRegion["ap-johorbahru"] != "cmd-johor" {
+		t.Fatalf("region map = %v", cfg.AllowedTATCommandIDsByRegion)
+	}
+}

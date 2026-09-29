@@ -468,3 +468,27 @@ func TestPassDestroyTaskDoesNotFailAfterCredentialCleanupError(t *testing.T) {
 		t.Fatalf("warning logs = %#v", logs.All())
 	}
 }
+
+func TestWebsiteCredentialSelectsExactSandboxRegion(t *testing.T) {
+	for _, tc := range []struct{ region, command string }{{"ap-johorbahru", "cmd-johor"}, {"ap-singapore", "cmd-singapore"}} {
+		t.Run(tc.region, func(t *testing.T) {
+			adapter := &createTaskSandboxAdapterStub{sandboxRegion: tc.region, invokeResult: &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}}
+			store := &createCredentialStore{issueToken: "vik_test_key_secret"}
+			l := &logic{sandboxAdapter: adapter, websiteCredentialStore: store, logger: zap.NewNop(), websiteAgentAPIBase: "https://api.lightvela.ai", websiteCredentialTATCommandID: "cmd-singapore", websiteCredentialTATCommandIDsByRegion: map[string]string{"ap-singapore": "cmd-singapore", "ap-johorbahru": "cmd-johor"}}
+			l.deliverWebsiteCredentialOnCreate(pctx.NewContext(context.Background()), &modelinstance.Entity{InstanceId: "ins-test", UserId: "usr-test"}, "sbx-test")
+			if len(adapter.invokeCalls) != 1 || adapter.invokeCalls[0].commandID != tc.command || len(store.activatedKeyIDs) != 1 {
+				t.Fatalf("invoke=%+v activated=%v", adapter.invokeCalls, store.activatedKeyIDs)
+			}
+		})
+	}
+}
+
+func TestWebsiteCredentialUnknownRegionFailsClosedBeforeIssuance(t *testing.T) {
+	adapter := &createTaskSandboxAdapterStub{sandboxRegion: "ap-unknown"}
+	store := &createCredentialStore{issueToken: "vik_test_key_secret"}
+	l := &logic{sandboxAdapter: adapter, websiteCredentialStore: store, logger: zap.NewNop(), websiteAgentAPIBase: "https://api.lightvela.ai", websiteCredentialTATCommandID: "cmd-singapore", websiteCredentialTATCommandIDsByRegion: map[string]string{"ap-singapore": "cmd-singapore"}}
+	l.deliverWebsiteCredentialOnCreate(pctx.NewContext(context.Background()), &modelinstance.Entity{InstanceId: "ins-test", UserId: "usr-test"}, "sbx-test")
+	if len(adapter.invokeCalls) != 0 || len(store.provisionalTTLs) != 0 || len(store.revokedInstanceIDs) != 0 {
+		t.Fatalf("unexpected credential activity: invokes=%d issues=%d revokes=%d", len(adapter.invokeCalls), len(store.provisionalTTLs), len(store.revokedInstanceIDs))
+	}
+}

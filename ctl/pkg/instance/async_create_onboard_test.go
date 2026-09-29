@@ -81,7 +81,9 @@ type createTaskSandboxAdapterStub struct {
 		parameters map[string]string
 		timeoutSec int
 	}
-	beforeInvoke func()
+	sandboxRegion string
+	sandboxErr    error
+	beforeInvoke  func()
 }
 
 func (s *createTaskSandboxAdapterStub) InvokeCommand(_ context.Context, sandboxID, commandID string, parameters map[string]string, timeoutSec int) (*psandbox.ExecCommandResult, error) {
@@ -153,7 +155,10 @@ func (s *createTaskSandboxAdapterStub) StreamPtyCommand(_ context.Context, _ str
 	return nil
 }
 func (s *createTaskSandboxAdapterStub) GetSandbox(context.Context, string) (*psandbox.SandboxDetail, error) {
-	return nil, nil
+	if s.sandboxErr != nil {
+		return nil, s.sandboxErr
+	}
+	return &psandbox.SandboxDetail{Region: s.sandboxRegion}, nil
 }
 func (s *createTaskSandboxAdapterStub) ListSandboxes(context.Context, *psandbox.ListSandboxesRequest) ([]psandbox.ListedSandbox, error) {
 	return nil, nil
