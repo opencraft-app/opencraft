@@ -391,7 +391,7 @@ func (i *Injector) waitForRecoveredPoolClean(ctx context.Context, runID string, 
 			if _, _, err := i.svc.ActivateWarmingPool(waitCtx, poolID); err != nil {
 				return core.Instance{}, err
 			}
-			if _, err := i.svc.ReconcileTemplateBindingAdmissions(waitCtx); err != nil {
+			if _, err := i.svc.ReconcilePoolBindingAdmission(waitCtx, poolID); err != nil {
 				return core.Instance{}, err
 			}
 			emitInjectEvent(waitCtx, "sandbox.faultinject.clean_inventory_observed", "故障注入已观察到恢复出的新 pool 具备 CLEAN 库存，后续将继续走真实分配链。", runID,

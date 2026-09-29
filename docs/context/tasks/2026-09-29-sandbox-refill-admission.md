@@ -15,7 +15,7 @@ Separate Sandbox Pool refill failure isolation from admission, and admit auto-de
 - `sandbox/internal/service/pool.go`: admission resolution and binding reconciliation.
 - `sandbox/cmd/worker/main.go`: refill loop and verified creation.
 - `sandbox/migrations/000012_add_pool_refill_paused.up.sql`: persistent breaker state.
-- Invariant: only verified CLEAN unlocks warming admission; terminal refill failure never discards existing admission.
+- Invariant: only verified CLEAN unlocks warming admission through an atomic guarded update; terminal refill failure never discards existing admission; activation only reconciles the target Pool binding.
 
 ## history_context
 - `current_design_refs`: `docs/engineering/domains/agent-gateway-runtime.md` Sandbox section.
@@ -44,7 +44,9 @@ Separate Sandbox Pool refill failure isolation from admission, and admit auto-de
 
 ## evidence
 - Code inspection: `doRefill` formerly called `PausePool` and `EnsurePoolForCapacityBundle` formerly created active Pool/binding.
-- `cd sandbox && GOWORK=off /data/go/bin/go test ./...`: all packages pass, including worker, service, faultinject and API.
+- `cd sandbox && GOWORK=off /data/go/bin/go test ./...`: all packages pass, including worker, service, faultinject and API. Release hardening adds a guarded MySQL update and targeted binding reconciliation.
+- `cd sandbox && GOWORK=off /data/go/bin/go test -race ./internal/service ./internal/store ./cmd/worker ./internal/faultinject`: passed.
+- `bash .ci/runtime/check_ci_runtime.sh`: passed, 601 tests (4 skipped).
 
 ## risks
 - Migration must run before new binaries; existing `refill_paused` defaults false. Roll back by reverting binary then migration, preserving operator intent separately.
@@ -57,6 +59,7 @@ Separate Sandbox Pool refill failure isolation from admission, and admit auto-de
 ## decisions
 - Persist `refill_paused` independently from `status`; keep manual full pause semantics. Owner: this MR.
 - Use a distinct `warming` admission state; activation requires CLEAN inventory. Owner: this MR.
+- Release hardening: activate with one conditional DB update and reconcile only the activated Pool binding. Owner: this MR.
 
 ## scan_scope
 - `sandbox/internal`, `sandbox/cmd/worker`, `sandbox/api-gin`, `sandbox/migrations`, targeted domain document.

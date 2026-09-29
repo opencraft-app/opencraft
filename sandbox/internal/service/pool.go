@@ -306,17 +306,37 @@ func (s *Service) ResetPoolRefillFailures(ctx context.Context, id string) (core.
 // ActivateWarmingPool admits an auto-derived pool only after verified CLEAN inventory exists.
 // A manually paused pool is never activated by this reconciliation.
 func (s *Service) ActivateWarmingPool(ctx context.Context, id string) (core.Pool, bool, error) {
+	activated, err := s.store.ActivatePoolIfWarmingWithClean(ctx, id)
+	if err != nil {
+		return core.Pool{}, false, err
+	}
 	pool, err := s.store.GetPool(ctx, id)
-	if err != nil || pool.Status != core.PoolStatusActive || pool.CapacityState != core.PoolCapacityStateWarming {
-		return pool, false, err
+	return pool, activated, err
+}
+
+// ReconcilePoolBindingAdmission updates only this pool's derived binding, so a
+// broken binding for an unrelated pool cannot interrupt its refill loop.
+func (s *Service) ReconcilePoolBindingAdmission(ctx context.Context, poolID string) (bool, error) {
+	pool, err := s.store.GetPool(ctx, poolID)
+	if err != nil || pool.TemplateClassID == "" {
+		return false, err
 	}
-	clean, err := s.store.ListInstancesByStates(ctx, id, []core.InstanceState{core.StateClean}, 1)
-	if err != nil || len(clean) == 0 {
-		return pool, false, err
+	bindings, err := s.store.ListTemplatePoolBindings(ctx, pool.TemplateClassID)
+	if err != nil {
+		return false, err
 	}
-	pool.CapacityState = core.PoolCapacityStateActive
-	pool, err = s.UpdatePool(ctx, pool)
-	return pool, err == nil, err
+	for _, binding := range bindings {
+		if binding.PoolID != poolID {
+			continue
+		}
+		nextState, nextReason, shouldApply := reconciledBindingAdmission(binding, pool)
+		if !shouldApply {
+			return false, nil
+		}
+		_, err := s.store.UpdateTemplatePoolBindingAdmission(ctx, binding.TemplateClassID, poolID, nextState, nextReason)
+		return err == nil, err
+	}
+	return false, nil
 }
 
 func normalizePool(pool core.Pool) (core.Pool, error) {

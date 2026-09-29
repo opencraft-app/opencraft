@@ -807,7 +807,7 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 			}
 			pool = updated
 			if activated {
-				if _, err := svc.ReconcileTemplateBindingAdmissions(ctx); err != nil {
+				if _, err := svc.ReconcilePoolBindingAdmission(ctx, pool.ID); err != nil {
 					return err
 				}
 			}
@@ -885,7 +885,7 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 				if _, activated, err := svc.ActivateWarmingPool(ctx, pool.ID); err != nil {
 					return err
 				} else if activated {
-					if _, err := svc.ReconcileTemplateBindingAdmissions(ctx); err != nil {
+					if _, err := svc.ReconcilePoolBindingAdmission(ctx, pool.ID); err != nil {
 						return err
 					}
 				}

@@ -203,6 +203,19 @@ func (s *MySQLStore) UpdatePool(ctx context.Context, pool core.Pool) (core.Pool,
 	return pool, err
 }
 
+func (s *MySQLStore) ActivatePoolIfWarmingWithClean(ctx context.Context, id string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE pools SET capacity_state = ?
+		WHERE id = ? AND status = ? AND capacity_state = ?
+		AND EXISTS (SELECT 1 FROM instances WHERE pool_id = ? AND state = ? LIMIT 1)
+	`, core.PoolCapacityStateActive, id, core.PoolStatusActive, core.PoolCapacityStateWarming, id, core.StateClean)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows > 0, err
+}
+
 func (s *MySQLStore) ListPoolsByIDs(ctx context.Context, ids []string) ([]core.Pool, error) {
 	if len(ids) == 0 {
 		return []core.Pool{}, nil
