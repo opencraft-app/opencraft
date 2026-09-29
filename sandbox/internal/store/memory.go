@@ -83,6 +83,26 @@ func (s *MemoryStore) UpdatePool(_ context.Context, pool core.Pool) (core.Pool, 
 	return pool, nil
 }
 
+func (s *MemoryStore) ActivatePoolIfWarmingWithClean(_ context.Context, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pool, ok := s.pools[id]
+	if !ok {
+		return false, core.ErrPoolNotFound
+	}
+	if pool.Status != core.PoolStatusActive || pool.CapacityState != core.PoolCapacityStateWarming {
+		return false, nil
+	}
+	for _, inst := range s.instances {
+		if inst.PoolID == id && inst.State == core.StateClean {
+			pool.CapacityState = core.PoolCapacityStateActive
+			s.pools[id] = pool
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *MemoryStore) ListPools(_ context.Context) ([]core.Pool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -62,6 +62,7 @@ const (
 	PoolStatusPaused PoolStatus = "paused"
 
 	PoolCapacityStateActive      PoolCapacityState = "active"
+	PoolCapacityStateWarming     PoolCapacityState = "warming"
 	PoolCapacityStateDraining    PoolCapacityState = "draining"
 	PoolCapacityStatePaused      PoolCapacityState = "paused"
 	PoolCapacityStateQuarantined PoolCapacityState = "quarantined"
@@ -128,6 +129,7 @@ type Pool struct {
 	InstanceType              string     `json:"instance_type"`
 	Status                    PoolStatus `json:"status"`
 	PauseReason               string     `json:"pause_reason,omitempty"`
+	RefillPaused              bool       `json:"refill_paused"`
 	ConsecutiveRefillFailures int        `json:"consecutive_refill_failures,omitempty"`
 	LastRefillErrorCode       string     `json:"last_refill_error_code,omitempty"`
 	LastRefillError           string     `json:"last_refill_error,omitempty"`

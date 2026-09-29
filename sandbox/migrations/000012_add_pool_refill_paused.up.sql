@@ -1,0 +1,1 @@
+ALTER TABLE pools ADD COLUMN refill_paused BOOLEAN NOT NULL DEFAULT FALSE AFTER pause_reason;

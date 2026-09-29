@@ -11,6 +11,9 @@ import (
 type Store interface {
 	CreatePool(ctx context.Context, pool core.Pool) (core.Pool, error)
 	UpdatePool(ctx context.Context, pool core.Pool) (core.Pool, error)
+	// ActivatePoolIfWarmingWithClean atomically opens admission only while the pool
+	// is active, warming, and already has verified CLEAN inventory.
+	ActivatePoolIfWarmingWithClean(ctx context.Context, id string) (bool, error)
 	GetPool(ctx context.Context, id string) (core.Pool, error)
 	ListPools(ctx context.Context) ([]core.Pool, error)
 	ListPoolsByIDs(ctx context.Context, ids []string) ([]core.Pool, error)
