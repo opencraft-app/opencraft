@@ -32,7 +32,7 @@ derived: false
 | `docs/context/tasks/2026-09-29-velagw-proxy-error-diagnostics.md@working-tree` | Active task state | Restore exact scope and validation |
 
 ## stage
-Shanghai VelaGW diagnostic release completed; post-release observation has not yet captured a live 502 sample.
+Shanghai VelaGW diagnostic release completed; post-release 502 samples exposed 30/60-second cancellation clusters. The timing extension is in source MR !4845, pending review and release.
 
 ## verified
 - Complete Docker image build passed full VelaGW Go tests, binary compilation, 50 Web tests, and TypeScript/Web build; `go vet ./...` passed.
@@ -46,7 +46,7 @@ Shanghai VelaGW diagnostic release completed; post-release observation has not y
 - Old traffic Pods drained and disappeared; the new traffic Pods are both Ready. The first 20 observed access logs had 19 responses with status 200 and one upstream 429; no proxy 502 sample yet.
 
 ## unverified
-- Need a live proxy failure sample before claiming the new diagnostic fields identify the first disconnecting hop.
+- Need timing-extension deployment and fresh proxy failure samples before attributing the first disconnecting hop.
 - Repository-wide context catalog has pre-existing errors; scoped baseline comparison remains if needed.
 
 ## discard
@@ -59,9 +59,9 @@ Shanghai VelaGW diagnostic release completed; post-release observation has not y
 - Task pack: `docs/context/tasks/2026-09-29-velagw-proxy-error-diagnostics.md`.
 
 ## next_action
-Continue monitoring Shanghai 5xx and 429 after rollout; when an `upstream_roundtrip_error` recurs, inspect only the bounded diagnostic fields to distinguish client cancellation from ingress-body or upstream transport failure.
+Wait for non-author owner review and commit checks on timing MR !4845; then merge, build, promote and manually sync Shanghai. Verify the actual image and fresh timing fields before attributing the first disconnecting hop.
 
 ## 2026-09-30 timing extension
 - Shanghai post-release logs showed 30/60-second `context_canceled` clusters with no upstream response status. The existing access log cannot prove when the upstream request was attempted or whether response headers/body bytes arrived.
 - Added elapsed milliseconds from the first upstream RoundTrip attempt through return, final response headers, and first response-body byte. The latter is not necessarily a model token; missing fields mean the milestone was not observed.
-- `go test ./...` and `go vet ./...` passed under `velagw/`. This extension remains local and has not been committed or published; production continues to run the preceding diagnostic image.
+- `go test ./...` and `go vet ./...` passed under `velagw/`, including on the latest-master branch. Commit `c44ac564c` is pushed as MR !4845. The extension has not been merged or published; production continues to run the preceding diagnostic image.

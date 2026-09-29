@@ -72,6 +72,7 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 - All Shanghai NewAPI traffic Pods were Ready with zero restarts; CPU and memory were low.
 - On 2026-09-29 the Shanghai `velagw-shprod` Application was `Synced/Healthy` at GitOps revision beginning `f6f0a31351bd`; `llmgateway-traffic` was 2/2 on the old image digest beginning `sha256:fb80d5a16886`. The diagnostic patch has not been released.
 - On 2026-09-30 the user explicitly authorized commit, push, and Shanghai production release. The isolated source MR is `https://git.woa.com/wisp/mono2/-/merge_requests/4842`; Gongfeng reports commit check success but rejected merge with `Review check not passed` (409). No production action has occurred.
+- MR !4842 was subsequently reviewed and merged as `728f32f22`; its diagnostic image was promoted and manually synced to Shanghai at GitOps revision `bb25ebd74`. The follow-up timing extension is source MR !4845 and has not been released.
 
 ## risks
 - Diagnostic logs could leak credentials or produce excess cardinality: use fixed error categories and byte counts only; do not log raw request/error strings.
@@ -101,4 +102,4 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 - Bounded source and manifest searches recorded in the conversation; no isolated scan artifact.
 
 ## handoff
-- Source implementation and local VelaGW/CI tests complete. The authorized source change is on an isolated latest-master branch and MR !4842, but merge is blocked by Gongfeng's human review check. Request a non-author VelaGW owner review before merging; then allow the service CI build and production promote, maintain manual Shanghai Argo sync, and verify expected GitOps revision, image, and traffic Deployment health.
+- Timing extension source MR !4845 targets current `master` and is awaiting independent owner review and commit checks. After both pass, merge, build and promote only to Shanghai, manually sync the leaf Argo app, and verify revision, image and traffic health.
