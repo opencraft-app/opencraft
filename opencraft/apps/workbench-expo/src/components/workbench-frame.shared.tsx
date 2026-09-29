@@ -19,7 +19,7 @@ import { setStringAsync } from "expo-clipboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../styles/workbench-styles";
 
 import {
   useThreadCatalog,
@@ -65,7 +65,7 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
   const catalog = useThreadCatalog();
   const modelCatalog = useComposerModelCatalog();
   const activeHost = useActiveHostDescriptor();
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const metrics = theme.metrics;

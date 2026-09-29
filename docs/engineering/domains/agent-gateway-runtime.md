@@ -23,6 +23,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区域打开官网 `/account/billing`（国内 `lightvela.com`、国际 `lightvela.ai`），不再使用旧的 `/account?tab=billing`；外部套餐页返回后仍刷新账户资料。此兼容不新增桌面总览、不改变实例创建权限或执行归属。
 
+OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网站 WebView。App 验证并保存本区域会话，仅向同源页面的既有浏览器 token store 注入凭据；外部站点交给系统浏览器，切换区域前须退出当前会话。底栏在同一 WebView 中导航智能体、账号和套餐页，网页自身的路由与语言决定当前标签。预热仅限同源版本化 `/_next/static/` 资源；站点 Service Worker 可缓存这类静态资源，不缓存私有 API、对话或其他站点内容。Android 内测 APK 仍承载独立原生工作台。运行与真机预览步骤见 [Expo README](../../../opencraft/apps/workbench-expo/README.md)。
+
 ## 稳定不变量
 
 - OpenCraft macOS 分发由下游 GitHub 镜像的 `macos-release` Environment 承载，但不取得源码权威。arm64 与 x64 必须在对应原生 Runner 组装，最终 job 才可读取 Developer ID 与 Apple 公证凭据；Universal 合并后依次完成签名、公证、staple、DMG/ZIP 封包和完整性验证。手工主分支运行只生成 Actions artifact，只有 `v*` tag 创建 GitHub Release；源码进入 mono2、镜像导出和公开制品发布仍是三个独立状态。镜像依赖的 mono2-parent shared package 使用带哈希清单的机械 workspace 快照，`shared/` 保持唯一真源，禁止用 Vite external 掩盖缺包。详细运行契约见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md)。

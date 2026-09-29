@@ -15,8 +15,7 @@
     "@opencraft/chat-render-react": "0.1.0",
     "@opencraft/design-system": "0.1.0",
     "react": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-unistyles": "3.3.0"
+    "react-native": "0.86.3"
   },
   "devDependencies": {
     "@types/react": "~19.2.2"

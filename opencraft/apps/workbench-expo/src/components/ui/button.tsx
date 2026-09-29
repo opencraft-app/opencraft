@@ -15,7 +15,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../../styles/workbench-styles";
 
 export interface ButtonProps extends Omit<PressableProps, "children" | "style"> {
   readonly children: ReactNode;
@@ -42,9 +42,8 @@ export function Button({
   variant = defaultButtonVariant,
   ...props
 }: ButtonProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const inactive = disabled || loading;
-  styles.useVariants({ variant, size, disabled: inactive });
   const pressed = pressedStyles[variant](styles);
   const spinnerColor = variant === "primary" || variant === "destructive" || variant === "hero"
     ? theme.color.button.primaryForeground
@@ -59,6 +58,9 @@ export function Button({
       hitSlop={size === "sm" ? 6 : props.hitSlop}
       style={({ pressed: isPressed }) => [
         styles.container,
+        containerVariantStyles[variant],
+        containerSizeStyles[size],
+        inactive && styles.disabled,
         isPressed && pressed,
         style,
       ]}
@@ -66,7 +68,7 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={spinnerColor} />
       ) : typeof children === "string" || typeof children === "number" ? (
-        <Text style={[styles.label, textStyle]}>{children}</Text>
+        <Text style={[labelVariantStyles[variant], labelSizeStyles[size], textStyle]}>{children}</Text>
       ) : (
         children
       )}
@@ -82,13 +84,12 @@ export function IconButton({
   variant = selected ? "secondary" : "ghost",
   ...props
 }: IconButtonProps) {
-  iconButtonStyles.useVariants({ size });
   return (
     <Button
       {...props}
       accessibilityState={{ ...props.accessibilityState, selected }}
       size={size}
-      style={[iconButtonStyles.control, style]}
+      style={[iconButtonStyles.control, iconButtonSizeStyles[size], style]}
       variant={variant}
     >
       {children}
@@ -115,96 +116,77 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     gap: theme.spacing[2],
     borderRadius: theme.metrics.control.radius,
-    variants: {
-      variant: {
-        primary: { backgroundColor: theme.color.button.primary },
-        secondary: { backgroundColor: theme.color.button.secondary },
-        outline: {
-          backgroundColor: "transparent",
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: theme.color.border.default,
-        },
-        ghost: { backgroundColor: "transparent" },
-        link: { minHeight: 0, paddingHorizontal: 0, backgroundColor: "transparent" },
-        destructive: { backgroundColor: theme.color.accent.negative },
-        hero: { backgroundColor: theme.color.button.primary },
-      },
-      size: {
-        sm: {
-          minHeight: buttonSizeMetrics.sm.height,
-          paddingHorizontal: buttonSizeMetrics.sm.horizontalPadding,
-        },
-        md: {
-          minHeight: buttonSizeMetrics.md.height,
-          paddingHorizontal: buttonSizeMetrics.md.horizontalPadding,
-        },
-        lg: {
-          minHeight: buttonSizeMetrics.lg.height,
-          paddingHorizontal: buttonSizeMetrics.lg.horizontalPadding,
-        },
-        toolbar: {
-          minHeight: buttonSizeMetrics.toolbar.height,
-          paddingHorizontal: buttonSizeMetrics.toolbar.horizontalPadding,
-        },
-      },
-      disabled: {
-        true: { opacity: theme.metrics.interaction.disabledOpacity },
-        false: { opacity: 1 },
-      },
-    },
   },
+  containerPrimary: { backgroundColor: theme.color.button.primary },
+  containerSecondary: { backgroundColor: theme.color.button.secondary },
+  containerOutline: { backgroundColor: "transparent", borderWidth: StyleSheet.hairlineWidth, borderColor: theme.color.border.default },
+  containerGhost: { backgroundColor: "transparent" },
+  containerLink: { minHeight: 0, paddingHorizontal: 0, backgroundColor: "transparent" },
+  containerDestructive: { backgroundColor: theme.color.accent.negative },
+  disabled: { opacity: theme.metrics.interaction.disabledOpacity },
+  sizeSm: { minHeight: buttonSizeMetrics.sm.height, paddingHorizontal: buttonSizeMetrics.sm.horizontalPadding },
+  sizeMd: { minHeight: buttonSizeMetrics.md.height, paddingHorizontal: buttonSizeMetrics.md.horizontalPadding },
+  sizeLg: { minHeight: buttonSizeMetrics.lg.height, paddingHorizontal: buttonSizeMetrics.lg.horizontalPadding },
+  sizeToolbar: { minHeight: buttonSizeMetrics.toolbar.height, paddingHorizontal: buttonSizeMetrics.toolbar.horizontalPadding },
   primaryPressed: { backgroundColor: theme.color.button.primaryHover },
   secondaryPressed: { backgroundColor: theme.color.button.secondaryHover },
   tertiaryPressed: { backgroundColor: theme.color.button.tertiaryHover },
   linkPressed: { opacity: theme.metrics.interaction.pressedOpacity },
   destructivePressed: { opacity: theme.metrics.interaction.pressedOpacity },
-  label: {
-    variants: {
-      variant: {
-        primary: { color: theme.color.button.primaryForeground },
-        secondary: { color: theme.color.text.primary },
-        outline: { color: theme.color.text.primary },
-        ghost: { color: theme.color.text.primary },
-        link: { color: theme.color.text.secondary, textDecorationLine: "underline" },
-        destructive: { color: theme.color.button.primaryForeground },
-        hero: { color: theme.color.button.primaryForeground },
-      },
-      size: {
-        sm: {
-          fontWeight: buttonSizeMetrics.sm.fontWeight,
-          fontSize: buttonSizeMetrics.sm.fontSize,
-          lineHeight: buttonSizeMetrics.sm.lineHeight,
-        },
-        md: {
-          fontWeight: buttonSizeMetrics.md.fontWeight,
-          fontSize: buttonSizeMetrics.md.fontSize,
-          lineHeight: buttonSizeMetrics.md.lineHeight,
-        },
-        lg: {
-          fontWeight: buttonSizeMetrics.lg.fontWeight,
-          fontSize: buttonSizeMetrics.lg.fontSize,
-          lineHeight: buttonSizeMetrics.lg.lineHeight,
-        },
-        toolbar: {
-          fontWeight: buttonSizeMetrics.toolbar.fontWeight,
-          fontSize: buttonSizeMetrics.toolbar.fontSize,
-          lineHeight: buttonSizeMetrics.toolbar.lineHeight,
-        },
-      },
-    },
-  },
+  labelPrimary: { color: theme.color.button.primaryForeground },
+  labelDefault: { color: theme.color.text.primary },
+  labelLink: { color: theme.color.text.secondary, textDecorationLine: "underline" as const },
+  labelSm: { fontWeight: buttonSizeMetrics.sm.fontWeight, fontSize: buttonSizeMetrics.sm.fontSize, lineHeight: buttonSizeMetrics.sm.lineHeight },
+  labelMd: { fontWeight: buttonSizeMetrics.md.fontWeight, fontSize: buttonSizeMetrics.md.fontSize, lineHeight: buttonSizeMetrics.md.lineHeight },
+  labelLg: { fontWeight: buttonSizeMetrics.lg.fontWeight, fontSize: buttonSizeMetrics.lg.fontSize, lineHeight: buttonSizeMetrics.lg.lineHeight },
+  labelToolbar: { fontWeight: buttonSizeMetrics.toolbar.fontWeight, fontSize: buttonSizeMetrics.toolbar.fontSize, lineHeight: buttonSizeMetrics.toolbar.lineHeight },
 }));
 
 const iconButtonStyles = StyleSheet.create({
-  control: {
-    paddingHorizontal: 0,
-    variants: {
-      size: {
-        sm: { width: buttonSizeMetrics.sm.height },
-        md: { width: buttonSizeMetrics.md.height },
-        lg: { width: buttonSizeMetrics.lg.height },
-        toolbar: { width: buttonSizeMetrics.toolbar.height },
-      },
-    },
-  },
+  control: { paddingHorizontal: 0 },
+  sm: { width: buttonSizeMetrics.sm.height },
+  md: { width: buttonSizeMetrics.md.height },
+  lg: { width: buttonSizeMetrics.lg.height },
+  toolbar: { width: buttonSizeMetrics.toolbar.height },
 });
+
+const containerVariantStyles: Record<ButtonVariant, ViewStyle> = {
+  primary: styles.containerPrimary,
+  secondary: styles.containerSecondary,
+  outline: styles.containerOutline,
+  ghost: styles.containerGhost,
+  link: styles.containerLink,
+  destructive: styles.containerDestructive,
+  hero: styles.containerPrimary,
+};
+
+const labelVariantStyles: Record<ButtonVariant, TextStyle> = {
+  primary: styles.labelPrimary,
+  secondary: styles.labelDefault,
+  outline: styles.labelDefault,
+  ghost: styles.labelDefault,
+  link: styles.labelLink,
+  destructive: styles.labelPrimary,
+  hero: styles.labelPrimary,
+};
+
+const containerSizeStyles: Record<ButtonSize, ViewStyle> = {
+  sm: styles.sizeSm,
+  md: styles.sizeMd,
+  lg: styles.sizeLg,
+  toolbar: styles.sizeToolbar,
+};
+
+const labelSizeStyles: Record<ButtonSize, TextStyle> = {
+  sm: styles.labelSm,
+  md: styles.labelMd,
+  lg: styles.labelLg,
+  toolbar: styles.labelToolbar,
+};
+
+const iconButtonSizeStyles: Record<ButtonSize, ViewStyle> = {
+  sm: iconButtonStyles.sm,
+  md: iconButtonStyles.md,
+  lg: iconButtonStyles.lg,
+  toolbar: iconButtonStyles.toolbar,
+};

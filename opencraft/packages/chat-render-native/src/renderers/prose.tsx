@@ -2,7 +2,7 @@ import type { ChatDocumentNode } from "@opencraft/chat-document";
 import type { ChatNodeRendererProps } from "@opencraft/chat-render-react";
 import type { ReactNode } from "react";
 import { Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet } from "../styles";
 
 function childContent(props: ChatNodeRendererProps): ReactNode {
   return "children" in props.node ? props.renderNodes(props.node.children) : null;

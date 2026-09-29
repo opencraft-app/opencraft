@@ -22,6 +22,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `headless-linux-amd64-tar` | Node Local Agent Host + Vite WebUI | Self-contained private server `.tar.gz` | Native Linux amd64 |
 | `expo-web` | Expo Router + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
+| `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
 
 The browser and Electron targets intentionally do not share a built `index.html`.
 They share source and chunks, but have different origin contracts. Electron
@@ -41,8 +42,19 @@ npm run matrix:build -- electron-linux-x64-appimage
 npm run matrix:build -- electron-linux-x64-rpm
 npm run matrix:build -- electron-linux-x64-deb
 npm run matrix:build -- headless-linux-amd64-tar
+npm run matrix:build -- expo-android-internal-apk
 npm run package:electron:mac:arm64:preview
 ```
+
+The Android internal target syncs an ignored native project, runs Gradle's
+`assembleRelease`, verifies its signature, and copies the standalone APK plus a
+SHA-256 file to `apps/workbench-expo/release/`. Expo's generated release
+configuration currently signs with its development keystore. This is suitable
+only for internal installation; it is not a Play Store signing or publication
+contract. `.github/workflows/android-internal-apk.yml` exposes a manual build
+and downloadable Actions artifact after this subtree reaches the standalone
+GitHub mirror; the nested workflow does not run in mono2. The local
+requirements and install command are in `apps/workbench-expo/README.md`.
 
 `electron-macos-universal-release` is an orchestrated delivery target rather
 than a single-host matrix command. `.github/workflows/macos-universal-release.yml`

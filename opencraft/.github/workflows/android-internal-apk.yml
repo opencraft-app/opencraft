@@ -1,0 +1,33 @@
+name: Android internal APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'build-tools;35.0.0' 'ndk;27.1.12297006' 'ndk;27.0.12077973' 'cmake;3.22.1'
+      - run: npm ci
+      - run: npm run matrix:check
+      - run: npm run matrix:build -- expo-android-internal-apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencraft-android-internal-apk
+          path: |
+            apps/workbench-expo/release/OpenCraft-android-internal.apk
+            apps/workbench-expo/release/OpenCraft-android-internal.apk.sha256
+          if-no-files-found: error
