@@ -1,3 +1,20 @@
+---
+id: mobile-responsive-sites-2026-09-29
+type: task
+scope: Domestic and international LightVela mobile browser layout fixes and MR review follow-up.
+triggers: ["mobile responsive", "international homepage", "MR 4829"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - https://git.woa.com/wisp/mono2/-/merge_requests/4829
+status: active
+reviewed_at: 2026-09-29
+review_due: 2026-10-06
+revision: 1.1.0
+precedence: task
+derived: false
+---
+
 ## goal
 改善 LightVela 国内站与国际站公开页面在移动浏览器中的布局、可读性与导航可达性。
 
@@ -27,6 +44,9 @@
 - `frontend/src/pages/marketing/changelog-page.tsx`
 - `frontend/src/pages/marketing/open-source-licenses-page.tsx`
 - `frontend/src/components/domain/tat-file-manager-panel.tsx`
+- `frontend/scripts/import-international-homepage.mjs`
+- `frontend/src/pages/marketing/__tests__/lightvela-intl-home-style.test.ts`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/`
 
 ## required_context
 - `site-environment-routing`、`frontend-product-surface`。
@@ -54,6 +74,11 @@
 - 另一次首页资源测试有 3 项既存失败：断言期待 `.png` 或旧文件名，HEAD 实际资源为 `.webp`；本次未改资源或断言。
 - 国内与国际站在最终代码上构建分别成功：105 与 616 个静态路由。
 - `validate_change_impact.py --staged` 与 `validate_documentation.py` 通过，后者无断链或告警。
+- MR !4829 的初始 CI 为 failure/block；本地复现 `check:mono2-agent-console` 因 `tat-file-manager-panel.tsx` 漂移失败。
+- 合入当前 `origin/master` 后，MR 自身改动仍为原六个文件；重新导入首页时可能覆盖的窄屏 CSS 已补进 importer，并新增样式断言。
+- 当前代码在 360px 国内首页实测 `scrollWidth=360`，品牌、登录入口和菜单不重叠；320px 日文、韩文首页均无页面级横向溢出。
+- 合入当前 master 后，首页样式、更新日志与文件页聚焦测试 47/47 通过；`pnpm check` 为 0 个新增 TypeScript 诊断。
+- 本 Task Pack 与 checkpoint 在 `validate_context.py` 中无新增条目；仓库其他历史 context 错误仍存在。
 
 ## risks
 - 首页静态片段含多种 locale，样式修复须验证至少中英文及长文案语言。
@@ -67,6 +92,7 @@
 - 先实测再改动；以页面级溢出和操作可达性作为优先级。
 - 首页保留操作入口，仅在 359px 以下压缩品牌图与菜单间距；中文长轮播词完整换行。
 - 文件页移动端不显示悬浮提示；按钮已有 `aria-label`，避免不可见提示撑宽页面。
+- 360px 已无溢出，保留 359px 断点；日文、韩文已有换行效果，不扩大语言选择器。
 
 ## scan_scope
 - `frontend/next-site/`、`frontend/src/components/site/`、`frontend/public/lightvela-intl-home/`。
@@ -75,4 +101,4 @@
 - 相关源码和邻接测试已做有界检索；后续记录浏览器矩阵。
 
 ## handoff
-- 本地修复与验证完成；用户已授权提交 MR，发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。
+- MR !4829 已打开；正在处理 CR 指出的 Opencraft 同步与生成态 CSS 持久性问题。发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。
