@@ -46,7 +46,14 @@
 - P2：兼容层 CSS 仍有多轮覆盖规则，后续可另案收敛；本次不扩大视觉重构范围。
 
 ## validation / evidence
-验证结果及未决项记录于本次 FE-AI change 的 report；提交前运行相关 Vitest、node:test、pnpm check、build:cn、build:global、diff 检查和 context 门禁。
+- 全新 `pnpm install --frozen-lockfile` 通过，未复用 node_modules 软链。
+- 首页/渲染/可访问性/头像四个相关 Vitest 文件 69/69；语言生成器 node:test 13/13。
+- `pnpm check`：TypeScript 166 current / 171 baseline / 0 new / 5 resolved；i18n 错误 0、既有告警 46。
+- `pnpm build:cn` 与 `pnpm build:global` 均通过，SEO 路由检查分别 8、42 条；素材转换后重复构建通过。
+- 新增浅紫 WebP 与原 PNG 的非透明像素及 alpha 完全一致；透明像素的不可见 RGB 被编码器清理。新增文件的字面量素材引用全部纳入 Git，无新增缺失路径。
+- `git diff --check`、三份 JS 语法检查、工蜂 Skill 校验、documentation validator、staged change-impact 通过。
+- Context 测试 22/26，4 项失败为原有 tasks 文档的 frontmatter/中文优先规则；报错文件未被本 MR 修改。context-audit 单测 33/33，审计发现已运行，不虚构成熟度分数。
+- 合入 `cfb478aef` 后确认前端与 Skill 文件未变化；本 MR 对 master 的差异不含合并带来的后端/GitOps 文件。
 
 ## risks / handoff
 本 MR 不代表上线。需要远端 CI 与人工 CR 后再决定合并；回滚通过反向提交本 MR 完成。原始素材和旧实验素材保留在本地，不随提交上传。
