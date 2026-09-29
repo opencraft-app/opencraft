@@ -193,6 +193,26 @@ describe("Agent settings navigation spacing", () => {
     const desktopNavigation = getBlockBody(styles, "\n.lv-agents-nav {");
     const desktopItem = getBlockBody(styles, "\n.lv-agents-nav-item {");
     const profileName = getBlockBody(styles, "\n.lv-agent-profile-name {");
+    const desktopMediaStart = styles.lastIndexOf("@media (min-width: 1024px) {");
+    const desktopStyles = desktopMediaStart < 0
+      ? undefined
+      : getBlockBody(styles.slice(desktopMediaStart), "@media (min-width: 1024px) {");
+    const desktopMiddleNavigation = getBlockBody(
+      desktopStyles ?? "",
+      "\n  .lv-agents-sidebar-middle .lv-agents-nav {",
+    );
+    const desktopMiddle = getBlockBody(
+      desktopStyles ?? "",
+      "\n  .lv-agents-sidebar-middle {",
+    );
+    const desktopMiddleGroupItems = getBlockBody(
+      desktopStyles ?? "",
+      "\n  .lv-agents-sidebar-middle .lv-agents-nav-group-items {",
+    );
+    const desktopMiddleItem = getBlockBody(
+      desktopStyles ?? "",
+      "\n  .lv-agents-sidebar-middle .lv-agents-nav-item {",
+    );
     const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
     const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n\n  .lv-agents-nav {");
     const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
@@ -204,6 +224,11 @@ describe("Agent settings navigation spacing", () => {
     expect(desktopItem).toContain("height: var(--lv-agents-nav-item-height);");
     expect(profileName).toContain("font-size: 14px;");
     expect(profileName).toContain("line-height: 20px;");
+    expect(desktopMiddle).toContain("--lv-agents-nav-group-gap: 4px;");
+    expect(desktopMiddle).toContain("--lv-agents-nav-item-gap: 0;");
+    expect(desktopMiddleNavigation).toContain("gap: var(--lv-agents-nav-group-gap);");
+    expect(desktopMiddleGroupItems).toContain("gap: var(--lv-agents-nav-item-gap);");
+    expect(desktopMiddleItem).toContain("font-size: 13px;");
     expect(mobileNavigation).toContain("gap: 12px;");
     expect(mobileItem).toContain("height: 36px;");
     expect(styles).toContain("@media (min-width: 1024px) and (max-height: 860px)");

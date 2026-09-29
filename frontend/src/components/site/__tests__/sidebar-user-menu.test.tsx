@@ -21,12 +21,14 @@ function Fixture(props: Partial<typeof data> = {}) {
 }
 
 describe("sidebar user menu presentation", () => {
-  it("opens from every part of the account row and never opens on hover", async () => {
+  it("opens from every part of the account row, including hover", async () => {
     const user = userEvent.setup();
     render(<Fixture />);
     const trigger = screen.getByRole("button", { name: "Open user menu" });
     await user.hover(trigger);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Account menu" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     const targets = [trigger.querySelector("img")!, screen.getByText("Agent Owner"),
       screen.getByText("Plan: Pro"), trigger.querySelector("svg")!, trigger];
     for (const target of targets) {
