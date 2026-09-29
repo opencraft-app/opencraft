@@ -8,7 +8,7 @@ authority: primary
 source_of_truth:
   - https://git.woa.com/wisp/mono2/-/merge_requests/4829
 status: active
-reviewed_at: 2026-09-29
+reviewed_at: 2026-09-30
 review_due: 2026-10-06
 revision: 1.1.0
 precedence: task
@@ -79,6 +79,8 @@ derived: false
 - 当前代码在 360px 国内首页实测 `scrollWidth=360`，品牌、登录入口和菜单不重叠；320px 日文、韩文首页均无页面级横向溢出。
 - 合入当前 master 后，首页样式、更新日志与文件页聚焦测试 47/47 通过；`pnpm check` 为 0 个新增 TypeScript 诊断。
 - 本 Task Pack 与 checkpoint 在 `validate_context.py` 中无新增条目；仓库其他历史 context 错误仍存在。
+- 源码补充提交 `19c26f518` 后运行 `sync:mono2-agent-console`，仅更新生成清单与 `tat-file-manager-panel.tsx` 副本；`check:mono2-agent-console` 输出 `Verified 130`。
+- 最终代码上 `build:cn` 与 `build:global` 分别生成 105、616 个路由，均通过 SEO/静态资源检查。
 
 ## risks
 - 首页静态片段含多种 locale，样式修复须验证至少中英文及长文案语言。
@@ -101,4 +103,4 @@ derived: false
 - 相关源码和邻接测试已做有界检索；后续记录浏览器矩阵。
 
 ## handoff
-- MR !4829 已打开；正在处理 CR 指出的 Opencraft 同步与生成态 CSS 持久性问题。发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。
+- MR !4829 已打开；CR 指出的 Opencraft 同步与生成态 CSS 持久性问题已在本地修复并通过门禁，待推送后核对远端状态。发布仍未授权。浏览器验证报告保存在本次 Codex 可视化目录。

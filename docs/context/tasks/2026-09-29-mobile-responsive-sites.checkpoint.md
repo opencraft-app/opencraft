@@ -8,7 +8,7 @@ authority: derived
 source_of_truth:
   - docs/context/tasks/2026-09-29-mobile-responsive-sites.md
 status: pilot
-reviewed_at: 2026-09-29
+reviewed_at: 2026-09-30
 review_due: 2026-10-06
 revision: 1.1.0
 precedence: task
@@ -16,7 +16,7 @@ derived: true
 ---
 
 ## stage
-MR !4829 已提交；正在处理 CR 意见。
+MR !4829 的 CR 问题已在本地修复，准备推送复核。
 
 ## verified
 - 独立工作树 `codex/mobile-responsive-sites` 基于 `4a3b49a`；主工作区未触碰。
@@ -28,6 +28,8 @@ MR !4829 已提交；正在处理 CR 意见。
 - 360px 国内首页实测无溢出或页头重叠；320px 日文、韩文首页无页面级横向溢出。
 - 首页导入脚本已纳入窄屏规则，样式测试 3/3 通过。
 - 合入当前 master 后，相关聚焦测试 47/47 通过，`pnpm check` 为 0 个新增 TypeScript 诊断。
+- Opencraft 同步后只改动生成清单和文件页副本，`check:mono2-agent-console` 输出 `Verified 130`。
+- 最新代码的国内与国际站构建通过，分别生成 105、616 个静态路由。
 
 ## unverified
 - 国际站登录后的控制台布局：本地认证 API 暂不可用。
@@ -41,4 +43,4 @@ MR !4829 已提交；正在处理 CR 意见。
 - 改动路径见 Task Pack `affected_paths`。
 
 ## next_action
-- 提交源码与 CR 跟进记录，再运行 Opencraft 同步及检查，单独提交生成物，复核本地门禁并推送 MR。
+- 单独提交生成物与验证记录，推送 MR !4829，并核对远端 SHA、合并状态和 CI 快照。
