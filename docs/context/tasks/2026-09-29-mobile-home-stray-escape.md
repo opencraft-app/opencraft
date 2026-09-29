@@ -67,7 +67,8 @@
 - `pnpm check` 通过（TypeScript 0 个新增诊断）；`pnpm build` 和 `pnpm build:global` 均通过。
 - 国际站静态构建的 `out/index.html` 中字面量 `\\n` 计数为 0；9 个片段回归测试全部覆盖。
 - `validate_change_impact.py --repo . --staged` 通过；无映射的正式设计或 owner CR 强制项。
-- 待补：预览验收。
+- 双站预览首页均返回 HTTP 200：`https://mobile-stray-escape-20260929.preview.lightclaw.tech/`、`https://intl-mobile-stray-escape-20260929.preview.lightclaw.tech/`。
+- 预览 HTML 中字面量 `\\n` 计数两站均为 0；各自 master 预览均为 1。浏览器可见的源文本已消失。
 
 ## decisions
 
@@ -80,7 +81,7 @@
 - 源/目标：`frontsandbox/mobile-stray-escape-20260929` → `master`
 - 描述：清除国内与国际首页各 locale 静态片段页脚后的字面量 `\\n`；导入器剔除来源文件独立的同类文本节点；补全 locale 回归测试。
 - 验证：聚焦回归 1/1、`pnpm check`、国内与国际生产构建、变更影响检查通过；相关套件 64/67，3 项旧 PNG→WEBP 断言失败。
-- 风险：预览发布后需双站移动端实际验收；无需后端或数据迁移。
+- 风险：最终移动端视觉验收仍由用户确认；无需后端或数据迁移。
 
 ## scan_scope
 
@@ -92,4 +93,4 @@
 
 ## handoff
 
-- 当前：实现、提交前 CR、聚焦回归与双站构建完成；继续预览推送和双站移动端验收。MR 草稿已准备，创建需用户确认。
+- 当前：实现、提交前 CR、聚焦回归、双站构建与双站预览 HTML 验收完成。MR 草稿已准备，创建需用户确认。
