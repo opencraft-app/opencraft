@@ -477,13 +477,13 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     } as const;
     const expectedAlwaysOnCopy = {
-      "en-US": "Work keeps finishing even after you step away.",
+      "en-US": "Work continues even when you step away.",
       "zh-SG": "即使你离开，任务也会继续完成。",
       "zh-Hant": "即使你離開，任務也會繼續完成。",
-      "id-ID": "Pekerjaan tetap berjalan sampai selesai meski Anda pergi.",
-      es: "El trabajo sigue completándose aunque te vayas.",
-      "ja-JP": "あなたが離れても、タスクは最後まで完了します。",
-      "ko-KR": "자리를 비워도 작업은 끝까지 완료됩니다.",
+      "id-ID": "Tugas terus berjalan saat Anda pergi.",
+      es: "El trabajo continúa aunque te ausentes.",
+      "ja-JP": "離れていてもタスクは進みます。",
+      "ko-KR": "자리를 비워도 작업은 계속됩니다.",
     } as const;
     const expectedCardAssets = {
       "en-US": [],
@@ -495,22 +495,22 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": [],
     } as const;
     const expectedAutomationPanelAsset = {
-      "en-US": "automation-templates-panel-en.png",
-      "zh-SG": "automation-templates-panel.png",
-      "zh-Hant": "automation-templates-panel-zh-Hant.png",
-      "id-ID": "automation-templates-panel-id.png",
-      es: "automation-templates-panel-es.png",
-      "ja-JP": "automation-templates-panel-ja.png",
-      "ko-KR": "automation-templates-panel-ko.png",
+      "en-US": "automation-templates-panel-en.webp",
+      "zh-SG": "automation-templates-panel.webp",
+      "zh-Hant": "automation-templates-panel-zh-Hant.webp",
+      "id-ID": "automation-templates-panel-id.webp",
+      es: "automation-templates-panel-es.webp",
+      "ja-JP": "automation-templates-panel-ja.webp",
+      "ko-KR": "automation-templates-panel-ko.webp",
     } as const;
     const expectedProductPanelAssets = {
-      "en-US": [expectedAutomationPanelAsset["en-US"], "workbench-panel-en.png"],
-      "zh-SG": [expectedAutomationPanelAsset["zh-SG"], "workbench-screenshot.png"],
-      "zh-Hant": [expectedAutomationPanelAsset["zh-Hant"], "workbench-screenshot.png"],
-      "id-ID": [expectedAutomationPanelAsset["id-ID"], "workbench-panel-id.png"],
-      es: [expectedAutomationPanelAsset.es, "workbench-panel-es.png"],
-      "ja-JP": [expectedAutomationPanelAsset["ja-JP"], "workbench-panel-ja.png"],
-      "ko-KR": [expectedAutomationPanelAsset["ko-KR"], "workbench-panel-ko.png"],
+      "en-US": [expectedAutomationPanelAsset["en-US"], "workbench-panel-en.webp"],
+      "zh-SG": [expectedAutomationPanelAsset["zh-SG"], "workbench-screenshot.webp"],
+      "zh-Hant": [expectedAutomationPanelAsset["zh-Hant"], "workbench-screenshot.webp"],
+      "id-ID": [expectedAutomationPanelAsset["id-ID"], "workbench-panel-id.webp"],
+      es: [expectedAutomationPanelAsset.es, "workbench-panel-es.webp"],
+      "ja-JP": [expectedAutomationPanelAsset["ja-JP"], "workbench-panel-ja.webp"],
+      "ko-KR": [expectedAutomationPanelAsset["ko-KR"], "workbench-panel-ko.webp"],
     } as const;
     const expectedNavLabels = {
       "en-US": ["Home", "Pricing", "Changelog", "Docs", "About"],
@@ -583,7 +583,7 @@ describe("international v2 homepage artifact", () => {
         );
       }
       if (["zh-SG", "zh-Hant"].includes(locale)) {
-        expect(document.querySelectorAll('.workspace-carousel__slide[src$=".zh-CN.png"]')).toHaveLength(6);
+        expect(document.querySelectorAll('.workspace-carousel__slide[src$=".zh-CN.webp"]')).toHaveLength(6);
       }
       const automationDeliveries = Array.from(
         document.querySelectorAll(".aut__bubble--delivery"),
@@ -833,8 +833,8 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelector(".foot__title em.foot__signature")?.textContent).toBe("Hermes Agent");
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("Hand your ideas to Hermes Agent,");
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("keep them moving in the cloud.");
-    // 英文文案大小写统一为 `My AI Companion`（issue #73 红线）
-    expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("My AI Companion");
+    // Static fallback follows the approved trial CTA; the session runtime remains authoritative.
+    expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("Free trial");
     expect(footer?.querySelector(".foot__cta a span")).not.toBeNull();
     expect(footer?.querySelectorAll(".foot__links-grid > div")).toHaveLength(6);
     expect(footer?.querySelectorAll(".foot__brand-copy")).toHaveLength(0);
@@ -889,13 +889,13 @@ describe("international v2 homepage artifact", () => {
     const expectedByLocale = {
       "zh-SG": {
         title: ["把想法交给 Hermes Agent，", "让它们在云端持续推进。"],
-        cta: "我的智能体伙伴",
+        cta: "免费试用",
         headings: ["产品", "对比", "社区", "公司", "相关产品"],
         links: ["1 个月免费试用", "定价", "接入 WhatsApp 指引", "与本地部署对比", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
       },
       "zh-Hant": {
         title: ["把想法交給 Hermes Agent，", "讓它們在雲端持續推進。"],
-        cta: "我的智能體夥伴",
+        cta: "免費試用",
         headings: ["產品", "對比", "社群", "公司", "相關產品"],
         links: ["1 個月免費試用", "定價", "接入 WhatsApp 指引", "與本地部署對比", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
       },
@@ -951,15 +951,6 @@ describe("international v2 homepage artifact", () => {
       "ja-JP": "常時稼働するクラウドエージェント",
       "ko-KR": "상시 실행 클라우드 에이전트",
     } as const;
-    const expectedEmphasis = {
-      "en-US": ["keeps finishing"],
-      "zh-SG": ["继续完成"],
-      "zh-Hant": ["繼續完成"],
-      "id-ID": ["berjalan sampai selesai"],
-      es: ["sigue completándose"],
-      "ja-JP": ["最後まで完了"],
-      "ko-KR": ["끝까지 완료"],
-    } as const;
 
     for (const locale of publishedInternationalLocales) {
       const document = new DOMParser().parseFromString(
@@ -974,80 +965,32 @@ describe("international v2 homepage artifact", () => {
         Array.from(runtimeCard?.querySelectorAll(".wcard__body p b") ?? [], (element) =>
           element.textContent?.trim(),
         ),
-      ).toEqual(expectedEmphasis[locale]);
+      ).toEqual([]);
+      expect(runtimeCard?.querySelector(".wcard__body p")?.textContent?.trim()).toBeTruthy();
     }
   });
 
-  it("ships capability cards that stay readable until the section enters the viewport", () => {
+  it("ships seven readable capability cards with approved motion and artwork", () => {
     const document = parseFragment();
     const cards = Array.from(document.querySelectorAll(".about__cards .wcard"));
-    expect(cards).toHaveLength(6);
-
-    /* 每张卡都有一次性动画时长与 Hover 重播时长，静止时停在完成帧 */
-    for (const card of cards) {
-      const demo = card.querySelector(".wcard__demo");
-      expect(demo, "card demo").not.toBeNull();
-      expect(Number(demo?.getAttribute("data-dur"))).toBeGreaterThan(0);
-      expect(Number(demo?.getAttribute("data-replay"))).toBeGreaterThan(0);
-    }
-
-    /* 渠道卡复用仓库内的真实 Logo，其他演示仍使用 SVG/DOM。 */
-    const html = readFileSync(fragmentPath, "utf8");
-    expect(html).not.toContain("wcard-apps-");
-    const cardImages = Array.from(document.querySelectorAll(".about__cards .wcard img"));
-    expect(cardImages).toHaveLength(22);
-    expect(document.querySelectorAll(".chnloop__viewport")).toHaveLength(1);
-    expect(document.querySelectorAll(".chnloop__list:first-child .chnloop__item")).toHaveLength(8);
-    expect(document.querySelectorAll(".channel-stack")).toHaveLength(1);
-    expect(document.querySelector(".channel-approval__title")?.textContent).toContain("Confirm before acting");
-    expect(html).not.toContain("memory-preference");
-    expect(document.querySelectorAll(".channel-approval__bubble")).toHaveLength(2);
-    expect(document.querySelector(".channel-approval__bubble--agent")?.textContent).toContain("Confirm delete");
-    expect(document.querySelectorAll(".channel-approval__actions")).toHaveLength(0);
-    expect(html).not.toContain("wcard-folder-");
-
-    /* 每张卡使用不同的演示结构，避免退化成统一骨架屏模板 */
-    expect(document.querySelector(".chnloop")).not.toBeNull();
-    expect(document.querySelectorAll(".cld__flow-line")).toHaveLength(5);
-    expect(document.querySelector(".cld__sent circle")).not.toBeNull();
-    expect(document.querySelector(".aut__bar")).toBeNull();
-    expect(document.querySelectorAll(".aut__conversation .aut__case")).toHaveLength(3);
-    expect(document.querySelectorAll(".aut__conversation .aut__bubble")).toHaveLength(9);
-    expect(document.querySelector(".aut__case--1 .aut__bubble--user")?.textContent).toContain("09:00");
-    expect(document.querySelector(".skwall")).not.toBeNull();
-    expect(cards[3].querySelectorAll(".workspace-carousel__slide")).toHaveLength(6);
-    expect(cards[1].querySelector(".cloud-status")?.textContent).toContain("24/7");
-    expect(document.querySelector(".memory-reel")).toBeNull();
-    expect(document.querySelectorAll(".memory-md")).toHaveLength(1);
-    expect(cards[5].querySelectorAll(".memory-md__line")).toHaveLength(2);
-    expect(cards[5].querySelector(".memory-md__saved")).not.toBeNull();
-    expect(cards[5].querySelector(".mem")).toBeNull();
-
-    /* 整卡可点：主卡运行机制 / 渠道 / 自动化 / 权限 / 记忆 / 工作台 */
-    expect(
-      cards.map((card) => card.querySelector(".wcard__more")?.getAttribute("href")),
-    ).toEqual([
-      "/agents/channels",
-      "/",
-      "/agents/automations",
-      "/agents/websites/",
-      "/agents/skills",
-      "/agents/memory",
+    expect(cards).toHaveLength(7);
+    expect(document.querySelectorAll('.feature-motion-channel')).toHaveLength(12);
+    expect(document.querySelectorAll('.feature-task__case')).toHaveLength(3);
+    expect(document.querySelectorAll('.feature-motion-skills .feature-skill')).toHaveLength(7);
+    expect(document.querySelectorAll('.feature-motion-workspace svg circle')).toHaveLength(2);
+    expect(document.querySelector('.feature-motion-wave img')?.getAttribute('src')).toContain('figma-feature-memory-wave.webp');
+    expect(document.querySelectorAll('.wcard--confirm .feature-copy-preview span')).toHaveLength(2);
+    expect(document.querySelectorAll('.wcard__body > p')).toHaveLength(2);
+    expect(document.querySelector('.home-cover-mascot img')?.getAttribute('src')).toContain('lv-cover-lavender.webp');
+    expect(cards.slice(0,6).map(card => card.querySelector('.wcard__more')?.getAttribute('href'))).toEqual([
+      '/agents/channels', '/', '/agents/automations', '/agents/websites/', '/agents/skills', '/agents/memory',
     ]);
-
-    const runtime = readFileSync(runtimePath, "utf8");
-    expect(runtime).toContain("new IntersectionObserver(");
-    expect(runtime).toContain("intersectionRatio < 0.4");
-    expect(runtime).toContain("intersectionRatio < 0.6");
-    expect(runtime).toContain('setAttribute("data-motion"');
-    expect(runtime).toContain("prefers-reduced-motion: reduce");
-
-    const css = readFileSync(stylesheetPath, "utf8");
-    expect(css).toMatch(/#lightvela-intl-home \.about__inner\s*\{[^}]*max-width:\s*var\(--shell\);/s);
-    expect(css).toMatch(/#lightvela-intl-home \.wcard__inner\s*\{[^}]*border-radius:\s*24px;/s);
-    expect(css).toMatch(/grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/);
-    expect(css).not.toMatch(/grid-template-columns:\s*repeat\(100,/);
-    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+    const motion = readFileSync(path.join(homeRoot, 'assets/feature-motion.js'), 'utf8');
+    const css = readFileSync(path.join(homeRoot, 'assets/hermes-home.css'), 'utf8');
+    expect(motion).toContain('IntersectionObserver');
+    expect(motion).toContain('prefers-reduced-motion');
+    expect(css).toContain('animation-play-state: running');
+    expect(css).toContain('prefers-reduced-motion');
   });
 
   it("keeps the imported reset inside the international homepage root", () => {
@@ -1292,16 +1235,27 @@ describe("international v2 homepage artifact", () => {
       ],
     } as const;
 
+    const confirmationTitles: Record<string, string> = {
+      "index-fragment.html": "Confirm important actions first",
+      "index-fragment.en-US.html": "Confirm important actions first",
+      "index-fragment.zh-CN.html": "重要动作先确认",
+      "index-fragment.zh-SG.html": "重要动作先确认",
+      "index-fragment.zh-Hant.html": "重要動作先確認",
+      "index-fragment.id-ID.html": "Konfirmasi tindakan penting",
+      "index-fragment.es.html": "Confirma las acciones importantes",
+      "index-fragment.ja-JP.html": "重要な操作は先に確認",
+      "index-fragment.ko-KR.html": "중요한 작업은 먼저 확인",
+    };
     for (const [fragmentName, titles] of Object.entries(expectedCapabilityTitles)) {
       const document = new DOMParser().parseFromString(
         readFileSync(path.join(homeRoot, fragmentName), "utf8"),
         "text/html",
       );
-      expect(document.querySelectorAll(".about__cards .wcard"), `${fragmentName} capability cards`).toHaveLength(6);
+      expect(document.querySelectorAll(".about__cards .wcard"), `${fragmentName} capability cards`).toHaveLength(7);
       expect(
         Array.from(document.querySelectorAll(".about__cards .wcard h4"), (heading) => heading.textContent?.trim()),
         `${fragmentName} capability titles`,
-      ).toEqual(titles);
+      ).toEqual([...titles.slice(0, 3), ...titles.slice(4), confirmationTitles[fragmentName]]);
     }
   });
 
@@ -1436,14 +1390,14 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": ["DeepSeek Harness 원클릭 배포", "바로 사용할 수 있고 클라우드에서 항상 온라인입니다.", "안전한 WebUI"],
     } as const;
     const deepSeekVisuals = {
-      "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.png?v=20260901-deepseek-ui",
+      "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.webp?v=20260901-deepseek-ui",
       "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260904-harness-sharp",
       "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260904-harness-sharp",
       "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260904-harness-sharp",
-      "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.png?v=20260901-deepseek-ui",
-      es: "/lightvela-intl-home/assets/deepseek-harness-es.png?v=20260901-deepseek-ui",
-      "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.png?v=20260901-deepseek-ui",
-      "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.png?v=20260901-deepseek-ui",
+      "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.webp?v=20260901-deepseek-ui",
+      es: "/lightvela-intl-home/assets/deepseek-harness-es.webp?v=20260901-deepseek-ui",
+      "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.webp?v=20260901-deepseek-ui",
+      "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.webp?v=20260901-deepseek-ui",
     } as const;
 
     for (const locale of publishedInternationalLocales) {
