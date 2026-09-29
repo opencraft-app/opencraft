@@ -23,6 +23,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `expo-web` | Expo Router + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
 | `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
+| `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | `com.tencent.vela` APK and filing text | Linux with JDK, Android SDK and release key |
 
 The browser and Electron targets intentionally do not share a built `index.html`.
 They share source and chunks, but have different origin contracts. Electron
@@ -43,6 +44,10 @@ npm run matrix:build -- electron-linux-x64-rpm
 npm run matrix:build -- electron-linux-x64-deb
 npm run matrix:build -- headless-linux-amd64-tar
 npm run matrix:build -- expo-android-internal-apk
+OPENCRAFT_ANDROID_RELEASE_KEYSTORE=/secure/path/release.p12 \
+OPENCRAFT_ANDROID_RELEASE_PASSWORD_FILE=/secure/path/password.txt \
+OPENCRAFT_ANDROID_RELEASE_KEY_ALIAS=lightvela-com-tencent-vela-release \
+  npm run matrix:build -- expo-android-release-apk
 npm run package:electron:mac:arm64:preview
 ```
 
@@ -55,6 +60,15 @@ contract. `.github/workflows/android-internal-apk.yml` exposes a manual build
 and downloadable Actions artifact after this subtree reaches the standalone
 GitHub mirror; the nested workflow does not run in mono2. The local
 requirements and install command are in `apps/workbench-expo/README.md`.
+
+The separate Android release target selects `com.tencent.vela`, requires a
+repository-external production keystore, verifies the package ID and APK
+signature against that keystore, and writes both the APK and filing values.
+It never falls back to the internal development key. The certificate MD5 and
+APK file MD5 are different values. The [Expo mobile route](../apps/workbench-expo/README.md#手机端路线)
+also covers the temporary Expo Go preview, iOS test IPA and single-file
+intranet download flow. An iOS IPA needs macOS, Xcode, CocoaPods and Apple
+signing; `expo-ios-bundle` does not produce an IPA.
 
 `electron-macos-universal-release` is an orchestrated delivery target rather
 than a single-host matrix command. `.github/workflows/macos-universal-release.yml`

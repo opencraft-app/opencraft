@@ -30,8 +30,10 @@
 | 平台、AppServer、Chat Runtime、Workbench、扩展 | [platform-architecture](docs/platform-architecture.md) 与命中的专题文档 |
 | 工作区、工具面板、浮动聊天、Side Chat | [design](design/README.md)；实现变更同步维护 `design/invariants.md` |
 | OpenCraft 架构、交互、布局、平台适配或预览 | [opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)，按任务读取其验证清单 |
-| 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
 | iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先核对外网 manifest 和完整 bundle，再给 `exps://` 链接，提醒用 Safari 打开。手机操作见 [Expo README](apps/workbench-expo/README.md#iphone-真机快速体验) |
+| Android 内测、正式 APK，或 iOS 测试 IPA | 先读 [手机端路线](apps/workbench-expo/README.md#手机端路线) 和 [构建矩阵](docs/build-matrix.md)；按目标选择签名、包名及验证步骤 |
+| Android 备案资料或临时内网下载 | [Android 正式 APK](apps/workbench-expo/README.md#android-lightvela-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
+| 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
 | mono2 Agent Console 共享实现 | [MONO2_MIGRATION](MONO2_MIGRATION.md)、`frontend/AGENTS.md`；同步边界还读 `../docs/context/project/upstream-subtrees.md` |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/build-matrix.md) |
 
@@ -39,8 +41,10 @@
 
 ## 手机端入口
 
-- iOS 当前是 HeroUI Native 登录与底栏，加 LightVela 网站 WebView；真机可用 Expo Go 打开开发预览。Android 当前是独立 React Native 工作台，内测 APK 的安装步骤见 [Expo README](apps/workbench-expo/README.md#android-internal-apk)。
-- iPhone 外网预览以已核验的 `exps://` 链接为入口，在 Safari 打开并跳转 Expo Go；不要让使用者依赖 Expo Go 的开发服务器列表。预览依赖持续运行的 Metro 与 Cloudflare Tunnel，链接过期或进程退出后须重新生成并核验。
+- iOS 当前是 HeroUI Native 登录与底栏，加 LightVela 网站 WebView；Android 是独立 React Native 工作台。手机平台、构建方式和产物先按 [Expo 路线表](apps/workbench-expo/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
+- iPhone 外网预览使用已核验的 `exps://` 链接，在 Safari 打开并跳转 Expo Go；Metro 与 Cloudflare Tunnel 必须持续运行，链接失效时重新生成并核验。
+- Android 内测包为 `dev.vela.workbench`，使用开发签名；正式包为 `com.tencent.vela`，必须使用仓库外的正式密钥。iOS 测试 IPA 须在有 Xcode 和 Apple 签名的 Mac 上构建。更换包名或密钥后，从**新成品**重新提取备案值。
+- 本地 APK/IPA 打包、备案资料和临时内网下载不等于 GitOps 发布。交接时分别报告源码 checkout、包名、签名证书摘要、APK 文件摘要、安装验证和下载进程状态；私钥与密码不得进入仓库、日志或下载目录。
 
 ## 代码与 Contract
 

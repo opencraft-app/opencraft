@@ -32,9 +32,20 @@ OpenCraft follows the same model without copying either product's filenames.
 | Project workspace | Explicit Project/Thread cwd | Project catalog / Thread | User-owned files |
 | Projectless workspace | `<product-home>/workspaces/<stable-id>` | Conversation creation transaction | Durable until explicitly removed |
 
-The installed application ID may remain `ai.lightvela.vela` and the iOS bundle
-ID may remain `dev.vela.workbench` until a separately planned installation
-migration. Bundle compatibility does not authorize a Vela-named data root.
+Installation IDs are explicit per platform and build profile:
+
+| Host/profile | Identifier |
+|---|---|
+| Desktop installed app | `ai.lightvela.vela` |
+| Android Expo Go and internal APK | `dev.vela.workbench` |
+| Android LightVela signed release APK | `com.tencent.vela` |
+| iOS development and internal IPA | `dev.vela.workbench` |
+| iOS LightVela test IPA | `ai.lightvela.vela` |
+
+The Expo release profiles are selected by `OPENCRAFT_ANDROID_RELEASE=1` and
+`OPENCRAFT_IOS_RELEASE=1` in `apps/workbench-expo/app.config.js`. A changed
+identifier is a separate installation; it does not update the old package.
+Bundle compatibility does not authorize a Vela-named data root.
 
 ### Authority rules
 

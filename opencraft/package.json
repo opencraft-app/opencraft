@@ -80,6 +80,7 @@
     "build:expo:ios": "npm run bundle:ios --workspace @opencraft/workbench-expo",
     "build:expo:ios:ipa": "npm run build:ios:ipa --workspace @opencraft/workbench-expo",
     "build:expo:android:apk": "npm run build:android:apk --workspace @opencraft/workbench-expo",
+    "build:expo:android:release": "npm run build:android:release --workspace @opencraft/workbench-expo",
     "matrix:list": "node scripts/build-matrix.mjs list",
     "matrix:check": "node scripts/build-matrix.mjs check",
     "matrix:build": "node scripts/build-matrix.mjs build",

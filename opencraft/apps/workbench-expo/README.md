@@ -8,6 +8,18 @@ The `workbench-frame.web.tsx` and `workbench-frame.native.tsx` files are host
 adapters with a shared semantic component underneath. DOM-only packages such as
 ProseMirror and the Codex SCSS frame are intentionally unavailable here.
 
+## 手机端路线
+
+| 要做什么 | 标识与产物 | 从哪里开始 |
+|---|---|---|
+| iPhone 体验当前代码 | Expo Go 临时预览，依赖持续运行的 Metro | [真机快速体验](#iphone-真机快速体验) |
+| Android 内测安装 | `dev.vela.workbench`，开发签名 APK | [Android 内测 APK](#android-internal-apk) |
+| Android 正式包与备案 | `com.tencent.vela`，独立正式签名 APK、公钥与 MD5 | [Android 正式 APK](#android-lightvela-release-apk) |
+| iOS 可安装测试包 | 内测 `dev.vela.workbench`；LightVela 测试包 `ai.lightvela.vela` | [iOS IPA](#ios-site-shell-and-simulator) |
+
+Expo Go 链接、Android APK 和 iOS IPA 是不同交付物。每次交付都从当前
+checkout 构建并验证成品；构建成功本身不代表已经安装、上架或发布。
+
 ## iPhone 真机快速体验
 
 当前 iOS 版是 HeroUI Native 登录页和底栏，登录后在 App 内打开所选站点的网页。Android 版仍是独立的 React Native 工作台；它的内测 APK 见下文。
@@ -104,6 +116,20 @@ Set `OPENCRAFT_IOS_EXPORT_METHOD=ad-hoc` for registered test devices; the
 default is `development`. Apple signing and device installation cannot be
 verified on Linux.
 
+要构建 LightVela 标识的 iOS 测试 IPA，在干净 checkout 的 Mac 上设置
+`OPENCRAFT_IOS_RELEASE=1`，并提供已注册 `ai.lightvela.vela` 的 Apple
+Developer Team：
+
+```bash
+OPENCRAFT_IOS_RELEASE=1 APPLE_TEAM_ID=YOUR_TEAM_ID \
+  OPENCRAFT_IOS_EXPORT_METHOD=ad-hoc npm run build:expo:ios:ipa
+```
+
+该命令生成 `apps/workbench-expo/release/LightVela-ios-internal.ipa`；
+`ad-hoc` 需要测试设备 UDID 和有效的签名配置。现有脚本只导出 development
+或 ad-hoc 测试包，不会生成 App Store 分发 IPA。Mac、Xcode、CocoaPods
+与 Apple 签名缺一不可；Linux 上的 JS bundle 检查不能代替 IPA 验证。
+
 ## Native LightVela login
 
 The iOS app uses the existing `GET https://api.lightvela.ai/oauth2/authorize` page and
@@ -167,3 +193,45 @@ the APK as an artifact. The nested workflow does not execute in mono2 and does
 not publish to a store or GitHub Release. Installing the APK does not require
 Metro; sign-in still requires the native LightVela login server contract
 described above.
+
+## Android LightVela release APK
+
+正式 Android 包名是 `com.tencent.vela`，显示名称和图标为 LightVela。
+Expo Go 与内测 APK 仍使用 `dev.vela.workbench`。正式签名 PKCS12 密钥库和
+密码文件必须保存在仓库外，并由负责人安全备份；后续更新同一包名须沿用同一密钥。
+使用 Linux、JDK 17 和上文的 Android SDK，设置 `JAVA_HOME`、
+`ANDROID_HOME`、`GRADLE_USER_HOME`，再从 OpenCraft 根目录运行：
+
+```bash
+export OPENCRAFT_ANDROID_RELEASE_KEYSTORE=/secure/path/lightvela-release.p12
+export OPENCRAFT_ANDROID_RELEASE_PASSWORD_FILE=/secure/path/keystore-password.txt
+export OPENCRAFT_ANDROID_RELEASE_KEY_ALIAS=lightvela-com-tencent-vela-release
+npm run build:expo:android:release
+```
+
+构建会重新生成忽略的 `android/` 工程，将 release variant 改为正式签名，
+校验 APK 的包名和签名证书。产物位于 `apps/workbench-expo/release/`：
+
+- `LightVela-com.tencent.vela-android-release.apk`：可安装包，旁边有 SHA-256 文件。
+- `LightVela-com.tencent.vela-filing.txt`：包名、**签名证书 MD5**、**APK 文件 MD5**、Base64 公钥。
+- `LightVela-com.tencent.vela-public-key.pem` 和 `-signing-cert.der`：可交接的公钥与公开证书，均不包含私钥。
+
+备案表若只写“MD5”，先确认要求的是签名证书还是 APK 文件；两者不同。
+更换密钥或重新构建 APK 后，应重新从新产物读取这些值，不沿用旧资料。
+在有 Android 设备时安装新包验证：
+
+```bash
+adb install -r apps/workbench-expo/release/LightVela-com.tencent.vela-android-release.apk
+```
+
+需要在内网提供临时下载链接时，让服务在持续运行的终端中启动：
+
+```bash
+python3 apps/workbench-expo/scripts/serve-android-release-apk.py --bind 0.0.0.0 --port 8765
+```
+
+用 `hostname -I` 找到可达的内网 IP，将
+`http://<内网 IP>:8765/LightVela-com.tencent.vela.apk` 发给测试者。
+先用 `curl -I` 检查 HTTP 200 和文件长度，再下载核对 SHA-256。
+服务只开放这一个 APK 路径；签名密钥和密码不得放进下载目录。
+关闭终端或服务器进程后，链接即失效。该流程不执行上架或公开发布。
