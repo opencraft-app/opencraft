@@ -29,13 +29,7 @@
     var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');
     if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];
     var index = 0;
-    var measurer = el.cloneNode(false);
-    measurer.removeAttribute('id');
-    measurer.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;white-space:nowrap;overflow:visible;';
-    el.parentNode.appendChild(measurer);
-    function measure(word) { measurer.textContent = word; return measurer.offsetWidth; }
     el.textContent = words[index];
-    wrap.style.width = measure(words[index]) + 'px';
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     var rotateTimer = 0;
     var changeTimer = 0;
@@ -54,8 +48,6 @@
     function applyWord(word) {
       el.textContent = word;
       el.setAttribute('data-word', word);
-      var width = measure(word);
-      if (width > 0) wrap.style.width = width + 'px';
     }
     applyWord(words[index]);
     function scheduleRotate(delay) {
