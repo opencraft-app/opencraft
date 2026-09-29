@@ -40,6 +40,7 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 ## acceptance
 - Gateway access logs distinguish request-context cancellation, inbound body read failure, and upstream transport failure, including bounded body-byte and declared-length diagnostics.
 - Tests cover canceled downstream, truncated body, and secret-free error output; Go package tests and release contract gates pass.
+- Timing tests cover cancellation before response headers, a response with body bytes, and an empty response. Missing milestones remain absent rather than reporting zero.
 - Release, if performed, is verified against the intended image digest, Argo revision, and traffic Deployment health.
 
 ## affected_paths
@@ -62,6 +63,9 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 | `velagw/MONO2_SUBTREE.md@working-tree` | Upstream and release boundary | Preserve subtree workflow |
 | `.ci/AGENTS.md@working-tree` | CI/production authorization | Manual Shanghai sync |
 | `docs/context/project/adjacency/argocd-ci-secrets.md@1.0.0` | Release neighbors | Check service overlay and contract test |
+| `docs/context/project/services/frontend.md@2.1.0` | Router must-read (false-positive header match) | Confirm no frontend change |
+| `docs/context/tasks/2026-09-29-velagw-proxy-error-diagnostics.md@working-tree` | Existing diagnostic task | Extend scope without changing proxy behavior |
+| `docs/engineering/domains/agent-gateway-runtime.md@working-tree` | Formal design source | Document timing semantics and limits |
 
 ## evidence
 - Before change, a recent 15-minute NewAPI sample had hundreds of 400 `unexpected EOF`, no NewAPI 5xx, and 429 channel errors largely recovered to 200. VelaGW logs report `upstream_roundtrip_error` 502 without original transport/context detail.
@@ -71,6 +75,7 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 
 ## risks
 - Diagnostic logs could leak credentials or produce excess cardinality: use fixed error categories and byte counts only; do not log raw request/error strings.
+- Timing fields contain only millisecond counts. A missing response-header/first-byte field means that milestone was not observed, not that NewAPI never received the request or that first-token latency is proven.
 - The worktree contains unrelated observability edits: stage and review only scoped files.
 - Production rollout can disrupt traffic: use the existing manual Shanghai GitOps path and verify image/health before declaring completion.
 
@@ -83,9 +88,11 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 - `python3 .agents/context/scripts/validate_context.py --build-catalog`: failed due to numerous pre-existing task-pack schema and secret-scan findings. Follow-up scoped check found no findings for either new task document; generated catalog output was restored.
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`: passed; owner review required for the `agent-gateway-runtime` mapping.
 - Live log inspection after release, if authorized and reachable.
+- On 2026-09-30, `go test ./...` and `go vet ./...` passed for the timing-only extension. No new image or production release has been made for this extension.
 
 ## decisions
 - Add observability only; do not infer a culprit from `unexpected EOF` alone.
+- On 2026-09-30, extend observability with RoundTrip completion, response-header, and first-response-body-byte durations; retain the existing proxy behavior and do not equate a body byte with a model token.
 
 ## scan_scope
 - `velagw/internal/gateway/`, `argocd/services/velagw/shprod/`, `.ci/velagw.yml`.
