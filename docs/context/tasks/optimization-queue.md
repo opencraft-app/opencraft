@@ -21,6 +21,7 @@
 - [OPT-003 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610)：`1070234090138685610`，当前「待确认」。
 - [OPT-004 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615)：`1070234090138685615`，当前「待确认」，等待数据范围决定。
 - [OPT-005 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685654)：`1070234090138685654`，用户指定插队，当前「待确认」。
+- [OPT-006 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138690655)：`1070234090138690655`，当前「进行中」。
 
 ## 需求清单
 
@@ -31,12 +32,13 @@
 | OPT-003 | `/subscribe` 套餐卡强调外框随 Hover 移动 | `pending_user` | `frontsandbox/subscribe-card-hover-border` | 鼠标移入任一卡片时强调该卡；移出全部卡片后不固定强调某张卡 | 已提交推送、CR 与 MR 草稿就绪；双站预览 200，待确认创建 MR |
 | OPT-004 | `/account/billing/` 展示已有订单列表 | `pending_user` | `frontsandbox/account-billing-order-list` | 将当前账号真实订单或真实空态作为独立区块置于「订阅套餐」大卡片下方 | 现有隐藏页是演示数据，真实历史 API 缺失；调查记录已推送，等待用户决定真实接口或先做真实空态；尚无实现/预览/MR |
 | OPT-005 | `/subscribe/` 套餐售罄交互与「需求加急」 | `pending_user`（用户指定插队） | `frontsandbox/subscribe-soldout-urgent` | 国内外付费卡保留灰显价格和功能点，售罄 CTA 改为加急反馈；国际站联系入口为 Discord；售罄绝不进入下单 | 已提交推送、CR 与 MR 草稿就绪；双站预览 200，待确认创建 MR |
+| OPT-006 | 国内、国际站移动端首页左下角出现字面量 `\n` | `active` | `frontsandbox/mobile-stray-escape-20260929` | 双站首页页脚下方不再显示转义符；重新导入静态首页素材不会复发 | 已定位 9 个静态片段尾部字面量并完成修复、聚焦测试、check、双站构建；继续 CR、推送预览和 MR 准备 |
 
 ## 当前处理项
 
 | ID | 需求 | 状态 | 独立分支 | 下一步 |
 |---|---|---|---|---|
-| — | 当前无进行中的代码实现；OPT-004 等待用户明确数据范围 | — | — | 用户回复后按 FIFO 恢复 OPT-004 |
+| OPT-006 | 双站移动端首页左下角转义符 | `active` | `frontsandbox/mobile-stray-escape-20260929` | 完成提交前 CR、预览与 MR 草稿；OPT-004 继续暂存，用户回复后排为下一项 |
 
 ## 待确认（看板统一回溯）
 
@@ -76,3 +78,4 @@
 - 2026-09-29：OPT-003 分支 `frontsandbox/subscribe-card-hover-border` 最新 `b2dc56c96` 已推送；聚焦测试 44/44、check、双站构建、CR 通过。看板移至「待确认」，评论 `1070234090217541821` 记录 MR 草稿；预览 `https://subscribe-card-hover-border.preview.lightclaw.tech/subscribe`、`https://intl-subscribe-card-hover-border.preview.lightclaw.tech/subscribe` 当前仍返回 404，未完成线上预览验收。
 - 2026-09-29：OPT-004 发现隐藏订单页使用 5 条写死演示数据，前端/后端均无当前账号订单历史接口。独立分支 `frontsandbox/account-billing-order-list` 推送调查 Task Pack 提交 `6f4c4bac2`；尚未更改用户页面。卡片移至「待确认」，流转评论 `1070234090217542037` 写明两种范围选择及恢复条件。该项没有预览、CR、MR 草稿，不能称为已交付。
 - 2026-09-29：OPT-003 双站预览转为 HTTP 200，且各自页面 JS 资源集与 master 预览不同；卡片补充评论 `1070234090217542126`。国内站 `https://subscribe-card-hover-border.preview.lightclaw.tech/subscribe`，国际站 `https://intl-subscribe-card-hover-border.preview.lightclaw.tech/subscribe`。
+- 2026-09-29：用户追加 OPT-006 双站移动端首页左下角字面量 `\n` 问题；TAPD 卡片 `1070234090138690655` 入「待优化」后因处理槽空闲立即流转「进行中」，入队与开始评论 `1070234090217551802`、`1070234090217551810`。独立分支 `frontsandbox/mobile-stray-escape-20260929` 从最新 master `96d19592f` 创建。生产双站 HTML 与 9 个 locale 片段均有该尾部字面量；已修复片段和导入脚本，聚焦测试 1/1、check、双站构建通过；完整相关套件 64/67，3 个既有 PNG→WEBP 预期失败记录在本项 Task Pack。
