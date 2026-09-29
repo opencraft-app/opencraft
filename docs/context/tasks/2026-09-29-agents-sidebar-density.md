@@ -14,6 +14,7 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 - `frontend/src/pages/marketing/agent-settings-page.tsx`: emits the shared Agents navigation for domestic and international sites.
 - `frontend/src/styles.css`: desktop sidebar rules override the shared navigation defaults at `min-width: 1024px`.
 - `frontend/src/components/site/sidebar-user-menu.tsx`: owns the desktop sidebar account-menu trigger and Popover interaction.
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`: records the frontend source revision for the mechanical OpenCraft Agent Console snapshot.
 - Invariant: mobile (`max-width: 1023px`) retains its 36px navigation item height and existing grid layout.
 
 ## history_context
@@ -26,6 +27,7 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 - Desktop navigation item labels are 13px, without changing the mobile rule.
 - Hovering the desktop account trigger opens its existing Popover; click and keyboard interactions remain available.
 - The focused navigation-spacing test and the frontend type/check gate pass.
+- The vendored OpenCraft manifest records the delivered frontend commit and passes its drift check.
 
 ## affected_paths
 - `frontend/src/styles.css`
@@ -33,6 +35,7 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 - `frontend/src/components/site/sidebar-user-menu.tsx`
 - `frontend/src/components/site/__tests__/sidebar-user-menu.test.tsx`
 - `frontend/src/components/site/__tests__/user-avatar-menu.test.tsx`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
 
 ## required_context
 - `frontend-product-surface`
@@ -50,6 +53,7 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 | `frontend/src/pages/marketing/__tests__/agent-settings-nav-spacing.test.ts@4e616ad0d` | Adjacent regression coverage | Provides the focused source-level contract to extend. |
 | `frontend/src/components/site/sidebar-user-menu.tsx@4e616ad0d` | Screenshot target implementation | Preserves the existing Popover semantics while adding hover opening. |
 | `frontend/src/components/site/__tests__/sidebar-user-menu.test.tsx@4e616ad0d` | Interaction regression coverage | Verifies hover, click, Escape, focus return, and menu content. |
+| `opencraft/AGENTS.md@a235443ec` | Generated-closure ownership and validation rules | Requires synchronizing and checking the vendored Agent Console snapshot after frontend source changes. |
 
 ## evidence
 - `git fetch origin master` updated `origin/master` from `9dd39f190` to `4e616ad0d`.
@@ -62,6 +66,7 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 - Follow-up visual adjustment: desktop middle-panel gaps were tightened to 4px between groups and 0px within groups. The focused spacing test remains 7/7 passed, and the existing Whistle proxy returned the local `/agents/` response with HTTP 200.
 - Hover interaction: `pnpm exec vitest run src/components/site/__tests__/sidebar-user-menu.test.tsx src/components/site/__tests__/user-avatar-menu.test.tsx src/pages/marketing/__tests__/agent-settings-nav-spacing.test.ts --api.host 127.0.0.1` passed 54/54. It verifies hover opening, click and keyboard entry, nested-language Escape handling, and focus return.
 - Final `pnpm check` passed with 166 current diagnostics, 171 baseline, and 0 new diagnostics; `git diff --check` passed.
+- CI repair: `npm --prefix opencraft run sync:mono2-agent-console` synchronized the generated manifest to `a235443ec`; `npm --prefix opencraft run check:mono2-agent-console` verified all 130 vendored files.
 
 ## risks
 - Reducing desktop spacing could affect compact desktop viewports. Existing max-height variables remain the source of truth for that variant.
