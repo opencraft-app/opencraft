@@ -20,7 +20,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--variant",
         default="all",
-        help="Platform env variant to update (for example testing); default updates every variant",
+        help=(
+            "Comma-separated platform env variants to update (for example testing,staging); "
+            "default updates every variant"
+        ),
     )
     return parser.parse_args()
 
@@ -37,15 +40,24 @@ PLATFORM_ENV_PATTERN = re.compile(r"^(?P<prefix>.+?)-platform(?:-[A-Za-z0-9]+)?\
 
 def resolve_platform_envs(repo_root: Path, service: str, env: str, variant: str = "all") -> list[Path]:
     service_dir = repo_root / "argocd" / "services" / service / env
-    normalized_variant = variant.strip().lower()
-    if normalized_variant not in ("", "all"):
-        suffix = "" if normalized_variant in ("primary", "prod", "production") else f"-{normalized_variant}"
-        selected = service_dir / f"{service}-platform{suffix}.env"
-        if not selected.is_file() or not PLATFORM_ENV_PATTERN.match(selected.name):
-            raise FileNotFoundError(
-                f"expected platform env variant {normalized_variant!r} at {selected}"
+    normalized_variants = [item.strip().lower() for item in variant.split(",") if item.strip()]
+    if normalized_variants and normalized_variants != ["all"]:
+        if "all" in normalized_variants:
+            raise ValueError("platform env variant 'all' cannot be combined with named variants")
+        selected_paths: list[Path] = []
+        for normalized_variant in dict.fromkeys(normalized_variants):
+            suffix = (
+                ""
+                if normalized_variant in ("primary", "prod", "production")
+                else f"-{normalized_variant}"
             )
-        return [selected]
+            selected = service_dir / f"{service}-platform{suffix}.env"
+            if not selected.is_file() or not PLATFORM_ENV_PATTERN.match(selected.name):
+                raise FileNotFoundError(
+                    f"expected platform env variant {normalized_variant!r} at {selected}"
+                )
+            selected_paths.append(selected)
+        return selected_paths
     candidates = sorted(
         path for path in service_dir.glob("*-platform*.env") if PLATFORM_ENV_PATTERN.match(path.name)
     )
