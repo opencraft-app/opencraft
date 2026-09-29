@@ -3,7 +3,27 @@ import type { RendererToAppHostMessage } from "@opencraft/app-host-protocol";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 
 type AppHostConnectionPhase = "connecting" | "socket-open" | "ready";
-type AppHostFailure = "socket-error" | "socket-close" | "handshake-timeout" | "invalid-response";
+type AppHostFailure = "socket-error" | "socket-close" | "handshake-timeout" | "probe-timeout" | "invalid-response";
+
+export interface AppHostRecoveryEvents {
+  isVisible(): boolean;
+  subscribe(listener: () => void): () => void;
+}
+
+const browserRecoveryEvents: AppHostRecoveryEvents = {
+  isVisible: () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  subscribe(listener) {
+    if (typeof window === "undefined") return () => undefined;
+    window.addEventListener?.("online", listener);
+    window.addEventListener?.("pageshow", listener);
+    globalThis.document?.addEventListener("visibilitychange", listener);
+    return () => {
+      window.removeEventListener?.("online", listener);
+      window.removeEventListener?.("pageshow", listener);
+      globalThis.document?.removeEventListener("visibilitychange", listener);
+    };
+  },
+};
 
 interface AppHostConnectionDiagnostic {
   attemptId: string;
@@ -34,6 +54,9 @@ class WebSocketAppHostPort {
   private readonly startedAt = Date.now();
   private phase: AppHostConnectionPhase = "connecting";
   private closed = false;
+  private supportsProbe = false;
+  private probeSequence = 0;
+  private probe: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
 
   get isClosed(): boolean { return this.closed; }
 
@@ -43,20 +66,31 @@ class WebSocketAppHostPort {
     createSocket: (url: string) => WebSocket = value => new WebSocket(value),
     handshakeTimeoutMs = 10_000,
     private readonly reportFailure = reportAppHostConnectionFailure,
+    private readonly probeTimeoutMs = 5_000,
+    private readonly isVisible: () => boolean = () => true,
   ) {
     this.socket = createSocket(url);
     this.handshakeTimer = globalThis.setTimeout(() => {
       this.fail("App Host handshake timed out", "handshake-timeout");
     }, handshakeTimeoutMs);
     this.socket.addEventListener("open", () => {
+      if (this.closed) return;
       this.phase = "socket-open";
       for (const frame of this.queued.splice(0)) this.socket.send(frame);
     });
     this.socket.addEventListener("message", event => {
+      if (this.closed) return;
       try {
         const message = JSON.parse(String(event.data));
-        if (message?.type === "ready") this.phase = "ready";
-        this.clearHandshakeTimer();
+        if (message?.type === "ready") {
+          this.phase = "ready";
+          this.supportsProbe = message.capabilities?.connectionProbe === true;
+          this.clearHandshakeTimer();
+        }
+        if (message?.type === "response" && message.requestId === this.probe?.id && message.ok === true) {
+          this.cancelProbe();
+          return;
+        }
         this.publish(message);
       }
       catch { this.fail("Invalid App Host response", "invalid-response"); }
@@ -85,10 +119,30 @@ class WebSocketAppHostPort {
 
   start(): void {}
 
+  probeReachability(): void {
+    if (this.closed || !this.supportsProbe || this.phase !== "ready" || this.probe !== null || !this.isVisible()) return;
+    const id = `${this.attemptId}:probe:${++this.probeSequence}`;
+    const timer = globalThis.setTimeout(() => {
+      if (this.closed || this.probe?.id !== id) return;
+      this.probe = null;
+      if (!this.isVisible()) return;
+      this.fail("App Host reachability probe timed out", "probe-timeout");
+    }, this.probeTimeoutMs);
+    this.probe = { id, timer };
+    try { this.postMessage({ type: "connection/probe", requestId: id }); }
+    catch { this.fail("App Host connection failed", "socket-error"); }
+  }
+
+  cancelProbe(): void {
+    if (this.probe !== null) globalThis.clearTimeout(this.probe.timer);
+    this.probe = null;
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
     this.clearHandshakeTimer();
+    this.cancelProbe();
     this.queued.length = 0;
     this.listeners.clear();
     this.socket.close();
@@ -129,11 +183,12 @@ class RenewableAppHostTransport implements DuplexTransport {
   private removeStatusListener: (() => void) | null = null;
   private readonly messageListeners = new Set<(frame: string) => void>();
   private readonly statusListeners = new Set<(status: TransportStatus) => void>();
+  private readonly recoveryListeners = new Set<() => void>();
   private currentStatus: TransportStatus = { state: "idle" };
   private connectOperation: Promise<void> | null = null;
   private closed = false;
 
-  constructor(private readonly createLease: () => DuplexTransport) {}
+  constructor(private readonly createLease: () => DuplexTransport, private readonly onClose: () => void) {}
 
   get status(): TransportStatus { return this.currentStatus; }
 
@@ -170,9 +225,9 @@ class RenewableAppHostTransport implements DuplexTransport {
     return operation;
   }
 
-  send(frame: string): Promise<void> {
+  send(frame: string, signal?: AbortSignal): Promise<void> {
     if (this.closed || this.lease === null) return Promise.reject(new Error("App Host transport is not open"));
-    return this.lease.send(frame);
+    return this.lease.send(frame, signal);
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {
@@ -185,9 +240,20 @@ class RenewableAppHostTransport implements DuplexTransport {
     return () => this.statusListeners.delete(listener);
   }
 
+  subscribeRecoveryHint(listener: () => void): () => void {
+    this.recoveryListeners.add(listener);
+    return () => this.recoveryListeners.delete(listener);
+  }
+
+  notifyRecoveryHint(): void {
+    for (const listener of this.recoveryListeners) listener();
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.onClose();
+    this.recoveryListeners.clear();
     this.detachLease();
     const lease = this.lease;
     this.lease = null;
@@ -213,14 +279,28 @@ class RenewableAppHostTransport implements DuplexTransport {
 
 export function connectWebSocketAppHost(
   createSocket?: (url: string) => WebSocket,
-  options: { readonly handshakeTimeoutMs?: number; readonly reportFailure?: (diagnostic: AppHostConnectionDiagnostic) => void } = {},
+  options: {
+    readonly handshakeTimeoutMs?: number;
+    readonly probeTimeoutMs?: number;
+    readonly recoveryEvents?: AppHostRecoveryEvents;
+    readonly reportFailure?: (diagnostic: AppHostConnectionDiagnostic) => void;
+  } = {},
 ): { createTransport(hostId: string): DuplexTransport; close(): void } {
   let current: { port: WebSocketAppHostPort; client: MessagePortAppHostClient } | null = null;
   let disposed = false;
+  const transports = new Set<RenewableAppHostTransport>();
+  const events = options.recoveryEvents ?? browserRecoveryEvents;
+  const unsubscribeRecovery = events.subscribe(() => {
+    if (disposed) return;
+    // A backgrounded page cannot spend its foreground probe deadline.
+    if (!events.isVisible()) { current?.port.cancelProbe(); return; }
+    current?.port.probeReachability();
+    for (const transport of transports) transport.notifyRecoveryHint();
+  });
   return {
     createTransport(hostId) {
       if (disposed) throw new Error("App Host connection is closed");
-      return new RenewableAppHostTransport(() => {
+      const transport = new RenewableAppHostTransport(() => {
         if (disposed) throw new Error("App Host connection is closed");
         if (current === null || current.port.isClosed) {
           const url = new URL("/apphost", window.location.href);
@@ -233,15 +313,20 @@ export function connectWebSocketAppHost(
             createSocket,
             options.handshakeTimeoutMs ?? 10_000,
             options.reportFailure ?? reportAppHostConnectionFailure,
+            options.probeTimeoutMs ?? 5_000,
+            () => events.isVisible(),
           );
           try { current = { port, client: new MessagePortAppHostClient(port, id) }; }
           catch (error) { port.close(); throw error; }
         }
         return current.client.createTransport(hostId);
-      });
+      }, () => transports.delete(transport));
+      transports.add(transport);
+      return transport;
     },
     close() {
       disposed = true;
+      unsubscribeRecovery();
       current?.client.close();
       current = null;
     },

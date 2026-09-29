@@ -24,6 +24,7 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
     async signIn() { account.signIn(); },
     async signOut() { account.signOut(); },
     async retry() { await account.refreshBots(); },
+    async webSessionToken() { return null; },
     request: account.request.bind(account),
     resolveActiveBot: account.resolveActiveBot.bind(account),
     dispose: () => account.dispose(),

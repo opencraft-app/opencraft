@@ -10,6 +10,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "dev.vela.workbench"
     },
+    "android": {
+      "package": "dev.vela.workbench",
+      "versionCode": 1
+    },
     "plugins": [
       "expo-router",
       "expo-sqlite",

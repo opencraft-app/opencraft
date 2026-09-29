@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
+  canHoverRevealSidebar,
   resolveSidebarFloatingIntent,
   SIDEBAR_TRIGGER_PEEK_DELAY_MS,
 } from "../sidebar-dock-model";
@@ -117,6 +118,9 @@ export function useSidebarDockIntent({
     };
 
     const handlePointerMove = (event: PointerEvent) => {
+      // Touch movement is a gesture, not hover intent. In particular, a drag
+      // across the sidebar edge must not reopen a dismissed floating panel.
+      if (!canHoverRevealSidebar(event.pointerType)) return;
       const overTrigger = isSidebarTrigger(event.target);
       const wasOverTrigger = pointerOverTriggerRef.current;
       pointerXRef.current = event.clientX;

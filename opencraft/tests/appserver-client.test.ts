@@ -35,6 +35,26 @@ const initializeParams = {
   capabilities: { experimentalApi: true },
 } as const;
 
+test("initialize cannot publish readiness when its reply is followed by connection loss", async () => {
+  const transport = new MemoryTransport({
+    schedule: callback => callback(),
+    server: {
+      receive(frame, peer) {
+        const message = parseJsonRpcMessage(frame);
+        if (!isJsonRpcRequest(message)) return;
+        peer.send(encodeJsonRpcMessage({ id: message.id, result: initializeResponse }));
+        peer.close("lost immediately after reply");
+      },
+    },
+  });
+  const client = new JsonRpcAppServerClient({ hostId: "initialize-race", transport });
+  try {
+    await assert.rejects(client.connect(initializeParams), /lost connection/);
+    assert.equal(client.initializeResult, null);
+    assert.equal(client.connectionGeneration, 0);
+  } finally { await client.close(); }
+});
+
 function createTestServer(): InMemoryAppServer {
   let triggeringRequestId: string | number | null = null;
   return {

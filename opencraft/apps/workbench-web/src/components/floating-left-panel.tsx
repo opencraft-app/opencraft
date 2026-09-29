@@ -3,6 +3,7 @@
 import {
   AnimatePresence,
   motion,
+  useIsPresent,
   useReducedMotion,
   type MotionValue,
 } from "motion/react";
@@ -16,6 +17,7 @@ interface FloatingLeftPanelProps {
   readonly header: ReactNode;
   readonly footer?: ReactNode;
   readonly visible: boolean;
+  readonly onExitComplete?: () => void;
   readonly width: number;
   readonly widthPx: MotionValue<string>;
   getCurrentWidth(): number;
@@ -30,6 +32,7 @@ export function FloatingLeftPanel({
   header,
   footer,
   visible,
+  onExitComplete,
   width,
   widthPx,
   getCurrentWidth,
@@ -38,19 +41,51 @@ export function FloatingLeftPanel({
   onResizeEnd,
   onResizingChange,
 }: FloatingLeftPanelProps) {
+  return (
+    <AnimatePresence initial={false} onExitComplete={onExitComplete}>
+      {visible ? <FloatingLeftPanelContent
+        key="floating-sidebar"
+        children={children}
+        header={header}
+        footer={footer}
+        width={width}
+        widthPx={widthPx}
+        getCurrentWidth={getCurrentWidth}
+        getMaximumWidth={getMaximumWidth}
+        onResize={onResize}
+        onResizeEnd={onResizeEnd}
+        onResizingChange={onResizingChange}
+      /> : null}
+    </AnimatePresence>
+  );
+}
+
+function FloatingLeftPanelContent({
+  children,
+  header,
+  footer,
+  width,
+  widthPx,
+  getCurrentWidth,
+  getMaximumWidth,
+  onResize,
+  onResizeEnd,
+  onResizingChange,
+}: Omit<FloatingLeftPanelProps, "visible" | "onExitComplete">) {
   const shouldReduceMotion = useReducedMotion() === true;
+  const isPresent = useIsPresent();
   const transition = shouldReduceMotion ? { duration: 0 } : PANEL_SPRING_TRANSITION;
 
   return (
-    <AnimatePresence initial={false}>
-      {visible ? (
-        <motion.div
+    <motion.div
           className="app-shell-floating-left-panel"
           data-pip-obstacle="app-shell-floating-left-panel"
+          inert={!isPresent || undefined}
+          aria-hidden={!isPresent || undefined}
           initial={shouldReduceMotion ? false : { opacity: 0, x: -8 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: shouldReduceMotion ? 0 : -8 }}
-          style={{ width: widthPx }}
+          style={{ width: widthPx, pointerEvents: isPresent ? "auto" : "none" }}
           transition={transition}
         >
           <aside
@@ -80,8 +115,6 @@ export function FloatingLeftPanel({
             onResizeEnd={onResizeEnd}
             onResizingChange={onResizingChange}
           />
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+    </motion.div>
   );
 }

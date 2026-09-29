@@ -15,7 +15,7 @@ import {
 } from "@opencraft/workbench-runtime";
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ScrollView, Text, TextInput, type TextInput as TextInputHandle, View } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../styles/workbench-styles";
 import { IconButton } from "./ui/button";
 import { InteractiveSurface } from "./ui/interactive-surface";
 import { ModalSurface } from "./ui/modal-surface";
@@ -42,7 +42,7 @@ export function WorkbenchComposer({
   onSubmit,
   onCancel,
 }: WorkbenchComposerProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const inputRef = useRef<TextInputHandle>(null);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const submitPendingRef = useRef(false);

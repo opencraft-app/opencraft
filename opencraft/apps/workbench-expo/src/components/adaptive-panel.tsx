@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useState, useSyncExternalStore } from "react";
 import { View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet } from "../styles/workbench-styles";
 import { AdaptivePanel, projectPanel, type PanelPage } from "@opencraft/workbench-runtime";
 import { Button } from "./ui/button";
 

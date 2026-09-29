@@ -6,6 +6,7 @@ import type {
   AccountPoolStore,
 } from "./store.js";
 import type { CodexCredentialRefreshReason } from "./oauth-refresh.js";
+import { CODEX_POOL_MAX_REQUEST_BYTES } from "./request-limits.js";
 
 const HOST_TOKEN_HEADER = "x-opencraft-account-pool-token";
 const FORWARDED_REQUEST_HEADERS = new Set([
@@ -182,7 +183,7 @@ export class CodexAccountPoolProxy {
     const hostId = this.store.authenticateHostToken(request.headers.get(HOST_TOKEN_HEADER) ?? "");
     if (hostId === null) return new Response(null, { status: 401 });
     const body = request.method === "GET" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
-    if (body.byteLength > 10 * 1024 * 1024) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
+    if (body.byteLength > CODEX_POOL_MAX_REQUEST_BYTES) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
     const identity = affinity(request, body);
     const attempted = new Set<string>();
     const refreshedAfterUnauthorized = new Set<string>();

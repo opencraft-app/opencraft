@@ -42,6 +42,10 @@ Allow an iPhone camera HEIC/HEIF photo selected in the Web Composer to become a 
 
 ## evidence
 - Screenshot: camera photo thumbnails show retry overlays; screenshots do not.
+- After the HEIC source fix was packaged and switched into the live Web service,
+  the user refreshed and still saw retry overlays for camera photos. The raw
+  iPhone File and its browser-side rejection message are not yet available;
+  server logs cannot identify a failure before attachment staging.
 - Source trace: HEIC was preserved by the worker while resolver rejected its MIME before ready state.
 - `npm run gate` passed after implementation (before the final 50 MP HEIC bound adjustment).
 - Final focused 22 tests and image-processing typecheck passed after the 50 MP adjustment. Web and Composer typechecks passed before that adjustment and their source was unchanged afterward.
@@ -50,6 +54,8 @@ Allow an iPhone camera HEIC/HEIF photo selected in the Web Composer to become a 
 
 ## risks
 - Browser-specific HEIC decode/canvas behavior needs an original iPhone file and Safari acceptance; unsupported browsers fail closed.
+- A photo may exceed a size/decode bound or fail in Safari canvas encoding;
+  guessing another codec change without the per-file error risks masking the cause.
 - Re-encoding can change metadata and color appearance; original selected File remains owned by the Draft for retry.
 - Large JPEG derivative must be rejected before base64 allocation.
 
@@ -61,6 +67,8 @@ Allow an iPhone camera HEIC/HEIF photo selected in the Web Composer to become a 
 ## decisions
 - Use the browser's image decode/canvas path only for HEIC/HEIF, keep ordinary PNG/JPEG worker processing and one-job service admission.
 - Preserve larger JPEG only when the result is a successful HEIC compatibility transcode; reject unsupported original if conversion fails.
+- Display the existing Draft-owned failure reason directly in the failed image
+  card on touch; do not transmit the selected photo to a new diagnostic endpoint.
 
 ## scan_scope
 - Bounded `rg` in OpenCraft image-processing, Composer, Web runtime and test paths.
@@ -69,19 +77,27 @@ Allow an iPhone camera HEIC/HEIF photo selected in the Web Composer to become a 
 - No separate scan artifact; exact results are summarized in evidence.
 
 ## handoff
-- Source implementation and verification are complete at the code level; no commit, push or running Web update authorized by this bug report alone. Await an original failed HEIC for real-device acceptance and explicit release direction.
+- The HEIC conversion source fix was released, but the user's iPhone photo still
+  fails after refresh. A local UI diagnostic makes the existing error text
+  visible beside each failed thumbnail; it is not committed or deployed yet.
+  Obtain that message or an original failed HEIC before changing codec logic.
 
 ## checkpoint
 ### stage
-- Code fix staged for review; next gate is original HEIC/iPhone WebKit acceptance and release authorization.
+- Released HEIC conversion is not yet accepted on the reported iPhone. Local
+  error-presentation follow-up awaits release authorization.
 ### verified
 - HEIC was formerly passed through and rejected by the inline resolver; the new path produces JPEG and preserves the original Draft-owned File.
 - Full gate, focused tests, typechecks and docs impact validation passed as recorded above.
 ### unverified
-- Native iPhone HEIC decode/canvas behavior, color/orientation and live Web send with a real photo.
+- Native iPhone HEIC decode/canvas behavior, color/orientation, live Web send,
+  and the exact client-side error for the failing original photo.
 ### discard
-- The failed generic-Web headless release is unrelated to this HEIC source fix; the current server still runs the prior released code.
+- Do not infer the browser failure from unrelated App Host socket errors in
+  server logs; the selected File never reaches the server when preparation fails.
 ### restore
 - Preserve unrelated dirty worktree changes in activity renderers and `agent-gateway-runtime.md`; only the explicitly staged HEIC paths belong to this task.
 ### next_action
-- Test one original iPhone HEIC through the staged Web source, then ask for commit/push/release confirmation before changing the live server.
+- Validate the failed-card UI, ask for release authorization in ordinary text
+  (the selectable-question control did not appear for this user), then request
+  the visible error text from one reselected original photo.

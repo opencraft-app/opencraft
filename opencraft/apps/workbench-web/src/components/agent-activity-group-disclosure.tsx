@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import { OverlayDisclosureTrigger } from "./overlay-disclosure-trigger";
 import {
   type ReactNode,
   useCallback,
@@ -166,22 +167,19 @@ export function AgentActivityGroupDisclosure({
       data-disclosure-phase={phase}
       data-open={expanded || undefined}
     >
-      <div className="thread-activity-item__header" data-interactive={canExpand || undefined}>
-        {canExpand ? (
-          <button
-            aria-expanded={expanded}
-            aria-labelledby={summaryId}
-            className="thread-activity-item__hit-target"
-            onClick={toggle}
-            type="button"
-          />
-        ) : null}
-        <span className="thread-activity-item__header-content">
+      <OverlayDisclosureTrigger
+        buttonClassName="thread-activity-item__hit-target"
+        className="thread-activity-item__header"
+        contentClassName="thread-activity-item__header-content"
+        interactive={canExpand}
+        labelId={summaryId}
+        onToggle={toggle}
+        open={expanded}
+      >
           {icon == null ? null : <span className="thread-activity-item__icon">{icon}</span>}
           <span className="thread-activity-item__summary" id={summaryId}>{visibleSummary}</span>
           {canExpand ? <ChevronRight aria-hidden="true" className="thread-activity-item__chevron" size={13} /> : null}
-        </span>
-      </div>
+      </OverlayDisclosureTrigger>
       {body}
     </div>
   );

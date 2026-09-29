@@ -5,6 +5,11 @@
 export const SIDEBAR_EDGE_REVEAL_WIDTH = 4;
 export const SIDEBAR_TRIGGER_PEEK_DELAY_MS = 100;
 
+/** Only a real mouse movement may acquire the transient hover presentation. */
+export function canHoverRevealSidebar(pointerType: string): boolean {
+  return pointerType === "mouse";
+}
+
 export interface SidebarFloatingIntentInput {
   readonly docked: boolean;
   readonly currentlyRequested: boolean;

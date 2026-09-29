@@ -2,6 +2,8 @@ import {
   createDefaultToolActivityPresenterRegistry,
   presentToolActivity,
   type TimelineBlock,
+  type AsyncQuestion,
+  type AsyncQuestionState,
   type ConversationDetailLevel,
   type ToolActivityPresentation,
   type ToolActivityPresenterRegistry,
@@ -26,6 +28,26 @@ export interface ConversationInteractionContextValue {
 }
 
 export const ConversationInteractionContext = createContext<ConversationInteractionContextValue>({ respond: null });
+
+export interface AsyncQuestionDraft {
+  readonly selectedIndex: number | null;
+  readonly otherText: string;
+}
+
+export interface AsyncQuestionContextValue {
+  readonly states: ReadonlyMap<string, AsyncQuestionState>;
+  readonly queuedIds: ReadonlySet<string>;
+  readonly drafts: Readonly<Record<string, AsyncQuestionDraft>>;
+  readonly submittingIds: ReadonlySet<string>;
+  readonly errors: Readonly<Record<string, string>>;
+  readonly answer: ((question: AsyncQuestion, answer: string) => Promise<void>) | null;
+  readonly updateDraft: (questionId: string, draft: AsyncQuestionDraft) => void;
+}
+
+export const AsyncQuestionContext = createContext<AsyncQuestionContextValue>({
+  states: new Map(), queuedIds: new Set(), drafts: {}, submittingIds: new Set(), errors: {},
+  answer: null, updateDraft: () => undefined,
+});
 export const ConversationDetailContext = createContext<ConversationDetailLevel>("STEPS_COMMANDS");
 
 export interface SetupCodexContextCatalogValue {

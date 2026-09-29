@@ -22,5 +22,6 @@ export interface MobileLightVelaAccount extends LightVelaAccountPort {
   signIn(): Promise<void>;
   signOut(): Promise<void>;
   retry(): Promise<void>;
+  webSessionToken(): Promise<string | null>;
   dispose(): void;
 }

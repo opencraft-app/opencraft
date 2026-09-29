@@ -1,6 +1,7 @@
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
+import { Platform } from "react-native";
 import { createNativeLoginStorage } from "./native-login-storage";
 import * as Crypto from "expo-crypto";
 import { createNativeLogin, isNativeLoginCallback, NATIVE_LOGIN_PENDING_KEY } from "./native-login";
@@ -130,7 +131,8 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       }
       if (disposed) return;
       if (token === null) { publish("anonymous", null, null); return; }
-      await refresh();
+      if (Platform.OS === "ios") publish("authenticated", null, null);
+      else await refresh();
     }),
     signIn: () => run(async () => {
       publish("loading", null, null);
@@ -140,7 +142,8 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       await SecureStore.setItemAsync(TOKEN_KEY, nextToken);
       if (disposed) return;
       token = nextToken;
-      await refresh();
+      if (Platform.OS === "ios") publish("authenticated", null, null);
+      else await refresh();
     }),
     signOut: () => run(async () => {
       token = null; bots = [];
@@ -148,6 +151,7 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       publish("anonymous", null, null);
     }),
     retry: () => run(refresh),
+    webSessionToken: async () => token,
     request,
     async resolveActiveBot() {
       if (snapshot.phase !== "authenticated") await run(refresh);

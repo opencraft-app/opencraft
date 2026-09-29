@@ -3,7 +3,7 @@ import {
   type ChatNodeRendererProps,
 } from "@opencraft/chat-render-react";
 import { Image, Linking, Pressable, Text } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet } from "../styles";
 
 export function NativeLinkRenderer({ node, renderNodes, context }: ChatNodeRendererProps) {
   if (node.kind !== "link") return null;
