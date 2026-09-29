@@ -376,6 +376,22 @@ describe("SubscribePage", () => {
     expect(cruiseCard).toHaveClass("rounded-[12px]");
     expect(launchCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
     expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    fireEvent.pointerEnter(launchCard, { pointerType: "mouse" });
+    expect(launchCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.95)");
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    fireEvent.pointerLeave(launchCard, { pointerType: "mouse" });
+    fireEvent.pointerEnter(cruiseCard, { pointerType: "mouse" });
+    expect(launchCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.95)");
+    fireEvent.pointerLeave(cruiseCard, { pointerType: "mouse" });
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    fireEvent.pointerEnter(cruiseCard, { pointerType: "touch" });
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
+    const cruiseButton = within(cruiseCard).getByRole("button", { name: /订阅|开通/ });
+    fireEvent.focus(cruiseButton);
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.95)");
+    fireEvent.blur(cruiseButton, { relatedTarget: null });
+    expect(cruiseCard.style.border).toBe("1px solid rgba(0, 0, 0, 0.1)");
     expect(launchCard).not.toHaveAttribute("aria-selected");
     expect(cruiseCard).not.toHaveAttribute("aria-selected");
 
