@@ -1438,6 +1438,8 @@ const PlanCard = ({
   const quoteErrorId = React.useId();
   /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
   const [showFreeTrialHint, setShowFreeTrialHint] = useState(false);
+  const [pointerHovered, setPointerHovered] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   const quotaWouldExceed = currentBots >= plan.maxBots;
   const isSoldOut = plan.soldOut === true;
   const isComingSoon = plan.comingSoon === true;
@@ -1461,6 +1463,7 @@ const PlanCard = ({
       : undefined;
   /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
+  const emphasizeBorder = pointerHovered || focusWithin;
 
   return (
     <MotionCard
@@ -1472,14 +1475,23 @@ const PlanCard = ({
       className="relative flex min-w-0 flex-col overflow-hidden"
       style={{
         background: colors.white,
-        border: `1px solid ${colors.border}`,
-        transition: "transform 0.3s",
+        border: `1px solid ${emphasizeBorder ? colors.black : colors.border}`,
+        boxShadow: emphasizeBorder ? `inset 0 0 0 1px ${colors.black}` : "none",
+        transition: "transform 0.3s, border-color 0.2s, box-shadow 0.2s",
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = "translateY(-2px)";
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "mouse") return;
+        setPointerHovered(true);
+        event.currentTarget.style.transform = "translateY(-2px)";
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "translateY(0)";
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "mouse") return;
+        setPointerHovered(false);
+        event.currentTarget.style.transform = "translateY(0)";
+      }}
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false);
       }}
     >
       {/* Popular Badge */}
