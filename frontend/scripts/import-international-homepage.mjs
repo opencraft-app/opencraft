@@ -4487,6 +4487,12 @@ for (const locale of supportedLocales) {
   applyAboutCapabilityCards(document, locale);
   polishCapabilityCards(document, locale);
 
+  // Some approved source pages end with a literal backslash-n text node.
+  // Keep it out of the generated fragment so it cannot appear below the footer.
+  for (const node of Array.from(document.body.childNodes)) {
+    if (node.nodeType === 3 && node.textContent.trim() === "\\n") node.remove();
+  }
+
   const fragment = [
     `<div id="lightvela-intl-home" data-locale="${locale}" data-source-locale="${sourceLocale}" data-rotator-words='${JSON.stringify(rotatorWordsByLocale[locale])}' style="--cta-delay: 1350ms; --tabs-delay: 1510ms; --frame-delay: 1670ms;">`,
     document.body.innerHTML.trim(),
