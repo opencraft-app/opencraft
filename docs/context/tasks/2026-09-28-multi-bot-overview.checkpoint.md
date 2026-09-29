@@ -163,3 +163,14 @@ derived: false
 - 保留国内站 5174；排除 `next-env.d.ts` 本地生成差异；本轮没有真实用户资料写入、复制或删除操作。
 - 下一步：暂存本需求差异，运行 staged 影响检查，提交推送，创建并核对 MR。
 - 追加差异对照：续费提醒的 7 条失败在本分支与干净最新 master 完全一致，均为第三方 CSS 导入异常；支付超时测试单独复跑两边均通过。日志 `/tmp/zonglan-928-{merged,master-baseline}-variable-failures.log`。
+
+
+## 流水线问题跟进与再次合并 master（2026-09-29）
+- 用户要求排查构建 `p-4ed28a7f9b6a4468a10dcfa92d3f9fe4` / `b-15802ae3c10f4ba9902a4dee80cf79ab`，先拉取并合并远程 master。
+- 最新 `origin/master` 为 `9dd39f190`。合并侧栏及八份词典冲突：使用 master 的 AgentSidebar 布局，保留总览置顶和 Bot 删除目标隔离；按生成脚本重建合并词典。
+- 本地检查发现五条词典测试引用已删除的旧 key，删除对应重复旧断言并保留现行文案断言；新侧栏读取依赖要求 listMyPasses mock 稳定，修复引导测试重复请求与内存耗尽；恢复 master 丢失的总览 locale 传参，保留原日期语言切换行为。
+- 16 文件 297 条测试通过；另 2 文件 29 条修复回归通过。check 通过，六语言完整。国内、国际隔离构建通过（在恢复 locale 两行之前）；恢复 locale 后另行运行最终类型检查。
+- 验证日志：`/tmp/zonglan-928-ci-{merged-test,regression-final2,final-check,final-typecheck,build-global,build-cn}.log`。
+- 当前没有 `BK_CI_ACCESS_TOKEN`；按 devops-pipeline 技能，尚未调用蓝盾 API，没有该构建失败日志证据，不把本地发现直接当作流水线根因。待用户提供 token 或授权从已登录浏览器获取后继续排查。
+- 本轮 context 首次 query 未匹配；更换源码路径后读取 frontend 服务、站点路由、frontend/AGENTS，检查 frontend 邻接卡及 vitest 配置。另读取 devops-pipeline/SKILL.md、reference/build-status.md、.ci/checks/frontend_guard.sh。
+- 本地开发生成 next-env.d.ts 已专门 stash 备份，合并后恢复；国内预览服务保持。未操作生产或手动触发流水线。

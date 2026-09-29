@@ -74,6 +74,8 @@ vi.mock("@/contexts/agent-context", () => ({
   }),
 }));
 
+const listMyPasses = vi.fn().mockResolvedValue([]);
+
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     bots: {
@@ -87,7 +89,7 @@ vi.mock("@/contexts/repository-context", () => ({
       })),
       getDashboardSnapshot: vi.fn().mockResolvedValue({ bots }),
     },
-    plans: { getRenewPrice: vi.fn(), createRenewOrder: vi.fn(), listMyPasses: vi.fn() },
+    plans: { getRenewPrice: vi.fn(), createRenewOrder: vi.fn(), listMyPasses },
   }),
 }));
 

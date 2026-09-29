@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { InternationalLanguageMenu } from "@/components/site/language-switcher";
+import { SidebarUserMenuController } from "@/components/site/sidebar-user-menu-controller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
@@ -35,7 +36,13 @@ type UserAvatarMenuProps = {
 export const UserAvatarMenu = ({
   showLanguageSwitcher = false,
   variant = "header",
-}: UserAvatarMenuProps) => {
+}: UserAvatarMenuProps) => variant === "sidebar"
+  ? <SidebarUserMenuController showLanguageSwitcher={showLanguageSwitcher} />
+  : <HeaderUserAvatarMenu showLanguageSwitcher={showLanguageSwitcher} />;
+
+const HeaderUserAvatarMenu = ({
+  showLanguageSwitcher = false,
+}: Pick<UserAvatarMenuProps, "showLanguageSwitcher">) => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
@@ -101,7 +108,7 @@ export const UserAvatarMenu = ({
     hostname: workbenchHostname,
     revealed: hiddenEntriesRevealed,
   });
-  const isSidebar = variant === "sidebar";
+  const isSidebar = false;
   const showModelEntry = isSidebar && shouldMoveModelEntryToAccountMenu(activePass);
   const accountMenuItem = (
     <a href="/account" onClick={() => setOpen(false)} className={menuItemClass}>
