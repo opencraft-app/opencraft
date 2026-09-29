@@ -200,3 +200,12 @@ derived: false
 - 2 文件 40 条测试通过，包含国际六语言积分链接断言；pnpm check 通过（166 current / 171 baseline，0 new），国内隔离构建通过。日志 /tmp/zonglan-928-credit-link-{tests,check,build}.log。
 - 真实国内代理页面点击剩余积分已进入 https://lightvela.com/account/billing/，显示「套餐与费用」标题；验证后返回原总览，未执行付费操作。
 - 按此前授权继续推送原 MR !4760；前端提交后单独刷新 OpenCraft 同步清单并校验。
+
+
+## OpenCraft 兼容及最新 master 合并（2026-09-29）
+- 合入 origin/master `4e616ad0d`，合并提交 `38d337964`。唯一冲突为 UPSTREAM 清单，合并后机械同步，130 文件校验及实际 CI guard 通过。
+- OpenCraft 未消费网页总览组件；本次改动其实际 lightvela-platform 账户管理订阅和套餐阻塞引导，按账号区域打开 `/account/billing`，保留外部返回刷新及实名引导。PRD 与平台/领域设计已补充。
+- 本地依赖旧于源码，首次测试/构建缺 fflate、i18n；按锁文件 npm ci 补齐后，20 条相关测试、平台插件 typecheck 和 Web 构建通过。未变更 package-lock。
+- 使用原有 smoke-account-controls 真实账户组件的隔离 Vite fixture（仅替换账户数据和外部 window.open）由 Browser Use 点击验证，国内得到 https://lightvela.com/account/billing，国际得到 https://lightvela.ai/account/billing。未进行真实账户写入或付费；未重新打包/启动 Electron，不把组件验证表述为桌面发行包验收。
+- 合并后网页 5 文件 87 条回归、pnpm check（166 current / 171 baseline，0 new）及国内隔离构建通过。日志 /tmp/zonglan-928-oc-merged-fe-{check,test,build}.log、/tmp/zonglan-928-oc-build-final.log。
+- 当前目标完成后沿用 MR !4760 提交推送，不合并 MR、不发布。保留国内站 5174；停止本轮临时 fixture。

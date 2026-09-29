@@ -173,3 +173,8 @@ derived: false
 - check 通过：166 当前/171 基线，0 新增；六语言校验通过。国内隔离构建通过，包含静态导出及 SEO 检查。
 - 日志 `/tmp/zonglan-928-cn-fleet-{test-final,check-final,build}.log`。PRD 改为国内/国际双站，沿用已有 context receipt、frontend 邻接卡及 runtime-config 邻居。
 - 按既有授权提交推送同一分支，另行机械同步 OpenCraft 清单并复验 CI guard；MR !4760 更新为双站描述。不改变生产部署。
+
+### OpenCraft 套餐入口兼容（2026-09-29）
+- 目标：兼容本轮套餐与费用跳转，合并最新 master 并更新原 MR；不移植网页总览布局到桌面、不发布客户端。
+- 精确路由首次 query `opencraft Agent Console overview billing compatibility` 未命中；按 `opencraft/plugins/lightvela-hermes` 命中后读取 OpenCraft 服务、agent-gateway-runtime、site-environment-routing、upstream-subtrees 与 opencraft/AGENTS。补读 MONO2_MIGRATION、维护技能/验证清单、platform-architecture 的账户章节、frontend-runtime-openspec-i18n 邻接卡；检查 sync-mono2-agent-console 的同步种子及相邻测试。
+- 实际入口在 lightvela-platform，账户管理订阅与额度阻塞恢复由旧 `/account?tab=billing` 改为 `/account/billing`，按账号区域选择域名；保留外部页面返回后的刷新机制。
