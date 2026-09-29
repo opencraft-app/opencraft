@@ -2027,14 +2027,14 @@ function stripTestRunMarker(name: string): string {
  *   而官方 ISO 示例是带秒的完整格式 `2026-03-15T09:00:00`。这个自造的、缺秒的
  *   格式很可能压根没被解析器正确识别，导致临时任务的 `next_run_at` 算错/为空，
  *   调度器永远扫不到它——这正是「测试运行怎么等都不执行」的根因。
- * - 相对延迟 `2m` 是文档直接给出的一次性任务示例，一定被解析器接受，且天然
- *   就是"未来 2 分钟"，不存在分钟精度截断那套自找的心智负担。
- * - 为什么是 `2m` 而不是 `1m`：调度器 tick 周期固定 60s，`2m` 能稳妥覆盖
+ * - Hermes 将裸时长 `2m` 解析为周期任务；显式的 `in 2m` 才是一次性延迟。
+ *   使用 Hermes 原生相对时间，避免客户端与机器时区不一致。
+ * - 为什么延迟 2 分钟而不是 1 分钟：调度器 tick 周期固定 60s，2 分钟能覆盖
  *   "创建到下一次 tick 对齐"的最坏情况；秒级单位（`s`）文档未提及且 60s tick
  *   粒度下无意义，不用。
  */
 function buildImmediateOnceSchedule(): string {
-  return "2m";
+  return "in 2m";
 }
 
 /** 从 ~/.hermes/cron/jobs.json 里按 id 读出未经 `hermes cron list` 文本裁剪的原始字段（如 origin / last_delivery_error） */
@@ -2309,7 +2309,7 @@ function delay(ms: number): Promise<void> {
  *    tick 自然执行"这条已验证路径（见 `runCronJobAsTest` 的实现与注释）。
  *
  * 因此这里的轮询超时要覆盖的最坏情况：
- *   `buildImmediateOnceSchedule()` 用的相对延迟 `2m`（精确「创建时刻 + 2 分钟」，
+ *   `buildImmediateOnceSchedule()` 用的一次性相对延迟 `in 2m`（精确「创建时刻 + 2 分钟」，
  *   无分钟截断问题）+ 调度器下一次 tick 的最坏对齐延迟（~60s）+ Agent 实际跑
  *   一次 prompt 的执行余量。前两者是硬下限（约 3 分钟），执行余量给 30~60s 足矣。
  *
