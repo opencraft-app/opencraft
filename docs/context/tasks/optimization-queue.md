@@ -17,9 +17,9 @@
 - [统一回溯入口：TAPD 优化看板](https://tapd.woa.com/tapd_fe/t/index/70234090)；进入「待确认」分组查看所有需用户回复的需求（用户提供的带 `query_token` 链接仅用于访问，不写入仓库）。
 - 分组：「待优化」「进行中」「待确认」「待验收」「已完成」。看板原生状态只有 `open`/`done`，中间阶段由分组表达。
 - [OPT-001 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577)：`1070234090138685577`，当前「待确认」。
-- [OPT-002 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685578)：`1070234090138685578`，当前「进行中」。
-- [OPT-003 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610)：`1070234090138685610`，当前「待优化」。
-- [OPT-004 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615)：`1070234090138685615`，当前「待优化」。
+- [OPT-002 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685578)：`1070234090138685578`，当前「待确认」。
+- [OPT-003 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610)：`1070234090138685610`，当前「待确认」。
+- [OPT-004 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615)：`1070234090138685615`，当前「待确认」，等待数据范围决定。
 - [OPT-005 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685654)：`1070234090138685654`，用户指定插队，当前「待确认」。
 
 ## 需求清单
@@ -27,30 +27,32 @@
 | ID | 需求 | 状态 | 独立分支 | 验收目标 | 下一步 |
 |---|---|---|---|---|---|
 | OPT-001 | Review `/subscribe` 页“首月 6 折”等优惠标签展示逻辑 | `pending_user` | `frontsandbox/subscribe-promotion-badge-20260929` | 有真实适用优惠时显示“免费”或实际折扣；无适用优惠时不显示促销标签 | 双站预览、提交前 CR、MR 草稿就绪；等待用户确认创建 MR |
-| OPT-002 | 微信快捷登录在弹窗内完成授权，展示快捷登录按钮或待扫描二维码 | `active` | `codex/wechat-login-in-modal-20260929` | 弹窗内嵌微信授权；确认后允许当前页回跳 | 本地实现已完成，正在复验、合并最新 master、准备预览、CR 和 MR；真实微信客户端验收需 Auth 预览部署 |
-| OPT-003 | `/subscribe` 套餐卡强调外框随 Hover 移动 | `queued` | `frontsandbox/subscribe-card-hover-border` | 鼠标移入任一卡片时强调该卡；移出全部卡片后不固定强调某张卡 | 排在 OPT-002 后；独立本地分支已从最新 `master` 创建，轮到本项时核对双站与响应式交互 |
-| OPT-004 | `/account/billing/` 展示已有订单列表 | `queued` | `frontsandbox/account-billing-order-list` | 将目前隐藏的订单列表作为独立区块展示在「订阅套餐」整个大卡片下方，与其纵向排列 | 排在 OPT-003 后；独立本地分支已创建，轮到本项时核实现有实现和隐藏条件 |
-| OPT-005 | `/subscribe/` 套餐售罄交互与「需求加急」 | `pending_user`（用户指定插队） | `frontsandbox/subscribe-soldout-urgent` | 国内外付费卡保留灰显价格和功能点，售罄 CTA 改为加急反馈；国际站联系入口为 Discord；售罄绝不进入下单 | 已提交推送、CR 与 MR 草稿就绪；双站预览当前 404，待发布后核查并请用户确认创建 MR |
+| OPT-002 | 微信快捷登录在弹窗内完成授权，展示快捷登录按钮或待扫描二维码 | `pending_user` | `frontsandbox/wechat-login-in-modal-20260929` | 弹窗内嵌微信授权；确认后允许当前页回跳 | 已提交推送，双站预览 200、CR 与 MR 草稿就绪；真实微信客户端验收需同站部署 Auth 后端；待确认创建 MR |
+| OPT-003 | `/subscribe` 套餐卡强调外框随 Hover 移动 | `pending_user` | `frontsandbox/subscribe-card-hover-border` | 鼠标移入任一卡片时强调该卡；移出全部卡片后不固定强调某张卡 | 已提交推送、CR 与 MR 草稿就绪；预览域名仍 404，待构建发布并确认创建 MR |
+| OPT-004 | `/account/billing/` 展示已有订单列表 | `pending_user` | `frontsandbox/account-billing-order-list` | 将当前账号真实订单或真实空态作为独立区块置于「订阅套餐」大卡片下方 | 现有隐藏页是演示数据，真实历史 API 缺失；调查记录已推送，等待用户决定真实接口或先做真实空态；尚无实现/预览/MR |
+| OPT-005 | `/subscribe/` 套餐售罄交互与「需求加急」 | `pending_user`（用户指定插队） | `frontsandbox/subscribe-soldout-urgent` | 国内外付费卡保留灰显价格和功能点，售罄 CTA 改为加急反馈；国际站联系入口为 Discord；售罄绝不进入下单 | 已提交推送、CR 与 MR 草稿就绪；双站预览 200，待确认创建 MR |
 
 ## 当前处理项
 
 | ID | 需求 | 状态 | 独立分支 | 下一步 |
 |---|---|---|---|---|
-| OPT-002 | 微信快捷登录弹窗 | `active` | `codex/wechat-login-in-modal-20260929` | 完成复验、预览、CR、MR 草稿；OPT-001 和 OPT-005 暂存「待确认」 |
+| — | 当前无进行中的代码实现；OPT-004 等待用户明确数据范围 | — | — | 用户回复后按 FIFO 恢复 OPT-004 |
 
 ## 待确认（看板统一回溯）
 
 | ID | 卡片 | 需用户决定 | 恢复条件 |
 |---|---|---|---|
 | OPT-001 | [订阅页促销标签](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577) | 是否创建已准备好的 `frontsandbox/subscribe-promotion-badge-20260929` → `master` MR | 用户确认后创建 MR，进入「待验收」；完整提交信息见卡片评论 |
-| OPT-005 | [售罄加急交互](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685654) | 双站预览发布后，是否创建 `frontsandbox/subscribe-soldout-urgent` → `master` MR | 先核对当前 404 的预览地址转为可访问，再由用户确认创建 MR；完整信息见卡片评论 |
+| OPT-002 | [微信登录弹窗](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685578) | 是否创建 `frontsandbox/wechat-login-in-modal-20260929` → `master` MR | 双站预览已返回 200；用户确认后创建 MR；真实扫码验收需同站 Auth 部署与微信客户端 |
+| OPT-003 | [套餐卡 Hover 外框](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610) | 预览发布后是否创建 `frontsandbox/subscribe-card-hover-border` → `master` MR | 预览当前 404；发布可访问并核对后，用户确认创建 MR |
+| OPT-004 | [账单页订单列表](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615) | 本次接真实订单查询接口，还是先做列表结构与真实空态？ | 用户选定范围后恢复实现、测试、预览、CR 和 MR 准备；不能展示演示订单 |
+| OPT-005 | [售罄加急交互](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685654) | 是否创建 `frontsandbox/subscribe-soldout-urgent` → `master` MR | 双站预览已返回 200；用户确认后创建 MR；完整信息见卡片评论 |
 
 ## 等待队列（FIFO）
 
 | 顺位 | ID | 需求 | 状态 | 独立分支 | 进入条件 |
 |---|---|---|---|---|---|
-| 1 | OPT-003 | `/subscribe` 套餐卡 Hover 外框 | `queued` | `frontsandbox/subscribe-card-hover-border` | OPT-002 完成当前处理阶段或暂存后按顺序取出 |
-| 2 | OPT-004 | `/account/billing/` 订单列表显露与布局 | `queued` | `frontsandbox/account-billing-order-list` | OPT-003 完成当前处理阶段或暂存后按顺序取出 |
+| — | — | 当前无尚未启动的新需求；OPT-004 暂存待确认 | — | — | 用户明确订单数据范围后恢复 |
 
 ## 处理记录
 
@@ -69,3 +71,7 @@
 - 2026-09-29：用户追加 OPT-004 账单页订单列表需求。创建 TAPD 卡片 `1070234090138685615`，放入「待优化」并写入入队评论 `1070234090217529445`；按 FIFO 排在 OPT-003 之后。独立本地分支 `frontsandbox/account-billing-order-list` 已从 `origin/master` 提交 `63d1850f6` 创建，卡片补充评论 `1070234090217529448` 已记录；尚未实施或推送。
 - 2026-09-29：用户明确要求插入 OPT-005，直接按 ZIP 的已确认国内站售罄设计实施，优先于 OPT-002—004。创建 TAPD 卡片 `1070234090138685654` 并移入「进行中」，流转评论 `1070234090217529622` 记录插队原因和范围；独立本地分支 `frontsandbox/subscribe-soldout-urgent` 从 `origin/master` 提交 `63d1850f6` 创建。ZIP 中正式设计、图和源码快照与仓库现有文件相同，运行代码尚未实现。
 - 2026-09-29：用户补充 OPT-005 国际站联系入口改为 Discord，并要求其余需求在上午检查前至少推进至待确认。OPT-005 国内外实现、聚焦测试 105/105、check、双站构建和提交前 CR 完成；预览分支最新 `725ac0f3c` 已推送，两站 URL 暂为 404。卡片移至「待确认」，评论 `1070234090217538012` 记录 MR 草稿、验证与预览状态。按 FIFO 取出 OPT-002，卡片移至「进行中」并评论 `1070234090217538184`。
+- 2026-09-29：OPT-005 双站预览随后均返回 200，且页面资源与 master 不同；卡片补充评论 `1070234090217539587`。预览：`https://subscribe-soldout-urgent.preview.lightclaw.tech/subscribe`、`https://intl-subscribe-soldout-urgent.preview.lightclaw.tech/subscribe`。
+- 2026-09-29：OPT-002 分支 `frontsandbox/wechat-login-in-modal-20260929` 最新 `4ebde14f2` 已推送；前端聚焦测试 105/105、check、国内站构建、CR 通过。双站预览返回 200 且资源与 master 不同：`https://wechat-login-in-modal-20260929.preview.lightclaw.tech/`、`https://intl-wechat-login-in-modal-20260929.preview.lightclaw.tech/`。看板移至「待确认」，评论 `1070234090217540000`、`1070234090217541389` 记录 MR 草稿与预览。真实扫码仍需同站部署 Auth 服务和微信客户端验收。
+- 2026-09-29：OPT-003 分支 `frontsandbox/subscribe-card-hover-border` 最新 `b2dc56c96` 已推送；聚焦测试 44/44、check、双站构建、CR 通过。看板移至「待确认」，评论 `1070234090217541821` 记录 MR 草稿；预览 `https://subscribe-card-hover-border.preview.lightclaw.tech/subscribe`、`https://intl-subscribe-card-hover-border.preview.lightclaw.tech/subscribe` 当前仍返回 404，未完成线上预览验收。
+- 2026-09-29：OPT-004 发现隐藏订单页使用 5 条写死演示数据，前端/后端均无当前账号订单历史接口。独立分支 `frontsandbox/account-billing-order-list` 推送调查 Task Pack 提交 `6f4c4bac2`；尚未更改用户页面。卡片移至「待确认」，流转评论 `1070234090217542037` 写明两种范围选择及恢复条件。该项没有预览、CR、MR 草稿，不能称为已交付。
