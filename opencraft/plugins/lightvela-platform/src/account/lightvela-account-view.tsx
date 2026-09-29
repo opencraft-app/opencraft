@@ -95,7 +95,7 @@ export function createLightVelaAccountView(account: LightVelaAccountService) {
               {initialLoading ? <span className="settings-skeleton" /> : <span>{planLabel}</span>}
               <SettingsButton type="button" disabled={initialLoading} onClick={() => {
                 billingReturn.current = true;
-                window.open(`https://${snapshot.region === "cn" ? "lightvela.com" : "lightvela.ai"}/account?tab=billing#renew`, "_blank", "noopener,noreferrer");
+                window.open(`https://${snapshot.region === "cn" ? "lightvela.com" : "lightvela.ai"}/account/billing`, "_blank", "noopener,noreferrer");
               }}>Manage subscription<ArrowUpRight size={14} aria-hidden="true" /></SettingsButton>
             </div>
           </SettingsRow>

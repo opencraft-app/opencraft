@@ -53,6 +53,7 @@ type Sandbox struct {
 // SandboxDetail represents a detailed sandbox response.
 type SandboxDetail struct {
 	Sandbox
+	Region     string            `json:"region,omitempty"`
 	StartedAt  time.Time         `json:"startedAt"`
 	EndAt      time.Time         `json:"endAt"`
 	CPUCount   int32             `json:"cpuCount"`

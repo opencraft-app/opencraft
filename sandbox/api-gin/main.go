@@ -46,16 +46,17 @@ func main() {
 	}
 	apiMetrics := observability.NewAPIMetrics(prometheus.NewRegistry())
 	h := &handler{
-		svc:                 svc,
-		routes:              routes,
-		commands:            commands,
-		invocations:         invocations,
-		terminals:           terminals,
-		terminalCommands:    terminalCommands,
-		cloud:               cp,
-		metrics:             apiMetrics,
-		allowedTATCommandID: cfg.AllowedTATCommandID,
-		cloudPauseResume:    cfg.CloudPauseResume,
+		svc:                          svc,
+		routes:                       routes,
+		commands:                     commands,
+		invocations:                  invocations,
+		terminals:                    terminals,
+		terminalCommands:             terminalCommands,
+		cloud:                        cp,
+		metrics:                      apiMetrics,
+		allowedTATCommandID:          cfg.AllowedTATCommandID,
+		allowedTATCommandIDsByRegion: cfg.AllowedTATCommandIDsByRegion,
+		cloudPauseResume:             cfg.CloudPauseResume,
 	}
 
 	r := gin.New()
