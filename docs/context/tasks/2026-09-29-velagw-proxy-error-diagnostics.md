@@ -67,6 +67,7 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 - Before change, a recent 15-minute NewAPI sample had hundreds of 400 `unexpected EOF`, no NewAPI 5xx, and 429 channel errors largely recovered to 200. VelaGW logs report `upstream_roundtrip_error` 502 without original transport/context detail.
 - All Shanghai NewAPI traffic Pods were Ready with zero restarts; CPU and memory were low.
 - On 2026-09-29 the Shanghai `velagw-shprod` Application was `Synced/Healthy` at GitOps revision beginning `f6f0a31351bd`; `llmgateway-traffic` was 2/2 on the old image digest beginning `sha256:fb80d5a16886`. The diagnostic patch has not been released.
+- On 2026-09-30 the user explicitly authorized commit, push, and Shanghai production release. The isolated source MR is `https://git.woa.com/wisp/mono2/-/merge_requests/4842`; Gongfeng reports commit check success but rejected merge with `Review check not passed` (409). No production action has occurred.
 
 ## risks
 - Diagnostic logs could leak credentials or produce excess cardinality: use fixed error categories and byte counts only; do not log raw request/error strings.
@@ -93,4 +94,4 @@ Make Shanghai VelaGW reverse-proxy failures diagnosable without exposing request
 - Bounded source and manifest searches recorded in the conversation; no isolated scan artifact.
 
 ## handoff
-- Source implementation and local VelaGW/CI tests complete. Publishing remains pending explicit user confirmation for commit, push, and Shanghai production release; maintain manual Argo sync and verify expected GitOps revision, image, and traffic Deployment health. Current working branch trails `origin/master` by 238 commits; move only this reviewed patch onto the latest base before submission.
+- Source implementation and local VelaGW/CI tests complete. The authorized source change is on an isolated latest-master branch and MR !4842, but merge is blocked by Gongfeng's human review check. Request a non-author VelaGW owner review before merging; then allow the service CI build and production promote, maintain manual Shanghai Argo sync, and verify expected GitOps revision, image, and traffic Deployment health.

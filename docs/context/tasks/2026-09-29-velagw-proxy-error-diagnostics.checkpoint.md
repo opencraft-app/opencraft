@@ -32,27 +32,28 @@ derived: false
 | `docs/context/tasks/2026-09-29-velagw-proxy-error-diagnostics.md@working-tree` | Active task state | Restore exact scope and validation |
 
 ## stage
-Safe proxy diagnostics implemented and locally validated; awaiting explicit authorization for Git and Shanghai production release.
+Safe proxy diagnostics implemented and locally validated; source MR !4842 is blocked by required human review before Shanghai release.
 
 ## verified
 - Complete Docker image build passed full VelaGW Go tests, binary compilation, 50 Web tests, and TypeScript/Web build; `go vet ./...` passed.
 - Release bundle contract suite passed 102 tests; documentation validation passed.
 - Staged change-impact validation passed and requires owner review.
 - Shanghai Argo application was `Synced/Healthy` on the old image digest; traffic Deployment was 2/2.
+- User authorized Shanghai production release; the source MR was pushed from an isolated latest-master branch, and Gongfeng returned `Review check not passed` (409) on merge.
 
 ## unverified
-- Final scoped diff review and move to latest `origin/master` remain.
-- No CI build, registry digest, GitOps promotion, Argo sync, or post-release logs exist for this patch.
+- A non-author VelaGW owner review is required for source MR !4842.
+- No CI build from master, registry digest, GitOps promotion, Argo sync, or post-release logs exist for this patch.
 - Repository-wide context catalog has pre-existing errors; scoped baseline comparison remains if needed.
 
 ## discard
 - Bare Alpine full-test attempts failed due to missing bootstrap tools and worktree Git context; the project Dockerfile build supersedes them.
 
 ## restore
-- Working tree: `/data/mono2-k0s-observability-20260928`, branch `codex/k0s-observability-20260928`.
+- Release worktree: `/data/mono2-velagw-proxy-diagnostics-20260930`, branch `codex/velagw-proxy-diagnostics-20260930`; original dirty worktree `/data/mono2-k0s-observability-20260928` remains separate.
 - Relevant implementation: `velagw/internal/gateway/{model.go,service.go,traffic_reverse_proxy.go,traffic_proxy_diagnostics.go,traffic_proxy_diagnostics_test.go}`.
-- Preserve unrelated observability changes in the dirty worktree; stage only task-scoped files.
+- Preserve unrelated observability changes in the original dirty worktree; stage only task-scoped files.
 - Task pack: `docs/context/tasks/2026-09-29-velagw-proxy-error-diagnostics.md`.
 
 ## next_action
-Await explicit release authorization, then move only the reviewed patch onto latest `origin/master`, submit through CI/GitOps, and verify Shanghai image, Argo sync, traffic health, and safe diagnostic logs.
+After non-author owner review passes, merge MR !4842, follow the service CI build and Shanghai GitOps promotion, then verify Shanghai image, Argo sync, traffic health, and safe diagnostic logs.
