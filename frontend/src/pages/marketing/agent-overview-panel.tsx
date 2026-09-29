@@ -22,9 +22,9 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useCurrentLocale, useT, type TranslateFn } from "@/i18n/t";
-import { ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
+import { ACCOUNT_BILLING_PATH, ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
@@ -40,6 +40,7 @@ import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import type { BuddyProfile } from "@/pages/marketing/agent-buddy-profile";
 import { buildBuddySetupPlan } from "@/pages/marketing/agent-buddy-setup";
 import {
+  isSetupCommandSucceeded,
   runBuddySetupPlan,
   type SetupExec,
   type SetupStepState,
@@ -98,7 +99,7 @@ const formatDays = (value: number | null): string => (value === null ? "\u2014" 
 /** 统计数字：拉不到按 0 显示（「还没有」本身就是有效信息） */
 const formatCount = (value: number | null): string => String(value ?? 0);
 
-const HeroBanner = ({ stats }: { stats: HeroStats }) => {
+export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroStats; botCount?: number | null; invitedFriends?: number | null }) => {
   const t = useT();
 
   /* 每张卡都可点，跳到对应的管理入口 */
@@ -107,9 +108,14 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
       id: "credits",
       label: t("剩余积分"),
       value: formatCount(stats.credits),
-      to: ACCOUNT_PATH,
+      to: ACCOUNT_BILLING_PATH,
     },
-    {
+    ...(botCount !== undefined ? [{
+      id: "bots",
+      label: t("Bot 数量"),
+      value: botCount === null ? "—" : String(botCount),
+      to: AGENT_SECTION_PATH_BY_ID.overview,
+    }] : [{
       id: "automations",
       label: t("定时任务"),
       value: formatCount(stats.automations),
@@ -120,7 +126,13 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
       label: t("工作台"),
       value: formatCount(stats.sites),
       to: AGENT_SECTION_PATH_BY_ID.website,
-    },
+    }]),
+    ...(invitedFriends !== undefined ? [{
+      id: "invited-friends",
+      label: t("已邀请好友"),
+      value: formatCount(invitedFriends),
+      to: ACCOUNT_PATH,
+    }] : []),
   ];
 
   return (
@@ -160,8 +172,8 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
           </div>
         </div>
 
-        {/* 右：三张数据卡 */}
-        <div className="grid shrink-0 grid-cols-3 gap-3">
+        {/* 右：数据卡 */}
+        <div className={cn("grid shrink-0 gap-3", statItems.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
           {statItems.map((stat) => (
             <AppLink
               key={stat.id}
@@ -202,13 +214,13 @@ type ChangelogEntry = {
 };
 
 const zeroTokenGlobalImages: Record<string, string> = {
-  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
-  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
-  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.png",
-  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.png",
-  es: "/assets/changelog/scheduled-tasks-notification-es.png",
-  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
-  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
+  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.webp",
+  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.webp",
+  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.webp",
+  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.webp",
+  es: "/assets/changelog/scheduled-tasks-notification-es.webp",
+  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.webp",
+  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.webp",
 };
 
 /** TODO(demo): 接真实 changelog 数据源后替换；展示 9 月动态中选定的三条。 */
@@ -239,8 +251,8 @@ const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] =
       title: t("定时任务新增通知任务和脚本任务"),
       body: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
       image: assetUrl(isGlobal
-        ? zeroTokenGlobalImages[locale] ?? "/assets/changelog/scheduled-tasks-notification-en-US.png"
-        : "/assets/changelog/scheduled-tasks-notification-zh-CN.png"),
+        ? zeroTokenGlobalImages[locale] ?? "/assets/changelog/scheduled-tasks-notification-en-US.webp"
+        : "/assets/changelog/scheduled-tasks-notification-zh-CN.webp"),
       imageAlt: t("定时任务新增通知任务和脚本任务"),
     },
   ];
@@ -249,7 +261,7 @@ const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] =
 /** 自动轮播间隔（毫秒） */
 const CAROUSEL_INTERVAL_MS = 5000;
 
-const LatestNewsSection = () => {
+export const LatestNewsSection = () => {
   const t = useT();
   const locale = useCurrentLocale();
   const [index, setIndex] = useState(0);
@@ -345,15 +357,19 @@ const LatestNewsSection = () => {
 
 /* ─────────────────────── 1. 我的智能伙伴 ─────────────────────── */
 
-/** 编辑资料的弹窗：名字 / 标签 / 描述 */
-const ProfileEditDialog = ({
+/** 单 Bot 与多 Bot 总览共用原有资料编辑弹窗。 */
+export const ProfileEditDialog = ({
   profile,
   onClose,
   onSave,
+  errorMessage,
+  saving = false,
 }: {
   profile: BuddyProfile;
   onClose: () => void;
   onSave: (next: BuddyProfile) => void;
+  errorMessage?: string | null;
+  saving?: boolean;
 }) => {
   const t = useT();
   const [name, setName] = useState(profile.name);
@@ -363,7 +379,7 @@ const ProfileEditDialog = ({
   const [color, setColor] = useState(profile.color);
   const [shapeBatch, setShapeBatch] = useState(() => AVATAR_SHAPES.slice(0, 8));
 
-  const canSave = name.trim().length > 0;
+  const canSave = name.trim().length > 0 && !saving;
 
   /** 换一批：重抽候选形状 + 换配色；当前形状不在新批次时顺延第一个 */
   const handleRandomize = () => {
@@ -379,10 +395,10 @@ const ProfileEditDialog = ({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="rounded-[0.875rem] md:w-[32rem]">
         <div className="pr-6">
-          <h2 className="text-lg font-semibold leading-7 text-black/[0.92]">{t("编辑资料")}</h2>
-          <p className="mt-1 text-[13px] leading-5 text-black/50">
+          <DialogTitle className="text-lg font-semibold leading-7 text-black/[0.92]">{t("编辑资料")}</DialogTitle>
+          <DialogDescription className="mt-1 text-[13px] leading-5 text-black/50">
             {t("修改你的智能伙伴的头像、名字与描述")}
-          </p>
+          </DialogDescription>
         </div>
 
         {/* ── 头像：大预览 + 形状候选 + 换一批 ── */}
@@ -445,6 +461,7 @@ const ProfileEditDialog = ({
           />
         </div>
 
+        {errorMessage && <p role="alert" className="mt-3 text-sm text-red-700">{errorMessage}</p>}
         <div className="mt-5 flex items-center justify-end gap-2">
           <button
             type="button"
@@ -487,12 +504,25 @@ const ProfileEditDialog = ({
  *   - 没配过（存量用户）→ 回落 bot 插画，与侧边栏同源
  * 否则存量用户会看到资料卡显示默认几何体、侧边栏显示插画，两个头像不一致。
  */
+export const BuddyProfileAvatar = ({ profile, hasCustomAvatar, fallbackAvatarUrl, size = 64 }: {
+  profile: BuddyProfile;
+  hasCustomAvatar: boolean;
+  fallbackAvatarUrl: string;
+  size?: number;
+}) => (hasCustomAvatar || !fallbackAvatarUrl ? (
+  <GeometricAvatar shapeId={profile.shapeId} color={profile.color} size={size} className="shrink-0" />
+) : (
+  <img src={fallbackAvatarUrl} alt="" width={size} height={size} className="shrink-0 rounded-full object-contain" />
+));
+
 const BuddyProfileSection = ({
   profile,
   hasCustomAvatar,
   fallbackAvatarUrl,
   canEdit,
   onSave,
+  errorMessage,
+  saving,
 }: {
   profile: BuddyProfile;
   /** 用户是否配过几何体头像 */
@@ -501,6 +531,8 @@ const BuddyProfileSection = ({
   fallbackAvatarUrl: string;
   canEdit: boolean;
   onSave: (next: BuddyProfile) => void;
+  errorMessage?: string | null;
+  saving?: boolean;
 }) => {
   const t = useT();
   const [editOpen, setEditOpen] = useState(false);
@@ -526,22 +558,7 @@ const BuddyProfileSection = ({
           "flex w-full cursor-pointer gap-4 p-4 text-left transition hover:border-black/[0.12] disabled:cursor-wait",
         )}
       >
-        {hasCustomAvatar || !fallbackAvatarUrl ? (
-          <GeometricAvatar
-            shapeId={profile.shapeId}
-            color={profile.color}
-            size={64}
-            className="shrink-0"
-          />
-        ) : (
-          <img
-            src={fallbackAvatarUrl}
-            alt=""
-            width={64}
-            height={64}
-            className="h-16 w-16 shrink-0 rounded-full object-contain"
-          />
-        )}
+        <BuddyProfileAvatar profile={profile} hasCustomAvatar={hasCustomAvatar} fallbackAvatarUrl={fallbackAvatarUrl} />
         <span className="min-w-0 flex-1">
           <span className="block text-[15px] font-semibold leading-6 text-black/[0.88]">
             {profile.name}
@@ -558,11 +575,10 @@ const BuddyProfileSection = ({
       {editOpen ? (
         <ProfileEditDialog
           profile={profile}
+          errorMessage={errorMessage}
+          saving={saving}
           onClose={() => setEditOpen(false)}
-          onSave={(next) => {
-            setEditOpen(false);
-            onSave(next);
-          }}
+          onSave={onSave}
         />
       ) : null}
     </section>
@@ -628,7 +644,7 @@ export function __i18nExtractOnlyAutomations(t: (zh: string) => string) {
   ];
 }
 
-const RecommendedAutomationsSection = () => {
+export const RecommendedAutomationsSection = () => {
   const t = useT();
 
   return (
@@ -682,6 +698,102 @@ const RecommendedAutomationsSection = () => {
 
 /* ──────────────────────────────── 面板 ──────────────────────────────── */
 
+export const useOverviewProfileEditor = ({ botId, profileId = "", execDebugCommand, onProfileChanged }: {
+  botId: string;
+  profileId?: string;
+  execDebugCommand: SetupExec;
+  onProfileChanged: () => void;
+}) => {
+  const t = useT();
+  /** 写入中：复用「喂咖啡」动效 + 步骤进度 */
+  const [steps, setSteps] = useState<SetupStepState[] | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const [isReadingSoul, setIsReadingSoul] = useState(false);
+
+  /**
+   * 资料写入：名字 / 描述 / 头像。
+   *
+   * 关键是 preserveSoulContent —— 这是**编辑**而非新建，SOUL.md 的正文
+   * 可能是用户在对话里调教出来的，只能改元数据行（Name / Summary），
+   * 正文必须原样保留。头像与描述另有 profile.yaml 一份（见 buildBuddySetupPlan）。
+   *
+   * 所以要先把当前 SOUL 原文读回来，交给 updateSoulMetadataFields 做字段级替换。
+   */
+  const resolvedProfileId = profileId.trim();
+  const canEditProfile = Boolean(botId && resolvedProfileId);
+  const scopeRef = useRef<object | null>(null);
+  useEffect(() => {
+    scopeRef.current = {};
+    setSteps(null);
+    setWriteError(null);
+    setIsReadingSoul(false);
+    return () => { scopeRef.current = null; };
+  }, [botId, resolvedProfileId]);
+  const applyProfile = async (next: BuddyProfile) => {
+    if (!canEditProfile || isReadingSoul || steps) return;
+    const scope = scopeRef.current;
+    const isCurrentScope = () => scope !== null && scopeRef.current === scope;
+    setWriteError(null);
+    setIsReadingSoul(true);
+
+    let existingSoul = "";
+    try {
+      const read = await execDebugCommand(
+        botId,
+        buildHermesSoulContentReadCommand(resolvedProfileId),
+        { timeoutMs: SOUL_READ_TIMEOUT_MS },
+      );
+      if (!isSetupCommandSucceeded(read)) throw new Error("Soul read failed");
+      const parsed = parseHermesSoulContent(read.output || "");
+      if (parsed.status !== "ready" && parsed.status !== "missing") {
+        if (isCurrentScope()) setWriteError(parsed.status === "too_large"
+          ? t("当前人设文件超过 20 KB，暂不支持在线编辑或下载")
+          : t("无法读取人设文件，请重试"));
+        return;
+      }
+      if (parsed.status === "ready") existingSoul = parsed.markdown;
+    } catch {
+      if (isCurrentScope()) setWriteError(t("无法读取人设文件，请重试"));
+      return;
+    } finally {
+      if (isCurrentScope()) setIsReadingSoul(false);
+    }
+
+    // 读取期间切换目标或卸载后，不再启动旧目标的写入。
+    if (!isCurrentScope()) return;
+    const plan = buildBuddySetupPlan({
+      profile: { name: next.name, description: next.description },
+      profileId: resolvedProfileId,
+      avatar: { shapeId: next.shapeId, color: next.color },
+      timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+      // 仅成功读取到明确的 missing 状态时允许新建；其他读取失败均已中止。
+      preserveSoulContent: Boolean(existingSoul),
+      existingSoul,
+      t,
+    });
+    setSteps(plan.map((step) => ({ step, status: "pending" as const })));
+
+    try {
+      await runBuddySetupPlan({
+        botId,
+        steps: plan,
+        exec: (targetBotId, command, options) => {
+          if (!isCurrentScope()) throw new Error("Profile edit target changed");
+          return execDebugCommand(targetBotId, command, options);
+        },
+        onProgress: (progress) => { if (isCurrentScope()) setSteps(progress); },
+      });
+      if (!isCurrentScope()) return;
+      onProfileChanged();
+      setSteps(null);
+    } catch (error) {
+      if (isCurrentScope()) setWriteError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  return { steps, writeError, isReadingSoul, canEditProfile, resolvedProfileId, applyProfile };
+};
+
 export const AgentOverviewPanel = ({
   botId,
   profileId = "",
@@ -710,79 +822,9 @@ export const AgentOverviewPanel = ({
   fallbackAvatarUrl?: string;
 }) => {
   const t = useT();
-  /** 写入中：复用「喂咖啡」动效 + 步骤进度 */
-  const [steps, setSteps] = useState<SetupStepState[] | null>(null);
-  const [writeError, setWriteError] = useState<string | null>(null);
-
-  /**
-   * 资料写入：名字 / 描述 / 头像。
-   *
-   * 关键是 preserveSoulContent —— 这是**编辑**而非新建，SOUL.md 的正文
-   * 可能是用户在对话里调教出来的，只能改元数据行（Name / Summary），
-   * 正文必须原样保留。头像与描述另有 profile.yaml 一份（见 buildBuddySetupPlan）。
-   *
-   * 所以要先把当前 SOUL 原文读回来，交给 updateSoulMetadataFields 做字段级替换。
-   */
-  const resolvedProfileId = profileId.trim();
-  const canEditProfile = Boolean(botId && resolvedProfileId);
-  const scopeRef = useRef<object | null>(null);
-  useEffect(() => {
-    scopeRef.current = {};
-    setSteps(null);
-    setWriteError(null);
-    return () => { scopeRef.current = null; };
-  }, [botId, resolvedProfileId]);
-  const applyProfile = async (next: BuddyProfile) => {
-    if (!canEditProfile) return;
-    const scope = scopeRef.current;
-    const isCurrentScope = () => scope !== null && scopeRef.current === scope;
-    setWriteError(null);
-
-    let existingSoul = "";
-    try {
-      const read = await execDebugCommand(
-        botId,
-        buildHermesSoulContentReadCommand(resolvedProfileId),
-        { timeoutMs: SOUL_READ_TIMEOUT_MS },
-      );
-      const parsed = parseHermesSoulContent(read.output || "");
-      if (parsed.status === "ready") existingSoul = parsed.markdown;
-    } catch {
-      /* 读不到就退回新建语义 —— 见下方 preserveSoulContent 的判断 */
-    }
-
-    // 读取期间切换目标或卸载后，不再启动旧目标的写入。
-    if (!isCurrentScope()) return;
-    const plan = buildBuddySetupPlan({
-      profile: { name: next.name, description: next.description },
-      profileId: resolvedProfileId,
-      avatar: { shapeId: next.shapeId, color: next.color },
-      timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-      // 只有真的读到了现有 SOUL 才走保留模式；读失败时宁可用新建语义
-      // 生成一份完整文件，也不要写出半截内容
-      preserveSoulContent: Boolean(existingSoul),
-      existingSoul,
-      t,
-    });
-    setSteps(plan.map((step) => ({ step, status: "pending" as const })));
-
-    try {
-      await runBuddySetupPlan({
-        botId,
-        steps: plan,
-        exec: (targetBotId, command, options) => {
-          if (!isCurrentScope()) throw new Error("Profile edit target changed");
-          return execDebugCommand(targetBotId, command, options);
-        },
-        onProgress: (progress) => { if (isCurrentScope()) setSteps(progress); },
-      });
-      if (!isCurrentScope()) return;
-      onProfileChanged();
-      setSteps(null);
-    } catch (error) {
-      if (isCurrentScope()) setWriteError(error instanceof Error ? error.message : String(error));
-    }
-  };
+  const { steps, writeError, isReadingSoul, canEditProfile, resolvedProfileId, applyProfile } = useOverviewProfileEditor({
+    botId, profileId, execDebugCommand, onProfileChanged,
+  });
 
   if (steps) {
     return <CreatingLoadingView errorMessage={writeError} steps={steps} />;
@@ -803,6 +845,8 @@ export const AgentOverviewPanel = ({
       <BuddyProfileSection
         key={JSON.stringify([botId, resolvedProfileId])}
         canEdit={canEditProfile}
+        errorMessage={writeError}
+        saving={isReadingSoul}
         profile={profile}
         hasCustomAvatar={hasCustomAvatar}
         fallbackAvatarUrl={fallbackAvatarUrl}
