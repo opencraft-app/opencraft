@@ -69,6 +69,7 @@ Tighten the desktop Agents left-navigation vertical rhythm, slightly enlarge its
 - CI repair: `npm --prefix opencraft run sync:mono2-agent-console` synchronized the generated manifest to `a235443ec`; `npm --prefix opencraft run check:mono2-agent-console` verified all 130 vendored files.
 - Conflict repair: after `origin/master` advanced to `c1df25f86`, the only merge conflict was the mechanical `UPSTREAM.json`. The target snapshot was used as the merge baseline, then the closure was regenerated from merge commit `b7da9f628`; `check:mono2-agent-console` again verified all 130 files.
 - Post-merge regression: the three focused sidebar suites passed 54/54; `pnpm check` passed with 166 current diagnostics, 171 baseline, and 0 new diagnostics.
+- Repeated target drift: after `origin/master` advanced to `cfb478aef`, the only conflict again was `UPSTREAM.json`. The branch merged that target as `cf372e676`, then regenerated and rechecked the 130-file closure rather than manually combining source revisions.
 
 ## risks
 - Reducing desktop spacing could affect compact desktop viewports. Existing max-height variables remain the source of truth for that variant.
