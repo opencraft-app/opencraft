@@ -85,6 +85,8 @@ func TestSandboxMigrationsPresent(t *testing.T) {
 		"000010_enforce_single_running_modify_operation.down.sql",
 		"000011_add_modify_instance_type_candidates.up.sql",
 		"000011_add_modify_instance_type_candidates.down.sql",
+		"000012_add_pool_refill_paused.up.sql",
+		"000012_add_pool_refill_paused.down.sql",
 	} {
 		path := filepath.Join("..", "..", "migrations", name)
 		if _, err := os.Stat(path); err != nil {
