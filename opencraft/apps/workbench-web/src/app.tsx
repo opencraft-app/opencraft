@@ -1637,6 +1637,10 @@ export function App({
                         addMenuContent={composerAddMenuContent}
                         endActions={composerEndActions}
                         modelSelectionPolicy={embedded ? "host-default" : "user"}
+                        placeholder={embedded ? intl.formatMessage({
+                          id: "chat.companionFollowupPlaceholder",
+                          defaultMessage: "Tell me what you'd like to do next",
+                        }) : undefined}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
                         mentionSuggestionsEnabled={false}

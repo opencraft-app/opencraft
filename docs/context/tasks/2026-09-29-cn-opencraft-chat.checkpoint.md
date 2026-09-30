@@ -220,3 +220,16 @@
 - 迁移后3/3 tests、Web typecheck、平台边界通过。既有构建与UI验证沿用前轮，无新生产代码；生成闭包检查另发现 sourceRevision 落后，需先提交前端测试迁移，再官方 sync 并独立提交。
 - context_receipt 补充 docs/engineering/domains/agent-gateway-runtime.md 验证边界。用户“继续吧”后继续修复和原MR提交；不处理原有master冲突，不合并或发布。
 - 源码迁移提交20dbd5595后，官方sync仅更新UPSTREAM.json的sourceRevision；130文件闭包检查通过，documentation和staged change-impact通过。生成清单独立后续提交，排除无关catalog.jsonl。
+
+## embedded_composer_height_followup
+- 编辑区域最小高度50→74px；Web typecheck、embedded release build、documentation、diff check通过。真实Chrome现有国内域名映射预览刷新后，DOM测量height/minHeight均为74px（修改前50px）；截图/tmp/lightvela-composer-height.png。未发消息。
+- 5174预览已恢复HTTP200，实际cwd为cn-opencraft-chat工作树，国内API api.lightvela.com。首次探测遗漏既有监听，启动脚本清理构建后端口冲突；已核对原Next进程所属本工作树，定向重启恢复。使用lightvela-local-preview Skill，未修改代理。
+- 本轮变更未提交/推送/发布；无关catalog.jsonl保持原状。
+
+## companion_followup_placeholder
+- 国内内嵌已有会话复用chat.companionPlaceholder，统一为“聊聊你的想法，或交给我一件事”；七语言复用同一catalog，独立版默认不变。
+- Web类型、i18n、embedded-companion-locales测试、嵌入构建通过；Chrome国内映射预览打开已有“友好打个招呼”会话，textbox名称确认新文案。未发送消息，未提交或发布。
+
+- 后续用户要求差异化：已有会话改为“继续聊聊，或告诉我接下来想做什么”，独立消息ID覆盖全部七语言。Web类型、163条i18n校验、嵌入构建和文档检查通过；Chrome已有会话textbox名称验证新文案，截图/tmp/lightvela-followup-copy.png。初始提示保持原文；本地预览已更新，未提交/发布。
+
+- 用户再精简后，已有会话最终文案为“告诉我接下来想做什么”，六套翻译和英文default同步；i18n、嵌入构建与diff检查通过，5174产物已更新。未提交或发布。

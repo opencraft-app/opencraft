@@ -166,3 +166,16 @@
 - Router `CI change impact directory guard opencraft` 无匹配；精确检索命中测试及 .ci/checks/frontend_guard.sh，检查 frontend-runtime-openspec-i18n 邻接卡和 frontend/vitest.config.ts。
 - context_receipt：frontend/AGENTS.md、现有 opencraft/AGENTS.md /维护Skill、karpathy-guidelines、devops-pipeline Skill（只读日志，无启动/取消流水线）；复用交付路由上下文。
 - 将真实 Shadow DOM 回归迁入 OpenCraft，使用自身 jsdom devDependency 与 node:test，不修改生产代码、类型检查基线或 CI 复制边界。计划运行迁移后测试与真实隔离 frontend guard。
+
+## embedded_composer_height_followup
+- 用户要求输入框稍增高：内嵌编辑区域50→74px，复用统一Composer；无协议、草稿及提交行为变化。
+- Router无匹配；初始路径查询未命中后rg --files定位embedded-chat/embedded-workbench-element.tsx。context_receipt沿用karpathy、OpenCraft AGENTS，复读维护Skill/verification、chat-ui-architecture、design/invariants和frontend adjacency，检查build-release-artifacts测试邻居。
+- 计划Web类型、嵌入构建和实际预览尺寸检查；5174当前无监听，按local-preview Skill恢复国内预览。
+
+## companion_followup_placeholder
+- 已有会话占位提示复用chat.companionPlaceholder及控制台七语言翻译，消除“修改要求”的场景限制；独立版保留原默认。
+- context_receipt补读site-environment-routing domain；沿用OpenCraft维护/karpathy规则与chat-ui架构。精确检索定位App主Composer的suppliedPlaceholder槽位，检查embedded-companion-messages翻译邻居。Web类型、i18n、嵌入构建及浏览器占位提示验收。
+
+- 用户随后要求区分开聊前后：已有会话使用独立chat.companionFollowupPlaceholder“继续聊聊，或告诉我接下来想做什么”，新会话保持原文案；全部七语言覆盖。沿用同一locale路由和context_receipt。
+
+- 文案精简：用户要求去掉“继续聊聊”，已有会话最终采用“告诉我接下来想做什么”；其他语言同步去掉开头继续聊天的短语。

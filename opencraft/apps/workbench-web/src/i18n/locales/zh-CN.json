@@ -62,6 +62,7 @@
   "chat.placeholder": "继续提出修改要求",
   "chat.companionHeading": "今天想一起做点什么？",
   "chat.companionPlaceholder": "聊聊你的想法，或交给我一件事",
+  "chat.companionFollowupPlaceholder": "告诉我接下来想做什么",
   "chat.newPlaceholder": "让 OpenCraft 为你处理任务",
   "chat.model": "模型",
   "chat.reasoning": "思考强度",
