@@ -11102,6 +11102,22 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+.workspace-file-source {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px 28px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font: 11px/18px var(--font-family-mono);
+
+  code { font: inherit; }
+  &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
+}
+
 .workspace-code-editor {
   width: 100%;
   min-width: 0;

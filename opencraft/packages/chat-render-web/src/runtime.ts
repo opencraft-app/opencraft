@@ -11,7 +11,7 @@ import { ShikiWebExtension } from "./extensions/shiki/plugin";
 import { BaseCodeBlockRenderer } from "./renderers/code/code-block";
 import { createImageRenderer } from "./renderers/media/image-renderer";
 import { proseNodeKinds, ProseRenderer } from "./renderers/prose/prose-renderer";
-import { createFileCitationRenderer, createLinkRenderer, createReferenceRenderer } from "./renderers/resource-link/resource-link";
+import { createFileCitationRenderer, createInlineMarkdownFileRenderer, createLinkRenderer, createReferenceRenderer } from "./renderers/resource-link/resource-link";
 import { TableRenderer } from "./renderers/table/table-renderer";
 import { ChatEnhancementService } from "./services/chat-enhancement-service";
 
@@ -24,6 +24,12 @@ const WebBuiltinRenderers = Object.assign(function WebBuiltinRenderers(ctx: Cont
       priority: 0,
       kinds: proseNodeKinds,
       component: ProseRenderer,
+    }),
+    ctx.chatNodeRenderers.register({
+      name: "web-inline-markdown-file",
+      priority: 1,
+      kinds: ["inline-code"],
+      component: createInlineMarkdownFileRenderer(ctx.chatResourcePolicies),
     }),
     ctx.chatNodeRenderers.register({
       name: "web-code-fallback",

@@ -1361,6 +1361,7 @@ export function App({
           onSidebarResizeEnd={commitSidebarWidth}
           rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
           rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
+          rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
               type: "set-region-open",
@@ -1693,6 +1694,10 @@ export function App({
                         addMenuContent={composerAddMenuContent}
                         endActions={composerEndActions}
                         modelSelectionPolicy={embedded ? "host-default" : "user"}
+                        placeholder={embedded ? intl.formatMessage({
+                          id: "chat.companionFollowupPlaceholder",
+                          defaultMessage: "Tell me what you'd like to do next",
+                        }) : undefined}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
                         mentionSuggestionsEnabled={false}

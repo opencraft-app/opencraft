@@ -4,7 +4,7 @@ import { FormattedMessage } from "@opencraft/i18n/react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Copy, ExternalLink, Globe2 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
 
 import { writeTextToClipboard } from "../../clipboard";
 import {
@@ -133,6 +133,33 @@ export function ExternalUrlLink({
   );
 }
 
+// An inline code label inside an explicit Markdown link belongs to that link.
+const ResourceLinkLabel = createContext(false);
+
+export function createInlineMarkdownFileRenderer(resources: ChatResourcePolicyService) {
+  return function InlineMarkdownFileRenderer({ node, context }: ChatNodeRendererProps) {
+    const insideLink = useContext(ResourceLinkLabel);
+    if (node.kind !== "inline-code") return null;
+    const code = <code className="chat-inline-code">{node.code}</code>;
+    // Only explicit file paths are actionable; commands, bare names and URLs
+    // remain code. The Host still decides whether a clicked file can be read.
+    if (insideLink || context.streaming || context.openResource === undefined
+      || !/^(?:\/(?!\/)|\.\.?\/|[a-z]:[\\/]|file:\/\/\/)[^\r\n`<>|;]*\.(?:md|markdown)$/iu.test(node.code)) return code;
+    const decision = resources.resolve(node.code, context);
+    if (!decision.allowed || decision.target === null
+      || (decision.kind !== "file" && decision.kind !== "workspace-file")) return code;
+    return <a
+      href={decision.target}
+      title={node.code}
+      data-chat-resource-kind={decision.kind}
+      onClick={(event) => {
+        event.preventDefault();
+        context.openResource?.(decision.target!, decision);
+      }}
+    >{code}</a>;
+  };
+}
+
 function basename(path: string): string {
   return path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? path;
 }
@@ -186,7 +213,7 @@ export function createLinkRenderer(resources: ChatResourcePolicyService) {
         <ExternalUrlLink
           context={context}
           decision={decision}
-          label={renderNodes(node.children)}
+          label={<ResourceLinkLabel.Provider value>{renderNodes(node.children)}</ResourceLinkLabel.Provider>}
           title={node.children.map((child) => child.kind === "text" ? child.text : "").join("") || null}
         />
       );
@@ -201,7 +228,7 @@ export function createLinkRenderer(resources: ChatResourcePolicyService) {
         rel={external ? "noopener noreferrer" : undefined}
         target={external ? "_blank" : undefined}
         title={node.title ?? decision.reason ?? node.href}
-      >{renderNodes(node.children)}</a>
+      ><ResourceLinkLabel.Provider value>{renderNodes(node.children)}</ResourceLinkLabel.Provider></a>
     );
   };
 }
