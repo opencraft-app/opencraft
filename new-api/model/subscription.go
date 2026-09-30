@@ -1410,7 +1410,9 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 		var subs []UserSubscription
 		if err := lockForUpdate(tx).
 			Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
-			Order("end_time asc, id asc").
+			// Promotional credits must precede package credits even when their gateway expiry is later.
+			// Preserve expiry/ID ordering within each class and the existing full-quota/tail-grace checks.
+			Order("CASE WHEN name LIKE 'free-credit:%' THEN 0 ELSE 1 END asc, end_time asc, id asc").
 			Find(&subs).Error; err != nil {
 			return errors.New("no active subscription")
 		}

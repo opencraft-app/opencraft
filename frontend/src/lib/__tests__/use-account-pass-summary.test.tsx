@@ -12,6 +12,11 @@ const pass = (overrides: Partial<Pass> = {}): Pass => ({
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason?: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 
 describe("shared account pass summary", () => {
+  it("includes granted quota and usage once in the shared sidebar summary", () => {
+    expect(accountPassCredits(pass({ credit_total: 4500, credit_available: 4000, free_credit_total: 1000, free_credit_available: 700 })))
+      .toEqual({ total: 5500, available: 4700, used: 800, usedPercent: 15 });
+  });
+
   it.each([
     ["none", []],
     ["ready", [pass()]],

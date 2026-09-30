@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "10a19252ada00903e264548eb32d385abd019248",
+  "sourceRevision": "6b7e19f6e398b3139363e34146e85216509be122",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "file": "domain/credit-pack.ts",
-      "sourceSha256": "fb5a49f8aeaa5c09a537a96b76fb5b28b03644d469012509a861aff9dad327d0"
+      "sourceSha256": "98a5ae9c6cd0f2560e82fe5ff240a6ea97df49b0c866f83b9a810875f9ca5b57"
     },
     {
       "file": "domain/instance-bot-errors.ts",
