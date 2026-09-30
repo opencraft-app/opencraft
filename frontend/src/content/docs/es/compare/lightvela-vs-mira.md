@@ -6,7 +6,7 @@
 
 Ambos productos van más allá de una ventana de chat, pero parten de centros distintos: Mira es un asistente centrado en Telegram, mientras que LightVela es un Agent personal configurable que puede crecer hasta convertirse en un sistema de flujos de trabajo más amplio.
 
-![Comparación entre LightVela y Mira para ejecutar un AI Agent personal](../images/lightvela-vs-mira.webp)
+![Comparación entre LightVela y Mira para ejecutar un AI Agent personal](../../images/lightvela-vs-mira.webp)
 
 ## Comparación rápida
 

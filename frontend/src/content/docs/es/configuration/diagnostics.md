@@ -30,7 +30,7 @@ El diagnóstico te ayuda a investigar un Agent que no se comporta como se espera
 3. Selecciona un rango de tiempo para los registros recientes: 1, 3, 6, 12 o 24 horas.
 4. Selecciona **Actualizar** para cargar los registros.
 
-![Diagnóstico en la consola de LightVela](../images/diagnostics-overview-en.webp)
+![Diagnóstico en la consola de LightVela](../../images/diagnostics-overview-en.webp)
 
 Empieza con el período más corto útil. Una ventana de registro más estrecha facilita conectar un error con la acción que lo provocó.
 
@@ -65,7 +65,7 @@ Para un problema que persiste después de revisar los registros y la configuraci
 3. Cuando termine, recarga la consola del Agent.
 4. Prueba una tarea simple en Chat, luego revisa Almacenamiento en la Nube y tu configuración habitual.
 
-![Diálogo de confirmación de reinstalación del Agent](../images/diagnostics-reinstall-en.webp)
+![Diálogo de confirmación de reinstalación del Agent](../../images/diagnostics-reinstall-en.webp)
 
 Un Agent puede estar brevemente no disponible durante el mantenimiento. Evita iniciar otra acción de reparación mientras la reinstalación aún esté en progreso.
 

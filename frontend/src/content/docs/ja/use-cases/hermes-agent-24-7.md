@@ -4,7 +4,7 @@
 
 **Hermes Agentは、ローカルマシンではなくクラウドインスタンス上で動作するため、24時間いつでも利用可能です。モデルと少なくとも1つのチャンネルが設定されると、どのエントリーポイントからメッセージを送っても同じメモリと動作を使用します。** 本当に長期的に利用可能であるためには、次の3つが必要です：使用可能なアカウントクォータで設定されたモデル（試用クレジットが尽きると返信がなくなる場合があります）、接続済みとして表示される少なくとも1つのチャンネル、そしてあなたが不在の間にスケジュールされた作業をカバーするスケジュールタスクです。コンソールのステータスだけで利用可能性を判断しないでください — 実際のチャンネルを通じて実際のメッセージを送信してください。何かが壊れた場合は、Diagnosticsで最近のログを確認してエクスポートしてください。（原因を特定するために、1、3、6、12、または24時間の範囲を選択可能）
 
-![Hermes Agent が LightVela コンソールでオンライン](../images/use-case-hermes-online.webp)
+![Hermes Agent が LightVela コンソールでオンライン](../../images/use-case-hermes-online.webp)
 
 ## 対象者
 
@@ -30,7 +30,7 @@
 
 詳細な手順は[Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md)および[WeChat](../configuration/channel-wechat.md)。
 
-![接続されたチャネルを持つ実行中の Hermes Agent](../images/use-case-hermes-online-channel.webp)
+![接続されたチャネルを持つ実行中の Hermes Agent](../../images/use-case-hermes-online-channel.webp)
 
 ### 2. 動作中の構成はシンプルで目に見える状態に保つ
 
@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 でスケジュールを作成し[スケジュールタスク](../configuration/automation.md)、適切であれば通知チャネルを選択し、最初の数回の実行を確認します。結果があまりにも広範囲であれば、すぐに別のスケジュールタスクを追加するのではなく、指示をより具体的にしてください。
 
-![Hermes Agentからの最近のスケジュールタスク実行](../images/use-case-hermes-online-automation.webp)
+![Hermes Agentからの最近のスケジュールタスク実行](../../images/use-case-hermes-online-automation.webp)
 
 ## FAQ
 

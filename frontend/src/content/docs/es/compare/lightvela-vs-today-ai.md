@@ -8,7 +8,7 @@ El modelo de producto documentado de LightVela se centra en un Hermes Agent aloj
 LightVela es la opción más fácil de entender si necesitas alojar un Agent persistente y controlar su configuración.
 Today.AI representa una visión más experimental: un asistente que construye una imagen viva de tu vida y actúa antes de que se lo pidas.
 
-![Comparación entre LightVela y Today.AI para un asistente personal de IA siempre disponible](../images/lightvela-vs-today-ai.webp)
+![Comparación entre LightVela y Today.AI para un asistente personal de IA siempre disponible](../../images/lightvela-vs-today-ai.webp)
 
 ## Comparación rápida
 

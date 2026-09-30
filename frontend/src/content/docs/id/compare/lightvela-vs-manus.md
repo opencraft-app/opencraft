@@ -1,6 +1,6 @@
 # LightVela vs Manus: Mana yang Lebih Sesuai untuk AI Agent?
 
-![LightVela dibandingkan dengan Manus untuk meng-hosting dan memakai AI Agent](../images/lightvela-vs-manus.webp)
+![LightVela dibandingkan dengan Manus untuk meng-hosting dan memakai AI Agent](../../images/lightvela-vs-manus.webp)
 
 ## Ringkasan
 

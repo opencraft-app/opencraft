@@ -4,7 +4,7 @@
 
 **Personal knowledge comes in two shapes that must be managed separately: stable information about who you are and how you work belongs in long-term memory, while evolving documents, notes, and project material belong in cloud storage.** Managing both as one thing costs you stability and findability at the same time. On LightVela, memory preserves context across conversations — the console's memory page shows what has been retained across separate Memory and User Profile tabs and lets you adjust the capacity limit, while additions and removals happen mainly through conversation with Hermes. Cloud storage is the file workspace, supporting upload, create, organise, download, rename, and delete, with a 1 GB per-file limit. One rule to hold to: never write passwords, keys, or unnecessary sensitive data into long-term memory.
 
-![LightVela Agent Memory and personal knowledge](../images/use-case-agent-memory.webp)
+![LightVela Agent Memory and personal knowledge](../../images/use-case-agent-memory.webp)
 
 ## Who this is for
 
@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![A Cloud Storage folder with project files](../images/use-case-memory-knowledge-storage.webp)
+![A Cloud Storage folder with project files](../../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. Review memory instead of assuming it is correct forever
 
@@ -69,7 +69,7 @@ Use the [Chat](../configuration/agent-chat.md) page or a connected channel to tu
 
 If your review follows a recurring rhythm, a [Scheduled Task](../configuration/automation.md) can remind you to revisit a folder or prepare a regular recap. Begin with a simple reminder or summary rather than granting a broad, open-ended task.
 
-![A Hermes Agent conversation using organized project knowledge](../images/use-case-memory-knowledge-automation.webp)
+![A Hermes Agent conversation using organized project knowledge](../../images/use-case-memory-knowledge-automation.webp)
 
 ## FAQ
 

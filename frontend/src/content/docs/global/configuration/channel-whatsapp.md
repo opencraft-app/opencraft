@@ -42,7 +42,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 ### 4. 在 WhatsApp 里查询你自己
 
-![](../images/whatsapp-2-global.webp)
+![](../../images/whatsapp-2-global.webp)
 
 与自我对话——这就是你的机器人。
 
@@ -54,7 +54,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 几秒内收到 Hermes Agent 回复。
 
-![](../images/whatsapp-3-global.webp)
+![](../../images/whatsapp-3-global.webp)
 
 ---
 

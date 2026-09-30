@@ -7,7 +7,7 @@ You can choose how the Agent requests approval for high-risk operations, manage 
 After Approval Mode is saved, LightVela reads the configuration back to confirm the new value.
 After a Memory or Context Management setting is saved, LightVela restarts the related service and reads the configuration back to confirm the new value.
 
-![Advanced Settings in the LightVela console](../images/setting-1-en.webp)
+![Advanced Settings in the LightVela console](../../images/setting-1-en.webp)
 
 ## This page covers
 

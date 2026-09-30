@@ -16,7 +16,7 @@ Reducimos la barrera de configuración mediante una consola visual: sin archivos
 
 El producto actual de LightVela es **Hermes Agent**, un Agent de IA impulsado por modelos de lenguaje grandes. Es posible que se agreguen más productos listos para usar en el futuro. Esta documentación se centra en Hermes Agent.
 
-![1.00](./images/1-1.webp)
+![1.00](../images/1-1.webp)
 
 ***
 
@@ -80,7 +80,7 @@ Un ciclo de conversación completo requiere tres configuraciones:
 
 3. **Skill** (opcional): Capacidades adicionales para Hermes Agent
 
-![1.00](./images/1-2.webp)
+![1.00](../images/1-2.webp)
 
 ***
 

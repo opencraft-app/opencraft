@@ -6,7 +6,7 @@ Aturan peran yang stabil, suara, batas perilaku, dan konteks tahan lama semuanya
 Di runtime Hermes Agent, `SOUL.md` adalah file inti yang membawa persona Agent.
 LightVela menghasilkan dan menyuntikkan Soul melalui fitur Personality, sehingga Anda tidak perlu mengoperasikan sistem file cloud secara langsung.
 
-![Menentukan peran, kepribadian, dan suara IM Agent dengan SOUL.md](../images/use-case-05-im-agent-persona-soul-md.webp)
+![Menentukan peran, kepribadian, dan suara IM Agent dengan SOUL.md](../../images/use-case-05-im-agent-persona-soul-md.webp)
 
 ## Ringkasan
 

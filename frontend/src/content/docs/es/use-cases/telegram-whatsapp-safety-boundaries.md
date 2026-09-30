@@ -4,7 +4,7 @@
 
 **El límite de seguridad de un Agent no se determina solo por el modelo. Se construye a partir de cuatro capas: credenciales del canal, alcance de la conversación, política de memoria y reglas para acciones externas.** Un límite claro te permite responder cuatro preguntas de forma definitiva: ¿quién puede acceder a este Agent?, ¿qué mensajes se procesan?, ¿qué contenido nunca debe enviarse?, y ¿qué acciones requieren confirmación primero? Prácticas clave: las credenciales son sensibles y nunca deben colocarse en el contexto a largo plazo ni pegarse en el chat; la política de memoria debe evitar convertir datos sensibles en un registro permanente; y todo lo que se envía externamente o es irreversible necesita una etapa de confirmación. Ten en cuenta que Telegram y WhatsApp actualmente soportan conversaciones uno a uno como modo principal, por lo que las reglas de chat de grupo sirven como pruebas de diseño y prelanzamiento en lugar de configuraciones configurables hoy. Trabaja a través de la lista de verificación de seguridad antes de ponerlo en producción.
 
-![Diseño de autorización, reglas de grupo y límites de acciones sensibles para Agents de Telegram y WhatsApp](../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
+![Diseño de autorización, reglas de grupo y límites de acciones sensibles para Agents de Telegram y WhatsApp](../../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
 
 ## Para quién es este documento
 

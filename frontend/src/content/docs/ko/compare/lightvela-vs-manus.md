@@ -4,7 +4,7 @@
 
 **항상 온라인 상태를 유지하고, 사용자의 설정을 기억하며, 평소 쓰는 메시징 채널에서 사용할 개인 Hermes Agent를 원한다면 LightVela를 선택하세요.** 리서치, 브라우저 작업, 보고서, 워크플로처럼 정의된 작업을 맡기고 에이전트가 결과물을 향해 진행하기를 원한다면 Manus를 선택하세요. 두 제품 모두 “에이전트”라는 표현을 사용하지만 일상적인 사용의 출발점은 매우 다릅니다.
 
-![AI 에이전트 호스팅 및 사용을 위한 LightVela와 Manus 비교](../images/lightvela-vs-manus.webp)
+![AI 에이전트 호스팅 및 사용을 위한 LightVela와 Manus 비교](../../images/lightvela-vs-manus.webp)
 
 ## 한눈에 비교하기
 

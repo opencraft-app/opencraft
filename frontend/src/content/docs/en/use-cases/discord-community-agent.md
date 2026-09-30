@@ -7,7 +7,7 @@
 Recent shared-agent products such as [Claude Tag](https://www.anthropic.com/news/introducing-claude-tag) and [Viktor](https://slack.com/marketplace/A0A2VN5TR5K-viktor) show why an Agent can be more useful when it works where a group already communicates.
 LightVela brings that pattern to Discord communities without requiring you to build and host a separate bot application first.
 
-![LightVela Agent connected to a Discord community](../images/use-case-discord-community-agent.webp)
+![LightVela Agent connected to a Discord community](../../images/use-case-discord-community-agent.webp)
 
 ## Who this is for and expected outcome
 
@@ -71,7 +71,7 @@ Then generate the invite link and add the bot to the intended server.
 
 Follow the complete [Discord setup steps](../configuration/channel-discord.md) for the current authorization and permission flow.
 
-![Discord bot permissions in the Developer Portal](../images/discord-6-global.webp)
+![Discord bot permissions in the Developer Portal](../../images/discord-6-global.webp)
 
 ### 4. Test the Agent with real community questions
 

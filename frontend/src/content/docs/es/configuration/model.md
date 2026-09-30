@@ -87,7 +87,7 @@ Ingresa a la consola y abre el botón "Modelo".
 5. Aparece el registro correspondiente en la lista de "Modelo actual", indicando que la configuración fue exitosa
 
 
-![](../images/5-1.webp)
+![](../../images/5-1.webp)
 
 ### Campos adicionales para modelos personalizados
 

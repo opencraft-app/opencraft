@@ -4,7 +4,7 @@
 
 **DeepSeek Harness는 LightVela에서 Hermes Agent와 함께 설치할 수 있는 플러그인 우선 AI 에이전트 프레임워크입니다. Labs 페이지에서 기존 Hermes 설정, 채널, 스킬, 메모리를 변경하지 않은 채 설치, 상태, 재시작, WebUI 액세스, 지원되는 모델 공급자 키, SkillHub가 포함된 프로필을 관리할 수 있습니다. Hermes Agent에서 사용하는 모델 공급자 설정은 [모델 구성](./model.md)을 참고하세요.**
 
-![DeepSeek Harness 개요](../images/deepseek-harness-01.webp)
+![DeepSeek Harness 개요](../../images/deepseek-harness-01.webp)
 
 Beta 안내: DeepSeek Harness는 Labs에서 조기 체험으로 제공되는 기능입니다. 업스트림 프레임워크와 플러그인 생태계가 발전함에 따라 호환성에 영향을 주는 업데이트가 이루어질 수 있습니다.
 
@@ -13,7 +13,7 @@ Beta 안내: DeepSeek Harness는 Labs에서 조기 체험으로 제공되는 기
 DeepSeek Harness(DSH)는 AI 모델이 실제 작업을 수행하는 데 필요한 환경과 도구를 제공하는 오픈 소스 에이전트 하네스입니다.
 LightVela에서 DSH는 Hermes Agent와 별도의 관리형 환경으로 실행됩니다. 이 환경에서는 프로젝트 파일로 작업하고, 도구와 스킬을 사용하며, 세션을 관리하고, WebUI를 통해 에이전트와 상호작용할 수 있습니다.
 
-![Labs의 DeepSeek Harness 페이지](../images/deepseek-harness-02.webp)
+![Labs의 DeepSeek Harness 페이지](../../images/deepseek-harness-02.webp)
 
 LightVela는 DSH를 위한 관리형 진입점을 제공합니다.
 패키지를 직접 설치하거나 공개 서버 주소를 설정하거나 터미널에서 DSH 서비스를 운영할 필요가 없습니다.
@@ -27,7 +27,7 @@ Labs의 "DeepSeek Harness" 페이지에서 관리형 런타임을 설치하고, 
 4. 설치가 진행되는 동안 페이지를 열어 둡니다.
    정상적인 설치에는 보통 1~3분이 걸립니다.
 
-![DeepSeek Harness 설치](../images/deepseek-harness-03.webp)
+![DeepSeek Harness 설치](../../images/deepseek-harness-03.webp)
 
 ## 모델 공급자 구성
 
@@ -51,24 +51,24 @@ DeepSeek Harness를 설치하면 기본 DSH 카드 아래에 Model Configuration
 3. Save를 선택합니다.
 4. 구성된 공급자 목록에 해당 공급자가 표시되는지 확인합니다.
 
-![DeepSeek Harness 모델 공급자 양식](../images/deepseek-harness-04.webp)
+![DeepSeek Harness 모델 공급자 양식](../../images/deepseek-harness-04.webp)
 
 공급자를 제거하려면 삭제 작업을 선택하고 제거를 확인합니다.
 제거한 뒤에도 나중에 새 API 키로 동일한 공급자를 다시 추가할 수 있습니다.
 
-![구성된 DeepSeek Harness 공급자](../images/deepseek-harness-05.webp)
+![구성된 DeepSeek Harness 공급자](../../images/deepseek-harness-05.webp)
 
 ## DeepSeek Harness WebUI 열기
 
 서비스 상태가 running이면 DeepSeek Harness 카드에서 Access WebUI를 선택합니다.
 
-![Access WebUI 버튼](../images/deepseek-harness-06.webp)
+![Access WebUI 버튼](../../images/deepseek-harness-06.webp)
 
 LightVela는 DeepSeek Harness WebUI에 전용 액세스 도메인과 기본 신원 인증을 제공하므로 본인만 WebUI에 접근할 수 있습니다.
 인증을 마치면 현재 에이전트 인스턴스의 WebUI를 열고, 이미 구성한 공급자를 사용해 간단한 테스트를 시작할 수 있습니다.
 기존 Hermes Agent를 별도로 테스트하려면 [채팅](./agent-chat.md)을 이용하세요.
 
-![DeepSeek Harness WebUI](../images/deepseek-harness-07.webp)
+![DeepSeek Harness WebUI](../../images/deepseek-harness-07.webp)
 
 ## 플러그인 이해하기
 
@@ -80,7 +80,7 @@ DSH 페이지 왼쪽 하단의 Plugin Plaza를 클릭하면 플러그인 광장�
 
 Plugin Plaza에서는 브라우저 도구, 메모리, 자동화, UI 개선, 외부 연동 등 DeepSeek Harness 환경에 추가할 기능을 살펴볼 수 있습니다.
 
-![Plugin Plaza 검색](../images/deepseek-harness-08.webp)
+![Plugin Plaza 검색](../../images/deepseek-harness-08.webp)
 
 플러그인을 열어 추가되는 기능을 확인한 뒤 원하는 플러그인을 설치하세요.
 설치한 플러그인은 명시적으로 언급하지 않아도 워크스페이스에서 바로 사용할 수 있습니다.
@@ -90,19 +90,19 @@ LightVela에서 관리하는 Hermes 스킬은 [스킬 구성](./skill.md)을 참
 
 설치된 플러그인 목록은 DSH WebUI > Plugin Plaza > Installed에서 확인할 수 있습니다.
 
-![설치된 DeepSeek Harness 플러그인](../images/deepseek-harness-09.webp)
+![설치된 DeepSeek Harness 플러그인](../../images/deepseek-harness-09.webp)
 
 ## 워크스페이스 사용
 
 워크스페이스는 세션 중 DeepSeek Harness가 작업하는 프로젝트 디렉터리입니다.
 WebUI에서 Add Workspace 아이콘을 클릭해 워크스페이스 디렉터리를 엽니다.
 
-![Add Workspace 아이콘](../images/deepseek-harness-10.webp)
+![Add Workspace 아이콘](../../images/deepseek-harness-10.webp)
 
 그런 다음 클라우드 호스팅 DSH 환경에서 새 폴더를 만들거나 기존 폴더를 선택해 프로젝트의 워크스페이스로 지정할 수 있습니다.
 에이전트는 해당 워크스페이스의 파일을 이용해 프로젝트를 파악하고, 파일을 편집하고, 명령을 실행하고, 클라우드 워크스페이스 안에서 작업을 수행할 수 있습니다.
 
-![Select Workspace Directory 대화 상자](../images/deepseek-harness-11.webp)
+![Select Workspace Directory 대화 상자](../../images/deepseek-harness-11.webp)
 
 워크스페이스는 프로젝트와 해당 세션을 체계적으로 관리하는 데도 도움이 됩니다.
 워크스페이스에서 만든 세션은 해당 디렉터리와 연결되므로, 같은 프로젝트로 돌아와 관련 세션 기록을 이어서 사용할 수 있습니다.
@@ -115,7 +115,7 @@ DSH가 설치되어 있지만 설정 변경 후 다시 로드해야 하거나 �
 재시작 작업은 DeepSeek Harness 서비스에만 적용됩니다.
 Hermes Agent는 독립적으로 계속 실행됩니다.
 
-![DeepSeek Harness 재시작 버튼](../images/deepseek-harness-12.webp)
+![DeepSeek Harness 재시작 버튼](../../images/deepseek-harness-12.webp)
 
 ## 일반적인 문제
 

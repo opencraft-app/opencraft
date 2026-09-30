@@ -30,7 +30,7 @@
 
 [lightvela.ai](https://lightvela.ai)에 접속해 오른쪽 상단의 "로그인"을 클릭하세요. 로그인 창에서 Google 또는 GitHub를 선택하고 약관에 동의한 뒤 인증을 완료하세요.
 
-![](./images/2-1.webp)
+![](../images/2-1.webp)
 
 ---
 
@@ -66,7 +66,7 @@ WeChat에서 추가된 봇 계정을 찾아 테스트 메시지를 보냅니다.
 Hi
 ```
 
-![](./images/2-7.webp)
+![](../images/2-7.webp)
 
 몇 초 내에 Hermes로부터 응답을 받아야 합니다. Hermes는 이제 WeChat을 통해 채팅할 수 있습니다.
 

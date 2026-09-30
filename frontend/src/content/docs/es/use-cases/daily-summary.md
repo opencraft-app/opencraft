@@ -4,7 +4,7 @@
 
 **Un resumen diario gana su valor no por su longitud, sino al entregarte el contexto adecuado antes de que lo pidas, y la forma de lograrlo es transformar una revisión manual en una tarea programada guardada.** Necesitas cuatro elementos: un Hermes Agent en la nube con un modelo configurado, un canal conectado para recibir los resultados, Skills opcionales para recopilar información y una tarea programada (sus campos son nombre, horario, instrucciones de tarea, ventana de tiempo activa y canales de notificación). El éxito depende de las instrucciones de la tarea: como nadie está presente para aclarar en tiempo de ejecución, la instrucción debe llevar su propio objetivo, límites de alcance (rango de tiempo y tope de elementos), formato de salida y qué hacer cuando no hay nada que reportar. Prueba la instrucción manualmente en el chat primero, luego crea la tarea programada y revisa la salida después de su primera ejecución real.
 
-![Un resumen diario entregado por Hermes Agent](../images/use-case-daily-summaries.webp)
+![Un resumen diario entregado por Hermes Agent](../../images/use-case-daily-summaries.webp)
 
 ## Para quién es esto
 
@@ -44,7 +44,7 @@ Hermes solo puede resumir información que pueda recibir o acceder a través de 
 
 Si necesitas una fuente de datos externa, elige una Skill adecuada de una fuente confiable y confirma su comportamiento antes de usarla. [Configurar Skills](../configuration/skill.md) explica cómo las Skills extienden a Hermes más allá del chat ordinario.
 
-![Fuentes de Cloud Storage para un resumen diario](../images/use-case-daily-summary-storage.webp)
+![Fuentes de Cloud Storage para un resumen diario](../../images/use-case-daily-summary-storage.webp)
 
 ### 3. Prueba la salida en una conversación normal primero
 
@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 Configura esto en [Tareas programadas](../configuration/automation.md). Revisa los primeros varios ejecuciones y ajusta la redacción si el resumen es demasiado amplio, demasiado largo o falta el contexto correcto.
 
-![Una tarea programada de resumen diario programada](../images/use-case-daily-summary-automation.webp)
+![Una tarea programada de resumen diario programada](../../images/use-case-daily-summary-automation.webp)
 
 ## Preguntas frecuentes
 

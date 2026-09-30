@@ -1,6 +1,6 @@
 # LightVela vs Genspark: Mana yang Lebih Sesuai untuk Hosting AI Agent?
 
-![LightVela dibandingkan dengan Genspark untuk meng-hosting AI Agent](../images/lightvela-vs-genspark.webp)
+![LightVela dibandingkan dengan Genspark untuk meng-hosting AI Agent](../../images/lightvela-vs-genspark.webp)
 
 ## Ringkasan
 

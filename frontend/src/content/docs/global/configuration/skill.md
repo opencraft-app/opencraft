@@ -142,7 +142,7 @@ Hermes 会打开页面并读取内容，以文字形式返回。
 
 该任务包含打开网页、等待加载、输入内容、点击按钮等多步操作，复杂度相对较高。Hermes 会按步骤完成并返回结果。
 
-![](../images/clawhub-browser-example-global.webp)
+![](../../images/clawhub-browser-example-global.webp)
 
 ---
 

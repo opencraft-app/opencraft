@@ -30,7 +30,7 @@
 3. 选择近期日志的时间范围：1、3、6、12 或 24 小时。
 4. 选择 **Refresh** 加载日志。
 
-![LightVela 管理台中的诊断中心](../images/diagnostics-overview.webp)
+![LightVela 管理台中的诊断中心](../../images/diagnostics-overview.webp)
 
 优先选择刚好覆盖异常发生时间的最短范围。时间窗口更小，通常更容易将错误和触发它的操作对应起来。
 
@@ -65,7 +65,7 @@
 3. 完成后重新加载 Agent 控制台。
 4. 在聊天中测试一项简单任务，再检查云存储和日常设置。
 
-![重置 Hermes 确认弹窗](../images/diagnostics-reinstall.webp)
+![重置 Hermes 确认弹窗](../../images/diagnostics-reinstall.webp)
 
 维护期间，Agent 可能暂时不可用。重置尚未完成时，请不要连续发起另一项修复操作。
 

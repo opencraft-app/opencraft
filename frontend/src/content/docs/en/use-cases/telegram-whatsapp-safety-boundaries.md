@@ -4,7 +4,7 @@
 
 **An Agent's safety boundary is not determined by the model alone. It is built from four layers: channel credentials, conversation scope, memory policy, and rules for external actions.** A clear boundary lets you answer four questions definitively — who can reach this Agent, which messages get processed, what content must never be sent, and which actions require confirmation first. Key practices: credentials are sensitive and must never go into long-term context or be pasted into chat; the memory policy must avoid turning sensitive data into a permanent record; and anything that sends externally or is irreversible needs a confirmation step. Telegram supports group messages after you disable Group Privacy in BotFather, add the Bot to the group, and start the conversation with `@bot_username`. WhatsApp group support remains subject to its own channel documentation. Work through the safety checklist before going live.
 
-![Designing authorization, group rules, and sensitive-action boundaries for Telegram and WhatsApp Agents](../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
+![Designing authorization, group rules, and sensitive-action boundaries for Telegram and WhatsApp Agents](../../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
 
 ## Who this is for
 

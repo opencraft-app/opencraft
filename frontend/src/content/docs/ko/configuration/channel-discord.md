@@ -42,7 +42,7 @@ Discord 카드를 찾아 "+ 연결"을 클릭하세요.
 
 1. 애플리케이션을 클릭하세요.
 
-![](../images/discord-1-global.webp)
+![](../../images/discord-1-global.webp)
 
 2. 오른쪽 상단 모서리에 있는 새 애플리케이션을 클릭합니다.
 
@@ -50,11 +50,11 @@ Discord 카드를 찾아 "+ 연결"을 클릭하세요.
 
 4. 애플리케이션에 봇을 추가하고 봇 토큰을 생성합니다. 토큰은 Hermes Agent와 Discord 서버 간의 연결을 인증하는 데 사용됩니다.
 
-![](../images/discord-2-global.webp)
+![](../../images/discord-2-global.webp)
 
 5. 토큰을 Discord 카드에 붙여넣습니다.
 
-![](../images/discord-3-global-en.webp)
+![](../../images/discord-3-global-en.webp)
 
 ### 4. 개발자 포털의 봇 페이지로 이동합니다.
 
@@ -66,7 +66,7 @@ Bot 페이지에서 Privileged Gateway Intents까지 아래로 스크롤하고 �
 
 - **현재 상태 의도**: 선택 사항, 상태 업데이트에만 사용됩니다.
 
-![](../images/discord-4-global.webp)
+![](../../images/discord-4-global.webp)
 
 활성화한 후 하단의 변경 사항 저장을 클릭합니다.
 
@@ -74,7 +74,7 @@ Bot 페이지에서 Privileged Gateway Intents까지 아래로 스크롤하고 �
 
 봇 권한 구성: 왼쪽 사이드바에서 OAuth2를 클릭한 다음 OAuth2 URL 생성기를 선택합니다. 먼저 범위를 구성하십시오. 최소 권한 원칙에 따라 `bot` 및 `applications.commands`를 선호합니다.
 
-![](../images/discord-5-global.webp)
+![](../../images/discord-5-global.webp)
 
 계속해서 아래로 스크롤하여 봇 권한을 구성하고 다음을 선택합니다.
 
@@ -90,13 +90,13 @@ Bot 페이지에서 Privileged Gateway Intents까지 아래로 스크롤하고 �
 
 - 반응 추가(선택 사항)
 
-![](../images/discord-6-global.webp)
+![](../../images/discord-6-global.webp)
 
 ### 6. 초대링크 복사 및 열기
 
 생성된 초대 링크를 복사하여 브라우저에서 열고 Discord 서버에 봇을 초대합니다(서버 관리자 권한 필요). 계속을 클릭하고 승인하면 봇이 서버에 초대됩니다.
 
-![](../images/discord-7-global.webp)
+![](../../images/discord-7-global.webp)
 
 ### 7. Discord에서 새로운 봇과 채팅
 
@@ -106,7 +106,7 @@ Bot 페이지에서 Privileged Gateway Intents까지 아래로 스크롤하고 �
 Hi
 ```
 
-![](../images/discord-chat-global.webp)
+![](../../images/discord-chat-global.webp)
 
 몇 초 내에 Hermes Agent 응답을 받게 됩니다.
 

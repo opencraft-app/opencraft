@@ -8,7 +8,7 @@
 
 **Solo una Alma está activa para un Agent a la vez, y debes iniciar una nueva conversación después de cambiarla para que se carguen las reglas actualizadas.**
 
-![Tarjetas de personalidad de Alma en la consola de LightVela](../images/soul-1.webp)
+![Tarjetas de personalidad de Alma en la consola de LightVela](../../images/soul-1.webp)
 
 ## ¿Qué cubre esta página
 
@@ -54,7 +54,7 @@ Cambia a otro Agent antes de configurarlo si quieres un rol o voz diferente en o
 Usa **Draw random soul** para explorar los estilos de personalidad disponibles.
 Usa **Soul personality test** cuando quieras una recomendación basada en tus preferencias de comunicación y comportamiento.
 
-![Diálogo de Draw random soul](../images/soul-2.webp)
+![Diálogo de Draw random soul](../../images/soul-2.webp)
 
 Revisa el rol, la voz, la descripción del comportamiento y los límites en cada tarjeta de Alma antes de tomar una decisión.
 Elige una Alma que coincida con el breve que preparaste en lugar de seleccionarla solo por su nombre o tono.
@@ -80,7 +80,7 @@ Usa esta opción cuando ya tienes una Alma en Markdown que quieres aplicar en lu
 5. Si el Agent ya tiene una Alma, confirma que quieres reemplazarla.
 6. Vuelve a un canal de conversación conectado y envía `/new`.
 
-![Diálogo de carga de archivo de personalidad](../images/soul-3.webp)
+![Diálogo de carga de archivo de personalidad](../../images/soul-3.webp)
 
 El nombre del archivo no necesita ser `soul.md`, pero debe usar la extensión `.md`, estar codificado en UTF-8 y no superar los 20 KB.
 LightVela muestra el contenido del archivo antes de la inyección para que puedas hacer ediciones finales.

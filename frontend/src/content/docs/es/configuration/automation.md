@@ -4,7 +4,7 @@
 
 **Las tareas programadas permiten que Hermes Agent empiece a trabajar sin un prompt manual. Elija una tarea de Agent cuando el trabajo necesite razonamiento de IA, una tarea de notificación cuando el mismo mensaje deba enviarse tal como está escrito, o una tarea de script cuando un script de Bash o Python deba realizar una comprobación determinista. Los tres tipos usan los mismos horarios de una sola vez, recurrentes y por intervalos, además de la ventana de validez y la configuración de notificaciones.**
 
-![Página de tareas programadas con plantillas y tareas actuales](../images/st-en-1.webp)
+![Página de tareas programadas con plantillas y tareas actuales](../../images/st-en-1.webp)
 
 ## Elegir un tipo de tarea
 
@@ -23,7 +23,7 @@ Todos los tipos pueden ejecutarse una vez, con una cadencia diaria, semanal o me
 
 Asegúrese de que Hermes Agent esté activo, elija un canal de notificación si lo necesita y revise el código de cualquier tarea de script antes de guardarla.
 
-![Opciones de canales de notificación con Telegram y WeChat](../images/notification-channels-en.webp)
+![Opciones de canales de notificación con Telegram y WeChat](../../images/notification-channels-en.webp)
 
 ## Crear una tarea de Agent
 
@@ -43,7 +43,7 @@ Configure los siguientes campos:
 A la hora programada, Hermes Agent crea una tarea de Agent y llama al modelo seleccionado.
 El resultado puede enviarse a los canales seleccionados y queda registrado en Ejecuciones recientes.
 
-![Diálogo Crear tarea programada con el tipo Tarea de Agent](../images/st-en-2.webp)
+![Diálogo Crear tarea programada con el tipo Tarea de Agent](../../images/st-en-2.webp)
 
 ## Crear una tarea de notificación
 
@@ -60,7 +60,7 @@ Por eso, el uso de tokens del modelo para la tarea es de 0 Token.
 Si no selecciona un canal, la tarea se ejecuta en segundo plano y escribe un registro en lugar de enviar un mensaje.
 El formato de cada canal todavía puede afectar a los saltos de línea y a los caracteres que reciben los destinatarios.
 
-![Diálogo Crear tarea programada con el tipo Tarea de notificación](../images/st-en-3.webp)
+![Diálogo Crear tarea programada con el tipo Tarea de notificación](../../images/st-en-3.webp)
 
 ## Crear una tarea de script
 
@@ -83,14 +83,14 @@ Usan 0 Token de modelo, pero siguen usando recursos de ejecución de Agent en la
 No use una tarea de script para reparar, explicar o resumir un fallo con IA.
 La ejecución sigue siendo determinista: una salida vacía permanece silenciosa y un script fallido no activa un fallback de modelo.
 
-![Diálogo Crear tarea programada con el tipo Tarea de script](../images/st-en-4.webp)
+![Diálogo Crear tarea programada con el tipo Tarea de script](../../images/st-en-4.webp)
 
 ## Vincular una tarea de Agent upstream
 
 Use una tarea upstream cuando una tarea de Agent deba preparar el contexto para otra.
 La tarea downstream recibe la salida completada más reciente de la tarea upstream y conserva su propia programación, instrucciones, ventana de validez y configuración de notificaciones.
 
-![Diálogo Crear tarea programada con la opción de tarea upstream](../images/st-en-5.webp)
+![Diálogo Crear tarea programada con la opción de tarea upstream](../../images/st-en-5.webp)
 
 Deje suficiente tiempo entre tareas dependientes y explique en las instrucciones downstream cómo usar la salida upstream.
 El contexto upstream, la ejecución del modelo y los Skills solo se aplican a las tareas de Agent.
@@ -108,21 +108,21 @@ Los tres tipos de tarea comparten los mismos controles de programación y notifi
 Cambiar el tipo mientras crea una tarea conserva estos ajustes compartidos.
 Después de crearla, el tipo no se puede cambiar, por lo que debe crear otra tarea si necesita cambiar el modelo de ejecución.
 
-![Diálogo Crear tarea para configurar una tarea programada](../images/automation-create-job.webp)
+![Diálogo Crear tarea para configurar una tarea programada](../../images/automation-create-job.webp)
 
 ## Usar plantillas de tareas
 
 Si no sabe cómo empezar una tarea de Agent, use el área de plantillas de la página Tareas programadas.
 Elija una tarjeta como Recordatorios de agua y medicación, Recordatorio del alquiler, Alerta de tipo de cambio o Resumen bursátil, y revise la programación y las instrucciones generadas antes de crear la tarea.
 
-![Área de plantillas con tarjetas de tareas programadas listas para usar](../images/automation-template-area.webp)
+![Área de plantillas con tarjetas de tareas programadas listas para usar](../../images/automation-template-area.webp)
 
 Al abrir una plantilla, el formulario Crear tarea se rellena previamente.
 Por ejemplo, la plantilla Resumen bursátil incluye el nombre, una programación diaria y las instrucciones de información de mercado, que puede ajustar antes de probarla o crearla.
 
 <div style={{ maxWidth: "760px" }}>
 
-![Plantilla Resumen bursátil abierta en el formulario Crear tarea](../images/automation-template-stock-job.webp)
+![Plantilla Resumen bursátil abierta en el formulario Crear tarea](../../images/automation-template-stock-job.webp)
 
 </div>
 
@@ -138,7 +138,7 @@ Las tareas en curso permanecen en Tareas actuales.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Página Tareas programadas con las pestañas Tareas actuales, Tareas finalizadas y Ejecuciones recientes](../images/automation-current-jobs.webp)
+![Página Tareas programadas con las pestañas Tareas actuales, Tareas finalizadas y Ejecuciones recientes](../../images/automation-current-jobs.webp)
 
 </div>
 
@@ -147,7 +147,7 @@ Antes de eliminar una tarea de Agent con una dependencia upstream, compruebe si 
 
 <div style={{ maxWidth: "520px" }}>
 
-![Tarjeta de tarea programada en ejecución en Tareas actuales](../images/automation-running-job.webp)
+![Tarjeta de tarea programada en ejecución en Tareas actuales](../../images/automation-running-job.webp)
 
 </div>
 

@@ -16,7 +16,7 @@ LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，致力于
 
 LightVela 目前提供的产品是 **Hermes Agent**，一个基于大语言模型的 AI Agent，未来会扩展到更多开箱即用的产品。本文档围绕 Hermes Agent 展开。
 
-![1.00](./images/1-1.webp)
+![1.00](../images/1-1.webp)
 
 ***
 
@@ -80,7 +80,7 @@ LightVela 云端的 Hermes Agent 实例（用户专属）
 
 3. **技能**（可选）：扩展 Hermes Agent 的能力
 
-![1.00](./images/1-2.webp)
+![1.00](../images/1-2.webp)
 
 ***
 

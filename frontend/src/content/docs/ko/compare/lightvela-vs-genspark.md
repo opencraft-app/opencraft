@@ -4,7 +4,7 @@
 
 **항상 사용 가능하고 하나의 일관된 설정을 따르는 전용 개인 AI 에이전트를 호스팅하고 싶다면 LightVela가 더 직접적인 선택입니다.** 리서치, 글쓰기, 디자인, 슬라이드 제작, 데이터 분석, 완성된 결과물 제작을 한곳에서 수행하는 올인원 AI 워크스페이스가 필요하다면 Genspark가 더 강력한 선택일 가능성이 큽니다. 두 제품 모두 챗봇 모델을 넘어 발전하고 있지만 서로 다른 문제를 해결합니다.
 
-![AI 에이전트 호스팅을 위한 LightVela와 Genspark 비교](../images/lightvela-vs-genspark.webp)
+![AI 에이전트 호스팅을 위한 LightVela와 Genspark 비교](../../images/lightvela-vs-genspark.webp)
 
 ## 한눈에 비교하기
 

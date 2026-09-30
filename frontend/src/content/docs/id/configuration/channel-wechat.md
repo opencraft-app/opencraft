@@ -40,7 +40,7 @@ Klik dropdown lalu pilih "WeChat". Pengantar kanal WeChat dan tautan "View Detai
 
 Sebuah kode QR akan muncul di halaman tersebut.
 
-![](../images/20260424-142558-0pl3.webp)
+![](../../images/20260424-142558-0pl3.webp)
 
 > ⚠️ **Masa berlaku kode QR**
 >
@@ -74,7 +74,7 @@ Hi
 
 Anda semestinya menerima balasan Hermes Agent dalam beberapa detik.
 
-![](../images/6.1-2.webp)
+![](../../images/6.1-2.webp)
 
 ---
 

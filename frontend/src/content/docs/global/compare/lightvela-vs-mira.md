@@ -6,7 +6,7 @@
 
 两者都超越了普通聊天窗口，但出发点不同：Mira 是以 Telegram 为中心的助手，LightVela 则是一个可以逐渐扩展为更广泛工作流系统的可配置个人 Agent。
 
-![LightVela 与 Mira 运行个人 AI Agent 的对比](../images/lightvela-vs-mira.webp)
+![LightVela 与 Mira 运行个人 AI Agent 的对比](../../images/lightvela-vs-mira.webp)
 
 ## 快速对比
 

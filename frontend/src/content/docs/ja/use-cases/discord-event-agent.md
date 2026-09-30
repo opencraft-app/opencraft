@@ -6,7 +6,7 @@
 
 このパターンは、同じ情報を多くの会話で繰り返す必要がある定期的なトーナメント、レイド、勉強会、コミュニティのローンチ、その他のイベントに最適です。
 
-![Discord イベントコミュニティをサポートする AI エージェント](../images/use-case-discord-event-agent.webp)
+![Discord イベントコミュニティをサポートする AI エージェント](../../images/use-case-discord-event-agent.webp)
 
 ## 対象者と期待される成果
 
@@ -63,12 +63,12 @@ LightVelaで、Discordチャンネルを接続し、Discord開発者ポータル
 
 4. 次の最小権限でボットを招待します：チャンネルを見る、メッセージを送信する、メッセージ履歴を読む。
 
-![Discord ボットの招待とサーバー選択](../images/discord-event-bot-invite.webp)
+![Discord ボットの招待とサーバー選択](../../images/discord-event-bot-invite.webp)
 
 最初の展開では、1つのイベントチャンネルまたは1つのサポートされているDiscord会話を選び、ワークフローを拡張する前にそこでテストしてください。
 これにより、回答、権限の挙動、および通知の配信を確認しやすくなります。
 
-![Discord ボット権限の設定](../images/discord-5-global.webp)
+![Discord ボット権限の設定](../../images/discord-5-global.webp)
 
 ### 3. 参加者が実際に尋ねる質問をテストする
 
@@ -122,7 +122,7 @@ LightVela は、一回限りの実行、特定の曜日での実行、固定間�
 固定の曜日、固定間隔、または一回限りの実行を選択できます。
 また、スケジュールタスクを後で一時停止、編集、または削除することもできます。
 
-![Discord イベントのスケジュールタスクを設定](../images/automation-2-global-en.webp)
+![Discord イベントのスケジュールタスクを設定](../../images/automation-2-global-en.webp)
 
 ```text
 One day before the tournament, remind the event channel about the start time, time zone, registration deadline, and rules channel.
@@ -132,7 +132,7 @@ If the brief is missing a detail, tell the organizer which detail needs review.
 
 この例では、ボットが「ゲームトーナメントのリマインダー」スケジュールタスクを実行しています。
 
-![Discord ボットによるトーナメントリマインダー送信](../images/discord-event-reminder.webp)
+![Discord ボットによるトーナメントリマインダー送信](../../images/discord-event-reminder.webp)
 
 また、主催者向けにイベント後のサマリーをスケジュールすることもできます：
 

@@ -4,7 +4,7 @@
 
 **Telegram y WhatsApp pueden servir como dos puntos de entrada al mismo Hermes Agent. Mientras que ambos canales se conecten al mismo Agent, comparten la personalidad del Agent, las Skills, las tareas programadas y la memoria a largo plazo, sin necesidad de duplicar la configuración por plataforma.** Sin embargo, "unificado" tiene un alcance definido: lo que se comparte son los activos del nivel del Agent, mientras que cada canal mantiene su propio flujo de autorización y límites de mensajes, por lo que conectarlos son dos pasos de autorización independientes. La forma más directa de verificar el compartir es decir algo en un canal y preguntar sobre ello en el otro — una respuesta correcta prueba que ambos puntos de entrada se resuelven al mismo Agent. Después de conectar, también confirme que las respuestas lleguen en la conversación desde la que se envió el mensaje, y no en otra.
 
-![Un Agent conectado a Telegram y WhatsApp con una sola personalidad y memoria a largo plazo](../images/use-case-07-multi-channel-personality-memory.webp)
+![Un Agent conectado a Telegram y WhatsApp con una sola personalidad y memoria a largo plazo](../../images/use-case-07-multi-channel-personality-memory.webp)
 
 ## Para quién es esto
 

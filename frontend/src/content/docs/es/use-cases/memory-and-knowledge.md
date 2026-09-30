@@ -4,7 +4,7 @@
 
 **El conocimiento personal se presenta en dos formas que deben gestionarse por separado: la información estable sobre quién eres y cómo trabajas pertenece a la memoria a largo plazo, mientras que los documentos en evolución, apuntes y material de proyectos pertenecen al almacenamiento en la nube.** Gestionar ambos como una sola cosa te cuesta estabilidad y encontrabilidad al mismo tiempo. En LightVela, la memoria preserva el contexto entre conversaciones — la página de memoria de la consola muestra lo que se ha retenido a través de las pestañas de Memoria y Perfil de Usuario y te permite ajustar el límite de capacidad, mientras que las adiciones y eliminaciones ocurren principalmente a través de la conversación con Hermes. El almacenamiento en la nube es el espacio de trabajo de archivos, que soporta carga, creación, organización, descarga, renombrado y eliminación, con un límite de 1 GB por archivo. Una regla que debes guardar: nunca escribas contraseñas, claves o datos sensibles innecesarios en la memoria a largo plazo.
 
-![Memoria del Agent LightVela y conocimiento personal](../images/use-case-agent-memory.webp)
+![Memoria del Agent LightVela y conocimiento personal](../../images/use-case-agent-memory.webp)
 
 ## Para quién es esto
 
@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![Una carpeta de Almacenamiento en la Nube con archivos de proyecto](../images/use-case-memory-knowledge-storage.webp)
+![Una carpeta de Almacenamiento en la Nube con archivos de proyecto](../../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. Revisa la memoria en lugar de asumir que es correcta para siempre
 
@@ -69,7 +69,7 @@ Usa la página [Chat](../configuration/agent-chat.md) o un canal conectado para 
 
 Si tu revisión sigue un ritmo recurrente, una [Tarea programada](../configuration/automation.md) puede recordarte para revisar una carpeta o preparar un resumen regular. Comienza con un recordatorio o resumen simple en lugar de conceder una tarea amplia y sin límites.
 
-![Una conversación del Agent Hermes usando conocimiento de proyecto organizado](../images/use-case-memory-knowledge-automation.webp)
+![Una conversación del Agent Hermes usando conocimiento de proyecto organizado](../../images/use-case-memory-knowledge-automation.webp)
 
 ## Preguntas frecuentes
 

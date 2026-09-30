@@ -8,7 +8,7 @@ Hermes 可以运行在 macOS、Windows、Linux、WSL2 等环境中。官方安�
 
 > **容易上手，不等于完全没有维护成本。** 本地 Agent 给你更多控制权，也意味着你需要负责让这套环境持续可用。
 
-![LightVela 云端设置与本地运行 Hermes 的对比](../images/lightvela-vs-self-hosted-hermes.webp)
+![LightVela 云端设置与本地运行 Hermes 的对比](../../images/lightvela-vs-self-hosted-hermes.webp)
 
 ## 快速对比
 

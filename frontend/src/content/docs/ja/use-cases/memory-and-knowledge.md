@@ -4,7 +4,7 @@
 
 **個人的な知識には、別々に管理する必要がある2つの形があります。自分が誰であり、どのように働くかに関する安定した情報は長期記憶に属し、進化するドキュメント、ノート、プロジェクト資料はクラウドストレージに属します。** 両方を一つのものとして管理すると、安定性と検索性の両方を失うことになります。LightVelaでは、記憶が会話を通して文脈を保持します — コンソールの記憶ページは、別々のメモリとユーザープロファイルタブで保持された内容を表示し、容量制限を調整でき、追加や削除は主にHermesとの会話を通じて行われます。クラウドストレージはファイル作業スペースであり、アップロード、作成、整理、ダウンロード、名前変更をサポートします。削除、1ファイルあたり1GBの制限付き。守るべきルールは1つだけ：パスワード、キー、不要な機密データを長期記憶に書き込まないこと。
 
-![LightVela エージェントメモリと個人の知識](../images/use-case-agent-memory.webp)
+![LightVela エージェントメモリと個人の知識](../../images/use-case-agent-memory.webp)
 
 ## 対象者
 
@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![プロジェクトファイルを含むクラウドストレージフォルダ](../images/use-case-memory-knowledge-storage.webp)
+![プロジェクトファイルを含むクラウドストレージフォルダ](../../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. 記憶を永遠に正しいと仮定するのではなく、レビューする
 
@@ -69,7 +69,7 @@ and keep weekly summaries to five bullets.
 
 レビューが定期的なリズムに従う場合、[スケジュールタスク](../configuration/automation.md)フォルダを再訪することや定期的なまとめを準備することを思い出させることができます。広範で自由なタスクを与えるのではなく、まずは簡単なリマインダーや要約から始めましょう。
 
-![整理されたプロジェクト知識を使用したHermes Agent会話](../images/use-case-memory-knowledge-automation.webp)
+![整理されたプロジェクト知識を使用したHermes Agent会話](../../images/use-case-memory-knowledge-automation.webp)
 
 ## FAQ
 

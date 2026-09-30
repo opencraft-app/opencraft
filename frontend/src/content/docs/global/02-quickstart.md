@@ -30,7 +30,7 @@
 
 访问 [lightvela.ai](https://lightvela.ai)，点击右上角「登录」。在登录对话框中选择 Google 或 GitHub 账号，勾选协议后完成授权。
 
-![](./images/2-1.webp)
+![](../images/2-1.webp)
 
 ---
 
@@ -66,7 +66,7 @@
 你好
 ```
 
-![](./images/2-7.webp)
+![](../images/2-7.webp)
 
 几秒内即可收到 Hermes 的回复，至此 Hermes 已可通过 WeChat 进行对话。
 

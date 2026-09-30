@@ -40,7 +40,7 @@ LightVela にサインインし、右上の「My Hermes」をクリックして�
 
 ページにQRコードが表示されます。
 
-![](../images/lark1.webp)
+![](../../images/lark1.webp)
 
 ### 4. Larkでスキャン
 
@@ -55,7 +55,7 @@ LightVela にサインインし、右上の「My Hermes」をクリックして�
 4. 画面の指示に従って認証を完了
 
 
-![](../images/lark2.webp)
+![](../../images/lark2.webp)
 
 ### 5. LarkでHermes Agentを探す
 
@@ -68,7 +68,7 @@ LightVela にサインインし、右上の「My Hermes」をクリックして�
 
 作成したアプリケーション名をLarkで検索してください。
 
-![](../images/lark3.webp)
+![](../../images/lark3.webp)
 
 ボットのチャットウィンドウを開き、テストメッセージを送信します：
 
@@ -76,7 +76,7 @@ LightVela にサインインし、右上の「My Hermes」をクリックして�
 Hello
 ```
 
-![](../images/lark4.webp)
+![](../../images/lark4.webp)
 
 ## 成功状態
 

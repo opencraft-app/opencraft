@@ -4,7 +4,7 @@
 
 **My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela. Choose a starter template or describe a website from scratch, then work with the Agent to refine and publish it.**
 
-![My Workbench overview](../images/workbench-01.webp)
+![My Workbench overview](../../images/workbench-01.webp)
 
 After deployment, you can view the public address, check the current status, and manage your existing workbenches from one place.
 
@@ -15,7 +15,7 @@ Beta notice: My Workbench is a Beta feature, so the generation and deployment wo
 My Workbench connects your agent chat with a managed static website workflow.
 You can start your own workbench "worksite" or choose one of the provided templates, interact with the Agent to refine it, and preview your site with your own dedicated link.
 
-![My Workbench page](../images/workbench-02.webp)
+![My Workbench page](../../images/workbench-02.webp)
 
 LightVela manages the hosting process, so you do not need to configure a separate hosting server or cloud account.
 
@@ -38,7 +38,7 @@ You can choose a template based on the type of website you want to build:
 
 Select a template to open Agent chat with a prepared request.
 
-![Starter templates](../images/workbench-03.webp)
+![Starter templates](../../images/workbench-03.webp)
 
 You can also select the blank option and let the Agent clarify the requirements with you step by step.
 
@@ -52,7 +52,7 @@ You can also select the blank option and let the Agent clarify the requirements 
 
 The current workflow uses React, TypeScript, Tailwind CSS, and common UI libraries for generated websites.
 
-![Create a Workbench with Agent chat](../images/workbench-04.webp)
+![Create a Workbench with Agent chat](../../images/workbench-04.webp)
 
 The Agent is also instructed to keep content editable, avoid preset mock business data, and use browser local storage when temporary local data is appropriate.
 
@@ -70,7 +70,7 @@ Each workbench has a deployment status so you can see whether it is ready to vis
 
 When a workbench is online and has a public address, select Visit to open it.
 
-![Workbench status and website preview](../images/workbench-05.webp)
+![Workbench status and website preview](../../images/workbench-05.webp)
 
 If the workbench is still building or publishing, wait for the process to finish and refresh the page if necessary.
 
