@@ -4,7 +4,7 @@
 
 **항상 사용 가능하고 자신의 워크플로에 속하는 개인 AI 에이전트를 호스팅하는 것이 목표라면 LightVela가 더 직접적인 선택입니다.** 대화, 파일, 리서치, 글쓰기 등 다양한 작업을 위한 폭넓고 완성도 높은 AI 워크스페이스가 필요하다면 ChatGPT가 더 적합합니다. 두 제품이 도울 수 있는 작업에는 겹치는 부분이 있지만, 기반이 되는 제품 성격은 서로 다릅니다.
 
-![개인 AI 어시스턴트 구축을 위한 LightVela와 ChatGPT 비교](../images/lightvela-vs-chatgpt.webp)
+![개인 AI 어시스턴트 구축을 위한 LightVela와 ChatGPT 비교](../../images/lightvela-vs-chatgpt.webp)
 
 ## 한눈에 비교하기
 

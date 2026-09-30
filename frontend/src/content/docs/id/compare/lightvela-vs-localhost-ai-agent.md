@@ -1,6 +1,6 @@
 # LightVela vs Agent yang Dihosting Sendiri: Mana yang Lebih Sesuai?
 
-![Penyiapan cloud LightVela dibandingkan dengan menjalankan Hermes secara lokal](../images/lightvela-vs-self-hosted-hermes.webp)
+![Penyiapan cloud LightVela dibandingkan dengan menjalankan Hermes secara lokal](../../images/lightvela-vs-self-hosted-hermes.webp)
 
 ## Ringkasan
 

@@ -4,7 +4,7 @@
 
 **Hermes Agent 能 7×24 小时可用，是因为它运行在云端实例上，不依赖你本地设备开机；配置好模型与至少一个对话通道后，无论你从哪个入口发消息，它都使用同一份记忆与行为方式。** 要真正达到长期在线，需要三件事到位：模型已配置且账户有可用额度（体验积分耗尽会导致无回复）、至少一个通道显示为已接入、以及用定时任务承担你不在场时的定时工作。判断是否真的可用不要只看控制台状态，应当从实际通道发一条消息验证；出现异常时可在诊断中心查看并导出近期日志（可选 1、3、6、12 或 24 小时范围）定位问题。
 
-![LightVela 控制台中在线的 Hermes Agent](../images/use-case-hermes-online.webp)
+![LightVela 控制台中在线的 Hermes Agent](../../images/use-case-hermes-online.webp)
 
 ## 适合谁
 
@@ -36,7 +36,7 @@
 
 你可以查看 [Telegram](../configuration/channel-telegram.md)、[WhatsApp](../configuration/channel-whatsapp.md)、[Discord](../configuration/channel-discord.md)、[Slack](../configuration/channel-slack.md) 和 [WeChat](../configuration/channel-wechat.md) 的详细说明。
 
-![运行中的 Hermes Agent 与已连接通道](../images/use-case-hermes-online-channel.webp)
+![运行中的 Hermes Agent 与已连接通道](../../images/use-case-hermes-online-channel.webp)
 
 ### 2. 让工作配置保持简单且容易查看
 
@@ -71,7 +71,7 @@
 在[定时任务](../configuration/automation.md)中创建时间安排，如果合适，可以选择一个通知通道。
 检查前几次执行结果，如果范围太大，应让指令更具体，而不是立即添加另一个定时任务。
 
-![Hermes Agent 最近的定时任务执行记录](../images/use-case-hermes-online-automation.webp)
+![Hermes Agent 最近的定时任务执行记录](../../images/use-case-hermes-online-automation.webp)
 
 ## 常见问题
 

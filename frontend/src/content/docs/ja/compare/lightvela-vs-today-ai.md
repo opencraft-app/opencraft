@@ -6,7 +6,7 @@
 
 LightVelaはクラウドホスト型Hermes Agentを中心にした製品モデルを公開しています。一方、Today.AIの公開情報は、個人の文脈、プロアクティブな支援、デバイス横断の体験を強調しています。LightVelaは永続的なエージェントのホスティングと明示的な管理が分かりやすく、Today.AIは生活の全体像を組み立て、依頼前に行動するという実験的なビジョンを示しています。
 
-![常時稼働する個人用AIアシスタントとしてのLightVelaとToday.AIの比較](../images/lightvela-vs-today-ai.webp)
+![常時稼働する個人用AIアシスタントとしてのLightVelaとToday.AIの比較](../../images/lightvela-vs-today-ai.webp)
 
 ## ひと目で比較
 

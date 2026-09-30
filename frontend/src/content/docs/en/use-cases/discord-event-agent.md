@@ -6,7 +6,7 @@
 
 This pattern is best for recurring tournaments, raids, study groups, community launches, and other events where the same information must be repeated across many conversations.
 
-![An AI Agent supporting a Discord event community](../images/use-case-discord-event-agent.webp)
+![An AI Agent supporting a Discord event community](../../images/use-case-discord-event-agent.webp)
 
 ## Who this is for and expected outcome
 
@@ -63,12 +63,12 @@ Use the [Discord setup guide](../configuration/channel-discord.md) to complete t
 
 4. Invite the bot with minimum permissions: View Channels, Send Messages, and Read Message History.
 
-![Discord bot invitation and server selection](../images/discord-event-bot-invite.webp)
+![Discord bot invitation and server selection](../../images/discord-event-bot-invite.webp)
 
 For the first rollout, choose one event channel or one supported Discord conversation and test there before expanding the workflow.
 This makes it easier to inspect answers, permission behavior, and notification delivery.
 
-![Discord Bot permission configuration](../images/discord-5-global.webp)
+![Discord Bot permission configuration](../../images/discord-5-global.webp)
 
 ### 3. Test the questions participants will actually ask
 
@@ -122,7 +122,7 @@ LightVela supports one-time runs, fixed weekdays, and fixed intervals, as well a
 You can choose a fixed weekday, fixed interval, or one-time execution.
 You can also pause, edit, or delete a scheduled task later.
 
-![Configure a scheduled task for a Discord event](../images/automation-2-global-en.webp)
+![Configure a scheduled task for a Discord event](../../images/automation-2-global-en.webp)
 
 ```text
 One day before the tournament, remind the event channel about the start time, time zone, registration deadline, and rules channel.
@@ -132,7 +132,7 @@ If the brief is missing a detail, tell the organizer which detail needs review.
 
 In this example, the bot is running the "Game tournament reminder" scheduled task.
 
-![A Discord bot sending a tournament reminder](../images/discord-event-reminder.webp)
+![A Discord bot sending a tournament reminder](../../images/discord-event-reminder.webp)
 
 You could also schedule a post-event summary for organizers:
 

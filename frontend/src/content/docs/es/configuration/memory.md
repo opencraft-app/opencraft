@@ -2,13 +2,13 @@
 
 ## Resumen
 
-**La memoria es lo que permite a Hermes retener lo importante a través de las conversaciones y los dispositivos — tus preferencias, quién eres, lo que estás trabajando actualmente y la experiencia que se acumula a través de la colaboración a largo plazo. Es la base que convierte a Hermes de una herramienta de respuestas a preguntas aisladas en un asistente que te entiende mejor con el tiempo. La memoria vive dentro del Agent y fuera del modelo, por lo que cambiar de modelo no hace que olvide. Puedes revisar, editar o limpiar lo que se ha acumulado en la página de memoria y perfil de usuario en el consola, y todos tus canales de mensajería comparten una sola memoria.**
+**La memoria permite a Hermes retener lo importante a través de conversaciones y dispositivos: tus preferencias, quién eres, en qué estás trabajando y la experiencia acumulada durante la colaboración a largo plazo. Es la base que convierte a Hermes de una herramienta de preguntas aisladas en un asistente que te entiende mejor con el tiempo. La memoria vive dentro del Agent y fuera del modelo, por lo que cambiar de modelo no hace que olvide. Puedes revisar el contenido acumulado y el uso de capacidad en la página de memoria y perfil de usuario, y pedirle a Hermes en una conversación que recuerde u olvide detalles concretos; todos tus canales de mensajería comparten una sola memoria.**
 
 ---
 
 La memoria ayuda a Hermes a retener información importante a través de las conversaciones y los dispositivos — tus preferencias, identidad, trabajo en progreso y la experiencia que se desarrolla a través de la colaboración a largo plazo. Es lo que convierte a Hermes de una herramienta de preguntas y respuestas aisladas en un asistente a largo plazo que te entiende mejor con el tiempo.
 
-![La página de Memoria y Perfil de Usuario en la consola de LightVela](../images/memory-management-overview-en.webp)
+![La página de Memoria y Perfil de Usuario en la consola de LightVela](../../images/memory-management-overview-en.webp)
 
 LightVela se aloja en la nube, por lo que estas memorías se almacenan junto con tu instancia de Hermes en la nube. No se pierden cuando cambias de dispositivo o pasas entre Telegram, WhatsApp, Discord, Slack y WeChat. Si le dices algo a Hermes en Telegram hoy, aún podrá recordarlo cuando continúes la conversación en WhatsApp mañana.
 

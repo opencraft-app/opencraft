@@ -370,6 +370,12 @@ for (const file of publicAssets) {
 }
 
 const manifestPath = join(targetRoot, "UPSTREAM.json");
+// Documentation and other unrelated frontend commits do not change the
+// vendored Agent Console. Track only the files copied into this manifest.
+const sourcePaths = [
+  ...files.map((file) => relative(sourceRepositoryRoot, join(sourceRoot, file))),
+  ...publicAssets.map((file) => relative(sourceRepositoryRoot, join(sourcePublicRoot, file))),
+];
 let sourceRevision;
 try {
   sourceRevision = execFileSync(
@@ -381,9 +387,7 @@ try {
       "-1",
       "--format=%H",
       "--",
-      "frontend/src",
-      "frontend/public/tat-hermes-web-proxy-sw.js",
-      "frontend/public/assets/skills",
+      ...sourcePaths,
     ],
     { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   ).trim();

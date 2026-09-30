@@ -42,7 +42,7 @@ Use WhatsApp on your phone to scan the code shown by LightVela, then follow the 
 
 ### 4. Find yourself in WhatsApp
 
-![](../images/whatsapp-2-global.webp)
+![](../../images/whatsapp-2-global.webp)
 
 Chat with yourself — that's your bot.
 
@@ -54,7 +54,7 @@ Hi
 
 You should receive a Hermes Agent reply within a few seconds.
 
-![](../images/whatsapp-3-global-en.webp)
+![](../../images/whatsapp-3-global-en.webp)
 
 ---
 

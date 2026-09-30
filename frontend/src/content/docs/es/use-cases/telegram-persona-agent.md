@@ -4,7 +4,7 @@
 
 **Telegram es solo un punto de entrada. Lo que determina cómo habla el Agent, cómo funciona y qué no hará es su personalidad y contexto a largo plazo.** El flujo tiene dos mitades: primero, conecte el Hermes Agent a Telegram siguiendo la guía del canal (cree un bot con BotFather para obtener un token, conéctelo en la consola y confirme que aparece como conectado), luego utilice la sección de Personalidad en la página de configuración del Agent para seleccionar un rol estable, tono y un conjunto de límites e inyectarlo. Mantenga las tres capas distintas: la personalidad contiene principios de comportamiento duraderos, el perfil de usuario contiene cómo desea ser tratado y la memoria a largo plazo contiene hechos confirmados y antecedentes del proyecto. Tenga en cuenta que el canal de Telegram actualmente solo soporta conversaciones uno a uno, no chats grupales.
 
-![Un Hermes Agent con una personalidad distintiva en Telegram](../images/use-case-03-telegram-persona-agent.webp)
+![Un Hermes Agent con una personalidad distintiva en Telegram](../../images/use-case-03-telegram-persona-agent.webp)
 
 ## Para quién es este documento
 

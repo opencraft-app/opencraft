@@ -4,7 +4,7 @@ Sebuah asisten paling membantu ketika ia tersedia saat pertanyaannya datang — 
 
 Hermes Agent adalah AI agent berbasis cloud di LightVela. Begitu model dan kanal percakapannya dikonfigurasi, ia dapat tetap tersedia secara independen dari perangkat lokal Anda, dengan memori dan perilaku yang sama di mana pun Anda mengirim pesan kepadanya.
 
-![Hermes Agent yang online di konsol LightVela](../images/use-case-hermes-online.webp)
+![Hermes Agent yang online di konsol LightVela](../../images/use-case-hermes-online.webp)
 
 ## Ringkasan
 
@@ -34,7 +34,7 @@ Pilih satu kanal sebagai cara default Anda menghubungi Hermes. Untuk pemakaian p
 
 Instruksi terperinci tersedia untuk [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md), dan [WeChat](../configuration/channel-wechat.md).
 
-![Hermes Agent yang berjalan dengan kanal terhubung](../images/use-case-hermes-online-channel.webp)
+![Hermes Agent yang berjalan dengan kanal terhubung](../../images/use-case-hermes-online-channel.webp)
 
 ### 2. Jaga konfigurasi kerjanya tetap sederhana dan terlihat
 
@@ -66,7 +66,7 @@ kalender hari ini, tindak lanjut yang masih terbuka, dan tindakan pertama yang p
 
 Buat jadwalnya di [Tugas Terjadwal](../configuration/automation.md), pilih kanal notifikasi bila sesuai, lalu periksa beberapa eksekusi pertama. Jika hasilnya terlalu luas, buat instruksinya lebih spesifik alih-alih langsung menambahkan tugas terjadwal lain.
 
-![Eksekusi tugas terjadwal terbaru dari sebuah Hermes Agent](../images/use-case-hermes-online-automation.webp)
+![Eksekusi tugas terjadwal terbaru dari sebuah Hermes Agent](../../images/use-case-hermes-online-automation.webp)
 
 ## FAQ
 

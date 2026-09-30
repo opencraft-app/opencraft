@@ -7,7 +7,7 @@
 [Claude Tag](https://www.anthropic.com/news/introducing-claude-tag)와 [Viktor](https://slack.com/marketplace/A0A2VN5TR5K-viktor)처럼 최근 등장한 공유 에이전트 제품은 그룹이 이미 소통하는 공간에서 에이전트가 작업할 때 더 유용해지는 이유를 보여 줍니다.
 LightVela는 별도의 봇 애플리케이션을 먼저 개발하고 호스팅하지 않아도 Discord 커뮤니티에서 이러한 방식을 사용할 수 있게 합니다.
 
-![Discord 커뮤니티에 연결된 LightVela Agent](../images/use-case-discord-community-agent.webp)
+![Discord 커뮤니티에 연결된 LightVela Agent](../../images/use-case-discord-community-agent.webp)
 
 ## 대상 사용자와 예상 결과
 
@@ -71,7 +71,7 @@ Discord Developer Portal에서 메시지 콘텐츠를 읽는 데 필요한 Messa
 
 현재 인증 및 권한 절차 전체는 [Discord 설정 단계](../configuration/channel-discord.md)를 따르세요.
 
-![Developer Portal의 Discord 봇 권한](../images/discord-6-global.webp)
+![Developer Portal의 Discord 봇 권한](../../images/discord-6-global.webp)
 
 ### 4. 실제 커뮤니티 질문으로 에이전트 테스트
 

@@ -30,7 +30,7 @@ This tutorial walks through the full process from signing in to receiving a Herm
 
 Visit [lightvela.ai](https://lightvela.ai) and click "Log in" in the upper-right corner. In the login dialog, choose Google or GitHub, accept the agreements, and complete authorization.
 
-![](./images/2-1.webp)
+![](../images/2-1.webp)
 
 ---
 
@@ -64,7 +64,7 @@ Find the added bot account in WeChat and send a test message:
 Hi
 ```
 
-![](./images/2-7.webp)
+![](../images/2-7.webp)
 
 You should receive a reply from Hermes within a few seconds. Hermes can now chat through WeChat.
 

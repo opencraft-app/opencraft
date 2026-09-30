@@ -4,7 +4,7 @@
 
 **VPSの管理を趣味にせずにHermes Agentを運用したい場合、LightVelaの方が適しています。** ルートアクセス、自分専用のサーバー環境、Hermesの周りのすべてのレイヤーを自由にカスタマイズしたい場合は、HostingerのVPSの方が柔軟な選択肢です。これは単なる製品対製品の比較ではありません：LightVelaはホストされたHermes Agentを提供し、Hostingerはその上で実行できるVPSを提供します。
 
-![LightVela クラウドホスティングと Hostinger VPS 上の Hermes 実行の比較](../images/lightvela-vs-hostinger.webp)
+![LightVela クラウドホスティングと Hostinger VPS 上の Hermes 実行の比較](../../images/lightvela-vs-hostinger.webp)
 
 ## 概要
 

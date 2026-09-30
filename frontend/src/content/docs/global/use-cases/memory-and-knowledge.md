@@ -4,7 +4,7 @@
 
 **个人知识有两种形态，必须分开管理：描述你是谁与你如何工作的稳定信息属于长期记忆，会不断变化的文档、笔记与项目材料属于云存储。** 混在一处管理会让助手同时失去稳定性与可查找性。在 LightVela 上，记忆用于跨对话保留持久上下文——管理台的记忆页可查看它记住了什么并区分「记忆」与「用户画像」两个标签页，也可调整容量上限，而增删主要通过与 Hermes 对话完成；云存储则是文件工作区，支持上传、新建、整理、下载、重命名与删除，单个文件上传下载上限 1 GB。一条必须遵守的原则：不要把密码、密钥或不必要的敏感信息写进长期记忆。
 
-![LightVela Agent 的记忆和个人知识](../images/use-case-agent-memory.webp)
+![LightVela Agent 的记忆和个人知识](../../images/use-case-agent-memory.webp)
 
 ## 适合谁
 
@@ -54,7 +54,7 @@
 请使用最新简报和会议记录，然后列出尚未解决的决定和问题。
 ```
 
-![包含项目文件的云存储文件夹](../images/use-case-memory-knowledge-storage.webp)
+![包含项目文件的云存储文件夹](../../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. 定期复查记忆，不要假设它永远正确
 
@@ -80,7 +80,7 @@
 如果你的复查有固定节奏，可以使用一个[定时任务](../configuration/automation.md)提醒你重新查看文件夹，或准备定期回顾。
 建议先从简单的提醒或总结开始，不要直接授予一个范围很大的开放式任务。
 
-![使用整理后的项目知识进行 Hermes Agent 对话](../images/use-case-memory-knowledge-automation.webp)
+![使用整理后的项目知识进行 Hermes Agent 对话](../../images/use-case-memory-knowledge-automation.webp)
 
 ## 常见问题
 

@@ -42,7 +42,7 @@ Discord カードを見つけ、「+ Connect」をクリックします。
 
 1. Applications をクリックします
 
-![](../images/discord-1-global.webp)
+![](../../images/discord-1-global.webp)
 
 2. 右上の New Application をクリックします
 
@@ -50,11 +50,11 @@ Discord カードを見つけ、「+ Connect」をクリックします。
 
 4. アプリケーションにボットを追加し、ボットトークンを生成します。このトークンは、Hermes Agent とあなたの Discord サーバー間の接続を認証するために使用されます。
 
-![](../images/discord-2-global.webp)
+![](../../images/discord-2-global.webp)
 
 5. トークンを Discord カードに貼り付けます。
 
-![](../images/discord-3-global-en.webp)
+![](../../images/discord-3-global-en.webp)
 
 ### 4. 開発者ポータルのボットページに移動します
 
@@ -66,7 +66,7 @@ Discord カードを見つけ、「+ Connect」をクリックします。
 
 - **プレゼンスインテント**: 任意、ステータス更新のみで使用
 
-![](../images/discord-4-global.webp)
+![](../../images/discord-4-global.webp)
 
 有効にした後、下部の「変更を保存」をクリックしてください。
 
@@ -74,7 +74,7 @@ Discord カードを見つけ、「+ Connect」をクリックします。
 
 ボットの権限を設定: 左サイドバーのOAuth2をクリックし、次にOAuth2 URLジェネレーターを選択します。最初にスコープを設定してください。最小権限の原則に従い、`bot`と`applications.commands`を優先してください。
 
-![](../images/discord-5-global.webp)
+![](../../images/discord-5-global.webp)
 
 Botの権限を設定するために下にスクロールし、次を選択してください：
 
@@ -90,13 +90,13 @@ Botの権限を設定するために下にスクロールし、次を選択し�
 
 - リアクションを追加（任意）
 
-![](../images/discord-6-global.webp)
+![](../../images/discord-6-global.webp)
 
 ### 6. 招待リンクをコピーして開く
 
 生成された招待リンクをコピーし、ブラウザで開き、DiscordサーバーにBotを招待します（サーバー管理者権限が必要です）。続行をクリックして承認すると、Botがサーバーに招待されます。
 
-![](../images/discord-7-global.webp)
+![](../../images/discord-7-global.webp)
 
 ### 7. Discordで新しいボットとチャットする
 
@@ -106,7 +106,7 @@ Botの権限を設定するために下にスクロールし、次を選択し�
 Hi
 ```
 
-![](../images/discord-chat-global.webp)
+![](../../images/discord-chat-global.webp)
 
 数秒以内にHermes Agentの返信が届くはずです。
 

@@ -8,7 +8,7 @@ Norma grup menentukan bagaimana ia berbicara di ruang bersama, memakai konteks, 
 
 Memori sosial jangka panjang menentukan apakah ia dapat mempertahankan konteks relasi yang sudah dikonfirmasi tanpa mengubah setiap percakapan menjadi catatan permanen.
 
-![Merancang IM Agent yang lebih natural dengan ritme percakapan, norma grup, dan memori sosial](../images/use-case-10-lifelike-im-agent-rhythm-social-memory.webp)
+![Merancang IM Agent yang lebih natural dengan ritme percakapan, norma grup, dan memori sosial](../../images/use-case-10-lifelike-im-agent-rhythm-social-memory.webp)
 
 ## Ringkasan
 

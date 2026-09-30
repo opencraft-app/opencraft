@@ -1,6 +1,6 @@
 # LightVela vs ChatGPT: Mana yang Lebih Sesuai untuk Asisten AI Pribadi?
 
-![LightVela dibandingkan dengan ChatGPT untuk membangun asisten AI pribadi](../images/lightvela-vs-chatgpt.webp)
+![LightVela dibandingkan dengan ChatGPT untuk membangun asisten AI pribadi](../../images/lightvela-vs-chatgpt.webp)
 
 ## Ringkasan
 

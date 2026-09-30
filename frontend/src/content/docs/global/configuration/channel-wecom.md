@@ -40,7 +40,7 @@
 
 页面弹出二维码。
 
-![](../images/wecom1.webp)
+![](../../images/wecom1.webp)
 
 > ⚠️ **二维码有时效**
 >
@@ -55,13 +55,13 @@
 3. 对准电脑屏幕上的二维码扫描
 
 
-![](../images/wecom2.webp)
+![](../../images/wecom2.webp)
 
 4. 按手机提示完成授权
 
-![](../images/wecom3.webp)
+![](../../images/wecom3.webp)
 
-![](../images/wecom4.webp)
+![](../../images/wecom4.webp)
 
 ### 5. 与创建的机器人对话
 
@@ -80,7 +80,7 @@
 
 几秒内收到 Hermes Agent 回复。
 
-![](../images/wecom5.webp)
+![](../../images/wecom5.webp)
 
 ---
 

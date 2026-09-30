@@ -4,7 +4,7 @@
 
 **パーソナルAIアシスタントを作る正しい順序は、すべてを一度にスケジュールタスクすることではありません。まず、すでに使っているチャットアプリでアクセス可能なクラウドHermes Agentを作り、その後メモリ、スキル、スケジュールタスクを重ねていきます。** 5つの構成要素はそれぞれ1つの問題を解決します：モデルは推論の質を決め、チャネルはどこでアクセスするかを決め、メモリは作業方法を保持させ、スキルは再利用可能な手法を与え、スケジュールタスクはあなたが不在の間に合意した作業を完了させます。最初の1週間は、次の3つだけを行います：1つのモデルを設定し、1つのチャネルを接続し、メモリが本当にセッション間で保持されることを確認します。その経路が信頼できるようになったら、スキルとスケジュールタスクを追加します — この方法で、何かが壊れたとき、どのレイヤーが原因かを判断できます。
 
-![チャネル全体でLightVelaを備えたパーソナルAIアシスタント](../images/use-case-personal-ai-assistant.webp)
+![チャネル全体でLightVelaを備えたパーソナルAIアシスタント](../../images/use-case-personal-ai-assistant.webp)
 
 ## 対象者
 
@@ -28,7 +28,7 @@
 
 1つのメッセージングチャネルを接続し、通常の日常を整理する場所から最初の数件のメッセージを送信します。チャネルは単なる配信手段ではなく、アシスタントを簡単に戻って利用できる習慣です。次のセットアップページに従ってください[Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack)や[WeChat](https://lightvela.ai/docs/configuration/channel-wechat)。
 
-![LightVelaコンソールのチャネルページ](../images/personal-ai-assistant-channel.webp)
+![LightVelaコンソールのチャネルページ](../../images/personal-ai-assistant-channel.webp)
 
 広範なリクエストよりも、まず明確な紹介から始めてください。例えば：
 
@@ -54,7 +54,7 @@ with meetings, deadlines, and the three most important next actions.
 
 Hermesは追加のスキルがなくてもチャットできます。情報の検索、やることリストの整理、定期レポートの作成など、実際の仕事で役立つスキルが思いついたら追加してください。これにより、アシスタントは理解しやすく、信頼しやすくなります。
 
-![LightVelaコンソールのスキルページ](../images/personal-ai-assistant-skills.webp)
+![LightVelaコンソールのスキルページ](../../images/personal-ai-assistant-skills.webp)
 
 ClawHubで適切なオプションを閲覧し、その後で使用してください[スキルを設定する](https://lightvela.ai/docs/configuration/skill)でインストールします。何かをインストールする前に、その説明を読み、信頼できるソースを選んでください。
 
@@ -71,7 +71,7 @@ Start with deadlines and meetings, then suggest three focused next actions.
 
 でスケジュールと通知チャネルを設定します。最初のスケジュールタスクは小さく保ち、実際の結果をいくつか確認した後で指示を改善できます。[スケジュールタスク](https://lightvela.ai/docs/configuration/automation)。
 
-![LightVelaコンソールのスケジュールタスクページ](../images/personal-ai-assistant-automations.webp)
+![LightVelaコンソールのスケジュールタスクページ](../../images/personal-ai-assistant-automations.webp)
 
 ## FAQ
 

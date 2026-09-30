@@ -4,7 +4,7 @@
 
 **My Workbenchでは、LightVelaのAI Agentを使って静的Webサイトを作成、デプロイ、管理できます。開始テンプレートを選ぶか、サイトを最初から説明し、Agentと一緒に内容を調整して公開できます。**
 
-![My Workbenchの概要](../images/workbench-01.webp)
+![My Workbenchの概要](../../images/workbench-01.webp)
 
 デプロイ後は、公開アドレス、現在の状態、既存のワークベンチを一つの場所で確認できます。
 
@@ -15,7 +15,7 @@
 My Workbenchは、Agentチャットと管理された静的Webサイトのワークフローを接続します。
 自分のワークベンチの「worksite」を開始するか、用意されたテンプレートを選び、Agentと対話して内容を調整し、専用リンクでサイトをプレビューできます。
 
-![My Workbenchページ](../images/workbench-02.webp)
+![My Workbenchページ](../../images/workbench-02.webp)
 
 LightVelaがホスティング処理を管理するため、別のホスティングサーバーやクラウドアカウントを設定する必要はありません。
 
@@ -38,7 +38,7 @@ Workbenchページには、現在の使用量、利用可能なテンプレー�
 
 テンプレートを選ぶと、準備済みのリクエストが入力されたAgentチャットが開きます。
 
-![開始テンプレート](../images/workbench-03.webp)
+![開始テンプレート](../../images/workbench-03.webp)
 
 空白のオプションを選び、Agentに要件を段階的に確認してもらうこともできます。
 
@@ -52,7 +52,7 @@ Workbenchページには、現在の使用量、利用可能なテンプレー�
 
 現在のワークフローでは、生成サイトにReact、TypeScript、Tailwind CSS、一般的なUIライブラリを使用します。
 
-![AgentチャットでWorkbenchを作成](../images/workbench-04.webp)
+![AgentチャットでWorkbenchを作成](../../images/workbench-04.webp)
 
 Agentには、内容を編集可能に保ち、事前に用意した架空のビジネスデータを避け、適切な場合はブラウザーのlocal storageを一時的なローカルデータに使うよう指示されています。
 
@@ -70,7 +70,7 @@ Agentには、内容を編集可能に保ち、事前に用意した架空のビ
 
 ワークベンチがOnlineで公開アドレスを持つ場合は、Visitを選択して開きます。
 
-![Workbenchの状態とWebサイトのプレビュー](../images/workbench-05.webp)
+![Workbenchの状態とWebサイトのプレビュー](../../images/workbench-05.webp)
 
 ワークベンチがBuildingまたはPublishingの場合は、処理が完了するまで待ち、必要に応じてページを更新します。
 

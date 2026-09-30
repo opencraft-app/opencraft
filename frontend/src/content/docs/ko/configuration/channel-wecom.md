@@ -40,7 +40,7 @@ WeCom 모듈을 찾아 "+ 연결"을 클릭하세요.
 
 페이지에 QR 코드가 나타납니다.
 
-![](../images/wecom1-en.webp)
+![](../../images/wecom1-en.webp)
 
 > ⚠️ **QR 코드 만료**
 >
@@ -55,13 +55,13 @@ WeCom 모듈을 찾아 "+ 연결"을 클릭하세요.
 3. 컴퓨터 화면에서 QR 코드를 스캔하세요.
 
 
-![](../images/wecom2.webp)
+![](../../images/wecom2.webp)
 
 4. 인증을 완료하려면 휴대전화의 안내를 따르세요.
 
-![](../images/wecom3.webp)
+![](../../images/wecom3.webp)
 
-![](../images/wecom4.webp)
+![](../../images/wecom4.webp)
 
 ### 5. 생성된 봇과 채팅
 
@@ -80,7 +80,7 @@ Hello
 
 몇 초 내에 Hermes Agent 응답을 받게 됩니다.
 
-![](../images/wecom5-en.webp)
+![](../../images/wecom5-en.webp)
 
 ---
 

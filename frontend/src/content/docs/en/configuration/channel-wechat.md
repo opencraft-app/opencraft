@@ -40,7 +40,7 @@ Click the dropdown and select "WeChat". The WeChat channel introduction and "Vie
 
 A QR code appears on the page.
 
-![](../images/20260424-142558-0pl3.webp)
+![](../../images/20260424-142558-0pl3.webp)
 
 > ⚠️ **QR code expiration**
 > 
@@ -74,7 +74,7 @@ Hi
 
 You should receive a Hermes Agent reply within a few seconds.
 
-![](../images/6.1-2.webp)
+![](../../images/6.1-2.webp)
 
 ---
 

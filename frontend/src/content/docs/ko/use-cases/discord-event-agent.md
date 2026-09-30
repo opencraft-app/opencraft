@@ -6,7 +6,7 @@
 
 이 방식은 반복 토너먼트, 레이드, 스터디 그룹, 커뮤니티 출시처럼 같은 정보를 여러 대화에서 반복해야 하는 이벤트에 가장 적합합니다.
 
-![Discord 이벤트 커뮤니티를 지원하는 AI 에이전트](../images/use-case-discord-event-agent.webp)
+![Discord 이벤트 커뮤니티를 지원하는 AI 에이전트](../../images/use-case-discord-event-agent.webp)
 
 ## 대상 사용자와 예상 결과
 
@@ -63,12 +63,12 @@ LightVela에서 Discord 채널을 연결하고 Discord Developer Portal 인증 �
 
 4. View Channels, Send Messages, Read Message History의 최소 권한으로 봇을 초대합니다.
 
-![Discord 봇 초대 및 서버 선택](../images/discord-event-bot-invite.webp)
+![Discord 봇 초대 및 서버 선택](../../images/discord-event-bot-invite.webp)
 
 첫 출시에서는 이벤트 채널 하나 또는 지원되는 Discord 대화 하나를 선택해 워크플로를 확장하기 전에 테스트하세요.
 답변, 권한 동작, 알림 전달을 더 쉽게 점검할 수 있습니다.
 
-![Discord Bot 권한 구성](../images/discord-5-global.webp)
+![Discord Bot 권한 구성](../../images/discord-5-global.webp)
 
 ### 3. 참가자가 실제로 물어볼 질문 테스트
 
@@ -122,7 +122,7 @@ LightVela는 일회성 실행, 고정 요일, 고정 간격과 선택적인 유�
 고정 요일, 고정 간격 또는 일회성 실행을 선택할 수 있습니다.
 나중에 예약 작업을 일시 중지, 편집 또는 삭제할 수도 있습니다.
 
-![Discord 이벤트용 예약 작업 구성](../images/automation-2-global-en.webp)
+![Discord 이벤트용 예약 작업 구성](../../images/automation-2-global-en.webp)
 
 ```text
 One day before the tournament, remind the event channel about the start time, time zone, registration deadline, and rules channel.
@@ -132,7 +132,7 @@ If the brief is missing a detail, tell the organizer which detail needs review.
 
 이 예시에서 봇은 "Game tournament reminder" 예약 작업을 실행합니다.
 
-![토너먼트 미리 알림을 보내는 Discord 봇](../images/discord-event-reminder.webp)
+![토너먼트 미리 알림을 보내는 Discord 봇](../../images/discord-event-reminder.webp)
 
 주최자를 위한 이벤트 후 요약도 예약할 수 있습니다.
 

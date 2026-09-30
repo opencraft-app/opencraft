@@ -98,7 +98,10 @@ const cnDocs = [
   { slug: 'configuration/agent-chat', title: '网页对话', file: 'configuration/agent-chat.md', group: 'Bot 与模型', description: '在网页中与主 Bot 对话、检查回复并排查不可用状态。', hideDescription: true },
   { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: 'Bot 与模型', description: '接入和管理 Hermes 使用的大语言模型。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: 'Bot 与模型', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
-  { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: 'Bot 与模型', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。', hideDescription: true },
+  // 成长
+  { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: '成长', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。', hideDescription: true },
+  { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '成长', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。', hideDescription: true },
+  { slug: 'configuration/achievements', title: '成就', file: 'configuration/achievements.md', group: '成长', description: '查看当前 Bot 的 Hermes Agent 成就、进度、计数规则和历史扫描状态。', hideDescription: true },
   // 通道与技能
   { slug: 'configuration/channel-wechat', title: '配置通道 - 微信', file: 'configuration/channel-wechat.md', group: '通道与技能', description: '通过微信与 Hermes Agent 对话。', hideDescription: true },
   { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '通道与技能', description: '通过 QQ 与 Hermes Agent 对话。', hideDescription: true },
@@ -107,7 +110,6 @@ const cnDocs = [
   { slug: 'configuration/channel-dingtalk', title: '配置通道 - 钉钉', file: 'configuration/channel-dingtalk.md', group: '通道与技能', description: '通过扫码或 Client ID / Secret 将钉钉接入 Hermes Agent。', hideDescription: true },
   { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '通道与技能', description: '在国内站 SkillHub 技能市场搜索、安装和管理 Hermes 技能。', hideDescription: true },
   // 自动化与资料
-  { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '自动化与资料', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。', hideDescription: true },
   { slug: 'configuration/automation', title: '定时任务', file: 'configuration/automation.md', group: '自动化与资料', description: '为 Hermes Agent 创建定时任务。', hideDescription: true },
   { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '自动化与资料', description: '管理 Agent 使用的云端文件和工作资料。', hideDescription: true },
   // 管理与排障
@@ -145,6 +147,7 @@ const cnDocs = [
 const CN_GROUP_ORDER = [
   '开始使用',
   'Bot 与模型',
+  '成长',
   '通道与技能',
   '自动化与资料',
   '管理与排障',
@@ -421,6 +424,17 @@ const globalDocs = [
     description: {
       'en-US': 'Choose and apply a Soul to define a Hermes Agent\'s role, voice, priorities, and behavioral boundaries.',
       'zh-CN': '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。',
+    },
+    hideDescription: true,
+  },
+  {
+    slug: 'configuration/achievements',
+    title: { 'en-US': 'Achievements', 'zh-CN': '成就' },
+    file: 'configuration/achievements.md',
+    group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
+    description: {
+      'en-US': 'Review the current Bot\'s Hermes Agent achievements, progress, counting rules, and history scan status.',
+      'zh-CN': '查看当前 Bot 的 Hermes Agent 成就、进度、计数规则和历史扫描状态。',
     },
     hideDescription: true,
   },
@@ -979,6 +993,10 @@ const ES_DOC_METADATA = {
     title: 'Personalidad',
     description: 'Elige y aplica una personalidad Soul para definir el rol, la voz, las prioridades y los límites de comportamiento de Hermes Agent.',
   },
+  'configuration/achievements': {
+    title: 'Achievements',
+    description: 'Revisa los achievements, el progreso, las reglas de conteo y el estado de escaneo del historial del Hermes Agent del Bot actual.',
+  },
   'configuration/memory': {
     title: 'Gestión de la memoria',
     description: 'Aprende cómo Hermes almacena y administra recuerdos a largo plazo y perfiles de usuario entre dispositivos y canales de mensajería.',
@@ -1265,6 +1283,10 @@ const ID_DOC_METADATA = {
   'configuration/personality': {
     title: 'Soul',
     description: 'Pilih, unggah, dan terapkan Soul untuk menentukan peran, gaya komunikasi, prioritas, dan batas perilaku Hermes Agent.',
+  },
+  'configuration/achievements': {
+    title: 'Achievement',
+    description: 'Lihat achievement, progres, aturan penghitungan, dan status pemindaian riwayat Hermes Agent untuk Bot saat ini.',
   },
   'configuration/memory': {
     title: 'Pengelolaan Memori',
@@ -1742,14 +1764,17 @@ function localizedImageName(imageName, locale) {
     [LOCALES.ZH_HANT]: ['-zh-hant'],
     [LOCALES.ID_ID]: ['-id', '-en'],
     [LOCALES.ES]: ['-es', '-en'],
-    [LOCALES.JA_JP]: ['-en'],
-    [LOCALES.KO_KR]: ['-en'],
+    [LOCALES.JA_JP]: ['-ja', '-en'],
+    [LOCALES.KO_KR]: ['-ko', '-en'],
   };
   const suffixes = suffixesByLocale[locale];
-  if (!suffixes || /-(?:en|zh-hant|id|es)\.[^.]+$/.test(imageName)) return imageName;
+  if (!suffixes) return imageName;
 
+  // A fallback source may already use another locale suffix (for example, -en).
+  // Replace that suffix before trying the requested locale and its fallbacks.
+  const baseName = imageName.replace(/-(?:en|zh-hant|id|es|ja|ko)(\.[^.]+)$/, '$1');
   for (const suffix of suffixes) {
-    const candidate = imageName.replace(/(\.[^.]+)$/, `${suffix}$1`);
+    const candidate = baseName.replace(/(\.[^.]+)$/, `${suffix}$1`);
     if (existsSync(join(sourceRoot, 'images', candidate))) return candidate;
   }
   return imageName;
@@ -1796,7 +1821,7 @@ export function normalizeMarkdownLinks(markdown, currentFile, outputPrefix, loca
   const currentDir = dirname(currentFile);
   const fileToHref = fileToHrefFor(outputPrefix);
   return markdown
-    .replace(/(!?\[[^\]]*]\()(?:(?:\.\.?\/)?images\/)([^)\s]+)([^)]*\))/g, (_match, prefix, imageName, suffix) => {
+    .replace(/(!?\[[^\]]*]\()(?:\.{1,2}\/)*images\/([^)\s]+)([^)]*\))/g, (_match, prefix, imageName, suffix) => {
       return `${prefix}/docs-images/${localizedImageName(imageName, locale)}${suffix}`;
     })
     .replace(/(?<!!)(\[[^\]\n]+]\()([^)\n]+)(\))/g, (match, opening, destination, closing) => {

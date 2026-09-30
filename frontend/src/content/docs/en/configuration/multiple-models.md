@@ -30,7 +30,7 @@ Model Switching lets you choose which configured model your Hermes Agent uses fo
 3. Choose the configured model you want the Agent to use.
 4. Save or apply the change, then wait for the Agent to finish updating its active configuration.
 
-![The model provider selector in the LightVela console](../images/4-1-en.webp)
+![The model provider selector in the LightVela console](../../images/4-1-en.webp)
 
 If you are choosing a model for the first time, use [Configure Models](./model.md) to add a supported provider or custom model before returning here.
 

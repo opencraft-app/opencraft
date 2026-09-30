@@ -40,7 +40,7 @@ Klik dropdown lalu pilih "Lark". Pengantar kanal Lark akan muncul di bawahnya.
 
 Sebuah kode QR akan muncul di halaman tersebut.
 
-![](../images/lark1.webp)
+![](../../images/lark1.webp)
 
 ### 4. Pindai dengan Lark
 
@@ -55,7 +55,7 @@ Sebuah kode QR akan muncul di halaman tersebut.
 4. Ikuti petunjuk untuk menyelesaikan otorisasi
 
 
-![](../images/lark2.webp)
+![](../../images/lark2.webp)
 
 ### 5. Temukan Hermes Agent di Lark
 
@@ -68,7 +68,7 @@ Setelah pemindaian berhasil:
 
 Cari di Lark dengan nama aplikasi yang Anda buat.
 
-![](../images/lark3.webp)
+![](../../images/lark3.webp)
 
 Buka jendela percakapan bot tersebut lalu kirim pesan uji:
 
@@ -76,7 +76,7 @@ Buka jendela percakapan bot tersebut lalu kirim pesan uji:
 Hello
 ```
 
-![](../images/lark4.webp)
+![](../../images/lark4.webp)
 
 ## Kondisi berhasil
 

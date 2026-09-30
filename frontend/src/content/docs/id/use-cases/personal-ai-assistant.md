@@ -4,7 +4,7 @@ Sebagian besar percakapan AI berguna untuk satu jawaban, lalu menghilang ke tab 
 
 LightVela adalah platform AI agent pribadi berbasis cloud: sebuah Hermes Agent dapat terus bekerja dengan model, kanal, memori, Skill, dan tugas terjadwal pilihan Anda. Panduan ini menunjukkan cara mengubah kumpulan komponen tersebut menjadi asisten yang sudah terasa berguna sejak pekan pertama, tanpa berusaha mengtugas terjadwalkan segalanya sekaligus.
 
-![Asisten AI pribadi dengan LightVela di berbagai kanal](../images/use-case-personal-ai-assistant.webp)
+![Asisten AI pribadi dengan LightVela di berbagai kanal](../../images/use-case-personal-ai-assistant.webp)
 
 ## Ringkasan
 
@@ -32,7 +32,7 @@ Ia sangat berguna ketika Anda mendapati diri Anda mengulang konteks seperti zona
 
 Hubungkan satu kanal pesan, lalu kirim beberapa pesan pertama dari tempat yang biasa Anda pakai untuk menata hari Anda. Kanal bukan sekadar metode pengiriman — ia adalah kebiasaan yang membuat asisten tersebut mudah untuk kembali dipakai. Ikuti halaman penyiapan untuk [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack), atau [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
 
-![Halaman Channel di konsol LightVela](../images/personal-ai-assistant-channel.webp)
+![Halaman Channel di konsol LightVela](../../images/personal-ai-assistant-channel.webp)
 
 Mulailah dengan perkenalan yang jelas alih-alih permintaan yang luas. Misalnya:
 
@@ -58,7 +58,7 @@ Gunakan halaman [Pengelolaan Memori](https://lightvela.ai/docs/configuration/mem
 
 Hermes dapat mengobrol tanpa Skill tambahan. Tambahkan satu ketika Anda dapat menyebutkan pekerjaan praktis yang seharusnya ia bantu, seperti mencari informasi, menata daftar to-do, atau menyiapkan laporan berulang. Ini menjaga asisten tersebut tetap mudah dipahami dan lebih mudah dipercaya.
 
-![Halaman Skills di konsol LightVela](../images/personal-ai-assistant-skills.webp)
+![Halaman Skills di konsol LightVela](../../images/personal-ai-assistant-skills.webp)
 
 Telusuri opsi yang sesuai di ClawHub, lalu pakai [Konfigurasi Skill](https://lightvela.ai/docs/configuration/skill) untuk memasangnya. Sebelum memasang apa pun, baca deskripsinya dan pilih sumber yang Anda percayai.
 
@@ -75,7 +75,7 @@ Mulai dengan tenggat waktu dan rapat, lalu sarankan tiga tindakan berikutnya yan
 
 Atur jadwal dan kanal notifikasinya di [Tugas Terjadwal](https://lightvela.ai/docs/configuration/automation). Jaga tugas terjadwal pertama tetap kecil; Anda dapat memperhalus instruksinya setelah melihat beberapa hasil nyata.
 
-![Halaman Tugas Terjadwal di konsol LightVela](../images/personal-ai-assistant-automations.webp)
+![Halaman Tugas Terjadwal di konsol LightVela](../../images/personal-ai-assistant-automations.webp)
 
 ## FAQ
 

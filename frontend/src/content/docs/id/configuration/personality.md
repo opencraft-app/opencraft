@@ -8,7 +8,7 @@
 
 **Satu Agent hanya dapat memiliki satu Soul aktif pada satu waktu, dan Anda perlu memulai percakapan baru setelah mengubahnya agar aturan baru dimuat.**
 
-![Kartu persona Soul di konsol LightVela](../images/soul-1.webp)
+![Kartu persona Soul di konsol LightVela](../../images/soul-1.webp)
 
 ## Yang dibahas di halaman ini
 
@@ -54,7 +54,7 @@ Pilih Agent lain terlebih dahulu bila Agent tersebut membutuhkan peran atau gaya
 Gunakan **Draw random soul** untuk menjelajahi gaya persona yang tersedia.
 Gunakan **Soul personality test** bila Anda ingin mendapatkan rekomendasi berdasarkan preferensi komunikasi dan perilaku Anda.
 
-![Dialog Draw random soul](../images/soul-2.webp)
+![Dialog Draw random soul](../../images/soul-2.webp)
 
 Tinjau peran, gaya komunikasi, deskripsi perilaku, dan batas pada setiap kartu Soul sebelum memilihnya.
 Pilih Soul yang sesuai dengan deskripsi yang sudah Anda siapkan, bukan hanya berdasarkan nama atau nadanya.
@@ -80,7 +80,7 @@ Gunakan opsi ini jika Anda sudah memiliki persona Markdown dan ingin menerapkann
 5. Jika Agent sudah memiliki Soul, konfirmasikan bahwa Anda ingin menggantinya.
 6. Kembali ke kanal percakapan yang terhubung lalu kirim `/new`.
 
-![Dialog Upload personality file](../images/soul-3.webp)
+![Dialog Upload personality file](../../images/soul-3.webp)
 
 Nama file tidak harus `soul.md`, tetapi ekstensinya harus `.md`, harus menggunakan pengodean UTF-8, dan ukurannya tidak boleh melebihi 20 KB.
 LightVela menampilkan isi file sebelum penyuntikan sehingga Anda dapat melakukan pemeriksaan atau pengeditan terakhir.

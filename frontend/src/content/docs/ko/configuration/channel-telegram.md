@@ -50,7 +50,7 @@ Telegram 카드를 찾아 "+ 연결"을 클릭하세요.
 
 6. HTTP API 토큰을 복사합니다.
 
-![](../images/telegram-botfather-3-global.webp)
+![](../../images/telegram-botfather-3-global.webp)
 
 
 ### 4. HTTP API 토큰을 Telegram에 붙여넣습니다.
@@ -67,7 +67,7 @@ HTTP API 토큰을 토큰 필드에 붙여넣습니다.
 
 BotFather가 제공하는 링크를 클릭하고 봇과 상호작용을 시작하세요.
 
-![](../images/telegram-botfather-5-global.webp)
+![](../../images/telegram-botfather-5-global.webp)
 
 봇과의 채팅을 열고 테스트 메시지를 보냅니다.
 

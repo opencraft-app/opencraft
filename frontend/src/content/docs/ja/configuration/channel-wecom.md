@@ -40,7 +40,7 @@ WeComモジュールを見つけ、「+ 接続」をクリックする。
 
 ページにQRコードが表示されます。
 
-![](../images/wecom1-en.webp)
+![](../../images/wecom1-en.webp)
 
 > ⚠️ **QRコードの有効期限**
 >
@@ -55,13 +55,13 @@ WeComモジュールを見つけ、「+ 接続」をクリックする。
 3. コンピュータ画面のQRコードをスキャン
 
 
-![](../images/wecom2.webp)
+![](../../images/wecom2.webp)
 
 4. 携帯の指示に従い、認証を完了する
 
-![](../images/wecom3.webp)
+![](../../images/wecom3.webp)
 
-![](../images/wecom4.webp)
+![](../../images/wecom4.webp)
 
 ### 5. 作成したボットとチャットする
 
@@ -80,7 +80,7 @@ Hello
 
 数秒以内にHermes Agentの返信を受け取ります。
 
-![](../images/wecom5-en.webp)
+![](../../images/wecom5-en.webp)
 
 ---
 

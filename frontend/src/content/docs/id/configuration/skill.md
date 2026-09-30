@@ -142,7 +142,7 @@ Pakai browser untuk mencari di ClawHub dan temukan Skill email yang saat ini pal
 
 Tugas ini mencakup beberapa langkah seperti membuka halaman web, menunggu halaman dimuat, memasukkan konten, dan mengklik tombol. Tugasnya relatif kompleks. Hermes akan menyelesaikan langkah-langkah tersebut dan mengembalikan hasilnya.
 
-![](../images/clawhub-browser-example-global-en.webp)
+![](../../images/clawhub-browser-example-global-en.webp)
 
 ---
 

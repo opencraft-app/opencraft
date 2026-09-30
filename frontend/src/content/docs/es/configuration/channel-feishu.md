@@ -37,7 +37,7 @@ Haga clic en la lista desplegable y seleccione "Lark". Aparecerá la introducci�
 
 Un código QR aparecerá en la página.
 
-![](../images/lark1.webp)
+![](../../images/lark1.webp)
 
 ### 4. Escanear con Lark
 
@@ -49,7 +49,7 @@ Un código QR aparecerá en la página.
 4. Siga las instrucciones para completar la autorización
 
 
-![](../images/lark2.webp)
+![](../../images/lark2.webp)
 
 ### 5. Buscar Hermes Agent en Lark
 
@@ -61,7 +61,7 @@ Después de un escaneo exitoso:
 
 Busque el nombre de la aplicación que creó en Lark.
 
-![](../images/lark3.webp)
+![](../../images/lark3.webp)
 
 Abra la ventana de chat del bot y envíe un mensaje de prueba:
 
@@ -69,7 +69,7 @@ Abra la ventana de chat del bot y envíe un mensaje de prueba:
 Hello
 ```
 
-![](../images/lark4.webp)
+![](../../images/lark4.webp)
 
 ## Estado de éxito
 

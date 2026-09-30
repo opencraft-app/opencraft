@@ -4,7 +4,7 @@
 
 **Agent 的安全边界不只由模型决定，而由四层共同构成：通道凭证、会话范围、记忆策略、外部操作规则。** 一套清晰的边界应当让你明确回答四个问题——谁可以找到这个 Agent、哪些消息会被处理、哪些内容不能发送、什么操作必须先确认。落地要点：凭证属于敏感信息，不要写入长期上下文或粘贴到聊天；记忆策略要避免把敏感信息沉淀成永久记录；涉及外部发送或不可逆操作时必须设置确认环节。Telegram 支持群消息，但需要先在 BotFather 中关闭 Group Privacy，将机器人加入群组并通过 `@机器人用户名` 发起对话。WhatsApp 的群聊支持范围仍以其通道文档为准。上线前建议逐项走完文中的安全清单。
 
-![为 Telegram 和 WhatsApp Agent 设计授权、群聊规则与敏感操作安全边界](../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
+![为 Telegram 和 WhatsApp Agent 设计授权、群聊规则与敏感操作安全边界](../../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
 
 ## 适合谁
 

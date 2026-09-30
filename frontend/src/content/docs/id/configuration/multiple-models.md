@@ -30,7 +30,7 @@ Penggantian model memungkinkan Anda memilih model terkonfigurasi mana yang dipak
 3. Pilih model terkonfigurasi yang ingin dipakai Agent.
 4. Simpan atau terapkan perubahan, lalu tunggu sampai Agent selesai memperbarui konfigurasi aktifnya.
 
-![Pemilih penyedia model di konsol LightVela](../images/4-1-en.webp)
+![Pemilih penyedia model di konsol LightVela](../../images/4-1-en.webp)
 
 Jika ini kali pertama Anda memilih model, gunakan [Konfigurasi Model](./model.md) untuk menambahkan penyedia yang didukung atau custom model sebelum kembali ke halaman ini.
 

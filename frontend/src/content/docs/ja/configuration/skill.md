@@ -142,7 +142,7 @@ Use the browser to search ClawHub and find the currently most-installed email sk
 
 このタスクには、ウェブページを開く、読み込みを待つ、内容を入力する、ボタンをクリックするといった複数のステップが含まれます。比較的複雑です。Hermes はこれらのステップを完了して結果を返します。
 
-![](../images/clawhub-browser-example-global-en.webp)
+![](../../images/clawhub-browser-example-global-en.webp)
 
 ---
 

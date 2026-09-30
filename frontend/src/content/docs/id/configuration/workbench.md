@@ -4,7 +4,7 @@
 
 **My Workbench memungkinkan Anda menggunakan Agent AI untuk membuat, menerbitkan, dan mengelola situs web statis di LightVela. Pilih template awal atau jelaskan situs web dari awal, lalu bekerja sama dengan Agent untuk menyempurnakan dan menerbitkannya.**
 
-![Ringkasan My Workbench](../images/workbench-01.webp)
+![Ringkasan My Workbench](../../images/workbench-01.webp)
 
 Setelah diterbitkan, Anda dapat melihat alamat publik, memeriksa status saat ini, dan mengelola workbench yang sudah ada dari satu tempat.
 
@@ -15,7 +15,7 @@ Pemberitahuan Beta: My Workbench adalah fitur Beta, sehingga alur pembuatan dan 
 My Workbench menghubungkan chat Agent Anda dengan alur kerja situs web statis yang dikelola.
 Anda dapat memulai "worksite" workbench sendiri atau memilih salah satu template yang tersedia, berinteraksi dengan Agent untuk menyempurnakannya, dan melihat pratinjau situs melalui tautan khusus.
 
-![Halaman My Workbench](../images/workbench-02.webp)
+![Halaman My Workbench](../../images/workbench-02.webp)
 
 LightVela mengelola proses hosting, sehingga Anda tidak perlu mengonfigurasi server hosting atau akun cloud terpisah.
 
@@ -38,7 +38,7 @@ Anda dapat memilih template berdasarkan jenis situs web yang ingin dibuat:
 
 Pilih template untuk membuka chat Agent dengan permintaan yang sudah disiapkan.
 
-![Template awal](../images/workbench-03.webp)
+![Template awal](../../images/workbench-03.webp)
 
 Anda juga dapat memilih opsi kosong dan membiarkan Agent mengklarifikasi kebutuhan bersama Anda langkah demi langkah.
 
@@ -52,7 +52,7 @@ Anda juga dapat memilih opsi kosong dan membiarkan Agent mengklarifikasi kebutuh
 
 Alur kerja saat ini menggunakan React, TypeScript, Tailwind CSS, dan library UI umum untuk membuat situs web.
 
-![Membuat Workbench dengan chat Agent](../images/workbench-04.webp)
+![Membuat Workbench dengan chat Agent](../../images/workbench-04.webp)
 
 Agent juga diarahkan untuk menjaga konten tetap dapat diedit, menghindari data bisnis contoh yang sudah ditentukan, dan menggunakan penyimpanan lokal browser jika data lokal sementara sesuai untuk digunakan.
 
@@ -70,7 +70,7 @@ Setiap workbench memiliki status deployment agar Anda dapat melihat apakah workb
 
 Saat workbench online dan memiliki alamat publik, pilih Visit untuk membukanya.
 
-![Status Workbench dan pratinjau situs web](../images/workbench-05.webp)
+![Status Workbench dan pratinjau situs web](../../images/workbench-05.webp)
 
 Jika workbench masih berstatus Building atau Publishing, tunggu proses selesai dan segarkan halaman bila perlu.
 

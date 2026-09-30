@@ -8,7 +8,7 @@ Hermes can run locally on macOS, Windows, Linux, WSL2, and more. Its official in
 
 > **Approachable is not the same as invisible.** A local agent gives you control, but it also gives you responsibility for keeping the environment ready.
 
-![LightVela cloud setup compared with running Hermes locally](../images/lightvela-vs-self-hosted-hermes.webp)
+![LightVela cloud setup compared with running Hermes locally](../../images/lightvela-vs-self-hosted-hermes.webp)
 
 ## At a glance
 

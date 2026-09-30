@@ -41,7 +41,7 @@ Usa WhatsApp en el teléfono para escanear el código que muestra LightVela y si
 
 ### 4. Encuentre a sí mismo en WhatsApp
 
-![](../images/whatsapp-2-global.webp)
+![](../../images/whatsapp-2-global.webp)
 
 Chatee consigo mismo — eso es su bot.
 
@@ -53,7 +53,7 @@ Hi
 
 Debería recibir una respuesta de Hermes Agent en unos pocos segundos.
 
-![](../images/whatsapp-3-global-en.webp)
+![](../../images/whatsapp-3-global-en.webp)
 
 ---
 
