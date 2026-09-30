@@ -14,6 +14,7 @@ import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH } from '@/lib/agent-routes';
 import { CTA_COPY_BY_LOCALE, journeyHref, resolveCtaRoute } from '@/lib/cta-journey';
+import { hasEverCreatedBot } from '@/lib/bot-creation-history';
 import {
   armPostLoginRedirect,
   disarmPostLoginRedirect,
@@ -111,7 +112,7 @@ function PublicHeaderAuthControls({
   loginOnly = isGlobal,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
-  const { authReady, isAuthenticated } = useSession();
+  const { authReady, isAuthenticated, session } = useSession();
   const { auth } = useRepositories();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
@@ -125,13 +126,22 @@ function PublicHeaderAuthControls({
     ? (CTA_COPY_BY_LOCALE[activeLocale]?.startFree ?? CTA_COPY_BY_LOCALE['en-US'].startFree)
     : copy.createNow;
   // CTA / 登录落点：订阅前统一 /subscribe，订阅后统一 /agents（国内国际同一套逻辑）。
-  const ctaRoute = resolveCtaRoute({ isAuthenticated, isSubscribed, hasBots });
+  // 曾创建过 Bot（含删光后重建）也算非首次，落控制台而非创建向导。
+  const ctaRoute = resolveCtaRoute({
+    isAuthenticated,
+    isSubscribed,
+    hasBots,
+    hasCreatedBot: hasEverCreatedBot(session?.user?.id),
+  });
   const ctaHref = journeyHref(ctaRoute, activeLocale, { localized: isGlobal });
   // 登录成功后按订阅状态分流：未订阅 → /subscribe，已订阅 → /agents
   const redirectAfterLogin = usePostLoginRedirect({ locale: activeLocale });
 
   const renderProductEntry = (surface: 'desktop' | 'mobile') => {
-    if (!showProductEntry) return null;
+    /* 购买前不暴露「我的智能体」入口（PRD 2026-09-30）。
+       与 /agents 门禁同口径：已订阅、或已有资产（有 Bot / 曾创建过）才显示。 */
+    const hasExistingAssets = (bots?.length ?? 0) > 0 || hasEverCreatedBot(session?.user?.id);
+    if (!showProductEntry || (!isSubscribed && !hasExistingAssets)) return null;
     const isMobile = surface === 'mobile';
     return (
       <a

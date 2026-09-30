@@ -16,6 +16,7 @@ import {
   resolveCtaRoute,
   type CtaCopyKey,
 } from '@/lib/cta-journey';
+import { hasEverCreatedBot } from '@/lib/bot-creation-history';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import { isGlobal } from '@/lib/region';
@@ -112,7 +113,7 @@ function readOfficialCtaLabels(): Partial<Record<CtaCopyKey, string>> {
 }
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
-  const { authReady, isAuthenticated } = useSession();
+  const { authReady, isAuthenticated, session } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
   const officialCtaLabelsRef = useRef<Partial<Record<CtaCopyKey, string>>>({});
 
@@ -155,7 +156,12 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
   useEffect(() => {
     if (!authReady) return;
 
-    const journeyState = { isAuthenticated, isSubscribed, hasBots: bots.length > 0 };
+    const journeyState = {
+      isAuthenticated,
+      isSubscribed,
+      hasBots: bots.length > 0,
+      hasCreatedBot: hasEverCreatedBot(session?.user?.id),
+    };
     const ctaHref = journeyHref(resolveCtaRoute(journeyState), locale, { localized: isGlobal });
     // 优先用片段里的官方译文，取不到（例如片段没有对应按钮）才回退到兜底文案表。
     const copyKey = resolveCtaCopyKey(journeyState);
@@ -168,7 +174,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       anchor.setAttribute('href', ctaHref);
       applyCtaLabel(anchor, ctaLabel);
     }
-  }, [authReady, bots.length, isAuthenticated, isSubscribed, locale, markup]);
+  }, [authReady, bots.length, isAuthenticated, isSubscribed, locale, markup, session?.user?.id]);
 
   return (
     <>

@@ -12,6 +12,7 @@ import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
+import { hasEverCreatedBot } from "@/lib/bot-creation-history";
 import {
   ACCOUNT_BILLING_PATH,
   AGENTS_HOME_PATH,
@@ -44,7 +45,7 @@ const HeaderUserAvatarMenu = ({
   showLanguageSwitcher = false,
 }: Pick<UserAvatarMenuProps, "showLanguageSwitcher">) => {
   const { session, signOut } = useSession();
-  const { activePass } = useOpenClaw();
+  const { activePass, bots, isSubscribed } = useOpenClaw();
   const t = useT();
   const { i18n } = useTranslation();
   const navigate = useAppNavigate();
@@ -237,7 +238,11 @@ const HeaderUserAvatarMenu = ({
 
             {/* Menu items */}
             <div className="py-1.5">
-              {!isSidebar && (
+              {/* 购买前不暴露「我的智能体」入口（PRD 2026-09-30）。
+                  口径与 /agents 门禁一致：已订阅、或已有资产（有 Bot / 曾创建过）才显示，
+                  否则过期老用户会在菜单里找不到入口、却能直接输 URL 进来。 */}
+              {!isSidebar
+                && (isSubscribed || (bots?.length ?? 0) > 0 || hasEverCreatedBot(session?.user?.id)) && (
                 <a
                   href={AGENTS_HOME_PATH}
                   onClick={() => setOpen(false)}

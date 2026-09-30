@@ -1,10 +1,14 @@
-import { render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let currentLanguage = "es";
 let sessionAuthReady = true;
 let sessionIsAuthenticated = false;
+
+afterEach(() => {
+  cleanup();
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/agents/skills",
@@ -32,6 +36,19 @@ vi.mock("@/contexts/session-context", () => ({
     isAuthenticated: sessionIsAuthenticated,
   }),
 }));
+
+const navigateMock = vi.hoisted(() => vi.fn());
+let entitlement = {
+  hasResolvedPasses: true,
+  isSubscribed: true,
+  passesError: false as false | string,
+  passesLoading: false,
+};
+
+vi.mock("@/contexts/agent-context", () => ({
+  useOpenClaw: () => entitlement,
+}));
+vi.mock("@/lib/app-navigation", () => ({ useAppNavigate: () => navigateMock }));
 vi.mock("@/i18n/t", () => ({ useT: () => (key: string) => key }));
 vi.mock("@/lib/region", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/region")>();
@@ -41,7 +58,7 @@ vi.mock("./next-app-navigation", () => ({
   NextAppNavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { AppRouteShell } from "./app-route-shell";
+import { AppRouteShell, NextAgentEntitlementGate } from "./app-route-shell";
 
 describe("AppRouteShell document metadata", () => {
   beforeEach(() => {
@@ -146,5 +163,56 @@ describe("AppRouteShell auth-gate footer", () => {
     );
 
     expect(container.querySelector('[data-testid="legal-footer"]')).not.toBeInTheDocument();
+  });
+});
+
+describe("NextAgentEntitlementGate", () => {
+  const renderGate = () =>
+    render(
+      <NextAgentEntitlementGate loadingFallback={<div>loading</div>}>
+        <div>console</div>
+      </NextAgentEntitlementGate>,
+    );
+
+  beforeEach(() => {
+    entitlement = {
+      hasResolvedPasses: true,
+      isSubscribed: true,
+      passesError: false,
+      passesLoading: false,
+    };
+    navigateMock.mockReset();
+  });
+
+  it("renders the console for a subscribed account", () => {
+    const { container, queryByText } = renderGate();
+
+    expect(queryByText("console")).toBeInTheDocument();
+    expect(container.querySelector("div")).not.toBeNull();
+  });
+
+  it("redirects to the subscribe page before purchase", async () => {
+    entitlement = { ...entitlement, isSubscribed: false };
+
+    const { queryByText } = renderGate();
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/subscribe", { replace: true }));
+    expect(queryByText("console")).not.toBeInTheDocument();
+  });
+
+  it("does not redirect while the entitlement snapshot is pending", () => {
+    entitlement = { ...entitlement, hasResolvedPasses: false, passesLoading: true };
+
+    renderGate();
+
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not kick an existing subscriber when the entitlement request fails", () => {
+    entitlement = { ...entitlement, passesError: "boom" };
+
+    renderGate();
+
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });

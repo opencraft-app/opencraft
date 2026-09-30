@@ -223,7 +223,7 @@ describe("UserAvatarMenu", () => {
       },
       signOut: vi.fn(),
     });
-    useOpenClaw.mockReturnValue({ activePass: null });
+    useOpenClaw.mockReturnValue({ activePass: null, isSubscribed: true });
 
     const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
     fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
@@ -580,6 +580,7 @@ describe("UserAvatarMenu", () => {
     });
     useOpenClaw.mockReturnValue({
       activePass: null,
+      isSubscribed: true,
     });
 
     render(<UserAvatarMenu />);

@@ -23,6 +23,13 @@ describe('resolvePostLoginRoute', () => {
   it('never leaves a subscribed user without an agent creation entry', () => {
     expect(resolvePostLoginRoute({ isSubscribed: true, hasBots: false })).toBe(JOURNEY_ROUTE.AGENTS_CREATING);
   });
+
+  /* 删光 Bot 的老用户算非首次：列表为空但曾创建过，落控制台而不是创建向导。 */
+  it('sends a returning creator to the console even with an empty list', () => {
+    expect(
+      resolvePostLoginRoute({ isSubscribed: true, hasBots: false, hasCreatedBot: true }),
+    ).toBe(JOURNEY_ROUTE.AGENTS);
+  });
 });
 
 describe('resolveCtaRoute', () => {
@@ -48,6 +55,13 @@ describe('resolveCtaRoute', () => {
     expect(resolveCtaRoute({ isAuthenticated: true, isSubscribed: true, hasBots: false })).toBe(
       JOURNEY_ROUTE.AGENTS_CREATING,
     );
+  });
+
+  /* 与登录后分流同口径：曾创建过 Bot 就不再是首次，CTA 落控制台。 */
+  it('sends a returning creator to the console even with an empty list', () => {
+    expect(
+      resolveCtaRoute({ isAuthenticated: true, isSubscribed: true, hasBots: false, hasCreatedBot: true }),
+    ).toBe(JOURNEY_ROUTE.AGENTS);
   });
 });
 

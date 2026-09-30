@@ -8,9 +8,11 @@ import { useTranslation } from 'react-i18next';
 import { LoginModal } from '@/components/site/login-modal';
 import { LegalFooter } from '@/components/site/legal-footer';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
+import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
 import { useAppNavigate } from '@/lib/app-navigation';
+import { hasEverCreatedBot } from '@/lib/bot-creation-history';
 import { isGlobal } from '@/lib/region';
 import { getSeoMeta } from '@/lib/seo-data';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
@@ -273,6 +275,67 @@ function NextMarketingAuthGate({
       <LoginModal open={showLogin} onClose={() => setShowLogin(false)} />
     </div>
   );
+}
+
+/**
+ * 订阅门禁：购买前不得进入「我的智能体」（/agents 及其子路由）。
+ *
+ * 入口隐藏只是体验层，直接输入 URL 仍需拦住 —— 权益未确认前不挂载智能体内容，
+ * 避免列表数据被渲染出来。请求失败时不误踢（网络抖动不应把已订阅用户带走），
+ * 只提示稍后重试。服务端仍保留权益校验，前端门禁不是权限边界。
+ */
+export function NextAgentEntitlementGate({
+  children,
+  loadingFallback,
+}: {
+  children: ReactNode;
+  loadingFallback: ReactNode;
+}) {
+  const navigate = useAppNavigate();
+  const t = useT();
+  const { bots, hasResolvedPasses, isSubscribed, passesError, passesLoading } = useOpenClaw();
+  const { session } = useSession();
+  /*
+   * 已有资产的老用户（当前有 Bot、或曾创建过）一律放行。
+   * 订阅过期的人同样要进来管理已有 Bot 和续费，不能把人挡在门外 ——
+   * 门禁只拦「从没买过、也没有任何资产」的新访客。
+   */
+  const hasExistingAssets = (bots?.length ?? 0) > 0 || hasEverCreatedBot(session?.user?.id);
+
+  useEffect(() => {
+    if (hasResolvedPasses && !passesLoading && !isSubscribed && !passesError && !hasExistingAssets) {
+      navigate('/subscribe', { replace: true });
+    }
+  }, [hasExistingAssets, hasResolvedPasses, isSubscribed, navigate, passesError, passesLoading]);
+
+  if (!hasResolvedPasses || passesLoading) {
+    return <>{loadingFallback}</>;
+  }
+
+  if (passesError) {
+    return (
+      <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: 'var(--lw-fg)' }}>
+        <main className="relative z-10 flex flex-grow items-center justify-center pb-8 pt-24">
+          <div className="mx-auto flex max-w-md flex-col items-center px-6 text-center">
+            <h2 className="text-xl font-bold" style={{ color: '#333', marginBottom: 16 }}>{t('权益状态加载失败')}</h2>
+            <p className="text-sm leading-relaxed" style={{ color: '#999', marginBottom: 48 }}>
+              {t('请稍后重试')}
+            </p>
+            <a href="/" className="lw-back-link" style={{ marginTop: 36 }}>
+              <ArrowLeft className="h-3.5 w-3.5" /> {t('返回首页')}
+            </a>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  /* 未订阅且无资产：不挂载智能体内容（避免列表被渲染出来），跳转由上面的 effect 负责。 */
+  if (!isSubscribed && !hasExistingAssets) {
+    return <>{loadingFallback}</>;
+  }
+
+  return <>{children}</>;
 }
 
 export function AppRouteShell({

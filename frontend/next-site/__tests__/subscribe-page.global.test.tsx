@@ -280,6 +280,7 @@ const buildNestedBundle = () => ({
 });
 
 const resetState = () => {
+  window.sessionStorage.removeItem("lv-pending-payment-plan");
   translationState.real = false;
   runtimeConfigState.paidBillingEnabled = true;
   openClawState.isLoggedIn = false;
@@ -1034,6 +1035,24 @@ describe("SubscribePage payment return", () => {
    * 弹窗被拦截时支付走 window.location.assign，付款后 return_url 回到全新页面，
    * 原窗口的 paying 轮询已销毁。带 pay_return 标记才能重新接棒等发货。
    */
+  it("keeps the payment return recoverable after the outer pricing modal closes", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    window.history.replaceState({}, "", "/?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { PricingModal } = await import("@next-site/pricing-modal");
+    const { rerender } = render(<PricingModal open resumePayReturn onOpenChange={() => {}} />);
+    const pending = await screen.findByText("正在开通套餐");
+    expect(pending.closest("[data-testid=pricing-modal]")).toBeNull();
+    expect(window.location.search).toBe("");
+
+    rerender(<PricingModal open={false} onOpenChange={() => {}} />);
+    rerender(<PricingModal open onOpenChange={() => {}} />);
+    expect(await screen.findByTestId("pending-payment-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("pending-payment-resume")).toBeInTheDocument();
+  });
+
   it("resumes the activation wait when returning from the hosted payment page", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;

@@ -159,6 +159,7 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 });
 
 const resetState = () => {
+  window.sessionStorage.removeItem("lv-pending-payment-plan");
   realnamePhoneVerificationEnabled = false;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
@@ -197,6 +198,39 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  it("keeps the pricing modal and backdrop above the fixed site navigation", async () => {
+    const { PricingModal } = await import("@next-site/pricing-modal");
+    render(<PricingModal open onOpenChange={() => {}} />);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass("z-[70]");
+    expect(dialog.previousElementSibling).toHaveClass("z-[70]");
+  });
+
+  it("renders only compact plan selection inside the pricing modal", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    const card = await screen.findByRole("group", { name: "启航 Launch" });
+    expect(within(card).getByText("Bot 数")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /订阅/ })).toBeInTheDocument();
+    expect(within(card).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-section")).not.toBeInTheDocument();
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument();
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
+  });
+
+  it("keeps the full comparison and credit packs on the standalone subscribe page", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    const card = await screen.findByRole("group", { name: "启航 Launch" });
+    expect(within(card).getByText("7*24小时在线")).toBeInTheDocument();
+    expect(screen.getByTestId("credit-pack-section")).toBeInTheDocument();
+    expect(screen.getByRole("banner")).toBeInTheDocument();
+    expect(screen.getByRole("contentinfo")).toBeInTheDocument();
+  });
+
   it("shows domestic promotion tags only when the quoted price supports them", async () => {
     openClawState.isLoggedIn = true;
     sessionState.isAuthenticated = true;

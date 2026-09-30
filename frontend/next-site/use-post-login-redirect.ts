@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { journeyHref, resolvePostLoginRoute } from '@/lib/cta-journey';
+import { hasEverCreatedBot } from '@/lib/bot-creation-history';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 
@@ -66,7 +67,7 @@ type PostLoginRedirectOptions = {
  */
 export function usePostLoginRedirect({ locale }: PostLoginRedirectOptions) {
   const router = useRouter();
-  const { authReady, isAuthenticated } = useSession();
+  const { authReady, isAuthenticated, session } = useSession();
   const {
     bots,
     hasResolvedPasses,
@@ -86,12 +87,20 @@ export function usePostLoginRedirect({ locale }: PostLoginRedirectOptions) {
         timeoutRef.current = null;
       }
       router.push(
-        journeyHref(resolvePostLoginRoute({ isSubscribed: subscribed, hasBots }), locale, {
-          localized: isGlobal,
-        }),
+        journeyHref(
+          resolvePostLoginRoute({
+            isSubscribed: subscribed,
+            hasBots,
+            hasCreatedBot: hasEverCreatedBot(session?.user?.id),
+          }),
+          locale,
+          {
+            localized: isGlobal,
+          },
+        ),
       );
     },
-    [locale, router],
+    [locale, router, session?.user?.id],
   );
 
   /** 刷新权益快照并进入等待分流态，由下面的 effect 在快照就绪后 complete。 */
@@ -133,6 +142,7 @@ export function usePostLoginRedirect({ locale }: PostLoginRedirectOptions) {
     passesError,
     passesLoading,
     pending,
+    session?.user?.id,
   ]);
 
   useEffect(() => {

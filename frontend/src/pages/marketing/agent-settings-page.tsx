@@ -137,6 +137,7 @@ import {
   shouldShowEarlyOnboarding,
   resolveOnboardingProfileId,
 } from "@/pages/marketing/agent-onboarding-mark";
+import { hasEverCreatedBot, markBotCreated } from "@/lib/bot-creation-history";
 import { hasUnfinishedBuddySetup } from "@/pages/marketing/agent-buddy-setup-progress";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
@@ -4211,7 +4212,7 @@ export const AgentSettingsPage = ({
    * （首个创建 → 空白模式、只需输入名字），让首次订阅与删除后重建走同一条命名流程。
    *
    * 消费一次即清掉 create 参数（replace）：避免用户取消弹窗、或刷新时重复自动弹出。
-   * 边界：账号已有 Bot（重复回跳 / 已建过）不再引导命名，直接落到正常控制台；
+   * 边界：账号已有 Bot、或曾创建过 Bot（删光后重进）不再引导命名，直接落到正常控制台；
    *       未订阅（理论上不会跳来，或 pass 尚未同步）先等待，不误弹。
    */
   useEffect(() => {
@@ -4219,7 +4220,8 @@ export const AgentSettingsPage = ({
     if (botsLoading || passesLoading) return;
     if (!isSubscribed) return;
     navigate(AGENTS_HOME_PATH, { replace: true });
-    if (bots.length > 0) return;
+    /* 曾创建过 Bot 的用户（含删光全部 Bot 后重进）算非首次，不再自动开命名向导。 */
+    if (bots.length > 0 || hasEverCreatedBot(session.user?.id)) return;
     setDirectCreateError(null);
     setCreateBotName("");
     /*
@@ -4235,7 +4237,7 @@ export const AgentSettingsPage = ({
       setCreateBotMode("blank");
       setShowCreateConfirm(true);
     }
-  }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
+  }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate, session.user?.id]);
 
   /*
    * 新订阅用户打标。
@@ -4492,6 +4494,8 @@ export const AgentSettingsPage = ({
           create_duration_ms: Date.now() - createStart,
         },
       });
+      /* 标记「已成功创建过 Bot」：此后订阅/登录分流按非首次处理，不再进命名向导。 */
+      markBotCreated(session.user?.id);
       setShowCreateConfirm(false);
       setIsCreating(true);
       navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
@@ -4628,6 +4632,14 @@ export const AgentSettingsPage = ({
       });
       // 新 bot 还没进 visibleBots（provisioning 会被过滤），所以直接用返回值
       const createdProfileId = newBot.profileId || "";
+      /*
+       * 标记「已成功创建过 Bot」。
+       *
+       * 线上真实创建路径就是这里（IS_BUDDY_ONBOARDING_ENABLED 恒为 true，
+       * 旧弹窗分支 createBotAndNavigate 只在开关关闭时才走）。漏掉这行的话，
+       * 分流判据会退化成只看 bots.length —— 删光 Bot 的老用户被反复当首次。
+       */
+      markBotCreated(session?.user?.id);
 
       /*
        * 守卫：多 bot 场景下拿到 "main" 视为「没拿到」。
@@ -4655,7 +4667,7 @@ export const AgentSettingsPage = ({
       setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
       return null;
     }
-  }, [createLimitMessage, addBot, activeBot, t]);
+  }, [createLimitMessage, addBot, activeBot, t, session?.user?.id]);
 
   const handleConfirmCreate = async () => {
     if (createLimitMessage) {

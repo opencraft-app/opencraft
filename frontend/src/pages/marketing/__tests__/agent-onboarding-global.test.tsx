@@ -167,6 +167,11 @@ describe("international Bot onboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
+    /*
+     * 「曾创建过 Bot」标记写在 localStorage 且按账号持久化（这是分流口径的一部分），
+     * 跨用例必须清掉 —— 否则前一个用例创建成功会把后面的用例判成非首次，不再开引导。
+     */
+    window.localStorage.clear();
     maxBots = 5;
     multiBotEnabled = true;
     testRegion.isCN = false;

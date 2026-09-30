@@ -125,6 +125,7 @@ describe("PublicHeaderAuthIsland", () => {
     ["ko-KR", "LightVela 열기"],
   ] as const)("shows the homepage product entry for %s", (locale, label) => {
     runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
     render(
       <PublicHeaderAuthIsland
         locale={locale}
@@ -142,7 +143,18 @@ describe("PublicHeaderAuthIsland", () => {
 
   it("keeps the product entry off non-home public pages", () => {
     runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
     render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} />);
+
+    expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
+  });
+
+  it("hides the product entry before purchase", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = false;
+    render(
+      <PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />,
+    );
 
     expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
   });
@@ -164,6 +176,7 @@ describe("PublicHeaderAuthIsland", () => {
 
   it("tracks the desktop product entry without changing its native target", () => {
     runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
     render(
       <PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />,
     );
