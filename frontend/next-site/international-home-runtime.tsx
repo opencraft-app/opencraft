@@ -27,7 +27,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/assets/feature-motion.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260929-responsive-v102';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260930-feature-loops-v109';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -149,6 +149,26 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       cancelled = true;
       document.dispatchEvent(new Event('lightvela-home-dispose'));
       mountedScripts.forEach((script) => script.remove());
+    };
+  }, [locale, markup]);
+
+  useEffect(() => {
+    if (!isGlobal) return;
+    const root = document.getElementById('lightvela-intl-home');
+    if (!root) return;
+    let cancelled = false;
+    let stopMotion: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      void import('./international-home-motion').then(({ mountInternationalHomeMotion }) => {
+        if (!cancelled && root.isConnected) stopMotion = mountInternationalHomeMotion(root);
+      }).catch((error: unknown) => {
+        console.error('Failed to load international homepage motion', error);
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      stopMotion?.();
     };
   }, [locale, markup]);
 

@@ -2781,11 +2781,12 @@ func (s *Service) markBindingProvisionFailed(ctx context.Context, binding UserBi
 func (s *Service) ProxyHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	accessLog := AccessLog{
-		Time:   start.UTC().Format(time.RFC3339Nano),
-		Event:  "llmgateway_access",
-		Method: r.Method,
-		Path:   r.URL.Path,
-		Status: http.StatusInternalServerError,
+		Time:    start.UTC().Format(time.RFC3339Nano),
+		Event:   "llmgateway_access",
+		TraceID: newTrafficTraceID(),
+		Method:  r.Method,
+		Path:    r.URL.Path,
+		Status:  http.StatusInternalServerError,
 	}
 	defer func() {
 		accessLog.DurationMS = time.Since(start).Milliseconds()
@@ -2847,6 +2848,14 @@ func (s *Service) ProxyHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.cacheTrafficRouteSnapshot(r.Context(), snapshot)
 	s.proxyWithTrafficRouteSnapshot(w, r, snapshot, &accessLog)
+}
+
+func newTrafficTraceID() string {
+	var randomBytes [12]byte
+	if _, err := rand.Read(randomBytes[:]); err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(randomBytes[:])
 }
 
 func (s *Service) tryProxyWithTrafficRouteSnapshot(w http.ResponseWriter, r *http.Request, externalKey string, accessLog *AccessLog) (bool, bool) {

@@ -7,6 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
+const motionMocks = vi.hoisted(() => {
+  const dispose = vi.fn();
+  return { dispose, mount: vi.fn(() => dispose) };
+});
+vi.mock('@next-site/international-home-motion', () => ({ mountInternationalHomeMotion: motionMocks.mount }));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
@@ -65,6 +70,8 @@ beforeEach(() => {
   (globalThis as { React?: typeof React }).React = React;
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   regionMock.isGlobal = false;
+  motionMocks.mount.mockClear();
+  motionMocks.dispose.mockClear();
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
   openClawMock.bots = [];
@@ -113,7 +120,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260929-responsive-v102"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260930-feature-loops-v109"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -215,6 +222,35 @@ describe("international v2 homepage rendering", () => {
 
     expect(document.querySelector("#hero-rotator")).toBe(runtimeNode);
     expect(document.querySelector("#hero-rotator")).toHaveTextContent("开发搭子");
+  });
+
+  it('mounts motion once, preserves it on unrelated renders and disposes it on locale changes', async () => {
+    regionMock.isGlobal = true;
+    const markup = '<main id="lightvela-intl-home"><h1>Home</h1></main>';
+    const { rerender, unmount } = render(<InternationalHomeRuntime locale="en-US" markup={markup} />);
+    await waitFor(() => expect(motionMocks.mount).toHaveBeenCalledTimes(1));
+    rerender(<InternationalHomeRuntime locale="en-US" markup={markup} />);
+    expect(motionMocks.mount).toHaveBeenCalledTimes(1);
+    expect(motionMocks.dispose).not.toHaveBeenCalled();
+    rerender(<InternationalHomeRuntime locale="es" markup={markup} />);
+    await waitFor(() => expect(motionMocks.mount).toHaveBeenCalledTimes(2));
+    expect(motionMocks.dispose).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(motionMocks.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels deferred motion loading when the page unmounts before the next frame', async () => {
+    regionMock.isGlobal = true;
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callbacks.push(callback); return 1; });
+    const cancel = vi.fn();
+    vi.stubGlobal('cancelAnimationFrame', cancel);
+    const { unmount } = render(<InternationalHomeRuntime locale="en-US" markup='<main id="lightvela-intl-home" />' />);
+    unmount();
+    callbacks.forEach((callback) => callback(0));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(cancel).toHaveBeenCalled();
+    expect(motionMocks.mount).not.toHaveBeenCalled();
   });
 
   it("mounts the production header actions into the imported navigation", () => {

@@ -104,13 +104,15 @@ describe("LegalFooter", () => {
     }
   });
 
-  it("links domestic product feedback to the Tencent questionnaire", () => {
-    render(<LegalFooter />);
+  it("shows one internal product feedback entry in the domestic footer", () => {
+    const { container } = render(<LegalFooter />);
 
     const feedbackLink = screen.getByRole("link", { name: "产品反馈" });
-    expect(feedbackLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
-    expect(feedbackLink).toHaveAttribute("target", "_blank");
-    expect(feedbackLink).toHaveAttribute("rel", "noopener noreferrer");
+    expect(feedbackLink).toHaveAttribute("href", "/support");
+    expect(feedbackLink).not.toHaveAttribute("target");
+    expect(container.querySelectorAll('a[href="/support"]')).toHaveLength(1);
+    expect(container.querySelector('a[href*="wj.qq.com"], a[href*="docs.qq.com"]')).toBeNull();
+    expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
   });
 
   it("wraps long localized QR instructions inside a viewport-safe popover", async () => {
@@ -155,6 +157,8 @@ describe("LegalFooter", () => {
     render(<LegalFooter />);
 
     expect(screen.getByText("© 2026 LightVela · 腾讯轻量云出品")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "用户反馈" })).toHaveAttribute("href", "/zh-sg/support");
+    expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "隐私政策" })).toHaveAttribute("href", "/zh-sg/privacy-policy");
     expect(screen.getByRole("link", { name: "服务条款" })).toHaveAttribute("href", "/zh-sg/terms-of-service");
     expect(screen.getByRole("link", { name: "开源声明" })).toHaveAttribute(

@@ -137,7 +137,8 @@ describe("international v2 homepage artifact", () => {
     expect(hrefs).toContain("/docs/core-concepts");
     expect(hrefs).toContain("https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3");
     expect(hrefs).toContain("https://cloud.tencent.com/document/product/301/48034");
-    expect(hrefs).toContain("https://wj.qq.com/s2/27184784/6d06/");
+    expect(hrefs.filter((href) => href === "/support")).toHaveLength(1);
+    expect(hrefs.some((href) => /(?:wj|docs)\.qq\.com/.test(href))).toBe(false);
     expect(hrefs).toContain("https://beian.miit.gov.cn/#/Integrated/index");
     expect(hrefs.every((href) => !href.startsWith("/zh-cn"))).toBe(true);
     expect(document.querySelector(".hero__cta .btn-dark")?.textContent).toContain("免费试用");
@@ -340,7 +341,7 @@ describe("international v2 homepage artifact", () => {
       },
       {
         heading: "公司",
-        links: ["关于我们", "用户反馈", "帮助与反馈", "隐私政策", "服务条款"],
+        links: ["关于我们", "产品反馈", "隐私政策", "服务条款"],
       },
     ]);
     expect(
