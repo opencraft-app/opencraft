@@ -224,4 +224,5 @@
 ## mr_4851_cr_followup_2026_09_30
 - 隔离工作树 `/data/mono2-mr4851-cr` 从 MR tip `7813b44e2` 创建，原 `/data/mono2` 的大量未提交改动保持原样。`origin/master` 合并复现 9 个冲突；源码、文档、测试与 package 两侧内容已逐处合并，生成清单由官方同步重建。
 - 保存入口已绑定目标 Host/path/text 并先检查只读；新增测试证明 previewOnly 抛错且 Host 写入/Blob 失效均未调用。生命周期补充迟到 prepare/show 与空 Profile 用例；前端测试固定国内 region。OpenCraft guard 新增本 MR 12 文件测试套件。
-- 本地证据：OpenCraft 142/142、frontend 8/8、Web typecheck、i18n、嵌入 release build、frontend check 0 new、CI guard 单测 7/7。后续需完成 merge commit 后重新生成 sourceRevision，复验官方闭包、文档门禁与远端 CI；未合并或发布。
+- 本地证据：OpenCraft 142/142、frontend 8/8、Web typecheck、i18n、嵌入 release build、frontend check 0 new、CI guard 单测 7/7、documentation 与 docs-impact 通过。合并提交 `2a65b0388` 后官方重建 `UPSTREAM.json`，`sourceRevision` 与最后一个 frontend 源码提交一致，130 文件闭包通过。
+- 真实 guard 冷安装第一次并发运行 141/142，随后同代码单独运行及 5 次复跑均 142/142；将 `test:embedded-ci` 改为串行后，完整 guard 冷安装 142/142 且 `all checks passed`。未从第一次截断日志定位具体失败用例，因此不把并发失败归因于某个源码缺陷。远端 CI 尚待观察；未合并或发布。
