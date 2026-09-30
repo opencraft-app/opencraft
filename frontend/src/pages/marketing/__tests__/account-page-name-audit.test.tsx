@@ -481,7 +481,7 @@ describe("AccountPage nickname audit state", () => {
     expect(progressFill).toHaveStyle({ background: expectedColor });
   });
 
-  it("shows referral credits separately from the package quota", () => {
+  it("includes referral credits in progress and lists granted credits first", () => {
     activePass = {
       ...buildActivePass(),
       credit_total: 4500,
@@ -492,19 +492,19 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage("billing");
 
-    expect(screen.getByText("套餐积分")).toBeInTheDocument();
+    expect(screen.getByText("已使用积分")).toBeInTheDocument();
     const creditDetails = screen.getByText("额度明细").parentElement?.parentElement;
     expect(creditDetails).not.toBeNull();
     const sources = within(creditDetails!).getAllByRole("listitem");
     expect(sources).toHaveLength(2);
-    expect(sources[0]).toHaveTextContent("启航套餐");
-    expect(sources[0]).toHaveTextContent("4,500 / 4,500");
-    expect(sources[1]).toHaveTextContent("额外积分");
-    expect(sources[1]).toHaveTextContent("500 / 500");
+    expect(sources[0]).toHaveTextContent("额外积分");
+    expect(sources[0]).toHaveTextContent("500 / 500");
+    expect(sources[1]).toHaveTextContent("启航套餐");
+    expect(sources[1]).toHaveTextContent("4,500 / 4,500");
     expect(
       screen.getByText((_, element) =>
         element?.tagName === "P" &&
-        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 4,500"
+        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 5,000"
       )
     ).toBeInTheDocument();
   });

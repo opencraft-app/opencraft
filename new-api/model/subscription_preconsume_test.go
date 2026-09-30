@@ -132,3 +132,48 @@ func TestRefundSubscriptionTailGraceRestoresRemainingQuotaIdempotently(t *testin
 	require.NoError(t, RefundSubscriptionPreConsume("tail-grace-refund"))
 	assert.EqualValues(t, 20, getPreConsumeSubscription(t, sub.Id).AmountUsed)
 }
+
+func TestPreConsumeUserSubscriptionPrefersFreeCreditOverEarlierExpiringPackage(t *testing.T) {
+	truncateTables(t)
+	const userID = 6201
+	now := time.Now()
+	paid := seedPreConsumeSubscription(t, userID, 4500, 0, now.Add(time.Hour).Unix())
+	free := seedPreConsumeSubscription(t, userID, 1000, 0, now.Add(365*24*time.Hour).Unix())
+	require.NoError(t, DB.Model(paid).Update("name", "package:pass-test").Error)
+	require.NoError(t, DB.Model(free).Update("name", "free-credit:referral:test").Error)
+	result, err := PreConsumeUserSubscription("free-credit-first", userID, "test-model", 0, 100, false)
+	require.NoError(t, err)
+	assert.Equal(t, free.Id, result.UserSubscriptionId)
+	assert.EqualValues(t, 0, getPreConsumeSubscription(t, paid.Id).AmountUsed)
+	assert.EqualValues(t, 100, getPreConsumeSubscription(t, free.Id).AmountUsed)
+	replay, err := PreConsumeUserSubscription("free-credit-first", userID, "test-model", 0, 100, false)
+	require.NoError(t, err)
+	assert.Equal(t, free.Id, replay.UserSubscriptionId)
+	assert.EqualValues(t, 100, getPreConsumeSubscription(t, free.Id).AmountUsed)
+	require.NoError(t, RefundSubscriptionPreConsume("free-credit-first"))
+	require.NoError(t, RefundSubscriptionPreConsume("free-credit-first"))
+	assert.EqualValues(t, 0, getPreConsumeSubscription(t, free.Id).AmountUsed)
+}
+
+func TestPreConsumeUserSubscriptionFallsBackWhenFreeCreditUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		used      int64
+		endOffset time.Duration
+	}{
+		{"exhausted", 1000, time.Hour}, {"expired", 0, -time.Hour}, {"insufficient", 950, time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateTables(t)
+			const userID = 6202
+			now := time.Now()
+			free := seedPreConsumeSubscription(t, userID, 1000, tc.used, now.Add(tc.endOffset).Unix())
+			require.NoError(t, DB.Model(free).Update("name", "free-credit:referral:test").Error)
+			paid := seedPreConsumeSubscription(t, userID, 4500, 0, now.Add(2*time.Hour).Unix())
+			result, err := PreConsumeUserSubscription("free-credit-fallback-"+tc.name, userID, "test-model", 0, 100, true)
+			require.NoError(t, err)
+			assert.Equal(t, paid.Id, result.UserSubscriptionId)
+			assert.EqualValues(t, tc.used, getPreConsumeSubscription(t, free.Id).AmountUsed)
+		})
+	}
+}
