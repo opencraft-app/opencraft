@@ -370,8 +370,40 @@ func TestCheckRenew_CurDeadlineMismatch(t *testing.T) {
 	}
 }
 
+func TestCheckRenew_CurDeadlineRFC3339(t *testing.T) {
+	expired := time.Date(2026, 10, 24, 3, 13, 12, 0, time.UTC)
+	beijing := time.FixedZone("CST", 8*60*60)
+	tests := []struct {
+		name       string
+		deadline   string
+		returnCode int
+	}{
+		{name: "UTC", deadline: expired.Format(time.RFC3339)},
+		{name: "Beijing offset", deadline: expired.In(beijing).Format(time.RFC3339)},
+		{name: "different instant", deadline: expired.Add(time.Second).Format(time.RFC3339), returnCode: ReturnCodeCurDeadlineMismatch},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pass := stdPass()
+			pass.ExpiredTime = expired
+			deps := Deps{
+				CTLClient: &fakeCTLClient{passes: []*ctlclient.PassDetail{pass}},
+				Builder:   stdBuilder(),
+			}
+			para := stdParaMap()
+			gd := para["goodsDetail"].(map[string]any)
+			gd["curDeadline"] = tt.deadline
+			resp := invokeHandler(t, deps, para)
+			if resp.ReturnCode != tt.returnCode {
+				t.Fatalf("returnCode=%d, want %d (msg=%q)", resp.ReturnCode, tt.returnCode, resp.ReturnMessage)
+			}
+		})
+	}
+}
+
 func TestCheckRenew_CurDeadline_BadFormat(t *testing.T) {
-	// 格式错（非 YYYY-MM-DD HH:MM:SS）也归 600404 — 字面"curDeadline 不一致"语义覆盖。
+	// 既不是北京时间字面值也不是 RFC3339，仍归 600404。
 	deps := Deps{
 		CTLClient: &fakeCTLClient{passes: []*ctlclient.PassDetail{stdPass()}},
 		Builder:   stdBuilder(),
