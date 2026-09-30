@@ -50,7 +50,14 @@ vi.mock("@/contexts/runtime-config-context", async () => ({
 import type { CronJob } from "@/lib/hermes-cron-client";
 import { HermesAgentAutomationsPanel } from "../agent-automations-panel";
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
   vi.clearAllMocks();
   cronClientMocks.detectCronContextFromCapability.mockResolvedValue("supported");
   cronClientMocks.execCommand.mockResolvedValue({
@@ -75,13 +82,27 @@ afterEach(() => {
   cleanup();
 });
 
+async function confirmLocalOnlyDelivery() {
+  fireEvent.click(await screen.findByRole("checkbox", { name: "I understand this saves locally only" }));
+}
+
 describe("HermesAgentAutomationsPanel global upstream context", () => {
+  it("marks an existing local-only task and opens its notification settings", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({ id: "local-job", name: "Local summary", deliver: "local" })]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const card = await getCronJobCard("Local summary");
+    expect(within(card).getByText("Saved locally only; not sent to chat")).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole("button", { name: "Set up notifications" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Scheduled Task");
+  });
+
   it("creates a zero-token fixed notification with English copy and global channels", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([]);
     cronClientMocks.execCommand.mockResolvedValue({
       status: "SUCCESS",
       exit_code: 0,
-      output: JSON.stringify({ success: true, data: { platforms: ["telegram"] } }),
+      output: JSON.stringify({ success: true, data: { channels: [{ name: "openclaw-telegram", status: "connected" }] } }),
     });
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
@@ -111,6 +132,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.change(screen.getByPlaceholderText(/Time for some water/), {
       target: { value: "Time to drink water" },
     });
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" })).toBeEnabled());
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -194,6 +216,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     });
     fireEvent.click(screen.getByRole("combobox", { name: "Upstream Task" }));
     fireEvent.click(screen.getByRole("option", { name: /Upstream/ }));
+    await confirmLocalOnlyDelivery();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -246,6 +269,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
       target: { value: "Summarize updates" },
     });
+    await confirmLocalOnlyDelivery();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {

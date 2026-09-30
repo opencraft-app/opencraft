@@ -41,7 +41,7 @@ Set the following fields:
 - **Notification**: Optionally choose where the completed result should be sent.
 
 At the scheduled time, Hermes Agent creates an Agent task and calls the selected model.
-The result can be delivered to the selected notification channels and is recorded in Recent Runs.
+The result can be delivered to the selected notification channels and is recorded in Recent Runs. With no channel selected, you must confirm local-only delivery before creating the task; no result is sent to chat.
 
 ![Create Scheduled Task dialog showing the Agent Task type](../../images/st-en-2.webp)
 
@@ -57,7 +57,7 @@ At the scheduled time, LightVela sends the notification content as written.
 It does not ask a model to draft, rewrite, summarize, translate, or explain the message.
 That means model-token usage is 0 Token for the task.
 
-If you do not select a notification channel, the task runs in the background and writes a record instead of sending a message.
+A Notification Task requires at least one notification channel before it can be created or saved.
 Notification-channel formatting may still affect how line breaks and characters appear to recipients.
 
 ![Create Scheduled Task dialog showing the Notification Task type](../../images/st-en-3.webp)
@@ -132,6 +132,8 @@ Create a custom Notification Task or Script Task from the Create dialog rather t
 
 After a task is created, use the Scheduled Tasks page to review Current Jobs, Ended Jobs, and Recent Runs.
 The Current Jobs view can filter Agent Tasks, Notification Tasks, and Script Tasks.
+
+In **Recent Runs**, open a run and choose **View result** to read its Markdown output or **Download Markdown** to save it. First switch to the Bot that owns the task: its result stays in that Bot’s run records and does not appear in another Bot’s chat or records. Existing local-only tasks show a notice and a **Set up notifications** action for choosing a connected channel.
 
 Ended Jobs collects completed, failed, and expired tasks.
 Ongoing tasks stay under Current Jobs.

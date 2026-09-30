@@ -13,6 +13,7 @@ const cronClientMocks = vi.hoisted(() => ({
   listAutomationBlueprints: vi.fn(),
   listCronJobs: vi.fn(),
   listRecentCronRuns: vi.fn(),
+  readCronRunOutput: vi.fn(),
   removeCronJob: vi.fn(),
   removeManagedCronScriptIfUnreferenced: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
@@ -114,6 +115,7 @@ beforeEach(() => {
   cronClientMocks.listAutomationBlueprints.mockResolvedValue([]);
   cronClientMocks.listCronJobs.mockResolvedValue([]);
   cronClientMocks.listRecentCronRuns.mockResolvedValue([]);
+  cronClientMocks.readCronRunOutput.mockResolvedValue("# 今日结果\n已完成资料收集。");
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
   cronClientMocks.removeManagedCronScriptIfUnreferenced.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
@@ -481,6 +483,7 @@ describe("recent run limit hint", () => {
 
   it("renders the empty recent-runs message without a nested gray container", () => {
     const { container } = render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -497,6 +500,7 @@ describe("recent run limit hint", () => {
 
   it("shows model drift as an unexecuted run with a concise reason", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         job_name: "每日工作小结",
         status: "not_executed",
@@ -512,6 +516,7 @@ describe("recent run limit hint", () => {
 
   it("localizes the unsupported-plan model error", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         status: "error: RuntimeError: HTTP 403: The requested model is not available in your current plan.",
       })],
@@ -524,6 +529,7 @@ describe("recent run limit hint", () => {
 
   it("shows the bound Skill in the recent-run detail", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ skills: ["builder-radar"] })],
       skillLoadState: { status: "ready", slugs: ["builder-radar"], error: null },
     }));
@@ -535,8 +541,29 @@ describe("recent run limit hint", () => {
     expect(screen.getByText("builder-radar")).toBeTruthy();
   });
 
+  it("loads the selected Bot's Markdown result on demand", async () => {
+    const run = makeCronRun({ job_id: "daily-research" });
+    render(createElement(RecentCronRunsPanel, {
+      target: { instanceId: "instance-3", profileId: "bot-3" },
+      runs: [run],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: localizedText("查看任务详情", "View job details") })[0]!);
+    expect(cronClientMocks.readCronRunOutput).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: localizedText("查看执行结果", "View result") }));
+
+    await waitFor(() => expect(cronClientMocks.readCronRunOutput).toHaveBeenCalledWith(
+      { instanceId: "instance-3", profileId: "bot-3" },
+      run,
+    ));
+    expect(screen.getByText(/已完成资料收集/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: localizedText("下载 Markdown", "Download Markdown") })).toBeEnabled();
+  });
+
   it("shows an unconfigured Skill binding in the recent-run detail", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ skills: [] })],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -553,6 +580,7 @@ describe("recent run limit hint", () => {
       "Deduplicate alerts. If nothing changed, return exactly [SILENT].",
     );
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ job_prompt: jobPrompt })],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -569,6 +597,7 @@ describe("recent run limit hint", () => {
 
   it("shows the 0 Token subtype in the recent-run list and hides Agent-only detail rows", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         job_name: "喝水提醒",
         job_prompt: "",
@@ -666,6 +695,7 @@ describe("multi-Skill automation form", () => {
     fireEvent.click(screen.getByRole("button", { name: localizedText("调用技能", "Use Skill") }));
     fireEvent.click(screen.getByRole("option", { name: /Finance News.*finance-news/ }));
     fireEvent.click(screen.getByRole("option", { name: /Market Data.*market-data/ }));
+    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
 
     await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
@@ -1307,6 +1337,7 @@ describe("cron context panel integration", () => {
       } else {
         fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "普通任务已更新" } });
       }
+      if (mode === "create") acknowledgeLocalDeliveryIfNeeded();
       fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       if (mode === "create") {
@@ -1330,6 +1361,7 @@ describe("cron context panel integration", () => {
 
     fillCreateFields();
     chooseUpstream("上游任务 A");
+    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -1364,6 +1396,7 @@ describe("cron context panel integration", () => {
 
       if (mode === "create") fillCreateFields();
       chooseUpstream("上游任务 A");
+      if (mode === "create") acknowledgeLocalDeliveryIfNeeded();
       fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(
@@ -1503,6 +1536,7 @@ describe("cron context panel integration", () => {
 
     fillCreateFields();
     chooseUpstream("上游任务 A");
+    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     const dialog = screen.getByRole("dialog");
@@ -1534,6 +1568,7 @@ describe("cron context panel integration", () => {
 
       if (mode === "create") fillCreateFields();
       chooseUpstream("上游任务 A");
+      if (mode === "create") acknowledgeLocalDeliveryIfNeeded();
       fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       const dialog = screen.getByRole("dialog");
@@ -2018,6 +2053,7 @@ describe("terminal cron card visibility", () => {
       name: new RegExp(localizedText("智能任务", "AI-powered")),
     })).toHaveClass("border-blue-300", "bg-blue-50");
 
+    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(within(dialog).getByRole("button", { name: localizedText("新建", "Create") }));
 
     await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
@@ -2198,6 +2234,7 @@ describe("terminal cron card visibility", () => {
     expect(await screen.findByText("旧任务")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
     fillCreateFields();
+    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -2217,6 +2254,7 @@ describe("terminal cron card visibility", () => {
 
     await screen.findByRole("heading", { name: localizedText("任务模板", "Task templates") });
     fireEvent.click(screen.getByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));
+    acknowledgeLocalDeliveryIfNeeded();
     const submitButton = within(screen.getByRole("dialog")).getByRole("button", { name: "新建" });
     await waitFor(() => {
       expect(submitButton).toBeEnabled();
@@ -2584,7 +2622,8 @@ describe("automation notification channel options", () => {
       channelStatus: "ready",
     });
 
-    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByRole("checkbox", { name: "我确认仅本地保存" })).not.toBeChecked();
     expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
     expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
     const notificationHelpButton = screen.getByRole("button", { name: "通知方式" });
@@ -2682,7 +2721,8 @@ describe("automation notification channel options", () => {
       channelStatus: "ready",
     });
 
-    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByRole("checkbox", { name: "我确认仅本地保存" })).not.toBeChecked();
     expect(screen.getByText("No channels configured.")).toBeTruthy();
     expect(screen.queryByText("No notification channels are configured yet.")).toBeNull();
     fireEvent.focus(screen.getByRole("button", { name: "Notification" }));
@@ -3026,6 +3066,40 @@ function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFor
   return render(createElement(AutomationFormModal, props));
 }
 
+function acknowledgeLocalDeliveryIfNeeded() {
+  const checkbox = screen.queryByRole("checkbox", {
+    name: localizedText("我确认仅本地保存", "I understand this saves locally only"),
+  });
+  if (checkbox) fireEvent.click(checkbox);
+}
+
+describe("local-only automation delivery", () => {
+  it("requires an explicit acknowledgement before creating an Agent task without a channel", async () => {
+    renderAutomationForm();
+    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入定时任务名称", "Enter scheduled task name")), {
+      target: { value: "每日资料" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(localizedText(
+      "请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展",
+      "Describe the task for your Agent, for example: summarize the latest AI news each day",
+    )), { target: { value: "收集并总结资料" } });
+
+    expect(screen.getByText(localizedText(
+      "结果仅保存在此 Bot 的执行记录中，不会发送到聊天。",
+      "Results are saved only in this Bot's run history and won't be sent to chat.",
+    ))).toBeTruthy();
+    const submit = screen.getByRole("button", { name: localizedText("新建", "Create") });
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: localizedText("我确认仅本地保存", "I understand this saves locally only") }));
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+      "bot-1", expect.objectContaining({ deliver: "local" }), undefined,
+    ));
+  });
+});
+
 describe("once execution time picker", () => {
   it("uses the same control height across recurring, interval, and one-time schedules", () => {
     renderAutomationForm();
@@ -3220,6 +3294,7 @@ describe("automation form test run", () => {
       },
     });
 
+    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -3876,7 +3951,8 @@ describe("automation notification channel options", () => {
     if (isGlobal) return;
     renderAutomationForm({ enabledChannels: new Set(), channelStatus: "ready" });
 
-    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByRole("checkbox", { name: "我确认仅本地保存" })).not.toBeChecked();
     expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
     expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
   });
@@ -3917,6 +3993,7 @@ describe("automation notification channel options", () => {
     renderAutomationForm({ onSaved });
 
     fillCreateFields();
+    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));

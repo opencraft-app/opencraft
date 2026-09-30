@@ -41,7 +41,7 @@ Configure los siguientes campos:
 - **Notificación**: Elija opcionalmente dónde enviar el resultado completado.
 
 A la hora programada, Hermes Agent crea una tarea de Agent y llama al modelo seleccionado.
-El resultado puede enviarse a los canales seleccionados y queda registrado en Ejecuciones recientes.
+El resultado puede enviarse a los canales seleccionados y queda registrado en Ejecuciones recientes. Si no selecciona un canal, deberá confirmar que el resultado se guardará solo localmente antes de crear la tarea; no se enviará al chat.
 
 ![Diálogo Crear tarea programada con el tipo Tarea de Agent](../../images/st-en-2.webp)
 
@@ -57,7 +57,7 @@ A la hora programada, LightVela envía el contenido tal como está escrito.
 No pide a un modelo que redacte, reescriba, resuma, traduzca ni explique el mensaje.
 Por eso, el uso de tokens del modelo para la tarea es de 0 Token.
 
-Si no selecciona un canal, la tarea se ejecuta en segundo plano y escribe un registro en lugar de enviar un mensaje.
+Una tarea de notificación requiere al menos un canal antes de poder crearla o guardarla.
 El formato de cada canal todavía puede afectar a los saltos de línea y a los caracteres que reciben los destinatarios.
 
 ![Diálogo Crear tarea programada con el tipo Tarea de notificación](../../images/st-en-3.webp)
@@ -132,6 +132,8 @@ Cree una tarea de notificación o de script personalizada desde el diálogo Crea
 
 Después de crear una tarea, use la página Tareas programadas para revisar Tareas actuales, Tareas finalizadas y Ejecuciones recientes.
 La vista Tareas actuales puede filtrar las tareas de Agent, de notificación y de script.
+
+En **Ejecuciones recientes**, abra los detalles de una ejecución y seleccione **Ver resultado** para leer el Markdown o **Descargar Markdown** para guardarlo. Primero cambie al Bot propietario de la tarea: el resultado permanece en sus registros de ejecución y no aparece en el chat ni en los registros de otro Bot. Si una tarea solo guarda el resultado localmente, seleccione un canal de notificación conectado para recibir futuras ejecuciones.
 
 Tareas finalizadas reúne las tareas completadas, fallidas y vencidas.
 Las tareas en curso permanecen en Tareas actuales.
