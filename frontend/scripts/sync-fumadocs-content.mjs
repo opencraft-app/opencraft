@@ -1768,10 +1768,13 @@ function localizedImageName(imageName, locale) {
     [LOCALES.KO_KR]: ['-ko', '-en'],
   };
   const suffixes = suffixesByLocale[locale];
-  if (!suffixes || /-(?:en|zh-hant|id|es|ja|ko)\.[^.]+$/.test(imageName)) return imageName;
+  if (!suffixes) return imageName;
 
+  // A fallback source may already use another locale suffix (for example, -en).
+  // Replace that suffix before trying the requested locale and its fallbacks.
+  const baseName = imageName.replace(/-(?:en|zh-hant|id|es|ja|ko)(\.[^.]+)$/, '$1');
   for (const suffix of suffixes) {
-    const candidate = imageName.replace(/(\.[^.]+)$/, `${suffix}$1`);
+    const candidate = baseName.replace(/(\.[^.]+)$/, `${suffix}$1`);
     if (existsSync(join(sourceRoot, 'images', candidate))) return candidate;
   }
   return imageName;

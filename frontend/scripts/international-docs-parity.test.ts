@@ -618,6 +618,22 @@ describe("international docs publication inventory", () => {
       );
     });
 
+    it("replaces a fallback image suffix with the requested locale when available", () => {
+      expect(syncDocsApi.normalizeMarkdownLinks).toBeTypeOf("function");
+      if (!syncDocsApi.normalizeMarkdownLinks) return;
+
+      const image = "![Achievements](../../images/achievements-overview-en.webp)";
+      expect(syncDocsApi.normalizeMarkdownLinks(image, "configuration/achievements.md", "ja-jp", "ja-JP")).toBe(
+        "![Achievements](/docs-images/achievements-overview-ja.webp)",
+      );
+      expect(syncDocsApi.normalizeMarkdownLinks(image, "configuration/achievements.md", "ko-kr", "ko-KR")).toBe(
+        "![Achievements](/docs-images/achievements-overview-ko.webp)",
+      );
+      expect(syncDocsApi.normalizeMarkdownLinks(image, "configuration/achievements.md", "en-us", "en-US")).toBe(
+        "![Achievements](/docs-images/achievements-overview-en.webp)",
+      );
+    });
+
     it("imports generator helpers without touching generated content or the tracked manifest", () => {
       const markerPath = join(generatedDocsRoot, ".helper-import-marker");
       const manifestPath = join(process.cwd(), "next-site", "docs-route-manifest.ts");
