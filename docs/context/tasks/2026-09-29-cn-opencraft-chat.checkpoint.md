@@ -219,3 +219,4 @@
 - 隔离 frontend guard 的 frozen install、pnpm check（166 current /171 baseline /0 new）与 i18n 通过；后续 Vitest 因本机 ENOTFOUND localhost 中止，因此未到 CN/global build。显式 --api.host 127.0.0.1 在原工作区重跑同七文件，130/130通过；不宣称完整隔离 guard 通过。
 - 迁移后3/3 tests、Web typecheck、平台边界通过。既有构建与UI验证沿用前轮，无新生产代码；生成闭包检查另发现 sourceRevision 落后，需先提交前端测试迁移，再官方 sync 并独立提交。
 - context_receipt 补充 docs/engineering/domains/agent-gateway-runtime.md 验证边界。用户“继续吧”后继续修复和原MR提交；不处理原有master冲突，不合并或发布。
+- 源码迁移提交20dbd5595后，官方sync仅更新UPSTREAM.json的sourceRevision；130文件闭包检查通过，documentation和staged change-impact通过。生成清单独立后续提交，排除无关catalog.jsonl。
