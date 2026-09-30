@@ -16,6 +16,8 @@ type SGShardRecoveryResult struct {
 	PoolCreated bool
 }
 
+const sourcePoolInstanceTypeLineageTag = "source_pool_instance_type"
+
 var securityGroupShardLimitCodes = map[string]struct{}{
 	"LimitExceeded.CvmsVifsPerSecGroupLimitExceeded": {},
 	"LimitExceeded.SingleUSGQuota":                   {},
@@ -94,6 +96,7 @@ func (s *Service) ReconcileSGShardRecovery(ctx context.Context, cp provider.Clou
 	}
 	bundle.LineageTags["template_class_id"] = templateClass.ID
 	bundle.LineageTags["sku_id"] = sku.ID
+	bundle.LineageTags[sourcePoolInstanceTypeLineageTag] = pool.InstanceType
 	bundle, err = s.UpsertCapacityBundle(ctx, bundle)
 	if err != nil {
 		return SGShardRecoveryResult{}, err
