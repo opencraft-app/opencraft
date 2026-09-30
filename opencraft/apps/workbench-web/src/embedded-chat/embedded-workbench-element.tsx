@@ -87,6 +87,7 @@ function embeddedStyles(): string {
     :host([data-visible="true"]) { visibility: visible; pointer-events: auto; }
     .opencraft-embedded-workbench-root { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
     ${application}
+    .opencraft-embedded-workbench-root { --height-toolbar: var(--lightvela-console-header-height, 46px); }
     .opencraft-embedded-workbench-root .codex-composer-queue-item__actions button.is-steer {
       width: 22px;
       padding: 0;

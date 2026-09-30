@@ -22,7 +22,7 @@ const { outputFiles } = await build({
       "../runtime/appserver-media-loader": `export const createAppServerMediaSourceLoader=()=>()=>{};`,
       "@opencraft/i18n/react": `export const useIntl=()=>({formatMessage:m=>m.defaultMessage});`,
       "@opencraft/chat-render-web": `export const WebChatDocument=()=>null;`,
-      "./workspace-code-editor": `export const WorkspaceCodeEditor=()=>null;`,
+      "./workspace-code-editor": `export const WorkspaceCodeEditor=()=>{throw new Error("editor unavailable")};`,
       "./workspace-file-icon": `export const WorkspaceFileIcon=()=>null;`,
       "lucide-react": `export const AlertTriangle=()=>null;export {AlertTriangle as ChevronDown,AlertTriangle as ChevronRight,AlertTriangle as Folder,AlertTriangle as FolderOpen,AlertTriangle as Image,AlertTriangle as LoaderCircle,AlertTriangle as Pencil,AlertTriangle as RotateCcw,AlertTriangle as Save,AlertTriangle as Search};`,
     };
@@ -56,4 +56,38 @@ test("preview rejects direct writes; editable panel saves the captured target", 
     assert.deepEqual(writes, [[target.path, Buffer.from(target.text).toString("base64")]]);
     assert.deepEqual(invalidations, [{scope:"bot-a",path:target.path}]);
   } finally { delete globalThis.__panelTest; }
+});
+
+
+test("Markdown preview and source switch without loading the editor", async () => {
+  const { JSDOM } = require("jsdom");
+  const { createRoot } = require("react-dom/client");
+  const { act } = require("react");
+  const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
+  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  globalThis.__panelTest = { runtime:{resources:{fileSystem:{}}}, blobs:{} };
+  const root = createRoot(document.getElementById("app"));
+  try {
+    await act(() => root.render(createElement(exports.WorkspaceResourcePreviewPanel, {tab:{resource:"/workspace/report.md"}})));
+    const button = name => Array.from(document.querySelectorAll("button")).find(node => node.textContent === name);
+    for (let i = 0; i < 2; i++) {
+      await act(() => button("Source").click());
+      assert.equal(document.querySelector("pre code")?.textContent, "# Hello");
+      assert.equal(document.querySelector("[contenteditable=true]"), null);
+      assert.equal(button("Source").getAttribute("aria-pressed"), "true");
+      await act(() => button("Preview").click());
+      assert.ok(document.querySelector(".workspace-file-markdown"));
+      assert.equal(document.querySelector("pre"), null);
+    }
+  } finally {
+    await act(() => root.unmount());
+    dom.window.close();
+    delete globalThis.__panelTest;
+    for (const key of keys) {
+      if (previous[key]) Object.defineProperty(globalThis, key, previous[key]);
+      else delete globalThis[key];
+    }
+  }
 });

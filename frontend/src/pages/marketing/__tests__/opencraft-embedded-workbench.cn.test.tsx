@@ -121,12 +121,12 @@ describe("AgentChatMigrationSurface", () => {
     const embedded = container.querySelector("opencraft-embedded-workbench");
     expect(embedded).not.toBeNull();
     const surface = container.firstElementChild;
-    expect(surface).toHaveClass("border-transparent", "rounded-none");
+    expect(surface).toHaveClass("border-0", "rounded-none");
     for (const isDraft of [true, false]) {
       act(() => embedded!.dispatchEvent(new CustomEvent("opencraft-sessions", {
         detail: { sessions: [], loading: false, error: null, selectedChatId: null, isDraft },
       })));
-      expect(surface).toHaveClass("border-transparent", "rounded-none");
+      expect(surface).toHaveClass("border-0", "rounded-none");
     }
     expect(commands).not.toBeNull();
     await requireCommands().createSession();

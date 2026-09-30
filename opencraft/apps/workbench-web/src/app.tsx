@@ -1361,6 +1361,7 @@ export function App({
           onSidebarResizeEnd={commitSidebarWidth}
           rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
           rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
+          rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
               type: "set-region-open",

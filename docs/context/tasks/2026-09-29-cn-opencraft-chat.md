@@ -202,3 +202,27 @@
 - 推送时远端出现并发 CR 修复 6d60a595c，普通 push 拒绝后合入该提交。保留远端 CI 冷安装与串行 embedded suite、writeWorkspaceResource 边界与测试，同时保留本轮真实面板 mutation 回归、候选实例生命周期闸门、七语言 followup 和 74px 高度。
 
 - 并发提交合入后，frontend CN/global 各12/12、frontend check 0 new、embedded-ci 143/143、Web types和embedded build通过；保留两侧验证记录。
+
+## Markdown 点击入口补齐
+- 用户截图明确路径 `/home/agentuser/顺德攻略.md` 为 inline-code，原 prose renderer 只输出 code，没有打开动作。补齐明确 Markdown 路径的点击入口，复用原资源策略和 Host 读取，不改变普通代码/命令或嵌套链接。
+- 验证：真实文档渲染点击与面板状态回归、Web/renderer types、内嵌构建、本地浏览器模拟 Host 验证；真实 Hermes 当前连接失败单独报告。
+
+## 右栏默认宽度调整
+- 用户要求国内控制台展开右栏时缩小约1/3。presentation policy 声明 compact，Shell 使用几何模型默认宽度2/3并钳制到原上下限，保留手动拖拽。
+- router `opencraft right panel width` 无匹配；bounded exact search 命中 AppShell 与 workbench-panels model，验证邻居为 workbench-panels.test.ts。沿用已读取的维护技能、AGENTS 和 frontend-runtime-openspec-i18n 邻接卡。
+
+## 连续分隔线修复
+- 目标：嵌入聊天的横向表头线连接左侧栏，右栏竖线从顶部到底部连续；不改其他设置页/国际旧聊天及窄屏布局。
+- context_receipt：docs/context/project/services/frontend.md、frontend/AGENTS.md、opencraft/AGENTS.md、frontend-runtime-openspec-i18n 邻接卡、frontend/vitest.config.ts 与嵌入相邻测试。
+- 有界目录搜索未命中，扩展文件名检索后定位 frontend/src/pages/marketing 和 styles.css；根因是设置页 top68/margin-top-24、gap24 和 max-width1280。
+- 设计依照当前 embedded Shell 单一 toolbar token，不增加装饰性补线。验证真实桌面分隔线、窄屏不溢出，相关检查及构建。
+
+## Markdown 源码切换保护
+- 用户报告源码切换导致整个嵌入根显示启动失败；新标签实际切换成功，旧页日志未保留具体异常，不将猜测视为已证实根因。源码检查显示 React.lazy 编辑器错误会冒泡到嵌入根。
+- 路由查询 opencraft Markdown 源码预览切换崩溃无匹配；按文件名定位 workspace-resource-panel/code-editor 并检查既有 readonly 测试邻居。复用此前已读取的 opencraft/AGENTS 与维护验证清单。
+- 只读 Markdown 的源码直接呈现原文，保持原文件加载和多Bot隔离契约；回归测试令编辑器抛错，实际切换预览/源码仍成功。
+
+## chrome_stale_source_chunk_2026_09_30
+- 用户反馈同一Chrome标签页仍报错，本轮直接读取原标签页1353670490日志，捕获 TypeError: Failed to fetch dynamically imported module，路径为 /__opencraft/assets/a-DCf_TcJE.js；本地5174该路径实测404。
+- 前次新标签页验证没有更新用户原标签页；原标签页仍引用已被重新构建移除的旧hash资源。本轮不新增产品代码，刷新原报错标签页后打开同一国庆抒怀.md并点击源码，显示新只读原文，聊天与输入框保留。截图 /tmp/lightvela-chrome-source-recovered.png。
+- 修正前次根因未确认记录：本次已有具体旧动态模块加载失败证据。未提交/推送/发布。

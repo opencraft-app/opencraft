@@ -254,3 +254,41 @@
 - 推送时远端出现并发 CR 修复 6d60a595c，普通 push 拒绝后合入该提交。保留远端 CI 冷安装与串行 embedded suite、writeWorkspaceResource 边界与测试，同时保留本轮真实面板 mutation 回归、候选实例生命周期闸门、七语言 followup 和 74px 高度。
 
 - 并发提交合入后，frontend CN/global 各12/12、frontend check 0 new、embedded-ci 143/143、Web types和embedded build通过；保留两侧验证记录。
+
+## markdown_preview_entry_investigation_2026_09_30
+- 用户反馈点击 .md 后右栏不打开；继续只读排查，尚未复现该具体链接，已请求消息截图或链接地址。
+- 当前 Chrome 国内映射预览显示 Hermes 连接失败，点击重新连接未恢复，无法验证真实远端文件读取。
+- 当前源码链路：chat resource-link → app.openChatResource → panels.open(resource) → open-tab 展开 right region；内嵌选择 WorkspaceResourcePreviewPanel。普通文件链接入口存在，尚无证据证明本次失效来自该路径。
+- 当前源码隔离浏览器验证真实 WorkspaceResourcePreviewPanel（仅 Host API 为模拟）：Markdown 标题、列表、表格、代码正常渲染；6/6 workspace-resource 与 readonly 聚焦回归通过。模拟组件验证不替代真实 Hermes 点击链路。
+- Context router query `opencraft markdown 文件预览 LightVela 嵌入聊天资源链接` 无匹配；有界搜索定位上述组件。读取 opencraft/AGENTS.md、opencraft-maintenance skill、frontend-runtime-openspec-i18n 邻接卡，并检查 frontend 的 embedded CN 回归及 OpenCraft workspace-resource 测试邻居。
+- 未修改产品源码、未提交、未推送；catalog.jsonl 保持原有变更。
+
+- 用户截图定位到 inline-code 文件路径无点击事件；新增明确 Markdown 路径 renderer，复用资源策略，避免命令/URL误识别及显式链接内嵌套。真实 renderer + Panel service 交互回归与只读/资源回归共7/7通过；renderer/Web typecheck、embedded release build通过。
+- 2026-09-30 本地预览重新启动：5174 国内站，API api.lightvela.com；页面与嵌入 bundle HTTP200，IAB 已打开但为未登录状态，因此未核验真实 Hermes 文件读取。源码/构建已更新，尚未 commit/push。
+
+## compact_right_panel_2026_09_30
+- 国内嵌入聊天通过 presentation policy 使用 compact 默认右栏宽度（原算法结果的 2/3），保留最小宽度、主内容保留空间与原拖拽 owner；独立工作台保持 standard。
+- Web 类型检查、嵌入 release 构建、面板与嵌入 presentation 聚焦测试17/17通过，diff检查通过。
+- 5174本地构建已更新；Chrome国内映射页刷新后聊天加载正常，点击预览开关实测 splitter宽577px，聊天区域扩大。截图 /tmp/lightvela-compact-right-panel.png。未提交/推送/发布。
+
+## continuous_dividers_2026_09_30
+- 国内桌面 embedded 宿主填满左栏右侧区域，移除外围 top/gutter/max-width；toolbar 通过宿主变量与左栏表头对齐68px。取消透明1px外边框占位，内部正文间距保持。
+- DOM实测：内容左边264px等于侧栏右边、top0；左右表头均68px。点击真实聊天Markdown路径已展开并渲染文件预览；截图 /tmp/lightvela-continuous-dividers.png。390px视口 documentWidth390、toolbar46px；恢复桌面。
+- frontend check 0 new TS，16/16聚焦测试通过；更新原有透明边框断言以匹配无边框。OpenCraft Web types、presentation测试和嵌入release构建通过；官方同步检查、文档及impact/diff检查通过。国内完整构建通过（pnpm build:cn，105页生成及静态SEO检查完成）。
+- 排障发现第三方重复gap-6规则覆盖gap-x-0，最终在宿主class选择中只给嵌入聊天gap-y-6，避免互相覆盖。源码未提交/推送，既有catalog变更保留。
+
+## markdown_source_switch_2026_09_30
+- 用户截图显示切换源码导致嵌入聊天根错误页；本轮新开独立浏览器页未复现原异常，原始异常堆栈不可恢复，不将资源缓存或编辑器故障认定为已证实根因。
+- 只读 Markdown Source 改为转义原文 pre/code，移除该分支对 lazy 编辑器的依赖；可编辑工作台与其他格式不变。复用既有源码多语言标签。
+- 真实组件回归2/2通过，包括编辑器抛错时仍能来回切换；Web类型检查、嵌入release构建、文档/impact及diff检查通过。
+- Chrome独立验证页使用5174映射的新本地构建，真实远端国庆抒怀.md经过预览→源码→预览→源码均正常，聊天输入框与消息保留。截图 /tmp/lightvela-markdown-source-fixed.png。
+- 本轮未提交、推送或发布；保留既有未提交工作。
+
+## chrome_stale_source_chunk_2026_09_30
+- 用户反馈同一Chrome标签页仍报错，本轮直接读取原标签页1353670490日志，捕获 TypeError: Failed to fetch dynamically imported module，路径为 /__opencraft/assets/a-DCf_TcJE.js；本地5174该路径实测404。
+- 前次新标签页验证没有更新用户原标签页；原标签页仍引用已被重新构建移除的旧hash资源。本轮不新增产品代码，刷新原报错标签页后打开同一国庆抒怀.md并点击源码，显示新只读原文，聊天与输入框保留。截图 /tmp/lightvela-chrome-source-recovered.png。
+- 修正前次根因未确认记录：本次已有具体旧动态模块加载失败证据。未提交/推送/发布。
+
+## mr_update_2026_09_30
+- 用户明确授权提交MR；复用现有 !4868 / codex/cn-opencraft-chat → master。已通过提交前 embedded-ci 145/145、平台边界、staged change-impact 与diff检查，复用此前类型/构建/浏览器证据。
+- fetch后发现现有主干冲突仅UPSTREAM.json的sourceRevision；本轮先交付已完成变更，未进行目标分支合并或生产操作。既有catalog.jsonl不纳入。

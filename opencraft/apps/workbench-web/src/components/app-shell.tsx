@@ -80,6 +80,7 @@ interface AppShellProps {
   rightPanel: ReactNode;
   rightPanelOpen: boolean;
   rightPanelFullWidth: boolean;
+  rightPanelDefaultSize?: "standard" | "compact";
   sidebarCollapsible?: boolean;
   sidebarTransientEnabled?: boolean;
   sidebarResizable?: boolean;
@@ -213,6 +214,7 @@ export function AppShell({
   rightPanel,
   rightPanelOpen: requestedRightPanelOpen,
   rightPanelFullWidth: requestedRightPanelFullWidth,
+  rightPanelDefaultSize = "standard",
   sidebarCollapsible = true,
   sidebarTransientEnabled = true,
   sidebarResizable = true,
@@ -386,6 +388,7 @@ export function AppShell({
   const initialRightPanelWidth = computeRightPanelDefaultWidth({
     mainContentWidth: initialMainContentWidth,
     shellHeight: shellHeight.get(),
+    size: rightPanelDefaultSize,
     mainContentReserve: shellSpaceMetrics.mainMinimum,
   });
   const rightPanelWidthRatio = useMotionValue(

@@ -5007,6 +5007,7 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
+        activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout && "lv-agent-embedded-chat-page",
         isEmptyAgentPage && "lv-agent-empty-page",
         isModifying && "lv-agent-upgrading-page",
       )}
@@ -5848,7 +5849,8 @@ export const AgentSettingsPage = ({
                 <div
                   className={cn(
                     /* lv-agent-settings-grid 来自 master，勿删 */
-                    "lv-agent-settings-grid grid items-start gap-6",
+                    "lv-agent-settings-grid grid items-start",
+                    activeSection === "chat" && openCraftChatEnabled ? "gap-y-6" : "gap-6",
                     /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
                     hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]",
                   )}

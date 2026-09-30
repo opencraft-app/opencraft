@@ -503,6 +503,13 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
                   }}
                 />
               </div>
+            ) : previewOnly && language === "markdown" ? (
+              <pre
+                className="workspace-file-source"
+                tabIndex={0}
+                role="region"
+                aria-label={intl.formatMessage({ id: "panel.markdownSource", defaultMessage: "Source" })}
+              ><code>{text}</code></pre>
             ) : (
               <WorkspaceCodeEditor
                 editable={editing}
