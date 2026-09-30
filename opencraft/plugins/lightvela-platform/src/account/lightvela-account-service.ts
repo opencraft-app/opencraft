@@ -161,6 +161,8 @@ interface PassListResponse {
 
 export interface LightVelaAccountServiceOptions {
   readonly desktopAccount?: LightVelaDesktopAccountPort;
+  /** Embedded applications borrow a host session and cannot perform login/logout. */
+  readonly sessionManagedByHost?: boolean;
   readonly apiBase?: string;
   /** Application-owned site binding; does not rewrite the shared region preference. */
   readonly initialRegion?: LightVelaRegion;
@@ -367,6 +369,7 @@ export class LightVelaAccountService {
     this.invalidateAuthority();
     this.publish("anonymous", [], null, null);
   };
+  private readonly sessionManagedByHost: boolean;
   private readonly storage: LightVelaAccountServiceOptions["storage"];
   private readonly transactionStorage: LightVelaAccountServiceOptions["transactionStorage"];
   private readonly fetchImpl: typeof fetch;
@@ -394,6 +397,7 @@ export class LightVelaAccountService {
   });
 
   constructor(options: LightVelaAccountServiceOptions = {}) {
+    this.sessionManagedByHost = options.sessionManagedByHost ?? false;
     this.apiBaseOverride = options.apiBase?.replace(/\/$/u, "");
     this.desktopAccount = options.desktopAccount ?? getLightVelaDesktopAccount();
     if (this.desktopAccount && options.storage === undefined) globalThis.localStorage?.removeItem(LIGHTVELA_TOKEN_KEY);
@@ -458,6 +462,7 @@ export class LightVelaAccountService {
   }
 
   bootstrapOAuthFragment(): boolean {
+    if (this.sessionManagedByHost) return false;
     if (this.signOutOperation) return false;
     const accepted = bootstrapLightVelaOAuthCallback({
       storage: this.storage,
@@ -471,6 +476,7 @@ export class LightVelaAccountService {
   }
 
   async signIn(): Promise<AuthenticationResult> {
+    if (this.sessionManagedByHost) throw new Error("Sign in through the embedding application");
     if (this.signInOperation) return this.signInOperation;
     if (this.signOutOperation) throw new Error("Sign out is still in progress");
     if (this.desktopAccount) {
@@ -533,6 +539,7 @@ export class LightVelaAccountService {
   }
 
   signOut(): Promise<void> {
+    if (this.sessionManagedByHost) return Promise.reject(new Error("Sign out through the embedding application"));
     if (this.signOutOperation) return this.signOutOperation;
     const apiBase = this.apiBase;
     const token = this.storage?.getItem(LIGHTVELA_TOKEN_KEY)?.trim();

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useSyncExternalStore, type ReactNode } from "react";
-import { canonicalizeLocale, LocaleRuntime, type IntlPort, type LocaleInputs } from "@opencraft/i18n";
+import { canonicalizeLocale, LocaleRuntime, type IntlPort, type LocaleCatalog, type LocaleInputs } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import type { UiPreferencesRuntime } from "@opencraft/ui-preferences";
 import { localeCatalogs } from "./catalogs";
@@ -27,7 +27,7 @@ export function validateWorkbenchLocaleOptions(input: WorkbenchLocaleOptions): W
 }
 
 export class WorkbenchLocaleController implements IntlPort {
-  readonly runtime = new LocaleRuntime(localeCatalogs, event => console.warn("[i18n]", event.code, event.locale));
+  readonly runtime: LocaleRuntime;
   readonly #preferences: UiPreferencesRuntime;
   readonly #unsubscribe: () => void;
   #options: WorkbenchLocaleOptions;
@@ -35,7 +35,8 @@ export class WorkbenchLocaleController implements IntlPort {
   #disposed = false;
   #systemGeneration = 0;
 
-  constructor(preferences: UiPreferencesRuntime, options: WorkbenchLocaleOptions = {}) {
+  constructor(preferences: UiPreferencesRuntime, options: WorkbenchLocaleOptions = {}, catalogs: readonly LocaleCatalog[] = localeCatalogs) {
+    this.runtime = new LocaleRuntime(catalogs, event => console.warn("[i18n]", event.code, event.locale));
     this.#preferences = preferences;
     this.#options = validateWorkbenchLocaleOptions(options);
     this.#systemLocale = globalThis.navigator?.language ?? "en-US";

@@ -559,8 +559,10 @@ Context with AppServer Host runtimes.
 Workbench canvas without an iframe. The embedding product owns its outer
 Sidebar, Explore/Chat routing and page history. OpenCraft owns only the right
 canvas: the standard Thread/Draft conversation route, Composer and Header.
-The embedded projection omits OpenCraft's Right Panel and its toggle; the full
-Workbench keeps that panel unchanged. Embedded Chat does not use the Bot
+The embedded projection exposes an initially collapsed Right Panel for webpage
+and conversation file previews. Its action allow-list contains only the browser
+launcher; its resource renderer is read-only and omits filesystem browsing, search,
+watches and editing. Full Workbench capabilities remain unchanged. Embedded Chat does not use the Bot
 conversation protocol. The outer Bot identity selects a logical Hermes Host
 scoped by both physical instance and native Profile; the canvas uses ordinary
 AppServer Thread ownership inside that fixed Profile. Thread list, creation,
@@ -574,16 +576,28 @@ never persists that physical instance identity into the normal Host catalog.
 These differences are expressed by a typed Workbench Presentation Policy, not
 route- or product-name conditionals. The full policy enables Shell navigation,
 context Sidebar, Right Panel and Connector launcher. The Embedded Core Chat
-policy disables those four optional surfaces and projects an empty allow-list
-for extension-contributed Composer actions. The full policy projects all
+policy disables Shell navigation, context Sidebar and Connector launcher, while
+restricting Right Panel renderers to browser and read-only resource previews and
+Composer actions to voice input. The full policy projects all
 Composer actions. This keeps unavailable Web Speech or future optional actions
 out of embedded products without component-level product checks.
 
 The host keeps legacy AgentChat authoritative until its explicit rollout
-`show()` command enables the embedded candidate. Route visibility alone never
-loads or adopts OpenCraft. After enablement, legacy remains visible while the
-embedded Host connects, activates its ordinary Thread/Draft, hydrates initial
-history and paints; the Web Component's own `show()` then grants its write
+`show()` command enables the embedded candidate on the domestic console. The
+international console retains AgentChat. The host passes an in-process session
+accessor to the component; credentials are never HTML attributes or copied to
+OpenCraft localStorage. Account metadata stays in memory. The console remains
+the login/logout owner, and embedded startup never consumes its OAuth callback.
+Vendored RepositoryContext requires injected account-bound repositories and has
+no module-level default initialization that could consume a host OAuth URL.
+Session replacement or logout synchronously revokes the old accessor and hides
+and disposes its component before another instance can borrow the new session. Route visibility alone never
+loads or adopts OpenCraft. After enablement, a neutral loading surface replaces legacy (which is not
+mounted) while the embedded Host connects, activates its ordinary Thread/Draft, hydrates initial
+history and paints. Connection failures retain the same Application and Host so its
+automatic recovery can complete; they never silently restore legacy. The host projects
+`opencraft-connection` phases and offers `reconnect()` without remounting a painted
+canvas. A module/application startup failure before adoption offers a fresh startup retry. The Web Component's own `show()` then grants its write
 lease. `hide()` revokes that lease synchronously without disposing the
 Application, so returning to the host-owned Explore view cannot lose
 conversation state. Only the visible owner may send,
@@ -1468,3 +1482,34 @@ Implement a feature in this order:
 
 If a feature starts in either app with networking, timers, persistence, or
 business state embedded in a component, it has crossed the boundary too early.
+
+### Embedded console model authority
+
+The embedded LightVela Chat uses the Host's configured model policy. Its model
+and reasoning controls are omitted; saved Composer choices cannot override the
+current Bot/Profile configuration. Before each new Turn the runtime re-reads
+the profile-scoped Host model catalog, validates input against its declared
+default and submits that canonical model. It does not hard-code `auto`, choose
+the first model, or overwrite Hermes reasoning settings. Missing defaults fail
+before sending and direct users to model settings. Steering and queued follow-ups
+retain the running Turn's model semantics. The full Workbench keeps user-owned
+model selection.
+
+### Embedded connection recovery
+
+The resident Host runtime remains the sole backoff/reconnect owner. Embedded startup
+observes readiness across failures instead of disposing on the first rejection.
+Disconnects preserve Thread, Composer document and attachment owners; reconnect
+rehydrates existing threads and does not replay user submissions. The console shows
+a slow-connection notice after 30 seconds; fixed-Profile Hermes transport attempts
+have a 90-second deadline. Timeout fences late bootstrap responses and releases the
+physical connection; disposal cancels pending startup. Manual retry shares an active
+attempt. Authentication/configuration/resource failures retain their manual-recovery
+classification. Account or Bot changes retire the old component and credentials;
+preservation applies within that owner, not across account changes or refresh.
+
+Embedded browser metadata (pages, tabs and conversation bindings) uses storage
+owned by one Application lifetime. Closing the panel parks its pages; switching
+conversations selects that conversation scope. Bot or account changes dispose the
+Application and do not restore the previous identity's browser metadata. This is
+presentation isolation, not an OS filesystem or browser-cookie security boundary.

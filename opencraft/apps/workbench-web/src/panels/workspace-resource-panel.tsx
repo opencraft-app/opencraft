@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BlobProgress } from "@opencraft/blob-resources";
 import type { FuzzyFileSearchResult } from "@opencraft/appserver-protocol/generated";
@@ -174,7 +175,7 @@ function useWorkspaceFileWatches(paths: readonly string[]) {
   }, [blobs, key, queryClient, runtime, snapshot.hostId]);
 }
 
-function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
+function useFuzzyWorkspaceFiles(roots: readonly string[], query: string, enabled = true) {
   const runtime = useAppServerRuntime();
   const [results, setResults] = useState<readonly FuzzyFileSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -186,6 +187,7 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
   useEffect(() => {
     let active = true;
     setResults([]);
+    if (!enabled) return;
     void runtime.resources.fileSystem.createFuzzyFileSearchSession({
       roots,
       onUpdated(update) {
@@ -210,7 +212,7 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
       sessionRef.current = null;
       if (session !== null) void session.stop();
     };
-  }, [rootsKey, runtime]);
+  }, [rootsKey, runtime, enabled]);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -229,7 +231,12 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
   return { results, searching };
 }
 
-export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
+export function WorkspaceResourcePreviewPanel(props: PanelRendererProps) {
+  return <WorkspaceResourcePanel {...props} previewOnly />;
+}
+
+export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRendererProps & { readonly previewOnly?: boolean }) {
+  const intl = useIntl();
   const blobs = useBlobResources();
   const initialLocation = useMemo(
     () => parseWorkspaceResource(tab.resource ?? ""),
@@ -251,17 +258,17 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   }, [initialLocation.path]);
 
   const execution = snapshot.conversation?.execution;
-  const roots = useMemo(() => workspaceRootsForResource(
+  const roots = useMemo(() => previewOnly ? [] : workspaceRootsForResource(
     execution?.runtimeWorkspaceRoots ?? [],
     execution?.cwd ?? null,
     selectedPath,
-  ), [execution?.cwd, execution?.runtimeWorkspaceRoots, selectedPath]);
+  ), [execution?.cwd, execution?.runtimeWorkspaceRoots, selectedPath, previewOnly]);
   const watchPaths = useMemo(
-    () => [...roots, workspacePathParent(selectedPath)],
-    [roots, selectedPath],
+    () => previewOnly ? [] : [...roots, workspacePathParent(selectedPath)],
+    [roots, selectedPath, previewOnly],
   );
   useWorkspaceFileWatches(watchPaths);
-  const search = useFuzzyWorkspaceFiles(roots, searchQuery);
+  const search = useFuzzyWorkspaceFiles(roots, searchQuery, !previewOnly);
 
   const resource = useQuery<LoadedWorkspaceResource>({
     queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope],
@@ -319,6 +326,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
 
   const save = useMutation({
     mutationFn: async () => {
+      if (previewOnly) throw new Error("This panel is read-only");
       await runtime.resources.fileSystem.writeFile(selectedPath, encodeBase64Text(draft));
       await blobs.invalidate(fileBlobResource(runtime, snapshot.hostId, selectedPath));
     },
@@ -335,8 +343,8 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   const language = workspaceFileLanguage(selectedPath);
 
   return (
-    <div className="workspace-resource-panel">
-      <aside className="workspace-file-browser">
+    <div className="workspace-resource-panel" data-preview-only={previewOnly || undefined}>
+      {!previewOnly ? <aside className="workspace-file-browser">
         <label className="workspace-file-search">
           <Search size={13} />
           <input
@@ -380,7 +388,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
             />
           ))}
         </div>
-      </aside>
+      </aside> : null}
       <section className="workspace-file-viewer">
         <header className="workspace-file-viewer__header">
           <FileCode2 size={15} />
@@ -388,7 +396,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
             <strong>{workspaceResourceBasename(selectedPath)}</strong>
             <small>{selectedPath}</small>
           </span>
-          {resource.data?.text !== null && resource.data?.text !== undefined ? (
+          {!previewOnly && resource.data?.text !== null && resource.data?.text !== undefined ? (
             <div className="workspace-file-viewer__actions">
               {editing ? (
                 <>
@@ -415,14 +423,15 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
         </header>
         {resource.isPending ? (
           <div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />
-            {readProgress?.path !== selectedPath ? "Checking file…"
+            {previewOnly ? intl.formatMessage({ id: "panel.readingFile", defaultMessage: "Loading file…" })
+              : readProgress?.path !== selectedPath ? "Checking file…"
               : readProgress.progress.phase === "queued" ? "Queued for download…"
               : readProgress.progress.phase === "cache" ? "Checking cache…" : "Reading file…"}
           </div>
         ) : resource.isError ? (
           <div className="workspace-file-viewer__state is-error"><AlertTriangle size={18} />{resource.error.message}</div>
         ) : resource.data?.isDirectory ? (
-          <div className="workspace-file-viewer__state"><FolderOpen size={20} />Select a file from this directory.</div>
+          <div className="workspace-file-viewer__state"><FolderOpen size={20} />{intl.formatMessage(previewOnly ? { id: "panel.directoryHint", defaultMessage: "Choose a file link in the conversation to preview its contents." } : { id: "panel.selectFile", defaultMessage: "Select a file from this directory." })}</div>
         ) : imageMime !== null && resource.data?.blob && imageSource?.blob === resource.data.blob ? (
           <div className="workspace-file-viewer__image">
             <img alt={workspaceResourceBasename(selectedPath)} src={imageSource.url} />
@@ -441,7 +450,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
             <pre className="workspace-file-source" data-language={language ?? "text"}><code>{resource.data.text}</code></pre>
           )
         ) : (
-          <div className="workspace-file-viewer__state"><AlertTriangle size={18} />Binary or oversized file ({resource.data?.size.toLocaleString() ?? 0} bytes)</div>
+          <div className="workspace-file-viewer__state"><AlertTriangle size={18} />{intl.formatMessage({ id: "panel.unsupportedFile", defaultMessage: "Preview unavailable for this file type or size." })}</div>
         )}
         {save.isError ? <div className="workspace-file-save-error">{save.error.message}</div> : null}
       </section>

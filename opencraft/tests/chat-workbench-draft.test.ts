@@ -1165,3 +1165,47 @@ test("an in-flight Thread command remains resident without a foreground View", a
     await runtime.dispose();
   }
 });
+
+
+test("host-default policy ignores stale Composer models and follows current Host configuration", async () => {
+  for (const existing of [false, true]) {
+    const models: Record<string, unknown>[] = [{ id: "configured-old", model: "configured-old", isDefault: true,
+      inputModalities: ["text"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Medium" }], defaultReasoningEffort: "medium" }];
+    const harness = createHarness(false, false, [], false, models);
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport,
+      autoReconnect: false, modelSelectionPolicy: "host-default" });
+    try {
+      await runtime.connect();
+      // Config changed after the page connected. Submission must read it again.
+      models[0] = { ...models[0], id: "hermes-model:custom:configured-new", model: "hermes-model:custom:configured-new" };
+      const target: SubmitIntent["target"] = existing
+        ? { type: "existing-thread", key: createConversationKey("local", "thread-created") }
+        : { type: "new-thread", draftId: "host-default", execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } };
+      const submission = { ...intent(target), selections: { model: "auto", effort: "high" } };
+      if (existing) {
+        const lease = await runtime.acquireThread("thread-created");
+        await waitForAuthoritative(lease);
+        await lease.submit(submission);
+        lease.release();
+      } else await runtime.createThread(submission);
+      const request = harness.requests.find(request => request.method === (existing ? "turn/start" : "thread/start"))!;
+      const params = request.params as { model?: string; effort?: string };
+      assert.equal(params.model, "hermes-model:custom:configured-new");
+      assert.equal(params.effort, undefined, "Hermes retains configured reasoning");
+      assert.equal(submission.selections.model, "auto", "original draft is not mutated");
+    } finally { await runtime.dispose(); }
+  }
+});
+
+test("host-default does not send when the configured default is missing", async () => {
+  const harness = createHarness(false, false, [], false, [{ id: "other", model: "other", isDefault: false }]);
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport,
+    autoReconnect: false, modelSelectionPolicy: "host-default" });
+  try {
+    await runtime.connect();
+    await assert.rejects(runtime.createThread({ ...intent({ type: "new-thread", draftId: "no-default", execution: {
+      hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+    } }), selections: { model: "other" } }), /当前 Bot 未配置可用的默认模型/);
+    assert.equal(harness.requests.some(request => request.method === "thread/start" || request.method === "turn/start"), false);
+  } finally { await runtime.dispose(); }
+});

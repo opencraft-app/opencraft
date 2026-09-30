@@ -1,3 +1,5 @@
+import { useIntl } from "@opencraft/i18n/react";
+import { ThinkingLabel } from "./thinking-label";
 import { ResponsePositionedTurns, type ResponsePositionedTurnsApi } from "./conversation/response-positioned-turns";
 import {
   createTimelineTurnPresentationPlan,
@@ -500,6 +502,7 @@ function Frame({
   showActions: boolean;
   threadDetailLevel: ConversationDetailLevel;
 }) {
+  const intl = useIntl();
   const followContentRef = useLatestTurnFollowContentRef();
   const frameRef = useRef<HTMLDivElement>(null);
   const visibleFrame = frame;
@@ -579,7 +582,9 @@ function Frame({
           data-virtualized-turn-content={virtualizeSingleSlot ? "" : undefined}
           key={thinkingId}
         >
-          <span aria-hidden="true" /><CadencedShimmer active>{thinkingLabel}</CadencedShimmer>
+          <span aria-hidden="true" /><CadencedShimmer active>{thinkingLabel === "Thinking"
+            ? <ThinkingLabel />
+            : thinkingLabel}</CadencedShimmer>
         </div>
       )}
       {visibleFrame.type === "assistant" && showActions && (hasMessageActions || actions?.sentAtMs != null) ? (
@@ -588,7 +593,7 @@ function Frame({
             const nodes = frameRef.current?.querySelectorAll<HTMLElement>("[data-assistant-copy-content] .opencraft-chat-document");
             return nodes?.length ? Array.from(nodes).map((node) => extractMarkdownElement(node).htmlText).join("\n") : null;
           }} /> : null}
-          {onRetry === undefined ? null : <button onClick={onRetry} type="button" title="Retry"><RotateCcw size={13} /></button>}
+          {onRetry === undefined ? null : <button onClick={onRetry} type="button" title={intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}><RotateCcw size={13} /></button>}
           {visibleFrame.hookStats == null ? null : <HookStatsButton detailLevel={threadDetailLevel} stats={visibleFrame.hookStats} />}
           {actions?.sentAtMs == null ? null : <time data-assistant-message-sent-time dateTime={new Date(actions.sentAtMs).toISOString()} title={new Date(actions.sentAtMs).toLocaleString()}>{new Date(actions.sentAtMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
         </div>

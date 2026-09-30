@@ -700,6 +700,8 @@ export interface CodexComposerProps {
   submissionDisabled?: boolean;
   placeholder?: string;
   selectionCatalog?: ComposerSelectionCatalog;
+  /** Host-owned models are inherited; this surface offers no model override. */
+  modelSelectionPolicy?: "user" | "host-default";
   effectiveSelections?: ComposerEffectiveSelections;
   executionTarget?: ComposerExecutionTarget;
   defaultFollowUpAction?: ComposerFollowUpAction;
@@ -757,6 +759,7 @@ export const CodexComposer = forwardRef<
     submissionDisabled = false,
     placeholder: suppliedPlaceholder,
     selectionCatalog,
+    modelSelectionPolicy = "user",
     effectiveSelections,
     executionTarget,
     defaultFollowUpAction = "queue",
@@ -874,7 +877,7 @@ export const CodexComposer = forwardRef<
   const catalogPermissions = selectionCatalog?.permissionProfiles ?? [];
   const showPermissionPicker = hasPermissionProfileChoices(catalogPermissions);
   const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
-  const selectedModelValue =
+  const selectedModelValue = modelSelectionPolicy === "host-default" ? catalogDefaultModel?.value ?? null :
     composerSnapshot.draft.selections.model ??
     effectiveSelections?.model ??
     catalogDefaultModel?.value ??
@@ -1115,7 +1118,7 @@ export const CodexComposer = forwardRef<
       const view = editorViewRef.current;
       const dictation = controller.getInputInteractionSnapshot();
       if (!dictationFinished && dictation !== null) {
-        if (dictation.phase !== "listening" || disabled || submissionDisabled || selectedModelValue === null || composerSnapshot.hasProcessingAssets) return;
+        if (dictation.phase !== "listening" || disabled || submissionDisabled || (modelSelectionPolicy !== "host-default" && selectedModelValue === null) || composerSnapshot.hasProcessingAssets) return;
         const draftId = controller.getSnapshot().draft.id;
         const committed = await dictation.finish();
         if (committed && editorViewRef.current === view && editorControllerRef.current === controller
@@ -1247,6 +1250,7 @@ export const CodexComposer = forwardRef<
       editingQueuedSubmissionId,
       selectedModel,
       selectedModelValue,
+      modelSelectionPolicy,
       effectiveSelections?.effort,
     ],
   );
@@ -1972,7 +1976,7 @@ export const CodexComposer = forwardRef<
           data-input-mode={voiceActive ? "dictation" : "standard"}
         >
           {inputInteraction === null ? null : <DictationFooter interaction={inputInteraction}
-            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && selectedModelValue !== null}
+            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && (modelSelectionPolicy === "host-default" || selectedModelValue !== null)}
             onSend={() => { void submit(); }} onCancel={() => { inputInteraction.cancel(); controller.focus(); }} />}
           <div
             ref={footerLayout.attachmentRef}
@@ -2049,7 +2053,7 @@ export const CodexComposer = forwardRef<
               </span>
             )}
             <div className="codex-composer-picker-region">
-              <DropdownMenu.Root
+              {modelSelectionPolicy === "user" ? <DropdownMenu.Root
                 modal={false}
                 open={openPicker === "intelligence"}
                 onOpenChange={(isOpen) => {
@@ -2246,7 +2250,7 @@ export const CodexComposer = forwardRef<
                     </DropdownMenu.Content>
                   </DropdownMenu.Portal>
                 </div>
-              </DropdownMenu.Root>
+              </DropdownMenu.Root> : null}
 
               {showPermissionPicker ? <DropdownMenu.Root
                 modal={false}

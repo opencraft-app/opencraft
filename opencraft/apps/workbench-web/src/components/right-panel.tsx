@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import type {
   PanelAction,
   PanelToolbarActionContext,
@@ -54,6 +55,7 @@ import {
 } from "./right-panel-tab-drag";
 
 interface RightPanelProps {
+  readonly emptyHint?: string;
   readonly state: ConversationPanelState;
   readonly presentationId: string;
   readonly renderers: readonly PanelRendererRegistration[];
@@ -132,6 +134,8 @@ function PanelCreationMenu({
   portalContainer?: HTMLElement | null;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const intl = useIntl();
+  const menuLabel = intl.formatMessage(tabs ? { id: "panel.tabs", defaultMessage: "Tabs" } : { id: "panel.newTab", defaultMessage: "New tab" });
   const pending = useRef<(() => void | Promise<void>) | null>(null);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; pending.current = null; }; }, []);
@@ -140,13 +144,13 @@ function PanelCreationMenu({
       <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger asChild>
           <button type="button" className="chrome-button right-panel-new-tab"
-            aria-label={tabs ? "Tabs" : "New tab"} title={tabs ? "Tabs" : "New tab"}>
+            aria-label={menuLabel} title={menuLabel}>
             {tabs ? <ChevronDown size={14} aria-hidden="true" /> : <Plus size={14} aria-hidden="true" />}
           </button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal container={portalContainer}>
           <DropdownMenu.Content className="right-panel-creation-menu" align="start" sideOffset={6}
-            aria-label={tabs ? "Tabs" : "New tab"}
+            aria-label={menuLabel}
             onCloseAutoFocus={(event) => {
               const operation = pending.current;
               pending.current = null;
@@ -159,7 +163,7 @@ function PanelCreationMenu({
                   if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
                 });
             }}>
-            {tabs ? <DropdownMenu.Label className="app-shell-toolbar-menu__title">New</DropdownMenu.Label> : null}
+            {tabs ? <DropdownMenu.Label className="app-shell-toolbar-menu__title">{intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" })}</DropdownMenu.Label> : null}
             {actions.length === 0 ? <DropdownMenu.Item disabled>No types available</DropdownMenu.Item> : actions.map(action => (
               <DropdownMenu.Item key={action.id} className="right-panel-creation-menu__item"
                 onSelect={() => { pending.current = () => action.run(context); }}>
@@ -169,14 +173,14 @@ function PanelCreationMenu({
             ))}
             {tabs ? <>
               <DropdownMenu.Separator className="right-panel-tab-menu__separator" />
-              <DropdownMenu.Label className="app-shell-toolbar-menu__title">Open tabs</DropdownMenu.Label>
+              <DropdownMenu.Label className="app-shell-toolbar-menu__title">{intl.formatMessage({ id: "panel.openTabs", defaultMessage: "Open tabs" })}</DropdownMenu.Label>
               <DropdownMenu.RadioGroup value={activeTabId ?? ""}>
-                {tabs.length === 0 ? <DropdownMenu.Item className="right-panel-creation-menu__item" disabled>No open tabs</DropdownMenu.Item> : tabs.map((tab, index) => (
+                {tabs.length === 0 ? <DropdownMenu.Item className="right-panel-creation-menu__item" disabled>{intl.formatMessage({ id: "panel.noTabs", defaultMessage: "No open tabs" })}</DropdownMenu.Item> : tabs.map((tab, index) => (
                   <DropdownMenu.RadioItem key={tab.id} value={tab.id} textValue={tab.title}
                     className="app-shell-toolbar-menu__item" onSelect={() => {
                       if (tab.id !== activeTabId) pending.current = () => onActivateTab?.(tab.id);
                     }}>
-                    <span className="app-shell-toolbar-menu__item-content"><PanelIcon tab={tab} /><span>{tab.title}</span></span>
+                    <span className="app-shell-toolbar-menu__item-content"><PanelIcon tab={tab} /><span>{tab.kind === "browser" && tab.title === "New tab" ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" }) : tab.title}</span></span>
                     {tabs.filter(other => other.title === tab.title).length > 1 ? <span className="right-panel-tab-menu__ordinal">{index + 1}</span> : null}
                     <DropdownMenu.ItemIndicator><Check size={14} aria-hidden="true" /></DropdownMenu.ItemIndicator>
                   </DropdownMenu.RadioItem>
@@ -228,6 +232,9 @@ function SortablePanelTab({
   readonly onActivate: () => void;
   readonly onClose: () => void;
 }) {
+  const intl = useIntl();
+  const title = tab.kind === "browser" && tab.title === "New tab"
+    ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" }) : tab.title;
   const {
     attributes,
     listeners,
@@ -271,13 +278,13 @@ function SortablePanelTab({
         }}
       >
         <PanelIcon tab={tab} />
-        <span>{tab.title}</span>
+        <span>{title}</span>
       </button>
       {tab.closable ? (
         <button
           className="right-panel-tab__close"
           type="button"
-          aria-label={`Close ${tab.title}`}
+          aria-label={intl.formatMessage({ id: "panel.closeTab", defaultMessage: "Close {title}" }, { title })}
           tabIndex={active ? 0 : -1}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={onClose}
@@ -323,6 +330,7 @@ function DraggedPanelTabOverlay({
 }
 
 export function RightPanel({
+  emptyHint,
   state,
   presentationId,
   renderers,
@@ -332,6 +340,7 @@ export function RightPanel({
   toolbarActionContext,
   portalContainer,
 }: RightPanelProps) {
+  const intl = useIntl();
   const region = "right" as const;
   const regionState = state[region];
   const presentation = useShellPresentation();
@@ -498,7 +507,7 @@ export function RightPanel({
             ref={stripRef}
             className="right-panel-tab-strip"
             role="tablist"
-            aria-label="Task panels"
+            aria-label={intl.formatMessage({ id: "panel.tabList", defaultMessage: "Preview tabs" })}
             onScroll={(event) =>
               onAction({
                 type: "set-scroll-offset",
@@ -569,11 +578,11 @@ export function RightPanel({
               className="chrome-button"
               type="button"
               title={
-                fullWidth ? "Restore panel" : "Maximize panel"
+                intl.formatMessage(fullWidth ? { id: "panel.restore", defaultMessage: "Restore panel" } : { id: "panel.maximize", defaultMessage: "Maximize panel" })
               }
               onClick={() => onAction({ type: "toggle-right-full-width" })}
               aria-label={
-                fullWidth ? "Restore panel" : "Maximize panel"
+                intl.formatMessage(fullWidth ? { id: "panel.restore", defaultMessage: "Restore panel" } : { id: "panel.maximize", defaultMessage: "Maximize panel" })
               }
               aria-pressed={fullWidth}
             >
@@ -603,8 +612,9 @@ export function RightPanel({
             <div
               className="right-panel-launcher"
               role="group"
-              aria-label="Open a panel"
+              aria-label={intl.formatMessage({ id: "panel.open", defaultMessage: "Open preview panel" })}
             >
+              {emptyHint ? <p>{emptyHint}</p> : null}
               {creationActions.length > 0 ? (
                 creationActions.map((action) => (
                   <PanelToolbarAction
@@ -615,13 +625,13 @@ export function RightPanel({
                   />
                 ))
               ) : (
-                <p>No panel actions available for this host.</p>
+                <p>{intl.formatMessage({ id: "panel.noActions", defaultMessage: "No previews available for this connection." })}</p>
               )}
             </div>
           ) : ActivePanel === null ? (
             <div className="right-panel-empty">
-              <strong>{activeTab.title} is unavailable</strong>
-              <p>The renderer plugin for this tab is not installed.</p>
+              <strong>{intl.formatMessage({ id: "panel.unavailable", defaultMessage: "{title} is unavailable" }, { title: activeTab.title })}</strong>
+              <p>{intl.formatMessage({ id: "panel.unavailableHint", defaultMessage: "This content cannot be previewed here." })}</p>
             </div>
           ) : (
             <ActivePanel

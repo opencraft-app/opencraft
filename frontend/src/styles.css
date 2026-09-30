@@ -879,6 +879,10 @@ a {
   padding-right: 8px;
 }
 
+.lv-agents-session-item--opencraft.lv-agents-nav-item {
+  padding-right: 44px;
+}
+
 .lv-agents-session-item .lv-agents-session-title {
   flex: 1;
   overflow: hidden;

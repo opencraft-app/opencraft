@@ -300,8 +300,8 @@ mutation capabilities remain AppServer authority. The host must not copy or
 infer a second conversation model, and the embedded surface must not inject
 Sidebar DOM or rewrite the host page route. The right canvas is an
 OpenCraft-owned presentation and may reuse the standard Header, Composer,
-and Timeline implementations. The embedded product does not project
-OpenCraft's Right Panel or its toggle.
+and Timeline implementations. The embedded product projects a collapsed preview panel with a Header toggle.
+Only webpage tabs and read-only files linked from the conversation are exposed.
 
 For LightVela multi-Bot instances, one embedded Host is identified by
 `instanceId + profileId`, not by the physical instance alone. CTL's root
@@ -322,11 +322,25 @@ delete uses `thread/delete`, closes a live Hermes session, then invokes
 `session.delete`. UI adapters must retain the operation Promise long enough
 to expose pending and failure state.
 
+The embedded canvas permits the existing `vela.voice-input.toggle` Composer
+action. Dictation uses the platform speech provider and the same transient input
+transaction as the full Workbench; no microphone starts until user interaction.
+Unsupported browsers retain the provider's disabled-state explanation.
+
 All floating primitives in that canvas resolve through one Workbench
 Presentation Root. This includes Composer model/effort menus, Draft project and
 Host selectors and application modals. The root also owns the
 semantic theme variables required by those primitives; a Portal must never fall
 back to the embedding product's document body.
+
+Global type-to-compose resolves input ownership through the keyboard event's
+composed path, including editable descendants inside the embedded Shadow DOM.
+It never inserts printable keys owned by an editor or control, or IME keys
+marked composing / keyCode 229 (including the initial composition key).
+
+The Web renderer localizes the Thinking status through one `ThinkingLabel`
+for turn placeholders, live reasoning and activity-group gaps between tools.
+Core status strings remain renderer-neutral; real reasoning summaries are preserved.
 
 ## Current migration ledger
 
@@ -418,3 +432,11 @@ uses the existing canonical Thread read-only: it proves WebSocket → Session �
 Replica authority, forced disconnect, reconnect and same-Thread recovery
 without mutating a user's conversation. Production Web, Expo Web and iOS
 bundles are independent quality gates; a static fixture alone is not accepted.
+
+控制台内嵌的新会话由宿主选择 Bot，Shell 通过 showExecutionControls=false 隐藏整个项目/执行环境工具栏和连接状态点；独立工作台默认展示。连接生命周期与发送就绪检查保持由 runtime 负责。
+
+内嵌新会话标题与占位提示覆盖控制台 en-US、zh-CN（含 zh-SG）、zh-Hant、id-ID、es、ja-JP、ko-KR。额外五套文案由 embedded-companion-messages.json 提供，通过嵌入专用 catalog 注入 LocaleController，跟随宿主语言切换；这不代表其他工作台文案已完整翻译，未覆盖项继续使用 defaultMessage。独立工作台语言选择项保持原样。
+
+内嵌新会话（draft 存在且尚无 submission）由 sessions bridge 显式发布 isDraft；启用右侧预览时保留顶部面板开关，已有会话继续展示标题与重命名。国内控制台内嵌聊天的加载、新会话和已有会话均无宿主圆角外框，内嵌主内容表面无阴影；保留标题重命名入口与输入框边界。预览面板默认关闭，网页标签随会话 scope 切换；文件只读预览不展示目录树、搜索或编辑。
+
+内嵌右侧预览面板的入口、标签列表/空态、缩放与关闭提示、宽度调整无障碍标签以及不可用状态均通过稳定消息 ID 跟随宿主语言；网页自身正文由目标站点控制，不由控制台翻译。

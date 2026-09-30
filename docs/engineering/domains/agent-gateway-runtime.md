@@ -446,3 +446,22 @@ OpenCraft 的窗口空间由 `shell-space` 统一分配：Applications、上下�
 ## Hermes 建站凭据的跨地域 TAT 下发
 
 CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `region`，按 `WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION` 精确选择对应地域创建的凭据安装 CommandId；地域缺失、未配置或映射无效时 fail-closed，不签发新 Key。Sandbox 内部 TAT 端点以自身持久化的 Sandbox region 再次验证该地域 CommandId，拒绝跨地域 ID。sgprod 同时容纳 `ap-singapore` 和 `ap-johorbahru` 时，两端必须配置一致的映射；旧单值仅供未配置地域映射的环境兼容。TAT 终态成功且退出码为 0 后 CTL 才激活临时 Key；失败时撤销。存量补发须先按 CTL↔Sandbox↔CVM 对账，分别验证 Skill 安装、每实例独立 Key、TAT 终态和建站能力请求，不以实例 `Running` 代替验收。
+
+### 国内控制台 OpenCraft 隐藏发布
+
+- 国内站 `!isGlobal && showHiddenAgentTools` 决定新 Chat 启用；默认仍为 AgentChat，F12 执行 `show()` 切换，再次执行关闭。国际站不启用该候选。
+- 复用 `AgentChatMigrationSurface` 的 ready/show adoption 和失败回退。控制台通过内存函数借出当前 session；OpenCraft 的 account metadata 仅内存保存，不复制 token 到另一 localStorage key，不消费宿主 OAuth fragment，也不拥有登录/退出权限。
+- 控制台 token 替换/清除发出无凭据 `lightclaw:auth-session-changed` 事件；跨标签通过 storage 事件识别。旧 accessor 立即失效，组件释放连接后新 owner 初始化。显式 Instance/Profile/account/region 绑定继续由 provider 校验。
+- Hermes 首次 Dashboard 启动脚本通过 TAT `PtyStart.Program/Args` 执行并以交互 shell 保活；长单行 `PtyInput` 会受 canonical PTY 长度限制。此路径需要真实部署中的 TAT 兼容验收，本地帧测试不代表线上联通。
+
+- 内嵌 Chat 仅允许已识别的主 Bot 在 Profile 缺失时使用 `main`；非主 Bot 缺少 Profile 必须由 embedded host 校验拒绝，不得回退主 Bot 会话。
+
+- 内嵌 OpenCraft 全局 type-to-compose 从键盘事件 composedPath 判断编辑器/控件所有权；Shadow DOM 重定向后的宿主元素不能作为“空白处打字”依据。组合输入和 keyCode 229 均不额外插字，防止拼音首字母混入草稿。
+
+- 内嵌 Chat 的 Composer 扩展白名单仅开放现有 `vela.voice-input.toggle`，麦克风由用户点击后启动；复用平台 Speech Provider、完成插入与取消事务，不为嵌入场景复制识别链路。
+
+- OpenCraft 会话消息的展开/收起、送达状态、复制操作与附件预览文案由现有 LocaleRuntime 和消息资源统一呈现；中文目录与英文 defaultMessage 同步维护，保留消息原文及状态语义。
+
+- 内嵌 Chat 标题重命名入口与侧栏共享 ThreadTitleWriter/threadManagement 持久化及缓存更新；标题原位输入用 Enter/失焦保存、Escape 取消，组合输入确认不提交。编辑 session 按 Host/Thread 身份隔离，不能在会话切换后写入新目标。
+
+- Web 语音输入由浏览器 onstart 确认采集状态；启动与停止分别限制 15 秒和 8 秒等待。超时/错误释放听写交互并保留原草稿，取消不依赖浏览器 abort 成功，迟到结果不得重新提交文字或触发发送。

@@ -1,3 +1,4 @@
+import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
 import { WebUserMessageDocument, resolveStandardChatResource, writeTextToClipboard } from "@opencraft/chat-render-web";
 import {
@@ -124,7 +125,7 @@ function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTime
           onClick={toggleExpansion}
           type="button"
         >
-          <span>{collapseState === "expanded" ? "Show less" : "Show more"}</span>
+          <span>{collapseState === "expanded" ? <FormattedMessage id="chat.message.showLess" defaultMessage="Show less" /> : <FormattedMessage id="chat.message.showMore" defaultMessage="Show more" />}</span>
           <ChevronDown aria-hidden="true" className={collapseState === "expanded" ? "is-expanded" : undefined} size={11} />
         </button>
       )}
@@ -143,6 +144,7 @@ function UserMessageImage({
   readonly onOpen: (trigger: HTMLButtonElement) => void;
   readonly source: string;
 }) {
+  const intl = useIntl();
   const documentContext = useContext(ConversationDocumentContext);
   const media = useConversationMediaSource(
     source,
@@ -151,7 +153,7 @@ function UserMessageImage({
   );
   return (
     <button
-      aria-label="Open attached image"
+      aria-label={intl.formatMessage({ id: "chat.image.open", defaultMessage: "Open attached image" })}
       className="thread-user-message__image"
       data-state={media.status}
       onClick={(event) => onOpen(event.currentTarget)}
@@ -162,7 +164,7 @@ function UserMessageImage({
           ? <LoaderCircle aria-hidden="true" className="is-spinning" size={20} />
           : <ImageIcon aria-hidden="true" size={20} />
         : <img
-            alt="User attachment"
+            alt={intl.formatMessage({ id: "chat.image.attachment", defaultMessage: "User attachment" })}
             onLoad={() => media.requestMeasurement("image-load")}
             src={media.source}
           />}
@@ -191,6 +193,7 @@ function UserMessageImageViewer({
   readonly returnFocus: () => HTMLElement | null;
   readonly source: string;
 }) {
+  const intl = useIntl();
   const documentContext = useContext(ConversationDocumentContext);
   const media = useConversationMediaSource(source, documentId, local ? documentContext.resolveImageSource : undefined);
   const [failedSource, setFailedSource] = useState<string | null>(null);
@@ -202,17 +205,17 @@ function UserMessageImageViewer({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [imageCount, onNext, onPrevious]);
-  const label = `Attached image ${index + 1} of ${imageCount}`;
+  const label = intl.formatMessage({ id: "chat.image.position", defaultMessage: "Attached image {index} of {count}" }, { index: index + 1, count: imageCount });
   return (
     <ModalSurface className="thread-user-image-lightbox" label={label} layer="nested" onDismiss={onClose} returnFocus={returnFocus} size="workspace">
       {media.source !== null && failedSource !== media.source
         ? <img alt={label} draggable={false} onError={() => setFailedSource(media.source)} src={media.source} />
-        : <div className="thread-user-image-lightbox__unavailable" role="status">{media.status === "loading" ? "Loading image…" : "Image unavailable"}</div>}
+        : <div className="thread-user-image-lightbox__unavailable" role="status">{media.status === "loading" ? <FormattedMessage id="chat.image.loading" defaultMessage="Loading image…" /> : <FormattedMessage id="chat.image.unavailable" defaultMessage="Image unavailable" />}</div>}
       {imageCount > 1 ? (
         <div className="thread-user-image-lightbox__navigation">
-          <button aria-label="Previous image" onClick={onPrevious} type="button"><ChevronLeft aria-hidden="true" size={20} /></button>
+          <button aria-label={intl.formatMessage({ id: "chat.image.previous", defaultMessage: "Previous image" })} onClick={onPrevious} type="button"><ChevronLeft aria-hidden="true" size={20} /></button>
           <span aria-hidden="true">{index + 1} / {imageCount}</span>
-          <button aria-label="Next image" onClick={onNext} type="button"><ChevronRight aria-hidden="true" size={20} /></button>
+          <button aria-label={intl.formatMessage({ id: "chat.image.next", defaultMessage: "Next image" })} onClick={onNext} type="button"><ChevronRight aria-hidden="true" size={20} /></button>
         </div>
       ) : null}
     </ModalSurface>
@@ -220,6 +223,7 @@ function UserMessageImageViewer({
 }
 
 function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimelineBlock }) {
+  const intl = useIntl();
   const documentContext = useContext(ConversationDocumentContext);
   const { images, audio, contexts, files, mcpContexts } = deriveUserMessageWebLayout(block);
   const [expandedImageIndex, setExpandedImageIndex] = useState<number | null>(null);
@@ -266,7 +270,7 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
           {audio.map((part, index) => {
             const source = part.type === "local-audio" ? documentContext.resolveImageSource?.(part.source) ?? null : part.source;
             return source === null
-              ? <button className="thread-user-message__chip" key={`${part.type}:${part.source}:${index}`} onClick={() => openPath(part.source)} type="button">Audio</button>
+              ? <button className="thread-user-message__chip" key={`${part.type}:${part.source}:${index}`} onClick={() => openPath(part.source)} type="button"><FormattedMessage id="chat.attachment.audio" defaultMessage="Audio" /></button>
               : <audio controls key={`${part.type}:${part.source}:${index}`} preload="metadata" src={source} />;
           })}
           {files.map((attachment) => (
@@ -282,8 +286,8 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
                 <strong>{attachment.name}</strong>
                 {attachment.startLine === null ? null : (
                   <small>{attachment.endLine === null || attachment.endLine === attachment.startLine
-                    ? `Line ${attachment.startLine}`
-                    : `Lines ${attachment.startLine}–${attachment.endLine}`}</small>
+                    ? intl.formatMessage({ id: "chat.attachment.line", defaultMessage: "Line {line}" }, { line: attachment.startLine })
+                    : intl.formatMessage({ id: "chat.attachment.lines", defaultMessage: "Lines {start}–{end}" }, { start: attachment.startLine, end: attachment.endLine })}</small>
                 )}
               </span>
             </button>
@@ -293,7 +297,7 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
       {contexts.length === 0 && mcpContexts.length === 0 && !block.referencesPriorConversation ? null : (
         <div className="thread-user-message__context-scroll" data-user-message-context-row="">
           <div className="thread-user-message__context-row">
-            {block.referencesPriorConversation ? <span className="thread-user-message__chip"><MessageSquare aria-hidden="true" size={13} />Previous context</span> : null}
+            {block.referencesPriorConversation ? <span className="thread-user-message__chip"><MessageSquare aria-hidden="true" size={13} /><FormattedMessage id="chat.message.previousContext" defaultMessage="Previous context" /></span> : null}
             {contexts.map((part, index) => (
               <button className="thread-user-message__chip" key={`${part.type}:${part.path}:${index}`} onClick={() => openPath(part.path)} type="button">
                 {part.type === "mention" ? "@" : "/"}{part.name}
@@ -333,16 +337,16 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
   readonly hookStatsAccessory?: ReactNode;
 }) {
   const chips: ReactNode[] = [];
-  if (block.deliveryStatus === "not-sent") chips.push(<span data-status-kind="hook-blocked" key="hook-blocked"><AlertCircle aria-hidden="true" size={11} />Hook blocked this message</span>);
-  else if (block.deliveryStatus === "sending") chips.push(<span data-status-kind="sending" key="sending"><LoaderCircle aria-hidden="true" className="is-spinning" size={11} />Sending</span>);
-  else if (block.deliveryStatus === "failed") chips.push(<span data-status-kind="failed" key="failed"><AlertCircle aria-hidden="true" size={11} />Not sent</span>);
-  else if (block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><AlertCircle aria-hidden="true" size={11} />Delivery unconfirmed</span>);
-  else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><Circle aria-hidden="true" size={8} />Sent as goal</span>);
-  else if (block.hookFeedback) chips.push(<span data-status-kind="hook-feedback" key="hook-feedback"><Wrench aria-hidden="true" size={11} />Hook feedback</span>);
-  if (block.reviewMode) chips.push(<span key="review">Review mode</span>);
-  if (block.pullRequestFixMode) chips.push(<span key="pr-fix">PR fix</span>);
-  if (block.autoResolveSync) chips.push(<span key="auto-resolve">Auto resolve conflicts</span>);
-  if (block.commentCount > 0) chips.push(<span key="comments">{block.commentCount} {block.commentCount === 1 ? "comment" : "comments"}</span>);
+  if (block.deliveryStatus === "not-sent") chips.push(<span data-status-kind="hook-blocked" key="hook-blocked"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookBlocked" defaultMessage="Hook blocked this message" /></span>);
+  else if (block.deliveryStatus === "sending") chips.push(<span data-status-kind="sending" key="sending"><LoaderCircle aria-hidden="true" className="is-spinning" size={11} /><FormattedMessage id="chat.message.sending" defaultMessage="Sending" /></span>);
+  else if (block.deliveryStatus === "failed") chips.push(<span data-status-kind="failed" key="failed"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.notSent" defaultMessage="Not sent" /></span>);
+  else if (block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><AlertCircle aria-hidden="true" size={11} /><FormattedMessage id="chat.message.unconfirmed" defaultMessage="Delivery unconfirmed" /></span>);
+  else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><Circle aria-hidden="true" size={8} /><FormattedMessage id="chat.message.goal" defaultMessage="Sent as goal" /></span>);
+  else if (block.hookFeedback) chips.push(<span data-status-kind="hook-feedback" key="hook-feedback"><Wrench aria-hidden="true" size={11} /><FormattedMessage id="chat.message.hookFeedback" defaultMessage="Hook feedback" /></span>);
+  if (block.reviewMode) chips.push(<span key="review"><FormattedMessage id="chat.message.reviewMode" defaultMessage="Review mode" /></span>);
+  if (block.pullRequestFixMode) chips.push(<span key="pr-fix"><FormattedMessage id="chat.message.prFix" defaultMessage="PR fix" /></span>);
+  if (block.autoResolveSync) chips.push(<span key="auto-resolve"><FormattedMessage id="chat.message.autoResolve" defaultMessage="Auto resolve conflicts" /></span>);
+  if (block.commentCount > 0) chips.push(<span key="comments"><FormattedMessage id="chat.message.comments" defaultMessage="{count, plural, one {# comment} other {# comments}}" values={{ count: block.commentCount }} /></span>);
   if (chips.length === 0 && hookStatsAccessory === undefined) return null;
   return <div className="thread-user-message__status-row">{chips}{hookStatsAccessory}</div>;
 }
@@ -351,6 +355,7 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
   readonly block: UserMessageTimelineBlock;
   readonly hookStatsAccessory?: ReactNode;
 }) {
+  const intl = useIntl();
   const layout = deriveUserMessageWebLayout(block);
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
@@ -366,20 +371,20 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
   };
   return (
     <div className="thread-user-message" data-message-kind={block.messageKind}>
-      <h4 className="thread-role-heading">You said:</h4>
+      <h4 className="thread-role-heading"><FormattedMessage id="chat.message.youSaid" defaultMessage="You said:" /></h4>
       <UserMessageAttachmentRows block={block} />
       {layout.showBody ? (
         <div className="thread-user-message__body" data-user-message-body="">
           {layout.showBubble ? (
             <div className={layout.hasText ? "thread-user-message__bubble" : "thread-user-message__bubble is-empty"} data-user-message-bubble="">
-              {layout.hasText ? <CollapsibleUserMessageText block={block} /> : <span className="thread-user-message__no-content">(No content)</span>}
+              {layout.hasText ? <CollapsibleUserMessageText block={block} /> : <span className="thread-user-message__no-content"><FormattedMessage id="chat.message.noContent" defaultMessage="(No content)" /></span>}
             </div>
           ) : null}
           <div className="thread-user-message__accessories">
             <UserMessageStatusRow block={block} hookStatsAccessory={hookStatsAccessory} />
             {layout.hasText ? <div className="thread-user-message__actions">
               {block.sentAtMs === null ? null : <time dateTime={new Date(block.sentAtMs).toISOString()}>{formatUserMessageTimestamp(block.sentAtMs)}</time>}
-              <button aria-label={copied ? "Copied" : "Copy message"} disabled={copied} onClick={copy} title={copied ? "Copied" : "Copy message"} type="button">{copied ? <Check aria-hidden="true" size={13} /> : <Copy aria-hidden="true" size={13} />}</button>
+              <button aria-label={copied ? intl.formatMessage({ id: "common.copied", defaultMessage: "Copied" }) : intl.formatMessage({ id: "chat.message.copy", defaultMessage: "Copy message" })} disabled={copied} onClick={copy} title={copied ? intl.formatMessage({ id: "common.copied", defaultMessage: "Copied" }) : intl.formatMessage({ id: "chat.message.copy", defaultMessage: "Copy message" })} type="button">{copied ? <Check aria-hidden="true" size={13} /> : <Copy aria-hidden="true" size={13} />}</button>
             </div> : null}
           </div>
         </div>

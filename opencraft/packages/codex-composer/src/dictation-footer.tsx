@@ -67,7 +67,7 @@ export function DictationFooter({ interaction, canSend, onSend, onCancel }: {
   return <div className="codex-composer-voice-footer" data-voice-phase={interaction.phase} aria-label="语音输入控制">
     <button type="button" className="codex-composer-icon-button" aria-label="取消语音输入" title="取消语音输入 · Esc" onClick={onCancel}><X size={16} aria-hidden="true" /></button>
     <div className="codex-composer-voice-footer__signal">
-      {listening ? <DictationWaveform levels={interaction.audioLevels} active /> : <span className="codex-composer-voice-footer__status"><LoaderCircle size={14} aria-hidden="true" />{status}</span>}
+      {listening ? <DictationWaveform levels={interaction.audioLevels} active /> : <span className="codex-composer-voice-footer__status"><LoaderCircle size={14} aria-hidden="true" /><span className="codex-composer-voice-footer__status-label" aria-hidden="true">{status}</span></span>}
       <span className="sr-only" role="status">{status}</span>
     </div>
     <span className="codex-composer-voice-footer__duration" aria-label="录音时长">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>

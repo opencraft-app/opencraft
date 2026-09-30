@@ -19,7 +19,7 @@ import type {
   InteractionResponse,
   TurnInterruptProvenance,
 } from "@opencraft/chat-runtime";
-import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
+import type { ModelSelectionPolicy, SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
 import {
   compileSubmitIntent,
@@ -40,6 +40,8 @@ export interface AppServerConversationCommandPortConfig {
   readonly queueAtomicSteer?: boolean;
   readonly queueUnconfirmedSteerDiscard?: boolean;
   readonly compiler?: SubmitCompilerOptions;
+  /** Host defaults supersede persisted Composer model and effort choices. */
+  readonly modelSelectionPolicy?: ModelSelectionPolicy;
   readonly resolveCompilerOptions?: (intent: SubmitIntent) => Promise<SubmitCompilerOptions>;
   /** Product-owned tools installed on every newly-created Thread. */
   readonly dynamicTools?: readonly DynamicToolSpec[];
@@ -116,6 +118,10 @@ export function createAppServerConversationCommandPort(
   config: AppServerConversationCommandPortConfig,
 ): ConversationCommandPort {
   const compile = async (intent: SubmitIntent) => {
+    if (config.modelSelectionPolicy === "host-default") {
+      const { model: _model, effort: _effort, ...selections } = intent.selections;
+      intent = { ...intent, selections };
+    }
     let resolved: SubmitCompilerOptions | undefined;
     try { resolved = await config.resolveCompilerOptions?.(intent); }
     catch (cause) { throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", `无法确认模型能力，尚未发送请求：${cause instanceof Error ? cause.message : String(cause)}`); }

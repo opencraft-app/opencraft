@@ -23,7 +23,7 @@ test("Embedded Workbench owns one presentation root for theme and overlays", () 
   assert.match(app, /presentation\.connectorLauncher[\s\S]*?connectorPresentation\.addMenuContent/u);
   assert.match(app, /composerAddMenuContent=\{composerAddMenuContent\}/u);
   assert.match(app, /actionIds=\{presentation\.composerActions\}/u);
-  assert.match(policy, /EMBEDDED_CORE_CHAT_PRESENTATION[\s\S]*?rightPanel:\s*false,[\s\S]*?connectorLauncher:\s*false,[\s\S]*?composerActions:\s*Object\.freeze\(\[\]\)/u);
+  assert.match(policy, /EMBEDDED_CORE_CHAT_PRESENTATION[\s\S]*?rightPanel:\s*true,[\s\S]*?connectorLauncher:\s*false,[\s\S]*?composerActions:\s*Object\.freeze\(\["vela\.voice-input\.toggle"\]\)/u);
   assert.equal(
     Array.from(draft.matchAll(/<DropdownMenu\.Portal container=\{portalContainer\}>/gu)).length,
     2,

@@ -1224,3 +1224,16 @@ Supervisor、多个有清晰所有权的 Runtime scope，以及可被两种以�
 仍然保持 provisional 的只有物理 Adapter SPI 细节、Native resident pool 策略和 Remote
 Browser 协议能力发现；它们必须由第二实现或真实服务证据决定。身份、生命周期与 Host
 client 所有权不应再因这些 Adapter 细节反复改动。
+
+### Embedded preview projection
+
+The domestic console's hidden Chat projection exposes browser tabs and read-only
+conversation file previews. Browser pages, tabs and bindings use application-local
+metadata storage. The outer console disposes that application on Bot/account
+changes; physical filesystem or cookie isolation is not implied.
+
+Web iframe bounds are measured in window coordinates, then translated by the
+Presentation Root's client rect before positioning an absolute physical surface.
+This keeps the same page aligned inside a contained Shadow DOM host and in the
+standalone viewport, including panel resize. The new-tab placeholder follows the
+Workbench locale without changing a navigated page's content.

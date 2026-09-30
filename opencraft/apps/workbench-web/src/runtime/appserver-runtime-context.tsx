@@ -580,8 +580,11 @@ export interface WebWorkbenchSupervisorOptions {
   readonly navigationMode?: "browser" | "memory";
   /** Embedded products may supply one explicit Host without directory discovery. */
   readonly hostProfileMode?: "environment" | "configured";
+  readonly modelSelectionPolicy?: "user" | "host-default";
   readonly lightVelaRegion?: "cn" | "intl";
   readonly lightVelaApiBase?: string;
+  /** Embedded session storage is supplied by the containing application. */
+  readonly lightVelaAccountStorage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
 }
 
 function setLocalPreference(key: string, value: string | null): void {
@@ -993,6 +996,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     ]);
     const lightVelaAccount = new lightVelaPlatform.LightVelaAccountService({
       apiBase: options.lightVelaApiBase,
+      storage: options.lightVelaAccountStorage,
+      sessionManagedByHost: options.lightVelaAccountStorage !== undefined,
       initialRegion: options.lightVelaRegion,
       runtimeCommands: new lightVela.AppServerLightVelaRuntimeCommandPort(
         appServerRegistry.clients,
@@ -1282,6 +1287,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         };
         const normalizedConfig = providerLease.provider.validate(profile.providerConfig, providerContext);
         runtime = createAppServerWorkbenchRuntime({
+        modelSelectionPolicy: options.modelSelectionPolicy,
         hostId: profile.hostId,
         hostKind: profile.hostKind,
         // A provider transport is one physical Client generation. Initial

@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import {
   compactionLabel,
   todoSummary,
@@ -23,6 +24,7 @@ export function PlanBlock({
 }: {
   block: Extract<TimelineBlock, { type: "plan" }>;
 }) {
+  const intl = useIntl();
   const document = useContext(ConversationDocumentContext);
   const [collapsed, setCollapsed] = useState(!block.completed);
   const reducedMotion = useReducedMotion();
@@ -55,7 +57,7 @@ export function PlanBlock({
               >
                 <Download size={12} />
               </button>
-            <AssistantCopyButton value={block.text} label="Copy plan" />
+            <AssistantCopyButton value={block.text} label={intl.formatMessage({ id: "chat.plan.copy", defaultMessage: "Copy plan" })} />
             </>
           ) : null}
           <button
