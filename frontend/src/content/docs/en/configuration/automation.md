@@ -4,7 +4,7 @@
 
 **Scheduled Tasks let Hermes Agent start work without a manual prompt. Choose an Agent Task when the work needs AI reasoning, a Notification Task when the same message should be sent as written, or a Script Task when a Bash or Python script should make a deterministic check. All three types use the same one-time, recurring, and interval schedules, effective window, and notification settings.**
 
-![Scheduled Tasks page showing task templates and current jobs](../images/st-en-1.webp)
+![Scheduled Tasks page showing task templates and current jobs](../../images/st-en-1.webp)
 
 ## Choose a Task Type
 
@@ -23,7 +23,7 @@ Every type can run once, on a recurring daily, weekly, or monthly cadence, or at
 
 Make sure Hermes Agent is active, choose a notification channel if needed, and review any Script Task code before saving.
 
-![Notification channel options showing Telegram and WeChat](../images/notification-channels-en.webp)
+![Notification channel options showing Telegram and WeChat](../../images/notification-channels-en.webp)
 
 ## Create an Agent Task
 
@@ -43,7 +43,7 @@ Set the following fields:
 At the scheduled time, Hermes Agent creates an Agent task and calls the selected model.
 The result can be delivered to the selected notification channels and is recorded in Recent Runs.
 
-![Create Scheduled Task dialog showing the Agent Task type](../images/st-en-2.webp)
+![Create Scheduled Task dialog showing the Agent Task type](../../images/st-en-2.webp)
 
 ## Create a Notification Task
 
@@ -60,7 +60,7 @@ That means model-token usage is 0 Token for the task.
 If you do not select a notification channel, the task runs in the background and writes a record instead of sending a message.
 Notification-channel formatting may still affect how line breaks and characters appear to recipients.
 
-![Create Scheduled Task dialog showing the Notification Task type](../images/st-en-3.webp)
+![Create Scheduled Task dialog showing the Notification Task type](../../images/st-en-3.webp)
 
 ## Create a Script Task
 
@@ -83,14 +83,14 @@ They have 0 Token model usage, but they do use cloud Agent runtime resources.
 Do not rely on a Script Task to repair, explain, or summarize a failure with AI.
 It stays deterministic: an empty output remains silent, and a failing script does not trigger a model fallback.
 
-![Create Scheduled Task dialog showing the Script Task type](../images/st-en-4.webp)
+![Create Scheduled Task dialog showing the Script Task type](../../images/st-en-4.webp)
 
 ## Link an Upstream Agent Task
 
 Use an upstream task when one Agent Task should prepare context for another.
 The downstream task receives the upstream task's latest completed output while keeping its own schedule, instructions, effective window, and notification settings.
 
-![Create Scheduled Task dialog showing the upstream task option](../images/st-en-5.webp)
+![Create Scheduled Task dialog showing the upstream task option](../../images/st-en-5.webp)
 
 Schedule dependent tasks with enough time between them, and explain in the downstream instructions how to use the upstream output.
 Upstream context, model execution, and Skills apply only to Agent Tasks.
@@ -108,21 +108,21 @@ All three task types share the same scheduling and notification controls.
 Changing a task type while creating a task keeps these shared settings.
 After creation, task type cannot be changed, so create a new task if the execution model needs to change.
 
-![Create Job dialog for configuring a scheduled task](../images/automation-create-job.webp)
+![Create Job dialog for configuring a scheduled task](../../images/automation-create-job.webp)
 
 ## Use Task Templates
 
 If you are not sure how to start an Agent Task, use the Template Area on the Scheduled Tasks page.
 Choose a card such as Water & medication reminders, Rent reminder, Exchange-rate alert, or Stock update digest, then review the generated schedule and instructions before creating the task.
 
-![Template Area showing ready-made scheduled task cards](../images/automation-template-area.webp)
+![Template Area showing ready-made scheduled task cards](../../images/automation-template-area.webp)
 
 Opening a template pre-fills the Create Job dialog.
 The Stock update digest template, for example, fills in the task name, a daily schedule, and market-information instructions that you can refine before testing or creating it.
 
 <div style={{ maxWidth: "760px" }}>
 
-![Stock update digest template opened in the Create Job dialog](../images/automation-template-stock-job.webp)
+![Stock update digest template opened in the Create Job dialog](../../images/automation-template-stock-job.webp)
 
 </div>
 
@@ -138,7 +138,7 @@ Ongoing tasks stay under Current Jobs.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Scheduled Tasks page showing Current Jobs, Ended Jobs, and Recent Runs tabs](../images/automation-current-jobs.webp)
+![Scheduled Tasks page showing Current Jobs, Ended Jobs, and Recent Runs tabs](../../images/automation-current-jobs.webp)
 
 </div>
 
@@ -147,7 +147,7 @@ For an Agent Task with an upstream dependency, check whether another task still 
 
 <div style={{ maxWidth: "520px" }}>
 
-![Running scheduled task card in Current Jobs](../images/automation-running-job.webp)
+![Running scheduled task card in Current Jobs](../../images/automation-running-job.webp)
 
 </div>
 

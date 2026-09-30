@@ -44,16 +44,16 @@ Slack 通道采用 Bot Token 和 App Token 接入方式，适合将 Hermes Agent
 1. 打开 [Slack API Apps](https://api.slack.com/apps) 并登录。
 2. 点击 **Create New App**。
 
-![在 Slack API Apps 页面创建新 App](../images/slack-create-app.webp)
+![在 Slack API Apps 页面创建新 App](../../images/slack-create-app.webp)
 
 3. 选择 **From scratch**。
 
-![选择 From scratch 创建 Slack App](../images/slack-create-from-scratch.webp)
+![选择 From scratch 创建 Slack App](../../images/slack-create-from-scratch.webp)
 
 4. 输入 App 名称，例如 `Hermes Agent`。
 5. 选择 Hermes Agent 要接入的 workspace，然后点击 **Create App**。
 
-![填写 Slack App 名称并选择 workspace](../images/slack-select-workspace.webp)
+![填写 Slack App 名称并选择 workspace](../../images/slack-select-workspace.webp)
 
 如果列表中没有目标 workspace，请确认当前 Slack 账号已加入该 workspace，并拥有创建 App 的权限。
 
@@ -63,28 +63,28 @@ App Token 用于通过 Socket Mode 建立 WebSocket 连接，必须包含 `conne
 
 1. 在 Slack App 左侧进入 **Settings → Basic Information**。
 
-![打开 Slack App 的 Basic Information](../images/slack-basic-information.webp)
+![打开 Slack App 的 Basic Information](../../images/slack-basic-information.webp)
 
 2. 向下找到 **App-Level Tokens**，点击 **Generate Token and Scopes**。
 
-![在 App-Level Tokens 中生成 Token](../images/slack-generate-app-token.webp)
+![在 App-Level Tokens 中生成 Token](../../images/slack-generate-app-token.webp)
 
 3. 输入便于识别的 Token 名称，例如 `HermesSocket`。
 4. 点击 **Add Scope**。
 
-![为 App Token 添加 scope](../images/slack-add-connection-scope.webp)
+![为 App Token 添加 scope](../../images/slack-add-connection-scope.webp)
 
 5. 搜索并选择 `connections:write`。
 
-![选择 connections write scope](../images/slack-select-connections-write.webp)
+![选择 connections write scope](../../images/slack-select-connections-write.webp)
 
 6. 确认 scope 已添加，点击 **Generate**。
 
-![生成带 connections write 的 App Token](../images/slack-generate-token.webp)
+![生成带 connections write 的 App Token](../../images/slack-generate-token.webp)
 
 7. 复制生成的 `xapp-...` Token，并保存在安全位置。复制后点击 **Done**。
 
-![复制 Slack App Token](../images/slack-copy-app-token.webp)
+![复制 Slack App Token](../../images/slack-copy-app-token.webp)
 
 不要把 App Token 填到 Bot Token 字段，也不要使用 Client Secret 或 Signing Secret 代替它。
 
@@ -95,7 +95,7 @@ App Token 用于通过 Socket Mode 建立 WebSocket 连接，必须包含 `conne
 1. 在左侧进入 **Settings → Socket Mode**。
 2. 打开 **Enable Socket Mode**。
 
-![开启 Slack Socket Mode](../images/slack-enable-socket-mode.webp)
+![开启 Slack Socket Mode](../../images/slack-enable-socket-mode.webp)
 
 Socket Mode 通过 WebSocket 向 Hermes Agent 发送 Slack 事件。使用此接入方式时，不需要配置 Event Subscriptions 的 Request URL，也不需要配置 OAuth Redirect URL。
 
@@ -105,7 +105,7 @@ Socket Mode 通过 WebSocket 向 Hermes Agent 发送 Slack 事件。使用此接
 2. 向下找到 **Scopes → Bot Token Scopes**。
 3. 点击 **Add an OAuth Scope**。
 
-![在 OAuth Permissions 中添加 Bot scope](../images/slack-add-oauth-scope.webp)
+![在 OAuth Permissions 中添加 Bot scope](../../images/slack-add-oauth-scope.webp)
 
 按使用场景添加以下权限：
 
@@ -121,7 +121,7 @@ Socket Mode 通过 WebSocket 向 Hermes Agent 发送 Slack 事件。使用此接
 | `groups:read` | 私有频道可选 | 读取私有频道基本信息 |
 | `groups:history` | 私有频道可选 | 读取 Bot 已加入的私有频道消息 |
 
-![核对 Slack Bot Token Scopes](../images/slack-bot-token-scopes.webp)
+![核对 Slack Bot Token Scopes](../../images/slack-bot-token-scopes.webp)
 
 仅在需要使用私有频道时添加两个 `groups:*` scopes。Bot 仍需被邀请进入目标频道后才能接收频道消息。
 
@@ -145,7 +145,7 @@ Socket Mode 通过 WebSocket 向 Hermes Agent 发送 Slack 事件。使用此接
 5. 如果需要私信，再添加 `message.im`。
 6. 点击 **Save Changes**。
 
-![配置 Slack Bot 事件订阅](../images/slack-event-subscriptions.webp)
+![配置 Slack Bot 事件订阅](../../images/slack-event-subscriptions.webp)
 
 > 安装 App 后如果修改了 scopes 或事件，请回到 **OAuth & Permissions**，点击 **Reinstall to Workspace**。重新安装后，新权限才会生效。
 
@@ -154,16 +154,16 @@ Socket Mode 通过 WebSocket 向 Hermes Agent 发送 Slack 事件。使用此接
 1. 回到 **Features → OAuth & Permissions**。
 2. 点击 **Install to Workspace**。如果 App 已安装，点击 **Reinstall to Workspace**。
 
-![将 Slack App 安装到 workspace](../images/slack-install-workspace.webp)
+![将 Slack App 安装到 workspace](../../images/slack-install-workspace.webp)
 
 3. 检查请求的权限，点击 **Allow**。
 
-![授权 Slack App 请求的权限](../images/slack-authorize-workspace.webp)
+![授权 Slack App 请求的权限](../../images/slack-authorize-workspace.webp)
 
 4. Slack 返回 **OAuth & Permissions** 后，找到 **OAuth Tokens for Your Workspace**。
 5. 复制以 `xoxb-` 开头的 **Bot User OAuth Token**。
 
-![复制 Slack Bot User OAuth Token](../images/slack-copy-bot-token.webp)
+![复制 Slack Bot User OAuth Token](../../images/slack-copy-bot-token.webp)
 
 不要使用 Signing Secret、Client Secret、Verification Token 或以 `xoxp-` 开头的 User OAuth Token。LightVela 只需要一个 `xapp-...` App Token 和一个 `xoxb-...` Bot Token。
 
@@ -200,7 +200,7 @@ Bot 只有在加入频道后，才能接收该频道中的消息。
 2. 进入 **Messages** 标签。
 3. 发送一条简短消息，例如 `你好`。
 
-![在 Slack App Home 中测试私信](../images/slack-direct-message-test.webp)
+![在 Slack App Home 中测试私信](../../images/slack-direct-message-test.webp)
 
 ---
 

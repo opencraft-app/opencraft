@@ -4,7 +4,7 @@
 
 **Si tu objetivo es alojar un Asistente de IA personal que permanezca disponible y pertenezca a tu propio flujo de trabajo, LightVela es la opción más directa.** ChatGPT es mejor si buscas un espacio de trabajo de IA amplio y pulido para conversaciones, archivos, investigación, escritura y muchos tipos diferentes de tareas. Se superponen en lo que pueden ayudarte a hacer, pero no son realmente el mismo producto en el fondo.
 
-![LightVela comparado con ChatGPT para construir un asistente de IA personal](../images/lightvela-vs-chatgpt.webp)
+![LightVela comparado con ChatGPT para construir un asistente de IA personal](../../images/lightvela-vs-chatgpt.webp)
 
 ## A un vistazo
 

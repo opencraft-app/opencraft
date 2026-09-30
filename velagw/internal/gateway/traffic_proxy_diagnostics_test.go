@@ -41,7 +41,9 @@ func TestProxyFailureDiagnosticsDistinguishCanceledClient(t *testing.T) {
 
 func TestProxyDiagnosticsRecordResponseHeaderAndFirstByte(t *testing.T) {
 	var entry AccessLog
-	svc, key := diagnosticProxyService(t, roundTripFunc(func(*http.Request) (*http.Response, error) {
+	var upstreamTraceID string
+	svc, key := diagnosticProxyService(t, roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		upstreamTraceID = request.Header.Get("X-VelaGW-Trace-ID")
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
@@ -51,9 +53,11 @@ func TestProxyDiagnosticsRecordResponseHeaderAndFirstByte(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("hello"))
 	request.Header.Set("Authorization", "Bearer "+key)
+	request.Header.Set("X-VelaGW-Trace-ID", "caller-controlled")
 	svc.ProxyHTTP(httptest.NewRecorder(), request)
 
 	if entry.Status != http.StatusOK || entry.UpstreamStatus != http.StatusOK ||
+		len(entry.TraceID) != 16 || upstreamTraceID != entry.TraceID || upstreamTraceID == "caller-controlled" ||
 		entry.UpstreamRoundTripMS == nil || entry.UpstreamResponseHeaderMS == nil || entry.UpstreamFirstByteMS == nil ||
 		*entry.UpstreamFirstByteMS < *entry.UpstreamResponseHeaderMS {
 		t.Fatalf("unexpected response timing diagnostics: %+v", entry)

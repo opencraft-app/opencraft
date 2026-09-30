@@ -24,11 +24,11 @@
 >
 > <strong>설명:</strong> Alpha Analyst는 기업 보고서, 시장 뉴스, 포트폴리오 성과, 가치 평가 및 금융 위험 분석을 전문으로 합니다. 근거에 기반한 간결한 분석을 제공하고 사실과 가정을 명확하게 구분하며, 분석을 보장된 금융 조언으로 제시하지 않습니다.
 
-![아바타 선택기, 이름 필드, 설명 필드 및 만들기 버튼이 있는 LightVela Bot 생성 양식](../images/bots-switching-create.webp)
+![아바타 선택기, 이름 필드, 설명 필드 및 만들기 버튼이 있는 LightVela Bot 생성 양식](../../images/bots-switching-create.webp)
 
 생성 화면에는 건강 관리자, 시장 관찰자 또는 AI 학습 친구처럼 역할별 템플릿이 표시될 수도 있습니다.
 
-![건강 관리자, 시장 관찰자 및 AI 학습 친구가 포함된 LightVela Bot 생성 템플릿](../images/bots-switching-templates.webp)
+![건강 관리자, 시장 관찰자 및 AI 학습 친구가 포함된 LightVela Bot 생성 템플릿](../../images/bots-switching-templates.webp)
 
 내용을 입력한 뒤 생성을 확인하고 새 Bot의 프로비저닝이 완료될 때까지 기다립니다.
 
@@ -36,7 +36,7 @@
 
 생성 후 Bot에는 자체 설정 작업 공간이 열립니다. Agent 메인 페이지의 Bot 탭에서 Bot을 선택하고 메모리, Skills, 성격, 예약 작업 및 연결된 채널 등 해당 Bot에서 사용할 수 있는 설정을 관리할 수 있습니다.
 
-![My Bots 영역에 Bot 카드가 표시된 LightVela Agent 개요](../images/bots-switching-overview.webp)
+![My Bots 영역에 Bot 카드가 표시된 LightVela Agent 개요](../../images/bots-switching-overview.webp)
 
 생성 방식에 따라 새 Bot이 상속하는 내용이 결정됩니다.
 
@@ -53,7 +53,7 @@
 
 독립적인 Bot을 사용하면 다른 작업에 사용 중인 Bot을 바꾸지 않고도 다른 작업 방식을 시험할 수 있습니다.
 
-![선택할 수 있는 여러 Bot을 보여 주는 LightVela Bot 프로필 메뉴](../images/bots-switching-selector.webp)
+![선택할 수 있는 여러 Bot을 보여 주는 LightVela Bot 프로필 메뉴](../../images/bots-switching-selector.webp)
 
 그 결과 LightVela 작업 공간을 더 체계적으로 관리할 수 있습니다. Bot을 전환하려면 Agent 작업 공간 왼쪽 위의 활성 Bot 프로필을 클릭한 다음 메뉴에서 다른 Bot을 선택합니다.
 
@@ -68,7 +68,7 @@
 
 WeChat 및 WhatsApp과 같은 채널에서는 현재 설정에 따라 인스턴스 하나에 하나의 Bot만 연결할 수 있습니다. 다른 Bot이 이미 채널을 소유하고 있으면 LightVela는 알림을 표시하고 해당 채널을 소유한 Bot을 관리할 수 있는 방법을 제공합니다.
 
-![WeChat이 다른 Bot에 사용 중이며 하나의 Bot만 연결할 수 있음을 보여 주는 LightVela 알림](../images/bots-switching-wechat.webp)
+![WeChat이 다른 Bot에 사용 중이며 하나의 Bot만 연결할 수 있음을 보여 주는 LightVela 알림](../../images/bots-switching-wechat.webp)
 
 ## Bot 전환 또는 채널 연결 확인
 

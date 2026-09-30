@@ -2,6 +2,7 @@ export interface WorkbenchPresentationPolicy {
   readonly shellNavigation: boolean;
   readonly contextSidebar: boolean;
   readonly rightPanel: boolean;
+  readonly rightPanelDefaultSize: "standard" | "compact";
   readonly panelActions: "all" | readonly string[];
   readonly filePreviewOnly: boolean;
   readonly connectorLauncher: boolean;
@@ -13,6 +14,7 @@ export const FULL_WORKBENCH_PRESENTATION: WorkbenchPresentationPolicy =
     shellNavigation: true,
     contextSidebar: true,
     rightPanel: true,
+    rightPanelDefaultSize: "standard",
     panelActions: "all",
     filePreviewOnly: false,
     connectorLauncher: true,
@@ -25,6 +27,7 @@ export const EMBEDDED_CORE_CHAT_PRESENTATION: WorkbenchPresentationPolicy =
     shellNavigation: false,
     contextSidebar: false,
     rightPanel: true,
+    rightPanelDefaultSize: "compact",
     panelActions: Object.freeze(["vela.browser.new-tab"]),
     filePreviewOnly: true,
     connectorLauncher: false,

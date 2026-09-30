@@ -42,7 +42,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Disc
 
 1. 点击 Applications
 
-![](../images/discord-1-global.webp)
+![](../../images/discord-1-global.webp)
 
 2. 点击右上角的 New Applications
 
@@ -50,11 +50,11 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Disc
 
 4. 为你的应用程序添加一个机器人，并生成一个机器人令牌。该令牌将用于验证 Hermes Agent 与您的 Discord 服务器之间的连接。
 
-![](../images/discord-2-global.webp)
+![](../../images/discord-2-global.webp)
 
 5. 把 Token 复制入 Discord 模块里。
 
-![](../images/discord-3-global.webp)
+![](../../images/discord-3-global.webp)
 
 ### 4. 前往 Developer Portal 里的 Bot 页面
 
@@ -66,7 +66,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Disc
 
 - **Presence Intent**：可选，仅用于状态更新
 
-![](../images/discord-4-global.webp)
+![](../../images/discord-4-global.webp)
 
 勾选后，点击下方 Save Changes 保存。
 
@@ -74,7 +74,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Disc
 
 配置 Bot 权限：点击页面左侧 OAuth2，进入后选择 OAuth2 URL Generator。先配置 Scopes，建议按最小权限原则，优先勾选 `bot` 和 `applications.commands`。
 
-![](../images/discord-5-global.webp)
+![](../../images/discord-5-global.webp)
 
 继续向下滑动配置 Bot Permissions，勾选：
 
@@ -90,13 +90,13 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Disc
 
 - Add Reactions（可选）
 
-![](../images/discord-6-global.webp)
+![](../../images/discord-6-global.webp)
 
 ### 6. 复制并粘贴邀请链接
 
 复制生成的 Invite Link，在浏览器中打开，并将 Bot 邀请到你的 Discord 服务器（需要服务器管理员权限）。点击 Continue 完成授权后，即可邀请 Bot 加入服务器。
 
-![](../images/discord-7-global.webp)
+![](../../images/discord-7-global.webp)
 
 ### 7. 与 Discord 里新的机器人聊天
 
@@ -106,7 +106,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes Agent 接入 Disc
 你好
 ```
 
-![](../images/discord-chat-global.webp)
+![](../../images/discord-chat-global.webp)
 
 几秒内收到 Hermes Agent 回复。
 

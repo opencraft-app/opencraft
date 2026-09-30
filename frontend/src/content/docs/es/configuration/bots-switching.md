@@ -24,11 +24,11 @@ Por ejemplo, para crear un Bot de análisis financiero, puedes introducir:
 >
 > <strong>Descripción:</strong> Alpha Analyst se especializa en analizar informes de empresas, noticias de mercado, rendimiento de carteras, valoración y riesgos financieros. Produce análisis concisos y basados en evidencias, distingue claramente los hechos de las suposiciones y no presenta el análisis como asesoramiento financiero garantizado.
 
-![Formulario de creación de un Bot de LightVela con selector de avatar, campos de nombre y descripción y botón Crear](../images/bots-switching-create.webp)
+![Formulario de creación de un Bot de LightVela con selector de avatar, campos de nombre y descripción y botón Crear](../../images/bots-switching-create.webp)
 
 La pantalla de creación también puede mostrar plantillas para roles específicos, como Gestor de salud, Observador del mercado o Compañero de estudio de IA.
 
-![Plantillas de creación de Bots de LightVela con Gestor de salud, Observador del mercado y Compañero de estudio de IA](../images/bots-switching-templates.webp)
+![Plantillas de creación de Bots de LightVela con Gestor de salud, Observador del mercado y Compañero de estudio de IA](../../images/bots-switching-templates.webp)
 
 Después de introducir los datos, confirma la creación y espera a que el nuevo Bot termine de aprovisionarse.
 
@@ -36,7 +36,7 @@ Después de introducir los datos, confirma la creación y espera a que el nuevo 
 
 Después de crearlo, el Bot abre su propio espacio de configuración. Desde la pestaña del Bot en la página principal del Agent, puedes seleccionar ese Bot y administrar sus opciones disponibles, incluida la memoria, las Skills, la personalidad, las tareas programadas y los canales conectados.
 
-![Resumen del Agent de LightVela con una tarjeta de Bot en la sección My Bots](../images/bots-switching-overview.webp)
+![Resumen del Agent de LightVela con una tarjeta de Bot en la sección My Bots](../../images/bots-switching-overview.webp)
 
 El modo de creación determina qué hereda el nuevo Bot:
 
@@ -53,7 +53,7 @@ Un Bot puede encargarse de muchas tareas, pero su contexto se vuelve más difíc
 
 Los Bots independientes también facilitan probar otro estilo de trabajo sin cambiar el Bot que ya usas para otra tarea.
 
-![Menú del perfil de Bot de LightVela con varios Bots que se pueden seleccionar](../images/bots-switching-selector.webp)
+![Menú del perfil de Bot de LightVela con varios Bots que se pueden seleccionar](../../images/bots-switching-selector.webp)
 
 El resultado es un espacio de trabajo de LightVela más organizado. Para cambiar de Bot, haz clic en el perfil del Bot activo en la esquina superior izquierda del espacio de trabajo del Agent y elige otro Bot en el menú.
 
@@ -68,7 +68,7 @@ Puedes conectar varios Bots a los canales de mensajería compatibles. Las combin
 
 En canales como WeChat y WhatsApp, la configuración actual puede permitir solo un Bot por instancia. Si otro Bot ya posee un canal, LightVela muestra un aviso y proporciona una forma de administrar el Bot que lo posee.
 
-![Aviso de LightVela que muestra que WeChat está ocupado por otro Bot y que solo un Bot puede conectarse](../images/bots-switching-wechat.webp)
+![Aviso de LightVela que muestra que WeChat está ocupado por otro Bot y que solo un Bot puede conectarse](../../images/bots-switching-wechat.webp)
 
 ## Verificar un cambio de Bot o una conexión de canal
 

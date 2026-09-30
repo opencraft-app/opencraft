@@ -68,7 +68,14 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/agent-chat", title: "网页对话" },
       { slug: "configuration/model", title: "配置模型" },
       { slug: "configuration/multiple-models", title: "模型切换" },
+    ],
+  },
+  {
+    title: "成长",
+    items: [
       { slug: "configuration/personality", title: "人设" },
+      { slug: "configuration/memory", title: "记忆管理" },
+      { slug: "configuration/achievements", title: "成就" },
     ],
   },
   {
@@ -87,7 +94,6 @@ const CN_SIDEBAR: DocGroup[] = [
   {
     title: "自动化与资料",
     items: [
-      { slug: "configuration/memory", title: "记忆管理" },
       { slug: "configuration/automation", title: "定时任务" },
       { slug: "configuration/files", title: "云存储" },
     ],
@@ -189,6 +195,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
       { slug: "configuration/personality", title: "人设", titleEn: "Souls" },
+      { slug: "configuration/achievements", title: "成就", titleEn: "Achievements" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
       { slug: "configuration/automation", title: "定时任务", titleEn: "Scheduled Tasks" },
       { slug: "configuration/files", title: "云存储", titleEn: "Cloud Storage" },
@@ -376,6 +383,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/bots-switching": "configuration/bots-switching.md",
+  "configuration/achievements": "configuration/achievements.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   "configuration/workbench": "configuration/workbench.md",
   "use-cases/scheduled-task-agent": "use-cases/scheduled-task-agent.md",
@@ -432,6 +440,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/advanced-settings": "configuration/advanced-settings.md",
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/bots-switching": "configuration/bots-switching.md",
+  "configuration/achievements": "configuration/achievements.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   "configuration/workbench": "configuration/workbench.md",
   "configuration/agent-chat": "configuration/agent-chat.md",

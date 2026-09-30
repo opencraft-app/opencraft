@@ -35,7 +35,7 @@ Ini berbeda dari konteks yang disimpan Agent. Untuk mengelola apa yang diingat A
 2. Buka bagian **Cloud Storage** atau **Files** miliknya.
 3. Tunggu daftar file selesai dimuat sebelum memulai unggahan atau tindakan folder.
 
-![Daftar file Cloud Storage di konsol LightVela](../images/cloud-storage-overview-en.webp)
+![Daftar file Cloud Storage di konsol LightVela](../../images/cloud-storage-overview-en.webp)
 
 Jika daftar tidak dimuat, segarkan halaman lalu coba lagi. Jika masalahnya berlanjut, gunakan [Diagnostik](./diagnostics.md) untuk meninjau log Agent terbaru sebelum melakukan perubahan yang lebih besar.
 

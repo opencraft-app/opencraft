@@ -24,11 +24,11 @@
 >
 > <strong>説明：</strong> Alpha Analystは、企業レポート、市場ニュース、ポートフォリオのパフォーマンス、バリュエーション、金融リスクの分析を専門としています。根拠に基づく簡潔な分析を提供し、事実と仮定を明確に区別し、分析を保証された金融アドバイスとして提示しません。
 
-![アバター選択、名前、説明、作成ボタンを含むLightVelaのBot作成フォーム](../images/bots-switching-create.webp)
+![アバター選択、名前、説明、作成ボタンを含むLightVelaのBot作成フォーム](../../images/bots-switching-create.webp)
 
 作成画面には、ヘルスマネージャー、マーケットウォッチャー、AI学習バディなど、役割別のテンプレートが表示されることもあります。
 
-![ヘルスマネージャー、マーケットウォッチャー、AI学習バディを含むLightVelaのBot作成テンプレート](../images/bots-switching-templates.webp)
+![ヘルスマネージャー、マーケットウォッチャー、AI学習バディを含むLightVelaのBot作成テンプレート](../../images/bots-switching-templates.webp)
 
 内容を入力したら作成を確定し、新しいBotのプロビジョニングが完了するまで待ちます。
 
@@ -36,7 +36,7 @@
 
 作成後、Botには専用の設定ワークスペースが用意されます。AgentのメインページにあるBotタブからBotを選び、そのBotで利用できるメモリ、Skills、人格、スケジュールタスク、接続済みチャンネルなどを管理できます。
 
-![My BotsセクションにBotカードが表示されたLightVela Agentの概要](../images/bots-switching-overview.webp)
+![My BotsセクションにBotカードが表示されたLightVela Agentの概要](../../images/bots-switching-overview.webp)
 
 作成モードによって、新しいBotが継承する内容が決まります。
 
@@ -53,7 +53,7 @@
 
 独立したBotを使うと、別の作業で利用しているBotを変更せずに、異なる作業スタイルを試すこともできます。
 
-![複数のBotを選択できるLightVelaのBotプロフィールメニュー](../images/bots-switching-selector.webp)
+![複数のBotを選択できるLightVelaのBotプロフィールメニュー](../../images/bots-switching-selector.webp)
 
 これにより、LightVelaのワークスペースを整理しやすくなります。Botを切り替えるには、Agentワークスペース左上のアクティブなBotプロフィールをクリックし、メニューから別のBotを選択します。
 
@@ -68,7 +68,7 @@
 
 WeChatやWhatsAppなどのチャンネルでは、現在の設定により1つのインスタンスに接続できるBotが1つだけになる場合があります。別のBotがチャンネルを所有している場合、LightVelaは通知を表示し、そのチャンネルを所有するBotを管理する入口を提供します。
 
-![WeChatが別のBotに占有され、1つのBotだけが接続できることを示すLightVelaの通知](../images/bots-switching-wechat.webp)
+![WeChatが別のBotに占有され、1つのBotだけが接続できることを示すLightVelaの通知](../../images/bots-switching-wechat.webp)
 
 ## Botの切り替えとチャンネル接続を確認する
 

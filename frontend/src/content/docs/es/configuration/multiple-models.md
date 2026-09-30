@@ -30,7 +30,7 @@ El cambio de modelo le permite elegir qué modelo configurado utilizará su Herm
 3. Elija el modelo configurado que desea que utilice el Agent.
 4. Guarde o aplique el cambio, luego espere a que el Agent termine de actualizar su configuración activa.
 
-![El selector de proveedor de modelo en la consola de LightVela](../images/4-1-en.webp)
+![El selector de proveedor de modelo en la consola de LightVela](../../images/4-1-en.webp)
 
 Si está eligiendo un modelo por primera vez, utilice [Configurar modelos](./model.md) para agregar un proveedor compatible o un modelo personalizado antes de volver aquí.
 

@@ -50,7 +50,7 @@ Find the Telegram card and click "+ Connect".
 
 6. Copy the HTTP API token:
 
-![](../images/telegram-botfather-3-global.webp)
+![](../../images/telegram-botfather-3-global.webp)
 
 
 ### 4. Paste the HTTP API token into Telegram
@@ -67,7 +67,7 @@ Paste the HTTP API token into the token field.
 
 Click the link provided by BotFather and start interacting with the bot.
 
-![](../images/telegram-botfather-5-global.webp)
+![](../../images/telegram-botfather-5-global.webp)
 
 Open the chat with the bot and send a test message:
 

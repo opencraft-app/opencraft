@@ -4,7 +4,7 @@
 
 **Elige LightVela si quieres un Hermes Agent personal que permanezca en línea, recuerde tu configuración y viva en los canales de mensajería que ya usas.** Elige Manus si quieres entregar una tarea definida —investigación, trabajo en el navegador, un informe o un flujo de trabajo— y tener un Agent que trabaje hacia un entregable. Se superponen en la palabra "Agent", pero en el uso diario parten de lugares muy diferentes.
 
-![LightVela comparado con Manus para alojar y usar un Agent de IA](../images/lightvela-vs-manus.webp)
+![LightVela comparado con Manus para alojar y usar un Agent de IA](../../images/lightvela-vs-manus.webp)
 
 ## En un vistazo
 

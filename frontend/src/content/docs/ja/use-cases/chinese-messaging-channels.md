@@ -4,7 +4,7 @@
 
 **Hermes Agentをメッセージングプラットフォームに接続するのは一つの考え方に基づいています。チャネルはエントリーポイントであり、エージェントが機能するものです。1つのクラウドエージェントは接続されたすべてのチャネルで同じモデル、スキル、メモリを共有するため、プラットフォームごとに別々のボットは必要ありません。** このフローは4つのステップで構成されています:チャネルが自分の地域で利用可能であることを確認(グローバルリージョンはTelegram、WhatsApp、Discord、Slack、WeChat、QQ、WeCom、Larkをサポートしている;中国地域はWeChat、QQ、WeCom、Lark、DingTalkをサポートしています);プラットフォーム側での完全な承認による認証取得;コンソールで接続し、チャネルが接続済みと表示されていることを確認します。その後、テストメッセージを送信し、返信が届くか確認同じ会話からメッセージを送った場所で。認証情報は機密情報です - 長期的なコンテキストに書き込んだり、チャットに貼り付けたりしないでください。
 
-![LightVela メッセージングプラットフォーム接続](../images/use-case-messaging-platforms.webp)
+![LightVela メッセージングプラットフォーム接続](../../images/use-case-messaging-platforms.webp)
 
 ## 対象者
 
@@ -50,7 +50,7 @@ LightVela は、他のサポートされているチャネル用のセットア�
 
 ボットトークン、アプリケーションID、およびシークレットはパスワードのように扱ってください。それらをグループチャット、公共のドキュメント、または他の人へのメッセージに貼り付けないでください。認証情報が漏洩した場合は、Hermesを再接続する前に、それを発行したプラットフォームで回転させてください。
 
-![LightVela チャネル接続ページ](../images/use-case-messaging-connection.webp)
+![LightVela チャネル接続ページ](../../images/use-case-messaging-connection.webp)
 
 ### 3. 簡単な会話で接続を確認する
 
@@ -68,7 +68,7 @@ Hi Hermes. Please reply with the channel you received this from.
 
 で収集してください。[メモリ管理](../configuration/memory.md)でアクティブなモデルを確認して、Hermesに保持してほしい長期的なコンテキストを見直してください。もしあるチャンネルが別の対象者向けであったり、非常に異なる役割が必要な場合は、関連性のない期待を1つの会話履歴に混ぜるのではなく、ユースケースを分けて考えることを検討してください。
 
-![チャンネル間で共有される同じ Hermes Agent コンテキスト](../images/use-case-messaging-memory.webp)
+![チャンネル間で共有される同じ Hermes Agent コンテキスト](../../images/use-case-messaging-memory.webp)
 
 もし Discord がコミュニティ用に使用したいチャンネルであれば、続けて[LightVelaとDiscordを体験：あなたのAIエージェント Discord Bot があなたのチャンネルにサービスを提供します](./discord-community-agent.md)。
 

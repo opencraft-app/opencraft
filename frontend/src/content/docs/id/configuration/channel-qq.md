@@ -38,7 +38,7 @@ Masuk ke LightVela, klik "My Hermes" di kanan atas untuk membuka konsol, lalu te
 
 Klik dropdown lalu pilih "QQ". Pengantar kanal QQ akan muncul di bawahnya.
 
-![](../images/qq1.webp)
+![](../../images/qq1.webp)
 
 ### 3. Daftar di QQ Open Platform
 
@@ -50,13 +50,13 @@ Setelah memindai di aplikasi QQ ponsel dan memilih **Agree**, pendaftaran selesa
 
 Di halaman daftar bot pada QQ Open Platform, klik "Create Bot" untuk membuat bot QQ baru.
 
-![](../images/qq2.webp)
+![](../../images/qq2.webp)
 
 ### 5. Dapatkan AppID dan AppSecret
 
 Setelah bot dibuat, temukan **AppID** dan **AppSecret** di halaman tersebut. Klik tombol "Copy" di sebelah masing-masing lalu simpan ke file catatan lokal.
 
-![](../images/qq3.webp)
+![](../../images/qq3.webp)
 
 > ⚠️ **AppSecret adalah kredensial sensitif**
 >
@@ -78,7 +78,7 @@ Kembali ke kartu "Channel" di konsol, pilih "QQ" dari dropdown, lalu tempel kred
 2. **AppSecret**: tempel AppSecret yang sudah disalin
 
 
-![](../images/qq4.webp)
+![](../../images/qq4.webp)
 
 ### 7. Klik "Add and Apply"
 
@@ -94,7 +94,7 @@ Hello
 
 Anda akan menerima balasan Hermes Agent dalam beberapa detik.
 
-![](../images/qq5.webp)
+![](../../images/qq5.webp)
 
 > ✅ **Mention di grup QQ didukung**
 >

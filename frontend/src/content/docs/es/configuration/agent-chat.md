@@ -12,7 +12,7 @@ Abra la página "Chat" para interactuar con su Hermes Agent a través de una ven
 >
 > La guía de interfaz de Chat está actualmente principalmente en chino; la localización completa está en camino.
 
-![La página de Chat en la consola de LightVela](../images/chat-overview-en.webp)
+![La página de Chat en la consola de LightVela](../../images/chat-overview-en.webp)
 
 ---
 
@@ -20,7 +20,7 @@ Abra la página "Chat" para interactuar con su Hermes Agent a través de una ven
 
 El Hermes Agent puede iterar y evolucionar por sí mismo a medida que continúan las conversaciones. Consulte la página "Memoria" para obtener más información sobre su memoria.
 
-![](../images/agentchat-2-global-en.webp)
+![](../../images/agentchat-2-global-en.webp)
 
 ### Cómo funciona la memoria
 

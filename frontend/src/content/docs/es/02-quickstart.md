@@ -30,7 +30,7 @@ Este tutorial guía a través del proceso completo desde el inicio de sesión ha
 
 Visite [lightvela.ai](https://lightvela.ai) y haga clic en "Iniciar sesión" en la esquina superior derecha. En el cuadro de diálogo de inicio de sesión, seleccione Google o GitHub, acepte los acuerdos y complete la autorización.
 
-![](./images/2-1.webp)
+![](../images/2-1.webp)
 
 ---
 
@@ -66,7 +66,7 @@ Encuentre la cuenta de bot agregada en WeChat y envíe un mensaje de prueba:
 Hi
 ```
 
-![](./images/2-7.webp)
+![](../images/2-7.webp)
 
 Debería recibir una respuesta de Hermes en unos pocos segundos. Hermes ahora puede chatear a través de WeChat.
 

@@ -482,28 +482,35 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
             <small><ImageIcon size={12} /> {resource.data.size.toLocaleString()} bytes</small>
           </div>
         ) : resource.data?.text !== null && resource.data?.text !== undefined ? (
-          language === "markdown" && !showSource && !editing ? (
-            <div className="workspace-file-markdown">
-              <WebChatDocument
-                key={documentId}
-                documentId={documentId}
-                source={text}
-                hostId={snapshot.hostId}
-                cwd={workspacePathParent(selectedPath)}
-                theme={theme.resolvedTheme}
-                allowWideBlocks={false}
-                loadMediaSource={loadMediaSource}
-                onOpenResource={(target, decision) => {
-                  if (decision.kind === "file" || decision.kind === "workspace-file") {
-                    setSelectedPath(parseWorkspaceResource(target).path);
-                  } else if (decision.kind === "external" || decision.kind === "mail") {
-                    window.open(target, "_blank", "noopener,noreferrer");
-                  }
-                }}
-              />
-            </div>
-          ) : (
-            <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />Loading editor…</div>}>
+          <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />Loading editor…</div>}>
+            {language === "markdown" && !showSource && !editing ? (
+              <div className="workspace-file-markdown">
+                <WebChatDocument
+                  key={documentId}
+                  documentId={documentId}
+                  source={text}
+                  hostId={snapshot.hostId}
+                  cwd={workspacePathParent(selectedPath)}
+                  theme={theme.resolvedTheme}
+                  allowWideBlocks={false}
+                  loadMediaSource={loadMediaSource}
+                  onOpenResource={(target, decision) => {
+                    if (decision.kind === "file" || decision.kind === "workspace-file") {
+                      setSelectedPath(parseWorkspaceResource(target).path);
+                    } else if (decision.kind === "external" || decision.kind === "mail") {
+                      window.open(target, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                />
+              </div>
+            ) : previewOnly && language === "markdown" ? (
+              <pre
+                className="workspace-file-source"
+                tabIndex={0}
+                role="region"
+                aria-label={intl.formatMessage({ id: "panel.markdownSource", defaultMessage: "Source" })}
+              ><code>{text}</code></pre>
+            ) : (
               <WorkspaceCodeEditor
                 editable={editing}
                 hasDraft={dirty}
@@ -513,8 +520,8 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
                 onChange={updateDraft}
                 value={text}
               />
-            </Suspense>
-          )
+            )}
+          </Suspense>
         ) : (
           <div className="workspace-file-viewer__state"><AlertTriangle size={18} />{intl.formatMessage({ id: "panel.unsupportedFile", defaultMessage: "Preview unavailable for this file type or size." })}</div>
         )}

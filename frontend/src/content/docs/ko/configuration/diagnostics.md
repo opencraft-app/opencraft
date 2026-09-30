@@ -30,7 +30,7 @@
 3. 최근 로그의 시간 범위를 1, 3, 6, 12, 24시간 중에서 선택합니다.
 4. **Refresh**를 선택해 로그를 불러옵니다.
 
-![LightVela 콘솔의 진단](../images/diagnostics-overview-en.webp)
+![LightVela 콘솔의 진단](../../images/diagnostics-overview-en.webp)
 
 필요한 내용이 포함된 가장 짧은 기간부터 확인하세요. 로그 범위를 좁히면 오류와 해당 오류를 유발한 작업을 연결해 파악하기가 쉬워집니다.
 
@@ -65,7 +65,7 @@
 3. 완료되면 에이전트 콘솔을 다시 불러옵니다.
 4. Chat에서 간단한 작업을 테스트한 뒤 Cloud Storage와 평소 설정을 확인합니다.
 
-![에이전트 재설치 확인 대화 상자](../images/diagnostics-reinstall-en.webp)
+![에이전트 재설치 확인 대화 상자](../../images/diagnostics-reinstall-en.webp)
 
 유지 관리 중에는 에이전트를 잠시 사용할 수 없을 수 있습니다. 재설치가 진행 중일 때는 다른 복구 작업을 시작하지 마세요.
 

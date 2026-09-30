@@ -4,7 +4,7 @@
 
 **Choose LightVela if you want one personal Hermes Agent that you can configure around your routines, equip with reusable Skills, and keep working through Scheduled Tasks and the channels you choose.** Choose Grok Bot if you want persistent cloud-based AI teammates that can work across apps, use a cloud computer, and run delegated jobs in parallel. Both products go beyond a normal chatbot, but they organize that capability around different jobs.
 
-![LightVela compared with Grok Bot for running a personal AI agent](../images/lightvela-vs-grok-bot.webp)
+![LightVela compared with Grok Bot for running a personal AI agent](../../images/lightvela-vs-grok-bot.webp)
 
 ## At a glance
 

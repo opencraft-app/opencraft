@@ -23,7 +23,7 @@ OpenCraft 的弱网恢复分开拥有共享 AppHost 连接、各 Host 的协议�
 
 OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 的实际沙箱/审批组合投影为标准语义（只读、接受编辑、完全访问）；无法验证的原生/自定义 profile 仍以引擎档案呈现，不由 Renderer 猜测。`opencraft/permission-modes` v1 的标准档位使用稳定的 `opencraft:permission-mode:*` 提交 ID，由 Host 在提交时映射为当前引擎原生 profile；恢复后的原生生效 ID 经目录映射回产品档位。DSH 选定 preset 在 Thread 创建时应用并回读校验，Turn 与 Fork 入口也校验，避免首轮执行前权限状态不一致。完整 bb 式 Host ceiling、请求值与生效值的持久对账仍属后续设计边界，不得据此宣称已经生效。
 
-OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。清单漂移报错列出发生差异的字段、已记录与当前推导的 sourceRevision，区分源码内容漂移和 Git 历史差异；仍保持完整清单严格比较。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
+OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。文件漂移报错同时给出来源标识和源文件、副本的 SHA-256，便于定位 CI 工作目录差异；哈希信息不替代逐字节校验。`sourceRevision` 仅取实际同步的源码闭包及公共资源的最近提交，文档等无关 `frontend/src` 改动不推进清单版本。清单漂移报错列出发生差异的字段、已记录与当前推导的 sourceRevision，区分源码内容漂移和 Git 历史差异；仍保持完整清单严格比较。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
 
 OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区域打开官网 `/account/billing`（国内 `lightvela.com`、国际 `lightvela.ai`），不再使用旧的 `/account?tab=billing`；外部套餐页返回后仍刷新账户资料。此兼容不新增桌面总览、不改变实例创建权限或执行归属。
 
@@ -464,7 +464,7 @@ CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `regio
 ### 国内控制台 OpenCraft 隐藏发布
 
 - 国内站 `!isGlobal && showHiddenAgentTools` 决定新 Chat 启用；默认仍为 AgentChat，F12 执行 `show()` 切换，再次执行关闭。国际站不启用该候选。
-- 复用 `AgentChatMigrationSurface` 的 ready/show adoption 和失败回退。控制台通过内存函数借出当前 session；OpenCraft 的 account metadata 仅内存保存，不复制 token 到另一 localStorage key，不消费宿主 OAuth fragment，也不拥有登录/退出权限。
+- 复用 `AgentChatMigrationSurface` 的 ready/show adoption；启用新 Chat 后，失败保持原位提示与重试，不自动回退 AgentChat。控制台通过内存函数借出当前 session；OpenCraft 的 account metadata 仅内存保存，不复制 token 到另一 localStorage key，不消费宿主 OAuth fragment，也不拥有登录/退出权限。
 - 控制台 token 替换/清除发出无凭据 `lightclaw:auth-session-changed` 事件；跨标签通过 storage 事件识别。旧 accessor 立即失效，组件释放连接后新 owner 初始化。显式 Instance/Profile/account/region 绑定继续由 provider 校验。
 - Hermes 首次 Dashboard 启动脚本通过 TAT `PtyStart.Program/Args` 执行并以交互 shell 保活；长单行 `PtyInput` 会受 canonical PTY 长度限制。此路径需要真实部署中的 TAT 兼容验收，本地帧测试不代表线上联通。
 
@@ -483,6 +483,22 @@ CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `regio
 ### Markdown 文件预览补充
 内嵌右侧栏的只读文件预览支持 `.md` / `.markdown` 排版与源码切换，复用既有 Markdown renderer 和 Host 文件读取/Blob lease。该呈现能力不增加编辑、目录浏览或跨 Bot 资源权限；源码仍为唯一文件内容。
 
+国内控制台内嵌 Chat 的 Composer 编辑区域最小高度为 74px，新会话与已有会话一致；独立工作台保留原有尺寸。
+
+国内控制台内嵌 Chat 的新会话提示为“聊聊你的想法，或交给我一件事”，已有会话提示为“告诉我接下来想做什么”；两个消息ID分别覆盖七语言，不以修改任务限定后续输入。
+
 ## LightVela 积分扣减优先级
 
 NewAPI 在锁定有效订阅后优先选择名称为 `free-credit:*` 的赠送积分，其次选择套餐/付费积分；各组内部保持到期时间、订阅 ID 升序。仅改变候选优先级，不改变单请求原子资金来源、预扣/退款幂等、套餐 pacing 或 tail-grace：赠送余额不足以覆盖本次预扣时，仍优先使用可完整覆盖请求的其他订阅；赠送已耗尽或过期则回退。Pass 有效期与网关准入仍由服务端验证，底层赠送订阅的长期到期日不是独立于 Pass 的使用授权。
+
+国内内嵌 Chat 在宿主侧拒绝空 Profile，显示配置检查提示且不创建连接；底层 embedded host 保留身份校验。prepare/show 迟到结果不得显示或采纳已退休、启动失败的实例，启动失败后的重试创建新实例。只读文件预览的保存入口也拒绝写入，独立工作台保存沿用操作发起时的 Host/path/text 快照。
+
+文件保存统一通过 writeWorkspaceResource 执行只读检查及目标快照写入；组件与 helper 均有拒绝写入测试。OpenCraft CI guard 在闭包校验后执行锁定依赖安装和串行 test:embedded-ci，包含真实预览面板的写入保护测试。
+
+国内嵌入聊天的 Markdown 文件入口同时支持标准文件链接与回复中行内代码形式的明确文件路径（`.md` / `.markdown`）。点击后由既有资源策略交给当前 Bot 的只读右栏；展示文字不提前触发远端读取，不把路径当命令执行。
+
+国内嵌入聊天采用 compact 右栏初始宽度：既有默认宽度的 2/3，并继续遵守面板最小宽度和聊天内容保留宽度；拖拽调整由原 Shell owner 负责，独立工作台保持 standard 默认。
+
+国内桌面嵌入聊天由控制台占满侧栏右侧的内容列，去除设置页外围 gutter 和宽度上限；宿主通过 `--lightvela-console-header-height` 对齐 68px 导航表头。嵌入根将其投影到 toolbar token（缺省 46px），消息正文保留内部间距；移动端与旧聊天入口沿用原布局。
+
+只读 Markdown 文件预览的“源码”直接呈现转义后的原文，可选择复制和键盘滚动，不依赖按需加载的编辑器模块；可编辑工作台继续由 CodeMirror 持有草稿。

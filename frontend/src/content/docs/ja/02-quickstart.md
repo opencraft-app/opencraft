@@ -30,7 +30,7 @@
 
 訪問してください[lightvela.ai](https://lightvela.ai)そして右上隅の「ログイン」をクリックします。ログインダイアログでGoogleまたはGitHubを選択し、同意項目に同意して、認証を完了します。
 
-![](./images/2-1.webp)
+![](../images/2-1.webp)
 
 ---
 
@@ -66,7 +66,7 @@ Agentのサイドバーで**Channels**を開き、**WeChat**カードの**+ Conn
 Hi
 ```
 
-![](./images/2-7.webp)
+![](../images/2-7.webp)
 
 数秒以内にHermesから返信が届くはずです。Hermesは現在、WeChatを通じてチャットできます。
 

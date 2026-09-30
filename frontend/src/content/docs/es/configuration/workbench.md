@@ -4,7 +4,7 @@
 
 **My Workbench te permite usar un Agent de IA para crear, publicar y administrar sitios web estáticos en LightVela. Elige una plantilla inicial o describe un sitio desde cero, y trabaja con el Agent para perfeccionarlo y publicarlo.**
 
-![Resumen de My Workbench](../images/workbench-01.webp)
+![Resumen de My Workbench](../../images/workbench-01.webp)
 
 Después de la implementación, puedes consultar la dirección pública, comprobar el estado actual y administrar tus workbenches desde un solo lugar.
 
@@ -15,7 +15,7 @@ Aviso Beta: My Workbench es una función Beta, por lo que el flujo de generació
 My Workbench conecta el chat de tu Agent con un flujo administrado para sitios web estáticos.
 Puedes iniciar tu propio "worksite" de workbench o elegir una de las plantillas disponibles, interactuar con el Agent para perfeccionarlo y previsualizar tu sitio con un enlace dedicado.
 
-![Página de My Workbench](../images/workbench-02.webp)
+![Página de My Workbench](../../images/workbench-02.webp)
 
 LightVela administra el proceso de alojamiento, por lo que no necesitas configurar un servidor de alojamiento ni una cuenta en la nube por separado.
 
@@ -38,7 +38,7 @@ Puedes elegir una plantilla según el tipo de sitio web que quieras crear:
 
 Selecciona una plantilla para abrir el chat del Agent con una solicitud preparada.
 
-![Plantillas iniciales](../images/workbench-03.webp)
+![Plantillas iniciales](../../images/workbench-03.webp)
 
 También puedes seleccionar la opción en blanco y dejar que el Agent aclare los requisitos contigo paso a paso.
 
@@ -52,7 +52,7 @@ También puedes seleccionar la opción en blanco y dejar que el Agent aclare los
 
 El flujo actual usa React, TypeScript, Tailwind CSS y bibliotecas de interfaz comunes para generar sitios web.
 
-![Crear un Workbench con el chat del Agent](../images/workbench-04.webp)
+![Crear un Workbench con el chat del Agent](../../images/workbench-04.webp)
 
 También se indica al Agent que mantenga el contenido editable, evite datos empresariales ficticios predefinidos y use el almacenamiento local del navegador cuando sea apropiado para datos locales temporales.
 
@@ -70,7 +70,7 @@ Cada workbench tiene un estado de implementación para que puedas saber si está
 
 Cuando un workbench esté online y tenga una dirección pública, selecciona Visit para abrirlo.
 
-![Estado del Workbench y vista previa del sitio](../images/workbench-05.webp)
+![Estado del Workbench y vista previa del sitio](../../images/workbench-05.webp)
 
 Si el workbench todavía está en Building o Publishing, espera a que termine el proceso y actualiza la página si es necesario.
 

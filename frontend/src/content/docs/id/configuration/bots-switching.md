@@ -24,11 +24,11 @@ Sebagai contoh, untuk membuat Bot Analis Keuangan, Anda dapat memasukkan:
 >
 > <strong>Deskripsi:</strong> Alpha Analyst mengkhususkan diri dalam menganalisis laporan perusahaan, berita pasar, kinerja portofolio, valuasi, dan risiko keuangan. Bot ini menghasilkan analisis ringkas berbasis bukti, membedakan fakta dari asumsi dengan jelas, dan tidak menyajikan analisis sebagai nasihat keuangan yang terjamin.
 
-![Formulir pembuatan Bot LightVela dengan pemilih avatar, kolom nama, kolom deskripsi, dan tombol Buat](../images/bots-switching-create.webp)
+![Formulir pembuatan Bot LightVela dengan pemilih avatar, kolom nama, kolom deskripsi, dan tombol Buat](../../images/bots-switching-create.webp)
 
 Layar pembuatan juga dapat menampilkan template untuk peran tertentu, seperti Manajer Kesehatan, Pemantau Pasar, atau Teman Belajar AI.
 
-![Template pembuatan Bot LightVela, termasuk Manajer Kesehatan, Pemantau Pasar, dan Teman Belajar AI](../images/bots-switching-templates.webp)
+![Template pembuatan Bot LightVela, termasuk Manajer Kesehatan, Pemantau Pasar, dan Teman Belajar AI](../../images/bots-switching-templates.webp)
 
 Setelah mengisi detail, konfirmasikan pembuatan dan tunggu Bot baru selesai disediakan.
 
@@ -38,7 +38,7 @@ Setelah dibuat, Bot membuka ruang kerja pengaturannya sendiri.
 
 Dari tab Bot di halaman Agent utama, Anda dapat memilih Bot dan mengelola pengaturan yang tersedia untuk Bot tersebut, termasuk memori, Skill, Soul, tugas terjadwal, dan kanal yang terhubung.
 
-![Halaman ringkasan Agent LightVela yang menampilkan kartu Bot di bagian My Bots](../images/bots-switching-overview.webp)
+![Halaman ringkasan Agent LightVela yang menampilkan kartu Bot di bagian My Bots](../../images/bots-switching-overview.webp)
 
 Mode pembuatan menentukan apa yang diwarisi Bot baru:
 
@@ -59,7 +59,7 @@ Bot khusus untuk riset, perencanaan perjalanan, analisis keuangan, atau pemeriks
 
 Bot mandiri juga memudahkan Anda mencoba gaya kerja lain tanpa mengubah Bot yang sudah digunakan untuk tugas lain.
 
-![Menu profil Bot LightVela yang menampilkan beberapa Bot yang dapat dipilih](../images/bots-switching-selector.webp)
+![Menu profil Bot LightVela yang menampilkan beberapa Bot yang dapat dipilih](../../images/bots-switching-selector.webp)
 
 Hasilnya adalah ruang kerja LightVela yang lebih teratur.
 
@@ -80,7 +80,7 @@ Untuk kanal seperti WeChat dan WhatsApp, konfigurasi saat ini dapat mengizinkan 
 
 Jika kanal sudah dimiliki Bot lain, LightVela menampilkan pemberitahuan dan menyediakan cara untuk mengelola Bot pemilik kanal tersebut.
 
-![Pemberitahuan LightVela bahwa WeChat sudah digunakan Bot lain dan hanya satu Bot yang dapat terhubung](../images/bots-switching-wechat.webp)
+![Pemberitahuan LightVela bahwa WeChat sudah digunakan Bot lain dan hanya satu Bot yang dapat terhubung](../../images/bots-switching-wechat.webp)
 
 ## Memverifikasi peralihan Bot atau koneksi kanal
 

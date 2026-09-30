@@ -6,7 +6,7 @@
 
 这个模式适合定期比赛、Raid、学习小组、社群发布和其他需要在多个对话中反复传达相同信息的活动。
 
-![为 Discord 活动社群提供支持的 AI Agent](../images/use-case-discord-event-agent.webp)
+![为 Discord 活动社群提供支持的 AI Agent](../../images/use-case-discord-event-agent.webp)
 
 ## 适合谁以及预期结果
 
@@ -63,12 +63,12 @@ AI Agent 可以让重复回答更容易，但无法让过时的日程变得正�
 
 4. 使用最小权限邀请 Bot：View Channels、Send Messages 和 Read Message History。
 
-![Discord Bot 邀请和服务器选择](../images/discord-event-bot-invite.webp)
+![Discord Bot 邀请和服务器选择](../../images/discord-event-bot-invite.webp)
 
 第一次上线时，选择一个活动频道或一个受支持的 Discord 会话进行测试，再逐步扩大使用范围。
 这样更容易检查回答、权限行为和通知投递情况。
 
-![Discord Bot 权限配置](../images/discord-5-global.webp)
+![Discord Bot 权限配置](../../images/discord-5-global.webp)
 
 ### 3. 测试参与者真正会问的问题
 
@@ -122,7 +122,7 @@ LightVela 支持单次执行、固定星期和固定间隔，也支持可选的�
 你可以选择固定星期、固定间隔或单次执行。
 之后也可以暂停、编辑或删除定时任务。
 
-![配置 Discord 活动定时任务](../images/automation-2-global.webp)
+![配置 Discord 活动定时任务](../../images/automation-2-global.webp)
 
 ```text
 在比赛前一天提醒活动频道，包含开始时间、时区、报名截止时间和规则频道。
@@ -132,7 +132,7 @@ LightVela 支持单次执行、固定星期和固定间隔，也支持可选的�
 
 在这个示例中，Bot 正在运行“Game tournament reminder”定时任务。
 
-![Discord Bot 发送比赛提醒](../images/discord-event-reminder.webp)
+![Discord Bot 发送比赛提醒](../../images/discord-event-reminder.webp)
 
 也可以为组织者安排活动后总结：
 

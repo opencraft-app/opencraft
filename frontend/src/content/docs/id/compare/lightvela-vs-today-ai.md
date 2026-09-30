@@ -8,7 +8,7 @@ Model produk LightVela yang terdokumentasi berpusat pada Hermes Agent berbasis c
 LightVela adalah pilihan yang lebih mudah dipahami jika Anda membutuhkan hosting Agent persisten dan kontrol yang jelas.
 Today.AI mewakili visi yang lebih eksperimental: asisten yang membangun gambaran hidup Anda dan bertindak sebelum Anda bertanya.
 
-![Perbandingan LightVela dan Today.AI untuk asisten AI pribadi yang selalu tersedia](../images/lightvela-vs-today-ai.webp)
+![Perbandingan LightVela dan Today.AI untuk asisten AI pribadi yang selalu tersedia](../../images/lightvela-vs-today-ai.webp)
 
 ## Perbandingan singkat
 

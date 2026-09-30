@@ -4,7 +4,7 @@
 
 **개인 AI 비서를 만들 때는 모든 기능을 한꺼번에 자동화하지 마세요. 먼저 평소 사용하는 채팅 앱에서 클라우드 Hermes Agent에 접속할 수 있게 한 뒤 메모리, 스킬, 예약 작업을 차례로 추가하는 것이 좋습니다.** 다섯 구성 요소는 각각 다른 문제를 해결합니다. 모델은 추론 품질을, 채널은 에이전트에 접속할 위치를 결정합니다. 메모리는 사용자의 작업 방식을 계속 기억하게 하고, 스킬은 재사용 가능한 절차를 제공하며, 예약 작업은 사용자가 자리를 비운 동안 합의한 일을 실행합니다. 첫 주에는 모델 하나를 설정하고 채널 하나를 연결한 뒤 메모리가 세션을 넘어 유지되는지만 확인하세요. 이 경로가 안정된 다음 스킬과 예약 작업을 추가하면 문제가 생겼을 때 원인이 어느 레이어에 있는지 쉽게 찾을 수 있습니다.
 
-![채널 전반에 걸쳐 LightVela를 갖춘 개인 AI 비서](../images/use-case-personal-ai-assistant.webp)
+![채널 전반에 걸쳐 LightVela를 갖춘 개인 AI 비서](../../images/use-case-personal-ai-assistant.webp)
 
 ## 대상 독자
 
@@ -28,7 +28,7 @@
 
 메시징 채널 하나를 연결한 뒤, 평소 하루 일정을 정리하는 곳에서 첫 메시지를 보내세요. 채널은 단순한 전달 수단이 아니라 비서에게 자연스럽게 다시 돌아오게 만드는 사용 습관입니다. [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack), [WeChat](https://lightvela.ai/docs/configuration/channel-wechat) 설정 가이드를 참고하세요.
 
-![LightVela 콘솔의 채널 페이지](../images/personal-ai-assistant-channel.webp)
+![LightVela 콘솔의 채널 페이지](../../images/personal-ai-assistant-channel.webp)
 
 광범위한 요청보다는 명확한 소개로 시작하세요. 예를 들면:
 
@@ -54,7 +54,7 @@ with meetings, deadlines, and the three most important next actions.
 
 Hermes는 별도 스킬 없이도 대화할 수 있습니다. 정보 검색, 할 일 목록 정리, 반복 보고서 준비처럼 필요한 작업을 구체적으로 설명할 수 있을 때 스킬을 추가하세요. 기능의 범위가 분명해져 비서의 동작을 이해하고 신뢰하기 쉬워집니다.
 
-![LightVela 콘솔의 스킬 페이지](../images/personal-ai-assistant-skills.webp)
+![LightVela 콘솔의 스킬 페이지](../../images/personal-ai-assistant-skills.webp)
 
 ClawHub에서 적합한 옵션을 찾아본 후 [스킬 구성](https://lightvela.ai/docs/configuration/skill)을 사용하여 설치하세요. 무엇이든 설치하기 전에 설명을 읽고 신뢰할 수 있는 소스를 선택하세요.
 
@@ -71,7 +71,7 @@ Start with deadlines and meetings, then suggest three focused next actions.
 
 [예약 작업](https://lightvela.ai/docs/configuration/automation)에서 일정 및 알림 채널을 설정하세요. 첫 번째 예약 작업을 작게 유지하십시오. 몇 가지 실제 결과를 본 후에 지침을 구체화할 수 있습니다.
 
-![LightVela 콘솔의 예약 작업 페이지](../images/personal-ai-assistant-automations.webp)
+![LightVela 콘솔의 예약 작업 페이지](../../images/personal-ai-assistant-automations.webp)
 
 ## FAQ
 

@@ -4,7 +4,7 @@
 
 **自分の習慣に合わせて設定し、再利用可能なスキルやスケジュールタスクを追加し、選んだチャネルから使い続けられる1体のHermes Agentが欲しいなら、LightVelaが適しています。** 複数のアプリを横断し、クラウドコンピューター上で並列に委任作業を進める永続的なAIチームメイトが必要なら、Grok Botが適しています。どちらも通常のチャットボットを超えていますが、中心となる仕事は異なります。
 
-![個人用AIエージェントを動かすためのLightVelaとGrok Botの比較](../images/lightvela-vs-grok-bot.webp)
+![個人用AIエージェントを動かすためのLightVelaとGrok Botの比較](../../images/lightvela-vs-grok-bot.webp)
 
 ## ひと目で比較
 

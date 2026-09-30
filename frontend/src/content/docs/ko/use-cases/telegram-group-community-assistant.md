@@ -5,7 +5,7 @@
 **LightVela에서 Telegram 그룹 메시지를 사용하려면 BotFather에서 Bot의 Group Privacy를 끄고, Bot을 그룹에 추가한 뒤 `@bot_username`을 멘션하여 대화를 시작해야 합니다.**
 이 가이드는 현재 확인된 설정만 다룹니다. 새 구성원 참여 이벤트나 멘션 없는 자동 응답을 지원 기능으로 가정하지 않으며, 같은 Hermes Agent를 그룹 Q&A·요약·알림에 활용하는 방법을 설명합니다.
 
-![그룹 Q&A, 요약 및 알림을 위한 Telegram 그룹 AI 커뮤니티 도우미](../images/use-case-08-telegram-group-community-assistant.webp)
+![그룹 Q&A, 요약 및 알림을 위한 Telegram 그룹 AI 커뮤니티 도우미](../../images/use-case-08-telegram-group-community-assistant.webp)
 
 ## 시작하기 전에
 

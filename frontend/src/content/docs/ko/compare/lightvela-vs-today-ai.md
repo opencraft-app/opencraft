@@ -6,7 +6,7 @@
 
 LightVela의 문서화된 제품 모델은 클라우드에서 호스팅되는 Hermes Agent를 중심으로 합니다. Today.AI의 공개 포지셔닝은 개인 컨텍스트, 선제적인 지원, 기기 간 경험을 강조합니다. LightVela는 지속형 에이전트 호스팅과 명시적인 제어가 더 이해하기 쉬우며, Today.AI는 사용자의 삶을 계속 이해하고 요청하기 전에 행동하는 실험적인 비전을 제시합니다.
 
-![상시 개인 AI 비서를 위한 LightVela와 Today.AI 비교](../images/lightvela-vs-today-ai.webp)
+![상시 개인 AI 비서를 위한 LightVela와 Today.AI 비교](../../images/lightvela-vs-today-ai.webp)
 
 ## 한눈에 비교하기
 

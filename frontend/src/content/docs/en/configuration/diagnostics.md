@@ -30,7 +30,7 @@ Diagnostics helps you investigate an Agent that is not behaving as expected. Fro
 3. Select a time range for recent logs: 1, 3, 6, 12, or 24 hours.
 4. Select **Refresh** to load the logs.
 
-![Diagnostics in the LightVela console](../images/diagnostics-overview-en.webp)
+![Diagnostics in the LightVela console](../../images/diagnostics-overview-en.webp)
 
 Start with the shortest useful period. A narrower log window makes it easier to connect an error with the action that triggered it.
 
@@ -65,7 +65,7 @@ For an issue that continues after reviewing logs and model settings, Diagnostics
 3. When it completes, reload the Agent console.
 4. Test a simple task in Chat, then check Cloud Storage and your usual setup.
 
-![The Agent reinstall confirmation dialog](../images/diagnostics-reinstall-en.webp)
+![The Agent reinstall confirmation dialog](../../images/diagnostics-reinstall-en.webp)
 
 An Agent can be briefly unavailable during maintenance. Avoid starting another repair action while the reinstall is still in progress.
 

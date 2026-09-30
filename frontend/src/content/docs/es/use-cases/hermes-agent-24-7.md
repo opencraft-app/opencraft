@@ -4,7 +4,7 @@
 
 **Un Hermes Agent permanece disponible las 24 horas porque se ejecuta en una instancia en la nube en lugar de en su máquina local. Una vez que se configura un modelo y al menos un canal, utiliza la misma memoria y comportamiento sin importar desde qué punto de entrada se le envíe un mensaje.** Tres cosas deben estar en lugar para una disponibilidad real a largo plazo: un modelo configurado con cuota de cuenta utilizable (los créditos de prueba agotados causan silenciosamente no-respuestas), al menos un canal que aparezca conectado y tareas programadas para cubrir el trabajo programado mientras usted está ausente. No juzgue la disponibilidad solo desde el estado del consola — envíe un mensaje real a través de un canal real. Cuando algo se rompe, vea y exporte los registros recientes en Diagnostics (seleccionable en rangos de 1, 3, 6, 12 o 24 horas) para localizar la causa.
 
-![Un Hermes Agent en línea en la consola LightVela](../images/use-case-hermes-online.webp)
+![Un Hermes Agent en línea en la consola LightVela](../../images/use-case-hermes-online.webp)
 
 ## Para quién es esto
 
@@ -30,7 +30,7 @@ Elija un canal como su método predeterminado de contacto con Hermes. Para uso p
 
 Las instrucciones detalladas están disponibles para [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md) y [WeChat](../configuration/channel-wechat.md).
 
-![Un Hermes Agent en ejecución con canales conectados](../images/use-case-hermes-online-channel.webp)
+![Un Hermes Agent en ejecución con canales conectados](../../images/use-case-hermes-online-channel.webp)
 
 ### 2. Mantener la configuración funcional simple y visible
 
@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 Cree el horario en [Tareas programadas](../configuration/automation.md), seleccione un canal de notificación si es apropiado y verifique los primeros ejecuciones. Si el resultado es demasiado amplio, haga la instrucción más específica en lugar de agregar otra tarea programada inmediatamente.
 
-![Ejecuciones recientes de tarea programada desde un Hermes Agent](../images/use-case-hermes-online-automation.webp)
+![Ejecuciones recientes de tarea programada desde un Hermes Agent](../../images/use-case-hermes-online-automation.webp)
 
 ## Preguntas frecuentes
 

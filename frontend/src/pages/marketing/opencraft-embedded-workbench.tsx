@@ -201,10 +201,6 @@ export function AgentChatMigrationSurface({
 
   useEffect(() => {
     if (!started || !enabled) return;
-    if (!profileId.trim()) {
-      setStartupFailed(true);
-      return;
-    }
     const mount = mountRef.current;
     const scriptUrl = embeddedWorkbenchScriptUrl();
     if (mount === null) return;
@@ -212,6 +208,10 @@ export function AgentChatMigrationSurface({
     setStartupFailed(false);
     setRetrying(false);
     setConnection({ phase: "connecting", failureCode: null });
+    if (!profileId.trim()) {
+      setConnection({ phase: "error", failureCode: "intervention:configuration-required" });
+      return;
+    }
     if (scriptUrl === null) {
       setStartupFailed(true);
       return;
@@ -330,10 +330,10 @@ export function AgentChatMigrationSurface({
       element.addEventListener("opencraft-connection", handleConnection);
       element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken });
       mount.append(element);
-      await element.prepare();
+      await candidate.prepare();
       if (retired || failed) return;
-      if (activeRef.current) await element.show();
-      else element.hide();
+      if (activeRef.current) await candidate.show();
+      else candidate.hide();
       if (!retired && !failed) {
         adopted = true;
         onOwnerChangeRef.current?.("opencraft");
@@ -396,7 +396,7 @@ export function AgentChatMigrationSurface({
       aria-hidden={!active || undefined}
       className={cn(
         "h-[clamp(516px,calc(100vh-220px),960px)] min-h-0 overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full",
-        enabled && "rounded-none border-transparent",
+        enabled && "rounded-none border-0",
         active ? "relative" : "invisible pointer-events-none absolute inset-0",
       )}
       inert={active ? undefined : true}
@@ -418,8 +418,7 @@ export function AgentChatMigrationSurface({
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
           <span role="status">
-            {!profileId.trim() ? t("当前 AI 伙伴不可用，请检查运行状态")
-              : startupFailed ? t("会话加载失败，请重试")
+            {startupFailed ? t("会话加载失败，请重试")
               : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
               : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
               : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴配置后重试")

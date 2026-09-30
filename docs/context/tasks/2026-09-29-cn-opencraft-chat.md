@@ -167,6 +167,30 @@
 - context_receipt：frontend/AGENTS.md、现有 opencraft/AGENTS.md /维护Skill、karpathy-guidelines、devops-pipeline Skill（只读日志，无启动/取消流水线）；复用交付路由上下文。
 - 将真实 Shadow DOM 回归迁入 OpenCraft，使用自身 jsdom devDependency 与 node:test，不修改生产代码、类型检查基线或 CI 复制边界。计划运行迁移后测试与真实隔离 frontend guard。
 
+## embedded_composer_height_followup
+- 用户要求输入框稍增高：内嵌编辑区域50→74px，复用统一Composer；无协议、草稿及提交行为变化。
+- Router无匹配；初始路径查询未命中后rg --files定位embedded-chat/embedded-workbench-element.tsx。context_receipt沿用karpathy、OpenCraft AGENTS，复读维护Skill/verification、chat-ui-architecture、design/invariants和frontend adjacency，检查build-release-artifacts测试邻居。
+- 计划Web类型、嵌入构建和实际预览尺寸检查；5174当前无监听，按local-preview Skill恢复国内预览。
+
+## companion_followup_placeholder
+- 已有会话占位提示复用chat.companionPlaceholder及控制台七语言翻译，消除“修改要求”的场景限制；独立版保留原默认。
+- context_receipt补读site-environment-routing domain；沿用OpenCraft维护/karpathy规则与chat-ui架构。精确检索定位App主Composer的suppliedPlaceholder槽位，检查embedded-companion-messages翻译邻居。Web类型、i18n、嵌入构建及浏览器占位提示验收。
+
+- 用户随后要求区分开聊前后：已有会话使用独立chat.companionFollowupPlaceholder“继续聊聊，或告诉我接下来想做什么”，新会话保持原文案；全部七语言覆盖。沿用同一locale路由和context_receipt。
+
+- 文案精简：用户要求去掉“继续聊聊”，已有会话最终采用“告诉我接下来想做什么”；其他语言同步去掉开头继续聊天的短语。
+
+## CR !4851 repair (2026-09-30)
+- 合并 origin/master 948c3a897 的九处冲突，保留主干代码编辑器、保存快照、测试清单与内嵌 Markdown/只读功能的并集；锁文件从已合并 manifest 重新生成。
+- 迁移测试明确固定国内 locale，CN/global 各 10 项通过。补充 prepare/show 迟到、启动 error 后重试重建、旧 Bot 事件及空 Profile 的行为覆盖；异步延续引用该次 candidate，退休/失败闸门显式阻止 show/adoption。
+- 真实文件面板在 Query mutation 边界测试：预览即使直接调用保存也拒绝，零 write/invalidate；可编辑面板按捕获目标写入。测试注册到 workbench 聚合。
+- 临时移除 prepare 闸门、adoption 闸门、只读保存保护分别触发回归测试失败，恢复后通过。
+- Web typecheck、boundaries、embedded release build、frontend check（0 new）、workbench 297/297、embedded/resource 17/17通过。修正两条因右栏多语言化失效的英文源码断言；本机 node-pty spawn-helper 缺执行位，恢复依赖文件执行位后终端测试通过，不提交 node_modules。
+- npm test 在 shared-control-standards 的 focus-indicator 断言停止（14/15），对应样式块和测试与 master 一致，不宣称全量绿。当时 CI OpenCraft guard 仅做闭包校验；后续远端并发提交新增 test:embedded-ci，见下方合并记录。
+- 本轮文案“告诉我接下来想做什么”及高度 74px 已在 4aed435a6；随修复更新原 MR，不合并或发布。
+
+- 最终隔离 frontend guard 全部通过：frozen install、check/i18n、发布脚本测试、CN/global 静态构建；仅本机 Vitest API host 显式改为 127.0.0.1，源码与构建配置未改。文档和 staged impact 通过，catalog.jsonl 原有变动排除。
+
 ## mr_4851_cr_followup_2026_09_30
 - 目标：解决 !4851 与最新 master 的 9 处冲突，保留两侧行为，并补齐只读写入、迟到启动结果、缺失 Profile 与 OpenCraft CI 验证。
 - 非目标：合并 MR、发布生产、真实 Bot 发消息或写实例文件。
@@ -174,3 +198,36 @@
 - 决策：文件面板的保存参数使用 master 的 Host/path/key/text 快照，同时在执行写入前检查 `previewOnly`；Markdown 排版预览与 CodeMirror 源码/编辑器共存。测试注册取两侧并集。嵌入启动要求非空 Profile；迟到 `prepare` 和 `show` 分别断言不会调用新 owner。
 - CI：OpenCraft guard 在生成闭包检查后执行锁定依赖安装及 `test:embedded-ci`，覆盖本 MR 的 12 个 OpenCraft 测试文件；测试文件串行执行，避免并发下偶发失败。frontend 区域测试固定 CN region，使国内文案断言稳定。
 - 验证：OpenCraft guard 冷安装与 12 文件 142/142、frontend 嵌入组件 8/8、Web typecheck、OpenCraft i18n、frontend check（166 current /171 baseline /0 new）、嵌入 release build、7 个 CI guard 单测、documentation 与 docs-impact 通过。合并提交 `2a65b0388` 后官方重建的 130 文件生成闭包通过；远端 CI 仍需复核。
+
+- 推送时远端出现并发 CR 修复 6d60a595c，普通 push 拒绝后合入该提交。保留远端 CI 冷安装与串行 embedded suite、writeWorkspaceResource 边界与测试，同时保留本轮真实面板 mutation 回归、候选实例生命周期闸门、七语言 followup 和 74px 高度。
+
+- 并发提交合入后，frontend CN/global 各12/12、frontend check 0 new、embedded-ci 143/143、Web types和embedded build通过；保留两侧验证记录。
+
+## Markdown 点击入口补齐
+- 用户截图明确路径 `/home/agentuser/顺德攻略.md` 为 inline-code，原 prose renderer 只输出 code，没有打开动作。补齐明确 Markdown 路径的点击入口，复用原资源策略和 Host 读取，不改变普通代码/命令或嵌套链接。
+- 验证：真实文档渲染点击与面板状态回归、Web/renderer types、内嵌构建、本地浏览器模拟 Host 验证；真实 Hermes 当前连接失败单独报告。
+
+## 右栏默认宽度调整
+- 用户要求国内控制台展开右栏时缩小约1/3。presentation policy 声明 compact，Shell 使用几何模型默认宽度2/3并钳制到原上下限，保留手动拖拽。
+- router `opencraft right panel width` 无匹配；bounded exact search 命中 AppShell 与 workbench-panels model，验证邻居为 workbench-panels.test.ts。沿用已读取的维护技能、AGENTS 和 frontend-runtime-openspec-i18n 邻接卡。
+
+## 连续分隔线修复
+- 目标：嵌入聊天的横向表头线连接左侧栏，右栏竖线从顶部到底部连续；不改其他设置页/国际旧聊天及窄屏布局。
+- context_receipt：docs/context/project/services/frontend.md、frontend/AGENTS.md、opencraft/AGENTS.md、frontend-runtime-openspec-i18n 邻接卡、frontend/vitest.config.ts 与嵌入相邻测试。
+- 有界目录搜索未命中，扩展文件名检索后定位 frontend/src/pages/marketing 和 styles.css；根因是设置页 top68/margin-top-24、gap24 和 max-width1280。
+- 设计依照当前 embedded Shell 单一 toolbar token，不增加装饰性补线。验证真实桌面分隔线、窄屏不溢出，相关检查及构建。
+
+## Markdown 源码切换保护
+- 用户报告源码切换导致整个嵌入根显示启动失败；新标签实际切换成功，旧页日志未保留具体异常，不将猜测视为已证实根因。源码检查显示 React.lazy 编辑器错误会冒泡到嵌入根。
+- 路由查询 opencraft Markdown 源码预览切换崩溃无匹配；按文件名定位 workspace-resource-panel/code-editor 并检查既有 readonly 测试邻居。复用此前已读取的 opencraft/AGENTS 与维护验证清单。
+- 只读 Markdown 的源码直接呈现原文，保持原文件加载和多Bot隔离契约；回归测试令编辑器抛错，实际切换预览/源码仍成功。
+
+## chrome_stale_source_chunk_2026_09_30
+- 用户反馈同一Chrome标签页仍报错，本轮直接读取原标签页1353670490日志，捕获 TypeError: Failed to fetch dynamically imported module，路径为 /__opencraft/assets/a-DCf_TcJE.js；本地5174该路径实测404。
+- 前次新标签页验证没有更新用户原标签页；原标签页仍引用已被重新构建移除的旧hash资源。本轮不新增产品代码，刷新原报错标签页后打开同一国庆抒怀.md并点击源码，显示新只读原文，聊天与输入框保留。截图 /tmp/lightvela-chrome-source-recovered.png。
+- 修正前次根因未确认记录：本次已有具体旧动态模块加载失败证据。未提交/推送/发布。
+
+## mr4868_conflict_repair_2026_09_30
+- 用户报告MR合并冲突，当前source 892919a99，target da1f500cb；有界merge-tree与实际合并均确认仅UPSTREAM.json sourceRevision冲突。
+- context_receipt: docs/context/project/upstream-subtrees.md、opencraft/AGENTS.md、frontend/AGENTS.md、opencraft/MONO2_MIGRATION.md、docs/context/project/adjacency/frontend-runtime-openspec-i18n.md；检查同步脚本和opencraft_guard生成物邻居。
+- 将最新master合入功能分支，以target清单作临时基线，官方sync/check重新生成并校验；保留双方源码，既有catalog改动独立暂存保护。MR本身不合入、不发布。

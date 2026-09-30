@@ -520,7 +520,7 @@ describe("UserAvatarMenu", () => {
     window.removeEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
   });
 
-  it("keeps the product feedback menu item hidden until show() reveals it", () => {
+  it("keeps one domestic product feedback entry before and after show()", () => {
     mockIsGlobal = false;
     useSession.mockReturnValue({
       session: {
@@ -536,16 +536,22 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu />);
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
-    expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "产品反馈" })).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
 
     act(() => {
       (window as Window & { show?: () => boolean }).show?.();
     });
 
     const feedbackLink = screen.getByRole("link", { name: "产品反馈" });
-    expect(feedbackLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
-    expect(feedbackLink).toHaveAttribute("target", "_blank");
-    expect(feedbackLink).toHaveAttribute("rel", "noopener noreferrer");
+    expect(feedbackLink).toHaveAttribute("href", "/support");
+    expect(feedbackLink).not.toHaveAttribute("target");
+    expect(document.querySelectorAll('a[href="/support"]')).toHaveLength(1);
+    expect(document.querySelector('a[href*="wj.qq.com"]')).toBeNull();
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+    expect(screen.getAllByRole("link", { name: "产品反馈" })).toHaveLength(1);
   });
 
   it("removes the product feedback menu item on the international site", () => {
@@ -568,6 +574,7 @@ describe("UserAvatarMenu", () => {
     });
 
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "用户反馈" })).toHaveAttribute("href", "/support");
   });
 
   it("keeps the companion and account entries first while removing My Workbench", () => {

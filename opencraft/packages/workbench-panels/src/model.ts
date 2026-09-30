@@ -403,6 +403,7 @@ export function getRightPanelWidthBounds(
 export function computeRightPanelDefaultWidth(input: {
   readonly mainContentWidth: number;
   readonly shellHeight: number;
+  readonly size?: "standard" | "compact";
   readonly mainContentReserve?: number;
 }) {
   const bounds = getRightPanelWidthBounds(input.mainContentWidth, "regular", input.mainContentReserve);
@@ -417,7 +418,8 @@ export function computeRightPanelDefaultWidth(input: {
       input.mainContentWidth - RIGHT_PANEL_MAIN_CONTENT_RESERVE,
     ),
   );
-  return clamp(recoveredDefault, bounds.minimum, bounds.maximum);
+  const preferred = input.size === "compact" ? recoveredDefault * 2 / 3 : recoveredDefault;
+  return clamp(preferred, bounds.minimum, bounds.maximum);
 }
 
 export function normalizeRightPanelWidth(

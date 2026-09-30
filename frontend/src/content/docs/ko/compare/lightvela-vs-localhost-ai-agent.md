@@ -8,7 +8,7 @@ Hermes는 macOS, Windows, Linux, WSL2 등에서 로컬로 실행할 수 있습�
 
 > **시작하기 쉽다는 것과 신경 쓸 일이 없다는 것은 다릅니다.** 로컬 에이전트는 제어권을 주지만 환경을 계속 준비된 상태로 유지할 책임도 함께 줍니다.
 
-![LightVela 클라우드 설정과 로컬 Hermes 실행 방식 비교](../images/lightvela-vs-self-hosted-hermes.webp)
+![LightVela 클라우드 설정과 로컬 Hermes 실행 방식 비교](../../images/lightvela-vs-self-hosted-hermes.webp)
 
 ## 한눈에 비교하기
 

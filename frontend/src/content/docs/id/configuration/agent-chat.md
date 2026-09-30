@@ -12,7 +12,7 @@ Buka halaman "Chat" untuk berinteraksi dengan Hermes Agent Anda melalui jendela 
 >
 > Panduan antarmuka Chat saat ini masih sebagian besar berbahasa Tiongkok; pelokalan penuh sedang dikerjakan.
 
-![Halaman Chat di konsol LightVela](../images/chat-overview-en.webp)
+![Halaman Chat di konsol LightVela](../../images/chat-overview-en.webp)
 
 ---
 
@@ -20,7 +20,7 @@ Buka halaman "Chat" untuk berinteraksi dengan Hermes Agent Anda melalui jendela 
 
 Hermes Agent dapat berkembang dan menyesuaikan diri sendiri seiring percakapan berlanjut. Pelajari memori Agent Anda lebih lanjut dengan membuka halaman "Memory".
 
-![](../images/agentchat-2-global-en.webp)
+![](../../images/agentchat-2-global-en.webp)
 
 ### Cara kerja memori
 

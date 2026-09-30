@@ -4,7 +4,7 @@
 
 **Si deseas alojar un AI Agent personal dedicado que permanezca disponible y siga una configuración consistente, LightVela es la opción más directa.** Si buscas un espacio de trabajo AI todo en uno que pueda investigar, escribir, diseñar, crear diapositivas, analizar datos y producir entregables finales, Genspark probablemente sea la mejor opción. Ambos están avanzando más allá del modelo de chatbot, pero están resolviendo problemas diferentes.
 
-![LightVela comparado con Genspark para alojar un AI Agent](../images/lightvela-vs-genspark.webp)
+![LightVela comparado con Genspark para alojar un AI Agent](../../images/lightvela-vs-genspark.webp)
 
 ## A primera vista
 

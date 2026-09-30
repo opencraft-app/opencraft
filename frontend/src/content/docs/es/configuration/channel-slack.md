@@ -44,16 +44,16 @@ Inicie sesión en el sitio internacional de LightVela, abra **Mi Hermes → Cana
 1. Abra [Slack API Apps](https://api.slack.com/apps) e inicie sesión.
 2. Haga clic en **Crear nueva aplicación**.
 
-![Crear una nueva aplicación desde Slack API Apps](../images/slack-create-app.webp)
+![Crear una nueva aplicación desde Slack API Apps](../../images/slack-create-app.webp)
 
 3. Seleccione **Desde cero**.
 
-![Seleccionar Desde cero para crear la aplicación de Slack](../images/slack-create-from-scratch.webp)
+![Seleccionar Desde cero para crear la aplicación de Slack](../../images/slack-create-from-scratch.webp)
 
 4. Introduzca un nombre de aplicación como `Hermes Agent`.
 5. Seleccione el espacio de trabajo donde debe ejecutarse Hermes Agent, luego haga clic en **Crear aplicación**.
 
-![Nombre la aplicación de Slack y seleccione un espacio de trabajo](../images/slack-select-workspace.webp)
+![Nombre la aplicación de Slack y seleccione un espacio de trabajo](../../images/slack-select-workspace.webp)
 
 Si el espacio de trabajo falta, verifique que la cuenta de Slack actual pertenece a él y puede crear aplicaciones.
 
@@ -63,28 +63,28 @@ El Token de Aplicación establece la conexión WebSocket en modo Socket. Debe in
 
 1. En la barra lateral de la aplicación de Slack, abra **Configuración → Información básica**.
 
-![Abrir Información básica en la aplicación de Slack](../images/slack-basic-information.webp)
+![Abrir Información básica en la aplicación de Slack](../../images/slack-basic-information.webp)
 
 2. Desplácese hasta **Tokens de nivel de aplicación** y haga clic en **Generar token y alcances**.
 
-![Generar un token de nivel de aplicación](../images/slack-generate-app-token.webp)
+![Generar un token de nivel de aplicación](../../images/slack-generate-app-token.webp)
 
 3. Introduzca un nombre de token reconocible, como `HermesSocket`.
 4. Haga clic en **Agregar alcance**.
 
-![Agregar un alcance al Token de Aplicación](../images/slack-add-connection-scope.webp)
+![Agregar un alcance al Token de Aplicación](../../images/slack-add-connection-scope.webp)
 
 5. Busque y seleccione `connections:write`.
 
-![Seleccionar el alcance de escritura de conexiones](../images/slack-select-connections-write.webp)
+![Seleccionar el alcance de escritura de conexiones](../../images/slack-select-connections-write.webp)
 
 6. Confirme que el alcance se lista, luego haga clic en **Generar**.
 
-![Generar el Token de Aplicación con escritura de conexiones](../images/slack-generate-token.webp)
+![Generar el Token de Aplicación con escritura de conexiones](../../images/slack-generate-token.webp)
 
 7. Copie el token generado `xapp-...` y guárdelo de forma segura. Haga clic en **Listo** después de copiarlo.
 
-![Copiar el Token de Aplicación de Slack](../images/slack-copy-app-token.webp)
+![Copiar el Token de Aplicación de Slack](../../images/slack-copy-app-token.webp)
 
 No pegue el Token de Aplicación en el campo de Token de Bot. Un Secreto de Cliente o Secreto de Firma no es un reemplazo para este token.
 
@@ -95,7 +95,7 @@ No pegue el Token de Aplicación en el campo de Token de Bot. Un Secreto de Clie
 1. Abra **Configuración → Modo Socket**.
 2. Active **Habilitar modo Socket**.
 
-![Habilitar modo Socket de Slack](../images/slack-enable-socket-mode.webp)
+![Habilitar modo Socket de Slack](../../images/slack-enable-socket-mode.webp)
 
 El modo Socket envía eventos de Slack a Hermes Agent a través de WebSocket. Esta configuración no requiere una URL de solicitud de suscripciones de eventos ni una URL de redirección OAuth.
 
@@ -105,7 +105,7 @@ El modo Socket envía eventos de Slack a Hermes Agent a través de WebSocket. Es
 2. Desplácese hasta **Alcances → Alcances de Token de Bot**.
 3. Haga clic en **Agregar un alcance OAuth**.
 
-![Agregar un alcance de bot en OAuth y permisos](../images/slack-add-oauth-scope.webp)
+![Agregar un alcance de bot en OAuth y permisos](../../images/slack-add-oauth-scope.webp)
 
 Agregue alcances para los modos de interacción que necesite:
 
@@ -121,7 +121,7 @@ Agregue alcances para los modos de interacción que necesite:
 | `groups:read` | Canales privados opcionales | Leer información de canales privados |
 | `groups:history` | Canales privados opcionales | Leer mensajes en canales privados a los que el bot se ha unido |
 
-![Revisar los alcances de Token de Bot de Slack](../images/slack-bot-token-scopes.webp)
+![Revisar los alcances de Token de Bot de Slack](../../images/slack-bot-token-scopes.webp)
 
 Solo agregue los dos alcances `groups:*` cuando se requiera acceso a canales privados. La aplicación aún debe ser invitada a cada canal objetivo.
 
@@ -145,7 +145,7 @@ Si solo utiliza menciones en canales, puede omitir esta sección y los alcances 
 5. Agregue `message.im` si se habilitan mensajes directos.
 6. Haga clic en **Guardar cambios**.
 
-![Configurar suscripciones de eventos de bot de Slack](../images/slack-event-subscriptions.webp)
+![Configurar suscripciones de eventos de bot de Slack](../../images/slack-event-subscriptions.webp)
 
 > Si cambia alcances o eventos después de la instalación, vuelva a **OAuth y permisos** y haga clic en **Reinstalar en espacio de trabajo**. Las nuevas permisos no surten efecto hasta que la aplicación se reinstale.
 
@@ -154,16 +154,16 @@ Si solo utiliza menciones en canales, puede omitir esta sección y los alcances 
 1. Vuelva a **Características → OAuth y permisos**.
 2. Haga clic en **Instalar en espacio de trabajo**. Si la aplicación ya está instalada, haga clic en **Reinstalar en espacio de trabajo**.
 
-![Instalar la aplicación de Slack en el espacio de trabajo](../images/slack-install-workspace.webp)
+![Instalar la aplicación de Slack en el espacio de trabajo](../../images/slack-install-workspace.webp)
 
 3. Revise los permisos solicitados y haga clic en **Permitir**.
 
-![Autorizar los permisos de la aplicación de Slack](../images/slack-authorize-workspace.webp)
+![Autorizar los permisos de la aplicación de Slack](../../images/slack-authorize-workspace.webp)
 
 4. Después de que Slack devuelva a **OAuth y permisos**, encuentre **Tokens OAuth para su espacio de trabajo**.
 5. Copie el **Token OAuth de Usuario de Bot** que comienza con `xoxb-`.
 
-![Copiar el Token OAuth de Usuario de Bot de Slack](../images/slack-copy-bot-token.webp)
+![Copiar el Token OAuth de Usuario de Bot de Slack](../../images/slack-copy-bot-token.webp)
 
 No utilice un Secreto de Firma, Secreto de Cliente, Token de Verificación o un Token OAuth de Usuario `xoxp-...`. LightVela requiere un Token de Aplicación `xapp-...` y un Token de Bot `xoxb-...`.
 
@@ -200,7 +200,7 @@ El bot solo recibe mensajes de canal después de haberse unido a ese canal.
 2. Seleccione la pestaña **Mensajes**.
 3. Envíe un mensaje corto como `Hola`.
 
-![Probar un mensaje directo en la página principal de la aplicación de Slack](../images/slack-direct-message-test.webp)
+![Probar un mensaje directo en la página principal de la aplicación de Slack](../../images/slack-direct-message-test.webp)
 
 ---
 

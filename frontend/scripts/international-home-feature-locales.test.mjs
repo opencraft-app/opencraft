@@ -29,6 +29,25 @@ test('hero runtime normalization removes all legacy measurements and keeps word 
   assert.ok(importer.includes('const runtimeSource = normalizeHeroRuntime('));
 });
 
+test('scene artwork is present once after both fresh and repeated generation', () => {
+  const html = '<header class="scenes__head sr"><h2 class="scenes__title">Scenes</h2></header>';
+  const once = localizeFeatureCards(html, 'en-US');
+  const twice = localizeFeatureCards(once, 'en-US');
+  for (const result of [once, twice]) {
+    const document = new JSDOM(result).window.document;
+    assert.equal(document.querySelectorAll('.scenes__mascot').length, 1);
+    assert.equal(document.querySelector('.scenes__mascot img').getAttribute('src'), '/lightvela-intl-home/assets/scenes-mascot-duo.webp?v=20260930-home-visual-v1');
+  }
+  const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
+  assert.ok(importer.includes('"scenes-mascot-duo.webp"'));
+  assert.ok(importer.includes('if (preservedHarnessAssetNameSet.has(relativeAssetPath)) continue;'));
+});
+
+test('scene mascot cannot overflow the mobile heading row', () => {
+  const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');
+  assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.scenes__mascot \{ display: none !important; \}/);
+});
+
 test('footer decoration preserves both CTA states and their localized source copy', () => {
   for (const href of ['/agents', '/subscribe']) {
     const cta = `<div class="foot__cta"><a href="${href}">Approved localized label <span>→</span></a></div>`;
@@ -118,7 +137,7 @@ test('fresh and legacy step imports converge on one artwork and foot anchor', (t
   t.after(() => dom.window.close());
   const mascot = dom.window.document.querySelector('.home-step-mascot');
   const image = mascot.querySelector('img');
-  assert.equal(image.getAttribute('src'), '/lightvela-intl-home/assets/figma-steps-user-original.webp');
+  assert.equal(image.getAttribute('src'), '/lightvela-intl-home/assets/figma-steps-user-original.webp?v=20260930-home-visual-v1');
   assert.equal(image.getAttribute('width'), '676');
   assert.equal(image.getAttribute('height'), '591');
   assert.equal(mascot.dataset.footY, '520');
@@ -246,7 +265,16 @@ for (const locale of FEATURE_LOCALES) {
     assert.ok(html.indexOf('class="foot__top"') < html.indexOf('class="foot__links"'));
     assert.ok(!html.includes('class="home-footer-mascot"'));
     assert.ok(!html.includes('class="home-door-note"'));
-    assert.match(html, /stroke="#696969"/);
+    const door = document.querySelector('.home-footer-boundary svg');
+    assert.equal(door.getAttribute('viewBox'), '0 0 964 966');
+    assert.equal(door.getAttribute('preserveAspectRatio'), 'xMidYMid meet');
+    assert.equal(door.querySelector('clipPath, path'), null, 'no legacy door clipping or ground overlay');
+    const artwork = door.querySelector('image');
+    assert.equal(artwork.getAttribute('href'), '/lightvela-intl-home/assets/hermes-door.webp?v=20260930-home-visual-v1');
+    assert.equal(artwork.getAttribute('width'), '964');
+    assert.equal(artwork.getAttribute('height'), '966');
+    assert.equal(artwork.getAttribute('preserveAspectRatio'), 'xMidYMid meet');
+    assert.equal(artwork.hasAttribute('clip-path'), false);
     if (locale !== 'en-US') assert.ok(!html.includes('Open a brighter way of working.'));
   });
 }

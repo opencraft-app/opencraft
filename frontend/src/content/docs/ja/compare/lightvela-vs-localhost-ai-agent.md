@@ -8,7 +8,7 @@ HermesはmacOS、Windows、Linux、WSL2などでローカルに実行できま�
 
 > **分かりやすいことは、目立たないこととは同じではありません。** ローカルエージェントは制御権を与えてくれますが、同時に環境を整えておく責任も伴います。
 
-![LightVela ローカルでHermesを実行する場合とクラウド設定の比較](../images/lightvela-vs-self-hosted-hermes.webp)
+![LightVela ローカルでHermesを実行する場合とクラウド設定の比較](../../images/lightvela-vs-self-hosted-hermes.webp)
 
 ## 概要
 

@@ -6,7 +6,7 @@
 
 차이는 단순히 어느 AI가 더 똑똑한지가 아닙니다. 에이전트가 어디에 존재하고, 누구에게 속하며, 어떤 일을 맡도록 설계되었는지가 핵심입니다.
 
-![개인 AI 에이전트 운영을 위한 LightVela와 Viktor.com 비교](../images/lightvela-vs-viktor.webp)
+![개인 AI 에이전트 운영을 위한 LightVela와 Viktor.com 비교](../../images/lightvela-vs-viktor.webp)
 
 ## 한눈에 비교하기
 

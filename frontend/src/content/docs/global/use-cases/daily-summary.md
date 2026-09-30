@@ -4,7 +4,7 @@
 
 **每日总结的价值不在篇幅，而在于你开口询问之前就把正确上下文交到你手上，实现方式是把一次性的手动复盘改写成一份定时任务配置。** 你需要准备四样东西：一个已配置模型的云端 Hermes Agent、一个用于接收结果的已接入通道、可选的信息获取技能，以及一份定时任务（配置项为名称、执行时间、任务说明、生效时间段、通知方式）。成败主要取决于任务说明：因为执行时没有人在旁边追问，提示词必须自带目标、范围边界（时间范围与条数上限）、输出格式和无内容时的处理方式。建议先在对话里手动跑一次验证效果，再创建任务，并在第一次真实执行后复查结果。
 
-![Hermes Agent 发送的每日信息总结](../images/use-case-daily-summaries.webp)
+![Hermes Agent 发送的每日信息总结](../../images/use-case-daily-summaries.webp)
 
 ## 适合谁
 
@@ -52,7 +52,7 @@ Hermes 只能总结它收到的内容，或者通过你配置的能力访问到�
 如果需要外部数据源，请从可信来源选择合适的技能，并在使用前确认它的行为。
 [配置技能](../configuration/skill.md)会介绍技能如何扩展 Hermes 的普通对话能力。
 
-![每日总结使用的云存储来源](../images/use-case-daily-summary-storage.webp)
+![每日总结使用的云存储来源](../../images/use-case-daily-summary-storage.webp)
 
 ### 3. 先在普通对话中测试结果
 
@@ -89,7 +89,7 @@ Hermes 只能总结它收到的内容，或者通过你配置的能力访问到�
 在[定时任务](../configuration/automation.md)中完成设置。
 检查前几次执行结果，如果总结范围太大、太长或缺少正确上下文，再调整指令内容。
 
-![定时发送每日总结的定时任务](../images/use-case-daily-summary-automation.webp)
+![定时发送每日总结的定时任务](../../images/use-case-daily-summary-automation.webp)
 
 ## 常见问题
 

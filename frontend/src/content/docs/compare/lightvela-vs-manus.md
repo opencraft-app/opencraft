@@ -18,7 +18,7 @@
 
 ## 两种不同的出发点
 
-LightVela 采取的是更个人化的路径。它在云端托管独立的 Hermes Agent，让 Agent 长期在线，并通过微信、飞书、QQ 等已配置通道与你对话。[LightVela 概览](../01-overview.md) 介绍了这种托管模式，以及 Agent 如何保持与你日常工具的连接。
+LightVela 采取的是更个人化的路径。它在云端托管独立的 Hermes Agent，让 Agent 长期在线，并通过微信、QQ、企业微信、飞书、钉钉等已配置通道与你对话。[LightVela 概览](../01-overview.md) 介绍了这种托管模式，以及 Agent 如何保持与你日常工具的连接。
 
 Manus 将自己定位为拥有虚拟电脑的自主通用 AI Agent：你给出一个结果目标，它负责规划、执行并返回工作成果。它的 [Cloud Browser](https://manus.im/docs/features/cloud-browser) 可以访问网站、填写表单、提取信息，并完成多步骤浏览器工作流。
 
