@@ -160,3 +160,9 @@
 - Router `opencraft markdown file preview workspace-resource-panel` 无匹配；有界检索 resource panel/model 与 chat-render-web 公共入口。复用 WebChatDocument 与既有 Blob media loader，文件身份决定呈现状态。
 - context_receipt：opencraft/AGENTS.md、opencraft-maintenance Skill/verification、design/README.md、design/invariants.md、platform-architecture Embedded 段、frontend-runtime-openspec-i18n 邻接卡；检查 embedded-companion-locales 测试及 locale catalogs 邻居。
 - 验证计划：聚焦文件/Markdown/i18n 测试、Web 类型和边界、embedded build、真实浏览器组件预览/源码/文件切换验收。
+
+## ci_isolated_frontend_test_fix
+- CI 日志源码 c96a61d5f：frontend typecheck TS2307，opencraft-type-to-compose.test.ts 跨服务引用在隔离 guard 只复制 frontend/velalink/shared 后失效；i18n WARN 不是失败原因。
+- Router `CI change impact directory guard opencraft` 无匹配；精确检索命中测试及 .ci/checks/frontend_guard.sh，检查 frontend-runtime-openspec-i18n 邻接卡和 frontend/vitest.config.ts。
+- context_receipt：frontend/AGENTS.md、现有 opencraft/AGENTS.md /维护Skill、karpathy-guidelines、devops-pipeline Skill（只读日志，无启动/取消流水线）；复用交付路由上下文。
+- 将真实 Shadow DOM 回归迁入 OpenCraft，使用自身 jsdom devDependency 与 node:test，不修改生产代码、类型检查基线或 CI 复制边界。计划运行迁移后测试与真实隔离 frontend guard。

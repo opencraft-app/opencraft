@@ -395,6 +395,8 @@ Applications 的内容宽度上限为 137px，独立于上下文栏的最大宽�
 
 ## 验证
 
+OpenCraft Renderer 的 DOM 回归测试由 `opencraft/tests` 持有，并使用 OpenCraft 自身声明的测试依赖；中文输入的 Shadow DOM 事件回归纳入 `test:workbench:unit`。前端 CI 隔离目录仅包含 `frontend`、`velalink` 和共享 Agent core，前端测试不能跨目录导入 OpenCraft 源码。
+
 OpenCraft 的维护方法和交互验收路由见项目内 [opencraft-maintenance Skill](../../../opencraft/.agents/skills/opencraft-maintenance/SKILL.md)；它消费现有正式设计与源码，不另建架构事实真源，也不授予发布权限。
 
 OpenCraft 第一阶段插件持久化提供 client-local JSON 文档 API：宿主绑定插件 namespace，

@@ -1,24 +1,38 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { shouldTypeToCompose } from "../../../../../opencraft/apps/workbench-web/src/type-to-compose";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { JSDOM } from "jsdom";
+import { shouldTypeToCompose } from "../apps/workbench-web/src/type-to-compose.ts";
+
+let window;
+let document;
+const elementDescriptor = Object.getOwnPropertyDescriptor(globalThis, "Element");
+beforeEach(() => {
+  ({ window } = new JSDOM("<!doctype html><body></body>"));
+  document = window.document;
+  Object.defineProperty(globalThis, "Element", { configurable: true, value: window.Element });
+});
+afterEach(() => {
+  window.close();
+  if (elementDescriptor) Object.defineProperty(globalThis, "Element", elementDescriptor);
+  else Reflect.deleteProperty(globalThis, "Element");
+});
 
 // Exercise the window listener after native Shadow DOM event retargeting.
-function dispatch(target: Element, init: KeyboardEventInit = {}) {
-  let result: boolean | undefined;
-  let observedTarget: EventTarget | null = null;
-  const listener = (event: KeyboardEvent) => {
+function dispatch(target, init = {}) {
+  let result;
+  let observedTarget = null;
+  const listener = (event) => {
     observedTarget = event.target;
     result = shouldTypeToCompose(event);
   };
   window.addEventListener("keydown", listener);
   try {
-    target.dispatchEvent(new KeyboardEvent("keydown", {
+    target.dispatchEvent(new window.KeyboardEvent("keydown", {
       key: "n", bubbles: true, composed: true, cancelable: true, ...init,
     }));
   } finally { window.removeEventListener("keydown", listener); }
   return { result, observedTarget };
 }
-
-afterEach(() => { document.body.replaceChildren(); });
 
 describe("embedded type-to-compose input ownership", () => {
   it("does not insert the first Pinyin key from the shadow editor before isComposing becomes true", () => {
@@ -30,8 +44,8 @@ describe("embedded type-to-compose input ownership", () => {
     const paragraph = document.createElement("p");
     editor.append(paragraph);
     shadow.append(editor);
-    expect(dispatch(paragraph)).toEqual({ result: false, observedTarget: host });
-    expect(dispatch(paragraph, { key: "s" }).result).toBe(false);
+    assert.deepEqual(dispatch(paragraph), { result: false, observedTarget: host });
+    assert.equal(dispatch(paragraph, { key: "s" }).result, false);
   });
 
   it("leaves shadow inputs, buttons, and menus in control of their keys", () => {
@@ -41,23 +55,23 @@ describe("embedded type-to-compose input ownership", () => {
     for (const tag of ["input", "textarea", "button"]) {
       const element = document.createElement(tag);
       shadow.append(element);
-      expect(dispatch(element).result).toBe(false);
+      assert.equal(dispatch(element).result, false);
     }
     const menu = document.createElement("div");
     menu.setAttribute("role", "menu");
     shadow.append(menu);
-    expect(dispatch(menu).result).toBe(false);
+    assert.equal(dispatch(menu).result, false);
   });
 
   it("keeps plain page typing but ignores composition start, active composition, shortcuts and prevented keys", () => {
-    expect(dispatch(document.body).result).toBe(true);
-    expect(dispatch(document.body, { keyCode: 229 }).result).toBe(false);
-    expect(dispatch(document.body, { isComposing: true }).result).toBe(false);
-    expect(dispatch(document.body, { ctrlKey: true }).result).toBe(false);
+    assert.equal(dispatch(document.body).result, true);
+    assert.equal(dispatch(document.body, { keyCode: 229 }).result, false);
+    assert.equal(dispatch(document.body, { isComposing: true }).result, false);
+    assert.equal(dispatch(document.body, { ctrlKey: true }).result, false);
     const input = document.createElement("input");
     document.body.append(input);
-    expect(dispatch(input).result).toBe(false);
+    assert.equal(dispatch(input).result, false);
     input.addEventListener("keydown", (event) => event.preventDefault());
-    expect(dispatch(input).result).toBe(false);
+    assert.equal(dispatch(input).result, false);
   });
 });

@@ -213,3 +213,9 @@
 
 ## markdown_mr_delivery
 - 用户随后明确授权提交，本轮补充提交并推送到已有 MR !4851；复用上述同代码的24项测试、Web类型、i18n、边界、构建及浏览器证据。不合并或发布；目标分支冲突单独处理。
+
+## ci_isolated_frontend_test_fix
+- c96a61d5f 的 CI 失败原因是前端测试跨目录导入 OpenCraft；已迁移真实 Shadow DOM/IME 回归到 opencraft/tests，加入自身 jsdom devDependency 和 test:workbench:unit。无生产行为改变。
+- 隔离 frontend guard 的 frozen install、pnpm check（166 current /171 baseline /0 new）与 i18n 通过；后续 Vitest 因本机 ENOTFOUND localhost 中止，因此未到 CN/global build。显式 --api.host 127.0.0.1 在原工作区重跑同七文件，130/130通过；不宣称完整隔离 guard 通过。
+- 迁移后3/3 tests、Web typecheck、平台边界通过。既有构建与UI验证沿用前轮，无新生产代码；生成闭包检查另发现 sourceRevision 落后，需先提交前端测试迁移，再官方 sync 并独立提交。
+- context_receipt 补充 docs/engineering/domains/agent-gateway-runtime.md 验证边界。用户“继续吧”后继续修复和原MR提交；不处理原有master冲突，不合并或发布。
