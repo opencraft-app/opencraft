@@ -51,6 +51,7 @@
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@2c9356c12` | 前端测试邻接 | 检查相邻动效测试 |
 | `.agents/skills/gongfeng/SKILL.md@workspace` | 工蜂评论读取流程 | 通过已登录浏览器只读获取评论 |
 | `opencraft/AGENTS.md@625dc7dc1` | OpenCraft vendored 同步规则 | 通过标准脚本更新机械生成 manifest |
+| `origin/master@1076ded3c` | 当前 CI guard 契约 | 确认 `test:embedded-ci` 来自主干并通过合入 master 取得 |
 
 ## evidence
 - 工蜂评论页：8 条 AI 评论，按严重程度排序。
@@ -64,6 +65,11 @@
 - 远端流水线反馈：`opencraft guard` 因 `UPSTREAM.json` 的 `sourceRevision` 漂移失败，期望 `2c9356c12539d4352ed453117e917756368729f8`。
 - `npm --prefix opencraft run sync:mono2-agent-console`：同步 130 个 Agent Console 文件，仅生成 `UPSTREAM.json` 的 `sourceRevision` 更新。
 - `npm --prefix opencraft run check:mono2-agent-console`：Verified 130 mono2 Agent Console files，退出码 0。
+- 第二轮远端流水线反馈：`opencraft guard` 使用主干 guard 调用 `npm --prefix opencraft run test:embedded-ci`，但 !4867 分支未包含该脚本；合入 `origin/master@1076ded3c` 后脚本存在。
+- 合入 master 后 `npm --prefix opencraft run sync:mono2-agent-console` 将 `UPSTREAM.json.sourceRevision` 同步为 merge commit `414ca8fe622b3ede88262b7412bdf88ad609d74b`，随后 `check:mono2-agent-console` 通过。
+- `npm --prefix opencraft ci --ignore-scripts --no-audit --no-fund --loglevel=error`：added 1358 packages in 47s。
+- `npm --prefix opencraft run test:embedded-ci`：142 tests passed，0 failed。
+- master 合入后复验：生成器测试 25/25、动效测试 26/26、`pnpm typecheck` 166 current / 171 baseline / 0 new / 5 resolved。
 
 ## risks
 - 动效触发器缺失时应跳过局部动画，不能导致首页初始化失败。
@@ -74,6 +80,7 @@
 - TypeScript baseline 检查：通过，0 个新增诊断。
 - 文档校验与 `git diff --check`：通过。
 - OpenCraft Agent Console vendored 检查：通过。
+- OpenCraft embedded CI 测试：通过，142/142。
 - Lint：仓库当前 `frontend/package.json` 无 lint script，已安装依赖也不提供 eslint/biome/oxlint/prettier 可执行文件，无法运行独立 lint 门禁。
 - Staged change-impact：本轮未 stage，故不运行 staged-only 门禁。
 
@@ -85,6 +92,7 @@
 - 门图 `viewBox="0 0 964 966"` 与 `meet` 保持不变，等待设计 owner 确认。
 - i18n 评论已在当前分支失效：`en-US` 的“用户反馈”为 `User Feedback`，无需改动。
 - OpenCraft guard 按标准生成流程只更新 `UPSTREAM.json.sourceRevision`，不手改 vendored 源文件。
+- `test:embedded-ci` 缺失属于 !4867 分支落后主干 CI 契约，采用合入 `origin/master` 取得脚本与对应测试，不在 MR 分支手写占位脚本。
 
 ## scan_scope
 - `frontend/next-site/`
@@ -98,5 +106,5 @@
 - 使用 `rg` 精确核对评论涉及的事件、状态、DOM 查询与反馈 URL。
 
 ## handoff
-- 当前状态：MR 已推送到 `625dc7dc1`；流水线反馈的 OpenCraft manifest drift 已在本地修复并通过 vendored 检查。
-- 下一步：用户确认后提交并推送 `UPSTREAM.json` 的独立修复 commit。
+- 当前状态：本地已合入 `origin/master@1076ded3c`，并追加 master merge 后的 OpenCraft manifest 同步提交；前端定向测试、typecheck、OpenCraft vendored 检查与 embedded CI 测试均通过。
+- 下一步：推送当前 HEAD 到 `feat/home-visual-and-domestic-feedback`，等待远端流水线重跑。
