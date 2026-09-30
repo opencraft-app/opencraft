@@ -38,7 +38,6 @@ import { acquireFileBlob, fileBlobResource, fileBlobUrls } from "../runtime/blob
 import {
   MAX_EDITABLE_FILE_BYTES,
   decodeWorkspaceText,
-  encodeBase64Text,
   joinWorkspacePath,
   parseWorkspaceResource,
   reconcileWorkspaceSave,
@@ -51,6 +50,8 @@ import {
   workspacePathParent,
   workspaceResourceBasename,
   workspaceRootsForResource,
+  writeWorkspaceResource,
+  type WorkspaceSaveTarget,
 } from "./workspace-resource-model";
 import { WorkspaceFileIcon } from "./workspace-file-icon";
 
@@ -357,11 +358,12 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
   };
 
   const save = useMutation({
-    mutationFn: async (target: { hostId: string; path: string; key: string; text: string }) => {
-      if (previewOnly) throw new Error("This panel is read-only");
-      await runtime.resources.fileSystem.writeFile(target.path, encodeBase64Text(target.text));
-      await blobs.invalidate(fileBlobResource(runtime, target.hostId, target.path));
-    },
+    mutationFn: (target: WorkspaceSaveTarget) => writeWorkspaceResource(
+      previewOnly,
+      target,
+      (path, content) => runtime.resources.fileSystem.writeFile(path, content),
+      (hostId, path) => blobs.invalidate(fileBlobResource(runtime, hostId, path)),
+    ),
     onSuccess: async (_result, target) => {
       await queryClient.invalidateQueries({
         queryKey: ["appserver-fs", target.hostId, "resource", target.path],
@@ -486,7 +488,7 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
                 <WebChatDocument
                   key={documentId}
                   documentId={documentId}
-                  source={resource.data.text}
+                  source={text}
                   hostId={snapshot.hostId}
                   cwd={workspacePathParent(selectedPath)}
                   theme={theme.resolvedTheme}

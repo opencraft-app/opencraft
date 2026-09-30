@@ -289,7 +289,49 @@ describe("AgentChatMigrationSurface", () => {
     expect(show).not.toHaveBeenCalled();
     expect(owner).not.toHaveBeenCalledWith("opencraft");
     expect(screen.queryByText("Legacy")).toBeNull();
+    show.mockRestore();
     prepare.mockRestore();
+  });
+
+  it("does not adopt a retired Bot when show resolves after switching", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    let resolveShow!: () => void;
+    const pendingShow = new Promise<void>(resolve => { resolveShow = resolve; });
+    const prepare = vi.spyOn(ctor.prototype, "prepare")
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(() => new Promise<void>(() => {}));
+    const show = vi.spyOn(ctor.prototype, "show").mockImplementationOnce(() => pendingShow);
+    const owner = vi.fn();
+    const surface = (profileId: string) => <AgentChatMigrationSurface active enabled accountId="account-1"
+      instanceId="ins-1" profileId={profileId} region="cn" legacy={<div>Legacy</div>} onOwnerChange={owner}
+      multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />;
+    try {
+      const { container, rerender } = render(surface("one"));
+      await waitFor(() => expect(show).toHaveBeenCalledOnce());
+      const previous = container.querySelector("opencraft-embedded-workbench")!;
+      rerender(surface("two"));
+      await waitFor(() => expect(container.querySelector("opencraft-embedded-workbench")).not.toBe(previous));
+      owner.mockClear();
+      await act(async () => { resolveShow(); await pendingShow; });
+      expect(owner).not.toHaveBeenCalledWith("opencraft");
+      expect(screen.queryByText("Legacy")).toBeNull();
+    } finally {
+      show.mockRestore();
+      prepare.mockRestore();
+    }
+  });
+
+  it("does not prepare an embedded Bot without a profile", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    const prepare = vi.spyOn(ctor.prototype, "prepare");
+    try {
+      const { container } = render(<AgentChatMigrationSurface active enabled accountId="account-1"
+        instanceId="ins-1" profileId="" region="cn" legacy={<div>Legacy</div>}
+        multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+      expect(container.querySelector("opencraft-embedded-workbench")).toBeNull();
+      expect(prepare).not.toHaveBeenCalled();
+      expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴配置后重试");
+    } finally { prepare.mockRestore(); }
   });
 
   it("offers retry after a startup deadline without mounting legacy", async () => {

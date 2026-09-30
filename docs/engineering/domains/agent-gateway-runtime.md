@@ -492,3 +492,5 @@ CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `regio
 NewAPI 在锁定有效订阅后优先选择名称为 `free-credit:*` 的赠送积分，其次选择套餐/付费积分；各组内部保持到期时间、订阅 ID 升序。仅改变候选优先级，不改变单请求原子资金来源、预扣/退款幂等、套餐 pacing 或 tail-grace：赠送余额不足以覆盖本次预扣时，仍优先使用可完整覆盖请求的其他订阅；赠送已耗尽或过期则回退。Pass 有效期与网关准入仍由服务端验证，底层赠送订阅的长期到期日不是独立于 Pass 的使用授权。
 
 国内内嵌 Chat 在宿主侧拒绝空 Profile，显示配置检查提示且不创建连接；底层 embedded host 保留身份校验。prepare/show 迟到结果不得显示或采纳已退休、启动失败的实例，启动失败后的重试创建新实例。只读文件预览的保存入口也拒绝写入，独立工作台保存沿用操作发起时的 Host/path/text 快照。
+
+文件保存统一通过 writeWorkspaceResource 执行只读检查及目标快照写入；组件与 helper 均有拒绝写入测试。OpenCraft CI guard 在闭包校验后执行锁定依赖安装和串行 test:embedded-ci，包含真实预览面板的写入保护测试。
