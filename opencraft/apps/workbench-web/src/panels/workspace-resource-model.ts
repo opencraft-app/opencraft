@@ -24,12 +24,17 @@ const languageByExtension: Readonly<Record<string, string>> = Object.freeze({
   cc: "cpp",
   cpp: "cpp",
   css: "css",
+  less: "css",
+  sass: "css",
+  scss: "css",
   go: "go",
   h: "cpp",
   hpp: "cpp",
   html: "html",
   java: "java",
   js: "javascript",
+  cjs: "javascript",
+  mjs: "javascript",
   json: "json",
   jsx: "jsx",
   md: "markdown",
@@ -84,6 +89,58 @@ export function workspaceFileLanguage(path: string): string | null {
   return languageByExtension[extension(path)] ?? null;
 }
 
+export type WorkspaceFileKind = "css" | "javascript" | "typescript" | "json" | "image" | "text" | "code";
+
+export interface WorkspaceDraft {
+  readonly baseText: string;
+  readonly text: string;
+}
+
+export function workspaceDraftKey(hostId: string, path: string): string {
+  return `${hostId}\u0000${path}`;
+}
+
+export function updateWorkspaceDraft(
+  drafts: Readonly<Record<string, WorkspaceDraft>>,
+  key: string,
+  serverText: string,
+  text: string,
+): Record<string, WorkspaceDraft> {
+  const baseText = drafts[key]?.baseText ?? serverText;
+  const next = { ...drafts };
+  if (text === baseText) delete next[key];
+  else next[key] = { baseText, text };
+  return next;
+}
+
+export function reconcileWorkspaceSave(
+  drafts: Readonly<Record<string, WorkspaceDraft>>,
+  key: string,
+  submittedText: string,
+): Record<string, WorkspaceDraft> {
+  const existing = drafts[key];
+  if (existing === undefined) return { ...drafts };
+  const next = { ...drafts };
+  if (existing.text === submittedText) delete next[key];
+  else next[key] = { baseText: submittedText, text: existing.text };
+  return next;
+}
+
+export function workspaceDraftConflicted(draft: WorkspaceDraft | undefined, serverText: string | null): boolean {
+  return draft !== undefined && serverText !== null && draft.baseText !== serverText;
+}
+
+export function workspaceFileKind(path: string): WorkspaceFileKind {
+  if (workspaceImageMime(path) !== null) return "image";
+  const language = workspaceFileLanguage(path);
+  if (language === "css") return "css";
+  if (language === "javascript" || language === "jsx") return "javascript";
+  if (language === "typescript" || language === "tsx") return "typescript";
+  if (language === "json") return "json";
+  if (language === "markdown") return "text";
+  return language === null ? "text" : "code";
+}
+
 export function workspaceImageMime(path: string): string | null {
   return imageMimeByExtension[extension(path)] ?? null;
 }
@@ -129,4 +186,3 @@ export function workspaceRootsForResource(
   if (cwd !== null && cwd.length > 0) return [cwd];
   return [workspacePathParent(normalizedPath)];
 }
-

@@ -284,7 +284,8 @@ test("panel creation picker is outlet-owned and shares its actions with the empt
   assert.match(rightPanelTabsSource, /creationActions\.map\(\(?action\)?\s*=>/);
   assert.match(rightPanelTabsSource, /onCloseAutoFocus=\{\(?event\)?\s*=>/);
   assert.match(rightPanelTabsSource, /tabs=\{regionState\.tabs\}/);
-  assert.match(rightPanelTabsSource, /aria-label=\{tabs \? "Tabs" : "New tab"\}/);
+  assert.match(rightPanelTabsSource, /const menuLabel = intl\.formatMessage\(tabs \? \{ id: "panel.tabs"[\s\S]*?id: "panel.newTab"/);
+  assert.match(rightPanelTabsSource, /aria-label=\{menuLabel\}/);
   assert.doesNotMatch(rightPanelTabsSource, /action\.panelKind|panelTabsForAction|right-panel-type-picker/);
 });
 
@@ -1166,7 +1167,7 @@ test("right-panel chrome is persistent while its default route is lazy", () => {
   assert.doesNotMatch(workbenchApp, /panels\.open\(panelThreadId, "changes"/u);
   assert.match(
     appShellHeaderSource,
-    /aria-label=\{[\s\S]*?"Hide task details"[\s\S]*?"Show task details"/u,
+    /aria-label=\{\s*intl\.formatMessage\(rightPanelOpen \? \{ id: "panel.close"[\s\S]*?id: "panel.open"/u,
   );
   assert.match(appShellHeaderSource, /app-shell-header__right-panel-toggle/u);
   assert.match(appShellHeaderSource, /aria-pressed=\{rightPanelOpen\}/u);

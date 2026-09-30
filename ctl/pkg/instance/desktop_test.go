@@ -149,6 +149,15 @@ func ptyFinishEvents(output string) []psandbox.PtyExecStreamEvent {
 	}
 }
 
+// ptyFinishEventsWithExit 模拟命令输出 + 指定退出码/状态，用于复现
+// "PTY set -e 污染退出码" 场景（stdout 有业务 marker 但 exit != 0）。
+func ptyFinishEventsWithExit(output, status string, exitCode int64) []psandbox.PtyExecStreamEvent {
+	return []psandbox.PtyExecStreamEvent{
+		{Type: "output", Chunk: output},
+		{Type: "finished", Status: status, ExitCode: exitCode},
+	}
+}
+
 // withDesktopEnv v3：仅需 ingress 域名（不再有独立桌面模板）。
 func withDesktopEnv(t *testing.T, domain string) {
 	t.Helper()
@@ -216,6 +225,7 @@ func TestRenderDesktopProvisionCommand(t *testing.T) {
 		desktopProbePendingMarker,
 		desktopMissingLayerMarker, // 范式 A：图形层检测桩
 		"systemctl cat vela-novnc.service",
+		desktopProvisionFailedMarker, // CR-P1#2：关键步骤失败必须能输出 fail marker
 	} {
 		if !strings.Contains(cmd, want) {
 			t.Fatalf("provision command missing %q:\n%s", want, cmd)
@@ -224,6 +234,40 @@ func TestRenderDesktopProvisionCommand(t *testing.T) {
 	// 反向断言：不得退化回单引号包裹裸密码的拼接形态。
 	if strings.Contains(cmd, "'"+pw+"'") {
 		t.Fatalf("provision command must not embed password in raw single quotes:\n%s", cmd)
+	}
+}
+
+// TestRenderDesktopProvisionCommandFailsHardOnKeySteps CR-P1#2 回归：
+// 密码写入 / 服务启动等关键步骤必须走 fail()（输出 DESKTOP_PROVISION_FAILED 并 exit 非零），
+// 不得再用 "|| true" 把失败吞成 exit 0——否则上层会误判为 Pending 永久轮询。
+func TestRenderDesktopProvisionCommandFailsHardOnKeySteps(t *testing.T) {
+	cmd := renderDesktopProvisionCommand("a1b2c3d4")
+	for _, want := range []string{
+		`x11vnc -storepasswd "$VNC_PW" "$VNC_PASSWD_FILE" >/dev/null 2>&1 || fail`,
+		"|| fail \"enable desktop services\"",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("provision command must fail hard on key step, missing %q:\n%s", want, cmd)
+		}
+	}
+	// 关键步骤不得再吞成 "|| true"（探测行仍允许，故检查带 storepasswd 的密码步骤）。
+	if strings.Contains(cmd, `-storepasswd "$VNC_PW" "$VNC_PASSWD_FILE" >/dev/null 2>&1 || true`) {
+		t.Fatalf("password store must not swallow failure with || true:\n%s", cmd)
+	}
+}
+
+// TestDesktopProvisionFailureDetail CR-P1#2：从 fail marker 行提取可诊断原因。
+func TestDesktopProvisionFailureDetail(t *testing.T) {
+	cases := map[string]string{
+		"DESKTOP_PROVISION_FAILED store vnc password":       "desktop provision failed: store vnc password",
+		"noise\nDESKTOP_PROVISION_FAILED enable desktop services\n": "desktop provision failed: enable desktop services",
+		"DESKTOP_PROVISION_FAILED":                          "desktop provision failed",
+		"no marker here":                                    "desktop provision failed",
+	}
+	for out, want := range cases {
+		if got := desktopProvisionFailureDetail(out); got != want {
+			t.Fatalf("desktopProvisionFailureDetail(%q)=%q, want %q", out, got, want)
+		}
 	}
 }
 
@@ -428,6 +472,64 @@ func TestDesktopProvisionMissingLayerTriggersInstall(t *testing.T) {
 	// 安装期间发过 ExecCommand（启动 + 至少一次进度查询）。
 	if sb.execCmdCount() < 2 {
 		t.Fatalf("expected install dispatch + progress poll ExecCommand, got %d", sb.execCmdCount())
+	}
+}
+
+// TestDesktopProvisionMissingLayerWithNonZeroExitTriggersInstall 现网 bj-7 回归：
+// provision 命令输出了 DESKTOP_LAYER_MISSING，但因 PTY + set -e 把退出码污染成 1
+// （status=FAILED exit_code=1 stdout=DESKTOP_LAYER_MISSING）。修复前会被 sandboxCommandSucceeded
+// 误判为失败、直接置 Failed；修复后"标记优先于退出码"，仍应触发按需装 → Installing。
+func TestDesktopProvisionMissingLayerWithNonZeroExitTriggersInstall(t *testing.T) {
+	resetDesktopSessionsForTest()
+	fastDesktopInstallPoll(t)
+	withDesktopEnv(t, "ingress.example.com")
+	dao := &desktopInstanceDaoStub{entity: desktopTestEntity()}
+	sb := &desktopSandboxStub{
+		// 关键：exit_code=1 + status=FAILED，但 stdout 含 MISSING marker（复现现网表现）。
+		ptyOutputs: [][]psandbox.PtyExecStreamEvent{
+			ptyFinishEventsWithExit(desktopMissingLayerMarker, "FAILED", 1),
+		},
+	}
+	sb.execFunc = func(bash string) (*psandbox.ExecCommandResult, error) {
+		if strings.Contains(bash, "vela-desktop-install.sh") {
+			return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: desktopInstallStartedMark}, nil
+		}
+		return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: "PROGRESS=100\n" + desktopInstallDoneMarker}, nil
+	}
+	l := newDesktopTestLogic(dao, sb)
+	ctx := pctx.NewContext(nil).WithUserID("user-desktop-1")
+
+	resp, err := l.EnsureDesktopSession(ctx, "ins-desktop-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 修复后：即使 exit_code=1，只要 stdout 有 MISSING marker，就应走安装 → Installing。
+	if resp.Status != transport.DesktopSessionStatusInstalling {
+		t.Fatalf("regression: expected Installing on MISSING marker despite exit_code=1, got %q (reason=%q)", resp.Status, resp.Reason)
+	}
+	// 应确实 dispatch 了安装命令（而非停在 Failed）。
+	session := l.desktopSessionOf("ins-desktop-1")
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, _, status, _, _ := session.snapshot(); status == transport.DesktopSessionStatusProvisioning {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, _, status, _, _ := session.snapshot(); status != transport.DesktopSessionStatusProvisioning {
+		t.Fatalf("expected Provisioning after install done, got %q", status)
+	}
+}
+
+// TestRenderDesktopProvisionCommandNoSetE 修复回归：provision 脚本不得使用 set -e，
+// 且必须以 exit 0 收尾——把"缺失/就绪/pending"作为 stdout marker 传递，避免退出码污染。
+func TestRenderDesktopProvisionCommandNoSetE(t *testing.T) {
+	cmd := renderDesktopProvisionCommand("a1b2c3d4")
+	if strings.Contains(cmd, "set -e") {
+		t.Fatalf("provision command must not use set -e (pollutes PTY exit code):\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "exit 0") {
+		t.Fatalf("provision command must explicitly exit 0:\n%s", cmd)
 	}
 }
 

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-config
+  namespace: trade
+data:
+  DIANSHI_RENEW_BASE_URL: http://43.140.62.77/v1/proxy/dianshi-order/activity_web/activity

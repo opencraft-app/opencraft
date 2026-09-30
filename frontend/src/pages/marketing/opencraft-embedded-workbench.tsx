@@ -208,6 +208,10 @@ export function AgentChatMigrationSurface({
     setStartupFailed(false);
     setRetrying(false);
     setConnection({ phase: "connecting", failureCode: null });
+    if (!profileId.trim()) {
+      setConnection({ phase: "error", failureCode: "intervention:configuration-required" });
+      return;
+    }
     if (scriptUrl === null) {
       setStartupFailed(true);
       return;
@@ -326,10 +330,10 @@ export function AgentChatMigrationSurface({
       element.addEventListener("opencraft-connection", handleConnection);
       element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken });
       mount.append(element);
-      await element.prepare();
+      await candidate.prepare();
       if (retired || failed) return;
-      if (activeRef.current) await element.show();
-      else element.hide();
+      if (activeRef.current) await candidate.show();
+      else candidate.hide();
       if (!retired && !failed) {
         adopted = true;
         onOwnerChangeRef.current?.("opencraft");

@@ -29,6 +29,8 @@ interface DraftHarness {
   releaseCapabilityRegistration(): void;
   failCapabilityRegistration(): void;
   releaseUnsubscribe(): void;
+  holdFork(): void;
+  releaseFork(): void;
   publishFork(): void;
   notifySkillsChanged(): void;
   notifyFsChanged(watchId: string, changedPaths: readonly string[]): void;
@@ -65,6 +67,8 @@ function createHarness(
   let releaseCapabilityRegistration = () => undefined;
   let failCapabilityRegistration = () => undefined;
   let releaseUnsubscribe = () => undefined;
+  let releaseFork = () => undefined;
+  let holdFork = false;
   let forkPublished = false;
   let activePeer: InMemoryAppServerPeer | null = null;
   const server: InMemoryAppServer = {
@@ -114,10 +118,12 @@ function createHarness(
         send({ data: [protocolThread("thread-created"), ...(forkPublished ? [protocolThread("thread-fork")] : [])], nextCursor: null });
       } else if (message.method === "thread/fork") {
         const ephemeral = (message.params as { ephemeral?: boolean }).ephemeral === true;
-        send({ thread: { ...protocolThread(ephemeral ? "thread-fork-ephemeral" : "thread-fork"), forkedFromId: "thread-created", ephemeral },
+        const respond = () => send({ thread: { ...protocolThread(ephemeral ? "thread-fork-ephemeral" : "thread-fork"), forkedFromId: "thread-created", ephemeral },
           model: "codex", modelProvider: "openai", cwd: "/workspace", approvalPolicy: "on-request", approvalsReviewer: "user",
           sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, runtimeWorkspaceRoots: ["/workspace"],
         });
+        if (holdFork) releaseFork = respond;
+        else respond();
       } else if (message.method === "thread/read" && historyTurns.length > 0) {
         const threadId = (message.params as { threadId?: string }).threadId ?? "thread-created";
         send({ thread: protocolThread(threadId) });
@@ -259,6 +265,8 @@ function createHarness(
     releaseCapabilityRegistration: () => releaseCapabilityRegistration(),
     failCapabilityRegistration: () => failCapabilityRegistration(),
     releaseUnsubscribe: () => releaseUnsubscribe(),
+    holdFork: () => { holdFork = true; },
+    releaseFork: () => releaseFork(),
     publishFork: () => { forkPublished = true; },
     notifySkillsChanged: () => activePeer?.send(encodeJsonRpcMessage({
       method: "skills/changed",
@@ -345,6 +353,25 @@ test("an acknowledged durable Fork stays in the default catalog until the Host l
     assert.equal((await runtime.resources.threads.list()).data.filter(thread => thread.id === child.id).length, 1);
     await runtime.resources.threads.fork!({ threadId: "thread-created", ephemeral: true, excludeTurns: true });
     assert.equal((await runtime.resources.threads.list()).data.some(thread => thread.id === "thread-fork-ephemeral"), false);
+  } finally { await runtime.dispose(); }
+});
+
+test("a durable Fork can outlive the generic request deadline without a second native request", async () => {
+  const harness = createHarness(false, false, [], false, undefined, false, false, false, false, { version: 1, fork: true });
+  harness.holdFork();
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, requestTimeoutMs: 20, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const fork = runtime.resources.threads.fork!({ threadId: "thread-created" });
+    const joined = runtime.resources.threads.fork!({ threadId: "thread-created" });
+    await waitForRequest(harness, "thread/fork");
+    await new Promise(resolve => setTimeout(resolve, 45));
+    assert.equal(harness.requests.filter(request => request.method === "thread/fork").length, 1);
+    harness.releaseFork();
+    assert.equal((await fork).id, "thread-fork");
+    assert.equal((await joined).id, "thread-fork");
+    const request = harness.requests.find(request => request.method === "thread/fork");
+    assert.deepEqual(request?.params, { threadId: "thread-created" });
   } finally { await runtime.dispose(); }
 });
 

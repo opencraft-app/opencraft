@@ -8,14 +8,15 @@ import {
   type CreditSummary,
 } from "@/domain/credit-pack";
 import { useRepositories } from "@/contexts/repository-context";
+import { useT } from "@/i18n/t";
 
 /**
  * 合并「套餐积分」「活动赠送积分」与「付费积分包」数据源，供账号页积分额度模块使用。
  *
  * 为什么需要合并：套餐积分来自 pass（`operablePass.credit_total/credit_available`），
  * 活动赠送积分由 pass 聚合返回，付费积分包来自 credit 服务（`GET /v1/credit/packages`）。
- * credit 服务当前只实现付费积分包，套餐积分的入口迁移「后续再补」
- * （见 credit/AGENTS.md:3），因此账号页只能在前端把这些来源拼起来展示。
+ * credit 服务自身只管理付费积分包，但查询接口同时返回 free-credit:* 的免费积分。
+ * 后者与 pass 聚合返回的是同一笔权益，不能当作新的积分包再加一次。
  *
  * ⚠️ 服务端才是扣减顺序的权威，本 hook 的排序仅用于解释性展示。
  */
@@ -69,6 +70,7 @@ export const useCreditSources = (
   freeCredit: FreeCreditInput | null = null,
 ): CreditSourcesState => {
   const repositories = useRepositories();
+  const t = useT();
   /* 用 ref 持有：repositories 若非 memo 化，放进依赖会导致 effect 反复重跑 */
   const repositoriesRef = useRef(repositories);
   repositoriesRef.current = repositories;
@@ -107,10 +109,10 @@ export const useCreditSources = (
         if (!active) return;
         setPackSources(
           items.map((item) => ({
-            source_type: "paid_pack" as const,
+            source_type: item.credit_type === "free" ? ("free_credit" as const) : ("paid_pack" as const),
             source_id: creditPackageSourceId(item),
-            /* 展示名用积分总额构造：查询结果不含商品名（credit/AGENTS.md:79） */
-            display_name: `${item.credit_total.toLocaleString()} 积分包`,
+            /* 查询结果没有商品名；免费积分与 pass 的 free_credit_* 是同一来源。 */
+            display_name: item.credit_type === "free" ? "" : `${item.credit_total.toLocaleString()} 积分包`,
             credit_total: item.credit_total,
             credit_available: item.credit_available,
             next_expire_at: item.expired_time,
@@ -154,9 +156,16 @@ export const useCreditSources = (
         credit_available: freeCredit.creditAvailable,
       });
     }
-    all.push(...packSources);
+    /* pass 已聚合 free-credit:* 时，credit 接口里的 free 是同一笔，不能重复计入。
+       若 pass 暂未返回免费积分，保留 credit 接口的 free 作为兜底。 */
+    const additionalSources = freeCredit && freeCredit.creditTotal > 0
+      ? packSources.filter((source) => source.source_type !== "free_credit")
+      : packSources;
+    all.push(...additionalSources.map((source) =>
+      source.source_type === "free_credit" ? { ...source, display_name: t("额外积分") } : source,
+    ));
     return sortCreditSources(all);
-  }, [freeCredit, packSources, planCredit]);
+  }, [freeCredit, packSources, planCredit, t]);
 
   const summary = useMemo(() => summarizeCreditSources(sources), [sources]);
 

@@ -7,6 +7,11 @@ import {
   encodeBase64Text,
   joinWorkspacePath,
   parseWorkspaceResource,
+  reconcileWorkspaceSave,
+  updateWorkspaceDraft,
+  workspaceDraftConflicted,
+  workspaceDraftKey,
+  workspaceFileKind,
   workspaceFileLanguage,
   workspaceRootsForResource,
 } from "../apps/workbench-web/src/panels/workspace-resource-model";
@@ -22,6 +27,21 @@ test("workspace resource URLs retain host paths and source locations", () => {
   );
 });
 
+test("workspace drafts retain Host/path identity across refresh and late save", () => {
+  const first = workspaceDraftKey("host-a", "/repo/app.css");
+  const second = workspaceDraftKey("host-b", "/repo/app.css");
+  assert.notEqual(first, second);
+  const drafts = updateWorkspaceDraft({}, first, "old", "local");
+  assert.deepEqual(drafts[first], { baseText: "old", text: "local" });
+  assert.equal(workspaceDraftConflicted(drafts[first], "external"), true);
+  assert.equal(workspaceDraftConflicted(drafts[first], "old"), false);
+  const changedWhileSaving = updateWorkspaceDraft(drafts, first, "old", "newer local");
+  assert.deepEqual(reconcileWorkspaceSave(changedWhileSaving, first, "local")[first], {
+    baseText: "local", text: "newer local",
+  });
+  assert.deepEqual(reconcileWorkspaceSave(drafts, first, "local"), {});
+});
+
 test("workspace text codec preserves UTF-8 across the AppServer base64 boundary", () => {
   const source = "你好，DSH sandbox\nconst answer = 42;\n";
   const encoded = encodeBase64Text(source);
@@ -34,6 +54,14 @@ test("workspace file presentation derives stable roots, paths, and languages", (
   assert.equal(workspaceFileLanguage("/workspace/project/src/main.tsx"), "tsx");
   assert.equal(workspaceFileLanguage("/workspace/README.MD"), "markdown");
   assert.equal(workspaceFileLanguage("/workspace/notes.markdown"), "markdown");
+
+  assert.equal(workspaceFileLanguage("/workspace/project/styles/site.scss"), "css");
+  assert.equal(workspaceFileLanguage("/workspace/project/src/worker.mjs"), "javascript");
+  assert.equal(workspaceFileKind("/workspace/project/styles/site.css"), "css");
+  assert.equal(workspaceFileKind("/workspace/project/src/main.js"), "javascript");
+  assert.equal(workspaceFileKind("/workspace/project/src/main.tsx"), "typescript");
+  assert.equal(workspaceFileKind("/workspace/project/config.json"), "json");
+  assert.equal(workspaceFileKind("/workspace/project/logo.png"), "image");
   assert.deepEqual(
     workspaceRootsForResource(["/workspace/project", "/workspace/project"], null, "/workspace/project/src/main.ts"),
     ["/workspace/project"],
@@ -43,4 +71,3 @@ test("workspace file presentation derives stable roots, paths, and languages", (
     ["/workspace/project"],
   );
 });
-

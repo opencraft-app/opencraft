@@ -21,7 +21,7 @@ describe("initializeInternationalHomeFragmentAccessibility", () => {
     const firstOutput = await readFile(fragmentPath, "utf8");
     const document = new DOMParser().parseFromString(firstOutput, "text/html");
 
-    expect(firstSummary).toEqual({ buttons: 6, fragments: 1 });
+    expect(firstSummary).toEqual({ buttons: 6, fragments: 1, images: 0, decorativeImages: 0 });
     expect(document.querySelector('[data-keep="unchanged"]')?.textContent).toBe("Keep me");
     for (const scene of document.querySelectorAll(".scene")) {
       const buttons = Array.from(scene.querySelectorAll<HTMLButtonElement>(".scene__sub"));

@@ -112,6 +112,12 @@ export class CodexHostQueue {
 
   firstUnsettled(threadId: string): HostQueuedSubmission | null { return this.list(threadId)[0] ?? null; }
 
+  firstAwaitingAdmission(threadId: string): HostQueuedSubmission | null {
+    const row = this.db.prepare("SELECT * FROM codex_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown') ORDER BY position,created_at_ms,id LIMIT 1")
+      .get(threadId);
+    return row ? fromRow(row) : null;
+  }
+
   update(threadId: string, id: string, input: readonly unknown[]): HostQueuedSubmission | null {
     parseInput(input);
     const result = this.db.prepare("UPDATE codex_host_queue SET input_json=?,updated_at_ms=? WHERE thread_id=? AND id=? AND state='queued'")
@@ -126,8 +132,9 @@ export class CodexHostQueue {
 
   reorder(threadId: string, ids: readonly string[]): void {
     const unsettled = this.list(threadId);
-    if (unsettled.some(row => row.state !== "queued")) throw new Error("Reconcile in-flight delivery before reordering this queue");
-    const queued = unsettled;
+    if (unsettled.some(row => row.state === "dispatching" || row.state === "unknown"))
+      throw new Error("Reconcile in-flight delivery before reordering this queue");
+    const queued = unsettled.filter(row => row.state === "queued");
     if (ids.length !== queued.length || new Set(ids).size !== ids.length || queued.some(row => !ids.includes(row.id))) {
       throw new Error("Queue order must contain each queued item exactly once");
     }

@@ -288,7 +288,12 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
     throw new Error(`Missing AppHost frame: ${JSON.stringify(frames)}`);
   };
   socket.send(JSON.stringify({ type: "hello", protocolVersion: 1, rendererId: "web-client" }));
-  assert.equal((await waitFor(frame => frame.type === "ready")).connectionId, "web-client");
+  const ready = await waitFor(frame => frame.type === "ready");
+  assert.equal(ready.connectionId, "web-client");
+  assert.equal(ready.capabilities.connectionProbe, true);
+  socket.send(JSON.stringify({ type: "connection/probe", requestId: "foreground-probe" }));
+  assert.equal((await waitFor(frame => frame.type === "response" && frame.requestId === "foreground-probe")).ok, true);
+  assert.equal(transportCount, 0, "probe must not activate an engine");
   socket.send(JSON.stringify({ type: "host/connect", requestId: "connect", hostId: "local-codex", leaseId: "lease" }));
   const connected = await waitFor(frame => frame.type === "response" && frame.requestId === "connect");
   assert.equal(connected.ok, true);

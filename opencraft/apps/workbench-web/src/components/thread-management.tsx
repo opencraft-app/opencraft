@@ -17,6 +17,7 @@ import {
 import { ConfirmationModalSurface } from "./modal/confirmation-modal-surface";
 import { ModalSurface } from "./modal";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
+import type { SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import "../styles/context-menu.scss";
 
 export interface ThreadActionTarget { readonly hostId: string; readonly threadId: string; readonly title: string }
@@ -34,13 +35,16 @@ export interface ThreadHostActionCallbacks {
   readonly onOpenSettings?: (hostId: string) => void;
 }
 
-export function ThreadRowMenu({ target, capabilities, children, hostActions, onRename, onFork, onArchive, onDelete }: ThreadActionCallbacks & {
+export function ThreadRowMenu({ target, capabilities, children, hostActions, openMenuKind, onOpenMenuChange, onRename, onFork, onArchive, onDelete }: ThreadActionCallbacks & {
   target: ThreadActionTarget; capabilities: ThreadActionCapabilities; children: ReactNode;
   hostActions?: ThreadHostActionCallbacks;
+  openMenuKind: SidebarThreadMenuKind | null;
+  onOpenMenuChange: (kind: SidebarThreadMenuKind, open: boolean) => void;
 }) {
   const portalContainer = useWorkbenchPresentationRoot();
   const [renaming, setRenaming] = useState(false), [draft, setDraft] = useState(""), [busy, setBusy] = useState(false), [forking, setForking] = useState(false), [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ThreadActionTarget | null>(null);
+  const modalHandoff = useRef(false);
   const mounted = useRef(true), formId = useId();
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const run = async (operation: () => Promise<void>, action: "fork" | "other" = "other") => {
@@ -52,10 +56,10 @@ export function ThreadRowMenu({ target, capabilities, children, hostActions, onR
   // Shared item model for both the right-click context menu and the row
   // "..." dropdown, mirroring the actions(entry).map pattern in bot-management.
   const menuItems = [
-    capabilities.rename ? { key: "rename", label: "重命名", onSelect: () => { setDraft(target.title); setError(null); setRenaming(true); } } : null,
+    capabilities.rename ? { key: "rename", label: "重命名", onSelect: () => { modalHandoff.current = true; setDraft(target.title); setError(null); setRenaming(true); } } : null,
     capabilities.fork ? { key: "fork", label: "新建分支", onSelect: () => { void run(() => onFork(target), "fork"); } } : null,
     capabilities.archive ? { key: "archive", label: "归档", onSelect: () => { void run(() => onArchive(target)); } } : null,
-    capabilities.delete ? { key: "delete", label: "删除", onSelect: () => { setError(null); setDeleting(target); } } : null,
+    capabilities.delete ? { key: "delete", label: "删除", onSelect: () => { modalHandoff.current = true; setError(null); setDeleting(target); } } : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
   const hostItems = [
     hostActions?.onNewTask ? { key: "new-task", label: `在 ${hostActions.label} 上新建任务`, onSelect: () => {
@@ -67,33 +71,39 @@ export function ThreadRowMenu({ target, capabilities, children, hostActions, onR
   ].filter((item): item is NonNullable<typeof item> => item !== null);
   if (menuItems.length === 0 && hostItems.length === 0) return children;
   const showSeparator = menuItems.length > 0 && hostItems.length > 0;
+  const onMenuCloseAutoFocus = (event: Event) => {
+    if (!modalHandoff.current) return;
+    event.preventDefault();
+    modalHandoff.current = false;
+  };
   return <>
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>
-        <div className="sidebar-activity-row">
-          {children}
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button type="button" className="sidebar-activity-item__menu-trigger" aria-label={forking ? `${target.title} 正在新建分支` : `${target.title} 的操作`} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={busy}>
-                {forking ? <LoaderCircle size={14} aria-hidden="true" /> : <MoreHorizontal size={14} aria-hidden="true" />}
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal container={portalContainer}>
-              <DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4} onCloseAutoFocus={event => { if (renaming) event.preventDefault(); }}>
-                {menuItems.map(({ key, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</DropdownMenu.Item>)}
-                {showSeparator ? <DropdownMenu.Separator className="workbench-context-menu__separator" /> : null}
-                {hostItems.map(({ key, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</DropdownMenu.Item>)}
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        </div>
-      </ContextMenu.Trigger>
-      <ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu" onCloseAutoFocus={event => { if (renaming) event.preventDefault(); }}>
-        {menuItems.map(({ key, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</ContextMenu.Item>)}
-        {showSeparator ? <ContextMenu.Separator className="workbench-context-menu__separator" /> : null}
-        {hostItems.map(({ key, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</ContextMenu.Item>)}
-      </ContextMenu.Content></ContextMenu.Portal>
-    </ContextMenu.Root>
+    <div className="sidebar-activity-row">
+      {/* Keep the dropdown outside this trigger: portal pointer events still bubble through the React tree. */}
+      <ContextMenu.Root open={openMenuKind === "context"} onOpenChange={open => onOpenMenuChange("context", open)}>
+        <ContextMenu.Trigger asChild>
+          <div className="sidebar-activity-row__target">{children}</div>
+        </ContextMenu.Trigger>
+        <ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu" onCloseAutoFocus={onMenuCloseAutoFocus}>
+          {menuItems.map(({ key, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</ContextMenu.Item>)}
+          {showSeparator ? <ContextMenu.Separator className="workbench-context-menu__separator" /> : null}
+          {hostItems.map(({ key, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</ContextMenu.Item>)}
+        </ContextMenu.Content></ContextMenu.Portal>
+      </ContextMenu.Root>
+      <DropdownMenu.Root open={openMenuKind === "dropdown"} onOpenChange={open => onOpenMenuChange("dropdown", open)}>
+        <DropdownMenu.Trigger asChild>
+          <button type="button" className="sidebar-activity-item__menu-trigger" aria-label={forking ? `${target.title} 正在新建分支` : `${target.title} 的操作`} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={busy}>
+            {forking ? <LoaderCircle size={14} aria-hidden="true" /> : <MoreHorizontal size={14} aria-hidden="true" />}
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal container={portalContainer}>
+          <DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4} onCloseAutoFocus={onMenuCloseAutoFocus}>
+            {menuItems.map(({ key, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</DropdownMenu.Item>)}
+            {showSeparator ? <DropdownMenu.Separator className="workbench-context-menu__separator" /> : null}
+            {hostItems.map(({ key, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</DropdownMenu.Item>)}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
     {renaming ? <ModalSurface portalContainer={portalContainer} label="重命名会话" size="compact" appearance="utility" onDismiss={() => setRenaming(false)}>
       <SettingsPanel title="重命名会话" footer={<><SettingsButton onClick={() => setRenaming(false)}>取消</SettingsButton><SettingsButton form={formId} type="submit" variant="primary" disabled={busy || !draft.trim()}>{busy ? "保存中…" : "保存"}</SettingsButton></>}>
         <form id={formId} onSubmit={event => { event.preventDefault(); void run(() => onRename(target, draft.trim())); }}>

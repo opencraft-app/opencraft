@@ -57,6 +57,8 @@ class ReferralConfigRolloutTest(unittest.TestCase):
                 self.assertRegex(config_name, r"^referral-config-[a-z0-9]+$")
                 self.assertEqual(config["data"]["REFERRAL_ENABLED"], "true")
                 self.assertEqual(config["data"]["REFERRAL_CAMPAIGN_ID"], expected_campaign)
+                if env in {"sgprod", "shprod"}:
+                    self.assertEqual(config["data"]["REFERRAL_BUDGET_CREDIT"], "9223372036854775807")
 
                 workloads = [item for item in resources if item["kind"] in {"Deployment", "Job"}]
                 self.assertEqual(

@@ -18,6 +18,27 @@ interface AppHostPort {
 interface PendingRequest {
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: Error) => void;
+  readonly clearTimer: () => void;
+}
+
+export interface AppHostClientOptions {
+  readonly controlTimeoutMs?: number;
+  readonly maxPendingRequests?: number;
+}
+
+function waitForControl<T>(operation: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => finish(new Error("App Host ready timed out")), timeoutMs);
+    const abort = () => finish(abortError("App Host connection was aborted"));
+    const finish = (error?: unknown, value?: T) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      if (error !== undefined) reject(error); else resolve(value as T);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    operation.then(value => finish(undefined, value), error => finish(error));
+  });
 }
 
 type AppHostRequestInput =
@@ -62,6 +83,7 @@ function abortError(message: string): Error {
 
 export class MessagePortAppHostClient {
   private readonly pending = new Map<string, PendingRequest>();
+  private readonly lateResults = new Map<string, (value: unknown) => void>();
   private readonly hostListeners = new Map<string, Set<(event: HostEvent) => void>>();
   private readonly ready: Promise<void>;
   private resolveReady!: () => void;
@@ -74,6 +96,7 @@ export class MessagePortAppHostClient {
   constructor(
     private readonly port: AppHostPort,
     private readonly rendererId: string,
+    private readonly options: AppHostClientOptions = {},
   ) {
     this.ready = new Promise<void>((resolve, reject) => {
       this.resolveReady = resolve;
@@ -102,9 +125,10 @@ export class MessagePortAppHostClient {
     return new AppHostChannelTransport(
       this,
       hostId,
-      `${this.rendererId}:lease:${++this.leaseSequence}`,
     );
   }
+
+  createLeaseId(): string { return `${this.rendererId}:lease:${++this.leaseSequence}`; }
 
   async connectHost(
     hostId: string,
@@ -112,9 +136,14 @@ export class MessagePortAppHostClient {
     signal?: AbortSignal,
   ): Promise<AppHostConnectResult> {
     if (signal?.aborted) throw abortError("App Host connection was aborted");
-    await this.ready;
+    await waitForControl(this.waitUntilReady(), this.options.controlTimeoutMs ?? 30_000, signal);
     if (signal?.aborted) throw abortError("App Host connection was aborted");
-    const operation = this.request<AppHostConnectResult>({ type: "host/connect", hostId, leaseId });
+    const operation = this.request<AppHostConnectResult>({ type: "host/connect", hostId, leaseId }, (value) => {
+      const result = value as AppHostConnectResult;
+      // Timeout ends the local wait, not process-scoped activation. A late
+      // grant belongs only to the expired lease and must be released.
+      void this.disconnectHost(hostId, leaseId, result.generation).catch(() => undefined);
+    });
     if (signal === undefined) return operation;
     return new Promise<AppHostConnectResult>((resolve, reject) => {
       let settled = false;
@@ -144,8 +173,8 @@ export class MessagePortAppHostClient {
     });
   }
 
-  sendHostFrame(hostId: string, leaseId: string, generation: number, frame: string): Promise<void> {
-    return this.request<void>({ type: "host/send", hostId, leaseId, generation, frame });
+  sendHostFrame(hostId: string, leaseId: string, generation: number, frame: string, signal?: AbortSignal): Promise<void> {
+    return this.request<void>({ type: "host/send", hostId, leaseId, generation, frame }, undefined, signal);
   }
 
   disconnectHost(hostId: string, leaseId: string, generation: number): Promise<void> {
@@ -169,19 +198,42 @@ export class MessagePortAppHostClient {
     this.terminate(new Error("App Host connection closed"));
   }
 
-  private request<TResult>(input: AppHostRequestInput): Promise<TResult> {
+  private request<TResult>(input: AppHostRequestInput, onLateResult?: (value: unknown) => void, signal?: AbortSignal): Promise<TResult> {
+    if (signal?.aborted) return Promise.reject(abortError("App Host request was aborted"));
     if (this.closed) {
       return Promise.reject(this.terminalError ?? new Error("App Host connection is closed"));
     }
+    if (this.pending.size + this.lateResults.size >= (this.options.maxPendingRequests ?? 256)) {
+      return Promise.reject(new Error("App Host pending request limit reached"));
+    }
     const requestId = `${this.rendererId}:${++this.requestSequence}`;
     return new Promise<TResult>((resolve, reject) => {
+      // host/send acknowledges forwarding, not execution. Its AppServer RPC
+      // retains its own deadline and reconciliation policy (e.g. native fork).
+      const timer = input.type === "host/send" ? null : setTimeout(() => {
+        this.pending.delete(requestId);
+        if (onLateResult) this.lateResults.set(requestId, onLateResult);
+        reject(new Error(`App Host ${input.type} timed out`));
+      }, this.options.controlTimeoutMs ?? 30_000);
+      const abort = () => {
+        this.pending.delete(requestId);
+        clearTimer();
+        reject(abortError("App Host request was aborted"));
+      };
+      const clearTimer = () => {
+        if (timer !== null) clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+      };
       this.pending.set(requestId, {
         resolve: (value) => resolve(value as TResult),
         reject,
+        clearTimer,
       });
+      signal?.addEventListener("abort", abort, { once: true });
       try {
         this.port.postMessage({ ...input, requestId } as RendererToAppHostMessage);
       } catch (cause) {
+        clearTimer();
         this.pending.delete(requestId);
         reject(cause instanceof Error ? cause : new Error(String(cause)));
       }
@@ -195,8 +247,9 @@ export class MessagePortAppHostClient {
     this.port.removeEventListener("message", this.receive);
     this.port.close();
     this.rejectReady(error);
-    for (const request of this.pending.values()) request.reject(error);
+    for (const request of this.pending.values()) { request.clearTimer(); request.reject(error); }
     this.pending.clear();
+    this.lateResults.clear();
     for (const listeners of this.hostListeners.values()) {
       for (const listener of listeners) {
         listener({ generation: 0, terminalReason: error.message });
@@ -221,7 +274,13 @@ export class MessagePortAppHostClient {
     }
     if (message?.type === "response") {
       const pending = this.pending.get(message.requestId);
-      if (pending === undefined) return;
+      if (pending === undefined) {
+        const late = this.lateResults.get(message.requestId);
+        this.lateResults.delete(message.requestId);
+        if (message.ok) late?.(message.result);
+        return;
+      }
+      pending.clearTimer();
       this.pending.delete(message.requestId);
       if (message.ok) pending.resolve(message.result);
       else pending.reject(appHostError(message.error));
@@ -245,11 +304,11 @@ class AppHostChannelTransport implements DuplexTransport {
   private generation = 0;
   private connectOperation: Promise<void> | null = null;
   private closed = false;
+  private leaseId = "";
 
   constructor(
     private readonly client: MessagePortAppHostClient,
     private readonly hostId: string,
-    private readonly leaseId: string,
   ) {
     this.unsubscribe = client.subscribeHost(hostId, (event) => this.receive(event));
   }
@@ -262,6 +321,7 @@ class AppHostChannelTransport implements DuplexTransport {
     if (this.closed) return Promise.reject(new Error(`App Host channel ${this.hostId} is closed`));
     if (this.currentStatus.state === "open") return Promise.resolve();
     if (this.connectOperation !== null) return this.connectOperation;
+    this.leaseId = this.client.createLeaseId();
     this.setStatus({ state: "connecting" });
     const operation = this.client.connectHost(this.hostId, this.leaseId, signal)
       .then((result) => {
@@ -281,11 +341,11 @@ class AppHostChannelTransport implements DuplexTransport {
     return operation;
   }
 
-  send(frame: string): Promise<void> {
+  send(frame: string, signal?: AbortSignal): Promise<void> {
     if (this.closed || this.currentStatus.state !== "open") {
       return Promise.reject(new Error(`App Host channel ${this.hostId} is not open`));
     }
-    return this.client.sendHostFrame(this.hostId, this.leaseId, this.generation, frame);
+    return this.client.sendHostFrame(this.hostId, this.leaseId, this.generation, frame, signal);
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {

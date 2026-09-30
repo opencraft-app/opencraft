@@ -175,7 +175,7 @@ ALTER TABLE trade_order
 ### 4.5 参与记录写入时机
 
 - 新购：`createResource` 成功后写 `scene='purchase'`，保持现有语义。
-- 控制台续费：点石 `do_goods` 成功返回后，在同一个数据库事务中创建 `trade_order` 并写入
+- 控制台续费：点石 `do_goods_renew` 成功返回后，在同一个数据库事务中创建 `trade_order` 并写入
   `scene='renew'` 的参与记录。
 - 内部无限次续费：只创建 `trade_order`，不调用参与记录写入逻辑。
 - 参与记录唯一键冲突按幂等成功处理。
@@ -194,14 +194,14 @@ ALTER TABLE trade_order
 Frontend
   -> CTL 续费询价/下单
   -> Trade 判断国内站续费活动资格
-     -> 首次参与：Dianshi get_price / do_goods
+     -> 首次参与：Dianshi get_price_renew / do_goods_renew
      -> 已参与：现有计费询价/下单
 
 内部无限次续费
 Internal Caller
   -> Trade internal dianshi/orders/renew/place-and-pay
   -> Trade 校验 internal token、站点及请求参数
-  -> Dianshi do_goods_and_pay
+  -> Dianshi do_goods_renew (auto_pay="1")
 
 现有计费续费
 Trusted Internal Caller
@@ -225,7 +225,8 @@ Trade 在国内站执行以下分流：
 3. 按 `(uin, activity_id, scene='renew')` 查询用户是否参与过续费活动。
 4. 未参与时调用点石询价。
 5. 已参与时走现有计费询价。
-6. 活动资格查询异常时回落现有计费询价，避免异常放大为续费不可用，也避免错误放出优惠资格。
+6. 没有 `scene='renew'` 活动配置、活动未启用或活动资格查询异常时，回落现有计费询价，
+   避免代码先于活动配置发布时影响存量续费。
 
 国际站不执行活动判断，继续走现有计费询价。
 
@@ -248,10 +249,12 @@ POST /v1/passes/{pass_id}/renew/order
 
 国内站下单时重新校验活动资格：
 
-- 未参与：调用点石 `do_goods`，创建待支付续费订单。
+- 未参与：调用点石 `do_goods_renew`，创建待支付续费订单。
 - 已参与：调用现有计费续费下单。
-- 点石 `do_goods` 成功后，在同一数据库事务中落续费订单和 `scene='renew'` 参与记录。
+- 点石 `do_goods_renew` 成功后，在同一数据库事务中落续费订单和 `scene='renew'` 参与记录。
 - 点石下单失败时不产生已参与事实；支付或履约失败不自动释放已经创建订单所消耗的活动资格。
+- 没有 `scene='renew'` 活动配置、活动未启用或活动查询失败时，普通续费下单走原计费
+  `GenerateDeals`；点石专用内部接口仍要求有效活动配置，不回退到计费。
 
 参与记录必须依赖数据库唯一约束和订单幂等，防止并发请求重复享受控制台续费活动。
 
@@ -277,7 +280,7 @@ POST /internal/trade/dianshi/orders/renew/place-and-pay
 - 不查询控制台续费活动参与记录。
 - 不写入控制台续费活动参与记录。
 - 允许受信任的内部调用方不限次数续费。
-- 调用点石 `do_goods_and_pay`。
+- 调用点石 `do_goods_renew`，并传 `auto_pay="1"`；不调用新购的 `do_goods_and_pay`。
 - 订单使用 `order_type=renew`、`resource_type=pass` 和目标 `pass_id`。
 - 不调用参与记录写入逻辑，明确绕过控制台活动资格。
 - 复用现有续费资源校验及 `checkRenew/renewResource` 回调处理。
@@ -307,10 +310,14 @@ POST /internal/trade/orders/renew/place-and-pay
 
 ## 8. 点石请求协议
 
-续费询价、`do_goods` 和 `do_goods_and_pay` 使用完全相同的 `preference_param`：
+续费询价和下单分别调用 `POST /activity_web/activity/get_price_renew` 与
+`POST /activity_web/activity/do_goods_renew`。控制台下单不传 `auto_pay`，内部下单并支付
+在同一个 `do_goods_renew` 请求中传 `auto_pay="1"`。两者均使用 `goods_renew` 数组，
+商品字段直接放在数组元素中：
 
 ```json
 {
+  "goods_id": 1975812517099088,
   "regionId": 1,
   "resourceId": "pass-xxxx",
   "timeSpanUnit": "1m",
@@ -326,6 +333,7 @@ POST /internal/trade/orders/renew/place-and-pay
 | `resourceId` | path 中的目标 Pass ID |
 | `timeSpanUnit` | `period + time_unit`，例如 `1m` |
 | `bundleId` | CTL 从目标 Pass 读取的 Bundle ID |
+| `goods_id` | 续费活动商品 ID (`act_id`) |
 
 不得额外传入以下字段：
 
@@ -339,7 +347,7 @@ POST /internal/trade/orders/renew/place-and-pay
 
 ## 9. 订单与活动语义
 
-### 9.1 控制台 `do_goods`
+### 9.1 控制台 `do_goods_renew`
 
 - `source = dianshi`
 - `order_type = renew`
@@ -348,7 +356,7 @@ POST /internal/trade/orders/renew/place-and-pay
 - 初始订单状态为待支付状态
 - 订单与 `scene=renew` 参与记录在同一数据库事务内写入
 
-### 9.2 内部 `do_goods_and_pay`
+### 9.2 内部 `do_goods_renew` (`auto_pay="1"`)
 
 - 使用相同的续费订单字段。
 - 同步成功并返回资源结果后，按现有下单并支付语义推进订单状态。
@@ -368,6 +376,7 @@ POST /internal/trade/orders/renew/place-and-pay
 | 场景 | 控制台普通续费 | 内部下单并支付 |
 | --- | --- | --- |
 | 活动资格查询失败 | 回落现有计费 | 不查询活动资格 |
+| 续费活动未配置或未启用 | 询价、下单均走现有计费 | 点石专用接口返回活动未配置错误 |
 | 用户已参加续费活动 | 回落现有计费 | 不受影响 |
 | 点石询价失败 | 返回明确上游错误 | 不适用 |
 | 点石下单失败 | 返回失败且不消耗资格 | 返回失败 |
@@ -391,8 +400,8 @@ POST /internal/trade/orders/renew/place-and-pay
 - `trade/internal/logic/activity/`：按 `bundle_id + scene` 解析活动，并按
   `uin + activity_id + scene` 判断资格。
 - `trade/internal/logic/inquiry/`：续费询价点石分流。
-- `trade/internal/logic/placeorder/`：控制台续费 `do_goods` 分流；新增独立的点石续费
-  `do_goods_and_pay` 方法，参考新购实现但不复用其业务语义。
+- `trade/internal/logic/placeorder/`：控制台续费 `do_goods_renew` 分流；新增独立的点石续费
+  下单并支付方法，通过同一接口的 `auto_pay="1"` 实现，不复用新购业务语义。
 - `trade/internal/httpapi/internalapi/`：新增点石续费专用内部路由，保留现有计费续费路由。
 - `trade/internal/store/`：补齐带 scene 的活动 DAO，并提供续费订单与参与记录的事务写入能力。
 - `trade/internal/logic/createresource/`：新购参与记录显式写 `scene=purchase`。
@@ -406,15 +415,16 @@ POST /internal/trade/orders/renew/place-and-pay
 
 ### 13.1 Trade
 
-- 国内用户首次续费询价走点石，并校验 `preference_param` 只有四个指定字段。
+- 国内用户首次续费询价走点石，并校验 `goods_renew` 仅有商品 ID 和四个指定业务字段。
 - 同一 Bundle 可同时读取 `purchase` 和 `renew` 两条活动配置，互不覆盖。
 - 存量活动映射和参与记录迁移后均为 `scene=purchase`。
 - 国内用户已参加续费活动时询价回落计费。
 - 活动资格查询异常时询价回落计费。
-- 国内首次控制台续费下单调用 `do_goods` 并记录参与信息。
+- 续费活动未配置或查询失败时，普通询价与下单均回落计费，且不调用点石。
+- 国内首次控制台续费下单调用 `do_goods_renew` 并记录参与信息。
 - 点石下单失败不记录参与信息。
 - 并发或重复请求不重复消耗活动资格、不生成非预期重复订单。
-- 内部续费下单并支付调用 `do_goods_and_pay`，且不读写参与记录。
+- 内部续费下单并支付调用 `do_goods_renew` 且传 `auto_pay="1"`，不读写参与记录。
 - 新购参与记录写 `scene=purchase`，续费参与记录写 `scene=renew`。
 - 同一 UIN、同一 activity ID 在 `purchase` 和 `renew` 场景可各有一条参与记录。
 - 同一 UIN、activity ID 和 scene 的重复写入按唯一键幂等处理。
@@ -434,7 +444,7 @@ POST /internal/trade/orders/renew/place-and-pay
 
 ### 13.3 联调
 
-- 点石续费询价、`do_goods` 和 `do_goods_and_pay` 的请求级 `preview` 固定为 `1`；新购不设置请求级
+- 点石续费询价和 `do_goods_renew` 的请求级 `preview` 固定为 `1`；新购不设置请求级
   preview，保持现有全局 `DIANSHI_PREVIEW` 行为。
 - 一个从未参与续费活动的国内用户完成点石询价、下单、支付及续费回调。
 - 同一用户第二次控制台续费回落现有计费。

@@ -233,3 +233,14 @@
 - 后续用户要求差异化：已有会话改为“继续聊聊，或告诉我接下来想做什么”，独立消息ID覆盖全部七语言。Web类型、163条i18n校验、嵌入构建和文档检查通过；Chrome已有会话textbox名称验证新文案，截图/tmp/lightvela-followup-copy.png。初始提示保持原文；本地预览已更新，未提交/发布。
 
 - 用户再精简后，已有会话最终文案为“告诉我接下来想做什么”，六套翻译和英文default同步；i18n、嵌入构建与diff检查通过，5174产物已更新。未提交或发布。
+
+## CR !4851 repair (2026-09-30)
+- 合并 origin/master 948c3a897 的九处冲突，保留主干代码编辑器、保存快照、测试清单与内嵌 Markdown/只读功能的并集；锁文件从已合并 manifest 重新生成。
+- 迁移测试明确固定国内 locale，CN/global 各 10 项通过。补充 prepare/show 迟到、启动 error 后重试重建、旧 Bot 事件及空 Profile 的行为覆盖；异步延续引用该次 candidate，退休/失败闸门显式阻止 show/adoption。
+- 真实文件面板在 Query mutation 边界测试：预览即使直接调用保存也拒绝，零 write/invalidate；可编辑面板按捕获目标写入。测试注册到 workbench 聚合。
+- 临时移除 prepare 闸门、adoption 闸门、只读保存保护分别触发回归测试失败，恢复后通过。
+- Web typecheck、boundaries、embedded release build、frontend check（0 new）、workbench 297/297、embedded/resource 17/17通过。修正两条因右栏多语言化失效的英文源码断言；本机 node-pty spawn-helper 缺执行位，恢复依赖文件执行位后终端测试通过，不提交 node_modules。
+- npm test 在 shared-control-standards 的 focus-indicator 断言停止（14/15），对应样式块和测试与 master 一致，不宣称全量绿。CI OpenCraft guard 仍仅做闭包校验，本 MR 的 OpenCraft 测试由本地手动执行；未扩大 CI pipeline 职责。
+- 本轮文案“告诉我接下来想做什么”及高度 74px 已在 4aed435a6；随修复更新原 MR，不合并或发布。
+
+- 最终隔离 frontend guard 全部通过：frozen install、check/i18n、发布脚本测试、CN/global 静态构建；仅本机 Vitest API host 显式改为 127.0.0.1，源码与构建配置未改。文档和 staged impact 通过，catalog.jsonl 原有变动排除。
