@@ -4,6 +4,7 @@ import { mountFeaturePreviews } from './international-home-feature-previews';
 import { mountStageMotion } from './international-home-stage-motion';
 
 const activeRoots = new WeakMap<HTMLElement, () => void>();
+const HOME_DISPOSE_EVENT = 'lightvela-home-dispose';
 
 export function mountInternationalHomeMotion(root: HTMLElement): () => void {
   activeRoots.get(root)?.();
@@ -164,13 +165,13 @@ export function mountInternationalHomeMotion(root: HTMLElement): () => void {
     if (disposed) return;
     disposed = true;
     media.revert();
-    document.removeEventListener('lightvela-home-dispose', dispose);
+    document.removeEventListener(HOME_DISPOSE_EVENT, dispose);
     if (originalReady === null) root.removeAttribute('data-home-motion-ready');
     else root.setAttribute('data-home-motion-ready', originalReady);
     if (activeRoots.get(root) === dispose) activeRoots.delete(root);
   }
 
   activeRoots.set(root, dispose);
-  document.addEventListener('lightvela-home-dispose', dispose);
+  document.addEventListener(HOME_DISPOSE_EVENT, dispose);
   return dispose;
 }

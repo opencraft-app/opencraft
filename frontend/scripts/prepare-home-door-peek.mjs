@@ -12,8 +12,14 @@ const character = Buffer.alloc(region.width * region.height * 4);
 const smooth = (value) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
 const sample = (x, y, channel) => {
   let sum = 0;
-  for (let dy = -3; dy <= 3; dy++) sum += source[((y + dy) * info.width + x) * 3 + channel];
-  return sum / 7;
+  let count = 0;
+  for (let dy = -3; dy <= 3; dy++) {
+    const sampleY = y + dy;
+    if (x < 0 || x >= info.width || sampleY < 0 || sampleY >= info.height) continue;
+    sum += source[(sampleY * info.width + x) * 3 + channel];
+    count++;
+  }
+  return count === 0 ? 0 : sum / count;
 };
 
 for (let y = 0; y < region.height; y++) {

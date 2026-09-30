@@ -3,6 +3,13 @@ import { gsap } from 'gsap';
 let nextClipId = 0;
 const ASSET_ROOT = '/lightvela-intl-home/assets/';
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const COMPANION_DOOR_EVENT = 'lightvela-companion-door';
+const DOOR_READY_EVENT = 'lightvela-door-ready';
+const DOOR_PEEK_STATE = {
+  ready: 'ready',
+  playing: 'playing',
+  complete: 'complete',
+} as const;
 
 export function mountDoorPeek(portal: HTMLElement): () => void {
   const artwork = portal.querySelector('svg');
@@ -21,9 +28,13 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
     timeline.scrollTrigger?.kill(false);
     timeline.pause().progress(guidedProgress, true);
     layers.style.display = guidedProgress >= 1 ? 'none' : '';
-    portal.dataset.doorPeek = guidedProgress >= 1 ? 'complete' : guidedProgress > 0 ? 'playing' : 'ready';
+    portal.dataset.doorPeek = guidedProgress >= 1
+      ? DOOR_PEEK_STATE.complete
+      : guidedProgress > 0
+        ? DOOR_PEEK_STATE.playing
+        : DOOR_PEEK_STATE.ready;
   };
-  portal.addEventListener('lightvela-companion-door', guide);
+  portal.addEventListener(COMPANION_DOOR_EVENT, guide);
   const loads: Array<() => void> = [];
   const originalState = portal.getAttribute('data-door-peek');
 
@@ -68,13 +79,13 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
     doorway.appendChild(character);
     layers.append(background, doorway);
     artwork.append(definitions, layers);
-    portal.dataset.doorPeek = 'ready';
+    portal.dataset.doorPeek = DOOR_PEEK_STATE.ready;
     timeline = gsap.timeline({
       scrollTrigger: { trigger: portal, start: 'top 82%', toggleActions: 'play pause resume pause' },
-      onStart: () => { portal.dataset.doorPeek = 'playing'; },
+      onStart: () => { portal.dataset.doorPeek = DOOR_PEEK_STATE.playing; },
       onComplete: () => {
         if (layers) layers.style.display = 'none';
-        portal.dataset.doorPeek = 'complete';
+        portal.dataset.doorPeek = DOOR_PEEK_STATE.complete;
       },
     });
     timeline.fromTo(character, { x: -136, y: 7, rotation: -5, svgOrigin: '374 620' }, {
@@ -84,8 +95,8 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
       .to(character, { x: -12, y: 2, rotation: -1.5, duration: 0.32, ease: 'sine.inOut' }, '+=0.65')
       .to(character, { x: 0, y: 0, rotation: 0, duration: 0.4, ease: 'sine.out' });
     timeline.scrollTrigger?.refresh();
-    if (guidedProgress !== undefined) guide(new CustomEvent('lightvela-companion-door', { detail: { progress: guidedProgress } }));
-    portal.dispatchEvent(new Event('lightvela-door-ready', { bubbles: true }));
+    if (guidedProgress !== undefined) guide(new CustomEvent(COMPANION_DOOR_EVENT, { detail: { progress: guidedProgress } }));
+    portal.dispatchEvent(new Event(DOOR_READY_EVENT, { bubbles: true }));
     if (document.hidden) { timeline.pause(); pausedForVisibility = true; }
   });
 
@@ -108,7 +119,7 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
     layers?.remove();
     definitions?.remove();
     document.removeEventListener('visibilitychange', visibility);
-    portal.removeEventListener('lightvela-companion-door', guide);
+    portal.removeEventListener(COMPANION_DOOR_EVENT, guide);
     if (originalState === null) portal.removeAttribute('data-door-peek');
     else portal.setAttribute('data-door-peek', originalState);
   };

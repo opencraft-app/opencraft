@@ -87,26 +87,31 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
   }
 
   const step = query('.home-step-mascot img');
+  const stepTrigger = query('.home-step-mascot');
   const deploy = query('.deploy');
-  if (step && deploy) {
+  if (step && stepTrigger && deploy) {
     const journey = remember(gsap.timeline({ scrollTrigger: desktop ? {
-      trigger: query('.home-step-mascot')!, start: 'top 90%', end: 'top 42%', scrub: 0.45,
+      trigger: stepTrigger, start: 'top 90%', end: 'top 42%', scrub: 0.45,
     } : { trigger: step, start: 'top 88%', toggleActions: 'play none none none' } }));
     journey.fromTo(step, { x: desktop ? -78 : -18, y: 0 }, {
       x: desktop ? -32 : -7, y: desktop ? -30 : -12, duration: 0.48, ease: 'power1.out', immediateRender: false,
     }).to(step, { x: 0, y: 0, duration: 0.52, ease: 'power2.inOut' });
     const badges = deploy.querySelectorAll('.track__badge');
-    if (badges.length) remember(gsap.fromTo(badges, { y: 12, scale: 0.88, opacity: 0.45 }, {
-      y: 0, scale: 1, opacity: 1, stagger: 0.14, duration: 0.45, ease: 'back.out(1.2)', immediateRender: false,
-      clearProps: 'transform,opacity', scrollTrigger: { trigger: query('.track')!, start: 'top 85%', toggleActions: 'play none none none' },
-    }));
+    const track = query('.track');
+    if (badges.length && track) {
+      remember(gsap.fromTo(badges, { y: 12, scale: 0.88, opacity: 0.45 }, {
+        y: 0, scale: 1, opacity: 1, stagger: 0.14, duration: 0.45, ease: 'back.out(1.2)', immediateRender: false,
+        clearProps: 'transform,opacity', scrollTrigger: { trigger: track, start: 'top 85%', toggleActions: 'play none none none' },
+      }));
+    }
   }
 
   const cta = query('.cta');
+  const ctaTrigger = query('.home-cta-mascot');
   const ctaMascot = query('.home-cta-mascot img');
-  if (cta && ctaMascot) {
+  if (cta && ctaTrigger && ctaMascot) {
     const glow = decorate(cta, 'home-cta-light');
-    const reveal = remember(gsap.timeline({ scrollTrigger: { trigger: query('.home-cta-mascot')!, start: 'top 90%', toggleActions: 'play none none none' } }));
+    const reveal = remember(gsap.timeline({ scrollTrigger: { trigger: ctaTrigger, start: 'top 90%', toggleActions: 'play none none none' } }));
     reveal.fromTo(ctaMascot, { y: 38, rotation: 6, opacity: 0 }, {
       y: -7, rotation: -4, opacity: 1, duration: 0.5, ease: 'power3.out', immediateRender: false,
     }).to(ctaMascot, { y: 0, rotation: 0, duration: 0.4, ease: 'back.out(1.5)', clearProps: 'transform,opacity' })
