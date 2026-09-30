@@ -42,7 +42,7 @@ Gunakan WhatsApp di ponsel untuk memindai kode yang ditampilkan LightVela, lalu 
 
 ### 4. Temukan diri Anda sendiri di WhatsApp
 
-![](../images/whatsapp-2-global.webp)
+![](../../images/whatsapp-2-global.webp)
 
 Mengobrol dengan diri sendiri — itulah bot Anda.
 
@@ -54,7 +54,7 @@ Hi
 
 Anda semestinya menerima balasan Hermes Agent dalam beberapa detik.
 
-![](../images/whatsapp-3-global-en.webp)
+![](../../images/whatsapp-3-global-en.webp)
 
 ---
 

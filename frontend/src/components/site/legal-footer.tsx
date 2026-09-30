@@ -15,7 +15,7 @@ import {
   DISCORD_QR_IMAGE,
 } from "@/constants/community";
 import { useLocaleOverride, useT } from "@/i18n/t";
-import { isCN, isGlobal, localizedPath } from "@/lib/region";
+import { isGlobal, localizedPath } from "@/lib/region";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 
 interface LegalFooterProps {
@@ -143,22 +143,9 @@ export const LegalFooter = ({ icpPlacement = "inline", showLinks = true }: Legal
                 {t("服务条款")}
               </a>
             )}
-            {isCN ? (
-              <>
-                ·
-                <a
-                  href={PRODUCT_FEEDBACK_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={footerLinkClass}
-                >
-                  {t("产品反馈")}
-                </a>
-              </>
-            ) : null}
             ·
-            <a href={localizedPath("/support", currentLocale)} className={footerLinkClass}>
-              {t("用户反馈")}
+            <a href={localizedPath(PRODUCT_FEEDBACK_URL, currentLocale)} className={footerLinkClass}>
+              {t("产品反馈")}
             </a>
             {isGlobal ? (
               <>

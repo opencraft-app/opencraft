@@ -42,7 +42,7 @@ WhatsApp カードを見つけ、「+ 接続」をクリックします。
 
 ### 4. WhatsAppに自分を見つけてください
 
-![](../images/whatsapp-2-global.webp)
+![](../../images/whatsapp-2-global.webp)
 
 自分自身とチャットしましょう — それがあなたのボットです。
 
@@ -54,7 +54,7 @@ Hi
 
 数秒以内にHermes Agentの返信が届くはずです。
 
-![](../images/whatsapp-3-global-en.webp)
+![](../../images/whatsapp-3-global-en.webp)
 
 ---
 

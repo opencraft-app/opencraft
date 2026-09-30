@@ -4,7 +4,7 @@
 
 **A Hermes Agent stays available around the clock because it runs on a cloud instance rather than your local machine. Once a model and at least one channel are configured, it uses the same memory and behaviour no matter which entry point you message from.** Three things must be in place for genuine long-term availability: a configured model with usable account quota (exhausted trial credits cause silent non-replies), at least one channel showing as connected, and scheduled tasks to cover scheduled work while you are away. Do not judge availability from the console status alone — send a real message through an actual channel. When something breaks, view and export recent logs in Diagnostics (selectable 1, 3, 6, 12, or 24-hour ranges) to locate the cause.
 
-![A Hermes Agent online in the LightVela console](../images/use-case-hermes-online.webp)
+![A Hermes Agent online in the LightVela console](../../images/use-case-hermes-online.webp)
 
 ## Who this is for
 
@@ -30,7 +30,7 @@ Choose one channel as your default way to contact Hermes. For personal use, the 
 
 Detailed instructions are available for [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md), and [WeChat](../configuration/channel-wechat.md).
 
-![A running Hermes Agent with connected channels](../images/use-case-hermes-online-channel.webp)
+![A running Hermes Agent with connected channels](../../images/use-case-hermes-online-channel.webp)
 
 ### 2. Keep the working configuration simple and visible
 
@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 Create the schedule in [Scheduled Tasks](../configuration/automation.md), select a notification channel if appropriate, and check the first few runs. If the result is too broad, make the instruction more specific rather than adding another scheduled task immediately.
 
-![Recent scheduled task runs from a Hermes Agent](../images/use-case-hermes-online-automation.webp)
+![Recent scheduled task runs from a Hermes Agent](../../images/use-case-hermes-online-automation.webp)
 
 ## FAQ
 

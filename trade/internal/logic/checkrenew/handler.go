@@ -325,7 +325,7 @@ func verifyPassRenewable(pass *ctlclient.PassDetail, para *callbackPara) string 
 // verifyCurDeadline 实现 §4.5 校验项 c：goodsDetail.curDeadline 严格 == ctl.pass.expired_time。
 //
 // 比较语义：
-//   - jifei goodsDetail.curDeadline 是 string，按 layout "2006-01-02 15:04:05" 解析
+//   - jifei goodsDetail.curDeadline 是 string，兼容北京时间字面值与 RFC3339 时间戳
 //   - ctl pass.ExpiredTime 是 time.Time（RFC3339 / DB DATETIME → Go time.Time）
 //   - 用 time.Time.Equal 比较绝对时刻（与 == 不同，Equal 跨 location 也安全）
 //
@@ -336,13 +336,15 @@ func verifyCurDeadline(goodsDetail map[string]interface{}, expiredTime time.Time
 		return "goodsDetail.curDeadline is required"
 	}
 
-	// 按 PDF §2.2 layout 解析；location 必须用 jifeiproto.CurDeadlineLocation（北京时间 UTC+8），
-	// 与 trade 输出端 resourcequery/mapper.go 把 expireTime 字段格式化为北京时间字面值的契约对齐
-	// （BUG-33 修复：之前用 time.Local 在 trade pod 跑 UTC 时会与输出端 CST 错位 8h）。
+	// 旧计费链路传北京时间字面值；点石续费链路可能透传 DescribePass 的 RFC3339 时间戳。
+	// 前者必须用固定北京时间解析，不能依赖 trade pod 的本地时区。
 	curDeadline, err := time.ParseInLocation(jifeiproto.CurDeadlineLayout, curDeadlineStr, jifeiproto.CurDeadlineLocation)
 	if err != nil {
-		return fmt.Sprintf("goodsDetail.curDeadline invalid format %q (expected %q): %v",
-			curDeadlineStr, jifeiproto.CurDeadlineLayout, err)
+		curDeadline, err = time.Parse(time.RFC3339Nano, curDeadlineStr)
+		if err != nil {
+			return fmt.Sprintf("goodsDetail.curDeadline invalid format %q (expected %q or RFC3339): %v",
+				curDeadlineStr, jifeiproto.CurDeadlineLayout, err)
+		}
 	}
 
 	if !curDeadline.Equal(expiredTime) {

@@ -4,7 +4,7 @@
 
 **The right order for building a personal AI assistant is not automating everything at once. Start by making a cloud Hermes Agent reachable in the chat app you already use, then layer on memory, skills, and scheduled tasks.** Five building blocks each solve one problem: the model determines reasoning quality, the channel determines where you reach it, memory lets it retain how you work, skills give it reusable methods, and scheduled tasks let it complete agreed work while you are absent. For the first week, do only three things: configure one model, connect one channel, and verify memory genuinely persists across sessions. Once that path is reliable, add skills and scheduled tasks — this way, when something breaks, you can tell which layer caused it.
 
-![A personal AI assistant with LightVela across channels](../images/use-case-personal-ai-assistant.webp)
+![A personal AI assistant with LightVela across channels](../../images/use-case-personal-ai-assistant.webp)
 
 ## Who this is for
 
@@ -28,7 +28,7 @@ It is especially useful when you find yourself repeating context such as your ti
 
 Connect one messaging channel, then send the first few messages from the same place you normally organize your day. The channel is not just a delivery method—it is the habit that makes the assistant easy to return to. Follow the setup page for [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack), or [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
 
-![The Channel page in the LightVela console](../images/personal-ai-assistant-channel.webp)
+![The Channel page in the LightVela console](../../images/personal-ai-assistant-channel.webp)
 
 Begin with a clear introduction rather than a broad request. For example:
 
@@ -54,7 +54,7 @@ Use the [Memory Management](https://lightvela.ai/docs/configuration/memory) page
 
 Hermes can chat without extra skills. Add one when you can name the practical job it should help with, such as looking up information, organizing a to-do list, or preparing a recurring report. This keeps the assistant understandable and easier to trust.
 
-![The Skills page in the LightVela console](../images/personal-ai-assistant-skills.webp)
+![The Skills page in the LightVela console](../../images/personal-ai-assistant-skills.webp)
 
 Browse a suitable option in ClawHub, then use [Configure Skills](https://lightvela.ai/docs/configuration/skill) to install it. Before you install anything, read its description and choose sources you trust.
 
@@ -71,7 +71,7 @@ Start with deadlines and meetings, then suggest three focused next actions.
 
 Set the schedule and notification channel in [Scheduled Tasks](https://lightvela.ai/docs/configuration/automation). Keep the first scheduled task small; you can refine the instruction after you have seen a few real results.
 
-![The Scheduled Tasks page in the LightVela console](../images/personal-ai-assistant-automations.webp)
+![The Scheduled Tasks page in the LightVela console](../../images/personal-ai-assistant-automations.webp)
 
 ## FAQ
 

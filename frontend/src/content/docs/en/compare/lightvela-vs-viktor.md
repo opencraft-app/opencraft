@@ -7,7 +7,7 @@
 The difference is not simply which AI is smarter.
 It is where the Agent lives, who it belongs to, and what kind of work it is designed to own.
 
-![LightVela compared with Viktor.com for running a personal AI agent](../images/lightvela-vs-viktor.webp)
+![LightVela compared with Viktor.com for running a personal AI agent](../../images/lightvela-vs-viktor.webp)
 
 ## At a glance
 

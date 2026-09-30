@@ -262,12 +262,12 @@ const HeaderUserAvatarMenu = ({
               {billingMenuItem}
               {isSidebar && accountMenuItem}
               <a
-                href="/support"
+                href={PRODUCT_FEEDBACK_URL}
                 onClick={() => setOpen(false)}
                 className={menuItemClass}
               >
                 <MessageSquare className={menuIconClass} />
-                {t("用户反馈")}
+                {isGlobal ? t("用户反馈") : t("产品反馈")}
               </a>
               {showWorkbenchEntry ? (
                 <a
@@ -277,18 +277,6 @@ const HeaderUserAvatarMenu = ({
                 >
                   <LayoutDashboard className={menuIconClass} />
                   {t("工作台")}
-                </a>
-              ) : null}
-              {hiddenEntriesRevealed && !isGlobal ? (
-                <a
-                  href={PRODUCT_FEEDBACK_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => setOpen(false)}
-                  className={menuItemClass}
-                >
-                  <MessageSquare className={menuIconClass} />
-                  {t("产品反馈")}
                 </a>
               ) : null}
               {isGlobal && showLanguageSwitcher ? (

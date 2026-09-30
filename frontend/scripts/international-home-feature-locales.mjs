@@ -1,5 +1,6 @@
 // Editable, localized text for the Figma capability illustrations.
 const DEFAULT_LOCALE = 'en-US';
+const HOME_VISUAL_ASSET_VERSION = '20260930-home-visual-v1';
 export const FEATURE_LOCALES = Object.freeze([DEFAULT_LOCALE, 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR']);
 const SIMPLIFIED_CHINESE = 'zh-CN';
 const SINGAPORE_CHINESE = 'zh-SG';
@@ -52,6 +53,10 @@ function formatFeatureMarkup(markup) {
   }).join('\n');
 }
 export function localizeFeatureCards(html, locale) {
+  for (const asset of ['scenes-mascot-duo.webp', STEP_ARTWORK.asset, 'hermes-black-companion.webp', 'hermes-door.webp']) {
+    html = html.replaceAll(`/lightvela-intl-home/assets/${asset}`, `/lightvela-intl-home/assets/${asset}?v=${HOME_VISUAL_ASSET_VERSION}`)
+      .replaceAll(`?v=${HOME_VISUAL_ASSET_VERSION}?v=${HOME_VISUAL_ASSET_VERSION}`, `?v=${HOME_VISUAL_ASSET_VERSION}`);
+  }
   // Snapshot widths depend on the capture viewport/font. CSS owns the fallback;
   // feature-motion.js reserves the widest localized phrase at runtime.
   html = html.replace(/(<span class="hero__rotator-wrap"[^>]*\bstyle=")([^"]*)(")/g, (_match, before, style, after) => {
@@ -60,6 +65,9 @@ export function localizeFeatureCards(html, locale) {
   });
   html = html.replace(/(?:\\n\s*)+$/, '\n');
   html = restoreFooterBoundary(html);
+  if (!html.includes('class="scenes__mascot"')) {
+    html = html.replace(/(<header class="scenes__head[^\"]*">[\s\S]*?)(<\/header>)/, `$1<span class="scenes__mascot" aria-hidden="true"><img src="/lightvela-intl-home/assets/scenes-mascot-duo.webp?v=${HOME_VISUAL_ASSET_VERSION}" alt="" width="261" height="174" loading="lazy" decoding="async"></span>$2`);
+  }
   html = addFeatureMotion(html, locale);
   const words = copy[locale] ?? copy[DEFAULT_LOCALE];
   const bubbles = (items) => `<div class="feature-copy-preview">${items.map((text) => `<span>${text}</span>`).join('')}</div>`;
@@ -78,7 +86,7 @@ export function localizeFeatureCards(html, locale) {
     const caption = index === 1 ? `<p>${sentences[index]}</p>` : '';
     return `<div class="wcard__body">${heading}${caption}</div>`;
   });
-  const step = `<span class="home-step-mascot" aria-hidden="true" data-foot-y="${STEP_ARTWORK.footY}"><img src="/lightvela-intl-home/assets/${STEP_ARTWORK.asset}" alt="" width="${STEP_ARTWORK.width}" height="${STEP_ARTWORK.height}" loading="lazy"><em>${notes[locale] ?? notes[DEFAULT_LOCALE]} →</em></span>`;
+  const step = `<span class="home-step-mascot" aria-hidden="true" data-foot-y="${STEP_ARTWORK.footY}"><img src="/lightvela-intl-home/assets/${STEP_ARTWORK.asset}?v=${HOME_VISUAL_ASSET_VERSION}" alt="" width="${STEP_ARTWORK.width}" height="${STEP_ARTWORK.height}" loading="lazy"><em>${notes[locale] ?? notes[DEFAULT_LOCALE]} →</em></span>`;
   const existingStep = /<span class="home-step-mascot"[^>]*>[\s\S]*?<\/span>/g;
   // This is the sole owner of the step artwork, for both fresh and legacy imports.
   if (existingStep.test(html)) return html.replace(existingStep, () => step);
@@ -105,7 +113,7 @@ function addFeatureMotion(html, locale) {
 export function restoreFooterBoundary(html) {
   html = html.replace(/<span class="home-footer-mascot"[\s\S]*?<\/span>/g, '');
   html = html.replace(/<div class="home-footer-boundary"[\s\S]*?<\/div>/g, '');
-  const boundary = `<div class="home-footer-boundary"><svg viewBox="0 0 1440 400" preserveAspectRatio="xMaxYMax slice" aria-hidden="true"><defs><clipPath id="home-door-silhouette"><polygon points="1003.1,42 1045.9,12.6 1045.9,214.8 1003.1,211.4"/></clipPath></defs><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4 L1440 400 L0 400Z" fill="#111"/><path d="M0 381.6 L1003.1 211.4 L1045.9 214.8 L1440 253.4" fill="none" stroke="#696969" stroke-width="1"/><image href="/lightvela-intl-home/assets/hermes-door.webp" x="830" y="0" width="340" height="268.6" preserveAspectRatio="none" clip-path="url(#home-door-silhouette)"/></svg></div>`;
+  const boundary = `<div class="home-footer-boundary"><svg viewBox="0 0 964 966" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><image href="/lightvela-intl-home/assets/hermes-door.webp?v=${HOME_VISUAL_ASSET_VERSION}" width="964" height="966" preserveAspectRatio="xMidYMid meet"/></svg></div>`;
   html = html.replace(/(<footer class="foot(?: foot--domestic)?">)/, `$1${boundary}`);
   // CTA text and href form a state-machine input; decoration must preserve both.
   return html;

@@ -42,7 +42,7 @@ WhatsApp 카드를 찾아 "+ 연결"을 클릭하세요.
 
 ### 4. WhatsApp에서 자신을 찾으세요
 
-![](../images/whatsapp-2-global.webp)
+![](../../images/whatsapp-2-global.webp)
 
 자신과 채팅하세요. 그게 바로 여러분의 봇입니다.
 
@@ -54,7 +54,7 @@ Hi
 
 몇 초 내에 Hermes Agent 응답을 받게 됩니다.
 
-![](../images/whatsapp-3-global-en.webp)
+![](../../images/whatsapp-3-global-en.webp)
 
 ---
 

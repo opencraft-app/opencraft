@@ -4,7 +4,7 @@
 
 **El orden correcto para construir un asistente personal de IA no es automatizar todo de una vez. Comience haciendo que un Hermes Agent en la nube sea accesible en la aplicación de chat que ya utiliza, luego capas de memoria, Skills y tareas programadas.** Cada uno de los cinco bloques de construcción resuelve un problema: el modelo determina la calidad del razonamiento, el canal determina dónde lo accede, la memoria le permite retener cómo trabaja, las Skills le dan métodos reutilizables y las tareas programadas le permiten completar trabajos acordados mientras usted está ausente. Durante la primera semana, haga solo tres cosas: configure un modelo, conecte un canal y verifique que la memoria persista realmente entre sesiones. Una vez que esta ruta sea confiable, agregue Skills y tareas programadas; de esta manera, cuando algo falle, podrá indicar qué capa lo causó.
 
-![Un asistente personal de IA con LightVela a través de varios canales](../images/use-case-personal-ai-assistant.webp)
+![Un asistente personal de IA con LightVela a través de varios canales](../../images/use-case-personal-ai-assistant.webp)
 
 ## Para quién es esto
 
@@ -28,7 +28,7 @@ Es especialmente útil cuando se encuentra repitiendo contexto como su zona hora
 
 Conecte un canal de mensajería y luego envíe los primeros mensajes desde el mismo lugar donde normalmente organiza su día. El canal no es solo un método de entrega; es el hábito que hace que el asistente sea fácil de volver a utilizar. Siga la página de configuración para [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack) o [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
 
-![La página de Canal en la consola de LightVela](../images/personal-ai-assistant-channel.webp)
+![La página de Canal en la consola de LightVela](../../images/personal-ai-assistant-channel.webp)
 
 Comience con una introducción clara en lugar de una solicitud amplia. Por ejemplo:
 
@@ -54,7 +54,7 @@ Utilice la página de [Memory Management](https://lightvela.ai/docs/configuratio
 
 Hermes puede charlar sin Skills adicionales. Agregue una cuando pueda nombrar el trabajo práctico que debe ayudar, como buscar información, organizar una lista de tareas o preparar un informe recurrente. Esto mantiene al asistente comprensible y más fácil de confiar.
 
-![La página de Skills en la consola de LightVela](../images/personal-ai-assistant-skills.webp)
+![La página de Skills en la consola de LightVela](../../images/personal-ai-assistant-skills.webp)
 
 Navegue por una opción adecuada en ClawHub, luego utilice [Configure Skills](https://lightvela.ai/docs/configuration/skill) para instalarla. Antes de instalar algo, lea su descripción y elija fuentes que confíe.
 
@@ -71,7 +71,7 @@ Start with deadlines and meetings, then suggest three focused next actions.
 
 Establezca el horario y el canal de notificación en [Tareas programadas](https://lightvela.ai/docs/configuration/automation). Mantenga la primera tarea programada pequeña; puede refinar la instrucción después de haber visto unos pocos resultados reales.
 
-![La página de Tareas programadas en la consola de LightVela](../images/personal-ai-assistant-automations.webp)
+![La página de Tareas programadas en la consola de LightVela](../../images/personal-ai-assistant-automations.webp)
 
 ## Preguntas frecuentes
 

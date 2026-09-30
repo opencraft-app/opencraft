@@ -2,13 +2,13 @@
 
 ## Ringkasan
 
-**Memori membuat Hermes mengingat hal penting lintas percakapan dan lintas perangkat — preferensi Anda, identitas Anda, hal yang sedang Anda kerjakan, serta pengalaman yang terkumpul dalam kolaborasi jangka panjang. Inilah dasar yang mengubah Hermes dari tanya-jawab sekali pakai menjadi asisten yang makin memahami Anda. Memori tersimpan di dalam Agent dan di luar model, sehingga berganti model tidak membuatnya lupa. Anda dapat meninjau, menyunting, atau membersihkan isi yang terkumpul pada halaman memori dan profil pengguna di konsol, dan semua kanal pesan berbagi satu memori yang sama.**
+**Memori membuat Hermes mengingat hal penting lintas percakapan dan lintas perangkat — preferensi Anda, identitas Anda, hal yang sedang Anda kerjakan, serta pengalaman yang terkumpul dalam kolaborasi jangka panjang. Inilah dasar yang mengubah Hermes dari tanya-jawab sekali pakai menjadi asisten yang makin memahami Anda. Memori tersimpan di dalam Agent dan di luar model, sehingga berganti model tidak membuatnya lupa. Di halaman memori dan profil pengguna, Anda dapat meninjau isi serta pemakaian kapasitas, lalu meminta Hermes melalui percakapan untuk mengingat atau melupakan detail tertentu; semua kanal pesan berbagi satu memori yang sama.**
 
 ---
 
 Memori membantu Hermes mempertahankan informasi penting lintas percakapan dan lintas perangkat—preferensi Anda, identitas, pekerjaan yang sedang berjalan, dan pengalaman yang terbentuk melalui kolaborasi jangka panjang. Inilah yang mengubah Hermes dari alat tanya-jawab sekali pakai menjadi asisten jangka panjang yang makin memahami Anda seiring waktu.
 
-![Halaman Memory dan User Profile di konsol LightVela](../images/memory-management-overview-en.webp)
+![Halaman Memory dan User Profile di konsol LightVela](../../images/memory-management-overview-en.webp)
 
 LightVela berjalan di cloud, sehingga memori ini disimpan bersama instans Hermes Anda di cloud. Memori tidak hilang saat Anda berganti perangkat atau berpindah antara Telegram, WhatsApp, Discord, Slack, dan WeChat. Jika hari ini Anda memberi tahu Hermes sesuatu di Telegram, besok ia tetap dapat mengingatnya saat Anda melanjutkan percakapan di WhatsApp.
 

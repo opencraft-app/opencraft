@@ -29,7 +29,7 @@ LightVela에서는 Agent 작업에 지침, 일정, 선택적 Skill, 업스트림
 
 > 중요한 업데이트를 최대 5개 수집하고, 요약과 링크를 포함한 뒤 결과를 보내세요.
 
-![아침 AI 다이제스트용 반복 AI 작업 만들기](../images/scheduled-task-agent-1.webp)
+![아침 AI 다이제스트용 반복 AI 작업 만들기](../../images/scheduled-task-agent-1.webp)
 
 핵심은 “모든 것”의 요약이 아니라 집중된 브리프를 요청하는 것입니다.
 정보 수집과 요약이 별도 작업이라면 수집을 먼저 예약하세요.
@@ -42,7 +42,7 @@ LightVela에서는 Agent 작업에 지침, 일정, 선택적 Skill, 업스트림
 
 > 업스트림 작업에서 수집한 메모를 사용하여 완료된 작업, 차단 요소, 다음 3가지 우선순위를 식별하세요.
 
-![업스트림 작업이 있는 주간 AI 작업 만들기](../images/scheduled-task-agent-2.webp)
+![업스트림 작업이 있는 주간 AI 작업 만들기](../../images/scheduled-task-agent-2.webp)
 
 검토 전에 수집 작업을 실행하고 작은 시간 여유를 두세요.
 Agent는 프로젝트 관리를 대체하지 않습니다.
@@ -54,7 +54,7 @@ LightVela에서는 Agent를 WhatsApp, Telegram, WeChat, Discord 등에 연결할
 하나 또는 모든 채널을 동시에 연결할 수 있습니다.
 예약 작업에서 각 IM의 알림 설정을 전환하여 작업이 IM에 알릴지 결정할 수 있습니다.
 
-![AI Agent가 Telegram으로 예약된 브리프를 직접 전송](../images/scheduled-task-agent-3.webp)
+![AI Agent가 Telegram으로 예약된 브리프를 직접 전송](../../images/scheduled-task-agent-3.webp)
 
 전환한 뒤 Agent는 작업을 완료하고 LightVela나 다른 앱을 열 필요 없이 IM으로 직접 업데이트합니다.
 
@@ -64,4 +64,4 @@ LightVela에서는 Agent를 WhatsApp, Telegram, WeChat, Discord 등에 연결할
 생성한 뒤에는 편집, 일시 중지, 이전 작업 탐색이 가능합니다.
 LightVela를 사용하면 개인 Hermes Agent가 자리를 비운 동안에도 작업을 효율적으로 실행합니다.
 
-![반복 Agent 작업이 있는 현재 작업 목록](../images/scheduled-task-agent-4.webp)
+![반복 Agent 작업이 있는 현재 작업 목록](../../images/scheduled-task-agent-4.webp)

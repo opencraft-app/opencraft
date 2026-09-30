@@ -35,7 +35,7 @@
 2. その **Cloud Storage** または **Files** セクションを開きます。
 3. アップロードやフォルダ操作を開始する前に、ファイル一覧が読み込まれるのを待ちます。
 
-![LightVelaコンソールのクラウドストレージファイル一覧](../images/cloud-storage-overview-en.webp)
+![LightVelaコンソールのクラウドストレージファイル一覧](../../images/cloud-storage-overview-en.webp)
 
 一覧が読み込まれない場合は、ページを更新して再試行してください。問題が続く場合は、[診断](./diagnostics.md)大きな変更を行う前に、エージェントの最近のログを確認してください。
 

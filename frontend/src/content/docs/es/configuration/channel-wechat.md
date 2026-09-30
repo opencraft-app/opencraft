@@ -40,7 +40,7 @@ Haga clic en la lista desplegable y seleccione "WeChat". Aparecerá la introducc
 
 Un código QR aparece en la página.
 
-![](../images/20260424-142558-0pl3.webp)
+![](../../images/20260424-142558-0pl3.webp)
 
 > ⚠️ **Vencimiento del código QR**
 >
@@ -73,7 +73,7 @@ Hi
 
 Debería recibir una respuesta de Hermes Agent en unos segundos.
 
-![](../images/6.1-2.webp)
+![](../../images/6.1-2.webp)
 
 ---
 

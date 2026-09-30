@@ -4,7 +4,7 @@
 
 **Hermes Agent는 로컬 컴퓨터가 아니라 클라우드 인스턴스에서 실행되므로 언제든 사용할 수 있습니다. 모델과 채널을 하나 이상 구성하면 어느 진입점에서 메시지를 보내든 같은 메모리와 행동 방식을 사용합니다.** 진정한 장기 가용성을 위해서는 세 가지가 필요합니다. 사용 가능한 계정 할당량이 있는 구성된 모델(체험 크레딧이 소진되면 아무 응답 없이 답하지 않을 수 있음), 연결됨으로 표시되는 채널 하나 이상, 사용자가 자리를 비운 동안 예약 작업을 처리하는 예약 작업입니다. 콘솔 상태만으로 가용성을 판단하지 말고 실제 채널을 통해 진짜 메시지를 보내세요. 문제가 발생하면 Diagnostics에서 최근 로그를 확인하고 내보내 원인을 찾으세요. 1, 3, 6, 12, 24시간 범위를 선택할 수 있습니다.
 
-![LightVela 콘솔에서 온라인 상태인 Hermes Agent](../images/use-case-hermes-online.webp)
+![LightVela 콘솔에서 온라인 상태인 Hermes Agent](../../images/use-case-hermes-online.webp)
 
 ## 이 활용 방식이 필요한 사용자
 
@@ -30,7 +30,7 @@ Hermes에 연락할 기본 방법으로 채널 하나를 선택하세요. 개인
 
 [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [Slack](../configuration/channel-slack.md), [WeChat](../configuration/channel-wechat.md)의 자세한 지침을 확인할 수 있습니다.
 
-![연결된 채널이 있는 실행 중 Hermes Agent](../images/use-case-hermes-online-channel.webp)
+![연결된 채널이 있는 실행 중 Hermes Agent](../../images/use-case-hermes-online-channel.webp)
 
 ### 2. 작동하는 설정을 단순하고 확인하기 쉽게 유지
 
@@ -62,7 +62,7 @@ calendar priorities, open follow-ups, and the first action to take.
 
 [예약 작업](../configuration/automation.md)에서 일정을 만들고, 필요하면 알림 채널을 선택한 뒤 처음 몇 차례 실행을 확인하세요. 결과가 너무 광범위하다면 즉시 다른 예약 작업을 추가하기보다 지침을 더 구체적으로 작성하세요.
 
-![Hermes Agent의 최근 예약 작업 실행](../images/use-case-hermes-online-automation.webp)
+![Hermes Agent의 최근 예약 작업 실행](../../images/use-case-hermes-online-automation.webp)
 
 ## FAQ
 

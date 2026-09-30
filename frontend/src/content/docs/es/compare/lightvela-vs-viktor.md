@@ -7,7 +7,7 @@
 La diferencia no es simplemente qué IA es más inteligente.
 La cuestión es dónde vive el Agent, a quién pertenece y qué tipo de trabajo está diseñado para asumir.
 
-![Comparación entre LightVela y Viktor.com para ejecutar un AI Agent personal](../images/lightvela-vs-viktor.webp)
+![Comparación entre LightVela y Viktor.com para ejecutar un AI Agent personal](../../images/lightvela-vs-viktor.webp)
 
 ## Comparación rápida
 

@@ -226,3 +226,8 @@
 - 用户反馈同一Chrome标签页仍报错，本轮直接读取原标签页1353670490日志，捕获 TypeError: Failed to fetch dynamically imported module，路径为 /__opencraft/assets/a-DCf_TcJE.js；本地5174该路径实测404。
 - 前次新标签页验证没有更新用户原标签页；原标签页仍引用已被重新构建移除的旧hash资源。本轮不新增产品代码，刷新原报错标签页后打开同一国庆抒怀.md并点击源码，显示新只读原文，聊天与输入框保留。截图 /tmp/lightvela-chrome-source-recovered.png。
 - 修正前次根因未确认记录：本次已有具体旧动态模块加载失败证据。未提交/推送/发布。
+
+## mr4868_conflict_repair_2026_09_30
+- 用户报告MR合并冲突，当前source 892919a99，target da1f500cb；有界merge-tree与实际合并均确认仅UPSTREAM.json sourceRevision冲突。
+- context_receipt: docs/context/project/upstream-subtrees.md、opencraft/AGENTS.md、frontend/AGENTS.md、opencraft/MONO2_MIGRATION.md、docs/context/project/adjacency/frontend-runtime-openspec-i18n.md；检查同步脚本和opencraft_guard生成物邻居。
+- 将最新master合入功能分支，以target清单作临时基线，官方sync/check重新生成并校验；保留双方源码，既有catalog改动独立暂存保护。MR本身不合入、不发布。

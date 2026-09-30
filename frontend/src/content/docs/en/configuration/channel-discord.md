@@ -42,7 +42,7 @@ Choose the server you want to add the bot to, then go to the [Developer Portal](
 
 1. Click Applications
 
-![](../images/discord-1-global.webp)
+![](../../images/discord-1-global.webp)
 
 2. Click New Application in the upper-right corner
 
@@ -50,11 +50,11 @@ Choose the server you want to add the bot to, then go to the [Developer Portal](
 
 4. Add a bot to your application and generate a bot token. The token is used to authenticate the connection between Hermes Agent and your Discord server.
 
-![](../images/discord-2-global.webp)
+![](../../images/discord-2-global.webp)
 
 5. Paste the token into the Discord card.
 
-![](../images/discord-3-global-en.webp)
+![](../../images/discord-3-global-en.webp)
 
 ### 4. Go to the Bot page in the Developer Portal
 
@@ -66,7 +66,7 @@ On the Bot page, scroll down to Privileged Gateway Intents and enable:
 
 - **Presence Intent**: optional, only used for status updates
 
-![](../images/discord-4-global.webp)
+![](../../images/discord-4-global.webp)
 
 After enabling them, click Save Changes at the bottom.
 
@@ -74,7 +74,7 @@ After enabling them, click Save Changes at the bottom.
 
 Configure bot permissions: click OAuth2 in the left sidebar, then choose OAuth2 URL Generator. Configure Scopes first; following the principle of least privilege, prefer `bot` and `applications.commands`.
 
-![](../images/discord-5-global.webp)
+![](../../images/discord-5-global.webp)
 
 Continue scrolling down to configure Bot Permissions, and select:
 
@@ -90,13 +90,13 @@ Continue scrolling down to configure Bot Permissions, and select:
 
 - Add Reactions (optional)
 
-![](../images/discord-6-global.webp)
+![](../../images/discord-6-global.webp)
 
 ### 6. Copy and open the invite link
 
 Copy the generated Invite Link, open it in your browser, and invite the bot to your Discord server (server admin permission required). After clicking Continue and authorizing, the bot will be invited to the server.
 
-![](../images/discord-7-global.webp)
+![](../../images/discord-7-global.webp)
 
 ### 7. Chat with the new bot in Discord
 
@@ -106,7 +106,7 @@ You can now start interacting with the bot. Open the chat with the bot and send 
 Hi
 ```
 
-![](../images/discord-chat-global.webp)
+![](../../images/discord-chat-global.webp)
 
 You should receive a Hermes Agent reply within a few seconds.
 

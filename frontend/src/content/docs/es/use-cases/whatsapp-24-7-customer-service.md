@@ -4,7 +4,7 @@
 
 **WhatsApp puede servir como un punto de entrada uno a uno entre los clientes y un Hermes Agent, útil para responder preguntas recurrentes, captar las necesidades del cliente y redactar respuestas. Pero "24/7" aquí significa que puede responder cuando el servicio esté en funcionamiento, el modelo esté disponible y el canal esté conectado — no es una garantía de servicio ininterrumpido ni un SLA de soporte humano.** Una segunda restricción es tan importante: el envío proactivo de mensajes en WhatsApp sigue sujeto a ventanas de conversación, mensajes de plantilla y configuración del canal, por lo que los recordatorios automatizados deben diseñarse por separado de las conversaciones iniciadas por el cliente, en lugar de asumir que puede enviar a su antojo. Construya en cuatro capas, en orden: la personalidad establece la voz y las condiciones de escalación, el conocimiento captura las preguntas frecuentes, las Skills agregan procedimientos reutilizables y las tareas programadas manejan los resúmenes programados.
 
-![Configurando servicio de atención al cliente de IA 24/7 en WhatsApp](../images/use-case-09-whatsapp-24-7-customer-service.webp)
+![Configurando servicio de atención al cliente de IA 24/7 en WhatsApp](../../images/use-case-09-whatsapp-24-7-customer-service.webp)
 
 ## Para quién es esto
 

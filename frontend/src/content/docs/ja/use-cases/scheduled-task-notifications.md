@@ -30,7 +30,7 @@ LightVelaでは、通知タスクにメッセージ、スケジュール、有�
 
 > コップ一杯の水を飲んで、少し休憩する時間です。
 
-![毎日の健康リマインダー用の繰り返し通知タスクを編集する](../images/scheduled-task-notifications-1.webp)
+![毎日の健康リマインダー用の繰り返し通知タスクを編集する](../../images/scheduled-task-notifications-1.webp)
 
 重要なのは、メッセージを短く実行しやすいものにすることです。
 モデルには渡されないため、通知が書き換えられたり、追加のコンテキストが付与されたりすることはありません。
@@ -43,7 +43,7 @@ LightVelaでは、通知タスクにメッセージ、スケジュール、有�
 
 > 毎月の支払い確認: 今週期限を迎える家賃、公共料金、サブスクリプションを確認してください。
 
-![支払いリマインダー用の毎月の通知タスクを編集する](../images/scheduled-task-notifications-2.webp)
+![支払いリマインダー用の毎月の通知タスクを編集する](../../images/scheduled-task-notifications-2.webp)
 
 通知は各支払いを期限前に見える状態に保ちます。
 請求書ごとに期日が異なる場合は、各リマインダーが役立つ時期に届くように別々のタスクを作成してください。
@@ -54,7 +54,7 @@ LightVelaでは、AgentをWhatsApp、Telegram、WeChat、Discordなどに接続�
 一つまたは複数のチャンネルを同時に接続できます。
 スケジュールタスクでは、設定済みの各チャンネルを切り替え、通知をどこに配信するかを決められます。
 
-![スケジュールされた通知がTelegramに直接配信される](../images/scheduled-task-notifications-3.webp)
+![スケジュールされた通知がTelegramに直接配信される](../../images/scheduled-task-notifications-3.webp)
 
 切り替え後、Hermesは正確な通知をIMに直接送信します。
 リマインダーを確認するためにLightVelaや別のアプリを開く必要はありません。
@@ -65,4 +65,4 @@ LightVelaでは、AgentをWhatsApp、Telegram、WeChat、Discordなどに接続�
 作成後は、内容とスケジュールを編集し、一時停止し、過去の実行を閲覧できます。
 LightVelaを使うと、個人用Hermes Agentが他の作業に集中している間も重要なルーティンを予定どおりに保ちます。
 
-![通知タスクを含む現在のジョブ一覧](../images/scheduled-task-notifications-4.webp)
+![通知タスクを含む現在のジョブ一覧](../../images/scheduled-task-notifications-4.webp)

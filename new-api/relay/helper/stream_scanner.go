@@ -302,9 +302,52 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	cleanup()
+	logStreamTimeline(c, info, resp)
 	if info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s", info.StreamStatus.Summary()))
 	} else {
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	}
+}
+
+// This reports post-header stalls and client cancellations without logging any
+// stream content or the upstream error text in StreamStatus.Summary().
+func logStreamTimeline(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	line, ok := formatStreamTimeline(info, c.GetHeader("X-VelaGW-Trace-ID"), resp, time.Now())
+	if ok {
+		logger.LogInfo(c, line)
+	}
+}
+
+func formatStreamTimeline(info *relaycommon.RelayInfo, traceID string, resp *http.Response, now time.Time) (string, bool) {
+	if info == nil || info.StartTime.IsZero() || info.StreamStatus == nil {
+		return "", false
+	}
+	traceID = relaycommon.SafeVelaGWTraceID(traceID)
+	if traceID == "none" {
+		return "", false
+	}
+	elapsed := now.Sub(info.StartTime)
+	if elapsed < 30*time.Second && info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
+		return "", false
+	}
+	firstEventMS := int64(-1)
+	if !info.FirstResponseTime.IsZero() && !info.FirstResponseTime.Before(info.StartTime) {
+		firstEventMS = info.FirstResponseTime.Sub(info.StartTime).Milliseconds()
+	}
+	channelID := 0
+	if info.ChannelMeta != nil {
+		channelID = info.ChannelId
+	}
+	status := 0
+	if resp != nil {
+		status = resp.StatusCode
+	}
+	return fmt.Sprintf(
+		"relay_stream_timeline trace_id=%s request_streaming=%t channel_id=%d elapsed_ms=%d upstream_status=%d first_event_ms=%d received_events=%d end_reason=%s",
+		traceID, info.IsStream, channelID, elapsed.Milliseconds(), status, firstEventMS, info.ReceivedResponseCount, info.StreamStatus.EndReason,
+	), true
 }

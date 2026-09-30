@@ -4,7 +4,7 @@
 
 **Hermes Agent를 메시징 플랫폼에 연결하는 방식은 하나의 개념에 기반합니다. 채널은 진입점이고, 실제로 작업하는 주체는 에이전트입니다. 하나의 클라우드 에이전트가 연결된 모든 채널에서 같은 모델, 스킬, 메모리를 공유하므로 플랫폼마다 별도의 봇을 만들 필요가 없습니다.** 절차는 네 단계입니다. 먼저 지역에서 채널을 사용할 수 있는지 확인합니다. 국제 지역은 Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom, Lark를 지원하고 중국 지역은 WeChat, QQ, WeCom, Lark, DingTalk를 지원합니다. 다음으로 플랫폼에서 인증을 완료해 자격 증명을 얻고, 콘솔에서 연결한 뒤 채널이 연결됨으로 표시되는지 확인합니다. 마지막으로 테스트 메시지를 보내고 메시지를 보낸 동일한 대화에 답변이 도착하는지 확인합니다. 자격 증명은 민감 정보이므로 장기 컨텍스트에 기록하거나 채팅에 붙여넣지 마세요.
 
-![LightVela 메시징 플랫폼 연결](../images/use-case-messaging-platforms.webp)
+![LightVela 메시징 플랫폼 연결](../../images/use-case-messaging-platforms.webp)
 
 ## 이 가이드가 필요한 사용자
 
@@ -50,7 +50,7 @@ LightVela는 그 밖의 지원 채널에도 설정 페이지를 제공합니다.
 
 봇 토큰, 애플리케이션 ID, 비밀 정보는 비밀번호처럼 취급하세요. 그룹 채팅, 공개 문서 또는 다른 사람에게 보내는 메시지에 붙여넣지 마세요. 자격 증명이 노출되었다면 Hermes를 다시 연결하기 전에 해당 자격 증명을 발급한 플랫폼에서 교체하세요.
 
-![LightVela 채널 연결 페이지](../images/use-case-messaging-connection.webp)
+![LightVela 채널 연결 페이지](../../images/use-case-messaging-connection.webp)
 
 ### 3. 간단한 대화로 연결 확인
 
@@ -68,7 +68,7 @@ Hi Hermes. Please reply with the channel you received this from.
 
 [메모리 관리](../configuration/memory.md)에서 Hermes가 유지할 장기 컨텍스트를 확인하세요. 특정 채널의 대상이 다르거나 매우 다른 역할이 필요하다면 서로 무관한 기대를 하나의 대화 기록에 섞지 말고 활용 사례를 분리하는 편을 고려하세요.
 
-![채널 간 공유되는 동일한 Hermes Agent 컨텍스트](../images/use-case-messaging-memory.webp)
+![채널 간 공유되는 동일한 Hermes Agent 컨텍스트](../../images/use-case-messaging-memory.webp)
 
 커뮤니티에 Discord 채널을 사용하려면 [Discord용 LightVela: 채널을 지원하는 AI 에이전트 Discord 봇](./discord-community-agent.md)을 계속 읽어 보세요.
 

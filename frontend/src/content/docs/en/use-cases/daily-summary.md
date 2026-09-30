@@ -4,7 +4,7 @@
 
 **A daily summary earns its value not by length but by handing you the right context before you ask for it, and the way to get there is turning a manual review into a saved scheduled task.** You need four things: a cloud Hermes Agent with a configured model, a connected channel to receive results, optional skills for gathering information, and a scheduled task (its fields are name, schedule, task instructions, active time window, and notification channels). Success hinges on the task instructions: since nobody is present to clarify at run time, the prompt must carry its own goal, scope boundaries (time range and item caps), output format, and what to do when there is nothing to report. Test the prompt manually in chat first, then create the scheduled task, and review the output after its first real run.
 
-![A daily summary delivered by Hermes Agent](../images/use-case-daily-summaries.webp)
+![A daily summary delivered by Hermes Agent](../../images/use-case-daily-summaries.webp)
 
 ## Who this is for
 
@@ -44,7 +44,7 @@ Hermes can only summarize information it can receive or access through the capab
 
 If you need an outside data source, choose a suitable skill from a trusted source and confirm its behavior before using it. [Configure Skills](../configuration/skill.md) explains how skills extend Hermes beyond ordinary chat.
 
-![Cloud Storage sources for a daily summary](../images/use-case-daily-summary-storage.webp)
+![Cloud Storage sources for a daily summary](../../images/use-case-daily-summary-storage.webp)
 
 ### 3. Test the output in a normal conversation first
 
@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 Set this up in [Scheduled Tasks](../configuration/automation.md). Review the first few runs and adjust the wording if the summary is too broad, too long, or missing the right context.
 
-![A scheduled daily summary scheduled task](../images/use-case-daily-summary-automation.webp)
+![A scheduled daily summary scheduled task](../../images/use-case-daily-summary-automation.webp)
 
 ## FAQ
 

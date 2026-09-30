@@ -129,7 +129,7 @@ Use the browser to search ClawHub and find the currently most-installed email sk
 
 Esta tarea incluye múltiples pasos como abrir una página web, esperar a que cargue, ingresar contenido y hacer clic en botones. Es relativamente compleja. Hermes completa los pasos y devuelve el resultado.
 
-![](../images/clawhub-browser-example-global-en.webp)
+![](../../images/clawhub-browser-example-global-en.webp)
 
 ---
 

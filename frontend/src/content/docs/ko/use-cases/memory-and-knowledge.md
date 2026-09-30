@@ -4,7 +4,7 @@
 
 **개인 지식은 두 종류로 나누어 관리해야 합니다. 사용자가 누구이고 어떤 방식으로 일하는지처럼 오래 유지되는 정보는 장기 메모리에, 계속 바뀌는 문서·노트·프로젝트 자료는 클라우드 스토리지에 두는 것이 적합합니다.** 둘을 한데 섞으면 정보의 안정성과 검색 편의성을 모두 잃기 쉽습니다. LightVela의 메모리는 대화가 바뀌어도 맥락을 이어 줍니다. 콘솔의 메모리 페이지에서는 `Memory`와 `User Profile` 탭에 보관된 내용을 확인하고 용량 한도를 조정할 수 있으며, 항목 추가와 삭제는 주로 Hermes와의 대화로 처리합니다. 클라우드 스토리지는 파일을 업로드·생성·정리·다운로드·이름 변경·삭제할 수 있는 작업 공간이며, 파일 하나의 최대 크기는 1GB입니다. 비밀번호, 키, 불필요한 민감 정보는 장기 메모리에 저장하지 마세요.
 
-![LightVela 에이전트 메모리 및 개인 지식](../images/use-case-agent-memory.webp)
+![LightVela 에이전트 메모리 및 개인 지식](../../images/use-case-agent-memory.webp)
 
 ## 대상 독자
 
@@ -48,7 +48,7 @@ Help me prepare for this project review. Use the latest brief and my
 meeting notes, then list unresolved decisions and questions.
 ```
 
-![프로젝트 파일이 있는 클라우드 스토리지 폴더](../images/use-case-memory-knowledge-storage.webp)
+![프로젝트 파일이 있는 클라우드 스토리지 폴더](../../images/use-case-memory-knowledge-storage.webp)
 
 ### 3. 메모리가 항상 정확하다고 가정하지 말고 검토합니다
 
@@ -69,7 +69,7 @@ and keep weekly summaries to five bullets.
 
 검토가 반복되는 리듬을 따르는 경우 [예약 작업](../configuration/automation.md)를 통해 폴더를 다시 방문하거나 정기적인 요약을 준비하도록 상기시켜 줄 수 있습니다. 광범위하고 개방형 작업을 부여하기보다는 간단한 알림이나 요약으로 시작하십시오.
 
-![정리된 프로젝트 지식을 활용한 Hermes Agent 대화](../images/use-case-memory-knowledge-automation.webp)
+![정리된 프로젝트 지식을 활용한 Hermes Agent 대화](../../images/use-case-memory-knowledge-automation.webp)
 
 ## FAQ
 

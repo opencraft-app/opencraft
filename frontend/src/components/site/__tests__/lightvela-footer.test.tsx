@@ -198,7 +198,7 @@ describe("LightVelaFooter", () => {
     );
   });
 
-  it("keeps the domestic Help and Feedback footer link on the Tencent questionnaire", () => {
+  it("deduplicates domestic feedback links into one internal product feedback entry", () => {
     mockIsGlobal = false;
     mockLanguage = "zh-CN";
     render(
@@ -209,10 +209,13 @@ describe("LightVelaFooter", () => {
 
     const companySection = screen.getByRole("heading", { name: "公司" }).closest("section");
     expect(companySection).not.toBeNull();
-    const supportLink = within(companySection as HTMLElement).getByRole("link", { name: "帮助与反馈" });
-    expect(supportLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
-    expect(supportLink).toHaveAttribute("target", "_blank");
-    expect(supportLink).toHaveAttribute("rel", "noopener noreferrer");
+    const supportLink = within(companySection as HTMLElement).getByRole("link", { name: "产品反馈" });
+    expect(supportLink).toHaveAttribute("href", "/support");
+    expect(supportLink).not.toHaveAttribute("target");
+    expect(companySection!.querySelectorAll('a[href="/support"]')).toHaveLength(1);
+    expect(companySection!.querySelector('a[href*="wj.qq.com"]')).toBeNull();
+    expect(within(companySection as HTMLElement).queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
+    expect(within(companySection as HTMLElement).queryByRole("link", { name: "帮助与反馈" })).not.toBeInTheDocument();
     const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
     expect(productSection).not.toBeNull();
     const product = within(productSection as HTMLElement);

@@ -87,7 +87,7 @@ Masuk ke konsol lalu buka tombol "Model".
 5. Catatan terkait akan muncul di daftar "Current model", menandakan konfigurasi berhasil
 
 
-![](../images/5-1.webp)
+![](../../images/5-1.webp)
 
 ### Kolom tambahan untuk custom model
 

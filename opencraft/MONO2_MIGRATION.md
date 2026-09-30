@@ -63,8 +63,10 @@ independent while stable cross-platform packages are extracted.
 - Regenerate: `cd opencraft && npm run sync:mono2-agent-console`
 
 The manifest records a repository-relative source and the latest commit that
-touched the shared frontend paths. It must never record a developer worktree
-path. Generated files are not edited by hand.
+touched one of the files actually copied into the Agent Console closure or its
+public assets. Unrelated frontend documentation and merge commits do not advance
+this revision. It must never record a developer worktree path. Generated files
+are not edited by hand.
 
 Long term, move stable UI primitives, domain contracts, and repository
 interfaces into explicit workspace packages. Delete each vendored slice only

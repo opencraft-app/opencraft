@@ -30,7 +30,7 @@ Diagnostik membantu Anda menyelidiki Agent yang tidak berperilaku seperti yang d
 3. Pilih rentang waktu untuk log terbaru: 1, 3, 6, 12, atau 24 jam.
 4. Pilih **Refresh** untuk memuat log.
 
-![Diagnostik di konsol LightVela](../images/diagnostics-overview-en.webp)
+![Diagnostik di konsol LightVela](../../images/diagnostics-overview-en.webp)
 
 Mulailah dari periode terpendek yang masih berguna. Jendela log yang lebih sempit memudahkan Anda menghubungkan sebuah error dengan tindakan yang memicunya.
 
@@ -65,7 +65,7 @@ Untuk masalah yang tetap berlanjut setelah Anda meninjau log dan pengaturan mode
 3. Setelah selesai, muat ulang konsol Agent.
 4. Uji satu tugas sederhana di Chat, lalu periksa Cloud Storage dan pengaturan yang biasa Anda pakai.
 
-![Dialog konfirmasi pemasangan ulang Agent](../images/diagnostics-reinstall-en.webp)
+![Dialog konfirmasi pemasangan ulang Agent](../../images/diagnostics-reinstall-en.webp)
 
 Agent dapat sesaat tidak tersedia selama pemeliharaan. Hindari memulai tindakan perbaikan lain saat pemasangan ulang masih berlangsung.
 

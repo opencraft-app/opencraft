@@ -43,7 +43,7 @@ Busque la tarjeta de Telegram y haga clic en "+ Conectar".
 5. Ingrese un nombre para su Agent: el nombre de usuario debe ser único y terminar con "bot"
 6. Copie el token de la API HTTP:
 
-![](../images/telegram-botfather-3-global.webp)
+![](../../images/telegram-botfather-3-global.webp)
 
 ### 4. Pegar el token de la API HTTP en Telegram
 
@@ -59,7 +59,7 @@ Pegue el token de la API HTTP en el campo de token.
 
 Haga clic en el enlace proporcionado por BotFather e inicie la interacción con el bot.
 
-![](../images/telegram-botfather-5-global.webp)
+![](../../images/telegram-botfather-5-global.webp)
 
 Abra el chat con el bot y envíe un mensaje de prueba:
 

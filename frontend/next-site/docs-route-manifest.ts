@@ -79,6 +79,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "achievements"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -316,6 +320,14 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "memory"
+    ],
+    [
+      "configuration",
+      "achievements"
+    ],
+    [
+      "configuration",
       "channel-wechat"
     ],
     [
@@ -337,10 +349,6 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "skill"
-    ],
-    [
-      "configuration",
-      "memory"
     ],
     [
       "configuration",
@@ -518,6 +526,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "personality"
+    ],
+    [
+      "configuration",
+      "achievements"
     ],
     [
       "configuration",
@@ -783,6 +795,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "achievements"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -1041,6 +1057,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "achievements"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -1292,6 +1312,10 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "personality"
+    ],
+    [
+      "configuration",
+      "achievements"
     ],
     [
       "configuration",
@@ -1557,6 +1581,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "achievements"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -1819,6 +1847,10 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "configuration",
+      "achievements"
+    ],
+    [
+      "configuration",
       "memory"
     ],
     [
@@ -2049,6 +2081,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/channel-feishu": "2026-08-20",
     "configuration/skill": "2026-08-20",
     "configuration/personality": "2026-08-24",
+    "configuration/achievements": "2026-09-30",
     "configuration/memory": "2026-08-20",
     "configuration/automation": "2026-08-20",
     "configuration/files": "2026-08-20",
@@ -2113,13 +2146,14 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/model": "2026-09-27",
     "configuration/multiple-models": "2026-08-28",
     "configuration/personality": "2026-09-28",
+    "configuration/memory": "2026-09-28",
+    "configuration/achievements": "2026-09-30",
     "configuration/channel-wechat": "2026-08-20",
     "configuration/channel-qq": "2026-08-20",
     "configuration/channel-wecom": "2026-08-20",
     "configuration/channel-feishu": "2026-08-20",
     "configuration/channel-dingtalk": "2026-09-27",
     "configuration/skill": "2026-09-28",
-    "configuration/memory": "2026-09-28",
     "configuration/automation": "2026-08-24",
     "configuration/files": "2026-09-28",
     "configuration/diagnostics": "2026-09-28",
@@ -2169,6 +2203,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/channel-feishu": "2026-08-20",
     "configuration/skill": "2026-08-20",
     "configuration/personality": "2026-08-24",
+    "configuration/achievements": "2026-09-30",
     "configuration/memory": "2026-08-20",
     "configuration/automation": "2026-08-20",
     "configuration/files": "2026-08-20",
@@ -2239,6 +2274,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/channel-feishu": "2026-08-20",
     "configuration/skill": "2026-08-20",
     "configuration/personality": "2026-08-24",
+    "configuration/achievements": "2026-09-30",
     "configuration/memory": "2026-08-20",
     "configuration/automation": "2026-08-20",
     "configuration/files": "2026-08-20",
@@ -2308,6 +2344,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/channel-feishu": "2026-08-20",
     "configuration/skill": "2026-08-20",
     "configuration/personality": "2026-08-24",
+    "configuration/achievements": "2026-09-30",
     "configuration/memory": "2026-08-20",
     "configuration/automation": "2026-08-20",
     "configuration/files": "2026-08-20",
@@ -2376,6 +2413,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/channel-feishu": "2026-08-26",
     "configuration/skill": "2026-08-26",
     "configuration/personality": "2026-08-26",
+    "configuration/achievements": "2026-09-30",
     "configuration/memory": "2026-08-26",
     "configuration/automation": "2026-08-26",
     "configuration/files": "2026-08-26",
@@ -2446,6 +2484,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/channel-feishu": "2026-08-28",
     "configuration/skill": "2026-08-28",
     "configuration/personality": "2026-08-28",
+    "configuration/achievements": "2026-09-30",
     "configuration/memory": "2026-08-28",
     "configuration/automation": "2026-08-28",
     "configuration/files": "2026-08-28",
@@ -2516,6 +2555,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/channel-feishu": "2026-08-31",
     "configuration/skill": "2026-08-31",
     "configuration/personality": "2026-08-31",
+    "configuration/achievements": "2026-09-30",
     "configuration/memory": "2026-08-31",
     "configuration/automation": "2026-08-31",
     "configuration/files": "2026-08-31",

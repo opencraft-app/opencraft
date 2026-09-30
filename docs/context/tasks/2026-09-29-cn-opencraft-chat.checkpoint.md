@@ -292,3 +292,9 @@
 ## mr_update_2026_09_30
 - 用户明确授权提交MR；复用现有 !4868 / codex/cn-opencraft-chat → master。已通过提交前 embedded-ci 145/145、平台边界、staged change-impact 与diff检查，复用此前类型/构建/浏览器证据。
 - fetch后发现现有主干冲突仅UPSTREAM.json的sourceRevision；本轮先交付已完成变更，未进行目标分支合并或生产操作。既有catalog.jsonl不纳入。
+
+## mr4868_conflict_repair_2026_09_30
+- 用户报告MR合并冲突，当前source 892919a99，target da1f500cb；有界merge-tree与实际合并均确认仅UPSTREAM.json sourceRevision冲突。
+- context_receipt: docs/context/project/upstream-subtrees.md、opencraft/AGENTS.md、frontend/AGENTS.md、opencraft/MONO2_MIGRATION.md、docs/context/project/adjacency/frontend-runtime-openspec-i18n.md；检查同步脚本和opencraft_guard生成物邻居。
+- 将最新master合入功能分支，以target清单作临时基线，官方sync/check重新生成并校验；保留双方源码，既有catalog改动独立暂存保护。MR本身不合入、不发布。
+- 合入后Web typecheck、embedded-ci 145/145、平台边界、文档与staged impact检查通过。保留master同步脚本仅追踪实际复制sourcePaths的新规则；合并提交后再次sync/check清单。

@@ -55,6 +55,7 @@
 - 【CN ✓ | GLOBAL N/A】钉钉
 - 【CN 待核实 | GLOBAL 待核实】Slack（配置不一致：`CN_SLUG_TO_FILE` 有映射但 `CN_SIDEBAR` 与 `cnDocs` 未暴露；`GLOBAL_SIDEBAR` 已暴露但 `GLOBAL_SLUG_TO_FILE` 无映射，需先修配置）
 - 【CN ✓ | GLOBAL ✓】配置技能
+- 【CN ✓ | GLOBAL ✓】成就
 - 【CN ✓ | GLOBAL ✓】记忆管理
 - 【CN ✓ | GLOBAL ✓】自动化任务
 - 【CN ✓ | GLOBAL ✓】云存储

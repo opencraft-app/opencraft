@@ -65,8 +65,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
     display: block !important;
     height: 360px !important;
     min-height: 360px !important;
-    opacity: 1 !important;
-    transform: none !important;
     overflow: visible !important;
   }
 
@@ -83,7 +81,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
     background: #f8f8f8 !important;
     box-shadow: none !important;
     overflow: hidden !important;
-    transform: none !important;
+    transform: none;
   }
 
   #lightvela-intl-home .about__cards .wcard__inner::before,
@@ -156,7 +154,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   }
 
   #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp?v=20260930-home-visual-v1') !important;
     background-size: cover !important;
     background-position: center top !important;
   }
@@ -209,7 +207,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   }
 
   #lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo::after {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp?v=20260930-home-visual-v1') !important;
   }
 }
 
@@ -285,8 +283,10 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 #lightvela-intl-home .track::before { left: 16px; transform: rotate(3deg); transform-origin: right top; }
 #lightvela-intl-home .track::after { left: 49%; right: auto; top: -58px; transform: rotate(-3deg); transform-origin: left top; }
-#lightvela-intl-home .home-cta-mascot { top: 70px; right: auto; left: max(20px, calc((100% - var(--shell)) / 2)); width: 74px; transform: scaleX(-1); }
-#lightvela-intl-home .home-cta-mascot img { display: block; width: 100%; height: auto; }
+#lightvela-intl-home .cta { display: grid; grid-template-columns: minmax(0, 1fr); }
+#lightvela-intl-home .cta__stage { grid-area: 1 / 1; }
+#lightvela-intl-home .home-cta-mascot { position: relative; grid-area: 1 / 1; align-self: start; top: auto; right: auto; left: max(64px, calc((100% - var(--shell)) / 2 + 80px)); width: 96px; transform: translateY(calc(-100% + 3px)); }
+#lightvela-intl-home .home-cta-mascot img { display: block; width: 100%; height: auto; aspect-ratio: 120 / 88; object-fit: contain; }
 #lightvela-intl-home .foot { padding: 104px 24px 64px; background: #111 !important; color: #f7f5fa; }
 #lightvela-intl-home .foot__top {
   position: relative;
@@ -435,7 +435,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 
 #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo {
-  background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp') !important;
+  background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp?v=20260930-home-visual-v1') !important;
   background-size: cover !important;
 }
 
@@ -486,7 +486,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 
 #lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo::after {
-  background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp');
+  background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp?v=20260930-home-visual-v1');
 }
 
 #lightvela-intl-home .plays {
@@ -571,10 +571,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   background: #fff;
   box-shadow: none;
 }
-@media (prefers-reduced-motion: no-preference) {
-  #lightvela-intl-home .home-cta-mascot img { animation: home-companion-float 7s ease-in-out infinite; }
-}
-@keyframes home-companion-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 @media (max-width: 600px) {
   #lightvela-intl-home .hero__line--main { overflow-wrap: anywhere; }
   #lightvela-intl-home .hero__line--dynamic { padding-right: 48px; }
@@ -585,7 +581,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .track::after { display: none; }
   #lightvela-intl-home .track__item { display: grid; grid-template-columns: 44px 1fr; align-items: start; gap: 16px; }
   #lightvela-intl-home .home-step-mascot { top: 72px; right: 22px; width: 58px; }
-  #lightvela-intl-home .home-cta-mascot { top: 44px; right: auto; left: 16px; width: 48px; }
+  #lightvela-intl-home .home-cta-mascot { top: auto; right: auto; left: 48px; width: 80px; }
   #lightvela-intl-home .about__cards {
     display: flex !important;
     grid-template-columns: none !important;
@@ -677,8 +673,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
     display: block !important;
     height: 360px !important;
     min-height: 360px !important;
-    opacity: 1 !important;
-    transform: none !important;
     overflow: visible !important;
   }
   #lightvela-intl-home .about__cards .wcard__inner {
@@ -694,7 +688,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
     background: #f8f8f8 !important;
     box-shadow: none !important;
     overflow: hidden !important;
-    transform: none !important;
+    transform: none;
   }
   #lightvela-intl-home .about__cards .wcard__inner::before,
   #lightvela-intl-home .about__cards .wcard__inner::after,
@@ -766,7 +760,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .about__cards .wcard__more { display: none !important; }
 
   #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp?v=20260930-home-visual-v1') !important;
     background-size: cover !important;
     background-position: center top !important;
   }
@@ -810,11 +804,14 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
     background-image: url('/lightvela-intl-home/assets/figma-feature-memory-wave.webp') !important;
   }
   #lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo::after {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp?v=20260930-home-visual-v1') !important;
   }
 }
 
 /* One page-wide measure, matching the supplied 2094px Figma frame. */
+@media (max-width: 899px) {
+  #lightvela-intl-home .scenes__mascot { display: none !important; }
+}
 @media (min-width: 900px) {
   #lightvela-intl-home .home-cover-mascot { left: 68px !important; width: 190px !important; }
   #lightvela-intl-home .home-cover-mascot img { width: 190px !important; }
@@ -838,6 +835,9 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .about__head { margin-bottom: 36px !important; }
   #lightvela-intl-home .about__head .k,
   #lightvela-intl-home .scenes__title { font-size: clamp(30px, 2.4vw, 48px) !important; line-height: 1.2 !important; letter-spacing: -0.035em !important; font-weight: 400 !important; }
+  #lightvela-intl-home .scenes__head { position: relative !important; display: flex !important; align-items: center !important; justify-content: space-between !important; }
+  #lightvela-intl-home .scenes__mascot { display: block !important; flex: 0 0 auto !important; }
+  #lightvela-intl-home .scenes__mascot img { width: clamp(140px, 14vw, 220px) !important; height: auto !important; display: block !important; }
   #lightvela-intl-home .about__cards { grid-template-rows: repeat(2, auto) !important; grid-auto-rows: auto !important; gap: 16px !important; }
   #lightvela-intl-home .about__cards .wcard,
   #lightvela-intl-home .about__cards .wcard__inner { height: auto !important; min-height: 0 !important; }
@@ -905,7 +905,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body,
   #lightvela-intl-home .about__cards .wcard--confirm .wcard__body { min-height: 62px !important; padding: 8px 18px 12px !important; }
   #lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__demo { background-size: auto 85% !important; }
-  #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo { position: absolute !important; inset: 0 !important; height: 100% !important; background-size: cover !important; background-position: center !important; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo { position: absolute !important; inset: 0 !important; height: 100% !important; background-size: auto 82% !important; background-position: center top !important; background-color: #aab4c9 !important; background-repeat: no-repeat !important; }
   #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body { position: absolute !important; inset: auto 0 0 !important; z-index: 1; padding: 30px 18px 18px !important; background: linear-gradient(transparent, rgba(0,0,0,.9)) !important; }
   #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body h4 { color: white !important; }
   #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body p,
@@ -921,7 +921,10 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .about .about__cards .wcard .wcard__body p * { text-shadow: none !important; }
 
 /* Localized card previews and annotation: text remains editable at every locale. */
-#lightvela-intl-home .about .about__cards .wcard:nth-child(2) .wcard__demo { background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent-matte.webp') !important; }
+#lightvela-intl-home .about .about__cards .wcard:nth-child(2) .wcard__demo { background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent-matte.webp?v=20260930-home-visual-v1') !important; }
+@media (min-width: 900px) {
+  #lightvela-intl-home .about .about__cards .wcard:nth-child(2) .wcard__demo { background-image: linear-gradient(to bottom, transparent 65%, #aab4c9 82%), url('/lightvela-intl-home/assets/figma-feature-cloud-agent-matte.webp?v=20260930-home-visual-v1') !important; background-size: 100% 100%, auto 82% !important; }
+}
 #lightvela-intl-home .about .about__cards .wcard:nth-child(3) .wcard__demo,
 #lightvela-intl-home .about .about__cards .wcard--confirm .wcard__demo { background-image: none !important; }
 #lightvela-intl-home .about .about__cards .wcard__demo .feature-copy-preview { display: flex !important; visibility: visible !important; position: relative !important; flex-direction: column; justify-content: center; gap: 12px; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; }
@@ -951,7 +954,8 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 @media (max-width: 899px) {
   #lightvela-intl-home .wcard--confirm .wcard__demo { min-height: 140px; }
-  #lightvela-intl-home .home-step-mascot { width: 160px; right: 20px; }
+  #lightvela-intl-home .home-step-mascot { position: relative; inset: auto; width: min(100%, 240px); margin: 12px 0 0 auto; justify-content: flex-end; }
+  #lightvela-intl-home .track { margin-top: 24px !important; }
 }
 
 /* White sign-off, doorway perspective boundary, then the black footer. */
@@ -1051,8 +1055,8 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .foot__cta { justify-content: center; margin-top: 32px; }
 #lightvela-intl-home .foot__cta a { display: inline-flex; align-items: center; min-height: 58px; height: auto; padding: 8px 8px 8px 28px; gap: 20px; background: #fff; color: #17151a; font-size: 20px; border-radius: 999px; }
 #lightvela-intl-home .foot__cta a span { position: static; flex: 0 0 42px; width: 42px; height: 42px; background: #17151a; color: #fff; transform: none; }
-#lightvela-intl-home .home-footer-boundary { position: relative; width: 100%; aspect-ratio: 1440 / 400; background: white; overflow: hidden; }
-#lightvela-intl-home .home-footer-boundary svg { display: block; width: 100%; height: 100%; }
+#lightvela-intl-home .home-footer-boundary { position: relative; width: 100%; height: clamp(300px, 55vw, 440px); background: #111; overflow: hidden; }
+#lightvela-intl-home .home-footer-boundary svg { display: block; width: 100%; height: 100%; mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent); }
 #lightvela-intl-home .foot__links { margin-top: 0 !important; padding: 40px 24px 0; box-sizing: border-box; }
 /* Layout-only correction: preserve existing handwriting, CTA and white/black artwork. */
 @media (min-width: 900px) {
@@ -1061,7 +1065,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .foot .foot__title { margin-inline: 0; }
   #lightvela-intl-home .foot__cta { justify-content: flex-start; }
   #lightvela-intl-home .foot > .home-footer-boundary { grid-column: 2; grid-row: 1; height: 440px; aspect-ratio: auto; background: #111; }
-  #lightvela-intl-home .home-footer-boundary svg { width: 1584px; max-width: none; position: absolute; right: 0; }
+  #lightvela-intl-home .home-footer-boundary svg { width: 100%; max-width: 100%; }
   #lightvela-intl-home .foot > .foot__links { grid-column: 1 / -1; }
   #lightvela-intl-home .foot > .foot__links { width: calc(100% - 48px) !important; max-width: 1280px !important; padding-inline: 0; }
   #lightvela-intl-home .hero__rotator-wrap { width: max-content !important; min-width: 5.2em; }
@@ -1072,7 +1076,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .hero__rotator-line { display: block !important; visibility: visible; background: #baa5f5; }
 @media (max-width: 600px) {
   #lightvela-intl-home .foot__top { padding-top: 64px !important; }
-  #lightvela-intl-home .home-footer-boundary { aspect-ratio: auto; height: 200px; }
+  #lightvela-intl-home .home-footer-boundary { height: 300px; }
 }
 
 /* Responsive audit: keep typography and the companion tied to the text, not a viewport offset. */
@@ -1274,4 +1278,148 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .plays .play--with-screen { grid-template-columns: minmax(0, 1fr); flex-direction: column; gap: 24px; }
   #lightvela-intl-home .plays .play__text { width: 100%; }
   #lightvela-intl-home .foot { margin-top: 56px; }
+}
+
+@media (min-width: 900px) {
+  #lightvela-intl-home:not([data-home-motion-ready]) .about__cards .wcard { opacity: 1 !important; transform: none !important; }
+}
+#lightvela-intl-home[data-home-motion-ready] .about .about__cards .wcard {
+  opacity: 1;
+  transform: none;
+  animation: none !important;
+  transition: none !important;
+}
+#lightvela-intl-home .soul-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: auto;
+}
+#lightvela-intl-home .soul-strip .soul-strip__half {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  min-height: 88px;
+  padding: 14px 22px;
+  box-sizing: border-box;
+}
+#lightvela-intl-home .soul-strip .soul-strip__cap {
+  position: relative;
+  inset: auto;
+  grid-area: 1 / 1;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: 10px;
+  overflow: visible;
+  white-space: normal;
+}
+#lightvela-intl-home .soul-strip .soul-strip__copy {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+}
+#lightvela-intl-home .soul-strip .soul-strip__state {
+  display: grid;
+  grid-template-columns: auto 1px minmax(0, 1fr);
+  width: 100%;
+  gap: 10px;
+}
+#lightvela-intl-home .soul-strip .soul-strip__cap b {
+  display: block;
+  flex: 1 1 0;
+  max-width: none;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  font-size: 14px;
+  line-height: 1.5;
+}
+#lightvela-intl-home .soul-strip .soul-strip__label {
+  max-width: 112px;
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.4;
+}
+#lightvela-intl-home .soul-strip .soul-strip__icons { margin: 0; flex: 0 0 auto; }
+@media (min-width: 900px) {
+  #lightvela-intl-home .soul-strip .soul-strip__half { min-height: 69px; padding: 12px; container-type: inline-size; }
+  #lightvela-intl-home .soul-strip .soul-strip__cap,
+  #lightvela-intl-home .soul-strip .soul-strip__state { gap: 6px; white-space: nowrap; }
+  #lightvela-intl-home .soul-strip .soul-strip__cap b,
+  #lightvela-intl-home .soul-strip .soul-strip__cap > span:not(.soul-strip__icons),
+  #lightvela-intl-home .soul-strip .soul-strip__label {
+    font-size: clamp(12px, 0.9vw, 14px);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    max-width: none;
+  }
+  #lightvela-intl-home[data-locale='es'] .soul-strip .soul-strip__cap b,
+  #lightvela-intl-home[data-locale='es'] .soul-strip .soul-strip__cap > span:not(.soul-strip__icons),
+  #lightvela-intl-home[data-locale='es'] .soul-strip .soul-strip__label { font-size: clamp(11px, 0.85vw, 14px); }
+  #lightvela-intl-home .soul-strip .soul-strip__icons i { width: 22px; height: 22px; flex: 0 0 22px; }
+  #lightvela-intl-home .soul-strip .soul-strip__icons i + i { margin-left: -8px; }
+  @container (max-width: 430px) {
+    #lightvela-intl-home .soul-strip .soul-strip__icons { display: none !important; }
+  }
+}
+@media (max-width: 640px) {
+  #lightvela-intl-home .soul-strip { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  #lightvela-intl-home .soul-strip .soul-strip__half { padding: 14px 16px; border-radius: 10px; }
+  #lightvela-intl-home .soul-strip .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) > i,
+  #lightvela-intl-home .soul-strip .soul-strip__half > .soul-strip__cap:not(.soul-strip__cap--secondary) > b { display: block; }
+  #lightvela-intl-home .soul-strip .soul-strip__icons { display: none !important; }
+}
+
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .wcard :is(.feature-skill, .feature-workspace-arrow, .feature-motion-wave img) {
+  animation: none !important;
+}
+#lightvela-intl-home[data-home-motion-ready] .about .wcard__demo--skills > .skwall { display: none !important; }
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .feature-motion-pages,
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .feature-motion-wave img { transform: none; }
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .feature-skill {
+  opacity: 1;
+  transform: translate(calc(var(--x) * 0.8), calc(var(--y) * 0.8));
+}
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .feature-workspace-arrow { opacity: 1; transform: translate(160px, 32.5px); }
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .feature-task__case { opacity: 0; transform: none; }
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .feature-task__case:first-child,
+#lightvela-intl-home[data-home-motion-ready='reduced'] .about .feature-task__case > * { opacity: 1; transform: none; }
+
+#lightvela-intl-home[data-home-motion-ready] .scene { animation: none !important; }
+#lightvela-intl-home[data-home-motion-ready] .scene__split,
+#lightvela-intl-home[data-home-motion-ready] .play__text,
+#lightvela-intl-home[data-home-motion-ready] .play__screen { transition: none !important; }
+@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home[data-home-motion-ready] .about .about__cards .wcard .wcard__inner { transform: none !important; }
+}
+
+#lightvela-intl-home[data-home-motion-ready='active'] .hero { isolation: isolate; }
+#lightvela-intl-home[data-home-motion-ready='active'] .hero__char,
+#lightvela-intl-home[data-home-motion-ready='active'] .hero__line--main,
+#lightvela-intl-home[data-home-motion-ready='active'] .hero__line--dynamic,
+#lightvela-intl-home[data-home-motion-ready='active'] .hero__eyebrow,
+#lightvela-intl-home[data-home-motion-ready='active'] .hero__cta {
+  animation: none !important;
+}
+#lightvela-intl-home[data-home-motion-ready='active'] .hero__char { display: inline; opacity: 1; transform: none; }
+#lightvela-intl-home .home-cta-light,
+#lightvela-intl-home .home-card-sheen { position: absolute; display: block; pointer-events: none; opacity: 0; }
+#lightvela-intl-home .home-card-sheen {
+  inset: -20%; z-index: 5; border-radius: 50%;
+  background: radial-gradient(ellipse at 40% 20%, #ffffffb3, #af91f324 35%, transparent 65%);
+}
+#lightvela-intl-home[data-home-motion-ready='active'] .about .wcard { isolation: isolate; }
+#lightvela-intl-home[data-home-motion-ready='active'] .about .wcard::after {
+  content: ''; position: absolute; inset: -1px; border-radius: 6px; pointer-events: none;
+  border: 1px solid #9972d7; box-shadow: 0 6px 30px #8c61d426; opacity: 0;
+  transition: opacity 350ms ease;
+}
+#lightvela-intl-home .home-cta-light {
+  left: 8%; top: 0; width: 84%; height: 200px; z-index: 0;
+  background: radial-gradient(ellipse, #b697fa66, transparent 66%);
+}
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  #lightvela-intl-home[data-home-motion-ready='active'] .about .about__cards .wcard .wcard__inner { transform: none; transition: none !important; }
 }

@@ -4,7 +4,7 @@
 
 **VPS 유지 관리를 취미처럼 떠안지 않고 Hermes Agent를 실행하고 싶다면 LightVela가 더 적합합니다.** 루트 액세스와 자체 서버 환경을 갖추고 Hermes를 둘러싼 모든 계층을 자유롭게 구성하고 싶다면 Hostinger VPS가 더 유연한 선택입니다. 이는 단순한 제품 간 비교가 아닙니다. LightVela는 호스팅된 Hermes Agent를 제공하고, Hostinger는 Hermes를 실행할 수 있는 VPS를 제공합니다.
 
-![LightVela 클라우드 호스팅과 Hostinger VPS에서 Hermes를 실행하는 방식 비교](../images/lightvela-vs-hostinger.webp)
+![LightVela 클라우드 호스팅과 Hostinger VPS에서 Hermes를 실행하는 방식 비교](../../images/lightvela-vs-hostinger.webp)
 
 ## 한눈에 비교하기
 

@@ -77,6 +77,20 @@ function listDocs(dir = join(frontendRoot, 'src/content/docs')): string[] {
 const docsWithSummary = listDocs().filter((path) => SUMMARY_PATTERN.test(readDoc(path)));
 
 describe('文档摘要段（GEO 可引用答案）', () => {
+  it('中文行内加粗引号不紧贴汉字，避免页面显示原始 Markdown 星号', () => {
+    const offenders: string[] = [];
+    const unsafeInlineBold = /\p{Script=Han}\*\*[“][^”\n]*[”]\*\*\p{Script=Han}/u;
+
+    for (const path of listDocs()) {
+      const lines = readDoc(path).split('\n');
+      lines.forEach((line, index) => {
+        if (unsafeInlineBold.test(line)) offenders.push(`${path}:${index + 1}`);
+      });
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
   it('全部文档都有摘要段', async () => {
     const missing = listDocs().filter((path) => !SUMMARY_PATTERN.test(readDoc(path)));
 

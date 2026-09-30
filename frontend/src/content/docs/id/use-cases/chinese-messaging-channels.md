@@ -4,7 +4,7 @@ Sebuah AI agent baru menjadi bagian dari rutinitas Anda ketika Anda dapat menjan
 
 LightVela membuat satu Hermes Agent berbasis cloud dapat melayani melalui kanal chat yang didukung. Agent yang sama mempertahankan model, Skill, dan memori yang sudah dikonfigurasi sementara Anda memilih platform yang cocok dengan orang dan momen yang ingin Anda dukung.
 
-![Koneksi platform chat LightVela](../images/use-case-messaging-platforms.webp)
+![Koneksi platform chat LightVela](../../images/use-case-messaging-platforms.webp)
 
 ## Ringkasan
 
@@ -54,7 +54,7 @@ Buka area Channel di konsol, pilih platformnya, lalu ikuti alur otorisasi atau k
 
 Perlakukan bot token, application ID, dan secret seperti kata sandi. Jangan menempelkannya ke grup chat, dokumen publik, atau pesan kepada orang lain. Jika sebuah kredensial terekspos, ganti kredensial itu di platform yang menerbitkannya sebelum menghubungkan Hermes kembali.
 
-![Halaman koneksi kanal LightVela](../images/use-case-messaging-connection.webp)
+![Halaman koneksi kanal LightVela](../../images/use-case-messaging-connection.webp)
 
 ### 3. Verifikasi koneksinya dengan percakapan sederhana
 
@@ -72,7 +72,7 @@ Ketika lebih dari satu kanal terhubung ke Hermes Agent yang sama, semuanya adala
 
 Gunakan [Pengelolaan Memori](../configuration/memory.md) untuk meninjau konteks jangka panjang yang ingin Anda pertahankan oleh Hermes. Jika satu kanal ditujukan untuk audiens yang berbeda atau membutuhkan peran yang sangat berbeda, pertimbangkan memisahkan kasus penggunaannya alih-alih mencampur ekspektasi yang tak berkaitan ke dalam satu riwayat percakapan.
 
-![Konteks Hermes Agent yang sama dibagikan lintas kanal](../images/use-case-messaging-memory.webp)
+![Konteks Hermes Agent yang sama dibagikan lintas kanal](../../images/use-case-messaging-memory.webp)
 
 ## FAQ
 

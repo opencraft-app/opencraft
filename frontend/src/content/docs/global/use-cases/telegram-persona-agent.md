@@ -4,7 +4,7 @@
 
 **Telegram 只是入口，真正决定 Agent 如何说话、如何做事、哪些事不能做的是它的人设与长期上下文。** 完整流程分两段：先按通道文档把 Hermes Agent 接入 Telegram（在 BotFather 侧创建机器人取得 Token，在管理台完成接入并确认显示为已接入），再通过管理台 Agent 设置页的「人设」区域选择一套稳定的角色、语气与行为边界并「注入人设」。三层分工要分清：人设写长期适用的行为原则，用户偏好写你希望被如何对待，长期记忆存已确认的事实与项目背景。Telegram 支持群消息，但需要先在 BotFather 中关闭 Group Privacy，将机器人加入群组后再通过 `@机器人用户名` 发起对话。
 
-![在 Telegram 中使用具有独立人格的 Hermes Agent](../images/use-case-03-telegram-persona-agent.webp)
+![在 Telegram 中使用具有独立人格的 Hermes Agent](../../images/use-case-03-telegram-persona-agent.webp)
 
 ## 适合谁
 
