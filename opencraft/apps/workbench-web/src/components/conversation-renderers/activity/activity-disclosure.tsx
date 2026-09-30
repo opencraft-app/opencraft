@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { workingShimmerMotion } from "@opencraft/design-system/tokens";
+import { OverlayDisclosureTrigger } from "../../overlay-disclosure-trigger";
 import {
   useCallback,
   useId,
@@ -106,28 +107,25 @@ export function ActivityDisclosure({
   }, [bodyMounted]);
   return (
     <div className="thread-activity-item" data-body-variant={bodyVariant} data-open={open || undefined} data-status={status}>
-      <div className="thread-activity-item__header" data-interactive={hasBody || undefined}>
-        {hasBody ? (
-          <button
-            aria-expanded={open}
-            aria-labelledby={summaryId}
-            className="thread-activity-item__hit-target"
-            onClick={() => {
-              if (!open && unmountBodyWhenCollapsed) setBodyMounted(true);
-              onOpenChange(!open);
-            }}
-            type="button"
-          />
-        ) : null}
-        <span className="thread-activity-item__header-content">
+      <OverlayDisclosureTrigger
+        buttonClassName="thread-activity-item__hit-target"
+        className="thread-activity-item__header"
+        contentClassName="thread-activity-item__header-content"
+        interactive={hasBody}
+        labelId={summaryId}
+        onToggle={() => {
+          if (!open && unmountBodyWhenCollapsed) setBodyMounted(true);
+          onOpenChange(!open);
+        }}
+        open={open}
+      >
           {icon == null ? null : <span className="thread-activity-item__icon">{icon}</span>}
           <CadencedShimmer active={running} className="thread-activity-item__summary" id={summaryId}>{summary}</CadencedShimmer>
           {detail ? <span className="thread-activity-item__detail">{detail}</span> : null}
           {trailing ? <span className="thread-activity-item__trailing">{trailing}</span> : null}
           {accessory ? <span className="thread-activity-item__accessory">{accessory}</span> : null}
           {hasBody ? <ChevronRight aria-hidden="true" className="thread-activity-item__chevron" size={13} /> : null}
-        </span>
-      </div>
+      </OverlayDisclosureTrigger>
       {hasBody ? (
         <motion.div
           animate={{ height: open ? bodyHeightPx : 0, opacity: open ? 1 : 0 }}

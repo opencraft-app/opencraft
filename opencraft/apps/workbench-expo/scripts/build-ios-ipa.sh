@@ -17,7 +17,18 @@ if [[ -z "${APPLE_TEAM_ID:-}" ]]; then
 fi
 
 export NODE_ENV=production
-CI=1 node scripts/run-expo.cjs prebuild --platform ios --no-install --no-clean
+if [[ "${OPENCRAFT_IOS_RELEASE:-0}" == "1" ]]; then
+  if [[ -e ios || -L ios ]]; then
+    echo "The iOS native project already exists; use a clean checkout for the LightVela build." >&2
+    exit 1
+  fi
+  product_name="LightVela"
+  prebuild_mode="--clean"
+else
+  product_name="OpenCraft"
+  prebuild_mode="--no-clean"
+fi
+CI=1 node scripts/run-expo.cjs prebuild --platform ios --no-install "$prebuild_mode"
 (cd ios && pod install)
 
 workspace="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
@@ -26,8 +37,8 @@ if [[ -z "$workspace" ]]; then
   exit 1
 fi
 scheme="$(basename "$workspace" .xcworkspace)"
-archive="$PWD/release/OpenCraft-ios-internal.xcarchive"
-artifact_dir="$PWD/release/ios-export"
+archive="$PWD/release/${product_name}-ios-internal.xcarchive"
+artifact_dir="$PWD/release/${product_name}-ios-export"
 export_method="${OPENCRAFT_IOS_EXPORT_METHOD:-development}"
 case "$export_method" in
   development|ad-hoc) ;;
@@ -67,6 +78,7 @@ if [[ -z "$ipa" ]]; then
   echo "Xcode export succeeded but did not produce an IPA." >&2
   exit 1
 fi
-cp "$ipa" release/OpenCraft-ios-internal.ipa
-shasum -a 256 release/OpenCraft-ios-internal.ipa > release/OpenCraft-ios-internal.ipa.sha256
-echo "Built release/OpenCraft-ios-internal.ipa"
+artifact="release/${product_name}-ios-internal.ipa"
+cp "$ipa" "$artifact"
+shasum -a 256 "$artifact" > "$artifact.sha256"
+echo "Built $artifact"

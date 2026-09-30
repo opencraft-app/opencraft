@@ -288,7 +288,7 @@ export const OpenSourceLicensesPage = () => {
           </div>
 
           <section className="pt-10 sm:pt-12">
-            <div className="max-w-[74ch] text-[15px] leading-8 text-slate-700 sm:text-base sm:leading-9">
+            <div className="max-w-[74ch] max-sm:min-w-0 max-sm:[overflow-wrap:anywhere] text-[15px] leading-8 text-slate-700 sm:text-base sm:leading-9">
               {noticeBlocks.map((block, index) => {
                 if (block.kind === "heading") {
                   return (
@@ -312,7 +312,7 @@ export const OpenSourceLicensesPage = () => {
                     <div key={`${block.number}-${block.name}-${index}`} className="mt-6 border-b border-slate-100 pb-5 last:border-b-0">
                       <p className="flex gap-3 text-base leading-7 text-slate-950">
                         <span className="w-7 shrink-0 text-right font-medium tabular-nums text-slate-400">{block.number}.</span>
-                        <span className="font-semibold">{block.name}</span>
+                        <span className="max-sm:min-w-0 font-semibold">{block.name}</span>
                       </p>
                       {block.details.length ? (
                         <div className="mt-1 space-y-1 pl-10">

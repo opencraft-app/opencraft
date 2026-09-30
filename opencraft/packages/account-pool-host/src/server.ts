@@ -3,8 +3,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 import type { CodexAccountPoolProxy } from "./codex-proxy.js";
-
-const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+import { CODEX_POOL_MAX_REQUEST_BYTES } from "./request-limits.js";
 
 function requestHeaders(request: IncomingMessage): Headers {
   const headers = new Headers();
@@ -18,12 +17,20 @@ function requestHeaders(request: IncomingMessage): Headers {
 async function requestBody(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
+  let oversized = false;
   for await (const raw of request) {
+    // Drain the rest so the client can receive HTTP 413 instead of a reset.
+    if (oversized) continue;
     const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
     size += chunk.byteLength;
-    if (size > MAX_REQUEST_BYTES) throw new RangeError("Request too large");
+    if (size > CODEX_POOL_MAX_REQUEST_BYTES) {
+      oversized = true;
+      chunks.length = 0;
+      continue;
+    }
     chunks.push(chunk);
   }
+  if (oversized) throw new RangeError("Request too large");
   return Buffer.concat(chunks);
 }
 

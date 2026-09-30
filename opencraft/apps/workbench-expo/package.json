@@ -11,6 +11,9 @@
     "bundle:ios": "node scripts/run-expo.cjs export:embed --platform ios --dev false --entry-file index.ts --bundle-output dist/ios/main.jsbundle --assets-dest dist/ios/assets",
     "build:ios:ipa": "bash scripts/build-ios-ipa.sh",
     "build:android:apk": "bash scripts/build-android-apk.sh",
+    "build:android:release": "bash scripts/build-android-release-apk.sh",
+    "licenses:generate": "node scripts/generate-mobile-open-source-licenses.mjs",
+    "licenses:check": "node scripts/generate-mobile-open-source-licenses.mjs --check",
     "web": "node scripts/run-expo.cjs start --web",
     "export:web": "node scripts/run-expo.cjs export --platform web",
     "typecheck": "tsc --noEmit"

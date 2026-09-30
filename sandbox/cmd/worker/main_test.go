@@ -920,6 +920,7 @@ func TestDoRefillAutoProvisionsNewShardPoolOnSecurityGroupLimit(t *testing.T) {
 	}
 	pool.TemplateClassID = "openclaw-default"
 	pool.SKUID = "sku-default"
+	pool.InstanceType = "SA4.MEDIUM2"
 	if _, err := svc.UpdatePool(ctx, pool); err != nil {
 		t.Fatalf("update pool: %v", err)
 	}
@@ -952,6 +953,16 @@ func TestDoRefillAutoProvisionsNewShardPoolOnSecurityGroupLimit(t *testing.T) {
 		}
 		if len(item.SecurityGroups) == 0 {
 			t.Fatalf("expected new shard pool to carry cloned security groups")
+		}
+		if item.InstanceType != pool.InstanceType {
+			t.Fatalf("new shard pool instance type = %q, want source pool type %q", item.InstanceType, pool.InstanceType)
+		}
+		bundle, err := svc.GetCapacityBundle(ctx, item.CapacityBundleID)
+		if err != nil {
+			t.Fatalf("get recovered capacity bundle: %v", err)
+		}
+		if bundle.LineageTags["source_pool_instance_type"] != pool.InstanceType {
+			t.Fatalf("recovery bundle source instance type = %q, want %q", bundle.LineageTags["source_pool_instance_type"], pool.InstanceType)
 		}
 	}
 	if !foundNew {

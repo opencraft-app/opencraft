@@ -220,3 +220,8 @@
 - 迁移后3/3 tests、Web typecheck、平台边界通过。既有构建与UI验证沿用前轮，无新生产代码；生成闭包检查另发现 sourceRevision 落后，需先提交前端测试迁移，再官方 sync 并独立提交。
 - context_receipt 补充 docs/engineering/domains/agent-gateway-runtime.md 验证边界。用户“继续吧”后继续修复和原MR提交；不处理原有master冲突，不合并或发布。
 - 源码迁移提交20dbd5595后，官方sync仅更新UPSTREAM.json的sourceRevision；130文件闭包检查通过，documentation和staged change-impact通过。生成清单独立后续提交，排除无关catalog.jsonl。
+
+## mr_4851_cr_followup_2026_09_30
+- 隔离工作树 `/data/mono2-mr4851-cr` 从 MR tip `7813b44e2` 创建，原 `/data/mono2` 的大量未提交改动保持原样。`origin/master` 合并复现 9 个冲突；源码、文档、测试与 package 两侧内容已逐处合并，生成清单由官方同步重建。
+- 保存入口已绑定目标 Host/path/text 并先检查只读；新增测试证明 previewOnly 抛错且 Host 写入/Blob 失效均未调用。生命周期补充迟到 prepare/show 与空 Profile 用例；前端测试固定国内 region。OpenCraft guard 新增本 MR 12 文件测试套件。
+- 本地证据：OpenCraft 142/142、frontend 8/8、Web typecheck、i18n、嵌入 release build、frontend check 0 new、CI guard 单测 7/7。后续需完成 merge commit 后重新生成 sourceRevision，复验官方闭包、文档门禁与远端 CI；未合并或发布。

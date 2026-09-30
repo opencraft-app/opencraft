@@ -76,6 +76,32 @@ func TestResolver_NonActivityBundle(t *testing.T) {
 	}
 }
 
+func TestResolver_PurchaseActivityWithoutRenewActivityFallsBack(t *testing.T) {
+	f := newFakeActivityStore()
+	f.bundles["bundle_launch_01|purchase"] = &store.BundleActivity{
+		BundleID: "bundle_launch_01", Scene: store.ActivityScenePurchase,
+		ActivityID: 1001, ActID: 2001, Active: true,
+	}
+	r := NewResolver(f)
+	for _, resolve := range []struct {
+		name string
+		fn   func(context.Context, store.ActivityScene, string, string, int, string) (*Mapping, bool, error)
+	}{
+		{name: "quote", fn: r.ResolveForInquiry},
+		{name: "order", fn: r.ResolveForPlaceOrder},
+	} {
+		t.Run(resolve.name, func(t *testing.T) {
+			mapping, useDianshi, err := resolve.fn(context.Background(), store.ActivitySceneRenew, "bundle_launch_01", "815836472", 1, "m")
+			if err != nil || mapping != nil || useDianshi {
+				t.Fatalf("renew mapping=%+v useDianshi=%v err=%v", mapping, useDianshi, err)
+			}
+		})
+	}
+	if f.hasCalls != 0 {
+		t.Fatalf("participation checks=%d, want 0", f.hasCalls)
+	}
+}
+
 func TestResolver_ActivityInactive(t *testing.T) {
 	f := newFakeActivityStore()
 	f.bundles["bundle_launch_01|purchase"] = &store.BundleActivity{

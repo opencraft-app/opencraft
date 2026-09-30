@@ -8,6 +8,11 @@ const intlHomeStyles = readFileSync(
 );
 
 describe("LightVela international home styles", () => {
+  it("preserves the narrow mobile header and Chinese hero rules after homepage import", () => {
+    expect(intlHomeStyles).toMatch(/@media \(max-width: 359px\)[\s\S]*?\.nav__brand img\s*\{[^}]*width:\s*92px/);
+    expect(intlHomeStyles).toMatch(/@media \(max-width: 359px\)[\s\S]*?\.hero__line--dynamic\s*\{[^}]*flex-wrap:\s*wrap/);
+  });
+
   it("self-hosts a stable signature font for the footer display text", () => {
     expect(intlHomeStyles).toContain("font-family: 'Allura'");
     expect(intlHomeStyles).toContain("src: url('assets/fonts/allura-latin.woff2') format('woff2');");

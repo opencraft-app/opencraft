@@ -31,6 +31,9 @@
 | 工作区、工具面板、浮动聊天、Side Chat | [design](design/README.md)；实现变更同步维护 `design/invariants.md` |
 | OpenCraft 架构、交互、布局、平台适配或预览 | [opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)，按任务读取其验证清单 |
 | iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先核对外网 manifest 和完整 bundle，再给 `exps://` 链接，提醒用 Safari 打开。手机操作见 [Expo README](apps/workbench-expo/README.md#iphone-真机快速体验) |
+| Android 内测、正式 APK，或 iOS 测试 IPA | 先读 [手机端路线](apps/workbench-expo/README.md#手机端路线) 和 [构建矩阵](docs/build-matrix.md)；按目标选择签名、包名及验证步骤 |
+| Android 备案资料或临时内网下载 | [Android 正式 APK](apps/workbench-expo/README.md#android-lightvela-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
+| 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
 | mono2 Agent Console 共享实现 | [MONO2_MIGRATION](MONO2_MIGRATION.md)、`frontend/AGENTS.md`；同步边界还读 `../docs/context/project/upstream-subtrees.md` |
 | Web、Expo、Electron 构建与交付 | [build-matrix](docs/build-matrix.md) |
 
@@ -38,8 +41,10 @@
 
 ## 手机端入口
 
-- iOS 当前是 HeroUI Native 登录与底栏，加 LightVela 网站 WebView；真机可用 Expo Go 打开开发预览。Android 当前是独立 React Native 工作台，内测 APK 的安装步骤见 [Expo README](apps/workbench-expo/README.md#android-internal-apk)。
-- iPhone 外网预览以已核验的 `exps://` 链接为入口，在 Safari 打开并跳转 Expo Go；不要让使用者依赖 Expo Go 的开发服务器列表。预览依赖持续运行的 Metro 与 Cloudflare Tunnel，链接过期或进程退出后须重新生成并核验。
+- iOS 当前是 HeroUI Native 登录与底栏，加 LightVela 网站 WebView；Android 是独立 React Native 工作台。手机平台、构建方式和产物先按 [Expo 路线表](apps/workbench-expo/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
+- iPhone 外网预览使用已核验的 `exps://` 链接，在 Safari 打开并跳转 Expo Go；Metro 与 Cloudflare Tunnel 必须持续运行，链接失效时重新生成并核验。
+- Android 内测包为 `dev.vela.workbench`，使用开发签名；正式包为 `com.tencent.vela`，必须使用仓库外的正式密钥。iOS 测试 IPA 须在有 Xcode 和 Apple 签名的 Mac 上构建。更换包名或密钥后，从**新成品**重新提取备案值。
+- 本地 APK/IPA 打包、备案资料和临时内网下载不等于 GitOps 发布。交接时分别报告源码 checkout、包名、签名证书摘要、APK 文件摘要、安装验证和下载进程状态；私钥与密码不得进入仓库、日志或下载目录。
 
 ## 代码与 Contract
 
@@ -71,9 +76,12 @@
 - 文件夹等复合选择控件拆分三层：Host/Provider 声明可浏览范围并读取资源，Feature 只提交选择意图及业务写入，平台 Modal 与共享控件拥有焦点、键盘、按钮状态和呈现。组件样式留在组件边界；不得在 `app.scss` 为单个功能重造主按钮或把客户端目录误当成远端 Workspace。
 - 主题色必须按语义成对消费（如主按钮背景与主按钮文字），不能拿正文色和页面背景色自行反推“反色”。修改复合控件时，在浅色、深色和至少一个扩展主题检查真实 computed 前景/背景及对比度，并覆盖正常、hover、键盘焦点、禁用、处理中和错误状态；变量未定义时不能依赖浏览器继承得到可读文字。
 - 跨扩展边界传递 `value/options/action`、`local/remote` 等稳定语义，不传具体图标组件、像素尺寸或 Feature CSS class。Web、Electron、Expo 可有不同物理实现，但消费同一 contract。
+- 用户可见的按钮、菜单、弹窗、通知和状态文案只描述用户任务、处理结果与可采取的动作；不得把内部类型、协议、方法、状态名（包括 `pending`）或原始诊断信息直接写到界面上。技术细节需要排障时放在显式的详情或日志入口，不占主要操作位。
+- 处理中反馈在原控件或原反馈槽位使用简短、尺寸稳定的文案或图标；不得追加技术状态说明或动态长文案，撑大弹窗、按钮、菜单、列表项，或造成相邻布局跳动。窄屏和触屏也须验证该约束。
 - 局部 loading、retry、badge 和错误反馈优先在既有槽位原位替换，不改变窗口、标题栏、正文起点或相邻布局；确需改变宿主几何时先说明影响并取得用户确认。
 - Mutation 的状态与反馈作用域必须和用户操作一致：行级/控件级操作使用独立 pending key，并在原控件槽位反馈；不得借用父级表单的 `dirty`、全页 `busy` 或路由 loading，导致无关编辑区展开、折叠、禁用、滚动或焦点变化。只有用户实际编辑父级表单字段时，父级 draft 才能变脏；用 held-promise 测试断言请求进行中布局与 draft 不变。
 - 菜单、Popover 和 Dialog 使用项目已有 Radix/Modal 基础设施，不手写键盘、焦点、关闭、遮罩或嵌套行为。新增共享视觉 contract 时，用测试证明业务层不再持有已上收规则。
+- 列表、树和多行侧栏中的临时菜单先定义互斥范围与唯一 owner：若同一容器同时只能有一个菜单，就由容器持有按稳定实体身份与入口类型标识的打开项，逐行 Radix Root 受控投影；不要让每行未受控的 `open` 状态各自决定全列表可见性。右键与“…”可以有独立触发区和事件，但切换行/入口或选中会话须关闭旧菜单，容器卸载须释放状态；旧菜单迟到的关闭事件只能清除自身，不能覆盖新菜单。触控连续点击不同菜单、菜单项、空白处与键盘操作都要作为回归序列验证。
 
 ### Typography 所有权
 

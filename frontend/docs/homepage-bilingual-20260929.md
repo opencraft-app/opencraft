@@ -1,0 +1,115 @@
+# 双站首页布局与多语言适配
+
+## goal
+交付用户验收的紧凑首页：双站顶部使用浅紫形象，其余区域保留黑色形象，同步多语言与移动端。
+
+## non_goals
+- 不改变鉴权、订阅、计费、后端接口、GitOps 或生产环境；不自动合并、发布。
+- 不纳入主工作区的其他改动。
+
+## requirement_refs
+本次用户对话及截图；最终确认「国内国际都要这个浅紫色的，提 MR」。相关历史需求为工蜂 [#74](https://git.woa.com/wisp/mono2/issues/74)，本次按后续用户确认的七卡与新标题方案演进，不宣称原八卡验收全部完成，不自动关闭 Issue。
+
+## interface_refs / data_structure_refs
+- `next-site/international-home-runtime.tsx`：共享脚本/样式生命周期，保留 CTA、会话和反馈入口。
+- `scripts/import-international-homepage.mjs`：生成入口，新增素材保留清单与统一后处理。
+- `scripts/international-home-feature-locales.mjs`：八语言文案与装饰结构，生成物不可作为独立真源。
+
+## history_context
+- current_design_refs：`frontend/AGENTS.md`、已验收首页预览。
+- relevant_evolution：以 `621550778` 隔离基线迁入预览改动，保留 master 已有博客与反馈入口。
+- superseded_refs：黑色顶部素材仅为历史方案；最终顶部是浅紫色。
+
+## acceptance
+- 双站使用同一顶部浅紫素材，轮播短词不推动角色位置；日语韩语句尾不与角色重叠。
+- 七张紧凑特性卡，按用户要求精简文案、调整确认气泡、修正插图裁切与页脚底色。
+- 保留语义链接、语言与站点入口；离屏、隐藏标签页、减少动态偏好下暂停装饰动画。
+- 相关测试、生成器测试、类型检查、双站构建通过后提交；不将本地构建视为生产发布。
+
+## affected_paths
+`next-site/international-home-runtime.tsx`、`public/lightvela-intl-home/`、相关 scripts/tests、字体子集及工蜂 Skill。
+
+## context_receipt
+| 文件 | 用途 |
+|---|---|
+| `docs/context/project/services/frontend.md` | 双站 UI 边界与验证范围 |
+| `frontend/AGENTS.md` | 图片默认 WebP、check/test/build 门禁 |
+| `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | 核对生成器及测试邻居 |
+| `frontend/vitest.config.ts` | 测试运行环境与 alias |
+| `.agents/context/change-impact.json` | 本次不命中运行时架构文档强制映射 |
+| `.agents/skills/gongfeng/SKILL.md` | 复用现有连接，不提取或输出凭据 |
+
+## decisions / review
+- 图片转换为无损 WebP，保留透明像素，不重绘用户提供的形象。
+- 测试按实际批准后的七卡结构更新；资源扩展名更新为 WebP，语言标题使用固定期望，不能从被测 DOM 反推期望。
+- 动效控制器的观察器、resize/visibility/media 监听通过既有 dispose 事件清理；只读取静态词组，不新增网络写入。
+- P2：兼容层 CSS 仍有多轮覆盖规则，后续可另案收敛；本次不扩大视觉重构范围。
+
+## validation / evidence
+- 全新 `pnpm install --frozen-lockfile` 通过，未复用 node_modules 软链。
+- 首页/渲染/可访问性/头像四个相关 Vitest 文件 69/69；语言生成器 node:test 13/13。
+- `pnpm check`：TypeScript 166 current / 171 baseline / 0 new / 5 resolved；i18n 错误 0、既有告警 46。
+- `pnpm build:cn` 与 `pnpm build:global` 均通过，SEO 路由检查分别 8、42 条；素材转换后重复构建通过。
+- 新增浅紫 WebP 与原 PNG 的非透明像素及 alpha 完全一致；透明像素的不可见 RGB 被编码器清理。新增文件的字面量素材引用全部纳入 Git，无新增缺失路径。
+- `git diff --check`、三份 JS 语法检查、工蜂 Skill 校验、documentation validator、staged change-impact 通过。
+- Context 测试 22/26，4 项失败为原有 tasks 文档的 frontmatter/中文优先规则；报错文件未被本 MR 修改。context-audit 单测 33/33，审计发现已运行，不虚构成熟度分数。
+- 合入 `cfb478aef` 后确认前端与 Skill 文件未变化；本 MR 对 master 的差异不含合并带来的后端/GitOps 文件。
+
+## risks / handoff
+本 MR 不代表上线。需要远端 CI 与人工 CR 后再决定合并；回滚通过反向提交本 MR 完成。原始素材和旧实验素材保留在本地，不随提交上传。
+
+## MR !4800 评审修复
+- 检查工蜂评审面板两页共 6 条意见：4 条工作台标题语义、1 条轨道坐标常量、1 条生成 HTML 可读性。
+- 将已批准的一句话工作台文案提升为原生 `h4`，保留原字号、颜色和间距，不恢复用户明确删除的旧标题；同步默认页和 8 个语言片段。
+- 技能轨道图标与坐标合并到具名数据常量，提取动画错峰常量，避免平行数组错位。
+- 生成的装饰块按标签分行缩进；测试覆盖重生成幂等性、七卡标题和多语言固定文案。缓存版本更新为 v98。
+- 验证：生成器 13/13；首页相关 Vitest 独立重跑 69/69（并行构建时曾有一项超时，未提高测试时限）；`pnpm check` 0 新增类型错误、0 i18n 错误；国内/国际构建与 SEO 路由检查 8/42 均通过。
+- 对比原提交的 9 份 DOM，卡片文字、图片路径及轨道坐标一致；文档检查、JS 语法、staged change-impact 与 diff 检查通过。
+- 交接检查点：追加到原 MR !4800，等待远端检查与人工复审。不合并、不发布。
+
+## 第二轮评审核验
+- 确认并修复页脚 CTA：装饰生成器不再改写按钮文案，9 份片段恢复 master 中与 `/agents` 匹配的原始译文；新增真实中文片段在未登录、未订阅、已订阅状态下的运行时测试。
+- 确认并修复 hero 双重注入：导入器直接使用 `lv-cover-lavender.webp`、528×410；本地化生成器不再覆盖形象，移除旧图的保留名单项。
+- 资源疑问不成立：`git ls-tree origin/master` 确认 automation/workbench/deepseek/workspace-carousel 所列 WebP 已被跟踪，来自 `27c0afb5b`（!4554），不是依赖本地未提交文件。
+- 字体疑问不成立：`style.css` 的 Allura `@font-face` 引用 `assets/fonts/allura-latin.woff2`，同文件定义 `--font-footer-display`；字体文件已被 Git 跟踪。补充变量/字体资产回归断言。
+- 检查点：生成器 16/16、首页相关 Vitest 72/72；`pnpm check` 0 新增类型错误；双站构建及 SEO 路由检查 8/42 通过；文档、JS 语法、staged change-impact、diff 检查通过。本轮只修复评审问题，不变更视觉方案，不合并发布。
+
+## 第三轮评审核验
+- 移除无引用的 `hermes-cover-companion.webp`，并同步移除失效背景图 `figma-steps-companion.webp` 及其导入保留项。文件可从历史提交恢复。
+- 部署角色唯一渲染方案为 `figma-steps-user-original.webp`（676×591），显示宽度 112px；沿用 `placeStepCompanion()` 计算的脚底落点。删除旧 300/139 背景方案和隐藏 img 的规则，将图片尺寸合并到一处；桌面容器宽度保持不变。
+- 回归覆盖唯一图片样式、定位变量与旧素材不存在；资源缓存版本升至 v99。
+- 检查点：生成器 17/17、首页相关测试 72/72，check 无新增类型错误，双站构建及 SEO 路由检查 8/42 通过，文档/变更影响/diff 检查通过；追加原 MR，不合并发布。
+
+## AI 评论区逐项复核
+- 已读取当前 3 条及“加载更多”后的历史 AI 评论，不能把“代码行已修改”误当作问题已解决。
+- `75849984` / `75845629`：标题字典缺失时显式失败，卡片数量及索引存在性先断言；不使用空字符串或可选链掩盖错误测试数据。
+- `75849985` / `75845624` / `75845631`：统一语言列表、默认语言及中文判断常量，生成器与测试共用语言列表；不采纳无用途的 `LANG_CODE` 建议补丁。
+- `75845630`：使用测试清理钩子关闭 JSDOM，断言失败时仍释放资源。
+- `75845627`：确认对话是有效内容，移除其父节点 `aria-hidden`，9 份片段同步，补充读屏可见性断言。
+- `75849986` / `75845626` / `75845628`：品牌吉祥物及重复频道动画为装饰性内容，保留空 alt 与 `aria-hidden`；频道文本已相邻呈现。补充回归守卫，不添加 AI 补丁中的不存在资源 `icon-whatsapp.png`。
+- `75845623`：规则针对控制台主题；本任务是已验收的固定配色营销首页，不擅自增加主题切换。保持 SVG 配色，记录为不适用。
+- 历史 4 条 workspace 标题、HTML 分行与轨道坐标意见已由前轮修复及回归覆盖，未恢复用户删掉的文案。
+- 检查点：生成器 17/17、首页相关 Vitest 72/72；check 无新增类型错误（已有 166 条基线诊断）、i18n 0 错误；双站构建与 SEO 路由检查 8/42 均通过。文档、JS 语法、staged change-impact 与 diff 检查通过；仅追加原 MR，不合并发布。
+
+## 页脚死资源及旋转词生成宽度复核
+- 删除失效的 `.home-footer-mascot` 样式、导入注入入口、`hermes-door-note.webp` 及保留名单项；现有 `.home-footer-boundary` 不变，素材可从 Git 历史恢复。
+- 生成器清除旋转词容器捕获的内联宽度，仅保留 `--rotator-delay`，同步默认页及八语言片段；维持 CSS 12em 兜底与运行时最长词测量，不添加宽度动画。新增不同捕获宽度的稳定生成测试。
+- 最新 AI 评论 `75855122`、`75855123`、`75855124` 均涉及装饰图：顶部/步骤/CTA 角色使用空 alt 和 `aria-hidden`，页脚边界 SVG 同样隐藏于读屏，不添加重复描述；补全各语言回归断言。
+- context_receipt：本轮路由无匹配 pack；读取 frontend/AGENTS.md、frontend-runtime-openspec-i18n 邻接卡并核对生成器相邻测试。首次精确查询将资源误定位到 public 根目录后，纠正为 assets 子目录。无现成 Graphify 图，不扩展为全仓建图任务。
+- 检查点：19 项生成器测试、72 项首页测试通过；check 无新增类型错误、i18n 无错误；双站构建及 SEO 路由检查 8/42 通过。JS 语法、文档、diff 检查通过；3 条新增 AI 误报已在工蜂填写原因并忽略。只追加原 MR，不合并发布。
+
+## 自查补充清理
+- 旧 runtime 切词仍写内联宽度：通过共享 `normalizeHeroRuntime()` 在导入生成末端移除旧测量节点、测量函数及宽度写入，保留切词/动画/可见性调度。现有 runtime 同步生成，宽度唯一归 feature-motion.js 管理，缓存版本 v101。
+- 页脚不再创建后删除 `home-door-note`，移除八语言无效字典；生成的九份 HTML 与清理前保持一致。
+- 新增归一化及产物幂等性测试，断言旧测量不再出现、切词语义保留。
+- 检查点：生成器及实际切词测试 21/21、首页 Vitest 72/72；check 无新增类型错误；双站构建及 SEO 路由检查 8/42 通过。文档、JS 语法、staged change-impact、diff 检查通过。九份片段幂等性通过，无视觉文案更改。本轮仍只更新 MR !4800，不合并、不发布。
+
+## 步骤形象单一生成入口
+- 当前导入顺序固定为 companionDecorations 后 localizeFeatureCards，虽最终始终使用原图，仍有两套冲突定义。移除导入器步骤角色条目，由本地化生成器唯一负责新节点插入与旧节点替换。
+- `STEP_ARTWORK` 统一原图路径、676×591 尺寸、footY=520；脚底锚点通过生成节点传给运行时。定位读取实际渲染宽度与 img 原始宽度，不再硬编码形象比例；保留既有曲线位置常量和原始视觉。
+- 默认及八语言片段重生成，资源版本 v102。测试覆盖全新导入/旧图导入一致性、幂等性、真实 ol.track 锚点及 112px/224px 脚底定位。
+- 检查点：23 项生成器测试、72 项首页测试通过；check 无新增类型错误；双站构建及 SEO 路由检查 8/42 通过，文档、JS 语法、变更影响与 diff 检查通过。仅更新 MR !4800，不合并发布。
+
+## 页脚废弃文案样式清理
+- 确认九份片段及生成器没有 `.home-door-note` 节点，删除基础、桌面、手机共三条死样式；扩展废弃页脚样式回归断言。无活跃样式或运行时变化，不额外升级资源版本。
+- 检查点：生成器 23/23、首页测试 72/72，check 无新增类型错误，文档及 diff 检查通过。本轮仅删除无引用 CSS，未重复全量双站构建；上一轮双站构建结果不冒充本轮执行。仅追加原 MR，不合并发布。

@@ -4,8 +4,28 @@ import test from "node:test";
 
 import * as webviewModule from "../apps/workbench-expo/src/runtime/lightvela-site-webview";
 
-const { createLightVelaMobileShellBootstrap, createLightVelaSiteBootstrap, createLightVelaStaticPrefetch, lightVelaSiteTabForUrl, lightVelaSiteTabUrl, lightVelaSiteUrl, LIGHTVELA_STATIC_PREFETCH } =
+const { createLightVelaMobileShellBootstrap, createLightVelaLocaleBootstrap, createLightVelaLocaleChange, createLightVelaSiteBootstrap, createLightVelaStaticPrefetch, lightVelaSiteTabForUrl, lightVelaSiteTabUrl, lightVelaSiteUrl, LIGHTVELA_STATIC_PREFETCH } =
   ("default" in webviewModule ? webviewModule.default : webviewModule) as typeof import("../apps/workbench-expo/src/runtime/lightvela-site-webview");
+
+test("native language reaches only the selected first-party site before its i18n starts", () => {
+  const stored = new Map<string, string>();
+  let reloads = 0;
+  const window = {
+    location: { origin: "https://other.example", reload: () => { reloads += 1; } },
+    localStorage: { setItem: (key: string, value: string) => stored.set(key, value) },
+  };
+  runInNewContext(createLightVelaLocaleBootstrap("intl", "zh-SG"), { window });
+  assert.equal(stored.size, 0);
+  window.location.origin = "https://lightvela.ai";
+  runInNewContext(createLightVelaLocaleBootstrap("intl", "zh-SG"), { window });
+  assert.equal(stored.get("lw-locale"), "zh-SG");
+  assert.equal(stored.get("lw-locale-explicit"), "1");
+  runInNewContext(createLightVelaLocaleChange("intl", "en-US"), { window });
+  assert.equal(stored.get("lw-locale"), "en-US");
+  assert.equal(reloads, 1);
+  runInNewContext(createLightVelaLocaleChange("cn", "zh-CN"), { window });
+  assert.equal(reloads, 1);
+});
 
 test("iOS site session is written only on the first-party origin and cleared on web sign-out", () => {
   const stored = new Map<string, string>();

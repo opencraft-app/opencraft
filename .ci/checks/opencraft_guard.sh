@@ -21,4 +21,8 @@ if ! node opencraft/scripts/sync-mono2-agent-console.mjs --check; then
   exit 1
 fi
 
+echo "opencraft guard: install locked dependencies and run embedded workbench regressions"
+npm --prefix opencraft ci --ignore-scripts --no-audit --no-fund --loglevel=error
+npm --prefix opencraft run test:embedded-ci
+
 echo "opencraft guard: all checks passed"

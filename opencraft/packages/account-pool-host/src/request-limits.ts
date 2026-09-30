@@ -1,0 +1,1 @@
+export const CODEX_POOL_MAX_REQUEST_BYTES = 32 * 1024 * 1024;

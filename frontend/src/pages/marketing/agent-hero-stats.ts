@@ -1,3 +1,4 @@
+import { summarizePassCredits } from "@/lib/pass-credits";
 /**
  * 总览页横幅的真实数据
  * ──────────────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ export const useHeroStats = (params: {
   return {
     servedDays: computeServedDays(activePass?.created_time),
     expiresAt: formatExpiryDate(activePass?.expired_time, locale),
-    credits: activePass ? activePass.credit_available : null,
+    credits: activePass ? summarizePassCredits(activePass).available : null,
     automations,
     sites,
   };

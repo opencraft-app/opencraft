@@ -8,6 +8,18 @@ The `workbench-frame.web.tsx` and `workbench-frame.native.tsx` files are host
 adapters with a shared semantic component underneath. DOM-only packages such as
 ProseMirror and the Codex SCSS frame are intentionally unavailable here.
 
+## 手机端路线
+
+| 要做什么 | 标识与产物 | 从哪里开始 |
+|---|---|---|
+| iPhone 体验当前代码 | Expo Go 临时预览，依赖持续运行的 Metro | [真机快速体验](#iphone-真机快速体验) |
+| Android 内测安装 | `dev.vela.workbench`，开发签名 APK | [Android 内测 APK](#android-internal-apk) |
+| Android 正式包与备案 | `com.tencent.vela`，独立正式签名 APK、公钥与 MD5 | [Android 正式 APK](#android-lightvela-release-apk) |
+| iOS 可安装测试包 | 内测 `dev.vela.workbench`；LightVela 测试包 `ai.lightvela.vela` | [iOS IPA](#ios-site-shell-and-simulator) |
+
+Expo Go 链接、Android APK 和 iOS IPA 是不同交付物。每次交付都从当前
+checkout 构建并验证成品；构建成功本身不代表已经安装、上架或发布。
+
 ## iPhone 真机快速体验
 
 当前 iOS 版是 HeroUI Native 登录页和底栏，登录后在 App 内打开所选站点的网页。Android 版仍是独立的 React Native 工作台；它的内测 APK 见下文。
@@ -15,7 +27,7 @@ ProseMirror and the Codex SCSS frame are intentionally unavailable here.
 1. 在 iPhone 上从[美区 App Store 安装 Expo Go](https://apps.apple.com/us/app/expo-go/id982107779)。
 2. 让开发者按 [Cloudflare Expo Go 预览 skill](../../.agents/skills/opencraft-expo-cf-preview/SKILL.md)启动并核验预览，然后取得本次的 `exps://…trycloudflare.com` 链接。链接每次可能变化；Metro 和 Cloudflare Tunnel 必须保持运行。
 3. 把完整链接粘贴到 **Safari 地址栏**，允许跳转 Expo Go。不要用聊天软件内置浏览器，也不必等待项目出现在 Expo Go 的开发服务器列表。
-4. 在 App 登录页选择“中国大陆”或“International”，再登录 LightVela。登录后进入“我的智能体”；底栏可切换“账号”和“套餐与费用”。切换站点需先退出当前账号。
+4. 在 App 登录页选择“中国大陆”或“International”，再登录 LightVela。登录后进入“我的智能体”；底栏可切换“账号”“套餐与费用”和“设置”。登录前也能从右上角打开设置，选择语言、查看开源授权。切换站点需先退出当前账号。
 
 如果出现红屏或一直加载，请把手机画面发给开发者，并让其重新核验外网 manifest、完整 bundle 和正在运行的 Metro 日志。此预览是临时开发服务，不能当作已安装的独立 IPA。
 
@@ -74,12 +86,34 @@ existing browser token store before its scripts run; other origins are opened
 outside the WebView and never receive that session. Web sign-out clears the
 native session. Android and Expo Web keep their existing workbench renderer.
 
-The iOS shell uses a HeroUI Native bottom bar for My agents, Account, and
-Plans & billing. These open the selected region's `/agents`, `/account`, and
-`/account/billing` pages in the same WebView. The App hides the website's
+The iOS shell uses a HeroUI Native bottom bar for My agents, Account,
+Plans & billing, and Settings. The first three open the selected region's
+`/agents`, `/account`, and `/account/billing` pages in the same WebView. Settings
+is a native screen inside the tab content area, so the bottom bar remains
+visible while Settings or open-source notices are open. The website page stays
+mounted beneath that screen. Settings is also
+available before sign-in from the login gate. The App hides the website's
 duplicate top header and keeps the Agent sidebar scrollable within a shorter
-mobile area. Navigation within the website updates the active native tab, and
-its document language controls the tab labels.
+mobile area. Navigation within the website updates the active native tab.
+
+The native Settings screen offers Follow device, Simplified Chinese, and
+English. The choice is saved locally and translates the App shell. Before a
+first-party WebView page starts its JavaScript, the App writes the selected
+locale to the website's existing `lw-locale` and `lw-locale-explicit` keys;
+changing it reloads the current page so the website's own i18n can apply it.
+International Simplified Chinese maps to the site's published `zh-SG` locale.
+The mainland China website currently remains Chinese even if the App shell is
+English. No session token or language value is sent to another origin. Add
+future native translations in `src/runtime/mobile-language.ts` and expose a
+locale only after both App and website have a complete dictionary.
+
+Settings also contains an offline list of this Expo app's direct open-source
+dependencies, with their versions and license identifiers from the workspace
+lockfile. Each row opens the upstream package page for full terms; a separate
+button opens LightVela's complete open-source notice. Run
+`npm run licenses:generate --workspace @opencraft/workbench-expo` after changing
+app dependencies and `npm run licenses:check --workspace @opencraft/workbench-expo`
+to verify the bundled list.
 
 The WebView warms a small set of first-party, versioned static assets for nearby
 `/agents/` pages without requesting private API data. It registers the site's
@@ -103,6 +137,20 @@ The script prebuilds iOS, installs pods, archives a Release build, and exports
 Set `OPENCRAFT_IOS_EXPORT_METHOD=ad-hoc` for registered test devices; the
 default is `development`. Apple signing and device installation cannot be
 verified on Linux.
+
+要构建 LightVela 标识的 iOS 测试 IPA，在干净 checkout 的 Mac 上设置
+`OPENCRAFT_IOS_RELEASE=1`，并提供已注册 `ai.lightvela.vela` 的 Apple
+Developer Team：
+
+```bash
+OPENCRAFT_IOS_RELEASE=1 APPLE_TEAM_ID=YOUR_TEAM_ID \
+  OPENCRAFT_IOS_EXPORT_METHOD=ad-hoc npm run build:expo:ios:ipa
+```
+
+该命令生成 `apps/workbench-expo/release/LightVela-ios-internal.ipa`；
+`ad-hoc` 需要测试设备 UDID 和有效的签名配置。现有脚本只导出 development
+或 ad-hoc 测试包，不会生成 App Store 分发 IPA。Mac、Xcode、CocoaPods
+与 Apple 签名缺一不可；Linux 上的 JS bundle 检查不能代替 IPA 验证。
 
 ## Native LightVela login
 
@@ -167,3 +215,45 @@ the APK as an artifact. The nested workflow does not execute in mono2 and does
 not publish to a store or GitHub Release. Installing the APK does not require
 Metro; sign-in still requires the native LightVela login server contract
 described above.
+
+## Android LightVela release APK
+
+正式 Android 包名是 `com.tencent.vela`，显示名称和图标为 LightVela。
+Expo Go 与内测 APK 仍使用 `dev.vela.workbench`。正式签名 PKCS12 密钥库和
+密码文件必须保存在仓库外，并由负责人安全备份；后续更新同一包名须沿用同一密钥。
+使用 Linux、JDK 17 和上文的 Android SDK，设置 `JAVA_HOME`、
+`ANDROID_HOME`、`GRADLE_USER_HOME`，再从 OpenCraft 根目录运行：
+
+```bash
+export OPENCRAFT_ANDROID_RELEASE_KEYSTORE=/secure/path/lightvela-release.p12
+export OPENCRAFT_ANDROID_RELEASE_PASSWORD_FILE=/secure/path/keystore-password.txt
+export OPENCRAFT_ANDROID_RELEASE_KEY_ALIAS=lightvela-com-tencent-vela-release
+npm run build:expo:android:release
+```
+
+构建会重新生成忽略的 `android/` 工程，将 release variant 改为正式签名，
+校验 APK 的包名和签名证书。产物位于 `apps/workbench-expo/release/`：
+
+- `LightVela-com.tencent.vela-android-release.apk`：可安装包，旁边有 SHA-256 文件。
+- `LightVela-com.tencent.vela-filing.txt`：包名、**签名证书 MD5**、**APK 文件 MD5**、Base64 公钥。
+- `LightVela-com.tencent.vela-public-key.pem` 和 `-signing-cert.der`：可交接的公钥与公开证书，均不包含私钥。
+
+备案表若只写“MD5”，先确认要求的是签名证书还是 APK 文件；两者不同。
+更换密钥或重新构建 APK 后，应重新从新产物读取这些值，不沿用旧资料。
+在有 Android 设备时安装新包验证：
+
+```bash
+adb install -r apps/workbench-expo/release/LightVela-com.tencent.vela-android-release.apk
+```
+
+需要在内网提供临时下载链接时，让服务在持续运行的终端中启动：
+
+```bash
+python3 apps/workbench-expo/scripts/serve-android-release-apk.py --bind 0.0.0.0 --port 8765
+```
+
+用 `hostname -I` 找到可达的内网 IP，将
+`http://<内网 IP>:8765/LightVela-com.tencent.vela.apk` 发给测试者。
+先用 `curl -I` 检查 HTTP 200 和文件长度，再下载核对 SHA-256。
+服务只开放这一个 APK 路径；签名密钥和密码不得放进下载目录。
+关闭终端或服务器进程后，链接即失效。该流程不执行上架或公开发布。

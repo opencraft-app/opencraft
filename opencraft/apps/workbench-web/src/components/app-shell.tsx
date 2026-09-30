@@ -21,6 +21,7 @@ import {
   type Ref,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import {
   getHeaderStartMinimumWidth,
@@ -231,6 +232,7 @@ export function AppShell({
   const shellHeight = useMotionValue(window.innerHeight);
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const [sidebarPeek, setSidebarPeek] = useState(false);
+  const [floatingExitOwnsContent, setFloatingExitOwnsContent] = useState(false);
   const [rightPanelRevealed, setRightPanelRevealed] = useState(false);
   const previousToolIntent = useRef({ layoutScope, open: requestedRightPanelOpen });
   const contextAvailable = leftPanel != null;
@@ -558,6 +560,19 @@ export function AppShell({
     layoutMounted: desktopDockMounted,
     layoutResizing,
   });
+  const floatingRequestedRef = useRef(showFloatingSidebar);
+  floatingRequestedRef.current = showFloatingSidebar;
+  // A close intent starts the exit animation; it does not move the shared
+  // content or uncover the conversation until the floating surface has left.
+  useLayoutEffect(() => {
+    if (!mountFloatingPresenceOwner) setFloatingExitOwnsContent(false);
+    else if (showFloatingSidebar) setFloatingExitOwnsContent(true);
+  }, [mountFloatingPresenceOwner, showFloatingSidebar]);
+  const floatingOwnsContent = mountFloatingPresenceOwner
+    && (showFloatingSidebar || floatingExitOwnsContent);
+  const finishFloatingExit = useCallback(() => {
+    if (!floatingRequestedRef.current) setFloatingExitOwnsContent(false);
+  }, []);
   const dockFloatingSidebar = useCallback(() => {
     if (viewportWidth < (contextAvailable ? sidebarWidth : shellSpaceMetrics.compact) + shellSpaceMetrics.mainMinimum) {
       setSidebarPeek(false);
@@ -569,14 +584,18 @@ export function AppShell({
     setSidebarPeek(false);
     onSidebarExpand();
   }, [contextAvailable, onSidebarExpand, sidebarProgress, sidebarWidth, viewportWidth]);
+  const dismissFloatingSidebar = useCallback(() => {
+    floatingIntent.dismiss();
+    setSidebarPeek(false);
+  }, [floatingIntent.dismiss]);
 
   const toggleSidebar = useCallback(() => {
-    if (sidebarPeek || showFloatingSidebar) { floatingIntent.dismiss(); setSidebarPeek(false); return; }
+    if (sidebarPeek || showFloatingSidebar) { dismissFloatingSidebar(); return; }
     if (sidebarOpen || navigationOpen) { onSidebarCollapse(); return; }
     if (viewportWidth < (contextAvailable ? sidebarWidth : shellSpaceMetrics.compact) + shellSpaceMetrics.mainMinimum) {
       setSidebarPeek(true);
     } else onSidebarExpand();
-  }, [sidebarPeek, showFloatingSidebar, floatingIntent.dismiss, sidebarOpen, navigationOpen, onSidebarCollapse, onSidebarExpand, viewportWidth, contextAvailable, sidebarWidth]);
+  }, [sidebarPeek, showFloatingSidebar, dismissFloatingSidebar, sidebarOpen, navigationOpen, onSidebarCollapse, onSidebarExpand, viewportWidth, contextAvailable, sidebarWidth]);
   const toggleRightPanel = useCallback(() => {
     if (rightPanelRevealed) { setRightPanelRevealed(false); onRightPanelOpenChange(false); return; }
     if (rightPanelOpen) onRightPanelOpenChange(false);
@@ -611,21 +630,13 @@ export function AppShell({
         event.preventDefault(); event.stopImmediatePropagation(); toggleSidebar();
       }
       if (event.key === "Escape" && showFloatingSidebar && !event.defaultPrevented) {
-        floatingIntent.dismiss();
-        setSidebarPeek(false);
+        dismissFloatingSidebar();
         shellRootRef.current?.querySelector<HTMLButtonElement>('[data-app-shell-sidebar-trigger]')?.focus();
       }
     };
-    const pointerdown = (event: PointerEvent) => {
-      if (showFloatingSidebar && event.target instanceof Element
-        && !event.target.closest('.app-shell-floating-left-panel, [data-app-shell-sidebar-trigger]')) {
-        floatingIntent.dismiss(); setSidebarPeek(false);
-      }
-    };
     window.addEventListener("keydown", keydown, true);
-    window.addEventListener("pointerdown", pointerdown);
-    return () => { window.removeEventListener("keydown", keydown, true); window.removeEventListener("pointerdown", pointerdown); };
-  }, [showFloatingSidebar, floatingIntent.dismiss, toggleSidebar]);
+    return () => { window.removeEventListener("keydown", keydown, true); };
+  }, [showFloatingSidebar, dismissFloatingSidebar, toggleSidebar]);
 
   // Subscribe every dock/overlay geometry reader before asking the owner to
   // synchronize external preferences. Earlier writes can be missed by a newly
@@ -651,10 +662,24 @@ export function AppShell({
         sidecarPrimaryDetent={navigationController.projection.railDetent}
         style={shellStyle}
       >
-        {sidebarTransientEnabled && mountFloatingPresenceOwner ? (
+        {sidebarTransientEnabled && mountFloatingPresenceOwner && typeof document !== "undefined" ? createPortal(
+          <div className="app-shell-floating-overlay-root" style={{
+            ...shellStyle,
+            "--spacing-token-safe-header-left": `${windowChrome.safeArea.left}px`,
+            "--spacing-token-safe-header-right": `${windowChrome.safeArea.right}px`,
+          } as CSSProperties}>
+          {floatingOwnsContent ? (
+            <button
+              type="button"
+              className="app-shell-floating-sidebar-dismiss"
+              aria-label="Close sidebar"
+              onClick={dismissFloatingSidebar}
+            />
+          ) : null}
           <FloatingLeftPanel
             header={floatingSidebarHeader(dockFloatingSidebar)}
             visible={showFloatingSidebar}
+            onExitComplete={finishFloatingExit}
             width={sidebarWidth}
             widthPx={floatingWidthPx}
             getCurrentWidth={() => contextAvailable ? floatingWidth.get() - floatingPrimaryWidth.get() : floatingWidth.get()}
@@ -669,18 +694,19 @@ export function AppShell({
               {contextAvailable ? <div className="floating-sidebar-context"><motion.div className="floating-sidebar-context__viewport" style={{ width: floatingContextViewportWidth }}><div className="sidecar-content-slot" ref={setFloatingContextHost} /></motion.div></div> : null}
             </div>
           </FloatingLeftPanel>
+          </div>, document.body,
         ) : null}
         <SharedSidebarContent
-          primary={{ target: showFloatingSidebar ? floatingPrimaryHost : dockedPrimaryHost, content: navigation ? <ShellNavigationDock
-            config={navigation} controller={showFloatingSidebar ? floatingController : navigationOpen ? navigationController : lastDockController.current}
-            expandedWidth={showFloatingSidebar ? floatingNavigationWidth : primaryMotion.viewportWidth}
-            frameWidth={showFloatingSidebar ? floatingNavigationWidth : primaryMotion.frameWidth} /> : null }}
-          context={{ target: showFloatingSidebar ? floatingContextHost : dockedContextHost, content: leftPanel }}
-          footer={{ target: showFloatingSidebar ? floatingFooterHost : dockedFooterHost, content: navigation ? <ShellNavigationFooter
-            config={navigation} controller={showFloatingSidebar ? floatingController : navigationController}
-            visible={showFloatingSidebar || navigationController.projection.footerVisible}
+          primary={{ target: floatingOwnsContent ? floatingPrimaryHost : dockedPrimaryHost, content: navigation ? <ShellNavigationDock
+            config={navigation} controller={floatingOwnsContent ? floatingController : navigationOpen ? navigationController : lastDockController.current}
+            expandedWidth={floatingOwnsContent ? floatingNavigationWidth : primaryMotion.viewportWidth}
+            frameWidth={floatingOwnsContent ? floatingNavigationWidth : primaryMotion.frameWidth} /> : null }}
+          context={{ target: floatingOwnsContent ? floatingContextHost : dockedContextHost, content: leftPanel }}
+          footer={{ target: floatingOwnsContent ? floatingFooterHost : dockedFooterHost, content: navigation ? <ShellNavigationFooter
+            config={navigation} controller={floatingOwnsContent ? floatingController : navigationController}
+            visible={floatingOwnsContent || navigationController.projection.footerVisible}
             entranceId="shared-shell-entrance"
-            onTogglePrimaryNavigation={showFloatingSidebar ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
+            onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
         />
         <div className="app-shell-row">
           <Sidecar animatedWidth={totalLeftWidth} footer={navigation ? <motion.div

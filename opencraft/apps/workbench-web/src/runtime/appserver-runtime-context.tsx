@@ -14,6 +14,7 @@ import {
 import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
 import { changesThreadCatalog } from "./thread-catalog-query";
 import {
+  AppServerRpcError,
   createCordisAppServerRegistry,
   type CordisAppServerRegistryRuntime,
 } from "@opencraft/appserver-client";
@@ -163,6 +164,7 @@ import { createComposerActionRendererContributionAdapter } from "./composer-acti
 import { HostProfileContributionRegistry } from "./host-profile-contributions";
 import { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 import { subscribeHostCatalogReadiness } from "./host-catalog-readiness";
+import { bindHostQueryRecovery } from "./host-query-recovery";
 import { connectAppearanceThemeContributions } from "../appearance-theme";
 import { workbenchProductId } from "../workbench-product";
 import {
@@ -1325,6 +1327,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         providerLease.release();
         throw error;
       }
+      const stopQueryRecovery = bindHostQueryRecovery(runtime, profile.hostId, queryClient);
       let disposed = false;
       return {
         ...runtime,
@@ -1335,6 +1338,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         async dispose() {
           if (disposed) return;
           disposed = true;
+          stopQueryRecovery();
           try {
             await runtime.dispose();
           } finally {
@@ -1911,11 +1915,8 @@ export function useMultiHostThreadCatalog(): {
   useEffect(() => subscribeHostCatalogReadiness(
     application.registry,
     hostIds,
-    (hostId) => {
+    () => {
       setReadinessRevision(value => value + 1);
-      void queryClient.invalidateQueries({
-        queryKey: ["appserver", hostId, "threads"],
-      });
     },
   ), [application.registry, hostIds, queryClient]);
   const queries = useQueries({
@@ -2023,7 +2024,7 @@ export function useComposerCatalog(
 ): ComposerCatalogSnapshot {
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerSnapshot();
-  const enabled = snapshot.phase === "ready" || snapshot.phase === "reconnecting";
+  const enabled = snapshot.phase === "ready";
   const supportsScopedModelCatalog =
     runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.[
       OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION
@@ -2049,8 +2050,11 @@ export function useComposerCatalog(
           supported: true as const,
           ...(await runtime.resources.composerCatalog.readNewThreadDefaults(cwd)),
         };
-      } catch {
-        return { supported: false as const, model: null, effort: null };
+      } catch (cause) {
+        if (cause instanceof AppServerRpcError && cause.code === -32601) {
+          return { supported: false as const, model: null, effort: null };
+        }
+        throw cause;
       }
     },
     staleTime: 60_000,

@@ -382,7 +382,7 @@ interface OwnedLease {
 export class AppHostServerConnection {
   private readonly leases = new Map<string, OwnedLease>();
   private readonly unsubscribePort: () => void;
-  private receiveOperation = Promise.resolve();
+  private readonly receiveOperations = new Map<string, Promise<void>>();
   private ready = false;
   private closed = false;
 
@@ -393,10 +393,31 @@ export class AppHostServerConnection {
     readonly internalId: string,
   ) {
     this.unsubscribePort = port.subscribe((message) => {
-      this.receiveOperation = this.receiveOperation.then(
+      // A reachability probe must never queue behind Host activation or sends.
+      if (this.ready && !this.closed && typeof message === "object" && message !== null
+        && "type" in message && message.type === "connection/probe"
+        && "requestId" in message && typeof message.requestId === "string"
+        && message.requestId.length > 0 && message.requestId.length <= 4096) {
+        this.post({ type: "response", requestId: message.requestId, ok: true, result: null });
+        return;
+      }
+      // hello establishes connection authority synchronously. Thereafter only
+      // messages for the same Host require ordering; a slow Host must not
+      // block another Host sharing this socket.
+      if (typeof message === "object" && message !== null && "type" in message && message.type === "hello") {
+        void this.receive(message);
+        return;
+      }
+      if (!this.ready) return;
+      const hostId = typeof message === "object" && message !== null && "hostId" in message && typeof message.hostId === "string"
+        ? message.hostId : "";
+      const operation = (this.receiveOperations.get(hostId) ?? Promise.resolve()).then(
         () => this.receive(message),
         () => this.receive(message),
       );
+      this.receiveOperations.set(hostId, operation);
+      const clear = () => { if (this.receiveOperations.get(hostId) === operation) this.receiveOperations.delete(hostId); };
+      void operation.then(clear, clear);
     });
     port.start();
   }
@@ -466,6 +487,7 @@ export class AppHostServerConnection {
         protocolVersion: APP_HOST_PROTOCOL_VERSION,
         connectionId: this.connectionId,
         services: ["appserver"],
+        capabilities: { connectionProbe: true },
       });
       return;
     }

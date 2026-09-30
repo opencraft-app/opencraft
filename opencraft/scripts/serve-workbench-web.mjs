@@ -147,6 +147,7 @@ function validAppHostFrame(message) {
   if (message.type === "hello") {
     return message.protocolVersion === 1 && validId(message.rendererId);
   }
+  if (message.type === "connection/probe") return validId(message.requestId);
   if (!validId(message.requestId) || !validId(message.hostId) || !validId(message.leaseId)) return false;
   if (message.type === "host/connect") return true;
   if (message.type !== "host/send" && message.type !== "host/disconnect") return false;
@@ -155,7 +156,7 @@ function validAppHostFrame(message) {
 }
 
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
-const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "invalid-response"]);
+const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
 const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode"]);
 

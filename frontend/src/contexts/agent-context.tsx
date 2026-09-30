@@ -18,6 +18,7 @@ import {
 } from "@lightvela/agent-core";
 import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN_QUERY, UPGRADE_POLL_INTERVAL_MS, UPGRADE_RECOVERY_TIMEOUT_MS, type PaidUpgradeCheckout } from "@/lib/upgrade-checkout";
 import { isGlobal } from "@/lib/region";
+import { summarizePassCredits } from "@/lib/pass-credits";
 import { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
 
 export { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
@@ -472,14 +473,14 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     }
     /**
      * 积分来源统一为 /v1/passes：
-     *   aiCredits   = activePass.credit_total
-     *   usedCredits = credit_total - credit_available
+     *   aiCredits / usedCredits 包含套餐和赠送积分，使用与侧栏相同的汇总口径。
      * 没有活跃 pass 时保持 defaultPlan 的默认值。
      */
-    const planFromPass = activePass ? {
+    const passCredits = activePass ? summarizePassCredits(activePass) : null;
+    const planFromPass = activePass && passCredits ? {
       name: activePass.bundle_name || defaultPlan.name,
-      aiCredits: activePass.credit_total,
-      usedCredits: Math.max(0, activePass.credit_total - activePass.credit_available),
+      aiCredits: passCredits.total,
+      usedCredits: passCredits.used,
     } : null;
 
     return {

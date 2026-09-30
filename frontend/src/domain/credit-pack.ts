@@ -206,7 +206,7 @@ export const summarizeCreditSources = (sources: readonly CreditSourceView[]): Cr
  *
  * 产品口径：下一次刷新或到期时间更早的先扣；时间相同时购买/创建时间更早的先扣。
  *
- * ⚠️ 本期只能按 next_expire_at 排序：credit 查询不返回购买时间，
+ * 赠送积分优先；同类及非赠送来源仍按 next_expire_at 排序。credit 查询不返回购买时间，
  * 无法实现「同时间按购买时间排序」的第二优先级。时间相同或缺失时，
  * 保持输入顺序（Array.prototype.sort 在现代引擎中是稳定排序），
  * 避免页面顺序抖动。
@@ -217,6 +217,8 @@ export const summarizeCreditSources = (sources: readonly CreditSourceView[]): Cr
  */
 export const sortCreditSources = (sources: readonly CreditSourceView[]): CreditSourceView[] =>
   [...sources].sort((a, b) => {
+    const freePriority = Number(b.source_type === "free_credit") - Number(a.source_type === "free_credit");
+    if (freePriority !== 0) return freePriority;
     const aTime = a.next_expire_at;
     const bTime = b.next_expire_at;
     /* 缺时间的排在最后：无到期约束的额度不应抢占优先扣减位 */

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
 import type { TsshFileInfo } from "@/lib/tencent-tssh-file-client";
@@ -165,6 +165,29 @@ describe("TatFileManagerPanel upload limits", () => {
     } else {
       Reflect.deleteProperty(navigator, "serviceWorker");
     }
+  });
+
+  it("only focuses tooltip wrappers when the desktop tooltip is visible", async () => {
+    let wide = false;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      get matches() { return wide; },
+      addEventListener: (_event: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_event: string, listener: () => void) => listeners.delete(listener),
+    })));
+
+    render(<TatFileManagerPanel botId="bot-tooltip-focus" />);
+    await screen.findByText("当前目录为空。");
+    const wrapper = screen.getByRole("button", { name: "上级" }).parentElement;
+    expect(wrapper).not.toHaveAttribute("tabindex");
+
+    wide = true;
+    act(() => listeners.forEach((listener) => listener()));
+    expect(wrapper).toHaveAttribute("tabindex", "0");
+
+    wide = false;
+    act(() => listeners.forEach((listener) => listener()));
+    expect(wrapper).not.toHaveAttribute("tabindex");
   });
 
   it("blocks uploading a single file larger than 1 GB", async () => {

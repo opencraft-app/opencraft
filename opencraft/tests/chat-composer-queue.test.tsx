@@ -83,6 +83,20 @@ test("unconfirmed steering claim offers review and explicit discard, never Send 
   assert.doesNotMatch(markup, /Start queued message|Resume|Edit queued message|Delete queued message/);
 });
 
+test("a queued item behind an unconfirmed delivery does not offer a Resume that cannot clear the claim", () => {
+  const markup = renderToStaticMarkup(
+    <ComposerQueueTray items={[
+      { ...pendingItem, state: "queued", actionable: true, pausedReason: "Earlier delivery is unconfirmed; review it before sending another message" },
+      { ...pendingItem, id: "claim-1", state: "queued", pausedReason: "Delivery unconfirmed", unconfirmedTargetTurnId: "turn-one" },
+    ]} isResponseInProgress atomicSteer />,
+  );
+  assert.match(markup, /Earlier delivery is unconfirmed/);
+  assert.match(markup, /Review &amp; discard/);
+  assert.doesNotMatch(markup, /Resume/);
+  assert.match(markup, /aria-label="Steer with queued message"[^>]*disabled=""/);
+  assert.match(markup, /aria-label="Reorder queued message"[^>]*disabled=""/);
+});
+
 test("queued Steer is disabled without Host atomic support while idle Send remains available", () => {
   const item = { ...pendingItem, state: "queued" as const, actionable: true };
   const running = renderToStaticMarkup(

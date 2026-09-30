@@ -166,3 +166,11 @@
 - Router `CI change impact directory guard opencraft` 无匹配；精确检索命中测试及 .ci/checks/frontend_guard.sh，检查 frontend-runtime-openspec-i18n 邻接卡和 frontend/vitest.config.ts。
 - context_receipt：frontend/AGENTS.md、现有 opencraft/AGENTS.md /维护Skill、karpathy-guidelines、devops-pipeline Skill（只读日志，无启动/取消流水线）；复用交付路由上下文。
 - 将真实 Shadow DOM 回归迁入 OpenCraft，使用自身 jsdom devDependency 与 node:test，不修改生产代码、类型检查基线或 CI 复制边界。计划运行迁移后测试与真实隔离 frontend guard。
+
+## mr_4851_cr_followup_2026_09_30
+- 目标：解决 !4851 与最新 master 的 9 处冲突，保留两侧行为，并补齐只读写入、迟到启动结果、缺失 Profile 与 OpenCraft CI 验证。
+- 非目标：合并 MR、发布生产、真实 Bot 发消息或写实例文件。
+- 权威与上下文：用户提供 CR 结论；根/前端/OpenCraft AGENTS、交付 flow、OpenCraft 维护 Skill、现有 Task Pack、平台/Chat/UI 设计与 frontend 邻接卡。先在隔离 worktree 从 `7813b44e2` 合入 `origin/master`，逐处解决冲突；生成副本只由官方同步脚本重建。
+- 决策：文件面板的保存参数使用 master 的 Host/path/key/text 快照，同时在执行写入前检查 `previewOnly`；Markdown 排版预览与 CodeMirror 源码/编辑器共存。测试注册取两侧并集。嵌入启动要求非空 Profile；迟到 `prepare` 和 `show` 分别断言不会调用新 owner。
+- CI：OpenCraft guard 在生成闭包检查后执行锁定依赖安装及 `test:embedded-ci`，覆盖本 MR 的 12 个 OpenCraft 测试文件；frontend 区域测试固定 CN region，使国内文案断言稳定。
+- 验证：OpenCraft 12 文件 142/142、frontend 嵌入组件 8/8、Web typecheck、OpenCraft i18n、frontend check（166 current /171 baseline /0 new）、嵌入 release build 与 7 个 CI guard 单测通过。合并提交后的 sourceRevision、生成闭包、文档影响与远端 CI 仍需最终复核。

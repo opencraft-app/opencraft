@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { polishCapabilityCards } from "./international-home-capability-polish.mjs";
+import { localizeFeatureCards, normalizeHeroRuntime } from "./international-home-feature-locales.mjs";
 import * as OpenCC from "opencc-js";
 
 import { initializeInternationalHomeFragmentAccessibility } from "./international-home-fragment-accessibility.mjs";
@@ -18,6 +19,31 @@ if (!sourceArgument) {
 const sourceRoot = path.resolve(sourceArgument);
 const targetRoot = path.join(frontendRoot, "public/lightvela-intl-home");
 const preservedHarnessAssetNames = [
+  "lv-cover-lavender.webp",
+  "hermes-black-companion.webp",
+  "hermes-home.css",
+  "feature-motion.js",
+  "whatsapp.svg",
+  "telegram.svg",
+  "discord.svg",
+  "slack.svg",
+  "wechat.webp",
+  "qq.webp",
+  "feishu.webp",
+  "dingtalk.webp",
+  "figma-feature-cloud-agent-matte.webp",
+  "figma-feature-cloud-agent.webp",
+  "figma-feature-chat-integration.webp",
+  "figma-feature-action-confirm.webp",
+  "figma-feature-workspace.webp",
+  "figma-feature-memory-wave.webp",
+  "figma-feature-memory-landscape.webp",
+  "figma-steps-user-original.webp",
+  "figma-steps-curve.webp",
+  "figma-feature-skills-orbit.webp",
+  "figma-feature-scheduled.webp",
+  "figma-feature-chat-orbit.webp",
+  "hermes-door.webp",
   "wcard-cloud-runtime-v2.webp",
   "wcard-skills-atlas-v1.webp",
   "wcard-cloud-runtime-v1.webp",
@@ -4493,6 +4519,20 @@ for (const locale of supportedLocales) {
     if (node.nodeType === 3 && node.textContent.trim() === "\\n") node.remove();
   }
 
+  const companionDecorations = [
+    [".hero__rotator-line", "afterend", "home-cover-mascot", "lv-cover-lavender.webp", 528, 410],
+    [".cta", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
+  ];
+  for (const [selector, position, className, asset, width, height] of companionDecorations) {
+    if (!document.querySelector(`.${className}`)) {
+      document.querySelector(selector)?.insertAdjacentHTML(position,
+        `<span class="${className}" aria-hidden="true"><img src="/lightvela-intl-home/assets/${asset}" alt="" width="${width}" height="${height}" decoding="async"${className === "home-cover-mascot" ? "" : ' loading="lazy"'}></span>`);
+    }
+  }
+
+  for (const number of document.querySelectorAll('.track__num')) {
+    number.textContent = number.textContent.trim().padStart(2, '0');
+  }
   const fragment = [
     `<div id="lightvela-intl-home" data-locale="${locale}" data-source-locale="${sourceLocale}" data-rotator-words='${JSON.stringify(rotatorWordsByLocale[locale])}' style="--cta-delay: 1350ms; --tabs-delay: 1510ms; --frame-delay: 1670ms;">`,
     document.body.innerHTML.trim(),
@@ -4500,9 +4540,9 @@ for (const locale of supportedLocales) {
     "",
   ].join("\n");
 
-  await writeFile(path.join(targetRoot, `index-fragment.${locale}.html`), cleanGeneratedText(fragment));
+  await writeFile(path.join(targetRoot, `index-fragment.${locale}.html`), cleanGeneratedText(localizeFeatureCards(fragment, locale)));
   if (locale === "en-US") {
-    await writeFile(path.join(targetRoot, "index-fragment.html"), cleanGeneratedText(fragment));
+    await writeFile(path.join(targetRoot, "index-fragment.html"), cleanGeneratedText(localizeFeatureCards(fragment, locale)));
   }
 }
 
@@ -7820,8 +7860,30 @@ text-wrap: balance;
   -webkit-line-clamp: 2;
 }
 `;
-const css = [localizedBaseCss, headerActionsLayerCss, playTabsExpansionCss, heroIntegrationLinkCss, plainHeroEyebrowCss, heroRotatorSweepCss, domesticStableHeroPrefixCss, longLocaleDesktopHeadingCss, footerRefreshCss, voiceSectionRestoreCss, internationalHeroChannelChromeCss, internationalHeroChannelParityCss, homepageReadingCss, automationPanelCss, domesticBrandIconCss, aboutCapabilityCardCss, cloudRefinedCss, capabilityPolishCss, capabilityTitleWrapCss].join("\n");
-const runtimeSource = inlineScripts.join("\n\n").replace(
+const narrowMobileCss = `
+@media (max-width: 359px) {
+  #lightvela-intl-home .nav__brand img {
+    width: 92px;
+  }
+
+  .home-mobile-menu-trigger {
+    margin-left: 4px;
+  }
+
+  #lightvela-intl-home:is([data-locale='zh-CN'], [data-locale='zh-SG'], [data-locale='zh-Hant']) .hero__line--dynamic {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  #lightvela-intl-home:is([data-locale='zh-CN'], [data-locale='zh-SG'], [data-locale='zh-Hant']) .hero__line--dynamic .hero__prefix,
+  #lightvela-intl-home:is([data-locale='zh-CN'], [data-locale='zh-SG'], [data-locale='zh-Hant']) .hero__rotator-wrap {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+`;
+const css = [localizedBaseCss, headerActionsLayerCss, playTabsExpansionCss, heroIntegrationLinkCss, plainHeroEyebrowCss, heroRotatorSweepCss, domesticStableHeroPrefixCss, longLocaleDesktopHeadingCss, footerRefreshCss, voiceSectionRestoreCss, internationalHeroChannelChromeCss, internationalHeroChannelParityCss, homepageReadingCss, automationPanelCss, domesticBrandIconCss, aboutCapabilityCardCss, cloudRefinedCss, capabilityPolishCss, capabilityTitleWrapCss, narrowMobileCss].join("\n");
+const runtimeSource = normalizeHeroRuntime(inlineScripts.join("\n\n").replace(
   "var words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
   "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
 ).replace(
@@ -7964,7 +8026,7 @@ const runtimeSource = inlineScripts.join("\n\n").replace(
         btn.addEventListener('click', activate);
         btn.addEventListener('keydown', activateFromKeyboard);
       });`,
-);
+));
 if (
   !runtimeSource.includes("btn.setAttribute('aria-pressed', i === active ? 'true' : 'false');")
   || !runtimeSource.includes("btn.addEventListener('click', activate);")
@@ -7981,7 +8043,8 @@ if (
   || !runtimeSource.includes("document.addEventListener('visibilitychange'")
   || !runtimeSource.includes("window.addEventListener('pageshow'")
   || !runtimeSource.includes("rotatorVisible = !document.hidden")
-  || !runtimeSource.includes("if (width > 0) wrap.style.width = width + 'px';")
+  || runtimeSource.includes("wrap.style.width")
+  || runtimeSource.includes("var measurer = el.cloneNode(false)")
 ) {
   throw new Error("Unable to add accessible activation to homepage scene buttons");
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, Monitor, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Monitor, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useRepositories } from "@/contexts/repository-context";
@@ -19,11 +19,25 @@ import { cn } from "@/lib/utils";/**
 const DESKTOP_POLL_INTERVAL_MS = 3_000;
 const DESKTOP_HEARTBEAT_MS = 30_000;
 const DESKTOP_MAX_POLL_ERRORS = 5;
+// WebSocket 保活间隔：桌面静止时 wss 链路长时间无字节，会被腾讯云 CLB 按
+// 「连接空闲/会话保持」超时（HTTP 监听器默认 30s）判定空闲并断开，表现为
+// 「不操作一会儿就断、点重试又能连」。这里在连接期周期性发一条 incremental
+// FramebufferUpdateRequest（RFB 消息类型 3），让 wss 链路有周期性流量，
+// 规避 CLB 空闲回收。间隔取 20s，明显小于 30s。
+// 注意：这与上面的 DESKTOP_HEARTBEAT_MS 是两回事——心跳是独立的 GET HTTP 轮询
+// （刷新后端 idle last_active），不经过 wss 长连接，无法为其保活。
+const DESKTOP_WS_KEEPALIVE_MS = 20_000;
 
 type PanelPhase = "idle" | "installing" | "provisioning" | "connecting" | "connected" | "failed";
 
 type RFBLike = {
   sendCredentials: (credentials: { password: string }) => void;
+  // sendFramebufferUpdateRequest()：经 noVNC 底层 WebSocket 发一条 10 字节的
+  // RFB FramebufferUpdateRequest（类型 3，incremental=1，1×1 区域），让 wss
+  // 链路有周期性流量，规避腾讯云 CLB 空闲回收。不产生任何键盘/鼠标事件。
+  // 实现直接访问 rfb._sock._websocket（原生 WebSocket），绕过 noVNC 队列，
+  // 是稳定的标准 API，不依赖 noVNC 内部方法签名。
+  sendFramebufferUpdateRequest: () => void;
   scaleViewport: boolean;
   resizeSession: boolean;
   disconnect: () => void;
@@ -64,6 +78,7 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
     pollAbortRef.current = abort;
     let pollErrors = 0;
     let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let wsKeepalive: ReturnType<typeof setInterval> | null = null;
 
     const startHeartbeat = () => {
       if (heartbeat) return;
@@ -73,6 +88,30 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
           .getDesktopSession(botId)
           .catch(() => undefined /* 心跳失败不打断 viewer */);
       }, DESKTOP_HEARTBEAT_MS);
+    };
+
+    // ws 保活：连接期周期性发一条 RFB FramebufferUpdateRequest（incremental=1），
+    // 让 wss 链路有流量，规避腾讯云 CLB 对空闲连接的超时回收（见常量注释）。
+    const startWsKeepalive = () => {
+      if (wsKeepalive) return;
+      wsKeepalive = setInterval(() => {
+        try {
+          rfbRef.current?.sendFramebufferUpdateRequest();
+        } catch {
+          // 连接已断/尚未就绪时发送失败可忽略，disconnect 会清理定时器。
+        }
+      }, DESKTOP_WS_KEEPALIVE_MS);
+    };
+
+    const stopTimers = () => {
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
+      if (wsKeepalive) {
+        clearInterval(wsKeepalive);
+        wsKeepalive = null;
+      }
     };
 
     const run = async () => {
@@ -124,13 +163,11 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
           if (!cancelled) {
             setPhase("connected");
             startHeartbeat();
+            startWsKeepalive();
           }
         });
         rfb.addEventListener("disconnect", (event) => {
-          if (heartbeat) {
-            clearInterval(heartbeat);
-            heartbeat = null;
-          }
+          stopTimers();
           if (!cancelled) {
             setPhase("failed");
             setErrorText(
@@ -142,7 +179,25 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
         });
         rfb.scaleViewport = true;
         rfb.resizeSession = false;
-        rfbRef.current = rfb as unknown as RFBLike;
+        // RFB FramebufferUpdateRequest（类型 3，incremental=1，1×1）：10 字节，
+        // 通过 noVNC 底层原生 WebSocket 直接发送，完全不产生键盘/鼠标事件。
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rawWs: WebSocket | undefined = (rfb as any)?._sock?._websocket;
+        const rfbLike: RFBLike = {
+          sendCredentials: rfb.sendCredentials.bind(rfb),
+          sendFramebufferUpdateRequest: () => {
+            if (rawWs?.readyState === WebSocket.OPEN) {
+              // type=3, incremental=1, x=0,y=0, w=1,h=1
+              rawWs.send(new Uint8Array([3, 1, 0, 0, 0, 0, 0, 1, 0, 1]));
+            }
+          },
+          get scaleViewport() { return rfb.scaleViewport; },
+          set scaleViewport(v) { rfb.scaleViewport = v; },
+          get resizeSession() { return rfb.resizeSession; },
+          set resizeSession(v) { rfb.resizeSession = v; },
+          disconnect: rfb.disconnect.bind(rfb),
+        };
+        rfbRef.current = rfbLike;
       } catch (err) {
         if (cancelled) return;
         setPhase("failed");
@@ -153,10 +208,7 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
     void run();
     return () => {
       cancelled = true;
-      if (heartbeat) {
-        clearInterval(heartbeat);
-        heartbeat = null;
-      }
+      stopTimers();
       teardown();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -187,7 +239,7 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
           <div>
             <h2 className="text-lg font-semibold">{t("云桌面")}</h2>
             <p className="text-muted-foreground text-xs">
-              {t("在浏览器中实时操作你的云端桌面（VNC），无需公网 IP")}
+              {t("在浏览器中实时操作你的云端桌面")}
             </p>
           </div>
         </div>
@@ -208,8 +260,17 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
       </div>
 
       {statusText && (
-        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
+        <div
+          className={cn(
+            "flex items-center gap-2 text-sm",
+            phase === "connected" ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground",
+          )}
+        >
+          {phase === "connected" ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          )}
           {statusText}
         </div>
       )}

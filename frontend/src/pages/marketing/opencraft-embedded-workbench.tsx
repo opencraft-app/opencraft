@@ -201,6 +201,10 @@ export function AgentChatMigrationSurface({
 
   useEffect(() => {
     if (!started || !enabled) return;
+    if (!profileId.trim()) {
+      setStartupFailed(true);
+      return;
+    }
     const mount = mountRef.current;
     const scriptUrl = embeddedWorkbenchScriptUrl();
     if (mount === null) return;
@@ -414,7 +418,8 @@ export function AgentChatMigrationSurface({
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
           <span role="status">
-            {startupFailed ? t("会话加载失败，请重试")
+            {!profileId.trim() ? t("当前 AI 伙伴不可用，请检查运行状态")
+              : startupFailed ? t("会话加载失败，请重试")
               : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
               : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
               : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴配置后重试")

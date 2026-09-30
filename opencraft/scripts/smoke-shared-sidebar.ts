@@ -18,7 +18,7 @@ layoutScope='test' mainContentLayout='default' sidebarOpen={open} sidebarWidth={
 header={<AppShellHeader title={null} project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={false} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={dock=><button onClick={dock}>固定侧栏</button>}
 leftPanel={context?<Context/>:null}>
-<div style={{padding:28}}><h1>Workspace</h1><input aria-label='Main draft' defaultValue='Keep draft'/></div></AppShell>}
+<div style={{padding:28}} onClick={()=>actions.push('Main')}><h1>Workspace</h1><input aria-label='Main draft' defaultValue='Keep draft'/></div></AppShell>}
 createRoot(document.getElementById('root')).render(<App/>);`;
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-shared-sidebar", esbuild: { jsx: "automatic" }, server: { host: "127.0.0.1", port: 0 },
   optimizeDeps: { include: ["react", "react-dom/client", "@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@tanstack/react-query"] },
@@ -156,6 +156,57 @@ try {
   const bounds = await floating.boundingBox(); assert.ok(bounds && bounds.width <= 516);
   await page.evaluate(() => (window as any).fixture.setThemePreference('dark')); await page.screenshot({ path: `${output}/narrow-dark.png` });
   for (const name of ['Chat', 'Settings']) assert.equal(await floating.getByRole('button', { name, exact: true }).count(), 1);
+  const exitFrame = await page.evaluate(async () => {
+    document.querySelector<HTMLButtonElement>('.app-shell-floating-sidebar-dismiss')!.click();
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const panel = document.querySelector('.app-shell-floating-left-panel');
+    const content = document.querySelector('[data-sidebar-content="context"]');
+    return { panelPresent: panel !== null, contentInsidePanel: panel?.contains(content) ?? false,
+      dismissPresent: document.querySelector('.app-shell-floating-sidebar-dismiss') !== null,
+      mounts: (window as any).fixture.mounts() };
+  });
+  if(process.env.OPENCRAFT_REDUCED_MOTION!=='1') {
+    assert.deepEqual(exitFrame, { panelPresent:true, contentInsidePanel:true, dismissPresent:true, mounts:1 },
+      'exit motion must retain its content and outside hit surface until completion');
+    await page.evaluate(() => document.querySelector<HTMLButtonElement>('[data-app-shell-sidebar-trigger]')!.click());
+    assert.equal(await page.evaluate(() => {
+      const panel = document.querySelector('.app-shell-floating-left-panel');
+      return panel?.contains(document.querySelector('[data-sidebar-content="context"]')) ?? false;
+    }), true, 'reopening during exit must keep the same content owner');
+  } else {
+    await page.getByRole('button', { name: 'Show sidebar', exact: true }).click(); await floating.waitFor();
+  }
+  await floating.waitFor();
+  // Browser surfaces are hosted in a body-level fixed portal, outside the
+  // Shell tree. Reproduce that stacking and hit-testing boundary on mobile.
+  await page.evaluate(() => {
+    const root = document.createElement('div');
+    root.className = 'web-browser-presentation-root';
+    root.id = 'sidebar-browser-layer-probe';
+    const surface = document.createElement('div');
+    surface.className = 'web-browser-surface';
+    surface.style.cssText = 'inset:0;pointer-events:auto';
+    surface.onclick = () => { (window as any).browserSurfaceClicks = ((window as any).browserSurfaceClicks ?? 0) + 1; };
+    root.append(surface); document.body.append(root);
+    (window as any).browserSurfaceNode = surface;
+  });
+  const layer = await page.evaluate(() => {
+    const sidebar = document.querySelector('.app-shell-floating-left-panel')!;
+    const inside = document.elementFromPoint(100, 620);
+    const outside = document.elementFromPoint(530, 400);
+    return { insideSidebar: sidebar.contains(inside), outsideDismiss: outside?.classList.contains('app-shell-floating-sidebar-dismiss') };
+  });
+  assert.deepEqual(layer, { insideSidebar: true, outsideDismiss: true }, 'floating sidebar and its dismiss surface must cover the browser portal');
+  await page.mouse.click(530, 200); await floating.waitFor({ state: 'hidden' });
+  assert.equal(await page.evaluate(() => (window as any).browserSurfaceClicks ?? 0), 0, 'the closing tap must not reach the browser');
+  assert.equal(await page.evaluate(() => document.querySelector('.web-browser-surface') === (window as any).browserSurfaceNode), true, 'closing the sidebar must retain the browser surface');
+  await page.mouse.click(530, 400);
+  assert.equal(await page.evaluate(() => (window as any).browserSurfaceClicks ?? 0), 1, 'the retained browser becomes interactive after sidebar exit');
+  await page.evaluate(() => document.querySelector('#sidebar-browser-layer-probe')?.remove());
+  assert.equal((await page.evaluate(() => (window as any).fixture.actions)).includes('Main'), false,
+    'an outside tap must not activate the covered conversation');
+  await page.getByRole('button', { name: 'Show sidebar', exact: true }).click(); await floating.waitFor();
+  evidence.push({ case: 'mobile-outside-dismiss-retains-content-and-consumes-tap', passed: true });
   await page.keyboard.press('Escape'); await floating.waitFor({ state: 'hidden' });
   await page.mouse.move(530, 200); await page.mouse.move(2, 200); await floating.waitFor();
   await page.mouse.move(100, 200); await page.keyboard.press('Escape'); await floating.waitFor({ state: 'hidden' });

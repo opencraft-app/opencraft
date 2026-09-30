@@ -2215,16 +2215,26 @@ type SetRuntimeRouteSnapshot struct {
 }
 
 type AccessLog struct {
-	Time                  string `json:"time"`
-	Event                 string `json:"event"`
-	Method                string `json:"method"`
-	Path                  string `json:"path"`
-	ExternalKeyID         string `json:"external_key_id"`
-	ExternalKeyHashPrefix string `json:"external_key_hash_prefix"`
-	SetID                 string `json:"set_id"`
-	Status                int    `json:"status"`
-	UpstreamStatus        int    `json:"upstream_status"`
-	DurationMS            int64  `json:"duration_ms"`
-	Streaming             bool   `json:"streaming"`
-	ErrorType             string `json:"error_type"`
+	Time                     string `json:"time"`
+	Event                    string `json:"event"`
+	Method                   string `json:"method"`
+	Path                     string `json:"path"`
+	ExternalKeyID            string `json:"external_key_id"`
+	ExternalKeyHashPrefix    string `json:"external_key_hash_prefix"`
+	SetID                    string `json:"set_id"`
+	Status                   int    `json:"status"`
+	UpstreamStatus           int    `json:"upstream_status"`
+	DurationMS               int64  `json:"duration_ms"`
+	UpstreamRoundTripMS      *int64 `json:"upstream_roundtrip_ms,omitempty"`
+	UpstreamResponseHeaderMS *int64 `json:"upstream_response_header_ms,omitempty"`
+	UpstreamFirstByteMS      *int64 `json:"upstream_first_byte_ms,omitempty"`
+	Streaming                bool   `json:"streaming"`
+	ErrorType                string `json:"error_type"`
+	ProxyErrorKind           string `json:"proxy_error_kind,omitempty"`
+	ProxyErrorOp             string `json:"proxy_error_op,omitempty"`
+	RequestContextError      string `json:"request_context_error,omitempty"`
+	RequestContentLength     *int64 `json:"request_content_length,omitempty"`
+	RequestBodyBytesRead     *int64 `json:"request_body_bytes_read,omitempty"`
+	RequestBodyReadWaitMS    *int64 `json:"request_body_read_wait_ms,omitempty"`
+	RequestBodyErrorKind     string `json:"request_body_error_kind,omitempty"`
 }

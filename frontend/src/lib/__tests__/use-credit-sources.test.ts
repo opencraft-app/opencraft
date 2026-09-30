@@ -14,6 +14,11 @@ vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => repositoriesStub,
 }));
 
+/* 每次渲染产生新的翻译函数，验证语言层引用变化不会触发重复请求。 */
+vi.mock("@/i18n/t", () => ({
+  useT: () => (text: string) => text,
+}));
+
 const planCredit: PlanCreditInput = {
   displayName: "启航版",
   creditTotal: 5000,
@@ -77,13 +82,60 @@ describe("useCreditSources", () => {
       expect(result.current.loading).toBe(false);
     });
 
-    expect(result.current.sources.map((source) => source.source_type)).toEqual(["plan", "free_credit"]);
+    expect(result.current.sources.map((source) => source.source_type)).toEqual(["free_credit", "plan"]);
     expect(result.current.summary).toEqual({
       available: 2500,
       total: 5500,
       used: 3000,
       sourceCount: 2,
     });
+  });
+
+  it("信用接口返回的同一笔免费积分不应重复显示为付费积分包", async () => {
+    listCreditPackages.mockResolvedValue([
+      { credit_type: "free", credit_total: 1000, credit_available: 1000, expired_time: "2126-09-29T14:56:15Z" },
+    ]);
+
+    const { result } = renderHook(() =>
+      useCreditSources(
+        { displayName: "Launch AI", creditTotal: 4500, creditAvailable: 4500 },
+        { displayName: "额外积分", creditTotal: 1000, creditAvailable: 1000 },
+      ),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.sources.map((source) => source.display_name)).toEqual(["额外积分", "Launch AI"]);
+    expect(result.current.summary).toEqual({ available: 5500, total: 5500, used: 0, sourceCount: 2 });
+  });
+
+  it("去重免费积分时保留真正购买的同额付费积分包", async () => {
+    listCreditPackages.mockResolvedValue([
+      { credit_type: "free", credit_total: 1000, credit_available: 1000, expired_time: "2126-09-29T14:56:15Z" },
+      { credit_type: "paid", credit_total: 1000, credit_available: 600, expired_time: "2026-11-01T00:00:00Z" },
+    ]);
+
+    const { result } = renderHook(() =>
+      useCreditSources(
+        { displayName: "Launch AI", creditTotal: 4500, creditAvailable: 4500 },
+        { displayName: "额外积分", creditTotal: 1000, creditAvailable: 1000 },
+      ),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.sources.map((source) => source.source_type)).toEqual(["free_credit", "paid_pack", "plan"]);
+    expect(result.current.summary).toEqual({ available: 6100, total: 6500, used: 400, sourceCount: 3 });
+  });
+
+  it("没有 pass 免费积分聚合时，信用接口的免费积分仍可兜底展示", async () => {
+    listCreditPackages.mockResolvedValue([
+      { credit_type: "free", credit_total: 1000, credit_available: 800, expired_time: "2126-09-29T14:56:15Z" },
+    ]);
+
+    const { result } = renderHook(() => useCreditSources(planCredit));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.sources.map((source) => source.source_type)).toEqual(["free_credit", "plan"]);
+    expect(result.current.summary).toEqual({ available: 2800, total: 6000, used: 3200, sourceCount: 2 });
   });
 
   it("按到期/刷新时间从早到晚排序，与扣减顺序一致", async () => {

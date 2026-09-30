@@ -9,7 +9,7 @@
     },
     {
       "file": "components/domain/tat-file-manager-panel.tsx",
-      "sourceSha256": "9733f9d2ee4ae9e901068d32967920d19ee570380f5ab2c41f4976380c817742"
+      "sourceSha256": "552f576d75d800216631c7a57dfc2ee6d8e3311fb2cf463497b605fdbb3fc25f"
     },
     {
       "file": "components/ui/badge.tsx",
@@ -69,7 +69,7 @@
     },
     {
       "file": "domain/credit-pack.ts",
-      "sourceSha256": "fb5a49f8aeaa5c09a537a96b76fb5b28b03644d469012509a861aff9dad327d0"
+      "sourceSha256": "98a5ae9c6cd0f2560e82fe5ff240a6ea97df49b0c866f83b9a810875f9ca5b57"
     },
     {
       "file": "domain/instance-bot-errors.ts",
@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "057479fbb3a55f89d6e613d88b6fe2637b4c7e4a535f327567d4dd11e438e373"
+      "sourceSha256": "3c023d2cd108225191539fa01750def98fb8154178ff67c1a18abd4e079de3de"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "d6302d5247d69342c9d1852e62ed19327ae7b9559426c86055856fddbb9adf73"
+      "sourceSha256": "e3cab9829f2857b45b9a68b49a4599043a427ca4ed66fa187fecbbc45fc8dbe9"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "b1e7fbfcca095cd6805f0bbe107b7a7590e15dad83e08a2f4d06c9713ee66afe"
+      "sourceSha256": "455517492a3bd47407d342fdde452994cff66abf116fdf1d7396ab499df01af4"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "743906ab6095e64e778b9fb89a2b9c631f15f485509297b9c88893f97594d12c"
+      "sourceSha256": "5de023653cc28fdee0710f81797d079c656b75f60edb6c2872ea1e48fd324010"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "6ec822ea3a74e534d33acb20015d8ca8475f6417a6b3dbc16609183bcb578fe6"
+      "sourceSha256": "7597173b0edfb6808c41aed549373762a7de2923750c005d0a9c8785aabd792d"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "af2496cc1340044cc4621a06d1207e4e446561050be2523b9d99764a377c8e4f"
+      "sourceSha256": "e4fe2123cac08ce39c3199cb92d7d4a4355e79cd3a9e6b80ffec932390f0c9f4"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "e4acc4bc8354af46e3f224a0d8d23afc7970b5e4db15e1fcfecb47b89a19cc42"
+      "sourceSha256": "bad8bcbb15897981e104e97b90d3b58a990b656e00fd7a824da8f52db6b27cbb"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "316ecf4ce98e01993e1ea563e11d2074e57640629b443fa9b0fc84c7745d02cf"
+      "sourceSha256": "0e1c00b5cf8f1b7802f78ce5572fb04686a6dc96de527ebbab78aca3a01d0aec"
     },
     {
       "file": "i18n/index.ts",
@@ -161,7 +161,7 @@
     },
     {
       "file": "lib/hermes-cron-client.ts",
-      "sourceSha256": "317dfb3e9ca03f660c38d678241a3ccdfd95c18f574299d8851af7862a61d2ee"
+      "sourceSha256": "39d112dcef5870b0960c18aef184348b816c5cbca171352270fdd8e1cd6cd681"
     },
     {
       "file": "lib/hermes-skills-client.ts",

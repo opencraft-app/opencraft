@@ -29,10 +29,8 @@ export interface ConversationDocumentContextValue {
   readonly loadMediaSource?: ChatMediaSourceLoader;
   /** Host-owned automations editor; ChatUI owns only the citation card. */
   readonly onOpenAutomation?: (block: AutomationUpdateTimelineBlock) => void;
-  /** Host-owned review surface; ChatUI only owns the resource-card contract. */
+  /** Workbench-owned read-only review surface; ChatUI only emits open intent. */
   readonly onReviewTurnDiff?: (block: TurnDiffTimelineBlock, path?: string) => void;
-  /** Host-owned git/apply-patch mutation used by the TurnDiff Undo/Reapply button. */
-  readonly onApplyTurnDiff?: (block: TurnDiffTimelineBlock, action: "undo" | "reapply") => Promise<void>;
   /** Host maps AppServer-local image paths to a browser-readable URL. */
   readonly resolveImageSource?: (path: string) => string | null;
   /** Optional host override for generated-image preview/navigation. */

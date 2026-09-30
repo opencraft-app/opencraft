@@ -4,6 +4,7 @@ import { shouldTypeToCompose } from "./type-to-compose";
 import { useQueryClient } from "@tanstack/react-query";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import {
+  createClientId,
   retargetSubmitIntentForFollowUp,
   type ComposerAttachment,
   type ComposerFollowUpAction,
@@ -17,7 +18,7 @@ import {
   CodexComposer,
   type ComposerSelectionCatalog,
 } from "@opencraft/codex-composer";
-import { asHostId, asTurnId, findPendingInteraction } from "@opencraft/chat-core";
+import { asHostId, asTurnId, deriveAsyncQuestionStates, findPendingInteraction, parseAsyncQuestionReply, renderAsyncQuestionReply, type AsyncQuestion, type TurnDiffTimelineBlock } from "@opencraft/chat-core";
 import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-web";
 import type { PlatformViewHost } from "@opencraft/extension-react";
 import type {
@@ -29,6 +30,7 @@ import { nativeProjectPicker } from "./runtime/project-folder-picker";
 import { ThreadTitleWriter } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
+import { formatDocumentTitle } from "./runtime/document-title";
 import {
   type PanelAction,
   type PanelTabDescriptor,
@@ -84,6 +86,7 @@ import {
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
+import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { Button } from "./components/ui/button";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isLightVelaStandaloneManagementSection } from "./components/lightvela-management-route";
@@ -578,6 +581,18 @@ export function App({
     });
   }, [dispatchPanel, panelState.right.open, panelState.right.tabs.length]);
   const timeline = snapshot.conversation?.timeline ?? null;
+  const [turnDiffReview, setTurnDiffReview] = useState<{
+    readonly block: TurnDiffTimelineBlock;
+    readonly path: string | null;
+    readonly threadId: string;
+  } | null>(null);
+  const openTurnDiffReview = useCallback((block: TurnDiffTimelineBlock, path?: string) => {
+    if (activeThreadId !== null) setTurnDiffReview({ block, path: path ?? null, threadId: activeThreadId });
+  }, [activeThreadId]);
+  const reviewedBlock = turnDiffReview?.threadId === activeThreadId
+    ? timeline?.frames.flatMap((frame) => frame.blocks).find((block): block is TurnDiffTimelineBlock =>
+      block.type === "turn-diff" && block.id === turnDiffReview.block.id) ?? turnDiffReview.block
+    : null;
   const recoveryPresentation = conversationRecoveryPresentation({
     authoritative: snapshot.conversation?.authoritative === true,
     hasVisibleHistory: (timeline?.frames.length ?? 0) > 0,
@@ -746,6 +761,40 @@ export function App({
       snapshot.phase,
     ],
   );
+  const answerAsyncQuestion = useCallback(async (question: AsyncQuestion, answer: string) => {
+    if (snapshot.phase !== "ready" || activeThreadLease === null) throw new Error("Reconnect to answer this question");
+    const conversation = activeThreadLease.getSnapshot();
+    if (!conversation.authoritative || deriveAsyncQuestionStates(conversation.timeline).get(question.id) !== "pending") {
+      throw new Error("This question is no longer available");
+    }
+    const currentDraft = composerController.getSnapshot().draft;
+    if (currentDraft.target.type !== "existing-thread"
+      || currentDraft.target.key.hostId !== conversation.key.hostId
+      || currentDraft.target.key.threadId !== conversation.key.threadId) {
+      throw new Error("The composer is attached to a different conversation");
+    }
+    const reply = renderAsyncQuestionReply(question, answer);
+    const baseIntent: SubmitIntent = {
+      commandId: createClientId(),
+      clientMessageId: createClientId(),
+      target: { type: "existing-thread", key: conversation.key },
+      document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: reply }] }] },
+      attachments: [],
+      context: [],
+      selections: currentDraft.selections,
+      options: currentDraft.options,
+      createdAt: Date.now(),
+    };
+    const intent = conversation.activeTurn === null ? baseIntent : retargetSubmitIntentForFollowUp(
+      baseIntent, conversation.key, conversation.activeTurn.turnId, "steer",
+    );
+    await hostCatalog.submit(intent);
+  }, [snapshot.phase, activeThreadLease, composerController, hostCatalog]);
+  const queuedAsyncQuestionIds = useMemo(() => (snapshot.conversation?.queuedSubmissions ?? []).flatMap((submission) => {
+    if (submission.input.length !== 1) return [];
+    const input = submission.input[0];
+    return input?.type === "text" ? (parseAsyncQuestionReply(input.text)?.map((reply) => reply.questionItemId) ?? []) : [];
+  }), [snapshot.conversation?.queuedSubmissions]);
   const respondToInteraction = useCallback(
     async (requestId: string, action: ConversationInteractionAction) => {
       const interaction = activeThreadLease
@@ -1226,6 +1275,18 @@ export function App({
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
   const presentedHeaderNavigationActions = presentation.shellNavigation ? headerNavigationActions : [];
+  const pageTitle = routeSettingsOpen
+    ? null
+    : extensionViewOpen
+      ? (extensionProjection.activeView?.title ?? null)
+      : draft === null
+        ? (activeThread?.title ?? "Untitled task")
+        : null;
+  const documentTitle = formatDocumentTitle(settingsOpen ? null : pageTitle);
+  useEffect(() => {
+    document.title = documentTitle;
+  }, [documentTitle]);
+  useEffect(() => () => { document.title = "OpenCraft"; }, []);
   const header = (
     <AppShellHeader
       showProjectIcon={embedded === undefined}
@@ -1236,15 +1297,7 @@ export function App({
           onRename={title => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: activeThread.id }, title)}
         />
       ) : undefined}
-      title={
-        routeSettingsOpen
-          ? null
-          : extensionViewOpen
-            ? (extensionProjection.activeView?.title ?? null)
-          : draft === null
-            ? (activeThread?.title ?? "Untitled task")
-            : null
-      }
+      title={pageTitle}
       project={
         embedded !== undefined || routeSettingsOpen || extensionViewOpen
           ? null
@@ -1535,6 +1588,7 @@ export function App({
                     hostId: snapshot.hostId,
                     loadMediaSource,
                     onOpenResource: openChatResource,
+                    onReviewTurnDiff: openTurnDiffReview,
                     theme: appearanceTheme.resolvedTheme,
                   }}
                   timeline={timeline}
@@ -1570,6 +1624,8 @@ export function App({
                     });
                   }}
                   onRespondInteraction={respondToInteraction}
+                  onAnswerAsyncQuestion={snapshot.phase === "ready" ? answerAsyncQuestion : undefined}
+                  queuedAsyncQuestionIds={queuedAsyncQuestionIds}
                   onConversationScrollApiChange={(api) => {
                     conversationScrollApiRef.current = api;
                   }}
@@ -1583,7 +1639,7 @@ export function App({
                       activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
                       enabled={conversationRouteOpen}
                       timeline={timeline}
-                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, theme: appearanceTheme.resolvedTheme }}
+                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, theme: appearanceTheme.resolvedTheme }}
                     >
                     <div
                       className="thread-composer-region"
@@ -1686,6 +1742,12 @@ export function App({
         </AppShell>
       </AppShellRouteRegionsProvider>
         <ModalHost requests={modalRequests} />
+      {reviewedBlock === null ? null : <TurnDiffReviewDialog
+        block={reviewedBlock}
+        initialPath={turnDiffReview?.path ?? null}
+        key={`${turnDiffReview?.threadId}:${reviewedBlock.id}:${turnDiffReview?.path ?? "all"}`}
+        onClose={() => setTurnDiffReview(null)}
+      />}
       {threadActionError ? <div role="alert" className="settings-control-notice">{threadActionError}<button type="button" onClick={() => setThreadActionError(null)}>关闭提示</button></div> : null}
       <WorkspaceDirectoryPicker
           open={
