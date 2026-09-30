@@ -32,6 +32,8 @@ test("workspace text codec preserves UTF-8 across the AppServer base64 boundary"
 test("workspace file presentation derives stable roots, paths, and languages", () => {
   assert.equal(joinWorkspacePath("/workspace/project/", "/src/main.ts"), "/workspace/project/src/main.ts");
   assert.equal(workspaceFileLanguage("/workspace/project/src/main.tsx"), "tsx");
+  assert.equal(workspaceFileLanguage("/workspace/README.MD"), "markdown");
+  assert.equal(workspaceFileLanguage("/workspace/notes.markdown"), "markdown");
   assert.deepEqual(
     workspaceRootsForResource(["/workspace/project", "/workspace/project"], null, "/workspace/project/src/main.ts"),
     ["/workspace/project"],

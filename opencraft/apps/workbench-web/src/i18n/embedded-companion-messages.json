@@ -23,7 +23,9 @@
     "panel.noActions": "目前連線沒有可用的預覽。",
     "panel.unavailable": "{title} 暫時無法使用",
     "panel.unavailableHint": "目前無法在此預覽這項內容。",
-    "panel.resize": "調整預覽面板寬度"
+    "panel.resize": "調整預覽面板寬度",
+    "panel.markdownPreview": "預覽",
+    "panel.markdownSource": "原始碼"
   },
   "id-ID": {
     "chat.companionHeading": "Mau melakukan apa bersama hari ini?",
@@ -49,7 +51,9 @@
     "panel.noActions": "Tidak ada pratinjau untuk koneksi ini.",
     "panel.unavailable": "{title} tidak tersedia",
     "panel.unavailableHint": "Konten ini tidak dapat dipratinjau di sini.",
-    "panel.resize": "Ubah lebar panel pratinjau"
+    "panel.resize": "Ubah lebar panel pratinjau",
+    "panel.markdownPreview": "Pratinjau",
+    "panel.markdownSource": "Sumber"
   },
   "es": {
     "chat.companionHeading": "¿Qué te gustaría hacer juntos hoy?",
@@ -75,7 +79,9 @@
     "panel.noActions": "No hay vistas previas disponibles para esta conexión.",
     "panel.unavailable": "{title} no está disponible",
     "panel.unavailableHint": "Este contenido no se puede previsualizar aquí.",
-    "panel.resize": "Ajustar el ancho del panel de vista previa"
+    "panel.resize": "Ajustar el ancho del panel de vista previa",
+    "panel.markdownPreview": "Vista previa",
+    "panel.markdownSource": "Código fuente"
   },
   "ja-JP": {
     "chat.companionHeading": "今日は一緒に何をしましょうか？",
@@ -101,7 +107,9 @@
     "panel.noActions": "この接続ではプレビューを利用できません。",
     "panel.unavailable": "{title} は利用できません",
     "panel.unavailableHint": "このコンテンツはここではプレビューできません。",
-    "panel.resize": "プレビューパネルの幅を調整"
+    "panel.resize": "プレビューパネルの幅を調整",
+    "panel.markdownPreview": "プレビュー",
+    "panel.markdownSource": "ソース"
   },
   "ko-KR": {
     "chat.companionHeading": "오늘은 함께 무엇을 해볼까요?",
@@ -127,6 +135,8 @@
     "panel.noActions": "현재 연결에서 사용할 수 있는 미리보기가 없습니다.",
     "panel.unavailable": "{title}을(를) 사용할 수 없습니다",
     "panel.unavailableHint": "이 콘텐츠는 여기에서 미리 볼 수 없습니다.",
-    "panel.resize": "미리보기 패널 너비 조절"
+    "panel.resize": "미리보기 패널 너비 조절",
+    "panel.markdownPreview": "미리보기",
+    "panel.markdownSource": "소스"
   }
 }

@@ -175,5 +175,7 @@
   "panel.noActions": "当前连接暂无可用预览。",
   "panel.unavailable": "{title} 暂不可用",
   "panel.unavailableHint": "暂时无法在这里预览此内容。",
-  "panel.resize": "调整预览面板宽度"
+  "panel.resize": "调整预览面板宽度",
+  "panel.markdownPreview": "预览",
+  "panel.markdownSource": "源码"
 }

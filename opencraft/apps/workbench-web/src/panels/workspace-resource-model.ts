@@ -33,6 +33,7 @@ const languageByExtension: Readonly<Record<string, string>> = Object.freeze({
   json: "json",
   jsx: "jsx",
   md: "markdown",
+  markdown: "markdown",
   py: "python",
   rs: "rust",
   sh: "bash",

@@ -10749,6 +10749,20 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+.workspace-file-viewer__actions button[aria-pressed="true"] {
+  background: var(--color-background-button-tertiary-hover);
+  color: var(--color-text);
+}
+
+.workspace-file-markdown {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px 18px 28px;
+  overflow-wrap: anywhere;
+}
+
 .workspace-file-viewer__state {
   display: flex;
   width: min(280px, calc(100% - 32px));

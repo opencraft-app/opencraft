@@ -154,3 +154,9 @@
 - context_receipt：docs/context/flows/tapd-gongfeng-delivery.md、.agents/skills/gongfeng/SKILL.md，以及已复核的 frontend/AGENTS.md 与 opencraft/AGENTS.md；执行个人 gongfeng-fast-mr 与 karpathy-guidelines Skill。
 - 提交前补验 frontend check（0 new diagnostics）、前端45 tests、runtime123 tests、Bot管理32 tests、130文件生成闭包全部通过；沿用同代码的Web类型、边界、i18n、嵌入构建及浏览器证据。
 - 全量门禁的既有失败与真实环境验收边界见checkpoint，不能宣称全仓通过。
+
+## markdown_file_preview
+- 用户要求补充 Markdown 排版预览和预览/源码切换，沿用只读文件读取；不添加编辑或新文件系统协议。
+- Router `opencraft markdown file preview workspace-resource-panel` 无匹配；有界检索 resource panel/model 与 chat-render-web 公共入口。复用 WebChatDocument 与既有 Blob media loader，文件身份决定呈现状态。
+- context_receipt：opencraft/AGENTS.md、opencraft-maintenance Skill/verification、design/README.md、design/invariants.md、platform-architecture Embedded 段、frontend-runtime-openspec-i18n 邻接卡；检查 embedded-companion-locales 测试及 locale catalogs 邻居。
+- 验证计划：聚焦文件/Markdown/i18n 测试、Web 类型和边界、embedded build、真实浏览器组件预览/源码/文件切换验收。

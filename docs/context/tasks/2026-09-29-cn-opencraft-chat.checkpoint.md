@@ -204,3 +204,12 @@
 - 提交前最新frontend check通过（166 current /171 baseline /0 new），前端45/45、runtime123/123、Bot管理32/32通过，130文件官方sync/check通过。
 - fetch后的目标master为9cb7ff6a5；工蜂鉴权成功，当前源分支没有打开的MR，创建新MR。
 - 排除context catalog校验生成的无关catalog.jsonl变化；保留5174预览。
+
+## markdown_file_preview_complete
+- 右侧文件面板对 .md/.markdown 默认复用 WebChatDocument 排版，提供预览/源码切换；控制台七语言覆盖切换标签。文件目录用于相对资源解析，Host Blob读取与只读限制保持原有所有权。
+- Web typecheck、162条i18n校验、boundaries、嵌入release构建通过；文件模型/Markdown/compiler/locale聚焦24/24通过。初次类型命令在repo根执行无workspace失败，已在opencraft目录成功重跑。
+- 真实Chrome运行实际文件面板、Query/Blob、Markdown组件与embedded构建样式，仅Host文件API为替身：标题/列表/表格/代码块排版、源码切换、普通txt、相对md链接正确，HTML显示文本，目录/搜索/监听/写入调用0。截图/tmp/lightvela-markdown-preview.png；无真实云文件或推理调用。
+- 本地5174 HTTP200，嵌入产物已更新；这轮新增源码未提交、未推送或发布，MR !4851尚不包含本轮Markdown补充。
+
+## markdown_mr_delivery
+- 用户随后明确授权提交，本轮补充提交并推送到已有 MR !4851；复用上述同代码的24项测试、Web类型、i18n、边界、构建及浏览器证据。不合并或发布；目标分支冲突单独处理。

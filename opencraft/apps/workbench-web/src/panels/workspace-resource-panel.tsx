@@ -1,3 +1,6 @@
+import { WebChatDocument } from "@opencraft/chat-render-web";
+import { useAppearanceTheme } from "../appearance-theme";
+import { createAppServerMediaSourceLoader } from "../runtime/appserver-media-loader";
 import { useIntl } from "@opencraft/i18n/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BlobProgress } from "@opencraft/blob-resources";
@@ -238,6 +241,7 @@ export function WorkspaceResourcePreviewPanel(props: PanelRendererProps) {
 export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRendererProps & { readonly previewOnly?: boolean }) {
   const intl = useIntl();
   const blobs = useBlobResources();
+  const theme = useAppearanceTheme();
   const initialLocation = useMemo(
     () => parseWorkspaceResource(tab.resource ?? ""),
     [tab.resource],
@@ -246,6 +250,13 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
   const snapshot = useAppServerSnapshot();
   const queryClient = useQueryClient();
   const [selectedPath, setSelectedPath] = useState(initialLocation.path);
+  const [sourceView, setSourceView] = useState<string | null>(null);
+  const documentId = JSON.stringify(["file-preview", snapshot.hostId, selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope]);
+  const showSource = sourceView === documentId;
+  const loadMediaSource = useMemo(
+    () => createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
+    [runtime, blobs, snapshot.hostId],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -396,6 +407,16 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
             <strong>{workspaceResourceBasename(selectedPath)}</strong>
             <small>{selectedPath}</small>
           </span>
+          {language === "markdown" && resource.data?.text != null && !editing ? (
+            <div className="workspace-file-viewer__actions">
+              <button aria-pressed={!showSource} onClick={() => setSourceView(null)} type="button">
+                {intl.formatMessage({ id: "panel.markdownPreview", defaultMessage: "Preview" })}
+              </button>
+              <button aria-pressed={showSource} onClick={() => setSourceView(documentId)} type="button">
+                {intl.formatMessage({ id: "panel.markdownSource", defaultMessage: "Source" })}
+              </button>
+            </div>
+          ) : null}
           {!previewOnly && resource.data?.text !== null && resource.data?.text !== undefined ? (
             <div className="workspace-file-viewer__actions">
               {editing ? (
@@ -446,6 +467,26 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
               spellCheck={false}
               value={draft}
             />
+          ) : language === "markdown" && !showSource ? (
+            <div className="workspace-file-markdown">
+              <WebChatDocument
+                key={documentId}
+                documentId={documentId}
+                source={resource.data.text}
+                hostId={snapshot.hostId}
+                cwd={workspacePathParent(selectedPath)}
+                theme={theme.resolvedTheme}
+                allowWideBlocks={false}
+                loadMediaSource={loadMediaSource}
+                onOpenResource={(target, decision) => {
+                  if (decision.kind === "file" || decision.kind === "workspace-file") {
+                    setSelectedPath(parseWorkspaceResource(target).path);
+                  } else if (decision.kind === "external" || decision.kind === "mail") {
+                    window.open(target, "_blank", "noopener,noreferrer");
+                  }
+                }}
+              />
+            </div>
           ) : (
             <pre className="workspace-file-source" data-language={language ?? "text"}><code>{resource.data.text}</code></pre>
           )

@@ -465,3 +465,6 @@ CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `regio
 - 内嵌 Chat 标题重命名入口与侧栏共享 ThreadTitleWriter/threadManagement 持久化及缓存更新；标题原位输入用 Enter/失焦保存、Escape 取消，组合输入确认不提交。编辑 session 按 Host/Thread 身份隔离，不能在会话切换后写入新目标。
 
 - Web 语音输入由浏览器 onstart 确认采集状态；启动与停止分别限制 15 秒和 8 秒等待。超时/错误释放听写交互并保留原草稿，取消不依赖浏览器 abort 成功，迟到结果不得重新提交文字或触发发送。
+
+### Markdown 文件预览补充
+内嵌右侧栏的只读文件预览支持 `.md` / `.markdown` 排版与源码切换，复用既有 Markdown renderer 和 Host 文件读取/Blob lease。该呈现能力不增加编辑、目录浏览或跨 Bot 资源权限；源码仍为唯一文件内容。
