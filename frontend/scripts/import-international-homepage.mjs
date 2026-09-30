@@ -20,6 +20,7 @@ const sourceRoot = path.resolve(sourceArgument);
 const targetRoot = path.join(frontendRoot, "public/lightvela-intl-home");
 const preservedHarnessAssetNames = [
   "lv-cover-lavender.webp",
+  "scenes-mascot-duo.webp",
   "hermes-black-companion.webp",
   "hermes-home.css",
   "feature-motion.js",
@@ -44,6 +45,8 @@ const preservedHarnessAssetNames = [
   "figma-feature-scheduled.webp",
   "figma-feature-chat-orbit.webp",
   "hermes-door.webp",
+  "hermes-door-background.webp",
+  "hermes-door-character.webp",
   "wcard-cloud-runtime-v2.webp",
   "wcard-skills-atlas-v1.webp",
   "wcard-cloud-runtime-v1.webp",
@@ -4420,9 +4423,11 @@ const preservedHarnessAssets = await Promise.all(
 await rm(targetRoot, { recursive: true, force: true });
 await mkdir(path.join(targetRoot, "assets"), { recursive: true });
 await Promise.all(
-  preservedHarnessAssets.map(([assetName, contents]) =>
-    writeFile(path.join(targetRoot, "assets", assetName), contents),
-  ),
+  preservedHarnessAssets.map(async ([assetName, contents]) => {
+    const destination = path.join(targetRoot, "assets", assetName);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, contents);
+  }),
 );
 
 for (const locale of supportedLocales) {
@@ -4584,6 +4589,7 @@ for (const assetName of [
 
 for (const assetPath of assetPaths) {
   const relativeAssetPath = assetPath.slice("assets/".length);
+  if (preservedHarnessAssetNameSet.has(relativeAssetPath)) continue;
   const destination = path.join(targetRoot, "assets", relativeAssetPath);
   await mkdir(path.dirname(destination), { recursive: true });
   await copyFile(path.join(sourceRoot, assetPath), destination);

@@ -135,18 +135,7 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => {
       title: t("公司"),
       links: [
         { label: t("关于我们"), to: "/about" },
-        { label: t("用户反馈"), to: "/support" },
-        ...(
-          isGlobal
-            ? []
-            : [
-                {
-                  label: t("帮助与反馈"),
-                  href: PRODUCT_FEEDBACK_URL,
-                  external: true,
-                } satisfies FooterLink,
-              ]
-        ),
+        { label: isGlobal ? t("用户反馈") : t("产品反馈"), to: PRODUCT_FEEDBACK_URL },
         isGlobal
           ? { label: t("隐私政策"), to: "/privacy-policy" }
           : { label: t("隐私政策"), href: CN_PRIVACY_POLICY_URL, external: true },

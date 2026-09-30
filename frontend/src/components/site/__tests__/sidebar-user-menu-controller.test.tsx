@@ -58,6 +58,10 @@ describe("sidebar account controller boundary", () => {
     expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(0);
     act(() => host().show?.());
     expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(isGlobal ? 0 : 1);
+    if (!isGlobal) {
+      expect(screen.getByRole("link", { name: "产品反馈" })).toHaveAttribute("href", "/support");
+      expect(screen.getByRole("link", { name: "产品反馈" })).not.toHaveAttribute("target");
+    }
     act(() => host().show?.());
     expect(screen.queryAllByRole("link", { name: "产品反馈" })).toHaveLength(0);
   });
