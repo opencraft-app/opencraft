@@ -87,6 +87,7 @@ function embeddedStyles(): string {
     :host([data-visible="true"]) { visibility: visible; pointer-events: auto; }
     .opencraft-embedded-workbench-root { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
     ${application}
+    .opencraft-embedded-workbench-root { --height-toolbar: var(--lightvela-console-header-height, 46px); }
     .opencraft-embedded-workbench-root .codex-composer-queue-item__actions button.is-steer {
       width: 22px;
       padding: 0;
@@ -96,7 +97,7 @@ function embeddedStyles(): string {
     .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-viewport { --app-shell-main-content-frame-top-offset: 0px; }
     .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-frame { border-top: 0; }
     .opencraft-embedded-workbench-root .main-content-surface { box-shadow: none; }
-    .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 50px; }
+    .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 74px; }
     .opencraft-embedded-workbench-root .codex-composer-voice-footer__status-label { display: none; }
     .opencraft-embedded-workbench-root .codex-composer-submit.is-stop {
       border-radius: 50%;

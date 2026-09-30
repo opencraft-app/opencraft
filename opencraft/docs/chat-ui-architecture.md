@@ -499,8 +499,12 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 
 控制台内嵌的新会话由宿主选择 Bot，Shell 通过 showExecutionControls=false 隐藏整个项目/执行环境工具栏和连接状态点；独立工作台默认展示。连接生命周期与发送就绪检查保持由 runtime 负责。
 
-内嵌新会话标题与占位提示覆盖控制台 en-US、zh-CN（含 zh-SG）、zh-Hant、id-ID、es、ja-JP、ko-KR。额外五套文案由 embedded-companion-messages.json 提供，通过嵌入专用 catalog 注入 LocaleController，跟随宿主语言切换；这不代表其他工作台文案已完整翻译，未覆盖项继续使用 defaultMessage。独立工作台语言选择项保持原样。
+内嵌新会话标题与新建/已有会话的差异化占位提示覆盖控制台 en-US、zh-CN（含 zh-SG）、zh-Hant、id-ID、es、ja-JP、ko-KR。额外五套文案由 embedded-companion-messages.json 提供，通过嵌入专用 catalog 注入 LocaleController，跟随宿主语言切换；这不代表其他工作台文案已完整翻译，未覆盖项继续使用 defaultMessage。独立工作台语言选择项保持原样。
 
 内嵌新会话（draft 存在且尚无 submission）由 sessions bridge 显式发布 isDraft；启用右侧预览时保留顶部面板开关，已有会话继续展示标题与重命名。国内控制台内嵌聊天的加载、新会话和已有会话均无宿主圆角外框，内嵌主内容表面无阴影；保留标题重命名入口与输入框边界。预览面板默认关闭，网页标签随会话 scope 切换；文件只读预览不展示目录树、搜索或编辑。
 
 内嵌右侧预览面板的入口、标签列表/空态、缩放与关闭提示、宽度调整无障碍标签以及不可用状态均通过稳定消息 ID 跟随宿主语言；网页自身正文由目标站点控制，不由控制台翻译。
+
+Embedded file previews retain the mutation-level read-only guard alongside snapshot-based saves in the standalone workspace editor. Markdown preview/source switching and lazy syntax editors share the same resource lifecycle. The read-only regression renders the real panel and invokes its captured Query mutation, asserting zero filesystem writes and cache invalidations.
+
+Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.

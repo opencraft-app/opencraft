@@ -214,6 +214,8 @@ test("Codex right panel geometry retains content reserve and magnetic shelf", ()
     }),
     940,
   );
+  assert.equal(computeRightPanelDefaultWidth({ mainContentWidth: 1_440, shellHeight: 960, size: "compact" }), 940 * 2 / 3);
+  assert.equal(computeRightPanelDefaultWidth({ mainContentWidth: 700, shellHeight: 600, size: "compact" }), 320);
   assert.equal(RIGHT_PANEL_COLLAPSE_SHELF, 160);
   // The pointer has a 160px magnetic travel corridor: drag geometry can fall
   // below the visible minimum while the rendered panel and its chrome remain

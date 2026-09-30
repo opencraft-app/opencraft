@@ -365,6 +365,22 @@ html.lw-settings-scrollbar-stable {
     margin-right: auto;
   }
 
+  /* Embedded chat owns the full desktop content column, including its dividers. */
+  .lv-agent-embedded-chat-page .lv-agent-settings-main {
+    padding-top: 0;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-settings-shell {
+    width: calc(100% - 16px);
+    margin-right: 0;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-settings-content {
+    --lightvela-console-header-height: 68px;
+    max-width: none;
+    margin: 0;
+  }
+
   header.lv-agent-sidebar-header > div {
     height: 68px !important;
     max-width: none;
