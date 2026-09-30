@@ -49,6 +49,8 @@
 - MR !4875 的 CI 日志显示 frontend guard 与 OpenCraft 生成物检查通过；OpenCraft 嵌入式测试 142 个中有 1 个心跳时序断言失败。
 - 心跳测试改为有界等待两次实际心跳、总是清理 transport，并使用 Node 支持的测试关闭事件；`npm --prefix opencraft run test:embedded-ci` 142/142 通过。
 - `npm --prefix opencraft run typecheck`、`check:mono2-agent-console`（130 个文件）及文档检查通过。
+- 合入 `master` 后运行官方 `sync:mono2-agent-console`，只重生成 `UPSTREAM.json` 的 `sourceRevision`；`check:mono2-agent-console` 验证 130 个文件通过。
+- 合并后复验：导航间距测试 7/7、`pnpm check` 无新增 TypeScript 诊断、OpenCraft 嵌入式测试 145/145 通过。
 
 ## risks
 - 桌面侧栏点击区域稍小；保持 30px 高，与现有矮屏规则相同。回滚 CSS 两个变量即可。
@@ -67,4 +69,4 @@
 - 无独立扫描产物。
 
 ## handoff
-- 本地 CSS、聚焦测试及 CI 心跳测试修复已验证；登录态侧栏视觉核对待有认证环境时完成。最新 master 的 `UPSTREAM.json` 有预合并冲突，合入和重生成需另行处理。未发布。
+- 本地 CSS、聚焦测试及 CI 心跳测试修复已验证；已合入最新 `master` 并通过官方脚本重生成清单。登录态侧栏视觉核对待有认证环境时完成。未发布。
