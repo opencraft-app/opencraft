@@ -65,4 +65,4 @@ Agent 已暂停时，聊天区显示暂停提示，不提示连接自动恢复�
 - `rg` 输出已用于定位，无需保留完整扫描产物。
 
 ## handoff
-- 本地实现与聚焦验证完成；尚未 commit、push、创建 MR 或发布。
+- MR !4872 已创建，目标 `master`；创建时为 `opened` / `can_be_merged`，CI `pending` 且阻塞。尚未合并或发布。
