@@ -22,7 +22,10 @@ if ! node opencraft/scripts/sync-mono2-agent-console.mjs --check; then
 fi
 
 echo "opencraft guard: install locked dependencies and run embedded workbench regressions"
-npm --prefix opencraft ci --ignore-scripts --no-audit --no-fund --loglevel=error
-npm --prefix opencraft run test:embedded-ci
+OPENCRAFT_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-opencraft-guard.XXXXXX")"
+trap 'rm -rf "$OPENCRAFT_GUARD_ROOT"' EXIT
+git ls-files -z -- opencraft frontend/src/i18n/locales.json | tar -C "$REPO_ROOT" --null -T - -cf - | tar -C "$OPENCRAFT_GUARD_ROOT" -xf -
+npm --prefix "$OPENCRAFT_GUARD_ROOT/opencraft" ci --ignore-scripts --no-audit --no-fund --loglevel=error
+npm --prefix "$OPENCRAFT_GUARD_ROOT/opencraft" run test:embedded-ci
 
 echo "opencraft guard: all checks passed"
