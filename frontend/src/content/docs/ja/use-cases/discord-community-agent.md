@@ -7,7 +7,7 @@
 最近の共有エージェント製品には、[Claude Tag](https://www.anthropic.com/news/introducing-claude-tag)および[Viktor](https://slack.com/marketplace/A0A2VN5TR5K-viktor)があり、エージェントがすでにグループがコミュニケーションを取っている場所で動作するとより有用である理由を示しています。
 LightVelaは、別のボットアプリケーションを構築してホストする必要なく、そのパターンをDiscordコミュニティにもたらします。
 
-![LightVela エージェントが Discord コミュニティに接続](../images/use-case-discord-community-agent.webp)
+![LightVela エージェントが Discord コミュニティに接続](../../images/use-case-discord-community-agent.webp)
 
 ## 対象者と期待される成果
 
@@ -71,7 +71,7 @@ Discord 開発者ポータルで、メッセージ内容を読み取るために
 
 完全な手順に従ってください[Discord 設定ステップ](../configuration/channel-discord.md)現在の認証および権限フローのために。
 
-![開発者ポータルでの Discord ボット権限](../images/discord-6-global.webp)
+![開発者ポータルでの Discord ボット権限](../../images/discord-6-global.webp)
 
 ### 4. 実際のコミュニティの質問でエージェントをテストする
 

@@ -8,7 +8,7 @@
 
 **에이전트에서는 한 번에 하나의 Soul만 활성화되며, 변경된 규칙을 불러오려면 Soul을 바꾼 뒤 새 대화를 시작해야 합니다.**
 
-![LightVela 콘솔의 Soul 페르소나 카드](../images/soul-1.webp)
+![LightVela 콘솔의 Soul 페르소나 카드](../../images/soul-1.webp)
 
 ## 이 페이지에서 다루는 내용
 
@@ -54,7 +54,7 @@ Personality는 하나의 대화 채널이 아니라 에이전트에 귀속됩니
 사용 가능한 페르소나 유형을 살펴보려면 **Draw random soul**을 사용합니다.
 소통 방식과 행동 선호도에 따른 추천을 받으려면 **Soul personality test**를 사용합니다.
 
-![Draw random soul 대화 상자](../images/soul-2.webp)
+![Draw random soul 대화 상자](../../images/soul-2.webp)
 
 선택하기 전에 각 Soul 카드의 역할, 말투, 행동 설명, 경계를 검토하세요.
 이름이나 어조만 보고 고르기보다 준비한 브리프와 일치하는 Soul을 선택하세요.
@@ -80,7 +80,7 @@ Personality는 하나의 대화 채널이 아니라 에이전트에 귀속됩니
 5. 에이전트에 이미 Soul이 있다면 교체할 것인지 확인합니다.
 6. 연결된 대화 채널로 돌아가 `/new`를 보냅니다.
 
-![Upload persona file 대화 상자](../images/soul-3.webp)
+![Upload persona file 대화 상자](../../images/soul-3.webp)
 
 파일 이름이 반드시 `soul.md`일 필요는 없지만, `.md` 확장자를 사용하고 UTF-8로 인코딩되어야 하며 크기는 20KB 이하여야 합니다.
 LightVela는 주입 전에 파일 내용을 보여 주므로 마지막으로 편집할 수 있습니다.

@@ -2,13 +2,13 @@
 
 ## Summary
 
-**Memory is what lets Hermes retain the things that matter across conversations and devices — your preferences, who you are, what you are currently working on, and the experience it accumulates through long-term collaboration. It is the foundation that turns Hermes from one-off question answering into an assistant that understands you better over time. Memory lives inside the agent and outside the model, so switching models does not make it forget. You can review, edit, or clear what has accumulated on the memory and user-profile page in the console, and all your messaging channels share one memory.**
+**Memory is what lets Hermes retain the things that matter across conversations and devices — your preferences, who you are, what you are currently working on, and the experience it accumulates through long-term collaboration. It is the foundation that turns Hermes from one-off question answering into an assistant that understands you better over time. Memory lives inside the agent and outside the model, so switching models does not make it forget. You can review accumulated memory and capacity usage on the memory and user-profile page, then ask Hermes in conversation to remember or forget specific details; all your messaging channels share one memory.**
 
 ---
 
 Memory helps Hermes retain important information across conversations and devices—your preferences, identity, work in progress, and the experience it develops through long-term collaboration. It is what turns Hermes from a one-off question-answering tool into a long-term assistant that understands you better over time.
 
-![The Memory and User Profile page in the LightVela console](../images/memory-management-overview-en.webp)
+![The Memory and User Profile page in the LightVela console](../../images/memory-management-overview-en.webp)
 
 LightVela is cloud-hosted, so these memories are stored with your Hermes instance in the cloud. They are not lost when you change devices or switch between Telegram, WhatsApp, Discord, Slack, and WeChat. If you tell Hermes something in Telegram today, it can still remember it when you continue the conversation in WhatsApp tomorrow.
 

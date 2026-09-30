@@ -40,7 +40,7 @@ Click the dropdown and select "Lark". The Lark channel introduction appears belo
 
 A QR code appears on the page.
 
-![](../images/lark1.webp)
+![](../../images/lark1.webp)
 
 ### 4. Scan with Lark
 
@@ -55,7 +55,7 @@ A QR code appears on the page.
 4. Follow the prompts to complete authorization
 
 
-![](../images/lark2.webp)
+![](../../images/lark2.webp)
 
 ### 5. Find Hermes Agent in Lark
 
@@ -68,7 +68,7 @@ After a successful scan:
 
 Search Lark for the application name you created.
 
-![](../images/lark3.webp)
+![](../../images/lark3.webp)
 
 Open the bot's chat window and send a test message:
 
@@ -76,7 +76,7 @@ Open the bot's chat window and send a test message:
 Hello
 ```
 
-![](../images/lark4.webp)
+![](../../images/lark4.webp)
 
 ## Success state
 

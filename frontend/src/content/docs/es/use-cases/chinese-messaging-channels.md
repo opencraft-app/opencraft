@@ -4,7 +4,7 @@
 
 **Conectar un Hermes Agent a plataformas de mensajería se basa en una idea simple: los canales son los puntos de entrada, y el Agent es lo que funciona. Un Agent en la nube comparte el mismo modelo, Skills y memoria entre todos los canales conectados, por lo que no es necesario crear un bot separado por plataforma.** El flujo consta de cuatro pasos: confirmar que el canal está disponible en su región (la región global soporta Telegram, WhatsApp, Discord, Slack, WeChat, QQ, WeCom y Lark; la región China soporta WeChat, QQ, WeCom, Lark y DingTalk); completar la autorización en el lado de la plataforma para obtener credenciales; conectar en el consola y confirmar que el canal aparece como conectado; luego enviar un mensaje de prueba y verificar que la respuesta llegue a la misma conversación desde la que se envió el mensaje. Las credenciales son sensibles: nunca escribirlas en el contexto a largo plazo ni pegués en el chat.
 
-![Conexiones de plataforma de mensajería de LightVela](../images/use-case-messaging-platforms.webp)
+![Conexiones de plataforma de mensajería de LightVela](../../images/use-case-messaging-platforms.webp)
 
 ## Para quién es este documento
 
@@ -50,7 +50,7 @@ Abra el área de Canal en la consola, seleccione la plataforma y siga su flujo d
 
 Trate los tokens de bot, IDs de aplicación y secretos como contraseñas. No peguéslos en un chat de grupo, documento público o mensaje dirigido a otra persona. Si una credencial se expone, rotéela en la plataforma que la emitió antes de reconectar Hermes.
 
-![La página de conexión de canal de LightVela](../images/use-case-messaging-connection.webp)
+![La página de conexión de canal de LightVela](../../images/use-case-messaging-connection.webp)
 
 ### 3. Verifique la conexión con una conversación simple
 
@@ -68,7 +68,7 @@ Cuando más de un canal se conecta al mismo Hermes Agent, son diferentes puertas
 
 Utilice [Gestión de Memoria](../configuration/memory.md) para revisar el contexto a largo plazo que desea que Hermes retenga. Si un canal es para una audiencia diferente o necesita un rol muy diferente, considere mantener el caso de uso separado en lugar de mezclar expectativas no relacionadas en un historial de conversación.
 
-![El mismo contexto de Hermes Agent compartido entre canales](../images/use-case-messaging-memory.webp)
+![El mismo contexto de Hermes Agent compartido entre canales](../../images/use-case-messaging-memory.webp)
 
 Si Discord es el canal que desea utilizar para una comunidad, continúe con [Conozca a LightVela para Discord: Su Agent de IA Discord Bot que Sientra su Canal](./discord-community-agent.md).
 

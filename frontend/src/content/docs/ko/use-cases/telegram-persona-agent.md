@@ -4,7 +4,7 @@
 
 **Telegram은 에이전트에 접속하는 진입점일 뿐입니다. 에이전트의 말투, 작업 방식, 하지 말아야 할 일은 페르소나와 장기 맥락에서 결정됩니다.** 설정 과정은 두 단계입니다. 먼저 채널 가이드에 따라 BotFather에서 Bot과 토큰을 만들고 Hermes Agent에 연결한 뒤, 콘솔에 연결된 것으로 표시되는지 확인합니다. 다음으로 에이전트 설정의 페르소나 섹션에서 지속적으로 사용할 역할, 말투, 행동 경계를 선택해 주입합니다. 페르소나는 오래 유지할 행동 원칙을, 사용자 프로필은 어떤 방식으로 응대받고 싶은지를, 장기 메모리는 확인된 사실과 프로젝트 배경을 담당합니다. Telegram 그룹 메시지를 사용하려면 BotFather에서 Group Privacy를 끄고 Bot을 그룹에 추가한 뒤 `@bot_username`을 멘션하여 대화를 시작해야 합니다.
 
-![Telegram에서 뚜렷한 페르소나를 사용하는 Hermes Agent](../images/use-case-03-telegram-persona-agent.webp)
+![Telegram에서 뚜렷한 페르소나를 사용하는 Hermes Agent](../../images/use-case-03-telegram-persona-agent.webp)
 
 ## 대상 독자
 

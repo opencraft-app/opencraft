@@ -35,7 +35,7 @@ It is different from the agent's saved context. To manage what an agent remember
 2. Open its **Cloud Storage** or **Files** section.
 3. Wait for the file list to load before starting an upload or a folder action.
 
-![The Cloud Storage file list in the LightVela console](../images/cloud-storage-overview-en.webp)
+![The Cloud Storage file list in the LightVela console](../../images/cloud-storage-overview-en.webp)
 
 If the list does not load, refresh the page and try again. If the issue continues, use [Diagnostics](./diagnostics.md) to review the Agent's recent logs before making a larger change.
 

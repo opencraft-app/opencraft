@@ -40,7 +40,7 @@ Temukan modul WeCom lalu klik "+ Connect".
 
 Sebuah kode QR akan muncul di halaman tersebut.
 
-![](../images/wecom1-en.webp)
+![](../../images/wecom1-en.webp)
 
 > ⚠️ **Masa berlaku kode QR**
 >
@@ -55,13 +55,13 @@ Sebuah kode QR akan muncul di halaman tersebut.
 3. Pindai kode QR di layar komputer Anda
 
 
-![](../images/wecom2.webp)
+![](../../images/wecom2.webp)
 
 4. Ikuti petunjuk di ponsel Anda untuk menyelesaikan otorisasi
 
-![](../images/wecom3.webp)
+![](../../images/wecom3.webp)
 
-![](../images/wecom4.webp)
+![](../../images/wecom4.webp)
 
 ### 5. Mengobrol dengan bot yang sudah dibuat
 
@@ -80,7 +80,7 @@ Hello
 
 Anda akan menerima balasan Hermes Agent dalam beberapa detik.
 
-![](../images/wecom5-en.webp)
+![](../../images/wecom5-en.webp)
 
 ---
 

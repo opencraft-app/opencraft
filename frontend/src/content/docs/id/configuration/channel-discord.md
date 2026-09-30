@@ -42,7 +42,7 @@ Pilih server tempat Anda ingin menambahkan bot, lalu buka [Developer Portal](htt
 
 1. Klik Applications
 
-![](../images/discord-1-global.webp)
+![](../../images/discord-1-global.webp)
 
 2. Klik New Application di kanan atas
 
@@ -50,11 +50,11 @@ Pilih server tempat Anda ingin menambahkan bot, lalu buka [Developer Portal](htt
 
 4. Tambahkan bot ke application Anda lalu buat bot token. Token tersebut dipakai untuk mengautentikasi koneksi antara Hermes Agent dan server Discord Anda.
 
-![](../images/discord-2-global.webp)
+![](../../images/discord-2-global.webp)
 
 5. Tempel token tersebut ke kartu Discord.
 
-![](../images/discord-3-global-en.webp)
+![](../../images/discord-3-global-en.webp)
 
 ### 4. Buka halaman Bot di Developer Portal
 
@@ -66,7 +66,7 @@ Di halaman Bot, gulir ke bawah sampai Privileged Gateway Intents lalu aktifkan:
 
 - **Presence Intent**: opsional, hanya dipakai untuk pembaruan status
 
-![](../images/discord-4-global.webp)
+![](../../images/discord-4-global.webp)
 
 Setelah mengaktifkannya, klik Save Changes di bagian bawah.
 
@@ -74,7 +74,7 @@ Setelah mengaktifkannya, klik Save Changes di bagian bawah.
 
 Konfigurasikan izin bot: klik OAuth2 di sidebar kiri, lalu pilih OAuth2 URL Generator. Atur Scopes terlebih dahulu; mengikuti prinsip hak akses minimum, utamakan `bot` dan `applications.commands`.
 
-![](../images/discord-5-global.webp)
+![](../../images/discord-5-global.webp)
 
 Lanjutkan menggulir ke bawah untuk mengatur Bot Permissions, lalu pilih:
 
@@ -90,13 +90,13 @@ Lanjutkan menggulir ke bawah untuk mengatur Bot Permissions, lalu pilih:
 
 - Add Reactions (opsional)
 
-![](../images/discord-6-global.webp)
+![](../../images/discord-6-global.webp)
 
 ### 6. Salin lalu buka tautan undangan
 
 Salin Invite Link yang dihasilkan, buka tautan tersebut di browser Anda, lalu undang bot ke server Discord Anda (memerlukan izin admin server). Setelah mengklik Continue dan memberikan otorisasi, bot akan diundang ke server tersebut.
 
-![](../images/discord-7-global.webp)
+![](../../images/discord-7-global.webp)
 
 ### 7. Mengobrol dengan bot baru di Discord
 
@@ -106,7 +106,7 @@ Sekarang Anda dapat mulai berinteraksi dengan bot tersebut. Buka percakapan deng
 Hi
 ```
 
-![](../images/discord-chat-global.webp)
+![](../../images/discord-chat-global.webp)
 
 Anda semestinya menerima balasan Hermes Agent dalam beberapa detik.
 

@@ -4,7 +4,7 @@
 
 **Tugas Terjadwal membuat Hermes Agent mulai bekerja tanpa prompt manual. Pilih Tugas Agent saat pekerjaan memerlukan penalaran AI, Tugas Notifikasi saat pesan harus dikirim persis seperti ditulis, atau Tugas Skrip saat skrip Bash atau Python harus menjalankan pemeriksaan yang deterministik. Ketiga jenis ini memakai jadwal sekali jalan, berulang, dan interval yang sama, serta periode berlaku dan pengaturan notifikasi yang sama.**
 
-![Halaman Tugas Terjadwal yang menampilkan templat tugas dan tugas saat ini](../images/st-en-1.webp)
+![Halaman Tugas Terjadwal yang menampilkan templat tugas dan tugas saat ini](../../images/st-en-1.webp)
 
 ## Memilih Jenis Tugas
 
@@ -23,7 +23,7 @@ Setiap jenis dapat berjalan sekali, berulang setiap hari, minggu, atau bulan, at
 
 Pastikan Hermes Agent aktif, pilih kanal notifikasi bila diperlukan, dan periksa kode Tugas Skrip sebelum menyimpannya.
 
-![Opsi kanal notifikasi yang menampilkan Telegram dan WeChat](../images/notification-channels-en.webp)
+![Opsi kanal notifikasi yang menampilkan Telegram dan WeChat](../../images/notification-channels-en.webp)
 
 ## Membuat Tugas Agent
 
@@ -43,7 +43,7 @@ Atur bidang berikut:
 Pada waktu yang dijadwalkan, Hermes Agent membuat tugas Agent dan memanggil model yang dipilih.
 Hasilnya dapat dikirim ke kanal notifikasi yang dipilih dan dicatat di Eksekusi terbaru.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Agent](../images/st-en-2.webp)
+![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Agent](../../images/st-en-2.webp)
 
 ## Membuat Tugas Notifikasi
 
@@ -60,7 +60,7 @@ Karena itu, penggunaan token model untuk tugas ini adalah 0 Token.
 Jika tidak memilih kanal notifikasi, tugas tetap berjalan di latar belakang dan menulis catatan tanpa mengirim pesan.
 Setiap kanal notifikasi tetap dapat merender baris baru dan karakter sesuai protokol teksnya sendiri.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Notifikasi](../images/st-en-3.webp)
+![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Notifikasi](../../images/st-en-3.webp)
 
 ## Membuat Tugas Skrip
 
@@ -83,14 +83,14 @@ Penggunaan token modelnya adalah 0 Token, tetapi tugas ini tetap memakai sumber 
 Jangan mengandalkan Tugas Skrip untuk memperbaiki, menjelaskan, atau merangkum kegagalan dengan AI.
 Tugas ini tetap deterministik: output kosong tetap senyap, dan skrip yang gagal tidak memicu fallback model.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Skrip](../images/st-en-4.webp)
+![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Skrip](../../images/st-en-4.webp)
 
 ## Menautkan Tugas Agent Upstream
 
 Gunakan tugas upstream saat satu Tugas Agent perlu menyiapkan konteks untuk Tugas Agent lain.
 Tugas downstream menerima output selesai terbaru dari tugas upstream sambil tetap memakai jadwal, instruksi, periode berlaku, dan pengaturan notifikasinya sendiri.
 
-![Dialog Buat Tugas Terjadwal yang menampilkan opsi tugas upstream](../images/st-en-5.webp)
+![Dialog Buat Tugas Terjadwal yang menampilkan opsi tugas upstream](../../images/st-en-5.webp)
 
 Beri jeda waktu yang cukup di antara tugas yang bergantung satu sama lain, lalu jelaskan dalam instruksi downstream cara memakai output upstream.
 Konteks upstream, eksekusi model, dan Skill hanya berlaku untuk Tugas Agent.
@@ -108,21 +108,21 @@ Ketiga jenis tugas memakai kontrol jadwal dan notifikasi yang sama.
 Mengubah jenis tugas saat membuat tugas tidak menghapus pengaturan bersama ini.
 Setelah dibuat, jenis tugas tidak dapat diubah, jadi buat tugas baru bila model eksekusinya perlu berubah.
 
-![Dialog Buat Tugas untuk mengonfigurasi tugas terjadwal](../images/automation-create-job.webp)
+![Dialog Buat Tugas untuk mengonfigurasi tugas terjadwal](../../images/automation-create-job.webp)
 
 ## Menggunakan Templat Tugas
 
 Jika belum yakin cara memulai Tugas Agent, gunakan Area Templat di halaman Tugas Terjadwal.
 Pilih kartu seperti Pengingat minum dan obat, Pengingat sewa, Pengingat kurs, atau Ringkasan info saham, lalu tinjau jadwal dan instruksi yang dihasilkan sebelum membuat tugas.
 
-![Area Templat dengan kartu tugas terjadwal siap pakai](../images/automation-template-area.webp)
+![Area Templat dengan kartu tugas terjadwal siap pakai](../../images/automation-template-area.webp)
 
 Saat membuka templat, dialog Buat Tugas terisi otomatis.
 Templat Ringkasan info saham, misalnya, mengisi nama tugas, jadwal harian, dan instruksi informasi pasar yang dapat Anda sesuaikan sebelum menguji atau membuatnya.
 
 <div style={{ maxWidth: "760px" }}>
 
-![Templat Ringkasan info saham terbuka di formulir Buat Tugas](../images/automation-template-stock-job.webp)
+![Templat Ringkasan info saham terbuka di formulir Buat Tugas](../../images/automation-template-stock-job.webp)
 
 </div>
 
@@ -138,7 +138,7 @@ Tugas yang masih berjalan tetap ada di Job Saat Ini.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Halaman Tugas Terjadwal dengan tab Job Saat Ini, Job Berakhir, dan Eksekusi terbaru](../images/automation-current-jobs.webp)
+![Halaman Tugas Terjadwal dengan tab Job Saat Ini, Job Berakhir, dan Eksekusi terbaru](../../images/automation-current-jobs.webp)
 
 </div>
 
@@ -147,7 +147,7 @@ Untuk Tugas Agent yang memiliki dependensi upstream, periksa apakah tugas lain m
 
 <div style={{ maxWidth: "520px" }}>
 
-![Kartu tugas terjadwal yang sedang berjalan di Job Saat Ini](../images/automation-running-job.webp)
+![Kartu tugas terjadwal yang sedang berjalan di Job Saat Ini](../../images/automation-running-job.webp)
 
 </div>
 

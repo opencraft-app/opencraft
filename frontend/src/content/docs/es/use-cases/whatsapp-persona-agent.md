@@ -4,7 +4,7 @@
 
 **WhatsApp lleva los mensajes; el rol, tono, límites y contexto a largo plazo del Agent provienen de su configuración en LightVela — cambiar el punto de entrada no cambia quién es.** Conecte primero el canal de WhatsApp (autorice según la guía del canal y confirme que la consola lo muestra como conectado), luego utilice la sección de Personalidad en la página de configuración del Agent para seleccionar e inyectar una personalidad adecuada para mensajes personales, recordatorios o conversaciones con clientes. Si este Agent se enfrenta a clientes o un equipo, nombre explícitamente al público objetivo en la personalidad y agregue el tono de marca, el alcance que puede manejar y las condiciones para escalar a un humano. Después de conectar, envíe un mensaje de prueba y confirme que la respuesta llegue a la conversación esperada. Si nada llega, verifique si el modelo está configurado, si los créditos de prueba se han agotado y si el canal se muestra como conectado.
 
-![Un Agent Hermes con una personalidad distinta en WhatsApp](../images/use-case-04-whatsapp-persona-agent.webp)
+![Un Agent Hermes con una personalidad distinta en WhatsApp](../../images/use-case-04-whatsapp-persona-agent.webp)
 
 ## Para quién es este documento
 

@@ -44,16 +44,16 @@ Masuk ke situs internasional LightVela, buka **My Hermes → Channel**, temukan 
 1. Buka [Slack API Apps](https://api.slack.com/apps) lalu masuk.
 2. Klik **Create New App**.
 
-![Membuat app baru dari Slack API Apps](../images/slack-create-app.webp)
+![Membuat app baru dari Slack API Apps](../../images/slack-create-app.webp)
 
 3. Pilih **From scratch**.
 
-![Memilih From scratch untuk membuat app Slack](../images/slack-create-from-scratch.webp)
+![Memilih From scratch untuk membuat app Slack](../../images/slack-create-from-scratch.webp)
 
 4. Masukkan nama aplikasi seperti `Hermes Agent`.
 5. Pilih workspace tempat Hermes Agent akan berjalan, lalu klik **Create App**.
 
-![Memberi nama app Slack dan memilih workspace](../images/slack-select-workspace.webp)
+![Memberi nama app Slack dan memilih workspace](../../images/slack-select-workspace.webp)
 
 Jika workspace tersebut tidak muncul, pastikan akun Slack saat ini memang termasuk di dalamnya dan dapat membuat aplikasi.
 
@@ -63,28 +63,28 @@ App Token membangun koneksi WebSocket Socket Mode. Token ini wajib menyertakan s
 
 1. Di sidebar app Slack, buka **Settings → Basic Information**.
 
-![Membuka Basic Information di app Slack](../images/slack-basic-information.webp)
+![Membuka Basic Information di app Slack](../../images/slack-basic-information.webp)
 
 2. Gulir sampai **App-Level Tokens** lalu klik **Generate Token and Scopes**.
 
-![Membuat app-level token](../images/slack-generate-app-token.webp)
+![Membuat app-level token](../../images/slack-generate-app-token.webp)
 
 3. Masukkan nama token yang mudah dikenali, misalnya `HermesSocket`.
 4. Klik **Add Scope**.
 
-![Menambahkan scope ke App Token](../images/slack-add-connection-scope.webp)
+![Menambahkan scope ke App Token](../../images/slack-add-connection-scope.webp)
 
 5. Cari lalu pilih `connections:write`.
 
-![Memilih scope connections write](../images/slack-select-connections-write.webp)
+![Memilih scope connections write](../../images/slack-select-connections-write.webp)
 
 6. Pastikan scope tersebut sudah tercantum, lalu klik **Generate**.
 
-![Membuat App Token dengan connections write](../images/slack-generate-token.webp)
+![Membuat App Token dengan connections write](../../images/slack-generate-token.webp)
 
 7. Salin token `xapp-...` yang dihasilkan lalu simpan dengan aman. Klik **Done** setelah menyalinnya.
 
-![Menyalin Slack App Token](../images/slack-copy-app-token.webp)
+![Menyalin Slack App Token](../../images/slack-copy-app-token.webp)
 
 Jangan menempelkan App Token ke kolom Bot Token. Client Secret atau Signing Secret bukan pengganti token ini.
 
@@ -95,7 +95,7 @@ Jangan menempelkan App Token ke kolom Bot Token. Client Secret atau Signing Secr
 1. Buka **Settings → Socket Mode**.
 2. Aktifkan **Enable Socket Mode**.
 
-![Mengaktifkan Slack Socket Mode](../images/slack-enable-socket-mode.webp)
+![Mengaktifkan Slack Socket Mode](../../images/slack-enable-socket-mode.webp)
 
 Socket Mode mengirim event Slack ke Hermes Agent melalui WebSocket. Penyiapan ini tidak memerlukan Request URL pada Event Subscriptions maupun OAuth Redirect URL.
 
@@ -105,7 +105,7 @@ Socket Mode mengirim event Slack ke Hermes Agent melalui WebSocket. Penyiapan in
 2. Gulir sampai **Scopes → Bot Token Scopes**.
 3. Klik **Add an OAuth Scope**.
 
-![Menambahkan bot scope di OAuth and Permissions](../images/slack-add-oauth-scope.webp)
+![Menambahkan bot scope di OAuth and Permissions](../../images/slack-add-oauth-scope.webp)
 
 Tambahkan scope sesuai mode interaksi yang Anda butuhkan:
 
@@ -121,7 +121,7 @@ Tambahkan scope sesuai mode interaksi yang Anda butuhkan:
 | `groups:read` | Channel privat (opsional) | Membaca informasi channel privat |
 | `groups:history` | Channel privat (opsional) | Membaca pesan di channel privat yang sudah diikuti bot |
 
-![Meninjau Slack Bot Token Scopes](../images/slack-bot-token-scopes.webp)
+![Meninjau Slack Bot Token Scopes](../../images/slack-bot-token-scopes.webp)
 
 Tambahkan dua scope `groups:*` hanya ketika akses channel privat memang diperlukan. Aplikasi tersebut tetap harus diundang ke setiap channel tujuan.
 
@@ -145,7 +145,7 @@ Jika Anda hanya memakai mention di channel, Anda dapat melewati bagian ini serta
 5. Tambahkan `message.im` jika pesan langsung diaktifkan.
 6. Klik **Save Changes**.
 
-![Mengonfigurasi langganan event bot Slack](../images/slack-event-subscriptions.webp)
+![Mengonfigurasi langganan event bot Slack](../../images/slack-event-subscriptions.webp)
 
 > Jika Anda mengubah scope atau event setelah pemasangan, kembali ke **OAuth & Permissions** lalu klik **Reinstall to Workspace**. Izin baru belum berlaku sampai aplikasi tersebut dipasang ulang.
 
@@ -154,16 +154,16 @@ Jika Anda hanya memakai mention di channel, Anda dapat melewati bagian ini serta
 1. Kembali ke **Features → OAuth & Permissions**.
 2. Klik **Install to Workspace**. Jika aplikasi sudah terpasang, klik **Reinstall to Workspace**.
 
-![Memasang app Slack ke workspace](../images/slack-install-workspace.webp)
+![Memasang app Slack ke workspace](../../images/slack-install-workspace.webp)
 
 3. Tinjau izin yang diminta lalu klik **Allow**.
 
-![Mengotorisasi izin app Slack](../images/slack-authorize-workspace.webp)
+![Mengotorisasi izin app Slack](../../images/slack-authorize-workspace.webp)
 
 4. Setelah Slack kembali ke **OAuth & Permissions**, temukan **OAuth Tokens for Your Workspace**.
 5. Salin **Bot User OAuth Token** yang dimulai dengan `xoxb-`.
 
-![Menyalin Slack Bot User OAuth Token](../images/slack-copy-bot-token.webp)
+![Menyalin Slack Bot User OAuth Token](../../images/slack-copy-bot-token.webp)
 
 Jangan memakai Signing Secret, Client Secret, Verification Token, atau User OAuth Token `xoxp-...`. LightVela membutuhkan satu App Token `xapp-...` dan satu Bot Token `xoxb-...`.
 
@@ -200,7 +200,7 @@ Bot hanya menerima pesan channel setelah ia bergabung ke channel tersebut.
 2. Pilih tab **Messages**.
 3. Kirim pesan singkat seperti `Hello`.
 
-![Menguji pesan langsung di Slack App Home](../images/slack-direct-message-test.webp)
+![Menguji pesan langsung di Slack App Home](../../images/slack-direct-message-test.webp)
 
 ---
 

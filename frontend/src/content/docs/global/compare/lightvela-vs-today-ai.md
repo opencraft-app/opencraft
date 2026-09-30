@@ -8,7 +8,7 @@ LightVela 的公开产品模型围绕云端 Hermes Agent 展开，而 Today.AI �
 LightVela 更容易理解，适合需要持久化 Agent 托管和明确控制的人。
 Today.AI 则代表一种更具实验性的愿景：让助手建立对你生活的动态理解，并在你开口之前采取行动。
 
-![LightVela 与 Today.AI 始终在线个人 AI 助手的对比](../images/lightvela-vs-today-ai.webp)
+![LightVela 与 Today.AI 始终在线个人 AI 助手的对比](../../images/lightvela-vs-today-ai.webp)
 
 ## 快速对比
 

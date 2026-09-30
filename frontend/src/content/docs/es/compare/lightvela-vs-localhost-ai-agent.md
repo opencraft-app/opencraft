@@ -8,7 +8,7 @@ Hermes puede ejecutarse localmente en macOS, Windows, Linux, WSL2 y más. Su ins
 
 > **Accesible no significa invisible.** Un Agent local te da control, pero también te da la responsabilidad de mantener el entorno listo.
 
-![Configuración en la nube de LightVela comparada con la ejecución local de Hermes](../images/lightvela-vs-self-hosted-hermes.webp)
+![Configuración en la nube de LightVela comparada con la ejecución local de Hermes](../../images/lightvela-vs-self-hosted-hermes.webp)
 
 ## En un vistazo
 

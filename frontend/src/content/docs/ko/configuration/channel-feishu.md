@@ -40,7 +40,7 @@ LightVela에 로그인하고 오른쪽 상단의 "My Hermes"를 클릭하여 콘
 
 페이지에 QR 코드가 나타납니다.
 
-![](../images/lark1.webp)
+![](../../images/lark1.webp)
 
 ### 4. Lark로 스캔
 
@@ -55,7 +55,7 @@ LightVela에 로그인하고 오른쪽 상단의 "My Hermes"를 클릭하여 콘
 4. 안내에 따라 승인을 완료하세요.
 
 
-![](../images/lark2.webp)
+![](../../images/lark2.webp)
 
 ### 5. Lark에서 Hermes Agent를 찾으세요.
 
@@ -68,7 +68,7 @@ LightVela에 로그인하고 오른쪽 상단의 "My Hermes"를 클릭하여 콘
 
 생성한 애플리케이션 이름을 Lark에서 검색하세요.
 
-![](../images/lark3.webp)
+![](../../images/lark3.webp)
 
 봇의 채팅 창을 열고 테스트 메시지를 보냅니다.
 
@@ -76,7 +76,7 @@ LightVela에 로그인하고 오른쪽 상단의 "My Hermes"를 클릭하여 콘
 Hello
 ```
 
-![](../images/lark4.webp)
+![](../../images/lark4.webp)
 
 ## 성공 상태
 

@@ -4,7 +4,7 @@
 
 **DeepSeek Harness adalah framework AI Agent dengan arsitektur plugin-first yang dapat Anda instal bersama Hermes Agent di LightVela. Halaman Labs mengelola instalasi, status, restart, akses WebUI, kunci penyedia model yang didukung, serta profil dengan SkillHub, tanpa mengubah konfigurasi, kanal, skill, atau memori Hermes yang sudah ada. Untuk pengaturan penyedia model yang digunakan Hermes Agent, lihat [Konfigurasi Model](./model.md).**
 
-![Ikhtisar DeepSeek Harness](../images/deepseek-harness-01.webp)
+![Ikhtisar DeepSeek Harness](../../images/deepseek-harness-01.webp)
 
 Catatan Beta: DeepSeek Harness adalah fitur Labs dalam akses awal.
 Pembaruan berikutnya dapat menimbulkan perubahan kompatibilitas seiring berkembangnya framework upstream dan ekosistem pluginnya.
@@ -14,7 +14,7 @@ Pembaruan berikutnya dapat menimbulkan perubahan kompatibilitas seiring berkemba
 DeepSeek Harness (DSH) adalah agent harness open-source yang menyediakan lingkungan dan alat yang dibutuhkan model AI untuk mengerjakan tugas nyata.
 Di LightVela, DSH berjalan sebagai lingkungan terkelola yang terpisah di samping Hermes Agent, sehingga Anda dapat mengerjakan file proyek, menggunakan alat dan skill, mengelola sesi, serta berinteraksi dengan Agent melalui WebUI.
 
-![Halaman DeepSeek Harness di Labs](../images/deepseek-harness-02.webp)
+![Halaman DeepSeek Harness di Labs](../../images/deepseek-harness-02.webp)
 
 LightVela menyediakan akses terkelola untuk DSH.
 Anda tidak perlu memasang paket secara manual, mengonfigurasi alamat server publik, atau menjalankan layanan DSH dari terminal.
@@ -28,7 +28,7 @@ Dari halaman DeepSeek Harness di Labs, Anda dapat memasang runtime terkelola, me
 4. Biarkan halaman tetap terbuka selama instalasi berlangsung.
    Instalasi normal biasanya memerlukan sekitar satu hingga tiga menit.
 
-![Memasang DeepSeek Harness](../images/deepseek-harness-03.webp)
+![Memasang DeepSeek Harness](../../images/deepseek-harness-03.webp)
 
 ## Mengonfigurasi Penyedia Model
 
@@ -52,24 +52,24 @@ Untuk menambahkan penyedia:
 3. Pilih Save.
 4. Pastikan penyedia tersebut muncul di daftar penyedia yang dikonfigurasi.
 
-![Form penyedia model DeepSeek Harness](../images/deepseek-harness-04.webp)
+![Form penyedia model DeepSeek Harness](../../images/deepseek-harness-04.webp)
 
 Untuk menghapus penyedia, pilih tindakan hapus lalu konfirmasi penghapusan.
 Setelah dihapus, Anda dapat menambahkan penyedia yang sama lagi dengan API key baru.
 
-![Penyedia DeepSeek Harness yang dikonfigurasi](../images/deepseek-harness-05.webp)
+![Penyedia DeepSeek Harness yang dikonfigurasi](../../images/deepseek-harness-05.webp)
 
 ## Membuka WebUI DeepSeek Harness
 
 Saat status layanan menunjukkan running, pilih Access WebUI pada kartu DeepSeek Harness.
 
-![Tombol Access WebUI](../images/deepseek-harness-06.webp)
+![Tombol Access WebUI](../../images/deepseek-harness-06.webp)
 
 LightVela menyediakan domain akses khusus dan autentikasi identitas bawaan untuk WebUI DeepSeek Harness, sehingga WebUI hanya dapat diakses oleh Anda.
 Setelah terautentikasi, Anda dapat membuka WebUI untuk instance Agent saat ini dan memulai pengujian sederhana menggunakan penyedia yang sudah dikonfigurasi.
 Jika Anda perlu menguji Hermes Agent yang sudah ada secara terpisah, gunakan [Chat](./agent-chat.md).
 
-![WebUI DeepSeek Harness](../images/deepseek-harness-07.webp)
+![WebUI DeepSeek Harness](../../images/deepseek-harness-07.webp)
 
 ## Memahami Plugin
 
@@ -81,7 +81,7 @@ Anda dapat mengunjungi Plugin Plaza dengan mengeklik Plugin Plaza di kiri bawah 
 
 Dari Plugin Plaza, Anda dapat menjelajahi kemampuan tambahan untuk lingkungan DeepSeek Harness, seperti alat browser, memori, tugas terjadwal, peningkatan UI, dan integrasi eksternal.
 
-![Pencarian Plugin Plaza](../images/deepseek-harness-08.webp)
+![Pencarian Plugin Plaza](../../images/deepseek-harness-08.webp)
 
 Buka plugin untuk meninjau kemampuannya, lalu pasang plugin yang ingin Anda gunakan.
 Setelah plugin dipasang, plugin tersebut dapat digunakan langsung di workspace tanpa perlu menyebutkannya secara eksplisit.
@@ -91,19 +91,19 @@ Untuk skill Hermes yang dikelola LightVela, lihat [Konfigurasi Skill](./skill.md
 
 Anda dapat melihat daftar plugin di DSH WebUI > Plugin Plaza > Installed.
 
-![Plugin DeepSeek Harness yang terpasang](../images/deepseek-harness-09.webp)
+![Plugin DeepSeek Harness yang terpasang](../../images/deepseek-harness-09.webp)
 
 ## Menggunakan Workspace
 
 Workspace adalah direktori proyek yang digunakan DeepSeek Harness selama sesi Anda.
 Dari WebUI, klik ikon Add Workspace untuk membuka direktori workspace.
 
-![Ikon Add Workspace](../images/deepseek-harness-10.webp)
+![Ikon Add Workspace](../../images/deepseek-harness-10.webp)
 
 Setelah memilih direktori, Anda dapat membuat folder baru atau memilih folder yang sudah ada dari lingkungan DSH yang di-host di cloud, lalu menjadikannya workspace proyek.
 Agent kemudian dapat menggunakan file di workspace tersebut untuk memahami proyek, mengedit file, menjalankan perintah, dan menyelesaikan tugas di workspace cloud tersebut.
 
-![Dialog Select Workspace Directory](../images/deepseek-harness-11.webp)
+![Dialog Select Workspace Directory](../../images/deepseek-harness-11.webp)
 
 Workspace juga membantu mengatur proyek dan sesi.
 Sesi yang dibuat untuk sebuah workspace terhubung dengan direktori tersebut, sehingga Anda dapat kembali ke proyek yang sama dan melanjutkan pekerjaan dengan riwayat sesi terkait.
@@ -116,7 +116,7 @@ Gunakan Restart saat DSH sudah terpasang tetapi perlu memuat ulang setelah perub
 Tindakan restart hanya berlaku untuk layanan DeepSeek Harness.
 Hermes Agent terus berjalan secara terpisah.
 
-![Tombol Restart DeepSeek Harness](../images/deepseek-harness-12.webp)
+![Tombol Restart DeepSeek Harness](../../images/deepseek-harness-12.webp)
 
 ## Masalah Umum
 

@@ -16,7 +16,7 @@ LightVelaはTencent Lighthouseチームによるクラウドエージェント�
 
 現在のLightVela製品は、**Hermes Agent**であり、これは大規模言語モデルを搭載したAIエージェントです。将来的には、より多くのすぐに使用可能な製品が追加される可能性があります。本ドキュメントはHermes Agentに焦点を当てています。
 
-![1.00](./images/1-1.webp)
+![1.00](../images/1-1.webp)
 
 ***
 
@@ -80,7 +80,7 @@ Response returns through the original channel
 
 3. **スキル**（オプション）: Hermes Agent の追加機能
 
-![1.00](./images/1-2.webp)
+![1.00](../images/1-2.webp)
 
 ***
 

@@ -24,11 +24,11 @@ For example, to create a Financial Analyst Bot, you may enter:
 >
 > <strong>Description:</strong> Alpha Analyst is specialized in analyzing company reports, market news, portfolio performance, valuation, and financial risks. Produces concise, evidence-based insights, clearly separates facts from assumptions, and avoids presenting analysis as guaranteed financial advice.
 
-![LightVela Bot creation form with an avatar selector, name field, description field, and Create button](../images/bots-switching-create.webp)
+![LightVela Bot creation form with an avatar selector, name field, description field, and Create button](../../images/bots-switching-create.webp)
 
 The creation screen may also show templates for specific roles, such as Health Manager, Market Watcher, or AI Study Buddy.
 
-![LightVela Bot creation templates including Health Manager, Market Watcher, and AI Study Buddy](../images/bots-switching-templates.webp)
+![LightVela Bot creation templates including Health Manager, Market Watcher, and AI Study Buddy](../../images/bots-switching-templates.webp)
 
 After entering the details, confirm the creation and wait for the new Bot to finish provisioning.
 
@@ -36,7 +36,7 @@ After entering the details, confirm the creation and wait for the new Bot to fin
 
 After creation, the Bot opens its own settings workspace. From the Bot tab in the main Agent page, you can select that Bot and manage the settings available for it, including memory, skills, personality, scheduled tasks, and connected channels.
 
-![LightVela Agent overview showing a Bot card in the My Bots section](../images/bots-switching-overview.webp)
+![LightVela Agent overview showing a Bot card in the My Bots section](../../images/bots-switching-overview.webp)
 
 The creation mode determines what the new Bot inherits:
 
@@ -53,7 +53,7 @@ One Bot can handle many tasks, but its context becomes harder to manage as its r
 
 Independent Bots also make it easier to test a different working style without changing the Bot you already use for another task.
 
-![LightVela Bot profile menu showing multiple Bots that can be selected](../images/bots-switching-selector.webp)
+![LightVela Bot profile menu showing multiple Bots that can be selected](../../images/bots-switching-selector.webp)
 
 The result is a more organized LightVela workspace. To switch between Bots, click the active Bot profile in the upper-left area of the Agent workspace, then choose another Bot from the menu.
 
@@ -68,7 +68,7 @@ You can connect multiple Bots to supported messaging channels. The available cha
 
 For channels such as WeChat and WhatsApp, the current configuration may allow only one Bot per instance. If a channel is already owned by another Bot, LightVela displays a notice and provides a way to manage the Bot that owns it.
 
-![LightVela notice showing that WeChat is occupied by another Bot and only one Bot can connect](../images/bots-switching-wechat.webp)
+![LightVela notice showing that WeChat is occupied by another Bot and only one Bot can connect](../../images/bots-switching-wechat.webp)
 
 ## Verify a Bot switch or channel connection
 

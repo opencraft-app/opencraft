@@ -30,7 +30,7 @@ Pesan:
 
 > Saatnya minum segelas air dan beristirahat sebentar.
 
-![Mengedit tugas notifikasi berulang untuk pengingat kesehatan harian](../images/scheduled-task-notifications-1.webp)
+![Mengedit tugas notifikasi berulang untuk pengingat kesehatan harian](../../images/scheduled-task-notifications-1.webp)
 
 Kuncinya adalah membuat pesan singkat dan dapat ditindaklanjuti.
 Karena tidak diteruskan ke model, notifikasi tidak akan ditulis ulang atau diberi konteks tambahan.
@@ -43,7 +43,7 @@ Pesan:
 
 > Pemeriksaan pembayaran bulanan: tinjau sewa, tagihan utilitas, dan langganan yang jatuh tempo minggu ini.
 
-![Mengedit tugas notifikasi bulanan untuk pengingat pembayaran](../images/scheduled-task-notifications-2.webp)
+![Mengedit tugas notifikasi bulanan untuk pengingat pembayaran](../../images/scheduled-task-notifications-2.webp)
 
 Notifikasi membuat setiap pembayaran tetap terlihat sebelum tenggat waktunya.
 Jika tagihan memiliki tanggal jatuh tempo berbeda, buat tugas terpisah agar setiap pengingat tiba saat berguna.
@@ -54,7 +54,7 @@ LightVela memungkinkan Anda menghubungkan Agent ke WhatsApp, Telegram, WeChat, D
 Anda dapat menghubungkan satu atau beberapa kanal pada saat yang sama.
 Di Tugas Terjadwal, Anda dapat mengaktifkan setiap kanal yang dikonfigurasi untuk menentukan tempat pengiriman notifikasi.
 
-![Notifikasi terjadwal dikirim langsung di Telegram](../images/scheduled-task-notifications-3.webp)
+![Notifikasi terjadwal dikirim langsung di Telegram](../../images/scheduled-task-notifications-3.webp)
 
 Setelah diaktifkan, Hermes akan mengirim notifikasi persis seperti yang ditulis langsung ke IM Anda.
 Anda tidak perlu membuka LightVela atau aplikasi lain untuk memeriksa pengingat.
@@ -65,4 +65,4 @@ Anda dapat membuat sebanyak mungkin tugas terjadwal yang dibutuhkan.
 Setelah membuatnya, Anda dapat mengedit isi dan jadwalnya, menjedakannya, serta menelusuri eksekusi sebelumnya.
 Dengan LightVela, Hermes Agent pribadi Anda dapat menjaga rutinitas penting tetap sesuai jadwal saat Anda fokus pada pekerjaan lain.
 
-![Daftar tugas saat ini dengan tugas notifikasi](../images/scheduled-task-notifications-4.webp)
+![Daftar tugas saat ini dengan tugas notifikasi](../../images/scheduled-task-notifications-4.webp)

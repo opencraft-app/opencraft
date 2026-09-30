@@ -1,6 +1,6 @@
 # LightVela vs Hostinger: Mana yang Lebih Sesuai untuk Hosting Agent?
 
-![Hosting cloud LightVela dibandingkan dengan menjalankan Hermes di VPS Hostinger](../images/lightvela-vs-hostinger.webp)
+![Hosting cloud LightVela dibandingkan dengan menjalankan Hermes di VPS Hostinger](../../images/lightvela-vs-hostinger.webp)
 
 ## Ringkasan
 

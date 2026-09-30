@@ -7,7 +7,7 @@
 승인 모드를 저장하면 LightVela가 설정을 다시 읽어 새 값이 적용되었는지 확인합니다.
 메모리 또는 컨텍스트 관리 설정을 저장하면 LightVela가 관련 서비스를 재시작한 뒤 설정을 다시 읽어 새 값이 적용되었는지 확인합니다.
 
-![LightVela 콘솔의 고급 설정](../images/setting-1-en.webp)
+![LightVela 콘솔의 고급 설정](../../images/setting-1-en.webp)
 
 ## 이 페이지에서 다루는 내용
 

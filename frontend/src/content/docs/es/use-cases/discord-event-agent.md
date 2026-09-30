@@ -6,7 +6,7 @@
 
 Este patrón es ideal para torneos recurrentes, raids, grupos de estudio, lanzamientos comunitarios y otros eventos donde la misma información debe repetirse en muchas conversaciones.
 
-![Un Agent de IA que apoya una comunidad de eventos de Discord](../images/use-case-discord-event-agent.webp)
+![Un Agent de IA que apoya una comunidad de eventos de Discord](../../images/use-case-discord-event-agent.webp)
 
 ## Para quién es esto y resultado esperado
 
@@ -63,12 +63,12 @@ Usa la [guía de configuración de Discord](../configuration/channel-discord.md)
 
 4. Invita al bot con permisos mínimos: Ver Canales, Enviar Mensajes y Leer Historial de Mensajes.
 
-![Invitación de bot de Discord y selección de servidor](../images/discord-event-bot-invite.webp)
+![Invitación de bot de Discord y selección de servidor](../../images/discord-event-bot-invite.webp)
 
 Para el primer despliegue, elige un canal de evento o una conversación de Discord compatible y pruébalo allí antes de expandir el flujo de trabajo.
 Esto facilita inspeccionar respuestas, comportamiento de permisos y entrega de notificaciones.
 
-![Configuración de permisos de Bot de Discord](../images/discord-5-global.webp)
+![Configuración de permisos de Bot de Discord](../../images/discord-5-global.webp)
 
 ### 3. Prueba las preguntas que realmente harán los participantes
 
@@ -122,7 +122,7 @@ LightVela soporta ejecuciones únicas, días fijos de la semana e intervalos fij
 Puedes elegir un día fijo de la semana, un intervalo fijo o una ejecución única.
 También puedes pausar, editar o eliminar una tarea programada más tarde.
 
-![Configura una tarea automatizada para un evento de Discord](../images/automation-2-global-en.webp)
+![Configura una tarea automatizada para un evento de Discord](../../images/automation-2-global-en.webp)
 
 ```text
 One day before the tournament, remind the event channel about the start time, time zone, registration deadline, and rules channel.
@@ -132,7 +132,7 @@ If the brief is missing a detail, tell the organizer which detail needs review.
 
 En este ejemplo, el bot está ejecutando la tarea programada "Recordatorio de torneo de juego".
 
-![Un bot de Discord que envía un recordatorio de torneo](../images/discord-event-reminder.webp)
+![Un bot de Discord que envía un recordatorio de torneo](../../images/discord-event-reminder.webp)
 
 También podrías programar un resumen post-evento para organizadores:
 

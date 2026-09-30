@@ -4,7 +4,7 @@
 
 **我的工作台让你可以在 LightVela 中使用 AI Agent 创建、部署和管理静态网站。你可以选择起始模板，也可以从零描述网站需求，再与 Agent 一起持续调整并发布。**
 
-![我的工作台概览](../images/workbench-01.webp)
+![我的工作台概览](../../images/workbench-01.webp)
 
 部署后，你可以在同一个页面查看公网地址、当前状态和已有工作台。
 
@@ -15,7 +15,7 @@
 我的工作台将 Agent 对话与托管静态网站流程连接起来。
 你可以创建自己的工作台“工作站”，也可以选择提供的模板，然后与 Agent 交流、完善需求，并通过专属链接预览网站。
 
-![我的工作台页面](../images/workbench-02-zh.webp)
+![我的工作台页面](../../images/workbench-02-zh.webp)
 
 LightVela 负责托管流程，因此你不需要单独配置托管服务器或云账户。
 
@@ -38,7 +38,7 @@ LightVela 负责托管流程，因此你不需要单独配置托管服务器或�
 
 选择模板后，系统会带着预先准备好的请求打开 Agent 对话。
 
-![起始模板](../images/workbench-03-zh.webp)
+![起始模板](../../images/workbench-03-zh.webp)
 
 你也可以选择空白选项，让 Agent 一步一步与你确认需求。
 
@@ -52,7 +52,7 @@ LightVela 负责托管流程，因此你不需要单独配置托管服务器或�
 
 当前流程使用 React、TypeScript、Tailwind CSS 和常见 UI 库生成网站。
 
-![使用 Agent 对话创建工作台](../images/workbench-04-zh.webp)
+![使用 Agent 对话创建工作台](../../images/workbench-04-zh.webp)
 
 Agent 还会被要求保持内容可编辑，避免预置虚构业务数据，并在适合临时保存本地数据时使用浏览器 localStorage。
 
@@ -70,7 +70,7 @@ Agent 还会被要求保持内容可编辑，避免预置虚构业务数据，�
 
 工作台处于 Online 状态并显示公网地址后，选择访问即可打开网站。
 
-![工作台状态和网站预览](../images/workbench-05.webp)
+![工作台状态和网站预览](../../images/workbench-05.webp)
 
 如果工作台仍处于 Building 或 Publishing 状态，请等待处理完成，必要时刷新页面。
 

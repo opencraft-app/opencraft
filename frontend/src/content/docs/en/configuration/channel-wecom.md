@@ -40,7 +40,7 @@ Find the WeCom module and click "+ Connect".
 
 A QR code appears on the page.
 
-![](../images/wecom1-en.webp)
+![](../../images/wecom1-en.webp)
 
 > ⚠️ **QR code expiration**
 >
@@ -55,13 +55,13 @@ A QR code appears on the page.
 3. Scan the QR code on your computer screen
 
 
-![](../images/wecom2.webp)
+![](../../images/wecom2.webp)
 
 4. Follow the prompts on your phone to complete authorization
 
-![](../images/wecom3.webp)
+![](../../images/wecom3.webp)
 
-![](../images/wecom4.webp)
+![](../../images/wecom4.webp)
 
 ### 5. Chat with the created bot
 
@@ -80,7 +80,7 @@ Hello
 
 You'll receive a Hermes Agent reply within seconds.
 
-![](../images/wecom5-en.webp)
+![](../../images/wecom5-en.webp)
 
 ---
 

@@ -16,7 +16,7 @@ LightVela menurunkan hambatan konfigurasi lewat konsol visual. Tidak perlu menul
 
 Produk LightVela saat ini adalah **Hermes Agent**, AI Agent yang didukung large language model. Produk siap pakai lain dapat ditambahkan di masa mendatang. Dokumentasi ini berfokus pada Hermes Agent.
 
-![1.00](./images/1-1.webp)
+![1.00](../images/1-1.webp)
 
 ***
 
@@ -80,7 +80,7 @@ Satu alur percakapan lengkap membutuhkan tiga konfigurasi:
 
 3. **Skill** (opsional): Kemampuan tambahan untuk Hermes Agent
 
-![1.00](./images/1-2.webp)
+![1.00](../images/1-2.webp)
 
 ***
 

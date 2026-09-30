@@ -7,7 +7,7 @@ Puede elegir cómo el Agent solicita aprobación para operaciones de alto riesgo
 Después de guardar el Modo de aprobación, LightVela lee la configuración de nuevo para confirmar el nuevo valor.
 Después de guardar una configuración de Gestión de memoria o contexto, LightVela reinicia el servicio relacionado y lee la configuración de nuevo para confirmar el nuevo valor.
 
-![Configuración avanzada en la consola de LightVela](../images/setting-1-en.webp)
+![Configuración avanzada en la consola de LightVela](../../images/setting-1-en.webp)
 
 ## ¿Qué cubre esta página?
 

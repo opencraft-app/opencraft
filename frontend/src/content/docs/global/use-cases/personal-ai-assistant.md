@@ -4,7 +4,7 @@
 
 **搭建个人 AI 助手的正确顺序不是一次把所有事情自动化，而是先让一个云端 Hermes Agent 在你已经在用的聊天工具里可用，再逐步叠加记忆、技能与定时任务。** 五个基础组件各自解决一个问题：模型决定推理质量，通道决定你从哪里找到它，记忆让它记住你的工作方式，技能让它掌握可复用的方法，定时任务让它在你不在场时也完成约定工作。建议第一周只做三件事：配置一个模型、接入一个通道、验证记忆确实跨会话生效；确认这条链路可靠后再引入技能与定时任务，这样出问题时能快速定位是哪一层。
 
-![通过 LightVela 跨通道使用个人 AI 助手](../images/use-case-personal-ai-assistant.webp)
+![通过 LightVela 跨通道使用个人 AI 助手](../../images/use-case-personal-ai-assistant.webp)
 
 ## 适合谁
 
@@ -28,7 +28,7 @@
 
 先连接一个消息通道，再从你平时整理一天安排的地方发送前几条消息。通道不只是消息投递方式，更是让你愿意持续回到这个助手的使用习惯。可以按说明配置 [Telegram](https://lightvela.ai/zh-sg/docs/configuration/channel-telegram)、[WhatsApp](https://lightvela.ai/zh-sg/docs/configuration/channel-whatsapp)、[Discord](https://lightvela.ai/zh-sg/docs/configuration/channel-discord)、[Slack](https://lightvela.ai/zh-sg/docs/configuration/channel-slack) 或[微信](https://lightvela.ai/zh-sg/docs/configuration/channel-wechat)。
 
-![LightVela 控制台中的通道页面](../images/personal-ai-assistant-channel.webp)
+![LightVela 控制台中的通道页面](../../images/personal-ai-assistant-channel.webp)
 
 与其直接提出一个很宽泛的请求，不如先清楚介绍你希望它如何协助。例如：
 
@@ -54,7 +54,7 @@ Hermes 会随着协作积累有用的上下文，因此你不必在每次对话�
 
 Hermes 即使没有额外技能也可以正常对话。只有当你能明确说出某项实际工作需要什么能力时，再添加技能，例如查询信息、整理待办事项或准备周期性报告。这样能让助手更容易理解，也更容易建立信任。
 
-![LightVela 控制台中的技能页面](../images/personal-ai-assistant-skills.webp)
+![LightVela 控制台中的技能页面](../../images/personal-ai-assistant-skills.webp)
 
 先在 ClawHub 浏览适合的技能，再通过[配置技能](https://lightvela.ai/zh-sg/docs/configuration/skill)安装。安装前请阅读技能说明，并优先选择你信任的来源。
 
@@ -71,7 +71,7 @@ Hermes 即使没有额外技能也可以正常对话。只有当你能明确说�
 
 在[定时任务](https://lightvela.ai/zh-sg/docs/configuration/automation)中设置执行时间和通知通道。第一个定时任务应保持简单；看过几次真实结果后，再逐步调整指令。
 
-![LightVela 控制台中的定时任务页面](../images/personal-ai-assistant-automations.webp)
+![LightVela 控制台中的定时任务页面](../../images/personal-ai-assistant-automations.webp)
 
 ## 常见问题
 

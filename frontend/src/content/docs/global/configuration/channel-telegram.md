@@ -50,7 +50,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 
 6. 拷贝 HTTP API：
 
-![](../images/telegram-botfather-3-global.webp)
+![](../../images/telegram-botfather-3-global.webp)
 
 
 ### 4. 复制 HTTP API 进「Telegram」
@@ -67,7 +67,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes Agent 接�
 
 点击 BotFather 提供的链接，现在你就可以开始与它互动了。
 
-![](../images/telegram-botfather-5-global.webp)
+![](../../images/telegram-botfather-5-global.webp)
 
 进入该机器人的聊天界面，发送测试消息：
 

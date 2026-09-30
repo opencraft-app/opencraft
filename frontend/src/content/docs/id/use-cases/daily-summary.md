@@ -4,7 +4,7 @@ Bagian yang berguna dari sebuah ringkasan harian bukanlah panjangnya, melainkan 
 
 Hermes dapat mengubah peninjauan yang berulang menjadi rutinitas asisten AI harian. LightVela menyediakan Agent yang di-hosting di cloud, kanal untuk pengiriman, Skill opsional untuk informasi yang Anda butuhkan, dan tugas terjadwal untuk penjadwalannya. Anda yang menentukan apa yang dihitung sebagai "ringkasan berguna hari ini".
 
-![Ringkasan harian yang dikirim oleh Hermes Agent](../images/use-case-daily-summaries.webp)
+![Ringkasan harian yang dikirim oleh Hermes Agent](../../images/use-case-daily-summaries.webp)
 
 ## Ringkasan
 
@@ -48,7 +48,7 @@ Hermes hanya dapat merangkum informasi yang dapat ia terima atau akses melalui k
 
 Jika Anda memerlukan sumber data eksternal, pilih Skill yang sesuai dari sumber terpercaya dan pastikan perilakunya sebelum memakainya. [Konfigurasi Skill](../configuration/skill.md) menjelaskan cara Skill memperluas Hermes melampaui percakapan biasa.
 
-![Sumber Cloud Storage untuk ringkasan harian](../images/use-case-daily-summary-storage.webp)
+![Sumber Cloud Storage untuk ringkasan harian](../../images/use-case-daily-summary-storage.webp)
 
 ### 3. Uji keluarannya dalam percakapan normal lebih dulu
 
@@ -82,7 +82,7 @@ tindakan berikutnya yang paling penting. Kirim sebagai poin-poin yang ringkas.
 
 Siapkan ini di [Tugas Terjadwal](../configuration/automation.md). Tinjau beberapa eksekusi pertama lalu sesuaikan kalimatnya jika ringkasannya terlalu luas, terlalu panjang, atau kehilangan konteks yang tepat.
 
-![Tugas Terjadwal ringkasan harian yang terjadwal](../images/use-case-daily-summary-automation.webp)
+![Tugas Terjadwal ringkasan harian yang terjadwal](../../images/use-case-daily-summary-automation.webp)
 
 ## FAQ
 

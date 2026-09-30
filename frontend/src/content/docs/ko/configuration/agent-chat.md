@@ -12,7 +12,7 @@
 >
 > 채팅 인터페이스 안내는 현재 주로 중국어로 제공됩니다. 전체 현지화는 준비 중입니다.
 
-![LightVela 콘솔의 채팅 페이지](../images/chat-overview-en.webp)
+![LightVela 콘솔의 채팅 페이지](../../images/chat-overview-en.webp)
 
 ---
 
@@ -20,7 +20,7 @@
 
 Hermes Agent는 대화가 이어지면서 스스로 발전과 진화를 거듭할 수 있습니다. "Memory" 페이지에서 메모리에 관해 자세히 알아보세요.
 
-![](../images/agentchat-2-global-en.webp)
+![](../../images/agentchat-2-global-en.webp)
 
 ### 메모리 작동 방식
 

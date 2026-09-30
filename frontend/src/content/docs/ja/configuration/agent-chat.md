@@ -12,7 +12,7 @@
 >
 > チャットのインターフェースガイドは現在主に中国語です。完全なローカライズは進行中です。
 
-![LightVelaコンソールのチャットページ](../images/chat-overview-en.webp)
+![LightVelaコンソールのチャットページ](../../images/chat-overview-en.webp)
 
 ---
 
@@ -20,7 +20,7 @@
 
 Hermes Agent は会話が続くにつれて自動的に反復および進化します。「メモリ」ページを訪問して、あなたの記憶について詳しく学びましょう。
 
-![](../images/agentchat-2-global-en.webp)
+![](../../images/agentchat-2-global-en.webp)
 
 ### 記憶の仕組み
 

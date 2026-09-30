@@ -4,7 +4,7 @@
 
 **일일 요약의 가치는 길이가 아니라 사용자가 요청하기 전에 적절한 컨텍스트를 전달하는 데 있으며, 수동 검토를 저장된 예약 작업으로 전환하면 이를 구현할 수 있습니다.** 네 가지가 필요합니다. 모델이 구성된 클라우드 Hermes Agent, 결과를 받을 연결 채널, 정보 수집을 위한 선택적 스킬, 그리고 예약 작업입니다. 예약 작업의 필드는 이름, 일정, 작업 지침, 활성 시간 범위, 알림 채널입니다. 성공 여부는 작업 지침에 달려 있습니다. 실행 시점에는 내용을 확인해 줄 사용자가 없으므로 프롬프트 자체에 목표, 범위 제한(기간 및 항목 수), 출력 형식, 보고할 내용이 없을 때의 처리 방법을 모두 담아야 합니다. 먼저 채팅에서 프롬프트를 수동으로 테스트한 뒤 예약 작업을 만들고, 첫 실제 실행이 끝나면 출력을 검토하세요.
 
-![Hermes Agent가 전달한 일일 요약](../images/use-case-daily-summaries.webp)
+![Hermes Agent가 전달한 일일 요약](../../images/use-case-daily-summaries.webp)
 
 ## 이 활용 사례가 필요한 사용자
 
@@ -44,7 +44,7 @@ Hermes는 사용자가 구성한 기능을 통해 받거나 접근할 수 있는
 
 외부 데이터 소스가 필요하다면 신뢰할 수 있는 출처에서 적합한 스킬을 선택하고 사용 전에 동작을 확인하세요. [스킬 구성](../configuration/skill.md)은 일반적인 채팅을 넘어 Hermes를 확장하는 방법을 설명합니다.
 
-![일일 요약을 위한 클라우드 스토리지 자료](../images/use-case-daily-summary-storage.webp)
+![일일 요약을 위한 클라우드 스토리지 자료](../../images/use-case-daily-summary-storage.webp)
 
 ### 3. 먼저 일반 대화에서 출력 테스트
 
@@ -78,7 +78,7 @@ important next actions. Send it as concise bullet points.
 
 [예약 작업](../configuration/automation.md)에서 설정하세요. 처음 몇 차례 실행 결과를 검토하고 요약이 너무 광범위하거나 길거나 필요한 컨텍스트가 빠졌다면 지침 문구를 조정하세요.
 
-![예약된 일일 요약 예약 작업](../images/use-case-daily-summary-automation.webp)
+![예약된 일일 요약 예약 작업](../../images/use-case-daily-summary-automation.webp)
 
 ## FAQ
 

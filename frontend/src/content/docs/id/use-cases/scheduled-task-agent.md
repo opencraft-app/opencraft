@@ -29,7 +29,7 @@ Prompt:
 
 > Kumpulkan hingga 5 pembaruan penting, rangkum, sertakan tautan, lalu kirim hasilnya.
 
-![Membuat tugas AI berulang untuk ringkasan pagi](../images/scheduled-task-agent-1.webp)
+![Membuat tugas AI berulang untuk ringkasan pagi](../../images/scheduled-task-agent-1.webp)
 
 Kuncinya adalah meminta brief yang terfokus, bukan ringkasan tentang “semuanya”.
 Jika pengumpulan informasi dan peringkasan adalah tugas terpisah, jadwalkan pengumpulan terlebih dahulu.
@@ -42,7 +42,7 @@ Prompt:
 
 > Gunakan catatan yang dikumpulkan tugas hulu, lalu identifikasi pekerjaan yang selesai, hambatan, dan 3 prioritas berikutnya.
 
-![Membuat tugas AI mingguan dengan tugas hulu](../images/scheduled-task-agent-2.webp)
+![Membuat tugas AI mingguan dengan tugas hulu](../../images/scheduled-task-agent-2.webp)
 
 Jalankan tugas pengumpulan sebelum ulasan, dengan jeda waktu singkat.
 Agent tidak menggantikan manajemen proyek.
@@ -54,7 +54,7 @@ LightVela memungkinkan Anda menghubungkan Agent ke WhatsApp, Telegram, WeChat, D
 Anda dapat menghubungkan satu atau semua kanal pada saat yang sama.
 Di tugas terjadwal, Anda dapat mengaktifkan atau menonaktifkan pengaturan notifikasi setiap IM untuk menentukan apakah tugas perlu memberi tahu IM Anda.
 
-![Agent AI mengirim brief terjadwal langsung di Telegram](../images/scheduled-task-agent-3.webp)
+![Agent AI mengirim brief terjadwal langsung di Telegram](../../images/scheduled-task-agent-3.webp)
 
 Setelah diaktifkan, Agent akan menyelesaikan tugas dan memperbarui Anda langsung di IM tanpa perlu membuka LightVela atau aplikasi lain.
 
@@ -64,4 +64,4 @@ Anda dapat membuat sebanyak mungkin tugas terjadwal yang dibutuhkan.
 Setelah membuatnya, Anda dapat mengedit, menjeda, dan menelusuri pekerjaan sebelumnya.
 Dengan LightVela, Hermes Agent pribadi Anda dapat menjalankan pekerjaan secara efisien saat Anda sedang pergi.
 
-![Daftar tugas saat ini dengan beberapa tugas Agent berulang](../images/scheduled-task-agent-4.webp)
+![Daftar tugas saat ini dengan beberapa tugas Agent berulang](../../images/scheduled-task-agent-4.webp)

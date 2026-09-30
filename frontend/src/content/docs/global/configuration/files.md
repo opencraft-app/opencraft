@@ -35,7 +35,7 @@
 2. 打开它的 **Cloud Storage** 或 **Files** 区域。
 3. 等待文件列表加载完成，再开始上传或新建操作。
 
-![LightVela 管理台中的云存储文件列表](../images/cloud-storage-overview.webp)
+![LightVela 管理台中的云存储文件列表](../../images/cloud-storage-overview.webp)
 
 如果列表未能加载，先刷新页面后重试。问题持续出现时，可先在[诊断中心](./diagnostics.md)查看 Agent 的近期日志，再进行更大范围的操作。
 

@@ -50,7 +50,7 @@ Telegramカードを見つけて「+ 接続」をクリックする
 
 6. HTTP APIトークンをコピー:
 
-![](../images/telegram-botfather-3-global.webp)
+![](../../images/telegram-botfather-3-global.webp)
 
 
 ### 4. HTTP APIトークンをTelegramに貼り付けます
@@ -67,7 +67,7 @@ HTTP APIトークンをトークン欄に貼り付けます。
 
 BotFatherから提供されたリンクをクリックして、ボットとのやり取りを開始してください。
 
-![](../images/telegram-botfather-5-global.webp)
+![](../../images/telegram-botfather-5-global.webp)
 
 ボットとのチャットを開き、テストメッセージを送信します:
 

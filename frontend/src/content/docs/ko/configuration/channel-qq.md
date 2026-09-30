@@ -38,7 +38,7 @@ LightVela에 로그인하고 오른쪽 상단의 "My Hermes"를 클릭하여 콘
 
 드롭다운을 클릭하고 "QQ"를 선택합니다. QQ 채널 소개는 아래에 나와 있습니다.
 
-![](../images/qq1.webp)
+![](../../images/qq1.webp)
 
 ### 3. QQ Open Platform에 등록하세요
 
@@ -50,13 +50,13 @@ QQ 모바일 앱을 스캔하고 **동의**를 선택하면 등록이 완료되�
 
 QQ Open Platform의 봇 페이지에서 "봇 생성"을 클릭하여 새로운 QQ 봇을 생성합니다.
 
-![](../images/qq2.webp)
+![](../../images/qq2.webp)
 
 ### 5. AppID 및 AppSecret 획득
 
 봇이 생성된 후 페이지에서 **AppID** 및 **AppSecret**을 찾습니다. 각 항목 옆에 있는 "복사" 버튼을 클릭하고 로컬 메모 파일에 저장하세요.
 
-![](../images/qq3.webp)
+![](../../images/qq3.webp)
 
 > ⚠️ **AppSecret은 민감한 자격 증명입니다**
 >
@@ -78,7 +78,7 @@ QQ Open Platform의 봇 페이지에서 "봇 생성"을 클릭하여 새로운 Q
 2. **AppSecret**: 복사한 AppSecret을 붙여넣습니다.
 
 
-![](../images/qq4.webp)
+![](../../images/qq4.webp)
 
 ### 7. "추가 및 적용"을 클릭하세요.
 
@@ -94,7 +94,7 @@ Hello
 
 몇 초 내에 Hermes Agent 응답을 받게 됩니다.
 
-![](../images/qq5.webp)
+![](../../images/qq5.webp)
 
 > ✅ **QQ 그룹 멘션이 지원됩니다**
 >

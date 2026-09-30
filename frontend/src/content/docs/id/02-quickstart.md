@@ -30,7 +30,7 @@ Tutorial ini memandu Anda dari proses masuk sampai menerima balasan pertama dari
 
 Buka [lightvela.ai](https://lightvela.ai), lalu klik "Masuk" di kanan atas. Di dialog login, pilih Google atau GitHub, setujui perjanjian yang ditampilkan, lalu selesaikan otorisasi.
 
-![](./images/2-1.webp)
+![](../images/2-1.webp)
 
 ---
 
@@ -66,7 +66,7 @@ Cari akun bot yang sudah ditambahkan di WeChat, lalu kirim pesan uji:
 Hi
 ```
 
-![](./images/2-7.webp)
+![](../images/2-7.webp)
 
 Anda seharusnya menerima balasan dari Hermes dalam beberapa detik. Sekarang Hermes sudah bisa diajak chat lewat WeChat.
 

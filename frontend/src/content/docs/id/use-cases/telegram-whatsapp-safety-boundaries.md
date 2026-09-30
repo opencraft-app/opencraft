@@ -7,7 +7,7 @@ Batas yang jelas seharusnya memberi tahu Anda siapa yang dapat menemukan Agent t
 Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy di BotFather, menambahkan Bot ke grup, dan memulai percakapan dengan `@username_bot`.
 Dukungan grup WhatsApp tetap mengikuti dokumentasi kanalnya sendiri.
 
-![Merancang otorisasi, aturan grup, dan batas tindakan sensitif untuk Agent Telegram dan WhatsApp](../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
+![Merancang otorisasi, aturan grup, dan batas tindakan sensitif untuk Agent Telegram dan WhatsApp](../../images/use-case-11-telegram-whatsapp-safety-boundaries.webp)
 
 ## Ringkasan
 

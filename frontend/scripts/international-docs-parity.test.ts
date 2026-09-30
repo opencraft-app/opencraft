@@ -90,7 +90,7 @@ const STASHED_SHARED_FILES = [
 
 const docsContentRoot = join(process.cwd(), "src", "content", "docs");
 const generatedDocsRoot = join(process.cwd(), ".fumadocs-content", "docs");
-const repoRoot = process.env.GUARD_REPO_ROOT ?? join(process.cwd(), "..");
+const repoRoot = process.env.GUARD_REPO_ROOT ?? process.env.REPO_ROOT ?? join(process.cwd(), "..");
 const stashRoot = join(
   repoRoot,
   "docs",
@@ -265,11 +265,11 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
     });
 
-    it("generates the same 68-route inventory as English from Japanese sources", () => {
+    it("generates the same 69-route inventory as English from Japanese sources", () => {
       expect(docsRouteSlugs["ja-jp"]).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs["ja-jp"]).toHaveLength(68);
+      expect(docsRouteSlugs["ja-jp"]).toHaveLength(69);
       const generatedDocs = walkFiles(generatedJaRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(67);
+      expect(generatedDocs).toHaveLength(68);
       for (const path of generatedDocs) {
         expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
           /^src\/content\/docs\/ja\//,
@@ -369,11 +369,11 @@ describe("international docs publication inventory", () => {
       expect(existsSync(join(routeRoot, "route.next.ts"))).toBe(false);
     });
 
-    it("generates the same 68-route inventory as English from Korean sources", () => {
+    it("generates the same 69-route inventory as English from Korean sources", () => {
       expect(docsRouteSlugs["ko-kr"]).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs["ko-kr"]).toHaveLength(68);
+      expect(docsRouteSlugs["ko-kr"]).toHaveLength(69);
       const generatedDocs = walkFiles(generatedKoRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(67);
+      expect(generatedDocs).toHaveLength(68);
       for (const path of generatedDocs) {
         expect(frontmatterValue(readFileSync(path, "utf8"), "source_path"), path).toMatch(
           /^src\/content\/docs\/ko\//,
@@ -504,28 +504,28 @@ describe("international docs publication inventory", () => {
   describe("Spanish docs source publication", () => {
     const esRoot = join(generatedDocsRoot, "es");
 
-    it("publishes the same 68 routes as international English for every completed locale", () => {
+    it("publishes the same 69 routes as international English for every completed locale", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
-      expect(docsRouteSlugs.es).toHaveLength(68);
+      expect(docsRouteSlugs.es).toHaveLength(69);
       expect(docsRouteSlugs.es).toContainEqual([]);
       expect(Object.keys(docsRouteSlugs)).toContain("ja-jp");
       expect(Object.keys(docsRouteSlugs)).toContain("ko-kr");
     });
 
     it("keeps the expected locale route inventories", () => {
-      expect(docsRouteSlugs["en-us"]).toHaveLength(68);
-      expect(docsRouteSlugs["zh-cn"]).toHaveLength(48);
-      expect(docsRouteSlugs["zh-sg"]).toHaveLength(68);
-      expect(docsRouteSlugs["zh-hant"]).toHaveLength(68);
-      expect(docsRouteSlugs["id-id"]).toHaveLength(65);
+      expect(docsRouteSlugs["en-us"]).toHaveLength(69);
+      expect(docsRouteSlugs["zh-cn"]).toHaveLength(49);
+      expect(docsRouteSlugs["zh-sg"]).toHaveLength(69);
+      expect(docsRouteSlugs["zh-hant"]).toHaveLength(69);
+      expect(docsRouteSlugs["id-id"]).toHaveLength(66);
     });
 
-    it("generates 67 Spanish documents from explicit Spanish body sources", () => {
+    it("generates 68 Spanish documents from explicit Spanish body sources", () => {
       expect(existsSync(join(docsContentRoot, "es"))).toBe(true);
       expect(existsSync(esRoot)).toBe(true);
 
       const generatedDocs = walkFiles(esRoot).filter((path) => path.endsWith(".mdx"));
-      expect(generatedDocs).toHaveLength(67);
+      expect(generatedDocs).toHaveLength(68);
 
       for (const path of generatedDocs) {
         const content = readFileSync(path, "utf8");

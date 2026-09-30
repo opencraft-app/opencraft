@@ -24,11 +24,11 @@
 >
 > <strong>描述：</strong> Alpha Analyst 专注于分析公司报告、市场新闻、投资组合表现、估值和金融风险。它提供简洁且有证据支持的分析，明确区分事实与假设，不会将分析表述为保证性的金融建议。
 
-![LightVela Bot 创建表单，包含头像选择器、名称、描述和创建按钮](../images/bots-switching-create.webp)
+![LightVela Bot 创建表单，包含头像选择器、名称、描述和创建按钮](../../images/bots-switching-create.webp)
 
 创建页面还可能提供针对特定角色的模板，例如健康管家、盘面观察员或 AI 学习搭子。
 
-![LightVela Bot 创建模板，包含健康管家、盘面观察员和 AI 学习搭子](../images/bots-switching-templates.webp)
+![LightVela Bot 创建模板，包含健康管家、盘面观察员和 AI 学习搭子](../../images/bots-switching-templates.webp)
 
 填写信息后确认创建，并等待新 Bot 完成创建。
 
@@ -36,7 +36,7 @@
 
 创建完成后，Bot 会拥有自己的设置工作区。你可以在 Agent 主页面的 Bot 标签中选择该 Bot，并管理该 Bot 可用的设置，包括记忆、技能、人设、定时任务和已连接通道。
 
-![LightVela Agent 概览页面中的 My Bots Bot 卡片](../images/bots-switching-overview.webp)
+![LightVela Agent 概览页面中的 My Bots Bot 卡片](../../images/bots-switching-overview.webp)
 
 创建方式决定新 Bot 继承哪些内容：
 
@@ -53,7 +53,7 @@
 
 独立的 Bot 也方便你测试另一种工作方式，而不会影响已经用于其他任务的 Bot。
 
-![LightVela Bot 资料菜单，显示可供选择的多个 Bot](../images/bots-switching-selector.webp)
+![LightVela Bot 资料菜单，显示可供选择的多个 Bot](../../images/bots-switching-selector.webp)
 
 这样可以让 LightVela 工作区更有条理。要切换 Bot，请点击 Agent 工作区左上方的当前 Bot 资料，然后从菜单中选择另一个 Bot。
 
@@ -68,7 +68,7 @@
 
 对于微信和 WhatsApp 等通道，当前配置可能限制每个实例只能连接一个 Bot。如果通道已经由另一个 Bot 占用，LightVela 会显示提示，并提供前往管理占用该通道的 Bot 的入口。
 
-![LightVela 提示微信已被另一个 Bot 占用，且每个实例只能连接一个 Bot](../images/bots-switching-wechat.webp)
+![LightVela 提示微信已被另一个 Bot 占用，且每个实例只能连接一个 Bot](../../images/bots-switching-wechat.webp)
 
 ## 检查 Bot 切换或通道连接结果
 

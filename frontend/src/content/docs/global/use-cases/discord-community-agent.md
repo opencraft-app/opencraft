@@ -7,7 +7,7 @@
 Anthropic 的 [Claude Tag](https://www.anthropic.com/news/introducing-claude-tag) 和 [Viktor](https://slack.com/marketplace/A0A2VN5TR5K-viktor) 等近期共享 Agent 产品说明了一个趋势：当 Agent 出现在群体已经沟通的地方时，它更容易成为实际协作者。
 LightVela 把这种模式带到 Discord 社群，同时不要求你先单独开发和托管一套 Bot 应用。
 
-![连接到 Discord 社群的 LightVela Agent](../images/use-case-discord-community-agent.webp)
+![连接到 Discord 社群的 LightVela Agent](../../images/use-case-discord-community-agent.webp)
 
 ## 适合谁以及预期结果
 
@@ -71,7 +71,7 @@ Discord Bot 是 Hermes 的一个入口，因此 LightVela 中配置的指令和�
 
 按照完整的 [Discord 配置步骤](../configuration/channel-discord.md) 完成当前授权和权限流程。
 
-![Discord Developer Portal 中的 Bot 权限配置](../images/discord-6-global.webp)
+![Discord Developer Portal 中的 Bot 权限配置](../../images/discord-6-global.webp)
 
 ### 4. 用真实的社群问题测试 Agent
 

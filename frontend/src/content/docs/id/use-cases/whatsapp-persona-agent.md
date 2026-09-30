@@ -5,7 +5,7 @@ Ia mengantarkan pesannya, sementara peran, suara, batas perilaku, dan konteks ta
 
 Panduan ini menunjukkan cara menghubungkan Hermes Agent ke WhatsApp dan memilih kepribadian yang stabil untuk percakapan pribadi, pengingat, atau pekerjaan satu lawan satu yang berhadapan dengan pelanggan.
 
-![Hermes Agent dengan kepribadian yang khas di WhatsApp](../images/use-case-04-whatsapp-persona-agent.webp)
+![Hermes Agent dengan kepribadian yang khas di WhatsApp](../../images/use-case-04-whatsapp-persona-agent.webp)
 
 ## Ringkasan
 
