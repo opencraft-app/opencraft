@@ -249,9 +249,10 @@ describe("AgentChatMigrationSurface", () => {
     const ctor = customElements.get("opencraft-embedded-workbench")!;
     let resolve!: () => void;
     const reconnect = vi.spyOn(ctor.prototype, "reconnect").mockImplementation(() => new Promise<void>(done => { resolve = done; }));
-    const { container } = render(<AgentChatMigrationSurface active enabled accountId="account-1"
+    const surface = (agentPaused: boolean) => <AgentChatMigrationSurface active enabled agentPaused={agentPaused} accountId="account-1"
       instanceId="ins-1" profileId="sales" region="cn" legacy={<div>Legacy</div>}
-      multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+      multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />;
+    const { container, rerender } = render(surface(false));
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
     const element = container.querySelector("opencraft-embedded-workbench")!;
     const input = document.createElement("textarea");
@@ -260,11 +261,21 @@ describe("AgentChatMigrationSurface", () => {
     const connection = (phase: string, failureCode: string | null = null) => act(() => element.dispatchEvent(new CustomEvent("opencraft-connection", { detail: { phase, failureCode } })));
     connection("error");
     expect(screen.getByRole("status")).toHaveTextContent("连接暂时中断");
+    rerender(surface(true));
+    expect(screen.getByRole("status")).toHaveTextContent("Agent 已暂停运行");
+    expect(screen.queryByRole("button", { name: "重新连接" })).toBeNull();
+    expect(reconnect).not.toHaveBeenCalled();
+    rerender(surface(false));
     act(() => screen.getByRole("button", { name: "重新连接" }).click());
     expect(reconnect).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "正在连接…" })).toBeDisabled();
     await act(async () => { resolve(); });
     connection("ready");
+    expect(screen.queryByRole("status")).toBeNull();
+    rerender(surface(true));
+    expect(screen.getByRole("status")).toHaveTextContent("Agent 已暂停运行");
+    expect(screen.queryByRole("button", { name: "重新连接" })).toBeNull();
+    rerender(surface(false));
     expect(screen.queryByRole("status")).toBeNull();
     expect(container.querySelector("opencraft-embedded-workbench")).toBe(element);
     expect(input.value).toBe("未发送的草稿");
