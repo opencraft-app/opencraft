@@ -100,7 +100,7 @@ import {
   type FuzzyFileSearchSession,
   type FuzzyFileSearchSessionOptions,
 } from "@opencraft/composer-appserver";
-import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
+import type { ModelSelectionPolicy, SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 import {
   ConversationNavigationController,
   type ConversationNavigationSource,
@@ -160,6 +160,7 @@ export interface AppServerRuntimeClock {
 
 export interface AppServerWorkbenchRuntimeConfig {
   readonly hostId: string;
+  readonly modelSelectionPolicy?: ModelSelectionPolicy;
   /** Fixed transport for isolated runtimes and tests. A closed fixed transport is terminal. */
   readonly transport?: DuplexTransport;
   /** Creates one transport for each AppServer Client generation. */
@@ -1246,23 +1247,36 @@ export function createAppServerWorkbenchRuntime(
           client.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION],
         ),
         compiler: { historyMode: "paginated" },
+        modelSelectionPolicy: config.modelSelectionPolicy,
         resolveCompilerOptions: async (intent) => {
           const followUp = intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up";
           const threadId = intent.target.type === "new-thread" ? null : intent.target.key.threadId;
-          const modelId = intent.selections.model ?? (threadId ? bindings.get(threadId)?.runtime.getSnapshot().execution.model : null);
-          const scope = client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
+          const useHostDefault = config.modelSelectionPolicy === "host-default" && !followUp;
+          const modelId = useHostDefault ? null : intent.selections.model ?? (threadId ? bindings.get(threadId)?.runtime.getSnapshot().execution.model : null);
+          const scope = !useHostDefault && client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
           let cursor: string | null = null;
           const seen = new Set<string>();
           do {
             const page: ModelListResponse = await client!.request("model/list", {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})});
             const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
-            if (model) return { inputModalities: modelInputModalities(model.inputModalities),
-              ...(!followUp ? { ...(!modelId ? { model: model.model } : {}),
-                reasoning:reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort) } : {}) };
+            if (model) {
+              const inputModalities = modelInputModalities(model.inputModalities);
+              if (followUp) return { inputModalities };
+              // The Host owns reasoning settings in embedded mode as well.
+              if (useHostDefault) return { inputModalities, model: model.model };
+              return {
+                inputModalities,
+                ...(!modelId ? { model: model.model } : {}),
+                reasoning: reasoningCapability(
+                  model.supportedReasoningEfforts.map(e => e.reasoningEffort),
+                  model.defaultReasoningEffort,
+                ),
+              };
+            }
             cursor = page.nextCursor;
             if (cursor) { if (seen.has(cursor)) throw new Error("模型目录分页重复"); seen.add(cursor); }
           } while (cursor);
-          throw new Error(modelId ? "所选模型已不可用，请重新选择" : "请先选择模型或在设置中指定默认模型");
+          throw new Error(useHostDefault ? "当前 Bot 未配置可用的默认模型，请在模型设置中检查" : modelId ? "所选模型已不可用，请重新选择" : "请先选择模型或在设置中指定默认模型");
         },
         dynamicTools: config.dynamicTools,
         onInterrupt: (event) => console.info("[turn-interrupt] client request", event),

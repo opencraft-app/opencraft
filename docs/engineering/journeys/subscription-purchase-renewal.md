@@ -37,6 +37,9 @@
   `POST /internal/trade/orders/renew/place-and-pay` 保持不变。
 - 点石同步回调可能早于本地续费订单写入；续费资源回调必须仅依赖稳定资源和外部订单事实完成幂等处理，
   不能假设 `trade_order` 已经存在。Trade 在点石调用成功后仍须原子写入本地续费订单和 `renew` 参与记录。
+- 点石续费下单触发的 `checkRenew` 回调可能把 DescribePass 的 RFC3339 到期时间原样放入
+  `goodsDetail.curDeadline`；原计费链路使用北京时间 `YYYY-MM-DD HH:mm:ss`。Trade 同时接受这两种格式，
+  解析为绝对时刻后与 CTL Pass 到期时间严格比较；非法格式或实际时刻不一致仍返回 `600404`。
 
 ## Pass 升配 Web checkout
 

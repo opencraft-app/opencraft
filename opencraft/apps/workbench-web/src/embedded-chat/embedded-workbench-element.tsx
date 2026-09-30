@@ -16,6 +16,7 @@ import type {
   EmbeddedWorkbenchAppSession,
 } from "../app";
 import type { UiPreferencesRuntime } from "@opencraft/ui-preferences";
+import { embeddedLocaleCatalogs } from "../i18n/catalogs";
 import { WorkbenchLocaleController, WorkbenchIntlProvider, validateWorkbenchLocaleOptions, type WorkbenchLocaleOptions } from "../i18n/workbench-locale";
 import {
   applyAppearanceThemeToElement,
@@ -35,6 +36,8 @@ import {
 import {
   EmbeddedChatRoot,
 } from "./embedded-chat-root";
+
+import { observeEmbeddedConnection } from "./embedded-connection";
 
 const ELEMENT_NAME = "opencraft-embedded-workbench";
 
@@ -56,6 +59,7 @@ export interface EmbeddedWorkbenchSessionsDetail {
   readonly loading: boolean;
   readonly error: string | null;
   readonly selectedChatId: string | null;
+  readonly isDraft: boolean;
 }
 
 function embeddedStyles(): string {
@@ -83,6 +87,27 @@ function embeddedStyles(): string {
     :host([data-visible="true"]) { visibility: visible; pointer-events: auto; }
     .opencraft-embedded-workbench-root { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
     ${application}
+    .opencraft-embedded-workbench-root .codex-composer-queue-item__actions button.is-steer {
+      width: 22px;
+      padding: 0;
+      gap: 0;
+    }
+    .opencraft-embedded-workbench-root .codex-composer-queue-item__actions button.is-steer > span { display: none; }
+    .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-viewport { --app-shell-main-content-frame-top-offset: 0px; }
+    .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-frame { border-top: 0; }
+    .opencraft-embedded-workbench-root .main-content-surface { box-shadow: none; }
+    .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 50px; }
+    .opencraft-embedded-workbench-root .codex-composer-voice-footer__status-label { display: none; }
+    .opencraft-embedded-workbench-root .codex-composer-submit.is-stop {
+      border-radius: 50%;
+      background: transparent;
+      color: var(--color-icon-primary);
+    }
+    .opencraft-embedded-workbench-root .codex-composer-submit.is-stop > svg {
+      width: 24px;
+      height: 24px;
+      stroke-width: 2.25;
+    }
     ${localizeAssets(proseStyles)}
     ${localizeAssets(codeStyles)}
     ${localizeAssets(imageStyles)}
@@ -124,12 +149,14 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private preferences: UiPreferencesRuntime | null = null;
   private locale: WorkbenchLocaleController | null = null;
   private localeObserver: MutationObserver | null = null;
+  private connection: ReturnType<typeof observeEmbeddedConnection> | null = null;
   private preparePromise: Promise<void> | null = null;
   private readyPromise: Promise<EmbeddedWorkbenchReadyDetail>;
   private resolveReady!: (detail: EmbeddedWorkbenchReadyDetail) => void;
   private rejectReady!: (error: Error) => void;
   private readyDetail: EmbeddedWorkbenchReadyDetail | null = null;
   private selectedConversationId: string | null = null;
+  private isDraft = true;
   private sessions = new Map<string, EmbeddedWorkbenchSession>();
   private stopThemeSubscription: (() => void) | null = null;
   private disposed = false;
@@ -148,6 +175,9 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
+    // Startup can fail or be disposed before prepareOwned begins awaiting readiness.
+    // Observe rejection now; prepare()/show() still receive the original failure.
+    void this.readyPromise.catch(() => undefined);
   }
 
   connectedCallback(): void {
@@ -177,6 +207,11 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (config === null) return Promise.reject(new Error("Embedded Workbench is not configured"));
     this.preparePromise = this.prepareOwned(config);
     return this.preparePromise;
+  }
+
+  /** Reuses the same Host and composer owners; never replays a submission. */
+  async reconnect(): Promise<void> {
+    await this.connection?.reconnect();
   }
 
   async show(): Promise<void> {
@@ -236,6 +271,8 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (this.readyDetail === null && !this.failed) {
       this.rejectReady(new Error("Embedded Workbench was disposed before it became ready"));
     }
+    this.connection?.dispose();
+    this.connection = null;
     this.root.unmount();
     this.locale?.dispose();
     this.localeObserver?.disconnect();
@@ -256,20 +293,27 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
 
   private async prepareOwned(config: EmbeddedWorkbenchConfig): Promise<void> {
     try {
-      const [application, preferences] = await Promise.all([
-        createEmbeddedChatApplication(config),
-        openWorkbenchUiPreferences(),
-      ]);
+      const application = await createEmbeddedChatApplication(config);
+      this.application = application;
+      const preferences = await openWorkbenchUiPreferences();
       if (this.disposed) {
         await Promise.all([application.dispose(), preferences.close()]);
         return;
       }
       this.application = application;
       this.preferences = preferences;
-      this.locale = new WorkbenchLocaleController(preferences, this.localeOptions());
+      this.locale = new WorkbenchLocaleController(preferences, this.localeOptions(), embeddedLocaleCatalogs);
       this.localeObserver = new MutationObserver(() => { void this.locale?.configure(this.localeOptions()); });
       this.localeObserver.observe(this.ownerDocument.documentElement, { attributes: true, attributeFilter: ["lang"] });
       await this.locale.initialize();
+      if (this.disposed) return;
+      const supervisor = application.application.supervisor;
+      if (supervisor.mode !== "active") throw new Error("Embedded Host is unavailable");
+      const runtime = supervisor.registry.getRuntime(application.hostId);
+      this.connection = observeEmbeddedConnection(runtime, detail => {
+        this.dispatchEvent(new CustomEvent("opencraft-connection", { detail }));
+      });
+      await this.connection.ready;
       if (this.disposed) return;
       this.renderApplication();
       await this.readyPromise;
@@ -304,9 +348,11 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     readonly sessions: readonly EmbeddedWorkbenchSession[];
     readonly loading: boolean;
     readonly selectedChatId: string | null;
+    readonly isDraft: boolean;
   }): void {
     this.sessions = new Map(detail.sessions.map((session) => [session.chatId, session]));
     this.selectedConversationId = detail.selectedChatId;
+    this.isDraft = detail.isDraft;
     this.publishSessions(detail.loading, null);
   }
 
@@ -318,6 +364,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   }
 
   private fail(error: Error): void {
+    if (this.disposed) return;
     if (!this.failed && this.readyDetail === null) {
       this.failed = true;
       this.rejectReady(error);
@@ -374,6 +421,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
           loading,
           error,
           selectedChatId: this.selectedConversationId,
+          isDraft: this.isDraft,
         }),
       },
     ));

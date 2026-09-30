@@ -900,6 +900,33 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   gap: 8px;
 }
 
+.thread-header-rename {
+  flex: 0 0 auto;
+}
+
+.thread-header-edit {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.thread-header-edit__input {
+  @include typography.role(thread-title, primary);
+  width: 240px;
+  max-width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  background: var(--color-background-elevated-primary);
+}
+
+.thread-header-edit__error {
+  @include typography.role(metadata, primary);
+}
+
 .thread-header-project-icon {
   display: grid;
   width: 24px;
@@ -9037,6 +9064,19 @@ html[data-codex-window-type="electron"] .thread-scroll {
   .codex-composer-voice-footer { animation: none; }
 }
 
+// Keep dictation announcements accessible without adding a visual status row.
+.codex-composer-voice-footer .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .codex-composer-voice-footer__signal {
   flex: 1;
   min-width: 0;
@@ -10385,7 +10425,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
 }
 
 .web-browser-surface {
-  position: fixed;
+  position: absolute;
   display: block;
   box-sizing: border-box;
   min-width: 0;
@@ -10806,6 +10846,10 @@ html[data-codex-window-type="electron"] .thread-scroll {
   container: workspace-resource / inline-size;
 }
 
+.workspace-resource-panel[data-preview-only] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .workspace-file-browser {
   display: flex;
   min-width: 0;
@@ -11025,6 +11069,20 @@ html[data-codex-window-type="electron"] .thread-scroll {
       opacity: 0.35;
     }
   }
+}
+
+.workspace-file-viewer__actions button[aria-pressed="true"] {
+  background: var(--color-background-button-tertiary-hover);
+  color: var(--color-text);
+}
+
+.workspace-file-markdown {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px 18px 28px;
+  overflow-wrap: anywhere;
 }
 
 .workspace-file-viewer__state {

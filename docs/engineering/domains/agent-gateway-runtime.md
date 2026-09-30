@@ -187,6 +187,7 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
 - Sandbox Pool 是云地域归属的生命周期 owner：Pool 创建后不得跨 region 修改；同 region 内可调整 zone、VPC 与 subnet。实例仍通过 `pool_id` 归属 Pool，CVM、CBS、TAT 交付校验、停启、销毁与同 SP 升配必须携带由 Pool zone 严格推导的 region，禁止以进程级 `TENCENT_REGION` 覆盖存量实例归属或在 region 缺失时静默回退。
+- Sandbox 因安全组配额触顶裂变 Pool 时，新 Pool 的 `instance_type` 继承源 Pool，并持久化在 capacity bundle 的 lineage 中以支持中断后重试；普通 SKU 容量扩张仍使用 SKU 默认机型。
 - Sandbox Pool 的补货熔断与接流量是两个独立状态：终局云创建错误或连续失败仅设置持久化 `refill_paused`，worker 不再补货，但 `status=active` 且 `capacity_state=active` 的已验收 CLEAN 库存仍可分配；显式 Pool 暂停仍挡住两者。运营可通过 Pool PATCH 清除 `refill_paused` 恢复补货。由容量 bundle 自动派生的 Pool 初始为 `capacity_state=warming`、绑定 admission paused；worker 通过数据库条件更新仅在 Pool 仍 active 且存在已验证 CLEAN 实例时切为 active，并只同步目标 Pool 的绑定。warming Pool 计入扩容目标，避免补货期间重复派生；没有 CLEAN 或手工暂停时不得自动开放。
 - Sandbox 实例隔离必须先通过 `DescribeInstancesStatus` 读取 CVM 状态：`STOPPED` 按幂等成功处理，`STOPPING` 不重复调用 `StopInstances` 而进入状态轮询，仅 `RUNNING` 调用 `StopInstances(STOP_CHARGING)`；其他状态必须明确失败。停机请求后的状态竞态仍须回到状态轮询，只有确认 `STOPPED` 后才能推进 `PAUSING → PAUSED`。CTL 提交暂停后必须在有界时间内轮询 Sandbox，确认其真实进入 `PAUSED` 才完成隔离任务；Sandbox 不存在、状态未知或轮询超时均须保留失败并允许任务重试。异步停机提交失败时，仅在云端明确回到 `RUNNING` 后回滚为 `ALLOCATED`，`STOPPING`、`STOPPED` 或无法确认的状态继续保留 `PAUSING` 以便后续对账。
 - 本轮活动保留既有 `spec-2c4g50g` / `spec-4c8g80g` 作为套餐兼容路由键，不由名称推断内存。CTL 规格字典对外返回的实际展示为 2 核 8G 50G 盘 / 4 核 16G 80G 盘，定价页与之保持一致；实际新建和升配落池仍以生产 `spec_pools` 对应的 class + SKU 及 Sandbox 有效池为准，不从规格展示字典推断 Pool ID。
@@ -406,6 +407,8 @@ Applications 的内容宽度上限为 137px，独立于上下文栏的最大宽�
 
 ## 验证
 
+OpenCraft Renderer 的 DOM 回归测试由 `opencraft/tests` 持有，并使用 OpenCraft 自身声明的测试依赖；中文输入的 Shadow DOM 事件回归纳入 `test:workbench:unit`。前端 CI 隔离目录仅包含 `frontend`、`velalink` 和共享 Agent core，前端测试不能跨目录导入 OpenCraft 源码。
+
 OpenCraft 的维护方法和交互验收路由见项目内 [opencraft-maintenance Skill](../../../opencraft/.agents/skills/opencraft-maintenance/SKILL.md)；它消费现有正式设计与源码，不另建架构事实真源，也不授予发布权限。
 
 OpenCraft 第一阶段插件持久化提供 client-local JSON 文档 API：宿主绑定插件 namespace，
@@ -457,3 +460,29 @@ OpenCraft 的窗口空间由 `shell-space` 统一分配：Applications、上下�
 ## Hermes 建站凭据的跨地域 TAT 下发
 
 CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `region`，按 `WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION` 精确选择对应地域创建的凭据安装 CommandId；地域缺失、未配置或映射无效时 fail-closed，不签发新 Key。Sandbox 内部 TAT 端点以自身持久化的 Sandbox region 再次验证该地域 CommandId，拒绝跨地域 ID。sgprod 同时容纳 `ap-singapore` 和 `ap-johorbahru` 时，两端必须配置一致的映射；旧单值仅供未配置地域映射的环境兼容。TAT 终态成功且退出码为 0 后 CTL 才激活临时 Key；失败时撤销。存量补发须先按 CTL↔Sandbox↔CVM 对账，分别验证 Skill 安装、每实例独立 Key、TAT 终态和建站能力请求，不以实例 `Running` 代替验收。
+
+### 国内控制台 OpenCraft 隐藏发布
+
+- 国内站 `!isGlobal && showHiddenAgentTools` 决定新 Chat 启用；默认仍为 AgentChat，F12 执行 `show()` 切换，再次执行关闭。国际站不启用该候选。
+- 复用 `AgentChatMigrationSurface` 的 ready/show adoption 和失败回退。控制台通过内存函数借出当前 session；OpenCraft 的 account metadata 仅内存保存，不复制 token 到另一 localStorage key，不消费宿主 OAuth fragment，也不拥有登录/退出权限。
+- 控制台 token 替换/清除发出无凭据 `lightclaw:auth-session-changed` 事件；跨标签通过 storage 事件识别。旧 accessor 立即失效，组件释放连接后新 owner 初始化。显式 Instance/Profile/account/region 绑定继续由 provider 校验。
+- Hermes 首次 Dashboard 启动脚本通过 TAT `PtyStart.Program/Args` 执行并以交互 shell 保活；长单行 `PtyInput` 会受 canonical PTY 长度限制。此路径需要真实部署中的 TAT 兼容验收，本地帧测试不代表线上联通。
+
+- 内嵌 Chat 仅允许已识别的主 Bot 在 Profile 缺失时使用 `main`；非主 Bot 缺少 Profile 必须由 embedded host 校验拒绝，不得回退主 Bot 会话。
+
+- 内嵌 OpenCraft 全局 type-to-compose 从键盘事件 composedPath 判断编辑器/控件所有权；Shadow DOM 重定向后的宿主元素不能作为“空白处打字”依据。组合输入和 keyCode 229 均不额外插字，防止拼音首字母混入草稿。
+
+- 内嵌 Chat 的 Composer 扩展白名单仅开放现有 `vela.voice-input.toggle`，麦克风由用户点击后启动；复用平台 Speech Provider、完成插入与取消事务，不为嵌入场景复制识别链路。
+
+- OpenCraft 会话消息的展开/收起、送达状态、复制操作与附件预览文案由现有 LocaleRuntime 和消息资源统一呈现；中文目录与英文 defaultMessage 同步维护，保留消息原文及状态语义。
+
+- 内嵌 Chat 标题重命名入口与侧栏共享 ThreadTitleWriter/threadManagement 持久化及缓存更新；标题原位输入用 Enter/失焦保存、Escape 取消，组合输入确认不提交。编辑 session 按 Host/Thread 身份隔离，不能在会话切换后写入新目标。
+
+- Web 语音输入由浏览器 onstart 确认采集状态；启动与停止分别限制 15 秒和 8 秒等待。超时/错误释放听写交互并保留原草稿，取消不依赖浏览器 abort 成功，迟到结果不得重新提交文字或触发发送。
+
+### Markdown 文件预览补充
+内嵌右侧栏的只读文件预览支持 `.md` / `.markdown` 排版与源码切换，复用既有 Markdown renderer 和 Host 文件读取/Blob lease。该呈现能力不增加编辑、目录浏览或跨 Bot 资源权限；源码仍为唯一文件内容。
+
+## LightVela 积分扣减优先级
+
+NewAPI 在锁定有效订阅后优先选择名称为 `free-credit:*` 的赠送积分，其次选择套餐/付费积分；各组内部保持到期时间、订阅 ID 升序。仅改变候选优先级，不改变单请求原子资金来源、预扣/退款幂等、套餐 pacing 或 tail-grace：赠送余额不足以覆盖本次预扣时，仍优先使用可完整覆盖请求的其他订阅；赠送已耗尽或过期则回退。Pass 有效期与网关准入仍由服务端验证，底层赠送订阅的长期到期日不是独立于 Pass 的使用授权。

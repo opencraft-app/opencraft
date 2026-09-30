@@ -19,7 +19,10 @@ export interface BrowserSurfaceEvents {
   onAutomationEvent(event: PreviewBridgeChildMessage): void;
 }
 
+export interface BrowserNewTabLabels { readonly title: string; readonly hint: string }
+
 export interface BrowserSurfaceHost {
+  setNewTabLabels?(labels: BrowserNewTabLabels): void;
   trackPointerNearBottom?(pageId: BrowserPageId, height: number, listener: (near: boolean) => void): () => void;
   setZoom?(pageId: BrowserPageId, percent: number): void;
   capture?(pageId: BrowserPageId): Promise<string>;
@@ -61,14 +64,18 @@ interface SurfaceRecord {
   disposeInjectedRuntime: (() => void) | null;
 }
 
-function newTabDocument() {
+const defaultNewTabLabels: BrowserNewTabLabels = { title: "New browser tab", hint: "Enter an address above to navigate" };
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+}
+function newTabDocument(labels = defaultNewTabLabels) {
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
     <meta name="color-scheme" content="light dark">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>New tab</title>
+    <title>${escapeHtml(labels.title)}</title>
     <style>
       html,body{height:100%;margin:0}
       body{display:grid;place-items:center;background:#fff;color:#999;font:400 14px/20px "Inter Variable","PingFang SC","PingFang TC",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;letter-spacing:-.01em;-webkit-font-smoothing:antialiased}
@@ -77,12 +84,12 @@ function newTabDocument() {
     </style>
   </head>
   <body>
-    <div class="mark"><div class="icon">◎</div><div>New browser tab</div>
-      <div class="hint">Enter an address above to navigate</div>
+    <div class="mark"><div class="icon">◎</div><div>${escapeHtml(labels.title)}</div>
+      <div class="hint">${escapeHtml(labels.hint)}</div>
       <output class="viewport" id="viewport-size" aria-live="polite"></output></div>
     <script>
       const output=document.getElementById("viewport-size");
-      const render=()=>{output.value="Viewport "+innerWidth+" × "+innerHeight};
+      const render=()=>{output.value=innerWidth+" × "+innerHeight};
       addEventListener("resize",render);render();
     </script>
   </body>
@@ -126,6 +133,15 @@ function configureSandbox(iframe: HTMLIFrameElement, trustedHostProxy: boolean):
 
 /** Web physical-page owner. It knows iframe mechanics, never Tabs or panel Views. */
 export class WebIframeSurfaceHost implements BrowserSurfaceHost {
+  private newTabLabels = defaultNewTabLabels;
+  setNewTabLabels(labels: BrowserNewTabLabels): void {
+    this.newTabLabels = labels;
+    for (const record of this.surfaces.values()) {
+      if (record.loadedUrl === null && record.iframe.hasAttribute("srcdoc")) {
+        record.iframe.srcdoc = newTabDocument(labels);
+      }
+    }
+  }
   trackPointerNearBottom(pageId: BrowserPageId, height: number, listener: (near: boolean) => void) {
     const record = this.surfaces.get(pageId);
     if (!record) return () => {};
@@ -186,7 +202,7 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
       record.trustedHostProxy = false;
       configureSandbox(record.iframe, false);
       record.iframe.removeAttribute("src");
-      record.iframe.srcdoc = newTabDocument();
+      record.iframe.srcdoc = newTabDocument(this.newTabLabels);
       return true;
     }
     if (!force && record.loadedUrl === url && record.trustedHostProxy === trustedHostProxy) return false;
@@ -215,8 +231,11 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     const { container, iframe } = record;
     const { visualBounds, viewportSize, scale } = layout;
     container.dataset.browserViewportMode = scale === 1 ? "responsive" : "fixed";
-    container.style.left = `${visualBounds.x}px`;
-    container.style.top = `${visualBounds.y}px`;
+    // Layout is measured in window coordinates. Embedded roots can establish
+    // their own containing block, so place physical pages relative to that root.
+    const origin = this.root?.getBoundingClientRect();
+    container.style.left = `${visualBounds.x - (origin?.left ?? 0)}px`;
+    container.style.top = `${visualBounds.y - (origin?.top ?? 0)}px`;
     container.style.width = `${visualBounds.width}px`;
     container.style.height = `${visualBounds.height}px`;
     iframe.style.left = "0px";

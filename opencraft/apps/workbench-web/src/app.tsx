@@ -1,5 +1,8 @@
+import { WorkspaceResourcePreviewPanel } from "./panels/workspace-resource-panel";
+import { EditableThreadTitle } from "./components/editable-thread-title";
+import { shouldTypeToCompose } from "./type-to-compose";
 import { useQueryClient } from "@tanstack/react-query";
-import { FormattedMessage } from "@opencraft/i18n/react";
+import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import {
   createClientId,
   retargetSubmitIntentForFollowUp,
@@ -211,6 +214,7 @@ export interface EmbeddedWorkbenchAppPresentation {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
     readonly loading: boolean;
     readonly selectedChatId: string | null;
+    readonly isDraft: boolean;
   }) => void;
   readonly bindActions: (actions: EmbeddedWorkbenchAppActions) => (() => void);
 }
@@ -222,6 +226,7 @@ export function App({
   readonly embedded?: EmbeddedWorkbenchAppPresentation;
   readonly presentation?: WorkbenchPresentationPolicy;
 } = {}) {
+  const intl = useIntl();
   const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
@@ -532,7 +537,17 @@ export function App({
   const browserWorkbench = useBrowserWorkbench();
   const panelState = useConversationPanelState(panelOwnerId);
   const panelRenderers = usePanelRendererSnapshot();
-  const panelToolbarActions = usePanelToolbarActions();
+  const allPanelToolbarActions = usePanelToolbarActions();
+  const panelToolbarActions = allPanelToolbarActions
+    .filter(action => presentation.panelActions === "all" || presentation.panelActions.includes(action.id))
+    .map(action => action.id === "vela.browser.new-tab" ? { ...action,
+      label: intl.formatMessage({ id: "panel.newBrowser", defaultMessage: "New browser tab" }),
+      creationLabel: intl.formatMessage({ id: "panel.browser", defaultMessage: "Browser" }),
+    } : action);
+  const presentedPanelRenderers = presentation.filePreviewOnly
+    ? panelRenderers.filter(renderer => renderer.kind === "browser" || renderer.kind === "resource")
+      .map(renderer => renderer.kind === "resource" ? { ...renderer, Component: WorkspaceResourcePreviewPanel } : renderer)
+    : panelRenderers;
   const requestClosePanel = (tab: PanelTabDescriptor) => {
     if (tab.kind === "sidechat" && tab.resource && panelRuntime.context.sideChats?.hasContent(tab.resource)) {
       setClosingSideChat({ ownerId: panelOwnerId, tab });
@@ -917,21 +932,7 @@ export function App({
       // Match Codex's global type-to-compose behavior. Printable keys only
       // transfer to Composer when no editable surface, menu or dialog owns
       // the event; browser shortcuts and IME composition remain untouched.
-      const target = event.target;
-      const targetElement = target instanceof Element ? target : null;
-      const ownsTextInput =
-        targetElement?.closest(
-          "input, textarea, select, button, a, summary, [contenteditable='true'], [role='textbox'], [role='button'], [role='dialog'], [role='menu'], [data-disable-type-to-compose='true']",
-        ) !== null;
-      if (
-        !event.defaultPrevented &&
-        !event.isComposing &&
-        event.key.length === 1 &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !ownsTextInput
-      ) {
+      if (shouldTypeToCompose(event)) {
         event.preventDefault();
         composerController.insertText(event.key);
       }
@@ -956,7 +957,7 @@ export function App({
       draft?.target.execution.workspace.cwd ??
       activeHost.workspaceBrowseRoots[0] ??
       null,
-    draft === null ? activeThreadId : null,
+    embedded === undefined && draft === null ? activeThreadId : null,
   );
   const composerWorkspaceRoots = useMemo<readonly string[]>(() => {
     if (draft !== null) {
@@ -1055,8 +1056,9 @@ export function App({
       sessions: embeddedSessions,
       loading: catalog.isFetching,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
+      isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.isFetching, embedded, embeddedSessions, snapshot.hostId]);
+  }, [activeThreadId, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
   useEffect(() => {
     if (embedded === undefined) return;
     if (conversationViewActivation.phase === "error") {
@@ -1287,9 +1289,17 @@ export function App({
   useEffect(() => () => { document.title = "OpenCraft"; }, []);
   const header = (
     <AppShellHeader
+      showProjectIcon={embedded === undefined}
+      titleContent={embedded !== undefined && conversationSurfaceVisible && draft === null && activeThread !== undefined && hostCatalog.threadManagement.capabilities(snapshot.hostId).rename ? (
+        <EditableThreadTitle
+          key={JSON.stringify([snapshot.hostId, activeThread.id])}
+          title={activeThread.title}
+          onRename={title => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: activeThread.id }, title)}
+        />
+      ) : undefined}
       title={pageTitle}
       project={
-        routeSettingsOpen || extensionViewOpen
+        embedded !== undefined || routeSettingsOpen || extensionViewOpen
           ? null
           : draft === null
             ? (activeThread?.project ?? "OpenCraft")
@@ -1360,7 +1370,7 @@ export function App({
               allowEmpty: true,
             })
           }
-          header={header}
+          header={embedded !== undefined && draft !== null && draft.submission === null && !presentation.rightPanel ? null : header}
           floatingSidebarHeader={(onDock) => !presentation.contextSidebar ? null : (
             <AppShellNavigationControls
               hostRole="transient"
@@ -1467,9 +1477,10 @@ export function App({
           )}
           rightPanel={!presentation.rightPanel ? null : (
             <RightPanel
+              emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
               state={panelState}
               presentationId={panelPresentationId}
-              renderers={panelRenderers}
+              renderers={presentedPanelRenderers}
               // Route ownership gates launchers even while the panel's exit
               // animation keeps its physical surface mounted. Do not unregister
               // plugins or close their resources when entering Settings.
@@ -1509,6 +1520,16 @@ export function App({
             composerPresentationEnabled={conversationRouteOpen}
             draft={draft}
             controller={composerController}
+            modelSelectionPolicy={embedded ? "host-default" : "user"}
+            showExecutionControls={!embedded}
+            heading={embedded ? intl.formatMessage({
+              id: "chat.companionHeading",
+              defaultMessage: "What would you like to do together today?",
+            }) : undefined}
+            placeholder={embedded ? intl.formatMessage({
+              id: "chat.companionPlaceholder",
+              defaultMessage: "Share your thoughts, or ask me to help with something",
+            }) : undefined}
             selectionCatalog={composerSelectionCatalog}
             catalog={composerSuggestionCatalog}
             effectiveSelections={composerCatalog.newThreadDefaults ?? undefined}
@@ -1671,6 +1692,7 @@ export function App({
                         onRemoveAttachment={removeActiveHostAttachment}
                         addMenuContent={composerAddMenuContent}
                         endActions={composerEndActions}
+                        modelSelectionPolicy={embedded ? "host-default" : "user"}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
                         mentionSuggestionsEnabled={false}

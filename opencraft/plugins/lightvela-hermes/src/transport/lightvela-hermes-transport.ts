@@ -52,6 +52,8 @@ export interface LightVelaAccountPort {
 export interface LightVelaHermesTransportOptions {
   readonly account: LightVelaAccountPort;
   readonly dashboardUrl?: string;
+  /** Startup deadline; fixed Profile embeds default to 90 seconds. */
+  readonly connectTimeoutMs?: number;
   /** Fixed native Hermes Profile scope for an embedded Bot Host. */
   readonly profile?: string;
   readonly WebSocketImpl?: typeof WebSocket;
@@ -152,6 +154,8 @@ export class LightVelaHermesTransport implements DuplexTransport {
 
   get status(): TransportStatus { return this.currentStatus; }
 
+  private startupAbort: AbortController | null = null;
+
   connect(signal?: AbortSignal): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("LightVela Hermes transport is closed"));
     if (this.currentStatus.state === "open") return Promise.resolve();
@@ -161,7 +165,19 @@ export class LightVelaHermesTransport implements DuplexTransport {
     this.connectionStartedAt = Date.now();
     this.logConnection("connect:start", generation);
     this.setStatus({ state: "connecting", reason: "正在确认云端 Agent…" });
-    this.connectPromise = this.open(generation, signal)
+    const controller = new AbortController();
+    this.startupAbort = controller;
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    const timeoutMs = this.options.connectTimeoutMs ?? (this.options.profile === undefined ? null : 90_000);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener("abort", () => reject(controller.signal.reason ?? abortError()), { once: true });
+      if (timeoutMs !== null) timeout = setTimeout(() => {
+        controller.abort(new Error("Hermes connection timed out"));
+      }, timeoutMs);
+    });
+    this.connectPromise = Promise.race([this.open(generation, controller.signal), deadline])
       .catch(async (error) => {
         const failure = classifyConnectFailure(error);
         this.logConnection("connect:failed", generation, {
@@ -169,7 +185,11 @@ export class LightVelaHermesTransport implements DuplexTransport {
           failure,
         });
         if (generation === this.generation) {
+          // Fence any late bootstrap response before releasing this attempt.
+          this.generation += 1;
+          this.connectPromise = null;
           await this.releasePhysicalConnection();
+          if (this.disposed || this.generation !== generation + 1) throw error;
           this.setStatus({
             state: "failed",
             reason: error instanceof Error ? error.message : String(error),
@@ -179,6 +199,9 @@ export class LightVelaHermesTransport implements DuplexTransport {
         throw error;
       })
       .finally(() => {
+        clearTimeout(timeout);
+        if (this.startupAbort === controller) this.startupAbort = null;
+        signal?.removeEventListener("abort", abort);
         if (generation === this.generation) this.connectPromise = null;
       });
     return this.connectPromise;
@@ -275,6 +298,8 @@ export class LightVelaHermesTransport implements DuplexTransport {
     this.whatsappOnboarding?.dispose();
     this.whatsappOnboarding = null;
     this.generation += 1;
+    this.startupAbort?.abort(abortError());
+    this.startupAbort = null;
     this.connectPromise = null;
     this.setStatus({ state: "closing" });
     await this.releasePhysicalConnection();
@@ -415,6 +440,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
         // Token persistence is an optimization, never part of Host readiness.
       }
     }
+    if (signal?.aborted || generation !== this.generation) throw abortError();
     if (socket === null) {
       this.setConnectingReason(generation, "正在建立 Hermes AppServer 连接…");
       socket = await this.openDashboardSocket(
@@ -533,6 +559,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       this.options.dashboardUrl ?? "ws://127.0.0.1:9119/api/ws",
       { proxyClient: proxy, sessionToken },
     );
+    if (signal?.aborted || this.proxy !== proxy) throw abortError();
     this.logConnection("hermes:endpoint-resolved", this.generation, {
       stageMs: Date.now() - stageStartedAt,
     });

@@ -72,6 +72,15 @@ describe("summarizeCreditSources", () => {
 });
 
 describe("sortCreditSources", () => {
+  it("赠送积分优先于更早到期的套餐和付费积分包", () => {
+    const sorted = sortCreditSources([
+      source({ source_id: "plan", source_type: "plan", next_expire_at: "2026-10-01T00:00:00Z" }),
+      source({ source_id: "free", source_type: "free_credit", next_expire_at: "2126-09-29T00:00:00Z" }),
+      source({ source_id: "paid", next_expire_at: "2026-11-01T00:00:00Z" }),
+    ]);
+    expect(sorted.map((item) => item.source_id)).toEqual(["free", "plan", "paid"]);
+  });
+
   it("到期时间更早的来源排在前面", () => {
     const sorted = sortCreditSources([
       source({ source_id: "late", next_expire_at: "2026-12-01T00:00:00Z" }),

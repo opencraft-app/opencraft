@@ -1351,6 +1351,9 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	if pool.DesiredCap != 2 {
 		t.Fatalf("expected desired capacity 2, got %d", pool.DesiredCap)
 	}
+	if pool.InstanceType != sku.InstanceType {
+		t.Fatalf("expected SKU default instance type %q, got %q", sku.InstanceType, pool.InstanceType)
+	}
 	if pool.CapacityState != core.PoolCapacityStateWarming || poolEligibleForAdmission(pool) {
 		t.Fatalf("new derived pool must warm before admission, got %+v", pool)
 	}
@@ -1427,6 +1430,53 @@ func TestActivateWarmingPoolDoesNotOverrideManualPause(t *testing.T) {
 	got, activated, err := svc.ActivateWarmingPool(ctx, pool.ID)
 	if err != nil || activated || got.Status != core.PoolStatusPaused || got.CapacityState != core.PoolCapacityStateWarming {
 		t.Fatalf("manual pause must win over activation: pool=%+v activated=%t err=%v", got, activated, err)
+	}
+}
+
+func TestEnsurePoolForCapacityBundlePreservesSourcePoolInstanceType(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID: "openclaw-default",
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	sku, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-default",
+		TemplateClassID: "openclaw-default",
+		BaseImage:       "img-test",
+		InstanceType:    "SA9.MEDIUM8",
+	})
+	if err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+	if _, err := svc.UpsertCapacityBundle(ctx, core.CapacityBundle{
+		ID:               "bundle-split",
+		Region:           "ap-beijing",
+		Zone:             testZone,
+		VpcID:            testVpcID,
+		SubnetID:         testSubnetID,
+		SecurityGroupIDs: testSecurityGroups,
+		Status:           core.CapacityBundleStatusWarm,
+		LineageTags: map[string]string{
+			"template_class_id":              "openclaw-default",
+			"sku_id":                         sku.ID,
+			sourcePoolInstanceTypeLineageTag: "SA4.MEDIUM8",
+		},
+	}); err != nil {
+		t.Fatalf("upsert split bundle: %v", err)
+	}
+
+	pool, created, err := svc.EnsurePoolForCapacityBundle(ctx, core.TemplateSkuBinding{
+		TemplateClassID: "openclaw-default",
+		SKUID:           sku.ID,
+		AdmissionState:  "active",
+	}, sku, "bundle-split")
+	if err != nil {
+		t.Fatalf("ensure split pool: %v", err)
+	}
+	if !created || pool.InstanceType != "SA4.MEDIUM8" {
+		t.Fatalf("expected split pool with source instance type, got created=%v pool=%+v", created, pool)
 	}
 }
 

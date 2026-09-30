@@ -1,3 +1,7 @@
+import { WebChatDocument } from "@opencraft/chat-render-web";
+import { useAppearanceTheme } from "../appearance-theme";
+import { createAppServerMediaSourceLoader } from "../runtime/appserver-media-loader";
+import { useIntl } from "@opencraft/i18n/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BlobProgress } from "@opencraft/blob-resources";
 import type { FuzzyFileSearchResult } from "@opencraft/appserver-protocol/generated";
@@ -34,7 +38,6 @@ import { acquireFileBlob, fileBlobResource, fileBlobUrls } from "../runtime/blob
 import {
   MAX_EDITABLE_FILE_BYTES,
   decodeWorkspaceText,
-  encodeBase64Text,
   joinWorkspacePath,
   parseWorkspaceResource,
   reconcileWorkspaceSave,
@@ -47,6 +50,8 @@ import {
   workspacePathParent,
   workspaceResourceBasename,
   workspaceRootsForResource,
+  writeWorkspaceResource,
+  type WorkspaceSaveTarget,
 } from "./workspace-resource-model";
 import { WorkspaceFileIcon } from "./workspace-file-icon";
 
@@ -183,7 +188,7 @@ function useWorkspaceFileWatches(paths: readonly string[]) {
   }, [blobs, key, queryClient, runtime, snapshot.hostId]);
 }
 
-function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
+function useFuzzyWorkspaceFiles(roots: readonly string[], query: string, enabled = true) {
   const runtime = useAppServerRuntime();
   const [results, setResults] = useState<readonly FuzzyFileSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -195,6 +200,7 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
   useEffect(() => {
     let active = true;
     setResults([]);
+    if (!enabled) return;
     void runtime.resources.fileSystem.createFuzzyFileSearchSession({
       roots,
       onUpdated(update) {
@@ -219,7 +225,7 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
       sessionRef.current = null;
       if (session !== null) void session.stop();
     };
-  }, [rootsKey, runtime]);
+  }, [rootsKey, runtime, enabled]);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -238,8 +244,14 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string) {
   return { results, searching };
 }
 
-export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
+export function WorkspaceResourcePreviewPanel(props: PanelRendererProps) {
+  return <WorkspaceResourcePanel {...props} previewOnly />;
+}
+
+export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRendererProps & { readonly previewOnly?: boolean }) {
+  const intl = useIntl();
   const blobs = useBlobResources();
+  const theme = useAppearanceTheme();
   const initialLocation = useMemo(
     () => parseWorkspaceResource(tab.resource ?? ""),
     [tab.resource],
@@ -248,6 +260,13 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   const snapshot = useAppServerSnapshot();
   const queryClient = useQueryClient();
   const [selectedPath, setSelectedPath] = useState(initialLocation.path);
+  const [sourceView, setSourceView] = useState<string | null>(null);
+  const documentId = JSON.stringify(["file-preview", snapshot.hostId, selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope]);
+  const showSource = sourceView === documentId;
+  const loadMediaSource = useMemo(
+    () => createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
+    [runtime, blobs, snapshot.hostId],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, WorkspaceDraft>>({});
@@ -259,17 +278,17 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   }, [initialLocation.path]);
 
   const execution = snapshot.conversation?.execution;
-  const roots = useMemo(() => workspaceRootsForResource(
+  const roots = useMemo(() => previewOnly ? [] : workspaceRootsForResource(
     execution?.runtimeWorkspaceRoots ?? [],
     execution?.cwd ?? null,
     selectedPath,
-  ), [execution?.cwd, execution?.runtimeWorkspaceRoots, selectedPath]);
+  ), [execution?.cwd, execution?.runtimeWorkspaceRoots, selectedPath, previewOnly]);
   const watchPaths = useMemo(
-    () => [...roots, workspacePathParent(selectedPath)],
-    [roots, selectedPath],
+    () => previewOnly ? [] : [...roots, workspacePathParent(selectedPath)],
+    [roots, selectedPath, previewOnly],
   );
   useWorkspaceFileWatches(watchPaths);
-  const search = useFuzzyWorkspaceFiles(roots, searchQuery);
+  const search = useFuzzyWorkspaceFiles(roots, searchQuery, !previewOnly);
 
   const resource = useQuery<LoadedWorkspaceResource>({
     queryKey: ["appserver-fs", snapshot.hostId, "resource", selectedPath, fileBlobResource(runtime, snapshot.hostId, selectedPath).scope],
@@ -339,10 +358,12 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   };
 
   const save = useMutation({
-    mutationFn: async (target: { hostId: string; path: string; key: string; text: string }) => {
-      await runtime.resources.fileSystem.writeFile(target.path, encodeBase64Text(target.text));
-      await blobs.invalidate(fileBlobResource(runtime, target.hostId, target.path));
-    },
+    mutationFn: (target: WorkspaceSaveTarget) => writeWorkspaceResource(
+      previewOnly,
+      target,
+      (path, content) => runtime.resources.fileSystem.writeFile(path, content),
+      (hostId, path) => blobs.invalidate(fileBlobResource(runtime, hostId, path)),
+    ),
     onSuccess: async (_result, target) => {
       await queryClient.invalidateQueries({
         queryKey: ["appserver-fs", target.hostId, "resource", target.path],
@@ -355,8 +376,8 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
   const language = workspaceFileLanguage(selectedPath);
 
   return (
-    <div className="workspace-resource-panel">
-      <aside className="workspace-file-browser">
+    <div className="workspace-resource-panel" data-preview-only={previewOnly || undefined}>
+      {!previewOnly ? <aside className="workspace-file-browser">
         <label className="workspace-file-search">
           <Search size={13} />
           <input
@@ -401,7 +422,7 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
             />
           ))}
         </div>
-      </aside>
+      </aside> : null}
       <section className="workspace-file-viewer">
         <header className="workspace-file-viewer__header">
           <WorkspaceFileIcon path={selectedPath} size={15} />
@@ -409,7 +430,17 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
             <strong>{workspaceResourceBasename(selectedPath)}</strong>
             <small>{selectedPath}</small>
           </span>
-          {resource.data?.text !== null && resource.data?.text !== undefined ? (
+          {language === "markdown" && resource.data?.text != null && !editing ? (
+            <div className="workspace-file-viewer__actions">
+              <button aria-pressed={!showSource} onClick={() => setSourceView(null)} type="button">
+                {intl.formatMessage({ id: "panel.markdownPreview", defaultMessage: "Preview" })}
+              </button>
+              <button aria-pressed={showSource} onClick={() => setSourceView(documentId)} type="button">
+                {intl.formatMessage({ id: "panel.markdownSource", defaultMessage: "Source" })}
+              </button>
+            </div>
+          ) : null}
+          {!previewOnly && resource.data?.text !== null && resource.data?.text !== undefined ? (
             <div className="workspace-file-viewer__actions">
               {editing ? (
                 <>
@@ -436,33 +467,56 @@ export function WorkspaceResourcePanel({ tab }: PanelRendererProps) {
         </header>
         {resource.isPending ? (
           <div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />
-            {readProgress?.path !== selectedPath ? "Checking file…"
+            {previewOnly ? intl.formatMessage({ id: "panel.readingFile", defaultMessage: "Loading file…" })
+              : readProgress?.path !== selectedPath ? "Checking file…"
               : readProgress.progress.phase === "queued" ? "Queued for download…"
               : readProgress.progress.phase === "cache" ? "Checking cache…" : "Reading file…"}
           </div>
         ) : resource.isError ? (
           <div className="workspace-file-viewer__state is-error"><AlertTriangle size={18} />{resource.error.message}</div>
         ) : resource.data?.isDirectory ? (
-          <div className="workspace-file-viewer__state"><FolderOpen size={20} />Select a file from this directory.</div>
+          <div className="workspace-file-viewer__state"><FolderOpen size={20} />{intl.formatMessage(previewOnly ? { id: "panel.directoryHint", defaultMessage: "Choose a file link in the conversation to preview its contents." } : { id: "panel.selectFile", defaultMessage: "Select a file from this directory." })}</div>
         ) : imageMime !== null && resource.data?.blob && imageSource?.blob === resource.data.blob ? (
           <div className="workspace-file-viewer__image">
             <img alt={workspaceResourceBasename(selectedPath)} src={imageSource.url} />
             <small><ImageIcon size={12} /> {resource.data.size.toLocaleString()} bytes</small>
           </div>
         ) : resource.data?.text !== null && resource.data?.text !== undefined ? (
-          <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />Loading editor…</div>}>
-            <WorkspaceCodeEditor
-              editable={editing}
-              hasDraft={dirty}
-              key={fileKey}
-              label={`${editing ? "Edit" : "View"} ${workspaceResourceBasename(selectedPath)}`}
-              language={language}
-              onChange={updateDraft}
-              value={text}
-            />
-          </Suspense>
+          language === "markdown" && !showSource && !editing ? (
+            <div className="workspace-file-markdown">
+              <WebChatDocument
+                key={documentId}
+                documentId={documentId}
+                source={text}
+                hostId={snapshot.hostId}
+                cwd={workspacePathParent(selectedPath)}
+                theme={theme.resolvedTheme}
+                allowWideBlocks={false}
+                loadMediaSource={loadMediaSource}
+                onOpenResource={(target, decision) => {
+                  if (decision.kind === "file" || decision.kind === "workspace-file") {
+                    setSelectedPath(parseWorkspaceResource(target).path);
+                  } else if (decision.kind === "external" || decision.kind === "mail") {
+                    window.open(target, "_blank", "noopener,noreferrer");
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />Loading editor…</div>}>
+              <WorkspaceCodeEditor
+                editable={editing}
+                hasDraft={dirty}
+                key={fileKey}
+                label={`${editing ? "Edit" : "View"} ${workspaceResourceBasename(selectedPath)}`}
+                language={language}
+                onChange={updateDraft}
+                value={text}
+              />
+            </Suspense>
+          )
         ) : (
-          <div className="workspace-file-viewer__state"><AlertTriangle size={18} />Binary or oversized file ({resource.data?.size.toLocaleString() ?? 0} bytes)</div>
+          <div className="workspace-file-viewer__state"><AlertTriangle size={18} />{intl.formatMessage({ id: "panel.unsupportedFile", defaultMessage: "Preview unavailable for this file type or size." })}</div>
         )}
         {conflicted ? <div className="workspace-file-save-error">File changed on disk. Revert your draft before saving.</div> : null}
         {save.isError ? <div className="workspace-file-save-error">{save.error.message}</div> : null}

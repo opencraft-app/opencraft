@@ -1,3 +1,5 @@
+export type ModelSelectionPolicy = "user" | "host-default";
+
 /** Resolve only an explicit selection or a declared default, never catalog order. */
 export function resolveModelSelection<T extends { readonly id: string; readonly value: string; readonly isDefault: boolean }>(
   models: readonly T[], selected: string | undefined | null,

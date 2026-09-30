@@ -762,12 +762,14 @@ test("dashboard ensure borrows and releases a PTY without closing its TAT owner"
   let released = false;
   let command = "";
   const token = await ensureHermesDashboard({
-    async openPty(handlers) {
+    async openPty(handlers, options) {
+      assert.equal(options?.program, "/bin/sh");
+      assert.deepEqual(options?.args?.slice(0, 1), ["-c"]);
+      command = options?.args?.[1] ?? "";
+      queueMicrotask(() => handlers.onOutput?.("__LV_DASHBOARD_READY__:test-session-token\\n"));
       return {
         sendInput(input) {
-          command = input;
-          queueMicrotask(() => handlers.onOutput?.("__LV_DASHBOARD_READY__:test-session-token\\n"));
-          return true;
+          assert.fail(`unexpected PTY input: ${input.length} bytes`);
         },
         resize: () => true,
         release() { released = true; },
@@ -789,11 +791,45 @@ test("dashboard ensure borrows and releases a PTY without closing its TAT owner"
   assert.match(command, /candidate_uid/u);
   assert.match(command, /\/proc\/\$opencraft_candidate_pid\/cmdline/u);
   assert.match(command, /\/usr\/local\/lib\/hermes-agent\/venv\/bin\/hermes/u);
+  assert.match(command, /exec \/bin\/sh -i$/u);
   assert.doesNotMatch(command, /<<<|dashboard_args=\(|\$\{dashboard_args\[@\]\}/u);
   assert.doesNotMatch(command, /(?:^|;)\s*exit\s*$/u);
-  const syntax = spawnSync("/bin/sh", ["-n"], { input: command, encoding: "utf8" });
+  const syntax = spawnSync("/bin/sh", ["-n", "-c", command], { encoding: "utf8" });
   assert.equal(syntax.status, 0, syntax.stderr);
   assert.equal(released, true);
+});
+
+test("dashboard ensure sends the bootstrap in PtyStart and retains its proxy session", async () => {
+  FakeTatWebSocket.instances = [];
+  const client = new TencentTatSessionMultiplexer(tatBootstrap, {
+    WebSocketImpl: FakeTatWebSocketImpl,
+    connectDelayMs: 0,
+  });
+  const ensured = ensureHermesDashboard(client);
+  const socket = FakeTatWebSocket.instances[0]!;
+  socket.open();
+  await flush();
+  const frames = () => socket.sent
+    .filter((frame): frame is string => typeof frame === "string")
+    .map((frame) => JSON.parse(frame) as { Type: string; Data: Record<string, unknown> });
+  const start = frames().find((frame) => frame.Type === "PtyStart");
+  assert.equal(start?.Data.Program, "/bin/sh");
+  assert.deepEqual((start?.Data.Args as string[]).slice(0, 1), ["-c"]);
+  assert.match((start?.Data.Args as string[])[1]!, /exec \/bin\/sh -i$/u);
+  assert.equal(frames().some((frame) => frame.Type === "PtyInput"), false);
+
+  socket.receive(JSON.stringify({ Type: "PtyReady", Data: {} }));
+  await flush();
+  socket.receive(JSON.stringify({
+    Type: "PtyOutput",
+    Data: { Output: btoa("__LV_DASHBOARD_READY__:test-session-token\n") },
+  }));
+  assert.equal(await ensured, "test-session-token");
+  const proxy = client.openProxy({ port: 9119, proxyId: "dashboard" });
+  await flush();
+  socket.receive(proxyResponse("PtyProxyReady", "dashboard"));
+  assert.equal((await proxy).proxyId, "dashboard");
+  client.close();
 });
 
 test("dashboard ensure surfaces a remote startup failure without waiting for its browser deadline", async () => {
@@ -801,10 +837,10 @@ test("dashboard ensure surfaces a remote startup failure without waiting for its
   await assert.rejects(
     ensureHermesDashboard({
       async openPty(handlers) {
+        queueMicrotask(() => handlers.onOutput?.("__LV_DASHBOARD_ERROR__:process_exited\n"));
         return {
           sendInput() {
-            queueMicrotask(() => handlers.onOutput?.("__LV_DASHBOARD_ERROR__:process_exited\n"));
-            return true;
+            assert.fail("unexpected PTY input");
           },
           resize: () => true,
           release() { released = true; },
@@ -812,6 +848,24 @@ test("dashboard ensure surfaces a remote startup failure without waiting for its
       },
     }),
     /process_exited/u,
+  );
+  assert.equal(released, true);
+});
+
+test("dashboard ensure surfaces a TAT PTY error without waiting for its browser deadline", async () => {
+  let released = false;
+  await assert.rejects(
+    ensureHermesDashboard({
+      async openPty(handlers) {
+        queueMicrotask(() => handlers.onError?.(new Error("remote shell exited")));
+        return {
+          sendInput() { assert.fail("unexpected PTY input"); },
+          resize: () => true,
+          release() { released = true; },
+        };
+      },
+    }),
+    /remote shell exited/u,
   );
   assert.equal(released, true);
 });

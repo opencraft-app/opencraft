@@ -903,26 +903,19 @@ const SubscriptionSection = ({
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
     useCreditSources(planCreditInput, freeCreditInput);
 
-  /* 套餐进度保持独立；汇总和告警计算所有积分来源。 */
-  const planCreditsTotal = operablePass ? operablePass.credit_total : 0;
-  const planCreditsAvailable = operablePass ? operablePass.credit_available : 0;
-  const freeCreditsTotal = freeCreditInput?.creditTotal ?? 0;
-  const planCreditsUsed = Math.max(0, planCreditsTotal - planCreditsAvailable);
-  const planUsedPercent = planCreditsTotal > 0
-    ? Math.min(100, Math.round((planCreditsUsed / planCreditsTotal) * 100))
-    : 0;
+  /* 进度、汇总和告警统一计算所有积分来源；free 已在 hook 中去重。 */
   const allCreditsTotal = creditSummary.total;
   const allCreditsAvailable = creditSummary.available;
   const allCreditsUsedPercent = allCreditsTotal > 0
-    ? Math.min(100, Math.round(((allCreditsTotal - allCreditsAvailable) / allCreditsTotal) * 100))
+    ? Math.min(100, Math.round((creditSummary.used / allCreditsTotal) * 100))
     : 0;
   const creditsExhausted = Boolean(allCreditsTotal > 0 && allCreditsAvailable <= 0);
   const showCreditPrompt = creditsExhausted || allCreditsUsedPercent > 95;
-  const creditUsageColor = planUsedPercent > 95
+  const creditUsageColor = allCreditsUsedPercent > 95
     ? "#991B1B"
-    : planUsedPercent >= 80
+    : allCreditsUsedPercent >= 80
       ? "#CF3D4C"
-      : planUsedPercent >= 50
+      : allCreditsUsedPercent >= 50
         ? "#C67B1E"
         : "var(--lw-accent)";
 
@@ -1095,13 +1088,11 @@ const SubscriptionSection = ({
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
             <div>
-              {planCreditsTotal > 0 && (
+              {allCreditsTotal > 0 && (
                 <>
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-semibold" style={{ color: "#333" }}>
-                      {freeCreditsTotal > 0 || creditSummary.sourceCount > 1
-                        ? t("套餐积分")
-                        : t("已使用积分")}
+                      {t("已使用积分")}
                     </span>
                     {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
                     <AppLink
@@ -1115,10 +1106,10 @@ const SubscriptionSection = ({
                   </div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
-                      {planCreditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {planCreditsTotal.toLocaleString()}</span>
+                      {creditSummary.used.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {allCreditsTotal.toLocaleString()}</span>
                     </p>
                     <span className="text-xs font-semibold" style={{ color: creditUsageColor }}>
-                      {planUsedPercent}%
+                      {allCreditsUsedPercent}%
                     </span>
                   </div>
                   {/* Progress bar */}
@@ -1126,13 +1117,13 @@ const SubscriptionSection = ({
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
-                        width: `${planUsedPercent}%`,
+                        width: `${allCreditsUsedPercent}%`,
                         background: creditUsageColor,
                       }}
                     />
                   </div>
 
-                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。 */}
+                  {/* 额度明细：赠送积分优先，其余按到期/刷新时间逐来源展示。 */}
                   {creditSources.length > 0 && (
                     <div className="mt-4">
                       <div className="mb-2 flex items-center justify-between">

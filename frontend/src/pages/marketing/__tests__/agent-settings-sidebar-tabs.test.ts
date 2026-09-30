@@ -238,7 +238,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
     const styles = readStylesSource();
 
-    expect(page).toContain("const isActiveBotChatAvailable = isActiveBotDefault || showHiddenAgentTools;");
+    expect(page).toContain("const isActiveBotChatAvailable = isActiveBotDefault || openCraftChatEnabled;");
     expect(page).toContain("if (!isActiveBotChatAvailable) return;");
     expect(page).toContain("const isChatTabDisabled = !isActiveBotChatAvailable || showBuddyOnboarding;");
     expect(page).toContain('disabled={isChatTabDisabled}');
@@ -252,9 +252,10 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(styles).not.toContain(".lv-agent-action-tooltip {");
     expect(page).toContain('!consoleShowStateReady || activeSection !== "chat" || !activeBot || isActiveBotChatAvailable');
     expect(page).toContain('{isActiveBotChatAvailable && (');
-    expect(page).toContain('&& !showHiddenAgentTools');
-    expect(page).toContain('enabled={showHiddenAgentTools}');
-    expect(page).toContain('profileId={sdkInstance.ProfileId ?? "main"}');
+    expect(page).toContain('&& !openCraftChatEnabled');
+    expect(page).toContain('enabled={openCraftChatEnabled}');
+    expect(page).toContain('profileId={activeBot.profileId ?? (isActiveBotDefault ? "main" : "")}');
+    expect(page).toContain("const openCraftChatEnabled = !isGlobal && showHiddenAgentTools;");
     expect(page).toContain("setConsoleShowStateReady(true);");
     expect(page).toContain("enableShowCommand: true");
     expect(styles).toContain(".lv-agents-sidebar-tab:disabled");

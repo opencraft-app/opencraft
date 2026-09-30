@@ -190,6 +190,8 @@ export function AppShellNavigationControls({
 export interface AppShellHeaderProps {
   readonly title: string | null;
   readonly project: string | null;
+  readonly showProjectIcon?: boolean;
+  readonly titleContent?: ReactNode;
   readonly routeHeaderActive?: boolean;
   readonly routeHeaderHostRef?: RefCallback<HTMLDivElement>;
   readonly sidebarOpen: boolean;
@@ -215,6 +217,8 @@ export interface AppShellHeaderProps {
 export function AppShellHeader({
   title,
   project,
+  showProjectIcon = true,
+  titleContent,
   routeHeaderActive = false,
   routeHeaderHostRef,
   sidebarOpen,
@@ -230,6 +234,7 @@ export function AppShellHeader({
   onForward,
   navigationActions,
 }: AppShellHeaderProps) {
+  const intl = useIntl();
   const presentation = useShellPresentation();
   const rightPanelOpen = presentation?.rightPanelOpen ?? requestedRightPanelOpen;
   const rightPanelFullWidth = presentation?.rightPanelFullWidth ?? requestedRightPanelFullWidth;
@@ -305,13 +310,13 @@ export function AppShellHeader({
           />
           {!routeHeaderActive && title !== null ? (
             <div className="thread-header-title">
-              <span className="thread-header-project-icon">
+              {showProjectIcon ? <span className="thread-header-project-icon">
                 <Code2 size={14} />
-              </span>
-              <span className="thread-header-copy">
+              </span> : null}
+              {titleContent ?? <span className="thread-header-copy">
                 <strong>{title}</strong>
                 {project === null ? null : <small>{project} · main</small>}
-              </span>
+              </span>}
             </div>
           ) : null}
         </div>
@@ -329,11 +334,11 @@ export function AppShellHeader({
                 className="chrome-button app-shell-header__right-panel-toggle"
                 type="button"
                 aria-label={
-                  rightPanelOpen ? "Hide task details" : "Show task details"
+                  intl.formatMessage(rightPanelOpen ? { id: "panel.close", defaultMessage: "Close preview panel" } : { id: "panel.open", defaultMessage: "Open preview panel" })
                 }
                 aria-pressed={rightPanelOpen}
                 onClick={onToggleRightPanel}
-                title="Toggle task details"
+                title={intl.formatMessage(rightPanelOpen ? { id: "panel.close", defaultMessage: "Close preview panel" } : { id: "panel.open", defaultMessage: "Open preview panel" })}
               >
                 <RightPanelToggleIcon panelOpen={rightPanelOpen} />
               </button>

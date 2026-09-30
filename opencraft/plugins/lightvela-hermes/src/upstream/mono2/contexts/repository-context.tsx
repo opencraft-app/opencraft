@@ -1,16 +1,17 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
 import { createContext, useContext } from "react";
 import type { PropsWithChildren } from "react";
-import { createRepositories } from "../repositories/http-repositories";
 import type { Repositories } from "../repositories/types";
 
-const repositories = createRepositories();
+const RepositoryContext = createContext<Repositories | null>(null);
 
-const RepositoryContext = createContext<Repositories>(repositories);
-
-export const RepositoryProvider = ({ children, value = repositories }: PropsWithChildren<{ value?: Repositories }>) => {
+export const RepositoryProvider = ({ children, value }: PropsWithChildren<{ value: Repositories }>) => {
   return <RepositoryContext value={value}>{children}</RepositoryContext>;
 };
 
-export const useRepositories = () => useContext(RepositoryContext);
+export const useRepositories = () => {
+  const repositories = useContext(RepositoryContext);
+  if (repositories === null) throw new Error("OpenCraft requires account-bound repositories");
+  return repositories;
+};
 export type { Repositories };

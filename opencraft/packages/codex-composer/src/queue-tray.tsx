@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import {
   closestCenter,
   DndContext,
@@ -79,6 +80,8 @@ function SortableQueueItem({
   readonly onDiscardUnconfirmed?: ComposerQueueTrayProps["onDiscardUnconfirmed"];
   readonly onSteer?: ComposerQueueTrayProps["onSteer"];
 }) {
+  const intl = useIntl();
+  const steerLabel = intl.formatMessage({ id: "chat.queue.steer", defaultMessage: "Steer with queued message" });
   const busy = item.operation !== "idle";
   const awaitingNativeReconciliation = item.pausedReason === "restored-after-host-restart";
   const sortable = useSortable({
@@ -149,11 +152,11 @@ function SortableQueueItem({
         ) : (
           <>
             <button
-              className="is-labelled"
+              className={isResponseInProgress ? "is-labelled is-steer" : "is-labelled"}
               type="button"
               aria-label={
                 isResponseInProgress
-                  ? "Steer with queued message"
+                  ? steerLabel
                   : "Start queued message"
               }
               disabled={!item.actionable || busy || awaitingNativeReconciliation || blockedByUnconfirmedDelivery || (isResponseInProgress && !atomicSteer)}
@@ -163,7 +166,7 @@ function SortableQueueItem({
                 ? "This queued message is awaiting native reconciliation before it can be sent"
                 : isResponseInProgress && !atomicSteer
                   ? "This Host cannot steer a queued message; it will remain queued until the turn finishes"
-                  : undefined}
+                  : isResponseInProgress ? steerLabel : "Start queued message"}
               onClick={() => ignoreRejected(onSteer?.(item.id))}
             >
               {isResponseInProgress ? (

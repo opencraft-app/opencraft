@@ -2680,6 +2680,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const openCraftChatEnabled = !isGlobal && showHiddenAgentTools;
   /** 多 bot 创建引导（取代原先的「创建 Bot」弹窗） */
   const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
   /** 「从其他 Bot 复制」选中的来源 bot id */
@@ -3236,7 +3237,7 @@ export const AgentSettingsPage = ({
     void refreshBots();
   }, [completeOnboarding, activeBot, earlyOnboardingBotId, buddyProfileState, refreshBots, navigate]);
 
-  const isActiveBotChatAvailable = isActiveBotDefault || showHiddenAgentTools;
+  const isActiveBotChatAvailable = isActiveBotDefault || openCraftChatEnabled;
   const isFirstBotCreation = !activeBot;
   const remainingInstanceBotCount = activeBot
     ? bots.filter((bot) => (
@@ -3265,7 +3266,7 @@ export const AgentSettingsPage = ({
     const selectedBot = visibleBots.find((bot) => bot.id === botId);
     const nextSection = activeSection === "chat"
       && !selectedBot?.isDefault
-      && !showHiddenAgentTools
+      && !openCraftChatEnabled
       ? "channel"
       : activeSection;
     if (nextSection !== activeSection) setSidebarTab("settings");
@@ -6235,6 +6236,7 @@ export const AgentSettingsPage = ({
                                               onClick={() => setSelectedChatId(session.chatId)}
                                               className={cn(
                                                 "lv-agents-session-item lv-agents-nav-item",
+                                                openCraftChatEnabled && "lv-agents-session-item--opencraft",
                                                 isSelected && "is-active",
                                               )}
                                             >
@@ -6646,9 +6648,9 @@ export const AgentSettingsPage = ({
                               active={activeSection === "chat"}
                               accountId={accountId}
                               apiBase={resolveConfiguredAuthApiBaseUrl() || undefined}
-                              enabled={showHiddenAgentTools}
+                              enabled={openCraftChatEnabled}
                               instanceId={sdkInstance.InstanceId}
-                              profileId={sdkInstance.ProfileId ?? "main"}
+                              profileId={activeBot.profileId ?? (isActiveBotDefault ? "main" : "")}
                               region={isGlobal ? "intl" : "cn"}
                               multiSession={openCraftChatMultiSessionBridge}
                               onOwnerChange={handleChatSurfaceOwnerChange}
@@ -6671,7 +6673,7 @@ export const AgentSettingsPage = ({
                                 />
                               ) : (
                                 <div className="flex size-full items-center justify-center text-sm text-black/50" role="status">
-                                  {t("正在加载聊天…")}
+                                  {t("正在加载会话…")}
                                 </div>
                               )}
                             />

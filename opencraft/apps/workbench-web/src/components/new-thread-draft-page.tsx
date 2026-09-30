@@ -61,14 +61,18 @@ export interface DraftHostOption {
 export interface NewThreadDraftPageProps {
   activeTabId?: string | null;
   composerPresentationEnabled?: boolean;
+  readonly placeholder?: string;
+  readonly heading?: string;
   readonly draft: NewThreadDraftSnapshot;
   readonly controller: ComposerController;
   readonly selectionCatalog: ComposerSelectionCatalog;
   readonly catalog: ComposerCatalog;
   readonly effectiveSelections?: ComposerEffectiveSelections;
+  readonly modelSelectionPolicy?: "user" | "host-default";
   readonly workspaceOptions: readonly DraftWorkspaceOption[];
   readonly workspaceOptionsLoading?: boolean;
   readonly nativeWorkspacePicking?: boolean;
+  readonly showExecutionControls?: boolean;
   readonly activeHostId: string;
   readonly hostOptions: readonly DraftHostOption[];
   readonly connectionPhase: string;
@@ -427,14 +431,18 @@ function ExecutionUtilityBar({
 export function NewThreadDraftPage({
   activeTabId = null,
   composerPresentationEnabled = true,
+  placeholder,
+  heading = "What should we work on?",
   draft,
   controller,
   selectionCatalog,
   catalog,
   effectiveSelections,
+  modelSelectionPolicy,
   workspaceOptions,
   workspaceOptionsLoading = false,
   nativeWorkspacePicking = false,
+  showExecutionControls = true,
   activeHostId,
   hostOptions,
   connectionPhase,
@@ -471,7 +479,7 @@ export function NewThreadDraftPage({
       <main className="new-thread-draft-main" aria-label="Main content">
         <div className="new-thread-draft-layout">
           <section className="new-thread-draft-hero" aria-labelledby="new-thread-heading">
-            <h1 id="new-thread-heading">What should we work on?</h1>
+            <h1 id="new-thread-heading">{heading}</h1>
           </section>
           <section className="new-thread-draft-composer-zone" aria-label="Start a new task">
             <div className="thread-layout-width new-thread-draft-composer-width">
@@ -481,7 +489,7 @@ export function NewThreadDraftPage({
                   ref={composerRef}
                   portalContainer={portalContainer}
                   controller={controller}
-                  chromeHeader={(
+                  chromeHeader={showExecutionControls ? (
                     <ExecutionUtilityBar
                       portalContainer={portalContainer}
                       draft={draft}
@@ -496,11 +504,11 @@ export function NewThreadDraftPage({
                       onBrowseWorkspace={onBrowseWorkspace}
                       onReturnFocus={() => composerRef.current?.focus()}
                     />
-                  )}
+                  ) : undefined}
                   disabled={draftSubmissionOwnsNavigation(draft.phase)}
                   submissionDisabled={connectionPhase !== "ready"}
                   isStreaming={false}
-                  placeholder={intl.formatMessage({ id: "chat.newPlaceholder", defaultMessage: "Ask OpenCraft to work on anything" })}
+                  placeholder={placeholder ?? intl.formatMessage({ id: "chat.newPlaceholder", defaultMessage: "Ask OpenCraft to work on anything" })}
                   onResolveAttachment={onResolveAttachment}
                   onRemoveAttachment={onRemoveAttachment}
                   addMenuContent={composerAddMenuContent}
@@ -509,6 +517,7 @@ export function NewThreadDraftPage({
                   catalog={catalog}
                   mentionSuggestionsEnabled={false}
                   effectiveSelections={effectiveSelections}
+                  modelSelectionPolicy={modelSelectionPolicy}
                   onSubmit={onSubmit}
                   onCancel={() => undefined}
                 />

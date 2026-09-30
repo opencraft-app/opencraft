@@ -1,3 +1,5 @@
+import { useIntl } from "@opencraft/i18n/react";
+import { ThinkingLabel } from "../../thinking-label";
 import {
   formatAutomaticApprovalReviewSummary,
   formatAutomaticApprovalReviewTitle,
@@ -52,7 +54,7 @@ function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reas
       onOpenChange={setOpen}
       open={open}
       running={block.streaming}
-      summary={block.streaming ? (block.summary || "Thinking") : (block.summary || "Thought")}
+      summary={block.streaming ? <ThinkingLabel summary={block.summary} /> : (block.summary || "Thought")}
     >
       {detail ? <p className="thread-activity-item__prose">{detail}</p> : null}
     </ActivityDisclosure>
@@ -174,6 +176,7 @@ function unwrapShellCommand(value: string): string {
 }
 
 function ShellCopyButton({ className = "", label, value }: { readonly className?: string; readonly label: string; readonly value: string }) {
+  const intl = useIntl();
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   useEffect(() => () => {
@@ -187,13 +190,14 @@ function ShellCopyButton({ className = "", label, value }: { readonly className?
     }).catch(() => setCopied(false));
   }, [value]);
   return (
-    <button aria-label={copied ? "Copied" : label} className={`thread-shell-output__copy ${className}`} onClick={copy} title={copied ? "Copied" : label} type="button">
+    <button aria-label={copied ? intl.formatMessage({ id: "common.copied", defaultMessage: "Copied" }) : label} className={`thread-shell-output__copy ${className}`} onClick={copy} title={copied ? intl.formatMessage({ id: "common.copied", defaultMessage: "Copied" }) : label} type="button">
       {copied ? <Check size={12} /> : <Copy size={12} />}
     </button>
   );
 }
 
-function AssistantCopyButton({ value, getHtml, label = "Copy response" }: { readonly value: string; readonly getHtml?: () => string | null; readonly label?: string }) {
+function AssistantCopyButton({ value, getHtml, label }: { readonly value: string; readonly getHtml?: () => string | null; readonly label?: string }) {
+  const intl = useIntl();
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   useEffect(() => () => {
@@ -208,13 +212,14 @@ function AssistantCopyButton({ value, getHtml, label = "Copy response" }: { read
     }).catch(() => setCopied(false));
   }, [value, getHtml]);
   return (
-    <button aria-label={copied ? "Copied" : label} onClick={copy} title={copied ? "Copied" : label} type="button">
+    <button aria-label={copied ? intl.formatMessage({ id: "common.copied", defaultMessage: "Copied" }) : label ?? intl.formatMessage({ id: "chat.response.copy", defaultMessage: "Copy response" })} onClick={copy} title={copied ? intl.formatMessage({ id: "common.copied", defaultMessage: "Copied" }) : label ?? intl.formatMessage({ id: "chat.response.copy", defaultMessage: "Copy response" })} type="button">
       {copied ? <Check size={13} /> : <Copy size={13} />}
     </button>
   );
 }
 
 function EmbeddedShellOutput({ block }: { block: Extract<TimelineBlock, { type: "command-execution" }> }) {
+  const intl = useIntl();
   const running = block.status === "pending" || block.status === "running";
   const command = unwrapShellCommand(block.command);
   const output = normalizeTerminalOutput(block.output ?? "");
@@ -240,12 +245,12 @@ function EmbeddedShellOutput({ block }: { block: Extract<TimelineBlock, { type: 
       {command.trim().length > 0 ? (
         <div className="thread-shell-output__command">
           <code><span aria-hidden="true">$ </span><AnsiTerminalText>{command}</AnsiTerminalText></code>
-          <ShellCopyButton label="Copy command" value={command} />
+          <ShellCopyButton label={intl.formatMessage({ id: "chat.command.copy", defaultMessage: "Copy command" })} value={command} />
         </div>
       ) : null}
       <div className="thread-shell-output__output">
         <pre onScroll={updateFollowIntent} ref={outputRef}><code><AnsiTerminalText>{displayOutput}</AnsiTerminalText></code></pre>
-        {output.length > 0 ? <ShellCopyButton label="Copy output" value={output} /> : null}
+        {output.length > 0 ? <ShellCopyButton label={intl.formatMessage({ id: "chat.output.copy", defaultMessage: "Copy output" })} value={output} /> : null}
       </div>
       <div className="thread-shell-output__footer" data-status={block.status}>{footer}</div>
     </div>

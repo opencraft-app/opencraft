@@ -39,6 +39,11 @@ func newTrafficReverseProxy() *httputil.ReverseProxy {
 			request.SetXForwarded()
 			request.Out.Host = plan.target.Host
 			request.Out.Header.Set("Authorization", "Bearer "+plan.upstreamKey)
+			// Overwrite any caller-supplied value so both services log the same trusted ID.
+			request.Out.Header.Del("X-VelaGW-Trace-ID")
+			if plan.accessLog.TraceID != "" {
+				request.Out.Header.Set("X-VelaGW-Trace-ID", plan.accessLog.TraceID)
+			}
 		},
 		Transport: trafficProxyRoundTripper{},
 		ModifyResponse: func(response *http.Response) error {

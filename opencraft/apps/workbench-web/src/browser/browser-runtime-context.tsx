@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import type {
   BrowserPageId,
   BrowserPageSnapshot,
@@ -88,8 +89,15 @@ export function useBrowserTab(tabId: BrowserTabId): BrowserTabSnapshot | null {
 }
 
 export function BrowserPresentationRoot() {
+  const intl = useIntl();
   const { surfaces } = useBrowserRuntimeContext();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    surfaces.setNewTabLabels?.({
+      title: intl.formatMessage({ id: "panel.newBrowser", defaultMessage: "New browser tab" }),
+      hint: intl.formatMessage({ id: "panel.addressHint", defaultMessage: "Enter an address above to navigate" }),
+    });
+  }, [intl, surfaces]);
   useLayoutEffect(() => {
     surfaces.setRoot(rootRef.current);
     return () => surfaces.setRoot(null);

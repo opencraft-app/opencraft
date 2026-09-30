@@ -2217,6 +2217,7 @@ type SetRuntimeRouteSnapshot struct {
 type AccessLog struct {
 	Time                     string `json:"time"`
 	Event                    string `json:"event"`
+	TraceID                  string `json:"trace_id,omitempty"`
 	Method                   string `json:"method"`
 	Path                     string `json:"path"`
 	ExternalKeyID            string `json:"external_key_id"`

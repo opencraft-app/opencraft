@@ -300,14 +300,20 @@ function applyWorkbenchAdapter(contents, file) {
     );
   }
   if (file === "contexts/repository-context.tsx") {
+    // Every OpenCraft consumer supplies its account-bound repositories. An
+    // eager mono2 default would consume the embedding console's OAuth URL at
+    // module evaluation and create an independent credential owner.
     return contents
+      .replace('import { createRepositories } from "../repositories/http-repositories";\n', "")
+      .replace('const repositories = createRepositories();\n\n', "")
+      .replace('createContext<Repositories>(repositories)', 'createContext<Repositories | null>(null)')
       .replace(
         "export const RepositoryProvider = ({ children }: PropsWithChildren) => {\n  return <RepositoryContext value={repositories}>{children}</RepositoryContext>;\n};",
-        "export const RepositoryProvider = ({ children, value = repositories }: PropsWithChildren<{ value?: Repositories }>) => {\n  return <RepositoryContext value={value}>{children}</RepositoryContext>;\n};",
+        "export const RepositoryProvider = ({ children, value }: PropsWithChildren<{ value: Repositories }>) => {\n  return <RepositoryContext value={value}>{children}</RepositoryContext>;\n};",
       )
       .replace(
         "export const useRepositories = () => useContext(RepositoryContext);",
-        "export const useRepositories = () => useContext(RepositoryContext);\nexport type { Repositories };",
+        "export const useRepositories = () => {\n  const repositories = useContext(RepositoryContext);\n  if (repositories === null) throw new Error(\"OpenCraft requires account-bound repositories\");\n  return repositories;\n};\nexport type { Repositories };",
       );
   }
   if (file === "observability/datong.ts") {

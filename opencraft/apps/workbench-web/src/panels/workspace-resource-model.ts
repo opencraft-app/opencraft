@@ -38,6 +38,7 @@ const languageByExtension: Readonly<Record<string, string>> = Object.freeze({
   json: "json",
   jsx: "jsx",
   md: "markdown",
+  markdown: "markdown",
   py: "python",
   rs: "rust",
   sh: "bash",
@@ -93,6 +94,24 @@ export type WorkspaceFileKind = "css" | "javascript" | "typescript" | "json" | "
 export interface WorkspaceDraft {
   readonly baseText: string;
   readonly text: string;
+}
+
+export interface WorkspaceSaveTarget {
+  readonly hostId: string;
+  readonly path: string;
+  readonly key: string;
+  readonly text: string;
+}
+
+export async function writeWorkspaceResource(
+  previewOnly: boolean,
+  target: WorkspaceSaveTarget,
+  writeFile: (path: string, contentBase64: string) => Promise<unknown>,
+  invalidate: (hostId: string, path: string) => Promise<unknown>,
+): Promise<void> {
+  if (previewOnly) throw new Error("This panel is read-only");
+  await writeFile(target.path, encodeBase64Text(target.text));
+  await invalidate(target.hostId, target.path);
 }
 
 export function workspaceDraftKey(hostId: string, path: string): string {

@@ -1797,7 +1797,7 @@ func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.
 		Description:         fmt.Sprintf("derived from sku %s", sku.ID),
 		BaseImage:           firstNonEmptyString(strings.TrimSpace(sku.DesiredImageID), strings.TrimSpace(sku.BaseImage)),
 		DesiredCap:          desiredCap,
-		InstanceType:        firstNonEmptyString(strings.TrimSpace(sku.InstanceType), defaultInstanceType),
+		InstanceType:        firstNonEmptyString(bundle.LineageTags[sourcePoolInstanceTypeLineageTag], sku.InstanceType, defaultInstanceType),
 		Status:              core.PoolStatusActive,
 		VpcID:               bundle.VpcID,
 		SubnetID:            bundle.SubnetID,
