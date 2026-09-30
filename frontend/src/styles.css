@@ -593,7 +593,7 @@ a {
 /* ── /agents 左侧导航视觉升级 ───────────────────────────────────────────── */
 .lv-agents-sidebar {
   --lv-agents-nav-width: 220px;
-  --lv-agents-nav-item-height: 32px;
+  --lv-agents-nav-item-height: 30px;
   --lv-agents-nav-item-gap: 2px;
   --lv-agents-nav-group-gap: 8px;
   --lv-agents-sidebar-middle-padding-block: 16px;
@@ -1161,7 +1161,7 @@ a {
   }
 
   .lv-agents-sidebar-middle {
-    --lv-agents-nav-group-gap: 4px;
+    --lv-agents-nav-group-gap: 2px;
     --lv-agents-nav-item-gap: 0;
 
     flex: 1 1 auto;
