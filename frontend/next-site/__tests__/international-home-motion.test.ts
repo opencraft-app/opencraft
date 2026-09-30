@@ -115,12 +115,9 @@ describe('international homepage motion', () => {
     image.src = '/lightvela-intl-home/assets/lv-cover-lavender.webp';
     dispose = mountInternationalHomeMotion(root);
     expect(root.querySelector('.hero .home-cover-mascot img')).toBe(image);
-    expect(root.hasAttribute('data-companion-journey')).toBe(false);
-    expect(root.querySelector('.home-companion-journey,.home-companion-traveler')).toBeNull();
     expect(gsap.getTweensOf(root.querySelector('.home-cover-mascot')).length).toBeGreaterThan(0);
     ScrollTrigger.getAll().forEach((trigger) => trigger.animation?.progress(1));
     expect(image.style.visibility).not.toBe('hidden');
-    expect(root.querySelector('.home-companion-traveler')).toBeNull();
   });
 
   it('does not multiply triggers on repeated initialization or a dispose event', () => {
@@ -206,7 +203,6 @@ describe('international homepage motion', () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     targets.forEach((target) => expect(gsap.getTweensOf(target)).toHaveLength(0));
     expect(root.querySelectorAll('#looping-tasks .feature-task__case')).toHaveLength(2);
-    expect(root.querySelectorAll('#scrolling-channels.home-feature-playing, #looping-tasks.home-feature-playing')).toHaveLength(0);
   });
 
   function prepareLoops() {
@@ -231,7 +227,6 @@ describe('international homepage motion', () => {
       expect(timeline.iteration()).toBeGreaterThanOrEqual(4);
       expect(timeline.paused()).toBe(false);
     }
-    expect(root.querySelector('.home-feature-playing')).toBeNull();
   });
 
   it('does not stop, rewind or serialize visible loops after pointer or keyboard input', () => {

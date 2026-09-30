@@ -1,10 +1,10 @@
 import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 let nextClipId = 0;
 const ASSET_ROOT = '/lightvela-intl-home/assets/';
+const ASSET_VERSION = '20260930-home-visual-v1';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const COMPANION_DOOR_EVENT = 'lightvela-companion-door';
-const DOOR_READY_EVENT = 'lightvela-door-ready';
 const DOOR_PEEK_STATE = {
   ready: 'ready',
   playing: 'playing',
@@ -12,6 +12,7 @@ const DOOR_PEEK_STATE = {
 } as const;
 
 export function mountDoorPeek(portal: HTMLElement): () => void {
+  gsap.registerPlugin(ScrollTrigger);
   const artwork = portal.querySelector('svg');
   if (!artwork || artwork.getAttribute('viewBox') !== '0 0 964 966') return () => {};
   let disposed = false;
@@ -19,22 +20,6 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
   let layers: SVGGElement | undefined;
   let definitions: SVGDefsElement | undefined;
   let pausedForVisibility = false;
-  let guidedProgress: number | undefined;
-  const guide = (event: Event) => {
-    const progress = (event as CustomEvent<{ progress: number }>).detail?.progress;
-    if (disposed || typeof progress !== 'number' || !Number.isFinite(progress)) return;
-    guidedProgress = Math.max(0, Math.min(1, progress));
-    if (!timeline || !layers) return;
-    timeline.scrollTrigger?.kill(false);
-    timeline.pause().progress(guidedProgress, true);
-    layers.style.display = guidedProgress >= 1 ? 'none' : '';
-    portal.dataset.doorPeek = guidedProgress >= 1
-      ? DOOR_PEEK_STATE.complete
-      : guidedProgress > 0
-        ? DOOR_PEEK_STATE.playing
-        : DOOR_PEEK_STATE.ready;
-  };
-  portal.addEventListener(COMPANION_DOOR_EVENT, guide);
   const loads: Array<() => void> = [];
   const originalState = portal.getAttribute('data-door-peek');
 
@@ -49,7 +34,7 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
       loads.push(() => finish(false));
       image.onload = () => finish(true);
       image.onerror = () => finish(false);
-      image.src = `${ASSET_ROOT}${file}`;
+      image.src = `${ASSET_ROOT}${file}?v=${ASSET_VERSION}`;
     });
   }
 
@@ -68,13 +53,13 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
     definitions.appendChild(clip);
     layers = svg('g', { class: 'home-door-peek-layers', 'aria-hidden': 'true', 'pointer-events': 'none' });
     const background = svg('image', {
-      class: 'home-door-peek-background', href: `${ASSET_ROOT}hermes-door-background.webp`,
+      class: 'home-door-peek-background', href: `${ASSET_ROOT}hermes-door-background.webp?v=${ASSET_VERSION}`,
       width: '964', height: '966', preserveAspectRatio: 'xMidYMid meet',
     });
     const doorway = svg('g', { 'clip-path': `url(#${clipId})` });
     const character = svg('g', { class: 'home-door-peek-character' });
     character.appendChild(svg('image', {
-      href: `${ASSET_ROOT}hermes-door-character.webp`, x: '374', y: '430', width: '128', height: '244',
+      href: `${ASSET_ROOT}hermes-door-character.webp?v=${ASSET_VERSION}`, x: '374', y: '430', width: '128', height: '244',
     }));
     doorway.appendChild(character);
     layers.append(background, doorway);
@@ -95,8 +80,6 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
       .to(character, { x: -12, y: 2, rotation: -1.5, duration: 0.32, ease: 'sine.inOut' }, '+=0.65')
       .to(character, { x: 0, y: 0, rotation: 0, duration: 0.4, ease: 'sine.out' });
     timeline.scrollTrigger?.refresh();
-    if (guidedProgress !== undefined) guide(new CustomEvent(COMPANION_DOOR_EVENT, { detail: { progress: guidedProgress } }));
-    portal.dispatchEvent(new Event(DOOR_READY_EVENT, { bubbles: true }));
     if (document.hidden) { timeline.pause(); pausedForVisibility = true; }
   });
 
@@ -119,7 +102,6 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
     layers?.remove();
     definitions?.remove();
     document.removeEventListener('visibilitychange', visibility);
-    portal.removeEventListener(COMPANION_DOOR_EVENT, guide);
     if (originalState === null) portal.removeAttribute('data-door-peek');
     else portal.setAttribute('data-door-peek', originalState);
   };

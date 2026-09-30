@@ -44,8 +44,8 @@ afterEach(() => {
 describe('door character peek', () => {
   it('preloads both layers without replacing or hiding the original artwork', async () => {
     expect(images.map((image) => image.src)).toEqual([
-      '/lightvela-intl-home/assets/hermes-door-background.webp',
-      '/lightvela-intl-home/assets/hermes-door-character.webp',
+      '/lightvela-intl-home/assets/hermes-door-background.webp?v=20260930-home-visual-v1',
+      '/lightvela-intl-home/assets/hermes-door-character.webp?v=20260930-home-visual-v1',
     ]);
     expect(portal.querySelector('.home-door-peek-layers')).toBeNull();
     expect(portal.querySelector('image')?.getAttribute('href')).toContain('hermes-door.webp');
@@ -111,25 +111,6 @@ describe('door character peek', () => {
     expect(portal.querySelector('defs')).toBeNull();
     expect(portal.hasAttribute('data-door-peek')).toBe(false);
     expect(ScrollTrigger.getAll()).toHaveLength(0);
-  });
-
-  it('accepts the companion handoff before assets load and reverses when the visitor scrolls back', async () => {
-    const guide = (progress: number) => portal.dispatchEvent(new CustomEvent('lightvela-companion-door', { detail: { progress } }));
-    guide(0);
-    await loaded();
-    expect(ScrollTrigger.getAll()).toHaveLength(0);
-    guide(1);
-    expect(portal.dataset.doorPeek).toBe('complete');
-    expect(portal.querySelector<SVGElement>('.home-door-peek-layers')!.style.display).toBe('none');
-    guide(0.5);
-    expect(portal.dataset.doorPeek).toBe('playing');
-    expect(portal.querySelector<SVGElement>('.home-door-peek-layers')!.style.display).toBe('');
-    guide(0);
-    expect(portal.dataset.doorPeek).toBe('ready');
-    expect(Number(gsap.getProperty(portal.querySelector('.home-door-peek-character'), 'x'))).toBe(-136);
-    dispose();
-    guide(1);
-    expect(portal.hasAttribute('data-door-peek')).toBe(false);
   });
 
   it('retains the layered assets in subsequent homepage imports', () => {

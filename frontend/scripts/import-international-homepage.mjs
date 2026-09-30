@@ -18,6 +18,7 @@ if (!sourceArgument) {
 
 const sourceRoot = path.resolve(sourceArgument);
 const targetRoot = path.join(frontendRoot, "public/lightvela-intl-home");
+const homeVisualAssetVersion = "20260930-home-visual-v1";
 const preservedHarnessAssetNames = [
   "lv-cover-lavender.webp",
   "scenes-mascot-duo.webp",
@@ -4414,12 +4415,16 @@ if (
   throw new Error("Domestic homepage must hide Blog and retain its approved channels, brand icons, unprefixed routes, and concise copyright before international import");
 }
 
-const preservedHarnessAssets = await Promise.all(
-  preservedHarnessAssetNames.map(async (assetName) => [
-    assetName,
-    await readFile(path.join(targetRoot, "assets", assetName)),
-  ]),
-);
+const preservedHarnessAssets = (await Promise.all(
+  preservedHarnessAssetNames.map(async (assetName) => {
+    try {
+      return [assetName, await readFile(path.join(targetRoot, "assets", assetName))];
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
+  }),
+)).filter(Boolean);
 await rm(targetRoot, { recursive: true, force: true });
 await mkdir(path.join(targetRoot, "assets"), { recursive: true });
 await Promise.all(
@@ -4531,7 +4536,7 @@ for (const locale of supportedLocales) {
   for (const [selector, position, className, asset, width, height] of companionDecorations) {
     if (!document.querySelector(`.${className}`)) {
       document.querySelector(selector)?.insertAdjacentHTML(position,
-        `<span class="${className}" aria-hidden="true"><img src="/lightvela-intl-home/assets/${asset}" alt="" width="${width}" height="${height}" decoding="async"${className === "home-cover-mascot" ? "" : ' loading="lazy"'}></span>`);
+        `<span class="${className}" aria-hidden="true"><img src="/lightvela-intl-home/assets/${asset}?v=${homeVisualAssetVersion}" alt="" width="${width}" height="${height}" decoding="async"${className === "home-cover-mascot" ? "" : ' loading="lazy"'}></span>`);
     }
   }
 

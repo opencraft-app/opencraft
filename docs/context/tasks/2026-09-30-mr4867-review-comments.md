@@ -7,10 +7,11 @@
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - `wisp/mono2!4867`：处理评论页显示的 8 条 AI 评审意见。
+- CR follow-up：处理移动端 mascot、静态资源缓存、死代码、ScrollTrigger 注册和导入脚本前置依赖；门图比例交设计确认。
 
 ## interface_refs / data_structure_refs
 - `PRODUCT_FEEDBACK_URL` 必须继续表示站内 `/support`。
-- 首页动效的 dispose、door guide、door ready 事件名与 door peek 状态值保持不变。
+- 首页动效的 dispose 事件与 door peek 状态值保持不变；无人发布或监听的 door handoff/ready 事件可以删除。
 
 ## history_context
 - `current_design_refs`：`docs/context/domains/site-environment-routing.md`、MR !4867 当前补丁。
@@ -23,6 +24,9 @@
 - 事件与 door peek 状态使用集中常量且行为不变。
 - 反馈链接维持内部路由；资源生成失败仍以非零状态向调用方传播。
 - 聚焦测试、lint 与类型检查通过。
+- 390px 视口下 `.scenes__mascot` 不挤压场景标题。
+- 同名替换的视觉资源 URL 带版本参数。
+- 未接线的 companion journey CSS 和 door handoff 事件链路移除。
 
 ## affected_paths
 - `frontend/next-site/international-home-stage-motion.ts`
@@ -52,6 +56,8 @@
 - `pnpm typecheck`：166 个既有诊断、171 个 baseline、0 个新增、5 个已消除，退出码 0。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：0 errors、0 warnings。
 - `git diff --check`：通过。
+- CR follow-up：生成器测试 25/25、动效测试 26/26、TypeScript 0 个新增诊断。
+- 本地国际站 `http://localhost:5174` 在 390×844 视口检查：场景标题与卡片正常，装饰 mascot 未进入移动端布局。
 
 ## risks
 - 动效触发器缺失时应跳过局部动画，不能导致首页初始化失败。
@@ -68,6 +74,9 @@
 - 采纳 DOM 安全、采样边界和常量化评论。
 - 不采纳两个“反馈 URL 可能为外链”评论：仓库权威常量明确为 `/support`。
 - 不采纳吞错式 try/catch 建议：top-level await 已会以非零状态传播 sharp 失败。
+- 移动端隐藏纯装饰性的 scenes mascot，不缩小后占用标题空间。
+- 门图 `viewBox="0 0 964 966"` 与 `meet` 保持不变，等待设计 owner 确认。
+- i18n 评论已在当前分支失效：`en-US` 的“用户反馈”为 `User Feedback`，无需改动。
 
 ## scan_scope
 - `frontend/next-site/`

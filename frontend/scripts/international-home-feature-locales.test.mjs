@@ -36,11 +36,16 @@ test('scene artwork is present once after both fresh and repeated generation', (
   for (const result of [once, twice]) {
     const document = new JSDOM(result).window.document;
     assert.equal(document.querySelectorAll('.scenes__mascot').length, 1);
-    assert.equal(document.querySelector('.scenes__mascot img').getAttribute('src'), '/lightvela-intl-home/assets/scenes-mascot-duo.webp');
+    assert.equal(document.querySelector('.scenes__mascot img').getAttribute('src'), '/lightvela-intl-home/assets/scenes-mascot-duo.webp?v=20260930-home-visual-v1');
   }
   const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
   assert.ok(importer.includes('"scenes-mascot-duo.webp"'));
   assert.ok(importer.includes('if (preservedHarnessAssetNameSet.has(relativeAssetPath)) continue;'));
+});
+
+test('scene mascot cannot overflow the mobile heading row', () => {
+  const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');
+  assert.match(css, /@media \(max-width: 899px\)[\s\S]*?\.scenes__mascot \{ display: none !important; \}/);
 });
 
 test('footer decoration preserves both CTA states and their localized source copy', () => {
@@ -132,7 +137,7 @@ test('fresh and legacy step imports converge on one artwork and foot anchor', (t
   t.after(() => dom.window.close());
   const mascot = dom.window.document.querySelector('.home-step-mascot');
   const image = mascot.querySelector('img');
-  assert.equal(image.getAttribute('src'), '/lightvela-intl-home/assets/figma-steps-user-original.webp');
+  assert.equal(image.getAttribute('src'), '/lightvela-intl-home/assets/figma-steps-user-original.webp?v=20260930-home-visual-v1');
   assert.equal(image.getAttribute('width'), '676');
   assert.equal(image.getAttribute('height'), '591');
   assert.equal(mascot.dataset.footY, '520');
@@ -265,7 +270,7 @@ for (const locale of FEATURE_LOCALES) {
     assert.equal(door.getAttribute('preserveAspectRatio'), 'xMidYMid meet');
     assert.equal(door.querySelector('clipPath, path'), null, 'no legacy door clipping or ground overlay');
     const artwork = door.querySelector('image');
-    assert.equal(artwork.getAttribute('href'), '/lightvela-intl-home/assets/hermes-door.webp');
+    assert.equal(artwork.getAttribute('href'), '/lightvela-intl-home/assets/hermes-door.webp?v=20260930-home-visual-v1');
     assert.equal(artwork.getAttribute('width'), '964');
     assert.equal(artwork.getAttribute('height'), '966');
     assert.equal(artwork.getAttribute('preserveAspectRatio'), 'xMidYMid meet');

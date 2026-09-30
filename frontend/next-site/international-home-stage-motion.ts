@@ -1,9 +1,11 @@
 import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { mountDoorPeek } from './international-home-door-peek';
 
 type StageOptions = { desktop: boolean; hover: boolean };
 
 export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOptions): () => void {
+  gsap.registerPlugin(ScrollTrigger);
   const decorations: HTMLElement[] = [];
   const animations: gsap.core.Animation[] = [];
   const paused = new Set<gsap.core.Animation>();

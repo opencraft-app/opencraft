@@ -154,7 +154,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   }
 
   #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp?v=20260930-home-visual-v1') !important;
     background-size: cover !important;
     background-position: center top !important;
   }
@@ -207,7 +207,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   }
 
   #lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo::after {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp?v=20260930-home-visual-v1') !important;
   }
 }
 
@@ -435,7 +435,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 
 #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo {
-  background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp') !important;
+  background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp?v=20260930-home-visual-v1') !important;
   background-size: cover !important;
 }
 
@@ -486,7 +486,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 
 #lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo::after {
-  background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp');
+  background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp?v=20260930-home-visual-v1');
 }
 
 #lightvela-intl-home .plays {
@@ -760,7 +760,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .about__cards .wcard__more { display: none !important; }
 
   #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent.webp?v=20260930-home-visual-v1') !important;
     background-size: cover !important;
     background-position: center top !important;
   }
@@ -804,11 +804,14 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
     background-image: url('/lightvela-intl-home/assets/figma-feature-memory-wave.webp') !important;
   }
   #lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo::after {
-    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp') !important;
+    background-image: url('/lightvela-intl-home/assets/figma-feature-memory-landscape.webp?v=20260930-home-visual-v1') !important;
   }
 }
 
 /* One page-wide measure, matching the supplied 2094px Figma frame. */
+@media (max-width: 899px) {
+  #lightvela-intl-home .scenes__mascot { display: none !important; }
+}
 @media (min-width: 900px) {
   #lightvela-intl-home .home-cover-mascot { left: 68px !important; width: 190px !important; }
   #lightvela-intl-home .home-cover-mascot img { width: 190px !important; }
@@ -918,9 +921,9 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .about .about__cards .wcard .wcard__body p * { text-shadow: none !important; }
 
 /* Localized card previews and annotation: text remains editable at every locale. */
-#lightvela-intl-home .about .about__cards .wcard:nth-child(2) .wcard__demo { background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent-matte.webp') !important; }
+#lightvela-intl-home .about .about__cards .wcard:nth-child(2) .wcard__demo { background-image: url('/lightvela-intl-home/assets/figma-feature-cloud-agent-matte.webp?v=20260930-home-visual-v1') !important; }
 @media (min-width: 900px) {
-  #lightvela-intl-home .about .about__cards .wcard:nth-child(2) .wcard__demo { background-image: linear-gradient(to bottom, transparent 65%, #aab4c9 82%), url('/lightvela-intl-home/assets/figma-feature-cloud-agent-matte.webp') !important; background-size: 100% 100%, auto 82% !important; }
+  #lightvela-intl-home .about .about__cards .wcard:nth-child(2) .wcard__demo { background-image: linear-gradient(to bottom, transparent 65%, #aab4c9 82%), url('/lightvela-intl-home/assets/figma-feature-cloud-agent-matte.webp?v=20260930-home-visual-v1') !important; background-size: 100% 100%, auto 82% !important; }
 }
 #lightvela-intl-home .about .about__cards .wcard:nth-child(3) .wcard__demo,
 #lightvela-intl-home .about .about__cards .wcard--confirm .wcard__demo { background-image: none !important; }
@@ -1413,7 +1416,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   border: 1px solid #9972d7; box-shadow: 0 6px 30px #8c61d426; opacity: 0;
   transition: opacity 350ms ease;
 }
-#lightvela-intl-home[data-home-motion-ready='active'] .about .wcard.home-feature-playing::after { opacity: 0.8; }
 #lightvela-intl-home .home-cta-light {
   left: 8%; top: 0; width: 84%; height: 200px; z-index: 0;
   background: radial-gradient(ellipse, #b697fa66, transparent 66%);
@@ -1421,22 +1423,3 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 @media (min-width: 900px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   #lightvela-intl-home[data-home-motion-ready='active'] .about .about__cards .wcard .wcard__inner { transform: none; transition: none !important; }
 }
-#lightvela-intl-home[data-companion-journey] { position: relative; }
-#lightvela-intl-home .home-companion-journey {
-  position: absolute; inset: 0; z-index: 8; overflow: hidden; pointer-events: none;
-}
-#lightvela-intl-home .home-companion-traveler {
-  position: absolute; left: 0; top: 0; width: 180px; height: 140px;
-  margin: -70px 0 0 -90px; opacity: 0; pointer-events: none;
-  transform-origin: center; will-change: transform;
-}
-#lightvela-intl-home .home-companion-traveler img {
-  display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none;
-}
-#lightvela-intl-home .home-companion-traveler .home-companion-peek-pose { position: absolute; inset: 0; opacity: 0; }
-#lightvela-intl-home[data-companion-journey] .home-cover-mascot img,
-#lightvela-intl-home[data-companion-journey] .home-step-mascot img,
-#lightvela-intl-home[data-companion-journey] .home-cta-mascot img { visibility: hidden !important; }
-#lightvela-intl-home[data-companion-journey] .home-card-sheen,
-#lightvela-intl-home[data-companion-journey] .home-cta-light,
-#lightvela-intl-home[data-companion-journey] .about .wcard::after { display: none !important; }

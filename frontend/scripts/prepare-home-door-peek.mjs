@@ -6,14 +6,16 @@ const assets = new URL('../public/lightvela-intl-home/assets/', import.meta.url)
 const { data: source, info } = await sharp(fileURLToPath(new URL('hermes-door.webp', assets))).removeAlpha().raw().toBuffer({ resolveWithObject: true });
 assert.equal(info.width, 964);
 assert.equal(info.height, 966);
+// Re-run this script whenever hermes-door.webp changes; these values are tuned to its 964×966 source pixels.
 const region = { left: 374, top: 430, width: 128, height: 244 };
+const verticalSampleRadius = 3;
 const plate = Buffer.from(source);
 const character = Buffer.alloc(region.width * region.height * 4);
 const smooth = (value) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); };
 const sample = (x, y, channel) => {
   let sum = 0;
   let count = 0;
-  for (let dy = -3; dy <= 3; dy++) {
+  for (let dy = -verticalSampleRadius; dy <= verticalSampleRadius; dy++) {
     const sampleY = y + dy;
     if (x < 0 || x >= info.width || sampleY < 0 || sampleY >= info.height) continue;
     sum += source[(sampleY * info.width + x) * 3 + channel];
