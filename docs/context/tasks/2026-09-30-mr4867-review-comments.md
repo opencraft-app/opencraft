@@ -27,12 +27,14 @@
 - 390px 视口下 `.scenes__mascot` 不挤压场景标题。
 - 同名替换的视觉资源 URL 带版本参数。
 - 未接线的 companion journey CSS 和 door handoff 事件链路移除。
+- OpenCraft vendored Agent Console manifest 与 frontend 源修订保持一致。
 
 ## affected_paths
 - `frontend/next-site/international-home-stage-motion.ts`
 - `frontend/next-site/international-home-motion.ts`
 - `frontend/next-site/international-home-door-peek.ts`
 - `frontend/scripts/prepare-home-door-peek.mjs`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
 
 ## required_context
 - `service-frontend`
@@ -48,6 +50,7 @@
 | `docs/context/flows/tapd-gongfeng-delivery.md@2c9356c12` | MR 写操作边界 | 不自动 commit、push 或回复评论 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@2c9356c12` | 前端测试邻接 | 检查相邻动效测试 |
 | `.agents/skills/gongfeng/SKILL.md@workspace` | 工蜂评论读取流程 | 通过已登录浏览器只读获取评论 |
+| `opencraft/AGENTS.md@625dc7dc1` | OpenCraft vendored 同步规则 | 通过标准脚本更新机械生成 manifest |
 
 ## evidence
 - 工蜂评论页：8 条 AI 评论，按严重程度排序。
@@ -58,6 +61,9 @@
 - `git diff --check`：通过。
 - CR follow-up：生成器测试 25/25、动效测试 26/26、TypeScript 0 个新增诊断。
 - 本地国际站 `http://localhost:5174` 在 390×844 视口检查：场景标题与卡片正常，装饰 mascot 未进入移动端布局。
+- 远端流水线反馈：`opencraft guard` 因 `UPSTREAM.json` 的 `sourceRevision` 漂移失败，期望 `2c9356c12539d4352ed453117e917756368729f8`。
+- `npm --prefix opencraft run sync:mono2-agent-console`：同步 130 个 Agent Console 文件，仅生成 `UPSTREAM.json` 的 `sourceRevision` 更新。
+- `npm --prefix opencraft run check:mono2-agent-console`：Verified 130 mono2 Agent Console files，退出码 0。
 
 ## risks
 - 动效触发器缺失时应跳过局部动画，不能导致首页初始化失败。
@@ -67,6 +73,7 @@
 - 相关 Vitest 测试：通过。
 - TypeScript baseline 检查：通过，0 个新增诊断。
 - 文档校验与 `git diff --check`：通过。
+- OpenCraft Agent Console vendored 检查：通过。
 - Lint：仓库当前 `frontend/package.json` 无 lint script，已安装依赖也不提供 eslint/biome/oxlint/prettier 可执行文件，无法运行独立 lint 门禁。
 - Staged change-impact：本轮未 stage，故不运行 staged-only 门禁。
 
@@ -77,16 +84,19 @@
 - 移动端隐藏纯装饰性的 scenes mascot，不缩小后占用标题空间。
 - 门图 `viewBox="0 0 964 966"` 与 `meet` 保持不变，等待设计 owner 确认。
 - i18n 评论已在当前分支失效：`en-US` 的“用户反馈”为 `User Feedback`，无需改动。
+- OpenCraft guard 按标准生成流程只更新 `UPSTREAM.json.sourceRevision`，不手改 vendored 源文件。
 
 ## scan_scope
 - `frontend/next-site/`
 - `frontend/scripts/prepare-home-door-peek.mjs`
 - `frontend/src/components/site/`
 - `frontend/src/constants/product-feedback.ts`
+- `opencraft/scripts/sync-mono2-agent-console.mjs`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
 
 ## scan_output
 - 使用 `rg` 精确核对评论涉及的事件、状态、DOM 查询与反馈 URL。
 
 ## handoff
-- 当前状态：本地 detached worktree 中已修复并完成可用门禁。
-- 下一步：用户确认后再 commit、push，并在工蜂处理评论状态。
+- 当前状态：MR 已推送到 `625dc7dc1`；流水线反馈的 OpenCraft manifest drift 已在本地修复并通过 vendored 检查。
+- 下一步：用户确认后提交并推送 `UPSTREAM.json` 的独立修复 commit。
