@@ -1,3 +1,4 @@
+import { ThinkingLabel } from "../../thinking-label";
 import {
   deriveAgentActivityHeaderPresentation,
   formatHookEventName,
@@ -81,7 +82,9 @@ function AgentActivityGroup({
         canExpand={visibleBlocks.length > 0}
         icon={header.icon === null ? undefined : activityIcon(header.icon)}
         shouldAnimateInitialCollapse={group.lifecycle.isLatestVisibleUnit && group.lifecycle.inProgress && !group.lifecycle.isActivitySliceClosed}
-        summary={<CadencedShimmer active={header.active}><AgentActivitySummaryView summary={header.summary} /></CadencedShimmer>}
+        summary={<CadencedShimmer active={header.active}>{header.state === "thinking" && header.summary.kind === "text"
+          ? <ThinkingLabel summary={header.summary.text} />
+          : <AgentActivitySummaryView summary={header.summary} />}</CadencedShimmer>}
         summaryKey={header.summaryKey}
         summaryTransition={header.state === "summary" ? "immediate" : "deferred"}
       >

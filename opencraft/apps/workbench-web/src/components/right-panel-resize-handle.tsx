@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import { createPortal } from "react-dom";
 import {
   useEffect,
@@ -37,6 +38,7 @@ export function RightPanelResizeHandle({
   onResizeEnd,
   onResizingChange,
 }: RightPanelResizeHandleProps) {
+  const intl = useIntl();
   const [resizing, setResizing] = useState(false);
   const dragRef = useRef<DragState | null>(null);
 
@@ -150,7 +152,7 @@ export function RightPanelResizeHandle({
       className="right-panel-resize-handle"
       data-resizing={resizing}
       role="separator"
-      aria-label="Resize right panel"
+      aria-label={intl.formatMessage({ id: "panel.resize", defaultMessage: "Resize preview panel" })}
       aria-orientation="vertical"
       aria-valuemax={Math.round(getMaximumSize())}
       aria-valuemin={Math.round(getMinimumSize())}

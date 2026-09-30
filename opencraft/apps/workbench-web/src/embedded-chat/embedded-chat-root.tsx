@@ -30,6 +30,7 @@ export interface EmbeddedChatRootProps {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
     readonly loading: boolean;
     readonly selectedChatId: string | null;
+    readonly isDraft: boolean;
   }) => void;
   readonly portalContainer: HTMLElement;
 }

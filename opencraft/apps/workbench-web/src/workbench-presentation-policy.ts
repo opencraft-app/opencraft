@@ -2,6 +2,8 @@ export interface WorkbenchPresentationPolicy {
   readonly shellNavigation: boolean;
   readonly contextSidebar: boolean;
   readonly rightPanel: boolean;
+  readonly panelActions: "all" | readonly string[];
+  readonly filePreviewOnly: boolean;
   readonly connectorLauncher: boolean;
   readonly composerActions: "all" | readonly string[];
 }
@@ -11,6 +13,8 @@ export const FULL_WORKBENCH_PRESENTATION: WorkbenchPresentationPolicy =
     shellNavigation: true,
     contextSidebar: true,
     rightPanel: true,
+    panelActions: "all",
+    filePreviewOnly: false,
     connectorLauncher: true,
     composerActions: "all",
   });
@@ -20,7 +24,9 @@ export const EMBEDDED_CORE_CHAT_PRESENTATION: WorkbenchPresentationPolicy =
   Object.freeze({
     shellNavigation: false,
     contextSidebar: false,
-    rightPanel: false,
+    rightPanel: true,
+    panelActions: Object.freeze(["vela.browser.new-tab"]),
+    filePreviewOnly: true,
     connectorLauncher: false,
-    composerActions: Object.freeze([]),
+    composerActions: Object.freeze(["vela.voice-input.toggle"]),
   });

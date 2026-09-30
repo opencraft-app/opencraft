@@ -73,7 +73,7 @@ interface AppShellProps {
   layoutScope: string;
   mainContentLayout: AppShellMainContentLayout;
   /** Physical window chrome stays mounted while routes replace shell content. */
-  header: ReactElement;
+  header: ReactElement | null;
   floatingSidebarHeader(onDock: () => void): ReactNode;
   /** Optional application context. Chat supplies a conversation list; other apps may omit it. */
   leftPanel?: ReactNode;

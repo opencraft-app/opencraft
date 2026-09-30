@@ -273,6 +273,7 @@ const OAUTH_SESSION_TOKEN_FRAGMENT_KEY = "session_token";
 const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 const DEFAULT_INSTANCE_TIMEOUT_SECONDS = 60 * 60;
 const DEFAULT_RESCUE_EXPORT_REMOTE_PATH = "/home/agentuser/.hermes";
+export const AUTH_SESSION_CHANGED_EVENT = "lightclaw:auth-session-changed";
 export const AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
 export const AUTH_SERVICE_UNAVAILABLE_MESSAGE = "认证服务暂时不可用，请稍后重试。";
 
@@ -347,12 +348,15 @@ export const writeStoredAuthToken = (token?: string | null) => {
   }
 
   const normalized = token?.trim();
+  const previous = readStoredAuthToken();
   if (!normalized) {
     storage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    if (previous) globalThis.dispatchEvent?.(new Event(AUTH_SESSION_CHANGED_EVENT));
     return;
   }
 
   storage.setItem(AUTH_TOKEN_STORAGE_KEY, normalized);
+  if (previous !== normalized) globalThis.dispatchEvent?.(new Event(AUTH_SESSION_CHANGED_EVENT));
 };
 
 const broadcastUnauthorized = () => {

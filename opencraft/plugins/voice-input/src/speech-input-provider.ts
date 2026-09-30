@@ -67,6 +67,7 @@ interface BrowserSpeechRecognition {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  onstart: (() => void) | null;
   onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
   onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
@@ -129,8 +130,29 @@ export class BrowserSpeechInputProvider implements SpeechInputProvider {
     recognition.lang = options.language ?? globalThis.navigator?.language ?? "en-US";
     let closed = false;
     let cancelled = false;
+    let listening = false;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     let stopping = false, sequence = 0;
     const ledger = new DictationTranscriptLedger();
+    const clearDeadline = () => { clearTimeout(deadline); deadline = undefined; };
+    const abort = () => { try { recognition.abort(); } catch { /* Release the UI even if the browser session has failed. */ } };
+    const fail = (error: SpeechInputError) => {
+      if (closed) return;
+      closed = true;
+      clearDeadline();
+      abort();
+      observer.error(error);
+    };
+    const armDeadline = (milliseconds: number, message: string) => {
+      clearDeadline();
+      deadline = setTimeout(() => fail({ code: "unknown", message }), milliseconds);
+    };
+    recognition.onstart = () => {
+      if (closed || stopping) return;
+      listening = true;
+      clearDeadline();
+      observer.status?.("listening");
+    };
 
     recognition.onresult = (event) => {
       if (closed || cancelled) return;
@@ -141,35 +163,41 @@ export class BrowserSpeechInputProvider implements SpeechInputProvider {
         try { ledger.accept({ utteranceId: `browser-result-${index}`, sequence: ++sequence,
           phase: result.isFinal ? "final" : "partial", text }); }
         catch (error) {
-          closed = true; recognition.abort(); observer.error({ code: "unknown", message: error instanceof Error ? error.message : "听写结果无效" }); return;
+          fail({ code: "unknown", message: error instanceof Error ? error.message : "听写结果无效" }); return;
         }
       }
     };
     recognition.onerror = (event) => {
-      if (!cancelled) {
-        closed = true;
-        observer.error(normalizeError(event));
-      }
+      if (!cancelled) fail(normalizeError(event));
     };
     recognition.onend = () => {
       if (closed) return;
       closed = true;
+      clearDeadline();
       try {
         if (!stopping) throw new Error("语音服务在用户停止前结束，请重新开始听写");
         const text = ledger.finish(); if (text.length > 0) observer.commit(text);
         observer.end();
       } catch (error) { observer.error({ code: "unknown", message: error instanceof Error ? error.message : "听写未能收尾" }); }
     };
-    recognition.start();
+    armDeadline(15_000, "语音识别启动超时，请检查麦克风权限或稍后重试");
+    try { recognition.start(); }
+    catch (error) { closed = true; clearDeadline(); abort(); throw error; }
 
     const close = (mode: "stop" | "cancel") => {
       if (closed) return;
-      if (mode === "cancel") { cancelled = true; closed = true; }
-      else { if (stopping) return; stopping = true; }
-      if (mode === "cancel") recognition.abort();
-      else recognition.stop();
+      if (mode === "cancel") {
+        cancelled = true; closed = true; clearDeadline(); abort();
+      } else {
+        if (stopping) return;
+        stopping = true;
+        armDeadline(8_000, "语音识别完成超时，已退出听写，请重试");
+        try { recognition.stop(); }
+        catch { fail({ code: "unknown", message: "无法结束语音识别，已退出听写，请重试" }); }
+      }
     };
     return {
+      get phase() { return listening ? "listening" as const : "starting" as const; },
       stop: () => close("stop"),
       cancel: () => close("cancel"),
     };

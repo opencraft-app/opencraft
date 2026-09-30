@@ -3,7 +3,16 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import { LocaleRuntime } from "@opencraft/i18n";
+import { IntlRuntimeProvider } from "@opencraft/i18n/react";
+import zh from "../apps/workbench-web/src/i18n/locales/zh-CN.json";
+
+const locale = new LocaleRuntime([]);
+await locale.update({ localeOverride: "en-US" });
+function renderToStaticMarkup(children: React.ReactNode) {
+  return renderMarkup(<IntlRuntimeProvider runtime={locale}>{children}</IntlRuntimeProvider>);
+}
 
 import { ComposerQueueTray } from "../packages/codex-composer/src/queue-tray";
 import { supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard } from "@opencraft/appserver-protocol";
@@ -115,4 +124,17 @@ test("queued Steer is disabled without Host atomic support while idle Send remai
     <ComposerQueueTray items={[{ ...item, pausedReason: "restored-after-host-restart" }]} isResponseInProgress={false} atomicSteer />,
   );
   assert.match(idleUnreconciled, /aria-label="Start queued message"[^>]*disabled=""/);
+});
+
+
+test("Chinese queued steer exposes the immediate-insert tooltip and accessible name", async () => {
+  const runtime = new LocaleRuntime([{ locale: "zh-CN", label: "中文", load: async () => zh }]);
+  await runtime.update({ localeOverride: "zh-CN" });
+  try {
+    const markup = renderMarkup(<IntlRuntimeProvider runtime={runtime}>
+      <ComposerQueueTray items={[{ ...pendingItem, state: "queued", actionable: true }]}
+        isResponseInProgress atomicSteer />
+    </IntlRuntimeProvider>);
+    assert.match(markup, /class="is-labelled is-steer"[^>]*aria-label="立即插入"[^>]*title="立即插入"/);
+  } finally { runtime.dispose(); }
 });

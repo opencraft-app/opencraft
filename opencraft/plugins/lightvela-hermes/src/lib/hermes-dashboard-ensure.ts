@@ -114,10 +114,13 @@ export const ensureHermesDashboard = async (
         const failure = new RegExp(`${ERROR_MARKER}([a-z_]+)`).exec(outputBuffer)?.[1];
         if (failure) finish(new Error(`Hermes dashboard failed to start (${failure}).`));
       },
+      onError(error) { finish(error); },
+    }, {
+      // Linux canonical PTYs truncate input lines beyond 4095 bytes. Pass the
+      // bootstrap as an argv value, then keep the shell alive for TAT proxying.
+      program: "/bin/sh",
+      args: ["-c", `${createHermesDashboardEnsureCommand()} exec /bin/sh -i`],
     });
-    if (!channel.sendInput(`${createHermesDashboardEnsureCommand()}\r`)) {
-      finish(new Error("TAT terminal was not ready to ensure the Hermes dashboard."));
-    }
     return await completion;
   } catch (error) {
     finish(new Error("TAT terminal failed while ensuring the Hermes dashboard."));

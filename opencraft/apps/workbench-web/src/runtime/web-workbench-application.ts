@@ -80,7 +80,9 @@ function loadConversationBindings(storage: BrowserMetadataStorage = window.local
 }
 
 /** Single application owner for every long-lived renderer service. */
-export interface CreateWebWorkbenchApplicationOptions extends WebWorkbenchSupervisorOptions {}
+export interface CreateWebWorkbenchApplicationOptions extends WebWorkbenchSupervisorOptions {
+  readonly browserMetadataStorage?: BrowserMetadataStorage;
+}
 
 export async function createWebWorkbenchApplication(
   options: CreateWebWorkbenchApplicationOptions = {},
@@ -89,8 +91,8 @@ export async function createWebWorkbenchApplication(
   // before IndexedDB, Cordis and extension activation so authentication does
   // not depend on the latency or success of the rest of application startup.
   const desktop = (globalThis as typeof globalThis & { opencraftDesktop?: { kind?: string } }).opencraftDesktop?.kind === "electron";
-  const browserStorage = desktop ? await createDesktopBrowserStorage() : null;
-  if (!desktop) {
+  const browserStorage = options.browserMetadataStorage ?? (desktop ? await createDesktopBrowserStorage() : null);
+  if (!desktop && options.lightVelaAccountStorage === undefined) {
     await bootstrapLightVelaWebLoginCallback();
     bootstrapLightVelaOAuthCallback();
   }
