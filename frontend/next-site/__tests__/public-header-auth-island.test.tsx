@@ -183,18 +183,28 @@ describe("PublicHeaderAuthIsland", () => {
     render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} loginOnly />);
 
     expect(screen.queryByRole("button", { name: "Create Now" })).not.toBeInTheDocument();
-    for (const button of screen.getAllByRole("button", { name: "Sign In" })) {
-      expect(button).toHaveClass("bg-black/90", "text-white");
-    }
+    expect(screen.getByRole("button", { name: "Sign In" })).toHaveClass("bg-black/90", "text-white");
+  });
+
+  it("keeps one login control when the homepage session becomes anonymous", () => {
+    runtimeMock.isAuthenticated = true;
+    const { rerender } = render(
+      <PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} loginOnly />,
+    );
+
+    runtimeMock.isAuthenticated = false;
+    rerender(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} loginOnly />);
+
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    expect(screen.getByTestId("current-login-modal")).toBeInTheDocument();
+    expect(trackDatongClickMock).toHaveBeenCalledWith("header_login_btn", { pgid: "home" });
   });
 
   it("keeps login-only auth copy localized", () => {
     (globalThis as { React?: typeof React }).React = React;
     render(<PublicHeaderAuthIsland locale="id-ID" showLanguageSwitcher={false} loginOnly />);
 
-    for (const button of screen.getAllByRole("button", { name: "Masuk" })) {
-      expect(button).toHaveClass("bg-black/90", "text-white");
-    }
+    expect(screen.getByRole("button", { name: "Masuk" })).toHaveClass("bg-black/90", "text-white");
     expect(screen.queryByRole("button", { name: "Sign In" })).not.toBeInTheDocument();
   });
 
