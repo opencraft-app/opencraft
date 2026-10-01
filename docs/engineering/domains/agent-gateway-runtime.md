@@ -17,6 +17,8 @@
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
+OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展示 Hermes 指令库；选择指令只写入可编辑草稿，用户发送后才沿既有 Composer → AppServer → Hermes `prompt.submit` 链路处理。其他 Host 不展示该入口，指令库不创建第二条执行通道。
+
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
 OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。

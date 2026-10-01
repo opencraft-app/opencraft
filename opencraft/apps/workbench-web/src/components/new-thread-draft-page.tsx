@@ -6,6 +6,7 @@ import {
   type CodexComposerHandle,
   type ComposerEffectiveSelections,
   type ComposerSelectionCatalog,
+  type ComposerShortcutCommand,
 } from "@opencraft/codex-composer";
 import type {
   ComposerAttachment,
@@ -89,6 +90,7 @@ export interface NewThreadDraftPageProps {
   ) => void | Promise<void>;
   readonly composerAddMenuContent?: ReactNode | ((closeMenu: () => void) => ReactNode);
   readonly composerEndActions?: ReactNode;
+  readonly shortcutCommands?: readonly ComposerShortcutCommand[];
   readonly onSubmit: (
     intent: SubmitIntent,
     context: { readonly followUpAction: ComposerFollowUpAction | null },
@@ -453,6 +455,7 @@ export function NewThreadDraftPage({
   onRemoveAttachment,
   composerAddMenuContent,
   composerEndActions,
+  shortcutCommands,
   onSubmit,
 }: NewThreadDraftPageProps) {
   const intl = useIntl();
@@ -512,6 +515,7 @@ export function NewThreadDraftPage({
                   onResolveAttachment={onResolveAttachment}
                   onRemoveAttachment={onRemoveAttachment}
                   addMenuContent={composerAddMenuContent}
+                  shortcutCommands={shortcutCommands}
                   endActions={composerEndActions}
                   selectionCatalog={selectionCatalog}
                   catalog={catalog}

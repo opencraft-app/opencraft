@@ -9199,6 +9199,54 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+.codex-composer-shortcut-trigger {
+  display: inline-flex;
+  height: var(--composer-control-size, 28px);
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: default;
+
+  &:hover,
+  &[data-state="open"] {
+    background: var(--color-background-button-tertiary-hover);
+    color: var(--color-text);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+}
+
+.codex-composer-shortcut-menu {
+  width: min(260px, calc(100vw - 16px));
+
+  .codex-composer-selection-menu__item {
+    justify-content: flex-start;
+    gap: 12px;
+  }
+}
+
+.codex-composer-shortcut-menu__command {
+  flex: 0 0 auto;
+  color: var(--color-text);
+}
+
+.codex-composer-shortcut-menu__description {
+  color: var(--color-text-secondary);
+}
+
 .opencraft-voice-input-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;

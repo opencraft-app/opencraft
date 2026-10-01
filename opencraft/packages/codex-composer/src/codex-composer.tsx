@@ -98,6 +98,11 @@ interface Suggestion {
   metadata?: Readonly<Record<string, unknown>>;
 }
 
+export interface ComposerShortcutCommand {
+  readonly name: string;
+  readonly description: string;
+}
+
 interface SuggestionQuery {
   kind: SuggestionKind;
   query: string;
@@ -683,6 +688,8 @@ export interface CodexComposerProps {
   chromeHeader?: ReactNode;
   /** Host-owned Radix items appended to Add; render callbacks may close the root menu after nested actions. */
   addMenuContent?: ReactNode | ((closeMenu: () => void) => ReactNode);
+  /** Host-scoped slash commands shown in the editor and its shortcut menu. */
+  shortcutCommands?: readonly ComposerShortcutCommand[];
   /** Host-owned trusted extension actions placed before built-in end actions. */
   endActions?: ReactNode;
   catalog?: ComposerCatalog;
@@ -750,6 +757,7 @@ export const CodexComposer = forwardRef<
     controller,
     chromeHeader,
     addMenuContent,
+    shortcutCommands,
     endActions,
     catalog,
     mentionSuggestionsEnabled = true,
@@ -798,6 +806,7 @@ export const CodexComposer = forwardRef<
   const filteredSuggestionsRef = useRef<readonly Suggestion[]>([]);
   const suggestionLoadingRef = useRef(false);
   const selectedSuggestionRef = useRef(0);
+  const refocusAfterShortcutSelectionRef = useRef(false);
   const pendingSubmissionRef = useRef<{
     readonly controller: ComposerController;
     readonly token: symbol;
@@ -836,6 +845,7 @@ export const CodexComposer = forwardRef<
   } | null>(null);
   const [openPicker, setOpenPicker] = useState<SelectionPicker | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [shortcutMenuOpen, setShortcutMenuOpen] = useState(false);
   const [editingQueuedSubmissionId, setEditingQueuedSubmissionId] = useState<
     string | null
   >(null);
@@ -920,11 +930,17 @@ export const CodexComposer = forwardRef<
   const catalogError = !catalogSearchActive ? null : catalog === undefined
     ? "No catalog is available for this Host"
     : currentCatalogResult?.error ?? null;
+  const commandSuggestions: readonly Suggestion[] = shortcutCommands?.map((command) => ({
+    id: `cmd-${command.name}`,
+    kind: "command",
+    label: command.name,
+    detail: command.description,
+  })) ?? localCommandSuggestions;
   const filteredSuggestions =
     suggestionQuery == null
       ? []
       : suggestionQuery.kind === "command"
-        ? localCommandSuggestions.filter((suggestion) =>
+        ? commandSuggestions.filter((suggestion) =>
             suggestion.label
               .toLowerCase()
               .includes(suggestionQuery.query.toLowerCase()),
@@ -1260,7 +1276,10 @@ export const CodexComposer = forwardRef<
   const insertSuggestion = useCallback((suggestion: Suggestion) => {
     const view = editorViewRef.current;
     const query = suggestionQueryRef.current;
-    if (view == null || query == null || view.composing || !filteredSuggestionsRef.current.includes(suggestion)) return;
+    const isCurrentSuggestion = suggestion.kind === "command"
+      ? filteredSuggestionsRef.current.some((entry) => entry.kind === "command" && entry.id === suggestion.id && entry.label === suggestion.label)
+      : filteredSuggestionsRef.current.includes(suggestion);
+    if (view == null || query == null || view.composing || !isCurrentSuggestion) return;
     const actualQuery = querySuggestion(view.state);
     if (actualQuery?.kind !== query.kind || actualQuery.from !== query.from || actualQuery.to !== query.to || actualQuery.query !== query.query) return;
     const token = composerSchema.nodes.token.create({
@@ -2043,6 +2062,35 @@ export const CodexComposer = forwardRef<
                 event.currentTarget.value = "";
               }}
             />
+            {shortcutCommands && shortcutCommands.length > 0 ? (
+              <DropdownMenu.Root modal={false} open={shortcutMenuOpen} onOpenChange={setShortcutMenuOpen}>
+                <DropdownMenu.Trigger asChild>
+                  <button className="codex-composer-shortcut-trigger" type="button" disabled={disabled}>
+                    <Sparkles size={15} aria-hidden="true" />
+                    <span><FormattedMessage id="composer.commands" defaultMessage="Commands" /></span>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal container={portalContainer}>
+                  <DropdownMenu.Content className="codex-composer-selection-menu codex-composer-shortcut-menu" align="start" side="top" sideOffset={6} collisionPadding={6} aria-label="Hermes commands" onCloseAutoFocus={(event) => {
+                    if (!refocusAfterShortcutSelectionRef.current) return;
+                    refocusAfterShortcutSelectionRef.current = false;
+                    event.preventDefault();
+                    controller.focus();
+                  }}>
+                    {shortcutCommands.map((command) => (
+                      <DropdownMenu.Item key={command.name} className="codex-composer-selection-menu__item" onSelect={() => {
+                        refocusAfterShortcutSelectionRef.current = true;
+                        controller.insertText(`/${command.name} `);
+                      }}>
+                        <span className="codex-composer-shortcut-menu__command">/{command.name}</span>
+                        <span className="codex-composer-shortcut-menu__description">{command.description}</span>
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            ) : null}
           </div>
           <div
             ref={footerLayout.controlsRef}

@@ -13,6 +13,12 @@ snapshot-oriented compatibility projection for Codex V3 Resume. Web and Native
 surfaces share identity, projection, runtime commands, Composer documents and
 design tokens. They do not share a renderer or editor implementation.
 
+For a LightVela Hermes Host, the Web Composer offers `/new`, `/compress`,
+`/status`, `/usage`, `/stop` and `/help` in its input footer and slash suggestions.
+Choosing a shortcut inserts editable text into the current Draft; only explicit
+submission sends it through Hermes `prompt.submit`. Other Hosts retain their
+own suggestions and have no Hermes shortcut menu.
+
 ```text
 WebSocket / Replay Transport
           |
