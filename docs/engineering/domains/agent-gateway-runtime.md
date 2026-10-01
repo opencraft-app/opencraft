@@ -496,6 +496,7 @@ NewAPI 在锁定有效订阅后优先选择名称为 `free-credit:*` 的赠送�
 文件保存统一通过 writeWorkspaceResource 执行只读检查及目标快照写入；组件与 helper 均有拒绝写入测试。OpenCraft CI guard 在闭包校验后执行锁定依赖安装和串行 test:embedded-ci，包含真实预览面板的写入保护测试。
 
 国内嵌入聊天的 Markdown 文件入口同时支持标准文件链接与回复中行内代码形式的明确文件路径（`.md` / `.markdown`）。点击后由既有资源策略交给当前 Bot 的只读右栏；展示文字不提前触发远端读取，不把路径当命令执行。
+Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>` 也走同一入口，只在回复完成后可点；非 Markdown、夹在正文中的文本及无效路径保持文本。`MEDIA:` 前缀仅用于识别，不进入文件路径或绕过 Host 文件权限。
 
 国内嵌入聊天采用 compact 右栏初始宽度：既有默认宽度的 2/3，并继续遵守面板最小宽度和聊天内容保留宽度；拖拽调整由原 Shell owner 负责，独立工作台保持 standard 默认。
 

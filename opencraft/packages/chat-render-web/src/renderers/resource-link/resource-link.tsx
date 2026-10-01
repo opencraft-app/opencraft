@@ -7,6 +7,7 @@ import { Copy, ExternalLink, Globe2 } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
 
 import { writeTextToClipboard } from "../../clipboard";
+import { ProseRenderer } from "../prose/prose-renderer";
 import {
   externalLinkMenuIntent,
   externalLinkPointerIntent,
@@ -135,6 +136,38 @@ export function ExternalUrlLink({
 
 // An inline code label inside an explicit Markdown link belongs to that link.
 const ResourceLinkLabel = createContext(false);
+const explicitMarkdownPath = /^(?:\/(?!\/)|\.\.?\/|[a-z]:[\\/]|file:\/\/\/)[^\r\n`<>|;]*\.(?:md|markdown)$/iu;
+
+export function mediaMarkdownPath(value: string): string | null {
+  const source = value.trim();
+  if (!source.startsWith("MEDIA:")) return null;
+  const path = source.slice("MEDIA:".length);
+  return explicitMarkdownPath.test(path) ? path : null;
+}
+
+export function createMediaMarkdownFileRenderer(resources: ChatResourcePolicyService) {
+  return function MediaMarkdownFileRenderer(props: ChatNodeRendererProps) {
+    const { node, context } = props;
+    const insideLink = useContext(ResourceLinkLabel);
+    if (node.kind !== "text") return null;
+    const path = mediaMarkdownPath(node.text);
+    if (insideLink || context.streaming || context.openResource === undefined || path === null) {
+      return <ProseRenderer {...props} />;
+    }
+    const decision = resources.resolve(path, context);
+    if (!decision.allowed || decision.target === null
+      || (decision.kind !== "file" && decision.kind !== "workspace-file")) return <ProseRenderer {...props} />;
+    return <a
+      href={decision.target}
+      title={path}
+      data-chat-resource-kind={decision.kind}
+      onClick={(event) => {
+        event.preventDefault();
+        context.openResource?.(decision.target!, decision);
+      }}
+    ><code className="chat-inline-code">{path}</code></a>;
+  };
+}
 
 export function createInlineMarkdownFileRenderer(resources: ChatResourcePolicyService) {
   return function InlineMarkdownFileRenderer({ node, context }: ChatNodeRendererProps) {
@@ -144,7 +177,7 @@ export function createInlineMarkdownFileRenderer(resources: ChatResourcePolicySe
     // Only explicit file paths are actionable; commands, bare names and URLs
     // remain code. The Host still decides whether a clicked file can be read.
     if (insideLink || context.streaming || context.openResource === undefined
-      || !/^(?:\/(?!\/)|\.\.?\/|[a-z]:[\\/]|file:\/\/\/)[^\r\n`<>|;]*\.(?:md|markdown)$/iu.test(node.code)) return code;
+      || !explicitMarkdownPath.test(node.code)) return code;
     const decision = resources.resolve(node.code, context);
     if (!decision.allowed || decision.target === null
       || (decision.kind !== "file" && decision.kind !== "workspace-file")) return code;
