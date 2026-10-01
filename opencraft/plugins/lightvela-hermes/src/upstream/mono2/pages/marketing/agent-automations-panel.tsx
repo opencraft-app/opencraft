@@ -15,7 +15,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Droplets, EllipsisVertical, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Download, Droplets, EllipsisVertical, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -75,6 +75,7 @@ import {
   listAutomationBlueprints,
   listCronJobs,
   listRecentCronRuns,
+  readCronRunOutput,
   isLightVelaZeroTokenScriptName,
   isTestRunMarkerName,
   pauseCronJob,
@@ -1573,6 +1574,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
           </div>
         ) : activeView === "recent" ? (
           <RecentCronRunsPanel
+            target={botId}
             runs={recentRuns}
             jobs={jobs}
             skillLoadState={installedSkillLoadState}
@@ -1841,10 +1843,12 @@ function getVisibleAutomationPrompt(prompt: string): string {
 }
 
 export function RecentCronRunsPanel({
+  target,
   runs,
   jobs = [],
   skillLoadState,
 }: {
+  target: HermesCronTarget;
   runs: CronRunRecord[];
   jobs?: CronJob[];
   skillLoadState: InstalledSkillLoadState;
@@ -1933,6 +1937,7 @@ export function RecentCronRunsPanel({
         )}
         {viewingRun && (
           <RecentCronRunDetailModal
+            target={target}
             run={viewingRun}
             currentUpstream={viewingUpstream ?? null}
             skillLoadState={skillLoadState}
@@ -1977,11 +1982,13 @@ function runToCronJob(run: CronRunRecord): CronJob {
 }
 
 function RecentCronRunDetailModal({
+  target,
   run,
   currentUpstream,
   skillLoadState,
   onClose,
 }: {
+  target: HermesCronTarget;
   run: CronRunRecord;
   currentUpstream: CronJob | null;
   skillLoadState: InstalledSkillLoadState;
@@ -1992,6 +1999,37 @@ function RecentCronRunDetailModal({
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
   const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const zeroTokenConfig = run.zero_token_config;
+  const [output, setOutput] = useState<string | null>(null);
+  const [outputLoading, setOutputLoading] = useState(false);
+  const [outputError, setOutputError] = useState<string | null>(null);
+  const loadOutput = useCallback(async () => {
+    setOutputLoading(true);
+    setOutputError(null);
+    try {
+      setOutput(await readCronRunOutput(target, run));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setOutputError(code === "cron_output_too_large"
+        ? t("结果文件过大，暂无法在此查看或下载。")
+        : code === "cron_output_missing"
+          ? t("结果文件已不存在。")
+          : t("暂时无法读取结果，请稍后重试。"));
+    } finally {
+      setOutputLoading(false);
+    }
+  }, [run, t, target]);
+  const downloadOutput = useCallback(() => {
+    if (output === null) return;
+    const blob = new Blob([output], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `automation-result-${run.job_id.replace(/[^A-Za-z0-9_-]/g, "-")}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [output, run.job_id]);
   return createPortal(
     <div
       className="lightvela-agent-console-portal lv-dialog-backdrop fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -2061,6 +2099,33 @@ function RecentCronRunDetailModal({
           <DeliverDetailRow deliver={run.deliver} />
           <DetailRow label={t("任务 ID")} value={run.job_id} />
         </dl>
+        <div className="mt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void loadOutput()}
+              disabled={outputLoading}
+              className="inline-flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium text-black/75 hover:bg-black/[0.04] disabled:opacity-45"
+            >
+              {outputLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Eye className="size-3.5" />}
+              {t("查看执行结果")}
+            </button>
+            {output !== null && (
+              <button
+                type="button"
+                onClick={downloadOutput}
+                className="inline-flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium text-black/75 hover:bg-black/[0.04]"
+              >
+                <Download className="size-3.5" />
+                {t("下载 Markdown")}
+              </button>
+            )}
+          </div>
+          {outputError && <p role="alert" className="mt-2 text-xs text-[#B91C1C]">{outputError}</p>}
+          {output !== null && (
+            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/[0.03] p-3 text-xs leading-5 text-black/75">{output}</pre>
+          )}
+        </div>
       </div>
     </div>,
     document.body,
@@ -2169,6 +2234,17 @@ function CronJobCard({
       </div>
 
       <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{taskSummary}</p>
+
+      {(!job.deliver || job.deliver === "local") && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-amber-800">
+          <span>{t("仅本地保存，不会发送到聊天")}</span>
+          {!terminal && (
+            <button type="button" onClick={onEdit} disabled={busy} className="font-medium underline underline-offset-2 hover:text-amber-950 disabled:opacity-45">
+              {t("设置通知")}
+            </button>
+          )}
+        </div>
+      )}
 
       {job.context_from?.length === 1 && (
         <p className="mt-2 truncate text-xs text-black/45">
@@ -3989,6 +4065,7 @@ export function AutomationFormModal({
     [initialJob, template?.deliver],
   );
   const [deliverPlatforms, setDeliverPlatforms] = useState<string[]>(initialDeliver.platforms);
+  const [localDeliveryConfirmed, setLocalDeliveryConfirmed] = useState(false);
   const shouldDefaultToConnectedChannels = mode === "create" && !initialJob && !template;
   const defaultDeliveryInitializedRef = useRef(!shouldDefaultToConnectedChannels);
   /** 每个 platform 的可选 chat_id：填了 → 拼 `<platform>:<id>` 直送；留空 → 走 home */
@@ -4079,6 +4156,10 @@ export function AutomationFormModal({
   }, [channelStatus, enabledChannels]);
 
   useEffect(() => {
+    setLocalDeliveryConfirmed(false);
+  }, [deliverPlatforms.length]);
+
+  useEffect(() => {
     if (!shouldDefaultToConnectedChannels || defaultDeliveryInitializedRef.current || channelStatus !== "ready") return;
     defaultDeliveryInitializedRef.current = true;
     setDeliverPlatforms(availableNotificationChannels
@@ -4121,11 +4202,16 @@ export function AutomationFormModal({
   const notificationChannelRequired = executionMode === "zero_token"
     && zeroTokenKind === "fixed_notification";
   const notificationChannelReady = !notificationChannelRequired || deliverPlatforms.length > 0;
+  const localDeliveryRequiresConfirmation = !notificationChannelRequired
+    && deliverPlatforms.length === 0
+    && (mode === "create" || (initialJob?.deliver || "local") !== "local");
   const canSubmit = !submitting
+    && channelStatus === "ready"
     && name.trim().length > 0
     && taskContentReady
     && scriptSafetyReady
     && notificationChannelReady
+    && (!localDeliveryRequiresConfirmation || localDeliveryConfirmed)
     && (scheduleUneditable || schedule.length > 0);
   const canTestRun = !submitting
     && testState !== "running"
@@ -4144,7 +4230,9 @@ export function AutomationFormModal({
     && taskContentReady
     && !notificationChannelReady
     ? t("未选择通知方式")
-    : null;
+    : localDeliveryRequiresConfirmation && !localDeliveryConfirmed
+      ? t("请先确认仅本地保存")
+      : null;
 
   const handleTestRun = useCallback(() => {
     if (!canTestRun) return;
@@ -5017,6 +5105,26 @@ export function AutomationFormModal({
             </div>
           )}
         </div>
+
+        {channelStatus === "ready" && deliverPlatforms.length === 0 && !notificationChannelRequired && (
+          <div className="mt-3 flex gap-2 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2.5 text-xs text-amber-900" role="status">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <div>
+              <p>{t("结果仅保存在此 Bot 的执行记录中，不会发送到聊天。")}</p>
+              {localDeliveryRequiresConfirmation && (
+                <label className="mt-2 flex cursor-pointer items-center gap-2 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={localDeliveryConfirmed}
+                    onChange={(event) => setLocalDeliveryConfirmed(event.target.checked)}
+                    className="size-4 accent-amber-900"
+                  />
+                  {t("我确认仅本地保存")}
+                </label>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
