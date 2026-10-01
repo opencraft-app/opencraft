@@ -16,8 +16,10 @@ design tokens. They do not share a renderer or editor implementation.
 For a LightVela Hermes Host, the Web Composer offers `/new`, `/compress`,
 `/status`, `/usage`, `/stop` and `/help` in its input footer and slash suggestions.
 Choosing a shortcut inserts editable text into the current Draft; only explicit
-submission sends it through Hermes `prompt.submit`. Other Hosts retain their
-own suggestions and have no Hermes shortcut menu.
+submission sends it through Hermes `prompt.submit`. While a Hermes Turn is
+active, submitting `/stop` alone instead uses the same `turn/interrupt` path as
+the Composer Stop button, which calls Hermes `session.interrupt`. Other Hosts
+retain their own suggestions and have no Hermes shortcut menu.
 
 ```text
 WebSocket / Replay Transport

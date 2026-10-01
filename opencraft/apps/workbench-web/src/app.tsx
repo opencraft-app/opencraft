@@ -2,6 +2,7 @@ import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission
 import { WorkspaceResourcePreviewPanel } from "./panels/workspace-resource-panel";
 import { EditableThreadTitle } from "./components/editable-thread-title";
 import { shouldTypeToCompose } from "./type-to-compose";
+import { isStandaloneHermesStop } from "./hermes-stop-command";
 import { useQueryClient } from "@tanstack/react-query";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import {
@@ -705,6 +706,23 @@ export function App({
       // rendered enabled button and its click handler.
       if (snapshot.phase !== "ready") return false;
       const currentConversation = activeThreadLease?.getSnapshot() ?? null;
+      if (
+        activeHostProviderId === "lightvela.hermes"
+        && intent.target.type === "existing-thread"
+        && currentConversation?.key.hostId === intent.target.key.hostId
+        && currentConversation.key.threadId === intent.target.key.threadId
+        && currentConversation.activeTurn !== null
+        && currentConversation.activeTurn !== undefined
+        && isStandaloneHermesStop(intent)
+      ) {
+        void activeThreadLease?.interrupt(currentConversation.activeTurn.turnId, {
+          source: "composer-stop",
+          trigger: "programmatic",
+          isTrusted: null,
+          occurredAt: Date.now(),
+        });
+        return true;
+      }
       let submittedIntent = intent;
       let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
       const followsActiveTurn =
@@ -765,6 +783,7 @@ export function App({
       hostCatalog,
       queryClient,
       activeThreadLease,
+      activeHostProviderId,
       captureLatestTurnPlacement,
       clearLatestTurnPlacement,
       snapshot.hostId,
