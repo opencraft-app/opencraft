@@ -8,7 +8,7 @@
 
 ---
 
-LightVela menyediakan dua seri paket, **Launch** dan **Cruise**, masing-masing dengan pilihan kredit standar dan AI, untuk kebutuhan mulai dari percobaan ringan sampai penggunaan Agent harian. Setiap paket menyediakan lingkungan cloud khusus untuk satu Hermes Agent dan alokasi kredit model bulanan. Halaman ini menjelaskan posisi, sumber daya, dan manfaat tiap paket agar Anda bisa memilih yang paling sesuai.
+LightVela menyediakan dua seri paket, **Launch** dan **Cruise**, masing-masing dengan pilihan kredit standar dan AI, untuk kebutuhan mulai dari percobaan ringan sampai penggunaan Agent harian. Setiap paket menyediakan lingkungan cloud khusus untuk satu Hermes Agent dan alokasi kredit model bulanan. Halaman ini menjelaskan posisi, sumber daya, manfaat, serta aturan pengembalian dana tiap paket agar Anda bisa memilih yang paling sesuai.
 
 ## Yang dibahas di halaman ini
 
@@ -19,6 +19,8 @@ LightVela menyediakan dua seri paket, **Launch** dan **Cruise**, masing-masing d
 - Kemampuan inti Agent yang tersedia di semua paket
 
 - Penawaran pengguna baru dan panduan memilih paket
+
+- Aturan pengembalian dana dan cara mengajukannya melalui email
 
 ---
 
@@ -106,6 +108,32 @@ Setiap Hermes Agent memiliki kemampuan inti yang sama; perbedaan paket hanya ada
 - **Opsi kredit**: Beberapa paket dapat menawarkan alokasi kredit berbeda. Opsi yang saat ini dapat dipilih dan manfaat yang termasuk di dalamnya ditampilkan di kartu paket.
 
 - **Syarat aktivasi**: Masuk dengan Google atau GitHub dan pilih paket yang tersedia. Situs internasional tidak memerlukan verifikasi nama asli Tiongkok.
+
+---
+
+## Panduan pengembalian dana
+
+Pesanan di situs internasional LightVela dapat diajukan untuk pengembalian dana melalui email. Ketentuan dan langkah pengajuannya adalah sebagai berikut.
+
+### Aturan pengembalian dana
+
+- Setiap akun hanya dapat menggunakan hak pengembalian dana untuk pesanan paket **satu kali**.
+
+- **Paket bulanan**: Pengembalian dana dapat diajukan dalam **24 jam** setelah pembayaran berhasil, selama belum ada kredit AI yang termasuk dalam paket digunakan.
+
+- **Paket triwulanan**: Pengembalian dana dapat diajukan dalam **72 jam** setelah pembayaran berhasil, selama belum ada kredit AI yang termasuk dalam paket digunakan.
+
+Persetujuan pengembalian dana bergantung pada hasil peninjauan tim dukungan LightVela.
+
+### Cara mengajukan
+
+1. Periksa aturan di atas dan pastikan pesanan Anda memenuhi syarat.
+
+2. Kirim email ke [lightvela@tencent.com](mailto:lightvela@tencent.com). Sertakan informasi akun (seperti email atau metode masuk, ID pengguna LightVela, nama paket, dan waktu pemesanan), alasan pengembalian dana, serta status penggunaan akun (seperti apakah Agent sudah dibuat atau dijalankan, apakah kredit AI sudah digunakan, atau apakah kanal, Skill, dan tugas terjadwal sudah dihubungkan).
+
+3. Tim dukungan LightVela akan memproses permohonan Anda dalam **3 hari kerja**.
+
+4. Jika permohonan disetujui, dana akan dikembalikan ke metode pembayaran semula dalam **5–10 hari kerja**. Jika tidak disetujui, biasanya persyaratan pengembalian dana belum terpenuhi.
 
 ---
 

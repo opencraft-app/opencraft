@@ -10,7 +10,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-01
 review_due: 2026-10-08
-revision: 1.2.2
+revision: 1.2.3
 precedence: task
 derived: false
 ---
@@ -18,7 +18,7 @@ derived: false
 # Task Pack：定价弹窗体验复核
 
 ## goal
-在 MR !4879 中统一控制所有套餐的权益展开状态，简化弹窗视觉，并确保公开站的定价入口保留原有购买意图。
+在 MR !4879 中统一控制所有套餐的权益展开状态，简化弹窗视觉，并确保公开站的定价与退款规则入口可找到、可到达。
 
 ## non_goals
 - 不调整套餐价格、权益、支付或 Bot 创建接口。
@@ -42,7 +42,8 @@ derived: false
 
 ## acceptance
 - 弹窗内只有一个可键盘操作的“查看全部权益 / 收起权益”入口；全部卡片一起展开、收起。
-- 弹窗卡片不在悬停时出现粗黑双描边；完整定价页不受视觉改动影响。
+- 弹窗卡片不在悬停时出现粗黑双描边；完整定价页保留原有套餐展示。
+- 双站弹窗与完整定价页在套餐卡片上方展示退款规则入口；各语言指向本语言文档内的规则段落。
 - 弹窗关闭按钮、辅助标题和新增入口使用当前路由 locale；六种目标字典完整。
 - 页头“免费试用”也在当前页打开定价弹窗；顶部导航“价格”仍进入独立定价页。
 - 带查询参数、锚点、跨站来源或新标签页意图的订阅链接保留原导航行为。
@@ -63,6 +64,7 @@ derived: false
 - `frontend/src/contexts/agent-context.tsx` 与测试、`frontend/src/components/site/user-avatar-menu.tsx` 与测试、`frontend/src/pages/marketing/agent-settings-page.tsx` 与首次创建测试
 - `frontend/src/lib/cta-journey.ts` 与测试；移除 `frontend/src/lib/bot-creation-history.ts` 及其测试
 - `frontend/src/i18n/generated/*.json`
+- `frontend/src/content/docs/id/plans.md` 与文档更新日期、路由生成清单
 - `docs/engineering/journeys/dual-site-request-routing.md`
 - `wiki/prd-docs/2026-09-30-pricing-modal-and-first-bot-onboarding.md`
 
@@ -77,6 +79,7 @@ derived: false
 | `docs/context/domains/subscription-entitlements.md@2.0.0` | 路由命中的 Pack | 避免把弹窗状态当作支付结果 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | 邻接卡 | 检查实现、测试和生成字典 |
 | `frontend/DESIGN.md@working-tree` | 现行视觉规范 | 选用轻量展开入口 |
+| `docs/context/domains/site-environment-routing.md@2.0.0` | 站点与 locale 路由 | 核对退款入口按站点和语言分流 |
 
 ## evidence
 - `validate_context.py --route 'frontend pricing modal subscription first bot onboarding user flow'` 命中 `subscription-entitlements`。
@@ -94,6 +97,7 @@ derived: false
 - 双站 `next build --webpack` 均成功：国内站 106 个静态页面、国际站 623 个；国际站后处理的 HTML 语言、EdgeOne 配置、SEO 检查通过。默认 `pnpm build:cn` 的 Turbopack 优化编译持续约 3 分钟无输出且进程几乎不占 CPU，停止后改用 Webpack 验证，默认构建结果未确认。
 - 合并后的全量 `pnpm test --maxWorkers=2` 已运行，但旧的设置页静态断言、诊断面板与渠道文案等测试失败，随后 worker 超过 4 GB 内存上限；停止该轮。设置页续费测试单独复现为第三方 CSS 扩展加载错误，与本次主链路改动无关。受影响链路按上述定向用例验证。
 - 已推送至 MR !4879；页面核对源分支为 `codex/prd-pricing-onboarding`、目标为 `master`，MR 描述已改为本轮实际验证结果。当前仍为 Draft，必要检查与代码评审未完成。
+- 退款入口复核：旧版国内站仅在套餐卡片底部有“退款规则”，国际站定价页无入口，但国际站各语言文档（印尼语除外）已有规则段落。将双站入口移至卡片上方，并补齐印尼语文档；国内与国际订阅页 2 文件 123 例通过，`pnpm check` 通过（0 新增类型错误）。
 
 ## risks
 - 首页「看全部场景」等指向 `/agents` 的静态链接仍经购买门禁；用户已确认保留拦截，未购买时回首页。
@@ -108,7 +112,8 @@ derived: false
 
 ## decisions
 - 展开状态放在 `SubscribePage`，避免每张卡独立产生冲突状态。
-- 完整定价页保持现状；仅对 `embedded` 卡片减弱装饰。
+- 完整定价页套餐卡展示保持现状；仅对 `embedded` 卡片减弱装饰。
+- 国内站原有退款规则在套餐卡片底部，完整页首屏看不到；两站套餐卡片上方提供轻量入口，按当前站点与语言直达对应规则。印尼语原文档缺少退款章节，补齐与国际站现有规则一致的内容。
 - 有查询参数或锚点的定价链接走完整页，保留现有深链接语义。
 - 用户已确认当前无 Bot 即进入创建界面，删除全部 Bot 后重新进入创建是预期行为；历史订阅单独保护过期用户进入管理页。
 

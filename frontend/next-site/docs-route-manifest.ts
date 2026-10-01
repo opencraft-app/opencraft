@@ -2329,7 +2329,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-09-27",
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-09-27",
-    "plans": "2026-09-27",
+    "plans": "2026-10-01",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-09-27",
     "configuration": "2026-09-21",

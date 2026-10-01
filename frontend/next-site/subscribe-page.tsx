@@ -3,7 +3,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { Card } from "@/components/ui/card";
 import { ModelActionTooltip as DisabledReasonTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
-import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+import { publicSiteHref, type PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
 import React, { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
@@ -96,6 +96,16 @@ const CRUISE_BUNDLE_NAME_KEYWORDS = {
   en: "cruise",
 } as const;
 const CN_REFUND_RULES_PATH = "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99";
+const REFUND_RULES_ANCHOR_BY_LOCALE: Record<PublicSiteLocale, string> = {
+  "en-US": "refund-rules",
+  "zh-CN": "退款规则",
+  "zh-SG": "退款规则",
+  "zh-Hant": "退款規則",
+  "id-ID": "aturan-pengembalian-dana",
+  es: "reglas-de-reembolso",
+  "ja-JP": "返金ルール",
+  "ko-KR": "환불-규정",
+};
 
 /** 按套餐名判定所属档位（启航 / 巡游）；中英文名与中英混排均可命中。 */
 const matchBundleTier = (bundleName: string | undefined) => {
@@ -2813,6 +2823,9 @@ export const SubscribePage = ({
   /* 弹窗内跳完整定价页：带上当前路由语种前缀，避免国际站被跳回默认语种。 */
   const fullPricingPageHref =
     publicLocalized && publicLocale ? `/${publicLocale.toLowerCase()}${SUBSCRIBE_PATH}` : SUBSCRIBE_PATH;
+  const refundRulesHref = isCN
+    ? CN_REFUND_RULES_PATH
+    : `${publicSiteHref("/docs/plans/", publicLocale ?? DEFAULT_LOCALE, { localized: Boolean(publicLocalized) })}#${encodeURIComponent(REFUND_RULES_ANCHOR_BY_LOCALE[publicLocale ?? DEFAULT_LOCALE])}`;
   const subscriptionLockReason =
     hasExistingPlan
       ? t("你已订阅「{{plan}}」套餐。", {
@@ -4118,6 +4131,15 @@ export const SubscribePage = ({
             </div>
           )}
 
+          <div className="mb-3 flex justify-end">
+            <AppLink
+              to={refundRulesHref}
+              className="inline-flex min-h-10 items-center text-[13px] font-medium text-black/70 underline decoration-black/30 underline-offset-4 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
+            >
+              {t("退款规则")}
+            </AppLink>
+          </div>
+
           {/* Plan Cards */}
           {bundlesError ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "32px 0" }}>
@@ -4196,14 +4218,6 @@ export const SubscribePage = ({
                     className="inline-flex min-h-10 items-center font-medium text-black/55 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
                   >
                     {t("查看全部套餐")}
-                  </AppLink>
-                )}
-                {isCN && (
-                  <AppLink
-                    to={CN_REFUND_RULES_PATH}
-                    className="inline-flex min-h-10 items-center font-medium text-black/55 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
-                  >
-                    {t("退款规则")}
                   </AppLink>
                 )}
               </div>

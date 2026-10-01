@@ -7,9 +7,7 @@ import { LocaleOverrideProvider } from "@/i18n/t";
 
 /* 国际站（isGlobal）专属用例。
    与 subscribe-page.test.tsx（国内站，不 mock region）分文件维护 ——
-   vi.mock 是模块级全局的，同一文件无法让 isCN / isGlobal 两种语义并存：
-   国内站用例断言仅在国内站展示的「退款规则」链接，
-   而本文件的支付回跳用例依赖 `if (!isGlobal) return;` 才能进入接管逻辑。
+   vi.mock 是模块级全局的，同一文件无法让 isCN / isGlobal 两种语义并存。
    拆分方式参照 login-modal.test.tsx / login-modal.global.test.tsx。 */
 
 vi.mock("@/components/site/public-site-header", () => ({
@@ -168,6 +166,31 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
 const cleanupPage = () => cleanup();
+
+describe("international refund rules entry", () => {
+  beforeEach(resetState);
+  afterEach(cleanupPage);
+
+  it.each([
+    ["en-US", "en-US", "/docs/plans/#refund-rules"],
+    ["zh-CN", "zh-SG", "/zh-sg/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99"],
+    ["zh-Hant", "zh-Hant", "/zh-hant/docs/plans/#%E9%80%80%E6%AC%BE%E8%A6%8F%E5%89%87"],
+    ["id-ID", "id-ID", "/id-id/docs/plans/#aturan-pengembalian-dana"],
+    ["es", "es", "/es/docs/plans/#reglas-de-reembolso"],
+    ["ja-JP", "ja-JP", `/ja-jp/docs/plans/#${encodeURIComponent("返金ルール")}`],
+    ["ko-KR", "ko-KR", `/ko-kr/docs/plans/#${encodeURIComponent("환불-규정")}`],
+  ] as const)("links %s pricing to its refund rules", async (locale, publicLocale, href) => {
+    translationState.real = true;
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(
+      <LocaleOverrideProvider locale={locale}>
+        <SubscribePage publicLocale={publicLocale} publicLocalized={locale !== "en-US"} />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(await screen.findByRole("link", { name: /退款规则|退款規則|Refund rules|Aturan pengembalian dana|Política de reembolso|返金規定|환불 규칙/ })).toHaveAttribute("href", href);
+  });
+});
 
 describe("international upgrade return", () => {
   it("shows the Singapore campaign memory on the international pricing card", async () => {
