@@ -5,6 +5,7 @@ import type {
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useRef, type CSSProperties, type ReactNode } from "react";
+import { useWorkbenchPresentationRoot } from "../workbench-presentation-root";
 
 export interface ModalSurfaceProps extends ModalDescriptor {
   readonly children: ReactNode;
@@ -38,6 +39,7 @@ export function ModalSurface({
   returnFocus,
   stackIndex = 0,
 }: ModalSurfaceProps) {
+  const presentationRoot = useWorkbenchPresentationRoot();
   const dismissReason = useRef<ModalDismissReason>("system");
   const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const surfaceClassName = className === undefined
@@ -55,7 +57,7 @@ export function ModalSurface({
         if (!open) onDismiss(dismissReason.current);
       }}
     >
-      <Dialog.Portal container={portalContainer ?? undefined}>
+      <Dialog.Portal container={portalContainer ?? presentationRoot ?? undefined}>
         <Dialog.Overlay
           className="modal-surface__scrim"
           data-layer={layer}
