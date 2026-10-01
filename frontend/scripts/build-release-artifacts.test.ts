@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
@@ -8,6 +9,7 @@ import {
   runFrontendArtifactBuildCommand,
   stageOpenCraftEmbeddedWorkbench,
 } from "./build-release-artifacts.mjs";
+import { resolveDeployDir } from "./deploy-edgeone-pages.mjs";
 
 const baseEnv = {
   FRONTEND_ARTIFACT_MODE: "required",
@@ -40,13 +42,22 @@ describe("build release artifacts", () => {
     // 而且报错里完全看不出是测试干的。实测踩过一次。
     const workspaceRoot = join(root, "workspace");
     const workspaceOut = join(workspaceRoot, "out");
+    const embedSource = join(root, "embedded-source");
     mkdirSync(workspaceRoot, { recursive: true });
+    mkdirSync(join(embedSource, ".vite"), { recursive: true });
+    mkdirSync(join(embedSource, "assets"), { recursive: true });
+    writeFileSync(join(embedSource, "embedded-workbench.js"), "await import('./assets/a-test.js');\n");
+    writeFileSync(join(embedSource, "version.json"), '{"schemaVersion":1,"buildId":"test"}');
+    writeFileSync(join(embedSource, ".vite", "manifest.json"), "{}");
+    writeFileSync(join(embedSource, "assets", "a-test.js"), "export {};\n");
 
     try {
       await runFrontendArtifactBuildCommand("build:next", {
         FRONTEND_BUILD_OUTPUT_DIR: outputDir,
         NODE_BIN: "node-bin",
         PNPM_BIN: "pnpm-bin",
+        NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL: "/__opencraft/embedded-workbench.js",
+        OPENCRAFT_EMBED_DIST_DIR: embedSource,
       }, async (command: string, args: string[]) => {
         calls.push(`${command} ${args.join(" ")}`);
         if (command === "pnpm-bin" && args.join(" ") === "exec next build") {
@@ -55,10 +66,10 @@ describe("build release artifacts", () => {
           writeFileSync(join(workspaceOut, "api/search"), "{}");
         }
         if (command === "node-bin" && args.join(" ") === "scripts/fix-next-static-html-lang.mjs") {
-          mkdirSync(join(workspaceOut, ".edgeone/assets"), { recursive: true });
-          mkdirSync(join(workspaceOut, ".edgeone/cloud-functions/ssr-node"), { recursive: true });
-          writeFileSync(join(workspaceOut, ".edgeone/assets/index.html"), "<html></html>");
-          writeFileSync(join(workspaceOut, ".edgeone/cloud-functions/ssr-node/config.json"), "{}");
+          execFileSync(process.execPath, [resolve("scripts/fix-next-static-html-lang.mjs")], {
+            cwd: workspaceRoot,
+            stdio: "pipe",
+          });
         }
         if (command === "node-bin" && args.join(" ") === "scripts/write-edgeone-config.mjs") {
           // 真实脚本会写进 out/.edgeone（即被上传的目录）
@@ -83,6 +94,11 @@ describe("build release artifacts", () => {
       expect(existsSync(join(outputDir, ".edgeone", "cloud-functions", "ssr-node", "config.json"))).toBe(true);
       // edgeone.json 必须在 cpSync 之前生成，才能进入 artifact
       expect(existsSync(join(outputDir, ".edgeone", "edgeone.json"))).toBe(true);
+      const deployDir = resolveDeployDir({ EDGEONE_PAGES_DIR: outputDir });
+      expect(deployDir).toBe(join(outputDir, ".edgeone"));
+      expect(existsSync(join(deployDir, "assets", "__opencraft", "embedded-workbench.js"))).toBe(true);
+      expect(existsSync(join(deployDir, "assets", "__opencraft", "version.json"))).toBe(true);
+      expect(existsSync(join(deployDir, "assets", "__opencraft", "assets", "a-test.js"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
