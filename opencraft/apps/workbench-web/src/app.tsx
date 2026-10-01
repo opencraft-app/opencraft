@@ -482,6 +482,14 @@ export function App({
   const activeHostProviderId = hostCatalog.profiles.find(
     (profile) => profile.hostId === activeHost.hostId,
   )?.providerId ?? null;
+  const hermesShortcutCommands = activeHost.hostId === snapshot.hostId && activeHostProviderId === "lightvela.hermes" ? [
+    { name: "new", description: intl.formatMessage({ id: "composer.commands.new", defaultMessage: "New conversation" }) },
+    { name: "compress", description: intl.formatMessage({ id: "composer.commands.compress", defaultMessage: "Compress context" }) },
+    { name: "status", description: intl.formatMessage({ id: "composer.commands.status", defaultMessage: "View status" }) },
+    { name: "usage", description: intl.formatMessage({ id: "composer.commands.usage", defaultMessage: "View usage" }) },
+    { name: "stop", description: intl.formatMessage({ id: "composer.commands.stop", defaultMessage: "Stop current task" }) },
+    { name: "help", description: intl.formatMessage({ id: "composer.commands.help", defaultMessage: "All commands" }) },
+  ] : undefined;
   // Account/catalog availability never owns the working conversation surface.
   // Only the selected Host's actual connection failure may request intervention.
   const connectionIntervention = hostConnectionIntervention?.providerId === activeHostProviderId
@@ -1566,6 +1574,7 @@ export function App({
             onRemoveAttachment={removeActiveHostAttachment}
             composerAddMenuContent={composerAddMenuContent}
             composerEndActions={composerEndActions}
+            shortcutCommands={hermesShortcutCommands}
             onSubmit={sendMessage}
           />
         ) : draft !== null ? (
@@ -1702,6 +1711,7 @@ export function App({
                         onResolveAttachment={resolveActiveHostAttachment}
                         onRemoveAttachment={removeActiveHostAttachment}
                         addMenuContent={composerAddMenuContent}
+                        shortcutCommands={hermesShortcutCommands}
                         endActions={composerEndActions}
                         modelSelectionPolicy={embedded ? "host-default" : "user"}
                         placeholder={embedded ? intl.formatMessage({
