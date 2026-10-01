@@ -260,6 +260,7 @@ describe("SubscribePage", () => {
     render(<PricingModal open onOpenChange={onOpenChange} />);
 
     const link = await screen.findByTestId("pricing-modal-full-page");
+    expect(link).toHaveTextContent("查看全部套餐");
     /* 该链接是整页出口，不能再被宿主页的弹窗拦截规则拦回来。 */
     expect(link).toHaveAttribute("data-pricing-modal", "off");
     fireEvent.click(link);

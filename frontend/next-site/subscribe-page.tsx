@@ -2729,7 +2729,7 @@ type SubscribePageProps = {
   publicLocalized?: boolean;
   /**
    * 关闭宿主弹窗的回调，仅 embedded 模式有值。
-   * 弹窗内的「查看完整定价页」要先关掉弹窗再跳整页，
+   * 弹窗内的「查看全部套餐」要先关掉弹窗再跳整页，
    * 否则导航后弹窗仍以 layout 级实例盖在 /subscribe 上。
    */
   onClose?: () => void;
@@ -4192,7 +4192,7 @@ export const SubscribePage = ({
                     onClick={() => onClose?.()}
                     className="inline-flex min-h-10 items-center font-medium text-black/55 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
                   >
-                    {t("查看完整定价页")}
+                    {t("查看全部套餐")}
                   </AppLink>
                 )}
                 {isCN && (
