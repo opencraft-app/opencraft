@@ -590,6 +590,12 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
   }
 }
 
+.opencraft-embedded-workbench-root:not(:has(.new-thread-draft-page))
+  .main-content-viewport[data-app-shell-thread-edge-scroll="false"]
+  > .main-content-frame[data-app-shell-thread-edge-divider="true"] {
+  margin-top: calc(var(--app-shell-main-content-frame-top-offset) - 1px);
+}
+
 .main-content-frame__inner {
   position: relative;
   display: flex;
