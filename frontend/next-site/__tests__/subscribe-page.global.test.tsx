@@ -167,28 +167,20 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
 const cleanupPage = () => cleanup();
 
-describe("international refund rules entry", () => {
+describe("international refund rules placement", () => {
   beforeEach(resetState);
   afterEach(cleanupPage);
 
-  it.each([
-    ["en-US", "en-US", "/docs/plans/#refund-rules"],
-    ["zh-CN", "zh-SG", "/zh-sg/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99"],
-    ["zh-Hant", "zh-Hant", "/zh-hant/docs/plans/#%E9%80%80%E6%AC%BE%E8%A6%8F%E5%89%87"],
-    ["id-ID", "id-ID", "/id-id/docs/plans/#aturan-pengembalian-dana"],
-    ["es", "es", "/es/docs/plans/#reglas-de-reembolso"],
-    ["ja-JP", "ja-JP", `/ja-jp/docs/plans/#${encodeURIComponent("返金ルール")}`],
-    ["ko-KR", "ko-KR", `/ko-kr/docs/plans/#${encodeURIComponent("환불-규정")}`],
-  ] as const)("links %s pricing to its refund rules", async (locale, publicLocale, href) => {
+  it("keeps refund rules in the docs, outside pricing pages and modals", async () => {
     translationState.real = true;
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(
-      <LocaleOverrideProvider locale={locale}>
-        <SubscribePage publicLocale={publicLocale} publicLocalized={locale !== "en-US"} />
+      <LocaleOverrideProvider locale="en-US">
+        <SubscribePage publicLocale="en-US" publicLocalized={false} />
       </LocaleOverrideProvider>,
     );
-
-    expect(await screen.findByRole("link", { name: /退款规则|退款規則|Refund rules|Aturan pengembalian dana|Política de reembolso|返金規定|환불 규칙/ })).toHaveAttribute("href", href);
+    await screen.findAllByRole("button", { name: /Subscribe/ });
+    expect(screen.queryByRole("link", { name: /Refund rules/ })).not.toBeInTheDocument();
   });
 });
 

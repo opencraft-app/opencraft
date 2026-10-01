@@ -361,10 +361,23 @@ describe("SubscribePage", () => {
     expect(actions).toHaveLength(2);
     for (const action of actions) {
       expect(action).toBeDisabled();
-      expect(action).toHaveStyle({ background: "#f2f2f2", color: "#666" });
+      expect(action).toHaveStyle({ background: "var(--surface-muted, #f2f2f2)", color: "var(--text-secondary, #666)" });
       await userEvent.hover(action);
-      expect(action).toHaveStyle({ background: "#f2f2f2" });
+      expect(action).toHaveStyle({ background: "var(--surface-muted, #f2f2f2)" });
     }
+  });
+
+  it("keeps refund rules on the full CN pricing page only", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { unmount } = render(<SubscribePage embedded />);
+    await screen.findAllByRole("button", { name: "立即订阅" });
+    expect(screen.queryByRole("link", { name: "退款规则" })).not.toBeInTheDocument();
+    unmount();
+
+    render(<SubscribePage />);
+    const actions = await screen.findAllByRole("button", { name: "立即订阅" });
+    const refundLink = screen.getByRole("link", { name: "退款规则" });
+    expect(actions[actions.length - 1].compareDocumentPosition(refundLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows a page-level loading state until the bundles request returns", async () => {

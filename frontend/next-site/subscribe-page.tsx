@@ -3,7 +3,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { Card } from "@/components/ui/card";
 import { ModelActionTooltip as DisabledReasonTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
-import { publicSiteHref, type PublicSiteLocale } from "@/lib/public-site-navigation";
+import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
 import React, { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
@@ -70,6 +70,9 @@ const colors = {
   /* Tooltip（免费试用提示等）配色，集中管理避免散落硬编码 */
   tooltipBg: "rgba(23,23,23,0.92)",
   tooltipShadow: "0 4px 16px rgba(0,0,0,0.18)",
+  disabledBg: "var(--surface-muted, #f2f2f2)",
+  disabledText: "var(--text-secondary, #666)",
+  disabledBorder: "var(--border-subtle, rgba(0,0,0,0.06))",
 };
 
 /* ─── 套餐识别常量（避免魔法字符串） ─── */
@@ -96,16 +99,6 @@ const CRUISE_BUNDLE_NAME_KEYWORDS = {
   en: "cruise",
 } as const;
 const CN_REFUND_RULES_PATH = "/docs/plans/#%E9%80%80%E6%AC%BE%E8%A7%84%E5%88%99";
-const REFUND_RULES_ANCHOR_BY_LOCALE: Record<PublicSiteLocale, string> = {
-  "en-US": "refund-rules",
-  "zh-CN": "退款规则",
-  "zh-SG": "退款规则",
-  "zh-Hant": "退款規則",
-  "id-ID": "aturan-pengembalian-dana",
-  es: "reglas-de-reembolso",
-  "ja-JP": "返金ルール",
-  "ko-KR": "환불-규정",
-};
 
 /** 按套餐名判定所属档位（启航 / 巡游）；中英文名与中英混排均可命中。 */
 const matchBundleTier = (bundleName: string | undefined) => {
@@ -2000,8 +1993,8 @@ const PlanCard = ({
                 padding: "12px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: disabled ? "#f2f2f2" : colors.primary,
-                color: disabled ? "#666" : colors.white,
+                background: disabled ? colors.disabledBg : colors.primary,
+                color: disabled ? colors.disabledText : colors.white,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
@@ -2034,9 +2027,9 @@ const PlanCard = ({
                 width: "100%",
                 padding: "12px 16px",
                 borderRadius: 8,
-                border: compact ? "none" : `1px solid ${disabled ? "rgba(0,0,0,0.06)" : colors.border}`,
-                background: disabled ? "#f2f2f2" : compact ? colors.primary : colors.white,
-                color: disabled ? "#666" : compact ? colors.white : colors.black,
+                border: compact ? "none" : `1px solid ${disabled ? colors.disabledBorder : colors.border}`,
+                background: disabled ? colors.disabledBg : compact ? colors.primary : colors.white,
+                color: disabled ? colors.disabledText : compact ? colors.white : colors.black,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
@@ -2823,9 +2816,6 @@ export const SubscribePage = ({
   /* 弹窗内跳完整定价页：带上当前路由语种前缀，避免国际站被跳回默认语种。 */
   const fullPricingPageHref =
     publicLocalized && publicLocale ? `/${publicLocale.toLowerCase()}${SUBSCRIBE_PATH}` : SUBSCRIBE_PATH;
-  const refundRulesHref = isCN
-    ? CN_REFUND_RULES_PATH
-    : `${publicSiteHref("/docs/plans/", publicLocale ?? DEFAULT_LOCALE, { localized: Boolean(publicLocalized) })}#${encodeURIComponent(REFUND_RULES_ANCHOR_BY_LOCALE[publicLocale ?? DEFAULT_LOCALE])}`;
   const subscriptionLockReason =
     hasExistingPlan
       ? t("你已订阅「{{plan}}」套餐。", {
@@ -4131,15 +4121,6 @@ export const SubscribePage = ({
             </div>
           )}
 
-          <div className="mb-3 flex justify-end">
-            <AppLink
-              to={refundRulesHref}
-              className="inline-flex min-h-10 items-center text-[13px] font-medium text-black/70 underline decoration-black/30 underline-offset-4 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
-            >
-              {t("退款规则")}
-            </AppLink>
-          </div>
-
           {/* Plan Cards */}
           {bundlesError ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "32px 0" }}>
@@ -4221,6 +4202,16 @@ export const SubscribePage = ({
                   </AppLink>
                 )}
               </div>
+              {isCN && !embedded && (
+                <div className="mt-[18px] flex justify-center">
+                  <AppLink
+                    to={CN_REFUND_RULES_PATH}
+                    className="text-xs font-medium leading-normal text-[var(--text-secondary)] underline underline-offset-[3px]"
+                  >
+                    {t("退款规则")}
+                  </AppLink>
+                </div>
+              )}
             </>
           )}
         </section>
