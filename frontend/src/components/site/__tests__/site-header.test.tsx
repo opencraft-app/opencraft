@@ -136,7 +136,7 @@ describe("PublicSiteHeader", () => {
 
     expect(screen.getAllByRole("link", { name: "登录" })[0]).toHaveAttribute("href", "/auth/sign-in");
     expect(screen.getByRole("link", { name: "立即创建" })).toHaveAttribute("href", "/subscribe");
-    expect(screen.getByRole("link", { name: "立即创建" })).toHaveAttribute("data-pricing-modal", "on");
+    expect(screen.getByRole("link", { name: "立即创建" })).not.toHaveAttribute("data-pricing-modal");
   });
 
   it("keeps auth actions hidden while the session is hydrating", () => {

@@ -26,11 +26,30 @@ const renderWithEntry = (anchorHtml: string) => {
 };
 
 describe("PublicSitePricingModalProvider", () => {
-  it("opens the pricing modal for a subscribe entry outside the header", () => {
-    const anchor = renderWithEntry('<a href="/subscribe">Free trial</a>');
+  it("opens the pricing modal only for an explicitly marked free-trial entry", () => {
+    const anchor = renderWithEntry('<a href="/subscribe" data-pricing-modal="on">Free trial</a>');
 
     fireEvent.click(anchor);
 
+    expect(screen.getByTestId("pricing-modal")).toHaveTextContent("open");
+  });
+
+  it("keeps the full pricing page for other purchase links", () => {
+    const anchor = renderWithEntry('<a href="/subscribe">See plans</a>');
+
+    expect(fireEvent.click(anchor)).toBe(true);
+    expect(screen.getByTestId("pricing-modal")).toHaveTextContent("closed");
+  });
+
+  it.each([
+    '<div id="lightvela-intl-home"><div class="hero__cta"><a href="/subscribe">Free trial</a></div></div>',
+    '<div id="lightvela-intl-home"><div class="cta__acts"><a href="/subscribe">Free trial</a></div></div>',
+    '<div id="lightvela-intl-home"><div class="foot__cta"><a href="/subscribe">Free trial</a></div></div>',
+    '<div id="lightvela-intl-home"><div class="foot__links-grid"><div class="foot__brand"></div><div><ul><li><a href="/subscribe">1-month free trial</a></li><li><a href="/subscribe">Pricing</a></li></ul></div></div></div>',
+  ])("opens the modal for a homepage free-trial entry: %s", (markup) => {
+    const anchor = renderWithEntry(markup);
+
+    fireEvent.click(anchor);
     expect(screen.getByTestId("pricing-modal")).toHaveTextContent("open");
   });
 
@@ -47,7 +66,18 @@ describe("PublicSitePricingModalProvider", () => {
       '<div class="lw-public-site-header"><a href="/subscribe">Pricing</a></div>',
     );
 
-    fireEvent.click(anchor);
+    expect(fireEvent.click(anchor)).toBe(true);
+
+    expect(screen.getByTestId("pricing-modal")).toHaveTextContent("closed");
+  });
+
+  it.each([
+    '<div id="lightvela-intl-home"><nav class="nav"><div class="nav__links"><a href="/subscribe">Pricing</a></div></nav></div>',
+    '<div class="home-mobile-menu"><nav><a href="/subscribe">Pricing</a></nav></div>',
+  ])("keeps the standalone page for international home navigation: %s", (markup) => {
+    const anchor = renderWithEntry(markup);
+
+    expect(fireEvent.click(anchor)).toBe(true);
 
     expect(screen.getByTestId("pricing-modal")).toHaveTextContent("closed");
   });
@@ -90,7 +120,7 @@ describe("PublicSitePricingModalProvider", () => {
 
   it("uses the active localized route for the pricing dialog", () => {
     window.history.replaceState({}, "", "/zh-cn/");
-    const anchor = renderWithEntry('<a href="/zh-cn/subscribe">Free trial</a>');
+    const anchor = renderWithEntry('<a href="/zh-cn/subscribe" data-pricing-modal="on">Free trial</a>');
     fireEvent.click(anchor);
 
     expect(screen.getByTestId("pricing-modal")).toHaveAttribute("data-locale", "zh-CN");

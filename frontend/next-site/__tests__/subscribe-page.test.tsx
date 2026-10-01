@@ -117,7 +117,7 @@ vi.mock("@/lib/app-navigation", () => ({
 }));
 
 /* 本文件保持国内站语义（不 mock @/lib/region，沿用真实 REGION 默认 "cn"）：
-   下方用例断言「退款规则」链接，而该链接由 subscribe-page 的 `{isCN && ...}` 条件渲染。
+   下方用例断言国内站「退款规则」链接。
    国际站（isGlobal）专属用例请放到 subscribe-page.global.test.tsx，
    参照 login-modal.test.tsx / login-modal.global.test.tsx 的拆分约定 ——
    vi.mock 是模块级全局的，同一文件无法让两种站点语义并存。 */

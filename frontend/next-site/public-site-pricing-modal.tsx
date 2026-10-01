@@ -17,8 +17,10 @@ export type OpenPricingModal = (options?: {
   resumePayReturn?: boolean;
 }) => void;
 
-/** 顶部导航「价格」所在容器：其中的订阅链接保持跳独立页，不改为弹窗。 */
-const SITE_HEADER_SELECTOR = '.lw-public-site-header';
+/** 国内站页头、国际站静态首页页头及移动菜单中的「定价」始终进入完整页面。 */
+const TOP_NAV_SELECTOR = '.lw-public-site-header__nav, #lightvela-intl-home .nav__links, .home-mobile-menu nav';
+/** 静态首页的试用 CTA；产品栏第一项为「1 个月免费试用」，第二项「定价」不在此列。 */
+const HOME_TRIAL_SELECTOR = '#lightvela-intl-home .hero__cta a, #lightvela-intl-home .cta__acts a, #lightvela-intl-home .foot__cta a, #lightvela-intl-home .foot__links-grid > div:nth-child(2) li:first-child a';
 
 const isSubscribeHref = (href: string): boolean => {
   const path = href.split('?')[0]?.split('#')[0] ?? '';
@@ -36,7 +38,7 @@ const isPlainPricingHref = (href: string): boolean => {
 };
 
 /**
- * 转化入口拦截：除顶部导航「价格」外，指向订阅页的链接在当前页面打开定价弹窗，
+ * 仅免费试用入口在当前页面打开定价弹窗；其余订阅链接保留完整定价页，
  * 用户可直接关闭并留在原页面。链接 href 保持不变，作为无 JS / 爬虫场景的兜底。
  */
 export function PublicSitePricingModalProvider({ children }: { children: ReactNode }) {
@@ -93,7 +95,8 @@ export function PublicSitePricingModalProvider({ children }: { children: ReactNo
       const anchor = target.closest('a[href]');
       if (!(anchor instanceof HTMLAnchorElement)) return;
       if (anchor.dataset.pricingModal === 'off') return;
-      if (anchor.dataset.pricingModal !== 'on' && anchor.closest(SITE_HEADER_SELECTOR)) return;
+      if (anchor.closest(TOP_NAV_SELECTOR)) return;
+      if (anchor.dataset.pricingModal !== 'on' && !anchor.matches(HOME_TRIAL_SELECTOR)) return;
       if ((anchor.target && anchor.target !== '_self') || anchor.hasAttribute('download')) return;
 
       const href = anchor.getAttribute('href') ?? '';

@@ -12,6 +12,7 @@ import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
 import { useAppNavigate } from '@/lib/app-navigation';
+import { AGENTS_HOME_PATH, getAgentCreateBotPath } from '@/lib/agent-routes';
 import { isGlobal } from '@/lib/region';
 import { getSeoMeta } from '@/lib/seo-data';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
@@ -291,6 +292,7 @@ export function NextAgentEntitlementGate({
   loadingFallback: ReactNode;
 }) {
   const navigate = useAppNavigate();
+  const pathname = usePathname() || AGENTS_HOME_PATH;
   const t = useT();
   const { bots, botsError, botsLoading, hasResolvedBots, hasResolvedPasses, isSubscribed, latestPass, passesError, passesLoading, refreshBots, refreshPasses } = useOpenClaw();
   /*
@@ -299,12 +301,21 @@ export function NextAgentEntitlementGate({
    * 门禁只拦「从没买过、也没有任何资产」的新访客。
    */
   const hasExistingAssets = (bots?.length ?? 0) > 0 || Boolean(latestPass);
+  const isAgentHome = pathname.replace(/\/$/, '') === AGENTS_HOME_PATH;
+  const mustCreateBeforeSection = isSubscribed && bots.length === 0 && !isAgentHome;
+  const mustReturnHomeWithoutBot = !isSubscribed && hasExistingAssets && bots.length === 0 && !isAgentHome;
 
   useEffect(() => {
     if (hasResolvedPasses && hasResolvedBots && !passesLoading && !botsLoading && !isSubscribed && !passesError && !botsError && !hasExistingAssets) {
       navigate('/', { replace: true });
     }
   }, [botsError, botsLoading, hasExistingAssets, hasResolvedBots, hasResolvedPasses, isSubscribed, navigate, passesError, passesLoading]);
+
+  useEffect(() => {
+    if (!hasResolvedPasses || !hasResolvedBots || passesLoading || botsLoading || passesError || botsError) return;
+    if (mustCreateBeforeSection) navigate(getAgentCreateBotPath(), { replace: true });
+    else if (mustReturnHomeWithoutBot) navigate(AGENTS_HOME_PATH, { replace: true });
+  }, [botsError, botsLoading, hasResolvedBots, hasResolvedPasses, mustCreateBeforeSection, mustReturnHomeWithoutBot, navigate, passesError, passesLoading]);
 
   if (passesError || botsError) {
     return (
@@ -333,6 +344,11 @@ export function NextAgentEntitlementGate({
 
   /* 未订阅且无资产：不挂载智能体内容（避免列表被渲染出来），跳转由上面的 effect 负责。 */
   if (!isSubscribed && !hasExistingAssets) {
+    return <>{loadingFallback}</>;
+  }
+
+  /* 没有 Bot 时，深层功能页必须先经过创建或管理首页；跳转前不挂载目标页面。 */
+  if (mustCreateBeforeSection || mustReturnHomeWithoutBot) {
     return <>{loadingFallback}</>;
   }
 

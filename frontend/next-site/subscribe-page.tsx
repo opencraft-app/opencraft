@@ -4170,59 +4170,40 @@ export const SubscribePage = ({
                   />
                 ))}
               </motion.div>
-              {hasHiddenFeatures && (
-                <div className="sticky bottom-0 z-10 mt-4 flex justify-center bg-white/95 py-2 backdrop-blur-sm">
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[13px]">
+                {hasHiddenFeatures && (
                   <button
                     type="button"
                     data-testid="plan-features-toggle"
                     aria-expanded={showAllFeatures}
                     onClick={() => setShowAllFeatures((value) => !value)}
-                    className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-black/60 transition-colors hover:text-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+                    className="inline-flex min-h-10 items-center gap-1 font-medium text-black/70 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
                   >
                     {showAllFeatures ? t("收起权益") : t("查看全部权益")}
-                    <ChevronDown aria-hidden="true" className={cn("size-4 transition-transform", showAllFeatures && "rotate-180")} />
+                    <ChevronDown aria-hidden="true" className={cn("size-3.5 transition-transform", showAllFeatures && "rotate-180")} />
                   </button>
-                </div>
-              )}
-              {/* 弹窗只保留精简套餐：完整对比、积分包与规则仍在独立订阅页，这里给出明确出口。 */}
-              {embedded && (
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+                )}
+                {/* 弹窗只保留精简套餐：完整对比、积分包与规则仍在独立订阅页。 */}
+                {embedded && (
                   <AppLink
                     to={fullPricingPageHref}
                     data-pricing-modal="off"
                     data-testid="pricing-modal-full-page"
                     onClick={() => onClose?.()}
-                    style={{
-                      color: colors.primary,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      lineHeight: 1.5,
-                      textDecoration: "underline",
-                      textUnderlineOffset: 3,
-                    }}
+                    className="inline-flex min-h-10 items-center font-medium text-black/55 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
                   >
                     {t("查看完整定价页")}
-                    {" >>"}
                   </AppLink>
-                </div>
-              )}
-              {isCN && (
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
+                )}
+                {isCN && (
                   <AppLink
                     to={CN_REFUND_RULES_PATH}
-                    style={{
-                      color: colors.warmGray500,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      lineHeight: 1.5,
-                      textDecoration: "underline",
-                      textUnderlineOffset: 3,
-                    }}
+                    className="inline-flex min-h-10 items-center font-medium text-black/55 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
                   >
                     {t("退款规则")}
                   </AppLink>
-                </div>
-              )}
+                )}
+              </div>
             </>
           )}
         </section>

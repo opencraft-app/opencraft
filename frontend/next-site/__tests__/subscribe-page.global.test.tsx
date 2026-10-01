@@ -8,7 +8,7 @@ import { LocaleOverrideProvider } from "@/i18n/t";
 /* 国际站（isGlobal）专属用例。
    与 subscribe-page.test.tsx（国内站，不 mock region）分文件维护 ——
    vi.mock 是模块级全局的，同一文件无法让 isCN / isGlobal 两种语义并存：
-   国内站用例断言 `{isCN && ...}` 渲染的「退款规则」链接，
+   国内站用例断言仅在国内站展示的「退款规则」链接，
    而本文件的支付回跳用例依赖 `if (!isGlobal) return;` 才能进入接管逻辑。
    拆分方式参照 login-modal.test.tsx / login-modal.global.test.tsx。 */
 

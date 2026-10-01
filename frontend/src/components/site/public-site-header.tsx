@@ -36,6 +36,7 @@ export type PublicSiteHeaderLinkProps = {
   href: string;
   onClick?: () => void;
   style?: CSSProperties;
+  "data-pricing-modal"?: "on";
 };
 
 export type RenderPublicSiteHeaderLink = (props: PublicSiteHeaderLinkProps) => ReactNode;
@@ -387,7 +388,6 @@ export function PublicSiteHeader({
               ) : (
                 <a
                   href={createHref}
-                  data-pricing-modal="on"
                   className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-4 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg xl:px-5"
                 >
                   {copy.createNow}
@@ -498,9 +498,8 @@ export function PublicSiteHeader({
                       <ArrowRight className="h-4 w-4" />
                     </button>
                   ) : (
-                  <a
-                    href={createHref}
-                    data-pricing-modal="on"
+                    <a
+                      href={createHref}
                       data-testid="site-header-mobile-create"
                       className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-black/90 px-5 py-3 text-[14px] font-medium text-white"
                     >

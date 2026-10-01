@@ -206,7 +206,7 @@ function PublicHeaderAuthControls({
         target: ctaRoute,
       },
     });
-    if (ctaRoute === 'subscribe') {
+    if (promoteFreeTrial && ctaRoute === 'subscribe') {
       const event = new CustomEvent(REOPEN_PRICING_MODAL_EVENT, { detail: { handled: false } });
       window.dispatchEvent(event);
       if (event.detail.handled) return;

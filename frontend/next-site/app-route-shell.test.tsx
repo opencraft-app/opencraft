@@ -3,6 +3,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let currentLanguage = "es";
+let currentPathname = "/agents/skills";
 let sessionAuthReady = true;
 let sessionIsAuthenticated = false;
 
@@ -11,7 +12,7 @@ afterEach(() => {
 });
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/agents/skills",
+  usePathname: () => currentPathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -70,6 +71,7 @@ import { AppRouteShell, NextAgentEntitlementGate } from "./app-route-shell";
 describe("AppRouteShell document metadata", () => {
   beforeEach(() => {
     currentLanguage = "es";
+    currentPathname = "/agents/skills";
     sessionAuthReady = true;
     sessionIsAuthenticated = false;
     document.title = "Agent Console | LightVela";
@@ -182,6 +184,7 @@ describe("NextAgentEntitlementGate", () => {
     );
 
   beforeEach(() => {
+    currentPathname = "/agents";
     entitlement = {
       bots: [],
       botsError: false,
@@ -203,6 +206,23 @@ describe("NextAgentEntitlementGate", () => {
 
     expect(queryByText("console")).toBeInTheDocument();
     expect(container.querySelector("div")).not.toBeNull();
+  });
+
+  it("sends a subscribed account without a Bot from a deep link to first creation", async () => {
+    currentPathname = "/agents/skills";
+    const { queryByText } = renderGate();
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents?create=1", { replace: true }));
+    expect(queryByText("console")).not.toBeInTheDocument();
+  });
+
+  it("allows a deep link only after the server Bot list contains a Bot", () => {
+    currentPathname = "/agents/skills";
+    entitlement = { ...entitlement, bots: [{ id: "bot-1" }] };
+    const { queryByText } = renderGate();
+
+    expect(queryByText("console")).toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("returns to the homepage before purchase", async () => {
@@ -233,6 +253,15 @@ describe("NextAgentEntitlementGate", () => {
     const { queryByText } = renderGate();
     expect(queryByText("console")).toBeInTheDocument();
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an expired account without a Bot from a deep link to management home", async () => {
+    currentPathname = "/agents/skills";
+    entitlement = { ...entitlement, isSubscribed: false, latestPass: { pass_id: "previous" } };
+    const { queryByText } = renderGate();
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents", { replace: true }));
+    expect(queryByText("console")).not.toBeInTheDocument();
   });
 
   it("offers retry when the Bot list cannot be checked", () => {
