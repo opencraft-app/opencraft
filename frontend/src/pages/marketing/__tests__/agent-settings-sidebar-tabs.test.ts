@@ -234,7 +234,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("setSelectedChatId(chatSessions[0]?.chatId)");
   });
 
-  it("keeps secondary Chat gated until show enables profile-scoped OpenCraft", () => {
+  it("uses OpenCraft for domestic Chat without show and keeps international AgentChat", () => {
     const page = readPageSource();
     const styles = readStylesSource();
 
@@ -255,7 +255,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('&& !openCraftChatEnabled');
     expect(page).toContain('enabled={openCraftChatEnabled}');
     expect(page).toContain('profileId={activeBot.profileId ?? (isActiveBotDefault ? "main" : "")}');
-    expect(page).toContain("const openCraftChatEnabled = !isGlobal && showHiddenAgentTools;");
+    expect(page).toContain("const openCraftChatEnabled = !isGlobal;");
+    expect(page).toContain('if (openCraftChatEnabled || activeSection !== "chat"');
     expect(page).toContain("setConsoleShowStateReady(true);");
     expect(page).toContain("enableShowCommand: true");
     expect(styles).toContain(".lv-agents-sidebar-tab:disabled");

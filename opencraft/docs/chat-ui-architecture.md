@@ -488,7 +488,9 @@ After acceptance, image presentation is derived from the authoritative
 Timeline. Sent-image thumbnails resolve direct image data or Host-backed media
 through the existing media source boundary; their click opens a modal image
 viewer rather than generic link navigation, which deliberately rejects `data:`
-URLs. No generic resource-policy exception is introduced. Full page reload
+URLs. The viewer uses the Workbench Presentation Root so embedded Shadow DOM
+keeps its modal styles and focus behavior; an explicit modal portal target
+still takes precedence. No generic resource-policy exception is introduced. Full page reload
 does not preserve an unsent browser `File`; that requires a separate durable
 draft/blob storage contract. Native Expo has the same semantic Draft but not
 this Web-only picker/presentation implementation.
