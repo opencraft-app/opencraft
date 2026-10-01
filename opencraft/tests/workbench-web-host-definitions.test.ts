@@ -31,6 +31,9 @@ const {
   refreshBundledHostBrowseRoots,
   productDatabaseName,
   productStorageKey,
+  activeThreadStorageKey,
+  currentProductStorageKey,
+  rememberedThreadId,
 } = await import(
   "../apps/workbench-web/src/runtime/appserver-runtime-context"
 );
@@ -59,6 +62,20 @@ test("named Web products cannot inherit another product's Host or Replica state"
     productDatabaseName("lightvela-web", "vela-workbench-replica"),
     "vela-workbench-replica-lightvela-web",
   );
+});
+
+test("embedded Host startup cannot restore another Host's legacy conversation", () => {
+  const hostId = "embedded:current-profile";
+  const preferences = new Map<string, string>([
+    [currentProductStorageKey("vela.active-thread-id"), "thread:other-profile"],
+  ]);
+  const storage = { getItem: (key: string) => preferences.get(key) ?? null };
+
+  assert.equal(rememberedThreadId(storage, hostId, "configured"), null);
+  assert.equal(rememberedThreadId(storage, hostId, "environment"), "thread:other-profile");
+
+  preferences.set(activeThreadStorageKey(hostId), "thread:current-profile");
+  assert.equal(rememberedThreadId(storage, hostId, "configured"), "thread:current-profile");
 });
 
 test("browser Host definitions preserve identity and reject ambiguous or credentialed URLs", () => {
