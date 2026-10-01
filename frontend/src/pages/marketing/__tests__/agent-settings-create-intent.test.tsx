@@ -209,4 +209,13 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
     expect(screen.queryByRole("heading", { name: "创建 Bot" })).not.toBeInTheDocument();
     expect(navigateMock).not.toHaveBeenCalledWith("/agents", { replace: true });
   });
+
+  it("shows the empty state on /agents before an unsubscribed user has a bot", () => {
+    isSubscribed = false;
+
+    render(page(""));
+
+    expect(screen.getByText("即刻创建你的云端智能体伙伴")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建" })).toBeInTheDocument();
+  });
 });
