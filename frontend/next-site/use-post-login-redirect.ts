@@ -21,6 +21,7 @@ const ENTITLEMENT_RESOLVE_TIMEOUT_MS = 2500;
  * 手机验证码登录是在弹窗内完成、不整页跳转的，仍走 onSuccess → redirectAfterLogin。
  */
 const POST_LOGIN_REDIRECT_KEY = 'lc_post_login_redirect';
+const LEGACY_POST_LOGIN_SUBSCRIBE_FLAG = '1';
 export const REOPEN_PRICING_MODAL_EVENT = 'lightvela:reopen-pricing-modal';
 export const POST_LOGIN_INTENT = {
   SUBSCRIBE: 'subscribe',
@@ -50,7 +51,7 @@ const readPostLoginIntent = (): PostLoginIntent | null => {
   try {
     const stored = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
     if (stored === POST_LOGIN_INTENT.PRICING_MODAL) return stored;
-    if (stored === POST_LOGIN_INTENT.SUBSCRIBE || stored === '1') return POST_LOGIN_INTENT.SUBSCRIBE;
+    if (stored === POST_LOGIN_INTENT.SUBSCRIBE || stored === LEGACY_POST_LOGIN_SUBSCRIBE_FLAG) return POST_LOGIN_INTENT.SUBSCRIBE;
     return null;
   } catch {
     return null;

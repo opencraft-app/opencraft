@@ -131,6 +131,7 @@ function PublicHeaderAuthControls({
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale = locale;
   const copy = copyByLocale[activeLocale];
+  const errorCopy = entitlementErrorCopy[activeLocale] ?? entitlementErrorCopy['en-US'];
   const hasBots = bots.length > 0;
   // 未登录转化引导：主按钮文案与 Hero / Footer CTA 共用同一份「免费试用」文案。
   // 可选链 + en-US 兜底，避免 CTA_COPY_BY_LOCALE 缺失对应语种时拿到 undefined（工蜂 AI CR 边界条件建议）。
@@ -234,7 +235,7 @@ function PublicHeaderAuthControls({
       <>
         {postLoginError && (
           <div role="alert" className="fixed right-4 top-20 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-[var(--surface-base)] px-4 py-3 text-sm text-[var(--color-danger)] shadow-lg ring-1 ring-[var(--color-danger)]/20">
-            <span>{entitlementErrorCopy[activeLocale].message}</span>
+            <span>{errorCopy.message}</span>
             <button
               type="button"
               className="shrink-0 font-semibold underline underline-offset-2"
@@ -243,7 +244,7 @@ function PublicHeaderAuthControls({
                 redirectAfterLogin();
               }}
             >
-              {entitlementErrorCopy[activeLocale].retry}
+              {errorCopy.retry}
             </button>
           </div>
         )}
