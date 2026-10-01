@@ -59,6 +59,9 @@
 
   --color-success: #07C160;
   --color-danger: #cf3d4c;
+  --pricing-promo-text: #D14081;
+  --pricing-promo-bg: #FDE7F0;
+  --pricing-promo-border: #F7B8D2;
   --danger: var(--color-danger);
   --ring: rgba(40, 93, 255, 0.24);
   --realname-control-border: #E9ECF1;

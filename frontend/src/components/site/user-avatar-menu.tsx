@@ -50,6 +50,7 @@ const HeaderUserAvatarMenu = ({
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const user = session.user;
+  const shouldShowMyAgents = isSubscribed || (bots?.length ?? 0) > 0 || Boolean(latestPass);
   const [open, setOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
@@ -242,7 +243,7 @@ const HeaderUserAvatarMenu = ({
                   否则过期老用户会在菜单里找不到入口、却能直接输 URL 进来。 */}
               {!isSidebar
                 && hasResolvedPasses && !passesLoading && !passesError && !botsLoading && !botsError
-                && (isSubscribed || (bots?.length ?? 0) > 0 || Boolean(latestPass)) && (
+                && shouldShowMyAgents && (
                 <a
                   href={AGENTS_HOME_PATH}
                   onClick={() => setOpen(false)}

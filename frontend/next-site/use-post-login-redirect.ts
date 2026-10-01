@@ -22,10 +22,14 @@ const ENTITLEMENT_RESOLVE_TIMEOUT_MS = 2500;
  */
 const POST_LOGIN_REDIRECT_KEY = 'lc_post_login_redirect';
 export const REOPEN_PRICING_MODAL_EVENT = 'lightvela:reopen-pricing-modal';
-type PostLoginIntent = 'subscribe' | 'pricing-modal';
+export const POST_LOGIN_INTENT = {
+  SUBSCRIBE: 'subscribe',
+  PRICING_MODAL: 'pricing-modal',
+} as const;
+type PostLoginIntent = typeof POST_LOGIN_INTENT[keyof typeof POST_LOGIN_INTENT];
 
 /** 点击登录动作前调用：标记「登录成功后需要按订阅状态分流」。 */
-export const armPostLoginRedirect = (intent: PostLoginIntent = 'subscribe') => {
+export const armPostLoginRedirect = (intent: PostLoginIntent = POST_LOGIN_INTENT.SUBSCRIBE) => {
   try {
     sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, intent);
   } catch {
@@ -45,8 +49,8 @@ export const disarmPostLoginRedirect = () => {
 const readPostLoginIntent = (): PostLoginIntent | null => {
   try {
     const stored = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
-    if (stored === 'pricing-modal') return stored;
-    if (stored === 'subscribe' || stored === '1') return 'subscribe';
+    if (stored === POST_LOGIN_INTENT.PRICING_MODAL) return stored;
+    if (stored === POST_LOGIN_INTENT.SUBSCRIBE || stored === '1') return POST_LOGIN_INTENT.SUBSCRIBE;
     return null;
   } catch {
     return null;
@@ -87,7 +91,7 @@ export function usePostLoginRedirect({ locale, onEntitlementUnavailable }: PostL
   const pendingRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshGenerationRef = useRef(0);
-  const intentRef = useRef<PostLoginIntent>('subscribe');
+  const intentRef = useRef<PostLoginIntent>(POST_LOGIN_INTENT.SUBSCRIBE);
   const onEntitlementUnavailableRef = useRef(onEntitlementUnavailable);
   onEntitlementUnavailableRef.current = onEntitlementUnavailable;
 
@@ -110,7 +114,7 @@ export function usePostLoginRedirect({ locale, onEntitlementUnavailable }: PostL
   const complete = useCallback(
     (hasBots: boolean, subscribed: boolean) => {
       if (!stopPending()) return;
-      if (!subscribed && intentRef.current === 'pricing-modal') {
+      if (!subscribed && intentRef.current === POST_LOGIN_INTENT.PRICING_MODAL) {
         const event = new CustomEvent(REOPEN_PRICING_MODAL_EVENT, { detail: { handled: false } });
         window.dispatchEvent(event);
         if (event.detail.handled) return;

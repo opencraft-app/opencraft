@@ -302,8 +302,9 @@ export function NextAgentEntitlementGate({
    */
   const hasExistingAssets = (bots?.length ?? 0) > 0 || Boolean(latestPass);
   const isAgentHome = pathname.replace(/\/$/, '') === AGENTS_HOME_PATH;
-  const mustCreateBeforeSection = isSubscribed && bots.length === 0 && !isAgentHome;
-  const mustReturnHomeWithoutBot = !isSubscribed && hasExistingAssets && bots.length === 0 && !isAgentHome;
+  const hasNoBots = (bots?.length ?? 0) === 0;
+  const mustCreateBeforeSection = isSubscribed && hasNoBots && !isAgentHome;
+  const mustReturnHomeWithoutBot = !isSubscribed && hasExistingAssets && hasNoBots && !isAgentHome;
 
   useEffect(() => {
     if (hasResolvedPasses && hasResolvedBots && !passesLoading && !botsLoading && !isSubscribed && !passesError && !botsError && !hasExistingAssets) {
@@ -322,8 +323,8 @@ export function NextAgentEntitlementGate({
       <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: 'var(--lw-fg)' }}>
         <main className="relative z-10 flex flex-grow items-center justify-center pb-8 pt-24">
           <div className="mx-auto flex max-w-md flex-col items-center px-6 text-center">
-            <h2 className="text-xl font-bold" style={{ color: '#333', marginBottom: 16 }}>{t(passesError ? '权益状态加载失败' : 'Bot 列表加载失败，请刷新重试。')}</h2>
-            <p className="text-sm leading-relaxed" style={{ color: '#999', marginBottom: 48 }}>
+            <h2 className="text-xl font-bold" style={{ color: 'var(--lw-fg)', marginBottom: 16 }}>{t(passesError ? '权益状态加载失败' : 'Bot 列表加载失败，请刷新重试。')}</h2>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--lw-fg-tertiary)', marginBottom: 48 }}>
               {t('请稍后重试')}
             </p>
             <button type="button" onClick={() => void (passesError ? refreshPasses() : refreshBots())} className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white">

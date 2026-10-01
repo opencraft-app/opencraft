@@ -45,6 +45,7 @@ import { UPGRADE_RETURN_QUERY, validUpgradeQuote } from "@/lib/upgrade-checkout"
 import {
   armPostLoginRedirect,
   disarmPostLoginRedirect,
+  POST_LOGIN_INTENT,
   usePostLoginRedirect,
 } from "./use-post-login-redirect";
 
@@ -1568,9 +1569,9 @@ const PlanCard = ({
                   fontSize: isGlobal ? 11 : 12,
                   fontWeight: 600,
                   lineHeight: 1,
-                  color: "#D14081",
-                  background: "#FDE7F0",
-                  border: compact ? "none" : "1px solid #F7B8D2",
+                  color: "var(--pricing-promo-text)",
+                  background: "var(--pricing-promo-bg)",
+                  border: compact ? "none" : "1px solid var(--pricing-promo-border)",
                   borderRadius: 999,
                   padding: isGlobal ? "3px 8px" : "4px 10px",
                   whiteSpace: "nowrap",
@@ -3694,7 +3695,7 @@ export const SubscribePage = ({
          已订阅不停在订阅页再次购买）。OAuth 是整页跳转，回跳后 LoginModal 已关闭、
          onSuccess 不会触发，故先 arm 分流意图，由 usePostLoginRedirect 在回跳后消费；
          手机验证码登录则在弹窗内成功、走 onSuccess。 */
-      armPostLoginRedirect(embedded ? 'pricing-modal' : 'subscribe');
+      armPostLoginRedirect(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE);
       setShowLoginModal(true);
       return;
     }
@@ -4309,7 +4310,7 @@ export const SubscribePage = ({
           disarmPostLoginRedirect();
           setShowLoginModal(false);
         }}
-        onSuccess={() => redirectAfterLogin(embedded ? 'pricing-modal' : 'subscribe')}
+        onSuccess={() => redirectAfterLogin(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE)}
       />
     </div>
   );

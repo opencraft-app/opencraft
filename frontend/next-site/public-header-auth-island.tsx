@@ -233,7 +233,7 @@ function PublicHeaderAuthControls({
     return (
       <>
         {postLoginError && (
-          <div role="alert" className="fixed right-4 top-20 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-white px-4 py-3 text-sm text-[#9f2332] shadow-lg ring-1 ring-[#9f2332]/20">
+          <div role="alert" className="fixed right-4 top-20 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-[var(--surface-base)] px-4 py-3 text-sm text-[var(--color-danger)] shadow-lg ring-1 ring-[var(--color-danger)]/20">
             <span>{entitlementErrorCopy[activeLocale].message}</span>
             <button
               type="button"

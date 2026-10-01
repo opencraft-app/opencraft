@@ -637,10 +637,10 @@ describe("SubscribePage", () => {
     );
     expect(source).toContain("usePostLoginRedirect");
     // OAuth 整页跳转路径：弹登录前 arm，关闭弹窗 disarm
-    expect(source).toContain("armPostLoginRedirect(embedded ? 'pricing-modal' : 'subscribe')");
+    expect(source).toContain("armPostLoginRedirect(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE)");
     expect(source).toContain("disarmPostLoginRedirect()");
     // 弹窗内登录路径：onSuccess 接 redirectAfterLogin
-    expect(source).toContain("onSuccess={() => redirectAfterLogin(embedded ? 'pricing-modal' : 'subscribe')}");
+    expect(source).toContain("onSuccess={() => redirectAfterLogin(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE)}");
   });
 
   it("disables subscription actions when an active pass is already present", async () => {
