@@ -48,6 +48,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => false,
   useMultiBotEnabled: () => true,
+  useReferralEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -80,12 +81,13 @@ vi.mock("@/contexts/agent-context", () => ({
   }),
 }));
 
-vi.mock("@/contexts/repository-context", () => ({
-  useRepositories: () => ({
+vi.mock("@/contexts/repository-context", () => {
+  const repositories = {
     bots: { execDebugCommand: vi.fn(), getRescueExportStatus: vi.fn().mockResolvedValue(null), getHermesImportStatus: vi.fn().mockResolvedValue(null), startRescueExport: vi.fn(), resetInstanceConfig: vi.fn() },
     plans: { getRenewPrice: vi.fn(), createRenewOrder: vi.fn(), listMyPasses: vi.fn() },
-  }),
-}));
+  };
+  return { useRepositories: () => repositories };
+});
 
 vi.mock("@/components/site/product-chrome", () => ({
   ProductFooter: () => null,
