@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ModelActionTooltip as DisabledReasonTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
 import React, { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useOpenClaw } from "@/contexts/agent-context";
@@ -1428,6 +1428,8 @@ const PlanCard = ({
   const defaultVariantIdx = getDefaultVariantIndex(variants);
   const preferredVariantIdx = variants.findIndex((variant) => variant.id === preferredBundleId);
   const [activeVariantIdx, setActiveVariantIdx] = useState(() => preferredVariantIdx >= 0 ? preferredVariantIdx : defaultVariantIdx);
+  /* 弹窗内权益默认折叠到核心差异，用户可就地展开查看全部，不必跳到完整订阅页。 */
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
   const appliedPreferredBundleIdRef = useRef<string | undefined>(preferredVariantIdx >= 0 ? preferredBundleId : undefined);
   useEffect(() => {
     if (!preferredBundleId || appliedPreferredBundleIdRef.current === preferredBundleId) return;
@@ -1472,9 +1474,13 @@ const PlanCard = ({
   /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
   const emphasizeBorder = pointerHovered || focusWithin;
-  const visibleFeatures = compact
+  /* 弹窗（compact）默认只展示核心差异（Bot 数 / 云端环境 / 存储 / 积分），避免卡片过长；
+     其余权益收进展开按钮，用户可就地查看，不必跳到完整订阅页才知道买到什么。 */
+  const coreFeatures = compact
     ? plan.features.filter((feature) => feature.value && [t("Bot 数"), t("专属云端环境"), t("专属云端存储"), t("模型积分")].includes(feature.label))
     : plan.features;
+  const visibleFeatures = compact && !showAllFeatures ? coreFeatures : plan.features;
+  const hiddenFeatureCount = compact ? plan.features.length - coreFeatures.length : 0;
 
   return (
     <MotionCard
@@ -1885,6 +1891,38 @@ const PlanCard = ({
               </li>
             ))}
           </ul>
+        )}
+
+        {/* 弹窗内折叠的权益就地展开：只收起长列表，不能让用户以为套餐不含这些能力。 */}
+        {compact && hiddenFeatureCount > 0 && (
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 10, order: 5 }}>
+            <button
+              type="button"
+              onClick={() => setShowAllFeatures((prev) => !prev)}
+              aria-expanded={showAllFeatures}
+              data-testid="plan-features-toggle"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "3px 10px",
+                borderRadius: 9999,
+                border: `1px solid ${colors.border}`,
+                background: colors.badgeBg,
+                color: colors.primary,
+                fontSize: 12,
+                fontWeight: 500,
+                lineHeight: 1.5,
+                cursor: "pointer",
+              }}
+            >
+              {showAllFeatures ? t("收起权益") : t("查看其余权益（{{count}} 项）", { count: hiddenFeatureCount })}
+              <ChevronDown
+                aria-hidden="true"
+                style={{ width: 14, height: 14, transform: showAllFeatures ? "rotate(180deg)" : "none", transition: "transform 150ms" }}
+              />
+            </button>
+          </div>
         )}
 
         {/* CTA Button — 需求3：上移到功能点上方（积分切换与分割线之间），order=3 */}
@@ -2716,6 +2754,12 @@ type SubscribePageProps = {
   resumePayReturn?: boolean;
   publicLocale?: PublicSiteLocale;
   publicLocalized?: boolean;
+  /**
+   * 关闭宿主弹窗的回调，仅 embedded 模式有值。
+   * 弹窗内的「查看完整定价页」要先关掉弹窗再跳整页，
+   * 否则导航后弹窗仍以 layout 级实例盖在 /subscribe 上。
+   */
+  onClose?: () => void;
   renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
 };
@@ -2781,6 +2825,7 @@ export const SubscribePage = ({
   resumePayReturn = false,
   publicLocale,
   publicLocalized,
+  onClose,
   renderLanguageSwitcher,
   renderLink = renderAppHeaderLink,
 }: SubscribePageProps = {}) => {
@@ -2790,8 +2835,13 @@ export const SubscribePage = ({
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
   const { isLoggedIn, isSubscribed, subscribe, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
+  /* 已有生效权益（订阅 / pass / Bot）：既锁定新购，也决定套餐区副标题对新老用户的口径。 */
+  const hasExistingPlan = isSubscribed || activePass !== null || bots.length > 0;
+  /* 弹窗内跳完整定价页：带上当前路由语种前缀，避免国际站被跳回默认语种。 */
+  const fullPricingPageHref =
+    publicLocalized && publicLocale ? `/${publicLocale.toLowerCase()}${SUBSCRIBE_PATH}` : SUBSCRIBE_PATH;
   const subscriptionLockReason =
-    isSubscribed || activePass !== null || bots.length > 0
+    hasExistingPlan
       ? t("你已订阅「{{plan}}」套餐。", {
           plan: activePass?.bundle_name ?? latestPass?.bundle_name ?? "LightVela",
         })
@@ -3961,6 +4011,8 @@ export const SubscribePage = ({
                     {" >>"}
                   </a>
                 </>
+              ) : hasExistingPlan ? (
+                t("继续使用你的云端智能伙伴，按需管理套餐")
               ) : (
                 t("免费开始，一键创建你的云端智能伙伴")
               )}
@@ -4130,6 +4182,28 @@ export const SubscribePage = ({
                   />
                 ))}
               </motion.div>
+              {/* 弹窗只保留精简套餐：完整对比、积分包与规则仍在独立订阅页，这里给出明确出口。 */}
+              {embedded && (
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+                  <AppLink
+                    to={fullPricingPageHref}
+                    data-pricing-modal="off"
+                    data-testid="pricing-modal-full-page"
+                    onClick={() => onClose?.()}
+                    style={{
+                      color: colors.primary,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      lineHeight: 1.5,
+                      textDecoration: "underline",
+                      textUnderlineOffset: 3,
+                    }}
+                  >
+                    {t("查看完整定价页")}
+                    {" >>"}
+                  </AppLink>
+                </div>
+              )}
               {isCN && (
                 <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
                   <AppLink

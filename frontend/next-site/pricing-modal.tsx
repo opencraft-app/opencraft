@@ -38,6 +38,7 @@ export function PricingModal({ open, locale, localized, resumePayReturn, onOpenC
           resumePayReturn={resumePayReturn}
           publicLocale={locale}
           publicLocalized={localized}
+          onClose={() => onOpenChange(false)}
         />
       </DialogContent>
     </Dialog>

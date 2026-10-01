@@ -231,6 +231,46 @@ describe("SubscribePage", () => {
     expect(screen.getByRole("contentinfo")).toBeInTheDocument();
   });
 
+  it("expands the remaining plan benefits in place inside the pricing modal", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    const card = await screen.findByRole("group", { name: "启航 Launch" });
+    const toggle = within(card).getByTestId("plan-features-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(card).queryByText("7*24小时在线")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(within(card).getByText("7*24小时在线")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(toggle);
+    expect(within(card).queryByText("7*24小时在线")).not.toBeInTheDocument();
+  });
+
+  it("closes the pricing modal when the user leaves for the full pricing page", async () => {
+    const { PricingModal } = await import("@next-site/pricing-modal");
+    const onOpenChange = vi.fn();
+    render(<PricingModal open onOpenChange={onOpenChange} />);
+
+    const link = await screen.findByTestId("pricing-modal-full-page");
+    /* 该链接是整页出口，不能再被宿主页的弹窗拦截规则拦回来。 */
+    expect(link).toHaveAttribute("data-pricing-modal", "off");
+    fireEvent.click(link);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("greets returning users with a continue copy instead of a first-purchase pitch", async () => {
+    openClawState.bots = [{ id: "hermes-1", status: "running" }];
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    expect(await screen.findByText("继续使用你的云端智能伙伴，按需管理套餐")).toBeInTheDocument();
+    expect(screen.queryByText("免费开始，一键创建你的云端智能伙伴")).not.toBeInTheDocument();
+  });
+
   it("shows domestic promotion tags only when the quoted price supports them", async () => {
     openClawState.isLoggedIn = true;
     sessionState.isAuthenticated = true;
