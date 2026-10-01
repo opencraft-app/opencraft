@@ -706,22 +706,33 @@ export function App({
       // rendered enabled button and its click handler.
       if (snapshot.phase !== "ready") return false;
       const currentConversation = activeThreadLease?.getSnapshot() ?? null;
+      const intentHostId = intent.target.type === "new-thread"
+        ? intent.target.execution.hostId
+        : intent.target.key.hostId;
       if (
         activeHostProviderId === "lightvela.hermes"
-        && intent.target.type === "existing-thread"
-        && currentConversation?.key.hostId === intent.target.key.hostId
-        && currentConversation.key.threadId === intent.target.key.threadId
-        && currentConversation.activeTurn !== null
-        && currentConversation.activeTurn !== undefined
+        && intentHostId === snapshot.hostId
         && isStandaloneHermesStop(intent)
       ) {
-        void activeThreadLease?.interrupt(currentConversation.activeTurn.turnId, {
-          source: "composer-stop",
-          trigger: "programmatic",
-          isTrusted: null,
-          occurredAt: Date.now(),
+        const threadId = intent.target.type === "new-thread" ? null : intent.target.key.threadId;
+        const expectedTurnId = threadId !== null
+          && currentConversation?.key.hostId === intentHostId
+          && currentConversation.key.threadId === threadId
+          ? currentConversation.activeTurn?.turnId ?? null
+          : null;
+        const stopping = hostCatalog.agentRuntimes.request(snapshot.hostId, "hermes/stop", {
+          threadId,
+          expectedTurnId,
         });
-        return true;
+        if (context.followUpAction !== null) {
+          void stopping.catch(() => {
+            const target = composerController.getSnapshot().draft.target;
+            if (target.type === "existing-thread" && target.key.threadId === threadId) {
+              composerController.dispatch({ type: "set-lifecycle", phase: "failed", error: "停止任务失败，请重试" });
+            }
+          });
+        }
+        return stopping.then(() => true);
       }
       let submittedIntent = intent;
       let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
@@ -784,6 +795,7 @@ export function App({
       queryClient,
       activeThreadLease,
       activeHostProviderId,
+      composerController,
       captureLatestTurnPlacement,
       clearLatestTurnPlacement,
       snapshot.hostId,

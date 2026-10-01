@@ -1873,6 +1873,27 @@ export class HermesAppServerAdapter {
     await this.gateway.call("session.interrupt", { session_id: await this.ensureLive(threadId) });
   }
 
+  async stopHermes(threadId: string | null, expectedTurnId: string | null): Promise<{ killed: number }> {
+    let interruptError: unknown;
+    if (threadId !== null) {
+      const live = this.liveByStored.get(threadId)
+        ?? (expectedTurnId === null ? null : await this.ensureLive(threadId));
+      const active = live === null ? undefined : this.activeByLive.get(live);
+      if ((active === undefined && expectedTurnId !== null)
+        || (active !== undefined && !active.isCompleted
+          && (expectedTurnId === null || active.turn.id === expectedTurnId))) {
+        try {
+          await this.cancelTurn(threadId);
+        } catch (error) {
+          interruptError = error;
+        }
+      }
+    }
+    const stopped = await this.gateway.call<{ killed: number }>("process.stop", {});
+    if (interruptError !== undefined) throw interruptError;
+    return stopped;
+  }
+
   private validateQueuedInput(input: unknown): void {
     if (!Array.isArray(input) || input.length === 0) throw new Error("Hermes input is empty");
     let hasContent = false;

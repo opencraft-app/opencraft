@@ -455,6 +455,10 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCode
     params: TurnInterruptParams;
     result: TurnInterruptResponse;
   };
+  "hermes/stop": {
+    params: { threadId: string | null; expectedTurnId: string | null };
+    result: { killed: number };
+  };
   "thread/queue/add": {
     params: ThreadQueueAddParams;
     result: ThreadQueueAddResponse;
