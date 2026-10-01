@@ -26,15 +26,10 @@ export type JourneyState = {
   isAuthenticated: boolean;
   isSubscribed: boolean;
   hasBots: boolean;
-  /**
-   * 历史上是否成功创建过 Bot（删光 Bot 的老用户也是 true）。
-   * 后端账号级字段缺失前由 `hasEverCreatedBot()` 本地标记兜底，不传时退化为只看 hasBots。
-   */
-  hasCreatedBot?: boolean;
 };
 
 /** 已登录用户的订阅态（登录成功分流只取决于它）。 */
-export type SubscriptionState = Pick<JourneyState, "isSubscribed" | "hasBots" | "hasCreatedBot">;
+export type SubscriptionState = Pick<JourneyState, "isSubscribed" | "hasBots">;
 
 /** 链路落点：订阅页 / 控制台 / 首个 Bot 创建向导（已订阅但尚无 Agent）。 */
 export type JourneyRoute = "subscribe" | "agents" | "agents-creating";
@@ -51,26 +46,22 @@ export const JOURNEY_ROUTE = {
 
 /**
  * 已订阅后的落点：
- * 已有 Agent、或历史上创建过 Agent（现在被删光也算）→ 控制台；
- * 只有从未创建过的人才进 /agents 的创建流程。
+ * 当前有 Agent → 控制台；当前无 Agent → 创建流程。
+ * 已删除全部 Bot 的老用户也从创建流程重新开始。
  */
-export const resolveSubscribedRoute = (
-  hasBots: boolean,
-  hasCreatedBot = false,
-): JourneyRoute =>
-  hasBots || hasCreatedBot ? JOURNEY_ROUTE.AGENTS : JOURNEY_ROUTE.AGENTS_CREATING;
+export const resolveSubscribedRoute = (hasBots: boolean): JourneyRoute =>
+  hasBots ? JOURNEY_ROUTE.AGENTS : JOURNEY_ROUTE.AGENTS_CREATING;
 
 /**
  * 登录成功分流：
  * - 未订阅 → /subscribe
- * - 已订阅 → /agents（从未创建过时进 /agents 的创建流程）
+ * - 已订阅 → 当前有 Bot 进列表，否则进创建流程
  */
 export const resolvePostLoginRoute = ({
   isSubscribed,
   hasBots,
-  hasCreatedBot,
 }: SubscriptionState): JourneyRoute =>
-  isSubscribed ? resolveSubscribedRoute(hasBots, hasCreatedBot) : JOURNEY_ROUTE.SUBSCRIBE;
+  isSubscribed ? resolveSubscribedRoute(hasBots) : JOURNEY_ROUTE.SUBSCRIBE;
 
 /**
  * CTA 分流（Hero / Footer 共用）：
@@ -81,10 +72,9 @@ export const resolveCtaRoute = ({
   isAuthenticated,
   isSubscribed,
   hasBots,
-  hasCreatedBot,
 }: JourneyState): JourneyRoute =>
   isAuthenticated && isSubscribed
-    ? resolveSubscribedRoute(hasBots, hasCreatedBot)
+    ? resolveSubscribedRoute(hasBots)
     : JOURNEY_ROUTE.SUBSCRIBE;
 
 /** 落点转 href：国际站按语种前缀本地化，国内站保持原路径（双站只差语言）。 */

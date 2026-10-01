@@ -11,6 +11,7 @@ const runtimeMock = vi.hoisted(() => ({
   isAuthenticated: false,
   isSubscribed: false,
   bots: [] as Array<{ id: string }>,
+  hasResolvedPasses: true,
 }));
 const trackDatongClickMock = vi.hoisted(() => vi.fn());
 const prepareReferralCodeMock = vi.hoisted(() => vi.fn());
@@ -25,7 +26,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots: runtimeMock.bots,
     isSubscribed: runtimeMock.isSubscribed,
-    hasResolvedPasses: true,
+    hasResolvedPasses: runtimeMock.hasResolvedPasses,
     passesLoading: false,
     passesError: false,
     refreshPasses: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("@/observability/datong-tracker", () => ({
 vi.mock("@next-site/language-switcher", () => ({ renderNextLanguageSwitcher: () => null }));
 
 import { PublicHeaderAuthIsland } from "@next-site/public-header-auth-island";
+import { REOPEN_PRICING_MODAL_EVENT } from "@next-site/use-post-login-redirect";
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
@@ -60,6 +62,7 @@ beforeEach(() => {
   runtimeMock.isAuthenticated = false;
   runtimeMock.isSubscribed = false;
   runtimeMock.bots = [];
+  runtimeMock.hasResolvedPasses = true;
   prepareReferralCodeMock.mockReset().mockResolvedValue(undefined);
 });
 
@@ -159,6 +162,14 @@ describe("PublicHeaderAuthIsland", () => {
     expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
   });
 
+  it("hides the product entry while purchase status is unconfirmed", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
+    runtimeMock.hasResolvedPasses = false;
+    render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
+  });
+
   it("keeps anonymous homepage actions unchanged", () => {
     render(
       <PublicHeaderAuthIsland
@@ -227,7 +238,7 @@ describe("PublicHeaderAuthIsland", () => {
     expect(screen.queryByRole("button", { name: "Start free" })).not.toBeInTheDocument();
   });
 
-  it("sends anonymous CTA clicks straight to the subscribe page (plan A)", () => {
+  it("keeps the subscribe page as the fallback when no pricing modal is mounted", () => {
     (globalThis as { React?: typeof React }).React = React;
     render(
       <PublicHeaderAuthIsland
@@ -249,5 +260,28 @@ describe("PublicHeaderAuthIsland", () => {
       pgid: "home",
       params: { has_bots: false, target: "subscribe" },
     });
+  });
+
+  it("opens the pricing modal from the header Free trial button", () => {
+    const openModal = vi.fn((event: Event) => {
+      (event as CustomEvent<{ handled: boolean }>).detail.handled = true;
+    });
+    window.addEventListener(REOPEN_PRICING_MODAL_EVENT, openModal);
+    try {
+      render(
+        <PublicHeaderAuthIsland
+          locale="en-US"
+          showLanguageSwitcher={false}
+          showProductEntry
+          promoteFreeTrial
+          loginOnly={false}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Free trial" }));
+      expect(openModal).toHaveBeenCalledTimes(1);
+      expect(routerMock.push).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(REOPEN_PRICING_MODAL_EVENT, openModal);
+    }
   });
 });

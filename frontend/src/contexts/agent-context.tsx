@@ -70,6 +70,8 @@ interface OpenClawContextValue {
   user: OpenClawUser;
   bots: OpenClawBot[];
   botsLoading: boolean;
+  /** 当前账号的 Bot 列表已从服务端成功读取，空数组才可信。 */
+  hasResolvedBots: boolean;
   /** Latest list read failed; an empty array is not proof of an empty account. */
   botsError: boolean;
   /** 当前用户的权益最新快照（来自 GET /v1/passes） */
@@ -247,6 +249,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const [hasResolvedPasses, setHasResolvedPasses] = useState(false);
   const [bots, setBots] = useState<OpenClawBot[]>([]);
   const [botsLoading, setBotsLoading] = useState(false);
+  const [hasResolvedBots, setHasResolvedBots] = useState(false);
   const [botsError, setBotsError] = useState(false);
   const fetchedRef = useRef(false);
 
@@ -506,6 +509,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       const mappedBots = projectBotCatalog(snapshot.bots)
         .map(({ source }) => mapBotToOpenClawBot(source));
       setBots(mappedBots);
+      setHasResolvedBots(true);
       setBotsError(false);
 
       /* 对每个 bot 尝试获取 openclaw 配置，恢复通道状态 */
@@ -567,6 +571,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setHasResolvedPasses(false);
     setIsSubscribed(false);
     setBots([]);
+    setHasResolvedBots(false);
     setBotsError(false);
     setPassesLoading(Boolean(session.user));
     fetchedRef.current = false;
@@ -602,6 +607,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setLatestPass(null);
       setHasResolvedPasses(false);
       setBots([]);
+      setHasResolvedBots(false);
       setBotsError(false);
       fetchedRef.current = false;
     }
@@ -629,6 +635,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setLatestPass(null);
     setHasResolvedPasses(false);
     setBots([]);
+    setHasResolvedBots(false);
     setBotsError(false);
     fetchedRef.current = false;
     void sessionSignOut();
@@ -707,6 +714,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       user,
       bots,
       botsLoading,
+      hasResolvedBots: hasResolvedBots && fetchedUserIdRef.current === session.user?.id,
       botsError,
       activePass,
       modifyingPass,
@@ -717,7 +725,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       retryPassUpgrade,
       passesLoading,
       passesError,
-      hasResolvedPasses,
+      hasResolvedPasses: hasResolvedPasses && fetchedUserIdRef.current === session.user?.id,
       latestPass,
       login,
       logout,
@@ -730,7 +738,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, botsError, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, hasResolvedBots, botsError, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots, session.user?.id],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

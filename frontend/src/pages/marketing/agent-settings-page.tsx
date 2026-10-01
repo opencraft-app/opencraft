@@ -76,7 +76,7 @@ import {
 import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
-import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 // 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
@@ -137,7 +137,6 @@ import {
   shouldShowEarlyOnboarding,
   resolveOnboardingProfileId,
 } from "@/pages/marketing/agent-onboarding-mark";
-import { hasEverCreatedBot, markBotCreated } from "@/lib/bot-creation-history";
 import { hasUnfinishedBuddySetup } from "@/pages/marketing/agent-buddy-setup-progress";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
@@ -2615,13 +2614,15 @@ export const AgentSettingsPage = ({
   const locale = useCurrentLocale();
   const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
+  const { pathname } = useAppLocation();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
   /* 订阅成功后引导「为首个 Bot 命名」的意图（/agents?create=1），区别于 creating 的等待态。 */
   const createBotIntentParam = searchParams.get(AGENT_CREATE_QUERY_KEY)?.trim() ?? "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
+  const firstCreateEntryHandled = useRef(false);
+  const { bots, botsLoading, hasResolvedBots, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
   const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
   const repositories = useRepositories();
@@ -4211,17 +4212,19 @@ export const AgentSettingsPage = ({
    * /agents?create=1。这里在订阅态与列表就绪后，自动打开与「新建 Bot」一致的命名弹窗
    * （首个创建 → 空白模式、只需输入名字），让首次订阅与删除后重建走同一条命名流程。
    *
-   * 消费一次即清掉 create 参数（replace）：避免用户取消弹窗、或刷新时重复自动弹出。
-   * 边界：账号已有 Bot、或曾创建过 Bot（删光后重进）不再引导命名，直接落到正常控制台；
+   * 消费一次即清掉 create 参数（replace）。本次挂载只打开一次；如果用户中途离开，
+   * 下次进 /agents 时，只要仍没有成功创建 Bot，就重新打开引导。
+   * 边界：当前已有 Bot 时直接落到正常控制台；Bot 已删光时重新打开创建界面；
    *       未订阅（理论上不会跳来，或 pass 尚未同步）先等待，不误弹。
    */
   useEffect(() => {
-    if (!createBotIntentParam) return;
-    if (botsLoading || passesLoading) return;
+    if (firstCreateEntryHandled.current) return;
+    if (!createBotIntentParam && pathname !== AGENTS_HOME_PATH) return;
+    if (!hasResolvedBots || botsLoading || passesLoading) return;
     if (!isSubscribed) return;
-    navigate(AGENTS_HOME_PATH, { replace: true });
-    /* 曾创建过 Bot 的用户（含删光全部 Bot 后重进）算非首次，不再自动开命名向导。 */
-    if (bots.length > 0 || hasEverCreatedBot(session.user?.id)) return;
+    firstCreateEntryHandled.current = true;
+    if (createBotIntentParam) navigate(AGENTS_HOME_PATH, { replace: true });
+    if (bots.length > 0) return;
     setDirectCreateError(null);
     setCreateBotName("");
     /*
@@ -4237,7 +4240,7 @@ export const AgentSettingsPage = ({
       setCreateBotMode("blank");
       setShowCreateConfirm(true);
     }
-  }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate, session.user?.id]);
+  }, [createBotIntentParam, pathname, hasResolvedBots, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
 
   /*
    * 新订阅用户打标。
@@ -4494,8 +4497,6 @@ export const AgentSettingsPage = ({
           create_duration_ms: Date.now() - createStart,
         },
       });
-      /* 标记「已成功创建过 Bot」：此后订阅/登录分流按非首次处理，不再进命名向导。 */
-      markBotCreated(session.user?.id);
       setShowCreateConfirm(false);
       setIsCreating(true);
       navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
@@ -4632,15 +4633,6 @@ export const AgentSettingsPage = ({
       });
       // 新 bot 还没进 visibleBots（provisioning 会被过滤），所以直接用返回值
       const createdProfileId = newBot.profileId || "";
-      /*
-       * 标记「已成功创建过 Bot」。
-       *
-       * 线上真实创建路径就是这里（IS_BUDDY_ONBOARDING_ENABLED 恒为 true，
-       * 旧弹窗分支 createBotAndNavigate 只在开关关闭时才走）。漏掉这行的话，
-       * 分流判据会退化成只看 bots.length —— 删光 Bot 的老用户被反复当首次。
-       */
-      markBotCreated(session?.user?.id);
-
       /*
        * 守卫：多 bot 场景下拿到 "main" 视为「没拿到」。
        *

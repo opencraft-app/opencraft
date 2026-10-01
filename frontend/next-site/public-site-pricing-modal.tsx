@@ -8,6 +8,7 @@ import { DEFAULT_PUBLIC_ROUTE_LOCALE, publicRouteLocaleFromLang } from '@next-si
 import { LocaleOverrideProvider } from '@/i18n/t';
 import { localeDefinition } from '@/i18n/locales.config';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { REOPEN_PRICING_MODAL_EVENT } from './use-post-login-redirect';
 
 export type OpenPricingModal = (options?: {
   locale?: PublicSiteLocale;
@@ -22,6 +23,16 @@ const SITE_HEADER_SELECTOR = '.lw-public-site-header';
 const isSubscribeHref = (href: string): boolean => {
   const path = href.split('?')[0]?.split('#')[0] ?? '';
   return /(^|\/)subscribe(\/|$)/.test(path);
+};
+
+/** 带查询参数或锚点的订阅链接承载积分包、升配、支付回跳等整页意图。 */
+const isPlainPricingHref = (href: string): boolean => {
+  try {
+    const url = new URL(href, window.location.href);
+    return url.origin === window.location.origin && isSubscribeHref(url.pathname) && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -63,6 +74,16 @@ export function PublicSitePricingModalProvider({ children }: { children: ReactNo
   }, []);
 
   useEffect(() => {
+    const reopenAfterLogin = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      event.detail.handled = true;
+      openRef.current();
+    };
+    window.addEventListener(REOPEN_PRICING_MODAL_EVENT, reopenAfterLogin);
+    return () => window.removeEventListener(REOPEN_PRICING_MODAL_EVENT, reopenAfterLogin);
+  }, []);
+
+  useEffect(() => {
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0) return;
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -72,10 +93,11 @@ export function PublicSitePricingModalProvider({ children }: { children: ReactNo
       const anchor = target.closest('a[href]');
       if (!(anchor instanceof HTMLAnchorElement)) return;
       if (anchor.dataset.pricingModal === 'off') return;
-      if (anchor.closest(SITE_HEADER_SELECTOR)) return;
+      if (anchor.dataset.pricingModal !== 'on' && anchor.closest(SITE_HEADER_SELECTOR)) return;
+      if ((anchor.target && anchor.target !== '_self') || anchor.hasAttribute('download')) return;
 
       const href = anchor.getAttribute('href') ?? '';
-      if (!href || !isSubscribeHref(href)) return;
+      if (!href || !isPlainPricingHref(href)) return;
 
       event.preventDefault();
       openRef.current();

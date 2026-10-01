@@ -9,6 +9,7 @@ vi.mock("@next-site/pricing-modal", () => ({
 }));
 
 import { PublicSitePricingModalProvider } from "@next-site/public-site-pricing-modal";
+import { REOPEN_PRICING_MODAL_EVENT } from "@next-site/use-post-login-redirect";
 
 afterEach(() => {
   cleanup();
@@ -33,6 +34,14 @@ describe("PublicSitePricingModalProvider", () => {
     expect(screen.getByTestId("pricing-modal")).toHaveTextContent("open");
   });
 
+  it("reopens the pricing modal on the original page after login", () => {
+    render(<PublicSitePricingModalProvider>{null}</PublicSitePricingModalProvider>);
+    const event = new CustomEvent(REOPEN_PRICING_MODAL_EVENT, { detail: { handled: false } });
+    fireEvent(window, event);
+    expect(event.detail.handled).toBe(true);
+    expect(screen.getByTestId("pricing-modal")).toHaveTextContent("open");
+  });
+
   it("keeps the standalone page for the top navigation pricing link", () => {
     const anchor = renderWithEntry(
       '<div class="lw-public-site-header"><a href="/subscribe">Pricing</a></div>',
@@ -43,11 +52,39 @@ describe("PublicSitePricingModalProvider", () => {
     expect(screen.getByTestId("pricing-modal")).toHaveTextContent("closed");
   });
 
+  it("opens the modal for a header conversion link", () => {
+    const anchor = renderWithEntry(
+      '<div class="lw-public-site-header"><a href="/subscribe" data-pricing-modal="on">Free trial</a></div>',
+    );
+
+    fireEvent.click(anchor);
+
+    expect(screen.getByTestId("pricing-modal")).toHaveTextContent("open");
+  });
+
   it("does not intercept other links", () => {
     const anchor = renderWithEntry('<a href="/docs/overview">Docs</a>');
 
     fireEvent.click(anchor);
 
+    expect(screen.getByTestId("pricing-modal")).toHaveTextContent("closed");
+  });
+
+  it.each([
+    '/subscribe?section=credits',
+    '/subscribe/?upgrade_pass_id=pass-1',
+    '/subscribe?pay_return=1&pay_plan=launch',
+    '/subscribe#plans',
+    'https://lightvela.ai/subscribe',
+  ])("preserves the standalone page for a link with its own intent: %s", (href) => {
+    const anchor = renderWithEntry(`<a href="${href}">Open pricing</a>`);
+    fireEvent.click(anchor);
+    expect(screen.getByTestId("pricing-modal")).toHaveTextContent("closed");
+  });
+
+  it("respects a subscribe link that explicitly opens in another tab", () => {
+    const anchor = renderWithEntry('<a href="/subscribe" target="_blank">Pricing</a>');
+    fireEvent.click(anchor);
     expect(screen.getByTestId("pricing-modal")).toHaveTextContent("closed");
   });
 

@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -39,10 +39,17 @@ vi.mock("@/contexts/session-context", () => ({
 
 const navigateMock = vi.hoisted(() => vi.fn());
 let entitlement = {
+  bots: [] as Array<{ id: string }>,
+  botsError: false,
+  botsLoading: false,
+  hasResolvedBots: true,
   hasResolvedPasses: true,
   isSubscribed: true,
+  latestPass: null as object | null,
   passesError: false as false | string,
   passesLoading: false,
+  refreshBots: vi.fn(),
+  refreshPasses: vi.fn(),
 };
 
 vi.mock("@/contexts/agent-context", () => ({
@@ -176,10 +183,17 @@ describe("NextAgentEntitlementGate", () => {
 
   beforeEach(() => {
     entitlement = {
+      bots: [],
+      botsError: false,
+      botsLoading: false,
+      hasResolvedBots: true,
       hasResolvedPasses: true,
       isSubscribed: true,
+      latestPass: null,
       passesError: false,
       passesLoading: false,
+      refreshBots: vi.fn(),
+      refreshPasses: vi.fn(),
     };
     navigateMock.mockReset();
   });
@@ -191,12 +205,12 @@ describe("NextAgentEntitlementGate", () => {
     expect(container.querySelector("div")).not.toBeNull();
   });
 
-  it("redirects to the subscribe page before purchase", async () => {
+  it("returns to the homepage before purchase", async () => {
     entitlement = { ...entitlement, isSubscribed: false };
 
     const { queryByText } = renderGate();
 
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/subscribe", { replace: true }));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/", { replace: true }));
     expect(queryByText("console")).not.toBeInTheDocument();
   });
 
@@ -208,11 +222,34 @@ describe("NextAgentEntitlementGate", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
+  it("waits for the server Bot list before treating an empty account as new", () => {
+    entitlement = { ...entitlement, isSubscribed: false, hasResolvedBots: false };
+    renderGate();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("lets an expired subscriber reach the console on another device", () => {
+    entitlement = { ...entitlement, isSubscribed: false, latestPass: { pass_id: "previous" } };
+    const { queryByText } = renderGate();
+    expect(queryByText("console")).toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("offers retry when the Bot list cannot be checked", () => {
+    entitlement = { ...entitlement, isSubscribed: false, hasResolvedBots: false, botsError: true };
+    const { getByRole } = renderGate();
+    expect(navigateMock).not.toHaveBeenCalled();
+    fireEvent.click(getByRole("button", { name: "重试" }));
+    expect(entitlement.refreshBots).toHaveBeenCalledTimes(1);
+  });
+
   it("does not kick an existing subscriber when the entitlement request fails", () => {
     entitlement = { ...entitlement, passesError: "boom" };
 
-    renderGate();
+    const { getByRole } = renderGate();
 
     expect(navigateMock).not.toHaveBeenCalled();
+    fireEvent.click(getByRole("button", { name: "重试" }));
+    expect(entitlement.refreshPasses).toHaveBeenCalledTimes(1);
   });
 });

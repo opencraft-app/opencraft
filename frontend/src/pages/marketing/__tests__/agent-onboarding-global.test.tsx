@@ -61,6 +61,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading: false,
+    hasResolvedBots: true,
     deleteBot,
     user: {
       email: "user@example.com",
@@ -167,10 +168,6 @@ describe("international Bot onboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
-    /*
-     * 「曾创建过 Bot」标记写在 localStorage 且按账号持久化（这是分流口径的一部分），
-     * 跨用例必须清掉 —— 否则前一个用例创建成功会把后面的用例判成非首次，不再开引导。
-     */
     window.localStorage.clear();
     maxBots = 5;
     multiBotEnabled = true;
@@ -272,10 +269,10 @@ describe("international Bot onboarding", () => {
     expect(addBot).not.toHaveBeenCalled();
   });
 
-  it("opens the same guide when creating the first Bot from an empty account", async () => {
+  it("automatically opens the guide for an empty account", async () => {
     bots = [];
     render(page(""));
-    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
   });

@@ -281,6 +281,7 @@ const buildNestedBundle = () => ({
 
 const resetState = () => {
   window.sessionStorage.removeItem("lv-pending-payment-plan");
+  window.localStorage.removeItem("lightvela:bot-created:u1");
   translationState.real = false;
   runtimeConfigState.paidBillingEnabled = true;
   openClawState.isLoggedIn = false;
@@ -1071,6 +1072,35 @@ describe("SubscribePage payment return", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("takes a returning account with an existing Bot to the normal list after payment", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    openClawState.bots = [{ id: "bot-existing", status: "running" }];
+    window.history.replaceState({}, "", "/subscribe?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents"), { timeout: 6000 });
+    expect(navigateMock).not.toHaveBeenCalledWith("/agents?creating=bot-existing");
+  }, 8000);
+
+  it("takes an account with all Bots deleted back to creation after payment", async () => {
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    window.localStorage.setItem("lightvela:bot-created:u1", "1");
+    window.history.replaceState({}, "", "/subscribe?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents?create=1"), { timeout: 6000 });
+    expect(navigateMock).not.toHaveBeenCalledWith("/agents");
+  }, 8000);
+
   it("ignores the marker when the plan cannot be resolved but still refreshes passes", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;
@@ -1087,6 +1117,7 @@ describe("SubscribePage payment return", () => {
     });
     /* 找不到套餐时不进 paying，避免卡在一个永远等不到结果的弹窗里 */
     expect(screen.queryByText("正在开通套餐")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("暂时无法确认订单状态，请稍后查询，避免重复付款。");
     expect(window.location.search).toBe("");
   });
 

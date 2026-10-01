@@ -12,7 +12,6 @@ import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
 import { useAppNavigate } from '@/lib/app-navigation';
-import { hasEverCreatedBot } from '@/lib/bot-creation-history';
 import { isGlobal } from '@/lib/region';
 import { getSeoMeta } from '@/lib/seo-data';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
@@ -293,34 +292,32 @@ export function NextAgentEntitlementGate({
 }) {
   const navigate = useAppNavigate();
   const t = useT();
-  const { bots, hasResolvedPasses, isSubscribed, passesError, passesLoading } = useOpenClaw();
-  const { session } = useSession();
+  const { bots, botsError, botsLoading, hasResolvedBots, hasResolvedPasses, isSubscribed, latestPass, passesError, passesLoading, refreshBots, refreshPasses } = useOpenClaw();
   /*
-   * 已有资产的老用户（当前有 Bot、或曾创建过）一律放行。
+   * 已购买的老用户（有历史订阅或现存 Bot）一律放行。
    * 订阅过期的人同样要进来管理已有 Bot 和续费，不能把人挡在门外 ——
    * 门禁只拦「从没买过、也没有任何资产」的新访客。
    */
-  const hasExistingAssets = (bots?.length ?? 0) > 0 || hasEverCreatedBot(session?.user?.id);
+  const hasExistingAssets = (bots?.length ?? 0) > 0 || Boolean(latestPass);
 
   useEffect(() => {
-    if (hasResolvedPasses && !passesLoading && !isSubscribed && !passesError && !hasExistingAssets) {
-      navigate('/subscribe', { replace: true });
+    if (hasResolvedPasses && hasResolvedBots && !passesLoading && !botsLoading && !isSubscribed && !passesError && !botsError && !hasExistingAssets) {
+      navigate('/', { replace: true });
     }
-  }, [hasExistingAssets, hasResolvedPasses, isSubscribed, navigate, passesError, passesLoading]);
+  }, [botsError, botsLoading, hasExistingAssets, hasResolvedBots, hasResolvedPasses, isSubscribed, navigate, passesError, passesLoading]);
 
-  if (!hasResolvedPasses || passesLoading) {
-    return <>{loadingFallback}</>;
-  }
-
-  if (passesError) {
+  if (passesError || botsError) {
     return (
       <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: 'var(--lw-fg)' }}>
         <main className="relative z-10 flex flex-grow items-center justify-center pb-8 pt-24">
           <div className="mx-auto flex max-w-md flex-col items-center px-6 text-center">
-            <h2 className="text-xl font-bold" style={{ color: '#333', marginBottom: 16 }}>{t('权益状态加载失败')}</h2>
+            <h2 className="text-xl font-bold" style={{ color: '#333', marginBottom: 16 }}>{t(passesError ? '权益状态加载失败' : 'Bot 列表加载失败，请刷新重试。')}</h2>
             <p className="text-sm leading-relaxed" style={{ color: '#999', marginBottom: 48 }}>
               {t('请稍后重试')}
             </p>
+            <button type="button" onClick={() => void (passesError ? refreshPasses() : refreshBots())} className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white">
+              {t('重试')}
+            </button>
             <a href="/" className="lw-back-link" style={{ marginTop: 36 }}>
               <ArrowLeft className="h-3.5 w-3.5" /> {t('返回首页')}
             </a>
@@ -328,6 +325,10 @@ export function NextAgentEntitlementGate({
         </main>
       </div>
     );
+  }
+
+  if (!hasResolvedPasses || !hasResolvedBots || passesLoading || botsLoading) {
+    return <>{loadingFallback}</>;
   }
 
   /* 未订阅且无资产：不挂载智能体内容（避免列表被渲染出来），跳转由上面的 effect 负责。 */

@@ -64,6 +64,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading,
+    hasResolvedBots: !botsLoading,
     deleteBot: vi.fn(),
     user: {
       email: "user@example.com",
@@ -131,6 +132,7 @@ const page = (search: string) => (
 describe("post-subscribe naming intent (/agents?create=1)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     testRegion.isCN = true;
     testRegion.isGlobal = false;
     isSubscribed = true;
@@ -161,6 +163,31 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
     expect(addBot).not.toHaveBeenCalled();
     // 消费一次即清掉 create 参数，避免刷新/取消后重复自动弹出
     expect(navigateMock).toHaveBeenCalledWith("/agents", { replace: true });
+  });
+
+  it("reopens first creation on a later direct visit until a Bot is created", async () => {
+    const firstVisit = render(page(""));
+    await waitFor(() => expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument());
+    expect(addBot).not.toHaveBeenCalled();
+    firstVisit.unmount();
+
+    render(page(""));
+    await waitFor(() => expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument());
+    expect(addBot).not.toHaveBeenCalled();
+  });
+
+  it("reopens creation after all Bots were deleted, even with a legacy browser marker", async () => {
+    window.localStorage.setItem("lightvela:bot-created:usr-test", "1");
+    render(page(""));
+    await waitFor(() => expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument());
+    expect(addBot).not.toHaveBeenCalled();
+  });
+
+  it("waits for the Bot list before starting first creation", async () => {
+    botsLoading = true;
+    render(page(""));
+    await Promise.resolve();
+    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
   });
 
   /*

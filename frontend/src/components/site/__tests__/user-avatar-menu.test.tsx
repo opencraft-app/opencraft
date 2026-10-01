@@ -32,7 +32,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 vi.mock("@/contexts/agent-context", () => ({
-  useOpenClaw: () => useOpenClaw(),
+  useOpenClaw: () => ({ hasResolvedPasses: true, botsLoading: false, passesLoading: false, ...useOpenClaw() }),
 }));
 
 vi.mock("@/i18n/t", () => ({
@@ -237,6 +237,18 @@ describe("UserAvatarMenu", () => {
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
     expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
+  });
+
+  it("hides My Agents in the public dropdown until subscription status is confirmed", () => {
+    useSession.mockReturnValue({
+      session: { user: { id: "pending-user", name: "User" }, currentSubscription: null },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({ activePass: null, bots: [], isSubscribed: true, hasResolvedPasses: false });
+
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
   });
 
   it("places the Model link before Plans & billing for ai bundles", () => {

@@ -3,6 +3,7 @@
 import React from 'react';
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { useT } from '@/i18n/t';
 import { SubscribePage } from '@next-site/subscribe-page';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 
@@ -22,24 +23,27 @@ export type PricingModalProps = {
  * 内容复用订阅页的套餐区（单一真源，不复制第二套价表）；下单仍沿用订阅页既有链路。
  */
 export function PricingModal({ open, locale, localized, resumePayReturn, onOpenChange }: PricingModalProps) {
+  const t = useT();
   return (
     <Dialog open={open} modal={false} onOpenChange={onOpenChange}>
       <DialogContent
-        closeLabel="关闭定价"
-        className="z-[70] max-h-[85dvh] overflow-y-auto p-0 md:w-[min(56rem,calc(100vw-2rem))]"
+        closeLabel={t('关闭')}
+        className="z-[70] overflow-hidden p-0 md:w-[min(56rem,calc(100vw-2rem))] [&>button]:right-2 [&>button]:top-2 [&>button]:size-11"
         nonModalOverlay
         onInteractOutside={(event) => event.preventDefault()}
         overlayClassName="z-[70]"
         data-testid="pricing-modal"
       >
-        <DialogTitle className="sr-only">定价套餐</DialogTitle>
-        <SubscribePage
-          embedded
-          resumePayReturn={resumePayReturn}
-          publicLocale={locale}
-          publicLocalized={localized}
-          onClose={() => onOpenChange(false)}
-        />
+        <DialogTitle className="sr-only">{t('选择适合你的套餐')}</DialogTitle>
+        <div className="max-h-[90dvh] overflow-y-auto overscroll-contain">
+          <SubscribePage
+            embedded
+            resumePayReturn={resumePayReturn}
+            publicLocale={locale}
+            publicLocalized={localized}
+            onClose={() => onOpenChange(false)}
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -231,22 +231,27 @@ describe("SubscribePage", () => {
     expect(screen.getByRole("contentinfo")).toBeInTheDocument();
   });
 
-  it("expands the remaining plan benefits in place inside the pricing modal", async () => {
+  it("expands and collapses every plan's benefits with one control in the pricing modal", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage embedded />);
 
-    const card = await screen.findByRole("group", { name: "启航 Launch" });
-    const toggle = within(card).getByTestId("plan-features-toggle");
+    const launch = await screen.findByRole("group", { name: "启航 Launch" });
+    const cruise = screen.getByRole("group", { name: "巡游 Cruise" });
+    const toggle = screen.getByTestId("plan-features-toggle");
+    expect(screen.getAllByTestId("plan-features-toggle")).toHaveLength(1);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(within(card).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(within(launch).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(within(cruise).queryByText("7*24小时在线")).not.toBeInTheDocument();
 
     fireEvent.click(toggle);
 
-    expect(within(card).getByText("7*24小时在线")).toBeInTheDocument();
+    expect(within(launch).getByText("7*24小时在线")).toBeInTheDocument();
+    expect(within(cruise).getByText("7*24小时在线")).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-expanded", "true");
 
     fireEvent.click(toggle);
-    expect(within(card).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(within(launch).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(within(cruise).queryByText("7*24小时在线")).not.toBeInTheDocument();
   });
 
   it("closes the pricing modal when the user leaves for the full pricing page", async () => {
@@ -631,10 +636,10 @@ describe("SubscribePage", () => {
     );
     expect(source).toContain("usePostLoginRedirect");
     // OAuth 整页跳转路径：弹登录前 arm，关闭弹窗 disarm
-    expect(source).toContain("armPostLoginRedirect()");
+    expect(source).toContain("armPostLoginRedirect(embedded ? 'pricing-modal' : 'subscribe')");
     expect(source).toContain("disarmPostLoginRedirect()");
     // 弹窗内登录路径：onSuccess 接 redirectAfterLogin
-    expect(source).toContain("onSuccess={() => redirectAfterLogin()}");
+    expect(source).toContain("onSuccess={() => redirectAfterLogin(embedded ? 'pricing-modal' : 'subscribe')}");
   });
 
   it("disables subscription actions when an active pass is already present", async () => {
