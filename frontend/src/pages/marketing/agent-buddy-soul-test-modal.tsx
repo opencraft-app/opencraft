@@ -7,7 +7,7 @@ import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { cn } from "@/lib/utils";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import type { SoulSpec } from "@/lib/soul-interpretations";
-import { toEnglishSlug } from "@/lib/soul-slug-mapping";
+import { toCanonicalSlug, toEnglishSlug } from "@/lib/soul-slug-mapping";
 import { SoulFaceCard } from "@/pages/marketing/agent-buddy-cards";
 import {
   calculateEnglishMatchedSoul,
@@ -144,14 +144,15 @@ export function SoulTestModal({
           return;
         }
         // 国际站 EN → 英文计算器；国际站 ZH → 中文计算器 + canonical→westernized slug 翻译（与 global-CN 池对齐）；国内站 → 中文计算器（canonical slug）。
+        const availableSoulIds = new Set(souls.map((soul) => toCanonicalSlug(soul.slug)));
         const matched = useLocalizedSoulText
-          ? calculateEnglishMatchedSoul(nextAnswers)
-          : calculateMatchedSoul(nextAnswers);
+          ? calculateEnglishMatchedSoul(nextAnswers, availableSoulIds)
+          : calculateMatchedSoul(nextAnswers, availableSoulIds);
         setMatchedSoulId(activeSoulLocale === "global-zh" ? toEnglishSlug(matched) : matched);
         setPhase("result");
       }, 300);
     },
-    [activeSoulLocale, answers, currentIndex, currentQuestion, totalQuestions, useLocalizedSoulText],
+    [activeSoulLocale, answers, currentIndex, currentQuestion, souls, totalQuestions, useLocalizedSoulText],
   );
 
   const handlePrev = useCallback(() => {

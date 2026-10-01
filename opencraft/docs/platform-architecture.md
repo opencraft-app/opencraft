@@ -606,6 +606,9 @@ other logical Host state include the Profile identity.
 The embedded entry constructs the same Application runtime as the full
 Workbench, but contributes an explicit, ephemeral LightVela Host profile and
 never persists that physical instance identity into the normal Host catalog.
+On startup it restores only a Thread remembered for that exact Host identity;
+the legacy global active Thread preference belongs to the standalone Workbench
+and cannot select a conversation from another embedded Profile.
 
 These differences are expressed by a typed Workbench Presentation Policy, not
 route- or product-name conditionals. The full policy enables Shell navigation,
