@@ -60,6 +60,7 @@ derived: false
 - 前端聚焦组件测试 14/14、`pnpm check`、`pnpm build` 通过；OpenCraft 插件类型检查、i18n 检查及 10 项测试通过。
 - `pnpm test` 总门禁出现多项无关测试失败及 Vitest worker 内存溢出；单独复现侧栏静态断言失败，期望的布局类名与当前源码不符。
 - Context 单测总门禁有 4 项失败，输出指向仓库中既有 Task Pack 元数据与字段缺失；本 Task Pack 和 checkpoint 已按当前校验要求补齐，定向校验不再报错。
+- MR !4897 的 CI 日志在 `e76488e7c294a6bcebb5057a2a3840aa5baf1b8d` 报出 `UPSTREAM.json` 的 `sourceRevision` 漂移：记录值 `2a65b0388ba612d99b62c5fe6ef42b8b9cc91632`，期望值为该提交。前端提交后重新运行同步脚本，只更新 manifest 这一字段，并通过 130 文件检查。
 
 ## risks
 - 中文源串变化会产生新 i18n key；通过补齐翻译、重新生成和同步降低空翻译风险。
@@ -79,4 +80,4 @@ derived: false
 - 有界精确搜索命中记录于本轮工具输出。
 
 ## handoff
-- 改动和聚焦验证完成；前端全量测试与 Context 单测总门禁失败已记录，更新既有 MR !4897 时须如实说明。
+- 源码和聚焦验证已完成；按 CI 要求再提交独立的 manifest 修复，并核验 MR !4897 的新一轮检查。前端全量测试与 Context 单测总门禁的已知失败仍保留在 MR 描述中。
