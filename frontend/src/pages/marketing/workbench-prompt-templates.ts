@@ -197,6 +197,10 @@ export function readPendingWorkbenchPrompt(now = new Date()): PendingWorkbenchPr
 }
 
 /** 清除待发送的工作台提示词（发送后调用）。 */
-export function clearPendingWorkbenchPrompt(): void {
+export function clearPendingWorkbenchPrompt(expected?: PendingWorkbenchPrompt): void {
+  if (expected) {
+    const current = readPendingWorkbenchPrompt();
+    if (current?.createdAt !== expected.createdAt || current.prompt !== expected.prompt || current.templateId !== expected.templateId) return;
+  }
   getWorkbenchPromptStorage()?.removeItem(PENDING_WORKBENCH_PROMPT_KEY);
 }

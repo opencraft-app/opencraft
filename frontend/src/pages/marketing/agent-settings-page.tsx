@@ -6748,7 +6748,7 @@ export const AgentSettingsPage = ({
           {
             !isModifying && !passesLoading && !isCreating && !botsLoading
               && !showMultiBotOnboarding && visibleBots.length === 0
-              && !(fleetOverviewEnabled && activeSection === "overview") && (
+              && !(fleetOverviewEnabled && activeSection === "overview" && isSubscribed) && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (

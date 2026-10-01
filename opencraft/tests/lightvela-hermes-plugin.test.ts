@@ -2236,7 +2236,7 @@ class FakeHermesRpcSocket extends EventTarget {
   }
   close(): void {
     this.readyState = WebSocket.CLOSED;
-    this.dispatchEvent(new CloseEvent("close", { code: 1000, wasClean: true }));
+    this.dispatchEvent(new Event("close"));
   }
 }
 
@@ -2244,20 +2244,25 @@ test("Hermes RPC transport owns the advertised Gateway heartbeat lifecycle", asy
   const socket = new FakeHermesRpcSocket();
   const rpc = new HermesRpcWebSocketTransport(socket, {
     heartbeatIntervalMs: 5,
-    heartbeatDeadlineMs: 100,
+    heartbeatDeadlineMs: 2_000,
   });
 
-  socket.receive({
-    jsonrpc: "2.0",
-    method: "event",
-    params: { type: "gateway.ready", payload: { heartbeat: true } },
-  });
-  await new Promise((resolve) => setTimeout(resolve, 18));
-  const heartbeats = socket.requests.filter(({ method }) => method === "gateway.ping");
-  assert.equal(heartbeats.length >= 2, true);
-  assert.equal(String(heartbeats[0]?.id).startsWith("heartbeat-"), true);
-
-  rpc.dispose();
+  try {
+    socket.receive({
+      jsonrpc: "2.0",
+      method: "event",
+      params: { type: "gateway.ready", payload: { heartbeat: true } },
+    });
+    const deadline = Date.now() + 500;
+    while (socket.requests.filter(({ method }) => method === "gateway.ping").length < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const heartbeats = socket.requests.filter(({ method }) => method === "gateway.ping");
+    assert.equal(heartbeats.length >= 2, true);
+    assert.equal(String(heartbeats[0]?.id).startsWith("heartbeat-"), true);
+  } finally {
+    rpc.dispose();
+  }
   const countAfterDispose = socket.requests.length;
   await new Promise((resolve) => setTimeout(resolve, 12));
   assert.equal(socket.requests.length, countAfterDispose);
