@@ -713,3 +713,9 @@ rollback 路由配置；runtime/TLS/角色凭据未落地时，capability 必须
 新机 Skill 和地域 runtime 的采用是后续独立核验的发布阶段，不能把测试 image/地址
 推广为生产。既有 Argo OutOfSync 必须先明确具体资源与差异归属，不全量同步未知漂移。
 Owner review、生产 DB 备份/迁移门禁、Argo 手工 sync 及静态兼容回归仍是正式发布门禁。
+
+建站专属 worker 目录（`workers/cmd/website-deployer/**`、
+`workers/internal/website/**`、`workers/websiteintegration/**`）从通用
+`.ci/workers.yml` push trigger 中排除，避免隐藏发布触发上海 rescue-exporter /
+hermes-importer 的自动 pin。建站继续走 `.ci/workers-website-deployer.yml` 的双区域
+人工 production 通道；共享 go.mod/go.sum/Dockerfile 和其他 worker 目录触发规则保留。

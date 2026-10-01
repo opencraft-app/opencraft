@@ -95,9 +95,28 @@ production migration, drift reconciliation, regional promotion and manual sync r
   deliberately unavailable. Both shprod/sgprod and prepare/enable stay covered.
 - Fresh read-only production evidence still shows the same four preexisting
   OutOfSync apps, all Healthy/manual-sync. No blanket sync is permitted.
-- App artifact attachment was attempted for the Gongfeng MR; this host rejects
-  its URL as unsupported. The MR itself remains accessible through Gongfeng API.
+- Gongfeng push output confirmed the canonical /-/merge_requests/4891 URL;
+  the MR is successfully attached to this chat using that URL.
 - CI-dependency correction current-source verification: full651 runtime tests,
   materialized smoke, trusted-ref dispatcher,103 service bundle contracts and
   service-gateway Go tests all pass locally. This is not a remote green check;
   push the correction and require the server-side check on its new exact SHA.
+
+## Release isolation checkpoint
+
+Remote MR build6332 onbb369d1e40952c60fda512411112f223e5d5529e succeeded.
+Normal owner review remains pending; no production deployment or DB mutation.
+
+Read-only Argo desired/live comparison resolved concrete preexisting drift:
+CTL API replica count, desktop env flags, restart annotations and service credential
+region-map env; sgprod site-gateway DSH timeout, image/redeploy metadata and CPU
+limit; sgprod website worker imagePullSecrets. Values/secrets were not dumped.
+Do not overwrite these as an incidental full sync.
+
+Source-release isolation found the generic workers push channel also matches
+website-only paths and auto-pins shanghai-workers. Add narrow exclusions for
+website cmd/internal/test-fixture paths, retaining all shared dependency and other
+worker triggers. The dedicated website worker channel remains shprod/sgprod and
+no automatic production pin. The regression failed on the missing exclusions
+before the change. This is source pipeline configuration, not a production
+pipeline parameter mutation or a pause of unrelated releases.

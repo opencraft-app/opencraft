@@ -2005,6 +2005,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 with self.subTest(bundle=bundle_name, env=env):
                     require_build_metadata(load_bundle(manifest, bundle_name, env))
 
+    def test_website_only_workers_changes_do_not_trigger_unrelated_auto_pin(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/workers.yml").read_text())
+        push = workflow.get("on", workflow.get(True))["push"]
+        ignored = set(push.get("paths-ignore", []))
+        website_only = {
+            "workers/cmd/website-deployer/**",
+            "workers/internal/website/**",
+            "workers/websiteintegration/**",
+        }
+        self.assertTrue(website_only.issubset(ignored))
+        self.assertIn("workers/**", push["paths"])
+        # Do not disable shared dependency or unrelated worker release triggers.
+        self.assertNotIn("workers/**", ignored)
+        for shared in ["workers/go.mod", "workers/go.sum", "workers/Dockerfile", "workers/internal/**"]:
+            self.assertNotIn(shared, ignored)
+        website = yaml.safe_load((REPO_ROOT / ".ci/workers-website-deployer.yml").read_text())
+        params = website["extends"]["parameters"]
+        self.assertEqual(params["BUNDLE"], "workers-website-deployer")
+        self.assertEqual(params["MASTER_AUTO_PIN_ENVS"], "none")
+        self.assertEqual(params["MASTER_BUILD_ENVS"], "shprod,sgprod")
+        for path in ["workers/cmd/website-deployer/**", "workers/internal/website/**"]:
+            self.assertIn(path, website.get("on", website.get(True))["push"]["paths"])
+
     def test_workers_release_bundle_targets_shanghai_worker_cluster(self) -> None:
         manifest = load_manifest()
 
