@@ -5,6 +5,7 @@
 - `UserMessageImageViewer` 原来直接调用 `ModalSurface`，它默认将 Radix portal 挂到 document body；国内嵌入工作台的样式与呈现根位于 Shadow DOM。
 - 修复前浏览器重现未能在内嵌根找到弹窗；修复后点击显示大图，Escape 关闭，浏览器无 pageerror。
 - Web workspace typecheck、边界检查、聚焦测试、442 项 Chat 测试、内嵌发布构建通过。
+- CR 跟进将 portal 容器顺序断言接入 `test:embedded-ci`（155 项通过），并为浏览器 smoke 注册 npm 入口、注明外部 Playwright/Chromium 参数；浏览器 smoke 再次通过。
 - 文档与 staged 改动影响检查通过；变更影响检查提示 `wisp/mono2-maintainers` 审阅。
 
 ## unverified

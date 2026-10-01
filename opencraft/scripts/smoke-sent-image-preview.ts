@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 
+// Run with an installed Playwright module and Chrome/Chromium binary; use
+// OPENCRAFT_PLAYWRIGHT_MODULE and OPENCRAFT_CHROMIUM_EXECUTABLE when external.
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const vite = await createServer({
   configFile: false,

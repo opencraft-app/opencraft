@@ -49,10 +49,12 @@
 - 侧栏测试另有 1 条布局断言失败；其期望字面量在未修改的 `origin/master` 页面已不存在。
 - `pnpm lint` 无对应 script；完整 `pnpm test` 在多处无关失败及 worker 终止超时后停止，日志 `/tmp/cn-opencraft-default-frontend-test.log`。
 - 最终文档校验通过（0 error、0 broken link、0 warning）；变更影响检查通过，`git diff --cached --check` 通过。
+- MR !4907 的 CR 跟进：修复侧栏既有红测，并以页面渲染断言覆盖国内 OpenCraft / 国际 AgentChat；相关前端测试 53 项通过。
 
 ## risks
 - 国内生产内嵌制品不可用时，OpenCraft 显示加载失败和重试；通过现有同源制品门禁及聚焦测试核验。
 - 回滚：恢复国内 OpenCraft 的 `showHiddenAgentTools` 条件与 launch-token 请求逻辑。
+- 国内默认启用也包含非主 Bot Chat，以及默认收起的网页标签和会话文件只读预览面板；发布回归须覆盖这些入口。
 
 ## validation
 - `pnpm lint`（当前无 script）、`pnpm check`、`pnpm typecheck`、`pnpm test`、`NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL=/__opencraft/embedded-workbench.js pnpm build:cn`（frontend）。
@@ -61,6 +63,7 @@
 
 ## decisions
 - 使用既有区域布尔值启用国内 OpenCraft，保留 `show()` 对其他隐藏工具的作用；owner：本轮用户需求。
+- 本 MR 保持代码回滚：现有 CTL 开关读取进程环境变量，关闭仍需滚动服务；前端运行时配置在页面加载后异步获取，直接套用会产生 Chat owner 切换窗口。独立设计运行时熔断后再扩展跨服务配置。
 
 ## scan_scope
 - `frontend/src/pages/marketing/`、`frontend/openspec/`、`frontend/release-matrix.json`。
@@ -69,4 +72,4 @@
 - 有界 `rg` 已定位页面门禁、相邻测试、内嵌组件和生产制品配置。
 
 ## handoff
-- 实现与本地验证已完成；尚未 commit、push、创建 MR 或发布，线上行为未验证。
+- 初版已提交 MR !4907；CR 跟进改动待更新 MR，线上尚未发布或验证。

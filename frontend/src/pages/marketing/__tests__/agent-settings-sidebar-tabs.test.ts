@@ -255,8 +255,6 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('&& !openCraftChatEnabled');
     expect(page).toContain('enabled={openCraftChatEnabled}');
     expect(page).toContain('profileId={activeBot.profileId ?? (isActiveBotDefault ? "main" : "")}');
-    expect(page).toContain("const openCraftChatEnabled = !isGlobal;");
-    expect(page).toContain('if (openCraftChatEnabled || activeSection !== "chat"');
     expect(page).toContain("setConsoleShowStateReady(true);");
     expect(page).toContain("enableShowCommand: true");
     expect(styles).toContain(".lv-agents-sidebar-tab:disabled");
@@ -455,7 +453,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
      * 具体几何由 agent-settings-nav-spacing 那条守。
      */
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
-    expect(page).toContain("lv-agent-settings-grid grid items-start gap-6");
+    expect(page).toContain("lv-agent-settings-grid grid items-start");
+    expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-6" : "gap-6"');
     expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
   });
 
