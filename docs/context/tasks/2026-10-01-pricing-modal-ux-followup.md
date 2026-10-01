@@ -10,7 +10,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-01
 review_due: 2026-10-08
-revision: 1.2.1
+revision: 1.2.2
 precedence: task
 derived: false
 ---
@@ -93,6 +93,7 @@ derived: false
 - 合入 `origin/master@7eb0d7227` 后无冲突；11 文件 299 例主链路测试和 master 新增的无订阅空状态等 4 条定向测试通过。`pnpm check`：166 项现有类型诊断、171 项基线、0 新增；文档校验 0 错误、0 告警。
 - 双站 `next build --webpack` 均成功：国内站 106 个静态页面、国际站 623 个；国际站后处理的 HTML 语言、EdgeOne 配置、SEO 检查通过。默认 `pnpm build:cn` 的 Turbopack 优化编译持续约 3 分钟无输出且进程几乎不占 CPU，停止后改用 Webpack 验证，默认构建结果未确认。
 - 合并后的全量 `pnpm test --maxWorkers=2` 已运行，但旧的设置页静态断言、诊断面板与渠道文案等测试失败，随后 worker 超过 4 GB 内存上限；停止该轮。设置页续费测试单独复现为第三方 CSS 扩展加载错误，与本次主链路改动无关。受影响链路按上述定向用例验证。
+- 已推送至 MR !4879；页面核对源分支为 `codex/prd-pricing-onboarding`、目标为 `master`，MR 描述已改为本轮实际验证结果。当前仍为 Draft，必要检查与代码评审未完成。
 
 ## risks
 - 首页「看全部场景」等指向 `/agents` 的静态链接仍经购买门禁；用户已确认保留拦截，未购买时回首页。

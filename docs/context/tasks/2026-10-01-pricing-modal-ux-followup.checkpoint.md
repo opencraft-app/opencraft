@@ -1,5 +1,5 @@
 ## stage
-MR !4879 的优化已提交到本地分支，并合入验证时的最新 master；下一步推送分支并核对 MR。
+MR !4879 的优化已推送并更新描述，合入验证时的最新 master；MR 仍为 Draft，等待必要检查和代码评审。
 
 ## verified
 - 当前无 Bot 的已订阅用户直接进入创建引导，当前有 Bot 进入列表；历史订阅保护已到期用户的管理入口。
@@ -19,4 +19,4 @@ MR !4879 的优化已提交到本地分支，并合入验证时的最新 master�
 - Task Pack：`docs/context/tasks/2026-10-01-pricing-modal-ux-followup.md`。
 
 ## next_action
-- 推送分支后核对 MR 的源分支、目标 master 与远端提交。
+- 跟进 MR 的必要检查与代码评审，并在预览或联调环境验证真实支付回跳。
