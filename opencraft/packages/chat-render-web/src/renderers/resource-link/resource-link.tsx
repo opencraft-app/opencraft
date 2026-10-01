@@ -174,16 +174,17 @@ export function createInlineMarkdownFileRenderer(resources: ChatResourcePolicySe
     const insideLink = useContext(ResourceLinkLabel);
     if (node.kind !== "inline-code") return null;
     const code = <code className="chat-inline-code">{node.code}</code>;
+    const path = explicitMarkdownPath.test(node.code) ? node.code : mediaMarkdownPath(node.code);
     // Only explicit file paths are actionable; commands, bare names and URLs
     // remain code. The Host still decides whether a clicked file can be read.
     if (insideLink || context.streaming || context.openResource === undefined
-      || !explicitMarkdownPath.test(node.code)) return code;
-    const decision = resources.resolve(node.code, context);
+      || path === null) return code;
+    const decision = resources.resolve(path, context);
     if (!decision.allowed || decision.target === null
       || (decision.kind !== "file" && decision.kind !== "workspace-file")) return code;
     return <a
       href={decision.target}
-      title={node.code}
+      title={path}
       data-chat-resource-kind={decision.kind}
       onClick={(event) => {
         event.preventDefault();

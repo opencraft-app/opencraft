@@ -63,6 +63,18 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
     await act(()=>mediaLink.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true})));
     assert.deepEqual(calls,['file:///home/agentuser/顺德攻略.md','file:///home/agentuser/国庆江西行作文.md']);
     assert.equal(ctx.workbenchPanels.getOwnerSnapshot('bot-a:thread-a').right.tabs.at(-1).resource,calls.at(-1));
+    const inlineMediaParsed=new exports.ChatDocumentCompiler().compile('`MEDIA:/home/agentuser/国庆江西行作文.md`');
+    const inlineMediaNode=inlineMediaParsed.nodes[0].children.find((node)=>node.kind==='inline-code');
+    assert.ok(inlineMediaNode,'backticked MEDIA path must parse as inline code');
+    await act(()=>root.render(React.createElement(Inline,{node:inlineMediaNode,context,renderNodes:()=>null})));
+    const inlineMediaLink=document.querySelector('a');
+    assert.ok(inlineMediaLink,'backticked MEDIA Markdown path must be actionable');
+    assert.equal(inlineMediaLink.textContent,'MEDIA:/home/agentuser/国庆江西行作文.md');
+    assert.equal(inlineMediaLink.getAttribute('href'),'file:///home/agentuser/国庆江西行作文.md');
+    assert.equal(calls.length,2,'rendering inline MEDIA must not read or open a file');
+    await act(()=>inlineMediaLink.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true})));
+    assert.equal(calls.at(-1),'file:///home/agentuser/国庆江西行作文.md');
+    assert.equal(ctx.workbenchPanels.getOwnerSnapshot('bot-a:thread-a').right.tabs.at(-1).resource,calls.at(-1));
     for(const value of ['MEDIA:README.md','MEDIA:https://example.com/a.md','MEDIA://example.com/a.md','MEDIA:/tmp/a.pdf',
       'MEDIA:/tmp/a.md; cat /tmp/b.md','See MEDIA:/tmp/a.md','MEDIA:/tmp/a.md and more']){
       await act(()=>root.render(React.createElement(Media,mediaProps(value))));
@@ -75,16 +87,26 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
       await act(()=>root.render(React.createElement(Inline,props(code))));
       assert.equal(document.querySelector('a'),null,code);
     }
+    for(const code of ['MEDIA:README.md','MEDIA:https://example.com/a.md','MEDIA://example.com/a.md',
+      'MEDIA:/tmp/a.pdf','MEDIA:/tmp/a.md; cat /tmp/b.md']){
+      await act(()=>root.render(React.createElement(Inline,props(code))));
+      assert.equal(document.querySelector('a'),null,code);
+    }
     for(const code of ['./顺德 攻略.MD','../notes.markdown','file:///home/agentuser/a.md','C:\\docs\\a.md']){
       await act(()=>root.render(React.createElement(Inline,props(code))));
       assert.ok(document.querySelector('a'),code);
     }
     await act(()=>root.render(React.createElement(Inline,props('/tmp/a.md',{streaming:true}))));
     assert.equal(document.querySelector('a'),null);
+    await act(()=>root.render(React.createElement(Inline,props('MEDIA:/tmp/a.md',{streaming:true}))));
+    assert.equal(document.querySelector('a'),null,'streaming inline MEDIA remains inert');
     await act(()=>root.render(React.createElement(Link,{node:{kind:'link',href:'/tmp/actual.md',children:[],title:null},context,
       renderNodes:()=>React.createElement(Inline,props('/tmp/label.md'))})));
     assert.equal(document.querySelectorAll('a').length,1,'explicit links must not contain nested links');
     assert.equal(document.querySelector('a').getAttribute('href'),'file:///tmp/actual.md');
+    await act(()=>root.render(React.createElement(Link,{node:{kind:'link',href:'/tmp/actual.md',children:[],title:null},context,
+      renderNodes:()=>React.createElement(Inline,props('MEDIA:/tmp/label.md'))})));
+    assert.equal(document.querySelectorAll('a').length,1,'inline MEDIA inside an explicit link must not create nested links');
     await act(()=>root.render(React.createElement(Link,{node:{kind:'link',href:'/tmp/actual.md',children:[],title:null},context,
       renderNodes:()=>React.createElement(Media,mediaProps('MEDIA:/tmp/label.md'))})));
     assert.equal(document.querySelectorAll('a').length,1,'MEDIA path inside an explicit link must not create nested links');
