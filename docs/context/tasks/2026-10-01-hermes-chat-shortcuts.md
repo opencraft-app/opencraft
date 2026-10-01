@@ -17,17 +17,18 @@ derived: false
 ---
 
 ## goal
-在新版 OpenCraft Chat 输入框为 Hermes Host 增加旧 AgentChat 风格的快捷指令入口。
+在新版 OpenCraft Chat 输入框为 Hermes Host 增加旧 AgentChat 风格的快捷指令入口，并让单独提交的 `/stop` 中断当前任务及清理 Hermes 后台进程。
 
 ## non_goals
-- 不修改 Hermes 运行时指令语义、网关或生产配置。
+- 不修改 Hermes 运行时、网关或生产配置。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
-- 用户 2026-10-01 请求及两张输入框截图：参考旧 AgentChat，在新版 Chat 输入框增加 Hermes 快捷指令。截图示例为 `/new`、`/compress`、`/status`、`/stop`、`/help`；后续追加 `/usage`。
+- 用户 2026-10-01 请求及两张输入框截图：参考旧 AgentChat，在新版 Chat 输入框增加 Hermes 快捷指令。截图示例为 `/new`、`/compress`、`/status`、`/stop`、`/help`；后续追加 `/usage`。用户又反馈生成中发送 `/stop` 后回复仍继续，要求确认中断能力。
 
 ## interface_refs / data_structure_refs
 - `CodexComposerProps.shortcutCommands`：由当前 Hermes Host 提供指令列表。
 - `ComposerController.insertText` 写入当前草稿；`compileSubmitIntent` 将命令文本交给 AppServer，Hermes Bridge 的 `prompt.submit` 仍拥有发送权。
+- 单独的 `/stop` 经 `hermes/stop` 请求交给 Hermes Bridge；运行中先调用 `session.interrupt`，再调用 `process.stop`，空闲时只调用 `process.stop`。
 
 ## history_context
 - current_design_refs: `opencraft/docs/chat-ui-architecture.md`、`docs/engineering/domains/agent-gateway-runtime.md`。
@@ -37,11 +38,14 @@ derived: false
 ## acceptance
 - Hermes 新会话及已有会话输入框显示指令库，六项菜单可键盘/鼠标选择，选中后内容留在草稿。
 - `/` 联想对 Hermes 使用同一列表；非 Hermes Host 不显示该菜单。
+- Hermes 已有会话在运行中提交单独的 `/stop` 时中断当前 Turn 并清理后台进程；空闲或新会话仍可清理后台进程。该指令不排入 `prompt.submit`，带正文或附件的输入不被误认；普通停止按钮仍只中断 Turn。
 - 前端类型检查、聚焦组件测试、i18n 检查及相关构建通过。
 
 ## affected_paths
 - `opencraft/packages/codex-composer/src/`
 - `opencraft/apps/workbench-web/src/`
+- `opencraft/packages/appserver-protocol/src/`
+- `opencraft/plugins/lightvela-hermes/src/hermes-appserver-bridge/`
 - `opencraft/docs/chat-ui-architecture.md`
 - `docs/engineering/domains/agent-gateway-runtime.md`
 
@@ -83,11 +87,16 @@ derived: false
 - 经本机代理打开的 `https://lightvela.com/agents/chat/` 实际运行隔离工作区的 Next 开发版；DevTools 记录到嵌入脚本从 `127.0.0.1:10001` 加载时因缺少 `Access-Control-Allow-Origin` 在 module 阶段失败。Vite 开发服务加入精确 Origin 列表后，请求带 `Origin: https://lightvela.com` 返回允许头，其他 Origin 不返回允许头；刷新浏览器后真实运行中 Hermes Bot 的历史会话、Composer 和五项指令菜单显示正常。
 - 本次 CORS 配置修改后 `npm run typecheck --workspace @opencraft/workbench-web`、`git diff --check` 通过；浏览器未发送或执行任何 Hermes 指令。
 - 追加 `/usage` 后，Composer 和 Workbench Web 类型检查、`check:i18n`、`smoke:skill-autocomplete` 通过；5174 模拟预览确认六项菜单包含“/usage 查看用量”，未发送指令。
+- 后续截图显示运行中 `/stop` 已成为一条用户消息且流式回复继续；源码定位到 `sendMessage` 统一提交文本，经 `prompt.submit(queued: true)` 排队，而停止按钮经 `turn/interrupt` 调用 Hermes `session.interrupt`。现在对运行中的单独 `/stop` 复用停止按钮的中断链路。
+- 官方 Hermes 将 `/stop` 定义为中断运行中任务并清理所有运行中的后台进程；其 Gateway 分别提供 `session.interrupt` 与 `process.stop`。本次补齐专用 `hermes/stop` 桥接，聚焦测试覆盖运行中、空闲、新会话、过期 Turn ID 及普通停止按钮。
+- 补齐后 `npm run test:chat` 446 项、`npm run test:bot-management` 32 项、Bridge/Web 类型检查、`check:i18n`、`check:boundaries`、嵌入式 Web 构建与文档检查通过；中断失败时仍尝试 `process.stop` 的测试通过。
+- `npm run test:appserver` 246/247 项通过；唯一失败为未改动的 `local-agent-host.test.ts` 中本机进程 RPC 测试，报 `posix_spawnp failed.`，单独运行该测试文件仍复现。
 
 ## risks
-- 指令执行效果依赖当前 Hermes 运行时；本次在真实已连接实例验证菜单与会话加载，未发送指令。
+- 指令执行效果依赖当前 Hermes 运行时；桥接测试使用模拟 Gateway，未由开发者在真实实例发送 `/stop`。
 - 指令清单目前由 Workbench Web 按 Hermes provider 在前端定义，未从 Hermes 实时指令注册表加载；运行时版本与实际指令执行需单独核验。
 - 全量门禁未通过，且没有执行真实 Hermes 指令。
+- AppServer 测试存在上述本机进程启动失败，不能宣称该套件全通过。
 
 ## validation
 - `npm run typecheck --workspace @opencraft/codex-composer`

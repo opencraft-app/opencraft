@@ -442,6 +442,11 @@ export const dispatchAppServerRequest = async (
     case "turn/interrupt":
       await adapter.cancelTurn(String(value.threadId ?? ""));
       return {};
+    case "hermes/stop":
+      return await adapter.stopHermes(
+        typeof value.threadId === "string" ? value.threadId : null,
+        typeof value.expectedTurnId === "string" ? value.expectedTurnId : null,
+      );
     case "fs/getMetadata":
       if (!services.fileSystem) throw new Error("Hermes Host filesystem is unavailable");
       return services.fileSystem.getMetadata(String(value.path ?? ""), services.signal);
