@@ -82,6 +82,10 @@ function SortableQueueItem({
 }) {
   const intl = useIntl();
   const steerLabel = intl.formatMessage({ id: "chat.queue.steer", defaultMessage: "Steer with queued message" });
+  const reorderLabel = intl.formatMessage({ id: "chat.queue.reorder", defaultMessage: "Reorder queued message" });
+  const cancelEditLabel = intl.formatMessage({ id: "chat.queue.cancelEdit", defaultMessage: "Cancel editing queued message" });
+  const editLabel = intl.formatMessage({ id: "chat.queue.edit", defaultMessage: "Edit queued message" });
+  const deleteLabel = intl.formatMessage({ id: "chat.queue.delete", defaultMessage: "Delete queued message" });
   const busy = item.operation !== "idle";
   const awaitingNativeReconciliation = item.pausedReason === "restored-after-host-restart";
   const sortable = useSortable({
@@ -109,10 +113,11 @@ function SortableQueueItem({
         ref={sortable.setActivatorNodeRef}
         className="codex-composer-queue-item__drag"
         type="button"
-        aria-label={item.reorderable === false ? "Queued message" : "Reorder queued message"}
+        aria-label={item.reorderable === false ? "Queued message" : reorderLabel}
         disabled={blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing}
         {...sortable.attributes}
         {...sortable.listeners}
+        title={item.reorderable === false ? item.error ?? item.pausedReason ?? "Queued message" : reorderLabel}
       >
         {item.state === "failed" || item.pausedReason ? (
           <CircleAlert size={12} aria-hidden="true" />
@@ -138,13 +143,14 @@ function SortableQueueItem({
 
       <div className="codex-composer-queue-item__actions">
         {item.unconfirmedTargetTurnId ? (
-          <button type="button" className="is-labelled" onClick={() => ignoreRejected(onDiscardUnconfirmed?.(item.id, item.unconfirmedTargetTurnId!))}>
+          <button type="button" className="is-labelled" title="Review & discard" onClick={() => ignoreRejected(onDiscardUnconfirmed?.(item.id, item.unconfirmedTargetTurnId!))}>
             <Trash2 size={12} /><span>Review &amp; discard</span>
           </button>
         ) : item.editing ? (
           <button
             type="button"
-            aria-label="Cancel editing queued message"
+            aria-label={cancelEditLabel}
+            title={cancelEditLabel}
             onClick={onCancelEdit}
           >
             <X size={12} />
@@ -178,7 +184,8 @@ function SortableQueueItem({
             </button>
             <button
               type="button"
-              aria-label="Edit queued message"
+              aria-label={editLabel}
+              title={editLabel}
               disabled={!item.actionable || busy}
               onClick={() => onEdit?.(item.id)}
             >
@@ -186,7 +193,8 @@ function SortableQueueItem({
             </button>
             <button
               type="button"
-              aria-label="Delete queued message"
+              aria-label={deleteLabel}
+              title={deleteLabel}
               disabled={!item.actionable || busy}
               onClick={() => ignoreRejected(onDelete?.(item.id))}
             >

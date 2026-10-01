@@ -214,7 +214,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         disabled={disabled || !available}
         title={label}
         onPointerDown={event => {
-          if (event.button !== 0 || activeRef.current) return;
+          if (disabled || !available || event.button !== 0 || activeRef.current) return;
           event.currentTarget.setPointerCapture?.(event.pointerId);
           pressGesture.press(start, () => {
             holdFinishRef.current = true;
@@ -230,6 +230,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         onPointerUp={event => pressGesture.release(event.pointerId)}
         onPointerCancel={event => pressGesture.release(event.pointerId)}
         onClick={() => {
+          if (disabled || !available) return;
           if (pressGesture.consumeClick()) return;
           if (phase === "starting" || phase === "transcribing") { cancel(); return; }
           if (listening) {
