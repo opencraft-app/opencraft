@@ -69,7 +69,7 @@ func buildOIDCConfigWithCodeStore(logger *slog.Logger, codeStore oidc.CodeStore)
 		logger.Warn("oidc disabled due to invalid client registry", "err", err)
 		return nil
 	}
-	if err := validateSiteGatewayOIDCClients(clients); err != nil {
+	if err := validateSiteGatewayOIDCClientsForIssuer(normalizedIssuer, clients); err != nil {
 		logger.Warn("oidc disabled due to invalid site-gateway registry", "err", err)
 		return nil
 	}
@@ -139,6 +139,26 @@ func decodeOIDCClients(raw string) ([]oidc.Client, error) {
 		})
 	}
 	return clients, nil
+}
+
+// The readiness authority must never redirect a test session into production.
+// Keep this registry closed: no arbitrary callback override or wildcard matching.
+func validateSiteGatewayOIDCClientsForIssuer(issuer string, clients []oidc.Client) error {
+	callback, testing := map[string]string{
+		"https://website-readiness.lightclaw.tech":    "https://sites-auth.sites.lightclaw.tech/auth/lightvela/callback",
+		"https://website-readiness-kr.lightclaw.tech": "https://sites-auth.sites-kr.lightclaw.tech/auth/lightvela/callback",
+	}[issuer]
+	if !testing {
+		return validateSiteGatewayOIDCClients(clients)
+	}
+	if len(clients) != 1 || clients[0].ID != "site-gateway" {
+		return fmt.Errorf("readiness issuer requires only the site-gateway client")
+	}
+	redirects := clients[0].RedirectURIs
+	if len(redirects) != 1 || redirects[0] != callback {
+		return fmt.Errorf("readiness issuer requires its exact testing callback")
+	}
+	return nil
 }
 
 func validateSiteGatewayOIDCClients(clients []oidc.Client) error {

@@ -104,6 +104,8 @@ type cosClient struct {
 
 // Deployer 部署执行器
 type Deployer struct {
+	runtimeURL           string
+	runtimeToken         string
 	ctlBaseURL           string
 	httpClient           *http.Client
 	maxArtifactBytes     int64
@@ -131,8 +133,10 @@ type Deployer struct {
 
 func NewDeployer() (*Deployer, error) {
 	d := &Deployer{
-		ctlBaseURL: getEnv("CTL_BASE_URL", "http://ctl-api.ctl.svc.cluster.local"),
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		runtimeURL:   strings.TrimRight(os.Getenv("WEBSITE_RUNTIME_BASE_URL"), "/"),
+		runtimeToken: os.Getenv("WEBSITE_RUNTIME_DEPLOY_TOKEN"),
+		ctlBaseURL:   getEnv("CTL_BASE_URL", "http://ctl-api.ctl.svc.cluster.local"),
+		httpClient:   &http.Client{Timeout: 30 * time.Second},
 		// 这些上限只是 worker 侧的兜底防御，精确的按套餐校验由 ctl 在创建发布时完成。
 		// 因此默认值必须不小于最大套餐允许的额度，否则会出现
 		// 「ctl 放行、worker 拒绝」的部署失败：当前最大套餐允许50MB 制品 / 500 文件。
@@ -398,6 +402,10 @@ func (d *Deployer) Execute(op Operation) error {
 		return d.executeCreate(op)
 	case "deploy":
 		return d.executeDeploy(op)
+	case "rollback":
+		return d.executeRollback(op)
+	case "prune_release":
+		return d.executePruneRelease(op)
 	case "delete":
 		return d.executeDelete(op)
 	case "suspend":
@@ -503,11 +511,30 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 		return d.failOperation(op, fmt.Sprintf("invalid website archive: %v", err))
 	}
 
+	code, err := backendBundle(zipReader.File, op)
+	if err != nil {
+		return d.failOperation(op, fmt.Sprintf("validate backend: %v", err))
+	}
+	activationAttempted := false
+	if op.Kind == "fullstack" {
+		if err := d.deployBackend(op, code); err != nil {
+			return d.failOperation(op, fmt.Sprintf("prepare backend: %v", err))
+		}
+		defer func() {
+			if !activationAttempted {
+				if err := d.deleteBackend(op); err != nil {
+					log.Printf("backend cleanup failed for release %s", op.ReleaseID)
+				}
+			}
+		}()
+	}
+
 	// 3. 并发上传到暂存目录。
 	// semaphore 限制单次部署的并发数，配合 Redis 令牌桶保护整个环境的 COS 配额。
 	maxConcurrency := 5
 	sem := make(chan struct{}, maxConcurrency)
 	var wg sync.WaitGroup
+	defer wg.Wait() // finish started uploads before any error cleanup removes the prefix
 	var uploadErrors []error
 	var errMu sync.Mutex
 	for _, file := range zipReader.File {
@@ -515,6 +542,9 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 			continue
 		}
 
+		if strings.HasPrefix(file.Name, "__backend/") {
+			continue
+		}
 		// 安全：清理路径，防止路径穿越
 		cleanName := strings.TrimPrefix(filepath.Clean("/"+file.Name), "/")
 		cosKey := stagingPrefix + cleanName
@@ -524,6 +554,19 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 			return d.failOperation(op, fmt.Sprintf("open zip entry %s: %v", file.Name, err))
 		}
 
+		if op.Kind == "fullstack" && file.Name == "index.html" {
+			body, readErr := io.ReadAll(io.LimitReader(reader, d.maxUncompressedBytes+1))
+			reader.Close()
+			if readErr != nil || int64(len(body)) > d.maxUncompressedBytes {
+				return d.failOperation(op, "invalid fullstack index")
+			}
+			body, pinErr := pinFullstackRelease(body, op.ReleaseID)
+			if pinErr != nil {
+				return d.failOperation(op, pinErr.Error())
+			}
+			reader = io.NopCloser(bytes.NewReader(body))
+			size = int64(len(body))
+		}
 		wg.Add(1)
 		sem <- struct{}{} // 获取信号量
 		go func(key string, body io.ReadCloser, size int64) {
@@ -576,8 +619,13 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 	// This is safe before activation because the previous active prefix is never a
 	// deletion candidate; if cleanup fails, the candidate is removed and the old
 	// site remains public.
-	if err := d.pruneSiteReleases(siteCos, op.SiteID, op.ReleaseID, op.ActiveCloudPath); err != nil {
-		return d.failOperation(op, fmt.Sprintf("prune stale releases before activation: %v", err))
+	// Fullstack history is reclaimed only by control-plane retention, which
+	// removes rollback eligibility before deleting BOTH static and backend data.
+	// Keep legacy static-site behavior unchanged.
+	if op.Kind != "fullstack" {
+		if err := d.pruneSiteReleases(siteCos, op.SiteID, op.ReleaseID, op.ActiveCloudPath); err != nil {
+			return d.failOperation(op, fmt.Sprintf("prune stale releases before activation: %v", err))
+		}
 	}
 
 	// 6. The candidate is complete. CTL must accept its actual retained storage
@@ -593,6 +641,10 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 
 	// 7. CTL switches cloud_path and release status in one DB transaction. Until
 	// this succeeds the gateway keeps serving the previous complete prefix.
+	if op.Kind == "fullstack" {
+		activationAttempted = true
+		keepReleasePrefix = true
+	}
 	if err := d.completeOperation(op, stagingPrefix, d.getSitePublicURL(op)); err != nil {
 		return err
 	}
@@ -626,6 +678,13 @@ func (d *Deployer) executeDelete(op Operation) error {
 		return d.failOperation(op, "site COS bucket is not configured")
 	}
 
+	if d.runtimeURL != "" {
+		if err := d.runtimeRequest("DELETE", "/v1/sites/"+url.PathEscape(op.SiteID), nil, nil); err != nil {
+			return d.failOperation(op, "delete backend failed")
+		}
+	} else if op.Kind == "fullstack" {
+		return d.failOperation(op, "runtime unavailable for deletion")
+	}
 	// Published files first: a failed delete must leave the site in deleting
 	// state and let ctl schedule the next durable retry.
 	prefix := fmt.Sprintf("sites/%s/", op.SiteID)
@@ -670,9 +729,12 @@ func (d *Deployer) deleteCosPrefix(client *cosClient, prefix string, op Operatio
 		for _, item := range result.Contents {
 			objects = append(objects, cos.Object{Key: item.Key})
 		}
-		_, _, err = client.client.Object.DeleteMulti(context.Background(), &cos.ObjectDeleteMultiOptions{Objects: objects})
+		deleted, _, err := client.client.Object.DeleteMulti(context.Background(), &cos.ObjectDeleteMultiOptions{Objects: objects})
 		if err != nil {
 			return fmt.Errorf("batch delete (%s): %v", prefix, err)
+		}
+		if deleted == nil || len(deleted.Errors) != 0 {
+			return fmt.Errorf("batch delete (%s): incomplete object deletion", prefix)
 		}
 
 		if !result.IsTruncated {

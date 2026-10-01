@@ -17,6 +17,47 @@ SPEC.loader.exec_module(build_image)
 
 
 class ImageSyncTests(unittest.TestCase):
+    def test_capture_rejects_instance_website_credentials_before_cleanup(self):
+        with mock.patch.object(build_image, "run_remote_shell_via_ssh") as run:
+            build_image.step_prepare_capture("test-host", "22", "app-only", 18789)
+        script = run.call_args.args[2]
+        self.assertIn("refusing image capture: instance website credential exists", script)
+        self.assertLess(script.index("refusing image capture"), script.index('rm -rf'))
+        # Run the exact emitted guard against fixtures, including dangling symlinks.
+        guard = script[script.index("# BEGIN instance credential guard"):script.index("# END instance credential guard")]
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            credential = Path(directory) / "website-credential.env"
+            fixture_guard = guard.replace("/etc/vela/website-credential.env", str(credential))
+            self.assertEqual(subprocess.run(["bash", "-c", fixture_guard], capture_output=True).returncode, 0)
+            credential.write_text("fixture-only")
+            result = subprocess.run(["bash", "-c", fixture_guard], capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn(b"fixture-only", result.stdout + result.stderr)
+            credential.unlink()
+            credential.symlink_to(Path(directory) / "missing")
+            self.assertNotEqual(subprocess.run(["bash", "-c", fixture_guard], capture_output=True).returncode, 0)
+
+    def test_capture_cleanup_keeps_shell_variable_expansion(self):
+        with mock.patch.object(build_image, "run_remote_shell_via_ssh") as run:
+            build_image.step_prepare_capture("test-host", "22", "app-only", 18789,
+                                             remote_build_dir="/opt/test-build")
+        script = run.call_args.args[2]
+        self.assertIn('rm -rf "${remote_build_dir}"', script)
+        self.assertNotIn('$/opt/test-build', script)
+
+    def test_hermes_capture_stops_gateway_then_cleans_state(self):
+        with mock.patch.object(build_image, "run_remote_shell_via_ssh") as run:
+            build_image.step_prepare_capture("test-host", "22", "app-only", 0,
+                                             runtime_kind="hermes")
+        script = run.call_args.args[2]
+        self.assertLess(script.index("stop hermes-gateway.service"), script.index("def clean_runtime"))
+        self.assertIn("is-active --quiet hermes-gateway.service", script)
+        self.assertIn("'sessions'", script)
+        with mock.patch.object(build_image, "run_remote_shell_via_ssh") as run:
+            build_image.step_prepare_capture("test-host", "22", "app-only", 18789)
+        self.assertNotIn("def clean_runtime", run.call_args.args[2])
+
     def test_local_command_only_allows_explicit_empty_arguments(self):
         with mock.patch.object(
             build_image.subprocess,

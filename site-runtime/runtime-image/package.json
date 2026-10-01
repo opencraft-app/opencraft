@@ -1,0 +1,8 @@
+{
+  "name": "website-runtime-engine",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "workerd": "1.20260929.1"
+  }
+}

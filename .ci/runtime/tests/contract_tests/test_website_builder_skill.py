@@ -7,6 +7,31 @@ SKILL_PATH = REPO_ROOT / ".agents" / "skills" / "website-builder" / "SKILL.md"
 
 
 class WebsiteBuilderSkillContractTests(unittest.TestCase):
+    def test_backend_capability_is_fail_closed(self) -> None:
+        skill = SKILL_PATH.read_text()
+        for text in ("data.backend.enabled", "data.data.enabled", "缺失", "false",
+                     '"kind": "static"', "WEBSITE_BACKEND_UNAVAILABLE", "不要重试", "服务端代码"):
+            with self.subTest(text=text):
+                self.assertIn(text, skill)
+
+    def test_skill_does_not_contradict_the_gated_stateless_backend(self) -> None:
+        skill = SKILL_PATH.read_text()
+        overview = skill.split("## ⚠️", 1)[0]
+        self.assertIn("无状态后端", overview)
+        self.assertIn("能力门禁", overview)
+        self.assertIn("站点所有者登录", skill)
+        for contradiction in (
+            "**纯静态网站**的创建", "没有后端接口",
+            "当前只支持静态网站，存不了数据，这个功能做不了",
+            "当场告诉用户当前只支持静态网站、存不了数据",
+        ):
+            with self.subTest(contradiction=contradiction):
+                self.assertNotIn(contradiction, skill)
+        self.assertIn("data.backend.enabled", skill)
+        self.assertIn("data.data.enabled", skill)
+        self.assertIn("fetch-v1", skill)
+        self.assertIn("不支持公开访客写入或持久化", skill)
+
     def test_public_url_examples_use_the_international_https_domain(self) -> None:
         skill = SKILL_PATH.read_text()
 

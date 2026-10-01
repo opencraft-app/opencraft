@@ -188,6 +188,11 @@ master 源码
   通过 Makers SDK 获取签名 URL；不得依赖 runner 出口地域绕过 Preview 认证，也不得记录签名 query
   或认证 Cookie。
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
+- 新 schema 的候选源码、release bundle `expected_migration_version_by_env` 和对应契约测试
+  必须成套更新；业务测试库完成新版本但正式发布校验仍固定旧版本，不属于 release-ready。
+  AI 建站无状态后端候选 `000032_website_backend_revision` 对应 CTL 的 shprod/sgprod 发布
+  校验版本32，适用于独立授权的 migration/readiness 阶段；本地修改此策略不等于生产DB
+  已迁移，也不能通过跳过校验或伪造 `schema_migrations` 来完成发布。
 - Sandbox 的 `beijing-sandbox`、`shprod`、`sgprod` 常驻 Argo Kustomization 必须删除 base 中的固定名 migration Job；schema 变更只由发布流水线的一次性 DB Job 执行并校验版本。更新迁移镜像 pin 时不能重命名或 patch 常驻 Job，否则已存在 Job 的 Pod template 不可变会阻断 Argo 收敛，完成后的 TTL 重建还会反复执行迁移。
 - migration version 一旦被任一长期环境记入 `schema_migrations` 即视为已占用；后续把该 SQL
   合并进较早版本或从源码删除，都不能再次复用这个编号。新 schema 变更使用未占用的新版本，
@@ -658,3 +663,53 @@ auth 侧 `trustedSourceIP()` 只信任该 header，客户端自带的 `X-Forward
 `ctl` 与 `sandbox-api` 的地域 CommandId 映射须同时进入目标地域 GitOps，并与每个目标地域实际存在的 TAT Command 对账。先发布两端映射并验收新购机器的文件状态与真实建站能力请求，再按生产实例快照运行可断点续跑的存量补发；Skill 可以按 TAT 单次目标上限共享命令批量下发，凭据必须逐实例签发、调用、确认终态，失败与未确认结果不可盲重试。核验镜像、Argo revision、`Synced/Healthy`、TAT 终态与真实能力请求分别留证。
 
 - Referral 活动总预算由各环境 overlay 的 `REFERRAL_BUDGET_CREDIT` 经 `referral-campaign` PostSync Job 写入独立数据库；调高 ConfigMap 值本身不等于活动 DB 已更新。两地生产须分别核对 Argo revision、Job 成功及 `referral_campaign.budget_credit`。已因预算被跳过且事件已入 inbox 的历史归因/付费记录不会自动补发；任何补发须另走可审计的资格核验和幂等流程。
+
+
+## 建站能力契约的发布门禁
+
+建站 Skill contract 检查需保持 `backend/data.enabled` 缺失时 fail-closed、静态发布
+兼容，以及 `WEBSITE_BACKEND_UNAVAILABLE` 不重试/不降级上传服务端包。
+这组源码门禁不验证 runtime 存在，也不构成机器上的 Skill 已更新证明。
+
+能力契约变更先验证 CTL 的 capability/release HTTP 与逻辑测试，再验证
+`.ci/runtime/tests/contract_tests/test_website_builder_skill.py`。实际交付需先发布兼容
+的 CTL，再下发对应 Skill；新实例预置与存量实例下发分别验收。当前能力仍关闭，
+不得因为这组测试通过就在生产打开动态执行或宣传数据存储。生产发布仍需单独授权，
+并提供 GitOps、Argo、镜像与真实机器业务请求证据。
+
+
+### Website Skill 新旧实例双通路（2026-09-29 实施，未发布）
+
+新镜像与存量 TAT 下发统一使用 `images/helpers/website_skill_bundle.py`，版本覆盖
+Markdown 与 `scripts/package_fullstack.py`。存量批次使用独立的
+`.ci/runtime/commands/rollout_website_skill.py`，只更新 Skill，不签发/轮换网站凭据。
+默认 dry-run；冻结命令/源码/清单；先真实 canary、人工确认后最多 100 台一轮；
+状态持久化、任务版本回执、歧义 invocation 对账、整目录原子更新和回滚。
+待机/无映射/重复映射属于未覆盖，不能把当次 eligible 成功当成全量完成。
+完整执行与剩余门禁见 [Website Skill 双通路交付](../../proposals/2026-09-29-website-skill-delivery.md)。
+
+
+### 无状态建站后端地域接线（离线准备，未发布）
+
+`.ci/runtime/commands/prepare_website_backend_release.py` 只接受固定源码树 hash、
+同地域私有 HTTPS endpoint 和 CA/deploy/invoke 的 Secret 引用，不读取凭据或 apply。
+默认 prepare 显式关闭 CTL 新 fullstack；enable 必须单独批准非空 owner allowlist。
+按 [地域接线说明](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 将生成 patch 列表
+追加到三个服务现有 source-facing overlay 的最后，走原 bundle 的 publish_paths。
+不能嵌入 Component：CTL 原有 positional JSON patch 会误删已存在的 rewrite 配置挂载。
+另一角色 token 显式置空，避免 envFrom 继承；CA 只读且不挂载执行凭据。
+国内 shprod / 国际 sgprod 的真实源码 overlay 离线 render 必须保留静态、鉴权、DSH 和
+镜像配置。此门禁不代替生产 runtime 地域输入、Secret/TLS 核验、migration32、
+新机地域镜像采用、GitOps/Argo Synced/Healthy 及真实业务验收；均须正式发布授权。
+
+
+### 建站后端隐藏发布（2026-10-01）
+
+国内与国际 production CTL overlay 在最后对 API/service/bypass 显式设置
+`WEBSITE_BACKEND_BETA_USERS=""`，覆盖 envFrom，保证后端代码发布不等于功能开放。
+本阶段不发布平台前端、不启用任何 owner allowlist、不执行生产存量 Skill 下发。
+可先发布兼容 CTL、website worker、site-gateway 镜像、migration32 及 service-gateway
+rollback 路由配置；runtime/TLS/角色凭据未落地时，capability 必须 fail-closed。
+新机 Skill 和地域 runtime 的采用是后续独立核验的发布阶段，不能把测试 image/地址
+推广为生产。既有 Argo OutOfSync 必须先明确具体资源与差异归属，不全量同步未知漂移。
+Owner review、生产 DB 备份/迁移门禁、Argo 手工 sync 及静态兼容回归仍是正式发布门禁。

@@ -230,7 +230,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 31, "sgprod": 31},
+                    {"shprod": 32, "sgprod": 32},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -320,11 +320,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 continue
             target_name = (patch.get("target") or {}).get("name")
             operations = yaml.safe_load(patch["patch"]) or []
-            overridden = {
-                (operation.get("value") or {}).get("name")
-                for operation in operations
-                if isinstance(operation.get("value"), dict)
-            }
+            if isinstance(operations, dict):
+                containers = (operations.get("spec", {}).get("template", {}).get("spec", {}).get("containers", []))
+                overridden = {variable.get("name") for container in containers for variable in container.get("env", [])}
+            else:
+                overridden = {
+                    (operation.get("value") or {}).get("name")
+                    for operation in operations
+                    if isinstance(operation, dict) and isinstance(operation.get("value"), dict)
+                }
             self.assertTrue(
                 forbidden.isdisjoint(overridden),
                 f"{target_name} must consume sgprod VelaGW settings from ctl-runtime-secrets",

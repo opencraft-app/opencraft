@@ -332,10 +332,25 @@ func (h *SiteHandler) authorizeSiteRequest(w http.ResponseWriter, r *http.Reques
 		if err == nil && strings.TrimSpace(shareCookie.Value) != "" && h.auth.TokenCodec != nil {
 			if session, openErr := h.auth.TokenCodec.OpenShareSession(shareCookie.Value, resolved.Host); openErr == nil &&
 				session.SiteID == resolved.SiteID && session.Generation == site.ShareGeneration {
+				// A static-site share session grants viewing, not backend mutation.
+				if r.Method != http.MethodGet && r.Method != http.MethodHead {
+					writeAuthFailure(w, http.StatusForbidden, "share session is read-only")
+					return false
+				}
 				return true
 			}
 		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeAuthFailure(w, http.StatusUnauthorized, "site authentication required")
+			return false
+		}
 		h.redirectToSharePage(w, r, safeReturnTo(r.URL.RequestURI()))
+		return false
+	}
+	// Never turn a write or preflight into a browser login redirect: clients may
+	// silently rewrite POST to GET and the request body cannot safely be replayed.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeAuthFailure(w, http.StatusUnauthorized, "site authentication required")
 		return false
 	}
 	h.redirectToSiteAuth(w, r, resolved, safeReturnTo(r.URL.RequestURI()))

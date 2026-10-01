@@ -1,0 +1,33 @@
+[Unit]
+Description=LightVela isolated website runtime manager
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/lightvela/website-runtime.env
+Environment=TMPDIR=/var/lib/website-runtime/tmp
+Environment=DOCKER_HOST=unix:///run/docker.sock
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/website-runtime/tmp
+ExecStart=/usr/local/bin/site-runtime
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/website-runtime
+# Do not use PrivateTmp: Docker bind mounts must see the same host paths.
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

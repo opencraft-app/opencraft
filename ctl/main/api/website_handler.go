@@ -117,6 +117,30 @@ func (h *websiteHandler) handleWebsitesByID(w http.ResponseWriter, r *http.Reque
 			writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
 		}
 
+	case subPath == "rollback":
+		if r.Method != http.MethodPost {
+			writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+			return
+		}
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrUnauthorized)
+			return
+		}
+		userID := ctx.GetUserID()
+		var req struct {
+			ReleaseID string `json:"release_id"`
+		}
+		if err := decodeJSONBody(r, &req); err != nil || req.ReleaseID == "" {
+			writeHTTPError(w, r, errcode.ErrWebsiteInvalidParam)
+			return
+		}
+		result, err := h.logic.RollbackRelease(userID, siteID, req.ReleaseID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusAccepted, result)
 	case strings.HasPrefix(subPath, "releases"):
 		h.handleReleases(w, r, siteID, subPath)
 
@@ -154,6 +178,20 @@ func (h *websiteHandler) handleInternalSite(w http.ResponseWriter, r *http.Reque
 	}
 
 	if len(parts) == 2 && parts[1] != "" {
+		if parts[1] == "retention" {
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+				return
+			}
+			op, err := h.logic.ScheduleReleaseRetention(siteID)
+			if err != nil {
+				writeHTTPError(w, r, err)
+				return
+			}
+			writeSuccess(w, r, http.StatusOK, map[string]interface{}{"operation": op, "scheduled": op != nil})
+			return
+		}
 		if parts[1] == "share-code/verify" {
 			h.handleInternalShareCodeVerify(w, r, siteID)
 			return
@@ -764,4 +802,22 @@ func (h *websiteHandler) handleInternalDomainUnbind(w http.ResponseWriter, r *ht
 	writeSuccess(w, r, http.StatusOK, map[string]string{
 		"domain": req.Domain,
 	})
+}
+
+func (h *websiteHandler) handleInternalRetentionSweep(w http.ResponseWriter, r *http.Request) {
+	if !hasValidWebsiteInternalToken(r.Header.Get("X-Internal-Token")) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	result, err := h.logic.SweepReleaseRetention(r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
 }
