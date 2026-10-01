@@ -61,11 +61,13 @@ export function FloatingComposerToggle({
   );
   if (!shell?.rightPanelFullWidth) return null;
   const shown = state.enabled && !state.collapsedTabs.has(activeTabId);
+  const toggleLabel = shown ? "Hide floating composer" : "Show floating composer";
   return (
     <button
       type="button"
       className="browser-toolbar-button"
-      aria-label={shown ? "Hide floating composer" : "Show floating composer"}
+      aria-label={toggleLabel}
+      title={toggleLabel}
       aria-pressed={shown}
       onClick={() => store.toggle(activeTabId, reduced)}
     >
@@ -600,6 +602,7 @@ export function ThreadComposerPresentation({
                         type="button"
                         className="thread-composer-overlay__hide"
                         aria-label="Hide chat input"
+                        title="Hide chat input"
                         inert={!view.interactive || undefined}
                         aria-hidden={!view.interactive || undefined}
                         onClick={(event) => hide(event.detail === 0)}
@@ -632,6 +635,7 @@ export function ThreadComposerPresentation({
                     inert={!view.peeked || undefined}
                     aria-hidden={!view.peeked || undefined}
                     aria-label="Show chat input"
+                    title="Show chat input"
                     onPointerEnter={() => {
                       clearTimeout(handoffTimer.current);
                       setHandoff(false);

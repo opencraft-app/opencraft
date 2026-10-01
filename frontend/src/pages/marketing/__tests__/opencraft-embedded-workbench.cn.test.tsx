@@ -331,7 +331,7 @@ describe("AgentChatMigrationSurface", () => {
         multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
       expect(container.querySelector("opencraft-embedded-workbench")).toBeNull();
       expect(prepare).not.toHaveBeenCalled();
-      expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴配置后重试");
+      expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴状态后重试");
     } finally { prepare.mockRestore(); }
   });
 
@@ -411,7 +411,7 @@ describe("AgentChatMigrationSurface", () => {
     const surface = (profileId: string) => <AgentChatMigrationSurface active enabled instanceId="ins-1" profileId={profileId} region="cn"
       legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />;
     const { container, rerender } = render(surface(""));
-    expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴配置后重试");
+    expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴状态后重试");
     expect(container.querySelector("opencraft-embedded-workbench")).toBeNull();
     expect(prepare).not.toHaveBeenCalled();
     expect(screen.queryByText("Legacy")).toBeNull();
