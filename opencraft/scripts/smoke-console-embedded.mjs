@@ -36,7 +36,7 @@ const server=createServer(async(req,res)=>{try{
  if(url.pathname.startsWith('/api/')) { requests.push({path:url.pathname,authenticated:req.headers.authorization==='Bearer synthetic-browser-session'});res.setHeader('content-type','application/json');res.end(JSON.stringify(apiReplies(url.pathname)));return;}
  if(url.pathname==='/fixture.js'){res.setHeader('content-type','text/javascript');res.end(built.outputFiles[0].contents);return;}
  if(url.pathname.startsWith('/__opencraft/')){modules++; const rel=url.pathname.slice('/__opencraft/'.length);if(rel.includes('..'))throw Error('invalid path');const body=await readFile(join(root,'opencraft/apps/workbench-web/dist-embedded-workbench',rel));res.setHeader('content-type',({'.js':'text/javascript','.css':'text/css','.woff2':'font/woff2'})[extname(rel)]||'application/octet-stream');res.end(body);return;}
- res.setHeader('content-type','text/html');res.end('<!doctype html><html lang="zh-CN"><head><style>body{font:16px system-ui;padding:24px}main{height:600px}.relative{position:relative}.absolute{position:absolute}.inset-0{inset:0}.invisible{visibility:hidden}[inert]{pointer-events:none}opencraft-embedded-workbench{height:500px}p{color:#666}</style></head><body><div id="root"></div><script type="module" src="/fixture.js"></script></body></html>');
+ res.setHeader('content-type','text/html');res.end('<!doctype html><html lang="zh-CN"><head><style>body{font:16px system-ui;padding:24px}main{height:600px}.relative{position:relative;height:500px}.z-10{z-index:10}.inset-x-0{left:0;right:0}.top-0{top:0}.absolute{position:absolute}.inset-0{inset:0}.invisible{visibility:hidden}[inert]{pointer-events:none}opencraft-embedded-workbench{height:500px}p{color:#666}</style></head><body><div id="root"></div><script type="module" src="/fixture.js"></script></body></html>');
 }catch(error){res.statusCode=404;res.end('Not found');}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 if (serveOnly) {
@@ -57,10 +57,13 @@ try{
  const until=Date.now()+20000;while(requests.length<2 && Date.now()<until)await new Promise(r=>setTimeout(r,100));
  assert.ok(requests.some(r=>r.path==='/api/auth/profile'));assert.ok(requests.some(r=>r.path==='/api/v1/instances'));assert.ok(requests.every(r=>r.authenticated));
  await page.getByRole('button',{name:'重新连接',exact:true}).waitFor();
+ await page.getByText('请检查 AI 伙伴配置后重试',{exact:true}).waitFor();
  assert.equal(await page.locator('[data-legacy]').count(),0);
  await page.getByRole('button',{name:'重新连接',exact:true}).click();
  await page.getByRole('button',{name:'重新连接',exact:true}).waitFor();
+ await page.getByText('请检查 AI 伙伴配置后重试',{exact:true}).waitFor();
  assert.equal(await page.locator('[data-legacy]').count(),0);
+ assert.equal(await page.evaluate(()=>document.querySelector('opencraft-embedded-workbench').submitPrompt('blocked-template','synthetic workbench template')),false);
  assert.equal(await page.evaluate(()=>localStorage.getItem('vela.lightvela.session-token.v1')),null);
  assert.equal(await page.evaluate(()=>location.hash),'#session_token=synthetic-unrelated-fragment');
  assert.equal(await page.evaluate(()=>window.show()),false);

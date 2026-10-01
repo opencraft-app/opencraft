@@ -220,6 +220,22 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    capability lease, and a failed prewarm is retried there rather than
    invalidating already-restored history.
 
+Embedded workbench templates enter through `submitPrompt(requestId, text)`, not
+through a legacy SDK sender or a DOM button. The embedded element deduplicates
+admitted request IDs in its Bot lifetime. The App admits only into an empty,
+editing new-Thread Composer belonging to the embedded Host after protocol
+readiness; an existing Thread first navigates to a new Draft. An occupied Draft
+is never overwritten. The site retains the pending template across cold startup,
+failed admission and inactive routes, and removes only the matching record when
+the Conversation owner accepts the immutable first Turn. Remote failure then
+belongs to that Conversation's retry UI, never an automatic duplicate send.
+
+A manual transport failure is a Host-attempt disposition: initialization cleanup
+must not erase its code when disposing the physical transport/client. Workbench
+snapshots retain the block through cleanup and clear it on an explicit new
+connection attempt or a connecting/open successor. Recovery presentation must
+not claim automatic retries when the Host is stopped for manual intervention.
+
 The Web recovery presentation does not equate non-authoritative with invisible.
 When a Thread already has painted Timeline frames, reconnect and retry preserve
 those frames, their scroll position and Composer draft; a small local connection

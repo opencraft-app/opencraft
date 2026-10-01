@@ -145,6 +145,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private readonly mount: HTMLDivElement;
   private readonly root: Root;
   private actions: EmbeddedWorkbenchAppActions | null = null;
+  private readonly admittedPrompts = new Set<string>();
   private application: EmbeddedChatApplication | null = null;
   private config: EmbeddedWorkbenchConfig | null = null;
   private preferences: UiPreferencesRuntime | null = null;
@@ -239,6 +240,16 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     void actions.selectThread(normalized).catch((error: unknown) => {
       this.fail(error instanceof Error ? error : new Error(String(error)));
     });
+  }
+
+  /** A request is consumed only after this Bot's Conversation owner admits it. */
+  submitPrompt(requestId: string, text: string): boolean {
+    if (this.disposed || this.failed) return false;
+    if (this.admittedPrompts.has(requestId)) return true;
+    if (this.readyDetail === null || this.actions === null) return false;
+    if (!this.actions.submitPrompt(text)) return false;
+    this.admittedPrompts.add(requestId);
+    return true;
   }
 
   async createConversation(): Promise<void> {
