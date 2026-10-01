@@ -85,6 +85,10 @@ export function getBuddySoulPool(locale: BuddySoulLocale): SkillHubSoul[] | null
   }
 }
 
+export function getRecommendableSouls(souls: SkillHubSoul[]): SkillHubSoul[] {
+  return souls.filter((soul) => toCanonicalSlug(soul.slug) !== "MUM");
+}
+
 export function getBuddySoulSpec(locale: BuddySoulLocale, slug: string): SoulSpec | null {
   const westernSlug = toEnglishSlug(slug);
   switch (locale) {

@@ -309,12 +309,16 @@ export function calculatePrefScores(answers: Record<string, string>): Record<Pre
   return scores;
 }
 
-export function calculateMatchedSoul(answers: Record<string, string>): string {
+export function calculateMatchedSoul(
+  answers: Record<string, string>,
+  availableSoulIds?: ReadonlySet<string>,
+): string {
   const userVector = toVector(calculatePrefScores(answers));
   let bestSoulId = "YYDS";
   let bestSimilarity = -1;
 
   for (const [soulId, weights] of Object.entries(soulWeights)) {
+    if (availableSoulIds && !availableSoulIds.has(soulId)) continue;
     const similarity = cosineSimilarity(userVector, toVector(weights));
     if (similarity > bestSimilarity) {
       bestSimilarity = similarity;
