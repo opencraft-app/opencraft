@@ -57,6 +57,7 @@ LightClaw 镜像全自动构建流水线（主入口）
   - 全量构建: ~25-70 分钟
 """
 
+from pathlib import Path
 import argparse
 import json
 import os
@@ -1646,16 +1647,35 @@ def step_write_image_version(ssh_host, ssh_port, metadata, dry_run=False):
 
 def step_prepare_capture(ssh_host, ssh_port, build_mode, gateway_port,
                          runtime_user=DEFAULT_RUNTIME_USER,
-                         remote_build_dir=DEFAULT_REMOTE_BUILD_DIR, dry_run=False):
+                         remote_build_dir=DEFAULT_REMOTE_BUILD_DIR, dry_run=False, runtime_kind="openclaw"):
     """制镜前刷新关键文件到磁盘，并确保 app 镜像的 gateway unit 没有损坏。"""
     log("制镜前预检: 校验 gateway unit 并执行刷盘")
     if dry_run:
         log("[DRY-RUN] 跳过制镜前预检")
         return
 
+    hermes_cleanup = ""
+    if runtime_kind == "hermes" and build_mode != "base-only":
+        cleanup_source = (Path(__file__).resolve().parent / "helpers" / "hermes_capture_cleanup.py").read_text()
+        hermes_cleanup = """
+sudo -u "${runtime_user}" -H env XDG_RUNTIME_DIR="/run/user/${runtime_uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${runtime_uid}/bus" systemctl --user stop hermes-gateway.service
+if sudo -u "${runtime_user}" -H env XDG_RUNTIME_DIR="/run/user/${runtime_uid}" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${runtime_uid}/bus" systemctl --user is-active --quiet hermes-gateway.service; then
+  echo "Hermes gateway still active; refusing capture" >&2
+  exit 1
+fi
+cloud-init clean --logs
+python3 - "${runtime_home}" <<'HERMES_CAPTURE_CLEANUP'
+""" + cleanup_source + "\nHERMES_CAPTURE_CLEANUP\n"
+
     build_mode_label = build_mode or "full"
     remote_shell = f"""\
 set -euo pipefail
+# BEGIN instance credential guard
+if [ -e /etc/vela/website-credential.env ] || [ -L /etc/vela/website-credential.env ]; then
+  echo "refusing image capture: instance website credential exists" >&2
+  exit 1
+fi
+# END instance credential guard
 runtime_user={json.dumps(runtime_user)}
 runtime_home="$(getent passwd "${{runtime_user}}" | cut -d: -f6)"
 if [ -z "${{runtime_home}}" ]; then
@@ -1665,7 +1685,7 @@ fi
 runtime_uid="$(id -u "${{runtime_user}}")"
 unit="${{runtime_home}}/.config/systemd/user/openclaw-gateway.service"
 remote_build_dir={json.dumps(remote_build_dir)}
-
+{hermes_cleanup}
 if [ {json.dumps(build_mode_label)} != "base-only" ] && [ -e "${{unit}}" ]; then
   if [ ! -s "${{unit}}" ]; then
     echo "gateway unit is empty; reinstalling before snapshot"
@@ -1681,11 +1701,11 @@ if [ {json.dumps(build_mode_label)} != "base-only" ] && [ -e "${{unit}}" ]; then
   stat -c 'gateway_unit_size=%s %n' "${{unit}}"
 fi
 
-if [ -n "${remote_build_dir}" ] && [ "${remote_build_dir}" != "/" ] && [ -e "${remote_build_dir}" ]; then
-  rm -rf "${remote_build_dir}"
+if [ -n "${{remote_build_dir}}" ] && [ "${{remote_build_dir}}" != "/" ] && [ -e "${{remote_build_dir}}" ]; then
+  rm -rf "${{remote_build_dir}}"
 fi
-if [ -n "${remote_build_dir}" ] && [ "${remote_build_dir}" != "/" ] && [ -e "${remote_build_dir}" ]; then
-  echo "remote build dir still exists after cleanup: ${remote_build_dir}" >&2
+if [ -n "${{remote_build_dir}}" ] && [ "${{remote_build_dir}}" != "/" ] && [ -e "${{remote_build_dir}}" ]; then
+  echo "remote build dir still exists after cleanup: ${{remote_build_dir}}" >&2
   exit 1
 fi
 
@@ -2285,6 +2305,7 @@ def main():
                     runtime_user=args.runtime_user,
                     remote_build_dir=args.remote_build_dir,
                     dry_run=args.dry_run,
+                    runtime_kind=args.runtime,
                 )
                 source_image_id = step_create_image(current_build_instance_id, args.source_region, image_name, dry_run=args.dry_run)
             else:
@@ -2336,6 +2357,7 @@ def main():
                     runtime_user=args.runtime_user,
                     remote_build_dir=args.remote_build_dir,
                     dry_run=args.dry_run,
+                    runtime_kind=args.runtime,
                 )
                 source_image_id = step_create_image(current_build_instance_id, args.source_region, image_name, dry_run=args.dry_run)
             else:
@@ -2427,6 +2449,7 @@ def main():
                     runtime_user=args.runtime_user,
                     remote_build_dir=args.remote_build_dir,
                     dry_run=args.dry_run,
+                    runtime_kind=args.runtime,
                 )
                 source_image_id = step_create_image(current_build_instance_id, args.source_region, image_name, dry_run=args.dry_run)
             else:

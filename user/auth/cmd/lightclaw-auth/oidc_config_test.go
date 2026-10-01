@@ -105,3 +105,62 @@ func TestBuildOIDCConfigRejectsAuthorizationCodeTTLDrift(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildOIDCConfigIsolatesBeijingReadinessCallbacks(t *testing.T) {
+	t.Setenv("LIGHTCLAW_OIDC_ENABLED", "true")
+	t.Setenv("LIGHTCLAW_OIDC_SIGNING_KEY_ID", "test-key")
+	t.Setenv("LIGHTCLAW_OIDC_SIGNING_KEYS_JSON", `{"test-key":"`+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x11}, 32))+`"}`)
+	testClient := `[{"id":"site-gateway","display_name":"Test Sites","redirect_uris":["https://sites-auth.sites.lightclaw.tech/auth/lightvela/callback"]}]`
+	productionClient := `[{"id":"site-gateway","display_name":"Test Sites","redirect_uris":["https://sites-auth.lightvela.tech/auth/lightvela/callback","https://sites-auth.lightvela.site/auth/lightvela/callback"]}]`
+	for _, tc := range []struct {
+		name, issuer, clients string
+		enabled               bool
+	}{
+		{"test callback", "https://website-readiness.lightclaw.tech", testClient, true},
+		{"production callback on test issuer", "https://website-readiness.lightclaw.tech", productionClient, false},
+		{"test callback on production issuer", "https://api.lightvela.com", testClient, false},
+		{"production unchanged", "https://api.lightvela.com", productionClient, true},
+		{"lookalike issuer", "https://website-readiness.lightclaw.tech.evil.example", testClient, false},
+		{"issuer path", "https://website-readiness.lightclaw.tech/other", testClient, false},
+		{"test callback query", "https://website-readiness.lightclaw.tech", `[{"id":"site-gateway","display_name":"Test Sites","redirect_uris":["https://sites-auth.sites.lightclaw.tech/auth/lightvela/callback?next=evil"]}]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("LIGHTCLAW_OIDC_ISSUER", tc.issuer)
+			t.Setenv("LIGHTCLAW_OIDC_CLIENTS_JSON", tc.clients)
+			got := buildOIDCConfigWithCodeStore(slog.New(slog.NewTextHandler(io.Discard, nil)), testOIDCCodeStore())
+			if (got != nil) != tc.enabled {
+				t.Fatalf("enabled=%v, want %v", got != nil, tc.enabled)
+			}
+		})
+	}
+}
+
+func TestBuildOIDCConfigIsolatesSeoulReadinessCallbacks(t *testing.T) {
+	t.Setenv("LIGHTCLAW_OIDC_ENABLED", "true")
+	t.Setenv("LIGHTCLAW_OIDC_SIGNING_KEY_ID", "test-key")
+	t.Setenv("LIGHTCLAW_OIDC_SIGNING_KEYS_JSON", `{"test-key":"`+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x11}, 32))+`"}`)
+	testClient := `[{"id":"site-gateway","display_name":"Test Sites","redirect_uris":["https://sites-auth.sites-kr.lightclaw.tech/auth/lightvela/callback"]}]`
+	productionClient := `[{"id":"site-gateway","display_name":"Test Sites","redirect_uris":["https://sites-auth.lightvela.tech/auth/lightvela/callback","https://sites-auth.lightvela.site/auth/lightvela/callback"]}]`
+	for _, tc := range []struct {
+		name, issuer, clients string
+		enabled               bool
+	}{
+		{"test callback", "https://website-readiness-kr.lightclaw.tech", testClient, true},
+		{"production callback on test issuer", "https://website-readiness-kr.lightclaw.tech", productionClient, false},
+		{"test callback on production issuer", "https://api.lightvela.com", testClient, false},
+		{"Seoul callback on Beijing issuer", "https://website-readiness.lightclaw.tech", testClient, false},
+		{"production unchanged", "https://api.lightvela.com", productionClient, true},
+		{"lookalike issuer", "https://website-readiness-kr.lightclaw.tech.evil.example", testClient, false},
+		{"issuer path", "https://website-readiness-kr.lightclaw.tech/other", testClient, false},
+		{"test callback query", "https://website-readiness-kr.lightclaw.tech", `[{"id":"site-gateway","display_name":"Test Sites","redirect_uris":["https://sites-auth.sites-kr.lightclaw.tech/auth/lightvela/callback?next=evil"]}]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("LIGHTCLAW_OIDC_ISSUER", tc.issuer)
+			t.Setenv("LIGHTCLAW_OIDC_CLIENTS_JSON", tc.clients)
+			got := buildOIDCConfigWithCodeStore(slog.New(slog.NewTextHandler(io.Discard, nil)), testOIDCCodeStore())
+			if (got != nil) != tc.enabled {
+				t.Fatalf("enabled=%v, want %v", got != nil, tc.enabled)
+			}
+		})
+	}
+}

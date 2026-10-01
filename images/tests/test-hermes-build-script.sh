@@ -199,6 +199,7 @@ EOF
 cat >"${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge/package.json" <<'EOF'
 {"private":true,"name":"whatsapp-bridge-fixture"}
 EOF
+cp "${INSTALLER_PAYLOAD}" "${TMPDIR}/hermes-src/hermes-agent/scripts/install.sh"
 tar -czf "${HERMES_TARBALL}" -C "${TMPDIR}/hermes-src" hermes-agent
 
 mkdir -p "${TMPDIR}/lightclawbot-wheel/lightclawbot/src"
@@ -441,7 +442,10 @@ grep -Fxq 'website-builder' "${RUNTIME_HOME}/.hermes/.lightvela/base-skills"
 
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
-grep -q "curl-installer" "${LOG_FILE}"
+if grep -q "curl-installer" "${LOG_FILE}"; then
+  echo "Pinned Hermes source must not use mutable upstream installer" >&2
+  exit 1
+fi
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage venv" "${LOG_FILE}"
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage python-deps" "${LOG_FILE}"
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --non-interactive --stage node-deps" "${LOG_FILE}"
@@ -475,6 +479,8 @@ grep -q '^  destructive_slash_confirm: false$' "${RUNTIME_HOME}/.hermes/config.y
 test ! -e "${RUNTIME_HOME}/.agents/skills/find-skill-skillhub"
 test ! -e "${RUNTIME_HOME}/.openclaw"
 test -s "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
+test -s "${RUNTIME_HOME}/.hermes/skills/website-builder/scripts/package_fullstack.py"
+cmp -s "$(dirname "${HERMES_WEBSITE_BUILDER_SKILL_FILE}")/scripts/package_fullstack.py" "${RUNTIME_HOME}/.hermes/skills/website-builder/scripts/package_fullstack.py"
 cmp -s "${HERMES_WEBSITE_BUILDER_SKILL_FILE}" "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
 ORIGINAL_WEBSITE_BUILDER_SKILL_FILE="${HERMES_WEBSITE_BUILDER_SKILL_FILE}"
 HERMES_WEBSITE_BUILDER_SKILL_FILE="${TMPDIR}/missing-website-builder-SKILL.md"

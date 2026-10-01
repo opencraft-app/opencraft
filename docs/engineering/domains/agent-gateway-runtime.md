@@ -505,3 +505,84 @@ Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>` 也走同一入
 只读 Markdown 文件预览的“源码”直接呈现转义后的原文，可选择复制和键盘滚动，不依赖按需加载的编辑器模块；可编辑工作台继续由 CodeMirror 持有草稿。
 
 - Embedded Chat 的工作台模板通过 element `submitPrompt(requestId, text)` 交给同一 Host/Composer/Conversation owner：冷启动等待 ready，切入空的新 Draft，不覆盖用户文字，接纳后才条件清除站点暂存。运行时初始化 cleanup 保留 manual failure code，直到新连接尝试才清除；页面不能把终态误报为自动恢复。该修复保持国内 `show()` 隐藏 rollout gate 与既有生产静态制品边界。见 [Chat UI invariants](../../../opencraft/docs/chat-ui-architecture.md#invariants)。
+
+
+## 建站动态接入：能力与发布边界
+
+2026-09-29 候选实现，未部署。`GET /v1/websites/capability` 增量返回
+`backend.enabled/contract` 和 `data.enabled`。backend 仅在 runtime URL、部署凭据
+配置有效且用户精确命中 `WEBSITE_BACKEND_BETA_USERS` 时为 true，契约 `fetch-v1`；
+data 始终 false。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
+
+release `kind` 缺省/static 保持静态，fullstack 需要能力门禁与 SHA-256；静态包不得
+携带私有 `__backend` 内容。worker 单独上传 `__backend/app.mjs` 到内部 runtime，
+静态进入 immutable COS prefix；CTL 在同一事务内验证 runtime readiness 并更新
+active release、静态路径和后端 digest。回滚也是经过 worker 验证的带代次 operation。
+
+fullstack `/api`、`/api/*` 只允许 owner session，即使国际静态页公开也不会公开后端。
+动态写请求必须同源 Origin；所有动态请求携带 `X-Website-Release`，与当前活动版本
+不匹配返回 409。实时校验站点状态/流量门禁；分享会话无动态调用权限。静态站仍然
+只支持 GET/HEAD，不改变 public 静态行为。浏览器 Cookie/Authorization 不转发用户 JS。
+
+`site-runtime` 使用每次调用独立 Docker/runsc 容器、固定引擎 digest、无网络、只读
+rootfs、资源限额和超时强制回收；无宿主执行降级。当前验证包括独立 Linux VM 中的
+隔离用例和跨模块发布/回滚集成；不等同生产隔离评审或容量验收。没有数据库能力。
+
+Skill 同步提供动态流程与离线打包器；新镜像/存量机器共用完整包版本，存量更新不
+触碰网站凭据。两条交付路径和上线前剩余门禁分别见
+[Fullstack Beta 实施](../../proposals/2026-09-29-website-fullstack-beta.md) 与
+[Skill 双通路交付](../../proposals/2026-09-29-website-skill-delivery.md)。
+
+### Website backend test findings (2026-09-30 Beijing time)
+
+Dedicated runtime reconciliation runs under the manager store lock before accepting
+requests: reap only owned containers, then reserved interrupted startup/prepare
+folders. Immutable active/rollback revisions must not be deleted without control-plane
+retention knowledge. Explicit file chmod is required with the private systemd umask.
+The website instance credential route allowlist also needs the exact POST rollback
+endpoint; session-only tests cannot prove that an Agent's instance credential can
+complete the same workflow. These source changes are not evidence of live routing.
+
+### Website fullstack revision retention (candidate implementation)
+
+Fullstack publication retains historical static and backend artifacts together;
+legacy static-only publication retains its existing two-prefix behavior. Cleanup
+requires a CTL transaction to mark a non-active historical release `pruning`, removing
+rollback eligibility before remote deletion. The worker deletes only that revision,
+checks current lease/generation between stages, and finalizes `pruned`; partial COS
+object errors are failures even when HTTP status is 200. Failed cleanup stays fenced.
+
+The internal authenticated `POST /internal/ctl/websites/sites/{siteId}/retention`
+reserves at most one candidate using deployment policy, never request-supplied ages.
+It is disabled unless `WEBSITE_RETENTION_ENABLED=true`, `WEBSITE_RETENTION_KEEP`
+is explicitly 1–16, and `WEBSITE_RETENTION_GRACE` is explicitly 1h–720h. It additionally
+requires a fullstack site owned by a backend-enabled allowlisted user. A successful
+response with `scheduled=false` means no eligible candidate, not a completed cleanup;
+when scheduled, follow the operation to terminal success. Worker polling is durable.
+No recurring scheduler or production policy is enabled by this source change.
+Grace and failed/orphan revisions can still exhaust the runtime revision bound;
+reconciliation and capacity acceptance remain release gates, not implicitly solved.
+
+If Pass lifecycle changes supersede a reserved cleanup, the internal trigger may
+recover that same operation after the site is active again and its old lease has
+expired (or it is terminal), provided no competing work exists. Recovery preserves
+`pruning`, increments the generation and clears the old lease; it never reactivates
+partially deleted artifacts. Dead-letter failures remain manual recovery, not an
+unbounded automatic retry loop.
+
+An opt-in worker scheduler now calls authenticated
+`POST /internal/ctl/websites/retention/sweep?cursor=...`. Set worker
+`WEBSITE_RETENTION_SWEEP_INTERVAL` explicitly (1m–24h); an absent value disables it.
+Each tick scans at most 20 active fullstack sites in site-ID order, filtering owners
+through the backend allowlist; each eligible site still uses the fenced reservation.
+A complete scan resets the cursor, HTTP/response failures preserve it for retry,
+and shutdown cancels the scheduler before draining workers. CTL policy must also
+be explicitly enabled. No deployment environment is enabled by the source defaults.
+
+Failed-publication artifact reconciliation uses the same fenced cleanup operation,
+not filesystem age alone: only a failed release with an explicit terminal failed
+`deploy` record and elapsed grace is eligible, after validating the entire site
+snapshot has no unsettled work. Successful history is considered first. Failed
+releases do not count toward the rollback window. Cleanup includes the exact
+private upload ZIP key as well as the exact static/backend revision; unknown runtime
+directories without authoritative release records are not automatically removed.

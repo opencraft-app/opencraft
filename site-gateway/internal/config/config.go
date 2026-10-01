@@ -214,7 +214,25 @@ func FromEnv() (Config, error) {
 		if !isBareHost(cfg.AuthFixedHost) {
 			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_FIXED_HOST must be a bare host when auth endpoints are enabled")
 		}
-		if !isAllowedFixedAuthHost(cfg.AuthFixedHost) {
+		testing := false
+		// Closed regional tuples prevent cross-region and test/production mixing.
+		for _, region := range []struct{ issuer, host, root string }{
+			{"https://website-readiness.lightclaw.tech", "sites-auth.sites.lightclaw.tech", "sites.lightclaw.tech"},
+			{"https://website-readiness-kr.lightclaw.tech", "sites-auth.sites-kr.lightclaw.tech", "sites-kr.lightclaw.tech"},
+		} {
+			if cfg.AuthFixedHost != region.host && cfg.AuthOIDCIssuer != region.issuer {
+				continue
+			}
+			testing = true
+			if cfg.AuthFixedHost != region.host || cfg.AuthOIDCIssuer != region.issuer ||
+				cfg.AuthOIDCAuthorizeURL != region.issuer+"/oauth2/authorize" ||
+				cfg.AuthOIDCTokenURL != region.issuer+"/oauth2/token" ||
+				cfg.AuthOIDCJWKSURL != region.issuer+"/.well-known/jwks.json" ||
+				len(cfg.RootDomains) != 1 || cfg.RootDomains[0] != region.root {
+				return Config{}, fmt.Errorf("readiness OIDC requires isolated regional testing host, root domain and exact testing endpoints")
+			}
+		}
+		if !testing && !isAllowedFixedAuthHost(cfg.AuthFixedHost) {
 			return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_FIXED_HOST must be one of sites-auth.lightvela.tech or sites-auth.lightvela.site")
 		}
 		if cfg.AuthOIDCIssuer == "" {

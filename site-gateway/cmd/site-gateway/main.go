@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.woa.com/wisp/mono/site-gateway/internal/backend"
 	"git.woa.com/wisp/mono/site-gateway/internal/config"
 	"git.woa.com/wisp/mono/site-gateway/internal/dshproxy"
 	"git.woa.com/wisp/mono/site-gateway/internal/hostroute"
@@ -75,7 +76,18 @@ func main() {
 		}
 	}
 
+	var backendClient *backend.Client
+	if base, token := os.Getenv("WEBSITE_RUNTIME_BASE_URL"), os.Getenv("WEBSITE_RUNTIME_INVOKE_TOKEN"); base != "" || token != "" {
+		if authCodec == nil {
+			log.Fatal("website backend requires site authentication endpoints")
+		}
+		backendClient, err = backend.New(base, token)
+		if err != nil {
+			log.Fatal("invalid website backend configuration")
+		}
+	}
 	siteHandler := httpapi.NewSiteHandler(httpapi.Options{
+		Backend:      backendClient,
 		Resolver:     hostroute.New(cfg.RootDomains),
 		Sites:        siteMetaClient,
 		DomainLookup: siteMetaClient,

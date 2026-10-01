@@ -369,3 +369,21 @@ HERMES_TAT_COMMAND_ID=cmd-xxx HERMES_TAT_API_BASE=https://api.lightvela.com HERM
 - `openclaw-weixin-login-session cancel`
 
 CTL 不应再把 PTY 原始输出当成二维码唯一事实源；输出解析与状态收敛职责应留在镜像内部协议脚本。
+
+### Hermes 镜像捕获前清理
+
+正常 `build-image.py` 的 `step_prepare_capture` 在创建镜像前执行以下门禁：
+
+- 如 `/etc/vela/website-credential.env` 存在（包括符号链接），拒绝制镜；不能用已分配用户机器作构建源。
+- 非 base-only 的 Hermes 构建停止用户 Gateway，再清理生成的运行数据库、锁、会话、日志和缓存；保留预装 Skill、依赖和配置。
+- 执行 `cloud-init clean --logs`，清空 machine-id、构建期 authorized_keys，移除 SSH host keys，让新机器首次启动时生成自己的身份。
+- 清理目标类型或符号链接异常时失败，不继续捕获；构建目录清理后检查目录确实不存在。
+
+该阶段只用于专用构建机，不能作为存量用户实例的维护脚本。配置保留不等于配置无密钥，仍须在制镜前审计构建输入。清理成功也不等于发布就绪：必须在测试环境从实际捕获镜像新建机器，验证身份重新生成、Gateway 启动、内置 Skill 和正常实例凭据下发。跨地域复制、池切换和生产发布仍须各自授权。
+
+本地回归：
+
+```bash
+python3 images/tests/test-build-image-sync.py
+python3 images/tests/test-hermes-capture-cleanup.py
+```

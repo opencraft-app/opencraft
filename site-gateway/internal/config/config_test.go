@@ -540,3 +540,74 @@ func TestFromEnvDSHRejectsInconsistentByteLimits(t *testing.T) {
 		t.Fatal("frame limit larger than connection budget unexpectedly succeeded")
 	}
 }
+
+func TestFromEnvBeijingReadinessOIDCIsolation(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.sites.lightclaw.tech")
+	t.Setenv("SITE_GATEWAY_ROOT_DOMAINS", "sites.lightclaw.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://website-readiness.lightclaw.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://website-readiness.lightclaw.tech/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://website-readiness.lightclaw.tech/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://website-readiness.lightclaw.tech/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	if _, err := FromEnv(); err != nil {
+		t.Fatalf("testing OIDC rejected: %v", err)
+	}
+	for _, tc := range []struct{ key, value string }{
+		{"SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.site"},
+		{"SITE_GATEWAY_ROOT_DOMAINS", "lightvela.site"},
+		{"SITE_GATEWAY_ROOT_DOMAINS", "sites.lightclaw.tech,lightvela.site"},
+		{"SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://api.lightvela.com"},
+		{"SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://api.lightvela.com/oauth2/authorize"},
+		{"SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://api.lightvela.com/oauth2/token"},
+		{"SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://api.lightvela.com/.well-known/jwks.json"},
+	} {
+		t.Run(tc.key+tc.value, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			if _, err := FromEnv(); err == nil {
+				t.Fatal("mixed production/testing configuration accepted")
+			}
+		})
+	}
+}
+
+func TestFromEnvSeoulReadinessOIDCIsolation(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SITE_GATEWAY_AUTH_MODE", "required")
+	t.Setenv("SITE_GATEWAY_AUTH_ENDPOINTS_ENABLED", "true")
+	t.Setenv("SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.sites-kr.lightclaw.tech")
+	t.Setenv("SITE_GATEWAY_ROOT_DOMAINS", "sites-kr.lightclaw.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://website-readiness-kr.lightclaw.tech")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://website-readiness-kr.lightclaw.tech/oauth2/authorize")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://website-readiness-kr.lightclaw.tech/oauth2/token")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://website-readiness-kr.lightclaw.tech/.well-known/jwks.json")
+	t.Setenv("SITE_GATEWAY_AUTH_OIDC_CLIENT_ID", "site-gateway")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_ACTIVE_KEY_ID", "key-1")
+	t.Setenv("SITE_GATEWAY_AUTH_AEAD_KEYS", "key-1="+base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef")))
+	if _, err := FromEnv(); err != nil {
+		t.Fatalf("testing OIDC rejected: %v", err)
+	}
+	for _, tc := range []struct{ key, value string }{
+		{"SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.lightvela.site"},
+		{"SITE_GATEWAY_ROOT_DOMAINS", "lightvela.site"},
+		{"SITE_GATEWAY_AUTH_FIXED_HOST", "sites-auth.sites.lightclaw.tech"},
+		{"SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://website-readiness.lightclaw.tech"},
+		{"SITE_GATEWAY_ROOT_DOMAINS", "sites.lightclaw.tech"},
+		{"SITE_GATEWAY_ROOT_DOMAINS", "sites-kr.lightclaw.tech,lightvela.site"},
+		{"SITE_GATEWAY_AUTH_OIDC_ISSUER", "https://api.lightvela.com"},
+		{"SITE_GATEWAY_AUTH_OIDC_AUTHORIZE_URL", "https://api.lightvela.com/oauth2/authorize"},
+		{"SITE_GATEWAY_AUTH_OIDC_TOKEN_URL", "https://api.lightvela.com/oauth2/token"},
+		{"SITE_GATEWAY_AUTH_OIDC_JWKS_URL", "https://api.lightvela.com/.well-known/jwks.json"},
+	} {
+		t.Run(tc.key+tc.value, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			if _, err := FromEnv(); err == nil {
+				t.Fatal("mixed production/testing configuration accepted")
+			}
+		})
+	}
+}

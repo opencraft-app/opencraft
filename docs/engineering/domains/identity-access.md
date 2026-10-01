@@ -226,3 +226,19 @@ capability 明文。
 API 真源是 `user/auth/api/openapi.yaml`，影子账号实现位于 `user/auth/internal/shadowbinding/`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
 
 相关 Journey：[账号到 Agent](../journeys/account-to-agent.md)。Agent 摘要：[identity-access Context](../../context/domains/identity-access.md)。
+
+
+## 建站无状态 API 身份边界与隐藏发布
+
+`site-gateway/internal/httpapi/fullstack.go` 在转发 `/api`、`/api/*` 前读取实时站点
+归属，校验绑定站点 host 的加密会话中的 SiteID 与 UserID。只有站点 owner 可以调用；
+国际 public 静态页、分享会话或普通访客不因此获得 API 权限。写请求必须是同源 HTTPS
+Origin，所有请求必须携带当前 `X-Website-Release`。浏览器 Cookie/Authorization、
+平台凭据和任意身份头不转发给用户 JavaScript，不提供网站自建用户体系或数据库权限。
+
+Auth 的准备变更只对两个明确的测试 issuer 允许其精确 site-gateway callback，并拒绝
+任意回调覆盖与通配；生产 issuer 继续沿用既有 site-gateway registry 校验分支。
+因此源代码合入不自动要求生产 Auth 镜像滚动；是否需要发布由真实运行配置/兼容验收确定。
+2026-10-01 隐藏发布通过生产 CTL API/service/bypass 的显式空
+`WEBSITE_BACKEND_BETA_USERS` 保持能力关闭，不创建 canary owner 或生产用户站点。
+后续开放必须独立核验 OIDC 登录、owner 隔离、同源写请求与错误/旧版本拒绝链路。

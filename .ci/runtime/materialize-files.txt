@@ -141,3 +141,11 @@
 .ci/runtime/support/staticpages_pack.py
 .ci/runtime/support/staticpages_preview.py
 .ci/runtime/support/yaml.py
+
+# Website backend release-preparation and Skill-only rollout commands.
+.ci/runtime/commands/prepare_website_backend_release.py
+.ci/runtime/commands/rollout_website_skill.py
+.ci/runtime/commands/verify_website_mysql_migration.py
+.ci/runtime/gates/verify_website_mysql_migration.py
+.ci/runtime/support/prepare_website_backend_release.py
+.ci/runtime/support/rollout_website_skill.py

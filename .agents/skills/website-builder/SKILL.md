@@ -1,18 +1,19 @@
 ---
 name: website-builder
-description: 当用户要求建站、创建网站、部署或发布静态网页，或制作个人主页、产品展示页、落地页、作品集等静态站点时使用。
+description: 当用户要求建站、发布网页、制作个人主页或产品展示页，或在平台能力开放后发布带无状态后端的网站时使用。
 ---
 
-# Vela 静态建站 Skill
+# Vela 建站 Skill
 
 ## 概述
 
-本 Skill 指导 AI 通过 Vela API 完成**纯静态网站**的创建、发布和访问。
-用户不需要任何云账号或密钥，Vela 统一托管所有后端资源。
+本 Skill 指导 AI 通过 Vela API 创建、发布和访问网站。静态托管始终按套餐权益使用；
+只有能力门禁明确开放 `fetch-v1` 时，才可以发布带**无状态后端**的网站。
+用户不需要任何云账号或密钥，Vela 统一托管网站资源。
 
-**平台只提供静态托管，没有任何服务端存储能力。** 站点由 HTML/CSS/JS 组成，
-访问时原样返回文件，没有数据库、没有后端接口、没有可以保存数据的地方。
-涉及保存数据的需求，见「能力边界」一节的处理方式。
+**无状态后端不等于数据存储能力。** 当前支持所有者访问的计算与校验 API，
+没有数据库、共享持久化或公开访客写入；每次请求也不保证保留内存。
+必须先查询实际能力，再判断需求是否匹配，见「后端与数据能力检查」与「能力边界」。
 
 ## ⚠️ 面向用户的输出规范（最高优先级）
 
@@ -31,7 +32,8 @@ description: 当用户要求建站、创建网站、部署或发布静态网页�
 - 部署过程中用一句简单的话报告进度即可，不要输出中间步骤的代码或日志
 
 **唯一的例外**：用户想要的功能需要保存数据（留言板、表单收集、计数器等）时，
-必须明确告诉用户"当前只支持静态网站，存不了数据，这个功能做不了"。
+必须明确告诉用户"当前不支持保存共享数据，这个功能还做不了"；
+不要把已开放的无状态后端也描述成不可用。
 这是能力边界，必须说清楚，见「能力边界」一节。
 
 ### AI 内部执行时
@@ -128,7 +130,9 @@ GET {API_BASE}/v1/websites/capability
   "storage_bytes": 10737418240,
   "used_storage_bytes": 0,
   "max_artifact_size": 52428800,
-  "max_files": 200
+  "max_files": 200,
+  "backend": { "enabled": false },
+  "data": { "enabled": false }
 }
 ```
 
@@ -144,6 +148,78 @@ GET {API_BASE}/v1/websites/capability
 | max_files | int | 单个制品最大文件数 |
 
 **始终以本接口返回的实际值为准，不要写死数字。**
+
+### 后端与数据能力检查（内部）
+
+- 检查完整响应中的 `data.backend.enabled`（后端执行）和 `data.data.enabled`（服务端数据）。
+- **字段缺失、null、未知值或不是布尔 true，一律按 false / 不可用处理。** 旧服务未返回这些字段时继续静态流程，不猜测能力。
+- 默认后端与数据能力关闭。仅当 `data.backend.enabled` 为布尔 true 且 `data.backend.contract` 严格等于 `fetch-v1` 时，允许执行下面的 Fullstack Beta 流程。其他版本一律不可猜测接口。`data.data.enabled` 仍须独立检查。
+- 静态 release 请求声明 `"kind": "static"`；旧客户端省略 kind 仍按静态处理。`fullstack` 必须携带 `backend_sha256` 并通过能力门禁；未知 kind 为参数错误。
+- 能力未开放时，先说明限制，不生成假接口或用 localStorage 冒充共享数据。当前 Fullstack Beta 仅支持无状态、所有者访问的 API，不支持公开访客写入或持久化。用户需要这些能力时必须说明尚不支持，不能静默缩减需求。得到用户确认后才改做静态/无状态替代方案。
+- 收到 `WEBSITE_BACKEND_UNAVAILABLE`：这是能力未开放，**不要重试**；不要删除 kind、改成 static 或降级上传原来的服务端代码。向用户说明后端能力当前不可用。
+
+### Fullstack Beta：仅在 fetch-v1 能力门禁通过后执行
+
+1. **先确认范围匹配。** 本版是无状态 `fetch(Request) -> Response`，后端 API 仅站点所有者登录后可访问，国际 public 静态域名也不例外。JS 模块每次调用不保证保留内存；没有数据库、任意出网、定时任务、WebSocket、任意 Node 进程、文件系统或 Secret 绑定。用户需求不匹配时停止并解释，不把“无状态计算 API”描述成数据库建站。
+2. 目录必须分离：`public/` 放静态文件，`backend/app.mjs` 放单个预打包 ES module。不要把后台源码、`.env`、私钥、平台凭据或后端 source map 放进 public。后端形态：
+
+```js
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/sum" && request.method === "POST") {
+      const { a, b } = await request.json();
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        return Response.json({ error: "invalid input" }, { status: 400 });
+      }
+      return Response.json({ sum: a + b });
+    }
+    return new Response("Not found", { status: 404 });
+  }
+};
+```
+
+3. `public/index.html` 在应用 JS 执行之前声明版本标记，deployer 只在私有校验成功后把完整引号包裹的标记值替换为本次 release ID，保留同名 JavaScript 变量。标记必须使用普通单引号或双引号，不能只声明同名变量而不赋值：
+
+```html
+<script>globalThis.__LIGHTVELA_RELEASE_ID__="__LIGHTVELA_RELEASE_ID__";</script>
+```
+
+所有前端 API 请求必须同源并带 `X-Website-Release`；不要在浏览器里加入平台 Authorization 或实例密钥。写请求由浏览器自动提供真实 Origin，不要通过伪造 Origin 绕过验证：
+
+```js
+const response = await fetch("/api/sum", {
+  method: "POST",
+  credentials: "same-origin",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Website-Release": globalThis.__LIGHTVELA_RELEASE_ID__
+  },
+  body: JSON.stringify({ a: 2, b: 3 })
+});
+// 401: 引导所有者完成站点登录后重新操作；不要自动重放写请求。
+// 409: 页面版本已过期，提示重新加载；不要用旧页面重试写操作。
+// 429/502/503: 显示暂时不可用，不把失败提示成已保存成功。
+```
+
+4. 使用随 Skill 安装的打包器，按 capability 传入实际大小/文件数上限。打包器不上传、不运行后端；输出仅包含可用于 CreateRelease 的非敏感元数据：
+
+```bash
+python3 ~/.hermes/skills/website-builder/scripts/package_fullstack.py \
+  --static-dir ./public --backend ./backend/app.mjs \
+  --output ./artifacts/site-v1.zip \
+  --max-files <capability.max_files> \
+  --max-artifact-size <capability.max_artifact_size>
+```
+
+脚本缺失时停止并说明 Skill 交付不完整，不自行改成静态 zip。产物布局为根目录静态文件与私有 `__backend/app.mjs`；deployer 不会把后者写入静态 COS 路径。不要覆盖历史 zip，保留上一成功 release ID 与制品以供回退。
+
+5. 创建 release 时使用打包器原样输出的 `kind=fullstack`、`backend_sha256`、`artifact_hash`、`artifact_size`、`file_count`。沿用后文签名上传流程，`data.upload_headers` 逐项原样提交；不得输出 `upload_url`、`VELA_WEBSITE_KEY` 或包含凭据的原始响应。后端 API 位于同站点 `/api`、`/api/*`；其它路径仍为静态资源。
+6. 轮询 operation 到真实 success，并核对站点和 release。后台未就绪、摘要错误、配额拒绝或发布失败时保持旧站，不能报告成功。不要把 operation 创建成功/HTTP 200 当成已经发布。
+7. 在所有者已登录的真实浏览器验证：页面、GET/POST 结果、非所有者拒绝、错误输入、重新发布后旧页面 409、刷新后恢复。没有浏览器登录态时明确标记“尚未完成所有者浏览器验收”，不生成假 cookie、不以内部调用替代公网验证。
+8. 回滚使用 `POST {API_BASE}/v1/websites/{siteId}/rollback`，正文 `{ "release_id": "<previous-successful-release>" }`，继续轮询返回的 operation。仅可回到仍保留的静态/后端版本；制品不在时会失败，应使用保留的旧 zip 重新发布，不能宣称回滚成功。回滚前后都核对实际页面和 API。停用后 API 必须拒绝访问。
+
+**运行限制：** 后端 JS 不超过 1 MiB，请求体不超过 1 MiB，响应体不超过 4 MiB；执行有 5 秒墙钟限制。首版不转发应用 cookie、任意身份头或跨域头，不支持后端重定向。不要编写依赖这些能力的应用。
 
 ### 第二步：需求澄清（与用户交互）
 
@@ -289,6 +365,7 @@ POST {API_BASE}/v1/websites/{siteId}/releases
 
 ```json
 {
+  "kind": "static",
   "artifact_hash": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
   "artifact_size": 45678,
   "file_count": 3
@@ -297,6 +374,8 @@ POST {API_BASE}/v1/websites/{siteId}/releases
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
+| kind | string | 否 | 静态填写 static；省略兼容旧静态客户端；fetch-v1 能力通过时可填 fullstack |
+| backend_sha256 | string | fullstack 必填 | 私有 app.mjs 的小写 SHA-256，静态发布不传 |
 | artifact_hash | string | 是 | zip 文件的 sha256 哈希值，64 位小写十六进制 |
 | artifact_size | int64 | 是 | zip 文件大小（字节数） |
 | file_count | int | 是 | zip 内文件总数 |
@@ -552,6 +631,7 @@ DELETE {API_BASE}/v1/websites/{siteId}
 | WEBSITE_NO_QUOTA | 你当前的套餐不包含建站功能，升级套餐即可使用 |
 | WEBSITE_NOT_ACTIVE | 这个网站当前不可用，可能已暂停或正在删除 |
 | WEBSITE_NOT_FOUND | 没有找到这个网站，可能已经被删除了 |
+| WEBSITE_BACKEND_UNAVAILABLE | 当前还不能发布带后端的网站，可以先做纯静态版本 |
 | WEBSITE_INVALID_PARAM | 网站配置有点问题，我调整一下重试 |
 
 **WEBSITE_INVALID_PARAM 特别说明**：服务端会在 `data` 中附上具体原因（`details.reason`），
@@ -569,16 +649,16 @@ DELETE {API_BASE}/v1/websites/{siteId}
 
 ## 能力边界
 
-### 不能做的
+### 当前不能做的持久化及自建账号功能
 
 - 留言板 / 评论区 / 评论系统
 - 报名 / 报名表单 / 问卷 / 预约
 - 电商下单 / 购物车 / 库存
-- 用户注册 / 登录 / 个人中心
+- 自建用户注册 / 登录 / 个人中心（不包括平台提供的站点所有者登录）
 - 访问计数器 / 投票 / 调查
 - 待办清单、记账本、任何需要"下次打开还在"的记录
 - 电商下单、库存、支付
-- 账号注册登录、用户中心、后台管理
+- 自建账号注册登录、用户中心、持久化后台管理
 
 **⛔ 绝对禁止：不要用 localStorage / sessionStorage / IndexedDB / cookie
 糊一个"看起来能用"的版本。**
@@ -594,7 +674,7 @@ DELETE {API_BASE}/v1/websites/{siteId}
 也就是说，它不是"功能弱一点"，而是**根本没实现用户要的那件事**，
 并且要等用户真的用起来、数据丢了才会发现。这比当场说"做不了"糟糕得多。
 
-**正确处理方式**：当场告诉用户当前只支持静态网站、存不了数据，
+**正确处理方式**：当场告诉用户当前没有共享持久化，不能保存这些数据，
 然后给出一个真的能用的替代方案，让用户明确选择：
 
 | 用户想要 | 可行的替代 |
@@ -602,7 +682,7 @@ DELETE {API_BASE}/v1/websites/{siteId}
 | 留言板 / 评论区 | 展示页 + 留下联系方式（邮箱、微信）让访客直接联系 |
 | 报名 / 问卷 / 预约表单 | 页面里嵌入或链接到第三方表单（问卷星、腾讯问卷、Google Forms） |
 | 电商下单 | 商品展示页 + 留联系方式询价 |
-| 用户登录 / 个人中心 | 无需登录的公开内容页 |
+| 自建用户登录 / 个人中心 | 不涉及自建账号的内容页；平台提供的站点所有者登录仅用于保护后端 API |
 | 访问计数器 / 投票 | 去掉，或改成静态的成果展示 |
 | 待办 / 记账 | 说明做不了；如果用户只是想自己单机用，必须明确告知"数据只存在这台设备的这个浏览器里，换设备或清缓存就没了"，由用户确认后再做 |
 

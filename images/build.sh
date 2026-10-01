@@ -1138,8 +1138,14 @@ install_hermes_website_builder_skill() {
     log_error "website-builder Skill source is missing: ${source_file}"
     return 1
   fi
-  mkdir -p "${target_dir}"
-  install -m 0644 "${source_file}" "${target_dir}/SKILL.md"
+  local packager="$(dirname "${source_file}")/scripts/package_fullstack.py"
+  if [ ! -s "${packager}" ]; then
+    log_error "website-builder packager is missing: ${packager}"
+    return 1
+  fi
+  python3 "${SCRIPT_DIR}/helpers/website_skill_bundle.py" \
+    --source "$(dirname "${source_file}")" --home "${RUNTIME_HOME}" || return 1
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${RUNTIME_HOME}/.hermes/.lightvela/website-builder-releases"
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${target_dir}"
   if [ ! -s "${target_dir}/SKILL.md" ]; then
     log_error "website-builder Skill installation failed: ${target_dir}/SKILL.md"
@@ -1607,10 +1613,6 @@ install_hermes_runtime() {
     qwen_spec="${qwen_spec}@latest"
   fi
 
-  if [ -z "${HERMES_INSTALL_SCRIPT_URL}" ]; then
-    log_error "missing runtime_hermes.install_script_url in build-manifest.json"
-    return 1
-  fi
   if [ -z "${HERMES_COS_BASE}" ]; then
     log_error "missing runtime_hermes.cos_base in build-manifest.json"
     return 1
@@ -1644,14 +1646,18 @@ install_hermes_runtime() {
 
   snapshot_hermes_source_tree_git "${hermes_dir}" "${HERMES_VERSION:-${hermes_cos_dir}}"
 
-  installer="$(mktemp "${TMPDIR:-/tmp}/hermes-install-XXXXXX.sh")"
-  curl -fsSL "${HERMES_INSTALL_SCRIPT_URL}" -o "${installer}"
-  chmod 0755 "${installer}"
+  # The installer must match the pinned COS source. Upstream main can require
+  # modules absent from that release (for example pm.cli), breaking clean builds.
+  installer="${hermes_dir}/scripts/install.sh"
+  if [ ! -s "${installer}" ] || [ -L "${installer}" ]; then
+    log_error "pinned Hermes source is missing a regular scripts/install.sh"
+    return 1
+  fi
   for installer_stage in venv python-deps node-deps path config; do
     run_hermes_installer_stage "${installer}" "${hermes_home}" "${hermes_dir}" "${installer_stage}"
   done
   force_reinstall_hermes_local_package "${hermes_dir}"
-  rm -rf "${tarball}" "${stage_dir}" "${installer}"
+  rm -rf "${tarball}" "${stage_dir}"
   verify_hermes_source_tree_version "${hermes_dir}" "after installer stages"
   verify_hermes_runtime_version
 

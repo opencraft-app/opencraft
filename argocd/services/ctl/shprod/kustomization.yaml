@@ -86,6 +86,64 @@ patches:
           name: CTL_LLMGATEWAY_BOT_CREATE_MIGRATION_ALLOWLIST
           value: "*"
 
+  # Hidden website backend release: explicit empty env masks any envFrom allowlist.
+  - target:
+      kind: Deployment
+      name: ctl-api
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ctl-api
+        namespace: ctl
+      spec:
+        template:
+          spec:
+            containers:
+              - name: api
+                env:
+                  - name: WEBSITE_BACKEND_BETA_USERS
+                    value: ""
+                    valueFrom: null
+  # Hidden website backend release: explicit empty env masks any envFrom allowlist.
+  - target:
+      kind: Deployment
+      name: ctl-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ctl-service
+        namespace: ctl
+      spec:
+        template:
+          spec:
+            containers:
+              - name: service
+                env:
+                  - name: WEBSITE_BACKEND_BETA_USERS
+                    value: ""
+                    valueFrom: null
+  # Hidden website backend release: explicit empty env masks any envFrom allowlist.
+  - target:
+      kind: Deployment
+      name: ctl-bypass
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ctl-bypass
+        namespace: ctl
+      spec:
+        template:
+          spec:
+            containers:
+              - name: bypass
+                env:
+                  - name: WEBSITE_BACKEND_BETA_USERS
+                    value: ""
+                    valueFrom: null
+
 generators:
   - ksops-assets-generator.yaml
 
