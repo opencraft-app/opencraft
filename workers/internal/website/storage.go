@@ -78,9 +78,13 @@ func (d *Deployer) pruneSiteReleases(client *cosClient, siteID, candidateRelease
 		for _, key := range victims[start:end] {
 			batch = append(batch, cos.Object{Key: key})
 		}
-		if _, _, err := client.client.Object.DeleteMulti(context.Background(),
-			&cos.ObjectDeleteMultiOptions{Objects: batch}); err != nil {
+		deleted, _, err := client.client.Object.DeleteMulti(context.Background(),
+			&cos.ObjectDeleteMultiOptions{Objects: batch})
+		if err != nil {
 			return fmt.Errorf("delete stale releases (%s): %v", basePrefix, err)
+		}
+		if deleted == nil || len(deleted.Errors) != 0 {
+			return fmt.Errorf("delete stale releases (%s): incomplete object deletion", basePrefix)
 		}
 	}
 	return nil
@@ -124,6 +128,11 @@ func (d *Deployer) siteStorageBytes(client *cosClient, siteID string) (int64, er
 		}
 		total += sumObjectSizes(objects)
 	}
+	backendBytes, err := d.backendStorage(siteID)
+	if err != nil {
+		return 0, err
+	}
+	total += backendBytes
 	return total, nil
 }
 

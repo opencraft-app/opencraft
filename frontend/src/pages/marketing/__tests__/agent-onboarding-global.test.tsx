@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -134,9 +134,9 @@ const createNavigation = (search: string): AppNavigationValue => ({
   setSearchParams: vi.fn(),
 });
 
-const page = (search: string) => (
+const page = (search: string, sectionId?: "chat") => (
   <AppNavigationProvider value={createNavigation(search)}>
-    <AgentSettingsPage showHeader={false} />
+    <AgentSettingsPage showHeader={false} sectionId={sectionId} />
   </AppNavigationProvider>
 );
 
@@ -151,7 +151,12 @@ function GlobalFirstBotJourney({ initialSearch }: { initialSearch: string }) {
 }
 
 vi.mock("@/pages/marketing/agent-chat-panel", () => ({
-  AgentChatPanel: () => null,
+  AgentChatPanel: () => <div data-testid="agent-chat" />,
+}));
+
+vi.mock("@/pages/marketing/opencraft-embedded-workbench", () => ({
+  AgentChatMigrationSurface: ({ enabled, legacy }: { enabled: boolean; legacy: ReactNode }) =>
+    enabled ? <div data-testid="opencraft-chat" /> : legacy,
 }));
 
 vi.mock("@/pages/marketing/agent-overview-panel", () => ({
@@ -185,11 +190,23 @@ describe("international Bot onboarding", () => {
   });
   afterEach(cleanup);
 
+  it("keeps international Chat on AgentChat", async () => {
+    render(page("?bot=ins-372", "chat"));
+    expect(await screen.findByTestId("agent-chat")).toBeInTheDocument();
+    expect(screen.queryByTestId("opencraft-chat")).not.toBeInTheDocument();
+  });
+
   describe("domestic multi-Bot overview", () => {
     beforeEach(() => {
       testRegion.isCN = true;
       testRegion.isGlobal = false;
       currentLocale = "zh-CN";
+    });
+
+    it("uses OpenCraft for domestic Chat without show", async () => {
+      render(page("?bot=ins-372", "chat"));
+      expect(await screen.findByTestId("opencraft-chat")).toBeInTheDocument();
+      expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
     });
 
     it("shows all Bots and places overview above the Bot selector", async () => {

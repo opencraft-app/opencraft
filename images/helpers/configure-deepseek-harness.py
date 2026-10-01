@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import http.cookiejar
 import json
 import re
 import sys
+import urllib.error
 import urllib.request
 import uuid
 
@@ -53,35 +55,116 @@ def credential_ref(namespace, path, fallback):
     return fallback
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    # Never follow a redirect while carrying a credential mutation payload.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class RpcClient:
+    """Process-local auth and read-only protocol negotiation for DSH 0.1/0.2."""
+
+    def __init__(self, base_url=BASE_URL):
+        self.base_url = base_url
+        self.cookies = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(
+            NoRedirect(), urllib.request.HTTPCookieProcessor(self.cookies),
+        )
+        self.protocol = None
+
+    def bootstrap(self):
+        # The managed installer admits this loopback root probe and issues the
+        # native signed cookie. Keep it in memory, never persist/print it.
+        with self.opener.open(f"{self.base_url}/", timeout=10) as response:
+            response.read(1024)
+        if not any(cookie.name.startswith("dsh-") for cookie in self.cookies):
+            raise RuntimeError("DSH authentication bootstrap failed; repair the managed DSH installation")
+
+    def request(self, method, payload):
+        rpc_id = f"lightvela-dsh-{uuid.uuid4().hex}"
+        body = json.dumps({
+            "type": "client-request", "rpcId": rpc_id,
+            "method": method, "payload": payload,
+        }, separators=(",", ":")).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.base_url}/api/{method}", data=body, method="POST",
+            headers={"Accept": "application/json", "Content-Type": "application/json", "Origin": self.base_url},
+        )
+        for attempt in range(2):
+            try:
+                with self.opener.open(request, timeout=20) as response:
+                    envelope = json.load(response)
+                break
+            except urllib.error.HTTPError as error:
+                error.close()
+                if error.code != 401 or attempt != 0:
+                    raise
+                self.cookies.clear()
+                self.bootstrap()
+        if not isinstance(envelope, dict) or envelope.get("type") != "server-response" or envelope.get("rpcId") != rpc_id:
+            raise RuntimeError(f"invalid DSH RPC response for {method}")
+        result = envelope.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError(f"missing DSH RPC result for {method}")
+        if result.get("ok") is not True:
+            error = result.get("error") if isinstance(result.get("error"), dict) else {}
+            # Do not expose server messages that can contain mutation inputs.
+            raise RuntimeError(f"DSH RPC {method} rejected ({error.get('code') or 'unknown error'})")
+        return result.get("value")
+
+    def modern_providers(self):
+        directory = self.request("llm/listConfigurableProviders", {"args": {}})
+        running = self.request("llm/listProviders", {"args": {}})
+        if not isinstance(directory, list) or not isinstance(running, list):
+            raise RuntimeError("invalid DSH provider directory response")
+        active = {entry.get("id") for entry in running if isinstance(entry, dict)}
+        return {"providers": [{**entry, "active": entry.get("provider") in active}
+                              for entry in directory if isinstance(entry, dict)]}
+
+    def call(self, method, payload):
+        try:
+            if self.protocol is None:
+                # Negotiate using a read ONLY. Never try another protocol after
+                # a credential/settings write: ambiguous writes must not replay.
+                try:
+                    providers = self.request("llm.providers", {})
+                    self.protocol = "legacy"
+                except urllib.error.HTTPError as error:
+                    if error.code != 404:
+                        raise
+                    providers = self.modern_providers()
+                    self.protocol = "modern"
+                if method == "llm.providers":
+                    return providers
+            if self.protocol == "legacy":
+                return self.request(method, payload)
+            if method == "llm.providers":
+                return self.modern_providers()
+            endpoints = {
+                "settings.describe": "settings/describe",
+                "settings.mutate": "settings/mutate",
+                "credentials.describe": "credentials/describe",
+                "credentials.set": "credentials/set",
+                "credentials.unset": "credentials/unset",
+            }
+            if method not in endpoints:
+                raise RuntimeError("unsupported DSH management method")
+            value = self.request(endpoints[method], {"args": payload})
+            return {"credentials": value} if method == "credentials.describe" else value
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(f"DSH RPC {method} failed (HTTP {error.code})") from None
+        except urllib.error.URLError:
+            raise RuntimeError("DSH local API is unavailable; check the DSH service") from None
+
+
+_RPC_CLIENT = None
+
+
 def rpc_call(method, payload):
-    rpc_id = f"lightvela-dsh-{uuid.uuid4().hex}"
-    body = json.dumps({
-        "type": "client-request",
-        "rpcId": rpc_id,
-        "method": method,
-        "payload": payload,
-    }, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(
-        f"{BASE_URL}/api/{method}",
-        data=body,
-        method="POST",
-        headers={
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Origin": BASE_URL,
-        },
-    )
-    with urllib.request.urlopen(request, timeout=20) as response:
-        envelope = json.load(response)
-    if envelope.get("type") != "server-response" or envelope.get("rpcId") != rpc_id:
-        raise RuntimeError(f"invalid DSH RPC response for {method}")
-    result = envelope.get("result")
-    if not isinstance(result, dict):
-        raise RuntimeError(f"missing DSH RPC result for {method}")
-    if not result.get("ok"):
-        error = result.get("error") if isinstance(result.get("error"), dict) else {}
-        raise RuntimeError(error.get("message") or f"DSH RPC {method} failed")
-    return result.get("value")
+    global _RPC_CLIENT
+    if _RPC_CLIENT is None:
+        _RPC_CLIENT = RpcClient()
+    return _RPC_CLIENT.call(method, payload)
 
 
 def describe_configuration(rpc):

@@ -57,11 +57,11 @@ try{
  const until=Date.now()+20000;while(requests.length<2 && Date.now()<until)await new Promise(r=>setTimeout(r,100));
  assert.ok(requests.some(r=>r.path==='/api/auth/profile'));assert.ok(requests.some(r=>r.path==='/api/v1/instances'));assert.ok(requests.every(r=>r.authenticated));
  await page.getByRole('button',{name:'重新连接',exact:true}).waitFor();
- await page.getByText('请检查 AI 伙伴配置后重试',{exact:true}).waitFor();
+ await page.getByText('请检查 AI 伙伴状态后重试',{exact:true}).waitFor();
  assert.equal(await page.locator('[data-legacy]').count(),0);
  await page.getByRole('button',{name:'重新连接',exact:true}).click();
  await page.getByRole('button',{name:'重新连接',exact:true}).waitFor();
- await page.getByText('请检查 AI 伙伴配置后重试',{exact:true}).waitFor();
+ await page.getByText('请检查 AI 伙伴状态后重试',{exact:true}).waitFor();
  assert.equal(await page.locator('[data-legacy]').count(),0);
  assert.equal(await page.evaluate(()=>document.querySelector('opencraft-embedded-workbench').submitPrompt('blocked-template','synthetic workbench template')),false);
  assert.equal(await page.evaluate(()=>localStorage.getItem('vela.lightvela.session-token.v1')),null);

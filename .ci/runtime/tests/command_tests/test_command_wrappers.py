@@ -127,6 +127,9 @@ class CommandWrapperTests(unittest.TestCase):
 
     def test_semantic_command_wrappers_import_expected_modules(self) -> None:
         expected = {
+            "prepare_website_backend_release.py": "support.prepare_website_backend_release",
+            "rollout_website_skill.py": "support.rollout_website_skill",
+            "verify_website_mysql_migration.py": "gates.verify_website_mysql_migration",
             "project_release_bundle.py": "gitops.projection",
             "update_image_pin.py": "gitops.image_pin",
             "run_release_gates.py": "gates.runner",

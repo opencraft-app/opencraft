@@ -430,7 +430,18 @@ export class DeepSeekHarnessCommandClient {
       `${this.providerHelperCommand()} providers --region ${region}`,
       { timeoutMs: 30_000 },
     );
-    const payload = parseJson<{ providers: DeepSeekHarnessProvider[] }>(result.output, "providers");
+    assertCommandSucceeded(result, "DeepSeek Harness provider query failed");
+    const payload = parseJson<{ providers?: unknown }>(result.output, "providers");
+    if (!payload || !Array.isArray(payload.providers) || !payload.providers.every(
+      (provider: unknown): provider is DeepSeekHarnessProvider => (
+        typeof provider === "object" && provider !== null
+        && "id" in provider && typeof provider.id === "string"
+        && "displayName" in provider && typeof provider.displayName === "string"
+        && "configured" in provider && typeof provider.configured === "boolean"
+        && "active" in provider && typeof provider.active === "boolean"
+        && "writable" in provider && typeof provider.writable === "boolean"
+      ),
+    )) throw new Error("Invalid DeepSeek Harness providers response");
     const allowed = new Set<string>(
       region === "cn" ? DEEPSEEK_HARNESS_CN_PROVIDERS : DEEPSEEK_HARNESS_GLOBAL_PROVIDERS,
     );

@@ -207,6 +207,7 @@ func newWebsiteOperationTestDB(t *testing.T) {
 	db := testutil.NewSQLiteDB(t)
 	for _, statement := range []string{
 		`CREATE TABLE website_sites (
+ kind TEXT NOT NULL DEFAULT 'static', active_release_id TEXT NOT NULL DEFAULT '', backend_sha256 TEXT NOT NULL DEFAULT '',
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             site_id TEXT NOT NULL,
             user_id TEXT NOT NULL,
@@ -241,6 +242,7 @@ func newWebsiteOperationTestDB(t *testing.T) {
             updated_time DATETIME
 		)`,
 		`CREATE TABLE website_releases (
+ kind TEXT NOT NULL DEFAULT 'static', backend_sha256 TEXT NOT NULL DEFAULT '',
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             release_id TEXT NOT NULL,
             site_id TEXT NOT NULL,

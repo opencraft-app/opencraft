@@ -2682,7 +2682,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const openCraftChatEnabled = !isGlobal && showHiddenAgentTools;
+  const openCraftChatEnabled = !isGlobal;
   /** 多 bot 创建引导（取代原先的「创建 Bot」弹窗） */
   const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
   /** 「从其他 Bot 复制」选中的来源 bot id */
@@ -3365,7 +3365,7 @@ export const AgentSettingsPage = ({
 
   useEffect(() => {
     // AgentChat 暂时只支持主 Bot；非主 Bot 不发起 token 请求。
-    if (activeSection !== "chat" || !isActiveBotDefault || !activeBotId || !activeRuntimeInstanceId) {
+    if (openCraftChatEnabled || activeSection !== "chat" || !isActiveBotDefault || !activeBotId || !activeRuntimeInstanceId) {
       return;
     }
     if (!accountId) {
@@ -3399,7 +3399,7 @@ export const AgentSettingsPage = ({
       cancelled = true;
       controller.abort();
     };
-  }, [activeSection, activeBotId, activeRuntimeInstanceId, accountId, isActiveBotDefault, launchTokenRefreshTick, fetchLaunchTokenValue]);
+  }, [activeSection, activeBotId, activeRuntimeInstanceId, accountId, isActiveBotDefault, launchTokenRefreshTick, fetchLaunchTokenValue, openCraftChatEnabled]);
 
   /**
    * SDK 续期入口：token 将过期时调用，拿新 token 返回给面板。不写 state，故不触发

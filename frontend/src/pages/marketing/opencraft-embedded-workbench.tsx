@@ -438,7 +438,7 @@ export function AgentChatMigrationSurface({
             {startupFailed ? t("会话加载失败，请重试")
               : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
               : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
-              : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴配置后重试")
+              : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
               : connection.phase === "error" ? t("连接暂时中断，正在尝试恢复…")
               : connectionSlow ? t("连接时间较长，请检查网络或重试")
               : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")

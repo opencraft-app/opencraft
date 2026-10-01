@@ -616,8 +616,7 @@ Composer actions to voice input. The full policy projects all
 Composer actions. This keeps unavailable Web Speech or future optional actions
 out of embedded products without component-level product checks.
 
-The host keeps legacy AgentChat authoritative until its explicit rollout
-`show()` command enables the embedded candidate on the domestic console. The
+The domestic console uses embedded OpenCraft Chat by default. The
 international console retains AgentChat. The host passes an in-process session
 accessor to the component; credentials are never HTML attributes or copied to
 OpenCraft localStorage. Account metadata stays in memory. The console remains
@@ -625,8 +624,8 @@ the login/logout owner, and embedded startup never consumes its OAuth callback.
 Vendored RepositoryContext requires injected account-bound repositories and has
 no module-level default initialization that could consume a host OAuth URL.
 Session replacement or logout synchronously revokes the old accessor and hides
-and disposes its component before another instance can borrow the new session. Route visibility alone never
-loads or adopts OpenCraft. After enablement, a neutral loading surface replaces legacy (which is not
+and disposes its component before another instance can borrow the new session. Entering the domestic Chat route
+loads OpenCraft; a neutral loading surface replaces legacy (which is not
 mounted) while the embedded Host connects, activates its ordinary Thread/Draft, hydrates initial
 history and paints. Connection failures retain the same Application and Host so its
 automatic recovery can complete; they never silently restore legacy. The host projects
@@ -642,15 +641,16 @@ CORS policy explicitly.
 For the LightVela Pages release, the Embedded Workbench remains an independent
 Vite target and is staged under the same-origin `/__opencraft/` subtree beside
 the Next export. It is not imported by the Next application bundle and is only
-requested after rollout enablement. The release build fails closed when the
+requested when domestic Chat is active. The release build fails closed when the
 reviewed Embedded artifact is unavailable, so legacy fallback cannot disguise
 an incomplete production artifact.
 
 `show()` is a browser-origin-scoped persisted toggle, not a one-way component
 callback. One shared feature-state controller owns versioned storage, in-page
 events, cross-tab storage reconciliation and a ref-counted global command.
-Calling `show()` again disables the revealed surfaces and persists that choice;
+Calling `show()` again disables the other revealed surfaces and persists that choice;
 page components subscribe to the state and never wrap `window.show` themselves.
+This command does not change the domestic Chat owner.
 The underlying persisted-feature primitive is reusable by other internal
 feature gates without copying localStorage/error/event lifecycle code.
 
