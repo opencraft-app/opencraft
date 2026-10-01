@@ -57,12 +57,16 @@ derived: false
 | `frontend/AGENTS.md@current` | 服务规则 | 前端测试与类型门禁 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | 相邻实现 | 检查测试和翻译生成链路 |
 | `frontend/openspec/specs/marketing.md@current` | 当前产品规格 | 保留任务与最近执行的页面职责 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@2.0.0` | MR 交付门禁 | 核对目标分支、提交与 CI 状态 |
+| `docs/context/project/upstream-subtrees.md@2.2.0` | OpenCraft 真源边界 | 仅从 mono2 前端源码生成兼容副本 |
+| `opencraft/AGENTS.md@current` 与 `opencraft/MONO2_MIGRATION.md@current` | 生成物约束 | 使用官方同步和漂移校验命令 |
 
 ## evidence
 - 初始隔离工作树基于 `master@efe04e16e`，分支 `codex/automation-delivery-results`。
 - 网页创建任务已有“默认选中已连接通道”逻辑；固定通知任务已要求选择通道。无通道时新建需要明确确认本地保存，现有本地任务展示状态和设置通知入口。
 - 最近执行从所属 Bot/Profile 的 `cron/output/<job-id>/*.md` 按需读取；路径越界、符号链接逃逸、缺失和超过 1 MiB 的结果均拒绝读取。
 - 国内及国际站现有定时任务文档已同步说明本地保存和从最近执行查看、下载 Markdown；国际站通知任务文档中与当前实现冲突的无通道描述已修正。
+- MR !4878 的 CI 在 OpenCraft guard 因 `i18n/generated/en-US.json` 生成副本漂移失败。分支合并 `origin/master@558470e16` 后，官方脚本同步 130 个文件；实际变更限于 11 个生成文件，其中包括 `UPSTREAM.json`。
 
 ## risks
 - 旧任务的 `origin` 可能没有创建时会话；不自动把 `local` 改为 `origin`。
@@ -75,6 +79,8 @@ derived: false
 - `validate_documentation.py --repo . --format json` 通过，无破损一方链接。
 - `validate_context.py --build-catalog` 失败于大量既有 Task Pack schema/历史错误；本 Task Pack 完善 frontmatter 后不在错误列表中。仓库级 Context 单测同样受既有 Context 契约失败影响。
 - `git diff --cached --check` 与 `validate_change_impact.py --repo . --staged` 通过，changed-path 无匹配高风险规则。
+- 合并 master 后，`npm --prefix opencraft run check:mono2-agent-console` 验证 130 个文件，OpenCraft 插件类型检查及 `test:embedded-ci` 155 项测试通过。
+- 合并 master 后，`pnpm check`、定时任务聚焦 Vitest 326 项以及国内站和国际站构建均通过。
 
 ## decisions
 - 优先补齐结果可达性和本地投递显性反馈；聊天创建路径由 Hermes 上游持有，未确认入口前不修改上游运行时。
@@ -86,14 +92,15 @@ derived: false
 - 精确搜索记录在本轮工具输出中。
 
 ## handoff
-- 功能、文案、文档和本地门禁已完成；待用户审阅分支。无提交、推送、MR 或发布授权。
+- MR !4878 已存在，用户授权修复 CI 并继续推送；完成生成物检查和远端核验后交接。未授权合并或发布。
 
 ## stage
-实现、文档与本地验证完成，准备交接。
+CI 漂移修复已在隔离分支完成，等待最后验证和推送。
 
 ## verified
 - 隔离分支只含本次改动；国内与国际站聚焦测试 326/326、前端检查、文档检查和 changed-path 门禁已有通过证据。
 - 全量 Context 门禁的历史错误仍存在；本 Task Pack 不在错误列表中。
+- 已合并 `origin/master@558470e16`；官方同步后的 OpenCraft 130 文件校验通过。
 
 ## unverified
 - 真实用户 Bot 的执行结果读取、聊天创建任务的 `origin` 行为和线上环境未验证。
@@ -108,4 +115,4 @@ derived: false
 - 本任务前端验证入口为 `pnpm check` 和三个聚焦 Vitest 文件。
 
 ## next_action
-撤销临时暂存，确认工作树只包含本任务文件，并交接分支供用户审阅。
+提交生成副本和本记录，推送 MR 分支并核对远端 SHA、CI 状态。
