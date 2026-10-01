@@ -1482,7 +1482,8 @@ const PlanCard = ({
   /* 弹窗（compact）默认只展示核心差异（Bot 数 / 云端环境 / 存储 / 积分），避免卡片过长；
      其余权益收进展开按钮，用户可就地查看，不必跳到完整订阅页才知道买到什么。 */
   const coreFeatures = compact ? compactPlanFeatures(plan, t) : plan.features;
-  const visibleFeatures = compact && !showAllFeatures ? coreFeatures : plan.features;
+  /* 核心项无法识别时展示完整权益，不能把可售套餐误写成「暂无详情」。 */
+  const visibleFeatures = compact && !showAllFeatures && coreFeatures.length > 0 ? coreFeatures : plan.features;
 
   return (
     <MotionCard
@@ -1830,7 +1831,7 @@ const PlanCard = ({
         <div style={{ height: 1, background: colors.border, marginTop: 4, marginBottom: compact ? 12 : 24, order: 4 }} />
 
         {/* Features - 售罄 / （无卖点的）未上线时展示占位文案 */}
-        {isSoldOut || visibleFeatures.length === 0 ? (
+        {isSoldOut || plan.features.length === 0 ? (
           <div
             style={{
               flex: 1,
@@ -1989,13 +1990,12 @@ const PlanCard = ({
                 padding: "12px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.15)" : colors.primary,
-                color: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.40)" : colors.white,
+                background: disabled ? "#f2f2f2" : colors.primary,
+                color: disabled ? "#666" : colors.white,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
                 cursor: disabled ? "not-allowed" : "pointer",
-                opacity: subscribing ? 0.6 : 1,
                 transition: "background 0.2s, transform 0.15s",
               }}
               onMouseEnter={(e) => {
@@ -2004,7 +2004,7 @@ const PlanCard = ({
                 }
               }}
               onMouseLeave={(e) => {
-                if (isUpgradeTarget || (!isSoldOut && !quotaWouldExceed)) {
+                if (!disabled) {
                   e.currentTarget.style.background = colors.primary;
                 }
               }}
@@ -2024,14 +2024,13 @@ const PlanCard = ({
                 width: "100%",
                 padding: "12px 16px",
                 borderRadius: 8,
-                border: compact ? "none" : `1px solid ${isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.06)" : colors.border}`,
-                background: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.03)" : compact ? colors.primary : colors.white,
-                color: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.35)" : compact ? colors.white : colors.black,
+                border: compact ? "none" : `1px solid ${disabled ? "rgba(0,0,0,0.06)" : colors.border}`,
+                background: disabled ? "#f2f2f2" : compact ? colors.primary : colors.white,
+                color: disabled ? "#666" : compact ? colors.white : colors.black,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
                 cursor: disabled ? "not-allowed" : "pointer",
-                opacity: subscribing ? 0.6 : 1,
                 transition: "all 0.2s",
               }}
               onMouseEnter={(e) => {
@@ -2041,7 +2040,7 @@ const PlanCard = ({
                 }
               }}
               onMouseLeave={(e) => {
-                if (!isSoldOut && !quotaWouldExceed) {
+                if (!disabled) {
                   e.currentTarget.style.background = compact ? colors.primary : colors.white;
                   if (!compact) e.currentTarget.style.borderColor = colors.border;
                 }
@@ -3138,7 +3137,10 @@ export const SubscribePage = ({
     return groups;
   }, [planList, t]);
   const hasHiddenFeatures = embedded && planTiers.some((tier) =>
-    tier.variants.some((plan) => compactPlanFeatures(plan, t).length < plan.features.length),
+    tier.variants.some((plan) => {
+      const coreCount = compactPlanFeatures(plan, t).length;
+      return coreCount > 0 && coreCount < plan.features.length;
+    }),
   );
 
   // 初次加载时只让源套餐所在卡选中当前套餐；其他卡保持原有默认展示。

@@ -344,6 +344,29 @@ describe("SubscribePage", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
+  it("visually disables locked plan actions in the compact pricing modal", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    openClawState.activePass = { bundle_id: "legacy_bundle", bundle_name: "巡游 Cruise" };
+    sessionState.isAuthenticated = true;
+    listBundlesMock.mockResolvedValue([
+      buildBundle("bundle_launch_ai_01", "启航 Launch"),
+      buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    const actions = await screen.findAllByRole("button", { name: "立即订阅" });
+    expect(actions).toHaveLength(2);
+    for (const action of actions) {
+      expect(action).toBeDisabled();
+      expect(action).toHaveStyle({ background: "#f2f2f2", color: "#666" });
+      await userEvent.hover(action);
+      expect(action).toHaveStyle({ background: "#f2f2f2" });
+    }
+  });
+
   it("shows a page-level loading state until the bundles request returns", async () => {
     sessionState.isAuthenticated = true;
     openClawState.isLoggedIn = true;
