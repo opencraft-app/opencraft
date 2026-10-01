@@ -12,6 +12,24 @@ async function loadLocalizationModule(): Promise<LocalizationModule | null> {
 }
 
 describe("Buddy Soul locale resolver", () => {
+  it("keeps historical MUM/MOMMY data while excluding it from new recommendations", async () => {
+    const localization = await loadLocalizationModule();
+    expect(localization).not.toBeNull();
+
+    const domesticSouls = [
+      { ...JAPANESE_SOULS[0]!, slug: "MUM" },
+      { ...JAPANESE_SOULS[1]!, slug: "YYDS" },
+    ];
+    expect(localization?.getRecommendableSouls(domesticSouls).map((soul) => soul.slug)).toEqual(["YYDS"]);
+    expect(domesticSouls[0]?.slug).toBe("MUM");
+
+    for (const locale of ["global-zh", "en", "id", "es", "ja", "ko"] as const) {
+      const sourceSouls = localization?.getBuddySoulPool(locale) ?? [];
+      expect(sourceSouls.some((soul) => soul.slug === "MOMMY")).toBe(true);
+      expect(localization?.getRecommendableSouls(sourceSouls).some((soul) => soul.slug === "MOMMY")).toBe(false);
+    }
+  });
+
   it("resolves global languages without locale-specific booleans", async () => {
     const localization = await loadLocalizationModule();
     expect(localization).not.toBeNull();

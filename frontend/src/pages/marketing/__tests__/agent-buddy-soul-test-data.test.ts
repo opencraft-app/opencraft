@@ -8,7 +8,12 @@ import {
   generatePersonalityProfile,
   personalityQuestions,
   prefQuestions,
+  soulWeights,
 } from "@/pages/marketing/agent-buddy-soul-test-data";
+import {
+  calculateEnglishMatchedSoul,
+  englishPrefQuestions,
+} from "@/pages/marketing/agent-buddy-soul-test-data.en";
 
 describe("agent-buddy-soul-test-data", () => {
   it("keeps the SkillHub test shape: 5 personality questions and 10 preference questions", () => {
@@ -36,6 +41,31 @@ describe("agent-buddy-soul-test-data", () => {
     const answers = Object.fromEntries(prefQuestions.map((question) => [question.id, "A"]));
 
     expect(calculateMatchedSoul(answers)).toBe("YYDS");
+  });
+
+  it("recommends the next available Soul when warm answers would match MUM", () => {
+    const warmAnswers = Object.fromEntries(prefQuestions.map((question) => [
+      question.id,
+      question.options.find((option) => option.primary === "安抚性")?.key ?? "B",
+    ]));
+    const warmEnglishAnswers = Object.fromEntries(englishPrefQuestions.map((question) => [
+      question.id,
+      question.options.find((option) => option.primary === "安抚性")?.key ?? "B",
+    ]));
+    const availableSoulIds = new Set(["MUM", "YYDS"]);
+
+    expect(calculateMatchedSoul(warmAnswers, availableSoulIds)).toBe("MUM");
+    expect(calculateEnglishMatchedSoul(warmEnglishAnswers, availableSoulIds)).toBe("MOMMY");
+
+    availableSoulIds.delete("MUM");
+    const domesticRecommendation = calculateMatchedSoul(warmAnswers, availableSoulIds);
+    const globalRecommendation = calculateEnglishMatchedSoul(warmEnglishAnswers, availableSoulIds);
+    expect(domesticRecommendation).toBe("YYDS");
+    expect(globalRecommendation).toBe("GOAT");
+
+    const fullPoolWithoutMum = new Set(Object.keys(soulWeights).filter((slug) => slug !== "MUM"));
+    expect(fullPoolWithoutMum.has(calculateMatchedSoul(warmAnswers, fullPoolWithoutMum))).toBe(true);
+    expect(calculateEnglishMatchedSoul(warmEnglishAnswers, fullPoolWithoutMum)).not.toBe("MOMMY");
   });
 
   it("derives each preference tag's maximum score from the question set", () => {

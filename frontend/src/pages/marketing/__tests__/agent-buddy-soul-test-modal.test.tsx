@@ -5,6 +5,11 @@ import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { ENGLISH_SOULS } from "@/lib/soul-english-data";
 import { JAPANESE_SOULS } from "@/lib/soul-japanese-data";
 import { SPANISH_SOULS } from "@/lib/soul-spanish-data";
+import { getRecommendableSouls } from "@/pages/marketing/agent-buddy-localization";
+import {
+  calculateEnglishMatchedSoul,
+  englishPrefQuestions,
+} from "@/pages/marketing/agent-buddy-soul-test-data.en";
 
 const yydsSoul: SkillHubSoul = {
   id: 1,
@@ -37,7 +42,7 @@ describe("SoulTestModal", () => {
     render(
       <SoulTestModal
         open
-        souls={[yydsSoul]}
+        souls={[yydsSoul, { ...yydsSoul, id: 2, slug: "HHHH", displayName: "HHHH · 哈哈" }]}
         maxDrawsReached={false}
         drawnSlugs={[]}
         onClose={onClose}
@@ -62,6 +67,39 @@ describe("SoulTestModal", () => {
     expect(onUseSoul).toHaveBeenCalledWith(yydsSoul);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not recommend MOMMY when the candidate pool excludes it", () => {
+    const onUseSoul = vi.fn(() => true);
+    const mumMatchingAnswers = Object.fromEntries(englishPrefQuestions.map((question, index) => [
+      question.id,
+      "CBABCAAABD"[index]!,
+    ]));
+    expect(calculateEnglishMatchedSoul(mumMatchingAnswers)).toBe("MOMMY");
+    render(
+      <SoulTestModal
+        open
+        souls={getRecommendableSouls(ENGLISH_SOULS)}
+        maxDrawsReached={false}
+        drawnSlugs={[]}
+        useEnglishSoulData
+        onClose={vi.fn()}
+        onUseSoul={onUseSoul}
+      />,
+    );
+
+    for (let index = 0; index < 15; index += 1) {
+      const question = englishPrefQuestions.find((item) => screen.queryByText(item.text));
+      if (index >= 5) expect(question).toBeDefined();
+      const selectedKey = question ? mumMatchingAnswers[question.id] : "A";
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${selectedKey}\\.`) }));
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "添加该人设" }));
+    expect(onUseSoul).toHaveBeenCalledWith(expect.objectContaining({ slug: expect.not.stringMatching(/^(MUM|MOMMY)$/) }));
   });
 
   it("uses the English soul test dataset when requested", async () => {

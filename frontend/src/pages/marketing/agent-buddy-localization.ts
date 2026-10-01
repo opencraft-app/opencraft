@@ -85,6 +85,11 @@ export function getBuddySoulPool(locale: BuddySoulLocale): SkillHubSoul[] | null
   }
 }
 
+export function getRecommendableSouls(souls: SkillHubSoul[]): SkillHubSoul[] {
+  // MUM/MOMMY 退出新推荐的依据见 docs/context/tasks/2026-10-01-hide-mum-soul-card.md；调整时同步双站抽卡与答题测试。
+  return souls.filter((soul) => toCanonicalSlug(soul.slug) !== "MUM");
+}
+
 export function getBuddySoulSpec(locale: BuddySoulLocale, slug: string): SoulSpec | null {
   const westernSlug = toEnglishSlug(slug);
   switch (locale) {

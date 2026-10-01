@@ -41,6 +41,11 @@ const regionState = vi.hoisted(() => ({
   isGlobal: false,
 }));
 
+const candidateState = vi.hoisted(() => ({
+  draw: [] as string[],
+  test: [] as string[],
+}));
+
 vi.mock("@/lib/region", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/region")>(),
   get isCN() {
@@ -99,28 +104,38 @@ vi.mock("@/pages/marketing/agent-buddy-soul-test-modal", () => ({
   SoulTestModal: ({
     open,
     onUseSoul,
+    souls,
   }: {
     open: boolean;
     onUseSoul: (soul: SkillHubSoul) => boolean;
-  }) => open ? (
+    souls: SkillHubSoul[];
+  }) => {
+    candidateState.test = souls.map((soul) => soul.slug);
+    return open ? (
     <button type="button" onClick={() => onUseSoul(fixtures.extra)}>
       使用测试推荐
     </button>
-  ) : null,
+    ) : null;
+  },
 }));
 
 vi.mock("@/pages/marketing/agent-buddy-draw-modal", () => ({
   DrawSoulModal: ({
     open,
     onInject,
+    souls,
   }: {
     open: boolean;
     onInject: (soul: SkillHubSoul) => Promise<boolean>;
-  }) => open ? (
+    souls: SkillHubSoul[];
+  }) => {
+    candidateState.draw = souls.map((soul) => soul.slug);
+    return open ? (
     <button type="button" onClick={() => void onInject(fixtures.extra)}>
       注入抽卡结果
     </button>
-  ) : null,
+    ) : null;
+  },
 }));
 
 const mockedLoadBuddyState = vi.mocked(loadBuddyState);
@@ -163,6 +178,8 @@ describe("BuddyPanel P1 stability", () => {
   beforeEach(() => {
     now = 0;
     regionState.isGlobal = false;
+    candidateState.draw = [];
+    candidateState.test = [];
     vi.spyOn(Date, "now").mockImplementation(() => now);
     repositoryMocks.execDebugCommand.mockReset();
     mockedLoadBuddyState.mockReset();
@@ -186,6 +203,39 @@ describe("BuddyPanel P1 stability", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("removes MUM from new domestic candidates while keeping a saved card", async () => {
+    const mum = { ...fixtures.agentA, slug: "MUM", displayName: "MUM · 妈妈（最新）" };
+    const savedMum = { ...mum, displayName: "MUM · 妈妈（旧快照）" };
+    const yyds = { ...fixtures.agentB, slug: "YYDS", displayName: "YYDS · 神人" };
+    mockedFetchSouls.mockResolvedValue({ total: 2, souls: [mum, yyds] });
+    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [savedMum], appliedSlug: "MUM" });
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    await waitFor(() => {
+      expect(candidateState.draw).toEqual(["YYDS"]);
+      expect(candidateState.test).toEqual(["YYDS"]);
+    });
+    expect(await screen.findByText("MUM · 妈妈（最新）")).toBeInTheDocument();
+    expect(screen.queryByText("MUM · 妈妈（旧快照）")).not.toBeInTheDocument();
+  });
+
+  it("removes MOMMY from both international candidate flows", async () => {
+    regionState.isGlobal = true;
+    const savedMum = { ...fixtures.agentA, slug: "MUM", displayName: "MUM · 妈妈" };
+    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [savedMum], appliedSlug: null });
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    await waitFor(() => {
+      expect(candidateState.draw).toContain("GOAT");
+      expect(candidateState.test).toContain("GOAT");
+    });
+    expect(candidateState.draw).not.toContain("MOMMY");
+    expect(candidateState.test).not.toContain("MOMMY");
+    expect(await screen.findByText("MOMMY · 老母亲")).toBeInTheDocument();
   });
 
   it("renders the page title and description above the persona card", () => {
