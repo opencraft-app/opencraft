@@ -375,6 +375,8 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodGet + " /v1/instances/{instance_id}":                                                     {},
 		http.MethodDelete + " /v1/instances/{instance_id}":                                                  {},
 		http.MethodPost + " /v1/instances/{instance_id}/debug/exec":                                         {},
+		http.MethodGet + " /v1/instances/{instance_id}/desktop/session":                                     {},
+		http.MethodPost + " /v1/instances/{instance_id}/desktop/session":                                    {},
 		http.MethodPost + " /v1/instances/{instance_id}/tat/session":                                        {},
 		http.MethodPost + " /v1/instances/{instance_id}/config/reset":                                       {},
 		http.MethodPost + " /v1/instances/{instance_id}/agentchat/launch-token":                             {},
@@ -541,6 +543,7 @@ func TestDeployConfigsScopeWebsiteInstanceCredentials(t *testing.T) {
 		http.MethodDelete + " /v1/websites/{site_id}":                        {},
 		http.MethodGet + " /v1/websites/{site_id}/releases":                  {},
 		http.MethodPost + " /v1/websites/{site_id}/releases":                 {},
+		http.MethodPost + " /v1/websites/{site_id}/rollback":                 {},
 		http.MethodGet + " /v1/websites/{site_id}/operations/{operation_id}": {},
 	}
 

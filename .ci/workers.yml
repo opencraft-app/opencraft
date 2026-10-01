@@ -12,6 +12,12 @@ on:
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
+      # Website-only changes use the independent manual production release channel.
+      # Keep shared worker dependencies in this channel; do not auto-pin unrelated
+      # rescue-exporter / hermes-importer for a hidden website backend release.
+      - workers/cmd/website-deployer/**
+      - workers/internal/website/**
+      - workers/websiteintegration/**
   manual: enabled
 
 concurrency:

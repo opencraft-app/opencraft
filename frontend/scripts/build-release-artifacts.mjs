@@ -177,10 +177,10 @@ export async function runFrontendArtifactBuildCommand(
   await runner(pnpmBin(env), ["exec", "fumadocs-mdx"], env);
   await runner(pnpmBin(env), ["exec", "next", "build"], env);
   await runner(nodeBin(env), ["scripts/version-next-static-assets.mjs"], env);
+  stageOpenCraftEmbeddedWorkbench(outDir, env);
   await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
   await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);
   await runner(nodeBin(env), ["scripts/check-versioned-next-static-assets.mjs"], env);
-  stageOpenCraftEmbeddedWorkbench(outDir, env);
   // 必须在 cpSync 之前：edgeone.json 写进 `out`，再随产物整体拷到 outputDir，
   // 这样 OCI artifact 里就带着当前 region 对应的 301 规则（静态导出下 Next 的
   // redirects() 不生效，这是唯一能让 301 进版本控制的位置）。

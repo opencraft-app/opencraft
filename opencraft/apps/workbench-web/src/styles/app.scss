@@ -9199,6 +9199,16 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+.opencraft-voice-input-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+
+  &:hover {
+    background: transparent;
+    color: var(--color-icon-secondary);
+  }
+}
+
 .opencraft-voice-input-action[data-voice-input-state="error"] {
   color: var(--color-text-danger);
 }

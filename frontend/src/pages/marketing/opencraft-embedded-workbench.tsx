@@ -1,3 +1,4 @@
+import { clearPendingWorkbenchPrompt, readPendingWorkbenchPrompt, withSharedTechStack } from "./workbench-prompt-templates";
 import {
   useEffect,
   useRef,
@@ -26,6 +27,7 @@ interface EmbeddedWorkbenchConfig {
 }
 
 interface EmbeddedWorkbenchElement extends HTMLElement {
+  submitPrompt?(requestId: string, text: string): boolean;
   configure(config: EmbeddedWorkbenchConfig): void;
   prepare(): Promise<void>;
   reconnect?(): Promise<void>;
@@ -148,6 +150,7 @@ export function AgentChatMigrationSurface({
   region,
 }: AgentChatMigrationSurfaceProps) {
   const t = useT();
+  const [promptRevision, setPromptRevision] = useState(0);
   const mountRef = useRef<HTMLDivElement>(null);
   const legacyRef = useRef<HTMLDivElement>(null);
   const elementRef = useRef<EmbeddedWorkbenchElement | null>(null);
@@ -303,6 +306,7 @@ export function AgentChatMigrationSurface({
       if (retired) return;
       latestSessions = (event as CustomEvent<EmbeddedSessionsDetail>).detail;
       publishSessions();
+      setPromptRevision(revision => revision + 1);
     };
     const handleConnection = (event: Event) => {
       if (retired) return;
@@ -374,6 +378,19 @@ export function AgentChatMigrationSurface({
   }, [accountId, apiBase, enabled, instanceId, profileId, region, sessionRevision, started]);
 
   useEffect(() => {
+    if (!active || !enabled || owner !== "opencraft" || connection.phase !== "ready") return;
+    const element = elementRef.current;
+    const pending = readPendingWorkbenchPrompt();
+    if (!pending || !element?.submitPrompt) return;
+    try {
+      const requestId = `${pending.templateId}:${pending.createdAt}`;
+      if (element.submitPrompt(requestId, withSharedTechStack(pending.prompt))) clearPendingWorkbenchPrompt(pending);
+    } catch {
+      // Not admitted: retain storage and the Composer text for explicit retry.
+    }
+  }, [active, enabled, owner, connection.phase, promptRevision]);
+
+  useEffect(() => {
     if (!enabled || owner !== "opencraft" || !multiSession.selectedChatId) return;
     const element = elementRef.current;
     if (element === null) return;
@@ -421,7 +438,7 @@ export function AgentChatMigrationSurface({
             {startupFailed ? t("会话加载失败，请重试")
               : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
               : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
-              : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴配置后重试")
+              : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
               : connection.phase === "error" ? t("连接暂时中断，正在尝试恢复…")
               : connectionSlow ? t("连接时间较长，请检查网络或重试")
               : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")

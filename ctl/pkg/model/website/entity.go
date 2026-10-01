@@ -104,6 +104,9 @@ const (
 // ---- Site Entity ----
 
 type SiteEntity struct {
+	Kind            string `gorm:"column:kind"`
+	ActiveReleaseID string `gorm:"column:active_release_id"`
+	BackendSHA256   string `gorm:"column:backend_sha256"`
 	model.BaseEntity
 	model.BaseUserEntity
 
@@ -164,6 +167,8 @@ func (UsageDailyEntity) TableName() string {
 // ---- Release Entity ----
 
 type ReleaseEntity struct {
+	Kind          string `gorm:"column:kind"`
+	BackendSHA256 string `gorm:"column:backend_sha256"`
 	model.BaseEntity
 	model.BaseUserEntity
 
@@ -184,6 +189,8 @@ func (ReleaseEntity) TableName() string {
 // ---- Operation Entity ----
 
 type OperationEntity struct {
+	Kind          string `gorm:"-"`
+	BackendSHA256 string `gorm:"-"`
 	model.BaseEntity
 	model.BaseUserEntity
 
@@ -205,7 +212,10 @@ type OperationEntity struct {
 	// ActiveCloudPath is populated only for the internal deployer response. It lets
 	// the worker retain the actual previous active release without guessing from
 	// COS object timestamps.
-	ActiveCloudPath string `gorm:"-"`
+	ActiveCloudPath       string `gorm:"-"`
+	ActiveReleaseID       string `gorm:"-"`
+	ReleaseStatus         string `gorm:"-"`
+	CurrentSiteGeneration int64  `gorm:"-"`
 }
 
 func (OperationEntity) TableName() string {

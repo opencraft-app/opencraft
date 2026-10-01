@@ -10,9 +10,11 @@ test("Embedded Workbench owns one presentation root for theme and overlays", () 
   const app = read("../apps/workbench-web/src/app.tsx");
   const draft = read("../apps/workbench-web/src/components/new-thread-draft-page.tsx");
   const presentation = read("../apps/workbench-web/src/components/workbench-presentation-root.tsx");
+  const modal = read("../apps/workbench-web/src/components/modal/modal-surface.tsx");
   const policy = read("../apps/workbench-web/src/workbench-presentation-policy.ts");
 
   assert.match(presentation, /WorkbenchPresentationRootContext/u);
+  assert.match(modal, /container=\{portalContainer \?\? presentationRoot \?\? undefined\}/u);
   assert.match(root, /<WorkbenchPresentationRootProvider target=\{portalContainer\}>/u);
   assert.match(root, /presentation=\{EMBEDDED_CORE_CHAT_PRESENTATION\}/u);
   assert.match(element, /applyAppearanceThemeToElement\(this, getAppearanceThemeSnapshot\(\)\)/u);

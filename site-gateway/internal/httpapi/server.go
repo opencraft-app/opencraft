@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"git.woa.com/wisp/mono/site-gateway/internal/backend"
 	"git.woa.com/wisp/mono/site-gateway/internal/hostroute"
 	"git.woa.com/wisp/mono/site-gateway/internal/objectkey"
 	"git.woa.com/wisp/mono/site-gateway/internal/origin"
@@ -18,6 +19,7 @@ import (
 )
 
 type Options struct {
+	Backend  *backend.Client
 	Resolver *hostroute.Resolver
 	Sites    sitemeta.Lookup
 	// DomainLookup 在 Host 未命中根域时查自定义域名→site_id。
@@ -31,6 +33,7 @@ type Options struct {
 }
 
 type SiteHandler struct {
+	backend      *backend.Client
 	resolver     *hostroute.Resolver
 	sites        sitemeta.Lookup
 	domainLookup sitemeta.DomainLookup
@@ -51,6 +54,7 @@ func NewSiteHandler(opts Options) *SiteHandler {
 		logger = log.Default()
 	}
 	return &SiteHandler{
+		backend:      opts.Backend,
 		resolver:     opts.Resolver,
 		sites:        opts.Sites,
 		domainLookup: opts.DomainLookup,
@@ -64,20 +68,21 @@ func NewSiteHandler(opts Options) *SiteHandler {
 // ServeHTTP 把站点路径空间整体交给静态回源。
 //
 // public 模式仍把路径空间完整交给静态站点；required 模式会先拦截认证与分享页的
-// 固定前缀，再把其余 GET/HEAD 交给静态回源。
+// 固定前缀，再对所有站点请求鉴权；当前静态回源仍只支持 GET/HEAD。
 func (h *SiteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.auth.EndpointsEnabled || h.auth.Required {
 		if h.handleAuthPath(w, r) {
 			return
 		}
 	}
+	if h.tryServeBackend(w, r) {
+		return
+	}
 	if h.auth.Required {
 		w.Header().Set("Cache-Control", "private, no-store")
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
-		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			if !h.authorizeSiteRequest(w, r) {
-				return
-			}
+		if !h.authorizeSiteRequest(w, r) {
+			return
 		}
 	}
 	h.serveStatic(w, r)
@@ -243,6 +248,9 @@ func (h *SiteHandler) writeSiteNotFound(w http.ResponseWriter, r *http.Request, 
 	defer obj.Body.Close()
 
 	w.Header().Set("Content-Type", contentTypeOrDefault(obj.ContentType, "text/html; charset=utf-8"))
+	if h.tryServeBackend(w, r) {
+		return
+	}
 	if h.auth.Required {
 		w.Header().Set("Cache-Control", "private, no-store")
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")

@@ -220,6 +220,22 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    capability lease, and a failed prewarm is retried there rather than
    invalidating already-restored history.
 
+Embedded workbench templates enter through `submitPrompt(requestId, text)`, not
+through a legacy SDK sender or a DOM button. The embedded element deduplicates
+admitted request IDs in its Bot lifetime. The App admits only into an empty,
+editing new-Thread Composer belonging to the embedded Host after protocol
+readiness; an existing Thread first navigates to a new Draft. An occupied Draft
+is never overwritten. The site retains the pending template across cold startup,
+failed admission and inactive routes, and removes only the matching record when
+the Conversation owner accepts the immutable first Turn. Remote failure then
+belongs to that Conversation's retry UI, never an automatic duplicate send.
+
+A manual transport failure is a Host-attempt disposition: initialization cleanup
+must not erase its code when disposing the physical transport/client. Workbench
+snapshots retain the block through cleanup and clear it on an explicit new
+connection attempt or a connecting/open successor. Recovery presentation must
+not claim automatic retries when the Host is stopped for manual intervention.
+
 The Web recovery presentation does not equate non-authoritative with invisible.
 When a Thread already has painted Timeline frames, reconnect and retry preserve
 those frames, their scroll position and Composer draft; a small local connection
@@ -472,7 +488,9 @@ After acceptance, image presentation is derived from the authoritative
 Timeline. Sent-image thumbnails resolve direct image data or Host-backed media
 through the existing media source boundary; their click opens a modal image
 viewer rather than generic link navigation, which deliberately rejects `data:`
-URLs. No generic resource-policy exception is introduced. Full page reload
+URLs. The viewer uses the Workbench Presentation Root so embedded Shadow DOM
+keeps its modal styles and focus behavior; an explicit modal portal target
+still takes precedence. No generic resource-policy exception is introduced. Full page reload
 does not preserve an unsent browser `File`; that requires a separate durable
 draft/blob storage contract. Native Expo has the same semantic Draft but not
 this Web-only picker/presentation implementation.
@@ -508,3 +526,4 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 Embedded file previews retain the mutation-level read-only guard alongside snapshot-based saves in the standalone workspace editor. Markdown preview/source switching and lazy syntax editors share the same resource lifecycle. The read-only regression renders the real panel and invokes its captured Query mutation, asserting zero filesystem writes and cache invalidations.
 
 Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
+Completed standalone Hermes `MEDIA:<path>` text for an explicit Markdown file uses that same click and Host permission flow. Non-Markdown media, embedded prose, malformed paths, streaming text and text inside an explicit link remain inert; the Renderer never treats `MEDIA:` as a browser URL or reads the file before clicking.

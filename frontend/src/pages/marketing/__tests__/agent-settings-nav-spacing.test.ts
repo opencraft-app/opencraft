@@ -220,11 +220,11 @@ describe("Agent settings navigation spacing", () => {
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
     expect(desktopSidebar).toContain("padding-right: 12px;");
     expect(desktopNavigation).toContain("gap: 8px;");
-    expect(desktopSidebar).toContain("--lv-agents-nav-item-height: 32px;");
+    expect(desktopSidebar).toContain("--lv-agents-nav-item-height: 30px;");
     expect(desktopItem).toContain("height: var(--lv-agents-nav-item-height);");
     expect(profileName).toContain("font-size: 14px;");
     expect(profileName).toContain("line-height: 20px;");
-    expect(desktopMiddle).toContain("--lv-agents-nav-group-gap: 4px;");
+    expect(desktopMiddle).toContain("--lv-agents-nav-group-gap: 2px;");
     expect(desktopMiddle).toContain("--lv-agents-nav-item-gap: 0;");
     expect(desktopMiddleNavigation).toContain("gap: var(--lv-agents-nav-group-gap);");
     expect(desktopMiddleGroupItems).toContain("gap: var(--lv-agents-nav-item-gap);");

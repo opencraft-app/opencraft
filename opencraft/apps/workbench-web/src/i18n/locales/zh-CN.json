@@ -1,5 +1,9 @@
 {
   "chat.queue.steer": "立即插入",
+  "chat.queue.reorder": "调整排队消息顺序",
+  "chat.queue.cancelEdit": "取消编辑排队消息",
+  "chat.queue.edit": "编辑排队消息",
+  "chat.queue.delete": "删除排队消息",
   "chat.thinking": "思考中...",
   "composer.skills.title": "技能",
   "composer.skills.retry": "重试",
@@ -62,7 +66,7 @@
   "chat.placeholder": "继续提出修改要求",
   "chat.companionHeading": "今天想一起做点什么？",
   "chat.companionPlaceholder": "聊聊你的想法，或交给我一件事",
-  "chat.companionFollowupPlaceholder": "告诉我接下来想做什么",
+  "chat.companionFollowupPlaceholder": "告诉我接下来想做点什么",
   "chat.newPlaceholder": "让 OpenCraft 为你处理任务",
   "chat.model": "模型",
   "chat.reasoning": "思考强度",

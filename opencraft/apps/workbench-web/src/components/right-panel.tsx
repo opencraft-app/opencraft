@@ -236,6 +236,7 @@ function SortablePanelTab({
   const intl = useIntl();
   const title = tab.kind === "browser" && tab.title === "New tab"
     ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" }) : tab.title;
+  const closeLabel = intl.formatMessage({ id: "panel.closeTab", defaultMessage: "Close {title}" }, { title });
   const {
     attributes,
     listeners,
@@ -285,7 +286,8 @@ function SortablePanelTab({
         <button
           className="right-panel-tab__close"
           type="button"
-          aria-label={intl.formatMessage({ id: "panel.closeTab", defaultMessage: "Close {title}" }, { title })}
+          aria-label={closeLabel}
+          title={closeLabel}
           tabIndex={active ? 0 : -1}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={onClose}

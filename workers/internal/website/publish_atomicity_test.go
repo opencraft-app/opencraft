@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"hash/crc64"
@@ -100,6 +101,19 @@ func (s *fakeCOSState) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost && r.URL.Query().Has("delete") {
+		var batch struct {
+			Objects []struct {
+				Key string `xml:"Key"`
+			} `xml:"Object"`
+		}
+		if err := xml.NewDecoder(r.Body).Decode(&batch); err != nil {
+			http.Error(w, "invalid delete batch", http.StatusBadRequest)
+			return
+		}
+		for _, object := range batch.Objects {
+			s.deletedObjects = append(s.deletedObjects, object.Key)
+			delete(s.objects, object.Key)
+		}
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = io.WriteString(w, `<DeleteResult></DeleteResult>`)
 		return
@@ -216,8 +230,11 @@ func TestPublishReleaseDeletesArtifactWhenHashIsInvalid(t *testing.T) {
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if len(state.deletedObjects) != 1 || state.deletedObjects[0] != "_artifacts/ws-1/wr-0123456789abcdef.zip" {
-		t.Fatalf("deleted objects = %v", state.deletedObjects)
+	assertSameKeys(t, state.deletedObjects, []string{
+		"_artifacts/ws-1/wr-0123456789abcdef.zip",
+	})
+	if len(state.objects) != 0 {
+		t.Fatalf("quota-rejected artifacts retained: %v", state.objects)
 	}
 }
 
@@ -245,7 +262,11 @@ func TestPublishReleaseDoesNotActivateWhenActualStorageIsRejected(t *testing.T) 
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if len(state.deletedObjects) != 1 || state.deletedObjects[0] != "_artifacts/ws-1/wr-0123456789abcdef.zip" {
-		t.Fatalf("deleted objects = %v", state.deletedObjects)
+	assertSameKeys(t, state.deletedObjects, []string{
+		"_artifacts/ws-1/wr-0123456789abcdef.zip",
+		"sites/ws-1/releases/wr-0123456789abcdef/index.html",
+	})
+	if len(state.objects) != 0 {
+		t.Fatalf("quota-rejected artifacts retained: %v", state.objects)
 	}
 }

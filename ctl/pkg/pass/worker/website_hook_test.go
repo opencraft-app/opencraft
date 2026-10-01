@@ -30,6 +30,7 @@ func newPassWebsiteTestDB(t *testing.T) *gorm.DB {
 	// website_sites 用建表语句而不是 AutoMigrate：SQLite 的索引名是库级唯一的，
 	// SiteEntity 和 pass Entity 都带 idx_status，一起 AutoMigrate 会撞名失败。
 	if err := db.Exec(`CREATE TABLE website_sites (
+ kind TEXT NOT NULL DEFAULT 'static', active_release_id TEXT NOT NULL DEFAULT '', backend_sha256 TEXT NOT NULL DEFAULT '',
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             site_id TEXT NOT NULL,
             user_id TEXT NOT NULL,

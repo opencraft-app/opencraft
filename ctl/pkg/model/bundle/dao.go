@@ -65,6 +65,15 @@ func (d *dao) ListByState(state string) ([]*Entity, error) {
 }
 
 func (d *dao) Upsert(entity *Entity) error {
+	// MySQL JSON columns reject the Go zero string. Use JSON null for absent
+	// optional values without mutating the caller or clearing legacy/quota fields
+	// on conflict (those columns remain excluded from DoUpdates below).
+	normalized := *entity
+	for _, value := range []*string{&normalized.Features, &normalized.Promotion, &normalized.AiGatewayPlans, &normalized.StaticSiteQuota} {
+		if *value == "" {
+			*value = "null"
+		}
+	}
 	return d.DB().Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: ColumnBundleID}},
 		DoUpdates: clause.AssignmentColumns([]string{
@@ -84,7 +93,7 @@ func (d *dao) Upsert(entity *Entity) error {
 			ColumnBundleSalesAvailCount,
 			ColumnBundleSalesTotalCount,
 		}),
-	}).Create(entity).Error
+	}).Create(&normalized).Error
 }
 
 func (d *dao) UpdateByBundleIDs(bundleIDs []string, updates map[string]interface{}) (int64, error) {
