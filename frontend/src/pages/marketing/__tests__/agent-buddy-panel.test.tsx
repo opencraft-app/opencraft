@@ -206,10 +206,11 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("removes MUM from new domestic candidates while keeping a saved card", async () => {
-    const mum = { ...fixtures.agentA, slug: "MUM", displayName: "MUM · 妈妈" };
+    const mum = { ...fixtures.agentA, slug: "MUM", displayName: "MUM · 妈妈（最新）" };
+    const savedMum = { ...mum, displayName: "MUM · 妈妈（旧快照）" };
     const yyds = { ...fixtures.agentB, slug: "YYDS", displayName: "YYDS · 神人" };
     mockedFetchSouls.mockResolvedValue({ total: 2, souls: [mum, yyds] });
-    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [mum], appliedSlug: "MUM" });
+    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [savedMum], appliedSlug: "MUM" });
 
     render(<BuddyPanel botId="agent-a" />);
 
@@ -217,7 +218,8 @@ describe("BuddyPanel P1 stability", () => {
       expect(candidateState.draw).toEqual(["YYDS"]);
       expect(candidateState.test).toEqual(["YYDS"]);
     });
-    expect(await screen.findByText("MUM · 妈妈")).toBeInTheDocument();
+    expect(await screen.findByText("MUM · 妈妈（最新）")).toBeInTheDocument();
+    expect(screen.queryByText("MUM · 妈妈（旧快照）")).not.toBeInTheDocument();
   });
 
   it("removes MOMMY from both international candidate flows", async () => {

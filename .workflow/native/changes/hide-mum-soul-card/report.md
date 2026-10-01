@@ -11,7 +11,7 @@
 | 命令 | 结果 |
 | --- | --- |
 | `pnpm install --offline --frozen-lockfile`（`frontend/`） | 通过 |
-| `pnpm exec vitest run` 四个相关测试文件（locale、匹配、面板、测试弹窗） | 53/53 通过；覆盖国内与国际站候选、历史卡片和目标匹配后的替代推荐 |
+| `pnpm exec vitest run` 四个相关测试文件（locale、匹配、面板、测试弹窗） | 54/54 通过；覆盖国内与国际站候选、国内历史卡片元数据刷新，以及测试弹窗传递候选池后的替代推荐 |
 | `pnpm check`（`frontend/`） | 通过；TypeScript 当前 166、基线 171、0 新增诊断；i18n 0 错误、47 条告警 |
 | `pnpm build`（`frontend/`） | 通过；构建自动改写的 `next-env.d.ts` 已恢复，未纳入变更 |
 | `python3 .agents/context/scripts/validate_documentation.py --repo . --format json` | 0 errors、0 broken links、0 unclassified |
@@ -26,5 +26,5 @@
 ## 风险与交接
 
 - 本地相关行为、类型与构建已验证；全量测试门禁未通过，需由测试环境或对应失败文件 owner 进一步处理。
-- 未做真实账号的双站浏览器验证、未提交、未推送、未创建实现 MR，也未发布。
+- 未做真实账号的双站浏览器验证；实现已提交至 MR !4917，尚未合并或发布。
 - `feai workflow usage-context write` 未执行：当前宿主未提供 `feai` 命令（`command not found`）。
