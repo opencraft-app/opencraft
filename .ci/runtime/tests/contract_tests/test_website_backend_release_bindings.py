@@ -8,6 +8,7 @@ import subprocess
 
 import yaml
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = ROOT / '.ci/runtime/support/prepare_website_backend_release.py'
@@ -147,18 +148,42 @@ class WebsiteBackendReleaseBindingsTests(unittest.TestCase):
                 self.api.write_candidate(cfg, link)
 
 
+def source_render_command():
+    """Require a real renderer, including kubectl's embedded Kustomize in CI."""
+    kustomize = shutil.which('kustomize')
+    if kustomize:
+        return [kustomize, 'build']
+    kubectl = shutil.which('kubectl')
+    if kubectl:
+        return [kubectl, 'kustomize']
+    raise RuntimeError('kustomize or kubectl is required for offline source acceptance')
+
+
+class WebsiteBackendRenderCommandTests(unittest.TestCase):
+    def test_prefers_standalone_kustomize(self):
+        with mock.patch.object(shutil, 'which', side_effect=lambda name: '/tools/' + name):
+            self.assertEqual(source_render_command(), ['/tools/kustomize', 'build'])
+
+    def test_uses_embedded_kustomize_when_only_kubectl_is_available(self):
+        with mock.patch.object(shutil, 'which', side_effect=lambda name: '/tools/kubectl' if name == 'kubectl' else None):
+            self.assertEqual(source_render_command(), ['/tools/kubectl', 'kustomize'])
+
+    def test_missing_renderers_fail_instead_of_skipping_source_acceptance(self):
+        with mock.patch.object(shutil, 'which', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'kustomize or kubectl'):
+                source_render_command()
+
+
 class WebsiteBackendSourceRenderTests(unittest.TestCase):
     """Real regional source renders; omit only KSOPS, never decrypt/read Secret values."""
 
     @classmethod
     def setUpClass(cls):
         cls.api = module()
-        cls.kustomize = shutil.which('kustomize')
-        if not cls.kustomize:
-            raise RuntimeError('kustomize is required for offline source acceptance')
+        cls.render_command = source_render_command()
 
     def render(self, path):
-        result = subprocess.run([self.kustomize, 'build', str(path)], capture_output=True, text=True)
+        result = subprocess.run([*self.render_command, str(path)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         return list(yaml.safe_load_all(result.stdout))
 

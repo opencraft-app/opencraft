@@ -80,3 +80,24 @@ full user/auth race tests, staged docs-impact and diff whitespace gates pass. St
 pass protected local credential inventory scan; no frontend/private evidence files present.
 The next permitted action is normal source commit/push/MR. Do not auto-approve or force merge;
 production migration, drift reconciliation, regional promotion and manual sync remain pending.
+
+## Remote source MR / CI checkpoint
+
+- Source MR4891 is open at357477660cff2a993ad3ccf17f54a41c92c93ed2; normal
+  reviewer approval remains pending. Production has not been changed.
+- Remote MR guard build6331 (b-6f09bcc70d8146cd83682f7770057b91) failed in the
+  real-source acceptance setup: standalone `kustomize` was not available. The
+  error was read from authenticated CI build status, not inferred from local tests.
+- Keep actual regional source rendering mandatory; use `kubectl kustomize` when
+  standalone Kustomize is absent. If neither renderer exists, fail, never skip.
+  Three resolver regressions observed RED before implementation, then all19
+  binding tests pass; the3 full-source tests also pass with standalone Kustomize
+  deliberately unavailable. Both shprod/sgprod and prepare/enable stay covered.
+- Fresh read-only production evidence still shows the same four preexisting
+  OutOfSync apps, all Healthy/manual-sync. No blanket sync is permitted.
+- App artifact attachment was attempted for the Gongfeng MR; this host rejects
+  its URL as unsupported. The MR itself remains accessible through Gongfeng API.
+- CI-dependency correction current-source verification: full651 runtime tests,
+  materialized smoke, trusted-ref dispatcher,103 service bundle contracts and
+  service-gateway Go tests all pass locally. This is not a remote green check;
+  push the correction and require the server-side check on its new exact SHA.
