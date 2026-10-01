@@ -503,3 +503,5 @@ Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>` 也走同一入
 国内桌面嵌入聊天由控制台占满侧栏右侧的内容列，去除设置页外围 gutter 和宽度上限；宿主通过 `--lightvela-console-header-height` 对齐 68px 导航表头。嵌入根将其投影到 toolbar token（缺省 46px），消息正文保留内部间距；移动端与旧聊天入口沿用原布局。
 
 只读 Markdown 文件预览的“源码”直接呈现转义后的原文，可选择复制和键盘滚动，不依赖按需加载的编辑器模块；可编辑工作台继续由 CodeMirror 持有草稿。
+
+- Embedded Chat 的工作台模板通过 element `submitPrompt(requestId, text)` 交给同一 Host/Composer/Conversation owner：冷启动等待 ready，切入空的新 Draft，不覆盖用户文字，接纳后才条件清除站点暂存。运行时初始化 cleanup 保留 manual failure code，直到新连接尝试才清除；页面不能把终态误报为自动恢复。该修复保持国内 `show()` 隐藏 rollout gate 与既有生产静态制品边界。见 [Chat UI invariants](../../../opencraft/docs/chat-ui-architecture.md#invariants)。

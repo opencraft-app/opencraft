@@ -1,3 +1,4 @@
+import { clearPendingWorkbenchPrompt, readPendingWorkbenchPrompt, withSharedTechStack } from "./workbench-prompt-templates";
 import {
   useEffect,
   useRef,
@@ -26,6 +27,7 @@ interface EmbeddedWorkbenchConfig {
 }
 
 interface EmbeddedWorkbenchElement extends HTMLElement {
+  submitPrompt?(requestId: string, text: string): boolean;
   configure(config: EmbeddedWorkbenchConfig): void;
   prepare(): Promise<void>;
   reconnect?(): Promise<void>;
@@ -148,6 +150,7 @@ export function AgentChatMigrationSurface({
   region,
 }: AgentChatMigrationSurfaceProps) {
   const t = useT();
+  const [promptRevision, setPromptRevision] = useState(0);
   const mountRef = useRef<HTMLDivElement>(null);
   const legacyRef = useRef<HTMLDivElement>(null);
   const elementRef = useRef<EmbeddedWorkbenchElement | null>(null);
@@ -303,6 +306,7 @@ export function AgentChatMigrationSurface({
       if (retired) return;
       latestSessions = (event as CustomEvent<EmbeddedSessionsDetail>).detail;
       publishSessions();
+      setPromptRevision(revision => revision + 1);
     };
     const handleConnection = (event: Event) => {
       if (retired) return;
@@ -372,6 +376,19 @@ export function AgentChatMigrationSurface({
       }
     };
   }, [accountId, apiBase, enabled, instanceId, profileId, region, sessionRevision, started]);
+
+  useEffect(() => {
+    if (!active || !enabled || owner !== "opencraft" || connection.phase !== "ready") return;
+    const element = elementRef.current;
+    const pending = readPendingWorkbenchPrompt();
+    if (!pending || !element?.submitPrompt) return;
+    try {
+      const requestId = `${pending.templateId}:${pending.createdAt}`;
+      if (element.submitPrompt(requestId, withSharedTechStack(pending.prompt))) clearPendingWorkbenchPrompt(pending);
+    } catch {
+      // Not admitted: retain storage and the Composer text for explicit retry.
+    }
+  }, [active, enabled, owner, connection.phase, promptRevision]);
 
   useEffect(() => {
     if (!enabled || owner !== "opencraft" || !multiSession.selectedChatId) return;

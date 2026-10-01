@@ -1,3 +1,4 @@
+import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
 import { WorkspaceResourcePreviewPanel } from "./panels/workspace-resource-panel";
 import { EditableThreadTitle } from "./components/editable-thread-title";
 import { shouldTypeToCompose } from "./type-to-compose";
@@ -200,6 +201,7 @@ export interface EmbeddedWorkbenchAppSession {
 }
 
 export interface EmbeddedWorkbenchAppActions {
+  submitPrompt(text: string): boolean;
   selectThread(threadId: string): Promise<void>;
   createThread(): Promise<void>;
   renameThread(threadId: string, title: string): Promise<void>;
@@ -1074,6 +1076,14 @@ export function App({
   useEffect(() => {
     if (embedded === undefined) return;
     return embedded.bindActions({
+      submitPrompt: (text) => {
+        if (composerController.getSnapshot().draft.target.type !== "new-thread") {
+          navigateToHome();
+          return false;
+        }
+        return submitEmbeddedPrompt(composerController, embedded.hostId, snapshot.phase === "ready", text,
+          intent => sendMessage(intent, { followUpAction: null }) === true);
+      },
       selectThread: async (threadId) => {
         await hostCatalog.navigate(createWorkbenchThreadLocation(embedded.hostId, threadId));
       },
@@ -1088,7 +1098,7 @@ export function App({
         if (activeThreadId === threadId) navigateToHome();
       },
     });
-  }, [activeThreadId, embedded, hostCatalog, navigateToHome, queryClient]);
+  }, [activeThreadId, composerController, embedded, hostCatalog, navigateToHome, queryClient, sendMessage, snapshot.phase]);
   const workspaceSelectionEpoch = useRef(0);
   useLayoutEffect(() => {
     workspaceSelectionEpoch.current++;

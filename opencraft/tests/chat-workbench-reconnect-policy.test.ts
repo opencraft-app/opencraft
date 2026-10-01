@@ -15,6 +15,8 @@ class TerminalFailureTransport implements DuplexTransport {
   private readonly statusListeners = new Set<(status: TransportStatus) => void>();
   private currentStatus: TransportStatus = { state: "idle" };
 
+  constructor(private readonly failureCode = "remote-resource-not-found") {}
+
   get status(): TransportStatus {
     return this.currentStatus;
   }
@@ -23,7 +25,7 @@ class TerminalFailureTransport implements DuplexTransport {
     this.currentStatus = {
       state: "failed",
       reason: "resource not found",
-      failure: { code: "remote-resource-not-found", recovery: "manual" },
+      failure: { code: this.failureCode, recovery: "manual" },
     };
     for (const listener of this.statusListeners) listener(this.currentStatus);
     return Promise.reject(new Error("resource not found"));
@@ -135,6 +137,7 @@ test("Workbench does not automatically reconnect a terminal transport failure", 
   try {
     await assert.rejects(runtime.connect(), /resource not found/u);
     assert.equal(runtime.getSnapshot().phase, "error");
+    assert.equal(runtime.getSnapshot().transport.failure?.code, "remote-resource-not-found");
     assert.equal(timers.length, 0);
   } finally {
     await runtime.dispose();
@@ -229,4 +232,41 @@ test("Thread capability readiness distinguishes cold deferral from partial Host 
     () => verifyDynamicToolRegistration(dynamicTools, { registered: 2, deferred: true }, { allowDeferred: true }),
     /registered 2 of 3 dynamic tools/u,
   );
+});
+
+test("factory startup failure survives cleanup and clears only on a fresh attempt", async () => {
+  let created = 0;
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "startup-failure",
+    createTransport: () => created++ === 0 ? new TerminalFailureTransport() : new GenerationTransport(true),
+    autoReconnect: false,
+  });
+  const observed: Array<{ phase: string; code: string | undefined }> = [];
+  runtime.subscribe(() => observed.push({ phase: runtime.getSnapshot().phase, code: runtime.getSnapshot().transport.failure?.code }));
+  try {
+    await assert.rejects(runtime.connect(), /resource not found/);
+    assert.equal(runtime.getSnapshot().transport.failure?.code, "remote-resource-not-found");
+    assert.equal(runtime.getSnapshot().transport.failure?.recovery, "manual");
+    assert.ok(observed.filter(item => item.phase === "error").every(item => item.code === "remote-resource-not-found"));
+    await runtime.reconnect();
+    assert.equal(runtime.getSnapshot().phase, "ready");
+    assert.equal(runtime.getSnapshot().transport.failure, undefined);
+    assert.equal(created, 2);
+  } finally { await runtime.dispose(); }
+});
+
+test("manual retries replace configuration failures with the current attempt's classification", async () => {
+  let created = 0;
+  const codes = ["intervention:configuration-required", "intervention:authentication-required"];
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "classified-startup", autoReconnect: false,
+    createTransport: () => created < codes.length ? new TerminalFailureTransport(codes[created++]) : new GenerationTransport(true) });
+  try {
+    await assert.rejects(runtime.connect());
+    assert.equal(runtime.getSnapshot().transport.failure?.code, codes[0]);
+    await assert.rejects(runtime.reconnect());
+    assert.equal(runtime.getSnapshot().transport.failure?.code, codes[1]);
+    await runtime.connect();
+    assert.equal(runtime.getSnapshot().phase, "ready");
+    assert.equal(runtime.getSnapshot().transport.failure, undefined);
+  } finally { await runtime.dispose(); }
 });

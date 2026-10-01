@@ -562,7 +562,8 @@ export function createAppServerWorkbenchRuntime(
     phase,
     hostId,
     connectionGeneration: client?.connectionGeneration ?? 0,
-    transport: client?.status ?? currentTransport?.status ?? { state: "idle" },
+    // Manual failure belongs to the Host attempt, not the disposed transport.
+    transport: automaticReconnectBlock ?? client?.status ?? currentTransport?.status ?? { state: "idle" },
     residentThreads: [...bindings.values()]
       .filter((binding) => !binding.disposed)
       .map(residencySnapshot),
@@ -1665,6 +1666,8 @@ export function createAppServerWorkbenchRuntime(
       if (phase === "reconnecting")
         return reconnectOperation ?? runtime.reconnect();
       if (startOperation !== null) return startOperation;
+      automaticReconnectBlock = null;
+      loggedReconnectStopCode = null;
       phase = "connecting";
       error = null;
       publish();
