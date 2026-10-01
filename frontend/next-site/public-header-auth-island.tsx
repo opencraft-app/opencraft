@@ -218,8 +218,15 @@ function PublicHeaderAuthControls({
 
   return (
     <>
-      <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
-        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
+      <div className={cn(
+        'shrink-0 items-center gap-2 xl:gap-3',
+        loginOnly ? 'ml-auto flex lg:ml-0 lg:translate-x-6' : 'hidden translate-x-6 lg:flex',
+      )}>
+        {showLanguageSwitcher && (loginOnly ? (
+          <div className="hidden lg:block">
+            {renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
+          </div>
+        ) : renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' }))}
         {!loginOnly && (
           <button
             type="button"
@@ -232,35 +239,17 @@ function PublicHeaderAuthControls({
         <button
           type="button"
           onClick={() => {
-            trackDatongClick('header_login_btn', { pgid: DATONG_PAGE_IDS.HOME });
-            // OAuth 整页跳转回跳后靠该意图分流；手机登录走 onSuccess。
-            armPostLoginRedirect();
-            setShowLogin(true);
-          }}
-          className={cn(
-            'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4',
-            loginOnly
-              ? 'border border-black/90 bg-black/90 text-white hover:bg-black'
-              : secondaryButtonClass[appearance],
-          )}
-        >
-          {copy.login}
-        </button>
-      </div>
-      <div className="ml-auto flex items-center gap-2 lg:hidden">
-        <button
-          type="button"
-          onClick={() => {
             trackDatongClick('header_login_btn', {
               pgid: DATONG_PAGE_IDS.HOME,
-              params: { surface: 'mobile' },
+              ...(loginOnly && window.innerWidth < 1024 ? { params: { surface: 'mobile' } } : {}),
             });
             // OAuth 整页跳转回跳后靠该意图分流；手机登录走 onSuccess。
             armPostLoginRedirect();
             setShowLogin(true);
           }}
           className={cn(
-            'inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
+            'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-3 font-heading font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors xl:px-4',
+            loginOnly ? 'h-[32px] text-[13px] lg:h-[36px] lg:text-sm' : 'h-[36px] text-sm',
             loginOnly
               ? 'border border-black/90 bg-black/90 text-white hover:bg-black'
               : secondaryButtonClass[appearance],
@@ -269,6 +258,28 @@ function PublicHeaderAuthControls({
           {copy.login}
         </button>
       </div>
+      {!loginOnly && (
+        <div className="ml-auto flex items-center gap-2 lg:hidden">
+          <button
+            type="button"
+            onClick={() => {
+              trackDatongClick('header_login_btn', {
+                pgid: DATONG_PAGE_IDS.HOME,
+                params: { surface: 'mobile' },
+              });
+              // OAuth 整页跳转回跳后靠该意图分流；手机登录走 onSuccess。
+              armPostLoginRedirect();
+              setShowLogin(true);
+            }}
+            className={cn(
+              'inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
+              secondaryButtonClass[appearance],
+            )}
+          >
+            {copy.login}
+          </button>
+        </div>
+      )}
       {showLogin && (
         <LoginModal
           open
