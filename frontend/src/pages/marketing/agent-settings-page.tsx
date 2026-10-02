@@ -6223,7 +6223,7 @@ export const AgentSettingsPage = ({
                                 <span className="min-w-0 flex-1 truncate">{t("新会话")}</span>
                               </button>
                               <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
-                              <ul className="lv-agents-nav-group-items">
+                              <ul className="lv-agents-nav-group-items lv-agents-session-list">
                                 {chatSessionsLoading && chatSessions.length === 0 ? (
                                   <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
                                 ) : chatSessions.length === 0 ? (
@@ -6448,7 +6448,7 @@ export const AgentSettingsPage = ({
                               return (
                                 <div
                                   key={group.id}
-                                  className="lv-agents-nav-group"
+                                  className={cn("lv-agents-nav-group", group.id === "labs" && "lv-agents-nav-group--labs")}
                                   role="group"
                                   aria-labelledby={groupLabelId}
                                 >
@@ -6472,9 +6472,9 @@ export const AgentSettingsPage = ({
                                               )}
                                             >
                                               <span className="lv-agents-nav-icon">{section.icon}</span>
-                                              <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
+                                              <span className={cn("min-w-0 flex-1 text-left", section.badge ? "whitespace-normal lg:whitespace-nowrap" : "whitespace-nowrap")}>{section.label}</span>
                                               {section.badge && (
-                                                <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                                <span className="shrink-0 rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
                                                   {section.badge}
                                                 </span>
                                               )}
@@ -6498,9 +6498,9 @@ export const AgentSettingsPage = ({
                                             )}
                                           >
                                             <span className="lv-agents-nav-icon">{section.icon}</span>
-                                            <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
+                                            <span className={cn("min-w-0 flex-1 text-left", section.badge ? "whitespace-normal lg:whitespace-nowrap" : "whitespace-nowrap")}>{section.label}</span>
                                             {section.badge && (
-                                              <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                              <span className="shrink-0 rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
                                                 {section.badge}
                                               </span>
                                             )}

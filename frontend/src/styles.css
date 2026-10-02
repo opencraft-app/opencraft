@@ -1359,6 +1359,18 @@ a {
   }
 }
 
+@media (max-width: 1023px) {
+  .lv-agents-nav-group-items.lv-agents-session-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 360px) {
+  .lv-agents-nav-group--labs .lv-agents-nav-group-items {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (min-width: 768px) {
   .lw-landing-navbar .lw-landing-navbar__nav {
     display: flex;
@@ -2636,6 +2648,9 @@ html[lang="ko-KR"] .landing-page span {
 }
 
 .lv-buddy-panel__source {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
   white-space: nowrap;
 }
 
