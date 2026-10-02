@@ -22,6 +22,7 @@
 
 ## affected_paths
 - `frontend/src/pages/marketing/agent-diagnostics-panel.tsx`：为诊断中心的两层网格指定单列最小宽度，避免 320px 下内容撑开页面。
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-diagnostics-panel.tsx` 与 `UPSTREAM.json`：CI 修复阶段由同步脚本机械生成。
 - 本任务记录与 `/tmp/lightvela-mobile-overlap-audit-20261002/` 下的验证报告。
 
 ## required_context
@@ -34,6 +35,9 @@
 | `frontend/AGENTS.md` | 最近服务规则 | 页面、测试与构建规则 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | 前端邻接 | 规格与测试邻居 |
 | `frontend/openspec/changes/2026-08-24-sidebar-chat-settings-tabs-plan.md` | 对话侧栏设计 | 保留会话导航结构 |
+| `docs/context/flows/tapd-gongfeng-delivery.md` | MR 交付路由 must_read | 在原 MR 更新提交，不执行合并或发布 |
+| `opencraft/AGENTS.md`、`opencraft/MONO2_MIGRATION.md` | OpenCraft 服务规则与源所有权 | 使用官方同步脚本，不手改 vendored 副本 |
+| `docs/context/project/upstream-subtrees.md` | OpenCraft 邻接边界 | 保持 mono2 单一真源 |
 
 ## test_matrix
 | id | 初始状态 | 入口 | 设备 | 操作 | 预期 | 证据 | 结果 |
@@ -51,6 +55,8 @@
 - 本地国内站 Chrome 320px 与 390px 浏览器实际渲染；对可见文字矩形交集和 `documentElement.scrollWidth - innerWidth` 做检查，并用页面截图辨别抽屉遮罩的预期交叠。
 - 诊断中心修复前 320px `scrollWidth=332`、`innerWidth=320`；修复后溢出 0，卡片网格宽度与内容区同为 272px；390px 溢出 0。
 - 原始巡检矩阵及结论见 `/tmp/lightvela-mobile-overlap-audit-20261002/report-data.json`、`report.html`。截图仅在浏览器工具会话中观察，未保存独立图片文件。
+- MR !4945 首轮 CI 日志中 `frontend` guard 全部通过；`opencraft` guard 报 `vendored mono2 file drifted`，首个文件为 `pages/marketing/agent-diagnostics-panel.tsx`。i18n WARN 并非该次退出原因。
+- 前端真源已经在 `ce74de1c29c4e9d2e01458932fb05702fa7690a0` 提交；同步脚本只改变 OpenCraft 诊断中心副本及 `UPSTREAM.json` 两个文件。
 
 ## risks
 - 暂停 Bot 无法展示真实多会话和部分运行态；有些页面仅检查了暂停或空状态。
@@ -61,9 +67,11 @@
 - `pnpm check`、`pnpm build:cn`、`pnpm build:global` 均通过。
 - 诊断中心聚焦 Vitest：24 通过、2 失败；失败为仓库原有文案预期不一致（测试期待“开始新会话”/“fresh session”，组件现有“开始新对话”/“fresh chat”），已用 `git show HEAD` 核对基线。
 - `git diff --check` 交接前执行。
+- CI 修复阶段：`npm --prefix opencraft run sync:mono2-agent-console` 与 `npm --prefix opencraft run check:mono2-agent-console` 通过，核对 130 个 Agent Console 同步文件；`npm --prefix opencraft run test:embedded-ci` 155/155 通过。
 
 ## decisions
 - 本次围绕 `/agents` 的移动端界面巡检，不扩展到营销站全站。
+- CI 修复只同步 OpenCraft 生成副本及 provenance；真源提交保持独立，不修改同步脚本或 CI 规则。
 
 ## scan_scope
 - `frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/styles.css`、相关相邻测试与 OpenSpec。
@@ -72,4 +80,4 @@
 - 精确搜索定位导航、会话和响应式样式。
 
 ## handoff
-- 本地修复和巡检完成；用户随后授权提交 MR，合并与发布另行处理。运行态多会话与国际站实际浏览器页面可在具备相应状态后补测。
+- 本地修复和巡检完成；用户随后授权修复 CI 并更新原 MR !4945，合并与发布另行处理。运行态多会话与国际站实际浏览器页面可在具备相应状态后补测。
