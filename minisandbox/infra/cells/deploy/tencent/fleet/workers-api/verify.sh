@@ -111,5 +111,5 @@ bash -n "$script_dir/sync-credentials.sh" "$script_dir/gitops/publish.sh" \
 	"$script_dir/gitops/rollback-failed-bootstrap.sh"
 (
 	cd "$script_dir/gitops"
-	PYTHONPATH="$script_dir/gitops" python3 -m unittest test_gitops
+	PYTHONPATH="$script_dir/gitops" python3 -m unittest test_gitops test_serving_recertification
 )

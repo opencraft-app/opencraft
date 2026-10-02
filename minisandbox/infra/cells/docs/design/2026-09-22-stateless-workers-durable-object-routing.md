@@ -943,6 +943,14 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   Actor/generation/index；注入前的 DNS 或日志解析失败不构成 ACK 协议结论。
 - ACK 门禁的业务动作使用 Guard 6420，私有 reconciliation footprint 使用 API Peer 6421，
   各自转发与就绪检查，不把只存在于 Peer 的检查路由假设为公共 API。
+- 2026-10-02 北京 B 的真实 ACK 断线门禁已通过，run `efdbc1c7c33f496ab0593feaed1f7f66`，
+  TAT `inv-e9dcgq0tjt` 为 SUCCESS/0，收据 SHA-256 `37e8f31cf9fe8e5a5b7f2b24202c68d98d087f0192932d27fe78a9231f9d0cbe`。
+  本次边界是 `after_commit_before_barrier`，Stop side effect 一次、ACK replay/barrier 各一次，
+  backlog 为零，Counter 1→2 且 Actor/Cell 身份不变。其他断线边界不能由本收据推定通过。
+- C 缺少当前 pinned revision 的 convergence 收据时，使用正式只读 recertify 恢复 CAS 基线；
+  serving 必须绑定十四项 tracked resource、两条 private endpoint 的安全策略、immutable Secret
+  以及四个外置 Cell identity/serving route ConfigMap 的 UID 和路由摘要。只读重验不构成压力、
+  业务准入或历史 self-heal 资格；漂移失败不得通过修改现网或手工拼收据来绕过。
 
 ## 必须固化的测试矩阵
 
