@@ -15,7 +15,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Droplets, EllipsisVertical, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Droplets, Ellipsis, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -108,7 +108,7 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
-const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
+const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "24px" };
 const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "20px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
@@ -2120,8 +2120,6 @@ function CronJobCard({
     : visiblePrompt;
   const scheduleLabel = formatScheduleFriendly(job, t);
   const scheduleTooltipLabel = formatScheduleTooltip(job, t);
-  const [actionRolloutRetained, setActionRolloutRetained] = useState(false);
-  const retainedActionRolloutClass = actionRolloutRetained ? "!opacity-100 !delay-0" : "";
   return (
     <div
       className="flex flex-col rounded-md bg-white p-4 transition hover:shadow-md"
@@ -2195,10 +2193,7 @@ function CronJobCard({
             />
           )}
         </div>
-        <div
-          className="ml-auto flex shrink-0 items-center"
-          onMouseLeave={() => setActionRolloutRetained(false)}
-        >
+        <div className="ml-auto flex shrink-0 items-center">
           {!terminal && (
             <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
               <Pencil className="h-3 w-3" />
@@ -2218,51 +2213,22 @@ function CronJobCard({
               <Trash2 className="h-3 w-3" />
             </CronActionButton>
           )}
-          <div
-            className="group/actions relative inline-flex items-center"
-            onMouseLeave={(event) => {
-              const relatedTarget = event.relatedTarget;
-              if (
-                relatedTarget instanceof Node
-                && event.currentTarget.parentElement?.contains(relatedTarget)
-                && !event.currentTarget.contains(relatedTarget)
-              ) {
-                setActionRolloutRetained(true);
-              }
-            }}
-          >
+          <div className="group/actions relative inline-flex items-center">
             <button
               type="button"
               aria-label={t("操作")}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={(event) => event.preventDefault()}
               className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-black/50 transition hover:bg-black/[0.04] hover:text-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
             >
-              <EllipsisVertical className="size-4" />
+              <Ellipsis className="size-4" />
             </button>
-            <div className={cn(
-              "pointer-events-none absolute top-1/2 z-10 flex -translate-y-1/2 items-center group-hover/actions:pointer-events-auto group-focus-within/actions:pointer-events-auto",
-              actionRolloutRetained && "pointer-events-auto",
-              terminal ? "right-[48px]" : "right-[72px]",
-            )}>
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute inset-0 bg-white opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-0 group-focus-within/actions:opacity-100 group-focus-within/actions:delay-0",
-                  retainedActionRolloutClass,
-                  terminal ? "delay-[40ms]" : "delay-[60ms]",
-                )}
-              />
-              <div className="relative flex items-center">
+            <div className="invisible absolute bottom-full right-0 z-20 pb-1 opacity-0 transition-opacity duration-100 group-hover/actions:visible group-hover/actions:opacity-100 group-focus-within/actions:visible group-focus-within/actions:opacity-100 motion-reduce:transition-none">
+              <div className="flex min-w-32 flex-col rounded-lg border border-black/10 bg-white p-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
                 {!terminal && (
                   <CronActionButton
                     label={t("测试运行")}
                     onClick={onTestRun}
                     disabled={busy || testState === "running"}
-                    className={cn(
-                      "opacity-0 transition-opacity duration-100 ease-out delay-0 motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-[60ms] group-focus-within/actions:opacity-100 group-focus-within/actions:delay-[60ms]",
-                      retainedActionRolloutClass,
-                    )}
+                    menuItem
                   >
                     {testState === "running" ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -2278,13 +2244,7 @@ function CronJobCard({
                 <CronActionButton
                   label={t("查看")}
                   onClick={onView}
-                  className={cn(
-                    "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
-                    retainedActionRolloutClass,
-                    terminal
-                      ? "delay-0 group-hover/actions:delay-[40ms] group-focus-within/actions:delay-[40ms]"
-                      : "delay-[20ms] group-hover/actions:delay-[40ms] group-focus-within/actions:delay-[40ms]",
-                  )}
+                  menuItem
                 >
                   <Eye className="h-3 w-3" />
                 </CronActionButton>
@@ -2292,13 +2252,7 @@ function CronJobCard({
                   label={t("复制")}
                   onClick={onCopy}
                   disabled={busy}
-                  className={cn(
-                    "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
-                    retainedActionRolloutClass,
-                    terminal
-                      ? "delay-[20ms] group-hover/actions:delay-[20ms] group-focus-within/actions:delay-[20ms]"
-                      : "delay-[40ms] group-hover/actions:delay-[20ms] group-focus-within/actions:delay-[20ms]",
-                  )}
+                  menuItem
                 >
                   <Copy className="h-3 w-3" />
                 </CronActionButton>
@@ -2307,11 +2261,7 @@ function CronJobCard({
                     label={t("删除")}
                     onClick={onRemove}
                     disabled={busy}
-                    className={cn(
-                      "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-0 group-focus-within/actions:opacity-100 group-focus-within/actions:delay-0",
-                      retainedActionRolloutClass,
-                      "delay-[60ms]",
-                    )}
+                    menuItem
                   >
                     <Trash2 className="h-3 w-3" />
                   </CronActionButton>
@@ -2330,16 +2280,29 @@ function CronActionButton({
   onClick,
   disabled = false,
   children,
-  className,
+  menuItem = false,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
   children: React.ReactNode;
-  className?: string;
+  menuItem?: boolean;
 }) {
+  if (menuItem) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className="flex w-full cursor-pointer items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-xs text-black/65 transition hover:bg-black/[0.04] hover:text-black/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15 disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:size-4 [&>svg]:shrink-0"
+      >
+        {children}
+        <span>{label}</span>
+      </button>
+    );
+  }
   return (
-    <span className={cn("group relative inline-flex", className)}>
+    <span className="group relative inline-flex">
       <button
         type="button"
         onClick={onClick}

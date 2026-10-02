@@ -10,7 +10,7 @@ source_of_truth:
 status: retired
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.1
+revision: 1.0.2
 precedence: task
 derived: false
 ---
@@ -23,6 +23,7 @@ derived: false
 - 删除确认弹窗的“取消”和“删除”按钮文字从 16px 调为 14px，行高保持 24px。
 - 聚焦测试 199/199、`pnpm check`、`pnpm build`、文档检查通过。
 - 后续字号调整后的聚焦测试 199/199、`pnpm check`、`pnpm build` 通过。
+- CI 暴露 OpenCraft vendored 文件漂移；已按官方脚本同步 130 个 Agent Console 文件，实际仅变更面板副本与 `UPSTREAM.json`，同步校验及隔离环境的嵌入式测试 155/155 通过。
 - `validate_change_impact.py --repo . --staged` 通过；`git diff --cached --check` 通过。
 
 ## unverified
@@ -38,4 +39,4 @@ derived: false
 - 任务记录：`docs/context/tasks/2026-10-02-automation-card-actions-menu.md`。
 
 ## next_action
-- 按需在该独立工作区审阅改动；提交、推送和发布均需另行明确授权。
+- 将 OpenCraft 同步修复提交并推送至现有 MR !4939，核对远端 CI；合并和发布仍需另行明确授权。
