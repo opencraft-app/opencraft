@@ -9,6 +9,7 @@ MR !4945 首轮 CI 的 OpenCraft vendored 漂移已定位并完成本地同步�
 - 用户提供的 CI 日志显示 frontend guard 通过，opencraft guard 因诊断中心 vendored 文件漂移失败；同步脚本仅修改 OpenCraft 诊断中心副本和 `UPSTREAM.json`，只读同步检查通过。
 - OpenCraft `test:embedded-ci` 155/155 通过。
 - 合入 `origin/master` 时仅 `UPSTREAM.json` 发生内容冲突；已运行官方同步脚本重生，保留目标分支定时任务源 hash 与本 MR 诊断中心源 hash，只读同步检查通过。
+- 合并提交后生成器将 `sourceRevision` 更新为合并提交 `a52c2b6701d94d627b427b7147fe5f0856c213b1`；再次同步检查通过，embedded CI 155/155 通过。
 
 ## unverified
 - 实验室导航 Vitest 文件在执行用例前出现 worker 内存溢出；线上发布状态未检查。
@@ -23,4 +24,4 @@ MR !4945 首轮 CI 的 OpenCraft vendored 漂移已定位并完成本地同步�
 - 原 MR !4945，源分支 `codex/mobile-agent-layout-20261002`，前端真源提交 `ce74de1c29c4e9d2e01458932fb05702fa7690a0`。
 
 ## next_action
-- 运行 OpenCraft embedded CI 测试和仓库差异检查，独立提交生成物并推送原分支，核对 MR/CI 即时状态。
+- 独立提交合并后的 manifest 及记录，推送原分支，核对 MR/CI 即时状态。

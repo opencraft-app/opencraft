@@ -58,6 +58,7 @@
 - MR !4945 首轮 CI 日志中 `frontend` guard 全部通过；`opencraft` guard 报 `vendored mono2 file drifted`，首个文件为 `pages/marketing/agent-diagnostics-panel.tsx`。i18n WARN 并非该次退出原因。
 - 前端真源已经在 `ce74de1c29c4e9d2e01458932fb05702fa7690a0` 提交；同步脚本只改变 OpenCraft 诊断中心副本及 `UPSTREAM.json` 两个文件。
 - 目标 `master` 同期修改了 Agent 定时任务源文件及同一份 manifest；合入目标后由同步脚本重生 manifest，同时保留定时任务和诊断中心两项 source hash。
+- 合并提交 `a52c2b6701d94d627b427b7147fe5f0856c213b1` 成为生成器计算的最新 closure 源修订；合并后重新同步使 manifest 记录该提交。
 
 ## risks
 - 暂停 Bot 无法展示真实多会话和部分运行态；有些页面仅检查了暂停或空状态。
@@ -69,6 +70,7 @@
 - 诊断中心聚焦 Vitest：24 通过、2 失败；失败为仓库原有文案预期不一致（测试期待“开始新会话”/“fresh session”，组件现有“开始新对话”/“fresh chat”），已用 `git show HEAD` 核对基线。
 - `git diff --check` 交接前执行。
 - CI 修复阶段：`npm --prefix opencraft run sync:mono2-agent-console` 与 `npm --prefix opencraft run check:mono2-agent-console` 通过，核对 130 个 Agent Console 同步文件；`npm --prefix opencraft run test:embedded-ci` 155/155 通过。
+- 合并目标分支后再次运行同步检查与 embedded CI 测试：130 个同步文件一致，155/155 通过。
 
 ## decisions
 - 本次围绕 `/agents` 的移动端界面巡检，不扩展到营销站全站。
