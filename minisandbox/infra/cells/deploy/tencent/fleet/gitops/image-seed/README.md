@@ -33,6 +33,16 @@ REGISTRY_AUTH_FILE=/protected/tcr-auth.json \
   ./build-foundations.sh
 ```
 
+For an incremental generation, set `ACTOR_FOUNDATION_REPOSITORIES=base-golang`
+to build only that reviewed root. The default still builds all five. Selection
+is a strict comma-separated set of distinct known names; empty, duplicate or
+unknown names fail before any build. The entire foundation lock and complete
+source manifest are validated even for a subset. This is not a partial release:
+the assembler still requires all 11 product receipts and all 28 repositories,
+and every reverse dependency must bind the selected base's exact digest.
+Unchanged roots and products must retain verified receipts or obtain new exact
+registry cold-pull receipts. A warm builder cache does not establish reuse proof.
+
 One `base-golang` image intentionally serves all Go product builders and the
 Python load generator. It contains the exact Go toolchain, the verified module
 cache and Python 3. `base-distroless` uses the `cc-debian12` variant so the same

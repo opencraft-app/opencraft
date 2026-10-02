@@ -28,8 +28,13 @@ done
 cd "$source_dir"
 sha256sum --check "$source_manifest" >/dev/null
 manifest_sha=$(sha256sum "$source_manifest" | cut -d' ' -f1)
-mapfile -t repositories < <(python3 "$script_dir/foundation-plan.py" --lock "$lock")
-[[ ${#repositories[@]} -eq 5 ]] || { echo "foundation plan did not resolve five repositories" >&2; exit 1; }
+plan_args=()
+if [[ ${ACTOR_FOUNDATION_REPOSITORIES+x} ]]; then
+	plan_args=(--repositories "$ACTOR_FOUNDATION_REPOSITORIES")
+fi
+plan=$(python3 "$script_dir/foundation-plan.py" --lock "$lock" "${plan_args[@]}")
+mapfile -t repositories <<<"$plan"
+[[ ${#repositories[@]} -ge 1 && ${#repositories[@]} -le 5 ]] || { echo "foundation plan did not resolve a bounded repository set" >&2; exit 1; }
 
 for repository in "${repositories[@]}"; do
 	receipt="$receipt_dir/product-${repository}-${run_id}.json"

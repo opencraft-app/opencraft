@@ -291,6 +291,9 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    工厂还缺少 consumer 要求的 go.mod/go.sum OCI labels；工厂补齐已验证输入的 hashes，
    consumer 校验不放宽。改变 Go base 后必须闭合产品 reverse dependencies，再生成完整
    inventory；Runtime-base 未变化时不重复编译 Runtime/workerd。该工厂修复仍不代替云上 release。
+   工厂增量构建允许严格选择已审阅 root，仍先验证完整 source manifest 与五项 foundation lock；
+   完整 generation 仍需全部 11 个产品收据、28 个仓库及 exact dependency closure。未变化 root
+   通过现有有效收据或全新隔离 registry cold-pull 复用，不把无关上游仓库可达性变成 leaf 发布前置。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入
