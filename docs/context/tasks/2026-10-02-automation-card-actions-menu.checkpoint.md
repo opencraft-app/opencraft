@@ -10,7 +10,7 @@ source_of_truth:
 status: retired
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.3
+revision: 1.0.4
 precedence: task
 derived: false
 ---
@@ -25,6 +25,7 @@ derived: false
 - 后续字号调整后的聚焦测试 199/199、`pnpm check`、`pnpm build` 通过。
 - CI 暴露 OpenCraft vendored 文件漂移；已按官方脚本同步 130 个 Agent Console 文件，实际仅变更面板副本与 `UPSTREAM.json`，同步校验及隔离环境的嵌入式测试 155/155 通过。
 - 远端 `master` 前进后合入，`UPSTREAM.json` 冲突通过重新运行同步脚本解决；合入后的 130 文件校验、前端聚焦测试 199/199、`pnpm check` 与 `pnpm build` 均通过。
+- 已复现并修复移动端点按省略号无反应：菜单通过显式状态展开；触屏点按当前任务和已结束任务、点按外部及 Esc 的聚焦测试 199/199 通过。
 - `validate_change_impact.py --repo . --staged` 通过；`git diff --cached --check` 通过。
 
 ## unverified
@@ -40,4 +41,4 @@ derived: false
 - 任务记录：`docs/context/tasks/2026-10-02-automation-card-actions-menu.md`。
 
 ## next_action
-- 将合入 `master` 后重新生成的 manifest 推送至现有 MR !4939，核对远端 CI；合并和发布仍需另行明确授权。
+- 从已合并的 MR !4939 后续分支提交移动端点按修复，完成验证并创建新 MR；合并和发布仍需另行明确授权。
