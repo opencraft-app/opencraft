@@ -953,6 +953,14 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   业务准入或历史 self-heal 资格；漂移失败不得通过修改现网或手工拼收据来绕过。
 - immutable 身份路由只允许五个身份字段，或额外包含完整四个资格审计 SHA-256 字段；未知字段、
   部分审计摘要、畸形摘要及 UID 改变都拒绝。审计字段不参与网络寻址，原 immutable UID 保护其原始内容。
+- 2026-10-02 C 正式发布 TAT `inv-a9deatgjx5` SUCCESS/0，Argo revision
+  `10b5ef6eeac98a1c9844df0e5fae023a708816a8`，Workers API 镜像
+  `sha256:2f7b6e9b4687f566163b4ee6b5ad7eb6275ac413c903b578e887163ede0e0d2a`。
+  发布 convergence 摘要 `57207003ec5f365a94628d2c56feee114bff0f9b9164af37e74af4b00c42b602`，
+  保留 Deployment、两条 CLB、Secret 的 UID/VIP 与 A/B Application，三副本三节点三 AZ，自愈通过。
+  后置独立只读重验 `inv-d9dedt0wte` SUCCESS/0，收据摘要
+  `c0b636478ee294319390cba719aa2cadcd3522bf5e60604b10d69ac650706bf8`，十四资源和四路由一致。
+  该证据只完成 C 发布边界，不替代随后启动的万级低容量扩缩容资格。
 
 ## 必须固化的测试矩阵
 

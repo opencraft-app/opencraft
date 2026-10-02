@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -79,6 +79,11 @@ derived: false
 - 首次云端重验 inv-a9de7ggwj1 FAILED/1：A immutable 身份路由保留四个资格审计摘要，现网未 mutation。
 - 只读诊断 inv-c9de8901a0 证明五个身份字段及 UID 正确；修复只允许完整四项 SHA-256 审计字段，拒绝未知、残缺或畸形字段。新增真实文件回归，不改既有路由。
 - 原失败日志官方下载，摘要前缀 cfb7f30d3b59，后续重验必须新输出路径，不能覆盖旧失败。
+- reviewed source 8d39a4a8 native inv-e9deam0h3k SUCCESS/0，正式门禁通过，没有重编 Runtime/workerd。
+- C 正式发布 inv-a9deatgjx5 SUCCESS/0，Argo revision 10b5ef6eeac9，API 镜像摘要前缀 2f7b6e9b4687。
+- convergence 官方下载并独立验真，摘要前缀 57207003ec5f；三副本三节点三可用区、UID/VIP 保留、A/B Application 不变、自愈通过。
+- 发布后独立 serving 只读重验 inv-d9dedt0wte SUCCESS/0，收据摘要前缀 c0b636478ee2，十四资源及四路由核验通过。
+- 新万级 active 门禁 inv-c9def3gxtj 已运行，run f56405fe9169424fb97d3c81b3da2704；两 Cell fresh strict governance 为 allow、从各四台起步。不能提前认定其通过。
 - ACK 实际门禁独立终态 SUCCESS/0，收据摘要前缀 37e8f31cf9fe，完整摘要见正式设计；不将它替代 C 发布或万级容量资格。
 
 ## risks
@@ -105,5 +110,5 @@ derived: false
 
 ## handoff
 
-- C 严格重验代码及本地回归已完成；尚需 reviewed source 交付、native 门禁和真实只读 C 重验。
+- 本 Task 的严格 serving 重验和 C 正式镜像发布完成，并取得发布后独立现网证据。
 - ACK 本次 after_commit_before_barrier 门禁通过；完整目标保持 active，尚未完成万级低容量扩缩容。
