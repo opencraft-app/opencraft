@@ -343,8 +343,8 @@ export function AgentDiagnosticsPanel({
         }
       />
 
-      <div className="grid gap-4">
-        <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <MaintenanceActionCard
             icon={<Wrench className="h-3 w-3" />}
             title={t("重置模型配置")}
