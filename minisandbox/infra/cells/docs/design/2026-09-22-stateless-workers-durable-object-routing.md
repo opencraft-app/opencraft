@@ -668,6 +668,11 @@ Router 并不自动减少 Registry 工作量。应同时观测实际 Registry GE
 本地真实 HTTP 事件屏障已复现旧路径的 `32 请求 → 32 GET`，读合并回归验证为 `32 请求 → 1 GET`，
 随后热请求无 GET。这是机制证据，不是云上吞吐资格，也不是旧万级负载冷降积压的完整根因结论。
 
+功能回归的超时合同与性能 SLO 分开验证：响应头必须在配置预算后终止等待，流响应体不受
+header timeout 或控制请求 timeout 截断。使用真实 HTTP 的取消、flush 与 body-release 事件
+建立顺序；共享构建机上的 10 ms timer 不保证线程在 50 ms 内重新获得 CPU。墙钟 p99/吞吐
+只能由绑定运行镜像和负载的性能门禁证明，不能靠单元测试的固定 sleep 或缩短等待来证明。
+
 ### Sleep、wake 与跨 Cell
 
 Object 休眠只释放 live owner：
