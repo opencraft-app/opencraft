@@ -941,6 +941,8 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
 - 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配
   Actor/generation/index；注入前的 DNS 或日志解析失败不构成 ACK 协议结论。
+- ACK 门禁的业务动作使用 Guard 6420，私有 reconciliation footprint 使用 API Peer 6421，
+  各自转发与就绪检查，不把只存在于 Peer 的检查路由假设为公共 API。
 
 ## 必须固化的测试矩阵
 

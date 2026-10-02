@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -34,6 +34,7 @@ derived: false
 - Registry Service worker-registry-system/worker-registry:8080，readyz 就绪检查。
 - Host/Engine 的实际 tracing 文本包含 ANSI SGR 与带引号 Envoy ID；门禁去掉呈现颜色，
   不改变时间戳、Actor/generation/index 或 Envoy 身份匹配。
+- 业务 Actor sleep 走 Guard 6420；reconciliation footprint 只在 API Peer 6421 注册。
 - 复用 persistent-runtime-e2e 的 Kubectl/PortForward；转发必须在任何业务请求前就绪。
 - 转发正常及异常退出都关闭，仍保留可选明确可达的 registry-endpoint。
 
@@ -83,6 +84,12 @@ derived: false
   仅这两项失败，证明门禁缺口而非靠换 runtime 配置掩盖。
 - 同时复现原文本匹配把 actor-a/actor-ab、generation=1/17、index=1/19 当同一身份的
   三个误判；改为字段精确匹配。全部 15 项测试通过，未放宽身份核对。
+- 新 native inv-e9dc17gd6k SUCCESS/0。第三次实际门禁 inv-a9dc3p092h FAILED/1，
+  已触发 fault，Stop 一次、ACK replay/barrier 检查通过，但 backlog 错查 Guard6420 得到404。
+  日志已官方下载，hash348b133dac59；完整资格仍未通过。
+- focused 17 项通过，包含实际 HTTP footprint 的 scope/完整分页拒绝，以及构造真实
+  API Peer PortForward 的 listener 检查。增加 fault/Host ACK/backlog 非秘密阶段输出，
+  使后续检查失败仍保留已经独立核对的阶段证据，不把部分通过当最终通过。
 
 ## risks
 
@@ -108,5 +115,5 @@ derived: false
 
 ## handoff
 
-- Registry 通路修复已 push master 41268e5b 并通过 native；当前收敛实际日志解析，
-  之后以新 source identity 重跑 native 和真实 ACK 边界。不把注入前失败视为协议结论。
+- Registry 与日志修复分别 push master 41268e5b/78b5d0f6 并通过 native；当前修正检查
+  listener，使用已有 API Peer，不增加网络暴露。下一轮仍需 Counter2 与 backlog零最终证据。

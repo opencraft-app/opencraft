@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import importlib.util
+import http.server
 import json
 import os
 import pathlib
@@ -8,9 +9,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import urllib.error
 import urllib.request
+import urllib.parse
 
 
 PATH = pathlib.Path(__file__).parent / "qualify.py"
@@ -21,6 +24,51 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CommandAckDisconnectQualificationTest(unittest.TestCase):
+    def test_reconciliation_inspection_selects_existing_private_peer_port(self):
+        kube = MODULE.runtime.Kubectl("/unused/operator.kubeconfig", "actor-fdb-cell-system")
+        forward = MODULE.api_peer_forward(kube, "actor-test-b")
+        self.assertEqual(forward.remote_port, 6421)
+        self.assertEqual(forward.resource, "service/actor-test-b-engine")
+        self.assertIs(forward.kubectl, kube)
+
+    def test_reconciliation_footprint_over_real_http_is_scope_fenced(self):
+        payload = {"scope": "reconciliation:envoy-a", "row_count": 0, "next_cursor": None, "page_sha256": "3" * 64}
+        observed = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                observed.append(urllib.parse.urlsplit(self.path))
+                body = json.dumps(payload).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *unused):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+        thread.start()
+        try:
+            endpoint = f"http://127.0.0.1:{server.server_port}"
+            self.assertEqual(MODULE.reconciliation_footprint(endpoint, "envoy-a")["row_count"], 0)
+            self.assertEqual(observed[-1].path, "/depot/inspect/footprint")
+            self.assertEqual(urllib.parse.parse_qs(observed[-1].query), {
+                "scope": ["reconciliation"], "namespace": ["default"], "envoy_key": ["envoy-a"], "limit": ["1000"],
+            })
+            payload["scope"] = "reconciliation:another-envoy"
+            with self.assertRaisesRegex(RuntimeError, "wrong reconciliation footprint scope"):
+                MODULE.reconciliation_footprint(endpoint, "envoy-a")
+            payload["scope"] = "reconciliation:envoy-a"
+            payload["next_cursor"] = "unscanned-rows"
+            with self.assertRaisesRegex(RuntimeError, "bounded footprint page"):
+                MODULE.reconciliation_footprint(endpoint, "envoy-a")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
+
     def test_extracts_observed_colored_and_quoted_host_envoy_identity(self):
         line = (
             '2026-10-02T13:35:21.104274759+08:00 \x1b[2m2026-10-02T05:35:21.104167Z\x1b[0m '

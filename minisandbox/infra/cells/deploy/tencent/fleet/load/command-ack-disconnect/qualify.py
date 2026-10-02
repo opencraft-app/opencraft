@@ -71,6 +71,10 @@ def listed_ready_pods(kube: runtime.Kubectl, selector: str) -> list[dict]:
     ]
 
 
+def api_peer_forward(kube: runtime.Kubectl, cell: str):
+    return runtime.PortForward(kube, f"service/{cell}-engine", 6421)
+
+
 def container_identity(pod: dict, name: str) -> dict:
     containers = {
         container.get("name"): container
@@ -492,6 +496,7 @@ def run(args) -> dict:
     registry = args.registry_endpoint.rstrip("/")
     kube = runtime.Kubectl(args.cell_kubeconfig, args.cell_namespace)
     engine = runtime.PortForward(kube, f"service/{args.cell}-engine", 6420)
+    peer = api_peer_forward(kube, args.cell)
     cell_uids = smoke.ready_cell_uids(args.hub_kubeconfig, set(args.all_cell))
     if args.cell not in cell_uids:
         raise RuntimeError("target Cell is not placement-ready")
@@ -503,6 +508,8 @@ def run(args) -> dict:
     result = None
     counter = 0
     try:
+        engine.start("/health")
+        peer.start("/health")
         _, version = smoke.request(
             "POST",
             f"{api}/workers/{args.worker}/versions",
@@ -529,7 +536,6 @@ def run(args) -> dict:
         ):
             raise RuntimeError("Registry did not bind the qualification Object to the target Cell")
 
-        engine.start("/health")
         host = resolve_host(kube, args.cell, actor_id)
         engine_owner = resolve_engine(kube, args.cell, host["envoyKey"])
         nonce = f"{args.run_id}-{uuid.uuid4().hex[:8]}"
@@ -570,14 +576,17 @@ def run(args) -> dict:
                 raise RuntimeError(f"fault receipt field {key} differs: {fired}")
         if not isinstance(fired.get("index"), int):
             raise RuntimeError("fault receipt lacks the exact command checkpoint index")
+        print(json.dumps({"stage": "fault_verified", "runId": args.run_id, "fault": fired}), flush=True)
 
         sleep_state = runtime.wait_for_sleep(engine.base_url, actor_id, args.timeout)
         host_evidence = wait_for_host_evidence(
             kube, host, actor_id, fired, since_time, args.timeout
         )
+        print(json.dumps({"stage": "host_ack_recovery_verified", "runId": args.run_id, "hostEvidence": host_evidence}), flush=True)
         backlog = wait_for_backlog_zero(
-            engine.base_url, host["envoyKey"], args.timeout
+            peer.base_url, host["envoyKey"], args.timeout
         )
+        print(json.dumps({"stage": "reconciliation_backlog_verified", "runId": args.run_id, "rows": backlog["row_count"]}), flush=True)
 
         counter = dispatch_counter(api, args.worker, name)
         if counter != 2:
@@ -615,6 +624,7 @@ def run(args) -> dict:
         }
     finally:
         engine.stop()
+        peer.stop()
         for pod, path in armed:
             try:
                 remove_remote(kube, pod, path)
