@@ -32,6 +32,15 @@ pub async fn stage_hot_job(
 	ctx: &ActivityCtx,
 	input: &StageHotJobInput,
 ) -> Result<StageHotJobOutput> {
+	#[cfg(feature = "test-faults")]
+	if let Some(output) = hot_stage_fault_output(
+		input.database_branch_id,
+		HotCompactionFaultPoint::StageBeforeAdmission,
+	)
+	.await?
+	{
+		return Ok(output);
+	}
 	let _admission = crate::admission::acquire(
 		crate::admission::ActivityClass::Compaction,
 		ctx.config().runtime.depot_compaction_max_concurrency(),

@@ -1499,6 +1499,190 @@ async fn cold_eviction_still_supports_a_restore_point_created_by_a_later_commit(
 	Ok(())
 }
 
+async fn assert_head_advance_replans_hot_job(point: HotCompactionFaultPoint) -> Result<()> {
+	let cold_root = Builder::new().prefix("depot-hot-head-advance-").tempdir()?;
+	let mut test_ctx = test_ctx_with_filesystem_cold_tier(cold_root.path()).await?;
+	let database_id = format!("hot-head-advance-{}", Uuid::new_v4());
+	let db = make_db(&test_ctx, &database_id).await?;
+	db.commit(
+		vec![DirtyPage {
+			pgno: 1,
+			bytes: vec![0x81; PAGE_SIZE as usize],
+		}],
+		2,
+		1_000,
+	)
+	.await?;
+	let branch_id = read_database_branch_id(&test_ctx, &database_id).await?;
+	let controller = DepotFaultController::new();
+	let pause = controller.pause_handle("hot-head-advance");
+	controller
+		.at(DepotFaultPoint::HotCompaction(point))
+		.database_branch_id(branch_id)
+		.once()
+		.pause("hot-head-advance")?;
+	let _fault_guard = register_workflow_fault_controller(branch_id, controller.clone());
+	let driver = DepotCompactionTestDriver::new(&test_ctx);
+	let manager_id = driver.start_manager(branch_id, None, true).await?;
+	let advance = async {
+		tokio::time::timeout(Duration::from_secs(30), pause.wait_reached()).await?;
+		let result = db
+			.commit(
+				vec![DirtyPage {
+					pgno: 1,
+					bytes: vec![0x82; PAGE_SIZE as usize],
+				}],
+				2,
+				2_000,
+			)
+			.await;
+		pause.release();
+		result
+	};
+	let force = driver.force_compaction(
+		manager_id,
+		branch_id,
+		ForceCompactionWork {
+			hot: true,
+			cold: false,
+			reclaim: false,
+			final_settle: false,
+		},
+	);
+	let (advance_result, hot_result) = tokio::join!(advance, force);
+	advance_result?;
+	let hot = hot_result?;
+	controller.assert_expected_fired()?;
+	assert!(
+		hot.terminal_error.is_none(),
+		"unexpected hot failure: {hot:?}"
+	);
+	assert_eq!(
+		hot.retryable_rejections, 1,
+		"current-head validation should invalidate this older plan: {hot:?}"
+	);
+	assert_eq!(
+		hot.completed_job_ids.len(),
+		2,
+		"one rejected plan must be followed by one successful plan: {hot:?}"
+	);
+	let root = decode_compaction_root(
+		&read_value(&test_ctx, branch_compaction_root_key(branch_id))
+			.await?
+			.context("replanned job should publish a compaction root")?,
+	)?;
+	assert_eq!(root.hot_watermark_txid, 2);
+	assert_eq!(
+		db.get_pages(vec![1]).await?[0].bytes,
+		Some(vec![0x82; PAGE_SIZE as usize])
+	);
+	test_ctx.shutdown().await?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn head_advance_before_hot_admission_replans_without_losing_latest_write() -> Result<()> {
+	assert_head_advance_replans_hot_job(HotCompactionFaultPoint::StageBeforeAdmission).await
+}
+
+#[tokio::test]
+async fn head_advance_after_hot_stage_replans_without_losing_latest_write() -> Result<()> {
+	assert_head_advance_replans_hot_job(HotCompactionFaultPoint::AfterStageBeforeFinishSignal).await
+}
+
+#[tokio::test]
+async fn continuous_head_advance_exhausts_hot_plan_retries_without_data_loss() -> Result<()> {
+	let cold_root = Builder::new()
+		.prefix("depot-hot-plan-starvation-")
+		.tempdir()?;
+	let mut test_ctx = test_ctx_with_filesystem_cold_tier(cold_root.path()).await?;
+	let database_id = format!("hot-plan-starvation-{}", Uuid::new_v4());
+	let db = make_db(&test_ctx, &database_id).await?;
+	db.commit(
+		vec![DirtyPage {
+			pgno: 1,
+			bytes: vec![0x90; PAGE_SIZE as usize],
+		}],
+		2,
+		1_000,
+	)
+	.await?;
+	let branch_id = read_database_branch_id(&test_ctx, &database_id).await?;
+	let controller = DepotFaultController::new();
+	let mut pauses = Vec::new();
+	// Each pause represents one distinct queued plan. A real commit advances the head before it
+	// enters Stage, so this is explicit workflow retry evidence rather than a test retry loop.
+	for invocation in 1..=9 {
+		let checkpoint = format!("hot-plan-starvation-{invocation}");
+		pauses.push(controller.pause_handle(checkpoint.clone()));
+		controller
+			.at(DepotFaultPoint::HotCompaction(
+				HotCompactionFaultPoint::StageBeforeAdmission,
+			))
+			.database_branch_id(branch_id)
+			.nth(invocation)
+			.pause(checkpoint)?;
+	}
+	let _fault_guard = register_workflow_fault_controller(branch_id, controller.clone());
+	let driver = DepotCompactionTestDriver::new(&test_ctx);
+	let manager_id = driver.start_manager(branch_id, None, true).await?;
+	let advance = async {
+		for (index, pause) in pauses.iter().enumerate() {
+			tokio::time::timeout(Duration::from_secs(30), pause.wait_reached()).await?;
+			let result = db
+				.commit(
+					vec![DirtyPage {
+						pgno: 1,
+						bytes: vec![0x91 + index as u8; PAGE_SIZE as usize],
+					}],
+					2,
+					2_000 + index as i64 * 1_000,
+				)
+				.await;
+			pause.release();
+			result?;
+		}
+		Ok::<_, anyhow::Error>(())
+	};
+	let force = driver.force_compaction(
+		manager_id,
+		branch_id,
+		ForceCompactionWork {
+			hot: true,
+			cold: false,
+			reclaim: false,
+			final_settle: false,
+		},
+	);
+	let (advance_result, hot_result) = tokio::join!(advance, force);
+	advance_result?;
+	let hot = hot_result?;
+	controller.assert_expected_fired()?;
+	assert_eq!(
+		hot.retryable_rejections, 9,
+		"every queued plan should be invalidated: {hot:?}"
+	);
+	assert_eq!(hot.completed_job_ids.len(), 9);
+	assert!(
+		hot.terminal_error
+			.as_deref()
+			.is_some_and(|error| error.contains("compaction plan remained stale after 8 retries")),
+		"unexpected force result: {hot:?}"
+	);
+	assert!(
+		read_value(&test_ctx, branch_compaction_root_key(branch_id))
+			.await?
+			.is_none(),
+		"repeated plans must not claim successful watermark progress"
+	);
+	assert_eq!(
+		db.get_pages(vec![1]).await?[0].bytes,
+		Some(vec![0x99; PAGE_SIZE as usize])
+	);
+	test_ctx.shutdown().await?;
+	Ok(())
+}
+
 #[tokio::test]
 async fn lifecycle_change_fences_an_inflight_hot_install() -> Result<()> {
 	let cold_root = Builder::new()

@@ -980,6 +980,15 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   不构成完整资格；拒绝发生在资源发布、Prometheus 访问和输出创建前。
 - 只有中央 Router 被证明为瓶颈后，才启动 Cell-local Router 下沉；
 - 不把压测中发现的单 Cell 上限误写成整个产品上限，横向容量通过增加 Cell 扩展。
+- 持续写入与后台队列须分别观察：当前热计划在 Stage 和 Install 都重读当前 head 并核对输入指纹，
+  排队期间 head 推进可能使计划失效重排。`cold_workflow_publish` 的事件有序回归分别暂停于
+  准入前和 Stage 完成后，通过真实 commit 验证拒绝计数、重新规划及最新页读取。
+  准入前暂停仅在 `test-faults` 启用，不在 UDB 事务内阻塞并发 commit；不得为了提升吞吐删除
+  fingerprint、生命周期或 PITR/history 校验。局部复现不等于证明云上积压根因，也不排除未来
+  用完整证明过的不可变前缀计划消除 head 推进造成的无效重排。
+  2026-10-02 本地三条真实存储回归确认两处失效及持续写入饥饿：九个计划分别在准入前被
+  新 commit 使其过期，force 耗尽八次重试预算且 root 没有推进，最新页仍正确；这不是云上
+  根因已修复的证据，也没有改变当前运行参数。
 - builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
   集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
 - 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配
