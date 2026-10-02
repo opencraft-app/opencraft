@@ -759,6 +759,20 @@ func (a *SandboxAdapter) doRequest(
 	expectedStatus int,
 	respBody interface{},
 ) error {
+	return a.doRequestWithRetryLimit(ctx, action, method, path, query, reqBody, expectedStatus, respBody, a.retryConfig.MaxRetries)
+}
+
+func (a *SandboxAdapter) doRequestWithRetryLimit(
+	ctx context.Context,
+	action string,
+	method string,
+	path string,
+	query url.Values,
+	reqBody interface{},
+	expectedStatus int,
+	respBody interface{},
+	maxRetries int,
+) error {
 	start := time.Now() // 记录请求开始时间
 
 	logger := a.logger
@@ -783,7 +797,7 @@ func (a *SandboxAdapter) doRequest(
 	}
 
 	var lastErr error
-	for attempt := 0; attempt <= a.retryConfig.MaxRetries; attempt++ {
+	for attempt := 0; attempt <= maxRetries; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, method, requestURL, bytes.NewReader(bodyBytes))
 		if err != nil {
 			metric.RecordSandboxAPICall(action, time.Since(start).Seconds(), errcode.ErrSandboxServiceError)
@@ -815,7 +829,7 @@ func (a *SandboxAdapter) doRequest(
 				zap.Int("attempt", attempt+1),
 				zap.Error(reqErr),
 			)
-			if shouldRetryNetwork(reqErr) && attempt < a.retryConfig.MaxRetries {
+			if shouldRetryNetwork(reqErr) && attempt < maxRetries {
 				if waitErr := sleepWithContext(ctx, backoff(a.retryConfig.RetryInterval, attempt)); waitErr != nil {
 					metric.RecordSandboxAPICall(action, time.Since(start).Seconds(), waitErr)
 					return waitErr
@@ -849,7 +863,7 @@ func (a *SandboxAdapter) doRequest(
 			zap.Duration("duration", duration),
 		)
 
-		if resp.StatusCode >= 500 && attempt < a.retryConfig.MaxRetries {
+		if resp.StatusCode >= 500 && attempt < maxRetries {
 			lastErr = errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox returned status %d", resp.StatusCode)
 			if waitErr := sleepWithContext(ctx, backoff(a.retryConfig.RetryInterval, attempt)); waitErr != nil {
 				metric.RecordSandboxAPICall(action, time.Since(start).Seconds(), waitErr)
@@ -1054,7 +1068,8 @@ func (a *SandboxAdapter) InvokeCommand(ctx context.Context, sandboxID string, co
 		return nil, err
 	}
 	commandID = strings.TrimSpace(commandID)
-	if commandID == "" || len(parameters) == 0 {
+	// Sandbox authorizes parameterless Skill IDs separately from credential IDs.
+	if commandID == "" {
 		return nil, errcode.ErrSandboxInvalidParam
 	}
 	if timeoutSec <= 0 {
@@ -1065,11 +1080,17 @@ func (a *SandboxAdapter) InvokeCommand(ctx context.Context, sandboxID string, co
 	}
 
 	invResp := new(TATCommandResponse)
-	if err := a.doRequest(
+	retryLimit := a.retryConfig.MaxRetries
+	if len(parameters) == 0 {
+		// An ambiguous Skill invoke is never blindly redispatched. GET polling
+		// and the established credential invocation retain their retry policy.
+		retryLimit = 0
+	}
+	if err := a.doRequestWithRetryLimit(
 		ctx, "tat_invoke", http.MethodPost,
 		"/internal/sandboxes/"+url.PathEscape(sandboxID)+"/tat/invocations",
 		nil, &InvokeCommandRequest{CommandID: commandID, Parameters: parameters},
-		http.StatusAccepted, invResp,
+		http.StatusAccepted, invResp, retryLimit,
 	); err != nil {
 		return nil, err
 	}

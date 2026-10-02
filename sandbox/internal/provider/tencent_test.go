@@ -515,3 +515,18 @@ func TestMockProviderExportBlueprintUsesStructuredShapes(t *testing.T) {
 		t.Fatalf("unexpected route semantics: %+v", exported.RouteShape.RouteTables[0].Routes)
 	}
 }
+
+func TestInvokeCommandParametersOmitsParameterFieldForSkill(t *testing.T) {
+	for _, parameters := range []map[string]string{nil, {}} {
+		request, err := invokeCommandParameters("ins-test", "cmd-skill", parameters)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, present := request["Parameters"]; present {
+			t.Fatal("parameterless Skill command must omit Parameters")
+		}
+		if request["CommandId"] != "cmd-skill" || len(request) != 2 {
+			t.Fatalf("unexpected request: %#v", request)
+		}
+	}
+}

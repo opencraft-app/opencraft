@@ -719,3 +719,12 @@ Owner review、生产 DB 备份/迁移门禁、Argo 手工 sync 及静态兼容�
 `.ci/workers.yml` push trigger 中排除，避免隐藏发布触发上海 rescue-exporter /
 hermes-importer 的自动 pin。建站继续走 `.ci/workers-website-deployer.yml` 的双区域
 人工 production 通道；共享 go.mod/go.sum/Dockerfile 和其他 worker 目录触发规则保留。
+
+## 建站 auth-only Skill hook 的配对发布（2026-10-02）
+
+`argocd/services/{ctl,sandbox}/{shprod,sgprod}` source env 的独立 Skill 地域映射必须配对；
+Sandbox replacements 消费进 runtime ConfigMap，CTL 创建任务 worker optional 注入同名 env。
+其它环境默认关闭，不得替换 credential CommandId。先发布 Sandbox 精确 allowlist/provider，
+再发布 CTL new-instance hook；回退先关闭 CTL Skill map 再关闭 Sandbox Skill allowlist。
+源配置/render 通过不等于 live GitOps/Argo revision/image 或新实例业务验收；本轮无实际发布。
+详细步骤及已交接 ID 见 [建站 Skill auth fallback](../operations/website-skill-auth-fallback.md)。
