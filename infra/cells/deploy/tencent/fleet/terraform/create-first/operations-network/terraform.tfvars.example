@@ -1,0 +1,7 @@
+region                  = "ap-beijing"
+terraform_state_bucket  = "actor-terraform-state-beijing-1388575217"
+foundation_state_prefix = "actor-fleet/foundation"
+management_state_prefix = "actor-fleet/management"
+operations_vpc_name     = "lightclaw-bj8"
+operations_vpc_cidr     = "10.0.0.0/12"
+route_table_name        = "actor-lightvela-operations"

@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: actor-fleet-system
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCellProfile
+metadata:
+  name: local-rivet-fdb-cos-v1
+spec:
+  driverABI: rivet-fdb-cos-v1
+  region: local
+  availabilityMode: production-multi-zone
+  zones: [local-a, local-b, local-c]
+  foundationDB:
+    version: 7.3.79
+    processCount: 6
+    processesPerZone: 2
+    coordinatorCount: 5
+    redundancyMode: three_data_hall
+    localityKey: data_hall
+    storageEngine: ssd-2
+    exclusiveCluster: true
+    supervisor: systemd-fdbmonitor
+    dataDisk:
+      type: CLOUD_BSSD
+      sizeGiB: 200
+      encrypted: false
+      retain: true
+  runtime:
+    deploymentMode: native-systemd
+    minEngineHosts: 1
+    minWorkerdHosts: 1
+    localStateDisposable: true
+  cos:
+    coldBucketPrefix: local-actor-cold-
+    backupBucketPrefix: local-actor-backup-
+    multiAZ: false
+    versioning: NeverEnabled
+    objectKeyLayout: depot-cold-v2
+    exactKeyRecovery: true
+    listIndependent: true
+    inCommitPath: false
+  capacity:
+    healthyWriteUtilizationLimitPercent: 50
+    degradedWriteUtilizationLimitPercent: 70
+    scaleOutAtPercent: 80
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardClass
+metadata:
+  name: local-rivet-fdb-cos-v1
+spec:
+  controllerName: fleet.actor.dev/rivet-fdb-cos
+  driverABI: rivet-fdb-cos-v1
+  profileRef:
+    name: local-rivet-fdb-cos-v1
+    digest: sha256:c5dc3da7d471bb777fd2fffde79adb9d4feaef41c06a759d655381ebaa6f1e61
+  mobilityPolicy: DriverControlled
+  retirementPolicy: ProofRequired
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardPool
+metadata:
+  name: local-mesh
+  namespace: actor-fleet-system
+spec:
+  className: local-rivet-fdb-cos-v1
+  minCells: 2
+  maxCells: 2
+  maxConcurrentCellProvisioning: 1
+  placement:
+    region: local
+    managementClusters: [runtime-a, runtime-b]
+  routing:
+    strategy: route-hinted-v1
+    exactExceptionDirectory: versioned-exact-v1
+    perActorKubernetesObjects: false
+  reservation:
+    mode: CAS
+    maxPendingPerCell: 1024
+    ttlSeconds: 30
+  rebalance:
+    onScaleOut: NewActorsOnly
+    migrationBatchSize: 128
+  scaleIn:
+    mode: Disabled
+    enterUtilizationPercent: 25
+    exitUtilizationPercent: 40
+    observationSeconds: 604800
+    maxConcurrentRetirements: 1

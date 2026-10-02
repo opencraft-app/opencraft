@@ -1,0 +1,5 @@
+FROM foundationdb/foundationdb:7.3.79
+
+RUN microdnf install -y iproute iproute-tc && microdnf clean all
+
+ENTRYPOINT ["/usr/sbin/tc"]

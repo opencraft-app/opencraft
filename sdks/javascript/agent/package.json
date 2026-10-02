@@ -1,0 +1,49 @@
+{
+	"name": "@minisandbox/agent",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"engines": {
+		"node": ">=20"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"examples",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsup src/index.ts --format esm --dts --clean",
+		"build:deepseek-harness": "node examples/deepseek-harness/build.mjs",
+		"check-types": "tsc --noEmit && tsc --noEmit -p examples/deepseek-harness/tsconfig.json",
+		"example:deepseek-harness": "node examples/deepseek-harness/run.mjs",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "4.20251014.0",
+		"@deepseek-ai/cordis": "4.0.2",
+		"@deepseek-ai/dsh-agent": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-agent-loop": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-compaction": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-compaction-basic": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-compaction-tool-result-pruner": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-llm": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-session": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-session-projection": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-token-meter": "0.1.2-alpha.5",
+		"@deepseek-ai/dsh-tools": "0.1.2-alpha.5",
+		"@minisandbox/miniflare": "workspace:*",
+		"@types/node": "^22.15.3",
+		"esbuild": "0.25.12",
+		"tsup": "^8.5.0",
+		"typescript": "^5.9.2",
+		"vitest": "^3.2.4"
+	}
+}

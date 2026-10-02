@@ -1,0 +1,67 @@
+prometheus:
+  url: http://actor-mesh-observability-prometheus.mesh-observability.svc
+  port: 9090
+
+replicas: 2
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 0
+
+logLevel: 4
+
+rules:
+  default: false
+  external: []
+  custom:
+    - seriesQuery: 'workers_api_routing_requests_total{namespace="workers-api-system",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+          pod:
+            resource: pod
+      name:
+        matches: ^workers_api_routing_requests_total$
+        as: workers_api_routing_requests_per_second
+      metricsQuery: sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)
+    - seriesQuery: 'workers_api_routing_requests_in_flight{namespace="workers-api-system",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+          pod:
+            resource: pod
+      name:
+        matches: ^workers_api_routing_requests_in_flight$
+        as: workers_api_routing_requests_in_flight
+      metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: fleet.actor.dev/control-pool
+              operator: In
+              values: ["true"]
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [prometheus-adapter]
+          topologyKey: kubernetes.io/hostname

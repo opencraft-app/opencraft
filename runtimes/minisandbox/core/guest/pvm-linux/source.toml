@@ -1,0 +1,55 @@
+# Reproducible external source input. The source tree is not vendored.
+
+[linux]
+repository = "https://github.com/loopholelabs/linux-pvm.git"
+branch = "pvm-v6.7"
+commit = "51ee0edb884b3372c168f58244de58507c99b2f7"
+archive_sha256 = "cf5e3a36119472d604de5d2207400a1c281ecd6c65fb5d0a88172ead19eaf1d9"
+kernel_version = "6.7.12"
+pvm_abi = "legacy-pvcs-v1"
+
+[minisandbox_overlay]
+base_commit = "51ee0edb884b3372c168f58244de58507c99b2f7"
+guest_driver_sha256 = "5edf4671efa536fbc64f177263a4c23fd3a1b243011402ffb3a7a230abb118f5"
+kernel_config_sha256 = "5722368d5def75d145ada04e4e48aec07d8f5e71fa24cc52520ff18f0e652909"
+smoke_init_sha256 = "a2f7068f4e775fda7622d4c007c17cc41a5f605ce94e11fe3b3fdbf49d59ff09"
+python_workload_sha256 = "e6ea70be36e44e1d669de27b4d2e559d943c14b27d28af47e1b6c8c66e21cb27"
+
+[minisandbox_overlay.pvm_socket]
+directory = "../../socket-service/guest"
+kconfig_sha256 = "bc90287cd371c6dc2a0adb65f43a487fd2e5262cdd089ac6c5e716e588ec8de2"
+makefile_sha256 = "0a967fe30ede75793b503f230f5bf90d389ceb935dbb0ea26012286f7999521c"
+provider_sha256 = "07ac20dfffc2a6c7d5f36b054d8d4d76ad20cab4b93c55f6d30aedd903b2dcad"
+local_provider_sha256 = "7df4df3851fdfc6d952c0d817188c1ce4cf7f386d38c77c84809a1f3a162ed27"
+local_header_sha256 = "db4f364a2f2db26374a044d933fb63f7eb2d873f5b566385805ee674d45b849b"
+abi_header_sha256 = "6e84f20c56b2b2c675fef0ca9aa5d3fd2448e2b3849add30adb50e35c09502ce"
+
+[[linux.patches]]
+file = "patches/0001-map-decompression-output-before-pvm-events.patch"
+base_commit = "51ee0edb884b3372c168f58244de58507c99b2f7"
+sha256 = "6c9fdf463a43ce0f45ed1aad6541ad0d28c61ac3924c9fb7f946ba5e90d7a160"
+purpose = "preserve the decompressor output identity map until PVM events exist"
+
+[[linux.patches]]
+file = "patches/0002-register-pmem-resources-without-pci.patch"
+base_commit = "51ee0edb884b3372c168f58244de58507c99b2f7"
+sha256 = "49f738304567f3da94725b771c7c8391844d16a580f5373a95c13b91b1c70c32"
+purpose = "register E820 type-12 PMEM when the minimal PVM guest omits PCI"
+
+[[linux.patches]]
+file = "patches/0003-publish-pvm-idle-deadline-to-minisandbox.patch"
+base_commit = "51ee0edb884b3372c168f58244de58507c99b2f7"
+sha256 = "864d33ca77fa3960f9dceace0859b178c952e3cbb3866fa181a4d7817f5bf70b"
+purpose = "opt in to a fixed-width host-visible idle deadline while retaining PVM IRQ_HALT"
+
+[[linux.patches]]
+file = "patches/0004-expose-native-inet-kernel-socket-factory.patch"
+base_commit = "51ee0edb884b3372c168f58244de58507c99b2f7"
+sha256 = "bf8c417e21e16c7ed53f8954e0b63974e3f114d09300c6c963ddda769c770c20"
+purpose = "route guest TCP loopback through hidden native INET while PVM owns public PF_INET"
+
+[erofs_utils]
+version = "1.8.10"
+upstream_commit = "51b5939b5f783221310d25146e6a2019ba8129b6"
+archive = "erofs-utils_1.8.10.orig.tar.gz"
+archive_sha256 = "05eb4edebe11decce6ecb34e98d2f80c8cd283c2f2967d8ba7efd58418570514"

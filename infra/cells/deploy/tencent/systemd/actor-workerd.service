@@ -1,0 +1,39 @@
+[Unit]
+Description=Actor shared workerd isolate runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=actor-workerd
+Group=actor-workerd
+EnvironmentFile=/etc/actor/rivet-workerd/workerd.env
+Environment=RIVET_DEPOT_BRIDGE_ADDRESS=127.0.0.1:18081
+Environment=RIVET_DEPOT_MAX_BINDINGS=4096
+Environment=RIVET_DEPOT_MAX_VFS_CACHE_BYTES=4294967296
+Environment=RIVET_DEPOT_CACHE_CAPACITY_PAGES=256
+Environment=RIVET_WORKERD_SQLITE_MAX_MEMORY_BYTES=16777216
+ExecStart=/opt/actor/rivet-workerd/current/bin/workerd serve /etc/actor/rivet-workerd/config-depot.capnp --experimental --socket-addr http=127.0.0.1:18080
+Restart=always
+RestartSec=1
+RuntimeDirectory=actor-workerd
+WorkingDirectory=/run/actor-workerd
+LimitNOFILE=1048576
+MemoryMax=12G
+TasksMax=4096
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

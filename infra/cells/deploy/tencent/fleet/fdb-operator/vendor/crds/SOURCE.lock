@@ -1,0 +1,7 @@
+source = "https://github.com/FoundationDB/fdb-kubernetes-operator"
+commit = "b543152be5614170a1fa976421238989e9820cde"
+operator_version = "v2.34.0"
+
+apps.foundationdb.org_foundationdbclusters.yaml = "sha256:57511675909ad02345909343efa295e4c28fcfb67c811cb021663a7c03dcd3f1"
+apps.foundationdb.org_foundationdbbackups.yaml = "sha256:2fb8313e25fa58be8a09f8a0cfc04172d80605b92850a523d73031ba8195a266"
+apps.foundationdb.org_foundationdbrestores.yaml = "sha256:499d7feb7d3e553f75b23c77a7e7d9467355703f771284b683ec4f4515ee9c6b"

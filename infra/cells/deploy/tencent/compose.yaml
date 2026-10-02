@@ -1,0 +1,451 @@
+name: rivet-fdb-cos
+
+x-fdb-service: &fdb-service
+  image: foundationdb/foundationdb:7.3.79
+  platform: linux/amd64
+  restart: unless-stopped
+  environment: &fdb-environment
+    FDB_CLUSTER_FILE_CONTENTS: rivetfdbcos:localorbstackr3@192.168.240.10:4500,192.168.240.11:4500,192.168.240.12:4500,192.168.240.13:4500,192.168.240.14:4500
+    FDB_NETWORKING_MODE: container
+    FDB_PROCESS_CLASS: storage
+  healthcheck:
+    test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/4500"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+    start_period: 5s
+
+x-qualification-fdb-service: &qualification-fdb-service
+  image: foundationdb/foundationdb:7.3.79
+  platform: linux/amd64
+  profiles: ["qualification"]
+  restart: "no"
+  environment: &qualification-fdb-environment
+    FDB_CLUSTER_FILE_CONTENTS: rivetfdbqualify:ephemeralorbstackr3@192.168.240.20:4500,192.168.240.21:4500,192.168.240.22:4500,192.168.240.23:4500,192.168.240.24:4500
+    FDB_NETWORKING_MODE: container
+    FDB_PROCESS_CLASS: storage
+  tmpfs:
+    - /var/fdb/data
+  healthcheck:
+    test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/4500"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+    start_period: 5s
+
+x-disk-full-fdb-service: &disk-full-fdb-service
+  image: foundationdb/foundationdb:7.3.79
+  platform: linux/amd64
+  profiles: ["disk-full"]
+  restart: "no"
+  environment: &disk-full-fdb-environment
+    FDB_CLUSTER_FILE_CONTENTS: rivetfdbdiskfull:ephemeralorbstackr3@192.168.240.30:4500,192.168.240.31:4500,192.168.240.32:4500,192.168.240.33:4500,192.168.240.34:4500
+    FDB_PROCESS_CLASS: storage
+  entrypoint: ["/qualification/fdb-disk-full-entrypoint.sh"]
+  volumes:
+    - ./fdb-disk-full-entrypoint.sh:/qualification/fdb-disk-full-entrypoint.sh:ro
+  tmpfs:
+    - /var/fdb/data:size=512m,mode=0755
+  healthcheck:
+    test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/4500"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+    start_period: 5s
+
+services:
+  fdb-0:
+    <<: *fdb-service
+    hostname: fdb-0
+    volumes:
+      - fdb-0-data:/var/fdb/data
+    networks:
+      default:
+        ipv4_address: 192.168.240.10
+
+  fdb-1:
+    <<: *fdb-service
+    hostname: fdb-1
+    volumes:
+      - fdb-1-data:/var/fdb/data
+    networks:
+      default:
+        ipv4_address: 192.168.240.11
+
+  fdb-2:
+    <<: *fdb-service
+    hostname: fdb-2
+    volumes:
+      - fdb-2-data:/var/fdb/data
+    networks:
+      default:
+        ipv4_address: 192.168.240.12
+
+  fdb-3:
+    <<: *fdb-service
+    hostname: fdb-3
+    volumes:
+      - fdb-3-data:/var/fdb/data
+    networks:
+      default:
+        ipv4_address: 192.168.240.13
+
+  fdb-4:
+    <<: *fdb-service
+    hostname: fdb-4
+    volumes:
+      - fdb-4-data:/var/fdb/data
+    networks:
+      default:
+        ipv4_address: 192.168.240.14
+
+  fdb-init:
+    image: foundationdb/foundationdb:7.3.79
+    platform: linux/amd64
+    restart: "no"
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for attempt in $$(seq 1 90); do
+          fdbcli -C /etc/foundationdb/fdb.cluster --exec 'configure new triple ssd' >/tmp/configure.log 2>&1 || true
+          fdb_report="$$(fdbcli -C /etc/foundationdb/fdb.cluster --exec 'status details' 2>&1 || true)"
+          if grep -q 'Replication health     - Healthy' <<<"$$fdb_report" \
+            && grep -q 'Fault Tolerance        - 2 machines' <<<"$$fdb_report" \
+            && grep -q 'Coordinators           - 5' <<<"$$fdb_report"; then
+            printf '%s\n' "$$fdb_report"
+            exit 0
+          fi
+          sleep 1
+        done
+        cat /tmp/configure.log
+        printf '%s\n' "$$fdb_report"
+        exit 1
+    volumes:
+      - ./fdb.cluster:/etc/foundationdb/fdb.cluster:ro
+    depends_on:
+      fdb-0:
+        condition: service_healthy
+      fdb-1:
+        condition: service_healthy
+      fdb-2:
+        condition: service_healthy
+      fdb-3:
+        condition: service_healthy
+      fdb-4:
+        condition: service_healthy
+
+  qfdb-0:
+    <<: *qualification-fdb-service
+    hostname: qfdb-0
+    networks:
+      default:
+        ipv4_address: 192.168.240.20
+
+  qfdb-1:
+    <<: *qualification-fdb-service
+    hostname: qfdb-1
+    networks:
+      default:
+        ipv4_address: 192.168.240.21
+
+  qfdb-2:
+    <<: *qualification-fdb-service
+    hostname: qfdb-2
+    networks:
+      default:
+        ipv4_address: 192.168.240.22
+
+  qfdb-3:
+    <<: *qualification-fdb-service
+    hostname: qfdb-3
+    networks:
+      default:
+        ipv4_address: 192.168.240.23
+
+  qfdb-4:
+    <<: *qualification-fdb-service
+    hostname: qfdb-4
+    networks:
+      default:
+        ipv4_address: 192.168.240.24
+
+  qfdb-init:
+    image: foundationdb/foundationdb:7.3.79
+    platform: linux/amd64
+    profiles: ["qualification"]
+    restart: "no"
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for attempt in $$(seq 1 90); do
+          fdbcli -C /etc/foundationdb/fdb.cluster --exec 'configure new triple ssd' >/tmp/configure.log 2>&1 || true
+          fdb_report="$$(fdbcli -C /etc/foundationdb/fdb.cluster --exec 'status details' 2>&1 || true)"
+          if grep -q 'Replication health     - Healthy' <<<"$$fdb_report" \
+            && grep -q 'Fault Tolerance        - 2 machines' <<<"$$fdb_report" \
+            && grep -q 'Coordinators           - 5' <<<"$$fdb_report"; then
+            printf '%s\n' "$$fdb_report"
+            exit 0
+          fi
+          sleep 1
+        done
+        cat /tmp/configure.log
+        printf '%s\n' "$$fdb_report"
+        exit 1
+    volumes:
+      - ./qualification-fdb.cluster:/etc/foundationdb/fdb.cluster:ro
+    depends_on:
+      qfdb-0:
+        condition: service_healthy
+      qfdb-1:
+        condition: service_healthy
+      qfdb-2:
+        condition: service_healthy
+      qfdb-3:
+        condition: service_healthy
+      qfdb-4:
+        condition: service_healthy
+
+  qfdb-backup-agent:
+    image: foundationdb/foundationdb:7.3.79
+    platform: linux/amd64
+    profiles: ["qualification"]
+    restart: "no"
+    entrypoint: ["/usr/bin/backup_agent"]
+    command: ["-C", "/etc/foundationdb/fdb.cluster", "-m", "1GiB"]
+    volumes:
+      - ./qualification-fdb.cluster:/etc/foundationdb/fdb.cluster:ro
+      - qualification-fdb-backup:/backup
+    depends_on:
+      qfdb-init:
+        condition: service_completed_successfully
+
+  dfdb-0:
+    <<: *disk-full-fdb-service
+    hostname: dfdb-0
+    networks:
+      default:
+        ipv4_address: 192.168.240.30
+
+  dfdb-1:
+    <<: *disk-full-fdb-service
+    hostname: dfdb-1
+    networks:
+      default:
+        ipv4_address: 192.168.240.31
+
+  dfdb-2:
+    <<: *disk-full-fdb-service
+    hostname: dfdb-2
+    networks:
+      default:
+        ipv4_address: 192.168.240.32
+
+  dfdb-3:
+    <<: *disk-full-fdb-service
+    hostname: dfdb-3
+    networks:
+      default:
+        ipv4_address: 192.168.240.33
+
+  dfdb-4:
+    <<: *disk-full-fdb-service
+    hostname: dfdb-4
+    networks:
+      default:
+        ipv4_address: 192.168.240.34
+
+  dfdb-init:
+    image: foundationdb/foundationdb:7.3.79
+    platform: linux/amd64
+    profiles: ["disk-full"]
+    restart: "no"
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for attempt in $$(seq 1 120); do
+          fdbcli -C /etc/foundationdb/fdb.cluster --exec 'configure new triple ssd' >/tmp/configure.log 2>&1 || true
+          fdb_report="$$(fdbcli -C /etc/foundationdb/fdb.cluster --exec 'status details' 2>&1 || true)"
+          if grep -q 'Replication health     - Healthy' <<<"$$fdb_report" \
+            && grep -q 'Fault Tolerance        - 2 machines' <<<"$$fdb_report" \
+            && grep -q 'Coordinators           - 5' <<<"$$fdb_report"; then
+            printf '%s\n' "$$fdb_report"
+            exit 0
+          fi
+          sleep 1
+        done
+        cat /tmp/configure.log
+        printf '%s\n' "$$fdb_report"
+        exit 1
+    volumes:
+      - ./disk-full-fdb.cluster:/etc/foundationdb/fdb.cluster:ro
+    depends_on:
+      dfdb-0:
+        condition: service_healthy
+      dfdb-1:
+        condition: service_healthy
+      dfdb-2:
+        condition: service_healthy
+      dfdb-3:
+        condition: service_healthy
+      dfdb-4:
+        condition: service_healthy
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio-data:/data
+    ports:
+      - "19010:9000"
+      - "19011:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 minioadmin minioadmin123
+        mc mb --ignore-existing local/rivet-depot-cold
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  engine:
+    image: rivet-local/engine:fdb-cos
+    platform: linux/amd64
+    build:
+      context: ../../../..
+      dockerfile: docker/engine/Dockerfile
+      target: engine-full
+      args:
+        CARGO_BUILD_MODE: release
+        CARGO_BUILD_JOBS: ${RIVET_CARGO_BUILD_JOBS:-2}
+    command: start
+    restart: unless-stopped
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin123
+      AWS_EC2_METADATA_DISABLED: "true"
+    volumes:
+      - ./config.jsonc:/etc/rivet/config.jsonc:ro
+      - ./fdb.cluster:/etc/foundationdb/fdb.cluster:ro
+    ports:
+      - "16420:6420"
+      - "16421:6421"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:6421/health"]
+      interval: 2s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    depends_on:
+      fdb-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+
+  runner-init:
+    image: rivet-local/engine:fdb-cos
+    platform: linux/amd64
+    restart: "no"
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for pool_name in test-envoy workerd; do
+          curl --fail --silent --show-error \
+            --retry 30 --retry-all-errors --retry-delay 1 \
+            --request PUT \
+            --header 'Authorization: Bearer dev' \
+            --header 'Content-Type: application/json' \
+            --data '{"datacenters":{"default":{"normal":{}}}}' \
+            "http://engine:6420/runner-configs/$$pool_name?namespace=default"
+        done
+    depends_on:
+      engine:
+        condition: service_healthy
+
+  runner:
+    image: rivet-local/test-envoy:fdb-cos
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+      additional_contexts:
+        rivet-source: ../../../..
+    restart: unless-stopped
+    environment:
+      RIVET_ENDPOINT: http://engine:6420
+      INTERNAL_SERVER_PORT: "5050"
+      RIVET_POOL_NAME: test-envoy
+      AUTOSTART_ENVOY: "1"
+      AUTOCONFIGURE_SERVERLESS: "0"
+    stop_grace_period: 4s
+    ports:
+      - "15050:5050"
+    depends_on:
+      runner-init:
+        condition: service_completed_successfully
+
+  qualify:
+    profiles: ["qualification"]
+    image: ghcr.io/rivet-dev/rivet/engine-base-builder:a36b881
+    platform: linux/amd64
+    working_dir: /app
+    environment:
+      FDB_CLUSTER_FILE: /etc/foundationdb/fdb.cluster
+      RIVET_TEST_S3_ENDPOINT: http://minio:9000
+      RIVET_TEST_S3_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin123
+      AWS_EC2_METADATA_DISABLED: "true"
+    command:
+      - cargo
+      - test
+      - -p
+      - depot
+      - --features
+      - foundationdb,test-faults
+      - --test
+      - cold_workflow_publish
+      - foundationdb_s3_workflow_publishes_evicts_and_refills_by_exact_key
+      - --
+      - --exact
+    volumes:
+      - ../../../..:/app
+      - ./qualification-fdb.cluster:/etc/foundationdb/fdb.cluster:ro
+      - qualification-target:/app/target
+      - qualification-cargo-registry:/usr/local/cargo/registry
+      - qualification-cargo-git:/usr/local/cargo/git
+    depends_on:
+      qfdb-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+
+volumes:
+  fdb-0-data:
+  fdb-1-data:
+  fdb-2-data:
+  fdb-3-data:
+  fdb-4-data:
+  minio-data:
+  qualification-target:
+  qualification-cargo-registry:
+  qualification-cargo-git:
+  qualification-fdb-backup:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 192.168.240.0/24

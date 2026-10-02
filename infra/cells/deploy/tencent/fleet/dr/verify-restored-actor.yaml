@@ -1,0 +1,110 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: actor-bj-k01-dr-verify-20260818
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/purpose: disaster-recovery-qualification
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/purpose: disaster-recovery-qualification
+    spec:
+      restartPolicy: Never
+      serviceAccountName: actor-bj-k01-runtime
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        fsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/fdb-dedicated
+                    operator: DoesNotExist
+      containers:
+        - name: verifier
+          image: lightclaw-bj82.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:3fb073eaf074f03cc5b8634413d34c26e0077a8958459e4e723f11520e6fb2eb
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              export RUST_LOG=error
+              engine=/opt/actor/bin/rivet-engine
+              config=/etc/actor/runtime/config.jsonc
+              actor=9663vwynu2ra440p9b2plrcna5bl00
+              "$engine" --config "$config" depot execute --actor-id "$actor" \
+                --query "PRAGMA integrity_check"
+              "$engine" --config "$config" depot execute --actor-id "$actor" \
+                --query "SELECT value AS counter FROM counters WHERE name = 'main'"
+              "$engine" --config "$config" depot execute --actor-id "$actor" \
+                --query "SELECT COUNT(*) AS chunks, COALESCE(SUM(length(payload)), 0) AS bytes FROM bottomless_qualification_payloads"
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-cos
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-cos
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: FDB_TLS_CERTIFICATE_FILE
+              value: /var/fdb-tls/cert.pem
+            - name: FDB_TLS_CA_FILE
+              value: /var/fdb-tls/ca.pem
+            - name: FDB_TLS_KEY_FILE
+              value: /var/fdb-tls/key.pem
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /etc/actor/runtime/config.jsonc
+              subPath: config.jsonc
+              readOnly: true
+            - name: fdb-config
+              mountPath: /etc/actor/runtime/fdb.cluster
+              subPath: cluster-file
+              readOnly: true
+            - name: fdb-tls
+              mountPath: /var/fdb-tls
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/actor-runtime
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: actor-bj-k01-runtime-config
+        - name: fdb-config
+          configMap:
+            name: actor-bj-k01-dr-20260818-config
+        - name: fdb-tls
+          secret:
+            secretName: actor-bj-k01-backup-tls
+            defaultMode: 0440
+        - name: state
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

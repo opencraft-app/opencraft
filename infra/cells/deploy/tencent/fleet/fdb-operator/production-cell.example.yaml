@@ -1,0 +1,28 @@
+# Example only. The node pool, TLS Secrets and unique COS buckets must exist
+# before this Cell is applied. The provider binds clusterRef.uid after creating
+# the FoundationDBCluster; operators must never fill that UID by hand.
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCell
+metadata:
+  name: actor-bj-k01
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/pool: actor-beijing-kubernetes
+spec:
+  cellId: actor-bj-k01
+  className: rivet-fdb-cos-kubernetes-v1
+  region: ap-beijing
+  managementCluster: cls-replace-with-qualified-tke
+  desiredState: Provisioning
+  foundationDB:
+    exclusive: true
+    clusterRef:
+      name: actor-bj-k01
+      namespace: actor-fdb-cell-system
+  cos:
+    coldBucket: actor-depot-cold-prod-bj-k01-replace-appid
+    backupBucket: actor-fdb-backup-prod-bj-k01-replace-appid
+  retirement:
+    generation: 1
+    proofRequired: true
+    rollbackRetentionSeconds: 604800

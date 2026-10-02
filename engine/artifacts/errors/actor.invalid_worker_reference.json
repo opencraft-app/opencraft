@@ -1,0 +1,5 @@
+{
+  "code": "invalid_worker_reference",
+  "group": "actor",
+  "message": "Invalid Worker version reference."
+}

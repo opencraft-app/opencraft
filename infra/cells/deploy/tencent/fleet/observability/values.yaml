@@ -1,0 +1,277 @@
+fullnameOverride: actor-observability
+namespaceOverride: observability
+
+alertmanager:
+  enabled: false
+
+defaultRules:
+  disabled:
+    InfoInhibitor: true
+    PrometheusNotConnectedToAlertmanagers: true
+    Watchdog: true
+  rules:
+    alertmanager: false
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubePrometheusNodeRecording: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    network: false
+    node: false
+    nodeExporterAlerting: false
+    nodeExporterRecording: false
+    windows: false
+
+grafana:
+  enabled: true
+  admin:
+    existingSecret: actor-observability-grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  defaultDashboardsTimezone: browser
+  ingress:
+    enabled: false
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    type: sts
+    storageClassName: actor-observability-cbs-wffc-retain
+    accessModes: [ReadWriteOnce]
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fleet.actor.dev/fdb-dedicated
+                operator: DoesNotExist
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fleet.actor.dev/fdb-dedicated
+                operator: DoesNotExist
+
+prometheus:
+  enabled: true
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    replicas: 1
+    shards: 1
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    retention: 15d
+    retentionSize: 85GB
+    walCompression: true
+    serviceMonitorSelectorNilUsesHelmValues: true
+    podMonitorSelectorNilUsesHelmValues: true
+    ruleSelectorNilUsesHelmValues: true
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: fleet.actor.dev/fdb-dedicated
+                  operator: DoesNotExist
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: actor-observability-cbs-wffc-retain
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 100Gi
+
+kube-state-metrics:
+  metricLabelsAllowlist:
+    - nodes=[rivet.dev/compute,rivet.dev/pvm,topology.kubernetes.io/zone,kubernetes.io/hostname]
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fleet.actor.dev/fdb-dedicated
+                operator: DoesNotExist
+  rbac:
+    extraRules:
+      - apiGroups: [apiextensions.k8s.io]
+        resources: [customresourcedefinitions]
+        verbs: [list, watch]
+      - apiGroups: [apps.foundationdb.org]
+        resources: [foundationdbclusters, foundationdbbackups]
+        verbs: [list, watch]
+      - apiGroups: [fleet.actor.dev]
+        resources: [rivetcells, rivetcellreports]
+        verbs: [list, watch]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: apps.foundationdb.org
+              version: v1beta2
+              kind: FoundationDBCluster
+            metricNamePrefix: actor_foundationdb_cluster
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              cluster: [metadata, name]
+            metrics:
+              - name: available
+                help: Whether FoundationDB reports the cluster available.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, health, available]
+              - name: full_replication
+                help: Whether FoundationDB reports full replication.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, health, fullReplication]
+              - name: healthy
+                help: Whether FoundationDB reports the cluster healthy.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, health, healthy]
+              - name: generation
+                help: Desired FoundationDBCluster generation.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [metadata, generation]
+              - name: reconciled_generation
+                help: Last FoundationDBCluster generation reconciled by the Operator.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, generations, reconciled]
+          - groupVersionKind:
+              group: apps.foundationdb.org
+              version: v1beta2
+              kind: FoundationDBBackup
+            metricNamePrefix: actor_foundationdb_backup
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              backup: [metadata, name]
+              cluster: [spec, clusterName]
+            metrics:
+              - name: running
+                help: Whether the continuous FoundationDB backup is running.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, backupDetails, running]
+              - name: deployment_configured
+                help: Whether the FoundationDB backup-agent deployment is configured.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, deploymentConfigured]
+              - name: agent_count
+                help: Number of FoundationDB backup agents reported by the Operator.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, agentCount]
+              - name: generation
+                help: Desired FoundationDBBackup generation.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [metadata, generation]
+              - name: reconciled_generation
+                help: Last FoundationDBBackup generation reconciled by the Operator.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, generations, reconciled]
+          - groupVersionKind:
+              group: fleet.actor.dev
+              version: v1alpha1
+              kind: RivetCell
+            metricNamePrefix: actor_rivetcell
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              cell: [metadata, name]
+              management_cluster: [spec, managementCluster]
+              desired_state: [spec, desiredState]
+            metrics:
+              - name: ready_for_placement
+                help: Whether the Cell controller currently permits new placement.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, readyForPlacement]
+              - name: scale_out_epoch
+                help: Monotonic Cell scale-out pressure epoch.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, scaleOutEpoch]
+              - name: placement_count
+                help: Current exact placement count reported for the Cell.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [status, placementCount]
+          - groupVersionKind:
+              group: fleet.actor.dev
+              version: v1alpha1
+              kind: RivetCellReport
+            metricNamePrefix: actor_rivetcellreport
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              cell: [spec, cellRef, name]
+            metrics:
+              - name: qualification_ready
+                help: Whether the Cell report is bound to a successful immutable qualification receipt.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [spec, qualification, ready]
+nodeExporter:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: true

@@ -1,0 +1,55 @@
+#!/bin/sh
+
+set -eu
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+echo MINISANDBOX_DEBIAN_BOOT
+echo "DEBIAN_VERSION=$(cat /etc/debian_version)"
+echo "ROOT_MOUNT=$(awk '$2 == "/" { print $1, $3, $4 }' /proc/mounts)"
+echo "PMEM_DAX=$(cat /sys/block/pmem0/queue/dax)"
+
+/bin/sh -c '
+  test -x /lib64/ld-linux-x86-64.so.2
+  test -x /bin/bash
+  test -x /usr/bin/curl
+  test -x /usr/bin/gcc
+  test -x /usr/bin/git
+  test -x /usr/bin/node
+  test -x /usr/bin/nslookup
+  test -x /usr/bin/python3
+  test -x /usr/bin/screen
+  test -x /usr/bin/strace
+  test -x /usr/bin/tmux
+  test -x /usr/bin/vim
+  test -x /usr/bin/wget
+  test -f /opt/minisandbox/python-warm.py
+  test "$(cat /sys/block/pmem0/queue/dax)" = 1
+  echo MINISANDBOX_DEBIAN_GLIBC_PYTHON_OK
+'
+
+if grep -q '^overlay / overlay rw' /proc/mounts; then
+  test -b /dev/vda
+  touch /.minisandbox-overlay-write-test
+  rm /.minisandbox-overlay-write-test
+  echo MINISANDBOX_OVERLAYFS_OK
+else
+  grep -q '^[^ ]* / erofs ro[^ ]*.*dax=always' /proc/mounts
+fi
+
+/usr/bin/curl --version >/dev/null
+/usr/bin/git --version >/dev/null
+/usr/bin/node -e 'process.exit(0)'
+/usr/bin/nslookup -version >/dev/null 2>&1
+/usr/bin/screen --version >/dev/null
+/usr/bin/strace -qq -o /dev/null /bin/true
+/usr/bin/tmux -V >/dev/null
+/usr/bin/vim --version >/dev/null
+/usr/bin/wget --version >/dev/null
+printf 'int main(void) { return 0; }\n' \
+  | /usr/bin/gcc -x c -o /tmp/minisandbox-gcc-smoke -
+/tmp/minisandbox-gcc-smoke
+rm /tmp/minisandbox-gcc-smoke
+echo MINISANDBOX_DEBIAN_TOOLS_OK
+
+echo MINISANDBOX_EROFS_DAX_OK
+exec /usr/bin/python3 /opt/minisandbox/python-warm.py

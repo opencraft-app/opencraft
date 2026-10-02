@@ -1,0 +1,32 @@
+{
+  "schema": "rivet-storage-profile/v1",
+  "id": "tencent-cos-gc-qualification",
+  "environment": "qualification",
+  "region": "ap-beijing",
+  "cold_store": {
+    "kind": "s3",
+    "endpoint": "https://cos.ap-beijing.myqcloud.com",
+    "addressing_style": "virtual_hosted",
+    "object_layout": "cold/v2",
+    "max_object_size_bytes": 4194304,
+    "recovery_window_ms": 604800000
+  },
+  "cold_gc": {
+    "enabled": true,
+    "grace_period_ms": 604800000,
+    "max_delete_concurrency": 2,
+    "max_objects_per_batch": 25,
+    "retry": {
+      "max_attempts": 5,
+      "initial_backoff_ms": 500,
+      "max_backoff_ms": 10000
+    },
+    "dry_run": false
+  },
+  "cells": {
+    "qualification-a": {
+      "fdb_cluster": "ephemeral-test-metadata",
+      "cold_bucket": "REPLACE-WITH-DEDICATED-QUALIFICATION-BUCKET"
+    }
+  }
+}

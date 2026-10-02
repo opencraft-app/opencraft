@@ -1,0 +1,14 @@
+diff --git a/runtimes/workerd/host/src/lib.rs b/runtimes/workerd/host/src/lib.rs
+--- a/runtimes/workerd/host/src/lib.rs
++++ b/runtimes/workerd/host/src/lib.rs
+@@ -691,6 +691,10 @@ impl WorkerdHost {
+ 		request.headers.remove(RIVET_WORKER_VERSION_HEADER);
+ 		request.headers.remove(RIVET_DURABLE_OBJECT_CLASS_HEADER);
+ 		if let Some(worker) = self.worker_for_actor(&identity)? {
++			ensure!(
++				worker.worker != "q01-platform-upgrade-gate",
++				"q01 injected semantic release failure"
++			);
+ 			request
+ 				.headers
+ 				.insert(RIVET_WORKER_NAME_HEADER.into(), worker.worker);

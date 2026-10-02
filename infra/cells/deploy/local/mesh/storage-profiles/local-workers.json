@@ -1,0 +1,36 @@
+{
+  "schema": "rivet-storage-profile/v1",
+  "id": "local-workers-v1",
+  "environment": "local",
+  "region": "local",
+  "cold_store": {
+    "kind": "s3",
+    "endpoint": "http://k3d-rivet-mesh-hub-server-0:30082",
+    "addressing_style": "path",
+    "object_layout": "cold/v2",
+    "max_object_size_bytes": 4194304,
+    "recovery_window_ms": 604800000
+  },
+  "cold_gc": {
+    "enabled": false,
+    "grace_period_ms": 604800000,
+    "max_delete_concurrency": 4,
+    "max_objects_per_batch": 100,
+    "retry": {
+      "max_attempts": 5,
+      "initial_backoff_ms": 250,
+      "max_backoff_ms": 10000
+    },
+    "dry_run": true
+  },
+  "cells": {
+    "local-runtime-a": {
+      "fdb_cluster": "local-runtime-a-storage-v1",
+      "cold_bucket": "local-runtime-a-cold-v1"
+    },
+    "local-runtime-b": {
+      "fdb_cluster": "local-runtime-b-storage-v1",
+      "cold_bucket": "local-runtime-b-cold-v1"
+    }
+  }
+}

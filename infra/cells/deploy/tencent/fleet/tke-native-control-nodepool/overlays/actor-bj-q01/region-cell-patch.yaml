@@ -1,0 +1,28 @@
+apiVersion: node.tke.cloud.tencent.com/v1beta1
+kind: MachineSet
+metadata:
+  name: np-control0
+spec:
+  displayName: actor-bj-q01-control-native-v2
+  replicas: 3
+  deletePolicy: Newest
+  instanceTypes: [SA9.4XLARGE32]
+  subnetIDs: [subnet-qljvksy9, subnet-k1rounhb, subnet-kx0feejb]
+  scaling:
+    createPolicy: ZoneEquality
+    minReplicas: 3
+    maxReplicas: 3
+  template:
+    metadata:
+      annotations:
+        node.tke.cloud.tencent.com/machine-cloud-tags: '[{"tagKey":"cell","tagValue":"actor-bj-q01"}]'
+    spec:
+      displayName: actor-bj-q01-control-native-v2-worker
+      metadata:
+        labels:
+          fleet.actor.dev/cell: actor-bj-q01
+          fleet.actor.dev/cell-name: actor-bj-q01
+      providerSpec:
+        value:
+          keyIDs: [skey-g2mcgx6l]
+          securityGroupIDs: [sg-6m67d62b]

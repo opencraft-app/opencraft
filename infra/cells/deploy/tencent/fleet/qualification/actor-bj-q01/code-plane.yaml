@@ -1,0 +1,324 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actor-bj-q01-worker-registry
+  namespace: actor-fdb-cell-system
+automountServiceAccountToken: false
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actor-bj-q01-worker-registry
+  namespace: actor-fdb-cell-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-q01
+      fleet.actor.dev/component: worker-registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-bj-q01-worker-registry
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-q01
+    fleet.actor.dev/component: worker-registry
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-q01
+      fleet.actor.dev/component: worker-registry
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-q01
+        fleet.actor.dev/component: worker-registry
+    spec:
+      serviceAccountName: actor-bj-q01-worker-registry
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      nodeSelector:
+        fleet.actor.dev/control-pool: "true"
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  fleet.actor.dev/cell-name: actor-bj-q01
+                  fleet.actor.dev/component: worker-registry
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              fleet.actor.dev/cell-name: actor-bj-q01
+              fleet.actor.dev/component: worker-registry
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker-registry
+          image: __WORKER_REGISTRY_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args:
+            - --listen-address=:8080
+            - --backend=fdb-cos
+            - --fdb-cluster-file=/etc/foundationdb/fdb.cluster
+            - --fdb-key-prefix=code-plane-qualification-q01
+            - --cos-bucket-url=https://actor-worker-code-qual-bj-q01-nv1-1388575217.cos-internal.ap-beijing.myqcloud.com
+            - --cos-object-prefix=worker-registry/v5
+            - --version-retention=5
+            - --max-compatibility-date=2026-08-14
+          env:
+            - name: FDB_TLS_CERTIFICATE_FILE
+              value: /var/fdb-tls/cert.pem
+            - name: FDB_TLS_CA_FILE
+              value: /var/fdb-tls/ca.pem
+            - name: FDB_TLS_KEY_FILE
+              value: /var/fdb-tls/key.pem
+            - name: TENCENTCLOUD_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-q01-runtime-cos
+                  key: AWS_ACCESS_KEY_ID
+            - name: TENCENTCLOUD_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-q01-runtime-cos
+                  key: AWS_SECRET_ACCESS_KEY
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: fdb-cluster-file
+              mountPath: /etc/foundationdb
+              readOnly: true
+            - name: fdb-tls
+              mountPath: /var/fdb-tls
+              readOnly: true
+      volumes:
+        - name: fdb-cluster-file
+          configMap:
+            name: actor-bj-q01-config
+            items:
+              - key: cluster-file
+                path: fdb.cluster
+        - name: fdb-tls
+          secret:
+            secretName: actor-bj-q01-fdb-tls
+            defaultMode: 0440
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-bj-q01-worker-registry
+  namespace: actor-fdb-cell-system
+spec:
+  selector:
+    fleet.actor.dev/cell-name: actor-bj-q01
+    fleet.actor.dev/component: worker-registry
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actor-bj-q01-workers-api
+  namespace: actor-fdb-cell-system
+automountServiceAccountToken: false
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actor-bj-q01-workers-api
+  namespace: actor-fdb-cell-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-q01
+      fleet.actor.dev/component: workers-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-bj-q01-workers-api
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-q01
+    fleet.actor.dev/component: workers-api
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-q01
+      fleet.actor.dev/component: workers-api
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-q01
+        fleet.actor.dev/component: workers-api
+    spec:
+      serviceAccountName: actor-bj-q01-workers-api
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      nodeSelector:
+        fleet.actor.dev/control-pool: "true"
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  fleet.actor.dev/cell-name: actor-bj-q01
+                  fleet.actor.dev/component: workers-api
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              fleet.actor.dev/cell-name: actor-bj-q01
+              fleet.actor.dev/component: workers-api
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workers-api
+          image: __WORKERS_API_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args:
+            - --listen-address=:8080
+            - --registry-url=http://actor-bj-q01-worker-registry:8080
+            - --engine-url=http://actor-bj-q01-engine:6420
+            - --engine-cell=actor-bj-q01
+            - --datacenter=default
+            - --namespace=default
+            - --runner-name-selector=workerd
+            - --actor-ready-timeout=3s
+            - --fetch-response-header-timeout=25s
+            - --actor-cache-capacity=32768
+            - --actor-cache-idle-ttl=10m
+            - --internal-token=$(INTERNAL_TOKEN)
+            - --qualification-cell=actor-bj-q01
+            - --qualification-cell-uid=__CELL_UID__
+            - --qualification-datacenter=default
+          env:
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-q01-runtime-auth
+                  key: token
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-bj-q01-workers-api
+  namespace: actor-fdb-cell-system
+spec:
+  selector:
+    fleet.actor.dev/cell-name: actor-bj-q01
+    fleet.actor.dev/component: workers-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -1,0 +1,19 @@
+[Unit]
+Description=Initialize the Rivet workerd runner pool
+After=network-online.target actor-rivet-engine.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=actor-engine
+Group=actor-engine
+EnvironmentFile=/etc/actor/rivet-workerd/envoy.env
+ExecStart=/opt/actor/rivet-workerd/current/bin/init-workerd-pool
+RemainAfterExit=true
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

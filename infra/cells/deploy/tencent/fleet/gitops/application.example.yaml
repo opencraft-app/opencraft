@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: actor-runtime-release-q01
+  namespace: argocd
+spec:
+  project: actor-runtime-release
+  source:
+    repoURL: ssh://git@git.example.invalid/actor/fleet-desired.git
+    targetRevision: refs/heads/main
+    path: releases/actor-bj-q01/current
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: actor-release-system
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: false
+    retry:
+      limit: 0
+    syncOptions:
+      - CreateNamespace=false
+      - FailOnSharedResource=true
+  revisionHistoryLimit: 20

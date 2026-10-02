@@ -1,0 +1,226 @@
+import { getLogger } from "@/common/log";
+import type {
+	DatabaseProvider,
+	RawAccess,
+	SqliteDatabase,
+	SqliteTransactionDatabase,
+} from "./config";
+import {
+	isManualTransactionControl,
+	isSqliteBindingObject,
+	MIGRATION_TRANSACTION_TIMEOUT_MS,
+	toSqliteBindings,
+	validateTransactionTimeout,
+} from "./shared";
+
+export type { RawAccess } from "./config";
+
+interface DatabaseFactoryConfig {
+	onMigrate?: (db: RawAccess) => Promise<void> | void;
+	warnOnManualTransactions?: boolean;
+}
+
+function hasMultipleStatements(query: string): boolean {
+	const trimmed = query.trim().replace(/;+$/, "").trimEnd();
+	return trimmed.includes(";");
+}
+
+export function db({
+	onMigrate,
+	warnOnManualTransactions = true,
+}: DatabaseFactoryConfig = {}): DatabaseProvider<RawAccess> {
+	return {
+		createClient: async (ctx) => {
+			const nativeDatabaseProvider = ctx.nativeDatabaseProvider;
+			if (!nativeDatabaseProvider) {
+				throw new Error(
+					"native SQLite is required, but the current runtime did not provide a native database provider",
+				);
+			}
+
+			const db = await nativeDatabaseProvider.open(ctx.actorId);
+			let closed = false;
+			let manualTransactionWarned = false;
+			const ensureOpen = () => {
+				if (closed) {
+					throw new Error(
+						"Database is closed. This usually means a background timer (setInterval, setTimeout) or a stray promise is still running after the actor stopped. Use c.abortSignal to clean up timers before the actor shuts down.",
+					);
+				}
+			};
+
+			const createClient = (
+				target: SqliteDatabase | SqliteTransactionDatabase,
+				transactionScoped = false,
+			): RawAccess => ({
+				execute: async <
+					TRow extends Record<string, unknown> = Record<
+						string,
+						unknown
+					>,
+				>(
+					query: string,
+					...args: unknown[]
+				): Promise<TRow[]> => {
+					ensureOpen();
+					if (
+						!transactionScoped &&
+						warnOnManualTransactions &&
+						!manualTransactionWarned &&
+						!hasMultipleStatements(query) &&
+						isManualTransactionControl(query)
+					) {
+						manualTransactionWarned = true;
+						getLogger("database").warn(
+							{ actorId: ctx.actorId },
+							"Manual cross-call SQLite transactions can interleave with other actor work. Use db.transaction() for coordinated transactions. Set warnOnManualTransactions: false in your db(...) configuration to disable this warning.",
+						);
+					}
+
+					const kvReadsBefore = ctx.metrics?.totalKvReads ?? 0;
+					const kvWritesBefore = ctx.metrics?.totalKvWrites ?? 0;
+					const start = performance.now();
+
+					try {
+						if (args.length > 0) {
+							const bindings =
+								args.length === 1 &&
+								isSqliteBindingObject(args[0])
+									? toSqliteBindings(args[0])
+									: toSqliteBindings(args);
+							const { rows, columns } = await target.execute(
+								query,
+								bindings,
+							);
+							return rows.map((row) =>
+								rowToObject<TRow>(row, columns),
+							);
+						}
+
+						if (!hasMultipleStatements(query)) {
+							const { rows, columns } = await target.execute(
+								query,
+								undefined,
+							);
+							return rows.map((row) =>
+								rowToObject<TRow>(row, columns),
+							);
+						}
+
+						return await execMultiStatement<TRow>(target, query);
+					} finally {
+						const durationMs = performance.now() - start;
+						ctx.metrics?.trackSql(query, durationMs);
+						if (ctx.metrics) {
+							const kvReads =
+								ctx.metrics.totalKvReads - kvReadsBefore;
+							const kvWrites =
+								ctx.metrics.totalKvWrites - kvWritesBefore;
+							ctx.log?.debug({
+								msg: "sql query",
+								query: query.slice(0, 120),
+								durationMs,
+								kvReads,
+								kvWrites,
+							});
+						}
+					}
+				},
+				transaction: async <T>(
+					callback: (tx: RawAccess) => Promise<T> | T,
+					options?: { timeout?: number },
+				): Promise<T> => {
+					validateTransactionTimeout(options?.timeout);
+					const transaction = await db.beginTransaction(
+						options?.timeout,
+					);
+					const tx = createClient(transaction, true);
+					try {
+						const result = await callback(tx);
+						await transaction.commit();
+						return result;
+					} catch (error) {
+						try {
+							await transaction.rollback();
+						} catch {
+							// Preserve the callback or commit error after expiry cleanup.
+						}
+						throw error;
+					}
+				},
+				close: async () => {
+					if (!closed) {
+						closed = true;
+						await db.close();
+					}
+				},
+				nativeMetrics: () => db.nativeMetrics?.() ?? null,
+			});
+			const client = createClient(db);
+			return client;
+		},
+		onMigrate: async (client) => {
+			if (onMigrate) {
+				await withMigrationSavepoint(client, (leased) =>
+					onMigrate(leased),
+				);
+			}
+		},
+	};
+}
+
+function rowToObject<TRow extends Record<string, unknown>>(
+	row: unknown[],
+	columns: string[],
+): TRow {
+	const rowObj: Record<string, unknown> = {};
+	for (let i = 0; i < columns.length; i++) {
+		rowObj[columns[i]] = row[i];
+	}
+	return rowObj as TRow;
+}
+
+async function execMultiStatement<TRow extends Record<string, unknown>>(
+	db: Pick<SqliteDatabase, "exec">,
+	query: string,
+): Promise<TRow[]> {
+	const results: Record<string, unknown>[] = [];
+	let columnNames: string[] | null = null;
+	await db.exec(query, (row: unknown[], columns: string[]) => {
+		if (!columnNames) {
+			columnNames = columns;
+		}
+		results.push(rowToObject(row, columnNames));
+	});
+	return results as TRow[];
+}
+
+async function withMigrationSavepoint<T>(
+	client: RawAccess,
+	callback: (leased: RawAccess) => Promise<T> | T,
+): Promise<T> {
+	return await client.transaction(
+		async (transaction) => {
+			await transaction.execute("SAVEPOINT __rivet_on_migrate");
+			try {
+				const result = await callback(transaction);
+				await transaction.execute(
+					"RELEASE SAVEPOINT __rivet_on_migrate",
+				);
+				return result;
+			} catch (error) {
+				try {
+					await transaction.execute(
+						"ROLLBACK TO SAVEPOINT __rivet_on_migrate",
+					);
+				} finally {
+					await transaction.execute(
+						"RELEASE SAVEPOINT __rivet_on_migrate",
+					);
+				}
+				throw error;
+			}
+		},
+		{ timeout: MIGRATION_TRANSACTION_TIMEOUT_MS },
+	);
+}

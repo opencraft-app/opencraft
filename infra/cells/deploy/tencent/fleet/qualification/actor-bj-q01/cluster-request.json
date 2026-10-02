@@ -1,0 +1,44 @@
+{
+  "ClusterType": "MANAGED_CLUSTER",
+  "ClusterCIDRSettings": {
+    "ClusterCIDR": "10.200.0.0/16",
+    "IgnoreClusterCIDRConflict": false,
+    "MaxNodePodNum": 64,
+    "MaxClusterServiceNum": 1024,
+    "ServiceCIDR": "10.201.0.0/22",
+    "IgnoreServiceCIDRConflict": false
+  },
+  "ClusterBasicSettings": {
+    "ClusterOs": "tlinux3.1x86_64",
+    "ClusterVersion": "1.30.0",
+    "ClusterName": "actor-serverless-qual-bj",
+    "ClusterDescription": "Dedicated Beijing qualification cluster for Actor serverless capacity, FDB and cold-tier gates.",
+    "VpcId": "vpc-6c2snz3a",
+    "ProjectId": 0,
+    "SubnetId": "subnet-qljvksy9",
+    "ClusterLevel": "L20",
+    "NeedWorkSecurityGroup": false,
+    "AutoUpgradeClusterLevel": {
+      "IsAutoUpgrade": false
+    },
+    "TagSpecification": [
+      {
+        "ResourceType": "cluster",
+        "Tags": [
+          {"Key": "product", "Value": "actor-serverless"},
+          {"Key": "purpose", "Value": "qualification"},
+          {"Key": "cell", "Value": "actor-bj-q01"},
+          {"Key": "managed-by", "Value": "minisandbox"}
+        ]
+      }
+    ]
+  },
+  "ClusterAdvancedSettings": {
+    "ContainerRuntime": "containerd",
+    "DeletionProtection": true,
+    "IPVS": true,
+    "NetworkType": "GR",
+    "IsHighAvailability": true,
+    "NodeNameType": "lan-ip"
+  }
+}

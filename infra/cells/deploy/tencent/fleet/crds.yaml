@@ -1,0 +1,1995 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: rivetcellprofiles.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Cluster
+  names:
+    plural: rivetcellprofiles
+    singular: rivetcellprofile
+    kind: RivetCellProfile
+    shortNames: [rcp]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [driverABI, region, availabilityMode, foundationDB, runtime, cos, capacity]
+              x-kubernetes-validations:
+                - rule: "has(self.zones) != has(self.topology)"
+                  message: "a profile must use either explicit native zones or portable Kubernetes topology, but not both"
+                - rule: "self.foundationDB.supervisor == 'foundationdb-kubernetes-operator' ? has(self.topology) : has(self.zones)"
+                  message: "Kubernetes Operator profiles use portable topology; native fdbmonitor profiles inventory explicit zones"
+                - rule: "has(self.zones) ? has(self.foundationDB.processesPerZone) && self.foundationDB.processCount == size(self.zones) * self.foundationDB.processesPerZone : true"
+                  message: "native processCount must equal explicit zones times processesPerZone"
+                - rule: "has(self.topology) ? self.foundationDB.processCount >= self.topology.zoneCount : true"
+                  message: "Kubernetes processCount must cover every required topology zone"
+                - rule: "self.foundationDB.supervisor == 'foundationdb-kubernetes-operator' ? has(self.foundationDB.kubernetes) : !has(self.foundationDB.kubernetes)"
+                  message: "the Kubernetes supervisor requires Kubernetes settings, while native fdbmonitor must not carry them"
+                - rule: "self.availabilityMode == 'production-multi-zone' ? ((has(self.zones) && size(self.zones) >= 3) || (has(self.topology) && self.topology.zoneCount == 3)) : (has(self.topology) && self.topology.zoneCount == 1)"
+                  message: "production profiles require at least three zones; qualification-single-zone profiles require one portable topology zone"
+                - rule: "self.foundationDB.supervisor == 'foundationdb-kubernetes-operator' && self.availabilityMode == 'production-multi-zone' ? self.foundationDB.processCount >= 9 && self.foundationDB.processCount % 3 == 0 && self.foundationDB.coordinatorCount == 9 && self.foundationDB.redundancyMode == 'three_data_hall' : true"
+                  message: "production operator profiles require three_data_hall with nine coordinators and at least nine hostname fault domains"
+                - rule: "self.foundationDB.supervisor == 'foundationdb-kubernetes-operator' && self.availabilityMode == 'qualification-single-zone' ? self.foundationDB.processCount >= 3 && self.foundationDB.coordinatorCount == 3 && self.foundationDB.redundancyMode == 'double' : true"
+                  message: "single-zone qualification operator profiles require double redundancy and three coordinators"
+                - rule: "(has(self.cos.coldBucketPrefix) && has(self.cos.backupBucketPrefix) && self.cos.coldBucketPrefix != self.cos.backupBucketPrefix) || (has(self.cos.coldBucket) && has(self.cos.backupBucket) && self.cos.coldBucket != self.cos.backupBucket)"
+                  message: "COS policy requires different cold and backup bucket names or prefixes"
+                - rule: "self.cos.versioning == 'NeverEnabled' && self.cos.multiAZ == false"
+                  message: "Actor COS buckets must be created without versioning; Tencent multi-AZ buckets cannot satisfy this contract"
+              properties:
+                driverABI:
+                  type: string
+                  enum: [rivet-fdb-cos-v1, rivet-fdb-cos-kubernetes-v1]
+                region:
+                  type: string
+                  pattern: '^[a-z][a-z0-9-]+$'
+                availabilityMode:
+                  type: string
+                  enum: [production-multi-zone, qualification-single-zone]
+                zones:
+                  type: array
+                  minItems: 1
+                  maxItems: 9
+                  x-kubernetes-list-type: set
+                  items:
+                    type: string
+                    minLength: 1
+                topology:
+                  type: object
+                  required: [zoneLabelKey, zoneCount, maxSkew, whenUnsatisfiable]
+                  properties:
+                    zoneLabelKey:
+                      type: string
+                      enum: [topology.kubernetes.io/zone]
+                    zoneCount:
+                      type: integer
+                      minimum: 1
+                      maximum: 9
+                    maxSkew:
+                      type: integer
+                      minimum: 1
+                      maximum: 1
+                    whenUnsatisfiable:
+                      type: string
+                      enum: [DoNotSchedule]
+                foundationDB:
+                  type: object
+                  required:
+                    - version
+                    - processCount
+                    - coordinatorCount
+                    - redundancyMode
+                    - localityKey
+                    - storageEngine
+                    - exclusiveCluster
+                    - supervisor
+                    - dataDisk
+                  x-kubernetes-validations:
+                    - rule: "!has(self.autoscaling) || (self.supervisor == 'foundationdb-kubernetes-operator' && self.processCount >= self.autoscaling.minProcessCount && self.processCount <= self.autoscaling.maxProcessCount)"
+                      message: "FDB autoscaling is operator-only and the baseline processCount must be inside its bounds"
+                  properties:
+                    version:
+                      type: string
+                      pattern: '^7\.3\.[0-9]+$'
+                    processCount:
+                      type: integer
+                      minimum: 3
+                    processesPerZone:
+                      type: integer
+                      minimum: 2
+                    coordinatorCount:
+                      type: integer
+                      minimum: 3
+                    redundancyMode:
+                      type: string
+                      enum: [double, three_data_hall]
+                    localityKey:
+                      type: string
+                      enum: [data_hall]
+                    storageEngine:
+                      type: string
+                      enum: [ssd-2]
+                    exclusiveCluster:
+                      type: boolean
+                      enum: [true]
+                    supervisor:
+                      type: string
+                      enum: [systemd-fdbmonitor, foundationdb-kubernetes-operator]
+                    kubernetes:
+                      type: object
+                      required:
+                        - operatorVersion
+                        - imageType
+                        - imageRepository
+                        - imageTagDigest
+                        - storageClassName
+                        - fdbServiceAccountName
+                        - placementMode
+                        - priorityClassName
+                        - faultDomainKey
+                        - nodeSelector
+                        - nodeCapacity
+                        - resources
+                        - tls
+                      properties:
+                        operatorVersion:
+                          type: string
+                          pattern: '^v2\.[0-9]+\.[0-9]+$'
+                        imageType:
+                          type: string
+                          enum: [unified]
+                        imageRepository:
+                          type: string
+                          pattern: '^[a-z0-9./_-]+$'
+                        imageTagDigest:
+                          type: string
+                          pattern: '^7\.3\.[0-9]+@sha256:[0-9a-f]{64}$'
+                        storageClassName:
+                          type: string
+                          minLength: 1
+                        fdbServiceAccountName:
+                          type: string
+                          minLength: 1
+                        placementMode:
+                          type: string
+                          enum: [DedicatedNodes, MixedEligibleNodes]
+                        priorityClassName:
+                          type: string
+                          minLength: 1
+                        faultDomainKey:
+                          type: string
+                          enum: [kubernetes.io/hostname]
+                        dataHallNodeLabel:
+                          type: string
+                          enum: [topology.kubernetes.io/zone]
+                        nodeSelector:
+                          type: object
+                          minProperties: 1
+                          additionalProperties:
+                            type: string
+                        nodeCapacity:
+                          type: object
+                          required: [provider, machineSetName, processesPerNode]
+                          properties:
+                            provider:
+                              type: string
+                              enum: [TKENativeMachineSet]
+                            machineSetName:
+                              type: string
+                              pattern: '^np-[a-z0-9]{8}$'
+                            processesPerNode:
+                              type: integer
+                              enum: [1]
+                        resources:
+                          type: object
+                          required: [cpuRequest, memoryRequest, cpuLimit, memoryLimit]
+                          x-kubernetes-validations:
+                            - rule: "self.cpuRequest == self.cpuLimit && self.memoryRequest == self.memoryLimit"
+                              message: "FDB Pods require equal requests and limits for Guaranteed QoS"
+                          properties:
+                            cpuRequest:
+                              type: string
+                              minLength: 1
+                            memoryRequest:
+                              type: string
+                              minLength: 1
+                            cpuLimit:
+                              type: string
+                              minLength: 1
+                            memoryLimit:
+                              type: string
+                              minLength: 1
+                        tls:
+                          type: object
+                          required: [mode]
+                          x-kubernetes-validations:
+                            - rule: "self.mode == 'Required' ? has(self.secretNameTemplate) && has(self.peerVerificationRules) : true"
+                              message: "TLS-required profiles need a per-Cell secret template and peer verification rules"
+                          properties:
+                            mode:
+                              type: string
+                              enum: [Required, DisabledForQualification]
+                            secretNameTemplate:
+                              type: string
+                              pattern: '^\{clusterName\}-[a-z0-9-]+$'
+                            peerVerificationRules:
+                              type: string
+                              minLength: 1
+                    autoscaling:
+                      type: object
+                      required:
+                        - mode
+                        - minProcessCount
+                        - maxProcessCount
+                        - stepProcessCount
+                        - scaleUp
+                        - scaleDown
+                        - volumeRetentionSeconds
+                        - volumeGCMode
+                      x-kubernetes-validations:
+                        - rule: "self.minProcessCount <= self.maxProcessCount"
+                          message: "autoscaling minProcessCount must not exceed maxProcessCount"
+                        - rule: "self.minProcessCount % 3 == 0 && self.maxProcessCount % 3 == 0 && self.stepProcessCount % 3 == 0"
+                          message: "three-zone FDB autoscaling counts and steps must be multiples of three"
+                        - rule: "self.scaleDown.headroomBytes > self.scaleUp.headroomBytes"
+                          message: "scale-down headroom must be above the scale-up threshold to provide hysteresis"
+                      properties:
+                        mode:
+                          type: string
+                          enum: [Disabled, ObserveOnly, Automatic]
+                        minProcessCount:
+                          type: integer
+                          minimum: 9
+                          maximum: 126
+                        maxProcessCount:
+                          type: integer
+                          minimum: 9
+                          maximum: 126
+                        stepProcessCount:
+                          type: integer
+                          minimum: 3
+                          maximum: 12
+                        scaleUp:
+                          type: object
+                          required: [headroomBytes, etaSeconds, sustainSeconds, cooldownSeconds, minimumSamples]
+                          properties:
+                            headroomBytes:
+                              type: integer
+                              minimum: 10737418240
+                            etaSeconds:
+                              type: integer
+                              minimum: 3600
+                            sustainSeconds:
+                              type: integer
+                              minimum: 300
+                            cooldownSeconds:
+                              type: integer
+                              minimum: 300
+                            minimumSamples:
+                              type: integer
+                              minimum: 1
+                        scaleDown:
+                          type: object
+                          required: [headroomBytes, writeUtilizationPercent, sustainSeconds, cooldownSeconds, minimumSamples]
+                          properties:
+                            headroomBytes:
+                              type: integer
+                              minimum: 10737418240
+                            writeUtilizationPercent:
+                              type: integer
+                              minimum: 0
+                              maximum: 50
+                            sustainSeconds:
+                              type: integer
+                              minimum: 3600
+                            cooldownSeconds:
+                              type: integer
+                              minimum: 3600
+                            minimumSamples:
+                              type: integer
+                              minimum: 1
+                        volumeRetentionSeconds:
+                          type: integer
+                          default: 2592000
+                          minimum: 86400
+                          maximum: 31536000
+                        volumeGCMode:
+                          type: string
+                          default: ObserveOnly
+                          enum: [ObserveOnly, Automatic]
+                    dataDisk:
+                      type: object
+                      required: [type, sizeGiB, encrypted, retain]
+                      properties:
+                        type:
+                          type: string
+                          enum: [CLOUD_BSSD, CLOUD_SSD, LOCAL_NVME]
+                        sizeGiB:
+                          type: integer
+                          minimum: 100
+                        encrypted:
+                          type: boolean
+                        retain:
+                          type: boolean
+                          enum: [true]
+                runtime:
+                  type: object
+                  required: [deploymentMode, minEngineHosts, minWorkerdHosts, localStateDisposable]
+                  properties:
+                    deploymentMode:
+                      type: string
+                      enum: [native-systemd, kubernetes]
+                    minEngineHosts:
+                      type: integer
+                      minimum: 1
+                    minWorkerdHosts:
+                      type: integer
+                      minimum: 1
+                    localStateDisposable:
+                      type: boolean
+                      enum: [true]
+                gasolineRetention:
+                  type: object
+                  required: [historyGraceSeconds, terminalGraceSeconds, pruneIntervalSeconds, fdbLogicalSoftBytes, fdbLogicalHardBytes]
+                  x-kubernetes-validations:
+                    - rule: "self.terminalGraceSeconds >= self.historyGraceSeconds"
+                      message: "terminal retention must not be shorter than history retention"
+                    - rule: "self.fdbLogicalHardBytes > self.fdbLogicalSoftBytes"
+                      message: "the FDB logical hard watermark must exceed the soft watermark"
+                  properties:
+                    historyGraceSeconds:
+                      type: integer
+                      minimum: 60
+                      maximum: 31536000
+                    terminalGraceSeconds:
+                      type: integer
+                      minimum: 60
+                      maximum: 31536000
+                    pruneIntervalSeconds:
+                      type: integer
+                      minimum: 1
+                      maximum: 86400
+                    fdbLogicalSoftBytes:
+                      type: integer
+                      minimum: 1073741824
+                    fdbLogicalHardBytes:
+                      type: integer
+                      minimum: 1073741825
+                cos:
+                  type: object
+                  required: [multiAZ, versioning, objectKeyLayout, exactKeyRecovery, listIndependent, inCommitPath]
+                  properties:
+                    coldBucket:
+                      type: string
+                      minLength: 3
+                    backupBucket:
+                      type: string
+                      minLength: 3
+                    coldBucketPrefix:
+                      type: string
+                      minLength: 3
+                    backupBucketPrefix:
+                      type: string
+                      minLength: 3
+                    multiAZ:
+                      type: boolean
+                      enum: [false]
+                    versioning:
+                      type: string
+                      enum: [NeverEnabled]
+                    objectKeyLayout:
+                      type: string
+                      enum: [depot-cold-v2]
+                    exactKeyRecovery:
+                      type: boolean
+                      enum: [true]
+                    listIndependent:
+                      type: boolean
+                      enum: [true]
+                    inCommitPath:
+                      type: boolean
+                      enum: [false]
+                capacity:
+                  type: object
+                  required: [healthyWriteUtilizationLimitPercent, degradedWriteUtilizationLimitPercent, scaleOutAtPercent]
+                  properties:
+                    healthyWriteUtilizationLimitPercent:
+                      type: integer
+                      minimum: 1
+                      maximum: 50
+                    degradedWriteUtilizationLimitPercent:
+                      type: integer
+                      minimum: 1
+                      maximum: 70
+                    scaleOutAtPercent:
+                      type: integer
+                      minimum: 1
+                      maximum: 80
+      additionalPrinterColumns:
+        - name: ABI
+          type: string
+          jsonPath: .spec.driverABI
+        - name: FDB
+          type: string
+          jsonPath: .spec.foundationDB.version
+        - name: Processes
+          type: integer
+          jsonPath: .spec.foundationDB.processCount
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: shardclasses.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Cluster
+  names:
+    plural: shardclasses
+    singular: shardclass
+    kind: ShardClass
+    shortNames: [sc]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [controllerName, driverABI, profileRef, mobilityPolicy, retirementPolicy]
+              properties:
+                controllerName:
+                  type: string
+                  enum: [fleet.actor.dev/rivet-fdb-cos]
+                driverABI:
+                  type: string
+                  enum: [rivet-fdb-cos-v1, rivet-fdb-cos-kubernetes-v1]
+                profileRef:
+                  type: object
+                  required: [name, digest]
+                  properties:
+                    name:
+                      type: string
+                    digest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                mobilityPolicy:
+                  type: string
+                  enum: [DriverControlled]
+                retirementPolicy:
+                  type: string
+                  enum: [ProofRequired]
+      additionalPrinterColumns:
+        - name: ABI
+          type: string
+          jsonPath: .spec.driverABI
+        - name: Profile
+          type: string
+          jsonPath: .spec.profileRef.name
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: rivetcells.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Namespaced
+  names:
+    plural: rivetcells
+    singular: rivetcell
+    kind: RivetCell
+    shortNames: [rc]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [cellId, className, region, managementCluster, desiredState, foundationDB, cos, retirement]
+              x-kubernetes-validations:
+                - rule: "self.cellId == oldSelf.cellId && self.className == oldSelf.className && self.region == oldSelf.region && self.managementCluster == oldSelf.managementCluster"
+                  message: "Cell identity, class, region and management cluster are immutable"
+                - rule: "!has(oldSelf.claimRef) || self.claimRef == oldSelf.claimRef"
+                  message: "a bound Cell claim is immutable"
+                - rule: "self.cos == oldSelf.cos"
+                  message: "Cell COS domain identity is immutable"
+                - rule: "self.retirement.generation >= oldSelf.retirement.generation"
+                  message: "retirement generation cannot decrease"
+              properties:
+                cellId:
+                  type: string
+                  pattern: '^actor-[a-z0-9]+-[a-z][0-9]{2}$'
+                className:
+                  type: string
+                region:
+                  type: string
+                  pattern: '^[a-z][a-z0-9-]+$'
+                managementCluster:
+                  type: string
+                claimRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                desiredState:
+                  type: string
+                  enum: [Provisioning, Qualifying, Ready, Draining, Frozen, Retired]
+                foundationDB:
+                  type: object
+                  required: [exclusive]
+                  x-kubernetes-validations:
+                    - rule: "!has(oldSelf.clusterIdentityHash) || self.clusterIdentityHash == oldSelf.clusterIdentityHash"
+                      message: "an observed FDB cluster identity is immutable"
+                    - rule: "(has(self.nodeRefs) && !has(self.clusterRef)) || (!has(self.nodeRefs) && has(self.clusterRef))"
+                      message: "a Cell must bind either native FDB nodes or one FoundationDBCluster, never both"
+                    - rule: "!has(oldSelf.clusterRef) || has(self.clusterRef)"
+                      message: "a FoundationDBCluster binding cannot be removed or changed back to native nodes"
+                  properties:
+                    exclusive:
+                      type: boolean
+                      enum: [true]
+                    clusterIdentityHash:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    nodeRefs:
+                      type: array
+                      maxItems: 128
+                      x-kubernetes-list-type: map
+                      x-kubernetes-list-map-keys: [instanceId]
+                      items:
+                        type: object
+                        required: [instanceId, zone]
+                        properties:
+                          instanceId:
+                            type: string
+                            pattern: '^ins-[a-z0-9]+$'
+                          zone:
+                            type: string
+                            minLength: 1
+                          privateIp:
+                            type: string
+                            format: ipv4
+                    clusterRef:
+                      type: object
+                      required: [name, namespace]
+                      x-kubernetes-validations:
+                        - rule: "!has(oldSelf.uid) || (has(self.uid) && self.uid == oldSelf.uid)"
+                          message: "a bound FoundationDBCluster UID is immutable"
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                          maxLength: 220
+                          x-kubernetes-validations:
+                            - rule: "self == oldSelf"
+                              message: "the FoundationDBCluster name is immutable"
+                        namespace:
+                          type: string
+                          minLength: 1
+                          maxLength: 63
+                          x-kubernetes-validations:
+                            - rule: "self == oldSelf"
+                              message: "the FoundationDBCluster namespace is immutable"
+                        uid:
+                          type: string
+                          minLength: 1
+                          maxLength: 128
+                cos:
+                  type: object
+                  required: [coldBucket, backupBucket]
+                  properties:
+                    coldBucket:
+                      type: string
+                    backupBucket:
+                      type: string
+                retirement:
+                  type: object
+                  required: [generation, proofRequired, rollbackRetentionSeconds]
+                  properties:
+                    generation:
+                      type: integer
+                      minimum: 1
+                    requestId:
+                      type: string
+                      minLength: 1
+                      maxLength: 128
+                    proofRequired:
+                      type: boolean
+                      enum: [true]
+                    rollbackRetentionSeconds:
+                      type: integer
+                      minimum: 3600
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                phase:
+                  type: string
+                  enum: [Unknown, Provisioning, NonConforming, Qualifying, Ready, Draining, Frozen, Retired, Failed]
+                readyForPlacement:
+                  type: boolean
+                placementCount:
+                  type: integer
+                  minimum: 0
+                pendingReservations:
+                  type: integer
+                  minimum: 0
+                activeWriters:
+                  type: integer
+                  minimum: 0
+                inFlightCommits:
+                  type: integer
+                  minimum: 0
+                migrationBacklog:
+                  type: integer
+                  minimum: 0
+                compactionBacklog:
+                  type: integer
+                  minimum: 0
+                gcBacklog:
+                  type: integer
+                  minimum: 0
+                reconciliationBacklog:
+                  type: integer
+                  minimum: 0
+                scaleInEvidenceReady:
+                  type: boolean
+                placementUtilizationPercent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                runtimeUtilizationPercent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                fdbWriteUtilizationPercent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                spokeCellRef:
+                  type: object
+                  properties:
+                    uid:
+                      type: string
+                    observedGeneration:
+                      type: integer
+                      minimum: 1
+                reportObservedAt:
+                  type: string
+                  format: date-time
+                profileDigest:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                capacityRisk:
+                  type: string
+                  enum: [Unknown, Normal, AdmissionClosed, Protect, Emergency]
+                scaleOutEpoch:
+                  type: integer
+                  minimum: 0
+                retirementProofVerified:
+                  type: boolean
+                retirementProofReady:
+                  type: boolean
+                fdbOperatorReady:
+                  type: boolean
+                foundationDBAutoscaling:
+                  type: object
+                  required:
+                    - mode
+                    - phase
+                    - desiredProcessCount
+                    - recommendedProcessCount
+                    - observedProcessCount
+                    - reason
+                    - volumeRetentionSeconds
+                    - volumeGCMode
+                  properties:
+                    mode:
+                      type: string
+                      enum: [Disabled, ObserveOnly, Automatic]
+                    phase:
+                      type: string
+                      enum: [Disabled, InsufficientData, Blocked, Stable, ScaleUpRecommended, ScaleDownRecommended, ScalingUp, ScalingDown]
+                    desiredProcessCount:
+                      type: integer
+                      minimum: 1
+                    recommendedProcessCount:
+                      type: integer
+                      minimum: 1
+                    observedProcessCount:
+                      type: integer
+                      minimum: 0
+                    scaleUpSignalSince:
+                      type: string
+                      format: date-time
+                    scaleDownSignalSince:
+                      type: string
+                      format: date-time
+                    lastScaleTime:
+                      type: string
+                      format: date-time
+                    lastScaleDirection:
+                      type: string
+                      enum: [Up, Down]
+                    reason:
+                      type: string
+                    volumeRetentionSeconds:
+                      type: integer
+                      minimum: 86400
+                    volumeGCMode:
+                      type: string
+                      enum: [ObserveOnly, Automatic]
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, reason, lastTransitionTime]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ['True', 'False', Unknown]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+      additionalPrinterColumns:
+        - name: Cell
+          type: string
+          jsonPath: .spec.cellId
+        - name: Desired
+          type: string
+          jsonPath: .spec.desiredState
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Ready
+          type: boolean
+          jsonPath: .status.readyForPlacement
+        - name: Actors
+          type: integer
+          jsonPath: .status.placementCount
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: shardpools.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Namespaced
+  names:
+    plural: shardpools
+    singular: shardpool
+    kind: ShardPool
+    shortNames: [sp]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [className, minCells, maxCells, maxConcurrentCellProvisioning, placement, routing, reservation, rebalance]
+              x-kubernetes-validations:
+                - rule: "self.minCells <= self.maxCells"
+                  message: "minCells must not exceed maxCells"
+              properties:
+                className:
+                  type: string
+                minCells:
+                  type: integer
+                  minimum: 2
+                maxCells:
+                  type: integer
+                  minimum: 2
+                  maximum: 1000
+                maxConcurrentCellProvisioning:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  description: Global Pool credit for Claims whose target Cell has not yet materialized and bound.
+                placement:
+                  type: object
+                  required: [region, managementClusters]
+                  properties:
+                    region:
+                      type: string
+                      pattern: '^[a-z][a-z0-9-]+$'
+                    managementClusters:
+                      type: array
+                      minItems: 1
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                routing:
+                  type: object
+                  required: [strategy, exactExceptionDirectory, perActorKubernetesObjects]
+                  properties:
+                    strategy:
+                      type: string
+                      enum: [route-hinted-v1]
+                    exactExceptionDirectory:
+                      type: string
+                      enum: [versioned-exact-v1]
+                    perActorKubernetesObjects:
+                      type: boolean
+                      enum: [false]
+                reservation:
+                  type: object
+                  required: [mode, maxPendingPerCell, ttlSeconds]
+                  properties:
+                    mode:
+                      type: string
+                      enum: [CAS]
+                    maxPendingPerCell:
+                      type: integer
+                      minimum: 1
+                    ttlSeconds:
+                      type: integer
+                      minimum: 5
+                      maximum: 300
+                rebalance:
+                  type: object
+                  required: [onScaleOut, migrationBatchSize]
+                  properties:
+                    onScaleOut:
+                      type: string
+                      enum: [NewActorsOnly]
+                    migrationBatchSize:
+                      type: integer
+                      minimum: 1
+                      maximum: 10000
+                scaleIn:
+                  type: object
+                  default:
+                    mode: Automatic
+                    enterUtilizationPercent: 25
+                    exitUtilizationPercent: 40
+                    observationSeconds: 604800
+                    maxConcurrentRetirements: 1
+                  required: [mode, enterUtilizationPercent, exitUtilizationPercent, observationSeconds, maxConcurrentRetirements]
+                  x-kubernetes-validations:
+                    - rule: "self.enterUtilizationPercent < self.exitUtilizationPercent"
+                      message: "scale-in enter utilization must be below the exit threshold"
+                  properties:
+                    mode:
+                      type: string
+                      enum: [Disabled, Automatic]
+                    enterUtilizationPercent:
+                      type: integer
+                      minimum: 1
+                      maximum: 98
+                    exitUtilizationPercent:
+                      type: integer
+                      minimum: 2
+                      maximum: 99
+                    observationSeconds:
+                      type: integer
+                      minimum: 3600
+                    maxConcurrentRetirements:
+                      type: integer
+                      minimum: 1
+                      maximum: 10
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                totalCells:
+                  type: integer
+                  minimum: 0
+                readyCells:
+                  type: integer
+                  minimum: 0
+                pendingCells:
+                  type: integer
+                  minimum: 0
+                drainingCells:
+                  type: integer
+                  minimum: 0
+                pendingClaims:
+                  type: integer
+                  minimum: 0
+                failedClaims:
+                  type: integer
+                  minimum: 0
+                desiredCells:
+                  type: integer
+                  minimum: 0
+                desiredAdditionalCells:
+                  type: integer
+                  minimum: 0
+                placementCount:
+                  type: integer
+                  minimum: 0
+                pendingReservations:
+                  type: integer
+                  minimum: 0
+                admissionOpen:
+                  type: boolean
+                admissionCandidates:
+                  type: array
+                  maxItems: 1000
+                  x-kubernetes-list-type: atomic
+                  items:
+                    type: string
+                scaleInCandidate:
+                  type: object
+                  required: [cellName, cellUID, requestId, observedSince, compositeLoadPercent]
+                  properties:
+                    cellName:
+                      type: string
+                    cellUID:
+                      type: string
+                    requestId:
+                      type: string
+                    observedSince:
+                      type: string
+                      format: date-time
+                    compositeLoadPercent:
+                      type: integer
+                      minimum: 0
+                      maximum: 100
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, reason, lastTransitionTime]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ['True', 'False', Unknown]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+      additionalPrinterColumns:
+        - name: Class
+          type: string
+          jsonPath: .spec.className
+        - name: Min
+          type: integer
+          jsonPath: .spec.minCells
+        - name: Max
+          type: integer
+          jsonPath: .spec.maxCells
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyCells
+        - name: Desired
+          type: integer
+          jsonPath: .status.desiredCells
+        - name: Admission
+          type: boolean
+          jsonPath: .status.admissionOpen
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: rivetcellclaims.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Namespaced
+  names:
+    plural: rivetcellclaims
+    singular: rivetcellclaim
+    kind: RivetCellClaim
+    shortNames: [rcc]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [poolRef, className, region, managementClusters]
+              x-kubernetes-validations:
+                - rule: "self == oldSelf"
+                  message: "a Cell claim is immutable; provider progress belongs in status"
+                - rule: "!has(self.reason) || (self.reason == 'CapacityPressure' ? has(self.trigger) : !has(self.trigger))"
+                  message: "CapacityPressure claims require one trigger; MinimumCells claims must not carry one"
+              properties:
+                poolRef:
+                  type: object
+                  required: [name, uid]
+                  x-kubernetes-validations:
+                    - rule: "self == oldSelf"
+                      message: "a Cell claim cannot be moved to another Pool"
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                className:
+                  type: string
+                region:
+                  type: string
+                  pattern: '^[a-z][a-z0-9-]+$'
+                managementClusters:
+                  type: array
+                  minItems: 1
+                  x-kubernetes-list-type: set
+                  items:
+                    type: string
+                reason:
+                  type: string
+                  enum: [MinimumCells, CapacityPressure]
+                trigger:
+                  type: object
+                  required: [cellRef, scaleOutEpoch]
+                  properties:
+                    cellRef:
+                      type: object
+                      required: [name, uid]
+                      properties:
+                        name:
+                          type: string
+                        uid:
+                          type: string
+                    scaleOutEpoch:
+                      type: integer
+                      minimum: 1
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Provisioning, Bound, Failed]
+                providerRef:
+                  type: string
+                placementDecision:
+                  type: object
+                  required: [targetClusterRef, environmentGeneration, logicalCellName, decidedAt]
+                  properties:
+                    targetClusterRef:
+                      type: object
+                      required: [name, uid, generation]
+                      properties:
+                        name:
+                          type: string
+                        uid:
+                          type: string
+                        generation:
+                          type: integer
+                          minimum: 1
+                    environmentGeneration:
+                      type: integer
+                      minimum: 1
+                    logicalCellName:
+                      type: string
+                    decidedAt:
+                      type: string
+                      format: date-time
+                logicalCellRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                workRef:
+                  type: object
+                  required: [namespace, name, uid]
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                spokeCellRef:
+                  type: object
+                  required: [name, uid, observedGeneration]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                    observedGeneration:
+                      type: integer
+                      minimum: 1
+                cellRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, reason, lastTransitionTime]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ['True', 'False', Unknown]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      observedGeneration:
+                        type: integer
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+      additionalPrinterColumns:
+        - name: Pool
+          type: string
+          jsonPath: .spec.poolRef.name
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Provider
+          type: string
+          jsonPath: .status.providerRef
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: rivetcellregistrations.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Namespaced
+  names:
+    plural: rivetcellregistrations
+    singular: rivetcellregistration
+    kind: RivetCellRegistration
+    shortNames: [rcreg]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required:
+                - provider
+                - claimRef
+                - poolRef
+                - spokeClusterRef
+                - spokeCellRef
+                - credentialSecretRef
+                - evidence
+                - datacenterName
+                - registeredAt
+              x-kubernetes-validations:
+                - rule: >-
+                    self.provider == oldSelf.provider &&
+                    self.claimRef == oldSelf.claimRef &&
+                    self.poolRef == oldSelf.poolRef &&
+                    self.spokeClusterRef == oldSelf.spokeClusterRef &&
+                    self.spokeCellRef == oldSelf.spokeCellRef &&
+                    self.credentialSecretRef == oldSelf.credentialSecretRef &&
+                    self.datacenterName == oldSelf.datacenterName
+                  message: "Cell registration identity is immutable; only qualification evidence may rotate"
+              properties:
+                provider:
+                  type: string
+                  enum: [TerraformArgo]
+                claimRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                poolRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                spokeClusterRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                spokeCellRef:
+                  type: object
+                  required: [name, namespace, uid]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^actor-[a-z0-9]+-[a-z][0-9]{2}$'
+                    namespace:
+                      type: string
+                    uid:
+                      type: string
+                credentialSecretRef:
+                  type: object
+                  required: [namespace, name, uid, key]
+                  properties:
+                    namespace:
+                      type: string
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                    key:
+                      type: string
+                      enum: [kubeconfig]
+                evidence:
+                  type: object
+                  required:
+                    - profileDigest
+                    - releaseDigest
+                    - convergenceReceiptDigest
+                    - qualificationChainReceiptDigest
+                    - activationReceiptDigest
+                  properties:
+                    profileDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    releaseDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    convergenceReceiptDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    qualificationChainReceiptDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    activationReceiptDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                datacenterName:
+                  type: string
+                  pattern: '^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$'
+                registeredAt:
+                  type: string
+                  format: date-time
+      additionalPrinterColumns:
+        - name: Claim
+          type: string
+          jsonPath: .spec.claimRef.name
+        - name: Cell
+          type: string
+          jsonPath: .spec.spokeCellRef.name
+        - name: Cluster
+          type: string
+          jsonPath: .spec.spokeClusterRef.name
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: rivetenvironmentreports.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Cluster
+  names:
+    plural: rivetenvironmentreports
+    singular: rivetenvironmentreport
+    kind: RivetEnvironmentReport
+    shortNames: [rer]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [managedClusterRef, observedManagedClusterGeneration, observedAt, region, health, capacity]
+              x-kubernetes-validations:
+                - rule: "self.managedClusterRef == oldSelf.managedClusterRef"
+                  message: "an environment report is permanently bound to one ManagedCluster identity"
+              properties:
+                managedClusterRef:
+                  type: object
+                  required: [name, uid, generation]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                    generation:
+                      type: integer
+                      minimum: 1
+                observedManagedClusterGeneration:
+                  type: integer
+                  minimum: 1
+                observedAt:
+                  type: string
+                  format: date-time
+                region:
+                  type: string
+                  pattern: '^[a-z][a-z0-9-]+$'
+                health:
+                  type: object
+                  required: [reachable, apiReady, cellControllerReady, fdbOperatorReady]
+                  properties:
+                    reachable:
+                      type: boolean
+                    apiReady:
+                      type: boolean
+                    cellControllerReady:
+                      type: boolean
+                    fdbOperatorReady:
+                      type: boolean
+                capacity:
+                  type: object
+                  required: [maxCells, currentCells, provisioningCells, availableCellSlots, allocatableCellUnits, maxConcurrentProvisioning]
+                  properties:
+                    maxCells:
+                      type: integer
+                      minimum: 1
+                    currentCells:
+                      type: integer
+                      minimum: 0
+                    provisioningCells:
+                      type: integer
+                      minimum: 0
+                    availableCellSlots:
+                      type: integer
+                      minimum: 0
+                    allocatableCellUnits:
+                      type: integer
+                      minimum: 0
+                    maxConcurrentProvisioning:
+                      type: integer
+                      minimum: 1
+      additionalPrinterColumns:
+        - name: Cluster
+          type: string
+          jsonPath: .spec.managedClusterRef.name
+        - name: Region
+          type: string
+          jsonPath: .spec.region
+        - name: Slots
+          type: integer
+          jsonPath: .spec.capacity.availableCellSlots
+        - name: Observed
+          type: date
+          jsonPath: .spec.observedAt
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: rivetcellreports.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Namespaced
+  names:
+    plural: rivetcellreports
+    singular: rivetcellreport
+    kind: RivetCellReport
+    shortNames: [rcr]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          x-kubernetes-validations:
+            - rule: "self.metadata.name == self.spec.cellRef.name"
+              message: "a RivetCellReport must have the same name as its Cell"
+          properties:
+            spec:
+              type: object
+              required:
+                - cellRef
+                - observedCellGeneration
+                - observedAt
+                - profileDigest
+                - foundationDB
+                - health
+                - capacity
+                - qualification
+              x-kubernetes-validations:
+                - rule: "!self.qualification.ready || (has(self.releaseDigest) && has(self.qualification.releaseDigest) && self.qualification.releaseDigest == self.releaseDigest)"
+                  message: "a ready qualification must be bound to the exact reported release digest"
+              properties:
+                cellRef:
+                  type: object
+                  required: [name, uid]
+                  x-kubernetes-validations:
+                    - rule: "self == oldSelf"
+                      message: "a Report is permanently bound to one Cell UID; recreate it after Cell recreation"
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                observedCellGeneration:
+                  type: integer
+                  minimum: 1
+                observedAt:
+                  type: string
+                  format: date-time
+                profileDigest:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                releaseDigest:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                staticRelease:
+                  type: object
+                  required: [ledgerRef, converged, driftCount]
+                  properties:
+                    ledgerRef:
+                      type: string
+                      pattern: '^ConfigMap/[a-z0-9]([-a-z0-9]*[a-z0-9])?-release-ledger$'
+                    releaseId:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    payloadDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    converged:
+                      type: boolean
+                    driftCount:
+                      type: integer
+                      minimum: 0
+                foundationDB:
+                  type: object
+                  required: [clusterIdentityHash, available, healthy, topologyConforming]
+                  properties:
+                    clusterIdentityHash:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    available:
+                      type: boolean
+                    healthy:
+                      type: boolean
+                    topologyConforming:
+                      type: boolean
+                health:
+                  type: object
+                  required: [runtimeReadyHosts, backupReady, credentialsReady, correctnessViolation]
+                  properties:
+                    runtimeReadyHosts:
+                      type: integer
+                      minimum: 0
+                    backupReady:
+                      type: boolean
+                    credentialsReady:
+                      type: boolean
+                    correctnessViolation:
+                      type: boolean
+                capacity:
+                  type: object
+                  required:
+                    - riskLevel
+                    - placementCount
+                    - pendingReservations
+                    - activeWriters
+                    - inFlightCommits
+                    - migrationBacklog
+                    - compactionBacklog
+                    - gcBacklog
+                    - reconciliationBacklog
+                  x-kubernetes-validations:
+                    - rule: "!has(oldSelf.scaleOutEpoch) || !has(self.scaleOutEpoch) || self.scaleOutEpoch >= oldSelf.scaleOutEpoch"
+                      message: "scaleOutEpoch cannot decrease"
+                  properties:
+                    riskLevel:
+                      type: string
+                      description: Deprecated reporter hint retained for v1alpha1 wire compatibility; the Cell controller derives authoritative status from capacity evidence and profile thresholds.
+                      enum: [Normal, AdmissionClosed, Protect, Emergency]
+                    scaleOutEpoch:
+                      type: integer
+                      description: Deprecated reporter hint retained for v1alpha1 wire compatibility; only the Cell controller mints the authoritative monotonic status epoch.
+                      minimum: 0
+                    placementCount:
+                      type: integer
+                      minimum: 0
+                    pendingReservations:
+                      type: integer
+                      minimum: 0
+                    activeWriters:
+                      type: integer
+                      minimum: 0
+                    inFlightCommits:
+                      type: integer
+                      minimum: 0
+                    migrationBacklog:
+                      type: integer
+                      minimum: 0
+                    compactionBacklog:
+                      type: integer
+                      minimum: 0
+                    gcBacklog:
+                      type: integer
+                      minimum: 0
+                    reconciliationBacklog:
+                      type: integer
+                      minimum: 0
+                    fdbStorageHeadroomBytes:
+                      type: integer
+                      minimum: 0
+                    fdbLogicalBytes:
+                      type: integer
+                      minimum: 0
+                    fdbStorageHeadroomETAKnown:
+                      type: boolean
+                    fdbStorageHeadroomETASeconds:
+                      type: integer
+                      minimum: 0
+                    fdbStorageHeadroomSamples:
+                      type: integer
+                      minimum: 0
+                    fdbWriteUtilizationPercent:
+                      type: integer
+                      minimum: 0
+                      maximum: 100
+                    fdbDataMovementBytes:
+                      type: integer
+                      minimum: 0
+                    fdbCapacityEvidenceReady:
+                      type: boolean
+                    scaleInEvidenceReady:
+                      type: boolean
+                    placementUtilizationPercent:
+                      type: integer
+                      minimum: 0
+                      maximum: 100
+                    runtimeUtilizationPercent:
+                      type: integer
+                      minimum: 0
+                      maximum: 100
+                qualification:
+                  type: object
+                  required: [ready]
+                  x-kubernetes-validations:
+                    - rule: "!self.ready || (has(self.receiptRef) && has(self.receiptDigest) && has(self.releaseDigest))"
+                      message: "a ready qualification requires an immutable receipt reference, receipt digest, and release digest"
+                  properties:
+                    ready:
+                      type: boolean
+                    receiptRef:
+                      type: string
+                    receiptDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    releaseDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                retirement:
+                  type: object
+                  required:
+                    - generation
+                    - exactColdReachable
+                    - exactBackupReachable
+                    - oldGenerationRejected
+                    - rollbackRetentionExpired
+                    - artifactsEnumerated
+                    - fullySettled
+                    - crossCellRestoreVerified
+                    - coldManifestRef
+                    - coldManifestDigest
+                    - receiptRef
+                    - receiptDigest
+                  properties:
+                    generation:
+                      type: integer
+                      minimum: 1
+                    exactColdReachable:
+                      type: boolean
+                    exactBackupReachable:
+                      type: boolean
+                    oldGenerationRejected:
+                      type: boolean
+                    rollbackRetentionExpired:
+                      type: boolean
+                    artifactsEnumerated:
+                      type: boolean
+                    fullySettled:
+                      type: boolean
+                    crossCellRestoreVerified:
+                      type: boolean
+                    coldManifestRef:
+                      type: string
+                      minLength: 1
+                    coldManifestDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+                    receiptRef:
+                      type: string
+                      minLength: 1
+                    receiptDigest:
+                      type: string
+                      pattern: '^sha256:[0-9a-f]{64}$'
+      additionalPrinterColumns:
+        - name: Cell
+          type: string
+          jsonPath: .spec.cellRef.name
+        - name: Observed
+          type: date
+          jsonPath: .spec.observedAt
+        - name: Risk
+          type: string
+          jsonPath: .spec.capacity.riskLevel
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: fdbscaleoperations.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Namespaced
+  names:
+    plural: fdbscaleoperations
+    singular: fdbscaleoperation
+    kind: FDBScaleOperation
+    shortNames: [fdbso]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [cellRef, foundationDBClusterRef, direction, fromProcessCount, toProcessCount, requestedAt, profileDigest, volumeInventory, volumeRetentionSeconds, volumeGCMode]
+              x-kubernetes-validations:
+                - rule: "self == oldSelf"
+                  message: "an FDB scale operation is an immutable decision receipt"
+                - rule: "self.fromProcessCount >= 9 && self.toProcessCount >= 9 && self.fromProcessCount % 3 == 0 && self.toProcessCount % 3 == 0"
+                  message: "three-zone FDB scale operations use process counts of at least nine in multiples of three"
+                - rule: "self.direction == 'Up' ? self.toProcessCount > self.fromProcessCount : self.toProcessCount < self.fromProcessCount"
+                  message: "scale direction must agree with from/to process counts"
+                - rule: "!has(self.selectedProcessGroups) || (self.direction == 'Up' ? size(self.selectedProcessGroups) == 0 : size(self.selectedProcessGroups) == self.fromProcessCount - self.toProcessCount)"
+                  message: "a persisted scale-down selection must contain the exact number of process groups being removed"
+                - rule: "!has(self.selectedProcessGroupTopology) || (has(self.selectedProcessGroups) && size(self.selectedProcessGroupTopology) == size(self.selectedProcessGroups))"
+                  message: "persisted scale-down topology evidence must cover every selected process group"
+              properties:
+                cellRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name: {type: string, minLength: 1}
+                    uid: {type: string, minLength: 1}
+                foundationDBClusterRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name: {type: string, minLength: 1}
+                    uid: {type: string, minLength: 1}
+                direction:
+                  type: string
+                  enum: [Up, Down]
+                fromProcessCount: {type: integer, minimum: 9}
+                toProcessCount: {type: integer, minimum: 9}
+                requestedAt:
+                  type: string
+                  format: date-time
+                profileDigest:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                volumeRetentionSeconds:
+                  type: integer
+                  default: 2592000
+                  minimum: 86400
+                  maximum: 31536000
+                volumeGCMode:
+                  type: string
+                  default: ObserveOnly
+                  enum: [ObserveOnly, Automatic]
+                nodeCapacityRef:
+                  type: object
+                  required: [provider, machineSetName, processesPerNode]
+                  properties:
+                    provider:
+                      type: string
+                      enum: [TKENativeMachineSet]
+                    machineSetName:
+                      type: string
+                      pattern: '^np-[a-z0-9]{8}$'
+                    processesPerNode:
+                      type: integer
+                      enum: [1]
+                selectedProcessGroups:
+                  type: array
+                  maxItems: 126
+                  x-kubernetes-list-type: set
+                  items: {type: string, pattern: '^storage-[0-9]+$'}
+                selectedProcessGroupTopology:
+                  type: array
+                  maxItems: 126
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [processGroupID]
+                  items:
+                    type: object
+                    required: [processGroupID, nodeName, zone]
+                    properties:
+                      processGroupID: {type: string, pattern: '^storage-[0-9]+$'}
+                      nodeName: {type: string, minLength: 1}
+                      zone: {type: string, minLength: 1}
+                volumeInventory:
+                  type: array
+                  maxItems: 126
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [processGroupID]
+                  items:
+                    type: object
+                    required: [processGroupID, pvcName, pvcUID, pvName, pvUID, cbsDiskID]
+                    properties:
+                      processGroupID: {type: string, pattern: '^storage-[0-9]+$'}
+                      pvcName: {type: string, minLength: 1}
+                      pvcUID: {type: string, minLength: 1}
+                      pvName: {type: string, minLength: 1}
+                      pvUID: {type: string, minLength: 1}
+                      cbsDiskID: {type: string, pattern: '^disk-[a-z0-9]+$'}
+            status:
+              type: object
+              properties:
+                observedGeneration: {type: integer}
+                phase:
+                  type: string
+                  enum: [Pending, ProvisioningCapacity, Scaling, Verifying, QuarantiningVolumes, ReclaimingCapacity, Succeeded, Failed, RolledBack]
+                foundationDBGeneration: {type: integer}
+                targetReadyAt:
+                  type: string
+                  format: date-time
+                selectedProcessGroups:
+                  type: array
+                  x-kubernetes-list-type: set
+                  items: {type: string, pattern: '^storage-[0-9]+$'}
+                receiptRef: {type: string}
+                receiptDigest: {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+                nodeCapacity:
+                  type: object
+                  properties:
+                    provider: {type: string}
+                    machineSetName: {type: string}
+                    desiredNodes: {type: integer}
+                    primaryStorageProcesses: {type: integer}
+                    auxiliaryStorageProcesses: {type: integer}
+                    minReplicas: {type: integer}
+                    maxReplicas: {type: integer}
+                    replicas: {type: integer}
+                    readyReplicas: {type: integer}
+                    availableReplicas: {type: integer}
+                    generation: {type: integer}
+                    observedGeneration: {type: integer}
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, reason, lastTransitionTime]
+                    properties:
+                      type: {type: string}
+                      status: {type: string, enum: ['True', 'False', Unknown]}
+                      reason: {type: string}
+                      message: {type: string}
+                      observedGeneration: {type: integer}
+                      lastTransitionTime: {type: string, format: date-time}
+      additionalPrinterColumns:
+        - name: Cell
+          type: string
+          jsonPath: .spec.cellRef.name
+        - name: Direction
+          type: string
+          jsonPath: .spec.direction
+        - name: From
+          type: integer
+          jsonPath: .spec.fromProcessCount
+        - name: To
+          type: integer
+          jsonPath: .spec.toProcessCount
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: fdbvolumeretirements.fleet.actor.dev
+spec:
+  group: fleet.actor.dev
+  scope: Namespaced
+  names:
+    plural: fdbvolumeretirements
+    singular: fdbvolumeretirement
+    kind: FDBVolumeRetirement
+    shortNames: [fdbvr]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required:
+                - cellRef
+                - foundationDBClusterRef
+                - scaleOperationRef
+                - processGroupID
+                - pvcRef
+                - pvRef
+                - cbsDiskID
+                - csiDriver
+                - quarantineSeconds
+                - gcMode
+              x-kubernetes-validations:
+                - rule: "self == oldSelf"
+                  message: "an FDB volume retirement identity and quarantine policy are immutable"
+              properties:
+                cellRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name: {type: string, minLength: 1}
+                    uid: {type: string, minLength: 1}
+                foundationDBClusterRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name: {type: string, minLength: 1}
+                    uid: {type: string, minLength: 1}
+                scaleOperationRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name: {type: string, minLength: 1}
+                    uid: {type: string, minLength: 1}
+                processGroupID:
+                  type: string
+                  pattern: '^storage-[0-9]+$'
+                pvcRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name: {type: string, minLength: 1}
+                    uid: {type: string, minLength: 1}
+                pvRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name: {type: string, minLength: 1}
+                    uid: {type: string, minLength: 1}
+                cbsDiskID:
+                  type: string
+                  pattern: '^disk-[a-z0-9]+$'
+                csiDriver:
+                  type: string
+                  enum: [com.tencent.cloud.csi.cbs]
+                quarantineSeconds:
+                  type: integer
+                  default: 2592000
+                  minimum: 86400
+                  maximum: 31536000
+                gcMode:
+                  type: string
+                  default: ObserveOnly
+                  enum: [ObserveOnly, Automatic]
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                phase:
+                  type: string
+                  enum: [Inventoried, WaitingForRelease, Quarantined, Eligible, Deleting, Deleted, Blocked]
+                releasedAt:
+                  type: string
+                  format: date-time
+                eligibleAt:
+                  type: string
+                  format: date-time
+                cloudState:
+                  type: string
+                  enum: [Unknown, Attached, Unattached, Terminating, Deleted]
+                scaleDownReceiptRef:
+                  type: string
+                scaleDownReceiptDigest:
+                  type: string
+                  pattern: '^sha256:[0-9a-f]{64}$'
+                deleteRequestID:
+                  type: string
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, reason, lastTransitionTime]
+                    properties:
+                      type: {type: string}
+                      status:
+                        type: string
+                        enum: ['True', 'False', Unknown]
+                      reason: {type: string}
+                      message: {type: string}
+                      observedGeneration: {type: integer}
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+      additionalPrinterColumns:
+        - name: Cell
+          type: string
+          jsonPath: .spec.cellRef.name
+        - name: ProcessGroup
+          type: string
+          jsonPath: .spec.processGroupID
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Eligible
+          type: date
+          jsonPath: .status.eligibleAt

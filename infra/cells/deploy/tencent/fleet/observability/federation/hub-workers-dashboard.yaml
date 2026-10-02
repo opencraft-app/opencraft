@@ -1,0 +1,209 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-mesh-workers-dashboard
+  namespace: mesh-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: actor-fleet
+data:
+  actor-mesh-workers.json: |
+    {
+      "annotations": {"list": []},
+      "description": "中央 Workers API、无状态 dispatch 与 Durable Object 跨 Cell 路由的有界运营视图。",
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [
+        {"title": "舰队总览", "type": "link", "url": "/d/actor-mesh-cell-fleet", "includeVars": true, "keepTime": true},
+        {"title": "计算与扩容", "type": "link", "url": "/d/actor-mesh-compute", "includeVars": true, "keepTime": true}
+      ],
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Workers API 在线副本",
+          "id": 1,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+          "targets": [{"expr": "sum(up{namespace=\"workers-api-system\",service=\"workers-api\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "无状态请求速率",
+          "id": 2,
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "targets": [{"expr": "sum(actor_mesh:worker_dispatch_requests_per_second:5m{namespace=~\"$namespace\",result=\"success\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "Object 路由请求速率",
+          "id": 3,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "targets": [{"expr": "sum(actor_mesh:object_router_requests_per_second:5m{namespace=~\"$namespace\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "结果不确定（5 分钟）",
+          "id": 4,
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+          "targets": [{"expr": "sum(increase(object_router_indeterminate_total{namespace=~\"$namespace\"}[5m]))", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "无状态 dispatch 结果",
+          "id": 5,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "targets": [{"expr": "sum by (pool, result) (actor_mesh:worker_dispatch_requests_per_second:5m{namespace=~\"$namespace\"})", "legendFormat": "{{pool}} / {{result}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Durable Object 路由结果",
+          "id": 6,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "targets": [{"expr": "sum by (source_cell, target_cell, result) (actor_mesh:object_router_requests_per_second:5m{namespace=~\"$namespace\"})", "legendFormat": "{{source_cell}} → {{target_cell}} / {{result}}", "refId": "A"}]
+        },
+        {
+          "type": "gauge",
+          "title": "Object placement 缓存命中率",
+          "id": 7,
+          "gridPos": {"h": 7, "w": 8, "x": 0, "y": 13},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 0.8}, {"color": "green", "value": 0.95}]}}, "overrides": []},
+          "targets": [{"expr": "actor_mesh:object_router_cache_hit_ratio:5m{namespace=~\"$namespace\"}", "legendFormat": "{{namespace}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "缓存条目与 placement miss",
+          "id": 8,
+          "gridPos": {"h": 7, "w": 8, "x": 8, "y": 13},
+          "targets": [
+            {"expr": "sum by (namespace) (object_router_cache_entries{namespace=~\"$namespace\"})", "legendFormat": "{{namespace}} 缓存条目", "refId": "A"},
+            {"expr": "sum by (namespace) (object_router_placement_misses_inflight{namespace=~\"$namespace\"})", "legendFormat": "{{namespace}} miss 执行中", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Registry 操作 p95",
+          "id": 9,
+          "gridPos": {"h": 7, "w": 8, "x": 16, "y": 13},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "actor_mesh:object_router_registry_p95_seconds:5m{namespace=~\"$namespace\"}", "legendFormat": "{{namespace}} / {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "按目标 Cell 的执行中请求",
+          "id": 10,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+          "targets": [{"expr": "sum by (namespace, target_cell) (object_router_inflight{namespace=~\"$namespace\"})", "legendFormat": "{{namespace}} → {{target_cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Cell serving route revision",
+          "description": "同一 Cell 在不同 Router 副本上的 revision 应最终一致且只增不减。",
+          "id": 11,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+          "targets": [{"expr": "max by (pool, cell) (object_router_route_revision)", "legendFormat": "{{pool}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "逐 Cell 无状态并发与排队",
+          "id": 12,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 28},
+          "targets": [
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_stateless_in_flight{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} 执行中", "refId": "A"},
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_stateless_queued{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} 排队", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "无状态 Pod 与待调度容量",
+          "id": 13,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 28},
+          "targets": [
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_stateless_up{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} Ready", "refId": "A"},
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_stateless_hpa_desired_replicas{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} HPA 期望", "refId": "B"},
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_stateless_unschedulable_pods{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} 待调度", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "无状态执行失败与缓存",
+          "id": 14,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 28},
+          "targets": [
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_stateless_rejected_per_second{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} 拒绝", "refId": "A"},
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_stateless_transport_failure_per_second{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} 结果不确定", "refId": "B"},
+            {"expr": "avg by (cluster, cell) (actor_fleet:cell_stateless_code_cache_hit_ratio{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} / {{cell}} 缓存命中率", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "中央 Router 负载与延迟",
+          "id": 15,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 36},
+          "targets": [
+            {"expr": "sum by (plane) (actor_mesh:workers_api_routing_requests_per_second:2m{namespace=~\"$namespace\"})", "legendFormat": "{{plane}} 请求/秒", "refId": "A"},
+            {"expr": "sum by (plane) (actor_mesh:workers_api_routing_in_flight{namespace=~\"$namespace\"})", "legendFormat": "{{plane}} 执行中", "refId": "B"},
+            {"expr": "max by (plane) (actor_mesh:workers_api_routing_p95_seconds:5m{namespace=~\"$namespace\"})", "legendFormat": "{{plane}} p95 秒", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "中央 Router HPA 水位",
+          "id": 16,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 36},
+          "targets": [
+            {"expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"workers-api-system\",horizontalpodautoscaler=\"workers-api\"}", "legendFormat": "当前副本", "refId": "A"},
+            {"expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"workers-api-system\",horizontalpodautoscaler=\"workers-api\"}", "legendFormat": "期望副本", "refId": "B"},
+            {"expr": "kube_horizontalpodautoscaler_spec_max_replicas{namespace=\"workers-api-system\",horizontalpodautoscaler=\"workers-api\"}", "legendFormat": "最大副本", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "跨 Cell Object 延迟",
+          "id": 17,
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 44},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [
+            {"expr": "max by (source_cell, target_cell) (actor_mesh:object_router_request_p50_seconds:5m{namespace=~\"$namespace\"})", "legendFormat": "{{source_cell}} → {{target_cell}} p50", "refId": "A"},
+            {"expr": "max by (source_cell, target_cell) (actor_mesh:object_router_request_p99_seconds:5m{namespace=~\"$namespace\"})", "legendFormat": "{{source_cell}} → {{target_cell}} p99", "refId": "B"},
+            {"expr": "max by (source_cell, target_cell) (actor_mesh:object_router_request_p999_seconds:5m{namespace=~\"$namespace\"})", "legendFormat": "{{source_cell}} → {{target_cell}} p999", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "中央 Router CPU 与单请求成本",
+          "description": "进程 CPU 核数及 Object 路由每请求消耗的 CPU 秒；后者用于跨副本数和缓存命中率比较。",
+          "id": 18,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 52},
+          "targets": [
+            {"expr": "actor_mesh:workers_api_process_cpu_cores:5m", "legendFormat": "CPU 核数", "refId": "A"},
+            {"expr": "actor_mesh:workers_api_cpu_seconds_per_object_request:5m", "legendFormat": "每 Object 请求 CPU 秒", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "中央 Router 常驻内存",
+          "id": 19,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 52},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_mesh:workers_api_process_rss_bytes", "legendFormat": "进程 RSS", "refId": "A"}
+          ]
+        }
+      ],
+      "refresh": "15s",
+      "schemaVersion": 41,
+      "tags": ["actor-fleet", "workers", "object-router", "durable-object"],
+      "templating": {"list": [
+        {"name": "namespace", "label": "租户命名空间", "type": "query", "query": "label_values(worker_dispatch_requests_total, namespace)", "includeAll": true, "allValue": ".*", "refresh": 1},
+        {"name": "cluster", "label": "TKE 集群", "type": "query", "query": "label_values(actor_fleet:cell_stateless_expected, cluster)", "includeAll": true, "allValue": ".*", "refresh": 1},
+        {"name": "cell", "label": "运行 Cell", "type": "query", "query": "label_values(actor_fleet:cell_stateless_expected{cluster=~\"$cluster\"}, cell)", "includeAll": true, "allValue": ".*", "refresh": 1}
+      ]},
+      "time": {"from": "now-3h", "to": "now"},
+      "timezone": "browser",
+      "title": "Workers 与 Durable Objects",
+      "uid": "actor-mesh-workers",
+      "version": 1
+    }

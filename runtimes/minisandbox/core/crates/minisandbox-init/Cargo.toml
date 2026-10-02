@@ -1,0 +1,13 @@
+[package]
+name = "minisandbox-init"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+libc = "0.2"
+minisandbox-control-protocol = { path = "../../control-protocol" }
+
+[lints]
+workspace = true

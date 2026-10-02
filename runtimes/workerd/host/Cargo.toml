@@ -1,0 +1,31 @@
+[package]
+name = "rivet-workerd-host"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+description = "Generation-fenced Rivet Envoy host for shared workerd isolates"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+base64 = "0.22.1"
+depot-client-types.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+moka.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+rivet-envoy-client = { workspace = true, features = ["native-transport"] }
+serde_bare.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

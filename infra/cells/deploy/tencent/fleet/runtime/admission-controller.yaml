@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: __CELL_NAME__-runtime-capacity
+  namespace: __CELL_NAMESPACE__
+imagePullSecrets:
+  - name: actor-fleet-tcr
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: __CELL_NAME__-runtime-capacity
+  namespace: __CELL_NAMESPACE__
+rules:
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    resourceNames: [__CELL_NAME__-runtime-hosts]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, create, delete]
+  # Eviction is served at policy/v1, but Kubernetes RBAC authorizes the
+  # pods/eviction subresource in the core API group.
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: __CELL_NAME__-runtime-capacity
+  namespace: __CELL_NAMESPACE__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: __CELL_NAME__-runtime-capacity
+subjects:
+  - kind: ServiceAccount
+    name: __CELL_NAME__-runtime-capacity
+    namespace: __CELL_NAMESPACE__
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: __CELL_NAME__-runtime-capacity
+rules:
+  - apiGroups: [node.tke.cloud.tencent.com]
+    resources: [machinesets]
+    resourceNames: [__MACHINESET__]
+    verbs: [get, patch]
+  - apiGroups: [node.tke.cloud.tencent.com]
+    resources: [machines]
+    verbs: [__MACHINE_VERBS__]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, patch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: __CELL_NAME__-runtime-capacity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: __CELL_NAME__-runtime-capacity
+subjects:
+  - kind: ServiceAccount
+    name: __CELL_NAME__-runtime-capacity
+    namespace: __CELL_NAMESPACE__
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __CELL_NAME__-runtime-capacity
+  namespace: __CELL_NAMESPACE__
+  labels:
+    fleet.actor.dev/cell-name: __CELL_NAME__
+    fleet.actor.dev/component: runtime-capacity-controller
+  annotations:
+    fleet.actor.dev/manifest-sha256: __MANIFEST_SHA256__
+    fleet.actor.dev/machine-repair-receipt-sha256: __MACHINE_REPAIR_RECEIPT_SHA256__
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: __CELL_NAME__
+      fleet.actor.dev/component: runtime-capacity-controller
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: __CELL_NAME__
+        fleet.actor.dev/component: runtime-capacity-controller
+      annotations:
+        fleet.actor.dev/manifest-sha256: __MANIFEST_SHA256__
+        fleet.actor.dev/machine-repair-receipt-sha256: __MACHINE_REPAIR_RECEIPT_SHA256__
+    spec:
+      serviceAccountName: __CELL_NAME__-runtime-capacity
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      __TKE_OIDC_VOLUMES__: null
+      nodeSelector:
+        fleet.actor.dev/control-pool: "true"
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: __REPORTER_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/workerd-runtime-capacity-controller]
+          env:
+            - name: CELL_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CELL_NAME
+              value: __CELL_NAME__
+            - name: RUNTIME_MACHINESET
+              value: __MACHINESET__
+            - name: RUNTIME_EXACT_SCALE_DOWN_ENABLED
+              value: "__EXACT_SCALE_DOWN_ENABLED__"
+            - name: RUNTIME_TKE_CLUSTER_ID
+              value: __TKE_CLUSTER_ID__
+            - name: TENCENTCLOUD_REGION
+              value: __TENCENT_REGION__
+            - name: TKE_REGION
+              value: __TENCENT_REGION__
+            - __TKE_OIDC_ENV__: null
+            - name: RUNTIME_CAPACITY_MIN_REPLICAS
+              value: "__MIN_REPLICAS__"
+            - name: RUNTIME_CAPACITY_MAX_REPLICAS
+              value: "__MAX_REPLICAS__"
+            - name: RUNTIME_CAPACITY_MAX_REPAIR_SURGE
+              value: "__MAX_REPAIR_SURGE__"
+            - name: RUNTIME_CAPACITY_REQUIRED_ZONES
+              value: "3"
+            - name: RUNTIME_CAPACITY_TARGETED_REPAIR_ENABLED
+              value: "__TARGETED_REPAIR_ENABLED__"
+            - name: RUNTIME_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: __CELL_NAME__-runtime-auth
+                  key: token
+            - name: RUNTIME_MANAGEMENT_PORT
+              value: "19083"
+            - name: RUNTIME_REPAIR_DRAIN_TIMEOUT
+              value: 10m
+            - name: RUNTIME_CAPACITY_SCALE_DOWN_STABILIZATION
+              value: 30s
+            - name: RUNTIME_CAPACITY_RECONCILE_INTERVAL
+              value: 5s
+            - name: RUNTIME_ADMISSION_IMAGE_PULL_SECRET
+              value: actor-fleet-tcr
+            - name: RUNTIME_ADMISSION_BOOTSTRAP_IMAGE
+              value: __RUNTIME_IMAGE__
+            - name: RUNTIME_ADMISSION_PROBE_TIMEOUT
+              value: 5m
+            - name: RUNTIME_ADMISSION_RETRY_BACKOFF
+              value: 1m
+            - name: RUNTIME_ADMISSION_RECONCILE_INTERVAL
+              value: 5s
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          __TKE_OIDC_VOLUME_MOUNTS__: null

@@ -1,0 +1,12 @@
+# Rebuild only when the Python runtime dependencies change. The source Rocky
+# image is mirrored in private TCR so even this dependency build never pulls a
+# public container registry; package installation is performed once and the
+# resulting image is pinned for ordinary loadgen builds.
+FROM lightclaw-bj82.tencentcloudcr.com/actor-fleet/base-golang@sha256:af5fbd460188a87059557422b2c00978f488ac6bc6b78d63a02e2fad040d7733
+
+RUN microdnf install -y python3 \
+    && microdnf clean all \
+    && rm -rf /var/cache/dnf /var/cache/yum
+
+LABEL org.opencontainers.image.title="Actor loadgen Python build base" \
+      fleet.actor.dev/source-base-digest="sha256:af5fbd460188a87059557422b2c00978f488ac6bc6b78d63a02e2fad040d7733"

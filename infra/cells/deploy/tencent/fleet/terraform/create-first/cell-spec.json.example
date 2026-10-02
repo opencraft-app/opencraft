@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "cellId": "actor-bj-k02",
+  "className": "rivet-fdb-cos-kubernetes-v1",
+  "poolName": "actor-beijing-kubernetes",
+  "profileDigest": "sha256:replace_with_rendered_regional_profile_digest",
+  "machinePools": {
+    "control": {
+      "instanceTypes": ["SA9.4XLARGE32"],
+      "replicas": 3,
+      "minReplicas": 3,
+      "maxReplicas": 3
+    },
+    "fdb": {
+      "instanceTypes": ["SA9.LARGE16"],
+      "replicas": 9,
+      "minReplicas": 9,
+      "maxReplicas": 30
+    },
+    "runtime": {
+      "instanceTypes": ["SA9.LARGE8"],
+      "replicas": 3,
+      "minReplicas": 3,
+      "maxReplicas": 301,
+      "repairSurge": 1
+    }
+  }
+}

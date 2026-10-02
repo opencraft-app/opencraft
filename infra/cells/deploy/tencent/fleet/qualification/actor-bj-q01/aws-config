@@ -1,0 +1,4 @@
+[default]
+region = ap-beijing
+s3 =
+    addressing_style = virtual

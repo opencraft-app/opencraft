@@ -1,0 +1,172 @@
+fullnameOverride: actor-mesh-observability
+namespaceOverride: mesh-observability
+
+alertmanager:
+  enabled: false
+
+defaultRules:
+  create: false
+
+grafana:
+  enabled: true
+  admin:
+    existingSecret: actor-mesh-observability-grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  defaultDashboardsEnabled: false
+  defaultDashboardsTimezone: browser
+  grafana.ini:
+    users:
+      default_language: zh-Hans
+  ingress:
+    enabled: false
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    type: sts
+    storageClassName: actor-mesh-observability-cbs-wffc-retain
+    accessModes: [ReadWriteOnce]
+    size: 10Gi
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fleet.actor.dev/fdb-dedicated
+                operator: DoesNotExist
+
+prometheusOperator:
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fleet.actor.dev/fdb-dedicated
+                operator: DoesNotExist
+
+prometheus:
+  enabled: true
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    replicas: 1
+    shards: 1
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    retention: 30d
+    retentionSize: 85GB
+    walCompression: true
+    ruleSelectorNilUsesHelmValues: true
+    resources:
+      # The Hub ingests only two bounded actor_fleet aggregate families per
+      # Cell, never raw Actor/FDB series. Keep the scheduling request within
+      # the three-node management baseline while retaining a 4 GiB hard ceiling.
+      requests: {cpu: 250m, memory: 512Mi}
+      limits: {cpu: "2", memory: 4Gi}
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: fleet.actor.dev/fdb-dedicated
+                  operator: DoesNotExist
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: actor-mesh-observability-cbs-wffc-retain
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 100Gi
+
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  rbac:
+    extraRules:
+      - apiGroups: [apiextensions.k8s.io]
+        resources: [customresourcedefinitions]
+        verbs: [list, watch]
+      - apiGroups: [fleet.actor.dev]
+        resources: [shardpools, rivetcellclaims]
+        verbs: [list, watch]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: fleet.actor.dev
+              version: v1alpha1
+              kind: ShardPool
+            metricNamePrefix: actor_mesh_shardpool
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              pool: [metadata, name]
+            metrics:
+              - name: admission_open
+                help: Whether the global Pool currently has placement capacity.
+                each: {type: Gauge, gauge: {path: [status, admissionOpen]}}
+              - name: ready_cells
+                help: Number of placement-ready Cells observed by the global Pool.
+                each: {type: Gauge, gauge: {path: [status, readyCells]}}
+              - name: pending_claims
+                help: Number of Cell Claims currently provisioning for the global Pool.
+                each: {type: Gauge, gauge: {path: [status, pendingClaims]}}
+          - groupVersionKind:
+              group: fleet.actor.dev
+              version: v1alpha1
+              kind: RivetCellClaim
+            metricNamePrefix: actor_mesh_cellclaim
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              claim: [metadata, name]
+            metrics:
+              - name: phase
+                help: Current durable provisioning phase of a Cell Claim.
+                each:
+                  type: StateSet
+                  stateSet:
+                    labelName: phase
+                    path: [status, phase]
+                    list: [Pending, Provisioning, Bound, Failed]
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fleet.actor.dev/fdb-dedicated
+                operator: DoesNotExist
+nodeExporter:
+  enabled: false
+kubeApiServer:
+  enabled: false
+kubelet:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+coreDns:
+  enabled: false
+
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: true

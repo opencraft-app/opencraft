@@ -1,0 +1,60 @@
+cell_id        = "actor-bj-k02"
+region         = "ap-beijing"
+environment    = "prod"
+account_app_id = "replace_appid"
+
+# Copy these immutable values from one current RivetCellClaim and its bound
+# ShardPool/ShardClass. MinimumCells provisioning uses scale_out_epoch = 0;
+# CapacityPressure uses the Claim trigger's positive scaleOutEpoch.
+fleet_binding = {
+  pool_name       = "actor-beijing-kubernetes"
+  pool_uid        = "replace_with_shardpool_uid"
+  claim_name      = "replace_with_rivetcellclaim_name"
+  claim_uid       = "replace_with_rivetcellclaim_uid"
+  class_name      = "rivet-fdb-cos-kubernetes-v1"
+  # Each Cell owns a separate Engine endpoint; the Engine-local datacenter is
+  # therefore default. Global routing uses cell_id, not this inner identity.
+  datacenter_name = "default"
+  scale_out_epoch = 1
+  profile_digest  = "sha256:replace_with_64_lowercase_hex_characters"
+}
+
+terraform_state_bucket = "actor-terraform-state-beijing-replace_appid"
+# The management VPC CIDR and cluster identity are read from this state, never
+# copied by hand into a Cell plan.
+management_state_prefix = "actor-fleet/management"
+
+vpc_cidr            = "10.162.0.0/20"
+cluster_pod_cidr    = "10.202.0.0/16"
+cluster_service_cidr = "172.22.0.0/22"
+regional_vpc_aggregate = "10.160.0.0/12"
+reserved_cidrs         = ["10.0.0.0/12", "10.128.0.0/16", "192.168.240.0/24"]
+
+subnets = {
+  z1 = { availability_zone = "ap-beijing-6", cidr_block = "10.162.0.0/22" }
+  z2 = { availability_zone = "ap-beijing-7", cidr_block = "10.162.4.0/22" }
+  z3 = { availability_zone = "ap-beijing-8", cidr_block = "10.162.8.0/22" }
+}
+# Keep 10.162.12.0/22 unallocated for future subnet use.
+
+bootstrap_subnet_key = "z1"
+trusted_api_cidrs    = []
+
+# Review this against the versions currently offered by TKE before every new
+# Cell plan. It is intentionally not inherited from q01.
+cluster_version          = "replace_with_reviewed_tke_version"
+node_image_name_regex     = "^replace_with_exact_reviewed_public_image_name$"
+bootstrap_instance_type  = "SA9.LARGE8"
+
+# Unlike the fixed control/FDB/runtime MachineSets, this pool must be an
+# official TKE Native NodePool so Cluster Autoscaler can discover it.
+stateless_node_pool = {
+  instance_types = ["SA9.LARGE8", "SA9e.LARGE8", "SA5.LARGE8", "S9.LARGE8"]
+  replicas       = 3
+  min_replicas   = 3
+  max_replicas   = 300
+}
+
+# Public material is an allowed root input. The matching private key never
+# enters Terraform state, Git, or Kubernetes.
+ssh_public_key = "ssh-ed25519 replace_with_operator_public_key"

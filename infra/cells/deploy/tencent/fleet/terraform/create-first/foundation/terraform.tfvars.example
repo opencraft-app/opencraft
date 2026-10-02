@@ -1,0 +1,7 @@
+region                 = "ap-beijing"
+registry_name          = "actor-fleet-beijing"
+registry_instance_type = "basic"
+ccn_name                = "actor-fleet-beijing"
+ccn_qos                 = "AU"
+ccn_bandwidth_limit_type = "INTER_REGION_LIMIT"
+ccn_metering_type        = "TRAFFIC"

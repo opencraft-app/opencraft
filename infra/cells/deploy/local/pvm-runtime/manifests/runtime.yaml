@@ -1,0 +1,294 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: __CELL__-minisandbox-hermes-metrics
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: minisandbox-hermes-metrics
+    app.kubernetes.io/part-of: minisandbox
+    fleet.actor.dev/cell-name: __CELL__
+spec:
+  clusterIP: None
+  selector:
+    fleet.actor.dev/cell-name: __CELL__
+    fleet.actor.dev/component: pvm-runtime
+  ports:
+    - name: metrics
+      port: 19083
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __CELL__-minisandbox-hermes
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: minisandbox-hermes
+    app.kubernetes.io/part-of: minisandbox
+    fleet.actor.dev/cell-name: __CELL__
+    fleet.actor.dev/component: pvm-runtime
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: __CELL__
+      fleet.actor.dev/component: pvm-runtime
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minisandbox-hermes
+        app.kubernetes.io/part-of: minisandbox
+        fleet.actor.dev/cell-name: __CELL__
+        fleet.actor.dev/component: pvm-runtime
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        rivet.dev/compute: "true"
+        rivet.dev/pvm: "true"
+      tolerations:
+        - key: rivet.dev/compute
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        fsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: sbxlet
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: RIVET_ENDPOINT
+              value: http://__CELL__-engine.actor-fdb-cell-system.svc.cluster.local:6420
+            - name: RIVET_NAMESPACE
+              value: default
+            - name: RIVET_POOL_NAME
+              value: __RUNNER_NAME__
+            - name: RIVET_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: __CELL__-runtime-auth
+                  key: token
+            - name: RIVET_MINISANDBOX_PROFILE
+              value: hermes-v1
+            - name: RIVET_MINISANDBOX_MEMORY_MIB
+              value: "__MEMORY_MIB__"
+            - name: RIVET_MINISANDBOX_UPPER_SIZE_MIB
+              value: "__UPPER_SIZE_MIB__"
+            - name: RIVET_MINISANDBOX_HERMES_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minisandbox-hermes-api
+                  key: api-key
+            - name: RIVET_MINISANDBOX_ACTOR_VOLUME_MIB
+              value: "2048"
+            - name: RIVET_MINISANDBOX_ACTOR_VOLUME_TEMPLATE
+              value: /data/minisandbox/actor-volume-template.ext4
+            - name: RIVET_MINISANDBOX_ACTOR_VOLUME_TEMPLATE_ID
+              value: "__ACTOR_VOLUME_TEMPLATE_ID__"
+            - name: RIVET_MINISANDBOX_FDB_CLUSTER_FILE
+              value: /etc/actor/runtime/fdb.cluster
+            - name: RIVET_MINISANDBOX_COS_BUCKET
+              value: "__COS_BUCKET__"
+            - name: RIVET_MINISANDBOX_COS_ENDPOINT
+              value: "__COS_ENDPOINT__"
+            - name: RIVET_MINISANDBOX_COS_REGION
+              value: "__COS_REGION__"
+            - name: RIVET_MINISANDBOX_BLOCK_CACHE
+              value: /data/minisandbox/block-cache
+            - name: RIVET_MINISANDBOX_METRICS_FILE
+              value: /var/metrics/metrics.txt
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: __CELL__-runtime-cos
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: __CELL__-runtime-cos
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: RUST_LOG
+              value: info
+          readinessProbe:
+            exec:
+              command:
+                - /usr/bin/test
+                - -f
+                - /var/lib/minisandbox/ready
+            failureThreshold: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+          startupProbe:
+            exec:
+              command:
+                - /usr/bin/test
+                - -f
+                - /var/lib/minisandbox/ready
+            failureThreshold: 180
+            periodSeconds: 2
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+              rivet.dev/kvm: "1"
+            limits:
+              cpu: "4"
+              memory: 4Gi
+              rivet.dev/kvm: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/minisandbox
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /data
+            - name: fdb-config
+              mountPath: /etc/actor/runtime/fdb.cluster
+              subPath: cluster-file
+              readOnly: true
+            - name: metrics
+              mountPath: /var/metrics
+        - name: metrics
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/bin/busybox, httpd, -f, -p, "19083", -h, /var/metrics]
+          ports:
+            - name: metrics
+              containerPort: 19083
+          readinessProbe:
+            httpGet:
+              path: /metrics.txt
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: metrics
+              mountPath: /var/metrics
+      volumes:
+        - name: state
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: cache
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: fdb-config
+          configMap:
+            # This must be the exact UniversalDB cluster used by the Engine so
+            # ActorBlockVolume commits conflict with Pegboard's generation key.
+            name: __FDB_CONFIG_MAP__
+        - name: metrics
+          emptyDir:
+            sizeLimit: 1Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: __CELL__-hermes-runner-config
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: minisandbox-hermes-runner-config
+    app.kubernetes.io/part-of: minisandbox
+    fleet.actor.dev/cell-name: __CELL__
+    fleet.actor.dev/component: runner-config-reconciler
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 50
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: minisandbox-hermes-runner-config
+            app.kubernetes.io/part-of: minisandbox
+            fleet.actor.dev/cell-name: __CELL__
+            fleet.actor.dev/component: runner-config-reconciler
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          nodeSelector:
+            rivet.dev/control: "true"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 4059
+            runAsGroup: 4059
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reconcile
+              image: __ENGINE_IMAGE__
+              imagePullPolicy: IfNotPresent
+              command:
+                - /usr/bin/curl
+              args:
+                - --fail
+                - --silent
+                - --show-error
+                - --noproxy
+                - "*"
+                - --connect-timeout
+                - "2"
+                - --max-time
+                - "5"
+                - --retry
+                - "5"
+                - --retry-delay
+                - "1"
+                - --retry-all-errors
+                - --request
+                - PUT
+                - --header
+                - "Content-Type: application/json"
+                - --data
+                - '{"normal":{}}'
+                - http://__CELL__-engine.actor-fdb-cell-system.svc.cluster.local:6421/runner-configs/__RUNNER_NAME__?namespace=default
+              resources:
+                requests:
+                  cpu: 5m
+                  memory: 16Mi
+                limits:
+                  cpu: 50m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true

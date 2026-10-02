@@ -1,0 +1,7 @@
+.git
+**/.omx
+**/.terraform
+**/graphify-out
+**/receipts
+**/target
+**/var

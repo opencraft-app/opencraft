@@ -1,0 +1,227 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: actor-cell-federation
+  namespace: observability
+  labels:
+    release: actor-observability
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  groups:
+    - name: actor-cell-federation
+      interval: 30s
+      rules:
+        # This is the complete export boundary. The Hub federates only bounded
+        # actor_fleet:cell_* and actor_fleet:compute_node_* aggregates. It never
+        # scrapes raw Actor, database, Pod, or COS object series from a TKE cluster.
+        - record: actor_fleet:cell_inventory
+          expr: max by (cell) (actor_rivetcell_ready_for_placement * 0 + 1)
+        - record: actor_fleet:cell_heartbeat_seconds
+          expr: actor_fleet:cell_inventory * 0 + time()
+        - record: actor_fleet:cell_ready_for_placement
+          expr: max by (cell) (actor_rivetcell_ready_for_placement)
+        - record: actor_fleet:cell_desired_ready
+          expr: max by (cell) (actor_rivetcell_ready_for_placement{desired_state="Ready"} * 0 + 1)
+        - record: actor_fleet:cell_qualification_ready
+          expr: max by (cell) (actor_rivetcellreport_qualification_ready)
+        - record: actor_fleet:cell_static_release_audit_success
+          expr: min by (cell) (actor_static_release_collection_success)
+        - record: actor_fleet:cell_static_release_converged
+          expr: min by (cell) (actor_static_release_converged)
+        - record: actor_fleet:cell_static_release_drift_findings
+          expr: max by (cell) (actor_static_release_drift_findings)
+        - record: actor_fleet:cell_static_release_drift_age_seconds
+          expr: max by (cell) (actor_static_release_drift_age_seconds)
+        - record: actor_fleet:cell_scale_out_epoch
+          expr: max by (cell) (actor_rivetcell_scale_out_epoch)
+        - record: actor_fleet:cell_placement_count
+          expr: max by (cell) (actor_rivetcell_placement_count)
+        - record: actor_fleet:cell_engine_expected
+          expr: max by (cell) (label_replace(kube_deployment_spec_replicas{namespace="actor-fdb-cell-system",deployment=~".+-engine"}, "cell", "$1", "deployment", "(.+)-engine"))
+        - record: actor_fleet:cell_engine_up
+          expr: count by (cell) (up{namespace="actor-fdb-cell-system",service="actor-fleet-engine-metrics"} == 1)
+        - record: actor_fleet:cell_runtime_expected
+          expr: max by (cell) (label_replace(kube_statefulset_replicas{namespace="actor-fdb-cell-system",statefulset=~".+-runtime-hosts"}, "cell", "$1", "statefulset", "(.+)-runtime-hosts"))
+        - record: actor_fleet:cell_runtime_up
+          expr: count by (cell) (up{namespace="actor-fdb-cell-system",service=~".+-runtime-hosts"} == 1)
+        - record: actor_fleet:cell_stateless_expected
+          expr: max by (cell) (label_replace(kube_deployment_spec_replicas{namespace="actor-stateless-system",deployment=~".+-stateless-executor"}, "cell", "$1", "deployment", "(.+)-stateless-executor"))
+        - record: actor_fleet:cell_stateless_up
+          expr: count by (cell) (up{namespace="actor-stateless-system",service=~".+-stateless-executor"} == 1)
+        - record: actor_fleet:cell_stateless_in_flight
+          expr: sum by (cell) (rivet_stateless_in_flight)
+        - record: actor_fleet:cell_stateless_queued
+          expr: sum by (cell) (rivet_stateless_queued)
+        - record: actor_fleet:cell_stateless_dispatch_per_second
+          expr: sum by (cell) (rate(rivet_stateless_dispatch_total[5m]))
+        - record: actor_fleet:cell_stateless_rejected_per_second
+          expr: sum by (cell) (rate(rivet_stateless_rejected_total[5m]))
+        - record: actor_fleet:cell_stateless_queue_timeout_per_second
+          expr: sum by (cell) (rate(rivet_stateless_queue_timeout_total[5m]))
+        - record: actor_fleet:cell_stateless_transport_failure_per_second
+          expr: sum by (cell) (rate(rivet_stateless_transport_failures_total[5m]))
+        - record: actor_fleet:cell_stateless_drain_timeout_per_second
+          expr: sum by (cell) (rate(rivet_stateless_drain_timeouts_total[10m]))
+        - record: actor_fleet:cell_stateless_code_cache_hit_ratio
+          expr: sum by (cell) (rate(rivet_stateless_code_cache_memory_hits_total[5m]) + rate(rivet_stateless_code_cache_disk_hits_total[5m])) / clamp_min(sum by (cell) (rate(rivet_stateless_code_cache_memory_hits_total[5m]) + rate(rivet_stateless_code_cache_disk_hits_total[5m]) + rate(rivet_stateless_code_cache_memory_misses_total[5m])), 0.000000001)
+        - record: actor_fleet:cell_stateless_hpa_current_replicas
+          expr: max by (cell) (label_replace(kube_horizontalpodautoscaler_status_current_replicas{namespace="actor-stateless-system",horizontalpodautoscaler=~".+-stateless-executor"}, "cell", "$1", "horizontalpodautoscaler", "(.+)-stateless-executor"))
+        - record: actor_fleet:cell_stateless_hpa_desired_replicas
+          expr: max by (cell) (label_replace(kube_horizontalpodautoscaler_status_desired_replicas{namespace="actor-stateless-system",horizontalpodautoscaler=~".+-stateless-executor"}, "cell", "$1", "horizontalpodautoscaler", "(.+)-stateless-executor"))
+        - record: actor_fleet:cell_stateless_hpa_max_replicas
+          expr: max by (cell) (label_replace(kube_horizontalpodautoscaler_spec_max_replicas{namespace="actor-stateless-system",horizontalpodautoscaler=~".+-stateless-executor"}, "cell", "$1", "horizontalpodautoscaler", "(.+)-stateless-executor"))
+        - record: actor_fleet:cell_stateless_unschedulable_pods
+          expr: sum by (cell) (label_replace(kube_pod_status_scheduled{namespace="actor-stateless-system",pod=~".+-stateless-executor-.+",condition="false"}, "cell", "$1", "pod", "(.+)-stateless-executor-.+"))
+        - record: actor_fleet:cell_fdb_available
+          expr: min by (cell) (label_replace(actor_foundationdb_cluster_available{namespace="actor-fdb-cell-system"}, "cell", "$1", "cluster", "(.+)"))
+        - record: actor_fleet:cell_fdb_full_replication
+          expr: min by (cell) (label_replace(actor_foundationdb_cluster_full_replication{namespace="actor-fdb-cell-system"}, "cell", "$1", "cluster", "(.+)"))
+        - record: actor_fleet:cell_backup_restorable
+          expr: min by (cell) (actor_fdb_backup_collection_success{namespace="actor-fdb-cell-system"}) * min by (cell) (actor_fdb_backup_container_restorable{namespace="actor-fdb-cell-system"})
+        - record: actor_fleet:cell_fdb_storage_headroom_bytes
+          expr: min by (cell) (actor:fdb_storage_headroom_bytes)
+        - record: actor_fleet:cell_fdb_storage_headroom_eta_seconds
+          expr: min by (cell) (actor:fdb_storage_headroom_eta_seconds)
+        - record: actor_fleet:cell_fdb_logical_bytes
+          expr: max by (cell) (actor_fdb_storage_total_kv_size_bytes)
+        - record: actor_fleet:cell_fdb_disk_bytes
+          expr: max by (cell) (actor_fdb_storage_total_disk_used_bytes)
+        - record: actor_fleet:cell_fdb_storage_amplification_ratio
+          expr: actor_fleet:cell_fdb_disk_bytes / clamp_min(actor_fleet:cell_fdb_logical_bytes, 1)
+        - record: actor_fleet:cell_fdb_logical_growth_bytes_per_second
+          expr: max by (cell) (actor:fdb_write_debt_proxy_growth_bytes_per_second:6h)
+        - record: actor_fleet:cell_placement_transactions_per_second
+          expr: max by (cell) (actor:placement_transactions_per_second:5m)
+        - record: actor_fleet:cell_placement_transaction_average_attempts
+          expr: max by (cell) (actor:placement_transaction_average_attempts:5m)
+        - record: actor_fleet:cell_placement_transactions_over_five_attempts_per_second
+          expr: max by (cell) (actor:placement_transactions_over_five_attempts_per_second:5m)
+        - record: actor_fleet:cell_placement_retry_fallbacks_per_second
+          expr: max by (cell) (actor:placement_retry_fallbacks_per_second:5m)
+        - record: actor_fleet:cell_gasoline_history_pruned_per_second
+          # A prune activity is executed by one Engine replica. Counters are therefore summed,
+          # unlike the replicated FDB-backed ledgers below.
+          expr: sum by (cell) (rate(rivet_gasoline_pruner_history_pruned_total[5m]))
+        - record: actor_fleet:cell_gasoline_terminal_pruned_per_second
+          expr: sum by (cell) (rate(rivet_gasoline_pruner_terminal_pruned_total[5m]))
+        - record: actor_fleet:cell_gasoline_pruner_last_success_seconds
+          expr: max by (cell) (rivet_gasoline_pruner_last_success_seconds)
+        - record: actor_fleet:cell_runtime_queue_utilization_ratio
+          expr: max by (cell) (actor:runtime_queue_utilization:ratio)
+        - record: actor_fleet:cell_compaction_backlog_bytes
+          expr: sum by (cell) (rivet_sqlite_compaction_backlog_bytes)
+        - record: actor_fleet:cell_compaction_backlog_objects
+          expr: sum by (cell, operation) (rivet_sqlite_compaction_backlog_objects)
+        - record: actor_fleet:cell_compaction_bytes_per_second
+          expr: sum by (cell, operation) (rate(rivet_sqlite_compaction_bytes_total[5m]))
+        - record: actor_fleet:cell_compaction_objects_per_second
+          expr: sum by (cell, operation) (rate(rivet_sqlite_compaction_objects_total[5m]))
+        - record: actor_fleet:cell_compaction_failures_per_second
+          expr: sum by (cell, operation, result) (rate(rivet_sqlite_compaction_jobs_total{result!="succeeded"}[5m]))
+        - record: actor_fleet:cell_cold_requests_in_flight
+          expr: sum by (cell, operation) (rivet_sqlite_cold_tier_requests_in_flight)
+        - record: actor_fleet:cell_cold_requests_queued
+          expr: sum by (cell, operation) (rivet_sqlite_cold_tier_requests_queued)
+        - record: actor_fleet:cell_cold_queue_wait_p99_seconds
+          expr: histogram_quantile(0.99, sum by (cell, operation, le) (rate(rivet_sqlite_cold_tier_queue_wait_duration_seconds_bucket[5m])))
+        - record: actor_fleet:cell_cold_read_p99_seconds
+          expr: histogram_quantile(0.99, sum by (cell, phase, le) (rate(rivet_sqlite_cold_read_phase_duration_seconds_bucket[5m])))
+        - record: actor_fleet:cell_shard_cache_reads_per_second
+          expr: sum by (cell, outcome) (rate(rivet_sqlite_shard_cache_read_total[5m]))
+        - record: actor_fleet:cell_cold_refills_per_second
+          expr: sum by (cell, outcome) (rate(rivet_sqlite_cold_refill_total[5m]))
+        - record: actor_fleet:cell_cold_object_average_bytes
+          expr: sum by (cell) (rate(rivet_sqlite_compaction_bytes_total{operation="cold_upload"}[5m])) / clamp_min(sum by (cell) (rate(rivet_sqlite_compaction_objects_total{operation="cold_upload"}[5m])), 0.000000001)
+        # Every Engine replica samples the same FDB-backed Cell ledger. `max`, not `sum`, prevents
+        # replica count from multiplying physical storage while still tolerating one stale sample.
+        - record: actor_fleet:cell_cold_storage_accounting_bytes
+          expr: max by (cell, class) (rivet_sqlite_cold_storage_accounting_bytes)
+        - record: actor_fleet:cell_cold_storage_accounting_objects
+          expr: max by (cell, class) (rivet_sqlite_cold_storage_accounting_objects)
+        - record: actor_fleet:cell_cold_gc_policy
+          expr: max by (cell, state) (rivet_sqlite_cold_gc_policy)
+        - record: actor_fleet:cell_cold_delete_attempts_per_second
+          expr: sum by (cell, result) (rate(rivet_sqlite_cold_delete_attempts_total[5m]))
+        - record: actor_fleet:cell_cold_delete_last_progress_seconds
+          expr: max by (cell) (rivet_sqlite_cold_delete_last_progress_seconds)
+        - record: actor_fleet:cell_cold_inventory_bytes
+          expr: max by (cell) (rivet_sqlite_cold_inventory_bytes)
+        - record: actor_fleet:cell_cold_inventory_objects
+          expr: max by (cell) (rivet_sqlite_cold_inventory_objects)
+        - record: actor_fleet:cell_cold_inventory_problem_objects
+          expr: max by (cell, kind) (rivet_sqlite_cold_inventory_problem_objects)
+        - record: actor_fleet:cell_cold_inventory_audit_complete
+          # Only the FDB lease holder scans the bucket; non-leaders intentionally remain at zero.
+          expr: max by (cell) (rivet_sqlite_cold_inventory_audit_complete)
+        - record: actor_fleet:cell_cold_inventory_last_success_seconds
+          expr: max by (cell) (rivet_sqlite_cold_inventory_last_success_seconds)
+        - record: actor_fleet:cell_cold_inventory_bytes_difference
+          expr: actor_fleet:cell_cold_inventory_bytes - on (cell) sum by (cell) (actor_fleet:cell_cold_storage_accounting_bytes{class=~"live|retired|delete_issued"})
+        - record: actor_fleet:cell_cold_inventory_objects_difference
+          expr: actor_fleet:cell_cold_inventory_objects - on (cell) sum by (cell) (actor_fleet:cell_cold_storage_accounting_objects{class=~"live|retired|delete_issued"})
+        - record: actor_fleet:cell_cold_requests_per_gib_uploaded
+          expr: sum by (cell, operation) (rate(rivet_sqlite_cold_tier_queue_wait_duration_seconds_count{operation=~"put|get"}[5m])) / on (cell) group_left clamp_min(sum by (cell) (rate(rivet_sqlite_compaction_bytes_total{operation="cold_upload"}[5m])) / 1073741824, 0.000000001)
+        - record: actor_fleet:cell_write_debt_backpressure_per_second
+          expr: sum by (cell) (rate(rivet_sqlite_write_debt_backpressure_total[5m]))
+        - record: actor_fleet:cell_compaction_drain_eta_seconds
+          expr: max by (cell) (actor:compaction_backlog_drain_eta_seconds)
+        - record: actor_fleet:cell_firing_alerts
+          expr: count by (cell, severity) (ALERTS{alertname=~"Actor.*",alertstate="firing",cell!=""} or label_replace(ALERTS{alertname=~"Actor.*",alertstate="firing",cell="",cluster!=""}, "cell", "$1", "cluster", "(.+)"))
+        - record: actor_fleet:compute_node_inventory
+          expr: max by (node) (kube_node_labels{label_rivet_dev_compute="true"})
+        - record: actor_fleet:compute_node_ready
+          expr: max by (node) (kube_node_status_condition{condition="Ready",status="true"} and on (node) actor_fleet:compute_node_inventory)
+        - record: actor_fleet:compute_node_cpu_allocatable_cores
+          expr: max by (node) (kube_node_status_allocatable{resource="cpu",unit="core"} and on (node) actor_fleet:compute_node_inventory)
+        - record: actor_fleet:compute_node_memory_allocatable_bytes
+          expr: max by (node) (kube_node_status_allocatable{resource="memory",unit="byte"} and on (node) actor_fleet:compute_node_inventory)
+        - record: actor_fleet:compute_node_cpu_requests_cores
+          expr: sum by (node) (kube_pod_container_resource_requests{resource="cpu",unit="core"}) and on (node) actor_fleet:compute_node_inventory
+        - record: actor_fleet:compute_node_memory_requests_bytes
+          expr: sum by (node) (kube_pod_container_resource_requests{resource="memory",unit="byte"}) and on (node) actor_fleet:compute_node_inventory
+        - record: actor_fleet:compute_node_cpu_usage_cores
+          expr: sum by (node) (rate(container_cpu_usage_seconds_total{container!="",container!="POD",image!=""}[5m])) and on (node) actor_fleet:compute_node_inventory
+        - record: actor_fleet:compute_node_memory_working_set_bytes
+          expr: sum by (node) (container_memory_working_set_bytes{container!="",container!="POD",image!=""}) and on (node) actor_fleet:compute_node_inventory
+        - record: actor_fleet:compute_node_cpu_request_utilization_ratio
+          expr: actor_fleet:compute_node_cpu_requests_cores / actor_fleet:compute_node_cpu_allocatable_cores
+        - record: actor_fleet:compute_node_memory_request_utilization_ratio
+          expr: actor_fleet:compute_node_memory_requests_bytes / actor_fleet:compute_node_memory_allocatable_bytes
+        - record: actor_fleet:compute_node_cpu_usage_ratio
+          expr: actor_fleet:compute_node_cpu_usage_cores / actor_fleet:compute_node_cpu_allocatable_cores
+        - record: actor_fleet:compute_node_memory_usage_ratio
+          expr: actor_fleet:compute_node_memory_working_set_bytes / actor_fleet:compute_node_memory_allocatable_bytes
+        - record: actor_fleet:compute_node_kvm_allocatable
+          expr: max by (node) (kube_node_status_allocatable{resource="rivet_dev_kvm"} and on (node) actor_fleet:compute_node_inventory)
+        - record: actor_fleet:compute_node_kvm_requests
+          expr: sum by (node) (kube_pod_container_resource_requests{resource="rivet_dev_kvm"}) and on (node) actor_fleet:compute_node_inventory
+        - record: actor_fleet:compute_node_runtime_active_actors
+          expr: sum by (node, runtime) (label_replace(rivet_workerd_active_actors, "runtime", "v8", "__name__", ".*") or label_replace(rivet_minisandbox_active_actors, "runtime", "pvm", "__name__", ".*"))
+        - record: actor_fleet:compute_node_v8_actor_capacity
+          expr: sum by (node) (rivet_workerd_max_active_actors)
+        - record: actor_fleet:compute_node_v8_actor_utilization_ratio
+          expr: sum by (node) (rivet_workerd_active_actors) / clamp_min(sum by (node) (rivet_workerd_max_active_actors), 1)
+        - record: actor_fleet:cell_v8_active_actors
+          expr: sum by (cell) (rivet_workerd_active_actors)
+        - record: actor_fleet:cell_v8_actor_capacity
+          expr: sum by (cell) (rivet_workerd_max_active_actors)
+        - record: actor_fleet:cell_v8_actor_headroom
+          expr: clamp_min(sum by (cell) (rivet_workerd_max_active_actors) - sum by (cell) (rivet_workerd_active_actors), 0)
+        - record: actor_fleet:cell_v8_actor_utilization_ratio
+          expr: sum by (cell) (rivet_workerd_active_actors) / clamp_min(sum by (cell) (rivet_workerd_max_active_actors), 1)
+        - record: actor_fleet:cell_runtime_hpa_current_replicas
+          expr: max by (cell) (label_replace(kube_horizontalpodautoscaler_status_current_replicas{namespace="actor-fdb-cell-system",horizontalpodautoscaler=~".+-runtime-hosts-actor-capacity"}, "cell", "$1", "horizontalpodautoscaler", "(.+)-runtime-hosts-actor-capacity"))
+        - record: actor_fleet:cell_runtime_hpa_desired_replicas
+          expr: max by (cell) (label_replace(kube_horizontalpodautoscaler_status_desired_replicas{namespace="actor-fdb-cell-system",horizontalpodautoscaler=~".+-runtime-hosts-actor-capacity"}, "cell", "$1", "horizontalpodautoscaler", "(.+)-runtime-hosts-actor-capacity"))
+        - record: actor_fleet:cell_runtime_hpa_max_replicas
+          expr: max by (cell) (label_replace(kube_horizontalpodautoscaler_spec_max_replicas{namespace="actor-fdb-cell-system",horizontalpodautoscaler=~".+-runtime-hosts-actor-capacity"}, "cell", "$1", "horizontalpodautoscaler", "(.+)-runtime-hosts-actor-capacity"))
+        - record: actor_fleet:cell_runtime_unschedulable_pods
+          expr: sum by (cell) (label_replace(kube_pod_status_scheduled{namespace="actor-fdb-cell-system",pod=~".+-runtime-hosts-[0-9]+",condition="false"}, "cell", "$1", "pod", "(.+)-runtime-hosts-[0-9]+"))
+        - record: actor_fleet:compute_node_v8_request_capacity
+          expr: sum by (node) (rivet_workerd_max_in_flight)
+        - record: actor_fleet:compute_node_v8_requests_in_flight
+          expr: sum by (node) (rivet_workerd_requests_in_flight)
+        - record: actor_fleet:compute_node_v8_requests_queued
+          expr: sum by (node) (rivet_workerd_requests_queued)
+        - record: actor_fleet:compute_node_v8_request_utilization_ratio
+          expr: actor_fleet:compute_node_v8_requests_in_flight / clamp_min(actor_fleet:compute_node_v8_request_capacity, 1)

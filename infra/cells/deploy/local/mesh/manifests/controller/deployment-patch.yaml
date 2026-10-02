@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-fleet-controller
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: manager
+          args:
+            - --leader-elect=false
+            - --report-freshness=45s
+            - --max-claims-per-reconcile=1
+            - --enable-fdb-kubernetes-provider=true
+            - --enable-ocm-provider=true
+          env:
+            - name: WATCH_NAMESPACE
+              value: ""

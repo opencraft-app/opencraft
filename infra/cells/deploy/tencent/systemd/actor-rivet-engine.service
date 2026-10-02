@@ -1,0 +1,35 @@
+[Unit]
+Description=Actor Rivet Engine with FoundationDB and COS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=actor-engine
+Group=actor-engine
+EnvironmentFile=/etc/actor/rivet-workerd/engine.env
+ExecStart=/opt/actor/rivet-workerd/current/bin/rivet-engine --config /etc/actor/rivet-workerd/config.jsonc start
+Restart=always
+RestartSec=2
+# The runtime configuration permits up to 600 seconds for workflow/guard drain. Leave an extra
+# 20 seconds for bounded Tokio teardown and systemd bookkeeping before SIGKILL is allowed.
+TimeoutStopSec=620s
+StateDirectory=actor-rivet-engine
+WorkingDirectory=/var/lib/actor-rivet-engine
+LimitNOFILE=1048576
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

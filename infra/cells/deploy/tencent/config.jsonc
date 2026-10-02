@@ -1,0 +1,27 @@
+{
+	"runtime": {
+		"gasoline_cell_namespace": "actor-local-a01"
+	},
+	"foundation_db": {
+		"cluster_file": "/etc/foundationdb/fdb.cluster",
+		"transaction_retry_limit": 10,
+		"allow_shared_cluster": false
+  },
+  "memory": {},
+  "sqlite": {
+    "unstable_disable_compaction": false,
+    "workflow_cold_storage": {
+      "s3": {
+        "bucket": "rivet-depot-cold",
+        "endpoint": "http://minio:9000",
+        "region": "us-east-1",
+        "addressing_style": "path",
+        "recovery_window_ms": 604800000,
+        "max_object_size_bytes": 4194304,
+        "max_concurrent_requests": 16,
+        "max_queued_requests": 64,
+        "queue_timeout_ms": 15000
+      }
+    }
+  }
+}

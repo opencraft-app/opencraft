@@ -1,0 +1,318 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-bj-k01-fdb-backup-metrics
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: actor-fdb-backup-metrics
+    app.kubernetes.io/part-of: actor-fleet
+data:
+  collect.sh: |
+    #!/usr/bin/env bash
+    set -u
+    destination='blobstore://@actor-fdb-backup-prod-bj-k01-nv1-1388575217.cos.ap-beijing.myqcloud.com:443/actor/production/ap-beijing/bj-k01/foundationdb/continuous?bucket=actor-fdb-backup-prod-bj-k01-nv1-1388575217&region=ap-beijing'
+    output=/var/metrics/metrics.txt
+    while true; do
+      temporary="${output}.tmp"
+      now=$(date +%s)
+      current=
+      description=
+      status=
+      max_restorable=
+      restorable=0
+      storage_collection_success=0
+      total_kv_size_bytes=
+      total_disk_used_bytes=
+      least_operating_space_bytes=
+      data_movement_in_flight_bytes=
+      data_movement_in_queue_bytes=
+      released_transactions_per_second=
+      transactions_per_second_limit=
+      if current=$(timeout 20 fdbcli --exec getversion 2>/dev/null) &&
+         description=$(timeout 45 fdbbackup describe -d "$destination" 2>/dev/null); then
+        max_restorable=$(printf '%s\n' "$description" | awk '$1 == "MaxRestorableVersion:" {print $2; exit}')
+        if printf '%s\n' "$description" | grep -q '^Restorable: true$'; then restorable=1; fi
+      fi
+      if [[ $current =~ ^[0-9]+$ && $max_restorable =~ ^[0-9]+$ ]]; then
+        lag_versions=$((current - max_restorable))
+        ((lag_versions < 0)) && lag_versions=0
+        lag_seconds=$(((lag_versions + 999999) / 1000000))
+        {
+          printf '%s\n' '# HELP actor_fdb_backup_collection_success Whether the backup lag collection succeeded.'
+          printf '%s\n' '# TYPE actor_fdb_backup_collection_success gauge'
+          printf 'actor_fdb_backup_collection_success 1\n'
+          printf '%s\n' '# HELP actor_fdb_backup_current_version Current source FoundationDB read version.'
+          printf '%s\n' '# TYPE actor_fdb_backup_current_version gauge'
+          printf 'actor_fdb_backup_current_version %s\n' "$current"
+          printf '%s\n' '# HELP actor_fdb_backup_max_restorable_version Maximum restorable backup version.'
+          printf '%s\n' '# TYPE actor_fdb_backup_max_restorable_version gauge'
+          printf 'actor_fdb_backup_max_restorable_version %s\n' "$max_restorable"
+          printf '%s\n' '# HELP actor_fdb_backup_lag_seconds Approximate source-to-backup lag using FoundationDB nominal version clock.'
+          printf '%s\n' '# TYPE actor_fdb_backup_lag_seconds gauge'
+          printf 'actor_fdb_backup_lag_seconds %s\n' "$lag_seconds"
+          printf '%s\n' '# HELP actor_fdb_backup_container_restorable Whether fdbbackup describe reports the container restorable.'
+          printf '%s\n' '# TYPE actor_fdb_backup_container_restorable gauge'
+          printf 'actor_fdb_backup_container_restorable %s\n' "$restorable"
+          printf '%s\n' '# HELP actor_fdb_backup_last_collection_timestamp_seconds Unix timestamp of the latest successful collection.'
+          printf '%s\n' '# TYPE actor_fdb_backup_last_collection_timestamp_seconds gauge'
+          printf 'actor_fdb_backup_last_collection_timestamp_seconds %s\n' "$now"
+        } >"$temporary"
+      else
+        {
+          printf '%s\n' '# HELP actor_fdb_backup_collection_success Whether the backup lag collection succeeded.'
+          printf '%s\n' '# TYPE actor_fdb_backup_collection_success gauge'
+          printf 'actor_fdb_backup_collection_success 0\n'
+        } >"$temporary"
+      fi
+      if status=$(timeout 20 fdbcli --exec 'status json' 2>/dev/null); then
+        total_kv_size_bytes=$(printf '%s\n' "$status" | jq -er '.cluster.data.total_kv_size_bytes | numbers') || total_kv_size_bytes=
+        total_disk_used_bytes=$(printf '%s\n' "$status" | jq -er '.cluster.data.total_disk_used_bytes | numbers') || total_disk_used_bytes=
+        least_operating_space_bytes=$(printf '%s\n' "$status" | jq -er '.cluster.data.least_operating_space_bytes_storage_server | numbers') || least_operating_space_bytes=
+        data_movement_in_flight_bytes=$(printf '%s\n' "$status" | jq -er '.cluster.data.moving_data.in_flight_bytes | numbers') || data_movement_in_flight_bytes=
+        data_movement_in_queue_bytes=$(printf '%s\n' "$status" | jq -er '.cluster.data.moving_data.in_queue_bytes | numbers') || data_movement_in_queue_bytes=
+        released_transactions_per_second=$(printf '%s\n' "$status" | jq -er '.cluster.qos.released_transactions_per_second | numbers') || released_transactions_per_second=
+        transactions_per_second_limit=$(printf '%s\n' "$status" | jq -er '.cluster.qos.transactions_per_second_limit | numbers') || transactions_per_second_limit=
+        if [[ $total_kv_size_bytes =~ ^[0-9]+$ && $total_disk_used_bytes =~ ^[0-9]+$ && $least_operating_space_bytes =~ ^[0-9]+$ ]]; then
+          storage_collection_success=1
+        fi
+      fi
+      {
+        printf '%s\n' '# HELP actor_fdb_storage_collection_success Whether the FoundationDB capacity collection succeeded.'
+        printf '%s\n' '# TYPE actor_fdb_storage_collection_success gauge'
+        printf 'actor_fdb_storage_collection_success %s\n' "$storage_collection_success"
+        if ((storage_collection_success)); then
+          printf '%s\n' '# HELP actor_fdb_storage_total_kv_size_bytes Logical bytes stored in the FoundationDB key-value space.'
+          printf '%s\n' '# TYPE actor_fdb_storage_total_kv_size_bytes gauge'
+          printf 'actor_fdb_storage_total_kv_size_bytes %s\n' "$total_kv_size_bytes"
+          printf '%s\n' '# HELP actor_fdb_storage_total_disk_used_bytes Disk bytes used across FoundationDB processes.'
+          printf '%s\n' '# TYPE actor_fdb_storage_total_disk_used_bytes gauge'
+          printf 'actor_fdb_storage_total_disk_used_bytes %s\n' "$total_disk_used_bytes"
+          printf '%s\n' '# HELP actor_fdb_storage_least_operating_space_bytes Lowest operating-space headroom reported by a storage server.'
+          printf '%s\n' '# TYPE actor_fdb_storage_least_operating_space_bytes gauge'
+          printf 'actor_fdb_storage_least_operating_space_bytes %s\n' "$least_operating_space_bytes"
+          if [[ $data_movement_in_flight_bytes =~ ^[0-9]+$ && $data_movement_in_queue_bytes =~ ^[0-9]+$ ]]; then
+            printf '%s\n' '# HELP actor_fdb_data_movement_in_flight_bytes Bytes currently moving between FoundationDB storage processes.'
+            printf '%s\n' '# TYPE actor_fdb_data_movement_in_flight_bytes gauge'
+            printf 'actor_fdb_data_movement_in_flight_bytes %s\n' "$data_movement_in_flight_bytes"
+            printf '%s\n' '# HELP actor_fdb_data_movement_in_queue_bytes Bytes queued for FoundationDB data movement.'
+            printf '%s\n' '# TYPE actor_fdb_data_movement_in_queue_bytes gauge'
+            printf 'actor_fdb_data_movement_in_queue_bytes %s\n' "$data_movement_in_queue_bytes"
+          fi
+          if [[ $released_transactions_per_second =~ ^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$ && $transactions_per_second_limit =~ ^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$ ]]; then
+            printf '%s\n' '# HELP actor_fdb_released_transactions_per_second Transactions per second currently released by FoundationDB ratekeeper.'
+            printf '%s\n' '# TYPE actor_fdb_released_transactions_per_second gauge'
+            printf 'actor_fdb_released_transactions_per_second %s\n' "$released_transactions_per_second"
+            printf '%s\n' '# HELP actor_fdb_transactions_per_second_limit Current FoundationDB transaction rate limit.'
+            printf '%s\n' '# TYPE actor_fdb_transactions_per_second_limit gauge'
+            printf 'actor_fdb_transactions_per_second_limit %s\n' "$transactions_per_second_limit"
+          fi
+          printf '%s\n' '# HELP actor_fdb_storage_last_collection_timestamp_seconds Unix timestamp of the latest successful capacity collection.'
+          printf '%s\n' '# TYPE actor_fdb_storage_last_collection_timestamp_seconds gauge'
+          printf 'actor_fdb_storage_last_collection_timestamp_seconds %s\n' "$now"
+        fi
+      } >>"$temporary"
+      mv "$temporary" "$output"
+      sleep 60
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-bj-k01-fdb-backup-metrics
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: actor-fdb-backup-metrics
+    app.kubernetes.io/part-of: actor-fleet
+    fleet.actor.dev/cell-name: actor-bj-k01
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actor-fdb-backup-metrics
+      fleet.actor.dev/cell-name: actor-bj-k01
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: actor-fdb-backup-metrics
+        app.kubernetes.io/part-of: actor-fleet
+        fleet.actor.dev/cell-name: actor-bj-k01
+    spec:
+      serviceAccountName: fdb-kubernetes
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        fsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/fdb-dedicated
+                    operator: DoesNotExist
+      containers:
+        - name: collector
+          image: foundationdb/fdb-kubernetes-monitor:7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+          command: [/bin/bash, /opt/actor/collect.sh]
+          env:
+            - name: FDB_CLUSTER_FILE
+              value: /var/dynamic-conf/fdb.cluster
+            - name: FDB_BLOB_CREDENTIALS
+              value: /var/backup-credentials/credentials
+            - name: FDB_TLS_CERTIFICATE_FILE
+              value: /var/fdb-tls/cert.pem
+            - name: FDB_TLS_CA_FILE
+              value: /var/fdb-tls/ca.pem
+            - name: FDB_TLS_KEY_FILE
+              value: /var/fdb-tls/key.pem
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: script
+              mountPath: /opt/actor/collect.sh
+              subPath: collect.sh
+              readOnly: true
+            - name: metrics
+              mountPath: /var/metrics
+            - name: config-map
+              mountPath: /var/dynamic-conf
+              readOnly: true
+            - name: backup-credentials
+              mountPath: /var/backup-credentials
+              readOnly: true
+            - name: fdb-tls
+              mountPath: /var/fdb-tls
+              readOnly: true
+        - name: server
+          image: lightclaw-bj82.tencentcloudcr.com/actor-fleet/observability-busybox@sha256:92b1d1cae5f235812184415e63d9b24464116c58d3ba3c460b1eb0247f0f46e3
+          command: [/bin/sh, -ec]
+          args:
+            - exec httpd -f -p 18083 -h /var/metrics
+          ports:
+            - name: metrics
+              containerPort: 18083
+          readinessProbe:
+            httpGet:
+              path: /metrics.txt
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: metrics
+              mountPath: /var/metrics
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: actor-bj-k01-fdb-backup-metrics
+            defaultMode: 0555
+        - name: metrics
+          emptyDir: {}
+        - name: config-map
+          configMap:
+            name: actor-bj-k01-config
+            items:
+              - key: cluster-file
+                path: fdb.cluster
+        - name: backup-credentials
+          secret:
+            secretName: actor-bj-k01-backup-credentials
+            defaultMode: 0400
+        - name: fdb-tls
+          secret:
+            secretName: actor-bj-k01-backup-tls
+            defaultMode: 0440
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-bj-k01-fdb-backup-metrics
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: actor-fdb-backup-metrics
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  selector:
+    app.kubernetes.io/name: actor-fdb-backup-metrics
+    fleet.actor.dev/cell-name: actor-bj-k01
+  ports:
+    - name: metrics
+      port: 18083
+      targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: actor-fdb-backup
+  namespace: observability
+  labels:
+    release: actor-observability
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  namespaceSelector:
+    matchNames: [actor-fdb-cell-system]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actor-fdb-backup-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics.txt
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_fleet_actor_dev_cell_name]
+          targetLabel: cell
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: actor-workerd-hosts
+  namespace: observability
+  labels:
+    release: actor-observability
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  namespaceSelector:
+    matchNames: [actor-fdb-cell-system]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actor-workerd-host-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics.txt
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_fleet_actor_dev_cell_name]
+          targetLabel: cell
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node

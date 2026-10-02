@@ -1,0 +1,54 @@
+prometheus:
+  url: http://actor-observability-prometheus.observability.svc
+  port: 9090
+
+replicas: 2
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 0
+
+# Qualification keeps backend PromQL visible when a custom metric disappears;
+# bounded HPA polling makes this safe while materially improving receipts.
+logLevel: 6
+
+rules:
+  default: false
+  custom: []
+  external:
+    - seriesQuery: 'rivet_workerd_active_actors{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+      name:
+        matches: ^rivet_workerd_active_actors$
+        as: rivet_workerd_active_actors_total
+      metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>})
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: fleet.actor.dev/control-pool
+              operator: In
+              values: ["true"]
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values: [prometheus-adapter]
+        topologyKey: kubernetes.io/hostname

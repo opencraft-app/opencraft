@@ -1,0 +1,22 @@
+[package]
+name = "minisandbox-core"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+minisandbox-block-backend = { path = "../../../storage/block-backend" }
+minisandbox-control-protocol = { path = "../../control-protocol" }
+minisandbox-pvm-sys = { path = "../minisandbox-pvm-sys" }
+pvm-socket-service = { path = "../../socket-service" }
+
+[dev-dependencies]
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+libc = "0.2"
+tokio = { version = "1", features = ["net", "rt", "time"] }
+
+[lints]
+workspace = true

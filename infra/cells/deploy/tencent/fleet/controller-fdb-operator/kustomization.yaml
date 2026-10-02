@@ -1,0 +1,43 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fdb-operator-actor-fleet-controller-system
+namePrefix: fdb-operator-
+resources:
+  - ../controller
+patches:
+  - target:
+      kind: Deployment
+      name: actor-fleet-controller
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/args/3
+        value: --enable-fdb-kubernetes-provider=true
+      - op: replace
+        path: /spec/template/spec/containers/0/args/4
+        value: --enable-ocm-provider=false
+      - op: replace
+        path: /spec/template/spec/containers/0/args/5
+        value: --enable-external-provider=false
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: actor-fdb-cell-system
+  - target:
+      kind: RoleBinding
+      name: actor-fleet-controller-leader-election
+    patch: |-
+      - op: replace
+        path: /subjects/0/name
+        value: fdb-operator-actor-fleet-controller
+      - op: replace
+        path: /subjects/0/namespace
+        value: fdb-operator-actor-fleet-controller-system
+  - target:
+      kind: ClusterRoleBinding
+      name: actor-fleet-controller
+    patch: |-
+      - op: replace
+        path: /subjects/0/name
+        value: fdb-operator-actor-fleet-controller
+      - op: replace
+        path: /subjects/0/namespace
+        value: fdb-operator-actor-fleet-controller-system

@@ -1,0 +1,210 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: worker-registry-system
+  labels:
+    app.kubernetes.io/part-of: rivet-worker-registry
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: apps.foundationdb.org/v1beta2
+kind: FoundationDBCluster
+metadata:
+  name: worker-registry-code-plane
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: worker-registry-code-plane
+    app.kubernetes.io/part-of: rivet-worker-registry
+spec:
+  version: 7.3.79
+  imageType: unified
+  mainContainer:
+    enableTls: false
+    imageConfigs:
+      - baseImage: foundationdb/fdb-kubernetes-monitor
+        tag: 7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+  databaseConfiguration:
+    redundancy_mode: single
+    storage: 3
+    storage_engine: ssd-2
+  processCounts:
+    storage: 3
+    log: -1
+    stateless: -1
+    unset: -1
+  faultDomain:
+    key: kubernetes.io/hostname
+  automationOptions:
+    replacements:
+      enabled: true
+      maxConcurrentReplacements: 1
+    synchronizationMode: local
+  processes:
+    general:
+      podTemplate:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: rivet-worker-registry
+        spec:
+          serviceAccountName: fdb-kubernetes
+          priorityClassName: actor-fdb-critical
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: "true"
+          securityContext:
+            runAsUser: 4059
+            runAsGroup: 4059
+            fsGroup: 4059
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: foundationdb
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: local-path
+          resources:
+            requests:
+              storage: 1Gi
+  replaceInstancesWhenResourcesChange: false
+  routing:
+    defineDNSLocalityFields: true
+    headlessService: true
+    useDNSInClusterFile: true
+  useExplicitListenAddress: true
+  minimumUptimeSecondsForBounce: 10
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-registry-code-plane
+  namespace: actor-fdb-cell-system
+spec:
+  podSelector:
+    matchLabels:
+      foundationdb.org/fdb-cluster-name: worker-registry-code-plane
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: worker-registry-system
+      ports:
+        - protocol: TCP
+          port: 4501
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: worker-registry-cos-data
+  namespace: worker-registry-system
+  labels:
+    app.kubernetes.io/name: worker-registry-cos
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-registry-cos
+  namespace: worker-registry-system
+  labels:
+    app.kubernetes.io/name: worker-registry-cos
+    app.kubernetes.io/part-of: rivet-worker-registry
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-registry-cos
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-registry-cos
+        app.kubernetes.io/part-of: rivet-worker-registry
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cos
+          image: python:3.12-alpine@sha256:1887c114801a8c82a4ec01daa52cfe7fc3f63573640e2247320289807ac1c3bb
+          imagePullPolicy: IfNotPresent
+          command: [python3, /opt/local-cos/local_cos.py]
+          env:
+            - name: LOCAL_COS_ROOT
+              value: /data/objects
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /__count
+              port: http
+            periodSeconds: 1
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /__count
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: script
+              mountPath: /opt/local-cos
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: script
+          configMap:
+            name: worker-registry-local-cos
+        - name: data
+          persistentVolumeClaim:
+            claimName: worker-registry-cos-data
+      terminationGracePeriodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-registry-cos
+  namespace: worker-registry-system
+  labels:
+    app.kubernetes.io/name: worker-registry-cos
+spec:
+  selector:
+    app.kubernetes.io/name: worker-registry-cos
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

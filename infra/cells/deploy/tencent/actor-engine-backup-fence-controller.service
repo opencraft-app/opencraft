@@ -1,0 +1,31 @@
+[Unit]
+Description=Actor Engine FoundationDB backup recovery-fence controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/var/lib/actor-backup-fence-controller
+Environment=LD_LIBRARY_PATH=/opt/actor/backup-fence/lib
+ExecStart=/opt/actor/backup-fence/bin/rivet-engine --config /etc/actor/backup-fence/controller.json depot backup-fence-controller-run-once
+TimeoutStartSec=240
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/actor-backup-fence-controller
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

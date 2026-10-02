@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-fleet-controller
+  labels:
+    app.kubernetes.io/name: actor-fleet-controller
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actor-fleet-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: actor-fleet-controller
+    spec:
+      serviceAccountName: actor-fleet-controller
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      terminationGracePeriodSeconds: 15
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: actor-fleet-controller
+      containers:
+        - name: manager
+          image: ghcr.io/skipzhang/actor-fleet-controller:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect=true
+            - --report-freshness=2m
+            - --max-claims-per-reconcile=1
+            - --enable-fdb-kubernetes-provider=false
+            - --enable-ocm-provider=false
+            - --enable-external-provider=true
+          env:
+            - name: WATCH_NAMESPACE
+              value: actor-fleet-system
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault

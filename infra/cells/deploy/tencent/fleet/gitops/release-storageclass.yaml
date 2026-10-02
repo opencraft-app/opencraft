@@ -1,0 +1,14 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: actor-release-cbs-wffc-retain
+  labels:
+    app.kubernetes.io/part-of: actor-release-plane
+    actor.rivet.dev/owner: platform-bootstrap
+provisioner: com.tencent.cloud.csi.cbs
+parameters:
+  diskType: CLOUD_BSSD
+  diskChargeType: POSTPAID_BY_HOUR
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

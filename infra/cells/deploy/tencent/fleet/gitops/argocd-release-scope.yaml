@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  resource.respectRBAC: strict
+  resource.inclusions: |
+    - apiGroups:
+      - ""
+      kinds:
+      - ConfigMap
+      - PersistentVolumeClaim
+      clusters:
+      - "*"
+    - apiGroups:
+      - batch
+      kinds:
+      - Job
+      clusters:
+      - "*"
+    - apiGroups:
+      - apps
+      kinds:
+      - Deployment
+      clusters:
+      - "*"
+    - apiGroups:
+      - fleet.actor.dev
+      kinds:
+      - RivetCell
+      - RivetCellProfile
+      - ShardClass
+      clusters:
+      - "*"
+    - apiGroups:
+      - ""
+      kinds:
+      - Service
+      clusters:
+      - "*"
+---
+# This secret contains no credential. It makes Argo's in-cluster client use
+# its projected ServiceAccount identity while restricting discovery and sync
+# to the exact release/control namespaces where bootstrap grants bounded RBAC.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: actor-runtime-release-target
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+type: Opaque
+stringData:
+  name: actor-bj-q01-target
+  server: https://kubernetes.default.svc
+  namespaces: actor-release-system,actor-fdb-cell-system,fdb-operator-actor-fleet-controller-system
+  clusterResources: "true"
+  config: '{"tlsClientConfig":{"insecure":false}}'

@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fdb-kubernetes-operator-controller-manager
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          env:
+            - name: FDB_BLOB_CREDENTIALS
+              value: /var/backup-credentials/credentials
+            - name: FDB_TLS_CERTIFICATE_FILE
+              value: /var/fdb-operator-tls/cert.pem
+            - name: FDB_TLS_KEY_FILE
+              value: /var/fdb-operator-tls/key.pem
+            - name: FDB_TLS_CA_FILE
+              value: /var/fdb-operator-tls/ca.pem
+            - name: FDB_NETWORK_OPTION_KNOB
+              value: tls_cert_refresh_delay_seconds=3600
+          volumeMounts:
+            - name: backup-credentials
+              mountPath: /var/backup-credentials
+              readOnly: true
+            - name: fdb-operator-tls
+              mountPath: /var/fdb-operator-tls
+              readOnly: true
+      volumes:
+        - name: backup-credentials
+          secret:
+            secretName: actor-bj-k01-backup-credentials
+            defaultMode: 256
+        - name: fdb-operator-tls
+          secret:
+            secretName: fdb-operator-tls

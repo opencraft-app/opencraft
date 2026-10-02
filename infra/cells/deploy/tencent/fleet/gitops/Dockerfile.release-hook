@@ -1,0 +1,11 @@
+ARG RELEASE_HOOK_BASE
+FROM ${RELEASE_HOOK_BASE}
+
+COPY --chmod=0555 infra/cells/deploy/tencent/fleet/tat /opt/actor/infra/cells/deploy/tencent/fleet/tat
+COPY --chmod=0555 infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/run-user-transparent-upgrade-via-tat.sh /opt/actor/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/run-user-transparent-upgrade-via-tat.sh
+COPY --chmod=0555 infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/approved-command-result.py /opt/actor/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/approved-command-result.py
+COPY --chmod=0444 infra/cells/deploy/tencent/fleet/gitops/verify_approved_release_commands.py /opt/actor/infra/cells/deploy/tencent/fleet/gitops/verify_approved_release_commands.py
+RUN /opt/actor/infra/cells/deploy/tencent/fleet/tat/test-tat-tools.sh
+USER 65532:65532
+ENV HOME=/data/home
+ENTRYPOINT ["/opt/actor/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/run-user-transparent-upgrade-via-tat.sh"]

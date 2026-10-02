@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Protocol double for the Engine backup-recovery fence controller. It deliberately
+# implements only the fdbbackup commands used by that controller and refuses to
+# run unless the pod is explicitly marked as a qualification environment.
+[[ ${RIVET_LOCAL_BACKUP_FENCE_DOUBLE:-} == qualification-only ]] || {
+	echo "local-fdbbackup-double is restricted to qualification-only environments" >&2
+	exit 64
+}
+
+state_dir=${RIVET_LOCAL_BACKUP_FENCE_STATE_DIR:-/var/lib/actor-runtime/local-fdbbackup}
+version_file=${state_dir}/minimum-restorable-version
+generation=restorable-generation-0001
+
+read_version() {
+	[[ -r ${version_file} ]] || return 1
+	local value
+	IFS= read -r value <"${version_file}"
+	[[ ${value} =~ ^[0-9]+$ ]] || {
+		echo "invalid minimum restorable version in ${version_file}" >&2
+		return 1
+	}
+	printf '%s\n' "${value}"
+}
+
+require_generation_url() {
+	local value=$1
+	[[ ${value} == file://*/${generation} ]] || {
+		echo "unexpected qualification backup generation URL: ${value}" >&2
+		exit 64
+	}
+}
+
+case ${1:-} in
+	--version)
+		[[ $# == 1 ]] || exit 64
+		printf 'FoundationDB Backup Tool (v7.3.79)\n'
+		;;
+	arm)
+		[[ $# == 2 && ${2} =~ ^[0-9]+$ ]] || {
+			echo "usage: local-fdbbackup-double arm MINIMUM_RESTORABLE_VERSION" >&2
+			exit 64
+		}
+		mkdir -p -- "${state_dir}"
+		temporary=${version_file}.tmp.$$
+		printf '%s\n' "${2}" >"${temporary}"
+		chmod 0600 "${temporary}"
+		mv -f -- "${temporary}" "${version_file}"
+		;;
+	disarm)
+		[[ $# == 1 ]] || exit 64
+		rm -f -- "${version_file}"
+		;;
+	list)
+		[[ $# == 3 && ${2} == -b && ${3} == file://* ]] || exit 64
+		if [[ -e ${version_file} ]]; then
+			read_version >/dev/null
+			printf '%s/%s\n' "${3%/}" "${generation}"
+		fi
+		;;
+	expire)
+		[[ $# == 7 && ${2} == -d && ${4} == --delete-before-days && ${6} == --min-restorable-days ]] || exit 64
+		require_generation_url "${3}"
+		[[ ${5} =~ ^[1-9][0-9]*$ && ${7} == "${5}" ]] || exit 64
+		read_version >/dev/null
+		;;
+	describe)
+		[[ $# == 3 && ${2} == -d ]] || exit 64
+		require_generation_url "${3}"
+		minimum=$(read_version)
+		printf 'URL: %s\n' "${3}"
+		printf 'Restorable: true\n'
+		printf 'MinRestorableVersion: %s\n' "${minimum}"
+		printf 'MaxRestorableVersion: %s\n' "${minimum}"
+		;;
+	*)
+		echo "unsupported local fdbbackup qualification command" >&2
+		exit 64
+		;;
+esac

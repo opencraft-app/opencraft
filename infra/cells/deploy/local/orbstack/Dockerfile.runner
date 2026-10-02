@@ -1,0 +1,28 @@
+FROM rust:1.88-slim AS builder
+
+WORKDIR /app
+
+# Keep this separate from upstream/rivet so the upstream snapshot remains clean.
+# Rivet's generated Runner Dockerfile currently omits rivetkit-rust even though
+# it is part of the Cargo workspace.
+COPY --from=rivet-source /Cargo.toml /Cargo.lock ./
+COPY --from=rivet-source /engine ./engine
+COPY --from=rivet-source /rivetkit-rust ./rivetkit-rust
+COPY --from=rivet-source /rivetkit-typescript ./rivetkit-typescript
+COPY --from=rivet-source /examples/chat-room-rust ./examples/chat-room-rust
+COPY --from=rivet-source /examples/hello-world-rust ./examples/hello-world-rust
+COPY --from=rivet-source /container-runner ./container-runner
+
+RUN cargo build --release -p rivet-test-envoy
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/rivet-test-envoy /usr/local/bin/rivet-test-envoy
+
+EXPOSE 5050
+
+CMD ["rivet-test-envoy"]

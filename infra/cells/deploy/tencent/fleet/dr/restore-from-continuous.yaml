@@ -1,0 +1,16 @@
+apiVersion: apps.foundationdb.org/v1beta2
+kind: FoundationDBRestore
+metadata:
+  name: actor-bj-k01-dr-20260818-final
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/purpose: disaster-recovery-qualification
+spec:
+  destinationClusterName: actor-bj-k01-dr-20260818
+  backupVersion: 118475632413
+  blobStoreConfiguration:
+    accountName: "@actor-fdb-backup-prod-bj-k01-nv1-1388575217.cos.ap-beijing.myqcloud.com"
+    backupName: actor/production/ap-beijing/bj-k01/foundationdb/continuous
+    bucket: actor-fdb-backup-prod-bj-k01-nv1-1388575217
+    urlParameters:
+      - region=ap-beijing

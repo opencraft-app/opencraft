@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: __CELL_NAME__-stateless-admission
+  namespace: actor-runtime-admission-system
+imagePullSecrets:
+  - name: actor-fleet-tcr
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: __CELL_NAME__-stateless-admission
+  namespace: actor-stateless-system
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [__CELL_NAME__-stateless-executor]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: __CELL_NAME__-stateless-admission
+  namespace: actor-stateless-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: __CELL_NAME__-stateless-admission
+subjects:
+  - kind: ServiceAccount
+    name: __CELL_NAME__-stateless-admission
+    namespace: actor-runtime-admission-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: __CELL_NAME__-stateless-admission
+rules:
+  - apiGroups: [node.tke.cloud.tencent.com]
+    resources: [machinesets]
+    resourceNames: [__STATELESS_MACHINE_SET__]
+    verbs: [get]
+  - apiGroups: [node.tke.cloud.tencent.com]
+    resources: [machines]
+    verbs: [get, list, patch]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: __CELL_NAME__-stateless-admission
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: __CELL_NAME__-stateless-admission
+subjects:
+  - kind: ServiceAccount
+    name: __CELL_NAME__-stateless-admission
+    namespace: actor-runtime-admission-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __CELL_NAME__-stateless-admission
+  namespace: actor-runtime-admission-system
+  labels:
+    fleet.actor.dev/cell-name: __CELL_NAME__
+    fleet.actor.dev/component: stateless-admission-controller
+  annotations:
+    fleet.actor.dev/manifest-sha256: __MANIFEST_SHA256__
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: __CELL_NAME__
+      fleet.actor.dev/component: stateless-admission-controller
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: __CELL_NAME__
+        fleet.actor.dev/component: stateless-admission-controller
+      annotations:
+        fleet.actor.dev/manifest-sha256: __MANIFEST_SHA256__
+    spec:
+      serviceAccountName: __CELL_NAME__-stateless-admission
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      nodeSelector:
+        fleet.actor.dev/control-pool: "true"
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: __REPORTER_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/workerd-runtime-capacity-controller]
+          env:
+            - name: CELL_NAMESPACE
+              value: actor-stateless-system
+            - name: CELL_NAME
+              value: __CELL_NAME__
+            - name: RUNTIME_MACHINESET
+              value: __STATELESS_MACHINE_SET__
+            - name: RUNTIME_CAPACITY_CONTROLLER_ENABLED
+              value: "false"
+            - name: RUNTIME_EXACT_SCALE_DOWN_ENABLED
+              value: "false"
+            - name: RUNTIME_ADMISSION_WORKLOAD_KIND
+              value: Deployment
+            - name: RUNTIME_ADMISSION_WORKLOAD_NAME
+              value: __CELL_NAME__-stateless-executor
+            - name: RUNTIME_ADMISSION_WORKLOAD_CONTAINER
+              value: workerd
+            - name: RUNTIME_ADMISSION_POOL_LABEL_KEY
+              value: fleet.actor.dev/stateless-pool
+            - name: RUNTIME_ADMISSION_POOL_TAINT_KEY
+              value: rivet.dev/stateless
+            - name: RUNTIME_ADMISSION_POOL_TAINT_VALUE
+              value: "true"
+            - name: RUNTIME_ADMISSION_PENDING_TAINT_KEY
+              value: startup-taint.cluster-autoscaler.kubernetes.io/stateless-admission
+            - name: RUNTIME_ADMISSION_ADMITTED_LABEL
+              value: fleet.actor.dev/stateless-admitted
+            - name: RUNTIME_ADMISSION_PHASE_LABEL
+              value: fleet.actor.dev/stateless-admission-phase
+            - name: RUNTIME_ADMISSION_STATE_ANNOTATION
+              value: fleet.actor.dev/stateless-admission-state
+            - name: RUNTIME_ADMISSION_DRAIN_ANNOTATION
+              value: fleet.actor.dev/stateless-capacity-drain
+            - name: RUNTIME_ADMISSION_PROFILE_VERSION
+              value: workerd-stateless-node-v1
+            - name: RUNTIME_ADMISSION_PROBE_COMPONENT
+              value: stateless-node-admission-probe
+            - name: RUNTIME_ADMISSION_BOOTSTRAP_IMAGE
+              value: __RUNTIME_IMAGE__
+            - name: RUNTIME_ADMISSION_IMAGE_PULL_SECRET
+              value: actor-fleet-tcr
+            - name: RUNTIME_ADMISSION_PROBE_TIMEOUT
+              value: 5m
+            - name: RUNTIME_ADMISSION_RETRY_BACKOFF
+              value: 1m
+            - name: RUNTIME_ADMISSION_RECONCILE_INTERVAL
+              value: 5s
+            - name: RUNTIME_CAPACITY_REQUIRED_ZONES
+              value: "0"
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true

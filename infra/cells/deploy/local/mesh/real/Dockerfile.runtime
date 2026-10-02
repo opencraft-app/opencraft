@@ -1,0 +1,20 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends bash ca-certificates curl libstdc++6 && \
+    rm -rf /var/lib/apt/lists/* && \
+    install -d -m 0755 /opt/actor/bin /opt/actor/share /usr/local/lib /var/lib/actor-runtime
+
+COPY --chmod=0755 rivet-engine rivet-workerd-host workerd init-workerd-pool fdbbackup local-fdbbackup-double /opt/actor/bin/
+COPY --chmod=0644 worker.js stateless-worker.js config-depot.capnp config-stateless.capnp /opt/actor/share/
+COPY --chmod=0755 libfdb_c.so libonion.so /usr/local/lib/
+
+ENV LD_LIBRARY_PATH=/usr/local/lib
+RUN /opt/actor/bin/workerd --version >/dev/null && \
+    /opt/actor/bin/rivet-workerd-host --help >/dev/null && \
+    /opt/actor/bin/rivet-engine --help >/dev/null && \
+    /opt/actor/bin/fdbbackup --version | grep -F '(v7.3.79)' >/dev/null
+
+USER 4059:4059
+WORKDIR /var/lib/actor-runtime
+STOPSIGNAL SIGTERM
