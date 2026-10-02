@@ -1,0 +1,8 @@
+upstream_repo=unpublished-local-history
+upstream_branch=none
+upstream_commit=fc637a82b717e3d5a664154e93341e0bc6a29679
+import_snapshot_commit=777fae776a30051f1112c6b5b54f17d63e086e31
+excluded_path=coscli.log
+prefix=minisandbox
+mode=squash-subtree
+source_of_truth=mono2

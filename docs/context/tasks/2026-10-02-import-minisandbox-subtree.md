@@ -1,3 +1,21 @@
+---
+id: minisandbox-subtree-import-2026-10-02
+type: task
+scope: 将独立 minisandbox 当前安全源码快照作为一次性 squash subtree 迁入 mono2。
+triggers: ["minisandbox subtree", "import minisandbox", "minisandbox 迁移"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - docs/context/tasks/2026-10-02-import-minisandbox-subtree.md
+  - minisandbox/MONO2_SUBTREE.md
+status: active
+reviewed_at: 2026-10-02
+review_due: 2026-11-02
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 ## goal
 
 将独立 `/data/minisandbox` 仓库当前已验证源码以 squash-style Git subtree 导入 mono2 的
@@ -41,6 +59,10 @@
 ## affected_paths
 
 - `minisandbox/`
+- `.agents/context/context-routing.yaml`
+- `.agents/context/route-smoke-cases.json`
+- `docs/context/INDEX.md`
+- `docs/context/decisions/ADR-0001-context-engineering-v2.md`
 - `docs/context/project/upstream-subtrees.md`
 - `docs/context/tasks/2026-10-02-import-minisandbox-subtree.md`
 
@@ -56,10 +78,27 @@
 | `docs/context/project/upstream-subtrees.md@b5996514e` | subtree 权威规范 | 采用 squash、保留精确 commit 与验证证据 |
 | `docs/context/tasks/TASK-TEMPLATE.md@b5996514e` | Task Pack 结构约束 | 记录目标、证据、风险和交接 |
 | `velagw/MONO2_SUBTREE.md@b5996514e` | 已有 subtree 邻近实现 | 复用 trailer、split 与 release boundary 写法 |
+| `docs/context/23-rules-matrix.md@b5996514e` | Context 路由治理 | 新增 prefix、deferred path 与 smoke case |
+| `docs/context/decisions/ADR-0001-context-engineering-v2.md@b5996514e` | Catalog 与路由决策 | 保持确定性路由与生成 catalog 边界 |
+| `docs/engineering/decisions/ADR-0002-design-history-and-docs-impact.md@b5996514e` | 设计影响治理 | 将一次性迁移谱系登记为正式当前边界 |
 
 ## evidence
 
-- 待补：安全快照、subtree import commit、tree comparison、敏感模式扫描和 context validation。
+- 源码 commit：`fc637a82b717e3d5a664154e93341e0bc6a29679`。
+- 安全快照：`777fae776a30051f1112c6b5b54f17d63e086e31`，仅排除 `coscli.log`。
+- subtree squash commit：`9ce5219347d2d278b5223c4cac5d2201f9bd69f0`。
+- subtree merge commit：`e895c598aba58a14af9ccfaf31180005c8e3677b`。
+- tree comparison：安全快照和导入 subtree 均为 `14241` 项，完全一致。
+- reachable history：`coscli.log` 不可达。
+- 敏感模式扫描：无意外命中；仅保留两个既有、公开且精确 allowlist 的 Guard TLS 单测夹具。
+- `validate_change_impact.py --staged`：通过；context-engineering 高风险映射已同步 ADR。
+- minisandbox 精确路由命中 `upstream-subtrees`，deferred provenance 指向
+  `minisandbox/MONO2_SUBTREE.md`；42 个 route smoke case 为 0 failure。
+- `validate_documentation.py`：通过，无 broken link 或无效 service documentation。
+- 全量 Context 单测仍为非绿基线：当前 `origin/master` 已存在旧 Task Pack、Catalog、credential
+  heuristic 与 OpenCraft 指令链债务；导入的独立仓库还带有超过 mono2 16 KiB 预算的嵌套
+  `AGENTS.md`。本次不以修改上游指令语义或放宽校验器来掩盖该问题，作为后续 minisandbox Context
+  归一化工作保留。
 
 ## risks
 
@@ -96,5 +135,5 @@
 
 ## handoff
 
-- 当前状态：准备从安全快照导入。
-- 下一步：提交 Task Pack、执行 subtree add、添加 provenance overlay、验证并交接分支。
+- 当前状态：安全 subtree 已导入，provenance overlay、正式 context、精确路由和 Catalog 对应记录已更新。
+- 下一步：提交 overlay，清理未推送的初次不安全本地分支；未经明确授权不 push、不发布。

@@ -74,7 +74,7 @@ derived: true
 | [playground-environment](runbooks/playground-environment.md) | 创建、诊断、修复、扩容或移除北京 playground |
 | [product-skill-sync](runbooks/product-skill-subtree-sync.md) | 在 mono2 编写 Product Skills 并同步下游 subtree |
 | [tapd-gongfeng-delivery](flows/tapd-gongfeng-delivery.md) | 解析 TAPD ID 并执行分支/MR 交付门禁 |
-| [upstream-subtrees](project/upstream-subtrees.md) | 保留 NewAPI、LLMGateway、VelaLink 的持续上游与 OpenCraft 一次性迁移谱系 |
+| [upstream-subtrees](project/upstream-subtrees.md) | 保留 NewAPI、LLMGateway、VelaLink 的持续上游与 OpenCraft、minisandbox 一次性迁移谱系 |
 | [context-governance](23-rules-matrix.md) | 变更路由、metadata、生命周期、审计或 23 条规则 contract |
 
 ## 治理资料
