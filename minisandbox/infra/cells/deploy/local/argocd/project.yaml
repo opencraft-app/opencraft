@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: actor-cells-static
+  namespace: argocd
+spec:
+  description: Static desired state only; runtime capacity and storage remain controller-owned.
+  sourceRepos:
+    - git://actor-gitops-repository.argocd.svc.cluster.local:9418/repo.git
+  destinations:
+    - name: runtime-a
+      namespace: actor-fdb-cell-system
+    - name: runtime-b
+      namespace: actor-fdb-cell-system
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+  orphanedResources:
+    warn: true

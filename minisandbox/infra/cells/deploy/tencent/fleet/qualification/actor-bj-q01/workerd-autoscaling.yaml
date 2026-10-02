@@ -1,0 +1,164 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actor-bj-q01-host-drain
+  namespace: actor-fdb-cell-system
+imagePullSecrets:
+  - name: actor-fleet-tcr
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: actor-bj-q01-host-drain
+  namespace: actor-fdb-cell-system
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [actor-bj-q01-runtime-auth]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    resourceNames: [actor-bj-q01-runtime-hosts]
+    verbs: [get, patch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    resourceNames: [actor-bj-q01-runtime-hosts-actor-capacity]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: actor-bj-q01-host-drain
+  namespace: actor-fdb-cell-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: actor-bj-q01-host-drain
+subjects:
+  - kind: ServiceAccount
+    name: actor-bj-q01-host-drain
+    namespace: actor-fdb-cell-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-bj-q01-host-drain
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-q01
+    fleet.actor.dev/component: host-drain-controller
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-q01
+      fleet.actor.dev/component: host-drain-controller
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-q01
+        fleet.actor.dev/component: host-drain-controller
+      annotations:
+        fleet.actor.dev/runtime-release-hold-protocol: statefulset-uid-cas-v1
+    spec:
+      serviceAccountName: actor-bj-q01-host-drain
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      nodeSelector:
+        fleet.actor.dev/control-pool: "true"
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: __RIVET_REPORTER_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/workerd-host-drain-controller]
+          env:
+            - name: CELL_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CELL_NAME
+              value: actor-bj-q01
+            - name: HOST_DRAIN_MIN_REPLICAS
+              value: "3"
+            - name: HOST_DRAIN_MAX_REMAINING_USAGE_PERCENT
+              value: "70"
+            - name: HOST_DRAIN_METRICS_FRESHNESS
+              value: 45s
+            - name: HOST_DRAIN_STABILIZATION
+              value: 5m
+            - name: HOST_DRAIN_TIMEOUT
+              value: 10m
+            - name: HOST_DRAIN_RECONCILE_INTERVAL
+              value: 5s
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: actor-bj-q01-runtime-hosts-actor-capacity
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-q01
+    fleet.actor.dev/purpose: qualification-autoscaling
+spec:
+  minReplicas: 3
+  maxReplicas: 30
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: actor-bj-q01-runtime-hosts
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      # Match the production bounded Envoy-admission cohort. Percent=100 only
+      # bounds the initial floor; Min prevents a large Cell from admitting a
+      # ten-percent Host wave after HPA tolerance accumulates demand.
+      selectPolicy: Min
+      policies:
+        - type: Pods
+          value: 6
+          periodSeconds: 60
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      # A generic HPA must never delete a StatefulSet ordinal that can still
+      # own a live Actor. The UID-fenced serial drain controller owns scale-in.
+      selectPolicy: Disabled
+  metrics:
+    - type: External
+      external:
+        metric:
+          name: rivet_workerd_active_actors_total
+          selector:
+            matchLabels:
+              cell: actor-bj-q01
+        target:
+          type: AverageValue
+          # Each Host has a hard 32-Actor admission limit. Targeting 16 keeps
+          # 50% warm headroom and asks for up to three nodes when all three
+          # baseline Hosts fill, instead of waiting for one-slot headroom.
+          averageValue: "16"

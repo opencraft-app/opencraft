@@ -1,0 +1,5 @@
+{
+  "code": "worker_version_mismatch",
+  "group": "actor",
+  "message": "The existing actor uses a different Worker version."
+}

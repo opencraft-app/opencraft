@@ -1,0 +1,57 @@
+# Portable TKE Native node-pool policy. Do not apply this base directly: a
+# region/Cell overlay must supply real resource IDs, the Cell identity and the
+# desired replica count.
+apiVersion: node.tke.cloud.tencent.com/v1beta1
+kind: MachineSet
+metadata:
+  # TKE requires "np-" followed by exactly eight lowercase alphanumerics.
+  # The ID is cluster-scoped, so the same stable ID can be reused in another
+  # regional TKE cluster.
+  name: np-fdbpool0
+spec:
+  type: Native
+  displayName: replace-with-cell-fdb-native
+  replicas: 3
+  autoRepair: false
+  # Scale-down removal plans select the newest steady-state Pod/node in each
+  # zone, so TKE must retire the matching empty Machines deterministically.
+  deletePolicy: Newest
+  instanceTypes:
+    - REPLACE_WITH_REGION_INSTANCE_TYPE
+  subnetIDs:
+    - subnet-replace
+  scaling:
+    # The cloud creates capacity evenly from the overlay's candidate subnets.
+    # Kubernetes schedules Pods by the standard zone and hostname labels.
+    createPolicy: ZoneEquality
+    minReplicas: 3
+    maxReplicas: 3
+  template:
+    metadata:
+      annotations:
+        node.tke.cloud.tencent.com/machine-cloud-tags: '[]'
+    spec:
+      displayName: replace-with-cell-fdb-native-worker
+      runtimeRootDir: /var/lib/containerd
+      unschedulable: false
+      metadata:
+        labels:
+          fleet.actor.dev/cell: replace-with-cell
+          fleet.actor.dev/cell-name: replace-with-cell
+          fleet.actor.dev/fdb-dedicated: "true"
+          node.tke.cloud.tencent.com/spread-placement-group-type: HOST
+      providerSpec:
+        type: Native
+        value:
+          instanceChargeType: PostpaidByHour
+          keyIDs:
+            - skey-replace
+          securityGroupIDs:
+            - sg-replace
+          systemDisk:
+            diskSize: 100
+            diskType: CloudBSSD
+      taints:
+        - key: fleet.actor.dev/fdb-dedicated
+          value: "true"
+          effect: NoSchedule

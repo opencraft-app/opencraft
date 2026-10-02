@@ -1,0 +1,27 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: actor-fdb-cbs-wffc-retain
+  labels:
+    app.kubernetes.io/part-of: actor-fleet
+provisioner: com.tencent.cloud.csi.cbs
+parameters:
+  diskType: CLOUD_BSSD
+  diskChargeType: POSTPAID_BY_HOUR
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: actor-runtime-cache-cbs-wffc
+  labels:
+    app.kubernetes.io/part-of: actor-fleet
+provisioner: com.tencent.cloud.csi.cbs
+parameters:
+  diskType: CLOUD_BSSD
+  diskChargeType: POSTPAID_BY_HOUR
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

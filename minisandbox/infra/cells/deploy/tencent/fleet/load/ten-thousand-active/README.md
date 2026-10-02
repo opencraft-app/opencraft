@@ -1,0 +1,97 @@
+# 10,000 active Agent qualification
+
+This gate proves one complete production capacity cycle across Beijing Cells A
+and B:
+
+```text
+4 Hosts + 4 canonical Machines per Cell
+  -> 10,000 continuously heartbeating durable Agents
+  -> HPA Pending Pods and TKE MachineSet expansion
+  -> all Agents become idle
+  -> serial Host drain and exact one-Machine contraction
+  -> 4 Hosts + 4 canonical Machines per Cell
+```
+
+The workload publishes only 16 immutable Worker versions. It creates 10,000
+stateful Agents at two per second while keeping every one active, then creates a
+1,000-object steady-state SLO sample at 20 per second. The low-origin warmup may
+observe bounded, explicitly classified capacity backpressure while cloud Nodes
+join; those idempotent retries are preserved as evidence and must finish within
+15 minutes per object. Every post-warmup object must complete creation plus its
+first SQLite write within three seconds with zero retries. Any unclassified
+warmup error, bounded-wait timeout, steady-state retry, identity mismatch,
+failed heartbeat, or failed object makes the receipt fail.
+
+`run-on-builder.sh RUN_ID` is deliberately read-only with respect to replicas,
+Machines, Nodes, admission labels and drain state. It waits for the genuine
+production floor, drives load through the public `/v1` endpoint, and then waits
+up to 36 hours for the ordinary five-minute serial drain policy to return both
+Cells to the floor. The resulting receipt binds the load receipt and the
+15-second capacity trace by SHA-256.
+
+The gate requires three consecutive complete samples at or above 10,000 active
+Agents, canonical Machine/Host growth above the initial floor, an observed
+post-load drain phase, and final convergence with all eight canonical Nodes
+Ready and admitted. Every complete capacity sample also requires each Cell's
+FoundationDB CR to be configured, generation-reconciled, available, healthy,
+and fully replicated, with every discovered FDB Pod Ready. A user-visible load
+can therefore not pass merely because degraded storage redundancy remained
+temporarily serviceable. Retired `np-runtime1` pools must remain at zero throughout
+when they still exist. A clean rebuild may omit that retired object entirely;
+the gate treats only an exact Kubernetes `NotFound` as equivalent to zero and
+fails closed on every other API error.
+
+Each 15-second sample also preserves Engine UDB pending work, Gasoline workflow
+cardinality, and Depot manager-refresh/compaction in-flight and waiter counts.
+These fields are diagnostic evidence rather than success-threshold shortcuts:
+the user-visible receipt still fails on any terminal request error or SLO breach.
+They make a failed run attributable before exact cleanup removes the active
+cohort, rather than requiring a later ad-hoc scrape whose retention may expire.
+
+The gate also owns deletion of every deterministic Object scheduled by its
+load receipt. Success and failure both invoke the resumable SQLite-backed
+`shared-agent-scale/cleanup.py`; the final qualification receipt requires a
+passed cleanup receipt with the exact run ID and scheduled cardinality before
+the low-capacity result can pass. A process crash may repeat a DELETE, but it
+cannot broaden deletion beyond receipt-derived `scale-<run-id>-*` identities.
+This prevents repeated qualifications from consuming the Cell logical-byte
+admission budget after their active-load evidence has already been captured.
+
+## Control-plane CPU qualification
+
+The failed run `755730aa4bcb4ce3be8e6a3eac306c65` is retained as capacity
+evidence. It reached 8,349 created Agents and completed 1,736,597 active
+interactions without a terminal Actor failure or identity mismatch, but 23
+active requests retried `worker_unavailable` during one 22-second interval.
+Every failed transport attempt targeted the A-Cell Engine service and timed out
+waiting for response headers. The six Engine Pods remained Ready with zero
+restarts and the A-Cell FDB write-utilization ratio remained below 0.22.
+
+The actual exhausted resource was Engine CPU. The old three-node control pool
+provided 24 physical cores in total, exactly equal to the six Engine containers'
+aggregate four-core limits. During the failure interval Engine CPU reached
+22.49 cores, UDB pending operations peaked at 9,267, Gasoline in-flight
+workflows peaked at 5,612, and the UDB operation p99 rose from roughly 25 ms to
+2.43 seconds. Adding Engine replicas on the same nodes would therefore create
+fake capacity and is not an acceptable remediation.
+
+The production Cell contract reserves three 16-vCPU control nodes and keeps the
+six-replica, two-per-zone Engine topology. Each Engine requests four cores and
+may burst to six, leaving at least four physical cores per node outside the two
+Engine limits for Kubernetes, NATS, controllers, and observability. A 10,000
+active-Agent receipt is invalid unless it is produced on that physical
+envelope; retries must not be reclassified or hidden to make the gate pass.
+
+The failed run `f9e4a8e0af77cf048edb96e6c7b0c5f4` exposed a different control
+plane limit at 8,298 active Agents. With the HPA's default tolerance, the old
+`selectPolicy: Max` plus `Percent: 100` changed one Cell from 235 to 260 Hosts
+in one decision. B admitted roughly twenty-one Hosts together; Envoy state
+transitions reached 82/minute, Actor allocation p99 reached 22.9 seconds,
+Guard ready-wait p99 reached 49.5 seconds, and two requests became
+indeterminate although Engine remained 6/6 and FDB remained available and
+fully replicated. The production and q01 HPA contracts now use
+`selectPolicy: Min`, `Pods: 6/60s`, and `Percent: 100/60s`: low capacity may
+double, but a large Cell can admit at most six new Host/Envoy members per
+minute. At the qualified one-Agent/second/Cell arrival rate and a 16-active
+target this exceeds the 3.75 Hosts/minute demand without recreating a
+ten-percent membership wave.

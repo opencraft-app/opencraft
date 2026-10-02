@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fdb-namespace-ingress
+spec:
+  podSelector:
+    matchExpressions:
+      - key: foundationdb.org/fdb-cluster-name
+        operator: Exists
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        # The regional Worker Registry is the only cross-namespace FDB client.
+        # Namespace membership is platform-owned; untrusted workloads never
+        # run here. Keeping this namespace allow explicit is required once the
+        # TKE NetworkPolicy controller actually enforces this object.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: worker-registry-system

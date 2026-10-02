@@ -1,0 +1,123 @@
+schemaVersion: 1
+name: actor-beijing-fleet-v1
+region: ap-beijing
+regionalVpcAggregate: 10.160.0.0/12
+
+# This is target inventory for new VPCs. It does not mutate or reinterpret the
+# existing 10.128.0.0 Actor VPC used by the Beijing qualification Cells.
+reservedCidrs:
+  - 10.0.0.0/12
+  - 10.128.0.0/16
+  - 192.168.240.0/24
+
+operationsNetwork:
+  name: lightvela-beijing
+  region: ap-beijing
+  vpcCidr: 10.0.0.0/12
+  attachment: isolated-custom-route-table
+  receivesRoutesFrom: [hub]
+  advertisesRoutesTo: [hub]
+  neverDirectlyReach: [runtime-a, runtime-b]
+
+clusters:
+  hub:
+    role: management-ingress
+    vpcCidr: 10.160.0.0/16
+    podCidr: 10.200.0.0/16
+    serviceCidr: 172.20.0.0/22
+    subnets:
+      ap-beijing-6: 10.160.0.0/20
+      ap-beijing-7: 10.160.16.0/20
+      ap-beijing-8: 10.160.32.0/20
+  runtime-a:
+    role: actor-runtime
+    vpcCidr: 10.161.0.0/20
+    podCidr: 10.201.0.0/16
+    serviceCidr: 172.21.0.0/22
+    subnets:
+      ap-beijing-6: 10.161.0.0/22
+      ap-beijing-7: 10.161.4.0/22
+      ap-beijing-8: 10.161.8.0/22
+    reservedSubnets: [10.161.12.0/22]
+  runtime-b:
+    role: actor-runtime
+    vpcCidr: 10.162.0.0/20
+    podCidr: 10.202.0.0/16
+    serviceCidr: 172.22.0.0/22
+    subnets:
+      ap-beijing-6: 10.162.0.0/22
+      ap-beijing-7: 10.162.4.0/22
+      ap-beijing-8: 10.162.8.0/22
+    reservedSubnets: [10.162.12.0/22]
+
+ccn:
+  topology: hub-spoke
+  advertise: vpc-subnets-only
+  neverAdvertise:
+    - podCidr
+    - serviceCidr
+  allowedFlows:
+    - from: operations.site-gateway
+      to: hub.workers-api
+      protocol: tcp
+      ports: [6688]
+    - from: hub.argocd
+      to: runtime-a.kube-api
+      protocol: tcp
+      ports: [443]
+    - from: hub.argocd
+      to: runtime-b.kube-api
+      protocol: tcp
+      ports: [443]
+    - from: hub.workers-api
+      to: runtime-a.private-gateway-clb
+      protocol: tcp
+      ports: [6420]
+    - from: hub.workers-api
+      to: runtime-b.private-gateway-clb
+      protocol: tcp
+      ports: [6420]
+    - from: runtime-a.workerd-host
+      to: hub.worker-registry-clb
+      protocol: tcp
+      ports: [8080]
+    - from: runtime-b.workerd-host
+      to: hub.worker-registry-clb
+      protocol: tcp
+      ports: [8080]
+    - from: hub.ingress
+      to: runtime-a.private-gateway-clb
+      protocol: tcp
+      ports: [443]
+    - from: hub.ingress
+      to: runtime-b.private-gateway-clb
+      protocol: tcp
+      ports: [443]
+    - from: runtime-a.gateway
+      to: runtime-b.private-gateway-clb
+      protocol: tcp
+      ports: [443]
+    - from: runtime-b.gateway
+      to: runtime-a.private-gateway-clb
+      protocol: tcp
+      ports: [443]
+    - from: runtime-a.ocm-agents
+      to: hub.ocm-api
+      protocol: tcp
+      ports: [443]
+    - from: runtime-b.ocm-agents
+      to: hub.ocm-api
+      protocol: tcp
+      ports: [443]
+  deniedFlows:
+    - runtime-a.non-gateway -> runtime-b.any
+    - runtime-b.non-gateway -> runtime-a.any
+    - hub.non-argocd -> runtime-a.kube-api
+    - hub.non-argocd -> runtime-b.kube-api
+    - hub.any -> runtime-a.fdb-nats-pod-service
+    - hub.any -> runtime-b.fdb-nats-pod-service
+
+privateDnsZone: cells.internal.rivet.dev
+runtimeGateways:
+  runtime-a: gateway-a.cells.internal.rivet.dev
+  runtime-b: gateway-b.cells.internal.rivet.dev

@@ -1,0 +1,22 @@
+[package]
+name = "pvm-block-service"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+libc = "0.2"
+log = "0.4"
+virtio-bindings = { git = "https://github.com/rust-vmm/vm-virtio", rev = "87bf424736548126983c278b0d49a7b061e38b12" }
+virtio-blk = { git = "https://github.com/rust-vmm/vm-virtio", rev = "87bf424736548126983c278b0d49a7b061e38b12", features = ["backend-stdio"] }
+virtio-device = { git = "https://github.com/rust-vmm/vm-virtio", rev = "87bf424736548126983c278b0d49a7b061e38b12" }
+virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio", rev = "87bf424736548126983c278b0d49a7b061e38b12" }
+vm-memory = { version = "0.18", features = ["backend-mmap"] }
+vmm-sys-util = "0.15"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

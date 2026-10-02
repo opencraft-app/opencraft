@@ -1,0 +1,34 @@
+using Workerd = import "/workerd/workerd.capnp";
+
+const unitTests :Workerd.Config = (
+  services = [
+    (
+      name = "worker-loader-abi-test",
+      worker = (
+        modules = [(
+          name = "worker",
+          esModule = embed "worker-loader-abi-test.js",
+        )],
+        compatibilityFlags = [
+          "nodejs_compat",
+          "rpc",
+          "enable_ctx_exports",
+          "experimental",
+        ],
+        bindings = [
+          (name = "WORKER_LOADER", workerLoader = ()),
+          (name = "OBJECT_ROUTER", service = "object-router-abi-test"),
+        ],
+      ),
+    ),
+    (
+      name = "object-router-abi-test",
+      worker = (
+        modules = [(
+          name = "worker",
+          esModule = embed "object-router-abi-test.js",
+        )],
+      ),
+    ),
+  ],
+);

@@ -1,0 +1,192 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: worker-registry-system
+  labels:
+    app.kubernetes.io/part-of: rivet-worker-registry
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: worker-registry
+  namespace: worker-registry-system
+automountServiceAccountToken: false
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-registry
+  namespace: worker-registry-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-registry
+  namespace: worker-registry-system
+  labels:
+    app.kubernetes.io/name: worker-registry
+    app.kubernetes.io/part-of: rivet-worker-registry
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-registry
+        app.kubernetes.io/part-of: rivet-worker-registry
+    spec:
+      serviceAccountName: worker-registry
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/control-pool
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: worker-registry
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: worker-registry
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker-registry
+          image: __WORKER_REGISTRY_IMAGE_DIGEST__
+          imagePullPolicy: IfNotPresent
+          args:
+            - --listen-address=:8080
+            - --backend=fdb-cos
+            - --fdb-cluster-file=/etc/foundationdb/fdb.cluster
+            - --fdb-key-prefix=code-plane-production
+            - --cos-bucket-url=$(COS_BUCKET_URL)
+            - --cos-object-prefix=worker-registry/v5
+            - --version-retention=5
+            - --max-compatibility-date=2026-08-14
+          env:
+            - name: FDB_TLS_CERTIFICATE_FILE
+              value: /var/fdb-tls/cert.pem
+            - name: FDB_TLS_CA_FILE
+              value: /var/fdb-tls/ca.pem
+            - name: FDB_TLS_KEY_FILE
+              value: /var/fdb-tls/key.pem
+            - name: COS_BUCKET_URL
+              valueFrom:
+                secretKeyRef:
+                  name: worker-registry-cos
+                  key: bucket-url
+            - name: TENCENTCLOUD_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: worker-registry-cos
+                  key: secret-id
+            - name: TENCENTCLOUD_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: worker-registry-cos
+                  key: secret-key
+            - name: TENCENTCLOUD_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: worker-registry-cos
+                  key: session-token
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: fdb-cluster-file
+              mountPath: /etc/foundationdb
+              readOnly: true
+            - name: fdb-tls
+              mountPath: /var/fdb-tls
+              readOnly: true
+      volumes:
+        - name: fdb-cluster-file
+          secret:
+            secretName: worker-registry-fdb
+            items:
+              - key: cluster-file
+                path: fdb.cluster
+        - name: fdb-tls
+          secret:
+            secretName: worker-registry-fdb-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-registry
+  namespace: worker-registry-system
+  labels:
+    app.kubernetes.io/name: worker-registry
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: worker-registry
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

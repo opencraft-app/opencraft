@@ -1,0 +1,44 @@
+[package]
+name = "minisandbox-nbd-frontend"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+rust-version = "1.96"
+
+[features]
+default = []
+fault-injection = ["minisandbox-block-backend/fault-injection"]
+
+[dependencies]
+libc = "=0.2.189"
+minisandbox-block-backend = { path = "../block-backend" }
+minisandbox-block-engine = { path = "../block-engine" }
+sha2 = "=0.11.0"
+thiserror = "=2.0.20"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[[bin]]
+name = "minisandbox-nbd"
+path = "src/main.rs"
+
+[[bin]]
+name = "minisandbox-block-oracle"
+path = "src/bin/block_oracle.rs"
+
+[[bin]]
+name = "minisandbox-inflight-oracle"
+path = "src/bin/inflight_oracle.rs"
+
+[[bin]]
+name = "minisandbox-block-admin"
+path = "src/bin/block_admin.rs"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

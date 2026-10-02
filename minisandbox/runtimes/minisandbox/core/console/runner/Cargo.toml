@@ -1,0 +1,15 @@
+[package]
+name = "pvm-console"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+libc = "0.2"
+minisandbox-core = { path = "../../crates/minisandbox-core" }
+minisandbox-pvm-sys = { path = "../../crates/minisandbox-pvm-sys" }
+pvm-socket-service = { path = "../../socket-service" }
+
+[lints]
+workspace = true

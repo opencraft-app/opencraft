@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: local-cell-evidence-simulator
+  namespace: actor-fleet-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: local-cell-evidence-simulator
+  namespace: actor-fleet-system
+rules:
+  - apiGroups: [fleet.actor.dev]
+    resources: [rivetcells]
+    verbs: [get, list]
+  - apiGroups: [fleet.actor.dev]
+    resources: [rivetcells/status]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: local-cell-evidence-simulator
+  namespace: actor-fleet-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: local-cell-evidence-simulator
+subjects:
+  - kind: ServiceAccount
+    name: local-cell-evidence-simulator
+    namespace: actor-fleet-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: local-cell-evidence-simulator
+  namespace: actor-fleet-system
+  labels:
+    app.kubernetes.io/name: local-cell-evidence-simulator
+    app.kubernetes.io/part-of: rivet-local-mesh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: local-cell-evidence-simulator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: local-cell-evidence-simulator
+        app.kubernetes.io/part-of: rivet-local-mesh
+    spec:
+      serviceAccountName: local-cell-evidence-simulator
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: simulator
+          image: docker.io/alpine/kubectl:1.35.4@sha256:9ccd823647622b620dce092d0f1406b8b41d152ce08ac963e3d4683770b14dfd
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              while true; do
+                # Model the production reporter's fail-closed dependency on
+                # fresh monitoring evidence. A healthy Kubernetes API alone
+                # must never keep a Cell qualified when Prometheus is absent.
+                if ! wget -qO- --timeout=5 \
+                  'http://actor-observability-prometheus.observability.svc:9090/api/v1/query?query=max%28kube_node_status_condition%7Bcondition%3D%22Ready%22%2Cstatus%3D%22true%22%7D%29' \
+                  | grep -Fq '"result":[{'; then
+                  sleep 15
+                  continue
+                fi
+                for cell in $(kubectl -n actor-fleet-system get rivetcell -o name); do
+                  generation=$(kubectl -n actor-fleet-system get "${cell}" -o jsonpath='{.metadata.generation}')
+                  desired=$(kubectl -n actor-fleet-system get "${cell}" -o jsonpath='{.spec.desiredState}')
+                  scale_in=$(kubectl -n actor-fleet-system get "${cell}" -o go-template='{{index .metadata.annotations "local.fleet.actor.dev/scale-in-evidence"}}')
+                  retirement_proof=$(kubectl -n actor-fleet-system get "${cell}" -o go-template='{{index .metadata.annotations "local.fleet.actor.dev/retirement-proof"}}')
+                  capacity_risk=$(kubectl -n actor-fleet-system get "${cell}" -o go-template='{{index .metadata.annotations "local.fleet.actor.dev/capacity-risk"}}')
+                  scale_out_epoch=$(kubectl -n actor-fleet-system get "${cell}" -o go-template='{{index .metadata.annotations "local.fleet.actor.dev/scale-out-epoch"}}')
+                  [ "${scale_in}" = true ] || scale_in=false
+                  [ "${retirement_proof}" = true ] || retirement_proof=false
+                  case "${capacity_risk}" in
+                    AdmissionClosed|Protect|Emergency) ;;
+                    *) capacity_risk=Normal ;;
+                  esac
+                  case "${scale_out_epoch}" in
+                    ''|*[!0-9]*) scale_out_epoch=0 ;;
+                  esac
+                  phase=Ready
+                  ready=true
+                  proof_ready=false
+                  proof_verified=false
+                  case "${desired}" in
+                    Draining)
+                      phase=Draining
+                      ready=false
+                      proof_ready=${retirement_proof}
+                      ;;
+                    Retired)
+                      phase=Retired
+                      ready=false
+                      proof_ready=${retirement_proof}
+                      proof_verified=${retirement_proof}
+                      ;;
+                  esac
+                  observed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  patch="{\"status\":{\"observedGeneration\":${generation},\"phase\":\"${phase}\",\"readyForPlacement\":${ready},\"capacityRisk\":\"${capacity_risk}\",\"scaleOutEpoch\":${scale_out_epoch},\"placementCount\":0,\"pendingReservations\":0,\"reportObservedAt\":\"${observed_at}\",\"scaleInEvidenceReady\":${scale_in},\"placementUtilizationPercent\":0,\"runtimeUtilizationPercent\":0,\"fdbWriteUtilizationPercent\":0,\"activeWriters\":0,\"inFlightCommits\":0,\"migrationBacklog\":0,\"compactionBacklog\":0,\"gcBacklog\":0,\"reconciliationBacklog\":0,\"retirementProofVerified\":${proof_verified},\"retirementProofReady\":${proof_ready},\"fdbOperatorReady\":true}}"
+                  kubectl -n actor-fleet-system patch "${cell}" --subresource=status --type=merge -p "${patch}"
+                done
+                sleep 15
+              done
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+      terminationGracePeriodSeconds: 5

@@ -1,0 +1,6 @@
+{
+  "license": "MIT",
+  "platform": "linux/amd64",
+  "repository": "https://github.com/NousResearch/hermes-agent.git",
+  "revision": "d66341ab28635d9eecbd30a18d50801d927153b8"
+}

@@ -1,0 +1,83 @@
+prometheus:
+  url: http://actor-observability-prometheus.observability.svc
+  port: 9090
+
+replicas: 2
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 0
+
+logLevel: 4
+
+rules:
+  default: false
+  custom: []
+  external:
+    - seriesQuery: 'rivet_workerd_active_actors{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+      name:
+        matches: ^rivet_workerd_active_actors$
+        as: rivet_workerd_active_actors_total
+      metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>})
+    - seriesQuery: 'rivet_stateless_in_flight{namespace!="",cell!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+      name:
+        matches: ^rivet_stateless_in_flight$
+        as: rivet_stateless_in_flight_total
+      metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>})
+    # An external AverageValue is divided by the HPA replica count. Multiplying
+    # the hottest Pod by the number of scraped Pods makes that average equal to
+    # the hottest Pod's pressure, so uneven CLB connection distribution cannot
+    # hide a saturated executor behind idle peers.
+    - seriesQuery: 'rivet_stateless_in_flight{namespace!="",cell!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+      name:
+        matches: ^rivet_stateless_in_flight$
+        as: rivet_stateless_peak_in_flight
+      metricsQuery: max(<<.Series>>{<<.LabelMatchers>>}) * count(<<.Series>>{<<.LabelMatchers>>})
+    - seriesQuery: 'rivet_stateless_queued{namespace!="",cell!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+      name:
+        matches: ^rivet_stateless_queued$
+        as: rivet_stateless_queued_total
+      metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>})
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: fleet.actor.dev/control-pool
+              operator: In
+              values: ["true"]
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values: [prometheus-adapter]
+        topologyKey: kubernetes.io/hostname

@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: minisandbox-hermes
+  namespace: observability
+  labels:
+    release: actor-observability
+    app.kubernetes.io/part-of: minisandbox
+spec:
+  namespaceSelector:
+    matchNames: [actor-fdb-cell-system]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minisandbox-hermes-metrics
+  sampleLimit: 1000
+  targetLimit: 100
+  labelLimit: 20
+  bodySizeLimit: 256KB
+  endpoints:
+    - port: metrics
+      path: /metrics.txt
+      scheme: http
+      interval: 15s
+      scrapeTimeout: 5s
+      honorLabels: false
+      filterRunning: true
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_label_fleet_actor_dev_cell_name]
+          targetLabel: cell
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node

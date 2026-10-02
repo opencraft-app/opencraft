@@ -1,0 +1,154 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: actor-mesh-federation
+  namespace: mesh-observability
+  labels:
+    release: actor-mesh-observability
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  groups:
+    - name: actor-release-qualification-gates
+      rules:
+        - alert: ActorCellReleaseQualificationMissing
+          expr: actor_fleet:cell_desired_ready == 1 unless on (cluster, cell) (actor_fleet:cell_qualification_ready == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: 期望上线的 Cell 缺少资格证据
+            description: Cell {{ $labels.cluster }}/{{ $labels.cell }} 期望进入 Ready，但没有绑定成功且不可变的资格收据；保持关闭准入状态。
+    - name: actor-cold-storage-gates
+      interval: 30s
+      rules:
+        - alert: ActorColdGcNoProgress
+          expr: actor_fleet:cell_cold_gc_policy{state="enabled"} == 1 and on (cluster, cell) actor_fleet:cell_cold_gc_policy{state="dry_run"} == 0 and on (cluster, cell) sum by (cluster, cell) (actor_fleet:cell_cold_storage_accounting_objects{class=~"retired|delete_issued"}) > 0 and on (cluster, cell) increase(actor_fleet:cell_cold_storage_accounting_objects{class="deleted_total"}[30m]) == 0
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: 冷对象 GC 长时间没有进展
+            description: Cell {{ $labels.cell }} 已启用真实删除且存在积压，但 30 分钟内没有完成对象删除。
+        - alert: ActorColdDeleteErrors
+          expr: sum by (cluster, cell) (actor_fleet:cell_cold_delete_attempts_per_second{result="failed"}) > 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: 冷对象删除持续失败
+            description: Cell {{ $labels.cell }} 的 exact-key DELETE 已连续失败至少 10 分钟。
+        - alert: ActorColdInventoryMismatch
+          expr: actor_fleet:cell_cold_inventory_audit_complete == 1 and on (cluster, cell) (abs(actor_fleet:cell_cold_inventory_bytes_difference) > 0 or abs(actor_fleet:cell_cold_inventory_objects_difference) > 0 or sum by (cluster, cell) (actor_fleet:cell_cold_inventory_problem_objects) > 0)
+          for: 15m
+          labels: {severity: critical}
+          annotations:
+            summary: FDB 账本与冷存储清单不一致
+            description: Cell {{ $labels.cell }} 的完整 bucket inventory 与 FDB 所有权账本持续不一致。
+        - alert: ActorColdInventoryAuditStale
+          expr: actor_fleet:cell_cold_inventory_last_success_seconds > 0 and (time() - actor_fleet:cell_cold_inventory_last_success_seconds > 28800)
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: 冷存储清单审计过期
+            description: Cell {{ $labels.cell }} 超过 8 小时没有完成一次有界 bucket inventory 审计。
+        - alert: ActorColdInventoryAuditIncomplete
+          expr: actor_fleet:cell_cold_inventory_audit_complete == 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: 冷存储清单审计未完成
+            description: Cell {{ $labels.cell }} 尚未完成 inventory 审计，或对象数超过当前 100000 个有界扫描上限；禁止据此开启不可逆删除。
+    - name: actor-gasoline-retention-gates
+      interval: 30s
+      rules:
+        - alert: ActorGasolinePrunerStale
+          expr: actor_fleet:cell_desired_ready == 1 unless on (cluster, cell) ((time() - actor_fleet:cell_gasoline_pruner_last_success_seconds) < 300)
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: Gasoline 历史回收器长时间无成功进展
+            description: Cell {{ $labels.cluster }}/{{ $labels.cell }} 已期望接收流量，但超过五分钟没有完成一次有界回收事务；停止扩大新 Agent 准入并检查 FDB 与 pruner workflow。
+    - name: actor-mesh-federation
+      interval: 30s
+      rules:
+        - alert: ActorFederationTargetDown
+          expr: up{federation="actor-cell"} == 0
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: A TKE Cell observability target is unreachable
+            description: Hub Prometheus cannot federate cluster {{ $labels.cluster }} in {{ $labels.region }}.
+        - alert: ActorFederationClusterHasNoCells
+          expr: up{federation="actor-cell"} == 1 unless on (cluster, region) count by (cluster, region) (actor_fleet:cell_inventory)
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: A reachable TKE cluster exports no Cell inventory
+            description: Cluster {{ $labels.cluster }} is reachable but exports no bounded Cell inventory series.
+        - alert: ActorFederationCellStale
+          expr: time() - actor_fleet:cell_heartbeat_seconds > 180
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: Federated Cell evidence is stale
+            description: Cell {{ $labels.cell }} in cluster {{ $labels.cluster }} has not evaluated its local federation rules recently.
+        - alert: ActorFederationDuplicateCellIdentity
+          expr: count by (cell) (actor_fleet:cell_inventory) > 1
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: The same Cell identity is exported by multiple TKE clusters
+            description: Cell {{ $labels.cell }} must have one current cluster owner; close global placement until generation ownership is resolved.
+        - alert: ActorMeshHasNoPlacementCapacity
+          expr: (sum(actor_fleet:cell_ready_for_placement == 1) or vector(0)) < 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: No Cell in the mesh is ready for placement
+            description: Every federated Cell has closed placement admission.
+        - alert: ActorMeshPoolAdmissionClosed
+          expr: actor_mesh_shardpool_admission_open == 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: A global ShardPool has closed admission
+            description: Pool {{ $labels.pool }} currently has no safe Cell candidate.
+        - alert: ActorMeshCellClaimFailed
+          expr: actor_mesh_cellclaim_phase{phase="Failed"} == 1
+          labels: {severity: critical}
+          annotations:
+            summary: Global Cell provisioning failed
+            description: Claim {{ $labels.claim }} reached the durable Failed phase.
+        - alert: ActorComputeNodeNotReady
+          expr: actor_fleet:compute_node_ready == 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: An Actor compute node is not Ready
+            description: Compute node {{ $labels.node }} in cluster {{ $labels.cluster }} has been unavailable for five minutes.
+        - alert: ActorComputeNodeCPURequestsHigh
+          expr: actor_fleet:compute_node_cpu_request_utilization_ratio >= 0.85
+          for: 15m
+          labels: {severity: warning, layer: compute}
+          annotations:
+            summary: Compute-node requested CPU is above 85 percent
+            description: Compute node {{ $labels.node }} in cluster {{ $labels.cluster }} has little schedulable CPU headroom.
+        - alert: ActorComputeNodeMemoryRequestsHigh
+          expr: actor_fleet:compute_node_memory_request_utilization_ratio >= 0.85
+          for: 15m
+          labels: {severity: warning, layer: compute}
+          annotations:
+            summary: Compute-node requested memory is above 85 percent
+            description: Compute node {{ $labels.node }} in cluster {{ $labels.cluster }} has little schedulable memory headroom.
+        - alert: ActorComputeNodeMemoryUsageHigh
+          expr: actor_fleet:compute_node_memory_usage_ratio >= 0.90
+          for: 10m
+          labels: {severity: critical, layer: compute}
+          annotations:
+            summary: Compute-node working-set memory is above 90 percent
+            description: Compute node {{ $labels.node }} in cluster {{ $labels.cluster }} is close to exhausting allocatable memory.
+        - alert: ActorComputeNodeV8AdmissionHigh
+          expr: actor_fleet:compute_node_v8_request_utilization_ratio >= 0.80
+          for: 10m
+          labels: {severity: warning, layer: v8}
+          annotations:
+            summary: V8 request admission is above 80 percent
+            description: V8 hosts on node {{ $labels.node }} in cluster {{ $labels.cluster }} need more execution capacity.

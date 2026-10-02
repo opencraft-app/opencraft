@@ -1,0 +1,31 @@
+{
+	"runtime": {
+		"gasoline_cell_namespace": "actor-bj-a01"
+	},
+	"foundation_db": {
+		"cluster_file": "/etc/actor/backup-fence/source-fdb.cluster",
+    "transaction_retry_limit": 10
+  },
+  "telemetry": {
+    "enabled": false
+  },
+  "sqlite": {
+    "backup_recovery_fence_controller": {
+      "backup_base_urls": [
+        "blobstore://@actor-fdb-backup-prod-bj-a01-1388575217.cos.ap-beijing.myqcloud.com?bucket=actor-fdb-backup-prod-bj-a01-1388575217&region=ap-beijing"
+      ],
+      "retention_days": 7,
+      "fdbbackup_binary": "/opt/actor/backup-fence/bin/fdbbackup",
+      "required_fdbbackup_version": "7.3.79",
+      "blob_credentials": [
+        "/etc/actor/backup-fence/blob-credentials.json"
+      ],
+      "tls_ca_file": "/etc/pki/tls/certs/ca-bundle.crt",
+      "poll_interval_ms": 60000,
+      "lease_validity_ms": 600000,
+      "command_timeout_ms": 120000,
+      "leadership_lease_ms": 300000,
+      "max_backup_generations": 128
+    }
+  }
+}

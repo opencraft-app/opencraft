@@ -1,0 +1,113 @@
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCellProfile
+metadata:
+  name: rivet-fdb-operator-cbs-beijing-v1
+spec:
+  driverABI: rivet-fdb-cos-kubernetes-v1
+  region: ap-beijing
+  availabilityMode: production-multi-zone
+  topology:
+    zoneLabelKey: topology.kubernetes.io/zone
+    zoneCount: 3
+    maxSkew: 1
+    whenUnsatisfiable: DoNotSchedule
+  foundationDB:
+    version: 7.3.79
+    processCount: 9
+    coordinatorCount: 9
+    redundancyMode: three_data_hall
+    localityKey: data_hall
+    storageEngine: ssd-2
+    exclusiveCluster: true
+    supervisor: foundationdb-kubernetes-operator
+    kubernetes:
+      operatorVersion: v2.34.0
+      imageType: unified
+      imageRepository: foundationdb/fdb-kubernetes-monitor
+      imageTagDigest: 7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+      storageClassName: actor-fdb-cbs-wffc-retain
+      fdbServiceAccountName: fdb-kubernetes
+      placementMode: DedicatedNodes
+      priorityClassName: actor-fdb-critical
+      faultDomainKey: kubernetes.io/hostname
+      nodeSelector:
+        fleet.actor.dev/fdb-dedicated: "true"
+      nodeCapacity:
+        provider: TKENativeMachineSet
+        machineSetName: np-fdbpool0
+        processesPerNode: 1
+      resources:
+        cpuRequest: "2"
+        memoryRequest: 8Gi
+        cpuLimit: "2"
+        memoryLimit: 8Gi
+      tls:
+        mode: Required
+        secretNameTemplate: "{clusterName}-fdb-tls"
+        peerVerificationRules: S.OU=actor-fdb
+    autoscaling:
+      # The production 9 -> 12 -> 9 cloud gate, cross-AZ placement and
+      # 30-day CBS quarantine receipt have passed. Automatic owns only the
+      # bounded FDB/TKE target; Disk GC remains independently ObserveOnly.
+      mode: Automatic
+      minProcessCount: 9
+      maxProcessCount: 30
+      stepProcessCount: 3
+      scaleUp:
+        headroomBytes: 85899345920
+        etaSeconds: 259200
+        sustainSeconds: 1800
+        cooldownSeconds: 7200
+        minimumSamples: 600
+      scaleDown:
+        headroomBytes: 171798691840
+        writeUtilizationPercent: 20
+        sustainSeconds: 86400
+        cooldownSeconds: 604800
+        minimumSamples: 1200
+      volumeRetentionSeconds: 2592000
+      volumeGCMode: ObserveOnly
+    dataDisk:
+      type: CLOUD_BSSD
+      sizeGiB: 200
+      encrypted: false
+      retain: true
+  runtime:
+    deploymentMode: kubernetes
+    minEngineHosts: 1
+    minWorkerdHosts: 3
+    localStateDisposable: true
+  gasolineRetention:
+    # Runtime history policy and admission watermarks have one owner. Release
+    # tooling refuses an unbound local override or a shorter rollback window.
+    historyGraceSeconds: 900
+    terminalGraceSeconds: 604800
+    pruneIntervalSeconds: 60
+    fdbLogicalSoftBytes: 42949672960
+    fdbLogicalHardBytes: 64424509440
+  cos:
+    coldBucketPrefix: actor-depot-cold-prod-bj-
+    backupBucketPrefix: actor-fdb-backup-prod-bj-
+    multiAZ: false
+    versioning: NeverEnabled
+    objectKeyLayout: depot-cold-v2
+    exactKeyRecovery: true
+    listIndependent: true
+    inCommitPath: false
+  capacity:
+    healthyWriteUtilizationLimitPercent: 50
+    degradedWriteUtilizationLimitPercent: 70
+    scaleOutAtPercent: 80
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardClass
+metadata:
+  name: rivet-fdb-cos-kubernetes-v1
+spec:
+  controllerName: fleet.actor.dev/rivet-fdb-cos
+  driverABI: rivet-fdb-cos-kubernetes-v1
+  profileRef:
+    name: rivet-fdb-operator-cbs-beijing-v1
+    digest: sha256:40ea3a33c9eac844621f8925b8b163d3ecc33d2ea1bc9cdcf66510674f4052ab
+  mobilityPolicy: DriverControlled
+  retirementPolicy: ProofRequired

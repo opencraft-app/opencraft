@@ -1,0 +1,424 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workers-api-system
+  labels:
+    app.kubernetes.io/part-of: rivet-workers-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: workers-api-placement-reader
+rules:
+  - apiGroups: ["fleet.actor.dev"]
+    resources: ["shardpools", "rivetcells"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workers-api-placement-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workers-api-placement-reader
+subjects:
+  - kind: ServiceAccount
+    name: workers-api
+    namespace: workers-api-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workers-api-route-reader
+  namespace: workers-api-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workers-api-route-reader
+  namespace: workers-api-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workers-api-route-reader
+subjects:
+  - kind: ServiceAccount
+    name: workers-api
+    namespace: workers-api-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+data:
+  registry-url: http://worker-registry.worker-registry-system.svc.cluster.local:8080
+  engine-cell-a: __ENGINE_CELL_A__
+  engine-cell-b: __ENGINE_CELL_B__
+  engine-cell-uid-a: __ENGINE_CELL_UID_A__
+  engine-cell-uid-b: __ENGINE_CELL_UID_B__
+  placement-pool-uid: __PLACEMENT_POOL_UID__
+  datacenter-a: __DATACENTER_A__
+  datacenter-b: __DATACENTER_B__
+  placement-namespace: __PLACEMENT_NAMESPACE__
+  placement-pool: __PLACEMENT_POOL__
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workers-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+  labels:
+    app.kubernetes.io/name: workers-api
+    app.kubernetes.io/part-of: rivet-workers-api
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      # A surge Pod can be scheduled while the old Pod in its destination
+      # zone is still counted, then leave a 1/2/0 topology after that old Pod
+      # exits. Drain-first makes the empty zone visible before replacement.
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workers-api
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+        fleet.actor.dev/topology-policy: zone-drain-first-v1
+      labels:
+        app.kubernetes.io/name: workers-api
+        app.kubernetes.io/part-of: rivet-workers-api
+    spec:
+      serviceAccountName: workers-api
+      automountServiceAccountToken: true
+      # TKE CLB performs a 5s TCP check and needs three failures before
+      # deregistering a NodePort target. Native lifecycle sleep keeps the Go
+      # server accepting connections while EndpointSlice, kube-proxy and CLB
+      # converge; SIGTERM then gets ten more seconds for active HTTP requests.
+      terminationGracePeriodSeconds: 50
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/control-pool
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: workers-api
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: workers-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workers-api
+          image: __WORKERS_API_IMAGE_DIGEST__
+          imagePullPolicy: IfNotPresent
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 30
+          args:
+            - --listen-address=:8080
+            - --internal-listen-address=:8081
+            - --registry-url=$(REGISTRY_URL)
+            - --engine-cell=$(ENGINE_CELL_A)
+            - --engine-cell=$(ENGINE_CELL_B)
+            - --engine-cell-uid=$(ENGINE_CELL_UID_A)
+            - --engine-cell-uid=$(ENGINE_CELL_UID_B)
+            - --engine-pool-uid=$(PLACEMENT_POOL_UID)
+            - --engine-pool-uid=$(PLACEMENT_POOL_UID)
+            - --datacenter=$(DATACENTER_A)
+            - --datacenter=$(DATACENTER_B)
+            - --namespace=default
+            - --runner-name-selector=workerd
+            - --actor-ready-timeout=3s
+            - --fetch-response-header-timeout=25s
+            - --actor-cache-capacity=32768
+            - --actor-cache-idle-ttl=10m
+            - --object-miss-capacity=4096
+            - --deployment-cache-capacity=4096
+            - --max-concurrent-prepares=4
+            - --placement-namespace=$(PLACEMENT_NAMESPACE)
+            - --placement-pool=$(PLACEMENT_POOL)
+            - --placement-route-namespace=workers-api-system
+            - --placement-max-report-age=5m
+            - --placement-refresh-interval=1s
+            - --serving-route-refresh-interval=1s
+            - --internal-token=$(REGISTRY_TOKEN)
+            - --engine-token=$(ENGINE_A_TOKEN)
+            - --engine-token=$(ENGINE_B_TOKEN)
+            - --object-router-token=$(OBJECT_ROUTER_A_TOKEN)
+            - --object-router-token=$(OBJECT_ROUTER_B_TOKEN)
+            - --stateless-executor-token=$(STATELESS_A_TOKEN)
+            - --stateless-executor-token=$(STATELESS_B_TOKEN)
+          env:
+            - name: REGISTRY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: registry-url
+            - name: DATACENTER_A
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: datacenter-a
+            - name: ENGINE_CELL_A
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: engine-cell-a
+            - name: ENGINE_CELL_B
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: engine-cell-b
+            - name: ENGINE_CELL_UID_A
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: engine-cell-uid-a
+            - name: ENGINE_CELL_UID_B
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: engine-cell-uid-b
+            - name: PLACEMENT_POOL_UID
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: placement-pool-uid
+            - name: DATACENTER_B
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: datacenter-b
+            - name: REGISTRY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-internal-token
+                  key: registry-token
+            - name: ENGINE_A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-internal-token
+                  key: engine-a-token
+            - name: ENGINE_B_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-internal-token
+                  key: engine-b-token
+            - name: STATELESS_A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-internal-token
+                  key: stateless-a-token
+            - name: STATELESS_B_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-internal-token
+                  key: stateless-b-token
+            - name: OBJECT_ROUTER_A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-internal-token
+                  key: object-router-a-token
+            - name: OBJECT_ROUTER_B_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-internal-token
+                  key: object-router-b-token
+            - name: PLACEMENT_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: placement-namespace
+            - name: PLACEMENT_POOL
+              valueFrom:
+                configMapKeyRef:
+                  name: workers-api
+                  key: placement-pool
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: object-router
+              containerPort: 8081
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: workers-api
+  minReplicas: 3
+  maxReplicas: 30
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Min
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: workers_api_routing_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "200"
+    - type: Pods
+      pods:
+        metric:
+          name: workers_api_routing_requests_in_flight
+        target:
+          type: AverageValue
+          averageValue: "64"
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+  labels:
+    app.kubernetes.io/name: workers-api
+    # This is the only Service which owns metrics discovery.  The private CLB
+    # and Object Router Services select the same Pods, so selecting only the
+    # application label would duplicate every Prometheus target and eventually
+    # trip the ServiceMonitor target limit as the HPA expands.
+    fleet.actor.dev/metrics-source: workers-api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: workers-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workers-object-router
+  namespace: workers-api-system
+  labels:
+    app.kubernetes.io/name: workers-object-router
+    app.kubernetes.io/part-of: rivet-workers-api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: workers-api
+  ports:
+    - name: object-router
+      port: 8081
+      targetPort: object-router

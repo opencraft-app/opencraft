@@ -1,0 +1,5 @@
+# Build and mirror this infrequently changed OS artifact separately. Runtime
+# releases consume its registry digest and never run a package manager.
+ARG ROCKY_IMAGE
+FROM ${ROCKY_IMAGE}
+RUN microdnf install -y ca-certificates curl libstdc++ && microdnf clean all

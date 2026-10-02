@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Rivet autonomy governance every 5 minutes
+
+[Timer]
+OnBootSec=2m
+OnUnitInactiveSec=5m
+Unit=autonomy-audit-control.service
+RandomizedDelaySec=30s
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,438 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: actor-fleet-runtime
+  namespace: observability
+  labels:
+    release: actor-observability
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  groups:
+    - name: actor-fleet-capacity-recording
+      interval: 30s
+      rules:
+        - record: actor:compaction_backlog_bytes:sum
+          expr: sum by (cell, operation) (rivet_sqlite_compaction_backlog_bytes)
+        - record: actor:compaction_bytes_per_second:15m
+          expr: sum by (cell, operation) (rate(rivet_sqlite_compaction_bytes_total{operation=~"cold_publish|reclaim_fdb"}[15m]))
+        - record: actor:cold_tier_publish_reclaim_bytes_per_second:15m
+          expr: sum by (cell, operation) (rate(rivet_sqlite_compaction_bytes_total{operation=~"cold_publish|reclaim_fdb"}[15m]))
+        - record: actor:cold_tier_publish_reclaim_objects_per_second:15m
+          expr: sum by (cell, operation) (rate(rivet_sqlite_compaction_jobs_total{operation=~"cold_publish|reclaim_fdb"}[15m]))
+        - record: actor:compaction_backlog_drain_eta_seconds
+          expr: actor:compaction_backlog_bytes:sum / actor:compaction_bytes_per_second:15m
+        - record: actor:fdb_total_kv_size_bytes:max
+          expr: max by (cell) (actor_fdb_storage_total_kv_size_bytes)
+        - record: actor:fdb_least_operating_space_bytes:min
+          expr: min by (cell) (actor_fdb_storage_least_operating_space_bytes)
+        - record: actor:fdb_write_debt_proxy_growth_bytes_per_second:6h
+          expr: clamp_min(deriv(actor:fdb_total_kv_size_bytes:max[6h]), 0)
+        - record: actor:fdb_storage_headroom_bytes
+          expr: clamp_min(actor:fdb_least_operating_space_bytes:min - 42949672960, 0)
+        - record: actor:fdb_storage_headroom_consumption_bytes_per_second:6h
+          expr: clamp_min(-deriv(actor:fdb_least_operating_space_bytes:min[6h]), 0)
+        - record: actor:fdb_storage_headroom_samples:6h
+          expr: count_over_time(actor:fdb_least_operating_space_bytes:min[6h])
+        - record: actor:fdb_storage_headroom_eta_seconds
+          expr: actor:fdb_storage_headroom_bytes / actor:fdb_storage_headroom_consumption_bytes_per_second:6h
+        - record: actor:fdb_data_movement_bytes
+          expr: max by (cell) (actor_fdb_data_movement_in_flight_bytes + actor_fdb_data_movement_in_queue_bytes)
+        - record: actor:fdb_write_utilization:ratio
+          expr: max by (cell) (actor_fdb_released_transactions_per_second / clamp_min(actor_fdb_transactions_per_second_limit, 1))
+        - record: actor:placement_transactions_per_second:5m
+          expr: sum by (cell) (rate(rivet_udb_transaction_attempts_count{name="pegboard_actor2_acquire_slot"}[5m]))
+        - record: actor:placement_transaction_average_attempts:5m
+          expr: sum by (cell) (rate(rivet_udb_transaction_attempts_sum{name="pegboard_actor2_acquire_slot"}[5m])) / clamp_min(sum by (cell) (rate(rivet_udb_transaction_attempts_count{name="pegboard_actor2_acquire_slot"}[5m])), 0.000000001)
+        - record: actor:placement_transactions_over_five_attempts_per_second:5m
+          expr: clamp_min(sum by (cell) (rate(rivet_udb_transaction_attempts_count{name="pegboard_actor2_acquire_slot"}[5m])) - sum by (cell) (rate(rivet_udb_transaction_attempts_bucket{name="pegboard_actor2_acquire_slot",le="5"}[5m])), 0)
+        - record: actor:placement_retry_fallbacks_per_second:5m
+          expr: sum by (cell) (rate(rivet_envoy_lb_retry_fallback_total[5m]))
+        - record: actor:runtime_queue_utilization:ratio
+          expr: (rivet_workerd_requests_queued + rivet_workerd_requests_in_flight) / clamp_min(rivet_workerd_max_queued + rivet_workerd_max_in_flight, 1)
+        - record: actor:container_rss_growth_bytes_per_second:6h
+          expr: clamp_min(deriv((max by (namespace, pod, container) (container_memory_rss{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",container=~"engine|workerd|workerd-host|foundationdb|nats"}))[6h:1m]), 0) and on (namespace, pod) (kube_pod_status_phase{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",phase="Running"} == 1)
+        - record: actor:container_rss_samples:6h
+          expr: count_over_time((max by (namespace, pod, container) (container_memory_rss{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",container=~"engine|workerd|workerd-host|foundationdb|nats"}))[6h:1m]) and on (namespace, pod) (kube_pod_status_phase{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",phase="Running"} == 1)
+        - record: actor:container_memory_utilization:ratio
+          expr: max by (namespace, pod, container) (container_memory_rss{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",container=~"engine|workerd|workerd-host|foundationdb|nats"}) / clamp_min(max by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",resource="memory",unit="byte",container=~"engine|workerd|workerd-host|foundationdb|nats"}), 1)
+        - record: actor:container_memory_headroom_eta_seconds
+          expr: clamp_min(max by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",resource="memory",unit="byte",container=~"engine|workerd|workerd-host|foundationdb|nats"}) - max by (namespace, pod, container) (container_memory_rss{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",container=~"engine|workerd|workerd-host|foundationdb|nats"}), 0) / on (namespace, pod, container) actor:container_rss_growth_bytes_per_second:6h
+
+    - name: actor-fleet-capacity-alerts
+      interval: 30s
+      rules:
+        - alert: ActorCompactionBacklogDrainExceeds72Hours
+          expr: actor:compaction_backlog_bytes:sum > 10485760 and actor:compaction_backlog_drain_eta_seconds > 259200
+          for: 30m
+          labels: {severity: warning, horizon: 72h}
+          annotations:
+            summary: Actor cold backlog will take more than 72 hours to drain
+            description: Cell {{ $labels.cell }} {{ $labels.operation }} has {{ $value | humanizeDuration }} of drain work at its trailing 15-minute throughput.
+        - alert: ActorFDBStorageCapacityWithin72Hours
+          expr: actor:fdb_storage_headroom_eta_seconds < 259200 and actor:fdb_storage_headroom_consumption_bytes_per_second:6h > 0 and actor:fdb_storage_headroom_samples:6h >= 600
+          for: 30m
+          labels: {severity: warning, horizon: 72h}
+          annotations:
+            summary: FoundationDB storage safety headroom is forecast to run out within 72 hours
+            description: Cell {{ $labels.cell }} has approximately {{ $value | humanizeDuration }} before its least-space storage server reaches the 40 GiB operating reserve.
+        - alert: ActorFDBStorageCapacityWithin24Hours
+          expr: actor:fdb_storage_headroom_eta_seconds < 86400 and actor:fdb_storage_headroom_consumption_bytes_per_second:6h > 0 and actor:fdb_storage_headroom_samples:6h >= 600
+          for: 15m
+          labels: {severity: critical, horizon: 24h}
+          annotations:
+            summary: FoundationDB storage safety headroom is forecast to run out within 24 hours
+            description: Cell {{ $labels.cell }} has approximately {{ $value | humanizeDuration }} before its least-space storage server reaches the 40 GiB operating reserve.
+        - alert: ActorFDBStorageOperatingReserveLow
+          expr: actor_fdb_storage_least_operating_space_bytes < 42949672960
+          for: 15m
+          labels: {severity: critical, horizon: exhausted}
+          annotations:
+            summary: FoundationDB storage operating reserve is already low
+            description: Cell {{ $labels.cell }} least-space storage server has only {{ $value | humanize1024 }}B of operating space.
+        - alert: ActorContainerMemoryCapacityWithin72Hours
+          expr: actor:container_memory_headroom_eta_seconds < 259200 and actor:container_rss_growth_bytes_per_second:6h > 0 and actor:container_rss_samples:6h >= 120 and actor:container_memory_utilization:ratio >= 0.5
+          for: 1h
+          labels: {severity: warning, horizon: 72h}
+          annotations:
+            summary: Actor container memory limit is forecast within 72 hours
+            description: Pod {{ $labels.pod }} container {{ $labels.container }} has approximately {{ $value | humanizeDuration }} of RSS headroom at its trailing six-hour growth slope.
+        - alert: ActorRuntimeQueueCapacityHigh
+          expr: actor:runtime_queue_utilization:ratio >= 0.8
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor runtime admission capacity is above 80 percent
+            description: Cell {{ $labels.cell }} runtime Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its combined in-flight and queued request capacity.
+        - alert: ActorPlacementTransactionRetryTail
+          expr: actor:placement_transactions_over_five_attempts_per_second:5m > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor placement transactions have a sustained FDB retry tail
+            description: Cell {{ $labels.cell }} has continuously completed placement transactions requiring more than five attempts; inspect per-Envoy slot contention before adding FDB nodes.
+
+    - name: actor-fleet-static-release
+      interval: 30s
+      rules:
+        - alert: ActorStaticReleaseAuditDown
+          expr: actor_static_release_collection_success == 0 or absent(actor_static_release_collection_success)
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: Cell 静态发布审计已停止
+            description: 无法取得 Cell 静态发布账本的最新审计结果；自动发布、资格测试和高风险修复必须暂停。
+        - alert: ActorStaticReleaseDrift
+          expr: actor_static_release_converged == 0 or actor_static_release_drift_findings > 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: Cell 静态发布状态发生漂移
+            description: Cell {{ $labels.cell }} 当前有 {{ $value }} 个静态发布漂移发现；动态容量保持运行，但禁止继续发布和自动修复。
+
+    - name: actor-fleet-fdb
+      interval: 30s
+      rules:
+        - alert: ActorFDBUnavailable
+          expr: actor_foundationdb_cluster_available{namespace="actor-fdb-cell-system"} == 0 or absent(actor_foundationdb_cluster_available{namespace="actor-fdb-cell-system"})
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: FoundationDB is unavailable
+            description: Cluster {{ $labels.cluster }} has reported unavailable for one minute.
+        - alert: ActorFDBNotFullyReplicated
+          expr: actor_foundationdb_cluster_full_replication{namespace="actor-fdb-cell-system"} == 0 or absent(actor_foundationdb_cluster_full_replication{namespace="actor-fdb-cell-system"})
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: FoundationDB is not fully replicated
+            description: Cluster {{ $labels.cluster }} has remained below full replication for five minutes.
+        - alert: ActorFDBOperatorReconcileStalled
+          expr: actor_foundationdb_cluster_generation{namespace="actor-fdb-cell-system"} != on (namespace, cluster) actor_foundationdb_cluster_reconciled_generation{namespace="actor-fdb-cell-system"}
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: FoundationDB Operator reconciliation is stalled
+            description: Cluster {{ $labels.cluster }} desired and reconciled generations differ for fifteen minutes.
+        - alert: ActorFDBBackupNotRestorable
+          expr: min by (cell) (actor_fdb_backup_collection_success{namespace="actor-fdb-cell-system"}) == 0 or absent(actor_fdb_backup_collection_success{namespace="actor-fdb-cell-system"}) or min by (cell) (actor_fdb_backup_container_restorable{namespace="actor-fdb-cell-system"}) == 0 or absent(actor_fdb_backup_container_restorable{namespace="actor-fdb-cell-system"})
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: FoundationDB continuous backup is not restorable
+            description: Exact fdbbackup describe for Cell {{ $labels.cell }} is unavailable or not restorable.
+        - alert: ActorFDBBackupNotRunning
+          expr: actor_foundationdb_backup_running{namespace="actor-fdb-cell-system"} == 0 or absent(actor_foundationdb_backup_running{namespace="actor-fdb-cell-system"})
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: FoundationDB continuous backup is not running
+            description: Backup {{ $labels.backup }} for cluster {{ $labels.cluster }} has stopped.
+        - alert: ActorFDBBackupAgentsMissing
+          expr: actor_foundationdb_backup_agent_count{namespace="actor-fdb-cell-system"} < 3
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: FoundationDB backup agents are missing
+            description: Backup {{ $labels.backup }} reports fewer than three agents.
+        - alert: ActorFDBBackupOperatorReconcileStalled
+          expr: actor_foundationdb_backup_generation{namespace="actor-fdb-cell-system"} != on (namespace, backup, cluster) actor_foundationdb_backup_reconciled_generation{namespace="actor-fdb-cell-system"}
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: FoundationDB backup reconciliation is stalled
+            description: Backup {{ $labels.backup }} desired and reconciled generations differ for fifteen minutes.
+        - alert: ActorFDBBackupMetricsDown
+          expr: (label_replace(kube_deployment_spec_replicas{namespace="actor-fdb-cell-system",deployment=~".+-fdb-backup-metrics"}, "cell", "$1", "deployment", "(.+)-fdb-backup-metrics") unless on (namespace, cell) max by (namespace, cell) (up{namespace="actor-fdb-cell-system",service=~".+-fdb-backup-metrics"})) or max by (namespace, cell) (up{namespace="actor-fdb-cell-system",service=~".+-fdb-backup-metrics"}) == 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: FoundationDB backup lag collector is down
+            description: Prometheus cannot scrape backup lag metrics for Cell {{ $labels.cell }}.
+        - alert: ActorFDBBackupCollectionFailed
+          expr: actor_fdb_backup_collection_success == 0 or (time() - actor_fdb_backup_last_collection_timestamp_seconds > 180)
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: FoundationDB backup lag collection is stale
+            description: Cell {{ $labels.cell }} has not produced a successful backup lag sample recently.
+        - alert: ActorFDBStorageCollectionFailed
+          expr: actor_fdb_storage_collection_success == 0 or (time() - actor_fdb_storage_last_collection_timestamp_seconds > 180)
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: FoundationDB capacity collection is stale
+            description: Cell {{ $labels.cell }} has not produced a successful storage headroom sample recently.
+        - alert: ActorCBSAttachmentReferencesMissingNode
+          expr: (kube_volumeattachment_status_attached == 1) * on (volumeattachment) group_left (node) kube_volumeattachment_info{attacher="com.tencent.cloud.csi.cbs"} unless on (node) kube_node_info
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: A Tencent CBS attachment points at a missing Kubernetes node
+            description: VolumeAttachment {{ $labels.volumeattachment }} remains attached to removed node {{ $labels.node }}. Verify CBS is detached before removing only the stale attachment record.
+        - alert: ActorFDBBackupLagHigh
+          expr: actor_fdb_backup_lag_seconds > 300 and actor_fdb_backup_lag_seconds <= 1800
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: FoundationDB backup is lagging
+            description: Cell {{ $labels.cell }} backup is approximately {{ $value | humanizeDuration }} behind.
+        - alert: ActorFDBBackupLagCritical
+          expr: actor_fdb_backup_lag_seconds > 1800
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: FoundationDB backup lag is critical
+            description: Cell {{ $labels.cell }} backup is approximately {{ $value | humanizeDuration }} behind.
+
+    - name: actor-fleet-cold-tier
+      interval: 30s
+      rules:
+        - alert: ActorColdTierQueueRejected
+          expr: sum by (cell, operation) (increase(rivet_sqlite_cold_tier_queue_wait_duration_seconds_count{outcome="full"}[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: Actor cold-tier admission rejected work
+            description: Cell {{ $labels.cell }} rejected {{ $labels.operation }} because the bounded queue was full.
+        - alert: ActorColdTierQueueTimeout
+          expr: sum by (cell, operation) (increase(rivet_sqlite_cold_tier_queue_wait_duration_seconds_count{outcome="timeout"}[5m])) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: Actor cold-tier request timed out in queue
+            description: Cell {{ $labels.cell }} observed a bounded {{ $labels.operation }} queue timeout.
+        - alert: ActorColdTierQueueClosed
+          expr: sum by (cell, operation) (increase(rivet_sqlite_cold_tier_queue_wait_duration_seconds_count{outcome="closed"}[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: Actor cold-tier admission gate closed
+            description: Cell {{ $labels.cell }} rejected {{ $labels.operation }} because its request gate was closed.
+        - alert: ActorColdTierQueueSustained
+          expr: sum by (cell, operation) (rivet_sqlite_cold_tier_requests_queued) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor cold-tier queue is sustained
+            description: Cell {{ $labels.cell }} has queued {{ $labels.operation }} work for five minutes.
+        - alert: ActorCompactionBacklogStalled
+          expr: (sum by (cell, operation) (rivet_sqlite_compaction_backlog_bytes) > 0) and on (cell, operation) (sum by (cell, operation) (increase(rivet_sqlite_compaction_bytes_total[15m])) == 0)
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor compaction backlog is not draining
+            description: Cell {{ $labels.cell }} {{ $labels.operation }} backlog has made no byte progress for at least fifteen minutes.
+        - alert: ActorCompactionJobFailed
+          expr: sum by (cell, operation, result) (increase(rivet_sqlite_compaction_jobs_total{result=~"failed|error|rejected"}[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: Actor compaction activity failed
+            description: Cell {{ $labels.cell }} observed a {{ $labels.result }} {{ $labels.operation }} activity.
+        - alert: ActorPublishReclaimFailureRateHigh
+          expr: (sum by (cell, operation) (rate(rivet_sqlite_compaction_jobs_total{operation=~"cold_publish|reclaim_fdb",result!="succeeded"}[10m])) / clamp_min(sum by (cell, operation) (rate(rivet_sqlite_compaction_jobs_total{operation=~"cold_publish|reclaim_fdb"}[10m])), 0.001)) > 0.05 and on (cell, operation) sum by (cell, operation) (increase(rivet_sqlite_compaction_jobs_total{operation=~"cold_publish|reclaim_fdb"}[10m])) >= 5
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor publish or reclaim failure rate is high
+            description: Cell {{ $labels.cell }} {{ $labels.operation }} failure ratio has exceeded five percent.
+        - alert: ActorPublishReclaimP95Slow
+          expr: histogram_quantile(0.95, sum by (cell, operation, le) (rate(rivet_sqlite_compaction_duration_seconds_bucket{operation=~"cold_publish|reclaim_fdb"}[10m]))) > 60 and on (cell, operation) sum by (cell, operation) (increase(rivet_sqlite_compaction_duration_seconds_count{operation=~"cold_publish|reclaim_fdb"}[10m])) >= 5
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor publish or reclaim p95 is slow
+            description: Cell {{ $labels.cell }} {{ $labels.operation }} p95 has exceeded sixty seconds.
+        - alert: ActorPublishReclaimThroughputStalled
+          expr: (sum by (cell, operation) (rivet_sqlite_compaction_backlog_bytes{operation=~"cold_publish|reclaim_fdb"}) > 0) and on (cell, operation) (sum by (cell, operation) (actor:cold_tier_publish_reclaim_bytes_per_second:15m) == 0)
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor publish or reclaim throughput is stalled
+            description: Cell {{ $labels.cell }} has backlog but no publish/reclaim byte throughput for fifteen minutes.
+        - alert: ActorFDBWriteDebtBackpressure
+          expr: sum by (cell) (increase(rivet_sqlite_write_debt_backpressure_total[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: Actor SQLite commits hit the FDB write-debt limit
+            description: Cell {{ $labels.cell }} backpressured at least one SQLite commit while FDB write debt drained.
+
+    - name: actor-fleet-workerd
+      interval: 30s
+      rules:
+        - alert: ActorWorkerdMetricsTargetDown
+          expr: label_replace(kube_statefulset_replicas{namespace="actor-fdb-cell-system",statefulset=~".+-runtime-hosts"}, "cell", "$1", "statefulset", "(.+)-runtime-hosts") unless on (namespace, cell) (count by (namespace, cell) (up{namespace="actor-fdb-cell-system",service=~".+-runtime-hosts"} == 1) >= on (namespace, cell) label_replace(kube_statefulset_replicas{namespace="actor-fdb-cell-system",statefulset=~".+-runtime-hosts"}, "cell", "$1", "statefulset", "(.+)-runtime-hosts"))
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: workerd-host metrics target is down
+            description: Cell {{ $labels.cell }} runtime Pod {{ $labels.pod }} has not been scraped for five minutes.
+        - alert: ActorWorkerdMetricsCollectionFailed
+          expr: rivet_workerd_metrics_collection_success == 0 or (time() - rivet_workerd_metrics_last_collection_timestamp_seconds > 60)
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: workerd admission metrics are stale
+            description: Cell {{ $labels.cell }} runtime Pod {{ $labels.pod }} cannot read its local admission state.
+        - alert: ActorWorkerdQueueSustained
+          expr: sum by (cell, pod) (rivet_workerd_requests_queued) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: workerd request queue is sustained
+            description: Cell {{ $labels.cell }} runtime Pod {{ $labels.pod }} has queued work for five minutes.
+        - alert: ActorWorkerdRequestRejected
+          expr: sum by (cell, pod) (increase(rivet_workerd_requests_rejected_total[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: workerd rejected requests
+            description: Cell {{ $labels.cell }} runtime Pod {{ $labels.pod }} exhausted its bounded admission queue.
+        - alert: ActorWorkerdRequestTimedOut
+          expr: sum by (cell, pod) (increase(rivet_workerd_requests_timed_out_total[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: workerd requests timed out in queue
+            description: Cell {{ $labels.cell }} runtime Pod {{ $labels.pod }} timed out work before dispatch.
+        - alert: ActorWorkerdInFlightSaturated
+          expr: rivet_workerd_requests_in_flight / on (cell, pod) rivet_workerd_max_in_flight >= 0.9
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: workerd in-flight admission is saturated
+            description: Cell {{ $labels.cell }} runtime Pod {{ $labels.pod }} has used at least ninety percent of its in-flight budget.
+
+    - name: actor-fleet-stateless-workers
+      interval: 15s
+      rules:
+        - alert: ActorStatelessExecutorMetricsTargetDown
+          expr: label_replace(kube_deployment_spec_replicas{namespace="actor-stateless-system",deployment=~".+-stateless-executor"}, "cell", "$1", "deployment", "(.+)-stateless-executor") unless on (namespace, cell) (count by (namespace, cell) (up{namespace="actor-stateless-system",service=~".+-stateless-executor"} == 1) >= on (namespace, cell) label_replace(kube_deployment_spec_replicas{namespace="actor-stateless-system",deployment=~".+-stateless-executor"}, "cell", "$1", "deployment", "(.+)-stateless-executor"))
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: 无状态 Worker 指标目标离线
+            description: Cell {{ $labels.cell }} 的 stateless executor 指标目标持续缺失。
+        - alert: ActorStatelessQueueSustained
+          expr: sum by (cell) (rivet_stateless_queued) > 0
+          for: 2m
+          labels: {severity: warning}
+          annotations:
+            summary: 无状态 Worker 持续排队
+            description: Cell {{ $labels.cell }} 的请求队列持续非空，HPA 或节点扩容可能没有追上。
+        - alert: ActorStatelessRequestRejected
+          expr: sum by (cell) (increase(rivet_stateless_rejected_total[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: 无状态 Worker 拒绝请求
+            description: Cell {{ $labels.cell }} 的有界队列已满并拒绝请求。
+        - alert: ActorStatelessQueueTimedOut
+          expr: sum by (cell) (increase(rivet_stateless_queue_timeout_total[5m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: 无状态 Worker 排队超时
+            description: Cell {{ $labels.cell }} 的请求在进入 V8 前已排队超时。
+        - alert: ActorStatelessTransportFailure
+          expr: sum by (cell) (increase(rivet_stateless_transport_failures_total[5m])) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: 无状态 Worker 执行结果不确定
+            description: Cell {{ $labels.cell }} 的 Host 到 workerd 传输失败，平台没有透明重放请求。
+        - alert: ActorStatelessDrainTimedOut
+          expr: sum by (cell) (increase(rivet_stateless_drain_timeouts_total[10m])) > 0
+          labels: {severity: critical}
+          annotations:
+            summary: 无状态 Worker 摘流超时
+            description: Cell {{ $labels.cell }} 有请求在 45 秒终止窗口内未完成；Pod replacement 可能截断了执行。
+
+    - name: actor-fleet-kubernetes
+      interval: 30s
+      rules:
+        - alert: ActorEngineMetricsTargetDown
+          expr: label_replace(kube_deployment_spec_replicas{namespace="actor-fdb-cell-system",deployment=~".+-engine"}, "cell", "$1", "deployment", "(.+)-engine") unless on (namespace, cell) (count by (namespace, cell) (up{namespace="actor-fdb-cell-system",service="actor-fleet-engine-metrics"} == 1) >= on (namespace, cell) label_replace(kube_deployment_spec_replicas{namespace="actor-fdb-cell-system",deployment=~".+-engine"}, "cell", "$1", "deployment", "(.+)-engine"))
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: Actor Engine metrics target is down
+            description: Cell {{ $labels.cell }} Engine Pod {{ $labels.pod }} has not been scraped for five minutes.
+        - alert: ActorEngineReplicaShortfall
+          expr: kube_deployment_status_replicas_ready{namespace="actor-fdb-cell-system",deployment=~".+-engine"} != kube_deployment_spec_replicas{namespace="actor-fdb-cell-system",deployment=~".+-engine"}
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: Actor Engine replica count is below desired
+            description: Deployment {{ $labels.deployment }} has not restored all desired replicas.
+        - alert: ActorRuntimeReplicaShortfall
+          expr: kube_statefulset_status_replicas_ready{namespace="actor-fdb-cell-system",statefulset=~".+-runtime-hosts"} != kube_statefulset_replicas{namespace="actor-fdb-cell-system",statefulset=~".+-runtime-hosts"}
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: Actor runtime-host replica count is below desired
+            description: StatefulSet {{ $labels.statefulset }} has not restored all desired replicas.
+        - alert: ActorEngineZoneSkew
+          expr: count by (cell) (count by (cell, label_topology_kubernetes_io_zone) ((up{namespace="actor-fdb-cell-system",service="actor-fleet-engine-metrics"} == 1) * on (node) group_left (label_topology_kubernetes_io_zone) kube_node_labels{label_topology_kubernetes_io_zone!=""})) < 3
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: Actor Engine no longer spans three availability zones
+            description: Cell {{ $labels.cell }} has Ready Engine targets in fewer than three zones.
+        - alert: ActorRuntimeZoneSkew
+          expr: count by (cell) (count by (cell, label_topology_kubernetes_io_zone) ((up{namespace="actor-fdb-cell-system",service=~".+-runtime-hosts"} == 1) * on (node) group_left (label_topology_kubernetes_io_zone) kube_node_labels{label_topology_kubernetes_io_zone!=""})) < 3
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: Actor runtime hosts no longer span three availability zones
+            description: Cell {{ $labels.cell }} has Ready runtime targets in fewer than three zones.
+        - alert: ActorContainerMemoryHigh
+          expr: max by (namespace, pod, container) (container_memory_rss{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",container=~"engine|workerd|workerd-host|foundationdb|nats"}) / max by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="actor-fdb-cell-system",pod!~".+-dr-.*",resource="memory",unit="byte",container=~"engine|workerd|workerd-host|foundationdb|nats"}) > 0.85
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: Actor container RSS is close to its memory limit
+            description: Pod {{ $labels.pod }} container {{ $labels.container }} RSS has exceeded 85% of its limit.
+        - alert: ActorContainerOOM
+          expr: increase(container_oom_events_total{namespace="actor-fdb-cell-system",container=~"engine|workerd|workerd-host|foundationdb|nats"}[10m]) > 0 or (increase(kube_pod_container_status_restarts_total{namespace="actor-fdb-cell-system",container=~"engine|workerd|workerd-host|foundationdb|nats"}[10m]) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1)
+          labels: {severity: critical}
+          annotations:
+            summary: Actor container was OOM-killed
+            description: Pod {{ $labels.pod }} container {{ $labels.container }} recorded an OOM event.
+        - alert: ActorContainerRestarted
+          expr: increase(kube_pod_container_status_restarts_total{namespace="actor-fdb-cell-system",container=~"engine|workerd|workerd-host|foundationdb|nats"}[15m]) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: Actor container restarted
+            description: Pod {{ $labels.pod }} container {{ $labels.container }} restarted in the last fifteen minutes.

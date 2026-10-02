@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-gitops-state
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    fleet.actor.dev/cell: local-runtime-a
+data:
+  schemaVersion: actor-static-desired-state/v1
+  cell: local-runtime-a
+  ownership: static-only

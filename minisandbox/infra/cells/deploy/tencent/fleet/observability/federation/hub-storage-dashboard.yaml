@@ -1,0 +1,191 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-mesh-storage-dashboard
+  namespace: mesh-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: actor-fleet
+data:
+  actor-mesh-storage.json: |
+    {
+      "annotations": {"list": []},
+      "description": "展示舰队存储健康状态，以及用于判断增加计算容量、消化积压或新增 Cell 的关键信号。",
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [
+        {"title": "舰队总览", "type": "link", "url": "/d/actor-mesh-cell-fleet", "includeVars": true, "keepTime": true},
+        {"title": "计算节点", "type": "link", "url": "/d/actor-mesh-compute", "includeVars": true, "keepTime": true}
+        ,{"title": "冷层运营", "type": "link", "url": "/d/actor-mesh-cold-tier", "includeVars": true, "keepTime": true}
+      ],
+      "panels": [
+        {
+          "type": "stat",
+          "title": "可接收调度的 Cell",
+          "id": 1,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+          "targets": [{"expr": "sum(actor_fleet:cell_ready_for_placement{cluster=~\"$cluster\",cell=~\"$cell\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "FDB 最小存储余量",
+          "id": 2,
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "min(actor_fleet:cell_fdb_storage_headroom_bytes{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "冷存储积压",
+          "id": 3,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "sum(actor_fleet:cell_compaction_backlog_bytes{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "待处理 Cell Claim",
+          "id": 4,
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+          "targets": [{"expr": "sum(actor_mesh_shardpool_pending_claims)", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 安全存储余量",
+          "id": 5,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_fdb_storage_headroom_bytes{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 存储余量耗尽时间",
+          "id": 6,
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_fdb_storage_headroom_eta_seconds{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "冷存储层积压",
+          "id": 7,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 14},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_compaction_backlog_bytes{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "积压消化预计时间",
+          "id": 8,
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 14},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_compaction_drain_eta_seconds{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "调度数量",
+          "id": 9,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 23},
+          "targets": [{"expr": "actor_fleet:cell_placement_count{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "运行时队列压力",
+          "description": "该指标持续偏高时应扩充计算容量；不要仅凭此信号增加存储容量。",
+          "id": 10,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 23},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_runtime_queue_utilization_ratio{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "扩容纪元",
+          "description": "Cell 控制器单调递增的压力纪元；应结合 Claim 变化和容量恢复情况分析。",
+          "id": 11,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 23},
+          "targets": [{"expr": "actor_fleet:cell_scale_out_epoch{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "table",
+          "title": "资源池准入与供给",
+          "id": 12,
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 31},
+          "targets": [
+            {"expr": "actor_mesh_shardpool_admission_open", "format": "table", "instant": true, "legendFormat": "准入状态", "refId": "A"},
+            {"expr": "actor_mesh_shardpool_ready_cells", "format": "table", "instant": true, "legendFormat": "就绪 Cell", "refId": "B"},
+            {"expr": "actor_mesh_shardpool_pending_claims", "format": "table", "instant": true, "legendFormat": "待处理 Claim", "refId": "C"},
+            {"expr": "actor_mesh_cellclaim_phase == 1", "format": "table", "instant": true, "legendFormat": "Claim 阶段", "refId": "D"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Gasoline 历史与终态回收吞吐",
+          "description": "按 Cell 汇总唯一 pruner activity 的五分钟速率。持续为零只有在没有到期 history 时才正常；不要通过全量 wf list 扫描线上 FDB。",
+          "id": 13,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_gasoline_history_pruned_per_second{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}} 历史", "refId": "A"},
+            {"expr": "actor_fleet:cell_gasoline_terminal_pruned_per_second{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}} 终态", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Gasoline 回收器距上次成功时间",
+          "description": "生产 profile 每 60 秒运行一次；超过 300 秒触发门禁告警。该指标证明回收控制环活着，不等同于 FDB 逻辑字节账本。",
+          "id": 14,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [
+            {"expr": "time() - actor_fleet:cell_gasoline_pruner_last_success_seconds{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 逻辑数据量",
+          "description": "FDB key/value 逻辑字节，不含复制、存储引擎版本与磁盘碎片；不能直接当作 CBS 账单或用户 SQLite 数据。",
+          "id": 15,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 48},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_fdb_logical_bytes{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 物理放大倍数",
+          "description": "storage process 实际磁盘字节除以逻辑 key/value 字节；用于识别复制、版本与碎片成本，不能按此给单个 Agent 计费。",
+          "id": 16,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 48},
+          "fieldConfig": {"defaults": {"unit": "none", "min": 0}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_fdb_storage_amplification_ratio{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 逻辑净增长（每日）",
+          "description": "六小时窗口的正向逻辑增长速度换算为每日字节；与 Gasoline 回收吞吐一起判断垃圾是否持续积累。负增长按零显示。",
+          "id": 17,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 48},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_fdb_logical_growth_bytes_per_second{cluster=~\"$cluster\",cell=~\"$cell\"} * 86400", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 41,
+      "tags": ["actor-fleet", "storage", "capacity", "scale-out"],
+      "templating": {
+        "list": [
+          {"name": "cluster", "label": "TKE 集群", "type": "query", "query": "label_values(actor_fleet:cell_inventory, cluster)", "includeAll": true, "allValue": ".*", "refresh": 1},
+          {"name": "cell", "label": "Cell 单元", "type": "query", "query": "label_values(actor_fleet:cell_inventory{cluster=~\"$cluster\"}, cell)", "includeAll": true, "allValue": ".*", "refresh": 1}
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timezone": "browser",
+      "title": "Actor Mesh / 存储与扩容",
+      "uid": "actor-mesh-storage",
+      "version": 1
+    }

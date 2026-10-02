@@ -1,0 +1,20 @@
+[package]
+name = "pvm-linux-sqlite-soak"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+minisandbox-block-backend = { path = "../../../storage/block-backend" }
+minisandbox-block-engine = { path = "../../../storage/block-engine" }
+minisandbox-core = { path = "../../crates/minisandbox-core" }
+minisandbox-pvm-sys = { path = "../../crates/minisandbox-pvm-sys" }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

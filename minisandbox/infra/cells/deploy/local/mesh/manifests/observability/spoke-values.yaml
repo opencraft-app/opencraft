@@ -1,0 +1,95 @@
+fullnameOverride: actor-observability
+namespaceOverride: observability
+
+alertmanager:
+  enabled: false
+defaultRules:
+  create: false
+grafana:
+  enabled: false
+
+prometheusOperator:
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+
+prometheus:
+  enabled: true
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    replicas: 1
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 6h
+    walCompression: true
+    ruleSelectorNilUsesHelmValues: true
+    serviceMonitorSelectorNilUsesHelmValues: true
+    podMonitorSelectorNilUsesHelmValues: true
+    resources:
+      # A 1 GiB spoke was OOM-killed while replaying the WAL after the
+      # 1,000-Agent capacity qualification. Keep observability isolated from
+      # compute admission by reserving enough memory to recover unattended.
+      requests: {cpu: 250m, memory: 512Mi}
+      limits: {cpu: "2", memory: 2Gi}
+
+kubeStateMetrics:
+  enabled: true
+kube-state-metrics:
+  metricLabelsAllowlist:
+    - nodes=[rivet.dev/compute,rivet.dev/pvm,topology.kubernetes.io/zone,kubernetes.io/hostname]
+  rbac:
+    extraRules:
+      - apiGroups: [apiextensions.k8s.io]
+        resources: [customresourcedefinitions]
+        verbs: [list, watch]
+      - apiGroups: [fleet.actor.dev]
+        resources: [rivetcells]
+        verbs: [list, watch]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: fleet.actor.dev
+              version: v1alpha1
+              kind: RivetCell
+            metricNamePrefix: actor_rivetcell
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              cell: [metadata, name]
+              management_cluster: [spec, managementCluster]
+            metrics:
+              - name: ready_for_placement
+                help: Whether the Cell permits new placement.
+                each: {type: Gauge, gauge: {path: [status, readyForPlacement]}}
+              - name: scale_out_epoch
+                help: Monotonic Cell scale-out pressure epoch.
+                each: {type: Gauge, gauge: {path: [status, scaleOutEpoch]}}
+              - name: placement_count
+                help: Current exact placement count.
+                each: {type: Gauge, gauge: {path: [status, placementCount]}}
+
+nodeExporter:
+  enabled: false
+kubeApiServer:
+  enabled: false
+kubelet:
+  enabled: true
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+coreDns:
+  enabled: false
+
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: false

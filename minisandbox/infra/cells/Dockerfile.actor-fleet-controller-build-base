@@ -1,0 +1,17 @@
+# The caller must supply a digest-pinned, regional private-TCR base.  Keeping
+# the historical registry in this Dockerfile would silently reintroduce a
+# public-NAT dependency when a Cell generation moves to a new TCR instance.
+ARG ACTOR_FLEET_BOOTSTRAP_IMAGE
+FROM ${ACTOR_FLEET_BOOTSTRAP_IMAGE}
+
+WORKDIR /deps
+ENV GOPROXY=https://mirrors.tencent.com/go/
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+ARG GO_MOD_SHA256
+ARG GO_SUM_SHA256
+ARG ACTOR_FLEET_BOOTSTRAP_IMAGE
+LABEL fleet.actor.dev/go-mod-sha256="${GO_MOD_SHA256}" \
+      fleet.actor.dev/go-sum-sha256="${GO_SUM_SHA256}" \
+      fleet.actor.dev/bootstrap-base="${ACTOR_FLEET_BOOTSTRAP_IMAGE}"

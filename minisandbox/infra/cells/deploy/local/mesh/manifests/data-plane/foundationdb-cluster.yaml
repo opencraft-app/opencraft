@@ -1,0 +1,79 @@
+apiVersion: apps.foundationdb.org/v1beta2
+kind: FoundationDBCluster
+metadata:
+  name: __CELL_NAME__
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: __CELL_NAME__
+    fleet.actor.dev/profile: local-real
+spec:
+  version: 7.3.79
+  imageType: unified
+  mainContainer:
+    enableTls: false
+    imageConfigs:
+      - baseImage: foundationdb/fdb-kubernetes-monitor
+        tag: 7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+  databaseConfiguration:
+    redundancy_mode: single
+    storage: 3
+    storage_engine: ssd-2
+  processCounts:
+    storage: 3
+    log: -1
+    stateless: -1
+    unset: -1
+  faultDomain:
+    key: kubernetes.io/hostname
+  automationOptions:
+    replacements:
+      enabled: true
+      maxConcurrentReplacements: 1
+    synchronizationMode: local
+  processes:
+    general:
+      podTemplate:
+        metadata:
+          labels:
+            fleet.actor.dev/cell-name: __CELL_NAME__
+        spec:
+          serviceAccountName: fdb-kubernetes
+          priorityClassName: actor-fdb-critical
+          nodeSelector:
+            rivet.dev/control: "true"
+          securityContext:
+            runAsUser: 4059
+            runAsGroup: 4059
+            fsGroup: 4059
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: foundationdb
+              env:
+                - name: ENABLE_NODE_WATCH
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: local-path
+          resources:
+            requests:
+              storage: 2Gi
+  replaceInstancesWhenResourcesChange: false
+  routing:
+    defineDNSLocalityFields: true
+    headlessService: true
+    useDNSInClusterFile: true
+  useExplicitListenAddress: true
+  minimumUptimeSecondsForBounce: 10

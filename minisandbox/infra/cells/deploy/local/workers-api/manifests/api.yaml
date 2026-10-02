@@ -1,0 +1,289 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workers-api-system
+  labels:
+    app.kubernetes.io/part-of: rivet-workers-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: workers-api-placement-reader
+rules:
+  - apiGroups: ["fleet.actor.dev"]
+    resources: ["shardpools", "rivetcells"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: workers-api-placement-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: workers-api-placement-reader
+subjects:
+  - kind: ServiceAccount
+    name: workers-api
+    namespace: workers-api-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workers-api-route-reader
+  namespace: workers-api-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workers-api-route-reader
+  namespace: workers-api-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: workers-api-route-reader
+subjects:
+  - kind: ServiceAccount
+    name: workers-api
+    namespace: workers-api-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+  labels:
+    app.kubernetes.io/name: workers-api
+    app.kubernetes.io/part-of: rivet-workers-api
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workers-api
+  template:
+    metadata:
+      annotations:
+        workers-api.rivet.dev/image-id: __WORKERS_API_IMAGE_ID__
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+      labels:
+        app.kubernetes.io/name: workers-api
+        app.kubernetes.io/part-of: rivet-workers-api
+    spec:
+      serviceAccountName: workers-api
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workers-api
+          image: __WORKERS_API_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args:
+            - --listen-address=:8080
+            - --internal-listen-address=:8081
+            - --registry-url=http://worker-registry.worker-registry-system.svc.cluster.local:8080
+            - --engine-url=http://k3d-__RUNTIME_A_CLUSTER__-server-0.:30420
+            - --engine-url=http://k3d-__RUNTIME_B_CLUSTER__-server-0.:30420
+            - --engine-cell=__CELL_NAME_A__
+            - --engine-cell=__CELL_NAME_B__
+            - --engine-cell-uid=__CELL_UID_A__
+            - --engine-cell-uid=__CELL_UID_B__
+            - --engine-pool-uid=__POOL_UID__
+            - --engine-pool-uid=__POOL_UID__
+            - --datacenter=local-runtime-a
+            - --datacenter=local-runtime-b
+            - --namespace=default
+            - --runner-name-selector=workerd
+            - --actor-ready-timeout=3s
+            - --actor-cache-capacity=32768
+            - --actor-cache-idle-ttl=10m
+            - --object-miss-capacity=4096
+            - --serving-route-source=static
+            - --object-router-token=$(OBJECT_ROUTER_A_TOKEN)
+            - --object-router-token=$(OBJECT_ROUTER_B_TOKEN)
+            - --stateless-executor-url=http://k3d-__RUNTIME_A_CLUSTER__-server-0.:30484
+            - --stateless-executor-url=http://k3d-__RUNTIME_B_CLUSTER__-server-0.:30484
+            - --stateless-executor-token=$(STATELESS_A_TOKEN)
+            - --stateless-executor-token=$(STATELESS_B_TOKEN)
+            - --placement-namespace=actor-fleet-system
+            - --placement-pool=local-mesh
+            - --placement-route-namespace=workers-api-system
+            - --placement-max-report-age=5m
+            - --placement-refresh-interval=1s
+          env:
+            - name: STATELESS_A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-local-stateless-auth
+                  key: stateless-a-token
+            - name: STATELESS_B_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-local-stateless-auth
+                  key: stateless-b-token
+            - name: OBJECT_ROUTER_A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-local-stateless-auth
+                  key: object-router-a-token
+            - name: OBJECT_ROUTER_B_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: workers-api-local-stateless-auth
+                  key: object-router-b-token
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: object-router
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 1
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+      terminationGracePeriodSeconds: 15
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workers-api
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: workers-api
+  minReplicas: 3
+  maxReplicas: 30
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - {type: Percent, value: 100, periodSeconds: 60}
+        - {type: Pods, value: 4, periodSeconds: 60}
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Min
+      policies:
+        - {type: Percent, value: 25, periodSeconds: 60}
+        - {type: Pods, value: 1, periodSeconds: 60}
+  metrics:
+    - type: Pods
+      pods:
+        metric: {name: workers_api_routing_requests_per_second}
+        target: {type: AverageValue, averageValue: "200"}
+    - type: Pods
+      pods:
+        metric: {name: workers_api_routing_requests_in_flight}
+        target: {type: AverageValue, averageValue: "64"}
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 65}
+    - type: Resource
+      resource:
+        name: memory
+        target: {type: Utilization, averageUtilization: 75}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workers-api
+  namespace: workers-api-system
+  labels:
+    app.kubernetes.io/name: workers-api
+spec:
+  selector:
+    app.kubernetes.io/name: workers-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workers-object-router
+  namespace: workers-api-system
+  labels:
+    app.kubernetes.io/name: workers-api
+spec:
+  selector:
+    app.kubernetes.io/name: workers-api
+  ports:
+    - name: http
+      port: 8081
+      targetPort: object-router
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workers-object-router-private
+  namespace: workers-api-system
+  labels:
+    app.kubernetes.io/name: workers-object-router
+    app.kubernetes.io/part-of: rivet-workers-api
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: workers-api
+  ports:
+    - name: http
+      port: 8081
+      targetPort: object-router
+      nodePort: 30083

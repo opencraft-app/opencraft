@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""Build an immutable low -> 10k active -> low qualification receipt."""
+
+import argparse
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+
+
+CELLS = ("actor-bj-a01", "actor-bj-b01")
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def active(cell):
+    values = cell.get("activeActors")
+    if not isinstance(values, list) or len(values) != 1:
+        return None
+    try:
+        return float(values[0])
+    except (TypeError, ValueError):
+        return None
+
+
+def drain_phase(cell):
+    raw = cell.get("hostConfig", {}).get("drainState")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw).get("phase")
+    except (TypeError, json.JSONDecodeError):
+        return "Malformed"
+
+
+def fdb_healthy(cell):
+    fdb = cell.get("foundationDB", {})
+    pods = cell.get("foundationDBPods", {})
+    health = fdb.get("health", {})
+    return (
+        fdb.get("configured") is True
+        and fdb.get("generation") is not None
+        and fdb.get("generation") == fdb.get("reconciledGeneration")
+        and all(health.get(name) is True for name in ("available", "fullReplication", "healthy"))
+        and isinstance(pods.get("total"), int)
+        and pods.get("total") >= 3
+        and pods.get("ready") == pods.get("total")
+    )
+
+
+def cell_low(cell, floor):
+    host = cell.get("hostConfig", {})
+    machine = cell.get("machineSet", {})
+    legacy = cell.get("legacyMachineSet", {})
+    nodes = cell.get("nodes", [])
+    return (
+        not cell.get("errors")
+        and fdb_healthy(cell)
+        and active(cell) == 0
+        and host.get("replicas") == floor
+        and host.get("ready") == floor
+        and host.get("currentRevision") == host.get("updateRevision")
+        and not host.get("releaseHold")
+        and drain_phase(cell) == "Idle"
+        and machine.get("desired") == floor
+        and machine.get("current") == floor
+        and machine.get("ready") == floor
+        and not machine.get("downscaleIntent")
+        and legacy.get("desired") == 0
+        and (legacy.get("current") or 0) == 0
+        and len(nodes) == floor
+        and all(node.get("ready") and node.get("admitted") for node in nodes)
+        and all(not any(taint.get("key") in {
+            "fleet.actor.dev/runtime-admission", "fleet.actor.dev/runtime-capacity-drain"
+        } for taint in node.get("taints", [])) for node in nodes)
+    )
+
+
+def normalized(sample):
+    by_name = {cell.get("cell"): cell for cell in sample.get("cells", [])}
+    if set(by_name) != set(CELLS):
+        return None
+    active_values = [active(by_name[name]) for name in CELLS]
+    if any(value is None for value in active_values):
+        active_total = None
+    else:
+        active_total = sum(active_values)
+    return {
+        "observedAt": sample.get("observedAt"),
+        "cells": by_name,
+        "active": active_total,
+        "hosts": sum(by_name[name].get("hostConfig", {}).get("replicas") or 0 for name in CELLS),
+        "readyHosts": sum(by_name[name].get("hostConfig", {}).get("ready") or 0 for name in CELLS),
+        "machines": sum(by_name[name].get("machineSet", {}).get("desired") or 0 for name in CELLS),
+        "readyMachines": sum(by_name[name].get("machineSet", {}).get("ready") or 0 for name in CELLS),
+        "phases": {name: drain_phase(by_name[name]) for name in CELLS},
+        "complete": all(not by_name[name].get("errors") and fdb_healthy(by_name[name])
+                        for name in CELLS),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--trace", type=Path, required=True)
+    parser.add_argument("--load-receipt", type=Path, required=True)
+    parser.add_argument("--cleanup-receipt", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--expected-active", type=int, default=10000)
+    parser.add_argument("--expected-objects", type=int, default=11000)
+    parser.add_argument("--floor-per-cell", type=int, default=4)
+    parser.add_argument("--hard-active-per-host", type=int, default=32)
+    args = parser.parse_args()
+    if (args.expected_active < 1 or args.expected_objects < args.expected_active
+            or args.floor_per_cell < 1 or args.hard_active_per_host < 1):
+        parser.error("invalid qualification bounds")
+    if args.output.exists():
+        raise SystemExit("receipt output already exists")
+
+    load = json.loads(args.load_receipt.read_text())
+    cleanup = json.loads(args.cleanup_receipt.read_text())
+    samples = []
+    with args.trace.open() as stream:
+        for line_number, line in enumerate(stream, 1):
+            try:
+                value = normalized(json.loads(line))
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"invalid trace line {line_number}: {error}") from error
+            if value is not None:
+                samples.append(value)
+    if not samples:
+        raise SystemExit("capacity trace is empty")
+
+    baseline = next((index for index, sample in enumerate(samples)
+                     if all(cell_low(sample["cells"][name], args.floor_per_cell) for name in CELLS)), None)
+    active_indices = [index for index, sample in enumerate(samples)
+                      if sample["complete"] and sample["active"] is not None
+                      and sample["active"] >= args.expected_active]
+    sustained = any(active_indices[offset + 2] == active_indices[offset] + 2
+                    and active_indices[offset + 1] == active_indices[offset] + 1
+                    for offset in range(max(0, len(active_indices) - 2)))
+    peak_index = max(range(len(samples)), key=lambda index: samples[index]["active"] or -1)
+    final = next((index for index in range(len(samples) - 1, -1, -1)
+                  if index > peak_index and all(
+                      cell_low(samples[index]["cells"][name], args.floor_per_cell) for name in CELLS
+                  )), None)
+    drain_observed = any(
+        index > peak_index and any(phase not in (None, "Idle") for phase in sample["phases"].values())
+        for index, sample in enumerate(samples)
+    )
+    max_hosts = max(sample["hosts"] for sample in samples)
+    max_ready_hosts = max(sample["readyHosts"] for sample in samples)
+    max_machines = max(sample["machines"] for sample in samples)
+    max_ready_machines = max(sample["readyMachines"] for sample in samples)
+    active_capacity_ready = any(
+        sample["complete"] and sample["active"] is not None
+        and sample["active"] >= args.expected_active
+        and sample["readyHosts"] * args.hard_active_per_host >= args.expected_active
+        and sample["readyMachines"] >= sample["readyHosts"]
+        for sample in samples
+    )
+    counters = load.get("counters", {})
+    warmup_backpressure = load.get("warmupBackpressure", {})
+    cleanup_runs = cleanup.get("runs", [])
+    cleanup_objects = cleanup.get("objects", {})
+    cleanup_passed = (
+        cleanup.get("schema") == "actor-shared-agent-cleanup/v1"
+        and cleanup.get("verdict") == "passed"
+        and len(cleanup_runs) == 1
+        and cleanup_runs[0].get("runId") == load.get("runId")
+        and cleanup_runs[0].get("scheduled") == counters.get("scheduled")
+        and cleanup_objects.get("total") == counters.get("scheduled")
+        and cleanup_objects.get("deleted") == counters.get("scheduled")
+        and cleanup_objects.get("pending") == 0
+    )
+    load_passed = (
+        load.get("verdict") == "passed"
+        and load.get("target") == args.expected_objects
+        and load.get("activeTarget") == args.expected_active
+        and load.get("activeReady") == args.expected_active
+        and load.get("activeProven") == args.expected_active
+        and counters.get("objectsCreated") == args.expected_objects
+        and counters.get("objectsFailed") == 0
+        and counters.get("readySloBreaches") == 0
+        and counters.get("requestRetries") == 0
+        and counters.get("warmupBackpressureTimeouts", 0) == 0
+        and warmup_backpressure.get("timeouts", 0) == 0
+        and counters.get("activeFailed") == 0
+        and counters.get("activeIdentityMismatches") == 0
+    )
+    checks = {
+        "loadReceiptPassed": load_passed,
+        "exactObjectCleanupPassed": cleanup_passed,
+        "initialLowCapacity": baseline is not None and baseline < peak_index,
+        "tenThousandActiveSustained": sustained,
+        "automaticScaleUpObserved": max_hosts > args.floor_per_cell * len(CELLS)
+            and max_ready_hosts > args.floor_per_cell * len(CELLS)
+            and max_machines > args.floor_per_cell * len(CELLS)
+            and max_ready_machines > args.floor_per_cell * len(CELLS),
+        "activeCapacityReady": active_capacity_ready,
+        "safeDrainObserved": drain_observed,
+        "finalLowCapacity": final is not None,
+    }
+    receipt = {
+        "schema": "actor-ten-thousand-active-qualification/v1",
+        "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "verdict": "passed" if all(checks.values()) else "failed",
+        "checks": checks,
+        "inputs": {
+            "capacityTrace": {"path": str(args.trace), "sha256": sha256(args.trace)},
+            "loadReceipt": {"path": str(args.load_receipt), "sha256": sha256(args.load_receipt)},
+            "cleanupReceipt": {"path": str(args.cleanup_receipt), "sha256": sha256(args.cleanup_receipt)},
+        },
+        "expected": {"active": args.expected_active, "objects": args.expected_objects,
+                     "floorPerCell": args.floor_per_cell,
+                     "hardActivePerHost": args.hard_active_per_host},
+        "evidence": {
+            "samples": len(samples), "completeSamples": sum(sample["complete"] for sample in samples),
+            "baselineSample": baseline, "peakSample": peak_index, "finalSample": final,
+            "peakActive": samples[peak_index]["active"], "maxHosts": max_hosts,
+            "maxReadyHosts": max_ready_hosts, "maxMachines": max_machines,
+            "maxReadyMachines": max_ready_machines,
+            "baselineObservedAt": samples[baseline]["observedAt"] if baseline is not None else None,
+            "peakObservedAt": samples[peak_index]["observedAt"],
+            "finalObservedAt": samples[final]["observedAt"] if final is not None else None,
+        },
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    descriptor = os.open(args.output, flags, 0o600)
+    with os.fdopen(descriptor, "w") as stream:
+        json.dump(receipt, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    print(json.dumps({"verdict": receipt["verdict"], **receipt["evidence"]}, sort_keys=True))
+    return 0 if receipt["verdict"] == "passed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

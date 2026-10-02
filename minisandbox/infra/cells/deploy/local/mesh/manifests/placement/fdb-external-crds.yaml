@@ -1,0 +1,44 @@
+# Local API doubles for cloud/operator-owned resources. The production fleet
+# controller uses these exact GVKs; only the external reconcilers are simulated.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: foundationdbclusters.apps.foundationdb.org
+spec:
+  group: apps.foundationdb.org
+  scope: Namespaced
+  names:
+    plural: foundationdbclusters
+    singular: foundationdbcluster
+    kind: FoundationDBCluster
+    shortNames: [fdb]
+  versions:
+    - name: v1beta2
+      served: true
+      storage: true
+      subresources: {status: {}}
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinesets.node.tke.cloud.tencent.com
+spec:
+  group: node.tke.cloud.tencent.com
+  scope: Cluster
+  names:
+    plural: machinesets
+    singular: machineset
+    kind: MachineSet
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      subresources: {status: {}}
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true

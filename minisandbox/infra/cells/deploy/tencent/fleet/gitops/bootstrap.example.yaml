@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: actor-release-system
+  labels:
+    app.kubernetes.io/part-of: actor-release-plane
+    actor.rivet.dev/owner: platform-bootstrap
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actor-release-hook
+  namespace: actor-release-system
+  labels:
+    app.kubernetes.io/part-of: actor-release-plane
+    actor.rivet.dev/owner: platform-bootstrap
+automountServiceAccountToken: false
+imagePullSecrets:
+  - name: actor-fleet-tcr

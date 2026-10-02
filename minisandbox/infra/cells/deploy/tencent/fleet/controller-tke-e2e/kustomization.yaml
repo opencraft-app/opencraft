@@ -1,0 +1,46 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tke-e2e-actor-fleet-controller-system
+namePrefix: tke-e2e-
+resources:
+  - ../controller
+  - pool.yaml
+images:
+  - name: ghcr.io/skipzhang/actor-fleet-controller
+    newName: lightclaw-bj82.tencentcloudcr.com/actor-fleet-e2e-20260816/controller
+    digest: sha256:a77c0a0eff322eae006fc9acf36f8daeb49f9085e94c8d607f74e192be035bca
+patches:
+  - target:
+      kind: Deployment
+      name: actor-fleet-controller
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: tke-e2e-actor-fleet-controller-system
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: tcr-pull
+  - target:
+      kind: RoleBinding
+      name: actor-fleet-controller-leader-election
+    patch: |-
+      - op: replace
+        path: /subjects/0/name
+        value: tke-e2e-actor-fleet-controller
+      - op: replace
+        path: /subjects/0/namespace
+        value: tke-e2e-actor-fleet-controller-system
+  - target:
+      kind: ClusterRoleBinding
+      name: actor-fleet-controller
+    patch: |-
+      - op: replace
+        path: /subjects/0/name
+        value: tke-e2e-actor-fleet-controller
+      - op: replace
+        path: /subjects/0/namespace
+        value: tke-e2e-actor-fleet-controller-system

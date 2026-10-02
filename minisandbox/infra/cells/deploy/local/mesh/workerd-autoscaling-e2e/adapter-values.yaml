@@ -1,0 +1,36 @@
+prometheus:
+  url: http://actor-observability-prometheus.observability.svc
+  port: 9090
+
+replicas: 1
+
+rules:
+  default: false
+  custom:
+    - seriesQuery: 'rivet_workerd_active_actors{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+          pod:
+            resource: pod
+      name:
+        matches: ^rivet_workerd_active_actors$
+        as: rivet_workerd_active_actors
+      metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: rivet.dev/compute
+              operator: DoesNotExist

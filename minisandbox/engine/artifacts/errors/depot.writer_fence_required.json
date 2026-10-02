@@ -1,0 +1,5 @@
+{
+  "code": "writer_fence_required",
+  "group": "depot",
+  "message": "SQLite writer generation is required."
+}

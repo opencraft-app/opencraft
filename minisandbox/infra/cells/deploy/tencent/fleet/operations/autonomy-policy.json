@@ -1,0 +1,121 @@
+{
+  "policy_version": "autonomy-control-policy-v1",
+  "version": "2026-09-06",
+  "rules": [
+    {
+      "name": "block-on-failed-verdict",
+      "match": {
+        "verdict": "failed"
+      },
+      "actions": [
+        "stop_scale_traffic_sensitive_workflows",
+        "block_rollout_or_qualification",
+        "open_incident_and_page"
+      ],
+      "notes": "任何 failed 表明基线保护失效；不应触发高风险动作，先执行人工修复。"
+    },
+    {
+      "name": "warn-on-coverage-loss",
+      "match": {
+        "failure": [
+          "fdb_available=false",
+          "fdb_healthy=false",
+          "fdb_pods_not_ready",
+          "fdb_pods_ready_below_3",
+          "fdb_not_in_three_zones",
+          "engine_not_in_three_zones",
+          "runtime_not_in_three_zones",
+          "backup_restorable=false",
+          "latest_bottomless_receipt_*",
+          "latest_engine_ha_receipt_*",
+          "latest_agent_arrival_receipt_*",
+          "latest_fdb_autoscaling_receipt_*",
+          "latest_user_transparent_upgrade_receipt_*",
+          "dr_receipt_*",
+          "prometheus_critical_alerts*"
+        ]
+      },
+      "actions": [
+        "enter_reduced_admission",
+        "run_topology_recheck",
+        "require_operator_review"
+      ],
+      "notes": "优先处理跨 AZ 分布/关键副本健康和关键告警源头，避免把故障归咎于业务流量。"
+    },
+    {
+      "name": "block-on-critical-failure",
+      "match": {
+        "failure": [
+          "foundationdb_*",
+          "engine_replicas_below_desired",
+          "runtime_host_replicas_below_desired",
+          "foundationdb_reconcile_phase_drift=true",
+          "backup_running=false",
+          "prometheus_critical_alerts*",
+          "engine_metrics_targets=*",
+          "runtime_metrics_targets=*",
+          "engine_metrics_targets_missing",
+          "runtime_metrics_targets_missing"
+        ]
+      },
+      "actions": [
+        "stop_scale_traffic_sensitive_workflows",
+        "block_rollout_or_qualification",
+        "open_incident_and_page"
+      ],
+      "notes": "关键基线失稳时必须制动所有高风险动作并进入恢复流程。"
+    },
+    {
+      "name": "warn-on-backpressure",
+      "match": {
+        "failure": [
+          "publish_reclaim_backlog_still_increasing",
+          "runtime_queue_utilization_high",
+          "container_memory_headroom_72h_warning",
+          "fdb_storage_headroom_critical_ETA"
+        ],
+        "warning": [
+          "prometheus_warning_alerts_exist"
+        ]
+      },
+      "actions": [
+        "limit_cold_reclaim_and_publish_rate",
+        "throttle_client_write_pressure",
+        "monitor_72h_forecast_until_stabilized"
+      ],
+      "notes": "背压类预警优先采用降压/限速，减少写入放大和恢复风暴放大。"
+    },
+    {
+      "name": "warn-on-workload-fallback",
+      "match": {
+        "warning": [
+          "ActorWorkerdRequestRejected",
+          "ActorWorkerdRequestTimedOut",
+          "runtime_queue_utilization_high",
+          "prometheus_attribution_metrics_missing=*"
+        ]
+      },
+      "actions": [
+        "inspect_frontdoor_and_queue_saturation",
+        "reduce_ingress_rate",
+        "prepare_engine_ha_probe_after_stability"
+      ],
+      "notes": "workerd 退化告警通常先限流，确认后再恢复写入，不要触发 rollout。"
+    },
+    {
+      "name": "warn-on-container-instability",
+      "match": {
+        "warning": [
+          "ActorContainerOOM",
+          "ActorContainerRestarted"
+        ]
+      },
+      "actions": [
+        "check_cgroup_and_memory_limits",
+        "collect_recent_oom_events",
+        "reduce_host_load_or_scale_out_after_rootcause"
+      ],
+      "notes": "容器异常重启应先确认内存配置与异常栈，再做扩缩容。"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+# Minisandbox block-semantics admission set.
+#
+# This is an explicit subset of upstream generic/quick plus two replay cases;
+# it is not an alias for all 643 generic/quick kernel regression tests. Every
+# selected case must run (a .notrun file fails the adapter).
+
+generic/001  # create/write/unlink chains with end-to-end data comparison
+generic/002  # hard-link inode counts
+generic/008  # zero-range byte and page boundaries
+generic/012  # fallocate/punch/collapse/fiemap combinations
+generic/013  # multiprocess fsstress metadata and data operations
+generic/029  # mmap writes across truncate and remount
+generic/034  # fsync journal replay through dm-flakey
+generic/035  # overwriting rename for files and directories
+generic/039  # hard-link/directory fsync journal replay through dm-flakey
+generic/075  # buffered fsx: read/write/mmap/truncate/fallocate/hole operations
+generic/091  # O_DIRECT fsx with sub-block offsets and buffered concurrency
+generic/112  # Linux AIO fsx
+generic/113  # multiprocess direct/O_SYNC AIO stress
+generic/169  # repeated fsync followed by unmount/remount
+generic/228  # fallocate and file-size limit boundaries
+generic/249  # sendfile data comparison followed by fsync
+generic/260  # FITRIM invalid-range and minimum-length behavior
+generic/269  # concurrent fsstress and ENOSPC writers
+generic/294  # read-only remount and creation error semantics
+generic/313  # truncate/ftruncate metadata updates
+generic/438  # mmap/fallocate race under repeated fsync
+generic/567  # mmap writes across hole punch and remount
+generic/568  # unaligned fallocate across a block boundary

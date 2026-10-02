@@ -1,0 +1,13 @@
+apiVersion: fleet.actor.dev/v1alpha1
+kind: PrometheusFederationTargets
+targets:
+  - cluster: actor-bj-k01
+    region: ap-beijing
+    address: prometheus-k01.monitoring.internal:9090
+    scheme: http
+    privateEndpoint: true
+  - cluster: actor-bj-k02
+    region: ap-beijing
+    address: 10.20.30.40:9090
+    scheme: http
+    privateEndpoint: true

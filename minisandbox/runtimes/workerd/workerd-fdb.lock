@@ -1,0 +1,9 @@
+version = 1
+upstream_url = "https://github.com/cloudflare/workerd.git"
+upstream_baseline = "22b2a0020044d7a910f4d98d640822de6bb312d6"
+upstream_release = "v1.20260807.1"
+fork_branch = "codex/workerd-fdb"
+fork_commit = "ce8bdf424dd94e93a39fd1385fdb459336eb76fd"
+fork_tree = "bb0dcb64842239dcade1f1b42b60b26e42e55b25"
+receipt_tag = "production/workerd-fdb-20260904"
+bundle_sha256 = "812a60f17adc9e4b7f1ff2343079ac141f53a395294e2a98767bfdaaacd00e0b"

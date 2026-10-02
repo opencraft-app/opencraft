@@ -1,0 +1,20 @@
+region       = "ap-beijing"
+vpc_id       = "vpc-6c2snz3a"
+cluster_name = "actor-serverless-qual-bj"
+tcr_attachment_subnet_id = "subnet-qljvksy9"
+tcr_registry_id          = "tcr-g7ax6o7q"
+release_tcr_registry_id  = "tcr-q9w0spg4"
+# Set only when importing an existing control plane.
+cluster_id   = "cls-replace-after-create"
+
+buckets = {
+  cold   = "actor-depot-cold-prod-bj-q01-nv1-1388575217"
+  backup = "actor-fdb-backup-prod-bj-q01-nv1-1388575217"
+  code   = "actor-worker-code-qual-bj-q01-nv1-1388575217"
+  relay  = "actor-build-relay-qual-bj-q01-nv1-1388575217"
+  evidence = "actor-qualification-evidence-prod-bj-q01-nv1-1388575217"
+}
+# This value has no default: read the exact currently admitted operator from
+# state/bootstrap-node.json for every plan/apply so a replacement cannot retain
+# TAT authority on a dead CVM identity.
+release_builder_instance_id = "ins-replace-with-current-q01-operator"

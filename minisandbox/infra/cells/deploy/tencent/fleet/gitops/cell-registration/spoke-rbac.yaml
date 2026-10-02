@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actor-argocd-cell
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell: __CELL_ID__
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: actor-argocd-cell-token
+  namespace: actor-fdb-cell-system
+  annotations:
+    kubernetes.io/service-account.name: actor-argocd-cell
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: actor-argocd-cell-__CELL_ID__
+rules:
+  - apiGroups: ["node.tke.cloud.tencent.com"]
+    resources: ["machinesets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: actor-argocd-cell-__CELL_ID__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: actor-argocd-cell-__CELL_ID__
+subjects:
+  - kind: ServiceAccount
+    name: actor-argocd-cell
+    namespace: actor-fdb-cell-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: actor-argocd-cell
+  namespace: actor-fdb-cell-system
+rules:
+  - apiGroups: ["fleet.actor.dev"]
+    resources: ["rivetcells"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: actor-argocd-cell
+  namespace: actor-fdb-cell-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: actor-argocd-cell
+subjects:
+  - kind: ServiceAccount
+    name: actor-argocd-cell
+    namespace: actor-fdb-cell-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: actor-argocd-stateless-runtime
+  namespace: actor-stateless-system
+rules:
+  # Argo's namespace-scoped cluster cache lists every discovered namespaced
+  # type in every namespace from the cluster Secret allow-list. RivetCell is
+  # only authored in actor-fdb-cell-system, but the cache must be able to prove
+  # that none exist here before it can compare either namespace. Keep this
+  # grant read-only; the runtime project cannot create or mutate RivetCells.
+  - apiGroups: ["fleet.actor.dev"]
+    resources: ["rivetcells"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: actor-argocd-stateless-runtime
+  namespace: actor-stateless-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: actor-argocd-stateless-runtime
+subjects:
+  - kind: ServiceAccount
+    name: actor-argocd-cell
+    namespace: actor-fdb-cell-system

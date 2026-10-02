@@ -1,0 +1,90 @@
+From: minisandbox <minisandbox@localhost>
+Subject: [PATCH] inet: expose a kernel-only socket factory for PVM loopback
+
+The minisandbox PVM socket provider owns public PF_INET registration.
+Non-loopback TCP crosses its bounded capability mailbox. The provider needs
+the native IPv4 stack for true guest-local loopback sockets, but calling
+sock_create_kern(PF_INET) would recurse into the PVM provider.
+
+Expose a narrow kernel-socket factory. It invokes native INET creation
+directly. The result remains an ordinary AF_INET/TCP object. No private
+address family or userspace entry point is added.
+
+Signed-off-by: minisandbox <minisandbox@localhost>
+
+diff --git a/include/net/inet_common.h b/include/net/inet_common.h
+--- a/include/net/inet_common.h
++++ b/include/net/inet_common.h
+@@ -23,5 +23,7 @@ struct sockaddr;
+ struct socket;
+ 
++int inet_create_kern_socket(struct net *net, int type, int protocol,
++			    struct socket **result);
+ int inet_release(struct socket *sock);
+ int inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
+ 			int addr_len, int flags);
+diff --git a/net/ipv4/af_inet.c b/net/ipv4/af_inet.c
+--- a/net/ipv4/af_inet.c
++++ b/net/ipv4/af_inet.c
+@@ -403,6 +403,34 @@ out_rcu_unlock:
+ 	goto out;
+ }
+ 
++int inet_create_kern_socket(struct net *net, int type, int protocol,
++			    struct socket **result)
++{
++	struct socket *sock;
++	int error;
++
++	*result = NULL;
++	error = sock_create_lite(PF_INET, type, protocol, &sock);
++	if (error)
++		return error;
++	error = inet_create(net, sock, protocol, 1);
++	if (error) {
++		/* Match __sock_create(): inet_create() has already released any
++		 * partially initialized struct sock on its failure paths.
++		 */
++		sock->ops = NULL;
++		sock_release(sock);
++		return error;
++	}
++	/* sock_create_lite() deliberately leaves protocol ownership to the
++	 * caller which completes the socket, as kernel_accept() also does.
++	 */
++	__module_get(sock->ops->owner);
++	*result = sock;
++	return 0;
++}
++EXPORT_SYMBOL_GPL(inet_create_kern_socket);
++
+ 
+ /*
+  *	The peer socket should always be NULL (or else). When we call this
+@@ -1683,8 +1711,13 @@ int inet_ctl_sock_create(struct sock **sk, unsigned short family,
+ 			 unsigned short type, unsigned char protocol,
+ 			 struct net *net)
+ {
+ 	struct socket *sock;
+-	int rc = sock_create_kern(net, family, type, protocol, &sock);
++	int rc;
++
++	if (family == PF_INET)
++		rc = inet_create_kern_socket(net, type, protocol, &sock);
++	else
++		rc = sock_create_kern(net, family, type, protocol, &sock);
+ 
+ 	if (rc == 0) {
+ 		*sk = sock->sk;
+@@ -1982,7 +2015,8 @@ static int __init inet_init(void)
+ 	 *	Tell SOCKET that we are alive...
+ 	 */
+ 
+-	(void)sock_register(&inet_family_ops);
++	if (!IS_ENABLED(CONFIG_PVM_SOCKET))
++		(void)sock_register(&inet_family_ops);
+ 
+ #ifdef CONFIG_SYSCTL
+ 	ip_static_sysctl_init();
+-- 
+2.43.0

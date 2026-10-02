@@ -1,0 +1,215 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actor-bj-k01-runtime
+  namespace: actor-fdb-cell-system
+automountServiceAccountToken: false
+imagePullSecrets:
+  - name: actor-fleet-tcr
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-bj-k01-nats-config
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: nats
+data:
+  nats.conf: |
+    port: 4222
+    http: 8222
+    lame_duck_duration: 30s
+    lame_duck_grace_period: 5s
+
+    cluster {
+      name: actor-bj-k01
+      port: 6222
+      routes = [
+        nats://actor-bj-k01-nats-0.actor-bj-k01-nats.actor-fdb-cell-system.svc.cluster.local:6222
+        nats://actor-bj-k01-nats-1.actor-bj-k01-nats.actor-fdb-cell-system.svc.cluster.local:6222
+        nats://actor-bj-k01-nats-2.actor-bj-k01-nats.actor-fdb-cell-system.svc.cluster.local:6222
+      ]
+      connect_retries: 120
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-bj-k01-nats
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: nats
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: nats
+  ports:
+    - name: client
+      port: 4222
+      targetPort: client
+    - name: cluster
+      port: 6222
+      targetPort: cluster
+    - name: monitoring
+      port: 8222
+      targetPort: monitoring
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actor-bj-k01-nats
+  namespace: actor-fdb-cell-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-k01
+      fleet.actor.dev/component: nats
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: actor-bj-k01-nats
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: nats
+spec:
+  serviceName: actor-bj-k01-nats
+  replicas: 3
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  # Readiness proves the three-member route mesh, but Engine clients also need
+  # a bounded interval to reconnect and replay subscriptions. Do not let the
+  # StatefulSet controller immediately remove the next member after the new
+  # Pod's first successful readiness probe.
+  minReadySeconds: 10
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-k01
+      fleet.actor.dev/component: nats
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-k01
+        fleet.actor.dev/component: nats
+      annotations:
+        fleet.actor.dev/manifest-sha256: __RIVET_MANIFEST_SHA256__
+    spec:
+      serviceAccountName: actor-bj-k01-runtime
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/control-pool
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  fleet.actor.dev/cell-name: actor-bj-k01
+                  fleet.actor.dev/component: nats
+              topologyKey: kubernetes.io/hostname
+            - labelSelector:
+                matchLabels:
+                  fleet.actor.dev/cell-name: actor-bj-k01
+                  fleet.actor.dev/component: nats
+              topologyKey: topology.kubernetes.io/zone
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              fleet.actor.dev/cell-name: actor-bj-k01
+              fleet.actor.dev/component: nats
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nats
+          image: __RIVET_NATS_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args: [-c, /etc/nats/nats.conf, --name, $(POD_NAME)]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: client
+              containerPort: 4222
+            - name: cluster
+              containerPort: 6222
+            - name: monitoring
+              containerPort: 8222
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  wget -qO- http://127.0.0.1:8222/routez | \
+                    grep -Eq '"num_routes"[[:space:]]*:[[:space:]]*[2-9][0-9]*'
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -ec
+                  - 'kill -USR2 1; while kill -0 1 2>/dev/null; do sleep 1; done'
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nats
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: actor-bj-k01-nats-config
+        - name: tmp
+          emptyDir: {}

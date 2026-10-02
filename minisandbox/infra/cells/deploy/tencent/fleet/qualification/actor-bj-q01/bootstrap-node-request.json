@@ -1,0 +1,11 @@
+{
+  "ClusterId": "cls-ike1rebd",
+  "RunInstancePara": "{\"InstanceChargeType\":\"POSTPAID_BY_HOUR\",\"Placement\":{\"Zone\":\"ap-beijing-6\",\"ProjectId\":0},\"InstanceType\":\"SA9.LARGE8\",\"SystemDisk\":{\"DiskType\":\"CLOUD_BSSD\",\"DiskSize\":100},\"VirtualPrivateCloud\":{\"VpcId\":\"vpc-6c2snz3a\",\"SubnetId\":\"subnet-qljvksy9\",\"AsVpcGateway\":false},\"InternetAccessible\":{\"InternetChargeType\":\"TRAFFIC_POSTPAID_BY_HOUR\",\"InternetMaxBandwidthOut\":0,\"PublicIpAssigned\":false},\"InstanceCount\":1,\"ImageId\":\"img-eb30mz89\",\"InstanceName\":\"actor-bj-q01-bootstrap\",\"LoginSettings\":{\"KeyIds\":[\"skey-g2mcgx6l\"]},\"SecurityGroupIds\":[\"sg-jfy27iab\"],\"EnhancedService\":{\"SecurityService\":{\"Enabled\":true},\"MonitorService\":{\"Enabled\":true}},\"ClientToken\":\"actor-bj-q01-bootstrap-v1\"}",
+  "InstanceAdvancedSettings": {
+    "Unschedulable": 0,
+    "Labels": [
+      {"Name": "fleet.actor.dev/cell-name", "Value": "actor-bj-q01"},
+      {"Name": "fleet.actor.dev/bootstrap", "Value": "true"}
+    ]
+  }
+}

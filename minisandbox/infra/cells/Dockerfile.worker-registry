@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.7
+ARG WORKER_REGISTRY_BUILD_IMAGE
+ARG WORKER_REGISTRY_RUNTIME_IMAGE
+FROM --platform=$BUILDPLATFORM ${WORKER_REGISTRY_BUILD_IMAGE} AS build
+WORKDIR /src
+ARG TARGETARCH
+RUN test "${TARGETARCH}" = amd64
+COPY foundationdb-clients_7.3.79-1_amd64.deb /tmp/foundationdb-clients.deb
+RUN dpkg-deb -x /tmp/foundationdb-clients.deb /opt/foundationdb
+ENV LD_LIBRARY_PATH=/opt/foundationdb/usr/lib
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/worker-registry ./cmd/worker-registry
+COPY internal/workerregistry ./internal/workerregistry
+ARG TARGETOS=linux
+RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    CGO_CFLAGS=-I/opt/foundationdb/usr/include \
+    CGO_LDFLAGS=-L/opt/foundationdb/usr/lib \
+    go test -tags=fdb ./internal/workerregistry
+RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    CGO_CFLAGS=-I/opt/foundationdb/usr/include \
+    CGO_LDFLAGS=-L/opt/foundationdb/usr/lib \
+    go build -tags=fdb -trimpath -ldflags='-s -w' -o /out/worker-registry ./cmd/worker-registry
+
+FROM ${WORKER_REGISTRY_RUNTIME_IMAGE}
+COPY --from=build /out/worker-registry /usr/local/bin/worker-registry
+COPY --from=build /opt/foundationdb/usr/lib/libfdb_c.so /usr/local/lib/libfdb_c.so
+ENV LD_LIBRARY_PATH=/usr/local/lib
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/worker-registry"]

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: actor-release-receipts
+  namespace: actor-release-system
+  annotations:
+    # Keep the WFFC claim in the same wave as the Hook Pod. An earlier wave
+    # deadlocks because Argo waits for a Bound claim before creating its first
+    # consumer, while CBS waits for that consumer's availability zone.
+    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: actor-release-cbs-wffc-retain
+  resources:
+    requests:
+      # Tencent CBS rejects volumes smaller than 10 GiB. Keep this explicit so
+      # a release cannot silently inherit a Cell's default StorageClass.
+      storage: 10Gi

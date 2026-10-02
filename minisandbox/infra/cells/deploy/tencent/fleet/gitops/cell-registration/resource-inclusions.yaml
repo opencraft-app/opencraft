@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  resource.inclusions: |
+    - apiGroups:
+        - node.tke.cloud.tencent.com
+      kinds:
+        - MachineSet
+      clusters:
+        - "*"
+    - apiGroups:
+        - fleet.actor.dev
+      kinds:
+        - RivetCell
+      clusters:
+        - "*"
+    - apiGroups:
+        - ""
+      kinds:
+        - ServiceAccount
+        - Service
+      clusters:
+        - "*"
+    - apiGroups:
+        - apps
+      kinds:
+        - Deployment
+      clusters:
+        - "*"
+    - apiGroups:
+        - policy
+      kinds:
+        - PodDisruptionBudget
+      clusters:
+        - "*"
+    - apiGroups:
+        - autoscaling
+      kinds:
+        - HorizontalPodAutoscaler
+      clusters:
+        - "*"
+    - apiGroups:
+        - cloud.tencent.com
+      kinds:
+        - TkeServiceConfig
+      clusters:
+        - "*"

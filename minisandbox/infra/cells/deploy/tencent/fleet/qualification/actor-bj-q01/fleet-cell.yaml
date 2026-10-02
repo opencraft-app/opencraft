@@ -1,0 +1,140 @@
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCellProfile
+metadata:
+  name: rivet-fdb-operator-cbs-beijing-q01-v1
+spec:
+  driverABI: rivet-fdb-cos-kubernetes-v1
+  region: ap-beijing
+  availabilityMode: production-multi-zone
+  topology:
+    zoneLabelKey: topology.kubernetes.io/zone
+    zoneCount: 3
+    maxSkew: 1
+    whenUnsatisfiable: DoNotSchedule
+  foundationDB:
+    version: 7.3.79
+    processCount: 9
+    coordinatorCount: 9
+    redundancyMode: three_data_hall
+    localityKey: data_hall
+    storageEngine: ssd-2
+    exclusiveCluster: true
+    supervisor: foundationdb-kubernetes-operator
+    kubernetes:
+      operatorVersion: v2.34.0
+      imageType: unified
+      imageRepository: foundationdb/fdb-kubernetes-monitor
+      imageTagDigest: 7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+      storageClassName: actor-fdb-cbs-wffc-retain
+      fdbServiceAccountName: fdb-kubernetes
+      placementMode: DedicatedNodes
+      priorityClassName: actor-fdb-critical
+      faultDomainKey: kubernetes.io/hostname
+      nodeSelector:
+        fleet.actor.dev/fdb-dedicated: "true"
+      nodeCapacity:
+        provider: TKENativeMachineSet
+        machineSetName: np-fdbpool0
+        processesPerNode: 1
+      resources:
+        cpuRequest: "2"
+        memoryRequest: 8Gi
+        cpuLimit: "2"
+        memoryLimit: 8Gi
+      tls:
+        mode: Required
+        secretNameTemplate: "{clusterName}-fdb-tls"
+        peerVerificationRules: S.OU=actor-fdb
+    autoscaling:
+      # This is the post-qualification production declaration.  Bootstrap
+      # installs the same policy in ObserveOnly and the guarded promotion
+      # workflow changes only this mode after the 9 -> 12 -> 9 receipt passes.
+      mode: Automatic
+      minProcessCount: 9
+      maxProcessCount: 30
+      stepProcessCount: 3
+      scaleUp:
+        headroomBytes: 85899345920
+        etaSeconds: 259200
+        sustainSeconds: 1800
+        cooldownSeconds: 7200
+        minimumSamples: 600
+      scaleDown:
+        headroomBytes: 171798691840
+        writeUtilizationPercent: 20
+        sustainSeconds: 86400
+        cooldownSeconds: 604800
+        minimumSamples: 1200
+      volumeRetentionSeconds: 2592000
+      volumeGCMode: ObserveOnly
+    dataDisk:
+      type: CLOUD_BSSD
+      sizeGiB: 200
+      encrypted: false
+      retain: true
+  runtime:
+    deploymentMode: kubernetes
+    minEngineHosts: 1
+    minWorkerdHosts: 3
+    localStateDisposable: true
+  gasolineRetention:
+    # These are Cell admission watermarks, not FDB disk-capacity thresholds.
+    # They close new Agent admission before application history can consume the
+    # headroom reserved for backup, pruning and FDB data movement.
+    historyGraceSeconds: 900
+    terminalGraceSeconds: 604800
+    pruneIntervalSeconds: 60
+    fdbLogicalSoftBytes: 42949672960
+    fdbLogicalHardBytes: 64424509440
+  cos:
+    coldBucketPrefix: actor-depot-cold-prod-bj-
+    backupBucketPrefix: actor-fdb-backup-prod-bj-
+    multiAZ: false
+    versioning: NeverEnabled
+    objectKeyLayout: depot-cold-v2
+    exactKeyRecovery: true
+    listIndependent: true
+    inCommitPath: false
+  capacity:
+    healthyWriteUtilizationLimitPercent: 50
+    degradedWriteUtilizationLimitPercent: 70
+    scaleOutAtPercent: 80
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardClass
+metadata:
+  name: rivet-fdb-cos-kubernetes-q01-v1
+spec:
+  controllerName: fleet.actor.dev/rivet-fdb-cos
+  driverABI: rivet-fdb-cos-kubernetes-v1
+  profileRef:
+    name: rivet-fdb-operator-cbs-beijing-q01-v1
+    digest: sha256:40ea3a33c9eac844621f8925b8b163d3ecc33d2ea1bc9cdcf66510674f4052ab
+  mobilityPolicy: DriverControlled
+  retirementPolicy: ProofRequired
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCell
+metadata:
+  name: actor-bj-q01
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/pool: actor-beijing-kubernetes-q01
+spec:
+  cellId: actor-bj-q01
+  className: rivet-fdb-cos-kubernetes-q01-v1
+  region: ap-beijing
+  managementCluster: cls-ike1rebd
+  desiredState: Provisioning
+  foundationDB:
+    exclusive: true
+    clusterRef:
+      name: actor-bj-q01
+      namespace: actor-fdb-cell-system
+  cos:
+    coldBucket: actor-depot-cold-prod-bj-q01-nv1-1388575217
+    backupBucket: actor-fdb-backup-prod-bj-q01-nv1-1388575217
+  retirement:
+    generation: 1
+    proofRequired: true
+    rollbackRetentionSeconds: 604800

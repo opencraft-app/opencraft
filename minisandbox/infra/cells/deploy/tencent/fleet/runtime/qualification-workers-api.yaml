@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: __CELL__-workers-api
+  namespace: __NAMESPACE__
+  labels:
+    fleet.actor.dev/qualification-only: "true"
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __CELL__-workers-api
+  namespace: __NAMESPACE__
+  labels:
+    fleet.actor.dev/cell-name: __CELL__
+    fleet.actor.dev/component: workers-api
+    fleet.actor.dev/qualification-only: "true"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: __CELL__
+      fleet.actor.dev/component: workers-api
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: __CELL__
+        fleet.actor.dev/component: workers-api
+        fleet.actor.dev/qualification-only: "true"
+    spec:
+      serviceAccountName: __CELL__-workers-api
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/control-pool
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  fleet.actor.dev/cell-name: __CELL__
+                  fleet.actor.dev/component: workers-api
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              fleet.actor.dev/cell-name: __CELL__
+              fleet.actor.dev/component: workers-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workers-api
+          image: __WORKERS_API_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args:
+            - --listen-address=:8080
+            - --registry-url=__REGISTRY_URL__
+            - --engine-url=http://__CELL__-engine:6420
+            - --engine-cell=__CELL__
+            - --datacenter=__DATACENTER__
+            - --namespace=default
+            - --runner-name-selector=workerd
+            - --actor-ready-timeout=3s
+            - --fetch-response-header-timeout=25s
+            - --actor-cache-capacity=32768
+            - --actor-cache-idle-ttl=10m
+            - --max-concurrent-prepares=4
+            - --internal-token=$(INTERNAL_TOKEN)
+            - --qualification-cell=__CELL__
+            - --qualification-cell-uid=__CELL_UID__
+            - --qualification-datacenter=__DATACENTER__
+          env:
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: __CELL__-runtime-auth
+                  key: token
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: __CELL__-workers-api
+  namespace: __NAMESPACE__
+  labels:
+    fleet.actor.dev/cell-name: __CELL__
+    fleet.actor.dev/component: workers-api
+    fleet.actor.dev/qualification-only: "true"
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: __CELL__
+      fleet.actor.dev/component: workers-api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: __CELL__-workers-api
+  namespace: __NAMESPACE__
+  labels:
+    fleet.actor.dev/cell-name: __CELL__
+    fleet.actor.dev/component: workers-api
+    fleet.actor.dev/qualification-only: "true"
+spec:
+  type: ClusterIP
+  selector:
+    fleet.actor.dev/cell-name: __CELL__
+    fleet.actor.dev/component: workers-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

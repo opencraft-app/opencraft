@@ -1,0 +1,1150 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-bj-k01-runtime-config
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+  annotations:
+    fleet.actor.dev/runtime-profile: __RIVET_RUNTIME_PROFILE__
+data:
+  config.jsonc: |
+    {
+      "runtime": {
+        "gasoline_cell_namespace": "actor-bj-k01",
+        "gasoline_worker_poll_interval_ms": __RIVET_GASOLINE_WORKER_POLL_INTERVAL_MS__,
+        "gasoline_worker_pull_batch_size": __RIVET_GASOLINE_WORKER_PULL_BATCH_SIZE__,
+        "gasoline_worker_max_active_workflows": __RIVET_GASOLINE_WORKER_MAX_ACTIVE_WORKFLOWS__,
+        "gasoline_worker_reserved_workflow_slots": 1,
+        "gasoline_worker_reserved_workflow_names": ["gasoline_pruner"],
+        "depot_manager_refresh_max_concurrency": __RIVET_DEPOT_MANAGER_REFRESH_MAX_CONCURRENCY__,
+        "depot_compaction_max_concurrency": __RIVET_DEPOT_COMPACTION_MAX_CONCURRENCY__,
+        "gasoline_worker_secondary_grace_ms": __RIVET_GASOLINE_WORKER_SECONDARY_GRACE_MS__,
+        "gasoline_history_prune_eligibility_duration": __RIVET_GASOLINE_HISTORY_PRUNE_ELIGIBILITY_SECONDS__,
+        "gasoline_prune_eligibility_duration": __RIVET_GASOLINE_TERMINAL_PRUNE_ELIGIBILITY_SECONDS__,
+        "gasoline_prune_interval_duration": __RIVET_GASOLINE_PRUNE_INTERVAL_SECONDS__
+      },
+      "foundation_db": {
+        "cluster_file": "/etc/actor/runtime/fdb.cluster",
+        "transaction_retry_limit": 10,
+        "allow_shared_cluster": false
+      },
+      "pegboard": {
+        "envoy_allocation_max_in_flight_per_pool": __RIVET_ENVOY_ALLOCATION_MAX_IN_FLIGHT_PER_POOL__,
+        "envoy_load_balancer": {
+          "hash": {
+            "virtual_nodes": 8,
+            "samples": 2,
+            "max_scan": 16,
+            "slot_jitter": __RIVET_ENVOY_SLOT_JITTER__,
+            "use_snapshot_read": true
+          }
+        }
+      },
+      "nats": {
+        "addresses": [
+          "actor-bj-k01-nats-0.actor-bj-k01-nats.actor-fdb-cell-system.svc.cluster.local:4222",
+          "actor-bj-k01-nats-1.actor-bj-k01-nats.actor-fdb-cell-system.svc.cluster.local:4222",
+          "actor-bj-k01-nats-2.actor-bj-k01-nats.actor-fdb-cell-system.svc.cluster.local:4222"
+        ]
+      },
+      "sqlite": {
+        "unstable_disable_compaction": false,
+        "workflow_write_debt": {
+          "target_bytes": __RIVET_FDB_WRITE_DEBT_TARGET_BYTES__,
+          "limit_bytes": __RIVET_FDB_WRITE_DEBT_LIMIT_BYTES__
+        },
+        "workflow_cold_storage": {
+          "s3": {
+            "bucket": "__RIVET_COLD_BUCKET__",
+            "endpoint": "__RIVET_COLD_ENDPOINT__",
+            "region": "__RIVET_COLD_REGION__",
+            "addressing_style": "virtual_hosted",
+            "recovery_window_ms": 604800000,
+            "max_object_size_bytes": 4194304,
+            "max_concurrent_requests": __RIVET_COLD_MAX_CONCURRENT_REQUESTS__,
+            "max_queued_requests": 64,
+            "queue_timeout_ms": 15000
+          }
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-bj-k01-engine
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: engine
+spec:
+  selector:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: engine
+  ports:
+    - name: api
+      port: 6420
+      targetPort: api
+    - name: health
+      port: 6421
+      targetPort: health
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actor-bj-k01-engine
+  namespace: actor-fdb-cell-system
+spec:
+  # Six steady Engine replicas are spread two-per-zone. Retaining four permits
+  # a voluntary whole-zone drain without dropping below the qualified
+  # three-zone coordination capacity.
+  minAvailable: 4
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-k01
+      fleet.actor.dev/component: engine
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-bj-k01-engine
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: engine
+spec:
+  # The 20 Agent/s production qualification demonstrated that three Gasoline
+  # workers develop multi-second actor-create scheduling tails. Six keeps the
+  # strict three-second ready SLO below 2.1s max while preserving two workers
+  # in each of the three control zones.
+  replicas: 6
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Engine is on the synchronous public request path. Preserve all six
+      # steady-state replicas until a replacement has passed startup/readiness.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-k01
+      fleet.actor.dev/component: engine
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-k01
+        fleet.actor.dev/component: engine
+      annotations:
+        fleet.actor.dev/manifest-sha256: __RIVET_MANIFEST_SHA256__
+        fleet.actor.dev/rollout-protocol: engine-before-runtime-v1
+    spec:
+      serviceAccountName: actor-bj-k01-runtime
+      automountServiceAccountToken: false
+      # preStop spends 30s on endpoint propagation; kubelet then gives Engine
+      # up to 120s to finish its own SIGTERM shutdown before force-kill.
+      terminationGracePeriodSeconds: 150
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/control-pool
+                    operator: In
+                    values: ["true"]
+        podAntiAffinity:
+          # A hard three-node anti-affinity makes the fourth rollout-surge Pod
+          # permanently unschedulable. Prefer separation while allowing the
+          # short-lived replacement to colocate; topologySpreadConstraints
+          # still restores the steady six replicas across zones.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    fleet.actor.dev/cell-name: actor-bj-k01
+                    fleet.actor.dev/component: engine
+                topologyKey: kubernetes.io/hostname
+            - weight: 90
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    fleet.actor.dev/cell-name: actor-bj-k01
+                    fleet.actor.dev/component: engine
+                topologyKey: topology.kubernetes.io/zone
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: 3
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              fleet.actor.dev/cell-name: actor-bj-k01
+              fleet.actor.dev/component: engine
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        fsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: engine
+          image: __RIVET_RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/opt/actor/bin/rivet-engine]
+          args: [--config, /etc/actor/runtime/config.jsonc, start]
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-cos
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-cos
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: FDB_TLS_CERTIFICATE_FILE
+              value: /var/fdb-tls/cert.pem
+            - name: FDB_TLS_CA_FILE
+              value: /var/fdb-tls/ca.pem
+            - name: FDB_TLS_KEY_FILE
+              value: /var/fdb-tls/key.pem
+            - name: RIVET_DEPOT_RECLAIM_INTERVAL_MS
+              value: "__RIVET_DEPOT_RECLAIM_INTERVAL_MS__"
+          ports:
+            - name: api
+              containerPort: 6420
+            - name: health
+              containerPort: 6421
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -ec
+                  - |
+                    touch /tmp/actor-engine-draining
+                    # TKE EndpointSlice publication and kube-proxy data-plane
+                    # convergence are asynchronous. Keep accepting traffic
+                    # from stale forwarding tables; Workers API cannot safely
+                    # replay an ambiguous, potentially non-idempotent fetch.
+                    sleep 30
+          startupProbe:
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:6421/health
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 90
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - test ! -e /tmp/actor-engine-draining && exec /usr/bin/curl --fail --silent http://127.0.0.1:6421/health
+            periodSeconds: 1
+            timeoutSeconds: 2
+            failureThreshold: 1
+          livenessProbe:
+            exec:
+              command:
+                - /usr/bin/curl
+                - --fail
+                - --silent
+                - http://127.0.0.1:6421/health
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+            requests:
+              # Six Engine replicas share three dedicated 16-vCPU control
+              # nodes. Reserve four cores per replica so the scheduler keeps
+              # two Engines plus the Cell control services within one node's
+              # physical CPU envelope. The higher limit absorbs bounded
+              # Gasoline/Depot waves without starving the gateway path.
+              cpu: "4"
+              memory: 1Gi
+            limits:
+              cpu: "6"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /etc/actor/runtime/config.jsonc
+              subPath: config.jsonc
+              readOnly: true
+            - name: fdb-config
+              mountPath: /etc/actor/runtime/fdb.cluster
+              subPath: cluster-file
+              readOnly: true
+            - name: fdb-tls
+              mountPath: /var/fdb-tls
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/actor-runtime
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: actor-bj-k01-runtime-config
+        - name: fdb-config
+          configMap:
+            name: actor-bj-k01-config
+        - name: fdb-tls
+          secret:
+            secretName: actor-bj-k01-backup-tls
+            defaultMode: 288
+        - name: state
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: actor-bj-k01-workerd-pool-init
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: pool-init
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-k01
+        fleet.actor.dev/component: pool-init
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: actor-bj-k01-runtime
+      automountServiceAccountToken: false
+      nodeSelector:
+        fleet.actor.dev/control-pool: "true"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pool-init
+          image: __RIVET_RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              for attempt in $(seq 1 120); do
+                if curl --fail --silent "$RIVET_HEALTH_URL" >/dev/null; then
+                  break
+                fi
+                if [[ $attempt -eq 120 ]]; then
+                  echo "Rivet did not become healthy after 120 attempts" >&2
+                  exit 1
+                fi
+                sleep 1
+              done
+              curl --fail --silent --show-error \
+                --request PUT \
+                --header "Authorization: Bearer $RIVET_AUTH_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --data '{"datacenters":{"default":{"normal":{}}}}' \
+                "$RIVET_API_URL/runner-configs/$RIVET_RUNNER_NAME?namespace=$RIVET_NAMESPACE"
+          env:
+            - name: RIVET_HEALTH_URL
+              value: http://actor-bj-k01-engine:6421/health
+            - name: RIVET_API_URL
+              value: http://actor-bj-k01-engine:6420
+            - name: RIVET_NAMESPACE
+              value: default
+            - name: RIVET_RUNNER_NAME
+              value: workerd
+            - name: RIVET_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-auth
+                  key: token
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-bj-k01-runtime-hosts
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: actor-workerd-host-metrics
+spec:
+  clusterIP: None
+  selector:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: workerd-host
+  ports:
+    - name: workerd
+      port: 18080
+    - name: bridge
+      port: 18081
+    - name: metrics
+      port: 18082
+      targetPort: metrics
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actor-bj-k01-runtime-hosts
+  namespace: actor-fdb-cell-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-k01
+      fleet.actor.dev/component: workerd-host
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: actor-bj-k01-runtime-hosts
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: workerd-host
+spec:
+  serviceName: actor-bj-k01-runtime-hosts
+  replicas: 3
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-k01
+      fleet.actor.dev/component: workerd-host
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-k01
+        fleet.actor.dev/component: workerd-host
+      annotations:
+        fleet.actor.dev/manifest-sha256: __RIVET_MANIFEST_SHA256__
+        fleet.actor.dev/runtime-auth-sha256: __RIVET_RUNTIME_AUTH_SHA256__
+        fleet.actor.dev/rollout-protocol: uid-fenced-serial-drain-v1
+    spec:
+      serviceAccountName: actor-bj-k01-runtime
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 620
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: rivet.dev/compute
+                    operator: In
+                    values: ["true"]
+                  - key: fleet.actor.dev/runtime-admitted
+                    operator: In
+                    values: ["true"]
+                  # Admission is scoped to one immutable MachineSet identity.
+                  # A retired pool may still carry a stale admitted label; it
+                  # must never receive a new Host during a pool migration.
+                  - key: node.tke.cloud.tencent.com/machineset
+                    operator: In
+                    values: ["__RIVET_RUNTIME_MACHINE_SET__"]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  fleet.actor.dev/cell-name: actor-bj-k01
+                  fleet.actor.dev/component: workerd-host
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              fleet.actor.dev/cell-name: actor-bj-k01
+              fleet.actor.dev/component: workerd-host
+      tolerations:
+        - key: rivet.dev/compute
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        fsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: prepare-workerd-config
+          image: __RIVET_RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              token=$(< /var/run/actor-auth/token)
+              [[ $token =~ ^[0-9a-f]{64}$ ]]
+              sed "s/dev-only-change-me/$token/" /opt/actor/share/config-depot.capnp > /run/actor-workerd/config-depot.capnp
+              cp /opt/actor/share/worker.js /run/actor-workerd/worker.js
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: auth
+              mountPath: /var/run/actor-auth
+              readOnly: true
+            - name: workerd-run
+              mountPath: /run/actor-workerd
+      containers:
+        - name: workerd
+          image: __RIVET_RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              pids=()
+              stop_pool() {
+                if ((${#pids[@]})); then
+                  kill "${pids[@]}" 2>/dev/null || true
+                  wait "${pids[@]}" 2>/dev/null || true
+                fi
+              }
+              trap 'stop_pool; exit 0' TERM INT
+              per_shard_bindings=$((4096 / RIVET_WORKERD_SHARDS))
+              per_shard_cache_bytes=$((4294967296 / RIVET_WORKERD_SHARDS))
+              for index in $(seq 0 $((RIVET_WORKERD_SHARDS - 1))); do
+                if ((index == 0)); then
+                  listen_address=0.0.0.0
+                  port=18080
+                else
+                  listen_address=127.0.0.1
+                  port=$((18081 + index))
+                fi
+                RIVET_DEPOT_MAX_BINDINGS="$per_shard_bindings" \
+                RIVET_DEPOT_MAX_VFS_CACHE_BYTES="$per_shard_cache_bytes" \
+                /opt/actor/bin/workerd serve /run/actor-workerd/config-depot.capnp \
+                  --experimental --socket-addr "http=$listen_address:$port" &
+                pids+=("$!")
+              done
+              set +e
+              wait -n "${pids[@]}"
+              status=$?
+              set -e
+              stop_pool
+              exit "$status"
+          env:
+            - name: RIVET_WORKERD_SHARDS
+              value: "__RIVET_WORKERD_SHARDS__"
+            - name: RIVET_WORKERD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-auth
+                  key: token
+            - name: RIVET_DEPOT_BRIDGE_ADDRESS
+              value: 127.0.0.1:18081
+            - name: RIVET_DEPOT_MAX_BINDINGS
+              value: "4096"
+            - name: RIVET_DEPOT_MAX_VFS_CACHE_BYTES
+              value: "4294967296"
+            - name: RIVET_DEPOT_CACHE_CAPACITY_PAGES
+              value: "256"
+            - name: RIVET_WORKERD_SQLITE_MAX_MEMORY_BYTES
+              value: "16777216"
+          ports:
+            - name: workerd
+              containerPort: 18080
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -ec
+                  - |
+                    barrier=${RIVET_PRESTOP_BARRIER_DIR:-/tmp/rivet-host-prestop}
+                    deadline=$((SECONDS + 580))
+                    mkdir -p "$barrier"
+                    if ! mkdir "$barrier/leader" 2>/dev/null; then
+                      while ((SECONDS < deadline)); do
+                        [[ ! -e "$barrier/failed" ]] || break
+                        [[ ! -e "$barrier/quiescent" ]] || exit 0
+                        sleep 1
+                      done
+                      echo "runtime Pod preStop leader did not publish exact quiescence; waiting for forced termination" >&2
+                      while true; do sleep 10; done
+                    fi
+                    trap ': > "$barrier/failed"' EXIT
+                    drain_confirmed=false
+                    while ((SECONDS < deadline)); do
+                      response=$(curl --fail --silent --show-error --max-time 2 \
+                        --header "content-type: application/json" \
+                        --header "x-rivet-workerd-token: $RIVET_WORKERD_TOKEN" \
+                        --data '{"draining":true}' \
+                        http://127.0.0.1:19083/v1/sqlite/drain 2>/dev/null || true)
+                      if grep -Eq '"metadata_sent":[[:space:]]*true' <<<"$response" && \
+                         grep -Eq '"host_draining":[[:space:]]*true' <<<"$response" && \
+                         grep -Eq '"host_accepting_actors":[[:space:]]*false' <<<"$response"; then
+                        drain_confirmed=true
+                        break
+                      fi
+                      sleep 1
+                    done
+                    if [[ $drain_confirmed != true ]]; then
+                      echo "runtime Pod preStop could not publish the Host placement fence; waiting for forced termination" >&2
+                      while true; do sleep 10; done
+                    fi
+                    while ((SECONDS < deadline)); do
+                      response=$(curl --fail --silent --show-error --max-time 2 \
+                        --header "x-rivet-workerd-token: $RIVET_WORKERD_TOKEN" \
+                        http://127.0.0.1:19083/v1/sqlite/stats 2>/dev/null || true)
+                      if grep -Eq '"quiescent":[[:space:]]*true' <<<"$response" && \
+                         grep -Eq '"host_active_actors":[[:space:]]*0' <<<"$response" && \
+                         grep -Eq '"bridge_active_actors":[[:space:]]*0' <<<"$response" && \
+                         grep -Eq '"in_flight":[[:space:]]*0' <<<"$response" && \
+                         grep -Eq '"queued":[[:space:]]*0' <<<"$response"; then
+                        : > "$barrier/quiescent"
+                        trap - EXIT
+                        exit 0
+                      fi
+                      sleep 1
+                    done
+                    echo "runtime Pod preStop did not observe exact Host quiescence; waiting for forced termination" >&2
+                    while true; do sleep 10; done
+          readinessProbe:
+            tcpSocket:
+              port: workerd
+            periodSeconds: 3
+            timeoutSeconds: 1
+            failureThreshold: 5
+          livenessProbe:
+            tcpSocket:
+              port: workerd
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "4"
+              memory: 6Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: workerd-run
+              mountPath: /run/actor-workerd
+            - name: tmp
+              mountPath: /tmp
+        - name: workerd-host
+          image: __RIVET_RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              endpoints=()
+              for index in $(seq 0 $((RIVET_WORKERD_SHARDS - 1))); do
+                if ((index == 0)); then port=18080; else port=$((18081 + index)); fi
+                endpoints+=("http://127.0.0.1:$port")
+              done
+              export RIVET_WORKERD_ENDPOINTS
+              RIVET_WORKERD_ENDPOINTS=$(IFS=,; echo "${endpoints[*]}")
+              exec /opt/actor/bin/rivet-workerd-host
+          env:
+            - name: RIVET_ENDPOINT
+              value: http://actor-bj-k01-engine:6420
+            - name: RIVET_API_URL
+              value: http://actor-bj-k01-engine:6420
+            - name: RIVET_HEALTH_URL
+              value: http://actor-bj-k01-engine:6421/health
+            - name: RIVET_POOL_NAME
+              value: workerd
+            - name: RIVET_RUNNER_NAME
+              value: workerd
+            - name: RIVET_NAMESPACE
+              value: default
+            - name: RIVET_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-auth
+                  key: token
+            - name: RIVET_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-auth
+                  key: token
+            - name: RIVET_WORKERD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-auth
+                  key: token
+            - name: RIVET_WORKERD_ENDPOINT
+              value: http://127.0.0.1:18080
+            - name: RIVET_WORKERD_SHARDS
+              value: "__RIVET_WORKERD_SHARDS__"
+            - name: RIVET_WORKERD_MAX_IN_FLIGHT
+              value: "__RIVET_WORKERD_MAX_IN_FLIGHT__"
+            - name: RIVET_WORKERD_MAX_ACTIVE_ACTORS
+              value: "__RIVET_WORKERD_MAX_ACTIVE_ACTORS__"
+            - name: RIVET_WORKERD_MAX_QUEUED
+              value: "__RIVET_WORKERD_MAX_QUEUED__"
+            - name: RIVET_WORKERD_QUEUE_TIMEOUT_MS
+              value: "__RIVET_WORKERD_QUEUE_TIMEOUT_MS__"
+            - name: RIVET_WORKERD_IDLE_SLEEP_MS
+              value: "__RIVET_WORKERD_IDLE_SLEEP_MS__"
+            - name: RIVET_WORKERD_SQLITE_BIND
+              value: 127.0.0.1:18081
+            - name: RIVET_WORKERD_MANAGEMENT_BIND
+              value: 0.0.0.0:19083
+            - name: RIVET_WORKER_REGISTRY_URL
+              value: "__RIVET_WORKER_REGISTRY_URL__"
+            - name: RIVET_WORKER_CODE_CACHE_DIR
+              value: /var/cache/rivet-worker-code
+            - name: RUST_LOG
+              value: info
+          ports:
+            - name: management
+              containerPort: 19083
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -ec
+                  - |
+                    barrier=${RIVET_PRESTOP_BARRIER_DIR:-/tmp/rivet-host-prestop}
+                    deadline=$((SECONDS + 580))
+                    mkdir -p "$barrier"
+                    if ! mkdir "$barrier/leader" 2>/dev/null; then
+                      while ((SECONDS < deadline)); do
+                        [[ ! -e "$barrier/failed" ]] || break
+                        [[ ! -e "$barrier/quiescent" ]] || exit 0
+                        sleep 1
+                      done
+                      echo "runtime Pod preStop leader did not publish exact quiescence; waiting for forced termination" >&2
+                      while true; do sleep 10; done
+                    fi
+                    trap ': > "$barrier/failed"' EXIT
+                    drain_confirmed=false
+                    while ((SECONDS < deadline)); do
+                      response=$(curl --fail --silent --show-error --max-time 2 \
+                        --header "content-type: application/json" \
+                        --header "x-rivet-workerd-token: $RIVET_WORKERD_TOKEN" \
+                        --data '{"draining":true}' \
+                        http://127.0.0.1:19083/v1/sqlite/drain 2>/dev/null || true)
+                      if grep -Eq '"metadata_sent":[[:space:]]*true' <<<"$response" && \
+                         grep -Eq '"host_draining":[[:space:]]*true' <<<"$response" && \
+                         grep -Eq '"host_accepting_actors":[[:space:]]*false' <<<"$response"; then
+                        drain_confirmed=true
+                        break
+                      fi
+                      sleep 1
+                    done
+                    if [[ $drain_confirmed != true ]]; then
+                      echo "runtime Pod preStop could not publish the Host placement fence; waiting for forced termination" >&2
+                      while true; do sleep 10; done
+                    fi
+                    while ((SECONDS < deadline)); do
+                      response=$(curl --fail --silent --show-error --max-time 2 \
+                        --header "x-rivet-workerd-token: $RIVET_WORKERD_TOKEN" \
+                        http://127.0.0.1:19083/v1/sqlite/stats 2>/dev/null || true)
+                      if grep -Eq '"quiescent":[[:space:]]*true' <<<"$response" && \
+                         grep -Eq '"host_active_actors":[[:space:]]*0' <<<"$response" && \
+                         grep -Eq '"bridge_active_actors":[[:space:]]*0' <<<"$response" && \
+                         grep -Eq '"in_flight":[[:space:]]*0' <<<"$response" && \
+                         grep -Eq '"queued":[[:space:]]*0' <<<"$response"; then
+                        : > "$barrier/quiescent"
+                        trap - EXIT
+                        exit 0
+                      fi
+                      sleep 1
+                    done
+                    echo "runtime Pod preStop did not observe exact Host quiescence; waiting for forced termination" >&2
+                    while true; do sleep 10; done
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -ec
+                - 'curl --fail --silent --header "x-rivet-workerd-token: $RIVET_WORKERD_TOKEN" http://127.0.0.1:18081/v1/sqlite/stats >/dev/null'
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -ec
+                - 'curl --fail --silent --header "x-rivet-workerd-token: $RIVET_WORKERD_TOKEN" http://127.0.0.1:18081/v1/sqlite/stats >/dev/null'
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: workerd-run
+              mountPath: /run/actor-workerd
+            - name: tmp
+              mountPath: /tmp
+            - name: worker-code-cache
+              mountPath: /var/cache/rivet-worker-code
+        - name: workerd-metrics
+          image: __RIVET_WORKERD_METRICS_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              output=/var/metrics/metrics.txt
+              collect() {
+                temporary="${output}.tmp"
+                now=$(date +%s)
+                response=$(wget -qO- --header="x-rivet-workerd-token: $RIVET_WORKERD_TOKEN" \
+                  http://127.0.0.1:18081/v1/sqlite/stats 2>/dev/null || true)
+                value() {
+                  printf '%s' "$response" | sed -n "s/.*\"$1\":\([0-9][0-9]*\).*/\1/p" | head -1
+                }
+                bool_value() {
+                  printf '%s' "$response" | sed -n "s/.*\"$1\":\(true\|false\).*/\1/p" | sed 's/true/1/;s/false/0/' | head -1
+                }
+                in_flight=$(value in_flight)
+                queued=$(value queued)
+                active_actors=$(value host_active_actors)
+                max_active_actors=$(value host_max_active_actors)
+                queued_total=$(value queued_total)
+                rejected_total=$(value rejected_total)
+                timed_out_total=$(value timed_out_total)
+                max_in_flight=$(value max_in_flight)
+                max_queued=$(value max_queued)
+                host_draining=$(bool_value host_draining)
+                host_accepting=$(bool_value host_accepting_actors)
+                if [ -n "$in_flight" ] && [ -n "$queued" ] && [ -n "$active_actors" ] && [ -n "$max_active_actors" ] && [ -n "$rejected_total" ] && [ -n "$host_draining" ] && [ -n "$host_accepting" ]; then
+                  printf '%s\n' \
+                    '# HELP rivet_workerd_metrics_collection_success Whether workerd admission stats collection succeeded.' \
+                    '# TYPE rivet_workerd_metrics_collection_success gauge' \
+                    'rivet_workerd_metrics_collection_success 1' \
+                    '# HELP rivet_workerd_requests_in_flight Requests currently dispatched to workerd shards.' \
+                    '# TYPE rivet_workerd_requests_in_flight gauge' \
+                    "rivet_workerd_requests_in_flight $in_flight" \
+                    '# HELP rivet_workerd_requests_queued Requests currently waiting for workerd admission.' \
+                    '# TYPE rivet_workerd_requests_queued gauge' \
+                    "rivet_workerd_requests_queued $queued" \
+                    '# HELP rivet_workerd_active_actors Actor generations currently admitted by this workerd host.' \
+                    '# TYPE rivet_workerd_active_actors gauge' \
+                    "rivet_workerd_active_actors $active_actors" \
+                    '# HELP rivet_workerd_max_active_actors Configured hard Actor admission capacity.' \
+                    '# TYPE rivet_workerd_max_active_actors gauge' \
+                    "rivet_workerd_max_active_actors $max_active_actors" \
+                    '# HELP rivet_workerd_requests_queued_total Requests that entered the bounded workerd queue.' \
+                    '# TYPE rivet_workerd_requests_queued_total counter' \
+                    "rivet_workerd_requests_queued_total $queued_total" \
+                    '# HELP rivet_workerd_requests_rejected_total Requests rejected because workerd admission was full.' \
+                    '# TYPE rivet_workerd_requests_rejected_total counter' \
+                    "rivet_workerd_requests_rejected_total $rejected_total" \
+                    '# HELP rivet_workerd_requests_timed_out_total Requests that timed out waiting for workerd admission.' \
+                    '# TYPE rivet_workerd_requests_timed_out_total counter' \
+                    "rivet_workerd_requests_timed_out_total $timed_out_total" \
+                    '# HELP rivet_workerd_max_in_flight Configured workerd in-flight limit.' \
+                    '# TYPE rivet_workerd_max_in_flight gauge' \
+                    "rivet_workerd_max_in_flight $max_in_flight" \
+                    '# HELP rivet_workerd_max_queued Configured workerd queue limit.' \
+                    '# TYPE rivet_workerd_max_queued gauge' \
+                    "rivet_workerd_max_queued $max_queued" \
+                    '# HELP rivet_workerd_host_draining Whether this Host is fenced for a serial scale-down.' \
+                    '# TYPE rivet_workerd_host_draining gauge' \
+                    "rivet_workerd_host_draining $host_draining" \
+                    '# HELP rivet_workerd_host_accepting_actors Whether this Host admits new Actor generations.' \
+                    '# TYPE rivet_workerd_host_accepting_actors gauge' \
+                    "rivet_workerd_host_accepting_actors $host_accepting" \
+                    '# HELP rivet_workerd_metrics_last_collection_timestamp_seconds Unix timestamp of the latest successful collection.' \
+                    '# TYPE rivet_workerd_metrics_last_collection_timestamp_seconds gauge' \
+                    "rivet_workerd_metrics_last_collection_timestamp_seconds $now" >"$temporary"
+                else
+                  printf '%s\n' \
+                    '# HELP rivet_workerd_metrics_collection_success Whether workerd admission stats collection succeeded.' \
+                    '# TYPE rivet_workerd_metrics_collection_success gauge' \
+                    'rivet_workerd_metrics_collection_success 0' >"$temporary"
+                fi
+                mv "$temporary" "$output"
+              }
+              while true; do collect; sleep 15; done &
+              collector_pid=$!
+              httpd -f -p 19082 -h /var/metrics &
+              httpd_pid=$!
+              stop_metrics() {
+                kill "$httpd_pid" "$collector_pid" 2>/dev/null || true
+                wait "$httpd_pid" "$collector_pid" 2>/dev/null || true
+              }
+              trap 'stop_metrics; exit 0' TERM INT
+              set +e
+              wait "$httpd_pid"
+              status=$?
+              set -e
+              stop_metrics
+              exit "$status"
+          env:
+            - name: RIVET_WORKERD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: actor-bj-k01-runtime-auth
+                  key: token
+          ports:
+            - name: metrics
+              containerPort: 19082
+          readinessProbe:
+            httpGet:
+              path: /metrics.txt
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 20m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: workerd-metrics
+              mountPath: /var/metrics
+      volumes:
+        - name: auth
+          secret:
+            secretName: actor-bj-k01-runtime-auth
+            defaultMode: 288
+        - name: workerd-run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: worker-code-cache
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: workerd-metrics
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: actor-bj-k01-cell-reporter
+  namespace: actor-fdb-cell-system
+automountServiceAccountToken: true
+imagePullSecrets:
+  - name: actor-fleet-tcr
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: actor-bj-k01-cell-reporter
+  namespace: actor-fdb-cell-system
+rules:
+  - apiGroups: [fleet.actor.dev]
+    resources: [rivetcells]
+    verbs: [get]
+  - apiGroups: [fleet.actor.dev]
+    resources: [rivetcellreports]
+    verbs: [get, create, update]
+  - apiGroups: [apps.foundationdb.org]
+    resources: [foundationdbclusters, foundationdbbackups]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [actor-bj-k01-release-ledger, actor-bj-k01-runtime-config, actor-bj-k01-nats-config]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [actor-bj-k01-runtime-cos, actor-bj-k01-runtime-auth, actor-bj-k01-backup-tls]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: actor-bj-k01-cell-reporter
+  namespace: actor-fdb-cell-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: actor-bj-k01-cell-reporter
+subjects:
+  - kind: ServiceAccount
+    name: actor-bj-k01-cell-reporter
+    namespace: actor-fdb-cell-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: actor-bj-k01-cell-reporter
+rules:
+  - apiGroups: [fleet.actor.dev]
+    resources: [shardclasses, rivetcellprofiles]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: actor-bj-k01-cell-reporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: actor-bj-k01-cell-reporter
+subjects:
+  - kind: ServiceAccount
+    name: actor-bj-k01-cell-reporter
+    namespace: actor-fdb-cell-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actor-bj-k01-cell-reporter
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: cell-reporter
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: actor-bj-k01
+      fleet.actor.dev/component: cell-reporter
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-k01
+        fleet.actor.dev/component: cell-reporter
+      annotations:
+        fleet.actor.dev/reporter-source-commit: __RIVET_REPORTER_SOURCE_REVISION__
+        fleet.actor.dev/reporter-source-manifest-sha256: __RIVET_REPORTER_SOURCE_MANIFEST_SHA256__
+    spec:
+      serviceAccountName: actor-bj-k01-cell-reporter
+      terminationGracePeriodSeconds: 10
+      nodeSelector:
+        fleet.actor.dev/control-pool: "true"
+      containers:
+        - name: reporter
+          image: __RIVET_REPORTER_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/rivet-cell-reporter]
+          env:
+            - name: CELL_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CELL_NAME
+              value: actor-bj-k01
+            - name: RELEASE_DIGEST
+              value: __RIVET_RUNTIME_DIGEST__
+            - name: REPORT_INTERVAL
+              value: 30s
+            - name: PROMETHEUS_URL
+              value: http://actor-observability-prometheus.observability.svc:9090
+            - name: RIVET_WORKER_REGISTRY_URL
+              value: "__RIVET_WORKER_REGISTRY_URL__"
+            - name: HOST_DRAIN_MODE
+              value: Disabled
+          ports:
+            - name: health
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-bj-k01-cell-reporter
+  namespace: actor-fdb-cell-system
+  labels:
+    app.kubernetes.io/name: actor-static-release-metrics
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  selector:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/component: cell-reporter
+  ports:
+    - name: metrics
+      port: 8081
+      targetPort: health
+      protocol: TCP

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    app.kubernetes.io/part-of: actor-fleet
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: actor-observability-cbs-wffc-retain
+  labels:
+    app.kubernetes.io/part-of: actor-fleet
+provisioner: com.tencent.cloud.csi.cbs
+parameters:
+  diskType: CLOUD_BSSD
+  diskChargeType: POSTPAID_BY_HOUR
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

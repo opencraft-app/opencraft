@@ -1,0 +1,150 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: actor-mesh-workers-api
+  namespace: mesh-observability
+  labels:
+    release: actor-mesh-observability
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  namespaceSelector:
+    matchNames: [workers-api-system]
+  selector:
+    matchLabels:
+      fleet.actor.dev/metrics-source: workers-api
+  sampleLimit: 5000
+  # One canonical target per HPA-managed Pod.  This must cover the complete
+  # Workers API HPA range; a lower limit makes Prometheus reject the entire
+  # scrape pool at the exact moment capacity expands beyond that limit.
+  targetLimit: 30
+  labelLimit: 30
+  bodySizeLimit: 1MB
+  endpoints:
+    - port: http
+      path: /metrics
+      scheme: http
+      interval: 15s
+      scrapeTimeout: 5s
+      honorLabels: false
+      filterRunning: true
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+          action: replace
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: actor-mesh-workers-api
+  namespace: mesh-observability
+  labels:
+    release: actor-mesh-observability
+    app.kubernetes.io/part-of: actor-fleet
+spec:
+  groups:
+    - name: actor-mesh-workers-api-recording
+      interval: 15s
+      rules:
+        - record: actor_mesh:worker_dispatch_requests_per_second:5m
+          expr: sum by (namespace, pool, result) (rate(worker_dispatch_requests_total[5m]))
+        - record: actor_mesh:object_router_requests_per_second:5m
+          expr: sum by (namespace, source_cell, target_cell, result) (rate(object_router_requests_total[5m]))
+        - record: actor_mesh:object_router_request_p50_seconds:5m
+          expr: histogram_quantile(0.50, sum by (namespace, source_cell, target_cell, le) (rate(object_router_request_duration_seconds_bucket[5m])))
+        - record: actor_mesh:object_router_request_p99_seconds:5m
+          expr: histogram_quantile(0.99, sum by (namespace, source_cell, target_cell, le) (rate(object_router_request_duration_seconds_bucket[5m])))
+        - record: actor_mesh:object_router_request_p999_seconds:5m
+          expr: histogram_quantile(0.999, sum by (namespace, source_cell, target_cell, le) (rate(object_router_request_duration_seconds_bucket[5m])))
+        - record: actor_mesh:object_router_cache_hit_ratio:5m
+          expr: sum by (namespace) (rate(object_router_cache_requests_total{result="hit"}[5m])) / clamp_min(sum by (namespace) (rate(object_router_cache_requests_total{result=~"hit|miss"}[5m])), 0.000000001)
+        - record: actor_mesh:object_router_registry_p95_seconds:5m
+          expr: histogram_quantile(0.95, sum by (namespace, operation, le) (rate(object_router_registry_seconds_bucket[5m])))
+        - record: actor_mesh:workers_api_routing_requests_per_second:2m
+          expr: sum by (namespace, plane) (rate(workers_api_routing_requests_total[2m]))
+        - record: actor_mesh:workers_api_routing_p95_seconds:5m
+          expr: histogram_quantile(0.95, sum by (namespace, plane, le) (rate(workers_api_routing_request_duration_seconds_bucket[5m])))
+        - record: actor_mesh:workers_api_routing_in_flight
+          expr: sum by (namespace, plane) (workers_api_routing_requests_in_flight)
+        - record: actor_mesh:workers_api_process_cpu_cores:5m
+          expr: sum(rate(process_cpu_seconds_total{namespace="workers-api-system",service="workers-api"}[5m]))
+        - record: actor_mesh:workers_api_cpu_seconds_per_object_request:5m
+          expr: sum(rate(process_cpu_seconds_total{namespace="workers-api-system",service="workers-api"}[5m])) / clamp_min(sum(rate(workers_api_routing_requests_total{plane="object"}[5m])), 0.000000001)
+        - record: actor_mesh:workers_api_process_rss_bytes
+          expr: sum(process_resident_memory_bytes{namespace="workers-api-system",service="workers-api"})
+    - name: actor-mesh-workers-api-alerts
+      interval: 15s
+      rules:
+        - alert: ActorWorkersAPIMetricsTargetDown
+          expr: kube_deployment_spec_replicas{namespace="workers-api-system",deployment="workers-api"} unless on (namespace) (count by (namespace) (up{namespace="workers-api-system",service="workers-api"} == 1) >= on (namespace) kube_deployment_spec_replicas{namespace="workers-api-system",deployment="workers-api"})
+          for: 5m
+          labels: {severity: critical, layer: routing}
+          annotations:
+            summary: Workers API 指标目标离线
+            description: Workers API 的可用副本没有全部进入 Hub Prometheus；Object Router 运行状态不可观测。
+        - alert: ActorObjectRouterPlacementOverloaded
+          expr: sum by (namespace) (increase(object_router_cache_requests_total{result="overloaded"}[5m])) > 0
+          labels: {severity: critical, layer: routing}
+          annotations:
+            summary: Object Router placement miss 已过载
+            description: namespace {{ $labels.namespace }} 的有界 placement miss 并发已满，新 Object 将 fail closed。
+        - alert: ActorObjectRouterIndeterminateResult
+          expr: sum by (namespace, target_cell) (increase(object_router_indeterminate_total[5m])) > 0
+          labels: {severity: critical, layer: routing}
+          annotations:
+            summary: Durable Object 请求结果不确定
+            description: namespace {{ $labels.namespace }} 到 Cell {{ $labels.target_cell }} 的响应在执行可能开始后丢失；平台未透明重放。
+        - alert: ActorObjectRouterServerErrors
+          expr: sum by (namespace, source_cell, target_cell) (increase(object_router_requests_total{result="server_error"}[5m])) > 0
+          for: 2m
+          labels: {severity: warning, layer: routing}
+          annotations:
+            summary: Object Router 持续服务端错误
+            description: 从 {{ $labels.source_cell }} 到 {{ $labels.target_cell }} 的 Durable Object 路由持续失败。
+        - alert: ActorObjectRouterRegistryErrors
+          expr: sum by (namespace, operation) (increase(object_router_registry_seconds_count{result="error"}[5m])) > 0
+          for: 2m
+          labels: {severity: warning, layer: registry}
+          annotations:
+            summary: Object Router Registry 操作持续失败
+            description: namespace {{ $labels.namespace }} 的 {{ $labels.operation }} 操作持续失败；已有缓存对象可能可用，但新 placement 会 fail closed。
+        - alert: ActorObjectRouterRegistryLatencyHigh
+          expr: actor_mesh:object_router_registry_p95_seconds:5m > 1
+          for: 10m
+          labels: {severity: warning, layer: registry}
+          annotations:
+            summary: Object Router Registry p95 延迟过高
+            description: namespace {{ $labels.namespace }} 的 {{ $labels.operation }} p95 超过 1 秒，冷 Object 创建/唤醒将受到影响。
+        - alert: ActorWorkersAPIAutoscalingMetricsUnavailable
+          expr: kube_horizontalpodautoscaler_status_condition{namespace="workers-api-system",horizontalpodautoscaler="workers-api",condition="ScalingActive",status="false"} == 1
+          for: 5m
+          labels: {severity: critical, layer: routing-capacity}
+          annotations:
+            summary: Workers API 自动扩容指标不可用
+            description: 中央 Router 无法读取 Pod QPS/并发或资源指标；当前副本不会被安全缩容，但突发流量可能耗尽容量。
+        - alert: ActorWorkersAPIAtMaximumReplicas
+          expr: kube_horizontalpodautoscaler_status_desired_replicas{namespace="workers-api-system",horizontalpodautoscaler="workers-api"} >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="workers-api-system",horizontalpodautoscaler="workers-api"}
+          for: 10m
+          labels: {severity: warning, layer: routing-capacity}
+          annotations:
+            summary: Workers API 已达到扩容上限
+            description: 中央 Router 连续十分钟保持最大副本数，需要扩展控制节点或重新校准单 Pod 容量。
+        - alert: ActorStatelessCapacityPending
+          expr: actor_fleet:cell_stateless_unschedulable_pods > 0
+          for: 2m
+          labels: {severity: warning, layer: stateless-capacity}
+          annotations:
+            summary: 无状态 Worker Pod 等待节点容量
+            description: Cell {{ $labels.cluster }}/{{ $labels.cell }} 持续存在待调度 stateless Pod，节点扩容或 admission 没有及时收敛。
+        - alert: ActorStatelessReplicaShortfall
+          expr: actor_fleet:cell_stateless_hpa_desired_replicas > on (cluster, cell) actor_fleet:cell_stateless_up
+          for: 5m
+          labels: {severity: critical, layer: stateless-capacity}
+          annotations:
+            summary: 无状态 Worker 副本长期低于 HPA 期望
+            description: Cell {{ $labels.cluster }}/{{ $labels.cell }} 五分钟内仍未补齐 HPA 期望副本。
+        - alert: ActorStatelessDrainTimeoutObserved
+          expr: actor_fleet:cell_stateless_drain_timeout_per_second > 0
+          labels: {severity: critical, layer: stateless-capacity}
+          annotations:
+            summary: 无状态 Worker 摘流超过预算
+            description: Cell {{ $labels.cluster }}/{{ $labels.cell }} 有在途请求超过 Pod termination drain 预算并被强退。

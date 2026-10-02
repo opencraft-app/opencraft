@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-cos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: fake-cos}
+  template:
+    metadata:
+      labels: {app: fake-cos}
+    spec:
+      containers:
+        - name: fake-cos
+          image: python:3.12-alpine
+          command: [python3, /opt/fake-cos/fake_cos.py]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /__count, port: http}
+            periodSeconds: 1
+          volumeMounts:
+            - {name: script, mountPath: /opt/fake-cos, readOnly: true}
+      volumes:
+        - name: script
+          configMap: {name: fake-cos}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-cos
+spec:
+  selector: {app: fake-cos}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-registry
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: worker-registry}
+  template:
+    metadata:
+      labels: {app: worker-registry}
+    spec:
+      containers:
+        - name: worker-registry
+          image: __WORKER_REGISTRY_IMAGE__
+          imagePullPolicy: Never
+          args:
+            - --listen-address=:8080
+            - --backend=fdb-cos
+            - --fdb-cluster-file=/etc/foundationdb/fdb.cluster
+            - --fdb-key-prefix=__FDB_KEY_PREFIX__
+            - --cos-bucket-url=http://fake-cos:8080
+            - --cos-object-prefix=worker-registry-e2e/v3
+            - --version-retention=5
+            - --max-compatibility-date=2026-08-14
+          env:
+            - {name: TENCENTCLOUD_SECRET_ID, value: e2e-id}
+            - {name: TENCENTCLOUD_SECRET_KEY, value: e2e-key}
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 1
+            timeoutSeconds: 2
+          volumeMounts:
+            - {name: fdb, mountPath: /etc/foundationdb, readOnly: true}
+      volumes:
+        - name: fdb
+          configMap: {name: worker-registry-fdb}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-registry
+spec:
+  selector: {app: worker-registry}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

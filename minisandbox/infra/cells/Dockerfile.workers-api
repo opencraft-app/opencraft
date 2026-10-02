@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1.7
+ARG WORKERS_API_BUILD_IMAGE
+ARG WORKERS_API_RUNTIME_IMAGE
+FROM --platform=$BUILDPLATFORM ${WORKERS_API_BUILD_IMAGE} AS build
+WORKDIR /src
+ARG TARGETARCH
+ARG TARGETOS=linux
+RUN test "${TARGETARCH}" = amd64
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/workers-api ./cmd/workers-api
+COPY internal/workersapi ./internal/workersapi
+# deployment_cache_integration_test exercises the public Registry boundary with
+# its in-memory implementation. This package is needed only by the build-stage
+# test; the final image still contains only the workers-api binary.
+COPY internal/workerregistry ./internal/workerregistry
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go test ./internal/workersapi/...
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags='-s -w' -o /out/workers-api ./cmd/workers-api
+
+FROM ${WORKERS_API_RUNTIME_IMAGE}
+COPY --from=build /out/workers-api /usr/local/bin/workers-api
+USER 65532:65532
+EXPOSE 8080 8081
+ENTRYPOINT ["/usr/local/bin/workers-api"]

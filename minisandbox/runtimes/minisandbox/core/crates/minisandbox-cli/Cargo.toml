@@ -1,0 +1,16 @@
+[package]
+name = "minisandbox-cli"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "minisandbox"
+path = "src/main.rs"
+
+[dependencies]
+minisandbox-init = { path = "../minisandbox-init" }
+
+[lints]
+workspace = true
