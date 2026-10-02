@@ -280,6 +280,12 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    并仅对 exact UID 未变、零 provider attempt、零 RequestID、完全缺失 fence 的意图安全取消后
    重新评估。已尝试删除、替换 UID、其他 owner 或部分 fence 不允许自动取消。Go 回归覆盖此
    次事件顺序；真实 controller 发布后安全缩回低容量仍需独立证据，不能以 cleanup passed 代替。
+   该事件还暴露了发布恢复顺序：旧 controller 无法取消卡住的意图，普通 release 却先等待 intent
+   settle。正式 release 增加默认关闭的 controller-first 恢复阶段，先完成候选 config/image preflight
+   和持久 immutable journal，再仅对 exact UID/zero-attempt/unfenced 状态 CAS 替换单副本
+   controller；settle 门禁不删除。前置失败以原模板 CAS 回滚，回滚失败或进程硬中断保留 hold
+   与 journal。该 journal 是 crash evidence，不代表 release 自动 resume；不以手工清 intent
+   或绕过 static ledger 替代正式事务。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入
