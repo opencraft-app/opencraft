@@ -46,8 +46,20 @@ for repository in "${repositories[@]}"; do
 	build_arg=$(python3 "$script_dir/foundation-plan.py" --lock "$lock" --repository "$repository" --field buildArg)
 	[[ -f $source_dir/$dockerfile ]] || { echo "foundation Dockerfile is missing: $dockerfile" >&2; exit 1; }
 	image_tag="$registry/actor-fleet/$repository:$run_id"
+	module_labels=()
+	if [[ $repository == base-golang ]]; then
+		# Product builders compare these labels with their reviewed module graph.
+		# Hash only after the complete source manifest has been verified above.
+		go_mod_sha=$(sha256sum "$source_dir/infra/cells/go.mod" | cut -d' ' -f1)
+		go_sum_sha=$(sha256sum "$source_dir/infra/cells/go.sum" | cut -d' ' -f1)
+		module_labels=(
+			--label "fleet.actor.dev/go-mod-sha256=$go_mod_sha"
+			--label "fleet.actor.dev/go-sum-sha256=$go_sum_sha"
+		)
+	fi
 	buildah bud --authfile "$auth_file" --platform linux/amd64 \
 		--build-arg "$build_arg=$source_image" \
+		"${module_labels[@]}" \
 		--label "org.opencontainers.image.revision=$source_revision" \
 		--label "fleet.actor.dev/source-manifest-sha256=$manifest_sha" \
 		--label "fleet.actor.dev/upstream-source=$source_image" \

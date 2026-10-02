@@ -286,6 +286,11 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    controller；settle 门禁不删除。前置失败以原模板 CAS 回滚，回滚失败或进程硬中断保留 hold
    与 journal。该 journal 是 crash evidence，不代表 release 自动 resume；不以手工清 intent
    或绕过 static ledger 替代正式事务。
+   builder 已通过该恢复流程的完整静态门禁，但 leaf image 晋级又发现基础制品约束：候选
+   controller 的 Go base 与现行完整 inventory 不一致，promotion 正确拒绝。canonical foundation
+   工厂还缺少 consumer 要求的 go.mod/go.sum OCI labels；工厂补齐已验证输入的 hashes，
+   consumer 校验不放宽。改变 Go base 后必须闭合产品 reverse dependencies，再生成完整
+   inventory；Runtime-base 未变化时不重复编译 Runtime/workerd。该工厂修复仍不代替云上 release。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入

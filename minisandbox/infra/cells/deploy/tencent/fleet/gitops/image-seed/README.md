@@ -40,6 +40,14 @@ identity supports both static binaries and Worker Registry's FDB-linked CGO
 binary. Creating variant images under either repository is forbidden because
 it would make dependency closure depend on a remembered tag.
 
+The canonical foundation builder stamps `base-golang` with the SHA-256 of the
+verified source's `infra/cells/go.mod` and `go.sum`. Controller builds compare
+these exact OCI labels before compiling. Missing labels are not permission to
+relax the consumer check or inject a different base into a leaf-only inventory
+promotion. A changed module graph requires a dependency-closed generation;
+unchanged Runtime/workerd products can retain their existing verified receipts
+when their `runtime-base` dependency is unchanged.
+
 Seed an empty Beijing TCR foundation from a protected builder:
 
 ```bash
