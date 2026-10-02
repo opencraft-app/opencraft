@@ -650,6 +650,24 @@ binding wrapper
 稳定请求不访问 Registry/FDB。每个 Router replica 的 cache 相互独立，丢失整个 cache 只造成可控
 的重新解析，不改变 placement。cache key、指标和日志不得把 Object ID 作为 Prometheus label。
 
+公共入口还需要读取 Worker 的 active Deployment。该 LRU 与 Object placement cache 是两个边界：
+namespace cursor 改变或 watch 断线时失效 Deployment cache，不得把旧版本选择永久缓存成 placement。
+仅 watch 已同步时，同一 replica、Worker、cursor/generation 的并发冷填充合并为一次只读 Registry GET；新 generation
+不得加入旧读取，迟到旧响应不得回填新 cache。合并不延伸到用户 fetch、claim 或写操作，不透明
+重试用户副作用。共享读取由 API 生命周期和有界超时拥有，而不是由首个请求拥有；单个请求取消
+只撤销自身等待，最后一个等待者离开或 API 关闭才取消共享读取。独立读取与总等待者各自受
+`DeploymentCacheCapacity` 限制；已取消但尚未终止的读取继续占用配额，耗尽时返回 retryable 503。
+watch 未同步时，后来的请求不得加入较早的 Registry 快照，保持各自独立的有界读取，不回填 cache。
+
+性能模型需要区分有用读取和重复等待：假设有 `R` 个 replica、`W` 个活跃 Worker，一次全局 cursor
+失效仍可能造成最多 `R × W` 个有效回填，这是 namespace 失效策略本身的代价。读合并消除同一
+代际的并发重复回填，不能消除不同 replica、不同 Worker 或持续发布产生的失效成本。因此扩容
+Router 并不自动减少 Registry 工作量。应同时观测实际 Registry GET、共享等待、过载和 in-flight，
+再用缓存命中率与 replica 矩阵评估后续是否需要更细的失效协议，不能取消正确性 fence 换取吞吐。
+
+本地真实 HTTP 事件屏障已复现旧路径的 `32 请求 → 32 GET`，读合并回归验证为 `32 请求 → 1 GET`，
+随后热请求无 GET。这是机制证据，不是云上吞吐资格，也不是旧万级负载冷降积压的完整根因结论。
+
 ### Sleep、wake 与跨 Cell
 
 Object 休眠只释放 live owner：
@@ -1120,6 +1138,8 @@ object_router_registry_seconds{namespace,operation,result}
 object_router_route_revision{pool,cell}
 object_router_inflight{namespace,target_cell}
 object_router_indeterminate_total{namespace,target_cell}
+workers_api_deployment_reads_total{namespace,result=started|registry|shared|overloaded}
+workers_api_deployment_read_group{namespace,state=inflight|waiters}
 
 durable_object_wake_seconds{namespace,pool}
 durable_object_active{namespace,pool}

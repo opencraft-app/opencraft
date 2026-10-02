@@ -109,8 +109,8 @@ type API struct {
 	objectRouter          *objectrouter.Router[actorBinding]
 	metrics               *apiMetrics
 	deployments           *deploymentCache
+	deploymentReads       *deploymentReadGroup
 	deploymentWatchOnce   sync.Once
-	deploymentWatchCancel context.CancelFunc
 }
 
 type actorBinding struct {
@@ -383,22 +383,22 @@ func NewAPI(config Config) (*API, error) {
 		// A conversational fetch may stream for much longer than control-plane
 		// operations. Its lifetime is owned by the caller context and the Agent
 		// execution policy, not the control client timeout.
-		fetchClient: &http.Client{Transport: fetchTransport},
-		mux:         http.NewServeMux(),
-		internalMux: http.NewServeMux(),
-		deployments: newDeploymentCache(deploymentCacheCapacity),
+		fetchClient:     &http.Client{Transport: fetchTransport},
+		mux:             http.NewServeMux(),
+		internalMux:     http.NewServeMux(),
+		deployments:     newDeploymentCache(deploymentCacheCapacity),
+		deploymentReads: newDeploymentReadGroup(deploymentCacheCapacity, requestTimeout),
 	}
 	api.objectRouter = newObjectRouter(api, actorCacheCapacity, actorCacheIdleTTL, objectMissCapacity)
-	api.metrics = newAPIMetrics(namespace, api.objectRouter)
+	api.metrics = newAPIMetrics(namespace, api.objectRouter, api.deploymentReads)
 	api.routes()
 	return api, nil
 }
 
-// Close stops the Registry deployment change watch. HTTP servers must call it
-// during shutdown so the long poll is cancelled before process exit.
+// Close cancels Registry reads and the Deployment watch during server shutdown.
 func (a *API) Close() {
-	if a.deploymentWatchCancel != nil {
-		a.deploymentWatchCancel()
+	if a.deploymentReads != nil {
+		a.deploymentReads.Close()
 	}
 }
 
