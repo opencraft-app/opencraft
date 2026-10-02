@@ -439,11 +439,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(chatPanel).toContain("lg:h-full");
   });
 
-  it("marks the active chat route and removes its desktop page padding", () => {
+  it("marks the active chat route and removes its page padding", () => {
     const page = readPageSource();
 
     expect(page).toContain('activeSection === "chat" && "lv-agent-chat-page"');
-    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('useMobileChatLayout ? "pb-0" : "pb-6"');
     expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
     /*
      * lv-agent-settings-main / -shell / 栅格列这三处本分支按
@@ -454,7 +454,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
      */
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain("lv-agent-settings-grid grid items-start");
-    expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-6" : "gap-6"');
+    expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6"');
     expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
   });
 
