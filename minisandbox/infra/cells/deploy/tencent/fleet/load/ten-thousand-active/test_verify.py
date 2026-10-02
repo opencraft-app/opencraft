@@ -12,7 +12,7 @@ RUNNER = ROOT / "run-on-builder.sh"
 
 def cell(name, active, hosts, machines, phase="Idle", legacy=0):
     nodes = [
-        {"name": f"{name}-{index}", "ready": True, "admitted": True,
+        {"name": f"{name}-{index}", "uid": f"{name}-node-{index}", "ready": True, "admitted": True,
          "taints": [{"key": "rivet.dev/compute", "value": "true", "effect": "NoSchedule"}]}
         for index in range(machines)
     ]
@@ -24,10 +24,10 @@ def cell(name, active, hosts, machines, phase="Idle", legacy=0):
             "health": {"available": True, "fullReplication": True, "healthy": True},
         },
         "foundationDBPods": {"total": 9, "ready": 9, "restarts": 0},
-        "hostConfig": {"replicas": hosts, "ready": hosts, "currentRevision": "r1",
+        "hostConfig": {"uid": f"{name}-hosts", "replicas": hosts, "ready": hosts, "currentRevision": "r1",
                        "updateRevision": "r1", "drainState": json.dumps({"phase": phase}),
                        "releaseHold": None},
-        "machineSet": {"desired": machines, "current": machines, "ready": machines,
+        "machineSet": {"uid": f"{name}-machines", "desired": machines, "current": machines, "ready": machines,
                        "downscaleIntent": None},
         "legacyMachineSet": {"desired": legacy, "current": legacy, "ready": legacy},
     }
@@ -60,7 +60,7 @@ class VerifyTest(unittest.TestCase):
         self.assertIn("else\n\t\treturn 1\n\tfi", script)
 
     def run_verifier(self, remove_final=False, warmup_timeouts=0, degrade_fdb=False,
-                     cleanup_pending=0):
+                     cleanup_pending=0, mutate=None):
         root = os.environ.get("TMPDIR", "/data/tmp")
         with tempfile.TemporaryDirectory(dir=root) as temporary:
             temporary = Path(temporary)
@@ -73,6 +73,8 @@ class VerifyTest(unittest.TestCase):
             if degrade_fdb:
                 values[2]["cells"][0]["foundationDB"]["health"]["fullReplication"] = False
                 values[-1]["cells"][0]["foundationDBPods"]["ready"] = 8
+            if mutate is not None:
+                mutate(values)
             trace.write_text("".join(json.dumps(value) + "\n" for value in values))
             load = temporary / "load.json"
             load.write_text(json.dumps({
@@ -129,6 +131,103 @@ class VerifyTest(unittest.TestCase):
         self.assertNotEqual(status, 0)
         self.assertEqual(receipt["verdict"], "failed")
         self.assertFalse(receipt["checks"]["exactObjectCleanupPassed"])
+
+    def test_rejects_same_name_replaced_capacity_resources(self):
+        for component in ("foundationDB", "hostConfig", "machineSet"):
+            with self.subTest(component=component):
+                def replace(values):
+                    values[2]["cells"][0][component]["uid"] = "replacement-uid"
+                status, receipt = self.run_verifier(mutate=replace)
+                self.assertNotEqual(status, 0)
+                self.assertFalse(receipt["checks"]["capacityIdentityStable"])
+
+    def test_rejects_missing_resource_identity_and_runtime_revision_change(self):
+        def missing(values):
+            values[0]["cells"][0]["hostConfig"].pop("uid")
+        status, receipt = self.run_verifier(mutate=missing)
+        self.assertNotEqual(status, 0)
+        self.assertFalse(receipt["checks"]["capacityIdentityStable"])
+        def rollout(values):
+            values[2]["cells"][0]["hostConfig"]["currentRevision"] = "r2"
+            values[2]["cells"][0]["hostConfig"]["updateRevision"] = "r2"
+        status, receipt = self.run_verifier(mutate=rollout)
+        self.assertNotEqual(status, 0)
+        self.assertFalse(receipt["checks"]["capacityIdentityStable"])
+
+    def test_ready_machines_without_admitted_nodes_are_not_active_capacity(self):
+        for kind in ("not_admitted", "pending", "duplicate"):
+            with self.subTest(kind=kind):
+                def mutate(values):
+                    for value in values[1:4]:
+                        for item in value["cells"]:
+                            for node in item["nodes"]:
+                                if kind == "not_admitted":
+                                    node["admitted"] = False
+                                elif kind == "pending":
+                                    node["taints"].append({"key": "fleet.actor.dev/runtime-admission"})
+                                else:
+                                    node["uid"] = "same-node-uid"
+                status, receipt = self.run_verifier(mutate=mutate)
+                self.assertNotEqual(status, 0)
+                self.assertFalse(receipt["checks"]["activeCapacityReady"])
+
+    def test_rejects_duplicate_cells_and_replayed_capacity_samples(self):
+        for kind in ("duplicate_cell", "duplicate_time", "reordered_time"):
+            with self.subTest(kind=kind):
+                def mutate(values):
+                    if kind == "duplicate_cell":
+                        values[2]["cells"].append(values[2]["cells"][0])
+                    elif kind == "duplicate_time":
+                        values[2]["observedAt"] = values[1]["observedAt"]
+                    else:
+                        values[2]["observedAt"] = values[0]["observedAt"]
+                status, receipt = self.run_verifier(mutate=mutate)
+                self.assertNotEqual(status, 0)
+                self.assertFalse(receipt["checks"]["capacityTraceValid"])
+
+    def test_rejects_nonfinite_and_negative_active_measurements(self):
+        for bad in ("NaN", "Infinity", "-1"):
+            with self.subTest(value=bad):
+                def mutate(values):
+                    for value in values[1:4]:
+                        for item in value["cells"]:
+                            item["activeActors"] = [bad]
+                status, receipt = self.run_verifier(mutate=mutate)
+                self.assertNotEqual(status, 0)
+                self.assertFalse(receipt["checks"]["tenThousandActiveSustained"])
+
+    def test_capacity_is_not_borrowed_from_the_other_cell(self):
+        def mutate(values):
+            for value in values[1:4]:
+                value["cells"][0]["activeActors"] = ["9900"]
+                value["cells"][1]["activeActors"] = ["100"]
+        status, receipt = self.run_verifier(mutate=mutate)
+        self.assertNotEqual(status, 0)
+        self.assertFalse(receipt["checks"]["activeCapacityReady"])
+
+    def test_spare_pending_nodes_and_replaced_node_uids_are_valid_scale_out(self):
+        def mutate(values):
+            for value in values[1:4]:
+                for item in value["cells"]:
+                    for node in item["nodes"]:
+                        node["uid"] += "-new"
+                    item["nodes"].append({
+                        "name": "pending-spare", "uid": "pending-spare-uid",
+                        "ready": True, "admitted": False,
+                        "taints": [{"key": "fleet.actor.dev/runtime-admission"}],
+                    })
+        status, receipt = self.run_verifier(mutate=mutate)
+        self.assertEqual(status, 0)
+        self.assertTrue(receipt["checks"]["activeCapacityReady"])
+
+    def test_duplicate_node_identities_cannot_prove_the_final_floor(self):
+        def mutate(values):
+            for item in values[-1]["cells"]:
+                for node in item["nodes"]:
+                    node["uid"] = "same-node-uid"
+        status, receipt = self.run_verifier(mutate=mutate)
+        self.assertNotEqual(status, 0)
+        self.assertFalse(receipt["checks"]["finalLowCapacity"])
 
 
 if __name__ == "__main__":

@@ -962,6 +962,12 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 ### Phase 5：资格与演进决策
 
 - 运行百万 dormant Object 元数据和万级 active Object 的分片容量测试；
+- 容量收据必须在完整采样中保持基线 FDB、Host StatefulSet、MachineSet UID 与已收敛 runtime revision。
+  同名重建不能拼接成一次成功的扩缩容。采样时间须带时区且严格递增，重复 Cell、重复采样时间、
+  非有限或负 active 值不能证明持续容量。峰值按 Cell 分别核对 Ready Host、Ready Machine 与去重后的
+  Ready/admitted Node UID，pending/drain 节点不贡献容量；允许普通扩容增加待准入节点及更换 Node UID。
+  2026-10-02 本地真实子进程回归已复现旧 verifier 对 UID 替换、未准入节点和时间重放的错误放行。
+  新校验只加强离线证据门禁，不改变正在运行的云端请求、3 秒 SLO 或零稳态重试约束。
 - 量化 Router p50/p99/p999、cache hit ratio、Registry TPS、跨 Cell RTT 和每请求 CPU；
 - 只有中央 Router 被证明为瓶颈后，才启动 Cell-local Router 下沉；
 - 不把压测中发现的单 Cell 上限误写成整个产品上限，横向容量通过增加 Cell 扩展。
