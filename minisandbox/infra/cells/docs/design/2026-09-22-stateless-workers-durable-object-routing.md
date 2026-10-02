@@ -294,6 +294,11 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    工厂增量构建允许严格选择已审阅 root，仍先验证完整 source manifest 与五项 foundation lock；
    完整 generation 仍需全部 11 个产品收据、28 个仓库及 exact dependency closure。未变化 root
    通过现有有效收据或全新隔离 registry cold-pull 复用，不把无关上游仓库可达性变成 leaf 发布前置。
+   区域镜像复验入口从显式审阅的现有完整 inventory 继承 mirror provenance，并与 canonical upstream
+   lock 精确比较；17 个区域 digest 各经独立空 VFS graph 拉取及实际平台检查后，生成新的 seed 和
+   `actor-regional-image-seed-revalidation/v1` proof。它不访问公共上游、不恢复旧 seed preimage，也
+   不声称独立验证 origin。新 seed 仍必须与 11 个依赖闭合产品收据组装成完整 28 项 inventory，
+   才能进入正式 release；原 inventory 不被覆盖。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入

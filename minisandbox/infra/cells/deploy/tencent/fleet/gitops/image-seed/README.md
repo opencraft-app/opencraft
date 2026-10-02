@@ -206,6 +206,40 @@ by the inventory. An older or manually assembled inventory that cannot satisfy
 this test remains usable as a handoff-bound standalone inventory, but must not
 be reported as having portable builder-preimage archives.
 
+When changing a foundation in an already reviewed regional generation, obtain
+fresh mirror availability evidence with `revalidate-regional-seed.py`. This is
+not initial upstream mirroring and does not recover an old seed preimage. The
+explicitly reviewed standalone inventory supplies mirror provenance; its
+self-authenticating digest detects changes, but is not a signature or an
+independent proof of origin. The helper requires the exact reviewed inventory
+digest, exact regional host and matching canonical upstream lock. It pulls only
+the 17 regional digest references, each in a separate empty Buildah VFS graph,
+then inspects the actual local image's Linux/amd64 platform. No tags, public
+upstream requests, pushes, relabelling or dependency overrides are accepted.
+
+```bash
+python3.11 revalidate-regional-seed.py \
+  --inventory /data/actor-create-first/image-generation/all-images.lock.json \
+  --expected-inventory-digest sha256:<reviewed-inventory-digest> \
+  --upstream-lock "$PWD/upstream-images.lock.json" \
+  --registry <regional-tcr>.tencentcloudcr.com \
+  --registry-auth-file /protected/tcr-auth.json \
+  --output /data/actor-qualification/receipts/image-seed-<new-run>.json \
+  --proof-output /data/actor-qualification/receipts/regional-seed-proof-<new-run>.json
+```
+
+Both outputs must be fresh absolute paths; the auth file must be an owned,
+regular non-symlink file with mode 0600. A failed pull or platform check emits
+neither output and suppresses raw tool diagnostics that might contain auth.
+After all pulls pass, immutable publication writes the explicit
+`actor-regional-image-seed-revalidation/v1` proof first and then the compatible
+seed receipt. A crash or publication race can leave the proof without a seed;
+that is an incomplete operation, not permission to overwrite either file.
+Retain both documents. The proof binds the reviewed inventory, upstream lock,
+new seed digest and all 17 cold pulls, and explicitly labels origin evidence as
+`inherited_reviewed_inventory`. Assemble this new seed with the full set of 11
+dependency-closed product receipts. A new seed alone never authorizes a release.
+
 When a reviewed generation already exists in another private regional TCR,
 `copy-inventory.sh` moves that exact generation without rebuilding product
 images. It refuses any manifest digest rewrite, cold-pulls every destination
