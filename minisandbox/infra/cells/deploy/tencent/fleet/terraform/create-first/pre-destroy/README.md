@@ -26,7 +26,8 @@ export COS_SECRET_KEY=...
 `verdict=passed` requires:
 
 - a completely clean Git worktree;
-- a deterministic source bundle for exactly `HEAD` and its Git tree;
+- a deterministic source bundle for exactly the mono2 `HEAD`, repository tree,
+  `minisandbox` project path, and project tree;
 - verified COS readback of that bundle and its receipt;
 - a complete 28-image inventory for the exact foundation TCR, with verified
   COS readback under a content-addressed recovery key;

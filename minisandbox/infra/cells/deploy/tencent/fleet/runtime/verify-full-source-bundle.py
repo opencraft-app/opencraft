@@ -11,6 +11,7 @@ from typing import Optional
 
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+PROJECT_PATH = re.compile(r"^(?:\.|[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)$")
 
 
 def sha256(path: Path) -> str:
@@ -28,15 +29,19 @@ def verify(bundle: Path, receipt: Path, expected_revision: Optional[str] = None)
         raise ValueError("source receipt must be a regular non-symlink file")
     value = json.loads(receipt.read_text(encoding="utf-8"))
     if set(value) != {"schema", "verdict", "source", "content", "bundle"}:
-        raise ValueError("source receipt fields do not match the v1 contract")
-    if value["schema"] != "actor-reviewed-source-bundle/v1" or value["verdict"] != "passed":
+        raise ValueError("source receipt fields do not match the v2 contract")
+    if value["schema"] != "actor-reviewed-source-bundle/v2" or value["verdict"] != "passed":
         raise ValueError("source receipt did not pass")
     source, content, artifact = value["source"], value["content"], value["bundle"]
-    if set(source) != {"revision", "tree"} or not all(
+    if set(source) != {"revision", "repositoryTree", "projectPath", "projectTree"} or not all(
         isinstance(source.get(field), str) and HEX40.fullmatch(source[field])
-        for field in ("revision", "tree")
+        for field in ("revision", "repositoryTree", "projectTree")
     ):
         raise ValueError("invalid source identity")
+    if not isinstance(source["projectPath"], str) or not PROJECT_PATH.fullmatch(source["projectPath"]):
+        raise ValueError("invalid source project path")
+    if source["projectPath"] != "." and any(part in ("", ".", "..") for part in source["projectPath"].split("/")):
+        raise ValueError("invalid source project path")
     if expected_revision is not None and source["revision"] != expected_revision:
         raise ValueError("source revision does not match the requested release")
     if set(content) != {"fileCount", "manifestSha256"}:

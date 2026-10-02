@@ -37,8 +37,10 @@ output=$3
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 create_first=$(dirname -- "$script_dir")
-repo=$(git -C "$script_dir" rev-parse --show-toplevel)
-runtime_dir=$repo/infra/cells/deploy/tencent/fleet/runtime
+fleet_dir=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+project_root=$(CDPATH= cd -- "$fleet_dir/../../../../.." && pwd)
+repository_root=$(git -C "$project_root" rev-parse --show-toplevel)
+runtime_dir=$project_root/infra/cells/deploy/tencent/fleet/runtime
 lock=$create_first/tools/terraform.lock.json
 endpoint=cos.ap-beijing.myqcloud.com
 
@@ -84,10 +86,10 @@ done
 # Terraform version.
 ACTOR_TOOL_ROOT=${ACTOR_TOOL_ROOT:-/data/actor-tools} "$create_first/verify.sh" >/dev/null
 
-revision=$(git -C "$repo" rev-parse HEAD)
+revision=$(git -C "$repository_root" rev-parse HEAD)
 bundle=$temporary/source/source-$revision.tar.gz
 source_receipt=$temporary/source/source-$revision.receipt.json
-RIVET_SOURCE_DIR=$repo \
+RIVET_SOURCE_DIR=$project_root \
 	RIVET_SOURCE_REVISION=$revision \
 	RIVET_SOURCE_BUNDLE=$bundle \
 	RIVET_SOURCE_RECEIPT=$source_receipt \
@@ -120,7 +122,7 @@ source_receipt_uri=cos://$state_bucket/$source_prefix/$(basename -- "$source_rec
 publish_exact "$bundle" "$source_uri" 'source bundle'
 publish_exact "$source_receipt" "$source_receipt_uri" 'source receipt'
 
-image_validation=$(python3 "$repo/infra/cells/deploy/tencent/fleet/gitops/image-seed/image-lock.py" \
+image_validation=$(python3 "$project_root/infra/cells/deploy/tencent/fleet/gitops/image-seed/image-lock.py" \
 	validate-inventory --lock "$image_inventory")
 image_digest=$(jq -er '.inventoryDigest' <<<"$image_validation")
 image_sha=$(sha256sum "$image_inventory" | cut -d' ' -f1)
@@ -139,7 +141,7 @@ publish_exact "$terraform_archive" "$terraform_uri" 'Terraform archive'
 
 set +e
 python3 "$script_dir/audit.py" \
-	--repo "$repo" \
+	--repo "$project_root" \
 	--source-bundle "$bundle" \
 	--source-receipt "$source_receipt" \
 	--source-remote-uri "$source_uri" \

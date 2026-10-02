@@ -22,16 +22,20 @@ class DestroyPlanTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temporary.name)
-        self.repo = self.root / "repo"
+        self.git_root = self.root / "repo"
+        self.git_root.mkdir()
+        self.repo = self.git_root / "minisandbox"
         self.repo.mkdir()
-        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.email", "test@example.invalid"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "test"], check=True)
+        subprocess.run(["git", "init", "-q", str(self.git_root)], check=True)
+        subprocess.run(["git", "-C", str(self.git_root), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(self.git_root), "config", "user.name", "test"], check=True)
+        (self.git_root / "sibling").write_text("outside project\n")
         (self.repo / "tracked").write_text("reviewed\n")
-        subprocess.run(["git", "-C", str(self.repo), "add", "tracked"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "fixture"], check=True)
+        subprocess.run(["git", "-C", str(self.git_root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.git_root), "commit", "-qm", "fixture"], check=True)
         revision = self.git("rev-parse", "HEAD")
-        tree = self.git("rev-parse", "HEAD^{tree}")
+        repository_tree = self.git("rev-parse", "HEAD^{tree}")
+        tree = self.git("rev-parse", "HEAD:minisandbox")
 
         self.inventory = self.root / "images.json"
         self.write(self.inventory, {
@@ -43,7 +47,12 @@ class DestroyPlanTest(unittest.TestCase):
             "schema": MODULE.AUDIT_SCHEMA,
             "verdict": "passed",
             "failures": [],
-            "source": {"revision": revision, "tree": tree},
+            "source": {
+                "revision": revision,
+                "repositoryTree": repository_tree,
+                "projectPath": "minisandbox",
+                "projectTree": tree,
+            },
             "imageInventory": {
                 "sha256": MODULE.sha256(self.inventory),
                 "inventoryDigest": "sha256:" + "a" * 64,

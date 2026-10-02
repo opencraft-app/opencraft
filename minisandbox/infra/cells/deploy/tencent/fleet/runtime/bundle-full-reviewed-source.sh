@@ -2,7 +2,7 @@
 set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-source_dir=${RIVET_SOURCE_DIR:?RIVET_SOURCE_DIR must name the reviewed Git tree}
+source_dir=${RIVET_SOURCE_DIR:?RIVET_SOURCE_DIR must name the reviewed project tree}
 source_revision=${RIVET_SOURCE_REVISION:?RIVET_SOURCE_REVISION must identify the release revision}
 output=${RIVET_SOURCE_BUNDLE:?RIVET_SOURCE_BUNDLE must name the output tar.gz}
 receipt=${RIVET_SOURCE_RECEIPT:?RIVET_SOURCE_RECEIPT must name the immutable receipt}
@@ -10,16 +10,46 @@ receipt=${RIVET_SOURCE_RECEIPT:?RIVET_SOURCE_RECEIPT must name the immutable rec
 	echo "invalid full source identity/output" >&2
 	exit 2
 }
-for command in git tar gzip sha256sum python3 cmp; do
+for command in git tar gzip sha256sum python3 cmp readlink; do
 	command -v "$command" >/dev/null || { echo "missing command: $command" >&2; exit 2; }
 done
 [[ -d $(dirname -- "$output") && -d $(dirname -- "$receipt") ]] || {
 	echo "bundle and receipt parents must already exist" >&2
 	exit 2
 }
-[[ $(git -C "$source_dir" cat-file -t "$source_revision") == commit ]]
-source_tree=$(git -C "$source_dir" rev-parse "$source_revision^{tree}")
-[[ $source_tree =~ ^[0-9a-f]{40}$ ]]
+[[ -d $source_dir && ! -L $source_dir ]] || { echo "reviewed project tree must be a real directory" >&2; exit 2; }
+source_dir=$(readlink -e "$source_dir")
+repository_root=$(git -C "$source_dir" rev-parse --show-toplevel)
+repository_root=$(readlink -e "$repository_root")
+[[ $(git -C "$repository_root" cat-file -t "$source_revision") == commit ]]
+repository_tree=$(git -C "$repository_root" rev-parse "$source_revision^{tree}")
+project_path=$(python3 - "$repository_root" "$source_dir" <<'PY'
+import os
+import re
+import sys
+
+root, project = map(os.path.realpath, sys.argv[1:])
+relative = os.path.relpath(project, root)
+if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+    raise SystemExit("reviewed project tree is outside its Git repository")
+project_path = "." if relative == "." else relative.replace(os.sep, "/")
+if project_path != "." and any(
+    not re.fullmatch(r"[A-Za-z0-9._-]+", part) or part in (".", "..")
+    for part in project_path.split("/")
+):
+    raise SystemExit("reviewed project path contains unsupported components")
+print(project_path)
+PY
+)
+if [[ $project_path == . ]]; then
+	project_tree=$repository_tree
+	archive_treeish=$source_revision
+else
+	[[ $(git -C "$repository_root" cat-file -t "$source_revision:$project_path") == tree ]]
+	project_tree=$(git -C "$repository_root" rev-parse "$source_revision:$project_path")
+	archive_treeish=$source_revision:$project_path
+fi
+[[ $repository_tree =~ ^[0-9a-f]{40}$ && $project_tree =~ ^[0-9a-f]{40}$ ]]
 
 temporary=$(mktemp -d /data/tmp/actor-full-source.XXXXXX)
 bundle_temporary=$(mktemp "$(dirname -- "$output")/.actor-source-bundle.XXXXXX")
@@ -31,7 +61,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$temporary/tree/.actor-source"
-git -C "$source_dir" archive --format=tar "$source_revision" | tar -C "$temporary/tree" -xf -
+git -C "$repository_root" archive --format=tar "$archive_treeish" | tar -C "$temporary/tree" -xf -
 (
 	cd "$temporary/tree"
 	find . -type f ! -path './.actor-source/*' -printf '%P\n' | LC_ALL=C sort | \
@@ -53,17 +83,33 @@ tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$temporary/tr
 bundle_sha=$(sha256sum "$bundle_temporary" | cut -d' ' -f1)
 bundle_bytes=$(wc -c <"$bundle_temporary" | tr -d ' ')
 
-python3 - "$receipt_temporary" "$(basename -- "$output")" "$source_revision" "$source_tree" \
-	"$file_count" "$manifest_sha" "$bundle_sha" "$bundle_bytes" <<'PY'
+python3 - "$receipt_temporary" "$(basename -- "$output")" "$source_revision" "$repository_tree" \
+	"$project_path" "$project_tree" "$file_count" "$manifest_sha" "$bundle_sha" "$bundle_bytes" <<'PY'
 import json
 import os
 import sys
 
-path, name, revision, tree, file_count, manifest_sha, bundle_sha, bundle_bytes = sys.argv[1:]
+(
+    path,
+    name,
+    revision,
+    repository_tree,
+    project_path,
+    project_tree,
+    file_count,
+    manifest_sha,
+    bundle_sha,
+    bundle_bytes,
+) = sys.argv[1:]
 value = {
-    "schema": "actor-reviewed-source-bundle/v1",
+    "schema": "actor-reviewed-source-bundle/v2",
     "verdict": "passed",
-    "source": {"revision": revision, "tree": tree},
+    "source": {
+        "revision": revision,
+        "repositoryTree": repository_tree,
+        "projectPath": project_path,
+        "projectTree": project_tree,
+    },
     "content": {"fileCount": int(file_count), "manifestSha256": manifest_sha},
     "bundle": {"name": name, "bytes": int(bundle_bytes), "sha256": bundle_sha},
 }
@@ -96,5 +142,5 @@ publish_exact "$bundle_temporary" "$output" bundle
 publish_exact "$receipt_temporary" "$receipt" receipt
 python3 "$script_dir/verify-full-source-bundle.py" \
 	--bundle "$output" --receipt "$receipt" --revision "$source_revision" >/dev/null
-printf 'full_source_bundle=%s receipt=%s revision=%s files=%s manifest_sha256=%s bundle_sha256=%s\n' \
-	"$output" "$receipt" "$source_revision" "$file_count" "$manifest_sha" "$bundle_sha"
+printf 'full_source_bundle=%s receipt=%s revision=%s project_path=%s project_tree=%s files=%s manifest_sha256=%s bundle_sha256=%s\n' \
+	"$output" "$receipt" "$source_revision" "$project_path" "$project_tree" "$file_count" "$manifest_sha" "$bundle_sha"

@@ -41,7 +41,8 @@ done
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 create_first=$(dirname -- "$script_dir")
-repo=$(git -C "$script_dir" rev-parse --show-toplevel)
+fleet_dir=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+project_root=$(CDPATH= cd -- "$fleet_dir/../../../../.." && pwd)
 terraform=$($create_first/tools/resolve-terraform.sh)
 python=${PYTHON:-python3}
 for command in "$terraform" "$python" git jq sha256sum; do
@@ -81,6 +82,6 @@ chmod 0600 "$output/destroy.tfplan"
 "$terraform" -chdir="$root" show -json "$output/destroy.tfplan" >"$output/destroy.tfplan.json"
 chmod 0600 "$output/destroy.tfplan.json"
 "$python" "$script_dir/validate-destroy-plan.py" \
-	--audit "$audit" --image-inventory "$inventory" --repo "$repo" --scope "$scope" \
+	--audit "$audit" --image-inventory "$inventory" --repo "$project_root" --scope "$scope" \
 	--state "$output/current-state.json" --plan "$output/destroy.tfplan" \
 	--plan-json "$output/destroy.tfplan.json" --output "$output/destroy-plan.receipt.json"

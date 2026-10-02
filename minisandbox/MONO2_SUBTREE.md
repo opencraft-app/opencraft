@@ -53,3 +53,9 @@ Inspect that branch before publishing it to any newly approved remote.
 The subtree import moves source ownership only. It does not publish runtime
 images, update Argo desired state, or change any production Cell. Those remain
 separate reviewed release operations with their existing qualification gates.
+
+Reviewed-source and recovery bundles must set `RIVET_SOURCE_DIR` to this
+`minisandbox/` project root while using the enclosing mono2 commit as
+`RIVET_SOURCE_REVISION`. The v2 receipt binds the mono2 repository tree,
+`minisandbox` project path, and exact project tree separately; the archive is
+rooted at the project tree and must not contain sibling mono2 services.

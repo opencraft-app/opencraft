@@ -185,12 +185,26 @@ def main() -> int:
     details: dict[str, Any] = {}
     try:
         repo = args.repo.resolve(strict=True)
-        head = git(repo, "rev-parse", "HEAD")
-        tree = git(repo, "rev-parse", "HEAD^{tree}")
-        dirty = git(repo, "status", "--porcelain=v1", "--untracked-files=all").splitlines()
+        repository_root = pathlib.Path(git(repo, "rev-parse", "--show-toplevel")).resolve(strict=True)
+        project_path_value = repo.relative_to(repository_root).as_posix()
+        project_path = "." if project_path_value == "." else project_path_value
+        head = git(repository_root, "rev-parse", "HEAD")
+        repository_tree = git(repository_root, "rev-parse", "HEAD^{tree}")
+        project_tree = (
+            repository_tree
+            if project_path == "."
+            else git(repository_root, "rev-parse", f"HEAD:{project_path}")
+        )
+        dirty = git(repo, "status", "--porcelain=v1", "--untracked-files=all", "--", ".").splitlines()
         if dirty:
             failures.append("working tree contains unarchived changes")
-        details["source"] = {"revision": head, "tree": tree, "dirtyPaths": dirty}
+        source_identity = {
+            "revision": head,
+            "repositoryTree": repository_tree,
+            "projectPath": project_path,
+            "projectTree": project_tree,
+        }
+        details["source"] = {**source_identity, "dirtyPaths": dirty}
 
         create_first = repo / "infra/cells/deploy/tencent/fleet/terraform/create-first"
         bootstrap_state = (create_first / "bootstrap-state/main.tf").read_text()
@@ -210,11 +224,11 @@ def main() -> int:
 
         source_receipt = load_json(args.source_receipt, "source receipt")
         if (
-            source_receipt.get("schema") != "actor-reviewed-source-bundle/v1"
+            source_receipt.get("schema") != "actor-reviewed-source-bundle/v2"
             or source_receipt.get("verdict") != "passed"
-            or source_receipt.get("source") != {"revision": head, "tree": tree}
+            or source_receipt.get("source") != source_identity
         ):
-            failures.append("source receipt does not bind the current Git commit and tree")
+            failures.append("source receipt does not bind the current Git commit and project tree")
         expected_bundle_sha = source_receipt.get("bundle", {}).get("sha256")
         actual_bundle_sha = sha256(args.source_bundle)
         if expected_bundle_sha != actual_bundle_sha:
@@ -346,7 +360,7 @@ def main() -> int:
         "retentionClass": "bootstrap-seed-do-not-destroy",
     }
     document = {
-        "schema": "actor-pre-destroy-audit/v1",
+        "schema": "actor-pre-destroy-audit/v2",
         "verdict": "passed" if not failures else "blocked",
         "failures": failures,
         **details,

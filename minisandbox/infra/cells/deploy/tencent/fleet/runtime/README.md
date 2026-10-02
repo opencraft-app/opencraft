@@ -106,12 +106,17 @@ A blank builder starts from a deterministic full reviewed-source bundle and
 its immutable machine-readable receipt:
 
 ```sh
-RIVET_SOURCE_DIR=/data/minisandbox \
-RIVET_SOURCE_REVISION=<full-commit-id> \
+RIVET_SOURCE_DIR=/data/mono2/minisandbox \
+RIVET_SOURCE_REVISION=<full-mono2-commit-id> \
 RIVET_SOURCE_BUNDLE=/protected/source-<full-commit-id>.tar.gz \
 RIVET_SOURCE_RECEIPT=/protected/source-<full-commit-id>.receipt.json \
 ./bundle-full-reviewed-source.sh
 ```
+
+`RIVET_SOURCE_DIR` names the project root, not necessarily the Git repository root. The bundler derives
+the committed project path and records the mono2 repository tree, `minisandbox` project path, and exact
+project tree in its v2 receipt. The archive itself starts at the project root, so a blank builder never
+receives unrelated mono2 services and existing build entrypoints keep the same layout.
 
 The operation never replaces either output. An exact replay is idempotent, and
 an interrupted bundle-without-receipt publication can only be completed after

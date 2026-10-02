@@ -18,11 +18,14 @@ class PreDestroyAuditTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temporary.name)
-        self.repo = self.root / "repo"
+        self.git_root = self.root / "repo"
+        self.git_root.mkdir()
+        self.repo = self.git_root / "minisandbox"
         self.repo.mkdir()
-        subprocess.run(["git", "init", "-q", self.repo], check=True)
-        subprocess.run(["git", "-C", self.repo, "config", "user.email", "test@example.invalid"], check=True)
-        subprocess.run(["git", "-C", self.repo, "config", "user.name", "test"], check=True)
+        subprocess.run(["git", "init", "-q", self.git_root], check=True)
+        subprocess.run(["git", "-C", self.git_root, "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", self.git_root, "config", "user.name", "test"], check=True)
+        (self.git_root / "sibling.txt").write_text("not part of minisandbox\n")
         (self.repo / "source.txt").write_text("reviewed\n")
         fixture_image_seed = (
             self.repo / "infra/cells/deploy/tencent/fleet/gitops/image-seed"
@@ -39,16 +42,22 @@ class PreDestroyAuditTest(unittest.TestCase):
             "  }\n"
             "}\n"
         )
-        subprocess.run(["git", "-C", self.repo, "add", "."], check=True)
-        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "fixture"], check=True)
+        subprocess.run(["git", "-C", self.git_root, "add", "."], check=True)
+        subprocess.run(["git", "-C", self.git_root, "commit", "-qm", "fixture"], check=True)
         self.revision = subprocess.run(
-            ["git", "-C", self.repo, "rev-parse", "HEAD"],
+            ["git", "-C", self.git_root, "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.repository_tree = subprocess.run(
+            ["git", "-C", self.git_root, "rev-parse", "HEAD^{tree}"],
             check=True,
             capture_output=True,
             text=True,
         ).stdout.strip()
         self.tree = subprocess.run(
-            ["git", "-C", self.repo, "rev-parse", "HEAD^{tree}"],
+            ["git", "-C", self.git_root, "rev-parse", "HEAD:minisandbox"],
             check=True,
             capture_output=True,
             text=True,
@@ -60,9 +69,14 @@ class PreDestroyAuditTest(unittest.TestCase):
         self.receipt.write_text(
             json.dumps(
                 {
-                    "schema": "actor-reviewed-source-bundle/v1",
+                    "schema": "actor-reviewed-source-bundle/v2",
                     "verdict": "passed",
-                    "source": {"revision": self.revision, "tree": self.tree},
+                    "source": {
+                        "revision": self.revision,
+                        "repositoryTree": self.repository_tree,
+                        "projectPath": "minisandbox",
+                        "projectTree": self.tree,
+                    },
                     "bundle": {"sha256": self.bundle_sha},
                 }
             )

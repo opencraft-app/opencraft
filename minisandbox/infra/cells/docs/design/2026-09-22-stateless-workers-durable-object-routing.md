@@ -195,6 +195,9 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    `receipts/fleet/rebuild-qualification-networkpolicy-94239be8.json`（SHA-256
    `a7e7205e47bcc1b0fdeb82a9459bbf4cf609056aa2d81e0cbace3b03bd413c82`），其中逐个绑定
    C/A/B controller UID 与 3/3、20/20、29/29 Ready 状态；
+   minisandbox 源码现以 mono2 的 `minisandbox/` subtree 为唯一真源；clean-room reviewed-source
+   bundle v2 分别绑定 mono2 commit、repository tree、project path 与 project tree，同时仍把项目
+   tree 作为归档根，避免把 mono2 其他服务带入 Runtime 构建或改变 builder 的目录契约；
 3. Terraform 已改为通过 TKE 控制面创建独立、启用 autoscaling 的 Native NodePool，并将其动态
    `np-*` ID 写入 Cell inventory；Argo 不再伪造或拥有该 MachineSet。集群级 scale-in 已启用且一次
    最多缩一台。stateless admission profile、startup taint、精确 runtime digest probe 和 workload

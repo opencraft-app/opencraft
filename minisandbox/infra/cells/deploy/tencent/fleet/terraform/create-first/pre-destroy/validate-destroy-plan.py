@@ -12,7 +12,7 @@ import subprocess
 from typing import Any
 
 
-AUDIT_SCHEMA = "actor-pre-destroy-audit/v1"
+AUDIT_SCHEMA = "actor-pre-destroy-audit/v2"
 RECEIPT_SCHEMA = "actor-terraform-destroy-plan/v1"
 SCOPES = {
     "management": {
@@ -89,13 +89,25 @@ def validate_authority(
     ):
         raise ValueError("recovery/state bucket is not protected")
     repo = repo.resolve(strict=True)
-    if git(repo, "status", "--porcelain=v1"):
+    if git(repo, "status", "--porcelain=v1", "--untracked-files=all", "--", "."):
         raise ValueError("working tree contains unarchived changes")
     source = audit.get("source", {})
-    if git(repo, "rev-parse", "HEAD") != source.get("revision"):
+    repository_root = pathlib.Path(git(repo, "rev-parse", "--show-toplevel")).resolve(strict=True)
+    project_path_value = repo.relative_to(repository_root).as_posix()
+    project_path = "." if project_path_value == "." else project_path_value
+    revision = git(repository_root, "rev-parse", "HEAD")
+    repository_tree = git(repository_root, "rev-parse", "HEAD^{tree}")
+    project_tree = (
+        repository_tree
+        if project_path == "."
+        else git(repository_root, "rev-parse", f"HEAD:{project_path}")
+    )
+    if revision != source.get("revision"):
         raise ValueError("audit source revision differs from current HEAD")
-    if git(repo, "rev-parse", "HEAD^{tree}") != source.get("tree"):
-        raise ValueError("audit Git tree differs from current HEAD")
+    if source.get("repositoryTree") != repository_tree:
+        raise ValueError("audit repository tree differs from current HEAD")
+    if source.get("projectPath") != project_path or source.get("projectTree") != project_tree:
+        raise ValueError("audit project tree differs from current HEAD")
     inventory = load(inventory_path, "image inventory")
     audited_inventory = audit.get("imageInventory", {})
     if sha256(inventory_path) != audited_inventory.get("sha256"):

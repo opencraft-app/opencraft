@@ -2620,7 +2620,10 @@ autoscale_qualifier = (root / "autoscaling" / "qualify.sh").read_text()
 full_source_bundler = (root / "runtime" / "bundle-full-reviewed-source.sh").read_text()
 full_source_materializer = (root / "qualification" / "actor-bj-q01" / "materialize-full-reviewed-source.sh").read_text()
 for full_source_guard in (
-    "git -C \"$source_dir\" archive",
+    "git -C \"$repository_root\" archive",
+    '"schema": "actor-reviewed-source-bundle/v2"',
+    '"projectPath": project_path',
+    '"projectTree": project_tree',
     ".actor-source/RELEASE_SHA256SUMS",
     ".actor-source/SOURCE_REVISION",
     "RIVET_SOURCE_RECEIPT",
@@ -2643,6 +2646,15 @@ for full_materialize_guard in (
 ):
     if full_materialize_guard not in full_source_materializer:
         raise SystemExit(f"full reviewed source materializer lost invariant: {full_materialize_guard}")
+pre_destroy_run = (root / "terraform" / "create-first" / "pre-destroy" / "run.sh").read_text()
+pre_destroy_plan = (root / "terraform" / "create-first" / "pre-destroy" / "plan-destroy.sh").read_text()
+for pre_destroy_source in (pre_destroy_run, pre_destroy_plan):
+    for source_guard in (
+        'fleet_dir=$(CDPATH= cd -- "$script_dir/../../.." && pwd)',
+        'project_root=$(CDPATH= cd -- "$fleet_dir/../../../../.." && pwd)',
+    ):
+        if source_guard not in pre_destroy_source:
+            raise SystemExit(f"pre-destroy source boundary lost invariant: {source_guard}")
 q01_bootstrap_creator = (root / "qualification" / "actor-bj-q01" / "create-bootstrap-node.sh").read_text()
 for bootstrap_guard in (
     "DescribeInstances",
