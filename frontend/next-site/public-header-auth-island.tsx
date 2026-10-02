@@ -17,6 +17,7 @@ import { CTA_COPY_BY_LOCALE, journeyHref, resolveCtaRoute } from '@/lib/cta-jour
 import {
   armPostLoginRedirect,
   disarmPostLoginRedirect,
+  REOPEN_PRICING_MODAL_EVENT,
   usePostLoginRedirect,
 } from './use-post-login-redirect';
 import { DATONG_PAGE_IDS } from '@/observability/datong';
@@ -86,6 +87,17 @@ const copyByLocale: Record<
   },
 };
 
+const entitlementErrorCopy: Record<PublicSiteLocale, { message: string; retry: string }> = {
+  'en-US': { message: 'Could not confirm your subscription. Try again.', retry: 'Retry' },
+  'zh-CN': { message: '订阅状态暂时无法确认，请重试。', retry: '重试' },
+  'zh-SG': { message: '订阅状态暂时无法确认，请重试。', retry: '重试' },
+  'zh-Hant': { message: '暫時無法確認訂閱狀態，請重試。', retry: '重試' },
+  'id-ID': { message: 'Status langganan belum dapat dikonfirmasi. Coba lagi.', retry: 'Coba lagi' },
+  es: { message: 'No se pudo confirmar tu suscripción. Inténtalo de nuevo.', retry: 'Reintentar' },
+  'ja-JP': { message: 'サブスクリプションの状態を確認できません。再試行してください。', retry: '再試行' },
+  'ko-KR': { message: '구독 상태를 확인할 수 없습니다. 다시 시도해 주세요.', retry: '다시 시도' },
+};
+
 type PublicHeaderAuthIslandProps = {
   appearance?: HeaderAppearance;
   locale: PublicSiteLocale;
@@ -113,11 +125,13 @@ function PublicHeaderAuthControls({
   const router = useRouter();
   const { authReady, isAuthenticated } = useSession();
   const { auth } = useRepositories();
-  const { bots, isSubscribed } = useOpenClaw();
+  const { bots, botsError, botsLoading, hasResolvedPasses, isSubscribed, latestPass, passesError, passesLoading } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
+  const [postLoginError, setPostLoginError] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale = locale;
   const copy = copyByLocale[activeLocale];
+  const errorCopy = entitlementErrorCopy[activeLocale] ?? entitlementErrorCopy['en-US'];
   const hasBots = bots.length > 0;
   // 未登录转化引导：主按钮文案与 Hero / Footer CTA 共用同一份「免费试用」文案。
   // 可选链 + en-US 兜底，避免 CTA_COPY_BY_LOCALE 缺失对应语种时拿到 undefined（工蜂 AI CR 边界条件建议）。
@@ -125,13 +139,24 @@ function PublicHeaderAuthControls({
     ? (CTA_COPY_BY_LOCALE[activeLocale]?.startFree ?? CTA_COPY_BY_LOCALE['en-US'].startFree)
     : copy.createNow;
   // CTA / 登录落点：订阅前统一 /subscribe，订阅后统一 /agents（国内国际同一套逻辑）。
-  const ctaRoute = resolveCtaRoute({ isAuthenticated, isSubscribed, hasBots });
+  // 当前没有 Bot 的已订阅用户直接进入创建流程。
+  const ctaRoute = resolveCtaRoute({
+    isAuthenticated,
+    isSubscribed,
+    hasBots,
+  });
   const ctaHref = journeyHref(ctaRoute, activeLocale, { localized: isGlobal });
   // 登录成功后按订阅状态分流：未订阅 → /subscribe，已订阅 → /agents
-  const redirectAfterLogin = usePostLoginRedirect({ locale: activeLocale });
+  const redirectAfterLogin = usePostLoginRedirect({
+    locale: activeLocale,
+    onEntitlementUnavailable: () => setPostLoginError(true),
+  });
 
   const renderProductEntry = (surface: 'desktop' | 'mobile') => {
-    if (!showProductEntry) return null;
+    /* 购买前不暴露「我的智能体」入口（PRD 2026-09-30）。
+       与 /agents 门禁同口径：已订阅、有历史订阅或 Bot 才显示。 */
+    const hasExistingAssets = (bots?.length ?? 0) > 0 || Boolean(latestPass);
+    if (!showProductEntry || !isAuthenticated || !hasResolvedPasses || passesLoading || passesError || botsLoading || botsError || (!isSubscribed && !hasExistingAssets)) return null;
     const isMobile = surface === 'mobile';
     return (
       <a
@@ -182,6 +207,11 @@ function PublicHeaderAuthControls({
         target: ctaRoute,
       },
     });
+    if (promoteFreeTrial && ctaRoute === 'subscribe') {
+      const event = new CustomEvent(REOPEN_PRICING_MODAL_EVENT, { detail: { handled: false } });
+      window.dispatchEvent(event);
+      if (event.detail.handled) return;
+    }
     router.push(ctaHref);
   };
 
@@ -203,6 +233,21 @@ function PublicHeaderAuthControls({
   if (isAuthenticated) {
     return (
       <>
+        {postLoginError && (
+          <div role="alert" className="fixed right-4 top-20 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-[var(--surface-base)] px-4 py-3 text-sm text-[var(--color-danger)] shadow-lg ring-1 ring-[var(--color-danger)]/20">
+            <span>{errorCopy.message}</span>
+            <button
+              type="button"
+              className="shrink-0 font-semibold underline underline-offset-2"
+              onClick={() => {
+                setPostLoginError(false);
+                redirectAfterLogin();
+              }}
+            >
+              {errorCopy.retry}
+            </button>
+          </div>
+        )}
         <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
           {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
           {renderProductEntry('desktop')}

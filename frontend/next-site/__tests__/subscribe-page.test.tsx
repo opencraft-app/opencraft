@@ -117,7 +117,7 @@ vi.mock("@/lib/app-navigation", () => ({
 }));
 
 /* 本文件保持国内站语义（不 mock @/lib/region，沿用真实 REGION 默认 "cn"）：
-   下方用例断言「退款规则」链接，而该链接由 subscribe-page 的 `{isCN && ...}` 条件渲染。
+   下方用例断言国内站「退款规则」链接。
    国际站（isGlobal）专属用例请放到 subscribe-page.global.test.tsx，
    参照 login-modal.test.tsx / login-modal.global.test.tsx 的拆分约定 ——
    vi.mock 是模块级全局的，同一文件无法让两种站点语义并存。 */
@@ -159,6 +159,7 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 });
 
 const resetState = () => {
+  window.sessionStorage.removeItem("lv-pending-payment-plan");
   realnamePhoneVerificationEnabled = false;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
@@ -197,6 +198,137 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  it("shows a pending payment only to the account that started it", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    window.sessionStorage.setItem("lv-pending-payment-plan", JSON.stringify({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    }));
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage embedded />);
+    expect(await screen.findByTestId("pending-payment-banner")).toBeInTheDocument();
+
+    sessionState.user = { id: "account-b" };
+    rerender(<SubscribePage embedded />);
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem("lv-pending-payment-plan")).toBeNull());
+  });
+
+  it("clears the pending payment when the account signs out", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    window.sessionStorage.setItem("lv-pending-payment-plan", JSON.stringify({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    }));
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage embedded />);
+    expect(await screen.findByTestId("pending-payment-banner")).toBeInTheDocument();
+
+    openClawState.isLoggedIn = false;
+    sessionState.isAuthenticated = false;
+    sessionState.user = null;
+    rerender(<SubscribePage embedded />);
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem("lv-pending-payment-plan")).toBeNull());
+  });
+
+  it("ignores legacy pending payments without an account ID", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    window.sessionStorage.setItem("lv-pending-payment-plan", "bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+    await screen.findByRole("group", { name: "巡游 Cruise" });
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
+  });
+
+  it("keeps the pricing modal and backdrop above the fixed site navigation", async () => {
+    const { PricingModal } = await import("@next-site/pricing-modal");
+    render(<PricingModal open onOpenChange={() => {}} />);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass("z-[70]");
+    expect(dialog.previousElementSibling).toHaveClass("z-[70]");
+  });
+
+  it("renders only compact plan selection inside the pricing modal", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    const card = await screen.findByRole("group", { name: "启航 Launch" });
+    expect(within(card).getByText("Bot 数")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /订阅/ })).toBeInTheDocument();
+    expect(within(card).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-section")).not.toBeInTheDocument();
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument();
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
+  });
+
+  it("keeps the full comparison and credit packs on the standalone subscribe page", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    const card = await screen.findByRole("group", { name: "启航 Launch" });
+    expect(within(card).getByText("7*24小时在线")).toBeInTheDocument();
+    expect(screen.getByTestId("credit-pack-section")).toBeInTheDocument();
+    expect(screen.getByRole("banner")).toBeInTheDocument();
+    expect(screen.getByRole("contentinfo")).toBeInTheDocument();
+  });
+
+  it("expands and collapses every plan's benefits with one control in the pricing modal", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    const launch = await screen.findByRole("group", { name: "启航 Launch" });
+    const cruise = screen.getByRole("group", { name: "巡游 Cruise" });
+    const toggle = screen.getByTestId("plan-features-toggle");
+    expect(screen.getAllByTestId("plan-features-toggle")).toHaveLength(1);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(launch).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(within(cruise).queryByText("7*24小时在线")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(within(launch).getByText("7*24小时在线")).toBeInTheDocument();
+    expect(within(cruise).getByText("7*24小时在线")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(toggle);
+    expect(within(launch).queryByText("7*24小时在线")).not.toBeInTheDocument();
+    expect(within(cruise).queryByText("7*24小时在线")).not.toBeInTheDocument();
+  });
+
+  it("closes the pricing modal when the user leaves for the full pricing page", async () => {
+    const { PricingModal } = await import("@next-site/pricing-modal");
+    const onOpenChange = vi.fn();
+    render(<PricingModal open onOpenChange={onOpenChange} />);
+
+    const link = await screen.findByTestId("pricing-modal-full-page");
+    expect(link).toHaveTextContent("查看全部套餐");
+    /* 该链接是整页出口，不能再被宿主页的弹窗拦截规则拦回来。 */
+    expect(link).toHaveAttribute("data-pricing-modal", "off");
+    fireEvent.click(link);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("greets returning users with a continue copy instead of a first-purchase pitch", async () => {
+    openClawState.bots = [{ id: "hermes-1", status: "running" }];
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    expect(await screen.findByText("继续使用你的云端智能伙伴，按需管理套餐")).toBeInTheDocument();
+    expect(screen.queryByText("免费开始，一键创建你的云端智能伙伴")).not.toBeInTheDocument();
+  });
+
   it("shows domestic promotion tags only when the quoted price supports them", async () => {
     openClawState.isLoggedIn = true;
     sessionState.isAuthenticated = true;
@@ -262,6 +394,42 @@ describe("SubscribePage", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("你已订阅「{{plan}}」套餐。");
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("visually disables locked plan actions in the compact pricing modal", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    openClawState.activePass = { bundle_id: "legacy_bundle", bundle_name: "巡游 Cruise" };
+    sessionState.isAuthenticated = true;
+    listBundlesMock.mockResolvedValue([
+      buildBundle("bundle_launch_ai_01", "启航 Launch"),
+      buildBundle("bundle_cruise_ai_01", "巡游 Cruise"),
+    ]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+
+    const actions = await screen.findAllByRole("button", { name: "立即订阅" });
+    expect(actions).toHaveLength(2);
+    for (const action of actions) {
+      expect(action).toBeDisabled();
+      expect(action).toHaveStyle({ background: "var(--surface-muted, #f2f2f2)", color: "var(--text-secondary, #666)" });
+      await userEvent.hover(action);
+      expect(action).toHaveStyle({ background: "var(--surface-muted, #f2f2f2)" });
+    }
+  });
+
+  it("keeps refund rules on the full CN pricing page only", async () => {
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { unmount } = render(<SubscribePage embedded />);
+    await screen.findAllByRole("button", { name: "立即订阅" });
+    expect(screen.queryByRole("link", { name: "退款规则" })).not.toBeInTheDocument();
+    unmount();
+
+    render(<SubscribePage />);
+    const actions = await screen.findAllByRole("button", { name: "立即订阅" });
+    const refundLink = screen.getByRole("link", { name: "退款规则" });
+    expect(actions[actions.length - 1].compareDocumentPosition(refundLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows a page-level loading state until the bundles request returns", async () => {
@@ -557,10 +725,10 @@ describe("SubscribePage", () => {
     );
     expect(source).toContain("usePostLoginRedirect");
     // OAuth 整页跳转路径：弹登录前 arm，关闭弹窗 disarm
-    expect(source).toContain("armPostLoginRedirect()");
+    expect(source).toContain("armPostLoginRedirect(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE)");
     expect(source).toContain("disarmPostLoginRedirect()");
     // 弹窗内登录路径：onSuccess 接 redirectAfterLogin
-    expect(source).toContain("onSuccess={() => redirectAfterLogin()}");
+    expect(source).toContain("onSuccess={() => redirectAfterLogin(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE)}");
   });
 
   it("disables subscription actions when an active pass is already present", async () => {

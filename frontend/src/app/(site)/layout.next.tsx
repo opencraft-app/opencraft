@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 import { LightVelaSearchDialog } from '@next-site/lightvela-search-dialog';
 import { PublicSiteAppProviders } from '@next-site/public-site-app-providers';
+import { PublicSitePricingModalProvider } from '@next-site/public-site-pricing-modal';
 import { SiteJsonLd } from '@next-site/seo';
 
 export default function SiteLayout({ children }: { children: ReactNode }) {
@@ -27,7 +28,9 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
         {/* Keep auth/runtime state at the persistent App Router layout level.
             Public pages still stream as static children, while the header auth island
             can hydrate without resetting on every client-side route transition. */}
-        <PublicSiteAppProviders>{children}</PublicSiteAppProviders>
+        <PublicSiteAppProviders>
+          <PublicSitePricingModalProvider>{children}</PublicSitePricingModalProvider>
+        </PublicSiteAppProviders>
       </RootProvider>
     </>
   );

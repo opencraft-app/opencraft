@@ -76,7 +76,7 @@ import {
 import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
-import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 // 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
@@ -2614,13 +2614,15 @@ export const AgentSettingsPage = ({
   const locale = useCurrentLocale();
   const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
+  const { pathname } = useAppLocation();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
   /* 订阅成功后引导「为首个 Bot 命名」的意图（/agents?create=1），区别于 creating 的等待态。 */
   const createBotIntentParam = searchParams.get(AGENT_CREATE_QUERY_KEY)?.trim() ?? "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
+  const firstCreateEntryHandled = useRef(false);
+  const { bots, botsLoading, hasResolvedBots, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
   const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
   const repositories = useRepositories();
@@ -4210,15 +4212,18 @@ export const AgentSettingsPage = ({
    * /agents?create=1。这里在订阅态与列表就绪后，自动打开与「新建 Bot」一致的命名弹窗
    * （首个创建 → 空白模式、只需输入名字），让首次订阅与删除后重建走同一条命名流程。
    *
-   * 消费一次即清掉 create 参数（replace）：避免用户取消弹窗、或刷新时重复自动弹出。
-   * 边界：账号已有 Bot（重复回跳 / 已建过）不再引导命名，直接落到正常控制台；
+   * 消费一次即清掉 create 参数（replace）。本次挂载只打开一次；如果用户中途离开，
+   * 下次进 /agents 时，只要仍没有成功创建 Bot，就重新打开引导。
+   * 边界：当前已有 Bot 时直接落到正常控制台；Bot 已删光时重新打开创建界面；
    *       未订阅（理论上不会跳来，或 pass 尚未同步）先等待，不误弹。
    */
   useEffect(() => {
-    if (!createBotIntentParam) return;
-    if (botsLoading || passesLoading) return;
+    if (firstCreateEntryHandled.current) return;
+    if (!createBotIntentParam && pathname !== AGENTS_HOME_PATH) return;
+    if (!hasResolvedBots || botsLoading || passesLoading) return;
     if (!isSubscribed) return;
-    navigate(AGENTS_HOME_PATH, { replace: true });
+    firstCreateEntryHandled.current = true;
+    if (createBotIntentParam) navigate(AGENTS_HOME_PATH, { replace: true });
     if (bots.length > 0) return;
     setDirectCreateError(null);
     setCreateBotName("");
@@ -4235,7 +4240,7 @@ export const AgentSettingsPage = ({
       setCreateBotMode("blank");
       setShowCreateConfirm(true);
     }
-  }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
+  }, [createBotIntentParam, pathname, hasResolvedBots, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
 
   /*
    * 新订阅用户打标。
@@ -4628,7 +4633,6 @@ export const AgentSettingsPage = ({
       });
       // 新 bot 还没进 visibleBots（provisioning 会被过滤），所以直接用返回值
       const createdProfileId = newBot.profileId || "";
-
       /*
        * 守卫：多 bot 场景下拿到 "main" 视为「没拿到」。
        *
@@ -4655,7 +4659,7 @@ export const AgentSettingsPage = ({
       setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
       return null;
     }
-  }, [createLimitMessage, addBot, activeBot, t]);
+  }, [createLimitMessage, addBot, activeBot, t, session?.user?.id]);
 
   const handleConfirmCreate = async () => {
     if (createLimitMessage) {

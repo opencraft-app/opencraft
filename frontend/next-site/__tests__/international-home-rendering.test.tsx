@@ -76,6 +76,9 @@ beforeEach(() => {
   sessionMock.isAuthenticated = false;
   openClawMock.bots = [];
   openClawMock.isSubscribed = false;
+  openClawMock.hasResolvedPasses = true;
+  openClawMock.passesLoading = false;
+  openClawMock.passesError = false;
 });
 
 afterEach(() => {
@@ -445,6 +448,40 @@ describe("international v2 homepage rendering", () => {
       expect(document.querySelector(".foot__cta a")).toHaveTextContent(state.label);
       expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", state.href);
     });
+  });
+
+  it("hides static My Agents hero and footer entries until entitlement-based CTA copy is ready", async () => {
+    sessionMock.authReady = false;
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a href="/agents">我的智能体伙伴</a></div><div class="foot__cta"><a href="/agents">我的智能体伙伴</a></div></main>';
+    const { rerender } = render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    const markupHost = document.querySelector("#lightvela-intl-home")?.parentElement?.parentElement;
+    expect(markupHost).toHaveClass("[&_.hero__cta]:invisible", "[&_.foot__cta]:invisible");
+
+    sessionMock.authReady = true;
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => {
+      expect(document.querySelector(".foot__cta a")).toHaveTextContent("免费试用");
+      expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", "/subscribe");
+      expect(document.querySelector(".hero__cta a")).toHaveTextContent("免费试用");
+      expect(document.querySelector(".hero__cta a")).toHaveAttribute("href", "/subscribe");
+      expect(markupHost).not.toHaveClass("[&_.hero__cta]:invisible", "[&_.foot__cta]:invisible");
+    });
+  });
+
+  it("keeps the international hero and footer hidden until subscription status is confirmed", async () => {
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+    openClawMock.hasResolvedPasses = false;
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a href="/agents">我的智能体伙伴</a></div><div class="foot__cta"><a href="/agents">我的智能体伙伴</a></div></main>';
+    const { rerender } = render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    const markupHost = document.querySelector("#lightvela-intl-home")?.parentElement?.parentElement;
+    expect(markupHost).toHaveClass("[&_.hero__cta]:invisible", "[&_.foot__cta]:invisible");
+
+    openClawMock.hasResolvedPasses = true;
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => expect(markupHost).not.toHaveClass("[&_.hero__cta]:invisible"));
+    expect(document.querySelector(".hero__cta a")).toHaveTextContent("免费试用");
+    expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", "/subscribe");
   });
 
   it("takes the subscribed CTA copy from the localized fragment as well", async () => {
