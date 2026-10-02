@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  resource.inclusions: |
+    - apiGroups: [""]
+      kinds: [Namespace, ServiceAccount, ConfigMap, Service]
+      clusters: ["https://kubernetes.default.svc", __MANAGEMENT_CLUSTER_URL__]
+    - apiGroups: [apps]
+      kinds: [Deployment]
+      clusters: ["https://kubernetes.default.svc", __MANAGEMENT_CLUSTER_URL__]
+    - apiGroups: [policy]
+      kinds: [PodDisruptionBudget]
+      clusters: ["https://kubernetes.default.svc", __MANAGEMENT_CLUSTER_URL__]
+    - apiGroups: [rbac.authorization.k8s.io]
+      kinds: [Role, RoleBinding, ClusterRole, ClusterRoleBinding]
+      clusters: ["https://kubernetes.default.svc", __MANAGEMENT_CLUSTER_URL__]
+    - apiGroups: [apps.foundationdb.org]
+      kinds: [FoundationDBCluster, FoundationDBBackup]
+      clusters: ["https://kubernetes.default.svc", __MANAGEMENT_CLUSTER_URL__]

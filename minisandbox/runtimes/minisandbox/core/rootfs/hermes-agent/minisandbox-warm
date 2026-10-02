@@ -1,0 +1,34 @@
+#!/bin/sh
+
+set -eu
+
+export HOME=/opt/data
+export HERMES_HOME="$HOME"
+export HERMES_WRITE_SAFE_ROOT="$HOME"
+export HERMES_DISABLE_LAZY_INSTALLS=1
+export HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
+export HERMES_TUI_DIR=/opt/hermes/ui-tui
+export PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONUNBUFFERED=1
+export PATH=/opt/hermes/bin:/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# The upstream image normally lets its container bootstrap repair this volume.
+# PVM has no Docker/s6 ownership phase, so make the private OverlayFS data root
+# usable by the fixed runtime identity before publishing the template.
+install -d -o hermes -g hermes -m 0750 /opt/data
+cd /opt/data
+exec /usr/bin/env -i \
+  HOME="$HOME" \
+  HERMES_HOME="$HERMES_HOME" \
+  HERMES_WRITE_SAFE_ROOT="$HERMES_WRITE_SAFE_ROOT" \
+  HERMES_DISABLE_LAZY_INSTALLS="$HERMES_DISABLE_LAZY_INSTALLS" \
+  HERMES_WEB_DIST="$HERMES_WEB_DIST" \
+  HERMES_TUI_DIR="$HERMES_TUI_DIR" \
+  PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+  PYTHONDONTWRITEBYTECODE="$PYTHONDONTWRITEBYTECODE" \
+  PYTHONUNBUFFERED="$PYTHONUNBUFFERED" \
+  PATH="$PATH" \
+  USER=hermes \
+  LOGNAME=hermes \
+  /opt/hermes/.venv/bin/python /opt/minisandbox/hermes-warm.py

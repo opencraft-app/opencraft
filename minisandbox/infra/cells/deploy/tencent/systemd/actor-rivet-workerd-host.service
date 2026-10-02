@@ -1,0 +1,41 @@
+[Unit]
+Description=Actor Rivet Envoy host for shared workerd
+After=actor-rivet-workerd-pool-init.service actor-workerd.service
+Requires=actor-rivet-workerd-pool-init.service
+Wants=actor-workerd.service
+
+[Service]
+Type=simple
+User=actor-workerd
+Group=actor-workerd
+EnvironmentFile=/etc/actor/rivet-workerd/workerd.env
+EnvironmentFile=/etc/actor/rivet-workerd/envoy.env
+Environment=RIVET_WORKERD_ENDPOINT=http://127.0.0.1:18080
+Environment=RIVET_WORKERD_MAX_IN_FLIGHT=16
+Environment=RIVET_WORKERD_MAX_ACTIVE_ACTORS=64
+Environment=RIVET_WORKERD_SQLITE_BIND=127.0.0.1:18081
+Environment=RUST_LOG=info
+ExecStart=/opt/actor/rivet-workerd/current/bin/rivet-workerd-host
+Restart=always
+RestartSec=1
+RuntimeDirectory=actor-rivet-workerd-host
+WorkingDirectory=/run/actor-rivet-workerd-host
+LimitNOFILE=1048576
+MemoryMax=1G
+TasksMax=1024
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

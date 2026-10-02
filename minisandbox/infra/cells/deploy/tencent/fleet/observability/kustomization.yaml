@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace-storage.yaml
+  - engine-metrics.yaml
+  - infrastructure-metrics.yaml
+  - actor-rules.yaml
+  - actor-dashboard.yaml
+  - federation/spoke-rules.yaml

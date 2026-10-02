@@ -1,0 +1,19 @@
+[Unit]
+Description=Rivet autonomy audit governance (cell operations)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Governance uses exit 1/2 to communicate an intentional degraded/block
+# decision.  Preserve that decision in its receipt without presenting the
+# timer itself as a crashed control plane component.
+SuccessExitStatus=1 2
+EnvironmentFile=/etc/actor/rivet-autonomy-audit.env
+WorkingDirectory=/
+ExecStart=/usr/local/libexec/actor-autonomy-reviewed-source-entrypoint
+StandardOutput=append:/var/log/actor-autonomy-governance.log
+StandardError=append:/var/log/actor-autonomy-governance.error.log
+
+[Install]
+WantedBy=multi-user.target

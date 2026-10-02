@@ -1,0 +1,73 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: actor-runtime-a-static
+  namespace: argocd
+spec:
+  project: actor-cells-static
+  source:
+    repoURL: git://actor-gitops-repository.argocd.svc.cluster.local:9418/repo.git
+    targetRevision: refs/heads/main
+    path: runtime-a
+  destination:
+    name: runtime-a
+    namespace: actor-fdb-cell-system
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
+    syncOptions:
+      - RespectIgnoreDifferences=true
+      - FailOnSharedResource=true
+  revisionHistoryLimit: 5
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/spec/replicas]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: actor-runtime-b-static
+  namespace: argocd
+spec:
+  project: actor-cells-static
+  source:
+    repoURL: git://actor-gitops-repository.argocd.svc.cluster.local:9418/repo.git
+    targetRevision: refs/heads/main
+    path: runtime-b
+  destination:
+    name: runtime-b
+    namespace: actor-fdb-cell-system
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
+    syncOptions:
+      - RespectIgnoreDifferences=true
+      - FailOnSharedResource=true
+  revisionHistoryLimit: 5
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/spec/replicas]

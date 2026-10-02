@@ -930,7 +930,7 @@ describe("http repositories auth token bootstrap", () => {
     // cannot prove whether siblings exist. The UI relies on this reason to warn the
     // user before deleting the whole Agent.
     expect(snapshot.bots).toEqual([
-      expect.objectContaining({ id: "ins_paused", siblingsUnknown: "instance_stopped" }),
+      expect.objectContaining({ id: "ins_paused", status: "paused", siblingsUnknown: "instance_stopped" }),
     ]);
   });
 
@@ -1022,7 +1022,7 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
-  it("does not mark siblings as unknown when the Bot list came from /bots", async () => {
+  it("does not treat a paused Bot on a running Agent as a stopped instance", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -1056,7 +1056,7 @@ describe("http repositories auth token bootstrap", () => {
               profile_id: "main",
               name: "主 Bot",
               is_default: true,
-              status: "ready",
+              status: "Paused",
               created_from: "blank",
               created_at: "2026-09-10T09:25:38Z",
               updated_at: "2026-09-10T09:25:38Z",
@@ -1075,7 +1075,7 @@ describe("http repositories auth token bootstrap", () => {
     const snapshot = await repositories.bots.getDashboardSnapshot("live");
 
     expect(snapshot.bots).toEqual([
-      expect.objectContaining({ id: "ins_running", siblingsUnknown: undefined }),
+      expect.objectContaining({ id: "ins_running", status: "paused", siblingsUnknown: undefined }),
     ]);
   });
 

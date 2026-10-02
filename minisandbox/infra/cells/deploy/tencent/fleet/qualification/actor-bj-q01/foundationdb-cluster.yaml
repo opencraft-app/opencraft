@@ -1,0 +1,128 @@
+# Qualification-only 3 -> 6 performance target. This is deliberately not a
+# RivetCellProfile and must never be advertised as three_data_hall production.
+apiVersion: apps.foundationdb.org/v1beta2
+kind: FoundationDBCluster
+metadata:
+  name: actor-bj-q01
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-q01
+    fleet.actor.dev/purpose: qualification
+spec:
+  version: 7.3.79
+  imageType: unified
+  mainContainer:
+    enableTls: true
+    imageConfigs:
+      - baseImage: foundationdb/fdb-kubernetes-monitor
+        tag: 7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+    peerVerificationRules: S.OU=actor-fdb
+  databaseConfiguration:
+    redundancy_mode: double
+    storage: 3
+    storage_engine: ssd-2
+  processCounts:
+    storage: 3
+    log: -1
+    stateless: -1
+    unset: -1
+  faultDomain:
+    key: kubernetes.io/hostname
+  automationOptions:
+    deletionMode: Zone
+    removalMode: Zone
+    podUpdateStrategy: ReplaceTransactionSystem
+    replacements:
+      enabled: true
+      maxConcurrentReplacements: 1
+    synchronizationMode: local
+  processes:
+    general:
+      customParameters:
+        - locality_data_hall=$NODE_LABEL_TOPOLOGY_KUBERNETES_IO_ZONE
+      podTemplate:
+        metadata:
+          annotations:
+            cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+        spec:
+          serviceAccountName: fdb-kubernetes
+          priorityClassName: actor-fdb-critical
+          nodeSelector:
+            fleet.actor.dev/cell-name: actor-bj-q01
+            fleet.actor.dev/fdb-dedicated: "true"
+          tolerations:
+            - key: fleet.actor.dev/fdb-dedicated
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      foundationdb.org/fdb-cluster-name: actor-bj-q01
+                  topologyKey: kubernetes.io/hostname
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  foundationdb.org/fdb-cluster-name: actor-bj-q01
+          securityContext:
+            runAsUser: 4059
+            runAsGroup: 4059
+            fsGroup: 4059
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: foundationdb
+              env:
+                - name: ENABLE_NODE_WATCH
+                  value: "true"
+                - name: FDB_TLS_CERTIFICATE_FILE
+                  value: /var/fdb-tls/cert.pem
+                - name: FDB_TLS_KEY_FILE
+                  value: /var/fdb-tls/key.pem
+                - name: FDB_TLS_CA_FILE
+                  value: /var/fdb-tls/ca.pem
+              resources:
+                requests: {cpu: "2", memory: 8Gi}
+                limits: {cpu: "2", memory: 8Gi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: fdb-tls
+                  mountPath: /var/fdb-tls
+                  readOnly: true
+          volumes:
+            - name: fdb-tls
+              secret:
+                secretName: actor-bj-q01-fdb-tls
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: actor-fdb-cbs-wffc-retain
+          resources:
+            requests:
+              storage: 200Gi
+  replaceInstancesWhenResourcesChange: false
+  routing:
+    defineDNSLocalityFields: true
+    headlessService: true
+    useDNSInClusterFile: true
+  useExplicitListenAddress: true
+  minimumUptimeSecondsForBounce: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actor-bj-q01-fdb
+  namespace: actor-fdb-cell-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      foundationdb.org/fdb-cluster-name: actor-bj-q01

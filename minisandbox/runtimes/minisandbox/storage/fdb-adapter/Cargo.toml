@@ -1,0 +1,54 @@
+[package]
+name = "minisandbox-fdb-adapter"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+rust-version = "1.96"
+description = "Depot FDB/COS adapter for minisandbox block metadata"
+
+[features]
+default = ["legacy-depot"]
+foundationdb = ["universaldb/foundationdb"]
+legacy-depot = [
+    "dep:depot-client",
+    "dep:minisandbox-block-engine",
+    "dep:minisandbox-block-backend",
+    "dep:rivet-envoy-client",
+    "dep:rusqlite",
+]
+
+[dependencies]
+anyhow = "=1.0.102"
+async-trait = "=0.1.89"
+aws-config = { version = "=1.8.5", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls"] }
+aws-sdk-s3 = { version = "=1.103.0", default-features = false, features = ["behavior-version-latest", "rt-tokio", "rustls"] }
+depot-client = { package = "rivet-depot-client", path = "../../../../engine/packages/depot-client", optional = true }
+foundationdb-tuple = { version = "=0.11.0", default-features = false }
+futures-util = "=0.3.31"
+hex = "=0.4.3"
+minisandbox-block-engine = { path = "../block-engine", optional = true }
+minisandbox-block-backend = { path = "../block-backend", optional = true }
+moka = { version = "=0.12.16", features = ["sync"] }
+parking_lot = "=0.12.5"
+rivet-envoy-client = { path = "../../../../engine/sdks/rust/envoy-client", default-features = false, features = ["native-transport"], optional = true }
+rivet-util-id = { path = "../../../../engine/packages/util-id" }
+rusqlite = { version = "=0.32.1", default-features = false, features = ["bundled", "hooks"], optional = true }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_bare = "=0.5.0"
+sha2 = "=0.11.0"
+thiserror = "=2.0.20"
+tokio = { version = "=1.50.0", features = ["io-util", "rt", "rt-multi-thread", "macros", "sync", "time"] }
+tracing = "=0.1.44"
+universaldb = { path = "../../../../engine/packages/universaldb" }
+vbare = "=0.0.4"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

@@ -1,0 +1,415 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: __CELL_NAME__-stateless-executor
+  namespace: actor-stateless-system
+  labels:
+    fleet.actor.dev/cell-name: __CELL_NAME__
+    fleet.actor.dev/component: stateless-executor
+automountServiceAccountToken: false
+imagePullSecrets:
+  - name: actor-fleet-tcr
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: __CELL_NAME__-stateless-executor
+  namespace: actor-stateless-system
+  labels:
+    fleet.actor.dev/cell-name: __CELL_NAME__
+    fleet.actor.dev/component: stateless-executor
+    app.kubernetes.io/name: actor-stateless-executor
+spec:
+  selector:
+    fleet.actor.dev/cell-name: __CELL_NAME__
+    fleet.actor.dev/component: stateless-executor
+  ports:
+    - name: http
+      port: 19084
+      targetPort: executor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: __CELL_NAME__-stateless-executor
+  namespace: actor-stateless-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: __CELL_NAME__
+      fleet.actor.dev/component: stateless-executor
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __CELL_NAME__-stateless-executor
+  namespace: actor-stateless-system
+  annotations:
+    fleet.actor.dev/stateless-machine-set: __STATELESS_MACHINE_SET__
+  labels:
+    fleet.actor.dev/cell-name: __CELL_NAME__
+    fleet.actor.dev/component: stateless-executor
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      fleet.actor.dev/cell-name: __CELL_NAME__
+      fleet.actor.dev/component: stateless-executor
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: __CELL_NAME__
+        fleet.actor.dev/component: stateless-executor
+      annotations:
+        fleet.actor.dev/runtime-digest: __RUNTIME_DIGEST__
+        fleet.actor.dev/stateless-profile: v1
+        fleet.actor.dev/stateless-machine-set: __STATELESS_MACHINE_SET__
+    spec:
+      serviceAccountName: __CELL_NAME__-stateless-executor
+      automountServiceAccountToken: false
+      # Public Worker fetches may stream for up to 510 seconds. A Deployment
+      # contraction must therefore outlive the longest admitted request rather
+      # than truncating it at the old one-minute Pod grace period.
+      terminationGracePeriodSeconds: 620
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: rivet.dev/stateless
+                    operator: In
+                    values: ["true"]
+                  - key: fleet.actor.dev/stateless-admitted
+                    operator: In
+                    values: ["true"]
+                  # Use labels present in TKE's simulated future-node
+                  # template. The generated np-* system label exists only on
+                  # real Nodes and would make CA believe scale-out cannot help.
+                  - key: fleet.actor.dev/stateless-pool
+                    operator: In
+                    values: ["true"]
+                  - key: fleet.actor.dev/cell-name
+                    operator: In
+                    values: ["__CELL_NAME__"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    fleet.actor.dev/cell-name: __CELL_NAME__
+                    fleet.actor.dev/component: stateless-executor
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              fleet.actor.dev/cell-name: __CELL_NAME__
+              fleet.actor.dev/component: stateless-executor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        fsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - key: rivet.dev/stateless
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      initContainers:
+        - name: prepare-workerd-config
+          image: __RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              workerd_token=$(< /var/run/stateless-auth/workerd-token)
+              object_router_token=$(< /var/run/stateless-auth/object-router-token)
+              [[ $workerd_token =~ ^[0-9a-f]{64}$ ]]
+              [[ $object_router_token =~ ^[0-9a-f]{64}$ ]]
+              [[ $workerd_token != "$object_router_token" ]]
+              sed -e "s/dev-only-change-me/$workerd_token/" \
+                  -e "s/object-router-token-change-me/$object_router_token/" \
+                  /opt/actor/share/config-stateless.capnp > /run/stateless/config-stateless.capnp
+              cp /opt/actor/share/stateless-worker.js /run/stateless/stateless-worker.js
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: stateless-auth
+              mountPath: /var/run/stateless-auth
+              readOnly: true
+            - name: run
+              mountPath: /run/stateless
+      containers:
+        - name: workerd
+          image: __RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              exec /opt/actor/bin/workerd serve /run/stateless/config-stateless.capnp \
+                --experimental \
+                --external-addr "object-router=$RIVET_OBJECT_ROUTER_ADDRESS"
+          env:
+            - name: RIVET_OBJECT_ROUTER_ADDRESS
+              value: __OBJECT_ROUTER_ADDRESS__
+          lifecycle:
+            # Container hooks run without an ordering guarantee. Keep workerd
+            # alive until the executor sibling has stopped proxying its admitted
+            # streams. Polling avoids charging the full grace period when an
+            # idle executor can terminate immediately.
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -ec
+                  - |
+                    deadline=$((SECONDS + 610))
+                    while ((SECONDS < deadline)); do
+                      if ! curl --fail --silent --show-error --max-time 2 \
+                        http://127.0.0.1:19084/healthz >/dev/null; then
+                        exit 0
+                      fi
+                      sleep 1
+                    done
+                    echo "stateless executor did not terminate inside the Pod grace period" >&2
+                    exit 1
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -ec
+                - exec 3<>/dev/tcp/127.0.0.1/18090
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: run
+              mountPath: /run/stateless
+            - name: tmp
+              mountPath: /tmp
+        - name: executor
+          image: __RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/opt/actor/bin/rivet-workerd-host, --mode=stateless]
+          env:
+            - name: RIVET_NAMESPACE
+              value: default
+            - name: RIVET_WORKER_REGISTRY_URL
+              value: __WORKER_REGISTRY_URL__
+            - name: RIVET_WORKERD_ENDPOINT
+              value: http://127.0.0.1:18090
+            - name: RIVET_STATELESS_LISTEN
+              value: 0.0.0.0:19084
+            - name: RIVET_STATELESS_EXECUTOR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: __CELL_NAME__-stateless-auth
+                  key: executor-token
+            - name: RIVET_WORKERD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: __CELL_NAME__-stateless-auth
+                  key: workerd-token
+            - name: RIVET_WORKERD_MAX_IN_FLIGHT
+              value: "64"
+            - name: RIVET_WORKERD_MAX_QUEUED
+              value: "256"
+            - name: RIVET_WORKERD_QUEUE_TIMEOUT_MS
+              value: "15000"
+            - name: RIVET_WORKER_CODE_CACHE_DIR
+              value: /var/cache/rivet-stateless-code
+            - name: RUST_LOG
+              value: info
+          ports:
+            - name: executor
+              containerPort: 19084
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/bash
+                  - -ec
+                  - |
+                    # Pod deletion removes the endpoint before this hook runs,
+                    # but the regional private load balancer converges
+                    # asynchronously. Keep accepting on stale backend
+                    # connections during that propagation window; otherwise a
+                    # single draining keep-alive can emit a burst of safe but
+                    # user-visible 503 responses.
+                    sleep 30
+                    curl --fail --silent --show-error --max-time 50 \
+                      -X POST \
+                      -H "x-rivet-stateless-executor-token: $RIVET_STATELESS_EXECUTOR_TOKEN" \
+                      http://127.0.0.1:19084/internal/v1/drain >/dev/null
+                    # The in-process drain endpoint waits for 45 seconds. If a
+                    # longer stream is still active, keep both containers alive
+                    # and observe the authoritative permit counters until they
+                    # reach zero. Never replay an indeterminate user request.
+                    deadline=$((SECONDS + 520))
+                    while ((SECONDS < deadline)); do
+                      metrics=$(curl --fail --silent --show-error --max-time 2 \
+                        http://127.0.0.1:19084/metrics) || {
+                          sleep 1
+                          continue
+                        }
+                      in_flight=$(awk '$1 == "rivet_stateless_in_flight" { print $2 }' <<<"$metrics")
+                      queued=$(awk '$1 == "rivet_stateless_queued" { print $2 }' <<<"$metrics")
+                      if [[ $in_flight == 0 && $queued == 0 ]]; then
+                        exit 0
+                      fi
+                      sleep 1
+                    done
+                    echo "stateless executor remained busy at the drain deadline" >&2
+                    exit 1
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: executor
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: executor
+            periodSeconds: 1
+            timeoutSeconds: 2
+            failureThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: executor
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: stateless-code-cache
+              mountPath: /var/cache/rivet-stateless-code
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: stateless-auth
+          secret:
+            secretName: __CELL_NAME__-stateless-auth
+            defaultMode: 288
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: stateless-code-cache
+          emptyDir:
+            sizeLimit: 512Mi
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: __CELL_NAME__-stateless-executor
+  namespace: actor-stateless-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: __CELL_NAME__-stateless-executor
+  minReplicas: 3
+  maxReplicas: 30
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 6
+          periodSeconds: 30
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+  metrics:
+    - type: External
+      external:
+        metric:
+          name: rivet_stateless_in_flight_total
+          selector:
+            matchLabels:
+              cell: __CELL_NAME__
+        target:
+          type: AverageValue
+          averageValue: "24"
+    - type: External
+      external:
+        metric:
+          name: rivet_stateless_peak_in_flight
+          selector:
+            matchLabels:
+              cell: __CELL_NAME__
+        target:
+          type: AverageValue
+          averageValue: "24"
+    - type: External
+      external:
+        metric:
+          name: rivet_stateless_queued_total
+          selector:
+            matchLabels:
+              cell: __CELL_NAME__
+        target:
+          type: AverageValue
+          averageValue: "1"
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75

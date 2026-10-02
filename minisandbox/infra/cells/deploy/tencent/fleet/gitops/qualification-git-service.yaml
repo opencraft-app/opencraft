@@ -1,0 +1,192 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: actor-git-system
+  labels:
+    app.kubernetes.io/part-of: actor-release-plane
+    actor.rivet.dev/owner: platform-bootstrap
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: actor-git-cbs-wffc-retain
+  labels:
+    app.kubernetes.io/part-of: actor-release-plane
+provisioner: com.tencent.cloud.csi.cbs
+parameters:
+  diskType: CLOUD_BSSD
+  diskChargeType: POSTPAID_BY_HOUR
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: actor-git-data
+  namespace: actor-git-system
+  labels:
+    app.kubernetes.io/name: actor-qualification-git
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: actor-git-cbs-wffc-retain
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actor-git
+  namespace: actor-git-system
+  labels:
+    app.kubernetes.io/name: actor-qualification-git
+spec:
+  selector:
+    app.kubernetes.io/name: actor-qualification-git
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+    - name: ssh
+      port: 2222
+      targetPort: ssh
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: actor-git
+  namespace: actor-git-system
+  labels:
+    app.kubernetes.io/name: actor-qualification-git
+spec:
+  serviceName: actor-git
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actor-qualification-git
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: actor-qualification-git
+        actor.rivet.dev/owner: platform-bootstrap
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gitea
+          image: lightclaw-bj82.tencentcloudcr.com/actor-fleet/git-service@sha256:f4b8d351d4b8cf29a2ce2b0dd792eec98b2dde026f3dae354e34256a01999b68
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+            - name: ssh
+              containerPort: 2222
+          env:
+            - name: GITEA__database__DB_TYPE
+              value: sqlite3
+            - name: GITEA__database__PATH
+              value: /var/lib/gitea/data/gitea/gitea.db
+            - name: GITEA__server__ROOT_URL
+              value: http://actor-git.actor-git-system.svc.cluster.local:3000/
+            - name: GITEA__server__DOMAIN
+              value: actor-git.actor-git-system.svc.cluster.local
+            - name: GITEA__server__HTTP_PORT
+              value: "3000"
+            - name: GITEA__server__SSH_DOMAIN
+              value: actor-git.actor-git-system.svc.cluster.local
+            - name: GITEA__server__SSH_PORT
+              value: "2222"
+            - name: GITEA__server__START_SSH_SERVER
+              value: "true"
+            - name: GITEA__security__INSTALL_LOCK
+              value: "true"
+            - name: GITEA__service__DISABLE_REGISTRATION
+              value: "true"
+            - name: GITEA__repository__DEFAULT_PRIVATE
+              value: private
+            - name: GITEA__repository__ENABLE_PUSH_CREATE_USER
+              value: "false"
+            - name: GITEA__repository__ENABLE_PUSH_CREATE_ORG
+              value: "false"
+            - name: GITEA__actions__ENABLED
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+            - name: config
+              mountPath: /etc/gitea
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: actor-git-data
+        - name: config
+          emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: actor-git
+  namespace: actor-git-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actor-qualification-git
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: actor-git-ingress
+  namespace: actor-git-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: actor-qualification-git
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: actor-git-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - protocol: TCP
+          port: 3000

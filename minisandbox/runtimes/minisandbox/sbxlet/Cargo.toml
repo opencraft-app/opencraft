@@ -1,0 +1,35 @@
+[package]
+name = "rivet-sbxlet"
+version = "0.1.0"
+authors = ["Rivet Gaming, LLC <developer@rivet.dev>"]
+license = "Apache-2.0"
+homepage = "https://rivet.dev"
+repository = "https://github.com/rivet-dev/rivet"
+edition = "2024"
+rust-version = "1.96"
+description = "PVM minisandbox execution host for Rivet Actors"
+
+[workspace]
+members = ["."]
+resolver = "3"
+
+[[bin]]
+name = "sbxlet"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+futures-util = "0.3"
+minisandbox-core = { path = "../core/crates/minisandbox-core" }
+minisandbox-fdb-adapter = { path = "../storage/fdb-adapter", default-features = false, features = ["foundationdb"] }
+minisandbox-pvm-sys = { path = "../core/crates/minisandbox-pvm-sys" }
+pvm-socket-service = { path = "../core/socket-service" }
+rivet-envoy-client = { path = "../../../engine/sdks/rust/envoy-client", features = ["native-transport"] }
+rivet-minisandbox-host = { path = "../host" }
+serde_json = "1"
+tokio = { version = "1", features = ["full", "tracing"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -13,6 +13,16 @@ snapshot-oriented compatibility projection for Codex V3 Resume. Web and Native
 surfaces share identity, projection, runtime commands, Composer documents and
 design tokens. They do not share a renderer or editor implementation.
 
+For a LightVela Hermes Host, the Web Composer offers `/new`, `/compress`,
+`/status`, `/usage`, `/stop` and `/help` in its input footer and slash suggestions.
+Choosing a shortcut inserts editable text into the current Draft; only explicit
+submission executes it. Ordinary shortcuts use Hermes `prompt.submit`. A standalone
+`/stop` uses the Hermes Host `hermes/stop` request instead: it interrupts the active
+Turn through `session.interrupt` when one exists, then calls `process.stop` to kill
+running background processes. An idle or new chat still calls `process.stop`.
+The Composer Stop button continues to use `turn/interrupt` only. Other Hosts
+retain their own suggestions and have no Hermes shortcut menu.
+
 ```text
 WebSocket / Replay Transport
           |
@@ -526,4 +536,4 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 Embedded file previews retain the mutation-level read-only guard alongside snapshot-based saves in the standalone workspace editor. Markdown preview/source switching and lazy syntax editors share the same resource lifecycle. The read-only regression renders the real panel and invokes its captured Query mutation, asserting zero filesystem writes and cache invalidations.
 
 Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
-Completed standalone Hermes `MEDIA:<path>` text for an explicit Markdown file uses that same click and Host permission flow. Non-Markdown media, embedded prose, malformed paths, streaming text and text inside an explicit link remain inert; the Renderer never treats `MEDIA:` as a browser URL or reads the file before clicking.
+Completed standalone Hermes `MEDIA:<path>` text or inline code for an explicit Markdown file uses that same click and Host permission flow. Non-Markdown media, embedded prose, malformed paths, streaming content and code inside an explicit link remain inert; the Renderer never treats `MEDIA:` as a browser URL or reads the file before clicking.

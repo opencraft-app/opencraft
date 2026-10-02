@@ -1,0 +1,9 @@
+version = 1
+upstream_url = "https://github.com/foundationdb-rs/foundationdb-rs.git"
+upstream_release = "foundationdb-sys-v0.9.1"
+upstream_commit = "4ad7c95184c3daa9429d87984e5fd4e89b0dd311"
+fork_branch = "codex/static-client-linking"
+fork_commit = "980ba0765084c5b4d06576f731ab555d7055858e"
+foundationdb_sys_tree = "2dfac75505e476d74c9e01cc28d21ba72ed8e7d8"
+build_rs_sha256 = "87218d474e98ecf6c824d888995633ae793357137d303528dde1454df9ed55a9"
+build_link_rs_sha256 = "15252b3ccd96016d458887a267bc565497eb8f1af2b4bef22d3dcc16ceb1b0c0"

@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: actor-fleet-system
+  labels:
+    app.kubernetes.io/part-of: actor-fleet
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCellProfile
+metadata:
+  name: rivet-fdb-cos-beijing-v1
+spec:
+  driverABI: rivet-fdb-cos-v1
+  region: ap-beijing
+  availabilityMode: production-multi-zone
+  zones: [ap-beijing-6, ap-beijing-7, ap-beijing-8]
+  foundationDB:
+    version: 7.3.79
+    processCount: 6
+    processesPerZone: 2
+    coordinatorCount: 5
+    redundancyMode: three_data_hall
+    localityKey: data_hall
+    storageEngine: ssd-2
+    exclusiveCluster: true
+    supervisor: systemd-fdbmonitor
+    dataDisk:
+      type: CLOUD_BSSD
+      sizeGiB: 200
+      encrypted: false
+      retain: true
+  runtime:
+    deploymentMode: native-systemd
+    minEngineHosts: 1
+    minWorkerdHosts: 3
+    localStateDisposable: true
+  cos:
+    coldBucketPrefix: actor-depot-cold-prod-bj-
+    backupBucketPrefix: actor-fdb-backup-prod-bj-
+    multiAZ: false
+    versioning: NeverEnabled
+    objectKeyLayout: depot-cold-v2
+    exactKeyRecovery: true
+    listIndependent: true
+    inCommitPath: false
+  capacity:
+    healthyWriteUtilizationLimitPercent: 50
+    degradedWriteUtilizationLimitPercent: 70
+    scaleOutAtPercent: 80
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardClass
+metadata:
+  name: rivet-fdb-cos-v1
+spec:
+  controllerName: fleet.actor.dev/rivet-fdb-cos
+  driverABI: rivet-fdb-cos-v1
+  profileRef:
+    name: rivet-fdb-cos-beijing-v1
+    digest: sha256:523b9c2510a6401b7123b4176a12cf631ee5e929436a8f34e6ef16947637d6fa
+  mobilityPolicy: DriverControlled
+  retirementPolicy: ProofRequired
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardPool
+metadata:
+  name: actor-beijing
+  namespace: actor-fleet-system
+spec:
+  className: rivet-fdb-cos-v1
+  minCells: 2
+  maxCells: 20
+  maxConcurrentCellProvisioning: 1
+  placement:
+    region: ap-beijing
+    managementClusters: [cls-0zvm1btp]
+  routing:
+    strategy: route-hinted-v1
+    exactExceptionDirectory: versioned-exact-v1
+    perActorKubernetesObjects: false
+  reservation:
+    mode: CAS
+    maxPendingPerCell: 1024
+    ttlSeconds: 30
+  rebalance:
+    onScaleOut: NewActorsOnly
+    migrationBatchSize: 128
+---
+# Cell A is live but admission remains closed until it has a sixth FDB process,
+# three_data_hall redundancy, a separately retained data disk, and an AZ-loss pass.
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCell
+metadata:
+  name: actor-bj-a01
+  namespace: actor-fleet-system
+  labels:
+    fleet.actor.dev/pool: actor-beijing
+spec:
+  cellId: actor-bj-a01
+  className: rivet-fdb-cos-v1
+  region: ap-beijing
+  managementCluster: cls-0zvm1btp
+  desiredState: Qualifying
+  foundationDB:
+    exclusive: true
+    nodeRefs:
+      - instanceId: ins-4f65ze5h
+        zone: ap-beijing-6
+        privateIp: 10.128.6.16
+      - instanceId: ins-6h5nhi7d
+        zone: ap-beijing-6
+        privateIp: 10.128.6.5
+      - instanceId: ins-pnhpdryj
+        zone: ap-beijing-7
+        privateIp: 10.128.7.10
+      - instanceId: ins-l9tpv6uj
+        zone: ap-beijing-7
+        privateIp: 10.128.7.9
+      - instanceId: ins-pp8fpkjv
+        zone: ap-beijing-8
+        privateIp: 10.128.8.11
+  cos:
+    coldBucket: actor-depot-cold-prod-bj-a01-1388575217
+    backupBucket: actor-fdb-backup-prod-bj-a01-1388575217
+  retirement:
+    generation: 1
+    proofRequired: true
+    rollbackRetentionSeconds: 604800
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCell
+metadata:
+  name: actor-bj-b01
+  namespace: actor-fleet-system
+  labels:
+    fleet.actor.dev/pool: actor-beijing
+spec:
+  cellId: actor-bj-b01
+  className: rivet-fdb-cos-v1
+  region: ap-beijing
+  managementCluster: cls-0zvm1btp
+  desiredState: Qualifying
+  foundationDB:
+    exclusive: true
+    clusterIdentityHash: sha256:cf215b2bb57715292c60f2df84ecac464a8bb271c558896e31dcec3c082a3776
+    nodeRefs:
+      - instanceId: ins-42ch5d9p
+        zone: ap-beijing-6
+        privateIp: 10.128.6.12
+      - instanceId: ins-d5uvhap7
+        zone: ap-beijing-6
+        privateIp: 10.128.6.17
+      - instanceId: ins-j2ya7ff3
+        zone: ap-beijing-7
+        privateIp: 10.128.7.6
+      - instanceId: ins-jaj78h49
+        zone: ap-beijing-7
+        privateIp: 10.128.7.15
+      - instanceId: ins-3mixtfnp
+        zone: ap-beijing-8
+        privateIp: 10.128.8.5
+      - instanceId: ins-nhl2y78p
+        zone: ap-beijing-8
+        privateIp: 10.128.8.4
+  cos:
+    coldBucket: actor-depot-cold-prod-bj-b01-nv1-1388575217
+    backupBucket: actor-fdb-backup-prod-bj-b01-nv1-1388575217
+  retirement:
+    generation: 1
+    proofRequired: true
+    rollbackRetentionSeconds: 604800

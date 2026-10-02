@@ -1,0 +1,56 @@
+[package]
+name = "rivet-depot-client"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+workspace = "../../../"
+description = "Depot-backed native SQLite VFS client"
+
+[lib]
+name = "depot_client"
+crate-type = ["lib"]
+
+[features]
+default = ["bundled-sqlite"]
+# libsqlite3-sys 0.30 compiles its linked-SQLite probe module even when the
+# bundled implementation is selected. Keep its default feature enabled so the
+# probe's pkg-config/vcpkg build dependencies are available in standalone
+# builds, not only through workspace feature unification.
+bundled-sqlite = ["libsqlite3-sys/bundled", "libsqlite3-sys/default"]
+# Use SQLite symbols supplied by the embedding executable. This is required by
+# workerd so the process-global VFS registry is the same registry its C++
+# SqliteDatabase uses.
+external-sqlite = [
+	"libsqlite3-sys/in_gecko",
+	"libsqlite3-sys/min_sqlite_version_3_14_0",
+]
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+crossbeam-channel = "0.5"
+libsqlite3-sys = { version = "0.30", default-features = false }
+tokio.workspace = true
+tracing.workspace = true
+getrandom = "0.2"
+rivet-envoy-protocol.workspace = true
+depot-client-types.workspace = true
+moka = { version = "0.12", default-features = false, features = ["sync"] }
+parking_lot.workspace = true
+scc.workspace = true
+
+[dev-dependencies]
+depot = { workspace = true, features = ["test-faults"] }
+futures-util.workspace = true
+gas.workspace = true
+rivet-config.workspace = true
+rivet-error.workspace = true
+rivet-pools.workspace = true
+rivet-test-deps.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+universaldb.workspace = true
+universalpubsub.workspace = true

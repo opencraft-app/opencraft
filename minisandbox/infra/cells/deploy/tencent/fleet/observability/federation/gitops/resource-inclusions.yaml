@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  resource.inclusions: |
+    - apiGroups: [""]
+      kinds: [Namespace, ServiceAccount, ConfigMap, Service]
+      clusters: ["https://kubernetes.default.svc", "__MANAGEMENT_CLUSTER_URL__"]
+    - apiGroups: [apps]
+      kinds: [Deployment, StatefulSet]
+      clusters: ["https://kubernetes.default.svc", "__MANAGEMENT_CLUSTER_URL__"]
+    - apiGroups: [admissionregistration.k8s.io]
+      kinds: [MutatingWebhookConfiguration, ValidatingWebhookConfiguration]
+      clusters: ["https://kubernetes.default.svc", "__MANAGEMENT_CLUSTER_URL__"]
+    - apiGroups: [apiregistration.k8s.io]
+      kinds: [APIService]
+      clusters: ["https://kubernetes.default.svc", "__MANAGEMENT_CLUSTER_URL__"]
+    - apiGroups: [monitoring.coreos.com]
+      kinds: [Prometheus, PrometheusRule, ServiceMonitor]
+      clusters: ["https://kubernetes.default.svc", "__MANAGEMENT_CLUSTER_URL__"]
+    - apiGroups: [rbac.authorization.k8s.io]
+      kinds: [ClusterRole, ClusterRoleBinding, RoleBinding]
+      clusters: ["https://kubernetes.default.svc", "__MANAGEMENT_CLUSTER_URL__"]
+    - apiGroups: [storage.k8s.io]
+      kinds: [StorageClass]
+      clusters: ["https://kubernetes.default.svc", "__MANAGEMENT_CLUSTER_URL__"]

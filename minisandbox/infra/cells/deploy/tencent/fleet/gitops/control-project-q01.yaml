@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: actor-cell-control
+  namespace: argocd
+spec:
+  description: Static Fleet control plane; runtime releases and dynamic capacity have separate owners.
+  sourceRepos:
+    - http://actor-git.actor-git-system.svc.cluster.local:3000/release-publisher/fleet-desired.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: fdb-operator-actor-fleet-controller-system
+    - server: https://kubernetes.default.svc
+      namespace: actor-fdb-cell-system
+  clusterResourceWhitelist:
+    - {group: fleet.actor.dev, kind: RivetCellProfile}
+    - {group: fleet.actor.dev, kind: ShardClass}
+  namespaceResourceWhitelist:
+    - {group: "", kind: Service}
+    - {group: apps, kind: Deployment}
+    - {group: fleet.actor.dev, kind: RivetCell}
+  orphanedResources:
+    # This child Application intentionally coexists with bootstrap, runtime-release,
+    # and capacity-controller owners in the same namespaces.  Orphans are therefore
+    # not evidence that the control Application should adopt or prune them.
+    warn: false

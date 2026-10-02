@@ -1,0 +1,192 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-mesh-cold-tier-dashboard
+  namespace: mesh-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: actor-fleet
+data:
+  actor-mesh-cold-tier.json: |
+    {
+      "annotations": {"list": []},
+      "description": "冷层运营视图：观察自然沉降、对象填充率、请求成本、恢复延迟、排队公平性和冷热抖动。所有跨集群数据均为 Cell 级有界聚合，不携带 Actor、数据库或对象标识。",
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [
+        {"title": "舰队总览", "type": "link", "url": "/d/actor-mesh-cell-fleet", "includeVars": true, "keepTime": true},
+        {"title": "存储与扩容", "type": "link", "url": "/d/actor-mesh-storage", "includeVars": true, "keepTime": true}
+      ],
+      "panels": [
+        {
+          "type": "stat", "title": "当前冷降积压", "id": 1,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "sum(actor_fleet:cell_compaction_backlog_bytes{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat", "title": "平均冷对象大小", "id": 2,
+          "description": "当前对象通常对应一个约 256 KiB shard；4 MiB 只是安全上限，不是对象目标粒度。",
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "avg(actor_fleet:cell_cold_object_average_bytes{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat", "title": "冷读九十九分位延迟", "id": 3,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "max(actor_fleet:cell_cold_read_p99_seconds{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat", "title": "写债务背压次数率", "id": 4,
+          "description": "这是 FDB 热层压力的可靠边界信号；当前没有把不准确的热字节估算冒充为精确容量。",
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "targets": [{"expr": "sum(actor_fleet:cell_write_debt_backpressure_per_second{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "timeseries", "title": "自然冷降吞吐", "id": 5,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5},
+          "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_compaction_bytes_per_second{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"cold_upload\"}", "legendFormat": "上传 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "actor_fleet:cell_compaction_bytes_per_second{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"cold_publish\"}", "legendFormat": "发布 {{cluster}} / {{cell}}", "refId": "B"},
+            {"expr": "actor_fleet:cell_compaction_bytes_per_second{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"reclaim_fdb\"}", "legendFormat": "回收 {{cluster}} / {{cell}}", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "冷层请求排队与执行", "id": 6,
+          "description": "按操作观察有界并发。排队持续增长而执行数封顶时，说明冷层吞吐不足；该图也是大对象是否饿死小对象的第一现场。",
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5},
+          "targets": [
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_cold_requests_in_flight{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "执行中 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_cold_requests_queued{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "排队中 {{cluster}} / {{cell}}", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "冷层队列等待九十九分位", "id": 7,
+          "gridPos": {"h": 9, "w": 8, "x": 0, "y": 14},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_queue_wait_p99_seconds{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"put\"}", "legendFormat": "写对象 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "actor_fleet:cell_cold_queue_wait_p99_seconds{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"get\"}", "legendFormat": "读对象 {{cluster}} / {{cell}}", "refId": "B"},
+            {"expr": "actor_fleet:cell_cold_queue_wait_p99_seconds{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"head\"}", "legendFormat": "查对象 {{cluster}} / {{cell}}", "refId": "C"},
+            {"expr": "actor_fleet:cell_cold_queue_wait_p99_seconds{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"delete\"}", "legendFormat": "删对象 {{cluster}} / {{cell}}", "refId": "D"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "每吉比上传的请求窗口比率", "id": 8,
+          "description": "PUT 是同窗口上传成本；GET 还包含独立冷唤醒，只能作为窗口相关的读放大信号，不能冒充逐次写入的精确归因。无上传流量时不应解读瞬时尖峰。",
+          "gridPos": {"h": 9, "w": 8, "x": 8, "y": 14},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_requests_per_gib_uploaded{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"put\"}", "legendFormat": "写对象 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "actor_fleet:cell_cold_requests_per_gib_uploaded{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"get\"}", "legendFormat": "读对象 {{cluster}} / {{cell}}", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "冷层失败与重试压力", "id": 9,
+          "description": "429、503 等最终会归入 retryable 或 failed；应和排队等待及执行并发一起判断退避是否健康。",
+          "gridPos": {"h": 9, "w": 8, "x": 16, "y": 14},
+          "targets": [
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_compaction_failures_per_second{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"cold_upload\"})", "legendFormat": "上传 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_compaction_failures_per_second{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"cold_publish\"})", "legendFormat": "发布 {{cluster}} / {{cell}}", "refId": "B"},
+            {"expr": "sum by (cluster, cell) (actor_fleet:cell_compaction_failures_per_second{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"reclaim_fdb\"})", "legendFormat": "回收 {{cluster}} / {{cell}}", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "缓存命中路径", "id": 10,
+          "description": "冷命中或回填持续升高，通常表示冷 Actor 被频繁唤醒；与 reclaim 吞吐同向增长时要警惕冷热抖动。",
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 23},
+          "targets": [
+            {"expr": "actor_fleet:cell_shard_cache_reads_per_second{cluster=~\"$cluster\",cell=~\"$cell\",outcome=\"fdb_hit\"}", "legendFormat": "热层命中 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "actor_fleet:cell_shard_cache_reads_per_second{cluster=~\"$cluster\",cell=~\"$cell\",outcome=\"cold_hit\"}", "legendFormat": "冷层命中 {{cluster}} / {{cell}}", "refId": "B"},
+            {"expr": "actor_fleet:cell_shard_cache_reads_per_second{cluster=~\"$cluster\",cell=~\"$cell\",outcome=\"miss\"}", "legendFormat": "未命中 {{cluster}} / {{cell}}", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "冷数据回填与回收对照", "id": 11,
+          "description": "回填率与 FDB 回收率长期同时偏高，说明 retention 可能过短或工作负载存在冷热振荡。",
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 23},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_refills_per_second{cluster=~\"$cluster\",cell=~\"$cell\",outcome=\"refilled\"}", "legendFormat": "已回填 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "actor_fleet:cell_cold_refills_per_second{cluster=~\"$cluster\",cell=~\"$cell\",outcome=\"hot_hit\"}", "legendFormat": "热层已有 {{cluster}} / {{cell}}", "refId": "B"},
+            {"expr": "actor_fleet:cell_compaction_objects_per_second{cluster=~\"$cluster\",cell=~\"$cell\",operation=\"reclaim_fdb\"}", "legendFormat": "已回收 {{cluster}} / {{cell}}", "refId": "C"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "冷对象物理账本", "id": 12,
+          "description": "来自 FDB 持久账本。live、retired、delete_issued 是互斥生命周期；orphan 是未发布对象子集，不应与前三者求和。",
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 32},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_storage_accounting_bytes{cluster=~\"$cluster\",cell=~\"$cell\",class=~\"live|retired|delete_issued|orphan\"}", "legendFormat": "{{class}} {{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "删除结果与 FDB 逻辑水位", "id": 13,
+          "description": "deleted_total 是累计完成的 exact-key 删除。当前 fdb_authoritative 已接写债务账本；fdb_cache/fdb_metadata 预留为零，接入精确分类前不能解读。它们都不等于 FoundationDB 物理磁盘账单。",
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 32},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_storage_accounting_bytes{cluster=~\"$cluster\",cell=~\"$cell\",class=~\"deleted_total|fdb_authoritative|fdb_cache|fdb_metadata\"}", "legendFormat": "{{class}} {{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "GC 积压与删除状态", "id": 14,
+          "description": "retired 与 delete_issued 是待处理物理数据。enabled=1 且 dry_run=0 才允许 irreversible DELETE。",
+          "gridPos": {"h": 9, "w": 8, "x": 0, "y": 41},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_storage_accounting_bytes{cluster=~\"$cluster\",cell=~\"$cell\",class=~\"retired|delete_issued\"}", "legendFormat": "{{class}} {{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "删除吞吐、失败与重试", "id": 15,
+          "description": "retryable 表示有界指数退避中的重试；failed 表示本轮已耗尽 retry budget，FDB 状态仍停在 DeleteIssued 等待后续重放。",
+          "gridPos": {"h": 9, "w": 8, "x": 8, "y": 41},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_delete_attempts_per_second{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{result}} {{cluster}} / {{cell}}", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries", "title": "FDB 账本与 Bucket 清单差异", "id": 16,
+          "description": "只有 inventory audit complete=1 时才可作为删除运营门禁。字节和对象差异都应最终回到 0。",
+          "gridPos": {"h": 9, "w": 8, "x": 16, "y": 41},
+          "targets": [
+            {"expr": "actor_fleet:cell_cold_inventory_bytes_difference{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "字节差 {{cluster}} / {{cell}}", "refId": "A"},
+            {"expr": "actor_fleet:cell_cold_inventory_objects_difference{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "对象差 {{cluster}} / {{cell}}", "refId": "B"}
+          ]
+        },
+        {
+          "type": "stat", "title": "清单异常对象", "id": 17,
+          "description": "unknown、deleted_but_present、size_mismatch 任一非零都阻止正式开启删除。",
+          "gridPos": {"h": 5, "w": 12, "x": 0, "y": 50},
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "targets": [
+            {"expr": "sum(actor_fleet:cell_cold_inventory_problem_objects{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}
+          ]
+        },
+        {
+          "type": "stat", "title": "完整清单审计新鲜度", "id": 18,
+          "description": "距最近一次完整 bucket inventory 审计的秒数；单个 Engine 租约持有者每 6 小时扫描，超过 8 小时触发告警。",
+          "gridPos": {"h": 5, "w": 12, "x": 12, "y": 50},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [
+            {"expr": "max(time() - actor_fleet:cell_cold_inventory_last_success_seconds{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 41,
+      "tags": ["actor-fleet", "cold-tier", "cos", "cost"],
+      "templating": {"list": [
+        {"name": "cluster", "label": "TKE 集群", "type": "query", "query": "label_values(actor_fleet:cell_inventory, cluster)", "includeAll": true, "allValue": ".*", "refresh": 1},
+        {"name": "cell", "label": "Cell 单元", "type": "query", "query": "label_values(actor_fleet:cell_inventory{cluster=~\"$cluster\"}, cell)", "includeAll": true, "allValue": ".*", "refresh": 1}
+      ]},
+      "time": {"from": "now-6h", "to": "now"},
+      "timezone": "browser",
+      "title": "Actor Mesh / 冷层运营",
+      "uid": "actor-mesh-cold-tier",
+      "version": 1
+    }

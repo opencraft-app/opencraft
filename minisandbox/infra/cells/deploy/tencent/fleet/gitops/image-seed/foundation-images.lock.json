@@ -1,0 +1,36 @@
+{
+  "images": [
+    {
+      "buildArg": "SOURCE_IMAGE",
+      "dockerfile": "infra/cells/deploy/tencent/fleet/gitops/image-seed/foundations/Dockerfile.base-distroless",
+      "repository": "base-distroless",
+      "source": "gcr.io/distroless/cc-debian12@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f"
+    },
+    {
+      "buildArg": "SOURCE_IMAGE",
+      "dockerfile": "infra/cells/deploy/tencent/fleet/gitops/image-seed/foundations/Dockerfile.base-golang",
+      "repository": "base-golang",
+      "source": "golang@sha256:e17419604b6d1f9bc245694425f0ec9b1b53685c80850900a376fb10cb0f70cb"
+    },
+    {
+      "buildArg": "SOURCE_IMAGE",
+      "dockerfile": "infra/cells/deploy/tencent/fleet/gitops/Dockerfile.release-hook-base",
+      "repository": "base-tencentcloud-cli",
+      "source": "tencentcom/tencentcloud-cli@sha256:6d13c0559c17a61cf43769b58430c3b914e48d246e298fa85e19095cb20a36c6"
+    },
+    {
+      "buildArg": "SOURCE_IMAGE",
+      "dockerfile": "infra/cells/deploy/tencent/fleet/gitops/image-seed/foundations/Dockerfile.git-service",
+      "repository": "git-service",
+      "source": "docker.gitea.com/gitea@sha256:1c17ecaead42eb3b5391553d8708103a4beb0e86edf5b9ebc1eb269c318845f2"
+    },
+    {
+      "buildArg": "ROCKY_IMAGE",
+      "dockerfile": "infra/cells/deploy/tencent/fleet/runtime/Dockerfile.base",
+      "repository": "runtime-base",
+      "source": "rockylinux@sha256:c584db6d77f40a71ab2364b55be18c154b8e92ba48189e2d82ba0aef64ffee32"
+    }
+  ],
+  "platform": "linux/amd64",
+  "schemaVersion": 1
+}

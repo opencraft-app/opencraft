@@ -1,0 +1,90 @@
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCellProfile
+metadata:
+  name: rivet-fdb-operator-cbs-chengdu-qual-v1
+spec:
+  driverABI: rivet-fdb-cos-kubernetes-v1
+  region: ap-chengdu
+  availabilityMode: qualification-single-zone
+  topology:
+    zoneLabelKey: topology.kubernetes.io/zone
+    zoneCount: 1
+    maxSkew: 1
+    whenUnsatisfiable: DoNotSchedule
+  foundationDB:
+    version: 7.3.79
+    processCount: 3
+    coordinatorCount: 3
+    redundancyMode: double
+    localityKey: data_hall
+    storageEngine: ssd-2
+    exclusiveCluster: true
+    supervisor: foundationdb-kubernetes-operator
+    kubernetes:
+      operatorVersion: v2.34.0
+      imageType: unified
+      imageRepository: foundationdb/fdb-kubernetes-monitor
+      imageTagDigest: 7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+      storageClassName: actor-fdb-cbs-wffc-retain
+      fdbServiceAccountName: fdb-kubernetes
+      placementMode: DedicatedNodes
+      priorityClassName: actor-fdb-critical
+      faultDomainKey: kubernetes.io/hostname
+      nodeSelector:
+        fleet.actor.dev/fdb-dedicated: "true"
+      nodeCapacity:
+        provider: TKENativeMachineSet
+        machineSetName: np-fdbpool0
+        processesPerNode: 1
+      resources:
+        cpuRequest: "2"
+        memoryRequest: 8Gi
+        cpuLimit: "2"
+        memoryLimit: 8Gi
+      tls:
+        mode: Required
+        secretNameTemplate: "{clusterName}-fdb-tls"
+        peerVerificationRules: S.OU=actor-fdb
+    dataDisk:
+      type: CLOUD_BSSD
+      sizeGiB: 200
+      encrypted: false
+      retain: true
+  runtime:
+    deploymentMode: kubernetes
+    minEngineHosts: 1
+    minWorkerdHosts: 1
+    localStateDisposable: true
+  gasolineRetention:
+    historyGraceSeconds: 900
+    terminalGraceSeconds: 604800
+    pruneIntervalSeconds: 60
+    fdbLogicalSoftBytes: 42949672960
+    fdbLogicalHardBytes: 64424509440
+  cos:
+    coldBucketPrefix: actor-depot-cold-qual-cd-
+    backupBucketPrefix: actor-fdb-backup-qual-cd-
+    multiAZ: false
+    versioning: NeverEnabled
+    objectKeyLayout: depot-cold-v2
+    exactKeyRecovery: true
+    listIndependent: true
+    inCommitPath: false
+  capacity:
+    healthyWriteUtilizationLimitPercent: 50
+    degradedWriteUtilizationLimitPercent: 70
+    scaleOutAtPercent: 80
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardClass
+metadata:
+  name: rivet-fdb-cos-kubernetes-cd-qual-v1
+spec:
+  controllerName: fleet.actor.dev/rivet-fdb-cos
+  driverABI: rivet-fdb-cos-kubernetes-v1
+  profileRef:
+    name: rivet-fdb-operator-cbs-chengdu-qual-v1
+    # The renderer replaces this after binding the regional private image.
+    digest: sha256:a7f55554482a92eebfffcdeb2a44804aab1853619a4e1634e7be28558e25fb41
+  mobilityPolicy: DriverControlled
+  retirementPolicy: ProofRequired

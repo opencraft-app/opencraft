@@ -442,6 +442,16 @@ export function activeThreadStorageKey(hostId: string): string {
   return currentProductStorageKey(`vela.active-thread-id:${hostId}`);
 }
 
+export function rememberedThreadId(
+  storage: Pick<Storage, "getItem">,
+  hostId: string,
+  hostProfileMode: "environment" | "configured" = "environment",
+): string | null {
+  const scopedThreadId = storage.getItem(activeThreadStorageKey(hostId));
+  if (scopedThreadId !== null || hostProfileMode === "configured") return scopedThreadId;
+  return storage.getItem(currentProductStorageKey("vela.active-thread-id"));
+}
+
 export function selectedProjectStorageKey(hostId: string): string {
   return currentProductStorageKey(`vela.selected-project-id:${hostId}`);
 }
@@ -1356,8 +1366,11 @@ export async function createWebWorkbenchApplicationSupervisor(
   const stopEnvironmentRegistry = connectEnvironmentRuntimeRegistry(hostProfiles, registry, createHostRegistration);
   startupRollback.push(stopEnvironmentRegistry);
   const active = registry.getRuntime(initialHostId).getSnapshot();
-  const persistedThreadId = window.localStorage.getItem(activeThreadStorageKey(initialHostId))
-    ?? window.localStorage.getItem(currentProductStorageKey("vela.active-thread-id"));
+  const persistedThreadId = rememberedThreadId(
+    window.localStorage,
+    initialHostId,
+    options.hostProfileMode,
+  );
   const initialThreadLocation = bootstrapLocation?.kind === "thread"
     ? bootstrapLocation
     : bootstrapLocation === null && persistedThreadId !== null

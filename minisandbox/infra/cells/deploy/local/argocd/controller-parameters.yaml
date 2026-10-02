@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+data:
+  # Keep repeated deterministic fault injection bounded in the local mesh.
+  # Production may retain Argo's larger cap to avoid a hot repair loop.
+  controller.self.heal.timeout.seconds: "2"
+  controller.self.heal.backoff.timeout.seconds: "2"
+  controller.self.heal.backoff.factor: "2"
+  controller.self.heal.backoff.cap.seconds: "15"

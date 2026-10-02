@@ -104,12 +104,12 @@
     },
     {
       "id": "upstream-subtrees",
-      "scope": "NewAPI、LLMGateway 和 VelaLink 的持续上游，以及 OpenCraft 一次性 subtree 迁移谱系。",
-      "triggers": ["velalink", "velagw", "new-api", "opencraft migration", "subtree", "upstream", "上游", "迁移谱系"],
+      "scope": "NewAPI、LLMGateway 和 VelaLink 的持续上游，以及 OpenCraft、minisandbox 一次性 subtree 迁移谱系。",
+      "triggers": ["velalink", "velagw", "new-api", "opencraft migration", "minisandbox", "subtree", "upstream", "上游", "迁移谱系"],
       "symbols": [".mono2-subtree", "velachat", "git subtree split", "git subtree pull"],
-      "path_prefixes": ["new-api/", "velagw/", "velalink/", "opencraft/"],
+      "path_prefixes": ["new-api/", "velagw/", "velalink/", "opencraft/", "minisandbox/"],
       "must_read": ["docs/context/project/upstream-subtrees.md"],
-      "deferred_paths": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md", "opencraft/MONO2_MIGRATION.md"]
+      "deferred_paths": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md", "opencraft/MONO2_MIGRATION.md", "minisandbox/MONO2_SUBTREE.md"]
     },
     {
       "id": "context-governance",

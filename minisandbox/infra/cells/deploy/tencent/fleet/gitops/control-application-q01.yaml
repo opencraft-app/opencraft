@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: actor-cell-control-q01
+  namespace: argocd
+spec:
+  project: actor-cell-control
+  source:
+    repoURL: http://actor-git.actor-git-system.svc.cluster.local:3000/release-publisher/fleet-desired.git
+    targetRevision: refs/heads/main
+    path: platform/actor-bj-q01/current
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: actor-fdb-cell-system
+  # Argo owns the Cell's immutable identity and policy binding. Admission is a
+  # runtime lifecycle decision made only by the qualification publisher after
+  # an exact, release-bound receipt passes; self-heal must not undo that CAS.
+  ignoreDifferences:
+    - group: fleet.actor.dev
+      kind: RivetCell
+      name: actor-bj-q01
+      namespace: actor-fdb-cell-system
+      jsonPointers:
+        - /spec/desiredState
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+    retry:
+      limit: 0
+    syncOptions:
+      - CreateNamespace=false
+      - FailOnSharedResource=true
+      - RespectIgnoreDifferences=true
+      - ServerSideApply=true
+  revisionHistoryLimit: 20

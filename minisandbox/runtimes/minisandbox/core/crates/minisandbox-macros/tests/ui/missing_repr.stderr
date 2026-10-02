@@ -1,0 +1,5 @@
+error: contract_enum requires an integer #[repr(...)]
+ --> tests/ui/missing_repr.rs:4:14
+  |
+4 |     pub enum MissingRepr {
+  |              ^^^^^^^^^^^

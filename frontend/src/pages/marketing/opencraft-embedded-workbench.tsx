@@ -52,6 +52,7 @@ function isEmbeddedWorkbenchElement(element: HTMLElement): element is EmbeddedWo
 
 interface AgentChatMigrationSurfaceProps extends Omit<EmbeddedWorkbenchConfig, "getSessionToken"> {
   readonly active: boolean;
+  readonly agentPaused?: boolean;
   /** Explicit rollout authority. Route visibility alone must never adopt OpenCraft. */
   readonly enabled: boolean;
   readonly legacy: ReactNode;
@@ -137,6 +138,7 @@ function loadEmbeddedWorkbench(url: string): Promise<void> {
 
 export function AgentChatMigrationSurface({
   active,
+  agentPaused = false,
   accountId,
   apiBase,
   enabled,
@@ -173,17 +175,17 @@ export function AgentChatMigrationSurface({
   const [started, setStarted] = useState(active && enabled);
   const presentedOwner = enabled ? owner : "legacy";
 
-  const unavailable = enabled && (owner !== "opencraft" || connection.phase !== "ready");
+  const unavailable = enabled && (agentPaused || owner !== "opencraft" || connection.phase !== "ready");
   useEffect(() => {
     setConnectionSlow(false);
-    if (!unavailable) return;
+    if (!unavailable || agentPaused) return;
     const timer = window.setTimeout(() => setConnectionSlow(true), 30_000);
     return () => window.clearTimeout(timer);
-  }, [unavailable, sessionRevision]);
+  }, [agentPaused, unavailable, sessionRevision]);
 
   const retryConnection = async () => {
     const element = elementRef.current;
-    if (retrying) return;
+    if (agentPaused || retrying) return;
     if (startupFailed || element === null) {
       setSessionRevision(value => value + 1);
       return;
@@ -435,7 +437,8 @@ export function AgentChatMigrationSurface({
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
           <span role="status">
-            {startupFailed ? t("会话加载失败，请重试")
+            {agentPaused ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
+              : startupFailed ? t("会话加载失败，请重试")
               : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
               : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
               : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
@@ -449,7 +452,7 @@ export function AgentChatMigrationSurface({
                 ))}</span>
               </span></>}
           </span>
-          {(startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
+          {!agentPaused && (startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
             <button type="button" disabled={retrying} onClick={() => { void retryConnection(); }}
               className="shrink-0 rounded-md border border-black/15 px-3 py-1 text-black/80 hover:bg-black/5 disabled:opacity-50">
               {retrying ? t("正在连接…") : t("重新连接")}

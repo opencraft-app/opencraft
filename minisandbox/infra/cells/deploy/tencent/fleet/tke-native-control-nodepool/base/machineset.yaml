@@ -1,0 +1,46 @@
+# Portable TKE Native capacity for Cell control services. A regional overlay
+# supplies cloud inventory; Engine, NATS and fleet agents select only the
+# control-pool label and never share a node with Actor compute or FDB.
+apiVersion: node.tke.cloud.tencent.com/v1beta1
+kind: MachineSet
+metadata:
+  name: np-control0
+spec:
+  type: Native
+  displayName: replace-with-cell-control-native
+  replicas: 3
+  autoRepair: false
+  instanceTypes:
+    - REPLACE_WITH_REGION_INSTANCE_TYPE
+  subnetIDs:
+    - subnet-replace
+  scaling:
+    createPolicy: ZoneEquality
+    minReplicas: 3
+    maxReplicas: 3
+  template:
+    metadata:
+      annotations:
+        node.tke.cloud.tencent.com/machine-cloud-tags: '[]'
+    spec:
+      displayName: replace-with-cell-control-native-worker
+      runtimeRootDir: /var/lib/containerd
+      unschedulable: false
+      metadata:
+        labels:
+          fleet.actor.dev/cell: replace-with-cell
+          fleet.actor.dev/cell-name: replace-with-cell
+          fleet.actor.dev/control-pool: "true"
+          node.tke.cloud.tencent.com/spread-placement-group-type: HOST
+      providerSpec:
+        type: Native
+        value:
+          instanceChargeType: PostpaidByHour
+          keyIDs:
+            - skey-replace
+          securityGroupIDs:
+            - sg-replace
+          systemDisk:
+            diskSize: 100
+            diskType: CloudBSSD
+      taints: []

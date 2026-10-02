@@ -1,0 +1,17 @@
+# No credentials belong in this file. The TencentCloud provider reads
+# short-lived credentials from its standard environment variables.
+region            = "ap-beijing"
+cell_id           = "actor-bj-b01"
+vpc_id            = "vpc-6c2snz3a"
+security_group_id = "sg-jfy27iab"
+image_id          = "img-eb30mz89"
+
+# Set true only when the selected storage policy requires CBS encryption and the
+# Tencent account has the corresponding capability. This flag is not a readiness gate.
+enable_cbs_encryption = false
+
+subnets = {
+  ap-beijing-6 = "subnet-qljvksy9"
+  ap-beijing-7 = "subnet-k1rounhb"
+  ap-beijing-8 = "subnet-kx0feejb"
+}

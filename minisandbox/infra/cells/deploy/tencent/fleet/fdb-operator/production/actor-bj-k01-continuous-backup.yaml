@@ -1,0 +1,119 @@
+apiVersion: apps.foundationdb.org/v1beta2
+kind: FoundationDBBackup
+metadata:
+  name: actor-bj-k01-continuous
+  namespace: actor-fdb-cell-system
+  labels:
+    fleet.actor.dev/cell-name: actor-bj-k01
+    fleet.actor.dev/purpose: continuous-backup
+spec:
+  version: 7.3.79
+  clusterName: actor-bj-k01
+  dataCenter: ap-beijing
+  backupMode: continuous
+  backupState: Running
+  backupType: backup_agent
+  deletionPolicy: stop
+  tag: actor-bj-k01-continuous
+  agentCount: 3
+  snapshotPeriodSeconds: 21600
+  imageType: unified
+  blobStoreConfiguration:
+    accountName: "@actor-fdb-backup-prod-bj-k01-nv1-1388575217.cos.ap-beijing.myqcloud.com"
+    bucket: actor-fdb-backup-prod-bj-k01-nv1-1388575217
+    backupName: actor/production/ap-beijing/bj-k01/foundationdb/continuous
+    urlParameters:
+      - region=ap-beijing
+  mainContainer:
+    imageConfigs:
+      - baseImage: foundationdb/fdb-kubernetes-monitor
+        tag: 7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c
+  podTemplateSpec:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: actor-bj-k01
+        fleet.actor.dev/purpose: continuous-backup
+    spec:
+      serviceAccountName: fdb-kubernetes
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      priorityClassName: actor-fdb-critical
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  foundationdb.org/deployment-name: actor-bj-k01-continuous-backup-agents
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              foundationdb.org/deployment-name: actor-bj-k01-continuous-backup-agents
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        fsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: foundationdb-kubernetes-init
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 4059
+      containers:
+        - name: foundationdb
+          env:
+            - name: FDB_BLOB_CREDENTIALS
+              value: /var/backup-credentials/credentials
+            - name: FDB_TLS_CERTIFICATE_FILE
+              value: /var/fdb-tls/cert.pem
+            - name: FDB_TLS_CA_FILE
+              value: /var/fdb-tls/ca.pem
+            - name: FDB_TLS_KEY_FILE
+              value: /var/fdb-tls/key.pem
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 4059
+          volumeMounts:
+            - name: backup-credentials
+              mountPath: /var/backup-credentials
+              readOnly: true
+            - name: fdb-tls
+              mountPath: /var/fdb-tls
+              readOnly: true
+      volumes:
+        - name: backup-credentials
+          secret:
+            secretName: actor-bj-k01-backup-credentials
+            defaultMode: 256
+        - name: fdb-tls
+          secret:
+            secretName: actor-bj-k01-backup-tls
+            defaultMode: 288

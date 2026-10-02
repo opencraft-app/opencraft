@@ -1,0 +1,22 @@
+[package]
+name = "pvm-stream-mailbox-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pvm-stream-mailbox = { path = ".." }
+pvm-socket-service = { path = "../../socket-service" }
+
+[workspace]
+
+[[bin]]
+name = "protocol"
+path = "fuzz_targets/protocol.rs"
+test = false
+doc = false
+bench = false

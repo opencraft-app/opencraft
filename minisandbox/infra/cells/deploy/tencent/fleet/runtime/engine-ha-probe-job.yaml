@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __ENGINE_HA_PROBE_JOB__
+  namespace: __RIVET_CELL_NAMESPACE__
+  labels:
+    fleet.actor.dev/cell-name: __RIVET_CELL_NAME__
+    fleet.actor.dev/component: engine-ha-probe
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        fleet.actor.dev/cell-name: __RIVET_CELL_NAME__
+        fleet.actor.dev/component: engine-ha-probe
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 180
+      serviceAccountName: __RIVET_CELL_NAME__-runtime
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: actor-fleet-tcr
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: fleet.actor.dev/control-pool
+                    operator: In
+                    values: ["true"]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4059
+        runAsGroup: 4059
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: probe
+          image: __RIVET_RUNTIME_IMAGE__
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, /opt/actor/probe/engine-ha-probe.sh]
+          env:
+            - name: TMPDIR
+              value: /tmp
+            - name: WORKERS_URL
+              value: http://__RIVET_CELL_NAME__-workers-api:8080
+            - name: RUN_ID
+              value: __ENGINE_HA_PROBE_JOB__
+            - name: WORKER_NAME
+              value: __ENGINE_HA_WORKER__
+            - name: REQUEST_COUNT
+              value: "1500"
+            - name: REQUEST_CONCURRENCY
+              value: "10"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: probe
+              mountPath: /opt/actor/probe
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: probe
+          configMap:
+            name: __ENGINE_HA_PROBE_JOB__
+            defaultMode: 365
+        - name: tmp
+          emptyDir: {}

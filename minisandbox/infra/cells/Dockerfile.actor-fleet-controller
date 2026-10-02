@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.7
+ARG ACTOR_FLEET_BUILD_IMAGE
+ARG ACTOR_FLEET_RUNTIME_IMAGE
+FROM --platform=$BUILDPLATFORM ${ACTOR_FLEET_BUILD_IMAGE} AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+ARG ACTOR_FLEET_GOPROXY=off
+ENV GOPROXY=${ACTOR_FLEET_GOPROXY}
+RUN go mod verify
+COPY cmd/actor-fleet-controller ./cmd/actor-fleet-controller
+COPY cmd/rivet-cell-reporter ./cmd/rivet-cell-reporter
+COPY cmd/workerd-host-drain-controller ./cmd/workerd-host-drain-controller
+COPY cmd/workerd-runtime-capacity-controller ./cmd/workerd-runtime-capacity-controller
+COPY internal/fleetcontroller ./internal/fleetcontroller
+COPY internal/cellreporter ./internal/cellreporter
+COPY internal/meshharness ./internal/meshharness
+COPY internal/hostdrain ./internal/hostdrain
+COPY internal/runtimecapacity ./internal/runtimecapacity
+RUN go test ./internal/runtimecapacity ./internal/hostdrain
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags='-s -w' -o /out/actor-fleet-controller ./cmd/actor-fleet-controller && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags='-s -w' -o /out/rivet-cell-reporter ./cmd/rivet-cell-reporter && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags='-s -w' -o /out/workerd-host-drain-controller ./cmd/workerd-host-drain-controller && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags='-s -w' -o /out/workerd-runtime-capacity-controller ./cmd/workerd-runtime-capacity-controller
+
+FROM ${ACTOR_FLEET_RUNTIME_IMAGE}
+ARG SOURCE_REVISION
+ARG SOURCE_MANIFEST_SHA256
+COPY --from=build /out/actor-fleet-controller /usr/local/bin/actor-fleet-controller
+COPY --from=build /out/rivet-cell-reporter /usr/local/bin/rivet-cell-reporter
+COPY --from=build /out/workerd-host-drain-controller /usr/local/bin/workerd-host-drain-controller
+COPY --from=build /out/workerd-runtime-capacity-controller /usr/local/bin/workerd-runtime-capacity-controller
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/actor-fleet-controller"]
+
+LABEL org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      fleet.actor.dev/source-manifest-sha256="${SOURCE_MANIFEST_SHA256}"

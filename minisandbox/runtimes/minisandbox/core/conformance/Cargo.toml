@@ -1,0 +1,15 @@
+[package]
+name = "minisandbox-conformance"
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+minisandbox-capi = { path = "../crates/minisandbox-capi" }
+minisandbox-core = { path = "../crates/minisandbox-core" }
+minisandbox-pvm-sys = { path = "../crates/minisandbox-pvm-sys" }
+
+[lints]
+workspace = true

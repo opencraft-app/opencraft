@@ -1,0 +1,23 @@
+{
+  "images": [
+    {"component": "argocd", "repository": "argocd", "source": "quay.io/argoproj/argocd:v3.5.2@sha256:e2aadfae709d904e87f46ba4aa49601d827b3022db22cd4d03aae816a2e7097b"},
+    {"component": "argocd-dex", "repository": "argocd-dex", "source": "ghcr.io/dexidp/dex:v2.45.1@sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462"},
+    {"component": "argocd-haproxy", "repository": "argocd-haproxy", "source": "public.ecr.aws/docker/library/haproxy:3.0.8-alpine@sha256:e11f034e651603f10a365e5ad5a0321825e18eded9620e40c4f4d6ae58419bfe"},
+    {"component": "argocd-redis", "repository": "argocd-redis", "source": "public.ecr.aws/docker/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba"},
+    {"component": "fdb-kubernetes-monitor", "repository": "fdb-kubernetes-monitor", "source": "docker.io/foundationdb/fdb-kubernetes-monitor:7.3.79@sha256:45f5b7632984a4835326f45a7bcfd662886db64d82333796ee14cbb3a7537c8c"},
+    {"component": "fdb-kubernetes-operator", "repository": "fdb-kubernetes-operator", "source": "docker.io/foundationdb/fdb-kubernetes-operator:v2.34.0@sha256:0b1538e0e6b87ac580c9874a22bee452cf0c2ccc618339f81c4ebe01627bfb2d"},
+    {"component": "nats", "repository": "nats", "source": "docker.io/library/nats:2.10.22-alpine@sha256:73b0ba5fec5518c5f698597c58d2a3350a2b5ccae43e84c308f8d2da1242deca"},
+    {"component": "observability-busybox", "repository": "observability-busybox", "source": "docker.io/library/busybox:1.38.0@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616"},
+    {"component": "observability-grafana", "repository": "observability-grafana", "source": "docker.io/grafana/grafana:13.1.1@sha256:7cb8c64c4d57a57e734073f3cc94620adb24a0acb929bd80ba9f14017e3a975b"},
+    {"component": "observability-k8s-sidecar", "repository": "observability-k8s-sidecar", "source": "quay.io/kiwigrid/k8s-sidecar:2.10.0@sha256:21b9fe7bb29d65caf2445ccbf96ff6eda5e589a92bd8f5188f957fe75b551d72"},
+    {"component": "observability-kube-state-metrics", "repository": "observability-kube-state-metrics", "source": "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1@sha256:85108987d044b18a098126732f98602df408888c0f7d456241f5abefb9744bc1"},
+    {"component": "observability-kubectl", "repository": "observability-kubectl", "source": "registry.k8s.io/kubectl:v1.30.0@sha256:af04dfa8fed5356d0d69dc3e36f3eed566321fbfe52d463e79a193f25fe638f1"},
+    {"component": "observability-prometheus", "repository": "observability-prometheus", "source": "quay.io/prometheus/prometheus:v3.13.1-distroless@sha256:214f8427c8fba80c327bb94a75feb802ae12f2d6ca30812aa6e7d22f09bbea80"},
+    {"component": "observability-prometheus-adapter", "repository": "observability-prometheus-adapter", "source": "registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.12.0@sha256:932eae60e2bcf9c4660d6442da066ef1a79b4ea7cc232c61c7303069216ca006"},
+    {"component": "observability-prometheus-config-reloader", "repository": "observability-prometheus-config-reloader", "source": "quay.io/prometheus-operator/prometheus-config-reloader:v0.92.1@sha256:74550ba3e8bf93f47bc574231090d340ae9c01d25cd11ff74799e65f9fdb9a48"},
+    {"component": "observability-prometheus-operator", "repository": "observability-prometheus-operator", "source": "quay.io/prometheus-operator/prometheus-operator:v0.92.1@sha256:7d9247d2351480fc74587e24681578f815f387bafb2ee7b86a852a94c4cd3774"},
+    {"component": "observability-webhook-certgen", "repository": "observability-webhook-certgen", "source": "ghcr.io/jkroepke/kube-webhook-certgen:1.8.5@sha256:d0e80b2f62fe43bb5e1b96adc692132fb4522e802f4cf673c09b1f94722b8cb6"}
+  ],
+  "platform": "linux/amd64",
+  "schemaVersion": 1
+}

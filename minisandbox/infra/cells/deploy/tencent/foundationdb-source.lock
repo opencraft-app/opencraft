@@ -1,0 +1,7 @@
+repository=https://github.com/apple/foundationdb.git
+tag=7.3.79
+commit=0074653ee0113fc39da0fa088b056c7210ab3191
+patch_sha256=2d1a4bacd4739bb7ff53c94b9c947f86f4ea4bad4996ddafc732865373a93772
+patched_tree_sha256=2464add756d92ee646970e13c70b0b16a6b76cc9f34da6bce5310f9b50741e5c
+source_dir=upstream/foundationdb-7.3.79
+license=Apache-2.0

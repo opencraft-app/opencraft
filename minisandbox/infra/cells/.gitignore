@@ -1,0 +1,13 @@
+/.omx/
+/var/
+graphify-out/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.auto.tfvars
+!*.tfvars.example
+__pycache__/
+*.pyc
+# Qualification receipts include live cluster identities and must remain local,
+# permission-restricted operational evidence rather than Git artifacts.
+deploy/tencent/fleet/**/receipts/

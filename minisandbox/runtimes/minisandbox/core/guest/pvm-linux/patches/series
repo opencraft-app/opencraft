@@ -1,0 +1,5 @@
+# Upstream base: 51ee0edb884b3372c168f58244de58507c99b2f7
+0001-map-decompression-output-before-pvm-events.patch
+0002-register-pmem-resources-without-pci.patch
+0003-publish-pvm-idle-deadline-to-minisandbox.patch
+0004-expose-native-inet-kernel-socket-factory.patch

@@ -1,0 +1,116 @@
+From: minisandbox <minisandbox@localhost>
+Subject: [PATCH] x86/pvm: publish the Linux idle deadline to minisandbox
+
+PVM's existing safe-halt operation enables virtual interrupts and enters
+KVM's halt path after Linux has programmed the LAPIC clockevent.  That keeps
+the next deadline entirely inside KVM, so an application hypervisor cannot
+distinguish a parked clone or compare KVM halt polling with a host-visible
+wait.
+
+Add an opt-in minisandbox.wait_until command-line experiment.  The x86 idle
+path reads the already-programmed per-CPU clockevent deadline without changing
+NO_HZ bookkeeping, publishes that single fixed-width value through the existing
+minisandbox PIO capability port, and then retains PVM_HC_IRQ_HALT as the atomic
+interrupt-enable and correctness fallback.  Active clockevents remain on the
+in-kernel LAPIC path.
+
+No guest address, descriptor, queue, or variable-length input crosses this
+boundary.  With the option absent the generated code retains the original
+safe-halt behavior.
+
+diff --git a/arch/x86/include/asm/pvm_para.h b/arch/x86/include/asm/pvm_para.h
+--- a/arch/x86/include/asm/pvm_para.h
++++ b/arch/x86/include/asm/pvm_para.h
+@@ -17,6 +17,7 @@ void pvm_install_sysvec(unsigned int sysvec, idtentry_t handler);
+ void pvm_switch_pvcs(int cpu);
+ void pvm_setup_event_handling(void);
+ bool __init pvm_kernel_layout_relocate(void);
++bool pvm_minisandbox_wait_until_idle(void);
+ 
+ static inline void pvm_cpuid(unsigned int *eax, unsigned int *ebx,
+ 			     unsigned int *ecx, unsigned int *edx)
+@@ -100,5 +101,10 @@ static inline bool pvm_kernel_layout_relocate(void)
+ 	return false;
+ }
++
++static inline bool pvm_minisandbox_wait_until_idle(void)
++{
++	return false;
++}
+ #endif /* CONFIG_PVM_GUEST */
+ 
+ void entry_SYSCALL_64_pvm(void);
+diff --git a/arch/x86/kernel/process.c b/arch/x86/kernel/process.c
+--- a/arch/x86/kernel/process.c
++++ b/arch/x86/kernel/process.c
+@@ -50,5 +50,6 @@
+ #include <asm/mmu_context.h>
+ #include <asm/shstk.h>
++#include <asm/pvm_para.h>
+ 
+ #include "process.h"
+ 
+@@ -739,7 +740,8 @@ EXPORT_SYMBOL(boot_option_idle_override);
+  */
+ void __cpuidle default_idle(void)
+ {
+-	raw_safe_halt();
++	if (!pvm_minisandbox_wait_until_idle())
++		raw_safe_halt();
+ 	raw_local_irq_disable();
+ }
+ #if defined(CONFIG_APM_MODULE) || defined(CONFIG_HALTPOLL_CPUIDLE_MODULE)
+diff --git a/arch/x86/kernel/pvm.c b/arch/x86/kernel/pvm.c
+--- a/arch/x86/kernel/pvm.c
++++ b/arch/x86/kernel/pvm.c
+@@ -10,6 +10,8 @@
+ 
+ #include <linux/mm_types.h>
+ #include <linux/nospec.h>
++#include <linux/tick.h>
++#include <linux/timekeeping.h>
+ 
+ #include <asm/cpufeature.h>
+ #include <asm/cpu_entry_area.h>
+@@ -24,5 +26,39 @@ unsigned long pvm_range_end __initdata;
+ 
+ static bool early_traps_setup __initdata;
++static bool minisandbox_wait_until_enabled;
++
++#define MINISANDBOX_HC_PORT		0x81
++#define MINISANDBOX_HC_WAIT_UNTIL	0x4d530107U
++static __always_inline long pvm_hypercall0(unsigned int nr);
++
++static int __init minisandbox_wait_until_setup(char *value)
++{
++	return value && !kstrtobool(value, &minisandbox_wait_until_enabled);
++}
++__setup("minisandbox.wait_until=", minisandbox_wait_until_setup);
++
++bool pvm_minisandbox_wait_until_idle(void)
++{
++	ktime_t deadline;
++	u64 timeout_ns;
++	u32 request = MINISANDBOX_HC_WAIT_UNTIL;
++	u16 port = MINISANDBOX_HC_PORT;
++
++	if (!minisandbox_wait_until_enabled ||
++	    !boot_cpu_has(X86_FEATURE_KVM_PVM_GUEST))
++		return false;
++
++	deadline = tick_nohz_get_next_hrtimer();
++	timeout_ns = max_t(s64,
++			   ktime_to_ns(ktime_sub(deadline, ktime_get())), 0);
++	asm volatile("outl %0, %w1"
++		     :
++		     : "a"(request), "Nd"(port), "D"(timeout_ns)
++		     : "memory");
++	/* Preserve PVM's atomic virtual-IRQ enable and LAPIC fallback. */
++	pvm_hypercall0(PVM_HC_IRQ_HALT);
++	return true;
++}
+ 
+ static __always_inline long pvm_hypercall0(unsigned int nr)
+ {
+-- 
+2.43.0

@@ -1,0 +1,37 @@
+prometheus:
+  url: http://actor-observability-prometheus.observability.svc
+  port: 9090
+
+replicas: 1
+
+rules:
+  default: false
+  custom: []
+  external:
+    - seriesQuery: 'rivet_stateless_in_flight{namespace!="",cell!="",pod!=""}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+      name:
+        matches: ^rivet_stateless_in_flight$
+        as: rivet_stateless_in_flight_total
+      metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>})
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: rivet.dev/compute
+              operator: DoesNotExist
+            - key: rivet.dev/stateless
+              operator: DoesNotExist

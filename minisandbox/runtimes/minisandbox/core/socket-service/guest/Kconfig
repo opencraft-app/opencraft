@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config PVM_SOCKET
+	bool "PVM PF_INET provider with native loopback and host-backed egress"
+	depends on PVM_GUEST && MINISANDBOX_GUEST && NET && INET && X86_64
+	default y
+	help
+	  Own the public PF_INET family. IPv4 loopback TCP uses a hidden native
+	  Linux INET socket and never leaves the guest. Other SOCK_STREAM traffic
+	  maps to host-backed TCP; SOCK_DGRAM remains restricted to allowlisted
+	  UDP DNS on port 53. External traffic crosses a fixed shared mailbox, and
+	  only the separately audited host broker owns host network descriptors.

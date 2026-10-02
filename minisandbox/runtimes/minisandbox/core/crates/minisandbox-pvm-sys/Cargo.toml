@@ -1,0 +1,20 @@
+[package]
+name = "minisandbox-pvm-sys"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+minisandbox-macros = { path = "../minisandbox-macros" }
+
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+kvm-bindings = { version = "0.14", features = ["fam-wrappers"] }
+kvm-ioctls = "0.25"
+libc = "0.2"
+pvm-console-device = { path = "../../console/device" }
+pvm-block-service = { path = "../../block-service" }
+vmm-sys-util = "0.15"
+
+[lints]
+workspace = true

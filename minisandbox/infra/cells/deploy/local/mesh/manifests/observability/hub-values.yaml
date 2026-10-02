@@ -1,0 +1,139 @@
+fullnameOverride: actor-mesh-observability
+namespaceOverride: mesh-observability
+
+alertmanager:
+  enabled: false
+defaultRules:
+  create: false
+
+grafana:
+  enabled: true
+  admin:
+    existingSecret: actor-mesh-observability-grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  defaultDashboardsEnabled: false
+  envFromConfigMaps:
+    - name: actor-mesh-observability-grafana-public
+      optional: true
+  grafana.ini:
+    auth:
+      disable_login_form: true
+      disable_signout_menu: true
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+      hide_version: true
+    server:
+      serve_from_sub_path: true
+    users:
+      default_language: zh-Hans
+      viewers_can_edit: false
+  readinessProbe:
+    httpGet:
+      path: /grafana/api/health
+      port: grafana
+  livenessProbe:
+    httpGet:
+      path: /grafana/api/health
+      port: grafana
+    initialDelaySeconds: 60
+    timeoutSeconds: 30
+    failureThreshold: 10
+  persistence:
+    enabled: false
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: "1", memory: 512Mi}
+
+prometheusOperator:
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+prometheus:
+  enabled: true
+  prometheusSpec:
+    replicas: 1
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 6h
+    walCompression: true
+    ruleSelectorNilUsesHelmValues: true
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+
+kubeStateMetrics:
+  enabled: true
+kube-state-metrics:
+  rbac:
+    extraRules:
+      - apiGroups: [apiextensions.k8s.io]
+        resources: [customresourcedefinitions]
+        verbs: [list, watch]
+      - apiGroups: [fleet.actor.dev]
+        resources: [shardpools, rivetcellclaims]
+        verbs: [list, watch]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: fleet.actor.dev
+              version: v1alpha1
+              kind: ShardPool
+            metricNamePrefix: actor_mesh_shardpool
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              pool: [metadata, name]
+            metrics:
+              - name: admission_open
+                help: Whether the Pool currently has placement capacity.
+                each: {type: Gauge, gauge: {path: [status, admissionOpen]}}
+              - name: ready_cells
+                help: Number of placement-ready Cells.
+                each: {type: Gauge, gauge: {path: [status, readyCells]}}
+              - name: pending_claims
+                help: Number of provisioning Claims.
+                each: {type: Gauge, gauge: {path: [status, pendingClaims]}}
+          - groupVersionKind:
+              group: fleet.actor.dev
+              version: v1alpha1
+              kind: RivetCellClaim
+            metricNamePrefix: actor_mesh_cellclaim
+            labelsFromPath:
+              namespace: [metadata, namespace]
+              claim: [metadata, name]
+            metrics:
+              - name: phase
+                help: Current durable Claim phase.
+                each:
+                  type: StateSet
+                  stateSet:
+                    labelName: phase
+                    path: [status, phase]
+                    list: [Pending, Provisioning, Bound, Failed]
+
+nodeExporter:
+  enabled: false
+kubeApiServer:
+  enabled: false
+kubelet:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+coreDns:
+  enabled: false
+
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: false

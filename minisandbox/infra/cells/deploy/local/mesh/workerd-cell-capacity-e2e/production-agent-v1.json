@@ -1,0 +1,57 @@
+{
+  "schema": "rivet-production-cell-capacity-profile/v1",
+  "name": "production-agent-v1",
+  "status": "candidate",
+  "capacity_unit": "one_cell",
+  "qualification": {
+    "create_rate_per_second": 100,
+    "duration_seconds": 10,
+    "actor_ready_max_ms": 3000,
+    "actor_ready_p95_ms": 3000,
+    "platform_retries": 0,
+    "long_conversations": 128,
+    "conversation_duration_seconds": 60,
+    "wake_p95_ms": 1000
+  },
+  "topology": {
+    "foundationdb": {
+      "process_count": 9,
+      "coordinator_count": 9,
+      "redundancy_mode": "three_data_hall",
+      "storage_engine": "ssd-2",
+      "zone_count": 3,
+      "cpu_per_process": 2,
+      "memory_gib_per_process": 8
+    },
+    "nats_replicas": 3,
+    "engine_replicas": 3,
+    "workerd_hosts": 16
+  },
+  "workerd": {
+    "active_actors_per_host": 32,
+    "max_in_flight_per_host": 16,
+    "max_queued_per_host": 16,
+    "queue_timeout_ms": 1000,
+    "idle_sleep_ms": 1000,
+    "isolate_heap_limit_mib": 128,
+    "cpu_limit": 4,
+    "memory_limit_gib": 6
+  },
+  "engine": {
+    "cpu_limit": 4,
+    "memory_limit_gib": 4,
+    "gasoline_worker_poll_interval_ms": 2000,
+    "gasoline_worker_pull_batch_size": 256,
+    "gasoline_worker_secondary_grace_ms": 1000
+  },
+  "planning": {
+    "ready_service_time_seconds": 1,
+    "resident_headroom_percent": 25,
+    "in_flight_headroom_percent": 10
+  },
+  "evidence": {
+    "local_state_machine": "pending",
+    "local_capacity": "pending",
+    "tencent_production_topology": "pending"
+  }
+}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  resource.inclusions: |
+    - apiGroups:
+        - ""
+      kinds:
+        - ConfigMap
+      clusters:
+        - https://k3d-rivet-runtime-a-serverlb:6443
+        - https://k3d-rivet-runtime-b-serverlb:6443

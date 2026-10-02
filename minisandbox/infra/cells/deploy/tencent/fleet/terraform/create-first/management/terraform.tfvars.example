@@ -1,0 +1,26 @@
+management_id         = "actor-bj-c01"
+region                = "ap-beijing"
+terraform_state_bucket = "actor-terraform-state-beijing-replace_appid"
+account_app_id          = "replace_appid"
+
+vpc_cidr             = "10.160.0.0/16"
+cluster_pod_cidr     = "10.200.0.0/16"
+cluster_service_cidr = "172.20.0.0/22"
+regional_vpc_aggregate = "10.160.0.0/12"
+reserved_cidrs         = ["10.0.0.0/12", "10.128.0.0/16", "192.168.240.0/24"]
+
+subnets = {
+  z1 = { availability_zone = "ap-beijing-6", cidr_block = "10.160.0.0/20" }
+  z2 = { availability_zone = "ap-beijing-7", cidr_block = "10.160.16.0/20" }
+  z3 = { availability_zone = "ap-beijing-8", cidr_block = "10.160.32.0/20" }
+}
+
+bootstrap_subnet_key = "z1"
+trusted_api_cidrs    = []
+# Exact corporate/VPN sources only; A/B Cell CIDRs must remain excluded.
+trusted_workers_api_cidrs = ["9.134.163.40/32", "10.0.0.0/12"]
+
+cluster_version         = "replace_with_reviewed_tke_version"
+node_image_name_regex   = "^replace_with_exact_reviewed_public_image_name$"
+bootstrap_instance_type = "SA9.LARGE8"
+ssh_public_key          = "ssh-ed25519 replace_with_operator_public_key"

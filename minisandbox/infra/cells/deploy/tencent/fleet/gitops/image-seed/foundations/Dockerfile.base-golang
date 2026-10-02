@@ -1,0 +1,14 @@
+ARG SOURCE_IMAGE
+FROM ${SOURCE_IMAGE}
+
+# One generation has one base-golang identity. It contains the Go module cache
+# consumed with GOPROXY=off by product builds and Python for the load generator.
+ENV GOPROXY=https://mirrors.tencent.com/go/
+WORKDIR /deps
+COPY infra/cells/go.mod infra/cells/go.sum ./
+RUN go mod download \
+    && go mod verify \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace

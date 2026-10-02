@@ -1,0 +1,80 @@
+apiVersion: fleet.actor.dev/v1alpha1
+kind: RivetCellProfile
+metadata:
+  name: e2e-rivet-fdb-cos-beijing-v1
+spec:
+  driverABI: rivet-fdb-cos-v1
+  region: ap-beijing
+  availabilityMode: production-multi-zone
+  zones: [ap-beijing-6, ap-beijing-7, ap-beijing-8]
+  foundationDB:
+    version: 7.3.79
+    processCount: 6
+    processesPerZone: 2
+    coordinatorCount: 5
+    redundancyMode: three_data_hall
+    localityKey: data_hall
+    storageEngine: ssd-2
+    exclusiveCluster: true
+    supervisor: systemd-fdbmonitor
+    dataDisk:
+      type: CLOUD_BSSD
+      sizeGiB: 200
+      encrypted: false
+      retain: true
+  runtime:
+    deploymentMode: native-systemd
+    minEngineHosts: 1
+    minWorkerdHosts: 3
+    localStateDisposable: true
+  cos:
+    coldBucketPrefix: e2e-actor-cold-
+    backupBucketPrefix: e2e-actor-backup-
+    multiAZ: false
+    versioning: NeverEnabled
+    objectKeyLayout: depot-cold-v2
+    exactKeyRecovery: true
+    listIndependent: true
+    inCommitPath: false
+  capacity:
+    healthyWriteUtilizationLimitPercent: 50
+    degradedWriteUtilizationLimitPercent: 70
+    scaleOutAtPercent: 80
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardClass
+metadata:
+  name: e2e-rivet-fdb-cos-v1
+spec:
+  controllerName: fleet.actor.dev/rivet-fdb-cos
+  driverABI: rivet-fdb-cos-v1
+  profileRef:
+    name: e2e-rivet-fdb-cos-beijing-v1
+    digest: sha256:7249b89f4e7c2da6f6e7804d4a31b8ec5853dc015092003999421ee9212cfcf6
+  mobilityPolicy: DriverControlled
+  retirementPolicy: ProofRequired
+---
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardPool
+metadata:
+  name: e2e-beijing
+  namespace: e2e-actor-fleet-controller-system
+spec:
+  className: e2e-rivet-fdb-cos-v1
+  minCells: 2
+  maxCells: 5
+  maxConcurrentCellProvisioning: 1
+  placement:
+    region: ap-beijing
+    managementClusters: [e2e-management]
+  routing:
+    strategy: route-hinted-v1
+    exactExceptionDirectory: versioned-exact-v1
+    perActorKubernetesObjects: false
+  reservation:
+    mode: CAS
+    maxPendingPerCell: 1024
+    ttlSeconds: 30
+  rebalance:
+    onScaleOut: NewActorsOnly
+    migrationBatchSize: 128

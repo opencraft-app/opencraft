@@ -1,0 +1,12 @@
+ARG SOURCE_IMAGE
+FROM ${SOURCE_IMAGE}
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && apt-get install -y --no-install-recommends jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o 65532 -g 65532 -m 0700 /data/home
+
+LABEL org.opencontainers.image.title="Actor release Hook dependency base" \
+      fleet.actor.dev/upstream-tencent-cli-digest="sha256:6d13c0559c17a61cf43769b58430c3b914e48d246e298fa85e19095cb20a36c6" \
+      fleet.actor.dev/tccli-version="3.1.160.1" \
+      fleet.actor.dev/jq-version="1.7"

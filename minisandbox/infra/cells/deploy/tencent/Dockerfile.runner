@@ -1,0 +1,30 @@
+FROM rust:1.88-slim AS builder
+
+WORKDIR /app
+
+# The generated Runner build needs the full Cargo workspace plus rivetkit-rust.
+COPY --from=rivet-source /Cargo.toml /Cargo.lock ./
+COPY --from=rivet-source /engine ./engine
+COPY --from=rivet-source /rivetkit-rust ./rivetkit-rust
+COPY --from=rivet-source /rivetkit-typescript ./rivetkit-typescript
+COPY --from=rivet-source /examples/chat-room-rust ./examples/chat-room-rust
+COPY --from=rivet-source /examples/hello-world-rust ./examples/hello-world-rust
+COPY --from=rivet-source /container-runner ./container-runner
+
+RUN --mount=type=cache,id=rivet-fdb-cos-runner-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=rivet-fdb-cos-runner-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=rivet-fdb-cos-runner-target,target=/app/target \
+    cargo build --release -p rivet-test-envoy \
+    && cp /app/target/release/rivet-test-envoy /rivet-test-envoy
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /rivet-test-envoy /usr/local/bin/rivet-test-envoy
+
+EXPOSE 5050
+
+CMD ["rivet-test-envoy"]

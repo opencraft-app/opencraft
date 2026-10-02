@@ -1,0 +1,254 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-fleet-overview-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: actor-fleet
+data:
+  actor-fleet-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "graphTooltip": 1,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Engine 采集目标在线",
+          "id": 1,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+          "targets": [{"expr": "sum(up{namespace=\"actor-fdb-cell-system\",service=\"actor-fleet-engine-metrics\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "冷层执行中请求",
+          "id": 2,
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+          "targets": [{"expr": "sum(sqlite_cold_tier_requests_in_flight)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "队列超时（5 分钟）",
+          "id": 3,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+          "targets": [{"expr": "sum(increase(sqlite_cold_tier_queue_wait_duration_seconds_count{outcome=\"timeout\"}[5m]))", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "每次 Engine 抓取样本数",
+          "id": 4,
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+          "targets": [{"expr": "sum(scrape_samples_post_metric_relabeling{namespace=\"actor-fdb-cell-system\",service=\"actor-fleet-engine-metrics\"})", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "按 Cell 与操作统计的冷层并发",
+          "id": 5,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5},
+          "targets": [{"expr": "sum by (cell, operation) (sqlite_cold_tier_requests_in_flight)", "legendFormat": "{{cell}} {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "冷层队列结果",
+          "id": 6,
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5},
+          "targets": [{"expr": "sum by (cell, operation, outcome) (rate(sqlite_cold_tier_queue_wait_duration_seconds_count[5m]))", "legendFormat": "{{cell}} {{operation}} {{outcome}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "冷层排队请求",
+          "id": 7,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 14},
+          "targets": [{"expr": "sum by (cell, operation) (rivet_sqlite_cold_tier_requests_queued)", "legendFormat": "{{cell}} {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "压实活跃积压字节",
+          "id": 8,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 14},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "sum by (cell, operation) (rivet_sqlite_compaction_backlog_bytes)", "legendFormat": "{{cell}} {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "压实活跃积压对象",
+          "id": 9,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 14},
+          "targets": [{"expr": "sum by (cell, operation) (rivet_sqlite_compaction_backlog_objects)", "legendFormat": "{{cell}} {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "发布与回收吞吐",
+          "id": 10,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 22},
+          "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
+          "targets": [{"expr": "sum by (cell, operation) (rate(rivet_sqlite_compaction_bytes_total[5m]))", "legendFormat": "{{cell}} {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "压实阶段 p95",
+          "id": 11,
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 22},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (cell, operation, phase, le) (rate(rivet_sqlite_compaction_phase_duration_seconds_bucket[5m])))", "legendFormat": "{{cell}} {{operation}} {{phase}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "压实任务结果",
+          "id": 12,
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 31},
+          "targets": [{"expr": "sum by (cell, operation, result) (rate(rivet_sqlite_compaction_jobs_total[5m]))", "legendFormat": "{{cell}} {{operation}} {{result}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "积压消化预计时间",
+          "id": 13,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 39},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "actor:compaction_backlog_drain_eta_seconds", "legendFormat": "{{cell}} {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "发布 / 回收吞吐",
+          "id": 14,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 39},
+          "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
+          "targets": [{"expr": "actor:compaction_bytes_per_second:15m", "legendFormat": "{{cell}} {{operation}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 高于 40 GiB 保留线的最小余量",
+          "id": 15,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 47},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "actor:fdb_storage_headroom_bytes", "legendFormat": "{{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 余量耗尽预计时间",
+          "id": 16,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 47},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "actor:fdb_storage_headroom_eta_seconds", "legendFormat": "{{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 热状态增长代理",
+          "description": "FDB 逻辑键值字节的六小时斜率；包含临时 Actor 写债与元数据。",
+          "id": 17,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 55},
+          "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
+          "targets": [{"expr": "actor:fdb_write_debt_proxy_growth_bytes_per_second:6h", "legendFormat": "{{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "运行时队列利用率",
+          "id": 18,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 55},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "max": 1}, "overrides": []},
+          "targets": [{"expr": "actor:runtime_queue_utilization:ratio", "legendFormat": "{{cell}} {{pod}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "容器 RSS 增长斜率",
+          "id": 19,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 55},
+          "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
+          "targets": [{"expr": "topk(10, actor:container_rss_growth_bytes_per_second:6h)", "legendFormat": "{{pod}} {{container}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 逻辑数据量",
+          "description": "应用层键值逻辑字节，不含复制、存储引擎版本和磁盘碎片。",
+          "id": 20,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 63},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "actor:fdb_total_kv_size_bytes:max", "legendFormat": "{{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 物理放大倍数",
+          "description": "storage process 实际磁盘字节除以逻辑键值字节；不能作为单 Agent 计费量。",
+          "id": 21,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 63},
+          "fieldConfig": {"defaults": {"unit": "none", "min": 0}, "overrides": []},
+          "targets": [{"expr": "max by (cell) (actor_fdb_storage_total_disk_used_bytes) / clamp_min(actor:fdb_total_kv_size_bytes:max, 1)", "legendFormat": "{{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 逻辑净增长（每日）",
+          "description": "六小时正向斜率折算为每日字节；与 Gasoline 回收吞吐共同判断垃圾是否持续积累。",
+          "id": 22,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 63},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "actor:fdb_write_debt_proxy_growth_bytes_per_second:6h * 86400", "legendFormat": "{{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Gasoline 历史与终态回收吞吐",
+          "description": "唯一 pruner 的五分钟回收速率；新完成 history 正常在 15 分钟后进入回收。",
+          "id": 23,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 71},
+          "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+          "targets": [
+            {"expr": "sum by (cell) (rate(rivet_gasoline_pruner_history_pruned_total[5m]))", "legendFormat": "{{cell}} 历史", "refId": "A"},
+            {"expr": "sum by (cell) (rate(rivet_gasoline_pruner_terminal_pruned_total[5m]))", "legendFormat": "{{cell}} 终态", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Gasoline 回收器距上次成功时间",
+          "description": "生产周期为 60 秒；持续超过 300 秒时停止扩大新 Agent 准入。",
+          "id": 24,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 71},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "time() - max by (cell) (rivet_gasoline_pruner_last_success_seconds)", "legendFormat": "{{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "无状态 Worker 并发与排队",
+          "description": "请求池与隔离池独立于持久 Actor；排队持续非零会触发 HPA。",
+          "id": 25,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 79},
+          "targets": [
+            {"expr": "sum by (cell) (rivet_stateless_in_flight)", "legendFormat": "{{cell}} 执行中", "refId": "A"},
+            {"expr": "sum by (cell) (rivet_stateless_queued)", "legendFormat": "{{cell}} 排队", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "无状态 Worker 吞吐与过载",
+          "id": 26,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 79},
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "targets": [
+            {"expr": "sum by (cell) (rate(rivet_stateless_dispatch_total[5m]))", "legendFormat": "{{cell}} 请求", "refId": "A"},
+            {"expr": "sum by (cell) (rate(rivet_stateless_rejected_total[5m]))", "legendFormat": "{{cell}} 拒绝", "refId": "B"},
+            {"expr": "sum by (cell) (rate(rivet_stateless_queue_timeout_total[5m]))", "legendFormat": "{{cell}} 排队超时", "refId": "C"},
+            {"expr": "sum by (cell) (rate(rivet_stateless_drain_timeouts_total[10m]))", "legendFormat": "{{cell}} 摘流超时", "refId": "D"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "无状态代码缓存",
+          "description": "Registry fetch 应远低于请求吞吐；持续升高表示 Version 缓存抖动。",
+          "id": 27,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 79},
+          "targets": [
+            {"expr": "sum by (cell) (rate(rivet_stateless_code_cache_memory_hits_total[5m]))", "legendFormat": "{{cell}} 内存命中", "refId": "A"},
+            {"expr": "sum by (cell) (rate(rivet_stateless_code_cache_memory_misses_total[5m]))", "legendFormat": "{{cell}} 内存未命中", "refId": "B"},
+            {"expr": "sum by (cell) (rate(rivet_stateless_code_registry_fetches_total[5m]))", "legendFormat": "{{cell}} Registry 拉取", "refId": "C"}
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 41,
+      "tags": ["actor-fleet", "rivet", "bottomless"],
+      "templating": {"list": []},
+      "time": {"from": "now-3h", "to": "now"},
+      "timezone": "browser",
+      "title": "Actor 舰队总览",
+      "uid": "actor-fleet-overview",
+      "version": 1
+    }

@@ -1,0 +1,247 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-mesh-compute-dashboard
+  namespace: mesh-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: actor-fleet
+data:
+  actor-mesh-compute.json: |
+    {
+      "annotations": {"list": []},
+      "description": "逐 Cell 和计算节点展示 Actor 硬槽位水位、workerd 装箱分布、Pod 扩容与节点承载状态。",
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [
+        {"title": "舰队总览", "type": "link", "url": "/d/actor-mesh-cell-fleet", "includeVars": true, "keepTime": true},
+        {"title": "存储与扩容", "type": "link", "url": "/d/actor-mesh-storage", "includeVars": true, "keepTime": true}
+      ],
+      "panels": [
+        {
+          "type": "stat",
+          "title": "就绪计算节点",
+          "id": 1,
+          "gridPos": {"h": 5, "w": 5, "x": 0, "y": 0},
+          "targets": [{"expr": "sum(actor_fleet:compute_node_ready{cluster=~\"$cluster\",node=~\"$node\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "可分配 CPU",
+          "id": 2,
+          "gridPos": {"h": 5, "w": 5, "x": 5, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "cores"}, "overrides": []},
+          "targets": [{"expr": "sum(actor_fleet:compute_node_cpu_allocatable_cores{cluster=~\"$cluster\",node=~\"$node\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "可分配内存",
+          "id": 3,
+          "gridPos": {"h": 5, "w": 5, "x": 10, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "sum(actor_fleet:compute_node_memory_allocatable_bytes{cluster=~\"$cluster\",node=~\"$node\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "V8 + PVM 活跃 Actor",
+          "description": "当前由运行时持有的 Actor 数量，不代表 Actor 硬槽位上限。",
+          "id": 4,
+          "gridPos": {"h": 5, "w": 5, "x": 15, "y": 0},
+          "targets": [{"expr": "sum(actor_fleet:compute_node_runtime_active_actors{cluster=~\"$cluster\",node=~\"$node\",runtime=~\"$runtime\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "已分配 KVM 宿主机槽位",
+          "description": "Kubernetes 分配给 sbxlet Pod 的 KVM 设备数量，不代表 PVM Actor 容量。",
+          "id": 5,
+          "gridPos": {"h": 5, "w": 4, "x": 20, "y": 0},
+          "targets": [{"expr": "sum(actor_fleet:compute_node_kvm_requests{cluster=~\"$cluster\",node=~\"$node\"})", "refId": "A"}]
+        },
+        {
+          "type": "gauge",
+          "title": "V8 Actor 容量水位",
+          "description": "当前活跃 V8 Actor 槽位占所有就绪 workerd Host 硬槽位的比例。75% 开始预警扩容，100% 表示没有空闲槽位。",
+          "id": 13,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 5},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.75}, {"color": "orange", "value": 0.9}, {"color": "red", "value": 1}]}}, "overrides": []},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true},
+          "targets": [{"expr": "sum(actor_fleet:cell_v8_active_actors{cluster=~\"$cluster\",cell=~\"$cell\"}) / clamp_min(sum(actor_fleet:cell_v8_actor_capacity{cluster=~\"$cluster\",cell=~\"$cell\"}), 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "V8 剩余 Actor 槽位",
+          "description": "所有筛选 Cell 的硬槽位容量减去当前活跃 Actor 数；这是可立即接收的剩余容量。",
+          "id": 14,
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 5},
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 1}, {"color": "green", "value": 4}]}}, "overrides": []},
+          "targets": [{"expr": "sum(actor_fleet:cell_v8_actor_headroom{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "V8 Actor 已用 / 总槽位",
+          "id": 15,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 5},
+          "targets": [
+            {"expr": "sum(actor_fleet:cell_v8_active_actors{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "已用槽位", "refId": "A"},
+            {"expr": "sum(actor_fleet:cell_v8_actor_capacity{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "总槽位", "refId": "B"}
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "workerd 期望 Pod",
+          "description": "优先显示 HPA 的期望副本；尚未启用 HPA 时回退到 StatefulSet 期望副本。",
+          "id": 16,
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 5},
+          "targets": [{"expr": "sum(actor_fleet:cell_runtime_hpa_desired_replicas{cluster=~\"$cluster\",cell=~\"$cell\"}) or sum(actor_fleet:cell_runtime_expected{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "bargauge",
+          "title": "逐节点 V8 Actor 装箱水位",
+          "description": "每个 workerd Host 所在节点的 Actor 硬槽位使用率。满节点集中、尾部节点较空表示 bin-pack 正常工作。",
+          "id": 17,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.75}, {"color": "orange", "value": 0.9}, {"color": "red", "value": 1}]}}, "overrides": []},
+          "options": {"displayMode": "gradient", "minVizHeight": 10, "minVizWidth": 0, "namePlacement": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "valueMode": "color"},
+          "targets": [{"expr": "actor_fleet:compute_node_v8_actor_utilization_ratio{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "V8 Actor 已用槽位与总容量",
+          "id": 18,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+          "targets": [
+            {"expr": "sum by (cluster) (actor_fleet:cell_v8_active_actors{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} 已用槽位", "refId": "A"},
+            {"expr": "sum by (cluster) (actor_fleet:cell_v8_actor_capacity{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} 总槽位", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "workerd Pod 与计算节点扩缩容",
+          "description": "同时观察 HPA 当前/期望 Pod、Unschedulable workerd Pod 和就绪计算节点，用于定位扩容发生在哪一层。",
+          "id": 19,
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 18},
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0, "decimals": 0}, "overrides": []},
+          "targets": [
+            {"expr": "sum by (cluster) (actor_fleet:cell_runtime_hpa_current_replicas{cluster=~\"$cluster\",cell=~\"$cell\"}) or sum by (cluster) (actor_fleet:cell_runtime_up{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} 当前 Pod", "refId": "A"},
+            {"expr": "sum by (cluster) (actor_fleet:cell_runtime_hpa_desired_replicas{cluster=~\"$cluster\",cell=~\"$cell\"}) or sum by (cluster) (actor_fleet:cell_runtime_expected{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} 期望 Pod", "refId": "B"},
+            {"expr": "sum by (cluster) (actor_fleet:cell_runtime_unschedulable_pods{cluster=~\"$cluster\",cell=~\"$cell\"})", "legendFormat": "{{cluster}} 待调度 Pod", "refId": "C"},
+            {"expr": "sum by (cluster) (actor_fleet:compute_node_ready{cluster=~\"$cluster\",node=~\"$node\"} == 1)", "legendFormat": "{{cluster}} 就绪计算节点", "refId": "D"}
+          ]
+        },
+        {
+          "type": "table",
+          "title": "逐节点容量与当前使用量",
+          "description": "CPU 和内存分别展示可分配量、调度请求量与容器实际使用量。KVM 是宿主机到 Pod 的设备分配；上方 V8 面板展示 Actor 硬槽位容量。",
+          "id": 6,
+          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 27},
+          "targets": [
+            {"expr": "actor_fleet:compute_node_ready{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "就绪状态", "refId": "A"},
+            {"expr": "actor_fleet:compute_node_cpu_allocatable_cores{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "CPU 可分配量", "refId": "B"},
+            {"expr": "actor_fleet:compute_node_cpu_requests_cores{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "CPU 请求量", "refId": "C"},
+            {"expr": "actor_fleet:compute_node_cpu_usage_cores{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "CPU 实际使用量", "refId": "D"},
+            {"expr": "actor_fleet:compute_node_memory_allocatable_bytes{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "内存可分配量", "refId": "E"},
+            {"expr": "actor_fleet:compute_node_memory_requests_bytes{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "内存请求量", "refId": "F"},
+            {"expr": "actor_fleet:compute_node_memory_working_set_bytes{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "内存实际使用量", "refId": "G"},
+            {"expr": "actor_fleet:compute_node_kvm_allocatable{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "KVM 宿主机槽位", "refId": "H"},
+            {"expr": "actor_fleet:compute_node_kvm_requests{cluster=~\"$cluster\",node=~\"$node\"}", "format": "table", "instant": true, "legendFormat": "KVM 已分配量", "refId": "I"}
+          ],
+          "transformations": [
+            {"id": "joinByField", "options": {"byField": "node", "mode": "outerTabular"}}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "CPU：实际使用量与调度请求量",
+          "id": 7,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 39},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:compute_node_cpu_usage_ratio{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}} 实际使用", "refId": "A"},
+            {"expr": "actor_fleet:compute_node_cpu_request_utilization_ratio{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}} 调度请求", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "内存：实际使用量与调度请求量",
+          "id": 8,
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 39},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:compute_node_memory_usage_ratio{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}} 实际使用", "refId": "A"},
+            {"expr": "actor_fleet:compute_node_memory_request_utilization_ratio{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}} 调度请求", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "按运行时与节点统计的活跃 Actor",
+          "id": 9,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 48},
+          "targets": [{"expr": "actor_fleet:compute_node_runtime_active_actors{cluster=~\"$cluster\",node=~\"$node\",runtime=~\"$runtime\"}", "legendFormat": "{{cluster}} / {{node}} / {{runtime}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "V8 请求准入利用率",
+          "description": "这里表示请求执行容量，不表示 Actor 驻留容量。",
+          "id": 10,
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 48},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:compute_node_v8_request_utilization_ratio{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "V8 排队请求数",
+          "id": 11,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57},
+          "targets": [{"expr": "actor_fleet:compute_node_v8_requests_queued{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "KVM 宿主机到 Pod 的分配",
+          "id": 12,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 57},
+          "targets": [
+            {"expr": "actor_fleet:compute_node_kvm_requests{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}} 已分配", "refId": "A"},
+            {"expr": "actor_fleet:compute_node_kvm_allocatable{cluster=~\"$cluster\",node=~\"$node\"}", "legendFormat": "{{cluster}} / {{node}} 可分配", "refId": "B"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Actor 分配事务尝试次数",
+          "description": "每笔 Actor placement 的五分钟平均 FDB 尝试次数；持续升高表示精确 key 冲突，不应直接用扩 FDB 节点掩盖。",
+          "id": 20,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 65},
+          "fieldConfig": {"defaults": {"unit": "short", "min": 1}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:cell_placement_transaction_average_attempts{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}} 平均尝试", "refId": "A"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Actor 分配冲突恢复",
+          "description": "同时显示冲突后的均匀选择 fallback，以及超过五次尝试的危险尾部。后者持续非零会触发告警。",
+          "id": 21,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 65},
+          "targets": [
+            {"expr": "actor_fleet:cell_placement_retry_fallbacks_per_second{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}} 冲突恢复", "refId": "A"},
+            {"expr": "actor_fleet:cell_placement_transactions_over_five_attempts_per_second{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}} 超五次尾部", "refId": "B"}
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 41,
+      "tags": ["actor-fleet", "compute", "v8", "pvm"],
+      "templating": {
+        "list": [
+          {"name": "cluster", "label": "TKE 集群", "type": "query", "query": "label_values(actor_fleet:compute_node_inventory, cluster)", "includeAll": true, "allValue": ".*", "refresh": 1},
+          {"name": "cell", "label": "运行 Cell", "type": "query", "query": "label_values(actor_fleet:cell_v8_actor_capacity{cluster=~\"$cluster\"}, cell)", "includeAll": true, "allValue": ".*", "refresh": 1},
+          {"name": "node", "label": "计算节点", "type": "query", "query": "label_values(actor_fleet:compute_node_inventory{cluster=~\"$cluster\"}, node)", "includeAll": true, "allValue": ".*", "refresh": 1},
+          {"name": "runtime", "label": "运行时", "type": "query", "query": "label_values(actor_fleet:compute_node_runtime_active_actors{cluster=~\"$cluster\",node=~\"$node\"}, runtime)", "includeAll": true, "allValue": ".*", "refresh": 1}
+        ]
+      },
+      "time": {"from": "now-3h", "to": "now"},
+      "timezone": "browser",
+      "title": "Actor Mesh / 计算节点",
+      "uid": "actor-mesh-compute",
+      "version": 2
+    }

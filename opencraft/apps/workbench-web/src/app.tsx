@@ -2,6 +2,7 @@ import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission
 import { WorkspaceResourcePreviewPanel } from "./panels/workspace-resource-panel";
 import { EditableThreadTitle } from "./components/editable-thread-title";
 import { shouldTypeToCompose } from "./type-to-compose";
+import { isStandaloneHermesStop } from "./hermes-stop-command";
 import { useQueryClient } from "@tanstack/react-query";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import {
@@ -482,6 +483,14 @@ export function App({
   const activeHostProviderId = hostCatalog.profiles.find(
     (profile) => profile.hostId === activeHost.hostId,
   )?.providerId ?? null;
+  const hermesShortcutCommands = activeHost.hostId === snapshot.hostId && activeHostProviderId === "lightvela.hermes" ? [
+    { name: "new", description: intl.formatMessage({ id: "composer.commands.new", defaultMessage: "New conversation" }) },
+    { name: "compress", description: intl.formatMessage({ id: "composer.commands.compress", defaultMessage: "Compress context" }) },
+    { name: "status", description: intl.formatMessage({ id: "composer.commands.status", defaultMessage: "View status" }) },
+    { name: "usage", description: intl.formatMessage({ id: "composer.commands.usage", defaultMessage: "View usage" }) },
+    { name: "stop", description: intl.formatMessage({ id: "composer.commands.stop", defaultMessage: "Stop current task" }) },
+    { name: "help", description: intl.formatMessage({ id: "composer.commands.help", defaultMessage: "All commands" }) },
+  ] : undefined;
   // Account/catalog availability never owns the working conversation surface.
   // Only the selected Host's actual connection failure may request intervention.
   const connectionIntervention = hostConnectionIntervention?.providerId === activeHostProviderId
@@ -697,6 +706,34 @@ export function App({
       // rendered enabled button and its click handler.
       if (snapshot.phase !== "ready") return false;
       const currentConversation = activeThreadLease?.getSnapshot() ?? null;
+      const intentHostId = intent.target.type === "new-thread"
+        ? intent.target.execution.hostId
+        : intent.target.key.hostId;
+      if (
+        activeHostProviderId === "lightvela.hermes"
+        && intentHostId === snapshot.hostId
+        && isStandaloneHermesStop(intent)
+      ) {
+        const threadId = intent.target.type === "new-thread" ? null : intent.target.key.threadId;
+        const expectedTurnId = threadId !== null
+          && currentConversation?.key.hostId === intentHostId
+          && currentConversation.key.threadId === threadId
+          ? currentConversation.activeTurn?.turnId ?? null
+          : null;
+        const stopping = hostCatalog.agentRuntimes.request(snapshot.hostId, "hermes/stop", {
+          threadId,
+          expectedTurnId,
+        });
+        if (context.followUpAction !== null) {
+          void stopping.catch(() => {
+            const target = composerController.getSnapshot().draft.target;
+            if (target.type === "existing-thread" && target.key.threadId === threadId) {
+              composerController.dispatch({ type: "set-lifecycle", phase: "failed", error: "停止任务失败，请重试" });
+            }
+          });
+        }
+        return stopping.then(() => true);
+      }
       let submittedIntent = intent;
       let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
       const followsActiveTurn =
@@ -757,6 +794,8 @@ export function App({
       hostCatalog,
       queryClient,
       activeThreadLease,
+      activeHostProviderId,
+      composerController,
       captureLatestTurnPlacement,
       clearLatestTurnPlacement,
       snapshot.hostId,
@@ -1566,6 +1605,7 @@ export function App({
             onRemoveAttachment={removeActiveHostAttachment}
             composerAddMenuContent={composerAddMenuContent}
             composerEndActions={composerEndActions}
+            shortcutCommands={hermesShortcutCommands}
             onSubmit={sendMessage}
           />
         ) : draft !== null ? (
@@ -1702,6 +1742,7 @@ export function App({
                         onResolveAttachment={resolveActiveHostAttachment}
                         onRemoveAttachment={removeActiveHostAttachment}
                         addMenuContent={composerAddMenuContent}
+                        shortcutCommands={hermesShortcutCommands}
                         endActions={composerEndActions}
                         modelSelectionPolicy={embedded ? "host-default" : "user"}
                         placeholder={embedded ? intl.formatMessage({

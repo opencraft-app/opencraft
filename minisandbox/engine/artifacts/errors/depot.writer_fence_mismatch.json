@@ -1,0 +1,5 @@
+{
+  "code": "writer_fence_mismatch",
+  "group": "depot",
+  "message": "SQLite writer fence mismatch."
+}

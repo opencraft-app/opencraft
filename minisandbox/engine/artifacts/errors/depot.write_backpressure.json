@@ -1,0 +1,5 @@
+{
+  "code": "write_backpressure",
+  "group": "depot",
+  "message": "Depot is compacting hot writes. Retry this SQLite commit."
+}

@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: actor-runtime-release
+  namespace: argocd
+spec:
+  description: Transactional runtime releases executed only through public /v1 semantic Hooks.
+  sourceRepos:
+    - ssh://git@git.example.invalid/actor/fleet-desired.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: actor-release-system
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: batch
+      kind: Job
+  orphanedResources:
+    warn: true

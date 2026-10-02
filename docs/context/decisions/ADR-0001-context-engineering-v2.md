@@ -8,9 +8,9 @@ authority: primary
 source_of_truth:
   - docs/context/decisions/ADR-0001-context-engineering-v2.md
 status: active
-reviewed_at: 2026-09-14
-review_due: 2026-11-23
-revision: 2.2.0
+reviewed_at: 2026-10-02
+review_due: 2026-12-31
+revision: 2.3.0
 precedence: project
 derived: false
 ---
@@ -54,3 +54,11 @@ Server/Member/腾讯 IM 映射控制面，后者是下发到托管 Computer 的 
 tree 一致性和 fast-forward 约束只由 `opencraft/MONO2_MIGRATION.md` 维护；根入口仅路由并声明
 不可双写、不可反向 pull、外部贡献须先回到 mono2 评审。这避免把一次公开导出误解为新的上游
 或第二套开发流程，也保持根 Team 指令、Project Pack 和服务迁移文档之间的权威层次。
+
+## 2026-10-02 应用：minisandbox 一次性 subtree 迁移
+
+`minisandbox/` 从没有配置 remote 的独立本地 Git 历史以 squash subtree 一次性迁入 mono2；导入后
+mono2 是唯一写入真源，不建立猜测出来的上游地址或双写流程。`upstream-subtrees` 路由增加
+`minisandbox/` 精确前缀、deferred provenance 文档和 smoke case，确保后续修改先读取迁移边界。
+初始 source tree 中误跟踪的运行日志与凭据不进入 subtree；安全快照、明确排除路径和 tree 一致性
+证据由 `minisandbox/MONO2_SUBTREE.md` 与任务记录共同保存。subtree 导入不隐式注册发布或生产能力。

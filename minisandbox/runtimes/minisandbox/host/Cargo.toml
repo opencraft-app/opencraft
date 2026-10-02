@@ -1,0 +1,20 @@
+[package]
+name = "rivet-minisandbox-host"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+description = "Generation-fenced Rivet Envoy host adapter for minisandbox"
+
+[dependencies]
+anyhow.workspace = true
+futures-util.workspace = true
+hyper = { workspace = true, features = ["client", "http1", "stream", "tcp"] }
+rand.workspace = true
+rivet-envoy-client = { workspace = true, features = ["native-transport"] }
+scc.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true

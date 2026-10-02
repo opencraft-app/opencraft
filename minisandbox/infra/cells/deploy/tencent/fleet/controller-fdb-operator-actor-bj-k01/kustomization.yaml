@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../controller-fdb-operator
+images:
+  - name: ghcr.io/skipzhang/actor-fleet-controller
+    newName: lightclaw-bj82.tencentcloudcr.com/actor-fleet/actor-fleet-controller
+    digest: sha256:6ff20f3b86bb6c891fc9b85f5af9f186310ae51c99cf42458e2640a1880ad323
+patches:
+  - target:
+      kind: Deployment
+      name: actor-fleet-controller
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          fleet.actor.dev/source-commit: 5f1f073b19c8d3b9a76607e1b49077e340902dc5
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: actor-fleet-tcr

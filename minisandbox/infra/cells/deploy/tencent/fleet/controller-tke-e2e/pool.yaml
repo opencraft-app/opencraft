@@ -1,0 +1,22 @@
+apiVersion: fleet.actor.dev/v1alpha1
+kind: ShardPool
+metadata:
+  name: beijing
+spec:
+  className: rivet-fdb-cos-v1
+  minCells: 2
+  maxCells: 5
+  placement:
+    region: ap-beijing
+    managementClusters: [tke-e2e-management]
+  routing:
+    strategy: route-hinted-v1
+    exactExceptionDirectory: versioned-exact-v1
+    perActorKubernetesObjects: false
+  reservation:
+    mode: CAS
+    maxPendingPerCell: 1024
+    ttlSeconds: 30
+  rebalance:
+    onScaleOut: NewActorsOnly
+    migrationBatchSize: 128

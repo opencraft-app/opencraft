@@ -1,0 +1,61 @@
+# Portable TKE Native capacity for Actor runtime Pods. A regional overlay
+# supplies cloud inventory. The compute taint prevents Engine, NATS and other
+# control workloads from sharing the Actor execution failure domain.
+apiVersion: node.tke.cloud.tencent.com/v1beta1
+kind: MachineSet
+metadata:
+  name: np-runtime0
+spec:
+  type: Native
+  displayName: replace-with-cell-compute-native
+  replicas: 3
+  autoRepair: false
+  # Every controller contraction first fences the newest empty Machine. During
+  # an exact repair, this also makes a provider-created race replacement the
+  # only eligible surplus victim instead of an older healthy Host.
+  deletePolicy: Newest
+  instanceTypes:
+    - REPLACE_WITH_REGION_INSTANCE_TYPE
+  subnetIDs:
+    - subnet-replace
+  scaling:
+    createPolicy: ZoneEquality
+    minReplicas: 3
+    maxReplicas: 3
+  template:
+    metadata:
+      annotations:
+        node.tke.cloud.tencent.com/machine-cloud-tags: '[]'
+    spec:
+      displayName: replace-with-cell-compute-native-worker
+      runtimeRootDir: /var/lib/containerd
+      unschedulable: false
+      metadata:
+        labels:
+          fleet.actor.dev/cell: replace-with-cell
+          fleet.actor.dev/cell-name: replace-with-cell
+          fleet.actor.dev/runtime-pool: "true"
+          rivet.dev/compute: "true"
+          # Runtime capacity is horizontally replaceable and already spread by
+          # Kubernetes zone/hostname constraints. Do not attach the whole
+          # elastic pool to one Tencent spread placement group: one group has
+          # a provider quota and silently turns maxReplicas into a much lower
+          # ceiling. Control and FDB pools retain HOST-level placement.
+      providerSpec:
+        type: Native
+        value:
+          instanceChargeType: PostpaidByHour
+          keyIDs:
+            - skey-replace
+          securityGroupIDs:
+            - sg-replace
+          systemDisk:
+            diskSize: 100
+            diskType: CloudBSSD
+      taints:
+        - key: rivet.dev/compute
+          value: "true"
+          effect: NoSchedule
+        - key: fleet.actor.dev/runtime-admission
+          value: pending
+          effect: NoSchedule

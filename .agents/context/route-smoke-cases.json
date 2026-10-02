@@ -13,6 +13,7 @@
     {"id": "tapd-id", "query": "TAPD 短 ID 12345678 转完整 ID 并创建 MR", "required_pack_ids": ["tapd-gongfeng-delivery"]},
     {"id": "velalink-pin", "query": "velalink 修复导出后更新 frontend 依赖", "required_pack_ids": ["upstream-subtrees"]},
     {"id": "new-api-upstream", "query": "同步 new-api upstream subtree", "required_pack_ids": ["upstream-subtrees"]},
+    {"id": "minisandbox-subtree", "query": "修改 minisandbox/engine/packages/pegboard-envoy", "required_pack_ids": ["upstream-subtrees"]},
     {"id": "payment-release", "query": "修复 payment 发布 bundle 边界", "required_pack_ids": ["subscription-entitlements", "release-gitops"]},
     {"id": "context-audit", "query": "审计仓库上下文建设和 23 条规则", "required_pack_ids": ["context-governance"]},
     {"id": "project-overview", "query": "项目架构模块关系和数据模型", "required_pack_ids": ["project-overview"]},

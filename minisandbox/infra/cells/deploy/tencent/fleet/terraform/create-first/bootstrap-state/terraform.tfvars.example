@@ -1,0 +1,2 @@
+region            = "ap-beijing"
+state_bucket_name = "actor-terraform-state-beijing-replace_appid"

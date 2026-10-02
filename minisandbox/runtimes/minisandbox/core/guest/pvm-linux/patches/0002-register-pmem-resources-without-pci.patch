@@ -1,0 +1,32 @@
+From: minisandbox <minisandbox@localhost>
+Subject: [PATCH] x86/pvm: register late E820 resources without PCI
+
+x86 leaves non-busy E820 resources, including legacy persistent memory,
+for e820__reserve_resources_late() after PCI resource survey.  A minimal PVM
+guest intentionally builds without PCI, so the survey and late registration
+never occur and e820_pmem cannot discover a memmap=nn!ss range.
+
+There is no PCI address space to survey in this configuration.  Register the
+remaining resources immediately after the initial E820 pass so the native
+e820_pmem and pmem drivers can expose the host-enforced read-only range.
+
+diff --git a/arch/x86/kernel/setup.c b/arch/x86/kernel/setup.c
+--- a/arch/x86/kernel/setup.c
++++ b/arch/x86/kernel/setup.c
+@@ -1163,6 +1163,14 @@ void __init setup_arch(char **cmdline_p)
+ 	x86_init.hyper.guest_late_init();
+ 
+ 	e820__reserve_resources();
++	/*
++	 * minisandbox: PVM guests deliberately omit PCI, whose resource
++	 * survey normally performs the late registration needed for E820
++	 * type-12 persistent memory.  No PCI resources can conflict here.
++	 */
++	if (IS_ENABLED(CONFIG_PVM_GUEST) && !IS_ENABLED(CONFIG_PCI))
++		e820__reserve_resources_late();
++
+ 	e820__register_nosave_regions(max_pfn);
+ 
+ 	x86_init.resources.reserve_resources();
+-- 
+2.43.0

@@ -1,0 +1,76 @@
+{
+  "accountAppId": "1388575217",
+  "cells": {
+    "actor-bj-a01": {
+      "environment": "prod",
+      "network": {
+        "podCidr": "10.201.0.0/16",
+        "serviceCidr": "172.21.0.0/22",
+        "subnets": {
+          "z1": { "availabilityZone": "ap-beijing-6", "cidr": "10.161.0.0/22" },
+          "z2": { "availabilityZone": "ap-beijing-7", "cidr": "10.161.4.0/22" },
+          "z3": { "availabilityZone": "ap-beijing-8", "cidr": "10.161.8.0/22" }
+        },
+        "vpcCidr": "10.161.0.0/20"
+      },
+      "storageIdentityMode": "shared-root"
+    },
+    "actor-bj-b01": {
+      "environment": "prod",
+      "network": {
+        "podCidr": "10.202.0.0/16",
+        "serviceCidr": "172.22.0.0/22",
+        "subnets": {
+          "z1": { "availabilityZone": "ap-beijing-6", "cidr": "10.162.0.0/22" },
+          "z2": { "availabilityZone": "ap-beijing-7", "cidr": "10.162.4.0/22" },
+          "z3": { "availabilityZone": "ap-beijing-8", "cidr": "10.162.8.0/22" }
+        },
+        "vpcCidr": "10.162.0.0/20"
+      },
+      "storageIdentityMode": "shared-root"
+    }
+  },
+  "fleet": {
+    "className": "rivet-fdb-cos-kubernetes-v1",
+    "datacenterName": "default",
+    "machinePools": {
+      "control": { "generation": "v2", "instanceTypes": ["SA9.4XLARGE32"], "machineSetName": "np-control1", "maxReplicas": 3, "minReplicas": 3, "replicas": 3 },
+      "fdb": { "instanceTypes": ["SA9.LARGE16"], "maxReplicas": 30, "minReplicas": 9, "replicas": 9 },
+      "runtime": { "instanceTypes": ["SA9.LARGE8", "SA9e.LARGE8", "SA5.LARGE8", "S9.LARGE8"], "maxReplicas": 301, "minReplicas": 3, "repairSurge": 1, "replicas": 3 },
+      "stateless": { "instanceTypes": ["SA9.LARGE8", "SA9e.LARGE8", "SA5.LARGE8", "S9.LARGE8"], "maxReplicas": 300, "minReplicas": 3, "replicas": 3 }
+    },
+    "poolName": "actor-beijing-kubernetes"
+  },
+  "management": {
+    "id": "actor-bj-c01",
+    "network": {
+      "podCidr": "10.200.0.0/16",
+      "serviceCidr": "172.20.0.0/22",
+      "subnets": {
+        "z1": { "availabilityZone": "ap-beijing-6", "cidr": "10.160.0.0/20" },
+        "z2": { "availabilityZone": "ap-beijing-7", "cidr": "10.160.16.0/20" },
+        "z3": { "availabilityZone": "ap-beijing-8", "cidr": "10.160.32.0/20" }
+      },
+      "vpcCidr": "10.160.0.0/16"
+    },
+    "trustedWorkersApiCidrs": ["9.134.163.40/32", "10.0.0.0/12"]
+  },
+  "node": {
+    "bootstrapInstanceType": "SA9.LARGE8",
+    "clusterLevel": "L20",
+    "clusterOs": "tlinux3.1x86_64",
+    "clusterVersion": "1.30.0",
+    "imageNameRegex": "^TencentOS Server 3[.]1 [(]TK4[)]$",
+    "sshPublicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL4hisVWG1Kit+hL1CwzceWOXwxWFgPKVfApg+kejCJ1"
+  },
+  "operationsNetwork": {
+    "routeTableName": "actor-lightvela-operations",
+    "vpcCidr": "10.0.0.0/12",
+    "vpcName": "lightclaw-bj8"
+  },
+  "region": "ap-beijing",
+  "regionalVpcAggregate": "10.160.0.0/12",
+  "reservedCidrs": ["10.0.0.0/12", "10.128.0.0/16", "192.168.240.0/24"],
+  "schema": "actor-clean-room-fleet-intent/v1",
+  "stateBucket": "actor-terraform-state-beijing-1388575217"
+}

@@ -28,7 +28,7 @@ if(mode==='hold')return new Promise(resolve=>pending.push(()=>resolve(result()))
 window.fixture={locale:locale=>intlRuntime.update({localeOverride:locale}),refresh:n=>{extra=n;listeners.forEach(f=>f())},host:()=>host,mode:v=>mode=v,resolve:()=>{pending.splice(0).forEach(f=>f())},requests:()=>requests.map(({signal,...r})=>({...r,aborted:signal?.aborted})),submitted:()=>submitted,switchHost:()=>setHost('B'),unavailable:()=>setAvailable(false),compile:()=>compileSubmitIntent(controller.createSubmitIntent()).input,document:()=>controller.getSnapshot().draft.document,
 codeBlock:()=>controller.dispatch({type:'set-document',document:{version:1,blocks:[{type:'code-block',language:'sh',text:'$'}]}}),
 dark:()=>{document.documentElement.dataset.theme='dark';for(const[k,v]of Object.entries(buildCodexThemeCssProperties('dark',zenCodeThemePalette.dark)))document.documentElement.style.setProperty(k,v)}};
-return <main style={{padding:40,paddingTop:320,maxWidth:900,margin:'auto'}}><button id='outside' style={{position:'fixed',top:16,left:16}}>Outside editor</button><CodexComposer controller={controller} catalog={catalog} selectionCatalog={{models:[{id:'model',value:'model',label:'Model',description:null,isDefault:true,defaultEffort:null,efforts:[]}],permissionProfiles:[]}} onSubmit={async()=>{submitted++}} onCancel={()=>{}}/></main>}
+return <main style={{padding:40,paddingTop:320,maxWidth:900,margin:'auto'}}><button id='outside' style={{position:'fixed',top:16,left:16}}>Outside editor</button><CodexComposer controller={controller} catalog={catalog} shortcutCommands={host==='A'?[{name:'new',description:'New conversation'},{name:'compress',description:'Compress context'},{name:'status',description:'View status'},{name:'usage',description:'View usage'},{name:'stop',description:'Stop current task'},{name:'help',description:'All commands'}]:undefined} selectionCatalog={{models:[{id:'model',value:'model',label:'Model',description:null,isDefault:true,defaultEffort:null,efforts:[]}],permissionProfiles:[]}} onSubmit={async()=>{submitted++}} onCancel={()=>{}}/></main>}
 const intlRuntime=new LocaleRuntime([{locale:'zh-CN',label:'简体中文',load:async()=> (await import('/apps/workbench-web/src/i18n/locales/zh-CN.json')).default}]);
 createRoot(document.getElementById('root')).render(<IntlRuntimeProvider runtime={intlRuntime}><App/></IntlRuntimeProvider>);`;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:"error",cacheDir:join("node_modules",`.vite-${basename(output)}`),resolve:{dedupe:["react","react-dom","react-intl"]},optimizeDeps:{include:["react","react-dom/client","react/jsx-runtime","react-intl"]},esbuild:{jsx:"automatic"},server:{host:"127.0.0.1",port:0,hmr:false},plugins:[{name:"skill-autocomplete-fixture",resolveId:id=>id==="/probe.tsx"?id:null,load:id=>id==="/probe.tsx"?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url==="/favicon.ico"){res.statusCode=204;res.end();return}if(req.url!=="/")return next();res.setHeader('content-type','text/html');res.end('<title>Skill autocomplete verification</title><div id="root"></div><script type="module" src="/probe.tsx"></script>')})}}]});
@@ -42,6 +42,33 @@ try{
   page.setDefaultTimeout(15000);page.setDefaultNavigationTimeout(60000);page.on('pageerror',(e:Error)=>{errors.push(e.message);console.error(e.message)});page.on('console',(m:any)=>{if(m.type()==='error')console.error(m.text())});await page.addInitScript('window.__name=value=>value');await page.goto(url,{waitUntil:'domcontentloaded'});console.log('Composer fixture loaded');
   const editor=page.locator('.codex-composer-editor');const list=page.getByRole('listbox',{name:'skill suggestions'});const options=list.getByRole('option');
   const fill=async(text:string)=>{await editor.fill('');await page.getByRole('listbox').waitFor({state:'hidden'});await editor.fill(text)};
+  await page.getByRole('button',{name:'Commands'}).click();
+  const commandMenu=page.locator('.codex-composer-shortcut-menu');
+  await commandMenu.getByRole('menuitem').first().waitFor();
+  assert.equal(await commandMenu.getByRole('menuitem').count(),6);
+  await page.screenshot({path:join(output,'hermes-commands.png')});
+  await commandMenu.getByRole('menuitem',{name:/\/usage/u}).click();
+  await commandMenu.waitFor({state:'hidden'});
+  assert.match(await editor.innerText(),/\/usage/u);
+  assert.equal(await page.evaluate(()=>(window as unknown as {fixture:{submitted:()=>number}}).fixture.submitted()),0);
+  await fill('/');
+  const commandList=page.getByRole('listbox',{name:'command suggestions'});
+  assert.equal(await commandList.getByRole('option').count(),6);
+  assert.equal(await commandList.getByRole('option',{name:/\/usage/u}).count(),1);
+  await commandList.getByRole('option').first().click();
+  assert.deepEqual((await page.evaluate(()=>(window as unknown as {fixture:{compile:()=>Array<{type:string;text?:string}>}}).fixture.compile())).find((input)=>input.type==='text')?.text?.trim(),'/new');
+  await page.evaluate(()=>(window as unknown as {fixture:{locale:(value:string)=>void}}).fixture.locale('zh-CN'));
+  await page.getByRole('button',{name:'指令库'}).waitFor();
+  await page.setViewportSize({width:375,height:700});
+  const shortcutBounds=await page.getByRole('button',{name:'指令库'}).boundingBox();
+  assert.ok(shortcutBounds && shortcutBounds.x>=0 && shortcutBounds.x+shortcutBounds.width<=375);
+  await page.getByRole('button',{name:'指令库'}).click();
+  await commandMenu.getByRole('menuitem').first().waitFor();
+  await page.screenshot({path:join(output,'hermes-commands-narrow.png')});
+  await page.keyboard.press('Escape');await commandMenu.waitFor({state:'hidden'});
+  await page.setViewportSize({width:1100,height:850});
+  await page.evaluate(()=>(window as unknown as {fixture:{locale:(value:string)=>void}}).fixture.locale('en-US'));
+  evidence.push('Hermes shortcut menu and slash suggestions insert editable commands without sending; localized menu remains reachable at narrow width');
   await fill('$');console.log('Bare dollar entered');await options.nth(2).waitFor();assert.equal(await options.count(),3);assert.match(await options.first().innerText(),/A Review/u);
   assert.equal((await page.evaluate(()=>(window as any).fixture.requests())).at(-1).query,'');
   await page.keyboard.press('ArrowUp');assert.equal(await options.nth(2).getAttribute('aria-selected'),'true');await page.keyboard.press('ArrowDown');
@@ -66,6 +93,10 @@ try{
   await fill('$test');await page.getByText('Loading skills…',{exact:true}).waitFor();await editor.fill('$repo');await page.evaluate(()=>(window as any).fixture.resolve());await options.first().waitFor();assert.match(await options.first().innerText(),/A Review/u);assert.equal(await options.count(),1);evidence.push('late previous-query results cannot replace current query');
   await fill('$');await page.getByText('Loading skills…',{exact:true}).waitFor();await page.evaluate(()=>(window as any).fixture.switchHost());
   await page.waitForFunction(()=>(window as any).fixture.host()==='B');await editor.fill('$');
+  assert.equal(await page.getByRole('button',{name:'Commands'}).count(),0);
+  await editor.fill('/');await page.getByRole('listbox',{name:'command suggestions'}).getByRole('option').first().waitFor();
+  assert.match(await page.getByRole('listbox',{name:'command suggestions'}).getByRole('option').first().innerText(),/\/plan/u);
+  await editor.fill('$');
   await page.waitForFunction(()=>(window as any).fixture.requests().some((r:any)=>r.host==='B'&&r.query===''));
   await page.evaluate(()=>(window as any).fixture.resolve());await options.first().waitFor();assert.match(await options.first().innerText(),/B Review/u);evidence.push('Host/controller replacement fences stale results');
   await page.evaluate(()=>(window as any).fixture.mode('empty'));await fill('$');await page.getByText('No skills found',{exact:true}).waitFor();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>(window as any).fixture.submitted()),0);

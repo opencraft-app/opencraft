@@ -1,0 +1,232 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actor-mesh-overview-dashboard
+  namespace: mesh-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: actor-fleet
+data:
+  actor-mesh-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": false,
+      "graphTooltip": 1,
+      "links": [
+        {"title": "计算节点", "type": "link", "url": "/d/actor-mesh-compute", "includeVars": true, "keepTime": true},
+        {"title": "存储与扩容", "type": "link", "url": "/d/actor-mesh-storage", "includeVars": true, "keepTime": true}
+      ],
+      "panels": [
+        {
+          "type": "stat",
+          "title": "TKE 联邦目标在线数",
+          "id": 1,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+          "targets": [{"expr": "sum(up{federation=\"actor-cell\",cluster=~\"$cluster\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "可接收调度的 Cell",
+          "id": 2,
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+          "targets": [{"expr": "sum(actor_fleet:cell_ready_for_placement{cluster=~\"$cluster\",cell=~\"$cell\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "Cell 总数",
+          "id": 3,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+          "targets": [{"expr": "sum(actor_fleet:cell_inventory{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "Cell 触发中告警",
+          "id": 4,
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+          "targets": [{"expr": "sum(actor_fleet:cell_firing_alerts{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "table",
+          "title": "Cell 调度与持久化健康",
+          "id": 5,
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 5},
+          "targets": [
+            {"expr": "actor_fleet:cell_ready_for_placement{cluster=~\"$cluster\",cell=~\"$cell\"}", "format": "table", "instant": true, "legendFormat": "可调度", "refId": "A"},
+            {"expr": "actor_fleet:cell_fdb_available{cluster=~\"$cluster\",cell=~\"$cell\"}", "format": "table", "instant": true, "legendFormat": "FDB 可用", "refId": "B"},
+            {"expr": "actor_fleet:cell_fdb_full_replication{cluster=~\"$cluster\",cell=~\"$cell\"}", "format": "table", "instant": true, "legendFormat": "FDB 完整复制", "refId": "C"},
+            {"expr": "actor_fleet:cell_backup_restorable{cluster=~\"$cluster\",cell=~\"$cell\"}", "format": "table", "instant": true, "legendFormat": "备份可恢复", "refId": "D"},
+            {"expr": "actor_fleet:cell_qualification_ready{cluster=~\"$cluster\",cell=~\"$cell\"}", "format": "table", "instant": true, "legendFormat": "已绑定资格收据", "refId": "E"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Cell 调度数量",
+          "id": 6,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+          "targets": [{"expr": "actor_fleet:cell_placement_count{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 存储余量",
+          "id": 7,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_fdb_storage_headroom_bytes{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "FDB 存储余量耗尽时间",
+          "id": 8,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 22},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_fdb_storage_headroom_eta_seconds{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "运行时队列利用率",
+          "id": 9,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 22},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_runtime_queue_utilization_ratio{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "压实积压",
+          "id": 10,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 22},
+          "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_compaction_backlog_bytes{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Engine 就绪数 / 期望数",
+          "id": 11,
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 30},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_engine_up{cluster=~\"$cluster\",cell=~\"$cell\"} / actor_fleet:cell_engine_expected{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "运行时就绪数 / 期望数",
+          "id": 12,
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 30},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [{"expr": "actor_fleet:cell_runtime_up{cluster=~\"$cluster\",cell=~\"$cell\"} / actor_fleet:cell_runtime_expected{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "扩容纪元",
+          "id": 13,
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 30},
+          "targets": [{"expr": "actor_fleet:cell_scale_out_epoch{cluster=~\"$cluster\",cell=~\"$cell\"}", "legendFormat": "{{cluster}} / {{cell}}", "refId": "A"}]
+        },
+        {
+          "type": "table",
+          "title": "资源池准入与供给",
+          "id": 14,
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 38},
+          "targets": [
+            {"expr": "actor_mesh_shardpool_admission_open", "format": "table", "instant": true, "legendFormat": "准入状态", "refId": "A"},
+            {"expr": "actor_mesh_shardpool_ready_cells", "format": "table", "instant": true, "legendFormat": "就绪 Cell", "refId": "B"},
+            {"expr": "actor_mesh_shardpool_pending_claims", "format": "table", "instant": true, "legendFormat": "待处理 Claim", "refId": "C"},
+            {"expr": "actor_mesh_cellclaim_phase == 1", "format": "table", "instant": true, "legendFormat": "Claim 阶段", "refId": "D"}
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "就绪计算节点",
+          "id": 15,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 46},
+          "targets": [{"expr": "sum(actor_fleet:compute_node_ready{cluster=~\"$cluster\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "CPU 请求峰值",
+          "id": 16,
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 46},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [{"expr": "max(actor_fleet:compute_node_cpu_request_utilization_ratio{cluster=~\"$cluster\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "内存请求峰值",
+          "id": 17,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 46},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [{"expr": "max(actor_fleet:compute_node_memory_request_utilization_ratio{cluster=~\"$cluster\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "待处理 Cell Claim",
+          "id": 18,
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 46},
+          "targets": [{"expr": "sum(actor_mesh_shardpool_pending_claims)", "refId": "A"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "计算扩容压力",
+          "description": "调度请求或实际利用率持续接近 100% 时需要增加计算容量；两类信号刻意分开呈现。",
+          "id": 19,
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 51},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+          "targets": [
+            {"expr": "actor_fleet:compute_node_cpu_request_utilization_ratio{cluster=~\"$cluster\"}", "legendFormat": "{{cluster}} / {{node}} CPU 请求", "refId": "A"},
+            {"expr": "actor_fleet:compute_node_memory_request_utilization_ratio{cluster=~\"$cluster\"}", "legendFormat": "{{cluster}} / {{node}} 内存请求", "refId": "B"},
+            {"expr": "actor_fleet:compute_node_cpu_usage_ratio{cluster=~\"$cluster\"}", "legendFormat": "{{cluster}} / {{node}} CPU 实际使用", "refId": "C"},
+            {"expr": "actor_fleet:compute_node_memory_usage_ratio{cluster=~\"$cluster\"}", "legendFormat": "{{cluster}} / {{node}} 内存实际使用", "refId": "D"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "V8 与 PVM 活跃 Actor",
+          "description": "按节点观测到的运行时驻留量；在运行时配置强制上限前，它不代表 Actor 硬容量。",
+          "id": 20,
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 51},
+          "targets": [{"expr": "actor_fleet:compute_node_runtime_active_actors{cluster=~\"$cluster\"}", "legendFormat": "{{cluster}} / {{node}} / {{runtime}}", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "静态发布一致的 Cell",
+          "description": "镜像 digest、运行 Pod imageID、工作负载静态字段与非 Secret ConfigMap 均匹配发布账本。副本数和节点状态不属于此指标。",
+          "id": 21,
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 60},
+          "targets": [{"expr": "sum(actor_fleet:cell_static_release_converged{cluster=~\"$cluster\",cell=~\"$cell\"} == 1)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "发生静态漂移的 Cell",
+          "id": 22,
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 60},
+          "targets": [{"expr": "sum(actor_fleet:cell_static_release_converged{cluster=~\"$cluster\",cell=~\"$cell\"} == 0)", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "静态漂移发现数",
+          "id": 23,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 60},
+          "targets": [{"expr": "sum(actor_fleet:cell_static_release_drift_findings{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        },
+        {
+          "type": "stat",
+          "title": "最长静态漂移持续时间",
+          "id": 24,
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 60},
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "targets": [{"expr": "max(actor_fleet:cell_static_release_drift_age_seconds{cluster=~\"$cluster\",cell=~\"$cell\"})", "refId": "A"}]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["actor-fleet", "meshharness", "federation"],
+      "templating": {
+        "list": [
+          {"name": "cluster", "label": "TKE 集群", "type": "query", "query": "label_values(actor_fleet:cell_inventory, cluster)", "includeAll": true, "allValue": ".*", "refresh": 1},
+          {"name": "cell", "label": "Cell 单元", "type": "query", "query": "label_values(actor_fleet:cell_inventory{cluster=~\"$cluster\"}, cell)", "includeAll": true, "allValue": ".*", "refresh": 1}
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timezone": "browser",
+      "title": "Actor Mesh / Cell 舰队总览",
+      "uid": "actor-mesh-cell-fleet",
+      "version": 2
+    }
