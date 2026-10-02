@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -77,6 +77,21 @@ derived: false
 - readonly progress inv-a9d713gma9 SUCCESS：11 产品均 registryPullVerified，Go 四叶和 base 为 2c4ced82，
   Runtime 保留 a2f68ea8 原始 source identity；无 buildah/go 进程。
 - baseline Context 为 4,812 errors；不得称全库绿。
+- c5923a4e2f034f2d6c4de1232d60ee7d7c2344cb 已推送 master；完整源码经 COS relay 到 builder，
+  inv-c9d78i01kg SUCCESS，远端 fleet 静态门禁通过，manifest 前缀 5ea9780e2ef6；完整值绑定于
+  /data/tmp/mono2-minisandbox-regional-seed-source.B5Vqlw/source.receipt.json。
+- 真实 regional cold-pull inv-d9d7am0pq3 SUCCESS/0：17/17 Linux/amd64，canonical proof digest
+  前缀 31bcb9783b36，seed digest 前缀 3c179b2aa5b8。完整 seed/proof 已经下载并独立验真，
+  位于同一 B5Vqlw evidence 目录；它们与 inventory 的 canonical digest 精确绑定。
+- canonical assemble-generation 成功闭合 11/28，inventory digest
+  前缀 8e85a0d9abb5，完整值保留在正式设计与 immutable 文件中：
+  /data/actor-build/beijing-rebuild-20260915/mono2-foundation-2c4ced82/all-images-c5923a4e.lock.json。
+- 下载后的完整 inventory 再次独立通过 image-lock validator，传输文件 SHA-256 为
+  前缀 2a46b27abc5a，未把文件 hash 混为 canonical digest。
+- readonly live preflight inv-d9d7bc0s06：A/B Host 4/4、主 FDB available/fullReplication/healthy；
+  B Node 已自动缩回 4，A prepared/zero-attempt intent 与 201 Node 未变化，无 release hold。
+- A 正式 controller-first Runtime release 已以 detached TAT inv-e9d7gqgp3v 提交并观测 RUNNING；
+  尚未证明 release 完成，未手工取消意图，未发起 B rollout 或新的 qualification。
 
 ## risks
 
@@ -106,6 +121,11 @@ derived: false
 
 ## handoff
 
-- 当前阶段：regional revalidation CLI、进程回归与完整静态门禁完成；仍需推送与真实 cloud pull。
-- next_action：reviewed-source relay 到 builder，复验 17 mirrors、assemble 全 28 项，再正式 release。
+- 当前阶段：regional CLI 已推送、真实 17 cold pulls 与 11/28 closure 已验真；A release 在运行。
+- verified：新 generation 可组装，Runtime/workerd 未重复编译，输入和产物 identities 保持独立。
+- unverified：A controller-first 恢复/rollout 完成、B release、A Node 缩回、strict 10k。
+- discard：将旧 seedReceiptDigest 当新 receipt、直接 leaf 注入不同 Go base、旧 q01 hardcoded wrapper。
+- restore：c592 reviewed source、2c 四个 Go 产品、a2 Runtime、5f9e9aad generation 收据。
+- next_action：继续观测 inv-e9d7gqgp3v，同一句柄终态后核验 release ledger/UID/配置和 Node intent；
+  不因无输出重复提交。成功后才进入 B release、安全缩回与 strict 10k。
 - remaining_goal：strict 10k、ACK/commit disconnect、告警投递、Router 性能、百万 dormant 与完整矩阵。

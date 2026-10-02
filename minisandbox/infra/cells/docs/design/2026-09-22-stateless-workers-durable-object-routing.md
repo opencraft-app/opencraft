@@ -299,6 +299,10 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    `actor-regional-image-seed-revalidation/v1` proof。它不访问公共上游、不恢复旧 seed preimage，也
    不声称独立验证 origin。新 seed 仍必须与 11 个依赖闭合产品收据组装成完整 28 项 inventory，
    才能进入正式 release；原 inventory 不被覆盖。
+   北京 builder 的真实复验 `inv-d9d7am0pq3` 已通过 17/17 平台检查，canonical assembler 完成
+   11/28 closure，新 inventory digest 为
+   `sha256:8e85a0d9abb56c045d60d1f592d9e6172d224c7966ec428a2127b4ab4322e8c4`。它解除了
+   镜像清单阻塞，不证明 controller 恢复、Runtime rollout 或 strict 10k 已通过。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入
