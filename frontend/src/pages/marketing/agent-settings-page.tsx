@@ -6648,6 +6648,7 @@ export const AgentSettingsPage = ({
                                不因其他 state 变化无谓重挂。 */
                             <AgentChatMigrationSurface
                               active={activeSection === "chat"}
+                              agentPaused={activeBot.status === "paused" && activeBot.siblingsUnknown === "instance_stopped"}
                               accountId={accountId}
                               apiBase={resolveConfiguredAuthApiBaseUrl() || undefined}
                               enabled={openCraftChatEnabled}
