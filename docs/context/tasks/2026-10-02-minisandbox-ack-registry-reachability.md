@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -32,6 +32,8 @@ derived: false
 ## interface_refs / data_structure_refs
 
 - Registry Service worker-registry-system/worker-registry:8080，readyz 就绪检查。
+- Host/Engine 的实际 tracing 文本包含 ANSI SGR 与带引号 Envoy ID；门禁去掉呈现颜色，
+  不改变时间戳、Actor/generation/index 或 Envoy 身份匹配。
 - 复用 persistent-runtime-e2e 的 Kubectl/PortForward；转发必须在任何业务请求前就绪。
 - 转发正常及异常退出都关闭，仍保留可选明确可达的 registry-endpoint。
 
@@ -74,6 +76,13 @@ derived: false
   urllib URLError Errno -2，发生在 arm_plan 之前；不能宣称 ACK 协议通过或失败。
 - focused 11 项测试通过，包含真实子进程 HTTP double、正常/异常后的端口关闭、
   Hub Service/namespace 校验、互斥参数与非 Service 路径拒绝。shell 与 Python 检查通过。
+- 新源码材料化 inv-d9dbja0ick SUCCESS/0，真实 native 23+15、relocated 及 ACK11 通过。
+- 新故障门禁 inv-c9dbn2gwda FAILED/1，Registry 通路已恢复，仍在 arm_plan 前：Host
+  actor-bj-b01-runtime-hosts-2 的 colored/quoted Envoy 行解析失败。原日志已下载保留。
+- 只读 inv-a9dbr80a36 SUCCESS/0 提供实际日志形态；新增两条解析回归先红，13 测试中
+  仅这两项失败，证明门禁缺口而非靠换 runtime 配置掩盖。
+- 同时复现原文本匹配把 actor-a/actor-ab、generation=1/17、index=1/19 当同一身份的
+  三个误判；改为字段精确匹配。全部 15 项测试通过，未放宽身份核对。
 
 ## risks
 
@@ -99,5 +108,5 @@ derived: false
 
 ## handoff
 
-- 本地修复通过；源路径门禁已 push master 6ddba245，待本修复推送后以新 source bundle
-  统一 native 验证，再运行真实 ACK 边界故障。不把本地通过写成云上资格通过。
+- Registry 通路修复已 push master 41268e5b 并通过 native；当前收敛实际日志解析，
+  之后以新 source identity 重跑 native 和真实 ACK 边界。不把注入前失败视为协议结论。

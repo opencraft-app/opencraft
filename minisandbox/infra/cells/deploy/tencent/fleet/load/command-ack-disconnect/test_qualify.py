@@ -21,6 +21,40 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CommandAckDisconnectQualificationTest(unittest.TestCase):
+    def test_extracts_observed_colored_and_quoted_host_envoy_identity(self):
+        line = (
+            '2026-10-02T13:35:21.104274759+08:00 \x1b[2m2026-10-02T05:35:21.104167Z\x1b[0m '
+            '\x1b[32m INFO\x1b[0m \x1b[2mrivet_workerd_host\x1b[0m\x1b[2m:\x1b[0m '
+            'workerd envoy host connected \x1b[3menvoy_key\x1b[0m\x1b[2m=\x1b[0m'
+            '"0210dba6-0507-499b-b586-56c3416b4aad"'
+        )
+        observed = MODULE.extract_envoy_key(line, "workerd envoy host connected")
+        self.assertIsNotNone(observed)
+        self.assertEqual(observed[1], "0210dba6-0507-499b-b586-56c3416b4aad")
+        self.assertEqual(observed[0].utcoffset(), datetime.timedelta(hours=8))
+
+    def test_matches_colored_text_checkpoint_without_changing_identity(self):
+        line = (
+            '2026-10-02T07:00:00Z \x1b[32m INFO\x1b[0m processed durable command '
+            '\x1b[3mactor_id\x1b[0m\x1b[2m=\x1b[0mactor-a '
+            '\x1b[3mgeneration\x1b[0m\x1b[2m=\x1b[0m7 '
+            '\x1b[3mindex\x1b[0m\x1b[2m=\x1b[0m19 command_kind="stop"'
+        )
+        self.assertTrue(MODULE.line_has_event(line, "processed durable command", "actor-a", 7, 19, "stop"))
+        self.assertFalse(MODULE.line_has_event(line, "processed durable command", "actor-a", 7, 20, "stop"))
+
+    def test_text_checkpoint_does_not_match_identity_or_integer_prefixes(self):
+        line = '2026-10-02T07:00:00Z INFO processed durable command actor_id="actor-ab" generation=17 index=19 command_kind="stop"'
+        for actor, generation, index in (("actor-a", 17, 19), ("actor-ab", 1, 19), ("actor-ab", 17, 1)):
+            with self.subTest(actor=actor, generation=generation, index=index):
+                self.assertFalse(MODULE.line_has_event(line, "processed durable command", actor, generation, index, "stop"))
+        self.assertTrue(MODULE.line_has_event(line, "processed durable command", "actor-ab", 17, 19, "stop"))
+
+    def test_colored_engine_envoy_is_filtered_before_latest_selection(self):
+        lines = '2026-10-02T07:00:00Z INFO envoy websocket connection ready \x1b[3menvoy_key\x1b[0m\x1b[2m=\x1b[0mtarget\n2026-10-02T07:00:01Z INFO envoy websocket connection ready envoy_key=other'
+        observed = MODULE.extract_envoy_key(lines, "envoy websocket connection ready", expected_key="target")
+        self.assertEqual(observed[1], "target")
+
     def test_explicit_registry_endpoint_does_not_require_cluster_dns(self):
         args = argparse.Namespace(registry_endpoint="http://127.0.0.1:8080/")
         with MODULE.reachable_registry(args) as endpoint:

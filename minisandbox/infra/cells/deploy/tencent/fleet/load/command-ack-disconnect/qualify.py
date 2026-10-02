@@ -26,6 +26,7 @@ BOUNDARY = "after_commit_before_barrier"
 ACTOR_NAMESPACE = "default"
 ENGINE_SELECTOR = "fleet.actor.dev/component=engine"
 HOST_SELECTOR = "fleet.actor.dev/component=workerd-host"
+ANSI_SGR = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def load_module(name: str, path: pathlib.Path):
@@ -166,6 +167,7 @@ def exec_registry_resolve(kube: runtime.Kubectl, pod: str, actor_id: str) -> dic
 
 
 def parse_timestamped_line(line: str) -> tuple[datetime.datetime | None, str]:
+    line = ANSI_SGR.sub("", line)
     prefix, separator, body = line.partition(" ")
     if not separator:
         return None, line
@@ -197,6 +199,7 @@ def line_has_event(
     index: int,
     command_kind: str | None = None,
 ) -> bool:
+    line = ANSI_SGR.sub("", line)
     fields = structured_fields(line)
     if fields:
         if fields.get("message") != message:
@@ -208,16 +211,16 @@ def line_has_event(
         if int(fields.get("index", -1)) != index:
             return False
         return command_kind is None or fields.get("command_kind") == command_kind
-    if message not in line or actor_id not in line:
+    if message not in line:
         return False
-    required = [f"generation={generation}", f"index={index}"]
+    required = {"actor_id": actor_id, "generation": generation, "index": index}
     if command_kind is not None:
-        if not re.search(
-            rf"command_kind=(?:\"|')?{re.escape(command_kind)}(?:\"|')?",
-            line,
-        ):
+        required["command_kind"] = command_kind
+    for name, value in required.items():
+        exact = re.escape(str(value))
+        if not re.search(rf"(?<![A-Za-z0-9_]){name}\s*=\s*(?:\"{exact}\"|'{exact}'|{exact}(?=\s|$))", line):
             return False
-    return all(value in line for value in required)
+    return True
 
 
 def extract_envoy_key(
@@ -226,10 +229,10 @@ def extract_envoy_key(
     matches = []
     patterns = (
         re.compile(r'"envoy_key"\s*:\s*"([A-Za-z0-9_-]{3,128})"'),
-        re.compile(r"envoy_key=([A-Za-z0-9_-]{3,128})"),
-        re.compile(r"envoy_key\s*=\s*([A-Za-z0-9_-]{3,128})"),
+        re.compile(r"envoy_key\s*=\s*[\"']?([A-Za-z0-9_-]{3,128})(?:[\"']|(?=\s|$))"),
     )
     for line in lines.splitlines():
+        line = ANSI_SGR.sub("", line)
         if message not in line:
             continue
         timestamp, _ = parse_timestamped_line(line)

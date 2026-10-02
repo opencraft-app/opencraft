@@ -35,6 +35,11 @@ cluster-internal DNS URL outside the cluster. A directly reachable Registry
 can still be selected explicitly with `qualify.py --registry-endpoint`; this
 is mutually exclusive with `--registry-service`.
 
+The qualification log parser accepts the runtime's ANSI-colored tracing text,
+quoted Envoy keys and Kubernetes timezone timestamps. Only SGR presentation
+escapes are removed; checkpoint identity and generation/index matching stay
+strict. The observed Host line is a permanent regression fixture.
+
 Runs reuse one stable qualification Worker because the public delete contract
 intentionally retains Workers that have Durable Object namespace history. Each
 run uses and then deletes only its deterministic Object, so repeated evidence
