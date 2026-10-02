@@ -41,7 +41,7 @@ Set the following fields:
 - **Notification**: Optionally choose where the completed result should be sent.
 
 At the scheduled time, Hermes Agent creates an Agent task and calls the selected model.
-The result can be delivered to the selected notification channels and is recorded in Recent Runs. With no channel selected, you must confirm local-only delivery before creating the task; no result is sent to chat.
+The result can be delivered to the selected notification channels and is recorded in Recent Runs. With no channel selected, the task is created with local-only delivery; its result stays in this Bot's Recent Runs and is not sent to chat.
 
 ![Create Scheduled Task dialog showing the Agent Task type](../../images/st-en-2.webp)
 

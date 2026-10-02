@@ -25,6 +25,7 @@ derived: false
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户反馈截图（2026-09-30）：第三个 Bot 的任务使用 `deliver: local`，用户未在聊天收到结果，无法从主 Bot 取回该 Bot 的本地文件。
 - 用户本轮确认“改吧，新起一个分支”；创建入口仍未知，不能假定所有任务都有可用 `origin`。
+- 用户 2026-10-02 澄清：未选通知通道就是仅本地保存，不应再要求勾选确认。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/lib/hermes-cron-client.ts` 的 `HermesCronTarget`、`CronRunRecord.output_path` 与 `execCommand`。
@@ -37,7 +38,7 @@ derived: false
 - `superseded_refs`：无。
 
 ## acceptance
-- 未选通知通道的创建操作必须明确确认“仅本地保存”，现有 `local` 任务有可见提示和设置通知入口。
+- 未选通知通道的智能任务和脚本任务可直接按 `deliver: local` 创建，同时显示结果仅留在本 Bot 执行记录中的提示；现有 `local` 任务有可见提示和设置通知入口。通知任务仍须选择通道。
 - 最近执行可查看和下载当前 Bot/Profile 的 Markdown 结果；路径越界、缺失、过大时拒绝读取并提示。
 - 相关组件、命令构造、中文和国际站文案测试通过。
 
@@ -63,7 +64,7 @@ derived: false
 
 ## evidence
 - 初始隔离工作树基于 `master@efe04e16e`，分支 `codex/automation-delivery-results`。
-- 网页创建任务已有“默认选中已连接通道”逻辑；固定通知任务已要求选择通道。无通道时新建需要明确确认本地保存，现有本地任务展示状态和设置通知入口。
+- 网页创建任务已有“默认选中已连接通道”逻辑；固定通知任务已要求选择通道。按用户澄清，未选通道时新建可直接本地保存，并保留结果去向说明；现有本地任务展示状态和设置通知入口。
 - 最近执行从所属 Bot/Profile 的 `cron/output/<job-id>/*.md` 按需读取；路径越界、符号链接逃逸、缺失和超过 1 MiB 的结果均拒绝读取。
 - 国内及国际站现有定时任务文档已同步说明本地保存和从最近执行查看、下载 Markdown；国际站通知任务文档中与当前实现冲突的无通道描述已修正。
 - MR !4878 的 CI 在 OpenCraft guard 因 `i18n/generated/en-US.json` 生成副本漂移失败。分支合并 `origin/master@558470e16` 后，官方脚本同步 130 个文件；实际变更限于 11 个生成文件，其中包括 `UPSTREAM.json`。
@@ -81,9 +82,11 @@ derived: false
 - `git diff --cached --check` 与 `validate_change_impact.py --repo . --staged` 通过，changed-path 无匹配高风险规则。
 - 合并 master 后，`npm --prefix opencraft run check:mono2-agent-console` 验证 130 个文件，OpenCraft 插件类型检查及 `test:embedded-ci` 155 项测试通过。
 - 合并 master 后，`pnpm check`、定时任务聚焦 Vitest 326 项以及国内站和国际站构建均通过。
+- 2026-10-02 移除强制勾选后，`pnpm check`、三份聚焦 Vitest 326 项、补充编辑场景后的国内站测试 202 项，以及国内站和国际站构建通过；文档链接检查无破损或未分类文档。
 
 ## decisions
 - 优先补齐结果可达性和本地投递显性反馈；聊天创建路径由 Hermes 上游持有，未确认入口前不修改上游运行时。
+- 原强制勾选为避免用户误以为本地任务会发到聊天；用户确认未选通道本来就表示本地投递后，移除额外确认，只保留非阻断提示。
 
 ## scan_scope
 - `frontend/src/lib/hermes-cron-client.ts` 与 `frontend/src/pages/marketing/agent-automations-panel.tsx` 的定时任务链路。
@@ -92,10 +95,10 @@ derived: false
 - 精确搜索记录在本轮工具输出中。
 
 ## handoff
-- MR !4878 已存在，用户授权修复 CI 并继续推送；完成生成物检查和远端核验后交接。未授权合并或发布。
+- MR !4878 已存在，用户确认不需要本地保存勾选；本轮修改待提交前端真源、同步 OpenCraft 生成物并核对远端 CI。未授权合并或发布。
 
 ## stage
-CI 漂移修复已在隔离分支完成，等待最后验证和推送。
+本地保存确认简化已实现并通过前端验证，待生成副本同步与 MR 更新。
 
 ## verified
 - 隔离分支只含本次改动；国内与国际站聚焦测试 326/326、前端检查、文档检查和 changed-path 门禁已有通过证据。
@@ -115,4 +118,4 @@ CI 漂移修复已在隔离分支完成，等待最后验证和推送。
 - 本任务前端验证入口为 `pnpm check` 和三个聚焦 Vitest 文件。
 
 ## next_action
-提交生成副本和本记录，推送 MR 分支并核对远端 SHA、CI 状态。
+先提交前端真源和本记录，再用官方脚本生成 OpenCraft 副本并单独提交；推送后核对 MR 与 CI。

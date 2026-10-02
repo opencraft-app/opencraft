@@ -41,7 +41,7 @@ Configure los siguientes campos:
 - **Notificación**: Elija opcionalmente dónde enviar el resultado completado.
 
 A la hora programada, Hermes Agent crea una tarea de Agent y llama al modelo seleccionado.
-El resultado puede enviarse a los canales seleccionados y queda registrado en Ejecuciones recientes. Si no selecciona un canal, deberá confirmar que el resultado se guardará solo localmente antes de crear la tarea; no se enviará al chat.
+El resultado puede enviarse a los canales seleccionados y queda registrado en Ejecuciones recientes. Si no selecciona ningún canal, la tarea se crea con entrega solo local; el resultado permanece en las Ejecuciones recientes de este Bot y no se envía al chat.
 
 ![Diálogo Crear tarea programada con el tipo Tarea de Agent](../../images/st-en-2.webp)
 

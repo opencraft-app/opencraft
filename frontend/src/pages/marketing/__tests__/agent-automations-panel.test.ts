@@ -695,7 +695,6 @@ describe("multi-Skill automation form", () => {
     fireEvent.click(screen.getByRole("button", { name: localizedText("调用技能", "Use Skill") }));
     fireEvent.click(screen.getByRole("option", { name: /Finance News.*finance-news/ }));
     fireEvent.click(screen.getByRole("option", { name: /Market Data.*market-data/ }));
-    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
 
     await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
@@ -1337,7 +1336,6 @@ describe("cron context panel integration", () => {
       } else {
         fireEvent.change(screen.getByPlaceholderText("请输入定时任务名称"), { target: { value: "普通任务已更新" } });
       }
-      if (mode === "create") acknowledgeLocalDeliveryIfNeeded();
       fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       if (mode === "create") {
@@ -1361,7 +1359,6 @@ describe("cron context panel integration", () => {
 
     fillCreateFields();
     chooseUpstream("上游任务 A");
-    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -1396,7 +1393,6 @@ describe("cron context panel integration", () => {
 
       if (mode === "create") fillCreateFields();
       chooseUpstream("上游任务 A");
-      if (mode === "create") acknowledgeLocalDeliveryIfNeeded();
       fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(
@@ -1536,7 +1532,6 @@ describe("cron context panel integration", () => {
 
     fillCreateFields();
     chooseUpstream("上游任务 A");
-    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     const dialog = screen.getByRole("dialog");
@@ -1568,7 +1563,6 @@ describe("cron context panel integration", () => {
 
       if (mode === "create") fillCreateFields();
       chooseUpstream("上游任务 A");
-      if (mode === "create") acknowledgeLocalDeliveryIfNeeded();
       fireEvent.click(screen.getByRole("button", { name: mode === "create" ? "新建" : "保存" }));
 
       const dialog = screen.getByRole("dialog");
@@ -2052,8 +2046,6 @@ describe("terminal cron card visibility", () => {
     expect(within(dialog).getByRole("button", {
       name: new RegExp(localizedText("智能任务", "AI-powered")),
     })).toHaveClass("border-blue-300", "bg-blue-50");
-
-    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(within(dialog).getByRole("button", { name: localizedText("新建", "Create") }));
 
     await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
@@ -2234,7 +2226,6 @@ describe("terminal cron card visibility", () => {
     expect(await screen.findByText("旧任务")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
     fillCreateFields();
-    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -2254,7 +2245,6 @@ describe("terminal cron card visibility", () => {
 
     await screen.findByRole("heading", { name: localizedText("任务模板", "Task templates") });
     fireEvent.click(screen.getByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));
-    acknowledgeLocalDeliveryIfNeeded();
     const submitButton = within(screen.getByRole("dialog")).getByRole("button", { name: "新建" });
     await waitFor(() => {
       expect(submitButton).toBeEnabled();
@@ -2622,8 +2612,7 @@ describe("automation notification channel options", () => {
       channelStatus: "ready",
     });
 
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
-    expect(screen.getByRole("checkbox", { name: "我确认仅本地保存" })).not.toBeChecked();
+    expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
     expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
     const notificationHelpButton = screen.getByRole("button", { name: "通知方式" });
@@ -2721,8 +2710,7 @@ describe("automation notification channel options", () => {
       channelStatus: "ready",
     });
 
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
-    expect(screen.getByRole("checkbox", { name: "我确认仅本地保存" })).not.toBeChecked();
+    expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.getByText("No channels configured.")).toBeTruthy();
     expect(screen.queryByText("No notification channels are configured yet.")).toBeNull();
     fireEvent.focus(screen.getByRole("button", { name: "Notification" }));
@@ -3066,15 +3054,8 @@ function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFor
   return render(createElement(AutomationFormModal, props));
 }
 
-function acknowledgeLocalDeliveryIfNeeded() {
-  const checkbox = screen.queryByRole("checkbox", {
-    name: localizedText("我确认仅本地保存", "I understand this saves locally only"),
-  });
-  if (checkbox) fireEvent.click(checkbox);
-}
-
 describe("local-only automation delivery", () => {
-  it("requires an explicit acknowledgement before creating an Agent task without a channel", async () => {
+  it("creates an Agent task locally without a notification channel", async () => {
     renderAutomationForm();
     fireEvent.change(screen.getByPlaceholderText(localizedText("请输入定时任务名称", "Enter scheduled task name")), {
       target: { value: "每日资料" },
@@ -3089,13 +3070,33 @@ describe("local-only automation delivery", () => {
       "Results are saved only in this Bot's run history and won't be sent to chat.",
     ))).toBeTruthy();
     const submit = screen.getByRole("button", { name: localizedText("新建", "Create") });
-    expect(submit).toBeDisabled();
-    fireEvent.click(screen.getByRole("checkbox", { name: localizedText("我确认仅本地保存", "I understand this saves locally only") }));
+    expect(screen.queryByRole("checkbox", { name: localizedText("我确认仅本地保存", "I understand this saves locally only") })).toBeNull();
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
 
     await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
       "bot-1", expect.objectContaining({ deliver: "local" }), undefined,
+    ));
+  });
+
+  it("saves an existing task locally when its last notification channel is cleared", async () => {
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({ deliver: "qqbot" }),
+      enabledChannels: new Set(["qqbot"]),
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
+    expect(screen.getByText(localizedText(
+      "结果仅保存在此 Bot 的执行记录中，不会发送到聊天。",
+      "Results are saved only in this Bot's run history and won't be sent to chat.",
+    ))).toBeTruthy();
+    const save = screen.getByRole("button", { name: localizedText("保存", "Save") });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(cronClientMocks.editCronJob).toHaveBeenCalledWith(
+      "bot-1", "job-1", expect.objectContaining({ deliver: "local" }),
     ));
   });
 });
@@ -3293,8 +3294,6 @@ describe("automation form test run", () => {
         previewKind: "briefing",
       },
     });
-
-    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -3951,8 +3950,7 @@ describe("automation notification channel options", () => {
     if (isGlobal) return;
     renderAutomationForm({ enabledChannels: new Set(), channelStatus: "ready" });
 
-    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
-    expect(screen.getByRole("checkbox", { name: "我确认仅本地保存" })).not.toBeChecked();
+    expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
     expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
   });
@@ -3993,7 +3991,6 @@ describe("automation notification channel options", () => {
     renderAutomationForm({ onSaved });
 
     fillCreateFields();
-    acknowledgeLocalDeliveryIfNeeded();
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));

@@ -82,10 +82,6 @@ afterEach(() => {
   cleanup();
 });
 
-async function confirmLocalOnlyDelivery() {
-  fireEvent.click(await screen.findByRole("checkbox", { name: "I understand this saves locally only" }));
-}
-
 describe("HermesAgentAutomationsPanel global upstream context", () => {
   it("marks an existing local-only task and opens its notification settings", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({ id: "local-job", name: "Local summary", deliver: "local" })]);
@@ -216,7 +212,6 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     });
     fireEvent.click(screen.getByRole("combobox", { name: "Upstream Task" }));
     fireEvent.click(screen.getByRole("option", { name: /Upstream/ }));
-    await confirmLocalOnlyDelivery();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -269,7 +264,6 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
       target: { value: "Summarize updates" },
     });
-    await confirmLocalOnlyDelivery();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {

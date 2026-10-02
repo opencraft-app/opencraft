@@ -41,7 +41,7 @@ Atur bidang berikut:
 - **Notifikasi**: Opsional, pilih tujuan pengiriman hasil.
 
 Pada waktu yang dijadwalkan, Hermes Agent membuat tugas Agent dan memanggil model yang dipilih.
-Hasilnya dapat dikirim ke kanal notifikasi yang dipilih dan dicatat di Eksekusi terbaru. Jika tidak memilih kanal, Anda harus mengonfirmasi penyimpanan lokal sebelum membuat tugas; hasil tidak akan dikirim ke chat.
+Hasilnya dapat dikirim ke kanal notifikasi yang dipilih dan dicatat di Eksekusi terbaru. Jika tidak memilih kanal, tugas dibuat dengan pengiriman lokal saja; hasilnya tetap ada di Eksekusi terbaru milik Bot ini dan tidak dikirim ke chat.
 
 ![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Agent](../../images/st-en-2.webp)
 
