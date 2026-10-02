@@ -1266,6 +1266,20 @@ TAT 命令最长 24 小时，完整自然缩容门禁允许等待 36 小时；�
 的 systemd 服务承载原 runner，保留整体 operation lock 和退出状态，TAT 仅提交/只读查询。
 不得把外层启动 SUCCESS 或观察期间短暂 Ready 当作最终 strict receipt 通过。
 
+后续 run `d3a163511fd849bf9a466553e4ab4f48` 已从 A/B 各四 Host 起步。首个约 270 秒的
+progress 为 384 ready、5,275 active interactions 成功、零 terminal failure，但 warmup
+容量背压重试 2,418 次，就绪最大约 78 秒；不能报告为全程零重试或三秒创建达标。
+相邻容量样本 A/B 各六 Ready Host，desired 已为 10/11；后台 refresh/compaction
+inflight/waiters 为零。这支持先排查新 Host 准入/容量等待，但不是完整因果或稳态证明。
+最终 steady-state 的零重试/三秒要求不变，低容量 warmup 与 steady-state 分别报告。
+
+生产创建 SLO 的容量模型还要包含供给时延：保留可用槽位至少覆盖
+`incoming_create_rate × node_admission_p99 + expected_wake_burst`，并留安全余量。
+这里的槽位必须来自真实 admitted/Ready/非 drain Host，不计 Pending 或 desired 副本；
+节点启动、精确镜像探测和 Host 注册耗时计入供给时延。只有水位阈值而没有这一余量，低
+容量突发时必然先背压；单靠放宽重试不会改善用户创建 SLO。该公式是容量规划约束，当前
+未实现预测扩容，也不能用本次 warmup 的容许重试替代正式创建 SLO。
+
 ## 所有权与核心不变量
 
 | 状态/动作 | 唯一所有者 |

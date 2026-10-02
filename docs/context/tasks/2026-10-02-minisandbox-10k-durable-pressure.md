@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.2.0
+revision: 1.2.1
 precedence: task
 derived: false
 ---
@@ -128,6 +128,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   exact cold 均为 48/48，等待约 973/964 秒；HA 各 1,500 公共请求、零失败。
 - 首个 strict10k preflight 的 B `CapacityEvidenceMissing` 失败已保留。只读
   `inv-e9e0300ee9` 证明证据到达后 readiness 自然恢复，不 patch 状态或重复 B release。
+- 新 run 首段只读 `inv-d9e08dgdx4`：约 270 秒，384 ready、5,275 active 成功、零
+  terminal failure，但 warmup 容量背压重试 2,418 次，就绪最大约 78 秒。不是全程零重试
+  或三秒创建证明。相邻样本 A/B 各六 Ready Host，desired 10/11，后台 admission 队列为零。
 
 ## risks
 
@@ -201,6 +204,7 @@ A/B 发布资格完成；失败 preflight 保留，新 strict10k 已确认进入
 ### unverified
 
 - strict 10k 最终结果和 Router performance receipt；A/B 小规模资格不替代容量验收。
+- 供给时延与可用槽位余量是否覆盖目标创建率和同步唤醒突发；未实现预测扩容。
 - 低 maintenance concurrency 能否同时保持 hot tail 有界和 cold publish 进度。
 
 ### discard
@@ -210,7 +214,7 @@ A/B 发布资格完成；失败 preflight 保留，新 strict10k 已确认进入
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 d7ff0a90 为已推送基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 83b5f321 为已推送证据基线；原 dirty 工作区保持不动。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
@@ -218,4 +222,5 @@ A/B 发布资格完成；失败 preflight 保留，新 strict10k 已确认进入
 ### next_action
 
 - 续接新 run 的监督服务和只读快照，确认内层负载后记录 effective throughput/hot-debt 时序；
+- 下一只读观察以五分钟级稀疏 cadence 续接；不重启服务或通过减少标准消除容量背压。
   继续用 exact job 时序定位冷降等待，不跳过 fingerprint 或保留策略。
