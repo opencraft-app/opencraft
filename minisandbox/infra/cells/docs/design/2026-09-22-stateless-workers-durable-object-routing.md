@@ -303,6 +303,26 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    11/28 closure，新 inventory digest 为
    `sha256:8e85a0d9abb56c045d60d1f592d9e6172d224c7966ec428a2127b4ab4322e8c4`。它解除了
    镜像清单阻塞，不证明 controller 恢复、Runtime rollout 或 strict 10k 已通过。
+   随后的正式 A controller-first release `inv-e9d7gqgp3v` 与 B normal release
+   `inv-c9d83v01pt` 均已终态 SUCCESS/0；A 使用显式 recovery=1，B 不开启恢复路径。
+   独立只读审计 `inv-d9d8a90q8b` 重新读取两 Cell static ledger、外部不可变 receipt、live workload
+   与 Pod image IDs，均为零 drift，且两边 Engine 6/6、Host 4/4、controller singleton Recreate；
+   既有 Host/controller UID 未变、Host revision 已收敛、release hold 正常释放。
+   两边现场配置均精确为每 Engine refresh=8/compaction=2，主 FDB available/fullReplication/healthy
+   且 generation=reconciled=2。Cell-neutral release artifact digest 为
+   `sha256:3a3f47792c10d999358cdfe5e8e616dbcebad8344605d83d171c5924522c3ea0`；
+   A/B releaseId 分别为 `sha256:a6ce4fc13fa7294e2e78c152820ed978f521b689affe3fea1af60eba9b9effdd`
+   与 `sha256:847138778c90244666e9c625eba9d14b6e985a772c2e3ca36bd6aaf3d63618b7`。
+   官方 TAT 下载分别验真文件 SHA-256
+   `dd26f2cb7687118734b1e96f3f4be9f003edf9ee9ef52273fc189db3acd27ca3` 与
+   `33863eb5d378089e8843cadde52aa402d4a1a88d82028362430b7a123da5cca1`；
+   收据在各 Cell 的 `receipts/runtime-release-c5923a4e/`，本地归档为
+   `/data/tmp/minisandbox-{a01,b01}-runtime-release-c5923a4e-ledger.json`。
+   A 卡住的零尝试意图已由新 controller 按 CAS 恢复，随后实际/Ready/desired Node 从 201
+   自动串行减少到 156，最新精确 provider acknowledgement 为 157→156；B 已回到四台。
+   这是恢复与缩容进展，不是 A 已回低容量的最终证据。正式 release 已按既有契约关闭 reporter
+   placement qualification，不能用更新镜像后的旧 receipt 重新开放。低容量收尾、当前 Runtime
+   重新绑定资格、strict 10k 和 Router 性能仍未完成，旧失败 cleanup 仍须续接原句柄。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入
