@@ -15,8 +15,9 @@ class RouterPerformanceBuilderEntrypointTest(unittest.TestCase):
 
     def test_resolves_live_endpoints_without_hard_coded_addresses(self):
         self.assertIn('endpoint-installation.json', SCRIPT)
-        self.assertIn("get configmap workers-api", SCRIPT)
-        self.assertIn("jsonpath='{.data.registry-url}'", SCRIPT)
+        self.assertIn("--registry-service worker-registry", SCRIPT)
+        self.assertIn("--registry-namespace worker-registry-system", SCRIPT)
+        self.assertNotIn("registry-url", SCRIPT)
         self.assertNotIn("10.160.", SCRIPT)
 
     def test_load_is_cross_cell_bounded_and_captured(self):

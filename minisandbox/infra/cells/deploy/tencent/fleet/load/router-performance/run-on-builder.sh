@@ -46,13 +46,11 @@ PY
 
 endpoint=$(jq -er '.endpoint' "$endpoint_receipt")/v1
 [[ $endpoint == http://*/v1 || $endpoint == https://*/v1 ]]
-registry_endpoint=$(kubectl --kubeconfig "$kubeconfig" -n workers-api-system \
-	get configmap workers-api -o jsonpath='{.data.registry-url}')
-[[ $registry_endpoint == http://* || $registry_endpoint == https://* ]]
 install -d -m 0700 "$out"
 
 python3.11 "$runner" \
-	--endpoint "$endpoint" --registry-endpoint "$registry_endpoint" \
+	--endpoint "$endpoint" \
+	--registry-service worker-registry --registry-namespace worker-registry-system \
 	--hub-kubeconfig "$kubeconfig" \
 	--cell actor-bj-a01 --cell actor-bj-b01 \
 	--worker "router-perf-${performance_run_id:0:16}" \
