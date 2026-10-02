@@ -1055,6 +1055,13 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 
 ## 必须固化的测试矩阵
 
+公共 API 的真实在途排空由独立 `load/workers-api-business-drain/` 门禁验证。它保持生产
+30 秒 preStop、50 秒 grace 和十秒 HTTP drain，先接收长流前半段，再用 UID precondition
+正常删除一个 API Pod。独立 admission 转发必须观察到容器拒绝新连接，而原长流仍未结束；
+随后须完整接收固定 128 KiB 内容、零重试、恢复三个 Ready API 节点，并精确清理临时
+stateless Worker。公共 CLB 同时接收独立快速业务请求。readyz HA 收据不能替代这个门禁；
+本地回归与工具实现也不能替代实际云上通过收据。
+
 ### 正确性
 
 - 同名 `idFromName()` 在进程、Pod 和 Cell 重启后完全一致；

@@ -13,6 +13,9 @@ for executable in \
 	"$script_dir/load/stateless-durable-routing/run.py" \
 	"$script_dir/load/command-ack-disconnect/qualify.py" \
 	"$script_dir/load/command-ack-disconnect/run-on-builder.sh" \
+	"$script_dir/load/workers-api-business-drain/qualify.py" \
+	"$script_dir/load/workers-api-business-drain/run-on-builder.sh" \
+	"$script_dir/load/workers-api-business-drain/test_qualify.py" \
 	"$script_dir/load/deployment-cursor/qualify.py" \
 	"$script_dir/load/fdb-network-outage/qualify.py" \
 	"$script_dir/load/fdb-network-outage/test_qualify.py" \
@@ -179,6 +182,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$local_deploy_dir/mesh/workers-api-autoscalin
 PYTHONDONTWRITEBYTECODE=1 python3 "$local_deploy_dir/mesh/workers-api-ha-e2e/test_run.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/fdb-network-outage/test_qualify.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/command-ack-disconnect/test_qualify.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/workers-api-business-drain/test_qualify.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/agent-upload-soak/test_observe.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_capture.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_run.py"
@@ -235,6 +239,7 @@ bash -n "$script_dir/bootstrap-fdb-node.sh" "$script_dir/test-bootstrap-fdb-node
 	"$script_dir/runtime/install-private-stateless-endpoint.sh" \
 	"$script_dir/load/stateless-autoscaling/run-on-builder.sh" \
 	"$script_dir/load/command-ack-disconnect/run-on-builder.sh" \
+	"$script_dir/load/workers-api-business-drain/run-on-builder.sh" \
 	"$script_dir/load/router-performance/run-on-builder.sh" \
 	"$script_dir/load/workers-api-autoscaling/run-on-builder.sh" \
 	"$script_dir/runtime/gitops/install-application.sh" \
