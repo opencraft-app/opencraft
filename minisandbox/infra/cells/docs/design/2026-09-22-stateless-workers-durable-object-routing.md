@@ -203,6 +203,9 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    依赖相同不能授权另一产品；渲染前一次读取产品收据，校验和输出证据使用同一字节快照。
    永久回归通过真实 11 产品/28 镜像清单和 CLI 子进程覆盖错镜像、错源码、重新格式化的收据
    以及清单自校验正确但收据 digest 不同的拒绝路径，两种阶段都不得输出 manifest 或 receipt；
+   正式 Workers API 门禁从操作目录调用时，先进入各测试 suite 的源码目录，再使用模块名称执行
+   unittest；不能依赖绝对测试文件路径的解释。Fleet 静态入口加入真实复制源码、带点号父目录、
+   unrelated cwd 的回归，避免 clean-room source 在 builder 上无法执行同一门禁；
 3. Terraform 已改为通过 TKE 控制面创建独立、启用 autoscaling 的 Native NodePool，并将其动态
    `np-*` ID 写入 Cell inventory；Argo 不再伪造或拥有该 MachineSet。集群级 scale-in 已启用且一次
    最多缩一台。stateless admission profile、startup taint、精确 runtime digest probe 和 workload

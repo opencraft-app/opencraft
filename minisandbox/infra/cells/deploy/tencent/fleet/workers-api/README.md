@@ -37,6 +37,12 @@ private Object Router endpoint, then A/B executors and serving routes. A final
 `serving` render consumes those receipts and enables stateless dispatch. No
 placeholder address or hand-edited Deployment is part of the production path.
 
+`verify.sh` may run from any operator working directory, including against a
+relocated reviewed-source tree. It enters each test suite's source directory
+and passes module names to `unittest`, not absolute file paths. The fleet
+static gate includes a real copied-tree regression with dotted parent paths
+and an unrelated working directory.
+
 `/readyz` proves that the stateless facade and authoritative Worker Registry
 are usable. It deliberately does not require an admitted placement candidate
 or every Cell Engine to be healthy. Capacity is request-scoped: new Object

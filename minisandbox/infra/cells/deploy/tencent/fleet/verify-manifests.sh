@@ -191,6 +191,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_qualification_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_ha_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_object_router_endpoint_contract.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_verify_runner.py"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/code-plane" -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/code-plane/gitops" -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/federation/test_federation.py"
