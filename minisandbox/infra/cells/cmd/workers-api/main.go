@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -227,30 +226,13 @@ func main() {
 			MaxHeaderBytes:    32 << 10,
 		})
 	}
-	go func() {
-		<-shutdownSignal.Done()
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		for _, activeServer := range servers {
-			if err := activeServer.Shutdown(shutdownContext); err != nil {
-				logger.Error("shut down Workers API listener", "address", activeServer.Addr, "error", err)
-			}
-		}
-	}()
-
-	listenerErrors := make(chan error, len(servers))
-	for _, activeServer := range servers {
-		go func() {
-			logger.Info("starting Workers API listener", "listenAddress", activeServer.Addr, "engineCount", len(engineURLs))
-			err := activeServer.ListenAndServe()
-			if errors.Is(err, http.ErrServerClosed) {
-				err = nil
-			}
-			listenerErrors <- err
-		}()
+	endpoints, err := bindHTTPServers(servers)
+	if err == nil {
+		err = runHTTPServers(shutdownSignal, logger, len(engineURLs), endpoints, 10*time.Second)
 	}
-	if err := <-listenerErrors; err != nil {
+	if err != nil {
 		stop()
+		api.Close()
 		logger.Error("Workers API listener stopped", "error", err)
 		os.Exit(1)
 	}

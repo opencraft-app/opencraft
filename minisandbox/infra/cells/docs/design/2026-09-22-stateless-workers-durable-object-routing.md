@@ -1003,6 +1003,12 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   DELTA 合并按每次 commit 的 EOF 截断，历史 coverage 使用自己的文件尺寸，避免 growth 复活
   旧页。完整十一目标180项回归已通过，包括 staged batch/input-check后的 truncate-grow、
   未知索引、fork历史EOF及坏chunk拒绝；生产非fault check通过，仍不构成云上一万活跃通过。
+- 公共 API 的退出不能由首个 listener 返回决定。源码复核发现 SIGTERM 虽在后台发起 Shutdown，
+  main 却在 ErrServerClosed 后立即退出，会跳过在途请求排空。真实子进程/TCP 回归已在旧排序下
+  重现单/双 listener、accept错误和超时三个门禁失败。修复后公共与内部 listener 同时停止新准入，
+  共用原十秒 drain 期限；main 等待全部 Shutdown 和 Serve 终态后才关闭 API。监听失败也须
+  排空 peer 并保留原错误，超时则关闭连接，不重放可能已产生副作用的请求。Pod 原50秒 grace
+  与30秒preStop保持不变。该本地回归已通过，云上发布与零稳态重试资格仍待原缩容周期结束。
 - builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
   集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
 - 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配
