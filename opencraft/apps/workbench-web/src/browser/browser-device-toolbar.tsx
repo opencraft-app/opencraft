@@ -77,7 +77,7 @@ export function BrowserDeviceHandles({mode,slot,onChange}:{mode:DeviceMode;slot:
   if(size.width<=0||size.height<=0)return null;
   return <div className="browser-device-handles" style={{left:bounds.x,top:bounds.y,width:bounds.width,height:bounds.height}}>
     {(["left","right","bottom","bottom-left","bottom-right"] as const).map(edge=><button key={edge} type="button"
-      className={`browser-device-resize browser-device-resize--${edge}`} aria-label={`Resize viewport ${edge}`}
+      className={`browser-device-resize browser-device-resize--${edge}`} aria-label={`Resize viewport ${edge}`} title={`Resize viewport ${edge}`}
       onPointerDown={event=>{
         if(event.button!==0||layout.scale<=0)return;
         event.preventDefault();drag.current={pointerId:event.pointerId,edge,mode,x:event.clientX,y:event.clientY,scale:layout.scale};

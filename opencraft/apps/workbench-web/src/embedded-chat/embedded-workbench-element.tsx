@@ -87,6 +87,7 @@ function embeddedStyles(): string {
     :host([data-visible="true"]) { visibility: visible; pointer-events: auto; }
     .opencraft-embedded-workbench-root { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
     ${application}
+    .opencraft-embedded-workbench-root { --height-toolbar: var(--lightvela-console-header-height, 46px); }
     .opencraft-embedded-workbench-root .codex-composer-queue-item__actions button.is-steer {
       width: 22px;
       padding: 0;
@@ -96,7 +97,7 @@ function embeddedStyles(): string {
     .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-viewport { --app-shell-main-content-frame-top-offset: 0px; }
     .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-frame { border-top: 0; }
     .opencraft-embedded-workbench-root .main-content-surface { box-shadow: none; }
-    .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 50px; }
+    .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 74px; }
     .opencraft-embedded-workbench-root .codex-composer-voice-footer__status-label { display: none; }
     .opencraft-embedded-workbench-root .codex-composer-submit.is-stop {
       border-radius: 50%;
@@ -144,6 +145,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private readonly mount: HTMLDivElement;
   private readonly root: Root;
   private actions: EmbeddedWorkbenchAppActions | null = null;
+  private readonly admittedPrompts = new Set<string>();
   private application: EmbeddedChatApplication | null = null;
   private config: EmbeddedWorkbenchConfig | null = null;
   private preferences: UiPreferencesRuntime | null = null;
@@ -238,6 +240,16 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     void actions.selectThread(normalized).catch((error: unknown) => {
       this.fail(error instanceof Error ? error : new Error(String(error)));
     });
+  }
+
+  /** A request is consumed only after this Bot's Conversation owner admits it. */
+  submitPrompt(requestId: string, text: string): boolean {
+    if (this.disposed || this.failed) return false;
+    if (this.admittedPrompts.has(requestId)) return true;
+    if (this.readyDetail === null || this.actions === null) return false;
+    if (!this.actions.submitPrompt(text)) return false;
+    this.admittedPrompts.add(requestId);
+    return true;
   }
 
   async createConversation(): Promise<void> {

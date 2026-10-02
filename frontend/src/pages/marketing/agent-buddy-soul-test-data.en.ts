@@ -230,12 +230,16 @@ export function calculateEnglishPrefScores(answers: Record<string, string>): Rec
   return scores;
 }
 
-export function calculateEnglishMatchedSoul(answers: Record<string, string>): string {
+export function calculateEnglishMatchedSoul(
+  answers: Record<string, string>,
+  availableSoulIds?: ReadonlySet<string>,
+): string {
   const userVector = toVector(calculateEnglishPrefScores(answers));
   let bestCanonical = "YYDS";
   let bestSimilarity = -1;
 
   for (const [soulId, weights] of Object.entries(soulWeights)) {
+    if (availableSoulIds && !availableSoulIds.has(soulId)) continue;
     const similarity = cosineSimilarity(userVector, toVector(weights));
     if (similarity > bestSimilarity) {
       bestSimilarity = similarity;

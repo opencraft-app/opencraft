@@ -69,6 +69,7 @@ import {
   getBuddySoulDetail,
   getBuddySoulPool,
   getBuddySoulSpec,
+  getRecommendableSouls,
   resolveBuddySoulLocale,
   usesWesternSoulSlugs,
   type BuddySoulLocale,
@@ -234,14 +235,16 @@ export function BuddyPanel({
     return fetchSouls({ page: 1, pageSize: 30 });
   }, [soulDataLocale]);
   const soulsResource = useAsyncResource(soulsFetcher, [soulDataLocale]);
-  const souls = soulsResource.data?.souls ?? [];
+  // 历史卡片仍从完整目录本地化；新抽卡与测试只使用筛选后的候选。
+  const sourceSouls = soulsResource.data?.souls;
+  const souls = useMemo(() => getRecommendableSouls(sourceSouls ?? []), [sourceSouls]);
   const localizedDrawnSouls = useMemo(
     () => localizeDrawnSouls(
       drawnSouls,
-      souls,
+      sourceSouls ?? [],
       soulDataLocale,
     ),
-    [drawnSouls, soulDataLocale, souls],
+    [drawnSouls, soulDataLocale, sourceSouls],
   );
 
   const drawnSlugs = drawnSouls.map((s) => s.slug);

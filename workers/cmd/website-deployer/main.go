@@ -65,6 +65,11 @@ func main() {
 		log.Fatal("website-deployer requires WEBSITE_INTERNAL_API_TOKEN")
 	}
 	deployer.SetInternalToken(internalToken)
+	retentionDone, err := deployer.StartRetentionScheduler(ctx)
+	if err != nil {
+		log.Fatalf("retention scheduler configuration: %v", err)
+	}
+	defer func() { cancel(); <-retentionDone }()
 
 	// 并发控制。
 	//
@@ -103,6 +108,7 @@ func main() {
 	for {
 		select {
 		case <-stop:
+			cancel() // Stop retention admission before draining in-flight work.
 			log.Println("website-deployer shutting down, waiting for in-flight operations...")
 			wg.Wait()
 			log.Println("website-deployer stopped")

@@ -481,6 +481,21 @@ describe("DeepSeekHarnessCommandClient", () => {
     expect(execDebugCommand).toHaveBeenCalledTimes(1);
   });
 
+  it("surfaces a failed provider query before attempting JSON parsing", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue({
+      status: "FAILED", exitCode: 1,
+      output: "RuntimeError: DSH authentication failed (HTTP 401)",
+    });
+    const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand);
+    await expect(client.listProviders("cn")).rejects.toThrow("DSH authentication failed (HTTP 401)");
+  });
+
+  it("rejects a malformed providers payload with a stable diagnostic", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue(success('{"providers":null}'));
+    const client = new DeepSeekHarnessCommandClient("bot-1", execDebugCommand);
+    await expect(client.listProviders("cn")).rejects.toThrow("Invalid DeepSeek Harness providers response");
+  });
+
   it("loads providers and saves an encrypted API key through inline management scripts", async () => {
     const providers = [{
       id: "deepseek",

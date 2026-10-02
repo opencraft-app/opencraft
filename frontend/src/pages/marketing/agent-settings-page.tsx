@@ -2680,7 +2680,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const openCraftChatEnabled = !isGlobal && showHiddenAgentTools;
+  const openCraftChatEnabled = !isGlobal;
   /** 多 bot 创建引导（取代原先的「创建 Bot」弹窗） */
   const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
   /** 「从其他 Bot 复制」选中的来源 bot id */
@@ -3363,7 +3363,7 @@ export const AgentSettingsPage = ({
 
   useEffect(() => {
     // AgentChat 暂时只支持主 Bot；非主 Bot 不发起 token 请求。
-    if (activeSection !== "chat" || !isActiveBotDefault || !activeBotId || !activeRuntimeInstanceId) {
+    if (openCraftChatEnabled || activeSection !== "chat" || !isActiveBotDefault || !activeBotId || !activeRuntimeInstanceId) {
       return;
     }
     if (!accountId) {
@@ -3397,7 +3397,7 @@ export const AgentSettingsPage = ({
       cancelled = true;
       controller.abort();
     };
-  }, [activeSection, activeBotId, activeRuntimeInstanceId, accountId, isActiveBotDefault, launchTokenRefreshTick, fetchLaunchTokenValue]);
+  }, [activeSection, activeBotId, activeRuntimeInstanceId, accountId, isActiveBotDefault, launchTokenRefreshTick, fetchLaunchTokenValue, openCraftChatEnabled]);
 
   /**
    * SDK 续期入口：token 将过期时调用，拿新 token 返回给面板。不写 state，故不触发
@@ -5007,6 +5007,7 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
+        activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout && "lv-agent-embedded-chat-page",
         isEmptyAgentPage && "lv-agent-empty-page",
         isModifying && "lv-agent-upgrading-page",
       )}
@@ -5848,7 +5849,8 @@ export const AgentSettingsPage = ({
                 <div
                   className={cn(
                     /* lv-agent-settings-grid 来自 master，勿删 */
-                    "lv-agent-settings-grid grid items-start gap-6",
+                    "lv-agent-settings-grid grid items-start",
+                    activeSection === "chat" && openCraftChatEnabled ? "gap-y-6" : "gap-6",
                     /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
                     hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]",
                   )}
@@ -6743,7 +6745,7 @@ export const AgentSettingsPage = ({
           {
             !isModifying && !passesLoading && !isCreating && !botsLoading
               && !showMultiBotOnboarding && visibleBots.length === 0
-              && !(fleetOverviewEnabled && activeSection === "overview") && (
+              && !(fleetOverviewEnabled && activeSection === "overview" && isSubscribed) && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (

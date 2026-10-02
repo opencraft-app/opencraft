@@ -1,3 +1,4 @@
+import { clearPendingWorkbenchPrompt, readPendingWorkbenchPrompt, withSharedTechStack } from "./workbench-prompt-templates";
 import {
   useEffect,
   useRef,
@@ -26,6 +27,7 @@ interface EmbeddedWorkbenchConfig {
 }
 
 interface EmbeddedWorkbenchElement extends HTMLElement {
+  submitPrompt?(requestId: string, text: string): boolean;
   configure(config: EmbeddedWorkbenchConfig): void;
   prepare(): Promise<void>;
   reconnect?(): Promise<void>;
@@ -150,6 +152,7 @@ export function AgentChatMigrationSurface({
   region,
 }: AgentChatMigrationSurfaceProps) {
   const t = useT();
+  const [promptRevision, setPromptRevision] = useState(0);
   const mountRef = useRef<HTMLDivElement>(null);
   const legacyRef = useRef<HTMLDivElement>(null);
   const elementRef = useRef<EmbeddedWorkbenchElement | null>(null);
@@ -203,10 +206,6 @@ export function AgentChatMigrationSurface({
 
   useEffect(() => {
     if (!started || !enabled) return;
-    if (!profileId.trim()) {
-      setStartupFailed(true);
-      return;
-    }
     const mount = mountRef.current;
     const scriptUrl = embeddedWorkbenchScriptUrl();
     if (mount === null) return;
@@ -214,6 +213,10 @@ export function AgentChatMigrationSurface({
     setStartupFailed(false);
     setRetrying(false);
     setConnection({ phase: "connecting", failureCode: null });
+    if (!profileId.trim()) {
+      setConnection({ phase: "error", failureCode: "intervention:configuration-required" });
+      return;
+    }
     if (scriptUrl === null) {
       setStartupFailed(true);
       return;
@@ -305,6 +308,7 @@ export function AgentChatMigrationSurface({
       if (retired) return;
       latestSessions = (event as CustomEvent<EmbeddedSessionsDetail>).detail;
       publishSessions();
+      setPromptRevision(revision => revision + 1);
     };
     const handleConnection = (event: Event) => {
       if (retired) return;
@@ -332,10 +336,10 @@ export function AgentChatMigrationSurface({
       element.addEventListener("opencraft-connection", handleConnection);
       element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken });
       mount.append(element);
-      await element.prepare();
+      await candidate.prepare();
       if (retired || failed) return;
-      if (activeRef.current) await element.show();
-      else element.hide();
+      if (activeRef.current) await candidate.show();
+      else candidate.hide();
       if (!retired && !failed) {
         adopted = true;
         onOwnerChangeRef.current?.("opencraft");
@@ -376,6 +380,19 @@ export function AgentChatMigrationSurface({
   }, [accountId, apiBase, enabled, instanceId, profileId, region, sessionRevision, started]);
 
   useEffect(() => {
+    if (!active || !enabled || owner !== "opencraft" || connection.phase !== "ready") return;
+    const element = elementRef.current;
+    const pending = readPendingWorkbenchPrompt();
+    if (!pending || !element?.submitPrompt) return;
+    try {
+      const requestId = `${pending.templateId}:${pending.createdAt}`;
+      if (element.submitPrompt(requestId, withSharedTechStack(pending.prompt))) clearPendingWorkbenchPrompt(pending);
+    } catch {
+      // Not admitted: retain storage and the Composer text for explicit retry.
+    }
+  }, [active, enabled, owner, connection.phase, promptRevision]);
+
+  useEffect(() => {
     if (!enabled || owner !== "opencraft" || !multiSession.selectedChatId) return;
     const element = elementRef.current;
     if (element === null) return;
@@ -398,7 +415,7 @@ export function AgentChatMigrationSurface({
       aria-hidden={!active || undefined}
       className={cn(
         "h-[clamp(516px,calc(100vh-220px),960px)] min-h-0 overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full",
-        enabled && "rounded-none border-transparent",
+        enabled && "rounded-none border-0",
         active ? "relative" : "invisible pointer-events-none absolute inset-0",
       )}
       inert={active ? undefined : true}
@@ -421,11 +438,10 @@ export function AgentChatMigrationSurface({
         )}>
           <span role="status">
             {agentPaused ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
-              : !profileId.trim() ? t("当前 AI 伙伴不可用，请检查运行状态")
               : startupFailed ? t("会话加载失败，请重试")
               : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
               : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
-              : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴配置后重试")
+              : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
               : connection.phase === "error" ? t("连接暂时中断，正在尝试恢复…")
               : connectionSlow ? t("连接时间较长，请检查网络或重试")
               : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")

@@ -44,6 +44,9 @@ func NormalizeAccessMode(mode string) string {
 var ErrNotFound = errors.New("site not found")
 
 type Site struct {
+	Kind            string     `json:"kind"`
+	ReleaseID       string     `json:"release_id"`
+	BackendSHA256   string     `json:"backend_sha256"`
 	SiteID          string     `json:"site_id"`
 	UserID          string     `json:"user_id"`
 	Status          string     `json:"status"`

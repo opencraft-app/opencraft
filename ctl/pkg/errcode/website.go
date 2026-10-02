@@ -2,6 +2,7 @@ package errcode
 
 // Website 错误码
 var (
+	ErrWebsiteBackendUnavailable         = Register(New("WEBSITE_BACKEND_UNAVAILABLE", 409, "website backend is not available; dynamic releases are not supported"))
 	ErrWebsiteNotFound                   = Register(New("WEBSITE_NOT_FOUND", 404, "website not found"))
 	ErrWebsiteQuotaExceeded              = Register(New("WEBSITE_QUOTA_EXCEEDED", 403, "website quota exceeded"))
 	ErrWebsiteInvalidParam               = Register(New("WEBSITE_INVALID_PARAM", 400, "invalid website parameters"))

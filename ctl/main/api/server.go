@@ -296,6 +296,7 @@ func newRouterWithWebsiteAuth(
 	mux.HandleFunc("/internal/ctl/websites/operations/", wh.handleInternalOperations)
 	mux.HandleFunc("/internal/ctl/websites/sites/", wh.handleInternalSite)
 	mux.HandleFunc("/internal/ctl/websites/usage", wh.handleInternalUsage)
+	mux.HandleFunc("/internal/ctl/websites/retention/sweep", wh.handleInternalRetentionSweep)
 	mux.HandleFunc("/internal/ctl/websites/domains/", wh.handleInternalDomain)
 	mux.HandleFunc("/internal/ctl/websites/domains/bind", wh.handleInternalDomainBind)
 	mux.HandleFunc("/internal/ctl/websites/domains/unbind", wh.handleInternalDomainUnbind)

@@ -13,6 +13,16 @@ snapshot-oriented compatibility projection for Codex V3 Resume. Web and Native
 surfaces share identity, projection, runtime commands, Composer documents and
 design tokens. They do not share a renderer or editor implementation.
 
+For a LightVela Hermes Host, the Web Composer offers `/new`, `/compress`,
+`/status`, `/usage`, `/stop` and `/help` in its input footer and slash suggestions.
+Choosing a shortcut inserts editable text into the current Draft; only explicit
+submission executes it. Ordinary shortcuts use Hermes `prompt.submit`. A standalone
+`/stop` uses the Hermes Host `hermes/stop` request instead: it interrupts the active
+Turn through `session.interrupt` when one exists, then calls `process.stop` to kill
+running background processes. An idle or new chat still calls `process.stop`.
+The Composer Stop button continues to use `turn/interrupt` only. Other Hosts
+retain their own suggestions and have no Hermes shortcut menu.
+
 ```text
 WebSocket / Replay Transport
           |
@@ -219,6 +229,22 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    can execute Agent work still awaits the binding's generation-scoped
    capability lease, and a failed prewarm is retried there rather than
    invalidating already-restored history.
+
+Embedded workbench templates enter through `submitPrompt(requestId, text)`, not
+through a legacy SDK sender or a DOM button. The embedded element deduplicates
+admitted request IDs in its Bot lifetime. The App admits only into an empty,
+editing new-Thread Composer belonging to the embedded Host after protocol
+readiness; an existing Thread first navigates to a new Draft. An occupied Draft
+is never overwritten. The site retains the pending template across cold startup,
+failed admission and inactive routes, and removes only the matching record when
+the Conversation owner accepts the immutable first Turn. Remote failure then
+belongs to that Conversation's retry UI, never an automatic duplicate send.
+
+A manual transport failure is a Host-attempt disposition: initialization cleanup
+must not erase its code when disposing the physical transport/client. Workbench
+snapshots retain the block through cleanup and clear it on an explicit new
+connection attempt or a connecting/open successor. Recovery presentation must
+not claim automatic retries when the Host is stopped for manual intervention.
 
 The Web recovery presentation does not equate non-authoritative with invisible.
 When a Thread already has painted Timeline frames, reconnect and retry preserve
@@ -472,7 +498,9 @@ After acceptance, image presentation is derived from the authoritative
 Timeline. Sent-image thumbnails resolve direct image data or Host-backed media
 through the existing media source boundary; their click opens a modal image
 viewer rather than generic link navigation, which deliberately rejects `data:`
-URLs. No generic resource-policy exception is introduced. Full page reload
+URLs. The viewer uses the Workbench Presentation Root so embedded Shadow DOM
+keeps its modal styles and focus behavior; an explicit modal portal target
+still takes precedence. No generic resource-policy exception is introduced. Full page reload
 does not preserve an unsent browser `File`; that requires a separate durable
 draft/blob storage contract. Native Expo has the same semantic Draft but not
 this Web-only picker/presentation implementation.
@@ -499,8 +527,13 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 
 控制台内嵌的新会话由宿主选择 Bot，Shell 通过 showExecutionControls=false 隐藏整个项目/执行环境工具栏和连接状态点；独立工作台默认展示。连接生命周期与发送就绪检查保持由 runtime 负责。
 
-内嵌新会话标题与占位提示覆盖控制台 en-US、zh-CN（含 zh-SG）、zh-Hant、id-ID、es、ja-JP、ko-KR。额外五套文案由 embedded-companion-messages.json 提供，通过嵌入专用 catalog 注入 LocaleController，跟随宿主语言切换；这不代表其他工作台文案已完整翻译，未覆盖项继续使用 defaultMessage。独立工作台语言选择项保持原样。
+内嵌新会话标题与新建/已有会话的差异化占位提示覆盖控制台 en-US、zh-CN（含 zh-SG）、zh-Hant、id-ID、es、ja-JP、ko-KR。额外五套文案由 embedded-companion-messages.json 提供，通过嵌入专用 catalog 注入 LocaleController，跟随宿主语言切换；这不代表其他工作台文案已完整翻译，未覆盖项继续使用 defaultMessage。独立工作台语言选择项保持原样。
 
 内嵌新会话（draft 存在且尚无 submission）由 sessions bridge 显式发布 isDraft；启用右侧预览时保留顶部面板开关，已有会话继续展示标题与重命名。国内控制台内嵌聊天的加载、新会话和已有会话均无宿主圆角外框，内嵌主内容表面无阴影；保留标题重命名入口与输入框边界。预览面板默认关闭，网页标签随会话 scope 切换；文件只读预览不展示目录树、搜索或编辑。
 
 内嵌右侧预览面板的入口、标签列表/空态、缩放与关闭提示、宽度调整无障碍标签以及不可用状态均通过稳定消息 ID 跟随宿主语言；网页自身正文由目标站点控制，不由控制台翻译。
+
+Embedded file previews retain the mutation-level read-only guard alongside snapshot-based saves in the standalone workspace editor. Markdown preview/source switching and lazy syntax editors share the same resource lifecycle. The read-only regression renders the real panel and invokes its captured Query mutation, asserting zero filesystem writes and cache invalidations.
+
+Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
+Completed standalone Hermes `MEDIA:<path>` text or inline code for an explicit Markdown file uses that same click and Host permission flow. Non-Markdown media, embedded prose, malformed paths, streaming content and code inside an explicit link remain inert; the Renderer never treats `MEDIA:` as a browser URL or reads the file before clicking.

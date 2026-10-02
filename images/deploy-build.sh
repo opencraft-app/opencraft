@@ -125,6 +125,13 @@ SSH_LIB="${LIB_DIR}/ssh.sh"
 RUNTIME_DIR="${SCRIPT_DIR}/runtime"
 WEIXIN_PROTOCOL_SCRIPT="${RUNTIME_DIR}/openclaw-weixin-login-session.sh"
 WEBSITE_BUILDER_SKILL_FILE="${SCRIPT_DIR}/../.agents/skills/website-builder/SKILL.md"
+WEBSITE_BUILDER_PACKAGER="${SCRIPT_DIR}/../.agents/skills/website-builder/scripts/package_fullstack.py"
+[[ -s "${SCRIPT_DIR}/helpers/website_skill_bundle.py" ]] || { log_error "website Skill installer is missing"; exit 1; }
+
+if [ ! -s "${WEBSITE_BUILDER_PACKAGER}" ]; then
+  log_error "website-builder packager is missing"
+  exit 1
+fi
 
 if [ ! -f "${SSH_LIB}" ]; then
   log_error "ssh library not found: ${SSH_LIB}"
@@ -292,9 +299,9 @@ sshlib_ensure_ready
 
 log_info "ensuring remote directory exists: ${REMOTE_DIR}"
 if [ "${SSHLIB_REMOTE_USER:-}" = "root" ]; then
-  sshlib_run_raw_retry_transport_safe "mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime' '${REMOTE_DIR}/skills/website-builder'"
+  sshlib_run_raw_retry_transport_safe "mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime' '${REMOTE_DIR}/skills/website-builder/scripts'"
 else
-  sshlib_run_raw_retry_transport_safe "sudo mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime' '${REMOTE_DIR}/skills/website-builder'"
+  sshlib_run_raw_retry_transport_safe "sudo mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime' '${REMOTE_DIR}/skills/website-builder/scripts'"
 fi
 
 log_info "uploading build assets"
@@ -305,6 +312,8 @@ upload_file_via_ssh "${RUNNER_SCRIPT}" "${REMOTE_DIR}/remote-build-runner.sh"
 upload_file_via_ssh "${AGENT_BINARY}" "${REMOTE_DIR}/bin/envd"
 upload_file_via_ssh "${WEIXIN_PROTOCOL_SCRIPT}" "${REMOTE_DIR}/runtime/openclaw-weixin-login-session.sh"
 upload_file_via_ssh "${WEBSITE_BUILDER_SKILL_FILE}" "${REMOTE_DIR}/skills/website-builder/SKILL.md"
+upload_file_via_ssh "${WEBSITE_BUILDER_PACKAGER}" "${REMOTE_DIR}/skills/website-builder/scripts/package_fullstack.py"
+upload_file_via_ssh "${SCRIPT_DIR}/helpers/website_skill_bundle.py" "${REMOTE_DIR}/helpers/website_skill_bundle.py"
 
 if [ "${UPLOAD_ONLY}" = true ]; then
   log_info "upload-only mode finished host=${REMOTE_HOST} remote_dir=${REMOTE_DIR}"

@@ -138,3 +138,22 @@ test("Chinese queued steer exposes the immediate-insert tooltip and accessible n
     assert.match(markup, /class="is-labelled is-steer"[^>]*aria-label="立即插入"[^>]*title="立即插入"/);
   } finally { runtime.dispose(); }
 });
+
+test("queued action tooltips describe the action instead of inheriting the message preview", async () => {
+  const runtime = new LocaleRuntime([{ locale: "zh-CN", label: "中文", load: async () => zh }]);
+  await runtime.update({ localeOverride: "zh-CN" });
+  try {
+    const item = { ...pendingItem, preview: "几点了", state: "queued" as const, actionable: true };
+    const markup = renderMarkup(<IntlRuntimeProvider runtime={runtime}>
+      <ComposerQueueTray items={[item]} isResponseInProgress atomicSteer />
+    </IntlRuntimeProvider>);
+    assert.match(markup, /class="codex-composer-queue-item"[^>]*title="几点了"/);
+    assert.match(markup, /aria-label="调整排队消息顺序"[^>]*title="调整排队消息顺序"/);
+    assert.match(markup, /aria-label="编辑排队消息"[^>]*title="编辑排队消息"/);
+    assert.match(markup, /aria-label="删除排队消息"[^>]*title="删除排队消息"/);
+    const editing = renderMarkup(<IntlRuntimeProvider runtime={runtime}>
+      <ComposerQueueTray items={[{ ...item, editing: true }]} isResponseInProgress atomicSteer />
+    </IntlRuntimeProvider>);
+    assert.match(editing, /aria-label="取消编辑排队消息"[^>]*title="取消编辑排队消息"/);
+  } finally { runtime.dispose(); }
+});

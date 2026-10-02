@@ -1,3 +1,4 @@
+import { savePendingWorkbenchPrompt, readPendingWorkbenchPrompt } from "../workbench-prompt-templates";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -14,18 +15,12 @@ import { writeStoredAuthToken } from "@/repositories/http-repositories";
 import { installConsoleShowCommand, subscribeConsoleShow } from "@/lib/console-show-event";
 import { useEffect, useState } from "react";
 
-vi.mock("@/lib/region", () => ({
-  DEFAULT_LOCALE: "zh-CN",
-  REGION: "cn",
-  isCN: true,
-  isGlobal: false,
-  localizedPath: (path: string) => path,
-  readLocaleFromPath: () => null,
-  switchLocaleInPath: (path: string) => path,
-  langPrefixRedirectTarget: () => null,
+vi.mock("@/lib/region", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/region")>(),
+  DEFAULT_LOCALE: "zh-CN", REGION: "cn", isCN: true, isGlobal: false,
 }));
 
-afterEach(() => { cleanup(); localStorage.clear(); });
+afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear(); vi.restoreAllMocks(); });
 
 describe("AgentChatMigrationSurface", () => {
   it("shows a loading surface after enablement until embedded show succeeds", async () => {
@@ -127,12 +122,12 @@ describe("AgentChatMigrationSurface", () => {
     const embedded = container.querySelector("opencraft-embedded-workbench");
     expect(embedded).not.toBeNull();
     const surface = container.firstElementChild;
-    expect(surface).toHaveClass("border-transparent", "rounded-none");
+    expect(surface).toHaveClass("border-0", "rounded-none");
     for (const isDraft of [true, false]) {
       act(() => embedded!.dispatchEvent(new CustomEvent("opencraft-sessions", {
         detail: { sessions: [], loading: false, error: null, selectedChatId: null, isDraft },
       })));
-      expect(surface).toHaveClass("border-transparent", "rounded-none");
+      expect(surface).toHaveClass("border-0", "rounded-none");
     }
     expect(commands).not.toBeNull();
     await requireCommands().createSession();
@@ -285,10 +280,11 @@ describe("AgentChatMigrationSurface", () => {
     reconnect.mockRestore();
   });
 
-  it("reports a slow startup and ignores a late result after switching Bot", async () => {
+  it("does not show or adopt a late prepared instance after switching Bot", async () => {
     const ctor = customElements.get("opencraft-embedded-workbench")!;
     let resolve!: () => void;
     const prepare = vi.spyOn(ctor.prototype, "prepare").mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+    const show = vi.spyOn(ctor.prototype, "show");
     const owner = vi.fn();
     const surface = (profileId: string) => <AgentChatMigrationSurface active enabled accountId="account-1"
       instanceId="ins-1" profileId={profileId} region="cn" legacy={<div>Legacy</div>} onOwnerChange={owner}
@@ -296,7 +292,6 @@ describe("AgentChatMigrationSurface", () => {
     const { container, rerender } = render(surface("one"));
     await waitFor(() => expect(prepare).toHaveBeenCalled());
     const previous = container.querySelector("opencraft-embedded-workbench")!;
-    const show = vi.spyOn(previous as HTMLElement & { show(): Promise<void> }, "show");
     const resolvePrevious = resolve;
     // Deliver the deadline without waiting 30 seconds in the test.
     // The production timeout is verified separately with fake timers below.
@@ -347,7 +342,7 @@ describe("AgentChatMigrationSurface", () => {
         multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
       expect(container.querySelector("opencraft-embedded-workbench")).toBeNull();
       expect(prepare).not.toHaveBeenCalled();
-      expect(screen.getByRole("status")).toHaveTextContent("当前 AI 伙伴不可用");
+      expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴状态后重试");
     } finally { prepare.mockRestore(); }
   });
 
@@ -363,6 +358,123 @@ describe("AgentChatMigrationSurface", () => {
       expect(screen.getByRole("button", { name: "重新连接" })).toBeEnabled();
       expect(screen.queryByText("Legacy")).toBeNull();
     } finally { cleanup(); vi.useRealTimers(); prepare.mockRestore(); }
+  });
+
+  it.each(["prepare", "show"] as const)("does not adopt a failed startup after late %s and rebuilds on retry", async stage => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    let resolve!: () => void;
+    const pending = new Promise<void>(done => { resolve = done; });
+    const held = vi.spyOn(ctor.prototype, stage).mockImplementationOnce(() => pending);
+    const show = stage === "show" ? held : vi.spyOn(ctor.prototype, "show");
+    const reconnect = vi.spyOn(ctor.prototype, "reconnect");
+    const owner = vi.fn();
+    const commands = vi.fn();
+    const { container } = render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="sales" region="cn"
+      legacy={<div>Legacy</div>} onOwnerChange={owner} onSessionCommandsChange={commands}
+      multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+    await waitFor(() => expect(held).toHaveBeenCalledOnce());
+    const previous = container.querySelector("opencraft-embedded-workbench")!;
+    act(() => previous.dispatchEvent(new CustomEvent("opencraft-error")));
+    expect(screen.getByRole("status")).toHaveTextContent("会话加载失败");
+    await act(async () => { resolve(); await pending; });
+    expect(owner).not.toHaveBeenCalledWith("opencraft");
+    expect(commands).not.toHaveBeenCalledWith(expect.objectContaining({ createSession: expect.any(Function) }));
+    if (stage === "prepare") expect(show).not.toHaveBeenCalled();
+    act(() => screen.getByRole("button", { name: "重新连接" }).click());
+    await waitFor(() => expect(owner).toHaveBeenLastCalledWith("opencraft"));
+    expect(container.querySelector("opencraft-embedded-workbench")).not.toBe(previous);
+    expect(previous.isConnected).toBe(false);
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(screen.queryByText("Legacy")).toBeNull();
+  });
+
+  it("ignores late show completion and events from the previous Bot", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    let resolve!: () => void;
+    const pending = new Promise<void>(done => { resolve = done; });
+    const show = vi.spyOn(ctor.prototype, "show").mockImplementationOnce(() => pending);
+    const owner = vi.fn();
+    const sessions = vi.fn();
+    const commands = vi.fn();
+    const surface = (profileId: string) => <AgentChatMigrationSurface active enabled instanceId="ins-1" profileId={profileId} region="cn"
+      legacy={<div>Legacy</div>} onOwnerChange={owner} onSessionCommandsChange={commands}
+      multiSession={{ onSessionStateChange: sessions, onSelectedChatIdChange: vi.fn() }} />;
+    const { container, rerender } = render(surface("one"));
+    await waitFor(() => expect(show).toHaveBeenCalledOnce());
+    const previous = container.querySelector("opencraft-embedded-workbench")!;
+    rerender(surface("two"));
+    await waitFor(() => expect(owner).toHaveBeenLastCalledWith("opencraft"));
+    owner.mockClear(); sessions.mockClear(); commands.mockClear();
+    await act(async () => {
+      previous.dispatchEvent(new CustomEvent("opencraft-sessions", { detail: { sessions: [{ chatId: "stale" }], loading: false, selectedChatId: "stale" } }));
+      previous.dispatchEvent(new CustomEvent("opencraft-connection", { detail: { phase: "error", failureCode: null } }));
+      resolve(); await pending;
+    });
+    expect(owner).not.toHaveBeenCalled();
+    expect(sessions).not.toHaveBeenCalled();
+    expect(commands).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("keeps a missing non-default profile on the configuration error surface until corrected", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    const prepare = vi.spyOn(ctor.prototype, "prepare");
+    const surface = (profileId: string) => <AgentChatMigrationSurface active enabled instanceId="ins-1" profileId={profileId} region="cn"
+      legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />;
+    const { container, rerender } = render(surface(""));
+    expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴状态后重试");
+    expect(container.querySelector("opencraft-embedded-workbench")).toBeNull();
+    expect(prepare).not.toHaveBeenCalled();
+    expect(screen.queryByText("Legacy")).toBeNull();
+    rerender(surface("sales"));
+    await waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  });
+
+  it("hands template text to the embedded owner only after cold readiness and consumes it once admitted", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    let resolveShow!: () => void;
+    const shown = new Promise<void>(resolve => { resolveShow = resolve; });
+    const show = vi.spyOn(ctor.prototype, "show").mockReturnValue(shown);
+    const submitPrompt = vi.fn(() => true);
+    Object.defineProperty(ctor.prototype, "submitPrompt", { value: submitPrompt, configurable: true });
+    savePendingWorkbenchPrompt("profile");
+    const pending = readPendingWorkbenchPrompt()!;
+    const { container } = render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="sales-123" region="cn"
+      legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+    await waitFor(() => expect(show).toHaveBeenCalled());
+    const element = container.querySelector("opencraft-embedded-workbench")!;
+    expect(submitPrompt).not.toHaveBeenCalled();
+    expect(readPendingWorkbenchPrompt()).toEqual(pending);
+    await act(async () => { resolveShow(); await shown; });
+    await waitFor(() => expect(submitPrompt).toHaveBeenCalledOnce());
+    expect(submitPrompt).toHaveBeenCalledWith(`profile:${pending.createdAt}`, expect.stringContaining(pending.prompt));
+    expect(readPendingWorkbenchPrompt()).toBeNull();
+    act(() => element.dispatchEvent(new CustomEvent("opencraft-sessions", { detail: { sessions: [], loading: false, selectedChatId: null, isDraft: true } })));
+    expect(submitPrompt).toHaveBeenCalledOnce();
+    delete ctor.prototype.submitPrompt;
+  });
+
+  it("retains the pending template on failed admission and never sends while inactive", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    vi.spyOn(ctor.prototype, "show").mockResolvedValue(undefined);
+    const submitPrompt = vi.fn(() => false);
+    Object.defineProperty(ctor.prototype, "submitPrompt", { value: submitPrompt, configurable: true });
+    savePendingWorkbenchPrompt("tool");
+    const surface = (active: boolean) => <AgentChatMigrationSurface active={active} enabled instanceId="ins-1" profileId="sales-123" region="cn"
+      legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />;
+    const { container, rerender } = render(surface(true));
+    await waitFor(() => expect(container.querySelector("opencraft-embedded-workbench")).not.toBeNull());
+    const element = container.querySelector("opencraft-embedded-workbench")!;
+    act(() => element.dispatchEvent(new CustomEvent("opencraft-connection", { detail: { phase: "ready", failureCode: null } })));
+    await waitFor(() => expect(submitPrompt).toHaveBeenCalled());
+    expect(readPendingWorkbenchPrompt()?.templateId).toBe("tool");
+    submitPrompt.mockClear();
+    rerender(surface(false));
+    act(() => element.dispatchEvent(new CustomEvent("opencraft-sessions", { detail: { sessions: [], loading: false, selectedChatId: null, isDraft: true } })));
+    expect(submitPrompt).not.toHaveBeenCalled();
+    expect(readPendingWorkbenchPrompt()?.templateId).toBe("tool");
+    delete ctor.prototype.submitPrompt;
   });
 
 });

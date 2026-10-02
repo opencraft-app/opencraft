@@ -17,9 +17,19 @@
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
+OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展示 Hermes 指令库；选择指令只写入可编辑草稿。用户发送时，普通指令沿既有 Composer → AppServer → Hermes `prompt.submit` 链路处理。单独发送 `/stop` 走 Hermes Host 的 `hermes/stop` 请求：已有运行中 Turn 先经 `session.interrupt` 中断，再调用 `process.stop` 清理后台进程；空闲或新会话直接调用 `process.stop`。输入框停止按钮仍只走 `turn/interrupt`，其他 Host 不展示 Hermes 指令库。
+
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
+OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。
+
+OpenCraft 右侧预览面板的图标按钮（包括关闭标签、浮动输入框切换及浏览器视口调整）使用操作名称作悬浮提示；文件列表保留路径提示，便于查看被截断的路径。
+
+OpenCraft Composer 的语音输入按钮在平台不支持或 Composer 禁用时保持不可操作：可用性提示与禁用态一致，指针按下和点击都不得启动听写，禁用态不显示可操作的 hover 高亮。
+
 OpenCraft 的弱网恢复分开拥有共享 AppHost 连接、各 Host 的协议就绪、Thread/资源恢复和查询缓存重新验证。页面重新可见或网络恢复时的主动探测只验证通路，不激活或重启执行引擎；Host 的 lease 与 initialize 就绪后，其它慢资源不应阻塞会话。旧连接的迟到响应不得覆盖新连接结果，已接纳的 Turn 仍由服务端持有，不因浏览器重连重新投递。详见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。
+
+国内站嵌入式 Chat 的会话启动记忆按当前物理实例和原生 Profile 组成的 Host ID 隔离；若当前 Host 没有记录过会话，从新草稿开始，不使用旧版全局 Thread ID。独立 Workbench 保留旧版全局 ID 的兼容回退；显式选择的会话仍按当前 Host 执行恢复。
 
 OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 的实际沙箱/审批组合投影为标准语义（只读、接受编辑、完全访问）；无法验证的原生/自定义 profile 仍以引擎档案呈现，不由 Renderer 猜测。`opencraft/permission-modes` v1 的标准档位使用稳定的 `opencraft:permission-mode:*` 提交 ID，由 Host 在提交时映射为当前引擎原生 profile；恢复后的原生生效 ID 经目录映射回产品档位。DSH 选定 preset 在 Thread 创建时应用并回读校验，Turn 与 Fork 入口也校验，避免首轮执行前权限状态不一致。完整 bb 式 Host ceiling、请求值与生效值的持久对账仍属后续设计边界，不得据此宣称已经生效。
 
@@ -73,8 +83,10 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 - OpenCraft 标签栏在 + 后提供统一下拉：上方新建类型、下方当前任务该 region 的全部标签；右侧 Browser/Terminal 图标保持一键新建。切换复用 activate-tab，新建复用 creation action，不按类型拆菜单或新增列表真源。见 [工作区所有权](../../../opencraft/docs/platform-architecture.md)。
 
-- OpenCraft Embedded Workbench 以无内层 Sidebar 的 Web Component 接入 LightVela Agent 页：LightVela 持有外层 Sidebar、Explore/Chat 路由和会话列表呈现，OpenCraft 只提供会话 snapshot/action，并拥有右侧 Chat 与 Composer 画布。每个逻辑 Host 由 LightVela `instance_id + profile_id` 唯一确定，普通 Thread 的列表、创建、恢复、历史、模型和生命周期写入均固定在该 Hermes Profile；物理 Dashboard token 可按实例复用，但 Composer queue 等逻辑状态必须按 Profile 隔离。旧 AgentChat 在持久化 `show()` toggle 开启且 embedded `show()` 成功前保持可见并拥有唯一写权限；再次执行 `show()` 必须撤销 Embedded owner、恢复 AgentChat 并持久化关闭态。嵌入 Host profile 与 Conversation binding 仅当前 Application 有效，不写入普通 Workbench Host 目录。见 [Embedded Workbench Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
-- Embedded Workbench 的生产交付保持独立 Vite target：frontend release matrix 将无 sourcemap、内容寻址的静态树同源投影到 Pages artifact 的 `/__opencraft/`，但 Next 主 bundle 不导入该树，只有持久化 `show()` rollout 开启后才请求 loader。缺少 loader、manifest 或 version 输入必须令 artifact 构建失败；不得用 Legacy AgentChat 的正常 fallback 掩盖不完整发布。该同源命名空间是静态交付边界，不改变 Hermes Host/Profile、Thread 或唯一写 lease 的运行时所有权。
+- OpenCraft Embedded Workbench 以无内层 Sidebar 的 Web Component 接入 LightVela Agent 页：LightVela 持有外层 Sidebar、Explore/Chat 路由和会话列表呈现，OpenCraft 只提供会话 snapshot/action，并拥有右侧 Chat 与 Composer 画布。每个逻辑 Host 由 LightVela `instance_id + profile_id` 唯一确定，普通 Thread 的列表、创建、恢复、历史、模型和生命周期写入均固定在该 Hermes Profile；物理 Dashboard token 可按实例复用，但 Composer queue 等逻辑状态必须按 Profile 隔离。国内 Chat 默认进入 OpenCraft；准备期间只呈现中性加载态，embedded `show()` 成功后由 OpenCraft 拥有唯一写权限。控制台 `show()` 只控制其他隐藏功能，不切换 Chat owner。国际站继续由 AgentChat 持有 Chat。嵌入 Host profile 与 Conversation binding 仅当前 Application 有效，不写入普通 Workbench Host 目录。见 [Embedded Workbench Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
+- Embedded Workbench 的生产交付保持独立 Vite target：frontend release matrix 将无 sourcemap、内容寻址的静态树同源投影到 Pages artifact 的 `/__opencraft/`，但 Next 主 bundle 不导入该树；国内用户进入 Chat 时才请求 loader。缺少 loader、manifest 或 version 输入必须令 artifact 构建失败；不得用 Legacy AgentChat 的正常 fallback 掩盖不完整发布。该同源命名空间是静态交付边界，不改变 Hermes Host/Profile、Thread 或唯一写 lease 的运行时所有权。
+- 已发送消息的图片缩略图由 ChatUI 打开预览弹窗；弹窗默认挂载到当前 Workbench Presentation Root，确保国内站内嵌 Shadow DOM 的样式、层级和焦点仍有效。显式传入的 portal 目标优先于默认根。
+- 国内默认接入的范围还包含非主 Bot Chat，以及默认收起的网页标签和会话文件只读预览面板。当前回滚须恢复前端门禁与旧 Chat token 请求并重新发布；CTL 运行时配置在页面加载后异步到达，不能直接作为启动前的 Chat owner 开关。
 
 - OpenCraft Terminal 是独立字符网格：测量和绘制不得受到应用正文 tracking/word-spacing/text-transform 的不同影响；xterm 拥有行补偿，不能只验证 screen≤host 而漏掉满行文字与光标。见 [字符度量边界](../../../opencraft/docs/platform-architecture.md#terminal-character-metrics-boundary)。
 
@@ -464,7 +476,7 @@ CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `regio
 ### 国内控制台 OpenCraft 隐藏发布
 
 - 国内站 `!isGlobal && showHiddenAgentTools` 决定新 Chat 启用；默认仍为 AgentChat，F12 执行 `show()` 切换，再次执行关闭。国际站不启用该候选。
-- 复用 `AgentChatMigrationSurface` 的 ready/show adoption 和失败回退。控制台通过内存函数借出当前 session；OpenCraft 的 account metadata 仅内存保存，不复制 token 到另一 localStorage key，不消费宿主 OAuth fragment，也不拥有登录/退出权限。
+- 复用 `AgentChatMigrationSurface` 的 ready/show adoption；启用新 Chat 后，失败保持原位提示与重试，不自动回退 AgentChat。控制台通过内存函数借出当前 session；OpenCraft 的 account metadata 仅内存保存，不复制 token 到另一 localStorage key，不消费宿主 OAuth fragment，也不拥有登录/退出权限。
 - 控制台 token 替换/清除发出无凭据 `lightclaw:auth-session-changed` 事件；跨标签通过 storage 事件识别。旧 accessor 立即失效，组件释放连接后新 owner 初始化。显式 Instance/Profile/account/region 绑定继续由 provider 校验。
 - Hermes 首次 Dashboard 启动脚本通过 TAT `PtyStart.Program/Args` 执行并以交互 shell 保活；长单行 `PtyInput` 会受 canonical PTY 长度限制。此路径需要真实部署中的 TAT 兼容验收，本地帧测试不代表线上联通。
 
@@ -483,6 +495,106 @@ CTL 在实例进入 `Running` 后，从 Sandbox detail 读取实例实际 `regio
 ### Markdown 文件预览补充
 内嵌右侧栏的只读文件预览支持 `.md` / `.markdown` 排版与源码切换，复用既有 Markdown renderer 和 Host 文件读取/Blob lease。该呈现能力不增加编辑、目录浏览或跨 Bot 资源权限；源码仍为唯一文件内容。
 
+国内控制台内嵌 Chat 的 Composer 编辑区域最小高度为 74px，新会话与已有会话一致；独立工作台保留原有尺寸。
+
+国内控制台内嵌 Chat 的新会话提示为“聊聊你的想法，或交给我一件事”，已有会话提示为“告诉我接下来想做什么”；两个消息ID分别覆盖七语言，不以修改任务限定后续输入。
+
 ## LightVela 积分扣减优先级
 
 NewAPI 在锁定有效订阅后优先选择名称为 `free-credit:*` 的赠送积分，其次选择套餐/付费积分；各组内部保持到期时间、订阅 ID 升序。仅改变候选优先级，不改变单请求原子资金来源、预扣/退款幂等、套餐 pacing 或 tail-grace：赠送余额不足以覆盖本次预扣时，仍优先使用可完整覆盖请求的其他订阅；赠送已耗尽或过期则回退。Pass 有效期与网关准入仍由服务端验证，底层赠送订阅的长期到期日不是独立于 Pass 的使用授权。
+
+国内内嵌 Chat 在宿主侧拒绝空 Profile，显示配置检查提示且不创建连接；底层 embedded host 保留身份校验。prepare/show 迟到结果不得显示或采纳已退休、启动失败的实例，启动失败后的重试创建新实例。只读文件预览的保存入口也拒绝写入，独立工作台保存沿用操作发起时的 Host/path/text 快照。
+
+文件保存统一通过 writeWorkspaceResource 执行只读检查及目标快照写入；组件与 helper 均有拒绝写入测试。OpenCraft CI guard 在闭包校验后执行锁定依赖安装和串行 test:embedded-ci，包含真实预览面板的写入保护测试。
+
+国内嵌入聊天的 Markdown 文件入口同时支持标准文件链接与回复中行内代码形式的明确文件路径（`.md` / `.markdown`）。点击后由既有资源策略交给当前 Bot 的只读右栏；展示文字不提前触发远端读取，不把路径当命令执行。
+Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>`（普通文本或行内代码）也走同一入口，只在回复完成后可点；非 Markdown、夹在正文中的文本及无效路径保持原样。`MEDIA:` 前缀仅用于识别，不进入文件路径或绕过 Host 文件权限。
+
+国内嵌入聊天采用 compact 右栏初始宽度：既有默认宽度的 2/3，并继续遵守面板最小宽度和聊天内容保留宽度；拖拽调整由原 Shell owner 负责，独立工作台保持 standard 默认。
+
+国内桌面嵌入聊天由控制台占满侧栏右侧的内容列，去除设置页外围 gutter 和宽度上限；宿主通过 `--lightvela-console-header-height` 对齐 68px 导航表头。嵌入根将其投影到 toolbar token（缺省 46px），消息正文保留内部间距；移动端与旧聊天入口沿用原布局。
+
+只读 Markdown 文件预览的“源码”直接呈现转义后的原文，可选择复制和键盘滚动，不依赖按需加载的编辑器模块；可编辑工作台继续由 CodeMirror 持有草稿。
+
+- Embedded Chat 的工作台模板通过 element `submitPrompt(requestId, text)` 交给同一 Host/Composer/Conversation owner：冷启动等待 ready，切入空的新 Draft，不覆盖用户文字，接纳后才条件清除站点暂存。运行时初始化 cleanup 保留 manual failure code，直到新连接尝试才清除；页面不能把终态误报为自动恢复。国内控制台默认使用 OpenCraft Chat，生产静态制品仍复用既有同源发布链路。见 [Chat UI invariants](../../../opencraft/docs/chat-ui-architecture.md#invariants)。
+
+
+## 建站动态接入：能力与发布边界
+
+2026-09-29 候选实现，未部署。`GET /v1/websites/capability` 增量返回
+`backend.enabled/contract` 和 `data.enabled`。backend 仅在 runtime URL、部署凭据
+配置有效且用户精确命中 `WEBSITE_BACKEND_BETA_USERS` 时为 true，契约 `fetch-v1`；
+data 始终 false。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
+
+release `kind` 缺省/static 保持静态，fullstack 需要能力门禁与 SHA-256；静态包不得
+携带私有 `__backend` 内容。worker 单独上传 `__backend/app.mjs` 到内部 runtime，
+静态进入 immutable COS prefix；CTL 在同一事务内验证 runtime readiness 并更新
+active release、静态路径和后端 digest。回滚也是经过 worker 验证的带代次 operation。
+
+fullstack `/api`、`/api/*` 只允许 owner session，即使国际静态页公开也不会公开后端。
+动态写请求必须同源 Origin；所有动态请求携带 `X-Website-Release`，与当前活动版本
+不匹配返回 409。实时校验站点状态/流量门禁；分享会话无动态调用权限。静态站仍然
+只支持 GET/HEAD，不改变 public 静态行为。浏览器 Cookie/Authorization 不转发用户 JS。
+
+`site-runtime` 使用每次调用独立 Docker/runsc 容器、固定引擎 digest、无网络、只读
+rootfs、资源限额和超时强制回收；无宿主执行降级。当前验证包括独立 Linux VM 中的
+隔离用例和跨模块发布/回滚集成；不等同生产隔离评审或容量验收。没有数据库能力。
+
+Skill 同步提供动态流程与离线打包器；新镜像/存量机器共用完整包版本，存量更新不
+触碰网站凭据。两条交付路径和上线前剩余门禁分别见
+[Fullstack Beta 实施](../../proposals/2026-09-29-website-fullstack-beta.md) 与
+[Skill 双通路交付](../../proposals/2026-09-29-website-skill-delivery.md)。
+
+### Website backend test findings (2026-09-30 Beijing time)
+
+Dedicated runtime reconciliation runs under the manager store lock before accepting
+requests: reap only owned containers, then reserved interrupted startup/prepare
+folders. Immutable active/rollback revisions must not be deleted without control-plane
+retention knowledge. Explicit file chmod is required with the private systemd umask.
+The website instance credential route allowlist also needs the exact POST rollback
+endpoint; session-only tests cannot prove that an Agent's instance credential can
+complete the same workflow. These source changes are not evidence of live routing.
+
+### Website fullstack revision retention (candidate implementation)
+
+Fullstack publication retains historical static and backend artifacts together;
+legacy static-only publication retains its existing two-prefix behavior. Cleanup
+requires a CTL transaction to mark a non-active historical release `pruning`, removing
+rollback eligibility before remote deletion. The worker deletes only that revision,
+checks current lease/generation between stages, and finalizes `pruned`; partial COS
+object errors are failures even when HTTP status is 200. Failed cleanup stays fenced.
+
+The internal authenticated `POST /internal/ctl/websites/sites/{siteId}/retention`
+reserves at most one candidate using deployment policy, never request-supplied ages.
+It is disabled unless `WEBSITE_RETENTION_ENABLED=true`, `WEBSITE_RETENTION_KEEP`
+is explicitly 1–16, and `WEBSITE_RETENTION_GRACE` is explicitly 1h–720h. It additionally
+requires a fullstack site owned by a backend-enabled allowlisted user. A successful
+response with `scheduled=false` means no eligible candidate, not a completed cleanup;
+when scheduled, follow the operation to terminal success. Worker polling is durable.
+No recurring scheduler or production policy is enabled by this source change.
+Grace and failed/orphan revisions can still exhaust the runtime revision bound;
+reconciliation and capacity acceptance remain release gates, not implicitly solved.
+
+If Pass lifecycle changes supersede a reserved cleanup, the internal trigger may
+recover that same operation after the site is active again and its old lease has
+expired (or it is terminal), provided no competing work exists. Recovery preserves
+`pruning`, increments the generation and clears the old lease; it never reactivates
+partially deleted artifacts. Dead-letter failures remain manual recovery, not an
+unbounded automatic retry loop.
+
+An opt-in worker scheduler now calls authenticated
+`POST /internal/ctl/websites/retention/sweep?cursor=...`. Set worker
+`WEBSITE_RETENTION_SWEEP_INTERVAL` explicitly (1m–24h); an absent value disables it.
+Each tick scans at most 20 active fullstack sites in site-ID order, filtering owners
+through the backend allowlist; each eligible site still uses the fenced reservation.
+A complete scan resets the cursor, HTTP/response failures preserve it for retry,
+and shutdown cancels the scheduler before draining workers. CTL policy must also
+be explicitly enabled. No deployment environment is enabled by the source defaults.
+
+Failed-publication artifact reconciliation uses the same fenced cleanup operation,
+not filesystem age alone: only a failed release with an explicit terminal failed
+`deploy` record and elapsed grace is eligible, after validating the entire site
+snapshot has no unsettled work. Successful history is considered first. Failed
+releases do not count toward the rollback window. Cleanup includes the exact
+private upload ZIP key as well as the exact static/backend revision; unknown runtime
+directories without authoritative release records are not automatically removed.

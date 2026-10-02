@@ -230,7 +230,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 31, "sgprod": 31},
+                    {"shprod": 32, "sgprod": 32},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -320,11 +320,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 continue
             target_name = (patch.get("target") or {}).get("name")
             operations = yaml.safe_load(patch["patch"]) or []
-            overridden = {
-                (operation.get("value") or {}).get("name")
-                for operation in operations
-                if isinstance(operation.get("value"), dict)
-            }
+            if isinstance(operations, dict):
+                containers = (operations.get("spec", {}).get("template", {}).get("spec", {}).get("containers", []))
+                overridden = {variable.get("name") for container in containers for variable in container.get("env", [])}
+            else:
+                overridden = {
+                    (operation.get("value") or {}).get("name")
+                    for operation in operations
+                    if isinstance(operation, dict) and isinstance(operation.get("value"), dict)
+                }
             self.assertTrue(
                 forbidden.isdisjoint(overridden),
                 f"{target_name} must consume sgprod VelaGW settings from ctl-runtime-secrets",
@@ -2000,6 +2004,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
             for env in master_build_envs.split(","):
                 with self.subTest(bundle=bundle_name, env=env):
                     require_build_metadata(load_bundle(manifest, bundle_name, env))
+
+    def test_website_only_workers_changes_do_not_trigger_unrelated_auto_pin(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/workers.yml").read_text())
+        push = workflow.get("on", workflow.get(True))["push"]
+        ignored = set(push.get("paths-ignore", []))
+        website_only = {
+            "workers/cmd/website-deployer/**",
+            "workers/internal/website/**",
+            "workers/websiteintegration/**",
+        }
+        self.assertTrue(website_only.issubset(ignored))
+        self.assertIn("workers/**", push["paths"])
+        # Do not disable shared dependency or unrelated worker release triggers.
+        self.assertNotIn("workers/**", ignored)
+        for shared in ["workers/go.mod", "workers/go.sum", "workers/Dockerfile", "workers/internal/**"]:
+            self.assertNotIn(shared, ignored)
+        website = yaml.safe_load((REPO_ROOT / ".ci/workers-website-deployer.yml").read_text())
+        params = website["extends"]["parameters"]
+        self.assertEqual(params["BUNDLE"], "workers-website-deployer")
+        self.assertEqual(params["MASTER_AUTO_PIN_ENVS"], "none")
+        self.assertEqual(params["MASTER_BUILD_ENVS"], "shprod,sgprod")
+        for path in ["workers/cmd/website-deployer/**", "workers/internal/website/**"]:
+            self.assertIn(path, website.get("on", website.get(True))["push"]["paths"])
 
     def test_workers_release_bundle_targets_shanghai_worker_cluster(self) -> None:
         manifest = load_manifest()

@@ -79,6 +79,16 @@ describe("workbench-prompt-templates", () => {
     expect(readPendingWorkbenchPrompt()).toBeNull();
   });
 
+  it("clears only the admitted template and preserves a newer navigation", () => {
+    savePendingWorkbenchPrompt("tool");
+    const previous = readPendingWorkbenchPrompt()!;
+    savePendingWorkbenchPrompt("profile");
+    clearPendingWorkbenchPrompt(previous);
+    expect(readPendingWorkbenchPrompt()?.templateId).toBe("profile");
+    clearPendingWorkbenchPrompt(readPendingWorkbenchPrompt()!);
+    expect(readPendingWorkbenchPrompt()).toBeNull();
+  });
+
   it("超过 TTL 的 pending 会被判为过期并清除", () => {
     const past = new Date("2026-01-01T00:00:00.000Z");
     savePendingWorkbenchPrompt("campaign", past);

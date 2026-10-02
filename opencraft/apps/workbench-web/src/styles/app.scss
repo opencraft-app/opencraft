@@ -590,6 +590,12 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
   }
 }
 
+.opencraft-embedded-workbench-root:not(:has(.new-thread-draft-page))
+  .main-content-viewport[data-app-shell-thread-edge-scroll="false"]
+  > .main-content-frame[data-app-shell-thread-edge-divider="true"] {
+  margin-top: calc(var(--app-shell-main-content-frame-top-offset) - 1px);
+}
+
 .main-content-frame__inner {
   position: relative;
   display: flex;
@@ -9199,6 +9205,64 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+.codex-composer-shortcut-trigger {
+  display: inline-flex;
+  height: var(--composer-control-size, 28px);
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: default;
+
+  &:hover,
+  &[data-state="open"] {
+    background: var(--color-background-button-tertiary-hover);
+    color: var(--color-text);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+}
+
+.codex-composer-shortcut-menu {
+  width: min(260px, calc(100vw - 16px));
+
+  .codex-composer-selection-menu__item {
+    justify-content: flex-start;
+    gap: 12px;
+  }
+}
+
+.codex-composer-shortcut-menu__command {
+  flex: 0 0 auto;
+  color: var(--color-text);
+}
+
+.codex-composer-shortcut-menu__description {
+  color: var(--color-text-secondary);
+}
+
+.opencraft-voice-input-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+
+  &:hover {
+    background: transparent;
+    color: var(--color-icon-secondary);
+  }
+}
+
 .opencraft-voice-input-action[data-voice-input-state="error"] {
   color: var(--color-text-danger);
 }
@@ -11100,6 +11164,22 @@ html[data-codex-window-type="electron"] .thread-scroll {
   &.is-error {
     color: var(--color-text-danger, #b42318);
   }
+}
+
+.workspace-file-source {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px 28px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font: 11px/18px var(--font-family-mono);
+
+  code { font: inherit; }
+  &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
 }
 
 .workspace-code-editor {

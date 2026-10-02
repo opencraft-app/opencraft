@@ -33,12 +33,22 @@ import (
 
 // ---- 返回类型 ----
 
+// FeatureAvailability is additive to the static capability contract. The zero
+// value must be serialized: an absent or unavailable runtime is never an opt-in.
+type FeatureAvailability struct {
+	Contract string `json:"contract,omitempty"`
+	Enabled  bool   `json:"enabled"`
+}
+
 type Capability struct {
-	MaxSites            int   `json:"max_sites"`
-	UsedSites           int   `json:"used_sites"`
-	MonthlyTrafficBytes int64 `json:"monthly_traffic_bytes"`
-	UsedTrafficBytes    int64 `json:"used_traffic_bytes"`
-	StorageBytes        int64 `json:"storage_bytes"`
+	// Backend requires an explicit user allowlist and configured runtime. Data is unavailable.
+	Backend             FeatureAvailability `json:"backend"`
+	Data                FeatureAvailability `json:"data"`
+	MaxSites            int                 `json:"max_sites"`
+	UsedSites           int                 `json:"used_sites"`
+	MonthlyTrafficBytes int64               `json:"monthly_traffic_bytes"`
+	UsedTrafficBytes    int64               `json:"used_traffic_bytes"`
+	StorageBytes        int64               `json:"storage_bytes"`
 	// UsedStorageBytes 是用户所有存活站点的 COS 占用之和。
 	//
 	// 数据来自 deployer 在发布/删除后回填的 website_sites.storage_bytes，
@@ -54,6 +64,10 @@ type CreateSiteResult struct {
 }
 
 type CreateReleaseRequest struct {
+	BackendSHA256 string `json:"backend_sha256,omitempty"`
+	// Empty preserves legacy static clients. Unsupported kinds must not silently
+	// fall back to uploading server-side code as public static assets.
+	Kind         string `json:"kind,omitempty"`
 	ArtifactHash string `json:"artifact_hash"`
 	ArtifactSize int64  `json:"artifact_size"`
 	FileCount    int    `json:"file_count"`
@@ -82,10 +96,13 @@ type DeleteSiteResult struct {
 // 30 秒 TTL 缓存，把两个数字塞进同一次回源是零额外成本；新增一次回源则会让
 // 站点的全部流量再多打一遍 ctl。
 type SiteStatusView struct {
-	SiteID    string `json:"site_id"`
-	UserID    string `json:"user_id"`
-	Status    string `json:"status"`
-	CloudPath string `json:"cloud_path"`
+	Kind          string `json:"kind"`
+	ReleaseID     string `json:"release_id"`
+	BackendSHA256 string `json:"backend_sha256"`
+	SiteID        string `json:"site_id"`
+	UserID        string `json:"user_id"`
+	Status        string `json:"status"`
+	CloudPath     string `json:"cloud_path"`
 	// MonthlyTrafficBytes 为 0 表示不限额（额度未配置或查不到），网关按不拦截处理。
 	MonthlyTrafficBytes int64      `json:"monthly_traffic_bytes"`
 	UsedTrafficBytes    int64      `json:"used_traffic_bytes"`
@@ -98,6 +115,7 @@ type SiteStatusView struct {
 
 type Logic interface {
 	GetCapability(userID string) (*Capability, error)
+	RollbackRelease(userID, siteID, releaseID string) (*RollbackReleaseResult, error)
 	CreateSite(userID, bundleID, name, idempotencyKey string) (*CreateSiteResult, error)
 	ListSites(userID string, page, pageSize int) ([]*website.SiteEntity, int64, error)
 	GetSite(userID, siteID string) (*website.SiteEntity, error)
@@ -118,6 +136,8 @@ type Logic interface {
 	CompleteOperation(operationID, leaseToken, cloudPath, publicURL string) error
 	FailOperation(operationID, leaseToken, errorMessage string) error
 	ReviveOperation(operationID string) (*website.OperationEntity, error)
+	ScheduleReleaseRetention(siteID string) (*website.OperationEntity, error)
+	SweepReleaseRetention(cursor string) (*RetentionSweepResult, error)
 	DeleteSite(userID, siteID string) (*DeleteSiteResult, error)
 	// Pass 生命周期联动。三者都是纯 DB 状态迁移，不触碰 COS。
 	OnPassIsolated(userID string) error
@@ -209,7 +229,7 @@ func isCurrentOperationGeneration(operationGeneration, siteGeneration int64) boo
 // 且 deploy 的制品上传窗口有时效，盲目重试没有意义。
 func shouldRetryFailedOperation(operationType string) bool {
 	switch operationType {
-	case website.OpTypeDelete, website.OpTypeSuspend, website.OpTypeResume:
+	case website.OpTypeDelete, website.OpTypeSuspend, website.OpTypeResume, "prune_release":
 		return true
 	default:
 		return false
@@ -459,6 +479,7 @@ func (l *logic) GetCapability(userID string) (*Capability, error) {
 	}
 
 	return &Capability{
+		Backend:             FeatureAvailability{Enabled: backendEnabledFor(userID), Contract: "fetch-v1"},
 		MaxSites:            q.MaxSites,
 		UsedSites:           int(usedSites),
 		MonthlyTrafficBytes: q.MonthlyTrafficBytes,
@@ -625,6 +646,24 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 		return nil, errcode.ErrWebsiteNotActive
 	}
 
+	// Check ownership and site status first; never expose a foreign site's
+	// capabilities. Reject before signing an upload or persisting any operation.
+	switch req.Kind {
+	case "", "static":
+		if req.BackendSHA256 != "" {
+			return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "backend_sha256 requires fullstack")
+		}
+	case "fullstack":
+		if !backendEnabledFor(userID) {
+			return nil, errcode.ErrWebsiteBackendUnavailable
+		}
+		if len(req.BackendSHA256) != 64 || req.BackendSHA256 != strings.ToLower(req.BackendSHA256) || !validateArtifactHash(req.BackendSHA256) {
+			return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "backend_sha256 required")
+		}
+	default:
+		return nil, errcode.Wrap(errcode.ErrWebsiteInvalidParam, "unsupported release kind")
+	}
+
 	p, err := l.getActivePass(userID)
 	if err != nil {
 		return nil, err
@@ -699,6 +738,13 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 			return errcode.ErrWebsiteNotActive
 		}
 
+		var pendingRollback int64
+		if err := tx.Table(website.OperationsTable).Where("site_id = ? AND operation_type IN ? AND status IN ?", siteID, []string{"rollback", "prune_release"}, []string{website.OpStatusCreated, website.OpStatusRunning}).Count(&pendingRollback).Error; err != nil {
+			return err
+		}
+		if pendingRollback > 0 {
+			return errcode.ErrWebsiteReleaseInProgress
+		}
 		inFlightStatuses := []string{
 			website.ReleaseStatusPending,
 			website.ReleaseStatusUploading,
@@ -745,6 +791,7 @@ func (l *logic) CreateRelease(userID, siteID string, req CreateReleaseRequest) (
 		version = v
 
 		release := &website.ReleaseEntity{
+			Kind: req.Kind, BackendSHA256: req.BackendSHA256,
 			ReleaseID:    releaseID,
 			SiteID:       siteID,
 			Version:      version,
@@ -870,6 +917,7 @@ func (l *logic) GetSiteInternal(siteID string) (*SiteStatusView, error) {
 		return nil, errcode.ErrWebsiteNotFound
 	}
 	view := &SiteStatusView{
+		Kind: site.Kind, ReleaseID: site.ActiveReleaseID, BackendSHA256: site.BackendSHA256,
 		SiteID:     site.SiteID,
 		UserID:     site.UserID,
 		Status:     site.Status,
@@ -928,6 +976,9 @@ func (l *logic) GetOperationInternal(operationID string) (*website.OperationEnti
 		return nil, errcode.ErrWebsiteNotFound
 	}
 	op.ActiveCloudPath = site.CloudPath
+	op.ActiveReleaseID = site.ActiveReleaseID
+	op.CurrentSiteGeneration = site.OperationGeneration
+	op.Kind = site.Kind
 	if op.ReleaseID != "" {
 		release, err := l.releaseDao.GetByReleaseID(op.ReleaseID)
 		if err != nil {
@@ -936,6 +987,9 @@ func (l *logic) GetOperationInternal(operationID string) (*website.OperationEnti
 		if release == nil || release.SiteID != op.SiteID || release.UserID != op.UserID {
 			return nil, errcode.ErrWebsiteReleaseNotFound
 		}
+		op.ReleaseStatus = release.Status
+		op.Kind = release.Kind
+		op.BackendSHA256 = release.BackendSHA256
 		op.ArtifactHash = release.ArtifactHash
 		op.ArtifactSize = release.ArtifactSize
 	}
@@ -1047,7 +1101,25 @@ func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL 
 				}
 			}
 
-		case website.OpTypeDeploy:
+		case website.OpTypeDeploy, "rollback":
+			var candidate website.ReleaseEntity
+			if err := tx.Table(website.ReleasesTable).Where("release_id = ? AND site_id = ? AND user_id = ?", op.ReleaseID, op.SiteID, op.UserID).First(&candidate).Error; err != nil {
+				return err
+			}
+			if candidate.Kind == "fullstack" {
+				if !backendEnabledFor(op.UserID) {
+					return errcode.ErrWebsiteBackendUnavailable
+				}
+				if cloudPath != "sites/"+op.SiteID+"/releases/"+op.ReleaseID+"/" {
+					return errcode.ErrWebsiteInvalidParam
+				}
+				if err := verifyBackendReady(op.SiteID, op.ReleaseID, candidate.BackendSHA256); err != nil {
+					return err
+				}
+			}
+			if err := tx.Table(website.SitesTable).Where("site_id = ?", op.SiteID).Updates(map[string]interface{}{"kind": candidate.Kind, "active_release_id": candidate.ReleaseID, "backend_sha256": candidate.BackendSHA256}).Error; err != nil {
+				return err
+			}
 			// 先让该站点此前的 active 版本退位，保证「当前版本」唯一。
 			// 否则续费恢复、发布历史展示都会面对多个自称当前的版本。
 			if err := tx.Table(website.ReleasesTable).
@@ -1069,6 +1141,20 @@ func (l *logic) CompleteOperation(operationID, leaseToken, cloudPath, publicURL 
 					Updates(map[string]interface{}{"cloud_path": cloudPath, "public_url": publicURL}).Error; err != nil {
 					return err
 				}
+			}
+
+		case "prune_release":
+			if op.ReleaseID == "" || site.ActiveReleaseID == op.ReleaseID {
+				return errcode.ErrWebsiteInvalidParam
+			}
+			result := tx.Table(website.ReleasesTable).
+				Where("release_id = ? AND site_id = ? AND user_id = ? AND status = ?", op.ReleaseID, op.SiteID, op.UserID, "pruning").
+				Update("status", "pruned")
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errcode.ErrWebsiteInvalidParam
 			}
 
 		case website.OpTypeDelete:
@@ -1188,7 +1274,7 @@ func (l *logic) FailOperation(operationID, leaseToken, errorMessage string) erro
 		case website.OpTypeDeploy:
 			return tx.Table(website.ReleasesTable).Where("release_id = ?", op.ReleaseID).
 				Updates(map[string]interface{}{"status": website.ReleaseStatusFailed, "error_message": safeMessage}).Error
-		case website.OpTypeDelete, website.OpTypeSuspend, website.OpTypeResume:
+		case website.OpTypeDelete, website.OpTypeSuspend, website.OpTypeResume, "prune_release":
 			// 站点状态保持不变，等待重试或人工介入。
 			return nil
 		}

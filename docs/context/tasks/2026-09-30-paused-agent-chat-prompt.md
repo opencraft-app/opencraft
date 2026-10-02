@@ -47,6 +47,10 @@ Agent 已暂停时，聊天区显示暂停提示，不提示连接自动恢复�
 | `docs/context/project/services/opencraft.md@HEAD` | 路由 must_read | OpenCraft 服务边界 |
 | `docs/context/project/upstream-subtrees.md@HEAD` | 路由 must_read | mono2 唯一写入真源 |
 | `docs/context/domains/agent-gateway-runtime.md@HEAD` | 路由 must_read | Agent 运行域范围 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@origin/master` | MR 冲突修复路由 | 确认提交与推送授权边界 |
+| `opencraft/.agents/skills/opencraft-maintenance/SKILL.md@origin/master` | OpenCraft 维护路由 | 选择嵌入聊天验证范围 |
+| `opencraft/docs/chat-ui-architecture.md@origin/master` | 当前聊天契约 | 保留模板投递、草稿和重连语义 |
+| `opencraft/docs/platform-architecture.md@origin/master` | 当前平台边界 | 不修改 Host 或会话所有权 |
 
 ## evidence
 - 截图中侧栏「已暂停」，聊天区显示「连接暂时中断，正在尝试恢复…」与「重新连接」。
@@ -59,12 +63,15 @@ Agent 已暂停时，聊天区显示暂停提示，不提示连接自动恢复�
 - 额外的 OpenCraft `npm run gate` 在 `test:extensions` 的测试输出后长期未退出，已停止；不把完整 gate 记为通过。本次 CI 对应的 `check:mono2-agent-console` 与 `test:embedded-ci` 已单独通过。
 - 目标分支后续合入 `da1f500cb`，其中 `sync-mono2-agent-console.mjs` 改为只追踪实际复制的源文件；二次合并后官方同步把 manifest `sourceRevision` 从目标上的 `414ca8fe6` 更新为 `2a65b0388`，130 个文件检查通过。
 - 二次合并后 `pnpm check` 为 0 条新增 TypeScript 诊断，相关与 guard 测试合计 221/221，CN/global build 均通过。
+- 2026-10-02 对照 `origin/master@b42d361c7` 解决冲突：新版 `opencraft-embedded-workbench.cn.test.tsx` 已接收暂停态回归；组件沿用主线的模板投递、草稿和启动逻辑，仅保留暂停提示/禁用重试；`UPSTREAM.json` 由官方同步脚本生成并检查 130 个文件。
+- 最新主线的 `opencraft/docs/chat-ui-architecture.md` 明确要求嵌入模板经 `submitPrompt` 进入 Host，已有会话和草稿不可被覆盖；合并结果保留相关入口。暂停/恢复切换的组件测试仍断言同一元素与未发送草稿保留。
 
 ## risks
 - 暂停状态延迟更新时，UI 仍依赖父页面当前 Bot 状态；状态刷新后恢复正确显示。
 
 ## validation
 - 聚焦 Vitest、`pnpm check`、CN/global build、OpenCraft 生成检查与 embedded CI 测试已通过；前端全量测试未通过，OpenCraft 完整 gate 未完成。
+- 2026-10-02：当前主线合并工作树上的前端聚焦测试 145/145、`pnpm check`、`pnpm build` 通过；OpenCraft `test:embedded-ci` 155/155、Web typecheck、`build:web`、130 文件生成检查通过；`git diff origin/master --check`、文档检查通过。前端全量 `pnpm test` 在多个未触及模块失败，一名 worker 达到约 4 GB 内存上限，随后停止，不记为通过。
 
 ## decisions
 - 仅在 `activeBot.status === "paused" && activeBot.siblingsUnknown === "instance_stopped"` 时判定 Agent 实例暂停；单独的 Bot 暂停不触发 Agent 提示。
@@ -77,4 +84,4 @@ Agent 已暂停时，聊天区显示暂停提示，不提示连接自动恢复�
 - `rg` 输出已用于定位，无需保留完整扫描产物。
 
 ## handoff
-- MR !4872 的 OpenCraft 生成闭包已按最新目标分支修复并验证；推送后需以最新 source SHA 重查 CI。尚未合并或发布。
+- MR !4872 已在隔离工作树本地合入 `origin/master@b42d361c7` 并解决冲突，当前仍处于未提交的 Git merge 状态。提交合并前需取得用户明确授权；提交后必须重新运行 `sync:mono2-agent-console` 和 `check:mono2-agent-console`，确认 `sourceRevision` 基于已提交的合并历史，再推送并核对 MR source SHA、冲突与 CI。尚未合并 MR 或发布。
