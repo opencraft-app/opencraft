@@ -951,6 +951,8 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   serving 必须绑定十四项 tracked resource、两条 private endpoint 的安全策略、immutable Secret
   以及四个外置 Cell identity/serving route ConfigMap 的 UID 和路由摘要。只读重验不构成压力、
   业务准入或历史 self-heal 资格；漂移失败不得通过修改现网或手工拼收据来绕过。
+- immutable 身份路由只允许五个身份字段，或额外包含完整四个资格审计 SHA-256 字段；未知字段、
+  部分审计摘要、畸形摘要及 UID 改变都拒绝。审计字段不参与网络寻址，原 immutable UID 保护其原始内容。
 
 ## 必须固化的测试矩阵
 

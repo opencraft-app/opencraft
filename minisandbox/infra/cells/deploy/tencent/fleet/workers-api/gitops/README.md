@@ -67,13 +67,14 @@ cache. An idempotent replay does not restart it.
 An already adopted durable-only API cannot wait for A/B stateless endpoints:
 those executors need the C Object Router address first. The explicit
 `object-router-bootstrap` render therefore publishes twelve Argo-tracked
-resources (the normal set minus the not-yet-created private Router CLB). It is
+resources in the API manifest, plus the existing private Workers API Service,
+for thirteen tracked resources (the private Router CLB is not yet created). It is
 authorized by the exact prior convergence receipt, binds the separately
 synchronized external credential, and proves the Pod has no stateless executor
 token flags. After this revision is healthy, create and qualify the Router CLB;
-the later `serving` render adds that thirteenth tracked resource and all serving
-route evidence. The current serving manifest also tracks its metrics ServiceMonitor,
-so its exact inventory is fourteen resources, not the historical thirteen.
+the later `serving` render adds the fourteenth tracked resource and all serving
+route evidence. The current API manifest contains twelve resources; adding both
+private Services makes the exact serving inventory fourteen resources.
 
 If the pinned Application is healthy but its historical convergence receipt
 was not retained, `recertify-live-convergence.sh` may reconstruct only that
@@ -89,6 +90,9 @@ render receipt hashes, all fourteen tracked resources, both endpoint listener
 and security policies, the immutable credential identity, and the exact four
 external Cell identity/serving route ConfigMaps. Their UIDs, Cell/pool bindings,
 authorities and canonical route digests must match the pinned render. Only
+the five identity routing fields and, when present, the complete four SHA-256
+audit fields from earlier immutable route publishers are accepted; unknown
+or partial audit fields fail closed. The original immutable UID must match. Only
 controller-allocated fields such as `clusterIP`, `nodePort` and Service status
 are excluded from desired-spec comparison; endpoint VIPs remain checked.
 

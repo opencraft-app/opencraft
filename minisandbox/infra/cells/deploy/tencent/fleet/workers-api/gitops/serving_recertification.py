@@ -3,6 +3,7 @@
 import hashlib
 import ipaddress
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -87,10 +88,18 @@ def verify_serving(desired: Path, application, deployment, secret, router_servic
         raise ValueError("serving external route inventory differs")
     for cell in cells:
         identity_route = by_name["actor-cell-route-" + cell["cell"]]
+        identity_data = {"pool-name": render["pool"]["name"], "pool-uid": render["pool"]["uid"],
+            "cell-name": cell["cell"], "cell-uid": cell["cellUid"], "datacenter": cell["datacenter"]}
+        data = identity_route.get("data", {})
+        audit_keys = {"activation-receipt-digest", "adoption-receipt-digest", "convergence-receipt-digest", "qualification-chain-receipt-digest"}
+        extra = set(data) - set(identity_data)
+        # The exact immutable UID fences the original bytes. Earlier identity
+        # publishers retained a complete audit bundle alongside routing fields.
+        audit_valid = not extra or (extra == audit_keys and all(
+            isinstance(data[key], str) and re.fullmatch(r"sha256:[0-9a-f]{64}", data[key]) for key in audit_keys))
         if (identity_route.get("immutable") is not True or identity_route["metadata"].get("uid") != cell["routeConfigMapUid"]
             or identity_route["metadata"].get("namespace") != "workers-api-system"
-            or identity_route.get("data") != {"pool-name": render["pool"]["name"], "pool-uid": render["pool"]["uid"],
-                "cell-name": cell["cell"], "cell-uid": cell["cellUid"], "datacenter": cell["datacenter"]}):
+            or not audit_valid or any(data.get(key) != value for key, value in identity_data.items())):
             raise ValueError("serving immutable Cell route differs")
         serving_map = by_name["actor-cell-serving-route-" + cell["cell"]]
         route = json.loads(serving_map.get("data", {}).get("route.json", "{}"))

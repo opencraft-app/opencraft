@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -75,7 +75,10 @@ derived: false
 - bounded 查找 bootstrap receipts/max4、build/max5 convergence 及当前 exact revision 查询均无匹配。
 - 管理 Git publisher 已定位配置文件路径，未读取或打印 credential 值。
 - Workers API 正式 manifest 门禁通过，23 项 render/product 测试和 18 项 GitOps 测试通过。
-- 新增 serving 重验 3 项测试，包含 20 个身份/策略漂移及 2 个原始字节变更拒绝场景。
+- 新增 serving 重验 4 项测试，包含 22 个身份/策略漂移、2 个原始字节变更以及完整审计摘要场景。
+- 首次云端重验 inv-a9de7ggwj1 FAILED/1：A immutable 身份路由保留四个资格审计摘要，现网未 mutation。
+- 只读诊断 inv-c9de8901a0 证明五个身份字段及 UID 正确；修复只允许完整四项 SHA-256 审计字段，拒绝未知、残缺或畸形字段。新增真实文件回归，不改既有路由。
+- 原失败日志官方下载，摘要前缀 cfb7f30d3b59，后续重验必须新输出路径，不能覆盖旧失败。
 - ACK 实际门禁独立终态 SUCCESS/0，收据摘要前缀 37e8f31cf9fe，完整摘要见正式设计；不将它替代 C 发布或万级容量资格。
 
 ## risks

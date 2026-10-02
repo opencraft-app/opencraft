@@ -86,6 +86,8 @@ class ServingRecertificationTest(unittest.TestCase):
             "identity_uid": lambda args: args[5]["items"][0]["metadata"].update(uid="replacement-route"),
             "mutable_identity": lambda args: args[5]["items"][0].update(immutable=False),
             "identity_cell_uid": lambda args: args[5]["items"][0]["data"].update({"cell-uid": "replaced-cell"}),
+            "identity_unknown_field": lambda args: args[5]["items"][0]["data"].update({"engine-url": "http://unapproved"}),
+            "identity_partial_audit": lambda args: args[5]["items"][0]["data"].update({"activation-receipt-digest": "sha256:" + "a" * 64}),
             "serving_uid": lambda args: args[5]["items"][1]["metadata"].update(uid="replacement-serving"),
             "serving_route_body": lambda args: args[5]["items"][1]["data"].update({"route.json": "{}"}),
         }
@@ -95,6 +97,17 @@ class ServingRecertificationTest(unittest.TestCase):
                 change(args)
                 with self.assertRaises(ValueError):
                     serving_recertification.verify_serving(*args)
+
+    def test_immutable_identity_may_retain_complete_publisher_audit_bundle(self):
+        with tempfile.TemporaryDirectory(prefix="serving-recertify.", dir="/data/tmp") as raw:
+            args = fixture(pathlib.Path(raw))
+            data = args[5]["items"][0]["data"]
+            for key in ("activation-receipt-digest", "adoption-receipt-digest", "convergence-receipt-digest", "qualification-chain-receipt-digest"):
+                data[key] = "sha256:" + "a" * 64
+            serving_recertification.verify_serving(*args)
+            data["activation-receipt-digest"] = "unbound"
+            with self.assertRaises(ValueError):
+                serving_recertification.verify_serving(*args)
 
     def test_manifest_and_endpoint_receipt_bytes_are_fenced(self):
         for target in ("manifest", "endpoint"):
