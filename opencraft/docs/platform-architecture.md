@@ -1590,6 +1590,14 @@ model selection.
 
 The resident Host runtime remains the sole backoff/reconnect owner. Embedded startup
 observes readiness across failures instead of disposing on the first rejection.
+Hermes capability initialization overlaps independent control-plane Bot bindings,
+native Profile discovery and hosted-room capability reads. It still waits for
+their current-connection results before advertising capabilities; an unsupported
+Profile API remains an absent Bot capability, while control-plane failures still
+fail initialization. The first conversation list remains a fresh `session.list`
+read after Host readiness, not a speculative cache that could mask session
+changes during connection. Transport stage logs distinguish Host connection,
+initialize and `thread/list` latency without recording conversation content.
 Disconnects preserve Thread, Composer document and attachment owners; reconnect
 rehydrates existing threads and does not replay user submissions. The console shows
 a slow-connection notice after 30 seconds; fixed-Profile Hermes transport attempts
