@@ -44,14 +44,18 @@ export const JOURNEY_ROUTE = {
   AGENTS_CREATING: "agents-creating",
 } as const satisfies Record<string, JourneyRoute>;
 
-/** 已订阅后的落点：已有 Agent 直接进控制台，否则进 /agents 的创建流程。 */
+/**
+ * 已订阅后的落点：
+ * 当前有 Agent → 控制台；当前无 Agent → 创建流程。
+ * 已删除全部 Bot 的老用户也从创建流程重新开始。
+ */
 export const resolveSubscribedRoute = (hasBots: boolean): JourneyRoute =>
   hasBots ? JOURNEY_ROUTE.AGENTS : JOURNEY_ROUTE.AGENTS_CREATING;
 
 /**
  * 登录成功分流：
  * - 未订阅 → /subscribe
- * - 已订阅 → /agents（无 Agent 时进 /agents 的创建流程）
+ * - 已订阅 → 当前有 Bot 进列表，否则进创建流程
  */
 export const resolvePostLoginRoute = ({
   isSubscribed,
@@ -69,7 +73,9 @@ export const resolveCtaRoute = ({
   isSubscribed,
   hasBots,
 }: JourneyState): JourneyRoute =>
-  isAuthenticated && isSubscribed ? resolveSubscribedRoute(hasBots) : JOURNEY_ROUTE.SUBSCRIBE;
+  isAuthenticated && isSubscribed
+    ? resolveSubscribedRoute(hasBots)
+    : JOURNEY_ROUTE.SUBSCRIBE;
 
 /** 落点转 href：国际站按语种前缀本地化，国内站保持原路径（双站只差语言）。 */
 export const journeyHref = (

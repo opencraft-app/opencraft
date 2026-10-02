@@ -61,6 +61,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading: false,
+    hasResolvedBots: true,
     deleteBot,
     user: {
       email: "user@example.com",
@@ -172,6 +173,7 @@ describe("international Bot onboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
+    window.localStorage.clear();
     maxBots = 5;
     multiBotEnabled = true;
     testRegion.isCN = false;
@@ -284,10 +286,10 @@ describe("international Bot onboarding", () => {
     expect(addBot).not.toHaveBeenCalled();
   });
 
-  it("opens the same guide when creating the first Bot from an empty account", async () => {
+  it("automatically opens the guide for an empty account", async () => {
     bots = [];
     render(page(""));
-    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
   });

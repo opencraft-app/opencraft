@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
@@ -112,9 +112,12 @@ function readOfficialCtaLabels(): Partial<Record<CtaCopyKey, string>> {
 }
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
-  const { authReady, isAuthenticated } = useSession();
-  const { bots, isSubscribed } = useOpenClaw();
+  const { authReady, isAuthenticated, session } = useSession();
+  const { bots, hasResolvedPasses, isSubscribed, passesError, passesLoading } = useOpenClaw();
   const officialCtaLabelsRef = useRef<Partial<Record<CtaCopyKey, string>>>({});
+  const [readyCtaKey, setReadyCtaKey] = useState<string | null>(null);
+  const entitlementReady = !isAuthenticated || (hasResolvedPasses && !passesLoading && !passesError);
+  const ctaKey = JSON.stringify([locale, authReady, isAuthenticated, entitlementReady, isSubscribed, bots.length, session?.user?.id]);
 
   // 先于下面的改写 effect 执行：抢在 href / 文案被改写前，从片段里取出该语种官方文案。
   useEffect(() => {
@@ -173,9 +176,13 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
   }, [locale, markup]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !entitlementReady) return;
 
-    const journeyState = { isAuthenticated, isSubscribed, hasBots: bots.length > 0 };
+    const journeyState = {
+      isAuthenticated,
+      isSubscribed,
+      hasBots: bots.length > 0,
+    };
     const ctaHref = journeyHref(resolveCtaRoute(journeyState), locale, { localized: isGlobal });
     // 优先用片段里的官方译文，取不到（例如片段没有对应按钮）才回退到兜底文案表。
     const copyKey = resolveCtaCopyKey(journeyState);
@@ -188,7 +195,8 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       anchor.setAttribute('href', ctaHref);
       applyCtaLabel(anchor, ctaLabel);
     }
-  }, [authReady, bots.length, isAuthenticated, isSubscribed, locale, markup]);
+    setReadyCtaKey(ctaKey);
+  }, [authReady, bots.length, ctaKey, entitlementReady, isAuthenticated, isSubscribed, locale, markup, session?.user?.id]);
 
   return (
     <>
@@ -207,7 +215,10 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       </PublicSiteLocaleBridge>
       {locale === PUBLIC_SITE_LOCALES.EN_US && <BrowserLanguageSuggestion />}
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
-      <InternationalHomeMarkup markup={markup} />
+      {/* 国际站静态片段的 Hero 和页脚默认写着「我的智能体」。权益就绪并完成 CTA 改写前隐藏入口。 */}
+      <div className={authReady && entitlementReady && readyCtaKey === ctaKey ? undefined : '[&_.hero__cta]:invisible [&_.foot__cta]:invisible'}>
+        <InternationalHomeMarkup markup={markup} />
+      </div>
       <div className="international-home-header-actions-layer">
         <PublicHeaderAuthIsland
           appearance="immersive"

@@ -9,7 +9,7 @@ import { journeyHref, resolvePostLoginRoute } from '@/lib/cta-journey';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 
-/** 权益快照解析超时兜底：超时按未订阅处理，落订阅页（避免卡在中间态）。 */
+/** 权益快照解析超时：保留当前页并提示重试，不能把未知状态当作未订阅。 */
 const ENTITLEMENT_RESOLVE_TIMEOUT_MS = 2500;
 
 /**
@@ -21,11 +21,18 @@ const ENTITLEMENT_RESOLVE_TIMEOUT_MS = 2500;
  * 手机验证码登录是在弹窗内完成、不整页跳转的，仍走 onSuccess → redirectAfterLogin。
  */
 const POST_LOGIN_REDIRECT_KEY = 'lc_post_login_redirect';
+const LEGACY_POST_LOGIN_SUBSCRIBE_FLAG = '1';
+export const REOPEN_PRICING_MODAL_EVENT = 'lightvela:reopen-pricing-modal';
+export const POST_LOGIN_INTENT = {
+  SUBSCRIBE: 'subscribe',
+  PRICING_MODAL: 'pricing-modal',
+} as const;
+type PostLoginIntent = typeof POST_LOGIN_INTENT[keyof typeof POST_LOGIN_INTENT];
 
 /** 点击登录动作前调用：标记「登录成功后需要按订阅状态分流」。 */
-export const armPostLoginRedirect = () => {
+export const armPostLoginRedirect = (intent: PostLoginIntent = POST_LOGIN_INTENT.SUBSCRIBE) => {
   try {
-    sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, '1');
+    sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, intent);
   } catch {
     /* sessionStorage 不可用时静默降级：退化为仅弹窗内登录（onSuccess）可分流 */
   }
@@ -40,20 +47,25 @@ export const disarmPostLoginRedirect = () => {
   }
 };
 
-const isPostLoginRedirectArmed = (): boolean => {
+const readPostLoginIntent = (): PostLoginIntent | null => {
   try {
-    return sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY) === '1';
+    const stored = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+    if (stored === POST_LOGIN_INTENT.PRICING_MODAL) return stored;
+    if (stored === POST_LOGIN_INTENT.SUBSCRIBE || stored === LEGACY_POST_LOGIN_SUBSCRIBE_FLAG) return POST_LOGIN_INTENT.SUBSCRIBE;
+    return null;
   } catch {
-    return false;
+    return null;
   }
 };
 
 type PostLoginRedirectOptions = {
   locale: PublicSiteLocale;
+  onEntitlementUnavailable?: () => void;
 };
 
 /**
- * 登录成功后的统一分流：未订阅 → /subscribe，已订阅 → /agents。
+ * 登录成功后的统一分流：已订阅 → /agents；未订阅时，普通登录去 /subscribe，
+ * 从定价弹窗发起的登录回到原页弹窗。
  *
  * 两条登录路径都覆盖：
  * - 弹窗内登录（手机验证码，不整页跳转）：调用方把返回的 `redirectAfterLogin` 接到
@@ -62,9 +74,9 @@ type PostLoginRedirectOptions = {
  *   `armPostLoginRedirect()`，回跳后由本 hook 在「已登录 + armed」时自动消费分流。
  *
  * 分流前会主动刷新权益快照（GET /v1/passes）并等待其就绪，避免把已订阅用户
- * 误判为未订阅带去再次购买；2.5s 超时兜底按未订阅处理，避免卡在中间态。
+ * 误判为未订阅带去再次购买；查询失败或超时保留当前页，由调用方提示重试。
  */
-export function usePostLoginRedirect({ locale }: PostLoginRedirectOptions) {
+export function usePostLoginRedirect({ locale, onEntitlementUnavailable }: PostLoginRedirectOptions) {
   const router = useRouter();
   const { authReady, isAuthenticated } = useSession();
   const {
@@ -76,34 +88,72 @@ export function usePostLoginRedirect({ locale }: PostLoginRedirectOptions) {
     refreshPasses,
   } = useOpenClaw();
   const [pending, setPending] = useState(false);
+  const [refreshFinished, setRefreshFinished] = useState(false);
+  const pendingRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshGenerationRef = useRef(0);
+  const intentRef = useRef<PostLoginIntent>(POST_LOGIN_INTENT.SUBSCRIBE);
+  const onEntitlementUnavailableRef = useRef(onEntitlementUnavailable);
+  onEntitlementUnavailableRef.current = onEntitlementUnavailable;
+
+  const stopPending = useCallback(() => {
+    if (!pendingRef.current) return false;
+    pendingRef.current = false;
+    setPending(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    return true;
+  }, []);
+
+  const fail = useCallback(() => {
+    if (!stopPending()) return;
+    onEntitlementUnavailableRef.current?.();
+  }, [stopPending]);
 
   const complete = useCallback(
     (hasBots: boolean, subscribed: boolean) => {
-      setPending(false);
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
+      if (!stopPending()) return;
+      if (!subscribed && intentRef.current === POST_LOGIN_INTENT.PRICING_MODAL) {
+        const event = new CustomEvent(REOPEN_PRICING_MODAL_EVENT, { detail: { handled: false } });
+        window.dispatchEvent(event);
+        if (event.detail.handled) return;
       }
       router.push(
-        journeyHref(resolvePostLoginRoute({ isSubscribed: subscribed, hasBots }), locale, {
-          localized: isGlobal,
-        }),
+        journeyHref(
+          resolvePostLoginRoute({
+            isSubscribed: subscribed,
+            hasBots,
+          }),
+          locale,
+          {
+            localized: isGlobal,
+          },
+        ),
       );
     },
-    [locale, router],
+    [locale, router, stopPending],
   );
 
   /** 刷新权益快照并进入等待分流态，由下面的 effect 在快照就绪后 complete。 */
-  const start = useCallback(() => {
+  const start = useCallback((intent: PostLoginIntent) => {
+    intentRef.current = intent;
+    const generation = ++refreshGenerationRef.current;
+    setRefreshFinished(false);
+    pendingRef.current = true;
     setPending(true);
-    void refreshPasses();
+    void Promise.resolve().then(refreshPasses).then(
+      () => { if (generation === refreshGenerationRef.current) setRefreshFinished(true); },
+      () => { if (generation === refreshGenerationRef.current) setRefreshFinished(true); },
+    );
   }, [refreshPasses]);
 
   /** 弹窗内登录成功（如手机验证码）回调：消费分流意图并开始分流。 */
-  const redirectAfterLogin = useCallback(() => {
+  const redirectAfterLogin = useCallback((intent?: PostLoginIntent) => {
+    const target = intent ?? readPostLoginIntent() ?? intentRef.current;
     disarmPostLoginRedirect();
-    start();
+    start(target);
   }, [start]);
 
   /**
@@ -114,37 +164,45 @@ export function usePostLoginRedirect({ locale }: PostLoginRedirectOptions) {
    */
   useEffect(() => {
     if (!authReady || !isAuthenticated) return;
-    if (!isPostLoginRedirectArmed()) return;
+    const intent = readPostLoginIntent();
+    if (!intent) return;
     disarmPostLoginRedirect();
-    start();
+    start(intent);
   }, [authReady, isAuthenticated, start]);
 
   useEffect(() => {
     if (!pending) return;
-    // 快照拉取中且未失败：继续等，避免用陈旧状态分流。
-    if (passesLoading && !passesError) return;
+    // 必须等本次刷新完成，不能用登录前缓存的权益快照分流。
+    if (!refreshFinished) return;
+    if (passesError) {
+      fail();
+      return;
+    }
+    if (passesLoading) return;
     if (!hasResolvedPasses) return;
     complete(bots.length > 0, isSubscribed);
   }, [
     bots.length,
     complete,
+    fail,
     hasResolvedPasses,
     isSubscribed,
     passesError,
     passesLoading,
     pending,
+    refreshFinished,
   ]);
 
   useEffect(() => {
     if (!pending) return;
-    timeoutRef.current = setTimeout(() => complete(false, false), ENTITLEMENT_RESOLVE_TIMEOUT_MS);
+    timeoutRef.current = setTimeout(fail, ENTITLEMENT_RESOLVE_TIMEOUT_MS);
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
     };
-  }, [complete, pending]);
+  }, [fail, pending]);
 
   return redirectAfterLogin;
 }

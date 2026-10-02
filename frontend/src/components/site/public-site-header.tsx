@@ -36,6 +36,7 @@ export type PublicSiteHeaderLinkProps = {
   href: string;
   onClick?: () => void;
   style?: CSSProperties;
+  "data-pricing-modal"?: "on";
 };
 
 export type RenderPublicSiteHeaderLink = (props: PublicSiteHeaderLinkProps) => ReactNode;
@@ -286,7 +287,7 @@ export function PublicSiteHeader({
         handleCreateClick();
       }
     : undefined;
-  const createHref = "/agents";
+  const createHref = "/subscribe";
   const loginHref = "/auth/sign-in";
   const renderLanguage = (variant: LanguageSwitcherVariant) => (
     renderLanguageSwitcher

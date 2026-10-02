@@ -62,6 +62,17 @@ describe("Pass modification refresh", () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); window.history.replaceState({}, "", "/"); });
 
+  it("waits for the account Bot list before treating an empty list as final", async () => {
+    let resolveBots!: (value: DashboardSnapshot) => void;
+    getDashboardSnapshot.mockImplementationOnce(() => new Promise<DashboardSnapshot>((resolve) => { resolveBots = resolve; }));
+    await mount();
+    expect(currentState.hasResolvedBots).toBe(false);
+
+    await act(async () => { resolveBots(snapshot("已有 Bot")); });
+    expect(currentState.hasResolvedBots).toBe(true);
+    expect(currentState.bots[0]?.name).toBe("已有 Bot");
+  });
+
   it("recovers a stuck initial Pass read without labeling it as an upgrade", async () => {
     let resolveOld!: (passes: Pass[]) => void;
     listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolveOld = resolve; }));

@@ -5,7 +5,7 @@ import { lazy, Suspense } from 'react';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import type { AgentSectionId, AgentSettingsSectionId } from '@/lib/agent-routes';
 
-import { AgentsRouteLoading, AppRouteShell } from './app-route-shell';
+import { AgentsRouteLoading, AppRouteShell, NextAgentEntitlementGate } from './app-route-shell';
 
 const AgentSettingsPage = lazy(() => import('@/pages/marketing/agent-settings-page').then(
   (module) => ({ default: module.AgentSettingsPage }),
@@ -35,18 +35,20 @@ export function AgentsPageClient({
 
   return (
     <AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>
-      <Suspense fallback={loadingFallback}>
-        {productHeader}
-        {isWorkbench ? (
-          <AgentsWorkbenchPage />
-        ) : (
-          <AgentSettingsPage
-            initialSectionSlug={initialSectionSlug}
-            sectionId={sectionId as AgentSettingsSectionId | undefined}
-            showHeader={false}
-          />
-        )}
-      </Suspense>
+      <NextAgentEntitlementGate loadingFallback={loadingFallback}>
+        <Suspense fallback={loadingFallback}>
+          {productHeader}
+          {isWorkbench ? (
+            <AgentsWorkbenchPage />
+          ) : (
+            <AgentSettingsPage
+              initialSectionSlug={initialSectionSlug}
+              sectionId={sectionId as AgentSettingsSectionId | undefined}
+              showHeader={false}
+            />
+          )}
+        </Suspense>
+      </NextAgentEntitlementGate>
     </AppRouteShell>
   );
 }

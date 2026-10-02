@@ -7,9 +7,7 @@ import { LocaleOverrideProvider } from "@/i18n/t";
 
 /* 国际站（isGlobal）专属用例。
    与 subscribe-page.test.tsx（国内站，不 mock region）分文件维护 ——
-   vi.mock 是模块级全局的，同一文件无法让 isCN / isGlobal 两种语义并存：
-   国内站用例断言 `{isCN && ...}` 渲染的「退款规则」链接，
-   而本文件的支付回跳用例依赖 `if (!isGlobal) return;` 才能进入接管逻辑。
+   vi.mock 是模块级全局的，同一文件无法让 isCN / isGlobal 两种语义并存。
    拆分方式参照 login-modal.test.tsx / login-modal.global.test.tsx。 */
 
 vi.mock("@/components/site/public-site-header", () => ({
@@ -169,6 +167,23 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
 const cleanupPage = () => cleanup();
 
+describe("international refund rules placement", () => {
+  beforeEach(resetState);
+  afterEach(cleanupPage);
+
+  it("keeps refund rules in the docs, outside pricing pages and modals", async () => {
+    translationState.real = true;
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(
+      <LocaleOverrideProvider locale="en-US">
+        <SubscribePage publicLocale="en-US" publicLocalized={false} />
+      </LocaleOverrideProvider>,
+    );
+    await screen.findAllByRole("button", { name: /Subscribe/ });
+    expect(screen.queryByRole("link", { name: /Refund rules/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("international upgrade return", () => {
   it("shows the Singapore campaign memory on the international pricing card", async () => {
     const { SubscribePage } = await import("@next-site/subscribe-page");
@@ -280,6 +295,8 @@ const buildNestedBundle = () => ({
 });
 
 const resetState = () => {
+  window.sessionStorage.removeItem("lv-pending-payment-plan");
+  window.localStorage.removeItem("lightvela:bot-created:u1");
   translationState.real = false;
   runtimeConfigState.paidBillingEnabled = true;
   openClawState.isLoggedIn = false;
@@ -1034,6 +1051,29 @@ describe("SubscribePage payment return", () => {
    * 弹窗被拦截时支付走 window.location.assign，付款后 return_url 回到全新页面，
    * 原窗口的 paying 轮询已销毁。带 pay_return 标记才能重新接棒等发货。
    */
+  it("keeps the payment return recoverable after the outer pricing modal closes", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    openClawState.isLoggedIn = true;
+    window.history.replaceState({}, "", "/?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { PricingModal } = await import("@next-site/pricing-modal");
+    const { rerender } = render(<PricingModal open resumePayReturn onOpenChange={() => {}} />);
+    const pending = await screen.findByText("正在开通套餐");
+    expect(pending.closest("[data-testid=pricing-modal]")).toBeNull();
+    expect(window.location.search).toBe("");
+
+    rerender(<PricingModal open={false} onOpenChange={() => {}} />);
+    rerender(<PricingModal open onOpenChange={() => {}} />);
+    expect(await screen.findByTestId("pending-payment-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("pending-payment-resume")).toBeInTheDocument();
+    expect(JSON.parse(window.sessionStorage.getItem("lv-pending-payment-plan") ?? "null")).toEqual({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    });
+  });
+
   it("resumes the activation wait when returning from the hosted payment page", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;
@@ -1052,6 +1092,57 @@ describe("SubscribePage payment return", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("does not transfer an open payment wait to another account", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    openClawState.isLoggedIn = true;
+    window.history.replaceState({}, "", "/?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage embedded resumePayReturn />);
+    expect(await screen.findByText("正在开通套餐")).toBeInTheDocument();
+    expect(JSON.parse(window.sessionStorage.getItem("lv-pending-payment-plan") ?? "null")).toEqual({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    });
+
+    sessionState.user = { id: "account-b" };
+    rerender(<SubscribePage embedded resumePayReturn />);
+    expect(screen.queryByText("正在开通套餐")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem("lv-pending-payment-plan")).toBeNull());
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
+  });
+
+  it("takes a returning account with an existing Bot to the normal list after payment", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    openClawState.bots = [{ id: "bot-existing", status: "running" }];
+    window.history.replaceState({}, "", "/subscribe?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents"), { timeout: 6000 });
+    expect(navigateMock).not.toHaveBeenCalledWith("/agents?creating=bot-existing");
+  }, 8000);
+
+  it("takes an account with all Bots deleted back to creation after payment", async () => {
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    window.localStorage.setItem("lightvela:bot-created:u1", "1");
+    window.history.replaceState({}, "", "/subscribe?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents?create=1"), { timeout: 6000 });
+    expect(navigateMock).not.toHaveBeenCalledWith("/agents");
+  }, 8000);
+
   it("ignores the marker when the plan cannot be resolved but still refreshes passes", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;
@@ -1068,6 +1159,7 @@ describe("SubscribePage payment return", () => {
     });
     /* 找不到套餐时不进 paying，避免卡在一个永远等不到结果的弹窗里 */
     expect(screen.queryByText("正在开通套餐")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("暂时无法确认订单状态，请稍后查询，避免重复付款。");
     expect(window.location.search).toBe("");
   });
 

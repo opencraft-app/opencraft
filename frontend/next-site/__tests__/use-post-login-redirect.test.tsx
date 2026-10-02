@@ -43,13 +43,15 @@ vi.mock("@/lib/region", async (importOriginal) => ({
 import {
   armPostLoginRedirect,
   disarmPostLoginRedirect,
+  REOPEN_PRICING_MODAL_EVENT,
   usePostLoginRedirect,
 } from "../use-post-login-redirect";
 
 const resetState = () => {
+  window.localStorage.removeItem("lightvela:bot-created:u1");
   regionState.isGlobal = false;
   routerPushMock.mockClear();
-  openClawState.refreshPasses.mockClear();
+  openClawState.refreshPasses.mockReset();
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
   openClawState.bots = [];
@@ -97,6 +99,16 @@ describe("usePostLoginRedirect — OAuth 整页跳转回跳分流", () => {
     expect(sessionStorage.getItem("lc_post_login_redirect")).toBeNull();
   });
 
+  it("returns a subscribed account with no current Bot to creation regardless of browser history", async () => {
+    window.localStorage.setItem("lightvela:bot-created:u1", "1");
+    armPostLoginRedirect();
+    sessionState.isAuthenticated = true;
+    openClawState.isSubscribed = true;
+
+    renderHook(() => usePostLoginRedirect({ locale: "zh-CN" }));
+    await waitFor(() => expect(routerPushMock).toHaveBeenCalledWith("/agents?create=1"));
+  });
+
   it("armed + 已登录未订阅：回跳后留在订阅页 /subscribe", async () => {
     armPostLoginRedirect();
     sessionState.isAuthenticated = true;
@@ -107,6 +119,21 @@ describe("usePostLoginRedirect — OAuth 整页跳转回跳分流", () => {
     await waitFor(() => {
       expect(routerPushMock).toHaveBeenCalledWith(SUBSCRIBE_PATH);
     });
+  });
+
+  it("returns an unsubscribed visitor to the pricing modal after OAuth", async () => {
+    const reopen = vi.fn((event: Event) => { (event as CustomEvent<{ handled: boolean }>).detail.handled = true; });
+    window.addEventListener(REOPEN_PRICING_MODAL_EVENT, reopen);
+    try {
+      sessionState.isAuthenticated = true;
+      armPostLoginRedirect('pricing-modal');
+      renderHook(() => usePostLoginRedirect({ locale: 'zh-CN' }));
+      await waitFor(() => expect(reopen).toHaveBeenCalledTimes(1));
+      expect(routerPushMock).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem('lc_post_login_redirect')).toBeNull();
+    } finally {
+      window.removeEventListener(REOPEN_PRICING_MODAL_EVENT, reopen);
+    }
   });
 
   it("未 arm（未经登录动作）+ 已登录：不自动分流，避免误跳", async () => {
@@ -133,5 +160,53 @@ describe("usePostLoginRedirect — OAuth 整页跳转回跳分流", () => {
     await waitFor(() => {
       expect(routerPushMock).toHaveBeenCalledWith(AGENTS_HOME_PATH);
     });
+  });
+
+  it("waits for this refresh before using a previously resolved entitlement", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isSubscribed = true;
+    let finishRefresh: (() => void) | undefined;
+    openClawState.refreshPasses.mockImplementation(() => new Promise<void>((resolve) => { finishRefresh = resolve; }));
+    const { result } = renderHook(() => usePostLoginRedirect({ locale: "zh-CN" }));
+
+    await act(async () => { result.current(); });
+    expect(routerPushMock).not.toHaveBeenCalled();
+    expect(finishRefresh).toBeDefined();
+    await act(async () => { finishRefresh?.(); });
+    await waitFor(() => expect(routerPushMock).toHaveBeenCalledWith("/agents?create=1"));
+  });
+
+  it("keeps the current page and reports a failed entitlement refresh", async () => {
+    sessionState.isAuthenticated = true;
+    const onEntitlementUnavailable = vi.fn();
+    openClawState.refreshPasses.mockImplementation(async () => { openClawState.passesError = true; });
+    const { result, rerender } = renderHook(() => usePostLoginRedirect({ locale: "zh-CN", onEntitlementUnavailable }));
+
+    await act(async () => { result.current(); });
+    rerender();
+    await waitFor(() => expect(onEntitlementUnavailable).toHaveBeenCalledTimes(1));
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current page and reports a timed-out entitlement refresh", async () => {
+    vi.useFakeTimers();
+    try {
+      sessionState.isAuthenticated = true;
+      openClawState.hasResolvedPasses = false;
+      const onEntitlementUnavailable = vi.fn();
+      let finishRefresh: (() => void) | undefined;
+      openClawState.refreshPasses.mockImplementation(() => new Promise<void>((resolve) => { finishRefresh = resolve; }));
+      const { result } = renderHook(() => usePostLoginRedirect({ locale: "zh-CN", onEntitlementUnavailable }));
+
+      await act(async () => { result.current(); });
+      act(() => { vi.advanceTimersByTime(2501); });
+      expect(onEntitlementUnavailable).toHaveBeenCalledTimes(1);
+      openClawState.hasResolvedPasses = true;
+      openClawState.isSubscribed = true;
+      await act(async () => { finishRefresh?.(); });
+      expect(routerPushMock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

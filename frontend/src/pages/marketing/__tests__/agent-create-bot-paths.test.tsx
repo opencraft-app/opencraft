@@ -56,6 +56,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => false,
   useMultiBotEnabled: () => true,
+  useReferralEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -72,6 +73,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading: false,
+    hasResolvedBots: true,
     deleteBot: vi.fn(),
     user: {
       email: "user@example.com",
