@@ -78,6 +78,11 @@ derived: false
 - inv-a9df8s0nrr SUCCESS/0：已修正真实 le=10.0，Guard proxy、ready-wait、dispatch、tunnel 完成样本均无大于10秒增长；不能证明取消或未到达的请求正常。
 - inv-d9dfcp0b2n SUCCESS/0：六 Engine UID 早于故障窗口且restart0，Envoy WS处理无大于1秒增长。node listener/conntrack 与 tunnel ping series 缺失，不当作健康；publish 的实际 success label 为 ok，不把它当错误。
 - inv-c9dfet0qmd SUCCESS/0，09:41 UTC：A Hosts17/MS19、B Hosts12/MS14，继续生产串行 drain；FDB仍9/9全复制、active0。Node异步观察不替代最终严格样本。
+- 原 inv-c9def3gxtj 已终态 FAILED/1，严格业务失败保持；最终收据摘要前缀794e64a9ceb3独立验真，150个完整样本证明初始低容量、自动扩容、精确清理、安全drain、最终低容量，不证明万级持续活跃。
+- 规范源码13801275在 inv-d9dfnmgpra 云端 materialize/fullfleet门禁通过；Go-only API构建 inv-a9dfr00v67 SUCCESS/0，产品收据摘要前缀c1817848e3b1且精确拉取验证，未重编Runtime。
+- 正式发布 inv-d9dft6gdrv SUCCESS/0，Argo87d5003cbea1、API镜像摘要前缀2b44930be720，三节点三AZ、自愈、身份及A/B Application保留门禁全通过。官方convergence摘要前缀9b9d3a9d2a8e已独立验真。
+- 后置独立只读 inv-e9dfw5g27n SUCCESS/0，十四资源、四路由与两endpoint、Secret UID均通过，收据摘要前缀8e1b7b1ef88c。
+- 公共Counter smoke inv-a9dfwt0e6h SUCCESS/0，A/B各对象通过stateless binding与ObjectRef共享1/2/3状态，普通Worker fetch通过，两个临时对象已精确删除。它是发布后小规模回归，不是万级负载资格。
 
 ## risks
 
@@ -89,12 +94,13 @@ derived: false
 - 首次默认 Go 命令被 mono2 根 go.work 的1.26要求拒绝，无产品测试结论。
 - 改用 GOWORK=off 和本地已缓存 Go1.25.4：完整 Workers API/objectrouter race 回归和 vet 通过，其中新增4项真实 HTTP 测试。
 - documentation errors/warnings 均为空，六个显式 changed-file 的 change-impact 与 diff check 通过。
-- Context audit 33 tests通过；根 Context 26 tests仍有既有4项失败，不宣称根门禁全绿。新增 Task 初次只有两个 triggers，已补齐第三项，最终 baseline差异待复核。
+- Context audit 33 tests通过；根 Context 26 tests仍有既有4项失败，不宣称根门禁全绿。新增 Task 初次只有两个 triggers，已补齐第三项，最终4855与baseline无新增。
+- Workers API生产manifest与23项测试、GitOps19项测试及源码relay实际子进程测试通过。
 
 ## decisions
 
 - 仅失败时输出固定字段日志，正常请求不增加日志；不改变现有25秒 response-header deadline。
-- 原任务未 terminal 前不发布，不重跑正式负载。
+- 原任务终态并释放锁后才进行规范源码中转与Go-only构建，随后通过正式Argo/CAS/wholelock发布。
 
 ## scan_scope
 
@@ -106,5 +112,5 @@ derived: false
 
 ## handoff
 
-- 本地新增代码尚未发布；完整目标 active，下一步验证并提交，再等原任务释放操作锁。
+- 诊断源码已push master13801275并正式发布，后置重验和公共Counter均通过；下一轮完整严格负载必须使用新run ID与新C convergence，不重提旧任务。
 - 根因仍未确定；不能把诊断覆盖当作 strict10k 通过。

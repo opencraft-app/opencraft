@@ -275,14 +275,25 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    等待响应头超过25秒，不能用增大超时、重试成功或健康FDB改判。原load收据SHA-256
    `151c16bb56db0d23d818158c9ac7c63ac58d7c99ee63c03a0b78f1b5c3d73eb1`，原精确cleanup
    收据SHA-256 `ce1b35b0af49f5c27df03713da5fe6d1325003c9357906b221dd3e8a7cbff9df`证明
-   1517对象已删除、pending0；任务仍须等待生产串行drain缩回。A/B实际48/45个Node与Host
+   1517对象已删除、pending0；任务已通过生产串行drain缩回A/B各4个Node与Host。A/B实际峰值48/45个Node与Host
    全部Ready且Node admitted，Engine/Host无重启、FDB9/9全复制，不替代业务零错误资格。
+   最终组合收据SHA-256 `794e64a9ceb34e07945a45560f45cfc63110be629fb7444016ee129195c7ae24`
+   保留 failed verdict；150个完整容量样本证明初始低容量、自动扩容、精确清理、安全drain和最终
+   低容量，不证明万级持续活跃。不得用节点恢复或业务重试成功替代该失败事实。
    针对此次等待响应头超时，Workers API 的 Object fetch 传输失败日志增加客户端 connection、
    request-written 与 first-response-byte 里程碑，区分 acquiring/writing/awaiting/reading 阶段。
    只记录固定阶段、毫秒耗时和 socket 地址，不记录 body、header、URL query，也不新增高基数
    metric。里程碑不能证明目标是否执行或提交，因此仍返回不可透明重试的 indeterminate；
    不改变25秒 response-header deadline 或 caller-owned streaming/cancellation。诊断代码通过本地
    验证后仍须正式发布和重新采集实际失败证据，不能据此认定该根因已修复。
+   诊断API已通过2026-10-02正式发布 `inv-d9dft6gdrv`，Argo revision
+   `87d5003cbea180edb1b3b02e3cc724462b7af34e`，API镜像
+   `sha256:2b44930be720cadd47aa1a83941bf042f5fb910faac591a1e371e833abfa26ba`。
+   convergence摘要 `9b9d3a9d2a8e464307baab6642fe0455e21a2f26ac56f2b81509e909ac03c810`，
+   保留全部现有UID、A/B Application与Runtime，三节点三AZ及self-heal通过；独立只读重验
+   `inv-e9dfw5g27n`再次确认十四资源、四路由与private endpoint一致，收据摘要
+   `8e1b7b1ef88c04f0b206528f451a71ace3de5f738aade043964fcfd882ed2046`。
+   发布与重验只完成诊断落地，不覆盖万级活跃资格或原超时根因。
    10k observer 还会把两 Cell 的 FDB CR configured/generation/available/fullReplication/healthy
    和全部 FDB Pod readiness 纳入每个 complete sample；存储冗余降级时即使请求暂时成功也不能
    取得容量资格。
