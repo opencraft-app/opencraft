@@ -1205,6 +1205,22 @@ head-fenced 冷降计划反复失效；大量 Envoy 一次加入带来的协调�
 只有对应窗口有效服务追上负载、积压不持续增长且原零重试/身份/持久性门禁不放宽，才可称
 性能改进。该模型是实验与设计约束，不是当前万级/百万资格已经通过的证据。
 
+容量负载 observer 将旧八个容量/压力查询与上述后台信号合成一个每 Cell 的有界 instant
+vector。保留请求/样本时间、完整 query、operation/result/class 和缺失/非有限状态；完成任务、
+成功 bytes/objects、duration sum/count 使用五分钟 `rate`，必须先在原 counter 上求 rate 再聚合。
+重复 Cell 账本同时保留 min/max，反映采样分歧，不把 Engine 数量乘进存储账本。响应限制
+1 MiB/256 行，五秒 HTTP 超时、无自动重试；观察程序不改变产品并发或维护周期。
+
+冷降时间进一步拆为 `保留/策略等待 + 排队 + 实际服务 + 计划失效后的重排等待`。
+2026-10-03 A 的实际 production-cell gate 48/48 exact cold、冷唤醒及 Engine HA 通过，但全部
+冷态等待约 973 秒。中途 29 个对象暂留 hot SHARD，同时观察到 compaction inflight/waiters
+均为零、累计 reclaim retryable 为 29；这不能单凭相关性证明完整根因。当前 manager 对 exact
+成功回收立即续下一有界批，对失效回收仍使用正常维护周期；生产默认 600 秒并按分支错峰为
+约 300～900 秒。需要用 exact job/时间顺序与真实存储回归验证这项等待是否贡献尾延迟，再
+考虑有界重排退避。不能缩短保留期限、取消 fingerprint、盲目提高并发，或将所有 dormancy
+对象重新变成周期轮询。A 最后发布 block 是收据名称与发现规则不一致，与上述冷降时间是
+两个不同问题；保留原失败决策，仅恢复资格发布，不重复执行已通过的 fault gate。
+
 ## 所有权与核心不变量
 
 | 状态/动作 | 唯一所有者 |
