@@ -59,6 +59,22 @@ data-volume path. The cache is never trusted as release evidence: every run
 still verifies the source bundle, locked fork commit/tree, toolchains, static
 ELF properties, staged checksums, and a new source-bound stage receipt.
 
+An incremental release may use `reuse-stage-from-runtime.sh` only after the
+verified base and release source agree on every stage input. This includes the
+embedded Rust bridge's local production dependency closure rooted at
+`rivet-depot-client` and `rivet-envoy-protocol`, not just the workerd fork bundle.
+The gate resolves both locked graphs offline before any container access and
+includes normal/build dependencies, workspace manifests, lockfile, Cargo
+configuration, source bytes and executable modes. Dev-only Engine/Depot code
+does not invalidate that stage. File links also bind their in-tree target's
+content and mode; directory links, escaping links and missing graph inputs
+fail closed. A changed compiled client requires a fresh stage, not a new label
+on the old binary. The build must configure its verified offline Cargo sources
+before invoking this gate.
+The bridge's direct dependency roots are bound to the audited fork tree. A new
+fork must use a fresh stage until that root contract is reviewed and updated;
+matching two copies of an unknown fork is not permission to omit its new roots.
+
 Those tools themselves are installed from the official checksum-locked sources
 without consulting `/data/build-cache`:
 

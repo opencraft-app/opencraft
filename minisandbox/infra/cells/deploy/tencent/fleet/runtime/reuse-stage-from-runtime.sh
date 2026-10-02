@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # Re-attest immutable workerd/FDB stage artifacts from a digest-pinned Runtime
 # when every source input that can affect those artifacts is byte-for-byte and
@@ -27,7 +28,7 @@ auth_file=${REGISTRY_AUTH_FILE:-}
 	echo "runtime stage reuse target must be empty" >&2
 	exit 2
 }
-for command in buildah jq python3 readelf sha256sum; do
+for command in buildah cargo jq python3 readelf sha256sum; do
 	command -v "$command" >/dev/null || { echo "missing command: $command" >&2; exit 1; }
 done
 
@@ -45,7 +46,8 @@ base_manifest_sha=$(sha256sum "$base_manifest" | cut -d' ' -f1)
 
 stage_inputs=(
 	# These are the complete content-defining inputs to prepare-stage.sh's four
-	# artifacts. The stage orchestration and source-bundle verifier are excluded:
+	# artifacts, plus the local Rust closure resolved below. The stage
+	# orchestration and source-bundle verifier are excluded:
 	# they can change cache layout or validation without changing output bytes.
 	# workerd's actual compiler recipe lives inside the content-addressed source
 	# bundle, while the exact Zig/Bazel and FDB identities are locked here.
@@ -58,56 +60,8 @@ stage_inputs=(
 	runtimes/workerd/workerd-fdb.lock
 	runtimes/workerd/host/workerd/config-depot.capnp
 )
-stage_inputs_digest=$(python3 - "$base_source_dir" "$source_dir" "${stage_inputs[@]}" <<'PY'
-import hashlib
-import os
-import stat
-import sys
-
-left, right, *roots = sys.argv[1:]
-
-def inventory(base):
-    result = []
-    for root in roots:
-        start = os.path.join(base, root)
-        if not os.path.lexists(start):
-            raise SystemExit("runtime stage input is missing: " + root)
-        paths = [start]
-        if os.path.isdir(start) and not os.path.islink(start):
-            for directory, names, files in os.walk(start, followlinks=False):
-                names.sort()
-                files.sort()
-                paths.extend(os.path.join(directory, name) for name in names + files)
-        for path in sorted(set(paths)):
-            relative = os.path.relpath(path, base).replace(os.sep, "/")
-            metadata = os.lstat(path)
-            executable = metadata.st_mode & 0o111
-            if stat.S_ISREG(metadata.st_mode):
-                with open(path, "rb") as handle:
-                    payload = handle.read()
-                kind = b"file"
-            elif stat.S_ISLNK(metadata.st_mode):
-                payload = os.readlink(path).encode()
-                kind = b"link"
-            elif stat.S_ISDIR(metadata.st_mode):
-                payload = b""
-                kind = b"directory"
-            else:
-                raise SystemExit("unsupported runtime stage input: " + relative)
-            result.append((relative, kind, executable, hashlib.sha256(payload).digest()))
-    return result
-
-left_inventory = inventory(left)
-right_inventory = inventory(right)
-if left_inventory != right_inventory:
-    raise SystemExit("base Runtime stage inputs differ from the release source")
-digest = hashlib.sha256()
-for path, kind, executable, payload_digest in right_inventory:
-    digest.update(path.encode() + b"\0" + kind + b"\0")
-    digest.update(str(executable).encode() + b"\0" + payload_digest)
-print(digest.hexdigest())
-PY
-)
+stage_inputs_digest=$(python3 "$script_dir/verify-stage-reuse-inputs.py" \
+	"$base_source_dir" "$source_dir" "${stage_inputs[@]}")
 [[ $stage_inputs_digest =~ ^[0-9a-f]{64}$ ]]
 
 from_args=()

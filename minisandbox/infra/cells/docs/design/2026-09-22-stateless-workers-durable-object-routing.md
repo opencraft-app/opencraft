@@ -1009,6 +1009,15 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   共用原十秒 drain 期限；main 等待全部 Shutdown 和 Serve 终态后才关闭 API。监听失败也须
   排空 peer 并保留原错误，超时则关闭连接，不重放可能已产生副作用的请求。Pod 原50秒 grace
   与30秒preStop保持不变。该本地回归已通过，云上发布与零稳态重试资格仍待原缩容周期结束。
+- workerd stage 复用同时验真其嵌入的 Rust SQLite bridge：除了 fork bundle 与固定 stage 文件，
+  还以两份真实 offline/locked Cargo metadata 解析客户端、协议及其本地普通/构建依赖，核对源码
+  字节、执行位和 workspace/Cargo 配置。只核对 fork commit 不能证明外部路径依赖未变。
+  客户端变更必须在容器读取和收据生成前拒绝复用；纯 Engine 或开发依赖变更仍允许复用。
+  文件链接同时绑定源码树内目标内容与执行位；目录链接、越界依赖或缺失 graph fail closed，
+  不因缓存不存在而自动放宽来源验证。
+  直接依赖根绑定已审阅 fork tree，未知新fork即使两份源码相同也不能沿用旧根集合证明；
+  必须fresh stage并审阅其bridge合同，不能遗漏新增加的直接路径依赖。
+  旧脚本已由真实 Cargo/子进程反例证明错误进入容器读取，新门禁本地通过；云上发布仍未发生。
 - builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
   集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
 - 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配
