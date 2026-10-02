@@ -29,6 +29,8 @@ OpenCraft Composer 的语音输入按钮在平台不支持或 Composer 禁用时
 
 OpenCraft 的弱网恢复分开拥有共享 AppHost 连接、各 Host 的协议就绪、Thread/资源恢复和查询缓存重新验证。页面重新可见或网络恢复时的主动探测只验证通路，不激活或重启执行引擎；Host 的 lease 与 initialize 就绪后，其它慢资源不应阻塞会话。旧连接的迟到响应不得覆盖新连接结果，已接纳的 Turn 仍由服务端持有，不因浏览器重连重新投递。详见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。
 
+OpenCraft Hermes Host 的 `initialize` 同时读取 CTL Bot 绑定、Hermes Profile 和群聊能力，待各自完成后才发布该连接的能力声明；其中任一读取失败仍按原有可用性/错误语义处理。首屏会话列表继续在 Host 就绪后新鲜读取 `session.list`，不跨越初始化缓存旧列表。桥接器分别记录连接、初始化与 `thread/list` 的无内容耗时，用于区分云端隧道和会话目录延迟。
+
 国内站嵌入式 Chat 的会话启动记忆按当前物理实例和原生 Profile 组成的 Host ID 隔离；若当前 Host 没有记录过会话，从新草稿开始，不使用旧版全局 Thread ID。独立 Workbench 保留旧版全局 ID 的兼容回退；显式选择的会话仍按当前 Host 执行恢复。
 
 OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 的实际沙箱/审批组合投影为标准语义（只读、接受编辑、完全访问）；无法验证的原生/自定义 profile 仍以引擎档案呈现，不由 Renderer 猜测。`opencraft/permission-modes` v1 的标准档位使用稳定的 `opencraft:permission-mode:*` 提交 ID，由 Host 在提交时映射为当前引擎原生 profile；恢复后的原生生效 ID 经目录映射回产品档位。DSH 选定 preset 在 Thread 创建时应用并回读校验，Turn 与 Fork 入口也校验，避免首轮执行前权限状态不一致。完整 bb 式 Host ceiling、请求值与生效值的持久对账仍属后续设计边界，不得据此宣称已经生效。
@@ -598,3 +600,13 @@ snapshot has no unsettled work. Successful history is considered first. Failed
 releases do not count toward the rollback window. Cleanup includes the exact
 private upload ZIP key as well as the exact static/backend revision; unknown runtime
 directories without authoritative release records are not automatically removed.
+
+## 建站 Skill-only 新实例补丁（2026-10-02）
+
+CTL 新实例成功持久化 Running 后，以独立精确地域 `WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION`
+执行一次有界 best-effort auth-only TAT 命令；不挂 resume/自动追补，不签发或 rotate Key。
+Sandbox 分开授权 parameterless Skill 与参数化 credential，任意类型 ID 重叠或未知地域拒绝。
+Skill POST 不盲重试，metadata 成功不等于 Skill 已 UPDATED；其它 credential 生命周期不变。
+默认关闭，仅 shprod/sgprod 两端 source maps 配对配置，线上启用仍需授权发布与真实新实例验收。
+实现、认可的生产 v1 hash、异常留档边界及回归见
+[建站 Skill auth fallback 运维说明](../operations/website-skill-auth-fallback.md)。

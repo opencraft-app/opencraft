@@ -489,6 +489,23 @@ CAS cancellation. Capacity, topology, emptiness, and stabilization must then be 
 An attempted operation, replacement UID, partial fence, or another owner's fence remains fail closed.
 Do not scale this writer above one replica without a cross-resource ownership protocol.
 
+For a known zero-attempt intent whose exact Node has completely lost its fence, set
+`RUNTIME_CAPACITY_CONTROLLER_RECOVERY=1` on the normal `release-runtime.sh` transaction.
+The default is `0`. This does not skip capacity settle: after acquiring the release hold, the
+workflow captures original templates, validates the candidate runtime config and both controller
+entrypoints, then validates the exact MachineSet/Machine/Node identities. It creates an immutable
+`${cell}-cap-recovery-${hold-id}` ConfigMap journal before the UID/resourceVersion/template-CAS
+controller-image patch. The singleton `Recreate` controller must clear the unattempted intent under
+the hold before any Engine/Host/NATS rollout proceeds. It never directly edits an intent or Node.
+Accepted/attempted operations, partial fences and replaced identities are not recoverable this way.
+
+Before full rollout starts, a failed recovery restores only its exact controller template under
+the same live hold. A foreign template, replaced Deployment/StatefulSet UID, or failed rollback
+retains the hold and immutable journal. A hard-killed release likewise leaves durable evidence;
+this journal is not automatic release resumption. The full transaction still owns the final static
+ledger and closes placement during replacement. Retain the journal for incident review; do not
+delete it or steal a hold to make a failed release look successful.
+
 `RIVET_CELL_REPORTER_MODE=disabled` is reserved for isolated runtime qualification
 clusters that deliberately do not install the production Fleet CRDs (for example, a
 three-FDB-node performance probe that cannot claim the nine-node production profile).

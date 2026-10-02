@@ -42,30 +42,61 @@ description: 当用户要求建站、发布网页、制作个人主页或产品�
 
 ## 认证与 API 地址
 
+<!-- vela-website-credential-fallback:v1 -->
+
 每个实例拥有一个由平台预置的永久凭据（`VELA_WEBSITE_KEY`）。
 凭据格式为 `vik_<key_id>_<secret>`，权限范围绑定该实例及其所属用户，
 只能调用建站相关接口，不暴露任何账号级权限；凭据不得复制或外泄。
 
 **取值方式**（按顺序取第一个非空值）：
 
-1. 环境变量 `VELA_WEBSITE_KEY`
-2. 都不可用 → 停下来提示用户需要先通过 Vela 平台初始化实例，**不要继续调用 API**
+1. 当前执行环境中的 `VELA_WEBSITE_KEY`。
+2. 环境变量缺失或为空时，在**同一次 terminal 命令的子 Shell** 中加载平台预置的 `/etc/vela/website-credential.env`，并 export `VELA_WEBSITE_KEY` 和 `VELA_API_BASE`。
+3. 只有环境变量和文件兜底都不可用（文件缺失、不可读、加载失败或 Key 仍为空），才停下来提示用户需要通过 Vela 平台初始化实例，**不要继续调用 API**。
 
-API 地址同样从平台预置的环境变量 `VELA_API_BASE` 获取。
-如果该变量不存在，按站点归属取生产默认值：
+**环境变量为空不等于实例未初始化。必须先尝试凭据文件兜底，不要求用户重启 Agent、gateway 或实例。**
+
+API 地址也优先使用当前环境中的非空 `VELA_API_BASE`，缺失时尝试同一凭据文件；
+加载文件不得覆盖已有的非空环境变量。如果地址仍为空，按站点归属取生产默认值：
 国内 `https://api.lightvela.com`、国际 `https://api.lightvela.ai`。
+**只有 API 地址有默认值，凭据没有默认值。**
 
-**注意：只有 API 地址有默认值，凭据没有默认值。**
-`VELA_WEBSITE_KEY` 不存在时必须立即停止，不允许继续调用 API。
+**加载凭据和使用凭据必须放在同一次终端执行中。** 将 API 请求或子脚本放在下面子 Shell 的结尾，
+不要先单独执行加载命令，再在另一次 terminal 调用中使用凭据；每次认证命令都要重复加载步骤。
+子 Shell 内 export 的变量可供同一命令启动的 Python/Node/其他子脚本读取，不会修改外层会话。
+禁止输出 Key、凭据文件内容或含凭据的原始响应，禁止写入聊天、日志、项目代码或上传文件；
+凭据处理及后续 API 请求期间保持 `set +x`，不要开启 shell tracing，不需要重启。
 
-读取示例（token 与地址都不要 echo 出来）：
+读取示例（在同一个子 Shell 中继续执行建站 API 请求或脚本）：
 
 ```bash
-# API 地址：有默认值（国内站），变量不存在时降级使用
-API_BASE="${VELA_API_BASE:-https://api.lightvela.com}"
+(
+  set +x
+  _vela_env_key="${VELA_WEBSITE_KEY:-}"
+  _vela_env_base="${VELA_API_BASE:-}"
+  if [ -z "$_vela_env_key" ] || [ -z "$_vela_env_base" ]; then
+    if [ -f /etc/vela/website-credential.env ] && [ -r /etc/vela/website-credential.env ]; then
+      # 文件仅由平台维护；抑制加载输出，失败时丢弃部分加载的值。
+      if ! . /etc/vela/website-credential.env >/dev/null 2>&1; then
+        VELA_WEBSITE_KEY=
+        VELA_API_BASE=
+      fi
+    fi
+  fi
+  VELA_WEBSITE_KEY="${_vela_env_key:-${VELA_WEBSITE_KEY:-}}"
+  VELA_API_BASE="${_vela_env_base:-${VELA_API_BASE:-}}"
+  unset _vela_env_key _vela_env_base
+  if [ -z "$VELA_WEBSITE_KEY" ]; then
+    printf '%s\n' 'website credential unavailable' >&2
+    exit 1
+  fi
+  VELA_API_BASE="${VELA_API_BASE:-https://api.lightvela.com}"
+  export VELA_WEBSITE_KEY VELA_API_BASE
+  KEY="$VELA_WEBSITE_KEY"
+  API_BASE="$VELA_API_BASE"
 
-# 凭据：无默认值，变量不存在时直接报错退出（:? 语法）
-KEY="${VELA_WEBSITE_KEY:?VELA_WEBSITE_KEY not set, instance not initialized}"
+  # 在这里执行建站 API 请求或子脚本；不要打印 KEY，不要重新开启 set -x。
+)
 ```
 
 请求头：

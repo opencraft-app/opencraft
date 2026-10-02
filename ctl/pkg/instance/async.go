@@ -1056,6 +1056,7 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 	}
 	metric.RecordInstanceCreate("success", sandboxResp.TemplateID, payload.InstanceSpecID, time.Since(entity.CreatedAt).Seconds())
 	l.recordCreateSuccessEvent(ctx, entity.InstanceId)
+	l.deliverWebsiteSkillOnCreate(ctx, entity, sandboxResp.SandboxID)
 	l.deliverWebsiteCredentialOnCreate(ctx, entity, sandboxResp.SandboxID)
 
 	return nil
@@ -1077,6 +1078,10 @@ func (l *logic) deliverWebsiteCredentialOnCreate(ctx pctx.Context, entity *model
 			l.logger.Warn("skip website credential delivery because region has no TAT command", zap.String("region", detail.Region), zap.String("sandbox_id", sandboxID))
 			return
 		}
+	}
+	if l.websiteCommandIDOverlapsSkill(commandID) {
+		l.logger.Warn("skip website credential delivery because command overlaps skill", zap.String("sandbox_id", sandboxID))
+		return
 	}
 	apiBase := strings.TrimSpace(l.websiteAgentAPIBase)
 	if commandID == "" || apiBase == "" {

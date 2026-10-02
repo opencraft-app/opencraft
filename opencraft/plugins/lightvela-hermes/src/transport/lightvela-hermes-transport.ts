@@ -220,6 +220,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       : "";
     const requestStartedAt = Date.now();
     if (method === "initialize") this.logConnection("appserver:initialize:start", this.generation);
+    if (method === "thread/list") this.logConnection("appserver:thread-list:start", this.generation);
     const response = await bridge.handle(request, signal);
     if (
       response !== null
@@ -237,6 +238,11 @@ export class LightVelaHermesTransport implements DuplexTransport {
     if (signal?.aborted || this.bridge !== bridge) return;
     if (method === "initialize") {
       this.logConnection("appserver:initialize:response", this.generation, {
+        stageMs: Date.now() - requestStartedAt,
+      });
+    }
+    if (method === "thread/list") {
+      this.logConnection("appserver:thread-list:response", this.generation, {
         stageMs: Date.now() - requestStartedAt,
       });
     }

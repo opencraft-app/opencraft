@@ -1902,7 +1902,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 if separator
             }
 
-        command_id = "cmd-c14avwti"
+        command_id = "cmd-czxw3gau"
         ctl_values = env_values(REPO_ROOT / "argocd/services/ctl/shprod/ctl-platform.env")
         sandbox_root = REPO_ROOT / "argocd/services/sandbox/shprod"
         sandbox_values = env_values(sandbox_root / "sandbox-platform.env")

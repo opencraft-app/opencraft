@@ -30,6 +30,16 @@ replacements:
   - source:
       kind: ConfigMap
       name: sandbox-platform-values
+      fieldPath: data.WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION
+    targets:
+      - select:
+          kind: ConfigMap
+          name: sandbox-runtime-config
+        fieldPaths:
+          - data.WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION
+  - source:
+      kind: ConfigMap
+      name: sandbox-platform-values
       fieldPath: data.WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION
     targets:
       - select:

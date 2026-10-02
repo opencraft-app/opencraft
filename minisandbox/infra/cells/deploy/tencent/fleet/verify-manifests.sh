@@ -185,6 +185,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_run.
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_run_on_builder.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/shared-agent-scale/test_cleanup.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_verify.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_capacity_controller_recovery.py"
 node --test "$script_dir/load/shared-agent-scale/runner.test.mjs"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_qualification_contract.py"
@@ -1544,6 +1545,8 @@ if runtime_release.count('--field-manager="$runtime_admission_rollback_field_man
     raise SystemExit("runtime admission update rollback must use its isolated field manager")
 if runtime_release.count('--field-manager="$runtime_admission_field_manager"') != 1:
     raise SystemExit("runtime admission ownership restore must use the canonical apply field manager")
+if runtime_release.count('--field-manager="$runtime_capacity_recovery_field_manager"') != 2:
+    raise SystemExit("capacity recovery must isolate its forward and rollback CAS updates")
 if "--field-manager=rivet-runtime-release-fields" in runtime_release:
     raise SystemExit("rollback must not update through the scoped release field manager")
 if runtime_release.count("--field-manager=rivet-runtime-release-ledger") != 2:
