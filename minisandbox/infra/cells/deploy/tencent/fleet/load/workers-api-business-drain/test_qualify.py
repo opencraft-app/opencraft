@@ -25,6 +25,56 @@ RUN_ID = "0123456789abcdef0123456789abcdef"
 
 
 class DrainTests(unittest.TestCase):
+    def test_framing_accepts_fixed_and_chunked_but_not_ambiguous_or_error_responses(self):
+        gate.validate_framing(200, "131072", None)
+        gate.validate_framing(200, None, "chunked")
+        for status, length, transfer in (
+            (503, None, "chunked"), (200, "131071", None),
+            (200, "131072", "chunked"), (200, None, None), (200, None, "gzip"),
+        ):
+            with self.assertRaises(RuntimeError):
+                gate.validate_framing(status, length, transfer)
+
+    def test_real_chunked_stream_is_held_until_release_and_has_exact_body(self):
+        release = threading.Event()
+        first, last = gate.chunks(RUN_ID)
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("transfer-encoding", "chunked")
+                self.end_headers()
+                self.wfile.write(b"10000\r\n" + first + b"\r\n")
+                self.wfile.flush()
+                release.wait(5)
+                self.wfile.write(b"10000\r\n" + last + b"\r\n0\r\n\r\n")
+                self.wfile.flush()
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}", timeout=5) as response:
+                gate.validate_framing(response.status, response.headers.get("Content-Length"),
+                                     response.headers.get("Transfer-Encoding"))
+                prefix = response.read(gate.CHUNK_BYTES)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    reading = pool.submit(response.read, gate.CHUNK_BYTES + 1)
+                    self.assertFalse(reading.done())
+                    release.set()
+                    suffix = reading.result(timeout=5)
+                gate.validate_stream(prefix, suffix, RUN_ID, 30, 35, True)
+        finally:
+            release.set()
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_stream_requires_complete_exact_bytes_and_admission_order(self):
         first, last = gate.chunks(RUN_ID)
         gate.validate_stream(first, last, RUN_ID, 30, 35, True)

@@ -1061,6 +1061,8 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 随后须完整接收固定 128 KiB 内容、零重试、恢复三个 Ready API 节点，并精确清理临时
 stateless Worker。公共 CLB 同时接收独立快速业务请求。readyz HA 收据不能替代这个门禁；
 本地回归与工具实现也不能替代实际云上通过收据。
+HTTP 的 fixed-length 与 chunked framing 均合法，但必须核验固定业务内容、完整 EOF 和
+listener-before-completion；header 本身不能作为数据完整性或排空成功的证据。
 
 ### 正确性
 

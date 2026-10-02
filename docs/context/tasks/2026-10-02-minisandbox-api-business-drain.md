@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -83,6 +83,12 @@ derived: false
 - Context 仍有 4,871 条旧仓库基线问题，本 Task errors 为零。根 Context 26 条测试有四项
   旧仓库整体治理/语言/预算失败，不把全仓检查标为通过；context-audit 的 33 条测试通过。
 - catalog 只增加本 Task 行，不顺带刷新无关任务的历史记录。
+- 首次云 run 在删除 Pod 前因 framing 断言失败；临时 Worker DELETE 204，未执行 Pod 删除。
+  原断言错误地要求普通 ReadableStream 一定有 Content-Length，与 Workers 原生行为不符。
+  支持 fixed/chunked 两种合法 HTTP framing，仍要求完整 128 KiB、逐字节核验、EOF、零重试和
+  listener-before-completion，不改变服务、超时或业务排空合同；收据增加实际 framing 字段。
+- fixed/chunked framing 与真实 chunked HTTP 的聚焦回归共 11 条通过。Host stateless 流式
+  代理源码显式删除 Content-Length，CF 官方 Response 文档也明确普通流的 runtime 行为。
 
 ## risks
 

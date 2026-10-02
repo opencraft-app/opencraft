@@ -136,6 +136,16 @@ def validate_stream(first, last, run_id, listener_stopped, completed, pending_wh
         raise RuntimeError("no live business request was observed after listener admission stopped")
 
 
+def validate_framing(status, content_length, transfer_encoding):
+    if status != 200:
+        raise RuntimeError("Worker stream status differs")
+    if content_length == str(2 * CHUNK_BYTES) and transfer_encoding is None:
+        return
+    if content_length is None and transfer_encoding == "chunked":
+        return
+    raise RuntimeError("Worker stream framing differs")
+
+
 def validate_args(args):
     url = urllib.parse.urlsplit(args.endpoint)
     if (url.scheme != "http" or url.port != 6688 or url.path not in ("", "/")
@@ -292,8 +302,11 @@ def run(args):
                 "X-Workers-Original-URL": "https://api-drain.example/stream"})
             result["stream"]["requestAttempts"] = 1
             response = urllib.request.urlopen(req, timeout=50)
-            if response.status != 200 or response.headers.get("Content-Length") != str(2 * CHUNK_BYTES):
-                raise RuntimeError("Worker stream framing differs")
+            result["stream"]["responseStatus"] = response.status
+            result["stream"]["contentLength"] = response.headers.get("Content-Length")
+            result["stream"]["transferEncoding"] = response.headers.get("Transfer-Encoding")
+            validate_framing(response.status, result["stream"]["contentLength"],
+                             result["stream"]["transferEncoding"])
             first = response.read(CHUNK_BYTES)
             if first != chunks(args.run_id)[0]:
                 raise RuntimeError("Worker stream prefix differs")

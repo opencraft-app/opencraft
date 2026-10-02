@@ -13,6 +13,13 @@ Worker，经公共 `/v1` 激活，然后让选定 API Pod 转发一个持续 35 
 整个转发会话，连带中断长流。门禁等待独立探测进程的容器 `connection refused` 事件，不能
 把任意网络超时当作 listener 已关闭。收据原子创建，不覆盖旧成功或失败证据。
 
+HTTP framing 可为固定 Content-Length 或 chunked；两者都必须完整接收并逐字节核验固定
+128 KiB 内容和 EOF。不能只靠 Content-Length 判断成功。workerd 对普通 ReadableStream
+会生成 chunked framing，手工设置长度不决定线上 header；这是
+[Workers Response 的原生行为](https://developers.cloudflare.com/workers/runtime-apis/response/)，
+并且当前 `host/src/stateless.rs` 的流式代理显式去除 Content-Length。这不是应通过修改
+生产代理来修复的错误。
+
 在同 VPC 的已审阅 builder 上运行；入口持有整个共享 operation lock：
 
 ```bash
