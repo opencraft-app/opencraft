@@ -4065,7 +4065,6 @@ export function AutomationFormModal({
     [initialJob, template?.deliver],
   );
   const [deliverPlatforms, setDeliverPlatforms] = useState<string[]>(initialDeliver.platforms);
-  const [localDeliveryConfirmed, setLocalDeliveryConfirmed] = useState(false);
   const shouldDefaultToConnectedChannels = mode === "create" && !initialJob && !template;
   const defaultDeliveryInitializedRef = useRef(!shouldDefaultToConnectedChannels);
   /** 每个 platform 的可选 chat_id：填了 → 拼 `<platform>:<id>` 直送；留空 → 走 home */
@@ -4156,10 +4155,6 @@ export function AutomationFormModal({
   }, [channelStatus, enabledChannels]);
 
   useEffect(() => {
-    setLocalDeliveryConfirmed(false);
-  }, [deliverPlatforms.length]);
-
-  useEffect(() => {
     if (!shouldDefaultToConnectedChannels || defaultDeliveryInitializedRef.current || channelStatus !== "ready") return;
     defaultDeliveryInitializedRef.current = true;
     setDeliverPlatforms(availableNotificationChannels
@@ -4202,16 +4197,12 @@ export function AutomationFormModal({
   const notificationChannelRequired = executionMode === "zero_token"
     && zeroTokenKind === "fixed_notification";
   const notificationChannelReady = !notificationChannelRequired || deliverPlatforms.length > 0;
-  const localDeliveryRequiresConfirmation = !notificationChannelRequired
-    && deliverPlatforms.length === 0
-    && (mode === "create" || (initialJob?.deliver || "local") !== "local");
   const canSubmit = !submitting
     && channelStatus === "ready"
     && name.trim().length > 0
     && taskContentReady
     && scriptSafetyReady
     && notificationChannelReady
-    && (!localDeliveryRequiresConfirmation || localDeliveryConfirmed)
     && (scheduleUneditable || schedule.length > 0);
   const canTestRun = !submitting
     && testState !== "running"
@@ -4230,9 +4221,7 @@ export function AutomationFormModal({
     && taskContentReady
     && !notificationChannelReady
     ? t("未选择通知方式")
-    : localDeliveryRequiresConfirmation && !localDeliveryConfirmed
-      ? t("请先确认仅本地保存")
-      : null;
+    : null;
 
   const handleTestRun = useCallback(() => {
     if (!canTestRun) return;
@@ -5109,20 +5098,7 @@ export function AutomationFormModal({
         {channelStatus === "ready" && deliverPlatforms.length === 0 && !notificationChannelRequired && (
           <div className="mt-3 flex gap-2 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2.5 text-xs text-amber-900" role="status">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            <div>
-              <p>{t("结果仅保存在此 Bot 的执行记录中，不会发送到聊天。")}</p>
-              {localDeliveryRequiresConfirmation && (
-                <label className="mt-2 flex cursor-pointer items-center gap-2 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={localDeliveryConfirmed}
-                    onChange={(event) => setLocalDeliveryConfirmed(event.target.checked)}
-                    className="size-4 accent-amber-900"
-                  />
-                  {t("我确认仅本地保存")}
-                </label>
-              )}
-            </div>
+            <p>{t("结果仅保存在此 Bot 的执行记录中，不会发送到聊天。")}</p>
           </div>
         )}
 
