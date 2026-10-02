@@ -937,6 +937,8 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 - 量化 Router p50/p99/p999、cache hit ratio、Registry TPS、跨 Cell RTT 和每请求 CPU；
 - 只有中央 Router 被证明为瓶颈后，才启动 Cell-local Router 下沉；
 - 不把压测中发现的单 Cell 上限误写成整个产品上限，横向容量通过增加 Cell 扩展。
+- builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
+  集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
 
 ## 必须固化的测试矩阵
 

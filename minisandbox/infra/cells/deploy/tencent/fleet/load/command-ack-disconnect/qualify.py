@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime
 import importlib.util
 import json
@@ -112,6 +113,22 @@ def registry_record(registry: str, worker: str, object_id: str) -> dict:
         f"/workers/{worker}/objects/{smoke.CLASS_NAME}/{object_id}",
     )
     return record
+
+
+@contextlib.contextmanager
+def reachable_registry(args):
+    if args.registry_endpoint:
+        yield args.registry_endpoint.rstrip("/")
+        return
+    if not re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", args.registry_service):
+        raise ValueError("Registry service must be a Kubernetes Service name")
+    kube = runtime.Kubectl(args.hub_kubeconfig, args.registry_namespace)
+    forward = runtime.PortForward(kube, f"service/{args.registry_service}", 8080)
+    try:
+        forward.start("/readyz")
+        yield forward.base_url
+    finally:
+        forward.stop()
 
 
 def dispatch_counter(api: str, worker: str, name: str) -> int:
@@ -615,7 +632,10 @@ def run(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
-    parser.add_argument("--registry-endpoint", required=True)
+    registry = parser.add_mutually_exclusive_group(required=True)
+    registry.add_argument("--registry-endpoint")
+    registry.add_argument("--registry-service")
+    parser.add_argument("--registry-namespace", default="worker-registry-system")
     parser.add_argument("--hub-kubeconfig", required=True, type=pathlib.Path)
     parser.add_argument("--cell-kubeconfig", required=True, type=pathlib.Path)
     parser.add_argument("--cell", required=True)
@@ -631,7 +651,9 @@ def main() -> int:
         parser.error("--run-id must be 32 lowercase hexadecimal characters")
     if len(set(args.all_cell)) < 2 or args.cell not in set(args.all_cell):
         parser.error("--all-cell must contain the target and at least one peer Cell")
-    result = run(args)
+    with reachable_registry(args) as endpoint:
+        args.registry_endpoint = endpoint
+        result = run(args)
     smoke.publish(args.receipt, result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

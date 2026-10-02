@@ -27,6 +27,14 @@ Engine owner, malformed fault receipt, duplicate processed Stop, absent ACK
 replay/barrier log, non-empty reconciliation footprint, changed Actor/Cell
 identity, or incomplete cleanup fails the gate.
 
+The builder entry point forwards the Hub's private
+`worker-registry-system/worker-registry:8080` through the existing Kubernetes
+API, checks `/readyz` before any public API mutation, and closes the loopback
+forward on both success and failure. It must not reuse the Workers API's
+cluster-internal DNS URL outside the cluster. A directly reachable Registry
+can still be selected explicitly with `qualify.py --registry-endpoint`; this
+is mutually exclusive with `--registry-service`.
+
 Runs reuse one stable qualification Worker because the public delete contract
 intentionally retains Workers that have Durable Object namespace history. Each
 run uses and then deletes only its deterministic Object, so repeated evidence
