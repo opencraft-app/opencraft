@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -89,6 +89,12 @@ derived: false
   listener-before-completion，不改变服务、超时或业务排空合同；收据增加实际 framing 字段。
 - fixed/chunked framing 与真实 chunked HTTP 的聚焦回归共 11 条通过。Host stateless 流式
   代理源码显式删除 Content-Length，CF 官方 Response 文档也明确普通流的 runtime 行为。
+- 修正版云 invocation `inv-d9du0g0989` 终态 SUCCESS/0。固定 128 KiB 原流在 listener 拒绝新
+  连接后仍保持 4.874 秒并完整结束，零重试；公共业务共 145 次成功，替换期间 138 次，零失败。
+- 精确旧 Pod UID 消失，新 UID Ready，恢复三个节点上的三副本，Deployment/HPA 策略不变，
+  临时 Worker DELETE 204。原始 JSON 已按字节数及 SHA-256 校验下载并归档于
+  `load/workers-api-business-drain/evidence/beijing-20261003.json`；工具源码 revision 为 `9f6c745c`，
+  使用已有 API image `28db6ffa`，未重建 API/Runtime 或改变生产配置。
 
 ## risks
 
@@ -115,6 +121,5 @@ derived: false
 
 ## handoff
 
-- 工具已实现并注册到 Fleet 静态入口。云上尚未运行，不能宣称业务排空资格通过。
-- 收齐 Fleet 和本 Task 门禁后提交；按完整 reviewed source + canonical TAT + operation lock
-  执行，使用已发布 API image，不重建 API 或 workerd。
+- 公共 API 在途业务排空门禁已通过并归档；不能代替内部 Router、万级活跃或完整无人值守资格。
+- 后续主线仍为候选 Runtime 的正式 A/B release/Bottomless/HA，随后重跑原 strict10k。

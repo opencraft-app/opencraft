@@ -1063,6 +1063,11 @@ stateless Worker。公共 CLB 同时接收独立快速业务请求。readyz HA �
 本地回归与工具实现也不能替代实际云上通过收据。
 HTTP 的 fixed-length 与 chunked framing 均合法，但必须核验固定业务内容、完整 EOF 和
 listener-before-completion；header 本身不能作为数据完整性或排空成功的证据。
+北京公共 API 在途排空的
+[2026-10-03 收据](../../deploy/tencent/fleet/load/workers-api-business-drain/evidence/beijing-20261003.json)
+绑定工具源码 `9f6c745c` 与已发布 API `28db6ffa`：原流在 listener 停止后继续 4.874 秒、
+完整 128 KiB、零重试；替换期间 138 次公共业务请求零失败，恢复三个 Ready API 节点并完成
+临时 Worker 清理。该证据只证明这个 API 故障边界，不证明内部 Router 或万级性能。
 
 ### 正确性
 
