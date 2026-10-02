@@ -35,6 +35,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 | 部署期望 | `argocd/apps/<env>/`、`argocd/services/*/<env>/` |
 | 真实运行 | Argo、集群、域名与浏览器 E2E 的现场证据 |
 
+国内站与国际站复用定时任务卡片操作界面：横向省略号在悬停或键盘聚焦后显示纵向的图标与本地化操作名称列表；两站沿用相同任务状态门控，文案由各自 locale 提供。
+
 ## 产品文档区域
 
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
