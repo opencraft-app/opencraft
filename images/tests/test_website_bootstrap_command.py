@@ -20,6 +20,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILDER = ROOT / '.ci/runtime/commands/website_bootstrap_command.py'
+SUPPORT = ROOT / '.ci/runtime/support/website_bootstrap_command.py'
 DELIMITER = 'VELA_WEBSITE_SKILL_BOOTSTRAP'
 BASH = shutil.which('bash')
 ENV = shutil.which('env')
@@ -57,7 +58,7 @@ class WebsiteBootstrapCommandTests(unittest.TestCase):
             raise FileNotFoundError(
                 f'Waiting for payload builder: {BUILDER}; tests must not implement it'
             )
-        spec = importlib.util.spec_from_file_location('website_bootstrap_command', BUILDER)
+        spec = importlib.util.spec_from_file_location('website_bootstrap_command', SUPPORT)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         cls.build_payload = staticmethod(module.build_payload)

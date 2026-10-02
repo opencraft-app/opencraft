@@ -21,7 +21,8 @@
 - bootstrap mock 30 PASS；auth helper 32 PASS；两区两组件 source render 3 PASS。
 - 原凭据 installer shell suite 68 PASS；focused website release contract 4 PASS；diff-check PASS。
 - 上海自然新机 ins-0xc7yflb 自动调用 bootstrap inv-u9d76607f6：SUCCESS/exit0、credential成功、Skill patched；只读验收 inv-u9d79hgapg 用 Hermes LocalEnvironment 清空 env Key 后执行安装的 snippet，HTTP200/OK/PASS。国际两地域尚未观察到新机自动调用，未创建生产测试实例。
-- 源码 MR 尚待创建，change-impact 门禁继续验证。
+- 固化 MR !4932 已创建、自审批；CI首次因command wrapper/materialize登记约束失败，已拆为commands wrapper与support模块并补登记。本机CI runtime全门禁通过（655 tests + materialized smoke）；继续推送修正、等待真实MR CI。
+- 柔佛自然新机 ins-ayo48pld 自动 bootstrap inv-d9d7a7gxn6 成功，Skill patched；只读验收 inv-c9d7fig0tt：无env Key的Hermes LocalEnvironment文件兜底HTTP200/OK/PASS。新加坡仍没有自然新机调用记录。
 - 不声称正式发布、Argo/GitOps闭环或真实新机验收已完成。
 
 ## 私有证据

@@ -141,7 +141,9 @@ START_FAILED ``InvalidUser: user `agentuser` not exists`` 由主线程分类为
 `7f425d00fbf00a6cefd8fb455f0304ffa1a4a0903beb57d5eae3f473abf5d308`；三地 bootstrap Content SHA-256
 `232d210b72aa6c849c732f5e096e0c5a755e84d2bc90de62d30fe350bd2b091c`。
 
-构造入口 `.ci/runtime/commands/website_bootstrap_command.py` 只做离线 payload：
+构造入口 `.ci/runtime/commands/website_bootstrap_command.py` 为标准 CLI wrapper，
+实现位于 `.ci/runtime/support/website_bootstrap_command.py`，两者均注册到 runtime
+materialize manifest；只做离线 payload（仍需要含 images helper 的完整源码 checkout）：
 读取旧 immutable TAT 命令的 **placeholder-only Content**，保留每个字节为前缀，
 追加 canonical auth helper 的命令。不能直接换成当前源码 credential installer：两者有
 不同 gateway discovery 行为，会把无关凭据生命周期变更带入本次热修。
