@@ -9,9 +9,9 @@ source_of_truth:
   - docs/context/tasks/2026-10-02-minisandbox-10k-durable-pressure.md
   - minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md
 status: active
-reviewed_at: 2026-10-02
+reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -31,6 +31,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
+- 用户追加要求：解释性能劣化并从建模设计解决，不能只靠调参数或增加机器。
 - `stateless-workers-do-routing/phase-5`：万级 active Object 容量测试必须通过，随后才能生成 Router
   performance receipt。
 - `stateless-workers-do-routing/phase-4`：扩容期间仍必须维持请求正确性和无人值守收敛。
@@ -93,6 +94,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `docs/context/domains/release-gitops.md@f06c5e0a` | 发布状态定义 | 构建成功不冒充 rollout/qualification 完成 |
 | `docs/context/project/adjacency/argocd-ci-secrets.md@f06c5e0a` | 发布邻接检查 | 不读取或提交 Secret；检查运行时 desired state 邻居 |
 | `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md@f06c5e0a` | 用户目标真源 | 保持 10k/零重试/跨 Cell 目标完整 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/load/shared-agent-scale/runner.mjs@d7ff0a90` | 实际负载语义 | heartbeat 包含持久 state 与操作记录写入，不能等同 keepalive |
+| `minisandbox/infra/cells/deploy/tencent/fleet/load/ten-thousand-active/run-on-builder.sh@d7ff0a90` | 固定到达模型 | 10k/十秒目标节拍、实际发起率与成功率分开 |
+| `minisandbox/engine/packages/depot/src/workflows/db_manager.rs@d7ff0a90` | 当前等待机制 | exact 成功续批与失效后的维护周期分开 |
+| `minisandbox/engine/packages/gasoline/src/db/kv/mod.rs@d7ff0a90` | 诊断存储路径 | workflow 索引还须包含 Cell namespace，旧无 namespace 查询不能证明工作流不存在 |
 
 ## evidence
 
@@ -109,6 +114,16 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   `Database::txn()` 只在 `.await` 正常返回后 decrement，future cancellation 会泄漏 gauge。
 - 线上精确配置由 TAT `inv-d9d2fmgmp3` 确认为每 Engine refresh=16、compaction=8；六副本实际
   Cell 上限分别为 96/48。
+- 以上是失败轮的历史配置，不是当前配置。新 Runtime source `072e504b` 保持六 Engine、
+  每进程 8/2；名义 Cell 总上限 48/12，不等于已校准的有效吞吐。
+- A 新 release、48 对象 production-cell Bottomless 和 Engine HA 已通过，冷态等待约 973 秒；
+  B 原发布 invocation `inv-e9dx3fg9p5` 已 release_passed，仍在精确冷态等待。
+  两项均不能替代 strict10k 或百万 dormant 的证据。
+- 新只读观察工具 source `d7ff0a90` 已落到 builder：`inv-d9dxb0g9gs` SUCCESS/0，
+  manifest 摘要前缀 `b2bfa893`（完整身份保留在 source receipt）。
+  tools 与 Runtime 来源分开绑定，不因此重编 workerd。
+- 当前 fixture 源码确认每个 heartbeat 写 state 和新的 operation 去重结果。十秒周期的
+  10k active 目标约为 1,000 次持久交互/秒；每对象一个在途请求会在迟到时降低实际到达率。
 
 ## risks
 
@@ -142,6 +157,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - 先修准确水位和每进程 maintenance 上限；不把请求超时、重试或 active 数量调松。
 - 生产 Engine 保持固定六副本；若未来改变 Engine 副本数，必须重新计算并验证 Cell 级 activity budget。
 - 只有新 digest 的真实 10k 通过后才生成 Router performance receipt。
+- 报告目标节拍、实际 attempts/s、成功/s、有效 reclaim、计划重做与债务趋势；容量模型
+  不得仅使用活跃 Object 数或平均 CPU。未来 Engine 扩容必须重新约束 Cell 总后台预算。
 
 ## scan_scope
 
@@ -153,24 +170,26 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## handoff
 
-- 当前状态：源码取消清理、8/2 maintenance 默认值、真实取消回归和配置/manifest 检查已完成；
-  新 runtime release 与 10k 重跑尚未完成。
+- 当前状态：源码取消清理、8/2 默认值及封闭输入前缀回归已完成；新 Runtime 已构建。
+  A 正式 release/Bottomless/HA/activation 已通过，B 正式资格原作业仍运行。工具源码已落地，
+  strict10k 未重跑；保持目标 active，不能把模型文档或小规模通过标为容量问题已解决。
 
 ## checkpoint
 
 ### stage
 
-源码与文档门禁完成后推 mono2/master；线上容量资格仍未通过。
+A 发布资格完成、B 原资格等待中；新 tools 已验真，线上万级容量资格仍未通过。
 
 ### verified
 
 - pending gauge 在真实 transaction cancellation、success、error 三条路径恢复基线。
 - Rust runtime 配置 10 项测试通过，production install/release/render 使用相同的 8/2 默认值。
-- 原 f06 候选镜像已构建并推送，真实 workerd process 6 项测试通过；它尚未包含本轮修复。
+- Runtime `072e504b` / image `6e4d982e` 已构建，A 正式 gate/activation 已通过。
+- 新 tools `d7ff0a90` 已完整验真落地，不改变上述 Runtime 镜像。
 
 ### unverified
 
-- 本轮新 digest 的正式 A/B release、ACK 故障门禁、strict 10k 和 Router performance receipt。
+- B 新 digest 的 Bottomless/HA/activation 终态、strict 10k 和 Router performance receipt。
 - 低 maintenance concurrency 能否同时保持 hot tail 有界和 cold publish 进度。
 
 ### discard
@@ -180,9 +199,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### restore
 
-- 当前开发在 mono2 的独立 jj revision；parent 为 f06c5e0a，原 dirty 工作区保持不动。
-- 真实 10k run 354610a58f4a66c7e0b4ec8d7978cbda 的 cleanup/downscale invocation 必须先确认终态。
+- 当前开发在 mono2 独立 jj revision，以 d7ff0a90 为已推送基线；原 dirty 工作区保持不动。
+- B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 
 ### next_action
 
-- 将通过验证的源码推 master，再生成绑定 mono2 commit/minisandbox tree 的 reviewed-source bundle。
+- 续接 B 原作业完成全部门禁后，以 tools/Runtime 分离身份启动未降低标准的 strict10k；
+  继续用 exact job 时序定位冷降等待，不跳过 fingerprint 或保留策略。

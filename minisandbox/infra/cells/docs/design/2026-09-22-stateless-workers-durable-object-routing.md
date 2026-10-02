@@ -1205,6 +1205,33 @@ head-fenced 冷降计划反复失效；大量 Envoy 一次加入带来的协调�
 只有对应窗口有效服务追上负载、积压不持续增长且原零重试/身份/持久性门禁不放宽，才可称
 性能改进。该模型是实验与设计约束，不是当前万级/百万资格已经通过的证据。
 
+容量单位还须包括工作负载形状，不能只报“多少 Agent”。当前 strict10k fixture 的每次
+heartbeat 都读取去重记录，并用 `storage.put()` 更新 state 和新的 operation 结果；
+10,000 个 Object、十秒周期的目标到达率约为 1,000 次持久交互/秒，而不是 1,000 次纯
+内存 keepalive。对象内最多一个在途 heartbeat，迟到请求会降低实际发起率，因此必须同时
+报告目标节拍、实际 attempts/s、成功/s 和延迟，不能把无失败的慢发起解释为达到目标吞吐。
+operation 记录持续增加，不是固定尺寸覆盖；用户 payload、SQLite 页写放大与新增权威 hot
+bytes 也不是同一单位。不得为通过资格偷偷改成无写 heartbeat 或删除去重记录。
+
+| 压力来源 | 应扩大/控制的资源 | 不应推断 |
+|---|---|---|
+| 活跃 Object 的执行/RSS | durable Host、已准入节点与对象装箱 | Host 扩容能提高同一 FDB 的写吞吐 |
+| Router miss/Deployment 失效 | 有界回填合并、缓存与 Router 容量 | 增加 Router 副本必然减少 Registry 请求 |
+| durable commit 与后台维护 | Cell FDB 延迟预算、有效维护吞吐和并发 | Engine Ready/CPU 空闲表示事务无争用 |
+| COS 限流或保留期限等待 | 有界 I/O 并发/退避、明确资格时间边界 | 增加 Host 或删正确性 fence 能加速安全回收 |
+
+每个 Engine 的 refresh/compaction permit 是本地资源，不是 Cell-wide permit：固定六 Engine
+时，8/2 配置对应名义总上限 48/12，实际有效并行度仍受共享 FDB/COS 和输入失效约束。
+未来 Engine 水平扩容必须先保持并重新校准 Cell 总维护预算，不能让副本数自动放大后台负载。
+不因此引入一个每请求争抢的全局 FDB semaphore；预算分配和持久状态正确性是不同所有权。
+
+用同一时间窗口区分三个可证伪判断：等待队列持续增长且有效服务满载才支持服务容量不足；
+许可空闲、债务不降并有 exact retryable job 时应检查重排/策略期限；新副本增加后 GET、
+失效计划或事务冲突增加而成功吞吐不升，则是工作放大而非单纯容量不足。累计 counter、
+一次空队列或平均服务时间均不足以作此判断。稳定运营需要有效回收追上新增权威 debt，且
+保留时间内和突发期间的债务峰值、最老等待与交互尾延迟有界；最终必须由固定负载与镜像
+的真实时间序列验证，不用提高超时、重试或减少活跃对象来替代。
+
 容量负载 observer 将旧八个容量/压力查询与上述后台信号合成一个每 Cell 的有界 instant
 vector。保留请求/样本时间、完整 query、operation/result/class 和缺失/非有限状态；完成任务、
 成功 bytes/objects、duration sum/count 使用五分钟 `rate`，必须先在原 counter 上求 rate 再聚合。
