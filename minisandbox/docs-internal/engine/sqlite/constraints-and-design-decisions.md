@@ -49,6 +49,16 @@ The first enabled worker installs the record with a serializable transaction; co
 
 ## Why Versioned SHARDs
 
+### Why Hot Jobs Bind A Committed Prefix
+
+Continuous writes must not invalidate an unchanged materialization merely because the current head or latest PIDX owner advanced while the job waited for admission. The planner selects a committed prefix under the existing key/byte budget. Stage and install anchor reads to that upper txid. Its fingerprint includes branch identity, root generation/watermark, selected txid, complete COMMIT/DELTA inputs, and current history/PITR coverage, not the mutable latest-owner index.
+
+This is not permission to skip safety checks. A new history pin or changed PITR coverage must invalidate the old proof. Lifecycle and root-generation changes remain fenced. Installation reads candidate PIDX owners serializably and clears only owners covered by the installed prefix, with quota/count adjustments in the same transaction. Later owners remain authoritative in DELTA. Fault tests exercise both admission and post-stage boundaries, verify continuous progress, and require changed fork/PITR coverage to replan while retaining historical reads.
+
+Truncate is not an ordinary overwrite: it removes PIDX rows and can prune or delete base and prepublished SHARD caches. The commit-owned fixed-width `META/truncate_txid` index certifies a never-truncated local history with zero. Every shrink records its TXID atomically, subsequent growth cannot clear it, and missing history is conservative. Only certified histories omit the mutable head from the fingerprint. Truncated or unknown histories retain the head fence; this deliberately trades progress under continuous writes after a shrink for storage safety.
+
+Input identity is checked before integrity preflight as well as in final publication. A concurrently removed staged row can be replanned only after an independent input check proves staleness. Unchanged plans still require full shard and chunk integrity. Folding DELTAs applies each commit's EOF so growth cannot resurrect removed pages, while pinned historical outputs retain their own historical EOF.
+
 Overwriting one SHARD key loses the older materialized image that forks and restore points may still need. Versioned SHARDs keep multiple materializations side by side:
 
 ```text

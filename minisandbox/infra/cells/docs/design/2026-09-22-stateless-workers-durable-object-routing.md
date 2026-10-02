@@ -198,6 +198,14 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    minisandbox 源码现以 mono2 的 `minisandbox/` subtree 为唯一真源；clean-room reviewed-source
    bundle v2 分别绑定 mono2 commit、repository tree、project path 与 project tree，同时仍把项目
    tree 作为归档根，避免把 mono2 其他服务带入 Runtime 构建或改变 builder 的目录契约；
+   Workers API 的 bootstrap/serving 渲染同时要求产品 ref、sourceRevision、sourceManifestDigest
+   和原始收据字节 buildReceiptDigest 与完整 inventory 的 exact workers-api 项一致。仅基础镜像
+   依赖相同不能授权另一产品；渲染前一次读取产品收据，校验和输出证据使用同一字节快照。
+   永久回归通过真实 11 产品/28 镜像清单和 CLI 子进程覆盖错镜像、错源码、重新格式化的收据
+   以及清单自校验正确但收据 digest 不同的拒绝路径，两种阶段都不得输出 manifest 或 receipt；
+   正式 Workers API 门禁从操作目录调用时，先进入各测试 suite 的源码目录，再使用模块名称执行
+   unittest；不能依赖绝对测试文件路径的解释。Fleet 静态入口加入真实复制源码、带点号父目录、
+   unrelated cwd 的回归，避免 clean-room source 在 builder 上无法执行同一门禁；
 3. Terraform 已改为通过 TKE 控制面创建独立、启用 autoscaling 的 Native NodePool，并将其动态
    `np-*` ID 写入 Cell inventory；Argo 不再伪造或拥有该 MachineSet。集群级 scale-in 已启用且一次
    最多缩一台。stateless admission profile、startup taint、精确 runtime digest probe 和 workload
@@ -258,6 +266,34 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    的 RTT 都会 fail closed。性能负载必须经 `/workers/{worker}/dispatch` 进入 stateless executor，并把
    Object 均衡预置到至少两个 placement-ready Cell；直接 ObjectRef 因 `source_cell=unassigned` 会被拒绝，
    不得冒充跨 Cell 证据。真实 10k 运行及新指标发布后的云上 receipt 仍是 Phase 5 未完成项。
+   性能入口在任何代码发布或 Object 创建前检查 Registry `/readyz`，集群外 builder 通过 Hub
+   Service port-forward 访问，不直接消费 C 内部 DNS。准备失败也进入精确 Object 清理并记录失败
+   receipt，包括响应丢失的已尝试 ID；未确认存在的 ID 才允许 DELETE 404。正常和异常退出均关闭
+   forward，失败不重试非幂等 dispatch。延迟直方图只包含正式负载窗口，不混入预置请求。
+   2026-10-02 新运行 `f56405fe9169424fb97d3c81b3da2704` 在1517 Object时严格失败，
+   09:20:41 UTC四次活跃 heartbeat返回502 `indeterminate_result`。C日志均指向B Engine
+   等待响应头超过25秒，不能用增大超时、重试成功或健康FDB改判。原load收据SHA-256
+   `151c16bb56db0d23d818158c9ac7c63ac58d7c99ee63c03a0b78f1b5c3d73eb1`，原精确cleanup
+   收据SHA-256 `ce1b35b0af49f5c27df03713da5fe6d1325003c9357906b221dd3e8a7cbff9df`证明
+   1517对象已删除、pending0；任务已通过生产串行drain缩回A/B各4个Node与Host。A/B实际峰值48/45个Node与Host
+   全部Ready且Node admitted，Engine/Host无重启、FDB9/9全复制，不替代业务零错误资格。
+   最终组合收据SHA-256 `794e64a9ceb34e07945a45560f45cfc63110be629fb7444016ee129195c7ae24`
+   保留 failed verdict；150个完整容量样本证明初始低容量、自动扩容、精确清理、安全drain和最终
+   低容量，不证明万级持续活跃。不得用节点恢复或业务重试成功替代该失败事实。
+   针对此次等待响应头超时，Workers API 的 Object fetch 传输失败日志增加客户端 connection、
+   request-written 与 first-response-byte 里程碑，区分 acquiring/writing/awaiting/reading 阶段。
+   只记录固定阶段、毫秒耗时和 socket 地址，不记录 body、header、URL query，也不新增高基数
+   metric。里程碑不能证明目标是否执行或提交，因此仍返回不可透明重试的 indeterminate；
+   不改变25秒 response-header deadline 或 caller-owned streaming/cancellation。诊断代码通过本地
+   验证后仍须正式发布和重新采集实际失败证据，不能据此认定该根因已修复。
+   诊断API已通过2026-10-02正式发布 `inv-d9dft6gdrv`，Argo revision
+   `87d5003cbea180edb1b3b02e3cc724462b7af34e`，API镜像
+   `sha256:2b44930be720cadd47aa1a83941bf042f5fb910faac591a1e371e833abfa26ba`。
+   convergence摘要 `9b9d3a9d2a8e464307baab6642fe0455e21a2f26ac56f2b81509e909ac03c810`，
+   保留全部现有UID、A/B Application与Runtime，三节点三AZ及self-heal通过；独立只读重验
+   `inv-e9dfw5g27n`再次确认十四资源、四路由与private endpoint一致，收据摘要
+   `8e1b7b1ef88c04f0b206528f451a71ace3de5f738aade043964fcfd882ed2046`。
+   发布与重验只完成诊断落地，不覆盖万级活跃资格或原超时根因。
    10k observer 还会把两 Cell 的 FDB CR configured/generation/available/fullReplication/healthy
    和全部 FDB Pod readiness 纳入每个 complete sample；存储冗余降级时即使请求暂时成功也不能
    取得容量资格。
@@ -294,6 +330,59 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    工厂增量构建允许严格选择已审阅 root，仍先验证完整 source manifest 与五项 foundation lock；
    完整 generation 仍需全部 11 个产品收据、28 个仓库及 exact dependency closure。未变化 root
    通过现有有效收据或全新隔离 registry cold-pull 复用，不把无关上游仓库可达性变成 leaf 发布前置。
+   区域镜像复验入口从显式审阅的现有完整 inventory 继承 mirror provenance，并与 canonical upstream
+   lock 精确比较；17 个区域 digest 各经独立空 VFS graph 拉取及实际平台检查后，生成新的 seed 和
+   `actor-regional-image-seed-revalidation/v1` proof。它不访问公共上游、不恢复旧 seed preimage，也
+   不声称独立验证 origin。新 seed 仍必须与 11 个依赖闭合产品收据组装成完整 28 项 inventory，
+   才能进入正式 release；原 inventory 不被覆盖。
+   北京 builder 的真实复验 `inv-d9d7am0pq3` 已通过 17/17 平台检查，canonical assembler 完成
+   11/28 closure，新 inventory digest 为
+   `sha256:8e85a0d9abb56c045d60d1f592d9e6172d224c7966ec428a2127b4ab4322e8c4`。它解除了
+   镜像清单阻塞，不证明 controller 恢复、Runtime rollout 或 strict 10k 已通过。
+   随后的正式 A controller-first release `inv-e9d7gqgp3v` 与 B normal release
+   `inv-c9d83v01pt` 均已终态 SUCCESS/0；A 使用显式 recovery=1，B 不开启恢复路径。
+   独立只读审计 `inv-d9d8a90q8b` 重新读取两 Cell static ledger、外部不可变 receipt、live workload
+   与 Pod image IDs，均为零 drift，且两边 Engine 6/6、Host 4/4、controller singleton Recreate；
+   既有 Host/controller UID 未变、Host revision 已收敛、release hold 正常释放。
+   两边现场配置均精确为每 Engine refresh=8/compaction=2，主 FDB available/fullReplication/healthy
+   且 generation=reconciled=2。Cell-neutral release artifact digest 为
+   `sha256:3a3f47792c10d999358cdfe5e8e616dbcebad8344605d83d171c5924522c3ea0`；
+   A/B releaseId 分别为 `sha256:a6ce4fc13fa7294e2e78c152820ed978f521b689affe3fea1af60eba9b9effdd`
+   与 `sha256:847138778c90244666e9c625eba9d14b6e985a772c2e3ca36bd6aaf3d63618b7`。
+   官方 TAT 下载分别验真文件 SHA-256
+   `dd26f2cb7687118734b1e96f3f4be9f003edf9ee9ef52273fc189db3acd27ca3` 与
+   `33863eb5d378089e8843cadde52aa402d4a1a88d82028362430b7a123da5cca1`；
+   收据在各 Cell 的 `receipts/runtime-release-c5923a4e/`，本地归档为
+   `/data/tmp/minisandbox-{a01,b01}-runtime-release-c5923a4e-ledger.json`。
+   A 卡住的零尝试意图已由新 controller 按 CAS 恢复，随后实际/Ready/desired Node 从 201
+   自动串行减少到 156，最新精确 provider acknowledgement 为 157→156；B 已回到四台。
+   这是恢复与缩容进展，不是 A 已回低容量的最终证据。正式 release 已按既有契约关闭 reporter
+   placement qualification，不能用更新镜像后的旧 receipt 重新开放。低容量收尾、当前 Runtime
+   重新绑定资格、strict 10k 和 Router 性能仍未完成，旧失败 cleanup 仍须续接原句柄。
+   后续只读采样 `inv-e9d966gx34` 于 06:07:09 UTC 确认 A actual/Ready/desired Node 已降至 85，
+   最近 acknowledgement 为 86→85，B 仍为四台。重新审计原 A/B immutable control 后确认两者的
+   既有资格模式均为 `initial-cell`；恢复该模式不构成降级，也不代替 autoscaling/strict 10k 证据。
+   B 新严格审计 `inv-e9d973gcuv` 只有旧 Bottomless release binding 与旧 Engine HA receipt 两项
+   失败，无 warning；FDB、备份、三域拓扑、Engine、Host、static ledger 和 FDB 自动扩容稳态均通过。
+   旧 10k 处于 Object cleanup 完成后的 final capacity wait，不再发起流量。经精确 B UID/四台
+   admitted Ready Node/Idle/no intent 检查，正式资格任务 `inv-e9d99rguwf` 已启动并确认 RUNNING，
+   通过完整 operation lock 与 B UID-CAS hold 串行执行 production-cell Bottomless、Engine HA、fresh
+   governance 和正式 qualification publisher。运行中不等于 passed，不允许用旧 receipt 开放 placement。
+   该 B 句柄随后终态 SUCCESS/0：48 Actor、6,240 次写入、online checkpoint 不停服，cold wake
+   p95=1,210.67 ms、p99/max=4,752.22 ms，sleep/wake 和 cleanup 均通过；独立 Engine HA 的
+   1,500 次公共 `/v1` 请求零失败、故障后持久写成功并恢复六副本。Bottomless、Engine HA 和
+   activation 文件 SHA 分别为 `a3528ee61847a1e7c88c21b92c874dc455b5bfe44efea572b4914b1cab3703aa`、
+   `eb547965ab82813dd4b6b6e98a39a4eff895a56c6d5a18fe79de6b251ead2507`、
+   `b5695bd739c574cd15a65807f9d9849296b0b49b7942865f9bbea891cec92b44`；官方传输和本地验证完成。
+   现场只读 `inv-e9d9ktg8be` 进一步证明 B spoke 与中央 Hub 均 Ready/readyForPlacement=true，
+   release digest 精确绑定当前 runtime，Host 4/4、Idle/no hold、Node 4/4/4/no intent；A 仍在
+   47 台串行回收。A 新资格任务 `inv-d9d9jw0nhw` 已启动，首先通过 Kubernetes watch 等待四台
+   低容量，之后才取得 operation lock 并采集 fresh strict audit、运行相同资格链。
+   B 的 production-cell 通过不替代 strict 10k，也不能提前开放未验证的 A。
+   后续只读 `inv-c9da5801w9` 在 06:40:16 UTC 看到 A Node 5/5/5，处于精确 6→5 issued intent。
+   原 A 资格句柄随后已报告 `bottomless_started`，说明其四台 exact UID/Ready/Idle preflight
+   和 fresh governance 已完成，进入持锁资格阶段。句柄仍 RUNNING，不代表 Bottomless/Engine HA
+   已通过；旧 10k final-wait 同样尚未证明终态，不得启动重叠的新 strict 10k。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入
@@ -873,9 +962,71 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 ### Phase 5：资格与演进决策
 
 - 运行百万 dormant Object 元数据和万级 active Object 的分片容量测试；
+- 百万 dormant 的公开路径工具使用本地 manifest schema4：每批请求前先持久化精确 Object ID，
+  整个 phase 持有同一 manifest 的排他锁，禁止与活跃 population/probe 并发清理，进程退出自动释放。
+  成功结果和 confirmation 同事务提交。响应丢失或工具进程被终止后仍按原始 ordinal/probe epoch
+  精确清理；cleanup/summary 不重新发布 Worker，配置不匹配在 Code Plane 写入前拒绝。
+  清理部分运行的全部已尝试 ID 不等于成功创建目标数量，外层资格仍核对完整 inventory 和状态。
+  2026-10-02 真实 HTTP、SQLite 和工具子进程终止回归证明此工具边界，不替代百万云端收据。
+- 容量收据必须在完整采样中保持基线 FDB、Host StatefulSet、MachineSet UID 与已收敛 runtime revision。
+  同名重建不能拼接成一次成功的扩缩容。采样时间须带时区且严格递增，重复 Cell、重复采样时间、
+  非有限或负 active 值不能证明持续容量。峰值按 Cell 分别核对 Ready Host、Ready Machine 与去重后的
+  Ready/admitted Node UID，pending/drain 节点不贡献容量；允许普通扩容增加待准入节点及更换 Node UID。
+  2026-10-02 本地真实子进程回归已复现旧 verifier 对 UID 替换、未准入节点和时间重放的错误放行。
+  新校验只加强离线证据门禁，不改变正在运行的云端请求、3 秒 SLO 或零稳态重试约束。
 - 量化 Router p50/p99/p999、cache hit ratio、Registry TPS、跨 Cell RTT 和每请求 CPU；
+- Router 性能负载与最终采集共用容量收据校验：八项完整周期门禁必须全部存在且为 JSON true，
+  新增检查项也必须为真，active 目标必须是至少10000的整数。空或部分检查表与 truthy 非布尔值
+  不构成完整资格；拒绝发生在资源发布、Prometheus 访问和输出创建前。
 - 只有中央 Router 被证明为瓶颈后，才启动 Cell-local Router 下沉；
 - 不把压测中发现的单 Cell 上限误写成整个产品上限，横向容量通过增加 Cell 扩展。
+- 持续写入与后台队列须分别观察：旧热计划在 Stage 和 Install 都重读当前 head 并核对输入指纹，
+  排队期间 head 推进可能使计划失效重排。`cold_workflow_publish` 的事件有序回归分别暂停于
+  准入前和 Stage 完成后，通过真实 commit 验证拒绝计数、重新规划及最新页读取。
+  准入前暂停仅在 `test-faults` 启用，不在 UDB 事务内阻塞并发 commit；不得为了提升吞吐删除
+  fingerprint、生命周期或 PITR/history 校验。局部复现不等于证明云上每个积压任务的根因。
+  2026-10-02 本地三条真实存储回归确认两处失效及持续写入饥饿：九个计划分别在准入前被
+  新 commit 使其过期，force 耗尽八次重试预算且 root 没有推进，最新页仍正确；这不是云上
+  根因已修复的证据，也没有改变当前运行参数。
+- 热计划现在绑定不可变已提交前缀：planner 仍按原有 FDB key/byte 预算选择上界，Stage 和
+  Install 只读取这段 COMMIT/DELTA；只有证明从未 truncate 的分支才不把后续 head 纳入同一计划。指纹绑定 branch、manifest
+  generation、watermark、所选 txid、完整 COMMIT/DELTA 和当前 history/PITR coverage；PIDX
+  是可变最新 owner，不属于物化输入，Install 仍以 Serializable 读取、条件清理和原子配额计数
+  保留所有未来 owner。新 pin、PITR coverage、生命周期或根 generation 改变仍须拒绝旧证明。
+  三条进展回归验证准入前、Stage 后及连续九次真实写入不再无效重排；四条保护回归验证上述
+  两个边界的新 fork pin 与 PITR 策略改变仍重排，并保留最新页和 fork 历史读取。这是本地证据，
+  不是已发布或 strict10k 已通过；新指纹域使旧未完成计划安全重排，不改变持久数据 schema。
+  commit 原子维护新固定宽度索引 `META/truncate_txid`：首次本地提交写零，shrink 写其 txid，
+  之后 growth 不清零；缺失或正数的分支保留旧 head fence，非法值 fail closed。truncate 会
+  删除或裁剪 SHARD，不能按普通覆盖写处理。Install 在 body preflight 前及最终发布事务内重验
+  同一 input identity；检查中 SHARD 消失后，也必须独立证明 stale 才允许重排，真损坏仍报错。
+  DELTA 合并按每次 commit 的 EOF 截断，历史 coverage 使用自己的文件尺寸，避免 growth 复活
+  旧页。完整十一目标180项回归已通过，包括 staged batch/input-check后的 truncate-grow、
+  未知索引、fork历史EOF及坏chunk拒绝；生产非fault check通过，仍不构成云上一万活跃通过。
+- builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
+  集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
+- 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配
+  Actor/generation/index；注入前的 DNS 或日志解析失败不构成 ACK 协议结论。
+- ACK 门禁的业务动作使用 Guard 6420，私有 reconciliation footprint 使用 API Peer 6421，
+  各自转发与就绪检查，不把只存在于 Peer 的检查路由假设为公共 API。
+- 2026-10-02 北京 B 的真实 ACK 断线门禁已通过，run `efdbc1c7c33f496ab0593feaed1f7f66`，
+  TAT `inv-e9dcgq0tjt` 为 SUCCESS/0，收据 SHA-256 `37e8f31cf9fe8e5a5b7f2b24202c68d98d087f0192932d27fe78a9231f9d0cbe`。
+  本次边界是 `after_commit_before_barrier`，Stop side effect 一次、ACK replay/barrier 各一次，
+  backlog 为零，Counter 1→2 且 Actor/Cell 身份不变。其他断线边界不能由本收据推定通过。
+- C 缺少当前 pinned revision 的 convergence 收据时，使用正式只读 recertify 恢复 CAS 基线；
+  serving 必须绑定十四项 tracked resource、两条 private endpoint 的安全策略、immutable Secret
+  以及四个外置 Cell identity/serving route ConfigMap 的 UID 和路由摘要。只读重验不构成压力、
+  业务准入或历史 self-heal 资格；漂移失败不得通过修改现网或手工拼收据来绕过。
+- immutable 身份路由只允许五个身份字段，或额外包含完整四个资格审计 SHA-256 字段；未知字段、
+  部分审计摘要、畸形摘要及 UID 改变都拒绝。审计字段不参与网络寻址，原 immutable UID 保护其原始内容。
+- 2026-10-02 C 正式发布 TAT `inv-a9deatgjx5` SUCCESS/0，Argo revision
+  `10b5ef6eeac98a1c9844df0e5fae023a708816a8`，Workers API 镜像
+  `sha256:2f7b6e9b4687f566163b4ee6b5ad7eb6275ac413c903b578e887163ede0e0d2a`。
+  发布 convergence 摘要 `57207003ec5f365a94628d2c56feee114bff0f9b9164af37e74af4b00c42b602`，
+  保留 Deployment、两条 CLB、Secret 的 UID/VIP 与 A/B Application，三副本三节点三 AZ，自愈通过。
+  后置独立只读重验 `inv-d9dedt0wte` SUCCESS/0，收据摘要
+  `c0b636478ee294319390cba719aa2cadcd3522bf5e60604b10d69ac650706bf8`，十四资源和四路由一致。
+  该证据只完成 C 发布边界，不替代随后启动的万级低容量扩缩容资格。
 
 ## 必须固化的测试矩阵
 

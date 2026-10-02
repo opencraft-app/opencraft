@@ -356,3 +356,59 @@ func TestModifySurfacesSandboxErrorCode(t *testing.T) {
 		})
 	}
 }
+
+func TestInvokeCommandSupportsParameterlessSkillAndMetadataOnlyResult(t *testing.T) {
+	for _, params := range []map[string]string{nil, {}} {
+		t.Run("empty-parameters", func(t *testing.T) {
+			posts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					posts++
+					var req InvokeCommandRequest
+					if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+						t.Fatal(err)
+					}
+					if req.CommandID != "cmd-skill" || len(req.Parameters) != 0 {
+						t.Fatal("Skill request carried parameters")
+					}
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(TATCommandResponse{CommandID: "cmd-skill", InvocationID: "inv-skill", Status: "PENDING"})
+				} else {
+					_ = json.NewEncoder(w).Encode(TATCommandMetadataResult{TATCommandResponse: TATCommandResponse{CommandID: "cmd-skill", InvocationID: "inv-skill", Status: "SUCCESS"}, ExitCode: 0})
+				}
+			}))
+			defer server.Close()
+			a := NewSandboxAdapter(&config.SandboxConfig{BaseURL: server.URL, APIKey: "synthetic", Timeout: 2}, zap.NewNop())
+			result, err := a.InvokeCommand(context.Background(), "sbx-test", "cmd-skill", params, 2)
+			if err != nil || posts != 1 || result == nil || result.Status != "SUCCESS" || result.Output != "" {
+				t.Fatalf("parameterless invocation failed: result=%+v err=%v posts=%d", result, err, posts)
+			}
+			if _, err := a.InvokeCommand(context.Background(), "sbx-test", "", params, 2); err == nil {
+				t.Fatal("empty command must be rejected")
+			}
+		})
+	}
+}
+
+func TestParameterlessSkillInvokeDoesNotRetryAmbiguousFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		params   map[string]string
+		attempts int
+	}{
+		{"skill", nil, 1}, {"credential", map[string]string{"website_key": "synthetic-only"}, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			posts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { posts++; w.WriteHeader(http.StatusBadGateway) }))
+			defer server.Close()
+			a := NewSandboxAdapter(&config.SandboxConfig{BaseURL: server.URL, MaxRetries: 3, RetryInterval: 1, Timeout: 2}, zap.NewNop())
+			if _, err := a.InvokeCommand(context.Background(), "sbx-test", "cmd-test", tc.params, 2); err == nil {
+				t.Fatal("expected rejected invocation")
+			}
+			if posts != tc.attempts {
+				t.Fatalf("posts=%d want %d", posts, tc.attempts)
+			}
+		})
+	}
+}

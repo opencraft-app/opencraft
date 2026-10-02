@@ -284,15 +284,14 @@ func (h *handler) postInternalTATInvoke(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid command_id"})
 		return
 	}
-	allowedID := h.allowedTATCommandID
-	if h.allowedTATCommandIDsByRegion != nil {
-		allowedID = strings.TrimSpace(h.allowedTATCommandIDsByRegion[strings.TrimSpace(sb.Region)])
-	}
-	if allowedID == "" || req.CommandID != allowedID {
+	skillCommand, credentialCommand := h.websiteTATCommandKind(strings.TrimSpace(sb.Region), req.CommandID)
+	if !skillCommand && !credentialCommand {
 		c.JSON(http.StatusForbidden, gin.H{"error": "command_id is not allowed"})
 		return
 	}
-	if len(req.Parameters) == 0 || len(req.Parameters) > maxTATParameterCount {
+	// Only the exact Skill-only command may omit parameters; never send Key
+	// material to it. Credential parameters retain their original validation.
+	if (skillCommand && len(req.Parameters) != 0) || (credentialCommand && (len(req.Parameters) == 0 || len(req.Parameters) > maxTATParameterCount)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid parameters"})
 		return
 	}

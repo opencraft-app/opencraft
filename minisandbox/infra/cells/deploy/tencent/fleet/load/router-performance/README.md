@@ -28,6 +28,21 @@ authoritative placement through Registry, deletes the temporary Objects, and
 retains the terminal Durable Object Worker namespace as required by the public
 API safety model.
 
+Registry `/readyz` is checked before publishing any temporary resource. For a
+builder outside the Hub cluster, select `--registry-service worker-registry`
+and `--registry-namespace worker-registry-system` instead of using the cluster's
+internal DNS name. The runner owns the Hub port-forward and closes it on both
+normal and exceptional exits. A reachable direct `--registry-endpoint` remains
+available, mutually exclusive with the Service selector.
+
+Preparation failure also produces a failed receipt and cleans only the exact
+Object IDs attempted by this run, including a request whose response was lost.
+The receipt records attempted/deleted IDs and per-Object cleanup errors for
+recovery. Confirmed Objects require DELETE 204/410; 404 is accepted only for
+unconfirmed attempts that may never have been created. No non-idempotent
+dispatch is retried. Publishing, preparation and cleanup requests are excluded
+from the load latency histogram.
+
 ```bash
 ./run.py \
   --endpoint http://10.160.0.3:6688/v1 \
@@ -38,10 +53,15 @@ API safety model.
   --receipt "$RUN/router-binding-load.json"
 ```
 
-The reviewed builder entrypoint resolves the current public `/v1`, Registry
-endpoint and Hub kubeconfig from authoritative receipts/live desired state. It
+The reviewed builder entrypoint resolves the current public `/v1` and Hub
+kubeconfig from authoritative receipts and selects the Hub Registry Service. It
 refuses to create temporary resources unless the exact capacity receipt is a
 complete passed 10k cycle, then runs both the five-minute load and collector:
+
+容量前置门禁与最终采集共用 `capture.py` 的 `validate_qualification`。八项周期检查必须全部存在，
+每个值必须为 JSON `true`；空或部分表、字符串 `"false"`、整数 `1` 均不能替代通过。
+新增检查项也必须为真，`expected.active` 必须为至少10000的整数。builder 在创建输出目录和
+发布临时资源前检查，collector 在访问 Prometheus 或生成证据前重复同一检查。
 
 ```bash
 ACTOR_REVIEWED_SOURCE=/var/lib/actor-build/deploy/q01-src-<revision>-<manifest> \

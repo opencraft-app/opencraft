@@ -23,6 +23,7 @@ describe('resolvePostLoginRoute', () => {
   it('never leaves a subscribed user without an agent creation entry', () => {
     expect(resolvePostLoginRoute({ isSubscribed: true, hasBots: false })).toBe(JOURNEY_ROUTE.AGENTS_CREATING);
   });
+
 });
 
 describe('resolveCtaRoute', () => {
@@ -44,7 +45,7 @@ describe('resolveCtaRoute', () => {
     );
   });
 
-  it('handles the subscribed-without-agent transition inside the console', () => {
+  it('sends any subscribed account without a current Bot to creation', () => {
     expect(resolveCtaRoute({ isAuthenticated: true, isSubscribed: true, hasBots: false })).toBe(
       JOURNEY_ROUTE.AGENTS_CREATING,
     );

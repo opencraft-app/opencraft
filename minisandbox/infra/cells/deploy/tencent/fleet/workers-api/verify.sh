@@ -100,11 +100,16 @@ assert secret_keys["OBJECT_ROUTER_B_TOKEN"] == "object-router-b-token"
 print("workers-api production manifest: PASS")
 PY
 python3 "$script_dir/qualify-public-admission.py" --help >/dev/null
-PYTHONPATH="$script_dir" python3 -m unittest \
-	"$script_dir/test_render.py" "$script_dir/test_qualify_public_admission.py" \
-	"$script_dir/test_credentials_contract.py" "$script_dir/test_sync_credentials.py"
+(
+	cd "$script_dir"
+	PYTHONPATH="$script_dir" python3 -m unittest \
+		test_render test_qualify_public_admission test_credentials_contract test_sync_credentials
+)
 python3 "$script_dir/test_install.py"
 bash -n "$script_dir/sync-credentials.sh" "$script_dir/gitops/publish.sh" \
 	"$script_dir/gitops/install-application.sh" "$script_dir/gitops/recertify-live-convergence.sh" \
 	"$script_dir/gitops/rollback-failed-bootstrap.sh"
-PYTHONPATH="$script_dir/gitops" python3 -m unittest "$script_dir/gitops/test_gitops.py"
+(
+	cd "$script_dir/gitops"
+	PYTHONPATH="$script_dir/gitops" python3 -m unittest test_gitops test_serving_recertification
+)

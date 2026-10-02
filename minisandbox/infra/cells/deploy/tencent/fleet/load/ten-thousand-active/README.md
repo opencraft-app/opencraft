@@ -29,6 +29,19 @@ up to 36 hours for the ordinary five-minute serial drain policy to return both
 Cells to the floor. The resulting receipt binds the load receipt and the
 15-second capacity trace by SHA-256.
 
+Capacity truth is identity-bound. Every complete sample must retain the
+baseline FoundationDB, Host StatefulSet and canonical MachineSet UIDs and the
+same converged Host runtime revision. Recreating a same-name resource or
+rolling the runtime during qualification fails `capacityIdentityStable`.
+Duplicate Cell entries or replayed/non-increasing observation timestamps fail
+`capacityTraceValid`; active measurements must be finite and nonnegative.
+
+Peak capacity is checked per Cell, not by borrowing spare Hosts from its peer.
+Every Ready Host counted as capacity needs a distinct Ready/admitted Node UID
+without admission/drain taints, as well as a Ready Machine. Additional pending
+Nodes and normal Node replacement during scale-out are allowed, but contribute
+no usable capacity. The final floor also requires distinct admitted Node UIDs.
+
 The gate requires three consecutive complete samples at or above 10,000 active
 Agents, canonical Machine/Host growth above the initial floor, an observed
 post-load drain phase, and final convergence with all eight canonical Nodes

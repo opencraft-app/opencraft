@@ -1020,10 +1020,13 @@ func (a *API) fetchActorAtURL(writer http.ResponseWriter, request *http.Request,
 	if token := a.tokenForURL(engine); token != "" {
 		forwarded.Header.Set("Authorization", "Bearer "+token)
 	}
+	forwarded, transportTrace := traceFetchRequest(forwarded)
 	response, err := a.fetchClient.Do(forwarded)
 	if err != nil {
-		slog.WarnContext(request.Context(), "Worker fetch transport failed",
-			"request_id", requestID(request), "engine", engine.Host, "error", err)
+		attrs := append(transportTrace.attributes(),
+			slog.String("request_id", requestID(request)), slog.String("engine", engine.Host),
+			slog.Any("error", err))
+		slog.Default().LogAttrs(request.Context(), slog.LevelWarn, "Worker fetch transport failed", attrs...)
 		// Once the request is handed to the HTTP transport, the target Object may
 		// already have executed and committed a side effect even if no response
 		// headers reached the Router. Do not advertise a transparent retry: doing

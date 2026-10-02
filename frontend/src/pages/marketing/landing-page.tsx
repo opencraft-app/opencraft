@@ -36,6 +36,7 @@ import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
 import { OverviewAutomationTasksSection } from "./scenario-tasks/OverviewAutomationTasksSection";
 import { getOverviewScenarioTaskPacks } from "./scenario-tasks/overview-packs";
+import { REOPEN_PRICING_MODAL_EVENT } from "@next-site/use-post-login-redirect";
 
 const NO_INSTALLED_SCENARIOS: ReadonlySet<string> = new Set();
 
@@ -117,16 +118,21 @@ export const LandingPageView = ({
         target,
       },
     });
-    // 未登录：跳订阅套餐页（未登录可浏览静态价格，点「订阅」时再引导登录）
+    const openFreeTrial = () => {
+      const event = new CustomEvent(REOPEN_PRICING_MODAL_EVENT, { detail: { handled: false } });
+      window.dispatchEvent(event);
+      if (!event.detail.handled) navigateTo(SUBSCRIBE_PATH);
+    };
+    // 首页主按钮此时展示「免费试用」，在原页打开弹窗；无弹窗容器时回退到完整页。
     if (!isAuthenticated) {
-      navigateTo(SUBSCRIBE_PATH);
+      openFreeTrial();
       return;
     }
     // 功能点1：首页「创建」不再前置实名认证，已登录用户直接进入后续流程。
     // 实名引导下沉到订阅套餐页点「订阅」按钮时通过 tips 提示，降低前置门槛、提升转化。
-    // 已登录但未订阅：先去订阅页
+    // 已登录但未订阅：仍是「免费试用」入口。
     if (!isSubscribed) {
-      navigateTo(SUBSCRIBE_PATH);
+      openFreeTrial();
       return;
     }
     // 已登录且已订阅：有智能体则进 agent 默认页（/agents），
@@ -145,8 +151,8 @@ export const LandingPageView = ({
       ? t("免费试用")
       : t("立即创建");
   const renderFooterLink: RenderFooterLink | undefined = renderLink
-    ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
-        renderLink({ ariaLabel, children, className, href, onClick })
+    ? ({ "aria-label": ariaLabel, children, className, href, onClick, "data-pricing-modal": pricingModal }) =>
+        renderLink({ ariaLabel, children, className, href, onClick, "data-pricing-modal": pricingModal })
     : undefined;
   const handleOverviewAutomationClick = useCallback(() => {
     navigateTo(AGENT_SECTION_PATH_BY_ID.automations);

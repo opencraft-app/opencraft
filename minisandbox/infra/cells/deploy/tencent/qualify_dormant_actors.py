@@ -16,6 +16,8 @@ to be reached over loopback on the cloud host.
 
 import argparse
 import concurrent.futures
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import math
@@ -32,7 +34,7 @@ import uuid
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 MAX_CONCURRENCY = 256
 MAX_BATCH_SIZE = 4096
 PUBLIC_CLASS_NAME = "Agent"
@@ -306,6 +308,20 @@ def connect_manifest(path: pathlib.Path) -> sqlite3.Connection:
             operation_retries INTEGER NOT NULL DEFAULT 0
                 CHECK(operation_retries >= 0)
         );
+        CREATE TABLE IF NOT EXISTS public_attempts (
+            object_id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL CHECK(kind IN ('actors', 'probes')),
+            ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+            prefix TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('pending', 'confirmed', 'deleted')),
+            scheduled_operations INTEGER NOT NULL DEFAULT 1 CHECK(scheduled_operations >= 1),
+            delete_ms REAL,
+            operation_retries INTEGER NOT NULL DEFAULT 0 CHECK(operation_retries >= 0)
+        );
+        CREATE INDEX IF NOT EXISTS public_attempts_cleanup
+            ON public_attempts(object_id) WHERE state != 'deleted';
+        CREATE INDEX IF NOT EXISTS public_attempts_probe_epoch
+            ON public_attempts(prefix) WHERE kind='probes' AND state!='deleted';
         """
     )
     for table in ("actors", "probes"):
@@ -324,6 +340,18 @@ def connect_manifest(path: pathlib.Path) -> sqlite3.Connection:
             )
     db.commit()
     return db
+
+
+@contextmanager
+def manifest_owner(path):
+    path = path.resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_name(path.name + ".lock").open("a+b") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError("manifest is already in use by another qualification phase") from error
+        yield
 
 
 def initialize_manifest(db: sqlite3.Connection, config: Dict[str, str]) -> None:
@@ -516,6 +544,7 @@ def make_public_client(args: argparse.Namespace):
         )
         return {
             "ordinal": ordinal,
+            "object_id": object_id,
             "delete_ms": delete_ms,
             "delete_already_absent": 1 if status == 404 else 0,
         }
@@ -693,7 +722,36 @@ def insert_results(db: sqlite3.Connection, table: str, results: List[Dict[str, A
         """.format(table=table),
         results,
     )
+    db.executemany(
+        "UPDATE public_attempts SET state='confirmed' "
+        "WHERE object_id=:actor_id AND state='pending'",
+        results,
+    )
     db.commit()
+
+
+def record_public_attempts(args, db, kind, ordinals, prefix):
+    if args.api_mode != "workers-v1":
+        return
+    db.executemany(
+        "INSERT INTO public_attempts(object_id,kind,ordinal,prefix,state) "
+        "VALUES (?,?,?,?,'pending') ON CONFLICT(object_id) DO UPDATE SET "
+        "scheduled_operations=public_attempts.scheduled_operations+1 "
+        "WHERE public_attempts.state='pending'",
+        [(public_object_id(args.run_id, index, prefix), kind, index, prefix)
+         for index in ordinals],
+    )
+    # FULL-synchronous SQLite commits precede dispatch to worker threads. A
+    # successful remote mutation with a lost response remains in this journal.
+    db.commit()
+
+
+def record_public_deletions(db, results):
+    db.executemany(
+        "UPDATE public_attempts SET state='deleted',delete_ms=:delete_ms,"
+        "operation_retries=operation_retries+:operation_retries WHERE object_id=:object_id",
+        results,
+    )
 
 
 def populate(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[str]) -> None:
@@ -720,6 +778,7 @@ def populate(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[s
                     break
             if not pending:
                 break
+            record_public_attempts(args, db, "actors", pending, "dormant")
             results, errors = bounded_results(executor, populate_one, pending)
             if results:
                 insert_results(db, "actors", results)
@@ -784,6 +843,13 @@ def probe(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[str]
                 args.target_actors, main_count
             )
         )
+    prefix = "cardinality-probe-{}".format(args.probe_epoch)
+    if args.api_mode == "workers-v1":
+        prior_prefixes = [row[0] for row in db.execute(
+            "SELECT DISTINCT prefix FROM public_attempts WHERE kind='probes' AND state!='deleted'",
+        )]
+        if any(prior != prefix for prior in prior_prefixes):
+            raise RuntimeError("unfinished probe epoch must be cleaned before selecting a new epoch")
     records = sample_records(db, args.target_actors, args.probe_actors)
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=args.concurrency, thread_name_prefix="dormant-probe"
@@ -818,9 +884,8 @@ def probe(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[str]
         ]
         for offset in range(0, len(probe_ordinals), args.batch_size):
             batch = probe_ordinals[offset : offset + args.batch_size]
-            fn = lambda index: populate_one(
-                index, "cardinality-probe-{}".format(args.probe_epoch)
-            )
+            record_public_attempts(args, db, "probes", batch, prefix)
+            fn = lambda index: populate_one(index, prefix)
             results, errors = bounded_results(executor, fn, batch)
             if results:
                 insert_results(db, "probes", results)
@@ -849,6 +914,8 @@ def probe(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[str]
                     "WHERE ordinal=:ordinal",
                     results,
                 )
+                if args.api_mode == "workers-v1":
+                    record_public_deletions(db, results)
                 db.commit()
             if errors:
                 raise RuntimeError(
@@ -860,6 +927,9 @@ def probe(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[str]
 
 def cleanup(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[str]) -> None:
     _, _, delete_one = make_client(args, token)
+    if args.api_mode == "workers-v1":
+        cleanup_public_attempts(args, db, delete_one)
+        return
     with concurrent.futures.ThreadPoolExecutor(
         max_workers=args.concurrency, thread_name_prefix="dormant-cleanup"
     ) as executor:
@@ -890,6 +960,46 @@ def cleanup(args: argparse.Namespace, db: sqlite3.Connection, token: Optional[st
                     ) from errors[0][1]
 
 
+def cleanup_public_attempts(args, db, delete_one):
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=args.concurrency, thread_name_prefix="dormant-cleanup",
+    ) as executor:
+        while True:
+            batch = db.execute(
+                "SELECT ordinal,object_id,kind,prefix FROM public_attempts "
+                "WHERE state!='deleted' ORDER BY object_id LIMIT ?", (args.batch_size,),
+            ).fetchall()
+            if not batch:
+                break
+            for ordinal, object_id, kind, prefix in batch:
+                bound = args.target_actors if kind == "actors" else args.probe_actors
+                valid_prefix = prefix == "dormant" if kind == "actors" else bool(
+                    re.fullmatch(r"cardinality-probe-[a-z0-9]([-a-z0-9]*[a-z0-9])?", prefix)
+                )
+                if (not valid_prefix or not 0 <= ordinal < bound
+                        or object_id != public_object_id(args.run_id, ordinal, prefix)):
+                    raise RuntimeError("public attempt journal does not match its exact run identity")
+            results, errors = bounded_results(
+                executor, delete_one, [(row[0], row[1]) for row in batch],
+            )
+            if results:
+                record_public_deletions(db, results)
+                for table in ("actors", "probes"):
+                    db.executemany(
+                        "UPDATE {} SET state='deleted',delete_ms=:delete_ms,"
+                        "delete_already_absent=:delete_already_absent,"
+                        "operation_retries=operation_retries+:operation_retries "
+                        "WHERE actor_id=:object_id".format(table), results,
+                    )
+                db.commit()
+            if errors:
+                raise RuntimeError(
+                    "{} public cleanup(s) failed; first ordinal {}".format(
+                        len(errors), errors[0][0][0],
+                    )
+                ) from errors[0][1]
+
+
 def manifest_digest(db: sqlite3.Connection) -> str:
     digest = hashlib.sha256()
     for table in ("actors", "probes"):
@@ -902,6 +1012,13 @@ def manifest_digest(db: sqlite3.Connection) -> str:
             encoded = json.dumps(row, separators=(",", ":")).encode("utf-8")
             digest.update(len(encoded).to_bytes(8, "big"))
             digest.update(encoded)
+    digest.update(b"public_attempts\0")
+    for row in db.execute(
+            "SELECT object_id,kind,ordinal,prefix,state,scheduled_operations "
+            "FROM public_attempts ORDER BY object_id"):
+        encoded = json.dumps(row, separators=(",", ":")).encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
     return digest.hexdigest()
 
 
@@ -909,6 +1026,7 @@ def summarize(args: argparse.Namespace, db: sqlite3.Connection) -> Dict[str, Any
     metadata = dict(db.execute("SELECT key, value FROM metadata"))
     actor_states = dict(db.execute("SELECT state, COUNT(*) FROM actors GROUP BY state"))
     probe_states = dict(db.execute("SELECT state, COUNT(*) FROM probes GROUP BY state"))
+    attempt_states = dict(db.execute("SELECT state,COUNT(*) FROM public_attempts GROUP BY state"))
     fresh = db.execute("SELECT COUNT(*) FROM actors WHERE created_fresh=1").fetchone()[0]
     idempotent_probe_deletes = db.execute(
         "SELECT COUNT(*) FROM probes WHERE delete_already_absent=1"
@@ -936,14 +1054,21 @@ def summarize(args: argparse.Namespace, db: sqlite3.Connection) -> Dict[str, Any
             else "incomplete"
         )
     else:
+        cleanup_complete = (
+            actor_states.get("dormant", 0) == 0
+            and attempt_states.get("pending", 0) == 0
+            and attempt_states.get("confirmed", 0) == 0
+        ) if args.api_mode == "workers-v1" else (
+            actor_states.get("deleted", 0) == args.target_actors
+        )
         verdict = (
             "passed"
-            if actor_states.get("deleted", 0) == args.target_actors
-            and probe_states.get("dormant", 0) == 0
+            if cleanup_complete and probe_states.get("dormant", 0) == 0
             else "incomplete"
         )
     return {
         "verdict": verdict,
+        "manifest_schema_version": metadata["schema_version"],
         "api_mode": args.api_mode,
         "public_api_only": args.api_mode == "workers-v1",
         "cell_id": args.cell_id,
@@ -969,6 +1094,10 @@ def summarize(args: argparse.Namespace, db: sqlite3.Connection) -> Dict[str, Any
         "manifest_sha256": manifest_digest(db),
         "actor_states": actor_states,
         "probe_states": probe_states,
+        "public_attempt_states": attempt_states,
+        "public_scheduled_operations": db.execute(
+            "SELECT COALESCE(SUM(scheduled_operations),0) FROM public_attempts",
+        ).fetchone()[0],
         "created_fresh": fresh,
         "idempotent_delete_retries": {
             "cardinality_probe": idempotent_probe_deletes,
@@ -1060,19 +1189,23 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     if not args.runner_name or any(not name for name in args.runner_name):
         raise ValueError("at least one non-empty runner-name is required")
     validate_cloud_execution(args)
-    public_release = None
     if args.api_mode == "workers-v1":
         if not args.workers_url.startswith(("http://", "https://")):
             raise ValueError("workers-url must be HTTP(S)")
         if not args.worker_name or not args.class_name:
             raise ValueError("public Worker and class names must be non-empty")
-        public_release = prepare_public_worker(args)
     token = None
     if args.auth_token_env:
         token = os.environ.get(args.auth_token_env)
         if token is None:
             raise ValueError("auth token environment variable is not set")
 
+    with manifest_owner(args.manifest):
+        return run_manifest(args, token)
+
+
+def run_manifest(args, token):
+    public_release = None
     db = connect_manifest(args.manifest)
     try:
         existing_run_id = db.execute(
@@ -1088,17 +1221,35 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             "actor_name": args.actor_name,
             "runner_names": json.dumps(args.runner_name, separators=(",", ":")),
             "target_actors": str(args.target_actors),
+            "probe_actors": str(args.probe_actors),
             "api_mode": args.api_mode,
             "workers_url": args.workers_url if args.api_mode == "workers-v1" else "",
             "worker_name": args.worker_name if args.api_mode == "workers-v1" else "",
             "class_name": args.class_name if args.api_mode == "workers-v1" else "",
-            "version_id": public_release["version_id"] if public_release else "",
-            "deployment_id": public_release["deployment_id"] if public_release else "",
             # A large Agent qualification measures the data plane. Every
             # Object in one run intentionally shares one immutable Version;
             # unique-code publication is a separate Code Plane benchmark.
-            "version_pool_size": "1" if public_release else "0",
+            "version_pool_size": "1" if args.api_mode == "workers-v1" else "0",
         }
+        existing = dict(db.execute("SELECT key,value FROM metadata"))
+        if existing:
+            # Validate the selected endpoint and scope before any Code Plane
+            # write. Recovery must not silently publish to another Worker.
+            initialize_manifest(db, config)
+        if args.api_mode == "workers-v1":
+            if args.mode in ("cleanup", "summary"):
+                if not existing:
+                    raise RuntimeError("public cleanup/summary requires an initialized manifest")
+                public_release = {
+                    "version_id": existing["version_id"],
+                    "deployment_id": existing["deployment_id"],
+                }
+            else:
+                public_release = prepare_public_worker(args)
+        config.update({
+            "version_id": public_release["version_id"] if public_release else "",
+            "deployment_id": public_release["deployment_id"] if public_release else "",
+        })
         initialize_manifest(db, config)
         if args.mode == "populate":
             populate(args, db, token)

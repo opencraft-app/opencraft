@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime
 import importlib.util
 import json
@@ -25,6 +26,7 @@ BOUNDARY = "after_commit_before_barrier"
 ACTOR_NAMESPACE = "default"
 ENGINE_SELECTOR = "fleet.actor.dev/component=engine"
 HOST_SELECTOR = "fleet.actor.dev/component=workerd-host"
+ANSI_SGR = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def load_module(name: str, path: pathlib.Path):
@@ -67,6 +69,10 @@ def listed_ready_pods(kube: runtime.Kubectl, selector: str) -> list[dict]:
         for pod in kube.json("get", "pods", "-l", selector).get("items", [])
         if ready(pod)
     ]
+
+
+def api_peer_forward(kube: runtime.Kubectl, cell: str):
+    return runtime.PortForward(kube, f"service/{cell}-engine", 6421)
 
 
 def container_identity(pod: dict, name: str) -> dict:
@@ -114,6 +120,22 @@ def registry_record(registry: str, worker: str, object_id: str) -> dict:
     return record
 
 
+@contextlib.contextmanager
+def reachable_registry(args):
+    if args.registry_endpoint:
+        yield args.registry_endpoint.rstrip("/")
+        return
+    if not re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", args.registry_service):
+        raise ValueError("Registry service must be a Kubernetes Service name")
+    kube = runtime.Kubectl(args.hub_kubeconfig, args.registry_namespace)
+    forward = runtime.PortForward(kube, f"service/{args.registry_service}", 8080)
+    try:
+        forward.start("/readyz")
+        yield forward.base_url
+    finally:
+        forward.stop()
+
+
 def dispatch_counter(api: str, worker: str, name: str) -> int:
     _, payload = smoke.request(
         "POST",
@@ -149,6 +171,7 @@ def exec_registry_resolve(kube: runtime.Kubectl, pod: str, actor_id: str) -> dic
 
 
 def parse_timestamped_line(line: str) -> tuple[datetime.datetime | None, str]:
+    line = ANSI_SGR.sub("", line)
     prefix, separator, body = line.partition(" ")
     if not separator:
         return None, line
@@ -180,6 +203,7 @@ def line_has_event(
     index: int,
     command_kind: str | None = None,
 ) -> bool:
+    line = ANSI_SGR.sub("", line)
     fields = structured_fields(line)
     if fields:
         if fields.get("message") != message:
@@ -191,16 +215,16 @@ def line_has_event(
         if int(fields.get("index", -1)) != index:
             return False
         return command_kind is None or fields.get("command_kind") == command_kind
-    if message not in line or actor_id not in line:
+    if message not in line:
         return False
-    required = [f"generation={generation}", f"index={index}"]
+    required = {"actor_id": actor_id, "generation": generation, "index": index}
     if command_kind is not None:
-        if not re.search(
-            rf"command_kind=(?:\"|')?{re.escape(command_kind)}(?:\"|')?",
-            line,
-        ):
+        required["command_kind"] = command_kind
+    for name, value in required.items():
+        exact = re.escape(str(value))
+        if not re.search(rf"(?<![A-Za-z0-9_]){name}\s*=\s*(?:\"{exact}\"|'{exact}'|{exact}(?=\s|$))", line):
             return False
-    return all(value in line for value in required)
+    return True
 
 
 def extract_envoy_key(
@@ -209,10 +233,10 @@ def extract_envoy_key(
     matches = []
     patterns = (
         re.compile(r'"envoy_key"\s*:\s*"([A-Za-z0-9_-]{3,128})"'),
-        re.compile(r"envoy_key=([A-Za-z0-9_-]{3,128})"),
-        re.compile(r"envoy_key\s*=\s*([A-Za-z0-9_-]{3,128})"),
+        re.compile(r"envoy_key\s*=\s*[\"']?([A-Za-z0-9_-]{3,128})(?:[\"']|(?=\s|$))"),
     )
     for line in lines.splitlines():
+        line = ANSI_SGR.sub("", line)
         if message not in line:
             continue
         timestamp, _ = parse_timestamped_line(line)
@@ -472,6 +496,7 @@ def run(args) -> dict:
     registry = args.registry_endpoint.rstrip("/")
     kube = runtime.Kubectl(args.cell_kubeconfig, args.cell_namespace)
     engine = runtime.PortForward(kube, f"service/{args.cell}-engine", 6420)
+    peer = api_peer_forward(kube, args.cell)
     cell_uids = smoke.ready_cell_uids(args.hub_kubeconfig, set(args.all_cell))
     if args.cell not in cell_uids:
         raise RuntimeError("target Cell is not placement-ready")
@@ -483,6 +508,8 @@ def run(args) -> dict:
     result = None
     counter = 0
     try:
+        engine.start("/health")
+        peer.start("/health")
         _, version = smoke.request(
             "POST",
             f"{api}/workers/{args.worker}/versions",
@@ -509,7 +536,6 @@ def run(args) -> dict:
         ):
             raise RuntimeError("Registry did not bind the qualification Object to the target Cell")
 
-        engine.start("/health")
         host = resolve_host(kube, args.cell, actor_id)
         engine_owner = resolve_engine(kube, args.cell, host["envoyKey"])
         nonce = f"{args.run_id}-{uuid.uuid4().hex[:8]}"
@@ -550,14 +576,17 @@ def run(args) -> dict:
                 raise RuntimeError(f"fault receipt field {key} differs: {fired}")
         if not isinstance(fired.get("index"), int):
             raise RuntimeError("fault receipt lacks the exact command checkpoint index")
+        print(json.dumps({"stage": "fault_verified", "runId": args.run_id, "fault": fired}), flush=True)
 
         sleep_state = runtime.wait_for_sleep(engine.base_url, actor_id, args.timeout)
         host_evidence = wait_for_host_evidence(
             kube, host, actor_id, fired, since_time, args.timeout
         )
+        print(json.dumps({"stage": "host_ack_recovery_verified", "runId": args.run_id, "hostEvidence": host_evidence}), flush=True)
         backlog = wait_for_backlog_zero(
-            engine.base_url, host["envoyKey"], args.timeout
+            peer.base_url, host["envoyKey"], args.timeout
         )
+        print(json.dumps({"stage": "reconciliation_backlog_verified", "runId": args.run_id, "rows": backlog["row_count"]}), flush=True)
 
         counter = dispatch_counter(api, args.worker, name)
         if counter != 2:
@@ -595,6 +624,7 @@ def run(args) -> dict:
         }
     finally:
         engine.stop()
+        peer.stop()
         for pod, path in armed:
             try:
                 remove_remote(kube, pod, path)
@@ -615,7 +645,10 @@ def run(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
-    parser.add_argument("--registry-endpoint", required=True)
+    registry = parser.add_mutually_exclusive_group(required=True)
+    registry.add_argument("--registry-endpoint")
+    registry.add_argument("--registry-service")
+    parser.add_argument("--registry-namespace", default="worker-registry-system")
     parser.add_argument("--hub-kubeconfig", required=True, type=pathlib.Path)
     parser.add_argument("--cell-kubeconfig", required=True, type=pathlib.Path)
     parser.add_argument("--cell", required=True)
@@ -631,7 +664,9 @@ def main() -> int:
         parser.error("--run-id must be 32 lowercase hexadecimal characters")
     if len(set(args.all_cell)) < 2 or args.cell not in set(args.all_cell):
         parser.error("--all-cell must contain the target and at least one peer Cell")
-    result = run(args)
+    with reachable_registry(args) as endpoint:
+        args.registry_endpoint = endpoint
+        result = run(args)
     smoke.publish(args.receipt, result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

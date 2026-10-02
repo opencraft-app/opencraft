@@ -5,8 +5,9 @@ import { Card } from "@/components/ui/card";
 import { ModelActionTooltip as DisabledReasonTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu, CreditCard, RefreshCw } from "lucide-react";
 import React, { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -33,7 +34,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { ACCOUNT_BILLING_PATH, ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreatingPath, getAgentCreateBotPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
+import { ACCOUNT_BILLING_PATH, ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreateBotPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -44,8 +45,13 @@ import { UPGRADE_RETURN_QUERY, validUpgradeQuote } from "@/lib/upgrade-checkout"
 import {
   armPostLoginRedirect,
   disarmPostLoginRedirect,
+  POST_LOGIN_INTENT,
   usePostLoginRedirect,
 } from "./use-post-login-redirect";
+
+function PaymentOverlayPortal({ embedded, children }: { embedded: boolean; children: ReactNode }) {
+  return embedded && typeof document !== "undefined" ? createPortal(children, document.body) : children;
+}
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -64,6 +70,9 @@ const colors = {
   /* Tooltip（免费试用提示等）配色，集中管理避免散落硬编码 */
   tooltipBg: "rgba(23,23,23,0.92)",
   tooltipShadow: "0 4px 16px rgba(0,0,0,0.18)",
+  disabledBg: "var(--surface-muted, #f2f2f2)",
+  disabledText: "var(--text-secondary, #666)",
+  disabledBorder: "var(--border-subtle, rgba(0,0,0,0.06))",
 };
 
 /* ─── 套餐识别常量（避免魔法字符串） ─── */
@@ -1379,6 +1388,11 @@ const SubscribePageHeader = ({
 
 const MotionCard = motion.create(Card);
 
+const compactPlanFeatures = (plan: PlanInfo, t: ReturnType<typeof useT>): PlanFeature[] => {
+  const coreLabels = [t("Bot 数"), t("专属云端环境"), t("专属云端存储"), t("模型积分")];
+  return plan.features.filter((feature) => feature.value && coreLabels.includes(feature.label));
+};
+
 const PlanCard = ({
   variants,
   index,
@@ -1386,6 +1400,8 @@ const PlanCard = ({
   subscribingPlanId,
   currentBots,
   reserveCreditTabSpace,
+  compact = false,
+  showAllFeatures = false,
   subscriptionLocked,
   subscriptionLockReason,
   upgradeTargetIds,
@@ -1402,6 +1418,8 @@ const PlanCard = ({
   currentBots: number;
   /* 是否为「无积分切换」的卡预留等高占位，使其 CTA/功能点与有积分切换的卡对齐 */
   reserveCreditTabSpace?: boolean;
+  compact?: boolean;
+  showAllFeatures?: boolean;
   /* 用户已有生效订阅时锁定新购；仅后端确认的升级目标可启用。 */
   subscriptionLocked?: boolean;
   /* 新购因已有权益或 Agent 锁定时展示的原因；升级目标不消费该提示。 */
@@ -1463,7 +1481,12 @@ const PlanCard = ({
       : undefined;
   /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
   const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
-  const emphasizeBorder = pointerHovered || focusWithin;
+  const emphasizeBorder = !compact && (pointerHovered || focusWithin);
+  /* 弹窗（compact）默认只展示核心差异（Bot 数 / 云端环境 / 存储 / 积分），避免卡片过长；
+     其余权益收进展开按钮，用户可就地查看，不必跳到完整订阅页才知道买到什么。 */
+  const coreFeatures = compact ? compactPlanFeatures(plan, t) : plan.features;
+  /* 核心项无法识别时展示完整权益，不能把可售套餐误写成「暂无详情」。 */
+  const visibleFeatures = compact && !showAllFeatures && coreFeatures.length > 0 ? coreFeatures : plan.features;
 
   return (
     <MotionCard
@@ -1481,13 +1504,17 @@ const PlanCard = ({
       }}
       onPointerEnter={(event) => {
         if (event.pointerType !== "mouse") return;
-        setPointerHovered(true);
-        event.currentTarget.style.transform = "translateY(-2px)";
+        if (!compact) {
+          setPointerHovered(true);
+          event.currentTarget.style.transform = "translateY(-2px)";
+        }
       }}
       onPointerLeave={(event) => {
         if (event.pointerType !== "mouse") return;
-        setPointerHovered(false);
-        event.currentTarget.style.transform = "translateY(0)";
+        if (!compact) {
+          setPointerHovered(false);
+          event.currentTarget.style.transform = "translateY(0)";
+        }
       }}
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
@@ -1514,7 +1541,7 @@ const PlanCard = ({
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col p-5 md:px-7 md:pb-7 md:pt-8">
+      <div className={compact ? "flex min-w-0 flex-1 flex-col p-4 md:px-5 md:pb-5 md:pt-5" : "flex min-w-0 flex-1 flex-col p-5 md:px-7 md:pb-7 md:pt-8"}>
         {/* Header: Name + Description */}
         <div style={{ marginBottom: 16 }}>
           <div
@@ -1546,9 +1573,9 @@ const PlanCard = ({
                   fontSize: isGlobal ? 11 : 12,
                   fontWeight: 600,
                   lineHeight: 1,
-                  color: "#D14081",
-                  background: "#FDE7F0",
-                  border: "1px solid #F7B8D2",
+                  color: "var(--pricing-promo-text)",
+                  background: "var(--pricing-promo-bg)",
+                  border: compact ? "none" : "1px solid var(--pricing-promo-border)",
                   borderRadius: 999,
                   padding: isGlobal ? "3px 8px" : "4px 10px",
                   whiteSpace: "nowrap",
@@ -1804,10 +1831,10 @@ const PlanCard = ({
         )}
         {/* 暂不展示剩余名额；售罄与可订阅状态继续由后端销售状态决定。 */}
         {/* Divider */}
-        <div style={{ height: 1, background: colors.border, marginTop: 4, marginBottom: 24, order: 4 }} />
+        <div style={{ height: 1, background: colors.border, marginTop: 4, marginBottom: compact ? 12 : 24, order: 4 }} />
 
         {/* Features - 售罄 / （无卖点的）未上线时展示占位文案 */}
-        {isSoldOut || (isComingSoon && plan.features.length === 0) || (!isComingSoon && !isSoldOut && plan.features.length === 0) ? (
+        {isSoldOut || plan.features.length === 0 ? (
           <div
             style={{
               flex: 1,
@@ -1848,8 +1875,8 @@ const PlanCard = ({
             )}
           </div>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, flex: 1, display: "flex", flexDirection: "column", gap: 16, order: 5 }}>
-            {plan.features.map((feature, idx) => (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, flex: 1, display: "flex", flexDirection: "column", gap: compact ? 10 : 16, order: 5 }}>
+            {visibleFeatures.map((feature, idx) => (
               <li
                 key={idx}
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:justify-between md:gap-0"
@@ -1966,13 +1993,12 @@ const PlanCard = ({
                 padding: "12px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.15)" : colors.primary,
-                color: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.40)" : colors.white,
+                background: disabled ? colors.disabledBg : colors.primary,
+                color: disabled ? colors.disabledText : colors.white,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
                 cursor: disabled ? "not-allowed" : "pointer",
-                opacity: subscribing ? 0.6 : 1,
                 transition: "background 0.2s, transform 0.15s",
               }}
               onMouseEnter={(e) => {
@@ -1981,7 +2007,7 @@ const PlanCard = ({
                 }
               }}
               onMouseLeave={(e) => {
-                if (isUpgradeTarget || (!isSoldOut && !quotaWouldExceed)) {
+                if (!disabled) {
                   e.currentTarget.style.background = colors.primary;
                 }
               }}
@@ -2001,26 +2027,25 @@ const PlanCard = ({
                 width: "100%",
                 padding: "12px 16px",
                 borderRadius: 8,
-                border: `1px solid ${isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.06)" : colors.border}`,
-                background: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.03)" : colors.white,
-                color: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.35)" : colors.black,
+                border: compact ? "none" : `1px solid ${disabled ? colors.disabledBorder : colors.border}`,
+                background: disabled ? colors.disabledBg : compact ? colors.primary : colors.white,
+                color: disabled ? colors.disabledText : compact ? colors.white : colors.black,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
                 cursor: disabled ? "not-allowed" : "pointer",
-                opacity: subscribing ? 0.6 : 1,
                 transition: "all 0.2s",
               }}
               onMouseEnter={(e) => {
                 if (!disabled) {
-                  e.currentTarget.style.background = colors.warmWhite;
-                  e.currentTarget.style.borderColor = "rgba(0,0,0,0.2)";
+                  e.currentTarget.style.background = compact ? colors.primaryHover : colors.warmWhite;
+                  if (!compact) e.currentTarget.style.borderColor = "rgba(0,0,0,0.2)";
                 }
               }}
               onMouseLeave={(e) => {
-                if (!isSoldOut && !quotaWouldExceed) {
-                  e.currentTarget.style.background = colors.white;
-                  e.currentTarget.style.borderColor = colors.border;
+                if (!disabled) {
+                  e.currentTarget.style.background = compact ? colors.primary : colors.white;
+                  if (!compact) e.currentTarget.style.borderColor = colors.border;
                 }
               }}
             >
@@ -2533,7 +2558,7 @@ const PaymentPendingModal = ({
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
             {timedOut
-              ? t("已收到你的支付，套餐开通稍有延迟，本页会自动完成开通，请勿关闭。")
+              ? t("暂时无法确认订单状态，请稍后查询，避免重复付款。")
               : provisioningOnly
                 ? t("订单已提交，正在等待套餐开通，完成后将自动跳转")
               : bridgeUrl
@@ -2691,8 +2716,26 @@ type SubscribeError = {
 
 type SubscribePageProps = {
   authControls?: ReactNode;
+  /**
+   * 弹窗嵌入模式：只渲染套餐内容，不渲染整页页头/页脚，也不吃页面级 query 定位。
+   * 用于「免费试用」等转化入口在当前页面打开的可关闭定价弹窗；
+   * 顶部导航「价格」仍走独立 /subscribe 页，不带此标记。
+   */
+  embedded?: boolean;
+  /**
+   * 支付回跳接棒模式：宿主页看到 return_url 带回的 pay_return 标记时打开弹窗，
+   * 由弹窗内这份实例接棒「等发货 → 自动建实例 → 跳管理页」。
+   * 弹窗默认不消费回跳（回跳落在宿主页，本来该由独立订阅页接棒）。
+   */
+  resumePayReturn?: boolean;
   publicLocale?: PublicSiteLocale;
   publicLocalized?: boolean;
+  /**
+   * 关闭宿主弹窗的回调，仅 embedded 模式有值。
+   * 弹窗内的「查看全部套餐」要先关掉弹窗再跳整页，
+   * 否则导航后弹窗仍以 layout 级实例盖在 /subscribe 上。
+   */
+  onClose?: () => void;
   renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
 };
@@ -2707,8 +2750,47 @@ const PAY_POLL_TIMEOUT_MS = 180_000;
  * 原窗口的 paying 轮询已经销毁。带上这两个 query 才能在回跳页重新接棒
  * 「等后台发货 → 自动创建实例 → 跳实例管理页」。
  */
-const PAY_RETURN_QUERY_KEY = "pay_return";
-const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
+export const PAY_RETURN_QUERY_KEY = "pay_return";
+export const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
+
+/* 未完成的支付意图：按账号记录套餐 id，存 sessionStorage（关标签页即失效）。
+   用途是给「付了款但把收银台/弹窗关了」的用户一个查询入口，不是支付凭证。 */
+const PENDING_PAYMENT_STORAGE_KEY = "lv-pending-payment-plan";
+type PendingPaymentPlan = { userId: string; planId: string };
+
+const readPendingPaymentPlan = (): PendingPaymentPlan | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_PAYMENT_STORAGE_KEY);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const { userId, planId } = value as Partial<PendingPaymentPlan>;
+    return typeof userId === "string" && userId.length > 0 && typeof planId === "string" && planId.length > 0
+      ? { userId, planId }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const writePendingPaymentPlan = (payment: PendingPaymentPlan): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(PENDING_PAYMENT_STORAGE_KEY, JSON.stringify(payment));
+  } catch {
+    /* 存储不可用时忽略：这只是兜底提示，不该让支付链路挂掉。 */
+  }
+};
+
+const clearPendingPaymentPlan = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
+  } catch {
+    /* 同上 */
+  }
+};
 
 /** 套餐卡片区锚点：积分包区域的「先开通套餐」需要定位回这里。 */
 const PLANS_SECTION_ID = "subscribe-plans";
@@ -2722,8 +2804,11 @@ const CREDIT_SECTION_QUERY_VALUE = "credits";
 
 export const SubscribePage = ({
   authControls,
+  embedded = false,
+  resumePayReturn = false,
   publicLocale,
   publicLocalized,
+  onClose,
   renderLanguageSwitcher,
   renderLink = renderAppHeaderLink,
 }: SubscribePageProps = {}) => {
@@ -2733,8 +2818,13 @@ export const SubscribePage = ({
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
   const { isLoggedIn, isSubscribed, subscribe, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
+  /* 已有生效权益（订阅 / pass / Bot）：既锁定新购，也决定套餐区副标题对新老用户的口径。 */
+  const hasExistingPlan = isSubscribed || activePass !== null || bots.length > 0;
+  /* 弹窗内跳完整定价页：带上当前路由语种前缀，避免国际站被跳回默认语种。 */
+  const fullPricingPageHref =
+    publicLocalized && publicLocale ? `/${publicLocale.toLowerCase()}${SUBSCRIBE_PATH}` : SUBSCRIBE_PATH;
   const subscriptionLockReason =
-    isSubscribed || activePass !== null || bots.length > 0
+    hasExistingPlan
       ? t("你已订阅「{{plan}}」套餐。", {
           plan: activePass?.bundle_name ?? latestPass?.bundle_name ?? "LightVela",
         })
@@ -2743,14 +2833,22 @@ export const SubscribePage = ({
   void BUNDLE_TYPE_TABS;
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
+  const currentUserId = authReady && isAuthenticated ? session.user?.id ?? null : null;
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
+  /* 弹窗里的套餐共用一个权益展开状态，避免两张卡出现相反的展开状态。 */
+  const [showAllFeatures, setShowAllFeatures] = useState(false);
   /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
   const [showLoginModal, setShowLoginModal] = useState(false);
-  /* 登录成功后按订阅状态分流：已订阅 → /agents（不让其停在订阅页再次购买，issue #73 红线），
-     未订阅 → 留在 /subscribe 继续开通。等权益快照就绪再跳，2.5s 超时兜底按未订阅处理。 */
-  const redirectAfterLogin = usePostLoginRedirect({ locale: publicLocale ?? DEFAULT_LOCALE });
   const [error, setError] = useState<SubscribeError | null>(null);
+  /* 登录成功后只按本次成功刷新的权益快照分流；状态未知时留在原页提示重试。 */
+  const redirectAfterLogin = usePostLoginRedirect({
+    locale: publicLocale ?? DEFAULT_LOCALE,
+    onEntitlementUnavailable: () => setError({
+      code: "entitlement_unavailable",
+      message: t("订阅状态暂时无法确认，请重试。"),
+    }),
+  });
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
   const [selectedPlan, setSelectedPlan] = useState<PlanInfo | null>(null);
   /* 邀请码守卫：未激活邀请码时拦截「立即开通」，弹窗输入后自动继续 */
@@ -2765,6 +2863,8 @@ export const SubscribePage = ({
   /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
      页面级套餐 Loading 结束后积分区才挂载，因此加载状态必须参与重试时机。 */
   useEffect(() => {
+    /* 弹窗嵌入模式不吃页面级 query：宿主页的 ?section= 不应滚动宿主页面。 */
+    if (embedded) return;
     if (bundlesInitialLoading) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -2785,7 +2885,8 @@ export const SubscribePage = ({
 
   const paidBillingEnabled = usePaidBillingEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
-  const upgradePassId = typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("upgrade_pass_id") ?? undefined;
+  /* 弹窗嵌入模式不吃宿主页 query：宿主页的 upgrade_pass_id 不应误启升级链路。 */
+  const upgradePassId = embedded || typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("upgrade_pass_id") ?? undefined;
   const upgrade = usePassUpgrade({ userId: session.user?.id, passId: upgradePassId, enabled: paidBillingActive && isAuthenticated, currentPass: activePass });
   const upgradeTargetIds = useMemo(() => new Set(upgrade.options.map((option) => option.target_bundle_id)), [upgrade.options]);
   const [upgradeSelection, setUpgradeSelection] = useState<{ passId: string; targetBundleId: string; initialOption: PassModifyOption } | null>(null);
@@ -3046,6 +3147,12 @@ export const SubscribePage = ({
     }
     return groups;
   }, [planList, t]);
+  const hasHiddenFeatures = embedded && planTiers.some((tier) =>
+    tier.variants.some((plan) => {
+      const coreCount = compactPlanFeatures(plan, t).length;
+      return coreCount > 0 && coreCount < plan.features.length;
+    }),
+  );
 
   // 初次加载时只让源套餐所在卡选中当前套餐；其他卡保持原有默认展示。
   // 后续套餐卡各自保留用户选择，按钮资格只由后端目标列表决定。
@@ -3055,6 +3162,7 @@ export const SubscribePage = ({
   /* 付费过程上下文：国内站走 bridge 中转页二维码方案；国际站走信用卡 hosted page 跳转。
      保存当前订单 deal_names + 已选套餐 + 支付页 URL，供 PaymentPendingModal 渲染。 */
   const [paymentContext, setPaymentContext] = useState<{
+    userId: string | null;
     plan: PlanInfo;
     dealNames: string[];
     /** 国内站：中转页二维码 URL */
@@ -3097,6 +3205,66 @@ export const SubscribePage = ({
      用 ref 而非 state：轮询回调里必须同步读到最新值，state 异步更新拦不住并发。 */
   const finalizingRef = useRef(false);
 
+  /*
+   * 上次未完成的支付：付了款却关掉收银台 / 关掉弹窗的人靠它找回接棒。
+   *
+   * 存 sessionStorage 是必须的 —— 弹窗关闭会卸载这份订阅页实例，
+   * state 留不住，用户重新打开弹窗或刷新页面后就再也找不到入口了。
+   */
+  const [pendingPayment, setPendingPayment] = useState<PendingPaymentPlan | null>(readPendingPaymentPlan);
+  const previousUserIdRef = useRef(currentUserId);
+  const pendingPayPlanId = currentUserId && pendingPayment?.userId === currentUserId
+    ? pendingPayment.planId
+    : null;
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (previousUserIdRef.current !== currentUserId) {
+      setPaymentContext(null);
+      setSelectedPlan(null);
+      setModalStep("closed");
+    }
+    previousUserIdRef.current = currentUserId;
+    const stored = readPendingPaymentPlan();
+    if (!currentUserId || (stored && stored.userId !== currentUserId)) {
+      clearPendingPaymentPlan();
+      setPendingPayment(null);
+      return;
+    }
+    setPendingPayment(stored);
+  }, [authReady, currentUserId]);
+
+  const rememberPendingPayment = useCallback((planId: string, ownerUserId: string | null = currentUserId) => {
+    if (!currentUserId || ownerUserId !== currentUserId) return;
+    const payment = { userId: currentUserId, planId };
+    writePendingPaymentPlan(payment);
+    setPendingPayment(payment);
+  }, [currentUserId]);
+
+  /* 只查权益、不重新下单：已付款的人不该被要求再付一次。 */
+  const handleResumePendingPayment = useCallback(() => {
+    const plan = planList.find((item) => item.id === pendingPayPlanId);
+    if (!plan) return;
+    setError(null);
+    setSelectedPlan(plan);
+    /* dealNames 留空：这里没有原订单号，轮询只依赖 pass 状态。 */
+    setPaymentContext({ userId: currentUserId, plan, dealNames: [] });
+    setModalStep("paying");
+  }, [pendingPayPlanId, planList, currentUserId]);
+
+  const handleReopenPendingPayment = useCallback(() => {
+    const plan = planList.find((item) => item.id === pendingPayPlanId);
+    if (!plan) return;
+    setError(null);
+    setSelectedPlan(plan);
+    setModalStep("confirm");
+  }, [pendingPayPlanId, planList]);
+
+  const handleDismissPendingPayment = useCallback(() => {
+    clearPendingPaymentPlan();
+    setPendingPayment(null);
+  }, []);
+
   /* 重复使用的收尾逻辑：subscribe + navigate（订阅成功后收敛订阅态并跳转）。
      供多个链路（免费试用 / 付费下单后 / 支付回跳）复用。
      注意：已不在此处 addBot——首个 Bot 的创建改由控制台命名向导承接（见下方 navigate 注释）。 */
@@ -3108,19 +3276,23 @@ export const SubscribePage = ({
        防「重复创建」靠的是下面的闸门②，不是这个标志位。 */
     if (finalizingRef.current) return;
     finalizingRef.current = true;
+    /* 已确认成交：清掉「未完成支付」的兜底提示，别让开通成功后还挂着查询入口。 */
+    clearPendingPaymentPlan();
+    setPendingPayment(null);
     try {
       /* 幂等闸门②：账号下已有实例说明发货后实例已建好（如原窗口先完成、或用户重复回跳），
          此时只做跳转，不再创建。 */
+      /* 发货后已有实例（原窗口先完成、或用户重复回跳）属于非首次用户，进入正常列表。 */
       const existingBot = botsRef.current[0];
       if (existingBot) {
         subscribe();
         setModalStep("closed");
         setSelectedPlan(null);
         setPaymentContext(null);
-        navigate(getAgentCreatingPath(existingBot.id));
+        navigate(AGENTS_HOME_PATH);
         return;
       }
-      /* 订阅成功但账号还没有 Bot：不再在这里写死默认名自动建 Bot，而是跳到控制台的
+      /* 订阅成功但账号当前没有 Bot（含删光后重新购买）：跳到控制台的
          命名向导（/agents?create=1），让用户为首个 Bot 命名后再创建——与「删除后重建」
          的命名流程完全一致，避免两条路径体验分叉（首次订阅无命名、重建有命名）。
          真正的 addBot 由控制台 createBotAndNavigate 在用户确认命名后执行。 */
@@ -3215,10 +3387,10 @@ export const SubscribePage = ({
     });
 
     /* bridge：渲染二维码，用户微信扫码 → 中转页支付，PC 端轮询 listMyPasses 接棒 finalize */
-    setPaymentContext({ plan, dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
+    setPaymentContext({ userId: currentUserId, plan, dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
     setSelectedPlan(plan);
     setModalStep("paying");
-  }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
+  }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration, currentUserId]);
 
   const startDianshiOrderAndPay = useCallback(async (plan: PlanInfo) => {
     trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
@@ -3240,6 +3412,7 @@ export const SubscribePage = ({
       time_unit: aiDuration.time_unit,
     });
     setPaymentContext({
+      userId: currentUserId,
       plan,
       dealNames: [order.deal_name],
       provisioningOnly: true,
@@ -3247,7 +3420,7 @@ export const SubscribePage = ({
     setSelectedPlan(plan);
     setModalStep("paying");
     await refreshPasses();
-  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans]);
+  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans, currentUserId]);
 
   /**
    * 国际站信用卡支付链路（正式）。
@@ -3323,13 +3496,13 @@ export const SubscribePage = ({
         /* 占位窗口被拦截（浏览器弹窗限制）：兜底当前页跳转 */
         window.location.assign(orderUrl.pay_url);
       }
-      setPaymentContext({ plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
+      setPaymentContext({ userId: currentUserId, plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
       setModalStep("paying");
     } catch (err) {
       payWindow?.close();
       throw err;
     }
-  }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration]);
+  }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration, currentUserId]);
 
   /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
      轮询 effect 内的 setInterval 闭包要拿最新 finalizeBot，又不能依赖它（会反复重建）。
@@ -3352,6 +3525,10 @@ export const SubscribePage = ({
     if (!authReady || !isAuthenticated) return;
     if (planList.length === 0) return;
     if (typeof window === "undefined") return;
+    /* 弹窗嵌入实例默认不消费支付回跳：回跳落在宿主页，应由独立订阅页接棒。
+       但「宿主页检测到 pay_return 后主动打开弹窗」这一路必须接棒 ——
+       否则用户付完钱回到首页，弹窗没了、没人等发货、也不会自动建 Bot。 */
+    if (embedded && !resumePayReturn) return;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get(PAY_RETURN_QUERY_KEY) !== "1") return;
@@ -3371,15 +3548,26 @@ export const SubscribePage = ({
     );
 
     if (!plan) {
-      /* 拿不到套餐（planList 变更 / 链接被改）：不静默失败，至少刷一次让当前订阅显示出来。 */
+      /* 拿不到套餐（planList 变更 / 链接被改）：不能冒充已支付，也不能让用户静默停在原页。 */
+      setError({
+        code: "payment_return_unresolved",
+        message: t("暂时无法确认订单状态，请稍后查询，避免重复付款。"),
+        action: { label: t("我的账号"), href: ACCOUNT_BILLING_PATH },
+      });
       void refreshPasses();
       return;
     }
+    if (embedded) rememberPendingPayment(plan.id);
     /* dealNames 留空：回跳页没有原订单号，轮询只依赖 pass 状态，不需要它。 */
     setSelectedPlan(plan);
-    setPaymentContext({ plan, dealNames: [] });
+    setPaymentContext({ userId: currentUserId, plan, dealNames: [] });
     setModalStep("paying");
-  }, [authReady, isAuthenticated, planList, refreshPasses]);
+  }, [authReady, isAuthenticated, planList, refreshPasses, t, rememberPendingPayment, currentUserId]);
+
+  useEffect(() => {
+    if (!embedded || !paymentContext || isSubscribed) return;
+    rememberPendingPayment(paymentContext.plan.id, paymentContext.userId);
+  }, [embedded, paymentContext, isSubscribed, rememberPendingPayment]);
 
   /* paying 阶段轮询 listMyPasses：代替 SDK callback。
      轮询到有效 active pass 后自动 finalizeBot 接棒，用户无需任何手动确认。
@@ -3388,7 +3576,7 @@ export const SubscribePage = ({
   useEffect(() => {
     if (modalStep !== "paying") return;
     const ctx = paymentContext;
-    if (!ctx) return;
+    if (!ctx || ctx.userId !== currentUserId) return;
     let cancelled = false;
     let finalizing = false;
     const startedAt = Date.now();
@@ -3427,7 +3615,7 @@ export const SubscribePage = ({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [modalStep, paymentContext, refreshPasses, t]);
+  }, [modalStep, paymentContext, refreshPasses, t, currentUserId]);
   /**
    * 总调度 — 根据站点路由到免费试用或付费下单，并统一出错处理
    */
@@ -3547,7 +3735,7 @@ export const SubscribePage = ({
          已订阅不停在订阅页再次购买）。OAuth 是整页跳转，回跳后 LoginModal 已关闭、
          onSuccess 不会触发，故先 arm 分流意图，由 usePostLoginRedirect 在回跳后消费；
          手机验证码登录则在弹窗内成功、走 onSuccess。 */
-      armPostLoginRedirect();
+      armPostLoginRedirect(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE);
       setShowLoginModal(true);
       return;
     }
@@ -3609,7 +3797,7 @@ export const SubscribePage = ({
     /* 付费套餐：进入确认订单弹窗 */
     setSelectedPlan(plan);
     setModalStep("confirm");
-  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, isSubscribed, activePass, refreshPasses, realnamePhoneVerificationEnabled, navigate, upgrade.pass, upgradeTargetIds, requestUpgradeQuote]);
+  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, isSubscribed, activePass, refreshPasses, realnamePhoneVerificationEnabled, navigate, upgrade.pass, upgradeTargetIds, requestUpgradeQuote, embedded]);
 
   /* 邀请码激活成功后：自动继续用户之前点击的套餐流程 */
   const handleInviteSuccess = useCallback(() => {
@@ -3638,10 +3826,17 @@ export const SubscribePage = ({
   }, []);
 
   const handleCloseModal = useCallback(() => {
+    /*
+     * 支付中途放弃（关掉收银台 / 关掉弹窗）：记住套餐。
+     * 否则已付款的用户会停在原地 —— 没有「查询开通状态」入口，也没有下一步。
+     */
+    if (paymentContext) {
+      rememberPendingPayment(paymentContext.plan.id, paymentContext.userId);
+    }
     setModalStep("closed");
     setSelectedPlan(null);
     setPaymentContext(null);
-  }, []);
+  }, [paymentContext, rememberPendingPayment]);
 
   /**
    * 「确认订单」点「支付」 → 发起 createPassOrder 跳转 jifei（走付费链路主入口）
@@ -3680,11 +3875,20 @@ export const SubscribePage = ({
   /* v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
      原轮询 listMyPasses 的 useEffect 已删除，SDK callback / 用户手动确认均会走 finalizeBot 接棒。 */
 
-  return (
-    <div className="flex min-h-dvh flex-col" style={{ background: colors.white, color: colors.black }}>
-      {header}
+  /*
+   * 未完成支付提示：只在「还没开通、且当前没有弹窗挡着」时显示，
+   * 免得和 paying 弹窗重复出现两条等待态。
+   */
+  const pendingPayPlan = pendingPayPlanId
+    ? planList.find((item) => item.id === pendingPayPlanId) ?? null
+    : null;
+  const showPendingPaymentBanner = Boolean(pendingPayPlan) && !isSubscribed && modalStep === "closed";
 
-      <main className="flex-grow px-4 pb-12 pt-24 md:px-6 md:pb-16">
+  return (
+    <div className={embedded ? "flex flex-col" : "flex min-h-dvh flex-col"} style={{ background: colors.white, color: colors.black }}>
+      {!embedded && header}
+
+      <main className={embedded ? "px-4 pb-6 pt-7 md:px-7 md:pb-8 md:pt-8" : "flex-grow px-4 pb-12 pt-24 md:px-6 md:pb-16"}>
         {bundlesInitialLoading ? (
           <section
             aria-labelledby="subscribe-bundles-loading-title"
@@ -3702,13 +3906,84 @@ export const SubscribePage = ({
           </section>
         ) : (
           <>
+        {showPendingPaymentBanner && (
+          <section
+            aria-labelledby="pending-payment-title"
+            data-testid="pending-payment-banner"
+            style={{
+              maxWidth: 1080,
+              margin: "0 auto 20px",
+              border: "1px solid #e6e1dc",
+              borderRadius: 12,
+              background: "#faf8f6",
+              padding: 16,
+            }}
+          >
+            <h2
+              id="pending-payment-title"
+              style={{ margin: 0, fontSize: 15, fontWeight: 600, color: colors.black }}
+            >
+              {t("支付未完成？如果你已经完成付款，可以直接查询开通状态。")}
+            </h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                data-testid="pending-payment-resume"
+                onClick={handleResumePendingPayment}
+                style={{
+                  background: colors.black,
+                  color: colors.white,
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                {t("我已付款，查询状态")}
+              </button>
+              <button
+                type="button"
+                data-testid="pending-payment-reopen"
+                onClick={handleReopenPendingPayment}
+                style={{
+                  background: colors.white,
+                  color: colors.black,
+                  border: "1px solid #e6e1dc",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                {t("重新支付")}
+              </button>
+              <button
+                type="button"
+                data-testid="pending-payment-dismiss"
+                onClick={handleDismissPendingPayment}
+                style={{
+                  background: "transparent",
+                  color: colors.warmGray500,
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                {t("放弃")}
+              </button>
+            </div>
+          </section>
+        )}
         <section id={PLANS_SECTION_ID} style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* Page Header — Notion style */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="mb-6 text-center md:mb-12"
+            className={embedded ? "mb-4 text-center md:mb-5" : "mb-6 text-center md:mb-12"}
           >
             <h1
               className="text-balance"
@@ -3750,6 +4025,8 @@ export const SubscribePage = ({
                     {" >>"}
                   </a>
                 </>
+              ) : hasExistingPlan ? (
+                t("继续使用你的云端智能伙伴，按需管理套餐")
               ) : (
                 t("免费开始，一键创建你的云端智能伙伴")
               )}
@@ -3783,6 +4060,7 @@ export const SubscribePage = ({
               style={{ maxWidth: 960, margin: "0 auto 24px" }}
             >
               <p
+                role="alert"
                 style={{
                   display: "flex",
                   flexWrap: "wrap",
@@ -3812,6 +4090,18 @@ export const SubscribePage = ({
                 ) : (
                   <>
                     <span>{error.message}</span>
+                    {error.code === "entitlement_unavailable" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError(null);
+                          redirectAfterLogin();
+                        }}
+                        style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
+                      >
+                        {t("重试")}
+                      </button>
+                    )}
                     {error.action && (
                       <AppLink
                         to={error.action.href}
@@ -3906,6 +4196,8 @@ export const SubscribePage = ({
                     onSubscribe={(planId) => void handleSubscribe(planId)}
                     subscribingPlanId={subscribingPlanId}
                     currentBots={bots.length}
+                    compact={embedded}
+                    showAllFeatures={showAllFeatures}
                     reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
                     /* 已有权益时锁定新购，仅按后端返回的目标 ID 开放升级。 */
                     subscriptionLocked={isSubscribed || activePass !== null || bots.length > 0}
@@ -3918,18 +4210,37 @@ export const SubscribePage = ({
                   />
                 ))}
               </motion.div>
-              {isCN && (
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 18 }}>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[13px]">
+                {hasHiddenFeatures && (
+                  <button
+                    type="button"
+                    data-testid="plan-features-toggle"
+                    aria-expanded={showAllFeatures}
+                    onClick={() => setShowAllFeatures((value) => !value)}
+                    className="inline-flex min-h-10 items-center gap-1 font-medium text-black/70 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
+                  >
+                    {showAllFeatures ? t("收起权益") : t("查看全部权益")}
+                    <ChevronDown aria-hidden="true" className={cn("size-3.5 transition-transform", showAllFeatures && "rotate-180")} />
+                  </button>
+                )}
+                {/* 弹窗只保留精简套餐：完整对比、积分包与规则仍在独立订阅页。 */}
+                {embedded && (
+                  <AppLink
+                    to={fullPricingPageHref}
+                    data-pricing-modal="off"
+                    data-testid="pricing-modal-full-page"
+                    onClick={() => onClose?.()}
+                    className="inline-flex min-h-10 items-center font-medium text-black/55 transition-colors hover:text-black focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/60"
+                  >
+                    {t("查看全部套餐")}
+                  </AppLink>
+                )}
+              </div>
+              {isCN && !embedded && (
+                <div className="mt-[18px] flex justify-center">
                   <AppLink
                     to={CN_REFUND_RULES_PATH}
-                    style={{
-                      color: colors.warmGray500,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      lineHeight: 1.5,
-                      textDecoration: "underline",
-                      textUnderlineOffset: 3,
-                    }}
+                    className="text-xs font-medium leading-normal text-[var(--text-secondary)] underline underline-offset-[3px]"
                   >
                     {t("退款规则")}
                   </AppLink>
@@ -3939,8 +4250,8 @@ export const SubscribePage = ({
           )}
         </section>
 
-        {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。 */}
-        <CreditPackSection
+        {/* 补充模型积分区域仅在完整订阅页展示。 */}
+        {!embedded && <CreditPackSection
           sectionId={CREDIT_SECTION_ID}
           isLoggedIn={isLoggedIn}
           hasActivePlan={Boolean(activePass)}
@@ -3953,15 +4264,16 @@ export const SubscribePage = ({
             /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
             document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
           }}
-        />
+        />}
         </>
         )}
       </main>
 
-      <LegalFooter />
+      {!embedded && <LegalFooter />}
 
       {/* Payment Modals */}
-      <AnimatePresence>
+      <PaymentOverlayPortal embedded={embedded}>
+      <AnimatePresence key={currentUserId ?? "anonymous"}>
         {upgradeSelection && selectedUpgradePass && (
           <UpgradePassModal
             pass={selectedUpgradePass}
@@ -4006,7 +4318,7 @@ export const SubscribePage = ({
             />
           )
         )}
-        {modalStep === "paying" && paymentContext && (
+        {modalStep === "paying" && paymentContext && paymentContext.userId === currentUserId && (
           <PaymentPendingModal
             key="paying"
             bridgeUrl={paymentContext.bridgeUrl}
@@ -4020,6 +4332,7 @@ export const SubscribePage = ({
           />
         )}
       </AnimatePresence>
+      </PaymentOverlayPortal>
 
       {/* Invite Code Modal — 未激活邀请码时拦截「立即开通」 */}
       <InviteCodeModal
@@ -4038,7 +4351,7 @@ export const SubscribePage = ({
           disarmPostLoginRedirect();
           setShowLoginModal(false);
         }}
-        onSuccess={() => redirectAfterLogin()}
+        onSuccess={() => redirectAfterLogin(embedded ? POST_LOGIN_INTENT.PRICING_MODAL : POST_LOGIN_INTENT.SUBSCRIBE)}
       />
     </div>
   );

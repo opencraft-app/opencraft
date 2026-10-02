@@ -33,6 +33,8 @@ master 源码
 
 ## 不变量
 
+- 2026-10-02 建站 Skill 紧急恢复采用兼容旧 credential 参数合同的 TAT bootstrap：逐地域 clone 原命令并追加降权 auth-only 修补，CTL/Sandbox 的 scalar 与地域映射成对热修和固化，独立 Skill hook 生产关闭，控制面镜像不换。详见 [操作说明](../operations/website-skill-auth-fallback.md)。bootstrap 入口遵循 `commands` 薄 wrapper / `support` 语义模块边界，两者注册到 materialize manifest，不能将业务逻辑直接放入 command wrapper。这是经用户明确授权的运行时配置热修，不是正式镜像/GitOps 发布；需分别报告 Pod 配置、实际新机 TAT/terminal 验收和 GitOps 对齐状态。
+
 - 紧急恢复时若先在生产集群直改 Auth ConfigMap 或 Deployment，必须记录原值与镜像 digest，并在同一事件内把限流参数、可信代理地址和镜像 pin 固化到对应环境的 GitOps 声明；业务 429 恢复只证明临时热修生效，Argo 对齐到预期 revision 且 `Synced/Healthy` 才表示发布闭环。可信代理不得为省事扩大到整个 Pod 网段。
 
 - 统一 Argo CD 控制面运行在受控国内发布机时，必须使用宿主机原生 k0s systemd 服务；禁止使用
@@ -719,3 +721,12 @@ Owner review、生产 DB 备份/迁移门禁、Argo 手工 sync 及静态兼容�
 `.ci/workers.yml` push trigger 中排除，避免隐藏发布触发上海 rescue-exporter /
 hermes-importer 的自动 pin。建站继续走 `.ci/workers-website-deployer.yml` 的双区域
 人工 production 通道；共享 go.mod/go.sum/Dockerfile 和其他 worker 目录触发规则保留。
+
+## 建站 auth-only Skill hook 的配对发布（2026-10-02）
+
+`argocd/services/{ctl,sandbox}/{shprod,sgprod}` source env 的独立 Skill 地域映射必须配对；
+Sandbox replacements 消费进 runtime ConfigMap，CTL 创建任务 worker optional 注入同名 env。
+其它环境默认关闭，不得替换 credential CommandId。先发布 Sandbox 精确 allowlist/provider，
+再发布 CTL new-instance hook；回退先关闭 CTL Skill map 再关闭 Sandbox Skill allowlist。
+源配置/render 通过不等于 live GitOps/Argo revision/image 或新实例业务验收；本轮无实际发布。
+详细步骤及已交接 ID 见 [建站 Skill auth fallback](../operations/website-skill-auth-fallback.md)。

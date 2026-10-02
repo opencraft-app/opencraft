@@ -97,12 +97,38 @@ mkdir "$temporary/desired"
 git -C "$temporary/repository" archive "$revision" management/workers-api | \
 	tar -C "$temporary/desired" --strip-components=2 -xf -
 
-"$python" - "$temporary/application.json" "$temporary/project.json" \
+router_receipt=
+router_service=$temporary/router-service.json
+external_routes=$temporary/external-routes.json
+phase=$("$python" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("phase","durable-legacy"))' "$temporary/desired/evidence.json")
+if [[ $phase == serving ]]; then
+	router_receipt=${ACTOR_OBJECT_ROUTER_ENDPOINT_RECEIPT:?serving recertification requires the exact Object Router endpoint receipt}
+	[[ $router_receipt == /* && -f $router_receipt && ! -L $router_receipt ]] || {
+		echo "Object Router endpoint receipt must be an absolute regular file" >&2; exit 2;
+	}
+	"${kube[@]}" -n workers-api-system get service workers-object-router-private -o json >"$router_service"
+	mapfile -t route_names < <("$python" - "$temporary/desired/workers-api-render.json" <<'PY'
+import json,re,sys
+cells=json.load(open(sys.argv[1])).get("cells",[])
+assert len(cells)==2 and len({item["cell"] for item in cells})==2
+for cell in cells:
+    name=cell["cell"]
+    assert re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",name)
+    print("actor-cell-route-"+name)
+    print("actor-cell-serving-route-"+name)
+PY
+)
+	[[ ${#route_names[@]} == 4 ]] || { echo "serving external route inventory is invalid" >&2; exit 2; }
+	"${kube[@]}" -n workers-api-system get configmap "${route_names[@]}" -o json >"$external_routes"
+fi
+
+PYTHONPATH="$(dirname -- "$0")" "$python" - "$temporary/application.json" "$temporary/project.json" \
 	"$temporary/deployment.json" "$temporary/service.json" "$temporary/secret.json" \
 	"$temporary/config.json" "$temporary/pods.json" "$temporary/nodes.json" "$ACTOR_WORKERS_API_ENDPOINT_RECEIPT" \
-	"$temporary/desired" "$revision" "$output" <<'PY'
+	"$temporary/desired" "$revision" "$output" "$router_receipt" "$router_service" "$external_routes" <<'PY'
 import hashlib,ipaddress,json,os,pathlib,re,sys,tempfile,urllib.parse,yaml
-application_path,project_path,deployment_path,service_path,secret_path,config_path,pods_path,nodes_path,endpoint_path,desired_path,revision,output=sys.argv[1:]
+from serving_recertification import verify_serving
+application_path,project_path,deployment_path,service_path,secret_path,config_path,pods_path,nodes_path,endpoint_path,desired_path,revision,output,router_receipt_path,router_service_path,external_routes_path=sys.argv[1:]
 application,project,deployment,service,secret,config,pods,nodes,endpoint=(json.load(open(path)) for path in sys.argv[1:10])
 desired=pathlib.Path(desired_path)
 files={item.name for item in desired.iterdir() if item.is_file() and not item.is_symlink()}
@@ -122,8 +148,8 @@ render=json.loads(render_bytes)
 if (render.get("schema"),render.get("verdict")) != ("actor-workers-api-render/v1","passed"):
     raise SystemExit("pinned Workers API render receipt did not pass")
 phase=evidence.get("phase","durable-legacy")
-if phase not in {"durable-legacy","object-router-bootstrap"}:
-    raise SystemExit("live recertification requires a pre-serving Workers API phase")
+if phase not in {"durable-legacy","object-router-bootstrap","serving"}:
+    raise SystemExit("live recertification requires a supported Workers API phase")
 documents=[item for item in yaml.safe_load_all((desired/"workers-api.yaml").read_text()) if item]
 desired_deployment=next(item for item in documents if item.get("kind")=="Deployment" and item.get("metadata",{}).get("name")=="workers-api")
 desired_config=next(item for item in documents if item.get("kind")=="ConfigMap" and item.get("metadata",{}).get("name")=="workers-api")
@@ -159,8 +185,10 @@ if (
     or live_status.get("readyReplicas") != replicas or live_status.get("updatedReplicas") != replicas
 ):
     raise SystemExit("live Workers API workload differs from its pinned Git evidence")
-ready=[item for item in pods.get("items",[]) if not item.get("metadata",{}).get("deletionTimestamp") and item.get("status",{}).get("phase")=="Running" and all(
-    value.get("ready") for value in item.get("status",{}).get("containerStatuses",[]))]
+ready=[item for item in pods.get("items",[]) if not item.get("metadata",{}).get("deletionTimestamp") and item.get("status",{}).get("phase")=="Running"
+    and item.get("status",{}).get("containerStatuses")
+    and any(value.get("type")=="Ready" and value.get("status")=="True" for value in item.get("status",{}).get("conditions",[]))
+    and all(value.get("ready") for value in item["status"]["containerStatuses"])]
 images={value.get("imageID","").replace("docker-pullable://","") for item in ready for value in item["status"]["containerStatuses"]}
 node_zones={
     item.get("metadata",{}).get("name"):item.get("metadata",{}).get("labels",{}).get("topology.kubernetes.io/zone")
@@ -222,6 +250,13 @@ value={
         "secretExternallyOwned":True,"threeNodeThreeZoneHa":True,"privateEndpointPreserved":True,
     },
 }
+if phase=="serving":
+    serving=verify_serving(desired,application,deployment,secret,json.load(open(router_service_path)),
+        json.load(open(external_routes_path)),pathlib.Path(router_receipt_path),service)
+    value["objectRouterEndpoint"]=serving["endpoint"]
+    value["adoptedResources"]["objectRouterServiceUid"]=serving["serviceUid"]
+    value["sourceReceipts"]["objectRouterEndpoint"]=serving["receiptSha256"]
+    value["gates"].update({"servingResourceInventoryVerified":True,"servingRoutesVerified":True,"objectRouterEndpointPreserved":True})
 descriptor,staged=tempfile.mkstemp(prefix="."+os.path.basename(output)+".",dir=os.path.dirname(output))
 try:
     os.fchmod(descriptor,0o644)

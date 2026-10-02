@@ -33,26 +33,20 @@ flock -n 9 || { echo "another Router performance qualification is running" >&2; 
 # Reject a stale, partial, or failed capacity result before publishing temporary
 # Worker/Object resources. capture.py repeats this validation when it binds the
 # final receipt, so a file replacement between the two checks still fails closed.
-python3.11 - "$capacity_receipt" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-if (value.get("schema") != "actor-ten-thousand-active-qualification/v1"
-        or value.get("verdict") != "passed"
-        or value.get("expected", {}).get("active", 0) < 10_000
-        or not value.get("checks")
-        or not all(value["checks"].values())):
-    raise SystemExit("capacity receipt does not prove the complete 10k active cycle")
+python3.11 - "$collector" "$capacity_receipt" <<'PY'
+import json, runpy, sys
+collector = runpy.run_path(sys.argv[1])
+with open(sys.argv[2]) as stream:
+    collector["validate_qualification"](json.load(stream))
 PY
 
 endpoint=$(jq -er '.endpoint' "$endpoint_receipt")/v1
 [[ $endpoint == http://*/v1 || $endpoint == https://*/v1 ]]
-registry_endpoint=$(kubectl --kubeconfig "$kubeconfig" -n workers-api-system \
-	get configmap workers-api -o jsonpath='{.data.registry-url}')
-[[ $registry_endpoint == http://* || $registry_endpoint == https://* ]]
 install -d -m 0700 "$out"
 
 python3.11 "$runner" \
-	--endpoint "$endpoint" --registry-endpoint "$registry_endpoint" \
+	--endpoint "$endpoint" \
+	--registry-service worker-registry --registry-namespace worker-registry-system \
 	--hub-kubeconfig "$kubeconfig" \
 	--cell actor-bj-a01 --cell actor-bj-b01 \
 	--worker "router-perf-${performance_run_id:0:16}" \

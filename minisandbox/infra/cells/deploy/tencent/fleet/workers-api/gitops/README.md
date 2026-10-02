@@ -21,8 +21,8 @@ Terraform C substrate
 
 Argo and its repository cannot be born from an Application stored in that
 repository. Their installation and the root `AppProject`/`Application` remain
-the small imperative bootstrap boundary. After adoption, Argo owns the thirteen
-Workers API resources and both private `LoadBalancer` Services (public `/v1`
+the small imperative bootstrap boundary. In the current serving phase Argo tracks
+fourteen resources, including both private `LoadBalancer` Services (public `/v1`
 and the isolated Object Router listener). It does not own:
 
 - the legacy `workers-api-internal-token`, its exact receipt-derived
@@ -48,7 +48,7 @@ This allowlist controls discovery only;
 the narrower AppProject remains the write boundary. `Secret` is absent from
 both layers. A nominally `Synced/Healthy` Application with any
 `ExcludedResourceWarning`, a tracked-resource count other than the exact
-phase-specific 12/13, or an unsynced resource fails the convergence gate. The two exact bootstrap-owned Secrets
+phase-specific inventory, or an unsynced resource fails the convergence gate. The exact bootstrap-owned Secrets
 (`actor-fleet-tcr`, the legacy `workers-api-internal-token`, and the exact
 receipt-derived versioned credential) and the two exact
 receipt-derived Cell route ConfigMaps are declared as known orphans; no
@@ -67,12 +67,14 @@ cache. An idempotent replay does not restart it.
 An already adopted durable-only API cannot wait for A/B stateless endpoints:
 those executors need the C Object Router address first. The explicit
 `object-router-bootstrap` render therefore publishes twelve Argo-tracked
-resources (the normal set minus the not-yet-created private Router CLB). It is
+resources in the API manifest, plus the existing private Workers API Service,
+for thirteen tracked resources (the private Router CLB is not yet created). It is
 authorized by the exact prior convergence receipt, binds the separately
 synchronized external credential, and proves the Pod has no stateless executor
 token flags. After this revision is healthy, create and qualify the Router CLB;
-the later `serving` render adds that thirteenth tracked resource and all serving
-route evidence.
+the later `serving` render adds the fourteenth tracked resource and all serving
+route evidence. The current API manifest contains twelve resources; adding both
+private Services makes the exact serving inventory fourteen resources.
 
 If the pinned Application is healthy but its historical convergence receipt
 was not retained, `recertify-live-convergence.sh` may reconstruct only that
@@ -81,6 +83,31 @@ commit, verifies the desired tree against live Deployment/image/ConfigMap,
 three-node topology, private endpoint and external Secret UID, and emits a new
 convergence receipt. It cannot apply, patch, create or delete Kubernetes
 resources and therefore cannot turn drift into evidence.
+
+For a `serving` revision the same read-only entry additionally requires
+`ACTOR_OBJECT_ROUTER_ENDPOINT_RECEIPT`. It verifies the raw pinned manifest and
+render receipt hashes, all fourteen tracked resources, both endpoint listener
+and security policies, the immutable credential identity, and the exact four
+external Cell identity/serving route ConfigMaps. Their UIDs, Cell/pool bindings,
+authorities and canonical route digests must match the pinned render. Only
+the five identity routing fields and, when present, the complete four SHA-256
+audit fields from earlier immutable route publishers are accepted; unknown
+or partial audit fields fail closed. The original immutable UID must match. Only
+controller-allocated fields such as `clusterIP`, `nodePort` and Service status
+are excluded from desired-spec comparison; endpoint VIPs remain checked.
+
+```bash
+HUB_KUBECONFIG=/protected/management.kubeconfig \
+ACTOR_MANAGEMENT_GIT_CREDENTIAL=/protected/management-git-publisher.json \
+ACTOR_WORKERS_API_ENDPOINT_RECEIPT=/protected/workers-api-private-endpoint.json \
+ACTOR_OBJECT_ROUTER_ENDPOINT_RECEIPT=/protected/workers-object-router-private-endpoint.json \
+ACTOR_WORKERS_API_LIVE_CONVERGENCE_RECEIPT=/protected/new-live-convergence.json \
+  ./recertify-live-convergence.sh
+```
+
+The output must not already exist. This recertification is only a fresh CAS
+baseline for a healthy, unchanged Application; it is not public admission,
+load qualification, historical self-heal or disaster-recovery evidence.
 
 If an `object-router-bootstrap` revision reaches `Synced/Degraded` solely
 because an earlier operator deleted and recreated the legacy immutable Secret

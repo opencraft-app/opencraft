@@ -30,13 +30,10 @@ flock -n 9 || { echo "another command ACK disconnect qualification is running" >
 
 endpoint=$(jq -er '.endpoint' "$endpoint_receipt")
 [[ $endpoint == http://* || $endpoint == https://* ]]
-registry_endpoint=$(kubectl --kubeconfig "$hub_kubeconfig" -n workers-api-system \
-	get configmap workers-api -o jsonpath='{.data.registry-url}')
-[[ $registry_endpoint == http://* || $registry_endpoint == https://* ]]
 install -d -m 0700 "$out"
 
 MINISANDBOX_REPO=$source_root python3.11 "$runner" \
-	--endpoint "$endpoint" --registry-endpoint "$registry_endpoint" \
+	--endpoint "$endpoint" --registry-service worker-registry \
 	--hub-kubeconfig "$hub_kubeconfig" --cell-kubeconfig "$cell_kubeconfig" \
 	--cell actor-bj-b01 --all-cell actor-bj-a01 --all-cell actor-bj-b01 \
 	--worker command-ack-disconnect-qualification --run-id "$run_id" \
