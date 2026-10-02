@@ -4,6 +4,7 @@ set -euo pipefail
 [[ $# -eq 2 ]] || { echo "Usage: materialize-full-reviewed-source.sh BUNDLE RECEIPT" >&2; exit 2; }
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python=${ACTOR_BUILD_PYTHON:-python3.11}
+verifier=${ACTOR_SOURCE_BUNDLE_VERIFIER:-$script_dir/../../runtime/verify-full-source-bundle.py}
 command -v "$python" >/dev/null || {
 	echo "reviewed source verification requires the qualified Python 3.11 runtime" >&2
 	exit 2
@@ -15,7 +16,11 @@ command -v "$python" >/dev/null || {
 bundle=$(readlink -e "$1")
 receipt=$(readlink -e "$2")
 [[ -f $bundle && -f $receipt ]] || { echo "invalid full source inputs" >&2; exit 2; }
-identity=$("$python" "$script_dir/../../runtime/verify-full-source-bundle.py" --bundle "$bundle" --receipt "$receipt")
+[[ $verifier == /* && -f $verifier && ! -L $verifier ]] || {
+	echo "ACTOR_SOURCE_BUNDLE_VERIFIER must name an absolute non-symlink regular file" >&2
+	exit 2
+}
+identity=$("$python" "$verifier" --bundle "$bundle" --receipt "$receipt")
 IFS=$'\t' read -r revision manifest_sha <<<"$identity"
 [[ $revision =~ ^[0-9a-f]{40}$ && $manifest_sha =~ ^[0-9a-f]{64}$ ]] || { echo "invalid full source receipt identity" >&2; exit 2; }
 install -d -m 0755 /var/lib/actor-build/deploy

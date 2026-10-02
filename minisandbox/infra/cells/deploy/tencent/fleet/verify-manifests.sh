@@ -236,6 +236,8 @@ bash -n "$script_dir/bootstrap-fdb-node.sh" "$script_dir/test-bootstrap-fdb-node
 	"$script_dir/runtime/gitops/install-application.sh" \
 	"$script_dir/runtime/apply-source-delta.sh" "$script_dir/runtime/test-source-delta.sh" \
 	"$script_dir/runtime/bundle-full-reviewed-source.sh" \
+	"$script_dir/qualification/actor-bj-q01/materialize-full-reviewed-source-via-relay.sh" \
+	"$script_dir/qualification/actor-bj-q01/test-materialize-full-reviewed-source-via-relay.sh" \
 	"$script_dir/runtime/validate-runtime-image.sh" \
 	"$script_dir/runtime/release-runtime.sh" \
 	"$script_dir/runtime/monitor-bottomless-qualification.sh" \

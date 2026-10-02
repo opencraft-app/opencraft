@@ -131,6 +131,13 @@ revision and manifest values:
   /incoming/source-<full-commit-id>.receipt.json
 ```
 
+When the builder still runs a pre-v2 source tree, use the workstation-side
+`qualification/actor-bj-q01/materialize-full-reviewed-source-via-relay.sh`.
+It sends the bundle, receipt, verifier and materializer through the
+content-addressed COS relay, checks all four exact hashes on the builder, and
+creates the immutable source directory without changing the promoted `current`
+link or any workload.
+
 The script first verifies every reviewed source file against the supplied
 manifest, runs an executable WorkerLoader ABI test against the exact staged
 `workerd` binary and its built-in config schema, builds both Rust binaries with

@@ -56,12 +56,14 @@ minisandbox 为根的完整 reviewed-source bundle，并让恢复和运行时构
 - receipt 同时绑定 mono2 commit、repository tree、project path 和 project tree。
 - 根项目仍能以 `projectPath=.` 生成相同布局。
 - pre-destroy recovery seed 从脚本所在 minisandbox 根取源，但使用 mono2 commit 作为 revision。
+- 旧 builder 可通过内容寻址 COS relay 引导 v2 verifier/materializer，且 materialize 不隐式 promote。
 - bundler、verifier、materializer 和 fleet manifest 门禁通过。
 
 ## affected_paths
 
 - `minisandbox/infra/cells/deploy/tencent/fleet/runtime/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/pre-destroy/run.sh`
+- `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh`
 - `minisandbox/infra/cells/deploy/tencent/fleet/runtime/README.md`
 
@@ -92,6 +94,8 @@ minisandbox 为根的完整 reviewed-source bundle，并让恢复和运行时构
   14,243 个 Git 文件/符号链接与 `git ls-tree -r HEAD:minisandbox` 精确一致。
 - `infra/cells/deploy/tencent/fleet/verify-manifests.sh`：通过，终态
   `fleet_manifest_invariants=passed`。
+- `test-materialize-full-reviewed-source-via-relay.sh`：通过；验证四个 artifact 的远端路径/模式/哈希
+  约束、v2 verifier 注入、目标 source identity，并拒绝 symlink verifier。
 - mono2 documentation validator：0 error、0 broken first-party link、0 unclassified document。
 - `git diff --check`：通过。
 
