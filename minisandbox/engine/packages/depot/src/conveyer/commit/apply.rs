@@ -329,6 +329,12 @@ impl Db {
 							.context("sqlite head txid overflowed")?,
 						None => 1,
 					};
+					if head_bytes.is_none() || db_size_pages < previous_db_size_pages {
+						// Only a new local history can prove it has never truncated. Existing
+						// unindexed histories stay conservative, and later growth never clears this fence.
+						let truncate_txid = if db_size_pages < previous_db_size_pages { txid } else { 0 };
+						tx.informal().set(&keys::branch_meta_truncate_txid_key(branch_id), &truncate_txid.to_be_bytes());
+					}
 
 					let phase_start = Instant::now();
 					let truncate_cleanup = collect_truncate_cleanup(

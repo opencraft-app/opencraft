@@ -1125,6 +1125,7 @@ pub(crate) struct ManagerFdbSnapshot {
 
 #[derive(Debug, Default)]
 pub(crate) struct HotInputSnapshot {
+	pub(crate) mutable_head_fence: Option<u64>,
 	pub(crate) commits: Vec<(u64, CommitRow)>,
 	pub(crate) pitr_interval_coverage: Vec<PitrIntervalSelection>,
 	pub(crate) delta_chunks: Vec<(Vec<u8>, Vec<u8>)>,

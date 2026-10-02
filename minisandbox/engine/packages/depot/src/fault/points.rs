@@ -54,6 +54,7 @@ pub enum HotCompactionFaultPoint {
 	StageAfterShardWrite,
 	AfterStageBeforeFinishSignal,
 	InstallBeforeShardIntegrityPreflight,
+	InstallAfterInputCheckBeforeShardIntegrity,
 	InstallBeforeStagedRead,
 	InstallAfterStagedRead,
 	InstallBeforeShardPublish,
@@ -144,6 +145,7 @@ impl HotCompactionFaultPoint {
 			| HotCompactionFaultPoint::StageAfterShardWrite
 			| HotCompactionFaultPoint::AfterStageBeforeFinishSignal
 			| HotCompactionFaultPoint::InstallBeforeShardIntegrityPreflight
+			| HotCompactionFaultPoint::InstallAfterInputCheckBeforeShardIntegrity
 			| HotCompactionFaultPoint::InstallBeforeStagedRead
 			| HotCompactionFaultPoint::InstallAfterStagedRead
 			| HotCompactionFaultPoint::InstallBeforeShardPublish

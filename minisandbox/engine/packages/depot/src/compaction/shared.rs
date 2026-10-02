@@ -138,7 +138,7 @@ pub(crate) async fn read_manager_fdb_snapshot(
 	let hot_inputs = read_hot_input_snapshot(
 		tx,
 		branch_id,
-		head.as_ref(),
+		head.as_ref().map(|head| head.head_txid),
 		&root,
 		Snapshot,
 		pitr_policy,
@@ -1142,22 +1142,53 @@ fn select_hot_shard_evictions_within_budget(
 pub(crate) async fn read_hot_input_snapshot(
 	tx: &universaldb::Transaction,
 	branch_id: DatabaseBranchId,
-	head: Option<&DBHead>,
+	committed_max_txid: Option<u64>,
 	root: &CompactionRoot,
 	isolation_level: universaldb::utils::IsolationLevel,
 	pitr_policy: PitrPolicy,
 	now_ms: i64,
 ) -> Result<HotInputSnapshot> {
-	let Some(head) = head else {
+	let Some(mut max_txid) = committed_max_txid else {
 		return Ok(HotInputSnapshot::default());
 	};
-	if head.head_txid <= root.hot_watermark_txid {
+	if max_txid <= root.hot_watermark_txid {
 		return Ok(HotInputSnapshot::default());
 	}
 
 	let min_txid = root.hot_watermark_txid.saturating_add(1);
-	let mut max_txid = head.head_txid;
 	let mut snapshot = HotInputSnapshot::default();
+	let truncate_txid = tx_get_value(
+		tx,
+		&keys::branch_meta_truncate_txid_key(branch_id),
+		isolation_level,
+	)
+	.await?
+	.map(|value| {
+		let bytes: [u8; 8] = value
+			.as_slice()
+			.try_into()
+			.context("truncate txid index must contain exactly eight bytes")?;
+		Ok::<_, anyhow::Error>(u64::from_be_bytes(bytes))
+	})
+	.transpose()?;
+	if truncate_txid != Some(0) {
+		// Truncate mutates base SHARD caches as well as PIDX. Unknown and truncated histories
+		// retain the original head fence rather than treating those mutations as ordinary writes.
+		let head = decode_db_head(
+			&tx_get_value(tx, &keys::branch_meta_head_key(branch_id), isolation_level)
+				.await?
+				.context("head-fenced hot prefix requires a current head")?,
+		)?;
+		ensure!(
+			max_txid <= head.head_txid,
+			"hot prefix exceeds the current head"
+		);
+		ensure!(
+			truncate_txid.is_none_or(|txid| txid <= head.head_txid),
+			"truncate txid exceeds the current head"
+		);
+		snapshot.mutable_head_fence = Some(head.head_txid);
+	}
 	let pin_page = history_pin::read_history_pin_txids_page(
 		tx,
 		branch_id,
@@ -2406,7 +2437,6 @@ pub(crate) fn plan_hot_job(
 	let input_fingerprint = fingerprint_hot_inputs(
 		database_branch_id,
 		&snapshot.root,
-		head,
 		&coverage_txids,
 		&snapshot.hot_inputs,
 	);
@@ -2605,15 +2635,25 @@ pub(crate) fn reclaim_noop_reason(snapshot: &ManagerFdbSnapshot) -> &'static str
 pub(crate) fn fingerprint_hot_inputs(
 	database_branch_id: DatabaseBranchId,
 	root: &CompactionRoot,
-	head: &DBHead,
 	coverage_txids: &[u64],
 	hot_inputs: &HotInputSnapshot,
 ) -> CompactionInputFingerprint {
 	let mut fingerprint = Sha256::new();
+	update_fingerprint(&mut fingerprint, b"hot-committed-prefix-v2");
 	update_fingerprint(&mut fingerprint, database_branch_id.as_uuid().as_bytes());
 	update_fingerprint(&mut fingerprint, &root.manifest_generation.to_be_bytes());
 	update_fingerprint(&mut fingerprint, &root.hot_watermark_txid.to_be_bytes());
-	update_fingerprint(&mut fingerprint, &head.head_txid.to_be_bytes());
+	update_fingerprint(
+		&mut fingerprint,
+		&hot_inputs.selected_max_txid.unwrap_or(0).to_be_bytes(),
+	);
+	match hot_inputs.mutable_head_fence {
+		Some(txid) => {
+			update_fingerprint(&mut fingerprint, &[1]);
+			update_fingerprint(&mut fingerprint, &txid.to_be_bytes());
+		}
+		None => update_fingerprint(&mut fingerprint, &[0]),
+	}
 	for txid in coverage_txids {
 		update_fingerprint(&mut fingerprint, &txid.to_be_bytes());
 	}
@@ -2641,10 +2681,8 @@ pub(crate) fn fingerprint_hot_inputs(
 		update_fingerprint(&mut fingerprint, key);
 		update_fingerprint(&mut fingerprint, value);
 	}
-	for (key, value) in &hot_inputs.pidx_entries {
-		update_fingerprint(&mut fingerprint, key);
-		update_fingerprint(&mut fingerprint, value);
-	}
+	// PIDX is the mutable latest-owner index, not an input to prefix materialization. Installation
+	// reads it again with Serializable isolation and only retires owners inside this prefix.
 	finish_fingerprint(fingerprint)
 }
 
@@ -2826,20 +2864,17 @@ pub(crate) fn finish_fingerprint(fingerprint: Sha256) -> CompactionInputFingerpr
 
 pub(crate) fn plan_staged_hot_shards(
 	input: &StageHotJobInput,
-	_head: &DBHead,
 	hot_inputs: &HotInputSnapshot,
 ) -> Result<Vec<PreparedHotShard>> {
 	let deltas = decode_hot_delta_chunks(input.database_branch_id, &hot_inputs.delta_chunks)?;
-	let selected_db_size_pages = hot_inputs
-		.commits
-		.iter()
-		.find_map(|(txid, commit)| {
-			(*txid == input.input_range.txids.max_txid).then_some(commit.db_size_pages)
-		})
-		.context("hot compaction selected commit row is missing")?;
 	let mut shards = Vec::new();
 
 	for as_of_txid in &input.input_range.coverage_txids {
+		let selected_db_size_pages = hot_inputs
+			.commits
+			.iter()
+			.find_map(|(txid, commit)| (*txid == *as_of_txid).then_some(commit.db_size_pages))
+			.context("hot compaction coverage commit row is missing")?;
 		let pages_by_shard =
 			collect_hot_pages_by_shard(selected_db_size_pages, &deltas, *as_of_txid)?;
 
@@ -2952,11 +2987,18 @@ pub(crate) fn collect_hot_pages_by_shard(
 	as_of_txid: u64,
 ) -> Result<BTreeMap<u32, Vec<(u32, Vec<u8>)>>> {
 	let mut pages_by_number = BTreeMap::<u32, Vec<u8>>::new();
+	let mut previous_db_size_pages = None;
 
 	for (txid, delta) in deltas {
 		if *txid > as_of_txid {
 			continue;
 		}
+		// Apply every intervening EOF before later growth; a final-size-only filter would
+		// resurrect removed pages from an earlier DELTA in the same batch.
+		if previous_db_size_pages.is_some_and(|size| delta.header.commit < size) {
+			pages_by_number.retain(|pgno, _| *pgno <= delta.header.commit);
+		}
+		previous_db_size_pages = Some(delta.header.commit);
 		for page in &delta.pages {
 			if page.pgno <= db_size_pages {
 				pages_by_number.insert(page.pgno, page.bytes.clone());

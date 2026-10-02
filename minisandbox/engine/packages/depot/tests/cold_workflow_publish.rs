@@ -32,20 +32,22 @@ use depot::{
 		branch_compaction_hot_shard_coverage_key, branch_compaction_retired_cold_object_due_key,
 		branch_compaction_retired_cold_object_key, branch_compaction_root_key,
 		branch_compaction_stage_hot_shard_prefix, branch_delta_chunk_key,
-		branch_manifest_last_access_bucket_key, branch_pidx_key, branch_pidx_prefix,
-		branch_shard_chunk_key, branch_shard_key, branches_list_key, bucket_branches_list_key,
-		bucket_catalog_by_db_key, hot_compaction_job_queue_prefix,
+		branch_manifest_last_access_bucket_key, branch_meta_truncate_txid_key,
+		branch_pidx_count_node_key, branch_pidx_key, branch_pidx_prefix, branch_shard_chunk_key,
+		branch_shard_key, branches_list_key, bucket_branches_list_key, bucket_catalog_by_db_key,
+		hot_compaction_job_queue_prefix,
 	},
 	ltx::{LtxHeader, encode_ltx_v3},
 	types::{
 		BranchState, BucketBranchId, BucketBranchRecord, BucketCatalogDbFact, BucketId,
 		ColdBackupRecoveryFence, ColdShardRef, DatabaseBranchId, DirtyPage, GetPagesOptions,
-		HotShardCoverage, PageSourceKind, RestorePointId, ShardCachePolicy, SnapshotSelector,
-		decode_cold_publish_marker, decode_cold_shard_ref, decode_compaction_root,
-		decode_database_branch_record, decode_hot_generation_manifest, decode_hot_publish_marker,
-		decode_hot_shard_coverage, decode_hot_shard_manifest, decode_retired_cold_object,
-		encode_bucket_branch_record, encode_bucket_catalog_db_fact, encode_cold_shard_ref,
-		encode_database_branch_record, encode_hot_shard_coverage, encode_retired_cold_object,
+		HotShardCoverage, PageSourceKind, PitrPolicy, ResolvedVersionstamp, RestorePointId,
+		ShardCachePolicy, SnapshotSelector, decode_cold_publish_marker, decode_cold_shard_ref,
+		decode_commit_row, decode_compaction_root, decode_database_branch_record,
+		decode_hot_generation_manifest, decode_hot_publish_marker, decode_hot_shard_coverage,
+		decode_hot_shard_manifest, decode_retired_cold_object, encode_bucket_branch_record,
+		encode_bucket_catalog_db_fact, encode_cold_shard_ref, encode_database_branch_record,
+		encode_hot_shard_coverage, encode_retired_cold_object,
 	},
 	workflows::compaction::{
 		CompactionJobKind, DepotCompactionTestDriver, ForceCompactionWork,
@@ -1499,7 +1501,7 @@ async fn cold_eviction_still_supports_a_restore_point_created_by_a_later_commit(
 	Ok(())
 }
 
-async fn assert_head_advance_replans_hot_job(point: HotCompactionFaultPoint) -> Result<()> {
+async fn assert_head_advance_preserves_hot_prefix(point: HotCompactionFaultPoint) -> Result<()> {
 	let cold_root = Builder::new().prefix("depot-hot-head-advance-").tempdir()?;
 	let mut test_ctx = test_ctx_with_filesystem_cold_tier(cold_root.path()).await?;
 	let database_id = format!("hot-head-advance-{}", Uuid::new_v4());
@@ -1521,6 +1523,14 @@ async fn assert_head_advance_replans_hot_job(point: HotCompactionFaultPoint) -> 
 		.database_branch_id(branch_id)
 		.once()
 		.pause("hot-head-advance")?;
+	let next_plan = controller.pause_handle("hot-next-prefix");
+	controller
+		.at(DepotFaultPoint::HotCompaction(
+			HotCompactionFaultPoint::StageBeforeAdmission,
+		))
+		.database_branch_id(branch_id)
+		.nth(2)
+		.pause("hot-next-prefix")?;
 	let _fault_guard = register_workflow_fault_controller(branch_id, controller.clone());
 	let driver = DepotCompactionTestDriver::new(&test_ctx);
 	let manager_id = driver.start_manager(branch_id, None, true).await?;
@@ -1537,7 +1547,34 @@ async fn assert_head_advance_replans_hot_job(point: HotCompactionFaultPoint) -> 
 			)
 			.await;
 		pause.release();
-		result
+		result?;
+		tokio::time::timeout(Duration::from_secs(30), next_plan.wait_reached()).await?;
+		let check = async {
+			let root = decode_compaction_root(
+				&read_value(&test_ctx, branch_compaction_root_key(branch_id))
+					.await?
+					.context("first prefix should install before the next plan")?,
+			)?;
+			assert_eq!(root.hot_watermark_txid, 1);
+			assert_eq!(
+				read_value(&test_ctx, branch_pidx_key(branch_id, 1)).await?,
+				Some(2_u64.to_be_bytes().to_vec()),
+				"installing prefix1 must retain the newer page owner"
+			);
+			assert_eq!(
+				read_value(&test_ctx, branch_pidx_count_node_key(branch_id, 1, 0)).await?,
+				Some(1_i64.to_le_bytes().to_vec()),
+				"newer PIDX owner must remain counted"
+			);
+			assert_eq!(
+				db.get_pages(vec![1]).await?[0].bytes,
+				Some(vec![0x82; PAGE_SIZE as usize])
+			);
+			Ok::<_, anyhow::Error>(())
+		}
+		.await;
+		next_plan.release();
+		check
 	};
 	let force = driver.force_compaction(
 		manager_id,
@@ -1558,13 +1595,13 @@ async fn assert_head_advance_replans_hot_job(point: HotCompactionFaultPoint) -> 
 		"unexpected hot failure: {hot:?}"
 	);
 	assert_eq!(
-		hot.retryable_rejections, 1,
-		"current-head validation should invalidate this older plan: {hot:?}"
+		hot.retryable_rejections, 0,
+		"a newer head must not invalidate an unchanged committed prefix: {hot:?}"
 	);
 	assert_eq!(
 		hot.completed_job_ids.len(),
 		2,
-		"one rejected plan must be followed by one successful plan: {hot:?}"
+		"both committed prefixes should install successfully: {hot:?}"
 	);
 	let root = decode_compaction_root(
 		&read_value(&test_ctx, branch_compaction_root_key(branch_id))
@@ -1572,6 +1609,16 @@ async fn assert_head_advance_replans_hot_job(point: HotCompactionFaultPoint) -> 
 			.context("replanned job should publish a compaction root")?,
 	)?;
 	assert_eq!(root.hot_watermark_txid, 2);
+	assert!(
+		read_value(&test_ctx, branch_pidx_key(branch_id, 1))
+			.await?
+			.is_none()
+	);
+	assert_eq!(
+		read_value(&test_ctx, branch_pidx_count_node_key(branch_id, 1, 0)).await?,
+		Some(0_i64.to_le_bytes().to_vec()),
+		"retired latest PIDX owner must be counted exactly once"
+	);
 	assert_eq!(
 		db.get_pages(vec![1]).await?[0].bytes,
 		Some(vec![0x82; PAGE_SIZE as usize])
@@ -1581,17 +1628,18 @@ async fn assert_head_advance_replans_hot_job(point: HotCompactionFaultPoint) -> 
 }
 
 #[tokio::test]
-async fn head_advance_before_hot_admission_replans_without_losing_latest_write() -> Result<()> {
-	assert_head_advance_replans_hot_job(HotCompactionFaultPoint::StageBeforeAdmission).await
+async fn head_advance_before_hot_admission_preserves_prefix_and_latest_write() -> Result<()> {
+	assert_head_advance_preserves_hot_prefix(HotCompactionFaultPoint::StageBeforeAdmission).await
 }
 
 #[tokio::test]
-async fn head_advance_after_hot_stage_replans_without_losing_latest_write() -> Result<()> {
-	assert_head_advance_replans_hot_job(HotCompactionFaultPoint::AfterStageBeforeFinishSignal).await
+async fn head_advance_after_hot_stage_preserves_prefix_and_latest_write() -> Result<()> {
+	assert_head_advance_preserves_hot_prefix(HotCompactionFaultPoint::AfterStageBeforeFinishSignal)
+		.await
 }
 
 #[tokio::test]
-async fn continuous_head_advance_exhausts_hot_plan_retries_without_data_loss() -> Result<()> {
+async fn continuous_head_advance_makes_hot_prefix_progress_without_data_loss() -> Result<()> {
 	let cold_root = Builder::new()
 		.prefix("depot-hot-plan-starvation-")
 		.tempdir()?;
@@ -1611,7 +1659,7 @@ async fn continuous_head_advance_exhausts_hot_plan_retries_without_data_loss() -
 	let controller = DepotFaultController::new();
 	let mut pauses = Vec::new();
 	// Each pause represents one distinct queued plan. A real commit advances the head before it
-	// enters Stage, so this is explicit workflow retry evidence rather than a test retry loop.
+	// enters Stage, so this is an explicit overlapping commit sequence, not a test retry loop.
 	for invocation in 1..=9 {
 		let checkpoint = format!("hot-plan-starvation-{invocation}");
 		pauses.push(controller.pause_handle(checkpoint.clone()));
@@ -1629,8 +1677,19 @@ async fn continuous_head_advance_exhausts_hot_plan_retries_without_data_loss() -
 	let advance = async {
 		for (index, pause) in pauses.iter().enumerate() {
 			tokio::time::timeout(Duration::from_secs(30), pause.wait_reached()).await?;
-			let result = db
-				.commit(
+			let result = async {
+				if index > 0 {
+					let root = decode_compaction_root(
+						&read_value(&test_ctx, branch_compaction_root_key(branch_id))
+							.await?
+							.context("every previous prefix should have progressed")?,
+					)?;
+					anyhow::ensure!(
+						root.hot_watermark_txid == index as u64,
+						"previous prefix did not progress"
+					);
+				}
+				db.commit(
 					vec![DirtyPage {
 						pgno: 1,
 						bytes: vec![0x91 + index as u8; PAGE_SIZE as usize],
@@ -1638,7 +1697,9 @@ async fn continuous_head_advance_exhausts_hot_plan_retries_without_data_loss() -
 					2,
 					2_000 + index as i64 * 1_000,
 				)
-				.await;
+				.await
+			}
+			.await;
 			pause.release();
 			result?;
 		}
@@ -1659,26 +1720,520 @@ async fn continuous_head_advance_exhausts_hot_plan_retries_without_data_loss() -
 	let hot = hot_result?;
 	controller.assert_expected_fired()?;
 	assert_eq!(
-		hot.retryable_rejections, 9,
-		"every queued plan should be invalidated: {hot:?}"
+		hot.retryable_rejections, 0,
+		"future commits must not starve prefix progress: {hot:?}"
 	);
-	assert_eq!(hot.completed_job_ids.len(), 9);
+	assert_eq!(hot.completed_job_ids.len(), 10);
 	assert!(
-		hot.terminal_error
-			.as_deref()
-			.is_some_and(|error| error.contains("compaction plan remained stale after 8 retries")),
+		hot.terminal_error.is_none(),
 		"unexpected force result: {hot:?}"
 	);
-	assert!(
-		read_value(&test_ctx, branch_compaction_root_key(branch_id))
+	let root = decode_compaction_root(
+		&read_value(&test_ctx, branch_compaction_root_key(branch_id))
 			.await?
-			.is_none(),
-		"repeated plans must not claim successful watermark progress"
-	);
+			.context("all committed prefixes should install")?,
+	)?;
+	assert_eq!(root.hot_watermark_txid, 10);
 	assert_eq!(
 		db.get_pages(vec![1]).await?[0].bytes,
 		Some(vec![0x99; PAGE_SIZE as usize])
 	);
+	test_ctx.shutdown().await?;
+	Ok(())
+}
+
+async fn assert_hot_prefix_revalidates_history(
+	point: HotCompactionFaultPoint,
+	add_fork: bool,
+) -> Result<()> {
+	let cold_root = Builder::new()
+		.prefix("depot-hot-prefix-history-")
+		.tempdir()?;
+	let mut test_ctx = test_ctx_with_filesystem_cold_tier(cold_root.path()).await?;
+	let database_id = format!("hot-prefix-history-{}", Uuid::new_v4());
+	let db = make_db(&test_ctx, &database_id).await?;
+	let udb = test_ctx.pools().udb()?;
+	// Both commits are in one recent PITR bucket, so the original plan covers txid 2 only.
+	let bucket_ms = PitrPolicy::default().interval_ms;
+	let first_ms = (rivet_util::timestamp::now() / bucket_ms - 1) * bucket_ms + 1_000;
+	for (index, fill) in [0xa1, 0xa2].into_iter().enumerate() {
+		db.commit(
+			vec![DirtyPage {
+				pgno: 1,
+				bytes: vec![fill; PAGE_SIZE as usize],
+			}],
+			2,
+			first_ms + index as i64 * 1_000,
+		)
+		.await?;
+	}
+	let branch_id = read_database_branch_id(&test_ctx, &database_id).await?;
+	let controller = DepotFaultController::new();
+	let first_commit = decode_commit_row(
+		&read_value(&test_ctx, branch_commit_key(branch_id, 1))
+			.await?
+			.context("first committed version should exist")?,
+	)?;
+	let pause = controller.pause_handle("hot-prefix-history");
+	controller
+		.at(DepotFaultPoint::HotCompaction(point))
+		.database_branch_id(branch_id)
+		.once()
+		.pause("hot-prefix-history")?;
+	let _fault_guard = register_workflow_fault_controller(branch_id, controller.clone());
+	let driver = DepotCompactionTestDriver::new(&test_ctx);
+	let manager_id = driver.start_manager(branch_id, None, true).await?;
+	let change_history = async {
+		tokio::time::timeout(Duration::from_secs(30), pause.wait_reached()).await?;
+		let result = async {
+			let fork_id = if add_fork {
+				Some(
+					branch::fork_database(
+						&udb,
+						BucketId::from_gas_id(test_bucket()),
+						database_id.clone(),
+						ResolvedVersionstamp {
+							versionstamp: first_commit.versionstamp,
+							restore_point: None,
+						},
+						BucketId::from_gas_id(test_bucket()),
+					)
+					.await?,
+				)
+			} else {
+				policy::set_database_pitr_policy_override(
+					&udb,
+					BucketId::from_gas_id(test_bucket()),
+					&database_id,
+					PitrPolicy {
+						interval_ms: 1_000,
+						..Default::default()
+					},
+				)
+				.await?;
+				None
+			};
+			if add_fork {
+				// The new catalog root invalidates the bucket proof. Finish its bounded pages
+				// before releasing Stage so this test isolates changed history coverage.
+				let mut complete = false;
+				for _ in 0..64 {
+					if !advance_bucket_fork_proof_for_test(&udb, branch_id).await? {
+						complete = true;
+						break;
+					}
+				}
+				ensure!(complete, "new fork catalog proof did not complete");
+			}
+			db.commit(
+				vec![DirtyPage {
+					pgno: 1,
+					bytes: vec![0xa3; PAGE_SIZE as usize],
+				}],
+				2,
+				first_ms + 2_000,
+			)
+			.await?;
+			Ok::<_, anyhow::Error>(fork_id)
+		}
+		.await;
+		pause.release();
+		result
+	};
+	let force = driver.force_compaction(
+		manager_id,
+		branch_id,
+		ForceCompactionWork {
+			hot: true,
+			cold: false,
+			reclaim: false,
+			final_settle: false,
+		},
+	);
+	let (history_result, hot_result) = tokio::join!(change_history, force);
+	let fork_id = history_result?;
+	let hot = hot_result?;
+	controller.assert_expected_fired()?;
+	assert_eq!(hot.terminal_error, None);
+	assert_eq!(
+		hot.retryable_rejections, 1,
+		"changed history coverage must invalidate the old proof: {hot:?}"
+	);
+	let root = decode_compaction_root(
+		&read_value(&test_ctx, branch_compaction_root_key(branch_id))
+			.await?
+			.context("replanned history prefix should install")?,
+	)?;
+	assert_eq!(root.hot_watermark_txid, 3);
+	assert!(
+		read_value(
+			&test_ctx,
+			branch_compaction_hot_shard_coverage_key(branch_id, 0, 1)
+		)
+		.await?
+		.is_some(),
+		"replanned prefix must materialize the newly required historical version"
+	);
+	if !add_fork {
+		assert!(
+			read_value(
+				&test_ctx,
+				branch_compaction_hot_shard_coverage_key(branch_id, 0, 2)
+			)
+			.await?
+			.is_some()
+		);
+	}
+	assert_eq!(
+		db.get_pages(vec![1]).await?[0].bytes,
+		Some(vec![0xa3; PAGE_SIZE as usize])
+	);
+	if let Some(fork_id) = fork_id {
+		let fork = make_db(&test_ctx, &fork_id).await?;
+		assert_eq!(
+			fork.get_pages(vec![1]).await?[0].bytes,
+			Some(vec![0xa1; PAGE_SIZE as usize])
+		);
+	}
+	test_ctx.shutdown().await?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn hot_prefix_new_fork_pin_before_stage_requires_new_coverage() -> Result<()> {
+	assert_hot_prefix_revalidates_history(HotCompactionFaultPoint::StageBeforeAdmission, true).await
+}
+
+#[tokio::test]
+async fn hot_prefix_new_fork_pin_after_stage_requires_new_coverage() -> Result<()> {
+	assert_hot_prefix_revalidates_history(
+		HotCompactionFaultPoint::AfterStageBeforeFinishSignal,
+		true,
+	)
+	.await
+}
+
+#[tokio::test]
+async fn hot_prefix_pitr_policy_change_before_stage_requires_new_coverage() -> Result<()> {
+	assert_hot_prefix_revalidates_history(HotCompactionFaultPoint::StageBeforeAdmission, false)
+		.await
+}
+
+#[tokio::test]
+async fn hot_prefix_pitr_policy_change_after_stage_requires_new_coverage() -> Result<()> {
+	assert_hot_prefix_revalidates_history(
+		HotCompactionFaultPoint::AfterStageBeforeFinishSignal,
+		false,
+	)
+	.await
+}
+
+async fn assert_truncate_growth_fences_old_hot_prefix(
+	point: HotCompactionFaultPoint,
+) -> Result<()> {
+	let cold_root = Builder::new()
+		.prefix("depot-hot-prefix-truncate-")
+		.tempdir()?;
+	let mut test_ctx = test_ctx_with_filesystem_cold_tier(cold_root.path()).await?;
+	let database_id = format!("hot-prefix-truncate-{}", Uuid::new_v4());
+	let db = make_db(&test_ctx, &database_id).await?;
+	db.commit(
+		vec![DirtyPage {
+			pgno: 3,
+			bytes: vec![0xb1; PAGE_SIZE as usize],
+		}],
+		4,
+		1_000,
+	)
+	.await?;
+	let branch_id = read_database_branch_id(&test_ctx, &database_id).await?;
+	let controller = DepotFaultController::new();
+	let pause = controller.pause_handle("hot-prefix-truncate");
+	controller
+		.at(DepotFaultPoint::HotCompaction(point))
+		.database_branch_id(branch_id)
+		.once()
+		.pause("hot-prefix-truncate")?;
+	let _fault_guard = register_workflow_fault_controller(branch_id, controller.clone());
+	let driver = DepotCompactionTestDriver::new(&test_ctx);
+	let manager_id = driver.start_manager(branch_id, None, true).await?;
+	let truncate = async {
+		tokio::time::timeout(Duration::from_secs(30), pause.wait_reached()).await?;
+		let result = async {
+			db.commit(
+				vec![DirtyPage {
+					pgno: 1,
+					bytes: vec![0xb2; PAGE_SIZE as usize],
+				}],
+				2,
+				2_000,
+			)
+			.await?;
+			db.commit(
+				vec![DirtyPage {
+					pgno: 1,
+					bytes: vec![0xb3; PAGE_SIZE as usize],
+				}],
+				4,
+				3_000,
+			)
+			.await?;
+			Ok::<_, anyhow::Error>(())
+		}
+		.await;
+		pause.release();
+		result
+	};
+	let force = driver.force_compaction(
+		manager_id,
+		branch_id,
+		ForceCompactionWork {
+			hot: true,
+			cold: false,
+			reclaim: false,
+			final_settle: false,
+		},
+	);
+	let (truncate_result, hot_result) = tokio::join!(truncate, force);
+	truncate_result?;
+	let hot = hot_result?;
+	controller.assert_expected_fired()?;
+	assert_eq!(hot.terminal_error, None);
+	let fresh = make_db(&test_ctx, &database_id).await?;
+	assert_eq!(
+		fresh.get_pages(vec![3]).await?[0].bytes,
+		Some(vec![0; PAGE_SIZE as usize]),
+		"regrowth must not resurrect a truncated page from an old prefix"
+	);
+	assert_eq!(
+		hot.retryable_rejections, 1,
+		"truncate must invalidate the old plan: {hot:?}"
+	);
+	test_ctx.shutdown().await?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn hot_prefix_truncate_growth_before_stage_preserves_zero_gap() -> Result<()> {
+	assert_truncate_growth_fences_old_hot_prefix(HotCompactionFaultPoint::StageBeforeAdmission)
+		.await
+}
+
+#[tokio::test]
+async fn hot_prefix_truncate_during_stage_batch_replans_without_zero_gap_loss() -> Result<()> {
+	assert_truncate_growth_fences_old_hot_prefix(
+		HotCompactionFaultPoint::StageAfterShardBatchFdbCommit,
+	)
+	.await
+}
+
+#[tokio::test]
+async fn hot_prefix_truncate_after_input_check_revalidates_missing_shard_as_stale() -> Result<()> {
+	assert_truncate_growth_fences_old_hot_prefix(
+		HotCompactionFaultPoint::InstallAfterInputCheckBeforeShardIntegrity,
+	)
+	.await
+}
+
+#[tokio::test]
+async fn hot_prefix_truncate_growth_after_stage_preserves_zero_gap() -> Result<()> {
+	assert_truncate_growth_fences_old_hot_prefix(
+		HotCompactionFaultPoint::AfterStageBeforeFinishSignal,
+	)
+	.await
+}
+
+async fn assert_unindexed_hot_prefix_keeps_head_fence(
+	point: HotCompactionFaultPoint,
+) -> Result<()> {
+	let cold_root = Builder::new()
+		.prefix("depot-hot-prefix-unindexed-")
+		.tempdir()?;
+	let mut test_ctx = test_ctx_with_filesystem_cold_tier(cold_root.path()).await?;
+	let database_id = format!("hot-prefix-unindexed-{}", Uuid::new_v4());
+	let db = make_db(&test_ctx, &database_id).await?;
+	db.commit(
+		vec![DirtyPage {
+			pgno: 1,
+			bytes: vec![0xc1; PAGE_SIZE as usize],
+		}],
+		2,
+		1_000,
+	)
+	.await?;
+	let branch = read_database_branch_id(&test_ctx, &database_id).await?;
+	clear_value(&test_ctx, branch_meta_truncate_txid_key(branch)).await?;
+	let controller = DepotFaultController::new();
+	let pause = controller.pause_handle("hot-prefix-unindexed");
+	controller
+		.at(DepotFaultPoint::HotCompaction(point))
+		.database_branch_id(branch)
+		.once()
+		.pause("hot-prefix-unindexed")?;
+	let _fault_guard = register_workflow_fault_controller(branch, controller.clone());
+	let driver = DepotCompactionTestDriver::new(&test_ctx);
+	let manager = driver.start_manager(branch, None, true).await?;
+	let advance = async {
+		tokio::time::timeout(Duration::from_secs(30), pause.wait_reached()).await?;
+		let result = db
+			.commit(
+				vec![DirtyPage {
+					pgno: 1,
+					bytes: vec![0xc2; PAGE_SIZE as usize],
+				}],
+				2,
+				2_000,
+			)
+			.await;
+		pause.release();
+		result
+	};
+	let force = driver.force_compaction(
+		manager,
+		branch,
+		ForceCompactionWork {
+			hot: true,
+			cold: false,
+			reclaim: false,
+			final_settle: false,
+		},
+	);
+	let (advance_result, force_result) = tokio::join!(advance, force);
+	advance_result?;
+	let hot = force_result?;
+	controller.assert_expected_fired()?;
+	assert_eq!(hot.terminal_error, None);
+	assert_eq!(
+		hot.retryable_rejections, 1,
+		"an unknown history must keep the original head fence"
+	);
+	assert_eq!(
+		read_value(&test_ctx, branch_meta_truncate_txid_key(branch)).await?,
+		None
+	);
+	let root = decode_compaction_root(
+		&read_value(&test_ctx, branch_compaction_root_key(branch))
+			.await?
+			.context("replanned prefix must publish")?,
+	)?;
+	assert_eq!(root.hot_watermark_txid, 2);
+	assert_eq!(
+		db.get_pages(vec![1]).await?[0].bytes,
+		Some(vec![0xc2; PAGE_SIZE as usize])
+	);
+	test_ctx.shutdown().await?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn hot_prefix_unindexed_head_change_before_stage_requires_replan() -> Result<()> {
+	assert_unindexed_hot_prefix_keeps_head_fence(HotCompactionFaultPoint::StageBeforeAdmission)
+		.await
+}
+
+#[tokio::test]
+async fn hot_prefix_unindexed_head_change_after_stage_requires_replan() -> Result<()> {
+	assert_unindexed_hot_prefix_keeps_head_fence(
+		HotCompactionFaultPoint::AfterStageBeforeFinishSignal,
+	)
+	.await
+}
+
+#[tokio::test]
+async fn hot_prefix_truncate_preserves_pinned_old_eof_but_not_latest_gap() -> Result<()> {
+	let cold_root = Builder::new()
+		.prefix("depot-hot-prefix-truncate-pin-")
+		.tempdir()?;
+	let mut test_ctx = test_ctx_with_filesystem_cold_tier(cold_root.path()).await?;
+	let database_id = format!("hot-prefix-truncate-pin-{}", Uuid::new_v4());
+	let db = make_db(&test_ctx, &database_id).await?;
+	db.commit(
+		vec![DirtyPage {
+			pgno: 3,
+			bytes: vec![0xd1; PAGE_SIZE as usize],
+		}],
+		4,
+		1_000,
+	)
+	.await?;
+	let branch_id = read_database_branch_id(&test_ctx, &database_id).await?;
+	let first = decode_commit_row(
+		&read_value(&test_ctx, branch_commit_key(branch_id, 1))
+			.await?
+			.context("first commit must exist")?,
+	)?;
+	let udb = test_ctx.pools().udb()?;
+	let fork_id = branch::fork_database(
+		&udb,
+		BucketId::from_gas_id(test_bucket()),
+		database_id.clone(),
+		ResolvedVersionstamp {
+			versionstamp: first.versionstamp,
+			restore_point: None,
+		},
+		BucketId::from_gas_id(test_bucket()),
+	)
+	.await?;
+	let mut complete = false;
+	for _ in 0..64 {
+		if !advance_bucket_fork_proof_for_test(&udb, branch_id).await? {
+			complete = true;
+			break;
+		}
+	}
+	ensure!(complete, "fork catalog proof did not complete");
+	db.commit(
+		vec![DirtyPage {
+			pgno: 1,
+			bytes: vec![0xd2; PAGE_SIZE as usize],
+		}],
+		2,
+		2_000,
+	)
+	.await?;
+	db.commit(
+		vec![DirtyPage {
+			pgno: 1,
+			bytes: vec![0xd3; PAGE_SIZE as usize],
+		}],
+		3,
+		3_000,
+	)
+	.await?;
+	let driver = DepotCompactionTestDriver::new(&test_ctx);
+	let manager = driver.start_manager(branch_id, None, true).await?;
+	let hot = driver
+		.force_compaction(
+			manager,
+			branch_id,
+			ForceCompactionWork {
+				hot: true,
+				cold: false,
+				reclaim: false,
+				final_settle: false,
+			},
+		)
+		.await?;
+	assert_eq!(hot.terminal_error, None);
+	assert!(
+		read_value(
+			&test_ctx,
+			branch_compaction_hot_shard_coverage_key(branch_id, 0, 1)
+		)
+		.await?
+		.is_some()
+	);
+	let fork = make_db(&test_ctx, &fork_id).await?;
+	assert_eq!(
+		fork.get_pages(vec![3]).await?[0].bytes,
+		Some(vec![0xd1; PAGE_SIZE as usize])
+	);
+	let fresh = make_db(&test_ctx, &database_id).await?;
+	assert_eq!(
+		fresh.get_pages(vec![3]).await?[0].bytes,
+		Some(vec![0; PAGE_SIZE as usize])
+	);
+	assert_eq!(fresh.get_pages(vec![4]).await?[0].bytes, None);
 	test_ctx.shutdown().await?;
 	Ok(())
 }
