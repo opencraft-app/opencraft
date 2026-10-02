@@ -33,6 +33,8 @@ master 源码
 
 ## 不变量
 
+- 2026-10-02 建站 Skill 紧急恢复采用兼容旧 credential 参数合同的 TAT bootstrap：逐地域 clone 原命令并追加降权 auth-only 修补，CTL/Sandbox 的 scalar 与地域映射成对热修和固化，独立 Skill hook 生产关闭，控制面镜像不换。详见 [操作说明](../operations/website-skill-auth-fallback.md)。这是经用户明确授权的运行时配置热修，不是正式镜像/GitOps 发布；需分别报告 Pod 配置、实际新机 TAT/terminal 验收和 GitOps 对齐状态。
+
 - 紧急恢复时若先在生产集群直改 Auth ConfigMap 或 Deployment，必须记录原值与镜像 digest，并在同一事件内把限流参数、可信代理地址和镜像 pin 固化到对应环境的 GitOps 声明；业务 429 恢复只证明临时热修生效，Argo 对齐到预期 revision 且 `Synced/Healthy` 才表示发布闭环。可信代理不得为省事扩大到整个 Pod 网段。
 
 - 统一 Argo CD 控制面运行在受控国内发布机时，必须使用宿主机原生 k0s systemd 服务；禁止使用

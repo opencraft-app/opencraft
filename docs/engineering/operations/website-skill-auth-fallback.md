@@ -55,7 +55,7 @@ payload 内嵌 helper，只定位 `$HOME/.hermes/skills/website-builder/SKILL.md
 安装完整 bundle（含 `scripts/package_fullstack.py`），**不得用于本次存量实例 auth-only 热修**。
 managed bundle 及缺失 Skill 另行确定镜像/版本发布路径，不在本补丁扩大修复范围。
 
-## 新实例 hook：已实现源码，未发布
+## 独立新实例 hook：源码已合入，生产配置保持禁用
 
 只在 `RunCreateInstanceTask` 成功持久化 Running 后执行一次独立 Skill-only hook，
 位于原 credential hook 之前。**未修改 resume、Paused/offline 追补或修复路径**；
@@ -121,23 +121,59 @@ payload**（两者安全语义等价，但本 helper 额外保留非空环境变
 START_FAILED ``InvalidUser: user `agentuser` not exists`` 由主线程分类为
 `EXCLUDED / TAT_AGENTUSER_MISSING`，retain action，不重试、不创建用户。Paused/offline 等留档人工处理。
 
-hook 独立 Skill 映射（已写 source env；尚未发布或在线启用）：
+### 存量 Skill-only CommandId 与新机 bootstrap 不可混用
 
-```text
-# shprod / CTL 与 Sandbox 配对
-WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION={"ap-shanghai":"cmd-njt2oy9u"}
+前述三个 Skill-only 命令只接受空参数，不得填入 credential 配置。本次生产不发布新镜像，
+复用旧二进制已经支持的 `WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION`：参数化 credential
+命令保留完整原 Content，成功后以 `agentuser` 追加 best-effort auth-only patch。
+生产 `WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION` 清空，避免未来发布新 hook 后重复调用。
 
-# sgprod / CTL 与 Sandbox 配对
-WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION={"ap-singapore":"cmd-nfuezsgx","ap-johorbahru":"cmd-dgorg46u"}
+## 2026-10-02 新机兼容 bootstrap 热修
+
+| 地域 | 原 credential 命令 | 新 bootstrap 命令 |
+|---|---|---|
+| ap-shanghai | `cmd-c14avwti` | `cmd-czxw3gau` |
+| ap-singapore | `cmd-j4ofkm4j` | `cmd-qdb9wde1` |
+| ap-johorbahru | `cmd-p1qx2es2` | `cmd-at6wymyk` |
+
+合同：root、`/tmp`、300 秒、EnableParameter=true；保留 `{{tat-hidden:website_key}}`
+及 `{{api_base}}`，无默认 Key。旧命令 Content SHA-256
+`7f425d00fbf00a6cefd8fb455f0304ffa1a4a0903beb57d5eae3f473abf5d308`；三地 bootstrap Content SHA-256
+`232d210b72aa6c849c732f5e096e0c5a755e84d2bc90de62d30fe350bd2b091c`。
+
+构造入口 `.ci/runtime/commands/website_bootstrap_command.py` 只做离线 payload：
+读取旧 immutable TAT 命令的 **placeholder-only Content**，保留每个字节为前缀，
+追加 canonical auth helper 的命令。不能直接换成当前源码 credential installer：两者有
+不同 gateway discovery 行为，会把无关凭据生命周期变更带入本次热修。
+输出 exclusive-create/0600，拒绝实际 Key、NUL、heredoc 碰撞及超长 payload。
+
+```bash
+python3 .ci/runtime/commands/website_bootstrap_command.py \
+  --credential-content-file /absolute/private-dir/placeholder-only.sh \
+  --output /absolute/private-dir/bootstrap.sh
+bash -n /absolute/private-dir/bootstrap.sh
 ```
 
-**绝不能**把上述命令写入 `WEBSITE_CREDENTIAL_TAT_COMMAND_ID` 或
-`WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION`。这两项仍是原参数化 credential installer
-的路由/allowlist；新 hook 也不传 `website_key`/`api_base`，不签发、激活或撤销 Key。
-本轮同步四份 production source env 与两份 Sandbox replacements；这只是隔离 worktree
-中的待审阅变更，不执行 GitOps promotion、Argo sync、apply 或实际发布。
+原 credential 安装失败保留退出码且不执行 Skill；成功后执行
+`runuser -u agentuser -- env -u WEBSITE_KEY -u API_BASE bash -s`，不把 TAT Key 传入
+Skill 子进程，不以 root 改用户 Skill。用户/工具不存在或 Skill 失败 best-effort skip；
+不覆盖定制或缺失 Skill，不签发额外 Key。必须核对 `WEBSITE_AUTH_RESULT.status`，
+只看到 credential 成功不能宣布 Skill 更新。
 
-## 成对发布与回退说明（只提供步骤，不执行）
+**仅供新实例原有自动 credential hook 使用。** 旧 credential installer 本来会 reload/restart
+新机 gateway，本次保留其行为；不能把 combined 命令下发到已有用户机器作为 canary。
+存量只用前述 Skill-only 命令，无 Key 变更、无 gateway 重启。
+
+CTL 与 Sandbox 的两区 source env 成对固定新 IDs：上海同时配置 scalar 与 regional map；
+国际 regional map 精确包含 Singapore/Johor。Sandbox 上海新增 regional-map replacement。
+热修只改对应 ConfigMap/Deployment 的三个非敏感配置，镜像不换；控制面 Pods 滚动更新，
+不重启用户 CVM/gateway。保存原值、镜像 digest 和回读证据，原 TAT 命令保留用于回退。
+
+新机验收须观察真实自动调用的新 CommandId、TAT SUCCESS/exit 0、Skill patch 状态及无环境
+Key 的 Hermes terminal API 200。配置回读和离线 mock 不代替此 E2E。源码合入不代表
+GitOps 已对齐；本次不做 production promote 或 Argo 全量 sync，尤其不能 Full Sync sandbox-sgprod。
+
+## 独立 hook 的可选发布路径（本次不执行）
 
 1. 审阅/合入授权后构建含 hook/adapter 与 allowlist/provider 修复的 CTL/Sandbox 镜像。
 2. 逐环境先交付 **Sandbox 新镜像 + 同环境 Skill map**，确认 credential allowlist 未变；
@@ -161,6 +197,6 @@ python3 -m unittest discover -s .agents/skills/website-builder/tests
 (cd sandbox && GOWORK=off go test ./api-gin ./internal/provider -count=1)
 ```
 
-本次不做 commit/push/MR、生产或云写操作。代码发布仍须审阅/合入授权，镜像构建时使用修复后的
-Skill；新实例 hook 源码/配置已实现，仍需配对发布、真实新实例验收。
-存量 auth-only 热修由主线程单独执行并核验，不能以离线测试或源码修复替代线上结论。
+本次用户已授权 TAT 创建、线上配置热修及源码 MR 合入，明确不审批正式镜像发布。
+存量 auth-only rollout 与新机 compatible bootstrap 分别核验；控制面配置回读、源码合入与真实
+新机业务验收分层报告，不以离线测试或源码修复代替线上结论。
