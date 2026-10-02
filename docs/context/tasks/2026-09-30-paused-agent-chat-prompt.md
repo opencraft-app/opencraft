@@ -65,6 +65,7 @@ Agent 已暂停时，聊天区显示暂停提示，不提示连接自动恢复�
 - 二次合并后 `pnpm check` 为 0 条新增 TypeScript 诊断，相关与 guard 测试合计 221/221，CN/global build 均通过。
 - 2026-10-02 对照 `origin/master@b42d361c7` 解决冲突：新版 `opencraft-embedded-workbench.cn.test.tsx` 已接收暂停态回归；组件沿用主线的模板投递、草稿和启动逻辑，仅保留暂停提示/禁用重试；`UPSTREAM.json` 由官方同步脚本生成并检查 130 个文件。
 - 最新主线的 `opencraft/docs/chat-ui-architecture.md` 明确要求嵌入模板经 `submitPrompt` 进入 Host，已有会话和草稿不可被覆盖；合并结果保留相关入口。暂停/恢复切换的组件测试仍断言同一元素与未发送草稿保留。
+- 用户明确授权推送后，2026-10-02 的冲突修复合并提交为 `785780e72`；随后运行官方同步及校验，`UPSTREAM.json` 的 `sourceRevision` 从未提交合并态的 `2a65b0388` 更新为已提交历史对应的 `e76488e7c`，130 个文件全部通过。
 
 ## risks
 - 暂停状态延迟更新时，UI 仍依赖父页面当前 Bot 状态；状态刷新后恢复正确显示。
@@ -84,4 +85,4 @@ Agent 已暂停时，聊天区显示暂停提示，不提示连接自动恢复�
 - `rg` 输出已用于定位，无需保留完整扫描产物。
 
 ## handoff
-- MR !4872 已在隔离工作树本地合入 `origin/master@b42d361c7` 并解决冲突，当前仍处于未提交的 Git merge 状态。提交合并前需取得用户明确授权；提交后必须重新运行 `sync:mono2-agent-console` 和 `check:mono2-agent-console`，确认 `sourceRevision` 基于已提交的合并历史，再推送并核对 MR source SHA、冲突与 CI。尚未合并 MR 或发布。
+- MR !4872 已在隔离工作树合入 `origin/master@b42d361c7`，冲突修复已提交。生成清单已按提交后的历史重新同步并校验；推送后核对 MR source SHA、冲突与 CI。尚未合并 MR 或发布。
