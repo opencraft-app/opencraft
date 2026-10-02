@@ -39,9 +39,9 @@ class RenderRuntimeConfigTest(unittest.TestCase):
                     "--gasoline-worker-max-active-workflows",
                     "4096",
                     "--depot-manager-refresh-max-concurrency",
-                    "16",
-                    "--depot-compaction-max-concurrency",
                     "8",
+                    "--depot-compaction-max-concurrency",
+                    "2",
                     "--gasoline-worker-secondary-grace-ms",
                     "1000",
                     "--gasoline-history-prune-eligibility-seconds",
@@ -79,8 +79,8 @@ class RenderRuntimeConfigTest(unittest.TestCase):
         self.assertEqual(document["runtime"]["gasoline_worker_poll_interval_ms"], 2000)
         self.assertEqual(document["runtime"]["gasoline_worker_pull_batch_size"], 256)
         self.assertEqual(document["runtime"]["gasoline_worker_max_active_workflows"], 4096)
-        self.assertEqual(document["runtime"]["depot_manager_refresh_max_concurrency"], 16)
-        self.assertEqual(document["runtime"]["depot_compaction_max_concurrency"], 8)
+        self.assertEqual(document["runtime"]["depot_manager_refresh_max_concurrency"], 8)
+        self.assertEqual(document["runtime"]["depot_compaction_max_concurrency"], 2)
         self.assertEqual(document["runtime"]["gasoline_worker_secondary_grace_ms"], 1000)
         self.assertEqual(
             document["runtime"]["gasoline_history_prune_eligibility_duration"], 900

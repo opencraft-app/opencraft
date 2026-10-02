@@ -20,8 +20,8 @@ fn gasoline_pull_batch_defaults_to_bounded_value() {
 	let root = runtime_config(None, None);
 	assert_eq!(root.runtime.gasoline_worker_pull_batch_size(), 256);
 	assert_eq!(root.runtime.gasoline_worker_max_active_workflows(), 256);
-	assert_eq!(root.runtime.depot_manager_refresh_max_concurrency(), 16);
-	assert_eq!(root.runtime.depot_compaction_max_concurrency(), 8);
+	assert_eq!(root.runtime.depot_manager_refresh_max_concurrency(), 8);
+	assert_eq!(root.runtime.depot_compaction_max_concurrency(), 2);
 	assert_eq!(
 		root.runtime.gasoline_worker_secondary_grace().as_millis(),
 		1_000

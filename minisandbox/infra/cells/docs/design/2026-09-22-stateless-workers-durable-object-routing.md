@@ -267,6 +267,13 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    indeterminate。Engine 仍 6/6、FDB 始终可用且全复制，因此修复不是扩 FDB 或放宽重试，而是把
    production/q01 Host 扩容改成 `Min(Pods 6/min, Percent 100/min)`，将大 Cell 的 membership cohort
    限在每分钟六个；待旧容量安全缩回后必须用相同零重试门禁重跑。
+   第二轮 `354610a58f4a66c7e0b4ec8d7978cbda` 从零 active/零 compaction waiter 启动，仍在
+   8,868 created 时严格失败。B 的后台 compaction 达 48 in-flight/1,258 waiters、manager refresh
+   达 96 in-flight/151 waiters；交互 UDB 事务升至秒级，而 Engine/FDB CPU 未饱和。最早故障是七次
+   B Cell indeterminate，随后 initialize 失败触发停止；127 个同时取消错误属于停止扇出。
+   下一候选将每 Engine refresh/compaction 默认值从 `16/8` 调整为 `8/2`，六副本 Cell 的总上限为
+   `48/12`；并以 drop guard 修复 UDB transaction future 取消后 pending gauge 不下降的观测错误。
+   参数校准仍须由同一 strict 10k receipt 证明，同时检查 hot bytes、waiter 年龄与 cold publish 进度。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入

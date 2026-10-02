@@ -114,11 +114,11 @@ impl Runtime {
 	}
 
 	pub fn depot_manager_refresh_max_concurrency(&self) -> usize {
-		self.depot_manager_refresh_max_concurrency.unwrap_or(16)
+		self.depot_manager_refresh_max_concurrency.unwrap_or(8)
 	}
 
 	pub fn depot_compaction_max_concurrency(&self) -> usize {
-		self.depot_compaction_max_concurrency.unwrap_or(8)
+		self.depot_compaction_max_concurrency.unwrap_or(2)
 	}
 
 	pub fn gasoline_worker_secondary_grace(&self) -> Duration {
