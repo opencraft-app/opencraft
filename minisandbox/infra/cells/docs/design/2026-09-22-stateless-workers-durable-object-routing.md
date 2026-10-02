@@ -975,6 +975,9 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   2026-10-02 本地真实子进程回归已复现旧 verifier 对 UID 替换、未准入节点和时间重放的错误放行。
   新校验只加强离线证据门禁，不改变正在运行的云端请求、3 秒 SLO 或零稳态重试约束。
 - 量化 Router p50/p99/p999、cache hit ratio、Registry TPS、跨 Cell RTT 和每请求 CPU；
+- Runtime 云构建可显式接入候选源码的 fresh stage：在签发临时 push 权限前验真 source/manifest、
+  fork/FDB/toolchain identity、规范四文件 hash 和 static ELF，复制后再次校验并保留原 receipt。
+  不读取旧 Runtime、不重标旧产物，不改变 Rust workspace/ABI/资源限制或发布资格。
 - Router 性能负载与最终采集共用容量收据校验：八项完整周期门禁必须全部存在且为 JSON true，
   新增检查项也必须为真，active 目标必须是至少10000的整数。空或部分检查表与 truthy 非布尔值
   不构成完整资格；拒绝发生在资源发布、Prometheus 访问和输出创建前。
