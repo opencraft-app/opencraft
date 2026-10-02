@@ -31,13 +31,38 @@ test("managed bridge negotiates read-only capability through both AppServer entr
   try {
     const initialized = await bridge.request("initialize") as { capabilities: { extensions: Record<string, { features: { botManagement: boolean } }> } };
     assert.equal(initialized.capabilities.extensions["vela/bot-conversations"]?.features.botManagement, false);
-    assert.deepEqual(socket.requests[0]?.params, { include_sessions: true });
+    assert.deepEqual(socket.requests.find(request => request.method === "profiles.list")?.params, { include_sessions: true });
     const listed = await bridge.handle({ id: 1, method: "bot/list" }) as { result: { data: Array<{ botId: string }> } };
     assert.deepEqual(listed.result.data.map(bot => bot.botId).sort(), ["instance", "sales-id"]);
     const denied = await bridge.handle({ id: 2, method: "bot/create", params: { name: "Unsafe clone" } }) as { error: { data: { code: string } } };
     assert.equal(denied.error.data.code, "BOT_CAPABILITY_UNAVAILABLE");
     assert.ok(socket.requests.every(request => ["profiles.list", "groups.capabilities"].includes(request.method)));
   } finally { bridge.dispose(); }
+});
+
+test("managed startup overlaps Bot bindings, native Profiles, and hosted-room discovery", async () => {
+  const started: string[] = [];
+  let releaseBindings!: (value: ReturnType<typeof bindings>) => void;
+  let releaseProfiles!: (value: Array<{ name: string }>) => void;
+  let releaseGroups!: (value: { driver: boolean; methods: string[] }) => void;
+  const handler = new HermesBotAppServerHandler({
+    listProfiles: () => { started.push("profiles"); return new Promise(resolve => { releaseProfiles = resolve; }); },
+    callHostedRoom: () => { started.push("groups"); return new Promise(resolve => { releaseGroups = resolve; }); },
+  } as unknown as HermesAppServerAdapter, () => {}, {
+    resolveProfileBots: () => { started.push("bindings"); return new Promise(resolve => { releaseBindings = resolve; }); },
+  });
+  const preparing = handler.prepareCapability();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(new Set(started), new Set(["bindings", "profiles", "groups"]));
+  let settled = false;
+  void preparing.finally(() => { settled = true; });
+  releaseProfiles([{ name: "default" }, { name: "sales" }]);
+  releaseBindings(bindings());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, "initialize must wait for hosted-room capability before advertising it");
+  releaseGroups({ driver: false, methods: [] });
+  assert.equal(await preparing, true);
+  handler.dispose();
 });
 
 test("managed bridge advertises Hermes hosted rooms only after capability negotiation", async () => {
