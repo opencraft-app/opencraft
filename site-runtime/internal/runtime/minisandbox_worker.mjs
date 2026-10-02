@@ -9,6 +9,9 @@ const Headers = globalThis.Headers, Request = globalThis.Request;
 const Response = globalThis.Response, URL = globalThis.URL;
 const TextEncoder = globalThis.TextEncoder;
 const TypeError = globalThis.TypeError, RangeError = globalThis.RangeError;
+const Promise = globalThis.Promise;
+const setTimeout = globalThis.setTimeout, clearTimeout = globalThis.clearTimeout;
+const MAX_HANDLER_MS = 3500; // Finish before the outer five-second invocation deadline.
 for (const intrinsic of [Object, Array, String, Number, RegExp, ArrayBuffer, Headers, Request, Response, URL, TextEncoder, TypeError, RangeError, globalThis.Function, globalThis.Promise, DurableObject]) {
   if (intrinsic.prototype) Object.freeze(intrinsic.prototype);
   Object.freeze(intrinsic);
@@ -48,9 +51,10 @@ function readQuery(query) {
   }
   if (quote || block) throw new TypeError("unterminated SQL token");
 }
-function sqlCapability(storage, readOnly) {
+function sqlCapability(storage, readOnly, isActive) {
   return Object.freeze({
     async exec(query, bindings = []) {
+      if (!isActive()) throw new TypeError("SQL invocation has ended");
       if (typeof query !== "string" || !query.trim() || encoder.encode(query).byteLength > MAX_QUERY_BYTES) throw new TypeError("invalid SQL query");
       if (!Array.isArray(bindings) || bindings.length > 256) throw new TypeError("invalid SQL bindings");
       let bindingBytes = 0;
@@ -76,12 +80,17 @@ function sqlCapability(storage, readOnly) {
         return { rows, columnNames: cursor.columnNames, rowsRead: cursor.rowsRead, rowsWritten: cursor.rowsWritten };
       });
     },
-    async databaseSize() { return storage.sql.databaseSize; }
+    async databaseSize() {
+      if (!isActive()) throw new TypeError("SQL invocation has ended");
+      return storage.sql.databaseSize;
+    }
   });
 }
 export class VelaSite extends DurableObject {
   #storage;
   #abort;
+  #tail = Promise.resolve();
+  #active = false;
   constructor(state, env) {
     super(state, env);
     this.#storage = state.storage;
@@ -100,6 +109,7 @@ export class VelaSite extends DurableObject {
       // database identity. The publisher holds the site's operation lock and
       // invokes only this private control path, never an application handler.
       if (expected !== null && expected !== platformPackageID) {
+        if (this.#active) return Response.json({code: "package_rotation_busy"}, {status: 503});
         this.#abort("platform immutable package rotation");
       }
       return Response.json({package_id: platformPackageID});
@@ -113,16 +123,39 @@ export class VelaSite extends DurableObject {
     const url = new URL(request.url);
     if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return new Response("not found", {status: 404});
     const safeRequest = new Request(request, {headers});
-    const sql = sqlCapability(this.#storage, readOnly);
-    const env = Object.freeze({ RIVET_STORAGE: Object.freeze({sql}) });
-    const ctx = Object.freeze({ waitUntil() { throw new TypeError("background work is not supported"); } });
+    // User modules retain state across requests. Revoke escaped SQL objects at
+    // completion and serialize handlers so a share cannot borrow a still-live
+    // owner capability while its original handler is suspended on an await.
+    const previous = this.#tail;
+    let release;
+    this.#tail = new Promise(resolve => { release = resolve; });
+    await previous;
+    let active = true, timer;
+    this.#active = true;
     try {
-      const backend = (await loader()).default;
-      if (!backend || typeof backend.fetch !== "function") throw new TypeError("fetch export required");
-      const response = await backend.fetch(safeRequest, env, ctx);
+      const sql = sqlCapability(this.#storage, readOnly, () => active);
+      const env = Object.freeze({ RIVET_STORAGE: Object.freeze({sql}) });
+      const ctx = Object.freeze({ waitUntil() { throw new TypeError("background work is not supported"); } });
+      // Outer HTTP cancellation alone cannot release a suspended JS handler.
+      // On timeout revoke its SQL object before letting the next request run;
+      // a late continuation cannot use the escaped capability again.
+      const response = await Promise.race([
+        (async () => {
+          const backend = (await loader()).default;
+          if (!backend || typeof backend.fetch !== "function") throw new TypeError("fetch export required");
+          return await backend.fetch(safeRequest, env, ctx);
+        })(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new TypeError("application deadline exceeded")), MAX_HANDLER_MS); })
+      ]);
       if (!(response instanceof Response)) throw new TypeError("fetch must return a Response");
       return response;
     } catch { return new Response("application execution failed", {status: 500}); }
+    finally {
+      active = false;
+      this.#active = false;
+      clearTimeout(timer);
+      release();
+    }
   }
 }
 // Workers API requires a default fetch export during preparation. Website

@@ -304,3 +304,74 @@ actual regional runtime before any release. Full Goal stays active.
   .tmp/minisandbox-integration/international-runtime-discovery-sg-20261002-summary.json.
 - Formal design impact check and staged whitespace checks PASS. Production,
   GitOps, owner Skill and Agent mutations have not begun in this phase.
+
+
+## checkpoint_20261002_1645_parallel_consumers_deployed
+
+- Committed and pushed source HEAD 8b02b4f23522a2ea54209d504742a3b2d43c8a1d.
+  Source MR !4938 opened, target master; not merged or production-released.
+  The desktop artifact tool rejected the Gongfeng MR URL; MR itself exists.
+- Beijing manager ctl/website-minisandbox-runtime-readiness created with a
+  dedicated 20 Gi RWO PVC, Recreate single replica and stable scope
+  cn-bjtest-minisandbox-v1. Native shared hosts were not restarted.
+- Startup initially failed because a Kubernetes Secret projection is a symlink
+  with group-readable mode, rejected by the existing private-key Lstat check.
+  Fixed only the scoped deployment: nonroot init materializes regular 0600
+  TLS files into a private memory volume; runtime mounts it read-only. TLS
+  protection was not relaxed. Runtime is Ready, zero restarts on the new Pod.
+- Certificate-verified TLS and separate deploy/invoke role checks passed.
+  Raw busybox nc stdin-EOF probes returned upstream_unavailable/503 while
+  normal Pod wget HTTP clients returned ready/200; operator read-only TAT
+  inv-a9dde9g1ie also confirms ready/200, admissionOpen=true, readyCells=2.
+  Do not classify the raw probe alone as a native outage or bypass admission.
+- Beijing CTL API, site gateway readiness candidate and website-deployer
+  now use the exact four-component build source hash
+  2f780e7a27153aea33a962af6634e3aa5b9798b4aae4bbf6698bd3c07a44c9bd.
+  All three rollouts passed, new imageID and Ready observed. Retiring old Pods
+  may still appear in the rollout snapshot; validate settled endpoints next.
+- Consumer runtime origin is HTTPS on the new manager Service. Dedicated
+  public CA maps preserve old trust roots and current system roots (151
+  certificates including the new test CA). Existing deploy/invoke bindings
+  matched the manager values; no credentials changed.
+- Persistence/shared-read flags opened only on these controlled Beijing test
+  consumers; existing Beta account scope preserved. The candidates have no
+  observed Argo ownership, so unrelated Argo applications were not paused.
+- User explicitly requested parallel acceleration: Euclid handles concrete
+  international runtime/deployment path; Volta reviews current transaction,
+  pointer/fingerprint/concurrency and capability boundary release blockers.
+  Main path moves on Beijing true consumer-chain acceptance.
+- Source/GitOps/production/user Skill/Agent/browser final acceptance remains
+  incomplete. No production, GitOps or owner-machine mutation in this phase.
+
+
+## checkpoint_20261002_1712_sql_lifetime_fix
+
+- Parallel review identified a real P1: an application can cache the owner SQL
+  capability and reuse it during a later share GET, bypassing per-request readonly
+  enforcement. Integrated the one-file repair: scoped capability revocation,
+  per-DO handler serialization and private-reset busy guard.
+- Added a bounded 3.5-second wrapper handler deadline so a suspended async
+  application cannot keep the per-DO queue permanently held after the outer
+  five-second HTTP deadline. Expired SQL capabilities remain revoked for late
+  continuations. Existing VM harness now supplies the real platform timer APIs.
+- Minimal offline before/after proof: old wrapper permits one cached-capability
+  write from share, fixed wrapper rejects it and leaves zero rows. A permanently
+  suspended handler returns 500 after 3503 ms and the queued share recovers with
+  200. This is a repair proof, not native or production qualification. No new
+  committed test matrix added.
+- Current wrapper/Todo existing regressions PASS 34/34; runtime focused race
+  PASS (2.606 s), current vet/build and Linux r7 build PASS. A new immutable
+  Worker package must carry the wrapper repair; retrying an existing PUT does
+  not rewrite an old native package. No real test publication was dispatched
+  before rebuilding/updating the runtime manager.
+- Actual existing controlled Beijing test VM ins-ndkqrlhp freshly verified
+  RUNNING. Read-only credential-authenticated public capability/site preflight
+  passed, TAT inv-c9de1n0xsm: fetch-v1 and rivet-sql-v1 both enabled; quota 1/1.
+  Its existing isolated website ws-38f6d001b70a3d7b will be used for the real
+  CTL -> worker -> runtime -> gateway publication, not a newly forged account.
+- Prepared a deterministic 3020-byte shared Todo artifact and explicit
+  publish/upload/operation ledger script, not dispatched yet. Existing user
+  production machine and Skill are unchanged.
+- Review follow-up worker stopped on a tool error after returning its initial
+  patch; main performed the bounded lifetime/deadline proof and took over.
+  International concrete deployment path remains delegated to Euclid.

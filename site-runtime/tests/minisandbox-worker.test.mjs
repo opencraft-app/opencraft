@@ -9,7 +9,7 @@ const todoSource = fs.readFileSync(new URL('../../.agents/skills/website-builder
 const digest='a'.repeat(64);
 
 async function worker(backend, database) {
- const context=vm.createContext({Headers,Request,Response,URL,TextEncoder,console});
+ const context=vm.createContext({Headers,Request,Response,URL,TextEncoder,console,setTimeout,clearTimeout});
  class DurableObject { constructor(state,env) { this.ctx=state;this.env=env; } }
  const builtin=new vm.SyntheticModule(['DurableObject'],function(){this.setExport('DurableObject',DurableObject)},{context});
  const main=new vm.SourceTextModule(`const platformPackageID="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";

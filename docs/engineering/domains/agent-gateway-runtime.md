@@ -593,8 +593,13 @@ separate stateless compatibility path, not the persistent implementation.
   GET/HEAD backend read. `SITE_GATEWAY_BACKEND_SHARED_READ=true` is separately
   required. Browser-supplied internal headers are discarded; the gateway creates
   `read_only` and the runtime creates private dispatch headers. Share SQL permits
-  one SELECT only and cannot initialize schema or perform writes. All writes still
-  require an authenticated site owner and exact same-origin checks.
+  one SELECT only and cannot initialize schema or perform writes. SQL capabilities
+  are request-scoped and revoked when the handler completes. Handlers in one DO
+  run serially so cached owner capabilities cannot be borrowed by a concurrent
+  share request; private class rotation returns busy while a handler is active.
+  A wrapper wall-clock deadline revokes suspended handlers and releases the queue
+  before the outer invocation deadline; late continuations keep revoked SQL objects.
+  All writes still require an authenticated site owner and exact same-origin checks.
 - Site deletion uses the logical Object terminal fence. Individual release
   retention removes code artifacts only, not the site database. Worker hard delete
   is not used to bypass the upstream historical Object inventory requirement.
@@ -607,9 +612,10 @@ This is a source design, not a launch receipt. Release gates require a real heal
 regional Workers/Depot/FDB path, persistence across deployment and host replacement,
 site isolation, share read/owner write checks, static regression and the public Agent
 flow. `/readyz=200` on Workers API alone does not prove admission or executor
-availability. Beijing has passed native SQL write/read and retained-version cold reads in a
-  scoped fixture; warm version propagation is still under qualification. Korea
-  and both production configurations remain unqualified. Do not
+availability. Beijing has passed native SQL write/read, retained-version reads,
+  warm version propagation and isolated adapter restart in scoped fixtures; this
+  does not prove native Host replacement, public Agent/browser flow or production
+  acceptance. Korea and both production configurations remain unqualified. Do not
 route international persistent data to Beijing simply to obtain a passing test.
 
 ### Website backend test findings (2026-09-30 Beijing time)
