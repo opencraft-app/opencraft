@@ -270,6 +270,13 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    Service port-forward 访问，不直接消费 C 内部 DNS。准备失败也进入精确 Object 清理并记录失败
    receipt，包括响应丢失的已尝试 ID；未确认存在的 ID 才允许 DELETE 404。正常和异常退出均关闭
    forward，失败不重试非幂等 dispatch。延迟直方图只包含正式负载窗口，不混入预置请求。
+   2026-10-02 新运行 `f56405fe9169424fb97d3c81b3da2704` 在1517 Object时严格失败，
+   09:20:41 UTC四次活跃 heartbeat返回502 `indeterminate_result`。C日志均指向B Engine
+   等待响应头超过25秒，不能用增大超时、重试成功或健康FDB改判。原load收据SHA-256
+   `151c16bb56db0d23d818158c9ac7c63ac58d7c99ee63c03a0b78f1b5c3d73eb1`，原精确cleanup
+   收据SHA-256 `ce1b35b0af49f5c27df03713da5fe6d1325003c9357906b221dd3e8a7cbff9df`证明
+   1517对象已删除、pending0；任务仍须等待生产串行drain缩回。A/B实际48/45个Node与Host
+   全部Ready且Node admitted，Engine/Host无重启、FDB9/9全复制，不替代业务零错误资格。
    10k observer 还会把两 Cell 的 FDB CR configured/generation/available/fullReplication/healthy
    和全部 FDB Pod readiness 纳入每个 complete sample；存储冗余降级时即使请求暂时成功也不能
    取得容量资格。
