@@ -13,6 +13,11 @@ Before rendering, resolve the immutable `workers-api` image from the complete
 28-image inventory plus both Cells' identity, private Engine/stateless endpoint,
 and published `CellServingRoute` receipts. Never
 select this image independently from the inventory used for runtime release.
+The renderer requires the product ref, source revision, source-manifest digest,
+and original build-receipt byte digest to match the inventory's exact
+`workers-api` entry. Matching Go foundations alone is insufficient. Both
+bootstrap and serving reject a mismatch before publishing any output.
+Do not reformat an immutable product receipt after assembling the inventory.
 Each Cell first creates its immutable `actor-stateless-auth/v1` credential
 receipt. `sync-credentials.sh` then copies the two exact Engine, executor and
 Object Router capabilities into the externally owned immutable

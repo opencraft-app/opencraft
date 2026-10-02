@@ -198,6 +198,11 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    minisandbox 源码现以 mono2 的 `minisandbox/` subtree 为唯一真源；clean-room reviewed-source
    bundle v2 分别绑定 mono2 commit、repository tree、project path 与 project tree，同时仍把项目
    tree 作为归档根，避免把 mono2 其他服务带入 Runtime 构建或改变 builder 的目录契约；
+   Workers API 的 bootstrap/serving 渲染同时要求产品 ref、sourceRevision、sourceManifestDigest
+   和原始收据字节 buildReceiptDigest 与完整 inventory 的 exact workers-api 项一致。仅基础镜像
+   依赖相同不能授权另一产品；渲染前一次读取产品收据，校验和输出证据使用同一字节快照。
+   永久回归通过真实 11 产品/28 镜像清单和 CLI 子进程覆盖错镜像、错源码、重新格式化的收据
+   以及清单自校验正确但收据 digest 不同的拒绝路径，两种阶段都不得输出 manifest 或 receipt；
 3. Terraform 已改为通过 TKE 控制面创建独立、启用 autoscaling 的 Native NodePool，并将其动态
    `np-*` ID 写入 Cell inventory；Argo 不再伪造或拥有该 MachineSet。集群级 scale-in 已启用且一次
    最多缩一台。stateless admission profile、startup taint、精确 runtime digest probe 和 workload
@@ -343,6 +348,10 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    47 台串行回收。A 新资格任务 `inv-d9d9jw0nhw` 已启动，首先通过 Kubernetes watch 等待四台
    低容量，之后才取得 operation lock 并采集 fresh strict audit、运行相同资格链。
    B 的 production-cell 通过不替代 strict 10k，也不能提前开放未验证的 A。
+   后续只读 `inv-c9da5801w9` 在 06:40:16 UTC 看到 A Node 5/5/5，处于精确 6→5 issued intent。
+   原 A 资格句柄随后已报告 `bottomless_started`，说明其四台 exact UID/Ready/Idle preflight
+   和 fresh governance 已完成，进入持锁资格阶段。句柄仍 RUNNING，不代表 Bottomless/Engine HA
+   已通过；旧 10k final-wait 同样尚未证明终态，不得启动重叠的新 strict 10k。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入
