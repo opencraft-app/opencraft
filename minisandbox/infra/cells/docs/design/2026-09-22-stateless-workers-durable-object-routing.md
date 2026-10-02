@@ -277,6 +277,12 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    收据SHA-256 `ce1b35b0af49f5c27df03713da5fe6d1325003c9357906b221dd3e8a7cbff9df`证明
    1517对象已删除、pending0；任务仍须等待生产串行drain缩回。A/B实际48/45个Node与Host
    全部Ready且Node admitted，Engine/Host无重启、FDB9/9全复制，不替代业务零错误资格。
+   针对此次等待响应头超时，Workers API 的 Object fetch 传输失败日志增加客户端 connection、
+   request-written 与 first-response-byte 里程碑，区分 acquiring/writing/awaiting/reading 阶段。
+   只记录固定阶段、毫秒耗时和 socket 地址，不记录 body、header、URL query，也不新增高基数
+   metric。里程碑不能证明目标是否执行或提交，因此仍返回不可透明重试的 indeterminate；
+   不改变25秒 response-header deadline 或 caller-owned streaming/cancellation。诊断代码通过本地
+   验证后仍须正式发布和重新采集实际失败证据，不能据此认定该根因已修复。
    10k observer 还会把两 Cell 的 FDB CR configured/generation/available/fullReplication/healthy
    和全部 FDB Pod readiness 纳入每个 complete sample；存储冗余降级时即使请求暂时成功也不能
    取得容量资格。
