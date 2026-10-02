@@ -412,7 +412,8 @@ export function AgentChatMigrationSurface({
     <div
       aria-hidden={!active || undefined}
       className={cn(
-        "h-[clamp(516px,calc(100vh-220px),960px)] min-h-0 overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full",
+        "min-h-0 overflow-hidden rounded-lg border border-black/[0.08] bg-white",
+        enabled ? "h-full" : "h-[clamp(516px,calc(100vh-220px),960px)] lg:h-full",
         enabled && "rounded-none border-0",
         active ? "relative" : "invisible pointer-events-none absolute inset-0",
       )}
