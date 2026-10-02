@@ -1018,6 +1018,9 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   直接依赖根绑定已审阅 fork tree，未知新fork即使两份源码相同也不能沿用旧根集合证明；
   必须fresh stage并审阅其bridge合同，不能遗漏新增加的直接路径依赖。
   旧脚本已由真实 Cargo/子进程反例证明错误进入容器读取，新门禁本地通过；云上发布仍未发生。
+  完整源码落地门禁须分别检查 shell 的 helper 调用与 helper 的依赖/源码证明，不能继续要求
+  已抽出的校验文字留在旧内联位置。该门禁包含不依赖 Cargo 的结构回归，保证空白 builder
+  可先落地源码再安装工具链；真实 offline Cargo/变更输入回归仍独立执行，不能互相替代。
 - builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
   集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
 - 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配

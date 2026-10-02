@@ -23,6 +23,32 @@ STAGE_ROOTS = (
 )
 
 
+class StageReuseContractTest(unittest.TestCase):
+    """Source-materialization contracts run before Rust toolchain installation."""
+
+    def test_shell_proves_closure_before_reading_base_container(self):
+        script = (ROOT / "reuse-stage-from-runtime.sh").read_text()
+        proof = script.index('python3 "$script_dir/verify-stage-reuse-inputs.py"')
+        self.assertIn('"$base_source_dir" "$source_dir" "${stage_inputs[@]}"', script)
+        self.assertLess(proof, script.index("container=$(buildah from"))
+        self.assertIn('[[ $stage_inputs_digest =~ ^[0-9a-f]{64}$ ]]', script)
+
+    def test_materialization_gate_checks_shell_and_helper_separately(self):
+        script = (ROOT.parent / "verify-manifests.sh").read_text()
+        self.assertIn('test_stage_reuse_inputs.py" StageReuseContractTest', script)
+        shell_checks = script.split("for stage_reuse_guard in (", 1)[1].split(
+            "for stage_closure_guard in (", 1
+        )[0]
+        self.assertIn('verify-stage-reuse-inputs.py', shell_checks)
+        self.assertNotIn('base Runtime stage inputs differ', shell_checks)
+        helper_checks = script.split("for stage_closure_guard in (", 1)[1].split(
+            "for stage_reuse_entry_guard in (", 1
+        )[0]
+        self.assertIn('base Runtime stage inputs differ', helper_checks)
+        self.assertIn('runtime_stage_reuse_inputs', helper_checks)
+        self.assertIn('"--locked", "--offline"', helper_checks)
+
+
 class StageReuseInputsTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(dir="/data/tmp")

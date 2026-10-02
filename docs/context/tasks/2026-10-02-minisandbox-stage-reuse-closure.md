@@ -7,11 +7,12 @@ owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth:
   - minisandbox/infra/cells/deploy/tencent/fleet/runtime/reuse-stage-from-runtime.sh
+  - minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh
   - minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -23,7 +24,7 @@ derived: false
 ## non_goals
 
 - 不改变请求、持久格式、Runtime ABI、云规模、3秒 SLO 或零稳态重试。
-- 原 strict10k 仍缩容，不并发发布、materialize 或构建云镜像。
+- 不并发运行发布、materialize、云构建与负载资格链；原 strict10k 已失败终态且自然缩回 floor。
 - 不为纯 Engine 修改重编 V8，不把本地输入校验说成真实万级通过。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -51,10 +52,12 @@ derived: false
 - 项目自身AGENTS文件链接同时绑定树内目标内容与执行位，不能仅hash链接文字。
 - 完整脚本对子进程容器边界的拒绝发生在旧镜像读取、stage 输出及收据之前。
 - 实际工程 metadata 可解析，聚焦 Python、Bash、文档及 impact 门禁通过。
+- 完整 fleet 静态门禁检查 shell/helper 各自责任，空白 builder 不因尚未安装 Cargo 而不能落地源码。
 
 ## affected_paths
 
 - runtime 复用脚本、新校验器和永久测试。
+- 完整源码落地调用的 fleet verify-manifests 门禁。
 - runtime README、正式设计、此 Task 与 catalog。
 
 ## required_context
@@ -78,6 +81,7 @@ derived: false
 | minisandbox/infra/cells/deploy/tencent/fleet/README.md@5d181cff | 资格边界 | 保留严格容量失败事实 |
 | minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_prepare_stage.py@5d181cff | 测试邻居 | 保留缓存与fresh stage合同 |
 | minisandbox/infra/cells/deploy/tencent/fleet/workers-api/api.yaml@5d181cff | 部署邻居 | 不改API或HPA |
+| minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh@199ce9e1 | 失败边界 | 检查helper集成而非旧内联位置 |
 
 ## evidence
 
@@ -90,6 +94,8 @@ derived: false
 - 原脚本单项反例0.083秒失败，明确见证客户端变更仍进入容器命令，不把预期失败当作测试通过。
 - 容器命令使用独立子进程见证，不执行真实 buildah 或访问 registry。
 - 外部日志 `/data/tmp/minisandbox-stage-reuse-rust-closure-{before,final}-20261002.log`。
+- canonical COS 源码落地在完整静态门禁拒绝：旧检查仍要求抽到 helper 的错误文字存在于 shell；源码未落地，未绕过门禁。
+- 修复双层结构合同并增加无需 Cargo 的回归；完整 fleet 门禁终态0，日志 `/data/tmp/minisandbox-fleet-stage-closure-full-static-20261002.log`。两项无编译器合同和十二项真实Cargo/文件边界回归共14项通过2.412秒。
 
 ## risks
 
@@ -102,6 +108,7 @@ derived: false
 - 本地完整22项 source/stage/cache/closure回归与两份真实工程源码校验通过；均未编译C++。
 - Bash syntax、Python编译、diff及七路径impact通过；文档errors/warnings为空，Context仅原有基线问题，无新增。
 - Context audit 33项通过；根Context测试仍有四项既有失败，未绕过或改写基线。
+- 后续集成修复：完整fleet static、14项stage回归、Bash/diff/impact通过，文档errors/warnings为空；未编译C++、未改变资格SLO。
 
 ## decisions
 
@@ -120,5 +127,6 @@ derived: false
 
 ## handoff
 
-- 局部修复准备正常master push；原缩容仍占操作锁，未执行云构建、materialize或发布。
+- stage生产闭包修复已正常master push；随后源码落地暴露完整门禁集成遗漏，当前修复已通过完整门禁，准备正常提交并重制canonical源码包。
+- 原 strict10k FAILED/1，8193对象全部清理，A/B自然缩回4台floor；不改写失败收据。新Go API构建和发布尚未开始。
 - 全目标仍缺修复发布、fresh strict10k、Router性能和百万dormant实跑；不标记完成。

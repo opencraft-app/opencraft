@@ -75,6 +75,13 @@ The bridge's direct dependency roots are bound to the audited fork tree. A new
 fork must use a fresh stage until that root contract is reviewed and updated;
 matching two copies of an unknown fork is not permission to omit its new roots.
 
+The full source-materialization gate checks the shell's helper invocation and
+the helper's production-input proof separately. Its structural regression runs
+without Cargo so a clean builder can materialize reviewed source before toolchain
+installation. The actual offline Cargo/changed-input tests remain mandatory for
+stage-reuse changes; neither check substitutes for the other or for a qualified
+compiled-origin receipt.
+
 Those tools themselves are installed from the official checksum-locked sources
 without consulting `/data/build-cache`:
 
