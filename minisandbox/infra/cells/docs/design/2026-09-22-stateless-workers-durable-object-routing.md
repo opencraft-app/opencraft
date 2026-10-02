@@ -668,6 +668,15 @@ Router 并不自动减少 Registry 工作量。应同时观测实际 Registry GE
 本地真实 HTTP 事件屏障已复现旧路径的 `32 请求 → 32 GET`，读合并回归验证为 `32 请求 → 1 GET`，
 随后热请求无 GET。这是机制证据，不是云上吞吐资格，也不是旧万级负载冷降积压的完整根因结论。
 
+该机制已通过 source `723eebaa` 的独立 Go product 发布到北京 C：
+[发布收据](../../deploy/tencent/fleet/workers-api/evidence/beijing-deployment-read-release-20261003.json)
+绑定 image `sha256:d2e890c531e1979f74dbc83714b365ee11a43050fd45bcd5a1131c83ca95f9d5`；
+[Argo 收敛](../../deploy/tencent/fleet/workers-api/evidence/beijing-deployment-read-convergence-20261003.json)
+绑定 revision `3021e63d9ffc5f92d1ce173b72d9b39ca21624c1`、十四资源、三节点三 AZ 和原外部 UID。
+实际 metrics 为 started/registry=2、shared/overloaded=0、inflight/waiters=0，仅证明新指标接线
+和该次观察无积压；无并发命中不能证明云上 32→1 或吞吐改善。后续性能资格必须测量有效
+吞吐、重做率、队列年龄与 hot-debt 变化，不能用发布通过、名义副本余量或单元测试取代。
+
 功能回归的超时合同与性能 SLO 分开验证：响应头必须在配置预算后终止等待，流响应体不受
 header timeout 或控制请求 timeout 截断。使用真实 HTTP 的取消、flush 与 body-release 事件
 建立顺序；共享构建机上的 10 ms timer 不保证线程在 50 ms 内重新获得 CPU。墙钟 p99/吞吐
@@ -1092,6 +1101,13 @@ listener-before-completion；header 本身不能作为数据完整性或排空�
 完整 128 KiB、零重试；替换期间 138 次公共业务请求零失败，恢复三个 Ready API 节点并完成
 临时 Worker 清理。该证据只证明这个 API 故障边界，不证明内部 Router 或万级性能。
 
+同日读合并发布后的
+[新镜像业务排空收据](../../deploy/tencent/fleet/load/workers-api-business-drain/evidence/beijing-deployment-read-20261003.json)
+绑定 source `723eebaa` 与 API `d2e890c5`：正常 UID 删除替换期间仍有 138 次公共业务请求
+零失败，全部 145 请求零失败；原长流在 listener 停止后继续 4.912 秒并完整结束，零重试。
+恢复三个 Ready 节点，临时 Worker DELETE 204，原 Deployment/HPA UID 与配置保持。
+这是当前发布的业务正确性证据，仍不是 Router 并发读合并或整体大规模性能证明。
+
 ### 正确性
 
 - 同名 `idFromName()` 在进程、Pod 和 Cell 重启后完全一致；
@@ -1152,6 +1168,42 @@ durable_object_active{namespace,pool}
 
 Grafana 分开呈现 stateless execution、Object Router、durable runtime 和 Registry/FDB。扩容决策只
 消费对应执行面的指标；跨 Cell QPS、失败率和 RTT 用 bounded Cell label 观察。
+
+### 性能劣化的模型与验收口径
+
+分别建模交互请求、placement/唤醒和持久化后台，不能以一个总 CPU 指标替代。对每个阶段
+记录到达率 `λ`、实际服务时间 `S`、有效并行度 `c`、排队时间和无效工作比例。粗略容量模型
+`ρ = λ × E[S] / c` 只在工作粒度一致、近似稳态时用于定位；真实串行热点、共享物理 CPU、
+FDB 冲突或 COS 限流会令有效 `c` 小于副本数。提高副本数却增加同一真值上的争用，不算扩容成功。
+
+冷降必须测量有效工作，而不是任务启动量：
+
+```text
+effective_reclaim_bytes/s
+    = completed_attempts/s × successful_fraction × mean_reclaimed_bytes_per_success
+hot_debt_change
+    = newly_retained_authoritative_bytes - authority_released - branch_gc_released
+```
+
+这里的 bytes 都是平台逻辑账本口径，不是 COS 计费大小；upload/publish 不等于已经从 FDB
+释放 authority。重复覆盖、冷热 cache 和 metadata 必须分开，不能把 guest 的全部写入字节
+直接当作新增 hot debt。`sqlite_compaction_jobs_total` 的 result 与
+`sqlite_compaction_bytes_total{operation="reclaim_fdb"}` 联合观察有效工作；
+`sqlite_cold_storage_accounting_bytes{class="fdb_authoritative"}` 观察账本趋势。
+Cell 账本由多个 Engine 重复采样时不能对 replica 求和；选取同一时段的有效 Cell 观察并保留采样误差。
+在途 batch 的 backlog gauge 不是整条 durable queue 的长度，完成者 wait histogram 也不能
+证明尚未获得 permit 的最长等待年龄。缺少这些观测时应明确证据缺口，不捏造队列已经收敛。
+
+设计修正优先消除无效工作和错误反馈：共享 generation 内的重复读取；持续 append 使旧
+head-fenced 冷降计划反复失效；大量 Envoy 一次加入带来的协调风暴；休眠对象被周期轮询。
+持续 append 可以使用已封闭输入前缀，但 generation、truncate、PITR/history、原子 cold publish
+和 serializable 条件清理仍是正确性 fence。交互与后台的许可分开不等于 FDB/CPU 隔离；后台
+并发必须保持有界并检查交互尾延迟，不能把每个 Engine 的独立限额误当作 Cell 总预算。
+
+验收固定 Version 数、请求到达/活跃/唤醒模式、缓存命中率、代码/镜像和物理容量，对比成功
+吞吐、p95/p99、排队/重做、事务冲突、实际 publish/reclaim、hot-debt 导数与扩缩容轨迹。
+只有对应窗口有效服务追上负载、积压不持续增长且原零重试/身份/持久性门禁不放宽，才可称
+性能改进。该模型是实验与设计约束，不是当前万级/百万资格已经通过的证据。
 
 ## 所有权与核心不变量
 

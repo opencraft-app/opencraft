@@ -8,17 +8,18 @@ authority: primary
 source_of_truth:
   - minisandbox/infra/cells/deploy/tencent/fleet/workers-api/build-image-via-tat.sh
   - minisandbox/infra/cells/deploy/tencent/fleet/workers-api/gitops/README.md
-status: active
+status: retired
 reviewed_at: 2026-10-03
 review_due: 2026-11-03
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
 
 ## goal
 
-将 source 86a11d23 的读合并实现通过独立 Go API product 正式发布；先修正工厂暴露的旧墙钟测试。
+将 source 86a11d23 的读合并实现通过独立 Go API product 正式发布；事件屏障测试修正后的
+source 723eebaa 已完成该单独发布边界，不表示完整 Stateless Workers / DO 目标完成。
 
 ## non_goals
 
@@ -50,7 +51,7 @@ derived: false
 
 ## affected_paths
 
-- 本 Task、正式设计的证据边界、workersapi/api_test.go 与单独非敏感发布记录。
+- 本 Task、正式设计的证据边界/性能模型、workersapi/api_test.go 与单独非敏感发布记录。
 
 ## required_context
 
@@ -74,12 +75,26 @@ derived: false
 ## evidence
 
 - 上一轮是实质 progress：86a11d23 normal push；本轮先 jj new，worktree 起点 clean。
-- 原 Runtime stage scope active/running，续接 session 94658 实际仍运行，未重启。
+- Go API 发布与独立 Runtime 作业分开；本 Task 不将 Runtime 构建或 Cell 资格计作 API 证据。
 - source 86a11d23 已通过完整 manifest 校验并由 inv-c9dv7c0dxt 成功 materialize。
 - Go 工厂 inv-e9dv9mgbai 明确 FAILED/1；旧测试得到正确的 502/indeterminate_result，
   但 382.9 ms 调度延迟违反其 50 ms 墙钟上限。失败日志保留，未产生 product、未发布。
 - 该子测试改用真实 HTTP 取消与响应体释放屏障；保持 10 ms header timeout、非 retryable
   副作用错误和完整流响应，删除 sleep/墙钟 SLO 断言，不调整生产配置。
+- 新 source 723eebaa 的正式 Go 工厂 inv-e9dvpp01g9 为 SUCCESS/0；原失败记录不覆盖。
+- C 正式发布 inv-d9dvu1g587 为 SUCCESS/0。API image d2e890c5，Argo revision 3021e63d
+  Synced/Healthy，十四资源、三节点三 AZ、原 Deployment/两 Service/外部 Secret UID 与 A/B
+  Application 均保持。完整 inventory 仅晋级 API，其余 27 项未变。
+- [发布收据](../../../minisandbox/infra/cells/deploy/tencent/fleet/workers-api/evidence/beijing-deployment-read-release-20261003.json)
+  与 [Argo 收敛收据](../../../minisandbox/infra/cells/deploy/tencent/fleet/workers-api/evidence/beijing-deployment-read-convergence-20261003.json)
+  为云端实际原始字节，摘要前缀 fa8bfd83 / 7f2c6627。
+- [实际业务排空](../../../minisandbox/infra/cells/deploy/tencent/fleet/load/workers-api-business-drain/evidence/beijing-deployment-read-20261003.json)
+  摘要前缀 1b948abb：145 请求零失败、替换期间 138 请求，原流在 listener 停止后继续
+  4.912 秒并收到完整 128 KiB/EOF/hash，零重试，恢复三个 Ready 节点，临时 Worker DELETE 204。
+- 实际运行镜像输出 inflight/waiters 两个零水位及 started/registry=2、shared/overloaded=0。
+  这证明指标接线，不证明云上 32→1、吞吐提升或万级性能已解决。原始 metrics 摘要由发布收据绑定。
+- 发布日志有一次 Kubernetes discovery i/o timeout，随后全部收敛与真实业务门禁通过；保留该
+  观察，不将其冒称产品请求失败或完整根因结论。
 
 ## risks
 
@@ -88,7 +103,7 @@ derived: false
 
 ## validation
 
-- 原 API verify、product validator、Argo convergence 与真实 public request；Docs/Context/impact。
+- 原 API verify、product validator、Argo convergence 与真实 public request 均实际通过。
 - 修正后完整 workersapi/objectrouter/cmd-workers-api race 单次通过：2.414/1.018/5.515 秒，
   日志 `/data/tmp/minisandbox-api-event-deadline-race-20261003.log`。vet 与本地 binary build 终态 0。
 - 文档校验无 errors/warnings；root Context 原有治理错误独立存在，不宣称全仓通过。
@@ -107,5 +122,7 @@ derived: false
 
 ## handoff
 
-- 首次工厂已失败，专项 race 回归通过；待完整门禁、独立源码提交及正式工厂重建。
-- 当前 C 仍为原 28db image，3 Ready、Argo Synced/Healthy；无生产更新或新 convergence。
+- 此 API 发布 Task 退役，C 为 d2e890c5、三 Ready、Argo 3021e63d Synced/Healthy。
+- 后续 Runtime 正式发布须沿用新 API product/full inventory，禁止回退旧 28db API。
+- 全目标继续验证 A/B Runtime、有效冷降吞吐/重排率/队列年龄/hot-debt 导数、严格万级自然扩缩
+  与 Router 矩阵；不能以这个发布/排空收据代替这些性能资格。
