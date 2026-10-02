@@ -480,6 +480,15 @@ the immutable Pod set during release or qualification. Dynamic release binding a
 production HPA envelope of 3..301 Ready Hosts and still requires the exact desired Pod UID set to
 remain unchanged across each qualification.
 
+The runtime capacity Deployment has one `Recreate` writer per MachineSet. Orphaned Node drain
+recovery requires an API-server JSON Patch test of the MachineSet UID and resourceVersion before
+the existing Node UID/resourceVersion/owner CAS removes its fence. A GET without an intent is not
+proof that a committed intent is absent. If the exact original Machine and Node still exist but an
+intent's entire fence is missing, only zero provider attempts and an empty RequestID permit its
+CAS cancellation. Capacity, topology, emptiness, and stabilization must then be evaluated again.
+An attempted operation, replacement UID, partial fence, or another owner's fence remains fail closed.
+Do not scale this writer above one replica without a cross-resource ownership protocol.
+
 `RIVET_CELL_REPORTER_MODE=disabled` is reserved for isolated runtime qualification
 clusters that deliberately do not install the production Fleet CRDs (for example, a
 three-FDB-node performance probe that cannot claim the nine-node production profile).

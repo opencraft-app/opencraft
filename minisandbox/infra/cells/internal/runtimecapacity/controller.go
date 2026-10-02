@@ -189,10 +189,10 @@ func (c *Controller) ReconcileOnce(ctx context.Context) (ReconcileResult, error)
 	// The Node placement fence is written before the durable MachineSet intent.
 	// If the process exits in that narrow interval, no provider request can have
 	// been issued, but the fenced Node is excluded from usable capacity forever.
-	// With no durable intent present every fence owned by this controller is
-	// therefore unambiguously orphaned. Restore it before making any capacity
-	// decision and restart stabilization on the next reconciliation.
-	restored, err := c.restoreOrphanedScaleDownFences(ctx)
+	// Confirm the no-intent snapshot at the API server before restoring any
+	// orphaned fence. A stale GET must not authorize clearing a committed intent's
+	// fence. Restart stabilization after restoration on the next reconciliation.
+	restored, err := c.restoreOrphanedScaleDownFences(ctx, machineSet)
 	if err != nil {
 		return result, err
 	}
@@ -711,8 +711,25 @@ func (c *Controller) reconcileDownscaleIntent(
 		}
 		return result, fmt.Errorf("re-read exact scale-down Node: %w", err)
 	}
-	if string(node.UID) != intent.NodeUID || node.Annotations[DrainAnnotation] != intent.MachineUID ||
+	if string(node.UID) != intent.NodeUID {
+		return result, fmt.Errorf("exact scale-down Node ownership fence changed")
+	}
+	if node.Annotations[DrainAnnotation] != intent.MachineUID ||
 		drainTaintIndex(node.Spec.Taints, intent.MachineUID) < 0 {
+		// A stale no-intent snapshot could previously restore this Node after the
+		// prepared intent had committed. No provider side effect is possible until
+		// Attempts is persisted. Cancel only an entirely absent fence on the exact
+		// original Node, then rerun full demand/topology/emptiness admission. Never
+		// overwrite another owner's fence or retry an attempted provider operation.
+		if intent.Attempts == 0 && intent.RequestID == "" &&
+			node.Annotations[DrainAnnotation] == "" && !hasTaintKey(node.Spec.Taints, DrainTaintKey) {
+			if err := c.clearDownscaleIntent(ctx, machineSet, raw); err != nil {
+				return result, err
+			}
+			c.resetDownscale()
+			result.Action = "abort-unfenced-exact-scale-down"
+			return result, nil
+		}
 		return result, fmt.Errorf("exact scale-down Node ownership fence changed")
 	}
 	if machine.GetDeletionTimestamp() != nil || node.DeletionTimestamp != nil {
@@ -1643,7 +1660,7 @@ func (c *Controller) restoreOwnedNodes(ctx context.Context) error {
 	return nil
 }
 
-func (c *Controller) restoreOrphanedScaleDownFences(ctx context.Context) ([]string, error) {
+func (c *Controller) restoreOrphanedScaleDownFences(ctx context.Context, machineSet *unstructured.Unstructured) ([]string, error) {
 	nodes, err := c.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{
 		LabelSelector: "node.tke.cloud.tencent.com/machineset=" + c.Config.MachineSetName,
 	})
@@ -1655,6 +1672,27 @@ func (c *Controller) restoreOrphanedScaleDownFences(ctx context.Context) ([]stri
 		node := &nodes.Items[i]
 		if node.Annotations[DrainAnnotation] == "" {
 			continue
+		}
+		// GET can observe an older no-intent snapshot than a just-completed
+		// prepare. Confirm it at the server before treating a fence as orphaned.
+		// This controller is the sole Recreate writer for the MachineSet; both
+		// the prepare and this check use its resourceVersion as their CAS fence.
+		if machineSet.GetAnnotations()[DownscaleIntentAnnotation] != "" {
+			return restored, fmt.Errorf("refuse orphan recovery with an exact scale-down intent")
+		}
+		if machineSet.GetUID() == "" || machineSet.GetResourceVersion() == "" {
+			return restored, fmt.Errorf("refuse orphan recovery without MachineSet UID and resourceVersion")
+		}
+		proof, _ := json.Marshal([]map[string]any{
+			{"op": "test", "path": "/metadata/uid", "value": string(machineSet.GetUID())},
+			{"op": "test", "path": "/metadata/resourceVersion", "value": machineSet.GetResourceVersion()},
+		})
+		confirmed, err := c.Dynamic.Resource(machineSetResource).Patch(ctx, machineSet.GetName(), types.JSONPatchType, proof, metav1.PatchOptions{})
+		if err != nil {
+			return restored, fmt.Errorf("confirm no exact scale-down intent before orphan recovery: %w", err)
+		}
+		if confirmed.GetUID() != machineSet.GetUID() || confirmed.GetAnnotations()[DownscaleIntentAnnotation] != "" {
+			return restored, fmt.Errorf("MachineSet identity or exact scale-down intent changed before orphan recovery")
 		}
 		if err := c.restoreOwnedNode(ctx, node); err != nil {
 			return restored, fmt.Errorf("restore orphaned scale-down fence on Node %s: %w", node.Name, err)

@@ -248,6 +248,187 @@ func TestRestartRestoresFenceCreatedBeforeDurableIntent(t *testing.T) {
 	}
 }
 
+func TestStaleNoIntentSnapshotCannotClearCommittedScaleDownFence(t *testing.T) {
+	controller, dynamicClient, now := fixture(t, 3, 4, false)
+	ctx := context.Background()
+	stale, err := dynamicClient.Resource(machineSetResource).Get(ctx, "np-runtime0", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controller.ReconcileOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(31 * time.Second)
+	if _, err := controller.ReconcileOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := dynamicClient.Resource(machineSetResource).Get(ctx, "np-runtime0", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fake tracker does not advance resourceVersion on mutation. Emulate
+	// the API server's committed version before delivering one stale GET.
+	committed.SetResourceVersion("2")
+	if _, err := dynamicClient.Resource(machineSetResource).Update(ctx, committed, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	delivered := false
+	dynamicClient.PrependReactor("get", "machinesets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if delivered {
+			return false, nil, nil
+		}
+		delivered = true
+		return true, stale.DeepCopy(), nil
+	})
+	if _, err := controller.ReconcileOnce(ctx); err == nil || !strings.Contains(err.Error(), "confirm no exact scale-down intent") {
+		t.Fatalf("stale no-intent snapshot did not fail closed: %v", err)
+	}
+	node, err := controller.Kubernetes.CoreV1().Nodes().Get(ctx, "runtime-4", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Annotations[DrainAnnotation] != "machine-4" || drainTaintIndex(node.Spec.Taints, "machine-4") < 0 {
+		t.Fatalf("stale snapshot cleared the committed fence: %#v", node)
+	}
+	if requests := controller.ExactScaleDown.(*fakeExactScaleDownProvider).requests; len(requests) != 0 {
+		t.Fatalf("stale snapshot reached provider: %#v", requests)
+	}
+	if result, err := controller.ReconcileOnce(ctx); err != nil || result.Action != "arm-exact-scale-down" {
+		t.Fatalf("committed intent did not remain recoverable: result=%#v err=%v", result, err)
+	}
+}
+
+func TestOrphanRecoveryProofFailurePreservesPlacementFence(t *testing.T) {
+	controller, dynamicClient, _ := fixture(t, 3, 4, false)
+	ctx := context.Background()
+	node, err := controller.Kubernetes.CoreV1().Nodes().Get(ctx, "runtime-4", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.cordonOwnedNode(ctx, node, "machine-4"); err != nil {
+		t.Fatal(err)
+	}
+	dynamicClient.PrependReactor("patch", "machinesets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("injected API proof failure")
+	})
+	if _, err := controller.ReconcileOnce(ctx); err == nil || !strings.Contains(err.Error(), "injected API proof failure") {
+		t.Fatalf("proof failure was not surfaced: %v", err)
+	}
+	node, err = controller.Kubernetes.CoreV1().Nodes().Get(ctx, "runtime-4", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Annotations[DrainAnnotation] != "machine-4" || drainTaintIndex(node.Spec.Taints, "machine-4") < 0 {
+		t.Fatalf("unconfirmed recovery cleared the fence: %#v", node)
+	}
+	if requests := controller.ExactScaleDown.(*fakeExactScaleDownProvider).requests; len(requests) != 0 {
+		t.Fatalf("unconfirmed recovery reached provider: %#v", requests)
+	}
+}
+
+func TestMissingExactScaleDownFenceRecovery(t *testing.T) {
+	for _, scenario := range []struct {
+		name      string
+		armed     bool
+		attempts  int
+		requestID string
+		nodeUID   types.UID
+		owner     string
+		wantAbort bool
+	}{
+		{name: "prepared", wantAbort: true},
+		{name: "armed but not attempted", armed: true, wantAbort: true},
+		{name: "ambiguous attempt", armed: true, attempts: 1},
+		{name: "accepted request", armed: true, attempts: 1, requestID: "request-original"},
+		{name: "replacement Node", nodeUID: "node-replaced"},
+		{name: "different fence owner", owner: "machine-other"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			controller, dynamicClient, now := fixture(t, 3, 4, false)
+			ctx := context.Background()
+			if _, err := controller.ReconcileOnce(ctx); err != nil {
+				t.Fatal(err)
+			}
+			*now = now.Add(31 * time.Second)
+			if _, err := controller.ReconcileOnce(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if scenario.armed {
+				if _, err := controller.ReconcileOnce(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			machineSet, err := dynamicClient.Resource(machineSetResource).Get(ctx, "np-runtime0", metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw := machineSet.GetAnnotations()[DownscaleIntentAnnotation]
+			if scenario.attempts > 0 || scenario.requestID != "" {
+				var intent downscaleIntent
+				if err := json.Unmarshal([]byte(raw), &intent); err != nil {
+					t.Fatal(err)
+				}
+				intent.Attempts = scenario.attempts
+				intent.RequestID = scenario.requestID
+				if err := controller.persistDownscaleIntent(ctx, machineSet, raw, intent); err != nil {
+					t.Fatal(err)
+				}
+				machineSet, err = dynamicClient.Resource(machineSetResource).Get(ctx, "np-runtime0", metav1.GetOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw = machineSet.GetAnnotations()[DownscaleIntentAnnotation]
+			}
+			node, err := controller.Kubernetes.CoreV1().Nodes().Get(ctx, "runtime-4", metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			delete(node.Annotations, DrainAnnotation)
+			node.Spec.Taints = nil
+			if scenario.nodeUID != "" {
+				node.UID = scenario.nodeUID
+			}
+			if scenario.owner != "" {
+				node.Annotations[DrainAnnotation] = scenario.owner
+				node.Spec.Taints = []corev1.Taint{{Key: DrainTaintKey, Value: scenario.owner, Effect: corev1.TaintEffectNoSchedule}}
+			}
+			if _, err := controller.Kubernetes.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			result, reconcileErr := controller.ReconcileOnce(ctx)
+			latest, err := dynamicClient.Resource(machineSetResource).Get(ctx, "np-runtime0", metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := controller.ExactScaleDown.(*fakeExactScaleDownProvider)
+			if len(provider.requests) != 0 {
+				t.Fatalf("missing fence reached provider: %#v", provider.requests)
+			}
+			if !scenario.wantAbort {
+				if reconcileErr == nil || !strings.Contains(reconcileErr.Error(), "ownership fence changed") || latest.GetAnnotations()[DownscaleIntentAnnotation] != raw {
+					t.Fatalf("unsafe recovery did not preserve the intent: result=%#v err=%v", result, reconcileErr)
+				}
+				return
+			}
+			if reconcileErr != nil || result.Action != "abort-unfenced-exact-scale-down" || latest.GetAnnotations()[DownscaleIntentAnnotation] != "" {
+				t.Fatalf("pre-provider intent was not safely cancelled: result=%#v err=%v", result, reconcileErr)
+			}
+			if result, err := controller.ReconcileOnce(ctx); err != nil || result.Action != "observe-scale-down" {
+				t.Fatalf("recovery skipped fresh stabilization: result=%#v err=%v", result, err)
+			}
+			*now = now.Add(31 * time.Second)
+			for _, want := range []string{"prepare-exact-scale-down-to-3", "arm-exact-scale-down", "request-exact-scale-down", "complete-exact-scale-down-to-3"} {
+				if result, err := controller.ReconcileOnce(ctx); err != nil || result.Action != want {
+					t.Fatalf("fresh recovery transition %s failed: result=%#v err=%v", want, result, err)
+				}
+			}
+			if len(provider.requests) != 1 {
+				t.Fatalf("recovery did not delete exactly one Machine: %#v", provider.requests)
+			}
+		})
+	}
+}
+
 func TestExactScaleDownConvergesOneMachineAtATimeFromSevenToThree(t *testing.T) {
 	controller, dynamicClient, now := fixture(t, 3, 7, false)
 	provider := controller.ExactScaleDown.(*fakeExactScaleDownProvider)
