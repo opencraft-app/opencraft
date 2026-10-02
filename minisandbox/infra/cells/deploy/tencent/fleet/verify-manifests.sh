@@ -198,6 +198,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/federation/test_fed
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/federation/test_hub_install_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/test_verify_scrape_convergence.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_prepare_stage.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_stage_reuse_inputs.py" StageReuseContractTest
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_warm_stage_cache.py" WarmStageContractTest
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_install_toolchains.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_stateless_executor_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/runtime/gitops" -p 'test_*.py'
@@ -424,6 +426,7 @@ python3 "$script_dir/qualification/actor-bj-q01/test_release_receipt_persistence
 python3 "$script_dir/runtime/test_bottomless_receipt_identity.py"
 python3 "$script_dir/runtime/test_runtime_base_contract.py"
 python3 "$script_dir/qualification/actor-bj-q01/test_runtime_build_log.py"
+python3 "$script_dir/qualification/actor-bj-q01/test_prepared_runtime_stage.py" PreparedStageContractTest
 python3 "$script_dir/runtime/test_monitor_bottomless.py"
 "$script_dir/qualification/actor-bj-q01/test-run-user-transparent-upgrade-via-tat.sh"
 python3 "$script_dir/runtime/test_capture_release_binding.py"
@@ -716,6 +719,7 @@ runtime_tat_builder = (
     root / "qualification" / "actor-bj-q01" / "build-runtime-via-tat.sh"
 ).read_text()
 runtime_stage_reuser = (root / "runtime" / "reuse-stage-from-runtime.sh").read_text()
+runtime_stage_reuse_inputs = (root / "runtime" / "verify-stage-reuse-inputs.py").read_text()
 runtime_cargo_cache = (root / "runtime" / "prepare-cargo-cache.sh").read_text()
 runtime_baseline_materializer = (
     root / "runtime" / "materialize-runtime-baseline-source.sh"
@@ -2219,7 +2223,9 @@ for remote_build_guard in (
 for stage_reuse_guard in (
     '@sha256:[0-9a-f]{64}',
     'sha256sum --check .actor-source/RELEASE_SHA256SUMS',
-    'base Runtime stage inputs differ from the release source',
+    'python3 "$script_dir/verify-stage-reuse-inputs.py"',
+    '"$base_source_dir" "$source_dir" "${stage_inputs[@]}"',
+    '[[ $stage_inputs_digest =~ ^[0-9a-f]{64}$ ]]',
     'fleet.actor.dev/source-revision',
     'fleet.actor.dev/source-manifest-sha256',
     'fleet.actor.dev/workerd-sha256',
@@ -2228,6 +2234,19 @@ for stage_reuse_guard in (
 ):
     if stage_reuse_guard not in runtime_stage_reuser:
         raise SystemExit(f"Runtime stage reuse lost immutable equivalence gate: {stage_reuse_guard}")
+for stage_closure_guard in (
+    'base Runtime stage inputs differ from the release source',
+    '"cargo", "metadata", "--locked", "--offline"',
+    'FFI_ROOTS = {"rivet-depot-client", "rivet-envoy-protocol"}',
+    'workerd bridge direct dependency contract is not audited for this fork',
+    'workerd Rust dependency escaped reviewed source',
+    'dependency.get("kind") == "dev"',
+    'target_bytes = handle.read()',
+    'target_mode = os.stat(target).st_mode & 0o111',
+    'left_inventory != right_inventory',
+):
+    if stage_closure_guard not in runtime_stage_reuse_inputs:
+        raise SystemExit(f"Runtime stage reuse lost production input proof: {stage_closure_guard}")
 for stage_reuse_entry_guard in (
     'base_sources=()',
     'if (( ${#base_sources[@]} != 1 )); then',

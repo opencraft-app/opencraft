@@ -245,6 +245,20 @@ set `QUALIFICATION_CELL_NAME`, `QUALIFICATION_KUBECONFIG`, and
 paths are validated before TAT runs; creating a fake q01 kubeconfig alias is
 not an accepted multi-Cell operating procedure.
 
+When a fresh stage has been built from the exact candidate source, transfer its
+four artifacts, `STAGE_SHA256SUMS` and immutable receipt through the COS relay,
+then select `QUALIFICATION_PREPARED_STAGE_DIR` and
+`QUALIFICATION_PREPARED_STAGE_RECEIPT` below `/data/actor-build/`. Both must be
+supplied. The entrypoint verifies source/manifest, fork and FDB identities,
+fresh toolchain receipt identity, positive build parallelism, the canonical
+four-artifact checksums and static ELF before issuing push authority. It repeats
+verification after copying into its private stage. The original receipt bytes
+are preserved, not rebound to a different source. This branch does not pull or
+extract an older Runtime; the positional base digest is retained as the existing
+command interface but is unused. Native Rust still builds in the stable,
+serialized workspace with the same resource and ABI gates. The default remains
+the separately validated previous-image reuse path.
+
 For an Engine/Host-only release, the entrypoint may reuse the expensive
 workerd/FoundationDB stage from a digest-pinned, previously qualified Runtime.
 `reuse-stage-from-runtime.sh` first verifies both complete source manifests,

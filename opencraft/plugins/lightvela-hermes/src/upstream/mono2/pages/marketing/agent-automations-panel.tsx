@@ -2120,6 +2120,31 @@ function CronJobCard({
     : visiblePrompt;
   const scheduleLabel = formatScheduleFriendly(job, t);
   const scheduleTooltipLabel = formatScheduleTooltip(job, t);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const actionsToggleRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !actionsRef.current?.contains(event.target)) {
+        setActionsOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActionsOpen(false);
+        actionsToggleRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [actionsOpen]);
+
   return (
     <div
       className="flex flex-col rounded-md bg-white p-4 transition hover:shadow-md"
@@ -2213,15 +2238,29 @@ function CronJobCard({
               <Trash2 className="h-3 w-3" />
             </CronActionButton>
           )}
-          <div className="group/actions relative inline-flex items-center">
+          <div ref={actionsRef} className="group/actions relative inline-flex items-center">
             <button
+              ref={actionsToggleRef}
               type="button"
               aria-label={t("操作")}
+              aria-expanded={actionsOpen}
+              onClick={() => setActionsOpen((open) => !open)}
               className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-black/50 transition hover:bg-black/[0.04] hover:text-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
             >
               <Ellipsis className="size-4" />
             </button>
-            <div className="invisible absolute bottom-full right-0 z-20 pb-1 opacity-0 transition-opacity duration-100 group-hover/actions:visible group-hover/actions:opacity-100 group-focus-within/actions:visible group-focus-within/actions:opacity-100 motion-reduce:transition-none">
+            <div
+              className={cn(
+                "absolute bottom-full right-0 z-20 pb-1 transition-opacity duration-100 motion-reduce:transition-none",
+                actionsOpen
+                  ? "visible opacity-100"
+                  : "invisible opacity-0 group-hover/actions:visible group-hover/actions:opacity-100",
+              )}
+              onClickCapture={() => {
+                setActionsOpen(false);
+                actionsToggleRef.current?.focus();
+              }}
+            >
               <div className="flex min-w-32 flex-col rounded-lg border border-black/10 bg-white p-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
                 {!terminal && (
                   <CronActionButton

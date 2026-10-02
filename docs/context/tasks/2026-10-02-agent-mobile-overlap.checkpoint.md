@@ -8,6 +8,7 @@ MR !4945 首轮 CI 的 OpenCraft vendored 漂移已定位并完成本地同步�
 - 本轮 `pnpm check` 与国内/国际构建通过。诊断中心聚焦测试 24 通过、2 个既有文案预期失败，基线源码与测试已核对。
 - 用户提供的 CI 日志显示 frontend guard 通过，opencraft guard 因诊断中心 vendored 文件漂移失败；同步脚本仅修改 OpenCraft 诊断中心副本和 `UPSTREAM.json`，只读同步检查通过。
 - OpenCraft `test:embedded-ci` 155/155 通过。
+- 合入 `origin/master` 时仅 `UPSTREAM.json` 发生内容冲突；已运行官方同步脚本重生，保留目标分支定时任务源 hash 与本 MR 诊断中心源 hash，只读同步检查通过。
 
 ## unverified
 - 实验室导航 Vitest 文件在执行用例前出现 worker 内存溢出；线上发布状态未检查。

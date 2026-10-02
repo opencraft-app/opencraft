@@ -1911,9 +1911,10 @@ describe("terminal cron card visibility", () => {
 
     expect(actionsMenu).toHaveClass("group/actions", "relative");
     expect(actionsToggle.querySelector(".lucide-ellipsis")).toBeTruthy();
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
     expect(actionsPopover).toHaveClass(
       "right-0", "bottom-full", "invisible",
-      "group-hover/actions:visible", "group-focus-within/actions:visible",
+      "group-hover/actions:visible",
     );
     expect(actionsContent).toHaveClass("flex-col", "border", "bg-white", "shadow-[0_8px_24px_rgba(15,23,42,0.12)]");
     expect(Array.from(actionsContent.children).map((item) => item.textContent)).toEqual([
@@ -1926,8 +1927,17 @@ describe("terminal cron card visibility", () => {
       expect(button.querySelector("svg")).toBeTruthy();
       expect(button.querySelector("span")).toHaveTextContent(button.textContent ?? "");
     }
+    await userEvent.pointer({ keys: "[TouchA]", target: actionsToggle });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "true");
+    expect(actionsPopover).toHaveClass("visible", "opacity-100");
+    fireEvent.pointerDown(document.body, { pointerType: "touch" });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(actionsPopover).toHaveClass("invisible", "opacity-0");
     await userEvent.click(actionsToggle);
     expect(actionsToggle).toHaveFocus();
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
     const resumeButton = within(disabledCard).getByRole("button", { name: localizedText("恢复", "Resume") });
     expect(resumeButton).toBeTruthy();
     expect(within(actionsContent).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
@@ -1959,6 +1969,7 @@ describe("terminal cron card visibility", () => {
 
     if (!endedActionsPopover) throw new Error("Expected ended-job actions popover");
     const endedActionsContent = endedActionsPopover.firstElementChild;
+    if (!(endedActionsContent instanceof HTMLElement)) throw new Error("Expected ended-job action list");
 
     expect(endedActionsPopover).toHaveClass("right-0", "bottom-full", "group-hover/actions:visible");
     expect(endedActionsContent?.children).toHaveLength(2);
@@ -1967,12 +1978,18 @@ describe("terminal cron card visibility", () => {
     expect(deleteButton.closest("[class~='group/actions']")).toBeNull();
     expect(Boolean(deleteButton.compareDocumentPosition(endedActionsToggle) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(endedActionsToggle.querySelector(".lucide-ellipsis")).toBeTruthy();
+    await userEvent.pointer({ keys: "[TouchB]", target: endedActionsToggle });
+    expect(endedActionsToggle).toHaveAttribute("aria-expanded", "true");
+    expect(endedActionsPopover).toHaveClass("visible", "opacity-100");
     expect(viewButton.closest(".ml-auto")).toBeTruthy();
     expect(deleteButton).toBeTruthy();
     expect(within(endedCard).queryByRole("button", { name: localizedText("测试运行", "Test run") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("恢复", "Resume") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("暂停", "Pause") })).toBeNull();
+    await userEvent.click(within(endedActionsContent).getByRole("button", { name: localizedText("复制", "Copy") }));
+    expect(endedActionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("copies an ended intelligent job into a prefilled create form without editing the source", async () => {

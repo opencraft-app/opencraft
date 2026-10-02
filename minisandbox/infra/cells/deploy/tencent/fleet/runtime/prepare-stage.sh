@@ -11,6 +11,7 @@ bazel=${WORKERD_BAZEL:?WORKERD_BAZEL must name the verified Bazel executable}
 build_jobs=${WORKERD_BUILD_JOBS:-16}
 lock=${RIVET_RUNTIME_STAGE_LOCK:-$script_dir/runtime-stage.lock.json}
 build_cache_root=${WORKERD_BUILD_CACHE_DIR:-/data/build-cache/workerd-stage}
+verified_warm_cache=${WORKERD_VERIFIED_WARM_CACHE_DIR:-}
 export TMPDIR=${ACTOR_BUILD_TMPDIR:-/data/tmp}
 
 [[ $source_dir == /* && $stage_dir == /* && $stage_receipt == /* && $TMPDIR == /* && $build_cache_root == /* ]] || {
@@ -68,20 +69,46 @@ workerd_tree_expected=$(awk -F'"' '$1 ~ /^fork_tree/ { print $2 }' "$source_dir/
 # every V8 translation unit in a fresh mktemp checkout. The sibling
 # rivet-history link is switched under the same lock; Cargo/Bazel still hash
 # the current reviewed dependency contents and rebuild affected actions.
-build_cache_root=${build_cache_root%/}/$workerd_commit_expected-$workerd_tree_expected
+if [[ -n $verified_warm_cache ]]; then
+	# Preserve the physical compiler path, its Bazel action cache and the source
+	# link. Never switch an independently owned workspace to another monorepo.
+	[[ $verified_warm_cache == /data/* && -d $verified_warm_cache && ! -L $verified_warm_cache ]] || {
+		echo "verified warm cache must be an existing real directory below /data" >&2
+		exit 2
+	}
+	build_cache_root=$(readlink -e "$verified_warm_cache")
+	[[ $build_cache_root == /data/* ]] || { echo "warm cache resolves outside /data" >&2; exit 2; }
+else
+	build_cache_root=${build_cache_root%/}/$workerd_commit_expected-$workerd_tree_expected
+fi
 case "$build_cache_root/" in
 "$source_dir"/*)
 	echo "workerd build cache must be outside the immutable source tree" >&2
 	exit 2
 	;;
 esac
-install -d -m 0755 "$build_cache_root"
-exec 9>"$build_cache_root/build.lock"
+if [[ -n $verified_warm_cache ]]; then
+	[[ ! -L $build_cache_root/.actor-runtime-stage-build.lock ]] || { echo "workerd cache lock must not be a symlink" >&2; exit 2; }
+	exec 9>"$build_cache_root/.actor-runtime-stage-build.lock"
+else
+	install -d -m 0755 "$build_cache_root"
+	[[ ! -L $build_cache_root/build.lock ]] || { echo "workerd cache lock must not be a symlink" >&2; exit 2; }
+	exec 9>"$build_cache_root/build.lock"
+fi
 flock 9
 
+warm_input_digest=
+if [[ -n $verified_warm_cache ]]; then
+	warm_input_digest=$(bash "$script_dir/verify-warm-stage-cache.sh" "$source_dir" "$build_cache_root" "$workerd_commit_expected" "$workerd_tree_expected")
+	[[ $warm_input_digest =~ ^[0-9a-f]{64}$ ]]
+fi
 workerd_source=$(RIVET_WORKERD_SOURCE="$build_cache_root/workerd-fdb" "$source_dir/runtimes/workerd/setup-fork.sh")
 workspace_compat_link="$build_cache_root/rivet-history"
-if [[ -L $workspace_compat_link ]]; then
+if [[ -n $verified_warm_cache ]]; then
+	# The verifier has proven the existing target's full production closure.
+	# Do not mutate that target or its link just to change release provenance.
+	:
+elif [[ -L $workspace_compat_link ]]; then
 	ln -sfn "$source_dir" "$workspace_compat_link"
 elif [[ -e $workspace_compat_link ]]; then
 	echo "workerd cache compatibility path is not a symlink: $workspace_compat_link" >&2
@@ -89,7 +116,7 @@ elif [[ -e $workspace_compat_link ]]; then
 else
 	ln -s "$source_dir" "$workspace_compat_link"
 fi
-[[ $(readlink -f "$workspace_compat_link") == "$source_dir" ]] || {
+[[ -n $verified_warm_cache || $(readlink -f "$workspace_compat_link") == "$source_dir" ]] || {
 	echo "workerd cache compatibility link does not bind reviewed source" >&2
 	exit 1
 }
@@ -98,6 +125,7 @@ workerd_commit=$(git -C "$workerd_source" rev-parse HEAD)
 	echo "workerd cache commit does not match source lock" >&2
 	exit 1
 }
+[[ -z $(git -C "$workerd_source" status --porcelain) ]] || { echo "workerd checkout is dirty" >&2; exit 1; }
 
 temporary=$(mktemp -d "$TMPDIR/runtime-stage.XXXXXX")
 receipt_stage=
@@ -137,6 +165,12 @@ fdb_library=$temporary/fdb-root/usr/lib/libfdb_c.so
 
 (cd "$workerd_source" && WORKERD_ZIG="$zig" WORKERD_BAZEL="$bazel" \
 	./tools/build-rivet-workerd-musl.sh --jobs="$build_jobs")
+[[ -z $(git -C "$workerd_source" status --porcelain) ]] || { echo "workerd checkout changed during the build" >&2; exit 1; }
+if [[ -n $verified_warm_cache ]]; then
+	verified_after=$(bash "$script_dir/verify-warm-stage-cache.sh" "$source_dir" "$build_cache_root" "$workerd_commit_expected" "$workerd_tree_expected")
+	[[ $verified_after == "$warm_input_digest" ]] || { echo "warm workerd inputs changed during the build" >&2; exit 1; }
+fi
+(cd "$source_dir" && sha256sum --check "$source_manifest" >/dev/null)
 workerd=$workerd_source/bazel-bin/src/workerd/server/workerd
 [[ -x $workerd ]] || { echo "workerd build produced no executable" >&2; exit 1; }
 if readelf -l "$workerd" | grep -q INTERP || readelf -d "$workerd" 2>/dev/null | grep -q '(NEEDED)'; then
@@ -158,8 +192,9 @@ jq -n \
 	--arg fdb_client_digest "sha256:$fdb_sha" \
 	--arg toolchain_receipt_digest "sha256:$(sha256sum "$toolchain_receipt" | cut -d' ' -f1)" \
 	--argjson build_jobs "$build_jobs" \
+	--arg warm_input_digest "$warm_input_digest" \
 	--arg artifacts_digest "sha256:$(sha256sum "$stage_dir/STAGE_SHA256SUMS" | cut -d' ' -f1)" \
-	'{schema:"actor-runtime-stage/v1",verdict:"passed",sourceRevision:$source_revision,sourceManifestDigest:$source_manifest_digest,workerdCommit:$workerd_commit,foundationdbClientDigest:$fdb_client_digest,toolchainReceiptDigest:$toolchain_receipt_digest,buildJobs:$build_jobs,artifactsDigest:$artifacts_digest}' \
+	'{schema:"actor-runtime-stage/v1",verdict:"passed",sourceRevision:$source_revision,sourceManifestDigest:$source_manifest_digest,workerdCommit:$workerd_commit,foundationdbClientDigest:$fdb_client_digest,toolchainReceiptDigest:$toolchain_receipt_digest,buildJobs:$build_jobs,artifactsDigest:$artifacts_digest} + (if $warm_input_digest == "" then {} else {warmCacheInputDigest:("sha256:"+$warm_input_digest)} end)' \
 	>"$receipt_stage"
 if ! ln "$receipt_stage" "$stage_receipt"; then
 	rm -f -- "$receipt_stage"

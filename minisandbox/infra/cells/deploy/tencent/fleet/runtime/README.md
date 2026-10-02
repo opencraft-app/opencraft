@@ -59,6 +59,18 @@ data-volume path. The cache is never trusted as release evidence: every run
 still verifies the source bundle, locked fork commit/tree, toolchains, static
 ELF properties, staged checksums, and a new source-bound stage receipt.
 
+An existing physical workspace can be selected explicitly with
+`WORKERD_VERIFIED_WARM_CACHE_DIR=/data/.../third-party`. This is a build-cache
+adoption path, not an old-binary reuse path. It requires a real, clean checkout
+at `workerd-fdb`, the exact locked fork commit/tree, and its existing
+`rivet-history` link. The full stage and local production Rust closure must
+match the reviewed source before and after the official fork compiler recipe.
+The builder does not change that source link or the old workspace's code. It
+retains the physical compiler path for Bazel/Cargo cache hits and records the
+input digest in the new immutable stage receipt. A dirty checkout, differing
+client input, missing graph or late source change fails closed. Blank builders
+still use the default content-addressed cache and require no adoption flag.
+
 An incremental release may use `reuse-stage-from-runtime.sh` only after the
 verified base and release source agree on every stage input. This includes the
 embedded Rust bridge's local production dependency closure rooted at
@@ -74,6 +86,13 @@ before invoking this gate.
 The bridge's direct dependency roots are bound to the audited fork tree. A new
 fork must use a fresh stage until that root contract is reviewed and updated;
 matching two copies of an unknown fork is not permission to omit its new roots.
+
+The full source-materialization gate checks the shell's helper invocation and
+the helper's production-input proof separately. Its structural regression runs
+without Cargo so a clean builder can materialize reviewed source before toolchain
+installation. The actual offline Cargo/changed-input tests remain mandatory for
+stage-reuse changes; neither check substitutes for the other or for a qualified
+compiled-origin receipt.
 
 Those tools themselves are installed from the official checksum-locked sources
 without consulting `/data/build-cache`:

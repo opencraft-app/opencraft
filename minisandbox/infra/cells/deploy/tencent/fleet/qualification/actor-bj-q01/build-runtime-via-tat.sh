@@ -14,6 +14,49 @@ cell_name=${QUALIFICATION_CELL_NAME:-actor-bj-q01}
 remote_kubeconfig=${QUALIFICATION_KUBECONFIG:-/var/lib/actor-build/credentials/actor-bj-q01.kubeconfig}
 source_link=${QUALIFICATION_SOURCE_LINK:-/var/lib/actor-build/deploy/actor-bj-q01-current}
 state_dir=${QUALIFICATION_STATE_DIR:-/data/agents/cloud/tencent-beijing-qualification/state}
+prepared_stage=${QUALIFICATION_PREPARED_STAGE_DIR:-}
+prepared_receipt=${QUALIFICATION_PREPARED_STAGE_RECEIPT:-}
+
+if [[ -n $prepared_stage || -n $prepared_receipt ]]; then
+	[[ $prepared_stage == /data/actor-build/* && $prepared_receipt == /data/actor-build/* &&
+	   $prepared_stage != /data/actor-build/ && $prepared_receipt != /data/actor-build/ &&
+	   $prepared_stage != *'/../'* && $prepared_receipt != *'/../'* ]] || {
+		echo "prepared stage and receipt must both be bounded /data/actor-build paths" >&2
+		exit 2
+	}
+fi
+
+# This function is emitted into both remote preflight and build commands.
+# Validate before minting push authority, then again around the bounded copy.
+verify_prepared_stage() {
+	local source=$1 directory=$2 receipt=$3 revision=$4 manifest=$5
+	[[ -d $directory && ! -L $directory && $(readlink -e "$directory") == "$directory" &&
+	   -f $receipt && ! -L $receipt && $(readlink -e "$receipt") == "$receipt" ]] || { echo "invalid prepared stage files" >&2; return 1; }
+	local artifact workerd_commit fdb_digest artifacts
+	for artifact in workerd init-workerd-pool config-depot.capnp libfdb_c.so STAGE_SHA256SUMS; do
+		[[ -f $directory/$artifact && ! -L $directory/$artifact ]] || { echo "invalid prepared artifact: $artifact" >&2; return 1; }
+	done
+	workerd_commit=$(awk -F'"' '$1 ~ /^fork_commit/ {print $2}' "$source/runtimes/workerd/workerd-fdb.lock")
+	fdb_digest=$(jq -er .foundationdbClient.sha256 "$source/infra/cells/deploy/tencent/fleet/runtime/runtime-stage.lock.json")
+	artifacts=$(sha256sum "$directory/STAGE_SHA256SUMS" | cut -d' ' -f1)
+	jq -e --arg revision "$revision" --arg manifest "sha256:$manifest" \
+		--arg artifacts "sha256:$artifacts" --arg commit "$workerd_commit" --arg fdb "sha256:$fdb_digest" '
+		.schema == "actor-runtime-stage/v1" and .verdict == "passed" and
+		.sourceRevision == $revision and .sourceManifestDigest == $manifest and
+		.artifactsDigest == $artifacts and .workerdCommit == $commit and
+		.foundationdbClientDigest == $fdb and (has("mode") | not) and
+		(.toolchainReceiptDigest | type == "string" and test("^sha256:[0-9a-f]{64}$")) and
+		(.buildJobs | type == "number" and . > 0 and . == floor)
+	' "$receipt" >/dev/null || { echo "prepared stage receipt identity mismatch" >&2; return 1; }
+	# Compare the canonical four-entry inventory, not arbitrary receipt paths.
+	cmp -s "$directory/STAGE_SHA256SUMS" <(cd "$directory" && sha256sum workerd init-workerd-pool config-depot.capnp libfdb_c.so) || {
+		echo "prepared stage artifact checksum mismatch" >&2; return 1;
+	}
+	readelf -h "$directory/workerd" >/dev/null || return 1
+	if readelf -l "$directory/workerd" | grep -q INTERP || readelf -d "$directory/workerd" 2>/dev/null | grep -q '(NEEDED)'; then
+		echo "prepared workerd must be static" >&2; return 1
+	fi
+}
 
 [[ $cell_name =~ ^actor-[a-z0-9]+-[a-z][0-9]{2}$ ]] || { echo "invalid QUALIFICATION_CELL_NAME" >&2; exit 2; }
 [[ $remote_kubeconfig == /data/actor-bootstrap/* || $remote_kubeconfig == /var/lib/actor-build/credentials/* ]] || {
@@ -47,6 +90,9 @@ done
 printf -v quoted_preflight_source_link '%q' "$source_link"
 {
 	printf 'source_link=%s\n' "$quoted_preflight_source_link"
+	printf 'prepared_stage=%q\nprepared_receipt=%q\nsource_revision=%q\nsource_manifest=%q\n' \
+		"$prepared_stage" "$prepared_receipt" "$source_revision" "$source_manifest"
+	declare -f verify_prepared_stage
 	cat <<'REMOTE_PREFLIGHT'
 set -euo pipefail
 missing=0
@@ -59,6 +105,9 @@ for tool in buildah cargo rustc gcc clang ld.lld make pkg-config protoc cmake ku
 done
 [[ $missing == 0 ]] || exit 2
 source=$(readlink -e "$source_link")
+if [[ -n $prepared_stage ]]; then
+  verify_prepared_stage "$source" "$prepared_stage" "$prepared_receipt" "$source_revision" "$source_manifest"
+fi
 lock_sha=$(sha256sum "$source/Cargo.lock" | cut -d' ' -f1)
 test "$(sha256sum "/data/build-cache/runtime-vendor/$lock_sha/Cargo.lock" | cut -d' ' -f1)" = "$lock_sha"
 cargo --version
@@ -99,10 +148,11 @@ chmod 0600 "$temporary/config.json"
 remote_auth=/var/lib/actor-build/credentials/q01-runtime-build-${request_id}.json
 TAT_UPLOAD_MODE=0600 "$fleet_dir/tat/tat-upload.sh" "$temporary/config.json" "$remote_auth" >/dev/null
 
-for value in source_link source_revision source_manifest base_runtime image_tag remote_auth registry_host runtime_os_base remote_kubeconfig cell_name; do
+for value in source_link source_revision source_manifest base_runtime image_tag remote_auth registry_host runtime_os_base remote_kubeconfig cell_name prepared_stage prepared_receipt; do
 	printf -v "quoted_$value" '%q' "${!value}"
 done
 {
+	declare -f verify_prepared_stage
 	printf 'export CARGO_BUILD_JOBS=%q\n' "$build_jobs"
 	# The workspace fat-LTO profile exceeds this operator's 6 GiB build
 	# cgroup during the final rivet-engine link. Thin LTO preserves whole-
@@ -114,6 +164,7 @@ done
 		"$quoted_source_link" "$quoted_source_revision" "$quoted_source_manifest" \
 		"$quoted_base_runtime" "$quoted_image_tag" "$quoted_remote_auth" "$quoted_registry_host" \
 		"$quoted_remote_kubeconfig" "$quoted_cell_name"
+	printf 'prepared_stage=%s\nprepared_receipt=%s\n' "$quoted_prepared_stage" "$quoted_prepared_receipt"
 	cat <<'REMOTE_BUILD'
 set -euo pipefail
 immutable_source=$(readlink -e "$source_link")
@@ -156,6 +207,18 @@ RIVET_CARGO_TARGET_DIR=/data/build-cache/rivet-runtime-cargo-target \
 RIVET_CARGO_CACHE_STATE="$workspace_root/cargo-cache.sha256" \
 ACTOR_BUILD_PYTHON=python3.11 \
   "$source/infra/cells/deploy/tencent/fleet/runtime/prepare-cargo-cache.sh"
+if [[ -n $prepared_stage ]]; then
+  verify_prepared_stage "$source" "$prepared_stage" "$prepared_receipt" "$source_revision" "$source_manifest"
+  prepared_receipt_sha=$(sha256sum "$prepared_receipt" | cut -d' ' -f1)
+  for artifact in workerd init-workerd-pool config-depot.capnp libfdb_c.so STAGE_SHA256SUMS; do
+    install -m "$(stat -c '%a' "$prepared_stage/$artifact")" "$prepared_stage/$artifact" "$stage/$artifact"
+  done
+  stage_receipt=$stage/prepared-stage-receipt.json
+  install -m 0644 "$prepared_receipt" "$stage_receipt"
+  [[ $(sha256sum "$stage_receipt" | cut -d' ' -f1) == "$prepared_receipt_sha" ]]
+  verify_prepared_stage "$source" "$stage" "$stage_receipt" "$source_revision" "$source_manifest"
+  printf 'runtime_stage_mode=prepared receipt_sha256=%s\n' "$prepared_receipt_sha"
+else
 buildah pull --authfile "$auth" "$base_runtime" >/dev/null
 base_inspect=$(buildah inspect "$base_runtime")
 base_revision=$(jq -er '.Docker.config.Labels["fleet.actor.dev/source-revision"]' <<<"$base_inspect")
@@ -193,6 +256,7 @@ RIVET_STAGE_RECEIPT="$stage_receipt" \
 RIVET_BASE_RUNTIME_IMAGE="$base_runtime" \
 REGISTRY_AUTH_FILE="$auth" \
   "$source/infra/cells/deploy/tencent/fleet/runtime/reuse-stage-from-runtime.sh"
+fi
 kubectl --kubeconfig "$remote_kubeconfig" \
   -n actor-fdb-cell-system get configmap "$cell_name-runtime-config" \
   -o jsonpath='{.data.config\.jsonc}' >"$stage/production-config.jsonc"

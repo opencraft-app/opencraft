@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.1
+revision: 1.0.2
 precedence: task
 derived: false
 ---
@@ -26,6 +26,7 @@ derived: false
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户 2026-10-02 截图与请求：横向点点点；hover 后按钮框纵向展开；每项有 icon 和操作名称。
 - 用户 2026-10-02 后续截图与请求：删除定时任务弹窗的按钮文案稍微小一点。
+- 用户 2026-10-02 移动端截图与反馈：登录后点按定时任务卡片的横向省略号无反应。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/pages/marketing/agent-automations-panel.tsx` 的 `CronJobCard` 和 `CronActionButton`；沿用 `CronJob` 状态门控和现有本地化键。
@@ -38,7 +39,7 @@ derived: false
 ## acceptance
 - 两类任务卡片都显示横向省略号。
 - 当前任务菜单在按钮上方纵向显示测试运行、查看、复制、删除；已结束任务菜单显示查看、复制；各项同时显示图标和本地化名称。
-- 悬停和键盘聚焦均可显示菜单；快捷操作与状态门控保持原样。
+- 桌面悬停、点击、移动端点按及键盘激活均可显示菜单；点按外部或按 Esc 可关闭；快捷操作与状态门控保持原样。
 - 删除确认弹窗的“取消”和“删除”文字由 16px 调为 14px，保持 24px 行高。
 - 聚焦组件测试、前端 lint/typecheck/test/build 门禁通过。
 
@@ -67,6 +68,7 @@ derived: false
 - `pnpm check`：i18n 检查通过；TypeScript 166 current / 171 baseline，0 new；构建前的单独 `pnpm typecheck` 因尚未生成 `collections/server` 失败，`pnpm check` 生成 MDX 类型后解决。
 - `pnpm build`：成功构建并生成静态页面。
 - 后续字号调整后复验：聚焦测试 199/199、`pnpm check`、`pnpm build` 通过。
+- 移动端点按修复后聚焦测试 199/199 通过；模拟触屏点按验证当前任务和已结束任务菜单均可展开，点按外部及 Esc 可关闭。
 - `pnpm lint`：仓库没有 `lint` 脚本，命令返回 `Command "lint" not found`。
 - `pnpm test`：全量运行遇到与本次菜单无关的多组失败，随后 Node 进程达到 4 GB 堆上限；中止前已出现文档和模型配置等失败。
 - 国际站相邻测试与主测试一起运行：主测试通过 199/199，国际站测试 6/8 因测试环境缺少 `ResizeObserver` 失败。
@@ -86,6 +88,7 @@ derived: false
 - 保留卡片底部原有快捷操作；只调整省略号菜单的视觉呈现，避免改变业务操作路径。
 - 使用已有图标和翻译键，不新增 locale 生成内容。
 - 后续弹窗字号调整只改共享按钮文字样式，保留按钮行高和操作逻辑。
+- 移动端点按使用显式开关状态，保留桌面悬停，键盘通过 Enter/Space 激活按钮。
 
 ## scan_scope
 - `frontend/src/pages/marketing/agent-automations-panel.tsx` 及相邻测试与 OpenSpec。

@@ -57,6 +57,7 @@
 - 原始巡检矩阵及结论见 `/tmp/lightvela-mobile-overlap-audit-20261002/report-data.json`、`report.html`。截图仅在浏览器工具会话中观察，未保存独立图片文件。
 - MR !4945 首轮 CI 日志中 `frontend` guard 全部通过；`opencraft` guard 报 `vendored mono2 file drifted`，首个文件为 `pages/marketing/agent-diagnostics-panel.tsx`。i18n WARN 并非该次退出原因。
 - 前端真源已经在 `ce74de1c29c4e9d2e01458932fb05702fa7690a0` 提交；同步脚本只改变 OpenCraft 诊断中心副本及 `UPSTREAM.json` 两个文件。
+- 目标 `master` 同期修改了 Agent 定时任务源文件及同一份 manifest；合入目标后由同步脚本重生 manifest，同时保留定时任务和诊断中心两项 source hash。
 
 ## risks
 - 暂停 Bot 无法展示真实多会话和部分运行态；有些页面仅检查了暂停或空状态。
