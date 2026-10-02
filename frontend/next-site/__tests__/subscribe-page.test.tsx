@@ -198,6 +198,58 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  it("shows a pending payment only to the account that started it", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    window.sessionStorage.setItem("lv-pending-payment-plan", JSON.stringify({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    }));
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage embedded />);
+    expect(await screen.findByTestId("pending-payment-banner")).toBeInTheDocument();
+
+    sessionState.user = { id: "account-b" };
+    rerender(<SubscribePage embedded />);
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem("lv-pending-payment-plan")).toBeNull());
+  });
+
+  it("clears the pending payment when the account signs out", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    window.sessionStorage.setItem("lv-pending-payment-plan", JSON.stringify({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    }));
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage embedded />);
+    expect(await screen.findByTestId("pending-payment-banner")).toBeInTheDocument();
+
+    openClawState.isLoggedIn = false;
+    sessionState.isAuthenticated = false;
+    sessionState.user = null;
+    rerender(<SubscribePage embedded />);
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem("lv-pending-payment-plan")).toBeNull());
+  });
+
+  it("ignores legacy pending payments without an account ID", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    window.sessionStorage.setItem("lv-pending-payment-plan", "bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage embedded />);
+    await screen.findByRole("group", { name: "巡游 Cruise" });
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
+  });
+
   it("keeps the pricing modal and backdrop above the fixed site navigation", async () => {
     const { PricingModal } = await import("@next-site/pricing-modal");
     render(<PricingModal open onOpenChange={() => {}} />);

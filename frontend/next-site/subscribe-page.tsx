@@ -2753,30 +2753,37 @@ const PAY_POLL_TIMEOUT_MS = 180_000;
 export const PAY_RETURN_QUERY_KEY = "pay_return";
 export const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
 
-/* 未完成的支付意图：只存套餐 id，存 sessionStorage（关标签页即失效）。
+/* 未完成的支付意图：按账号记录套餐 id，存 sessionStorage（关标签页即失效）。
    用途是给「付了款但把收银台/弹窗关了」的用户一个查询入口，不是支付凭证。 */
 const PENDING_PAYMENT_STORAGE_KEY = "lv-pending-payment-plan";
+type PendingPaymentPlan = { userId: string; planId: string };
 
-const readPendingPaymentPlanId = (): string | null => {
+const readPendingPaymentPlan = (): PendingPaymentPlan | null => {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(PENDING_PAYMENT_STORAGE_KEY);
-    return raw && raw.length > 0 ? raw : null;
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const { userId, planId } = value as Partial<PendingPaymentPlan>;
+    return typeof userId === "string" && userId.length > 0 && typeof planId === "string" && planId.length > 0
+      ? { userId, planId }
+      : null;
   } catch {
     return null;
   }
 };
 
-const writePendingPaymentPlanId = (planId: string): void => {
+const writePendingPaymentPlan = (payment: PendingPaymentPlan): void => {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(PENDING_PAYMENT_STORAGE_KEY, planId);
+    window.sessionStorage.setItem(PENDING_PAYMENT_STORAGE_KEY, JSON.stringify(payment));
   } catch {
     /* 存储不可用时忽略：这只是兜底提示，不该让支付链路挂掉。 */
   }
 };
 
-const clearPendingPaymentPlanId = (): void => {
+const clearPendingPaymentPlan = (): void => {
   if (typeof window === "undefined") return;
   try {
     window.sessionStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
@@ -2826,6 +2833,7 @@ export const SubscribePage = ({
   void BUNDLE_TYPE_TABS;
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
+  const currentUserId = authReady && isAuthenticated ? session.user?.id ?? null : null;
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   /* 弹窗里的套餐共用一个权益展开状态，避免两张卡出现相反的展开状态。 */
@@ -3154,6 +3162,7 @@ export const SubscribePage = ({
   /* 付费过程上下文：国内站走 bridge 中转页二维码方案；国际站走信用卡 hosted page 跳转。
      保存当前订单 deal_names + 已选套餐 + 支付页 URL，供 PaymentPendingModal 渲染。 */
   const [paymentContext, setPaymentContext] = useState<{
+    userId: string | null;
     plan: PlanInfo;
     dealNames: string[];
     /** 国内站：中转页二维码 URL */
@@ -3202,9 +3211,35 @@ export const SubscribePage = ({
    * 存 sessionStorage 是必须的 —— 弹窗关闭会卸载这份订阅页实例，
    * state 留不住，用户重新打开弹窗或刷新页面后就再也找不到入口了。
    */
-  const [pendingPayPlanId, setPendingPayPlanId] = useState<string | null>(
-    () => readPendingPaymentPlanId(),
-  );
+  const [pendingPayment, setPendingPayment] = useState<PendingPaymentPlan | null>(readPendingPaymentPlan);
+  const previousUserIdRef = useRef(currentUserId);
+  const pendingPayPlanId = currentUserId && pendingPayment?.userId === currentUserId
+    ? pendingPayment.planId
+    : null;
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (previousUserIdRef.current !== currentUserId) {
+      setPaymentContext(null);
+      setSelectedPlan(null);
+      setModalStep("closed");
+    }
+    previousUserIdRef.current = currentUserId;
+    const stored = readPendingPaymentPlan();
+    if (!currentUserId || (stored && stored.userId !== currentUserId)) {
+      clearPendingPaymentPlan();
+      setPendingPayment(null);
+      return;
+    }
+    setPendingPayment(stored);
+  }, [authReady, currentUserId]);
+
+  const rememberPendingPayment = useCallback((planId: string, ownerUserId: string | null = currentUserId) => {
+    if (!currentUserId || ownerUserId !== currentUserId) return;
+    const payment = { userId: currentUserId, planId };
+    writePendingPaymentPlan(payment);
+    setPendingPayment(payment);
+  }, [currentUserId]);
 
   /* 只查权益、不重新下单：已付款的人不该被要求再付一次。 */
   const handleResumePendingPayment = useCallback(() => {
@@ -3213,9 +3248,9 @@ export const SubscribePage = ({
     setError(null);
     setSelectedPlan(plan);
     /* dealNames 留空：这里没有原订单号，轮询只依赖 pass 状态。 */
-    setPaymentContext({ plan, dealNames: [] });
+    setPaymentContext({ userId: currentUserId, plan, dealNames: [] });
     setModalStep("paying");
-  }, [pendingPayPlanId, planList]);
+  }, [pendingPayPlanId, planList, currentUserId]);
 
   const handleReopenPendingPayment = useCallback(() => {
     const plan = planList.find((item) => item.id === pendingPayPlanId);
@@ -3226,8 +3261,8 @@ export const SubscribePage = ({
   }, [pendingPayPlanId, planList]);
 
   const handleDismissPendingPayment = useCallback(() => {
-    clearPendingPaymentPlanId();
-    setPendingPayPlanId(null);
+    clearPendingPaymentPlan();
+    setPendingPayment(null);
   }, []);
 
   /* 重复使用的收尾逻辑：subscribe + navigate（订阅成功后收敛订阅态并跳转）。
@@ -3242,8 +3277,8 @@ export const SubscribePage = ({
     if (finalizingRef.current) return;
     finalizingRef.current = true;
     /* 已确认成交：清掉「未完成支付」的兜底提示，别让开通成功后还挂着查询入口。 */
-    clearPendingPaymentPlanId();
-    setPendingPayPlanId(null);
+    clearPendingPaymentPlan();
+    setPendingPayment(null);
     try {
       /* 幂等闸门②：账号下已有实例说明发货后实例已建好（如原窗口先完成、或用户重复回跳），
          此时只做跳转，不再创建。 */
@@ -3352,10 +3387,10 @@ export const SubscribePage = ({
     });
 
     /* bridge：渲染二维码，用户微信扫码 → 中转页支付，PC 端轮询 listMyPasses 接棒 finalize */
-    setPaymentContext({ plan, dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
+    setPaymentContext({ userId: currentUserId, plan, dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
     setSelectedPlan(plan);
     setModalStep("paying");
-  }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
+  }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration, currentUserId]);
 
   const startDianshiOrderAndPay = useCallback(async (plan: PlanInfo) => {
     trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
@@ -3377,6 +3412,7 @@ export const SubscribePage = ({
       time_unit: aiDuration.time_unit,
     });
     setPaymentContext({
+      userId: currentUserId,
       plan,
       dealNames: [order.deal_name],
       provisioningOnly: true,
@@ -3384,7 +3420,7 @@ export const SubscribePage = ({
     setSelectedPlan(plan);
     setModalStep("paying");
     await refreshPasses();
-  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans]);
+  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans, currentUserId]);
 
   /**
    * 国际站信用卡支付链路（正式）。
@@ -3460,13 +3496,13 @@ export const SubscribePage = ({
         /* 占位窗口被拦截（浏览器弹窗限制）：兜底当前页跳转 */
         window.location.assign(orderUrl.pay_url);
       }
-      setPaymentContext({ plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
+      setPaymentContext({ userId: currentUserId, plan, dealNames: order.deal_names, redirectUrl: orderUrl.pay_url });
       setModalStep("paying");
     } catch (err) {
       payWindow?.close();
       throw err;
     }
-  }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration]);
+  }, [isSubscribed, repositories.plans, finalizeBot, refreshPasses, aiDuration, currentUserId]);
 
   /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
      轮询 effect 内的 setInterval 闭包要拿最新 finalizeBot，又不能依赖它（会反复重建）。
@@ -3521,18 +3557,17 @@ export const SubscribePage = ({
       void refreshPasses();
       return;
     }
-    if (embedded) writePendingPaymentPlanId(plan.id);
+    if (embedded) rememberPendingPayment(plan.id);
     /* dealNames 留空：回跳页没有原订单号，轮询只依赖 pass 状态，不需要它。 */
     setSelectedPlan(plan);
-    setPaymentContext({ plan, dealNames: [] });
+    setPaymentContext({ userId: currentUserId, plan, dealNames: [] });
     setModalStep("paying");
-  }, [authReady, isAuthenticated, planList, refreshPasses, t]);
+  }, [authReady, isAuthenticated, planList, refreshPasses, t, rememberPendingPayment, currentUserId]);
 
   useEffect(() => {
     if (!embedded || !paymentContext || isSubscribed) return;
-    writePendingPaymentPlanId(paymentContext.plan.id);
-    setPendingPayPlanId(paymentContext.plan.id);
-  }, [embedded, paymentContext, isSubscribed]);
+    rememberPendingPayment(paymentContext.plan.id, paymentContext.userId);
+  }, [embedded, paymentContext, isSubscribed, rememberPendingPayment]);
 
   /* paying 阶段轮询 listMyPasses：代替 SDK callback。
      轮询到有效 active pass 后自动 finalizeBot 接棒，用户无需任何手动确认。
@@ -3541,7 +3576,7 @@ export const SubscribePage = ({
   useEffect(() => {
     if (modalStep !== "paying") return;
     const ctx = paymentContext;
-    if (!ctx) return;
+    if (!ctx || ctx.userId !== currentUserId) return;
     let cancelled = false;
     let finalizing = false;
     const startedAt = Date.now();
@@ -3580,7 +3615,7 @@ export const SubscribePage = ({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [modalStep, paymentContext, refreshPasses, t]);
+  }, [modalStep, paymentContext, refreshPasses, t, currentUserId]);
   /**
    * 总调度 — 根据站点路由到免费试用或付费下单，并统一出错处理
    */
@@ -3796,13 +3831,12 @@ export const SubscribePage = ({
      * 否则已付款的用户会停在原地 —— 没有「查询开通状态」入口，也没有下一步。
      */
     if (paymentContext) {
-      writePendingPaymentPlanId(paymentContext.plan.id);
-      setPendingPayPlanId(paymentContext.plan.id);
+      rememberPendingPayment(paymentContext.plan.id, paymentContext.userId);
     }
     setModalStep("closed");
     setSelectedPlan(null);
     setPaymentContext(null);
-  }, [paymentContext]);
+  }, [paymentContext, rememberPendingPayment]);
 
   /**
    * 「确认订单」点「支付」 → 发起 createPassOrder 跳转 jifei（走付费链路主入口）
@@ -4239,7 +4273,7 @@ export const SubscribePage = ({
 
       {/* Payment Modals */}
       <PaymentOverlayPortal embedded={embedded}>
-      <AnimatePresence>
+      <AnimatePresence key={currentUserId ?? "anonymous"}>
         {upgradeSelection && selectedUpgradePass && (
           <UpgradePassModal
             pass={selectedUpgradePass}
@@ -4284,7 +4318,7 @@ export const SubscribePage = ({
             />
           )
         )}
-        {modalStep === "paying" && paymentContext && (
+        {modalStep === "paying" && paymentContext && paymentContext.userId === currentUserId && (
           <PaymentPendingModal
             key="paying"
             bridgeUrl={paymentContext.bridgeUrl}

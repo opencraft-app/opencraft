@@ -1054,6 +1054,7 @@ describe("SubscribePage payment return", () => {
   it("keeps the payment return recoverable after the outer pricing modal closes", async () => {
     (globalThis as { React?: typeof React }).React = React;
     sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
     openClawState.isLoggedIn = true;
     window.history.replaceState({}, "", "/?pay_return=1&pay_plan=bundle_cruise_ai_01");
 
@@ -1067,6 +1068,10 @@ describe("SubscribePage payment return", () => {
     rerender(<PricingModal open onOpenChange={() => {}} />);
     expect(await screen.findByTestId("pending-payment-banner")).toBeInTheDocument();
     expect(screen.getByTestId("pending-payment-resume")).toBeInTheDocument();
+    expect(JSON.parse(window.sessionStorage.getItem("lv-pending-payment-plan") ?? "null")).toEqual({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    });
   });
 
   it("resumes the activation wait when returning from the hosted payment page", async () => {
@@ -1085,6 +1090,28 @@ describe("SubscribePage payment return", () => {
     expect(screen.queryByRole("button", { name: "重新打开支付页" })).not.toBeInTheDocument();
     /* query 必须被清掉，避免刷新重复触发轮询 */
     expect(window.location.search).toBe("");
+  });
+
+  it("does not transfer an open payment wait to another account", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "account-a" };
+    openClawState.isLoggedIn = true;
+    window.history.replaceState({}, "", "/?pay_return=1&pay_plan=bundle_cruise_ai_01");
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage embedded resumePayReturn />);
+    expect(await screen.findByText("正在开通套餐")).toBeInTheDocument();
+    expect(JSON.parse(window.sessionStorage.getItem("lv-pending-payment-plan") ?? "null")).toEqual({
+      userId: "account-a",
+      planId: "bundle_cruise_ai_01",
+    });
+
+    sessionState.user = { id: "account-b" };
+    rerender(<SubscribePage embedded resumePayReturn />);
+    expect(screen.queryByText("正在开通套餐")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem("lv-pending-payment-plan")).toBeNull());
+    expect(screen.queryByTestId("pending-payment-banner")).not.toBeInTheDocument();
   });
 
   it("takes a returning account with an existing Bot to the normal list after payment", async () => {
