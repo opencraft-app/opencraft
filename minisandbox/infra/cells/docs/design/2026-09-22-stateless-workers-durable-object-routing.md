@@ -1248,6 +1248,24 @@ vector。保留请求/样本时间、完整 query、operation/result/class 和�
 对象重新变成周期轮询。A 最后发布 block 是收据名称与发现规则不一致，与上述冷降时间是
 两个不同问题；保留原失败决策，仅恢复资格发布，不重复执行已通过的 fault gate。
 
+2026-10-03 同一 Runtime `072e504b` / digest `6e4d982e` 的 A/B 原始 gate 已归档到
+`runtime/evidence/beijing-prefix-072e504b-{a01,b01}-{bottomless,engine-ha}-20261003.json`。
+原字节 SHA 与下载端一致；Bottomless 使用 production-cell verifier，HA 核对原生成器的
+canonical hash、故障 UID 消失、版本不变、流量窗口内注入与清理条件。两 Cell 均为 48 对象
+exact cold；A/B 冷态等待约 973/964 秒，冷唤醒 p95 约 956/1,072 ms；各 HA 1,500 次
+公共请求、零失败。它们只证明这些具体门禁，不证明万对象服务容量或 Router 吞吐。
+
+万对象启动还必须检查当时的 placement 真值。首个 preflight run
+`e479f1a64f1e4d109ac8940d75c05999` 遇到 B `readyForPlacement=false` 而退出，未创建负载
+目录；不能将 TAT 服务提交成功视为资格成功。发布 activation 与 Cell report/controller 的
+收敛是不同步骤，保留失败快照并等待控制器自然恢复，不手工设置 readiness。
+该失败快照的具体原因是 `CapacityEvidenceMissing`：报告新鲜但缺少 Prometheus-backed
+容量证据，健康与 FDB 条件正常。后续只读 `inv-e9e0300ee9` 确认新证据到达后 PlacementReady
+自然恢复；不能将此暂态误归因于存储数据丢失，仍需监测容量证据的缺失频率与尾延迟。
+TAT 命令最长 24 小时，完整自然缩容门禁允许等待 36 小时；因此该资格用独立、确定 run ID
+的 systemd 服务承载原 runner，保留整体 operation lock 和退出状态，TAT 仅提交/只读查询。
+不得把外层启动 SUCCESS 或观察期间短暂 Ready 当作最终 strict receipt 通过。
+
 ## 所有权与核心不变量
 
 | 状态/动作 | 唯一所有者 |

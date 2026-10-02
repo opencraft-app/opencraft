@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -117,13 +117,17 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - 以上是失败轮的历史配置，不是当前配置。新 Runtime source `072e504b` 保持六 Engine、
   每进程 8/2；名义 Cell 总上限 48/12，不等于已校准的有效吞吐。
 - A 新 release、48 对象 production-cell Bottomless 和 Engine HA 已通过，冷态等待约 973 秒；
-  B 原发布 invocation `inv-e9dx3fg9p5` 已 release_passed，仍在精确冷态等待。
+  B 原发布 invocation `inv-e9dx3fg9p5` 已 SUCCESS/0，Bottomless、Engine HA 和 activation 均通过。
   两项均不能替代 strict10k 或百万 dormant 的证据。
 - 新只读观察工具 source `d7ff0a90` 已落到 builder：`inv-d9dxb0g9gs` SUCCESS/0，
   manifest 摘要前缀 `b2bfa893`（完整身份保留在 source receipt）。
   tools 与 Runtime 来源分开绑定，不因此重编 workerd。
 - 当前 fixture 源码确认每个 heartbeat 写 state 和新的 operation 去重结果。十秒周期的
   10k active 目标约为 1,000 次持久交互/秒；每对象一个在途请求会在迟到时降低实际到达率。
+- 原始 A/B Bottomless/HA 收据归档到 fleet `runtime/evidence/`，未重写 JSON。两 Cell 的
+  exact cold 均为 48/48，等待约 973/964 秒；HA 各 1,500 公共请求、零失败。
+- 首个 strict10k preflight 的 B `CapacityEvidenceMissing` 失败已保留。只读
+  `inv-e9e0300ee9` 证明证据到达后 readiness 自然恢复，不 patch 状态或重复 B release。
 
 ## risks
 
@@ -171,14 +175,14 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## handoff
 
 - 当前状态：源码取消清理、8/2 默认值及封闭输入前缀回归已完成；新 Runtime 已构建。
-  A 正式 release/Bottomless/HA/activation 已通过，B 正式资格原作业仍运行。工具源码已落地，
-  strict10k 未重跑；保持目标 active，不能把模型文档或小规模通过标为容量问题已解决。
+  A/B 正式 release/Bottomless/HA/activation 已通过；B 原作业正常结束，没有重发发布。工具源码已落地，
+  strict10k 新 run 已进入低容量起步；保持目标 active，不能把模型文档或小规模通过标为容量问题已解决。
 
 ## checkpoint
 
 ### stage
 
-A 发布资格完成、B 原资格等待中；新 tools 已验真，线上万级容量资格仍未通过。
+A/B 发布资格完成；失败 preflight 保留，新 strict10k 已确认进入 initial low 后启动实际 runner。
 
 ### verified
 
@@ -186,10 +190,17 @@ A 发布资格完成、B 原资格等待中；新 tools 已验真，线上万级
 - Rust runtime 配置 10 项测试通过，production install/release/render 使用相同的 8/2 默认值。
 - Runtime `072e504b` / image `6e4d982e` 已构建，A 正式 gate/activation 已通过。
 - 新 tools `d7ff0a90` 已完整验真落地，不改变上述 Runtime 镜像。
+- 原始 A/B Bottomless/HA JSON 已按原字节归档并验 SHA；正式 Bottomless verifier 与 HA
+  原生成器的 hash、UID、请求窗口/清理条件均通过。
+- strict10k `e479f1a64f1e4d109ac8940d75c05999` 在 preflight 失败：B UID 与 observedGeneration
+  正确，但 `readyForPlacement=false`。负载目录不存在，不能报告“已开始万对象负载”。
+- 新 run `d3a163511fd849bf9a466553e4ab4f48` 已提交，TAT `inv-e9e03sgq36` SUCCESS/0；
+  监督服务 InvocationID 前缀 `5090f1d5`。只读 `inv-e9e04dg6b4` 确认服务 running、
+  A/B 完整 preflight 通过、initial low 和实际 runner 的首个统计；最终 receipt 尚未产生。
 
 ### unverified
 
-- B 新 digest 的 Bottomless/HA/activation 终态、strict 10k 和 Router performance receipt。
+- strict 10k 最终结果和 Router performance receipt；A/B 小规模资格不替代容量验收。
 - 低 maintenance concurrency 能否同时保持 hot tail 有界和 cold publish 进度。
 
 ### discard
@@ -201,8 +212,10 @@ A 发布资格完成、B 原资格等待中；新 tools 已验真，线上万级
 
 - 当前开发在 mono2 独立 jj revision，以 d7ff0a90 为已推送基线；原 dirty 工作区保持不动。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
+- B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
+  启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
 
 ### next_action
 
-- 续接 B 原作业完成全部门禁后，以 tools/Runtime 分离身份启动未降低标准的 strict10k；
+- 续接新 run 的监督服务和只读快照，确认内层负载后记录 effective throughput/hot-debt 时序；
   继续用 exact job 时序定位冷降等待，不跳过 fingerprint 或保留策略。
