@@ -2234,17 +2234,6 @@ function CronJobCard({
 
       <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{taskSummary}</p>
 
-      {(!job.deliver || job.deliver === "local") && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-amber-800">
-          <span>{t("仅本地保存，不会发送到聊天")}</span>
-          {!terminal && (
-            <button type="button" onClick={onEdit} disabled={busy} className="font-medium underline underline-offset-2 hover:text-amber-950 disabled:opacity-45">
-              {t("设置通知")}
-            </button>
-          )}
-        </div>
-      )}
-
       {job.context_from?.length === 1 && (
         <p className="mt-2 truncate text-xs text-black/45">
           {upstream

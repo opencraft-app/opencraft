@@ -133,7 +133,7 @@ Cree una tarea de notificación o de script personalizada desde el diálogo Crea
 Después de crear una tarea, use la página Tareas programadas para revisar Tareas actuales, Tareas finalizadas y Ejecuciones recientes.
 La vista Tareas actuales puede filtrar las tareas de Agent, de notificación y de script.
 
-En **Ejecuciones recientes**, abra los detalles de una ejecución y seleccione **Ver resultado** para leer el Markdown o **Descargar Markdown** para guardarlo. Primero cambie al Bot propietario de la tarea: el resultado permanece en sus registros de ejecución y no aparece en el chat ni en los registros de otro Bot. Si una tarea solo guarda el resultado localmente, seleccione un canal de notificación conectado para recibir futuras ejecuciones.
+En **Ejecuciones recientes**, abra los detalles de una ejecución y seleccione **Ver resultado** para leer el Markdown o **Descargar Markdown** para guardarlo. Primero cambie al Bot propietario de la tarea: el resultado permanece en sus registros de ejecución y no aparece en el chat ni en los registros de otro Bot.
 
 Tareas finalizadas reúne las tareas completadas, fallidas y vencidas.
 Las tareas en curso permanecen en Tareas actuales.

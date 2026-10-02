@@ -16,7 +16,7 @@ derived: false
 ---
 
 ## goal
-让定时任务的本地投递状态清楚可见，并让用户从所属 Bot 的最近执行记录取回 Markdown 结果。
+在定时任务创建表单说明本地投递结果去向，并让用户从所属 Bot 的最近执行记录取回 Markdown 结果。
 
 ## non_goals
 - 不改 Hermes 上游调度器或自动改写现有任务的投递目标。
@@ -26,6 +26,7 @@ derived: false
 - 用户反馈截图（2026-09-30）：第三个 Bot 的任务使用 `deliver: local`，用户未在聊天收到结果，无法从主 Bot 取回该 Bot 的本地文件。
 - 用户本轮确认“改吧，新起一个分支”；创建入口仍未知，不能假定所有任务都有可用 `origin`。
 - 用户 2026-10-02 澄清：未选通知通道就是仅本地保存，不应再要求勾选确认。
+- 用户随后要求：已有本地投递任务的卡片不再展示提示和“设置通知”入口。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/lib/hermes-cron-client.ts` 的 `HermesCronTarget`、`CronRunRecord.output_path` 与 `execCommand`。
@@ -38,7 +39,7 @@ derived: false
 - `superseded_refs`：无。
 
 ## acceptance
-- 未选通知通道的智能任务和脚本任务可直接按 `deliver: local` 创建，同时显示结果仅留在本 Bot 执行记录中的提示；现有 `local` 任务有可见提示和设置通知入口。通知任务仍须选择通道。
+- 未选通知通道的智能任务和脚本任务可直接按 `deliver: local` 创建，创建表单说明结果仅留在本 Bot 执行记录中；已有任务卡片不额外展示本地投递提示或快捷入口。通知任务仍须选择通道。
 - 最近执行可查看和下载当前 Bot/Profile 的 Markdown 结果；路径越界、缺失、过大时拒绝读取并提示。
 - 相关组件、命令构造、中文和国际站文案测试通过。
 
@@ -64,7 +65,7 @@ derived: false
 
 ## evidence
 - 初始隔离工作树基于 `master@efe04e16e`，分支 `codex/automation-delivery-results`。
-- 网页创建任务已有“默认选中已连接通道”逻辑；固定通知任务已要求选择通道。按用户澄清，未选通道时新建可直接本地保存，并保留结果去向说明；现有本地任务展示状态和设置通知入口。
+- 网页创建任务已有“默认选中已连接通道”逻辑；固定通知任务已要求选择通道。按用户澄清，未选通道时新建可直接本地保存，并保留创建表单中的结果去向说明；已有本地任务卡片不再显示专门提示或入口。
 - 最近执行从所属 Bot/Profile 的 `cron/output/<job-id>/*.md` 按需读取；路径越界、符号链接逃逸、缺失和超过 1 MiB 的结果均拒绝读取。
 - 国内及国际站现有定时任务文档已同步说明本地保存和从最近执行查看、下载 Markdown；国际站通知任务文档中与当前实现冲突的无通道描述已修正。
 - MR !4878 的 CI 在 OpenCraft guard 因 `i18n/generated/en-US.json` 生成副本漂移失败。分支合并 `origin/master@558470e16` 后，官方脚本同步 130 个文件；实际变更限于 11 个生成文件，其中包括 `UPSTREAM.json`。
@@ -83,10 +84,12 @@ derived: false
 - 合并 master 后，`npm --prefix opencraft run check:mono2-agent-console` 验证 130 个文件，OpenCraft 插件类型检查及 `test:embedded-ci` 155 项测试通过。
 - 合并 master 后，`pnpm check`、定时任务聚焦 Vitest 326 项以及国内站和国际站构建均通过。
 - 2026-10-02 移除强制勾选后，`pnpm check`、三份聚焦 Vitest 326 项、补充编辑场景后的国内站测试 202 项，以及国内站和国际站构建通过；文档链接检查无破损或未分类文档。
+- 2026-10-02 移除已有本地任务卡片提示与快捷入口后，`pnpm check`、国内与国际站任务面板聚焦 Vitest 211/211、国内与国际站构建及文档链接检查通过。
 
 ## decisions
 - 优先补齐结果可达性和本地投递显性反馈；聊天创建路径由 Hermes 上游持有，未确认入口前不修改上游运行时。
 - 原强制勾选为避免用户误以为本地任务会发到聊天；用户确认未选通道本来就表示本地投递后，移除额外确认，只保留非阻断提示。
+- 用户进一步收窄已有任务卡片：只保留通用编辑操作，不再显示本地投递横幅或“设置通知”快捷入口。
 
 ## scan_scope
 - `frontend/src/lib/hermes-cron-client.ts` 与 `frontend/src/pages/marketing/agent-automations-panel.tsx` 的定时任务链路。
@@ -95,10 +98,10 @@ derived: false
 - 精确搜索记录在本轮工具输出中。
 
 ## handoff
-- MR !4878 已存在，用户确认不需要本地保存勾选；本轮修改待提交前端真源、同步 OpenCraft 生成物并核对远端 CI。未授权合并或发布。
+- MR !4878 已存在；用户确认不需要本地保存勾选，也不展示已有本地任务卡片的提示与“设置通知”快捷入口。本轮修改待提交前端真源、同步 OpenCraft 生成物并核对远端 CI。未授权合并或发布。
 
 ## stage
-本地保存确认简化已实现并通过前端验证，待生成副本同步与 MR 更新。
+已有本地任务卡片展示已按用户反馈简化并通过前端验证，待生成副本同步与 MR 更新。
 
 ## verified
 - 隔离分支只含本次改动；国内与国际站聚焦测试 326/326、前端检查、文档检查和 changed-path 门禁已有通过证据。

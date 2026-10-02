@@ -83,13 +83,14 @@ afterEach(() => {
 });
 
 describe("HermesAgentAutomationsPanel global upstream context", () => {
-  it("marks an existing local-only task and opens its notification settings", async () => {
+  it("keeps an existing local-only task editable without a delivery notice", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({ id: "local-job", name: "Local summary", deliver: "local" })]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     const card = await getCronJobCard("Local summary");
-    expect(within(card).getByText("Saved locally only; not sent to chat")).toBeInTheDocument();
-    fireEvent.click(within(card).getByRole("button", { name: "Set up notifications" }));
+    expect(within(card).queryByText("Saved locally only; not sent to chat")).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Set up notifications" })).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Edit Scheduled Task");
   });
 
