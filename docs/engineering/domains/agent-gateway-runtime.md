@@ -600,3 +600,13 @@ snapshot has no unsettled work. Successful history is considered first. Failed
 releases do not count toward the rollback window. Cleanup includes the exact
 private upload ZIP key as well as the exact static/backend revision; unknown runtime
 directories without authoritative release records are not automatically removed.
+
+## 建站 Skill-only 新实例补丁（2026-10-02）
+
+CTL 新实例成功持久化 Running 后，以独立精确地域 `WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION`
+执行一次有界 best-effort auth-only TAT 命令；不挂 resume/自动追补，不签发或 rotate Key。
+Sandbox 分开授权 parameterless Skill 与参数化 credential，任意类型 ID 重叠或未知地域拒绝。
+Skill POST 不盲重试，metadata 成功不等于 Skill 已 UPDATED；其它 credential 生命周期不变。
+默认关闭，仅 shprod/sgprod 两端 source maps 配对配置，线上启用仍需授权发布与真实新实例验收。
+实现、认可的生产 v1 hash、异常留档边界及回归见
+[建站 Skill auth fallback 运维说明](../operations/website-skill-auth-fallback.md)。

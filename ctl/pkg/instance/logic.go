@@ -148,6 +148,7 @@ type logic struct {
 	websiteCredentialStore                 websiteauth.Store
 	websiteCredentialTATCommandID          string
 	websiteCredentialTATCommandIDsByRegion map[string]string
+	websiteSkillTATCommandIDsByRegion      map[string]string
 	websiteAgentAPIBase                    string
 }
 
@@ -183,6 +184,7 @@ func NewLogic() Logic {
 		websiteCredentialStore:                 websiteauth.New(resource.RedisMainClient),
 		websiteCredentialTATCommandID:          websiteCredentialTATCommandIDFromConfig(),
 		websiteCredentialTATCommandIDsByRegion: websiteCredentialTATCommandIDsByRegionFromEnv(),
+		websiteSkillTATCommandIDsByRegion:      websiteSkillTATCommandIDsByRegionFromEnv(),
 		websiteAgentAPIBase:                    websiteAgentAPIBaseFromConfig(),
 	}
 }

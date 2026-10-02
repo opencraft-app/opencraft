@@ -2034,15 +2034,20 @@ func commandInvocationQueryParameters(invocationID, instanceID string, hideOutpu
 }
 
 func invokeCommandParameters(instanceID, commandID string, parameters map[string]string) (map[string]interface{}, error) {
-	parameterJSON, err := json.Marshal(parameters)
-	if err != nil {
-		return nil, fmt.Errorf("marshal tat invocation parameters: %w", err)
-	}
-	return map[string]interface{}{
+	request := map[string]interface{}{
 		"CommandId":   commandID,
 		"InstanceIds": []string{instanceID},
-		"Parameters":  string(parameterJSON),
-	}, nil
+	}
+	// Non-parameterized Skill commands must not send Parameters="null" or
+	// placeholder credentials. Preserve encoding for real credential parameters.
+	if len(parameters) != 0 {
+		parameterJSON, err := json.Marshal(parameters)
+		if err != nil {
+			return nil, fmt.Errorf("marshal tat invocation parameters: %w", err)
+		}
+		request["Parameters"] = string(parameterJSON)
+	}
+	return request, nil
 }
 
 func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region, instanceID string) (TerminalSession, error) {
