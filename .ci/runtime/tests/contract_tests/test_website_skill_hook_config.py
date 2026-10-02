@@ -1,4 +1,4 @@
-"""Offline real source renders for paired Skill-only hooks; no apply or KSOPS."""
+"""Offline real source renders for compatible bootstrap maps; no apply or KSOPS."""
 import json
 from pathlib import Path
 import shutil
@@ -9,10 +9,11 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
-VARIABLE = 'WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION'
+VARIABLE = 'WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION'
+SKILL_VARIABLE = 'WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION'
 MAPS = {
-    'shprod': {'ap-shanghai': 'cmd-njt2oy9u'},
-    'sgprod': {'ap-singapore': 'cmd-nfuezsgx', 'ap-johorbahru': 'cmd-dgorg46u'},
+    'shprod': {'ap-shanghai': 'cmd-czxw3gau'},
+    'sgprod': {'ap-singapore': 'cmd-qdb9wde1', 'ap-johorbahru': 'cmd-at6wymyk'},
 }
 
 
@@ -22,24 +23,23 @@ def env_values(path):
 
 
 class WebsiteSkillHookConfigurationTests(unittest.TestCase):
-    def test_production_maps_are_paired_and_disjoint_from_credentials(self):
+    def test_production_bootstrap_maps_are_paired_and_independent_hook_disabled(self):
         for environment, expected in MAPS.items():
             for component in ('ctl', 'sandbox'):
                 with self.subTest(environment=environment, component=component):
                     values = env_values(ROOT / f'argocd/services/{component}/{environment}/{component}-platform.env')
                     self.assertEqual(json.loads(values[VARIABLE]), expected)
-                    credential = set(json.loads(values.get('WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION') or '{}').values())
-                    credential.add(values.get('WEBSITE_CREDENTIAL_TAT_COMMAND_ID', ''))
-                    self.assertFalse(set(expected.values()) & credential)
+                    self.assertEqual(values['WEBSITE_CREDENTIAL_TAT_COMMAND_ID'], next(iter(expected.values())))
+                    self.assertFalse(values.get(SKILL_VARIABLE))
 
     def test_other_environment_sources_remain_disabled(self):
         for component in ('ctl', 'sandbox'):
             for path in (ROOT / f'argocd/services/{component}').glob(f'*/{component}-platform.env'):
                 if path.parent.name not in MAPS:
-                    self.assertFalse(env_values(path).get(VARIABLE), str(path))
+                    self.assertFalse(env_values(path).get(SKILL_VARIABLE), str(path))
         base = list(yaml.safe_load_all((ROOT / 'sandbox/k8s/base/manifests.yaml').read_text()))
         config = next(item for item in base if item.get('kind') == 'ConfigMap' and item['metadata']['name'] == 'sandbox-runtime-config')
-        self.assertEqual(config['data'][VARIABLE], '')
+        self.assertEqual(config['data'][SKILL_VARIABLE], '')
 
     def test_real_source_renders_deliver_maps_to_both_consumers(self):
         renderer = shutil.which('kustomize')

@@ -149,3 +149,6 @@
 .ci/runtime/gates/verify_website_mysql_migration.py
 .ci/runtime/support/prepare_website_backend_release.py
 .ci/runtime/support/rollout_website_skill.py
+
+.ci/runtime/commands/website_bootstrap_command.py
+.ci/runtime/support/website_bootstrap_command.py

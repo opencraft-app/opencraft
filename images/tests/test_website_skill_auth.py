@@ -160,7 +160,7 @@ class AuthPatchTests(unittest.TestCase):
         self.assertIn(self.helper.AUTH_SECTION, SKILL.read_text())
 
     def test_exact_pinned_auth_is_already_current_without_rewrite(self):
-        pinned = (ROOT / 'images/tests/fixtures/website-auth-fallback-v1.md').read_text()
+        pinned = (ROOT / 'images/tests/fixtures/website-auth-fallback-v1.md').read_text().rstrip('\n') + '\n\n'
         source = self.legacy.replace(self.helper.LEGACY_AUTH, pinned)
         self.skill.write_text(source)
         before = self.skill.stat()
@@ -170,7 +170,7 @@ class AuthPatchTests(unittest.TestCase):
         self.assertFalse(list(self.root.glob('*.auth-backup-*')))
 
     def test_marker_does_not_authorize_unknown_custom_auth(self):
-        pinned = (ROOT / 'images/tests/fixtures/website-auth-fallback-v1.md').read_text()
+        pinned = (ROOT / 'images/tests/fixtures/website-auth-fallback-v1.md').read_text().rstrip('\n') + '\n\n'
         custom = pinned.replace('读取示例', '定制认证流程')
         self.skill.write_text(self.legacy.replace(self.helper.LEGACY_AUTH, custom))
         source = self.skill.read_text()
