@@ -1021,6 +1021,10 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
   完整源码落地门禁须分别检查 shell 的 helper 调用与 helper 的依赖/源码证明，不能继续要求
   已抽出的校验文字留在旧内联位置。该门禁包含不依赖 Cargo 的结构回归，保证空白 builder
   可先落地源码再安装工具链；真实 offline Cargo/变更输入回归仍独立执行，不能互相替代。
+  对既有物理编译workspace可显式选择完整输入验真的warm cache：锁定fork commit/tree且working tree
+  必须干净，已有source链接不改，完整stage与生产闭包在正式编译recipe前后都必须相同。
+  运行recipe及static ELF/hash检查后生成fresh source-bound收据，而不是把旧binary重新贴标签。
+  默认空白builder仍按fork身份建立cache；候选manifest、执行位或客户端改变不能借缓存放行。
 - builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
   集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
 - 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配

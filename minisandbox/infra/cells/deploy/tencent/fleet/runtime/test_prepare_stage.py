@@ -46,6 +46,18 @@ class RuntimeStageTests(unittest.TestCase):
         self.assertIn('--argjson build_jobs "$build_jobs"', script)
         self.assertIn('buildJobs:$build_jobs', script)
 
+    def test_explicit_warm_cache_is_verified_before_and_after_real_build(self):
+        script = (ROOT / "prepare-stage.sh").read_text()
+        self.assertIn("WORKERD_VERIFIED_WARM_CACHE_DIR", script)
+        proof = 'bash "$script_dir/verify-warm-stage-cache.sh"'
+        self.assertEqual(script.count(proof), 2)
+        recipe = script.index('./tools/build-rivet-workerd-musl.sh --jobs="$build_jobs"')
+        self.assertLess(script.index(proof), recipe)
+        self.assertLess(recipe, script.rindex(proof))
+        self.assertIn('[[ $verified_after == "$warm_input_digest" ]]', script)
+        self.assertIn('warmCacheInputDigest', script)
+        self.assertIn('workerd checkout changed during the build', script)
+
 
 if __name__ == "__main__":
     unittest.main()

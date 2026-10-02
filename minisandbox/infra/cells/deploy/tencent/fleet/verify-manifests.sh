@@ -199,6 +199,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/federation/test_hub
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/test_verify_scrape_convergence.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_prepare_stage.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_stage_reuse_inputs.py" StageReuseContractTest
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_warm_stage_cache.py" WarmStageContractTest
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_install_toolchains.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_stateless_executor_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/runtime/gitops" -p 'test_*.py'

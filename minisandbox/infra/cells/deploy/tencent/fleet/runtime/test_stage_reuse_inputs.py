@@ -49,7 +49,7 @@ class StageReuseContractTest(unittest.TestCase):
         self.assertIn('"--locked", "--offline"', helper_checks)
 
 
-class StageReuseInputsTest(unittest.TestCase):
+class StageReuseFixture(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(dir="/data/tmp")
         self.addCleanup(self.temporary.cleanup)
@@ -86,6 +86,8 @@ class StageReuseInputsTest(unittest.TestCase):
     def compare(self):
         return MODULE.compare(str(self.base), str(self.release), STAGE_ROOTS)
 
+
+class StageReuseInputsTest(StageReuseFixture):
     def test_identical_production_closure_has_stable_digest(self):
         first = self.compare()
         self.assertEqual(len(first), 64)
