@@ -36,11 +36,12 @@ type Bundle struct {
 	SHA256 string `json:"sha256"`
 }
 type Invocation struct {
-	SHA256  string            `json:"sha256"`
-	Method  string            `json:"method"`
-	Path    string            `json:"path"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    []byte            `json:"body,omitempty"`
+	SHA256   string            `json:"sha256"`
+	ReadOnly bool              `json:"read_only,omitempty"`
+	Method   string            `json:"method"`
+	Path     string            `json:"path"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	Body     []byte            `json:"body,omitempty"`
 }
 type Result struct {
 	Status  int               `json:"status"`
@@ -67,6 +68,8 @@ type Service struct {
 	dataDir, deployToken, invokeToken string
 	runner                            Runner
 	slots                             chan struct{}
+	deployFiles                       deploymentFileOps
+	pendingDeployments                sync.Map
 }
 
 func New(o Options) (*Service, error) {
@@ -89,7 +92,13 @@ func New(o Options) (*Service, error) {
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	return &Service{rates: make(map[string]rateBucket), dataDir: dir, deployToken: o.DeployToken, invokeToken: o.InvokeToken, runner: o.Runner, slots: make(chan struct{}, o.Concurrency), activeSites: make(map[string]int), siteLocks: make(map[string]*sync.RWMutex), siteConcurrency: o.SiteConcurrency}, nil
+	s := &Service{rates: make(map[string]rateBucket), dataDir: dir, deployToken: o.DeployToken, invokeToken: o.InvokeToken, runner: o.Runner, slots: make(chan struct{}, o.Concurrency), activeSites: make(map[string]int), siteLocks: make(map[string]*sync.RWMutex), siteConcurrency: o.SiteConcurrency, deployFiles: osDeploymentFiles{}}
+	// A bounded startup pass must not make one unavailable site hold up all
+	// others. Unresolved journals remain an on-disk invocation/readiness fence.
+	ctx, cancel := context.WithTimeout(context.Background(), startupDeploymentRecoveryTimeout)
+	_ = s.Reconcile(ctx)
+	cancel()
+	return s, nil
 }
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -129,12 +138,20 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer s.release(parts[2])
 	lock := s.admittedSiteLock(parts[2])
 	dir := filepath.Join(s.dataDir, parts[2], parts[4])
-	if invoke || r.Method == "GET" {
+	_, managed := s.runner.(managedRunner)
+	// Managed readiness may reset a stale native DO. Wait for this site's
+	// in-flight invocations before verifying; reset must not abort their SQL.
+	// Invocation and nonmanaged GET remain read-locked.
+	if invoke || (r.Method == "GET" && !managed) {
 		lock.RLock()
 		defer lock.RUnlock()
 	} else {
 		lock.Lock()
 		defer lock.Unlock()
+	}
+	if r.Method != "PUT" && s.pendingDeployment(parts[2]) {
+		http.Error(w, "deployment transaction pending", 503)
+		return
 	}
 	switch {
 	case invoke:
@@ -146,6 +163,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			storeError(w, err)
 			return
+		}
+		if _, ok := s.runner.(managedRunner); ok {
+			if err := s.verifyDeploymentReceipt(r.Context(), dir, bundle.SHA256); err != nil {
+				http.Error(w, "persistent runtime not ready", 503)
+				return
+			}
 		}
 		writeJSON(w, 200, map[string]string{"sha256": bundle.SHA256, "status": "ready"})
 	case r.Method == "DELETE":
@@ -245,6 +268,15 @@ func (s *Service) deploy(w http.ResponseWriter, r *http.Request, dir string) {
 		http.Error(w, "invalid bundle digest or size", 400)
 		return
 	}
+	if _, managed := s.runner.(managedRunner); managed {
+		runner, ok := s.runner.(transactionalManagedRunner)
+		if !ok {
+			http.Error(w, "transactional runtime adapter unavailable", 503)
+			return
+		}
+		s.deployTransactional(w, r, dir, b, runner)
+		return
+	}
 	previous, err := load(dir)
 	if err == nil {
 		if previous.SHA256 != b.SHA256 {
@@ -293,8 +325,8 @@ func (s *Service) deploy(w http.ResponseWriter, r *http.Request, dir string) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), ExecutionTimeout)
-	defer cancel()
 	result, err := s.runner.Run(ctx, temp, Invocation{Method: "GET", Path: "/__platform_health"})
+	cancel()
 	if err != nil || result.Status != 204 {
 		http.Error(w, "runtime readiness failed", 422)
 		return
@@ -318,6 +350,17 @@ func (s *Service) deploy(w http.ResponseWriter, r *http.Request, dir string) {
 	}
 	if err := os.Rename(temp, dir); err != nil {
 		http.Error(w, "activation failed", 500)
+		return
+	}
+	parent, err := os.Open(filepath.Dir(dir))
+	if err != nil {
+		http.Error(w, "activation sync failed", 500)
+		return
+	}
+	syncErr = parent.Sync()
+	parent.Close()
+	if syncErr != nil {
+		http.Error(w, "activation sync failed", 500)
 		return
 	}
 	writeJSON(w, 201, map[string]string{"sha256": b.SHA256, "status": "ready"})
@@ -469,10 +512,23 @@ func (s *Service) siteRequest(w http.ResponseWriter, r *http.Request, site strin
 	lock := s.admittedSiteLock(site)
 	lock.Lock()
 	defer lock.Unlock()
+	if s.pendingDeployment(site) {
+		http.Error(w, "deployment transaction pending", 503)
+		return
+	}
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
 	dir := filepath.Join(s.dataDir, site)
 	if r.Method == "DELETE" {
+		if managed, ok := s.runner.(managedRunner); ok {
+			ctx, cancel := context.WithTimeout(r.Context(), PrepareTimeout)
+			err := managed.DeleteSite(ctx, site)
+			cancel()
+			if err != nil {
+				http.Error(w, "persistent site deletion pending", 503)
+				return
+			}
+		}
 		if err := os.RemoveAll(dir); err != nil {
 			http.Error(w, "delete failed", 500)
 			return

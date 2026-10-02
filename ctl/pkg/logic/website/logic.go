@@ -41,7 +41,7 @@ type FeatureAvailability struct {
 }
 
 type Capability struct {
-	// Backend requires an explicit user allowlist and configured runtime. Data is unavailable.
+	// Backend requires an explicit user allowlist and configured runtime. Data additionally requires the qualified Minisandbox release gate.
 	Backend             FeatureAvailability `json:"backend"`
 	Data                FeatureAvailability `json:"data"`
 	MaxSites            int                 `json:"max_sites"`
@@ -480,6 +480,7 @@ func (l *logic) GetCapability(userID string) (*Capability, error) {
 
 	return &Capability{
 		Backend:             FeatureAvailability{Enabled: backendEnabledFor(userID), Contract: "fetch-v1"},
+		Data:                FeatureAvailability{Enabled: backendDataEnabledFor(userID), Contract: "rivet-sql-v1"},
 		MaxSites:            q.MaxSites,
 		UsedSites:           int(usedSites),
 		MonthlyTrafficBytes: q.MonthlyTrafficBytes,

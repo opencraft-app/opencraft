@@ -159,3 +159,31 @@ func TestBackendReleaseGatePreservesSiteStateGuards(t *testing.T) {
 		})
 	}
 }
+
+func TestBackendDataCapabilityRequiresIndependentGateAndBackendConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name, dataGate, allowlist, baseURL, token, userID string
+		want                                              bool
+	}{
+		{"default closed", "", "user-1", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"explicit open", "1", "user-1", "http://runtime.internal", "fixture-deploy-token", "user-1", true},
+		{"unknown flag closed", "true", "user-1", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"empty allowlist closed", "1", "", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"other user closed", "1", "user-2", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"empty user closed", "1", "", "http://runtime.internal", "fixture-deploy-token", "", false},
+		{"exact user only", "1", "user-11", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"missing runtime closed", "1", "user-1", "", "fixture-deploy-token", "user-1", false},
+		{"missing token closed", "1", "user-1", "http://runtime.internal", "", "user-1", false},
+		{"invalid URL closed", "1", "user-1", "http://runtime.internal/unexpected", "fixture-deploy-token", "user-1", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("WEBSITE_BACKEND_DATA_ENABLED", tc.dataGate)
+			t.Setenv("WEBSITE_BACKEND_BETA_USERS", tc.allowlist)
+			t.Setenv("WEBSITE_RUNTIME_BASE_URL", tc.baseURL)
+			t.Setenv("WEBSITE_RUNTIME_DEPLOY_TOKEN", tc.token)
+			if got := backendDataEnabledFor(tc.userID); got != tc.want {
+				t.Fatalf("data gate = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

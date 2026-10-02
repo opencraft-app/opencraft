@@ -545,6 +545,73 @@ Skill 同步提供动态流程与离线打包器；新镜像/存量机器共用�
 [Fullstack Beta 实施](../../proposals/2026-09-29-website-fullstack-beta.md) 与
 [Skill 双通路交付](../../proposals/2026-09-29-website-skill-delivery.md)。
 
+### Website persistent backend adapter (candidate, 2026-10-02)
+
+The persistent driver consumes Skip's imported `minisandbox` Workers API;
+`WEBSITE_RUNTIME_DRIVER=minisandbox` selects it explicitly. There is no host-JS,
+local-SQLite or browser-storage fallback. The existing runsc driver remains a
+separate stateless compatibility path, not the persistent implementation.
+
+- The immutable backend contract remains `fetch-v1`. CTL exposes `data.enabled`
+  and `rivet-sql-v1` only when `WEBSITE_BACKEND_DATA_ENABLED=1`, a configured backend
+  runtime and the exact user beta allowlist all pass. Static sites are unchanged;
+  frontend visibility still follows its existing hidden `show()` boundary.
+- A trusted `(environment scope, site ID)` deterministically identifies one
+  Worker and one `VelaSite` Durable Object. Releases select a verified backend
+  digest within the retained Worker package; they do not create a new database.
+  Storage is native Durable Object SQL through Depot/FoundationDB and inherits
+  the platform commit/output gate. Each bounded SQL call rolls back on quota or
+  result overflow. Database limit is 16 MiB; SQL/query and response limits are
+  enforced in the platform wrapper, not delegated to generated application code.
+- Preparation activates via `expected_deployment_id` CAS and fences the exact
+  deployment ID/targets before and after stateless and durable compiled-package
+  probes, without invoking application fetch or SQL. The versioned canonical
+  package fingerprint covers main-module identity, all module contents,
+  compatibility date and Durable Object bindings, excluding only its own exact
+  injected marker. An old warm durable isolate cannot satisfy new readiness.
+  After observing a valid stale marker, the private durable probe may use native
+  `DurableObjectState.abort` to break a retained old class container, without
+  changing Actor/Depot identity or deleting storage. It never replays an
+  application handler. Deployment/recovery and managed readiness hold the
+  exclusive site lock, waiting for in-flight invocations before such a reset.
+  Failed linking
+  compensates the previous deployment with CAS against only its own activation;
+  cancellation cannot cancel the bounded compensation. A conflicting or failed
+  compensation is an error, never reported as a successful preparation. Initial
+  failed candidates have no website active pointer or local readiness receipt.
+- A fsynced write-ahead deployment journal and atomic receipts bind retained
+  digests to the actual upstream deployment, version and endpoint/scope identity.
+  Unknown/borrowed ownership cannot authorize compensation. Incomplete journals,
+  corrupt receipts, unbound legacy receipts and legacy source-only fingerprints
+  fail invocation/readiness/publication closed; they are not silently adopted,
+  rebound or removed. Interrupted native publication and disk receipt publication
+  reconcile to an explicit commit or exact owned-pointer CAS restoration before
+  readiness. External deployment and filesystem writes are not one transaction.
+  Each DataDir has one manager; the service executable holds a nonblocking
+  exclusive OS file lock for its lifetime.
+- Gateway freshly verifies share policy, generation and expiration before a
+  GET/HEAD backend read. `SITE_GATEWAY_BACKEND_SHARED_READ=true` is separately
+  required. Browser-supplied internal headers are discarded; the gateway creates
+  `read_only` and the runtime creates private dispatch headers. Share SQL permits
+  one SELECT only and cannot initialize schema or perform writes. All writes still
+  require an authenticated site owner and exact same-origin checks.
+- Site deletion uses the logical Object terminal fence. Individual release
+  retention removes code artifacts only, not the site database. Worker hard delete
+  is not used to bypass the upstream historical Object inventory requirement.
+- New-image and single-instance Skill delivery use the same content-addressed
+  bundle, including the Todo backend template. Previous two-file bundle manifests
+  remain verifiable for exact rollback; existing credentials are not part of that
+  bundle. Data capability is queried independently; absent/unknown fields are off.
+
+This is a source design, not a launch receipt. Release gates require a real healthy
+regional Workers/Depot/FDB path, persistence across deployment and host replacement,
+site isolation, share read/owner write checks, static regression and the public Agent
+flow. `/readyz=200` on Workers API alone does not prove admission or executor
+availability. Beijing has passed native SQL write/read and retained-version cold reads in a
+  scoped fixture; warm version propagation is still under qualification. Korea
+  and both production configurations remain unqualified. Do not
+route international persistent data to Beijing simply to obtain a passing test.
+
 ### Website backend test findings (2026-09-30 Beijing time)
 
 Dedicated runtime reconciliation runs under the manager store lock before accepting

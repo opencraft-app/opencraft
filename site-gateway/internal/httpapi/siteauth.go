@@ -35,6 +35,7 @@ var (
 )
 
 type AuthOptions struct {
+	BackendSharedRead bool
 	Required          bool
 	EndpointsEnabled  bool
 	FixedAuthHost     string

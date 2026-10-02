@@ -23,6 +23,12 @@ func backendEnabledFor(userID string) bool {
 	}
 	return false
 }
+
+// Enable only after regional Minisandbox persistence acceptance. The explicit
+// flag cannot activate a user whose backend allowlist or runtime is absent.
+func backendDataEnabledFor(userID string) bool {
+	return backendEnabledFor(userID) && os.Getenv("WEBSITE_BACKEND_DATA_ENABLED") == "1"
+}
 func backendRuntimeConfig() (string, string, error) {
 	base := strings.TrimRight(os.Getenv("WEBSITE_RUNTIME_BASE_URL"), "/")
 	token := os.Getenv("WEBSITE_RUNTIME_DEPLOY_TOKEN")

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,7 +75,7 @@ func TestFullstackOwnerRequestUsesPinnedRevisionAndStripsCredentials(t *testing.
 			req = httptest.NewRequest("POST", "https://"+host+"/api/sum?q=1", strings.NewReader("payload"))
 			req.Host = host
 			req.Header.Set("X-Website-Release", "wr-abc")
- req.Header.Set("Origin", tc.origin)
+			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("Authorization", "Bearer browser-secret")
 			req.Header.Set("X-User-ID", "forged")
 			req.Header.Set("Content-Type", "application/json")
@@ -105,5 +106,134 @@ func TestFullstackOwnerRequestUsesPinnedRevisionAndStripsCredentials(t *testing.
 	h.ServeHTTP(rec, req)
 	if rec.Code != 403 || calls != before {
 		t.Fatal("stale active cache bypassed suspension")
+	}
+}
+
+func TestFullstackShareSessionCanOnlyReadQualifiedPersistentBackend(t *testing.T) {
+	now := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	provider := newFakeOIDCProvider(t, now)
+	defer provider.Close()
+	sites := activeSite("ws-abc")
+	site := sites.sites["ws-abc"]
+	site.Kind = "fullstack"
+	site.ReleaseID = "wr-abc"
+	site.BackendSHA256 = strings.Repeat("a", 64)
+	site.AccessMode = sitemeta.AccessModeShareCode
+	site.ShareGeneration = "generation-1"
+	expiry := now.Add(time.Hour)
+	site.ShareExpiresAt = &expiry
+	h := newRequiredHandler(t, now, provider, sites, &fakeOrigin{})
+	h.auth.Clock = func() time.Time { return now }
+	calls := 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var in backend.Invocation
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			t.Error(err)
+		}
+		if !in.ReadOnly || (in.Method != "GET" && in.Method != "HEAD") {
+			t.Error("share acquired writable runtime capability")
+		}
+		_ = json.NewEncoder(w).Encode(backend.Result{Status: 200, Body: []byte(`{"todos":["shared"]}`)})
+	}))
+	defer runtime.Close()
+	client, err := backend.New(runtime.URL, "internal-test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.backend = client
+	host := "ws-abc." + domesticRootDomain
+	share, err := h.auth.TokenCodec.SealShareSession(siteauth.ShareSessionClaims{SiteID: "ws-abc", SiteHost: host, Generation: "generation-1", Nonce: "share"}, now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, method string
+		enabled      bool
+		generation   string
+		want         int
+	}{
+		{"gate closed", "GET", false, "generation-1", 401},
+		{"valid viewer", "GET", true, "generation-1", 200},
+		{"valid head", "HEAD", true, "generation-1", 200},
+		{"viewer write", "POST", true, "generation-1", 401},
+		{"revoked", "GET", true, "generation-2", 401},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h.auth.BackendSharedRead = tc.enabled
+			site.ShareGeneration = tc.generation
+			req := requestWithHost(tc.method, host, "/api/todos")
+			req.AddCookie(&http.Cookie{Name: shareSessionCookie, Value: share})
+			req.Header.Set("X-Website-Release", "wr-abc")
+			req.Header.Set("Origin", "https://"+host)
+			req.Header.Set("X-Lightvela-Storage-Read-Only", "0")
+			rec := httptest.NewRecorder()
+			before := calls
+			h.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if tc.want != 200 && calls != before {
+				t.Fatal("unauthorized upstream invocation")
+			}
+		})
+	}
+}
+
+func TestFullstackShareAuthorizationIgnoresStalePositiveMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*sitemeta.Site, *fakeSites)
+		want   int
+	}{
+		{"revoked generation", func(s *sitemeta.Site, _ *fakeSites) { s.ShareGeneration = "generation-2" }, 401},
+		{"expired policy", func(s *sitemeta.Site, _ *fakeSites) {
+			expiry := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+			s.ShareExpiresAt = &expiry
+		}, 401},
+		{"share disabled", func(s *sitemeta.Site, _ *fakeSites) { s.AccessMode = sitemeta.AccessModeOwnerOnly }, 401},
+		{"fresh lookup failed", func(_ *sitemeta.Site, f *fakeSites) { f.freshErr = fmt.Errorf("fixture lookup unavailable") }, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+			provider := newFakeOIDCProvider(t, now)
+			defer provider.Close()
+			sites := activeSite("ws-abc")
+			cached := sites.sites["ws-abc"]
+			cached.Kind = "fullstack"
+			cached.ReleaseID = "wr-abc"
+			cached.BackendSHA256 = strings.Repeat("a", 64)
+			cached.AccessMode = sitemeta.AccessModeShareCode
+			cached.ShareGeneration = "generation-1"
+			expires := now.Add(time.Hour)
+			cached.ShareExpiresAt = &expires
+			fresh := *cached
+			sites.freshSites = map[string]*sitemeta.Site{"ws-abc": &fresh}
+			tc.change(&fresh, sites)
+			h := newRequiredHandler(t, now, provider, sites, &fakeOrigin{})
+			h.auth.Clock = func() time.Time { return now }
+			h.auth.BackendSharedRead = true
+			called := false
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true; w.WriteHeader(200) }))
+			defer upstream.Close()
+			client, err := backend.New(upstream.URL, "internal-fixture-token")
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.backend = client
+			host := "ws-abc." + domesticRootDomain
+			share, err := h.auth.TokenCodec.SealShareSession(siteauth.ShareSessionClaims{SiteID: "ws-abc", SiteHost: host, Generation: "generation-1", Nonce: "share"}, expires)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := requestWithHost("GET", host, "/api/todos")
+			req.Header.Set("X-Website-Release", "wr-abc")
+			req.AddCookie(&http.Cookie{Name: shareSessionCookie, Value: share})
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != tc.want || called {
+				t.Fatalf("status=%d wanted=%d upstream=%v", rec.Code, tc.want, called)
+			}
+		})
 	}
 }

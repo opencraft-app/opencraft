@@ -19,6 +19,8 @@ class SkillDeliveryTests(unittest.TestCase):
         (self.source / 'scripts').mkdir(parents=True)
         (self.source / 'SKILL.md').write_text('skill v1')
         (self.source / 'scripts/package_fullstack.py').write_text('print("v1")')
+        (self.source / 'templates').mkdir()
+        (self.source / 'templates/todo-backend.mjs').write_text('export default { fetch() {} };')
         self.home = self.root / 'home'
         (self.home / '.hermes').mkdir(parents=True)
         self.credentials = self.home / '.hermes/.env'
@@ -27,7 +29,7 @@ class SkillDeliveryTests(unittest.TestCase):
     def test_bundle_reproducible_and_complete(self):
         first = bundle.build(self.source)
         self.assertEqual(first, bundle.build(self.source))
-        self.assertEqual(set(first['files']), {'SKILL.md', 'scripts/package_fullstack.py'})
+        self.assertEqual(set(first['files']), {'SKILL.md', 'scripts/package_fullstack.py', 'templates/todo-backend.mjs'})
         self.assertEqual(bundle.decode(bundle.encode(first)), first)
 
     def test_install_upgrade_rollback_preserves_credentials(self):
@@ -50,6 +52,28 @@ class SkillDeliveryTests(unittest.TestCase):
             bundle.install(data, self.home)
         (self.source / 'SKILL.md').unlink()
         (self.source / 'SKILL.md').symlink_to(self.credentials)
+        with self.assertRaises(ValueError):
+            bundle.build(self.source)
+
+    def test_upgrade_previous_two_file_bundle_can_rollback(self):
+        previous = bundle.build(self.source, bundle.LEGACY_FILES)
+        bundle.install(previous, self.home)
+        current = bundle.build(self.source)
+        bundle.install(current, self.home)
+        active = self.home / '.hermes/skills/website-builder'
+        self.assertEqual((active / 'templates/todo-backend.mjs').read_text(), 'export default { fetch() {} };')
+        self.assertEqual(bundle.rollback(current['version'], self.home)['active'], previous['version'])
+        self.assertFalse((active / 'templates').exists())
+        self.assertEqual(self.credentials.read_text(), 'fixture credential bytes\n')
+
+    def test_refuses_template_directory_symlink(self):
+        data = bundle.build(self.source)
+        (self.source / 'templates/todo-backend.mjs').unlink()
+        (self.source / 'templates').rmdir()
+        foreign = self.root / 'foreign'
+        foreign.mkdir()
+        (foreign / 'todo-backend.mjs').write_text('foreign template')
+        (self.source / 'templates').symlink_to(foreign, target_is_directory=True)
         with self.assertRaises(ValueError):
             bundle.build(self.source)
 

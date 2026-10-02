@@ -64,7 +64,7 @@ func (d *Deployer) runtimeRequest(method, path string, body any, out any) error 
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, d.runtimeURL+path, bytes.NewReader(data))
 	if err != nil {
@@ -72,7 +72,7 @@ func (d *Deployer) runtimeRequest(method, path string, body any, out any) error 
 	}
 	req.Header.Set("Authorization", "Bearer "+d.runtimeToken)
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Timeout: 110 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("runtime request failed")

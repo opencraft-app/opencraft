@@ -17,7 +17,8 @@ import tempfile
 import uuid
 import zlib
 
-FILES = ('SKILL.md', 'scripts/package_fullstack.py')
+LEGACY_FILES = ('SKILL.md', 'scripts/package_fullstack.py')
+FILES = (*LEGACY_FILES, 'templates/todo-backend.mjs')
 HEX = re.compile(r'[0-9a-f]{64}')
 
 
@@ -31,16 +32,18 @@ def regular(path):
     return path.read_bytes()
 
 
-def build(source):
+def build(source, names=FILES):
     source = Path(source)
-    if source.is_symlink() or (source / 'scripts').is_symlink():
+    if set(names) not in (set(LEGACY_FILES), set(FILES)):
+        raise ValueError('unsupported bundle files')
+    if source.is_symlink() or any((source / Path(name).parent).is_symlink() for name in names):
         raise ValueError('symlink source directory')
-    files = {name: base64.b64encode(regular(source / name)).decode() for name in FILES}
+    files = {name: base64.b64encode(regular(source / name)).decode() for name in names}
     return {'version': hashlib.sha256(canonical(files)).hexdigest(), 'files': files}
 
 
 def validate(data):
-    if set(data) != {'version', 'files'} or set(data['files']) != set(FILES):
+    if set(data) != {'version', 'files'} or set(data['files']) not in (set(LEGACY_FILES), set(FILES)):
         raise ValueError('invalid bundle manifest')
     if data['version'] != hashlib.sha256(canonical(data['files'])).hexdigest():
         raise ValueError('bundle digest mismatch')
@@ -108,7 +111,7 @@ def verify(target, expected):
     target = target.resolve(strict=True)
     manifest = json.loads(regular(target / 'bundle.json'))
     validate(manifest)
-    if manifest['version'] != expected or build(target) != manifest:
+    if manifest['version'] != expected or build(target, tuple(manifest['files'])) != manifest:
         raise ValueError('installed bundle digest mismatch')
     return manifest
 
@@ -138,7 +141,8 @@ def install(data, home):
             raise ValueError('symlink version directory')
         if not target.exists():
             stage = Path(tempfile.mkdtemp(prefix='.stage-', dir=store))
-            (stage / 'scripts').mkdir()
+            for name in data['files']:
+                (stage / name).parent.mkdir(parents=True, exist_ok=True)
             for name, content in data['files'].items():
                 path = stage / name
                 with path.open('xb') as out:
@@ -147,7 +151,8 @@ def install(data, home):
                     os.fsync(out.fileno())
                 path.chmod(0o644)
             write_json(stage / 'bundle.json', data)
-            sync_dir(stage / 'scripts')
+            for parent in {Path(name).parent for name in data['files']} - {Path('.')}:
+                sync_dir(stage / parent)
             sync_dir(stage)
             os.rename(stage, target)
             sync_dir(store)
@@ -165,10 +170,11 @@ def install(data, home):
         # Stage+exchange is atomic even for a legacy nonempty Skill directory.
         stage = store / ('.previous-' + uuid.uuid4().hex)
         shutil.copytree(target, stage)
-        for name in (*FILES, 'bundle.json'):
+        for name in (*data['files'], 'bundle.json'):
             with (stage / name).open('rb') as stream:
                 os.fsync(stream.fileno())
-        sync_dir(stage / 'scripts')
+        for parent in {Path(name).parent for name in data['files']} - {Path('.')}:
+            sync_dir(stage / parent)
         sync_dir(stage)
         write_json(store / (version + '.receipt.json'), {
             'version': version, 'previous': stage.name if current else None,
