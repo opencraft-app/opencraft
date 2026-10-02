@@ -33,15 +33,11 @@ flock -n 9 || { echo "another Router performance qualification is running" >&2; 
 # Reject a stale, partial, or failed capacity result before publishing temporary
 # Worker/Object resources. capture.py repeats this validation when it binds the
 # final receipt, so a file replacement between the two checks still fails closed.
-python3.11 - "$capacity_receipt" <<'PY'
-import json, sys
-value = json.load(open(sys.argv[1]))
-if (value.get("schema") != "actor-ten-thousand-active-qualification/v1"
-        or value.get("verdict") != "passed"
-        or value.get("expected", {}).get("active", 0) < 10_000
-        or not value.get("checks")
-        or not all(value["checks"].values())):
-    raise SystemExit("capacity receipt does not prove the complete 10k active cycle")
+python3.11 - "$collector" "$capacity_receipt" <<'PY'
+import json, runpy, sys
+collector = runpy.run_path(sys.argv[1])
+with open(sys.argv[2]) as stream:
+    collector["validate_qualification"](json.load(stream))
 PY
 
 endpoint=$(jq -er '.endpoint' "$endpoint_receipt")/v1

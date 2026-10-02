@@ -58,6 +58,11 @@ kubeconfig from authoritative receipts and selects the Hub Registry Service. It
 refuses to create temporary resources unless the exact capacity receipt is a
 complete passed 10k cycle, then runs both the five-minute load and collector:
 
+容量前置门禁与最终采集共用 `capture.py` 的 `validate_qualification`。八项周期检查必须全部存在，
+每个值必须为 JSON `true`；空或部分表、字符串 `"false"`、整数 `1` 均不能替代通过。
+新增检查项也必须为真，`expected.active` 必须为至少10000的整数。builder 在创建输出目录和
+发布临时资源前检查，collector 在访问 Prometheus 或生成证据前重复同一检查。
+
 ```bash
 ACTOR_REVIEWED_SOURCE=/var/lib/actor-build/deploy/q01-src-<revision>-<manifest> \
   ./run-on-builder.sh <capacity-run-id> <performance-run-id>

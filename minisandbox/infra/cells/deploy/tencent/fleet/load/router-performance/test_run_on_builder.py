@@ -7,11 +7,12 @@ SCRIPT = (pathlib.Path(__file__).parent / "run-on-builder.sh").read_text()
 
 class RouterPerformanceBuilderEntrypointTest(unittest.TestCase):
     def test_binds_capacity_receipt_before_load(self):
-        capacity = 'capacity receipt does not prove the complete 10k active cycle'
+        capacity = 'collector["validate_qualification"](json.load(stream))'
         load = 'python3.11 "$runner"'
         self.assertIn(capacity, SCRIPT)
         self.assertLess(SCRIPT.index(capacity), SCRIPT.index(load))
-        self.assertIn('not all(value["checks"].values())', SCRIPT)
+        self.assertIn('runpy.run_path(sys.argv[1])', SCRIPT)
+        self.assertIn('python3.11 - "$collector" "$capacity_receipt"', SCRIPT)
 
     def test_resolves_live_endpoints_without_hard_coded_addresses(self):
         self.assertIn('endpoint-installation.json', SCRIPT)
@@ -39,7 +40,7 @@ class RouterPerformanceBuilderEntrypointTest(unittest.TestCase):
         self.assertIn("sha256sum", SCRIPT)
 
     def test_does_not_leave_an_empty_run_before_preflight_passes(self):
-        self.assertLess(SCRIPT.index("capacity receipt does not prove"),
+        self.assertLess(SCRIPT.index('collector["validate_qualification"]'),
                         SCRIPT.index('install -d -m 0700 "$out"'))
 
 

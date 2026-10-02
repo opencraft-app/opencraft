@@ -19,6 +19,11 @@ import urllib.request
 
 SCHEMA = "actor-router-performance-evidence/v1"
 RAW_SCHEMA = "actor-router-performance-prometheus-raw/v1"
+CAPACITY_CHECKS = frozenset({
+    "loadReceiptPassed", "exactObjectCleanupPassed", "initialLowCapacity",
+    "tenThousandActiveSustained", "automaticScaleUpObserved", "activeCapacityReady",
+    "safeDrainObserved", "finalLowCapacity",
+})
 QUERIES = {
     "objectQps": 'sum(rate(workers_api_routing_requests_total{plane="object"}[5m]))',
     "objectP50Seconds": (
@@ -287,6 +292,20 @@ def publish(path: Path, value: object, mode: int = 0o600) -> None:
         Path(staged).unlink(missing_ok=True)
 
 
+def validate_qualification(value):
+    if (not isinstance(value, dict)
+            or value.get("schema") != "actor-ten-thousand-active-qualification/v1"
+            or value.get("verdict") != "passed"):
+        raise ValueError("qualification receipt is not a passed 10k active gate")
+    expected = value.get("expected")
+    checks = value.get("checks")
+    if (not isinstance(expected, dict) or type(expected.get("active")) is not int
+            or expected["active"] < 10000
+            or not isinstance(checks, dict) or not CAPACITY_CHECKS.issubset(checks)
+            or any(result is not True for result in checks.values())):
+        raise ValueError("qualification receipt does not prove the complete 10k active cycle")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--load-receipt", required=True, type=Path)
@@ -309,12 +328,7 @@ def main() -> int:
         raise SystemExit("output directory already exists")
     load = json.loads(args.load_receipt.read_text())
     qualification = json.loads(args.qualification_receipt.read_text())
-    if (qualification.get("schema") != "actor-ten-thousand-active-qualification/v1"
-            or qualification.get("verdict") != "passed"):
-        raise SystemExit("qualification receipt is not a passed 10k active gate")
-    if (qualification.get("expected", {}).get("active", 0) < 10000
-            or not all(qualification.get("checks", {}).values())):
-        raise SystemExit("qualification receipt does not prove the complete 10k active cycle")
+    validate_qualification(qualification)
     client = PrometheusClient(
         kubeconfig=args.kubeconfig, base_url=args.prometheus_url,
         namespace=args.prometheus_namespace, service=args.prometheus_service,
