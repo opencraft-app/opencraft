@@ -1882,6 +1882,22 @@ input chunk 上再次要求 `len == index`，会把合法多块输入误判为�
 Gasoline 全部 22 项 lib 测试通过。不改生产 replay、持久键或编码，不因此重建 workerd，
 也不能把这项诊断修复称为上述 10k 性能问题的修复。
 
+性能窗口本身也需要门禁。pressure analyzer v3 只有在实际 query 的完整五分钟区间
+位于显式工作窗口内时才输出 rate 派生量；跨边界 rate 为 unknown，instant gauge 与
+ledger 仍可用，未声明工作窗口时 scope 为 null。输入校验在屏蔽前完成，不能用短窗口
+隐藏 stale/非法指标。真实文件/CLI 回归覆盖 299/300 秒边界及 query 与 collector 时钟
+错位，不改变 strict10k 成功条件，不重写旧 v2 evidence 或在途 tools120。
+
+新 c631 原 run 200a42ae 的 09:40--09:55 / 09:55--10:12 不可变窗口见
+[evidence README](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md)。
+各 Cell 活跃数增加时 stage completed mean 暂未上升，whole-Cell authority 净增长却
+加快；reclaim 仍为零。这不等于维护已稳定或内存/存储泄漏。warmup 同时增加对象
+数量与数据库年龄，历史前缀到期会改变 eligible work mix。因此单位成本模型还须按
+请求形状、年龄、eligible prefix bytes、coverage/base 大小和失效重做分组，不能直接
+用两段总量相除证明随基数超线性放大。合法保留与可回收债务必须分开；小冷发布
+planned-byte rate 与整个 authority ledger 不是同一口径，不能相减估算服务缺口。
+原 run 仍无终态或 post-warmup 三秒样本，不由这些中间诊断推进 Router 资格。
+
 性能证据的编码也属于控制边界。headroom ETA 在增长率为零时可以是无限；
 审计内部仍按数值判定阈值，写出收据时非有限诊断采用 JSON 字符串
 `"+Inf"`、`"-Inf"`、`"NaN"`，有限数据编码不变。Prometheus scalar 的 NaN

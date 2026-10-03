@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.20.0
+revision: 1.21.0
 precedence: task
 derived: false
 ---
@@ -84,6 +84,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - 共享 Agent heartbeat 保留单对象单在途，但诊断须分开理想 timer 槽、实际访问、逻辑派发、
   未就绪/在途/停止的互斥跳过和物理 HTTP 尝试。停 timer 后排空不得制造新理想需求；
   零失败或至少成功一次不证明固定到达吞吐，新增计数不得成为放宽资格的新成功捷径。
+- pressure rate 的实际五分钟 query 区间必须完全位于显式工作窗口内；跨界时 rate 未知，
+  gauge/ledger 保留。输入先验证再屏蔽；null scope 不证明稳态，旧证据不重写。
 - 本地组件 gate 对百万不同 key 实际访问生产 ObjectRouter，验证缓存/LRU/miss 表有界、
   GC 后的保留 heap 不随历史访问基数线性增长。固定小 payload 的组件证明不能替代百万
   dormant 公共路径/FDB/真实 API RSS 与云端容量证据。
@@ -118,6 +120,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `docs/context/domains/release-gitops.md`、`docs/context/project/upstream-subtrees.md`、`minisandbox/infra/cells/{AGENTS.md,deploy/tencent/fleet/{load/ten-thousand-active/{analyze_pressure.py,test_analyze_pressure.py,README.md},qualification/actor-bj-q01/relay-download-from-builder.sh,tat/tat-run.sh}}@9234d346` | 同一压测窗口与成本归因 | 原进程只读快照、COS 长度/SHA、真实 CLI 窗口边界；不改在途工具或编译 runtime |
 | `AGENTS.md`、`minisandbox/AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@ad3a5102` | 本轮目标接续与工具性能口径 | mono2 唯一写源、新 jj revision、原 ops lock 与 immutable cloud 运行保留 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/{README.md,load/ten-thousand-active/{README.md,analyze_pressure.py,test_analyze_pressure.py},load/shared-agent-scale/{runner.mjs,runner.test.mjs,README.md},verify-manifests.sh}`、`minisandbox/scripts/format/agent-format.mjs`、`minisandbox/biome.json` | 实际 heartbeat 调度与测试邻接 | 已有在途会抑制派发；真实 HTTP、常数空间计数、全 fleet gate，不修改节拍或稳态资格 |
 | `docs/context/domains/release-gitops.md`、`docs/context/project/upstream-subtrees.md`、`minisandbox/infra/cells/{AGENTS.md,deploy/tencent/fleet/README.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/{runtime/qualify-engine-ha.sh,operations/{publish-qualified-release.sh,plan-qualification-activation.py},load/ten-thousand-active/README.md}@b2874c06` | A 终态验真与 B 发布前置 | 读真实 HA 内置 probe/hash/topology、activation 源 audit hash 和完整容量门禁；不将 production-cell 小规模收据冒充全产品容量 |
@@ -392,7 +395,48 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-当前 checkpoint（1.20.0）：上一 turn 为 progress，A/B 原始资格证据、README 和
+当前 checkpoint（1.21.0）：上一 turn 为 progress，heartbeat demand 工具/真实 HTTP
+回归已 FF 推 master 9234d346，remote exact SHA verified、clean。保留空 wqksmskz，
+先 jj new 创建 ukkwwqou；新工具不部署进原 tools120/run。只读快照与官方 COS relay
+不修改 workload、容量或 runtime，不重编 V8。
+
+10:13:06 UTC inv-c9esir0vn4 SUCCESS/0 验证原 MainPID/InvocationID running：
+4,703 ready/4,698 proven、550,495 active success，ordinary retry/failure/mismatch
+零，warmup 回压 4,673、零 timeout；post-warmup SLO 样本零。A/B active 2,299/2,363，
+Host desired/Ready 136/123 与 135/126，Machines Ready 130/135，观察异常空。
+本次在五分钟边界后提交；保守下一 progress 不早于 10:18:30 UTC。
+10:13:38 快照 inv-a9esj90bq8 SUCCESS/0，23,689,705-byte 原 trace 前缀
+SHA 前缀 ae7f122bf73ca8c3（完整 SHA 在正式 evidence README）；源末行
+删除以排除并发 append；COS metadata/upload inv-c9esjigixx/inv-d9esjjgt3t 都
+SUCCESS/0、local 长度/SHA 相同，temporary key 已清理。exact paths、两份 v3 派生
+evidence、完整摘要和局限见正式 evidence README，不把下载成功当资格通过。
+
+确定性修复：原 analyzer 短窗口会输出跨边界的五分钟 rate。v3 以 actual query
+时间判断包含性，outside rate unknown、instant gauge/ledger 不变；先校验输入，
+无 bounds scope=null。新增真实文件/CLI 测试覆盖短窗、299/300 秒、query/collector
+错位、unbounded scope 与 stale metric，21 项通过。完整 fleet gate exit 0，实际
+21 项和 fleet_manifest_invariants=passed；Python compile/diff check 通过。
+不修改 strict10k verifier，不为此重编 workerd。documentation 零 error/warning；
+Context 初验识别 Task 中完整 SHA 为长十六进制，Task 仅留摘要前缀、正式 evidence
+保留完整 SHA 后复验，不放宽扫描器。catalog 仅同步 Task hash/version，保留历史基线。
+原 run 相邻窗口 stage 均值/读量暂无上升，authority 净增长加快且 reclaim 仍零。
+warmup 对象基数与年龄同时增长，不能据此证明单位成本超线性；下一取证要按
+eligible bytes、coverage/base 与重做分组、在慢 job 仍存在时保存 due/lease/attempt。
+不混用 whole-Cell ledger 与 cold-publish planned bytes，不把合法保留都叫可回收债务。
+
+10:18:45 inv-d9esq2056u SUCCESS/0，clock guard 后原进程仍 running：5,392 ready/
+5,380 proven，723,430 active success、45 active 尚在途，failure/retry/mismatch
+零。累计交互 p99 上界 279 ms/max 1,120 ms，不是该时刻固定到达窗口的尾延迟。
+trace A/B active 2,634/2,715，Host desired/Ready 154/141、159/147，Machines Ready
+148/153；异常空，无最终 receipt。下一 periodic progress 不早于 10:24:00 UTC。
+一次 jq 直接读取混合 TAT/JSON log parse 失败，改为精确 JSON 行筛选后读取，不重发
+远端观察。context tests 同四项历史失败、audit tests 33/33；不报全仓门禁全绿。
+最终 Context 4,942 errors 与上一 turn sorted errors 完全相同，Task errors 空；
+documentation 零 errors/warnings。实际九个 changed-file 参数的 change-impact passed，
+matched rules 空不代替语义审查；changed credential value patterns 零。完整输入 SHA、
+派生字节 SHA 和发布边界已经分别记录，不靠空 changed-files 的检查声称通过。
+
+历史 checkpoint（1.20.0）：上一 turn 为 progress，A/B 原始资格证据、README 和
 正式设计更新已 FF 推 master ad3a5102，remote exact SHA verified、import 后 clean。
 保留空 qqwrurwu，先 jj new 创建 nprkksru 后修改未来工具；不修改 cloud tools120。
 cloud runtime skill/networking 本轮完整读取，environment_status tool 不存在、policy

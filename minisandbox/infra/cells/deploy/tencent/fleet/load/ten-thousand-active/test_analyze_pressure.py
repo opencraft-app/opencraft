@@ -64,7 +64,7 @@ class PressureTest(unittest.TestCase):
     def test_costs_and_bounds_not_replica_sum(self):
         path = self.write([sample(), sample(20)])
         result = analysis.analyze(path)
-        self.assertEqual(result["schema"], "actor-pressure-analysis/v2")
+        self.assertEqual(result["schema"], "actor-pressure-analysis/v3")
         self.assertFalse(result["qualificationEvidence"])
         self.assertEqual(result["input"]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual(result["input"]["bytes"], path.stat().st_size)
@@ -130,6 +130,40 @@ class PressureTest(unittest.TestCase):
         self.assertIsNone(cell["lastSnapshot"]["gauges"]["activeActors"])
         self.assertIsNone(cell["observedAuthoritySlopeBoundsBytesPerSecond"])
         self.assertEqual(cell["lastObservationErrors"], 1)
+
+    def test_short_window_masks_rates_but_keeps_gauges_and_ledger(self):
+        path = self.write([sample(), sample(20), sample(40)])
+        result = analysis.analyze(path, EPOCH + 20, EPOCH + 40)
+        cell = result["cells"][analysis.CELLS[0]]
+        frame = cell["lastSnapshot"]
+        self.assertFalse(frame["rateWindowWithinObservationWindow"])
+        self.assertEqual(frame["gauges"]["activeActors"], 140)
+        self.assertEqual(frame["ledgerBounds"]["fdb_authoritative"], {"min": 140, "max": 150})
+        self.assertEqual(cell["observedAuthoritySlopeBoundsBytesPerSecond"], {"min": 0.5, "max": 1.5})
+        self.assertIsNone(frame["planning"]["depot_manager_refresh"]["completedTransactionsPerSecond"])
+        self.assertIsNone(frame["activities"]["refresh_manager"]["execution"]["succeeded"]["outcomesPerSecond"])
+        self.assertIsNone(frame["successfulCompaction"]["reclaim_fdb"]["bytesPerSecond"])
+
+    def test_rate_window_uses_query_clock_with_inclusive_exact_boundaries(self):
+        for query_offset, observed_offset, expected in ((299, 300, False), (300, 299, True),
+                                                        (600, 600, True), (601, 600, False)):
+            with self.subTest(query_offset=query_offset):
+                row = sample(query_offset)
+                row["observedAt"] = sample(observed_offset)["observedAt"]
+                frame = analysis.analyze(self.write([row]), EPOCH, EPOCH + 600)["cells"][analysis.CELLS[0]]["lastSnapshot"]
+                self.assertEqual(frame["rateWindowWithinObservationWindow"], expected)
+                value = frame["planning"]["depot_manager_refresh"]["completedTransactionsPerSecond"]
+                self.assertEqual(value, 2 if expected else None)
+
+    def test_unbounded_scope_explicit_and_outside_window_input_still_validated(self):
+        path = self.write([sample()])
+        frame = analysis.analyze(path)["cells"][analysis.CELLS[0]]["lastSnapshot"]
+        self.assertIsNone(frame["rateWindowWithinObservationWindow"])
+        self.assertEqual(frame["planning"]["depot_manager_refresh"]["completedTransactionsPerSecond"], 2)
+        row = sample(20)
+        row["cells"][0]["metricsSnapshot"]["samples"][1]["timestamp"] -= 5
+        with self.assertRaisesRegex(ValueError, "metric time"):
+            analysis.analyze(self.write([row]), EPOCH, EPOCH + 40)
 
     def test_nonfinite_and_zero_denominator_unknown(self):
         row = sample()
@@ -235,9 +269,22 @@ class PressureTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "too many"):
             analysis.analyze(self.write([row]))
 
-    def cli(self, trace, output):
+    def cli(self, trace, output, *options):
         return subprocess.run([sys.executable, str(Path(analysis.__file__)), "--trace", str(trace),
-                               "--output", str(output)], capture_output=True, text=True, timeout=5)
+                               "--output", str(output), *options], capture_output=True, text=True, timeout=5)
+
+    def test_real_cli_masks_partial_rate_window_and_accepts_complete_window(self):
+        path = self.write([sample(), sample(299), sample(300)])
+        for offset in (299, 300):
+            with self.subTest(offset=offset):
+                output = self.root / (str(offset) + ".json")
+                result = self.cli(path, output, "--from-observed-at", sample()["observedAt"],
+                                  "--until-observed-at", sample(offset)["observedAt"])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                frame = json.loads(output.read_text())["cells"][analysis.CELLS[0]]["lastSnapshot"]
+                self.assertEqual(frame["rateWindowWithinObservationWindow"], offset == 300)
+                self.assertEqual(frame["successfulCompaction"]["reclaim_fdb"]["bytesPerSecond"],
+                                 8192 if offset == 300 else None)
 
     def test_cli_exclusive_private_output(self):
         self.write([sample(), sample(20)])

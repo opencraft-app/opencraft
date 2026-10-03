@@ -117,6 +117,7 @@ def derived(frame):
     get = lambda *key: values.get(tuple(key))
     result = {"requestedAtEpochSeconds": frame["requestedAtEpochSeconds"],
               "rateWindowSeconds": frame["rateWindowSeconds"],
+              "rateWindowWithinObservationWindow": frame.get("rateWindowWithinObservationWindow"),
               "gauges": {name: get(name) for name in SCALARS}}
     result["planning"] = {name: {
         "completedTransactionsPerSecond": get("depotPlanningTransactionCompletionsPerSecond", name),
@@ -241,6 +242,17 @@ def analyze(path, start_at=None, end_at=None):
                     if state["lastQueryTime"] is not None and query_time <= state["lastQueryTime"]:
                         raise ValueError("metric query times must be strictly increasing")
                     state["lastQueryTime"] = query_time
+                # Validate every sample before masking: a short selected window
+                # cannot turn malformed or stale metrics into acceptable input.
+                # Gauges/ledger are instant observations, not rolling rates.
+                contained = None if start_at is None else (
+                    query_time is not None and query_time - frame["rateWindowSeconds"] >= start_at
+                    and query_time <= end_at)
+                frame["rateWindowWithinObservationWindow"] = contained
+                if contained is False:
+                    frame["metrics"] = {key: value if key[0] in SCALARS or key[0] in (
+                        "coldStorageBytesMin", "coldStorageBytesMax") else None
+                        for key, value in frame["metrics"].items()}
                 current = derived(frame)
                 state["samples"] += 1
                 state["lastSnapshot"] = current  # Never substitute an older complete snapshot.
@@ -274,11 +286,12 @@ def analyze(path, start_at=None, end_at=None):
             if not all(math.isfinite(value) for value in state["observedAuthoritySlopeBoundsBytesPerSecond"].values()):
                 state["observedAuthoritySlopeBoundsBytesPerSecond"] = None
         state["capacityIdentityComplete"] = state["unboundIdentitySamples"] == 0
-    return {"schema": "actor-pressure-analysis/v2", "qualificationEvidence": False,
+    return {"schema": "actor-pressure-analysis/v3", "qualificationEvidence": False,
             "input": {"sha256": digest.hexdigest(), "bytes": before.st_size},
             "observationWindow": {"requestedStartEpochSeconds": start_at, "requestedEndEpochSeconds": end_at,
                                   "firstEpochSeconds": first_time, "lastEpochSeconds": last_time},
             "limitations": ["rolling_5m_rates_not_exact_interval_totals", "completed_outcomes_not_offered_demand",
+                "rates_outside_selected_window_unknown_unbounded_window_not_workload_proof",
                 "succeeded_activity_not_successful_fold", "ledger_bounds_are_observations_not_provider_billing",
                 "successful_activity_counters_not_unique_provider_operations",
                 "planned_shard_bytes_not_cos_object_fill_or_wire_bytes",

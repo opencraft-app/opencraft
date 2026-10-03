@@ -119,6 +119,16 @@ are not unique provider PUTs/GETs or object-fill measurements. A replayed succes
 activity may count its output again. Historical v1 `logicalBytesPerObject` must
 not be used to infer physical COS occupancy or bytes per deleted COS object.
 
+Schema v3 additionally fences rolling rates to the explicitly selected window:
+the actual query time minus 300 seconds must be at or after its start, and the
+query time must be at or before its end. Otherwise all rate-derived fields in
+that snapshot are unknown; instant gauges and ledger bounds remain usable.
+`rateWindowWithinObservationWindow` is false for an out-of-window rate, true
+for a contained rate, and null without explicit window bounds. An unbounded
+analysis does not establish a steady workload phase. Validation still rejects
+invalid dimensions and stale metrics before applying this mask. This changes
+diagnostic scope, not the load or qualification predicate.
+
 ## Control-plane CPU qualification
 
 The failed run `755730aa4bcb4ce3be8e6a3eac306c65` is retained as capacity

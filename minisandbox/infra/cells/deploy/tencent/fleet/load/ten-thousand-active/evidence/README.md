@@ -1,5 +1,67 @@
 # Capacity failures and pressure evidence, 2026-10-03
 
+## Current c631 run: rising population is not a controlled service curve
+
+Run `200a42ae03ef4e128505b0def22e8af8` remains in flight, not qualified.
+Read-only `inv-c9esir0vn4` completed SUCCESS/0 at 10:13 UTC with the original
+MainPID 1728155 and systemd InvocationID `8a1ff14bc64e49c889255161316c32e8`.
+At load elapsed 2,370 seconds it reports 4,703 ready / 4,698 proven Objects,
+550,495 successful interactions, zero ordinary retries, failures and identity
+mismatches. Warmup backpressure retries remain 4,673; there are still zero
+post-warmup three-second SLO samples. Runtime active A/B is 2,299/2,363, not
+the same measurement as cumulative SDK-ready. Hosts desired/Ready are 136/123
+and 135/126, with Machines Ready 130/135; no manual scaling was performed.
+
+Immutable trace-prefix capture `inv-a9esj90bq8` completed SUCCESS/0 at
+10:13:38 UTC. It read a fixed 24,001,977-byte append-only prefix and omitted
+its last row, retaining 23,689,705 bytes. Remote snapshot:
+`/data/actor-build/release/strict10k-pressure-200a42ae-20261003.m3SJ1w/capacity.ndjson`.
+Local verified copy:
+`/data/tmp/minisandbox-strict10k-200a42ae-pressure-prefix-101338-20261003.ndjson`.
+SHA-256: `ae7f122bf73ca8c388a0db48ad85c4894c85f0bf3592d0bdc4b41da933536e25`.
+Official COS relay metadata/upload `inv-c9esjigixx` / `inv-d9esjjgt3t` both
+completed SUCCESS/0, with source/local length and hash verified. The temporary
+relay key was deleted; the remote and local evidence files remain. This is not
+a permanent COS backup or a live-workload mutation.
+
+Two reproducible, non-qualification schema-v3 analyses bind that entire input:
+
+| Diagnostic | SHA-256 |
+| --- | --- |
+| [09:40--09:55 UTC](200a42ae-pressure-early-v3-20261003.json) | `0542a59507945eb8a9b8fe095dcdf82c7fbe04fe25e43744c0d01a5d1d9b6aab` |
+| [09:55--10:12 UTC](200a42ae-pressure-middle-v3-20261003.json) | `2b08d907df4cb8f45c95cf9270cd022f5c6c503e27dcdb11a27ff7fd3f048dee` |
+
+Their last query windows are fully inside the selected intervals. Actual
+observation counts are 53 and 56 per Cell. Stage completed-execution means at
+the window ends are A/B 166/197 ms and 117/155 ms; stage prepare read bytes per
+completed transaction are about 141/136 KB and 105/108 KB. Compaction waiter
+peaks are 0/0 and 2/14. These observations do not show rising stage unit cost
+at this population, but do not establish sustainable throughput at 10k.
+
+Whole-Cell authoritative-byte net-growth bounds rise from about A/B
+104--111 / 107--117 KB/s to 327--352 / 345--364 KB/s. Successful FDB reclaim
+rate remains explicitly zero at both ends. In the second window cold-publish
+planned-byte rates are only about 21.8/21.9 KB/s; they measure a different
+logical population from the authoritative-byte ledger. Do not subtract them
+to calculate eligible debt, provider throughput or lost data. The original
+trace baseline already contains 4,939,956,034 / 5,629,379,954 authoritative
+bytes, so total Cell stock is not current-run business data.
+
+Warmup increases both population and database age. A retained prefix becoming
+eligible for maintenance changes the work mix even with constant per-job cost.
+The next causal comparison must separate steady request rate, database age,
+eligible prefix bytes, coverage count, base size and invalidated/replayed work.
+Neither gross maintenance completions per Object nor rising total hot bytes
+alone proves superlinear per-Object cost or a reclaim defect. Preserve history,
+PITR, pin, backup and lifecycle fences; inspect due/lease/attempt and progress
+while a slow exact job is still present, before cleanup removes the evidence.
+
+Schema v3 makes the window boundary explicit: a rolling rate whose actual
+query interval crosses the selected start/end is unknown, while gauges and
+ledger bounds are still usable. Null scope means no workload window was
+specified, not steady load. No old v2 receipt is rewritten, and the running
+tools120/workload, heartbeat cadence and qualification predicate are unchanged.
+
 ## Terminal result for the original strict run
 
 Read-only observation `inv-e9ekt2gfn9` at 06:57:09 UTC completed SUCCESS/0.
