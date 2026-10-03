@@ -138,3 +138,22 @@
 ## MR 交付更新
 
 用户明确授权「提交mr」。已创建 [MR !4947](https://git.woa.com/wisp/mono2/-/merge_requests/4947)，源分支 frontsandbox/chat-friendly-loading-20261003 → master，状态 opened、can_be_merged；与 origin/master@02f3c6763 的 merge-tree 检查无冲突。待 Fanny/负责人 CR 与登录态验收；全量测试限制保留，未合并或发布生产。
+
+## MR !4947 CI 修复（2026-10-03）
+
+- `goal`：修复 MR 的 OpenCraft vendored 一致性门禁，使生成副本与本 MR 已提交的前端翻译字典一致。
+- `non_goals`：不改变 Chat 行为、前端源字典、同步脚本、流水线配置或生产环境。
+- `requirement_refs`：用户提供的 MR !4947 和 2026-10-03 CI 日志；日志首个致命错误为 `i18n/generated/en-US.json` 的 source/target SHA 不一致。
+- `interface_refs`：`opencraft/scripts/sync-mono2-agent-console.mjs` 的 130 文件依赖闭包、`UPSTREAM.json` 清单与 `.ci/checks/opencraft_guard.sh`；生成物由 `frontend/src` 驱动。
+- `history_context`：当前 MR 源提交 `0f21e85bc9e1f5c9752300187707c6ac568ac820`，最后影响 vendored 源文件的提交为 `2bfd749a54260a4411e31392f2980e0197f7f4b2`；本次只补齐原功能提交遗漏的生成副本。
+- `acceptance`：同步命令只更新 8 份字典和 `UPSTREAM.json`；130 文件检查、嵌入式 CI 测试、OpenCraft 类型检查与变更影响检查通过。
+- `affected_paths`：`opencraft/plugins/lightvela-hermes/src/upstream/mono2/i18n/generated/`、同目录 `UPSTREAM.json`，以及本 Task Pack/checkpoint。
+- `required_context`：`site-environment-routing`、`tapd-gongfeng-delivery`；`frontend/AGENTS.md` 与 i18n 邻接卡。
+- `context_receipt`：本轮读取 `docs/context/domains/site-environment-routing.md`、`docs/context/flows/tapd-gongfeng-delivery.md`、`frontend/AGENTS.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`、`frontend/src/i18n/index.ts`、`opencraft/scripts/sync-mono2-agent-console.mjs`、`.ci/checks/opencraft_guard.sh`、`docs/context/tasks/{TASK,CHECKPOINT}-TEMPLATE.md`；分别用于站点/交付边界、服务门禁、生成机制与状态记录。
+- `evidence`：隔离 worktree 基于 MR 源提交；同步前 `npm --prefix opencraft run check:mono2-agent-console` exit 1，与 CI 相同 SHA；运行 `npm --prefix opencraft run sync:mono2-agent-console` 后，检查 exit 0，验证 130 文件；`npm --prefix opencraft run test:embedded-ci` 155/155 通过。
+- `validation`：`npm --prefix opencraft run check:i18n`、`check:boundaries`、`typecheck` 均 exit 0；`python3 .agents/context/scripts/validate_documentation.py --repo . --format json` exit 0、warnings 为空；`python3 .agents/context/scripts/validate_change_impact.py --repo . --staged` exit 0，覆盖 11 份 staged 文件；`git diff --cached --check` 无输出。
+- `risks`：尚未提交和推送，因此远端 CI 尚不能据此判断为通过；本地验证也不替代原 MR 的登录态 Chat 验收。
+- `decisions`：使用仓库同步器生成全部副本与清单，不手工编辑 hash 或调整 guard。
+- `scan_scope`：MR 变更列表、OpenCraft 同步器与 guard、前端 i18n 入口及相邻卡；未扩展到无关服务。
+- `scan_output`：无独立扫描产物，精确 diff 见当前 worktree。
+- `handoff`：本地同步和服务验证已完成；需本次用户明确确认才能 commit/push 到 MR 源分支并观察远端 CI。

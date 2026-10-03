@@ -28,3 +28,12 @@
 ## MR 交付更新
 
 用户明确授权「提交mr」。已创建 [MR !4947](https://git.woa.com/wisp/mono2/-/merge_requests/4947)，源分支 frontsandbox/chat-friendly-loading-20261003 → master，状态 opened、can_be_merged；与 origin/master@02f3c6763 的 merge-tree 检查无冲突。待 Fanny/负责人 CR 与登录态验收；全量测试限制保留，未合并或发布生产。
+
+## 2026-10-03 CI 修复检查点（最新）
+
+- `stage`：基于 MR 源提交 `0f21e85bc` 的隔离 worktree 已同步 OpenCraft 生成副本，服务与 context 门禁已通过，待本次提交/推送授权。
+- `verified`：附件日志与本地检查均复现 `en-US.json` drift；同步仅更新 8 份 locale 字典和 `UPSTREAM.json`；130 文件一致性检查、嵌入式 CI 155/155 测试、OpenCraft 类型、i18n、平台边界、文档与 staged 变更影响检查通过。MR 远端分支仍为 `0f21e85bc`。
+- `unverified`：修复提交未推送，无法断言远端 CI 已通过；原 MR 登录态 Chat 验收仍待完成。
+- `discard`：日志中的翻译 WARN 与 MDX deprecated option 不是此次 OpenCraft guard 的首个退出原因。
+- `restore`：worktree `/Users/pablozhong/.codex/worktrees/mr-4947-ci-fix/lightvela`；Task Pack 的「MR !4947 CI 修复」段及当前 `git diff`。
+- `next_action`：拿到本次 commit/push 明确确认后，提交生成同步并核对远端分支与 CI。
