@@ -33,7 +33,8 @@ done
 [[ $build_python =~ ^/[-A-Za-z0-9._/]+$ || $build_python =~ ^[A-Za-z0-9._-]+$ ]]
 [[ $image_tag =~ ^${registry_host//./\.}/actor-fleet/actor-fleet-controller:[A-Za-z0-9._-]+$ ]]
 [[ $source_link == /var/lib/actor-build/deploy/actor-bj-q01-current ||
-   $source_link == "/var/lib/actor-build/deploy/q01-src-${source_revision}-${source_manifest_sha}" ]] || {
+   $source_link == "/var/lib/actor-build/deploy/q01-src-${source_revision}-${source_manifest_sha}" ||
+   $source_link == "/data/actor-build/deploy/controller-src-${source_revision}-${source_manifest_sha}" ]] || {
 	echo "controller build source must be the reviewed current link or exact immutable source" >&2
 	exit 2
 }
@@ -72,7 +73,7 @@ auth=$(printf '%s:%s' "$username" "$token" | base64 | tr -d '\n')
 jq -n --arg host "$registry_host" --arg auth "$auth" \
 	'{auths:{($host):{auth:$auth}}}' >"$temporary/config.json"
 chmod 0600 "$temporary/config.json"
-remote_auth=/var/lib/actor-build/credentials/q01-tcr-build-${request_id}.json
+remote_auth=/data/actor-build/credentials/controller-build-${request_id}.json
 TAT_UPLOAD_MODE=0600 "$fleet_dir/tat/tat-upload.sh" "$temporary/config.json" "$remote_auth" >/dev/null
 
 printf -v quoted_source_link '%q' "$source_link"

@@ -2253,6 +2253,21 @@ CLI在InClusterConfig、Secret读取及协调循环之前退出，并拒绝未�
 此预检只证明入口可执行，不证明真实TKE eviction协议、Actor generation或AZ容量；
 原supervisor持锁时不运行预检Pod、不发布、不开repair flag。
 
+独立controller制品从mono2已提交的完整`minisandbox/infra/cells` Git tree导出为
+`infra/cells/`，不是记忆文件subset；source revision、tree ID和逐文件manifest随包校验。
+北京管理模板的COS bootstrap relay只作content-addressed中转，按当前管理outputs选择，
+不回退旧q01默认bucket/TCR。builder使用`/data`下revision+manifest绑定的immutable目录，
+新wrapper在mint temporary push credentials前拒绝任意目录/错误revision或manifest。
+push auth也只落`/data`，保留双cleanup和expiry；Go base必须匹配完整module graph。
+候选OCI须完成registry digest冷拉和标签校验，再进入既有串行release路径。
+制品准备不需要重编workerd，不变更Cell、RBAC或repair开关，也不证明TKE实际修复资格。
+
+2026-10-04候选已通过实际Go build/test、TCR push和隔离缓存cold pull，见
+[controller产品回执](../../deploy/tencent/fleet/controller/evidence/controller-product-03e7e7b7-20261004.json)。
+TAT `inv-d9fh1a0su6` SUCCESS/0；source为mono2 `03e7e7b7`，制品尚未发布。
+不能用本地Buildah manifest digest替代registry-reported digest；回执绑定后者。
+原strict10k同supervisor仍持锁，A111/115、B4/4、active0；真实修复及完整Phase5仍未通过。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

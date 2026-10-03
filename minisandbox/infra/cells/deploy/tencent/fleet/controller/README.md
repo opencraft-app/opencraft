@@ -62,6 +62,31 @@ before mutating live workloads. A successful help probe proves only that the
 entrypoint runs, not PDB behavior, Actor fencing, destination capacity or safe
 scale-in. Topology repair remains disabled until its independent gates pass.
 
+For a mono2-only controller build, export the **entire committed**
+`minisandbox/infra/cells` Git tree under `infra/cells/`; do not assemble a
+remembered file subset or include uncommitted source. Bind the full mono2
+revision, subtree tree ID and per-file manifest in `.actor-source/`, scan the
+closure, and transfer the content-addressed archive through the management
+template's current COS bootstrap relay. Select the relay and TCR from current
+management outputs, not the historical q01 defaults.
+
+`qualification/actor-bj-q01/build-controller-via-tat.sh` accepts the exact
+`/data/actor-build/deploy/controller-src-<revision>-<manifest-sha256>` path for
+this build. It still accepts the reviewed legacy q01 inputs for existing
+workflows, but the new path cannot point at `current`, a nested directory or
+another revision/manifest. Validation happens before minting push credentials.
+Temporary push authority is stored under `/data/actor-build/credentials/`,
+removed by both remote and local cleanup, and independently expires. The build
+requires pinned bases with matching Go module labels and retains the normal
+isolated registry cold-pull receipt. This is an artifact preparation operation,
+not permission to alter a Cell while a qualification supervisor holds its lock.
+
+The [2026-10-04 candidate receipt](evidence/controller-product-03e7e7b7-20261004.json)
+records a real Go-only build, registry push and isolated cold-pull for source
+`03e7e7b7`. It is **not deployed** and does not certify TKE topology repair or
+the strict 10,000-active-object gate. Keep repair disabled until the real API,
+generation, destination-capacity and serialized release gates pass.
+
 Apply CRDs before this kustomization:
 
 ```sh
