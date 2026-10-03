@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.44.0
+revision: 1.45.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,42 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.45.0）：上一turn为progress，toolchain/all-path/runtime-base ABI
+三套独立native结果已沉淀并正常FF推master de900ea2185e；保留post-push空zqkotpms与
+wqonuvry，另new txpuqmyr继续同一Phase5。无native长任务遗留，不把历史intent当运行中。
+按真实runtime stage入口review历史baseline materializer、stage reuse closure和build-image；
+三次测试文件定位失败（test_reuse_stage_from_runtime.py、test_runtime_baseline_source.py及
+后续test_stage_reuse.py/test_baseline_source.py）均只读，无云动作；已改为runtime目录
+rg --files的真实test_stage_reuse_inputs.py/test_prepare_stage.py/test_full_source_bundle.py，
+不继续猜路径。本轮root路由must_read及argocd-ci-secrets邻居重新读取；既有云访问skill与
+networking reference完整读取，environment_status工具仍不存在，network snapshot缺失不作
+授权/ready证明，直接使用已配置CLI并检查实际响应。ops只读inv-e9f6u10e1n SUCCESS/0
+验证c631全量bundle/receipt，原ops整段锁下guarded relay inv-c9f6vwg7vj/inv-d9f6w00xjr
+与capture inv-e9f6w400q3后，stage guest inv-a9f6wcgmxh/outer inv-d9f6vvgr5c均SUCCESS/0。
+完整baseline readonly materialize、actual offline production closure及六输入、镜像label/hash/
+static ELF通过，原helper实际提取四artifact，新stage-receipt在
+/data/actor-build/runtime-workspace/stage-reuse-2757.1T78WC；digest前缀c5ed14d7647d，
+compiled-input digest仍a48e6285a470。实际workerd 2026-08-07与WorkerLoader ABI test通过，
+这是已发生的stage复用，不再只是eligibility；14相关回归通过，17 storage回归通过。
+首次local-build adapter（SHA前缀6b79e5dc8d79）outer inv-d9f72bg6qa和guest
+inv-d9f72ng152已native FAILED/1，尚未进Cargo；错误是把readonly source bind列作writable
+bulk output，checker正确拒绝。确认两终态后才修adapter：source单独验证same-device及
+ST_RDONLY，可写gate改为原immutable backing及stage/Cargo/cache/Buildah/temp，不改checker
+门槛，不让源码可写。v2 wrapper前缀fe1a7d609016、唯一outer inv-c9f73m0252和guest
+inv-a9f73xgu29当前native RUNNING，original ops锁仍持有，intent为
+/data/actor-build/runtime-builder-verify-eec1f1ef/input/compiler-intent.zJLNx3。
+ops从真实A ConfigMap读取1959bytes config，UID d2f333dc-9c46-4586-bad0-1f09ecdcf81c、
+resourceVersion 3178491291，digest前缀11c5aefb8831；JSON拒绝inline credentials，builder只接收
+精确config，不持有kubeconfig/根云凭据。新actual writable-path门禁及content/toolchain Cargo
+cache binding已通过，resources保持2 jobs/6GiB/thin-LTO/200% CPU，RIVET_PUSH_IMAGE=0。
+正式build-image从真实2757 readonly stable workspace编译，工作目录为
+/data/actor-build/runtime-workspace/runtime-build-2757.5jaNuQ，log为其build.log。
+只读inv-e9f75rg0ua SUCCESS/0在2026-10-03T17:22:59Z确认cargo/rustc活进程，日志9448bytes，
+仍正常编译dependencies；未推registry、未改A/B、未跑第二负载。下次bounded progress不早于
+17:28:00Z，只续接原native guest/outer，不重提编译。终态后才验Engine/Host process tests、
+WorkerLoader/config/container selfchecks及精确本地OCI identity，签发新短期TCR auth单独push/
+cold-pull产品收据，正式A/B release/qualification后重跑固定strict10k与整个Phase5。
 
 当前checkpoint（1.44.0）：本轮继续原Phase5，不新开目标。eec1f1efbdcd正常FF推master，
 保留空kurpxrrp后另new zuyvmtql记录独立native evidence。171 bootstrap回归已通过；文档

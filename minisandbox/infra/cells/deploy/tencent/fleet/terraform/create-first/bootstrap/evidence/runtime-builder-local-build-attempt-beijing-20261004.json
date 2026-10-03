@@ -1,0 +1,52 @@
+{
+  "schema": "actor-runtime-builder-local-build-attempt-evidence/v1",
+  "verdict": "in-progress",
+  "runtimeSourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "runtimeSourceManifestSha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "stageReceiptSha256": "c5ed14d7647d89fd57fff8b7fe66f75eb628e10ec2bb40113c6a7d250d4c4b6e",
+  "config": {
+    "cell": "actor-bj-a01",
+    "configMapUid": "d2f333dc-9c46-4586-bad0-1f09ecdcf81c",
+    "configMapResourceVersion": "3178491291",
+    "bytes": 1959,
+    "sha256": "11c5aefb8831f15970d2649c3095fe1383f2314a05c100b16eaecfad6035ff46",
+    "inlineCredentialsRefused": true,
+    "builderHasKubeconfig": false
+  },
+  "firstAttempt": {
+    "wrapperSha256": "6b79e5dc8d79e3e91515f272e67b113d34583ea78ffbd3db13b6ba22b7a58db1",
+    "coordinatorInvocationId": "inv-d9f72bg6qa",
+    "coordinatorStatus": "FAILED", "coordinatorExitCode": 1,
+    "coordinatorNativeRequestId": "06374a90-7871-4256-b711-ca43bc315cff",
+    "coordinatorNativeResponseSha256": "7b3e27cf5fcf099ea94b4a540d9cc2c052051d8bb8caaac8e76f095a7dcb87ae",
+    "guestInvocationId": "inv-d9f72ng152", "guestStatus": "FAILED", "guestExitCode": 1,
+    "guestNativeRequestId": "437bc6a1-9153-4ac0-85dd-9151943690bf",
+    "guestNativeResponseSha256": "6f9d6c02ddf900a7bd19c17670900949d0bc48232f6a14d12c230b8cdcc018f8",
+    "cause": "The adapter incorrectly included the intentionally read-only source bind in the writable-output gate. Admission correctly refused it before Cargo compilation. The checker and source read-only boundary were not weakened."
+  },
+  "correctedAttempt": {
+    "wrapperSha256": "fe1a7d609016f35ffb07b70cda000ac4cadf266a8c26845877a90ccfffb7d338",
+    "coordinatorInvocationId": "inv-c9f73m0252",
+    "guestInvocationId": "inv-a9f73xgu29",
+    "guestObservedStatus": "RUNNING",
+    "guestObservationNativeRequestId": "722b265d-cf96-4a32-9d51-50301a5ef3bc",
+    "guestObservationNativeResponseSha256": "6a6d19122fa816751b2ef5bd5d37b60619e05b82143500508120d14f53a72cb3",
+    "operationsIntent": "/data/actor-build/runtime-builder-verify-eec1f1ef/input/compiler-intent.zJLNx3",
+    "workingDirectory": "/data/actor-build/runtime-workspace/runtime-build-2757.5jaNuQ",
+    "buildLog": "/data/actor-build/runtime-workspace/runtime-build-2757.5jaNuQ/build.log",
+    "cargoInputSha256": "3f9cf65a0cf5abe53846b693f00e4d54ff937441c68c91d5b6ed2c453c24a5e1",
+    "cargoToolchainSha256": "c7ad1eae06909c56a9b96f385cfb6653788b54f4474b49807bf98342d3b9a412",
+    "readOnlyProgressInvocationId": "inv-e9f75rg0ua",
+    "readOnlyProgressUtc": "2026-10-03T17:22:59Z",
+    "liveCargoAndRustcObserved": true,
+    "logBytesAtObservation": 9448,
+    "jobs": 2, "memoryMaxGiB": 6, "cpuQuotaPercent": 200, "lto": "thin",
+    "pushImage": false
+  },
+  "boundaries": [
+    "Native RUNNING and live compiler observations describe their evidence times, not completion or enduring liveness. Resume the exact original handles and re-observe them; never resubmit because an observer disconnects.",
+    "Operations holds the original fleet lock while the independent builder holds its stable compiler-workspace lock. The source bind remains read-only and is separately checked for dedicated-disk identity and ST_RDONLY.",
+    "The operations host passes only the exact credential-refused ConfigMap data. No cloud root credential, kubeconfig or temporary TCR auth is needed for the local compilation.",
+    "RIVET_PUSH_IMAGE=0 builds and self-checks locally. Registry publication, cold pull, production-image receipt, A/B release and strict10k qualification remain unproven."
+  ]
+}

@@ -312,6 +312,13 @@ then compares `getconf` on the builder with the exact private runtime-base
 digest inside Buildah. Neither receipt is compiled-stage reuse, product
 compilation or admission of the candidate Runtime to A/B.
 
+The [stage-reuse receipt](evidence/runtime-builder-stage-reuse-beijing-20261004.json)
+then records an actual immutable Runtime extraction, matching compiled-input
+closure and source-bound stage receipt, plus the extracted workerd's real
+WorkerLoader ABI test. The historical full source tree remains a read-only
+comparison baseline, never candidate source. No V8 rebuild is implied or needed
+when the complete audited stage closure matches.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

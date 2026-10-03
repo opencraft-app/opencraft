@@ -28,6 +28,12 @@ also checks the actual stage, Cargo target and temporary directories before
 image pulls and compilation. A directory named `/data` on the system filesystem,
 a tmpfs/overlay/network backing, missing mount identity or inadequate headroom
 fails closed. The checker is read-only and never formats, mounts or deletes data.
+Its writable-path contract must not be applied to the intentionally read-only
+source bind mount after workspace setup. Check that bind separately for the
+exact reviewed source, dedicated-disk device and `ST_RDONLY`; keep every stage,
+Cargo, temporary and Buildah output in the writable-path gate. A read-only source
+rejection is an adapter scoping error, not permission to make source writable
+or relax the storage checker.
 The observed Buildah store comes from its documented
 [`info` JSON](https://github.com/podman-container-tools/buildah/blob/main/docs/buildah-info.1.md),
 not an assumed default pathname.
@@ -114,6 +120,13 @@ before invoking this gate.
 The bridge's direct dependency roots are bound to the audited fork tree. A new
 fork must use a fresh stage until that root contract is reviewed and updated;
 matching two copies of an unknown fork is not permission to omit its new roots.
+
+The [standalone Beijing stage-reuse evidence](../terraform/create-first/bootstrap/evidence/runtime-builder-stage-reuse-beijing-20261004.json)
+records the actual base-container extraction after full baseline verification,
+offline production-closure equality and static ELF/hash checks. The extracted
+workerd also passed the production WorkerLoader ABI test. This is not merely
+a source-only eligibility result, but it still does not prove the subsequent
+Engine/Host build, registry publication, rollout or workload qualification.
 
 The full source-materialization gate checks the shell's helper invocation and
 the helper's production-input proof separately. Its structural regression runs
