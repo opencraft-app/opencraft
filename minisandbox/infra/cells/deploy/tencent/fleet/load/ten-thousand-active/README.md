@@ -70,6 +70,36 @@ cannot broaden deletion beyond receipt-derived `scale-<run-id>-*` identities.
 This prevents repeated qualifications from consuming the Cell logical-byte
 admission budget after their active-load evidence has already been captured.
 
+## Offline pressure analysis
+
+Use `analyze_pressure.py` against an immutable, regular-file copy of the capacity
+trace. It streams bounded rows, binds the entire input by SHA-256, and creates a
+new mode-0600 JSON diagnostic. It performs no network queries or runtime builds
+and never changes the capacity qualification verdict.
+
+```bash
+python3 analyze_pressure.py --trace capacity.ndjson --output pressure.json \
+  --from-observed-at 2026-10-02T20:00:00Z \
+  --until-observed-at 2026-10-02T20:25:00Z
+```
+
+The optional paired timestamps select one workload phase, excluding cleanup;
+the hash still covers the entire file. Output distinguishes planning bytes and
+attempts per completed transaction, completed admission wait, outcome-specific
+execution duration, successful logical publication/reclaim rates, and ledger
+min/max disagreement. Authority-growth bounds use the actual query timestamps,
+not the collector's loop-start timestamp. Missing latest samples never fall
+back to older data. Missing identities make the growth result unknown; changed
+resource UIDs or Host revisions reject the selected window. Node additions are
+allowed. Duplicate dimensions, stale instant-query timestamps, oversized rows,
+and concurrent file mutation are rejected.
+
+Five-minute rate windows overlap and must not be integrated as exact event
+totals. Completed work does not measure offered demand or oldest pending age;
+an activity returning successfully is not proof that a useful fold occurred.
+Logical ledger bytes are not provider billing or bucket-inventory bytes.
+`qualificationEvidence=false` is intentional even when all inputs are present.
+
 ## Control-plane CPU qualification
 
 The failed run `755730aa4bcb4ce3be8e6a3eac306c65` is retained as capacity

@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.4
+revision: 1.8.5
 precedence: task
 derived: false
 ---
@@ -310,6 +310,13 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### verified
 
+- 03:39:01 UTC `inv-d9ef1agh1t` SUCCESS/0，只读确认原 service / InvocationID 未变：
+  2,244 ready、2,231 proven、121,935 active success，普通 retry/失败/身份漂移零；
+  warmup 背压累计 7,166 次、576 对象、零 timeout、最长 227 秒。A/B desired Host
+  65/62、Ready 各 57；三秒 post-warmup 样本尚未开始。下一观察不早于 03:44:01 UTC。
+- 独立 pressure analyzer 与 16 项真实文件/CLI 回归、完整 fleet 通过；旧失败 trace
+  窗口复算和设计约束见 `2026-10-03-minisandbox-pressure-analysis.md`。诊断不重建 Runtime，
+  不触碰运行中 tools 120，不签发容量资格。规划/准入/执行/有效回收分别报告，缺项 unknown。
 - B 原 `inv-a9ednt0v6b` SUCCESS/0，02:58:56 UTC 进入资格、03:17:42 UTC 激活。
   只读 `inv-d9eeevgn90` 用正式 production-cell verifier 复验：48 对象、6,240 写入、
   48/48 exact cold、964,391 ms 冷态等待；cold wake p95 约 1,115 ms、max 约 4,295 ms。
@@ -478,7 +485,7 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 73598bca 为已推送基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 e4490d46 为已推送基线；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
 - 上述 59e86519 build 已成功，不再重启其 service/InvocationID；日志和完整 source receipt 在
@@ -501,6 +508,8 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 - 跟随唯一已运行 strict10k，保留旧失败身份，不临时 patch 线上容量、超时或重试。
   A/B release/qualification、materialization/stage reuse 与新产品已通过，strict10k 未通过。
   不因为文档/诊断更新重编 workerd；tools 120 独立于 Runtime 59。
+- 复用已完成的离线 `analyze_pressure.py` 选择不可变 trace 的负载窗口，不混入 cleanup，
+  不将重叠五分钟 rate 积分为精确事件总数。供给 lead time 与后台债务分开判断。
 - 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
   已复现；新指标 A/B 已可用。不重写历史分类，不用小资格采样宣称
   万级对照已经成功。

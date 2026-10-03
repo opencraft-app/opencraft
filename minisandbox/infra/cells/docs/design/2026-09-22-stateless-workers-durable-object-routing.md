@@ -1430,6 +1430,22 @@ attempt sum/count。所有 counter 先逐 series rate，再按有界活动/结�
 这些数据足以比较已完成工作的扫描和重试成本，却仍不覆盖全部 history replay、offered
 demand 或未完成工作的最长等待；缺项不能被均值、CPU 空闲或 HTTP 错误减少代替。
 
+对应离线实现为 `fleet/load/ten-thousand-active/analyze_pressure.py`，只读取不可变 capacity
+trace，输出固定维度、原字节 SHA 和显式非资格诊断。可按 observation 时间选择负载窗口，
+避免把失败后的 cleanup 回收混入稳定服务结论；滚动五分钟 rate 仍不等于精确区间事件数。
+同窗规划 bytes/完成事务、attempts/完成事务、已完成准入等待和分结果执行时间分别报告；
+ledger 取副本 min/max，增长上下界使用实际 query 时间。最新缺失保持 unknown，不回退；
+资源 UID/Host revision 变化拒绝跨身份比较，正常 Node 增加不视为身份漂移。
+
+设计修正的顺序是先降低每份有效工作的重复规划/失效重做，再控制 Cell 总维护预算并保护
+前台 durable commit，最后才根据真实服务成本增资源。若活跃数据库各自按周期 `T` 触发
+维护，基础需求随 `N/T` 增长；增加 Engine 而同时增加规划扫描和竞争，会形成正反馈，
+不能当作线性扩容。应分别校准事件触发/合并、active-job 小额观察、真正需要的全量规划和
+安全回收；未改变 dirty 输入的重复 wake 不应制造新的数据工作，但持久 signal 不得丢弃。
+低容量启动时，云节点创建/镜像准入延迟属于 supply lead time。已有 headroom 不足时，
+分钟级 warmup 等待不能被标成三秒创建达标；需用到达率乘供给延迟规划预留与扩容提前量，
+而不是借后台维护均值推断创建 SLO。该模型及工具尚不替代 strict10k 的实际终态门禁。
+
 性能修正的发布证据也分层：本地算法回归、reviewed-source build、A/B runtime qualification、
 相同 strict10k receipt，不能互相替代。正式 builder 的默认 Python 3.6 不满足 stage closure
 verifier 的 subprocess 接口；共享构建入口须在授予 push authority 前验证已安装的 Python 3.11，

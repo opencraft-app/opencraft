@@ -189,6 +189,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_run.
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_run_on_builder.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/shared-agent-scale/test_cleanup.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_verify.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_analyze_pressure.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_capacity_controller_recovery.py"
 node --test "$script_dir/load/shared-agent-scale/runner.test.mjs"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_contract.py"
