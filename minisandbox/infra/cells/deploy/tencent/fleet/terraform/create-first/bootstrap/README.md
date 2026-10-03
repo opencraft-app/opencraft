@@ -298,6 +298,20 @@ failed installation invocation and intent; verification never rewrites them
 or makes their historical result successful. A successful version probe or
 marker alone is insufficient to skip this full verification.
 
+The [Beijing verification receipt](evidence/runtime-builder-offline-verification-beijing-20261004.json)
+records independent guest/coordinator terminal `SUCCESS/0` results with identical
+verification-only output. It preserves the [failed installation evidence](evidence/runtime-builder-offline-attempt-beijing-20261004.json);
+neither a successful recovery check nor `toolchainReady=true` rewrites that
+historical failure or grants runtime-build/release qualification.
+
+The separate [actual-path receipt](evidence/runtime-builder-path-preflight-beijing-20261004.json)
+checks all eleven source, stage, Cargo, cache, temporary and Buildah paths on
+the dedicated disk and resolves the locked offline Cargo graph. The
+[runtime-base ABI receipt](evidence/runtime-builder-abi-preflight-beijing-20261004.json)
+then compares `getconf` on the builder with the exact private runtime-base
+digest inside Buildah. Neither receipt is compiled-stage reuse, product
+compilation or admission of the candidate Runtime to A/B.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

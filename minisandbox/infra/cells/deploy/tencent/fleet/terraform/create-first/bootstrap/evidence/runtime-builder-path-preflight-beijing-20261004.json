@@ -1,0 +1,81 @@
+{
+  "schema": "actor-runtime-builder-path-preflight-evidence/v1",
+  "verdict": "passed",
+  "toolingSourceRevision": "eec1f1efbdcd1e40fe0d8f768010fb87fdc252d1",
+  "runtimeSourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "runtimeSourceManifestSha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "wrapperSha256": "70794a4f09bdf8b88fed7ace267bfef19330fae303a34756c10d627bddc6c560",
+  "captureInvocationId": "inv-c9f6krgaap",
+  "coordinator": {
+    "invocationId": "inv-e9f6kmg5vf",
+    "nativeRequestId": "eb40871b-8636-4e7e-84ba-5639fc732798",
+    "nativeResponseSha256": "6c3738c9f494dac5a7a17f36462d5bda63f52b80d3abdb0e760cdecec13f2323",
+    "status": "SUCCESS",
+    "exitCode": 0
+  },
+  "guest": {
+    "invocationId": "inv-c9f6kt0crr",
+    "nativeRequestId": "c5450eba-dc46-4ee9-92fb-f1b36cbc16bf",
+    "nativeResponseSha256": "85548745b5da8cf5af7c43d95e577205d5b987bb04ef5d78561b9707d1f9ffeb",
+    "status": "SUCCESS",
+    "exitCode": 0
+  },
+  "results": [
+    {
+      "additionalBytesPerFilesystem": 68719476736,
+      "errors": [],
+      "filesystems": [
+        {
+          "availableBytes": 536798347264,
+          "availableInodes": 33485334,
+          "capacityBytes": 540053790720,
+          "device": 64784,
+          "paths": [
+            "/data",
+            "/var/lib/actor-build",
+            "/data/actor-build/containers/storage",
+            "/var/lib/actor-build/deploy/q01-src-2757fc785d8f572d1b6430e471100c4a880aefac-c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+            "/data/actor-build/preflight-2757/stage",
+            "/data/build-cache/rivet-runtime-cargo-target",
+            "/data/tmp",
+            "/data/actor-build/preflight-2757/cargo-home",
+            "/data/actor-build/runtime-workspace",
+            "/data/build-cache/runtime-vendor/01ba910e0089376400ca7ec634d9be47619644c42e0007b6c08b11597ce8850f",
+            "/data/build-cache/runtime-rust/1.96.0"
+          ],
+          "requiredBytes": 122724855808,
+          "requiredInodes": 81920,
+          "reserveBytes": 54005379072
+        }
+      ],
+      "root": {
+        "availableBytes": 94835720192,
+        "availableInodes": 6436210,
+        "capacityBytes": 105620869120,
+        "device": 64769,
+        "filesystemType": "ext4",
+        "path": "/",
+        "resolved": "/",
+        "source": "/dev/vda1"
+      },
+      "rootReserveBytes": 21474836480,
+      "schema": "actor-builder-storage-admission/v1",
+      "verdict": "passed"
+    },
+    {
+      "cargoCompilation": false,
+      "metadataSha256": "3720d38a10fee30ee347edfc01b4cb3e007debf0d447ce86297be7e85c02f107",
+      "packages": 861,
+      "schema": "actor-runtime-cargo-metadata-preflight/v1",
+      "verdict": "passed"
+    }
+  ],
+  "builderGlibc": "glibc 2.28",
+  "boundaries": [
+    "Fresh native attachment/TKE exclusion was collected under the original operations lock. Matching by-id mount, UUID, journal and complete reviewed source were rechecked on the builder.",
+    "Only empty bounded build directories were prepared; no old cache or source was adopted or removed.",
+    "Eleven actual bulk paths are on the dedicated CBS filesystem; root reserve, headroom and inode gates passed.",
+    "Locked offline Cargo metadata resolved 861 packages including both product roots, but is not compilation or exact source-closure attestation.",
+    "No runtime-base ABI equivalence, compiled stage reuse, product build, release or workload qualification is implied."
+  ]
+}

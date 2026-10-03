@@ -1,0 +1,43 @@
+{
+  "schema": "actor-runtime-builder-offline-verification-evidence/v1",
+  "verdict": "passed",
+  "sourceRevision": "eec1f1efbdcd1e40fe0d8f768010fb87fdc252d1",
+  "sourceManifestSha256": "1b7ceaf3c98293a9dd274a40b1ad49d759eb8eae433c5813cf8f79a87a33acdc",
+  "sourceBundleBytes": 54856806,
+  "sourceBundleSha256": "0e39ba54ac9bb175beb9939290cb5875ec748aed820be8482f164002824b9437",
+  "sourceReceiptSha256": "81bba4e33e67f7a9d09f947ffeda50a6ce3c4e08b663398bcb13146f9715bccd",
+  "inventorySha256": "882113091f01cbe12e224f53d3f34667c4e659d37afdc37d8b9ecf8cc1419a57",
+  "operationsInstanceId": "ins-55ry1kb1",
+  "builderInstanceId": "ins-mh9mruw7",
+  "wrapperSha256": "bc73edb6f32ec28cff999c537af1e0d926bbd64e9089bb9d8c9a39c6e9fd1fca",
+  "operationsRelayInvocationIds": ["inv-d9f6hx0wd4", "inv-e9f6i00jn3", "inv-c9f6ing9sr"],
+  "captureInvocationId": "inv-c9f6itgg0m",
+  "coordinator": {
+    "invocationId": "inv-c9f6ip0ncp", "status": "SUCCESS", "exitCode": 0,
+    "nativeRequestId": "15e425cc-0f78-4e80-942c-534c8b936b9a",
+    "nativeResponseSha256": "6905cbf9eb5fe335235e3e2a819abc81e1b25a0f34ae4a16183571a6ccb1c828"
+  },
+  "guest": {
+    "invocationId": "inv-a9f6iv08h7", "status": "SUCCESS", "exitCode": 0,
+    "nativeRequestId": "2e0864d0-8fa4-41ff-8a28-0f5bc69a10ab",
+    "nativeResponseSha256": "1131c1bfdea0607a2d55944c1b12f72827f623830afa250ef21407ece51399d1"
+  },
+  "result": {
+    "schema": "actor-runtime-builder-offline-toolchain/v1", "verdict": "passed",
+    "toolchainReady": true, "storageReady": false, "verificationOnly": true,
+    "instanceId": "ins-mh9mruw7", "diskId": "disk-kkels2ln",
+    "filesystemUuid": "dd34c927-dfee-4826-8b45-d5cbb4d47c5e",
+    "journalSha256": "416b384527f21b1035a2de16f7fb9d06687d08b196b824c849f02ceaff7e6039",
+    "rustArchiveSha256": "a20d9626e9da938091b1ffb8d9073163f40cca459e9ac2b397251ba7e14cbc5e",
+    "vendorArchiveSha256": "82eafab8214d56aeb2fc7ee4194072d0fb1c9fef9151be6ca44f41daf63fe324",
+    "cargoLockSha256": "01ba910e0089376400ca7ec634d9be47619644c42e0007b6c08b11597ce8850f"
+  },
+  "historicalFailedInstallerInvocationId": "inv-c9f62j0fq9",
+  "boundaries": [
+    "Independent native guest and coordinator terminal SUCCESS/0 outputs bind exactly the same result.",
+    "Only existing complete trees were byte-checked against pinned archives, followed by actual version and journal checks. No archive transfer or reinstall occurred.",
+    "The original failed installation intent and invocations were retained and remain failed.",
+    "toolchainReady is not build admission: actual writable paths, Cargo closure, exact runtime-base ABI, stage reuse, compilation, release and workload qualification are separate gates.",
+    "No Runtime image, A/B acceptance, capacity or release changed."
+  ]
+}

@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.43.0
+revision: 1.44.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,30 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.44.0）：本轮继续原Phase5，不新开目标。eec1f1efbdcd正常FF推master，
+保留空kurpxrrp后另new zuyvmtql记录独立native evidence。171 bootstrap回归已通过；文档
+零error/warning，Context同4,970历史error且own Task零新增，root26仍同四历史失败，
+audit33通过，discovery不冒充语义资格。新版完整工具bundle54,856,806bytes/14,345files
+经ops三relay inv-d9f6hx0wd4/inv-e9f6i00jn3/inv-c9f6ing9sr校验后readonly materialize；
+原ops全程共享锁、确认旧load停止且旧install intent仍FAILED，fresh capture
+inv-c9f6itgg0m后唯一verification guest inv-a9f6iv08h7与outer inv-c9f6ip0ncp均SUCCESS/0。
+两份独立native输出精确一致：verificationOnly/toolchainReady为true、storageReady为false，
+实际Rust/vendor全量bytes、锁文件、版本、UUID/journal均通过；没有重传两包、重新安装或
+改写旧失败intent。新verification JSON只证明工具链，不授予build/release资格。
+随后原ops锁下fresh capture inv-c9f6krgaap、all-path guest inv-c9f6kt0crr与outer
+inv-e9f6kmg5vf均SUCCESS/0：11个实际bulk paths全在独立盘，约500GiB available，
+64GiB增量及root/inode保留门禁通过；locked/offline Cargo metadata解析861packages，
+包含Engine/Host，没有运行编译。独立capture inv-e9f6pc0acc后的runtime-base ABI guest
+inv-d9f6pkg1mf与outer inv-c9f6p8g94d均SUCCESS/0；private TCR exact digest实际拉取，
+Buildah内runtime与builder均glibc 2.28；短期TCR auth按原锁内trap清理，未给builder根云凭据
+或kubeconfig。三套nonsecret JSON evidence分别保留native request/hash和边界。
+只读inv-e9f6ra0e6i SUCCESS/0另证实purpose credentials目录为空，无认证文件残留。
+下一项是正式standalone build handoff：校验并materialize历史c631完整baseline，复用四个
+compiled stage artifacts并重新证明六输入闭包；生产config由ops读取，不能让builder拥有
+kubeconfig。实际bulk/source/ABI/资源与短期push权继续fail closed，Engine/Host正式编译、
+产品自检/registry digest、A/B正式release后再跑固定strict10k；尚未宣称编译/上线/万级通过。
+whole Phase5及百万dormant、Router矩阵、故障和streaming资格仍active，无long soak/physical restore。
 
 当前checkpoint（1.43.0）：7846706c36d9工具正常FF推master，保留post-push空xzrsssrr，
 另new swqpzqxm处理真实native结果。完整bootstrap168、archive6/coordinator21通过；root
