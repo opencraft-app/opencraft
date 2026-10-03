@@ -2,7 +2,9 @@
 
 ## Current c631 run: rising population is not a controlled service curve
 
-Run `200a42ae03ef4e128505b0def22e8af8` remains in flight, not qualified.
+Run `200a42ae03ef4e128505b0def22e8af8` subsequently failed at 10:49:47 UTC;
+its supervisor is waiting for natural drain. The observations below precede
+that failure, not a qualification result.
 Read-only `inv-c9esir0vn4` completed SUCCESS/0 at 10:13 UTC with the original
 MainPID 1728155 and systemd InvocationID `8a1ff14bc64e49c889255161316c32e8`.
 At load elapsed 2,370 seconds it reports 4,703 ready / 4,698 proven Objects,
@@ -61,6 +63,52 @@ query interval crosses the selected start/end is unknown, while gauges and
 ledger bounds are still usable. Null scope means no workload window was
 specified, not steady load. No old v2 receipt is rewritten, and the running
 tools120/workload, heartbeat cadence and qualification predicate are unchanged.
+
+## Current run: first failure and bounded pre-error window
+
+Read-only `inv-c9etu9ga0j` completed SUCCESS/0 at 10:57:23 UTC against the
+original MainPID and InvocationID. Its [projected native output](200a42ae-first-error-20261003.txt)
+is 2,518 bytes, SHA-256
+`b48603e2b634650a1a59f6f5654c5096d3d8b7ffaefeb2149bc5c4b394d4e2ac`.
+It is a diagnostic projection, not the raw receipt. The original load receipt
+SHA-256 is `affced2c82eabaa761f73ee7dc45e23047970740499e4abf20cae8026c45767b`.
+The first journal error is index 9035, initialize, `502 indeterminate_result`,
+at 10:49:47.171 UTC. Terminal load verdict is failed, with 9,086 ready /
+9,074 proven, 2,070,235 successful interactions, one initialize error and
+2,294 active `network:20` errors after global cancellation. Those cancellation
+errors are not 2,294 independent server failures. Ordinary retries and identity
+mismatches are zero; post-warmup three-second samples remain zero. Exact cleanup
+has exit zero; final natural-drain qualification is still pending.
+
+The old 64 MiB full-prefix capture `inv-d9etkq068h` failed without an artifact.
+A bounded, fixed-EOF tail capture `inv-d9etnrgcxh` succeeded at 10:51:32 UTC:
+source dev:inode `64769:1313642`, byte interval `[56460531,73237747)`, first
+fragment and final row omitted, 15,782,786 bytes retained. Remote immutable file:
+`/data/actor-build/release/strict10k-pressure-tail-200a42ae-20261003.qbR4sW/capacity.ndjson`.
+Local verified copy:
+`/data/tmp/minisandbox-strict10k-200a42ae-pressure-tail-105132-20261003.ndjson`.
+SHA-256 `c46c9437d2c118bbbfe60dfadc5750f40e2620bcfe31762ffa77240a9121eccf`.
+Official COS relay `inv-d9etqdgtxh` / `inv-d9etqe07hh` completed SUCCESS/0;
+length/hash were verified and the temporary relay object deleted.
+
+[Pre-error schema-v3 analysis](200a42ae-pressure-preerror-v3-20261003.json),
+20,297 bytes, SHA-256
+`25021376ae4e63e54607405335a0fb441b3278076f0aeec84f7ce56dc598180f`,
+selects 10:40:46--10:49:00 UTC, with actual rows 10:40:46.515--10:48:51.220
+UTC and 24 samples per Cell. Its last rolling windows are fully pre-error;
+windows crossing the selected boundary remain unknown, not zero. It does not
+include the original run baseline and is not qualification evidence.
+
+At the last sample A/B stage completed-execution means are 0.482/2.031 seconds,
+stage admission means 2.143/9.256 seconds, prepare bytes per completed stage
+transaction 168,584/270,300 and completion rates 20.09/5.14 per second.
+UDB pending peaks are 1,063/4,156, compaction waiter peaks 90/96. Whole-Cell
+authoritative-byte net growth bounds are about 901--1,034 / 927--1,027 KB/s;
+successful reclaim is zero at the end. This shows late maintenance degradation,
+not the exact cause of index 9035 or a per-Object superlinear service curve.
+Completed stage work may still be rejected at install; its success count is not
+installed/reclaimed progress. Population, age, eligible prefix and rework must
+be separated before changing concurrency or sizing FDB.
 
 ## Current run: exact live-branch install rejection
 

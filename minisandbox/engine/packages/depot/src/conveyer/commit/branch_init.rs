@@ -53,7 +53,6 @@ pub(super) async fn write_root_branch_metadata(
 	database_id: &str,
 	now_ms: i64,
 	root_versionstamp: &[u8; 16],
-	bucket_initialized: bool,
 ) -> Result<()> {
 	let record = DatabaseBranchRecord {
 		branch_id,
@@ -81,18 +80,7 @@ pub(super) async fn write_root_branch_metadata(
 		&1_i64.to_le_bytes(),
 		MutationType::Add,
 	);
-	if bucket_initialized {
-		branch::write_bucket_catalog_marker_with_root(
-			tx,
-			bucket_branch,
-			bucket_branch,
-			branch_id,
-			root_versionstamp,
-		)?;
-	} else {
-		branch::write_bucket_catalog_marker(tx, bucket_branch, branch_id, root_versionstamp)
-			.await?;
-	}
+	branch::write_bucket_catalog_marker(tx, bucket_branch, branch_id, root_versionstamp)?;
 
 	let pointer = DatabasePointer {
 		current_branch: branch_id,

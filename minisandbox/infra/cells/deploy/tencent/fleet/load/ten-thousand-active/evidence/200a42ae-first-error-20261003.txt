@@ -1,0 +1,14 @@
+tat: invocation=inv-c9etu9ga0j
+observed_at=2026-10-03T10:57:23Z run_id=200a42ae03ef4e128505b0def22e8af8
+MainPID=1728155
+ActiveState=active
+SubState=running
+InvocationID=8a1ff14bc64e49c889255161316c32e8
+{"event":"error","at":"2026-10-03T10:49:47.171Z","index":9035,"phase":"initialize","status":502,"code":"indeterminate_result"}
+affced2c82eabaa761f73ee7dc45e23047970740499e4abf20cae8026c45767b  /data/actor-bootstrap/beijing-rebuild-20260915/load-tests/ten-thousand-active-200a42ae03ef4e128505b0def22e8af8/load/receipt.json
+{"schema":"actor-shared-agent-scale/v1","runId":"200a42ae03ef4e128505b0def22e8af8","startedAt":"2026-10-03T09:33:25.790Z","finishedAt":"2026-10-03T10:49:47.871Z","verdict":"failed","stopReason":"warmup_unexpected_error","activeReady":9086,"activeProven":9074,"counters":{"versionsPublished":16,"deploymentsPublished":16,"scheduled":9127,"createAttempts":9127,"objectsCreated":9086,"objectsFailed":41,"readySloBreaches":0,"requestRetries":0,"warmupBackpressureRetries":5729,"warmupBackpressureTimeouts":0,"activeTargetReady":9086,"activeAttempts":2072529,"activeSucceeded":2070235,"activeFailed":2294,"activeIdentityMismatches":0,"consecutiveCreationFailures":41,"inFlightPeak":186},"errors":{"initialize:502:indeterminate_result":1,"active:network:20":2294},"latency":{"version":{"count":16,"p50UpperBoundMs":64,"p95UpperBoundMs":165.99546299532923,"p99UpperBoundMs":165.99546299532923,"maxMs":163.526699},"deployment":{"count":16,"p50UpperBoundMs":1116.6799182492239,"p95UpperBoundMs":1448.1546878700494,"p99UpperBoundMs":1448.1546878700494,"maxMs":1373.0735700000005},"create":{"count":10181,"p50UpperBoundMs":469.50607012079166,"p95UpperBoundMs":3158.4477704354626,"p99UpperBoundMs":3158.4477704354626,"maxMs":3179.107805999927},"initialize":{"count":13781,"p50UpperBoundMs":512,"p95UpperBoundMs":3444.3117168792146,"p99UpperBoundMs":8933.439345993791,"maxMs":25412.126966000535},"warmupReady":{"count":9086,"p50UpperBoundMs":861.0779292198037,"p95UpperBoundMs":19483.96937220458,"p99UpperBoundMs":65536,"maxMs":197074.917092},"ready":{"count":0,"p50UpperBoundMs":null,"p95UpperBoundMs":null,"p99UpperBoundMs":null,"maxMs":0},"active":{"count":2072529,"p50UpperBoundMs":117.37651753019792,"p95UpperBoundMs":1327.9637039626339,"p99UpperBoundMs":4870.992343051145,"maxMs":23619.92641200032}}}
+capacity_phase=initial status=low elapsed_seconds=1
+load_exit_status=1
+cleanup_exit_status=0
+capacity_phase=final status=waiting elapsed_seconds=0
+tat: invocation=inv-c9etu9ga0j status=SUCCESS exit=0

@@ -5,9 +5,7 @@ mod resolve;
 mod shared;
 
 pub use catalog::{DatabaseListPage, list_databases, list_databases_page};
-pub(crate) use catalog::{
-	read_bucket_root_branch_id, write_bucket_catalog_marker, write_bucket_catalog_marker_with_root,
-};
+pub(crate) use catalog::{read_bucket_root_branch_id, write_bucket_catalog_marker};
 pub use fork::{derive_branch_at, derive_bucket_branch_at, fork_bucket, fork_database};
 pub(crate) use lifecycle::rollback_database_to_target_tx;
 pub use lifecycle::{

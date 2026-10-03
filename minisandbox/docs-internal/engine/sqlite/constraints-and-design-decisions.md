@@ -88,6 +88,14 @@ Bucket forks must be metadata-only. Eagerly copying every database membership en
 
 `BUCKET_CATALOG` solves this with parent walks. A bucket fork starts with an empty local catalog and inherits parent catalog entries whose versionstamp is at or before the fork's `parent_versionstamp`. Tombstones hide inherited entries only along the relevant bucket path.
 
+## Proof Invalidation Must Match The Dependency
+
+A database's bounded bucket-fork proof depends on its own reverse catalog memberships and on fork edges of the subscribed bucket trees. Catalog insertion or tombstoning atomically clears only that database's complete marker, cursor, roots, epoch subscriptions, queue and seen state. New bucket forks still invalidate the subscribed trees through root and fixed-fanout epochs; an incomplete proof still blocks publication and reclamation.
+
+Incrementing a shared tree epoch for every unrelated database creation couples independent databases: proof reset can reject already staged output, and the manager then replans the same input. Execution permits bound concurrent work but cannot make this feedback useful. Scope invalidation to changed dependencies before increasing maintenance concurrency; measure installed/reclaimed progress separately from activity success. The real RocksDB/UDB `bucket_proof_invalidation` regressions cover completed and paged proofs under unrelated membership churn and retain the real fork-history pin fence.
+
+These tests do not establish all bucket-fork read semantics. A separate counterexample forks a bucket at TXID 1, overwrites its parent at TXID 2, and observes TXID 2 through the child bucket's default `Db` read. The current pointer resolver returns the physical database branch without carrying the inherited bucket versionstamp into the page-read plan. Explicit historical reads and database forks are different paths. Bucket read-cap propagation remains a separate correctness fix; preservation of history alone does not prove the child selects it.
+
 ## Why Split Manifest Fields
 
 The branch manifest is stored under separate subkeys:

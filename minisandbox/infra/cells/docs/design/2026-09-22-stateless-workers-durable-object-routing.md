@@ -1907,16 +1907,46 @@ refresh 对同一 fingerprint、295--347 prefix 和 308/338/347 coverage 重建 
 48-entry active history 有界截取不能证明完整 loop state；缺少通用 StateKey 或 global
 lease 也不证明 manager 丢状态或死亡，LUPE 持久状态属于 loop event。
 
-当前 catalog create/tombstone 同时使变更数据库的 proof 失效，并递增 bucket root 与
+运行中 c631 的 catalog create/tombstone 同时使变更数据库的 proof 失效，并递增 bucket root 与
 256-way shard epoch。其他数据库共享 root（或 shard collision）时也被重新验证。
 热 planner 未等待 proof 完成，而 install 必须等待完整证明。这样持续创建带来的失效
 可能形成「proof reset → staging → install reject → 同输入 replan」反馈，消耗真实
 FDB/CPU/执行许可，却不推动 watermark。后台需求模型必须把该返工单列，而不能用
 stage success rate 代表有效维护吞吐。无 fork 的独立 membership churn 应只失效相关
-数据库证明；新 bucket fork 仍需要树级 epoch、分页完成前仍 fail closed。这是下一项
-收窄失效范围的设计方向，不是已部署修复；须验证同数据库 membership 并发变化、真实
-新 fork/多层继承、分页过程中重启与变化，以及 install 的 Serializable publication fence。
+数据库证明；新 bucket fork 仍需要树级 epoch、分页完成前仍 fail closed。源码现已实现
+这个收窄：catalog 与 reverse fact 写入仍在同一事务清除相关数据库的完整/分页证明，
+不再改无关树 epoch，也不再为 catalog 写入遍历 root。真实 RocksDB/UDB 的三个 churn
+反例在修复前失败、修复后通过，另一个真实 fork/pin/history fence 回归通过。
+另外覆盖 affected partial tombstone 清理，以及强制两个独立 root 同 epoch shard
+时的无关 membership 变更；六项聚焦测试均通过，不依赖随机 UUID 恰好碰撞。既有
+database/bucket fork 与 hot-prefix 回归保持通过。这不是已部署的性能修复；仍须验证
+实际发布后的有效吞吐，以及分布式并发、分页重启、多层继承和 Serializable publication fence。
 不能简单移除 proof/epoch 检查或把不完整证明当作可发布状态。
+
+成本模型应显式写为 `后台资源需求 = 有效维护工作 + 必要重试 + 失效返工 + durable replay`。
+旧 catalog 每次变更推进一个共享 256-way epoch shard，因而即使对象各有独立 bucket
+root，同 shard 的其他证明也会重新验证；不必共享同一棵 bucket 树才能产生耦合。若每个
+数据库订阅一个均匀散列 root，单次变更的潜在订阅者约为 `N/256`；多 root 和热点会
+改变这个估算，它不是本轮实测重做次数。新 catalog 路径把这个变更影响限制为一个
+physical database，真实 fork 保留保守的 shard 碰撞失效。仅调大 execution permits
+既不减少失效次数，也不降低每次扫描成本，可能把更多无效工作压到前台共享的 FDB。
+修复后的对照须固定 arrival/request shape，并报告有效 watermark/reclaim 的推进、
+rejection/replan 比例、扫描字节与前台 p99；不能以更多 stage completion 判性能恢复。
+
+该测试又暴露一个独立的 bucket fork 默认读取反例：bucket 在 TXID 1 fork 后，parent
+在 TXID 2 覆写，child 的默认 Db read 读到 TXID 2。pointer resolver 返回 inherited
+physical database branch 后，read plan 未携带 bucket ancestry 的 versionstamp cap。
+显式历史读能取回 TXID 1、materialized pin 存在，并不能证明默认 child 读正确。此项
+read-cap 修复须单独完成，不取消保留 fence，也不能把它当作当前前台首错的已证根因。
+
+原 run 于 10:49:47 UTC 在 9,086 ready/9,074 proven 停止，首错为 index 9035 的
+initialize `502 indeterminate_result`；后续 2,294 个 active `network:20` 属全局取消
+扇出，不是 2,294 个独立服务端故障。普通 retry 和 identity mismatch 均零，仍判失败；
+post-warmup 三秒样本为零。首错前固定尾部窗口 10:40:46--10:48:51 UTC 各 Cell
+24 个样本，B UDB pending 峰值 4,156，stage completed-execution mean 末端约
+2.03 秒、admission mean 9.26 秒，A 分别约 0.48/2.14 秒。后台确有劣化，但该
+相关性尚不能确定首错具体阻塞点；后台模型必须区分有效工作、失效重做、队列等待与
+history replay，不用完成者均值冒充 offered demand，不由观察成功推进万级资格。
 
 性能证据的编码也属于控制边界。headroom ETA 在增长率为零时可以是无限；
 审计内部仍按数值判定阈值，写出收据时非有限诊断采用 JSON 字符串

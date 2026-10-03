@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.22.0
+revision: 1.23.0
 precedence: task
 derived: false
 ---
@@ -196,6 +196,22 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/infra/cells/internal/workersapi/api.go@d10ee76a`、`minisandbox/infra/cells/deploy/tencent/fleet/load/shared-agent-scale/runner.mjs@d10ee76a` | 首错与取消边界 | 等响应头超时不透明重试；journal 首个错误与全局取消分开 |
 
 ## evidence
+
+本轮补充 context receipt：完整复读 root/minisandbox/engine AGENTS、release-gitops 与
+upstream-subtrees；读取真实 branch/catalog/resolve、commit/branch_init/apply、read/plan、
+compaction/shared/test_driver、tests/common 与 fork_common，以及 sqlite components、
+storage-structure、constraints-and-design-decisions。首错分析读取 fleet/load/shared-agent-scale/
+runner.mjs 的 journal/request/cancellation/receipt 路径，TAT tat-run.sh、formatter 的 stdin
+path 合约、context validator catalog_record/目录来源与 impact CLI；adjacency 卡及
+test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻居，不猜 manifest。
+
+- 本轮 ynnwtruz 收窄 catalog proof invalidation：reverse fact/marker 与相关 DB 完整/分页
+  proof 清理仍原子；只有真实 bucket fork 改 tree/shard epoch，publication/PITR/GC 不变。
+  三个真实 RocksDB/UDB churn 反例 red v2 失败、修复后通过；最终六项回归全部通过。
+  独立 bucket 默认 read cap 反例不混入 scope 修复的通过结论，旧失败日志保留。
+- 当前 c631 原 run 于 10:49:47 initialize 首个 502 indeterminate_result 失败，9,086
+  ready/9,074 proven。2294 active network:20 是全局取消扇出。源码未部署，本轮失败
+  不能作为新修复收益；cleanup exit 0、natural drain 待终态。
 
 - 第二轮 run `354610a58f4a66c7e0b4ec8d7978cbda` 从 A/B 各 4 Host、0 active、0
   compaction waiter 启动；在 8,868 created 时 strict load receipt 失败。
@@ -398,7 +414,88 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-当前 checkpoint（1.22.0）：上一 turn 为 progress，pressure v3 window gate 和真实 CLI
+当前 checkpoint（1.23.0）：上一 turn 为 progress，原分支/history 字节证据与正式模型
+FF 推 master 2b38d801，remote exact SHA verified、clean。保留空 nqvuooto，先 jj new
+ynnwtruz，在临时 RocksDB/UDB 上验证 proof invalidation scope，不改运行中的 c631。
+red v1 新四项实际运行：三个 catalog churn/分页反例如预期失败；第四个检查 bucket
+fork 的默认 Db read 时读到了后来的 parent write，暴露另一个 read cap 问题。源码
+read/plan.rs 通过 resolve_database_branch 取得 parent physical branch 后，只加载 DB
+ancestry，不带 bucket ancestry cap。这个新问题须独立修复，不能冒充本项 scope 根因。
+本项 safety fixture 改为验证真实 fork epoch、materialized history pin 和显式历史 read，
+没有取消 fork fence。原失败日志 /data/tmp/minisandbox-bucket-proof-red-20261003.log 保留，
+red v2 为三失败一通过；修复后四项全部通过，追加 affected partial tombstone 后最终
+五项全部通过。既有 fork bucket 4/4、fork database 7/7、hot-prefix 12/12、513 root
+分页 1/1、lib 61/61、production 非 test-faults cargo check exit 0。
+随后用真实 root metadata/commit writer 强制两个独立 root 的同-shard 碰撞，新增第六项
+通过；final v4 六项、fork 4/7 与 clippy exit 0，无新增 fixture warning。补查 conveyer.rs
+误猜不存在，实际 conveyer/mod.rs pub udb 与 keys.rs shard 函数确认后实现，不用随机
+UUID 碰撞概率构造测试。
+Clippy exit 0，
+现有 Depot lib 47 warning 保留；新 fixture 复用 fork_common 内同一 common module，
+消除初版 duplicate_mod 和再版 unused import，最终 focused 5/4/7 与 clippy v3 均
+exit 0、无新增 fixture warning，不执行全库 fixer。cargo 首次从 mono2 root
+执行导致 Tokio_unstable 配置缺失（11 error），改从 minisandbox 执行后 focused 15 项
+通过。无云 FDB 测试、无 V8 build、无线上 Runtime/admission/容量改动。
+
+10:57:23 inv-c9etu9ga0j SUCCESS/0 原身份只读首错：10:49:47.171 UTC index 9035
+initialize 502 indeterminate_result。原 load receipt SHA 前缀 affced2c82ea，终态 failed；
+9,086 ready/9,074 proven、2,070,235 active succeeded，ordinary retry/mismatch 零。
+唯一 initialize 错误引发 controller.abort，2294 active network:20 为取消扇出；不能
+据总数认定2294服务端错误。cleanup exit 0，supervisor 仍自然 drain。10:59:12
+inv-a9etw00q30 SUCCESS/0 原 MainPID/InvocationID running、final waiting；next periodic
+不早于 11:04:30 UTC。原在途完整 ops lock 不被抢占，不启动第二负载或 rollout。
+
+有界尾部 capture inv-d9etnrgcxh SUCCESS/0：10:51:32 UTC，固定 byte range
+56460531..73237747，保留 15,782,786 bytes，SHA 前缀 c46c9437d2c1。官方 relay
+inv-d9etqdgtxh/inv-d9etqe07hh SUCCESS/0、验证长度/SHA、临时 COS key 删除。
+preerror v3 分析 exit 0，输入上述固定文件，窗口 10:40:46--10:49:00（实际最后行
+10:48:51），24 samples/Cell，原诊断零 warning/error；不含 baseline，不是资格。
+派生 SHA 前缀 25021376ae4e、firsterror projection b48603e2b634 归档在 evidence。
+正式设计、key owner/失效语义与单独 bucket read cap 风险同步；等待 context/gate/push。
+
+本轮检索失败已收敛：误猜 qualification/actor-bj-q01/load/runner、fork_common.rs、
+bucket_catalog.rs、bucket_fork*.rs、universaldb/src/test.rs、workflows/compaction*.rs、
+mono2/.context/catalog.jsonl 均不存在；随后用相关目录 rg --files 或实际 script 常量
+确定 fleet/load、fork_common/mod.rs、cold_workflow_publish/shared.rs、docs/context/.context。
+一次 formatter 输入 files-string-array 不被识别，fallback 找到 JSON 后 Biome 不存在，
+未格式化；按已读 formatter 合约改用 exact repo-relative path 后 Rust formatter exit 0。
+未安装依赖或全树 fixer。一次组合 apply_patch 第二段上下文不匹配，整次未生效，拆成
+已核对段后成功。首错 archive 原 .log 被仓库忽略，改 .txt 保留相同 byte hash。
+documentation zero errors/warnings；context final 的历史 4942 errors Counter 与旧
+exact-branch baseline 完全相同（全库旧 catalog stale 保留），Task zero，自己的 1.23
+catalog record/hash 与 validator 生成值一致。source check、lib、最终 focused 17 项、hot-prefix 12 项、513-root
+分页与 lint 均有实际日志；无 pending 的新增 source gate。证据非资格、runtime 未部署，
+完整目标仍 active，不能因这一局部修复或故障证据完成就标记目标完成。
+
+最终 context tests 26 项保留与上轮同名四个历史失败；audit tests 33/33、pressure
+analyzer tests 21/21。audit CLI 是 Markdown、impact CLI 首行文本后才 JSON，两次
+jq 误读整个输出失败，检查真实格式后确认 impact passed（exact 15 paths，matched rule
+空不等于设计语义已自动审核）；audit 仍 needs_agent_review/Unknown，不冒充资格。
+changed file credential pattern scan 无 suspect，diff check clean；Task/catalog 最后同步后
+再做相同确定性门禁。源码与证据准备 FF 推 master，不重编或部署 workerd。
+lefthook 不在默认 PATH；现有本地 CLI 1.12.4 可用，未下载依赖。默认 install 错把
+mono2 root 当配置根，产生一个本轮 example 文件，已用 apply_patch 精确删除；改以
+LEFTHOOK_CONFIG 绑定既有 minisandbox/lefthook.yml 后 install exit 0，仅同步现有
+pre-commit hook。工具路径不是 runtime/source ownership，不新增 root 产品配置。
+
+11:05:04 inv-e9eu3g05w1 SUCCESS/0：原 MainPID/InvocationID running，cleanup exit 0，
+final natural drain waiting 300 秒，next periodic 不早于 11:10:30 UTC。收尾只读观察不抢
+原 ops lock。下一项保持首错具体阻塞点、bucket read-cap 独立正确性修复，以及正式产品
+发布后的 fixed strict10k 对照；整个 stateless/DO/跨 Cell 目标的 Router 矩阵、百万休眠、
+同步唤醒与故障资格不能由此局部修复替代。
+
+此前 10:47:51 inv-a9etjbgabm SUCCESS/0：8,846 ready/8,836 proven、1,960,558 active
+success，ordinary retry/failure/mismatch 零，但 2,167 active 在途，warmup 回压 5,135。
+trace 10:47:24 A/B compaction 12/12、waiters 89/91，UDB pending 1,033/2,543；
+B stage completed mean/read bytes 上升，零错误并不证明稳定。next periodic progress
+不早于 10:53:00 UTC。原 snapshot inv-d9etkq068h FAILED/1，没有产出快照；旧脚本有
+64 MiB prefix cap，下一只读采集须先诊断实际 inode/size，再用固定 byte range 的有界
+tail，不能重发旧完整快照或因此改 workload。
+早于五分钟的 progress clock guard 一次正确拒绝，未提交 invocation。engine/.cargo/
+config.toml 猜测不存在；用 rg --files --hidden 找到 minisandbox/.cargo/config.toml，
+cargo 从 minisandbox 执行、offline/locked、target 和 TMPDIR 均在 /data，不编 V8。
+
+历史 checkpoint（1.22.0）：上一 turn 为 progress，pressure v3 window gate 和真实 CLI
 回归 FF 推 master ea628922，remote exact SHA verified、clean。保留空 nvotwvxu，
 jj new uvrwxsqx 仅归档原 run 的精确分支诊断与正式模型；不部署新工具或重编 Runtime。
 cloud runtime skill/networking 已完整读取；environment_status tool 不存在，policy snapshot

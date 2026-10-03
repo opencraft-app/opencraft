@@ -677,7 +677,6 @@ impl Db {
 							&database_id,
 							now_ms,
 							&udb::INCOMPLETE_VERSIONSTAMP,
-							branch_resolution.bucket_initialized,
 						)
 						.await?;
 					}
