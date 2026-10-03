@@ -265,6 +265,28 @@ admission or supersede the historical failed source-gate receipt. The subsequent
 source-admission section separately records the original complete static gate
 passing and publishing the 2757 source tree, without a Runtime build or rollout.
 
+`--prepare-offline-toolchain` installs the reviewed qualification Rust and vendor
+archives using the same coordinator and separate
+`/var/lib/actor-runtime-builder-toolchain-coordinator/<instance-id>.json` intent.
+The archive digests, Rust version and exact Cargo.lock are source-pinned in
+`install-runtime-builder-offline-toolchain.py`. Changes require a newly reviewed
+artifact set and source revision, not runtime discovery from a remembered q01
+`bootstrap-node.json`. Use guarded relay under the original operations lock to
+place the two exact archive filenames from that helper below
+`/data/actor-build/source/` before invoking this mode.
+
+The installer requires matching mounted journal and fresh native attachment/TKE
+exclusion, checks real artifact/cache filesystem backing and reserves, rejects
+oversized/escaping/duplicate/special archive members and link-controlled parents,
+then publishes complete tool trees on the build disk. Files are extracted before
+symlinks without adopting archive ownership. Existing trees are byte-checked
+against the exact archive and are never silently repaired or replaced. Actual
+Rust/Cargo versions, installed lock, mount and journal are checked afterwards.
+`toolchainReady=true/storageReady=false` is only offline installation evidence.
+These qualification artifact pins are not proof of a fresh-machine artifact
+producer, Cargo compilation, full actual-path admission, stage reuse or release.
+Do not transfer Cargo credentials, host registry config or any kubeconfig.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

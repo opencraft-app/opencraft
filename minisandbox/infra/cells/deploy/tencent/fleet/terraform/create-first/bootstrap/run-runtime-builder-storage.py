@@ -53,13 +53,17 @@ FILES = module("builder_storage_files", "initialize-runtime-builder-storage.py")
 require = IDENTITY.require
 
 
-def guest_tools(prepare_host=False, render_binary=None):
+def guest_tools(prepare_host=False, render_binary=None, offline_toolchain=False):
+    require(sum((bool(prepare_host), render_binary is not None, bool(offline_toolchain))) <= 1,
+            "builder preparation modes are mutually exclusive")
+    if offline_toolchain:
+        return (*TOOLS, "prepare-runtime-builder-host.py", "install-runtime-builder-offline-toolchain.py")
     if render_binary is not None:
         return (*TOOLS, "prepare-runtime-builder-host.py", "install-runtime-builder-render-tool.py")
     return (*TOOLS, "prepare-runtime-builder-host.py") if prepare_host else TOOLS
 
 
-def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT, prepare_host=False, render_binary=None):
+def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT, prepare_host=False, render_binary=None, offline_toolchain=False):
     IDENTITY.pattern(revision, r"[0-9a-f]{40}", "source revision")
     IDENTITY.pattern(manifest_hash, r"[0-9a-f]{64}", "source manifest")
     source = project / ".actor-source"
@@ -78,9 +82,9 @@ def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT, prepar
                 and not any(character in match[2] for character in "\x00\r\\"), "manifest entry")
         expected[match[2]] = match[1]
     result = {}
-    tools = guest_tools(prepare_host, render_binary)
+    tools = guest_tools(prepare_host, render_binary, offline_toolchain)
     authority = tuple(dict.fromkeys((*AUTHORITY, *tools)))
-    if render_binary is not None:
+    if render_binary is not None or offline_toolchain:
         authority = (*authority, "../../../qualification/actor-bj-q01/relay-upload-to-builder.sh")
     for relative in authority:
         path = root / relative
@@ -95,9 +99,9 @@ def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT, prepar
     return result
 
 
-def payload(inventory_raw, observation, sources, prepare_host=False, render_binary=None):
+def payload(inventory_raw, observation, sources, prepare_host=False, render_binary=None, offline_toolchain=False):
     """One bounded, credential-free transfer; no preexisting /data dependency."""
-    tools = guest_tools(prepare_host, render_binary)
+    tools = guest_tools(prepare_host, render_binary, offline_toolchain)
     require(set(sources) == set(tools), "guest tool closure")
     inventory = IDENTITY.mapping(json.loads(inventory_raw, object_pairs_hook=IDENTITY.unique_object), "inventory")
     IDENTITY.validate_inventory(inventory)
@@ -135,7 +139,8 @@ with tempfile.TemporaryDirectory(prefix="actor-builder-storage-",dir="/var/tmp")
     assert len(result.stdout)<=16384
     sys.stdout.buffer.write(result.stdout)
 '''
-    entrypoint = ("install-runtime-builder-render-tool.py" if render_binary is not None
+    entrypoint = ("install-runtime-builder-offline-toolchain.py" if offline_toolchain
+                  else "install-runtime-builder-render-tool.py" if render_binary is not None
                   else "prepare-runtime-builder-host.py" if prepare_host else "initialize-runtime-builder-storage.py")
     program = ("ENCODED=" + repr(encoded) + "\nDIGEST=" + repr(hashlib.sha256(raw).hexdigest())
                + "\nEXPECTED_FILES=" + repr(sorted(data)) + "\nENTRYPOINT=" + repr(entrypoint) + "\n" + program)
@@ -170,8 +175,21 @@ def execute(args, environment, program=None):
                           capture_output=True, env=environment, check=False)
 
 
-def receipt(raw, inventory, prepare_host=False, render_binary=None):
+def receipt(raw, inventory, prepare_host=False, render_binary=None, offline_toolchain=False):
     value = CAPTURE.document(raw, "initialization receipt")
+    if offline_toolchain:
+        installer = module("builder_offline_receipt", "install-runtime-builder-offline-toolchain.py")
+        require(set(value) == {"schema", "verdict", "toolchainReady", "storageReady", "instanceId", "diskId",
+                               "filesystemUuid", "journalSha256", "rustArchiveSha256", "vendorArchiveSha256", "cargoLockSha256"},
+                "offline toolchain receipt schema")
+        require(value["schema"] == "actor-runtime-builder-offline-toolchain/v1" and value["verdict"] == "passed"
+                and value["toolchainReady"] is True and value["storageReady"] is False
+                and value["instanceId"] == inventory["instanceId"] and value["diskId"] == inventory["dataDiskId"]
+                and value["rustArchiveSha256"] == installer.RUST_SHA and value["vendorArchiveSha256"] == installer.VENDOR_SHA
+                and value["cargoLockSha256"] == installer.LOCK_SHA, "offline toolchain receipt identity")
+        require(str(uuid.UUID(value["filesystemUuid"])) == value["filesystemUuid"], "receipt filesystem UUID")
+        IDENTITY.pattern(value["journalSha256"], r"[0-9a-f]{64}", "receipt journal digest")
+        return value
     if render_binary is not None:
         renderer = module("builder_render_receipt", "install-runtime-builder-render-tool.py")
         require(set(value) == {"schema", "verdict", "renderReady", "storageReady", "instanceId", "diskId",
@@ -213,7 +231,7 @@ def receipt(raw, inventory, prepare_host=False, render_binary=None):
 
 
 def coordinate(inventory_raw, inventory, revision, manifest, state, capture, sources,
-               run=execute, pause=time.sleep, recheck=False, prepare_host=False, render_binary=None):
+               run=execute, pause=time.sleep, recheck=False, prepare_host=False, render_binary=None, offline_toolchain=False):
     # The fleet lock can be deliberately inherited by sibling operations.
     # Serialize this one intent as well, so two children of the same wrapper
     # cannot both pass "no intent" and overwrite each other's invocation.
@@ -226,11 +244,12 @@ def coordinate(inventory_raw, inventory, revision, manifest, state, capture, sou
                 and info.st_nlink == 1 and not info.st_mode & 0o077, "intent lock ownership/type")
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return coordinate_locked(inventory_raw, inventory, revision, manifest, state, capture,
-                                 sources, run=run, pause=pause, recheck=recheck, prepare_host=prepare_host, render_binary=render_binary)
+                                 sources, run=run, pause=pause, recheck=recheck, prepare_host=prepare_host,
+                                 render_binary=render_binary, offline_toolchain=offline_toolchain)
 
 
 def coordinate_locked(inventory_raw, inventory, revision, manifest, state, capture, sources,
-                      run=execute, pause=time.sleep, recheck=False, prepare_host=False, render_binary=None):
+                      run=execute, pause=time.sleep, recheck=False, prepare_host=False, render_binary=None, offline_toolchain=False):
     identity = {"inventorySha256": hashlib.sha256(inventory_raw).hexdigest(),
                 "sourceRevision": revision, "sourceManifestSha256": manifest}
     if state.exists() or state.is_symlink():
@@ -248,7 +267,7 @@ def coordinate_locked(inventory_raw, inventory, revision, manifest, state, captu
             if not recheck:
                 require(value["terminalStatus"] == "SUCCESS", "original initialization failed")
                 if value["receipt"] is not None:
-                    return receipt(json.dumps(value["receipt"]).encode(), inventory, prepare_host, render_binary)
+                    return receipt(json.dumps(value["receipt"]).encode(), inventory, prepare_host, render_binary, offline_toolchain)
                 # A crash after terminal observation but before saving its
                 # output can only re-collect this same invocation.
             else:
@@ -266,14 +285,14 @@ def coordinate_locked(inventory_raw, inventory, revision, manifest, state, captu
                        TAT_API_RETRIES="1", TAT_MAX_CONTENT_BYTES="60000")
     if value is None:
         observation = capture()
-        program = payload(inventory_raw, observation, sources, prepare_host, render_binary)
+        program = payload(inventory_raw, observation, sources, prepare_host, render_binary, offline_toolchain)
         value = {"schema": "actor-runtime-builder-coordination/v1", **identity, "phase": "submitting",
                  "commandName": "actor-builder-storage-" + uuid.uuid4().hex, "invocationId": None,
                  "payloadSha256": hashlib.sha256(program.encode()).hexdigest(), "terminalStatus": None,
                  "receipt": None}
         FILES.write_journal(state, value)
         result = run([str(FLEET / "tat/tat-run.sh"), "--detach", "--name", value["commandName"],
-                      "--timeout", "3000" if prepare_host else "900"], environment, program)
+                      "--timeout", "3000" if prepare_host else "1800" if offline_toolchain else "900"], environment, program)
         require(result.returncode == 0 and len(result.stdout) <= 256, "submission indeterminate; preserve intent")
         invocation = IDENTITY.pattern(result.stdout.decode().strip(), r"inv-[a-zA-Z0-9-]+", "invocation identity")
         print("builder_storage_submitted_invocation=" + invocation, file=sys.stderr, flush=True)
@@ -297,7 +316,7 @@ def coordinate_locked(inventory_raw, inventory, revision, manifest, state, captu
         FILES.write_journal(state, value)
         require(status == "SUCCESS" and match[2] == b"0" and result.returncode == 0, "native initialization failed")
         require(len(result.stdout) <= 16384, "initialization receipt envelope")
-        verified = receipt(result.stdout, inventory, prepare_host, render_binary)
+        verified = receipt(result.stdout, inventory, prepare_host, render_binary, offline_toolchain)
         FILES.write_journal(state, dict(value, receipt=verified))
         return verified
 
@@ -314,12 +333,14 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare-host", action="store_true", help="prepare packages on already initialized storage; never format")
     mode.add_argument("--install-render-kubectl", metavar="REMOTE_BINARY", help="install the pinned offline renderer; never format")
+    mode.add_argument("--prepare-offline-toolchain", action="store_true", help="install reviewed offline Rust/vendor archives; never format")
     args = parser.parse_args()
     try:
         require(os.geteuid() == 0 and sys.version_info[:2] == (3, 11), "qualified root Python 3.11 required")
         require(os.environ.get("AUTONOMY_CONTROL_LOCK_PATH", str(LOCK_PATH)) == str(LOCK_PATH), "original lock required")
         sources = verified_sources(args.source_revision, args.source_manifest_sha256,
-                                   prepare_host=args.prepare_host, render_binary=args.install_render_kubectl)
+                                   prepare_host=args.prepare_host, render_binary=args.install_render_kubectl,
+                                   offline_toolchain=args.prepare_offline_toolchain)
         if os.environ.get("AUTONOMY_OPERATION_LOCK_HELD") != "1":
             os.execv(str(FLEET / "operations/with-autonomy-operation-lock.sh"),
                      ["with-autonomy-operation-lock.sh", "--", sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
@@ -328,7 +349,8 @@ def main():
         IDENTITY.validate_inventory(inventory)
         operation_host(inventory)
         _, management = IDENTITY.read_json(args.management_inventory)
-        state_root = (Path("/var/lib/actor-runtime-builder-render-coordinator") if args.install_render_kubectl is not None
+        state_root = (Path("/var/lib/actor-runtime-builder-toolchain-coordinator") if args.prepare_offline_toolchain
+                      else Path("/var/lib/actor-runtime-builder-render-coordinator") if args.install_render_kubectl is not None
                       else Path("/var/lib/actor-runtime-builder-host-coordinator") if args.prepare_host else STATE_ROOT)
         FILES.directory(state_root, 0o700)
         require(state_root.stat().st_dev == Path("/").stat().st_dev, "coordinator intent must be root-backed")
@@ -341,7 +363,7 @@ def main():
                                    sources["collect-runtime-builder-guest.py"], attached_only=True)
         result = coordinate(inventory_raw, inventory, args.source_revision, args.source_manifest_sha256,
                             state, capture, sources, recheck=args.recheck, prepare_host=args.prepare_host,
-                            render_binary=args.install_render_kubectl)
+                            render_binary=args.install_render_kubectl, offline_toolchain=args.prepare_offline_toolchain)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
         print("builder_storage_coordination=blocked: preserve state and original invocation", file=sys.stderr)
         return 1

@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.41.0
+revision: 1.42.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,24 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.42.0）：上一goal turn是progress，云端render与完整2757 source准入
+实际SUCCESS/0；master 8bf3519e6286已复查，保留post-push空qulnzkyv，另new unwytoqy。
+本轮继续同一完整Phase5目标，未发新负载、Runtime release或云端toolchain mutation。
+新增offline toolchain安装器复用PREP mounted journal、附件/TKE identity、全路径实际device、
+余量及post-guest验证；Rust/vendor归档与Cargo.lock固定为已核验qualifying artifact，不读
+旧q01 state。归档有resource/path/type/link/duplicate envelope，文件先于链接提取，atomic
+完整tree publication；repeat比对实际bytes而非只信marker，不修复或覆盖无关tree。
+coordinator新增互斥--prepare-offline-toolchain与独立toolchain intent，保留single submission/
+原invocation恢复、source manifest及原ops lock。六archive真实文件回归和21协调器真实
+process回归通过；第一轮无关tree fixture父目录mode不满足真实guard，fixture修正后通过，
+不隐藏原失败输出。已用actual342MB Rust与174MB vendor归档跑生产member/checksum
+校验，244/52,400 members接受；尚未native安装，不把这些测试冒充CBS/build资格。
+完整bootstrap168通过，documentation零error/warning，Context同4,970历史error、当前Task
+增量零；下一项review/doc/catalog/push新工具，在原ops完整锁下guarded
+relay已准备的两包到builder、fresh native capture与唯一toolchain invocation。成功后仍须
+实际cache/Cargo/Buildah全部bulk-path准入、stage reuse、Engine-only build/release及strict10k。
+首次生产资格所需Phase5其余百万dormant/Router/故障及streaming门禁不因该前置进展完成。
 
 当前 checkpoint（1.41.0）：工具ccbebe4f1983已正常FF推master；jj push因保留的无描述
 empty祖先拒绝，改用普通git FF push，无force、squash或删除祖先。push后保留空zkkmqozw，

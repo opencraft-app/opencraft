@@ -167,6 +167,31 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.coordinate(prepare_host=True)
         self.assertIsNone(json.loads(self.state.read_text())['receipt'])
 
+    def test_offline_toolchain_exact_closure_receipt_and_single_submission(self):
+        installer = module('offline_expected', 'install-runtime-builder-offline-toolchain.py')
+        for name in ('prepare-runtime-builder-host.py', 'install-runtime-builder-offline-toolchain.py'):
+            self.sources[name] = (ROOT / name).read_text()
+        expected = {"schema": "actor-runtime-builder-offline-toolchain/v1", "verdict": "passed",
+                    "toolchainReady": True, "storageReady": False, "instanceId": "ins-builder01",
+                    "diskId": "disk-builder01", "filesystemUuid": valid_receipt()['filesystemUuid'],
+                    "journalSha256": '1' * 64, "rustArchiveSha256": installer.RUST_SHA,
+                    "vendorArchiveSha256": installer.VENDOR_SHA, "cargoLockSha256": installer.LOCK_SHA}
+        self.protocol.update(timeout=1800, receipt=expected, loseObservation=True)
+        self.assertEqual(self.coordinate(offline_toolchain=True), expected)
+        self.assertEqual(self.coordinate(offline_toolchain=True), expected)
+        self.assertEqual(self.calls().count('RunCommand'), 1)
+        program = (self.root / 'payload.sh').read_text().split("\n", 2)[2].rsplit('\n', 1)[0]
+        tree = ast.parse(program)
+        assignments = {s.targets[0].id: ast.literal_eval(s.value) for s in tree.body[:4]}
+        self.assertEqual(assignments['ENTRYPOINT'], 'install-runtime-builder-offline-toolchain.py')
+        files = json.loads(zlib.decompress(base64.b64decode(assignments['ENCODED'])))
+        self.assertEqual(set(files), {'inventory.json', 'observation.json', *self.sources})
+        bad = dict(expected, cargoLockSha256='0' * 64)
+        with self.assertRaises(ValueError):
+            COORD.receipt(json.dumps(bad).encode(), self.inventory, offline_toolchain=True)
+        with self.assertRaises(ValueError):
+            COORD.receipt(json.dumps(valid_receipt()).encode(), self.inventory, offline_toolchain=True)
+
     def test_render_tool_closure_artifact_and_receipt_are_bound_without_initialization(self):
         renderer = module('builder_render_fixture', 'install-runtime-builder-render-tool.py')
         self.sources = {name: (ROOT / name).read_text() for name in COORD.guest_tools(render_binary='selected')}
