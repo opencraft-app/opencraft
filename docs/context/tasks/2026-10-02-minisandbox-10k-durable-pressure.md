@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.26.0
+revision: 1.27.0
 precedence: task
 derived: false
 ---
@@ -414,7 +414,27 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ### stage
 
-当前 checkpoint（1.26.0）：上一 turn 为 progress。bucket inherited read-cap/lazy COW
+当前 checkpoint（1.27.0）：本turn的hot领域结果/取消成本观察、bounded HTTP/analyzer与
+正式模型边界已正常FF推master0eb04a29，remote exact SHA verified、clean。保留空
+nkyoluns，另起只归档交付/候选artifact的checkpoint，不重建workerd/V8，不部署云组件。
+完整目标仍active；本地语义/诊断通过不能替代原strict10k失败、Router曲线或百万dormant。
+最终root文档validator0 errors/warnings；本Task0 errors、own catalog exact。全仓context
+仍4942历史errors，与上一baseline normalized Counter added0/removed0；26 tests既有
+四fail未规避。audit33/33、默认report为Unknown/not_assessed，不称全仓资格通过。
+正式full-source v2候选来自exact 0eb04a29，目录
+/data/tmp/minisandbox-runtime-candidate-hot-20261003.kFrAKf：14324文件、54,797,376bytes，
+project tree前缀1efb7dcaa0ef、manifest55ea8542c0d1、bundle1de5381c1b05。原bundle/receipt
+exclusive创建并验证；从该tar提取current-0eb后，与实际c631 archive完整locked/offline
+FFI生产闭包及六stage inputs比较，digest仍a48e6285a470。只是reuse eligibility证明，
+没有容器stage重认证/Runtime构建/qualification/上线。旧2ae候选不覆写，c631原run不重标。
+12:19:12 progress30 inv-a9ew9009xj SUCCESS/0：原service MainPID/InvocationID running，
+load exit1、cleanup0；12:19:00 A/B Host76/76、Machine85/83、active0、errors空，仍非
+floor4终态；保持serial安全drain，不手工scale。next periodic不早于12:24:20UTC。
+部署/第二份load继续受原supervisor ops lock约束；退出后按正式immutable source/stage/
+release/qualification推进，再用同样arrival/形状验证返工、有效推进与前台尾延迟。
+此checkpoint仅Root Task/catalog记录归档，不影响0eb候选project tree或source identity。
+
+历史 checkpoint（1.26.0）：上一 turn 为 progress。bucket inherited read-cap/lazy COW
 修复与101项相关回归正常FF推master2ae6947f，remote exact SHA verified、clean；
 没有部署或重编workerd/V8。保留空slrkwyys，jj new qsvmyypt。目标仍为完整Phase0–5，
 不以局部正确性修复替代strict10k、百万dormant或Router曲线资格。
