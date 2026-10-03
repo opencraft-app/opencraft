@@ -11,7 +11,7 @@ source_of_truth:
 status: retired
 reviewed_at: 2026-10-03
 review_due: 2026-11-03
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -36,7 +36,9 @@ derived: false
 
 - `agent-upload-soak/observe.py` 的 `metricsSnapshot`：有界 instant vector、五分钟 rate、
   query timestamp、missingSignals 和 warnings；同一 Cell ledger 以 min/max 而非副本 sum 聚合。
-- `depot/metrics.rs`：仅 succeeded 时更新 compaction logical bytes/objects；batch gauge 不是队列。
+- `depot/metrics.rs`：仅 succeeded 时更新 compaction bytes/items；batch gauge 不是队列。
+  实际 guard 高于 metric HELP：cold upload/publish bytes 为计划 hot shard bytes、items 为 cold
+  ref count；reclaim bytes/key count 为实际 FDB 清理输出。不得据此计算 COS 对象填充率。
 - `ten-thousand-active/verify.py`：本分析不签发或覆写其资格收据。
 
 ## history_context
@@ -53,6 +55,7 @@ derived: false
 - 缺失、NaN/Inf、零 denominator 不生成零成本或无失败结论。
 - 比率使用同一 snapshot 的 sum/count；账本保留 min/max 分歧与采样时刻。
 - 输出显式为非资格分析，拒绝已有输出，不连接云或触发编译。
+- schema v2 显式报告 byte/item 单位，区别计划 hot shard bytes、cold references 和 reclaimed FDB keys。
 - 本地真实文件/子进程回归、fleet、documentation 和 change-impact 门禁通过。
 
 ## affected_paths
@@ -75,6 +78,7 @@ derived: false
 | `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/observe.py@e4490d46`、`minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/test_observe.py@e4490d46` | 实际 metrics 结构 | 单次有界读取，unknown 不补零，不 sum 账本 |
 | `minisandbox/engine/packages/depot/src/metrics.rs@e4490d46`、`minisandbox/engine/packages/depot/src/workflows/db_reclaimer.rs@e4490d46`、`minisandbox/engine/packages/depot/src/workflows/db_cold_compacter.rs@e4490d46` | bytes/objects 成功语义 | publication、upload、reclaim 是不同成本口径 |
 | `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md@e4490d46`、`minisandbox/infra/cells/deploy/tencent/fleet/load/ten-thousand-active/verify.py@e4490d46` | 完整目标与原资格 | 不缩小目标或放宽 verifier |
+| `minisandbox/engine/packages/depot/src/compaction/types.rs@5f04c576`、`minisandbox/engine/packages/depot/src/compaction/shared.rs@5f04c576`、`minisandbox/engine/packages/depot/src/workflows/db_reclaimer.rs@5f04c576`、`minisandbox/engine/packages/depot/src/workflows/db_cold_compacter.rs@5f04c576` | 真实 live snapshot 与 metric HELP 的歧义 | 按实际 producer 修正诊断单位，不改 Runtime 指标或吞吐 |
 
 ## evidence
 
@@ -90,6 +94,20 @@ derived: false
   上界约 826,384/871,051 bytes/s；窗口末端 reclaim rate 真实零，规划新指标 unknown。
   这是旧压测的非资格诊断，不是首个 502 的因果证明。复算结果保留在
   `/data/tmp/minisandbox-strict10k-d3a16351-pressure-window-v1-final-20261003.json`。
+- 新 run 55b55875 的固定前缀快照 `inv-e9efa7gbxk` SUCCESS/0：13,472,442 bytes，
+  SHA 前缀 a11bd34a，官方 COS relay `inv-a9efamgh3u` / `inv-e9efan09pw` SUCCESS/0。
+  本地原字节路径 `/data/tmp/minisandbox-strict10k-55b55875-pressure-capacity-034831-20261003.ndjson`。
+  v2 复算的 03:35--03:48 每 Cell 44 样本、身份完整、无末端错误/warning；A/B authority
+  增长约 202,882--211,353 / 202,603--216,007 bytes/s，末端 reclaim bytes/key rate 为零。
+  A/B manager/compaction waiter 峰值 0/0 与 0/1；active observation 约 165 bytes/事务，
+  full refresh 约 84,409/82,158 bytes/完成事务、attempt ratio 1.065/1.083。
+  该低水位阶段与旧 9k 负载不同，不能作为受控性能收益对照或万级稳定性证明。
+- 复算收据 `evidence/55b55875-pressure-early-20261003.json` 与本地 v2 JSON 同字节，
+  SHA 前缀 f86945a8；明确 qualificationEvidence=false，不替代容量资格。
+- 03:54:54 UTC `inv-a9efg70hhp` SUCCESS/0，同一 service/InvocationID：4,134 ready、
+  4,117 proven、423,205 active success、116 in-flight，零普通失败/retry/身份漂移；
+  warmup 背压未再增加，三秒 post-warmup 样本仍零。A/B Host desired 119/122、Ready
+  108/111。下一 progress 观察不早于 03:59:54 UTC。
 
 ## risks
 
@@ -103,6 +121,10 @@ derived: false
   日志 `/data/tmp/minisandbox-pressure-analysis-fleet-20261003.log`。
 - documentation 零 errors/warnings；audit 33 项通过。Context 26 项仍为原四项失败，
   失败名称与旧 baseline 一致；全仓历史诊断另按 Counter 比较，不能标成全部通过。
+- v2 单位与 producer 契约 17 项通过，真实新 trace 复算成功；完整 fleet exit 0，
+  日志 `/data/tmp/minisandbox-pressure-units-v2-fleet-20261003.log`。Audit 33 项再次通过。
+- v2 documentation 零 errors/warnings；Context 4,942 个历史错误按归一化 Counter
+  比较无新增或消失，原四项 unit failure 不标绿；audit discovery 未进行成熟度评定。
 
 ## decisions
 
@@ -115,10 +137,12 @@ derived: false
 ## scan_output
 
 - `db_cold_uploader.rs` 的有界查询无该文件；实际 guard 位于 `db_cold_compacter.rs`。
+- 本轮 `compaction.rs`、`compaction_protocol*.rs`、`compaction/planner.rs` 不存在；
+  之后有界 file list 找到 `compaction/{mod,shared,types}.rs`，不继续猜测目录。
 
 ## handoff
 
-- 离线工具与设计完成，属于诊断交付；完整目标继续由 10k durable pressure Task 跟踪。
+- v2 单位工具、设计和真实低水位分析完成，属于诊断交付；完整目标继续由 10k durable pressure Task 跟踪。
   云上唯一活跃负载仍为 run 55b55875，不能声明万级通过。
 
 ## checkpoint
@@ -126,12 +150,12 @@ derived: false
 ### stage
 
 前一目标 turn 为 progress：A/B qualification 完成、唯一 strict10k 启动且证据已推 master。
-本轮为 progress：只读确认原 run 仍运行，完成独立有界分析、真实旧 trace 复算、16 项回归
-和完整 fleet；没有修改运行中 immutable source，没有 runtime build 或新的云资源。
-性能修正仍需新 run 的实际终态资格，不能从当前 2,244 对象成功推断万级。
+本轮为 progress：完成 v2 单位修正、真实新快照复算、17 项回归与 fleet，未修改 Runtime。
+当前维护队列小、authority 仍增长；v1 的 per-object 字段不能用于 COS 填充率。
+唯一 service fresh 04:02:22 UTC 为 5,033 ready、628,461 success，普通 retry/失败零；
+下一 progress 观察不早于 04:07:22 UTC。先完成 catalog/context 并推 master，不改在线策略。
 
 ### next_action
 
-完成本次 catalog/hash、context 基线比较并推 master。下一目标 turn 按五分钟节奏观察
-原 run，保留普通零重试、三秒 post-warmup 和 exact cleanup/natural drain 门禁；全容量
-收据通过后再进入真正 stateless Router performance，不并发启动另一个负载。
+完成 catalog/context 与 master push。继续观察原 10k，结合高水位、hot debt 与真实
+pin/retention 判断持续回收，不能由一小段零 reclaim 或低 waiter 指定根因；不并发启动另一个负载。

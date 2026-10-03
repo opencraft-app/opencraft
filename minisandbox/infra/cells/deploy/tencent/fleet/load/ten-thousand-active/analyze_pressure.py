@@ -22,6 +22,11 @@ ACTIVITIES = ("refresh_manager", "observe_active_manager", "stage_hot_job", "ins
               "retire_cold_objects", "delete_retired_cold_objects")
 TRANSACTIONS = ("depot_manager_refresh", "depot_manager_observe_active", "depot_hot_compact_stage")
 OPERATIONS = ("cold_upload", "cold_publish", "reclaim_fdb")
+OUTPUT_UNITS = {
+    "cold_upload": ("planned_hot_shard_bytes", "cold_object_reference"),
+    "cold_publish": ("planned_hot_shard_bytes", "cold_object_reference"),
+    "reclaim_fdb": ("deleted_fdb_value_bytes", "deleted_fdb_key"),
+}
 LEDGER_CLASSES = ("live", "retired", "delete_issued", "orphan", "deleted_total",
                   "fdb_authoritative", "fdb_cache", "fdb_metadata")
 MAX_LINE_BYTES = 4 * 1024 * 1024
@@ -131,9 +136,11 @@ def derived(frame):
         } for outcome in ("succeeded", "error", "timeout")},
     } for name in ACTIVITIES}
     result["successfulCompaction"] = {operation: {
-        "logicalBytesPerSecond": get("compactionBytesPerSecond", operation),
-        "objectsPerSecond": get("compactionObjectsPerSecond", operation),
-        "logicalBytesPerObject": ratio(get("compactionBytesPerSecond", operation),
+        "byteSemantics": OUTPUT_UNITS[operation][0],
+        "itemSemantics": OUTPUT_UNITS[operation][1],
+        "bytesPerSecond": get("compactionBytesPerSecond", operation),
+        "itemsPerSecond": get("compactionObjectsPerSecond", operation),
+        "bytesPerItem": ratio(get("compactionBytesPerSecond", operation),
             get("compactionObjectsPerSecond", operation)),
     } for operation in OPERATIONS}
     result["ledgerBounds"] = {name: {
@@ -267,12 +274,14 @@ def analyze(path, start_at=None, end_at=None):
             if not all(math.isfinite(value) for value in state["observedAuthoritySlopeBoundsBytesPerSecond"].values()):
                 state["observedAuthoritySlopeBoundsBytesPerSecond"] = None
         state["capacityIdentityComplete"] = state["unboundIdentitySamples"] == 0
-    return {"schema": "actor-pressure-analysis/v1", "qualificationEvidence": False,
+    return {"schema": "actor-pressure-analysis/v2", "qualificationEvidence": False,
             "input": {"sha256": digest.hexdigest(), "bytes": before.st_size},
             "observationWindow": {"requestedStartEpochSeconds": start_at, "requestedEndEpochSeconds": end_at,
                                   "firstEpochSeconds": first_time, "lastEpochSeconds": last_time},
             "limitations": ["rolling_5m_rates_not_exact_interval_totals", "completed_outcomes_not_offered_demand",
                 "succeeded_activity_not_successful_fold", "ledger_bounds_are_observations_not_provider_billing",
+                "successful_activity_counters_not_unique_provider_operations",
+                "planned_shard_bytes_not_cos_object_fill_or_wire_bytes",
                 "oldest_pending_wait_and_history_replay_bytes_unknown"], "cells": states}
 
 

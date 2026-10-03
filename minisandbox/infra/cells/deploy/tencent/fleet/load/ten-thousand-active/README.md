@@ -86,7 +86,7 @@ python3 analyze_pressure.py --trace capacity.ndjson --output pressure.json \
 The optional paired timestamps select one workload phase, excluding cleanup;
 the hash still covers the entire file. Output distinguishes planning bytes and
 attempts per completed transaction, completed admission wait, outcome-specific
-execution duration, successful logical publication/reclaim rates, and ledger
+execution duration, instrumented successful publication/reclaim rates, and ledger
 min/max disagreement. Authority-growth bounds use the actual query timestamps,
 not the collector's loop-start timestamp. Missing latest samples never fall
 back to older data. Missing identities make the growth result unknown; changed
@@ -99,6 +99,12 @@ totals. Completed work does not measure offered demand or oldest pending age;
 an activity returning successfully is not proof that a useful fold occurred.
 Logical ledger bytes are not provider billing or bucket-inventory bytes.
 `qualificationEvidence=false` is intentional even when all inputs are present.
+Analysis schema v2 explicitly records byte/item semantics. The existing cold
+upload/publish counters use planned hot-shard bytes and output-reference counts;
+reclaim counts deleted FDB value bytes and keys, not COS objects. Those counters
+are not unique provider PUTs/GETs or object-fill measurements. A replayed successful
+activity may count its output again. Historical v1 `logicalBytesPerObject` must
+not be used to infer physical COS occupancy or bytes per deleted COS object.
 
 ## Control-plane CPU qualification
 

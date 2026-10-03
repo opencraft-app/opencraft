@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.6
+revision: 1.8.7
 precedence: task
 derived: false
 ---
@@ -287,6 +287,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## scan_output
 
 - 云上只读诊断通过 TAT invocation 留存；不包含 token、Secret、kubeconfig 或对象 payload。
+- 本轮三次有界精确路径查询失败：`depot/src/compaction.rs`、
+  `depot/src/compaction_protocol*.rs`、`depot/src/compaction/planner.rs` 不存在。
+  已读取 `compaction/types.rs`，下一步仅在 `depot/src/compaction/` 用文件清单定位 planner。
 
 ## handoff
 
@@ -301,18 +304,41 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
+2026-10-03 04:02:22 UTC 恢复点：当前唯一 run 已 fresh 确认 running，5,033 ready、
+628,461 active success，普通 retry/失败零。13,472,442 bytes 非 Secret trace 快照已经经
+官方 COS relay 下载并验 SHA 前缀 a11bd34a，03:35--03:48 的 44 样本/Cell 复算成功。
+诊断 schema v2 已修正：reclaim item 为 FDB key，cold upload/publish bytes 为计划 hot shard
+bytes。17 项与实际 producer 契约回归、fleet 通过，不改正在运行的 Runtime/tools/参数。
+本轮是 progress（新真实快照与单位修正），不是万级资格完成；下一采样不早于 04:07:22 UTC。
+documentation 零 errors/warnings；Context 的 4,942 个历史错误按归一化 Counter 比较无新增、
+无消失，原四项 Context unit failure 不冒充通过；audit discovery 本身不做成熟度评定。
+下一步刷新两个 Task catalog hash、最终 diff 与 context，再提交本次离线修正。
+
 A/B 旧 Runtime 资格完成；strict10k 终态失败。新 Runtime 59e86519 的 reviewed build、
 workerd reuse、产品 cold pull 和 A 正式 rollout/Bottomless/HA/activation 均已完成。
 B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run 从 A/B 各四 Host/Node
 开始实际负载，Runtime 59/tools 120/API 723 独立绑定；新诊断信号完整、无采样 warning。
 小资格负载或首批 warmup 成功不证明 strict10k 通过，
 原零普通重试、万活跃及三秒创建门禁不放宽。
-本轮上一 turn 为 progress（pressure analyzer 已推 master）；当前为 verified wait：
-03:44:27 UTC 原 systemd service 仍 active/running，InvocationID 与 MainPID 均未变。
+本轮上一 turn 为 verified wait；当前为 progress（真实快照、单位修正与离线回归）：
+04:02:22 UTC 原 systemd service 仍 active/running，InvocationID 与 MainPID 均未变。
 未启动第二负载，未编译或发布 Runtime；完整目标仍未完成。
 
 ### verified
 
+- `inv-c9efp70fti` SUCCESS/0，04:02:22 UTC：5,033 ready、5,021 proven、628,461
+  active success、103 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
+  三秒 post-warmup 样本零。A/B Host desired 143/146、Ready 129/132；Machines
+  desired/current/Ready 为 143/143/137 与 146/146/146。仍是原 run，不是万级终态。
+- `inv-a9efg70hhp` SUCCESS/0，03:54:54 UTC：4,134 ready、4,117 proven、423,205
+  active success、116 in-flight；普通失败/retry/身份漂移零。warmup 背压累计仍 7,166，
+  三秒 post-warmup 样本零。A/B Host desired 119/122、Ready 108/111，原 service 身份不变。
+- fixed-prefix snapshot `inv-e9efa7gbxk` 与官方 relay 两 invocation 均 SUCCESS/0，
+  13,472,442 原字节与 SHA 前缀 a11bd34a 校验通过。复算同窗 authority 约各增长
+  0.20--0.22 MB/s，末端 reclaim 零、manager waiter 峰值零、compaction waiter 峰值 0/1。
+  阶段约 1.6k active/Cell，与旧 9k 场景不同，不推断受控收益或高水位根因。
+- v2 非资格分析和 metric 单位修正见 pressure-analysis Task；cold publication rate
+  不是实际唯一 PUT 或对象填充率，不能与 reclaimed FDB value bytes 直接相减。
 - `inv-d9ef6dga7b` SUCCESS/0，03:44:27 UTC 原 run 55b55875：2,873 ready/proven、
   203,912 active success，普通请求 retry/失败/身份漂移零；warmup 背压仍 7,166 次、
   576 对象、零 timeout，三秒 post-warmup 样本零。A/B Host desired 83/80、Ready 75/72，
@@ -499,7 +525,7 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 2e390039 为已推送基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 5f04c576 为已推送基线；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
 - 上述 59e86519 build 已成功，不再重启其 service/InvocationID；日志和完整 source receipt 在
@@ -519,7 +545,7 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
-- 下一次只读观察原 service 不早于 03:49:27 UTC，继续原 2/s warmup 与零普通 retry 门禁。
+- 下一次只读观察原 service 不早于 04:07:22 UTC，继续原 2/s warmup 与零普通 retry 门禁。
   前提仍是 complete strict10k（包含 exact cleanup/natural drain）先通过，再实际运行
   stateless Worker binding Router performance；不并发运行容量与性能资格。
 - 跟随唯一已运行 strict10k，保留旧失败身份，不临时 patch 线上容量、超时或重试。

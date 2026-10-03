@@ -1437,6 +1437,20 @@ trace，输出固定维度、原字节 SHA 和显式非资格诊断。可按 obs
 ledger 取副本 min/max，增长上下界使用实际 query 时间。最新缺失保持 unknown，不回退；
 资源 UID/Host revision 变化拒绝跨身份比较，正常 Node 增加不视为身份漂移。
 
+计量单位须按实际 producer，而不是只看 Prometheus 名称或 HELP。现有 cold upload/publish
+bytes 取计划中 hot shard 的尺寸之和，items 取输出 cold ref count；reclaim bytes 则取
+实际删除的 FDB value bytes、items 为 key count。离线 schema v2 显式携带这些单位，
+不能将三者都叫 COS objects，也不能从计划 bytes/ref 推导 COS 对象填充率、wire bytes
+或唯一 PUT 次数。一次成功 activity 的重放重执行仍可能重复计入计数，实际 ledger 和
+provider inventory 才能证明净存量；这些计数不能直接相减当作同单位的 hot-debt 收支。
+
+新 run 55b55875 的[早期非资格诊断](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/55b55875-pressure-early-20261003.json)
+绑定固定前缀原字节 SHA：03:35--03:48 UTC 每 Cell 44 样本，资源身份完整。
+阶段约 1.6k active/Cell，manager waiter 峰值零，compaction waiter 峰值 0/1；authority
+观察增长约各 0.20--0.22 MB/s，末端安全 reclaim 为零。该观察说明当前无明显维护准入
+排队，却不足以判断 pin/retention 还是服务吞吐限制，更不证明高水位稳定或旧 502 根因。
+实际 producer 契约与 v2 17 项回归只证明计量边界，不能替代严格容量/自然缩容资格。
+
 设计修正的顺序是先降低每份有效工作的重复规划/失效重做，再控制 Cell 总维护预算并保护
 前台 durable commit，最后才根据真实服务成本增资源。若活跃数据库各自按周期 `T` 触发
 维护，基础需求随 `N/T` 增长；增加 Engine 而同时增加规划扫描和竞争，会形成正反馈，

@@ -64,6 +64,7 @@ class PressureTest(unittest.TestCase):
     def test_costs_and_bounds_not_replica_sum(self):
         path = self.write([sample(), sample(20)])
         result = analysis.analyze(path)
+        self.assertEqual(result["schema"], "actor-pressure-analysis/v2")
         self.assertFalse(result["qualificationEvidence"])
         self.assertEqual(result["input"]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual(result["input"]["bytes"], path.stat().st_size)
@@ -78,8 +79,30 @@ class PressureTest(unittest.TestCase):
         self.assertEqual(activity["completedAdmissionMeanSeconds"], 4)
         self.assertEqual(activity["execution"]["succeeded"]["meanSeconds"], 0.1)
         self.assertIsNone(activity["execution"]["timeout"]["outcomesPerSecond"])
-        self.assertEqual(frame["successfulCompaction"]["reclaim_fdb"]["logicalBytesPerObject"], 4096)
+        reclaimed = frame["successfulCompaction"]["reclaim_fdb"]
+        self.assertEqual(reclaimed["bytesPerItem"], 4096)
+        self.assertEqual(reclaimed["byteSemantics"], "deleted_fdb_value_bytes")
+        self.assertEqual(reclaimed["itemSemantics"], "deleted_fdb_key")
+        for operation in ("cold_upload", "cold_publish"):
+            self.assertEqual(frame["successfulCompaction"][operation]["itemSemantics"], "cold_object_reference")
+            self.assertEqual(frame["successfulCompaction"][operation]["byteSemantics"], "planned_hot_shard_bytes")
         self.assertEqual(cell["observedAuthoritySlopeBoundsBytesPerSecond"], {"min": 0.5, "max": 1.5})
+
+    def test_units_match_real_metric_producers_not_generic_help(self):
+        depot = Path(__file__).resolve().parents[7] / "engine/packages/depot/src"
+        producer = (depot / "workflows/db_cold_compacter.rs").read_text()
+        for function in ("upload_cold_job", "publish_cold_job"):
+            guard = producer.split("pub async fn " + function + "(", 1)[1].split("\nasync fn ", 1)[0]
+            compact = "".join(guard.split())
+            self.assertIn("u64::from(output.output_summary.output_ref_count)", compact)
+            self.assertIn("ifsucceeded{input.input_range.max_bytes}else{0}", compact)
+        planner = "".join((depot / "compaction/shared.rs").read_text().split())
+        self.assertIn("max_bytes:snapshot.cold_inputs.total_value_bytes", planner)
+        self.assertIn("|total,input|total.saturating_add(input.size_bytes)", planner)
+        reclaim = (depot / "workflows/db_reclaimer.rs").read_text().split("async fn reclaim_fdb_job_inner", 1)[0]
+        compact = "".join(reclaim.split())
+        self.assertIn(".map(|reference|u64::from(reference.key_count))", compact)
+        self.assertIn(".map(|reference|reference.byte_count)", compact)
 
     def test_slope_uses_metric_query_time(self):
         end = sample(20)
