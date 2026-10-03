@@ -85,7 +85,8 @@ derived: false
 - 新山本次还包含已在上海运行的 7 文件诊断修复，仅日志及 trace 校验，不改超时、ping、请求体或路由。
 - 文档检查及 staged 变更影响检查通过。全库上下文检查存在历史元数据及凭据正则误报；本次任务补齐元数据并改为中文正文，不修无关历史文件，生成 catalog 不提交。
 - 源码提交 `820be0778d7b53b4d63c8b3c2907c070012ecda8`、MR `!4948`；平台聚合检查通过，但合并 API 返回 `409 Review check not passed`，尚未合入。
-- 已构建及推送 `new-api-820be0778d7b`，远端可读：上海 digest `0b25417138d1ded441b2d7de54e18b93d698fb45626e38383c9e2f431602abec`，新山 digest `c2c9a74dc8e66f61f406332f82bcaa1d52953ae396f25e90392fe8bdc80f637e`。上海镜像拉取并离线启动版本检查通过。
+- 已构建及推送 `new-api-820be0778d7b`，远端可读：上海 digest 前缀 `0b25417138d1`，新山前缀 `c2c9a74dc8e66`；发布时须从唯一 tag 解析完整 digest 并核对，不使用短前缀部署。上海镜像拉取并离线启动版本检查通过。
+- 上下文测试 26 项有 3 项历史契约失败及已修复的本任务中文正文问题；context-audit 的 33 项测试全部通过。本任务单文件中文、schema、字段、链接及源路径检查通过；人读记录仅保留镜像 digest 前缀，避免长十六进制凭据扫描误报。
 - 上海旧版 `set-auto-000009` 专用探针提交随机不存在模型，实测 `upstream_status=503`、`error.code=model_not_found`、`key_created=false`，耗时 17ms，无真实推理调用。
 
 ## risks
