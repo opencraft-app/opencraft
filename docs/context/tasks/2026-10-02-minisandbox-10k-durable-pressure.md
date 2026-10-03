@@ -9,9 +9,9 @@ source_of_truth:
   - docs/context/tasks/2026-10-02-minisandbox-10k-durable-pressure.md
   - minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md
 status: active
-reviewed_at: 2026-10-03
-review_due: 2026-11-02
-revision: 1.38.0
+reviewed_at: 2026-10-04
+review_due: 2026-11-03
+revision: 1.39.0
 precedence: task
 derived: false
 ---
@@ -120,6 +120,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `AGENTS.md`、`minisandbox/{AGENTS.md,infra/cells/AGENTS.md}`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/{README.md,operations/with-autonomy-operation-lock.sh,runtime/{test_monitor_bottomless.py,verify-builder-storage.py,bundle-full-reviewed-source.sh,install-toolchains.sh,toolchains.lock.json},terraform/create-first/bootstrap/{README.md,prepare-bootstrap-host.sh,initialize-runtime-builder-storage.py,run-runtime-builder-storage.py,collect-runtime-builder-storage.py,test_initialize_runtime_builder_storage.py,test_validate_runtime_builder_storage.py,test_run_runtime_builder_storage.py},qualification/actor-bj-q01/{materialize-full-reviewed-source.sh,materialize-full-reviewed-source-via-relay.sh,relay-upload-to-builder.sh,bootstrap-runtime-rust-via-tat.sh,bootstrap-runtime-vendor-via-tat.sh},workers-api/verify.sh,verify-manifests.sh}@54cc7273` | 独立builder的包准备与完整static prerequisite | 原ops锁、native original invocation、managed journal/bulk门禁；packageReady不冒充Rust/stage/source准入；kubectl仅缺offline kustomize客户端，无需给builder Kubernetes权限 |
 | `docs/context/project/{upstream-subtrees.md,services/ctl.md,services/sandbox.md,adjacency/argocd-ci-secrets.md}`、`docs/context/domains/{agent-gateway-runtime.md,release-gitops.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/{operations/with-autonomy-operation-lock.sh,tat/{tat-run.sh,tat-wait.sh,lib-tat.sh},runtime/{generate-source-manifest.sh,verify-full-source-bundle.py,test_monitor_bottomless.py},terraform/create-first/bootstrap/{README.md,collect-runtime-builder-storage.py,collect-runtime-builder-guest.py,validate-runtime-builder-storage.py,test_collect_runtime_builder_storage.py,test_validate_runtime_builder_storage.py}}@d644c661` | 原操作锁持有和 source/TAT 交接边界 | 不新增 fleet lock、不重试 indeterminate submission；原 full manifest 有 Unity 空格与 frontend `$`/方括号路径，不能假设 Python-safe 文件名 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/bootstrap/{collect-runtime-builder-storage.py,collect-runtime-builder-guest.py,validate-runtime-builder-storage.py,prepare-bootstrap-host.sh,test_collect_runtime_builder_storage.py,README.md}`、`runtime/{verify-builder-storage.py,test_builder_storage.py,README.md#L23-L49}`、`operations/with-autonomy-operation-lock.sh`、`terraform/create-first/{management/main.tf,test-terraform-storage-contract.py}@e0270035` | 独立builder初始化和恢复协议的真实所有权 | 原operations host owns共享锁，guest local flock仅防重复初始化；mount不替代真实bulk backing/Buildah/toolchain准入 |
 | `docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py`、`terraform/create-first/bootstrap/{README.md,validate-runtime-builder-storage.py,collect-runtime-builder-guest.py,test_validate_runtime_builder_storage.py}@71dfe019` | 本轮性能建模接续与实际发布前置 | 不将未发布修正当收益；独立builder storage journal仍缺，不绕过原锁或格式化既有PV |
@@ -414,6 +415,31 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前 checkpoint（1.39.0）：54cc72736123已正常FF推master，保留所有empty祖先与push后
+somqqmzq，再jj new mqwlrukq记录真实云端交付。完整bootstrap152、coordinator18、包协议10
+通过；documentation零错误/警告，root Context仍4,942历史错误且新增/删除均0，root26 tests
+仍同四历史失败，audit33通过，default audit为needs_agent_review/score=null，不冒充仓库资格。
+
+新tools14,337files/54,837,844bytes经原COSrelay inv-d9f4iegwm2、inv-a9f4ig0ie1
+SUCCESS/0到原ops，完整hash见host-prepared evidence。原锁coordinator inv-e9f4j2gij8
+完成fresh capture inv-c9f4j6gvn1并提交唯一guest inv-c9f4j803t6；guest与outer均SUCCESS/0。
+两份原生输出result精确比对一致：packageReady=true/storageReady=false，actual GraphRoot
+为/data/actor-build/containers/storage，UUID与journal hash保持原值。声明式包集、Node20、
+Python/PyYAML与基础compiler工具验证通过；没有Rust编译、重绑初始化日志或部署Runtime。
+
+随后原ops在同一共享锁下提交source admission outer inv-a9f4me0efw，复用已在builder的
+2757 bundle/receipt/materializer/verifier，仅重跑materializer。入口先核验package intent
+native-success receipt，再核验builder metadata、UUID mount、bulk link、actual Buildah
+GraphRoot和四份输入hash；不重复四次relay、不跳过完整static gate。outer与guest
+inv-a9f4mf0fgs现均native FAILED/1；Git前置及此前多组回归已通过，新失败精确在workers-api/
+test_verify_runner.py：真实verify.sh需要kubectl kustomize，standalone builder缺客户端。
+staging按原trap清理，incoming仍在，不将packageReady成功改写为source准入成功。下一项
+用锁定且校验的render-only kubectl artifact补齐静态前置，再重跑原门禁；不为此授予builder
+kubeconfig或云权限。本机现有v1.30.14/linux-amd64 binary hash与official dl.k8s.io相同版本
+checksum实际HTTPS响应一致，完整SHA/URL见JSON evidence，尚未安装到builder；此校验
+不能证明live cluster版本兼容，也不是TKE接入准入。后续仍是pinned Rust/offline vendor/全路径admission、Engine-only
+stage/build/release，再strict10k与完整Phase5；whole goal保持active，尚未交付最终容量资格。
 
 当前 checkpoint（1.38.0）：另jj new qzsqtxtv保留全部empty祖先推进独立builder基础工具
 准备。只读native inv-d9f4bhgv5k SUCCESS/0确认原journal仍mounted、同instance/disk/UUID，
