@@ -603,7 +603,7 @@ RIVET_RUNTIME_CONFIG_FILE="$temporary/config.jsonc" \
 	"$script_dir/validate-runtime-image.sh"
 
 # The runtime image validator does not exercise the separately released
-# controller/reporter image. Pull and execute both entrypoints on every control
+# controller/reporter image. Pull and execute every required entrypoint on each control
 # node before changing a live Deployment; a registry-side manifest rewrite or
 # stale/nonexistent digest must fail before rollout_started becomes true.
 ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
@@ -613,6 +613,14 @@ ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
 	ACTOR_IMAGE_PREFLIGHT_NODE_SELECTOR=fleet.actor.dev/control-pool=true \
 	ACTOR_IMAGE_PREFLIGHT_EXPECTED_EXIT_CODE=0 \
 	"$operations_dir/preflight-image-pull.sh" /usr/local/bin/workerd-runtime-capacity-controller --help
+ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
+	ACTOR_IMAGE_PREFLIGHT_NAME=host-drain-release \
+	ACTOR_IMAGE_PREFLIGHT_IMAGE="$reporter_image" \
+	ACTOR_IMAGE_PREFLIGHT_PULL_SECRET=actor-fleet-tcr \
+	ACTOR_IMAGE_PREFLIGHT_NODE_SELECTOR=fleet.actor.dev/control-pool=true \
+	ACTOR_IMAGE_PREFLIGHT_EXPECTED_EXIT_CODE=0 \
+	ACTOR_IMAGE_PREFLIGHT_REQUIRED_OUTPUT='Usage: workerd-host-drain-controller [--help]' \
+	"$operations_dir/preflight-image-pull.sh" /usr/local/bin/workerd-host-drain-controller --help
 ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
 	ACTOR_IMAGE_PREFLIGHT_NAME=cell-reporter-release \
 	ACTOR_IMAGE_PREFLIGHT_IMAGE="$reporter_image" \

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -18,6 +20,12 @@ import (
 )
 
 func main() {
+	if done, err := handleCommandLine(os.Args[1:], os.Stdout); done {
+		if err != nil {
+			log.Fatalf("command line: %v", err)
+		}
+		return
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	config, err := rest.InClusterConfig()
@@ -63,6 +71,20 @@ func main() {
 		Now: time.Now, Logf: log.Printf,
 	}
 	controller.Run(ctx)
+}
+
+// Help is an image entrypoint probe, not a controller initialization. Keep it
+// before in-cluster credentials, Secret reads and reconciliation. Configuration
+// remains environment-only; reject unexpected arguments without echoing values.
+func handleCommandLine(args []string, output io.Writer) (bool, error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		_, err := fmt.Fprintln(output, "Usage: workerd-host-drain-controller [--help]\nConfiguration uses environment variables; topology repair defaults to disabled.")
+		return true, err
+	}
+	return true, fmt.Errorf("unexpected arguments; use --help")
 }
 
 func boolean(name string, fallback bool) bool {

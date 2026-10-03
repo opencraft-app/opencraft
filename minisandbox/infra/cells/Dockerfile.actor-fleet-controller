@@ -16,7 +16,7 @@ COPY internal/cellreporter ./internal/cellreporter
 COPY internal/meshharness ./internal/meshharness
 COPY internal/hostdrain ./internal/hostdrain
 COPY internal/runtimecapacity ./internal/runtimecapacity
-RUN go test ./internal/runtimecapacity ./internal/hostdrain
+RUN go test ./cmd/workerd-host-drain-controller ./internal/runtimecapacity ./internal/hostdrain
 ARG TARGETOS=linux
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \

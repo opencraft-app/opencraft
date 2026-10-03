@@ -53,6 +53,15 @@ namespace's own pull Secret. Registry, credential, node-network and
 architecture failures therefore preserve the previous version instead of
 creating an `ImagePullBackOff` rollout.
 
+The separate Go image also includes `workerd-host-drain-controller`; changing
+its UID/RV-fenced topology repair logic does not require rebuilding workerd or
+the unified runtime image. Its `--help` / `-h` exits successfully before
+Kubernetes initialization, Secret reads or reconciliation. Runtime releases
+probe this exact entrypoint and its expected help output on every control node
+before mutating live workloads. A successful help probe proves only that the
+entrypoint runs, not PDB behavior, Actor fencing, destination capacity or safe
+scale-in. Topology repair remains disabled until its independent gates pass.
+
 Apply CRDs before this kustomization:
 
 ```sh

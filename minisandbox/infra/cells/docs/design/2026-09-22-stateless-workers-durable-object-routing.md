@@ -2244,6 +2244,15 @@ upstream [v1.30.0 eviction实现](https://github.com/kubernetes/kubernetes/blob/
 也检查UID/RV、更新condition后的delete RV并禁用带RV请求的冲突重试；这仅解释协议，
 不证明TKE的实际行为。云repair开关仍false、源码未发布，A的真实安全缩容仍待完成。
 
+Host drain源码属于独立`actor-fleet-controller` Go镜像，不在workerd/V8统一runtime二进制
+内。仅变更此协调器不要求重编workerd；发布仍须使用新的immutable controller digest及
+source manifest，通过既有串行release/rollback路径，不允许直接patch live image。
+发布预检新增精确`workerd-host-drain-controller --help`，在每个控制节点以新digest运行，
+要求exit0及固定Usage输出，早于容量协调器恢复或任何live Deployment rollout。
+CLI在InClusterConfig、Secret读取及协调循环之前退出，并拒绝未知/混合参数且不回显值。
+此预检只证明入口可执行，不证明真实TKE eviction协议、Actor generation或AZ容量；
+原supervisor持锁时不运行预检Pod、不发布、不开repair flag。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循
