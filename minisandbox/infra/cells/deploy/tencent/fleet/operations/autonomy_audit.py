@@ -299,10 +299,29 @@ def extract_scalar(result):
     for item in result:
         raw = item.get("value", [None, None])[1]
         try:
-            values.append(float(raw))
+            value = float(raw)
+            # NaN is an unavailable observation, not a healthy zero or ETA.
+            if not math.isnan(value):
+                values.append(value)
         except (TypeError, ValueError):
             pass
     return values
+
+
+def receipt_json_bytes(receipt):
+    """Encode non-finite diagnostics without changing internal policy values."""
+    def json_value(value):
+        if isinstance(value, float) and not math.isfinite(value):
+            if math.isnan(value):
+                return "NaN"
+            return "+Inf" if value > 0 else "-Inf"
+        if isinstance(value, dict):
+            return {key: json_value(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [json_value(item) for item in value]
+        return value
+
+    return json.dumps(json_value(receipt), indent=2, sort_keys=True, allow_nan=False).encode()
 
 
 def _safe_float(value, default=None):
@@ -2034,7 +2053,7 @@ def main():
         receipt_path = base_dir / f"autonomy-audit-{args.cell}-{started_at.replace(':', '').replace('-', '')}.json"
 
     if not args.dry_run:
-        payload = json.dumps(receipt, indent=2, sort_keys=True).encode()
+        payload = receipt_json_bytes(receipt)
         receipt_path.write_bytes(payload)
         digest = hashlib.sha256(payload).hexdigest()
     else:

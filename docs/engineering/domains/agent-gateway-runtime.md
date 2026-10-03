@@ -43,6 +43,8 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 ## 稳定不变量
 
+- NewAPI 在选渠道失败时区分配置缺失与运行时不可用：当前授权分组（`auto` 为其可用分组集合）没有该模型的任何 `ability`，返回 HTTP 404 与 `model_not_found`；已配置但禁用的渠道、路径筛选后无候选、选渠道出错或配置查询失败继续返回 HTTP 503 与 `get_channel_failed`。正常选渠道路径不增加数据库查询。404 文案同时保留 `model_not_found` 标识，以兼容只保留异常 message 的 Hermes provider wrapper。
+
 - OpenCraft macOS 分发由下游 GitHub 镜像的 `macos-release` Environment 承载，但不取得源码权威。arm64 与 x64 必须在对应原生 Runner 组装，最终 job 才可读取 Developer ID 与 Apple 公证凭据；Universal 合并后依次完成签名、公证、staple、DMG/ZIP 封包和完整性验证。手工主分支运行只生成 Actions artifact，只有 `v*` tag 创建 GitHub Release；源码进入 mono2、镜像导出和公开制品发布仍是三个独立状态。镜像依赖的 mono2-parent shared package 使用带哈希清单的机械 workspace 快照，`shared/` 保持唯一真源，禁止用 Vite external 掩盖缺包。详细运行契约见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md)。
 
 - OpenCraft 独立 headless Linux Server 以一个端口托管静态 WebUI、`/appserver` 和 `/apphost` WebSocket。默认回环模式要求有效的回环 Host，检查显式 HTTP Origin 且要求 WebSocket Origin 同源；显式 `--allow-unauthenticated-public` 公开模式不检查 HTTP 或 WebSocket Origin，以允许 HTTPS 终止代理转发到直连 HTTP listener。这是单用户调试部署，不提供认证或跨站隔离；任何可访问该地址的浏览器都可尝试建立 AppHost 连接。浏览器断线重连必须在同一个 Workbench transport 对象内换新 AppHost lease，不能复用已关闭的 WebSocket 代次。Web Host 以 Ping/Pong 主动终止半开连接，浏览器限制初次 AppHost 握手时间；两者只能产生可重试 transport failure，不得销毁 Daemon 持有的物理 Host。Web 会话呈现保留已绘制的历史与 View/草稿身份，以局部状态提示重连；只有无可见历史时才在时间线空槽显示骨架，恢复权威前继续禁止执行命令。Codex Host 的 logical initialize / Thread resume 诊断只记录标识与结果，不记录消息、凭据或响应 payload。见 [OpenCraft 平台架构](../../../opencraft/docs/platform-architecture.md)。

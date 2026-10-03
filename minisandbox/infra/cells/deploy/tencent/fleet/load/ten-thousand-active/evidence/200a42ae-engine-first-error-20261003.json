@@ -1,0 +1,116 @@
+{
+  "candidateActorId": "dl048ozwnqe1135wwtkz1qc5lgcl00",
+  "cell": {
+    "name": "actor-bj-b01",
+    "uid": "87a07636-737c-4a57-8693-9d02f61883f8"
+  },
+  "engineDeploymentUid": "c78ee4ad-d13d-4d99-8d3c-60c17a0299bc",
+  "finishedAt": "2026-10-03T11:26:21.680073+00:00",
+  "limitations": [
+    "current Service address binding is observed after failure, not a historical route receipt",
+    "deleted Pods and previous container logs are not included",
+    "bounded log tails may exclude failure-window lines; no match is unknown, not successful execution",
+    "actor match alone is not an exact request join; only requestIdMatched establishes that join",
+    "local transport write does not prove request execution or durable commit",
+    "no business request, checkpoint, wake, mutation, or source rollout was performed"
+  ],
+  "matchedRows": 0,
+  "podObservations": [
+    {
+      "byteCapReached": true,
+      "containerStartedAt": "2026-10-03T08:44:32Z",
+      "createdAt": "2026-10-03T08:44:28Z",
+      "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+      "matchedRows": 0,
+      "name": "actor-bj-b01-engine-7f566b884f-8h4xh",
+      "nativeExitCode": 0,
+      "restartCount": 0,
+      "returnedBytes": 2097152,
+      "uid": "8314bafe-137f-4368-abfe-a596a6eedbfc"
+    },
+    {
+      "byteCapReached": true,
+      "containerStartedAt": "2026-10-03T08:44:37Z",
+      "createdAt": "2026-10-03T08:44:34Z",
+      "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+      "matchedRows": 0,
+      "name": "actor-bj-b01-engine-7f566b884f-cscqb",
+      "nativeExitCode": 0,
+      "restartCount": 0,
+      "returnedBytes": 2097152,
+      "uid": "3cc6832a-5635-4056-add8-812668355ff1"
+    },
+    {
+      "byteCapReached": true,
+      "containerStartedAt": "2026-10-03T08:44:25Z",
+      "createdAt": "2026-10-03T08:44:06Z",
+      "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+      "matchedRows": 0,
+      "name": "actor-bj-b01-engine-7f566b884f-hplsn",
+      "nativeExitCode": 0,
+      "restartCount": 0,
+      "returnedBytes": 2097152,
+      "uid": "5062d3f9-c151-45c4-8c45-fc12d3124512"
+    },
+    {
+      "byteCapReached": false,
+      "containerStartedAt": "2026-10-03T08:43:57Z",
+      "createdAt": "2026-10-03T08:43:54Z",
+      "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+      "matchedRows": 0,
+      "name": "actor-bj-b01-engine-7f566b884f-pd5pt",
+      "nativeExitCode": 0,
+      "restartCount": 0,
+      "returnedBytes": 1866603,
+      "uid": "e0df49f2-5ffd-4ce3-920b-48f13abdb33e"
+    },
+    {
+      "byteCapReached": false,
+      "containerStartedAt": "2026-10-03T08:44:04Z",
+      "createdAt": "2026-10-03T08:44:01Z",
+      "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+      "matchedRows": 0,
+      "name": "actor-bj-b01-engine-7f566b884f-vhk66",
+      "nativeExitCode": 0,
+      "restartCount": 0,
+      "returnedBytes": 337371,
+      "uid": "3923d540-cc65-429c-a9c0-b119c321ada9"
+    },
+    {
+      "byteCapReached": true,
+      "containerStartedAt": "2026-10-03T09:28:42Z",
+      "createdAt": "2026-10-03T09:28:41Z",
+      "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+      "matchedRows": 0,
+      "name": "actor-bj-b01-engine-7f566b884f-wtfdr",
+      "nativeExitCode": 0,
+      "restartCount": 0,
+      "returnedBytes": 2097152,
+      "uid": "94604a53-7a3c-4475-ba37-51df6a11aa0f"
+    }
+  ],
+  "qualificationEvidence": false,
+  "requestId": "req_905d883bddc2602882a690218fb4c0ba",
+  "rows": [],
+  "runId": "200a42ae03ef4e128505b0def22e8af8",
+  "schema": "actor-engine-fetch-failure-diagnostic/v1",
+  "service": {
+    "addresses": [
+      "10.162.0.2"
+    ],
+    "name": "actor-bj-b01-engine-private",
+    "ports": [
+      {
+        "port": 6420,
+        "targetPort": "api"
+      }
+    ],
+    "resourceVersion": "3483579461",
+    "uid": "11ee72e5-8f4e-42a5-b57c-46cc44a8b1e4"
+  },
+  "startedAt": "2026-10-03T11:26:19.982066+00:00",
+  "window": {
+    "end": "2026-10-03T10:49:49Z",
+    "start": "2026-10-03T10:49:15Z"
+  }
+}

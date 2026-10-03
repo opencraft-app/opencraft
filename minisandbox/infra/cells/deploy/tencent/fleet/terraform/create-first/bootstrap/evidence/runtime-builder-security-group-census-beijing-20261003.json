@@ -1,0 +1,56 @@
+{
+  "schema": "actor-runtime-builder-security-group-census/v1",
+  "verdict": "observed",
+  "claimEligible": false,
+  "region": "ap-beijing",
+  "sourceRevision": "5b3f9b7cdc70e68e9c7add97fe5f98a620a29a6a",
+  "recordedAt": "2026-10-03T14:06:30Z",
+  "cloudMutations": 0,
+  "quota": {
+    "used": 50,
+    "limit": 50
+  },
+  "selection": {
+    "matchingProjectProductTag": 10,
+    "matchingNameOnly": 2,
+    "outsideSelection": 38
+  },
+  "observations": {
+    "selectedGroups": 12,
+    "withAssociatedResources": 12,
+    "withReportedSecurityGroupReferences": 0,
+    "withNonemptyReferenceList": 0,
+    "zeroAssociationCandidates": 0
+  },
+  "decision": {
+    "deleteAuthorized": false,
+    "deleteCandidates": 0,
+    "nextAction": "increase_regional_security_group_quota",
+    "builderReady": false
+  },
+  "sources": {
+    "DescribeSecurityGroups": {
+      "requestId": "dd120cb5-192c-4c5f-a4d0-8ba0f525c0db",
+      "responseSha256": "454eaa34c62f404f6833dd0c71c68f5a20837a35b405d43a36c5c495971aff43"
+    },
+    "DescribeSecurityGroupLimits": {
+      "requestId": "0e28d525-0b5d-41c3-b7d2-596c3c439d0f",
+      "responseSha256": "d040371244d6ff170e67a773f3e8f065c59f061adf1c0e7c2baa475ca1f9df6f"
+    },
+    "DescribeSecurityGroupAssociationStatistics": {
+      "requestId": "490e90e0-3f04-4e3c-a53d-6f9649b519ea",
+      "responseSha256": "dc60ab4adc1332bbb5378df166f99b091f386b59cf55dd8a653be47dd7655fe8"
+    },
+    "DescribeSecurityGroupReferences": {
+      "requestId": "58116e3a-677d-4846-b27f-6a84c5a662f4",
+      "responseSha256": "f5cb82b6de60e4367502289d7a82edca8d3754953f221481724cea10b80e0adc"
+    }
+  },
+  "limitations": [
+    "The sequential API responses are a read-only snapshot, not an atomic deletion fence.",
+    "A name match is not ownership evidence or deletion authority.",
+    "Product tags alone do not replace Terraform desired-state and identity joins.",
+    "Groups outside the project selection are not cleanup candidates.",
+    "This observation does not grant build, release, placement or performance qualification."
+  ]
+}

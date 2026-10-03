@@ -31,8 +31,11 @@ The workflow compaction path uses one persistent DB manager plus hot, cold, and 
 Responsibilities:
 
 - Coalesce commit wakeups through `SQLITE_CMP_DIRTY/{database_branch_id}` and `DeltasAvailable` signals.
+- Admit maintenance separately from execution. Each process has independent refresh/compaction lanes, bounded FIFO wait slots, and a bounded wait. Overflow defers the exact durable job through Gasoline's lease-fenced wake deadline without recording an execution failure. Accepted FIFO ordering does not imply global fairness among deferred workflows.
+- While any branch job is active, observe only bounded lifecycle/head/dirty/pin-count metadata. A deferred planning observation must neither clear dirty work nor finish a force request; full planning resumes after exact job completion. Lifecycle stop checks and existing fallback deadlines remain active.
 - Plan bounded committed hot prefixes from current FDB state instead of trusting signal payloads. Stage and install retain the planned upper txid while revalidating current history/PITR coverage.
 - Use prefix-only identity only for histories certified never truncated. Keep head identity for truncated or unindexed histories, apply every DELTA's EOF, and materialize historical coverage at its own commit size.
+- Fold the selected DELTAs once across all hot-job coverages, retaining each intervening EOF. Historical outputs still copy their required page snapshots, preserve caller order, and obey the existing staged-row limit; this reduces repeated merge work, not FDB publication transactions or retained history.
 - Validate input identity before shard-body preflight and inside atomic publication. A removed staged cache row is retryable only when a fresh input check independently proves the plan stale; real corruption remains an error.
 - Carry the branch lifecycle generation through planned jobs and reject stale stage, publish, or reclaim work after branch deletion or recreation.
 - Have the hot companion prepublish SHARD bodies and write compact stage proofs under `CMP/stage/{job_id}/hot_shard`. Bodies are not authoritative without published coverage.
@@ -48,6 +51,14 @@ Responsibilities:
 - Stop the manager and companion workflows through `DestroyDatabaseBranch` when a database branch is no longer live.
 
 Lease ownership: none. Gasoline workflow uniqueness uses only the database branch id tag.
+
+Hot stage/install expose bounded domain outcomes through the existing compaction
+counter/duration families, independently of Gasoline admission and execution
+returns. A normal activity return can contain retryable/rejected output. Fresh
+install exits are distinct from `already_applied` marker replay; neither counter
+is a durable publication ledger. A dropped activity records cancelled execution
+cost and releases its diagnostic backlog gauge. No extra storage transaction or
+publication authority is added. See [diagnostic semantics](constraints-and-design-decisions.md#maintenance-observations-are-not-publication-authority).
 
 ## Branch Garbage Collection
 

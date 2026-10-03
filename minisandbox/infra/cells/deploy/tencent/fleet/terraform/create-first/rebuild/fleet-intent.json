@@ -43,6 +43,10 @@
   },
   "management": {
     "id": "actor-bj-c01",
+    "runtimeBuilder": {
+      "instanceType": "SA9.4XLARGE32",
+      "dataDiskGiB": 512
+    },
     "network": {
       "podCidr": "10.200.0.0/16",
       "serviceCidr": "172.20.0.0/22",

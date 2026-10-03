@@ -28,24 +28,28 @@ pub async fn depot_db_hot_compacter(
 }
 
 #[activity(StageHotJob)]
+#[admission = stage_hot_admission(ctx, input)]
 pub async fn stage_hot_job(
 	ctx: &ActivityCtx,
 	input: &StageHotJobInput,
 ) -> Result<StageHotJobOutput> {
-	#[cfg(feature = "test-faults")]
-	if let Some(output) = hot_stage_fault_output(
-		input.database_branch_id,
-		HotCompactionFaultPoint::StageBeforeAdmission,
-	)
-	.await?
-	{
-		return Ok(output);
-	}
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
+	let activity = crate::metrics::CompactionActivityGuard::new("hot_stage", 0, 0);
+	let result = stage_hot_job_inner(ctx, input).await;
+	activity.finish(
+		match &result {
+			Ok(output) => crate::metrics::compaction_status_label(&output.status),
+			Err(_) => "error",
+		},
+		0,
+		0,
+	);
+	result
+}
+
+async fn stage_hot_job_inner(
+	ctx: &ActivityCtx,
+	input: &StageHotJobInput,
+) -> Result<StageHotJobOutput> {
 	let input_for_prepare = input.clone();
 	let now_ms = ctx.ts();
 	let prepared = ctx
@@ -518,16 +522,51 @@ fn failed_hot_job(err: anyhow::Error) -> StageHotJobOutput {
 	}
 }
 
+async fn stage_hot_admission(
+	ctx: &ActivityCtx,
+	_input: &StageHotJobInput,
+) -> Result<gas::activity::ActivityAdmission<StageHotJobOutput>> {
+	#[cfg(feature = "test-faults")]
+	if let Some(output) = hot_stage_fault_output(
+		_input.database_branch_id,
+		HotCompactionFaultPoint::StageBeforeAdmission,
+	)
+	.await?
+	{
+		return Ok(gas::activity::ActivityAdmission::Complete(output));
+	}
+	crate::admission::compaction(ctx).await
+}
+
 #[activity(InstallHotJob)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn install_hot_job(
 	ctx: &ActivityCtx,
 	input: &InstallHotJobInput,
 ) -> Result<InstallHotJobOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
+	let activity = crate::metrics::CompactionActivityGuard::new("hot_install", 0, 0);
+	let result = install_hot_job_inner(ctx, input).await;
+	activity.finish(
+		match &result {
+			Ok((output, newly_published)) => {
+				if matches!(output.status, CompactionJobStatus::Succeeded) && !newly_published {
+					"already_applied"
+				} else {
+					crate::metrics::compaction_status_label(&output.status)
+				}
+			}
+			Err(_) => "error",
+		},
+		0,
+		0,
+	);
+	result.map(|(output, _)| output)
+}
+
+async fn install_hot_job_inner(
+	ctx: &ActivityCtx,
+	input: &InstallHotJobInput,
+) -> Result<(InstallHotJobOutput, bool)> {
 	// A conflict in the final publish transaction means its automatic retry would otherwise trust
 	// a preflight from an older read version. Escape the driver's retry closure, repeat every
 	// bounded integrity read, and only then attempt the compact atomic publish again.
@@ -539,11 +578,11 @@ pub async fn install_hot_job(
 		)
 		.await?
 		{
-			return Ok(output);
+			return Ok((output, false));
 		}
 
 		let integrity_refs = match read_hot_install_integrity_refs(ctx, input).await? {
-			HotInstallIntegrityPlan::Output(output) => return Ok(output),
+			HotInstallIntegrityPlan::Output(output) => return Ok((output, false)),
 			HotInstallIntegrityPlan::Refs(refs) => refs,
 		};
 		#[cfg(feature = "test-faults")]
@@ -553,14 +592,17 @@ pub async fn install_hot_job(
 		)
 		.await?
 		{
-			return Ok(output);
+			return Ok((output, false));
 		}
 		let integrity_batches = match hot_install_integrity_batches(integrity_refs) {
 			Ok(batches) => batches,
 			Err(err) => {
-				return Ok(rejected_hot_install(format!(
-					"invalid staged hot shard integrity plan: {err:#}"
-				)));
+				return Ok((
+					rejected_hot_install(format!(
+						"invalid staged hot shard integrity plan: {err:#}"
+					)),
+					false,
+				));
 			}
 		};
 		for batch in integrity_batches {
@@ -582,9 +624,9 @@ pub async fn install_hot_job(
 				if let HotInstallIntegrityPlan::Output(output) =
 					read_hot_install_integrity_refs(ctx, input).await?
 				{
-					return Ok(output);
+					return Ok((output, false));
 				}
-				return Ok(rejected_hot_install(reason));
+				return Ok((rejected_hot_install(reason), false));
 			}
 		}
 
@@ -601,7 +643,10 @@ pub async fn install_hot_job(
 						return Err(HotInstallIntegrityRecheckRequired.into());
 					}
 					tx.priority(Priority::Low)?;
-					install_hot_job_tx(&tx, &input, now_ms).await
+					let mut newly_published = false;
+					let output =
+						install_hot_job_tx(&tx, &input, now_ms, &mut newly_published).await?;
+					Ok((output, newly_published))
 				}
 			})
 			.await;
@@ -991,6 +1036,7 @@ async fn install_hot_job_tx(
 	tx: &universaldb::Transaction,
 	input: &InstallHotJobInput,
 	now_ms: i64,
+	newly_published: &mut bool,
 ) -> Result<InstallHotJobOutput> {
 	let (root, hot_inputs) = match validate_hot_install_inputs_tx(tx, input, now_ms).await? {
 		HotInstallInputCheck::Output(output) => return Ok(output),
@@ -1255,6 +1301,9 @@ async fn install_hot_job_tx(
 	}
 	clear_hot_stage_job_record_tx(tx, input.database_branch_id, input.job_id).await?;
 
+	// This observation becomes visible only after the surrounding transaction returns success.
+	// Response-loss replay returns from the exact marker check without setting it again.
+	*newly_published = true;
 	Ok(InstallHotJobOutput {
 		status: CompactionJobStatus::Succeeded,
 		output_summary: input.output_summary,

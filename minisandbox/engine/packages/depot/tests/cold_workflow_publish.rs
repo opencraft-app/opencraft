@@ -2901,6 +2901,12 @@ async fn cold_publish_response_loss_replays_as_idempotent_success() -> Result<()
 
 #[tokio::test]
 async fn hot_install_response_loss_replays_from_atomic_publish_proof() -> Result<()> {
+	let replay_before = depot::metrics::SQLITE_COMPACTION_JOBS_TOTAL
+		.with_label_values(&["hot_install", "already_applied"])
+		.get();
+	let error_before = depot::metrics::SQLITE_COMPACTION_JOBS_TOTAL
+		.with_label_values(&["hot_install", "error"])
+		.get();
 	let cold_root = Builder::new()
 		.prefix("depot-hot-workflow-publish-response-loss-")
 		.tempdir()?;
@@ -2942,6 +2948,19 @@ async fn hot_install_response_loss_replays_from_atomic_publish_proof() -> Result
 		.await?;
 	assert_eq!(hot.terminal_error, None);
 	controller.assert_expected_fired()?;
+	// Run this test alone for an isolated diagnostic assertion. These process
+	// counters are not an exactly-once durable publication ledger: the injected
+	// commit-before-response failure is an error exit, and its replay is distinct.
+	assert!(
+		depot::metrics::SQLITE_COMPACTION_JOBS_TOTAL
+			.with_label_values(&["hot_install", "already_applied"])
+			.get() > replay_before
+	);
+	assert!(
+		depot::metrics::SQLITE_COMPACTION_JOBS_TOTAL
+			.with_label_values(&["hot_install", "error"])
+			.get() > error_before
+	);
 
 	let root = decode_compaction_root(
 		&read_value(&test_ctx, branch_compaction_root_key(branch_id))

@@ -44,6 +44,7 @@ runtime = load_module(
     "persistent_runtime_e2e",
     REPO / "infra/cells/deploy/local/mesh/workerd-persistent-code-e2e/run.py",
 )
+pod_lifecycle = load_module("qualification_pod_lifecycle", ROOT / "pod_lifecycle.py")
 
 
 WORKER_SOURCE = r'''
@@ -246,23 +247,28 @@ def wait_not_ready(client, cell: str, pod_uid: str, endpoint: str, timeout: floa
     raise TimeoutError(f"executor did not visibly leave both readiness planes: {last}")
 
 
-def wait_replacement(client, cell: str, old_uids: set[str], expected: int, timeout: float) -> dict:
+def wait_replacement(
+    client, cell: str, old_uids: set[str], victim_uid: str, expected: int, timeout: float,
+) -> dict:
     deadline = time.monotonic() + timeout
     last = None
     while time.monotonic() < deadline:
         try:
-            pods = ready_pods(client, cell)
             all_pods = [
                 item
                 for item in client.json("get", "pods", "-l", SELECTOR.format(cell=cell)).get("items", [])
                 if item.get("metadata", {}).get("deletionTimestamp") is None
             ]
-            added = [item for item in pods if item["metadata"]["uid"] not in old_uids]
-            last = {"total": len(all_pods), "ready": len(pods), "new": len(added)}
-            if len(all_pods) == expected and len(pods) == expected and len(added) == 1:
-                return {"name": added[0]["metadata"]["name"], "uid": added[0]["metadata"]["uid"]}
         except Exception as error:
             last = str(error)
+            time.sleep(0.5)
+            continue
+        pods = [item for item in all_pods if runtime.ready(item)]
+        last = {"total": len(all_pods), "ready": len(pods)}
+        if len(all_pods) == expected and len(pods) == expected:
+            replacement = pod_lifecycle.replacement_in_snapshot(pods, old_uids, victim_uid)
+            if replacement is not None:
+                return {"name": replacement["metadata"]["name"], "uid": replacement["metadata"]["uid"]}
         time.sleep(0.5)
     raise TimeoutError(f"{cell} did not restore its exact executor floor: {last}")
 
@@ -307,7 +313,7 @@ def execute_case(api, worker, version, clients, expected_replicas, delay_ms, for
             victim_forward = forwards[(cell, pod_name)]
             timeout_before = metric(victim_forward.base_url, "rivet_stateless_drain_timeouts_total")
             began = time.monotonic()
-            clients[cell].run("delete", "pod", pod_name, "--wait=false")
+            pod_lifecycle.delete_exact_pod(clients[cell], pod)
             # The application flips immediately, while the Kubernetes
             # readiness condition needs three failed five-second probes. Give
             # that asynchronous control-plane observation one full extra
@@ -360,7 +366,7 @@ def execute_case(api, worker, version, clients, expected_replicas, delay_ms, for
                 raise RuntimeError(f"graceful in-flight request changed: {status} {payload}")
     finally:
         close_forwards(forwards)
-    replacement = wait_replacement(clients[cell], cell, old_uids[cell], expected_replicas, timeout)
+    replacement = wait_replacement(clients[cell], cell, old_uids[cell], victim_uid, expected_replicas, timeout)
     return {
         "cell": cell,
         "pod": pod_name,

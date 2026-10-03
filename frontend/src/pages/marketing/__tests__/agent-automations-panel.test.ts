@@ -13,6 +13,7 @@ const cronClientMocks = vi.hoisted(() => ({
   listAutomationBlueprints: vi.fn(),
   listCronJobs: vi.fn(),
   listRecentCronRuns: vi.fn(),
+  readCronRunOutput: vi.fn(),
   removeCronJob: vi.fn(),
   removeManagedCronScriptIfUnreferenced: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
@@ -114,6 +115,7 @@ beforeEach(() => {
   cronClientMocks.listAutomationBlueprints.mockResolvedValue([]);
   cronClientMocks.listCronJobs.mockResolvedValue([]);
   cronClientMocks.listRecentCronRuns.mockResolvedValue([]);
+  cronClientMocks.readCronRunOutput.mockResolvedValue("# 今日结果\n已完成资料收集。");
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
   cronClientMocks.removeManagedCronScriptIfUnreferenced.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
@@ -481,6 +483,7 @@ describe("recent run limit hint", () => {
 
   it("renders the empty recent-runs message without a nested gray container", () => {
     const { container } = render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -497,6 +500,7 @@ describe("recent run limit hint", () => {
 
   it("shows model drift as an unexecuted run with a concise reason", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         job_name: "每日工作小结",
         status: "not_executed",
@@ -512,6 +516,7 @@ describe("recent run limit hint", () => {
 
   it("localizes the unsupported-plan model error", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         status: "error: RuntimeError: HTTP 403: The requested model is not available in your current plan.",
       })],
@@ -524,6 +529,7 @@ describe("recent run limit hint", () => {
 
   it("shows the bound Skill in the recent-run detail", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ skills: ["builder-radar"] })],
       skillLoadState: { status: "ready", slugs: ["builder-radar"], error: null },
     }));
@@ -535,8 +541,29 @@ describe("recent run limit hint", () => {
     expect(screen.getByText("builder-radar")).toBeTruthy();
   });
 
+  it("loads the selected Bot's Markdown result on demand", async () => {
+    const run = makeCronRun({ job_id: "daily-research" });
+    render(createElement(RecentCronRunsPanel, {
+      target: { instanceId: "instance-3", profileId: "bot-3" },
+      runs: [run],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: localizedText("查看任务详情", "View job details") })[0]!);
+    expect(cronClientMocks.readCronRunOutput).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: localizedText("查看执行结果", "View result") }));
+
+    await waitFor(() => expect(cronClientMocks.readCronRunOutput).toHaveBeenCalledWith(
+      { instanceId: "instance-3", profileId: "bot-3" },
+      run,
+    ));
+    expect(screen.getByText(/已完成资料收集/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: localizedText("下载执行结果", "Download result") })).toBeEnabled();
+  });
+
   it("shows an unconfigured Skill binding in the recent-run detail", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ skills: [] })],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -553,6 +580,7 @@ describe("recent run limit hint", () => {
       "Deduplicate alerts. If nothing changed, return exactly [SILENT].",
     );
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ job_prompt: jobPrompt })],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -569,6 +597,7 @@ describe("recent run limit hint", () => {
 
   it("shows the 0 Token subtype in the recent-run list and hides Agent-only detail rows", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         job_name: "喝水提醒",
         job_prompt: "",

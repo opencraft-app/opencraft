@@ -31,7 +31,7 @@ All Depot keys live under the crate-owned `[0x02]` prefix. The next byte is the 
 | `BUCKET_FORK_PIN` | `[0x02][0x71]` | bucket fork, workflow compaction | Unresolved bucket fork retention facts. |
 | `BUCKET_CHILD` | `[0x02][0x72]` | bucket fork, workflow compaction | Bucket child edges for bounded proof walks. |
 | `BUCKET_CATALOG_BY_DB` | `[0x02][0x73]` | bucket catalog, workflow compaction | Reverse bucket membership index by database branch. |
-| `BUCKET_PROOF_EPOCH` | `[0x02][0x74]` | bucket fork/catalog mutation | Bucket-tree proof invalidation epoch. |
+| `BUCKET_PROOF_EPOCH` | `[0x02][0x74]` | bucket fork | Bucket-tree proof invalidation epoch. |
 | `SQLITE_CMP_DIRTY` | `[0x02][0x75]` | conveyer, workflow compaction | Coalesced compaction wake marker by database branch. |
 | `DB_POLICY_BINDING` | `[0x02][0x76]` | policy APIs, branch GC | Exact database-to-policy binding. |
 | `BUCKET_POLICY_PITR_SHARD` | `[0x02][0x77]` | policy APIs, workflow compaction | Sharded PITR policy membership. |
@@ -84,12 +84,16 @@ BUCKET_PTR/{bucket_id_uuid_be:16}/cur
 
 Database pointer resolution walks bucket parents when a current bucket branch does not contain a local database pointer. Pointer history supports restore/rollback bookkeeping without changing the branch-local page layout.
 
+Inherited read resolution also returns the minimum bucket fork versionstamp on that walk. The page plan limits the inherited head and sources to that cap, including historical EOF. Bucket AS-OF selection uses one reverse, limit-one VTX range; known exact database-fork commits still use exact VTX reads. An unwritten fork's existing `head_at_fork` may resolve to its retained parent COMMIT through a depth-bounded walk, with identity, cap, EOF and checksum checks. Missing required history is an error. On the first inherited write, the same commit transaction derives a child physical branch and writes a local DBPTR/catalog/policy binding before applying data. These are existing records, not a new storage format or a copied parent image.
+
 ```text
 BUCKET_CATALOG/{bucket_id_uuid_be:16}/{database_id_uuid_be:16}
   -> 16-byte FDB versionstamp via SetVersionstampedValue
 ```
 
 The value is the database membership versionstamp. Parent walks use it as the AS-OF cap for `fork_bucket`. Database tombstones on the bucket branch hide matching inherited catalog entries.
+
+Catalog insertion and tombstoning update the reverse `BUCKET_CATALOG_BY_DB` fact and clear the affected database's complete and partial proof state in the same transaction. They do not increment the tree-wide proof epoch: unrelated database memberships cannot change this database's inheritance. A new bucket fork still increments the source tree epoch and its fixed epoch shard because the child may inherit every visible database. Publication and reclamation continue to require a complete, serializably validated proof. This changes invalidation ownership, not the persisted key/value format.
 
 ## Branch Records And Pins
 

@@ -29,6 +29,19 @@ up to 36 hours for the ordinary five-minute serial drain policy to return both
 Cells to the floor. The resulting receipt binds the load receipt and the
 15-second capacity trace by SHA-256.
 
+The archived `evidence/c631-runtime-tools120-admission-20261003.sh` binds the
+point-read runtime to the unchanged tools-120 load graph. Before load it verifies
+both original Bottomless/HA receipts, activation -> control -> audit byte hashes,
+qualified source identity, live Cell/FDB/workload identities and the shared
+operation lock. Workers API capacity remains HPA-owned: any converged integer
+replica count within the existing 3..30 policy is valid, but stale generation,
+partial rollout, wrong image or replaced UID fails closed. It never scales the
+API to three just to satisfy an obsolete preflight assumption. This is an
+exact-release qualification artifact, not a rebuild intent or general deployment
+entrypoint. Preparing or transferring it does not prove that load ran or passed.
+`test_release_admission.py` executes its real jq filters as subprocesses; the
+original load/SLO/cleanup/drain verifier remains unchanged.
+
 Capacity truth is identity-bound. Every complete sample must retain the
 baseline FoundationDB, Host StatefulSet and canonical MachineSet UIDs and the
 same converged Host runtime revision. Recreating a same-name resource or
@@ -69,6 +82,71 @@ the low-capacity result can pass. A process crash may repeat a DELETE, but it
 cannot broaden deletion beyond receipt-derived `scale-<run-id>-*` identities.
 This prevents repeated qualifications from consuming the Cell logical-byte
 admission budget after their active-load evidence has already been captured.
+
+## Offline pressure analysis
+
+Use `analyze_pressure.py` against an immutable, regular-file copy of the capacity
+trace. It streams bounded rows, binds the entire input by SHA-256, and creates a
+new mode-0600 JSON diagnostic. It performs no network queries or runtime builds
+and never changes the capacity qualification verdict.
+
+```bash
+python3 analyze_pressure.py --trace capacity.ndjson --output pressure.json \
+  --from-observed-at 2026-10-02T20:00:00Z \
+  --until-observed-at 2026-10-02T20:25:00Z
+```
+
+The optional paired timestamps select one workload phase, excluding cleanup;
+the hash still covers the entire file. Output distinguishes planning bytes and
+attempts per completed transaction, completed admission wait, outcome-specific
+execution duration, instrumented successful publication/reclaim rates, and ledger
+min/max disagreement. Authority-growth bounds use the actual query timestamps,
+not the collector's loop-start timestamp. Missing latest samples never fall
+back to older data. Missing identities make the growth result unknown; changed
+resource UIDs or Host revisions reject the selected window. Node additions are
+allowed. Duplicate dimensions, stale instant-query timestamps, oversized rows,
+and concurrent file mutation are rejected.
+
+Five-minute rate windows overlap and must not be integrated as exact event
+totals. Completed work does not measure offered demand or oldest pending age;
+an activity returning successfully is not proof that a useful fold occurred.
+Logical ledger bytes are not provider billing or bucket-inventory bytes.
+`qualificationEvidence=false` is intentional even when all inputs are present.
+Analysis schema v2 explicitly records byte/item semantics. The existing cold
+upload/publish counters use planned hot-shard bytes and output-reference counts;
+reclaim counts deleted FDB value bytes and keys, not COS objects. Those counters
+are not unique provider PUTs/GETs or object-fill measurements. A replayed successful
+activity may count its output again. Historical v1 `logicalBytesPerObject` must
+not be used to infer physical COS occupancy or bytes per deleted COS object.
+
+Schema v3 additionally fences rolling rates to the explicitly selected window:
+the actual query time minus 300 seconds must be at or after its start, and the
+query time must be at or before its end. Otherwise all rate-derived fields in
+that snapshot are unknown; instant gauges and ledger bounds remain usable.
+`rateWindowWithinObservationWindow` is false for an out-of-window rate, true
+for a contained rate, and null without explicit window bounds. An unbounded
+analysis does not establish a steady workload phase. Validation still rejects
+invalid dimensions and stale metrics before applying this mask. This changes
+diagnostic scope, not the load or qualification predicate.
+
+Schema v4 adds `hotMaintenance`, separately from Gasoline activity returns and
+the existing cold/reclaim byte counters. `hot_stage` success means output was
+staged, not installed. `hot_install` records fresh succeeded exits separately
+from `already_applied` marker replays. Retryable/rejected/error and cancelled
+execution costs are preserved, including future abort or panic unwind; process
+death cannot reliably record an exit. Admission delay remains a separate signal.
+
+These are process-local observed outcomes, not a durable progress ledger. A
+commit followed by response loss can record error/cancelled or no exit, and its
+replay records `already_applied`; therefore succeeded exits can undercount actual
+installations. Authoritative root/marker/watermark and safe reclaim remain the
+progress proof. No new FDB query, mutation, metric ID label or protocol field is
+introduced. Hot stage/install intentionally provide no byte/item throughput;
+their zero-sized metric series must not imply physical bytes, object fill or
+zero useful work. Missing old-runtime series remain unknown. v4 retains v3's
+full rate-window mask and does not rewrite archived evidence or an in-flight
+observer. The complete fixed label product has 295 instant samples; collection
+and analysis reject vectors above 320 and unbounded hot operation/result labels.
 
 ## Control-plane CPU qualification
 

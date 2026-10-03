@@ -14,6 +14,182 @@ The phase is idempotent, reports a hash of the installed package NEVRA
 inventory, and rejects a host with less than 20 GiB free instead of failing
 halfway through an image generation transfer.
 
+This is an operator/bootstrap workspace check, not runtime-build admission.
+The separate `runtime_builder_inventory` Terraform output identifies a standalone
+build CVM and its exact attached CBS. It must not be added to the strict
+management platform inventory. `prepare-bootstrap-host.sh` does not initialize or mount
+that disk and must not be mistaken for its readiness proof. Keep the original
+bootstrap host as the owner of the shared release/qualification operation lock.
+Build handoff requires independently verified storage initialization and actual
+bulk-path admission on the standalone host; never start a compiler on a control
+worker merely because `/data` exists.
+
+`validate-runtime-builder-storage.py` is the read-only preflight for initializing
+an empty dedicated disk, not the initializer itself. It requires the separate
+inventory and a fresh `actor-runtime-builder-storage-observation/v1` document:
+
+- native `DescribeInstances` and `DescribeDisks` responses selecting exactly one
+  matching private running CVM and exclusive attached data disk, including ownership
+  tags, zone, security group, capacity and request identities;
+- management `kubectl get nodes -o json`, proving that the builder is not a TKE node;
+- the builder's live metadata instance ID, resolved exact disk by-id link,
+  `lsblk` JSON with filesystem, UUID, mount, serial and byte-capacity columns,
+  root-device ancestry and an empty `wipefs` signature observation for that exact device.
+
+The source response must not be renamed to invent unsupported API fields.
+The locked provider 1.83.11 uses the disk ID as its attachment resource ID, not
+an independent cloud attachment UUID; the planner therefore also checks the
+live CBS `InstanceId` ([provider implementation](https://github.com/tencentcloudstack/terraform-provider-tencentcloud/blob/v1.83.11/tencentcloud/services/cbs/resource_tc_cbs_storage_attachment.go)).
+Observations older than 120 seconds or from the future fail closed. Disk letters
+are not identities: the expected link, disk serial and cloud disk ID must agree.
+Root ancestry is cross-checked with the actual mounted root in `lsblk`. Existing
+partitions, filesystems or mounts are rejected, even if the cloud attachment matches.
+
+```bash
+"${ACTOR_BOOTSTRAP_PYTHON:?qualified Python 3.11 is required}" validate-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --observation /protected/runtime-builder.storage-observation.json
+```
+
+`collect-runtime-builder-storage.py` now obtains this observation using the configured
+cloud CLI, an exact management inventory/kubeconfig and the existing `tat-run.sh`.
+It projects only required CVM/CBS fields and ownership tags; unrelated login settings,
+annotations and credential material must not enter the evidence. The guest program
+uses stock Python 3.6-compatible syntax and receives only the instance/disk selectors,
+not cloud credentials. It verifies the instance metadata before reading any disk.
+The metadata endpoint is Tencent's documented
+[instance-ID endpoint](https://cloud.tencent.com/document/product/213/4934).
+
+```bash
+"${ACTOR_BOOTSTRAP_PYTHON:?qualified Python 3.11 is required}" collect-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --management-inventory /protected/management-inventory.json \
+  --management-kubeconfig /protected/management.kubeconfig \
+  > /protected/runtime-builder.storage-observation.json
+```
+
+The earliest cloud observation and guest observation must both be fresh and ordered.
+The collector reports the immutable TAT invocation separately; a timeout is not
+permission to submit the same operation blindly. Collect that invocation with the
+existing TAT waiter. A successful capture still grants no formatting permission.
+Tests use actual subprocess protocol doubles and the real TAT shell helper, covering
+wrong management/node/metadata identities and already-used disks without cloud writes.
+
+The plan hashes both exact input files and deliberately keeps `storageReady=false`.
+It performs no cloud mutation, formatting, mounting, cleanup or runtime rollout.
+`initialize-runtime-builder-storage.py` implements the separate mutating guest
+phase. The coordinator must hold the original operations lock for collection,
+transfer and the complete TAT invocation; the guest's local file lock is not a
+second fleet lock. Install qualified Python 3.11 without creating a `/data`
+workspace first. Transfer only the reviewed helper sources, immutable separate
+inventory and a freshly collected observation; no cloud credential goes to the
+builder. A saved preflight is not authorization to format.
+No observed management PVC, including a disk currently named `/dev/vdb`, is a
+candidate build disk. Rerunning against an already formatted dedicated build disk
+without its matching journal refuses initialization.
+
+```bash
+# Only on the exact standalone builder, through the lock-owning coordinator.
+python3.11 initialize-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --observation /protected/runtime-builder.storage-observation.json --execute
+```
+
+The initializer recollects live guest metadata/serial/root ancestry and rechecks
+the two-minute cloud observation before formatting. It never guesses a disk
+letter. It writes and fsyncs a private root-backed journal at
+`/var/lib/actor-runtime-builder-storage/journal.json` **before** calling `mkfs`.
+The journal binds exact inventory bytes, instance, CBS, capacity and a generated
+filesystem UUID. Its phases are `formatting -> formatted -> mounted`. Existing
+partitions, signatures or mounts cannot be adopted without the matching journal;
+foreign UUIDs, nonempty underlying `/data`, existing bulk directories, conflicting
+fstab/units, root ancestry, TKE membership and stale cloud observations fail closed.
+No existing files or cache trees are moved or removed.
+
+If formatting succeeds but its response is lost, resume validates the recorded
+ext4 UUID and read-only `e2fsck`, never reformats the filesystem. An empty journaled
+format intent may retry the same UUID; partial/foreign filesystem signatures fail
+closed. A mounted/finished journal can never return to formatting. Preserve the
+original TAT invocation on timeout and collect it before submitting a resume.
+
+Persistence uses the exclusive managed `data.mount` unit, UUID-based source,
+actual `findmnt` plus a fresh block observation, and a unique UUID link resolving
+to the same CBS. There is no `nofail` fallback to root storage. `/var/lib/actor-build`
+is created only as an absent-path link to `/data/actor-build`; existing trees are
+rejected, not migrated. The managed Buildah configuration is
+`/var/lib/actor-runtime-builder-storage/storage.conf`, with GraphRoot on `/data`.
+Later preparation/build invocations must explicitly propagate
+`CONTAINERS_STORAGE_CONF` to this file and verify Buildah's actual `info` result.
+The existing storage admission checker must still inspect all actual bulk paths,
+available bytes/inodes and root reserves. `mountVerified=true` deliberately keeps
+`storageReady=false`; mounting is not toolchain/cache admission or permission to
+compile on the old control node.
+
+For a resume, the original collector's `--attached-only` mode captures an
+already-initialized disk without requiring emptiness. It preserves the same
+cloud/root/TKE identity fences, only proves `action=verify-attachment`, and never
+grants formatting or build admission. The default collector/planner remains the
+strict fresh-empty path. Local tests run real journal files and subprocess
+protocol doubles, plus a native ext4 regular-file signature/fsck probe. They do
+not prove cloud block mounts, reboot persistence, actual cloud coordination,
+toolchain installation or controlled build handoff; those remain cloud gates.
+
+`run-runtime-builder-storage.py` is the operations-host coordination entrypoint.
+It verifies the exact reviewed `.actor-source` revision and manifest for the
+initializer, collectors, planner, coordinator and existing lock/TAT helpers.
+The full manifest supports the real repository's spaces, brackets and `$` in
+unrelated filenames; only the fixed selected tool closure is transferred.
+It re-execs through the original `with-autonomy-operation-lock.sh`, verifies
+that the lock is actually held and that live instance metadata identifies the
+inventory's original operations host. A variable saying "lock held" alone is
+not evidence. No alternative fleet lock or cloud credential is sent to the
+builder. Run it as a supervised operations-host job, not a disposable local
+client process.
+
+```bash
+# From the immutable reviewed source tree on the original operations host.
+python3.11 run-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --management-inventory /protected/management-inventory.json \
+  --management-kubeconfig /protected/management.kubeconfig \
+  --source-revision "$REVIEWED_TOOLS_REVISION" \
+  --source-manifest-sha256 "$REVIEWED_TOOLS_MANIFEST_SHA256" --execute
+```
+
+The coordinator stores and fsyncs its private root-backed intent at
+`/var/lib/actor-runtime-builder-coordinator/<instance-id>.json` before submission.
+The identity binds exact inventory bytes, reviewed tools and actual transfer
+payload. Keying it by host, not input hash, prevents reordered or changed inputs
+from silently obtaining a second submission authority. The one bounded TAT
+workflow also holds a private per-host intent lock: sibling commands beneath
+the same fleet-lock supervisor cannot race the intent or replace its handle.
+That lock does not confer fleet-operation authority. The bounded TAT
+command materializes its exact credential-free closure under a new private
+`/var/tmp` directory, so it does not create `/data` before the disk initializer.
+The payload digest uses the actual bytes sent by TAT, including its command
+substitution's removal of trailing newlines.
+
+The coordinator makes one CLI submission attempt and disables the TAT helper's
+submission retry loop. Once its invocation is recorded,
+observation failure retains the operation lock and reuses `tat-wait.sh` for
+that exact invocation. Restart from `submitted`, or from a native success whose
+output was not saved, also only collects the original command. Unknown status
+never permits a fresh command or build handoff. A lost submission response
+leaves `submitting` and blocks reruns: collect the exact original command using
+the recorded unique command name before any operator repair. This is not an
+atomic transaction across local storage and TAT, nor a promise that a crashed
+operations host retains a kernel flock. Preserve the intent and supervise the
+job; never clear it or resubmit merely because a waiter disappeared.
+
+A completed duplicate call returns its previously verified receipt. That is
+historical evidence, not a new mount observation. `--recheck --execute` permits
+a fresh attachment/journal/mount check only after the original native terminal
+result is collected. Keep the original reviewed tool identity when resuming.
+The receipt still says `storageReady=false`; Buildah, bulk-path admission,
+toolchain/cache preparation, real CBS/reboot verification and build handoff
+remain independent gates. Real lock/TAT subprocess tests cover local protocol
+semantics, not cloud qualification.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

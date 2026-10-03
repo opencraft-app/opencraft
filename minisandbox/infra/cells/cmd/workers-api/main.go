@@ -86,7 +86,7 @@ func main() {
 	flag.IntVar(&actorCacheCapacity, "actor-cache-capacity", 32_768, "maximum cached Durable Object Actor placements")
 	flag.DurationVar(&actorCacheIdleTTL, "actor-cache-idle-ttl", 10*time.Minute, "idle lifetime of a cached Durable Object Actor placement")
 	flag.IntVar(&objectMissCapacity, "object-miss-capacity", 4_096, "maximum distinct concurrent Durable Object cache misses")
-	flag.IntVar(&deploymentCacheCapacity, "deployment-cache-capacity", 4_096, "maximum active Worker Deployments cached behind the Registry change cursor")
+	flag.IntVar(&deploymentCacheCapacity, "deployment-cache-capacity", 4_096, "maximum cached Worker Deployments, shared Deployment reads, and read waiters")
 	flag.StringVar(&placementNamespace, "placement-namespace", "actor-fleet-system", "namespace containing the production ShardPool and RivetCells")
 	flag.StringVar(&placementPool, "placement-pool", "", "ShardPool used for new Agent placement")
 	flag.StringVar(&placementRouteNamespace, "placement-route-namespace", "workers-api-system", "namespace containing immutable Cell route records")

@@ -230,25 +230,8 @@ pub(super) async fn is_database_visible_in_bucket_branch(
 	Err(SqliteStorageError::BucketForkChainTooDeep.into())
 }
 
-pub(crate) async fn write_bucket_catalog_marker(
+pub(crate) fn write_bucket_catalog_marker(
 	tx: &universaldb::Transaction,
-	bucket_branch_id: BucketBranchId,
-	database_id: DatabaseBranchId,
-	catalog_versionstamp: &[u8; 16],
-) -> Result<()> {
-	let root_bucket_branch_id = read_bucket_root_branch_id(tx, bucket_branch_id).await?;
-	write_bucket_catalog_marker_with_root(
-		tx,
-		root_bucket_branch_id,
-		bucket_branch_id,
-		database_id,
-		catalog_versionstamp,
-	)
-}
-
-pub(crate) fn write_bucket_catalog_marker_with_root(
-	tx: &universaldb::Transaction,
-	root_bucket_branch_id: BucketBranchId,
 	bucket_branch_id: BucketBranchId,
 	database_id: DatabaseBranchId,
 	catalog_versionstamp: &[u8; 16],
@@ -273,8 +256,9 @@ pub(crate) fn write_bucket_catalog_marker_with_root(
 			.context("prepare versionstamped sqlite bucket catalog proof fact")?,
 		MutationType::SetVersionstampedValue,
 	);
+	// Membership changes affect only this database's reverse catalog. Its durable proof pages
+	// are invalidated in this transaction, including a proof that is not yet complete.
 	invalidate_database_bucket_proof(tx, database_id);
-	bump_bucket_proof_epoch(tx, root_bucket_branch_id);
 
 	Ok(())
 }
@@ -284,7 +268,6 @@ pub(super) async fn write_bucket_catalog_tombstone_marker(
 	bucket_branch_id: BucketBranchId,
 	database_id: DatabaseBranchId,
 ) -> Result<()> {
-	let root_bucket_branch_id = read_bucket_root_branch_id(tx, bucket_branch_id).await?;
 	let existing_fact = tx
 		.informal()
 		.get(
@@ -313,7 +296,6 @@ pub(super) async fn write_bucket_catalog_tombstone_marker(
 		MutationType::SetVersionstampedValue,
 	);
 	invalidate_database_bucket_proof(tx, database_id);
-	bump_bucket_proof_epoch(tx, root_bucket_branch_id);
 
 	Ok(())
 }
@@ -349,6 +331,8 @@ pub(super) async fn write_bucket_fork_facts(
 		),
 		&encoded_fact,
 	);
+	// A new child can inherit every database visible on the source path. Unlike a catalog
+	// mutation, it must invalidate the subscribed proofs across the whole bucket tree.
 	bump_bucket_proof_epoch(tx, root_bucket_branch_id);
 
 	Ok(())

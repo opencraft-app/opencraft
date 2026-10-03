@@ -1,0 +1,272 @@
+{
+  "after": {
+    "deployment_available": 6,
+    "deployment_generation": 45,
+    "deployment_replicas": 6,
+    "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+    "pdb_current_healthy": 6,
+    "pdb_disruptions_allowed": 2,
+    "pdb_min_available": 4,
+    "phase": "after",
+    "topology": [
+      {
+        "hostname": "10.162.1.69",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.1.69",
+        "pod": "actor-bj-b01-engine-7f566b884f-8h4xh",
+        "restart_count": 0,
+        "uid": "8314bafe-137f-4368-abfe-a596a6eedbfc",
+        "zone": "800006"
+      },
+      {
+        "hostname": "10.162.4.204",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.4.204",
+        "pod": "actor-bj-b01-engine-7f566b884f-cscqb",
+        "restart_count": 0,
+        "uid": "3cc6832a-5635-4056-add8-812668355ff1",
+        "zone": "800007"
+      },
+      {
+        "hostname": "10.162.9.172",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.9.172",
+        "pod": "actor-bj-b01-engine-7f566b884f-hplsn",
+        "restart_count": 0,
+        "uid": "5062d3f9-c151-45c4-8c45-fc12d3124512",
+        "zone": "800008"
+      },
+      {
+        "hostname": "10.162.1.69",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.1.69",
+        "pod": "actor-bj-b01-engine-7f566b884f-pd5pt",
+        "restart_count": 0,
+        "uid": "e0df49f2-5ffd-4ce3-920b-48f13abdb33e",
+        "zone": "800006"
+      },
+      {
+        "hostname": "10.162.4.204",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.4.204",
+        "pod": "actor-bj-b01-engine-7f566b884f-vhk66",
+        "restart_count": 0,
+        "uid": "3923d540-cc65-429c-a9c0-b119c321ada9",
+        "zone": "800007"
+      },
+      {
+        "hostname": "10.162.9.172",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.9.172",
+        "pod": "actor-bj-b01-engine-7f566b884f-wtfdr",
+        "restart_count": 0,
+        "uid": "94604a53-7a3c-4475-ba37-51df6a11aa0f",
+        "zone": "800008"
+      }
+    ]
+  },
+  "before": {
+    "deployment_available": 6,
+    "deployment_generation": 45,
+    "deployment_replicas": 6,
+    "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+    "pdb_current_healthy": 6,
+    "pdb_disruptions_allowed": 2,
+    "pdb_min_available": 4,
+    "phase": "before",
+    "topology": [
+      {
+        "hostname": "10.162.9.172",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.9.172",
+        "pod": "actor-bj-b01-engine-7f566b884f-7qbqd",
+        "restart_count": 0,
+        "uid": "f2ba3799-9839-4ae1-8d4b-ea0214a98312",
+        "zone": "800008"
+      },
+      {
+        "hostname": "10.162.1.69",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.1.69",
+        "pod": "actor-bj-b01-engine-7f566b884f-8h4xh",
+        "restart_count": 0,
+        "uid": "8314bafe-137f-4368-abfe-a596a6eedbfc",
+        "zone": "800006"
+      },
+      {
+        "hostname": "10.162.4.204",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.4.204",
+        "pod": "actor-bj-b01-engine-7f566b884f-cscqb",
+        "restart_count": 0,
+        "uid": "3cc6832a-5635-4056-add8-812668355ff1",
+        "zone": "800007"
+      },
+      {
+        "hostname": "10.162.9.172",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.9.172",
+        "pod": "actor-bj-b01-engine-7f566b884f-hplsn",
+        "restart_count": 0,
+        "uid": "5062d3f9-c151-45c4-8c45-fc12d3124512",
+        "zone": "800008"
+      },
+      {
+        "hostname": "10.162.1.69",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.1.69",
+        "pod": "actor-bj-b01-engine-7f566b884f-pd5pt",
+        "restart_count": 0,
+        "uid": "e0df49f2-5ffd-4ce3-920b-48f13abdb33e",
+        "zone": "800006"
+      },
+      {
+        "hostname": "10.162.4.204",
+        "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "image_id": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "node": "10.162.4.204",
+        "pod": "actor-bj-b01-engine-7f566b884f-vhk66",
+        "restart_count": 0,
+        "uid": "3923d540-cc65-429c-a9c0-b119c321ada9",
+        "zone": "800007"
+      }
+    ]
+  },
+  "cell": "actor-bj-b01",
+  "cell_name": "actor-bj-b01",
+  "cell_namespace": "actor-fdb-cell-system",
+  "contract": "public_v1_workers_api_survives_one_engine_pod_loss_without_request_failure",
+  "evidence_sha256": "1c14293199fa6e29c69f63c780743f572d3d2f267615d6ff50a6d1ad4de26fbc",
+  "fault": {
+    "injected_at_epoch_ms": 1791019721888,
+    "kind": "uid_fenced_zero_grace_engine_pod_delete",
+    "node": "10.162.9.172",
+    "pod": "actor-bj-b01-engine-7f566b884f-7qbqd",
+    "uid": "f2ba3799-9839-4ae1-8d4b-ea0214a98312",
+    "zone": "800008"
+  },
+  "fault_injected_at": "2026-10-03T09:28:41Z",
+  "finished_at": "2026-10-03T09:28:58Z",
+  "namespace": "actor-fdb-cell-system",
+  "probe": {
+    "cleanup": "passed",
+    "concurrency": 10,
+    "deployment_id": "d_f3334b4b64ca0ee9eedf3003af1550fa",
+    "failures": 0,
+    "object_count": 10,
+    "object_id": "75f735dddfdf54611e8993f328edbef8232416151ad41467dfadb6ec9dcfb9e1",
+    "post_failure_write_count": 1,
+    "public_api": "/v1",
+    "requests": 1500,
+    "traffic_finished_at_ms": 1791019734212,
+    "traffic_started_at_ms": 1791019721579,
+    "verdict": "passed",
+    "version_id": "v_b73f29b1c6f391b2f50972f8a1265ca5c09fd9ca9f296d384f660f1666500413",
+    "worker": "b01-engine-ha-gate",
+    "worker_fixture_retained": true
+  },
+  "release_binding": {
+    "contract": "same_immutable_release_and_pod_set_before_after_qualification",
+    "engine_auxiliary_images": {},
+    "engine_desired_replicas": 6,
+    "engine_pod_uids": [
+      "3923d540-cc65-429c-a9c0-b119c321ada9",
+      "3cc6832a-5635-4056-add8-812668355ff1",
+      "5062d3f9-c151-45c4-8c45-fc12d3124512",
+      "8314bafe-137f-4368-abfe-a596a6eedbfc",
+      "e0df49f2-5ffd-4ce3-920b-48f13abdb33e",
+      "f2ba3799-9839-4ae1-8d4b-ea0214a98312"
+    ],
+    "engine_primary_container_names": [
+      "engine"
+    ],
+    "manifest_sha256": "ef8f58537a3eff755bff7a5d39c524a80c8003bf4afee00f26feded29bc69b2e",
+    "resolved_container_digests": {
+      "engine": {
+        "engine": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711"
+      },
+      "workerd-host": {
+        "workerd": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "workerd-host": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "workerd-metrics": "sha256:7b9a320334d446845c17edcfad9bdd1d54ad05c84c35b117e8fa7d830b9fcce5"
+      }
+    },
+    "runtime_auxiliary_images": {
+      "workerd-metrics": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/observability-busybox@sha256:7b9a320334d446845c17edcfad9bdd1d54ad05c84c35b117e8fa7d830b9fcce5"
+    },
+    "runtime_capacity_dynamic": true,
+    "runtime_desired_replicas": 4,
+    "runtime_digest": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+    "runtime_host_pod_uids": [
+      "38d7525f-58c6-4221-84ee-1fcbecaae2a2",
+      "4dc2bdc5-167c-4f33-a905-751ec275f7f9",
+      "9a23543d-7d40-4859-8495-49cd14f6a89c",
+      "cfb4c296-edd8-4f33-bed8-52d3b18147d4"
+    ],
+    "runtime_image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+    "runtime_primary_container_names": [
+      "workerd",
+      "workerd-host"
+    ],
+    "runtime_ready_replicas": 4
+  },
+  "release_binding_after": {
+    "contract": "same_immutable_release_and_pod_set_before_after_qualification",
+    "engine_auxiliary_images": {},
+    "engine_desired_replicas": 6,
+    "engine_pod_uids": [
+      "3923d540-cc65-429c-a9c0-b119c321ada9",
+      "3cc6832a-5635-4056-add8-812668355ff1",
+      "5062d3f9-c151-45c4-8c45-fc12d3124512",
+      "8314bafe-137f-4368-abfe-a596a6eedbfc",
+      "94604a53-7a3c-4475-ba37-51df6a11aa0f",
+      "e0df49f2-5ffd-4ce3-920b-48f13abdb33e"
+    ],
+    "engine_primary_container_names": [
+      "engine"
+    ],
+    "manifest_sha256": "ef8f58537a3eff755bff7a5d39c524a80c8003bf4afee00f26feded29bc69b2e",
+    "resolved_container_digests": {
+      "engine": {
+        "engine": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711"
+      },
+      "workerd-host": {
+        "workerd": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "workerd-host": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "workerd-metrics": "sha256:7b9a320334d446845c17edcfad9bdd1d54ad05c84c35b117e8fa7d830b9fcce5"
+      }
+    },
+    "runtime_auxiliary_images": {
+      "workerd-metrics": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/observability-busybox@sha256:7b9a320334d446845c17edcfad9bdd1d54ad05c84c35b117e8fa7d830b9fcce5"
+    },
+    "runtime_capacity_dynamic": true,
+    "runtime_desired_replicas": 4,
+    "runtime_digest": "sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+    "runtime_host_pod_uids": [
+      "38d7525f-58c6-4221-84ee-1fcbecaae2a2",
+      "4dc2bdc5-167c-4f33-a905-751ec275f7f9",
+      "9a23543d-7d40-4859-8495-49cd14f6a89c",
+      "cfb4c296-edd8-4f33-bed8-52d3b18147d4"
+    ],
+    "runtime_image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+    "runtime_primary_container_names": [
+      "workerd",
+      "workerd-host"
+    ],
+    "runtime_ready_replicas": 4
+  },
+  "schema": "actor-cell-engine-ha/v1",
+  "started_at": "2026-10-03T09:28:35Z",
+  "verdict": "passed"
+}

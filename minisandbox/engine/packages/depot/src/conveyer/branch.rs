@@ -5,9 +5,7 @@ mod resolve;
 mod shared;
 
 pub use catalog::{DatabaseListPage, list_databases, list_databases_page};
-pub(crate) use catalog::{
-	read_bucket_root_branch_id, write_bucket_catalog_marker, write_bucket_catalog_marker_with_root,
-};
+pub(crate) use catalog::{read_bucket_root_branch_id, write_bucket_catalog_marker};
 pub use fork::{derive_branch_at, derive_bucket_branch_at, fork_bucket, fork_database};
 pub(crate) use lifecycle::rollback_database_to_target_tx;
 pub use lifecycle::{
@@ -18,6 +16,8 @@ pub use resolve::{
 	resolve_database_branch_in_bucket, resolve_database_pointer,
 	resolve_or_allocate_root_bucket_branch, write_root_bucket_metadata,
 };
+pub(crate) use resolve::{resolve_database_read_branch, resolve_database_read_pointer};
 pub(super) use shared::{
-	lookup_txid_at_versionstamp, read_commit_row, read_database_branch_record,
+	lookup_commit_position_at_or_before, lookup_txid_at_versionstamp, read_commit_row,
+	read_database_branch_record,
 };

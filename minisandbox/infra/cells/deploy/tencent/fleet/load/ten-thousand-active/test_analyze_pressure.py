@@ -1,0 +1,435 @@
+"""Real-file and CLI regressions for the offline, non-qualification analyzer."""
+
+import copy
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+import analyze_pressure as analysis
+
+
+EPOCH = 1790980000
+
+
+def metric(trace, value, offset=0, **labels):
+    return {"labels": {"trace": trace, **labels}, "timestamp": EPOCH + offset,
+            "finite": True, "value": str(value)}
+
+
+def sample(offset=0):
+    return {
+        "observedAt": datetime.datetime.fromtimestamp(EPOCH + offset, datetime.timezone.utc).isoformat(),
+        "cells": [{
+            "cell": cell, "foundationDB": {"uid": cell + "-fdb"},
+            "machineSet": {"uid": cell + "-machines"},
+            "hostConfig": {"uid": cell + "-hosts", "currentRevision": "rev1", "updateRevision": "rev1"},
+            "errors": [], "metricsSnapshot": {
+                "requestedAtEpochSeconds": EPOCH + offset, "rateWindowSeconds": 300,
+                "warnings": [], "missingSignals": [], "samples": [
+                    metric("activeActors", 100 + offset, offset),
+                    metric("depotPlanningReadBytesPerSecond", 1000, offset, name="depot_manager_refresh"),
+                    metric("depotPlanningTransactionCompletionsPerSecond", 2, offset, name="depot_manager_refresh"),
+                    metric("depotPlanningTransactionAttemptsPerSecond", 3, offset, name="depot_manager_refresh"),
+                    metric("depotAdmissionSecondsPerSecond", 8, offset, activity_name="refresh_manager", result="ready"),
+                    metric("depotAdmissionOutcomesPerSecond", 2, offset, activity_name="refresh_manager", result="ready"),
+                    metric("depotExecutionSecondsPerSecond", 0.2, offset, activity_name="refresh_manager", result="succeeded"),
+                    metric("depotExecutionOutcomesPerSecond", 2, offset, activity_name="refresh_manager", result="succeeded"),
+                    metric("compactionBytesPerSecond", 8192, offset, operation="reclaim_fdb"),
+                    metric("compactionObjectsPerSecond", 2, offset, operation="reclaim_fdb"),
+                    metric("coldStorageBytesMin", 100 + offset, offset, **{"class": "fdb_authoritative"}),
+                    metric("coldStorageBytesMax", 110 + offset, offset, **{"class": "fdb_authoritative"}),
+                ],
+            },
+        } for cell in analysis.CELLS],
+    }
+
+
+class PressureTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir="/data/tmp")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.trace = self.root / "capacity.ndjson"
+
+    def write(self, rows):
+        self.trace.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return self.trace
+
+    def test_costs_and_bounds_not_replica_sum(self):
+        path = self.write([sample(), sample(20)])
+        result = analysis.analyze(path)
+        self.assertEqual(result["schema"], "actor-pressure-analysis/v4")
+        self.assertFalse(result["qualificationEvidence"])
+        self.assertEqual(result["input"]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(result["input"]["bytes"], path.stat().st_size)
+        cell = result["cells"][analysis.CELLS[0]]
+        self.assertTrue(cell["capacityIdentityComplete"])
+        self.assertEqual(cell["gaugePeaks"]["activeActors"], 120)
+        frame = cell["lastSnapshot"]
+        plan = frame["planning"]["depot_manager_refresh"]
+        self.assertEqual(plan["readBytesPerCompletedTransaction"], 500)
+        self.assertEqual(plan["attemptsPerCompletedTransaction"], 1.5)
+        activity = frame["activities"]["refresh_manager"]
+        self.assertEqual(activity["completedAdmissionMeanSeconds"], 4)
+        self.assertEqual(activity["execution"]["succeeded"]["meanSeconds"], 0.1)
+        self.assertIsNone(activity["execution"]["timeout"]["outcomesPerSecond"])
+        reclaimed = frame["successfulCompaction"]["reclaim_fdb"]
+        self.assertEqual(reclaimed["bytesPerItem"], 4096)
+        self.assertEqual(reclaimed["byteSemantics"], "deleted_fdb_value_bytes")
+        self.assertEqual(reclaimed["itemSemantics"], "deleted_fdb_key")
+        for operation in ("cold_upload", "cold_publish"):
+            self.assertEqual(frame["successfulCompaction"][operation]["itemSemantics"], "cold_object_reference")
+            self.assertEqual(frame["successfulCompaction"][operation]["byteSemantics"], "planned_hot_shard_bytes")
+        self.assertEqual(cell["observedAuthoritySlopeBoundsBytesPerSecond"], {"min": 0.5, "max": 1.5})
+
+    def test_units_match_real_metric_producers_not_generic_help(self):
+        depot = Path(__file__).resolve().parents[7] / "engine/packages/depot/src"
+        producer = (depot / "workflows/db_cold_compacter.rs").read_text()
+        for function in ("upload_cold_job", "publish_cold_job"):
+            guard = producer.split("pub async fn " + function + "(", 1)[1].split("\nasync fn ", 1)[0]
+            compact = "".join(guard.split())
+            self.assertIn("u64::from(output.output_summary.output_ref_count)", compact)
+            self.assertIn("ifsucceeded{input.input_range.max_bytes}else{0}", compact)
+        planner = "".join((depot / "compaction/shared.rs").read_text().split())
+        self.assertIn("max_bytes:snapshot.cold_inputs.total_value_bytes", planner)
+        self.assertIn("|total,input|total.saturating_add(input.size_bytes)", planner)
+        reclaim = (depot / "workflows/db_reclaimer.rs").read_text().split("async fn reclaim_fdb_job_inner", 1)[0]
+        compact = "".join(reclaim.split())
+        self.assertIn(".map(|reference|u64::from(reference.key_count))", compact)
+        self.assertIn(".map(|reference|reference.byte_count)", compact)
+
+    def test_slope_uses_metric_query_time(self):
+        end = sample(20)
+        end["observedAt"] = sample(40)["observedAt"]
+        cell = analysis.analyze(self.write([sample(), end]))["cells"][analysis.CELLS[0]]
+        self.assertEqual(cell["observedAuthoritySlopeBoundsBytesPerSecond"]["min"], 0.5)
+
+    def hot_sample(self, offset=0):
+        row = sample(offset)
+        metrics = row["cells"][0]["metricsSnapshot"]["samples"]
+        metrics.extend([
+            metric("depotExecutionOutcomesPerSecond", 10, offset,
+                   activity_name="stage_hot_job", result="succeeded"),
+            metric("compactionBytesPerSecond", 0, offset, operation="hot_install"),
+            metric("compactionObjectsPerSecond", 0, offset, operation="hot_install"),
+        ])
+        for operation, outcome, count, seconds in (
+                ("hot_stage", "retryable", 8, 16), ("hot_install", "succeeded", 1, 0.5),
+                ("hot_install", "already_applied", 2, 0.2), ("hot_stage", "cancelled", 1, 4)):
+            metrics.extend([
+                metric("compactionJobsPerSecond", count, offset, operation=operation, result=outcome),
+                metric("compactionDurationObservationsPerSecond", count, offset, operation=operation, result=outcome),
+                metric("compactionDurationSecondsPerSecond", seconds, offset, operation=operation, result=outcome),
+            ])
+        return row
+
+    def test_hot_domain_outcomes_do_not_become_durable_progress_or_byte_throughput(self):
+        frame = analysis.analyze(self.write([self.hot_sample()]))["cells"][analysis.CELLS[0]]["lastSnapshot"]
+        self.assertEqual(frame["activities"]["stage_hot_job"]["execution"]["succeeded"]["outcomesPerSecond"], 10)
+        hot = frame["hotMaintenance"]
+        self.assertEqual(hot["hot_stage"]["retryable"]["observedOutcomesPerSecond"], 8)
+        self.assertEqual(hot["hot_stage"]["retryable"]["meanExecutionSeconds"], 2)
+        self.assertEqual(hot["hot_stage"]["cancelled"]["executionSecondsPerSecond"], 4)
+        self.assertIsNone(hot["hot_stage"]["succeeded"]["observedOutcomesPerSecond"])
+        self.assertEqual(hot["hot_install"]["succeeded"]["observedOutcomesPerSecond"], 1)
+        self.assertEqual(hot["hot_install"]["already_applied"]["observedOutcomesPerSecond"], 2)
+        self.assertEqual(set(frame["successfulCompaction"]), set(analysis.OPERATIONS))
+        self.assertNotIn("hot_install", frame["successfulCompaction"])
+
+    def test_old_runtime_hot_domain_metrics_are_unknown_not_zero(self):
+        frame = analysis.analyze(self.write([sample()]))["cells"][analysis.CELLS[0]]["lastSnapshot"]
+        for outcomes in frame["hotMaintenance"].values():
+            for values in outcomes.values():
+                self.assertTrue(all(value is None for value in values.values()))
+
+    def test_complete_fixed_label_product_is_bounded_and_analyzable(self):
+        row = sample()
+        metrics = [metric(name, 1) for name in analysis.SCALARS]
+        for phase, outcomes in (("Admission", ("ready", "complete", "deferred", "error", "evicted")),
+                                ("Execution", ("succeeded", "error", "timeout"))):
+            for kind in ("Seconds", "Outcomes"):
+                for activity in analysis.ACTIVITIES:
+                    metrics.extend(metric(f"depot{phase}{kind}PerSecond", 1, activity_name=activity, result=outcome)
+                                   for outcome in outcomes)
+        for trace in ("depotPlanningReadBytesPerSecond", "depotPlanningTransactionAttemptsPerSecond",
+                      "depotPlanningTransactionCompletionsPerSecond"):
+            metrics.extend(metric(trace, 1, name=name) for name in analysis.TRANSACTIONS)
+        for operation in analysis.METRIC_OPERATIONS:
+            for trace in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                          "compactionDurationObservationsPerSecond"):
+                outcomes = (*analysis.DOMAIN_RESULTS, *(("already_applied",) if operation == "hot_install" else ()))
+                metrics.extend(metric(trace, 1, operation=operation, result=outcome) for outcome in outcomes)
+            metrics.extend(metric(trace, 1, operation=operation)
+                           for trace in ("compactionBytesPerSecond", "compactionObjectsPerSecond"))
+        for trace in ("coldStorageBytesMin", "coldStorageBytesMax"):
+            metrics.extend(metric(trace, 1, **{"class": name}) for name in analysis.LEDGER_CLASSES)
+        row["cells"][0]["metricsSnapshot"]["samples"] = metrics
+        self.assertEqual(len(metrics), 295)
+        self.assertEqual(len(analysis.snapshot(row["cells"][0])["metrics"]), 295)
+        result = analysis.analyze(self.write([row]))
+        self.assertFalse(result["qualificationEvidence"])
+        hot = result["cells"][analysis.CELLS[0]]["lastSnapshot"]["hotMaintenance"]
+        self.assertEqual(hot["hot_install"]["already_applied"]["meanExecutionSeconds"], 1)
+
+    def test_hot_duration_missing_nonfinite_and_zero_counts_are_unknown(self):
+        for value, finite in (("0", True), ("NaN", True), ("2", False)):
+            with self.subTest(value=value, finite=finite):
+                row = self.hot_sample()
+                for metric_row in row["cells"][0]["metricsSnapshot"]["samples"]:
+                    if metric_row["labels"] == {
+                            "trace": "compactionDurationObservationsPerSecond",
+                            "operation": "hot_stage", "result": "retryable"}:
+                        metric_row.update(value=value, finite=finite)
+                frame = analysis.analyze(self.write([row]))["cells"][analysis.CELLS[0]]["lastSnapshot"]
+                self.assertIsNone(frame["hotMaintenance"]["hot_stage"]["retryable"]["meanExecutionSeconds"])
+
+    def test_hot_metrics_have_bounded_labels_and_replay_is_install_only(self):
+        for labels in ({"operation": "hot_stage", "result": "already_applied"},
+                       {"operation": "actor_123", "result": "succeeded"},
+                       {"operation": "hot_install", "result": "deferred"},
+                       {"operation": "hot_install", "result": "succeeded", "actor_id": "123"}):
+            for trace in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                          "compactionDurationObservationsPerSecond"):
+                with self.subTest(trace=trace, labels=labels):
+                    row = sample()
+                    row["cells"][0]["metricsSnapshot"]["samples"].append(metric(trace, 1, **labels))
+                    with self.assertRaisesRegex(ValueError, "metric dimensions"):
+                        analysis.analyze(self.write([row]))
+        row = self.hot_sample()
+        rows = row["cells"][0]["metricsSnapshot"]["samples"]
+        rows.append(copy.deepcopy(rows[-1]))
+        with self.assertRaisesRegex(ValueError, "duplicate aggregated"):
+            analysis.analyze(self.write([row]))
+
+    def test_real_cli_hot_costs_obey_complete_rate_window(self):
+        path = self.write([self.hot_sample(), self.hot_sample(299), self.hot_sample(300)])
+        for offset in (299, 300):
+            output = self.root / ("hot-" + str(offset) + ".json")
+            result = self.cli(path, output, "--from-observed-at", sample()["observedAt"],
+                              "--until-observed-at", sample(offset)["observedAt"])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            frame = json.loads(output.read_text())["cells"][analysis.CELLS[0]]["lastSnapshot"]
+            self.assertEqual(frame["hotMaintenance"]["hot_stage"]["retryable"]["meanExecutionSeconds"],
+                             2 if offset == 300 else None)
+
+    def test_explicit_window_hashes_entire_input_without_cleanup_mix(self):
+        path = self.write([sample(), sample(20), sample(40), sample(60)])
+        result = analysis.analyze(path, EPOCH + 20, EPOCH + 40)
+        self.assertEqual(result["input"]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(result["cells"][analysis.CELLS[0]]["samples"], 2)
+        self.assertEqual(result["cells"][analysis.CELLS[0]]["gaugePeaks"]["activeActors"], 140)
+        self.assertEqual(result["observationWindow"]["lastEpochSeconds"], EPOCH + 40)
+        for start, end in ((EPOCH, None), (EPOCH, EPOCH), (EPOCH + 80, EPOCH + 90)):
+            with self.assertRaises(ValueError):
+                analysis.analyze(path, start, end)
+
+    def test_latest_missing_never_falls_back(self):
+        end = sample(20)
+        for cell in end["cells"]:
+            del cell["metricsSnapshot"]
+            cell["errors"] = ["metrics unavailable"]
+        cell = analysis.analyze(self.write([sample(), end]))["cells"][analysis.CELLS[0]]
+        self.assertIsNone(cell["lastSnapshot"]["gauges"]["activeActors"])
+        self.assertIsNone(cell["observedAuthoritySlopeBoundsBytesPerSecond"])
+        self.assertEqual(cell["lastObservationErrors"], 1)
+
+    def test_short_window_masks_rates_but_keeps_gauges_and_ledger(self):
+        path = self.write([sample(), sample(20), sample(40)])
+        result = analysis.analyze(path, EPOCH + 20, EPOCH + 40)
+        cell = result["cells"][analysis.CELLS[0]]
+        frame = cell["lastSnapshot"]
+        self.assertFalse(frame["rateWindowWithinObservationWindow"])
+        self.assertEqual(frame["gauges"]["activeActors"], 140)
+        self.assertEqual(frame["ledgerBounds"]["fdb_authoritative"], {"min": 140, "max": 150})
+        self.assertEqual(cell["observedAuthoritySlopeBoundsBytesPerSecond"], {"min": 0.5, "max": 1.5})
+        self.assertIsNone(frame["planning"]["depot_manager_refresh"]["completedTransactionsPerSecond"])
+        self.assertIsNone(frame["activities"]["refresh_manager"]["execution"]["succeeded"]["outcomesPerSecond"])
+        self.assertIsNone(frame["successfulCompaction"]["reclaim_fdb"]["bytesPerSecond"])
+
+    def test_rate_window_uses_query_clock_with_inclusive_exact_boundaries(self):
+        for query_offset, observed_offset, expected in ((299, 300, False), (300, 299, True),
+                                                        (600, 600, True), (601, 600, False)):
+            with self.subTest(query_offset=query_offset):
+                row = sample(query_offset)
+                row["observedAt"] = sample(observed_offset)["observedAt"]
+                frame = analysis.analyze(self.write([row]), EPOCH, EPOCH + 600)["cells"][analysis.CELLS[0]]["lastSnapshot"]
+                self.assertEqual(frame["rateWindowWithinObservationWindow"], expected)
+                value = frame["planning"]["depot_manager_refresh"]["completedTransactionsPerSecond"]
+                self.assertEqual(value, 2 if expected else None)
+
+    def test_unbounded_scope_explicit_and_outside_window_input_still_validated(self):
+        path = self.write([sample()])
+        frame = analysis.analyze(path)["cells"][analysis.CELLS[0]]["lastSnapshot"]
+        self.assertIsNone(frame["rateWindowWithinObservationWindow"])
+        self.assertEqual(frame["planning"]["depot_manager_refresh"]["completedTransactionsPerSecond"], 2)
+        row = sample(20)
+        row["cells"][0]["metricsSnapshot"]["samples"][1]["timestamp"] -= 5
+        with self.assertRaisesRegex(ValueError, "metric time"):
+            analysis.analyze(self.write([row]), EPOCH, EPOCH + 40)
+
+    def test_nonfinite_and_zero_denominator_unknown(self):
+        row = sample()
+        metrics = row["cells"][0]["metricsSnapshot"]["samples"]
+        metrics[0]["value"] = "NaN"
+        metrics[2]["value"] = "0"
+        metrics[4]["finite"] = False
+        frame = analysis.analyze(self.write([row]))["cells"][analysis.CELLS[0]]["lastSnapshot"]
+        self.assertIsNone(frame["gauges"]["activeActors"])
+        self.assertIsNone(frame["planning"]["depot_manager_refresh"]["readBytesPerCompletedTransaction"])
+        self.assertIsNone(frame["activities"]["refresh_manager"]["completedAdmissionMeanSeconds"])
+        for invalid in (True, "Inf", -1, "-Infinity"):
+            self.assertIsNone(analysis.number(invalid))
+
+    def test_invalid_input_rejected(self):
+        def duplicate_cell(row):
+            row["cells"][1] = copy.deepcopy(row["cells"][0])
+
+        def duplicate_metric(row):
+            metrics = row["cells"][0]["metricsSnapshot"]["samples"]
+            metrics.append(copy.deepcopy(metrics[0]))
+
+        def extra_label(row):
+            row["cells"][0]["metricsSnapshot"]["samples"][0]["labels"]["actor_id"] = "unsafe"
+
+        def stale_metric(row):
+            row["cells"][0]["metricsSnapshot"]["samples"][0]["timestamp"] -= 5
+
+        def wrong_window(row):
+            row["cells"][0]["metricsSnapshot"]["rateWindowSeconds"] = 60
+
+        def ledger_disagreement(row):
+            row["cells"][0]["metricsSnapshot"]["samples"][-1]["value"] = "1"
+
+        for edit in (duplicate_cell, duplicate_metric, extra_label, stale_metric, wrong_window, ledger_disagreement):
+            with self.subTest(edit=edit.__name__):
+                row = sample()
+                edit(row)
+                with self.assertRaises(ValueError):
+                    analysis.analyze(self.write([row]))
+
+    def test_identity_changes_rejected_even_in_partial_frame(self):
+        for resource in ("foundationDB", "hostConfig", "machineSet"):
+            with self.subTest(resource=resource):
+                row = sample(20)
+                row["cells"][0][resource]["uid"] = "replacement"
+                del row["cells"][0]["hostConfig"]["updateRevision"]
+                with self.assertRaisesRegex(ValueError, "identity changed"):
+                    analysis.analyze(self.write([sample(), row]))
+        row = sample(20)
+        row["cells"][0]["hostConfig"]["updateRevision"] = "rollout"
+        with self.assertRaisesRegex(ValueError, "identity changed"):
+            analysis.analyze(self.write([sample(), row]))
+
+    def test_missing_identity_is_explicit_unknown(self):
+        row = sample(20)
+        del row["cells"][0]["foundationDB"]
+        cell = analysis.analyze(self.write([sample(), row]))["cells"][analysis.CELLS[0]]
+        self.assertFalse(cell["capacityIdentityComplete"])
+        self.assertEqual(cell["unboundIdentitySamples"], 1)
+        self.assertIsNone(cell["observedAuthoritySlopeBoundsBytesPerSecond"])
+
+    def test_partial_first_identity_still_fences_later_replacement(self):
+        start, end = sample(), sample(20)
+        del start["cells"][0]["machineSet"]
+        end["cells"][0]["foundationDB"]["uid"] = "replaced"
+        with self.assertRaisesRegex(ValueError, "identity changed"):
+            analysis.analyze(self.write([start, end]))
+
+    def test_time_replays_rejected(self):
+        for rows in ([sample(), sample()], [sample(20), sample()]):
+            with self.assertRaisesRegex(ValueError, "strictly increasing"):
+                analysis.analyze(self.write(rows))
+        row = sample()
+        row["observedAt"] = sample(20)["observedAt"]
+        with self.assertRaisesRegex(ValueError, "query times"):
+            analysis.analyze(self.write([sample(), row]))
+
+    def test_no_unbounded_sample_history_or_dynamic_dimensions(self):
+        rows = []
+        for offset in range(200):
+            row = sample(offset)
+            row["cells"][0]["nodes"] = [{"uid": "new-node-" + str(offset)}]
+            row["cells"][0]["metricsSnapshot"]["samples"].append(metric("unused" + str(offset), 1, offset))
+            rows.append(row)
+        result = analysis.analyze(self.write(rows))
+        self.assertEqual(result["cells"][analysis.CELLS[0]]["samples"], 200)
+        self.assertLess(len(json.dumps(result)), 20000)
+        self.assertNotIn("unused", json.dumps(result))
+
+    def test_duplicate_json_and_incomplete_rows_rejected(self):
+        for raw in ('{"observedAt":1,"observedAt":2}\n', json.dumps(sample()), "", "[]\n"):
+            self.trace.write_text(raw)
+            with self.assertRaises(ValueError):
+                analysis.analyze(self.trace)
+
+    def test_line_and_vector_bounds(self):
+        self.trace.write_bytes(b"x" * (analysis.MAX_LINE_BYTES + 1) + b"\n")
+        with self.assertRaisesRegex(ValueError, "oversized"):
+            analysis.analyze(self.trace)
+        row = sample()
+        row["cells"][0]["metricsSnapshot"]["samples"] *= 30
+        with self.assertRaisesRegex(ValueError, "too many"):
+            analysis.analyze(self.write([row]))
+
+    def cli(self, trace, output, *options):
+        return subprocess.run([sys.executable, str(Path(analysis.__file__)), "--trace", str(trace),
+                               "--output", str(output), *options], capture_output=True, text=True, timeout=5)
+
+    def test_real_cli_masks_partial_rate_window_and_accepts_complete_window(self):
+        path = self.write([sample(), sample(299), sample(300)])
+        for offset in (299, 300):
+            with self.subTest(offset=offset):
+                output = self.root / (str(offset) + ".json")
+                result = self.cli(path, output, "--from-observed-at", sample()["observedAt"],
+                                  "--until-observed-at", sample(offset)["observedAt"])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                frame = json.loads(output.read_text())["cells"][analysis.CELLS[0]]["lastSnapshot"]
+                self.assertEqual(frame["rateWindowWithinObservationWindow"], offset == 300)
+                self.assertEqual(frame["successfulCompaction"]["reclaim_fdb"]["bytesPerSecond"],
+                                 8192 if offset == 300 else None)
+
+    def test_cli_exclusive_private_output(self):
+        self.write([sample(), sample(20)])
+        output = self.root / "analysis.json"
+        first = self.cli(self.trace, output)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(json.loads(output.read_text())["qualificationEvidence"])
+        saved = output.read_bytes()
+        second = self.cli(self.trace, output)
+        self.assertNotEqual(second.returncode, 0)
+        self.assertEqual(saved, output.read_bytes())
+
+    def test_fifo_and_symlink_do_not_block_or_read(self):
+        fifo = self.root / "fifo"
+        os.mkfifo(fifo)
+        self.assertNotEqual(self.cli(fifo, self.root / "out").returncode, 0)
+        self.write([sample()])
+        link = self.root / "link"
+        link.symlink_to(self.trace)
+        self.assertNotEqual(self.cli(link, self.root / "out").returncode, 0)
+
+    def test_real_file_changed_before_final_stat_rejected(self):
+        path = self.write([sample()])
+
+        class ChangedPath:
+            def __fspath__(self):
+                return str(path)
+
+            def stat(self):
+                with path.open("ab") as stream:
+                    stream.write(b"\n")
+                return path.stat()
+
+        with self.assertRaisesRegex(ValueError, "changed during"):
+            analysis.analyze(ChangedPath())
+
+
+if __name__ == "__main__":
+    unittest.main()

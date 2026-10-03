@@ -23,4 +23,6 @@ trusted_workers_api_cidrs = ["9.134.163.40/32", "10.0.0.0/12"]
 cluster_version         = "replace_with_reviewed_tke_version"
 node_image_name_regex   = "^replace_with_exact_reviewed_public_image_name$"
 bootstrap_instance_type = "SA9.LARGE8"
+runtime_builder_instance_type = "SA9.4XLARGE32"
+runtime_builder_data_disk_gib = 512
 ssh_public_key          = "ssh-ed25519 replace_with_operator_public_key"

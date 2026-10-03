@@ -172,7 +172,7 @@ impl Db {
 						}
 					}
 					let branch_resolution =
-						resolve_or_allocate_branch(&tx, bucket_id, &database_id).await?;
+						resolve_or_allocate_branch(&tx, bucket_id, &database_id, now_ms).await?;
 					let branch_id = branch_resolution.branch_id;
 					#[cfg(feature = "test-faults")]
 					maybe_fire_commit_fault(
@@ -677,7 +677,6 @@ impl Db {
 							&database_id,
 							now_ms,
 							&udb::INCOMPLETE_VERSIONSTAMP,
-							branch_resolution.bucket_initialized,
 						)
 						.await?;
 					}

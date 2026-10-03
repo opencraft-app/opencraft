@@ -37,6 +37,7 @@ runtime = load_module(
     "persistent_runtime_e2e",
     REPO / "infra/cells/deploy/local/mesh/workerd-persistent-code-e2e/run.py",
 )
+pod_lifecycle = load_module("qualification_pod_lifecycle", ROOT / "pod_lifecycle.py")
 
 
 def parse_cell_kubeconfigs(values: list[str]) -> dict[str, pathlib.Path]:
@@ -74,22 +75,22 @@ def replace_one_pod(kubectl, selector: str, expected: int, timeout: float) -> di
     victim = ready[0]
     old_name = victim["metadata"]["name"]
     old_uid = victim["metadata"]["uid"]
-    kubectl.run("delete", "pod", old_name, "--wait=false")
+    pod_lifecycle.delete_exact_pod(kubectl, victim)
 
     deadline = time.monotonic() + timeout
     last = None
     while time.monotonic() < deadline:
         try:
             after = listed_pods(kubectl, selector)
-            ready_after = [pod for pod in after if runtime.ready(pod)]
-            new_pods = [pod for pod in ready_after if pod["metadata"]["uid"] not in old_uids]
-            last = {
-                "total": len(after),
-                "ready": len(ready_after),
-                "new": [pod["metadata"]["name"] for pod in new_pods],
-            }
-            if len(after) == expected and len(ready_after) == expected and len(new_pods) == 1:
-                replacement = new_pods[0]
+        except Exception as error:  # transient API failure remains bounded by timeout
+            last = str(error)
+            time.sleep(0.5)
+            continue
+        ready_after = [pod for pod in after if runtime.ready(pod)]
+        last = {"total": len(after), "ready": len(ready_after)}
+        if len(after) == expected and len(ready_after) == expected:
+            replacement = pod_lifecycle.replacement_in_snapshot(ready_after, old_uids, old_uid)
+            if replacement is not None:
                 return {
                     "selector": selector,
                     "pod": old_name,
@@ -98,8 +99,6 @@ def replace_one_pod(kubectl, selector: str, expected: int, timeout: float) -> di
                     "newPodUid": replacement["metadata"]["uid"],
                     "readyReplicas": expected,
                 }
-        except Exception as error:  # transient API failure remains bounded by timeout
-            last = str(error)
         time.sleep(0.5)
     raise TimeoutError(f"Pod replacement did not restore the exact Ready floor: {last}")
 
