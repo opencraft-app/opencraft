@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.32.0
+revision: 1.33.0
 precedence: task
 derived: false
 ---
@@ -415,7 +415,20 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ## checkpoint
 
-当前 checkpoint（1.32.0）：上一 goal turn 为 progress：fresh full management plan/native
+当前 checkpoint（1.33.0）：上一 goal turn 为 progress：只读 ownership census 改变下一步，
+确认没有可安全删除的项目空闲 SG；记录正常推至 master9ac745d602bb，工作区 clean。
+本轮正常配置的只读 native API 再确认北京 TotalCount50/returned50、SecurityGroupLimit50，
+RequestId 分别为5268bec5-1ce5-428d-93cc-d5c086aae647、
+4b49b407-540e-45a4-9c25-6da78dcf61b8。同一配额阻塞已连续三个 goal turn 出现；
+没有仍运行的构建/资格句柄可等待，不重复提交 partial apply。构建、正式发布和修正后
+strict10k 是下一条必要依赖，源码回归、旧 c631 上重复负载或 Registry-only population
+均不能代替。整体目标未完成，本轮请求将 goal 标记 blocked，解除条件是北京 SG 配额
+出现真实余量；不删除在用/未知归属资源、不改用更宽的 control SG。
+解除后保留 management lineage/serial63/CBS disk-kkels2ln，以原 operations 锁重新完整
+plan，继续独立 builder 初始化、正式 Engine-only release 和全部原 Phase5 门禁。
+本轮只更新 checkpoint，既不重编 workerd，也不改 Runtime、负载或容量策略。
+
+历史 checkpoint（1.32.0）：上一 goal turn 为 progress：fresh full management plan/native
 partial apply 改变 authoritative state，并确定位于 region SG quota，而不是仍等待旧 strict10k。
 master5b3f9b7c 已正常推送，remote exact/工作区 clean；本轮保留 empty ancestor yswlulmm，
 jj new yxzyvqmt。目标仍为整个 Phase5，不将 builder gate 或 census 替代万级性能资格。
