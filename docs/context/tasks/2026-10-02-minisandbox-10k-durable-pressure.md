@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.9
+revision: 1.9.3
 precedence: task
 derived: false
 ---
@@ -104,6 +104,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `docs/context/domains/agent-gateway-runtime.md@046f2bde`、`docs/context/project/services/ctl.md@046f2bde`、`docs/context/project/services/sandbox.md@046f2bde` | 本轮路径路由必读 | 后两者为 minisandbox 字符匹配的邻接摘要，不修改独立 CTL/Sandbox 服务 |
+| `minisandbox/engine/AGENTS.md@046f2bde`、`minisandbox/.claude/reference/testing.md@046f2bde`、`minisandbox/docs-internal/engine/sqlite/components.md@046f2bde`、`minisandbox/docs-internal/engine/sqlite/storage-structure.md@046f2bde`、`minisandbox/docs-internal/engine/sqlite/constraints-and-design-decisions.md@046f2bde` | 局部 fold 改动规则与 fence | 测试单独文件、只改页折叠，不改变存储权威、事务或恢复覆盖 |
+| `minisandbox/engine/packages/guard/src/routing/pegboard_gateway/mod.rs@046f2bde`、`minisandbox/engine/packages/pegboard-gateway2/src/lib.rs@046f2bde`、`minisandbox/engine/packages/namespace/src/keys/metric.rs@046f2bde`、`minisandbox/engine/packages/pegboard-envoy/src/ws_to_tunnel_task.rs@046f2bde` | 前台真实成本 | 区分就绪、gateway lookup、统计和 generation 验证，不删 fence 或丢计量 |
 | `AGENTS.md@f06c5e0a` | mono2 P0、Task Pack 与发布边界 | 使用隔离 clone；源码、镜像和线上证据分层 |
 | `minisandbox/AGENTS.md@f06c5e0a` | Engine 修改和验证约束 | 使用聚焦 cargo 门禁，不运行宽泛 fixer |
 | `minisandbox/engine/AGENTS.md@f06c5e0a` | Rust/Engine 不变量 | 保持 FDB/Gasoline 正确性与协议不变 |
@@ -209,6 +212,22 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## validation
 
+- 本轮局部 fold 五项通过：真实 LTX encode/decode、旧 prefix oracle、24 种 shrink/grow
+  历史、乱序/重复 coverage、future 排除、空输入零访问及原 staged-row 上限；128 coverage
+  输入访问 128 次而原重复应用总数 8,256。不是端到端倍数或云上容量证明。
+  全 Depot lib 61、真实 RocksDB forced driver/head advance 各三项通过。首轮 clippy
+  发现新 source-owned fixture 位于 tests 顶层，被 Cargo 同时当作 integration crate；
+  已移到 tests/inline 并保留私有模块 shim，随后重跑同样默认 lint，不添加 ignore/allow。
+  最终路径的全部 61 项 lib 再次 passed，默认 clippy exit 0，新 fixture 无 warning；
+  保留既有库/测试与依赖 warnings。改动仅 Rust 页合并与正式模型/原证据，未构建 V8。
+  最终路径的真实 driver/head-advance 各三项、branch-GC 七项再验通过。Context 4,942
+  历史错误经 SHA 归一化、保留重复次数的 Counter 与基线完全相同，无新增或消失，
+  本 Task 无错误。最终 checkpoint/catalog 更新后再执行同一检查。
+  Python analyzer 17、release monitor 5、audit 33 通过；documentation 零 errors/warnings；
+  Context 26 项仍同样四个历史失败，不冒充全仓全绿。七文件 change-impact 通过但没有
+  matched rule，不代替性能或语义资格。
+  最初未指定已有 target cache 的本地测试被主动终止，随后指定受控四 jobs 和已配置
+  cargo cache 重跑成功；不把被终止命令标为通过，未构建 workerd 或发布云 Runtime。
 - 本轮只读归因/文档：analyzer 17 项真实文件/CLI 回归通过，三份新归档 JSON 与原文件
   cmp 同字节；documentation 零 errors/warnings，七文件 change-impact 通过（matched_rules
   空，不冒充语义评审）。未修改 Rust、未重编 workerd，未运行另一份业务负载。
@@ -284,6 +303,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## decisions
 
+- 本轮先修可独立证明的重复成本：同一 hot job 多个历史 coverage 共享一次 DELTA 前缀
+  折叠，输出仍逐 coverage 生成，顺序、重复 coverage 与逐次 EOF 语义保持。用原逐前缀
+  算法作等价 oracle，并验证访问次数；不声称该 CPU/copy 优化就是 A Cell 首错根因。
+  不修改 FDB transaction、fingerprint、PITR/GC/backup fence、wire schema 或在线 Runtime。
 - 先修准确水位和每进程 maintenance 上限；不把请求超时、重试或 active 数量调松。
 - 生产 Engine 保持固定六副本；若未来改变 Engine 副本数，必须重新计算并验证 Cell 级 activity budget。
 - 只有新 digest 的真实 10k 通过后才生成 Router performance receipt。
@@ -296,6 +319,12 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## scan_output
 
+- 本轮精确路径查询发现 config 的 guard/pegboard 位于 `src/config/`，不是 `src/`；
+  `depot/tests/test_driver.rs` 不存在。后续使用限定目录的文件清单，不扩大仓库扫描。
+- 新 request-path 原字节已官方 relay 验真。A 的前台 gateway、Depot commit 与 Gasoline
+  多类 transaction 同时排队；不能把 shared contention 简化为 hot stage 的唯一故障。
+  源码确认 Gateway2 ingress 统计用 join 加入响应关键路径，每 HTTP 另有 egress transaction；
+  改为异步/批量之前必须明确计量准确性、有限缓冲和重启语义，不先丢弃账本。
 - 云上只读诊断通过 TAT invocation 留存；不包含 token、Secret、kubeconfig 或对象 payload。
 - 本轮三次有界精确路径查询失败：`depot/src/compaction.rs`、
   `depot/src/compaction_protocol*.rs`、`depot/src/compaction/planner.rs` 不存在。
@@ -303,6 +332,11 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## handoff
 
+- 本轮新增共享前缀 fold 仅源码落地，不能把线上 Runtime 59 标成包含该优化。已确认
+  A ready-wait 和多类 FDB transaction 同窗劣化；下一项仍需核对 A/B FDB 分片/机器/
+  I/O 与热点差异，及前台统计与重复 lookup 的成本。没有确定唯一根因，不直接 rollout。
+  原 run 的 exact cleanup 已通过，自然缩容仍由原 unit 完成；Router performance gate
+  与完整 strict10k 仍未通过。后续服务曲线必须同看交互率/尾延迟、有效维护和债务斜率。
 - 当前状态：历史 Runtime 072e504b 的 A/B release/Bottomless/HA/activation 已通过，
   其 strict10k 失败后精确清理和自然缩容完成。性能修正 source 59e86519 已实际通过 stage
   reuse、Engine/Host 编译和产品 cold pull；A 的正式 rollout/Bottomless/HA/activation 已通过。
@@ -313,6 +347,42 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+2026-10-03 05:08:36 UTC 最终 checkpoint：原 unit 仍同 PID/InvocationID running，
+Host 已自然降至 A/B 215/215、MachineSet 224/221；next observation 不早于
+05:13:36 UTC，无 final receipt。源码、存储回归与 lint 已通过；最终 documentation
+零 errors/warnings，Context Counter 仍相同 4,942 项，八文件 impact passed（无 rule
+命中）。本轮准备正常推送 master；不发布 Runtime、不新增负载、不将容量目标标 complete。
+
+2026-10-03 05:07:42 UTC：本轮为 progress。新源码共享 hot coverage 前缀已完成，
+最终 lib 61、driver 3、head-advance 3、branch-GC 7 通过，默认 clippy exit 0，库/测试
+保留 47/50 warnings，新 fixture 无 warning。Context 4,942 历史错误 Counter 不变。
+本轮下一步是最后 docs/catalog/impact 验证及正常 master push；不是 Runtime 发布或
+万级容量通过。仍只有原监督 unit 执行 natural drain，不重发 load；完整目标 active。
+
+2026-10-03 05:03:11 UTC：原 supervisor 仍 running；exact cleanup passed，Host 已
+自然降至 A/B 228/228、Machines 236/233，仍无 final receipt。下一只读进度不早于
+05:08:11 UTC。源码共享前缀 fold 已落地、五项等价/成本回归通过，其余真实存储与 lint
+门禁在本地单一 cargo cache 上运行。局部原型不是万级性能资格通过。
+
+2026-10-03 04:59:27 UTC：固定 phase 新查询与 relay 均成功，原 combined-name 查询
+错误仍保留。A ready-wait p99 末端 24.22 秒、B 2.35 秒，订阅均毫秒级；A 多类前台/
+Gasoline transaction 同时变慢。下一实现仅减少源码已确认的多 coverage 重复 DELTA
+遍历，以等价 oracle 和访问数保护；不是完整根因修复，不编 workerd、不发布或重跑负载。
+
+2026-10-03 04:52:27 UTC checkpoint：原 exact cleanup 已确证 9,159/9,159 deleted、
+零 DELETE retry、pending 零；自然缩容仍等待，不能把清理成功当作容量通过。
+新只读 request-path invocation 已 SUCCESS/0，恢复首错 Actor ID，并采集 A/B 12 个
+实际 Engine Pod 身份和历史 transaction/gateway 指标。两个 phase histogram query 返回
+HTTPError，不能把该维度当成零；下一步先 relay 原 JSON 和 cleanup 原字节、核验 SHA，
+再修正固定 phase 查询。当前没有 live local session，不重复原诊断或业务负载。
+
+2026-10-03 04:48:06 UTC 恢复：上一 turn 为 progress，真实高水位/首错证据及成本模型
+已推 master 046f2bde。原 supervisor fresh 同 PID/InvocationID running；load 已失败，
+cleanup_exit_status=0，final capacity phase waiting，A/B sampled active 均零、Host 263/260。
+当前继续确证 cleanup 原收据与定位 Cell 内响应等待，不重启负载、不跑 Router qualification。
+下一只读进度不早于 04:53:06 UTC。云环境 status tool 和 policy snapshot 均不可用，不由
+缺失推断网络/凭证 readiness；使用已有授权的 CLI，保持 proxy/凭证边界。
 
 2026-10-03 04:36:37 UTC 接续：原 run 已 load_exit_status=1，stopReason 为
 warmup_unexpected_error；9,127 ready、9,111 proven、2,086,955 active success。
@@ -342,6 +412,29 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### verified
 
+- `inv-e9ehma0rme` SUCCESS/0，05:08:36 UTC：exact cleanup 已通过、final capacity
+  waiting；A/B active 零、Host 215/215，原监督身份不变，sample missing/warning/error 零。
+- 固定 phase follow-up `inv-e9ehaqg4md` SUCCESS/0，无 query errors；官方 relay
+  `inv-d9ehbf0rqc` / `inv-a9ehbfgu7m` SUCCESS/0，411,749 原字节 SHA 前缀 8a65d1812adf。
+  两个原 combined-name HTTPError 仍保留，没有改写原诊断成成功。
+- `inv-a9ehg7g2i6` SUCCESS/0，05:03:11 UTC：原 unit 身份不变，Host 已降至
+  A/B 228/228、MachineSet 236/233、active 零，仍 final waiting。
+- `inv-a9eh970n7b` SUCCESS/0，04:55:42 UTC：原 supervisor 身份未变；A/B Host 已
+  自然降至 246/246，MachineSet 253/251；仍 final waiting，无容量终态收据。
+- request-path relay `inv-d9eh96geat` / `inv-c9eh970f0f` SUCCESS/0、SHA 验真；
+  cleanup relay `inv-d9eh98gjkc` / `inv-a9eh99056w` SUCCESS/0、原字节验真。
+  同窗 A/B gateway success rolling mean 末端 2.166/0.179 秒、in-flight 1,144/101；
+  Depot commit histogram p99 2.274/0.308 秒。A 的 pending 含 gateway metrics 637、
+  gateway lookup 457、commit 184 及多类 Gasoline transaction。不是单请求因果追踪。
+- `inv-e9eh5ugs4b` SUCCESS/0：首错 Actor ID 为 5jtio0wprc5klcki8595arbwolal00；
+  A/B 各六 Engine UID 未替换、零 restart。有限时间/日志字节内未匹配该 Actor，不能证明
+  请求未执行。14 个 range query 中两个 routePhaseP99 返回 HTTPError，其余成功；
+  request-path.json 161,966 bytes，SHA 前缀 8681733c4e39，尚未 relay 本地。
+- 同一目录 cleanup-receipt.json 原字节 1,160 bytes，SHA 前缀 5331e9b3506c；
+  04:43:02 UTC passed：本 run exact-owned 9,159 deleted、alreadyAbsent/pending/retries
+  均零。未删除测试 cohort 以外资源，不声称业务失败得到修复或 final floor 收敛完成。
+- `inv-e9eh230s0h` SUCCESS/0，04:48:06 UTC：原 supervisor 仍同 PID/InvocationID
+  running，cleanup_exit_status=0；final waiting，A/B active 零、Host Ready 263/260。
 - `inv-a9egtq0md4` SUCCESS/0；12 个 bounded range query 无错误，缺失 throttle series
   仍 unknown。首个安全 API transport record 为 req_1ae818ff4410d89378c8dc7915bd8603，
   04:36:35.186453032 UTC：连接/write 各 2 ms，等待 response headers 25,002 ms 超时，
@@ -620,7 +713,7 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
   A/B compaction 峰值均 12 in-flight、waiter 89/88；stage 成功执行均值 236/282 ms、
   完成率 37.86/34.76 per second。前台仍零 ordinary retry 不代表后台容量已通过；
   下一步核对 guard/timer 生命周期及 stage 分片事务成本，不能直接由完成者估计 offered load。
-- 下一次只读进度不早于 04:46:35 UTC；首错与故障前 trace 已保存，不把 supervisor
+- 下一次只读进度不早于 04:53:06 UTC；首错与故障前 trace 已保存，不把 supervisor
   running 误报为负载正常。等待原 exact cleanup/natural drain 与最终失败 receipt，
   不并发第二负载或 Router performance，不重启原 service。
 - 跟随唯一已运行 strict10k，保留旧失败身份，不临时 patch 线上容量、超时或重试。

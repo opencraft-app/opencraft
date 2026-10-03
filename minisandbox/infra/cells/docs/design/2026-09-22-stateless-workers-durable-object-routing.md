@@ -1506,8 +1506,8 @@ work_per_effective_prefix = planning + stage + install + required cold/reclaim
 
 `db_hot_compacter::stage_hot_job` 逐个 shard 串行事务，而 stage planning 指标只计第一笔
 `depot_hot_compact_stage`，不包含后续 publish batch，不能当作总 stage read bytes。
-`plan_staged_hot_shards` 对每个 coverage txid 重新遍历已选 DELTA，materialization 对
-每个输出重新读取 authoritative base；coverage、基底大小与分片数是成本维度。
+Runtime 59 的 `plan_staged_hot_shards` 对每个 coverage txid 重新遍历已选 DELTA，
+materialization 对每个输出重新读取 authoritative base；coverage、基底大小与分片数是成本维度。
 这些是源码确认的潜在放大路径，不代表本轮已测得 coverage 次数或实际字节放大倍数。
 coverage 由 PITR/history pins 决定，不能删历史覆盖、lifecycle/fingerprint、truncate、
 backup 或 install integrity fence 来提速。上面的 A transaction 均值到故障前为 prepare
@@ -1536,6 +1536,63 @@ backup 或 install integrity fence 来提速。上面的 A transaction 均值到
 低容量启动时，云节点创建/镜像准入延迟属于 supply lead time。已有 headroom 不足时，
 分钟级 warmup 等待不能被标成三秒创建达标；需用到达率乘供给延迟规划预留与扩容提前量，
 而不是借后台维护均值推断创建 SLO。该模型及工具尚不替代 strict10k 的实际终态门禁。
+
+#### 前台成本向量与共享资源门禁
+
+进一步的只读 request-path 与独立 phase query 原字节、SHA、invocation 和限制见
+[evidence README](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md)。
+04:25--04:36:30 的滚动直方图显示 A ready-wait p99 从约 0.97 秒升至 24.22 秒，B
+末端约 2.35 秒；两 Cell 的订阅 p99 均小于 5 ms。A 同时有 gateway lookup、SQLite
+commit、Gateway accounting 和多类 Gasoline transaction 延迟上升。这支持“共享资源
+争用、对象就绪链被放大”的候选解释，但不是首错请求的逐阶段因果 trace。
+无界日志之外的缺失匹配不能证明请求没执行；502 副作用边界与零透明重试保持。
+
+同窗末端 A/B SQLite commit 完成率约 427.7/451.1 per second，gateway accounting
+865.4/904.6，gateway lookup 898.5/908.9。两 Cell 的交互规模相近而延迟差异显著，
+不能只由 Agent 数或总平均 CPU 解释，也不能把异步完成率相除当作每请求精确放大。
+需要继续核验 FDB process/分片与机器映射、读写与 commit 延迟、磁盘/NIC 和热点范围。
+
+源码确认 HTTP Gateway2 有两笔统计 transaction（入口和成功记录入口之后的出口），
+入口使用 `tokio::join!` 等待统计与业务响应。统计每次读取 Actor name 并 atomic-add
+namespace/name counters，不能把它当作免费的 Prometheus 采样。Gateway2 每次还做一次
+authoritative Actor lookup，Guard route cache miss 会多做一次；每个 lookup 有十个点读。
+VFS/remote SQLite 还有 generation 验证，真正 commit 内的 serializable writer fence
+不可删除。这些成本必须计入 Cell 的前台预算，而不只是业务 DELTA bytes。
+
+```text
+for each shared resource r:
+  foreground demand_r = sum(request_class_i arrival_rate_i * work_per_request_i,r)
+  total demand_r = foreground demand_r + effective maintenance_r + rework/replay_r
+  stable service requires total demand_r < measured sustainable capacity_r
+
+work_per_request = (FDB point/range reads, keys/bytes written, commits,
+                    execution CPU, network bytes, cold I/O)
+```
+
+这里的 sustainable capacity 不是配置的 permit 数或已完成 histogram rate；应在固定
+负载和实际资源身份下测量，并留 tail-latency/headroom 余量。actor 数决定基数/内存，
+请求率和读写形状决定实时需求；bootstrap 就绪链与稳定交互分开校准。扩容的提前量仍
+需覆盖供给延迟，不能将生产请求超时抬高来替代三秒创建资格。
+
+统计若脱离响应路径，必须先定义它是运营观测还是精确计量，再设计有界缓冲、合并、
+flush/restart/过载语义。随意 spawn 无界 task、丢计量、删除 generation 检查或延长
+timeout 都不属于已批准的修复。FDB 资源隔离与后台预算只能保护公平性；重复工作成本
+和总负债不能因此忽略。
+
+#### 多 coverage 共同前缀折叠的局部修正
+
+新源码 `plan_hot_coverage_shards` 将请求 coverage 的本地索引排序，对已选 DELTA
+仅做一次有序应用，然后在各 coverage 的 EOF 下复制必需输出。返回顺序与重复
+coverage 保留；每次中间 shrink 都淘汰旧页，后续 grow 不会复活它。合并状态不超过
+输入中可见页集合，输出继续受原 FDB staged-row 上限约束并提前失败。
+现有提交元数据选取、immutable base 读取、stage/publication 事务和全部 fingerprint/
+history/PITR/lifecycle/GC/backup fence 不变；不是新的 publication authority。
+
+原算法作为测试 oracle 保留在 test-only 代码，用真实 LTX encode/decode 对比历史
+输出。128 个逐提交 coverage 的已知重复 DELTA 应用数原为 8,256，新 fold 的输入访问
+数为 128；这只是算法工作次数，不是 64 倍端到端收益。输出快照复制仍不可免，提交
+元数据选择和 FDB materialization/publication 成本也仍存在。该源码局部优化尚未发布
+到 Runtime 59，不能据此将 A ready timeout 或完整 10k 门禁标为修复。
 
 性能修正的发布证据也分层：本地算法回归、reviewed-source build、A/B runtime qualification、
 相同 strict10k receipt，不能互相替代。正式 builder 的默认 Python 3.6 不满足 stage closure

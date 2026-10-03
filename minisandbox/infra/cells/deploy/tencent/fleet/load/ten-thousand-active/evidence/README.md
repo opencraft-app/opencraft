@@ -11,13 +11,15 @@ The original load failed at 9,127 ready / 9,111 proven after 2,086,955 successfu
 active interactions. It never reached the post-warmup three-second sample.
 The first error is initialize index 9086, HTTP 502 `indeterminate_result` at
 `2026-10-03T04:36:35.187Z`. The 2,043 subsequent active `code=20` errors are
-global cancellation, not independent transport faults. Exact cleanup/natural
-drain remain owned by the original supervisor; no final capacity verdict or
-floor-convergence success is claimed here.
+global cancellation, not independent transport faults. Exact cleanup passed:
+all 9,159 scheduled test identities were deleted, with zero retries or pending
+deletes. Natural drain remains owned by the original supervisor; no final
+capacity verdict or floor-convergence success is claimed here.
 
 | Committed original/diagnostic | Raw SHA-256 |
 |---|---|
 | `55b55875-load-receipt-20261003.json` | `91e10cdd037e382187f2facd08753b9d13af224eaeee0beb598004bd3b7a7e05` |
+| `55b55875-cleanup-receipt-20261003.json` | `5331e9b3506c08e0d633a3102461441ff0d3941784e028e77f3af19a168dfc74` |
 | `55b55875-pressure-late-20261003.json` | `2628460d5fbd8906cb3f6b3dc31c3836786544c5a63d4749a14a30a8b3704359` |
 | `55b55875-pressure-prefailure-20261003.json` | `c2af117532fabf7cf042164384887fe96d754f98686a48a301b467ae1f6d4df2` |
 
@@ -70,6 +72,39 @@ The same API Deployment UID had already grown to 13 Ready, with HPA max 30;
 this observation does not use the initial three-replica state as a failure cause.
 The two earlier temporary diagnostic attempts failed on diagnostic-only row
 caps (12 Pods / 128 errors); those are not extra workload failures.
+
+Read-only request-path `inv-e9eh5ugs4b` succeeded. Its 161,966-byte JSON remains
+outside Git at
+`/data/actor-build/release/strict10k-path-55b55875-20261003.LXBrcQ/request-path.json`,
+SHA-256 `8681733c4e3934485147041390cb50f5704298c7995021e3b81111c5f2ee4bb1`.
+Official relay `inv-d9eh96geat` / `inv-c9eh970f0f` verified local original bytes
+at `/data/tmp/minisandbox-strict10k-55b55875-request-path-20261003.json`.
+The first-error Actor ID is `5jtio0wprc5klcki8595arbwolal00`. Current bounded
+Engine logs had no matches; that does not prove the request never executed.
+Two combined-name phase queries returned HTTPError and remain in the original.
+
+Corrected separate fixed-phase queries `inv-e9ehaqg4md` succeeded with no query
+errors. The 411,749-byte artifact is
+`/data/actor-build/release/strict10k-phases-55b55875-20261003.jsIK5D/route-phases.json`,
+SHA-256 `8a65d1812adfbfde355fe4a0d2cca04331a94ad3c8e479e7d50cadfc4c580ddb`.
+Official relay `inv-d9ehbf0rqc` / `inv-a9ehbfgu7m` verified it at
+`/data/tmp/minisandbox-strict10k-55b55875-route-phases-20261003.json`.
+The query window is 04:25--04:36:30 UTC at 30-second steps. A's ready-wait
+histogram p99 rises from 0.97 to 24.22 seconds; B ends at 2.35 seconds.
+Subscribe p99 remains below five milliseconds in both Cells. A's Depot commit,
+gateway lookup, metrics recording, and Gasoline transactions all slow together.
+At the final rolling sample, A/B Depot commits are 427.7/451.1 per second,
+gateway accounting transactions 865.4/904.6 per second, and gateway lookups
+898.5/908.9 per second. These are completed transaction rates, not causal
+per-HTTP amplification ratios or offered load.
+The observed Engine services are ClusterIP, not the API's `10.161.0.7` peer;
+the intermediate internal route still needs identity confirmation.
+
+Cleanup's original receipt was independently verified via official relay
+`inv-d9eh98gjkc` / `inv-a9eh99056w`; it is bound to the same failed load receipt
+and exact owned manifest. No resources outside that test cohort were deleted.
+At 04:55:42 UTC, `inv-a9eh970n7b` confirms the original supervisor identity and
+natural reduction to 246 Hosts per Cell, but not final floor convergence.
 
 ## Historical input-prefix run d3a16351
 

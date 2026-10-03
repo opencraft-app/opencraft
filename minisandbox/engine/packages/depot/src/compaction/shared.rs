@@ -2867,33 +2867,79 @@ pub(crate) fn plan_staged_hot_shards(
 	hot_inputs: &HotInputSnapshot,
 ) -> Result<Vec<PreparedHotShard>> {
 	let deltas = decode_hot_delta_chunks(input.database_branch_id, &hot_inputs.delta_chunks)?;
-	let mut shards = Vec::new();
+	let coverage = input
+		.input_range
+		.coverage_txids
+		.iter()
+		.map(|as_of_txid| {
+			let db_size_pages = hot_inputs
+				.commits
+				.iter()
+				.find_map(|(txid, commit)| (*txid == *as_of_txid).then_some(commit.db_size_pages))
+				.context("hot compaction coverage commit row is missing")?;
+			Ok((*as_of_txid, db_size_pages))
+		})
+		.collect::<Result<Vec<_>>>()?;
+	plan_hot_coverage_shards(&coverage, deltas.into_iter())
+}
 
-	for as_of_txid in &input.input_range.coverage_txids {
-		let selected_db_size_pages = hot_inputs
-			.commits
-			.iter()
-			.find_map(|(txid, commit)| (*txid == *as_of_txid).then_some(commit.db_size_pages))
-			.context("hot compaction coverage commit row is missing")?;
-		let pages_by_shard =
-			collect_hot_pages_by_shard(selected_db_size_pages, &deltas, *as_of_txid)?;
+/// Fold each selected DELTA once across all historical outputs. Only the unavoidable output
+/// snapshots copy page bytes; earlier commits are not reapplied for every PITR/history pin.
+/// Sorting a local index preserves the caller's output order, including duplicate coverages.
+fn plan_hot_coverage_shards(
+	coverage: &[(u64, u32)],
+	deltas: impl Iterator<Item = (u64, DecodedLtx)>,
+) -> Result<Vec<PreparedHotShard>> {
+	let mut requested = coverage.iter().copied().enumerate().collect::<Vec<_>>();
+	requested.sort_by_key(|(_, (txid, _))| *txid);
+	let max_db_size_pages = coverage.iter().map(|(_, size)| *size).max().unwrap_or(0);
+	let mut deltas = deltas.peekable();
+	let mut pages_by_number = BTreeMap::<u32, Vec<u8>>::new();
+	let mut previous_db_size_pages = None;
+	let mut outputs = Vec::with_capacity(coverage.len());
+	let mut row_count = 0;
+
+	for (index, (as_of_txid, db_size_pages)) in requested {
+		while deltas.peek().is_some_and(|(txid, _)| *txid <= as_of_txid) {
+			let (_, delta) = deltas.next().context("peeked hot delta is missing")?;
+			// EOF applies at every commit, not just at output boundaries. Retaining a page
+			// across a shrink and later growth would resurrect deleted historical contents.
+			if previous_db_size_pages.is_some_and(|size| delta.header.commit < size) {
+				pages_by_number.retain(|pgno, _| *pgno <= delta.header.commit);
+			}
+			previous_db_size_pages = Some(delta.header.commit);
+			for page in delta.pages {
+				if page.pgno <= max_db_size_pages {
+					pages_by_number.insert(page.pgno, page.bytes);
+				}
+			}
+		}
+		let mut pages_by_shard = BTreeMap::<u32, Vec<(u32, Vec<u8>)>>::new();
+		for (pgno, bytes) in pages_by_number.range(..=db_size_pages) {
+			pages_by_shard
+				.entry(pgno / keys::SHARD_SIZE)
+				.or_default()
+				.push((*pgno, bytes.clone()));
+		}
+		row_count += pages_by_shard.len();
+		ensure!(
+			row_count <= CMP_FDB_BATCH_MAX_KEYS,
+			"planned hot job produced {row_count} staged shard rows, exceeding the {}-row FDB job limit",
+			CMP_FDB_BATCH_MAX_KEYS
+		);
+		let mut shards = Vec::with_capacity(pages_by_shard.len());
 
 		for (shard_id, page_updates) in pages_by_shard {
 			shards.push(PreparedHotShard {
 				shard_id,
-				as_of_txid: *as_of_txid,
+				as_of_txid,
 				page_updates,
 			});
 		}
+		outputs.push((index, shards));
 	}
-	ensure!(
-		shards.len() <= CMP_FDB_BATCH_MAX_KEYS,
-		"planned hot job produced {} staged shard rows, exceeding the {}-row FDB job limit",
-		shards.len(),
-		CMP_FDB_BATCH_MAX_KEYS
-	);
-
-	Ok(shards)
+	outputs.sort_by_key(|(index, _)| *index);
+	Ok(outputs.into_iter().flat_map(|(_, shards)| shards).collect())
 }
 
 /// Expands exactly one planned shard from its immutable base. Callers run this in a dedicated
@@ -2981,6 +3027,7 @@ pub(crate) fn decode_hot_delta_chunks(
 		.collect()
 }
 
+#[cfg(test)]
 pub(crate) fn collect_hot_pages_by_shard(
 	db_size_pages: u32,
 	deltas: &BTreeMap<u64, DecodedLtx>,
@@ -3243,6 +3290,10 @@ pub(crate) async fn tx_scan_range_values_limited(
 
 	Ok(rows)
 }
+
+#[cfg(test)]
+#[path = "../../tests/inline/hot_coverage_fold.rs"]
+mod hot_coverage_fold_tests;
 
 #[cfg(test)]
 mod tests {
