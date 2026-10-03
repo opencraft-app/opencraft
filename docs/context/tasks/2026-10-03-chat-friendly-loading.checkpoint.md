@@ -54,3 +54,11 @@
 - `unverified`：合并最新 `master` 后的门禁、远端 MR/CI 状态待核验；Gongfeng API 查询曾遇临时 TLS 连接重置。
 - `restore`：worktree `/Users/pablozhong/.codex/worktrees/mr-4947-ci-fix/lightvela`；仅提交明确列出的页面、组件、字典、生成副本和文档文件。5174 预览因构建暂时停止。
 - `next_action`：提交本次界面调整，合并 `origin/master`，重新运行 OpenCraft 同步与必要门禁，推送至 MR !4947 源分支并核验。
+
+## 2026-10-03 合并后交接检查点
+
+- `stage`：已提交国内站加载态调整并合并最新 `master`；生成清单在合并后刷新。待推送并核对 MR 与 CI 即时状态。
+- `verified`：合并后聚焦测试 15/15、`pnpm check`（新增 TypeScript 错误 0）、国内及国际站构建、OpenCraft 嵌入式 CI 155/155、130 文件生成闭包均通过。与 `origin/master` 比对表明国际站两个入口继续使用原文本加载提示，新的头像和句末动画只在 `isCN` 分支出现。
+- `unverified`：远端 MR 在推送前仍显示 `cannot_be_merged`；新源分支及 CI 状态待推送后查询。
+- `restore`：当前 HEAD `7fc1681fa`；源分支 `frontsandbox/chat-friendly-loading-20261003`，目标 `master`。构建生成的 `next-env.d.ts` 与字体子集需恢复后再提交文档检查点。
+- `next_action`：清理构建噪声，提交检查点，普通推送现有源分支，核对远端 SHA、MR 和 CI 快照。
