@@ -143,8 +143,15 @@ def validate_attachment(value: Any, evidence: Any, now_ms: int) -> dict[str, Any
     require(instance.get("InstanceId") == inventory["instanceId"]
             and instance.get("InstanceState") == "RUNNING", "live builder identity/state")
     require(instance.get("InstanceType") == inventory["instanceType"], "builder type")
+    internet = mapping(instance.get("InternetAccessible"), "builder Internet envelope")
+    require(type(internet.get("InternetMaxBandwidthOut")) is int
+            and internet["InternetMaxBandwidthOut"] == 0 and "PublicIpAssigned" in internet
+            and (internet["PublicIpAssigned"] is None or internet["PublicIpAssigned"] is False),
+            "builder Internet envelope")
     require(instance.get("PrivateIpAddresses") == [inventory["privateIp"]]
-            and instance.get("PublicIpAddresses") == [], "builder IP envelope")
+            and "PublicIpAddresses" in instance
+            and (instance["PublicIpAddresses"] is None or instance["PublicIpAddresses"] == []),
+            "builder IP envelope")
     require(mapping(instance.get("VirtualPrivateCloud"), "instance VPC").get("VpcId") == inventory["vpcId"], "builder VPC")
     require(mapping(instance.get("Placement"), "instance placement").get("Zone") == inventory["availabilityZone"], "builder zone")
     require(instance.get("SecurityGroupIds") == [inventory["securityGroupId"]], "builder security group")
@@ -154,7 +161,8 @@ def validate_attachment(value: Any, evidence: Any, now_ms: int) -> dict[str, Any
             and disk.get("InstanceId") == inventory["instanceId"], "live disk attachment")
     require(disk.get("DiskState") == "ATTACHED" and disk.get("Attached") is True, "disk attachment state")
     require(disk.get("DiskUsage") == "DATA_DISK" and disk.get("Portable") is True
-            and disk.get("Shareable") is False and disk.get("InstanceIdList") == [], "disk exclusivity")
+            and disk.get("Shareable") is False
+            and disk.get("InstanceIdList") in ([], [inventory["instanceId"]]), "disk exclusivity")
     require(disk.get("Migrating") is False and disk.get("Rollbacking") is False, "disk transition")
     require(type(disk.get("DiskSize")) is int and disk["DiskSize"] == inventory["dataDiskGiB"]
             and disk.get("DiskType") == "CLOUD_BSSD", "disk capacity/type")

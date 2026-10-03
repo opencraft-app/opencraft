@@ -22,7 +22,7 @@ SPEC.loader.exec_module(IDENTITY)
 GUEST = ROOT / "collect-runtime-builder-guest.py"
 TAT = ROOT.parents[2] / "tat" / "tat-run.sh"
 INSTANCE_FIELDS = ("InstanceId", "InstanceState", "InstanceType", "PrivateIpAddresses", "PublicIpAddresses",
-                   "VirtualPrivateCloud", "Placement", "SecurityGroupIds", "Tags")
+                   "InternetAccessible", "VirtualPrivateCloud", "Placement", "SecurityGroupIds", "Tags")
 DISK_FIELDS = ("DiskId", "InstanceId", "DiskState", "Attached", "DiskUsage", "Portable", "Shareable",
                "InstanceIdList", "Migrating", "Rollbacking", "DiskSize", "DiskType", "Placement", "Tags")
 
@@ -60,6 +60,7 @@ def document(raw: bytes, label: str) -> dict:
 
 def projection(value: dict, collection: str, fields: tuple[str, ...]) -> dict:
     resource = IDENTITY.singleton(value, collection)
+    IDENTITY.require(all(key in resource for key in fields), collection + " observation incomplete")
     selected = {key: resource.get(key) for key in fields}
     tags = resource.get("Tags")
     IDENTITY.require(isinstance(tags, list) and len(tags) <= 64, "resource tag envelope")

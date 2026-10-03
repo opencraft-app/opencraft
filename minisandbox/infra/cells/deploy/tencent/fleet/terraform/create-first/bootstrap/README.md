@@ -45,6 +45,19 @@ are not identities: the expected link, disk serial and cloud disk ID must agree.
 Root ancestry is cross-checked with the actual mounted root in `lsblk`. Existing
 partitions, filesystems or mounts are rejected, even if the cloud attachment matches.
 
+Native API representations are joined, not rewritten: `PublicIpAddresses` may
+be `null` ([CVM field contract](https://cloud.tencent.com/document/api/213/15753)).
+The private-only gate additionally requires explicit zero outbound bandwidth and
+no positive public-IP assignment; missing fields, positive bandwidth or any
+public address reject. `Shareable=false` and the exact attached `InstanceId`
+remain mandatory. The documented non-shared `InstanceIdList=[]` and the actually
+observed `[exact builder ID]` are accepted; another instance, duplicate/multiple
+IDs or null/missing lists reject. The [CBS field document](https://cloud.tencent.com/document/api/362/15669)
+describes an empty list, while the Beijing native receipt records the singleton
+representation. This observed difference is not a claim that the documentation
+promises that representation. Projection checks key presence before retaining
+nullable values, so an omitted field cannot silently become a successful null.
+
 ```bash
 "${ACTOR_BOOTSTRAP_PYTHON:?qualified Python 3.11 is required}" validate-runtime-builder-storage.py \
   --inventory /protected/runtime-builder.inventory.json \

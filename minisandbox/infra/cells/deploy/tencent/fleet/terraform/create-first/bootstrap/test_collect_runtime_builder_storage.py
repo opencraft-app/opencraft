@@ -213,6 +213,16 @@ class BuilderStorageCollectorTests(unittest.TestCase):
     def test_guest_source_accepts_stock_python36_syntax(self):
         ast.parse(GUEST.read_text(), feature_version=(3, 6))
 
+    def test_actual_native_nullable_ip_and_single_instance_list_pass_real_capture(self):
+        self.fixture['instances']['InstanceSet'][0]['PublicIpAddresses'] = None
+        self.fixture['disks']['DiskSet'][0]['InstanceIdList'] = ['ins-builder01']
+        self.assertEqual(self.capture().returncode, 0)
+
+    def test_missing_native_ip_field_rejects_before_guest_observation(self):
+        del self.fixture['instances']['InstanceSet'][0]['PublicIpAddresses']
+        self.assertEqual(self.capture().returncode, 1)
+        self.assertNotIn('RunCommand', (self.directory / 'calls.ndjson').read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

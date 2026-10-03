@@ -1,0 +1,41 @@
+{
+  "schema": "actor-runtime-builder-native-shape-observation/v1",
+  "claimEligible": false,
+  "region": "ap-beijing",
+  "instanceId": "ins-mh9mruw7",
+  "diskId": "disk-kkels2ln",
+  "nativeInstance": {
+    "requestId": "11462153-ed07-4955-bb1a-78b34aab6a0d",
+    "responseSha256": "7fff34b9d0e5b8680319fb5beaabfae1af5b37aef2d1a446af082768ecc36f92",
+    "PublicIpAddresses": null,
+    "InternetAccessible": {"InternetMaxBandwidthOut": 0, "PublicIpAssigned": null}
+  },
+  "nativeDisk": {
+    "requestId": "2b5f48a8-38d9-4a9d-b118-18e001de49da",
+    "responseSha256": "2d1c9ce12a8e045e13daa9a9414bb1232956faf9a61f50c6fef48dc3bbf07c44",
+    "Shareable": false,
+    "Attached": true,
+    "DiskState": "ATTACHED",
+    "InstanceId": "ins-mh9mruw7",
+    "InstanceIdList": ["ins-mh9mruw7"]
+  },
+  "failedCaptureDiagnostic": {
+    "invocationId": "inv-a9f3kf07fu",
+    "status": "FAILED",
+    "exitCode": 1,
+    "requestId": "31ee67d7-33a3-469f-a48e-aad9f0d7ab44",
+    "responseSha256": "38db838e734d7f4ea8e6ccb1dbc89c8ac8b9014047cdf0a893d60db465686de7",
+    "condition": "builder IP envelope",
+    "coordinatorIntentExists": false,
+    "guestInvocationId": "inv-a9f3kigif8"
+  },
+  "sources": [
+    "https://cloud.tencent.com/document/api/213/15753",
+    "https://cloud.tencent.com/document/api/362/15669"
+  ],
+  "limitations": [
+    "The native non-shared singleton InstanceIdList differs from the Chinese field documentation; this receipt records an observation, not a vendor guarantee.",
+    "Nullable IP is accepted only with explicit zero outbound bandwidth and no positive public-IP assignment; a missing field is rejected.",
+    "No initializer was submitted by the failed read-only capture; this is not mount, build admission or runtime qualification evidence."
+  ]
+}

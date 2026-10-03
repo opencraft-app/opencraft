@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.35.0
+revision: 1.36.0
 precedence: task
 derived: false
 ---
@@ -415,7 +415,26 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ## checkpoint
 
-当前 checkpoint（1.35.0）：用户追问后，全量北京50组审计发现六个零关联/零SG引用候选，
+当前 checkpoint（1.36.0）：384651d9262821fedaee491de2d41550f3e631ac已正常FF推master，
+保留原empty ancestors与push后empty zuttszqs，另jj new vsqllrzo推进原生API表示修正。
+完整新tools bundle14,333files/54,829,347bytes、manifest155727c60417d63c9e466327411f578f3a2b3be22990c72d3451b57a5c412bd4，
+经COS relay inv-e9f3ij0538与inv-e9f3ik0xcc SUCCESS/0独立校验bytes/SHA送达原ops。
+原锁coordinator inv-a9f3j709tf FAILED/1，但guest inv-c9f3jagpqv SUCCESS/0，
+wipefs修复已在native生效。原ops只读诊断inv-a9f3kf07fu确认capture为builder IP envelope
+且coordinatorIntentExists=false；仍无initializer任务。native CVM PublicIpAddresses=null、
+InternetMaxBandwidthOut=0/PublicIpAssigned=null；CBS Shareable=false、InstanceId与
+InstanceIdList=[ins-mh9mruw7]一致。原fixture只建[]，缺少真实native空值/挂载列表回归。
+
+新修正将InternetAccessible保留进projection并检查所有选取字段key存在；零公网带宽、
+assignment严格null/false和公共地址null/[]联合验证。缺key不能被.get改成合法null，
+正带宽/public assignment/公网地址仍拒绝。磁盘只允许[]或[exact instance]且
+Shareable严格false、InstanceId/Attached/状态仍联合证明；null/多ID/重复/外部ID拒绝。
+中文CBS文档描述非共享空数组，与实际singleton差异明确记入native-shape receipt和README，
+不篡改文档承诺，不绕过host/disk/tag/root/时效门禁。全新reviewed tools identity仍须
+先推送/重新bundle，再由原ops协调，不修改旧cloud source，也不因capture失败盲重放mutation。
+管理节点未编译Runtime，10k/Router/完整Phase5仍未通过。
+
+历史 checkpoint（1.35.0）：用户追问后，全量北京50组审计发现六个零关联/零SG引用候选，
 此前project-tag/name-only的12组范围不能推导全账号无可清理组；“必须提升配额”过早。
 用户明确授权清理，并确认北京没有生产，本轮只删除这六个精确ID；不扩大到其他组、
 集群、资源解绑或数据。fresh exact metadata/name join、完整关联/reference ID集合、

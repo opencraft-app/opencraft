@@ -47,6 +47,7 @@ def observation(observed_at=NOW):
             "InstanceSet": [{"InstanceId": "ins-builder01", "InstanceState": "RUNNING",
                              "InstanceType": "SA9.4XLARGE32", "PrivateIpAddresses": ["10.160.0.30"],
                              "PublicIpAddresses": [], "VirtualPrivateCloud": {"VpcId": "vpc-test01"},
+                             "InternetAccessible": {"InternetMaxBandwidthOut": 0, "PublicIpAssigned": None},
                              "Placement": {"Zone": "ap-beijing-6"}, "SecurityGroupIds": ["sg-build01"],
                              "Tags": ownership("runtime-builder")}],
         },
@@ -102,6 +103,39 @@ class BuilderStorageIdentityTests(unittest.TestCase):
         self.assertEqual(VALIDATE.validate(inventory(), candidate, NOW)["device"], "/dev/vdc")
         row["mountpoints"] = ["/data"]
         with self.assertRaisesRegex(ValueError, "mounted"):
+            VALIDATE.validate(inventory(), candidate, NOW)
+
+    def test_native_null_public_ip_with_zero_bandwidth_and_exact_single_attachment(self):
+        candidate = observation()
+        candidate['instances']['InstanceSet'][0]['PublicIpAddresses'] = None
+        candidate['disks']['DiskSet'][0]['InstanceIdList'] = ['ins-builder01']
+        self.assertEqual(VALIDATE.validate(inventory(), candidate, NOW)['action'], 'initialize-empty')
+
+    def test_null_public_ip_needs_explicit_zero_bandwidth_and_no_assignment(self):
+        for accessible in (None, {}, {'InternetMaxBandwidthOut': 0},
+                           {'InternetMaxBandwidthOut': False, 'PublicIpAssigned': None},
+                           {'InternetMaxBandwidthOut': 1, 'PublicIpAssigned': None},
+                           {'InternetMaxBandwidthOut': 0, 'PublicIpAssigned': True},
+                           {'InternetMaxBandwidthOut': 0, 'PublicIpAssigned': 'false'}):
+            candidate = observation()
+            instance = candidate['instances']['InstanceSet'][0]
+            instance['PublicIpAddresses'] = None
+            instance['InternetAccessible'] = accessible
+            with self.subTest(accessible=accessible), self.assertRaises(ValueError):
+                VALIDATE.validate(inventory(), candidate, NOW)
+
+    def test_disk_attachment_list_is_not_an_unbounded_or_optional_hint(self):
+        for instance_list in (None, ['ins-other01'], ['ins-builder01', 'ins-other01'],
+                              ['ins-builder01', 'ins-builder01'], {}, 'ins-builder01'):
+            candidate = observation()
+            candidate['disks']['DiskSet'][0]['InstanceIdList'] = instance_list
+            with self.subTest(instance_list=instance_list), self.assertRaises(ValueError):
+                VALIDATE.validate(inventory(), candidate, NOW)
+
+    def test_missing_public_ip_field_is_not_documented_null(self):
+        candidate = observation()
+        del candidate['instances']['InstanceSet'][0]['PublicIpAddresses']
+        with self.assertRaises(ValueError):
             VALIDATE.validate(inventory(), candidate, NOW)
 
     def test_inventory_fail_closed(self):
