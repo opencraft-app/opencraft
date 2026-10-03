@@ -2116,7 +2116,7 @@ function RecentCronRunDetailModal({
                 className="inline-flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium text-black/75 hover:bg-black/[0.04]"
               >
                 <Download className="size-3.5" />
-                {t("下载 Markdown")}
+                {t("下载执行结果")}
               </button>
             )}
           </div>
@@ -4186,7 +4186,6 @@ export function AutomationFormModal({
     && zeroTokenKind === "fixed_notification";
   const notificationChannelReady = !notificationChannelRequired || deliverPlatforms.length > 0;
   const canSubmit = !submitting
-    && channelStatus === "ready"
     && name.trim().length > 0
     && taskContentReady
     && scriptSafetyReady
@@ -5082,13 +5081,6 @@ export function AutomationFormModal({
             </div>
           )}
         </div>
-
-        {channelStatus === "ready" && deliverPlatforms.length === 0 && !notificationChannelRequired && (
-          <div className="mt-3 flex gap-2 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2.5 text-xs text-amber-900" role="status">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            <p>{t("结果仅保存在此 Bot 的执行记录中，不会发送到聊天。")}</p>
-          </div>
-        )}
 
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (

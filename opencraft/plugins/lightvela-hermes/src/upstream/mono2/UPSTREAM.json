@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "96c25bfdf9c32264b05506db3f60048c43bb32242368dc92e638d1244d0ccb1e"
+      "sourceSha256": "e2882e8be8fbb941874784d8e16bd6195e3c41ccf15e9e4d5ff8c2628443acbb"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "00c0515b34cc05040ac10f1799bcec6a20621aa12d2082a4fb72db816be825fa"
+      "sourceSha256": "c094c330efbcab0e5067e3a26372daf49e0a794d05d0c24c64aa37402b0d957a"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "7836a307346f1e6c47efeaf9f8122ae7145267f9bc3df60823356d79b87fd7a2"
+      "sourceSha256": "e7e47d60aed49c3b8309f1ab68d49b308b49747a2f5a22961e624989713528b0"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "f3ba79382571b838049f18beaa2fd16032a30625854782ef8e119b4e3d174c31"
+      "sourceSha256": "46eaeac2142c3dd9010b373f65a5b28bf0433969cf8a4a1fdee2f78be8a19904"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "988311adc3905327ee450875618580c98762926c4933a35200d251c67a7135e7"
+      "sourceSha256": "e5fb6ba2e9a8476a47db46f147b2d75faf576a2e1d562eaec593fe15e8121e47"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "6327fbb42314517b6c377f1d82e4eb96895ffc26b7796204d2dccdb756cc8cd3"
+      "sourceSha256": "d4b8649d53ffad25a4e8ba47cb1f1731d0686205fe7fb6afcc914c39a7bd3ae8"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "0f69917e73ecdfe792a238214013cfaa953a6659374819ce0e145a22e4ce2298"
+      "sourceSha256": "0883b8d417937c5016bdd199d8e29ffdd0571559001310630d8f8e4ab05dd66d"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "b61f5b3c34a6af7f17ca9084e56bdfe476398315570075999059d316ff915fe7"
+      "sourceSha256": "a31e55e952c202f0ac3ae77dd7adae37c175a07348aa9cb7b5236588044eb62f"
     },
     {
       "file": "i18n/index.ts",
@@ -225,7 +225,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "5012536fb55f96b67c1fbb81caa210a29762dd0613bb7ad27a739fb459139c82"
+      "sourceSha256": "d4090ae6378c6e5aa3c06a40c847754f4b1bda052e8a4889688b560d00474dac"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",

@@ -41,7 +41,7 @@ Atur bidang berikut:
 - **Notifikasi**: Opsional, pilih tujuan pengiriman hasil.
 
 Pada waktu yang dijadwalkan, Hermes Agent membuat tugas Agent dan memanggil model yang dipilih.
-Hasilnya dapat dikirim ke kanal notifikasi yang dipilih dan dicatat di Eksekusi terbaru. Jika tidak memilih kanal, tugas dibuat dengan pengiriman lokal saja; hasilnya tetap ada di Eksekusi terbaru milik Bot ini dan tidak dikirim ke chat.
+Hasilnya dapat dikirim ke kanal notifikasi yang dipilih dan dicatat di Eksekusi terbaru.
 
 ![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Agent](../../images/st-en-2.webp)
 
@@ -57,7 +57,7 @@ Pada waktu yang dijadwalkan, LightVela mengirim isi notifikasi persis seperti di
 LightVela tidak meminta model untuk menyusun, menulis ulang, merangkum, menerjemahkan, atau menjelaskan pesan.
 Karena itu, penggunaan token model untuk tugas ini adalah 0 Token.
 
-Tugas Notifikasi memerlukan setidaknya satu kanal notifikasi sebelum dapat dibuat atau disimpan.
+Jika tidak memilih kanal notifikasi, tugas tetap berjalan di latar belakang dan menulis catatan tanpa mengirim pesan.
 Setiap kanal notifikasi tetap dapat merender baris baru dan karakter sesuai protokol teksnya sendiri.
 
 ![Dialog Buat Tugas Terjadwal yang menampilkan jenis Tugas Notifikasi](../../images/st-en-3.webp)
@@ -133,7 +133,7 @@ Buat Tugas Notifikasi atau Tugas Skrip khusus dari dialog Buat, bukan dengan men
 Setelah tugas dibuat, gunakan halaman Tugas Terjadwal untuk meninjau Job Saat Ini, Job Berakhir, dan Eksekusi terbaru.
 Tampilan Job Saat Ini dapat memfilter Tugas Agent, Tugas Notifikasi, dan Tugas Skrip.
 
-Di **Eksekusi terbaru**, buka detail eksekusi lalu pilih **Lihat hasil** untuk membaca keluaran Markdown atau **Unduh Markdown** untuk menyimpannya. Beralihlah ke Bot pemilik tugas terlebih dahulu: hasilnya tersimpan dalam catatan eksekusi Bot tersebut dan tidak muncul di chat atau catatan Bot lain.
+Di **Eksekusi terbaru**, buka detail eksekusi lalu pilih **Lihat hasil** untuk membaca keluaran Markdown atau **Unduh hasil** untuk menyimpannya. Beralihlah ke Bot pemilik tugas terlebih dahulu: hasilnya tersimpan dalam catatan eksekusi Bot tersebut dan tidak muncul di chat atau catatan Bot lain.
 
 Job Berakhir mengumpulkan tugas yang selesai, gagal, dan kedaluwarsa.
 Tugas yang masih berjalan tetap ada di Job Saat Ini.

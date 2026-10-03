@@ -1,124 +1,120 @@
 ---
 id: task-automation-delivery-results-2026-09-30
 type: task
-scope: Web scheduled-task delivery visibility and run-result access.
-triggers: ["scheduled task delivery", "cron output", "automation run result"]
+scope: View and download recent automation results from the owning Bot/Profile.
+triggers: ["scheduled task result", "cron output", "automation run result"]
 owner: pablozhong
 authority: primary
 source_of_truth:
   - docs/context/tasks/2026-09-30-automation-delivery-results.md
 status: active
-reviewed_at: 2026-10-01
-review_due: 2026-11-01
-revision: 1.0.0
+reviewed_at: 2026-10-03
+review_due: 2026-11-02
+revision: 1.1.0
 precedence: task
 derived: false
 ---
 
 ## goal
-在定时任务创建表单说明本地投递结果去向，并让用户从所属 Bot 的最近执行记录取回 Markdown 结果。
+把 MR !4878 收窄为：在所属 Bot/Profile 的“最近执行”中按需查看、下载单次执行结果，双站按钮统一为“下载执行结果”。
 
 ## non_goals
-- 不改 Hermes 上游调度器或自动改写现有任务的投递目标。
-- 不跨 Bot 或 Profile 读取文件，不执行发布或生产操作。
+- 不修改新建或编辑定时任务时的通知通道、本地投递逻辑及表单提示。
+- 不修改 Hermes 调度器、聊天创建任务的投递规则或生产环境。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
-- 用户反馈截图（2026-09-30）：第三个 Bot 的任务使用 `deliver: local`，用户未在聊天收到结果，无法从主 Bot 取回该 Bot 的本地文件。
-- 用户本轮确认“改吧，新起一个分支”；创建入口仍未知，不能假定所有任务都有可用 `origin`。
-- 用户 2026-10-02 澄清：未选通知通道就是仅本地保存，不应再要求勾选确认。
-- 用户随后要求：已有本地投递任务的卡片不再展示提示和“设置通知”入口。
+- [MR !4878](https://git.woa.com/wisp/mono2/-/merge_requests/4878)：保留最近执行结果读取，撤回同 MR 的本地投递表单改动。
+- 用户 2026-10-03：国内站和国际站都把“下载 Markdown”改为描述动作的“下载执行结果”；MR 中其他功能改动不再需要。
 
 ## interface_refs / data_structure_refs
-- `frontend/src/lib/hermes-cron-client.ts` 的 `HermesCronTarget`、`CronRunRecord.output_path` 与 `execCommand`。
-- `frontend/src/pages/marketing/agent-automations-panel.tsx` 的任务表单、任务卡、最近执行详情。
-- 结果读取必须绑定当前 Bot/Profile，只允许读取该 Profile 的 `cron/output/<job-id>/*.md`。
+- `frontend/src/lib/hermes-cron-client.ts`：`HermesCronTarget`、`CronRunRecord.output_path`、`readCronRunOutput`。
+- `frontend/src/pages/marketing/agent-automations-panel.tsx`：`RecentCronRunsPanel`、`RecentCronRunDetailModal`。
+- 结果文件限定在当前 Profile 的 `cron/output/<job-id>/*.md`，最大 1 MiB。
 
 ## history_context
-- `current_design_refs`：`frontend/openspec/specs/marketing.md`、`frontend/openspec/plan.md` 的定时任务创建和通知确认约束。
-- `relevant_evolution`：当前网页手动创建默认选中已连接通道；固定通知任务要求至少一个通知通道。Hermes 的 `origin` 依赖真实聊天创建上下文。
-- `superseded_refs`：无。
+- `current_design_refs`：`frontend/openspec/specs/marketing.md` 的“最近执行”约束。
+- `relevant_evolution`：MR 原含本地投递表单提示和文档说明；2026-10-03 用户要求撤回，仅保留结果查看能力。
+- `superseded_refs`：本 Task Pack 原先记录的本地投递改动，现不再是本 MR 目标。
 
 ## acceptance
-- 未选通知通道的智能任务和脚本任务可直接按 `deliver: local` 创建，创建表单说明结果仅留在本 Bot 执行记录中；已有任务卡片不额外展示本地投递提示或快捷入口。通知任务仍须选择通道。
-- 最近执行可查看和下载当前 Bot/Profile 的 Markdown 结果；路径越界、缺失、过大时拒绝读取并提示。
-- 相关组件、命令构造、中文和国际站文案测试通过。
+- 国内站和国际站的详情弹窗展示“查看执行结果”和“下载执行结果”；下载文件仍为 `.md`。
+- 读取只访问当前 Bot/Profile 的结果文件；越界、符号链接逃逸、缺失和超过 1 MiB 均拒绝。
+- MR 相对目标分支不再包含创建表单的本地投递提示、放宽校验及对应测试/文档/规格变化。
+- 前端 lint、类型、聚焦测试及双站构建、OpenCraft 同步检查通过。
 
 ## affected_paths
-- `frontend/src/lib/hermes-cron-client.ts` 及测试。
-- `frontend/src/pages/marketing/agent-automations-panel.tsx` 及测试、i18n 资源。
-- 定时任务产品文档和本 Task Pack。
+- `frontend/src/pages/marketing/agent-automations-panel.tsx`
+- `frontend/src/lib/hermes-cron-client.ts`
+- 相邻测试、`frontend/src/i18n/generated/`、双站定时任务文档、`frontend/openspec/specs/marketing.md`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/` 同步副本
 
 ## required_context
-- `agent-gateway-runtime` 与 `frontend-product-surface`。
+- `frontend-product-surface`、`service-frontend`、`site-environment-routing`、`tapd-gongfeng-delivery`。
 
 ## context_receipt
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
-| `docs/context/domains/agent-gateway-runtime.md@2.0.0` | Agent 与网关归属 | 保持读结果与任务变更在所属实例内 |
-| `docs/context/project/services/frontend.md@2.1.0` | 前端服务边界 | 双站和 i18n 验证 |
-| `frontend/AGENTS.md@current` | 服务规则 | 前端测试与类型门禁 |
-| `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | 相邻实现 | 检查测试和翻译生成链路 |
-| `frontend/openspec/specs/marketing.md@current` | 当前产品规格 | 保留任务与最近执行的页面职责 |
-| `docs/context/flows/tapd-gongfeng-delivery.md@2.0.0` | MR 交付门禁 | 核对目标分支、提交与 CI 状态 |
-| `docs/context/project/upstream-subtrees.md@2.2.0` | OpenCraft 真源边界 | 仅从 mono2 前端源码生成兼容副本 |
-| `opencraft/AGENTS.md@current` 与 `opencraft/MONO2_MIGRATION.md@current` | 生成物约束 | 使用官方同步和漂移校验命令 |
+| `frontend/AGENTS.md@current` | 前端门禁 | 检查 lint/type/test/build |
+| `docs/context/project/services/frontend.md@2.1.0` | 前端与文档真源 | 双站和生成物边界 |
+| `docs/context/domains/site-environment-routing.md@2.0.0` | 双站边界 | 分别验证国内与国际站 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@2.0.0` | MR 交付门禁 | 区分本地改动与远端状态 |
+| `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | i18n 邻接 | 从源码重新生成字典并检查相邻测试 |
+| `frontend/openspec/specs/marketing.md@current` | 产品规格 | 只保留结果查看约束 |
+| `.agents/skills/gongfeng/SKILL.md@current` | 工蜂访问规则 | 只读鉴权与 MR 查询 |
 
 ## evidence
-- 初始隔离工作树基于 `master@efe04e16e`，分支 `codex/automation-delivery-results`。
-- 网页创建任务已有“默认选中已连接通道”逻辑；固定通知任务已要求选择通道。按用户澄清，未选通道时新建可直接本地保存，并保留创建表单中的结果去向说明；已有本地任务卡片不再显示专门提示或入口。
-- 最近执行从所属 Bot/Profile 的 `cron/output/<job-id>/*.md` 按需读取；路径越界、符号链接逃逸、缺失和超过 1 MiB 的结果均拒绝读取。
-- 国内及国际站现有定时任务文档已同步说明本地保存和从最近执行查看、下载 Markdown；国际站通知任务文档中与当前实现冲突的无通道描述已修正。
-- MR !4878 的 CI 在 OpenCraft guard 因 `i18n/generated/en-US.json` 生成副本漂移失败。分支合并 `origin/master@558470e16` 后，官方脚本同步 130 个文件；实际变更限于 11 个生成文件，其中包括 `UPSTREAM.json`。
+- 2026-10-03 工蜂只读查询：MR !4878 为 opened，源提交 `12f99a3c49b6d6758e61842545b36fd6e6059693`。
+- 代码差异显示本地投递表单的新增行为仅为额外 `channelStatus === "ready"` 提交条件与提示块，已从工作树撤回。
+- `pnpm i18n:extract` 已生成新按钮 key；各语言翻译已补齐，`pnpm i18n:zh-hant` 已运行。
+- `npm --prefix opencraft run sync:mono2-agent-console`：同步 130 个嵌入文件。
 
 ## risks
-- 旧任务的 `origin` 可能没有创建时会话；不自动把 `local` 改为 `origin`。
-- 执行内容可能较大；读取限定目录和 1 MiB 大小，超出后显示不能在此查看或下载的提示。
-- 聊天创建任务由 Hermes 上游处理，本次网页改动不能改变其默认投递决策；需要上游单独确认。
+- 下载以浏览器读取后的 Markdown 内容生成 `.md` 文件；真实用户 Bot 和线上环境尚未验证。
+- MR 尚未由本轮更新；提交、推送和修改 MR 描述须按交付门禁另行确认。
 
 ## validation
-- 聚焦 Vitest：`hermes-cron-client.test.ts`、`agent-automations-panel.test.ts` 和 global 对应测试合并复跑，326/326 通过。
-- `pnpm check` 通过：i18n 提取/结构/繁体转换、文档同步/MDX、TypeScript 基线 0 个新增诊断。现存 i18n 告警 47 个。
-- `validate_documentation.py --repo . --format json` 通过，无破损一方链接。
-- `validate_context.py --build-catalog` 失败于大量既有 Task Pack schema/历史错误；本 Task Pack 完善 frontmatter 后不在错误列表中。仓库级 Context 单测同样受既有 Context 契约失败影响。
-- `git diff --cached --check` 与 `validate_change_impact.py --repo . --staged` 通过，changed-path 无匹配高风险规则。
-- 合并 master 后，`npm --prefix opencraft run check:mono2-agent-console` 验证 130 个文件，OpenCraft 插件类型检查及 `test:embedded-ci` 155 项测试通过。
-- 合并 master 后，`pnpm check`、定时任务聚焦 Vitest 326 项以及国内站和国际站构建均通过。
-- 2026-10-02 移除强制勾选后，`pnpm check`、三份聚焦 Vitest 326 项、补充编辑场景后的国内站测试 202 项，以及国内站和国际站构建通过；文档链接检查无破损或未分类文档。
-- 2026-10-02 移除已有本地任务卡片提示与快捷入口后，`pnpm check`、国内与国际站任务面板聚焦 Vitest 211/211、国内与国际站构建及文档链接检查通过。
+- 聚焦 Vitest：3 文件，324/324 通过。
+- `pnpm check` 与 `pnpm typecheck` 通过：TypeScript 基线 171，当前 166，新增 0。
+- `pnpm build:cn` 与 `pnpm build:global` 均通过；文档校验无破损站内链接、未分类文档。
+- OpenCraft 同步校验 130/130、插件 `typecheck` 和嵌入测试 155/155 通过。
+- 全量 `pnpm test --maxWorkers=2` 出现模型配置、诊断面板等无关失败及多次 Node OOM 后停止；未得到全量通过结论。
+- `pnpm lint` 无法运行：当前 `frontend/package.json` 无 `lint` 脚本且未安装 ESLint。
+- 全量 `validate_context.py --build-catalog` 因大量既有 Task Pack schema/历史错误失败；所见错误未涉及本 Task Pack。
 
 ## decisions
-- 优先补齐结果可达性和本地投递显性反馈；聊天创建路径由 Hermes 上游持有，未确认入口前不修改上游运行时。
-- 原强制勾选为避免用户误以为本地任务会发到聊天；用户确认未选通道本来就表示本地投递后，移除额外确认，只保留非阻断提示。
-- 用户进一步收窄已有任务卡片：只保留通用编辑操作，不再显示本地投递横幅或“设置通知”快捷入口。
+- 保留“最近执行”文件读取和 1 MiB/目录校验；撤回与结果查看无关的本地投递改动。
+- 按钮以用户动作命名；文件格式仍为 Markdown，必要时在文档中说明。
 
 ## scan_scope
-- `frontend/src/lib/hermes-cron-client.ts` 与 `frontend/src/pages/marketing/agent-automations-panel.tsx` 的定时任务链路。
+- MR !4878 相对 `master@62c1bf91b` 的 33 个变更路径；源码搜索限于定时任务页面、客户端、文档与 i18n。
 
 ## scan_output
-- 精确搜索记录在本轮工具输出中。
+- MR 文件差异和本地 `git diff` 摘要，不保存完整扫描输出。
 
 ## handoff
-- MR !4878 已存在；用户确认不需要本地保存勾选，也不展示已有本地任务卡片的提示与“设置通知”快捷入口。本轮修改待提交前端真源、同步 OpenCraft 生成物并核对远端 CI。未授权合并或发布。
+- 本地改动及可运行门禁已完成；等待用户确认是否 commit、push 并更新 MR 描述。全量前端测试与全量 Context 校验未通过，限制已在验证记录中列出。
 
 ## stage
-已有本地任务卡片展示已按用户反馈简化并通过前端验证，待生成副本同步与 MR 更新。
+MR 范围已收窄，正在完成最终差异审核与交接。
 
 ## verified
-- 隔离分支只含本次改动；国内与国际站聚焦测试 326/326、前端检查、文档检查和 changed-path 门禁已有通过证据。
-- 全量 Context 门禁的历史错误仍存在；本 Task Pack 不在错误列表中。
-- 已合并 `origin/master@558470e16`；官方同步后的 OpenCraft 130 文件校验通过。
+- 聚焦 Vitest 324/324、`pnpm check`、`pnpm typecheck`、国内及国际站构建通过。
+- OpenCraft 130 文件同步校验、插件类型检查和嵌入测试 155/155 通过。
+- 文档校验无破损站内链接或未分类文档。
 
 ## unverified
-- 真实用户 Bot 的执行结果读取、聊天创建任务的 `origin` 行为和线上环境未验证。
-- 真实用户 Bot 和线上发布状态未验证。
+- 真实用户 Bot 的文件读取和线上环境效果未验证。
+- 全量前端测试在多个无关模块失败后出现 Node 内存耗尽，本轮已停止；完整全量通过状态未证实。
+- 仓库当前没有可运行的 `pnpm lint` 脚本。
+- 全量 Context 校验仍因历史 Task Pack schema 错误失败；本 Task Pack 未在所见错误中出现。
 
 ## discard
-- 国际站测试原来的 `platforms` 状态模拟已由当前 `channels` 结构替代。
-- 国际站文档原来的“通知任务无通道仍可保存”描述已由真实表单约束替代。
+- 已撤回的本地投递表单提示及相应文档、规格、测试断言。
+- 构建及 Context 校验产生的无关生成文件已恢复。
 
 ## restore
-- 工作树 `/Users/pablozhong/.codex/worktrees/automation-delivery-results/lightvela`，分支 `codex/automation-delivery-results`；根 checkout 的既有脏改动未碰。
-- 本任务前端验证入口为 `pnpm check` 和三个聚焦 Vitest 文件。
+- 工作树：`/Users/pablozhong/.codex/worktrees/automation-delivery-results/lightvela`，分支 `codex/automation-delivery-results`。
+- MR !4878 当前远端源提交 `12f99a3c49b6d6758e61842545b36fd6e6059693`；本轮改动尚未 commit/push。
 
 ## next_action
-先提交前端真源和本记录，再用官方脚本生成 OpenCraft 副本并单独提交；推送后核对 MR 与 CI。
+- 核对最终 diff、更新本 Task Pack 的验证记录，再请用户明确确认 commit、push 和更新 MR 描述。

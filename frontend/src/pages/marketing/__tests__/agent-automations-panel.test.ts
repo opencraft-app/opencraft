@@ -558,7 +558,7 @@ describe("recent run limit hint", () => {
       run,
     ));
     expect(screen.getByText(/已完成资料收集/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: localizedText("下载 Markdown", "Download Markdown") })).toBeEnabled();
+    expect(screen.getByRole("button", { name: localizedText("下载执行结果", "Download result") })).toBeEnabled();
   });
 
   it("shows an unconfigured Skill binding in the recent-run detail", () => {
@@ -2046,6 +2046,7 @@ describe("terminal cron card visibility", () => {
     expect(within(dialog).getByRole("button", {
       name: new RegExp(localizedText("智能任务", "AI-powered")),
     })).toHaveClass("border-blue-300", "bg-blue-50");
+
     fireEvent.click(within(dialog).getByRole("button", { name: localizedText("新建", "Create") }));
 
     await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
@@ -2612,7 +2613,7 @@ describe("automation notification channel options", () => {
       channelStatus: "ready",
     });
 
-    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
     expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
     const notificationHelpButton = screen.getByRole("button", { name: "通知方式" });
@@ -2710,7 +2711,7 @@ describe("automation notification channel options", () => {
       channelStatus: "ready",
     });
 
-    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByText("No channels configured.")).toBeTruthy();
     expect(screen.queryByText("No notification channels are configured yet.")).toBeNull();
     fireEvent.focus(screen.getByRole("button", { name: "Notification" }));
@@ -3054,53 +3055,6 @@ function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFor
   return render(createElement(AutomationFormModal, props));
 }
 
-describe("local-only automation delivery", () => {
-  it("creates an Agent task locally without a notification channel", async () => {
-    renderAutomationForm();
-    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入定时任务名称", "Enter scheduled task name")), {
-      target: { value: "每日资料" },
-    });
-    fireEvent.change(screen.getByPlaceholderText(localizedText(
-      "请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展",
-      "Describe the task for your Agent, for example: summarize the latest AI news each day",
-    )), { target: { value: "收集并总结资料" } });
-
-    expect(screen.getByText(localizedText(
-      "结果仅保存在此 Bot 的执行记录中，不会发送到聊天。",
-      "Results are saved only in this Bot's run history and won't be sent to chat.",
-    ))).toBeTruthy();
-    const submit = screen.getByRole("button", { name: localizedText("新建", "Create") });
-    expect(screen.queryByRole("checkbox", { name: localizedText("我确认仅本地保存", "I understand this saves locally only") })).toBeNull();
-    expect(submit).toBeEnabled();
-    fireEvent.click(submit);
-
-    await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
-      "bot-1", expect.objectContaining({ deliver: "local" }), undefined,
-    ));
-  });
-
-  it("saves an existing task locally when its last notification channel is cleared", async () => {
-    renderAutomationForm({
-      mode: "edit",
-      initialJob: makeCronJob({ deliver: "qqbot" }),
-      enabledChannels: new Set(["qqbot"]),
-    });
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
-    expect(screen.getByText(localizedText(
-      "结果仅保存在此 Bot 的执行记录中，不会发送到聊天。",
-      "Results are saved only in this Bot's run history and won't be sent to chat.",
-    ))).toBeTruthy();
-    const save = screen.getByRole("button", { name: localizedText("保存", "Save") });
-    expect(save).toBeEnabled();
-    fireEvent.click(save);
-
-    await waitFor(() => expect(cronClientMocks.editCronJob).toHaveBeenCalledWith(
-      "bot-1", "job-1", expect.objectContaining({ deliver: "local" }),
-    ));
-  });
-});
-
 describe("once execution time picker", () => {
   it("uses the same control height across recurring, interval, and one-time schedules", () => {
     renderAutomationForm();
@@ -3294,6 +3248,7 @@ describe("automation form test run", () => {
         previewKind: "briefing",
       },
     });
+
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -3950,7 +3905,7 @@ describe("automation notification channel options", () => {
     if (isGlobal) return;
     renderAutomationForm({ enabledChannels: new Set(), channelStatus: "ready" });
 
-    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByText("暂无已配置的通知通道。")).toBeTruthy();
     expect(screen.getByRole("link", { name: "前往通道配置" })).toHaveAttribute("href", "/agents/channels/");
   });
