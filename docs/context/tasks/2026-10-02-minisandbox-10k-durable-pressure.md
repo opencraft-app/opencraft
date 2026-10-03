@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.29.0
+revision: 1.30.0
 precedence: task
 derived: false
 ---
@@ -120,6 +120,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `docs/context/project/{upstream-subtrees.md,services/ctl.md,services/sandbox.md,adjacency/argocd-ci-secrets.md}`、`docs/context/domains/{agent-gateway-runtime.md,release-gitops.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/{operations/with-autonomy-operation-lock.sh,tat/{tat-run.sh,tat-wait.sh,lib-tat.sh},runtime/{generate-source-manifest.sh,verify-full-source-bundle.py,test_monitor_bottomless.py},terraform/create-first/bootstrap/{README.md,collect-runtime-builder-storage.py,collect-runtime-builder-guest.py,validate-runtime-builder-storage.py,test_collect_runtime_builder_storage.py,test_validate_runtime_builder_storage.py}}@d644c661` | 原操作锁持有和 source/TAT 交接边界 | 不新增 fleet lock、不重试 indeterminate submission；原 full manifest 有 Unity 空格与 frontend `$`/方括号路径，不能假设 Python-safe 文件名 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/bootstrap/{collect-runtime-builder-storage.py,collect-runtime-builder-guest.py,validate-runtime-builder-storage.py,prepare-bootstrap-host.sh,test_collect_runtime_builder_storage.py,README.md}`、`runtime/{verify-builder-storage.py,test_builder_storage.py,README.md#L23-L49}`、`operations/with-autonomy-operation-lock.sh`、`terraform/create-first/{management/main.tf,test-terraform-storage-contract.py}@e0270035` | 独立builder初始化和恢复协议的真实所有权 | 原operations host owns共享锁，guest local flock仅防重复初始化；mount不替代真实bulk backing/Buildah/toolchain准入 |
 | `docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py`、`terraform/create-first/bootstrap/{README.md,validate-runtime-builder-storage.py,collect-runtime-builder-guest.py,test_validate_runtime_builder_storage.py}@71dfe019` | 本轮性能建模接续与实际发布前置 | 不将未发布修正当收益；独立builder storage journal仍缺，不绕过原锁或格式化既有PV |
 | `AGENTS.md`、`minisandbox/{AGENTS.md,engine/AGENTS.md,infra/cells/AGENTS.md}`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@ea628922` | 原运行中精确 branch 取证与性能反馈建模 | mono2 唯一写源、原 invocation/ops lock；只读且有界，不新发布或重编 workerd |
@@ -413,6 +414,56 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前 checkpoint（1.30.0）：上一轮 d644c661 已正常 FF 推 master，并完成原 strict10k
+终态收据归档；上一 goal turn 是 progress，原 run 已 terminal，不再以其旧锁状态重复等待。
+本轮隔离 revision wywwnwul 增加原 operations-host coordinator：核验 fixed reviewed
+tools closure、实际 host metadata 和原 kernel flock；root-backed submitting/submitted/
+terminal intent 先 fsync。一次有界 credential-free TAT payload 只在 private `/var/tmp`
+中转移工具/input，不预先创建 `/data`。记录调用后失联或重启只 collect 原 invocation；
+失去提交响应则保留 ambiguous intent，禁止自动重发。重复成功是历史 receipt，fresh
+recheck 需原 native terminal；mountVerified 仍非 storageReady，也非 cloud qualification。
+
+首次 12 项 coordinator 回归有 6 errors/2 failures：真实 tat-run 的 command substitution
+移除 trailing newline，导致本地 payload hash 不等于 native sent bytes。保留 first 日志并
+按实际协议规范化，second 12/12 通过。实读已归档 full manifest 又发现原 strict filename
+regex 会拒绝 Unity 空格/frontend `$`/方括号路径；修正合法 canonical relative path 验证，
+只选固定 source closure，不执行 manifest 中任意路径。新增执行确认、错误 operations
+metadata、假 held 环境变量与 real wrapper/observation retry，third 15/15 通过。
+日志 `/data/tmp/minisandbox-builder-coordinator-{first,second,third}-20261003.log`。
+这些是实际 subprocess/file/lock 协议门禁，不是 CBS/cloud mount/reboot 或性能改善证据。
+
+最终复核补齐 per-host private intent flock：原 fleet wrapper 的 sibling 子命令不允许同时
+通过 no-intent 后覆盖 invocation。局部锁不取得新的 fleet 操作权限。新增 busy intent 反例
+在 capture/TAT/intent 写入前拒绝；冻结后 coordinator16/16、combined51/51 通过，日志
+`/data/tmp/minisandbox-builder-coordinator-frozen-combined-20261003.log`。完整 frozen Fleet
+原 session38696 exit0、fleet_manifest_invariants=passed，日志 frozen-fleet；不重编 V8。
+此前50项/Fleet的旧日志保留，最终源码以上述 frozen 两个门禁为准。
+
+coordinator 已加入正式 Fleet runner，原 session 85486 exit0、fleet_manifest_invariants=
+passed，日志 `/data/tmp/minisandbox-builder-coordinator-fleet-20261003.log`。combined storage
+50/50 通过，涵盖原 identity/capture/initializer 与新 coordinator；py_compile/bash-n/
+diff-check 通过。默认 audit 返回 Unknown/not_assessed，不进行全仓语义评分。
+documentation 零 error/warning；rootcontext 4942 历史 errors 与上一基线归一化 Counter
+added0/removed0、本Task0。context26 tests仍同四项历史fail，audit33/33，不称全仓通过。
+
+bounded native 检查纠正旧交接：08:12:21 UTC 的 healthy saved plan 实际存在（不是旧两份
+failed plan）；tfstate lineage a7e30c7b/serial62 对应当前 C，尚无 runtime_builder resource。
+原 `tfdata-management` 为正式 COS backend，prefix actor-fleet/management，已用正常配置
+加载 provider1.83.11，而不是本地 validation copy。首次两条 show 命令缺 provider package
+而失败（pipeline jq 无输出不算通过），指定实际 TF_DATA_DIR 后成功。
+重新运行完整 management plan 原 session2164 exit0，13:25:12 UTC errored=false/
+applyable=true，只五 create、零 change/destroy；CVM SA9.4XLARGE32/CBS512GiB CLOUD_BSSD
+同 ap-beijing-6，无对 existing workload 的计划变更。新 protected plan 为
+`/data/tmp/minisandbox-builder-management-coordinator-20261003.tfplan`，SHA前缀e8c8b99b7a94。
+其中四份 tfconfig bytes 与当前 source exact match；plan/全state/凭据不提交仓库或输出。
+本轮只读 plan，未 apply 或 provisioning，不将它作为实际 guest storage/handoff 证据。
+
+下一动作：完成 own catalog/context/source 门禁并提交，再在原 operations host 的受监督
+持锁工作流内重验/执行完整 management plan。真实独立 builder provisioning、qualified Python
+安装、native storage 初始化/reboot、Buildah actual GraphRoot/资源 reserve、toolchain/cache
+与受控 Engine-only release 未完成；新修正仍未部署。strict10k 及整个 Phase 5 保持不变，
+不能将 safe contraction 或局部门禁转写成万活跃/三秒资格通过。
 
 ### stage
 

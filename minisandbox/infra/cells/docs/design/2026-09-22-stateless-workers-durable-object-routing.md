@@ -1731,6 +1731,21 @@ MountVerified 仍保持 storageReady=false：Buildah 真实 GraphRoot、全部 b
 资源 reserve、toolchain/cache 和受控 handoff 必须独立通过，不能由 journal 替代。
 锁持有的 coordinator、真实新 builder 初始化/重启/构建交接尚未云上完成。
 
+coordinator 源码已进一步绑定 reviewed revision/full manifest 的固定工具闭包，并通过原
+operations wrapper 全程持锁、实际锁冲突检查与 native metadata 验证 operations host。
+一次有界 TAT payload 在 private root-backed temp 中转移工具/inventory/新观察，不先创建
+`/data` 或携带 cloud credential。root-backed 提交 intent 先 fsync，绑定实际 TAT payload
+bytes；state 以 host 身份索引，改变 inventory bytes 不能绕开旧 intent。记录 invocation
+前还持有 private per-host intent lock，原 wrapper 的 sibling 子命令不能同时覆盖提交意图。
+该局部锁不取得 fleet 操作权限，也不替代原全程 operation lock。记录 invocation
+后的观察失败或重启只 collect 同一 handle，未知状态保持锁、不产生新 mutation。
+提交响应丢失的 `submitting` 必须 fail closed，原 unique commandName/native 调用尚未
+查清前不自动重发；不能承诺 local journal 与 TAT 原子提交，也不能将进程死亡后已释放的
+flock 伪装为仍持有。入口须由原 operations host 的监督作业运行，不能靠 disposable
+client waiter。重复成功返回的是历史 mount receipt；fresh `--recheck` 只在原 native
+terminal 已收集后执行，原 helper source 身份保持。真实 lock/TAT 协议进程回归仅证明
+本地协议语义，不代表已创建 CBS、完成 reboot 或发布性能修正。
+
 07:08:46 UTC 的新观察表明 Prometheus 暂时 Ready、HPA condition 恢复 ValidMetricFound，
 但 C 原 builder 节点仍 DiskPressure、构建仍共根盘。没有实际查询两项 custom metric 值，
 也没有负载窗口，不能因此宣称控制闭环稳定或整个性能问题已解决。

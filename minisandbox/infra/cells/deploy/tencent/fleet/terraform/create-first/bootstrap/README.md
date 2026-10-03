@@ -131,8 +131,64 @@ cloud/root/TKE identity fences, only proves `action=verify-attachment`, and neve
 grants formatting or build admission. The default collector/planner remains the
 strict fresh-empty path. Local tests run real journal files and subprocess
 protocol doubles, plus a native ext4 regular-file signature/fsck probe. They do
-not prove cloud block mounts, reboot persistence, a lock-owning coordinator,
+not prove cloud block mounts, reboot persistence, actual cloud coordination,
 toolchain installation or controlled build handoff; those remain cloud gates.
+
+`run-runtime-builder-storage.py` is the operations-host coordination entrypoint.
+It verifies the exact reviewed `.actor-source` revision and manifest for the
+initializer, collectors, planner, coordinator and existing lock/TAT helpers.
+The full manifest supports the real repository's spaces, brackets and `$` in
+unrelated filenames; only the fixed selected tool closure is transferred.
+It re-execs through the original `with-autonomy-operation-lock.sh`, verifies
+that the lock is actually held and that live instance metadata identifies the
+inventory's original operations host. A variable saying "lock held" alone is
+not evidence. No alternative fleet lock or cloud credential is sent to the
+builder. Run it as a supervised operations-host job, not a disposable local
+client process.
+
+```bash
+# From the immutable reviewed source tree on the original operations host.
+python3.11 run-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --management-inventory /protected/management-inventory.json \
+  --management-kubeconfig /protected/management.kubeconfig \
+  --source-revision "$REVIEWED_TOOLS_REVISION" \
+  --source-manifest-sha256 "$REVIEWED_TOOLS_MANIFEST_SHA256" --execute
+```
+
+The coordinator stores and fsyncs its private root-backed intent at
+`/var/lib/actor-runtime-builder-coordinator/<instance-id>.json` before submission.
+The identity binds exact inventory bytes, reviewed tools and actual transfer
+payload. Keying it by host, not input hash, prevents reordered or changed inputs
+from silently obtaining a second submission authority. The one bounded TAT
+workflow also holds a private per-host intent lock: sibling commands beneath
+the same fleet-lock supervisor cannot race the intent or replace its handle.
+That lock does not confer fleet-operation authority. The bounded TAT
+command materializes its exact credential-free closure under a new private
+`/var/tmp` directory, so it does not create `/data` before the disk initializer.
+The payload digest uses the actual bytes sent by TAT, including its command
+substitution's removal of trailing newlines.
+
+The coordinator makes one CLI submission attempt and disables the TAT helper's
+submission retry loop. Once its invocation is recorded,
+observation failure retains the operation lock and reuses `tat-wait.sh` for
+that exact invocation. Restart from `submitted`, or from a native success whose
+output was not saved, also only collects the original command. Unknown status
+never permits a fresh command or build handoff. A lost submission response
+leaves `submitting` and blocks reruns: collect the exact original command using
+the recorded unique command name before any operator repair. This is not an
+atomic transaction across local storage and TAT, nor a promise that a crashed
+operations host retains a kernel flock. Preserve the intent and supervise the
+job; never clear it or resubmit merely because a waiter disappeared.
+
+A completed duplicate call returns its previously verified receipt. That is
+historical evidence, not a new mount observation. `--recheck --execute` permits
+a fresh attachment/journal/mount check only after the original native terminal
+result is collected. Keep the original reviewed tool identity when resuming.
+The receipt still says `storageReady=false`; Buildah, bulk-path admission,
+toolchain/cache preparation, real CBS/reboot verification and build handoff
+remain independent gates. Real lock/TAT subprocess tests cover local protocol
+semantics, not cloud qualification.
 
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
