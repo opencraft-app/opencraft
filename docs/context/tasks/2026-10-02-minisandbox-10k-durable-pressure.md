@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.5.0
+revision: 1.6.0
 precedence: task
 derived: false
 ---
@@ -48,8 +48,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `502 indeterminate_result` 保持现有副作用边界；修复目标是消除资源饥饿，不改变错误语义。
 - Gasoline debug history 按 signal index 分组多个 input chunk；调试读取不能把合法多块信号
   误判为历史损坏。生产 replay、持久编码与当前负载 Runtime 不变。
-- Gasoline activity execution attempt 使用固定 succeeded/error/timeout 结果；排队时间仍包含
-  在 execution attempt timeout 内，指标不能将正常返回的 retryable 业务结果等同有效 fold。
+- Gasoline activity execution attempt 使用固定 succeeded/error/timeout 结果。新源码显式准入
+  不计入 execution timeout；旧 Runtime 仍含排队。正常返回 retryable 业务结果不是有效 fold。
+- Depot 的 refresh/compaction lane 仍各为每进程 8/2 执行许可，等待槽各最多 64/16。
+  准入最多 30 秒，超出后通过 exact lease 延后 60--120 秒，不记录 execution failure event。
 - manager 新迭代在任意 active job 期间执行有界观察，`planning_deferred=true` 不是无待办工作。
   force completion、quiescing 与派发新计划必须等待完整 refresh；生命周期停止与 fallback timer 不跳过。
 
@@ -71,6 +73,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - reviewed-source、runtime 配置、Rust 聚焦测试、fleet manifest 与 mono2 context/change-impact 门禁通过。
 - active job 观察的读取量与历史 tail 大小无关；不能清 dirty、完成未执行 force 请求或跳过
   生命周期停止。旧完整 activity 与新观察均可持久回放，普通规划不增加版本事务。
+- 明确排队与执行预算；真实 production workflow handler 必须在延期时释放 exact lease、
+  保留 input、重启恢复且不耗尽执行失败次数。实际 execution timeout 和数据 fence 不削弱。
 - 新 digest 经正式 release 后，真实 10k receipt 必须满足零 retry、零 active failure、10,000 active；
   通过前不得运行或宣称 Router performance qualification 完成。
 
@@ -79,6 +83,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `minisandbox/engine/packages/universaldb/`
 - `minisandbox/engine/packages/config/`
 - `minisandbox/engine/packages/gasoline/`
+- `minisandbox/engine/packages/gasoline-macros/`
 - `minisandbox/engine/packages/depot/`
 - `minisandbox/docs-internal/engine/sqlite/components.md`
 - `minisandbox/infra/cells/deploy/tencent/fleet/runtime/`
@@ -120,6 +125,12 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/engine/packages/depot/src/workflows/db_manager.rs@10b8b6d2`、`minisandbox/engine/packages/depot/src/compaction/shared.rs@10b8b6d2` | 无效规划路径 | 已有 active job 时仍完整读取 DELTA，最终无法派发 |
 | `minisandbox/engine/packages/depot/src/compaction/companion.rs@10b8b6d2`、`minisandbox/engine/packages/gasoline/src/ctx/workflow.rs@10b8b6d2` | 完成与回放所有权 | 不丢 dirty、完成信号或旧 activity，显式区分观察与规划 |
 | `minisandbox/docs-internal/engine/sqlite/constraints-and-design-decisions.md@10b8b6d2` | 数据 fence | 仅消除规划读取，不删除 stage/install/PITR/lifecycle 校验 |
+| `AGENTS.md@4857746f`、`minisandbox/AGENTS.md@4857746f`、`minisandbox/engine/AGENTS.md@4857746f`、`minisandbox/infra/cells/AGENTS.md@4857746f` | 本轮所有权与验证 | 只改源码和本地回归，不写云上配置或发布 workerd |
+| `docs/context/project/upstream-subtrees.md@4857746f`、`minisandbox/MONO2_SUBTREE.md@4857746f`、`docs/context/domains/release-gitops.md@4857746f`、`docs/context/project/adjacency/argocd-ci-secrets.md@4857746f` | 源码、发布和邻接 | mono2 唯一真源；源码通过不冒充 Runtime 发布 |
+| `minisandbox/.claude/reference/testing.md@4857746f`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@4857746f` | 测试与发布邻居 | 真实 RocksDB/memory PubSub；不重启失联云作业 |
+| `minisandbox/docs-internal/engine/sqlite/components.md@4857746f`、`minisandbox/docs-internal/engine/sqlite/constraints-and-design-decisions.md@4857746f`、`minisandbox/docs-internal/engine/sqlite/storage-structure.md@4857746f` | 后台工作与安全边界 | 准入不取得数据权威，保留原 publication/lifecycle/backup fence |
+| `minisandbox/engine/packages/gasoline/src/ctx/workflow.rs@4857746f`、`minisandbox/engine/packages/gasoline/src/error.rs@4857746f`、`minisandbox/engine/packages/gasoline/src/worker.rs@4857746f`、`minisandbox/engine/packages/gasoline-macros/src/lib.rs@4857746f` | admission/execution/replay | 独立有界准入、可取消；由原 exact-lease handler 持久延期 |
+| `minisandbox/engine/packages/depot/src/admission.rs@4857746f`、`minisandbox/engine/packages/depot/src/compaction/companion.rs@4857746f`、`minisandbox/engine/packages/depot/src/workflows/db_hot_compacter.rs@4857746f` | job 恢复和故障边界 | 不丢 signal、伪造完成或移动 StageBeforeAdmission fault 到许可之后 |
 
 ## evidence
 
@@ -167,6 +178,11 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   100 倍；此比值仅证明此路径的读取成本，不是生产请求速度或集群容量的倍率。
 - 七项真实存储/history 回归覆盖有界观察、恢复规划、旧完整事件回放、新观察回放不重复读、
   普通规划单 activity、force/timer 不误完成、非 live/畸形 metadata 失败关闭。
+- 新显式准入 fixture 已证明连续三次 deferred 仍保留同一 job/input、不写 execution error，
+  production handler 每次释放 lease；等待跨越原 execution deadline 后仍能取得许可执行。
+  worker stop、真实 execution timeout 和持久 output replay 分开验证，未提高执行超时或重试数。
+- 有界 FIFO pool 验证 10,000 次 overflow 均立即延后、accepted waiters 顺序和取消/到期释放容量；
+  这是本地算法回归，不是万级业务压测。真实 stage 前/后 head advance 三项及 branch GC 七项通过。
 
 ## risks
 
@@ -174,9 +190,21 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   waiter 年龄和 cold publish 追赶速度，而不是只看 HTTP 成功。
 - 只扩 FDB process 不会消除进程级 activity 放大；CPU/health 绿色也不能证明延迟安全。
 - 运行时参数变更必须随新 digest 发布；直接 patch ConfigMap 会制造不可重建漂移。
+- FIFO 只保证已接受的进程内等待者，不保证过载时所有 deferred job 全球公平或最终准入。
+  延期仍有 due/replay 成本，并可能延后完成/停止信号处理；必须测 hot-debt 斜率与有效 service rate。
 
 ## validation
 
+- 本轮独立准入：Gasoline lib 33 passed、Depot lib 56 passed，真实存储/production handler
+  覆盖延期重启、same input、新 lease、stale owner fencing、排队取消、实际执行超时、
+  output replay、pre-admission output 及直接宏调用不绕过准入。
+- 本轮真实 `test_driver` 3、`head_advance` 3、branch GC 7 passed；没有物理恢复或云端变更。
+  Gasoline 默认路径 `activity_ctx` 两项真实 worker 集成也通过，验证 state/property 行为不变。
+  `cargo check --offline --locked -p rivet-engine` exit 0，默认 clippy exit 0；Depot 保留
+  48/50、Gasoline 保留 139/140 现存库/测试 warnings，新准入 fixture 无 warning。
+- 本轮 documentation validator 0 errors/0 warnings；Context 4,942 个历史错误与上一基线
+  在归一化 SHA 后完全相同，当前 Task 无错误。context 26 项测试仍同样四个历史失败；
+  audit 33 项测试 passed，实际 audit exit 0。未将历史全量失败称为全量通过。
 - 本轮 Depot lib：54 passed，包含七项 active observation 回归；真实 manager/companion
   `test_driver` 三项、`head_advance` 三项、branch GC 七项均通过。
 - 本轮默认 clippy `--lib --tests -- -W warnings` exit 0，库/测试保留 48/50 warnings，
@@ -238,7 +266,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-A/B 发布资格完成；strict10k 终态失败；active-job 有界观察通过本地存储/回放/工作流回归，尚未发布。
+A/B 发布资格完成；strict10k 终态失败；active-job 有界观察与独立有界准入已有本地回归，尚未发布。
 
 ### verified
 
@@ -270,6 +298,9 @@ A/B 发布资格完成；strict10k 终态失败；active-job 有界观察通过�
   指标修正冒充调度/性能整改完成。线上镜像仍是 072e504b/6e4d982e。
 - active-job 有界观察通过 Depot 54 项 lib 测试及真实工作流/前缀/GC 共 13 项回归。
   保留数据 fence、fallback timer 与 force 语义；普通规划活动序列未变。尚无新的发布或 strict10k。
+- 独立准入源码通过 Gasoline 33 / Depot 56、实际工作流/前缀/GC 13 项回归；Engine 类型
+  检查和默认 clippy 通过。只在准入 overflow/deadline 延后原 job，失败计数、数据 fence
+  与持久 event 编码不变；真实 strict10k 与正式 Runtime 发布仍未完成。
 
 ### unverified
 
@@ -280,8 +311,8 @@ A/B 发布资格完成；strict10k 终态失败；active-job 有界观察通过�
   reclaim 为零可能是 live pins/retention，不能只凭同窗相关性下结论。
 - 历史窗口具体 timeout/replan 比例、admission 等待与实际执行的分布、首次 502 完整归因。
   per-Pod CPU/读字节/transaction attempts 已补，旧合并 activity 标签无法追溯分类。
-- durable admission deferral 和有界 DELTA 读批优化尚未实现；active-job 观察尚未发布，
-  其真实 strict10k 读取/延迟改进仍无证据。
+- durable admission deferral 源码已实现；有界 DELTA 读批优化仍未实现。准入修正与 active-job
+  观察尚未发布，其真实 strict10k 读取/延迟、有效吞吐和 hot-debt 改进仍无证据。
 
 ### discard
 
@@ -290,7 +321,7 @@ A/B 发布资格完成；strict10k 终态失败；active-job 有界观察通过�
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 10b8b6d2 为已推送证据基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 4857746f 为已推送证据基线；原 dirty 工作区保持不动。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
@@ -299,8 +330,10 @@ A/B 发布资格完成；strict10k 终态失败；active-job 有界观察通过�
 
 - 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
   已复现，须把新指标随下一实际修正发布后才能量化旧反馈假设，不重写历史分类。
-- active-job 有界观察源码门禁完成；继续明确 exact job durable admission/deferral 的 lease
-  所有权、等待上限与公平性，不以每秒 durable polling 制造另一轮放大。
+- active-job 有界观察与独立准入完成源码/本地验证后，按同一 reviewed release 纳入实际 Engine；
+  使用 unchanged workerd 的构建投影/cache，不为文档或诊断变更单独重建。
+- 重跑相同 strict10k，观察 shared lane 总 offered demand、执行时间、有效 fold/publish/reclaim、
+  deferral/replay 成本和 hot-debt 斜率。排队不再耗失败预算并不证明存储吞吐已足够。
 - 新 attempt metric 与行为修正仍须同一 reviewed release 发布；发布前不拿旧合并指标估算
   timeout 比例，不因普通 docs/诊断变更单独重建 workerd。
 - 保持 Router performance 前置 10k 门禁；诊断修复不单独触发 workerd 重构建或 Runtime 发布。

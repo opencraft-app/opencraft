@@ -1200,15 +1200,11 @@ fn manager_planning_timers_disabled(_input: &DbManagerInput) -> bool {
 }
 
 #[activity(RefreshManager)]
+#[admission = crate::admission::manager_refresh(ctx)]
 pub async fn refresh_manager(
 	ctx: &ActivityCtx,
 	input: &RefreshManagerInput,
 ) -> Result<RefreshManagerOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::ManagerRefresh,
-		ctx.config().runtime.depot_manager_refresh_max_concurrency(),
-	)
-	.await?;
 	let now_ms = ctx.ts();
 	let database_branch_id = input.database_branch_id;
 	let cold_storage_enabled = ctx.config().sqlite().workflow_cold_storage().is_some();
@@ -1299,15 +1295,11 @@ pub async fn refresh_manager(
 }
 
 #[activity(ObserveActiveManager)]
+#[admission = crate::admission::manager_refresh(ctx)]
 pub async fn observe_active_manager(
 	ctx: &ActivityCtx,
 	input: &ObserveActiveManagerInput,
 ) -> Result<RefreshManagerOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::ManagerRefresh,
-		ctx.config().runtime.depot_manager_refresh_max_concurrency(),
-	)
-	.await?;
 	let branch_id = input.database_branch_id;
 	let now_ms = ctx.ts();
 	ctx.udb()?

@@ -28,15 +28,11 @@ pub async fn depot_db_cold_compacter(
 }
 
 #[activity(UploadColdJob)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn upload_cold_job(
 	ctx: &ActivityCtx,
 	input: &UploadColdJobInput,
 ) -> Result<UploadColdJobOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	let activity = crate::metrics::CompactionActivityGuard::new(
 		"cold_upload",
 		usize::try_from(input.input_range.input_summary.input_ref_count).unwrap_or(usize::MAX),
@@ -956,15 +952,11 @@ fn rejected_cold_upload_cleanup(reason: impl Into<String>) -> CleanupColdUploadJ
 }
 
 #[activity(PublishColdJob)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn publish_cold_job(
 	ctx: &ActivityCtx,
 	input: &PublishColdJobInput,
 ) -> Result<PublishColdJobOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	let activity = crate::metrics::CompactionActivityGuard::new(
 		"cold_publish",
 		usize::try_from(input.output_summary.output_ref_count).unwrap_or(usize::MAX),

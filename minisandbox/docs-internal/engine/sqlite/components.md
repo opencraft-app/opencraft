@@ -31,6 +31,7 @@ The workflow compaction path uses one persistent DB manager plus hot, cold, and 
 Responsibilities:
 
 - Coalesce commit wakeups through `SQLITE_CMP_DIRTY/{database_branch_id}` and `DeltasAvailable` signals.
+- Admit maintenance separately from execution. Each process has independent refresh/compaction lanes, bounded FIFO wait slots, and a bounded wait. Overflow defers the exact durable job through Gasoline's lease-fenced wake deadline without recording an execution failure. Accepted FIFO ordering does not imply global fairness among deferred workflows.
 - While any branch job is active, observe only bounded lifecycle/head/dirty/pin-count metadata. A deferred planning observation must neither clear dirty work nor finish a force request; full planning resumes after exact job completion. Lifecycle stop checks and existing fallback deadlines remain active.
 - Plan bounded committed hot prefixes from current FDB state instead of trusting signal payloads. Stage and install retain the planned upper txid while revalidating current history/PITR coverage.
 - Use prefix-only identity only for histories certified never truncated. Keep head identity for truncated or unindexed histories, apply every DELTA's EOF, and materialize historical coverage at its own commit size.

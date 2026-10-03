@@ -14,7 +14,7 @@ use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::{
-	activity::{Activity, ActivityInput},
+	activity::{Activity, ActivityAdmission, ActivityInput},
 	builder::{WorkflowRepr, workflow as builder},
 	ctx::{ActivityCtx, ListenCtx, MessageCtx, VersionedWorkflowCtx},
 	db::{BumpSubSubject, DatabaseHandle, PulledWorkflowData},
@@ -298,9 +298,56 @@ impl WorkflowCtx {
 			self.parallelized,
 		)?;
 
+		let admission = if A::HAS_ADMISSION {
+			let started = Instant::now();
+			let result = tokio::select! {
+				biased;
+				_ = self.wait_stop() => Err(WorkflowError::WorkflowEvicted),
+				result = tokio::time::timeout(A::ADMISSION_TIMEOUT, A::admit(&ctx, input).in_current_span()) =>
+					match result {
+						Ok(result) => result.map_err(|err| WorkflowError::ActivityAdmissionFailure(A::NAME, err)),
+						Err(_) => Ok(ActivityAdmission::deferred(self.workflow_id)),
+					},
+			};
+			let label = match &result {
+				Ok(ActivityAdmission::Ready(_)) => "ready",
+				Ok(ActivityAdmission::Complete(_)) => "complete",
+				Ok(ActivityAdmission::Deferred(_)) => "deferred",
+				Err(WorkflowError::WorkflowEvicted) => "evicted",
+				Err(_) => "error",
+			};
+			metrics::ACTIVITY_ADMISSION_DURATION
+				.with_label_values(&[self.name.as_str(), A::NAME, label])
+				.observe(started.elapsed().as_secs_f64());
+			Some(result?)
+		} else {
+			None
+		};
+		if let Some(ActivityAdmission::Deferred(delay)) = &admission {
+			if *delay < Duration::from_secs(1) {
+				return Err(WorkflowError::ActivityAdmissionFailure(
+					A::NAME,
+					anyhow::anyhow!("admission deferral must be at least one second"),
+				));
+			}
+			let delay_ms =
+				i64::try_from(delay.as_millis()).map_err(|_| WorkflowError::IntegerConversion)?;
+			return Err(WorkflowError::ActivityAdmissionDeferred(
+				A::NAME,
+				rivet_util::timestamp::now().saturating_add(delay_ms),
+			));
+		}
+		self.check_stop()?;
 		let start_instant = Instant::now();
-
-		let res = tokio::time::timeout(A::TIMEOUT, A::run(&ctx, input).in_current_span())
+		let execution = async {
+			match admission {
+				Some(ActivityAdmission::Ready(guard)) => A::run_admitted(&ctx, input, guard).await,
+				Some(ActivityAdmission::Complete(output)) => Ok(output),
+				Some(ActivityAdmission::Deferred(_)) => unreachable!("deferred before execution"),
+				None => A::run(&ctx, input).await,
+			}
+		};
+		let res = tokio::time::timeout(A::TIMEOUT, execution.in_current_span())
 			.await
 			.map_err(|_| WorkflowError::ActivityTimeout(A::NAME, 0));
 
@@ -531,6 +578,10 @@ impl WorkflowCtx {
 #[cfg(test)]
 #[path = "../../tests/modules/activity_attempt_metrics.rs"]
 mod activity_attempt_metrics_tests;
+
+#[cfg(test)]
+#[path = "../../tests/modules/activity_admission.rs"]
+mod activity_admission_tests;
 
 impl WorkflowCtx {
 	/// Creates a sub workflow builder.

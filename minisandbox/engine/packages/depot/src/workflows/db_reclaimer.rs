@@ -22,15 +22,11 @@ pub async fn depot_db_reclaimer(ctx: &mut WorkflowCtx, input: &DbReclaimerInput)
 }
 
 #[activity(ReclaimFdbJob)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn reclaim_fdb_job(
 	ctx: &ActivityCtx,
 	input: &ReclaimFdbJobInput,
 ) -> Result<ReclaimFdbJobOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	let backlog_items = input
 		.input_range
 		.txid_refs
@@ -465,15 +461,11 @@ async fn reclaim_fdb_job_tx(
 }
 
 #[activity(RetireColdObjects)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn retire_cold_objects(
 	ctx: &ActivityCtx,
 	input: &RetireColdObjectsInput,
 ) -> Result<RetireColdObjectsOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	let input = input.clone();
 	let retired_at_ms = ctx.ts();
 	let Some(cold_storage) = ctx.config().sqlite().workflow_cold_storage() else {
@@ -890,15 +882,11 @@ fn rejected_cold_object_retire(reason: impl Into<String>) -> RetireColdObjectsOu
 }
 
 #[activity(DeleteRetiredColdObjects)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn delete_retired_cold_objects(
 	ctx: &ActivityCtx,
 	input: &DeleteRetiredColdObjectsInput,
 ) -> Result<DeleteRetiredColdObjectsOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	if input.retired_objects.is_empty() {
 		return Ok(DeleteRetiredColdObjectsOutput {
 			status: CompactionJobStatus::Succeeded,

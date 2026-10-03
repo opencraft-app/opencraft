@@ -28,24 +28,11 @@ pub async fn depot_db_hot_compacter(
 }
 
 #[activity(StageHotJob)]
+#[admission = stage_hot_admission(ctx, input)]
 pub async fn stage_hot_job(
 	ctx: &ActivityCtx,
 	input: &StageHotJobInput,
 ) -> Result<StageHotJobOutput> {
-	#[cfg(feature = "test-faults")]
-	if let Some(output) = hot_stage_fault_output(
-		input.database_branch_id,
-		HotCompactionFaultPoint::StageBeforeAdmission,
-	)
-	.await?
-	{
-		return Ok(output);
-	}
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	let input_for_prepare = input.clone();
 	let now_ms = ctx.ts();
 	let prepared = ctx
@@ -518,16 +505,28 @@ fn failed_hot_job(err: anyhow::Error) -> StageHotJobOutput {
 	}
 }
 
+async fn stage_hot_admission(
+	ctx: &ActivityCtx,
+	_input: &StageHotJobInput,
+) -> Result<gas::activity::ActivityAdmission<StageHotJobOutput>> {
+	#[cfg(feature = "test-faults")]
+	if let Some(output) = hot_stage_fault_output(
+		_input.database_branch_id,
+		HotCompactionFaultPoint::StageBeforeAdmission,
+	)
+	.await?
+	{
+		return Ok(gas::activity::ActivityAdmission::Complete(output));
+	}
+	crate::admission::compaction(ctx).await
+}
+
 #[activity(InstallHotJob)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn install_hot_job(
 	ctx: &ActivityCtx,
 	input: &InstallHotJobInput,
 ) -> Result<InstallHotJobOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	// A conflict in the final publish transaction means its automatic retry would otherwise trust
 	// a preflight from an older read version. Escape the driver's retry closure, repeat every
 	// bounded integrity read, and only then attempt the compact atomic publish again.

@@ -1346,7 +1346,7 @@ attempt_service_rate != useful_fold/publish/reclaim_service_rate
    对 DELTA 读取优化须保留事务/字节预算和 exact committed prefix；stage/install 的 lifecycle、
    truncate、PITR/pin、原子 publication 与条件 PIDX 清理校验不能去掉。
 4. 各阶段报告 attempt result 和有效 output，先证明 timeout/replan 放大下降、前台尾延迟恢复、
-   hot debt 有界，再重跑相同 strict10k。当前未实现上述新的 durable admission 调度。
+   hot debt 有界，再重跑相同 strict10k。以下准入修正目前只有源码和本地回归，不代表线上已修复。
 
 ### Active job 期间的规划成本
 
@@ -1372,6 +1372,49 @@ manager 先处理当前 signal 批次，再选择 refresh 模式。旧路径即�
 条件 PIDX 清理 fence。它不解决 admission queue 消耗 execution timeout 的另一条反馈链，也
 不能使已耗尽重试预算的 companion 自动恢复。实际发布后仍须测量规划读字节、有效 fold、
 queue timeout、交互尾延迟和 hot-debt 趋势，并通过原 strict10k，才能宣称万级性能整改完成。
+
+### 有界准入与性能稳定性模型
+
+新的显式 activity admission 与实际执行分开计时。执行仍使用原 `TIMEOUT` 和失败预算；
+普通、未声明 admission 的 activity 保留原执行路径。一次完成的 history replay 不再排队。
+
+- Depot 每进程仍只有 refresh 与 compaction 两条独立执行 lane，不扩大原 8/2 执行许可。
+  每 lane 最多 `clamp(8 * permits, 8, 64)` 个等待槽；生产对应 64/16，而不是随 Object 数增长。
+- 已接受的等待按 Tokio semaphore FIFO 排序。等待最多 30 秒，worker stop 立即取消准入并
+  返回已有的 eviction 语义。队满或等待到期不执行数据工作，不写 activity failure event。
+- 未执行的工作返回 admission deferral。生产 workflow error handler 通过 exact lease 提交
+  60--120 秒的错峰 wake deadline 并释放 lease。原 signal/history/input 是真值，不新增 job、
+  不发送假完成，不清 dirty，也不增加 `MAX_RETRIES` 的执行失败计数。
+- permit 只覆盖执行，成功、失败、timeout 或 cancellation 均释放；history commit 不占许可。
+  直接调用宏生成的 `Activity::run` 也先准入，不能因使用工作流外入口而无意绕过限制。
+- 新 `gasoline_activity_admission_duration` 仅使用固定 `ready|complete|deferred|error|evicted`
+  结果。显式 admission 不再进入 attempt execution histogram。旧 Runtime 的含排队数据
+  不得与新执行时间直接拼接比较；正常返回 retryable status 仍不代表有效 fold。
+
+这切断了“未执行却消耗失败预算”的反馈，但不会凭空增加存储吞吐。稳定性按工作类型而非
+仅按 active Object 数判断：
+
+```text
+rho_lane = sum_k(offered_execution_demand_k * mean(actual_execution_seconds_k)) / lane_permits
+useful_service_rate_k = successful_fold_or_publish_k / observation_seconds
+d(hot_debt_bytes)/dt = authoritative_hot_bytes_in - safely_reclaimed_hot_bytes_out
+```
+
+`offered_execution_demand` 包括新工作、必要执行重试和实际失效重做；同一 job 的准入延期
+不算新工作。共享 compaction lane 的 stage/install/upload/publish/reclaim 成本必须相加，
+不能给每种 activity 各自算一份完整许可。仅测已获准执行率会被 admission 截断，不能替代
+offered demand；实际需求率与有效进度目前还须在正式负载中补齐。
+
+`rho_lane >= 1` 的持续输入仍会积压，必须减少每份有效工作的扫描/重做成本、合并工作或增加
+经证据校准的资源；改变超时不能让它稳定。等待槽的 FIFO 只约束已接受队列，不承诺持续过载
+时所有 deferred workflow 的全球顺序或无饥饿。延期仍有 due-index/history replay 成本，
+约随 `pending_jobs / deferral_interval` 增长，不是常数：一分钟下限避免逐秒 polling，但
+并不证明百万待办的成本可忽略。错峰周期和等待槽数是首轮保守策略，尚不是容量校准结论。
+
+后续正式 release 与原 strict10k 必须同时验证：准入 deferral/等待年龄、真实 execute 分布、
+有效 fold/publish/reclaim 率、规划和 replay 的 FDB 读字节、前台 p99 及 hot debt 的斜率。
+如果 deferral 降低错误却使 debt 持续增长，仍判性能门禁失败。暂停的工作也可能延后 branch
+完成/停止信号处理；不得把 bounded delay 描述为立即完成或丢弃 exact job。
 
 诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
 input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
