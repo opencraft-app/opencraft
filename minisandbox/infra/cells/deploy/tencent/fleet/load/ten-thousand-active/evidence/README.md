@@ -110,6 +110,71 @@ Completed stage work may still be rejected at install; its success count is not
 installed/reclaimed progress. Population, age, eligible prefix and rework must
 be separated before changing concurrency or sizing FDB.
 
+## Current run: first-failure transport and Cell binding
+
+Two immutable, projected native observations explicitly set
+`qualificationEvidence=false`. No raw payload, authorization header, config or
+unredacted error is archived:
+
+| Observation | Bytes | SHA-256 |
+| --- | --- | --- |
+| [API transport](200a42ae-api-first-error-20261003.json) | 52,765 | `2f3daf872443d0a71b024d424e32dfee1a2f863f5d03fdfcda334cb0361dad85` |
+| [Engine address and bounded logs](200a42ae-engine-first-error-20261003.json) | 4,548 | `bd5dfdeb8370f069c4fbbd1abc1aed2fd17c79c5cb9d0afcb169df82b7e6a3a3` |
+
+API collector `inv-d9eufq0xh5` completed SUCCESS/0 at 11:18:08--11:18:10 UTC.
+The exact Deployment UID/image matched the original release; desired/Ready was
+12. Its selector included 55 Pods, including retained Succeeded Pods, **not 55
+active replicas**. The first collector `inv-a9eudj0jie` failed its metadata
+count bound before logs/artifact creation; metadata `inv-c9euefgf8n` established
+the reason. The corrected diagnostic bound is 128 metadata Pods, with 39
+terminated-before-window Pods excluded and 16 bounded log reads. It matched
+2,125 rows in 10:49:35--10:49:49 UTC, retaining only the first 32 rows; this is
+neither a complete request history nor an additional load/rollout.
+
+The earliest row is 10:49:47.163 UTC, response-header timeout, Actor
+`dl048ozwnqe1135wwtkz1qc5lgcl00`, request
+`req_905d883bddc2602882a690218fb4c0ba`, engine `10.162.0.2:6420`.
+The API Pod UID was checked before/after the read. Connection took 2 ms, local
+write completed at 3 ms, elapsed was 25,003 ms without first response byte;
+the connection was not reused. Later rows are chiefly context cancellation.
+The original client first error is 8 ms later but has no request ID, so this is
+the unique earliest timeout **candidate**, not an exact client-to-server join.
+Local write completion does not prove dispatch into user code or durable commit.
+
+Remote original:
+`/data/actor-build/release/strict10k-api-error-200a42ae-20261003.aqcl1m1z/observation.json`.
+Official COS relay metadata/upload `inv-c9eugqg09m` / `inv-a9eugr0pvm`
+completed SUCCESS/0, length/hash verified and exact temporary key deleted.
+
+Engine collector `inv-c9eupdgeaa` completed SUCCESS/0 at 11:26:19--11:26:21 UTC.
+It bound B Cell UID `87a07636-737c-4a57-8693-9d02f61883f8`, the existing
+Engine Deployment UID/image, Service `actor-bj-b01-engine-private` UID
+`11ee72e5-8f4e-42a5-b57c-46cc44a8b1e4`, address `10.162.0.2` and port 6420
+to target `api`. This is a current post-error address binding, **not historical
+route or exact backend proof**. Six existing Engine Pods had zero restarts;
+all native bounded log reads succeeded but yielded zero matching Actor/request
+rows in 10:49:15--10:49:49 UTC. Four 2 MiB byte caps were reached. Logs from
+deleted Pods/previous containers were not collected. Therefore the blocking
+phase remains unknown: a missing match is not evidence of no execution or a
+successful commit. Do not silently increase/scan unrestricted log history.
+
+Remote original:
+`/data/actor-build/release/strict10k-engine-error-200a42ae-20261003.ek8ezcb2/observation.json`.
+Official relay `inv-a9euprghrm` / `inv-d9eups08ec` completed SUCCESS/0,
+length/hash verified and temporary key deleted. Both archived files match the
+verified originals byte-for-byte. The original supervisor remained running at
+11:25:27 UTC (`inv-d9eunjg5tw` SUCCESS/0), cleanup exit zero and natural drain
+waiting 1,503 seconds; the load itself remains failed.
+
+Source confirms DO databases use `conn.namespace_id` as the shared bucket and
+Actor ID as the database ID in `pegboard-envoy::actor_db()`. The exact live
+branch below also binds that namespace/bucket. Consequently the old tree-wide
+catalog invalidation couples proofs within a namespace; independent-root
+`N/256` is only a hypothetical collision model, not this observed DO mapping.
+The master source fix narrows ordinary catalog invalidation, but is not deployed
+in c631. Neither this deterministic source defect nor late pending/stage
+degradation alone proves the earliest timeout's causal chain.
+
 ## Current run: exact live-branch install rejection
 
 Two byte-identical, read-only observations preserve a live B Object before

@@ -1933,6 +1933,30 @@ physical database，真实 fork 保留保守的 shard 碰撞失效。仅调大 e
 修复后的对照须固定 arrival/request shape，并报告有效 watermark/reclaim 的推进、
 rejection/replan 比例、扫描字节与前台 p99；不能以更多 stage completion 判性能恢复。
 
+实际 DO 映射不是上述独立 root 假设。`pegboard-envoy::actor_db()` 把
+`conn.namespace_id` 作为 `Db` 的 bucket ID，把 Actor ID 作为 database ID；
+`Db::sqlite_bucket_id()` 再转换该 namespace ID。原精确分支观察的 bucket 也等于
+namespace ID。因此同 Cell/namespace 的 DO 共享 bucket，catalog churn 的树级影响
+可能覆盖该 bucket 内其他证明，不能按 `N/256` 估算这条真实路径。潜在受影响者是
+实际订阅该 epoch 的证明集合，不等于所有对象都会立即产生一次完整扫描。
+
+模型中的放大来自工作依赖，而不只是对象数量：一个对象改变 membership，使其他
+对象的证明失效；完成 stage 后 install 无法使用输出，又回到 refresh/replan。
+应测量 `维护放大 = 实际扫描/执行工作量 ÷ 对应的有效推进工作量`；有效推进为零时
+标记 stalled，不能给出零成本。即使每次扫描大小不变，返工概率上升也会使有效吞吐
+下降。只有在独立 Poisson 变更、完整证明耗时固定且期间任何变更都会使它失效的
+简化假设下，无失效完成概率才是 `exp(-变更率 × 证明耗时)`；这是解释反馈的模型，
+不是本轮测得的概率或服务容量。收窄 invalidation dependency 是消除这种结构性
+耦合的修正，不能用增大 execution permits 或延长前台 timeout 替代。
+
+容量还必须按共享资源分别核算：前台有效请求成本、后台有效维护成本、失效返工和
+durable replay 都消耗 FDB/CPU/网络或执行许可。一个资源的排队会延长另一个资源的
+许可占用；不能用全 Cell CPU 均值推断每个 lane 都有余量。后续固定到达率对照同时
+记录前台阶段时延、后台 installed watermark/reclaim、rejection/replan、scan bytes、
+permit 占用和有界等待深度。对象基数、数据库年龄与 eligible prefix bytes 独立分组。
+只有减少返工后仍有有效工作供需缺口，才据此调整资源预算或扩容；前后台预算隔离
+与公平调度仍要保持 generation、publication、history/pin/backup fence。
+
 该测试又暴露一个独立的 bucket fork 默认读取反例：bucket 在 TXID 1 fork 后，parent
 在 TXID 2 覆写，child 的默认 Db read 读到 TXID 2。pointer resolver 返回 inherited
 physical database branch 后，read plan 未携带 bucket ancestry 的 versionstamp cap。
@@ -1947,6 +1971,16 @@ post-warmup 三秒样本为零。首错前固定尾部窗口 10:40:46--10:48:51 
 2.03 秒、admission mean 9.26 秒，A 分别约 0.48/2.14 秒。后台确有劣化，但该
 相关性尚不能确定首错具体阻塞点；后台模型必须区分有效工作、失效重做、队列等待与
 history replay，不用完成者均值冒充 offered demand，不由观察成功推进万级资格。
+
+[原生 API transport 与 Engine 诊断](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md#current-run-first-failure-transport-and-cell-binding)
+进一步缩小边界：10:49:47.163 UTC 唯一最早 header-timeout 候选请求到
+`10.162.0.2:6420`，connect 2 ms、write 3 ms、25,003 ms 后仍无响应头字节，未复用连接。
+它与客户端首错相差 8 ms，但客户端没有 request ID，仍不是精确跨进程 join。
+读后 B Cell 的 UID-bound `engine-private` Service 确认该地址；它不是故障时历史
+endpoint receipt，也不确定实际后端 Pod。六 Engine 的有界历史日志未匹配候选 Actor，
+其中四份达到 byte cap；零匹配表示证据不足，不表示 Actor 未执行或请求没有提交。
+目前不能把等待点认定为 ready、SQLite/FDB commit 或响应返回，也不能把已证
+proof rejection 直接等同于这次 502 的根因。保持 `indeterminate_result` 不自动重放。
 
 性能证据的编码也属于控制边界。headroom ETA 在增长率为零时可以是无限；
 审计内部仍按数值判定阈值，写出收据时非有限诊断采用 JSON 字符串

@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.23.0
+revision: 1.24.0
 precedence: task
 derived: false
 ---
@@ -414,7 +414,71 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ### stage
 
-当前 checkpoint（1.23.0）：上一 turn 为 progress，原分支/history 字节证据与正式模型
+当前 checkpoint（1.24.0）：上一 turn 为 progress。catalog scope 修正、六项新回归、
+native 首错与 preerror v3 证据 FF 推 master 606aec3e，remote exact SHA verified、clean；
+未部署新 Runtime。保留空 zkvllptl，jj new ptrtsnos，只读定位原 run 的首次 transport
+failure 与后台阻塞，不改变旧 load/timeout/retry 或抢占完整 ops lock。
+cloud runtime/networking skill 本轮完整读取；environment_status tool 缺失、policy snapshot
+缺失，不推断 readiness，既有 CLI/TAT 实际返回为准。route must-read 与 cells AGENTS
+全文读取，adjacency argocd-ci-secrets 卡与真实 test_monitor_bottomless.py 已复核。
+11:13:06 inv-c9eub10bmx SUCCESS/0：原 MainPID/InvocationID running、cleanup exit 0、
+final natural drain waiting 902 秒；next periodic 不早于 11:18:30 UTC。
+初轮猜 workersapi/engine.go 和 workers-api/workers-api.yaml 不存在，实际 bounded
+rg --files 确认 upstream.go/fetch_trace.go 与部署目录。组合输出截断的 Phase 5/test matrix
+已补读准确范围。公开 fetch 只有 transport/stream ambiguity 才生成该 502，先获取日志
+真实阶段；generic后台增长/旧branch反例不能替代请求因果证据。
+
+11:19:14 inv-e9eugr0i0h SUCCESS/0：原身份 running、cleanup exit 0、final waiting
+1203 秒；next progress 不早于 11:24:30 UTC。API collector v1 inv-a9eudj0jie 在
+metadata Pod count assertion 失败，未读日志、未产物。原因不是副本超限：只读 metadata
+inv-c9euefgf8n SUCCESS/0 显示 Deployment desired/Ready 12，selector 共55 Pod，包含
+保留的 Succeeded Pod；TAT大 JSON 输出被截断不能当完整 inventory。v2 只把诊断 metadata
+上限改128，并按容器终止时间排除窗口外旧 Pod，保留源UID/image和每Pod1MiB日志限制；
+不改 HPA/runtime 配置。collector inv-d9eufq0xh5 SUCCESS/0，11:18:08--11:18:10，
+55 metadata Pods、39终止于窗口前、16实际日志读、2125匹配行，仅归档前32行。
+52,765 bytes、SHA 前缀2f3daf872443，远端aqcl1m1z/observation.json；官方relay
+inv-c9eugqg09m/inv-a9eugr0pvm SUCCESS/0、验证原长度/SHA、临时COS key已删。
+本地 /data/tmp/minisandbox-strict10k-200a42ae-api-first-error-20261003.json。
+最早窗口内日志10:49:47.163 UTC：Actor dl048ozwnqe1135wwtkz1qc5lgcl00，request
+req_905d883bddc2602882a690218fb4c0ba，engine10.162.0.2:6420，response-header timeout，
+local connect2ms/write3ms/elapsed25003ms，无复用、无first-byte；Pod UID在读前后确认。
+client journal未保留request ID，候选请求与唯一首错相差8ms，不冒充额外精确join证据。
+下一项只读核对目标Cell和Engine请求阶段，不把本地write当用户代码已执行。
+collector AST/bash检查通过；一次空组合apply_patch上下文不符未生效，按已存在锚点修复。
+
+11:25:27 UTC progress20 inv-d9eunjg5tw SUCCESS/0：同一 supervisor 身份 running、
+cleanup exit0、natural drain waiting1503秒。最新 A/B active 均0、Host Ready205/205、
+Machine Ready210/211。无手工扩缩容/新负载；下一次 periodic 不早于11:30:30 UTC。
+Engine collector inv-c9eupdgeaa SUCCESS/0（11:26:19--11:26:21）绑定 B Cell/Engine
+Deployment exact UID/image、engine-private Service UID11ee72e5/address10.162.0.2/api6420，
+读后再次确认Service UID。它是读后地址绑定，不是故障时endpoint历史收据或精确后端。
+六Engine现存Pod restart0，限定故障窗口日志零候选Actor/request匹配，其中四份2MiB
+cap已达；不能将缺日志当未执行/成功/根因。原投影4548bytes、SHA前缀bd5dfdeb8370，
+远端ek8ezcb2/observation.json；relay inv-a9euprghrm/inv-d9eups08ec SUCCESS/0，
+验证长度/SHA、临时key已删。API/Engine原投影已byte-identical用apply_patch归档、
+README与正式设计补证据限制。初次归档编排TextEncoder在V8缺失，尚未编辑；改用
+ASCII+length检查后归档，最终shell SHA与原始相同。
+源码pegboard-envoy::actor_db实际用namespace_id作Db bucket、ActorId作database，
+原live branch bucket也等于namespace ID；真实耦合应按共享bucket订阅证明集合解释，
+不能用独立root的N/256替代。正式模型补有效工作/失效返工放大、资源分项、简化假设和
+固定到达率对照要求；未认定它是首错因果链，未部署新master606修正、未重编V8。
+失败exact query：qualification/actor-bj-q01/tat-run-script.sh、guard/src/phase.rs、
+depot/src/db.rs、engine/Cargo.toml、pegboard/ops/actor/sqlite均不存在；有界files与
+符号检索确认tat/tat-run.sh、guard/routing/mod.rs、depot/conveyer/db.rs和
+pegboard-envoy/ws_to_tunnel_task.rs；没有猜路径输出受保护配置。
+下一步补当前变更文档/Context门禁、catalog本Task单行并推精确master；原drain未终止、
+ops lock未释放前不发布/另跑。请求具体Engine阻塞点仍未知，后续需从有界阶段证据补齐。
+
+本轮门禁：documentation零errors/warnings、显式六path+--staged change-impact passed，
+Context4942历史errors与master606前baseline normalized Counter完全相同、Task零error；
+本Task catalog record按validator精确核验，只改本行。26项Context tests保留同四项历史
+失败名称；audit tests33/33，audit discovery仍needs_agent_review/not_assessed/Unknown，
+不宣称成熟度评分。限定变更的credential-pattern scan和git diff --check通过。
+11:30:37 UTC progress21 inv-c9eutegssh SUCCESS/0：原MainPID/InvocationID running、
+load failed/cleanup exit0/final waiting1804秒，未生成终态资格收据。下一次periodic
+不早于11:35:40UTC。此revision只补原生诊断与模型文档，不部署、不编译Runtime/workerd。
+
+历史 checkpoint（1.23.0）：上一 turn 为 progress，原分支/history 字节证据与正式模型
 FF 推 master 2b38d801，remote exact SHA verified、clean。保留空 nqvuooto，先 jj new
 ynnwtruz，在临时 RocksDB/UDB 上验证 proof invalidation scope，不改运行中的 c631。
 red v1 新四项实际运行：三个 catalog churn/分页反例如预期失败；第四个检查 bucket
