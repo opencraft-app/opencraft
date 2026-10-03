@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.9.4
+revision: 1.9.5
 precedence: task
 derived: false
 ---
@@ -106,6 +106,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{bundle-full-reviewed-source.sh,verify-full-source-bundle.py,build-image.sh,reuse-stage-from-runtime.sh,test_full_source_bundle.py}@c631f554`、`qualification/actor-bj-q01/{materialize-full-reviewed-source-via-relay.sh,relay-upload-to-builder.sh,build-runtime-via-tat.sh}@c631f554` | 正式不可变源码、COS relay 与 stage 复用 | 构建包含 fold/point-read 修正的新 Runtime；不重编未改 V8，不绕过 compiled-input closure，不改线上 Cell |
 | `minisandbox/engine/packages/universaldb/src/driver/foundationdb/{database,transaction}.rs@0700632d`、`minisandbox/engine/packages/universaldb/tests/{foundationdb,foundationdb_unavailable,foundationdb_node_loss,conflict_parity}.rs@0700632d` | adapter 真实等待与重试边界 | 修正相邻点读，并保留 FIFO state barrier 与 native conflict/maybe-committed 语义 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/observability/{infrastructure-metrics.yaml,values.yaml}@0700632d` | FDB 诊断来源及缺失指标 | 容量 gauge 不是延迟证明；nodeExporter 禁用时空磁盘指标保持 unknown |
 | `minisandbox/.claude/reference/{testing,docs-sync}.md@0700632d`、`docs/context/project/adjacency/argocd-ci-secrets.md@0700632d`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@0700632d` | 本轮验证与发布邻接 | 私有测试 shim、正式设计同步和只读观察不重发原作业 |
@@ -723,6 +724,37 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- 用户重申从模型/设计解决劣化。沿用正式设计的前台成本向量、有效 maintenance 与
+  rework/replay 分解；不把机器 CPU 均值、有界 permit、排队延期或源码测试当作容量收益。
+  两项确定性修正已在 master `c631f554`，仍须同负载实际尾延迟/有效吞吐证明。
+- 本轮完整 source bundle session 79514 已 exit 0；14,287 files，project tree
+  `7abf2ab8`、manifest 前缀 `a54e7daa59d1`、bundle SHA 前缀 `810754b20d39`。
+  `verify-full-source-bundle.py` 对 exact revision 验证 exit 0。session 93526 的
+  full-source 五项和 bottomless monitor 五项测试均通过；不冒充 Engine/容量测试。
+  本地证据 `/data/actor-build/local-admission-c631f554-20261003/`。
+  唯一 formal build wrapper 为 `/data/tmp/minisandbox-point-read-runtime-build-c631f554-20261003.sh`，
+  local session 67448 正在继续；首个 relay TAT `inv-a9eigvgdpt` 已提交，不重复启动。
+  exact Runtime 59 digest 用作 unchanged workerd stage 基准；immutable tag 为
+  `bounded-point-reads-c631f5542f45`。此处只准备/构建产品，不发布或启动新负载。
+  relay 的四个 download invocation `inv-a9eigvgdpt`、`inv-e9eih1gdmf`、
+  `inv-d9eih2gr5d`、`inv-e9eih3gjxu` 均 SUCCESS/0；原 atomic materialize
+  `inv-e9eih40404` 正在运行，继续唯一 session 67448，不因等待重提。
+- 05:38:34 UTC 原 run 只读 `inv-d9eihd0d57` SUCCESS/0；MainPID/InvocationID
+  未变，load failed/cleanup passed/final waiting。最新 trace 05:38:16 A/B Host
+  各 143 Ready，Machine 153/150 Ready，active 均零、观察 errors/warnings/missing 均空。
+  此次仍早于建议边界十四秒；下次硬按至少五分钟，不能用 trace 采样时间替代完成时间。
+  后续只读观察不早于 05:43:40 UTC；不抢占原 ops lock，不启动第二负载或线上 rollout。
+- 上一 goal turn 为 progress：源码修正已正常 FF 推 master `c631f554`，远端 SHA 与
+  本地相同、工作区 clean。当前新 jj revision `zknkrxvw` parent `c631f554`，不沿用旧
+  source identity。本轮按正式 full reviewed-source/COS relay/build-runtime 入口准备新产品，
+  复用 Runtime 59 的 exact workerd stage，不降低 compiled-input closure/self-check 门禁。
+  build 与 runtime rollout 分离：原 strict10k ops lock 未释放前不改 A/B 镜像、配置或负载。
+  cloud runtime Skill 与 networking/docker references 本轮已完整读取；环境状态 tool 不存在、
+  network policy 文件缺失，不能因此声称网络/auth readiness，实际现有授权 CLI/TAT 为准。
+- 05:33:48 UTC `inv-d9eicw0wna` SUCCESS/0，再确认唯一 supervisor 原 MainPID/InvocationID
+  running；load failed、exact cleanup passed、final waiting。A/B Host desired/Ready 各
+  154/154，Machine desired/current/Ready 为 164/164/164 与 161/161/161，active 均零。
+  该观察比建议边界提前九秒，后续用真实完成时间至少五分钟，下一次不早于 05:38:48 UTC。
 - ReadFlights 源码本轮验收：universaldb + foundationdb check exit 0、lib 19/19、
   clippy v4 --lib --tests exit 0；新增文件没有 warning，现有 UDB lib 20/libtest 22
   warning 不做无关 fixer。真实 FDB 7.3.79 opt-in gate 四项全部通过，原日志为
