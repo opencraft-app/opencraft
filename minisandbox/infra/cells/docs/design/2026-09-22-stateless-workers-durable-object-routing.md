@@ -2220,6 +2220,30 @@ MachineSet get，没有Pod delete/Node或Machine写入/全局Secret读取。新�
 但HTTP double仍不是实际Kubernetes/PDB门禁，不能据此打开开关或宣布111Host已收敛。
 下一步核验实际server的UID/RV eviction与取消竞态，并走受锁发布和真实缩容资格链。
 
+隔离的真实API门禁已在本机k3s `v1.35.5+k3s1`通过（143.35秒），证据见
+`deploy/local/mesh/workerd-host-eviction-api-e2e/evidence/20261004-k3s-v1.35.5.json`。
+它使用单个pause Pod及management stats double，实际调用同一controller的UID/RV
+eviction/cancel adapter，验证PDB 429、真实CREATE eviction admission迟到请求被取消CAS
+阻断返回409、取消凭据的authoritative GET、正常eviction后同名新UID拒绝旧操作，
+并验证condition RV之后metadata CAS使stale DELETE存储前置条件失败。
+测试namespace/webhook均已按exact UID正常移除；没有改变A/B业务Pod、Node或Machine。
+
+取消后的PDB reservation不会立即归还：真实controller约2分钟后自然清理DisruptedPods，
+门禁明确等待恢复，不修改PDB status或绕过预算。这是安全协议的liveness延迟，生产
+仍应保留有界退避和超时，不能将429转换成直接Delete或换UID重试。
+参考[固定版本disruption实现](https://github.com/kubernetes/kubernetes/blob/v1.35.5/pkg/controller/disruption/disruption.go)。
+内部condition Update/Delete使用ValidateAll、不经过普通DELETE admission，所以本地
+门禁没有截获真实server内部两次存储调用之间的窗口，receipt明确
+`intraServerConditionDeleteWindowObserved=false`、`claimEligible=false`。
+这是实际API primitive证据，不是完整Host状态机/Actor迁移或目的AZ容量资格。
+
+2026-10-03T22:31:41Z云观测仍为A111Hosts/115Machines、B4/4，active0；原strict10k
+supervisor同InvocationID/PID且继续持锁，负载失败与清理通过结论不变。TAT
+`inv-a9fg78gqwm`为SUCCESS/ExitCode0；两Cell实际server均`v1.30.0-tke.22`。
+upstream [v1.30.0 eviction实现](https://github.com/kubernetes/kubernetes/blob/v1.30.0/pkg/registry/core/pod/storage/eviction.go)
+也检查UID/RV、更新condition后的delete RV并禁用带RV请求的冲突重试；这仅解释协议，
+不证明TKE的实际行为。云repair开关仍false、源码未发布，A的真实安全缩容仍待完成。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循
