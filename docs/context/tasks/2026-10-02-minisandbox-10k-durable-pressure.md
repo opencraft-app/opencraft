@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.27.0
+revision: 1.28.0
 precedence: task
 derived: false
 ---
@@ -120,6 +120,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py`、`terraform/create-first/bootstrap/{README.md,validate-runtime-builder-storage.py,collect-runtime-builder-guest.py,test_validate_runtime_builder_storage.py}@71dfe019` | 本轮性能建模接续与实际发布前置 | 不将未发布修正当收益；独立builder storage journal仍缺，不绕过原锁或格式化既有PV |
 | `AGENTS.md`、`minisandbox/{AGENTS.md,engine/AGENTS.md,infra/cells/AGENTS.md}`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@ea628922` | 原运行中精确 branch 取证与性能反馈建模 | mono2 唯一写源、原 invocation/ops lock；只读且有界，不新发布或重编 workerd |
 | `minisandbox/engine/packages/{depot/src/{compaction/shared.rs,compaction/types.rs,workflows/{db_manager.rs,db_hot_compacter.rs},inspect.rs,conveyer/{keys.rs,branch/{catalog.rs,fork.rs}}},gasoline/src/{builder/workflow/lupe.rs,db/kv/{mod.rs,keys/{history.rs,workflow.rs}},ctx/workflow.rs},engine/src/{commands/udb/cli.rs,util/udb.rs},api-peer/src/{router.rs,depot_inspect.rs}}`、`minisandbox/engine/packages/depot/tests/cold_workflow_publish.rs` | 实际 proof、loop history、install reject 与采集边界 | generic StateKey 不代表 LUPE 状态；CLI exit 0 不代表 key 存在；catalog churn 可能扩大证明失效和同输入返工 |
 | `minisandbox/{.claude/reference/testing.md,docs-internal/engine/sqlite/{constraints-and-design-decisions.md,storage-structure.md}}`、`minisandbox/infra/cells/deploy/{local/mesh/workerd-persistent-code-e2e/run.py,tencent/fleet/load/{shared-agent-scale/runner.mjs,router-performance/README.md,command-ack-disconnect/README.md,ten-thousand-active/evidence/README.md}}` | 正常只读 API 与剩余目标边界 | ephemeral port-forward finally 关闭；故障/Router gate 不抢原负载锁；保留 fork/PITR/backup fence |
@@ -414,7 +415,26 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ### stage
 
-当前 checkpoint（1.27.0）：本turn的hot领域结果/取消成本观察、bounded HTTP/analyzer与
+当前 checkpoint（1.28.0）：用户再次明确性能劣化须从建模设计解决，不以加副本或延长
+timeout替代。按既有正式模型继续区分单位请求/扫描成本、共享依赖失效返工、准入等待和
+有效持久推进；stage completion、进程 succeeded 出口与 durable watermark 不混为一谈。
+catalog 作用域收窄与 inherited read-cap/lazy COW 修复已在master，新候选0eb04a29仍未
+发布，不能称云端性能已恢复；首次502的完整因果链仍未知，不自动重放indeterminate。
+本轮保留空krumtrmu，jj new oylvpupx；parent root checkpoint master71dfe019，无业务代码
+修改。cloud runtime/networking rules、route两份must-read与adjacency实际测试已复核。
+existing bootstrap README/planner/guest collector 与七项真实文件/CLI测试已读取；该独立
+builder的磁盘初始化/mount journal尚未实现，不能仅等原drain完成就对共享C根盘编译。
+后续构建须先完成Terraform/bootstrap独立bulk backing与实际storage admission，受原
+operations lock约束；禁止把vdb/vdc等已用Kubernetes PV当空盘或手工搬目录规避。
+12:32:00 progress32 inv-c9ewkxgw3a SUCCESS/0：原MainPID1728155/InvocationID不变、
+service active/running，load exit1、exact cleanup0；12:31:54 A/B Host均45/45，Machine
+分别54/54/54与52/52/52，active0、errors空。正在自然缩容，不是floor4终态，也不构成
+strict10k合格；没有第二负载、构建、云mutation或手工scale。next periodic不早于
+12:37:20UTC。本轮重新验证analyzer27/27、builder identity7/7通过，不将工具门禁
+称为生产容量证据。固定arrival/request shape的后续对照须同时报告返工/scan、有效
+watermark/reclaim、hot-debt斜率和前台尾延迟；扩容仅在返工下降后仍有有效供需缺口时校准。
+
+历史 checkpoint（1.27.0）：本turn的hot领域结果/取消成本观察、bounded HTTP/analyzer与
 正式模型边界已正常FF推master0eb04a29，remote exact SHA verified、clean。保留空
 nkyoluns，另起只归档交付/候选artifact的checkpoint，不重建workerd/V8，不部署云组件。
 完整目标仍active；本地语义/诊断通过不能替代原strict10k失败、Router曲线或百万dormant。
