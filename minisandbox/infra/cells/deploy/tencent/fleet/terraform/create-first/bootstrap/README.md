@@ -319,6 +319,15 @@ WorkerLoader ABI test. The historical full source tree remains a read-only
 comparison baseline, never candidate source. No V8 rebuild is implied or needed
 when the complete audited stage closure matches.
 
+The [local-build attempt record](evidence/runtime-builder-local-build-attempt-beijing-20261004.json)
+retains the rejected writable-source admission and subsequent live compiler
+observations separately. A live Cargo process, increasing log, successful
+progress probe or `RUNNING` task with exit code zero is not a completed build.
+Only terminal success of the original build, its process tests and image
+self-checks permits publication. Publication must push the already validated
+local image rather than rerun Cargo, then cold-pull the registry digest through
+the formal product-receipt entrypoint before any Cell rollout.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

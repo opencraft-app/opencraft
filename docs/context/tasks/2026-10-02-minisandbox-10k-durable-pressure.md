@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.45.0
+revision: 1.46.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,28 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.46.0）：继续同一目标，53dc2b1e1a19已正常FF推master；保留post-push
+空spszslsl，当前tnopssrp继续记录。原guest inv-a9f73xgu29与outer inv-c9f73m0252
+仍是唯一构建，native RequestId f39b308f-9595-4d1a-b4cf-3f695b4fe07f确认均RUNNING，
+没有终态，不因ExitCode=0声称成功。17:34:01Z只读inv-c9f7g4g4p9 SUCCESS/0，log
+26040bytes、cargo及两个rustc活进程，scope active/MemoryCurrent 5389606912bytes，
+仍在2 jobs/6GiB限额内；已编译至Depot/Pegboard/API依赖。不改变A/B或重新提交编译。
+最新17:39:20Z只读inv-c9f7m40gpr SUCCESS/0，log增至27505bytes，已进入rivet-engine
+编译，scope active/MemoryCurrent 3465973760bytes，cargo/rustc仍活；下一次bounded log
+observation不早于17:44:20Z。当前只在/data/tmp准备独立push adapter，
+尚未上传或执行；其先验证原guest与outer均SUCCESS/0，再持原ops锁收集fresh storage
+attachment和私网TCR endpoint，新签临时auth，校验本地OCI各binary label/hash，直接push
+本轮已验证镜像，使用正式record-product-image.py做隔离cold pull及收据，不再编译。
+只读定位又发现check-runtime-baseline-source.py及.agents/context/catalog.json/catalog.yaml
+均不存在，失败已记录；后续只通过rg --files与validate_context.py实际路径定位，不再猜名。
+stage已通过不等于产品build/release已通过；正式A/B发布、Bottomless/EngineHA与strict10k
+及完整Phase5仍待原任务终态后推进。未发布、未开第二负载、goal保持active。
+本轮验证：storage 17/17、stage reuse 14/14；documentation零errors/warnings；Context
+仍4970个历史错误，排序后摘要与上轮完全一致，当前Task零错误；root 26项仍同四项历史
+失败，audit tests 33/33。audit默认输出是Markdown，误用jq及缺少--output的JSON请求
+只影响本地观察；按实际CLI contract重新导出，不能把discovery当语义评分或生产门禁。
+change-impact使用四个exact changed-file通过；base-ref只查提交差异，不将空差异当验收。
 
 当前checkpoint（1.45.0）：上一turn为progress，toolchain/all-path/runtime-base ABI
 三套独立native结果已沉淀并正常FF推master de900ea2185e；保留post-push空zqkotpms与

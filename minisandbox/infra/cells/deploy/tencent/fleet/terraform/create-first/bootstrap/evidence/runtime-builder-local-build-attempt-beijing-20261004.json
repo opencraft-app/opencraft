@@ -43,6 +43,21 @@
     "jobs": 2, "memoryMaxGiB": 6, "cpuQuotaPercent": 200, "lto": "thin",
     "pushImage": false
   },
+  "laterReadOnlyProgress": [
+    {
+      "invocationId": "inv-c9f7g4g4p9", "status": "SUCCESS", "exitCode": 0,
+      "observedAtUtc": "2026-10-03T17:34:01Z", "logBytes": 26040,
+      "memoryCurrentBytes": 5389606912, "scopeState": "active",
+      "liveCompilerObserved": true, "phase": "compiling-engine-dependencies"
+    },
+    {
+      "invocationId": "inv-c9f7m40gpr", "status": "SUCCESS", "exitCode": 0,
+      "observedAtUtc": "2026-10-03T17:39:20Z", "logBytes": 27505,
+      "memoryCurrentBytes": 3465973760, "scopeState": "active",
+      "liveCompilerObserved": true, "phase": "compiling-rivet-engine",
+      "nextBoundedLogObservationNotBeforeUtc": "2026-10-03T17:44:20Z"
+    }
+  ],
   "boundaries": [
     "Native RUNNING and live compiler observations describe their evidence times, not completion or enduring liveness. Resume the exact original handles and re-observe them; never resubmit because an observer disconnects.",
     "Operations holds the original fleet lock while the independent builder holds its stable compiler-workspace lock. The source bind remains read-only and is separately checked for dedicated-disk identity and ST_RDONLY.",
