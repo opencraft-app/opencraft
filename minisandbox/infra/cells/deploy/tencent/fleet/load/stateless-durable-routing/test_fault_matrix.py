@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import importlib.util
+import json
 import pathlib
 import unittest
 from unittest import mock
@@ -14,7 +15,7 @@ spec.loader.exec_module(MODULE)
 
 def pod(name, uid, ready=True, deleting=False):
     value = {
-        "metadata": {"name": name, "uid": uid},
+        "metadata": {"name": name, "uid": uid, "namespace": "test"},
         "status": {"conditions": [{"type": "Ready", "status": "True" if ready else "False"}]},
     }
     if deleting:
@@ -24,15 +25,19 @@ def pod(name, uid, ready=True, deleting=False):
 
 class FakeKubectl:
     def __init__(self, responses):
+        self.namespace = "test"
         self.responses = iter(responses)
         self.deleted = []
+        self.delete_options = []
 
     def json(self, *args):
         return {"items": next(self.responses)}
 
-    def run(self, *args):
+    def run(self, *args, **kwargs):
         self.deleted.append(args)
-        return ""
+        options = json.loads(pathlib.Path(args[args.index("-f") + 1]).read_text())
+        self.delete_options.append(options)
+        return json.dumps({"metadata": {"uid": options["preconditions"]["uid"]}})
 
 
 class FaultMatrixUnitTests(unittest.TestCase):
@@ -56,13 +61,25 @@ class FaultMatrixUnitTests(unittest.TestCase):
         result = MODULE.replace_one_pod(client, "app=api", 2, 5)
         self.assertEqual(result["oldPodUid"], "u1")
         self.assertEqual(result["newPodUid"], "u3")
-        self.assertEqual(client.deleted, [("delete", "pod", "api-a", "--wait=false")])
+        self.assertEqual(client.deleted[0][:3], ("delete", "--raw", "/api/v1/namespaces/test/pods/api-a"))
+        self.assertEqual(client.delete_options, [{
+            "apiVersion": "v1", "kind": "DeleteOptions", "preconditions": {"uid": "u1"},
+        }])
 
     def test_replace_one_pod_fails_closed_on_degraded_start(self):
         client = FakeKubectl([[pod("api-a", "u1"), pod("api-b", "u2", ready=False)]])
         with self.assertRaisesRegex(RuntimeError, "exactly 2"):
             MODULE.replace_one_pod(client, "app=api", 2, 1)
         self.assertEqual(client.deleted, [])
+
+    def test_replace_one_pod_rejects_unselected_peer_replacement(self):
+        client = FakeKubectl([
+            [pod("api-a", "u1"), pod("api-b", "u2")],
+            [pod("api-a", "u1"), pod("api-c", "u3")],
+        ])
+        with self.assertRaisesRegex(RuntimeError, "unselected Pod"):
+            MODULE.replace_one_pod(client, "app=api", 2, 5)
+        self.assertEqual(len(client.deleted), 1)
 
 
 if __name__ == "__main__":

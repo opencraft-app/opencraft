@@ -434,6 +434,11 @@ python3 "$script_dir/qualification/actor-bj-q01/test_runtime_build_log.py"
 python3 "$script_dir/qualification/actor-bj-q01/test_runtime_python.py"
 python3 "$script_dir/qualification/actor-bj-q01/test_prepared_runtime_stage.py" PreparedStageContractTest
 python3 "$script_dir/runtime/test_monitor_bottomless.py"
+command -v kubectl >/dev/null || {
+	echo "kubectl is required for the qualification Pod UID protocol gate" >&2
+	exit 1
+}
+python3 -m unittest discover -s "$script_dir/load/stateless-durable-routing" -p 'test_*.py' -v
 "$script_dir/qualification/actor-bj-q01/test-run-user-transparent-upgrade-via-tat.sh"
 python3 "$script_dir/runtime/test_capture_release_binding.py"
 python3 "$script_dir/runtime/test_render_runtime_config.py"

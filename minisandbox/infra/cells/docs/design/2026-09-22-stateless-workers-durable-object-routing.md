@@ -1132,6 +1132,12 @@ listener-before-completion；header 本身不能作为数据完整性或排空�
 - 非 Gateway Pod 直连 peer Cell 必须失败；
 - operations VPC 永远不能学习 runtime Cell route。
 
+Pod 故障注入必须通过 Kubernetes DELETE 的 UID precondition 绑定已观察的目标，不能仅按名称
+删除。正常 termination 不覆盖 workload 的 grace period/preStop。UID 冲突或 ACK 身份不符时
+门禁立即停止，不重新选另一台删除。恢复使用同一个 Pod-list snapshot，必须证明目标旧 UID
+已消失、所有未选中 peer 的旧 UID 保留、恰好一个新 Ready UID 恢复原副本下限；无关 peer
+被替换不能算作目标恢复。该 harness 约束的本地回归不代替真实 Cell 网络和性能资格。
+
 ### 性能与容量
 
 - 共享少量 Version 创建大量 Object，禁止每 Object 上传代码；
