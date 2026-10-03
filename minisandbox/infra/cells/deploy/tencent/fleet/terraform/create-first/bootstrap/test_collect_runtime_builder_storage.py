@@ -43,7 +43,12 @@ elif name=='lsblk':
     print(json.dumps(fixture['guest']['lsblk']))
 elif name=='wipefs':
     assert args==['--json','--no-act','/dev/vdc']
-    print(json.dumps({'signatures':fixture['guest']['wipefs']['signatures']}))
+    mode=fixture.get('wipefsOutputMode','json')
+    if mode=='empty': pass
+    elif mode=='failed': raise SystemExit(1)
+    elif mode=='malformed': print('{')
+    elif mode=='missing': print('{}')
+    else: print(json.dumps({'signatures':fixture['guest']['wipefs']['signatures']}))
 elif name=='kubectl':
     assert args==['--kubeconfig',str(root/'kubeconfig'),'get','nodes','-o','json']
     print(json.dumps(fixture['managementNodes']))
@@ -132,6 +137,42 @@ class BuilderStorageCollectorTests(unittest.TestCase):
         calls = (self.directory / "calls.ndjson").read_text()
         self.assertNotIn('["readlink"', calls)
         self.assertNotIn('["wipefs"', calls)
+
+    def test_legacy_wipefs_empty_success_is_joined_with_empty_disk_observation(self):
+        self.fixture['wipefsOutputMode'] = 'empty'
+        result = self.capture()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        evidence = json.loads(result.stdout)
+        self.assertEqual(evidence['guest']['wipefs']['signatures'], [])
+        plan = FIXTURE.VALIDATE.validate(FIXTURE.inventory(), evidence, time.time_ns() // 1000000)
+        self.assertFalse(plan['storageReady'])
+
+    def test_empty_wipefs_never_overrides_nonempty_lsblk_even_in_attachment_mode(self):
+        for field, value in (('fstype', 'ext4'), ('uuid', 'existing-uuid'),
+                             ('mountpoint', '/data'), ('children', [{}])):
+            with self.subTest(field=field):
+                self.fixture = FIXTURE.observation()
+                self.fixture['wipefsOutputMode'] = 'empty'
+                self.fixture['guest']['lsblk']['blockdevices'][2][field] = value
+                result = self.capture('--attached-only')
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(result.stdout, '')
+
+    def test_wipefs_failed_malformed_or_missing_observations_stay_closed(self):
+        for mode in ('failed', 'malformed', 'missing'):
+            with self.subTest(mode=mode):
+                self.fixture['wipefsOutputMode'] = mode
+                result = self.capture()
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, '')
+
+    def test_empty_wipefs_requires_explicit_filesystem_columns(self):
+        for field in ('fstype', 'uuid', 'mountpoint'):
+            with self.subTest(field=field):
+                self.fixture = FIXTURE.observation()
+                self.fixture['wipefsOutputMode'] = 'empty'
+                del self.fixture['guest']['lsblk']['blockdevices'][2][field]
+                self.assertEqual(self.capture('--attached-only').returncode, 1)
 
     def test_used_disk_is_observed_but_never_initializes_or_passes(self):
         self.fixture["guest"]["lsblk"]["blockdevices"][2]["fstype"] = "ext4"

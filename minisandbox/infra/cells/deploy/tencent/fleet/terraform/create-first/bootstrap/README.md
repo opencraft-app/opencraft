@@ -60,6 +60,13 @@ not cloud credentials. It verifies the instance metadata before reading any disk
 The metadata endpoint is Tencent's documented
 [instance-ID endpoint](https://cloud.tencent.com/document/product/213/4934).
 
+Stock util-linux 2.32.1 returns exit status zero and **empty stdout**, rather than
+JSON, for `wipefs --json --no-act` on a blank disk. The collector normalizes only
+that exact successful empty output, corroborated by `lsblk` reporting no
+filesystem, UUID, mount or child partitions. Nonzero exit, malformed/nonempty
+JSON and contradictory block observations still fail closed. This compatibility
+handling grants no formatting or build admission and changes no disk identity gate.
+
 ```bash
 "${ACTOR_BOOTSTRAP_PYTHON:?qualified Python 3.11 is required}" collect-runtime-builder-storage.py \
   --inventory /protected/runtime-builder.inventory.json \

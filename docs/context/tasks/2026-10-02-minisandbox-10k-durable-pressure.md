@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.33.0
+revision: 1.35.0
 precedence: task
 derived: false
 ---
@@ -415,7 +415,46 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ## checkpoint
 
-当前 checkpoint（1.33.0）：上一 goal turn 为 progress：只读 ownership census 改变下一步，
+当前 checkpoint（1.35.0）：用户追问后，全量北京50组审计发现六个零关联/零SG引用候选，
+此前project-tag/name-only的12组范围不能推导全账号无可清理组；“必须提升配额”过早。
+用户明确授权清理，并确认北京没有生产，本轮只删除这六个精确ID；不扩大到其他组、
+集群、资源解绑或数据。fresh exact metadata/name join、完整关联/reference ID集合、
+十个region AS launch configuration和零CVM launch template通过检查；每组删除前又
+读取原生关联和引用，六份规则备份成功后才逐个调用DeleteSecurityGroup，保留各ack。
+最终完整inventory50→44且before_ids−targets==after_ids，remaining44未变、quota50，
+可用六位。私有备份在`/data/tmp/minisandbox-sg-cleanup-beijing-20261003.WCtu04`；
+原SG ID不可恢复，配置只能按备份以新ID重建。两处检查的本地Pulumi backend不存在，
+不能将此描述为所有外部IaC已认证。明确用户授权覆盖了这六个清理目标。
+credential-free receipt已归档`terraform/create-first/bootstrap/evidence/security-group-cleanup-beijing-20261003.json`，
+README纠正旧范围/结论；cleanup移除了配额阻塞，不是Runtime build或性能通过。
+
+用户随后明确继续整个目标；goal已恢复active。已按原完整source bundle/hash、COS backend、
+private API和原operations lock恢复新的完整plan/apply，gate改为serial63/原lineage、
+disk-kkels2ln no-op/reuse，仅其余四个精确resource create，零update/destroy；不是target
+apply或重跑serial62旧plan。第一次本地tat_initialize在提交前因PATH缺tccli退出，无云调用；
+正常将已配置CLI加入PATH后仅提交一次`inv-e9f3320wma`。同一native最终SUCCESS/0，
+RequestId611ba320-bc55-4c13-a4d5-0ac424ebb4fb；serial63→65，创建独立builder
+ins-mh9mruw7并复用原512GiB disk-kkels2ln。credential-free provisioning receipt已归档，
+storageReady仍false。Python准备inv-a9f35fgpkq SUCCESS/0，仅安装3.11，不创建/data。
+
+原fc833工具coordinator inv-e9f36r0njr FAILED/1，其只读capture inv-e9f36vgjnt
+FAILED/1，尚未提交initializer。native诊断inv-a9f3a9g6tp确认util-linux2.32.1对空盘
+wipefs --json --no-act退出0但stdout为空，原collector拒绝“wipefs invalid JSON”；
+by-id/serial一致且排除root。另一次原ops只读inv-c9f3dugxt8 SUCCESS/0确认该builder
+coordinator intent不存在，不能靠源码推断无mutation。已修正仅成功空输出且lsblk显式
+fstype/uuid/mountpoint均null、无children时规范化空signature；非零命令、非法JSON、
+缺字段、已有FS/UUID/mount/partition仍fail closed，附加attachment模式也不例外。
+真实subprocess/TAT回归先红后绿；不改变identity、时效、root/TKE排除或journal协议。
+新工具必须先正常review/push并生成新immutable bundle；不得修改云上fc833源码或receipt。
+本轮完整bootstrap测试134项通过、Python compile与diff whitespace通过、文档零错误/警告，
+精确九文件change-impact通过。Context仍为原4,942历史错误，归一化added/removed均0、
+本Task无错；context tests原4项失败未增加，audit tests33项通过。default audit只为
+discovery/not_assessed，不声称整个mono2上下文门禁已通过。
+管理节点只运行Terraform/协调工具，不编译Runtime。后续仍为builder storage初始化、
+受控Engine-only release、strict10k和全部原Phase5门禁；不得把删除配额、mount或native
+provisioning替代万级业务性能资格。恢复仍保持原operations lock，不重放indeterminate任务。
+
+历史 checkpoint（1.33.0）：上一 goal turn 为 progress：只读 ownership census 改变下一步，
 确认没有可安全删除的项目空闲 SG；记录正常推至 master9ac745d602bb，工作区 clean。
 本轮正常配置的只读 native API 再确认北京 TotalCount50/returned50、SecurityGroupLimit50，
 RequestId 分别为5268bec5-1ce5-428d-93cc-d5c086aae647、

@@ -82,6 +82,18 @@ must be joined to current desired state and exact identities before an approved
 deletion. Do not extend cleanup to unrelated account resources to unblock a build.
 This snapshot grants neither builder readiness nor performance qualification.
 
+The subsequent [authorized six-group cleanup](bootstrap/evidence/security-group-cleanup-beijing-20261003.json)
+expanded the census to all fifty Beijing groups and removed only six exact,
+unassociated candidates after the user confirmed cleanup. Fresh association and
+reference checks, all ten regional AS launch configurations and the empty CVM
+launch-template inventory showed no target references. Policy backups remain in
+a private local directory; the original group IDs are irrecoverable. The final
+inventory contains the same remaining forty-four IDs, leaving six quota slots.
+No cluster, resource binding or Terraform state was deleted. The earlier census
+was project-scoped and did not establish that raising quota was the only option.
+Resume provisioning with a new full plan that reuses the existing build disk;
+quota availability still does not prove builder or runtime readiness.
+
 Provisioning is not build readiness. The inventory deliberately requires a
 storage bootstrap: verify the cloud attachment and exact guest block-device
 identity before any initialization; never infer `/dev/vdb` or overwrite a used

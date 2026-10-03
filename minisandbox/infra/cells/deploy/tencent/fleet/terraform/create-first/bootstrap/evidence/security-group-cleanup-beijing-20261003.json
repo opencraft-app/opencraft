@@ -1,0 +1,181 @@
+{
+  "schema": "actor-security-group-cleanup/v1",
+  "verdict": "completed",
+  "region": "ap-beijing",
+  "sourceRevision": "8ed8054640102acf31789af1670e078621e87a8d",
+  "recordedAt": "2026-10-03T15:01:58Z",
+  "authorization": {
+    "scope": "six previously identified zero-association candidates",
+    "userConfirmedCleanup": true,
+    "userConfirmedNoBeijingProduction": true
+  },
+  "cloudMutations": 6,
+  "deletedGroups": [
+    {
+      "id": "sg-0nwicxiz",
+      "name": "tke-worker-security-for-cls-0zvm1btp",
+      "resourceCountBeforeDelete": 0,
+      "securityGroupReferenceCountBeforeDelete": 0,
+      "deleteAcknowledgement": {
+        "requestId": "7aa6d482-55b7-46b1-a296-87efece4c93c",
+        "responseSha256": "34a894f7c925844ef200992893e6f1c2f09b622b7872c0e682020c8568cd435a"
+      },
+      "policyBackupSha256": "2c72413f97ad9f3cae4f9925f7a622ca0e3c6eac9b76fb41de85f7643e611a48",
+      "finalAssociationProof": {
+        "requestId": "41253c60-c1f2-49c0-b605-734274c0a9a3",
+        "responseSha256": "a5dc4e7e983e2b4bd527a8ad27436046f749b38493ad27255b75d6e76afad5c8"
+      },
+      "finalReferenceProof": {
+        "requestId": "4edf04ea-b1ef-40ae-9c3e-d9df59a30c55",
+        "responseSha256": "ce2a7a44bb836a6b3613100093948a9f1d82d04b7aa4eda458426022b991decc"
+      }
+    },
+    {
+      "id": "sg-rjme7kmz",
+      "name": "tke-worker-security-for-cls-5ppfclx7",
+      "resourceCountBeforeDelete": 0,
+      "securityGroupReferenceCountBeforeDelete": 0,
+      "deleteAcknowledgement": {
+        "requestId": "a857e920-b76a-41de-9e47-d7c7d9a24ed6",
+        "responseSha256": "db4416f20403ae7b4937fcd8a48067de356b4cd56833cb37ee0296287b15dc35"
+      },
+      "policyBackupSha256": "ac924bae7dafc13b0cc7baaad8d0e13d4ee073aed5491580e06fc0bfdd13449b",
+      "finalAssociationProof": {
+        "requestId": "cb867c53-9726-495c-bd6e-cd85909f613e",
+        "responseSha256": "06c59f5f3f8c666da6203be297481081e63c954dd5b1b94b47925c03053504bf"
+      },
+      "finalReferenceProof": {
+        "requestId": "2d48d6eb-02aa-4808-be49-d8c9e77c72c1",
+        "responseSha256": "e9b9a818d783dae9d3793a44b322b0d0853ecbebfd4168244a8f3b9ec683e93b"
+      }
+    },
+    {
+      "id": "sg-d6nusyot",
+      "name": "llmgateway-rehearsal-bjdrill-traffic-edge",
+      "resourceCountBeforeDelete": 0,
+      "securityGroupReferenceCountBeforeDelete": 0,
+      "deleteAcknowledgement": {
+        "requestId": "d8d94570-17f1-4c32-876e-a50d3fefe191",
+        "responseSha256": "a5d7e7c61d1bbdae61da6d894d4ee639d023757108d4b9c4ac3ba5ac3396fe5f"
+      },
+      "policyBackupSha256": "e4ada10e73d0640abefa1e5921482908601d500babb316224b3cdd396d518898",
+      "finalAssociationProof": {
+        "requestId": "926b6d53-0886-483e-aef6-fb0981823218",
+        "responseSha256": "ae985a0abf881163614652024eb4a42ccd466a5563ebe497aaefd6878c50aca6"
+      },
+      "finalReferenceProof": {
+        "requestId": "153e399c-225b-4791-b5a8-03fdf33a8fc7",
+        "responseSha256": "002b97932c9b8ecf0f2a29478f7dffce7131a3642836861de645363ab18d10d9"
+      }
+    },
+    {
+      "id": "sg-1w1fxdo1",
+      "name": "llmgateway-prod-bj-traffic-edge",
+      "resourceCountBeforeDelete": 0,
+      "securityGroupReferenceCountBeforeDelete": 0,
+      "deleteAcknowledgement": {
+        "requestId": "3d489324-a5f5-45ce-a33c-80aa3ab39c33",
+        "responseSha256": "7690ced835cbf8b6e3d37a99f45e1317df20c0be8daa5434b316f5312af2e646"
+      },
+      "policyBackupSha256": "b170a8b079c7bbc424f2e9bf5fbbcc32c7d9e08b198e3bb8d99e051ce6dcc00b",
+      "finalAssociationProof": {
+        "requestId": "7d199a26-9a8c-403c-a960-bc05c32cc441",
+        "responseSha256": "5f8b6b0d20d42ccc91523df890d58f21da37c457a551f130b8c99652af94bae3"
+      },
+      "finalReferenceProof": {
+        "requestId": "5351175a-8116-4cea-a53a-7141334ffe80",
+        "responseSha256": "d64d1336fae087e9388bf4befa09fd7f17e8c59c64bd24178b857fa3347285e2"
+      }
+    },
+    {
+      "id": "sg-71ahk8fz",
+      "name": "tke-apiserver-public-sg",
+      "resourceCountBeforeDelete": 0,
+      "securityGroupReferenceCountBeforeDelete": 0,
+      "deleteAcknowledgement": {
+        "requestId": "cd47eacf-42d4-4e30-a94c-a18b36f374c5",
+        "responseSha256": "8837438038e3874efd2fb580527f8f6883cc0838b8884eae0c20fdd233852500"
+      },
+      "policyBackupSha256": "f8268914e5514e60bd784fc3129fc6a1553eb9e404dc1c8c76ddf3373f37ae62",
+      "finalAssociationProof": {
+        "requestId": "ddf53bf4-d906-4de0-9405-8ba9074e16e4",
+        "responseSha256": "5b36663eaa5c93060a3adbc8721629cd39189998d4d1b5709a9b529030ea272e"
+      },
+      "finalReferenceProof": {
+        "requestId": "4e0ec84c-1b0b-4e7b-b27b-771bc1d08968",
+        "responseSha256": "37a1731efebeb30d84b8c563c7a4421e804148f35b509e461aa966a3b74eaf05"
+      }
+    },
+    {
+      "id": "sg-8hi1uwut",
+      "name": "自定义模板-20251212114810835",
+      "resourceCountBeforeDelete": 0,
+      "securityGroupReferenceCountBeforeDelete": 0,
+      "deleteAcknowledgement": {
+        "requestId": "6cb679fb-3e53-44c1-bdaa-f44d565913e2",
+        "responseSha256": "a2a1b02da742022673eb49ff72f90902e1dba215743f9d3e36573e07cf39933e"
+      },
+      "policyBackupSha256": "d81d5de072541502a53c6351ae169fbb58695aea962df9876afca1cf038a45d1",
+      "finalAssociationProof": {
+        "requestId": "8072e026-ae4a-4b2e-b0b9-53f1dee60660",
+        "responseSha256": "747e0efa67eb6c4540db22e65749625c06bb5eec7b727867a4904e6a35c928a3"
+      },
+      "finalReferenceProof": {
+        "requestId": "36ba49ed-896d-439f-a683-9d511e92a404",
+        "responseSha256": "c27c5e8fc7d378d4548c05b78edf8b890569c5a199ad51ebb2f4cc0628713b0f"
+      }
+    }
+  ],
+  "verification": {
+    "groupsBefore": 50,
+    "groupsAfter": 44,
+    "regionalQuota": 50,
+    "availableQuotaAfter": 6,
+    "remainingGroupIdsUnchanged": true,
+    "targetIdsAbsentAfter": true,
+    "regionalLaunchConfigurationsChecked": 10,
+    "targetReferencesInLaunchConfigurations": 0,
+    "regionalCvmLaunchTemplates": 0,
+    "clustersDeleted": 0,
+    "resourceDetachments": 0,
+    "terraformStateMutations": 0
+  },
+  "sources": {
+    "groups-before.json": {
+      "requestId": "b58e0ba7-a50b-40c3-9021-280ba3802af5",
+      "responseSha256": "03c9e45b770217e4f8fe5fc46c15bb61253a2ae571ef6f853abea67ed2cb6d63"
+    },
+    "groups-after.json": {
+      "requestId": "90e8633b-ff7d-4058-82a0-998aec9c40a0",
+      "responseSha256": "f49b647ea202c29c11034f865fd783c0caba4768d22e5a19d36b1904cb8e0578"
+    },
+    "targets-before.json": {
+      "requestId": "9ccfdb57-0ffe-441d-b9d8-b9d3f2d0f3ad",
+      "responseSha256": "f67fd0ac6b259f6119c5a5959d27d19b0f2ca6620b3d78d0f6f3128ef262d3d2"
+    },
+    "launch-configurations-0.json": {
+      "requestId": "0d465b12-b948-464b-a1fc-4ed727355ec4",
+      "responseSha256": "5f736c88fa988c106ef79a58374554174b8c7a63dc486e851e03e619197eddf8"
+    },
+    "launch-templates-0.json": {
+      "requestId": "be5ec76f-496d-487d-9729-fcf19331ccf4",
+      "responseSha256": "84aea615d6a5fa9da8b8af19d076b2bd7101ed86906ab8d51b48d2e7fdb69ba7"
+    },
+    "limits-after.json": {
+      "requestId": "795a5a27-12c6-4a9b-aa3c-eb244f28913c",
+      "responseSha256": "7b59033ef90c03699675bf7cfad039e1a380e124afbb66d115bbc9090325b68a"
+    }
+  },
+  "privateBackupDirectory": "/data/tmp/minisandbox-sg-cleanup-beijing-20261003.WCtu04",
+  "recovery": {
+    "originalIdsRestorable": false,
+    "policyBackupsCaptured": true,
+    "recreationRequiresNewIds": true
+  },
+  "limitations": [
+    "API observations are sequential, not an atomic fence over all future infrastructure changes.",
+    "No local Pulumi backend was present in the two checked worktrees; this does not certify external IaC state.",
+    "Deletion authorization was explicitly scoped to these six candidates; it grants no deletion of the remaining groups.",
+    "This cleanup removes a provisioning quota blocker; it proves no runtime build, deployment or performance qualification."
+  ]
+}

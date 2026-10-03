@@ -89,7 +89,18 @@ def collect(instance_id, disk_id):
     require(row is not None and row.get("type") == "disk" and row.get("serial") == disk_id,
             "selected disk serial/type mismatch")
     require(device not in roots, "selected disk contains root")
-    wipefs = document(command(["wipefs", "--json", "--no-act", device], "wipefs"), "wipefs")
+    signatures_raw = command(["wipefs", "--json", "--no-act", device], "wipefs")
+    if signatures_raw == "":
+        # util-linux 2.32.1 emits no JSON when no signatures exist. Accept
+        # only a successful, truly empty result corroborated by lsblk; neither
+        # an execution error nor positive filesystem evidence may disappear.
+        require(all(field in row for field in ("fstype", "uuid", "mountpoint"))
+                and row.get("fstype") is None and row.get("uuid") is None
+                and row.get("mountpoint") is None and row.get("children", []) == [],
+                "empty signatures contradict block observation")
+        wipefs = {"signatures": []}
+    else:
+        wipefs = document(signatures_raw, "wipefs")
     require(isinstance(wipefs.get("signatures"), list), "signature observation missing")
     return {"instanceId": observed_instance, "observedAtMs": observed_at,
             "rootDevices": sorted(roots), "byId": {by_id: device}, "lsblk": lsblk,

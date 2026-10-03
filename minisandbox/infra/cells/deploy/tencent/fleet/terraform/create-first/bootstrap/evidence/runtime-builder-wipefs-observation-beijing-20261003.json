@@ -1,0 +1,33 @@
+{
+  "schema": "actor-runtime-builder-guest-tool-observation/v1",
+  "claimEligible": false,
+  "region": "ap-beijing",
+  "instanceId": "ins-mh9mruw7",
+  "diskId": "disk-kkels2ln",
+  "readOnlyDiagnostic": {
+    "invocationId": "inv-a9f3a9g6tp",
+    "status": "FAILED",
+    "exitCode": 1,
+    "requestId": "6fd548ef-504b-4925-bc87-f68f4dd82a78",
+    "responseSha256": "9d3c1ecd4bef0fa61f20edf015066f27ad22f89bcbba9ee1104b26297dc621c9",
+    "collectorCondition": "wipefs invalid JSON",
+    "wipefsVersion": "util-linux 2.32.1",
+    "noActJsonExitCode": 0,
+    "noActJsonStdoutBytes": 0,
+    "noActParsableExitCode": 0,
+    "noActParsableStdoutBytes": 0
+  },
+  "coordinatorIntentObservation": {
+    "invocationId": "inv-c9f3dugxt8",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "requestId": "f33077ff-69a1-444e-9b45-6a4892c72335",
+    "responseSha256": "1025d4457dd4e6ab11e0a57282bb0dc40179ace8cd8d33add7bbedb4b9b3ae20",
+    "coordinatorIntentExists": false
+  },
+  "limitations": [
+    "Diagnostic task intentionally exited nonzero after recording the collector ValueError; neither task performed formatting.",
+    "A successful empty wipefs output requires corroborating filesystem, UUID, mount and partition observations before normalization.",
+    "This receipt does not grant disk initialization, toolchain admission, runtime release or performance qualification."
+  ]
+}
