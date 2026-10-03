@@ -2165,6 +2165,14 @@ runtime2757 的 run7d5fa6ac 在 5,394 ready 对象时因一次普通 active 503 
 不记录原始 URL/error、token 或 payload，不改变 timeout、response、retry 或请求副作用。
 真实 HTTP POST 收到后断连回归证明无新增重放。该源码诊断尚未发布，不代表本次 503 已修复。
 
+后续只读CLS检查确认：北京现有7个topic不能由名字认定属于本平台；当前A/B/C的标准
+TKE LogConfig CRD不存在，未发现常见采集器，故本次不能依赖已安装的TKE→CLS通道追溯。
+没有查询无绑定的其他服务日志，也不排除自定义外部agent/sidecar。证据见严格负载目录的
+`2757-run-7d5fa6ac-cls-discovery-20261004.json`。日志是诊断材料，不是对象存储真值或
+admission资格。未来标准采集应纳入Terraform/Argo desired state，绑定精确cluster/service，
+优先保留结构化平台错误，默认不采集用户JS请求内容、Secret或console输出；不要用全量
+DEBUG和无界日志量替代定位。原supervisor持锁期间没有安装或变更日志采集组件。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

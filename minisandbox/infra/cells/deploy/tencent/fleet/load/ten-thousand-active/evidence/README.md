@@ -1026,3 +1026,20 @@ now records socket milestones and a bounded error classification without URLs,
 credentials, payloads or raw error strings. A real HTTP peer that closes after
 receiving a POST proves one attempt, EOF classification and sanitized logging.
 This is diagnostic coverage, not a fix or deployed qualification for this 503.
+
+### CLS collection discovery
+
+`2757-run-7d5fa6ac-cls-discovery-20261004.json` records the later read-only CLS
+check. All seven Beijing topics were enumerated, but none was verified as bound
+to these current Actor clusters. Topic contents belonging to other services were
+not searched. Live TKE identities for A/B/C were checked, then every cluster's
+`DescribeLogConfigs` returned Kubernetes resource-not-found for
+`logconfigs.cls.cloud.tencent.com`. A successful independent Kubernetes
+observation found no matching LogConfig/logging CRD or commonly named collector
+DaemonSet/Deployment in any of the three clusters.
+
+This demonstrates that the standard TKE LogConfig collection path is absent;
+it does not exclude a custom external agent or sidecar. Existing account topics
+are not evidence of fleet log retention, and a lack of retained logs is not
+evidence that the 503 never occurred. No collection configuration or cloud
+resource was changed during the original supervisor's operation lock.
