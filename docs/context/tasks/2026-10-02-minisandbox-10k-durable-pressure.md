@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.9.3
+revision: 1.9.4
 precedence: task
 derived: false
 ---
@@ -75,6 +75,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   生命周期停止。旧完整 activity 与新观察均可持久回放，普通规划不增加版本事务。
 - 明确排队与执行预算；真实 production workflow handler 必须在延期时释放 exact lease、
   保留 input、重启恢复且不耗尽执行失败次数。实际 execution timeout 和数据 fence 不削弱。
+- FDB 相邻 Get/GetKey 有界并发而非串行等待；mutation、range、commit 和 retry/reset 均为
+  FIFO barrier。真实 native FDB 验证读写顺序、64 并发值、generation 冲突和 on_error 重试。
 - 新 digest 经正式 release 后，真实 10k receipt 必须满足零 retry、零 active failure、10,000 active；
   通过前不得运行或宣称 Router performance qualification 完成。
 
@@ -104,6 +106,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/engine/packages/universaldb/src/driver/foundationdb/{database,transaction}.rs@0700632d`、`minisandbox/engine/packages/universaldb/tests/{foundationdb,foundationdb_unavailable,foundationdb_node_loss,conflict_parity}.rs@0700632d` | adapter 真实等待与重试边界 | 修正相邻点读，并保留 FIFO state barrier 与 native conflict/maybe-committed 语义 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/observability/{infrastructure-metrics.yaml,values.yaml}@0700632d` | FDB 诊断来源及缺失指标 | 容量 gauge 不是延迟证明；nodeExporter 禁用时空磁盘指标保持 unknown |
+| `minisandbox/.claude/reference/{testing,docs-sync}.md@0700632d`、`docs/context/project/adjacency/argocd-ci-secrets.md@0700632d`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@0700632d` | 本轮验证与发布邻接 | 私有测试 shim、正式设计同步和只读观察不重发原作业 |
 | `docs/context/domains/agent-gateway-runtime.md@046f2bde`、`docs/context/project/services/ctl.md@046f2bde`、`docs/context/project/services/sandbox.md@046f2bde` | 本轮路径路由必读 | 后两者为 minisandbox 字符匹配的邻接摘要，不修改独立 CTL/Sandbox 服务 |
 | `minisandbox/engine/AGENTS.md@046f2bde`、`minisandbox/.claude/reference/testing.md@046f2bde`、`minisandbox/docs-internal/engine/sqlite/components.md@046f2bde`、`minisandbox/docs-internal/engine/sqlite/storage-structure.md@046f2bde`、`minisandbox/docs-internal/engine/sqlite/constraints-and-design-decisions.md@046f2bde` | 局部 fold 改动规则与 fence | 测试单独文件、只改页折叠，不改变存储权威、事务或恢复覆盖 |
 | `minisandbox/engine/packages/guard/src/routing/pegboard_gateway/mod.rs@046f2bde`、`minisandbox/engine/packages/pegboard-gateway2/src/lib.rs@046f2bde`、`minisandbox/engine/packages/namespace/src/keys/metric.rs@046f2bde`、`minisandbox/engine/packages/pegboard-envoy/src/ws_to_tunnel_task.rs@046f2bde` | 前台真实成本 | 区分就绪、gateway lookup、统计和 generation 验证，不删 fence 或丢计量 |
@@ -319,6 +324,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## scan_output
 
+- 本轮云环境 status tool 与 policy snapshot 仍不可用，不据此宣称访问/凭证 ready。
+  `observability/rules/` 与 `qualification/actor-bj-q01/collect-cloud-evidence.sh` 精确路径
+  不存在；实际规则为 actor-rules.yaml、FDB 低频采集脚本在 infrastructure-metrics.yaml。
+  后续只在已定位 producer/observer 与实际 kubeconfig 对应 Cell 中收集有界只读证据。
 - 本轮精确路径查询发现 config 的 guard/pegboard 位于 `src/config/`，不是 `src/`；
   `depot/tests/test_driver.rs` 不存在。后续使用限定目录的文件清单，不扩大仓库扫描。
 - 新 request-path 原字节已官方 relay 验真。A 的前台 gateway、Depot commit 与 Gasoline
@@ -347,6 +356,17 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+2026-10-03 05:13:51 UTC：原只读 `inv-d9ehs7gxq7` SUCCESS/0，原 unit running、
+Host A/B 202/202、MachineSet 212/208、active 零，final waiting。下一进度不早于
+05:18:51 UTC。临时 FDB 诊断 `inv-c9ehrugfrk` FAILED/1，内嵌 Python 的 RSS query
+f-string 语法错误，实际业务/云配置未改变；已修正且下一提交前额外 AST 校验，不重发
+业务负载或把该工具失败当成新业务故障。
+
+2026-10-03 05:12:29 UTC 恢复：前一 goal turn 为 progress，源码/模型已推 master
+0700632d，当前 clean。新 turn 保持完整目标 active；原负载 failed、exact cleanup
+passed、自然缩容未终态。下一只读不早于 05:13:36 UTC。本轮先定位 A/B FDB 拓扑与
+历史 I/O 差异，不重启 workload、改线上容量或发布局部 fold；缺失历史指标不能补零。
 
 2026-10-03 05:08:36 UTC 最终 checkpoint：原 unit 仍同 PID/InvocationID running，
 Host 已自然降至 A/B 215/215、MachineSet 224/221；next observation 不早于
@@ -703,6 +723,62 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- ReadFlights 源码本轮验收：universaldb + foundationdb check exit 0、lib 19/19、
+  clippy v4 --lib --tests exit 0；新增文件没有 warning，现有 UDB lib 20/libtest 22
+  warning 不做无关 fixer。真实 FDB 7.3.79 opt-in gate 四项全部通过，原日志为
+  `/data/tmp/minisandbox-fdb-point-read-test.556dPz/attempt.NuDO1u/test.log`，没有 skip。
+  launcher trap 已停止唯一测试 server，localhost:45679 无 listener；data/log 留作证据。
+  不连旧本地/云上数据库，不改线上镜像、admission、范围读或存储格式。
+  正式设计、FDB 诊断 evidence README 已同步。下一步完成 source/context 门禁并推 master；
+  等原自然 drain 收敛/ops lock 释放后，才走正式 runtime release 和固定 strict10k。
+  四项 native fixture 清理改用 exact owned prefix successor，重跑验证清理后范围/键为空；
+  单 key 的 `end_of_key_range` 不用于 prefix cleanup。最终 gate 仍 4/4，Clippy gate exit 0。
+  文档门禁零 errors/warnings；Context 当前 4,942 个全量历史 error 与已存基线的 normalized
+  Counter 完全相同、Task 零 error；26 项 context 测试保留同四项历史失败、audit tests 33/33。
+  原监督服务 05:28:57 UTC `inv-d9ei8cgw2j` 同一身份 running；A/B Host 166 Ready、
+  Machine 176/173 Ready、active 均零，load failed/cleanup passed/final receipt 尚未产生。
+  下一次只读进度不早于 05:33:57 UTC，不抢占原 ops lock。
+- 当前 revision `uplnqwyp` parent `0700632d` 正在修正 FDB point-read 串行化，尚未提交或
+  发布。`cargo check -p universaldb --features foundationdb` exit 0；lib 19 tests（含
+  四个 ReadFlights 状态机）已通过。第一轮 lib fixture 的 pinned future 生命周期编译失败，
+  缩小借用 scope 后复跑通过，不隐藏原失败日志。真实本地 FDB gate 仅绑定
+  `/data/tmp/minisandbox-fdb-point-read-test.556dPz/fdb.cluster` 的 localhost:45679，
+  使用现有 7.3.79 binary，不连接旧本地/云上 FDB。初始连接名非法和 server memory 小于
+  默认 cache 导致 fixture 启动失败，已修正名称和显式 memory/cache 后复跑；真实结果未出。
+  FIFO barrier 覆盖除 Get/GetKey 之外所有 command；范围读没有并行化，generation fence、
+  native on_error、reset 与 maybe-committed 分类不变。不把本地 gate 当作 strict10k 改善。
+  新 native fixture 又暴露 Slice 的 Deref target 是 Vec、Fn async 必须显式 clone/move 的
+  编译错误，已修 fixture 并重跑。重复启动沿用已初始化目录会使 `configure new` 拒绝，
+  launcher 改为每次独立 mktemp data/log 目录；不将 fixture 失败冒充 native gate 通过。
+  首个真正执行的 native gate 为 2 passed/1 failed：range 的默认 Iterator 首页只返回一行，
+  fixture 错把首页当作全部 64 行。改为原生分页 stream 的 try_collect，不改 driver 的范围
+  语义；追加真实 conflict/on_error/reset 回归后重新跑四项。clippy v3 已 exit 0，尚待
+  最终 fixture 对应门禁。原失败日志保留在 `attempt.Gt1nOE/test.log`。
+- 当前只读 FDB 诊断 v2 `inv-a9eht400a3` 已 SUCCESS/0；远端原文件为
+  `/data/actor-build/release/strict10k-fdb-55b55875-20261003.1qNi9u/fdb-diagnostic.json`，
+  307,079 bytes、SHA 前缀 `b9476d6015d5`。官方 COS relay 正在原 session 64924
+  继续，metadata invocation 为 `inv-c9ehvtgg4b`，不得因断线重发诊断。
+  A/B 当前各九 FDB storage Pod/Node/PVC，CR UID 与负载身份相同；CPU、RSS、历史 Pod
+  UID 和前台 attempts 有结果，node/disk 与 throttling 查询空集是 unknown，不是零。
+  初版 `inv-c9ehrugfrk` 在远端 Python 解析失败，未采业务数据；v2 AST/bash 检查后重提。
+  relay 已 SUCCESS/0：metadata `inv-c9ehvtgg4b`、upload `inv-e9ehvug1ju`；本地原文件
+  `/data/tmp/minisandbox-strict10k-55b55875-fdb-diagnostic-20261003.json` 已验长度和 SHA。
+  同窗十八 Pod UID 全匹配，A/B 总 CPU 采样峰值 6.756/6.585 cores、单 Pod 小于
+  0.89 core；前台 attempts 接近一，refresh 峰值 1.95/1.523。CPU 均值和 ratekeeper
+  ratio 不能排除单线程/局部热范围/网络或磁盘尾延迟。
+- 源码确认 FDB `TransactionTask::run` 对每个 Get/GetKey/GetRange 都 await 后才取下一
+  command；`get_for_gateway` 的十个 try_join 点读因此被 adapter 串行化。下一项是有界
+  read-flight 修正，mutation/commit/reset/on_error 保留 FIFO barrier；它是确定性缺陷，
+  不是尚未完成的首错因果证明。`nodeExporter.enabled=false` 解释本轮 node/disk 空指标，
+  不以盲目改 selector 或空集推断磁盘空闲。
+- 原监督服务 `inv-d9ehs7gxq7` 在 05:13:51 UTC 仍为同一 MainPID/InvocationID；
+  load failed、exact cleanup passed、final capacity waiting。A/B Host desired/Ready 各
+  202/202，Machine desired/current/Ready 为 212/212/212 与 208/208/208，active 均零。
+  下一次原服务只读观察不早于 05:18:51 UTC；不发第二负载、不改容量或发布新 Runtime。
+- 最新 progress `inv-d9ehwgg5ve` 已 SUCCESS/0，同一监督服务 05:18:25 UTC running；
+  最新 trace A/B Host 192/192、Machine 201/201/201 与 197/197/197、active 零。
+  本次提交早于建议五分钟边界约 26 秒，后续恢复至少五分钟间隔，下一次不早于
+  05:23:25 UTC。无第二负载、故障或 rollout。
 - 04:29:50 UTC 高水位快照的官方 relay 已完成：metadata `inv-a9eghu0595` 与 upload
   `inv-c9eghv03s2` 均 SUCCESS/0，原本地 session 91503 已 exit 0，不重发快照或 relay。
   本地 trace `/data/tmp/minisandbox-strict10k-55b55875-pressure-capacity-042950-20261003.ndjson`

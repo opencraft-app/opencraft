@@ -1579,6 +1579,36 @@ flush/restart/过载语义。随意 spawn 无界 task、丢计量、删除 gener
 timeout 都不属于已批准的修复。FDB 资源隔离与后台预算只能保护公平性；重复工作成本
 和总负债不能因此忽略。
 
+#### FDB 适配层点读的串行放大
+
+同窗 FDB 诊断绑定原 run `55b55875` 和两 Cell 的 CR UID，十八个历史 Pod UID
+均与当前 Pod 匹配、重启为零。A/B 的九个 FDB 容器一分钟总 CPU 峰值约 6.756/6.585
+cores，单容器峰值小于 0.89 core，配置各 2 CPU / 8 GiB；RSS 单容器峰值约
+4.13/5.44 GiB。前台 commit、gateway lookup/accounting 和 signal pull 的平均尝试
+次数接近一，后台 full refresh 峰值为 1.95/1.523。ratekeeper released/limit 采样
+约 8.5--19.1% / 11.7--17.7%。这些证据不支持“前台 conflict retry 风暴”这一解释，
+也不证明 FDB 服务无瓶颈：一分钟均值会遮蔽突发，单线程、局部热点、网络和磁盘尾延迟
+仍须独立核验。`nodeExporter.enabled=false`，node/disk 空集不能补成零。
+
+源码确认 `get_for_gateway` 在一个事务中 `try_join!` 十个独立点读，但 Runtime 59 的
+FDB adapter 逐个取 command、await native read 完成后才取下一个。因而上层并发在
+适配层被串行化。对十个独立读，关键路径近似从 `max(read_latency_i)` 变成
+`sum(read_latency_i)`；这是源码成本模型，不是本次首错的实测十倍归因。低 CPU 与
+高 pending 可以同时出现，因为在途请求等待 I/O；`L = arrival_rate * latency` 只在
+定义一致的稳定窗口内适用，不能用不同滚动窗口机械相除。
+
+新源码只重叠相邻 `Get`/`GetKey`，每笔事务最多十六个 native point-read future，
+仍在 FIFO command 顺序中创建。所有 mutation、range read、option/conflict-range
+变更、commit、reset、cancel、on_error 都先等待之前的 point reads 完成；没有额外
+spawn、跨事务缓存或 snapshot 降级。范围读保持串行，既有 command queue 和结果字节
+预算没有因此变为全局有界，仍须按请求成本向量进行 Cell 级 admission。
+
+这项修正降低等待链长度，不减少十个 FDB 读的工作量，也不消除后台 full refresh
+与前台共用存储资源的竞争。必须同时评估 FDB read demand、后台有效进度、hot debt
+和前台尾延迟。保留 writer generation 的 serializable 冲突、native retry/reset 与
+maybe-committed 分类；成功的本地 native FDB 顺序/冲突回归不能替代正式 release 和
+相同 strict10k 的容量结果。未取得新运行时实证前不声称整体劣化已经解决。
+
 #### 多 coverage 共同前缀折叠的局部修正
 
 新源码 `plan_hot_coverage_shards` 将请求 coverage 的本地索引排序，对已选 DELTA

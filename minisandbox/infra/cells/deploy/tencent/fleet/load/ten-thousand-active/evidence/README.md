@@ -106,6 +106,45 @@ and exact owned manifest. No resources outside that test cohort were deleted.
 At 04:55:42 UTC, `inv-a9eh970n7b` confirms the original supervisor identity and
 natural reduction to 246 Hosts per Cell, but not final floor convergence.
 
+Read-only FDB cost/topology v2 `inv-a9eht400a3` completed successfully. Original
+307,079-byte JSON is retained at
+`/data/actor-build/release/strict10k-fdb-55b55875-20261003.1qNi9u/fdb-diagnostic.json`,
+SHA-256 `b9476d6015d5dce7e9eb09337546a38755c96d4e8b7badcf1ee287021d160dd2`.
+Official relay metadata/upload `inv-c9ehvtgg4b` / `inv-e9ehvug1ju` verified
+identical local bytes at
+`/data/tmp/minisandbox-strict10k-55b55875-fdb-diagnostic-20261003.json`.
+The first diagnostic attempt `inv-c9ehrugfrk` failed at Python parsing before
+Kubernetes or Prometheus reads. It was not a workload attempt or business error.
+
+The window remains 04:25--04:36:30 UTC, step 30 seconds. Each Cell currently has
+nine storage Pods on nine `SA9.LARGE16` Nodes, with nine 200 GiB PVCs. Historical
+`kube_pod_info` has exactly the same eighteen Pod UIDs. Each FDB container has
+2 CPU / 8 GiB requests and limits, and zero observed restarts.
+
+| Sampled quantity | A | B |
+|---|---:|---:|
+| Peak simultaneous total FDB CPU, cores | 6.756 | 6.585 |
+| Peak single FDB container CPU, cores | 0.887 | 0.856 |
+| Peak single FDB container RSS, GiB | 4.126 | 5.445 |
+| Peak full-refresh completed attempts/transaction | 1.950 | 1.523 |
+| Released/limit transaction-rate range | 0.085--0.191 | 0.117--0.177 |
+
+Foreground Depot commit, gateway lookup/accounting, and signal-pull attempts
+remain approximately one. This does not establish absence of FDB latency,
+single-thread or range hotspots. Node CPU/I/O/disk and CFS throttling queries
+returned empty series, not zero values. The source disables nodeExporter;
+there is no historical disk telemetry in this artifact. Current CR health is
+not substituted for fault-time latency. Existing disk headroom and ratekeeper
+gauges cannot establish a sustainable low-tail service curve.
+
+The new source correction overlaps at most sixteen adjacent native point reads
+per transaction. It does not reduce FDB key reads, mutate the online Runtime,
+or turn this failed run into a successful 10k result. FIFO mutation, range,
+commit, retry, and state-change barriers remain explicit. Only the original
+supervisor owns natural drain. At 05:23:48 UTC, `inv-e9ei3i03tb` confirms the
+same supervisor identity, 178 Ready Hosts per Cell, and 188/185 Ready Machines;
+final floor convergence and the capacity receipt are still pending.
+
 ## Historical input-prefix run d3a16351
 
 Run `d3a163511fd849bf9a466553e4ab4f48` used runtime source
