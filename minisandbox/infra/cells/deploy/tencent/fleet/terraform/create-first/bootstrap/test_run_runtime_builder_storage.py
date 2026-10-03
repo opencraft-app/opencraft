@@ -56,7 +56,7 @@ if os.environ.get('ASSERT_COORDINATOR_LOCK')=='1':
         else: raise SystemExit('original lock was not held during TAT')
 if action=='RunCommand':
     assert json.loads(args[args.index('--InstanceIds')+1])==['ins-builder01']
-    assert args[args.index('--Timeout')+1]=='900'
+    assert args[args.index('--Timeout')+1]==str(fixture.get('timeout',900))
     encoded=args[args.index('--Content')+1]
     assert len(encoded)<=60000
     (root/'payload.sh').write_bytes(base64.b64decode(encoded))
@@ -138,6 +138,34 @@ class CoordinatorTests(unittest.TestCase):
         self.assertFalse(self.coordinate()["storageReady"])
         self.assertEqual(self.calls().count("RunCommand"), 1)
         self.assertEqual(self.captures, 1)
+
+    def test_host_preparation_has_exact_closure_long_timeout_and_distinct_receipt(self):
+        self.sources['prepare-runtime-builder-host.py'] = (ROOT / 'prepare-runtime-builder-host.py').read_text()
+        expected = {"schema": "actor-runtime-builder-host-preparation/v1", "verdict": "passed",
+                    "packageReady": True, "storageReady": False, "instanceId": "ins-builder01",
+                    "diskId": "disk-builder01", "filesystemUuid": valid_receipt()['filesystemUuid'],
+                    "journalSha256": '1' * 64, "packageInventorySha256": '2' * 64,
+                    "graphRoot": '/data/actor-build/containers/storage'}
+        self.protocol.update(timeout=3000, receipt=expected, loseObservation=True)
+        self.assertEqual(self.coordinate(prepare_host=True), expected)
+        self.assertEqual(self.coordinate(prepare_host=True), expected)
+        self.assertEqual(self.calls().count('RunCommand'), 1)
+        program = (self.root / 'payload.sh').read_text().split("\n", 2)[2].rsplit('\n', 1)[0]
+        tree = ast.parse(program)
+        assignments = {statement.targets[0].id: ast.literal_eval(statement.value)
+                       for statement in tree.body[:4]}
+        self.assertEqual(assignments['ENTRYPOINT'], 'prepare-runtime-builder-host.py')
+        files = json.loads(zlib.decompress(base64.b64decode(assignments['ENCODED'])))
+        self.assertEqual(set(files), set(assignments['EXPECTED_FILES']))
+        self.assertEqual(files['prepare-runtime-builder-host.py'], self.sources['prepare-runtime-builder-host.py'])
+        self.assertFalse(json.loads(self.state.read_text())['receipt']['storageReady'])
+        with self.assertRaises(ValueError): COORD.receipt(json.dumps(expected).encode(), self.inventory)
+
+    def test_host_preparation_rejects_initialization_receipt(self):
+        self.sources['prepare-runtime-builder-host.py'] = (ROOT / 'prepare-runtime-builder-host.py').read_text()
+        self.protocol['timeout'] = 3000
+        with self.assertRaises(ValueError): self.coordinate(prepare_host=True)
+        self.assertIsNone(json.loads(self.state.read_text())['receipt'])
 
     def test_observation_loss_only_recollects_same_invocation(self):
         self.protocol["loseObservation"] = True

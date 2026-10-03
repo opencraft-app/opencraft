@@ -53,7 +53,7 @@ FILES = module("builder_storage_files", "initialize-runtime-builder-storage.py")
 require = IDENTITY.require
 
 
-def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT):
+def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT, prepare_host=False):
     IDENTITY.pattern(revision, r"[0-9a-f]{40}", "source revision")
     IDENTITY.pattern(manifest_hash, r"[0-9a-f]{64}", "source manifest")
     source = project / ".actor-source"
@@ -72,7 +72,9 @@ def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT):
                 and not any(character in match[2] for character in "\x00\r\\"), "manifest entry")
         expected[match[2]] = match[1]
     result = {}
-    for relative in AUTHORITY:
+    tools = (*TOOLS, "prepare-runtime-builder-host.py") if prepare_host else TOOLS
+    authority = (*AUTHORITY, "prepare-runtime-builder-host.py") if prepare_host else AUTHORITY
+    for relative in authority:
         path = root / relative
         FILES.safe_path(path)
         path = path.resolve(strict=True)
@@ -80,14 +82,15 @@ def verified_sources(revision, manifest_hash, project=PROJECT, root=ROOT):
         require(path.is_file() and path.stat().st_size <= 128 * 1024, "tool source envelope")
         raw = path.read_bytes()
         require(hashlib.sha256(raw).hexdigest() == expected.get(name), "tool differs from reviewed source")
-        if relative in TOOLS:
+        if relative in tools:
             result[relative] = raw.decode()
     return result
 
 
-def payload(inventory_raw, observation, sources):
+def payload(inventory_raw, observation, sources, prepare_host=False):
     """One bounded, credential-free transfer; no preexisting /data dependency."""
-    require(set(sources) == set(TOOLS), "guest tool closure")
+    tools = (*TOOLS, "prepare-runtime-builder-host.py") if prepare_host else TOOLS
+    require(set(sources) == set(tools), "guest tool closure")
     inventory = IDENTITY.mapping(json.loads(inventory_raw, object_pairs_hook=IDENTITY.unique_object), "inventory")
     IDENTITY.validate_inventory(inventory)
     IDENTITY.validate_attachment(inventory, observation, time.time_ns() // 1000000)
@@ -104,21 +107,23 @@ assert os.geteuid()==0 and sys.version_info[:2]==(3,11)
 raw=zlib.decompress(base64.b64decode(ENCODED,validate=True))
 assert len(raw)<=131072 and hashlib.sha256(raw).hexdigest()==DIGEST
 files=json.loads(raw)
-assert set(files)=={"inventory.json","observation.json","initialize-runtime-builder-storage.py","validate-runtime-builder-storage.py","collect-runtime-builder-guest.py"}
+assert set(files)==set(EXPECTED_FILES)
 with tempfile.TemporaryDirectory(prefix="actor-builder-storage-",dir="/var/tmp") as directory:
     root=Path(directory)
     for name,content in files.items():
         path=root/name
         with path.open("x") as output: output.write(content)
         path.chmod(0o600)
-    result=subprocess.run([sys.executable,str(root/"initialize-runtime-builder-storage.py"),"--inventory",str(root/"inventory.json"),"--observation",str(root/"observation.json"),"--execute"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    result=subprocess.run([sys.executable,str(root/ENTRYPOINT),"--inventory",str(root/"inventory.json"),"--observation",str(root/"observation.json"),"--execute"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     if result.returncode:
         print("builder_storage_guest=blocked: preserve journal",file=sys.stderr)
         raise SystemExit(1)
     assert len(result.stdout)<=16384
     sys.stdout.buffer.write(result.stdout)
 '''
-    program = "ENCODED=" + repr(encoded) + "\nDIGEST=" + repr(hashlib.sha256(raw).hexdigest()) + "\n" + program
+    entrypoint = "prepare-runtime-builder-host.py" if prepare_host else "initialize-runtime-builder-storage.py"
+    program = ("ENCODED=" + repr(encoded) + "\nDIGEST=" + repr(hashlib.sha256(raw).hexdigest())
+               + "\nEXPECTED_FILES=" + repr(sorted(data)) + "\nENTRYPOINT=" + repr(entrypoint) + "\n" + program)
     # tat-run's command substitution removes trailing newlines. Bind the bytes
     # actually sent by that established transport, not a different local form.
     result = "set -euo pipefail\npython3.11 - <<'ACTOR_STORAGE_CLOSURE'\n" + program + "ACTOR_STORAGE_CLOSURE"
@@ -150,8 +155,20 @@ def execute(args, environment, program=None):
                           capture_output=True, env=environment, check=False)
 
 
-def receipt(raw, inventory):
+def receipt(raw, inventory, prepare_host=False):
     value = CAPTURE.document(raw, "initialization receipt")
+    if prepare_host:
+        require(set(value) == {"schema", "verdict", "packageReady", "storageReady", "instanceId", "diskId",
+                               "filesystemUuid", "journalSha256", "packageInventorySha256", "graphRoot"},
+                "host preparation receipt schema")
+        require(value["schema"] == "actor-runtime-builder-host-preparation/v1" and value["verdict"] == "passed"
+                and value["packageReady"] is True and value["storageReady"] is False
+                and value["instanceId"] == inventory["instanceId"] and value["diskId"] == inventory["dataDiskId"]
+                and value["graphRoot"] == "/data/actor-build/containers/storage", "host preparation receipt identity")
+        require(str(uuid.UUID(value["filesystemUuid"])) == value["filesystemUuid"], "receipt filesystem UUID")
+        for key in ("journalSha256", "packageInventorySha256"):
+            IDENTITY.pattern(value[key], r"[0-9a-f]{64}", "receipt digest")
+        return value
     require(set(value) == {"schema", "verdict", "storageReady", "mountVerified", "instanceId", "diskId",
                            "filesystemUuid", "journalSha256", "mountUnitSha256", "buildahStorageConfigSha256"},
             "initialization receipt schema")
@@ -167,7 +184,7 @@ def receipt(raw, inventory):
 
 
 def coordinate(inventory_raw, inventory, revision, manifest, state, capture, sources,
-               run=execute, pause=time.sleep, recheck=False):
+               run=execute, pause=time.sleep, recheck=False, prepare_host=False):
     # The fleet lock can be deliberately inherited by sibling operations.
     # Serialize this one intent as well, so two children of the same wrapper
     # cannot both pass "no intent" and overwrite each other's invocation.
@@ -180,11 +197,11 @@ def coordinate(inventory_raw, inventory, revision, manifest, state, capture, sou
                 and info.st_nlink == 1 and not info.st_mode & 0o077, "intent lock ownership/type")
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return coordinate_locked(inventory_raw, inventory, revision, manifest, state, capture,
-                                 sources, run=run, pause=pause, recheck=recheck)
+                                 sources, run=run, pause=pause, recheck=recheck, prepare_host=prepare_host)
 
 
 def coordinate_locked(inventory_raw, inventory, revision, manifest, state, capture, sources,
-                      run=execute, pause=time.sleep, recheck=False):
+                      run=execute, pause=time.sleep, recheck=False, prepare_host=False):
     identity = {"inventorySha256": hashlib.sha256(inventory_raw).hexdigest(),
                 "sourceRevision": revision, "sourceManifestSha256": manifest}
     if state.exists() or state.is_symlink():
@@ -202,7 +219,7 @@ def coordinate_locked(inventory_raw, inventory, revision, manifest, state, captu
             if not recheck:
                 require(value["terminalStatus"] == "SUCCESS", "original initialization failed")
                 if value["receipt"] is not None:
-                    return receipt(json.dumps(value["receipt"]).encode(), inventory)
+                    return receipt(json.dumps(value["receipt"]).encode(), inventory, prepare_host)
                 # A crash after terminal observation but before saving its
                 # output can only re-collect this same invocation.
             else:
@@ -220,14 +237,14 @@ def coordinate_locked(inventory_raw, inventory, revision, manifest, state, captu
                        TAT_API_RETRIES="1", TAT_MAX_CONTENT_BYTES="60000")
     if value is None:
         observation = capture()
-        program = payload(inventory_raw, observation, sources)
+        program = payload(inventory_raw, observation, sources, prepare_host)
         value = {"schema": "actor-runtime-builder-coordination/v1", **identity, "phase": "submitting",
                  "commandName": "actor-builder-storage-" + uuid.uuid4().hex, "invocationId": None,
                  "payloadSha256": hashlib.sha256(program.encode()).hexdigest(), "terminalStatus": None,
                  "receipt": None}
         FILES.write_journal(state, value)
         result = run([str(FLEET / "tat/tat-run.sh"), "--detach", "--name", value["commandName"],
-                      "--timeout", "900"], environment, program)
+                      "--timeout", "3000" if prepare_host else "900"], environment, program)
         require(result.returncode == 0 and len(result.stdout) <= 256, "submission indeterminate; preserve intent")
         invocation = IDENTITY.pattern(result.stdout.decode().strip(), r"inv-[a-zA-Z0-9-]+", "invocation identity")
         print("builder_storage_submitted_invocation=" + invocation, file=sys.stderr, flush=True)
@@ -251,7 +268,7 @@ def coordinate_locked(inventory_raw, inventory, revision, manifest, state, captu
         FILES.write_journal(state, value)
         require(status == "SUCCESS" and match[2] == b"0" and result.returncode == 0, "native initialization failed")
         require(len(result.stdout) <= 16384, "initialization receipt envelope")
-        verified = receipt(result.stdout, inventory)
+        verified = receipt(result.stdout, inventory, prepare_host)
         FILES.write_journal(state, dict(value, receipt=verified))
         return verified
 
@@ -265,11 +282,12 @@ def main():
     parser.add_argument("--source-manifest-sha256", required=True)
     parser.add_argument("--execute", required=True, action="store_true")
     parser.add_argument("--recheck", action="store_true", help="fresh journal/mount check after a terminal invocation")
+    parser.add_argument("--prepare-host", action="store_true", help="prepare packages on already initialized storage; never format")
     args = parser.parse_args()
     try:
         require(os.geteuid() == 0 and sys.version_info[:2] == (3, 11), "qualified root Python 3.11 required")
         require(os.environ.get("AUTONOMY_CONTROL_LOCK_PATH", str(LOCK_PATH)) == str(LOCK_PATH), "original lock required")
-        sources = verified_sources(args.source_revision, args.source_manifest_sha256)
+        sources = verified_sources(args.source_revision, args.source_manifest_sha256, prepare_host=args.prepare_host)
         if os.environ.get("AUTONOMY_OPERATION_LOCK_HELD") != "1":
             os.execv(str(FLEET / "operations/with-autonomy-operation-lock.sh"),
                      ["with-autonomy-operation-lock.sh", "--", sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
@@ -278,17 +296,18 @@ def main():
         IDENTITY.validate_inventory(inventory)
         operation_host(inventory)
         _, management = IDENTITY.read_json(args.management_inventory)
-        FILES.directory(STATE_ROOT, 0o700)
-        require(STATE_ROOT.stat().st_dev == Path("/").stat().st_dev, "coordinator intent must be root-backed")
+        state_root = Path("/var/lib/actor-runtime-builder-host-coordinator") if args.prepare_host else STATE_ROOT
+        FILES.directory(state_root, 0o700)
+        require(state_root.stat().st_dev == Path("/").stat().st_dev, "coordinator intent must be root-backed")
         # Stable per host, not per input bytes: changing/reordering an inventory
         # cannot silently create a second submission authority for that host.
-        state = STATE_ROOT / (inventory["instanceId"] + ".json")
+        state = state_root / (inventory["instanceId"] + ".json")
         def capture():
             return CAPTURE.collect(inventory, management, args.management_kubeconfig,
                                    os.environ.get("TCCLI", "tccli"), "kubectl", FLEET / "tat/tat-run.sh",
                                    sources["collect-runtime-builder-guest.py"], attached_only=True)
         result = coordinate(inventory_raw, inventory, args.source_revision, args.source_manifest_sha256,
-                            state, capture, sources, recheck=args.recheck)
+                            state, capture, sources, recheck=args.recheck, prepare_host=args.prepare_host)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
         print("builder_storage_coordination=blocked: preserve state and original invocation", file=sys.stderr)
         return 1

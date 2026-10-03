@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.37.0
+revision: 1.38.0
 precedence: task
 derived: false
 ---
@@ -414,6 +414,22 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前 checkpoint（1.38.0）：另jj new qzsqtxtv保留全部empty祖先推进独立builder基础工具
+准备。只读native inv-d9f4bhgv5k SUCCESS/0确认原journal仍mounted、同instance/disk/UUID，
+实际/data仍来自exactCBS，managed unit/config hash未变。没有清除或重绑原storage intent。
+
+新增prepare-runtime-builder-host.py先验证mounted journal、inventory hash、UUID/by-id/serial/
+capacity/root排除、managed unit/config、现有bulk路径与root/bulk余量，再安装声明式包集；
+TMPDIR和dnf cache置于已挂载盘，Node明确20 stream，子进程显式CONTAINERS_STORAGE_CONF，
+实际buildah info验证GraphRoot。安装后重新核验guest身份/挂载/日志/余量，不伪造云观测时钟。
+十项真实文件/包工具subprocess协议测试通过；它们不证明native dnf已完成或Rust/stage资格。
+现有锁/TAT/source-bound coordinator新增--prepare-host，独立root-backed host intent，
+只调用prepare入口、永不调用mkfs；保留single submission、原invocation收集和native receipt
+校验。完整bootstrap 152项及coordinator单独18项门禁通过，尚未提交云端package mutation。
+下一项在门禁通过及reviewed source交付后，用原ops锁做实际工具准备，再复用2757 incoming，
+不重复四次relay或跳过static gate。未开始Rust/workerd编译、Runtime发布、strict10k或Router
+资格，whole goal保持active，Phase5目标未缩减。
 
 当前 checkpoint（1.37.0）：native API表示修正与140项bootstrap测试通过已进入master
 c7a328adf110，随后checksum长度触发root secret scan的误报（不是真密钥）通过仅缩短Task

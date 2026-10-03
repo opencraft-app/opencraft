@@ -210,6 +210,29 @@ toolchain/cache preparation, real CBS/reboot verification and build handoff
 remain independent gates. Real lock/TAT subprocess tests cover local protocol
 semantics, not cloud qualification.
 
+For an initialized standalone builder, the same coordinator's `--prepare-host`
+mode transfers `prepare-runtime-builder-host.py` and its exact reviewed closure.
+It uses separate root-backed intent under
+`/var/lib/actor-runtime-builder-host-coordinator`; never change or clear the
+initialization intent to install tools. The original operations lock, fresh
+native attachment/TKE exclusion, source-manifest checks, single submission and
+same-invocation recovery remain mandatory. Use the same arguments shown above,
+adding `--prepare-host`, from the new reviewed tooling source.
+
+The guest requires the matching mounted journal, UUID, by-id/serial/capacity,
+managed mount unit/config and existing bulk directories before running dnf.
+It checks root/bulk byte and inode reserves and refuses a root-backed `/data`.
+The declared packages combine the bootstrap tools with the native Engine/Host
+compiler prerequisites; Node uses the explicit distro `nodejs:20` stream.
+Temporary files and dnf cache are on the mounted disk. Every child receives
+the managed `CONTAINERS_STORAGE_CONF`, and actual `buildah info` must report
+`/data/actor-build/containers/storage`. Post-install guest identity, mount,
+journal and reserves are checked again without inventing a fresh cloud
+timestamp. The receipt deliberately reports `packageReady=true` and
+`storageReady=false`. Pinned Rust, offline Cargo vendor, complete actual-path
+admission and stage/build provenance still require separate evidence. This mode
+never formats, imports cloud credentials/kubeconfig or compiles product code.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit
