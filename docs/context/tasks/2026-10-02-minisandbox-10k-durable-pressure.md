@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.39.0
+revision: 1.40.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,22 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前 checkpoint（1.40.0）：从master b5eb910753db的空祖先另jj new ykmtrpzx，保留历史；
+继续同一目标，不将builder准备当作Phase5完成。新增checksum-pinned render-only安装器、
+独立render coordinator intent与实际文件/进程回归。包准备和初始化intent保持原身份。
+工具只做client version与离线Kustomize canary，KUBECONFIG=/dev/null，不获得集群权限。
+安装前后join mounted journal、exact附件/UUID与实际路径设备；storageReady仍false。
+relay新增可选exact UUID/disk guard，在下载前及rename前检查实际mount、metadata、
+by-id、非root设备、解析后路径及partial链接。六项真实进程协议测试通过；完整bootstrap
+复跑仍在进行，不以本地协议double声称CBS资格。本机锁定真实binary离线canary已通过。
+新只读native inv-c9f518gf64 SUCCESS/0与本机CVM/CBS查询确认同一mounted journal、
+instance/disk/UUID；后续mutating coordinator仍须重新capture完整新鲜身份。
+这次完整复读root/minisandbox/cells AGENTS、cloud skill/networking、upstream-subtrees、
+argocd-ci-secrets邻接与monitor真实测试。环境status工具和policy snapshot未提供，
+不由其缺失推断网络授权；仅使用已有configured CLI。暂未新云写入、源码admission、
+Rust/Engine编译或Runtime rollout。下一项是review/test/push工具，再原ops完整锁下
+guarded artifact relay与唯一render invocation，成功后复用2757原incoming重跑static gate。
 
 当前 checkpoint（1.39.0）：54cc72736123已正常FF推master，保留所有empty祖先与push后
 somqqmzq，再jj new mqwlrukq记录真实云端交付。完整bootstrap152、coordinator18、包协议10

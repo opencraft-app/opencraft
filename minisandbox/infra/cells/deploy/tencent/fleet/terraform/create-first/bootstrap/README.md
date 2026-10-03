@@ -233,6 +233,31 @@ timestamp. The receipt deliberately reports `packageReady=true` and
 admission and stage/build provenance still require separate evidence. This mode
 never formats, imports cloud credentials/kubeconfig or compiles product code.
 
+Static source admission also requires a real offline Kustomize renderer. After
+package preparation, use `--install-render-kubectl /data/actor-build/source/<artifact>/kubectl`
+with the same inventory, management inputs and reviewed-source arguments. This
+mode has its own immutable intent at
+`/var/lib/actor-runtime-builder-render-coordinator/<instance-id>.json`; it must
+not rewrite initialization or package intents. The binary is pinned to the
+official Linux/amd64 v1.30.14 checksum in `install-runtime-builder-render-tool.py`.
+It is installed atomically without replacement at
+`/data/actor-build/tools/render-kubectl/v1.30.14/bin/kubectl` with mode 0555.
+An unrelated existing binary fails closed rather than being overwritten.
+
+Hold the original operations lock through artifact transfer and installation.
+For the existing COS relay, set both `RELAY_BUILDER_FILESYSTEM_UUID` and
+`RELAY_BUILDER_DISK_ID` from the matching mounted journal/inventory. Guarded
+relay verifies metadata, exact by-id mount, non-root backing, resolved destination
+and partial-file identity before download and before rename. It cannot silently
+fall back to root storage. Neither variable is needed for legacy transfers to
+the operations host. Never send a cloud credential or kubeconfig to the builder.
+The installer rechecks fresh native attachment/TKE exclusion, mounted journal,
+actual artifact filesystem and reserves. It runs `version --client` and a real
+offline canary with `KUBECONFIG=/dev/null`, then checks the mount again.
+`renderReady=true/storageReady=false` proves only this rendering prerequisite,
+not cluster API compatibility, Rust/vendor preparation or runtime-build admission.
+Later source admission must explicitly add this pinned directory to `PATH`.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

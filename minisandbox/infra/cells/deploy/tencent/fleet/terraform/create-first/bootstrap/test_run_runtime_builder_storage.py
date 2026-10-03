@@ -167,6 +167,42 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.coordinate(prepare_host=True)
         self.assertIsNone(json.loads(self.state.read_text())['receipt'])
 
+    def test_render_tool_closure_artifact_and_receipt_are_bound_without_initialization(self):
+        renderer = module('builder_render_fixture', 'install-runtime-builder-render-tool.py')
+        self.sources = {name: (ROOT / name).read_text() for name in COORD.guest_tools(render_binary='selected')}
+        artifact = '/data/actor-build/source/kubectl-reviewed/kubectl'
+        expected = {"schema": "actor-runtime-builder-render-tool/v1", "verdict": "passed",
+                    "renderReady": True, "storageReady": False, "instanceId": "ins-builder01",
+                    "diskId": "disk-builder01", "filesystemUuid": valid_receipt()['filesystemUuid'],
+                    "journalSha256": '1' * 64, "version": renderer.VERSION,
+                    "binarySha256": renderer.BINARY_SHA256, "binaryPath": renderer.BINARY_PATH,
+                    "renderCanarySha256": '2' * 64}
+        self.protocol.update(receipt=expected, loseObservation=True)
+        self.assertEqual(self.coordinate(render_binary=artifact), expected)
+        self.assertEqual(self.coordinate(render_binary=artifact), expected)
+        self.assertEqual(self.calls().count('RunCommand'), 1)
+        program = (self.root / 'payload.sh').read_text().split('\n', 2)[2].rsplit('\n', 1)[0]
+        assignments = {statement.targets[0].id: ast.literal_eval(statement.value)
+                       for statement in ast.parse(program).body[:4]}
+        self.assertEqual(assignments['ENTRYPOINT'], 'install-runtime-builder-render-tool.py')
+        files = json.loads(zlib.decompress(base64.b64decode(assignments['ENCODED'])))
+        self.assertEqual(set(files), set(assignments['EXPECTED_FILES']))
+        self.assertEqual(json.loads(files['render-tool.json']), {'binary': artifact})
+        with self.assertRaises(ValueError): COORD.receipt(json.dumps(expected).encode(), self.inventory)
+        for key, value in (('binarySha256','f'*64),('binaryPath','/usr/local/bin/kubectl'),
+                           ('version','v1.37.0'),('storageReady',True)):
+            invalid = dict(expected, **{key: value})
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                COORD.receipt(json.dumps(invalid).encode(), self.inventory, render_binary=artifact)
+
+    def test_render_artifact_path_rejected_before_submission(self):
+        self.sources = {name: (ROOT / name).read_text() for name in COORD.guest_tools(render_binary='selected')}
+        for path in ('/tmp/kubectl','/data/actor-build/source/../root/kubectl',
+                     '/data/actor-build/source/x/kubectl;id','/data/actor-build/source//kubectl'):
+            with self.subTest(path=path), self.assertRaises(ValueError): self.coordinate(render_binary=path)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse(self.state.exists())
+
     def test_observation_loss_only_recollects_same_invocation(self):
         self.protocol["loseObservation"] = True
         self.assertEqual(self.coordinate(), valid_receipt())
