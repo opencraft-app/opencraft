@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.48.0
+revision: 1.49.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,50 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.49.0，终态推进）：A唯一resume inv-g9f8xi0ukh于18:50:25Z native
+SUCCESS/0（RequestId 26c6b303-eb4b-4728-8930-ada96c51d256）。未重放release；真实
+Bottomless production-cell verifier通过、EngineHA 1500请求零失败/故障后写入通过，
+final audit/control无failures/warnings，activation通过。只读链inv-d9f9qgg1hw于18:51:13Z
+SUCCESS/0验证activation→control→audit原字节hash、当前Cell UID/readyForPlacement=true
+及Bottomless/HA exact新06797c645337 digest。正式monitor session20711已exit0、原收据
+下载/验SHA/verify通过；五份真实A收据原字节归档runtime/evidence/beijing-runtime-2757-a01-*
+（audit原件无末尾LF，归档保留原格式，不破坏control byte hash）。48对象/6240写，create
+max387ms、cold-wake p99 1839.86ms、零create retry、零cleanup error；这不是万级容量证明。
+cold wait1391685.85ms，旧c631 A为909691.50ms；两次不同运行，尚无因果归因，明确不宣称
+沉降性能收益。仍保留原3600秒期限，后续strict10k检验维护债务/交互服务曲线。
+只有完成上述实证后，才提交B唯一inv-e9f9qug68r（18:51:37Z）使用已prepare SHA
+4a543b7e660a的同一caller；native确认B-only preflight通过与release_started，仍RUNNING，
+不是rollout通过。原五分钟monitor session9813跟随该ID。
+只读progress inv-d9f9vkg4n5于18:56:41Z观察B exact新digest 6 Engine/4 Host全部Ready、
+workload UID不变；formal cycle收据尚未出现，Cell readyForPlacement=false，不能宣称release通过。
+B root为同一runtime-admission-2757fc...-aea4ca...-cycle-owner-v2，remote receipt qualification/actor-bj-b01-bottomless-
+production-bounded-maintenance-2757fc78-20261004.json，本地目标/data/tmp/minisandbox-runtime-
+2757-b-bottomless-production-20261004.json。不重提B、不新建另一锁/负载；B的完整
+Bottomless/EngineHA/activation通过后才提交原prepared strict10k。完整Phase5仍active。
+本轮verifier/monitor两个聚焦suite各5项通过，audit33项通过；root26项仍同4个历史失败。
+documentation零error/warning，Context仍4970历史错误、Task零错误，排序error hash仍
+前缀75428dbc9fc2（完整值保留于本地校验输出，不嵌入正文）。
+实际changed-file impact门禁通过，discovery未输出数值评分；只同步Task自己的catalog行。
+
+本轮初始checkpoint（1.49.0）：上轮f8aea2619c54已正常FF推master。保留其后空mosrkkqs。
+本轮在nxxslotu继续，只做原资格任务观察与下一阶段入口准备，未重提build/release/load。
+唯一producer仍为inv-g9f8xi0ukh；monitor session20711保持五分钟观察。真实cold进度
+18:34:23Z、18:39:12Z、18:44:49Z分别37/43/47个cold-ready，共48个，pending 11/5/1，
+hot shards 1154/566/156、staged rows均0、read errors均0。后两次create retries与cleanup
+errors均0，首轮未正确提取这两个字段，不补造。三次只读native均SUCCESS/0，SHA与
+RequestId已归档runtime-2757-a-natural-cold-progress-beijing-20261004.json；不把observer
+成功当producer终态。未放宽原3600秒期限，cold逻辑计数不当COS物理账本或性能收益。
+B入口已prepare为/data/tmp/minisandbox-runtime-2757-b-release-cycle-owner-v3-native-prepared-20261004.sh，
+SHA前缀4a543b7e660a；bash syntax通过，未上传/提交。它先验证A实际activation→control→audit
+字节hash链、原production-cell verifier及Bottomless/HA exact新digest，之后才正式B-only
+preflight/release；不在A已更新后重跑要求旧digest的A preflight。strict10k prepared入口
+仍未执行，原tools120、3秒SLO/零普通重试不变。下一步跟随同invocation到终态：通过
+实际A receipt链后才发布B，两Cell资格通过才运行万级负载。完整Phase5仍active，
+本轮分类为verified wait并有实际冷降进展，不因等待正常producer就标blocked或complete。
+本轮有限搜索中qualify_runtime.py与runtime/bottomless*不存在；第二次deploy/qualify_workerd_density.py
+也不存在。已从qualify-runtime.sh真实qualifier相对路径定位tencent/qualify_workerd_density.py，
+不继续猜文件或扩大仓库扫描。
 
 当前checkpoint（1.48.0）：锁所有权回归、完整local build、push/cold-pull/product与ops
 source admission证据及两版exact release adapter已正常FF推master f4f170329619；remote

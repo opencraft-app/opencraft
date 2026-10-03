@@ -1,0 +1,80 @@
+{
+  "schema": "actor-runtime-qualification-progress-evidence/v1",
+  "verdict": "qualification-pending",
+  "qualificationEvidence": false,
+  "cell": "actor-bj-a01",
+  "instanceId": "ins-55ry1kb1",
+  "producerInvocationId": "inv-g9f8xi0ukh",
+  "producerStartedAtUtc": "2026-10-03T18:24:37Z",
+  "runtimeSourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "runtimeRef": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+  "receiptRootSuffix": "cycle-owner-v2",
+  "stage": "waiting_for_exact_cold_state",
+  "observations": [
+    {
+      "observedAtUtc": "2026-10-03T18:34:23Z",
+      "invocationId": "inv-d9f98pgw5b",
+      "taskStatus": "SUCCESS",
+      "exitCode": 0,
+      "nativeRequestId": "ccd20ac2-b997-4b91-9100-f5b8b049bfd6",
+      "nativeResponseSha256": "47f65d55a3e9e4c62fc62dfd1f4a66f945ed37561cac8a80f06e59c317b71927",
+      "coldState": {
+        "actorCount": 48,
+        "coldReadyActors": 37,
+        "pendingActors": 11,
+        "hotShards": 1154,
+        "coldShards": 1790,
+        "stagedHotRows": 0,
+        "elapsedMs": 457164.007,
+        "readErrorCount": 0
+      }
+    },
+    {
+      "observedAtUtc": "2026-10-03T18:39:12Z",
+      "invocationId": "inv-a9f9d80bv1",
+      "taskStatus": "SUCCESS",
+      "exitCode": 0,
+      "nativeRequestId": "2a231746-1087-4b0f-8dc7-09508a73b095",
+      "nativeResponseSha256": "ee0dee6c79a690c791f6e4bcb0e14350316585fc861953bafcff72fd7f8b18c6",
+      "cleanupErrorCount": 0,
+      "createRetries": 0,
+      "coldState": {
+        "actorCount": 48,
+        "coldReadyActors": 43,
+        "pendingActors": 5,
+        "hotShards": 566,
+        "coldShards": 1022,
+        "stagedHotRows": 0,
+        "elapsedMs": 731134.165,
+        "readErrorCount": 0
+      }
+    },
+    {
+      "observedAtUtc": "2026-10-03T18:44:49Z",
+      "invocationId": "inv-d9f9igg60r",
+      "taskStatus": "SUCCESS",
+      "exitCode": 0,
+      "nativeRequestId": "0526e5a7-bd88-4d3d-93b2-711931108d31",
+      "nativeResponseSha256": "e01c41050e5cc294f66f7ac5cc9f984a1524be40f2c3833a0fc19fe7edede79c",
+      "cleanupErrorCount": 0,
+      "createRetries": 0,
+      "coldState": {
+        "actorCount": 48,
+        "coldReadyActors": 47,
+        "pendingActors": 1,
+        "hotShards": 156,
+        "coldShards": 587,
+        "stagedHotRows": 0,
+        "elapsedMs": 1066034.971,
+        "readErrorCount": 0
+      }
+    }
+  ],
+  "boundaries": [
+    "These successful tasks are read-only progress observers, not the qualification producer's terminal status.",
+    "The original qualification producer remains the only submitted workload. No release replay, forced deletion, manual capacity change or deadline relaxation was performed.",
+    "Shard counts describe sampled logical checkpoint/cold state. They are not COS bucket inventory, physical bytes or billing evidence.",
+    "Progress from 37 to 47 cold-ready Actors does not prove cold-wake SLO, Engine HA, activation, Cell B qualification or strict10k capacity.",
+    "The first observer did not extract valid cleanup/retry counters. Those missing fields are not backfilled from subsequent observations."
+  ]
+}
