@@ -72,6 +72,21 @@ class DiagnosticMetricTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 OBSERVE.diagnostic_queries(namespace, cell)
 
+    def test_explicit_admission_execution_and_planning_remain_separate(self):
+        queries = OBSERVE.diagnostic_queries("actor-fdb-cell-system", "actor-bj-a01")
+        for phase, metric in (("Admission", "admission"), ("Execution", "attempt")):
+            for kind, suffix in (("Seconds", "sum"), ("Outcomes", "count")):
+                query = queries[f"depot{phase}{kind}PerSecond"]
+                self.assertTrue(query.startswith("sum by (activity_name,result)(rate("))
+                self.assertIn(f"rivet_gasoline_activity_{metric}_duration_{suffix}", query)
+                self.assertIn('workflow_name=~"depot_.*"', query)
+                self.assertIn('activity_name=~"' + "|".join(OBSERVE.DEPOT_ADMITTED_ACTIVITIES) + '"', query)
+                self.assertNotIn("rivet_gasoline_activity_duration_", query)
+        for name in ("depotPlanningReadBytesPerSecond", "depotPlanningTransactionAttemptsPerSecond",
+                     "depotPlanningTransactionCompletionsPerSecond"):
+            self.assertTrue(queries[name].startswith("sum by (name)(rate("))
+            self.assertIn("depot_manager_refresh|depot_manager_observe_active|depot_hot_compact_stage", queries[name])
+
 
 @contextlib.contextmanager
 def prometheus_response(payload, status=200):
@@ -106,8 +121,8 @@ def prometheus_response(payload, status=200):
             raise AssertionError("HTTP fixture did not shut down")
 
 
-def sample(name, value="1", **dimensions):
-    return {"metric": dict(trace=name, **dimensions), "value": [1790964960.25, value]}
+def sample(trace_name, value="1", **dimensions):
+    return {"metric": dict(trace=trace_name, **dimensions), "value": [1790964960.25, value]}
 
 
 def vector(*samples):
@@ -145,6 +160,51 @@ class MetricHttpTest(unittest.TestCase):
         self.assertEqual(result["samples"][0]["value"], "NaN")
         self.assertIn("activeActors", result["missingSignals"])
         self.assertIn("udbPending", result["missingSignals"])
+
+    def test_new_runtime_metrics_preserve_bounded_results_and_missing_signals(self):
+        rows = [sample("depotAdmissionOutcomesPerSecond", "0.5", activity_name="stage_hot_job", result="deferred"),
+                sample("depotExecutionSecondsPerSecond", "1.25", activity_name="stage_hot_job", result="timeout"),
+                sample("depotPlanningReadBytesPerSecond", "4096", name="depot_manager_observe_active")]
+        with prometheus_response(vector(*rows)) as (endpoint, calls):
+            result = self.collect(endpoint)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual([row["labels"] for row in result["samples"]], [row["metric"] for row in rows])
+        self.assertNotIn("depotAdmissionOutcomesPerSecond", result["missingSignals"])
+        self.assertIn("depotExecutionOutcomesPerSecond", result["missingSignals"])
+        self.assertIn("depotPlanningTransactionAttemptsPerSecond", result["missingSignals"])
+
+    def test_new_metrics_reject_unbounded_and_cross_phase_dimensions(self):
+        rows = [sample("depotAdmissionOutcomesPerSecond", activity_name="user_actor_123", result="deferred"),
+                sample("depotExecutionOutcomesPerSecond", activity_name="stage_hot_job", result="deferred"),
+                sample("depotAdmissionOutcomesPerSecond", activity_name="stage_hot_job", result="timeout"),
+                sample("depotPlanningReadBytesPerSecond", name="actor_id_123"),
+                sample("depotPlanningReadBytesPerSecond", name="depot_manager_refresh", result="succeeded"),
+                sample("activeActors", name="depot_manager_refresh"),
+                sample("depotExecutionSecondsPerSecond", activity_name="stage_hot_job")]
+        for row in rows:
+            with self.subTest(labels=row["metric"]):
+                with prometheus_response(vector(row)) as (endpoint, calls):
+                    with self.assertRaises(ValueError):
+                        self.collect(endpoint)
+                self.assertEqual(len(calls), 1)
+
+    def test_maximum_new_bounded_activity_and_transaction_dimensions_fit_response_limit(self):
+        rows = []
+        for phase, results in (("Admission", ("ready", "complete", "deferred", "error", "evicted")),
+                               ("Execution", ("succeeded", "error", "timeout"))):
+            for kind in ("Seconds", "Outcomes"):
+                for activity in OBSERVE.DEPOT_ADMITTED_ACTIVITIES:
+                    rows.extend(sample(f"depot{phase}{kind}PerSecond", activity_name=activity, result=result)
+                                for result in results)
+        for name in ("depotPlanningReadBytesPerSecond", "depotPlanningTransactionAttemptsPerSecond",
+                     "depotPlanningTransactionCompletionsPerSecond"):
+            rows.extend(sample(name, name=transaction) for transaction in OBSERVE.DEPOT_PLANNING_TRANSACTIONS)
+        rows.append(sample("activeActors", "10000"))
+        self.assertEqual(len(rows), 154)
+        with prometheus_response(vector(*rows)) as (endpoint, calls):
+            result = self.collect(endpoint)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(result["samples"]), len(rows))
 
     def test_warnings_are_preserved(self):
         payload = vector(sample("udbPending", "0"))

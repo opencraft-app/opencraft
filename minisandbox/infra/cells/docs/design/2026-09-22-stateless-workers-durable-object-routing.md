@@ -1416,6 +1416,14 @@ offered demand；实际需求率与有效进度目前还须在正式负载中补
 如果 deferral 降低错误却使 debt 持续增长，仍判性能门禁失败。暂停的工作也可能延后 branch
 完成/停止信号处理；不得把 bounded delay 描述为立即完成或丢弃 exact job。
 
+统一 capacity trace 的只读诊断查询同时保留九类显式活动的 admission/execution sum/count
+速率，以及 full refresh、active observation、hot stage 三类固定 transaction 的 read bytes、
+attempt sum/count。所有 counter 先逐 series rate，再按有界活动/结果或 transaction 聚合；
+不增加查询次数、Actor 标签或数据库扫描。旧 Runtime 缺失新指标时明确标为 unknown，不能
+回退到包含排队的旧 duration，也不能将新 execution `succeeded` 当成有效 fold。
+这些数据足以比较已完成工作的扫描和重试成本，却仍不覆盖全部 history replay、offered
+demand 或未完成工作的最长等待；缺项不能被均值、CPU 空闲或 HTTP 错误减少代替。
+
 性能修正的发布证据也分层：本地算法回归、reviewed-source build、A/B runtime qualification、
 相同 strict10k receipt，不能互相替代。正式 builder 的默认 Python 3.6 不满足 stage closure
 verifier 的 subprocess 接口；共享构建入口须在授予 push authority 前验证已安装的 Python 3.11，

@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.7.1
+revision: 1.8.0
 precedence: task
 derived: false
 ---
@@ -89,6 +89,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `minisandbox/infra/cells/deploy/tencent/fleet/runtime/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh`
+- `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/`
 - `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md`
 
 ## required_context
@@ -135,6 +136,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/engine/packages/depot/src/admission.rs@4857746f`、`minisandbox/engine/packages/depot/src/compaction/companion.rs@4857746f`、`minisandbox/engine/packages/depot/src/workflows/db_hot_compacter.rs@4857746f` | job 恢复和故障边界 | 不丢 signal、伪造完成或移动 StageBeforeAdmission fault 到许可之后 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/README.md@3d03bf6a`、`minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/build-runtime-via-tat.sh@3d03bf6a`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/reuse-stage-from-runtime.sh@3d03bf6a` | 实际发布入口与 compiled-input closure | 先证实 workerd 复用，不绕过 source、ABI、资源及凭证边界 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/test_runtime_build_log.py@3d03bf6a`、`minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/test_build_parallelism.py@3d03bf6a` | 发布邻居真实测试 | 原 invocation 失败须保留；有界日志、退出状态、CPU/内存限制不变 |
+| `AGENTS.md@1a724a3c`、`minisandbox/AGENTS.md@1a724a3c`、`minisandbox/infra/cells/AGENTS.md@1a724a3c`、`docs/context/domains/release-gitops.md@1a724a3c`、`docs/context/project/upstream-subtrees.md@1a724a3c` | 本轮发布和观察工具边界 | 单独工具身份，不修改原 build、负载参数或线上容量 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/test_observe.py@1a724a3c`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/release-runtime.sh@1a724a3c`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@1a724a3c` | 真实诊断和发布邻居 | 单次有界查询；失败 job 不重复发起；完整持有发布锁 |
 
 ## evidence
 
@@ -199,6 +202,15 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## validation
 
+- 本轮 observer 21 项回归通过：同一个真实 loopback HTTP 请求保留显式准入/执行和规划
+  transaction 的独立维度；缺失不当作零，未知/跨阶段维度失败关闭。新维度最坏 154 行
+  fixture 保持原 1 MiB/256 行上限，既有八个容量字段不变。不是云端吞吐证明。
+- 本轮观察工具不改变 source 59e86519 的原 build，也不触发 workerd 构建；新工具须在
+  正式 strict10k 前通过独立 reviewed-source 身份部署，负载数、频率和重试规则不变。
+- 原 strict verifier 15 项通过；full fleet manifest invariants 通过，manifest e8aa3e5b。
+  documentation 0 errors/0 warnings，显式五文件 change-impact 通过（matched_rules 为空，
+  不冒充语义评审）。Context 4,942 个历史错误归一化 digest 后逐项相同，当前 Task 无错误；
+  26 项 context 测试仍为同样四项历史失败，audit 33 项通过。没有 Rust 改动或本地重编译。
 - 本轮 builder Python 修正：3 项回归通过，真实子进程在旧 default 位于 PATH 首位时
   仍使用 Python 3.11，支持原失败的 subprocess 接口；错误 interpreter 失败关闭，主机默认不变。
   构建 parallelism 9、prepared stage 9、bounded log 1、stage closure 14 项通过，共 36 项。
@@ -271,9 +283,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## handoff
 
-- 当前状态：源码取消清理、8/2 默认值及封闭输入前缀回归已完成；新 Runtime 已构建。
-  A/B 正式 release/Bottomless/HA/activation 已通过；B 原作业正常结束，没有重发发布。工具源码已落地，
-  strict10k 新 run 现已失败，精确清理和自然缩容完成；不能把模型文档或小规模通过标为容量问题已解决。
+- 当前状态：历史 Runtime 072e504b 的 A/B release/Bottomless/HA/activation 已通过，
+  其 strict10k 失败后精确清理和自然缩容完成。性能修正 source 59e86519 已实际通过 stage
+  reuse，Engine/Host 仍在编译；新诊断工具尚未部署。不能把源码、小规模资格或模型文档
+  标为万级容量问题已解决。
 
 ## checkpoint
 
@@ -281,15 +294,28 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 A/B 旧 Runtime 资格完成；strict10k 终态失败。3d03bf6a 首个构建在 workerd reuse 验证前因
 默认 Python 3.6 失败。构建入口修正 59e86519 已推送；新身份流程已启动，仍在 reviewed
-source materialization 阶段，尚无新产品 digest 或 A/B 发布。
+source materialization 后的 Engine/Host 编译阶段；实际 workerd reuse 已通过，尚无新产品
+digest 或 A/B 发布。同一 trace 的准入、执行和扫描成本分离工具已本地验证，尚未部署。
 
 ### verified
 
 - source `59e865199b8d841e6c8ecb6469240c3be13d12ab` 的 full bundle 已在本地生成并验真，
   14,273 文件，manifest 前缀 `24b265e9`。新本地监督服务
   `minisandbox-admission-runtime-build-59e86519-20261003.service` 的 InvocationID 为
-  `5e68a0bf8b094b3a84d9f745bae85259`，最新观察 active/running；当前 materialization
-  invocation `inv-e9ebxa0pb1` 尚未返回终态。没有重启原失败服务或旧 TAT invocation。
+  `5e68a0bf8b094b3a84d9f745bae85259`，最新观察 active/running；materialization
+  `inv-e9ebxa0pb1` 与 build preflight `inv-d9ec0qg3pu` 已 SUCCESS/0。实际 build
+  `inv-c9ec0u0g61` 仍运行，没有重启原失败服务或旧 TAT invocation。
+- 实际 stage receipt `runtime-stage-reuse-59e86519...-uKwrsV.json` verdict passed，
+  SHA 前缀 `e00cf451`。完整 receipt 在 builder `/data/actor-qualification/builds/`，绑定
+  source 59e86519、manifest 24b265e9、stage projection a48e6285、artifact 614a6a8c，
+  workerd buildJobs=0；不是仅靠旧 label 或本地回归宣称二进制可以复用。
+  只读 `inv-e9ec8cg3f6` SUCCESS/0：scope `actor-bj-a01-runtime-build-59e865199b8d-uKwrsV.scope`
+  active/running，真实日志已编译至 aws-sdk-s3；尚无产品 receipt。
+- 最新 release inputs `inv-d9ec2b0fcg` SUCCESS/0：A/B 仍为旧 Runtime，Cell/Host/Engine/
+  MachineSet UID 未变，各六 Ready Engine、四 Ready Host，没有 release hold。C Workers API
+  仍为 source 723eebaa、image d2e890c5、三 Ready；Argo Synced/Healthy，不推断未发布的 86a 工具。
+- 只读 `inv-e9ec6m0ipe` SUCCESS/0：A/B 实际 `fdbbackup describe` 均 Restorable true。
+  不要求物理恢复；A CR 的 restorable 字段为空不等于实际备份不可恢复。
 - 本轮只读 `inv-d9ebkng529`：A/B 均 readyForPlacement，仍运行旧 6e4d982e 镜像，
   Engine 各 6 Ready、Host 各 4 Ready。未 rollout 或修改线上容量。
 - source `3d03bf6a6fe9ece26e3ae2ea54a4864b66b785d3`，manifest 前缀 `c2c1614c`，
@@ -353,7 +379,7 @@ source materialization 阶段，尚无新产品 digest 或 A/B 发布。
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 3d03bf6a 为已推送证据基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 1a724a3c 为已推送基线；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
 - 新流程只续接上述 59e86519 service/InvocationID；其日志和完整 source receipt 在
@@ -366,9 +392,12 @@ source materialization 阶段，尚无新产品 digest 或 A/B 发布。
 
 ### next_action
 
-- 续接上述新身份流程，先确认 materialization 与实际 stage reuse 投影，通过后跟踪原构建
-  invocation。保留旧失败身份；产品 digest、A/B release 和 strict10k 仍未通过，不能仅
+- 续接上述原 build invocation，保留旧失败身份；materialization/stage reuse 已通过，
+  产品 digest、A/B release 和 strict10k 仍未通过，不能仅
   复用旧 stage label、因文档 checkpoint 更新重编 workerd，或临时 patch 线上配置。
+- 新观察工具须单独提交并 materialize immutable reviewed source，不改变 Runtime 59e86519。
+  后续 release wrapper 草案在 `/data/tmp/minisandbox-admission-release-and-qualify-59e86519-20261003.sh`，
+  只通过 shell syntax，尚未执行；执行前须重新检查实际 product receipt、当前 UID 和库存。
 - 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
   已复现，须把新指标随下一实际修正发布后才能量化旧反馈假设，不重写历史分类。
 - active-job 有界观察与独立准入完成源码/本地验证后，按同一 reviewed release 纳入实际 Engine；

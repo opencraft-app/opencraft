@@ -15,6 +15,16 @@ import urllib.parse
 import urllib.request
 
 
+DEPOT_ADMITTED_ACTIVITIES = (
+    "refresh_manager", "observe_active_manager", "stage_hot_job", "install_hot_job",
+    "upload_cold_job", "publish_cold_job", "reclaim_fdb_job",
+    "retire_cold_objects", "delete_retired_cold_objects",
+)
+DEPOT_PLANNING_TRANSACTIONS = (
+    "depot_manager_refresh", "depot_manager_observe_active", "depot_hot_compact_stage",
+)
+
+
 def kube(path, *args):
     result = subprocess.run(
         ["kubectl", "--kubeconfig", str(path), "--request-timeout=10s", *args, "-o", "json"],
@@ -77,6 +87,24 @@ def diagnostic_queries(namespace, cell):
         queries[f"coldStorageBytes{aggregate.title()}"] = (
             f'{aggregate} by (class)(rivet_sqlite_cold_storage_accounting_bytes{{{scope}}})'
         )
+    # These activities explicitly exclude admission from execution time in the
+    # new Runtime. Do not mix the legacy all-inclusive duration into this series.
+    activities = "|".join(DEPOT_ADMITTED_ACTIVITIES)
+    activity_scope = f'{scope},workflow_name=~"depot_.*",activity_name=~"{activities}"'
+    for phase, metric in (("Admission", "admission"), ("Execution", "attempt")):
+        for kind, suffix in (("Seconds", "sum"), ("Outcomes", "count")):
+            queries[f"depot{phase}{kind}PerSecond"] = (
+                f'sum by (activity_name,result)(rate('
+                f'rivet_gasoline_activity_{metric}_duration_{suffix}{{{activity_scope}}}[5m]))'
+            )
+    transactions = "|".join(DEPOT_PLANNING_TRANSACTIONS)
+    transaction_scope = f'{scope},name=~"{transactions}"'
+    for name, metric in (
+        ("depotPlanningReadBytesPerSecond", "read_bytes"),
+        ("depotPlanningTransactionAttemptsPerSecond", "attempts_sum"),
+        ("depotPlanningTransactionCompletionsPerSecond", "attempts_count"),
+    ):
+        queries[name] = f'sum by (name)(rate(rivet_udb_transaction_{metric}{{{transaction_scope}}}[5m]))'
     return queries
 
 
@@ -106,7 +134,20 @@ def collect_metrics(endpoint, namespace, cell):
     for row in rows:
         labels = row["metric"]
         name = labels.get("trace")
-        if name not in queries or set(labels) - {"trace", "operation", "result", "class"}:
+        if name not in queries:
+            raise ValueError("Prometheus response contains unexpected dimensions")
+        if name.startswith(("depotAdmission", "depotExecution")):
+            outcomes = ({"ready", "complete", "deferred", "error", "evicted"}
+                        if name.startswith("depotAdmission") else {"succeeded", "error", "timeout"})
+            if (set(labels) != {"trace", "activity_name", "result"}
+                    or labels["activity_name"] not in DEPOT_ADMITTED_ACTIVITIES
+                    or labels["result"] not in outcomes):
+                raise ValueError("Prometheus response contains unexpected Depot activity dimensions")
+        elif name.startswith("depotPlanning"):
+            if (set(labels) != {"trace", "name"}
+                    or labels["name"] not in DEPOT_PLANNING_TRANSACTIONS):
+                raise ValueError("Prometheus response contains unexpected Depot transaction dimensions")
+        elif set(labels) - {"trace", "operation", "result", "class"}:
             raise ValueError("Prometheus response contains unexpected dimensions")
         timestamp, value = row["value"]
         if (not isinstance(value, str) or isinstance(timestamp, bool)
