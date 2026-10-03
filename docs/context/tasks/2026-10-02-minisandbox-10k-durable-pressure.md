@@ -417,7 +417,7 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 当前 checkpoint（1.36.0）：384651d9262821fedaee491de2d41550f3e631ac已正常FF推master，
 保留原empty ancestors与push后empty zuttszqs，另jj new vsqllrzo推进原生API表示修正。
-完整新tools bundle14,333files/54,829,347bytes、manifest155727c60417d63c9e466327411f578f3a2b3be22990c72d3451b57a5c412bd4，
+完整新tools bundle14,333files/54,829,347bytes、manifest155727c60417（完整SHA见tools source receipt），
 经COS relay inv-e9f3ij0538与inv-e9f3ik0xcc SUCCESS/0独立校验bytes/SHA送达原ops。
 原锁coordinator inv-a9f3j709tf FAILED/1，但guest inv-c9f3jagpqv SUCCESS/0，
 wipefs修复已在native生效。原ops只读诊断inv-a9f3kf07fu确认capture为builder IP envelope
