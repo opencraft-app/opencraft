@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.36.0
+revision: 1.37.0
 precedence: task
 derived: false
 ---
@@ -415,7 +415,34 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ## checkpoint
 
-当前 checkpoint（1.36.0）：384651d9262821fedaee491de2d41550f3e631ac已正常FF推master，
+当前 checkpoint（1.37.0）：native API表示修正与140项bootstrap测试通过已进入master
+c7a328adf110，随后checksum长度触发root secret scan的误报（不是真密钥）通过仅缩短Task
+摘要hash、保留JSON原始完整SHA的forward-doc2757fc785d8f正常FF修正；未改scanner规则。
+最终documentation无错误/警告，root Context回到原4,942错误，Task无新增。所有empty祖先
+保留，当前另jj new ylmnwpsl只记录初始化交付证据，不修改Runtime或负载条件。
+
+新的2757tools14,334files/54,831,539bytes经原COS relay inv-e9f3tagnfr、inv-c9f3tbgwus
+SUCCESS/0到原ops。manifest c6785b95c7d2、bundle1774b05e81aa，完整SHA见source receipt。
+原ops coordinator inv-d9f3tug8mn完成fresh身份join并提交guest inv-d9f3u2gck3，
+该guest FAILED/1。只读inv-c9f3vg0ama、inv-c9f3wkgqs9 SUCCESS/0确认exact
+disk-kkels2ln已是ext4、UUID dd34c927-dfee-4826-8b45-d5cbb4d47c5e，日志phase=formatting、
+UUID/实例/盘/input hash一致，未挂载且无mount unit，不是空盘无意图或可盲重放mkfs。
+在native terminal确认后，由同一2757 reviewed source、inventory与原ops锁显式--recheck，
+outer inv-d9f3xqgakq与guest inv-c9f3xvgbpu均SUCCESS/0，复用同一UUID完成日志恢复、
+fsck、data.mount与Buildah配置。mountVerified=true而storageReady=false；完整原生ack/hash与
+初始化result归档storage-initialized receipt。首轮失败具体条件仍未确证，不能把恢复成功
+写成已证实udev/cache竞态原因。没有清除journal、修改source binding或重新format入口。
+
+现已将2757源码bundle/receipt/materializer/verifier通过COS送入独立builder的bulk incoming，
+四次relay inv-d9f42n0gxg/c9f42rgd4i/a9f42t0bve/c9f42u0iqq SUCCESS/0。
+materializer inv-c9f42ugegt FAILED/1，真实static gate发现stock新host缺git（十项测试setUp失败）；
+不可将传输成功写成源码已准入，staging按原trap清理，incoming仍可复用。下一项先做
+独立build-only host声明式package/工具链准备，保持journal/UUID/by-id/实际bulk backing门禁，
+不在control node编译；补齐git/Node20等真实static prerequisites后续接已验证incoming，
+再验证actual Buildah GraphRoot和全部bulk paths。未开始Rust/workerd编译、Runtime发布、
+strict10k或Router资格；整个goal保持active，原Phase5目标未缩减。
+
+历史 checkpoint（1.36.0）：384651d9262821fedaee491de2d41550f3e631ac已正常FF推master，
 保留原empty ancestors与push后empty zuttszqs，另jj new vsqllrzo推进原生API表示修正。
 完整新tools bundle14,333files/54,829,347bytes、manifest155727c60417（完整SHA见tools source receipt），
 经COS relay inv-e9f3ij0538与inv-e9f3ik0xcc SUCCESS/0独立校验bytes/SHA送达原ops。
