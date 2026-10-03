@@ -1,0 +1,107 @@
+{
+  "schema": "actor-shared-agent-scale/v1",
+  "runId": "55b558752ba2454987491cdea655ff68",
+  "startedAt": "2026-10-03T03:19:57.891Z",
+  "elapsedSeconds": 4597.887894305,
+  "target": 11000,
+  "rate": 20,
+  "sharedVersionsTarget": 16,
+  "activeTarget": 10000,
+  "activeReady": 9127,
+  "activeProven": 9111,
+  "warmupTarget": 10000,
+  "heartbeatTarget": 10000,
+  "heartbeatReady": 9127,
+  "warmupBackpressure": {
+    "timeoutMs": 900000,
+    "retries": 7631,
+    "objects": 785,
+    "timeouts": 0
+  },
+  "readySlo": {
+    "limitMs": 3000,
+    "scope": "post-warmup_object_create_plus_initial_state",
+    "breaches": 0
+  },
+  "activeInFlight": 0,
+  "inFlight": 0,
+  "counters": {
+    "versionsPublished": 16,
+    "deploymentsPublished": 16,
+    "scheduled": 9159,
+    "createAttempts": 9159,
+    "objectsCreated": 9127,
+    "objectsFailed": 32,
+    "readySloBreaches": 0,
+    "requestRetries": 0,
+    "warmupBackpressureRetries": 7631,
+    "warmupBackpressureTimeouts": 0,
+    "activeTargetReady": 9127,
+    "activeAttempts": 2088998,
+    "activeSucceeded": 2086955,
+    "activeFailed": 2043,
+    "activeIdentityMismatches": 0,
+    "consecutiveCreationFailures": 32,
+    "inFlightPeak": 249
+  },
+  "errors": {
+    "initialize:502:indeterminate_result": 1,
+    "active:network:20": 2043
+  },
+  "latency": {
+    "version": {
+      "count": 16,
+      "p50UpperBoundMs": 69.79249489057649,
+      "p95UpperBoundMs": 152.2185107203483,
+      "p99UpperBoundMs": 152.2185107203483,
+      "maxMs": 151.64782300000024
+    },
+    "deployment": {
+      "count": 16,
+      "p50UpperBoundMs": 1024,
+      "p95UpperBoundMs": 1217.7480857627863,
+      "p99UpperBoundMs": 1217.7480857627863,
+      "maxMs": 1185.761908
+    },
+    "create": {
+      "count": 9624,
+      "p50UpperBoundMs": 512,
+      "p95UpperBoundMs": 2896.309375740099,
+      "p99UpperBoundMs": 3158.4477704354626,
+      "maxMs": 3320.129106999375
+    },
+    "initialize": {
+      "count": 16307,
+      "p50UpperBoundMs": 861.0779292198037,
+      "p95UpperBoundMs": 4466.7196729968955,
+      "p99UpperBoundMs": 7512.097121932667,
+      "maxMs": 25016.54253999982
+    },
+    "warmupReady": {
+      "count": 9127,
+      "p50UpperBoundMs": 939.0121402415833,
+      "p95UpperBoundMs": 23170.47500592079,
+      "p99UpperBoundMs": 101070.3286539348,
+      "maxMs": 227219.28691100003
+    },
+    "ready": {
+      "count": 0,
+      "p50UpperBoundMs": null,
+      "p95UpperBoundMs": null,
+      "p99UpperBoundMs": null,
+      "maxMs": 0
+    },
+    "active": {
+      "count": 2088998,
+      "p50UpperBoundMs": 128,
+      "p95UpperBoundMs": 394.80597130443283,
+      "p99UpperBoundMs": 2896.309375740099,
+      "maxMs": 17195.726436999626
+    }
+  },
+  "loadGeneratorRssBytes": 706957312,
+  "stopReason": "warmup_unexpected_error",
+  "retained": true,
+  "finishedAt": "2026-10-03T04:36:35.779Z",
+  "verdict": "failed"
+}

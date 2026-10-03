@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.8
+revision: 1.8.9
 precedence: task
 derived: false
 ---
@@ -141,6 +141,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `AGENTS.md@69098b68`、`minisandbox/AGENTS.md@69098b68`、`minisandbox/infra/cells/AGENTS.md@69098b68`、`docs/context/project/upstream-subtrees.md@69098b68`、`docs/context/domains/release-gitops.md@69098b68` | 本轮恢复工作与发布边界 | 只记录确证阶段；维持 immutable invocation、完整锁和原性能门禁 |
 | `docs/context/project/adjacency/argocd-ci-secrets.md@69098b68`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@69098b68`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/verify_bottomless_receipt.py@69098b68` | 邻接、故障与收据资格 | 原作业不重发；原字节 SHA 和正式 production-cell profile 重验 |
 | `minisandbox/engine/AGENTS.md@73598bca`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/qualify-runtime.sh@73598bca`、`minisandbox/infra/cells/deploy/tencent/qualify_workerd_density.py@73598bca`、`minisandbox/engine/packages/depot/src/compaction/shared.rs@73598bca` | exact cold 等待的真实条件 | 区分 cache override、checkpoint publication、PITR/history pin 及安全回收，不由总等待推断单一瓶颈 |
+| `AGENTS.md@d10ee76a`、`minisandbox/engine/AGENTS.md@d10ee76a`、`docs/context/project/upstream-subtrees.md@d10ee76a`、`docs/context/project/adjacency/argocd-ci-secrets.md@d10ee76a`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@d10ee76a` | 当前归因与发布邻接 | 不变更 Runtime 或重发 load；诊断成功与资格失败分别记录 |
+| `minisandbox/engine/packages/gasoline/src/ctx/workflow.rs@d10ee76a`、`minisandbox/engine/packages/gasoline-macros/src/lib.rs@d10ee76a`、`minisandbox/engine/packages/depot/src/admission.rs@d10ee76a` | timer/guard 生命周期 | completed-cohort proxy 不冒充精确利用率或 offered rho |
+| `minisandbox/engine/packages/depot/src/workflows/db_hot_compacter.rs@d10ee76a`、`minisandbox/engine/packages/depot/src/compaction/shared.rs@d10ee76a`、`minisandbox/engine/packages/depot/src/workflows/db_cold_compacter.rs@d10ee76a`、`minisandbox/engine/packages/depot/src/workflows/db_reclaimer.rs@d10ee76a` | stage 成本及共享 lane | 准备、串行 materialize/publish 与 integrity/install 分开，不能去掉 PITR/lifecycle/backup fence |
+| `minisandbox/infra/cells/internal/workersapi/api.go@d10ee76a`、`minisandbox/infra/cells/deploy/tencent/fleet/load/shared-agent-scale/runner.mjs@d10ee76a` | 首错与取消边界 | 等响应头超时不透明重试；journal 首个错误与全局取消分开 |
 
 ## evidence
 
@@ -205,6 +209,12 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## validation
 
+- 本轮只读归因/文档：analyzer 17 项真实文件/CLI 回归通过，三份新归档 JSON 与原文件
+  cmp 同字节；documentation 零 errors/warnings，七文件 change-impact 通过（matched_rules
+  空，不冒充语义评审）。未修改 Rust、未重编 workerd，未运行另一份业务负载。
+  最终 Context 4,942 个历史错误按归一化 SHA、保留重复次数的 Counter 与原 baseline
+  相同，无新增或消失；不是全仓全绿。临时完整摘要触发检查后，Task 改为摘要前缀并引用
+  正式 evidence README 的完整 SHA，未削弱凭证检查器。
 - 本轮 checkpoint：documentation 0 errors/0 warnings；Context 4,942 个历史错误在
   SHA 归一化、保留重复次数后与 12080 基线完全相同，当前 Task 无错误。context 26 项仍为
   原四项历史失败，audit 33 项通过。真实 monitor 五项与 operation-lock 回归通过；
@@ -304,6 +314,13 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
+2026-10-03 04:36:37 UTC 接续：原 run 已 load_exit_status=1，stopReason 为
+warmup_unexpected_error；9,127 ready、9,111 proven、2,086,955 active success。
+32 objectsFailed/2,043 activeFailed 包含取消扇出，尚未提取首因，不称为独立错误数。
+原监督 unit 仍 active/running、InvocationID/MainPID 未变，不能把监督清理期当作正常负载。
+此前 04:29:50 高水位快照 relay 已完成、SHA 验真、离线复算成功。下一项先保存首错和
+故障前 trace，让原 exact cleanup/natural drain 完成，不重发 workload，不放宽资格。
+
 2026-10-03 04:23:54 UTC 恢复点：当前唯一 run 已 fresh 确认 running，7,613 ready、
 1,443,192 active success，普通 retry/失败零。InvocationID/MainPID 不变，三秒创建正式
 样本仍零；下一采样不早于 04:28:54 UTC。上一轮 v2 单位修正与固定 SHA trace 证据
@@ -320,12 +337,44 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 开始实际负载，Runtime 59/tools 120/API 723 独立绑定；新诊断信号完整、无采样 warning。
 小资格负载或首批 warmup 成功不证明 strict10k 通过，
 原零普通重试、万活跃及三秒创建门禁不放宽。
-本轮上一 turn 为 progress（单位修正已推 master）；当前为 progress（Router 证据完整性）：
-04:23:54 UTC 原 systemd service 仍 active/running，InvocationID 与 MainPID 均未变。
-未启动第二负载，未编译或发布 Runtime；完整目标仍未完成。
+本轮为 progress：固定原始失败 load 与高水位分析、确认首错传输阶段和工作成本模型；
+不是 runtime 性能修复或容量通过。未启动第二负载，未编译或发布 Runtime；完整目标未完成。
 
 ### verified
 
+- `inv-a9egtq0md4` SUCCESS/0；12 个 bounded range query 无错误，缺失 throttle series
+  仍 unknown。首个安全 API transport record 为 req_1ae818ff4410d89378c8dc7915bd8603，
+  04:36:35.186453032 UTC：连接/write 各 2 ms，等待 response headers 25,002 ms 超时，
+  peer 10.161.0.7:6420。1935 其余匹配 warning 是 context canceled；一个 Evicted API Pod
+  的日志不可读，其发生时间与资源原因不确定，不据此归因。
+  195,048-byte 原 JSON SHA 前缀 `a831e7c8439a`，完整摘要见 evidence README，
+  官方 relay `inv-d9egu8g0xp` / `inv-d9egu9g22k` SUCCESS/0、本地原字节已验。
+- `inv-d9egtxgbjh` SUCCESS/0，04:41:35 UTC：原 supervisor 仍 running，load 已 failed；
+  A/B sampled active 均零，Host desired 263/260。没有 cleanup terminal receipt，
+  不能把 active 零当作全部 DELETE 完成或 floor/natural drain 通过。
+- 首错归档 `inv-c9egqm0ktj` SUCCESS/0：04:36:35.187 UTC、index 9086 的 initialize
+  返回一次 502 indeterminate_result；04:36:35.546 UTC 起 2,043 个 active code=20 是
+  全局取消。Load receipt 原字节 SHA 前缀 `91e10cdd037e`，完整摘要见 evidence README。
+  官方 relay `inv-a9egr30m47` / `inv-e9egr3g42x` SUCCESS/0，8,099,833-byte archive
+  SHA 前缀 `cfd762515131`，完整摘要见 evidence README。
+  本地 `/data/tmp/minisandbox-strict10k-55b55875-failure.V19y9o/` 的 trace 为
+  72,264,143 bytes，SHA 前缀 `c8f32a8b2688`，完整摘要见 evidence README。
+  04:25--04:36:35.187 离线 v2 32 样本/Cell：A/B UDB pending 峰值 4,373/717，
+  compaction waiter 峰值 94/87。此阶段比 04:29 更劣化，尚不是 502 单一根因证明。
+- C 只读 `inv-d9egs90inr` SUCCESS/0：相同 Workers API UID/image，HPA 已自动扩大到
+  13 desired/13 Ready，并非始终三副本。一个 Failed Pod 原因为 Evicted，其具体资源
+  原因与发生时间尚不确定，不能据此解释首错。
+  临时诊断 `inv-c9egrr0p2h` / `inv-d9egsw03at` 均 FAILED/1，分别是诊断自身把 Pod
+  数误限为 12、把取消后的匹配日志数量误限为 128；不代表新业务故障。
+  新诊断改为按实际有界 HPA envelope 检查、保留最早 128 条及总数，不改运行时/资格门禁。
+- `inv-d9egpaghg6` SUCCESS/0，04:36:37 UTC：原 supervisor 身份不变，load 已 exit 1，
+  9,159 scheduled、9,127 ready、9,111 proven、2,086,955 active success，普通 retry 零、
+  warmup 背压 7,631，post-warmup 样本零；停止原因为 warmup_unexpected_error。
+  32 object failures 和 2,043 active failures 的首因/取消分组待查；前台 active p99 累计
+  上界约 2.9 秒、max 17.2 秒。A/B Host desired 263/260、Ready 244/246。
+- `inv-c9eggx0d8c` SUCCESS/0，04:29:50 UTC：8,333 ready、8,312 proven、1,730,459
+  active success、37 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
+  三秒 post-warmup 样本零。A/B Host desired 233/242、Ready 222/222，原 service 身份不变。
 - `inv-d9egbd0hva` SUCCESS/0，04:23:54 UTC：7,613 ready、7,610 proven、1,443,192
   active success、零 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
   三秒 post-warmup 样本零。A/B Host desired 215/218、Ready 206/202；MachineSet
@@ -540,7 +589,8 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 5f04c576 为已推送基线；原 dirty 工作区保持不动。
+- 当前开发在 `/data/tmp/mono2-minisandbox-storage-pressure-local.kPqDAf/repo` 的独立 jj
+  revision lxlmltuv，parent master d10ee76a；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
 - 上述 59e86519 build 已成功，不再重启其 service/InvocationID；日志和完整 source receipt 在
@@ -560,9 +610,19 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
-- 下一次只读观察原 service 不早于 04:28:54 UTC，继续原 2/s warmup 与零普通 retry 门禁。
-  前提仍是 complete strict10k（包含 exact cleanup/natural drain）先通过，再实际运行
-  stateless Worker binding Router performance；不并发运行容量与性能资格。
+- 04:29:50 UTC 高水位快照的官方 relay 已完成：metadata `inv-a9eghu0595` 与 upload
+  `inv-c9eghv03s2` 均 SUCCESS/0，原本地 session 91503 已 exit 0，不重发快照或 relay。
+  本地 trace `/data/tmp/minisandbox-strict10k-55b55875-pressure-capacity-042950-20261003.ndjson`
+  为 59,971,839 bytes，SHA 前缀 `b080ebd57a0b`，完整摘要见 evidence README。
+  离线 v2 分析 04:15--04:29 UTC 已 exit 0，各 Cell 41 样本、无观察 warning/error；
+  输出 `/data/tmp/minisandbox-strict10k-55b55875-pressure-late-v2-042950-20261003.json`，
+  SHA 前缀 `2628460d5fbd`，完整摘要见 evidence README。
+  A/B compaction 峰值均 12 in-flight、waiter 89/88；stage 成功执行均值 236/282 ms、
+  完成率 37.86/34.76 per second。前台仍零 ordinary retry 不代表后台容量已通过；
+  下一步核对 guard/timer 生命周期及 stage 分片事务成本，不能直接由完成者估计 offered load。
+- 下一次只读进度不早于 04:46:35 UTC；首错与故障前 trace 已保存，不把 supervisor
+  running 误报为负载正常。等待原 exact cleanup/natural drain 与最终失败 receipt，
+  不并发第二负载或 Router performance，不重启原 service。
 - 跟随唯一已运行 strict10k，保留旧失败身份，不临时 patch 线上容量、超时或重试。
   A/B release/qualification、materialization/stage reuse 与新产品已通过，strict10k 未通过。
   不因为文档/诊断更新重编 workerd；tools 120 独立于 Runtime 59。
@@ -573,6 +633,9 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
   万级对照已经成功。
 - 当前相同 strict10k 观察 shared lane 总 offered demand、执行时间、有效 fold/publish/reclaim、
   deferral/replay 成本和 hot-debt 斜率。排队不再耗失败预算并不证明存储吞吐已足够。
+- Formal design 已记录新的高水位失败和 stage 工作成本拆分；下一轮须补有效状态/coverage/shard
+  成本归因，先减少每份有效工作成本，再评估资源预算。不把有界队列、13 API Ready 或 CPU
+  空闲当作容量结论；当前 first 502 已定位到发送后响应等待，Cell 内具体阻塞点仍未确定。
 - 不拿旧合并指标估算
   timeout 比例，不因普通 docs/诊断变更单独重建 workerd。
 - 保持 Router performance 前置 10k 门禁；诊断修复不单独触发 workerd 重构建或 Runtime 发布。

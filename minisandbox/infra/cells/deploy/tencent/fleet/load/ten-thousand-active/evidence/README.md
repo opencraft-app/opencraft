@@ -1,4 +1,77 @@
-# Failed input-prefix capacity run, 2026-10-03
+# Capacity failures and pressure evidence, 2026-10-03
+
+## Explicit-admission run 55b55875
+
+Run `55b558752ba2454987491cdea655ff68` used Runtime source
+`59e865199b8d841e6c8ecb6469240c3be13d12ab`, image
+`sha256:05840b4817f33d9047d350bf59fe99a809c8e538805c6af0b74388555f3f431e`,
+tools source `12080fbe94ac5b39324a98c7a3ec60d82b87f6c1`, and the unchanged
+Workers API image `sha256:d2e890c531e1979f74dbc83714b365ee11a43050fd45bcd5a1131c83ca95f9d5`.
+The original load failed at 9,127 ready / 9,111 proven after 2,086,955 successful
+active interactions. It never reached the post-warmup three-second sample.
+The first error is initialize index 9086, HTTP 502 `indeterminate_result` at
+`2026-10-03T04:36:35.187Z`. The 2,043 subsequent active `code=20` errors are
+global cancellation, not independent transport faults. Exact cleanup/natural
+drain remain owned by the original supervisor; no final capacity verdict or
+floor-convergence success is claimed here.
+
+| Committed original/diagnostic | Raw SHA-256 |
+|---|---|
+| `55b55875-load-receipt-20261003.json` | `91e10cdd037e382187f2facd08753b9d13af224eaeee0beb598004bd3b7a7e05` |
+| `55b55875-pressure-late-20261003.json` | `2628460d5fbd8906cb3f6b3dc31c3836786544c5a63d4749a14a30a8b3704359` |
+| `55b55875-pressure-prefailure-20261003.json` | `c2af117532fabf7cf042164384887fe96d754f98686a48a301b467ae1f6d4df2` |
+
+The 04:15--04:29 UTC diagnostic binds 59,971,839 trace bytes, SHA-256
+`b080ebd57a0bdceb427090903f00b5f64cadea4917ea124504c8c12a072ad5dc`.
+Its fixed-prefix publication was `inv-a9eggx0803`; official relay metadata/upload
+`inv-a9eghu0595` / `inv-c9eghv03s2` completed successfully. Each Cell has 41
+selected observations with complete capacity identity. Both compaction lanes
+reach 12 in-flight; waiter peaks are 89/88. This is not a successful 10k receipt.
+
+The failure archive contains only `load-receipt.json`, `events.ndjson.gz`, and
+the complete-row fixed prefix `capacity.ndjson.gz`. Builder publication
+`inv-c9egqm0ktj` succeeded:
+`/data/actor-build/release/strict10k-failure-55b55875-20261003.HuUc12/evidence.tar.gz`.
+The 8,099,833-byte archive hashes to
+`cfd762515131a7e0a8dc5b9ed2ed24f14ae42db971b1135f287967fda86d1472`.
+Official relay `inv-a9egr30m47` / `inv-e9egr3g42x` verified the same bytes;
+its exact temporary COS key was removed. This is not permanent COS archival.
+Local extraction is `/data/tmp/minisandbox-strict10k-55b55875-failure.V19y9o/`.
+Its 72,264,143-byte trace hashes to
+`c8f32a8b26881b2e8e080a274ae74260273c682bc2d9ee5673027a0446f83143`.
+Reproduction uses the unmodified v2 analyzer:
+
+```bash
+python3 ../analyze_pressure.py --trace capacity.ndjson --output pressure.json \
+  --from-observed-at 2026-10-03T04:25:00Z \
+  --until-observed-at 2026-10-03T04:36:35.187Z
+```
+
+That window has 32 observations per Cell, latest query timestamps before the
+first error. A/B pending peaks are 4,373/717. Stage execution mean rises to
+856/466 ms and the completion rate falls to 11.87/22.75 per second. These
+completed-work metrics are not offered demand, unique progress, or a full
+causal explanation. The bounded queue is working but did not make this run pass.
+
+Read-only transport/cost `inv-a9egtq0md4` succeeded. The raw 195,048-byte JSON is
+outside Git at
+`/data/actor-build/release/strict10k-cost-55b55875-20261003.an9T9Q/transport-cost.json`,
+SHA-256 `a831e7c8439a8714977e72a7e33c5cbd296ab49d47e1685e0d9dca7ce1ee28f9`.
+Official relay `inv-d9egu8g0xp` / `inv-d9egu9g22k` verified it locally at
+`/data/tmp/minisandbox-strict10k-55b55875-transport-cost-v3-20261003.json`.
+Twelve bounded range queries cover 04:25--04:36:30 UTC, 30-second steps,
+without query errors; missing throttle series are unknown.
+The earliest sanitized API transport record matches the journal timestamp:
+`req_1ae818ff4410d89378c8dc7915bd8603`, connection/write 2 ms, 25,002 ms waiting
+for response headers from `10.161.0.7:6420`. The 1,935 other matching warnings
+classify as cancellation. Only the earliest 128 are retained, and one evicted
+API Pod's logs were unavailable. Its eviction timing/cause is not established.
+The same API Deployment UID had already grown to 13 Ready, with HPA max 30;
+this observation does not use the initial three-replica state as a failure cause.
+The two earlier temporary diagnostic attempts failed on diagnostic-only row
+caps (12 Pods / 128 errors); those are not extra workload failures.
+
+## Historical input-prefix run d3a16351
 
 Run `d3a163511fd849bf9a466553e4ab4f48` used runtime source
 `072e504bb9784e7d2d0b73def169e886a7f30e31`, immutable runtime image

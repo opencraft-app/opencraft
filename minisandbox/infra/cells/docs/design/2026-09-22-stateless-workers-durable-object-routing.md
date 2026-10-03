@@ -1456,6 +1456,78 @@ provider inventory 才能证明净存量；这些计数不能直接相减当作�
 排队，却不足以判断 pin/retention 还是服务吞吐限制，更不证明高水位稳定或旧 502 根因。
 实际 producer 契约与 v2 17 项回归只证明计量边界，不能替代严格容量/自然缩容资格。
 
+#### 高水位失败与工作成本模型（2026-10-03）
+
+Runtime 59 的同一 run 55b55875 最终在 warmup 9,127 ready / 9,111 proven、
+2,086,955 successful active interactions 后停止，未进入正式三秒创建样本。
+[原始 load receipt](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/55b55875-load-receipt-20261003.json)
+为 failed：04:36:35.187 UTC 的 initialize index 9086 返回一次 502
+indeterminate_result；随后 2,043 个 code=20 是全局取消。普通请求 retry 仍零。
+原 supervisor 继续 exact cleanup/natural drain；running 不再表示业务负载正常。
+
+[04:15--04:29 非资格窗口](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/55b55875-pressure-late-20261003.json)
+各 Cell 41 样本：A/B compaction 都达到 12 in-flight，waiter 峰值 89/88。
+末端 stage 成功执行均值 236/282 ms，完成率 37.86/34.76 per second。
+[故障前窗口](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/55b55875-pressure-prefailure-20261003.json)
+04:25--04:36:35.187 各 32 样本，末次实际 query 均早于首错：A/B pending 峰值
+4,373/717，stage 均值升至 856/466 ms、完成率降为 11.87/22.75 per second；
+full refresh read bytes/完成事务升至约 443 KB，attempt ratio 为 1.484/1.391。
+observed authority 斜率约各 0.92--1.02 MB/s，不能称为全部可回收债务。
+有界等待者比旧失败显著少，但本轮仍失败，不能将队列有界当作容量整改通过。
+
+额外 bounded transport/cost 原字节证据绑定 SHA
+`a831e7c8439a8714977e72a7e33c5cbd296ab49d47e1685e0d9dca7ce1ee28f9`，路径和
+复算方式见 evidence README。首个 API warning 在 04:36:35.186453032 UTC：连接和
+发送各约 2 ms，25,002 ms 后 awaiting_response_headers 超时；其余匹配 warning 为
+取消。C Workers API 已同 UID/image 自动扩到 13 Ready，非固定三副本。A/B 同窗每
+Engine 一分钟 CPU 峰值不超过约 1.82/1.85 cores；缺失 throttle series 保持 unknown。
+此证据把等待定位到发出请求之后，但尚未区分 Engine gateway、Actor 获取、Host dispatch
+与 SQLite commit；不能直接认定某次后台任务就是首错因果。
+
+模型必须以每份有效工作而非每次返回成功为单位。共享 compaction lane 的可观察完成者
+成本为 `sum(completed_rate_k * mean_execution_seconds_k)`：04:29 约 A 11.86 / B
+11.90 service-seconds/second，接近各 12 个许可的名义预算；stage 占已观测成本的大部分。
+这只是 completed-cohort service-load proxy，不是精确利用率、offered rho 或有效吞吐。
+五分钟窗口在开始/结束处归属不一致，missing error/timeout 不能补零；Complete admission
+可绕过实际工作，execution timer 不含之后的 durable history commit。
+源码的 `run_admitted` 持有 guard 直到整个 activity 返回/取消，但 guard 获取早于 timer，
+不能由上述 proxy 推导精确 permit 占用积分。
+
+stage 的成本还须按实际流水线拆解：
+
+```text
+S_stage = S_prepare_committed_prefix
+        + sum_over_prepared_shards(S_read_immutable_base + S_merge_encode_hash
+                                   + S_publish_fenced_batch_transaction)
+S_install = S_integrity_preflight + S_atomic_root_publish + S_conflict_recheck
+work_per_effective_prefix = planning + stage + install + required cold/reclaim
+                           + invalidated rework + durable replay/commit
+```
+
+`db_hot_compacter::stage_hot_job` 逐个 shard 串行事务，而 stage planning 指标只计第一笔
+`depot_hot_compact_stage`，不包含后续 publish batch，不能当作总 stage read bytes。
+`plan_staged_hot_shards` 对每个 coverage txid 重新遍历已选 DELTA，materialization 对
+每个输出重新读取 authoritative base；coverage、基底大小与分片数是成本维度。
+这些是源码确认的潜在放大路径，不代表本轮已测得 coverage 次数或实际字节放大倍数。
+coverage 由 PITR/history pins 决定，不能删历史覆盖、lifecycle/fingerprint、truncate、
+backup 或 install integrity fence 来提速。上面的 A transaction 均值到故障前为 prepare
+约 253 ms / publish batch 145 ms，后者不等于整份 stage 的总成本。
+
+确定整改顺序如下，不在失败 run 清理期间 rollout：
+
+1. 补齐成本归因：固定维度的 effective/retryable/rejected 输出、每 job 输入 DELTA bytes、
+   coverage/shard 数、phase read/commit/replay 和 eligible-debt/oldest-pending；不加 Actor
+   metric label。继续区分 committed-prefix 进度与仅 activity succeeded。
+2. 先减少每份有效工作的成本：合并重复触发和不变输入的规划；在字节/事务界限内增量折叠
+   多个 coverage 的共同前缀，避免重复解码/拷贝。任何 immutable-base 复用或 bounded batch
+   并行都须证明 exact watermark/fingerprint、GC/backup fence、取消和失效后的重做安全，
+   不能只提高并发。
+3. 对共享资源给出前台预算与后台分阶段预算/有界工作量；同一 lane 不能默认保证 cold /
+   reclaim 获得进度。阶段保留份额只能解决公平性，不会增加总服务能力；总 eligible debt
+   持续增长时仍失败，不以更长延期或历史保留掩盖。
+4. 用不变业务输入检验服务曲线：目标与实际持久交互率、前台尾延迟、有效 prefix/冷发布/
+   安全回收、队列年龄及债务斜率一起验收。之后才决定容量与扩容提前量。
+
 设计修正的顺序是先降低每份有效工作的重复规划/失效重做，再控制 Cell 总维护预算并保护
 前台 durable commit，最后才根据真实服务成本增资源。若活跃数据库各自按周期 `T` 触发
 维护，基础需求随 `N/T` 增长；增加 Engine 而同时增加规划扫描和竞争，会形成正反馈，
