@@ -287,6 +287,17 @@ These qualification artifact pins are not proof of a fresh-machine artifact
 producer, Cargo compilation, full actual-path admission, stage reuse or release.
 Do not transfer Cargo credentials, host registry config or any kubeconfig.
 
+For completed trees whose earlier installation failed its final validator,
+`--verify-offline-toolchain` uses a separate
+`/var/lib/actor-runtime-builder-toolchain-verification-coordinator` intent and
+the guest's `--verify-only` path. Both completed trees must already exist.
+Missing trees fail without installation; existing files are checked against
+the entire pinned archives, and the real version outputs are compared as bytes.
+The result binds `verificationOnly=true`. Preserve and collect the original
+failed installation invocation and intent; verification never rewrites them
+or makes their historical result successful. A successful version probe or
+marker alone is insufficient to skip this full verification.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

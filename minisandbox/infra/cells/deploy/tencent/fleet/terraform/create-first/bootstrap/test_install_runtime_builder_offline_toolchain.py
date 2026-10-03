@@ -104,6 +104,28 @@ class ArchiveTests(unittest.TestCase):
         self.archive.symlink_to(other)
         with self.assertRaises(ValueError): self.install(digest)
 
+    def test_version_checks_use_actual_subprocess_bytes(self):
+        binary = self.root / "rust/bin"
+        binary.mkdir(parents=True)
+        for name,version in [('rustc',TOOL.RUST_VERSION),('cargo','cargo 1.96.0 (30a34c682 2026-05-25)')]:
+            path = binary / name
+            path.write_text('#!/usr/bin/env bash\nprintf "%s\\n" '+repr(version)+'\n')
+            path.chmod(0o700)
+        TOOL.verify_versions(binary.parent, dict(os.environ))
+        (binary / 'rustc').write_text('#!/usr/bin/env bash\necho rustc-bad\n')
+        with self.assertRaisesRegex(ValueError, 'Rust version'):
+            TOOL.verify_versions(binary.parent, dict(os.environ))
+
+    def test_verification_missing_tree_never_creates_parent_or_installs(self):
+        digest = self.archive_file([("bin/compiler", "file", b"compiler")])
+        with self.assertRaisesRegex(ValueError, 'existing offline tree'):
+            TOOL.install_archive(self.archive, self.target, digest, {'bin'}, verify_only=True)
+        self.assertFalse(self.target.parent.exists())
+        self.install(digest)
+        inode = self.target.stat().st_ino
+        TOOL.install_archive(self.archive, self.target, digest, {'bin'}, verify_only=True)
+        self.assertEqual(self.target.stat().st_ino, inode)
+
 
 if __name__ == "__main__":
     unittest.main()

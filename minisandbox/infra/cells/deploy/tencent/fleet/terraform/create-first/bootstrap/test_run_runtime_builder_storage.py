@@ -175,7 +175,8 @@ class CoordinatorTests(unittest.TestCase):
                     "toolchainReady": True, "storageReady": False, "instanceId": "ins-builder01",
                     "diskId": "disk-builder01", "filesystemUuid": valid_receipt()['filesystemUuid'],
                     "journalSha256": '1' * 64, "rustArchiveSha256": installer.RUST_SHA,
-                    "vendorArchiveSha256": installer.VENDOR_SHA, "cargoLockSha256": installer.LOCK_SHA}
+                    "vendorArchiveSha256": installer.VENDOR_SHA, "cargoLockSha256": installer.LOCK_SHA,
+                    "verificationOnly": False}
         self.protocol.update(timeout=1800, receipt=expected, loseObservation=True)
         self.assertEqual(self.coordinate(offline_toolchain=True), expected)
         self.assertEqual(self.coordinate(offline_toolchain=True), expected)
@@ -191,6 +192,22 @@ class CoordinatorTests(unittest.TestCase):
             COORD.receipt(json.dumps(bad).encode(), self.inventory, offline_toolchain=True)
         with self.assertRaises(ValueError):
             COORD.receipt(json.dumps(valid_receipt()).encode(), self.inventory, offline_toolchain=True)
+
+    def test_toolchain_verification_requires_distinct_receipt_and_fixed_payload_flag(self):
+        installer = module('offline_verify_expected', 'install-runtime-builder-offline-toolchain.py')
+        for name in ('prepare-runtime-builder-host.py', 'install-runtime-builder-offline-toolchain.py'):
+            self.sources[name] = (ROOT / name).read_text()
+        expected = {"schema": "actor-runtime-builder-offline-toolchain/v1", "verdict": "passed",
+                    "toolchainReady": True, "storageReady": False, "instanceId": "ins-builder01",
+                    "diskId": "disk-builder01", "filesystemUuid": valid_receipt()['filesystemUuid'],
+                    "journalSha256": '1' * 64, "rustArchiveSha256": installer.RUST_SHA,
+                    "vendorArchiveSha256": installer.VENDOR_SHA, "cargoLockSha256": installer.LOCK_SHA,
+                    "verificationOnly": True}
+        self.protocol.update(timeout=1800, receipt=expected)
+        self.assertEqual(self.coordinate(offline_toolchain=True, verify_toolchain=True), expected)
+        self.assertIn('extra.append("--verify-only")', (self.root / 'payload.sh').read_text())
+        with self.assertRaises(ValueError):
+            COORD.receipt(json.dumps(expected).encode(), self.inventory, offline_toolchain=True)
 
     def test_render_tool_closure_artifact_and_receipt_are_bound_without_initialization(self):
         renderer = module('builder_render_fixture', 'install-runtime-builder-render-tool.py')

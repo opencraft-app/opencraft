@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.42.0
+revision: 1.43.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,24 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.43.0）：7846706c36d9工具正常FF推master，保留post-push空xzrsssrr，
+另new swqpzqxm处理真实native结果。完整bootstrap168、archive6/coordinator21通过；root
+26仍同四历史失败，audit33通过，文档零error/warning，Context同4,970历史error且own Task
+增量零。新工具bundle54,854,095 bytes/14,344files经relay inv-a9f6140qqq/
+inv-a9f613gfm8到ops，wrapper relay inv-d9f622ggum成功；唯一outer inv-c9f623g60r
+及installer guest inv-c9f62j0fq9均native FAILED/1，原intent保留，不重绑/重发。
+两份archive的guarded builder relay inv-e9f625gpm5/inv-c9f62agssf均SUCCESS/0，
+fresh capture为inv-a9f62i072t。只读probe inv-e9f67tgn23 SUCCESS/0确认Rust/vendor树
+与completed marker均存在，实际rustc/cargo版本正确；故障从源码确定为PREP.command返回
+bytes，而新validator比较str及startswith(str)。已改为bytes并加真实子进程回归，archive8/
+coordinator22及完整bootstrap171通过；不将marker/version probe当全量bytes证明。
+新增--verify-offline-toolchain独立verification intent及guest --verify-only：只允许已有完整树，
+实际文件逐个与pin archive比较，missing tree不fallback安装，保留原failed命令；readonly
+result绑定verificationOnly=true。尚未native跑新版full verification，未获toolchainReady。
+下一项完成当前回归/文档/source门禁并推工具，在原ops完整锁下fresh native capture、
+唯一verification invocation；不用再传两包或跑安装。成功后仍是all-actual-path/cache/ABI/
+stage reuse/Engine-only build/release与固定strict10k。whole Phase5目标保持active。
 
 当前checkpoint（1.42.0）：上一goal turn是progress，云端render与完整2757 source准入
 实际SUCCESS/0；master 8bf3519e6286已复查，保留post-push空qulnzkyv，另new unwytoqy。

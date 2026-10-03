@@ -78,10 +78,16 @@ def archive_members(archive, roots):
     return members
 
 
-def install_archive(source, target, expected, roots):
+def install_archive(source, target, expected, roots, verify_only=False):
     check_archive(source, expected)
     STORAGE.safe_path(target)
-    STORAGE.directory(target.parent, 0o700)
+    if verify_only:
+        require(target.parent.is_dir() and target.is_dir(), "verification requires existing offline tree")
+        info = target.parent.stat()
+        require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
+                "verification offline parent ownership/permissions")
+    else:
+        STORAGE.directory(target.parent, 0o700)
     with tarfile.open(source, "r:gz") as archive:
         members = archive_members(archive, roots)
         if target.exists():
@@ -101,6 +107,7 @@ def install_archive(source, target, expected, roots):
                         with archive.extractfile(member) as stream:
                             require(digest(path) == hashlib.file_digest(stream, "sha256").hexdigest(), "installed offline bytes changed")
             return
+        require(not verify_only, "offline tree disappeared during verification")
         # Real files are created before symlinks, so extraction cannot write
         # through an archive-controlled parent link. No tar ownership is adopted.
         with tempfile.TemporaryDirectory(prefix=".offline-toolchain-", dir=target.parent) as temporary:
@@ -131,7 +138,12 @@ def install_archive(source, target, expected, roots):
             STORAGE.sync_directory(target.parent)
 
 
-def install(inventory_raw, inventory, evidence, paths):
+def verify_versions(rust, env):
+    require(PREP.command([str(rust / "bin/rustc"), "--version"], env).strip() == RUST_VERSION.encode(), "offline Rust version")
+    require(PREP.command([str(rust / "bin/cargo"), "--version"], env).strip().startswith(b"cargo 1.96.0 "), "offline Cargo version")
+
+
+def install(inventory_raw, inventory, evidence, paths, verify_only=False):
     PREP.IDENTITY.validate_inventory(inventory)
     STORAGE.safe_path(paths.state)
     descriptor = os.open(paths.state / "initialize.lock", os.O_RDWR | os.O_NOFOLLOW)
@@ -151,12 +163,14 @@ def install(inventory_raw, inventory, evidence, paths):
             require(ancestor.stat().st_dev == paths.mount.stat().st_dev, "offline artifact path outside build storage")
         rust = paths.root / RUST_TARGET.removeprefix("/")
         vendor = paths.root / VENDOR_TARGET.removeprefix("/")
-        install_archive(paths.root / RUST_ARCHIVE.removeprefix("/"), rust, RUST_SHA, {"bin", "lib", "libexec", "etc"})
-        install_archive(paths.root / VENDOR_ARCHIVE.removeprefix("/"), vendor, VENDOR_SHA, {"vendor", "Cargo.lock"})
+        if verify_only:
+            require(all(path.is_dir() and (path / ".archive-sha256").is_file() for path in (rust, vendor)),
+                    "verification requires completed offline toolchain trees")
+        install_archive(paths.root / RUST_ARCHIVE.removeprefix("/"), rust, RUST_SHA, {"bin", "lib", "libexec", "etc"}, verify_only)
+        install_archive(paths.root / VENDOR_ARCHIVE.removeprefix("/"), vendor, VENDOR_SHA, {"vendor", "Cargo.lock"}, verify_only)
         require(digest(vendor / "Cargo.lock") == LOCK_SHA, "offline Cargo.lock identity")
         env = dict(os.environ, TMPDIR=str(paths.mount / "tmp"), KUBECONFIG="/dev/null")
-        require(PREP.command([str(rust / "bin/rustc"), "--version"], env).strip() == RUST_VERSION, "offline Rust version")
-        require(PREP.command([str(rust / "bin/cargo"), "--version"], env).strip().startswith("cargo 1.96.0 "), "offline Cargo version")
+        verify_versions(rust, env)
         current["guest"] = STORAGE.GUEST.collect(inventory["instanceId"], inventory["dataDiskId"])
         _, final_sha = PREP.validate_files(inventory_raw, inventory, current, plan, paths, PREP.command(mount_args))
         require(final_sha == journal_sha, "builder journal changed during offline installation")
@@ -164,7 +178,8 @@ def install(inventory_raw, inventory, evidence, paths):
     return {"schema": "actor-runtime-builder-offline-toolchain/v1", "verdict": "passed", "toolchainReady": True,
             "storageReady": False, "instanceId": inventory["instanceId"], "diskId": inventory["dataDiskId"],
             "filesystemUuid": journal["filesystemUuid"], "journalSha256": journal_sha,
-            "rustArchiveSha256": RUST_SHA, "vendorArchiveSha256": VENDOR_SHA, "cargoLockSha256": LOCK_SHA}
+            "rustArchiveSha256": RUST_SHA, "vendorArchiveSha256": VENDOR_SHA, "cargoLockSha256": LOCK_SHA,
+            "verificationOnly": verify_only}
 
 
 def main():
@@ -172,6 +187,7 @@ def main():
     parser.add_argument("--inventory", required=True, type=Path)
     parser.add_argument("--observation", required=True, type=Path)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--verify-only", action="store_true", help="require and byte-check completed trees; never install missing trees")
     args = parser.parse_args()
     if not args.execute:
         parser.error("offline toolchain installation requires --execute")
@@ -179,7 +195,7 @@ def main():
         require(os.geteuid() == 0 and sys.version_info[:2] == (3, 11), "requires root and Python 3.11")
         raw, inventory = PREP.IDENTITY.read_json(args.inventory)
         _, evidence = PREP.IDENTITY.read_json(args.observation)
-        print(json.dumps(install(raw, inventory, evidence, STORAGE.Paths()), sort_keys=True))
+        print(json.dumps(install(raw, inventory, evidence, STORAGE.Paths(), args.verify_only), sort_keys=True))
         return 0
     except (ValueError, OSError, KeyError, TypeError, tarfile.TarError, subprocess.SubprocessError):
         print("runtime_builder_offline_toolchain_blocked", file=sys.stderr)
