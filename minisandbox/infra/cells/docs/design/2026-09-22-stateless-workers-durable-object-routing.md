@@ -1438,7 +1438,8 @@ projection，或把一次构建失败误报为线上性能回归。
 
 2026-10-03 Runtime source `59e86519`、manifest `24b265e9`、image `05840b48` 已在 A
 完成正式 rollout、production-cell Bottomless、Engine HA 和新资格 activation；原 invocation
-`inv-e9ecw30f8e` SUCCESS/0。B 同一产品的 `inv-a9ednt0v6b` 尚在资格流程，strict10k 未重跑。
+`inv-e9ecw30f8e` SUCCESS/0。B 同一产品的原 `inv-a9ednt0v6b` 也已 SUCCESS/0，
+完成 rollout/Bottomless/HA/activation，没有重发资格作业。
 A 五分钟只读采样已能区分新指标：active observation 约 165 bytes/完成事务、8.05 ms
 平均返回成功执行时间；同窗完整 refresh 约 76,285 bytes/完成事务。采样来自小资格流量，
 不是万级前后对照，不能将不同事务类型和不同负载的均值直接换算成业务吞吐收益。
@@ -1450,7 +1451,12 @@ commit。完整 phase、原字节收据摘要和剩余验收记录在 10k durabl
 请求零失败。这证明小规模功能与恢复，不证明后台持续吞吐或万级交互 SLO。冷态等待包含
 安全 reclaim 的 pin/retention 等资格条件，不能直接当作 COS 上传吞吐；须结合有效 publish、
 安全 reclaim 和 hot debt 走势区分策略等待与实际服务不足。
-B 已完成新产品 rollout，仍由原 invocation 完成资格；strict10k 新 run 已准备、尚未提交。
+正式 qualifier 对测试数据库设置的 shard-cache retention override 为 1 ms，并请求
+checkpoint/reclaim；该等待不证明默认策略的自然冷降时延，也不能据此将延迟归因于缓存 TTL。
+B 新收据同样 48/48 exact cold、约 964 秒等待，cold wake p95 约 1,115 ms，HA 1,500
+请求零失败。唯一 strict10k 新 run `55b558752ba2454987491cdea655ff68` 已从各四 Host/Node
+启动；首批 54 对象就绪、72 次持久交互成功，零请求 retry/失败。完整 preflight 和新诊断
+信号通过不代表万级验收通过；尚无终态性能或安全缩容收据。
 性能验收继续保留目标到达率、实际到达率、成功率和尾延迟：每对象单在途模型在响应变慢时
 会自行降低到达率，因此不能仅凭“成功率高且队列稳定”证明支持目标的 1,000 持久交互/s。
 

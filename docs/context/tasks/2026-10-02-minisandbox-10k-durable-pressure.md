@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.3
+revision: 1.8.4
 precedence: task
 derived: false
 ---
@@ -140,6 +140,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/test_observe.py@1a724a3c`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/release-runtime.sh@1a724a3c`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@1a724a3c` | 真实诊断和发布邻居 | 单次有界查询；失败 job 不重复发起；完整持有发布锁 |
 | `AGENTS.md@69098b68`、`minisandbox/AGENTS.md@69098b68`、`minisandbox/infra/cells/AGENTS.md@69098b68`、`docs/context/project/upstream-subtrees.md@69098b68`、`docs/context/domains/release-gitops.md@69098b68` | 本轮恢复工作与发布边界 | 只记录确证阶段；维持 immutable invocation、完整锁和原性能门禁 |
 | `docs/context/project/adjacency/argocd-ci-secrets.md@69098b68`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@69098b68`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/verify_bottomless_receipt.py@69098b68` | 邻接、故障与收据资格 | 原作业不重发；原字节 SHA 和正式 production-cell profile 重验 |
+| `minisandbox/engine/AGENTS.md@73598bca`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/qualify-runtime.sh@73598bca`、`minisandbox/infra/cells/deploy/tencent/qualify_workerd_density.py@73598bca`、`minisandbox/engine/packages/depot/src/compaction/shared.rs@73598bca` | exact cold 等待的真实条件 | 区分 cache override、checkpoint publication、PITR/history pin 及安全回收，不由总等待推断单一瓶颈 |
 
 ## evidence
 
@@ -292,7 +293,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - 当前状态：历史 Runtime 072e504b 的 A/B release/Bottomless/HA/activation 已通过，
   其 strict10k 失败后精确清理和自然缩容完成。性能修正 source 59e86519 已实际通过 stage
   reuse、Engine/Host 编译和产品 cold pull；A 的正式 rollout/Bottomless/HA/activation 已通过。
-  B 已完成同产品 rollout，原 invocation 正在 Bottomless 资格阶段；strict10k 尚未启动。
+  B 的同产品 rollout/Bottomless/HA/activation 也已通过；strict10k 新 run 已实际启动。
   新诊断工具已独立交付且真实 A/B 查询通过。不能把源码、小规模资格或模型文档
   标为万级容量问题已解决。
 
@@ -302,13 +303,38 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 A/B 旧 Runtime 资格完成；strict10k 终态失败。新 Runtime 59e86519 的 reviewed build、
 workerd reuse、产品 cold pull 和 A 正式 rollout/Bottomless/HA/activation 均已完成。
-B 按同一产品提交独立 invocation，已完成 rollout，尚未资格终态。诊断 tools 120 已独立交付；
-A 已能观察分开的准入、执行和规划成本，B 的新 Runtime 指标待资格后重新采样。
-小资格负载不证明 strict10k 通过，
+B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run 从 A/B 各四 Host/Node
+开始实际负载，Runtime 59/tools 120/API 723 独立绑定；新诊断信号完整、无采样 warning。
+小资格负载或首批 warmup 成功不证明 strict10k 通过，
 原零普通重试、万活跃及三秒创建门禁不放宽。
 
 ### verified
 
+- B 原 `inv-a9ednt0v6b` SUCCESS/0，02:58:56 UTC 进入资格、03:17:42 UTC 激活。
+  只读 `inv-d9eeevgn90` 用正式 production-cell verifier 复验：48 对象、6,240 写入、
+  48/48 exact cold、964,391 ms 冷态等待；cold wake p95 约 1,115 ms、max 约 4,295 ms。
+  HA 1,500 请求零失败、清理 passed。Bottomless/HA/activation SHA 前缀分别为
+  72b394d5/beb2c656/5cad44f8，最终 allow control SHA 前缀 1323ce56，warnings/failures 空。
+- strict10k run `55b558752ba2454987491cdea655ff68` 已提交一次：`inv-c9eef1012r`
+  SUCCESS/0 只证明 supervisor 提交。真实 systemd InvocationID 为
+  `8ee84c21e87944c983932c62a5df5c56`，MainPID 4004295；没有重发或借用旧 run。
+  `inv-e9eeg5gs9d` 只读证明 service active/running、完整 preflight 通过、initial low
+  成功。实际首个 progress（约 45 秒）54 ready、44 proven、72 active success，零普通
+  retry/失败/身份错配；16 Version 已发布，尚未进入 post-warmup 三秒创建样本。
+  同窗 A/B observer 各 91/87 samples、新诊断无 missingSignals/warnings；容量仍各四。
+  输出根为 `load-tests/ten-thousand-active-55b558752ba2454987491cdea655ff68`，无终态收据。
+- B 非 Secret 三文件 archive `inv-c9eeg60ccv` SUCCESS/0，23,898 bytes、SHA 前缀
+  162c2f62，原收据逐个 SHA 校验通过；官方 COS relay `inv-e9eegtgjv4` /
+  `inv-e9eegugnbr` SUCCESS/0，本地 archive 和 exact 三个普通 member 原始 SHA 均一致。
+  解包目录 `b01-qualified.sCoN2Z`，本地正式 production-cell verifier 再次通过。
+- 本轮性能归因复查：正式 qualifier 的 cold-cache retention override 为 1 ms，
+  exact cold 等待仍同时要求 checkpoint watermark、cold_ready、head 不回退及写债边界。
+  因此 954 秒不是默认自然冷降耗时，也不能单独归因于缓存 TTL 或 COS 带宽；必须分阶段观察。
+  B 曾在 Bottomless hold（03:14:25 UTC，`inv-d9eea8g9tf` 只读确认），之后已通过；
+  没有修改 Runtime 或在资格前提交 strict10k。后续继续跟随上述唯一活跃 load run。
+- 本轮有界查找中 `docs/context/catalog.json`、`deploy/tencent/qualify_runtime.py` 与
+  `depot/src/branch/reclaim.rs` 不存在；已分别从 validator、正式 qualifier 和
+  `depot/src/compaction/shared.rs` 定位实际路径。没有扩大到无关服务或读取凭证。
 - A 原字节收据重新验证 `inv-a9edtugu8q` SUCCESS/0：production-cell profile，48 个
   Actor、6,240 次写入、48/48 exact cold，冷态等待 954,465 ms（约 15.9 分钟）；
   cold wake p95 约 942 ms、最大约 4,494 ms。HA 1,500 请求零失败，清理通过。
@@ -324,9 +350,9 @@ A 已能观察分开的准入、执行和规划成本，B 的新 Runtime 指标�
   05840b48，Ready 数达标；02:58:56 UTC 获得 exact Host UID 的 qualification hold。
   post-control 只因新 Bottomless/HA 收据尚缺而 block，未人为解除。原 `inv-a9ednt0v6b`
   仍 RUNNING；不能把 rollout 就绪当成最终资格通过。
-- strict10k run `55b558752ba2454987491cdea655ff68` 监督 launcher 已完成语法验证，
-  SHA 前缀 a2e1d18c，尚未提交。保持 Runtime 59/tools 120 和原负载参数；B 实际
-  qualification activation 通过前不得启动。15 项 strict、21 项 observer 回归再次通过；
+- strict10k run `55b558752ba2454987491cdea655ff68` 监督 launcher SHA 前缀 a2e1d18c，
+  保持 Runtime 59/tools 120 和原负载参数；仅在 B qualification activation 通过后提交。
+  15 项 strict、21 项 observer、五项 monitor 回归再次通过；
   此轮未修改或重新编译 Runtime。
 - A 原 invocation `inv-e9ecw30f8e` 已 SUCCESS/0，输出依次证明 rollout、Bottomless、
   Engine HA、qualification activation passed。新产品 digest 05840b48、source 59e86519、
@@ -380,7 +406,7 @@ A 已能观察分开的准入、执行和规划成本，B 的新 Runtime 指标�
 - release wrapper 已验 SHA 交付并提交 A；已静态核对使用正式 ops-cycle 执行 rollout，再持完整共享锁
   运行 Bottomless/HA/activation。新 release 使旧资格失效时保留 cycle 的 post-block，不伪造
   pass；只有 pre-allow 且 exact action 的字符串 exitCode="0" 才进入新 digest 的资格阶段。
-  strict10k wrapper 已绑定 Runtime 59 与 tools 120 的独立身份，仍保持原负载参数，尚未启动。
+  strict10k wrapper 在准备时绑定 Runtime 59/tools 120 独立身份；随后按原参数启动，见本节开头。
 - 最新 release inputs `inv-d9ec2b0fcg` SUCCESS/0：A/B 仍为旧 Runtime，Cell/Host/Engine/
   MachineSet UID 未变，各六 Ready Engine、四 Ready Host，没有 release hold。C Workers API
   仍为 source 723eebaa、image d2e890c5、三 Ready；Argo Synced/Healthy，不推断未发布的 86a 工具。
@@ -433,7 +459,8 @@ A 已能观察分开的准入、执行和规划成本，B 的新 Runtime 指标�
 
 ### unverified
 
-- strict 10k 通过和 Router performance receipt；本轮最终失败，A/B 小规模资格不替代容量验收。
+- strict 10k 通过和 Router performance receipt；历史 run 失败、新 run 尚无终态，
+  A/B 小规模资格不替代容量验收。
 - 供给时延与可用槽位余量是否覆盖目标创建率和同步唤醒突发；未实现预测扩容。
 - 低 maintenance concurrency 能否同时保持 hot tail 有界和 cold publish 进度。
 - 万级失败完整因果：补 hot fold 有效/失效工作、history replay 字节、每 Pod CPU 与 FDB 重试；
@@ -441,7 +468,7 @@ A 已能观察分开的准入、执行和规划成本，B 的新 Runtime 指标�
 - 历史窗口具体 timeout/replan 比例、admission 等待与实际执行的分布、首次 502 完整归因。
   per-Pod CPU/读字节/transaction attempts 已补，旧合并 activity 标签无法追溯分类。
 - durable admission deferral 源码已实现；有界 DELTA 读批优化仍未实现。准入修正与 active-job
-  观察已在 A 发布，B 正在资格流程；其真实 strict10k 读取/延迟、有效吞吐和 hot-debt
+  观察已完成 A/B 发布与资格；其真实 strict10k 读取/延迟、有效吞吐和 hot-debt
   改进仍无证据。
 
 ### discard
@@ -451,36 +478,34 @@ A 已能观察分开的准入、执行和规划成本，B 的新 Runtime 指标�
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 ed864b54 为已推送基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 73598bca 为已推送基线；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
 - 上述 59e86519 build 已成功，不再重启其 service/InvocationID；日志和完整 source receipt 在
   `/data/actor-build/local-admission-59e86519-20261003/`，固定 wrapper 在
   `/data/tmp/minisandbox-admission-runtime-build-59e86519-20261003.sh`。
   原 terminal TAT、stage closure 和 product receipt 才是构建成功证据。
-- 当前 B release/qualification 只续接 `inv-a9ednt0v6b` / waiter session 22706；
-  本地 launcher `/data/tmp/minisandbox-admission-release-b59-20261003.sh`，不重复提交。
+- B release/qualification `inv-a9ednt0v6b` 已 SUCCESS/0，waiter session 22706 已结束；
+  本地 launcher `/data/tmp/minisandbox-admission-release-b59-20261003.sh` 不重复提交。
+- 当前只观察 strict10k `55b558752ba2454987491cdea655ff68`，systemd InvocationID
+  `8ee84c21e87944c983932c62a5df5c56`；launcher/只读 progress 分别为 `/data/tmp/` 下
+  `minisandbox-strict10k-start-55b55875-20261003.sh` / `minisandbox-strict10k-progress-55b55875-20261003.sh`。
+  TAT `inv-c9eef1012r` 只提交一次，不因本地断线重发；service 的终态、load/cleanup/capacity
+  原收据和 exact 清理才决定验收结果。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
 
 ### next_action
 
-- 续接 B 原 release invocation，保留旧失败身份；A release/qualification、
-  materialization/stage reuse 与新产品已通过，B 资格和 strict10k 仍未通过，不能仅
-  复用旧 stage label、因文档 checkpoint 更新重编 workerd，或临时 patch 线上配置。
-- 新观察工具已独立 materialize 并完成真实查询，不改变 Runtime 59e86519。
-  release wrapper 在 `/data/tmp/minisandbox-admission-release-and-qualify-59e86519-20261003.sh`，
-  已修正 cycle action exitCode 的字符串契约；A 已成功，B 续接原 invocation，按实际 cycle
-  和 gate 终态判断，不把 TAT 提交或 release 后的预期 post-block 当作资格通过。
-  B 成功后启动同一 strict10k。
+- 跟随唯一已运行 strict10k，保留旧失败身份，不临时 patch 线上容量、超时或重试。
+  A/B release/qualification、materialization/stage reuse 与新产品已通过，strict10k 未通过。
+  不因为文档/诊断更新重编 workerd；tools 120 独立于 Runtime 59。
 - 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
-  已复现；新指标 A 已可用，B 尚未完成发布。不重写历史分类，不用小资格采样宣称
+  已复现；新指标 A/B 已可用。不重写历史分类，不用小资格采样宣称
   万级对照已经成功。
-- active-job 有界观察与独立准入完成源码/本地验证后，按同一 reviewed release 纳入实际 Engine；
-  使用 unchanged workerd 的构建投影/cache，不为文档或诊断变更单独重建。
-- 重跑相同 strict10k，观察 shared lane 总 offered demand、执行时间、有效 fold/publish/reclaim、
+- 当前相同 strict10k 观察 shared lane 总 offered demand、执行时间、有效 fold/publish/reclaim、
   deferral/replay 成本和 hot-debt 斜率。排队不再耗失败预算并不证明存储吞吐已足够。
-- B 新 attempt metric 与行为修正仍须完成同一 reviewed release；不拿旧合并指标估算
+- 不拿旧合并指标估算
   timeout 比例，不因普通 docs/诊断变更单独重建 workerd。
 - 保持 Router performance 前置 10k 门禁；诊断修复不单独触发 workerd 重构建或 Runtime 发布。
