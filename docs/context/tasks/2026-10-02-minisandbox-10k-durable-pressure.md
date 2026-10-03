@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.47.0
+revision: 1.48.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,23 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.48.0）：锁所有权回归、完整local build、push/cold-pull/product与ops
+source admission证据及两版exact release adapter已正常FF推master f4f170329619；remote
+已验同SHA。保留post-push空ttmypuvx，再new qyumtmln继续目标，不改既有空ancestor。
+只读progress inv-f9f93j0vth于18:28:54Z SUCCESS/0，证实唯一资格resume inv-g9f8xi0ukh
+已进入真实Bottomless（bottomless-private.log 1001bytes）；A仍exact06797c645337，6 Engine/
+4 Host全部Ready、UID不变、readyForPlacement=false。这里不声称Bottomless/HA已通过。
+原正式monitor session20711按300秒跟随这个invocation，remote receipt仍在same
+cycle-owner-v2 root；本地目标/data/tmp/minisandbox-runtime-2757-a-bottomless-production-20261004.json。
+只跟随该handle和session到终态；不能重提qualification、并行B或另开负载。
+本地已prepare下一次2757 Runtime/tools120 strict10k入口，文件为
+/data/tmp/minisandbox-2757-runtime-tools120-10k-admission-prepared-20261004.sh，hash前缀
+2385bb343b8d；未上传/运行。精确diff仅改Runtime/source/product path与本轮receipt root/name，
+原load graph、工具source、control/UID/fence、3秒和zero ordinary retry不改。syntax通过，
+旧artifact原五项真实jq回归通过，不冒充新版云端验收。B尚未release，必须先确认A
+Bottomless、EngineHA及activation全部通过，再按原正式cycle owner发布B；两Cell都通过
+才启动新的strict10k。百万dormant/Router/跨Cell故障/streaming等完整Phase5仍未完成。
 
 当前checkpoint（1.47.0）：4f4931ffc86c已正常FF推master，保留空pxvmryvv后另new
 xyynlmpr。原build guest inv-a9f73xgu29于17:44:16Z、outer inv-c9f73m0252于17:44:18Z

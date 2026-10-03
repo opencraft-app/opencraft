@@ -83,6 +83,19 @@
     "archivedAdapter": "runtime-2757-release-and-qualify-cycle-owner-v3-diagnostic-20261004.sh",
     "releaseReplayed": false,
     "allOriginalGatesRetained": true,
+    "bottomlessStartedObservation": {
+      "invocationId": "inv-f9f93j0vth",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "observedAtUtc": "2026-10-03T18:28:54Z",
+      "nativeRequestId": "8836c6ab-1901-4683-afd8-ef1cc9078074",
+      "nativeResponseSha256": "50dd1c0b76ef5c5e78e3d110de76a4b1cbd4d78589c4c6f24d2f77f2ae85bde5",
+      "bottomlessLogBytes": 1001,
+      "engineReadyReplicas": 6,
+      "hostReadyReplicas": 4,
+      "workloadUidsUnchanged": true,
+      "readyForPlacement": false
+    },
     "diagnostics": "Only ERR phase/cell/line/exit diagnostics were added. An accepted nonzero governance status is not itself a fatal qualification failure."
   },
   "localRegression": {
