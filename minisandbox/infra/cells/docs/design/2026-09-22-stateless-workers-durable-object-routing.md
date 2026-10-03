@@ -1348,6 +1348,31 @@ attempt_service_rate != useful_fold/publish/reclaim_service_rate
 4. 各阶段报告 attempt result 和有效 output，先证明 timeout/replan 放大下降、前台尾延迟恢复、
    hot debt 有界，再重跑相同 strict10k。当前未实现上述新的 durable admission 调度。
 
+### Active job 期间的规划成本
+
+manager 先处理当前 signal 批次，再选择 refresh 模式。旧路径即使 branch 已有 active job，
+仍读取完整的 committed DELTA prefix、冷态与 reclaim 输入，然后在 dispatch 阶段丢弃不能运行的
+计划。排队越长，同一前缀就可能被越多次重复读取，额外消耗 FDB 服务能力。这是源码中可确定的
+无效工作，不等于已证明它独自造成历史首个 502。
+
+仅 active-job 分支使用 Gasoline version check 记录新的活动序列，普通规划不增加版本事务：
+
+- 无 active job：保留完整 `RefreshManager` 和所有规划校验。
+- 任意 hot/cold/reclaim job active：运行 `ObserveActiveManager`，只读取 branch、head、dirty
+  和固定分片 pin-count index。元数据读取使用同一 UDB transaction；没有 DELTA、SHARD 或
+  reclaim 扫描，也不执行 dirty 清除、stage cleanup 或 publication。
+- 观察结果显式为 `planning_deferred=true`。缺少计划不代表无工作，不能结束 force request、
+  派发另一份共享 generation 的计划或使 manager quiescent；branch 非 live 仍立即进入停止流程。
+- 既有 cold/reclaim fallback deadline 保留并按到期事件重新安排。精确完成信号仍由 companion
+  的持久 signal/replay 发送；处理完最后一个 active job 后，下一 refresh 恢复完整规划。
+- 已记录的完整 refresh 仍回放原 activity；不能直接删掉旧历史中的步骤。version check 也有
+  小额持久事务成本，不能将减少 DELTA bytes 自动换算为整条请求吞吐增益。
+
+该修正不改变数据 job 的 lifecycle、root generation、truncate、PITR/history、publication 或
+条件 PIDX 清理 fence。它不解决 admission queue 消耗 execution timeout 的另一条反馈链，也
+不能使已耗尽重试预算的 companion 自动恢复。实际发布后仍须测量规划读字节、有效 fold、
+queue timeout、交互尾延迟和 hot-debt 趋势，并通过原 strict10k，才能宣称万级性能整改完成。
+
 诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
 input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
 写入的多信号/UTF-8 多块 fixture 证明生产 replay 可以成功而 debug reader 失败。修复仅在

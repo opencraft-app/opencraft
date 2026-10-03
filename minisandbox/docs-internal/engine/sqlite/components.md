@@ -31,6 +31,7 @@ The workflow compaction path uses one persistent DB manager plus hot, cold, and 
 Responsibilities:
 
 - Coalesce commit wakeups through `SQLITE_CMP_DIRTY/{database_branch_id}` and `DeltasAvailable` signals.
+- While any branch job is active, observe only bounded lifecycle/head/dirty/pin-count metadata. A deferred planning observation must neither clear dirty work nor finish a force request; full planning resumes after exact job completion. Lifecycle stop checks and existing fallback deadlines remain active.
 - Plan bounded committed hot prefixes from current FDB state instead of trusting signal payloads. Stage and install retain the planned upper txid while revalidating current history/PITR coverage.
 - Use prefix-only identity only for histories certified never truncated. Keep head identity for truncated or unindexed histories, apply every DELTA's EOF, and materialize historical coverage at its own commit size.
 - Validate input identity before shard-body preflight and inside atomic publication. A removed staged cache row is retryable only when a fresh input check independently proves the plan stale; real corruption remains an error.
