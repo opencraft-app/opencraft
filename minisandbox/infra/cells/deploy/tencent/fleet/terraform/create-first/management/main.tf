@@ -616,19 +616,6 @@ locals {
         controller   = "kube-system/networkpolicy"
       }
     }
-    runtimeBuilder = {
-      instanceId               = tencentcloud_instance.runtime_builder.id
-      privateIp                = tencentcloud_instance.runtime_builder.private_ip
-      availabilityZone         = local.bootstrap_subnet.availability_zone
-      instanceType             = var.runtime_builder_instance_type
-      attachedToKubernetes     = false
-      operationsInstanceId     = tencentcloud_instance.bootstrap.id
-      securityGroupId          = tencentcloud_security_group.runtime_builder.id
-      dataDiskId               = tencentcloud_cbs_storage.runtime_builder.id
-      dataDiskAttachmentId     = tencentcloud_cbs_storage_attachment.runtime_builder.id
-      dataDiskGiB              = var.runtime_builder_data_disk_gib
-      storageBootstrapRequired = true
-    }
     registry = {
       id        = local.registry.id
       host      = local.registry.host
@@ -640,5 +627,24 @@ locals {
       qualificationEvidenceBucket = tencentcloud_cos_bucket.code_plane["evidence"].bucket
       workerCodeBucket            = tencentcloud_cos_bucket.code_plane["code"].bucket
     }
+  }
+  # Build resources have their own input contract. Adding them to management's
+  # strict platform inventory would invalidate unrelated bootstrap receipts.
+  runtime_builder_inventory = {
+    schema                   = "actor-runtime-builder-inventory/v1"
+    managementId             = var.management_id
+    region                   = var.region
+    vpcId                    = tencentcloud_vpc.management.id
+    instanceId               = tencentcloud_instance.runtime_builder.id
+    privateIp                = tencentcloud_instance.runtime_builder.private_ip
+    availabilityZone         = local.bootstrap_subnet.availability_zone
+    instanceType             = var.runtime_builder_instance_type
+    attachedToKubernetes     = false
+    operationsInstanceId     = tencentcloud_instance.bootstrap.id
+    securityGroupId          = tencentcloud_security_group.runtime_builder.id
+    dataDiskId               = tencentcloud_cbs_storage.runtime_builder.id
+    dataDiskAttachmentId     = tencentcloud_cbs_storage_attachment.runtime_builder.id
+    dataDiskGiB              = var.runtime_builder_data_disk_gib
+    storageBootstrapRequired = true
   }
 }

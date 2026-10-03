@@ -37,9 +37,10 @@ Terraform creates a private standalone CVM and an independently identified
 512 GiB CBS by default; neither joins TKE nor changes the three control workers.
 `runtime_builder_instance_type` and `runtime_builder_data_disk_gib` are explicit
 management-only inputs. This is disposable build capacity, not Actor storage.
-The credential-free `runtimeBuilder` inventory binds the instance, zone, disk
+The separate credential-free `runtime_builder_inventory` output binds the instance, zone, disk
 and attachment, and retains `operationsInstanceId` as the original bootstrap
-host. Do not move release/qualification to a second operation-lock domain.
+host. It is not part of the strict platform `management_inventory` contract.
+Do not move release/qualification to a second operation-lock domain.
 
 Provisioning is not build readiness. The inventory deliberately requires a
 storage bootstrap: verify the cloud attachment and exact guest block-device
@@ -48,7 +49,10 @@ disk. All actual bulk write paths must pass `runtime/verify-builder-storage.py`
 on the mounted data filesystem. The disk envelope does not establish the peak
 space or CPU/I/O budget of a fresh V8 build. No Terraform provisioner formats,
 migrates or prunes an existing host, and the build entrypoint must remain blocked
-until the separate storage bootstrap is implemented and verified.
+until the separate storage bootstrap is implemented and verified. The read-only
+`bootstrap/validate-runtime-builder-storage.py` joins fresh native cloud API,
+management-node and guest block-device observations to this output. A passed
+plan still reports `storageReady=false` and is not reusable format authority.
 
 Management and Cell roots also own the TKE `networkpolicy` add-on at an
 explicit reviewed version. Kubernetes accepting a `NetworkPolicy` object is

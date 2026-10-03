@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.10.0
+revision: 1.11.0
 precedence: task
 derived: false
 ---
@@ -114,6 +114,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `AGENTS.md`、`minisandbox/AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@df32d6c0` | 本轮继续性能归因与 bootstrap 修复 | mono2 唯一写源，原独立 revision 接续，不将局部测试视为发布 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/{management/main.tf,management/outputs.tf,test-terraform-storage-contract.py,bootstrap/validate-inputs.py,bootstrap/test_validate_inputs.py,bootstrap/README.md,rebuild/README.md,README.md}@df32d6c0` | 严格 inventory 契约和磁盘身份 | 确认新增 builder 字段会被平台拒绝，独立输出，不放松原 schema；新 planner 只读且不是格式化授权 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/{management/main.tf,management/variables.tf,management/outputs.tf,management/versions.tf,management/terraform.tfvars.example,rebuild/fleet-intent.json,rebuild/render-inputs.py,rebuild/test_render_inputs.py,test-terraform-storage-contract.py,bootstrap/prepare-bootstrap-host.sh,bootstrap/README.md,README.md,rebuild/README.md,tools/resolve-terraform.sh,tools/install-terraform.sh}@173f293b` | 用户追加性能设计要求与资源所有权 | 在模板内增加 build-only CVM/CBS，不替换控制节点，不将 provisioning 当作已挂载或已准入 |
 | `docs/context/domains/release-gitops.md@173f293b`、`docs/context/project/upstream-subtrees.md@173f293b`、`docs/context/project/adjacency/argocd-ci-secrets.md@173f293b`、`minisandbox/infra/cells/AGENTS.md@173f293b` | 正式发布与邻接 | 保持源码/镜像/实际资格分层；读取真实 Terraform storage 和 renderer tests |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{build-image.sh,prepare-cargo-cache.sh,README.md,test_runtime_base_contract.py}@f225363b`、`qualification/actor-bj-q01/{build-runtime-via-tat.sh,test_build_parallelism.py,test_runtime_python.py,test_runtime_build_log.py}@f225363b` | 实际构建副作用边界 | 在 push authority 和 source mount/compile 前检查实际 backing，保持 Python/ABI/source/token 与输出边界 |
@@ -376,6 +378,46 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+本轮源码最终门禁：bootstrap 86、rebuild 20、storage contract 10 项均通过；完整 fleet
+runner 原 session 62533 exit 0，fleet_manifest_invariants=passed，新 planner 回归已接入
+该正式 runner。真实 Terraform 1.9.8/provider 1.83.11 validate 为 valid=true、零 error/warning，
+合法 .tf fmt、diff-check 通过。documentation 目前零 error/warning，context tests 仍同
+四项历史失败、audit 33/33、discovery needs_agent_review；不伪造全库通过或质量评分。
+documentation 最终零 error/warning；14 条 exact changed paths impact passed、无 matched
+rule，不能代替语义审阅。Context 4,942 历史 errors 的归一化 Counter 无新增或消失，
+本 Task 零错误。只更新本 Task 的 catalog row，不运行全库改写。
+正式设计补充资源成本向量、四项结构问题与不同预期效果，区分关键路径缩短和总工作减少；
+并纠正原 strict run 已 failed 终态，安全 drain 通过不覆盖 active 容量失败。
+一次 patch 使用了错误换行 anchor 被整笔拒绝，随后在实际已读完整行成功修改。
+一次读取尚未完成的 discovery 输出报告不存在，等待同一 session 22120 exit 0 后读取；
+不重复发作业。对 attachment ID 的一级来源核验中，旧 provider 文件路径 404、搜索
+无结果、Registry web 页面不可访问；正确 services/cbs 路径成功读取锁定 1.83.11 源码，
+Create SetId(storageId) 与 live InstanceId 检查一致。不据访问失败放松身份门禁。
+Cloud networking 已完整重读，policy snapshot 缺失不作为访问 readiness；无绕过。
+最终 Task/catalog 更新后再验 docs/context/精确 impact 并核验 source push。
+仍无云 apply、初始化/挂载、缓存删除、Runtime release 或新负载，本轮是源码 progress。
+
+2026-10-03 07:19 UTC 接续 checkpoint：当前 lxknlqyx revision 修复上一模板的严格
+inventory 回归。实际 production validator 拒绝 runtimeBuilder unknown field；旧 fixture
+未包含新增输出，107 项通过不覆盖该组合。现将 builder 拆成独立 runtime_builder_inventory
+输出，保持平台 management inventory 不变，不放松 schema，也不混入 C bootstrap receipt。
+新增只读磁盘 planner 的七项测试通过，含 42 个 observation 故障子场景及真实文件/CLI：
+exact cloud/CVM/CBS/TKE/guest 身份，by-id+serial+capacity，实际 root ancestry，空签名，
+拒绝既有挂载/文件系统、过期证据及重复 JSON。plan 保持 storageReady=false；实际 collector、
+磁盘初始化/挂载和受控交接未实现，不能把 planner 通过等同 build-ready。
+
+只读 inv-a9em5wgcj7 SUCCESS/0 于 07:08:46 UTC 证明 C 原控制节点仍 DiskPressure True，
+root、data、Buildah 仍共 /dev/vda1，available 14,845,512 KiB；API 12/12 Ready。
+Hub Prometheus 当前 Ready，HPA condition 为 ValidMetricFound，但没有查询实际两项 metric
+值，不声称闭环已恢复。vdb/vdc 已挂载到实际 Kubernetes PV，均不能初始化或用作构建盘。
+原 strict 已 failed 终态，未重发；c631 image 未发布、未 apply/格式化/删缓存。
+
+失败 query 已记：docs/evidence 目录、bootstrap/run-tests.sh 和 fleet/verify.sh 均不存在；
+有界 rg --files 定位到真实 fleet/verify-manifests.sh 与 load/ten-thousand-active/evidence/README.md，
+不继续猜文件名。Cloud skill 已完整重读；environment_status tool 缺失，不能据此宣称 ready。
+下一项先完成独立 inventory 与身份门禁源码测试/文档/TF 验证并发布；随后仍需完整存储
+bootstrap、隔离构建交接、观测信号验收及 c631 正式 release，再重跑同一 strict10k。
 
 本轮最终本地 gate：standalone builder 的 78 项 bootstrap、20 项 rebuild 与九项 storage
 contract 回归全部通过；完整 fleet runner session 90061 exit 0，marker 为

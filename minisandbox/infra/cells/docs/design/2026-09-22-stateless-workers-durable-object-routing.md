@@ -1235,6 +1235,23 @@ head-fenced 冷降计划反复失效；大量 Envoy 一次加入带来的协调�
 丢持久信号、透明重试有副作用请求或延长超时当作性能优化。对照以同样负载与资源身份
 测单位读写/事务成本、实际到达/成功率、队列年龄、p99、有效维护和债务斜率。
 
+成本按资源向量分开，而不是把所有 job 当成同一种服务：每个成功交互/唤醒/维护单位的
+point-read 数、range bytes、transaction attempts、fold 输入/输出页、COS requests 和 CPU
+分别记录。对资源 r，需求近似为各类实际到达率乘单位有效工作成本之和，加后台有效服务
+和无效重做的真实需求；供给则是同一窗口实测可用吞吐，不是副本数。该向量用于对照，
+不新增每请求争抢的全局 FDB key。缺失的计数保持 unknown，不拿总延迟反推出读写次数。
+
+| 已确认的结构问题 | 应改变的模型项 | 必须另验的结果 |
+|---|---|---|
+| adapter 将独立点读串行等待 | 请求关键路径长度；总 GET 数不因此减少 | 相同负载的尾延迟与 FDB 总 read demand |
+| 多 coverage 重复折叠共同前缀 | fold 输入访问量；输出复制仍保留 | 单位有效维护成本、实际 reclaim/debt 趋势 |
+| 每 Engine 的维护许可叠加 | Cell 总后台并发及重做预算 | Engine 扩容后前台尾延迟不反向恶化 |
+| 构建与控制节点共盘 | 在线资源 reserve 与供给信号可用性 | 实际隔离、custom metric 连续性及新节点落位延迟 |
+
+后续增长门禁既检查尾延迟，也检查单位有效工作成本是否随 active 数、历史长度或副本数
+非预期增长。三秒创建还要求已有可用 headroom 覆盖实际节点/镜像准入供给期；HPA
+从不足容量开始追赶不等于能承诺每次突发三秒内完成。上述判据不是当前已测容量数字。
+
 Router binding 负载工具以固定时钟生成到达计划，分别记录计划到实际 dispatch、dispatch
 到 response、计划到 response 的时延。客户端迟到和线程调度时间不能从端到端数字中消失；
 所有已提交请求仍只执行一次，达到有界 in-flight 上限即失败，不改成慢速闭环掩盖过载。
@@ -1657,11 +1674,25 @@ bulk filesystem 保留 max(10 GiB, 10% capacity)，还需 64 GiB 构建增量；
 
 重建模板现在声明单独的 build-only CVM 和 CBS：management 根 owns 它们，builder
 不加入 TKE，原三个控制 worker 的资源和身份保持不变。默认 512 GiB 是可配置构建盘
-envelope，不是实测 V8 峰值。inventory 显式绑定 instance/zone/disk/attachment，并保留
+envelope，不是实测 V8 峰值。独立 runtime_builder_inventory 输出显式绑定
+instance/zone/disk/attachment，不进入严格的 management platform inventory，并保留
 原 bootstrap 的 operationsInstanceId；release/qualification 仍只有原共享操作锁。
 Terraform 不执行格式化或旧目录迁移，storageBootstrapRequired=true 明确表示还不能
 构建。真实 guest disk identity、初始化/挂载、全部实际写路径 admission、受控构建交接、
 旧根盘缓存的安全退役和 Prometheus/HPA 恢复须另行验证；源码模板不能代表云上整改完成。
+
+只读 storage identity planner 先把 Terraform 输出与两分钟内的实际 CVM/CBS API、
+management Node inventory 和 guest metadata/lsblk/by-id/wipefs 做 exact join。
+builder 必须不在 TKE；云盘为同区 exclusive attached data disk，所有权 tags 匹配。
+guest serial、by-id、容量须指向同一 cloud Disk ID；root ancestry、已有分区、文件系统、
+挂载和签名均拒绝。磁盘字母不是身份，实际 C 的 vdb/vdc 是生产 PVC，不能格式化。
+planner 的通过只生成 storageReady=false 的 empty-disk plan；不实现 collector、格式化
+或持久挂载，不授予未来任意时间的破坏性权限。真正初始化前须在原共享操作锁内重新
+观察；崩溃恢复、已格式化盘复用、持久挂载和实际 build path admission 仍需单独闭环。
+
+07:08:46 UTC 的新观察表明 Prometheus 暂时 Ready、HPA condition 恢复 ValidMetricFound，
+但 C 原 builder 节点仍 DiskPressure、构建仍共根盘。没有实际查询两项 custom metric 值，
+也没有负载窗口，不能因此宣称控制闭环稳定或整个性能问题已解决。
 
 监控是扩缩容控制输入，不只是可选 dashboard。HPA custom metric 无值必须保持 unknown，
 不得补零来强制缩容；未知时保守拒绝缩容是安全行为，但不证明无人值守能力已合格。
@@ -1737,9 +1768,10 @@ commit。完整 phase、原字节收据摘要和剩余验收记录在 10k durabl
 正式 qualifier 对测试数据库设置的 shard-cache retention override 为 1 ms，并请求
 checkpoint/reclaim；该等待不证明默认策略的自然冷降时延，也不能据此将延迟归因于缓存 TTL。
 B 新收据同样 48/48 exact cold、约 964 秒等待，cold wake p95 约 1,115 ms，HA 1,500
-请求零失败。唯一 strict10k 新 run `55b558752ba2454987491cdea655ff68` 已从各四 Host/Node
-启动；首批 54 对象就绪、72 次持久交互成功，零请求 retry/失败。完整 preflight 和新诊断
-信号通过不代表万级验收通过；尚无终态性能或安全缩容收据。
+请求零失败。唯一 strict10k run `55b558752ba2454987491cdea655ff68` 已 failed 终态，
+未达到万级 active 资格；原 receipt 的 exact cleanup、自动扩容观察、安全 drain 与回归
+低容量检查为 true。该终态既不能覆盖容量失败，也不证明性能修正已发布。完整证据见
+`deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md`，不重发原 supervisor。
 性能验收继续保留目标到达率、实际到达率、成功率和尾延迟：每对象单在途模型在响应变慢时
 会自行降低到达率，因此不能仅凭“成功率高且队列稳定”证明支持目标的 1,000 持久交互/s。
 

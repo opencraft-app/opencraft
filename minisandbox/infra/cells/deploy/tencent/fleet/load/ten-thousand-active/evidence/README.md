@@ -26,6 +26,31 @@ qualification pass. Do not restart this failed run.
 
 ## Dedicated builder template, not deployed recovery
 
+The strict platform bootstrap validator rejects a root `runtimeBuilder` field.
+The old platform fixture did not represent that added Terraform output, so its
+passing tests were not evidence for the combined contract. Build identity is now
+a separate `runtime_builder_inventory` output, with a regression that preserves
+the management platform's exact root schema. No platform schema is loosened and
+no build disk is folded into C bootstrap identity.
+
+The new read-only `validate-runtime-builder-storage.py` joins fresh native
+CVM/CBS responses, management nodes and guest metadata/lsblk/by-id/wipefs.
+Seven tests include exact identity, root ancestry, existing production-disk
+refusal, stale evidence, missing filesystem columns, duplicate JSON and real
+file/subprocess refusal. These tests prove the planner, not a live collector,
+disk initialization, mount recovery or build handoff. Its passed plan deliberately
+reports `storageReady=false`.
+
+Read-only observation `inv-a9em5wgcj7`, 07:08:46 UTC, completed SUCCESS/0.
+The original C control/builder node still reports DiskPressure and shares its
+root with data/build paths, with 14,845,512 KiB available. Workers API is 12/12
+Ready, Hub Prometheus is now Ready, and the HPA condition says ValidMetricFound.
+Actual custom metric values were not queried; this does not establish a restored
+control loop or fix the resource coupling. Both observed data disks are live
+Kubernetes PVs and must not be initialized as builder storage. The complete local
+observation log `/data/actor-build/local-admission-c631f554-20261003/control-storage-current-0710.log`
+hashes to `3b126f9f914bfb9181a618d4ea49509b9e0da74b74f8aa7366f2dbec22f2e7b0`.
+
 Management Terraform now declares a standalone private build-only CVM and
 separate CBS, exposing the exact instance/disk/attachment identity. It does
 not attach that instance to TKE, replace existing control workers or move the

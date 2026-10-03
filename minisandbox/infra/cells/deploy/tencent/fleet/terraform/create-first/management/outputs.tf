@@ -10,7 +10,7 @@ output "management_inventory_yaml" {
 
 output "runtime_builder_inventory" {
   description = "Build-only CVM and attached CBS identities. Provisioning does not establish storage/build readiness."
-  value       = local.management_inventory.runtimeBuilder
+  value       = local.runtime_builder_inventory
 }
 
 output "sensitive_bootstrap" {

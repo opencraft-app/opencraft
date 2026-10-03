@@ -64,6 +64,12 @@ class ValidateBootstrapInputsTests(unittest.TestCase):
         self.assertIn("workers-api-system", result["namespaces"])
         self.assertNotIn("actor-fdb-cell-system", result["namespaces"])
 
+    def test_build_capacity_must_not_change_platform_inventory_contract(self):
+        candidate = management()
+        candidate["runtimeBuilder"] = {"instanceId": "ins-builder01"}
+        with self.assertRaisesRegex(ValueError, "schema mismatch"):
+            VALIDATE.validate(candidate, RENDER_TEST.image_inventory(), "management")
+
     def test_rejects_registry_mismatch(self):
         candidate = management()
         candidate["registry"]["host"] = "different.tencentcloudcr.com"

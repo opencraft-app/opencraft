@@ -15,13 +15,50 @@ inventory, and rejects a host with less than 20 GiB free instead of failing
 halfway through an image generation transfer.
 
 This is an operator/bootstrap workspace check, not runtime-build admission.
-The management inventory also identifies a standalone `runtimeBuilder` CVM and
-its exact attached CBS. `prepare-bootstrap-host.sh` does not initialize or mount
+The separate `runtime_builder_inventory` Terraform output identifies a standalone
+build CVM and its exact attached CBS. It must not be added to the strict
+management platform inventory. `prepare-bootstrap-host.sh` does not initialize or mount
 that disk and must not be mistaken for its readiness proof. Keep the original
 bootstrap host as the owner of the shared release/qualification operation lock.
 Build handoff requires independently verified storage initialization and actual
 bulk-path admission on the standalone host; never start a compiler on a control
 worker merely because `/data` exists.
+
+`validate-runtime-builder-storage.py` is the read-only preflight for initializing
+an empty dedicated disk, not the initializer itself. It requires the separate
+inventory and a fresh `actor-runtime-builder-storage-observation/v1` document:
+
+- native `DescribeInstances` and `DescribeDisks` responses selecting exactly one
+  matching private running CVM and exclusive attached data disk, including ownership
+  tags, zone, security group, capacity and request identities;
+- management `kubectl get nodes -o json`, proving that the builder is not a TKE node;
+- the builder's live metadata instance ID, resolved exact disk by-id link,
+  `lsblk` JSON with filesystem, UUID, mount, serial and byte-capacity columns,
+  root-device ancestry and an empty `wipefs` signature observation for that exact device.
+
+The source response must not be renamed to invent unsupported API fields.
+The locked provider 1.83.11 uses the disk ID as its attachment resource ID, not
+an independent cloud attachment UUID; the planner therefore also checks the
+live CBS `InstanceId` ([provider implementation](https://github.com/tencentcloudstack/terraform-provider-tencentcloud/blob/v1.83.11/tencentcloud/services/cbs/resource_tc_cbs_storage_attachment.go)).
+Observations older than 120 seconds or from the future fail closed. Disk letters
+are not identities: the expected link, disk serial and cloud disk ID must agree.
+Root ancestry is cross-checked with the actual mounted root in `lsblk`. Existing
+partitions, filesystems or mounts are rejected, even if the cloud attachment matches.
+
+```bash
+"${ACTOR_BOOTSTRAP_PYTHON:?qualified Python 3.11 is required}" validate-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --observation /protected/runtime-builder.storage-observation.json
+```
+
+The plan hashes both exact input files and deliberately keeps `storageReady=false`.
+It performs no cloud mutation, formatting, mounting, cleanup or runtime rollout.
+The collector and initialization/mount journal still need implementation. A later
+mutating bootstrap must recollect the identities under the original operations
+lock immediately before acting; a saved preflight is not authorization to format.
+No observed management PVC, including a disk currently named `/dev/vdb`, is a
+candidate build disk. Rerunning against an already formatted dedicated build disk
+also refuses initialization; safe reuse needs a separate verified mount/journal path.
 
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve

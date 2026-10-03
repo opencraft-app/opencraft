@@ -87,6 +87,13 @@ class TerraformStorageIdentityContractTests(unittest.TestCase):
         self.assertEqual(len(builder_rules), 1)
         self.assertIn('type              = "egress"', builder_rules[0])
 
+    def test_build_inventory_is_not_part_of_strict_platform_inventory(self):
+        self.assertIn('value       = local.runtime_builder_inventory', MANAGEMENT_OUTPUTS)
+        platform = MANAGEMENT.split('management_inventory = {', 1)[1].split('runtime_builder_inventory = {', 1)[0]
+        self.assertNotIn('runtimeBuilder', platform)
+        self.assertNotIn('tencentcloud_instance.runtime_builder', platform)
+        self.assertIn('schema                   = "actor-runtime-builder-inventory/v1"', MANAGEMENT)
+
     def test_cold_and_backup_are_independent_api_only_users(self):
         self.assertIn('var.storage_identity_mode == "dedicated-users"', MAIN)
         self.assertIn('name          = "${var.cell_id}-${each.key}-storage"', MAIN)
