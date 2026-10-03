@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.40.0
+revision: 1.41.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,34 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前 checkpoint（1.41.0）：工具ccbebe4f1983已正常FF推master；jj push因保留的无描述
+empty祖先拒绝，改用普通git FF push，无force、squash或删除祖先。push后保留空zkkmqozw，
+另new zssrlqts记录证据。完整bootstrap161、coordinator20、artifact7、relay6及TAT工具
+通过；documentation零错误/警告，Context仍4,970历史错误、当前Task零错误，26 root tests
+仍同四项历史失败，audit33通过，discovery score仍null，不宣称全仓绿色。
+五份输入经COS到原ops均native SUCCESS/0，byte/SHA验证通过；原ops持完整共享锁提交
+guarded builder relay inv-d9f5g90xq0 SUCCESS/0、fresh guest capture inv-c9f5gd09bm，
+唯一renderer guest inv-c9f5gegs26及outer inv-e9f5g70u78均SUCCESS/0。两份独立native
+响应解码result精确一致：renderReady=true/storageReady=false，earlier UUID/journal不变；
+真实offline canary与本机相同，完整hash/request/source/transport身份记录在render-tool
+JSON evidence。无builder credentials/kubeconfig，不重绑原package或initialize intent。
+原ops readiness读inv-e9f5eq00jc确认strict10k服务MainPID=0；/data仍root-backed，
+不因其工具接线成功允许在ops编译。native renderer完成后新source-admission wrapper
+经relay inv-d9f5i1047e校验，仅提交outer inv-d9f5ingem6一次；它持原共享锁先fresh
+capture inv-c9f5is07f2，再运行原2757 materializer guest inv-c9f5itgq0s。复用已有
+四份incoming字节并显式PATH pinned renderer；现outer/guest都native SUCCESS/0，
+两份原生响应都有相同existing=false正式source publication footer与114组static摘要，
+无FAILED或Traceback；原脚本包含的optional skip仍原样，不据此宣称native Runtime资格。
+原失败source invocation保持原结论。Rust1.96.0 archive为342,294,783 bytes，vendor
+为174,065,317 bytes，Cargo.lock与2757一致；两个archive的成员边界、路径/link安全、
+source replacement及lock已本机核验。两份准备包只向ops传输，relay inv-c9f5mugn5p/
+inv-e9f5mwgb97均SUCCESS/0、byte/SHA验证通过；尚未传builder/安装/取得全路径build
+admission；包中没有Cargo credentials或registry config。旧Rust/vendor helpers仍读取q01
+bootstrap-node.json，不伪造旧state使其通过；下一项将standalone inventory/fresh attachment/
+matching journal及原ops完整锁接入toolchain handoff，路径与编译准入继续分别验证。
+whole goal仍active；源码准入之后是pinned Rust/vendor、stage reuse/Engine-only正式
+build/release与固定strict10k，最终Phase5其余门禁仍未完成。
 
 当前 checkpoint（1.40.0）：从master b5eb910753db的空祖先另jj new ykmtrpzx，保留历史；
 继续同一目标，不将builder准备当作Phase5完成。新增checksum-pinned render-only安装器、

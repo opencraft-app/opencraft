@@ -258,6 +258,13 @@ offline canary with `KUBECONFIG=/dev/null`, then checks the mount again.
 not cluster API compatibility, Rust/vendor preparation or runtime-build admission.
 Later source admission must explicitly add this pinned directory to `PATH`.
 
+The [Beijing native render receipt](evidence/runtime-builder-render-tool-beijing-20261004.json)
+records guarded relay and independent guest/coordinator `SUCCESS/0` results,
+matching the earlier filesystem UUID and journal hash. It does not grant build
+admission or supersede the historical failed source-gate receipt. The subsequent
+source-admission section separately records the original complete static gate
+passing and publishing the 2757 source tree, without a Runtime build or rollout.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit
