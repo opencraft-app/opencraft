@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.11.0
+revision: 1.12.0
 precedence: task
 derived: false
 ---
@@ -114,6 +114,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/{agent-gateway-runtime.md,release-gitops.md}`、`docs/context/project/{upstream-subtrees.md,services/ctl.md,services/sandbox.md,adjacency/argocd-ci-secrets.md}@00708032` | 恢复后精确路由与原发布边界 | 只读 collector 和原锁复用，跨服务信息不授权修改 CTL/Sandbox |
+| `docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@00708032`、`minisandbox/infra/cells/deploy/tencent/fleet/{tat/{tat-run.sh,lib-tat.sh},operations/with-autonomy-operation-lock.sh,terraform/create-first/bootstrap/{prepare-bootstrap-host.sh,test_install_pull_credential_e2e.py},qualification/actor-bj-q01/{build-runtime-via-tat.sh,relay-upload-to-builder.sh},runtime/prepare-cargo-cache.sh,terraform/create-first/management/{main.tf,variables.tf},terraform/create-first/pre-destroy/audit.py}@00708032` | 实际存储采集、保护凭据、构建缓存与 Terraform 状态邻接 | 原 TAT/ops lock 语义不另造，guest 兼容 stock Python 3.6，仅用 metadata 读取实例 ID |
 | `AGENTS.md`、`minisandbox/AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@df32d6c0` | 本轮继续性能归因与 bootstrap 修复 | mono2 唯一写源，原独立 revision 接续，不将局部测试视为发布 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/{management/main.tf,management/outputs.tf,test-terraform-storage-contract.py,bootstrap/validate-inputs.py,bootstrap/test_validate_inputs.py,bootstrap/README.md,rebuild/README.md,README.md}@df32d6c0` | 严格 inventory 契约和磁盘身份 | 确认新增 builder 字段会被平台拒绝，独立输出，不放松原 schema；新 planner 只读且不是格式化授权 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/{management/main.tf,management/variables.tf,management/outputs.tf,management/versions.tf,management/terraform.tfvars.example,rebuild/fleet-intent.json,rebuild/render-inputs.py,rebuild/test_render_inputs.py,test-terraform-storage-contract.py,bootstrap/prepare-bootstrap-host.sh,bootstrap/README.md,README.md,rebuild/README.md,tools/resolve-terraform.sh,tools/install-terraform.sh}@173f293b` | 用户追加性能设计要求与资源所有权 | 在模板内增加 build-only CVM/CBS，不替换控制节点，不将 provisioning 当作已挂载或已准入 |
@@ -378,6 +380,66 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+本轮最新 checkpoint：bootstrap discover 92 项通过，完整 fleet runner session 15608
+已 exit 0、fleet_manifest_invariants=passed。只读 collector 已接入正式 runner 并补齐 README 与
+正式设计；guest/control timestamps 均要求 fresh、有序。未构建 workerd、未发布 Runtime。
+当前 latest Task 1.12.0，最终源码冻结后只更新本 Task 的 catalog row，不改写全库。
+context tests 26 项仍同四项历史失败；audit tests 33 项通过，discovery 仅候选发现，
+没有语义评分。documentation 最终零 error/warning；11 条精确变更路径 impact passed，
+没有 matched rule，不代替语义审阅。Context 4,942 历史 errors 的归一化 Counter 与基线
+完全一致，added/removed 均零，本 Task 零 errors。最后 checkpoint 后再次核验并正常
+FF 推 master；完整目标保持 active，不称 builder 云上隔离或 strict10k 已通过。
+
+完整保护集合由 all-namespace C/A/B deploy/sts/pod（含 initContainers）重新观察。
+第一 dry-run inv-a9en8egsq3 FAILED/1 因全对象 JSON 输出超过上限，deletedIds 空；
+改为 kubectl 原生 image-only projection，不提升输出上限。新 artifact e19d048eb061
+经 COS relay inv-a9enckgsn3 SUCCESS/0 核对 bytes/SHA；TCR RequestId 74cb8789
+重新获得全部 36/36 refs，全部十六候选仍可恢复。
+dry-run inv-a9encv0inv SUCCESS/0：保护 40 refs、空 containers、原 ops/build 锁及 exact
+C node identity 通过。execute inv-a9end9g59c FAILED/1，partial，仅第一候选 image
+779bdd8e7285 成功删除，第二候选命令失败即停止；没有 --force 或清业务数据。
+随后 inv-d9endv081c SUCCESS/0 于 07:51:22 UTC 确认第一 ID 不在 inventory、第二
+b204330e1c21 仍完整双名，镜像从 91 到 90；root available 16,882,380,800 bytes，
+同 UID node DiskPressure 仍 True。不能宣称恢复健康，也不能直接重发原 partial plan。
+进一步只读 inv-d9enge0843 SUCCESS/0 于 07:54:04 UTC 取得实际 kubelet summary/configz：
+nodeFs 与 imageFs 同 capacity 105,620,869,120、available 15,495,536,640 bytes，约
+14.67%，低于真实 imagefs.available=15% evictionHard；nodefs=10%，transition=5m。
+native imageFs used 4,391,030,784、nodeFs used 85,706,403,840，不能用容器镜像自身
+用量代替整个 backing 的可用量。df 与 kubelet samples 不同窗，差值不能直接归因为构建。
+这确证共 backing 与当前 pressure 判据，不反向证明原业务首个 502 的唯一原因。
+需重新观察剩余精确身份及失败语义，再形成新的有界计划；不强删 containers/旧 PVC。
+本轮 exact runtime/relay-upload-to-builder.sh 不存在；rg --files 定位到 qualification
+真实 helper 并完整阅读。外部 Buildah untag 文档路径 404，不假设该命令存在或重试变更。
+
+当前 npnlnupk revision 接续已推 master 00708032，上一 goal turn 是 progress。新增
+guest 与 control 两份只读 collector，真实 TAT shell helper + 本地协议进程六项测试通过。
+guest 不接收云 credential，只读取 metadata、lsblk、精确 by-id 和 wipefs --no-act；
+control 加入 exact C inventory/VPC/bootstrap membership，裁剪无关 API 字段和 tags，
+保留请求 ID、原 TAT terminal invocation、source hash 与最早采样时间。未实现初始化。
+
+实际全 management Terraform plan 原 session 61548 已 exit 1：预计五 add、零 change/
+destroy，但 provider refresh 原 bootstrap attachment 时失败，未保存 plan、未 apply。
+独立 TKE DescribeClusterInstances RequestId 0a177a50 于本轮返回唯一 ins-55ry1kb1 为
+failed，FailedReason 明确 DiskPressure:True,Ready:True；不是 provider 误报，不能跳过。
+只读 inv-d9emqtg58a SUCCESS/0 于 07:28:55 UTC 确认同 UID C node 仍 DiskPressure。
+其中猜测的 actor-ten-thousand-active unit 查询没有 LoadState/InvocationID，不能作为
+原作业观察证据；原 run 的终态沿用已验证原 receipt，不重新启动。
+
+缓存诊断 inv-d9emrtgmrv FAILED/5 因无 containers 时原生 JSON 为 null；改为兼容空
+array 后 inv-c9emsmgdjt SUCCESS，但 91 个 image 的 TAT aggregate 输出截断，不当完整
+库存。随后 bounded inv-e9emtg01un SUCCESS/0 于 07:31:44 UTC：无 Buildah containers，
+root 外层持锁/compiler 列表空；Cargo target 约 2.97 GB、整个 build-cache 约 5.10 GB。
+不据一次无进程观察删除任何目录。旧镜像的十六条精确 ID inventory 完整获得，TCR
+DescribeImages 共 36/36 rows 可证明全部十六 immutable registry refs 仍存在。
+首次 A/B 查询只取 admission namespace，仅返回 controller，不是 Runtime 绑定证据；
+正在用只读 all-namespace deploy/sts/pod image 集合补齐，未删除镜像、Cargo 或磁盘。
+一次 exact runtime/manifest.yaml 查询不存在，后续不继续猜 manifest 路径。
+
+下一安全步骤是完整保护 current/rollback image、保持原 ops/build 双锁，仅退役经过归档
+验证的精确本地旧构建镜像，恢复 C 实际 disk condition 后重跑 full plan；不改 eviction
+threshold、不使用 targeted apply 绕过现有 node 异常。盘初始化/持久挂载及 c631 正式 release
+仍未完成，strict10k 不变，完整目标保持 active。
 
 本轮源码最终门禁：bootstrap 86、rebuild 20、storage contract 10 项均通过；完整 fleet
 runner 原 session 62533 exit 0，fleet_manifest_invariants=passed，新 planner 回归已接入

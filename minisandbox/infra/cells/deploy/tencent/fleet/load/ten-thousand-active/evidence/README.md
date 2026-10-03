@@ -37,9 +37,35 @@ The new read-only `validate-runtime-builder-storage.py` joins fresh native
 CVM/CBS responses, management nodes and guest metadata/lsblk/by-id/wipefs.
 Seven tests include exact identity, root ancestry, existing production-disk
 refusal, stale evidence, missing filesystem columns, duplicate JSON and real
-file/subprocess refusal. These tests prove the planner, not a live collector,
-disk initialization, mount recovery or build handoff. Its passed plan deliberately
+file/subprocess refusal. A separate read-only collector now exercises native cloud
+projections, exact C membership and the real TAT helper through local protocol
+processes. Its six regressions include refusing wrong metadata before disk probes
+and refusing already-used disks; stock Python 3.6 syntax is checked. These tests
+do not prove the not-yet-created standalone builder, disk initialization, mount
+recovery or build handoff. Its passed plan deliberately
 reports `storageReady=false`.
+
+The subsequent full management Terraform plan failed while refreshing the original
+C bootstrap attachment: native TKE reported `DiskPressure:True,Ready:True`, not a
+provider false positive. It was not saved or applied. Local-cache retirement
+preflight `inv-a9encv0inv` passed under the original operations/build locks, protecting
+40 C/A/B image references and proving all sixteen old immutable refs remained in TCR.
+Mutation `inv-a9end9g59c` then stopped partial after one local image; no `--force`
+was used and the other fifteen were not successfully deleted. Read-only
+`inv-d9endv081c`, 07:51:22 UTC, confirmed 90 local images, the second exact candidate
+unchanged, 16,882,380,800 root-available bytes and DiskPressure still true. This is
+neither storage isolation nor repaired cloud admission. Registry objects, business
+data, existing PVs, source trees and Cargo caches were not deleted. A replacement
+cleanup plan must be re-observed rather than blindly replaying the partial operation.
+
+Read-only `inv-d9enge0843`, 07:54:04 UTC, completed SUCCESS/0 and captured native
+kubelet stats/config projections. Both nodeFs and imageFs reported capacity
+105,620,869,120 and available 15,495,536,640 bytes (about 14.67%), below the actual
+`imagefs.available=15%` hard-eviction threshold. Native imageFs usage was only
+4,391,030,784 bytes, but it shares the full backing's free-space signal. The
+configured pressure transition is five minutes. These samples explain the current
+pressure guard, not the original business 502. They are not simultaneous with the
+earlier `df`; their difference is not an attributable build-write rate.
 
 Read-only observation `inv-a9em5wgcj7`, 07:08:46 UTC, completed SUCCESS/0.
 The original C control/builder node still reports DiskPressure and shares its

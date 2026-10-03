@@ -61,7 +61,7 @@ def observation(observed_at=NOW):
         },
         "managementNodes": {"items": [{"spec": {"providerID": "qcloud:///1/ins-control01"}}]},
         "guest": {
-            "instanceId": "ins-builder01", "rootDevices": ["/dev/vda", "/dev/vda1"],
+            "instanceId": "ins-builder01", "observedAtMs": observed_at, "rootDevices": ["/dev/vda", "/dev/vda1"],
             "byId": {"/dev/disk/by-id/virtio-disk-builder01": "/dev/vdc"},
             "lsblk": {"blockdevices": [
                 {"name": "vda", "type": "disk", "serial": None, "size": "107374182400",
@@ -150,6 +150,7 @@ class BuilderStorageIdentityTests(unittest.TestCase):
             (["disks", "DiskSet", 0, "Placement", "Zone"], "ap-beijing-7"),
             (["managementNodes", "items", 0, "spec", "providerID"], "qcloud:///1/ins-builder01"),
             (["managementNodes", "items"], []), (["guest", "instanceId"], "ins-control01"),
+            (["guest", "observedAtMs"], NOW - 1), (["guest", "observedAtMs"], NOW + 1),
             (["guest", "rootDevices"], ["/dev/vda1"]),
             (["guest", "byId", "/dev/disk/by-id/virtio-disk-builder01"], "/dev/vdb"),
             (["guest", "byId", "/dev/disk/by-id/virtio-disk-builder01"], "/dev/vda"),

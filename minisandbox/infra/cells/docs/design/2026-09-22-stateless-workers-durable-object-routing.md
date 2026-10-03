@@ -1686,8 +1686,11 @@ management Node inventory 和 guest metadata/lsblk/by-id/wipefs 做 exact join�
 builder 必须不在 TKE；云盘为同区 exclusive attached data disk，所有权 tags 匹配。
 guest serial、by-id、容量须指向同一 cloud Disk ID；root ancestry、已有分区、文件系统、
 挂载和签名均拒绝。磁盘字母不是身份，实际 C 的 vdb/vdc 是生产 PVC，不能格式化。
-planner 的通过只生成 storageReady=false 的 empty-disk plan；不实现 collector、格式化
-或持久挂载，不授予未来任意时间的破坏性权限。真正初始化前须在原共享操作锁内重新
+planner 的通过只生成 storageReady=false 的 empty-disk plan。独立的只读 collector 已实现：
+control 通过原 TAT helper 获取 guest 原生观测，guest 先校验 metadata 身份再读 exact disk；
+云凭据不进入 guest，仅必要 API 字段/ownership tags 进入证据。最早 cloud 与 guest 时间
+均须新鲜且有序；真实协议进程回归不代替尚未创建的独立 builder 云上正例。
+collector 不实现格式化或持久挂载，不授予未来任意时间的破坏性权限。真正初始化前须在原共享操作锁内重新
 观察；崩溃恢复、已格式化盘复用、持久挂载和实际 build path admission 仍需单独闭环。
 
 07:08:46 UTC 的新观察表明 Prometheus 暂时 Ready、HPA condition 恢复 ValidMetricFound，
@@ -1698,6 +1701,12 @@ planner 的通过只生成 storageReady=false 的 empty-disk plan；不实现 co
 不得补零来强制缩容；未知时保守拒绝缩容是安全行为，但不证明无人值守能力已合格。
 观测恢复验收应包含 Ready Pod 的实际 QPS/in-flight 值、保留盘拓扑、节点空间水位和重启后
 链路恢复。不能通过容忍 DiskPressure、降低 eviction threshold 或替换保留 PVC 掩盖问题。
+
+07:54:04 UTC 的真实 kubelet summary/configz 进一步显示 nodeFs 与 imageFs 共容量和
+available：约 14.67% 可用，已低于实际 imagefs.available=15% hard eviction 门槛；
+imageFs 自身只用约 4.39 GB，不代表 backing 空间安全。资源模型须以实际共享设备的
+总需求与 reserve 为准，不能把“镜像少”推断成“不会阻断调度”。这是当前控制面故障的
+证据，不是原万对象请求首错的逆向归因；不同时间的 df/stats 也不证明特定写入速率。
 
 #### FDB 适配层点读的串行放大
 

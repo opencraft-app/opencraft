@@ -167,6 +167,9 @@ def validate(value: Any, evidence: Any, now_ms: int) -> dict[str, Any]:
         require(provider.rsplit("/", 1)[1] != inventory["instanceId"], "builder is a Kubernetes node")
     guest = mapping(evidence["guest"], "guest observation")
     require(guest.get("instanceId") == inventory["instanceId"], "guest metadata instance identity")
+    guest_observed_at = guest.get("observedAtMs")
+    require(type(guest_observed_at) is int and observed_at <= guest_observed_at <= now_ms
+            and now_ms - guest_observed_at <= MAX_AGE_MS, "stale or future guest observation")
     root_devices = guest.get("rootDevices")
     require(isinstance(root_devices, list) and 1 <= len(root_devices) <= 16, "root device ancestry")
     for root_device in root_devices:

@@ -51,9 +51,33 @@ partitions, filesystems or mounts are rejected, even if the cloud attachment mat
   --observation /protected/runtime-builder.storage-observation.json
 ```
 
+`collect-runtime-builder-storage.py` now obtains this observation using the configured
+cloud CLI, an exact management inventory/kubeconfig and the existing `tat-run.sh`.
+It projects only required CVM/CBS fields and ownership tags; unrelated login settings,
+annotations and credential material must not enter the evidence. The guest program
+uses stock Python 3.6-compatible syntax and receives only the instance/disk selectors,
+not cloud credentials. It verifies the instance metadata before reading any disk.
+The metadata endpoint is Tencent's documented
+[instance-ID endpoint](https://cloud.tencent.com/document/product/213/4934).
+
+```bash
+"${ACTOR_BOOTSTRAP_PYTHON:?qualified Python 3.11 is required}" collect-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --management-inventory /protected/management-inventory.json \
+  --management-kubeconfig /protected/management.kubeconfig \
+  > /protected/runtime-builder.storage-observation.json
+```
+
+The earliest cloud observation and guest observation must both be fresh and ordered.
+The collector reports the immutable TAT invocation separately; a timeout is not
+permission to submit the same operation blindly. Collect that invocation with the
+existing TAT waiter. A successful capture still grants no formatting permission.
+Tests use actual subprocess protocol doubles and the real TAT shell helper, covering
+wrong management/node/metadata identities and already-used disks without cloud writes.
+
 The plan hashes both exact input files and deliberately keeps `storageReady=false`.
 It performs no cloud mutation, formatting, mounting, cleanup or runtime rollout.
-The collector and initialization/mount journal still need implementation. A later
+The initialization/mount journal still needs implementation. A later
 mutating bootstrap must recollect the identities under the original operations
 lock immediately before acting; a saved preflight is not authorization to format.
 No observed management PVC, including a disk currently named `/dev/vdb`, is a
