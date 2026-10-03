@@ -1,5 +1,51 @@
 # Capacity failures and pressure evidence, 2026-10-03
 
+## Release preflight and management resource coupling
+
+The c631 release operator wrapper was verified and relayed as 12,103 bytes,
+SHA-256 `1a44fbcfad285fc4b0058b3c5452078fd2b11f537e09a06e3a629d868d0dfaf7`.
+It reuses the formal release, shared operation lock, qualification and activation
+paths. Bash syntax and six existing release-hold tests passed. This operator
+artifact is not a product rebuild or a deployment. Actual read-only preflight
+`inv-d9ejqjg5u6` succeeded as a diagnostic but reported both Cell preflights
+exit one. No release or second load was launched.
+
+Readiness diagnostic `inv-e9ejtk0j3t`, 06:23:37 UTC, completed SUCCESS/0.
+Its full 84,546-byte JSON was downloaded through verified COS relay
+`inv-c9ejv0gw05` / `inv-e9ejv10m41`; SHA-256 is
+`7f723c22039da4de588c729e4da7b4ceab75586454f0ce8931299394cf39d24d`.
+Remote original:
+`/data/actor-build/release/api-readiness-c631f554.HLwRFW/diagnostic.json`.
+Local original:
+`/data/actor-build/local-admission-c631f554-20261003/api-readiness-diagnostic.json`.
+The earlier v1 TAT output was truncated and is not a complete artifact.
+
+The C node `10.160.0.4`, UID `cdea12a3-7dab-47c9-bb43-7d45cd321f0b`,
+is the builder CVM. It reports DiskPressure, not MemoryPressure. Eighteen
+DisruptionTarget records identify this node; eviction events continue at
+06:17:22 and 06:23:19 UTC. The API's own temporary usage was only 36--140 KiB.
+Disk diagnostic `inv-d9ejv00vae` at 06:25:04 UTC confirms `/data` and
+`/var/lib/{actor-build,containerd,containers}` all share `/dev/vda1`:
+105,620,869,120-byte capacity, 15,240,155,136 bytes available, with no inode
+exhaustion. Buildah occupied 14,825,512,960 bytes, containerd 4,703,731,712,
+and logs 827,445,248. The actor-build du timed out after 45 seconds; its total
+size is unknown. No files, caches, disks or live capacity were changed.
+
+Read-only `inv-e9ek3igvri`, 06:32:05 UTC, proves both actual custom-metrics
+requests fail with InternalError. The unique APIService points to the Hub
+Adapter and both Adapter Pods are Ready, but Hub Prometheus is Pending.
+Follow-up `inv-a9ek410d4r` at 06:32:34 UTC captured its actual scheduling
+condition: one node has an untolerated disk-pressure taint and two have volume
+node affinity conflicts. This follow-up's aggregate TAT output is truncated;
+the initial complete Pod condition is usable, not the full events/inventory.
+Historical HPA warning counts do not establish one continuous outage duration.
+These management failures do not prove the cause of the original 04:36 502.
+
+Original strict supervisor `inv-d9ek3i08h1`, 06:32:04 UTC, retains the same
+MainPID and InvocationID. A/B Host desired/Ready counts are 15/52, Machines
+24/55, and active counts zero. Natural floor convergence remains pending;
+load failed and exact cleanup passed remain separate from the final verdict.
+
 ## Local million-key Router cache component gate
 
 The production `objectrouter.Router` at parent source `40adcd4e` was exercised

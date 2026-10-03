@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.9.7
+revision: 1.9.8
 precedence: task
 derived: false
 ---
@@ -113,6 +113,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/infra/cells/deploy/tencent/fleet/observability/{README.md,federation/README.md,federation/hub-values.yaml,federation/hub-prometheus-adapter-values.yaml}@b72df9f5`、`terraform/create-first/{bootstrap/prepare-bootstrap-host.sh,management/main.tf}@b72df9f5` | 管理面真实资源耦合 | 核实 custom metric 上游、保留盘拓扑及 builder 共根盘；不在原作业持锁时修改观测或目录 |
+| `docs/context/domains/release-gitops.md@b72df9f5`、`docs/context/project/upstream-subtrees.md@b72df9f5`、`minisandbox/infra/cells/deploy/tencent/fleet/README.md@b72df9f5` | 正式 Runtime 发布前置 | 保持源码、镜像、资格与实际发布分层；不与原 strict cycle 重叠 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{release-runtime.sh,test_build_runtime_scale_in_hold_patch.py}@b72df9f5`、`operations/{run-autonomy-ops-cycle.sh,with-autonomy-operation-lock.sh}@b72df9f5`、`gitops/image-seed/{bind-inventory.sh,product-lock.py}@b72df9f5` | 锁、来源与回滚门禁 | 复用正式 transaction、exact runtime digest 和资格激活，不直接 patch Cell |
 | `minisandbox/infra/cells/internal/workersapi/objectrouter/{router.go,router_test.go}@40adcd4e`、`minisandbox/infra/cells/go.mod@40adcd4e` | 百万 key 后缓存驻留成本 | 生产 LRU/TTL/single-flight 与轻量确定性 resolver fixture；不模拟云端持久性、不写 Registry/FDB |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{prepare-cargo-cache.sh,build-image.sh,README.md}@ae339fd6` | Rust 重编工作量诊断 | 输入/toolchain closure 改变会清空整批 Cargo target；不将此次编译描述为只编几份修改源码，不改 live build |
 | `minisandbox/infra/cells/deploy/tencent/fleet/load/router-performance/{README.md,run.py,capture.py,run-on-builder.sh,test_run.py,test_lifecycle.py,test_capture.py,test_sample_window.py,test_capacity_receipt.py,test_run_on_builder.py}@ae339fd6` | 后续 Router 性能门禁的实际覆盖 | 修正固定到达延迟与五分钟窗口污染；只跑本地真实 HTTP/子进程回归，不抢占云端 ops lock |
@@ -368,6 +371,36 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+本轮交接：只读诊断、正式 release wrapper 与共同资源预算设计为 progress，不是修复发布。
+docs 零 error/warning、四路径 impact passed，release hold 六项及 monitor 五项通过。
+Context 全量仍 4,942 历史 error，归一化 Counter added/removed 零、Task 零 error；
+26 context tests 仍是相同四项历史失败，audit tests 33/33。第一次 Context 验证使用
+默认 Markdown 却按 JSON 解析失败，改为 --format json 后比较通过，不隐藏失败。
+audit discovery 首次缺少 --output 拒绝，随后使用显式本地路径重跑；仅候选发现，非成熟度评分。
+未再观察云端或修改 live workload。下一项先完成原 floor convergence，再在完整 ops lock
+下修复 builder/在线资源耦合与观测调度；c631 source/image 不因本文档变更重新构建。
+
+2026-10-03 06:32 UTC 最新验证：原 supervisor `inv-d9ek3i08h1` SUCCESS/0，仍同一身份
+running；Host A/B 15/52 Ready、Machine 24/55 Ready，active 零，final waiting。
+实际 custom-metrics 只读 `inv-e9ek3igvri` SUCCESS/0，两项均 InternalError；唯一
+APIService 已指向两个 Ready 的 Hub Adapter，但 Prometheus Pending。调度诊断
+`inv-a9ek410d4r` 首个完整 Pod condition 明确一个 disk-pressure 节点、两个 volume
+affinity conflict；其整体 TAT output 截断，不能把后续 inventory 当完整原件。
+正式设计与 evidence README 已同步共同资源模型；没有发布、清理缓存或改容量。
+新增失败路径查询已记录：`.agents/context/scripts/invalidate_context.py`、
+`observability/federation/values.yaml`、`observability/federation/test_verify_hub.py` 与旧
+`.agents/context/catalog*` 均无对应文件。实际 helpers 在 validate_context.py，目录隐藏
+catalog 在 docs/context/.context；Hub 配置是 hub-values.yaml，测试由 rg --files 定位。
+
+2026-10-03 06:26 UTC 接续：c631 产品已构建，正式 release wrapper 已上传但未发布；
+原 strict10k 仍在自然 drain，负载失败和 exact cleanup 成功均不改写。完整 readiness
+原件经 COS 验证 84,546 bytes、SHA 前缀 `7f723c22039d`。C 的 builder 同时是控制节点
+10.160.0.4；DiskPressure 正在驱逐 API，而非已证实的 API 内存泄漏。只读磁盘诊断
+确认 /data 和 Buildah/containerd 均在 100 GiB 系统盘上；actor-build du 超时，大小 unknown。
+两项 HPA custom metrics 未有值，CPU/memory 有值；原因尚未核实，不把它补零或改 HPA。
+下一步保持只读，验证 custom-metrics 链与原 drain，并记录独立构建/在线资源预算设计。
+不能由后续 eviction 反推首个 502，不能通过任意清理、扩副本或降低 eviction 门槛遮蔽问题。
 
 2026-10-03 05:13:51 UTC：原只读 `inv-d9ehs7gxq7` SUCCESS/0，原 unit running、
 Host A/B 202/202、MachineSet 212/208、active 零，final waiting。下一进度不早于
@@ -735,6 +768,34 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- 上一 goal turn 为 progress：百万 key 组件实测/模型与原收据记录正常 FF 推 master
+  `b72df9f5`，远端身份与 clean worktree 已核验。当前独立 `lnrotoor` revision parent
+  `b72df9f5`，准备 c631 的正式 A/B release，不缩小完整目标。
+- 只读 preflight `inv-d9ejqjg5u6` 于 06:20:23 UTC SUCCESS/0，但 A/B preflight 都 exit 1，
+  绝不是发布成功。原 strict supervisor 同一 MainPID/InvocationID live；A/B Host 42/80
+  全 Ready，Machine 52/81 Ready，仍未到原低容量门禁。C API desired 12/Ready 11，HPA
+  min/max 3/30，UID/image 未变；readiness v1 已完成但 TAT 输出截断，不作为完整原件。
+- 完整 readiness v2 `inv-e9ejtk0j3t` SUCCESS/0，06:23:37 UTC；COS relay
+  `inv-c9ejv0gw05` / `inv-e9ejv10m41` 已 SUCCESS/0，原件 84,546 bytes、SHA 前缀
+  `7f723c22039d`。C Node UID 前缀 `cdea12a3` 对应原 builder，DiskPressure True；
+  18 条 DisruptionTarget 记录及 06:23:19 eviction 均在该节点。memory pressure False。
+- 磁盘只读 `inv-d9ejv00vae` SUCCESS/0，06:25:04 UTC：/data 不是独立数据盘，和
+  /var/lib/{actor-build,containerd,containers} 共用 /dev/vda1。available 15,240,155,136
+  bytes，inode 未耗尽；Buildah 14,825,512,960 bytes、containerd 4,703,731,712 bytes、
+  logs 827,445,248 bytes。actor-build du timeout/124，不推断它的总大小。未清理或改盘。
+- 用户再次要求从成本/排队/协调/维护模型解决性能劣化。HPA snapshot 的两项 custom
+  metrics 未有值，不能仅由低 CPU 推断可缩容；生产源码已经初始化零值 metric，排除
+  “缺少启动时零序列”这一简单解释。继续核实唯一 APIService/Adapter/Prometheus 路径。
+- c631 release wrapper 已复用正式 release/ops/qualification/activation 路径；旧期望 Runtime
+  改为 59、旧资格目录改为 runtime-admission。公共 API 只校验同 UID/digest、HPA 3--30
+  内实际 desired 全 Ready，不强制三副本；仍保留四 Host/Machine、六 Engine 与全部资格门禁。
+  preflight 只可生成本地 image inventory，不调用 workload mutation。bash -n exit 0，
+  六项 exact release-hold 回归通过。wrapper SHA 前缀 `1a44fbcfad28`；正式 COS relay
+  `inv-a9ejph06wf` 验真 12,103 bytes，未启动 release、未创建第二份负载。
+- 已记录三条失败的 exact query：`qualification/actor-bj-q01/release-runtime-via-tat.sh`、
+  `runtime/test-runtime-admission-render.sh`、`workers-api/production.yaml`。都不存在，已按
+  有界文件搜索回到正式 release-runtime.sh、真实 release-hold test 和 workers-api/api.yaml，
+  不再猜测上述路径。等待前一原作业，不将 API 短暂未 Ready 直接判成完整根因。
 - 本轮 million churn 组件变更的文档 gate 零 error/warning；Context 26 tests 的四项失败名称
   与既有 FDB-read-flights 基线完全一致，audit tests 33/33。discovery 执行 exit 0 只是候选
   发现，不是成熟度评审通过。最终 Context normalized error Counter 与基线完全相同：

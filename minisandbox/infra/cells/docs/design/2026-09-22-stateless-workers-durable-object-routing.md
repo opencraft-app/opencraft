@@ -1603,6 +1603,32 @@ flush/restart/过载语义。随意 spawn 无界 task、丢计量、删除 gener
 timeout 都不属于已批准的修复。FDB 资源隔离与后台预算只能保护公平性；重复工作成本
 和总负债不能因此忽略。
 
+#### 构建与在线控制面的共同资源故障
+
+性能模型不能只包含 Engine/FDB。2026-10-03 的只读诊断确认 C 的 bootstrap builder
+同时是可调度的控制节点，`/data`、Buildah、containerd 和系统共用 100 GiB 根盘。
+在 06:23:37 UTC 该节点 DiskPressure True、MemoryPressure False，Workers API 多次
+被驱逐；API 容器自身只占几十至百余 KiB 临时空间，不支持“API 自己写满磁盘”的归因。
+增加 API 副本并不消除这个共同资源故障。
+
+06:32:05 UTC 实际 custom-metrics 查询证明两项 Router HPA 指标均返回 unable to fetch
+metrics。唯一 APIService 指向正确的 Hub Adapter，两 Adapter Ready，但 Hub Prometheus
+Pending。随后实际 Pod scheduling condition 给出一个节点有 disk-pressure taint，另外两个
+节点有 volume node affinity conflict。该事实解释当时为何有正确 Adapter 配置却没有值，
+不代表所有历史指标故障均由此次构建造成，也不能反推 04:36 首个业务 502。
+
+容量闭环因此须分别约束三项预算：在线节点的 nodefs 可用空间及 kubelet reserve、
+构建 source/target/image 的峰值临时空间与可回收缓存、观测面在其保留盘拓扑内的实际可调度性。
+`mkdir /data` 不等于数据盘隔离，单次“20 GiB free” bootstrap 检查也不是构建全生命周期预算。
+构建准入应以峰值空间和在线 reserve 判定，不能由在线 Pod eviction 被动替构建释放空间。
+优先设计独立 builder 或独立挂载且受预算约束的构建盘；保持原源码闭包、镜像和证据来源校验。
+实际迁移必须沉淀为 Terraform/bootstrap，不能在长作业持锁时手工移动目录或任意删除缓存。
+
+监控是扩缩容控制输入，不只是可选 dashboard。HPA custom metric 无值必须保持 unknown，
+不得补零来强制缩容；未知时保守拒绝缩容是安全行为，但不证明无人值守能力已合格。
+观测恢复验收应包含 Ready Pod 的实际 QPS/in-flight 值、保留盘拓扑、节点空间水位和重启后
+链路恢复。不能通过容忍 DiskPressure、降低 eviction threshold 或替换保留 PVC 掩盖问题。
+
 #### FDB 适配层点读的串行放大
 
 同窗 FDB 诊断绑定原 run `55b55875` 和两 Cell 的 CR UID，十八个历史 Pod UID
