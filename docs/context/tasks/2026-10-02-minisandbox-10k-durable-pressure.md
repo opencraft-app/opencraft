@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.19.0
+revision: 1.20.0
 precedence: task
 derived: false
 ---
@@ -81,6 +81,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   通过前不得运行或宣称 Router performance qualification 完成。
 - Router 性能工具必须区分固定到达计划、实际 dispatch 和 response 时延；五分钟 Prometheus
   滚动窗口全部位于 offered-load 窗口内部。准备、尾部等待和清理不能污染 steady-load 指标。
+- 共享 Agent heartbeat 保留单对象单在途，但诊断须分开理想 timer 槽、实际访问、逻辑派发、
+  未就绪/在途/停止的互斥跳过和物理 HTTP 尝试。停 timer 后排空不得制造新理想需求；
+  零失败或至少成功一次不证明固定到达吞吐，新增计数不得成为放宽资格的新成功捷径。
 - 本地组件 gate 对百万不同 key 实际访问生产 ObjectRouter，验证缓存/LRU/miss 表有界、
   GC 后的保留 heap 不随历史访问基数线性增长。固定小 payload 的组件证明不能替代百万
   dormant 公共路径/FDB/真实 API RSS 与云端容量证据。
@@ -98,6 +101,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh`
 - `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/`
+- `minisandbox/infra/cells/deploy/tencent/fleet/load/shared-agent-scale/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/load/router-performance/`
 - `minisandbox/infra/cells/internal/workersapi/objectrouter/`
 - `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md`
@@ -114,6 +118,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `AGENTS.md`、`minisandbox/AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@ad3a5102` | 本轮目标接续与工具性能口径 | mono2 唯一写源、新 jj revision、原 ops lock 与 immutable cloud 运行保留 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/{README.md,load/ten-thousand-active/{README.md,analyze_pressure.py,test_analyze_pressure.py},load/shared-agent-scale/{runner.mjs,runner.test.mjs,README.md},verify-manifests.sh}`、`minisandbox/scripts/format/agent-format.mjs`、`minisandbox/biome.json` | 实际 heartbeat 调度与测试邻接 | 已有在途会抑制派发；真实 HTTP、常数空间计数、全 fleet gate，不修改节拍或稳态资格 |
 | `docs/context/domains/release-gitops.md`、`docs/context/project/upstream-subtrees.md`、`minisandbox/infra/cells/{AGENTS.md,deploy/tencent/fleet/README.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/{runtime/qualify-engine-ha.sh,operations/{publish-qualified-release.sh,plan-qualification-activation.py},load/ten-thousand-active/README.md}@b2874c06` | A 终态验真与 B 发布前置 | 读真实 HA 内置 probe/hash/topology、activation 源 audit hash 和完整容量门禁；不将 production-cell 小规模收据冒充全产品容量 |
 | `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@587b4fb2` | 本轮正式发布取证 | 保持完整目标、同一 invocation、mono2 唯一写源和资格锁 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/{load/ten-thousand-active/README.md,operations/{run-autonomy-governance.sh,static-release-plane.md,verify-release-qualification-authorization.py},qualification/actor-bj-q01/{persist-receipt-from-builder.sh,relay-upload-to-builder.sh,relay-download-from-builder.sh},runtime/{test_monitor_bottomless.py,test_build_runtime_scale_in_hold_patch.py}}@587b4fb2` | 原生 ledger、COS relay 和门禁所有权 | 不把 action exit 0 或中间旧收据缺失改写为最终资格通过，不绕过静态漂移检查 |
@@ -386,7 +392,75 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-当前 checkpoint（1.19.0）：上一 turn 为 progress，正式 release-bound wrapper、jq
+当前 checkpoint（1.20.0）：上一 turn 为 progress，A/B 原始资格证据、README 和
+正式设计更新已 FF 推 master ad3a5102，remote exact SHA verified、import 后 clean。
+保留空 qqwrurwu，先 jj new 创建 nprkksru 后修改未来工具；不修改 cloud tools120。
+cloud runtime skill/networking 本轮完整读取，environment_status tool 不存在、policy
+snapshot 缺失，不能推定 readiness；现有授权 CLI 只做原进程身份和压力只读观察。
+组合 AGENTS 阅读输出截断后已按局部范围补读至 EOF；不委托阅读规则。
+
+原 strict10k 唯一 run 200a42ae、MainPID 1728155、InvocationID 8a1ff14b 保持。
+09:44:30 inv-e9erpx092e SUCCESS/0 同一系统进程 running：660 秒，1,283 ready/
+1,267 proven、38,779 active success，零 retry/active failure/identity mismatch。
+09:49:49 inv-c9eruwghhr SUCCESS/0 再验证同一身份：975 秒，1,913 ready/
+1,909 proven、89,911 active success，普通 retry/active failure/mismatch 零。
+warmup backpressure 仍 4,673、442 Object，零 timeout；post-warmup SLO 样本
+仍零，不能声称三秒或万级通过。此次提交用本地真实 UTC clock guard，不提前；
+下一 periodic progress 不早于 09:54:49 UTC。
+A/B 最新 Host desired/Ready 52/45 与 57/51、Machines Ready 52/53；runtime
+active 918/981，采集 errors/warnings/missingSignals 空。五分钟维护指标当前
+stage/reclaim 成功率为显式零，lane in-flight/waiters 为零，UDB pending 11/41；
+不能由此证明整条 durable queue 无债务。Cell authoritative ledger A 约 4.99 GB、
+B 5.68 GB 是整个 Cell 观察，不能归为本轮新增写入；同窗 baseline 尚未取得。
+这是固定负载的中间观察，不替代终态、有效吞吐或债务趋势。
+旧 waiter 25982 已由工具确认 Unknown process id，不重启已 SUCCESS/0 的原 B。
+
+本轮工具修正 `activeDemand` 用常数空间暴露 closed-loop coordinated omission：
+访问槽与逻辑派发/三类互斥跳过精确守恒，dispatched==activeAttempts；名义对象
+频率与原 timer ceil 频率独立报告，idealTimerSlots 按阶段时钟积分；timer 被
+停止后不把排空算成新需求。`activeHttpAttempts` 另计实际 fetch 尝试（含 retry/
+cancel），不冒充服务端接收数。已有单对象单在途、请求节拍、SLO、重试和资格
+判定均不变，未来 tools source 才有字段，不能补造当前 tools120 的计数。
+真实 HTTP 回归用响应事件屏障，慢对象首个 heartbeat 等另一对象下一轮才释放，
+证明零失败仍会 skippedInFlight；另一故障验证额外物理尝试和 strict 失败同时成立。
+五项 deterministic meter 测试覆盖延迟 timer、计数守恒、阶段切换、停止及离散
+ceil 口径；实际 Node tests 初版 12/12，通过后追加 HTTP attempt/retry 回归。
+Node syntax、bash syntax、diff whitespace 通过；最终 13 项全部通过。首轮完整
+fleet 包含初版 12 项并通过；最终 HTTP-attempt 回归加入后又完整重跑，明确看到
+13 项和 fleet_manifest_invariants=passed，原两个 session 均 exit 0。
+cleanup 真实 HTTP/SQLite 三项通过；documentation 零 error/warning，Context
+4,942 历史 error 的 normalized Counter 完全不变、Task 零 error，26 项 context
+tests 仍同四项历史失败、audit 33/33，不声称全 mono2 gate 已全绿。
+首个 rg --files -g AGENTS.md 无匹配导致组合 shell exit 1，不是测试失败或新增局部规则。
+
+仍保持完整 Phase 5：万级原资格八检查、百万 dormant 公共/FDB/API RSS、Router
+1/50/99% 命中与 1/4/8/16 replica、1k/10k wake storm、ACK 其他故障边界、
+热点与多 key/长流取消回压、真实 CCN/TLS/DNS/deny 仍不能由本轮工具门禁推定通过。
+不发第二负载、rollout、monitor installer 或 Terraform apply；无 Runtime/V8 编译。
+
+09:55:08 inv-d9es1vggu5 SUCCESS/0，clock guard 后跟随同一进程：1,290 秒、
+2,543 ready/2,531 proven、159,044 active success，零 ordinary retry/failure/
+identity mismatch，warmup 回压次数仍 4,673、零 timeout。A/B Host desired/
+Ready 70/63 和 75/69，Machines Ready 70/75，runtime active 1,219/1,295，
+观察 errors/warnings/missing 空。下一 periodic progress 不早于 10:00:08 UTC。
+已取得 trace 第一条 09:33:05 baseline，原 A/B FDB UID 对应 authoritative
+bytes 4,939,956,034/5,629,379,954。故 5 GB 级存量不是这 2,543 对象全部新造的。
+至 09:54:59 同窗 Cell 净增长界为约 98.6--104.3 MB/101.6--109.4 MB；按实际
+query 时间差 1,314.9/1,316.6 秒得约 75.0--79.3/77.1--83.1 kB/s。这是全 Cell
+净变化，不归因本 run、不是写放大或 COS provider bytes，不对重复 replica 求和。
+维护已开始：五分钟 completed-stage mean 约 166/197 ms、每完成 stage transaction
+读约 141/136 kB，attempt/completion 比为一；reclaim rate 仍显式零、未出现
+timeout series 仍 unknown。不同输入、完成者 cohort、不同范围不能据此宣称旧
+万级问题已有受控收益；继续等待同一高水位下的前台、有效维护和债务趋势。
+
+10:00:40 inv-e9es740a4p SUCCESS/0：原 MainPID/InvocationID running，1,620 秒、
+3,203 ready/3,193 proven、253,822 active success，retry/failure/mismatch 均零，
+warmup 回压仍 4,673，post-warmup SLO 样本仍零。最新 trace A/B Host desired/
+Ready 88/81 与 93/87、Machines Ready 88/93、active 1,541/1,619，采集异常空。
+下一 periodic progress 不早于 10:05:40 UTC；不因中间成功签发八检查最终收据。
+变更实际九文件 change-impact passed，matched rules 空仍不代替语义审查。
+
+历史 checkpoint（1.19.0）：上一 turn 为 progress，正式 release-bound wrapper、jq
 回归与设计门禁已 FF 推送 master 42873a2d，remote exact SHA verified、clean。
 新 mvnzoyvp 只归档原资格证据和进展；空祖先 usqrqztm/kztxkyxu 保留。
 

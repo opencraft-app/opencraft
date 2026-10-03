@@ -33,7 +33,7 @@ test("a terminal active heartbeat failure cannot pass after all targets were pro
 	assert.equal(qualificationPassed(result), false);
 });
 
-async function protocolServer(callback, objectDelayMs = 0, failOncePredicate = null, failOnceCode = "injected_unavailable") {
+async function protocolServer(callback, objectDelayMs = 0, failOncePredicate = null, failOnceCode = "injected_unavailable", beforeHeartbeatReply = null) {
 	const uploads = [];
 	const deployments = [];
 	const states = new Map();
@@ -43,7 +43,7 @@ async function protocolServer(callback, objectDelayMs = 0, failOncePredicate = n
 		for await (const chunk of req) text += chunk;
 		const body = text ? JSON.parse(text) : null;
 		res.setHeader("content-type", "application/json");
-		if (!injectedFailure && failOncePredicate?.(req)) {
+		if (!injectedFailure && failOncePredicate?.(req, body)) {
 			injectedFailure = true;
 			res.statusCode = 503;
 			res.end(JSON.stringify(failOnceCode === "http_error" ? {} : { error: { code: failOnceCode } }));
@@ -60,6 +60,7 @@ async function protocolServer(callback, objectDelayMs = 0, failOncePredicate = n
 		}
 		const state = states.get(objectId);
 		if (req.headers["x-workers-original-url"] === "https://agent.example/state") { res.end(JSON.stringify(state)); return; }
+		if (body.operation.startsWith("heartbeat:") && beforeHeartbeatReply) await beforeHeartbeatReply(body);
 		let reply = state.operations.get(body.operation);
 		if (!reply) {
 			if (body.operation === "init") state.initialized = true; else state.heartbeats++;
@@ -96,6 +97,10 @@ test("few shared versions create many independent objects and keep a bounded hot
 		assert.equal(receipt.activeReady, 5);
 		assert.equal(receipt.activeProven, 5);
 		assert.ok(receipt.counters.activeSucceeded >= 5);
+		assert.equal(receipt.activeDemand.dispatched, receipt.counters.activeAttempts);
+		assert.equal(receipt.counters.activeHttpAttempts, receipt.counters.activeAttempts);
+		assert.equal(receipt.activeDemand.visitedSlots, receipt.activeDemand.dispatched +
+			receipt.activeDemand.skippedNotReady + receipt.activeDemand.skippedInFlight + receipt.activeDemand.skippedStopping);
 		assert.equal(observed.uploads.length, 2);
 		assert.equal(observed.deployments.length, 2);
 		assert.equal(observed.states.size, 20);
@@ -111,6 +116,55 @@ test("few shared versions create many independent objects and keep a bounded hot
 		assert.equal(typeof readyEvents[0].createMs, "number");
 		assert.equal(typeof readyEvents[0].initializeMs, "number");
 	});
+});
+
+test("real HTTP slow heartbeat remains single-flight and reports skipped demand", { timeout: 10000 }, async () => {
+	let release;
+	const held = new Promise((resolve) => { release = resolve; });
+	let otherRequests = 0;
+	let didHold = false;
+	await protocolServer(async (endpoint) => {
+		const output = await mkdtemp("/data/tmp/shared-agent-scale-demand-test-");
+		const config = options([
+			"--endpoint", endpoint, "--output", output, "--run-id", "f".repeat(32),
+			"--count", "2", "--rate", "100", "--active", "2", "--workers", "1",
+			"--warmup", "2", "--warmup-rate", "100", "--warmup-settle-ms", "10",
+			"--active-interval-ms", "20", "--observe-after-ms", "200", "--timeout-ms", "5000",
+		]);
+		try {
+			const receipt = await run(config);
+			assert.equal(receipt.verdict, "passed");
+			assert.equal(receipt.counters.requestRetries, 0);
+			assert.equal(receipt.counters.activeFailed, 0);
+			assert.equal(didHold, true);
+			assert.ok(receipt.activeDemand.skippedInFlight > 0);
+			assert.equal(receipt.activeDemand.dispatched, receipt.counters.activeAttempts);
+			assert.equal(receipt.activeDemand.visitedSlots, receipt.activeDemand.dispatched +
+				receipt.activeDemand.skippedNotReady + receipt.activeDemand.skippedInFlight + receipt.activeDemand.skippedStopping);
+		} finally { release(); }
+	}, 0, null, "injected_unavailable", async (body) => {
+		if (body.agent === 0 && body.operation === "heartbeat:1") { didHold = true; await held; }
+		if (body.agent === 1 && didHold && ++otherRequests === 2) release();
+	});
+});
+
+test("real HTTP heartbeat retry is separate physical work and still fails strict qualification", async () => {
+	await protocolServer(async (endpoint) => {
+		const output = await mkdtemp("/data/tmp/shared-agent-scale-demand-retry-test-");
+		const config = options([
+			"--endpoint", endpoint, "--output", output, "--run-id", "a".repeat(32),
+			"--count", "1", "--rate", "100", "--active", "1", "--workers", "1",
+			"--warmup", "1", "--warmup-rate", "100", "--warmup-settle-ms", "1",
+			"--active-interval-ms", "20", "--observe-after-ms", "200", "--timeout-ms", "1000",
+		]);
+		const receipt = await run(config);
+		assert.equal(receipt.verdict, "failed");
+		assert.equal(receipt.stopReason, "request_retry");
+		assert.equal(receipt.counters.requestRetries, 1);
+		assert.equal(receipt.counters.activeFailed, 0);
+		assert.equal(receipt.activeDemand.dispatched, receipt.counters.activeAttempts);
+		assert.equal(receipt.counters.activeHttpAttempts, receipt.counters.activeAttempts + 1);
+	}, 0, (_req, body) => body?.operation?.startsWith("heartbeat:"));
 });
 
 test("steady-state readiness SLO breach fails the qualification", async () => {

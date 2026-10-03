@@ -193,7 +193,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_ver
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_release_admission.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_analyze_pressure.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_capacity_controller_recovery.py"
-node --test "$script_dir/load/shared-agent-scale/runner.test.mjs"
+node --test "$script_dir/load/shared-agent-scale/runner.test.mjs" "$script_dir/load/shared-agent-scale/heartbeat-demand.test.mjs"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_qualification_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_ha_contract.py"
