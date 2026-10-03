@@ -157,6 +157,56 @@ missing new Bottomless/HA receipts. Keep these transitions distinct. Qualificati
 may proceed only through its existing recovery authorization, not a generic
 block bypass. B, unchanged strict10k and the full Phase 5 matrices remain pending.
 
+### A qualification completed; B started with the same immutable product
+
+Native TAT RequestId `57667815-2657-418f-aaf2-9491118ccc5b` proves original
+`inv-a9ep2a0399` ended SUCCESS/0 at 08:36:16 UTC. No resubmission occurred.
+`inv-e9eprjgpda` and `inv-c9epsg0h0v` copied only the five exact completed
+receipts into the approved COS-relay root; the existing relay verified every
+remote/copy/local byte count and SHA. The archived files remain byte-identical:
+
+| Native receipt | Bytes | SHA-256 |
+|---|---:|---|
+| [Bottomless](../../../runtime/evidence/beijing-point-read-c631f554-a01-bottomless-20261003.json) | 263,220 | `922a7cba934ae50db81907b02395e508d25c89cf538aada41c73fa9882fa83d3` |
+| [Engine HA](../../../runtime/evidence/beijing-point-read-c631f554-a01-engine-ha-20261003.json) | 12,977 | `bcf821139d7159c3a9c1b0842f8ccb1cacfe710ff0e8cf7a156fda2eccd3c07c` |
+| [Activation](../../../runtime/evidence/beijing-point-read-c631f554-a01-activation-20261003.json) | 4,190 | `0858168f3607ea610924a3070aedd4042c0cb1da8fcc8c220c345796e3547f29` |
+| [Control](../../../runtime/evidence/beijing-point-read-c631f554-a01-control-20261003.json) | 1,066 | `130f41068e982dcf92c09075a1616e98f538f75e6a39abb78325dfae6b45692d` |
+| [Audit](../../../runtime/evidence/beijing-point-read-c631f554-a01-audit-20261003.json) | 29,269 | `9b100d943e11a9992d9e46002ebb96e8b62a67f1e78948e9127e686b492f286a` |
+
+The formal production-cell verifier passes 48 Objects and 6,240 writes,
+reporting cold-wake p95 719.303432 ms and p99/max 1,998.496521 ms.
+`claim_eligible=false` is preserved: this is not a standalone full-product
+Bottomless or strict10k capacity claim. The HA canonical hash, unchanged
+artifact, six-replica 2/2/2 topology and exact victim replacement all verify;
+ten concurrent public Objects receive 1,500 requests with zero failures and a
+verified post-failure SQLite write. Activation/control/audit SHA chaining,
+allow/passed and static drift zero verify independently. Fresh live observation
+confirms the same Cell UID, observed generation four and readyForPlacement.
+
+The native audit has four Python `Infinity` leaves, solely in memory/storage
+headroom ETA forecasts, and no trailing newline. Its exact bytes are preserved;
+strict JSON readers will reject that historical serialization. Do not silently
+normalize it or alter the control receipt's source hash. A future tool-only
+serialization fix must retain explicit non-finite semantics, not invent zero
+or finite headroom. These forecasts are not measured workload throughput.
+
+After A's complete prerequisites passed, B was submitted once as
+`inv-d9epts0437`, StartTime 08:40:20 UTC. Native RequestId
+`c562ccbe-c6ef-4621-9489-1563bfbc6f1b` reports RUNNING, not terminal success.
+Resume its existing five-minute waiter. The same checksum-bound wrapper,
+c631 product receipt and operation-lock domain are retained; there was no
+new workerd build, manual scaling, monitoring installation or second load.
+Only B's complete qualification can permit the unchanged strict10k next.
+
+Read-only `inv-c9eq32g9ba` completed SUCCESS/0 at 08:48:05 UTC. The original
+B Engine UID is 6/6 and Host UID 4/4 at exact `d3a6e41e`, with converged Host
+revision `6767cb4bd`. Its original cycle preserves pre allow/0, action exit
+string zero and post block/string one. The inflight gate has 48 Objects and
+48 online/final/post-sleep reclaim records, but is only beginning exact-cold
+waiting: zero cold-ready, 48 pending, elapsed 50.709 ms, zero read errors and
+no cleanup errors. Three staged-hot rows are not proof of failure or a stuck
+task. No B cold-wake, HA, activation or strict10k pass is claimed.
+
 Read-only observation `inv-a9em5wgcj7`, 07:08:46 UTC, completed SUCCESS/0.
 The original C control/builder node still reports DiskPressure and shares its
 root with data/build paths, with 14,845,512 KiB available. Workers API is 12/12

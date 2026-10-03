@@ -1738,6 +1738,22 @@ action exit 0，原生 ledger 的 source、manifest、远端 digest 和静态身
 08:32:17 UTC 同一 gate 为 36/48 cold-ready、12 pending，读取/清理错误仍为零，
 stage 仍等待精确冷态；不将变化的 shard 数当作精确 reclaimed-byte 吞吐。
 
+A 原 invocation 在 08:36:16 UTC 正常 SUCCESS/0 终止，最终原字节资格收据已经
+COS relay/hash、正式 production-cell verifier 和 HA/activation hash 链验真归档。
+48 Object/6,240 writes 的 cold wake p95 719 ms、p99/max 1,998 ms；HA fault
+期间公共 /v1 1,500 次请求零失败并验证后续 SQLite 写入。原 Cell UID 的 Ready/
+readyForPlacement 和 release-bound control allow 已实时核对。这是当前 Cell 资格，
+`claim_eligible=false` 保留，不冒充原标准 strict10k、全产品无限容量或百万资格。
+B 在 A 前置通过后于 08:40:20 UTC 提交同一 c631 产品，仍待终态；不降低门禁或重编。
+08:48:05 UTC 原 B Engine 6/6、Host 4/4 已收敛至 exact 新 digest，48 个在线/
+最终 checkpoint 和 post-sleep reclaim 已执行；精确冷态仍待 48 对象，无读取/清理
+错误。B rollout 不等于 cold-wake/HA/activation 通过，也不授权抢跑 strict10k。
+
+原 audit 的 memory/storage headroom ETA 各含两个 Python float Infinity 叶子，
+JSON 严格消费者会拒绝其非标准序列化。归档保留源字节和 control→audit SHA 链，
+不由诊断修改历史。后续工具应显式编码非有限值，不能补零、改成有限容量预测，
+也不能将 unknown 观测解释为健康；这不是本轮实际 throughput 的证据。
+
 #### FDB 适配层点读的串行放大
 
 同窗 FDB 诊断绑定原 run `55b55875` 和两 Cell 的 CR UID，十八个历史 Pod UID

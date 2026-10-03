@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.15.0
+revision: 1.16.0
 precedence: task
 derived: false
 ---
@@ -114,6 +114,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `docs/context/domains/release-gitops.md`、`docs/context/project/upstream-subtrees.md`、`minisandbox/infra/cells/{AGENTS.md,deploy/tencent/fleet/README.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/{runtime/qualify-engine-ha.sh,operations/{publish-qualified-release.sh,plan-qualification-activation.py},load/ten-thousand-active/README.md}@b2874c06` | A 终态验真与 B 发布前置 | 读真实 HA 内置 probe/hash/topology、activation 源 audit hash 和完整容量门禁；不将 production-cell 小规模收据冒充全产品容量 |
 | `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@587b4fb2` | 本轮正式发布取证 | 保持完整目标、同一 invocation、mono2 唯一写源和资格锁 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/{load/ten-thousand-active/README.md,operations/{run-autonomy-governance.sh,static-release-plane.md,verify-release-qualification-authorization.py},qualification/actor-bj-q01/{persist-receipt-from-builder.sh,relay-upload-to-builder.sh,relay-download-from-builder.sh},runtime/{test_monitor_bottomless.py,test_build_runtime_scale_in_hold_patch.py}}@587b4fb2` | 原生 ledger、COS relay 和门禁所有权 | 不把 action exit 0 或中间旧收据缺失改写为最终资格通过，不绕过静态漂移检查 |
 | `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@962ad5ea` | 接续用户性能建模要求 | mono2 唯一写源，不以扩大副本替代单位成本/控制面隔离 |
@@ -384,6 +385,64 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+当前 checkpoint（1.16.0）：上一 goal turn 为 progress，A 原始 release/cycle 与
+模型更新已正常 FF 推 master b2874c06，远端 exact SHA 核验且 clean。本轮新 revision
+qywotuok 接续，不改旧 source 或历史。只读 inv-e9epr40mix 于 08:37:28 已观察到
+Bottomless 最终 passed；inv-e9eprjgpda 在批准的 evidence root 复制精确 Bottomless/HA。
+原 A inv-a9ep2a0399 已由 native RequestId 57667815 确认为 SUCCESS/0，08:13:08 开始、
+08:36:16 结束，slow waiter 14735 也已 exit 0。没有重发原工作。
+
+五份正式收据经现有 COS helper 下载，source/copy/local/仓库字节 SHA 相同：
+Bottomless 263,220 bytes/922a7cba934a；HA 12,977/bcf821139d71；activation
+4,190/0858168f3607；control 1,066/130f41068e98；audit 29,269/9b100d943e11。
+production-cell 正式 verifier 通过：48 Actor/6,240 writes、cold wake p95
+719.303432 ms、p99/max 1,998.496521 ms。claim_eligible=false 原样保留，小规模
+Cell 资格不单独构成 Bottomless 全产品/万级容量声明。
+
+HA canonical evidence hash 重算、六副本/三 hostname/三 zone 2/2/2、exact victim
+UID 替换和 fault 在流量窗口内均通过；公共 /v1 十对象/十并发、1,500 请求零失败、
+故障后 SQLite write count=1、cleanup passed。activation 的 control SHA 与 control
+的 source audit SHA 精确串联，audit allow/passed、零 failures/warnings、static drift=0。
+08:38 的只读 inv-c9epsg0h0v 确认原 Cell UID、generation/observedGeneration=4、
+desired/phase Ready、readyForPlacement=true、capacityRisk Normal，不仅依靠旧收据。
+
+A 全部前置通过后，B 仅提交一次 inv-d9epts0437，StartTime 08:40:20；native
+RequestId c562ccbe 的本地 projection 于 08:42:46 完成并确认 RUNNING，不将其中
+ExitCode=0 当作终态。
+新 slow waiter local session 25982 五分钟轮询，原 shared operation lock 与
+checksum-bound 1a44fbcfad28 wrapper/c631 product 完全复用，未重编 workerd、手动
+改容量、apply TF、安装监控或启动第二负载。下一次 B 观察不早于 08:47:46 UTC。
+
+08:48:05 只读 inv-c9eq32g9ba SUCCESS/0：B 原 Engine UID 6/6、Host UID 4/4
+均为 exact d3a6e41e，新 current/update revision 6767cb4bd 收敛。原 cycle
+20261003T084021Z-1512977 pre allow/0、action string 0、post block/string 1，
+不合成 cycle passed。真实 .inflight waiting_for_exact_cold_state，48 Actor、48
+online/final/post-sleep reclaim，cold-ready 0/48，elapsed 50.709 ms、read errors 0、
+cleanup 空；三个 staged hot rows 不当成错误或卡死。还没有 B cold-wake、HA、
+activation 终态，原任务不重发。下一次观察不早于 08:53:05 UTC。
+
+本轮检索/归档异常不隐藏：猜测 operations/verify-qualified-runtime-release.py 不存在，
+已 bounded exact filename/source 定位真实 publisher/planner。第一次 native TAT query
+错误使用 InvocationId 参数而非官方 helper 的 Filters，未取得状态；读 lib 后单次正确
+query 才确认 SUCCESS。整份归档读取被截断，JSON parse 拒绝，未提交不完整数据；
+改为每 200 行有界读取。audit 的四个 ETA float Infinity 是原 Python 非标准 JSON，
+只位于 memory/storage headroom 预测；原字节保留，不重写源 audit/control 身份。
+其尾部原无 newline，归档仅机械恢复该格式后才通过 byte/hash 检查。strict JSON
+消费者仍有确定性序列化缺口，后续单独修工具，不碰当前 immutable B workflow。
+
+本轮局部 activation planner 3、monitor 5、release-hold 6 passed；Context unit 26 项
+保留相同四个历史失败，audit unit 33/33 passed、discovery 正常结束。文档门禁零
+errors/warnings，五份 artifact 的 sensitive-key/credential-literal 扫描无命中且字节
+一致。没有 Rust/Go/workerd 源码改动，不重复重编。最终 catalog/source hash matched，
+Context 4,942 条历史 errors 的 normalized Counter 与基线相同、added/removed 零、
+本 Task 零 errors；九路径 impact passed、文档零 errors/warnings、diff --check passed。
+万级 verifier 的 15 项真实 CLI/子进程回归通过。猜测该目录 test_run_on_builder.py
+不存在，随后 bounded exact filename/source 搜索定位 test_verify.py；读取真实
+runner/fixture 后核对原参数与 verifier，未运行负载、未改脚本或门禁。
+
+完整目标继续 active：B 全部资格、原标准 strict10k、Router 矩阵/百万 dormant/
+同步唤醒/故障和网络证据尚未齐全；不以 A 资格或中间云状态宣称完成。
 
 当前 checkpoint（1.15.0）：上一 goal turn 是 progress，实测缓存清理/控制面恢复和
 成本模型文档已正常 FF 推 master 587b4fb2，远端 exact SHA 已核验、隔离 worktree
