@@ -182,6 +182,32 @@ variable "bootstrap_instance_type" {
   default = "SA9.LARGE8"
 }
 
+variable "runtime_builder_instance_type" {
+  description = "Dedicated build CVM, never attached to TKE. Independent of control-plane capacity."
+  type        = string
+  default     = "SA9.4XLARGE32"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]+\\.[A-Za-z0-9]+$", var.runtime_builder_instance_type))
+    error_message = "runtime_builder_instance_type must be an explicit CVM type."
+  }
+}
+
+variable "runtime_builder_data_disk_gib" {
+  description = "Disposable build CBS capacity. This envelope is not a measured full-V8 build peak or a runtime quota."
+  type        = number
+  default     = 512
+
+  validation {
+    condition = (
+      var.runtime_builder_data_disk_gib >= 256 &&
+      var.runtime_builder_data_disk_gib <= 4096 &&
+      var.runtime_builder_data_disk_gib == floor(var.runtime_builder_data_disk_gib)
+    )
+    error_message = "runtime_builder_data_disk_gib must be an integer between 256 and 4096."
+  }
+}
+
 variable "ssh_public_key" {
   description = "Operator-owned public key; the private half never enters Terraform state."
   type        = string

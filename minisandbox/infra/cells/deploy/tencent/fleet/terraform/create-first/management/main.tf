@@ -463,6 +463,60 @@ resource "tencentcloud_kubernetes_cluster_attachment" "ha_worker" {
   }
 }
 
+# Image compilation must not consume the nodefs, CPU or I/O budget that keeps
+# Workers API, Argo and the HPA metrics pipeline available. This CVM is not a
+# Kubernetes worker. Operations still run on bootstrap under the existing
+# shared operation lock; a build host does not establish a second lock domain.
+resource "tencentcloud_security_group" "runtime_builder" {
+  name        = "${var.management_id}-runtime-builder"
+  description = "Standalone runtime builder; TAT access only, no ingress rules."
+  tags        = merge(local.tags, { role = "runtime-builder" })
+}
+
+resource "tencentcloud_security_group_rule" "runtime_builder_egress" {
+  security_group_id = tencentcloud_security_group.runtime_builder.id
+  type              = "egress"
+  cidr_ip           = "0.0.0.0/0"
+  ip_protocol       = "ALL"
+  policy            = "ACCEPT"
+  description       = "Outbound build dependencies, Tencent API, TCR and COS"
+}
+
+resource "tencentcloud_instance" "runtime_builder" {
+  instance_name              = "${var.management_id}-runtime-builder"
+  availability_zone          = local.bootstrap_subnet.availability_zone
+  image_id                   = local.node_image_id
+  instance_type              = var.runtime_builder_instance_type
+  instance_charge_type       = "POSTPAID_BY_HOUR"
+  vpc_id                     = tencentcloud_vpc.management.id
+  subnet_id                  = tencentcloud_subnet.management[var.bootstrap_subnet_key].id
+  orderly_security_groups    = [tencentcloud_security_group.runtime_builder.id]
+  key_ids                    = [tencentcloud_key_pair.management.id]
+  allocate_public_ip         = false
+  internet_max_bandwidth_out = 0
+  system_disk_type           = "CLOUD_BSSD"
+  system_disk_size           = 100
+  disable_api_termination    = var.deletion_protection
+  tags                       = merge(local.tags, { role = "runtime-builder" })
+}
+
+# Separate resources expose the exact CBS identity for bootstrap validation.
+# Do not choose a guest device by order or format an existing control-node disk.
+resource "tencentcloud_cbs_storage" "runtime_builder" {
+  storage_name      = "${var.management_id}-runtime-builder-data"
+  storage_type      = "CLOUD_BSSD"
+  storage_size      = var.runtime_builder_data_disk_gib
+  availability_zone = local.bootstrap_subnet.availability_zone
+  charge_type       = "POSTPAID_BY_HOUR"
+  force_delete      = false
+  tags              = merge(local.tags, { role = "runtime-builder-cache" })
+}
+
+resource "tencentcloud_cbs_storage_attachment" "runtime_builder" {
+  storage_id  = tencentcloud_cbs_storage.runtime_builder.id
+  instance_id = tencentcloud_instance.runtime_builder.id
+}
+
 resource "tencentcloud_kubernetes_cluster_endpoint" "private" {
   cluster_id                      = tencentcloud_kubernetes_cluster.management.id
   cluster_internet                = false
@@ -561,6 +615,19 @@ locals {
         addonVersion = var.network_policy_addon_version
         controller   = "kube-system/networkpolicy"
       }
+    }
+    runtimeBuilder = {
+      instanceId               = tencentcloud_instance.runtime_builder.id
+      privateIp                = tencentcloud_instance.runtime_builder.private_ip
+      availabilityZone         = local.bootstrap_subnet.availability_zone
+      instanceType             = var.runtime_builder_instance_type
+      attachedToKubernetes     = false
+      operationsInstanceId     = tencentcloud_instance.bootstrap.id
+      securityGroupId          = tencentcloud_security_group.runtime_builder.id
+      dataDiskId               = tencentcloud_cbs_storage.runtime_builder.id
+      dataDiskAttachmentId     = tencentcloud_cbs_storage_attachment.runtime_builder.id
+      dataDiskGiB              = var.runtime_builder_data_disk_gib
+      storageBootstrapRequired = true
     }
     registry = {
       id        = local.registry.id

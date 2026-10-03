@@ -1,5 +1,42 @@
 # Capacity failures and pressure evidence, 2026-10-03
 
+## Terminal result for the original strict run
+
+Read-only observation `inv-e9ekt2gfn9` at 06:57:09 UTC completed SUCCESS/0.
+The original service has MainPID zero and failed/exit one, with unchanged
+InvocationID `8ee84c21e87944c983932c62a5df5c56`. The underlying strict run did
+not pass: `activeCapacityReady`, `loadReceiptPassed` and
+`tenThousandActiveSustained` are false. Exact cleanup, observed automatic
+scale-up, safe drain and final low capacity are true. The final observation at
+06:53:45.902833 UTC has four Ready Hosts and four Ready Machines in each Cell,
+zero active Actors and 694 complete samples. Natural drain took 7,801 seconds.
+Peak capacity was 523 Hosts and 525 Machines across the two Cells; this is
+observed supply, not successfully qualified active-object capacity.
+
+The original raw receipt remains at
+`/data/actor-bootstrap/beijing-rebuild-20260915/load-tests/ten-thousand-active-55b558752ba2454987491cdea655ff68/receipt.json`
+on the original operations host. Its reported SHA-256 is
+`a49cb93099fd010d5cc8d01d934fdd5f1c021acd7520502eae668ec65f98ad9e`.
+The local observation log
+`/data/actor-build/local-admission-c631f554-20261003/progress-0659.log`
+hashes to `aa93679765de92ce3c99e50f96576e6cfbbd06cc1fcc9858a020561d46ac2894`.
+It contains the original command's receipt output, not a byte-identical
+download of the raw receipt. The observation command's success is not a
+qualification pass. Do not restart this failed run.
+
+## Dedicated builder template, not deployed recovery
+
+Management Terraform now declares a standalone private build-only CVM and
+separate CBS, exposing the exact instance/disk/attachment identity. It does
+not attach that instance to TKE, replace existing control workers or move the
+release operation-lock domain. The management-only renderer and storage
+contract each pass nine tests. Terraform 1.9.8 with the locked Tencent provider
+1.83.11 validates the actual configuration with zero errors or warnings after
+backend-disabled initialization. No cloud plan/apply, disk initialization,
+mount, cache migration, runtime build or rollout was performed by this change.
+Storage bootstrap and actual build handoff remain unimplemented; the existing
+build admission must continue to fail closed until they are qualified.
+
 ## Release preflight and management resource coupling
 
 The first read-only `runtime/verify-builder-storage.py` diagnostic hashes to

@@ -49,6 +49,44 @@ class TerraformStorageIdentityContractTests(unittest.TestCase):
         self.assertRegex(MANAGEMENT, r'workerCodeBucket\s*=\s*tencentcloud_cos_bucket\.code_plane\["code"\]\.bucket')
         self.assertIn('output "code_plane_buckets"', MANAGEMENT_OUTPUTS)
 
+    def test_runtime_builder_is_not_a_control_worker(self):
+        block = re.search(
+            r'resource "tencentcloud_instance" "runtime_builder" \{(.*?)\n\}', MANAGEMENT, re.S,
+        )
+        self.assertIsNotNone(block)
+        self.assertIn("var.runtime_builder_instance_type", block.group(1))
+        self.assertIn("allocate_public_ip         = false", block.group(1))
+        self.assertIn("tencentcloud_security_group.runtime_builder.id", block.group(1))
+        attachments = re.findall(
+            r'resource "tencentcloud_kubernetes_cluster_attachment" "[^"]+" \{(.*?)\n\}',
+            MANAGEMENT, re.S,
+        )
+        self.assertEqual(len(attachments), 2)
+        for attachment in attachments:
+            self.assertNotIn("runtime_builder", attachment)
+        control_nodes = re.search(r'initialWorkerInstanceIds = concat\((.*?)\n      \)', MANAGEMENT, re.S)
+        self.assertIsNotNone(control_nodes)
+        self.assertNotIn("runtime_builder", control_nodes.group(1))
+
+    def test_build_disk_has_exact_identity_without_formatting_existing_disks(self):
+        self.assertIn('resource "tencentcloud_cbs_storage" "runtime_builder"', MANAGEMENT)
+        self.assertIn('resource "tencentcloud_cbs_storage_attachment" "runtime_builder"', MANAGEMENT)
+        self.assertIn("storage_id  = tencentcloud_cbs_storage.runtime_builder.id", MANAGEMENT)
+        self.assertIn("instance_id = tencentcloud_instance.runtime_builder.id", MANAGEMENT)
+        self.assertIn("force_delete      = false", MANAGEMENT)
+        self.assertRegex(MANAGEMENT, r"dataDiskId\s*=\s*tencentcloud_cbs_storage.runtime_builder.id")
+        self.assertRegex(MANAGEMENT, r"storageBootstrapRequired\s*=\s*true")
+        self.assertRegex(MANAGEMENT, r"operationsInstanceId\s*=\s*tencentcloud_instance.bootstrap.id")
+        self.assertIn('output "runtime_builder_inventory"', MANAGEMENT_OUTPUTS)
+        for forbidden in ("local-exec", "remote-exec", "mkfs", "/dev/vdb"):
+            self.assertNotIn(forbidden, MANAGEMENT)
+
+    def test_builder_security_group_has_no_ingress_authority(self):
+        rules = re.findall(r'resource "tencentcloud_security_group_rule" "[^"]+" \{(.*?)\n\}', MANAGEMENT, re.S)
+        builder_rules = [rule for rule in rules if "tencentcloud_security_group.runtime_builder.id" in rule]
+        self.assertEqual(len(builder_rules), 1)
+        self.assertIn('type              = "egress"', builder_rules[0])
+
     def test_cold_and_backup_are_independent_api_only_users(self):
         self.assertIn('var.storage_identity_mode == "dedicated-users"', MAIN)
         self.assertIn('name          = "${var.cell_id}-${each.key}-storage"', MAIN)

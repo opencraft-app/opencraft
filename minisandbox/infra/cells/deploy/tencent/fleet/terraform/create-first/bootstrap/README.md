@@ -14,6 +14,15 @@ The phase is idempotent, reports a hash of the installed package NEVRA
 inventory, and rejects a host with less than 20 GiB free instead of failing
 halfway through an image generation transfer.
 
+This is an operator/bootstrap workspace check, not runtime-build admission.
+The management inventory also identifies a standalone `runtimeBuilder` CVM and
+its exact attached CBS. `prepare-bootstrap-host.sh` does not initialize or mount
+that disk and must not be mistaken for its readiness proof. Keep the original
+bootstrap host as the owner of the shared release/qualification operation lock.
+Build handoff requires independently verified storage initialization and actual
+bulk-path admission on the standalone host; never start a compiler on a control
+worker merely because `/data` exists.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

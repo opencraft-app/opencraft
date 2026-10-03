@@ -1216,6 +1216,25 @@ head-fenced 冷降计划反复失效；大量 Envoy 一次加入带来的协调�
 只有对应窗口有效服务追上负载、积压不持续增长且原零重试/身份/持久性门禁不放宽，才可称
 性能改进。该模型是实验与设计约束，不是当前万级/百万资格已经通过的证据。
 
+性能回归必须留下可验证的设计结论，而不是把每轮失败转换成更大的配额。每个候选原因
+按「触发负载 → 单位有效工作成本 → 共享瓶颈 → 排队/重做反馈 → 修正 → 对照证据」记录。
+源码确定性缺陷、窗口相关性与首错请求的因果链是三个证据等级，不能互相替代。
+规模增长时至少分别检查以下增长项：
+
+- dormant 基数带来的目录/缓存驻留量；历史访问不能使单 API 进程无限增长。
+- active 数与业务到达率；10,000 个对象每十秒一次持久交互，目标是约 1,000 次/秒，
+  不是一万条连接或无写入的 keepalive。
+- 按对象周期触发的维护需求 `N_active / T`、每 job 的输入/coverage/shard 数，以及失效
+  重做和 durable replay；增加 Engine 不得同时无约束地增加 Cell 的后台需求。
+- burst 与新增容量的供给延迟；可用 headroom 应覆盖供给期间的新需求，并计入镜像/节点
+  准入时间。将 warmup 拉长不能替代三秒创建 SLO。
+- 在线、构建和观测面的物理资源交集；HPA 的控制输入受故障影响时，扩副本不能修复信号。
+
+整改先降低重复扫描、串行等待和无效重做，再隔离必要资源、限定总预算，最后校准扩容。
+任何批处理/缓存/并行化都必须保留 generation、FDB ACK 和失效恢复语义；不能把丢计量、
+丢持久信号、透明重试有副作用请求或延长超时当作性能优化。对照以同样负载与资源身份
+测单位读写/事务成本、实际到达/成功率、队列年龄、p99、有效维护和债务斜率。
+
 Router binding 负载工具以固定时钟生成到达计划，分别记录计划到实际 dispatch、dispatch
 到 response、计划到 response 的时延。客户端迟到和线程调度时间不能从端到端数字中消失；
 所有已提交请求仍只执行一次，达到有界 in-flight 上限即失败，不改成慢速闭环掩盖过载。
@@ -1487,7 +1506,9 @@ Runtime 59 的同一 run 55b55875 最终在 warmup 9,127 ready / 9,111 proven、
 [原始 load receipt](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/55b55875-load-receipt-20261003.json)
 为 failed：04:36:35.187 UTC 的 initialize index 9086 返回一次 502
 indeterminate_result；随后 2,043 个 code=20 是全局取消。普通请求 retry 仍零。
-原 supervisor 继续 exact cleanup/natural drain；running 不再表示业务负载正常。
+原 supervisor 随后完成 exact cleanup 和 7,801 秒自然 drain：最终两 Cell 各四 Host/
+Machine Ready、active 零，但 strict receipt 仍 failed，万活跃及正式三秒样本未通过。
+原终态观察及 receipt 身份见上述 evidence README；扩缩容通过不等于容量负载通过。
 
 [04:15--04:29 非资格窗口](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/55b55875-pressure-late-20261003.json)
 各 Cell 41 样本：A/B compaction 都达到 12 in-flight，waiter 峰值 89/88。
@@ -1633,6 +1654,14 @@ bulk filesystem 保留 max(10 GiB, 10% capacity)，还需 64 GiB 构建增量；
 这是保守 admission floor，不是已校准的 V8 峰值或硬 quota。
 只读快照不排除同盘其他 writer 和后续耗尽，实际布局隔离与运行期保护仍需完成。
 不降低 kubelet eviction 门槛、不由检查器安装/格式化/移动目录，也不补零 HPA 指标。
+
+重建模板现在声明单独的 build-only CVM 和 CBS：management 根 owns 它们，builder
+不加入 TKE，原三个控制 worker 的资源和身份保持不变。默认 512 GiB 是可配置构建盘
+envelope，不是实测 V8 峰值。inventory 显式绑定 instance/zone/disk/attachment，并保留
+原 bootstrap 的 operationsInstanceId；release/qualification 仍只有原共享操作锁。
+Terraform 不执行格式化或旧目录迁移，storageBootstrapRequired=true 明确表示还不能
+构建。真实 guest disk identity、初始化/挂载、全部实际写路径 admission、受控构建交接、
+旧根盘缓存的安全退役和 Prometheus/HPA 恢复须另行验证；源码模板不能代表云上整改完成。
 
 监控是扩缩容控制输入，不只是可选 dashboard。HPA custom metric 无值必须保持 unknown，
 不得补零来强制缩容；未知时保守拒绝缩容是安全行为，但不证明无人值守能力已合格。

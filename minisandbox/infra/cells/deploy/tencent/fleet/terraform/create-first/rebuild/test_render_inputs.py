@@ -58,6 +58,38 @@ class RenderRebuildInputsTest(unittest.TestCase):
         for prefix in ("cls-", "vpc-", "subnet-", "ins-", "sg-"):
             self.assertNotIn(prefix, encoded)
 
+    def test_builder_capacity_is_explicit_and_separate_from_control_nodes(self) -> None:
+        rendered = MODULE.render_management(self.intent)
+        self.assertEqual(rendered["runtime_builder_instance_type"], "SA9.4XLARGE32")
+        self.assertEqual(rendered["runtime_builder_data_disk_gib"], 512)
+        self.assertEqual(rendered["bootstrap_instance_type"], "SA9.LARGE8")
+        cell, _ = MODULE.render_cell(self.intent, "actor-bj-a01", self.binding)
+        self.assertNotIn("runtime_builder_instance_type", cell)
+        self.assertNotIn("runtime_builder_data_disk_gib", cell)
+
+    def test_builder_disk_and_identity_fail_closed(self) -> None:
+        for value in (True, False, None, "512", 512.0, 255, 4097):
+            with self.subTest(value=value):
+                self.intent["management"]["runtimeBuilder"]["dataDiskGiB"] = value
+                with self.assertRaisesRegex(ValueError, "dataDiskGiB"):
+                    MODULE.render_management(self.intent)
+        self.intent["management"]["runtimeBuilder"]["dataDiskGiB"] = 512
+        self.intent["management"]["runtimeBuilder"]["instanceType"] = "ins-remembered"
+        with self.assertRaisesRegex(ValueError, "instanceType"):
+            MODULE.render_management(self.intent)
+        del self.intent["management"]["runtimeBuilder"]
+        with self.assertRaisesRegex(ValueError, "runtimeBuilder"):
+            MODULE.render_management(self.intent)
+
+    def test_management_cli_includes_builder_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = pathlib.Path(temporary) / "management.tfvars.json"
+            subprocess.run(
+                ["python3", str(ROOT / "render-inputs.py"), "--intent", str(INTENT_PATH),
+                 "--target", "management", "--output", str(output)], check=True,
+            )
+            self.assertEqual(json.loads(output.read_text())["runtime_builder_data_disk_gib"], 512)
+
     def test_renders_operations_network_by_stable_vpc_identity(self) -> None:
         rendered = MODULE.render_operations_network(self.intent)
         self.assertEqual(rendered["operations_vpc_name"], "lightclaw-bj8")

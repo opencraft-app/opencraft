@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.9.9
+revision: 1.10.0
 precedence: task
 derived: false
 ---
@@ -87,6 +87,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## affected_paths
 
+- `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/`
 - `minisandbox/engine/packages/universaldb/`
 - `minisandbox/engine/packages/config/`
 - `minisandbox/engine/packages/gasoline/`
@@ -113,6 +114,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/{management/main.tf,management/variables.tf,management/outputs.tf,management/versions.tf,management/terraform.tfvars.example,rebuild/fleet-intent.json,rebuild/render-inputs.py,rebuild/test_render_inputs.py,test-terraform-storage-contract.py,bootstrap/prepare-bootstrap-host.sh,bootstrap/README.md,README.md,rebuild/README.md,tools/resolve-terraform.sh,tools/install-terraform.sh}@173f293b` | 用户追加性能设计要求与资源所有权 | 在模板内增加 build-only CVM/CBS，不替换控制节点，不将 provisioning 当作已挂载或已准入 |
+| `docs/context/domains/release-gitops.md@173f293b`、`docs/context/project/upstream-subtrees.md@173f293b`、`docs/context/project/adjacency/argocd-ci-secrets.md@173f293b`、`minisandbox/infra/cells/AGENTS.md@173f293b` | 正式发布与邻接 | 保持源码/镜像/实际资格分层；读取真实 Terraform storage 和 renderer tests |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{build-image.sh,prepare-cargo-cache.sh,README.md,test_runtime_base_contract.py}@f225363b`、`qualification/actor-bj-q01/{build-runtime-via-tat.sh,test_build_parallelism.py,test_runtime_python.py,test_runtime_build_log.py}@f225363b` | 实际构建副作用边界 | 在 push authority 和 source mount/compile 前检查实际 backing，保持 Python/ABI/source/token 与输出边界 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/{management/main.tf,management/variables.tf,management/outputs.tf,bootstrap/README.md,rebuild/render-inputs.py,test-terraform-storage-contract.py}@f225363b` | rebuild 资源所有权 | 现有模板共享 rootfs，不因新 admission checker 通过就声称已实现独立盘；本轮不 apply 云资源 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/observability/{README.md,federation/README.md,federation/hub-values.yaml,federation/hub-prometheus-adapter-values.yaml}@b72df9f5`、`terraform/create-first/{bootstrap/prepare-bootstrap-host.sh,management/main.tf}@b72df9f5` | 管理面真实资源耦合 | 核实 custom metric 上游、保留盘拓扑及 builder 共根盘；不在原作业持锁时修改观测或目录 |
@@ -374,6 +377,40 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
+本轮最终本地 gate：standalone builder 的 78 项 bootstrap、20 项 rebuild 与九项 storage
+contract 回归全部通过；完整 fleet runner session 90061 exit 0，marker 为
+fleet_manifest_invariants=passed。合法 .tf fmt、真实 provider validate、diff-check 均通过。
+documentation 零 error/warning；15 个 exact changed paths 的 impact passed（无匹配
+rule，不代替语义审阅）。Context 4,942 个历史 errors 按 SHA 归一化并保留重复次数与
+基线完全相同，本 Task 零错误；context tests 仍同四项历史失败，audit 33/33。
+discovery 仅 needs_agent_review。上述都是源码/本地门禁，不是已创建新 builder 或恢复
+在线 HPA；本轮不编 workerd、不启动第二负载、不 apply 云资源。更新 catalog 后再验
+docs/context/impact，正常 FF source publish 与远端核验后交接；完整目标未完成。
+
+2026-10-03 本轮接续：用户确认需要从建模设计解释性能劣化，不仅扩副本。当前 revision
+qlqrltvm 在 management Terraform 中增加独立、不加入 TKE 的 build-only CVM/CBS 和
+exact inventory；renderer 显式管理其容量，不改变 Cell 或原三个 C worker。
+storage contract 与 renderer 各九项通过；真实 provider 1.83.11 init（backend=false、
+lockfile=readonly）及 validate JSON 为 valid=true、零 error/warning。初始化只写本地
+TF_DATA_DIR，没有 plan/apply 或云节点变化。首次 fmt 误传 .tfvars.example 被拒绝；
+随后只对合法 .tf 文件检查，不将拒绝命令标为通过。一次 docs patch 的末段不存在，
+整笔 patch 拒绝，回到已读取的实际标题修正；不扩大检索。
+后续 docs patch 仍带不准确的末段 anchor，被整笔拒绝；现已拆成独立、精确上下文
+patch 成功。只使用实际已读行，不把失败编辑记成完成。没有 source rollback 或云 mutation。
+一次本地汇总将 impact 的 text+JSON 当成纯 JSON 导致 parser 失败；实际 impact 已 passed，
+已重新直接核验其状态并单独完成 Context Counter 的 assert，不将 parser 失败标成门禁通过。
+
+原 run 55b55875 现在已有终态：只读 `inv-e9ekt2gfn9` SUCCESS/0 于 06:57:09 UTC
+确认 MainPID=0、同一 InvocationID、service failed/exit 1。原 receipt failed，但
+exactObjectCleanupPassed、automaticScaleUpObserved、safeDrainObserved 和 finalLowCapacity
+均 true；最终 06:53:45 UTC A/B 各四 Host/Machine Ready、active 零，694 样本。原始
+receipt 路径仍在同一 load root，SHA 前缀 a49cb93099fd；本地 observation log 为
+`/data/actor-build/local-admission-c631f554-20261003/progress-0659.log`。不将观察命令的
+SUCCESS 当成负载通过，也不再重发原 load 或假称 supervisor live。该次观察距前一
+06:53:25 UTC 不足五分钟，终态后不再轮询，后续长作业严格保持至少五分钟 cadence。
+实际独立 builder 尚未 apply，guest 数据盘初始化/挂载、正式 build handoff、旧缓存安全
+退役和 Prometheus/HPA 恢复仍未完成；c631 已建镜像仍未发布、完整目标 active。
+
 06:49 UTC 交接：最终 fleet runner session 22614 已 exit 0，最后 marker 为
 fleet_manifest_invariants=passed；最终行为源码没有在此轮 runner 期间变更。checker 十七项
 及旧 ABI/parallelism/Python/log/stage tests 已通过，docs 零 error/warning，十条精确路径
@@ -516,6 +553,9 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### verified
 
+- 本轮 standalone builder 模板：实际 Terraform 1.9.8/provider 1.83.11 validate valid、
+  零 error/warning；storage/renderer 各九项通过，合法三个 .tf fmt-check passed。
+  原 strict10k `inv-e9ekt2gfn9` 确认 terminal failed，但自然缩容和 exact cleanup passed。
 - `inv-e9ehma0rme` SUCCESS/0，05:08:36 UTC：exact cleanup 已通过、final capacity
   waiting；A/B active 零、Host 215/215，原监督身份不变，sample missing/warning/error 零。
 - 固定 phase follow-up `inv-e9ehaqg4md` SUCCESS/0，无 query errors；官方 relay
@@ -767,7 +807,7 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
   单副本曲线不得通过直接降低生产三副本 HA 下限实现。
 - 完整目标还包括百万 dormant 公共路径、1k/10k 同步 wake storm、热点/多 key、流式取消/
   背压及剩余网络故障矩阵；不把已有小资格、局部算法测试或 3→4→3 HPA 证据代替这些要求。
-- strict 10k 通过和 Router performance receipt；历史 run 失败、新 run 尚无终态，
+- strict 10k 通过和 Router performance receipt；历史 run 与 55b55875 均终态失败，
   A/B 小规模资格不替代容量验收。
 - 供给时延与可用槽位余量是否覆盖目标创建率和同步唤醒突发；未实现预测扩容。
 - 低 maintenance concurrency 能否同时保持 hot tail 有界和 cold publish 进度。
@@ -786,6 +826,11 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### restore
 
+- 本轮开发 revision qlqrltvm，parent c2e2d4ae（空 revision），master 为 173f293b。
+  真实 TF 本地 validation data `/data/tmp/minisandbox-runtime-builder-tf.b2T4Na`，
+  init/validate 输出为 `/data/tmp/minisandbox-runtime-builder-tf-{init,validate}-20261003.*`。
+  原 strict supervisor 已 terminal，不再续接或重发。c631 image 不因本轮 Terraform/docs
+  变更重编，实际 source、build、release 身份仍按其原 immutable receipts。
 - 当前开发在 `/data/tmp/mono2-minisandbox-storage-pressure-local.kPqDAf/repo` 的独立 jj
   revision lxlmltuv，parent master d10ee76a；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
@@ -807,6 +852,10 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- 先完成新 builder 的 exact cloud/guest CBS 身份 join、拒绝使用已有数据盘的初始化、
+  幂等持久挂载和真实 bulk-path admission，再在 reviewed plan 下创建/交接。原 C 的 rootfs
+  恢复只允许 exact 验证后可恢复的旧构建缓存处理，不碰在线 containerd/日志/PVC 或旧证据。
+  恢复真实 HPA 监控信号后使用已建 c631 正式 release/资格，随后重跑原严格负载。
 - 当前源码防回归是 progress，云上真实 builder 负门禁已证明 fail closed，不是性能修复完成。
   剩余明确：在原自然 drain/ops lock 完成后，通过 Terraform/bootstrap 实现独立 bulk backing
   或独立 builder，不手工搬目录；恢复实际 Prometheus/HPA 值后，发布已建 c631 并重跑固定

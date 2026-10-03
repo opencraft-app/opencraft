@@ -21,7 +21,7 @@ remain later receipt-bound phases rather than hidden Terraform provisioners.
 |---|---|---|
 | `bootstrap-state` | one encrypted, versioned COS Terraform-state bucket | local bootstrap state |
 | `foundation` | regional private TCR instance, namespace, complete repository inventory, regional CCN, and the account-scoped TKE OIDC role-policy attachment | `actor-fleet/foundation` |
-| `management` | C VPC, three subnets, node/TKE-API/private-Workers-API security groups, TKE, three zonal workers (one bootstrap), private endpoint, TCR/CCN attachments, regional Worker-code, code-plane FDB-backup and qualification-evidence buckets | `actor-fleet/management` |
+| `management` | C VPC, three subnets, security groups, TKE, three zonal workers (one bootstrap), standalone runtime-builder CVM and build CBS, private endpoint, TCR/CCN attachments, regional Worker-code, code-plane FDB-backup and qualification-evidence buckets | `actor-fleet/management` |
 | `cell` | one VPC, three subnets, security groups, TKE, bootstrap worker, private endpoint, TCR/CCN attachments, COS buckets and scoped CAM roles | `actor-fleet/cells/<cell-id>` |
 | `operations-network` | attach an existing regional LightVela VPC to an isolated CCN route table; expose only C and prevent current/future Cells from learning operations routes | `actor-fleet/operations-network` |
 
@@ -31,6 +31,24 @@ Kubernetes desired state: Cell Terraform creates only its bootstrap worker.
 Management Terraform creates three initial workers because upstream Argo HA
 has hard hostname anti-affinity and cannot converge on one node. Terraform
 never marks a Cell placement-ready.
+
+Runtime image compilation has a separate physical resource envelope. Management
+Terraform creates a private standalone CVM and an independently identified
+512 GiB CBS by default; neither joins TKE nor changes the three control workers.
+`runtime_builder_instance_type` and `runtime_builder_data_disk_gib` are explicit
+management-only inputs. This is disposable build capacity, not Actor storage.
+The credential-free `runtimeBuilder` inventory binds the instance, zone, disk
+and attachment, and retains `operationsInstanceId` as the original bootstrap
+host. Do not move release/qualification to a second operation-lock domain.
+
+Provisioning is not build readiness. The inventory deliberately requires a
+storage bootstrap: verify the cloud attachment and exact guest block-device
+identity before any initialization; never infer `/dev/vdb` or overwrite a used
+disk. All actual bulk write paths must pass `runtime/verify-builder-storage.py`
+on the mounted data filesystem. The disk envelope does not establish the peak
+space or CPU/I/O budget of a fresh V8 build. No Terraform provisioner formats,
+migrates or prunes an existing host, and the build entrypoint must remain blocked
+until the separate storage bootstrap is implemented and verified.
 
 Management and Cell roots also own the TKE `networkpolicy` add-on at an
 explicit reviewed version. Kubernetes accepting a `NetworkPolicy` object is
