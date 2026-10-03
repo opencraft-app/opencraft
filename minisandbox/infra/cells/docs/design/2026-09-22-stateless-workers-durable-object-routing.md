@@ -1837,6 +1837,14 @@ input chunk 上再次要求 `len == index`，会把合法多块输入误判为�
 Gasoline 全部 22 项 lib 测试通过。不改生产 replay、持久键或编码，不因此重建 workerd，
 也不能把这项诊断修复称为上述 10k 性能问题的修复。
 
+性能证据的编码也属于控制边界。headroom ETA 在增长率为零时可以是无限；
+审计内部仍按数值判定阈值，写出收据时非有限诊断采用 JSON 字符串
+`"+Inf"`、`"-Inf"`、`"NaN"`，有限数据编码不变。Prometheus scalar 的 NaN
+不计为可用样本；全为空仍为 null，触发既有缺指标门禁，不能变成零压力或健康预测。
+control SHA 必须绑定实际写出的字节，不得重新编码已经归档的 audit 来修补旧证据链。
+严格 JSON、真实 collector HTTP 和 evaluator CLI 回归是诊断工具门禁，不是吞吐收益
+或万级资格；此工具修正不要求重建 V8/workerd，也不修改在途资格的 immutable source。
+
 ## 所有权与核心不变量
 
 | 状态/动作 | 唯一所有者 |

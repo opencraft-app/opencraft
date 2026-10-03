@@ -475,6 +475,7 @@ python3 "$script_dir/qualification/actor-bj-q01/test_verify_runtime_topology_rep
 python3 "$script_dir/qualification/actor-bj-q01/test_verify_existing_runtime_capacity.py"
 python3 "$script_dir/qualification/actor-bj-q01/physical-restore/test_physical_restore.py"
 python3 "$script_dir/operations/test_autonomy_audit.py"
+python3 "$script_dir/operations/test_audit_json.py"
 arrival_schema=actor-cell-agent-arrival-rate/v1
 grep -Fq '"schema": "'"$arrival_schema"'"' \
 	"$script_dir/qualification/actor-bj-q01/agent-arrival-rate.py"

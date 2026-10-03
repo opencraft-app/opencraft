@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.16.0
+revision: 1.17.0
 precedence: task
 derived: false
 ---
@@ -385,6 +385,45 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+当前 checkpoint（1.17.0）：上一阶段 A 五份原生最终证据已进入 master
+7a9e669416ebd255fb05269399b2b5b25b81767d，远端 verified、clean；新 qunpnqyq
+只修改独立 audit 工具及回归，不修改正在执行的 immutable c631 B workflow。
+B 原 inv-d9epts0437 保持唯一，waiter 25982 未结束。08:53:35 只读
+inv-e9eq87ge4e SUCCESS/0：Engine 6/6、Host 4/4 exact d3a6e41e；精确冷态
+14/48、pending 34、hot/cold shards 3341/4421、staged hot rows 0、read errors 0。
+本次进度命令实际于 08:53:36 提交；未将 cycle 原 post block 当作最终 qualification。
+08:58:41 只读 inv-e9eqd0gnkm SUCCESS/0：cold-ready 26/48、pending 22、
+hot/cold shards 2178/2888、elapsed 641060.922 ms，staged/read/cleanup 错误均零。
+下次进度采样不得早于 09:03:41 UTC；原 slow waiter 继续，不重复启动任务。
+
+审计 writer 的确定性修正：内部分数/阈值计算保持数值，输出递归转换非有限 float
+为 +Inf/-Inf/NaN 字符串并使用 allow_nan=False；有限值字节不变。Prometheus
+scalar NaN 不计为有效样本，全缺失时 value=null、触发既有缺指标门禁，不能补零。
+五项真实文件/HTTP/CLI 回归与既有 audit 28 项通过；原 A audit/control 原字节不变。
+实际 Node JSON.parse 新编码原生 fixture 通过。新测试纳入完整 fleet verifier；
+原 fleet session 42912 已 exit 0，manifest invariants passed；未执行云端物理恢复。
+activation planner 3 项与 Cell-binding assert gate passed。独立 audit Context 33/33 passed，
+Context unit 26 项仍为同名四项历史 failure；documentation 0 errors/0 warnings。
+全仓 Context 4,942 条错误的归一化 Counter 与基线相同，added/removed 均零、
+本 Task 无错误。一次 --base-ref gate 只比较已提交 HEAD，changed_files 为空，
+不能作为本次 jj 工作树证据；按 jj diff 的实际七路径逐项 --changed-file 重跑，
+impact passed、matched_rules 为空，仍不将结构检查包装为设计语义证明。
+新工具尚未发布云端，因此不声称本轮 B 收据已经使用严格 JSON 编码。
+
+本次完整读取根/minisandbox/infra-cells AGENTS、路由五份 must_read、
+argocd-ci-secrets adjacency 和 monitor 测试邻居；operations README 全文及真实
+autonomy_audit.py collector/verdict/writer、evaluate-autonomy-receipt.py consumer
+均已检查。cloud-environment/networking skill 已读，status tool 与网络 policy
+snapshot 不可用，不视为环境 readiness。先前猜测 autonomy_control.py 和
+test_evaluate_autonomy_receipt.py 均不存在，bounded filename 搜索后定位真实 evaluator
+和 test_autonomy_audit.py；不引用不存在的 gate。本次 positional tat-run 参数被本地
+parser 拒绝（exit 2、未提交远端），读 usage 后改为 --file 发一次有界只读进度查询。
+
+性能工作仍按成本向量推进：point-read overlap 减少串行关键路径，不减少 GET 数；
+shared coverage fold 减少重复输入访问，不减少必需输出。每 Engine 8/2 乘六即 Cell
+48/12，尚不声称全 Cell 预算自动有界。A 小 gate 不能替代 unchanged strict10k
+收益对照，旧 run 55b55875 永久保留 FAILED；完整 goal active。
 
 当前 checkpoint（1.16.0）：上一 goal turn 为 progress，A 原始 release/cycle 与
 模型更新已正常 FF 推 master b2874c06，远端 exact SHA 核验且 clean。本轮新 revision
