@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.17.0
+revision: 1.18.0
 precedence: task
 derived: false
 ---
@@ -385,6 +385,87 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+当前 checkpoint（1.18.0）：上一 turn 为 progress，strict JSON 工具与真实回归已
+FF 推送 master b0e77182ab893111dab0bdd1c9aea8fe1b8a6930，remote exact SHA
+核验、jj import 后 clean；空祖先 usqrqztm 保留，新 xyknulvl 独立记录资格进展。
+09:03:52 只读 inv-e9eqhu0322 SUCCESS/0：B 原 qualification 精确冷态 43/48、
+pending 5、hot/cold shards 482/763、elapsed 945137.137 ms，staged/read/cleanup
+错误零。下次 progress 不早于 09:08:52；原 inv-d9epts0437 与 waiter 25982
+09:04:42 重新确认仍 running，不能把 observer 终态当作 mutation 完成。
+
+路由 must_read release-gitops/upstream-subtrees、argocd-ci-secrets adjacency、
+monitor 测试邻居已读；cloud-environment/networking skill 已读，status tool/policy
+snapshot 缺失不推定 readiness。源协议 collector/control/activation 与现有
+COS relay helper 均保持不变。误在 /data/tmp 猜测带 immutable hash 的 release wrapper
+路径失败；bounded filename 列出真实 draft 与正式远端路径后不使用错误副本。
+猜测 test_runtime_release_hold.py 不存在，bounded filename 定位真实
+test_build_runtime_scale_in_hold_patch.py。第一次组合 jq 的 cold_state_wait 字段
+猜测不存在，未取得 schema；随后直接 keys/source 确认真实 bottomless.states 与
+actor_records。猜测 depot/routes*/ops 也不存在，bounded package search 后定位
+src/inspect.rs；不把缺失路径当作行为结论。两次包含无实际设计修改的 patch 因
+context 不匹配被拒绝，核对未创建文件后按真实 context 单独重提。
+最终证据通过 activation 引用追溯 exact control/audit，校验链后复制到已批准
+release evidence root，再使用原 COS relay；不重写已有 native 非标准 JSON。
+
+下一 safe action 是 B 完整资格终态、原五份收据及 live UID/Ready 校验，然后更新
+runtime release-bound strict10k launcher。API 已使用 HPA 3..30，旧 wrapper 的固定
+spec.replicas==3 与 dynamic ownership 不符，不能手工缩 API 以满足旧静态假设；
+须观测实际 desired/ready/UID/image 并保留容量身份，不改变原 workload 参数、
+三秒 post-warmup SLO、零普通重试、精确 cleanup 与自然 drain。没有运行新负载。
+
+09:08:12 progress inv-c9eqmw0wh2 SUCCESS/0：47/48 冷态、pending 1、hot/cold
+90/247、elapsed 1218142.889 ms、staged/read/cleanup 零。该提交提前五分钟
+边界约 40 秒，不掩藏；后续已增加实际 clock guard。09:13:20
+inv-d9eqsq0qk9 SUCCESS/0 同样 47/48、90/247、elapsed 1521571.288 ms；
+下一 progress 不早于 09:18:20。原任务/handle 仍 live，不重启、不强制清页。
+
+新 qualification wrapper 原字节 8712 bytes、SHA 前缀 653289721ab7；完整哈希由
+归档 artifact 的 test_release_admission.py 固化，不在短派生入口重复长十六进制值。
+已作为 exact-release evidence artifact 归档。API HPA 3..30、整数 replicas、
+observed generation/Ready/updated/image/UID 都必须收敛；activation/control/audit
+字节链及 source identity 先复核。实际 jq 子进程五项回归和原 strict10k verifier
+十五项通过；未执行 wrapper。原 tools120 workload graph 完全保留。
+COS relay upload inv-a9eqt50are SUCCESS/0、远端 length/SHA 验证，落于
+/data/actor-build/release/minisandbox-strict10k-runtimec631-tools120-653289721ab7.sh。
+仅传源码 artifact，不改集群容量或 runtime，不绕过 B 的 pending 资格。
+完整 fleet session 22738 已 exit 0，fleet_manifest_invariants=passed；没有新增
+Runtime/workerd 编译。09:17:07 只读 inv-d9eqw90iqb SUCCESS/0，复用原 qualifier
+PID 1536326 的动态 loopback inspect，不另启端口转发。唯一 large database 的
+head/hot/cold watermark 均 179（与 exact checkpoint 一致），manifest generation
+256、hot shards 90、cold shards 122、staged 0、write debt 374,929 bytes。
+该状态证明 publication 已覆盖目标，不证明 reclaim 完成或解释慢因。
+
+09:21:08 progress inv-a9er21g4gh SUCCESS/0：仍 47/48 exact cold，hot/cold shards
+降至 26/185，elapsed 2006813.24 ms，staged/read/cleanup 错误零；Engine 6/6、
+Host 4/4 exact digest/revision 收敛。下一 periodic progress 不早于 09:26:08。
+本轮第一次 tat-run 误传不存在的 --poll-interval，helper 在提交前拒绝，未创建
+invocation；按 usage 修正后只提交一次成功 observer，不冒充 qualification 完成。
+
+09:21:48 一数据库保留诊断 inv-a9er2n0v75 SUCCESS/0：branch Live、dirty null、
+hot/cold watermark 179、manifest generation 258，history-pin rows 空且没有下一页；
+唯一 PITR interval 保护 txid 179，expires_at_ms 1791622059363。GC root/refcount
+是存活分支身份，不可等同 runtime/history pin。sample_limit=1 的 row family 数
+存在 truncated，只作有界元数据观察，不作 exact 总数。回收已推进而非全程停滞；
+不能由 PITR 存在直接断言它阻止所有 hot eviction，也不能由 dirty null 宣称无维护。
+后续以 exact manager job/lease/attempt 及阶段成本区分安全保留、排队、失效重排和
+实际执行；不强制清理、不延长门禁、不以增加 Engine 掩盖单位工作放大。
+上述诊断成功不是 B 原 inv-d9epts0437 完成，当前仍不启动新 strict10k。
+本轮组合 patch 再次因无实际修改的设计 context 不匹配被拒绝，未落盘；随后按
+真实文本分别更新。源码检索误猜 depot/src/policy.rs 不存在，真实 policy binding
+读取位于 compaction/shared.rs；不据缺失文件推断系统行为。
+Context 首验新增一个 long hexadecimal credential finding，实际是此处 wrapper SHA；
+短摘要改为 SHA 前缀，完整值留在真实 artifact checksum 测试，不放宽检测器。
+本轮追加读取 api-peer 的真实 router/depot_inspect、Depot inspect 的 database/
+branch/rows 与 compaction/shared、db_reclaimer、db_manager 的回收/到期路径。
+一次检索误猜 depot/src/db.rs 不存在；后续只搜实际 conveyer/workflows 目录，未
+取得 exact manager ID，不把源码候选当作线上已确认慢因。只读观察使用已有 TAT/
+qualifier，不发布修改或强制调用 maintenance。
+本地新增 jq filter 五项、strict10k verifier 十五项、monitor 五项全部通过；完整
+fleet 已通过。documentation 零 error/warning，Context v3 的 4,942 个历史 error
+归一化 Counter 与已存基线完全一致，Task 零 error；26 项 context tests 保留同
+四项历史失败，不宣称整个 mono2 context 全绿。change-impact 对七个真实 changed
+path passed；该门禁不替代设计语义审查和云上性能证据。
 
 当前 checkpoint（1.17.0）：上一阶段 A 五份原生最终证据已进入 master
 7a9e669416ebd255fb05269399b2b5b25b81767d，远端 verified、clean；新 qunpnqyq

@@ -29,6 +29,19 @@ up to 36 hours for the ordinary five-minute serial drain policy to return both
 Cells to the floor. The resulting receipt binds the load receipt and the
 15-second capacity trace by SHA-256.
 
+The archived `evidence/c631-runtime-tools120-admission-20261003.sh` binds the
+point-read runtime to the unchanged tools-120 load graph. Before load it verifies
+both original Bottomless/HA receipts, activation -> control -> audit byte hashes,
+qualified source identity, live Cell/FDB/workload identities and the shared
+operation lock. Workers API capacity remains HPA-owned: any converged integer
+replica count within the existing 3..30 policy is valid, but stale generation,
+partial rollout, wrong image or replaced UID fails closed. It never scales the
+API to three just to satisfy an obsolete preflight assumption. This is an
+exact-release qualification artifact, not a rebuild intent or general deployment
+entrypoint. Preparing or transferring it does not prove that load ran or passed.
+`test_release_admission.py` executes its real jq filters as subprocesses; the
+original load/SLO/cleanup/drain verifier remains unchanged.
+
 Capacity truth is identity-bound. Every complete sample must retain the
 baseline FoundationDB, Host StatefulSet and canonical MachineSet UIDs and the
 same converged Host runtime revision. Recreating a same-name resource or

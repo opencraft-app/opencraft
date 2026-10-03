@@ -190,6 +190,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/agent-upload-soak/test_obser
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/load/router-performance" -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/shared-agent-scale/test_cleanup.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_verify.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_release_admission.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_analyze_pressure.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_capacity_controller_recovery.py"
 node --test "$script_dir/load/shared-agent-scale/runner.test.mjs"

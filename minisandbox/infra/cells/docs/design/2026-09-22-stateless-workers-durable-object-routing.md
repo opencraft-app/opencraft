@@ -1601,6 +1601,23 @@ backup 或 install integrity fence 来提速。上面的 A transaction 均值到
 
 #### 前台成本向量与共享资源门禁
 
+容量资格的前置检查必须尊重各层所有权。Durable pool 的低容量起点仍是每 Cell
+四 Host/四 canonical Machines；中央 API 由 HPA 按 3..30 策略管理，不能为了
+满足旧脚本的固定三副本假设而手工缩容。前置检查要核验整数 desired、观测 generation、
+Ready/updated 收敛、原 UID 和 exact image，并记录实际配置，不把允许动态副本当作
+允许部分 rollout。Runtime 与工具图分别绑定 immutable revision/manifest；新镜像只有
+在两 Cell 原生 Bottomless/HA、activation/control/audit 字节链及 live Ready 均通过后
+才可进入原始万级负载。准备或传输 wrapper 不是测试已经启动或容量资格已经通过。
+
+慢冷降必须按状态进度归因，不能把整个等待时间记为 COS 服务时间。2026-10-03 B
+原 c631 qualification 的精确大数据库已到 head/hot/cold watermark 179，而全波次
+hot shard 数仍从 90 降至 26；一次有界分支读取发现 history pin 空、dirty null，
+PITR interval 保留最新 txid。该事实尚不能确定剩余等待原因。诊断须结合 exact
+manager job/lease/attempt、策略到期与有效回收批次，区分可回收债务、合法保留和
+失效重排；保留 pin/publication/lifecycle/事务预算的所有安全检查。只有可回收
+债务持续增长且实际服务需求超出预算，才进入容量调整；低效重复扫描或逐项串行
+验证则先修单位工作量和关键路径，再用相同 strict10k 证明收益。
+
 进一步的只读 request-path 与独立 phase query 原字节、SHA、invocation 和限制见
 [evidence README](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md)。
 04:25--04:36:30 的滚动直方图显示 A ready-wait p99 从约 0.97 秒升至 24.22 秒，B
