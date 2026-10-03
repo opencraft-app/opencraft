@@ -109,6 +109,54 @@ not a release, Bottomless, HA, activation or strict10k pass. Resume this exact
 invocation, do not submit it again. No workerd recompilation or second load was
 performed by these recovery steps.
 
+### A rollout completed; new qualification still in flight
+
+The original `inv-a9ep2a0399` has progressed, without resubmission. Read-only
+`inv-c9ep9c0npq` SUCCESS/0 at 08:20:40 UTC observed the completed native
+operations cycle and a live Bottomless harness. The original receipts were
+copied only to the approved relay evidence root in `inv-c9epaigfn2`, then
+downloaded through the existing COS relay helper with source/copy/local byte
+and SHA checks. Native relay metadata/upload invocations
+`inv-c9epatg7pw`, `inv-d9epau028s`, `inv-a9epau0puv` and `inv-a9epav0q7i`
+all completed SUCCESS/0.
+
+The byte-identical receipts are now archived in runtime evidence:
+
+- [A release ledger](../../../runtime/evidence/beijing-point-read-c631f554-a01-release-20261003.json):
+  5,330 bytes, SHA-256 `462be8f387ce6643d9445be478ed0cd6f66e927b5d715b15507a2754dd84dcbc`.
+- [A operations cycle](../../../runtime/evidence/beijing-point-read-c631f554-a01-cycle-20261003.json):
+  1,497 bytes, SHA-256 `0ae9e25860776388dcbcc9298c339b7e800db528b3ebb6f343dccb75e74dc868`.
+
+The production ledger validator recomputed the release identity and accepted
+the exact A namespace, c631 source/manifest and `d3a6e41e` Engine/Host/init
+image references. The cycle preserves preControl=allow/0, action exit="0"
+and postControl=block/"1". It is rollout evidence, not a fabricated successful
+operations-cycle or qualification receipt.
+
+Read-only `inv-c9epcvga64`, 08:24:27 UTC, proves the original A Engine UID is
+6/6 Ready and the original Host StatefulSet UID is 4/4 Ready at the new digest
+and converged revision. In `inv-c9epdmgv72`, 08:25:16 UTC, the native inflight
+stage is `waiting_for_exact_cold_state`: 48 Actor records, 48 initial/final
+checkpoints and post-sleep reclaim requests; 20/48 exact cold, 28 pending,
+elapsed 275,868.841 ms, zero cold-state read errors and no cleanup errors.
+This is progress evidence, not final data integrity, cold-wake, HA or activation.
+
+The later read-only `inv-c9epk8gk9c` completed SUCCESS/0 at 08:32:17 UTC:
+36/48 exact cold, twelve pending, elapsed 704,189.414 ms, zero read errors and
+no cleanup errors. The same gate remains in `waiting_for_exact_cold_state`.
+Do not derive exact reclaimed-byte throughput from these changing shard counts
+or equate qualification progress with the unchanged strict10k passing.
+
+The intermediate post-action audit's one static finding was not ignored.
+`inv-e9epebgcb5` SUCCESS/0 binds the reason to the previous release directory:
+`external_release_receipt_missing_or_mismatched`, while the live ledger payload
+hash already matches. The following audit against the new release directory
+reports static ready=true, driftCount=0, payload/external hashes matched,
+FDB available/fully replicated and backup restorable; its only failures are
+missing new Bottomless/HA receipts. Keep these transitions distinct. Qualification
+may proceed only through its existing recovery authorization, not a generic
+block bypass. B, unchanged strict10k and the full Phase 5 matrices remain pending.
+
 Read-only observation `inv-a9em5wgcj7`, 07:08:46 UTC, completed SUCCESS/0.
 The original C control/builder node still reports DiskPressure and shares its
 root with data/build paths, with 14,845,512 KiB available. Workers API is 12/12

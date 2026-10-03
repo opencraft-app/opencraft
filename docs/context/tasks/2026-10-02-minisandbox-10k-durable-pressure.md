@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.14.0
+revision: 1.15.0
 precedence: task
 derived: false
 ---
@@ -114,6 +114,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@587b4fb2` | 本轮正式发布取证 | 保持完整目标、同一 invocation、mono2 唯一写源和资格锁 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/{load/ten-thousand-active/README.md,operations/{run-autonomy-governance.sh,static-release-plane.md,verify-release-qualification-authorization.py},qualification/actor-bj-q01/{persist-receipt-from-builder.sh,relay-upload-to-builder.sh,relay-download-from-builder.sh},runtime/{test_monitor_bottomless.py,test_build_runtime_scale_in_hold_patch.py}}@587b4fb2` | 原生 ledger、COS relay 和门禁所有权 | 不把 action exit 0 或中间旧收据缺失改写为最终资格通过，不绕过静态漂移检查 |
 | `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@962ad5ea` | 接续用户性能建模要求 | mono2 唯一写源，不以扩大副本替代单位成本/控制面隔离 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/{README.md,tat/{tat-run.sh,lib-tat.sh,tat-download.sh},operations/{run-autonomy-ops-cycle.sh,with-autonomy-operation-lock.sh},runtime/{monitor-bottomless-qualification.sh,install-admission-controller.sh,install-host-autoscaling.sh,test_builder_storage.py}}@962ad5ea` | 实际锁、准入所有权与发布邻接 | MachineSet minimum 与 Host HPA floor 由不同 installer 读取，不能因都叫 MIN_REPLICAS 擅自改 qualification 条件 |
 | `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/{agent-gateway-runtime.md,release-gitops.md}`、`docs/context/project/{upstream-subtrees.md,services/ctl.md,services/sandbox.md,adjacency/argocd-ci-secrets.md}@00708032` | 恢复后精确路由与原发布边界 | 只读 collector 和原锁复用，跨服务信息不授权修改 CTL/Sandbox |
@@ -382,6 +384,56 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+当前 checkpoint（1.15.0）：上一 goal turn 是 progress，实测缓存清理/控制面恢复和
+成本模型文档已正常 FF 推 master 587b4fb2，远端 exact SHA 已核验、隔离 worktree
+干净。本轮接续 koumyook，原 A inv-a9ep2a0399 仍由 slow waiter 14735 观察，未重发。
+08:20:40 inv-c9ep9c0npq SUCCESS/0 已证明实际 release cycle pre allow/0、action
+exit string 0、post block/1；08:18:27 native ledger releaseId 62e200a732cc 已生成。
+Bottomless .inflight 存在、原 shell/python 仍执行。不是停止或再次发布授权。
+
+inv-c9epaigfn2 SUCCESS/0 将两个精确已完成原始收据复制到批准的 evidence relay
+根，source/copy SHA 完全一致。原 COS helper metadata/upload/read-after-write
+inv-c9epatg7pw、inv-d9epau028s、inv-a9epau0puv、inv-a9epav0q7i 均 SUCCESS/0。
+5330-byte release SHA 462be8f387ce、1497-byte cycle SHA 0ae9e2586077 已保存原字节
+到 runtime/evidence；仓库文件与云源 SHA 相同。真实 validate_ledger、releaseId
+重算、c631 source/manifest、Engine/Host/init exact d3a6e41e digest 与 action 条件检查
+通过；旧 block/1 原样保留，不合成 passed receipt。未改 workload 或容量。
+
+08:24:27 inv-c9epcvga64 SUCCESS/0：A same Engine UID 6/6、新 Host revision 4/4
+已收敛到新 digest。其第一次 inflight projection 错用了最终 receipt 字段，null/length
+结果不当作零错误或进度。08:25:16 inv-c9epdmgv72 SUCCESS/0 用真实 stage/progress：
+waiting_for_exact_cold_state，48 Actor、48 initial/final/post-sleep reclaim，20 cold-ready、
+28 pending、275868.841 ms、read_error_count 0、cleanup_errors 空；不是终态。
+
+08:25:59 inv-e9epebgcb5 SUCCESS/0 明确中间静态 block 的原因：post-action 沿用旧
+59 release directory，external_release_receipt_missing_or_mismatched；ledger payload
+hash 一直一致。后续新目录 audit ready=true、driftCount=0、externalReceiptMatches=true，
+FDB Available/fully replicated、backup Restorable，失败仅缺新 Bottomless/HA receipts。
+不误判成新 workload 漂移，也不放宽 qualification 或静态门禁。
+
+08:32:17 inv-c9epk8gk9c SUCCESS/0 沿同一 root 观察到 36/48 cold-ready、12 pending，
+elapsed 704189.414 ms，read_error_count 0、cleanup_errors 空；stage 仍为
+waiting_for_exact_cold_state。不以中间 shard 总量变化推断精确回收字节或有效吞吐。
+原 slow waiter 和原 inv-a9ep2a0399 未重发，下一次观察不早于 08:37:17 UTC。
+本轮重验 monitor 5、release-hold 6 passed。第一次 ledger unittest 错用 runtime
+目录，仅发现零项，不能算通过；已定位 operations/test_release_ledger.py 重验。
+正确目录重新发现且通过 14 项。Context unit 26 项保留四个同名历史失败，audit
+unit 33/33 passed，不把历史全库检查写成通过。HA 没有独立
+`verify_engine_ha_receipt.py`，已由 bounded exact filename/source 搜索定位真实
+qualify-engine-ha.sh 的内置 probe/receipt 验证；未调用不存在的 verifier。
+B 的 checksum-bound launcher 仅准备并通过 bash -n，尚未提交。它复用同一云端
+immutable wrapper、product receipt 和 shared lock，不重编或更改 payload。
+最终 documentation 零 errors/warnings；Context 4,942 条历史 errors 的 SHA-normalized
+Counter 与已存基线完全一致，added/removed 均零，本 Task 零 errors。六个 exact
+路径 change-impact passed（matched_rules 空，不替代语义评审），diff --check passed。
+audit discovery 已正常结束，仅待 Agent assessment，不虚构成熟度评分。
+
+本轮局部门禁 monitor 五、release-hold 六、ledger 十四项通过，原字节/身份检查通过。
+猜测 `runtime/verify_runtime_release_receipt.py` 不存在，后续仅用已定位正式 ledger
+模块，不造不存在的 verifier。没有 workerd/Rust 构建、云 TF apply 或第二负载。
+下一项仍是同一 A gate 的终态 → B 同产品完整资格 → 原标准 strict10k；百万 dormant、
+同步唤醒、Router cache/replica/performance、故障矩阵等完整目标没有缩小或宣称完成。
 
 当前 checkpoint（1.14.0）：新 v2 dry-run inv-e9ens0gbt4、execute inv-e9ensrg8cq
 均 SUCCESS/0，后者通过收据已进入正式 evidence JSON：十五 exact deletedIds、零

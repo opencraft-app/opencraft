@@ -1,0 +1,24 @@
+{
+  "action": {
+    "exitCode": "0",
+    "logSha256": "96462e4d5aa15852b6274f06851de611f7d2bab07f191e2700e24ca52f938b9c",
+    "path": "/var/lib/actor-build/deploy/q01-src-c631f5542f45b974455543d5bb458e0b3b3cf395-a54e7daa59d1b1a48403d6766a866486630b2cb7d1187a1e0d2a4427eb82bd0c/infra/cells/deploy/tencent/fleet/runtime/release-runtime.sh",
+    "requested": true,
+    "sha256": "bf60caf7443bde277299dab9708224b9af50a300c29100420c0d3768d5246e0d"
+  },
+  "cycleID": "20261003T081309Z-1396059",
+  "postControl": {
+    "control": "block",
+    "exitCode": "1",
+    "path": "/data/actor-bootstrap/beijing-rebuild-20260915/cells/actor-bj-a01/receipts/runtime-admission-c631f5542f45b974455543d5bb458e0b3b3cf395-d49da48b0ec04edd39bd53252910a20e2cbaa4c44930f92fd1a89bef44685cb1/release-cycle/cycles/20261003T081309Z-1396059/decisions/post-action-control.json",
+    "sha256": "b37673bef62078b6f892952d814686d156d0f673dae323eda524935b2bc3818f"
+  },
+  "preControl": {
+    "control": "allow",
+    "exitCode": 0,
+    "path": "/data/actor-bootstrap/beijing-rebuild-20260915/cells/actor-bj-a01/receipts/runtime-admission-c631f5542f45b974455543d5bb458e0b3b3cf395-d49da48b0ec04edd39bd53252910a20e2cbaa4c44930f92fd1a89bef44685cb1/release-cycle/cycles/20261003T081309Z-1396059/decisions/autonomy-control-actor-bj-a01-20261003T081309Z.json",
+    "sha256": "adcbda442c77ae9bfb0c94265251c018b66467e949bbb61b27da65962fffad4f"
+  },
+  "schemaVersion": "actor-fdb-autonomy-ops-cycle-v1",
+  "timestamp": "2026-10-03T08:18:29Z"
+}

@@ -1727,6 +1727,17 @@ A/B 对 c631 性能修正产品的正式 preflight 均通过，A release/qualifi
 TAT invocation。该候选降低重复 fold 输入访问及独立点读等待，不能据已构建或发布开始
 宣称 strict10k 已通过。实际缓存收据和发布句柄见 [容量证据目录](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md)。
 
+A 的 c631 rollout 已于 08:18:27 UTC 完成：原 operations cycle pre allow/0、release
+action exit 0，原生 ledger 的 source、manifest、远端 digest 和静态身份已按原字节验真
+归档。post-action 的 block/1 仍原样保留：旧 receipt directory 找不到新 ledger 的
+外部收据；切到新目录后 static ready=true、driftCount=0，只剩新 Bottomless/HA 收据
+尚未完成。它不是新 workload 漂移，更不是可以自动跳过资格的理由。
+08:25:16 UTC 新版本 gate 已完成 48 个在线/最终 checkpoint 与 post-sleep reclaim 请求，
+20/48 精确冷态、28 pending，无冷态读取/清理错误；后续 cold wake、HA、激活和 B
+完整资格仍待终态。同一小规模 gate 的进展不证明万级成本模型或整个 Phase 5 完成。
+08:32:17 UTC 同一 gate 为 36/48 cold-ready、12 pending，读取/清理错误仍为零，
+stage 仍等待精确冷态；不将变化的 shard 数当作精确 reclaimed-byte 吞吐。
+
 #### FDB 适配层点读的串行放大
 
 同窗 FDB 诊断绑定原 run `55b55875` 和两 Cell 的 CR UID，十八个历史 Pod UID
