@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -50,10 +51,13 @@ type ControllerConfig struct {
 	TopologyKey            string
 	RequiredZones          int
 	TopologyMaxSkew        int
+	TopologyRepairEnabled  bool
+	MachineSetName         string
 }
 
 type Controller struct {
 	Kubernetes kubernetes.Interface
+	Dynamic    dynamic.Interface
 	HTTPClient *http.Client
 	Config     ControllerConfig
 	Now        func() time.Time
@@ -139,11 +143,30 @@ func (c *Controller) ReconcileOnce(ctx context.Context) (ReconcileResult, error)
 			Reason: fmt.Sprintf("runtime release hold %q pauses Host scale-in", hold.ID),
 		}}, nil
 	}
+	if decision, err := c.pendingCancellation(ctx, statefulSet, state); err != nil {
+		return ReconcileResult{}, err
+	} else if decision != nil {
+		return c.executeDecision(ctx, statefulSet, state, *decision)
+	}
 	snapshot, err := c.snapshot(ctx, statefulSet)
 	if err != nil {
+		// Indeterminate eviction plus lost observations must cancel, not keep
+		// an old request eligible indefinitely. Persist recovery first; the
+		// next reconciliation can perform a Kubernetes-only cancellation CAS.
+		if state.Phase == PhaseRebalanceEvicting && state.EvictionResourceVersion != "" && state.RepairWorkloadUID == string(statefulSet.UID) {
+			next := withPhase(state, PhaseRebalanceCancelling, c.now())
+			if persistErr := c.persistState(ctx, statefulSet, next); persistErr != nil {
+				return ReconcileResult{}, fmt.Errorf("persist eviction recovery: %w", persistErr)
+			}
+			return ReconcileResult{Decision: Decision{State: next, Action: Action{Kind: ActionNone}, Reason: "lost eviction observations; cancel before restoring placement"}, Applied: true}, err
+		}
 		return ReconcileResult{}, err
 	}
 	decision := Decide(state, snapshot)
+	return c.executeDecision(ctx, statefulSet, state, decision)
+}
+
+func (c *Controller) executeDecision(ctx context.Context, statefulSet *appsv1.StatefulSet, state State, decision Decision) (ReconcileResult, error) {
 	if decision.State == state && decision.Action.Kind == ActionNone {
 		return ReconcileResult{Decision: decision}, nil
 	}
@@ -153,16 +176,17 @@ func (c *Controller) ReconcileOnce(ctx context.Context) (ReconcileResult, error)
 	if decision.Action.Kind == ActionNone {
 		return ReconcileResult{Decision: decision, Applied: true}, nil
 	}
-	if err := c.applyAction(ctx, statefulSet, decision.Action, state); err != nil {
+	if err := c.applyAction(ctx, statefulSet, decision.Action, decision.State); err != nil {
 		return ReconcileResult{Decision: decision}, err
 	}
 	return ReconcileResult{Decision: decision, Applied: true}, nil
 }
 
 func (c *Controller) snapshot(ctx context.Context, statefulSet *appsv1.StatefulSet) (Snapshot, error) {
-	now := time.Now().UTC()
-	if c.Now != nil {
-		now = c.Now().UTC()
+	now := c.now()
+	state, err := decodeState(statefulSet.Annotations[StateAnnotation])
+	if err != nil {
+		return Snapshot{}, err
 	}
 	hpa, err := c.Kubernetes.AutoscalingV2().HorizontalPodAutoscalers(c.Config.Namespace).Get(
 		ctx, c.Config.HPAName, metav1.GetOptions{},
@@ -177,10 +201,14 @@ func (c *Controller) snapshot(ctx context.Context, statefulSet *appsv1.StatefulS
 		return Snapshot{}, fmt.Errorf("list runtime Hosts: %w", err)
 	}
 	nodeZones := make(map[string]string)
+	var nodes *corev1.NodeList
 	if c.Config.RequiredZones > 0 {
-		nodes, err := c.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		nodes, err = c.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1000})
 		if err != nil {
 			return Snapshot{}, fmt.Errorf("list runtime Host Nodes: %w", err)
+		}
+		if nodes.Continue != "" || len(nodes.Items) > 1000 {
+			return Snapshot{}, fmt.Errorf("runtime Node evidence exceeds bounded inventory")
 		}
 		for index := range nodes.Items {
 			node := &nodes.Items[index]
@@ -191,9 +219,17 @@ func (c *Controller) snapshot(ctx context.Context, statefulSet *appsv1.StatefulS
 	readyIndexes := make([]int, 0, len(pods.Items))
 	for index := range pods.Items {
 		pod := &pods.Items[index]
+		if err := validateHostOwner(pod, statefulSet); err != nil {
+			return Snapshot{}, err
+		}
 		ordinal, err := statefulOrdinal(c.Config.StatefulSetName, pod.Name)
 		if err != nil {
 			return Snapshot{}, err
+		}
+		hosts[index] = Host{
+			Name: pod.Name, UID: string(pod.UID), Ordinal: ordinal,
+			ResourceVersion:   pod.ResourceVersion,
+			EvictionCancelled: evictionCancellationObserved(state, pod),
 		}
 		zone := ""
 		if c.Config.RequiredZones > 0 && pod.Spec.NodeName != "" {
@@ -203,10 +239,7 @@ func (c *Controller) snapshot(ctx context.Context, statefulSet *appsv1.StatefulS
 		// object. Preserve its identity for the pure state machine, but do not
 		// turn the expected Terminating window into a failed HTTP observation.
 		if pod.DeletionTimestamp != nil {
-			hosts[index] = Host{
-				Name: pod.Name, UID: string(pod.UID), Ordinal: ordinal, Zone: zone,
-				Terminating: true, ObservedAt: now,
-			}
+			hosts[index].Zone, hosts[index].Terminating, hosts[index].ObservedAt = zone, true, now
 			continue
 		}
 		// A Pending or otherwise unready StatefulSet Pod has no trustworthy
@@ -215,13 +248,10 @@ func (c *Controller) snapshot(ctx context.Context, statefulSet *appsv1.StatefulS
 		// HTTP request to an empty/stale PodIP. The incomplete Host evidence
 		// blocks scale-in fail-closed.
 		if !podReady(pod) || net.ParseIP(pod.Status.PodIP) == nil {
-			hosts[index] = Host{
-				Name: pod.Name, UID: string(pod.UID), Ordinal: ordinal, Zone: zone,
-				ObservedAt: now,
-			}
+			hosts[index].Zone, hosts[index].ObservedAt = zone, now
 			continue
 		}
-		hosts[index] = Host{Name: pod.Name, UID: string(pod.UID), Ordinal: ordinal, Zone: zone}
+		hosts[index].Zone = zone
 		readyIndexes = append(readyIndexes, index)
 	}
 	observationContext, cancelObservations := context.WithCancel(ctx)
@@ -240,9 +270,8 @@ func (c *Controller) snapshot(ctx context.Context, statefulSet *appsv1.StatefulS
 			for index := range jobs {
 				pod := &pods.Items[index]
 				stats, err := c.readHostStats(observationContext, pod)
-				if err == nil && (stats.HostActiveActors == nil || stats.HostMaxActiveActors == nil ||
-					stats.HostDraining == nil || stats.HostAcceptingActors == nil || stats.WorkerdAdmission == nil) {
-					err = fmt.Errorf("Host %s returned incomplete drain evidence", pod.Name)
+				if err == nil {
+					err = validateHostStats(stats)
 				}
 				if err != nil {
 					select {
@@ -255,13 +284,13 @@ func (c *Controller) snapshot(ctx context.Context, statefulSet *appsv1.StatefulS
 				hosts[index].Ready = true
 				hosts[index].Draining = *stats.HostDraining
 				hosts[index].Accepting = *stats.HostAcceptingActors
-				hosts[index].Quiescent = stats.Quiescent
+				hosts[index].Quiescent = stats.Quiescent && stats.BridgeActiveActors == 0
 				hosts[index].ActiveActors = *stats.HostActiveActors
 				hosts[index].Capacity = *stats.HostMaxActiveActors
 				hosts[index].RequestCapacity = stats.WorkerdAdmission.MaxInFlight
 				hosts[index].InFlight = stats.WorkerdAdmission.InFlight
 				hosts[index].Queued = stats.WorkerdAdmission.Queued
-				hosts[index].ObservedAt = now
+				hosts[index].ObservedAt = c.now()
 			}
 		}()
 	}
@@ -298,8 +327,8 @@ sendObservations:
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("validate runtime HPA: %w", err)
 	}
-	return Snapshot{
-		Now: now, WorkloadUID: string(statefulSet.UID), Replicas: replicas,
+	snapshot := Snapshot{
+		Now: c.now(), WorkloadUID: string(statefulSet.UID), Replicas: replicas,
 		ReadyReplicas: statefulSet.Status.ReadyReplicas, MinReplicas: c.Config.MinReplicas,
 		MaxRemainingUsagePct:   c.Config.MaxRemainingUsagePct,
 		MetricsFreshness:       c.Config.MetricsFreshness,
@@ -310,7 +339,17 @@ sendObservations:
 		RequiredZones:          c.Config.RequiredZones,
 		TopologyMaxSkew:        c.Config.TopologyMaxSkew,
 		Hosts:                  hosts,
-	}, nil
+	}
+	if c.Config.TopologyRepairEnabled && snapshot.Replicas > snapshot.MinReplicas &&
+		(isRebalancePhase(state.Phase) || topologyBlocked(topologyScaleInBlockReason(snapshot, highestOrdinal(snapshot.Hosts)))) {
+		zones, err := c.rebalanceZones(ctx, statefulSet, nodes)
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("observe topology repair capacity: %w", err)
+		}
+		snapshot.RebalanceZones = zones
+		snapshot.Now = c.now()
+	}
+	return snapshot, nil
 }
 
 func autoscalerScaleSignals(hpa *autoscalingv2.HorizontalPodAutoscaler, statefulSet *appsv1.StatefulSet, minReplicas int32, activeActors int64) (bool, bool, error) {
@@ -439,24 +478,6 @@ func requireJSONEOF(decoder *json.Decoder) error {
 	return nil
 }
 
-func (c *Controller) applyAction(ctx context.Context, statefulSet *appsv1.StatefulSet, action Action, previous State) error {
-	switch action.Kind {
-	case ActionSetDraining:
-		pod, err := c.Kubernetes.CoreV1().Pods(c.Config.Namespace).Get(ctx, action.TargetName, metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("get drain target: %w", err)
-		}
-		if string(pod.UID) != action.TargetUID {
-			return fmt.Errorf("drain target UID changed before action")
-		}
-		return c.setHostDraining(ctx, pod, action.Draining)
-	case ActionSetReplicas:
-		return c.setReplicas(ctx, statefulSet.Name, statefulSet.UID, previous.FromReplicas, action.Replicas)
-	default:
-		return fmt.Errorf("unsupported Host drain action %q", action.Kind)
-	}
-}
-
 func (c *Controller) setHostDraining(ctx context.Context, pod *corev1.Pod, draining bool) error {
 	address, err := managementAddress(pod.Status.PodIP, c.Config.ManagementPort, "/v1/sqlite/drain")
 	if err != nil {
@@ -475,8 +496,7 @@ func (c *Controller) setHostDraining(ctx context.Context, pod *corev1.Pod, drain
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		message, _ := io.ReadAll(io.LimitReader(response.Body, 4*1024))
-		return fmt.Errorf("set Host draining=%t returned HTTP %d: %s", draining, response.StatusCode, strings.TrimSpace(string(message)))
+		return fmt.Errorf("set Host draining=%t returned HTTP %d", draining, response.StatusCode)
 	}
 	return nil
 }
@@ -487,7 +507,13 @@ func (c *Controller) persistState(ctx context.Context, statefulSet *appsv1.State
 		return err
 	}
 	path := "/metadata/annotations/" + escapeJSONPointer(StateAnnotation)
-	operations := []map[string]any{{"op": "test", "path": "/metadata/resourceVersion", "value": statefulSet.ResourceVersion}}
+	if statefulSet.UID == "" || statefulSet.ResourceVersion == "" {
+		return fmt.Errorf("persist drain state requires workload UID and resourceVersion")
+	}
+	operations := []map[string]any{
+		{"op": "test", "path": "/metadata/uid", "value": string(statefulSet.UID)},
+		{"op": "test", "path": "/metadata/resourceVersion", "value": statefulSet.ResourceVersion},
+	}
 	if statefulSet.Annotations == nil {
 		operations = append(operations, map[string]any{"op": "add", "path": "/metadata/annotations", "value": map[string]string{StateAnnotation: string(encoded)}})
 	} else {
@@ -500,15 +526,18 @@ func (c *Controller) persistState(ctx context.Context, statefulSet *appsv1.State
 	return err
 }
 
-func (c *Controller) setReplicas(ctx context.Context, name string, uid types.UID, from, to int32) error {
+func (c *Controller) setReplicas(ctx context.Context, statefulSet *appsv1.StatefulSet, state State, to int32) error {
+	from := state.FromReplicas
 	operations := []map[string]any{
-		{"op": "test", "path": "/metadata/uid", "value": string(uid)},
+		{"op": "test", "path": "/metadata/uid", "value": string(statefulSet.UID)},
+		{"op": "test", "path": "/metadata/resourceVersion", "value": statefulSet.ResourceVersion},
+		{"op": "test", "path": "/metadata/annotations/" + escapeJSONPointer(StateAnnotation), "value": statefulSet.Annotations[StateAnnotation]},
 		{"op": "test", "path": "/spec/replicas", "value": from},
 		{"op": "replace", "path": "/spec/replicas", "value": to},
 	}
 	payload, _ := json.Marshal(operations)
 	_, err := c.Kubernetes.AppsV1().StatefulSets(c.Config.Namespace).Patch(
-		ctx, name, types.JSONPatchType, payload, metav1.PatchOptions{},
+		ctx, statefulSet.Name, types.JSONPatchType, payload, metav1.PatchOptions{},
 	)
 	if err != nil {
 		return fmt.Errorf("scale StatefulSet from %d to %d: %w", from, to, err)
@@ -538,6 +567,9 @@ func (c *Controller) validate() error {
 			return fmt.Errorf("Host drain topology policy is incomplete")
 		}
 	}
+	if c.Config.TopologyRepairEnabled && (c.Dynamic == nil || c.Config.MachineSetName == "" || c.Config.RequiredZones < 1) {
+		return fmt.Errorf("topology repair requires dynamic client, MachineSet and topology policy")
+	}
 	return nil
 }
 
@@ -545,10 +577,16 @@ func decodeState(raw string) (State, error) {
 	if raw == "" {
 		return State{Phase: PhaseIdle}, nil
 	}
+	if len(raw) > 16*1024 {
+		return State{}, fmt.Errorf("%s exceeds 16 KiB", StateAnnotation)
+	}
 	var state State
 	decoder := json.NewDecoder(io.LimitReader(strings.NewReader(raw), 16*1024))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&state); err != nil {
+		return State{}, fmt.Errorf("decode %s: %w", StateAnnotation, err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
 		return State{}, fmt.Errorf("decode %s: %w", StateAnnotation, err)
 	}
 	if err := validateState(state); err != nil {
@@ -560,6 +598,9 @@ func decodeState(raw string) (State, error) {
 func decodeReleaseHold(raw, workloadUID string) (*releaseHold, error) {
 	if raw == "" {
 		return nil, nil
+	}
+	if len(raw) > 4*1024 {
+		return nil, fmt.Errorf("%s exceeds 4 KiB", ReleaseHoldAnnotation)
 	}
 	var hold releaseHold
 	decoder := json.NewDecoder(io.LimitReader(strings.NewReader(raw), 4*1024))
@@ -630,4 +671,11 @@ func (c *Controller) logf(format string, values ...any) {
 	if c.Logf != nil {
 		c.Logf(format, values...)
 	}
+}
+
+func (c *Controller) now() time.Time {
+	if c.Now != nil {
+		return c.Now().UTC()
+	}
+	return time.Now().UTC()
 }

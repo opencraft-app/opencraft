@@ -9,6 +9,8 @@ min_replicas=${RUNTIME_CAPACITY_MIN_REPLICAS:-4}
 max_replicas=${RUNTIME_CAPACITY_MAX_REPLICAS:-301}
 target_active_actors=${RUNTIME_CAPACITY_TARGET_ACTIVE_ACTORS:-16}
 topology_max_skew=${RUNTIME_HOST_DRAIN_TOPOLOGY_MAX_SKEW:-2}
+topology_repair_enabled=${RUNTIME_HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED:-false}
+runtime_machine_set=${RUNTIME_MACHINE_SET:-np-runtime0}
 field_manager=${RUNTIME_AUTOSCALING_FIELD_MANAGER:-rivet-runtime-autoscaling}
 kubeconfig_args=()
 [[ -n ${KUBECONFIG:-} ]] && kubeconfig_args=(--kubeconfig "$KUBECONFIG")
@@ -19,6 +21,14 @@ kubeconfig_args=()
 }
 [[ $namespace =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || {
 	echo "RIVET_CELL_NAMESPACE must be a DNS label" >&2
+	exit 2
+}
+[[ $runtime_machine_set =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || {
+	echo "RUNTIME_MACHINE_SET must be a DNS label" >&2
+	exit 2
+}
+[[ $topology_repair_enabled == true || $topology_repair_enabled == false ]] || {
+	echo "RUNTIME_HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED must be true or false" >&2
 	exit 2
 }
 [[ $controller_image =~ ^[^[:space:]]+/actor-fleet/actor-fleet-controller@sha256:[0-9a-f]{64}$ ]] || {
@@ -64,6 +74,8 @@ sed \
 	-e "s|__MAX_REPLICAS__|$max_replicas|g" \
 	-e "s|__TARGET_ACTIVE_ACTORS__|$target_active_actors|g" \
 	-e "s|__TOPOLOGY_MAX_SKEW__|$topology_max_skew|g" \
+	-e "s|__TOPOLOGY_REPAIR_ENABLED__|$topology_repair_enabled|g" \
+	-e "s|__RUNTIME_MACHINE_SET__|$runtime_machine_set|g" \
 	"$script_dir/host-autoscaling.yaml" >"$rendered"
 if grep -Eq '__[A-Z0-9_]+__' "$rendered"; then
 	echo "Host autoscaling manifest retained an unresolved placeholder" >&2

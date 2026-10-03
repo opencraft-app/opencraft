@@ -20,6 +20,8 @@ class HostAutoscalingManifestTests(unittest.TestCase):
             "__MAX_REPLICAS__": "301",
             "__TARGET_ACTIVE_ACTORS__": "16",
             "__TOPOLOGY_MAX_SKEW__": "2",
+            "__TOPOLOGY_REPAIR_ENABLED__": "false",
+            "__RUNTIME_MACHINE_SET__": "np-runtime0",
         }
         for source, target in replacements.items():
             raw = raw.replace(source, target)
@@ -58,7 +60,16 @@ class HostAutoscalingManifestTests(unittest.TestCase):
         cluster_role = next(item for item in documents if item["kind"] == "ClusterRole")
         self.assertEqual(cluster_role["rules"], [{
             "apiGroups": [""], "resources": ["nodes"], "verbs": ["get", "list"],
+        }, {
+            "apiGroups": [""], "resources": ["pods"], "verbs": ["list"],
+        }, {
+            "apiGroups": ["node.tke.cloud.tencent.com"], "resources": ["machinesets"], "resourceNames": ["np-runtime0"], "verbs": ["get"],
+        }, {
+            "apiGroups": ["node.tke.cloud.tencent.com"], "resources": ["machines"], "verbs": ["list"],
         }])
+        self.assertIn({"apiGroups": [""], "resources": ["pods/eviction"], "verbs": ["create"]}, role["rules"])
+        for rule in role["rules"] + cluster_role["rules"]:
+            self.assertNotIn("delete", rule["verbs"])
         binding = next(item for item in documents if item["kind"] == "ClusterRoleBinding")
         self.assertEqual(binding["roleRef"]["name"], "actor-bj-a01-host-drain")
         self.assertEqual(binding["subjects"], [{
@@ -74,6 +85,8 @@ class HostAutoscalingManifestTests(unittest.TestCase):
         self.assertEqual(env["HOST_DRAIN_TOPOLOGY_KEY"], "topology.kubernetes.io/zone")
         self.assertEqual(env["HOST_DRAIN_REQUIRED_ZONES"], "3")
         self.assertEqual(env["HOST_DRAIN_TOPOLOGY_MAX_SKEW"], "2")
+        self.assertEqual(env["HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED"], "false")
+        self.assertEqual(env["HOST_DRAIN_MACHINE_SET"], "np-runtime0")
 
     def test_production_installer_always_converges_release_hold_controller(self):
         installer = (ROOT / "install.sh").read_text()

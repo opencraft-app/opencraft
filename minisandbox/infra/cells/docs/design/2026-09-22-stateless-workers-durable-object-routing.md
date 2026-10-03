@@ -2197,9 +2197,28 @@ metadata RV CAS，观察属于同一epoch/eviction RV的取消凭据后才unfenc
 纯状态机回归已覆盖成功、重启/PDB拒绝/丢响应、取消与删除竞争、UID和workload替换、
 稳定窗口、缺目的容量和不改善置换。四个120Host任意ordinal序列模型均逐台收敛至4，
 保持最多单台drain；模型显式假设可用目的AZ被成功调度，不是实际K8s容量或云资格证明。
-当前controller还没有采集spare-zone/Pod-RV证据，也没有eviction/cancellation adapter，
-故新路径在当前运行中不启用，pods权限仍只有get/list；本提交不能单独当作修复发布。
-接完真实adapter、RBAC门禁及实际K8s eviction测试后，才能沿受锁发布路径上线。
+源码controller已接Pod owner UID/RV、取消凭据和policy/v1 eviction adapter；每次动作重新
+核验持久state/工作负载UID/release hold/fresh容量，实际删除保留原UID/RV preconditions与
+正常grace，不直接Delete。取消CAS不依赖Host HTTP；已授权eviction的观测失效时先持久化
+Cancelling，后续只靠Kubernetes完成精确metadata CAS，确认凭据后才恢复placement。
+StatefulSet状态和replica patch也绑定UID/RV与操作annotation，拒绝观测期间发生的配置变化。
+
+`topology_capacity.go`只读当前MachineSet、限定500个Machines、1000个Nodes和5000个Pods，
+拒绝partial inventory。目的节点需绑定当前Node/Provider/Machine/MachineSet UID、准入profile
+与workerd image，且Ready、非drain、无未知taint。空闲专属节点仅允许DaemonSet占用，
+按allocatable减去保守requests（含allocated resize、init、overhead、Pod slots），校验当前
+模板hard affinity/hostname anti-affinity及目标AZ的zone-spread条件。未知硬约束拒绝修复；
+这不是另一个完整scheduler，观测不是容量预约，实际置换仍由Kubernetes调度并证明拓扑改善。
+只在拓扑阻塞或repair阶段读额外库存，不向普通应用请求增加RPC/FDB事务。
+
+源码RBAC添加Cell namespace内pods patch/eviction create；集群级只有容量list及精确
+MachineSet get，没有Pod delete/Node或Machine写入/全局Secret读取。新的
+`RUNTIME_HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED`默认false，installer向controller传递
+`HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED`；`RUNTIME_MACHINE_SET`同步绑定affinity及只读RBAC。
+这些manifest尚未发布，云上权限/image/原supervisor都不变。21组新adapter/capacity测试
+包含真实typed-client HTTP载荷与111Host完整reconcile（并发HPA扩容/STS变更拒绝动作），
+但HTTP double仍不是实际Kubernetes/PDB门禁，不能据此打开开关或宣布111Host已收敛。
+下一步核验实际server的UID/RV eviction与取消竞态，并走受锁发布和真实缩容资格链。
 
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；

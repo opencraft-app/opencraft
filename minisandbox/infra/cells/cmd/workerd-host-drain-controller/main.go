@@ -10,6 +10,7 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -27,6 +28,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("create Kubernetes client: %v", err)
 	}
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		log.Fatalf("create Kubernetes dynamic client: %v", err)
+	}
 	namespace := required("CELL_NAMESPACE")
 	cell := required("CELL_NAME")
 	secretName := value("RUNTIME_AUTH_SECRET", cell+"-runtime-auth")
@@ -36,6 +41,7 @@ func main() {
 	}
 	controller := &hostdrain.Controller{
 		Kubernetes: client,
+		Dynamic:    dynamicClient,
 		Config: hostdrain.ControllerConfig{
 			Namespace: namespace, CellName: cell,
 			StatefulSetName: value("HOST_DRAIN_STATEFULSET", cell+"-runtime-hosts"),
@@ -51,10 +57,24 @@ func main() {
 			TopologyKey:            value("HOST_DRAIN_TOPOLOGY_KEY", "topology.kubernetes.io/zone"),
 			RequiredZones:          integer("HOST_DRAIN_REQUIRED_ZONES", 3),
 			TopologyMaxSkew:        integer("HOST_DRAIN_TOPOLOGY_MAX_SKEW", 1),
+			TopologyRepairEnabled:  boolean("HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED", false),
+			MachineSetName:         value("HOST_DRAIN_MACHINE_SET", "np-runtime0"),
 		},
 		Now: time.Now, Logf: log.Printf,
 	}
 	controller.Run(ctx)
+}
+
+func boolean(name string, fallback bool) bool {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return fallback
+	}
+	result, err := strconv.ParseBool(raw)
+	if err != nil {
+		log.Fatalf("%s must be a boolean", name)
+	}
+	return result
 }
 
 func required(name string) string {
