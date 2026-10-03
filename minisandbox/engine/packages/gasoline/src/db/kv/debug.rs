@@ -39,6 +39,11 @@ use crate::{
 
 const EARLY_TXN_TIMEOUT: Duration = Duration::from_secs(3);
 
+// Private key access keeps corruption fixtures inside the real storage boundary.
+#[cfg(test)]
+#[path = "../../../tests/modules/debug_history.rs"]
+mod tests;
+
 impl DatabaseKv {
 	#[tracing::instrument(skip_all)]
 	async fn get_workflows_inner(
@@ -946,16 +951,15 @@ impl DatabaseDebug for DatabaseKv {
 									self.subspace
 										.unpack::<keys::history::IndexedInputChunkKey>(entry.key())
 								{
-									ensure!(
-										current_event.indexed_input_chunks.len() == key.index,
-										"corrupt history, indexed chunk doesn't exist yet or is out of order"
-									);
-
 									if let Some(input_chunks) =
 										current_event.indexed_input_chunks.get_mut(key.index)
 									{
 										input_chunks.push(entry);
 									} else {
+										ensure!(
+											current_event.indexed_input_chunks.len() == key.index,
+											"corrupt history, indexed chunk doesn't exist yet or is out of order"
+										);
 										current_event
 											.indexed_input_chunks
 											.insert(key.index, vec![entry]);

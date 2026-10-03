@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-02
 review_due: 2026-11-02
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -94,6 +94,32 @@ Ready 下限及 maintenance 配置，并保留自动缩回低容量的真实证�
 - B releaseId 前缀 847138778c90，文件 SHA 前缀 33863eb5d378；官方下载验真至
   /data/tmp/minisandbox-b01-runtime-release-c5923a4e-ledger.json。
 - 旧失败 10k cleanup inv-a9cwx404ak 仍 RUNNING；本轮未启动任何新并发 workload。
+- 后续只读采样 inv-e9d966gx34 SUCCESS/0（06:07:09 UTC）：A desired/current/Ready Node 均为
+  85，最近 provider acknowledgement 为 86→85；B 保持四台。A 自动回收仍在推进。
+- 原 A/B immutable audit 均使用 initial-cell qualification mode。恢复这条既有资格链不是把
+  autoscaling-cell 降级；同时它不能单独证明 strict 10k 或完整无人值守容量目标。
+- B 严格 post-release governance inv-e9d973gcuv SUCCESS/0，审计实际返回 control=block：
+  仅 latest_bottomless_receipt_release_binding_mismatch 和
+  latest_engine_ha_receipt_not_recent_passed，warnings=[]。FDB available/fullReplication、backup
+  restorable、Engine/runtime Ready、三个三域 topology、static release convergence 和 FDB 自动扩容
+  稳态均为 true。
+- 旧 10k 原句柄仍 RUNNING，输出处于 final capacity wait；源码证明该阶段已完成 Object cleanup，
+  不再发起负载。B 自身精确 MachineSet/Cell/Host UID、四台 admitted Ready Node、Idle/no hold/no intent
+  经启动前检查，正式 post-release 资格任务 inv-e9d99rguwf 已 detached，并确认 RUNNING。
+  它先调用 qualify-runtime.sh 的 production-cell 门禁，再串行执行 qualify-engine-ha.sh、fresh strict
+  governance 与 publish-qualified-release.sh。失败即停止，不手工改 reporter；未宣称资格已通过。
+- 同一句柄后续已终态 SUCCESS/0：48 个 Actor、6,240 次写入，online checkpoint 期间无服务中断，
+  sleep/cold/wake、跨 transient write-debt limit 与 cleanup 均通过。冷醒 p95=1,210.67 ms，
+  p99/max=4,752.22 ms；这是 production-cell 数据路径资格，不是 strict 10k 容量资格。
+- Engine HA 真实删除一个 exact Pod UID，1,500 次公共 /v1 请求全部成功，并完成故障后写入及
+  六副本恢复。Bottomless、Engine HA、activation 三份收据经官方传输完整验真，文件 SHA 前缀
+  分别为 a3528ee61847、eb547965ab82、b5695bd739c5；完整 SHA 保留在正式设计与不可变收据中。
+- 独立现场核验 inv-e9d9ktg8be SUCCESS/0：B spoke 与中央 Hub 均为 Ready/readyForPlacement=true，
+  UID/generation 与 release digest 精确匹配，Host 4/4、Idle/no hold，MachineSet 4/4/4、no intent。
+  A 为 47/47/47，仍 Qualifying；没有将 B 通过描述成整个目标完成。
+- A 资格任务 inv-d9d9jw0nhw 已 detached 并确认 RUNNING，当前仅用 Kubernetes watch 等待
+  MachineSet 回到四台。到达低容量后取得 shared operation lock，重新采集严格审计，再经相同的
+  canonical Bottomless/Engine HA/governance/publisher 入口。等待期间不持 lock、不冻结空节点回收。
 
 ## risks
 
@@ -108,11 +134,21 @@ Ready 下限及 maintenance 配置，并保留自动缩回低容量的真实证�
 - 文档 errors/warnings=[]，显式三文件 change-impact 与 diff 检查通过；Context 仍为 4,826，
   新 Task errors=[]。26 条 Context 测试仍有相同四项既有失败，33 条 Context-audit 测试通过。
 - 官方下载的两份 ledger 还通过本地 validate_ledger，并精确比较 cell-neutral scope 全部字段相同。
+- 后续 Bottomless verifier 10 条通过；两个临时 TAT 编排脚本 bash -n 通过。本轮无 Runtime 编译。
+- rebase 到远端 62c1bf91 后，编辑前 Context baseline 为 4,855；原先 4,826 只描述前一 revision。
+- 本轮文档 errors/warnings=[]、change-impact/diff 通过，Context 前后仍为 4,855，无新增错误。
+  26 条 Context 测试仍为相同四项 baseline 失败，33 条 context-audit 测试通过；自动发现工具输出
+  needs_agent_review/not_assessed，不伪报全库门禁绿色。
+- qualification activation 3 条、autonomy control shell gate、ACK fault harness 7 条通过。下载的 HA
+  receipt 独立验真 canonical digest、前后 immutable release 与 exact victim replacement，activation
+  精确绑定 B Cell UID/generation/runtime。
 
 ## decisions
 
 - A 用显式 controller-first recovery=1；B 用 normal recovery=0，不把异常恢复变成默认发布路径。
 - 继续保留同一 generation 的 Runtime/controller provenance，不把 orchestrator commit 重标为镜像源码。
+- 先恢复已经回低容量的 B；A Node controller 独立回收空节点。旧 runner 已结束流量且进入 final wait，
+  允许 B 在 shared operation lock 与自身 UID-CAS scale-in hold 下做资格恢复；不允许重叠新的 10k。
 
 ## scan_scope
 
@@ -125,12 +161,13 @@ Ready 下限及 maintenance 配置，并保留自动缩回低容量的真实证�
 
 ## handoff
 
-- stage：A/B 正式 release 与独立 audit 通过；A 正常串行缩容，B 已回四台。
+- stage：B 新 Runtime 正式资格已通过且两层 admission 收敛；A 正常串行缩容，资格等待低容量。
 - verified：完整 image closure、两 Cell 实际 images/ledger/UID/readiness、live 8/2 config、A intent
   恢复、主 FDB 健康。release qualification scope 在两 Cell 相同，Cell releaseId 保持分离。
-- unverified：A 回到四台、旧失败 cleanup terminal、当前 runtime 重新 qualification。
+- unverified：A 回到四台、旧失败 cleanup terminal、A 当前 runtime 重新 qualification。
 - discard：以旧 failed receipt 或单次 release success 宣称 strict 10k 与完整目标完成。
-- restore：c592 source、2c generation inventory、a2 Runtime，B 句柄 inv-c9d83v01pt。
-- next_action：回查旧 cleanup inv-a9cwx404ak，独立核验 A 的低容量与 controller intent；
-  等收尾后按原资格链重新绑定当前 runtime，再做 ACK fault 和 strict 10k，不重叠负载。
+- restore：c592 source、2c generation inventory、a2 Runtime；B inv-e9d99rguwf SUCCESS，A 资格
+  句柄 inv-d9d9jw0nhw RUNNING，旧 final-wait inv-a9cwx404ak 不重发。
+- next_action：续接 A 句柄，验真低容量、资格与中央 admission；两 Cell Ready 后运行真实 ACK fault，
+  旧 runner 终态且全部低容量后再做 strict 10k。
 - remaining_goal：strict 10k、ACK/commit disconnect、真实告警、Router 性能、百万 dormant 与完整矩阵。

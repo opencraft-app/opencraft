@@ -69,6 +69,7 @@ pub const PAGE_SIZE: u32 = 4096;
 pub const SHARD_SIZE: u32 = 64;
 
 const META_HEAD_PATH: &[u8] = b"/META/head";
+const META_TRUNCATE_TXID_PATH: &[u8] = b"/META/truncate_txid";
 const META_HEAD_AT_FORK_PATH: &[u8] = b"/META/head_at_fork";
 const META_COMMIT_ATTEMPT_PATH: &[u8] = b"/META/commit_attempt";
 const META_COMPACT_PATH: &[u8] = b"/META/compact";
@@ -530,6 +531,11 @@ pub fn branch_range(branch_id: DatabaseBranchId) -> (Vec<u8>, Vec<u8>) {
 
 pub fn branch_meta_head_key(branch_id: DatabaseBranchId) -> Vec<u8> {
 	with_suffix(database_branch_base(branch_id), META_HEAD_PATH)
+}
+
+/// Zero proves the branch has never truncated. Missing data provides no such proof.
+pub fn branch_meta_truncate_txid_key(branch_id: DatabaseBranchId) -> Vec<u8> {
+	with_suffix(database_branch_base(branch_id), META_TRUNCATE_TXID_PATH)
 }
 
 pub fn branch_meta_head_at_fork_key(branch_id: DatabaseBranchId) -> Vec<u8> {

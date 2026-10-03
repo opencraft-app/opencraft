@@ -858,6 +858,11 @@ pub struct RefreshManagerInput {
 	pub force: ForceCompactionWork,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
+pub struct ObserveActiveManagerInput {
+	pub database_branch_id: DatabaseBranchId,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshManagerOutput {
 	#[serde(default)]
@@ -879,6 +884,10 @@ pub struct RefreshManagerOutput {
 	/// which predates `next_reclaim_at_ms`. Unknown histories retain their fallback timers.
 	#[serde(default)]
 	pub maintenance_deadline_observed: bool,
+	/// An active job owns planning until its exact completion is processed. Missing plans in this
+	/// observation are not evidence that a force request or retained maintenance work is complete.
+	#[serde(default)]
+	pub planning_deferred: bool,
 }
 
 impl ForceCompactionTracker {
@@ -1125,6 +1134,7 @@ pub(crate) struct ManagerFdbSnapshot {
 
 #[derive(Debug, Default)]
 pub(crate) struct HotInputSnapshot {
+	pub(crate) mutable_head_fence: Option<u64>,
 	pub(crate) commits: Vec<(u64, CommitRow)>,
 	pub(crate) pitr_interval_coverage: Vec<PitrIntervalSelection>,
 	pub(crate) delta_chunks: Vec<(Vec<u8>, Vec<u8>)>,

@@ -198,6 +198,14 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    minisandbox 源码现以 mono2 的 `minisandbox/` subtree 为唯一真源；clean-room reviewed-source
    bundle v2 分别绑定 mono2 commit、repository tree、project path 与 project tree，同时仍把项目
    tree 作为归档根，避免把 mono2 其他服务带入 Runtime 构建或改变 builder 的目录契约；
+   Workers API 的 bootstrap/serving 渲染同时要求产品 ref、sourceRevision、sourceManifestDigest
+   和原始收据字节 buildReceiptDigest 与完整 inventory 的 exact workers-api 项一致。仅基础镜像
+   依赖相同不能授权另一产品；渲染前一次读取产品收据，校验和输出证据使用同一字节快照。
+   永久回归通过真实 11 产品/28 镜像清单和 CLI 子进程覆盖错镜像、错源码、重新格式化的收据
+   以及清单自校验正确但收据 digest 不同的拒绝路径，两种阶段都不得输出 manifest 或 receipt；
+   正式 Workers API 门禁从操作目录调用时，先进入各测试 suite 的源码目录，再使用模块名称执行
+   unittest；不能依赖绝对测试文件路径的解释。Fleet 静态入口加入真实复制源码、带点号父目录、
+   unrelated cwd 的回归，避免 clean-room source 在 builder 上无法执行同一门禁；
 3. Terraform 已改为通过 TKE 控制面创建独立、启用 autoscaling 的 Native NodePool，并将其动态
    `np-*` ID 写入 Cell inventory；Argo 不再伪造或拥有该 MachineSet。集群级 scale-in 已启用且一次
    最多缩一台。stateless admission profile、startup taint、精确 runtime digest probe 和 workload
@@ -258,6 +266,34 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    的 RTT 都会 fail closed。性能负载必须经 `/workers/{worker}/dispatch` 进入 stateless executor，并把
    Object 均衡预置到至少两个 placement-ready Cell；直接 ObjectRef 因 `source_cell=unassigned` 会被拒绝，
    不得冒充跨 Cell 证据。真实 10k 运行及新指标发布后的云上 receipt 仍是 Phase 5 未完成项。
+   性能入口在任何代码发布或 Object 创建前检查 Registry `/readyz`，集群外 builder 通过 Hub
+   Service port-forward 访问，不直接消费 C 内部 DNS。准备失败也进入精确 Object 清理并记录失败
+   receipt，包括响应丢失的已尝试 ID；未确认存在的 ID 才允许 DELETE 404。正常和异常退出均关闭
+   forward，失败不重试非幂等 dispatch。延迟直方图只包含正式负载窗口，不混入预置请求。
+   2026-10-02 新运行 `f56405fe9169424fb97d3c81b3da2704` 在1517 Object时严格失败，
+   09:20:41 UTC四次活跃 heartbeat返回502 `indeterminate_result`。C日志均指向B Engine
+   等待响应头超过25秒，不能用增大超时、重试成功或健康FDB改判。原load收据SHA-256
+   `151c16bb56db0d23d818158c9ac7c63ac58d7c99ee63c03a0b78f1b5c3d73eb1`，原精确cleanup
+   收据SHA-256 `ce1b35b0af49f5c27df03713da5fe6d1325003c9357906b221dd3e8a7cbff9df`证明
+   1517对象已删除、pending0；任务已通过生产串行drain缩回A/B各4个Node与Host。A/B实际峰值48/45个Node与Host
+   全部Ready且Node admitted，Engine/Host无重启、FDB9/9全复制，不替代业务零错误资格。
+   最终组合收据SHA-256 `794e64a9ceb34e07945a45560f45cfc63110be629fb7444016ee129195c7ae24`
+   保留 failed verdict；150个完整容量样本证明初始低容量、自动扩容、精确清理、安全drain和最终
+   低容量，不证明万级持续活跃。不得用节点恢复或业务重试成功替代该失败事实。
+   针对此次等待响应头超时，Workers API 的 Object fetch 传输失败日志增加客户端 connection、
+   request-written 与 first-response-byte 里程碑，区分 acquiring/writing/awaiting/reading 阶段。
+   只记录固定阶段、毫秒耗时和 socket 地址，不记录 body、header、URL query，也不新增高基数
+   metric。里程碑不能证明目标是否执行或提交，因此仍返回不可透明重试的 indeterminate；
+   不改变25秒 response-header deadline 或 caller-owned streaming/cancellation。诊断代码通过本地
+   验证后仍须正式发布和重新采集实际失败证据，不能据此认定该根因已修复。
+   诊断API已通过2026-10-02正式发布 `inv-d9dft6gdrv`，Argo revision
+   `87d5003cbea180edb1b3b02e3cc724462b7af34e`，API镜像
+   `sha256:2b44930be720cadd47aa1a83941bf042f5fb910faac591a1e371e833abfa26ba`。
+   convergence摘要 `9b9d3a9d2a8e464307baab6642fe0455e21a2f26ac56f2b81509e909ac03c810`，
+   保留全部现有UID、A/B Application与Runtime，三节点三AZ及self-heal通过；独立只读重验
+   `inv-e9dfw5g27n`再次确认十四资源、四路由与private endpoint一致，收据摘要
+   `8e1b7b1ef88c04f0b206528f451a71ace3de5f738aade043964fcfd882ed2046`。
+   发布与重验只完成诊断落地，不覆盖万级活跃资格或原超时根因。
    10k observer 还会把两 Cell 的 FDB CR configured/generation/available/fullReplication/healthy
    和全部 FDB Pod readiness 纳入每个 complete sample；存储冗余降级时即使请求暂时成功也不能
    取得容量资格。
@@ -323,6 +359,30 @@ handler 中；如果 Router 吞吐或 C 故障域将来成为限制，同一实�
    这是恢复与缩容进展，不是 A 已回低容量的最终证据。正式 release 已按既有契约关闭 reporter
    placement qualification，不能用更新镜像后的旧 receipt 重新开放。低容量收尾、当前 Runtime
    重新绑定资格、strict 10k 和 Router 性能仍未完成，旧失败 cleanup 仍须续接原句柄。
+   后续只读采样 `inv-e9d966gx34` 于 06:07:09 UTC 确认 A actual/Ready/desired Node 已降至 85，
+   最近 acknowledgement 为 86→85，B 仍为四台。重新审计原 A/B immutable control 后确认两者的
+   既有资格模式均为 `initial-cell`；恢复该模式不构成降级，也不代替 autoscaling/strict 10k 证据。
+   B 新严格审计 `inv-e9d973gcuv` 只有旧 Bottomless release binding 与旧 Engine HA receipt 两项
+   失败，无 warning；FDB、备份、三域拓扑、Engine、Host、static ledger 和 FDB 自动扩容稳态均通过。
+   旧 10k 处于 Object cleanup 完成后的 final capacity wait，不再发起流量。经精确 B UID/四台
+   admitted Ready Node/Idle/no intent 检查，正式资格任务 `inv-e9d99rguwf` 已启动并确认 RUNNING，
+   通过完整 operation lock 与 B UID-CAS hold 串行执行 production-cell Bottomless、Engine HA、fresh
+   governance 和正式 qualification publisher。运行中不等于 passed，不允许用旧 receipt 开放 placement。
+   该 B 句柄随后终态 SUCCESS/0：48 Actor、6,240 次写入、online checkpoint 不停服，cold wake
+   p95=1,210.67 ms、p99/max=4,752.22 ms，sleep/wake 和 cleanup 均通过；独立 Engine HA 的
+   1,500 次公共 `/v1` 请求零失败、故障后持久写成功并恢复六副本。Bottomless、Engine HA 和
+   activation 文件 SHA 分别为 `a3528ee61847a1e7c88c21b92c874dc455b5bfe44efea572b4914b1cab3703aa`、
+   `eb547965ab82813dd4b6b6e98a39a4eff895a56c6d5a18fe79de6b251ead2507`、
+   `b5695bd739c574cd15a65807f9d9849296b0b49b7942865f9bbea891cec92b44`；官方传输和本地验证完成。
+   现场只读 `inv-e9d9ktg8be` 进一步证明 B spoke 与中央 Hub 均 Ready/readyForPlacement=true，
+   release digest 精确绑定当前 runtime，Host 4/4、Idle/no hold、Node 4/4/4/no intent；A 仍在
+   47 台串行回收。A 新资格任务 `inv-d9d9jw0nhw` 已启动，首先通过 Kubernetes watch 等待四台
+   低容量，之后才取得 operation lock 并采集 fresh strict audit、运行相同资格链。
+   B 的 production-cell 通过不替代 strict 10k，也不能提前开放未验证的 A。
+   后续只读 `inv-c9da5801w9` 在 06:40:16 UTC 看到 A Node 5/5/5，处于精确 6→5 issued intent。
+   原 A 资格句柄随后已报告 `bottomless_started`，说明其四台 exact UID/Ready/Idle preflight
+   和 fresh governance 已完成，进入持锁资格阶段。句柄仍 RUNNING，不代表 Bottomless/Engine HA
+   已通过；旧 10k final-wait 同样尚未证明终态，不得启动重叠的新 strict 10k。
 9. durable command 的 ACK-of-ACK 已完成代码和本地确定性门禁。协议把 checkpoint 的释放绑定到
    服务端 FDB commit 后返回的 barrier，并将单事务 ACK 限制为 `512` 条；断线后的相同 ACK 与空 range
    clear 均为幂等。剩余证据不是继续修改协议，而是在北京 A/B 的真实 Host/Engine/FDB 链路精确注入
@@ -589,6 +649,38 @@ binding wrapper
 
 稳定请求不访问 Registry/FDB。每个 Router replica 的 cache 相互独立，丢失整个 cache 只造成可控
 的重新解析，不改变 placement。cache key、指标和日志不得把 Object ID 作为 Prometheus label。
+
+公共入口还需要读取 Worker 的 active Deployment。该 LRU 与 Object placement cache 是两个边界：
+namespace cursor 改变或 watch 断线时失效 Deployment cache，不得把旧版本选择永久缓存成 placement。
+仅 watch 已同步时，同一 replica、Worker、cursor/generation 的并发冷填充合并为一次只读 Registry GET；新 generation
+不得加入旧读取，迟到旧响应不得回填新 cache。合并不延伸到用户 fetch、claim 或写操作，不透明
+重试用户副作用。共享读取由 API 生命周期和有界超时拥有，而不是由首个请求拥有；单个请求取消
+只撤销自身等待，最后一个等待者离开或 API 关闭才取消共享读取。独立读取与总等待者各自受
+`DeploymentCacheCapacity` 限制；已取消但尚未终止的读取继续占用配额，耗尽时返回 retryable 503。
+watch 未同步时，后来的请求不得加入较早的 Registry 快照，保持各自独立的有界读取，不回填 cache。
+
+性能模型需要区分有用读取和重复等待：假设有 `R` 个 replica、`W` 个活跃 Worker，一次全局 cursor
+失效仍可能造成最多 `R × W` 个有效回填，这是 namespace 失效策略本身的代价。读合并消除同一
+代际的并发重复回填，不能消除不同 replica、不同 Worker 或持续发布产生的失效成本。因此扩容
+Router 并不自动减少 Registry 工作量。应同时观测实际 Registry GET、共享等待、过载和 in-flight，
+再用缓存命中率与 replica 矩阵评估后续是否需要更细的失效协议，不能取消正确性 fence 换取吞吐。
+
+本地真实 HTTP 事件屏障已复现旧路径的 `32 请求 → 32 GET`，读合并回归验证为 `32 请求 → 1 GET`，
+随后热请求无 GET。这是机制证据，不是云上吞吐资格，也不是旧万级负载冷降积压的完整根因结论。
+
+该机制已通过 source `723eebaa` 的独立 Go product 发布到北京 C：
+[发布收据](../../deploy/tencent/fleet/workers-api/evidence/beijing-deployment-read-release-20261003.json)
+绑定 image `sha256:d2e890c531e1979f74dbc83714b365ee11a43050fd45bcd5a1131c83ca95f9d5`；
+[Argo 收敛](../../deploy/tencent/fleet/workers-api/evidence/beijing-deployment-read-convergence-20261003.json)
+绑定 revision `3021e63d9ffc5f92d1ce173b72d9b39ca21624c1`、十四资源、三节点三 AZ 和原外部 UID。
+实际 metrics 为 started/registry=2、shared/overloaded=0、inflight/waiters=0，仅证明新指标接线
+和该次观察无积压；无并发命中不能证明云上 32→1 或吞吐改善。后续性能资格必须测量有效
+吞吐、重做率、队列年龄与 hot-debt 变化，不能用发布通过、名义副本余量或单元测试取代。
+
+功能回归的超时合同与性能 SLO 分开验证：响应头必须在配置预算后终止等待，流响应体不受
+header timeout 或控制请求 timeout 截断。使用真实 HTTP 的取消、flush 与 body-release 事件
+建立顺序；共享构建机上的 10 ms timer 不保证线程在 50 ms 内重新获得 CPU。墙钟 p99/吞吐
+只能由绑定运行镜像和负载的性能门禁证明，不能靠单元测试的固定 sleep 或缩短等待来证明。
 
 ### Sleep、wake 与跨 Cell
 
@@ -902,11 +994,119 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 ### Phase 5：资格与演进决策
 
 - 运行百万 dormant Object 元数据和万级 active Object 的分片容量测试；
+- 百万 dormant 的公开路径工具使用本地 manifest schema4：每批请求前先持久化精确 Object ID，
+  整个 phase 持有同一 manifest 的排他锁，禁止与活跃 population/probe 并发清理，进程退出自动释放。
+  成功结果和 confirmation 同事务提交。响应丢失或工具进程被终止后仍按原始 ordinal/probe epoch
+  精确清理；cleanup/summary 不重新发布 Worker，配置不匹配在 Code Plane 写入前拒绝。
+  清理部分运行的全部已尝试 ID 不等于成功创建目标数量，外层资格仍核对完整 inventory 和状态。
+  2026-10-02 真实 HTTP、SQLite 和工具子进程终止回归证明此工具边界，不替代百万云端收据。
+- 容量收据必须在完整采样中保持基线 FDB、Host StatefulSet、MachineSet UID 与已收敛 runtime revision。
+  同名重建不能拼接成一次成功的扩缩容。采样时间须带时区且严格递增，重复 Cell、重复采样时间、
+  非有限或负 active 值不能证明持续容量。峰值按 Cell 分别核对 Ready Host、Ready Machine 与去重后的
+  Ready/admitted Node UID，pending/drain 节点不贡献容量；允许普通扩容增加待准入节点及更换 Node UID。
+  2026-10-02 本地真实子进程回归已复现旧 verifier 对 UID 替换、未准入节点和时间重放的错误放行。
+  新校验只加强离线证据门禁，不改变正在运行的云端请求、3 秒 SLO 或零稳态重试约束。
 - 量化 Router p50/p99/p999、cache hit ratio、Registry TPS、跨 Cell RTT 和每请求 CPU；
+- Runtime 云构建可显式接入候选源码的 fresh stage：在签发临时 push 权限前验真 source/manifest、
+  fork/FDB/toolchain identity、规范四文件 hash 和 static ELF，复制后再次校验并保留原 receipt。
+  不读取旧 Runtime、不重标旧产物，不改变 Rust workspace/ABI/资源限制或发布资格。
+- Router 性能负载与最终采集共用容量收据校验：八项完整周期门禁必须全部存在且为 JSON true，
+  新增检查项也必须为真，active 目标必须是至少10000的整数。空或部分检查表与 truthy 非布尔值
+  不构成完整资格；拒绝发生在资源发布、Prometheus 访问和输出创建前。
 - 只有中央 Router 被证明为瓶颈后，才启动 Cell-local Router 下沉；
 - 不把压测中发现的单 Cell 上限误写成整个产品上限，横向容量通过增加 Cell 扩展。
+- 持续写入与后台队列须分别观察：旧热计划在 Stage 和 Install 都重读当前 head 并核对输入指纹，
+  排队期间 head 推进可能使计划失效重排。`cold_workflow_publish` 的事件有序回归分别暂停于
+  准入前和 Stage 完成后，通过真实 commit 验证拒绝计数、重新规划及最新页读取。
+  准入前暂停仅在 `test-faults` 启用，不在 UDB 事务内阻塞并发 commit；不得为了提升吞吐删除
+  fingerprint、生命周期或 PITR/history 校验。局部复现不等于证明云上每个积压任务的根因。
+  2026-10-02 本地三条真实存储回归确认两处失效及持续写入饥饿：九个计划分别在准入前被
+  新 commit 使其过期，force 耗尽八次重试预算且 root 没有推进，最新页仍正确；这不是云上
+  根因已修复的证据，也没有改变当前运行参数。
+- 热计划现在绑定不可变已提交前缀：planner 仍按原有 FDB key/byte 预算选择上界，Stage 和
+  Install 只读取这段 COMMIT/DELTA；只有证明从未 truncate 的分支才不把后续 head 纳入同一计划。指纹绑定 branch、manifest
+  generation、watermark、所选 txid、完整 COMMIT/DELTA 和当前 history/PITR coverage；PIDX
+  是可变最新 owner，不属于物化输入，Install 仍以 Serializable 读取、条件清理和原子配额计数
+  保留所有未来 owner。新 pin、PITR coverage、生命周期或根 generation 改变仍须拒绝旧证明。
+  三条进展回归验证准入前、Stage 后及连续九次真实写入不再无效重排；四条保护回归验证上述
+  两个边界的新 fork pin 与 PITR 策略改变仍重排，并保留最新页和 fork 历史读取。这是本地证据，
+  不是已发布或 strict10k 已通过；新指纹域使旧未完成计划安全重排，不改变持久数据 schema。
+  commit 原子维护新固定宽度索引 `META/truncate_txid`：首次本地提交写零，shrink 写其 txid，
+  之后 growth 不清零；缺失或正数的分支保留旧 head fence，非法值 fail closed。truncate 会
+  删除或裁剪 SHARD，不能按普通覆盖写处理。Install 在 body preflight 前及最终发布事务内重验
+  同一 input identity；检查中 SHARD 消失后，也必须独立证明 stale 才允许重排，真损坏仍报错。
+  DELTA 合并按每次 commit 的 EOF 截断，历史 coverage 使用自己的文件尺寸，避免 growth 复活
+  旧页。完整十一目标180项回归已通过，包括 staged batch/input-check后的 truncate-grow、
+  未知索引、fork历史EOF及坏chunk拒绝；生产非fault check通过，仍不构成云上一万活跃通过。
+- 公共 API 的退出不能由首个 listener 返回决定。源码复核发现 SIGTERM 虽在后台发起 Shutdown，
+  main 却在 ErrServerClosed 后立即退出，会跳过在途请求排空。真实子进程/TCP 回归已在旧排序下
+  重现单/双 listener、accept错误和超时三个门禁失败。修复后公共与内部 listener 同时停止新准入，
+  共用原十秒 drain 期限；main 等待全部 Shutdown 和 Serve 终态后才关闭 API。监听失败也须
+  排空 peer 并保留原错误，超时则关闭连接，不重放可能已产生副作用的请求。Pod 原50秒 grace
+  与30秒preStop保持不变。该本地回归已通过，云上发布与零稳态重试资格仍待原缩容周期结束。
+- workerd stage 复用同时验真其嵌入的 Rust SQLite bridge：除了 fork bundle 与固定 stage 文件，
+  还以两份真实 offline/locked Cargo metadata 解析客户端、协议及其本地普通/构建依赖，核对源码
+  字节、执行位和 workspace/Cargo 配置。只核对 fork commit 不能证明外部路径依赖未变。
+  客户端变更必须在容器读取和收据生成前拒绝复用；纯 Engine 或开发依赖变更仍允许复用。
+  文件链接同时绑定源码树内目标内容与执行位；目录链接、越界依赖或缺失 graph fail closed，
+  不因缓存不存在而自动放宽来源验证。
+  直接依赖根绑定已审阅 fork tree，未知新fork即使两份源码相同也不能沿用旧根集合证明；
+  必须fresh stage并审阅其bridge合同，不能遗漏新增加的直接路径依赖。
+  旧脚本已由真实 Cargo/子进程反例证明错误进入容器读取，新门禁本地通过；云上发布仍未发生。
+  完整源码落地门禁须分别检查 shell 的 helper 调用与 helper 的依赖/源码证明，不能继续要求
+  已抽出的校验文字留在旧内联位置。该门禁包含不依赖 Cargo 的结构回归，保证空白 builder
+  可先落地源码再安装工具链；真实 offline Cargo/变更输入回归仍独立执行，不能互相替代。
+  对既有物理编译workspace可显式选择完整输入验真的warm cache：锁定fork commit/tree且working tree
+  必须干净，已有source链接不改，完整stage与生产闭包在正式编译recipe前后都必须相同。
+  运行recipe及static ELF/hash检查后生成fresh source-bound收据，而不是把旧binary重新贴标签。
+  默认空白builder仍按fork身份建立cache；候选manifest、执行位或客户端改变不能借缓存放行。
+- builder ACK 故障门禁必须先通过 Hub Kubernetes API 转发并检查 Registry 就绪，再创建业务请求；
+  集群内部 DNS 不是 builder endpoint。转发正常及异常结束都关闭，不新增公网服务或改变 ACK 协议。
+- 同一门禁的日志解析必须接受现网 tracing 的 ANSI SGR 与 quoted Envoy key，仍严格匹配
+  Actor/generation/index；注入前的 DNS 或日志解析失败不构成 ACK 协议结论。
+- ACK 门禁的业务动作使用 Guard 6420，私有 reconciliation footprint 使用 API Peer 6421，
+  各自转发与就绪检查，不把只存在于 Peer 的检查路由假设为公共 API。
+- 2026-10-02 北京 B 的真实 ACK 断线门禁已通过，run `efdbc1c7c33f496ab0593feaed1f7f66`，
+  TAT `inv-e9dcgq0tjt` 为 SUCCESS/0，收据 SHA-256 `37e8f31cf9fe8e5a5b7f2b24202c68d98d087f0192932d27fe78a9231f9d0cbe`。
+  本次边界是 `after_commit_before_barrier`，Stop side effect 一次、ACK replay/barrier 各一次，
+  backlog 为零，Counter 1→2 且 Actor/Cell 身份不变。其他断线边界不能由本收据推定通过。
+- C 缺少当前 pinned revision 的 convergence 收据时，使用正式只读 recertify 恢复 CAS 基线；
+  serving 必须绑定十四项 tracked resource、两条 private endpoint 的安全策略、immutable Secret
+  以及四个外置 Cell identity/serving route ConfigMap 的 UID 和路由摘要。只读重验不构成压力、
+  业务准入或历史 self-heal 资格；漂移失败不得通过修改现网或手工拼收据来绕过。
+- immutable 身份路由只允许五个身份字段，或额外包含完整四个资格审计 SHA-256 字段；未知字段、
+  部分审计摘要、畸形摘要及 UID 改变都拒绝。审计字段不参与网络寻址，原 immutable UID 保护其原始内容。
+- 2026-10-02 C 正式发布 TAT `inv-a9deatgjx5` SUCCESS/0，Argo revision
+  `10b5ef6eeac98a1c9844df0e5fae023a708816a8`，Workers API 镜像
+  `sha256:2f7b6e9b4687f566163b4ee6b5ad7eb6275ac413c903b578e887163ede0e0d2a`。
+  发布 convergence 摘要 `57207003ec5f365a94628d2c56feee114bff0f9b9164af37e74af4b00c42b602`，
+  保留 Deployment、两条 CLB、Secret 的 UID/VIP 与 A/B Application，三副本三节点三 AZ，自愈通过。
+  后置独立只读重验 `inv-d9dedt0wte` SUCCESS/0，收据摘要
+  `c0b636478ee294319390cba719aa2cadcd3522bf5e60604b10d69ac650706bf8`，十四资源和四路由一致。
+  该证据只完成 C 发布边界，不替代随后启动的万级低容量扩缩容资格。
 
 ## 必须固化的测试矩阵
+
+公共 API 的真实在途排空由独立 `load/workers-api-business-drain/` 门禁验证。它保持生产
+30 秒 preStop、50 秒 grace 和十秒 HTTP drain，先接收长流前半段，再用 UID precondition
+正常删除一个 API Pod。独立 admission 转发必须观察到容器拒绝新连接，而原长流仍未结束；
+随后须完整接收固定 128 KiB 内容、零重试、恢复三个 Ready API 节点，并精确清理临时
+stateless Worker。公共 CLB 同时接收独立快速业务请求。readyz HA 收据不能替代这个门禁；
+本地回归与工具实现也不能替代实际云上通过收据。
+HTTP 的 fixed-length 与 chunked framing 均合法，但必须核验固定业务内容、完整 EOF 和
+listener-before-completion；header 本身不能作为数据完整性或排空成功的证据。
+北京公共 API 在途排空的
+[2026-10-03 收据](../../deploy/tencent/fleet/load/workers-api-business-drain/evidence/beijing-20261003.json)
+绑定工具源码 `9f6c745c` 与已发布 API `28db6ffa`：原流在 listener 停止后继续 4.874 秒、
+完整 128 KiB、零重试；替换期间 138 次公共业务请求零失败，恢复三个 Ready API 节点并完成
+临时 Worker 清理。该证据只证明这个 API 故障边界，不证明内部 Router 或万级性能。
+
+同日读合并发布后的
+[新镜像业务排空收据](../../deploy/tencent/fleet/load/workers-api-business-drain/evidence/beijing-deployment-read-20261003.json)
+绑定 source `723eebaa` 与 API `d2e890c5`：正常 UID 删除替换期间仍有 138 次公共业务请求
+零失败，全部 145 请求零失败；原长流在 listener 停止后继续 4.912 秒并完整结束，零重试。
+恢复三个 Ready 节点，临时 Worker DELETE 204，原 Deployment/HPA UID 与配置保持。
+这是当前发布的业务正确性证据，仍不是 Router 并发读合并或整体大规模性能证明。
 
 ### 正确性
 
@@ -959,6 +1159,8 @@ object_router_registry_seconds{namespace,operation,result}
 object_router_route_revision{pool,cell}
 object_router_inflight{namespace,target_cell}
 object_router_indeterminate_total{namespace,target_cell}
+workers_api_deployment_reads_total{namespace,result=started|registry|shared|overloaded}
+workers_api_deployment_read_group{namespace,state=inflight|waiters}
 
 durable_object_wake_seconds{namespace,pool}
 durable_object_active{namespace,pool}
@@ -966,6 +1168,266 @@ durable_object_active{namespace,pool}
 
 Grafana 分开呈现 stateless execution、Object Router、durable runtime 和 Registry/FDB。扩容决策只
 消费对应执行面的指标；跨 Cell QPS、失败率和 RTT 用 bounded Cell label 观察。
+
+### 性能劣化的模型与验收口径
+
+分别建模交互请求、placement/唤醒和持久化后台，不能以一个总 CPU 指标替代。对每个阶段
+记录到达率 `λ`、实际服务时间 `S`、有效并行度 `c`、排队时间和无效工作比例。粗略容量模型
+`ρ = λ × E[S] / c` 只在工作粒度一致、近似稳态时用于定位；真实串行热点、共享物理 CPU、
+FDB 冲突或 COS 限流会令有效 `c` 小于副本数。提高副本数却增加同一真值上的争用，不算扩容成功。
+
+冷降必须测量有效工作，而不是任务启动量：
+
+```text
+effective_reclaim_bytes/s
+    = completed_attempts/s × successful_fraction × mean_reclaimed_bytes_per_success
+hot_debt_change
+    = newly_retained_authoritative_bytes - authority_released - branch_gc_released
+```
+
+这里的 bytes 都是平台逻辑账本口径，不是 COS 计费大小；upload/publish 不等于已经从 FDB
+释放 authority。重复覆盖、冷热 cache 和 metadata 必须分开，不能把 guest 的全部写入字节
+直接当作新增 hot debt。`sqlite_compaction_jobs_total` 的 result 与
+`sqlite_compaction_bytes_total{operation="reclaim_fdb"}` 联合观察有效工作；
+`sqlite_cold_storage_accounting_bytes{class="fdb_authoritative"}` 观察账本趋势。
+Cell 账本由多个 Engine 重复采样时不能对 replica 求和；选取同一时段的有效 Cell 观察并保留采样误差。
+在途 batch 的 backlog gauge 不是整条 durable queue 的长度，完成者 wait histogram 也不能
+证明尚未获得 permit 的最长等待年龄。缺少这些观测时应明确证据缺口，不捏造队列已经收敛。
+
+设计修正优先消除无效工作和错误反馈：共享 generation 内的重复读取；持续 append 使旧
+head-fenced 冷降计划反复失效；大量 Envoy 一次加入带来的协调风暴；休眠对象被周期轮询。
+持续 append 可以使用已封闭输入前缀，但 generation、truncate、PITR/history、原子 cold publish
+和 serializable 条件清理仍是正确性 fence。交互与后台的许可分开不等于 FDB/CPU 隔离；后台
+并发必须保持有界并检查交互尾延迟，不能把每个 Engine 的独立限额误当作 Cell 总预算。
+
+验收固定 Version 数、请求到达/活跃/唤醒模式、缓存命中率、代码/镜像和物理容量，对比成功
+吞吐、p95/p99、排队/重做、事务冲突、实际 publish/reclaim、hot-debt 导数与扩缩容轨迹。
+只有对应窗口有效服务追上负载、积压不持续增长且原零重试/身份/持久性门禁不放宽，才可称
+性能改进。该模型是实验与设计约束，不是当前万级/百万资格已经通过的证据。
+
+容量单位还须包括工作负载形状，不能只报“多少 Agent”。当前 strict10k fixture 的每次
+heartbeat 都读取去重记录，并用 `storage.put()` 更新 state 和新的 operation 结果；
+10,000 个 Object、十秒周期的目标到达率约为 1,000 次持久交互/秒，而不是 1,000 次纯
+内存 keepalive。对象内最多一个在途 heartbeat，迟到请求会降低实际发起率，因此必须同时
+报告目标节拍、实际 attempts/s、成功/s 和延迟，不能把无失败的慢发起解释为达到目标吞吐。
+operation 记录持续增加，不是固定尺寸覆盖；用户 payload、SQLite 页写放大与新增权威 hot
+bytes 也不是同一单位。不得为通过资格偷偷改成无写 heartbeat 或删除去重记录。
+
+| 压力来源 | 应扩大/控制的资源 | 不应推断 |
+|---|---|---|
+| 活跃 Object 的执行/RSS | durable Host、已准入节点与对象装箱 | Host 扩容能提高同一 FDB 的写吞吐 |
+| Router miss/Deployment 失效 | 有界回填合并、缓存与 Router 容量 | 增加 Router 副本必然减少 Registry 请求 |
+| durable commit 与后台维护 | Cell FDB 延迟预算、有效维护吞吐和并发 | Engine Ready/CPU 空闲表示事务无争用 |
+| COS 限流或保留期限等待 | 有界 I/O 并发/退避、明确资格时间边界 | 增加 Host 或删正确性 fence 能加速安全回收 |
+
+每个 Engine 的 refresh/compaction permit 是本地资源，不是 Cell-wide permit：固定六 Engine
+时，8/2 配置对应名义总上限 48/12，实际有效并行度仍受共享 FDB/COS 和输入失效约束。
+未来 Engine 水平扩容必须先保持并重新校准 Cell 总维护预算，不能让副本数自动放大后台负载。
+不因此引入一个每请求争抢的全局 FDB semaphore；预算分配和持久状态正确性是不同所有权。
+
+用同一时间窗口区分三个可证伪判断：等待队列持续增长且有效服务满载才支持服务容量不足；
+许可空闲、债务不降并有 exact retryable job 时应检查重排/策略期限；新副本增加后 GET、
+失效计划或事务冲突增加而成功吞吐不升，则是工作放大而非单纯容量不足。累计 counter、
+一次空队列或平均服务时间均不足以作此判断。稳定运营需要有效回收追上新增权威 debt，且
+保留时间内和突发期间的债务峰值、最老等待与交互尾延迟有界；最终必须由固定负载与镜像
+的真实时间序列验证，不用提高超时、重试或减少活跃对象来替代。
+
+容量负载 observer 将旧八个容量/压力查询与上述后台信号合成一个每 Cell 的有界 instant
+vector。保留请求/样本时间、完整 query、operation/result/class 和缺失/非有限状态；完成任务、
+成功 bytes/objects、duration sum/count 使用五分钟 `rate`，必须先在原 counter 上求 rate 再聚合。
+重复 Cell 账本同时保留 min/max，反映采样分歧，不把 Engine 数量乘进存储账本。响应限制
+1 MiB/256 行，五秒 HTTP 超时、无自动重试；观察程序不改变产品并发或维护周期。
+
+冷降时间进一步拆为 `保留/策略等待 + 排队 + 实际服务 + 计划失效后的重排等待`。
+2026-10-03 A 的实际 production-cell gate 48/48 exact cold、冷唤醒及 Engine HA 通过，但全部
+冷态等待约 973 秒。中途 29 个对象暂留 hot SHARD，同时观察到 compaction inflight/waiters
+均为零、累计 reclaim retryable 为 29；这不能单凭相关性证明完整根因。当前 manager 对 exact
+成功回收立即续下一有界批，对失效回收仍使用正常维护周期；生产默认 600 秒并按分支错峰为
+约 300～900 秒。需要用 exact job/时间顺序与真实存储回归验证这项等待是否贡献尾延迟，再
+考虑有界重排退避。不能缩短保留期限、取消 fingerprint、盲目提高并发，或将所有 dormancy
+对象重新变成周期轮询。A 最后发布 block 是收据名称与发现规则不一致，与上述冷降时间是
+两个不同问题；保留原失败决策，仅恢复资格发布，不重复执行已通过的 fault gate。
+
+2026-10-03 同一 Runtime `072e504b` / digest `6e4d982e` 的 A/B 原始 gate 已归档到
+`runtime/evidence/beijing-prefix-072e504b-{a01,b01}-{bottomless,engine-ha}-20261003.json`。
+原字节 SHA 与下载端一致；Bottomless 使用 production-cell verifier，HA 核对原生成器的
+canonical hash、故障 UID 消失、版本不变、流量窗口内注入与清理条件。两 Cell 均为 48 对象
+exact cold；A/B 冷态等待约 973/964 秒，冷唤醒 p95 约 956/1,072 ms；各 HA 1,500 次
+公共请求、零失败。它们只证明这些具体门禁，不证明万对象服务容量或 Router 吞吐。
+
+万对象启动还必须检查当时的 placement 真值。首个 preflight run
+`e479f1a64f1e4d109ac8940d75c05999` 遇到 B `readyForPlacement=false` 而退出，未创建负载
+目录；不能将 TAT 服务提交成功视为资格成功。发布 activation 与 Cell report/controller 的
+收敛是不同步骤，保留失败快照并等待控制器自然恢复，不手工设置 readiness。
+该失败快照的具体原因是 `CapacityEvidenceMissing`：报告新鲜但缺少 Prometheus-backed
+容量证据，健康与 FDB 条件正常。后续只读 `inv-e9e0300ee9` 确认新证据到达后 PlacementReady
+自然恢复；不能将此暂态误归因于存储数据丢失，仍需监测容量证据的缺失频率与尾延迟。
+TAT 命令最长 24 小时，完整自然缩容门禁允许等待 36 小时；因此该资格用独立、确定 run ID
+的 systemd 服务承载原 runner，保留整体 operation lock 和退出状态，TAT 仅提交/只读查询。
+不得把外层启动 SUCCESS 或观察期间短暂 Ready 当作最终 strict receipt 通过。
+
+后续 run `d3a163511fd849bf9a466553e4ab4f48` 已从 A/B 各四 Host 起步。首个约 270 秒的
+progress 为 384 ready、5,275 active interactions 成功、零 terminal failure，但 warmup
+容量背压重试 2,418 次，就绪最大约 78 秒；不能报告为全程零重试或三秒创建达标。
+相邻容量样本 A/B 各六 Ready Host，desired 已为 10/11；后台 refresh/compaction
+inflight/waiters 为零。这支持先排查新 Host 准入/容量等待，但不是完整因果或稳态证明。
+最终 steady-state 的零重试/三秒要求不变，低容量 warmup 与 steady-state 分别报告。
+
+生产创建 SLO 的容量模型还要包含供给时延：保留可用槽位至少覆盖
+`incoming_create_rate × node_admission_p99 + expected_wake_burst`，并留安全余量。
+这里的槽位必须来自真实 admitted/Ready/非 drain Host，不计 Pending 或 desired 副本；
+节点启动、精确镜像探测和 Host 注册耗时计入供给时延。只有水位阈值而没有这一余量，低
+容量突发时必然先背压；单靠放宽重试不会改善用户创建 SLO。该公式是容量规划约束，当前
+未实现预测扩容，也不能用本次 warmup 的容许重试替代正式创建 SLO。
+
+同一 run 的最终资格已失败，原字节收据保留在
+`load/ten-thousand-active/evidence/`。9,194 ready、约 212 万 active attempts 后，首个错误是
+初始化 `502 indeterminate_result`；之后 2,643 条 `code=20` 是全局取消扇出，不能当作独立
+网络故障。9,226 个 scheduled Object 全部精确删除、清理零 retry，A/B 自然缩回各四个
+admitted/Ready 节点。自动扩容、稳定身份、安全 drain 与最终低容量检查通过；10k sustained、
+active capacity 和 load verdict 没通过，不能继续生成 Router performance 资格。
+
+最后故障前样本的 A/B compaction 为 12/12 in-flight、1,360/1,102 waiters，B UDB pending
+达 3,989。故障前历史范围查询显示 Cell 汇总 Engine CPU 峰值约 10.6/10.8 cores，B UDB
+operation p99 约 0.988 秒、workflow-history transaction mean 约 1.007 秒；汇总 CPU 不支持
+直接复用上一轮总 CPU 饱和的结论，仍不能排除单 Pod 饱和。最后约 27 分钟的采样窗口有效
+reclaim 为零，authority bytes 增长约 A 1.35/B 1.41 GB；live pins/retention 也可合法解释
+reclaim 延后。下一步必须区分 hot fold 的有效/失效工作、history replay 字节、FDB 重试和
+cold eligibility，不能仅调 permit、Host 数或超时。原始首因 transport log 没保留在此次
+有界 current-Pod 选择中，不能用之后的取消日志补造首因；压力相关性不是完整因果证明。
+
+进一步只读历史查询 `inv-c9e9u20q2x` 覆盖首错前的 20:07--20:27 UTC、30 秒步长。
+原始 `work-amplification.json` 为 718,367 bytes，SHA-256
+`e73676dd1ad9ddd37278a243a8f9d3ebbab63eafac3549b6fb01a818a2b879ce`，保存在同一
+builder evidence 目录并经 COS 验真下载。末个五分钟窗口 A/B manager 规划读取约
+23.16/24.19 MB/s，hot stage 另读 9.22/7.00 MB/s；manager 每完成一笔 transaction 对应
+约 605/634 KB 读取，平均 attempts 为 1.460/1.453。这不是 business payload 的写放大倍数，
+也不是全部 FDB I/O，但证明维护规划已是主要读取成本之一。逐 Pod 一分钟 CPU 峰值最高
+约 A 2.09/B 2.34 cores，不支持仅凭汇总低 CPU 就继续盲加 Engine。
+
+同一末窗口 stage activity 完成率约 A 39.13/B 35.80 attempts/s，平均总耗时
+27.77/28.26 秒；install 平均约 26.40/26.33 秒。现有 `gasoline_activity_duration` 将成功、
+失败、超时都记到空 error 标签，且在 history 写入后才观察，因此这些完成率不是成功 fold
+吞吐，不能回推有多少 timeout。`run_activity()` 的默认 30 秒 timeout 包住整个
+`Activity::run()`，而 Depot 在其中等待 semaphore。真实 RocksDB、生产 ActivityCtx 和零容量
+semaphore 的回归已证明：尚未获得 admission、数据工作完全没有开始，就可以写入一次持久
+activity timeout。此机制提供了排队超时和 replay 放大的可证伪解释，仍不是上述首个 502 的
+完整归因。
+
+新增 `gasoline_activity_attempt_duration{workflow_name,activity_name,result}` 使用固定
+`succeeded|error|timeout` 三值，观察返回或超时的执行尝试，在 history write 前记录。
+它不记录被外层取消但没有返回的尝试，不表示 workflow commit，也不把业务返回的
+`CompactionJobStatus::Retryable` 当作成功 fold。成功 activity history 的生产 replay 不再计一次
+execution attempt。历史指标保留，持久输出、timeout、重试和 generation fence 均不因此改变。
+当前只完成源码和真实存储验证，没有发布新 Runtime 或把历史窗口重新分类。
+
+下一修正的模型要分离三个时间和两种服务率：
+
+```text
+T_attempt = T_admission_wait + T_execute
+T_workflow = T_attempt + T_history_commit + T_replay/backoff
+attempt_service_rate != useful_fold/publish/reclaim_service_rate
+```
+
+许可数约束正在执行的工作，不约束已经 leased、携带历史和 activity retry budget 的等待者。
+只减 permit 会增大队列等待；若等待仍消耗 execution timeout，就可能变成
+`queue -> timeout -> history/replay reads -> FDB latency -> slower queue` 正反馈。
+稳定性必须用每种工作类型的有效 service time、有效成功率、实际输入 bytes 和队列年龄判断，
+不能拿约 28 秒的含排队时间除以 12 个执行许可来计算执行吞吐，也不能认为约 40 attempts/s
+已处理完约 40 个有效 job。
+
+在修改调度前需要固化如下边界，而不是直接提高 timeout 或无界等待：
+
+1. admission 等待、执行失败与 FDB commit/replay 失败分开；排队不能无意义地耗尽数据 job
+   的失败预算，但等待本身仍须有界、可取消且恢复后不丢 exact job。
+2. 后台超出执行预算时，未运行工作应保留 durable identity 和明确 due/lease 所有权。
+   不能返回假成功、丢信号、轮询所有 dormant Object 或争抢一个全局每请求 FDB 锁。
+3. 同一 branch 的 dirty wake 合并，并检查 active job 已占用时是否仍反复完整规划输入。
+   对 DELTA 读取优化须保留事务/字节预算和 exact committed prefix；stage/install 的 lifecycle、
+   truncate、PITR/pin、原子 publication 与条件 PIDX 清理校验不能去掉。
+4. 各阶段报告 attempt result 和有效 output，先证明 timeout/replan 放大下降、前台尾延迟恢复、
+   hot debt 有界，再重跑相同 strict10k。以下准入修正目前只有源码和本地回归，不代表线上已修复。
+
+### Active job 期间的规划成本
+
+manager 先处理当前 signal 批次，再选择 refresh 模式。旧路径即使 branch 已有 active job，
+仍读取完整的 committed DELTA prefix、冷态与 reclaim 输入，然后在 dispatch 阶段丢弃不能运行的
+计划。排队越长，同一前缀就可能被越多次重复读取，额外消耗 FDB 服务能力。这是源码中可确定的
+无效工作，不等于已证明它独自造成历史首个 502。
+
+仅 active-job 分支使用 Gasoline version check 记录新的活动序列，普通规划不增加版本事务：
+
+- 无 active job：保留完整 `RefreshManager` 和所有规划校验。
+- 任意 hot/cold/reclaim job active：运行 `ObserveActiveManager`，只读取 branch、head、dirty
+  和固定分片 pin-count index。元数据读取使用同一 UDB transaction；没有 DELTA、SHARD 或
+  reclaim 扫描，也不执行 dirty 清除、stage cleanup 或 publication。
+- 观察结果显式为 `planning_deferred=true`。缺少计划不代表无工作，不能结束 force request、
+  派发另一份共享 generation 的计划或使 manager quiescent；branch 非 live 仍立即进入停止流程。
+- 既有 cold/reclaim fallback deadline 保留并按到期事件重新安排。精确完成信号仍由 companion
+  的持久 signal/replay 发送；处理完最后一个 active job 后，下一 refresh 恢复完整规划。
+- 已记录的完整 refresh 仍回放原 activity；不能直接删掉旧历史中的步骤。version check 也有
+  小额持久事务成本，不能将减少 DELTA bytes 自动换算为整条请求吞吐增益。
+
+该修正不改变数据 job 的 lifecycle、root generation、truncate、PITR/history、publication 或
+条件 PIDX 清理 fence。它不解决 admission queue 消耗 execution timeout 的另一条反馈链，也
+不能使已耗尽重试预算的 companion 自动恢复。实际发布后仍须测量规划读字节、有效 fold、
+queue timeout、交互尾延迟和 hot-debt 趋势，并通过原 strict10k，才能宣称万级性能整改完成。
+
+### 有界准入与性能稳定性模型
+
+新的显式 activity admission 与实际执行分开计时。执行仍使用原 `TIMEOUT` 和失败预算；
+普通、未声明 admission 的 activity 保留原执行路径。一次完成的 history replay 不再排队。
+
+- Depot 每进程仍只有 refresh 与 compaction 两条独立执行 lane，不扩大原 8/2 执行许可。
+  每 lane 最多 `clamp(8 * permits, 8, 64)` 个等待槽；生产对应 64/16，而不是随 Object 数增长。
+- 已接受的等待按 Tokio semaphore FIFO 排序。等待最多 30 秒，worker stop 立即取消准入并
+  返回已有的 eviction 语义。队满或等待到期不执行数据工作，不写 activity failure event。
+- 未执行的工作返回 admission deferral。生产 workflow error handler 通过 exact lease 提交
+  60--120 秒的错峰 wake deadline 并释放 lease。原 signal/history/input 是真值，不新增 job、
+  不发送假完成，不清 dirty，也不增加 `MAX_RETRIES` 的执行失败计数。
+- permit 只覆盖执行，成功、失败、timeout 或 cancellation 均释放；history commit 不占许可。
+  直接调用宏生成的 `Activity::run` 也先准入，不能因使用工作流外入口而无意绕过限制。
+- 新 `gasoline_activity_admission_duration` 仅使用固定 `ready|complete|deferred|error|evicted`
+  结果。显式 admission 不再进入 attempt execution histogram。旧 Runtime 的含排队数据
+  不得与新执行时间直接拼接比较；正常返回 retryable status 仍不代表有效 fold。
+
+这切断了“未执行却消耗失败预算”的反馈，但不会凭空增加存储吞吐。稳定性按工作类型而非
+仅按 active Object 数判断：
+
+```text
+rho_lane = sum_k(offered_execution_demand_k * mean(actual_execution_seconds_k)) / lane_permits
+useful_service_rate_k = successful_fold_or_publish_k / observation_seconds
+d(hot_debt_bytes)/dt = authoritative_hot_bytes_in - safely_reclaimed_hot_bytes_out
+```
+
+`offered_execution_demand` 包括新工作、必要执行重试和实际失效重做；同一 job 的准入延期
+不算新工作。共享 compaction lane 的 stage/install/upload/publish/reclaim 成本必须相加，
+不能给每种 activity 各自算一份完整许可。仅测已获准执行率会被 admission 截断，不能替代
+offered demand；实际需求率与有效进度目前还须在正式负载中补齐。
+
+`rho_lane >= 1` 的持续输入仍会积压，必须减少每份有效工作的扫描/重做成本、合并工作或增加
+经证据校准的资源；改变超时不能让它稳定。等待槽的 FIFO 只约束已接受队列，不承诺持续过载
+时所有 deferred workflow 的全球顺序或无饥饿。延期仍有 due-index/history replay 成本，
+约随 `pending_jobs / deferral_interval` 增长，不是常数：一分钟下限避免逐秒 polling，但
+并不证明百万待办的成本可忽略。错峰周期和等待槽数是首轮保守策略，尚不是容量校准结论。
+
+后续正式 release 与原 strict10k 必须同时验证：准入 deferral/等待年龄、真实 execute 分布、
+有效 fold/publish/reclaim 率、规划和 replay 的 FDB 读字节、前台 p99 及 hot debt 的斜率。
+如果 deferral 降低错误却使 debt 持续增长，仍判性能门禁失败。暂停的工作也可能延后 branch
+完成/停止信号处理；不得把 bounded delay 描述为立即完成或丢弃 exact job。
+
+性能修正的发布证据也分层：本地算法回归、reviewed-source build、A/B runtime qualification、
+相同 strict10k receipt，不能互相替代。正式 builder 的默认 Python 3.6 不满足 stage closure
+verifier 的 subprocess 接口；共享构建入口须在授予 push authority 前验证已安装的 Python 3.11，
+并让所有子 helper 通过进程内 shim 使用它。不得因此替换系统 Python、跳过 compiled-input
+projection，或把一次构建失败误报为线上性能回归。
+
+诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
+input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
+写入的多信号/UTF-8 多块 fixture 证明生产 replay 可以成功而 debug reader 失败。修复仅在
+新 signal index 创建时检查连续性；单块、多块、缺失 index 和非法 chunk 四项回归通过，
+Gasoline 全部 22 项 lib 测试通过。不改生产 replay、持久键或编码，不因此重建 workerd，
+也不能把这项诊断修复称为上述 10k 性能问题的修复。
 
 ## 所有权与核心不变量
 

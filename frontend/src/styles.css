@@ -392,6 +392,104 @@ html.lw-settings-scrollbar-stable {
   }
 }
 
+.lv-agent-chat-mobile-nav-toggle,
+.lv-agent-chat-mobile-nav-close,
+.lv-agent-chat-mobile-nav-backdrop {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .lv-agent-embedded-chat-page {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-settings-main {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    padding: 60px 0 0;
+    overflow: hidden;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-settings-shell {
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+    margin: 0;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-settings-grid {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: 44px minmax(0, 1fr);
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-settings-content,
+  .lv-agent-embedded-chat-page ._lh-claw-bot-panel,
+  .lv-agent-embedded-chat-page ._lh-claw-bot-panel__cards {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-chat-mobile-nav-toggle {
+    display: flex;
+    min-width: 0;
+    height: 44px;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    border: 0;
+    border-bottom: 1px solid #e9ecf1;
+    background: #fff;
+    color: #1f1f1f;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agents-sidebar {
+    display: none;
+  }
+
+  .lv-agent-embedded-chat-page.lv-agent-mobile-nav-open .lv-agents-sidebar {
+    position: fixed;
+    z-index: 40;
+    top: 60px;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: min(320px, calc(100vw - 48px));
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px 16px 24px;
+    border-right: 1px solid #e9ecf1;
+    background: #fff;
+    box-shadow: 8px 0 24px rgb(0 0 0 / 8%);
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-chat-mobile-nav-close {
+    display: flex;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-end;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+  }
+
+  .lv-agent-embedded-chat-page .lv-agent-chat-mobile-nav-backdrop {
+    position: fixed;
+    z-index: 39;
+    inset: 60px 0 0;
+    display: block;
+    border: 0;
+    background: rgb(0 0 0 / 24%);
+  }
+}
+
 /* 创建 / 引导态的 header 去边框：左上角只留 LightVela logo。
  *
  * 那时右侧没有侧边栏，header 的右边框和下边框会把 logo 框成一个孤立的
@@ -1258,6 +1356,18 @@ a {
 @media (max-width: 720px) {
   .lv-agents-nav-group-items {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1023px) {
+  .lv-agents-nav-group-items.lv-agents-session-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 360px) {
+  .lv-agents-nav-group--labs .lv-agents-nav-group-items {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2538,6 +2648,9 @@ html[lang="ko-KR"] .landing-page span {
 }
 
 .lv-buddy-panel__source {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
   white-space: nowrap;
 }
 

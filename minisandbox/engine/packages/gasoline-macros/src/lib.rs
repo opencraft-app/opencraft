@@ -24,6 +24,7 @@ struct WorkflowConfig {
 struct OperationConfig {
 	max_retries: Option<syn::Expr>,
 	timeout: Option<syn::Expr>,
+	admission: Option<syn::Expr>,
 }
 
 impl OperationConfig {
@@ -128,7 +129,7 @@ pub fn activity(attr: TokenStream, item: TokenStream) -> TokenStream {
 	let name = parse_macro_input!(attr as Ident).to_string();
 	let item_fn = parse_macro_input!(item as ItemFn);
 
-	let config = match parse_op_config(&item_fn.attrs) {
+	let config = match parse_op_config(&item_fn.attrs, true) {
 		Ok(x) => x,
 		Err(err) => return err.into_compile_error().into(),
 	};
@@ -161,6 +162,38 @@ pub fn activity(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let max_retries = config.max_retries();
 	let timeout = config.timeout();
+	let run_methods = if let Some(admission) = &config.admission {
+		quote! {
+			const HAS_ADMISSION: bool = true;
+
+			async fn admit(#ctx_ident: #ctx_ty, #input_ident: &Self::Input)
+				-> Result<gas::activity::ActivityAdmission<Self::Output>> {
+				let _ = #input_ident;
+				#admission.await
+			}
+
+			async fn run(#ctx_ident: #ctx_ty, #input_ident: &Self::Input) -> Result<Self::Output> {
+				match Self::admit(#ctx_ident, #input_ident).await? {
+					gas::activity::ActivityAdmission::Ready(guard) =>
+						Self::run_admitted(#ctx_ident, #input_ident, guard).await,
+					gas::activity::ActivityAdmission::Complete(output) => Ok(output),
+					gas::activity::ActivityAdmission::Deferred(_) =>
+						anyhow::bail!("activity admission deferred"),
+				}
+			}
+
+			async fn run_admitted(#ctx_ident: #ctx_ty, #input_ident: &Self::Input,
+				_admission_guard: Box<dyn Send>) -> Result<Self::Output> {
+				#fn_body
+			}
+		}
+	} else {
+		quote! {
+			async fn run(#ctx_ident: #ctx_ty, #input_ident: &Self::Input) -> Result<Self::Output> {
+				#fn_body
+			}
+		}
+	};
 
 	let expanded = quote! {
 		#vis struct #struct_ident;
@@ -178,9 +211,7 @@ pub fn activity(attr: TokenStream, item: TokenStream) -> TokenStream {
 			const MAX_RETRIES: usize = #max_retries;
 			const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(#timeout);
 
-			async fn run(#ctx_ident: #ctx_ty, #input_ident: &Self::Input) -> Result<Self::Output> {
-				#fn_body
-			}
+			#run_methods
 		}
 	};
 
@@ -198,7 +229,7 @@ pub fn operation(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 	let item_fn = parse_macro_input!(item as ItemFn);
 
-	let config = match parse_op_config(&item_fn.attrs) {
+	let config = match parse_op_config(&item_fn.attrs, false) {
 		Ok(x) => x,
 		Err(err) => return err.into_compile_error().into(),
 	};
@@ -498,7 +529,10 @@ fn parse_wf_config(attrs: &[syn::Attribute]) -> syn::Result<WorkflowConfig> {
 	Ok(config)
 }
 
-fn parse_op_config(attrs: &[syn::Attribute]) -> syn::Result<OperationConfig> {
+fn parse_op_config(
+	attrs: &[syn::Attribute],
+	allow_admission: bool,
+) -> syn::Result<OperationConfig> {
 	let mut config = OperationConfig::default();
 
 	for attr in attrs {
@@ -517,6 +551,8 @@ fn parse_op_config(attrs: &[syn::Attribute]) -> syn::Result<OperationConfig> {
 			config.timeout = Some(syn::parse::<syn::Expr>(
 				name_value.value.to_token_stream().into(),
 			)?);
+		} else if ident == "admission" && allow_admission {
+			config.admission = Some(name_value.value.clone());
 		} else if ident != "doc" {
 			return Err(syn::Error::new(
 				name_value.span(),

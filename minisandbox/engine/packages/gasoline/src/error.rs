@@ -16,6 +16,12 @@ pub enum WorkflowError {
 	#[error("activity {0} failed: {1:?}")]
 	ActivityFailure(&'static str, #[source] anyhow::Error, usize),
 
+	#[error("activity {0} admission failed: {1:?}")]
+	ActivityAdmissionFailure(&'static str, #[source] anyhow::Error),
+
+	#[error("activity {0} admission deferred")]
+	ActivityAdmissionDeferred(&'static str, i64),
+
 	#[error("activity {0} failed, max retries reached: {1:?}")]
 	ActivityMaxFailuresReached(&'static str, #[source] anyhow::Error),
 
@@ -213,7 +219,9 @@ impl WorkflowError {
 
 				Some(deadline_ts)
 			}
-			WorkflowError::Sleep(ts) | WorkflowError::NoSignalFoundAndSleep(_, ts) => Some(*ts),
+			WorkflowError::Sleep(ts)
+			| WorkflowError::NoSignalFoundAndSleep(_, ts)
+			| WorkflowError::ActivityAdmissionDeferred(_, ts) => Some(*ts),
 			// Always retry udb errors, they're usually caused by ephemeral outages and can be retried
 			WorkflowError::Udb(_) => Some(rivet_util::timestamp::now() + 30_000),
 			_ => None,
@@ -231,6 +239,7 @@ impl WorkflowError {
 			| WorkflowError::SubWorkflowIncomplete(_)
 			| WorkflowError::Sleep(_)
 			| WorkflowError::WorkflowEvicted => true,
+			WorkflowError::ActivityAdmissionDeferred(_, _) => true,
 			_ => false,
 		}
 	}

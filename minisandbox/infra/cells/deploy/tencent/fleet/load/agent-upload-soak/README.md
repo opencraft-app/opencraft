@@ -44,8 +44,29 @@ Host RSS 与 active actor 指标。禁止为了制造扩容证明手改 replicas
 capacity controller 增加 MachineSet、TKE 创建新 Node、准入通过和 placement。
 单纯 HPA desired 增长不算 Node 扩容通过。观察程序只有读权限。
 
+`observe.py` 每 Cell 每次使用一个有界 Prometheus instant-vector 查询，保留既有八个容量与
+压力字段，另在 `metricsSnapshot` 记录完整 query、请求时刻、样本时刻、operation/result/class、
+缺失指标与服务端 warnings。HTTP 超时五秒、响应最多 1 MiB/256 行，不重试，不访问 Actor
+数据库，也不创建高基数指标。kubectl 读取仍有独立超时；一次 Prometheus 查询不等于整个
+Kubernetes 快照原子一致或保证 15 秒采样周期。
+
+后台诊断同时记录五分钟滑动窗口的完成 job、成功 bytes/objects 和活动 duration sum/count
+的速率。先对原始 counter 做 `rate` 再聚合，允许 Prometheus 处理 Engine 重启；不能对副本
+sum 的累计值直接作差。联合查看：
+
+- `reclaim_fdb` 成功 bytes/s 是否追上权威 hot debt 增长。
+- 相同 operation 的 succeeded/retryable/rejected 比例以及活动服务时间。
+- permit/waiter 有余量时，是否仍存在计划重排、维护周期或保留策略等待。
+- `coldStorageBytesMin/Max` 中同一 Cell 账本的副本采样分歧；它们不是不同副本的存储量，
+  不能相加。FDB 账本是平台逻辑 payload，不是 COS 账单或 FDB 物理磁盘大小。
+
+`missingSignals` 与非有限样本不能当作零。活动计数不是 COS PUT/GET 次数，成功 bytes 也
+不是用户写入总量；五分钟 rate 不是本次测试对象的独立计数。完成活动的平均服务时间不包含
+未获许可者的最长等待。不能凭这个 trace 证明任务公平性、最长队龄或维护期限的根因。
+
 ```sh
 node --test runner.test.mjs
+python3 test_observe.py
 ```
 
 测试通过真实 loopback HTTP protocol double 验证独立上传、持久消息校验、保留

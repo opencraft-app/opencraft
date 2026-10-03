@@ -28,15 +28,11 @@ pub async fn depot_db_hot_compacter(
 }
 
 #[activity(StageHotJob)]
+#[admission = stage_hot_admission(ctx, input)]
 pub async fn stage_hot_job(
 	ctx: &ActivityCtx,
 	input: &StageHotJobInput,
 ) -> Result<StageHotJobOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	let input_for_prepare = input.clone();
 	let now_ms = ctx.ts();
 	let prepared = ctx
@@ -208,10 +204,18 @@ async fn prepare_hot_job_tx(
 	};
 
 	let pitr_policy = read_effective_pitr_policy_for_branch(tx, branch_record.as_ref()).await?;
+	if input.input_range.txids.min_txid != root.hot_watermark_txid.saturating_add(1)
+		|| input.input_range.txids.max_txid < input.input_range.txids.min_txid
+		|| input.input_range.txids.max_txid > head.head_txid
+	{
+		return Ok(PreparedHotJob::Output(rejected_hot_job(
+			"invalid committed hot prefix range",
+		)));
+	}
 	let hot_inputs = read_hot_input_snapshot(
 		tx,
 		input.database_branch_id,
-		Some(&head),
+		Some(input.input_range.txids.max_txid),
 		&root,
 		Snapshot,
 		pitr_policy,
@@ -237,7 +241,6 @@ async fn prepare_hot_job_tx(
 	let input_fingerprint = fingerprint_hot_inputs(
 		input.database_branch_id,
 		&root,
-		&head,
 		&coverage_txids,
 		&hot_inputs,
 	);
@@ -256,7 +259,7 @@ async fn prepare_hot_job_tx(
 		return Ok(PreparedHotJob::Output(output));
 	}
 
-	let shards = plan_staged_hot_shards(input, &head, &hot_inputs)?;
+	let shards = plan_staged_hot_shards(input, &hot_inputs)?;
 	Ok(PreparedHotJob::Ready(PreparedHotWork {
 		base_hot_watermark_txid: root.hot_watermark_txid,
 		shards,
@@ -502,16 +505,28 @@ fn failed_hot_job(err: anyhow::Error) -> StageHotJobOutput {
 	}
 }
 
+async fn stage_hot_admission(
+	ctx: &ActivityCtx,
+	_input: &StageHotJobInput,
+) -> Result<gas::activity::ActivityAdmission<StageHotJobOutput>> {
+	#[cfg(feature = "test-faults")]
+	if let Some(output) = hot_stage_fault_output(
+		_input.database_branch_id,
+		HotCompactionFaultPoint::StageBeforeAdmission,
+	)
+	.await?
+	{
+		return Ok(gas::activity::ActivityAdmission::Complete(output));
+	}
+	crate::admission::compaction(ctx).await
+}
+
 #[activity(InstallHotJob)]
+#[admission = crate::admission::compaction(ctx)]
 pub async fn install_hot_job(
 	ctx: &ActivityCtx,
 	input: &InstallHotJobInput,
 ) -> Result<InstallHotJobOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::Compaction,
-		ctx.config().runtime.depot_compaction_max_concurrency(),
-	)
-	.await?;
 	// A conflict in the final publish transaction means its automatic retry would otherwise trust
 	// a preflight from an older read version. Escape the driver's retry closure, repeat every
 	// bounded integrity read, and only then attempt the compact atomic publish again.
@@ -526,7 +541,19 @@ pub async fn install_hot_job(
 			return Ok(output);
 		}
 
-		let integrity_refs = read_hot_install_integrity_refs(ctx, input).await?;
+		let integrity_refs = match read_hot_install_integrity_refs(ctx, input).await? {
+			HotInstallIntegrityPlan::Output(output) => return Ok(output),
+			HotInstallIntegrityPlan::Refs(refs) => refs,
+		};
+		#[cfg(feature = "test-faults")]
+		if let Some(output) = hot_install_fault_output(
+			input.database_branch_id,
+			HotCompactionFaultPoint::InstallAfterInputCheckBeforeShardIntegrity,
+		)
+		.await?
+		{
+			return Ok(output);
+		}
 		let integrity_batches = match hot_install_integrity_batches(integrity_refs) {
 			Ok(batches) => batches,
 			Err(err) => {
@@ -549,6 +576,13 @@ pub async fn install_hot_job(
 				})
 				.await?;
 			if let Some(reason) = rejection {
+				// Truncate may remove a prepublished row after the initial input check. Only an
+				// independently proven stale plan can turn this integrity failure into a retry.
+				if let HotInstallIntegrityPlan::Output(output) =
+					read_hot_install_integrity_refs(ctx, input).await?
+				{
+					return Ok(output);
+				}
 				return Ok(rejected_hot_install(reason));
 			}
 		}
@@ -597,27 +631,37 @@ fn hot_install_integrity_recheck_required(err: &anyhow::Error) -> bool {
 		.any(|cause| cause.is::<HotInstallIntegrityRecheckRequired>())
 }
 
-/// Reads only the compact stage proofs. Shard bodies are deliberately verified in separate,
-/// bounded transactions below so one large compaction cannot turn root publication into a
-/// multi-megabyte FoundationDB transaction. A response-loss replay has no stage rows and falls
-/// through to the atomic publish marker check in `install_hot_job_tx`.
+enum HotInstallIntegrityPlan {
+	Output(InstallHotJobOutput),
+	Refs(Vec<HotShardOutputRef>),
+}
+
+/// Validate bounded input identity before reading compact stage proofs. Shard bodies are verified
+/// separately so one large generation cannot load every body into the publication transaction.
+/// The exact publication marker also resolves response-loss replay before reading retired inputs.
 async fn read_hot_install_integrity_refs(
 	ctx: &ActivityCtx,
 	input: &InstallHotJobInput,
-) -> Result<Vec<HotShardOutputRef>> {
+) -> Result<HotInstallIntegrityPlan> {
 	let input_for_tx = input.clone();
+	let now_ms = ctx.ts();
 	ctx.udb()?
 		.txn("depot_hot_compact_read_integrity_proofs", move |tx| {
 			let input = input_for_tx.clone();
 			async move {
 				tx.priority(Priority::Low)?;
+				if let HotInstallInputCheck::Output(output) =
+					validate_hot_install_inputs_tx(&tx, &input, now_ms).await?
+				{
+					return Ok(HotInstallIntegrityPlan::Output(output));
+				}
 				let staged = read_staged_hot_shard_batch(&tx, &input, Serializable).await?;
 				if summarize_staged_hot_rows(&staged.rows) != input.output_summary {
 					// Let the atomic install path return its existing precise rejection or
 					// idempotent response-loss result.
-					return Ok(Vec::new());
+					return Ok(HotInstallIntegrityPlan::Refs(Vec::new()));
 				}
-				Ok(staged.output_refs)
+				Ok(HotInstallIntegrityPlan::Refs(staged.output_refs))
 			}
 		})
 		.await
@@ -792,19 +836,31 @@ async fn verify_hot_install_shard_batch_tx(
 	Ok(None)
 }
 
-async fn install_hot_job_tx(
+enum HotInstallInputCheck {
+	Output(InstallHotJobOutput),
+	Valid {
+		root: CompactionRoot,
+		hot_inputs: HotInputSnapshot,
+	},
+}
+
+/// Validate the same bounded input identity before body preflight and inside root publication.
+/// A stale truncate fence must be recognized before its removed cache rows are called corrupt.
+async fn validate_hot_install_inputs_tx(
 	tx: &universaldb::Transaction,
 	input: &InstallHotJobInput,
 	now_ms: i64,
-) -> Result<InstallHotJobOutput> {
+) -> Result<HotInstallInputCheck> {
 	if input.job_kind != CompactionJobKind::Hot {
-		return Ok(rejected_hot_install("manager received a non-hot job"));
+		return Ok(HotInstallInputCheck::Output(rejected_hot_install(
+			"manager received a non-hot job",
+		)));
 	}
 	if hot_install_was_already_applied(tx, input).await? {
-		return Ok(InstallHotJobOutput {
+		return Ok(HotInstallInputCheck::Output(InstallHotJobOutput {
 			status: CompactionJobStatus::Succeeded,
 			output_summary: input.output_summary,
-		});
+		}));
 	}
 
 	let branch_record = tx_get_value(
@@ -819,7 +875,9 @@ async fn install_hot_job_tx(
 	.context("decode sqlite database branch record for hot install")?;
 	if !branch_record_is_live_at_generation(branch_record.as_ref(), input.base_lifecycle_generation)
 	{
-		return Ok(rejected_hot_install("database branch lifecycle changed"));
+		return Ok(HotInstallInputCheck::Output(rejected_hot_install(
+			"database branch lifecycle changed",
+		)));
 	}
 
 	let root = tx_get_value(
@@ -840,7 +898,9 @@ async fn install_hot_job_tx(
 		cold_watermark_versionstamp: [0; 16],
 	});
 	if root.manifest_generation != input.base_manifest_generation {
-		return Ok(retryable_hot_install("base manifest generation changed"));
+		return Ok(HotInstallInputCheck::Output(retryable_hot_install(
+			"base manifest generation changed",
+		)));
 	}
 	let publish_generation = input.base_manifest_generation.saturating_add(1);
 	if tx_get_value(
@@ -851,9 +911,9 @@ async fn install_hot_job_tx(
 	.await?
 	.is_some()
 	{
-		return Ok(rejected_hot_install(
+		return Ok(HotInstallInputCheck::Output(rejected_hot_install(
 			"hot publish generation marker already exists with different proof",
-		));
+		)));
 	}
 
 	let Some(head) = tx_get_value(
@@ -867,17 +927,29 @@ async fn install_hot_job_tx(
 	.transpose()
 	.context("decode sqlite head for hot install")?
 	else {
-		return Ok(rejected_hot_install("database branch head is missing"));
+		return Ok(HotInstallInputCheck::Output(rejected_hot_install(
+			"database branch head is missing",
+		)));
 	};
 
 	if resolve_bucket_fork_pins(tx, input.database_branch_id).await? {
-		return Ok(rejected_hot_install("bucket fork proof is ambiguous"));
+		return Ok(HotInstallInputCheck::Output(rejected_hot_install(
+			"bucket fork proof is ambiguous",
+		)));
 	}
 	let pitr_policy = read_effective_pitr_policy_for_branch(tx, branch_record.as_ref()).await?;
+	if input.input_range.txids.min_txid != root.hot_watermark_txid.saturating_add(1)
+		|| input.input_range.txids.max_txid < input.input_range.txids.min_txid
+		|| input.input_range.txids.max_txid > head.head_txid
+	{
+		return Ok(HotInstallInputCheck::Output(rejected_hot_install(
+			"invalid committed hot prefix range",
+		)));
+	}
 	let hot_inputs = read_hot_input_snapshot(
 		tx,
 		input.database_branch_id,
-		Some(&head),
+		Some(input.input_range.txids.max_txid),
 		&root,
 		Serializable,
 		pitr_policy,
@@ -885,9 +957,9 @@ async fn install_hot_job_tx(
 	)
 	.await?;
 	if hot_inputs.selected_max_txid != Some(input.input_range.txids.max_txid) {
-		return Ok(retryable_hot_install(
+		return Ok(HotInstallInputCheck::Output(retryable_hot_install(
 			"hot compaction selected txid changed",
-		));
+		)));
 	}
 	let coverage_txids = selected_hot_coverage_txids(
 		&root,
@@ -896,22 +968,34 @@ async fn install_hot_job_tx(
 		&hot_inputs.pitr_interval_coverage,
 	);
 	if coverage_txids != input.input_range.coverage_txids {
-		return Ok(retryable_hot_install(
+		return Ok(HotInstallInputCheck::Output(retryable_hot_install(
 			"hot compaction coverage targets changed",
-		));
+		)));
 	}
 	let input_fingerprint = fingerprint_hot_inputs(
 		input.database_branch_id,
 		&root,
-		&head,
 		&coverage_txids,
 		&hot_inputs,
 	);
 	if input_fingerprint != input.input_fingerprint {
-		return Ok(retryable_hot_install(
+		return Ok(HotInstallInputCheck::Output(retryable_hot_install(
 			"hot compaction input fingerprint changed",
-		));
+		)));
 	}
+	Ok(HotInstallInputCheck::Valid { root, hot_inputs })
+}
+
+async fn install_hot_job_tx(
+	tx: &universaldb::Transaction,
+	input: &InstallHotJobInput,
+	now_ms: i64,
+) -> Result<InstallHotJobOutput> {
+	let (root, hot_inputs) = match validate_hot_install_inputs_tx(tx, input, now_ms).await? {
+		HotInstallInputCheck::Output(output) => return Ok(output),
+		HotInstallInputCheck::Valid { root, hot_inputs } => (root, hot_inputs),
+	};
+	let publish_generation = input.base_manifest_generation.saturating_add(1);
 
 	let mut staged_output_refs = Vec::with_capacity(input.output_summary.staged_row_count as usize);
 	let mut staged_outputs = BTreeSet::new();

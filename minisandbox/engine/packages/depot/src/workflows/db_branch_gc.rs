@@ -41,19 +41,17 @@ pub struct DbBranchGcInput {
 /// global pointer scan and no object-store LIST are needed, and each activity has a fixed batch.
 #[workflow(DbBranchGcWorkflow)]
 pub async fn depot_db_branch_gc(ctx: &mut WorkflowCtx, input: &DbBranchGcInput) -> Result<()> {
-	let lifecycle_generation = loop {
-		match ctx
-			.activity(FenceBranchGcInput {
-				database_branch_id: input.database_branch_id,
-			})
-			.await?
-		{
-			FenceBranchGcOutput::Gone => return Ok(()),
-			FenceBranchGcOutput::Requeued => return Ok(()),
-			FenceBranchGcOutput::Ready {
-				lifecycle_generation,
-			} => break lifecycle_generation,
-		}
+	let lifecycle_generation = match ctx
+		.activity(FenceBranchGcInput {
+			database_branch_id: input.database_branch_id,
+		})
+		.await?
+	{
+		FenceBranchGcOutput::Gone => return Ok(()),
+		FenceBranchGcOutput::Requeued => return Ok(()),
+		FenceBranchGcOutput::Ready {
+			lifecycle_generation,
+		} => lifecycle_generation,
 	};
 
 	stop_compaction_workflows(ctx, input.database_branch_id, lifecycle_generation).await?;

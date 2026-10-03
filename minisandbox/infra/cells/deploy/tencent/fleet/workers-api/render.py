@@ -279,13 +279,27 @@ def render(
     if not NAME.fullmatch(pool):
         raise ValueError("ShardPool name is invalid")
     inventory = CONTRACT.validate_inventory(load(inventory_path, "image inventory"))
-    product = PRODUCT.validate_receipt(load(product_path, "Workers API product receipt"))
+    product_bytes = product_path.read_bytes()
+    product_value = json.loads(product_bytes)
+    if not isinstance(product_value, dict):
+        raise ValueError("Workers API product receipt must be a JSON object")
+    product = PRODUCT.validate_receipt(product_value)
     if product["repository"] != "workers-api":
         raise ValueError("product receipt does not describe Workers API")
     foundations = {name: CONTRACT.resolve(inventory, name)["ref"] for name in ("base-golang", "base-distroless")}
     if {item["repository"]: item["ref"] for item in product["dependencies"]} != foundations:
         raise ValueError("Workers API build foundations differ from the complete image inventory")
-    workers_image = product["ref"]
+    inventory_product = CONTRACT.resolve(inventory, "workers-api")
+    if product["ref"] != inventory_product["ref"]:
+        raise ValueError("Workers API image differs from the complete image inventory")
+    provenance = inventory_product["provenance"]
+    for field in ("sourceRevision", "sourceManifestDigest"):
+        if product[field] != provenance[field]:
+            raise ValueError(f"Workers API {field} differs from the complete image inventory")
+    product_digest = "sha256:" + hashlib.sha256(product_bytes).hexdigest()
+    if product_digest != provenance["buildReceiptDigest"]:
+        raise ValueError("Workers API build receipt digest differs from the complete image inventory")
+    workers_image = inventory_product["ref"]
     endpoints = {item["cell"]: item for item in map(validate_endpoint, endpoint_paths)}
     routes = {item["cell"]: item for item in map(validate_route, route_paths)}
     stateless_endpoints = {
@@ -396,7 +410,7 @@ def render(
         "phase": phase,
         "imageInventory": {"digest": inventory["inventoryDigest"], "fileSha256": sha256(inventory_path)},
         "workersApiImage": workers_image,
-        "workersApiProductReceipt": {"path": str(product_path.resolve()), "sha256": sha256(product_path)},
+        "workersApiProductReceipt": {"path": str(product_path.resolve()), "sha256": product_digest},
         "credentialReceipt": {
             "path": str(credential_path.resolve()), "sha256": credential["digest"],
             "name": credential["name"], "uid": credential["uid"],

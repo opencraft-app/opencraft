@@ -18,12 +18,12 @@ use depot::{
 		PAGE_SIZE, branch_commit_key, branch_compaction_root_key, branch_delta_chunk_key,
 		branch_manifest_last_access_bucket_key, branch_manifest_last_access_ts_ms_key,
 		branch_meta_commit_attempt_key, branch_meta_compact_key, branch_meta_head_key,
-		branch_page_history_complete_txid_key, branch_page_history_key, branch_pidx_count_node_key,
-		branch_pidx_key, branch_shard_chunk_key, branch_shard_key, branch_vtx_key,
-		branches_list_key, bucket_branches_list_key, bucket_branches_refcount_key,
-		bucket_pointer_cur_key, ctr_eviction_index_key, database_pointer_cur_key,
-		decode_sqlite_cmp_dirty_due_key, sqlite_cmp_dirty_due_key,
-		sqlite_cmp_dirty_due_locator_key, sqlite_cmp_dirty_key,
+		branch_meta_truncate_txid_key, branch_page_history_complete_txid_key,
+		branch_page_history_key, branch_pidx_count_node_key, branch_pidx_key,
+		branch_shard_chunk_key, branch_shard_key, branch_vtx_key, branches_list_key,
+		bucket_branches_list_key, bucket_branches_refcount_key, bucket_pointer_cur_key,
+		ctr_eviction_index_key, database_pointer_cur_key, decode_sqlite_cmp_dirty_due_key,
+		sqlite_cmp_dirty_due_key, sqlite_cmp_dirty_due_locator_key, sqlite_cmp_dirty_key,
 	},
 	ltx::{LtxHeader, encode_ltx_v3},
 	quota::{self, FDB_WRITE_DEBT_LIMIT_BYTES},
@@ -277,6 +277,61 @@ fn faulting_db(db: Arc<universaldb::Database>, controller: DepotFaultController)
 		NodeId::new(),
 		controller,
 	)
+}
+
+#[tokio::test]
+async fn truncate_index_is_commit_owned_and_growth_never_clears_it() -> Result<()> {
+	commit_matrix!("depot-commit-truncate-index", |ctx, db, database_db| {
+		database_db.commit(vec![page(1, 0x11)], 4, 1_000).await?;
+		let branch = read_branch_id(&db).await?;
+		let key = branch_meta_truncate_txid_key(branch);
+		assert_eq!(
+			read_value(&db, key.clone()).await?,
+			Some(0_u64.to_be_bytes().to_vec())
+		);
+		database_db.commit(vec![page(1, 0x22)], 2, 2_000).await?;
+		assert_eq!(
+			read_value(&db, key.clone()).await?,
+			Some(2_u64.to_be_bytes().to_vec())
+		);
+		database_db.commit(vec![page(1, 0x33)], 4, 3_000).await?;
+		assert_eq!(
+			read_value(&db, key.clone()).await?,
+			Some(2_u64.to_be_bytes().to_vec())
+		);
+		database_db.commit(vec![page(1, 0x44)], 1, 4_000).await?;
+		assert_eq!(
+			read_value(&db, key).await?,
+			Some(4_u64.to_be_bytes().to_vec())
+		);
+		Ok(())
+	})
+}
+
+#[tokio::test]
+async fn ordinary_commit_cannot_certify_an_existing_unindexed_history() -> Result<()> {
+	commit_matrix!("depot-commit-truncate-unindexed", |ctx, db, database_db| {
+		database_db.commit(vec![page(1, 0x11)], 2, 1_000).await?;
+		let branch = read_branch_id(&db).await?;
+		let key = branch_meta_truncate_txid_key(branch);
+		let key_for_clear = key.clone();
+		db.txn("test_remove_truncate_index", move |tx| {
+			let key = key_for_clear.clone();
+			async move {
+				tx.informal().clear(&key);
+				Ok(())
+			}
+		})
+		.await?;
+		database_db.commit(vec![page(1, 0x22)], 3, 2_000).await?;
+		assert_eq!(read_value(&db, key.clone()).await?, None);
+		database_db.commit(vec![page(1, 0x33)], 1, 3_000).await?;
+		assert_eq!(
+			read_value(&db, key).await?,
+			Some(3_u64.to_be_bytes().to_vec())
+		);
+		Ok(())
+	})
 }
 
 #[tokio::test]

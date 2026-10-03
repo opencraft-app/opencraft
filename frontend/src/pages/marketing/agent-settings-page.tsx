@@ -2745,6 +2745,15 @@ export const AgentSettingsPage = ({
   /* ── 侧边栏「探索/对话」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
   /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
   const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
+  const [mobileChatNavOpen, setMobileChatNavOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileChatNavOpen) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileChatNavOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileChatNavOpen]);
   /**
    * 连接器入口默认隐藏（灰度）：控制台执行 show() 后显示（与工作台 reveal
    * 同款机制——window.show 劫持 toggle 持久化状态并广播）。初始读持久化值
@@ -3146,6 +3155,10 @@ export const AgentSettingsPage = ({
     isCreating,
     hasActiveBot: Boolean(activeBot),
   }) && !showBuddyOnboarding && !showMultiBotOnboarding;
+  const useMobileChatLayout = activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout;
+  useEffect(() => {
+    setMobileChatNavOpen(false);
+  }, [activeSection, activeBot?.id]);
 
   /*
    * 把「正在走创建引导」标到 <html> 上，供 CSS 去掉 header 的线框。
@@ -5012,6 +5025,7 @@ export const AgentSettingsPage = ({
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
         activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout && "lv-agent-embedded-chat-page",
+        useMobileChatLayout && mobileChatNavOpen && "lv-agent-mobile-nav-open",
         isEmptyAgentPage && "lv-agent-empty-page",
         isModifying && "lv-agent-upgrading-page",
       )}
@@ -5600,7 +5614,8 @@ export const AgentSettingsPage = ({
 
       <main
         className={cn(
-          "lw-app-top-pad flex-grow bg-white pb-6",
+          "lw-app-top-pad flex-grow bg-white",
+          useMobileChatLayout ? "pb-0" : "pb-6",
           /*
            * lv-agent-settings-main 把顶部内边距压到 68px，配套的是
            * lv-agent-sidebar-header 那个 264px 宽的侧边栏表头。没有侧边栏时
@@ -5854,7 +5869,7 @@ export const AgentSettingsPage = ({
                   className={cn(
                     /* lv-agent-settings-grid 来自 master，勿删 */
                     "lv-agent-settings-grid grid items-start",
-                    activeSection === "chat" && openCraftChatEnabled ? "gap-y-6" : "gap-6",
+                    activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6",
                     /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
                     hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]",
                   )}
@@ -5862,7 +5877,41 @@ export const AgentSettingsPage = ({
                   {/* 引导态隐藏整个侧边栏：新用户先专注建伙伴，
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout ? (
+                  <>
+                  {useMobileChatLayout && (
+                    <>
+                      <button
+                        type="button"
+                        className="lv-agent-chat-mobile-nav-toggle"
+                        aria-expanded={mobileChatNavOpen}
+                        onClick={() => setMobileChatNavOpen(true)}
+                      >
+                        <MessageSquare className="size-4 shrink-0" aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate text-left">{agentProfileDisplayName}</span>
+                        <span className="shrink-0 text-xs text-black/50">{t("最近会话")}</span>
+                        <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
+                      </button>
+                      {mobileChatNavOpen && (
+                        <button
+                          type="button"
+                          className="lv-agent-chat-mobile-nav-backdrop"
+                          aria-label={t("关闭")}
+                          onClick={() => setMobileChatNavOpen(false)}
+                        />
+                      )}
+                    </>
+                  )}
                   <AgentSidebar>
+                    {useMobileChatLayout && (
+                      <button
+                        type="button"
+                        className="lv-agent-chat-mobile-nav-close"
+                        aria-label={t("关闭")}
+                        onClick={() => setMobileChatNavOpen(false)}
+                      >
+                        <X className="size-4" aria-hidden="true" />
+                      </button>
+                    )}
                     <div className="lv-agents-sidebar-profile">
                     {fleetOverviewEnabled && (
                       <div className="mb-4 border-b border-black/[0.06] pb-4">
@@ -6165,13 +6214,16 @@ export const AgentSettingsPage = ({
                                 )}
                                 aria-label={t("新会话")}
                                 disabled={chatSessionCommands === null || chatSessionMutationState?.pending === true}
-                                onClick={createChatSession}
+                                onClick={() => {
+                                  setMobileChatNavOpen(false);
+                                  createChatSession();
+                                }}
                               >
                                 <span className="lv-agents-nav-icon"><Plus aria-hidden="true" className="size-4" /></span>
                                 <span className="min-w-0 flex-1 truncate">{t("新会话")}</span>
                               </button>
                               <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
-                              <ul className="lv-agents-nav-group-items">
+                              <ul className="lv-agents-nav-group-items lv-agents-session-list">
                                 {chatSessionsLoading && chatSessions.length === 0 ? (
                                   <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
                                 ) : chatSessions.length === 0 ? (
@@ -6190,6 +6242,7 @@ export const AgentSettingsPage = ({
                                   <li>
                                     <AppLink
                                       to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
+                                      onClick={() => setMobileChatNavOpen(false)}
                                       aria-current={activeSection === "chat" ? "page" : undefined}
                                       className={cn(
                                         "lv-agents-session-item lv-agents-nav-item",
@@ -6239,7 +6292,10 @@ export const AgentSettingsPage = ({
                                             <AppLink
                                               to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
                                               aria-current={isSelected ? "page" : undefined}
-                                              onClick={() => setSelectedChatId(session.chatId)}
+                                              onClick={() => {
+                                                setSelectedChatId(session.chatId);
+                                                setMobileChatNavOpen(false);
+                                              }}
                                               className={cn(
                                                 "lv-agents-session-item lv-agents-nav-item",
                                                 openCraftChatEnabled && "lv-agents-session-item--opencraft",
@@ -6392,7 +6448,7 @@ export const AgentSettingsPage = ({
                               return (
                                 <div
                                   key={group.id}
-                                  className="lv-agents-nav-group"
+                                  className={cn("lv-agents-nav-group", group.id === "labs" && "lv-agents-nav-group--labs")}
                                   role="group"
                                   aria-labelledby={groupLabelId}
                                 >
@@ -6416,9 +6472,9 @@ export const AgentSettingsPage = ({
                                               )}
                                             >
                                               <span className="lv-agents-nav-icon">{section.icon}</span>
-                                              <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
+                                              <span className={cn("min-w-0 flex-1 text-left", section.badge ? "whitespace-normal lg:whitespace-nowrap" : "whitespace-nowrap")}>{section.label}</span>
                                               {section.badge && (
-                                                <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                                <span className="shrink-0 rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
                                                   {section.badge}
                                                 </span>
                                               )}
@@ -6442,9 +6498,9 @@ export const AgentSettingsPage = ({
                                             )}
                                           >
                                             <span className="lv-agents-nav-icon">{section.icon}</span>
-                                            <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
+                                            <span className={cn("min-w-0 flex-1 text-left", section.badge ? "whitespace-normal lg:whitespace-nowrap" : "whitespace-nowrap")}>{section.label}</span>
                                             {section.badge && (
-                                              <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                              <span className="shrink-0 rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
                                                 {section.badge}
                                               </span>
                                             )}
@@ -6469,6 +6525,7 @@ export const AgentSettingsPage = ({
                       ) : null}
                     </div>
                   </AgentSidebar>
+                  </>
                   ) : null}
 
                   <section

@@ -1932,41 +1932,41 @@ describe("terminal cron card visibility", () => {
     const disabledCard = await getCronJobCard("停用任务");
     const actionsToggle = within(disabledCard).getByRole("button", { name: localizedText("操作", "Actions") });
     const actionsMenu = actionsToggle.parentElement;
-    const actionsRollout = actionsToggle.nextElementSibling;
+    const actionsPopover = actionsToggle.nextElementSibling;
 
-    if (!actionsRollout) throw new Error("Expected current-job action rollout");
-    const [actionsMask, actionsContent] = Array.from(actionsRollout.children);
-
-    if (!(actionsMask instanceof HTMLElement) || !(actionsContent instanceof HTMLElement)) {
-      throw new Error("Expected rollout mask and action content");
-    }
-    const actionItems = Array.from(actionsContent.children);
-    const [testAction, viewAction, copyAction, deleteAction] = actionItems;
-
-    if (!testAction || !viewAction || !copyAction || !deleteAction) {
-      throw new Error("Expected the remaining current-job actions in the rollout");
-    }
+    if (!(actionsPopover instanceof HTMLElement)) throw new Error("Expected current-job actions popover");
+    const actionsContent = actionsPopover.firstElementChild;
+    if (!(actionsContent instanceof HTMLElement)) throw new Error("Expected action list");
 
     expect(actionsMenu).toHaveClass("group/actions", "relative");
-    expect(actionsRollout).toHaveClass(
-      "right-[72px]",
-      "top-1/2",
-      "-translate-y-1/2",
-      "pointer-events-none",
+    expect(actionsToggle.querySelector(".lucide-ellipsis")).toBeTruthy();
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(actionsPopover).toHaveClass(
+      "right-0", "bottom-full", "invisible",
+      "group-hover/actions:visible",
     );
-    expect(actionsMask).toHaveClass(
-      "bg-white",
-      "opacity-0",
-      "group-hover/actions:opacity-100",
-    );
-    expect(actionsRollout).not.toHaveClass("border", "p-0.5", "shadow-sm");
-    expect(testAction).toHaveClass("transition-opacity", "delay-0", "group-hover/actions:delay-[60ms]");
-    expect(testAction).not.toHaveClass("translate-x-1", "group-hover/actions:translate-x-0");
-    expect(viewAction).toHaveClass("delay-[20ms]", "group-hover/actions:delay-[40ms]");
-    expect(copyAction).toHaveClass("delay-[40ms]", "group-hover/actions:delay-[20ms]");
-    expect(deleteAction).toHaveClass("delay-[60ms]", "group-hover/actions:delay-0");
-    expect(fireEvent.pointerDown(actionsToggle)).toBe(false);
-    expect(fireEvent.click(actionsToggle)).toBe(false);
+    expect(actionsContent).toHaveClass("flex-col", "border", "bg-white", "shadow-[0_8px_24px_rgba(15,23,42,0.12)]");
+    expect(Array.from(actionsContent.children).map((item) => item.textContent)).toEqual([
+      localizedText("测试运行", "Test run"),
+      localizedText("查看", "View"),
+      localizedText("复制", "Copy"),
+      localizedText("删除", "Delete"),
+    ]);
+    for (const button of within(actionsContent).getAllByRole("button")) {
+      expect(button.querySelector("svg")).toBeTruthy();
+      expect(button.querySelector("span")).toHaveTextContent(button.textContent ?? "");
+    }
+    await userEvent.pointer({ keys: "[TouchA]", target: actionsToggle });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "true");
+    expect(actionsPopover).toHaveClass("visible", "opacity-100");
+    fireEvent.pointerDown(document.body, { pointerType: "touch" });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(actionsPopover).toHaveClass("invisible", "opacity-0");
+    await userEvent.click(actionsToggle);
+    expect(actionsToggle).toHaveFocus();
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
     const resumeButton = within(disabledCard).getByRole("button", { name: localizedText("恢复", "Resume") });
     expect(resumeButton).toBeTruthy();
     expect(within(actionsContent).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
@@ -1992,31 +1992,33 @@ describe("terminal cron card visibility", () => {
     expect(screen.getAllByText(localizedText("已取消", "Cancelled"))).toHaveLength(2);
     const endedCard = await getCronJobCard("结束任务 completed");
     const endedActionsToggle = within(endedCard).getByRole("button", { name: localizedText("操作", "Actions") });
-    const endedActionsRollout = endedActionsToggle.nextElementSibling;
+    const endedActionsPopover = endedActionsToggle.nextElementSibling;
     const viewButton = within(endedCard).getByRole("button", { name: localizedText("查看", "View") });
     const deleteButton = within(endedCard).getByRole("button", { name: localizedText("删除", "Delete") });
 
-    if (!endedActionsRollout) throw new Error("Expected ended-job action rollout");
-    const endedActionsMask = endedActionsRollout.firstElementChild;
-    const endedActionsContent = endedActionsRollout.lastElementChild;
+    if (!endedActionsPopover) throw new Error("Expected ended-job actions popover");
+    const endedActionsContent = endedActionsPopover.firstElementChild;
+    if (!(endedActionsContent instanceof HTMLElement)) throw new Error("Expected ended-job action list");
 
-    expect(endedActionsMask).toHaveClass("bg-white", "opacity-0", "delay-[40ms]", "group-hover/actions:opacity-100");
+    expect(endedActionsPopover).toHaveClass("right-0", "bottom-full", "group-hover/actions:visible");
     expect(endedActionsContent?.children).toHaveLength(2);
-    expect(viewButton.parentElement).toHaveClass("delay-0", "group-hover/actions:delay-[40ms]");
-    expect(within(endedCard).getByRole("button", { name: localizedText("复制", "Copy") }).parentElement).toHaveClass(
-      "delay-[20ms]",
-      "group-hover/actions:delay-[20ms]",
-    );
+    expect(viewButton).toHaveTextContent(localizedText("查看", "View"));
+    expect(within(endedCard).getByRole("button", { name: localizedText("复制", "Copy") })).toHaveTextContent(localizedText("复制", "Copy"));
     expect(deleteButton.closest("[class~='group/actions']")).toBeNull();
     expect(Boolean(deleteButton.compareDocumentPosition(endedActionsToggle) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(fireEvent.pointerDown(endedActionsToggle)).toBe(false);
-    expect(fireEvent.click(endedActionsToggle)).toBe(false);
+    expect(endedActionsToggle.querySelector(".lucide-ellipsis")).toBeTruthy();
+    await userEvent.pointer({ keys: "[TouchB]", target: endedActionsToggle });
+    expect(endedActionsToggle).toHaveAttribute("aria-expanded", "true");
+    expect(endedActionsPopover).toHaveClass("visible", "opacity-100");
     expect(viewButton.closest(".ml-auto")).toBeTruthy();
     expect(deleteButton).toBeTruthy();
     expect(within(endedCard).queryByRole("button", { name: localizedText("测试运行", "Test run") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("恢复", "Resume") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("暂停", "Pause") })).toBeNull();
+    await userEvent.click(within(endedActionsContent).getByRole("button", { name: localizedText("复制", "Copy") }));
+    expect(endedActionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("copies an ended intelligent job into a prefilled create form without editing the source", async () => {

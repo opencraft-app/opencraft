@@ -82,6 +82,11 @@ installation time, not claimed to be a hermetic package snapshot.
 `build-runtime-via-tat.sh` checks all required executables before issuing or
 transferring any registry push credential. A passed bootstrap is only build
 readiness, never runtime release or public API qualification evidence.
+It checks the exact Python 3.11 interpreter during preflight, then installs a
+process-local `python3` shim for the complete remote build and cleans it on exit.
+Setting only `ACTOR_BUILD_PYTHON` is insufficient: stage reuse and other child
+helpers invoke `python3` themselves and must not fall back to TencentOS Python 3.6.
+The system default interpreter is never replaced.
 
 The q01 runtime and semantic-failure build wrappers default to one Cargo build job on the
 4-core, 8 GiB operator. `RIVET_BUILD_JOBS=2` is the only higher supported setting there.
@@ -244,6 +249,20 @@ set `QUALIFICATION_CELL_NAME`, `QUALIFICATION_KUBECONFIG`, and
 `QUALIFICATION_SOURCE_LINK` to the exact reviewed Cell inputs. Their bounded
 paths are validated before TAT runs; creating a fake q01 kubeconfig alias is
 not an accepted multi-Cell operating procedure.
+
+When a fresh stage has been built from the exact candidate source, transfer its
+four artifacts, `STAGE_SHA256SUMS` and immutable receipt through the COS relay,
+then select `QUALIFICATION_PREPARED_STAGE_DIR` and
+`QUALIFICATION_PREPARED_STAGE_RECEIPT` below `/data/actor-build/`. Both must be
+supplied. The entrypoint verifies source/manifest, fork and FDB identities,
+fresh toolchain receipt identity, positive build parallelism, the canonical
+four-artifact checksums and static ELF before issuing push authority. It repeats
+verification after copying into its private stage. The original receipt bytes
+are preserved, not rebound to a different source. This branch does not pull or
+extract an older Runtime; the positional base digest is retained as the existing
+command interface but is unused. Native Rust still builds in the stable,
+serialized workspace with the same resource and ABI gates. The default remains
+the separately validated previous-image reuse path.
 
 For an Engine/Host-only release, the entrypoint may reuse the expensive
 workerd/FoundationDB stage from a digest-pinned, previously qualified Runtime.

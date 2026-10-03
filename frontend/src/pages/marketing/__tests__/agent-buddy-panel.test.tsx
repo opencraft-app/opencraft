@@ -291,8 +291,8 @@ describe("BuddyPanel P1 stability", () => {
       "items-center",
       "justify-center",
     );
-    expect(source).toHaveClass("absolute", "inset-y-0", "right-0", "items-center");
-    expect(source).not.toHaveClass("right-6");
+    expect(source).toHaveClass("lv-buddy-panel__source", "items-center");
+    expect(source).not.toHaveClass("absolute", "right-6");
     expect(description.parentElement).not.toBe(source.parentElement);
   });
 

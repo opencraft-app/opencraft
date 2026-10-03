@@ -16,6 +16,7 @@ Responsibilities:
 - Write PIDX owner rows for dirty pages.
 - Write `COMMITS/{txid}` and `VTX/{versionstamp}` in the same commit transaction.
 - Maintain `META/head`, the latest `META/commit_attempt` idempotency proof, quota counters, and access-touch manifest fields.
+- Initialize the exact `META/truncate_txid` index on the first local commit and atomically record each shrink. Never clear the fence on growth or certify an existing unindexed history.
 - Recover FDB `commit_unknown_result` and duplicate Envoy delivery by exact-reading the attempt proof and returning the original TXID when its request hash matches.
 - Update `SQLITE_CMP_DIRTY/{database_branch_id}` and send throttled `DeltasAvailable` workflow wakeups when hot lag crosses compaction thresholds.
 - Create buckets, create databases, fork buckets, fork databases, and write branch records/catalog markers.
@@ -30,10 +31,14 @@ The workflow compaction path uses one persistent DB manager plus hot, cold, and 
 Responsibilities:
 
 - Coalesce commit wakeups through `SQLITE_CMP_DIRTY/{database_branch_id}` and `DeltasAvailable` signals.
-- Plan hot jobs from current FDB state instead of trusting signal payloads.
+- Admit maintenance separately from execution. Each process has independent refresh/compaction lanes, bounded FIFO wait slots, and a bounded wait. Overflow defers the exact durable job through Gasoline's lease-fenced wake deadline without recording an execution failure. Accepted FIFO ordering does not imply global fairness among deferred workflows.
+- While any branch job is active, observe only bounded lifecycle/head/dirty/pin-count metadata. A deferred planning observation must neither clear dirty work nor finish a force request; full planning resumes after exact job completion. Lifecycle stop checks and existing fallback deadlines remain active.
+- Plan bounded committed hot prefixes from current FDB state instead of trusting signal payloads. Stage and install retain the planned upper txid while revalidating current history/PITR coverage.
+- Use prefix-only identity only for histories certified never truncated. Keep head identity for truncated or unindexed histories, apply every DELTA's EOF, and materialize historical coverage at its own commit size.
+- Validate input identity before shard-body preflight and inside atomic publication. A removed staged cache row is retryable only when a fresh input check independently proves the plan stale; real corruption remains an error.
 - Carry the branch lifecycle generation through planned jobs and reject stale stage, publish, or reclaim work after branch deletion or recreation.
-- Have the hot companion write staged shard blobs under `CMP/stage/{job_id}/hot_shard`.
-- Install matching hot job output by copying staged blobs to reader-visible `SHARD`, advancing `CMP/root`, and compare-and-clearing expected PIDX rows.
+- Have the hot companion prepublish SHARD bodies and write compact stage proofs under `CMP/stage/{job_id}/hot_shard`. Bodies are not authoritative without published coverage.
+- Install validated hot output by publishing its reader-visible coverage and advancing `CMP/root`. Serializably read current PIDX owners and compare-and-clear only those inside the prefix, preserving future owners and atomically updating quota/counts.
 - Have the cold companion upload immutable LTX shard objects to S3-compatible storage, stage exact refs in FDB, and atomically publish the refs with the cold watermark.
 - Keep cold job control-plane payloads constant-size by carrying only an input count and digest; the upload activity reconstructs the bounded exact list from the immutable FDB hot generation.
 - Record a durable job-local intent before every object PUT so failed partial uploads are deleted by exact key without object-store LIST.
@@ -68,7 +73,7 @@ Sixty-four fixed `DbBranchGcReconcilerWorkflow`s provide the durable dispatch fa
 
 | Component | Main writes | Lease |
 |---|---|---|
-| Conveyer | `META/head`, `META/commit_attempt`, `COMMITS`, `VTX`, `PIDX`, `DELTA`, branch records, restore points | None |
+| Conveyer | `META/head`, `META/commit_attempt`, `META/truncate_txid`, `COMMITS`, `VTX`, `PIDX`, `DELTA`, branch records, restore points | None |
 | Workflow DB manager | `CMP/root`, live `SHARD`, cold publication refs, `PITR_INTERVAL`, matching PIDX clears | None |
 | Workflow companions | Staged hot output, immutable cold objects, and manager-authorized FDB/object cleanup | None |
 | Branch GC workflow | `META/gc/deleting`, exact branch cold-object deletion, branch-local FDB retirement | None |

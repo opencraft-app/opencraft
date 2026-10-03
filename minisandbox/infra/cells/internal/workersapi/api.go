@@ -109,8 +109,8 @@ type API struct {
 	objectRouter          *objectrouter.Router[actorBinding]
 	metrics               *apiMetrics
 	deployments           *deploymentCache
+	deploymentReads       *deploymentReadGroup
 	deploymentWatchOnce   sync.Once
-	deploymentWatchCancel context.CancelFunc
 }
 
 type actorBinding struct {
@@ -383,22 +383,22 @@ func NewAPI(config Config) (*API, error) {
 		// A conversational fetch may stream for much longer than control-plane
 		// operations. Its lifetime is owned by the caller context and the Agent
 		// execution policy, not the control client timeout.
-		fetchClient: &http.Client{Transport: fetchTransport},
-		mux:         http.NewServeMux(),
-		internalMux: http.NewServeMux(),
-		deployments: newDeploymentCache(deploymentCacheCapacity),
+		fetchClient:     &http.Client{Transport: fetchTransport},
+		mux:             http.NewServeMux(),
+		internalMux:     http.NewServeMux(),
+		deployments:     newDeploymentCache(deploymentCacheCapacity),
+		deploymentReads: newDeploymentReadGroup(deploymentCacheCapacity, requestTimeout),
 	}
 	api.objectRouter = newObjectRouter(api, actorCacheCapacity, actorCacheIdleTTL, objectMissCapacity)
-	api.metrics = newAPIMetrics(namespace, api.objectRouter)
+	api.metrics = newAPIMetrics(namespace, api.objectRouter, api.deploymentReads)
 	api.routes()
 	return api, nil
 }
 
-// Close stops the Registry deployment change watch. HTTP servers must call it
-// during shutdown so the long poll is cancelled before process exit.
+// Close cancels Registry reads and the Deployment watch during server shutdown.
 func (a *API) Close() {
-	if a.deploymentWatchCancel != nil {
-		a.deploymentWatchCancel()
+	if a.deploymentReads != nil {
+		a.deploymentReads.Close()
 	}
 }
 
@@ -1020,10 +1020,13 @@ func (a *API) fetchActorAtURL(writer http.ResponseWriter, request *http.Request,
 	if token := a.tokenForURL(engine); token != "" {
 		forwarded.Header.Set("Authorization", "Bearer "+token)
 	}
+	forwarded, transportTrace := traceFetchRequest(forwarded)
 	response, err := a.fetchClient.Do(forwarded)
 	if err != nil {
-		slog.WarnContext(request.Context(), "Worker fetch transport failed",
-			"request_id", requestID(request), "engine", engine.Host, "error", err)
+		attrs := append(transportTrace.attributes(),
+			slog.String("request_id", requestID(request)), slog.String("engine", engine.Host),
+			slog.Any("error", err))
+		slog.Default().LogAttrs(request.Context(), slog.LevelWarn, "Worker fetch transport failed", attrs...)
 		// Once the request is handed to the HTTP transport, the target Object may
 		// already have executed and committed a side effect even if no response
 		// headers reached the Router. Do not advertise a transparent retry: doing

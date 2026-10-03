@@ -354,6 +354,7 @@ mod tests {
 			reclaim_noop_reason: None,
 			next_reclaim_at_ms: None,
 			maintenance_deadline_observed: true,
+			planning_deferred: false,
 		}
 	}
 
@@ -830,12 +831,33 @@ async fn execute_refresh_effect(
 	input: &DbManagerInput,
 	force: ForceCompactionWork,
 ) -> Result<RefreshManagerOutput> {
-	let refresh = ctx
-		.activity(RefreshManagerInput {
+	// The activity sequence is durable. An already recorded full refresh must replay as that
+	// activity, while new iterations can observe an active job without rereading its DELTA inputs.
+	let observe_active = if state.active_jobs.hot.is_some()
+		|| state.active_jobs.cold.is_some()
+		|| state.active_jobs.reclaim.is_some()
+	{
+		match ctx.check_version(2).await? {
+			1 => false,
+			2 => true,
+			version => bail!("unsupported manager refresh version: {version}"),
+		}
+	} else {
+		false
+	};
+	let refresh = if observe_active {
+		ctx.v(2)
+			.activity(ObserveActiveManagerInput {
+				database_branch_id: input.database_branch_id,
+			})
+			.await?
+	} else {
+		ctx.activity(RefreshManagerInput {
 			database_branch_id: input.database_branch_id,
 			force,
 		})
-		.await?;
+		.await?
+	};
 
 	state.last_observed_branch_lifecycle_generation = refresh.branch_lifecycle_generation;
 	if state.last_dirty_cursor.is_none()
@@ -1034,6 +1056,9 @@ pub(super) fn manager_effects_after_refresh(
 			reason: ManagerStopReason::BranchNotLive,
 		})];
 	}
+	if refresh.planning_deferred {
+		return Vec::new();
+	}
 
 	let mut effects = Vec::new();
 	if matches!(state.branch_stop_state, BranchStopState::Running) {
@@ -1175,15 +1200,11 @@ fn manager_planning_timers_disabled(_input: &DbManagerInput) -> bool {
 }
 
 #[activity(RefreshManager)]
+#[admission = crate::admission::manager_refresh(ctx)]
 pub async fn refresh_manager(
 	ctx: &ActivityCtx,
 	input: &RefreshManagerInput,
 ) -> Result<RefreshManagerOutput> {
-	let _admission = crate::admission::acquire(
-		crate::admission::ActivityClass::ManagerRefresh,
-		ctx.config().runtime.depot_manager_refresh_max_concurrency(),
-	)
-	.await?;
 	let now_ms = ctx.ts();
 	let database_branch_id = input.database_branch_id;
 	let cold_storage_enabled = ctx.config().sqlite().workflow_cold_storage().is_some();
@@ -1269,13 +1290,74 @@ pub async fn refresh_manager(
 		reclaim_noop_reason,
 		next_reclaim_at_ms: snapshot.reclaim_inputs.next_reclaim_at_ms,
 		maintenance_deadline_observed: true,
+		planning_deferred: false,
 	})
 }
 
+#[activity(ObserveActiveManager)]
+#[admission = crate::admission::manager_refresh(ctx)]
+pub async fn observe_active_manager(
+	ctx: &ActivityCtx,
+	input: &ObserveActiveManagerInput,
+) -> Result<RefreshManagerOutput> {
+	let branch_id = input.database_branch_id;
+	let now_ms = ctx.ts();
+	ctx.udb()?
+		.txn("depot_manager_observe_active", move |tx| async move {
+			let branch_key = keys::branches_list_key(branch_id);
+			let head_key = keys::branch_meta_head_key(branch_id);
+			let dirty_key = keys::sqlite_cmp_dirty_key(branch_id);
+			let (branch_bytes, head_bytes, dirty_bytes, db_pin_count) = tokio::try_join!(
+				tx_get_value(&tx, &branch_key, Serializable),
+				tx_get_value(&tx, &head_key, Serializable),
+				tx_get_value(&tx, &dirty_key, Serializable),
+				history_pin::read_indexed_pin_count(&tx, branch_id, Serializable),
+			)?;
+			let branch_record = branch_bytes
+				.as_deref()
+				.map(decode_database_branch_record)
+				.transpose()
+				.context("decode sqlite branch record for active manager observation")?;
+			let head = head_bytes
+				.as_deref()
+				.map(decode_db_head)
+				.transpose()
+				.context("decode sqlite head for active manager observation")?;
+			let observed_dirty = dirty_bytes
+				.as_deref()
+				.map(decode_sqlite_cmp_dirty)
+				.transpose()
+				.context("decode sqlite dirty marker for active manager observation")?;
+			Ok(RefreshManagerOutput {
+				refreshed_at_ms: now_ms,
+				planned_hot_job: None,
+				planned_cold_job: None,
+				planned_reclaim_job: None,
+				observed_dirty,
+				head_txid: head.map(|head| head.head_txid),
+				branch_is_live: branch_record
+					.as_ref()
+					.is_some_and(|record| record.state == BranchState::Live),
+				branch_lifecycle_generation: branch_record
+					.as_ref()
+					.map(|record| record.lifecycle_generation),
+				db_pin_count,
+				reclaim_noop_reason: None,
+				next_reclaim_at_ms: None,
+				maintenance_deadline_observed: false,
+				planning_deferred: true,
+			})
+		})
+		.await
+}
+
+#[cfg(test)]
+#[path = "../../tests/unit/manager_active_observation.rs"]
+mod active_observation_tests;
+
 // Bound the work inside one activity, not the number of keys in one transaction.
 // Every pass commits independently with the existing generation fences and budgets.
-// No workflow event or serialized activity output changes, so recorded histories
-// retain their existing replay path and an older binary can still consume the output.
+// Cleanup passes stay inside one refresh activity and do not create extra workflow events.
 async fn refresh_with_stage_cleanup<T, F, Fut>(mut refresh: F) -> Result<T>
 where
 	F: FnMut() -> Fut,
