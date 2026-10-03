@@ -421,6 +421,16 @@ somqqmzq，再jj new mqwlrukq记录真实云端交付。完整bootstrap152、coo
 通过；documentation零错误/警告，root Context仍4,942历史错误且新增/删除均0，root26 tests
 仍同四历史失败，audit33通过，default audit为needs_agent_review/score=null，不冒充仓库资格。
 
+证据doc87d2bea0cf4e的普通push遇到remote并发MR !4947（frontend loading），拒绝stale
+push后fetch；两个只读revset查询分别因函数名和conflicted bookmark失败，未产生云操作。
+已按精确父commit检查27项远端改动均不重叠本轮范围，再创建双parent merge保留远端MR、
+本轮证据及全部empty祖先；无文件冲突，不rebase/squash/force。合并后重新验证本轮Task/
+catalog、documentation与root Context增量；remote新增Context/前端资产属于远端Owner，
+不为把整个仓库变绿而重写其正文或批量刷新catalog。单独render-kubectl relocation真实
+测试已本地通过，证明该锁定客户端可满足原失败渲染测试，不代替native builder安装。
+合并后documentation仍零错误/警告；root Context 4,970错误相对原4,942新增28项，逐项
+归属于remote的2026-10-03-chat-friendly-loading Task/checkpoint，本轮Task增量为0。
+
 新tools14,337files/54,837,844bytes经原COSrelay inv-d9f4iegwm2、inv-a9f4ig0ie1
 SUCCESS/0到原ops，完整hash见host-prepared evidence。原锁coordinator inv-e9f4j2gij8
 完成fresh capture inv-c9f4j6gvn1并提交唯一guest inv-c9f4j803t6；guest与outer均SUCCESS/0。
