@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import { useT } from "@/i18n/t";
+import { ChatLoadingState } from "@/components/site/chat-loading-state";
 
 import { AUTH_SESSION_CHANGED_EVENT, readStoredAuthToken } from "@/repositories/http-repositories";
 import { cn } from "@/lib/utils";
@@ -410,6 +411,16 @@ export function AgentChatMigrationSurface({
     else element.hide();
   }, [active, enabled, owner]);
 
+  const connectionMessage = agentPaused ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
+    : startupFailed ? t("会话加载失败，请重试")
+    : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
+    : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
+    : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
+    : connection.phase === "error" ? t("连接暂时中断，正在尝试恢复…")
+    : connectionSlow ? t("连接时间较长，请检查网络或重试")
+    : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")
+    : null;
+
   return (
     <div
       aria-hidden={!active || undefined}
@@ -437,22 +448,7 @@ export function AgentChatMigrationSurface({
           "absolute z-10 flex items-center justify-center gap-3 bg-white/95 px-4 py-3 text-sm text-black/60",
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
-          <span role="status">
-            {agentPaused ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
-              : startupFailed ? t("会话加载失败，请重试")
-              : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
-              : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
-              : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
-              : connection.phase === "error" ? t("连接暂时中断，正在尝试恢复…")
-              : connectionSlow ? t("连接时间较长，请检查网络或重试")
-              : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")
-              : <><span className="sr-only">{t("正在加载会话…")}</span><span aria-hidden="true">
-                {t("正在加载会话…").replace(/(?:…|\.{3})$/u, "")}
-                <span className="inline-flex w-[1em] justify-between">{[0, 1, 2].map(dot => (
-                  <span key={dot} className="motion-safe:animate-pulse" style={{ animationDelay: `${dot * 200}ms`, animationDuration: "1.2s" }}>.</span>
-                ))}</span>
-              </span></>}
-          </span>
+          {connectionMessage === null ? <ChatLoadingState /> : <span role="status">{connectionMessage}</span>}
           {!agentPaused && (startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
             <button type="button" disabled={retrying} onClick={() => { void retryConnection(); }}
               className="shrink-0 rounded-md border border-black/15 px-3 py-1 text-black/80 hover:bg-black/5 disabled:opacity-50">

@@ -17,6 +17,7 @@ export type {
 
 import i18n from "@/i18n";
 import { useT } from "@/i18n/t";
+import { ChatLoadingState } from "@/components/site/chat-loading-state";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongEvent } from "@/observability/datong-tracker";
 import { WorkbenchPromptAutoSender } from "./workbench-prompt-auto-sender";
@@ -176,9 +177,7 @@ export const AgentChatPanel = ({
       ? "h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full [&>*]:h-full"
       : "size-full overflow-hidden bg-white [&>*]:h-full"}>
       {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
-        <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-          {t("正在获取对话启动 token…")}
-        </div>
+        <ChatLoadingState className="h-full" />
       )}
       {launchTokenStatus === "error" && (
         <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
@@ -196,11 +195,7 @@ export const AgentChatPanel = ({
       )}
       {launchTokenStatus === "ready" && launchToken && accountId && stableApiParams && (
         <Suspense
-          fallback={(
-            <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-              {t("正在加载对话…")}
-            </div>
-          )}
+          fallback={<ChatLoadingState className="h-full" />}
         >
           <LightVelaPanel
             instanceIds={[instanceId]}

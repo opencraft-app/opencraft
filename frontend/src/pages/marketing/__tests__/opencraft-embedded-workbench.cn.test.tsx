@@ -108,7 +108,7 @@ describe("AgentChatMigrationSurface", () => {
       region: "intl",
     });
     expect(screen.queryByText("Legacy AgentChat")).toBeNull();
-    expect(screen.getByRole("status")).toHaveTextContent("正在加载会话…");
+    expect(screen.getByRole("status")).toHaveTextContent("你的 AI 小助理，马上就来");
     resolveShow();
     await waitFor(() => expect(onOwnerChange).toHaveBeenCalledWith("opencraft"));
     expect(screen.queryByText("Legacy AgentChat")).toBeNull();
@@ -190,7 +190,7 @@ describe("AgentChatMigrationSurface", () => {
       expect(legacyMounted).not.toHaveBeenCalled();
       rerender(surface(true));
       await waitFor(() => expect(show).toHaveBeenCalled());
-      expect(screen.getByRole("status")).toHaveTextContent("正在加载会话…");
+      expect(screen.getByRole("status")).toHaveTextContent("你的 AI 小助理，马上就来");
       expect(legacyMounted).not.toHaveBeenCalled();
       await act(async () => { resolveShow(); await pendingShow; });
       await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
