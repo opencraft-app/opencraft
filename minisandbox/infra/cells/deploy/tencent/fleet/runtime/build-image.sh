@@ -58,12 +58,19 @@ install -d -m 0755 "$RIVET_ERROR_OUTPUT_DIR"
 	echo "RIVET_SOURCE_REVISION or .actor-source/SOURCE_REVISION must be a full commit ID" >&2
 	exit 2
 }
-for command in cargo buildah getconf install jq sha256sum; do
+for command in cargo buildah findmnt getconf install jq sha256sum; do
 	command -v "$command" >/dev/null 2>&1 || {
 		echo "required command not found: $command" >&2
 		exit 1
 	}
 done
+
+# Paths alone do not establish disk isolation. Check the actual Buildah store
+# and every large writable output before pulling an image or compiling.
+graph_root=$(buildah info | jq -er '.store.GraphRoot | select(type == "string" and startswith("/"))')
+"$product_python" "$script_dir/verify-builder-storage.py" \
+	--bulk-path /data --bulk-path /var/lib/actor-build --bulk-path "$graph_root" \
+	--bulk-path "$stage_dir" --bulk-path "$cargo_target_dir" --bulk-path "$TMPDIR"
 
 # Engine and Host dynamically link glibc (and Engine loads libfdb_c.so). Build
 # them only on the same libc ABI as the digest-pinned runtime base. Without

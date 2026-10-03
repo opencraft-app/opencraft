@@ -1624,6 +1624,16 @@ Pending。随后实际 Pod scheduling condition 给出一个节点有 disk-press
 优先设计独立 builder 或独立挂载且受预算约束的构建盘；保持原源码闭包、镜像和证据来源校验。
 实际迁移必须沉淀为 Terraform/bootstrap，不能在长作业持锁时手工移动目录或任意删除缓存。
 
+新的只读 `verify-builder-storage.py` 将这个边界接入正式 Runtime 构建：remote preflight
+在临时 push token 前检查，持稳定 build lock 后复核，直接 build-image 入口再校验实际
+stage/Cargo/TMP 路径。所有 bulk 路径必须位于非系统 ext4/xfs 块设备文件系统；未知或
+tmpfs/overlay/network backing 不通过。系统保留 max(20 GiB, 20% capacity)，每个独立
+bulk filesystem 保留 max(10 GiB, 10% capacity)，还需 64 GiB 构建增量；同设备的路径
+合并预算，不重复计费。nodefs/bulk 还各需 16,384/81,920 可用 inode，不能只看 free bytes。
+这是保守 admission floor，不是已校准的 V8 峰值或硬 quota。
+只读快照不排除同盘其他 writer 和后续耗尽，实际布局隔离与运行期保护仍需完成。
+不降低 kubelet eviction 门槛、不由检查器安装/格式化/移动目录，也不补零 HPA 指标。
+
 监控是扩缩容控制输入，不只是可选 dashboard。HPA custom metric 无值必须保持 unknown，
 不得补零来强制缩容；未知时保守拒绝缩容是安全行为，但不证明无人值守能力已合格。
 观测恢复验收应包含 Ready Pod 的实际 QPS/in-flight 值、保留盘拓扑、节点空间水位和重启后

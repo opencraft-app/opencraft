@@ -2,6 +2,41 @@
 
 ## Release preflight and management resource coupling
 
+The first read-only `runtime/verify-builder-storage.py` diagnostic hashes to
+`3c2c7a652e4275dbb6662fab6e4f80371fb7a83737c371ab3de53a32893ee186`.
+Fifteen component and real-filesystem CLI tests pass. The formal build wrapper
+checks before push authority and rechecks under its workspace lock; the direct
+image builder checks the actual writable output paths before pull/compile.
+These tests prove refusal and budget arithmetic, not successful provisioning
+of an isolated cloud disk or runtime performance improvement.
+
+Read-only cloud negative gate `inv-c9ekcp03c6`, 06:41:50 UTC, completed
+SUCCESS/0 because the checker correctly returned blocked/exit one. `/data`,
+`/var/lib/actor-build` and the actual `/var/lib/containers/storage` GraphRoot
+all remain on `/dev/vda1`, device 64769. Capacity is 105,620,869,120 bytes,
+available 16,602,746,880 bytes, below the 21,474,836,480-byte system reserve
+and the 79,456,894,976-byte build requirement. No build, formatting, mounting,
+cache deletion, push token or runtime mutation was performed. Original local
+log `/data/actor-build/local-admission-c631f554-20261003/builder-storage-negative-gate.log`
+hashes to `ca6699a06b9edf18ee64fe8523f62c532ed12566e7a17465485b6aaccb623beb`.
+The conservative 64 GiB increment is not a measured peak or a disk quota.
+
+The final checker additionally reserves inodes and rejects excess CLI paths
+before observing filesystems. Its source hashes to
+`47d1aed61e11c97c5e4079e8d8b7abc3d10a3d688cec560a3642c0c634dc66ce`;
+all seventeen focused tests pass. Cloud negative gate `inv-a9ekgn0vip` at
+06:46:04 UTC confirms this exact source still blocks the shared system backing,
+with 15,225,659,392 available bytes and 3,389,309 available inodes. The inode
+budget is satisfied; the isolation and byte budgets are not. The complete local
+log `builder-storage-negative-gate-final.log` in the same protected directory
+hashes to `3bfdb89dbe2c126cfd309bfea018b29cce7dbfe1db786b253e0fd2758e2455a6`.
+This read-only negative result is not a positive builder qualification.
+
+Original supervisor progress `inv-a9eke8g65p`, 06:43:18 UTC, remains the same
+live handle. A has reached four Ready Hosts and four Ready Machines. B has
+25 Ready Hosts and 27 Ready Machines. Active Actors remain zero; final natural
+floor convergence is still not established for both Cells.
+
 The c631 release operator wrapper was verified and relayed as 12,103 bytes,
 SHA-256 `1a44fbcfad285fc4b0058b3c5452078fd2b11f537e09a06e3a629d868d0dfaf7`.
 It reuses the formal release, shared operation lock, qualification and activation

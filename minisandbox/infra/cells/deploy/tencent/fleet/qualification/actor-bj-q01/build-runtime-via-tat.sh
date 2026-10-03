@@ -97,7 +97,7 @@ printf -v quoted_preflight_source_link '%q' "$source_link"
 set -euo pipefail
 missing=0
 export PATH=/data/build-cache/runtime-rust/1.96.0/bin:$PATH
-for tool in buildah cargo rustc gcc clang ld.lld make pkg-config protoc cmake kubectl systemd-run python3.11 flock mount mountpoint umount; do
+for tool in buildah cargo rustc gcc clang ld.lld make pkg-config protoc cmake kubectl systemd-run python3.11 flock findmnt mount mountpoint umount; do
   if ! command -v "$tool" >/dev/null; then
     echo "runtime build prerequisite missing: $tool" >&2
     missing=1
@@ -106,6 +106,9 @@ done
 [[ $missing == 0 ]] || exit 2
 python3.11 -c 'import sys; assert sys.version_info[:2] == (3, 11)'
 source=$(readlink -e "$source_link")
+graph_root=$(buildah info | jq -er '.store.GraphRoot | select(type == "string" and startswith("/"))')
+python3.11 "$source/infra/cells/deploy/tencent/fleet/runtime/verify-builder-storage.py" \
+  --bulk-path /data --bulk-path /var/lib/actor-build --bulk-path "$graph_root"
 if [[ -n $prepared_stage ]]; then
   verify_prepared_stage "$source" "$prepared_stage" "$prepared_receipt" "$source_revision" "$source_manifest"
 fi
@@ -182,6 +185,10 @@ workspace_root=/var/lib/actor-build/runtime-workspace
 install -d -m 0700 "$workspace_root"
 exec 9>"$workspace_root/build.lock"
 flock -n 9 || { echo "another Runtime build owns the stable workspace" >&2; exit 75; }
+source=$immutable_source
+graph_root=$(buildah info | jq -er '.store.GraphRoot | select(type == "string" and startswith("/"))')
+python3.11 "$source/infra/cells/deploy/tencent/fleet/runtime/verify-builder-storage.py" \
+  --bulk-path /data --bulk-path /var/lib/actor-build --bulk-path "$graph_root"
 stable_source=$workspace_root/source
 if mountpoint -q "$stable_source"; then umount "$stable_source"; fi
 install -d -m 0700 "$stable_source"

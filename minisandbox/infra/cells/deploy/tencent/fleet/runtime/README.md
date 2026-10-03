@@ -20,6 +20,34 @@ count. MachineSet Ready replicas and `ZoneEquality` alone are insufficient.
 `qualification-single-zone` is explicit; production never relaxes its
 three-zone constraint to work around a Pending NATS or Engine Pod.
 
+Runtime builds require actual bulk-storage isolation. `verify-builder-storage.py`
+checks `/data`, the reviewed-source/workspace root and Buildah's reported
+GraphRoot before `build-runtime-via-tat.sh` grants push authority, then rechecks
+under the stable build lock before mounting the workspace. `build-image.sh`
+also checks the actual stage, Cargo target and temporary directories before
+image pulls and compilation. A directory named `/data` on the system filesystem,
+a tmpfs/overlay/network backing, missing mount identity or inadequate headroom
+fails closed. The checker is read-only and never formats, mounts or deletes data.
+The observed Buildah store comes from its documented
+[`info` JSON](https://github.com/podman-container-tools/buildah/blob/main/docs/buildah-info.1.md),
+not an assumed default pathname.
+
+The conservative initial policy reserves at least 20 GiB or 20% of nodefs,
+whichever is larger, plus at least 64 GiB of build increment and 10 GiB or 10%
+of each independent bulk filesystem. Paths on the same filesystem pay the
+increment once, not once per directory. This is preflight admission, not a disk
+quota or a measured peak bound for arbitrary builds. Concurrent writers and
+late disk consumption can still invalidate a snapshot. Fresh workerd/V8 builds
+need their own measured peak budget; this gate does not qualify them.
+The system filesystem also needs 16,384 available inodes; each bulk filesystem
+needs 81,920. Adequate free bytes alone cannot qualify an inode-exhausted build.
+
+Canonical paths and disk layout must be established by Terraform/bootstrap
+before building. Existing source bundles, stage receipts and caches must not be
+silently moved, reformatted or deleted by the checker. The existing c631 product
+can be released without rebuilding it, but the shared-root builder diagnosed on
+2026-10-03 is deliberately not eligible for a new build until its storage is fixed.
+
 The runtime image is built from the exact Beijing-qualified artifacts recorded
 as OCI labels in `Dockerfile`. It must be supplied by registry digest. The
 installer derives the runtime COS Secret inside Kubernetes from the existing

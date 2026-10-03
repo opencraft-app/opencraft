@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.9.8
+revision: 1.9.9
 precedence: task
 derived: false
 ---
@@ -113,6 +113,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{build-image.sh,prepare-cargo-cache.sh,README.md,test_runtime_base_contract.py}@f225363b`、`qualification/actor-bj-q01/{build-runtime-via-tat.sh,test_build_parallelism.py,test_runtime_python.py,test_runtime_build_log.py}@f225363b` | 实际构建副作用边界 | 在 push authority 和 source mount/compile 前检查实际 backing，保持 Python/ABI/source/token 与输出边界 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/{management/main.tf,management/variables.tf,management/outputs.tf,bootstrap/README.md,rebuild/render-inputs.py,test-terraform-storage-contract.py}@f225363b` | rebuild 资源所有权 | 现有模板共享 rootfs，不因新 admission checker 通过就声称已实现独立盘；本轮不 apply 云资源 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/observability/{README.md,federation/README.md,federation/hub-values.yaml,federation/hub-prometheus-adapter-values.yaml}@b72df9f5`、`terraform/create-first/{bootstrap/prepare-bootstrap-host.sh,management/main.tf}@b72df9f5` | 管理面真实资源耦合 | 核实 custom metric 上游、保留盘拓扑及 builder 共根盘；不在原作业持锁时修改观测或目录 |
 | `docs/context/domains/release-gitops.md@b72df9f5`、`docs/context/project/upstream-subtrees.md@b72df9f5`、`minisandbox/infra/cells/deploy/tencent/fleet/README.md@b72df9f5` | 正式 Runtime 发布前置 | 保持源码、镜像、资格与实际发布分层；不与原 strict cycle 重叠 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{release-runtime.sh,test_build_runtime_scale_in_hold_patch.py}@b72df9f5`、`operations/{run-autonomy-ops-cycle.sh,with-autonomy-operation-lock.sh}@b72df9f5`、`gitops/image-seed/{bind-inventory.sh,product-lock.py}@b72df9f5` | 锁、来源与回滚门禁 | 复用正式 transaction、exact runtime digest 和资格激活，不直接 patch Cell |
@@ -371,6 +373,43 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+06:49 UTC 交接：最终 fleet runner session 22614 已 exit 0，最后 marker 为
+fleet_manifest_invariants=passed；最终行为源码没有在此轮 runner 期间变更。checker 十七项
+及旧 ABI/parallelism/Python/log/stage tests 已通过，docs 零 error/warning，十条精确路径
+impact passed（无 rule 命中，不是语义评审）。context tests 仍同四项历史失败，audit 33/33；
+discovery 仅 needs_agent_review、不伪造评分。原 strict `inv-e9ekj3gv8m` 于 06:48:33 UTC
+SUCCESS/0，同一身份 live，A Host/Machine 各四，B Host 12/Machine 15 Ready、active 零。
+下一原作业进度不早于 06:53:34 UTC。source helper 防回归可发布，实际独立盘/独立 builder
+仍未实施，新 Runtime c631 未发布，strict10k 仍失败，完整目标保持 active。
+
+06:46:04 UTC 最终 checker 负门禁 `inv-a9ekgn0vip` SUCCESS/0：exact 源码 SHA 前缀
+47d1aed61e11 正确 blocked/exit 1，bulk 共 root、15,225,659,392 bytes available；
+inode 3,389,309 充足，不是 inode 耗尽。新 checker 追加 inode 保留与 CLI 路径数量的
+前置界限，最终十七项已通过。首轮 fleet runner session 22646 已 exit 0，但其内部
+builder test 早于最终修改，最终 fleet runner 唯一 session 22614 正在重验，不冒充终态。
+context tests 二十六项仍同四项历史失败；audit tests 三十三项通过。没有 live mutation。
+
+06:43:18 UTC 最新只读 `inv-a9eke8g65p` SUCCESS/0：原 supervisor identity 未变，A 已到
+Host/Machine 各四 Ready，B Host 25、Machine 27 Ready；active 零、final waiting。
+storage admission 最终十五项、base contract 四项、parallelism 九项、Python 三项、log 一项、
+prepared stage 九项全部通过，bash/AST/diff 检查通过；完整 fleet runner 原 session 22646
+仍在执行，不能据中途 OK 计作最终 gate。没有新构建或 live rollout。
+
+2026-10-03 06:42 UTC 接续：上一 turn progress 已正常 FF 推 master f225363b，远端与
+clean 核验。当前独立 xmruvmtt revision 在落地只读 builder storage admission，不缩小目标。
+原 strict progress `inv-d9ek8fgvn6` 06:37:11 UTC SUCCESS/0，同一 supervisor live；
+A/B Host 4/39 Ready、Machine 12/42 Ready、active 零，自然 drain 未终态。
+新 checker 十五项通过；旧 parallelism/Python/log tests 9/3/1 项通过。实际云上负门禁
+`inv-c9ekcp03c6` SUCCESS/0，06:41:50 UTC checker 正确 blocked/exit 1：三 bulk 路径
+均在 /dev/vda1、系统 reserve 不足、build increment 空间不足；这是负案例成功，不是
+builder 已资格通过。checker SHA 前缀 3c2c7a652e42，不写盘或授予 push token。
+正式 build-runtime 在 token 前及 build lock 内复核，build-image 还检查实际 stage/target/TMP。
+预算 floor 是保守 64 GiB increment，不是 V8 峰值或运行期 quota；同设备路径合并预算。
+Terraform/bootstrap 的实际分盘或独立 builder 仍待完成，本轮没有 apply、格式化或缓存删除。
+本轮 exact query 的 runtime/bootstrap-runtime-system.sh、runtime/test_product_receipt.py
+不存在；已回到 qualification 的真实 system helper 和 runtime base test，不再猜路径。
+Cloud Skill/networking 完整读取；status tool 不存在、policy snapshot 缺失不证明 readiness。
 
 本轮交接：只读诊断、正式 release wrapper 与共同资源预算设计为 progress，不是修复发布。
 docs 零 error/warning、四路径 impact passed，release hold 六项及 monitor 五项通过。
@@ -768,6 +807,10 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- 当前源码防回归是 progress，云上真实 builder 负门禁已证明 fail closed，不是性能修复完成。
+  剩余明确：在原自然 drain/ops lock 完成后，通过 Terraform/bootstrap 实现独立 bulk backing
+  或独立 builder，不手工搬目录；恢复实际 Prometheus/HPA 值后，发布已建 c631 并重跑固定
+  strict10k。已有 c631 产品不因 tools/文档变更重编 workerd。
 - 上一 goal turn 为 progress：百万 key 组件实测/模型与原收据记录正常 FF 推 master
   `b72df9f5`，远端身份与 clean worktree 已核验。当前独立 `lnrotoor` revision parent
   `b72df9f5`，准备 c631 的正式 A/B release，不缩小完整目标。
