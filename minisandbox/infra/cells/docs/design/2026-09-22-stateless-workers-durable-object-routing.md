@@ -1618,6 +1618,12 @@ manager job/lease/attempt、策略到期与有效回收批次，区分可回收�
 债务持续增长且实际服务需求超出预算，才进入容量调整；低效重复扫描或逐项串行
 验证则先修单位工作量和关键路径，再用相同 strict10k 证明收益。
 
+因果取证也有生命周期边界：精确冷态通过并执行 cleanup 后，本次分支的
+manager/reclaimer tag lookup 已为空，不能由此证明先前没有排队或失效 job。
+慢分支应在 inflight 时按 exact branch 保存 job identity、due/lease/attempt 与
+阶段进度，和同窗前台/债务关联；不得靠完成后全库扫描补造历史。最终资格收据
+能证明状态与安全门禁，不自动证明等待原因或设计修正的吞吐收益。
+
 进一步的只读 request-path 与独立 phase query 原字节、SHA、invocation 和限制见
 [evidence README](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md)。
 04:25--04:36:30 的滚动直方图显示 A ready-wait p99 从约 0.97 秒升至 24.22 秒，B
@@ -1765,6 +1771,16 @@ B 在 A 前置通过后于 08:40:20 UTC 提交同一 c631 产品，仍待终态�
 08:48:05 UTC 原 B Engine 6/6、Host 4/4 已收敛至 exact 新 digest，48 个在线/
 最终 checkpoint 和 post-sleep reclaim 已执行；精确冷态仍待 48 对象，无读取/清理
 错误。B rollout 不等于 cold-wake/HA/activation 通过，也不授权抢跑 strict10k。
+
+B 原 invocation 已于 09:29:08 UTC SUCCESS/0，原五份 Bottomless/HA/activation/
+control/audit 收据已按源字节归档并验 SHA 链；live 原 Cell UID 的 Ready 也已核对。
+48/48 exact cold、6,240 writes、HA 1,500 请求零失败，冷唤醒 p95/p99 约
+1,109/2,320 ms；精确冷态等待约 41 分钟的原因仍未确定。随后仅启动一次原参数
+strict10k run `200a42ae03ef4e128505b0def22e8af8`，从每 Cell 四 Host/四 Machine
+开始，API 副本仍由 HPA 管理。实际 systemd InvocationID、immutable runtime/tools
+及低容量起点已核对；预热成功不等于万级容量通过，也不将 SDK 已就绪集合当成
+同时活跃的 runtime 实例数。对照必须同时报告目标到达、实际派发与完成率，保留
+三秒 post-warmup SLO、零普通重试、精确 cleanup 和无人值守自然缩容门禁。
 
 原 audit 的 memory/storage headroom ETA 各含两个 Python float Infinity 叶子，
 JSON 严格消费者会拒绝其非标准序列化。归档保留源字节和 control→audit SHA 链，

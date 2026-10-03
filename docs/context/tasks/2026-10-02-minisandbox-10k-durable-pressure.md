@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.18.0
+revision: 1.19.0
 precedence: task
 derived: false
 ---
@@ -386,7 +386,76 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-当前 checkpoint（1.18.0）：上一 turn 为 progress，strict JSON 工具与真实回归已
+当前 checkpoint（1.19.0）：上一 turn 为 progress，正式 release-bound wrapper、jq
+回归与设计门禁已 FF 推送 master 42873a2d，remote exact SHA verified、clean。
+新 mvnzoyvp 只归档原资格证据和进展；空祖先 usqrqztm/kztxkyxu 保留。
+
+B 原 inv-d9epts0437 已于 09:29:08 UTC SUCCESS/0。原五份 Bottomless/HA/
+activation/control/audit 经官方 COS relay 逐份下载，raw SHA 校验后归档；真实
+production-cell verifier、HA canonical hash 和 activation→control→audit 字节链
+均通过，live 原 Cell UID Ready/readyForPlacement/observed generation 也已核对。
+48/48 exact cold、6,240 writes、冷态等待 2,450,858.673 ms，冷唤醒 p95/p99
+1,109/2,320 ms；HA 公共 /v1 1,500 请求零失败，后续 SQLite 写入与 cleanup 通过。
+claim_eligible=false 是组件边界，不能改为 strict10k 或全产品资格通过。
+09:28:50 manager lookup inv-c9er9904dm 是 final 已存在的 no-op，不是慢因证明。
+剩余 26 hot shards 最终回收到零，但约 41 分钟等待的因果仍未知；不归咎 COS、
+不强清 PITR/pin，不增加 Engine 掩盖单位工作成本。
+
+C 09:31:13 readonly inv-c9erbggia6 SUCCESS/0：API HPA 3..30，原 UID/image
+下 12/12 Ready、updated/available 收敛，三 Node Ready、DiskPressure false。
+builder rootfs available 约 18.44 GiB，只满足本轮负载的 eviction headroom，
+不满足独立 builder/20 GiB 构建准入。独立 builder Terraform 尚未 apply；不重编。
+
+新 strict10k run 200a42ae03ef4e128505b0def22e8af8 仅提交一次：launcher
+inv-a9erd305kp SUCCESS/0，实际 systemd MainPID 1728155、InvocationID
+8a1ff14bc64e49c889255161316c32e8，原 ops lock 覆盖全部 child 生命周期。
+runtime c631/a54、product d49、tools120/952、API d2e 保持 immutable。
+09:34:25 inv-e9eregg636 SUCCESS/0 实际确认 running，initial low 每 Cell 四
+Host/四 Machines，60 秒时 83 ready/64 proven、134 active success、零普通重试。
+09:39:13 inv-d9erj00fue SUCCESS/0 再确认同一进程：345 秒、617 ready/
+609 proven、9,002 active success、零 active failure/普通 retry/identity mismatch。
+warmup backpressure 4,193 次、364 Object、零 timeout；warmupReady max 约
+175.6 秒，post-warmup ready 样本仍为零，不能声称三秒 SLO 通过。
+observer 09:39:07 A/B Host desired/Ready 18/10 与 14/9、Machines Ready
+12/12，runtime active 288/215，errors/warnings/missingSignals 空。
+这是低容量扩容期间的供给 lead time 与阻塞，非已证明的 FDB steady-state 饱和；
+SDK ready 集合也不是同时运行 VM 数。新轮必须同看到达/派发/完成与热债务。
+此 observer 于 09:39:11 提交，早于五分钟边界 14 秒；不隐瞒，下一次提交由
+实际 clock guard 限制为不早于 09:44:13 UTC，而非靠人工估计。
+
+原始启动/进度脚本在 /data/tmp/minisandbox-strict10k-{start,progress}-200a42ae-
+20261003.sh；supervisor 输出保留在远端对应 run 的 load-tests 目录。
+旧 55b55875 FAILED 的清理/自然缩容终态不重标，新 run 未产生最终容量收据。
+不启动第二负载、rollout、monitor installer 或 Terraform apply。
+
+本轮追加实际读取 Gasoline Cell namespace/tag key 与 UDB/wf CLI、Engine HA
+verifier、Bottomless verifier、官方 relay-download、固定 runner 的 heartbeat/
+warmup/请求分类和原 start/progress scripts；定位源码后不运行 wf 写命令。
+误猜 udb subcommands、Gasoline keys.rs、runtime config template 路径不存在，
+bounded 搜索定位 engine/commands/udb、keys/workflow.rs、runtime.yaml/render。
+bottomless.states 是 object，第一次 states[0] jq 失败后按 keys/实际 Actor key
+读取，最终该 DB exact hot/staged 为零。fixture 代码实际在 runner.mjs sourceFor，
+不是不存在的 agent.mjs；一次宽 /data/tmp filename 搜索截断，已缩到 maxdepth 1。
+不把查询失败、no-op 或缺历史工作流误当作零成本/无维护。
+
+最终分支只读 lookup 第一版 inv-c9erm40e20 FAILED/1：final receipt 不包含
+inflight 的 final_checkpoints；按真实 bottomless.states 修正。第二版
+inv-a9ermfg2a4 FAILED/1：错误 app selector 返回空 Pod 集；源码实际使用
+fleet.actor.dev/cell-name/component，已修正，不放松 six Ready/image 门禁。
+两次均在业务 UDB 查询前失败，未触碰工作流状态。不将只读诊断失败冒充故障矩阵。
+归档五份 B 原字节与远端副本一致，HA canonical hash、正式 Bottomless verifier
+再验通过；release-admission 五项、Bottomless 十项单测通过。documentation 零
+errors/warnings；Context 4,942 历史 errors 的 normalized Counter 与基线一致，
+Task 零 error。26 项 context tests 同四项历史失败，audit 33/33。
+第三版 inv-e9erna01rj SUCCESS/0（09:42:45），绑定真实 Cell namespace、六
+Ready Engine 中一个 exact Pod UID/digest，对该分支 manager/reclaimer tag key
+各 limit 3，只得 0 entries、stderr 空。完成并 cleanup 后的空索引不能证明历史
+没有 job，也不能还原等待因果；不扩大成全库 workflow catalog 扫描。一次 grep
+误猜 depot/src/workflows/compaction/shared.rs 不存在，真实目录已在先前源码
+阅读中定位，未据此改变诊断或线上行为。下一轮慢分支须在 inflight 时保留 job/
+阶段证据，不能等到清理后再用缺索引断言零开销。
+
+历史 checkpoint（1.18.0）：上一 turn 为 progress，strict JSON 工具与真实回归已
 FF 推送 master b0e77182ab893111dab0bdd1c9aea8fe1b8a6930，remote exact SHA
 核验、jj import 后 clean；空祖先 usqrqztm 保留，新 xyknulvl 独立记录资格进展。
 09:03:52 只读 inv-e9eqhu0322 SUCCESS/0：B 原 qualification 精确冷态 43/48、
