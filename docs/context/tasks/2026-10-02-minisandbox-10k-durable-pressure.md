@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.9.6
+revision: 1.9.7
 precedence: task
 derived: false
 ---
@@ -81,6 +81,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   通过前不得运行或宣称 Router performance qualification 完成。
 - Router 性能工具必须区分固定到达计划、实际 dispatch 和 response 时延；五分钟 Prometheus
   滚动窗口全部位于 offered-load 窗口内部。准备、尾部等待和清理不能污染 steady-load 指标。
+- 本地组件 gate 对百万不同 key 实际访问生产 ObjectRouter，验证缓存/LRU/miss 表有界、
+  GC 后的保留 heap 不随历史访问基数线性增长。固定小 payload 的组件证明不能替代百万
+  dormant 公共路径/FDB/真实 API RSS 与云端容量证据。
 
 ## affected_paths
 
@@ -95,6 +98,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh`
 - `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/load/router-performance/`
+- `minisandbox/infra/cells/internal/workersapi/objectrouter/`
 - `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md`
 
 ## required_context
@@ -109,6 +113,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/infra/cells/internal/workersapi/objectrouter/{router.go,router_test.go}@40adcd4e`、`minisandbox/infra/cells/go.mod@40adcd4e` | 百万 key 后缓存驻留成本 | 生产 LRU/TTL/single-flight 与轻量确定性 resolver fixture；不模拟云端持久性、不写 Registry/FDB |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{prepare-cargo-cache.sh,build-image.sh,README.md}@ae339fd6` | Rust 重编工作量诊断 | 输入/toolchain closure 改变会清空整批 Cargo target；不将此次编译描述为只编几份修改源码，不改 live build |
 | `minisandbox/infra/cells/deploy/tencent/fleet/load/router-performance/{README.md,run.py,capture.py,run-on-builder.sh,test_run.py,test_lifecycle.py,test_capture.py,test_sample_window.py,test_capacity_receipt.py,test_run_on_builder.py}@ae339fd6` | 后续 Router 性能门禁的实际覆盖 | 修正固定到达延迟与五分钟窗口污染；只跑本地真实 HTTP/子进程回归，不抢占云端 ops lock |
 | `minisandbox/infra/cells/internal/workersapi/{object_router.go,objectrouter/router.go,metrics.go,api.go}@ae339fd6` | 缓存模型边界 | 固定轮询不能保证命中率；32,768 项/十分钟 TTL 与 Router 副本独立，意图不能代替实测 |
@@ -730,6 +735,43 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- 本轮 million churn 组件变更的文档 gate 零 error/warning；Context 26 tests 的四项失败名称
+  与既有 FDB-read-flights 基线完全一致，audit tests 33/33。discovery 执行 exit 0 只是候选
+  发现，不是成熟度评审通过。最终 Context normalized error Counter 与基线完全相同：
+  4,942 项、added/removed 均零、当前 Task 零 error；六条精确变更路径的 impact gate 通过，
+  matched_rules 为空，只是变更集映射检查，不代表完整性能目标通过。
+- million churn 实测已经执行且没有 skip：独立模块用 GOWORK=off、已安装 Go 1.25.4，
+  native 三项测试 exit 0；100 万不同 SHA key、32,768 retained entries，GC heap 在
+  131,072/1,000,000 访问为 10,773,840/10,774,144 bytes，exact Worker delete 后
+  1,862,168 bytes（baseline 1,861,320）。race 三项也 exit 0、无 data race，百万 fixture
+  9.85 秒；Go vet exit 0，gofmt/diff-check 通过。两个日志 SHA 前缀为 `3b99e3d70f51`/
+  `dc250f40f727`，完整摘要在正式 evidence。固定 64-byte ID payload 的保留 heap 门禁
+  不代表整套 API RSS；README/design 已明确边界。
+- 原生首跑被根 go.work 的 Go 1.26 要求和系统 GOTOOLCHAIN=local/Go 1.24.4 拦住，
+  未执行任何测试。随后 bounded find 定位真实 binary
+  `/data/build-cache/toolchains/go1.25.4/bin/go`；在 module/GOWORK=off 下实际 GOVERSION
+  已核验为 go1.25.4。未改根 workspace、工程 toolchain/version 或下载未知编译器。
+  未加 GOWORK=off 的 version 观察曾选择 Go 1.26，这不是最终 gate 的 toolchain 身份。
+- 原服务 06:14:44 UTC `inv-e9ejja0pwn` SUCCESS/0，同一 MainPID/InvocationID running，
+  load failed/cleanup passed/final waiting；A/B Host desired/Ready 56/87，Machine
+  66/87 Ready，active 零、无观察错误。只观察原 supervisor，不提交第二份负载。
+- 原 runtime build session 67448 / `inv-a9eij1gqpt` 已 SUCCESS/0，临时 build auth 清理
+  `inv-a9ejfgge4q` SUCCESS/0。只读 06:10:41 UTC `inv-a9ejfgge4n` 确认产品收据 passed、
+  source `c631f554` / manifest `a54e7daa59d1` / registry image `d3a6e41e3d1c`，
+  registryPullVerified 真。Rust Host 六项测试通过；未重编 V8、未上线 A/B。
+  正式 COS relay `inv-d9ejgg0jmg` / `inv-d9ejgh03tg` 下载产品原收据 673 bytes，
+  SHA 前缀 `d49da48b0ec0`，源身份及 exact ref 本地 jq 已核验。原 runtime build log
+  SHA 前缀 `06ec7b3b4e48`。完整 identity/hash 在正式 evidence。
+- 上一 goal turn 为 progress：Router offered-window 修正正常 FF 推 master `40adcd4e`，
+  远端 SHA 已核验、worktree clean。当前独立 revision `ytlzyvvs` parent `40adcd4e`，
+  只补 million-key cache churn 组件验证；不降低完整 million-dormant/10k/cache-mix 门禁。
+  原 build session 67448 本轮续接已完成；不重新提交 runtime build/rollout 或负载。
+  cloud runtime Skill/networking 本轮已完整读取，status tool 不存在、policy snapshot 缺失，
+  实际现有授权 TAT 为准。Go 系统 binary 为 1.24.4，工程 pin 1.25.4，使用正常 toolchain
+  选择且将 cache/tmp 放 /data，不降工程 version 规避要求。
+- 只读临时路径检索曾误扫 /data/tmp 树，已核验并终止唯一自建 rg 进程，改为 maxdepth=1
+  的确切文件查找。产品 helper `runtime/build-product-receipt.py` 是不存在的错误路径，
+  已回到实际 build-image/build-runtime 入口和 product 原收据；未运行猜测的 verifier。
 - 当前 Router 工具的最终 source 门禁：49/49、changed Python AST 六文件通过、diff-check
   无错误，documentation 零 error/warning；Context 4,942 历史 error 的 normalized Counter
   与基线完全相同、Task 零 error。26 项 context tests 与旧 FDB-read-flights 日志的四个失败

@@ -124,3 +124,28 @@ working sets, immutable runtime/config identities, and observed cache-hit
 validation. A proposed hot-key fraction is not cache-hit evidence. Increasing
 the number of newly created Objects also changes claim/wake cost and must not
 be presented as an isolated placement-cache experiment.
+
+## Local million-key cache churn
+
+From the independent `minisandbox/infra/cells` Go module, use a toolchain meeting
+its `go.mod` requirement and disable the enclosing mono2 workspace for this
+standalone module:
+
+```bash
+GOWORK=off go test -count=1 -v ./internal/workersapi/objectrouter
+GOWORK=off go test -race -count=1 ./internal/workersapi/objectrouter
+```
+
+`TestRouterMillionKeyChurn` resolves one million distinct SHA-256 Object IDs
+through the production Router implementation. The lightweight resolver returns
+a fixed-size ID and retains no history. A frozen clock prevents TTL expiry from
+hiding broken LRU eviction. The test checks the 32,768-entry bound, empty miss
+table, exact backend miss/hit behavior, and deletion of all owned Worker entries.
+It samples live Go heap after GC at 131,072 and 1,000,000 keys. The allowed heap
+growth is a conservative fixture-specific `capacity * 1024 + 8 MiB`, not a
+product quota or an API RSS guarantee. The test has no skip or reduced count.
+
+This is a component gate, not a passed million-dormant/public-HTTP qualification.
+Real binding payload sizes, other API caches, in-flight bodies, native memory,
+FDB metadata, Actor creation, and cloud sleep/wake remain separate requirements.
+Entry cardinality alone cannot bound bytes unless payload sizes are also bounded.

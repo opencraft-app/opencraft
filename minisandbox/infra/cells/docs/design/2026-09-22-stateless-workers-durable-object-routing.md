@@ -1232,6 +1232,14 @@ LRU 容量、idle TTL、流量分配与 reuse distance；新的 Object 还会混
 完整 cache/replica 矩阵仍须独立工作集/流量形状和实际 cache 指标验证，不能把拟定的热 key
 比例写成命中率或将这次工具门禁等同于整个性能矩阵完成。
 
+有界缓存的内存模型还要拆成 `entries * (key + binding + index)`、有界 miss table 的
+在途状态，以及 HTTP body/其他 API cache/native allocator。单纯限制 entries 不证明
+产品 RSS 上限。`TestRouterMillionKeyChurn` 用固定 64-byte ID payload 实际访问生产
+Router 的一百万不同 key，冻结时钟排除 TTL 对淘汰的掩盖；在 131,072 和 1,000,000
+访问后强制 GC 比较保留 heap，并核对 LRU、miss 表、命中/淘汰与 Worker exact 删除。
+它使用单独的 fixture 内存增长门禁，不将该阈值作为部署预算；这项本地组件证明不替代
+真实 binding payload、整个 API RSS、百万 dormant 公共路径与跨 Cell 云端资格。
+
 容量单位还须包括工作负载形状，不能只报“多少 Agent”。当前 strict10k fixture 的每次
 heartbeat 都读取去重记录，并用 `storage.put()` 更新 state 和新的 operation 结果；
 10,000 个 Object、十秒周期的目标到达率约为 1,000 次持久交互/秒，而不是 1,000 次纯

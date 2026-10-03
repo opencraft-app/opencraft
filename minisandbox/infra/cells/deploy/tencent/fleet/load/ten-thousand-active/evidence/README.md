@@ -1,5 +1,52 @@
 # Capacity failures and pressure evidence, 2026-10-03
 
+## Local million-key Router cache component gate
+
+The production `objectrouter.Router` at parent source `40adcd4e` was exercised
+with one million distinct SHA-256 Object keys, not one million cloud Actors.
+Test source `internal/workersapi/objectrouter/million_churn_test.go` hashes to
+`61d7e0935c16b859a999ca296f99edc1fd57e8e634a2baa048d5d5c44105a2f5`.
+Its resolver retains no history and returns only a fixed-size ID. The clock is
+frozen, so expiry cannot disguise retention or eviction bugs. Cache capacity is
+32,768; miss capacity is 256. This sequential churn fixture validates miss-table
+cleanup, not the throughput or admission of 256 simultaneous misses.
+
+All three package tests passed natively and under the race detector, with no
+skip or reduced count. `go vet` exited zero. The independent module used the
+existing Go 1.25.4 binary with `GOWORK=off` and `GOMAXPROCS=4`; both caches and
+temporary files stayed under `/data`. The initial system Go 1.24.4 attempt was
+blocked by the enclosing workspace's toolchain requirement before tests ran.
+Neither the workspace nor the module version was downgraded.
+
+| GC live heap sample | Native bytes | Race bytes |
+|---|---:|---:|
+| Baseline | 1,861,320 | 1,874,424 |
+| 131,072 distinct keys, cache full | 10,773,840 | 10,787,008 |
+| 1,000,000 distinct keys, cache full | 10,774,144 | 10,787,552 |
+| Exact Worker cache deletion, zero entries | 1,862,168 | 1,875,176 |
+
+The million-key fixture took 2.27 seconds natively and 9.85 seconds under race.
+These include key generation and test checks and are not a production QPS
+curve. Both full-cache phases retained exactly 32,768 entries. Before the final
+hit/eviction checks there were exactly one million backend misses, zero hits,
+zero overloads, and no remaining miss flights. A previously evicted key resolved
+again; a recent key refreshed once. Exact Worker deletion removed cache entries
+and LRU nodes, but this operation did not delete any durable Worker or Actor.
+
+Original native and race logs remain outside Git:
+
+- `/data/tmp/minisandbox-router-million-churn-v2-20261003.log`, SHA-256
+  `3b99e3d70f51239a4531d5f33c17f508488935f225b304a09acf09458fbc36eb`.
+- `/data/tmp/minisandbox-router-million-churn-race-20261003.log`, SHA-256
+  `dc250f40f727a4b2eca8e50b63b5600c54a746599147a77faa199a0ad1625f45`.
+
+The fixture growth guard is `capacity * 1024 + 8 MiB`, not a product memory
+quota. Live Go heap after forced GC is not process RSS. Real binding sizes,
+HTTP bodies, other caches, native allocation, FDB metadata, and cloud ownership,
+creation, sleep, and wake are outside this component proof. The strict10k
+qualification remains failed and the million-dormant public-path gate remains
+unproven.
+
 ## Explicit-admission run 55b55875
 
 Run `55b558752ba2454987491cdea655ff68` used Runtime source
@@ -15,6 +62,34 @@ global cancellation, not independent transport faults. Exact cleanup passed:
 all 9,159 scheduled test identities were deleted, with zero retries or pending
 deletes. Natural drain remains owned by the original supervisor; no final
 capacity verdict or floor-convergence success is claimed here.
+
+The unchanged original supervisor was still running at 06:06:26 UTC, read-only
+`inv-d9ejbh07va`, with the same MainPID and InvocationID. A/B Host desired counts
+were 76/90, Ready 76/89, and Ready Machines 86/91. Both Cells reported zero
+active Actors and no observer errors. These are ongoing natural-drain samples,
+not final floor convergence or a new qualification attempt.
+The next read-only sample, `inv-e9ejja0pwn` at 06:14:44 UTC, retained that same
+supervisor identity. A/B Hosts were desired/Ready 56/87, Ready Machines 66/87,
+active Actors zero, and observer errors empty. Final convergence remained pending.
+
+The replacement Runtime was built separately from immutable source
+`c631f5542f45b974455543d5bb458e0b3b3cf395`, source manifest
+`a54e7daa59d1b1a48403d6766a866486630b2cb7d1187a1e0d2a4427eb82bd0c`.
+Original build `inv-a9eij1gqpt` and temporary-auth cleanup `inv-a9ejfgge4q`
+finished with SUCCESS/0. The product receipt reports passed container checks
+and registry pull verification for
+`actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711`.
+The existing workerd stage was reused, and the Host's six focused tests passed.
+This build is not an A/B release or evidence that the failed load now passes.
+
+Original 673-byte product receipt:
+`/data/actor-qualification/builds/product-rivet-runtime-c631f5542f45b974455543d5bb458e0b3b3cf395-8vj0eL.json`,
+SHA-256 `d49da48b0ec04edd39bd53252910a20e2cbaa4c44930f92fd1a89bef44685cb1`.
+Official relay `inv-d9ejgg0jmg` / `inv-d9ejgh03tg` verified identical bytes at
+`/data/actor-build/local-admission-c631f554-20261003/product-runtime.receipt.json`
+and removed only its temporary relay key. The original completed build log
+`/data/actor-qualification/builds/runtime-c631f5542f45b974455543d5bb458e0b3b3cf395.OJTtUP.log`
+hashes to `06ec7b3b4e48484747e6452b4f04fcc8cd07f1c76df096a4cb7fd75e7f6e6727`.
 
 | Committed original/diagnostic | Raw SHA-256 |
 |---|---|
