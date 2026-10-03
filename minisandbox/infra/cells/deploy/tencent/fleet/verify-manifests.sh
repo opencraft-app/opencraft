@@ -431,6 +431,7 @@ python3 "$script_dir/qualification/actor-bj-q01/test_release_receipt_persistence
 python3 "$script_dir/runtime/test_bottomless_receipt_identity.py"
 python3 "$script_dir/runtime/test_runtime_base_contract.py"
 python3 "$script_dir/qualification/actor-bj-q01/test_runtime_build_log.py"
+python3 "$script_dir/qualification/actor-bj-q01/test_runtime_python.py"
 python3 "$script_dir/qualification/actor-bj-q01/test_prepared_runtime_stage.py" PreparedStageContractTest
 python3 "$script_dir/runtime/test_monitor_bottomless.py"
 "$script_dir/qualification/actor-bj-q01/test-run-user-transparent-upgrade-via-tat.sh"

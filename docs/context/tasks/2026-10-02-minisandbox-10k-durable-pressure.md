@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.6.0
+revision: 1.7.0
 precedence: task
 derived: false
 ---
@@ -87,6 +87,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `minisandbox/engine/packages/depot/`
 - `minisandbox/docs-internal/engine/sqlite/components.md`
 - `minisandbox/infra/cells/deploy/tencent/fleet/runtime/`
+- `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/`
+- `minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh`
 - `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md`
 
 ## required_context
@@ -131,6 +133,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/docs-internal/engine/sqlite/components.md@4857746f`、`minisandbox/docs-internal/engine/sqlite/constraints-and-design-decisions.md@4857746f`、`minisandbox/docs-internal/engine/sqlite/storage-structure.md@4857746f` | 后台工作与安全边界 | 准入不取得数据权威，保留原 publication/lifecycle/backup fence |
 | `minisandbox/engine/packages/gasoline/src/ctx/workflow.rs@4857746f`、`minisandbox/engine/packages/gasoline/src/error.rs@4857746f`、`minisandbox/engine/packages/gasoline/src/worker.rs@4857746f`、`minisandbox/engine/packages/gasoline-macros/src/lib.rs@4857746f` | admission/execution/replay | 独立有界准入、可取消；由原 exact-lease handler 持久延期 |
 | `minisandbox/engine/packages/depot/src/admission.rs@4857746f`、`minisandbox/engine/packages/depot/src/compaction/companion.rs@4857746f`、`minisandbox/engine/packages/depot/src/workflows/db_hot_compacter.rs@4857746f` | job 恢复和故障边界 | 不丢 signal、伪造完成或移动 StageBeforeAdmission fault 到许可之后 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/runtime/README.md@3d03bf6a`、`minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/build-runtime-via-tat.sh@3d03bf6a`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/reuse-stage-from-runtime.sh@3d03bf6a` | 实际发布入口与 compiled-input closure | 先证实 workerd 复用，不绕过 source、ABI、资源及凭证边界 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/test_runtime_build_log.py@3d03bf6a`、`minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/test_build_parallelism.py@3d03bf6a` | 发布邻居真实测试 | 原 invocation 失败须保留；有界日志、退出状态、CPU/内存限制不变 |
 
 ## evidence
 
@@ -195,6 +199,15 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## validation
 
+- 本轮 builder Python 修正：3 项回归通过，真实子进程在旧 default 位于 PATH 首位时
+  仍使用 Python 3.11，支持原失败的 subprocess 接口；错误 interpreter 失败关闭，主机默认不变。
+  构建 parallelism 9、prepared stage 9、bounded log 1、stage closure 14 项通过，共 36 项。
+  原脚本在新契约测试中三项均失败；真实 Python 3.6 故障证据来自原云 invocation，
+  不把测试中缺少新 shim 的失败混称为完整旧解释器仿真。shell syntax 与 diff 检查通过。
+  full fleet manifest invariants 通过，新增 Python 回归进入 permanent materialization gate；
+  documentation 0 errors/0 warnings，audit 33 项通过且实际 audit exit 0。
+  Context 仍为相同 4,942 个历史错误，归一化 digest 后与 3d03bf6a 基线逐项相同，
+  当前 Task 无错误；26 项 context 测试仍为同样四项历史失败，不称全量通过。
 - 本轮独立准入：Gasoline lib 33 passed、Depot lib 56 passed，真实存储/production handler
   覆盖延期重启、same input、新 lease、stale owner fencing、排队取消、实际执行超时、
   output replay、pre-admission output 及直接宏调用不绕过准入。
@@ -266,10 +279,23 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-A/B 发布资格完成；strict10k 终态失败；active-job 有界观察与独立有界准入已有本地回归，尚未发布。
+A/B 旧 Runtime 资格完成；strict10k 终态失败。3d03bf6a 修正版已验真落到 builder，首个构建
+在 workerd reuse 验证前因默认 Python 3.6 失败；正在修正式构建入口，尚未发布。
 
 ### verified
 
+- 本轮只读 `inv-d9ebkng529`：A/B 均 readyForPlacement，仍运行旧 6e4d982e 镜像，
+  Engine 各 6 Ready、Host 各 4 Ready。未 rollout 或修改线上容量。
+- source `3d03bf6a6fe9ece26e3ae2ea54a4864b66b785d3`，manifest 前缀 `c2c1614c`，
+  完整 manifest/bundle 摘要保留在上述本地 immutable source receipt 与 builder metadata。
+  14,272 文件的 full reviewed source 经 COS 中转；`inv-d9ebm30xwq` SUCCESS/0，
+  immutable materialization 和 manifest 门禁通过，不改变 promoted source link。
+- 构建原 invocation `inv-d9ebnrg4ke` FAILED/1，明确报
+  `__init__() got an unexpected keyword argument 'text'`。reuse helper 的 subprocess 使用
+  Python 3.7+ 接口，而 builder 默认是 3.6；仅设置 ACTOR_BUILD_PYTHON 不覆盖子 helper。
+  本地监督服务 InvocationID `b9a4377a38e749bf9c066f4613ee99b2` 已 failed/1，不是仍在构建。
+- 原构建没有 stage receipt、产品 receipt 或 rollout。14 项 stage reuse 本地回归通过；
+  不将这组测试冒充本次真实 compiled-input projection 已通过。
 - pending gauge 在真实 transaction cancellation、success、error 三条路径恢复基线。
 - Rust runtime 配置 10 项测试通过，production install/release/render 使用相同的 8/2 默认值。
 - Runtime `072e504b` / image `6e4d982e` 已构建，A 正式 gate/activation 已通过。
@@ -321,13 +347,18 @@ A/B 发布资格完成；strict10k 终态失败；active-job 有界观察与独�
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 4857746f 为已推送证据基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 3d03bf6a 为已推送证据基线；原 dirty 工作区保持不动。
+- 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
+  原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
 
 ### next_action
 
+- 先修 builder 子 helper 的 Python 选择并完成正式门禁，然后使用新 reviewed source
+  提交一次新构建。保留旧失败身份；实际 reuse 证明、产品 digest、A/B release 和 strict10k
+  都尚未通过，不能仅复用旧 stage label 或临时 patch 线上配置。
 - 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
   已复现，须把新指标随下一实际修正发布后才能量化旧反馈假设，不重写历史分类。
 - active-job 有界观察与独立准入完成源码/本地验证后，按同一 reviewed release 纳入实际 Engine；

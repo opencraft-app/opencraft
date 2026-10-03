@@ -82,6 +82,11 @@ installation time, not claimed to be a hermetic package snapshot.
 `build-runtime-via-tat.sh` checks all required executables before issuing or
 transferring any registry push credential. A passed bootstrap is only build
 readiness, never runtime release or public API qualification evidence.
+It checks the exact Python 3.11 interpreter during preflight, then installs a
+process-local `python3` shim for the complete remote build and cleans it on exit.
+Setting only `ACTOR_BUILD_PYTHON` is insufficient: stage reuse and other child
+helpers invoke `python3` themselves and must not fall back to TencentOS Python 3.6.
+The system default interpreter is never replaced.
 
 The q01 runtime and semantic-failure build wrappers default to one Cargo build job on the
 4-core, 8 GiB operator. `RIVET_BUILD_JOBS=2` is the only higher supported setting there.

@@ -104,6 +104,7 @@ for tool in buildah cargo rustc gcc clang ld.lld make pkg-config protoc cmake ku
   fi
 done
 [[ $missing == 0 ]] || exit 2
+python3.11 -c 'import sys; assert sys.version_info[:2] == (3, 11)'
 source=$(readlink -e "$source_link")
 if [[ -n $prepared_stage ]]; then
   verify_prepared_stage "$source" "$prepared_stage" "$prepared_receipt" "$source_revision" "$source_manifest"
@@ -190,13 +191,21 @@ source=$stable_source
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$source/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/clang-lld-linker.sh"
 stage=$(mktemp -d /data/tmp/q01-runtime-stage.XXXXXX)
 cargo_home=$(mktemp -d /data/tmp/q01-runtime-cargo-home.XXXXXX)
+python_shim=$(mktemp -d /data/tmp/q01-runtime-python.XXXXXX)
 cleanup_remote() {
   rm -rf -- "$stage"
   rm -rf -- "$cargo_home"
+  rm -rf -- "$python_shim"
   if mountpoint -q "$stable_source"; then umount "$stable_source"; fi
   rm -f -- "$auth"
 }
 trap cleanup_remote EXIT INT TERM
+# Child helpers invoke python3 themselves. ACTOR_BUILD_PYTHON alone only
+# selects product receipts, leaving stage verification on TencentOS Python 3.6.
+# Bind every child to the qualified interpreter without changing the host default.
+ln -s "$(command -v python3.11)" "$python_shim/python3"
+export PATH="$python_shim:$PATH"
+python3 -c 'import sys; assert sys.version_info[:2] == (3, 11)'
 lock_sha=$(sha256sum "$immutable_source/Cargo.lock" | cut -d' ' -f1)
 vendor_root=/data/build-cache/runtime-vendor/$lock_sha
 test "$(sha256sum "$vendor_root/Cargo.lock" | cut -d' ' -f1)" = "$lock_sha"

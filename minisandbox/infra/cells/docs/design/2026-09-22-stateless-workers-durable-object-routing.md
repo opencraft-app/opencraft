@@ -1416,6 +1416,12 @@ offered demand；实际需求率与有效进度目前还须在正式负载中补
 如果 deferral 降低错误却使 debt 持续增长，仍判性能门禁失败。暂停的工作也可能延后 branch
 完成/停止信号处理；不得把 bounded delay 描述为立即完成或丢弃 exact job。
 
+性能修正的发布证据也分层：本地算法回归、reviewed-source build、A/B runtime qualification、
+相同 strict10k receipt，不能互相替代。正式 builder 的默认 Python 3.6 不满足 stage closure
+verifier 的 subprocess 接口；共享构建入口须在授予 push authority 前验证已安装的 Python 3.11，
+并让所有子 helper 通过进程内 shim 使用它。不得因此替换系统 Python、跳过 compiled-input
+projection，或把一次构建失败误报为线上性能回归。
+
 诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
 input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
 写入的多信号/UTF-8 多块 fixture 证明生产 replay 可以成功而 debug reader 失败。修复仅在
