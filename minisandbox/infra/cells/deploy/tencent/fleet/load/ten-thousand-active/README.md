@@ -29,6 +29,19 @@ up to 36 hours for the ordinary five-minute serial drain policy to return both
 Cells to the floor. The resulting receipt binds the load receipt and the
 15-second capacity trace by SHA-256.
 
+The final 36-hour window is unchanged on success or failure. Its timeout is now
+captured rather than exiting through `set -e` before verification: the observer
+is stopped/reaped and available load/cleanup/trace inputs still produce a failed
+receipt. The verifier requires explicit load, cleanup and final-capacity command
+exit statuses; an earlier passing JSON document cannot hide a nonzero process
+exit or failed final convergence. Missing/malformed input remains nonzero and
+cannot be promoted to success; in that case the terminal log records verifier
+failure rather than inventing a complete receipt. Abrupt supervisor death is
+not covered by this finalization path. `test_supervisor.py` executes the actual
+Bash entrypoint with offline boundary doubles and a synthetic clock; it does not
+accelerate cloud policy or qualify TKE. Existing live immutable tools snapshots
+are not edited/restarted by this source change.
+
 The archived `evidence/c631-runtime-tools120-admission-20261003.sh` binds the
 point-read runtime to the unchanged tools-120 load graph. Before load it verifies
 both original Bottomless/HA receipts, activation -> control -> audit byte hashes,

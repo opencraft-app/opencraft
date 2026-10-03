@@ -78,14 +78,14 @@ wait_for_low() {
 	local phase=$1 timeout=$2 began=$SECONDS last_report=0
 	while ((SECONDS - began < timeout)); do
 		if cell_is_low actor-bj-a01 && cell_is_low actor-bj-b01; then
-			printf 'capacity_phase=%s status=low elapsed_seconds=%d\n' "$phase" "$((SECONDS - began))" | tee -a "$out/state.log"
+			printf 'capacity_phase=%s status=low elapsed_seconds=%d\n' "$phase" "$((SECONDS - began))" | tee -a "$out/state.log" || return 1
 			return 0
 		fi
 		if ((SECONDS - last_report >= 300)); then
-			printf 'capacity_phase=%s status=waiting elapsed_seconds=%d\n' "$phase" "$((SECONDS - began))" | tee -a "$out/state.log"
+			printf 'capacity_phase=%s status=waiting elapsed_seconds=%d\n' "$phase" "$((SECONDS - began))" | tee -a "$out/state.log" || return 1
 			last_report=$SECONDS
 		fi
-		sleep 30
+		sleep 30 || return 1
 	done
 	echo "$phase capacity convergence timed out" >&2
 	return 1
@@ -138,18 +138,29 @@ if [[ -f $out/load/receipt.json ]]; then
 fi
 printf 'cleanup_exit_status=%d\n' "$cleanup_status" | tee -a "$out/state.log"
 
-# Even a failed load must return through the production sleep/drain path; the
-# harness never leaves a deliberately inflated fleet behind.
-wait_for_low final 129600
+# Even a failed load waits for the production sleep/drain path. A timeout is
+# failure evidence, not permission to force capacity down. Capture it before
+# stopping the observer so set -e cannot skip the final verifier/failed receipt.
+final_capacity_status=0
+wait_for_low final 129600 || final_capacity_status=$?
+printf 'final_capacity_exit_status=%d\n' "$final_capacity_status" | tee -a "$out/state.log"
 sleep 45
 cleanup
 trap - EXIT INT TERM
 
+set +e
 python3.11 "$verifier" \
 	--trace "$out/capacity.ndjson" --load-receipt "$out/load/receipt.json" \
 	--cleanup-receipt "$out/cleanup-receipt.json" \
 	--output "$out/receipt.json" --expected-active 10000 --expected-objects 11000 \
-	--floor-per-cell 4 --hard-active-per-host 32
-test "$load_status" = 0
-test "$cleanup_status" = 0
+	--floor-per-cell 4 --hard-active-per-host 32 \
+	--load-exit-status "$load_status" --cleanup-exit-status "$cleanup_status" \
+	--final-capacity-exit-status "$final_capacity_status"
+verification_status=$?
+set -e
+if ((load_status != 0 || cleanup_status != 0 || final_capacity_status != 0 || verification_status != 0)); then
+	printf 'ten_thousand_active_qualification=failed run_id=%s load_exit_status=%d cleanup_exit_status=%d final_capacity_exit_status=%d verifier_exit_status=%d\n' \
+		"$run_id" "$load_status" "$cleanup_status" "$final_capacity_status" "$verification_status"
+	exit 1
+fi
 printf 'ten_thousand_active_qualification=passed run_id=%s receipt=%s\n' "$run_id" "$out/receipt.json"

@@ -2281,6 +2281,15 @@ TAT `inv-d9fh1a0su6` SUCCESS/0；source为mono2 `03e7e7b7`，制品尚未发布�
 controller变化，其余27项与其他root metadata保持不变。这里只产生staged目标inventory，
 没有更新Cell/GitOps、没有开启repair；实际TKE/Actor fencing与完整Phase5仍待执行。
 
+strict10k supervisor的失败证据也必须fail closed：最终36h normal drain等待超时不能
+因`set -e`跳过verifier，源码改为捕获该status、停并reap observer，再用已有输入生成
+失败回执。verifier显式绑定load/cleanup/final-capacity三项exit status，任何非零拒绝
+passed，即使输入receipt看起来成功或trace曾记录low。未产生/损坏的输入不能伪造为
+完整receipt；只能留下nonzero终止日志。此修正不缩短正常缩容窗口、不强制缩容或释放
+live workflow的锁，也不覆盖abrupt supervisor death。离线actual Bash故障测试不能
+替代真实TKE缩容资格。2026-10-03T23:35:02Z原supervisor同InvocationID/PID仍live，
+A111Hosts/115Machines、B4/4、active0；原load失败、cleanup通过与完整Phase5未通过不变。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

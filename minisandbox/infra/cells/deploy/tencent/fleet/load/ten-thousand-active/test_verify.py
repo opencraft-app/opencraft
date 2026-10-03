@@ -60,7 +60,7 @@ class VerifyTest(unittest.TestCase):
         self.assertIn("else\n\t\treturn 1\n\tfi", script)
 
     def run_verifier(self, remove_final=False, warmup_timeouts=0, degrade_fdb=False,
-                     cleanup_pending=0, mutate=None):
+                     cleanup_pending=0, mutate=None, exit_statuses=(0, 0, 0)):
         root = os.environ.get("TMPDIR", "/data/tmp")
         with tempfile.TemporaryDirectory(dir=root) as temporary:
             temporary = Path(temporary)
@@ -99,6 +99,9 @@ class VerifyTest(unittest.TestCase):
                 "python3", str(ROOT / "verify.py"), "--trace", str(trace),
                 "--load-receipt", str(load), "--cleanup-receipt", str(cleanup),
                 "--output", str(output),
+                "--load-exit-status", str(exit_statuses[0]),
+                "--cleanup-exit-status", str(exit_statuses[1]),
+                "--final-capacity-exit-status", str(exit_statuses[2]),
             ], capture_output=True, text=True)
             return result.returncode, json.loads(output.read_text())
 
@@ -113,6 +116,36 @@ class VerifyTest(unittest.TestCase):
         self.assertNotEqual(status, 0)
         self.assertEqual(receipt["verdict"], "failed")
         self.assertFalse(receipt["checks"]["finalLowCapacity"])
+
+    def test_process_failures_cannot_be_hidden_by_passed_input_receipts(self):
+        for statuses in ((42, 0, 0), (0, 1, 0), (0, 0, 1)):
+            with self.subTest(statuses=statuses):
+                status, receipt = self.run_verifier(exit_statuses=statuses)
+                self.assertEqual(status, 1)
+                self.assertEqual(receipt["verdict"], "failed")
+                self.assertFalse(receipt["checks"]["executionSucceeded"])
+                self.assertEqual(receipt["executionExitStatuses"], dict(
+                    zip(("load", "cleanup", "finalCapacity"), statuses)))
+                if statuses[2]:
+                    self.assertFalse(receipt["checks"]["finalLowCapacity"])
+
+    def test_explicit_valid_exit_statuses_are_required(self):
+        base = ["python3", str(ROOT / "verify.py"), "--trace", "offline-missing",
+                "--load-receipt", "offline-missing", "--cleanup-receipt", "offline-missing",
+                "--output", "offline-missing"]
+        result = subprocess.run(base, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("required", result.stderr)
+        for index in range(3):
+            for value in (-1, 256):
+                statuses = [0, 0, 0]
+                statuses[index] = value
+                flags = [item for name, status in zip(
+                    ("load", "cleanup", "final-capacity"), statuses)
+                    for item in (f"--{name}-exit-status", str(status))]
+                result = subprocess.run([*base, *flags], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("exit statuses", result.stderr)
 
     def test_rejects_warmup_backpressure_timeout(self):
         status, receipt = self.run_verifier(warmup_timeouts=1)

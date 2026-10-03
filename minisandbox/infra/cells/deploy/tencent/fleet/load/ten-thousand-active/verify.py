@@ -167,10 +167,17 @@ def main():
     parser.add_argument("--expected-objects", type=int, default=11000)
     parser.add_argument("--floor-per-cell", type=int, default=4)
     parser.add_argument("--hard-active-per-host", type=int, default=32)
+    parser.add_argument("--load-exit-status", type=int, required=True)
+    parser.add_argument("--cleanup-exit-status", type=int, required=True)
+    parser.add_argument("--final-capacity-exit-status", type=int, required=True)
     args = parser.parse_args()
     if (args.expected_active < 1 or args.expected_objects < args.expected_active
             or args.floor_per_cell < 1 or args.hard_active_per_host < 1):
         parser.error("invalid qualification bounds")
+    exit_statuses = {"load": args.load_exit_status, "cleanup": args.cleanup_exit_status,
+                     "finalCapacity": args.final_capacity_exit_status}
+    if any(status < 0 or status > 255 for status in exit_statuses.values()):
+        parser.error("exit statuses must be integers from 0 through 255")
     if args.output.exists():
         raise SystemExit("receipt output already exists")
 
@@ -268,6 +275,7 @@ def main():
         and counters.get("activeIdentityMismatches") == 0
     )
     checks = {
+        "executionSucceeded": all(status == 0 for status in exit_statuses.values()),
         "capacityTraceValid": trace_valid,
         "capacityIdentityStable": bool(identity_stable),
         "loadReceiptPassed": load_passed,
@@ -280,13 +288,14 @@ def main():
             and max_ready_machines > args.floor_per_cell * len(CELLS),
         "activeCapacityReady": active_capacity_ready,
         "safeDrainObserved": drain_observed,
-        "finalLowCapacity": final is not None,
+        "finalLowCapacity": final is not None and args.final_capacity_exit_status == 0,
     }
     receipt = {
         "schema": "actor-ten-thousand-active-qualification/v1",
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "verdict": "passed" if all(checks.values()) else "failed",
         "checks": checks,
+        "executionExitStatuses": exit_statuses,
         "inputs": {
             "capacityTrace": {"path": str(args.trace), "sha256": sha256(args.trace)},
             "loadReceipt": {"path": str(args.load_receipt), "sha256": sha256(args.load_receipt)},
