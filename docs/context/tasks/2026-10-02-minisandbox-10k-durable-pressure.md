@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.5
+revision: 1.8.6
 precedence: task
 derived: false
 ---
@@ -307,9 +307,17 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 开始实际负载，Runtime 59/tools 120/API 723 独立绑定；新诊断信号完整、无采样 warning。
 小资格负载或首批 warmup 成功不证明 strict10k 通过，
 原零普通重试、万活跃及三秒创建门禁不放宽。
+本轮上一 turn 为 progress（pressure analyzer 已推 master）；当前为 verified wait：
+03:44:27 UTC 原 systemd service 仍 active/running，InvocationID 与 MainPID 均未变。
+未启动第二负载，未编译或发布 Runtime；完整目标仍未完成。
 
 ### verified
 
+- `inv-d9ef6dga7b` SUCCESS/0，03:44:27 UTC 原 run 55b55875：2,873 ready/proven、
+  203,912 active success，普通请求 retry/失败/身份漂移零；warmup 背压仍 7,166 次、
+  576 对象、零 timeout，三秒 post-warmup 样本零。A/B Host desired 83/80、Ready 75/72，
+  Machines desired/current/Ready 为 83/83/83 与 80/80/80。诊断 91/87 samples，无缺项/warning。
+  active p99 上界约 304 ms；这只是当前累计样本，不是万级终态性能。
 - 03:39:01 UTC `inv-d9ef1agh1t` SUCCESS/0，只读确认原 service / InvocationID 未变：
   2,244 ready、2,231 proven、121,935 active success，普通 retry/失败/身份漂移零；
   warmup 背压累计 7,166 次、576 对象、零 timeout、最长 227 秒。A/B desired Host
@@ -466,6 +474,12 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### unverified
 
+- Router 当前 `run.py` 只支持一次共享 Worker、固定 Object 集的持续绑定负载；
+  `capture.py` 可采实际 cache hit ratio，但尚无 1%/50%/99% mix 与 1/4/8/16+ replica
+  的完整矩阵收据。新增 Object 请求不是纯 cache miss，创建/唤醒成本不得混为缓存成本；
+  单副本曲线不得通过直接降低生产三副本 HA 下限实现。
+- 完整目标还包括百万 dormant 公共路径、1k/10k 同步 wake storm、热点/多 key、流式取消/
+  背压及剩余网络故障矩阵；不把已有小资格、局部算法测试或 3→4→3 HPA 证据代替这些要求。
 - strict 10k 通过和 Router performance receipt；历史 run 失败、新 run 尚无终态，
   A/B 小规模资格不替代容量验收。
 - 供给时延与可用槽位余量是否覆盖目标创建率和同步唤醒突发；未实现预测扩容。
@@ -485,7 +499,7 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 e4490d46 为已推送基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 2e390039 为已推送基线；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
 - 上述 59e86519 build 已成功，不再重启其 service/InvocationID；日志和完整 source receipt 在
@@ -505,6 +519,9 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- 下一次只读观察原 service 不早于 03:49:27 UTC，继续原 2/s warmup 与零普通 retry 门禁。
+  前提仍是 complete strict10k（包含 exact cleanup/natural drain）先通过，再实际运行
+  stateless Worker binding Router performance；不并发运行容量与性能资格。
 - 跟随唯一已运行 strict10k，保留旧失败身份，不临时 patch 线上容量、超时或重试。
   A/B release/qualification、materialization/stage reuse 与新产品已通过，strict10k 未通过。
   不因为文档/诊断更新重编 workerd；tools 120 独立于 Runtime 59。
