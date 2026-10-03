@@ -305,6 +305,16 @@ impl WorkflowCtx {
 			.map_err(|_| WorkflowError::ActivityTimeout(A::NAME, 0));
 
 		let dt = start_instant.elapsed().as_secs_f64();
+		// Errors and timeouts must remain distinguishable without putting their payloads in labels.
+		// Record execution separately from the durable event write, which can fail independently.
+		let result_label = match &res {
+			Ok(Ok(_)) => "succeeded",
+			Ok(Err(_)) => "error",
+			Err(_) => "timeout",
+		};
+		metrics::ACTIVITY_ATTEMPT_DURATION
+			.with_label_values(&[self.name.as_str(), A::NAME, result_label])
+			.observe(dt);
 
 		match res {
 			Ok(Ok(output)) => {
@@ -517,6 +527,10 @@ impl WorkflowCtx {
 		Err(WorkflowError::WorkflowEvicted)
 	}
 }
+
+#[cfg(test)]
+#[path = "../../tests/modules/activity_attempt_metrics.rs"]
+mod activity_attempt_metrics_tests;
 
 impl WorkflowCtx {
 	/// Creates a sub workflow builder.

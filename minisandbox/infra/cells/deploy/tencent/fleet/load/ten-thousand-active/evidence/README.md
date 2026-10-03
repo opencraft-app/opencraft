@@ -85,3 +85,32 @@ history replay bytes, transaction retries, and per-Pod CPU before selecting a
 remedy. Reducing background permits bounded execution but did not make this
 10k run pass. Neither blind replica growth nor looser retries/timeouts is a
 validated correction.
+
+## Work-amplification follow-up
+
+Read-only invocation `inv-c9e9u20q2x` succeeded with exit zero. Its historical
+queries stop at 20:27:00 UTC, before the first error, with 30-second steps and
+bounded responses. Raw builder file `work-amplification.json`, alongside the
+archives above, is 718,367 bytes and hashes to
+`e73676dd1ad9ddd37278a243a8f9d3ebbab63eafac3549b6fb01a818a2b879ce`.
+The same bytes were verified locally through COS relay. The transfer removed
+only its temporary relay object and did not delete the builder evidence.
+
+At the final five-minute window, A/B manager reads are approximately
+23.16/24.19 MB/s and hot-stage reads are 9.22/7.00 MB/s. Manager transaction
+attempts average 1.460/1.453. Per-Pod one-minute CPU peaks are at most
+2.09/2.34 cores. These are sampled logical client metrics, not provider billing
+or physical FDB I/O, and no business-byte amplification ratio is established.
+
+Hot-stage activity duration averages 27.77/28.26 seconds; install averages
+26.40/26.33 seconds. The old histogram collapses success, failure, and timeout
+into the same empty error label. Its roughly 39.13/35.80 stage completions/s
+are therefore attempt completions, not successful materializations.
+
+Source inspection and a real RocksDB-backed ActivityCtx test prove that
+admission wait consumes the activity timeout and can record a durable timeout
+without executing any data job. This supports investigating queue/replay
+feedback, but does not retrospectively prove how many of these historical
+attempts timed out or caused the primary HTTP 502. The added bounded-result
+attempt metric is a source change, not a deployed runtime or repaired capacity
+qualification. Router performance remains blocked by the failed strict run.

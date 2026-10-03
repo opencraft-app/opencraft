@@ -206,6 +206,13 @@ lazy_static::lazy_static! {
 		BUCKETS.to_vec(),
 		*REGISTRY
 	).unwrap();
+	pub static ref ACTIVITY_ATTEMPT_DURATION: HistogramVec = register_histogram_vec_with_registry!(
+		"gasoline_activity_attempt_duration",
+		"Activity execution attempts, including admission wait, by bounded terminal result before history persistence. This is not a workflow commit or compaction progress metric.",
+		&["workflow_name", "activity_name", "result"],
+		BUCKETS.to_vec(),
+		*REGISTRY
+	).unwrap();
 	pub static ref ACTIVITY_ERRORS: IntCounterVec = register_int_counter_vec_with_registry!(
 		"gasoline_activity_errors",
 		"All errors made in an activity.",

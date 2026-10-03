@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.3.0
+revision: 1.4.0
 precedence: task
 derived: false
 ---
@@ -48,6 +48,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `502 indeterminate_result` 保持现有副作用边界；修复目标是消除资源饥饿，不改变错误语义。
 - Gasoline debug history 按 signal index 分组多个 input chunk；调试读取不能把合法多块信号
   误判为历史损坏。生产 replay、持久编码与当前负载 Runtime 不变。
+- Gasoline activity execution attempt 使用固定 succeeded/error/timeout 结果；排队时间仍包含
+  在 execution attempt timeout 内，指标不能将正常返回的 retryable 业务结果等同有效 fold。
 
 ## history_context
 
@@ -105,6 +107,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/engine/AGENTS.md@02f3c676` | 本轮 Rust 验证 | 新测试放在 tests/，私有键 fixtures 使用最小 cfg(test) shim |
 | `minisandbox/.claude/reference/testing.md@02f3c676` | 测试环境 | 从 minisandbox 执行 Cargo，加载 tokio_unstable；真实 RocksDB/memory PubSub |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@02f3c676` | 发布邻接真实测试 | 复核失联不能重复发作业，失败收据不得冒充资格成功 |
+| `AGENTS.md@3989cb4d`、`minisandbox/AGENTS.md@3989cb4d`、`minisandbox/engine/AGENTS.md@3989cb4d` | 本轮源码与测试约束 | 不改重试或持久 schema，新 fixture 放在 tests/ |
+| `docs/context/project/upstream-subtrees.md@3989cb4d`、`docs/context/project/adjacency/argocd-ci-secrets.md@3989cb4d` | 路由与邻接 | mono2 唯一真源，检查实际 monitor 测试而非只读摘要 |
+| `minisandbox/docs-internal/engine/sqlite/components.md@3989cb4d`、`minisandbox/docs-internal/engine/sqlite/storage-structure.md@3989cb4d` | 后台成本与 fence | 排除全局 ledger 争用假设，不去掉 committed-prefix/PITR 校验 |
+| `minisandbox/engine/packages/gasoline/src/ctx/workflow.rs@3989cb4d`、`minisandbox/engine/packages/depot/src/admission.rs@3989cb4d` | 超时所有权 | execution timeout 当前包含 admission 排队，以真实 semaphore 验证 |
 
 ## evidence
 
@@ -138,6 +144,16 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - 新 run 首段只读 `inv-d9e08dgdx4`：约 270 秒，384 ready、5,275 active 成功、零
   terminal failure，但 warmup 容量背压重试 2,418 次，就绪最大约 78 秒。不是全程零重试
   或三秒创建证明。相邻样本 A/B 各六 Ready Host，desired 10/11，后台 admission 队列为零。
+- 新只读 `inv-c9e9u20q2x` SUCCESS/0，故障前末五分钟 A/B manager read 为
+  23.16/24.19 MB/s、hot stage 为 9.22/7.00 MB/s；manager attempts 平均 1.460/1.453。
+  每 Pod 一分钟 CPU 峰值最高约 2.09/2.34 cores。业务输入 bytes 未齐，不能声称写放大倍数。
+- 同窗 stage attempt 平均耗时 27.77/28.26 秒、install 为 26.40/26.33 秒。旧 activity
+  histogram 将 timeout/error/success 合并，不能将完成率视为有效 compaction 或计算 timeout 比例。
+- 原始 718,367-byte work-amplification.json 已经 COS relay 验 SHA；完整 SHA、builder 路径、
+  时间窗口与证据限制记录在 strict10k evidence README，不把原始大文件加入 Git。
+- 真实 RocksDB/UDB 与生产 ActivityCtx fixture 证明 admission semaphore 等待可以在数据工作
+  开始前产生持久 activity timeout。新的固定 result metric 在 history write 前观察执行结果；
+  成功输出 replay 不重复计数。未修改 durable event、activity timeout/retry 或发布 Runtime。
 
 ## risks
 
@@ -148,6 +164,11 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## validation
 
+- 本轮 `cargo test --offline --locked -p gasoline --lib -- --nocapture`：25 passed，包含
+  成功与生产 history replay、用户错误固定标签、admission queue timeout 三项新真实存储回归。
+- 本轮 clippy exit 0，库/测试保留原 139/140 warnings，新 fixture 无 warning；documentation
+  validator 0 errors/0 warnings，显式六文件 change-impact 通过，Context 仍为 4,942 个历史错误，
+  当前 Task Pack 无错误。没有把空 changed-files 检查作为门禁证据。
 - 本轮 `cargo test --offline --locked -p gasoline --lib`：22 passed，真实 RocksDB/memory PubSub；
   聚焦 debug history 四项均通过。旧 reader 多块失败反例已经执行，不修改生产 replay。
 - 本轮 `cargo clippy --offline --locked -p gasoline --lib --tests -- -W warnings`：exit 0，保留
@@ -199,7 +220,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-A/B 发布资格完成；strict10k 原服务终态失败，完整输入已取回；调试 history 多块误报已修复并验证。
+A/B 发布资格完成；strict10k 终态失败；维护读取/attempt 新证据已取回，admission 超时机制本地验证。
 
 ### verified
 
@@ -227,6 +248,8 @@ A/B 发布资格完成；strict10k 原服务终态失败，完整输入已取回
   原始首因 transport warning 未落在 bounded current-Pod log 选择内；不以取消日志替代首因。
 - debug 多块 fixture 在旧 reader 失败、生产 replay 成功；修复后四项真实存储回归和全部
   22 项 Gasoline lib 测试通过。缺失 index 与非法 chunk 仍失败关闭，不变更 Runtime 镜像。
+- 进一步 25 项 Gasoline lib 测试通过；新增有界三结果指标和真实 queue timeout 回归，不将
+  指标修正冒充调度/性能整改完成。线上镜像仍是 072e504b/6e4d982e。
 
 ### unverified
 
@@ -235,6 +258,9 @@ A/B 发布资格完成；strict10k 原服务终态失败，完整输入已取回
 - 低 maintenance concurrency 能否同时保持 hot tail 有界和 cold publish 进度。
 - 万级失败完整因果：补 hot fold 有效/失效工作、history replay 字节、每 Pod CPU 与 FDB 重试；
   reclaim 为零可能是 live pins/retention，不能只凭同窗相关性下结论。
+- 历史窗口具体 timeout/replan 比例、admission 等待与实际执行的分布、首次 502 完整归因。
+  per-Pod CPU/读字节/transaction attempts 已补，旧合并 activity 标签无法追溯分类。
+- durable admission deferral、active-job 规划合并和有界 DELTA 读批优化尚未实现。
 
 ### discard
 
@@ -243,14 +269,15 @@ A/B 发布资格完成；strict10k 原服务终态失败，完整输入已取回
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 02f3c676 为已推送证据基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 3989cb4d 为已推送证据基线；原 dirty 工作区保持不动。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
 
 ### next_action
 
-- 保存失败收据并复算相同 verifier；检查最初 initialize 失败与 B control/storage 压力时序。
-- 从 hot fold/replay 工作粒度和实际 bytes/transaction amplification 建模下一修正；先取得可证伪
-  根因与真实存储回归，不立即重复耗时负载、不加 retry/timeout、不减 Object 标准。
+- 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
+  已复现，须把新指标随下一实际修正发布后才能量化旧反馈假设，不重写历史分类。
+- 明确 exact job durable deferral/lease 所有权和等待上限，检查 busy job 时的重复规划及
+  committed-prefix 读批；先写真实存储/调度回归，不立即重跑耗时负载、不加 retry/timeout。
 - 保持 Router performance 前置 10k 门禁；诊断修复不单独触发 workerd 重构建或 Runtime 发布。

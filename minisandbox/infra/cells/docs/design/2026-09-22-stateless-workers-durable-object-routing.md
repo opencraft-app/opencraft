@@ -1296,6 +1296,58 @@ reclaim 延后。下一步必须区分 hot fold 的有效/失效工作、history
 cold eligibility，不能仅调 permit、Host 数或超时。原始首因 transport log 没保留在此次
 有界 current-Pod 选择中，不能用之后的取消日志补造首因；压力相关性不是完整因果证明。
 
+进一步只读历史查询 `inv-c9e9u20q2x` 覆盖首错前的 20:07--20:27 UTC、30 秒步长。
+原始 `work-amplification.json` 为 718,367 bytes，SHA-256
+`e73676dd1ad9ddd37278a243a8f9d3ebbab63eafac3549b6fb01a818a2b879ce`，保存在同一
+builder evidence 目录并经 COS 验真下载。末个五分钟窗口 A/B manager 规划读取约
+23.16/24.19 MB/s，hot stage 另读 9.22/7.00 MB/s；manager 每完成一笔 transaction 对应
+约 605/634 KB 读取，平均 attempts 为 1.460/1.453。这不是 business payload 的写放大倍数，
+也不是全部 FDB I/O，但证明维护规划已是主要读取成本之一。逐 Pod 一分钟 CPU 峰值最高
+约 A 2.09/B 2.34 cores，不支持仅凭汇总低 CPU 就继续盲加 Engine。
+
+同一末窗口 stage activity 完成率约 A 39.13/B 35.80 attempts/s，平均总耗时
+27.77/28.26 秒；install 平均约 26.40/26.33 秒。现有 `gasoline_activity_duration` 将成功、
+失败、超时都记到空 error 标签，且在 history 写入后才观察，因此这些完成率不是成功 fold
+吞吐，不能回推有多少 timeout。`run_activity()` 的默认 30 秒 timeout 包住整个
+`Activity::run()`，而 Depot 在其中等待 semaphore。真实 RocksDB、生产 ActivityCtx 和零容量
+semaphore 的回归已证明：尚未获得 admission、数据工作完全没有开始，就可以写入一次持久
+activity timeout。此机制提供了排队超时和 replay 放大的可证伪解释，仍不是上述首个 502 的
+完整归因。
+
+新增 `gasoline_activity_attempt_duration{workflow_name,activity_name,result}` 使用固定
+`succeeded|error|timeout` 三值，观察返回或超时的执行尝试，在 history write 前记录。
+它不记录被外层取消但没有返回的尝试，不表示 workflow commit，也不把业务返回的
+`CompactionJobStatus::Retryable` 当作成功 fold。成功 activity history 的生产 replay 不再计一次
+execution attempt。历史指标保留，持久输出、timeout、重试和 generation fence 均不因此改变。
+当前只完成源码和真实存储验证，没有发布新 Runtime 或把历史窗口重新分类。
+
+下一修正的模型要分离三个时间和两种服务率：
+
+```text
+T_attempt = T_admission_wait + T_execute
+T_workflow = T_attempt + T_history_commit + T_replay/backoff
+attempt_service_rate != useful_fold/publish/reclaim_service_rate
+```
+
+许可数约束正在执行的工作，不约束已经 leased、携带历史和 activity retry budget 的等待者。
+只减 permit 会增大队列等待；若等待仍消耗 execution timeout，就可能变成
+`queue -> timeout -> history/replay reads -> FDB latency -> slower queue` 正反馈。
+稳定性必须用每种工作类型的有效 service time、有效成功率、实际输入 bytes 和队列年龄判断，
+不能拿约 28 秒的含排队时间除以 12 个执行许可来计算执行吞吐，也不能认为约 40 attempts/s
+已处理完约 40 个有效 job。
+
+在修改调度前需要固化如下边界，而不是直接提高 timeout 或无界等待：
+
+1. admission 等待、执行失败与 FDB commit/replay 失败分开；排队不能无意义地耗尽数据 job
+   的失败预算，但等待本身仍须有界、可取消且恢复后不丢 exact job。
+2. 后台超出执行预算时，未运行工作应保留 durable identity 和明确 due/lease 所有权。
+   不能返回假成功、丢信号、轮询所有 dormant Object 或争抢一个全局每请求 FDB 锁。
+3. 同一 branch 的 dirty wake 合并，并检查 active job 已占用时是否仍反复完整规划输入。
+   对 DELTA 读取优化须保留事务/字节预算和 exact committed prefix；stage/install 的 lifecycle、
+   truncate、PITR/pin、原子 publication 与条件 PIDX 清理校验不能去掉。
+4. 各阶段报告 attempt result 和有效 output，先证明 timeout/replan 放大下降、前台尾延迟恢复、
+   hot debt 有界，再重跑相同 strict10k。当前未实现上述新的 durable admission 调度。
+
 诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
 input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
 写入的多信号/UTF-8 多块 fixture 证明生产 replay 可以成功而 debug reader 失败。修复仅在
