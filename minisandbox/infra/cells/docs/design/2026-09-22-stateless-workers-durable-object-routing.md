@@ -1280,6 +1280,29 @@ inflight/waiters 为零。这支持先排查新 Host 准入/容量等待，但�
 容量突发时必然先背压；单靠放宽重试不会改善用户创建 SLO。该公式是容量规划约束，当前
 未实现预测扩容，也不能用本次 warmup 的容许重试替代正式创建 SLO。
 
+同一 run 的最终资格已失败，原字节收据保留在
+`load/ten-thousand-active/evidence/`。9,194 ready、约 212 万 active attempts 后，首个错误是
+初始化 `502 indeterminate_result`；之后 2,643 条 `code=20` 是全局取消扇出，不能当作独立
+网络故障。9,226 个 scheduled Object 全部精确删除、清理零 retry，A/B 自然缩回各四个
+admitted/Ready 节点。自动扩容、稳定身份、安全 drain 与最终低容量检查通过；10k sustained、
+active capacity 和 load verdict 没通过，不能继续生成 Router performance 资格。
+
+最后故障前样本的 A/B compaction 为 12/12 in-flight、1,360/1,102 waiters，B UDB pending
+达 3,989。故障前历史范围查询显示 Cell 汇总 Engine CPU 峰值约 10.6/10.8 cores，B UDB
+operation p99 约 0.988 秒、workflow-history transaction mean 约 1.007 秒；汇总 CPU 不支持
+直接复用上一轮总 CPU 饱和的结论，仍不能排除单 Pod 饱和。最后约 27 分钟的采样窗口有效
+reclaim 为零，authority bytes 增长约 A 1.35/B 1.41 GB；live pins/retention 也可合法解释
+reclaim 延后。下一步必须区分 hot fold 的有效/失效工作、history replay 字节、FDB 重试和
+cold eligibility，不能仅调 permit、Host 数或超时。原始首因 transport log 没保留在此次
+有界 current-Pod 选择中，不能用之后的取消日志补造首因；压力相关性不是完整因果证明。
+
+诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
+input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
+写入的多信号/UTF-8 多块 fixture 证明生产 replay 可以成功而 debug reader 失败。修复仅在
+新 signal index 创建时检查连续性；单块、多块、缺失 index 和非法 chunk 四项回归通过，
+Gasoline 全部 22 项 lib 测试通过。不改生产 replay、持久键或编码，不因此重建 workerd，
+也不能把这项诊断修复称为上述 10k 性能问题的修复。
+
 ## 所有权与核心不变量
 
 | 状态/动作 | 唯一所有者 |

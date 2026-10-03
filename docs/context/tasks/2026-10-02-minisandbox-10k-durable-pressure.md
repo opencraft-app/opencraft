@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.2.1
+revision: 1.3.0
 precedence: task
 derived: false
 ---
@@ -46,6 +46,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `rivet_udb_transaction_pending{name}` 必须表示当前尚未结束的 transaction；future 被取消时也必须
   恢复 gauge。
 - `502 indeterminate_result` 保持现有副作用边界；修复目标是消除资源饥饿，不改变错误语义。
+- Gasoline debug history 按 signal index 分组多个 input chunk；调试读取不能把合法多块信号
+  误判为历史损坏。生产 replay、持久编码与当前负载 Runtime 不变。
 
 ## history_context
 
@@ -70,6 +72,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 - `minisandbox/engine/packages/universaldb/`
 - `minisandbox/engine/packages/config/`
+- `minisandbox/engine/packages/gasoline/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/runtime/`
 - `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md`
 
@@ -98,6 +101,10 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/infra/cells/deploy/tencent/fleet/load/ten-thousand-active/run-on-builder.sh@d7ff0a90` | 固定到达模型 | 10k/十秒目标节拍、实际发起率与成功率分开 |
 | `minisandbox/engine/packages/depot/src/workflows/db_manager.rs@d7ff0a90` | 当前等待机制 | exact 成功续批与失效后的维护周期分开 |
 | `minisandbox/engine/packages/gasoline/src/db/kv/mod.rs@d7ff0a90` | 诊断存储路径 | workflow 索引还须包含 Cell namespace，旧无 namespace 查询不能证明工作流不存在 |
+| `minisandbox/engine/packages/gasoline/src/db/kv/debug.rs@02f3c676` | 诊断反例 | 新 signal index 与同一输入后续 chunk 的检查分开 |
+| `minisandbox/engine/AGENTS.md@02f3c676` | 本轮 Rust 验证 | 新测试放在 tests/，私有键 fixtures 使用最小 cfg(test) shim |
+| `minisandbox/.claude/reference/testing.md@02f3c676` | 测试环境 | 从 minisandbox 执行 Cargo，加载 tokio_unstable；真实 RocksDB/memory PubSub |
+| `minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@02f3c676` | 发布邻接真实测试 | 复核失联不能重复发作业，失败收据不得冒充资格成功 |
 
 ## evidence
 
@@ -141,6 +148,13 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ## validation
 
+- 本轮 `cargo test --offline --locked -p gasoline --lib`：22 passed，真实 RocksDB/memory PubSub；
+  聚焦 debug history 四项均通过。旧 reader 多块失败反例已经执行，不修改生产 replay。
+- 本轮 `cargo clippy --offline --locked -p gasoline --lib --tests -- -W warnings`：exit 0，保留
+  现有库/依赖告警；新 debug_history fixture 无告警。不运行 broad fixer。
+- 原 trace SHA 验真后在本地复算 strict verifier：预期 exit 1，四组
+  verdict/checks/expected/evidence 与原云端收据逐项相同。strict verifier 15 项单测通过。
+- documentation validator：0 errors/0 warnings；原字节三份终态收据 SHA 与 builder 一致。
 - `cargo test -p universaldb --lib pending_transaction_gauge -- --nocapture`：1 passed；真实 RocksDB
   transaction 进入 closure 后 abort，等待 cancellation 完成再检查 gauge，同时检查成功和失败返回。
 - `cargo test -p rivet-config --test runtime -- --nocapture`：10 passed。
@@ -179,13 +193,13 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 - 当前状态：源码取消清理、8/2 默认值及封闭输入前缀回归已完成；新 Runtime 已构建。
   A/B 正式 release/Bottomless/HA/activation 已通过；B 原作业正常结束，没有重发发布。工具源码已落地，
-  strict10k 新 run 已进入低容量起步；保持目标 active，不能把模型文档或小规模通过标为容量问题已解决。
+  strict10k 新 run 现已失败，精确清理和自然缩容完成；不能把模型文档或小规模通过标为容量问题已解决。
 
 ## checkpoint
 
 ### stage
 
-A/B 发布资格完成；失败 preflight 保留，新 strict10k 已确认进入 initial low 后启动实际 runner。
+A/B 发布资格完成；strict10k 原服务终态失败，完整输入已取回；调试 history 多块误报已修复并验证。
 
 ### verified
 
@@ -200,12 +214,27 @@ A/B 发布资格完成；失败 preflight 保留，新 strict10k 已确认进入
 - 新 run `d3a163511fd849bf9a466553e4ab4f48` 已提交，TAT `inv-e9e03sgq36` SUCCESS/0；
   监督服务 InvocationID 前缀 `5090f1d5`。只读 `inv-e9e04dg6b4` 确认服务 running、
   A/B 完整 preflight 通过、initial low 和实际 runner 的首个统计；最终 receipt 尚未产生。
+- 本轮 `inv-e9e0adgcj4` 只读确认同一监督服务 running；约 390 秒时 641 ready、10,877
+  active 成功。未重发 workload 或 release。
+- 最终原服务已 failed/exit 1；只读 `inv-e9e9bh00r4` 取回终态。load 到 9,194 ready、
+  2,117,371 active success 后遇到一个 initialize `502 indeterminate_result`。随后 2,643
+  `code=20` 为全局取消；9,226 scheduled 全部精确删除、清理零 retry，自然回到各四 Host/Node。
+- 原字节 capacity/load/cleanup receipt 已归档，完整 189.7 MB trace 与 load journal 经 COS
+  中转并验 SHA。复算 verifier 的 verdict/checks/expected/evidence 与原收据相同，exit 1；
+  扩容、身份、trace、cleanup、safe drain、final low 通过，10k/load/active capacity 未通过。
+- 故障前 B UDB pending 为 3,989、A/B compaction waiter 为 1,360/1,102。历史 range 证据
+  `inv-d9e9ei01uw` 显示汇总 Engine CPU 峰值约 10.6/10.8 cores，并非上轮总 CPU 饱和。
+  原始首因 transport warning 未落在 bounded current-Pod log 选择内；不以取消日志替代首因。
+- debug 多块 fixture 在旧 reader 失败、生产 replay 成功；修复后四项真实存储回归和全部
+  22 项 Gasoline lib 测试通过。缺失 index 与非法 chunk 仍失败关闭，不变更 Runtime 镜像。
 
 ### unverified
 
-- strict 10k 最终结果和 Router performance receipt；A/B 小规模资格不替代容量验收。
+- strict 10k 通过和 Router performance receipt；本轮最终失败，A/B 小规模资格不替代容量验收。
 - 供给时延与可用槽位余量是否覆盖目标创建率和同步唤醒突发；未实现预测扩容。
 - 低 maintenance concurrency 能否同时保持 hot tail 有界和 cold publish 进度。
+- 万级失败完整因果：补 hot fold 有效/失效工作、history replay 字节、每 Pod CPU 与 FDB 重试；
+  reclaim 为零可能是 live pins/retention，不能只凭同窗相关性下结论。
 
 ### discard
 
@@ -214,13 +243,14 @@ A/B 发布资格完成；失败 preflight 保留，新 strict10k 已确认进入
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 83b5f321 为已推送证据基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 02f3c676 为已推送证据基线；原 dirty 工作区保持不动。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
 
 ### next_action
 
-- 续接新 run 的监督服务和只读快照，确认内层负载后记录 effective throughput/hot-debt 时序；
-- 下一只读观察以五分钟级稀疏 cadence 续接；不重启服务或通过减少标准消除容量背压。
-  继续用 exact job 时序定位冷降等待，不跳过 fingerprint 或保留策略。
+- 保存失败收据并复算相同 verifier；检查最初 initialize 失败与 B control/storage 压力时序。
+- 从 hot fold/replay 工作粒度和实际 bytes/transaction amplification 建模下一修正；先取得可证伪
+  根因与真实存储回归，不立即重复耗时负载、不加 retry/timeout、不减 Object 标准。
+- 保持 Router performance 前置 10k 门禁；诊断修复不单独触发 workerd 重构建或 Runtime 发布。
