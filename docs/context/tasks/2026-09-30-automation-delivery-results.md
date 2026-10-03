@@ -92,10 +92,10 @@ derived: false
 - MR 文件差异和本地 `git diff` 摘要，不保存完整扫描输出。
 
 ## handoff
-- 用户已确认提交 MR；代码已提交并合入最新 `master`，待推送和更新 MR 说明。全量前端测试与全量 Context 校验未通过，限制已在验证记录中列出。
+- 用户已确认提交 MR；源分支已推送，MR !4878 的标题和说明已更新，远端显示可合并、CI 运行中。全量前端测试与全量 Context 校验未通过，限制已在验证记录中列出。
 
 ## stage
-MR 范围已收窄，已合入最新 `master` 并通过合并后的聚焦验证，正在提交远端。
+MR 范围已收窄，已合入最新 `master` 并通过合并后的聚焦验证；MR !4878 保持打开，尚未合并或发布。
 
 ## verified
 - 聚焦 Vitest 324/324、`pnpm check`、`pnpm typecheck`、国内及国际站构建通过。
@@ -114,7 +114,7 @@ MR 范围已收窄，已合入最新 `master` 并通过合并后的聚焦验证�
 
 ## restore
 - 工作树：`/Users/pablozhong/.codex/worktrees/automation-delivery-results/lightvela`，分支 `codex/automation-delivery-results`。
-- 本地结果查看提交 `37ad194d2`，合入 `master@1a724a3cf` 的提交 `7f7267cb2`；远端状态待推送后核验。
+- 结果查看提交 `37ad194d2`，合入 `master@1a724a3cf` 的提交 `7f7267cb2`；远端 MR !4878 已核对为 opened、can_be_merged，CI pending。
 
 ## next_action
-- 提交同步清单，推送既有 MR 源分支，更新 MR 标题和说明并核对远端状态。
+- 等待 MR 的 CI 结果和人工评审；合并与发布由后续流程执行。
