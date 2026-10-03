@@ -1708,6 +1708,25 @@ imageFs 自身只用约 4.39 GB，不代表 backing 空间安全。资源模型�
 总需求与 reserve 为准，不能把“镜像少”推断成“不会阻断调度”。这是当前控制面故障的
 证据，不是原万对象请求首错的逆向归因；不同时间的 df/stats 也不证明特定写入速率。
 
+08:05 UTC 的有界缓存退役已取得真实 SUCCESS/0 收据：在原 operations/build 双锁下，
+重新验证 C/A/B 全 namespace 的 40 个保护引用及 TCR 的完整归档集合，只删除剩余
+15 个精确旧本地镜像，无额外父镜像删除。root available 从 16,886,652,928 增至
+21,554,479,104 bytes；业务数据、PVC、源码、Cargo 缓存和 TCR 对象未动。缓存清理
+只恢复空间余量，不是构建隔离；当前共盘布局依旧不能通过新的 build admission。
+
+08:11:44 UTC 同 UID 的 native kubelet 样本显示约 19.1% backing 可用，DiskPressure
+已于 08:07:59 转为 False，API 12/12 Ready。近期 API Pod 的实际 DisruptionTarget
+明确为 ephemeral-storage 驱逐，因此这条控制面资源耦合有直接证据；后续 TKE native
+也报告三节点 running。中途曾 False/True 抖动，不以单次 df 或瞬间 False 宣称修复。
+HPA 当前读取到 QPS/in-flight 为零并有 ValidMetricFound，只证明此时空闲观察链恢复，
+不证明负载中的指标连续性、扩容成功或原业务 502 的唯一根因。
+
+恢复后的完整 Terraform plan 已保存，审计结果仅新增独立 builder 的 CVM、CBS、attachment、
+security group 和 egress rule，共五 create、零 change/destroy、零 drift；尚未 apply。
+A/B 对 c631 性能修正产品的正式 preflight 均通过，A release/qualification 已提交原不可变
+TAT invocation。该候选降低重复 fold 输入访问及独立点读等待，不能据已构建或发布开始
+宣称 strict10k 已通过。实际缓存收据和发布句柄见 [容量证据目录](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md)。
+
 #### FDB 适配层点读的串行放大
 
 同窗 FDB 诊断绑定原 run `55b55875` 和两 Cell 的 CR UID，十八个历史 Pod UID

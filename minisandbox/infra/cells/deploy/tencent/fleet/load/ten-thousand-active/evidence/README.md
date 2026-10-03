@@ -67,6 +67,48 @@ configured pressure transition is five minutes. These samples explain the curren
 pressure guard, not the original business 502. They are not simultaneous with the
 earlier `df`; their difference is not an attributable build-write rate.
 
+### Exact cache retirement and observed recovery, not storage isolation
+
+The fresh v2 dry-run `inv-e9ens0gbt4` and execution `inv-e9ensrg8cq` both completed
+SUCCESS/0. The latter's non-secret native receipt is
+[`beijing-builder-cache-retirement-20261003.json`](beijing-builder-cache-retirement-20261003.json),
+SHA-256 `73037af55910bb64710d5623feed7d09010ae17be87280488ae2f306a73759bc`.
+It binds the verified COS-relayed operator artifact, complete 36/36 TCR archive,
+forty current/rollback protection references and the original operations/build locks.
+Exactly fifteen remaining local image IDs were deleted; `implicitDeletedIds` is empty.
+Root available bytes increased from 16,886,652,928 to 21,554,479,104. Immutable
+registry copies remain recoverable. Business data, PVCs, source trees and Cargo
+caches were not removed. This was a new re-observed plan, not a replay of the
+partial v1 mutation. Buildah 1.33.11 refuses multi-name deletion by ID, so each
+exact mutable alias was removed first, the remaining immutable identity checked,
+and only then the exact local ID deleted, without force or broad prune.
+
+Read-only `inv-e9ep100q67` completed SUCCESS/0 at 08:11:44 UTC. It reports the
+same C Node UID, DiskPressure=False since 08:07:59, Ready=True, and all twelve
+desired Workers API replicas Ready with the expected digest. Native nodeFs and
+imageFs share 105,620,869,120 capacity and 20,180,090,880 available bytes, about
+19.1%. The latest three API disruption conditions explicitly record kubelet
+ephemeral-storage eviction; they establish this control-plane failure mechanism,
+not the cause of the earlier 04:36 business 502. The complete projected local log
+`/data/tmp/minisandbox-current-api-node-health-20261003.log` hashes to
+`6461c1486ce9c684a45b92bb3fe8a2531afba32fb201bb933b194db51a5ae38b`.
+Its earlier unbounded Pod-detail diagnostic was truncated and is not the complete
+evidence. HPA current custom metrics are zero with ValidMetricFound at idle;
+continuous correctness under offered load is still unqualified.
+
+Native TKE RequestId `e2c33cbd-f074-4c6b-a1c9-fa1a8266f17d` subsequently reports
+all three original C workers running. A new full Terraform plan succeeded and
+was saved locally; its JSON projection has exactly five builder-only creates,
+no existing-resource change/destroy and no drift. No apply or disk initialization
+has occurred, and the original control/build root remains shared.
+
+Both A/B c631 preflights passed in `inv-d9ep1i0ech` SUCCESS/0. A's formal
+release/qualification was submitted once as detached `inv-a9ep2a0399`, retaining
+the original release wrapper and shared operation-lock domain. It is pending,
+not a release, Bottomless, HA, activation or strict10k pass. Resume this exact
+invocation, do not submit it again. No workerd recompilation or second load was
+performed by these recovery steps.
+
 Read-only observation `inv-a9em5wgcj7`, 07:08:46 UTC, completed SUCCESS/0.
 The original C control/builder node still reports DiskPressure and shares its
 root with data/build paths, with 14,845,512 KiB available. Workers API is 12/12

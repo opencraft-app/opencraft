@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.12.0
+revision: 1.14.0
 precedence: task
 derived: false
 ---
@@ -114,6 +114,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@962ad5ea` | 接续用户性能建模要求 | mono2 唯一写源，不以扩大副本替代单位成本/控制面隔离 |
+| `minisandbox/infra/cells/deploy/tencent/fleet/{README.md,tat/{tat-run.sh,lib-tat.sh,tat-download.sh},operations/{run-autonomy-ops-cycle.sh,with-autonomy-operation-lock.sh},runtime/{monitor-bottomless-qualification.sh,install-admission-controller.sh,install-host-autoscaling.sh,test_builder_storage.py}}@962ad5ea` | 实际锁、准入所有权与发布邻接 | MachineSet minimum 与 Host HPA floor 由不同 installer 读取，不能因都叫 MIN_REPLICAS 擅自改 qualification 条件 |
 | `AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/{agent-gateway-runtime.md,release-gitops.md}`、`docs/context/project/{upstream-subtrees.md,services/ctl.md,services/sandbox.md,adjacency/argocd-ci-secrets.md}@00708032` | 恢复后精确路由与原发布边界 | 只读 collector 和原锁复用，跨服务信息不授权修改 CTL/Sandbox |
 | `docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@00708032`、`minisandbox/infra/cells/deploy/tencent/fleet/{tat/{tat-run.sh,lib-tat.sh},operations/with-autonomy-operation-lock.sh,terraform/create-first/bootstrap/{prepare-bootstrap-host.sh,test_install_pull_credential_e2e.py},qualification/actor-bj-q01/{build-runtime-via-tat.sh,relay-upload-to-builder.sh},runtime/prepare-cargo-cache.sh,terraform/create-first/management/{main.tf,variables.tf},terraform/create-first/pre-destroy/audit.py}@00708032` | 实际存储采集、保护凭据、构建缓存与 Terraform 状态邻接 | 原 TAT/ops lock 语义不另造，guest 兼容 stock Python 3.6，仅用 metadata 读取实例 ID |
 | `AGENTS.md`、`minisandbox/AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@df32d6c0` | 本轮继续性能归因与 bootstrap 修复 | mono2 唯一写源，原独立 revision 接续，不将局部测试视为发布 |
@@ -380,6 +382,80 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 ## checkpoint
 
 ### stage
+
+当前 checkpoint（1.14.0）：新 v2 dry-run inv-e9ens0gbt4、execute inv-e9ensrg8cq
+均 SUCCESS/0，后者通过收据已进入正式 evidence JSON：十五 exact deletedIds、零
+implicitDeletedIds、四十保护 refs，root available 增加 4,667,826,176 bytes。
+fresh TCR inventory 共 36/36；所有删除对象有 immutable registry 副本可恢复。
+业务数据/PVC/源码/Cargo/TCR 未删，不放宽 kubelet 门槛，不重发 v1 partial mutation。
+新 archive 的第一次 sed 截断解析失败，未生成 artifact；改为完整 jq projection 后
+成功，不把截断库存当作完整证据。08:00 的 DiskPressure False 在二十秒后转 True；
+故未宣称瞬间恢复。inv-c9envf0x9m FAILED/1 精确定位原 preflight line 62 为 C API
+readiness predicate；不误报为产品 checksum 或源码失败。
+
+只读 inv-e9ep100q67 SUCCESS/0 于 08:11:44 UTC：same Node UID、DP False since
+08:07:59、Ready True、API 12/12 exact digest Ready，kubelet backing available
+20,180,090,880 bytes。近期 DisruptionTarget 明确 ephemeral-storage 驱逐；HPA 当前
+QPS/in-flight 为零、ValidMetricFound，只是 idle 链恢复证据。第一次全 Pod 明细输出
+截断，未当完整 artifact；新的精简 projection 完整保留，SHA 6461c1486ce9。
+TKE RequestId e2c33cbd 返回三原节点 running。完整 TF plan session 74033 exit 0、
+show session 41263 exit 0：五 builder-only create，零 change/destroy/drift；已保存
+plan，未 apply。cloud lock/鉴权没有绕过，没有 targeted/skip-refresh。
+
+A/B c631 preflight inv-d9ep1i0ech SUCCESS/0，两个 Cell 都 passed。A formal release
+仅提交一次 inv-a9ep2a0399 detached，slow waiter local session 14735 使用五分钟
+间隔，后续必须继续同一 invocation，不重发。原 fast local waiter 已终止，仅停止
+本地观察、不取消远端工作；没有第二云 mutation。发布、Bottomless、HA、activation
+目前未取得终态，不宣称 passed。没有重编 workerd或新建另一负载。
+
+局部临时 wrapper 草稿曾把 qualify 的 Node capacity minimum 改为四；阅读真实
+install-admission-controller 后发现它读的是 MachineSet min（三），Host autoscaling
+才读 floor 四。已撤回草稿改动，云端始终使用原 1a44fbcfad28 不可变 wrapper；没有
+发布该错误推断。猜测 `.agents/context/catalog.json` 与根 `.context/catalog.jsonl`
+路径不存在；读取真实 validator 后定位 `docs/context/.context/catalog.jsonl`，后续
+只更新本 Task 的精确 row。一次 `/data/tmp` 递归文件名搜索匹配 Metro cache 而非
+目标 operator 文件，输出未用于身份或发布决策；后续限定已知 artifact 路径。
+
+当前本地门禁：builder storage 17 项通过，真实缓存收据字段/计数/字节增量检查通过；
+documentation 零 error/warning，五 exact 路径 impact passed（matched_rules 空，
+不冒充语义评审）。最终 catalog/source hash 与 Context 基线复核仍待收口。
+context 26 项仍四个历史失败，audit tests 33 项通过；未修改其他服务历史文档，
+不把检查执行当成全库通过，也未重新编译 V8/Rust。
+原 A native TAT RequestId 258c1c7c 确认 RUNNING、StartTime 08:13:08 UTC，未重发。
+08:15:40 只读 inv-c9ep4n0w4u SUCCESS/0：旧 runtime Engine 6/6、Host 4/4，
+未观察到 rollout，不将 RUNNING 的 ExitCode=0 当作成功。
+08:18:00 inv-a9ep6u0kiw SUCCESS/0 确认原 release shell 仍在执行，且精确 admission
+receipt root 已创建；尚无 terminal cycle/qualification 收据。完整目标保持 active。
+最终文档零 error/warning；Context 4,942 条历史 errors 按 SHA 归一化且保留重复次数
+后与基线 Counter 完全相同，added/removed 均零、本 Task 零 errors。catalog 仅更新
+本 Task row。audit discovery 实际输出 Markdown，错误按 JSON jq 解析的命令 exit 5，
+不把它当作 audit 失败或新语义评分；实际 discovery 为 needs_agent_review/not_assessed。
+
+2026-10-03 接续：上一 goal turn 是 progress，collector/回归和 kubelet 共盘/阈值证据
+已正常 FF 推 master 962ad5ea 并核验 clean。当前独立 revision xkspvlyr 接续，完整目标
+仍 active，不把 schema/模板当成 runtime release 或 strict10k 通过。原 partial 清理
+inv-a9end9g59c 的 immutable receipt 已通过同一 waiter 重新收集，仍 FAILED/1、仅一
+image deleted；不重发该 mutation。当前只读 inv-d9enk80qei / local session 77859 正在
+观察 Buildah 版本、精确第二候选、四个已知目录占用及真实 C node condition；只读
+timeout 不是允许重启 mutation。Cloud Skill/networking 已完整重读；status 工具与 policy
+snapshot 缺失不推断 readiness。下一项在实际版本语义和新 inventory 上形成新 bounded
+plan，而不是改 eviction threshold 或 force 删除。未 apply、未新编译、未启动第二负载。
+
+当前只读 inv-d9enk80qei 已 SUCCESS/0，原 TAT payload 从 07:58:09 UTC 运行至
+08:00:29 UTC 后才结束；期间 native DescribeInvocationTasks 确认 RUNNING，未重发。
+Buildah 实际版本 1.33.11、无 containers、90 images、第二 exact ID 双名未变；已知
+四路径 allocated bytes：containers/storage 14,513,721,344，actor-build 25,559,724,032，
+/data 30,573,514,752，/var/log 841,539,584。du 非同时快照、bind/路径可能重叠，不求和
+冒充 root unique bytes。最终同 UID node DiskPressure=False（transition 08:00:29），
+df available 15,856,648,192 bytes，余量仍很窄。
+完整 TF plan 新 session 85992 已 exit 1：仍 bootstrap attachment refresh failed，未保存
+或 apply；native TKE RequestId 46a01456 仍 failed/旧 DiskPressure:True reason。其与更早
+Kubernetes condition 时间不同，尚不能断言只是 cloud stale；不使用 targeted/skip-refresh。
+已核对 upstream Buildah v1.33.11 与 pinned common v0.57.7：by-ID 多名拒绝，tag 可
+单独 untag，剩一名再按 ID 删；默认可回收无引用父层，需记录 actual ID delta。新计划
+仅原剩余十五 exact image，fresh TCR 36/36 refs RequestId b23c1cfb；临时 artifact
+61458c19b820 经 inv-e9enrbgxgj COS relay SUCCESS/0。无 ops lock 的本地负门禁拒绝；
+新 dry-run/execute 仍待实际收据，不能因源码可解析即当成清理通过。
 
 本轮最新 checkpoint：bootstrap discover 92 项通过，完整 fleet runner session 15608
 已 exit 0、fleet_manifest_invariants=passed。只读 collector 已接入正式 runner 并补齐 README 与
