@@ -37,8 +37,9 @@ class Client:
             return {"status": "success", "data": {"resultType": "matrix", "result": []}}
         if name.startswith("crossCell") or name == "routesByCell":
             target = "actor-bj-a01" if self.same_cell else "actor-bj-b01"
-            return response({"source_cell": "actor-bj-a01", "target_cell": target})
-        return response()
+            return response({"source_cell": "actor-bj-a01", "target_cell": target},
+                            [[start, "1"], [end, "2"]])
+        return response(values=[[start, "1"], [end, "2"]])
 
 
 def load_receipt():

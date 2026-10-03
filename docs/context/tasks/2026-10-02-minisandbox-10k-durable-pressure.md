@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.7
+revision: 1.8.8
 precedence: task
 derived: false
 ---
@@ -304,15 +304,15 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-2026-10-03 04:02:22 UTC 恢复点：当前唯一 run 已 fresh 确认 running，5,033 ready、
-628,461 active success，普通 retry/失败零。13,472,442 bytes 非 Secret trace 快照已经经
-官方 COS relay 下载并验 SHA 前缀 a11bd34a，03:35--03:48 的 44 样本/Cell 复算成功。
-诊断 schema v2 已修正：reclaim item 为 FDB key，cold upload/publish bytes 为计划 hot shard
-bytes。17 项与实际 producer 契约回归、fleet 通过，不改正在运行的 Runtime/tools/参数。
-本轮是 progress（新真实快照与单位修正），不是万级资格完成；下一采样不早于 04:07:22 UTC。
-documentation 零 errors/warnings；Context 的 4,942 个历史错误按归一化 Counter 比较无新增、
-无消失，原四项 Context unit failure 不冒充通过；audit discovery 本身不做成熟度评定。
-下一步刷新两个 Task catalog hash、最终 diff 与 context，再提交本次离线修正。
+2026-10-03 04:23:54 UTC 恢复点：当前唯一 run 已 fresh 确认 running，7,613 ready、
+1,443,192 active success，普通 retry/失败零。InvocationID/MainPID 不变，三秒创建正式
+样本仍零；下一采样不早于 04:28:54 UTC。上一轮 v2 单位修正与固定 SHA trace 证据
+已经推 master 51d79791；不同阶段的均值不能换算成受控性能收益。
+本轮是 progress：真实 HTTP 重现 Router collector 对历史时间错误放行，修复窗口、
+step 网格、时间顺序和末端新鲜度，42 项回归和最终 fleet 通过，discover 入口已包含全部测试。
+documentation 当前零 errors/warnings；audit 33 项通过，Context unit 仍为原四项失败。
+Context 4,942 个历史 errors 的归一化 Counter 无新增或消失；最新 checkpoint/catalog 后再验一次。
+本轮源码待正常 push，不改在线 Runtime/tools/负载。
 
 A/B 旧 Runtime 资格完成；strict10k 终态失败。新 Runtime 59e86519 的 reviewed build、
 workerd reuse、产品 cold pull 和 A 正式 rollout/Bottomless/HA/activation 均已完成。
@@ -320,12 +320,27 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 开始实际负载，Runtime 59/tools 120/API 723 独立绑定；新诊断信号完整、无采样 warning。
 小资格负载或首批 warmup 成功不证明 strict10k 通过，
 原零普通重试、万活跃及三秒创建门禁不放宽。
-本轮上一 turn 为 verified wait；当前为 progress（真实快照、单位修正与离线回归）：
-04:02:22 UTC 原 systemd service 仍 active/running，InvocationID 与 MainPID 均未变。
+本轮上一 turn 为 progress（单位修正已推 master）；当前为 progress（Router 证据完整性）：
+04:23:54 UTC 原 systemd service 仍 active/running，InvocationID 与 MainPID 均未变。
 未启动第二负载，未编译或发布 Runtime；完整目标仍未完成。
 
 ### verified
 
+- `inv-d9egbd0hva` SUCCESS/0，04:23:54 UTC：7,613 ready、7,610 proven、1,443,192
+  active success、零 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
+  三秒 post-warmup 样本零。A/B Host desired 215/218、Ready 206/202；MachineSet
+  desired/current/Ready 为 215/215/215 与 218/218/212。诊断无 missing/warning/errors。
+- `inv-c9eg5vgkxa` SUCCESS/0，04:18:04 UTC：6,923 ready、6,907 proven、1,193,475
+  active success、119 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
+  三秒 post-warmup 样本零。A/B Host desired 197/200、Ready 183/181；MachineSet
+  desired/current/Ready 为 197/197/191 与 200/200/194。诊断无 missing/warning/errors。
+- `inv-a9eg0qgash` SUCCESS/0，04:12:33 UTC：6,262 ready、6,245 proven、976,752
+  active success、109 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
+  三秒 post-warmup 样本零。A/B Host desired 173/182、Ready 165/163；MachineSet
+  desired/current/Ready 为 173/173/173 与 182/182/176。诊断无 missing/warning/errors。
+- `inv-d9efts05nb` SUCCESS/0，04:07:16 UTC：5,632 ready、5,622 proven、787,957
+  active success、150 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
+  三秒 post-warmup 样本零。A/B Host desired 161/164、Ready 147/150，原 service 身份不变。
 - `inv-c9efp70fti` SUCCESS/0，04:02:22 UTC：5,033 ready、5,021 proven、628,461
   active success、103 in-flight，普通 retry/失败/身份漂移零；warmup 背压仍 7,166，
   三秒 post-warmup 样本零。A/B Host desired 143/146、Ready 129/132；Machines
@@ -545,7 +560,7 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
-- 下一次只读观察原 service 不早于 04:07:22 UTC，继续原 2/s warmup 与零普通 retry 门禁。
+- 下一次只读观察原 service 不早于 04:28:54 UTC，继续原 2/s warmup 与零普通 retry 门禁。
   前提仍是 complete strict10k（包含 exact cleanup/natural drain）先通过，再实际运行
   stateless Worker binding Router performance；不并发运行容量与性能资格。
 - 跟随唯一已运行 strict10k，保留旧失败身份，不临时 patch 线上容量、超时或重试。

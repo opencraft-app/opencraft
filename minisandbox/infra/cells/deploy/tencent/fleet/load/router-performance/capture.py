@@ -162,26 +162,45 @@ class PrometheusClient:
             raise RuntimeError("Prometheus returned malformed JSON") from error
 
 
-def finite_values(series: dict) -> tuple[list[float], int]:
+def finite_values(series: dict, start: float, end: float,
+                  step: int) -> tuple[list[float], int, float | None]:
     finite = []
     discarded = 0
-    for sample in series.get("values", []):
+    latest_time = None
+    previous_time = None
+    grid_start = float(f"{start:.3f}")
+    samples = series.get("values")
+    if not isinstance(samples, list):
+        raise ValueError("query series has malformed samples")
+    for sample in samples:
         if not isinstance(sample, list) or len(sample) != 2:
-            discarded += 1
-            continue
+            raise ValueError("query series has malformed sample")
+        timestamp = sample[0]
+        # The transport serializes query boundaries to millisecond precision.
+        if (type(timestamp) not in (int, float) or not math.isfinite(timestamp)
+                or timestamp < start - 0.001 or timestamp > end + 0.001):
+            raise ValueError("query sample timestamp is outside the requested window or malformed")
+        if previous_time is not None and timestamp <= previous_time:
+            raise ValueError("query sample timestamps are not strictly increasing")
+        evaluation = grid_start + round((timestamp - grid_start) / step) * step
+        if abs(timestamp - evaluation) > 0.001:
+            raise ValueError("query sample timestamp does not match the requested evaluation grid")
+        previous_time = timestamp
+        if not isinstance(sample[1], str):
+            raise ValueError("query sample value is malformed")
         try:
             value = float(sample[1])
         except (TypeError, ValueError):
-            discarded += 1
-            continue
+            raise ValueError("query sample value is malformed") from None
         if math.isfinite(value):
             finite.append(value)
+            latest_time = timestamp
         else:
             discarded += 1
-    return finite, discarded
+    return finite, discarded, latest_time
 
 
-def summarize(name: str, response: dict) -> dict:
+def summarize(name: str, response: dict, start: float, end: float, step: int) -> dict:
     if response.get("status") != "success":
         raise ValueError(f"query {name} failed")
     data = response.get("data", {})
@@ -190,12 +209,22 @@ def summarize(name: str, response: dict) -> dict:
     summaries = []
     all_values = []
     discarded = 0
+    seen_labels = set()
+    start_millis = round(float(f"{start:.3f}") * 1000)
+    end_millis = round(float(f"{end:.3f}") * 1000)
+    final_evaluation = (start_millis + (end_millis - start_millis) // (step * 1000) * step * 1000) / 1000
     for series in data["result"]:
+        if not isinstance(series, dict):
+            raise ValueError(f"query {name} returned a malformed series")
         labels = series.get("metric")
         if not isinstance(labels, dict) or any(not isinstance(key, str) or not isinstance(value, str)
                                                 for key, value in labels.items()):
             raise ValueError(f"query {name} returned malformed labels")
-        values, ignored = finite_values(series)
+        identity = tuple(sorted(labels.items()))
+        if identity in seen_labels:
+            raise ValueError(f"query {name} returned duplicate label series")
+        seen_labels.add(identity)
+        values, ignored, latest_time = finite_values(series, start, end, step)
         discarded += ignored
         if not values:
             continue
@@ -207,9 +236,13 @@ def summarize(name: str, response: dict) -> dict:
             "maximum": max(values),
             "mean": statistics.fmean(values),
             "latest": values[-1],
+            "latestFiniteSampleEpochSeconds": latest_time,
+            "latestEvaluationObserved": abs(latest_time - final_evaluation) <= 0.001,
         })
     if not all_values:
         raise ValueError(f"query {name} has no finite samples")
+    if not any(series["latestEvaluationObserved"] for series in summaries):
+        raise ValueError(f"query {name} has no finite sample at the final requested evaluation")
     return {
         "series": summaries,
         "seriesCount": len(summaries),
@@ -225,7 +258,7 @@ def summarize(name: str, response: dict) -> dict:
 def validate_cross_cell(summary: dict) -> None:
     pairs = {
         (series["labels"].get("source_cell"), series["labels"].get("target_cell"))
-        for series in summary["series"]
+        for series in summary["series"] if series["latestEvaluationObserved"]
     }
     if not any(source and target and source != target and
                source != "unassigned" and target != "unassigned"
@@ -262,7 +295,7 @@ def collect(client: PrometheusClient, load: dict, step: int,
     for name, query in QUERIES.items():
         response = client.get(query, start, end, step)
         responses[name] = response
-        summaries[name] = summarize(name, response)
+        summaries[name] = summarize(name, response, start, end, step)
     for name in ("crossCellP50Seconds", "crossCellP99Seconds", "crossCellP999Seconds"):
         validate_cross_cell(summaries[name])
     raw = {

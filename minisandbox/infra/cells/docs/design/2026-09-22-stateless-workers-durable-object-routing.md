@@ -1013,6 +1013,11 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 - Router 性能负载与最终采集共用容量收据校验：八项完整周期门禁必须全部存在且为 JSON true，
   新增检查项也必须为真，active 目标必须是至少10000的整数。空或部分检查表与 truthy 非布尔值
   不构成完整资格；拒绝发生在资源发布、Prometheus 访问和输出创建前。
+- query-range 的每个样本时间必须为有限数值、匹配本次窗口/step 网格且在各 series 中严格递增；
+  仅允许 transport 的 1 ms 舍入差。重复标签 series、畸形行或错误时间不得当作缺失跳过。
+  合法 histogram NaN/Inf 保留 discarded 计数、不补零；每项指标必须在最后请求评估时刻
+  有有限样本，跨 Cell RTT 也必须在该时刻有不同 source/target pair。
+  每 series 报告最后有限时间；观测均值不是精确事件积分，局部回归不证明 cache/replica 曲线。
 - 只有中央 Router 被证明为瓶颈后，才启动 Cell-local Router 下沉；
 - 不把压测中发现的单 Cell 上限误写成整个产品上限，横向容量通过增加 Cell 扩展。
 - 持续写入与后台队列须分别观察：旧热计划在 Stage 和 Install 都重读当前 head 并核对输入指纹，

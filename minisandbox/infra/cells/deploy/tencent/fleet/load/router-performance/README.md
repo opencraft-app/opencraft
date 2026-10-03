@@ -19,6 +19,17 @@ qualification receipt, query set, and exact UTC time range by SHA-256. Missing
 series, a non-passed qualification, NaN-only data, same-Cell-only route data,
 or an attempt to overwrite prior evidence fails closed.
 
+Every sample must have a numeric timestamp inside the requested load window
+(with 1 ms tolerance for transport rounding), match its evaluation grid, and
+be strictly time-ordered within each series. Malformed rows, duplicate label series, and invalid timestamps
+are errors, not discarded observations. Legitimate NaN/Inf metric values are
+counted as discarded and never become zero latency. Each measurement requires
+a finite sample at the final requested evaluation; a historical finite value
+cannot replace a missing or NaN final evaluation. Distinct source/target RTT
+must also be present at that evaluation. The receipt reports per-series latest
+finite timestamps so partial observations remain visible. Sample means are
+means of observed evaluations, not exact time-integrated event totals.
+
 The load must enter through `/workers/{worker}/dispatch`; direct ObjectRef
 traffic has no bounded stateless executor Cell and is deliberately rejected.
 `run.py` publishes one immutable Worker, prepares a balanced Object set in all
