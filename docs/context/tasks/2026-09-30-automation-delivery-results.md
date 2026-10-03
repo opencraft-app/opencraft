@@ -70,7 +70,7 @@ derived: false
 
 ## risks
 - 下载以浏览器读取后的 Markdown 内容生成 `.md` 文件；真实用户 Bot 和线上环境尚未验证。
-- MR 尚未由本轮更新；提交、推送和修改 MR 描述须按交付门禁另行确认。
+- 用户已确认提交 MR；本轮仅更新代码分支和 MR 说明，尚未合并或发布。
 
 ## validation
 - 聚焦 Vitest：3 文件，324/324 通过。
@@ -86,16 +86,16 @@ derived: false
 - 按钮以用户动作命名；文件格式仍为 Markdown，必要时在文档中说明。
 
 ## scan_scope
-- MR !4878 相对 `master@62c1bf91b` 的 33 个变更路径；源码搜索限于定时任务页面、客户端、文档与 i18n。
+- MR !4878 相对 `master@1a724a3cf` 的结果查看相关变更；源码搜索限于定时任务页面、客户端、文档与 i18n。
 
 ## scan_output
 - MR 文件差异和本地 `git diff` 摘要，不保存完整扫描输出。
 
 ## handoff
-- 本地改动及可运行门禁已完成；等待用户确认是否 commit、push 并更新 MR 描述。全量前端测试与全量 Context 校验未通过，限制已在验证记录中列出。
+- 用户已确认提交 MR；代码已提交并合入最新 `master`，待推送和更新 MR 说明。全量前端测试与全量 Context 校验未通过，限制已在验证记录中列出。
 
 ## stage
-MR 范围已收窄，正在完成最终差异审核与交接。
+MR 范围已收窄，已合入最新 `master` 并通过合并后的聚焦验证，正在提交远端。
 
 ## verified
 - 聚焦 Vitest 324/324、`pnpm check`、`pnpm typecheck`、国内及国际站构建通过。
@@ -114,7 +114,7 @@ MR 范围已收窄，正在完成最终差异审核与交接。
 
 ## restore
 - 工作树：`/Users/pablozhong/.codex/worktrees/automation-delivery-results/lightvela`，分支 `codex/automation-delivery-results`。
-- MR !4878 当前远端源提交 `12f99a3c49b6d6758e61842545b36fd6e6059693`；本轮改动尚未 commit/push。
+- 本地结果查看提交 `37ad194d2`，合入 `master@1a724a3cf` 的提交 `7f7267cb2`；远端状态待推送后核验。
 
 ## next_action
-- 核对最终 diff、更新本 Task Pack 的验证记录，再请用户明确确认 commit、push 和更新 MR 描述。
+- 提交同步清单，推送既有 MR 源分支，更新 MR 标题和说明并核对远端状态。
