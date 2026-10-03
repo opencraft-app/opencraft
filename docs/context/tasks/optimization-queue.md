@@ -24,7 +24,7 @@
 - [OPT-006 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138690655)：`1070234090138690655`，当前「待验收」，MR [!4774](https://git.woa.com/wisp/mono2/-/merge_requests/4774)。
 - [OPT-007 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138696615)：`1070234090138696615`，当前「待验收」，MR [!4850](https://git.woa.com/wisp/mono2/-/merge_requests/4850)。
 - [OPT-008 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138709055)：`1070234090138709055`，调查完成，当前「待确认」治理范围。
-- [OPT-009 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138744537)：`1070234090138744537`，当前「待确认」，流转评论 `1070234090217814055`；待确认提交与推送预览。
+- [OPT-009 卡片](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138744537)：当前「待验收」，MR !4947；流转评论1070234090217814807。
 
 ## 需求清单
 
@@ -39,13 +39,12 @@
 | OPT-007 | 创建 Agent 页「建议」卡片可横向滚动查看更多选项 | `awaiting_review` | `frontsandbox/agent-onboarding-suggestions-scroll-20260929` | 鼠标滚轮、按钮、触控板和触屏可到达全部建议卡片；点击卡片仍可选模板 | 已创建 [MR !4850](https://git.woa.com/wisp/mono2/-/merge_requests/4850)，需求分支已同步最新 master 并复验、双站预览 200；等待 CR 与登录态视觉验收，尚未合并或发布 |
 | OPT-008 | “测试运行”临时任务残留并继续消耗 Token | `pending_user`（调研完成） | `frontsandbox/automation-test-task-cleanup-20260930` | 新测试不会重复执行；旧版残留可安全识别并清理；异常中断有兜底且清理失败可见 | 最新 master 的 `in 2m` 修复只防止新增；调查与治理方案见 Task Pack。待确认是否实施存量止损与持久清理；尚无代码实现/预览/MR |
 
-| OPT-009 | Chat 首屏等待文案与可爱小助理图案/动效 | `pending_user` | `frontsandbox/chat-friendly-loading-20261003` | 功能提交2bfd749a5已推送；双站Chat预览200且资源含新文案，115聚焦/check/双站构建/CR通过；全量测试未通过，待确认创建MR | 用户已确认提交并推送预览；本地验证已完成，正在提交、推送并核对双站分支预览 |
+| OPT-009 | Chat 首屏等待文案与可爱小助理图案/动效 | `awaiting_review` | `frontsandbox/chat-friendly-loading-20261003` | [MR !4947](https://git.woa.com/wisp/mono2/-/merge_requests/4947)，双站预览200 | 待CR与登录态验收；全量测试限制保留 |
 
 ## 当前处理项
 
 | ID | 需求 | 状态 | 独立分支 | 下一步 |
 |---|---|---|---|---|
-| OPT-009 | Chat 首屏小助理加载状态 | `pending_user` | 功能提交2bfd749a5已推送；双站Chat预览200且资源含新文案，115聚焦/check/双站构建/CR通过；全量测试未通过，待确认创建MR | 用户已确认提交并推送预览，正在核对双站分支产物 |
 
 ## 待确认（看板统一回溯）
 
@@ -72,7 +71,7 @@
 
 | 顺位 | ID | 需求 | 状态 | 独立分支 | 进入条件 |
 |---|---|---|---|---|---|
-| — | — | 当前无尚未启动的新需求；OPT-004 挂起 | — | — | 需用户回复的 OPT-002、005、008、009 暂存待确认；当前无 active |
+| — | — | 当前无尚未启动的新需求；OPT-004 挂起 | — | — | 需用户回复的 OPT-002、005、008 暂存待确认；当前无 active |
 
 ## 处理记录
 
