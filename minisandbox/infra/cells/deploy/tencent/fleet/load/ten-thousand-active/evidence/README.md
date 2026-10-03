@@ -1061,3 +1061,18 @@ zone order and aggregate counts, verifies that fresh evidence and elapsed time
 do not unblock it, and demonstrates a counterfactual placement repair without
 changing the skew policy. No rebalance is implemented or deployed by this test;
 the original supervisor and final low-capacity gate remain unchanged.
+
+The follow-up pure planner in `internal/hostdrain/topology_rebalance.go` selects
+one quiescent surplus-zone Host when admitted spare-zone evidence is available.
+It persists workload/Pod identity and the next contraction prefix's squared
+zone-count score. Each completed replacement must decrease that score; a
+non-improving replacement blocks further evictions. Tests cover durable restart,
+same UID/RV authority after a rejected or ambiguous eviction, cancellation fencing,
+late deletion, successor identity, expansion priority and incomplete evidence.
+Four 120-Host ordinal models converge serially to a four-Host, three-zone floor.
+They explicitly assume successful destination scheduling, not actual capacity.
+
+This is source-only planner coverage. The Kubernetes adapter, exact cancellation
+CAS, spare-zone observation, eviction RBAC and real API gate are still pending.
+No new planner evidence converts this failed load run or pending final contraction
+into a passed qualification, and no cloud workload or policy was changed.

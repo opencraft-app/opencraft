@@ -2182,7 +2182,24 @@ hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的ske
 后续拓扑修复必须与同一串行drain状态机组合：replicas保持不变，选择过量AZ的单台Host，
 精确UID fence后等待fresh quiescence，以尊重PDB的eviction替换并重新验证目标AZ调度容量、
 新UID Ready和拓扑改善；扩容优先、release hold、超时、重启及迟到响应仍fail closed。
-此动作尚未实现，现有pods权限仅get/list，不能借测试脚本或强删绕过所有权与操作锁。
+纯决策状态机已实现在`internal/hostdrain/topology_rebalance.go`：同一annotation只保留单台
+target，持久化workload UID、源/目的AZ、原Pod RV和下一个最高ordinal前缀的平方和。
+每次再平衡必须严格降低该前缀的平方和，不能提高skew阈值；只选择当前已quiescent的
+非最高ordinal Host，有已准入空闲目的AZ证据才可规划。低负载稳定窗口、fresh counters、
+剩余容量、三AZ和扩容优先仍是硬前置条件。置换没有改善时保留Blocked，不重复制造换机风暴。
+
+响应丢失不能直接恢复placement：删除只授权原Pod UID/RV。取消先对精确旧Pod执行新的
+metadata RV CAS，观察属于同一epoch/eviction RV的取消凭据后才unfence。仅观察RV变化
+不够，因为Kubernetes eviction本身会先更新DisruptionTarget并推进RV，再尝试删除。
+若删除先赢，控制器只等新UID Ready，不把旧动作转给继任Pod，也不强制终止。
+协议依据见[Kubernetes eviction实现](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/core/pod/storage/eviction.go)。
+
+纯状态机回归已覆盖成功、重启/PDB拒绝/丢响应、取消与删除竞争、UID和workload替换、
+稳定窗口、缺目的容量和不改善置换。四个120Host任意ordinal序列模型均逐台收敛至4，
+保持最多单台drain；模型显式假设可用目的AZ被成功调度，不是实际K8s容量或云资格证明。
+当前controller还没有采集spare-zone/Pod-RV证据，也没有eviction/cancellation adapter，
+故新路径在当前运行中不启用，pods权限仍只有get/list；本提交不能单独当作修复发布。
+接完真实adapter、RBAC门禁及实际K8s eviction测试后，才能沿受锁发布路径上线。
 
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
