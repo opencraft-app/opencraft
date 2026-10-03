@@ -14,7 +14,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Droplets, Ellipsis, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Download, Droplets, Ellipsis, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -74,6 +74,7 @@ import {
   listAutomationBlueprints,
   listCronJobs,
   listRecentCronRuns,
+  readCronRunOutput,
   isLightVelaZeroTokenScriptName,
   isTestRunMarkerName,
   pauseCronJob,
@@ -1572,6 +1573,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
           </div>
         ) : activeView === "recent" ? (
           <RecentCronRunsPanel
+            target={botId}
             runs={recentRuns}
             jobs={jobs}
             skillLoadState={installedSkillLoadState}
@@ -1840,10 +1842,12 @@ function getVisibleAutomationPrompt(prompt: string): string {
 }
 
 export function RecentCronRunsPanel({
+  target,
   runs,
   jobs = [],
   skillLoadState,
 }: {
+  target: HermesCronTarget;
   runs: CronRunRecord[];
   jobs?: CronJob[];
   skillLoadState: InstalledSkillLoadState;
@@ -1932,6 +1936,7 @@ export function RecentCronRunsPanel({
         )}
         {viewingRun && (
           <RecentCronRunDetailModal
+            target={target}
             run={viewingRun}
             currentUpstream={viewingUpstream ?? null}
             skillLoadState={skillLoadState}
@@ -1976,11 +1981,13 @@ function runToCronJob(run: CronRunRecord): CronJob {
 }
 
 function RecentCronRunDetailModal({
+  target,
   run,
   currentUpstream,
   skillLoadState,
   onClose,
 }: {
+  target: HermesCronTarget;
   run: CronRunRecord;
   currentUpstream: CronJob | null;
   skillLoadState: InstalledSkillLoadState;
@@ -1991,6 +1998,37 @@ function RecentCronRunDetailModal({
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
   const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const zeroTokenConfig = run.zero_token_config;
+  const [output, setOutput] = useState<string | null>(null);
+  const [outputLoading, setOutputLoading] = useState(false);
+  const [outputError, setOutputError] = useState<string | null>(null);
+  const loadOutput = useCallback(async () => {
+    setOutputLoading(true);
+    setOutputError(null);
+    try {
+      setOutput(await readCronRunOutput(target, run));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setOutputError(code === "cron_output_too_large"
+        ? t("结果文件过大，暂无法在此查看或下载。")
+        : code === "cron_output_missing"
+          ? t("结果文件已不存在。")
+          : t("暂时无法读取结果，请稍后重试。"));
+    } finally {
+      setOutputLoading(false);
+    }
+  }, [run, t, target]);
+  const downloadOutput = useCallback(() => {
+    if (output === null) return;
+    const blob = new Blob([output], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `automation-result-${run.job_id.replace(/[^A-Za-z0-9_-]/g, "-")}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [output, run.job_id]);
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -2060,6 +2098,33 @@ function RecentCronRunDetailModal({
           <DeliverDetailRow deliver={run.deliver} />
           <DetailRow label={t("任务 ID")} value={run.job_id} />
         </dl>
+        <div className="mt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void loadOutput()}
+              disabled={outputLoading}
+              className="inline-flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium text-black/75 hover:bg-black/[0.04] disabled:opacity-45"
+            >
+              {outputLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Eye className="size-3.5" />}
+              {t("查看执行结果")}
+            </button>
+            {output !== null && (
+              <button
+                type="button"
+                onClick={downloadOutput}
+                className="inline-flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium text-black/75 hover:bg-black/[0.04]"
+              >
+                <Download className="size-3.5" />
+                {t("下载执行结果")}
+              </button>
+            )}
+          </div>
+          {outputError && <p role="alert" className="mt-2 text-xs text-[#B91C1C]">{outputError}</p>}
+          {output !== null && (
+            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/[0.03] p-3 text-xs leading-5 text-black/75">{output}</pre>
+          )}
+        </div>
       </div>
     </div>,
     document.body,
