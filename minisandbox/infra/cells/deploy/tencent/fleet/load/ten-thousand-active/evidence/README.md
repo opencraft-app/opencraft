@@ -1,5 +1,32 @@
 # Capacity failures and pressure evidence, 2026-10-03
 
+## Independent bucket-read correctness regression
+
+`engine/packages/depot/tests/fork_bucket_read.rs` runs against real temporary
+RocksDB/UniversalDB state, independently of the cloud load. The first four
+counterexamples failed before the read-cap/lazy-write correction. Expansion
+then found an unwritten database-fork virtual head (6/7 passed), and an exact
+database-fork VTX gap incorrectly falling back to an earlier commit (0/1).
+Those red logs are retained under `/data/tmp/minisandbox-bucket-read-*20261003.log`;
+the exact-gap log is `minisandbox-bucket-read-exact-cap-red-20261003.log`.
+The corrected suite passed 10/10, together with library 61/61, proof
+invalidation 6/6, bucket fork 4/4 and database fork 7/7, in
+`/data/tmp/minisandbox-bucket-read-final-v2-20261003.log`.
+
+The existing `cold_workflow_publish` hot-prefix regressions passed 12/12,
+and its 513-root bucket-proof pagination regression passed 1/1 in
+`/data/tmp/minisandbox-bucket-read-hot-prefix-20261003.log`. The production
+library check without test fault hooks and scoped Clippy both exited zero;
+Clippy retains 47 existing library warnings, with no new warnings from the
+changed branch-resolution/read-plan helpers. This is not a repository-wide
+warning-free result.
+
+This proves the tested snapshot/read/first-write boundaries, not cloud
+performance, all parent-pointer mutation semantics, or the first 502 cause.
+It changes no persistent schema and does not relax generation, retention,
+history, publication or backup fences. The running c631 has not been changed.
+Ordinary non-inherited reads avoid the new VTX/COMMIT snapshot lookups.
+
 ## Current c631 run: rising population is not a controlled service curve
 
 Run `200a42ae03ef4e128505b0def22e8af8` subsequently failed at 10:49:47 UTC;

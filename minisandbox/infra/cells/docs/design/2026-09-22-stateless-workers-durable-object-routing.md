@@ -1960,8 +1960,26 @@ permit 占用和有界等待深度。对象基数、数据库年龄与 eligible 
 该测试又暴露一个独立的 bucket fork 默认读取反例：bucket 在 TXID 1 fork 后，parent
 在 TXID 2 覆写，child 的默认 Db read 读到 TXID 2。pointer resolver 返回 inherited
 physical database branch 后，read plan 未携带 bucket ancestry 的 versionstamp cap。
-显式历史读能取回 TXID 1、materialized pin 存在，并不能证明默认 child 读正确。此项
-read-cap 修复须单独完成，不取消保留 fence，也不能把它当作当前前台首错的已证根因。
+显式历史读能取回 TXID 1、materialized pin 存在，并不能证明默认 child 读正确。源码现已
+单独修复：resolver 携带路径上最小 bucket versionstamp cap，默认读据此限制 head、EOF、
+PIDX、历史 DELTA 与 SHARD；全局 bucket 时间点可能落在某数据库两次提交之间，因此
+只在这种 AS-OF 选择中使用 reverse/limit=1 的 VTX floor。数据库 fork 的精确提交边界
+仍要求 exact VTX，缺失时不能退回更早提交。未本地写入的 database fork 通过有界 parent
+链读取已有 head_at_fork 对应的 COMMIT，校验 branch、cap、EOF 与 checksum，不伪造历史。
+
+child 的首次写入必须在原提交事务内惰性 derive 一个新 physical database branch，写本地
+pointer/catalog/policy binding，然后执行原提交；不得沿 inherited pointer 修改 parent。
+derive 复用现有 history、GC、retention、pin/refcount 与深度检查；actor generation fence
+仍先于分支解析。这没有增加持久 schema 或复制数据，普通无 bucket 继承路径不增加 VTX
+floor/COMMIT 读取。新增真实 RocksDB/UDB 十项回归已通过，包括 parent overwrite/shrink、
+非精确 bucket 时间点、多层 cap、late membership、虚拟 fork head、首次写隔离与缺失历史。
+四项初始反例、虚拟 head 和 exact VTX 缺失的红测均保留；后者防止本轮 floor 修正放松
+原数据库 fork 边界。既有 proof、database/bucket fork 和 lib 回归亦通过。
+
+这只是源码局部门禁，不是当前首个 502 的已证根因，也未发布到运行中的 c631。父级
+逻辑 pointer 变更/删除与 bucket 快照的组合、分布式并发以及真实 FDB publication 边界
+仍需独立验证；不得据此宣称全部 bucket fork 语义或万级容量合格。性能修复和这项读写
+正确性修复必须分别举证，不取消任何保留 fence。
 
 原 run 于 10:49:47 UTC 在 9,086 ready/9,074 proven 停止，首错为 index 9035 的
 initialize `502 indeterminate_result`；后续 2,294 个 active `network:20` 属全局取消

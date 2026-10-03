@@ -84,6 +84,8 @@ BUCKET_PTR/{bucket_id_uuid_be:16}/cur
 
 Database pointer resolution walks bucket parents when a current bucket branch does not contain a local database pointer. Pointer history supports restore/rollback bookkeeping without changing the branch-local page layout.
 
+Inherited read resolution also returns the minimum bucket fork versionstamp on that walk. The page plan limits the inherited head and sources to that cap, including historical EOF. Bucket AS-OF selection uses one reverse, limit-one VTX range; known exact database-fork commits still use exact VTX reads. An unwritten fork's existing `head_at_fork` may resolve to its retained parent COMMIT through a depth-bounded walk, with identity, cap, EOF and checksum checks. Missing required history is an error. On the first inherited write, the same commit transaction derives a child physical branch and writes a local DBPTR/catalog/policy binding before applying data. These are existing records, not a new storage format or a copied parent image.
+
 ```text
 BUCKET_CATALOG/{bucket_id_uuid_be:16}/{database_id_uuid_be:16}
   -> 16-byte FDB versionstamp via SetVersionstampedValue

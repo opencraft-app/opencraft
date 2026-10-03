@@ -16,6 +16,8 @@ pub use resolve::{
 	resolve_database_branch_in_bucket, resolve_database_pointer,
 	resolve_or_allocate_root_bucket_branch, write_root_bucket_metadata,
 };
+pub(crate) use resolve::{resolve_database_read_branch, resolve_database_read_pointer};
 pub(super) use shared::{
-	lookup_txid_at_versionstamp, read_commit_row, read_database_branch_record,
+	lookup_commit_position_at_or_before, lookup_txid_at_versionstamp, read_commit_row,
+	read_database_branch_record,
 };

@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.24.0
+revision: 1.25.0
 precedence: task
 derived: false
 ---
@@ -414,7 +414,47 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ### stage
 
-当前 checkpoint（1.24.0）：上一 turn 为 progress。catalog scope 修正、六项新回归、
+当前 checkpoint（1.25.0）：上一turn为progress，正式namespace模型和原生API/Engine
+投影正常FF推master007d8245，远端exactSHA verified、clean；未部署。保留空rtyzyuxv，
+jj new wrnsllsz，在真实临时RocksDB/UDB中修复独立bucket inherited-read cap与
+first-write lazy COW，不把它当首次502根因。resolver携带最小bucket cap、readplan限制
+head/EOF/page来源；全局bucket时间点bounded floor查VTX，exact DB fork仍exact lookup。
+首次child写在原提交事务derive新physicalbranch，复用原history/retention/GC/refcount检查。
+虚拟head通过有界parent COMMIT校验branch/cap/EOF/checksum，不制造持久历史。
+初始四项0/4红测→4/4；扩展六通过一失败的virtual head已修；exact VTX gap红测0/1
+暴露本轮floor会过度放松DB fork，修后final-v2十项10/10、lib61、proof6、bucket4、DB7
+均exit0。不改持久schema或普通无fork查询成本；parent pointer变更/删除与分布式并发
+未验证。Cloud原压测immutable Runtime c631仍不变；尚未部署这项修复。
+本轮route两份must-read与根/minisandbox/engine/cells instructions分段补读完整；
+adjacency argocd-ci-secrets与runtime/test_monitor_bottomless.py实际邻居完整复核；
+cloud runtime/networking完整读取，环境status tool/policy snapshot缺失不建立readiness。
+失败查询已记录：depot/src/branch/resolve.rs、conveyer/branch_init.rs、read/mod.rs、
+conveyer/keys/*.rs与observability/test_monitor_bottomless.py不存在；实际为
+conveyer/branch/resolve.rs、commit/branch_init.rs、read.rs、keys.rs和runtime测试。
+11:33:59 progress22 inv-a9euwj0ntg SUCCESS/0：原身份running/cleanup exit0/final
+waiting2105秒。该查询早于五分钟边界；local shell test失败后没有set-e仍继续提交，
+后续guard必须set-e或显式exit，不把epoch比较本身当有效停止。next periodic至少
+11:39:00UTC。不抢ops lock、不并发第二负载或rollout，不重复旧invocation。
+11:39:31 progress23 inv-c9ev3rgwm8、11:45:56 progress24 inv-e9ev9s0w8s
+均SUCCESS/0，原MainPID/InvocationID running、load exit1、cleanup exit0、自然缩容
+final waiting2406/2707秒；未有final capacity receipt。next periodic不早于11:51:00UTC，
+严格set-e守卫。后续失败查询：types/meta.rs/db.rs与branch/derive.rs不存在，实际
+types/storage.rs与branch/fork.rs；docs在docs-internal/engine/sqlite非depot/docs。
+一次multifile patch误猜caller commit.rs，验证失败无变更；实际commit/apply.rs。
+另一次readplan patch猜错rustfmt断行无变更且后续tool未执行，按实读上下文更正。
+formatter在minisandbox cwd误带minisandbox前缀MODULE_NOT_FOUND，已从repo root重跑；
+生产check独立启动，formatter错误不冒充format成功。不再猜不存在的bucket_fork_pins.rs。
+最终clippy-v2 exit0，Depot恢复原47条baseline warning，新增两条collapsible_if已修；
+production cargo check（无test-faults）exit0；hot_prefix12/12与513-root分页证明1/1
+exit0。documentation errors/warnings均零。Context tests26项有原四项历史失败，不把
+全monorepo标全绿；context error multiset经hash归一后与007d基线4942项完全相同，
+added/removed均零、own Task error零；own catalog同步1.25与源hash。audit tests33/33、
+change-impact passed，默认audit仍needs_agent_review/not_assessed/Unknown，不冒充成熟度。
+敏感模式filename-only扫描无命中、diff-check通过；准备正常FF推送，不做rollout。
+仅重编Depot变化，没有重编workerd/V8或发布新的Runtime。
+一次附带README不存在warning锚点的patch验证失败，无文件生效；按实读锚点重提。
+
+历史 checkpoint（1.24.0）：上一 turn 为 progress。catalog scope 修正、六项新回归、
 native 首错与 preerror v3 证据 FF 推 master 606aec3e，remote exact SHA verified、clean；
 未部署新 Runtime。保留空 zkvllptl，jj new ptrtsnos，只读定位原 run 的首次 transport
 failure 与后台阻塞，不改变旧 load/timeout/retry 或抢占完整 ops lock。

@@ -352,8 +352,8 @@ impl Db {
 							loaded_pidx_rows = Some(decoded_rows);
 						}
 					}
-					let historical_delta_sources = if diagnostic_current_source_delta_fallback
-						&& !read_mode.allows_side_effects()
+					let historical_delta_sources = if plan.inherited_bucket_cap
+						|| (diagnostic_current_source_delta_fallback && !read_mode.allows_side_effects())
 					{
 						&plan.sources[..]
 					} else {

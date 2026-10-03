@@ -22,13 +22,53 @@ pub(super) async fn resolve_or_allocate_branch(
 	tx: &universaldb::Transaction,
 	bucket_id: BucketId,
 	database_id: &str,
+	now_ms: i64,
 ) -> Result<BranchResolution> {
 	let bucket = branch::resolve_or_allocate_root_bucket_branch(tx, bucket_id).await?;
 
-	if let Some(branch_id) =
-		branch::resolve_database_branch_in_bucket(tx, bucket.branch_id, database_id, Serializable)
+	if let Some(resolution) =
+		branch::resolve_database_read_pointer(tx, bucket.branch_id, database_id, Serializable)
 			.await?
 	{
+		let mut branch_id = resolution.pointer.current_branch;
+		if let Some(cap) = resolution.versionstamp_cap {
+			let (versionstamp, _) =
+				branch::lookup_commit_position_at_or_before(tx, branch_id, cap).await?;
+			let local_branch = DatabaseBranchId::new_v4();
+			branch::derive_branch_at(
+				tx,
+				branch_id,
+				versionstamp,
+				local_branch,
+				bucket.branch_id,
+				None,
+			)
+			.await?;
+			let pointer = encode_database_pointer(DatabasePointer {
+				current_branch: local_branch,
+				last_swapped_at_ms: now_ms,
+			})?;
+			tx.informal().set(
+				&keys::database_pointer_cur_key(bucket.branch_id, database_id),
+				&pointer,
+			);
+			branch::write_bucket_catalog_marker(
+				tx,
+				bucket.branch_id,
+				local_branch,
+				&udb::INCOMPLETE_VERSIONSTAMP,
+			)?;
+			policy::write_database_policy_binding(
+				tx,
+				DatabasePolicyBinding {
+					database_branch_id: local_branch,
+					bucket_id,
+					database_id: database_id.to_string(),
+				},
+			)
+			.await?;
+			branch_id = local_branch;
+		}
 		return Ok(BranchResolution {
 			branch_id,
 			bucket_branch_id: bucket.branch_id,

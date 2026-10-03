@@ -104,9 +104,28 @@ pub async fn resolve_database_branch(
 	database_id: &str,
 	isolation_level: IsolationLevel,
 ) -> Result<Option<DatabaseBranchId>> {
+	Ok(
+		resolve_database_read_branch(tx, bucket_id, database_id, isolation_level)
+			.await?
+			.map(|resolution| resolution.pointer.current_branch),
+	)
+}
+
+#[derive(Debug)]
+pub(crate) struct DatabaseReadResolution {
+	pub pointer: DatabasePointer,
+	pub versionstamp_cap: Option<[u8; 16]>,
+}
+
+pub(crate) async fn resolve_database_read_branch(
+	tx: &universaldb::Transaction,
+	bucket_id: BucketId,
+	database_id: &str,
+	isolation_level: IsolationLevel,
+) -> Result<Option<DatabaseReadResolution>> {
 	let Some(bucket_branch_id) = resolve_bucket_branch(tx, bucket_id, isolation_level).await?
 	else {
-		return resolve_database_branch_in_bucket(
+		return resolve_database_read_pointer(
 			tx,
 			BucketBranchId::nil(),
 			database_id,
@@ -115,14 +134,13 @@ pub async fn resolve_database_branch(
 		.await;
 	};
 
-	if let Some(branch_id) =
-		resolve_database_branch_in_bucket(tx, bucket_branch_id, database_id, isolation_level)
-			.await?
+	if let Some(resolution) =
+		resolve_database_read_pointer(tx, bucket_branch_id, database_id, isolation_level).await?
 	{
-		return Ok(Some(branch_id));
+		return Ok(Some(resolution));
 	}
 
-	resolve_database_branch_in_bucket(tx, BucketBranchId::nil(), database_id, isolation_level).await
+	resolve_database_read_pointer(tx, BucketBranchId::nil(), database_id, isolation_level).await
 }
 
 pub async fn resolve_database_branch_in_bucket(
@@ -144,7 +162,21 @@ pub async fn resolve_database_pointer(
 	database_id: &str,
 	isolation_level: IsolationLevel,
 ) -> Result<Option<DatabasePointer>> {
+	Ok(
+		resolve_database_read_pointer(tx, bucket_branch_id, database_id, isolation_level)
+			.await?
+			.map(|resolution| resolution.pointer),
+	)
+}
+
+pub(crate) async fn resolve_database_read_pointer(
+	tx: &universaldb::Transaction,
+	bucket_branch_id: BucketBranchId,
+	database_id: &str,
+	isolation_level: IsolationLevel,
+) -> Result<Option<DatabaseReadResolution>> {
 	let mut current_branch_id = bucket_branch_id;
+	let mut versionstamp_cap: Option<[u8; 16]> = None;
 
 	for _ in 0..=MAX_BUCKET_DEPTH {
 		if let Some(pointer_bytes) = tx
@@ -157,7 +189,24 @@ pub async fn resolve_database_pointer(
 		{
 			let pointer = decode_database_pointer(&pointer_bytes)
 				.context("decode sqlite database pointer")?;
-			return Ok(Some(pointer));
+			if let Some(cap) = versionstamp_cap {
+				let catalog = tx
+					.informal()
+					.get(
+						&keys::bucket_catalog_key(current_branch_id, pointer.current_branch),
+						isolation_level,
+					)
+					.await?
+					.context("inherited sqlite database catalog marker is missing")?;
+				let catalog_versionstamp = super::shared::decode_versionstamp_value(&catalog)?;
+				if catalog_versionstamp > cap {
+					return Err(SqliteStorageError::DatabaseNotFound.into());
+				}
+			}
+			return Ok(Some(DatabaseReadResolution {
+				pointer,
+				versionstamp_cap,
+			}));
 		}
 
 		if current_branch_id == BucketBranchId::nil() {
@@ -191,6 +240,10 @@ pub async fn resolve_database_pointer(
 		let Some(parent) = record.parent else {
 			return Ok(None);
 		};
+		let parent_cap = record
+			.parent_versionstamp
+			.context("sqlite bucket branch parent versionstamp is missing")?;
+		versionstamp_cap = Some(versionstamp_cap.map_or(parent_cap, |cap| cap.min(parent_cap)));
 		current_branch_id = parent;
 	}
 
