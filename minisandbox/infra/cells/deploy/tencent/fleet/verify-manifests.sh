@@ -125,6 +125,7 @@ for executable in \
 	"$script_dir/terraform/create-first/bootstrap/validate-inputs.py" \
 	"$script_dir/terraform/create-first/bootstrap/validate-runtime-builder-storage.py" \
 	"$script_dir/terraform/create-first/bootstrap/collect-runtime-builder-storage.py" \
+	"$script_dir/terraform/create-first/bootstrap/initialize-runtime-builder-storage.py" \
 	"$script_dir/terraform/create-first/bootstrap/collect-runtime-builder-guest.py" \
 	"$script_dir/terraform/create-first/bootstrap/validate-storage-inputs.py" \
 	"$script_dir/terraform/create-first/bootstrap/validate-cell-platform-inputs.py" \
@@ -219,6 +220,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/fdb-operator/test_render_install.
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_validate_inputs.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_validate_runtime_builder_storage.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_collect_runtime_builder_storage.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_initialize_runtime_builder_storage.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/test-terraform-storage-contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_install_pull_credential.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_install_pull_credential_e2e.py"

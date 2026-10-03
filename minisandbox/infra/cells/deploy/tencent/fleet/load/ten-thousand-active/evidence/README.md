@@ -913,3 +913,30 @@ feedback, but does not retrospectively prove how many of these historical
 attempts timed out or caused the primary HTTP 502. The added bounded-result
 attempt metric is a source change, not a deployed runtime or repaired capacity
 qualification. Router performance remains blocked by the failed strict run.
+
+## Current run final cleanup and natural contraction
+
+`200a42ae-final-qualification-receipt-20261003.json` preserves the original
+supervisor's final bytes, SHA-256
+`397d6b334418b52d6f58ecbf9df8659cfd643aa38427047858abf5889c9616c6`.
+It is a **failed** strict qualification: load, sustained 10,000 active and active
+capacity did not pass. Automatic scale-up, stable capacity identities, valid
+trace, exact Object cleanup, safe drain and final low capacity did pass. Those
+partial results must not override the failed verdict or open Router qualification.
+
+The final capacity observation at `2026-10-03T12:54:03.838003+00:00` binds both
+Cells to four Ready Hosts and four desired/current/Ready canonical Machines.
+Original service InvocationID `8a1ff14bc64e49c889255161316c32e8` was terminal
+(`MainPID=0`, `ActiveState=failed`, exit status 1) when the read-only progress
+capture `inv-c9exb3003w` completed with native TAT SUCCESS/0 at 12:55:34 UTC.
+This is natural contraction, not a manual replica edit or timeout shortcut.
+
+Archive invocation `inv-c9exehgiqx` verified the original terminal identity,
+schema, failed verdict and exact SHA before copying only this 2,463-byte receipt
+to the builder's approved qualification evidence root. Its short lock probe
+reported the original operations lock available; it is an observation, not
+permission for a later workflow to omit the real held lock.
+The existing COS relay metadata/upload invocations `inv-a9exgbg97k` and
+`inv-a9exgc0w3e` both completed SUCCESS/0. Download verified identical bytes/SHA;
+only the temporary relay key was removed, and original/archived builder evidence
+remains. No load was restarted and no capacity predicate was changed.

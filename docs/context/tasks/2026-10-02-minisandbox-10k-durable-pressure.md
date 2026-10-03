@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.28.0
+revision: 1.29.0
 precedence: task
 derived: false
 ---
@@ -120,6 +120,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/bootstrap/{collect-runtime-builder-storage.py,collect-runtime-builder-guest.py,validate-runtime-builder-storage.py,prepare-bootstrap-host.sh,test_collect_runtime_builder_storage.py,README.md}`、`runtime/{verify-builder-storage.py,test_builder_storage.py,README.md#L23-L49}`、`operations/with-autonomy-operation-lock.sh`、`terraform/create-first/{management/main.tf,test-terraform-storage-contract.py}@e0270035` | 独立builder初始化和恢复协议的真实所有权 | 原operations host owns共享锁，guest local flock仅防重复初始化；mount不替代真实bulk backing/Buildah/toolchain准入 |
 | `docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py`、`terraform/create-first/bootstrap/{README.md,validate-runtime-builder-storage.py,collect-runtime-builder-guest.py,test_validate_runtime_builder_storage.py}@71dfe019` | 本轮性能建模接续与实际发布前置 | 不将未发布修正当收益；独立builder storage journal仍缺，不绕过原锁或格式化既有PV |
 | `AGENTS.md`、`minisandbox/{AGENTS.md,engine/AGENTS.md,infra/cells/AGENTS.md}`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@ea628922` | 原运行中精确 branch 取证与性能反馈建模 | mono2 唯一写源、原 invocation/ops lock；只读且有界，不新发布或重编 workerd |
 | `minisandbox/engine/packages/{depot/src/{compaction/shared.rs,compaction/types.rs,workflows/{db_manager.rs,db_hot_compacter.rs},inspect.rs,conveyer/{keys.rs,branch/{catalog.rs,fork.rs}}},gasoline/src/{builder/workflow/lupe.rs,db/kv/{mod.rs,keys/{history.rs,workflow.rs}},ctx/workflow.rs},engine/src/{commands/udb/cli.rs,util/udb.rs},api-peer/src/{router.rs,depot_inspect.rs}}`、`minisandbox/engine/packages/depot/tests/cold_workflow_publish.rs` | 实际 proof、loop history、install reject 与采集边界 | generic StateKey 不代表 LUPE 状态；CLI exit 0 不代表 key 存在；catalog churn 可能扩大证明失效和同输入返工 |
@@ -415,7 +416,56 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ### stage
 
-当前 checkpoint（1.28.0）：用户再次明确性能劣化须从建模设计解决，不以加副本或延长
+当前 checkpoint（1.29.0）：上一轮通过只读progress32与交接归档推进，master e0270035
+remote exact verified/clean。当前lpqqnykm保留parent/source身份，不改原c631负载工具和
+门禁。独立builder的guest initializer已源码实现：root-backed fsync journal binds exact
+inventory/instance/CBS/capacity/UUID，formatting→formatted→mounted；formatter前重采
+metadata/serial/root/TKE/云attachment，cloud观测两分钟新鲜。无journal的既有签名拒绝；
+已格式化响应丢失通过exact UUID+read-only fsck恢复、不重格式化；mounted不能回退。
+persistent data.mount用UUID，检查唯一UUID/link、findmnt和block mount；非空/data、
+existing bulk tree、foreign unit/fstab、symlink与lock冲突拒绝，不移旧目录/cache，不碰PV。
+Buildah专属config的GraphRoot在/data，后续handoff须明确传播CONTAINERS_STORAGE_CONF。
+mountVerified保持storageReady=false，原bulk path/reserve/inode/toolchain/cache门禁不变。
+empty planner原语义保留；新validate_attachment/collector attached-only仅供journal恢复
+采集，不授予empty/build readiness。首次init必须通过original lock-owning coordinator，
+该coordinator与真实CBS初始化/reboot/handoff仍未云上完成，本轮无实际mkfs/mount云操作。
+14项初始真实file/subprocess double测试通过；扩展31项曾因新增测试片段错位出现一项
+FileNotFoundError，已修测试且保留regression日志；随后33项和native最终34/34通过。
+native仅新建32MiB regular-file probe，验证ext4签名UUID/readonly fsck，不冒充block mount。
+最终补齐CLI显式execute/qualified Python+工具预检查，35/35通过；journal还实际校验
+state directory与系统filesystem同st_dev。冻结后完整fleet gate再验exit0，不重编V8。
+Terraform contract最初unittest discover含连字符文件执行0项，不计覆盖；直接正式入口
+10/10通过。既有actual builder admission17/17通过，py_compile/bash-n/diff-check通过；
+verify-manifests增加initializer syntax/executable与真实测试入口，完整fleet gate exit0，
+末端fleet_manifest_invariants=passed；没有真实compiler、cloud mutation或资格替代。
+12:37:33 progress33 inv-e9ews6gs11 SUCCESS/0：原身份running，A/B Host31/32；
+12:43:42 progress34 inv-c9ewxx0e7p SUCCESS/0：MainPID1728155/InvocationID不变，
+load exit1、exact cleanup0，12:43:38 A/B Host均17/17，Machine26/24均Ready、active0、
+errors空。早于12:42:45的本地guard正确exit1，没有TAT invocation；只提交随后同名
+progress34。尚未回floor4，不称原strict10k通过；next periodic不早于12:49:00UTC。
+12:49:30 progress35 inv-c9ex5cgjdv SUCCESS/0：原身份active/running、cleanup0，12:49:25
+A/B Host均4/4，Machine14/10均Ready、active0、errors空。Host已到floor不等于Machine
+终态，原supervisor operations lock仍live；next periodic不早于12:54:45UTC。不并发新
+build/rollout/负载、手工scale或云资源mutation。下一项是持原共享锁的正式coordinator
+以及独立builder real CBS/reboot/storage/toolchain/cache admission与受控build handoff。
+12:55:34 progress36 inv-c9exb3003w SUCCESS/0：原InvocationID相同，但MainPID0、
+ActiveState/SubState failed、ExecMainStatus1，已真正terminal，不再等待live drain。
+12:54:03 A/B Host均4/4，Machine各4/4/4，全active0/errors空。原最终receipt verdict
+failed，只有initial/final low、exact cleanup、scaleup、stable identity、trace与safe drain
+通过；load与sustained10k/activeCapacity未通过，绝不据此开放Router或称万级资格完成。
+final receipt SHA前缀397d6b334418，2463bytes。archive inv-c9exehgiqx SUCCESS/0验证
+原终态/原字节并仅归档这个receipt，short probe观察original operations lock available。
+它不替代下一正式workflow全程持锁。COS原helper metadata/upload inv-a9exgbg97k/
+inv-a9exgc0w3e均SUCCESS/0，download与原bytes/SHA一致；已归档真实final artifact与
+evidence README，不改旧收据或重启负载。cos-relay.py路径精确查询不存在，使用实际
+fully-read relay-download helper；已闭合fleet session再次poll返回Unknown，不因此重跑。
+doc validator0 errors/warnings，rootcontext仍4942历史errors，与上一baseline Counter
+added0/removed0、本Task0。context26 tests同四历史fail，audit33/33，不称全仓资格通过。
+下一步不再等待原supervisor：先完成原锁owner的coordinator与真实management reviewed
+plan、新builder CBS/reboot/admission/handoff，再正式发布候选并重跑同样严格形状。
+catalog失效收窄等候选仍未发布；正式固定负载对照与Router/百万dormant完整目标仍active。
+
+历史 checkpoint（1.28.0）：用户再次明确性能劣化须从建模设计解决，不以加副本或延长
 timeout替代。按既有正式模型继续区分单位请求/扫描成本、共享依赖失效返工、准入等待和
 有效持久推进；stage completion、进程 succeeded 出口与 durable watermark 不混为一谈。
 catalog 作用域收窄与 inherited read-cap/lazy COW 修复已在master，新候选0eb04a29仍未

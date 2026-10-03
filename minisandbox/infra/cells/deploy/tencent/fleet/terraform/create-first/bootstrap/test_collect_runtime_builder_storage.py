@@ -104,10 +104,10 @@ class BuilderStorageCollectorTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def capture(self):
+    def capture(self, *options):
         (self.directory / "fixture.json").write_text(json.dumps(self.fixture))
         return subprocess.run([sys.executable, str(SCRIPT), "--inventory", str(self.inventory),
-            "--management-inventory", str(self.management), "--management-kubeconfig", str(self.kubeconfig)],
+            "--management-inventory", str(self.management), "--management-kubeconfig", str(self.kubeconfig), *options],
             env=self.environment, capture_output=True, text=True, check=False)
 
     def test_real_tat_shell_helper_collects_matching_disk_without_credentials(self):
@@ -139,6 +139,21 @@ class BuilderStorageCollectorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_attached_only_captures_used_disk_but_never_grants_empty_or_build_admission(self):
+        self.fixture["guest"]["lsblk"]["blockdevices"][2]["fstype"] = "ext4"
+        result = self.capture("--attached-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        evidence = json.loads(result.stdout)
+        plan = FIXTURE.VALIDATE.validate_attachment(FIXTURE.inventory(), evidence, time.time_ns() // 1000000)
+        self.assertEqual(plan["action"], "verify-attachment")
+        self.assertFalse(plan["storageReady"])
+        with self.assertRaises(ValueError):
+            FIXTURE.VALIDATE.validate(FIXTURE.inventory(), evidence, time.time_ns() // 1000000)
+
+    def test_attached_only_does_not_relax_disk_identity(self):
+        self.fixture["guest"]["byId"]["/dev/disk/by-id/virtio-disk-builder01"] = "/dev/vdb"
+        self.assertEqual(self.capture("--attached-only").returncode, 1)
 
     def test_wrong_management_inventory_rejects_before_cloud_or_tat(self):
         value = json.loads(self.management.read_text())

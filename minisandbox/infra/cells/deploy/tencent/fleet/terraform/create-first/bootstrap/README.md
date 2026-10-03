@@ -77,12 +77,62 @@ wrong management/node/metadata identities and already-used disks without cloud w
 
 The plan hashes both exact input files and deliberately keeps `storageReady=false`.
 It performs no cloud mutation, formatting, mounting, cleanup or runtime rollout.
-The initialization/mount journal still needs implementation. A later
-mutating bootstrap must recollect the identities under the original operations
-lock immediately before acting; a saved preflight is not authorization to format.
+`initialize-runtime-builder-storage.py` implements the separate mutating guest
+phase. The coordinator must hold the original operations lock for collection,
+transfer and the complete TAT invocation; the guest's local file lock is not a
+second fleet lock. Install qualified Python 3.11 without creating a `/data`
+workspace first. Transfer only the reviewed helper sources, immutable separate
+inventory and a freshly collected observation; no cloud credential goes to the
+builder. A saved preflight is not authorization to format.
 No observed management PVC, including a disk currently named `/dev/vdb`, is a
 candidate build disk. Rerunning against an already formatted dedicated build disk
-also refuses initialization; safe reuse needs a separate verified mount/journal path.
+without its matching journal refuses initialization.
+
+```bash
+# Only on the exact standalone builder, through the lock-owning coordinator.
+python3.11 initialize-runtime-builder-storage.py \
+  --inventory /protected/runtime-builder.inventory.json \
+  --observation /protected/runtime-builder.storage-observation.json --execute
+```
+
+The initializer recollects live guest metadata/serial/root ancestry and rechecks
+the two-minute cloud observation before formatting. It never guesses a disk
+letter. It writes and fsyncs a private root-backed journal at
+`/var/lib/actor-runtime-builder-storage/journal.json` **before** calling `mkfs`.
+The journal binds exact inventory bytes, instance, CBS, capacity and a generated
+filesystem UUID. Its phases are `formatting -> formatted -> mounted`. Existing
+partitions, signatures or mounts cannot be adopted without the matching journal;
+foreign UUIDs, nonempty underlying `/data`, existing bulk directories, conflicting
+fstab/units, root ancestry, TKE membership and stale cloud observations fail closed.
+No existing files or cache trees are moved or removed.
+
+If formatting succeeds but its response is lost, resume validates the recorded
+ext4 UUID and read-only `e2fsck`, never reformats the filesystem. An empty journaled
+format intent may retry the same UUID; partial/foreign filesystem signatures fail
+closed. A mounted/finished journal can never return to formatting. Preserve the
+original TAT invocation on timeout and collect it before submitting a resume.
+
+Persistence uses the exclusive managed `data.mount` unit, UUID-based source,
+actual `findmnt` plus a fresh block observation, and a unique UUID link resolving
+to the same CBS. There is no `nofail` fallback to root storage. `/var/lib/actor-build`
+is created only as an absent-path link to `/data/actor-build`; existing trees are
+rejected, not migrated. The managed Buildah configuration is
+`/var/lib/actor-runtime-builder-storage/storage.conf`, with GraphRoot on `/data`.
+Later preparation/build invocations must explicitly propagate
+`CONTAINERS_STORAGE_CONF` to this file and verify Buildah's actual `info` result.
+The existing storage admission checker must still inspect all actual bulk paths,
+available bytes/inodes and root reserves. `mountVerified=true` deliberately keeps
+`storageReady=false`; mounting is not toolchain/cache admission or permission to
+compile on the old control node.
+
+For a resume, the original collector's `--attached-only` mode captures an
+already-initialized disk without requiring emptiness. It preserves the same
+cloud/root/TKE identity fences, only proves `action=verify-attachment`, and never
+grants formatting or build admission. The default collector/planner remains the
+strict fresh-empty path. Local tests run real journal files and subprocess
+protocol doubles, plus a native ext4 regular-file signature/fsck probe. They do
+not prove cloud block mounts, reboot persistence, a lock-owning coordinator,
+toolchain installation or controlled build handoff; those remain cloud gates.
 
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve

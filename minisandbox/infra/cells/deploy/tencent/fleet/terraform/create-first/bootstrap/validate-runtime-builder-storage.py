@@ -127,7 +127,8 @@ def root_ancestry(value: dict[str, Any]) -> set[str]:
     return result
 
 
-def validate(value: Any, evidence: Any, now_ms: int) -> dict[str, Any]:
+def validate_attachment(value: Any, evidence: Any, now_ms: int) -> dict[str, Any]:
+    """Prove attachment/root exclusion, never emptiness or build readiness."""
     inventory = validate_inventory(value)
     evidence = mapping(evidence, "observation")
     require(set(evidence) == {"schema", "observedAtMs", "region", "instances", "disks", "guest", "managementNodes"},
@@ -189,17 +190,26 @@ def validate(value: Any, evidence: Any, now_ms: int) -> dict[str, Any]:
     require(int(size) == inventory["dataDiskGiB"] * 1024 ** 3, "guest/cloud disk size mismatch")
     require("fstype" in row and "uuid" in row and ("mountpoint" in row or "mountpoints" in row),
             "disk filesystem observation incomplete")
+    signatures = mapping(guest.get("wipefs"), "wipefs observation")
+    require(signatures.get("device") == device and isinstance(signatures.get("signatures"), list),
+            "missing signatures or wrong probe target")
+    return {"schema": "actor-runtime-builder-storage-plan/v1", "verdict": "passed",
+            "storageReady": False, "action": "verify-attachment", "instanceId": inventory["instanceId"],
+            "operationsInstanceId": inventory["operationsInstanceId"], "diskId": inventory["dataDiskId"],
+            "device": device, "byId": by_id, "capacityBytes": int(size), "observedAtMs": observed_at}
+
+
+def validate(value: Any, evidence: Any, now_ms: int) -> dict[str, Any]:
+    plan = validate_attachment(value, evidence, now_ms)
+    guest = evidence["guest"]
+    row = block_devices(guest["lsblk"])[plan["device"].removeprefix("/dev/")]
     mounts = row.get("mountpoints")
     require(mounts is None or (isinstance(mounts, list) and all(mount is None for mount in mounts)),
             "disk already mounted")
     require(not row.get("children") and row.get("fstype") is None and row.get("uuid") is None
             and row.get("mountpoint") is None, "disk already partitioned/formatted/mounted")
-    signatures = mapping(guest.get("wipefs"), "wipefs observation")
-    require(signatures.get("device") == device and signatures.get("signatures") == [], "disk signatures or wrong probe target")
-    return {"schema": "actor-runtime-builder-storage-plan/v1", "verdict": "passed",
-            "storageReady": False, "action": "initialize-empty", "instanceId": inventory["instanceId"],
-            "operationsInstanceId": inventory["operationsInstanceId"], "diskId": inventory["dataDiskId"],
-            "device": device, "byId": by_id, "capacityBytes": int(size), "observedAtMs": observed_at}
+    require(guest["wipefs"]["signatures"] == [], "disk signatures or wrong probe target")
+    return dict(plan, action="initialize-empty")
 
 
 def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

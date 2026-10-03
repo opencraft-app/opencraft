@@ -1716,6 +1716,21 @@ control 通过原 TAT helper 获取 guest 原生观测，guest 先校验 metadat
 collector 不实现格式化或持久挂载，不授予未来任意时间的破坏性权限。真正初始化前须在原共享操作锁内重新
 观察；崩溃恢复、已格式化盘复用、持久挂载和实际 build path admission 仍需单独闭环。
 
+独立 initializer 的源码现补上 root-backed fsync journal：`formatting -> formatted -> mounted`，
+绑定 exact inventory/instance/CBS/capacity 和生成的 filesystem UUID。初次格式化前重采
+guest 身份并要求 cloud observation 仍在两分钟内；不接受既有分区/签名或 root/TKE/PV。
+格式化成功但响应丢失时，通过匹配 UUID 与只读 fsck 恢复，不重格式化已完成文件系统；
+foreign/partial signature、journal 身份变化及未知状态 fail closed。journal 不依赖尚未
+挂载的数据盘，formatter 之前必须持久落盘，mounted 状态不能回到格式化。
+持久挂载用 exclusive `data.mount` 与唯一 UUID，并以 actual findmnt/block observation
+验证；不通过 nofail 回落根盘，不移动既有缓存/目录。默认 empty planner 语义保留，
+collector 的 attached-only 只为恢复采集，不授予 ready 或格式化权限。local 文件/协议
+子进程与 native ext4 regular-file probe 是局部证据，不证明真实 CBS、reboot 或发布。
+原 operations host 仍唯一 owns 全程共享锁；guest local flock 仅防同节点重复初始化。
+MountVerified 仍保持 storageReady=false：Buildah 真实 GraphRoot、全部 bulk backing、
+资源 reserve、toolchain/cache 和受控 handoff 必须独立通过，不能由 journal 替代。
+锁持有的 coordinator、真实新 builder 初始化/重启/构建交接尚未云上完成。
+
 07:08:46 UTC 的新观察表明 Prometheus 暂时 Ready、HPA condition 恢复 ValidMetricFound，
 但 C 原 builder 节点仍 DiskPressure、构建仍共根盘。没有实际查询两项 custom metric 值，
 也没有负载窗口，不能因此宣称控制闭环稳定或整个性能问题已解决。

@@ -78,7 +78,7 @@ def payload(instance_id: str, disk_id: str, guest_source: str) -> str:
 
 
 def collect(inventory: dict, management: dict, kubeconfig: Path, tccli: str,
-            kubectl: str, tat: Path, guest_source: str) -> dict:
+            kubectl: str, tat: Path, guest_source: str, attached_only: bool = False) -> dict:
     inventory = IDENTITY.validate_inventory(inventory)
     management = IDENTITY.mapping(management, "management inventory")
     IDENTITY.require(management.get("schemaVersion") == 1 and management.get("managementId") == inventory["managementId"]
@@ -126,7 +126,8 @@ def collect(inventory: dict, management: dict, kubeconfig: Path, tccli: str,
     evidence = {"schema": "actor-runtime-builder-storage-observation/v1", "observedAtMs": observed_at,
                 "region": inventory["region"], "instances": instances, "disks": disks,
                 "guest": guest, "managementNodes": nodes}
-    IDENTITY.validate(inventory, evidence, time.time_ns() // 1000000)
+    validator = IDENTITY.validate_attachment if attached_only else IDENTITY.validate
+    validator(inventory, evidence, time.time_ns() // 1000000)
     return evidence
 
 
@@ -137,12 +138,15 @@ def main() -> int:
     parser.add_argument("--management-kubeconfig", required=True, type=Path)
     parser.add_argument("--tccli", default=os.environ.get("TCCLI", "tccli"))
     parser.add_argument("--kubectl", default="kubectl")
+    parser.add_argument("--attached-only", action="store_true",
+                        help="capture an initialized disk for journal verification; not formatting/build admission")
     args = parser.parse_args()
     try:
         _, inventory = IDENTITY.read_json(args.inventory)
         _, management = IDENTITY.read_json(args.management_inventory)
         source = GUEST.read_text()
-        evidence = collect(inventory, management, args.management_kubeconfig, args.tccli, args.kubectl, TAT, source)
+        evidence = collect(inventory, management, args.management_kubeconfig, args.tccli, args.kubectl,
+                           TAT, source, args.attached_only)
     except (ValueError, OSError, TypeError):
         print("builder_storage_capture=blocked", file=sys.stderr)
         return 1
