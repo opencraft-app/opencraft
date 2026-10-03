@@ -2290,6 +2290,21 @@ live workflow的锁，也不覆盖abrupt supervisor death。离线actual Bash故
 替代真实TKE缩容资格。2026-10-03T23:35:02Z原supervisor同InvocationID/PID仍live，
 A111Hosts/115Machines、B4/4、active0；原load失败、cleanup通过与完整Phase5未通过不变。
 
+真实TKE eviction primitive必须有独立显式入口，不能放宽local loopback门禁。
+[受锁云入口](../../deploy/tencent/fleet/qualification/host-eviction-api/README.md)要求strict intent
+绑定private HTTPS endpoint/context、kube-system UID、精确server版本、Ready/control Node
+UID/provider ID、private callback IP、完整目标inventory的busybox digest和实际adapter哈希。
+整个源码closure（含test/helper/verifier）校验后才允许Go-only测试；无显式intent的SKIP、
+任意非零exit或缺少绑定intent SHA的完整回执都不能过门禁。fixture仅作用于自己的新
+namespace，TLS/IP SAN、PDB与普通grace不放宽，cleanup按实际namespace/webhook UID，
+回执O_EXCL新建0600拒绝覆盖，并检查测试期间Node UID不变。
+
+共享fixture重构在本机1.35.5真实API复验通过（147.43秒、12 checks、正常cleanup），
+本地entry仍保留原loopback/context/single-node限制。此时TKE入口仅source-prepared，
+未在原supervisor持锁期间执行；callback可达性、实际1.30.0-tke行为、真实Actor fencing、
+目的AZ容量和最终安全缩容均不能据此宣称通过。回执始终claimEligible=false，且未拦截
+真实server内部condition/Delete窗口；API primitive不是controller/Actor admission。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

@@ -69,6 +69,22 @@ type evictionAPIReceipt struct {
 	Checks                       map[string]bool   `json:"checks"`
 	IntraServerWindowObserved    bool              `json:"intraServerConditionDeleteWindowObserved"`
 	Scope                        string            `json:"scope"`
+	IntentSHA256                 string            `json:"intentSha256,omitempty"`
+	ControlNodeUID               types.UID         `json:"controlNodeUid,omitempty"`
+}
+
+type evictionAPIFixtureTarget struct {
+	ClusterUID    string
+	ServerVersion string
+	NodeName      string
+	NodeUID       types.UID
+	CallbackIP    net.IP
+	Image         string
+	Command       []string
+	PullPolicy    corev1.PullPolicy
+	ReceiptPath   string
+	Scope         string
+	IntentSHA256  string
 }
 
 type evictionAdmissionGate struct {
@@ -207,14 +223,34 @@ func TestRealKubernetesFencedEviction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runEvictionAPIFixture(t, ctx, client, evictionAPIFixtureTarget{
+		ClusterUID: string(clusterNS.UID), ServerVersion: version.GitVersion,
+		NodeName: nodes.Items[0].Name, NodeUID: nodes.Items[0].UID, CallbackIP: ip,
+		Image: cachedPauseImage, PullPolicy: corev1.PullNever, ReceiptPath: receiptPath,
+		Scope: "local-real-api-primitives-with-pause-and-management-double-not-cloud-admission",
+	})
+}
+
+// Only the separate guarded local/TKE entrypoints call this shared primitive
+// fixture. Sharing the body does not relax either entrypoint's target policy.
+func runEvictionAPIFixture(t *testing.T, ctx context.Context, client kubernetes.Interface, target evictionAPIFixtureTarget) {
+	t.Helper()
+	if _, err := os.Lstat(target.ReceiptPath); !os.IsNotExist(err) {
+		t.Fatal("fixture receipt must be a new file")
+	}
+	node, err := client.CoreV1().Nodes().Get(ctx, target.NodeName, metav1.GetOptions{})
+	if err != nil || node.UID != target.NodeUID || node.DeletionTimestamp != nil {
+		t.Fatal("fixture Node identity changed before creation")
+	}
 	namespace, err := client.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "host-eviction-api-"}}, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	runID := string(namespace.UID)
-	receipt := evictionAPIReceipt{Schema: "minisandbox-host-eviction-api/v1", Verdict: "failed", ServerVersion: version.GitVersion,
-		ClusterNamespaceUID: string(clusterNS.UID), Namespace: namespace.Name, NamespaceUID: namespace.UID, Image: cachedPauseImage,
-		AdapterHashes: map[string]string{}, Checks: map[string]bool{}, Scope: "local-real-api-primitives-with-pause-and-management-double-not-cloud-admission"}
+	receipt := evictionAPIReceipt{Schema: "minisandbox-host-eviction-api/v1", Verdict: "failed", ServerVersion: target.ServerVersion,
+		ClusterNamespaceUID: target.ClusterUID, Namespace: namespace.Name, NamespaceUID: namespace.UID, Image: target.Image,
+		AdapterHashes: map[string]string{}, Checks: map[string]bool{}, Scope: target.Scope,
+		IntentSHA256: target.IntentSHA256, ControlNodeUID: target.NodeUID}
 	webhookName := namespace.Name + "-eviction"
 	gate := &evictionAdmissionGate{namespace: namespace.Name, blocked: make(chan *policyv1.Eviction, 1), released: make(chan struct{})}
 	var tlsServer *httptest.Server
@@ -225,7 +261,7 @@ func TestRealKubernetesFencedEviction(t *testing.T) {
 		webhooks := client.AdmissionregistrationV1().ValidatingWebhookConfigurations()
 		current, err := webhooks.Get(cleanupCtx, webhookName, metav1.GetOptions{})
 		if err == nil {
-			if current.Labels[apiFixtureLabel] != runID {
+			if current.Labels[apiFixtureLabel] != runID || receipt.WebhookUID == "" || current.UID != receipt.WebhookUID {
 				t.Error("refuse foreign webhook cleanup")
 			} else {
 				uid := current.UID
@@ -269,7 +305,17 @@ func TestRealKubernetesFencedEviction(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if err := os.WriteFile(receiptPath, append(payload, '\n'), 0600); err != nil {
+		file, err := os.OpenFile(target.ReceiptPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer file.Close()
+		if _, err := file.Write(append(payload, '\n')); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := file.Sync(); err != nil {
 			t.Error(err)
 		}
 	})
@@ -308,8 +354,8 @@ func TestRealKubernetesFencedEviction(t *testing.T) {
 	workload, err := client.AppsV1().StatefulSets(namespace.Name).Create(ctx, &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "host", Labels: labels}, Spec: appsv1.StatefulSetSpec{Replicas: &replicas, ServiceName: "fixture", Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: &automount, TerminationGracePeriodSeconds: &grace, NodeSelector: map[string]string{corev1.LabelHostname: nodes.Items[0].Name},
-				Containers: []corev1.Container{{Name: "pause", Image: cachedPauseImage, ImagePullPolicy: corev1.PullNever,
+				AutomountServiceAccountToken: &automount, TerminationGracePeriodSeconds: &grace, NodeSelector: map[string]string{corev1.LabelHostname: target.NodeName},
+				Containers: []corev1.Container{{Name: "pause", Image: target.Image, ImagePullPolicy: target.PullPolicy, Command: target.Command,
 					Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("16Mi")}},
 					SecurityContext: &corev1.SecurityContext{RunAsNonRoot: &nonroot, RunAsUser: &user, ReadOnlyRootFilesystem: &nonroot, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}}}},
 			}},
@@ -408,7 +454,7 @@ func TestRealKubernetesFencedEviction(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitPDB(1, 30*time.Second)
-	tlsServer, ca := realEvictionTLSGate(t, gate, ip)
+	tlsServer, ca := realEvictionTLSGate(t, gate, target.CallbackIP)
 	sideEffects, failure, match, scope, timeout := registrationv1.SideEffectClassNone, registrationv1.Fail, registrationv1.Exact, registrationv1.NamespacedScope, int32(10)
 	webhookURL := tlsServer.URL + "/validate"
 	webhook, err := client.AdmissionregistrationV1().ValidatingWebhookConfigurations().Create(ctx, &registrationv1.ValidatingWebhookConfiguration{
@@ -553,7 +599,12 @@ func TestRealKubernetesFencedEviction(t *testing.T) {
 	receipt.Checks["fresh_eviction_creates_new_uid"] = true
 	receipt.Checks["successor_rejects_old_eviction_uid"] = true
 	receipt.Checks["successor_rejects_old_cancellation"] = true
-	t.Logf("real API fixture passed: server=%s namespace=%s original=%s successor=%s; in-server condition/delete window was not intercepted", version.GitVersion, namespace.Name, pod.UID, replacement.UID)
+	node, err = client.CoreV1().Nodes().Get(ctx, target.NodeName, metav1.GetOptions{})
+	if err != nil || node.UID != target.NodeUID || node.DeletionTimestamp != nil {
+		t.Fatal("fixture Node identity changed during primitive gate")
+	}
+	receipt.Checks["fixture_node_identity_stable"] = true
+	t.Logf("real API fixture passed: server=%s namespace=%s original=%s successor=%s; in-server condition/delete window was not intercepted", target.ServerVersion, namespace.Name, pod.UID, replacement.UID)
 }
 
 func strconvPort(address *url.URL) (int, error) {
