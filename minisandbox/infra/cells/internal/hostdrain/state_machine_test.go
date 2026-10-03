@@ -95,6 +95,73 @@ func TestStableContractionStopsImmediatelyWhenDemandRises(t *testing.T) {
 	}
 }
 
+func TestObservedOrdinalPrefixCannotConvergeWithoutTopologyRepair(t *testing.T) {
+	now := time.Date(2026, 10, 3, 21, 30, 19, 0, time.UTC)
+	snapshot := healthySnapshot(now)
+	snapshot.MinReplicas = 4
+	snapshot.RequiredZones = 3
+	snapshot.TopologyMaxSkew = 2
+	snapshot.Hosts = nil
+	appendHost := func(zone string) {
+		ordinal := len(snapshot.Hosts)
+		snapshot.Hosts = append(snapshot.Hosts, Host{
+			Name: fmt.Sprintf("runtime-%d", ordinal), UID: fmt.Sprintf("uid-%d", ordinal),
+			Ordinal: int32(ordinal), Zone: zone, Ready: true, Accepting: true,
+			Quiescent: true, Capacity: 32, RequestCapacity: 32, ObservedAt: now,
+		})
+	}
+	// The lower prefix is synthetic. Its aggregate counts and the six exact
+	// tail zones match the read-only cloud observation for run 7d5fa6ac.
+	for index := 0; index < 34; index++ {
+		for _, zone := range []string{"zone-a", "zone-b", "zone-c"} {
+			appendHost(zone)
+		}
+	}
+	for index := 0; index < 3; index++ {
+		appendHost("zone-c")
+	}
+	for _, zone := range []string{"zone-b", "zone-c", "zone-c", "zone-c", "zone-c", "zone-a"} {
+		appendHost(zone)
+	}
+	snapshot.Replicas = 111
+	snapshot.ReadyReplicas = 111
+	state := State{Phase: PhaseIdle}
+	for step := 0; step < 3; step++ {
+		decision := Decide(state, snapshot)
+		if decision.State != state || decision.Action.Kind != ActionNone ||
+			decision.Reason != "scale-down would violate runtime topology maxSkew" {
+			t.Fatalf("unsafe prefix progressed at step %d: %#v", step, decision)
+		}
+		// Waiting does not repair the ordinal-to-zone ordering. Refresh every
+		// metric so the block cannot be mistaken for stale observation evidence.
+		snapshot.Now = snapshot.Now.Add(time.Hour)
+		for index := range snapshot.Hosts {
+			snapshot.Hosts[index].ObservedAt = snapshot.Now
+		}
+	}
+
+	// A lower prefix can satisfy the same policy, but reaching it requires
+	// traversing the forbidden 110-Host shape. Never skip those serial gates.
+	lower := snapshot
+	lower.Hosts = snapshot.Hosts[:109]
+	lower.Replicas, lower.ReadyReplicas = 109, 109
+	if decision := Decide(state, lower); decision.State.Phase != PhaseSelected ||
+		decision.State.TargetName != "runtime-108" || decision.Action.Kind != ActionNone {
+		t.Fatalf("lower balanced prefix = %#v", decision)
+	}
+
+	// This counterfactual proves that placement repair can restore liveness
+	// without raising the skew bound. It is not a production eviction action.
+	rebalanced := snapshot
+	rebalanced.Hosts = append([]Host(nil), snapshot.Hosts...)
+	rebalanced.Hosts[2].Zone = "zone-a"
+	if decision := Decide(state, rebalanced); decision.State.Phase != PhaseSelected ||
+		decision.State.TargetName != "runtime-110" || decision.State.TargetUID != "uid-110" ||
+		decision.Action.Kind != ActionNone {
+		t.Fatalf("single placement repair did not preserve serial selection: %#v", decision)
+	}
+}
+
 func TestDemandRiseAbortsAndRestoresTheSameHost(t *testing.T) {
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	snapshot := healthySnapshot(now)

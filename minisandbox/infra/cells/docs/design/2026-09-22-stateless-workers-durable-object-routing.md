@@ -2173,6 +2173,17 @@ admission资格。未来标准采集应纳入Terraform/Argo desired state，绑�
 优先保留结构化平台错误，默认不采集用户JS请求内容、Secret或console输出；不要用全量
 DEBUG和无界日志量替代定位。原supervisor持锁期间没有安装或变更日志采集组件。
 
+严格负载后的自然缩容还暴露一个独立liveness缺口：A在111 Ready Host、active0、无release
+hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的skew7超过当前缩容
+边界6。低前缀最终可平衡不代表中间删除已被授权，等待也不会改变现有ordinal到AZ映射。
+无secret证据为`2757-run-7d5fa6ac-drain-topology-20261004.json`；纯状态机回归复现此阻滞，
+未改安全策略、RBAC或云状态。不要继续提高经验性skew阈值来宣布收敛。
+
+后续拓扑修复必须与同一串行drain状态机组合：replicas保持不变，选择过量AZ的单台Host，
+精确UID fence后等待fresh quiescence，以尊重PDB的eviction替换并重新验证目标AZ调度容量、
+新UID Ready和拓扑改善；扩容优先、release hold、超时、重启及迟到响应仍fail closed。
+此动作尚未实现，现有pods权限仅get/list，不能借测试脚本或强删绕过所有权与操作锁。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

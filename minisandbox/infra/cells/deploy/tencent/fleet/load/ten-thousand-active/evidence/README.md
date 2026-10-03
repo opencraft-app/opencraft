@@ -1043,3 +1043,21 @@ it does not exclude a custom external agent or sidecar. Existing account topics
 are not evidence of fleet log retention, and a lack of retained logs is not
 evidence that the 503 never occurred. No collection configuration or cloud
 resource was changed during the original supervisor's operation lock.
+
+### Natural contraction topology block
+
+`2757-run-7d5fa6ac-drain-topology-20261004.json` binds successful read-only TAT
+observations to the exact A StatefulSet and Host-drain controller. Cleanup is
+complete and all Actors are inactive, but A remains at 111 Ready Hosts with
+zone counts 35/35/41. Its highest ordinal belongs to a smaller zone, so the
+next removal produces 34/35/41. Skew 7 exceeds the current contraction envelope
+of 6. The controller is Idle without a release hold or sampled reconcile error.
+
+This is a liveness defect in the composition of arbitrary StatefulSet ordinal
+placement and the serial topology safety gate, not evidence of unsafe deletion.
+The lower valid prefix does not authorize skipping the blocked intermediate
+shape. A deterministic state-machine regression preserves the observed tail
+zone order and aggregate counts, verifies that fresh evidence and elapsed time
+do not unblock it, and demonstrates a counterfactual placement repair without
+changing the skew policy. No rebalance is implemented or deployed by this test;
+the original supervisor and final low-capacity gate remain unchanged.
