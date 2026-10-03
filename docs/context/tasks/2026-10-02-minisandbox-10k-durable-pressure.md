@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.21.0
+revision: 1.22.0
 precedence: task
 derived: false
 ---
@@ -120,6 +120,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `AGENTS.md`、`minisandbox/{AGENTS.md,engine/AGENTS.md,infra/cells/AGENTS.md}`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@ea628922` | 原运行中精确 branch 取证与性能反馈建模 | mono2 唯一写源、原 invocation/ops lock；只读且有界，不新发布或重编 workerd |
+| `minisandbox/engine/packages/{depot/src/{compaction/shared.rs,compaction/types.rs,workflows/{db_manager.rs,db_hot_compacter.rs},inspect.rs,conveyer/{keys.rs,branch/{catalog.rs,fork.rs}}},gasoline/src/{builder/workflow/lupe.rs,db/kv/{mod.rs,keys/{history.rs,workflow.rs}},ctx/workflow.rs},engine/src/{commands/udb/cli.rs,util/udb.rs},api-peer/src/{router.rs,depot_inspect.rs}}`、`minisandbox/engine/packages/depot/tests/cold_workflow_publish.rs` | 实际 proof、loop history、install reject 与采集边界 | generic StateKey 不代表 LUPE 状态；CLI exit 0 不代表 key 存在；catalog churn 可能扩大证明失效和同输入返工 |
+| `minisandbox/{.claude/reference/testing.md,docs-internal/engine/sqlite/{constraints-and-design-decisions.md,storage-structure.md}}`、`minisandbox/infra/cells/deploy/{local/mesh/workerd-persistent-code-e2e/run.py,tencent/fleet/load/{shared-agent-scale/runner.mjs,router-performance/README.md,command-ack-disconnect/README.md,ten-thousand-active/evidence/README.md}}` | 正常只读 API 与剩余目标边界 | ephemeral port-forward finally 关闭；故障/Router gate 不抢原负载锁；保留 fork/PITR/backup fence |
 | `docs/context/domains/release-gitops.md`、`docs/context/project/upstream-subtrees.md`、`minisandbox/infra/cells/{AGENTS.md,deploy/tencent/fleet/{load/ten-thousand-active/{analyze_pressure.py,test_analyze_pressure.py,README.md},qualification/actor-bj-q01/relay-download-from-builder.sh,tat/tat-run.sh}}@9234d346` | 同一压测窗口与成本归因 | 原进程只读快照、COS 长度/SHA、真实 CLI 窗口边界；不改在途工具或编译 runtime |
 | `AGENTS.md`、`minisandbox/AGENTS.md`、`minisandbox/infra/cells/AGENTS.md`、`docs/context/domains/release-gitops.md`、`docs/context/project/{upstream-subtrees.md,adjacency/argocd-ci-secrets.md}@ad3a5102` | 本轮目标接续与工具性能口径 | mono2 唯一写源、新 jj revision、原 ops lock 与 immutable cloud 运行保留 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/{README.md,load/ten-thousand-active/{README.md,analyze_pressure.py,test_analyze_pressure.py},load/shared-agent-scale/{runner.mjs,runner.test.mjs,README.md},verify-manifests.sh}`、`minisandbox/scripts/format/agent-format.mjs`、`minisandbox/biome.json` | 实际 heartbeat 调度与测试邻接 | 已有在途会抑制派发；真实 HTTP、常数空间计数、全 fleet gate，不修改节拍或稳态资格 |
@@ -395,7 +398,62 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-当前 checkpoint（1.21.0）：上一 turn 为 progress，heartbeat demand 工具/真实 HTTP
+当前 checkpoint（1.22.0）：上一 turn 为 progress，pressure v3 window gate 和真实 CLI
+回归 FF 推 master ea628922，remote exact SHA verified、clean。保留空 nvotwvxu，
+jj new uvrwxsqx 仅归档原 run 的精确分支诊断与正式模型；不部署新工具或重编 Runtime。
+cloud runtime skill/networking 已完整读取；environment_status tool 不存在，policy snapshot
+缺失，不推断 readiness，正常配置的 CLI 实际观察为准。组合规则输出截断后补读局部
+范围，原在途 relay session 49320 续接 exit 0，没有重复提交。
+
+10:24:08 inv-c9esv404uk、10:29:59 inv-a9et2jg23u 均 SUCCESS/0，原 MainPID/
+InvocationID running；分别 6,023/6,743 ready 与 904,635/1,133,578 active success，
+failure/ordinary retry/mismatch 零。B compaction waiter 10:24 为 40，触发一次有界
+精确 branch 取证，而不是高频 progress。collector inv-d9et210ru6 SUCCESS/0，
+5,985 bytes、SHA 前缀 b7ea65cd5dd499e8；同一 Engine UID/运行 image、B Cell/FDB UID
+校验通过。exact index 0 branch 的 manager 出现 install_hot_job admission deferred，
+不是 execution failure；state/0 查询不存在不代表 LUPE state 丢失。
+follow-up inv-d9et46gi5r SUCCESS/0，12,328 bytes、SHA 前缀 95a6feab593816f6，
+仅 48-entry active history、exact lease/wake；两次 official COS relay 长度/SHA 验真并
+删除临时 key。正式 evidence README 存完整摘要/路径，raw JSON 按原字节归档。
+
+实际 history 有 stage Succeeded（三行）、install Rejected: bucket fork proof is
+ambiguous，下一 Hot job 同 fingerprint/prefix/coverage。这是一次无效返工，不是全
+Cell rejection rate 或请求首错归因。源码 catalog create/tombstone 同时失效相关 DB
+并 bump root/shard epoch，导致无关 DB proof reset；planner 不等待，install 必须等待。
+下一确定性修正要从 proof invalidation scope 入手，真实 UDB 回归先验证 unrelated DB
+churn 与 relevant membership/fork 并发边界，不能删安全证明或直接扩许可。
+
+10:36:34 inv-d9et8r0gak SUCCESS/0：7,523 ready/7,509 proven，1,410,802 active
+success、162 在途，普通失败/重试/身份漂移零；post-warmup SLO samples 零，无终态。
+trace 10:36:19 A/B active 3,659/3,810，Host desired/Ready 208/201、219/207，
+Machine Ready 208/213；queries 12/12 compaction inflight、71/77 waiters。next periodic
+progress 不早于 10:42:00 UTC；仍原 full-child ops lock，不启动第二负载或 rollout。
+
+路径猜测失败已记录：gasoline/src/cli、universaldb/src/cli.rs、depot/src/inspect/*.rs、
+runtime/{render.py,engine.yaml,service.yaml}、db_manager/types.rs、builder/lupe.rs、
+rivet-util/src/id.rs、depot/src/keys* 不存在；之后用 rg --files 定位实际 CLI/inspect/
+compaction/types.rs/builder/workflow/lupe.rs/conveyer/keys.rs，不由空结果推定功能缺失。
+后续 branch/mod.rs 与 .agents/context/catalog* 猜测同样不存在；实际 branch 入口须
+用 rg --files 定位，catalog 真源为 docs/context/.context/catalog.jsonl，不继续猜测。
+此 revision 不修改 runtime、proof 逻辑或测试 harness；下轮先复现失效 fanout 再修正。
+本轮 raw archive cmp/长度/SHA 与 collection/source 链检查通过；pressure 21 项、
+相邻 monitor 5 项、audit 33 项通过。Context 26 项仍同四项历史失败，documentation
+零 errors/warnings。首次 catalog stale 属于本 Task 改动，更新其唯一派生行后验基线，
+不放宽扫描器或宣称全仓 Context 全绿。此 docs/evidence revision 不构成生产修复。
+10:42:03 inv-a9etdvgwq4 SUCCESS/0 再确认原进程身份 running：8,180 ready/
+8,166 proven、1,669,139 active success、151 在途，普通失败/重试/身份漂移仍零。
+warmup backpressure 4,675、零 timeout；post-warmup ready 样本仍零，无最终 receipt。
+next periodic progress 不早于 10:47:10 UTC，不将 SDK 累计 ready 当作持续 active。
+最终 Context 4,942 errors 与上一 turn 按保留重复次数的归一化 Counter 完全相同，
+Task errors 空；六个实际 changed-file 的 change-impact passed，matched rules 空不
+替代设计语义审查；changed credential value patterns 零。exact raw bytes 不重编码。
+独立 audit CLI 首次因 --format json 缺 --output 拒绝，未产出有效审计；按原契约加
+本地 --output 后 exit 0。报告 schema 3、needs_agent_review/not_assessed、Unknown，
+没有伪造评分或仓库全绿；本地报告在 /data/tmp/minisandbox-exact-branch-audit-final-20261003.json。
+后续真实回归可复用 depot/tests/common/mod.rs 的临时 RocksDB/UDB 和现有 test-faults
+advance_bucket_fork_proof_for_test，不需要连接云端 FDB 或启动第二个负载。
+
+历史 checkpoint（1.21.0）：上一 turn 为 progress，heartbeat demand 工具/真实 HTTP
 回归已 FF 推 master 9234d346，remote exact SHA verified、clean。保留空 wqksmskz，
 先 jj new 创建 ukkwwqou；新工具不部署进原 tools120/run。只读快照与官方 COS relay
 不修改 workload、容量或 runtime，不重编 V8。

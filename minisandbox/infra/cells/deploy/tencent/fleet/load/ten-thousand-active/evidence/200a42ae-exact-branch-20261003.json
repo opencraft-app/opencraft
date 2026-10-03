@@ -1,0 +1,151 @@
+{
+  "cell": "actor-bj-b01",
+  "cellUid": "87a07636-737c-4a57-8693-9d02f61883f8",
+  "collectionCompleted": true,
+  "engine": {
+    "name": "actor-bj-b01-engine-7f566b884f-8h4xh",
+    "uid": "8314bafe-137f-4368-abfe-a596a6eedbfc"
+  },
+  "fdbUid": "c6e52dcb-1a7b-499b-bf36-39e8fe2194dd",
+  "finishedAt": "2026-10-03T10:29:27.417837+00:00",
+  "object": {
+    "actorId": "9u4isd43dgw6j26tsc0wprue6pal00",
+    "index": 0,
+    "objectId": "61e6b18f8f94010bd30353c359ff686ec17878add900c00256e93786c07bc216",
+    "placement": {
+      "cell_name": "actor-bj-b01",
+      "cell_uid": "87a07636-737c-4a57-8693-9d02f61883f8",
+      "datacenter": "default",
+      "decided_at": "2026-10-03T09:33:44.004271717Z",
+      "pool_name": "actor-beijing-kubernetes",
+      "pool_uid": "d23499bb-cc40-4fa2-8b3c-c36553051ef8",
+      "snapshot_digest": "sha256:d54393ba3bc5d5a6825ad3f130369c3069a84132f8f81cf2f76b5834de2a0257",
+      "snapshot_resource_version": "3161305793"
+    },
+    "worker": "scale-200a42ae03ef4e128505b0def22e8af8-s000"
+  },
+  "observations": {
+    "bottomlessState": {
+      "bottomless_contract_version": 1,
+      "branch_id": "813ded40-c89d-4e9b-81a0-625ab4c240d0",
+      "bucket_id": "6317a4af-8a29-46db-a0a4-40e028806f59",
+      "cold_ready": false,
+      "compaction_root": {
+        "cold_watermark_txid": 279,
+        "cold_watermark_versionstamp": [
+          0,
+          0,
+          1,
+          106,
+          199,
+          144,
+          80,
+          210,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "hot_watermark_txid": 294,
+        "manifest_generation": 21,
+        "schema_version": 1
+      },
+      "counts_exact": true,
+      "database_id": "9u4isd43dgw6j26tsc0wprue6pal00",
+      "fdb_write_debt_bytes": 750037,
+      "fdb_write_debt_limit_bytes": 12582912,
+      "fdb_write_debt_target_bytes": 10485760,
+      "found": true,
+      "generated_at_ms": 1791023365730,
+      "head": {
+        "branch_id": "813ded40-c89d-4e9b-81a0-625ab4c240d0",
+        "db_size_pages": 15,
+        "head_txid": 335,
+        "post_apply_checksum": 0
+      },
+      "logical_size_bytes": 61440,
+      "logical_storage_limit_bytes": null,
+      "node_id": "5694d9bd-baeb-4162-98fc-9667d04be658",
+      "row_counts": {
+        "cold_publish_markers": {
+          "count": 15,
+          "truncated": false
+        },
+        "cold_shards": {
+          "count": 15,
+          "truncated": false
+        },
+        "hot_shards": {
+          "count": 21,
+          "truncated": false
+        },
+        "pitr_intervals": {
+          "count": 11,
+          "truncated": false
+        },
+        "staged_hot_shards": {
+          "count": 4,
+          "truncated": false
+        }
+      },
+      "scope": {
+        "bucket_id": "6317a4af-8a29-46db-a0a4-40e028806f59",
+        "database_id": "9u4isd43dgw6j26tsc0wprue6pal00",
+        "kind": "bottomless_state"
+      }
+    }
+  },
+  "qualificationEvidence": false,
+  "queries": [
+    {
+      "exitCode": 0,
+      "observedAt": "2026-10-03T10:29:25.731059+00:00",
+      "query": "ls -l 3 -d 20 -s list 0/1/2/str:actor-bj-b01/workflow/by_name_and_tag/depot_db_manager/str:database_branch_id/str:813ded40-c89d-4e9b-81a0-625ab4c240d0",
+      "stderr": "",
+      "stdout": "  /dtuk2ktl5bxqy9eqye3b6k69iscl00 = []\n\n1 entry\n"
+    },
+    {
+      "exitCode": 0,
+      "observedAt": "2026-10-03T10:29:25.986598+00:00",
+      "query": "ls -l 8 -d 20 -s list 0/1/2/str:actor-bj-b01/workflow/data/dtuk2ktl5bxqy9eqye3b6k69iscl00",
+      "stderr": "",
+      "stdout": "  /lease (8) = 539seqcvckcqizu5d3jna6i285bl00\n  /tag (9)/database_branch_id/813ded40-c89d-4e9b-81a0-625ab4c240d0\n  /input (10)/rivet (0) = {\n    \"actor_id\": \"9u4isd43dgw6j26tsc0wprue6pal00\",\n    \"database_branch_id\": \"813ded40-c89d-4e9b-81a0-625ab4c240d0\"\n  }\n  /wake_deadline (13) = 1791023384829\n  /create_ts (15) = 1791021317616\n  /ray_id (18) = l3gyu1knhhp46ee3l8xjpkvh9hcl00\n  /name (19) = 6465706f-745f-6462-5f6d-616e61676572\n  /error (26) = activity install_hot_job admission deferred\n\n8 entries\n"
+    },
+    {
+      "exitCode": 0,
+      "observedAt": "2026-10-03T10:29:26.243745+00:00",
+      "query": "get -t str 0/1/2/str:actor-bj-b01/workflow/data/dtuk2ktl5bxqy9eqye3b6k69iscl00/state/0",
+      "stderr": "",
+      "stdout": "key does not exist\n"
+    },
+    {
+      "exitCode": 0,
+      "observedAt": "2026-10-03T10:29:26.507226+00:00",
+      "query": "ls -l 3 -d 20 -s list 0/1/2/str:actor-bj-b01/workflow/by_name_and_tag/depot_db_reclaimer/str:database_branch_id/str:813ded40-c89d-4e9b-81a0-625ab4c240d0",
+      "stderr": "",
+      "stdout": "  /hwb38tq0pd3hbpsy6f4k6x1plval00 = []\n\n1 entry\n"
+    },
+    {
+      "exitCode": 0,
+      "observedAt": "2026-10-03T10:29:26.765446+00:00",
+      "query": "ls -l 8 -d 20 -s list 0/1/2/str:actor-bj-b01/workflow/data/hwb38tq0pd3hbpsy6f4k6x1plval00",
+      "stderr": "",
+      "stdout": "  /lease (8) = pi2pritgzp4s5gu8nxsjf3t4rhal00\n  /tag (9)/database_branch_id/813ded40-c89d-4e9b-81a0-625ab4c240d0\n  /input (10)/rivet (0) = {\n    \"database_branch_id\": \"813ded40-c89d-4e9b-81a0-625ab4c240d0\"\n  }\n  /wake_signal (12)/depot_sqlite_cmp_destroy_database_branch\n  /wake_signal (12)/depot_sqlite_cmp_run_reclaim_job\n  /create_ts (15) = 1791021317769\n  /ray_id (18) = l3gyu1knhhp46ee3l8xjpkvh9hcl00\n  /name (19) = depot_db_reclaimer\n\n8 entries\n"
+    },
+    {
+      "exitCode": 0,
+      "observedAt": "2026-10-03T10:29:27.044558+00:00",
+      "query": "get -t str 0/1/2/str:actor-bj-b01/workflow/data/hwb38tq0pd3hbpsy6f4k6x1plval00/state/0",
+      "stderr": "",
+      "stdout": "key does not exist\n"
+    }
+  ],
+  "runId": "200a42ae03ef4e128505b0def22e8af8",
+  "runtimeImage": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+  "schema": "strict10k-exact-branch-observation/v1",
+  "startedAt": "2026-10-03T10:29:23.254721+00:00"
+}

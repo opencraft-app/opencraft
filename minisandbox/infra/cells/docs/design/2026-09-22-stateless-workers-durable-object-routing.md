@@ -1898,6 +1898,26 @@ ledger 仍可用，未声明工作窗口时 scope 为 null。输入校验在屏�
 planned-byte rate 与整个 authority ledger 不是同一口径，不能相减估算服务缺口。
 原 run 仍无终态或 post-warmup 三秒样本，不由这些中间诊断推进 Router 资格。
 
+运行中精确分支还必须区分「排队」与「无效重做」。同一原 run 在 10:29/10:31 UTC 的
+[原字节分支/manager history](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md#current-run-exact-live-branch-install-rejection)
+绑定 B Cell/FDB、Engine Pod UID 和 image：先观察到 install admission deferred，随后
+有三行成功 staged output，但 install 返回 `bucket fork proof is ambiguous`；下一次
+refresh 对同一 fingerprint、295--347 prefix 和 308/338/347 coverage 重建 Hot job。
+这是一次确切 rejection/replan，不是全 Cell 拒绝率、丢数据或首个请求慢的完整因果证明。
+48-entry active history 有界截取不能证明完整 loop state；缺少通用 StateKey 或 global
+lease 也不证明 manager 丢状态或死亡，LUPE 持久状态属于 loop event。
+
+当前 catalog create/tombstone 同时使变更数据库的 proof 失效，并递增 bucket root 与
+256-way shard epoch。其他数据库共享 root（或 shard collision）时也被重新验证。
+热 planner 未等待 proof 完成，而 install 必须等待完整证明。这样持续创建带来的失效
+可能形成「proof reset → staging → install reject → 同输入 replan」反馈，消耗真实
+FDB/CPU/执行许可，却不推动 watermark。后台需求模型必须把该返工单列，而不能用
+stage success rate 代表有效维护吞吐。无 fork 的独立 membership churn 应只失效相关
+数据库证明；新 bucket fork 仍需要树级 epoch、分页完成前仍 fail closed。这是下一项
+收窄失效范围的设计方向，不是已部署修复；须验证同数据库 membership 并发变化、真实
+新 fork/多层继承、分页过程中重启与变化，以及 install 的 Serializable publication fence。
+不能简单移除 proof/epoch 检查或把不完整证明当作可发布状态。
+
 性能证据的编码也属于控制边界。headroom ETA 在增长率为零时可以是无限；
 审计内部仍按数值判定阈值，写出收据时非有限诊断采用 JSON 字符串
 `"+Inf"`、`"-Inf"`、`"NaN"`，有限数据编码不变。Prometheus scalar 的 NaN

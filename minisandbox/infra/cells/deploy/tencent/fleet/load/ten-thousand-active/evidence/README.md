@@ -62,6 +62,72 @@ ledger bounds are still usable. Null scope means no workload window was
 specified, not steady load. No old v2 receipt is rewritten, and the running
 tools120/workload, heartbeat cadence and qualification predicate are unchanged.
 
+## Current run: exact live-branch install rejection
+
+Two byte-identical, read-only observations preserve a live B Object before
+cleanup can remove its workflow. Both explicitly set `qualificationEvidence=false`:
+
+| Observation | Bytes | SHA-256 |
+| --- | --- | --- |
+| [Branch, 10:29:23--10:29:27 UTC](200a42ae-exact-branch-20261003.json) | 5,985 | `b7ea65cd5dd499e8394831d566d9056dbabec928f8695f097f3e831aa7f9cd5d` |
+| [Manager active history, 10:31:41--10:31:42 UTC](200a42ae-exact-loop-20261003.json) | 12,328 | `95a6feab593816f638e2501d620ec56e6825a9ee5e3017a99e97e5859ae24e16` |
+
+Collector invocations `inv-d9et210ru6` / `inv-d9et46gi5r` completed SUCCESS/0.
+Remote immutable files remain at
+`/data/actor-build/release/strict10k-exact-branch-200a42ae-20261003.ji2m4atg/observation.json`
+and
+`/data/actor-build/release/strict10k-exact-loop-200a42ae-20261003.1o7zta2n/observation.json`.
+Official COS metadata/upload pairs `inv-d9et2igvk5` / `inv-e9et2jg6nq` and
+`inv-a9et5605jg` / `inv-a9et56gn5r` completed SUCCESS/0; length/hash were verified
+and temporary relay keys deleted. Collection success means identity and transport
+checks passed, not that every queried key existed or the workload qualified.
+
+The selected Object is index 0 of Worker
+`scale-200a42ae03ef4e128505b0def22e8af8-s000`, Actor
+`9u4isd43dgw6j26tsc0wprue6pal00`, branch
+`813ded40-c89d-4e9b-81a0-625ab4c240d0`. The evidence binds the original B
+Cell/FDB UID and exact Engine Pod UID/image. Queries use the normal private
+Registry/Peer APIs and bounded exact UDB prefixes, never business fetch,
+checkpoint, wake, reclaim, workflow-catalog scan or fault injection. Each
+capture is a sequence of reads, not a single transaction across all keys.
+
+The first snapshot has head 335, hot/cold watermarks 294/279, generation 21,
+15 logical pages and 750,037 write-debt bytes, below the 12,582,912-byte limit.
+Its manager error is `activity install_hot_job admission deferred`, a controlled
+admission delay, not an execution failure. Generic workflow `data/.../state/0`
+is absent: LUPE state lives in loop history, so this does not prove the manager
+lost its state. Likewise, an absent global lease with a future wake deadline
+does not prove a dead workflow. Native UDB CLI can print `key does not exist`
+with exit zero; the text must be interpreted, not just the process exit code.
+
+The second snapshot reads at most 48 active-history entries. It contains a
+successful hot-stage completion with three staged rows, followed by
+`install_hot_job` returning `Rejected: bucket fork proof is ambiguous`.
+The subsequent `refresh_manager` creates another Hot job with the identical
+input fingerprint, selected range 295--347 and coverage 308/338/347. This
+proves one observed stage-to-install rejection/replan, not a rejection rate or
+the full request-latency root cause. The limited history is not a complete
+workflow/loop-state dump. Refresh reports `reclaim:no-actionable-work` and a
+future reclaim deadline; that must not be relabelled as a reclaim defect.
+
+Source inspection explains a possible feedback path: catalog create/tombstone
+already invalidates the changed database's proof, but also bumps its bucket-root
+epoch and the shared 256-way epoch shard. Other databases on that root/shard
+then reset bounded proofs. Hot planning does not gate on the unresolved proof,
+while hot install does. Continuous catalog churn can therefore waste staging
+work and shared admission capacity. This is a concrete code path and exact
+branch counterexample, not measured fleet-wide attribution. Preserve all
+fork/history/PITR/manifest/lifecycle fences. A scope correction needs real UDB
+tests for unrelated database churn, relevant membership changes, new bucket
+forks and concurrent paginated proof progress before release.
+
+Read-only `inv-d9et8r0gak`, 10:36 UTC, still observes the original running service:
+7,523 ready / 7,509 proven, 1,410,802 successful active interactions, zero
+ordinary retries, failures or identity mismatches, no final receipt and zero
+post-warmup SLO samples. At query time the two Cells have 12 compaction
+executions each and 71/77 waiters. This is shared-lane pressure, not exact
+offered load or a proof of which operation should receive more capacity.
+
 ## Terminal result for the original strict run
 
 Read-only observation `inv-e9ekt2gfn9` at 06:57:09 UTC completed SUCCESS/0.
