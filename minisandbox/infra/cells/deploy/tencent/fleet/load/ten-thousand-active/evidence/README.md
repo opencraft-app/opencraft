@@ -1,4 +1,43 @@
-# Capacity failures and pressure evidence, 2026-10-03
+# Capacity failures and pressure evidence, 2026-10-03--04
+
+## Runtime 2757：低容量自动扩容仍在预热，非资格通过
+
+当前唯一 run `7d5fa6acee6a4a0fa60ea59d4b9ffe91` 的
+[20:21:13 UTC 快照](2757-run-7d5fa6ac-progress-202113-20261004.json)绑定原
+systemd InvocationID/PID、runtime2757、tools120及Native request/response SHA。
+2,274 ready/2,270 proven、127,081成功交互，普通重试/失败/身份漂移均零。
+自动Host目标A/B65/68，Ready52/60、Machine Ready59/62；容量采样与SDK累计ready
+时间不同。warm backpressure累计6,732次/543 Object、最长约243秒，尚无timeout；
+post-warmup三秒创建样本零。不能由这些数据提前放行完整万级/Router资格。
+
+只读snapshot `inv-d9fccv04e3`产生7,174,665字节完整append-only prefix，SHA
+`a743a7be1291a558cb02b2d096b24d76d93ebadf1eeea999079728c46f1867c5`。
+原COS relay metadata/upload `inv-c9fcd5g0qu`/`inv-e9fcd6gn98`均SUCCESS/0，
+本地 `/data/tmp/minisandbox-strict10k-7d5fa6ac-pressure-prefix-20261004.ndjson`
+逐字节验长度/SHA。全69行两Cell完整且观察errors/warnings为空。
+Native摘要pressure最后一行在8,192字节处被截断，虽Dropped=0也不能证明完整，
+该不完整行被舍弃，不补零、不重发producer。
+
+[20:02:00--20:20:55 UTC schema-v4分析](2757-run-7d5fa6ac-pressure-early-v4-20261004.json)
+SHA为`18c86ed7d5c36d0af9568512b9d764605f3b5bf1f315597f9aaf41321145fcee`，
+每Cell67样本、原容量身份完整。末尾五分钟query窗口均含于已证明仍在warmup的范围；
+首版20:20:40截止正确屏蔽晚于边界361ms的B rates，其本地结果保留而不覆盖。
+
+| 早期压力口径 | A | B |
+| --- | --- | --- |
+| UDB pending采样峰值 | 96 | 126 |
+| compaction waiter采样峰值 | 0 | 0 |
+| hot-stage成功exit均值 | 145 ms | 228 ms |
+| hot-install成功exit均值 | 174 ms | 198 ms |
+| stage每完成txn读取量 | 96.9 KB | 114.2 KB |
+| stage txn attempts/completion | 1.0 | 1.0 |
+| authority逻辑账本正斜率 | 60.9--63.6 KB/s | 64.8--68.5 KB/s |
+| 末尾成功FDB reclaim速率 | 0 | 0 |
+
+这里KB为十进制千字节。短暂任务可能在采样间隙排队；成功exit不等于每次exact
+publication，缺失结果维度仍unknown。低负载零waiter不能证明10k服务曲线或长期
+冷热平衡，账本与planned-byte计数不能相减为COS成本或eligible debt。保持原
+持续heartbeat、零普通retry、三秒post-warmup、精确cleanup和自然drain门禁。
 
 ## Independent bucket-read correctness regression
 

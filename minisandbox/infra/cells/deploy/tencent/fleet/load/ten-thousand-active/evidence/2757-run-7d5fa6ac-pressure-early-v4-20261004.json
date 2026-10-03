@@ -1,0 +1,807 @@
+{
+  "cells": {
+    "actor-bj-a01": {
+      "capacityIdentity": {
+        "foundationDB": "eef9ba91-78d3-46dd-b814-b1d2d01b61c6",
+        "hostConfig": "a25fdf91-5c54-464d-a516-d085e6870396",
+        "machineSet": "f80d4089-2a42-46d4-b932-97c74fa4f1a1",
+        "runtimeRevision": "actor-bj-a01-runtime-hosts-775494f897"
+      },
+      "capacityIdentityComplete": true,
+      "firstLedger": {
+        "max": 4941904909.0,
+        "min": 4941904909.0,
+        "observedAt": 1791057725.890302,
+        "requestedAtEpochSeconds": 1791057726.5308177
+      },
+      "gaugePeaks": {
+        "activeActors": 1056.0,
+        "depotCompactionInflight": 0.0,
+        "depotCompactionWaiters": 0.0,
+        "depotManagerRefreshInflight": 1.0,
+        "depotManagerRefreshWaiters": 0.0,
+        "gasolineWorkflows": 619.0,
+        "hostRssBytes": 9735872512.0,
+        "udbPending": 96.0
+      },
+      "lastMetricWarnings": 0,
+      "lastObservationErrors": 0,
+      "lastQueryTime": 1791058839.3480191,
+      "lastSnapshot": {
+        "activities": {
+          "delete_retired_cold_objects": {
+            "completedAdmissionMeanSeconds": null,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "install_hot_job": {
+            "completedAdmissionMeanSeconds": 5.19190000478488e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.17403631169172723,
+                "outcomesPerSecond": 0.08670877777777779
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "observe_active_manager": {
+            "completedAdmissionMeanSeconds": 1.1881636111111141e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.00658527324444441,
+                "outcomesPerSecond": 1.3333333333333335
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "publish_cold_job": {
+            "completedAdmissionMeanSeconds": 1.0848999999701903e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.09551027299999859,
+                "outcomesPerSecond": 0.003703703703703704
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "reclaim_fdb_job": {
+            "completedAdmissionMeanSeconds": null,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": null,
+                "outcomesPerSecond": 0.0
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "refresh_manager": {
+            "completedAdmissionMeanSeconds": 1.1150887719102962e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.06923453176603683,
+                "outcomesPerSecond": 0.20010527777777778
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "retire_cold_objects": {
+            "completedAdmissionMeanSeconds": null,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": null,
+                "outcomesPerSecond": 0.0
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "stage_hot_job": {
+            "completedAdmissionMeanSeconds": 0.001031540734415238,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.1452947102162536,
+                "outcomesPerSecond": 0.09542516666666667
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "upload_cold_job": {
+            "completedAdmissionMeanSeconds": 1.0109000001534696e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.2664368539999984,
+                "outcomesPerSecond": 0.003703703703703704
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          }
+        },
+        "gauges": {
+          "activeActors": 1056.0,
+          "depotCompactionInflight": 0.0,
+          "depotCompactionWaiters": 0.0,
+          "depotManagerRefreshInflight": 0.0,
+          "depotManagerRefreshWaiters": 0.0,
+          "gasolineWorkflows": 619.0,
+          "hostRssBytes": 9735872512.0,
+          "udbPending": 23.0
+        },
+        "hotMaintenance": {
+          "hot_install": {
+            "already_applied": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "cancelled": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "error": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "failed": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "rejected": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "requested": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "retryable": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "succeeded": {
+              "durationObservationsPerSecond": 0.08670877777777779,
+              "executionSecondsPerSecond": 0.015089375922195985,
+              "meanExecutionSeconds": 0.1740236260839462,
+              "observedOutcomesPerSecond": 0.08670877777777779
+            }
+          },
+          "hot_stage": {
+            "cancelled": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "error": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "failed": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "rejected": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "requested": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "retryable": {
+              "durationObservationsPerSecond": 0.0,
+              "executionSecondsPerSecond": 0.0,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": 0.0
+            },
+            "succeeded": {
+              "durationObservationsPerSecond": 0.09542516666666667,
+              "executionSecondsPerSecond": 0.013863368116833414,
+              "meanExecutionSeconds": 0.1452799989887372,
+              "observedOutcomesPerSecond": 0.09542516666666667
+            }
+          }
+        },
+        "ledgerBounds": {
+          "delete_issued": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "deleted_total": {
+            "max": 971428.0,
+            "min": 971428.0
+          },
+          "fdb_authoritative": {
+            "max": 5012663005.0,
+            "min": 5009655222.0
+          },
+          "fdb_cache": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "fdb_metadata": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "live": {
+            "max": 50043584.0,
+            "min": 50042555.0
+          },
+          "orphan": {
+            "max": 7477.0,
+            "min": 7477.0
+          },
+          "retired": {
+            "max": 1832512324.0,
+            "min": 1832512324.0
+          }
+        },
+        "planning": {
+          "depot_hot_compact_stage": {
+            "attemptsPerCompletedTransaction": 1.0,
+            "completedTransactionsPerSecond": 0.09542516666666667,
+            "readBytesPerCompletedTransaction": 96919.71221952281
+          },
+          "depot_manager_observe_active": {
+            "attemptsPerCompletedTransaction": 1.0,
+            "completedTransactionsPerSecond": 1.3333333333333335,
+            "readBytesPerCompletedTransaction": 164.99999999999997
+          },
+          "depot_manager_refresh": {
+            "attemptsPerCompletedTransaction": 1.0,
+            "completedTransactionsPerSecond": 0.20010527777777778,
+            "readBytesPerCompletedTransaction": 54961.63217047323
+          }
+        },
+        "rateWindowSeconds": 300,
+        "rateWindowWithinObservationWindow": true,
+        "requestedAtEpochSeconds": 1791058839.3480191,
+        "successfulCompaction": {
+          "cold_publish": {
+            "byteSemantics": "planned_hot_shard_bytes",
+            "bytesPerItem": 861.0,
+            "bytesPerSecond": 3.188888888888889,
+            "itemSemantics": "cold_object_reference",
+            "itemsPerSecond": 0.003703703703703704
+          },
+          "cold_upload": {
+            "byteSemantics": "planned_hot_shard_bytes",
+            "bytesPerItem": 861.0,
+            "bytesPerSecond": 3.188888888888889,
+            "itemSemantics": "cold_object_reference",
+            "itemsPerSecond": 0.003703703703703704
+          },
+          "reclaim_fdb": {
+            "byteSemantics": "deleted_fdb_value_bytes",
+            "bytesPerItem": null,
+            "bytesPerSecond": 0.0,
+            "itemSemantics": "deleted_fdb_key",
+            "itemsPerSecond": 0.0
+          }
+        }
+      },
+      "observedAuthoritySlopeBoundsBytesPerSecond": {
+        "max": 63584.65335772127,
+        "min": 60881.79884012307
+      },
+      "observedIdentity": {
+        "foundationDB": "eef9ba91-78d3-46dd-b814-b1d2d01b61c6",
+        "hostConfig": "a25fdf91-5c54-464d-a516-d085e6870396",
+        "machineSet": "f80d4089-2a42-46d4-b932-97c74fa4f1a1",
+        "runtimeRevision": "actor-bj-a01-runtime-hosts-775494f897"
+      },
+      "samples": 67,
+      "unboundIdentitySamples": 0
+    },
+    "actor-bj-b01": {
+      "capacityIdentity": {
+        "foundationDB": "c6e52dcb-1a7b-499b-bf36-39e8fe2194dd",
+        "hostConfig": "671c4557-324a-4082-89dd-ac109a542032",
+        "machineSet": "71ac45ab-fd52-42e6-812e-08d00f781ae7",
+        "runtimeRevision": "actor-bj-b01-runtime-hosts-dc9c46494"
+      },
+      "capacityIdentityComplete": true,
+      "firstLedger": {
+        "max": 5629958268.0,
+        "min": 5629958268.0,
+        "observedAt": 1791057725.890302,
+        "requestedAtEpochSeconds": 1791057727.1958675
+      },
+      "gaugePeaks": {
+        "activeActors": 1110.0,
+        "depotCompactionInflight": 0.0,
+        "depotCompactionWaiters": 0.0,
+        "depotManagerRefreshInflight": 0.0,
+        "depotManagerRefreshWaiters": 0.0,
+        "gasolineWorkflows": 643.0,
+        "hostRssBytes": 10396246016.0,
+        "udbPending": 126.0
+      },
+      "lastMetricWarnings": 0,
+      "lastObservationErrors": 0,
+      "lastQueryTime": 1791058840.3613117,
+      "lastSnapshot": {
+        "activities": {
+          "delete_retired_cold_objects": {
+            "completedAdmissionMeanSeconds": null,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "install_hot_job": {
+            "completedAdmissionMeanSeconds": 9.63513333521367e-06,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.198443952866666,
+                "outcomesPerSecond": 0.05555555555555556
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "observe_active_manager": {
+            "completedAdmissionMeanSeconds": 1.2214843220338985e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.006871613368644066,
+                "outcomesPerSecond": 0.8740740740740741
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "publish_cold_job": {
+            "completedAdmissionMeanSeconds": 9.18333332341111e-06,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.08850475866666822,
+                "outcomesPerSecond": 0.011111111111111112
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "reclaim_fdb_job": {
+            "completedAdmissionMeanSeconds": null,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": null,
+                "outcomesPerSecond": 0.0
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "refresh_manager": {
+            "completedAdmissionMeanSeconds": 1.0702456229479261e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.06659999104179921,
+                "outcomesPerSecond": 0.1671088888888889
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "retire_cold_objects": {
+            "completedAdmissionMeanSeconds": null,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": null,
+                "outcomesPerSecond": 0.0
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "stage_hot_job": {
+            "completedAdmissionMeanSeconds": 1.1139569752003885e-05,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.22808791739503137,
+                "outcomesPerSecond": 0.05022111111111111
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          },
+          "upload_cold_job": {
+            "completedAdmissionMeanSeconds": 9.539500002375691e-06,
+            "deferredPerSecond": null,
+            "execution": {
+              "error": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              },
+              "succeeded": {
+                "meanSeconds": 0.1855286320000005,
+                "outcomesPerSecond": 0.007407407407407408
+              },
+              "timeout": {
+                "meanSeconds": null,
+                "outcomesPerSecond": null
+              }
+            }
+          }
+        },
+        "gauges": {
+          "activeActors": 1110.0,
+          "depotCompactionInflight": 0.0,
+          "depotCompactionWaiters": 0.0,
+          "depotManagerRefreshInflight": 0.0,
+          "depotManagerRefreshWaiters": 0.0,
+          "gasolineWorkflows": 643.0,
+          "hostRssBytes": 10396246016.0,
+          "udbPending": 11.0
+        },
+        "hotMaintenance": {
+          "hot_install": {
+            "already_applied": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "cancelled": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "error": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "failed": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "rejected": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "requested": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "retryable": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "succeeded": {
+              "durationObservationsPerSecond": 0.05555555555555556,
+              "executionSecondsPerSecond": 0.01102394417777772,
+              "meanExecutionSeconds": 0.19843099519999896,
+              "observedOutcomesPerSecond": 0.05555555555555556
+            }
+          },
+          "hot_stage": {
+            "cancelled": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "error": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "failed": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "rejected": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "requested": {
+              "durationObservationsPerSecond": null,
+              "executionSecondsPerSecond": null,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": null
+            },
+            "retryable": {
+              "durationObservationsPerSecond": 0.0,
+              "executionSecondsPerSecond": 0.0,
+              "meanExecutionSeconds": null,
+              "observedOutcomesPerSecond": 0.0
+            },
+            "succeeded": {
+              "durationObservationsPerSecond": 0.05022111111111111,
+              "executionSecondsPerSecond": 0.011454032871305177,
+              "meanExecutionSeconds": 0.2280720720408562,
+              "observedOutcomesPerSecond": 0.05022111111111111
+            }
+          }
+        },
+        "ledgerBounds": {
+          "delete_issued": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "deleted_total": {
+            "max": 395961.0,
+            "min": 395961.0
+          },
+          "fdb_authoritative": {
+            "max": 5706213549.0,
+            "min": 5702125949.0
+          },
+          "fdb_cache": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "fdb_metadata": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "live": {
+            "max": 37370223.0,
+            "min": 37368195.0
+          },
+          "orphan": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "retired": {
+            "max": 1739722707.0,
+            "min": 1739722707.0
+          }
+        },
+        "planning": {
+          "depot_hot_compact_stage": {
+            "attemptsPerCompletedTransaction": 1.0,
+            "completedTransactionsPerSecond": 0.05022111111111111,
+            "readBytesPerCompletedTransaction": 114232.72037729449
+          },
+          "depot_manager_observe_active": {
+            "attemptsPerCompletedTransaction": 1.0,
+            "completedTransactionsPerSecond": 0.8740740740740741,
+            "readBytesPerCompletedTransaction": 165.0
+          },
+          "depot_manager_refresh": {
+            "attemptsPerCompletedTransaction": 1.0,
+            "completedTransactionsPerSecond": 0.1671088888888889,
+            "readBytesPerCompletedTransaction": 52380.225306630855
+          }
+        },
+        "rateWindowSeconds": 300,
+        "rateWindowWithinObservationWindow": true,
+        "requestedAtEpochSeconds": 1791058840.3613117,
+        "successfulCompaction": {
+          "cold_publish": {
+            "byteSemantics": "planned_hot_shard_bytes",
+            "bytesPerItem": 1361.0,
+            "bytesPerSecond": 15.122222222222224,
+            "itemSemantics": "cold_object_reference",
+            "itemsPerSecond": 0.011111111111111112
+          },
+          "cold_upload": {
+            "byteSemantics": "planned_hot_shard_bytes",
+            "bytesPerItem": 861.0,
+            "bytesPerSecond": 6.377777777777778,
+            "itemSemantics": "cold_object_reference",
+            "itemsPerSecond": 0.007407407407407408
+          },
+          "reclaim_fdb": {
+            "byteSemantics": "deleted_fdb_value_bytes",
+            "bytesPerItem": null,
+            "bytesPerSecond": 0.0,
+            "itemSemantics": "deleted_fdb_key",
+            "itemsPerSecond": 0.0
+          }
+        }
+      },
+      "observedAuthoritySlopeBoundsBytesPerSecond": {
+        "max": 68503.09754199166,
+        "min": 64831.046795596216
+      },
+      "observedIdentity": {
+        "foundationDB": "c6e52dcb-1a7b-499b-bf36-39e8fe2194dd",
+        "hostConfig": "671c4557-324a-4082-89dd-ac109a542032",
+        "machineSet": "71ac45ab-fd52-42e6-812e-08d00f781ae7",
+        "runtimeRevision": "actor-bj-b01-runtime-hosts-dc9c46494"
+      },
+      "samples": 67,
+      "unboundIdentitySamples": 0
+    }
+  },
+  "input": {
+    "bytes": 7174665,
+    "sha256": "a743a7be1291a558cb02b2d096b24d76d93ebadf1eeea999079728c46f1867c5"
+  },
+  "limitations": [
+    "rolling_5m_rates_not_exact_interval_totals",
+    "completed_outcomes_not_offered_demand",
+    "rates_outside_selected_window_unknown_unbounded_window_not_workload_proof",
+    "succeeded_activity_not_successful_fold",
+    "ledger_bounds_are_observations_not_provider_billing",
+    "successful_activity_counters_not_unique_provider_operations",
+    "hot_stage_success_not_install_or_reclaim",
+    "hot_install_succeeded_exits_can_undercount_commit_before_response_or_crash",
+    "already_applied_replay_not_new_install_cancelled_not_proof_of_no_commit",
+    "planned_shard_bytes_not_cos_object_fill_or_wire_bytes",
+    "oldest_pending_wait_and_history_replay_bytes_unknown"
+  ],
+  "observationWindow": {
+    "firstEpochSeconds": 1791057725.890302,
+    "lastEpochSeconds": 1791058838.346181,
+    "requestedEndEpochSeconds": 1791058855.0,
+    "requestedStartEpochSeconds": 1791057720.0
+  },
+  "qualificationEvidence": false,
+  "schema": "actor-pressure-analysis/v4"
+}

@@ -1707,6 +1707,20 @@ nodefs reserve 拒绝：同一 `10.160.0.4` UID Ready、DiskPressure=False，但
 再删除，逐项保留 native journal；不触碰业务卷、对象存储、live container 或 eviction
 门槛。此操作恢复实验前提，不证明运行期容量控制或万级负载已通过。
 
+恢复余量后仅启动一次 `7d5fa6acee6a4a0fa60ea59d4b9ffe91`，runtime source2757与
+tools120保持不变。20:21:13 UTC累计2,274 ready、127,081成功交互，普通重试/失败/
+身份漂移均零；A/B Host自动目标65/68，Ready52/60，不混作全部可用容量。
+低容量预热固定2 Object/s，已有543 Object发生过容量等待、最长约243秒；三秒SLO
+只适用于后续1,000新增对象且当前样本仍零。因此不能宣称冷启动创建SLO达标。
+20:02--20:20:55 UTC的immutable prefix每Cell67样本，UDB pending峰96/126、
+采样compaction waiter峰均零；末尾hot-stage均值145/228ms、install174/198ms。
+同时authority逻辑账本斜率约60.9--63.6/64.8--68.5千字节每秒，末尾reclaim rate零。
+低水位暂未观察到排队不证明高水位吞吐、长期冷热平衡或物理COS成本；必须继续原
+完整负载/cleanup/自然缩容，并将高水位单位工作成本与债务斜率分开比较。
+该次native pressure stdout在8192字节处截断且Dropped=0，不能据此判断输出完整。
+实际归因使用原COS relay验长度/SHA后的完整append-only prefix，舍弃不完整JSON；
+五分钟rate窗口必须含于明确负载窗口，晚于边界的query保持unknown而不补零。
+
 新的只读 `verify-builder-storage.py` 将这个边界接入正式 Runtime 构建：remote preflight
 在临时 push token 前检查，持稳定 build lock 后复核，直接 build-image 入口再校验实际
 stage/Cargo/TMP 路径。所有 bulk 路径必须位于非系统 ext4/xfs 块设备文件系统；未知或

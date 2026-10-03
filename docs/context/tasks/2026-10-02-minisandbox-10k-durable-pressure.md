@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.51.0
+revision: 1.52.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,27 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.52.0）：前轮实际progress：B原字节资格、受控源码cache恢复和
+strict10k启动/1644 ready证据已FF推master 87114943319c，保留post-push空rvtzupoq，
+本轮new ppkxpuvv。20:21:14Z只读inv-e9fccug1rp SUCCESS/0证明原systemd InvID/PID
+仍running；2274 ready/2270 proven、127081交互全部成功，普通retry/failure/identity
+mismatch均0。A/B Host目标65/68、Ready52/60；Machine Ready59/62，自动目标增长不是
+全部Ready容量。warm backpressure6732/543没有增加、最长243105ms，post-warmup ready
+样本0；不能以warmup低负载成功声称三秒创建或万级资格已通过。
+同次pressure stdout实际8192字节、最后JSON行截断而native Dropped仍0，丢弃该不完整
+压力行；未据此补零或重发producer。inv-d9fccv04e3 SUCCESS/0生成精确append-only
+prefix并保留源inode/device；7174665字节SHA a743a7be1291，经原COS relay metadata
+inv-c9fcd5g0qu/upload inv-e9fcd6gn98 SUCCESS/0验真到/data/tmp。全69行两Cell完整、
+observation errors/warnings均空，选20:02:00--20:20:55Z每Cell67样本，原资源UID稳定。
+首版until20:20:40Z正确屏蔽晚于边界361ms的B rate，保留该文件；新v4-1扩大到仍处于
+已证明warmup的20:20:55Z，A/B末尾rate均含于窗口，不修改原trace或历史receipt。
+正式归档pressure SHA18c86ed7d5c；UDB pending峰96/126，refresh waiter/compaction
+waiter采样峰均0。末尾hot stage均值145/228ms、install174/198ms，stage point读
+约96.9/114.2KB每完成txn、attempt ratio均1。authority账本正斜率约60.9--63.6/
+64.8--68.5千字节每秒，末尾reclaim rate0；不能称冷热长期平衡或物理COS成本结论。
+下一只读进度不早于20:26:14Z，继续同一原producer/ops lock。源码指标合同和完整
+Phase5剩余范围不缩减，不因本地文档/分析重编workerd或改线上profile。
 
 当前checkpoint（1.51.0）：前轮是实际progress：新版万级admission真实jq回归10项、
 Python52项/Node13项通过，prepared入口与B rollout证据FF推master 40093a9935a9。
