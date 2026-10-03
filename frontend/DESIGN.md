@@ -13,7 +13,7 @@
 
 ## Chat Initial Loading
 
-国内站对话首屏等待 launch token、聊天面板代码或嵌入式工作台准备完成时，复用 `src/components/site/chat-loading-state.tsx`，只显示「你的 AI 伙伴，马上就来」及依次跳动的灰黑色句末三点。国际站继续使用各入口原有的文本加载提示；共享组件在国际站调用时仍保留原主文案「你的 AI 小助理，马上就来」和辅助文案「正在准备我们的对话」。文案通过现有 `useT()` 提供对应语言。
+国内站对话首屏等待 launch token、聊天面板代码或嵌入式工作台准备完成时，复用 `src/components/site/chat-loading-state.tsx`，只显示「你的 AI 伙伴，马上就来」及依次跳动的灰黑色句末三点。国际站继续使用各入口原有的文本加载提示，不调用此组件。文案通过现有 `useT()` 提供对应语言。
 
 - 图案复用 `GeometricAvatar` 的橘橙色 `blob` 形状和 `alive` 动效，配浅橙圆形底与小星光；不新增位图或动画依赖。
 - 头像采用已有轻量呼吸、眨眼和视线动效；国内站的星光渐明渐暗，句末三点依次跳动。动效均遵守全局 `prefers-reduced-motion` 规则。图案和动态三点只作装饰，使用 `aria-hidden="true"`；文案容器使用 `role="status"` 和礼貌播报语义。

@@ -62,3 +62,11 @@
 - `unverified`：远端 MR 在推送前仍显示 `cannot_be_merged`；新源分支及 CI 状态待推送后查询。
 - `restore`：当前 HEAD `7fc1681fa`；源分支 `frontsandbox/chat-friendly-loading-20261003`，目标 `master`。构建生成的 `next-env.d.ts` 与字体子集需恢复后再提交文档检查点。
 - `next_action`：清理构建噪声，提交检查点，普通推送现有源分支，核对远端 SHA、MR 和 CI 快照。
+
+## 2026-10-03 CR 意见修正检查点（最新）
+
+- `stage`：用户给出 CR 报告；已核对当前 MR `329786a42`、打开且 CI 成功。报告的调用点覆盖缺口成立，报告建议去掉调用点区域门禁不符合国内站限定要求。
+- `verified`：已把加载组件收敛为国内站专用，新增真实调用点测试覆盖 AgentChatPanel 的 token 等待与 SDK 懒加载、国际站 OpenCraft 原提示；连同原国内站测试 17/17。`pnpm check` 新增 TypeScript 错误 0、国内及国际构建、OpenCraft 130 文件闭包与嵌入式测试 155/155、文档校验通过。
+- `unverified`：本轮代码尚未提交或推送；推送后的 CI 与 MR 状态仍需回读。登录态完整 Chat 链路未在本轮重新验收。
+- `restore`：worktree `/Users/pablozhong/.codex/worktrees/mr-4947-ci-fix/lightvela`，当前基点 `329786a42`；构建产生的 `next-env.d.ts` 和字体子集需恢复；提交前检查当前 diff 与生成闭包。
+- `next_action`：清理构建噪声，提交源码和前端字典；在该提交之后再次官方同步 OpenCraft manifest，提交生成副本，普通推送现有 MR 源分支并核对远端。

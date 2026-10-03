@@ -28,7 +28,7 @@
 - `superseded_refs`：本分支初始队列只含 OPT-001–006，不能当作当前空队列；`/data/optimization-queue-worktree-20260929` 的更早未提交队列不作为校准源。
 
 ## acceptance
-- token 等待、聊天 SDK lazy chunk 等待和嵌入式工作台正常初始等待都显示「你的 AI 小助理，马上就来」与「正在准备我们的对话」。
+- 国内站 token 等待、聊天 SDK lazy chunk 等待和嵌入式工作台正常初始等待都显示「你的 AI 伙伴，马上就来」及灰黑色动态三点；国际站保留各入口原有文本加载提示。
 - 显示现有橘橙 blob 头像，启用轻量呼吸/眨眼，提供小星光装饰；reduced motion 下保持可读。
 - 新状态具有礼貌状态播报，装饰图案不产生重复无障碍内容；窄屏和长译文不溢出。
 - token 错误、连接失败、慢连接、Agent 暂停与重连保留当前消息和适用的重试按钮；不把异常包装成正常等待。
@@ -164,8 +164,17 @@
 - `non_goals`：不改动连接失败、暂停、超时与重试提示；不把本地 TAT 连接故障伪装成正常加载。
 - `requirement_refs`：用户提供的加载态截图及“保留上面那句…下面那句算了不要了，然后加个动态的效果”。
 - `history_context`：组件已经复用 `GeometricAvatar alive` 的呼吸、眨眼与视线动效；本轮仅调整加载态文案和装饰动画。
-- `acceptance`：国内站副文案不再出现，主文案为「你的 AI 伙伴，马上就来」；句末灰黑色三点依次跳动、星光脉动，减少动态效果时静止。国际站的两个入口保留原文本加载提示，共享组件被调用时仍保留原主副文案及装饰方式；六种译文齐全；Chrome 国内站显示新加载态。
+- `acceptance`：国内站副文案不再出现，主文案为「你的 AI 伙伴，马上就来」；句末灰黑色三点依次跳动、星光脉动，减少动态效果时静止。国际站的两个入口保留原文本加载提示，不调用新组件；六种译文齐全；Chrome 国内站显示新加载态。
 - `affected_paths`：`frontend/src/components/site/chat-loading-state.tsx`、`frontend/src/pages/marketing/agent-chat-panel.tsx`、`frontend/src/pages/marketing/opencraft-embedded-workbench.tsx`、`frontend/src/styles.css`、国内与国际相关测试和字典、`frontend/DESIGN.md`、OpenCraft vendored i18n 生成副本、Task Pack/checkpoint。
 - `context_receipt`：本轮读取 `frontend/AGENTS.md`、`frontend/src/components/site/chat-loading-state.tsx`、`frontend/src/pages/marketing/agent-avatar-shapes.tsx`、`frontend/src/styles.css`、`frontend/DESIGN.md`、相关测试与本 Task Pack；路由器无 pack 命中后，按精确文案对 `frontend/src` 与 `opencraft` 做有界搜索。
 - `validation`：聚焦测试 14/14、`pnpm check`、国内与国际构建、OpenCraft 130 文件闭包检查和嵌入式 CI 155/155 均通过。Chrome 经 Whistle 访问国内站 5174，实见单句加载态；三点计算样式分别延迟 0/0.2/0.4 秒，随后进入真实会话。浏览器重载时曾在开发服务尚未监听的瞬间收到一次 Whistle `ECONNREFUSED`，重试后 HTTP 200。
 - `handoff`：先交付本地 5174 国内站预览供用户验收；远端 MR 更新按提交/推送授权处理。
+
+## MR !4947 CR 意见修正（2026-10-03）
+
+- `goal`：保留国内站专用加载态与国际站原提示，清掉共享组件内无生产调用方的国际站分支，并补齐三个实际入口的区域回归测试。
+- `non_goals`：不放开国际站调用门禁，不改变错误、暂停、慢连接和重试状态，不把 CR 报告中的建议当作独立需求。
+- `requirement_refs`：用户提供的 `CR-MR4947.md`；其中指出组件国际站分支不可达、现有测试未覆盖调用点，以及 DESIGN 与初始 acceptance 的措辞过时。
+- `context_receipt`：已读取 `docs/context/flows/tapd-gongfeng-delivery.md`、`docs/context/project/services/frontend.md`、`docs/context/domains/site-environment-routing.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`、`frontend/AGENTS.md`、相关调用点和测试；按调用点精确检索 `frontend/src` 与 `frontend/openspec`，确认本变更不触及独立 OpenSpec 约束。
+- `acceptance`：国内站 token 等待和 SDK 懒加载显示新头像文案，国际站两个等待状态及嵌入式工作台显示原文本提示；组件只包含国内站文案；无用旧文案键从生成字典和 OpenCraft 镜像中消失；正式设计和本 Task Pack 与实际调用一致。
+- `validation`：真实调用点聚焦测试与原嵌入式测试合计 17/17；i18n 检查 3035 条、六个必填语种无缺译；OpenCraft 130 文件闭包和嵌入式测试 155/155、`pnpm check` 新增 TypeScript 错误 0、国内与国际站构建均通过。

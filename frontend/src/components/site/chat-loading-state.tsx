@@ -1,10 +1,10 @@
 import { Sparkles } from "lucide-react";
 
 import { useT } from "@/i18n/t";
-import { isCN } from "@/lib/region";
 import { cn } from "@/lib/utils";
 import { DEFAULT_AVATAR_COLOR, GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
 
+/** Domestic Chat loading state; callers keep the global site on its original prompts. */
 export function ChatLoadingState({ className }: { className?: string }) {
   const t = useT();
 
@@ -16,20 +16,17 @@ export function ChatLoadingState({ className }: { className?: string }) {
     >
       <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full bg-orange-50" aria-hidden="true">
         <GeometricAvatar shapeId="blob" color={DEFAULT_AVATAR_COLOR} size={72} alive />
-        <Sparkles className={cn("absolute right-0 top-1 size-4 text-orange-400", isCN && "motion-safe:animate-pulse")} />
+        <Sparkles className="absolute right-0 top-1 size-4 text-orange-400 motion-safe:animate-pulse" />
       </div>
       <div className="w-full max-w-xs space-y-1">
         <p className="text-pretty text-base font-medium leading-6 text-black/80">
-          {isCN ? t("你的 AI 伙伴，马上就来") : t("你的 AI 小助理，马上就来")}
-          {isCN && (
-            <span className="ml-0.5 inline-flex text-black/55" aria-hidden="true">
-              <span className="lv-chat-loading-dot">.</span>
-              <span className="lv-chat-loading-dot">.</span>
-              <span className="lv-chat-loading-dot">.</span>
-            </span>
-          )}
+          {t("你的 AI 伙伴，马上就来")}
+          <span className="ml-0.5 inline-flex text-black/55" aria-hidden="true">
+            <span className="lv-chat-loading-dot">.</span>
+            <span className="lv-chat-loading-dot">.</span>
+            <span className="lv-chat-loading-dot">.</span>
+          </span>
         </p>
-        {!isCN && <p className="text-pretty text-sm leading-5 text-black/55">{t("正在准备我们的对话")}</p>}
       </div>
     </div>
   );
