@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.31.0
+revision: 1.32.0
 precedence: task
 derived: false
 ---
@@ -415,7 +415,36 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ## checkpoint
 
-当前 checkpoint（1.31.0）：上一 goal turn 为 progress，coordinator 已正常推至 master
+当前 checkpoint（1.32.0）：上一 goal turn 为 progress：fresh full management plan/native
+partial apply 改变 authoritative state，并确定位于 region SG quota，而不是仍等待旧 strict10k。
+master5b3f9b7c 已正常推送，remote exact/工作区 clean；本轮保留 empty ancestor yswlulmm，
+jj new yxzyvqmt。目标仍为整个 Phase5，不将 builder gate 或 census 替代万级性能资格。
+
+本轮正常配置的只读 API census 再确认北京 SG50/limit50。完整列表保存在 protected
+`/data/tmp/minisandbox-builder-sg-audit-20261003.d48OP5`，不输出全清单。范围按 product tag
+匹配10个，按名称线索另匹配2个；后者不证明 ownership，其他38个不进入清理范围。
+对 exact selected12 的 association/reference API 校验 row count 与ID集合完整匹配；12个
+均 TotalCount>0，即有关联资源，SG reference统计和列表均零。没有零关联候选，不存在
+可据此授权的安全删除目标。不能为了释放一个配额位，删除一个有绑定的本项目 SG，或
+转向删除未确认归属的其他资源。该 snapshot 也不是原子 delete fence。
+
+credential-free 派生摘要与四份原 response SHA/RequestId 已归档到
+`minisandbox/infra/cells/deploy/tencent/fleet/terraform/create-first/bootstrap/evidence/runtime-builder-security-group-census-beijing-20261003.json`。
+verdict observed、claimEligible=false、deleteAuthorized=false、builderReady=false；不是
+云生产资格收据。原始 private response 不提交仓库。现明确 next action 为提升北京区域
+SG配额；原 CBS disk-kkels2ln 留在management state63，无重复apply、mkfs、编译或发布。
+在配额有真实余量后才由原operations wrapper重新完整plan，不能复用serial62旧plan。
+
+本轮精确搜索记录：fleet/load 与 workerd/examples 查 dormant 工具未命中，examples 路径
+不存在；有界扩到 infra/cells/deploy/tencent 后定位 qualify_dormant_actors.py 和两份真实
+协议测试。公开路径资格包含真正 DO expected-value 持久状态 transition，不是只写一百万
+Registry占位符。仍保留云端 million dormant、strict10k、Router矩阵/网络故障等原未完成项；
+不在旧 c631 上反复压已知 maintenance 缺陷来替代新Runtime的同负载对照。
+cloud-environment Skill/networking 已完整读取；环境状态tool/policy文件仍缺，不推断
+managed network readiness。仓库 must_read 因 quota 弱词还命中 subscription pack，只阅读
+其边界不改billing；upstream-subtrees/adjacency/pre-destroy state gate已实读，未运行destroy。
+
+历史 checkpoint（1.31.0）：上一 goal turn 为 progress，coordinator 已正常推至 master
 fc83364db9018eb8b9391459b84d290a09564d82；incoming NewAPI 与全部 empty ancestors
 保留。新 revision vvszvxzn 接续用户要求：性能劣化要从依赖/单位有效成本建模修复，不由
 配置 permit、完成者均值或扩大副本推导吞吐已恢复。当前 c631 仍是云端 Runtime，严格

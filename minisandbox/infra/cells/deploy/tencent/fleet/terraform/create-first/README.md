@@ -74,6 +74,14 @@ resolved must reuse recorded resources; never rerun the old plan, discard state,
 delete unreviewed security groups, or adopt a broader control-worker security
 group merely to bypass the standalone builder's isolation contract.
 
+The [2026-10-03 Beijing read-only census](bootstrap/evidence/runtime-builder-security-group-census-beijing-20261003.json)
+found quota use at 50/50. All ten product-tag matches and two name-only leads
+had associated resources, so there was no zero-association project candidate.
+Name matches and tags are not deletion authority; even a future empty result
+must be joined to current desired state and exact identities before an approved
+deletion. Do not extend cleanup to unrelated account resources to unblock a build.
+This snapshot grants neither builder readiness nor performance qualification.
+
 Provisioning is not build readiness. The inventory deliberately requires a
 storage bootstrap: verify the cloud attachment and exact guest block-device
 identity before any initialization; never infer `/dev/vdb` or overwrite a used
