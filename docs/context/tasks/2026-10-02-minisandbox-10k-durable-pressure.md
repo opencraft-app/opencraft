@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.7.0
+revision: 1.7.1
 precedence: task
 derived: false
 ---
@@ -279,11 +279,17 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-A/B 旧 Runtime 资格完成；strict10k 终态失败。3d03bf6a 修正版已验真落到 builder，首个构建
-在 workerd reuse 验证前因默认 Python 3.6 失败；正在修正式构建入口，尚未发布。
+A/B 旧 Runtime 资格完成；strict10k 终态失败。3d03bf6a 首个构建在 workerd reuse 验证前因
+默认 Python 3.6 失败。构建入口修正 59e86519 已推送；新身份流程已启动，仍在 reviewed
+source materialization 阶段，尚无新产品 digest 或 A/B 发布。
 
 ### verified
 
+- source `59e865199b8d841e6c8ecb6469240c3be13d12ab` 的 full bundle 已在本地生成并验真，
+  14,273 文件，manifest 前缀 `24b265e9`。新本地监督服务
+  `minisandbox-admission-runtime-build-59e86519-20261003.service` 的 InvocationID 为
+  `5e68a0bf8b094b3a84d9f745bae85259`，最新观察 active/running；当前 materialization
+  invocation `inv-e9ebxa0pb1` 尚未返回终态。没有重启原失败服务或旧 TAT invocation。
 - 本轮只读 `inv-d9ebkng529`：A/B 均 readyForPlacement，仍运行旧 6e4d982e 镜像，
   Engine 各 6 Ready、Host 各 4 Ready。未 rollout 或修改线上容量。
 - source `3d03bf6a6fe9ece26e3ae2ea54a4864b66b785d3`，manifest 前缀 `c2c1614c`，
@@ -350,15 +356,19 @@ A/B 旧 Runtime 资格完成；strict10k 终态失败。3d03bf6a 修正版已验
 - 当前开发在 mono2 独立 jj revision，以 3d03bf6a 为已推送证据基线；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
+- 新流程只续接上述 59e86519 service/InvocationID；其日志和完整 source receipt 在
+  `/data/actor-build/local-admission-59e86519-20261003/`，固定 wrapper 在
+  `/data/tmp/minisandbox-admission-runtime-build-59e86519-20261003.sh`。
+  supervisor 成功启动仅证明流程存在，不证明 stage reuse、Engine 编译或产品构建已通过。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
 
 ### next_action
 
-- 先修 builder 子 helper 的 Python 选择并完成正式门禁，然后使用新 reviewed source
-  提交一次新构建。保留旧失败身份；实际 reuse 证明、产品 digest、A/B release 和 strict10k
-  都尚未通过，不能仅复用旧 stage label 或临时 patch 线上配置。
+- 续接上述新身份流程，先确认 materialization 与实际 stage reuse 投影，通过后跟踪原构建
+  invocation。保留旧失败身份；产品 digest、A/B release 和 strict10k 仍未通过，不能仅
+  复用旧 stage label、因文档 checkpoint 更新重编 workerd，或临时 patch 线上配置。
 - 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
   已复现，须把新指标随下一实际修正发布后才能量化旧反馈假设，不重写历史分类。
 - active-job 有界观察与独立准入完成源码/本地验证后，按同一 reviewed release 纳入实际 Engine；
