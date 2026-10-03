@@ -2268,6 +2268,19 @@ TAT `inv-d9fh1a0su6` SUCCESS/0；source为mono2 `03e7e7b7`，制品尚未发布�
 不能用本地Buildah manifest digest替代registry-reported digest；回执绑定后者。
 原strict10k同supervisor仍持锁，A111/115、B4/4、active0；真实修复及完整Phase5仍未通过。
 
+当前完整2757 release inventory复核发现上述初始Go candidate的base与目标lock不同。
+同module graph不等于同foundation identity：实际`product-lock.py promote`拒绝该candidate，
+不得因此放宽dependency closure或更新所有其他产品的foundation。新controller候选必须
+使用目标完整lock的base；leaf晋级只改controller项并保留qualified runtime及其余全部metadata。
+构建回执身份加入source、manifest、两base refs和unique tag的NUL分隔输入hash，拒绝覆盖
+已有intent回执，避免同代码换base/tag时撞旧proof。receipt生成禁写Python字节码；派生cache
+不是Git源文件，必须移出immutable closure后再完整复核，不能靠忽略extra files通过。
+
+[匹配当前lock的controller回执](../../deploy/tencent/fleet/controller/evidence/controller-product-03e7e7b7-current-lock-20261004.json)
+已通过真实Go build/test、TCR cold pull和28项完整inventory的leaf promotion；逐项对比仅
+controller变化，其余27项与其他root metadata保持不变。这里只产生staged目标inventory，
+没有更新Cell/GitOps、没有开启repair；实际TKE/Actor fencing与完整Phase5仍待执行。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

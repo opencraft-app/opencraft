@@ -81,11 +81,40 @@ requires pinned bases with matching Go module labels and retains the normal
 isolated registry cold-pull receipt. This is an artifact preparation operation,
 not permission to alter a Cell while a qualification supervisor holds its lock.
 
-The [2026-10-04 candidate receipt](evidence/controller-product-03e7e7b7-20261004.json)
+The [2026-10-04 initial candidate receipt](evidence/controller-product-03e7e7b7-20261004.json)
 records a real Go-only build, registry push and isolated cold-pull for source
-`03e7e7b7`. It is **not deployed** and does not certify TKE topology repair or
+`03e7e7b7`. Its Go base does **not** match the current runtime-2757 complete
+inventory, so this historical artifact cannot be promoted into that inventory.
+It is **not deployed** and does not certify TKE topology repair or
 the strict 10,000-active-object gate. Keep repair disabled until the real API,
 generation, destination-capacity and serialized release gates pass.
+
+Select controller bases from the **exact target release's complete inventory**,
+not from bootstrap inputs or whichever cached base has matching module labels.
+Module-graph equality is necessary for compilation but does not replace the
+dependency-closure identity checked by `product-lock.py promote`. A controller
+leaf promotion must preserve every other inventory entry, especially the
+qualified runtime; do not change a foundation entry to accommodate a candidate.
+
+The build wrapper keys new receipts by a NUL-separated SHA-256 of source revision,
+source-manifest SHA-256, build-base ref, runtime-base ref and unique output tag.
+It rejects an existing receipt before build/push. Different bases/tags therefore
+cannot collide with the previous immutable proof; retry a disconnected operation
+by its original TAT invocation, not by resubmitting the same build intent.
+`PYTHONDONTWRITEBYTECODE=1` prevents receipt-generation imports from placing
+derived caches in the reviewed source closure.
+
+The [current-lock candidate](evidence/controller-product-03e7e7b7-current-lock-20261004.json)
+passed real Go build/test, registry cold-pull and `product-lock.py promote`
+against the runtime-2757 inventory. Comparison proved that only the controller
+entry changed; the other 27 entries and remaining root metadata were preserved.
+This is a **staged inventory**, not a cloud release or TKE/Actor qualification.
+
+Execute release helpers from a frozen source snapshot, including their TAT
+neighbours. Never edit a local waiter while its remote invocation is active:
+the shell can report a footer parse failure even after the original remote build
+succeeded. Resume that invocation, collect its immutable receipt and verify exact
+credential cleanup instead of rebuilding or pretending the local exit passed.
 
 Apply CRDs before this kustomization:
 
