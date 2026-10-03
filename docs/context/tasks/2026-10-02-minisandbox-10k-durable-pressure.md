@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.1
+revision: 1.8.2
 precedence: task
 derived: false
 ---
@@ -297,18 +297,36 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 ### stage
 
-A/B 旧 Runtime 资格完成；strict10k 终态失败。3d03bf6a 首个构建在 workerd reuse 验证前因
-默认 Python 3.6 失败。构建入口修正 59e86519 已推送；新身份流程已启动，仍在 reviewed
-source materialization、Engine/Host 编译及产品 cold pull；实际 workerd reuse 已通过。新产品
-digest 已生成，A 的正式发布资格已提交，B 未发布。同一 trace 的准入、执行和扫描成本分离工具已独立交付并完成真实查询，
-旧 Runtime 缺少新阶段指标，仍不能量化修正效果。
+A/B 旧 Runtime 资格完成；strict10k 终态失败。新 Runtime 59e86519 的 reviewed build、
+workerd reuse、产品 cold pull 和 A 正式 rollout/Bottomless/HA/activation 均已完成。
+B 按同一产品提交独立 invocation，尚未终态。诊断 tools 120 已独立交付；A 已能观察
+分开的准入、执行和规划成本，B 的旧 Runtime 仍缺新指标。小资格负载不证明 strict10k 通过，
+原零普通重试、万活跃及三秒创建门禁不放宽。
 
 ### verified
 
+- A 原 invocation `inv-e9ecw30f8e` 已 SUCCESS/0，输出依次证明 rollout、Bottomless、
+  Engine HA、qualification activation passed。新产品 digest 05840b48、source 59e86519、
+  manifest 24b265e9，未借用旧 072 资格。新 Bottomless 原字节 SHA 前缀 `83728114`，
+  HA SHA 前缀 `1c5fb716`；activation 于 02:51:09 UTC 生成，SHA 前缀 `a75656d0`，
+  最终 control SHA 前缀 `d6637bfc`，image inventory SHA 前缀 `814cd243`。
+- B 正式 release/qualification `inv-a9ednt0v6b` 已 detached 提交。同一 d39e86f5 wrapper
+  和 c8dac029 产品 receipt；本地 waiter session 22706，每五分钟恢复原 invocation，不重发。
+- A 只读配置 `inv-e9ed4n0u05` SUCCESS/0：真实 refresh/compaction 8/2、workflow 上限
+  4096、4 MiB 对象、write-debt target/limit 10/12 MiB；ConfigMap UID d2f333dc，
+  config hash 前缀 11c5aefb。未通过手工提高 timeout、重试或容量规避本次负载。
+- observer `inv-d9edjngwtw` SUCCESS/0（02:50 UTC）：A/B 各一次 query，91/60 finite
+  samples、无 warning；A 新四类 admission/execution 信号完整，B 仍为预期 unknown。
+- 只读成本采样 `inv-d9edmb0rgk` SUCCESS/0（02:52 UTC，五分钟 rate 窗口）：A 的
+  active observation 约 1.354 完成事务/s、165 bytes/完成事务、平均 attempts 1.0；
+  完整 refresh 约 0.202 完成事务/s、76,285 bytes/完成事务、平均 attempts 1.0。
+  此时 active observation 平均实际执行约 8.05 ms、已完成准入约 11.6 us。
+  这些是小资格流量下的完成者样本，不是 strict10k 对照；不能把旧 605 KB 与新 165 bytes
+  直接当同一业务工作的收益，也不能由 null 推导零 timeout 或由 succeeded 推导有效 fold。
 - source `59e865199b8d841e6c8ecb6469240c3be13d12ab` 的 full bundle 已在本地生成并验真，
   14,273 文件，manifest 前缀 `24b265e9`。新本地监督服务
   `minisandbox-admission-runtime-build-59e86519-20261003.service` 的 InvocationID 为
-  `5e68a0bf8b094b3a84d9f745bae85259`，最新观察 active/running；materialization
+  `5e68a0bf8b094b3a84d9f745bae85259`；构建成功后临时 unit 已回收。materialization
   `inv-e9ebxa0pb1` 与 build preflight `inv-d9ec0qg3pu` 已 SUCCESS/0。实际 build
   `inv-c9ec0u0g61` 已 SUCCESS/0，没有重启原失败服务或旧 TAT invocation。
 - 实际产品 image digest 前缀 `05840b48`，source 59e86519 / manifest 24b265e9，
@@ -316,8 +334,8 @@ digest 已生成，A 的正式发布资格已提交，B 未发布。同一 trace
   路径 `/data/actor-build/local-admission-59e86519-20261003/product-runtime.receipt.json`。
   native build log SHA 前缀 `3fb01b46`；Engine 编译 25m28s，Host 编译 2m22s，六项实际
   workerd_process 测试通过。构建成功不等于集群发布或吞吐门禁成功。
-- A 正式 release/qualification 原 invocation `inv-e9ecw30f8e` 已 detached 提交，尚未终态。
-  使用已验 SHA 的 d39e86f5 wrapper 与 exact c8dac029 产品，不发重复作业。B 未提交。
+- A 正式 release/qualification 使用已验 SHA 的 d39e86f5 wrapper 与 exact c8dac029 产品，
+  原 invocation 的最终成功证据见本节开头，不发重复作业。
   新资格根路径使用 `runtime-admission-59e86519...-c8dac029...`，不能借旧 072 的资格。
 - 只读 `inv-e9ed000sws` SUCCESS/0（02:29 UTC）：A 的正式 pre-control 为 allow，
   failures/warnings 均空，exact Host UID 的 release hold 已获得。此时 Engine/Host
@@ -384,10 +402,11 @@ digest 已生成，A 的正式发布资格已提交，B 未发布。同一 trace
 - 进一步 25 项 Gasoline lib 测试通过；新增有界三结果指标和真实 queue timeout 回归，不将
   指标修正冒充调度/性能整改完成。线上镜像仍是 072e504b/6e4d982e。
 - active-job 有界观察通过 Depot 54 项 lib 测试及真实工作流/前缀/GC 共 13 项回归。
-  保留数据 fence、fallback timer 与 force 语义；普通规划活动序列未变。尚无新的发布或 strict10k。
+  保留数据 fence、fallback timer 与 force 语义；普通规划活动序列未变。该本地结果本身
+  不是发布或 strict10k 证据。
 - 独立准入源码通过 Gasoline 33 / Depot 56、实际工作流/前缀/GC 13 项回归；Engine 类型
   检查和默认 clippy 通过。只在准入 overflow/deadline 延后原 job，失败计数、数据 fence
-  与持久 event 编码不变；真实 strict10k 与正式 Runtime 发布仍未完成。
+  与持久 event 编码不变；A 正式发布证据见本节开头，真实 strict10k 仍未通过。
 
 ### unverified
 
@@ -399,7 +418,8 @@ digest 已生成，A 的正式发布资格已提交，B 未发布。同一 trace
 - 历史窗口具体 timeout/replan 比例、admission 等待与实际执行的分布、首次 502 完整归因。
   per-Pod CPU/读字节/transaction attempts 已补，旧合并 activity 标签无法追溯分类。
 - durable admission deferral 源码已实现；有界 DELTA 读批优化仍未实现。准入修正与 active-job
-  观察尚未发布，其真实 strict10k 读取/延迟、有效吞吐和 hot-debt 改进仍无证据。
+  观察已在 A 发布，B 正在资格流程；其真实 strict10k 读取/延迟、有效吞吐和 hot-debt
+  改进仍无证据。
 
 ### discard
 
@@ -408,33 +428,36 @@ digest 已生成，A 的正式发布资格已提交，B 未发布。同一 trace
 
 ### restore
 
-- 当前开发在 mono2 独立 jj revision，以 12080fbe 为已推送基线；原 dirty 工作区保持不动。
+- 当前开发在 mono2 独立 jj revision，以 ed864b54 为已推送基线；原 dirty 工作区保持不动。
 - 本轮 build/materialization 日志在 `/data/actor-build/local-admission-3d03bf6a-20261003/`。
   原构建监督服务已经终止失败；只能在构建入口修正验收后提交一份新身份作业，不重启原作业。
-- 新流程只续接上述 59e86519 service/InvocationID；其日志和完整 source receipt 在
+- 上述 59e86519 build 已成功，不再重启其 service/InvocationID；日志和完整 source receipt 在
   `/data/actor-build/local-admission-59e86519-20261003/`，固定 wrapper 在
   `/data/tmp/minisandbox-admission-runtime-build-59e86519-20261003.sh`。
-  supervisor 成功启动仅证明流程存在，不证明 stage reuse、Engine 编译或产品构建已通过。
+  原 terminal TAT、stage closure 和 product receipt 才是构建成功证据。
+- 当前 B release/qualification 只续接 `inv-a9ednt0v6b` / waiter session 22706；
+  本地 launcher `/data/tmp/minisandbox-admission-release-b59-20261003.sh`，不重复提交。
 - B 原 TAT invocation `inv-e9dx3fg9p5` 只能续接，不能重发发布；历史失败负载不改为 passed。
 - B 发布原作业已 SUCCESS/0。strict10k 服务 InvocationID 前缀 `0836e279` 已 failed/exit 1；
   启动 TAT `inv-d9e00x0557` 的 SUCCESS 仅表示服务提交，绝非资格通过。
 
 ### next_action
 
-- 续接 A 原 release invocation，保留旧失败身份；materialization/stage reuse 与新产品已通过，
-  A/B release/qualification 和 strict10k 仍未通过，不能仅
+- 续接 B 原 release invocation，保留旧失败身份；A release/qualification、
+  materialization/stage reuse 与新产品已通过，B 资格和 strict10k 仍未通过，不能仅
   复用旧 stage label、因文档 checkpoint 更新重编 workerd，或临时 patch 线上配置。
 - 新观察工具已独立 materialize 并完成真实查询，不改变 Runtime 59e86519。
   release wrapper 在 `/data/tmp/minisandbox-admission-release-and-qualify-59e86519-20261003.sh`，
-  已修正 cycle action exitCode 的字符串契约；A 已提交，续接原 invocation，按实际 cycle
+  已修正 cycle action exitCode 的字符串契约；A 已成功，B 续接原 invocation，按实际 cycle
   和 gate 终态判断，不把 TAT 提交或 release 后的预期 post-block 当作资格通过。
-  A 成功后按相同 exact 产品更新 B，再启动同一 strict10k。
+  B 成功后启动同一 strict10k。
 - 将 admission wait、execution 与 durable history/replay 分开建模；现有排队 timeout 机制
-  已复现，须把新指标随下一实际修正发布后才能量化旧反馈假设，不重写历史分类。
+  已复现；新指标 A 已可用，B 尚未完成发布。不重写历史分类，不用小资格采样宣称
+  万级对照已经成功。
 - active-job 有界观察与独立准入完成源码/本地验证后，按同一 reviewed release 纳入实际 Engine；
   使用 unchanged workerd 的构建投影/cache，不为文档或诊断变更单独重建。
 - 重跑相同 strict10k，观察 shared lane 总 offered demand、执行时间、有效 fold/publish/reclaim、
   deferral/replay 成本和 hot-debt 斜率。排队不再耗失败预算并不证明存储吞吐已足够。
-- 新 attempt metric 与行为修正仍须同一 reviewed release 发布；发布前不拿旧合并指标估算
+- B 新 attempt metric 与行为修正仍须完成同一 reviewed release；不拿旧合并指标估算
   timeout 比例，不因普通 docs/诊断变更单独重建 workerd。
 - 保持 Router performance 前置 10k 门禁；诊断修复不单独触发 workerd 重构建或 Runtime 发布。

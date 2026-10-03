@@ -1436,6 +1436,15 @@ verifier 的 subprocess 接口；共享构建入口须在授予 push authority �
 并让所有子 helper 通过进程内 shim 使用它。不得因此替换系统 Python、跳过 compiled-input
 projection，或把一次构建失败误报为线上性能回归。
 
+2026-10-03 Runtime source `59e86519`、manifest `24b265e9`、image `05840b48` 已在 A
+完成正式 rollout、production-cell Bottomless、Engine HA 和新资格 activation；原 invocation
+`inv-e9ecw30f8e` SUCCESS/0。B 同一产品的 `inv-a9ednt0v6b` 尚在资格流程，strict10k 未重跑。
+A 五分钟只读采样已能区分新指标：active observation 约 165 bytes/完成事务、8.05 ms
+平均返回成功执行时间；同窗完整 refresh 约 76,285 bytes/完成事务。采样来自小资格流量，
+不是万级前后对照，不能将不同事务类型和不同负载的均值直接换算成业务吞吐收益。
+缺失的 timeout series 是 unknown，不自动补零；返回 succeeded 仍不代表有效 fold 或 history
+commit。完整 phase、原字节收据摘要和剩余验收记录在 10k durable pressure Task。
+
 诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
 input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
 写入的多信号/UTF-8 多块 fixture 证明生产 replay 可以成功而 debug reader 失败。修复仅在
