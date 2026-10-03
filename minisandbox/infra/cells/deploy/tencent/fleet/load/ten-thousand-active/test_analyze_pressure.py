@@ -64,7 +64,7 @@ class PressureTest(unittest.TestCase):
     def test_costs_and_bounds_not_replica_sum(self):
         path = self.write([sample(), sample(20)])
         result = analysis.analyze(path)
-        self.assertEqual(result["schema"], "actor-pressure-analysis/v3")
+        self.assertEqual(result["schema"], "actor-pressure-analysis/v4")
         self.assertFalse(result["qualificationEvidence"])
         self.assertEqual(result["input"]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual(result["input"]["bytes"], path.stat().st_size)
@@ -109,6 +109,114 @@ class PressureTest(unittest.TestCase):
         end["observedAt"] = sample(40)["observedAt"]
         cell = analysis.analyze(self.write([sample(), end]))["cells"][analysis.CELLS[0]]
         self.assertEqual(cell["observedAuthoritySlopeBoundsBytesPerSecond"]["min"], 0.5)
+
+    def hot_sample(self, offset=0):
+        row = sample(offset)
+        metrics = row["cells"][0]["metricsSnapshot"]["samples"]
+        metrics.extend([
+            metric("depotExecutionOutcomesPerSecond", 10, offset,
+                   activity_name="stage_hot_job", result="succeeded"),
+            metric("compactionBytesPerSecond", 0, offset, operation="hot_install"),
+            metric("compactionObjectsPerSecond", 0, offset, operation="hot_install"),
+        ])
+        for operation, outcome, count, seconds in (
+                ("hot_stage", "retryable", 8, 16), ("hot_install", "succeeded", 1, 0.5),
+                ("hot_install", "already_applied", 2, 0.2), ("hot_stage", "cancelled", 1, 4)):
+            metrics.extend([
+                metric("compactionJobsPerSecond", count, offset, operation=operation, result=outcome),
+                metric("compactionDurationObservationsPerSecond", count, offset, operation=operation, result=outcome),
+                metric("compactionDurationSecondsPerSecond", seconds, offset, operation=operation, result=outcome),
+            ])
+        return row
+
+    def test_hot_domain_outcomes_do_not_become_durable_progress_or_byte_throughput(self):
+        frame = analysis.analyze(self.write([self.hot_sample()]))["cells"][analysis.CELLS[0]]["lastSnapshot"]
+        self.assertEqual(frame["activities"]["stage_hot_job"]["execution"]["succeeded"]["outcomesPerSecond"], 10)
+        hot = frame["hotMaintenance"]
+        self.assertEqual(hot["hot_stage"]["retryable"]["observedOutcomesPerSecond"], 8)
+        self.assertEqual(hot["hot_stage"]["retryable"]["meanExecutionSeconds"], 2)
+        self.assertEqual(hot["hot_stage"]["cancelled"]["executionSecondsPerSecond"], 4)
+        self.assertIsNone(hot["hot_stage"]["succeeded"]["observedOutcomesPerSecond"])
+        self.assertEqual(hot["hot_install"]["succeeded"]["observedOutcomesPerSecond"], 1)
+        self.assertEqual(hot["hot_install"]["already_applied"]["observedOutcomesPerSecond"], 2)
+        self.assertEqual(set(frame["successfulCompaction"]), set(analysis.OPERATIONS))
+        self.assertNotIn("hot_install", frame["successfulCompaction"])
+
+    def test_old_runtime_hot_domain_metrics_are_unknown_not_zero(self):
+        frame = analysis.analyze(self.write([sample()]))["cells"][analysis.CELLS[0]]["lastSnapshot"]
+        for outcomes in frame["hotMaintenance"].values():
+            for values in outcomes.values():
+                self.assertTrue(all(value is None for value in values.values()))
+
+    def test_complete_fixed_label_product_is_bounded_and_analyzable(self):
+        row = sample()
+        metrics = [metric(name, 1) for name in analysis.SCALARS]
+        for phase, outcomes in (("Admission", ("ready", "complete", "deferred", "error", "evicted")),
+                                ("Execution", ("succeeded", "error", "timeout"))):
+            for kind in ("Seconds", "Outcomes"):
+                for activity in analysis.ACTIVITIES:
+                    metrics.extend(metric(f"depot{phase}{kind}PerSecond", 1, activity_name=activity, result=outcome)
+                                   for outcome in outcomes)
+        for trace in ("depotPlanningReadBytesPerSecond", "depotPlanningTransactionAttemptsPerSecond",
+                      "depotPlanningTransactionCompletionsPerSecond"):
+            metrics.extend(metric(trace, 1, name=name) for name in analysis.TRANSACTIONS)
+        for operation in analysis.METRIC_OPERATIONS:
+            for trace in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                          "compactionDurationObservationsPerSecond"):
+                outcomes = (*analysis.DOMAIN_RESULTS, *(("already_applied",) if operation == "hot_install" else ()))
+                metrics.extend(metric(trace, 1, operation=operation, result=outcome) for outcome in outcomes)
+            metrics.extend(metric(trace, 1, operation=operation)
+                           for trace in ("compactionBytesPerSecond", "compactionObjectsPerSecond"))
+        for trace in ("coldStorageBytesMin", "coldStorageBytesMax"):
+            metrics.extend(metric(trace, 1, **{"class": name}) for name in analysis.LEDGER_CLASSES)
+        row["cells"][0]["metricsSnapshot"]["samples"] = metrics
+        self.assertEqual(len(metrics), 295)
+        self.assertEqual(len(analysis.snapshot(row["cells"][0])["metrics"]), 295)
+        result = analysis.analyze(self.write([row]))
+        self.assertFalse(result["qualificationEvidence"])
+        hot = result["cells"][analysis.CELLS[0]]["lastSnapshot"]["hotMaintenance"]
+        self.assertEqual(hot["hot_install"]["already_applied"]["meanExecutionSeconds"], 1)
+
+    def test_hot_duration_missing_nonfinite_and_zero_counts_are_unknown(self):
+        for value, finite in (("0", True), ("NaN", True), ("2", False)):
+            with self.subTest(value=value, finite=finite):
+                row = self.hot_sample()
+                for metric_row in row["cells"][0]["metricsSnapshot"]["samples"]:
+                    if metric_row["labels"] == {
+                            "trace": "compactionDurationObservationsPerSecond",
+                            "operation": "hot_stage", "result": "retryable"}:
+                        metric_row.update(value=value, finite=finite)
+                frame = analysis.analyze(self.write([row]))["cells"][analysis.CELLS[0]]["lastSnapshot"]
+                self.assertIsNone(frame["hotMaintenance"]["hot_stage"]["retryable"]["meanExecutionSeconds"])
+
+    def test_hot_metrics_have_bounded_labels_and_replay_is_install_only(self):
+        for labels in ({"operation": "hot_stage", "result": "already_applied"},
+                       {"operation": "actor_123", "result": "succeeded"},
+                       {"operation": "hot_install", "result": "deferred"},
+                       {"operation": "hot_install", "result": "succeeded", "actor_id": "123"}):
+            for trace in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                          "compactionDurationObservationsPerSecond"):
+                with self.subTest(trace=trace, labels=labels):
+                    row = sample()
+                    row["cells"][0]["metricsSnapshot"]["samples"].append(metric(trace, 1, **labels))
+                    with self.assertRaisesRegex(ValueError, "metric dimensions"):
+                        analysis.analyze(self.write([row]))
+        row = self.hot_sample()
+        rows = row["cells"][0]["metricsSnapshot"]["samples"]
+        rows.append(copy.deepcopy(rows[-1]))
+        with self.assertRaisesRegex(ValueError, "duplicate aggregated"):
+            analysis.analyze(self.write([row]))
+
+    def test_real_cli_hot_costs_obey_complete_rate_window(self):
+        path = self.write([self.hot_sample(), self.hot_sample(299), self.hot_sample(300)])
+        for offset in (299, 300):
+            output = self.root / ("hot-" + str(offset) + ".json")
+            result = self.cli(path, output, "--from-observed-at", sample()["observedAt"],
+                              "--until-observed-at", sample(offset)["observedAt"])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            frame = json.loads(output.read_text())["cells"][analysis.CELLS[0]]["lastSnapshot"]
+            self.assertEqual(frame["hotMaintenance"]["hot_stage"]["retryable"]["meanExecutionSeconds"],
+                             2 if offset == 300 else None)
 
     def test_explicit_window_hashes_entire_input_without_cleanup_mix(self):
         path = self.write([sample(), sample(20), sample(40), sample(60)])

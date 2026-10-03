@@ -52,6 +52,14 @@ Responsibilities:
 
 Lease ownership: none. Gasoline workflow uniqueness uses only the database branch id tag.
 
+Hot stage/install expose bounded domain outcomes through the existing compaction
+counter/duration families, independently of Gasoline admission and execution
+returns. A normal activity return can contain retryable/rejected output. Fresh
+install exits are distinct from `already_applied` marker replay; neither counter
+is a durable publication ledger. A dropped activity records cancelled execution
+cost and releases its diagnostic backlog gauge. No extra storage transaction or
+publication authority is added. See [diagnostic semantics](constraints-and-design-decisions.md#maintenance-observations-are-not-publication-authority).
+
 ## Branch Garbage Collection
 
 Actor destroy resolves and tombstones its logical database name in the same FDB transaction that decrements the branch refcount. It then dispatches one durable, uniquely tagged branch GC workflow for that exact physical branch. The workflow:

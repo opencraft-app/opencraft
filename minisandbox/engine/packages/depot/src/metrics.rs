@@ -9,7 +9,7 @@ use crate::compaction::CompactionJobStatus;
 lazy_static::lazy_static! {
 	pub static ref SQLITE_COMPACTION_JOBS_TOTAL: IntCounterVec = register_int_counter_vec_with_registry!(
 		"sqlite_compaction_jobs_total",
-		"Completed Depot compaction activity attempts.",
+		"Observed Depot compaction activity exits by domain result, not durable publication counts.",
 		&["operation", "result"],
 		*REGISTRY
 	).unwrap();
@@ -30,7 +30,7 @@ lazy_static::lazy_static! {
 
 	pub static ref SQLITE_COMPACTION_DURATION: HistogramVec = register_histogram_vec_with_registry!(
 		"sqlite_compaction_duration_seconds",
-		"Duration of Depot cold upload, cold publish, and FDB reclaim activity attempts.",
+		"Execution duration of Depot hot stage, hot install, cold upload, cold publish, and FDB reclaim attempts.",
 		&["operation", "result"],
 		BUCKETS.to_vec(),
 		*REGISTRY
@@ -333,6 +333,7 @@ pub struct CompactionActivityGuard {
 	objects: i64,
 	bytes: i64,
 	started: Instant,
+	finished: bool,
 }
 
 impl CompactionActivityGuard {
@@ -350,16 +351,13 @@ impl CompactionActivityGuard {
 			objects,
 			bytes,
 			started: Instant::now(),
+			finished: false,
 		}
 	}
 
-	pub fn finish(self, result: &'static str, completed_objects: u64, completed_bytes: u64) {
-		SQLITE_COMPACTION_JOBS_TOTAL
-			.with_label_values(&[self.operation, result])
-			.inc();
-		SQLITE_COMPACTION_DURATION
-			.with_label_values(&[self.operation, result])
-			.observe(self.started.elapsed().as_secs_f64());
+	pub fn finish(mut self, result: &'static str, completed_objects: u64, completed_bytes: u64) {
+		self.record_result(result);
+		self.finished = true;
 		if result == "succeeded" {
 			SQLITE_COMPACTION_OBJECTS_TOTAL
 				.with_label_values(&[self.operation])
@@ -369,10 +367,22 @@ impl CompactionActivityGuard {
 				.inc_by(completed_bytes);
 		}
 	}
+
+	fn record_result(&self, result: &'static str) {
+		SQLITE_COMPACTION_JOBS_TOTAL
+			.with_label_values(&[self.operation, result])
+			.inc();
+		SQLITE_COMPACTION_DURATION
+			.with_label_values(&[self.operation, result])
+			.observe(self.started.elapsed().as_secs_f64());
+	}
 }
 
 impl Drop for CompactionActivityGuard {
 	fn drop(&mut self) {
+		if !self.finished {
+			self.record_result("cancelled");
+		}
 		SQLITE_COMPACTION_BACKLOG_OBJECTS
 			.with_label_values(&[self.operation])
 			.sub(self.objects);

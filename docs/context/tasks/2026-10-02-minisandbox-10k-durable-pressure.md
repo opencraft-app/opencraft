@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.25.0
+revision: 1.26.0
 precedence: task
 derived: false
 ---
@@ -414,7 +414,72 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ### stage
 
-当前 checkpoint（1.25.0）：上一turn为progress，正式namespace模型和原生API/Engine
+当前 checkpoint（1.26.0）：上一 turn 为 progress。bucket inherited read-cap/lazy COW
+修复与101项相关回归正常FF推master2ae6947f，remote exact SHA verified、clean；
+没有部署或重编workerd/V8。保留空slrkwyys，jj new qsvmyypt。目标仍为完整Phase0–5，
+不以局部正确性修复替代strict10k、百万dormant或Router曲线资格。
+本轮cloud runtime/networking已完整读取；environment_status工具缺失、policy snapshot
+缺失，不能建立readiness。route两份must-read、根/minisandbox/engine/cells instructions
+分段复核，adjacency argocd-ci-secrets和实际runtime/test_monitor_bottomless.py已读取。
+11:51:14 progress25 inv-e9ever0xs5 SUCCESS/0：原服务MainPID/InvocationID running、
+load exit1、cleanup exit0、自然缩容waiting3007秒；11:50:57样本A/B Host143/144、
+Machine152/150、active均零。不是已缩回floor4，也不是过程卡死；低水位predicate检查
+Ready/admitted、release/drain与Machine intent，必须全满足。原脚本final ceiling36小时，
+不以deadline长当功能合格。next只读progress不早于11:56:30UTC，不抢ops lock或并发
+第二份负载/rollout。先核对剩余有效维护成本、排空进展及候选release inputs。
+失败精确查询：ten-thousand-active/run.sh、compaction/metrics.rs与manager.rs不存在，
+实际run-on-builder.sh与compaction/mod.rs/companion.rs；按rg --files有界定位后再读取。
+11:56:51 progress26 inv-c9evk50h0m SUCCESS/0，原服务running/cleanup0；11:56:43
+A/B Host129/130、Machine138/136、active均零，final waiting3609秒。自然缩容推进，
+不手工加速；next periodic不早于12:02:00UTC。两次early本地set-e guard正确exit1，
+没有TAT invocation，只有随后越过边界的同名progress26提交成功。
+独立候选2ae6947f的正式full bundle已生成、verified v2，14323文件、54,793,323bytes；
+本地candidate hCyxLZ，manifest前缀18ac60b11a6e、bundle896cb8e52eb9。与git archive
+实际c631 project tree比较完整locked/offline生产Rust闭包及六stage输入，digest前缀
+a48e6285a470相同。只是可复用输入证明，没有读取容器或假装完成新stage/Runtime发布。
+源码发现hot stage/install没有领域结果指标，Gasoline成功返回包含retryable/rejected；
+新修正复用既有bounded compaction指标、区分fresh install与already_applied，不改公开
+output/schema/FDB读写/fence；取消guard要记录执行成本。五个真实Prometheus/异步取消
+回归修前2通过3失败、修后5/5，红/绿hot-observation日志保留。hot阶段成功不是安装，
+marker replay不是新推进；commit后响应丢失/死亡会使fresh成功出口低估真实发布，
+metrics不充当exactly-once账本，root/marker/watermark仍为真值。取消也不证明未提交。
+原生response-loss回归增加error与already_applied出口观察，单独运行1/1通过；
+原hot-prefix12、lib61、proof6、bucket-read10全部通过，原公开activity输入/输出不变。
+generic guard扩大回归：账本2、inventory3、branch cold GC2通过。57个workflow故障用例
+默认并跑29通过28失败（force-result/deadline超时，完整cold-regression日志保留）；
+独立数据库共享进程admission池，不据此推定生产数据故障。未加生产并发/超时，按
+test-threads=1重验57/57（93.54秒）通过；串行不替代并发资格，仍保留该并跑问题。
+no-fault production cargo check exit0；聚焦Clippy exit0，Depot lib仍为既有47 warnings，
+已有cold_workflow_publish两条Copy clone warnings未修改。未执行全仓格式化或fix。
+analyzer v4新增hot领域结果/成本分组，不计hot的零byte/item series为吞吐；Gasoline成功
+返回、retryable/rejected、fresh出口、already_applied、cancelled分别保留。旧Runtime
+series缺失是unknown，完整五分钟窗口校验不变。collector仍只做一笔只读HTTP查询，
+固定标签上界295 samples、vector cap320，拒绝动态维度/跨operation replay。
+真实文件/CLI analyzer27与原qualification verifier15合计42/42，真实HTTP collector24/24；
+完整295维度、取消/响应丢失、missing/nonfinite、299/300秒边界都验证，不增加新资格条件。
+12:08:11 progress28 inv-c9evwmg99a SUCCESS/0：原身份running、cleanup0，12:08:07
+A/B Host102/103、Machine111/108、active0；final waiting4210秒。next periodic不早于
+12:13:20UTC。候选bundle2ae仍不可变，新源码未被偷换进该bundle或运行中c631。
+12:13:42 progress29 inv-a9ew3sgrfb SUCCESS/0：原服务身份不变；12:13:24 A/B
+Host89/90、Machine98/96、active0、errors空，仍自然waiting，非floor4终态；next
+periodic不早于12:18:50UTC。原run、image与receipts不重标；无第二份云mutation。
+正式SQLite组件/约束、routing设计和load README同步指标边界。文档validator0 errors/
+warnings，context测试26仍为既有四fail（治理、中文、短预算、全仓validator）；audit
+测试33/33，change-impact含显式变更路径通过但matched_rules空，不宣称语义审查覆盖。
+本Task/catalog需最后同步并与上一4942历史errors基线核对，不全量改其他catalog行。
+进一步以test-threads=4执行相同57项，57/57、32.70秒；每项内部fault/concurrency
+不序列化，driver/production超时未加长。实际Runtime默认compaction2、FIFO wait16，
+TestDeps未override，共用该进程池；默认57并跑超时仍留为独立证据，不证明云公平性。
+metrics帮助文本明确观察出口非durable发布数；最后metric/lib66项与production check均
+exit0。一条formatter因从minisandbox cwd重复前缀失败后，已按实际根目录重验成功；
+未触发全仓format，Rust测试由正确project cwd执行。默认audit exit0但仍明确
+needs_agent_review/not_assessed/Unknown，不虚构文档成熟度或生产资格。
+新增失败路径：runtime-hosts-hpa.yaml/runtime-capacity-controller.yaml、tests/metrics.rs、
+agent-upload-soak/test_observe_metrics.py不存在，实际已按有界rg --files定位test_observe.py。
+若干旧context helper/docs与gasoline test路径不存在，经有界rg定位真实文件；两次patch
+上下文不匹配已读取实际行后修正。未修改不相关文件或读取凭证正文。
+
+历史 checkpoint（1.25.0）：上一turn为progress，正式namespace模型和原生API/Engine
 投影正常FF推master007d8245，远端exactSHA verified、clean；未部署。保留空rtyzyuxv，
 jj new wrnsllsz，在真实临时RocksDB/UDB中修复独立bucket inherited-read cap与
 first-write lazy COW，不把它当首次502根因。resolver携带最小bucket cap、readplan限制

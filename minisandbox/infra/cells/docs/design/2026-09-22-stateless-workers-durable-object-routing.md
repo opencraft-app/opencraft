@@ -1957,6 +1957,21 @@ permit 占用和有界等待深度。对象基数、数据库年龄与 eligible 
 只有减少返工后仍有有效工作供需缺口，才据此调整资源预算或扩容；前后台预算隔离
 与公平调度仍要保持 generation、publication、history/pin/backup fence。
 
+为量化模型，热维护现复用既有 bounded compaction 指标，按领域结果记录执行成本，
+不增加 FDB 读写或公共 output/schema。Gasoline 正常返回可能包含 retryable/rejected；
+hot stage 成功只是 staged output，不是 root/watermark 推进。hot install 原事务把
+fresh publication 与 marker replay 分开，后者记录 already_applied，不能计为新安装。
+取消/future drop/panic unwind 记录 cancelled 成本并释放 gauge，准入等待仍单独统计。
+这些是进程观察，不是 exactly-once 账本：commit 后响应丢失可能记录 error/cancelled，
+进程死亡也可能完全不记录 fresh success；取消不证明未提交。durable root/marker、
+watermark 与安全 reclaim 仍是有效推进真值，metrics 不替代它们。
+
+pressure analyzer v4 分开保留上述结果/耗时、Gasoline 执行返回与 cold/reclaim 字节口径；
+hot stage/install 不提供 byte/item 吞吐。旧 Runtime 缺失 series 继续 unknown，五分钟
+rate 仍须完全位于选定工作窗口内。collector/analyzer 完整固定标签集合为 295 samples，
+有界上限 320，不允许 Actor/branch/job ID 等动态维度。真实 Prometheus/取消、HTTP 与
+文件/CLI 回归验证该观察边界，不把源码测试或观察计数称为万级性能恢复，不重写旧证据。
+
 该测试又暴露一个独立的 bucket fork 默认读取反例：bucket 在 TXID 1 fork 后，parent
 在 TXID 2 覆写，child 的默认 Db read 读到 TXID 2。pointer resolver 返回 inherited
 physical database branch 后，read plan 未携带 bucket ancestry 的 versionstamp cap。

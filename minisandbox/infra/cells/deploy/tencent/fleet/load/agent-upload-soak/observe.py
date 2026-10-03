@@ -23,6 +23,10 @@ DEPOT_ADMITTED_ACTIVITIES = (
 DEPOT_PLANNING_TRANSACTIONS = (
     "depot_manager_refresh", "depot_manager_observe_active", "depot_hot_compact_stage",
 )
+COMPACTION_OPERATIONS = ("cold_upload", "cold_publish", "reclaim_fdb", "hot_stage", "hot_install")
+COMPACTION_RESULTS = ("requested", "succeeded", "retryable", "rejected", "failed", "error", "cancelled")
+# The complete fixed label product is 295 samples, including new hot outcomes.
+MAX_METRIC_SAMPLES = 320
 
 
 def kube(path, *args):
@@ -127,7 +131,7 @@ def collect_metrics(endpoint, namespace, cell):
         raise ValueError("Prometheus query failed")
     data = payload.get("data", {})
     rows = data.get("result")
-    if data.get("resultType") != "vector" or not isinstance(rows, list) or len(rows) > 256:
+    if data.get("resultType") != "vector" or not isinstance(rows, list) or len(rows) > MAX_METRIC_SAMPLES:
         raise ValueError("Prometheus response must be a bounded instant vector")
     samples = []
     present = set()
@@ -136,7 +140,15 @@ def collect_metrics(endpoint, namespace, cell):
         name = labels.get("trace")
         if name not in queries:
             raise ValueError("Prometheus response contains unexpected dimensions")
-        if name.startswith(("depotAdmission", "depotExecution")):
+        if name.startswith("compaction"):
+            has_result = name in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                                  "compactionDurationObservationsPerSecond")
+            expected = {"trace", "operation", "result"} if has_result else {"trace", "operation"}
+            if (set(labels) != expected or labels["operation"] not in COMPACTION_OPERATIONS
+                    or (has_result and labels["result"] not in (*COMPACTION_RESULTS, "already_applied"))
+                    or (labels.get("result") == "already_applied" and labels["operation"] != "hot_install")):
+                raise ValueError("Prometheus response contains unexpected compaction dimensions")
+        elif name.startswith(("depotAdmission", "depotExecution")):
             outcomes = ({"ready", "complete", "deferred", "error", "evicted"}
                         if name.startswith("depotAdmission") else {"succeeded", "error", "timeout"})
             if (set(labels) != {"trace", "activity_name", "result"}

@@ -161,6 +161,28 @@ class MetricHttpTest(unittest.TestCase):
         self.assertIn("activeActors", result["missingSignals"])
         self.assertIn("udbPending", result["missingSignals"])
 
+    def test_hot_domain_outcomes_preserved_separately_from_activity_success(self):
+        rows = [sample("depotExecutionOutcomesPerSecond", "10", activity_name="stage_hot_job", result="succeeded"),
+                sample("compactionJobsPerSecond", "8", operation="hot_stage", result="retryable"),
+                sample("compactionJobsPerSecond", "2", operation="hot_install", result="already_applied"),
+                sample("compactionDurationSecondsPerSecond", "4", operation="hot_stage", result="cancelled")]
+        with prometheus_response(vector(*rows)) as (endpoint, calls):
+            result = self.collect(endpoint)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual([row["labels"] for row in result["samples"]], [row["metric"] for row in rows])
+        self.assertIn("compactionDurationObservationsPerSecond", result["missingSignals"])
+
+    def test_hot_compaction_dimensions_are_bounded_and_replay_is_install_only(self):
+        for labels in ({"operation": "hot_stage", "result": "already_applied"},
+                       {"operation": "actor_123", "result": "succeeded"},
+                       {"operation": "hot_install", "result": "deferred"},
+                       {"operation": "hot_install", "result": "succeeded", "actor_id": "123"}):
+            with self.subTest(labels=labels):
+                with prometheus_response(vector(sample("compactionJobsPerSecond", **labels))) as (endpoint, calls):
+                    with self.assertRaises(ValueError):
+                        self.collect(endpoint)
+                self.assertEqual(len(calls), 1)
+
     def test_new_runtime_metrics_preserve_bounded_results_and_missing_signals(self):
         rows = [sample("depotAdmissionOutcomesPerSecond", "0.5", activity_name="stage_hot_job", result="deferred"),
                 sample("depotExecutionSecondsPerSecond", "1.25", activity_name="stage_hot_job", result="timeout"),
@@ -213,6 +235,37 @@ class MetricHttpTest(unittest.TestCase):
             result = self.collect(endpoint)
         self.assertEqual(result["warnings"], ["partial data"])
 
+    def test_complete_fixed_label_product_including_hot_outcomes_fits_bounded_vector(self):
+        rows = []
+        for phase, results in (("Admission", ("ready", "complete", "deferred", "error", "evicted")),
+                               ("Execution", ("succeeded", "error", "timeout"))):
+            for kind in ("Seconds", "Outcomes"):
+                for activity in OBSERVE.DEPOT_ADMITTED_ACTIVITIES:
+                    rows.extend(sample(f"depot{phase}{kind}PerSecond", activity_name=activity, result=result)
+                                for result in results)
+        for trace in ("depotPlanningReadBytesPerSecond", "depotPlanningTransactionAttemptsPerSecond",
+                      "depotPlanningTransactionCompletionsPerSecond"):
+            rows.extend(sample(trace, name=name) for name in OBSERVE.DEPOT_PLANNING_TRANSACTIONS)
+        rows.extend(sample(trace) for trace in OBSERVE.metric_queries("actor-fdb-cell-system", "actor-bj-a01"))
+        for operation in OBSERVE.COMPACTION_OPERATIONS:
+            for trace in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                          "compactionDurationObservationsPerSecond"):
+                results = (*OBSERVE.COMPACTION_RESULTS, *(("already_applied",) if operation == "hot_install" else ()))
+                rows.extend(sample(trace, operation=operation, result=result) for result in results)
+            rows.extend(sample(trace, operation=operation)
+                        for trace in ("compactionBytesPerSecond", "compactionObjectsPerSecond"))
+        for trace in ("coldStorageBytesMin", "coldStorageBytesMax"):
+            rows.extend(sample(trace, **{"class": name}) for name in (
+                "live", "retired", "delete_issued", "orphan", "deleted_total",
+                "fdb_authoritative", "fdb_cache", "fdb_metadata"))
+        self.assertEqual(len(rows), 295)
+        self.assertLess(len(rows), OBSERVE.MAX_METRIC_SAMPLES)
+        with prometheus_response(vector(*rows)) as (endpoint, calls):
+            result = self.collect(endpoint)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["missingSignals"], [])
+        self.assertEqual(len(result["samples"]), 295)
+
     def test_failed_response_is_not_retried(self):
         with prometheus_response({"status": "error"}) as (endpoint, calls):
             with self.assertRaises(ValueError):
@@ -227,7 +280,7 @@ class MetricHttpTest(unittest.TestCase):
 
     def test_nonvector_and_excess_rows_fail_closed(self):
         for payload in ({"status": "success", "data": {"resultType": "scalar", "result": [0, "0"]}},
-                        vector(*[sample("activeActors") for _ in range(257)])):
+                        vector(*[sample("activeActors") for _ in range(OBSERVE.MAX_METRIC_SAMPLES + 1)])):
             with prometheus_response(payload) as (endpoint, _):
                 with self.assertRaises(ValueError):
                     self.collect(endpoint)

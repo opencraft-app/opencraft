@@ -22,6 +22,12 @@ ACTIVITIES = ("refresh_manager", "observe_active_manager", "stage_hot_job", "ins
               "retire_cold_objects", "delete_retired_cold_objects")
 TRANSACTIONS = ("depot_manager_refresh", "depot_manager_observe_active", "depot_hot_compact_stage")
 OPERATIONS = ("cold_upload", "cold_publish", "reclaim_fdb")
+HOT_OPERATIONS = ("hot_stage", "hot_install")
+METRIC_OPERATIONS = (*OPERATIONS, *HOT_OPERATIONS)
+DOMAIN_RESULTS = ("requested", "succeeded", "retryable", "rejected", "failed", "error", "cancelled")
+# All fixed families, operations and outcomes fit in 295 samples, including
+# hot-install replay. This is a vector bound, not permission for dynamic labels.
+MAX_METRIC_SAMPLES = 320
 OUTPUT_UNITS = {
     "cold_upload": ("planned_hot_shard_bytes", "cold_object_reference"),
     "cold_publish": ("planned_hot_shard_bytes", "cold_object_reference"),
@@ -64,7 +70,10 @@ def schema(trace):
     if trace in ("coldStorageBytesMin", "coldStorageBytesMax"):
         return {"class": LEDGER_CLASSES}
     if trace in ("compactionBytesPerSecond", "compactionObjectsPerSecond"):
-        return {"operation": OPERATIONS}
+        return {"operation": METRIC_OPERATIONS}
+    if trace in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                 "compactionDurationObservationsPerSecond"):
+        return {"operation": METRIC_OPERATIONS, "result": (*DOMAIN_RESULTS, "already_applied")}
     if trace.startswith("depotPlanning") and trace in (
             "depotPlanningReadBytesPerSecond", "depotPlanningTransactionAttemptsPerSecond",
             "depotPlanningTransactionCompletionsPerSecond"):
@@ -86,7 +95,7 @@ def snapshot(cell):
     requested = number(raw.get("requestedAtEpochSeconds"))
     if requested is None or type(raw.get("rateWindowSeconds")) is not int or raw["rateWindowSeconds"] != 300:
         raise ValueError("invalid snapshot time or rate window")
-    if len(raw["samples"]) > 256:
+    if len(raw["samples"]) > MAX_METRIC_SAMPLES:
         raise ValueError("too many metric samples")
     metrics = {}
     for row in raw["samples"]:
@@ -101,6 +110,8 @@ def snapshot(cell):
             continue
         if set(labels) != {"trace", *dimensions} or any(
                 labels[name] not in allowed for name, allowed in dimensions.items()):
+            raise ValueError("unexpected metric dimensions")
+        if labels.get("result") == "already_applied" and labels.get("operation") != "hot_install":
             raise ValueError("unexpected metric dimensions")
         key = (trace, *(labels[name] for name in dimensions))
         if key in metrics:
@@ -144,6 +155,17 @@ def derived(frame):
         "bytesPerItem": ratio(get("compactionBytesPerSecond", operation),
             get("compactionObjectsPerSecond", operation)),
     } for operation in OPERATIONS}
+    # These are observed exits/costs, not exactly-once root publications. A
+    # commit followed by lost response/process death can have no succeeded exit.
+    # Stage success is only staging; an install replay is not a new install.
+    result["hotMaintenance"] = {operation: {outcome: {
+        "observedOutcomesPerSecond": get("compactionJobsPerSecond", operation, outcome),
+        "executionSecondsPerSecond": get("compactionDurationSecondsPerSecond", operation, outcome),
+        "durationObservationsPerSecond": get("compactionDurationObservationsPerSecond", operation, outcome),
+        "meanExecutionSeconds": ratio(get("compactionDurationSecondsPerSecond", operation, outcome),
+            get("compactionDurationObservationsPerSecond", operation, outcome)),
+    } for outcome in (*DOMAIN_RESULTS, *(("already_applied",) if operation == "hot_install" else ()))
+    } for operation in HOT_OPERATIONS}
     result["ledgerBounds"] = {name: {
         "min": get("coldStorageBytesMin", name), "max": get("coldStorageBytesMax", name),
     } for name in LEDGER_CLASSES}
@@ -286,7 +308,7 @@ def analyze(path, start_at=None, end_at=None):
             if not all(math.isfinite(value) for value in state["observedAuthoritySlopeBoundsBytesPerSecond"].values()):
                 state["observedAuthoritySlopeBoundsBytesPerSecond"] = None
         state["capacityIdentityComplete"] = state["unboundIdentitySamples"] == 0
-    return {"schema": "actor-pressure-analysis/v3", "qualificationEvidence": False,
+    return {"schema": "actor-pressure-analysis/v4", "qualificationEvidence": False,
             "input": {"sha256": digest.hexdigest(), "bytes": before.st_size},
             "observationWindow": {"requestedStartEpochSeconds": start_at, "requestedEndEpochSeconds": end_at,
                                   "firstEpochSeconds": first_time, "lastEpochSeconds": last_time},
@@ -294,6 +316,9 @@ def analyze(path, start_at=None, end_at=None):
                 "rates_outside_selected_window_unknown_unbounded_window_not_workload_proof",
                 "succeeded_activity_not_successful_fold", "ledger_bounds_are_observations_not_provider_billing",
                 "successful_activity_counters_not_unique_provider_operations",
+                "hot_stage_success_not_install_or_reclaim",
+                "hot_install_succeeded_exits_can_undercount_commit_before_response_or_crash",
+                "already_applied_replay_not_new_install_cancelled_not_proof_of_no_commit",
                 "planned_shard_bytes_not_cos_object_fill_or_wire_bytes",
                 "oldest_pending_wait_and_history_replay_bytes_unknown"], "cells": states}
 

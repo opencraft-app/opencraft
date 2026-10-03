@@ -98,6 +98,40 @@ Proof tests alone do not establish bucket-fork read semantics. Default reads now
 
 The first write to an inherited database derives a private physical branch and installs its local pointer, catalog marker, and policy binding in the original commit transaction. It must not mutate the parent's database. This reuses the existing generation, retention, GC, history, pin, and refcount fences. A fork with no local COMMIT resolves its stored virtual head through a depth-bounded parent chain and verifies cap, identity, EOF, and checksum. No fake COMMIT or copied page image is created. Ordinary non-inherited reads do not pay the new snapshot lookup cost. The real `fork_bucket_read` regressions cover these boundaries; parent logical-pointer mutations/deletion and distributed publication races remain separate qualification work.
 
+## Maintenance Observations Are Not Publication Authority
+
+Measure activity execution separately from its domain result. Gasoline returning
+successfully does not mean a hot output was installed: the output may say
+retryable/rejected, and hot-stage success proves only staging. Installation's
+existing atomic publish marker distinguishes a fresh publish from an idempotent
+replay. The diagnostic wrapper carries this distinction out of the existing
+transaction without a new FDB read, mutation, public output field or fence.
+
+Observed succeeded exits and `already_applied` exits are separate. Commit before
+response loss or process death can undercount fresh installs; cancellation is
+not proof that no commit occurred. Future abort/drop/panic unwind records bounded
+cancelled cost, but a killed process cannot guarantee this observation. Admission
+complete/deferred paths may not enter the wrapper. Root/marker/watermark and safe
+reclaim are still authoritative. Hot metrics do not claim byte/item throughput,
+physical object occupancy, provider request counts or exactly-once progress.
+
+Use these observations to partition execution cost into useful candidates,
+retryable/rejected rework and replay, then join durable progress in the same
+fixed workload window. Missing series stay unknown. Do not compensate for
+missing progress evidence by increasing permits or relaxing history, generation,
+integrity, pin, backup or publication checks.
+
+The workflow fault suite creates independent test databases but shares the
+process-local admission pool: the default compaction limit is two with sixteen
+FIFO wait slots. Launching all 57 scenarios at once is not 57 independent Engine
+instances, and can exhaust fixed per-scenario force-result deadlines. For
+semantic regression run `cargo test -p depot --locked --offline --features
+test-faults --test cold_workflow_publish -- --test-threads=4` (or one for isolated
+counter assertions). This does not serialize concurrency or fault races inside
+each scenario, change production admission, or qualify large-load fairness.
+Keep default-parallel failures as separate evidence; Engine saturation belongs
+in an explicit offered-load test with its queue/defer/progress observations.
+
 ## Why Split Manifest Fields
 
 The branch manifest is stored under separate subkeys:

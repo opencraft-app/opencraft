@@ -129,6 +129,25 @@ analysis does not establish a steady workload phase. Validation still rejects
 invalid dimensions and stale metrics before applying this mask. This changes
 diagnostic scope, not the load or qualification predicate.
 
+Schema v4 adds `hotMaintenance`, separately from Gasoline activity returns and
+the existing cold/reclaim byte counters. `hot_stage` success means output was
+staged, not installed. `hot_install` records fresh succeeded exits separately
+from `already_applied` marker replays. Retryable/rejected/error and cancelled
+execution costs are preserved, including future abort or panic unwind; process
+death cannot reliably record an exit. Admission delay remains a separate signal.
+
+These are process-local observed outcomes, not a durable progress ledger. A
+commit followed by response loss can record error/cancelled or no exit, and its
+replay records `already_applied`; therefore succeeded exits can undercount actual
+installations. Authoritative root/marker/watermark and safe reclaim remain the
+progress proof. No new FDB query, mutation, metric ID label or protocol field is
+introduced. Hot stage/install intentionally provide no byte/item throughput;
+their zero-sized metric series must not imply physical bytes, object fill or
+zero useful work. Missing old-runtime series remain unknown. v4 retains v3's
+full rate-window mask and does not rewrite archived evidence or an in-flight
+observer. The complete fixed label product has 295 instant samples; collection
+and analysis reject vectors above 320 and unbounded hot operation/result labels.
+
 ## Control-plane CPU qualification
 
 The failed run `755730aa4bcb4ce3be8e6a3eac306c65` is retained as capacity
