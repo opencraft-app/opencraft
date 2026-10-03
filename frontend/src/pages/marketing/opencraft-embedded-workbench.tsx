@@ -8,6 +8,7 @@ import {
 
 import { useT } from "@/i18n/t";
 import { ChatLoadingState } from "@/components/site/chat-loading-state";
+import { isCN } from "@/lib/region";
 
 import { AUTH_SESSION_CHANGED_EVENT, readStoredAuthToken } from "@/repositories/http-repositories";
 import { cn } from "@/lib/utils";
@@ -448,7 +449,17 @@ export function AgentChatMigrationSurface({
           "absolute z-10 flex items-center justify-center gap-3 bg-white/95 px-4 py-3 text-sm text-black/60",
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
-          {connectionMessage === null ? <ChatLoadingState /> : <span role="status">{connectionMessage}</span>}
+          {connectionMessage === null ? (isCN ? <ChatLoadingState /> : (
+            <span role="status">
+              <span className="sr-only">{t("正在加载会话…")}</span>
+              <span aria-hidden="true">
+                {t("正在加载会话…").replace(/(?:…|\.{3})$/u, "")}
+                <span className="inline-flex w-[1em] justify-between">{[0, 1, 2].map(dot => (
+                  <span key={dot} className="motion-safe:animate-pulse" style={{ animationDelay: `${dot * 200}ms`, animationDuration: "1.2s" }}>.</span>
+                ))}</span>
+              </span>
+            </span>
+          )) : <span role="status">{connectionMessage}</span>}
           {!agentPaused && (startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
             <button type="button" disabled={retrying} onClick={() => { void retryConnection(); }}
               className="shrink-0 rounded-md border border-black/15 px-3 py-1 text-black/80 hover:bg-black/5 disabled:opacity-50">

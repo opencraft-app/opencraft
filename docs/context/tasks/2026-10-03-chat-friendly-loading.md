@@ -157,3 +157,15 @@
 - `scan_scope`：MR 变更列表、OpenCraft 同步器与 guard、前端 i18n 入口及相邻卡；未扩展到无关服务。
 - `scan_output`：无独立扫描产物，精确 diff 见当前 worktree。
 - `handoff`：本地同步和服务验证已完成；需本次用户明确确认才能 commit/push 到 MR 源分支并观察远端 CI。
+
+## MR !4947 加载态验收调整（2026-10-03）
+
+- `goal`：按用户在国内站 Chrome 预览中的反馈，仅将国内站加载态收敛为单句「你的 AI 伙伴，马上就来…」，并提供可见、轻量的动态反馈；国际站维持原样。
+- `non_goals`：不改动连接失败、暂停、超时与重试提示；不把本地 TAT 连接故障伪装成正常加载。
+- `requirement_refs`：用户提供的加载态截图及“保留上面那句…下面那句算了不要了，然后加个动态的效果”。
+- `history_context`：组件已经复用 `GeometricAvatar alive` 的呼吸、眨眼与视线动效；本轮仅调整加载态文案和装饰动画。
+- `acceptance`：国内站副文案不再出现，主文案为「你的 AI 伙伴，马上就来」；句末灰黑色三点依次跳动、星光脉动，减少动态效果时静止。国际站的两个入口保留原文本加载提示，共享组件被调用时仍保留原主副文案及装饰方式；六种译文齐全；Chrome 国内站显示新加载态。
+- `affected_paths`：`frontend/src/components/site/chat-loading-state.tsx`、`frontend/src/pages/marketing/agent-chat-panel.tsx`、`frontend/src/pages/marketing/opencraft-embedded-workbench.tsx`、`frontend/src/styles.css`、国内与国际相关测试和字典、`frontend/DESIGN.md`、OpenCraft vendored i18n 生成副本、Task Pack/checkpoint。
+- `context_receipt`：本轮读取 `frontend/AGENTS.md`、`frontend/src/components/site/chat-loading-state.tsx`、`frontend/src/pages/marketing/agent-avatar-shapes.tsx`、`frontend/src/styles.css`、`frontend/DESIGN.md`、相关测试与本 Task Pack；路由器无 pack 命中后，按精确文案对 `frontend/src` 与 `opencraft` 做有界搜索。
+- `validation`：聚焦测试 14/14、`pnpm check`、国内与国际构建、OpenCraft 130 文件闭包检查和嵌入式 CI 155/155 均通过。Chrome 经 Whistle 访问国内站 5174，实见单句加载态；三点计算样式分别延迟 0/0.2/0.4 秒，随后进入真实会话。浏览器重载时曾在开发服务尚未监听的瞬间收到一次 Whistle `ECONNREFUSED`，重试后 HTTP 200。
+- `handoff`：先交付本地 5174 国内站预览供用户验收；远端 MR 更新按提交/推送授权处理。

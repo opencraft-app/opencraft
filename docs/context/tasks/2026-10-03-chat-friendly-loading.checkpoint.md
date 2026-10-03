@@ -37,3 +37,20 @@
 - `discard`：日志中的翻译 WARN 与 MDX deprecated option 不是此次 OpenCraft guard 的首个退出原因。
 - `restore`：worktree `/Users/pablozhong/.codex/worktrees/mr-4947-ci-fix/lightvela`；Task Pack 的「MR !4947 CI 修复」段及当前 `git diff`。
 - `next_action`：拿到本次 commit/push 明确确认后，提交生成同步并核对远端分支与 CI。
+
+## 2026-10-03 加载态预览调整检查点（最新）
+
+- `stage`：用户已授权更新 MR，并明确要求仅修改国内站展示；已增加区域判断和国际站回归测试，待复验与提交。
+- `verified`：精确定位共享 `ChatLoadingState`；六种译文补齐；聚焦测试 14/14、`pnpm check`、双站构建、OpenCraft 130 文件一致性与嵌入式 CI 155/155 通过。Chrome 国内站实见新单句加载态，三点动画名与 0/0.2/0.4 秒延迟已读回；用户指定的灰黑色计算值为 `oklab(0 0 0 / 0.55)`，之后真实会话加载成功。
+- `unverified`：区域收窄后的完整门禁及远端 MR 尚待核验；本地 Chat 连接偶有失败，不能把一次成功加载当成所有环境稳定。
+- `discard`：旧副文案「正在准备我们的对话」和旧主文案不再适用于新的验收要求。
+- `restore`：worktree `/Users/pablozhong/.codex/worktrees/mr-4947-ci-fix/lightvela`；查看当前 diff、5174 本地监听和 Chrome 国内站预览。
+- `next_action`：验证国内/国际显示与生成闭包，提交并推送现有 MR !4947，核对远端即时状态；验收结束时恢复系统代理。
+
+## 2026-10-03 提交前检查点
+
+- `stage`：国内站限定改动与国际站原提示已完成；准备先提交，再解决最新目标分支上的 OpenCraft 生成清单冲突。
+- `verified`：前端聚焦测试 15/15、`pnpm check`（新增 TypeScript 错误 0）、双站构建、OpenCraft 130 文件闭包和嵌入式 CI 155/155、文档校验、翻译检查均通过；远端源分支仍在 `fc77bd4c9`。最新 `master` 为 `8ed805464`，与旧 `master` 相差 103 个提交；三方预检发现 `UPSTREAM.json` 冲突。
+- `unverified`：合并最新 `master` 后的门禁、远端 MR/CI 状态待核验；Gongfeng API 查询曾遇临时 TLS 连接重置。
+- `restore`：worktree `/Users/pablozhong/.codex/worktrees/mr-4947-ci-fix/lightvela`；仅提交明确列出的页面、组件、字典、生成副本和文档文件。5174 预览因构建暂时停止。
+- `next_action`：提交本次界面调整，合并 `origin/master`，重新运行 OpenCraft 同步与必要门禁，推送至 MR !4947 源分支并核验。
