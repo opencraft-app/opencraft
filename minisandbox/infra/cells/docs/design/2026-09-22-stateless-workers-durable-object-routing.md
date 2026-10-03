@@ -1445,6 +1445,15 @@ A 五分钟只读采样已能区分新指标：active observation 约 165 bytes/
 缺失的 timeout series 是 unknown，不自动补零；返回 succeeded 仍不代表有效 fold 或 history
 commit。完整 phase、原字节收据摘要和剩余验收记录在 10k durable pressure Task。
 
+本轮 A 原始收据在本地重新验 SHA、按 production-cell profile 重验通过：48 对象、
+6,240 写入、48/48 exact cold，冷态等待约 954 秒，cold wake p95 约 942 ms，HA 1,500
+请求零失败。这证明小规模功能与恢复，不证明后台持续吞吐或万级交互 SLO。冷态等待包含
+安全 reclaim 的 pin/retention 等资格条件，不能直接当作 COS 上传吞吐；须结合有效 publish、
+安全 reclaim 和 hot debt 走势区分策略等待与实际服务不足。
+B 已完成新产品 rollout，仍由原 invocation 完成资格；strict10k 新 run 已准备、尚未提交。
+性能验收继续保留目标到达率、实际到达率、成功率和尾延迟：每对象单在途模型在响应变慢时
+会自行降低到达率，因此不能仅凭“成功率高且队列稳定”证明支持目标的 1,000 持久交互/s。
+
 诊断正确性也必须独立验证。Gasoline debug history 原读取器在 signal index 0 的第二个
 input chunk 上再次要求 `len == index`，会把合法多块输入误判为损坏。真实 RocksDB/UDB
 写入的多信号/UTF-8 多块 fixture 证明生产 replay 可以成功而 debug reader 失败。修复仅在

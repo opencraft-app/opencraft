@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.8.2
+revision: 1.8.3
 precedence: task
 derived: false
 ---
@@ -138,6 +138,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 | `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/test_runtime_build_log.py@3d03bf6a`、`minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/test_build_parallelism.py@3d03bf6a` | 发布邻居真实测试 | 原 invocation 失败须保留；有界日志、退出状态、CPU/内存限制不变 |
 | `AGENTS.md@1a724a3c`、`minisandbox/AGENTS.md@1a724a3c`、`minisandbox/infra/cells/AGENTS.md@1a724a3c`、`docs/context/domains/release-gitops.md@1a724a3c`、`docs/context/project/upstream-subtrees.md@1a724a3c` | 本轮发布和观察工具边界 | 单独工具身份，不修改原 build、负载参数或线上容量 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/test_observe.py@1a724a3c`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/release-runtime.sh@1a724a3c`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@1a724a3c` | 真实诊断和发布邻居 | 单次有界查询；失败 job 不重复发起；完整持有发布锁 |
+| `AGENTS.md@69098b68`、`minisandbox/AGENTS.md@69098b68`、`minisandbox/infra/cells/AGENTS.md@69098b68`、`docs/context/project/upstream-subtrees.md@69098b68`、`docs/context/domains/release-gitops.md@69098b68` | 本轮恢复工作与发布边界 | 只记录确证阶段；维持 immutable invocation、完整锁和原性能门禁 |
+| `docs/context/project/adjacency/argocd-ci-secrets.md@69098b68`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/test_monitor_bottomless.py@69098b68`、`minisandbox/infra/cells/deploy/tencent/fleet/runtime/verify_bottomless_receipt.py@69098b68` | 邻接、故障与收据资格 | 原作业不重发；原字节 SHA 和正式 production-cell profile 重验 |
 
 ## evidence
 
@@ -289,7 +291,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 - 当前状态：历史 Runtime 072e504b 的 A/B release/Bottomless/HA/activation 已通过，
   其 strict10k 失败后精确清理和自然缩容完成。性能修正 source 59e86519 已实际通过 stage
-  reuse、Engine/Host 编译和产品 cold pull；A 的正式 release/qualification 已提交，尚未通过。
+  reuse、Engine/Host 编译和产品 cold pull；A 的正式 rollout/Bottomless/HA/activation 已通过。
+  B 已完成同产品 rollout，原 invocation 正在 Bottomless 资格阶段；strict10k 尚未启动。
   新诊断工具已独立交付且真实 A/B 查询通过。不能把源码、小规模资格或模型文档
   标为万级容量问题已解决。
 
@@ -299,12 +302,32 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 A/B 旧 Runtime 资格完成；strict10k 终态失败。新 Runtime 59e86519 的 reviewed build、
 workerd reuse、产品 cold pull 和 A 正式 rollout/Bottomless/HA/activation 均已完成。
-B 按同一产品提交独立 invocation，尚未终态。诊断 tools 120 已独立交付；A 已能观察
-分开的准入、执行和规划成本，B 的旧 Runtime 仍缺新指标。小资格负载不证明 strict10k 通过，
+B 按同一产品提交独立 invocation，已完成 rollout，尚未资格终态。诊断 tools 120 已独立交付；
+A 已能观察分开的准入、执行和规划成本，B 的新 Runtime 指标待资格后重新采样。
+小资格负载不证明 strict10k 通过，
 原零普通重试、万活跃及三秒创建门禁不放宽。
 
 ### verified
 
+- A 原字节收据重新验证 `inv-a9edtugu8q` SUCCESS/0：production-cell profile，48 个
+  Actor、6,240 次写入、48/48 exact cold，冷态等待 954,465 ms（约 15.9 分钟）；
+  cold wake p95 约 942 ms、最大约 4,494 ms。HA 1,500 请求零失败，清理通过。
+  claim_eligible=false 是此 48 对象 profile 的边界，不声称已通过更大 profile 或 strict10k。
+- A 三份非 Secret 资格收据经 exact SHA 和 credential-shaped 字段检查后归档：
+  `inv-e9ee1b0pwp` SUCCESS/0，24,007-byte archive SHA 前缀 d8cface6，完整摘要保留在
+  原 invocation 及本地 archive 验真记录。
+  官方 COS relay `inv-a9ee1ngcfx` / `inv-d9ee1pgrdj` SUCCESS/0，下载后 SHA 一致；
+  本地为 `/data/actor-build/local-admission-59e86519-20261003/qualified-a01-evidence.tar.gz`。
+  本地已检查 exact 三个普通 archive member、各原始 receipt SHA，正式 production-cell
+  verifier 通过；解包目录 `a01-qualified.C8Dbwq`。不复制 kubeconfig 或 Secret。
+- B 只读 `inv-d9edukgvhr` SUCCESS/0（02:59:53 UTC）：六 Engine、四 Host 均已更新至
+  05840b48，Ready 数达标；02:58:56 UTC 获得 exact Host UID 的 qualification hold。
+  post-control 只因新 Bottomless/HA 收据尚缺而 block，未人为解除。原 `inv-a9ednt0v6b`
+  仍 RUNNING；不能把 rollout 就绪当成最终资格通过。
+- strict10k run `55b558752ba2454987491cdea655ff68` 监督 launcher 已完成语法验证，
+  SHA 前缀 a2e1d18c，尚未提交。保持 Runtime 59/tools 120 和原负载参数；B 实际
+  qualification activation 通过前不得启动。15 项 strict、21 项 observer 回归再次通过；
+  此轮未修改或重新编译 Runtime。
 - A 原 invocation `inv-e9ecw30f8e` 已 SUCCESS/0，输出依次证明 rollout、Bottomless、
   Engine HA、qualification activation passed。新产品 digest 05840b48、source 59e86519、
   manifest 24b265e9，未借用旧 072 资格。新 Bottomless 原字节 SHA 前缀 `83728114`，
