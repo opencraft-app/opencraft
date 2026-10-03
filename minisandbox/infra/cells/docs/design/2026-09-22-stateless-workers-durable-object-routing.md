@@ -2151,6 +2151,20 @@ JS 只保存名字，不跨请求保存 WorkerStub。原生 SubrequestChannel �
 [Host README](../../../../runtimes/workerd/host/README.md#无状态-worker-的命名缓存)。
 本变更未发布，也未修改正在运行的 strict10k 图、镜像或容量。
 
+### 严格负载失败的诊断边界
+
+runtime2757 的 run7d5fa6ac 在 5,394 ready 对象时因一次普通 active 503 重试停止，
+不得把最终交互成功重标为零重试或万活跃通过。原 supervisor 已精确清理全部测试对象，
+自然缩容仍在运行；完整 failed/cleanup 原字节收据和归档见
+[严格负载证据](../../deploy/tencent/fleet/load/ten-thousand-active/evidence/README.md#runtime-2757-strict-run-one-active-retry-exact-cleanup)。
+
+故障窗内 C 的 12 个 API 监控目标可抓取，两类内部 overload 计数均为零；一个 API Pod
+产生未分配 target Cell 的错误。公开 code 会折叠未知 retryable 错误，因此不能仅凭
+`upstream_unavailable` 归因 FDB、容量或网络。空日志和成功重试也不是健康证据。
+控制面 `requestJSON` 新增只在传输失败时记录连接阶段、有界 error 分类和已有 request ID；
+不记录原始 URL/error、token 或 payload，不改变 timeout、response、retry 或请求副作用。
+真实 HTTP POST 收到后断连回归证明无新增重放。该源码诊断尚未发布，不代表本次 503 已修复。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

@@ -1,0 +1,37 @@
+{
+  "endpoint": "http://10.160.0.3:6688/v1",
+  "generatedAt": "2026-10-03T20:48:31.210366+00:00",
+  "limits": {
+    "batchSize": 1024,
+    "concurrency": 64,
+    "rate": 100.0,
+    "retries": 8
+  },
+  "manifest": {
+    "path": "/data/actor-bootstrap/beijing-rebuild-20260915/load-tests/ten-thousand-active-7d5fa6acee6a4a0fa60ea59d4b9ffe91/cleanup.sqlite",
+    "sha256": "22c6b8390a84b4f9c464298fb6a7d92b09e647e6164b2d328090ba3e5eecbe05"
+  },
+  "objects": {
+    "alreadyAbsent": 0,
+    "completedBeforeResume": 0,
+    "deleted": 5394,
+    "pending": 0,
+    "total": 5394
+  },
+  "retries": 0,
+  "runs": [
+    {
+      "configSha256": "472c1728d41c475364054f9c19108fd1bb415302a6c6a4c761c06cbee272b667",
+      "kind": "shared",
+      "receipt": {
+        "path": "/data/actor-bootstrap/beijing-rebuild-20260915/load-tests/ten-thousand-active-7d5fa6acee6a4a0fa60ea59d4b9ffe91/load/receipt.json",
+        "sha256": "a38991d48c0484b60672499e13151d25b796b8de3d0978db5b809eef0c26ec6a"
+      },
+      "runId": "7d5fa6acee6a4a0fa60ea59d4b9ffe91",
+      "scheduled": 5394,
+      "workers": 16
+    }
+  ],
+  "schema": "actor-shared-agent-cleanup/v1",
+  "verdict": "passed"
+}

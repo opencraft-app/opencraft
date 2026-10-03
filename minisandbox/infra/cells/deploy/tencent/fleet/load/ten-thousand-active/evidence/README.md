@@ -979,3 +979,50 @@ The existing COS relay metadata/upload invocations `inv-a9exgbg97k` and
 `inv-a9exgc0w3e` both completed SUCCESS/0. Download verified identical bytes/SHA;
 only the temporary relay key was removed, and original/archived builder evidence
 remains. No load was restarted and no capacity predicate was changed.
+
+## Runtime 2757 strict run: one active retry, exact cleanup
+
+Run `7d5fa6acee6a4a0fa60ea59d4b9ffe91` stopped irreversibly on one ordinary
+active retry at 2026-10-03 20:47:07.847 UTC: index 360, HTTP 503,
+`upstream_unavailable`. The preserved original-byte
+`2757-run-7d5fa6ac-load-failed-20261004.json` reports 5,394 ready Objects,
+5,381 proven active, 721,990 completed interactions and zero identity mismatches.
+Its failed verdict is not a successful 10,000-active qualification. The
+post-warmup three-second creation sample never started.
+
+`2757-run-7d5fa6ac-cleanup-20261004.json` binds the failed receipt and reports
+5,394 exact deletions, zero pending and zero cleanup retries. Both original-byte
+hashes were verified after COS relay download; the original supervisor remained
+the only operation owner. By 21:07:48 UTC, A/B active counts were zero and Ready
+Hosts had naturally contracted to 129/126; Machines were 131/129. This is not
+final low-capacity evidence: both floors remain four and the supervisor is live.
+
+The immutable remote archive
+`/data/actor-build/release/strict10k-failed-7d5fa6ac-20261004.4KmuSQ/evidence.tar.gz`
+also retains the complete event journal and an append-only capacity prefix:
+209 valid rows, 47,756,875 uncompressed bytes. Local archive SHA-256 is
+`105328ba791c85167e8f1842279099cff1e21bbe5f25ca95f1092db762dc59fa`.
+Only the helper's own temporary COS relay object was deleted; original evidence
+and the immutable builder archive remain recoverable.
+
+C monitoring is in `mesh-observability`, not the empty `observability`
+namespace. Historical Prometheus queries ending at 20:48 UTC found 12/12 API
+scrapes up, zero deployment-read/ObjectRouter overload counters, and one new
+unassigned-target server-error series on Pod `workers-api-7d567c894f-wbtzz`.
+Deployment reads on that Pod did not increase in the five-minute window.
+Claim errors did increase, but include other requests and cannot identify this
+one request. Prometheus `increase()` values are extrapolations, not literal
+integer event counts; lifetime error counters include older experiments.
+The exact Pod's bounded fault-window log was empty. These observations narrow
+the likely failure to placement resolution before business fetch forwarding,
+but do not prove a socket cause or absence of control-plane side effects.
+`2757-run-7d5fa6ac-control-diagnostic-20261004.json` preserves the native
+invocation identities and parsed successful historical queries, explicitly as
+non-qualification evidence.
+
+Public `upstream_unavailable` collapses multiple internal errors. The control
+HTTP client previously discarded its transport error. A source-only diagnostic
+now records socket milestones and a bounded error classification without URLs,
+credentials, payloads or raw error strings. A real HTTP peer that closes after
+receiving a POST proves one attempt, EOF classification and sanitized logging.
+This is diagnostic coverage, not a fix or deployed qualification for this 503.

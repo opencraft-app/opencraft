@@ -1,0 +1,104 @@
+{
+  "schema": "actor-shared-agent-scale/v1",
+  "runId": "7d5fa6acee6a4a0fa60ea59d4b9ffe91",
+  "startedAt": "2026-10-03T20:01:53.817Z",
+  "elapsedSeconds": 2715.300166567,
+  "target": 11000,
+  "rate": 20,
+  "sharedVersionsTarget": 16,
+  "activeTarget": 10000,
+  "activeReady": 5394,
+  "activeProven": 5381,
+  "warmupTarget": 10000,
+  "heartbeatTarget": 10000,
+  "heartbeatReady": 5394,
+  "warmupBackpressure": {
+    "timeoutMs": 900000,
+    "retries": 6732,
+    "objects": 543,
+    "timeouts": 0
+  },
+  "readySlo": {
+    "limitMs": 3000,
+    "scope": "post-warmup_object_create_plus_initial_state",
+    "breaches": 0
+  },
+  "activeInFlight": 0,
+  "inFlight": 0,
+  "counters": {
+    "versionsPublished": 16,
+    "deploymentsPublished": 16,
+    "scheduled": 5394,
+    "createAttempts": 5394,
+    "objectsCreated": 5394,
+    "objectsFailed": 0,
+    "readySloBreaches": 0,
+    "requestRetries": 1,
+    "warmupBackpressureRetries": 6732,
+    "warmupBackpressureTimeouts": 0,
+    "activeTargetReady": 5394,
+    "activeAttempts": 721990,
+    "activeSucceeded": 721990,
+    "activeFailed": 0,
+    "activeIdentityMismatches": 0,
+    "consecutiveCreationFailures": 0,
+    "inFlightPeak": 216
+  },
+  "errors": {},
+  "latency": {
+    "version": {
+      "count": 16,
+      "p50UpperBoundMs": 76.10925536017415,
+      "p95UpperBoundMs": 197.40298565221642,
+      "p99UpperBoundMs": 197.40298565221642,
+      "maxMs": 182.56067199999995
+    },
+    "deployment": {
+      "count": 16,
+      "p50UpperBoundMs": 1116.6799182492239,
+      "p95UpperBoundMs": 1217.7480857627863,
+      "p99UpperBoundMs": 1217.7480857627863,
+      "maxMs": 1174.8667969999997
+    },
+    "create": {
+      "count": 5394,
+      "p50UpperBoundMs": 362.03867196751236,
+      "p95UpperBoundMs": 558.3399591246119,
+      "p99UpperBoundMs": 608.8740428813932,
+      "maxMs": 733.5868909999263
+    },
+    "initialize": {
+      "count": 12126,
+      "p50UpperBoundMs": 1448.1546878700494,
+      "p95UpperBoundMs": 3444.3117168792146,
+      "p99UpperBoundMs": 4870.992343051145,
+      "maxMs": 5981.675638999965
+    },
+    "warmupReady": {
+      "count": 5394,
+      "p50UpperBoundMs": 663.9818519813169,
+      "p95UpperBoundMs": 42494.838526804284,
+      "p99UpperBoundMs": 101070.3286539348,
+      "maxMs": 243105.221553
+    },
+    "ready": {
+      "count": 0,
+      "p50UpperBoundMs": null,
+      "p95UpperBoundMs": null,
+      "p99UpperBoundMs": null,
+      "maxMs": 0
+    },
+    "active": {
+      "count": 721991,
+      "p50UpperBoundMs": 90.50966799187809,
+      "p95UpperBoundMs": 197.40298565221642,
+      "p99UpperBoundMs": 279.16997956230597,
+      "maxMs": 560.4550029998645
+    }
+  },
+  "loadGeneratorRssBytes": 392015872,
+  "stopReason": "request_retry",
+  "retained": true,
+  "finishedAt": "2026-10-03T20:47:09.117Z",
+  "verdict": "failed"
+}
