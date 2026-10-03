@@ -1,0 +1,81 @@
+{
+  "schema": "actor-cell-qualification-activation/v1",
+  "verdict": "passed",
+  "cell": "actor-bj-b01",
+  "namespace": "actor-fdb-cell-system",
+  "started_at": "2026-10-03T19:16:34Z",
+  "finished_at": "2026-10-03T19:16:40Z",
+  "cell_identity": {
+    "uid": "87a07636-737c-4a57-8693-9d02f61883f8",
+    "generation": 4,
+    "observed_generation": 4,
+    "profile_digest": "sha256:7438b9a73ed18dd16c5de408da00ce475a5f113981d3c35bdf6829a1c1c69449"
+  },
+  "control_receipt": "/data/actor-bootstrap/beijing-rebuild-20260915/cells/actor-bj-b01/receipts/runtime-admission-2757fc785d8f572d1b6430e471100c4a880aefac-aea4ca3f31b280c99f710833203352547373fdd1299f8a0b6f44a3f033662b72-cycle-owner-v2/decisions/autonomy-control-actor-bj-b01-20261003T191631Z.json",
+  "control_receipt_sha256": "bf88c06fde982694fa6aee366f177c8071978495ac11d610c1863ce97c9ab259",
+  "qualification": {
+    "receipt_ref": "kubernetes://actor-fdb-cell-system/configmaps/actor-evidence-actor-bj-b01-bf88c06fde982694fa6a?sha256=bf88c06fde982694fa6aee366f177c8071978495ac11d610c1863ce97c9ab259",
+    "receipt_digest": "sha256:bf88c06fde982694fa6aee366f177c8071978495ac11d610c1863ce97c9ab259",
+    "release_digest": "sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026"
+  },
+  "desired_state": "Ready",
+  "ready_for_placement": true,
+  "activation_plan": {
+    "cell": "actor-bj-b01",
+    "control_receipt_sha256": "bf88c06fde982694fa6aee366f177c8071978495ac11d610c1863ce97c9ab259",
+    "namespace": "actor-fdb-cell-system",
+    "qualification": {
+      "ready": true,
+      "receipt_digest": "sha256:bf88c06fde982694fa6aee366f177c8071978495ac11d610c1863ce97c9ab259",
+      "receipt_ref": "kubernetes://actor-fdb-cell-system/configmaps/actor-evidence-actor-bj-b01-bf88c06fde982694fa6a?sha256=bf88c06fde982694fa6aee366f177c8071978495ac11d610c1863ce97c9ab259",
+      "release_digest": "sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026"
+    },
+    "release_binding": {
+      "contract": "same_immutable_release_and_pod_set_before_after_qualification",
+      "engine_auxiliary_images": {},
+      "engine_desired_replicas": 6,
+      "engine_pod_uids": [
+        "075762a8-3ae1-46eb-967b-021e620b453e",
+        "0ce5c356-3363-4bea-97db-40ac049446d2",
+        "12022db9-8fd9-4543-9f95-86a7caef902f",
+        "b8005727-f755-4202-8889-d515b89f9cfb",
+        "e80dc797-b9fa-420d-88ae-764040043f01",
+        "ffc07926-cb11-4b00-9bf6-b31d92b53f93"
+      ],
+      "engine_primary_container_names": [
+        "engine"
+      ],
+      "manifest_sha256": "ef8f58537a3eff755bff7a5d39c524a80c8003bf4afee00f26feded29bc69b2e",
+      "resolved_container_digests": {
+        "engine": {
+          "engine": "sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026"
+        },
+        "workerd-host": {
+          "workerd": "sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+          "workerd-host": "sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+          "workerd-metrics": "sha256:7b9a320334d446845c17edcfad9bdd1d54ad05c84c35b117e8fa7d830b9fcce5"
+        }
+      },
+      "runtime_auxiliary_images": {
+        "workerd-metrics": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/observability-busybox@sha256:7b9a320334d446845c17edcfad9bdd1d54ad05c84c35b117e8fa7d830b9fcce5"
+      },
+      "runtime_capacity_dynamic": true,
+      "runtime_desired_replicas": 4,
+      "runtime_digest": "sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+      "runtime_host_pod_uids": [
+        "2f707cbc-f901-4ba7-b1c8-b76bea3a27b0",
+        "4e188008-b59a-4b32-afe2-1b6c49cce073",
+        "6cf4d44e-8743-4334-b3b6-e2102dcd2b97",
+        "d955e724-5734-412a-9214-12aeb31f412c"
+      ],
+      "runtime_image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+      "runtime_primary_container_names": [
+        "workerd",
+        "workerd-host"
+      ],
+      "runtime_ready_replicas": 4
+    },
+    "schema": "actor-cell-qualification-activation-plan/v1",
+    "source_receipt_sha256": "fdfb50e096492cc13efda3e0be1d2fea798e1b92e5909783a37609f96498bb07"
+  }
+}

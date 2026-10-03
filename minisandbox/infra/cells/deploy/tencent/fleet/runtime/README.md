@@ -54,6 +54,25 @@ silently moved, reformatted or deleted by the checker. The existing c631 product
 can be released without rebuilding it, but the shared-root builder diagnosed on
 2026-10-03 is deliberately not eligible for a new build until its storage is fixed.
 
+Legacy Beijing control-node source caches can be audited separately with
+`retire-reviewed-source-cache.py`; it is an operator-bound recovery tool, not
+a cleanup daemon or permission for the storage checker to delete files. The
+original whole-operation lock and stable build lock are required. Current runtime,
+load tools, API, verification tools and rollback sources are protected, as are
+source paths referenced by processes or systemd units. A dry-run verifies every
+selected v2 bundle, receipt, embedded source identity, full extracted file manifest,
+symlink inventory and absence of added state. The only allowed generated extras
+are bounded CPython 3.11 bytecode files whose header, source identity and recompiled
+code match an unchanged manifest-listed Python source; a `.pyc` suffix alone is
+not proof that a file is disposable. Execution requires that exact plan's
+SHA-256 within ten minutes and revalidates all members before the first deletion.
+Only exact extracted `q01-src-<revision>-<manifest>` directories are retired;
+compressed recovery bundles and receipts remain. Native output journals each
+attempted/deleted target, including partial filesystem failures. This tool neither
+deletes registry images, business volumes, FDB/COS objects nor changes admission
+thresholds or workload replica counts. Restore through the original full-source
+materializer, not by copying a remembered subset of files.
+
 The runtime image is built from the exact Beijing-qualified artifacts recorded
 as OCI labels in `Dockerfile`. It must be supplied by registry digest. The
 installer derives the runtime COS Secret inside Kubernetes from the existing

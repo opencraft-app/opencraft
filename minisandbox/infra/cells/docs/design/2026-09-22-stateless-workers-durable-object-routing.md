@@ -1180,6 +1180,17 @@ durable_object_active{namespace,pool}
 Grafana 分开呈现 stateless execution、Object Router、durable runtime 和 Registry/FDB。扩容决策只
 消费对应执行面的指标；跨 Cell QPS、失败率和 RTT 用 bounded Cell label 观察。
 
+2026-10-04 的 producer 复核仍不能证明上述观测合同全部完成。现有 stateless exporter 提供
+`rivet_stateless_queued`、`rivet_stateless_in_flight` 及代码缓存计数；
+`rivet_stateless_code_cache_memory_entries` 表示 Host 代码缓存条目，不是 workerd live isolate
+数量，不能直接映射成 `worker_isolates`。Pegboard 的 `pegboard_actor_start_duration` 记录
+allocation 到 connectable，包含协调与网络时间，且未区分首次启动和从休眠恢复，不能单独
+证明 `durable_object_wake_seconds`。生产源码和配置的有界检索尚未发现上述 isolate/cold-start/
+wake 三项语义的完整 producer。必须补真实执行生命周期观测、bounded 标签和语义回归后
+再关闭此项；不以改名、代码 cache miss 或局部资格的 wake histogram 冒充平台持续观测。
+这不是降低原观测要求，也不否定已有 queue/active 指标；当前发布或万级验收通过仍不能
+自动证明完整设计已经完成。
+
 ### 性能劣化的模型与验收口径
 
 分别建模交互请求、placement/唤醒和持久化后台，不能以一个总 CPU 指标替代。对每个阶段
@@ -1684,6 +1695,17 @@ Pending。随后实际 Pod scheduling condition 给出一个节点有 disk-press
 构建准入应以峰值空间和在线 reserve 判定，不能由在线 Pod eviction 被动替构建释放空间。
 优先设计独立 builder 或独立挂载且受预算约束的构建盘；保持原源码闭包、镜像和证据来源校验。
 实际迁移必须沉淀为 Terraform/bootstrap，不能在长作业持锁时手工移动目录或任意删除缓存。
+
+2026-10-04 新镜像已完成 A/B 发布资格后，严格万级 launcher 在实际负载开始前被 C
+nodefs reserve 拒绝：同一 `10.160.0.4` UID Ready、DiskPressure=False，但只有
+16,533,864,448 可用字节，低于 `15% capacity + 2 GiB` 的 17,990,614,016 字节。
+另外两节点与两项 HPA custom metrics 正常，systemd unit/log/load/preflight 均不存在；
+这不是新镜像的万级请求失败，也不能用 Kubernetes Ready 替代实验余量预算。
+旧解压源码缓存约 22.9 GB，必须将当前 source/tools/rollback、进程和 systemd 引用排除，
+仅在原 whole-operation/build locks 内通过完整 v2 bundle/manifest/额外状态校验后退役。
+保留可恢复的压缩 bundle 与 receipt，按 exact plan hash 和十分钟有效期执行，先全部验证
+再删除，逐项保留 native journal；不触碰业务卷、对象存储、live container 或 eviction
+门槛。此操作恢复实验前提，不证明运行期容量控制或万级负载已通过。
 
 新的只读 `verify-builder-storage.py` 将这个边界接入正式 Runtime 构建：remote preflight
 在临时 push token 前检查，持稳定 build lock 后复核，直接 build-image 入口再校验实际

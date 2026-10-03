@@ -1,0 +1,38 @@
+{
+  "schema": "operator-observation/strict10k-launch-preflight/v1",
+  "runId": "5e03579b65bc486db53bb2fdadfe9f8b",
+  "launcherSha256": "3fc4505fb0d75e33d7f806d3e8c7045af1a64cdb71f6cfc7f2549ae7a590a91c",
+  "wrapperSha256": "2385bb343b8d549c3ca4b0acec14f804af8f413fa19ae4d423255af81425a74f",
+  "launchInvocation": {
+    "id": "inv-a9famsg57i",
+    "status": "FAILED",
+    "exitCode": 1,
+    "startTime": "2026-10-03T19:22:29Z",
+    "endTime": "2026-10-03T19:22:30Z",
+    "requestId": "80aea32e-6918-41c6-9424-802e16b59a28"
+  },
+  "readOnlyDiagnostic": {
+    "id": "inv-d9fanig53m",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "startTime": "2026-10-03T19:23:17Z",
+    "endTime": "2026-10-03T19:23:18Z",
+    "requestId": "1783320d-f4e9-443c-a1b8-d2a02387ad44",
+    "nativeResponseSha256": "ce5f2c6cd8de5e44e90da9edb6d40b6b742a4775db221a03782271e56b0f3ff3"
+  },
+  "systemdUnit": {"loadState": "not-found", "mainPid": 0, "invocationId": ""},
+  "supervisorLogExists": false,
+  "loadOutputExists": false,
+  "preflightOutputExists": false,
+  "businessLoadStarted": false,
+  "aAndBActivationLogsPassed": true,
+  "centralHpa": {"minReplicas": 3, "maxReplicas": 30, "scalingActive": true, "routingRpsPresent": true, "routingInFlightPresent": true},
+  "centralNodeFs": [
+    {"name": "10.160.0.4", "uid": "cdea12a3-7dab-47c9-bb43-7d45cd321f0b", "ready": true, "diskPressure": false, "capacityBytes": 105620869120, "availableBytes": 16533864448, "inodesFree": 3185923, "requiredAvailableBytes": 17990614016, "passed": false},
+    {"name": "10.160.16.12", "uid": "15bf6eef-828a-45de-9ac1-e88e476f58a5", "ready": true, "diskPressure": false, "capacityBytes": 105620869120, "availableBytes": 82887634944, "inodesFree": 6352726, "requiredAvailableBytes": 17990614016, "passed": true},
+    {"name": "10.160.32.10", "uid": "8bf41d54-df04-4952-9719-3361fe297f0c", "ready": true, "diskPressure": false, "capacityBytes": 105620869120, "availableBytes": 81745338368, "inodesFree": 6332312, "requiredAvailableBytes": 17990614016, "passed": true}
+  ],
+  "loadAdmissionBypassed": false,
+  "manualReplicaScaling": false,
+  "loadSuccessClaimed": false
+}

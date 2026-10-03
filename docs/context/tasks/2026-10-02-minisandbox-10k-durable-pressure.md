@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.50.0
+revision: 1.51.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,78 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.51.0）：前轮是实际progress：新版万级admission真实jq回归10项、
+Python52项/Node13项通过，prepared入口与B rollout证据FF推master 40093a9935a9。
+保留post-push空oosrnmps，本轮new lyynslvx。原B producer inv-e9f9qug68r于19:16:41Z
+native SUCCESS/0，Bottomless、Engine HA、activation完整通过；没有重发release或qualification。
+原monitor9813本地exit143不能否定native终态；独立下载原字节收据并复验production-cell。
+48 Object/6240 writes、cleanup errors空，冷降等待1013234ms，cold wake p99/max2824ms；
+该profile verified但claim_eligible=false，不冒充全生产/万级容量证明。只读链检查
+inv-e9fakrgmmu SUCCESS/0核对activation→control→audit字节hash、当前B UID和ready=true。
+五份正式B收据已归档；audit原字节无尾LF，归档仅格式化恢复后cmp一致。
+已上传不变的2757/tools120 wrapper与launcher并核对hash。新run ID
+5e03579b65bc486db53bb2fdadfe9f8b唯一首次launcher inv-a9famsg57i于19:22:30Z FAILED/1，
+无业务负载、无unit/log/run/preflight创建。只读inv-d9fanig53m SUCCESS/0定位原C
+10.160.0.4 Node UID不变、Ready且DiskPressure=False，nodefs available16533864448
+低于保留线17990614016；另外两节点及HPA3..30/两项custom metrics均正常。
+不降eviction/负载门槛、不手工扩副本，先只读核对系统/构建/容器缓存占用并按原锁治理。
+本轮完整目标只读复核已发现观测语义尚未闭合：host/stateless.rs exporter的代码cache
+entries不是live isolate数量；Pegboard metrics.rs及actor2/runtime.rs的Actor start耗时
+混合首次启动/恢复和协调网络，不能当独立wake metric。对engine/packages、runtimes/
+workerd和infra/cells生产rs/go/c++/yaml有界检索未找到三个目标producer完整接线。设计
+原指标合同不删、不降级；已明确记录isolate/cold-start/wake语义缺口，后续补真实生命周期
+指标与bounded标签/语义回归。当前镜像/实验不改，避免在万级资格前混入新的变量。
+Phase5仍包含百万dormant、万级active、Router replica/cache矩阵、wake storm、热Worker/
+热点DO、stream/cancel/backpressure及真实网络/ACK矩阵；A/B发布门禁不能替代这些。
+本轮首次pegboard/src/workflows/actor2.rs和observability/dashboards路径不存在，已用限定
+file inventory转入真实actor2/runtime.rs，不扩大不相关目录。本轮两次jq诊断误猜
+phases/stages和wake_after_sleep对象形状，真实receipt key inventory证明后者为boolean，
+改用实际latency/bottomless字段；未改写收据。下一步先恢复C nodefs预算，保留首次
+launch失败证据，确认无producer后才提交受控恢复；当前万级负载未启动。
+
+恢复进度：只读inv-c9fap3g4s9 SUCCESS/0测得旧deploy源码约22.9GB、两类incoming
+共约5GB，不触碰业务存储。第一次transfer目录诊断head+pipefail造成exit141，只读
+v2 inv-c9fat10w9n SUCCESS/0已改为drain输出；没有重发任何mutation。只读
+inv-d9favw07ui找到14份可由保留v2 bundle恢复的旧解压树，当前runtime/tools/API/
+verification/rollback source保护不变。新增operator-bound source cache retirement，
+持原whole-operation/build locks，exact plan/hash/十分钟TTL，全部验证后才删除。
+首次dry-run inv-d9fb2x04cq FAILED/1于删除前拒绝unmanifested state，没有删除任何目录；
+只读inv-d9fb4h0ufx发现首树额外49个CPython311缓存、missing0。不能按pyc扩展名忽略，
+新版仅允许来源在manifest中、header/source/recompiled code精确匹配且无尾部数据的
+有界bytecode cache；应用数据、元数据额外状态和symlink仍拒绝。新增8项安全回归、
+launcher5项真实jq gate与原52项共57项通过。第一次tar metadata归一化lstrip错误由
+真实tar fixture red捕获并修复为仅去./前缀；云上新版dry-run尚待终态，不称已经清理。
+
+进一步只读证明：v2 dry-run inv-c9fb6q0x2s与v3 inv-d9fbau0eds均在首删前FAILED/1；
+inv-e9fb8a0cd4查出49个extras中仅一个co_filename含fleet/../，header/source/code
+均相同。已按canonical路径限定原source/staging根，越出原根仍拒绝，9项回归通过。
+逐份只读inv-e9fbf9g9xk SUCCESS/0证明13份完整bundle/源码/cache可重建（每份49--50
+个bytecode）；c5923a4e一份含四个不透明CPython36 cache，整树加入保护而不忽略其内容。
+已上传helper b713cfe52ea8；唯一v4 dry-run inv-c9fbmdgkes正在跟随，目标仅13份。
+这仍是恢复nodefs前提，不是业务数据GC或新镜像容量证明，没有重编译workerd、改副本
+或降低load/eviction阈值。source cache清理尚未执行，当前strict10k producer仍不存在。
+
+终态推进：v4 dry-run inv-c9fbmdgkes与exact执行inv-e9fbp608r9均native SUCCESS/0。
+plan 52a57c17ba0b、执行journal 6c5a5254055e原字节下载并归档。只删除13个旧解压source
+target，保留所有bundle/receipt，释放2013392896字节；root available从16532852736升到
+18546245632，c592/当前source及业务存储未动。首次被拒run 5e03579b保留，不重用。
+新的7d5fa6acee6a4a0fa60ea59d4b9ffe91由唯一launcher inv-c9fbs80d31 SUCCESS/0启动；
+systemd InvocationID c5d5db1b472d4631aa48ab25e91a629a、MainPID261665。
+只读inv-a9fbtvg266于20:03:08Z SUCCESS/0证实service active/running、正式admission
+进入真实负载；16 Version/Deployment、83 ready/64 proven、136交互成功、普通retry/
+active failure/identity mismatch均0，warm backpressure0，post-warmup SLO样本仍0。
+A/B从4Host/4Machine低容量起步；SDK累计ready与滞后的runtime gauge分别记录，不能
+混作同时观测。真实strict10k仍在warmup，尚非容量/SLO/scale/drain通过；继续原producer
+和原whole-operation lock，不因观察断线重发。Phase5其余矩阵及指标语义缺口保留。
+
+最新只读inv-c9fc8008f5于20:16:00Z SUCCESS/0，原systemd InvocationID/PID不变。
+1644 ready/1628 proven，64381次交互全部成功，ordinary retries/active failure/
+identity mismatch均0。A/B自动供给目标已47/50，Host Ready36/42、Machine Ready42/45；
+容量采样20:15:46Z，runtime active753/831不等同SDK累计ready。warm backpressure
+6732次/543 Object、timeout0，最长warmup ready243105ms；这是明确供给等待，不能写为
+三秒创建达标。post-warmup ready样本0，严格资格尚未完成。已归档固定snapshot与原生
+response hash；继续相同producer/源/负载，保持每次至少五分钟只读进度观察，不修改容量。
 
 当前checkpoint（1.50.0）：前轮是实际progress，A完整Bottomless/HA/activation已通过，
 五份原字节收据与B唯一submission已FF推master 7d62c0081cc3；保留post-push空lornvnsk，
