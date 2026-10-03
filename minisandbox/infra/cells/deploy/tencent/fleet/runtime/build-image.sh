@@ -157,6 +157,11 @@ sha256sum "$source_manifest" | cut -d' ' -f1 >"$stage_dir/source-manifest-sha256
 	--compat-date=2026-08-14 \
 	runtimes/workerd/host/workerd/worker-loader-abi-test.wd-test
 
+# Check named-cache retirement and in-flight response ownership with the exact
+# staged binary and production root JS before an image can be published.
+"$stage_dir/workerd" test --experimental --no-verbose --gc-stress \
+	runtimes/workerd/host/workerd/stateless-isolate-cache-native.wd-test cache-test
+
 # This is the cheapest release-compatibility gate: the exact freshly built
 # Engine must deserialize and validate the exact config that will be applied.
 "$stage_dir/rivet-engine" --config "$runtime_config" config show >/dev/null

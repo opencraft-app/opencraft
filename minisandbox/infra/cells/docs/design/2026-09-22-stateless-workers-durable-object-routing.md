@@ -2127,6 +2127,30 @@ proof 是源码可验证的依赖边界，真正 fork、history/pin 和 publicat
 
 ## 与已有设计的关系
 
+### Stateless 命名缓存的驻留成本（2026-10-04）
+
+Host 的有界代码下载缓存不限制 workerd 原生 WorkerLoader namespace。locked fork
+`ce8bdf424dd94e93a39fd1385fdb459336eb76fd` 的命名表只有显式 unload/abort 才删除；
+若每个历史 Worker/Version 都保留一个强引用，增加 executor 副本无法解决单进程长期增长。
+
+root JS 因此单独拥有有界 name/last-use LRU，默认容量 16、idle TTL 60 秒，最大允许
+256/3,600 秒。有效请求和 prepare 才触碰表；先校验鉴权、保留路径和 original URL，
+再执行原生 get。容量淘汰与 TTL 懒清理都调用 `unload(name)`；卸载失败不得继续新增名字。
+生产配置通过受信 root binding 渲染，不接收请求或用户 Worker env 覆盖。
+
+JS 只保存名字，不跨请求保存 WorkerStub。原生 SubrequestChannel 的独立 Rc 保持旧在途
+实例和响应流；同名随后可惰性新建，这符合 stateless 全局内存可丢弃的契约。不得复用于
+持久 DO，因为 DO 的 generation/SQLite writer 由 Pegboard 与 FDB fence 管理。
+
+成本拆为 `named references <= capacity`、在途旧实例、后台任务、V8/native/external
+内存。前者有界不证明后三者归零，也不能把 cache.size 作为 `worker_isolates` 指标。
+原设计的真实 isolate/cold-start/wake 指标与云上 Phase5 仍需补齐。
+
+本地 gate 已用实际 production root JS 和既有 workerd binary 验证 LRU/TTL 重载、热复用、
+旧流在淘汰和同名重载后完整、取消、URL/body framing，并通过 GC stress；测试入口见
+[Host README](../../../../runtimes/workerd/host/README.md#无状态-worker-的命名缓存)。
+本变更未发布，也未修改正在运行的 strict10k 图、镜像或容量。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

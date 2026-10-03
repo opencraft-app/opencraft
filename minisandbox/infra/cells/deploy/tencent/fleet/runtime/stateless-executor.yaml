@@ -141,10 +141,23 @@ spec:
               [[ $workerd_token =~ ^[0-9a-f]{64}$ ]]
               [[ $object_router_token =~ ^[0-9a-f]{64}$ ]]
               [[ $workerd_token != "$object_router_token" ]]
+              [[ $RIVET_STATELESS_ISOLATE_CACHE_CAPACITY =~ ^[1-9][0-9]{0,2}$ ]]
+              [[ $RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS =~ ^[1-9][0-9]{0,6}$ ]]
+              (( RIVET_STATELESS_ISOLATE_CACHE_CAPACITY <= 256 ))
+              (( RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS <= 3600000 ))
               sed -e "s/dev-only-change-me/$workerd_token/" \
                   -e "s/object-router-token-change-me/$object_router_token/" \
+                  -e "s/\(name = \"RIVET_STATELESS_ISOLATE_CACHE_CAPACITY\", text = \)\"16\"/\1\"$RIVET_STATELESS_ISOLATE_CACHE_CAPACITY\"/" \
+                  -e "s/\(name = \"RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS\", text = \)\"60000\"/\1\"$RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS\"/" \
                   /opt/actor/share/config-stateless.capnp > /run/stateless/config-stateless.capnp
+              grep -Fq "(name = \"RIVET_STATELESS_ISOLATE_CACHE_CAPACITY\", text = \"$RIVET_STATELESS_ISOLATE_CACHE_CAPACITY\")" /run/stateless/config-stateless.capnp
+              grep -Fq "(name = \"RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS\", text = \"$RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS\")" /run/stateless/config-stateless.capnp
               cp /opt/actor/share/stateless-worker.js /run/stateless/stateless-worker.js
+          env:
+            - name: RIVET_STATELESS_ISOLATE_CACHE_CAPACITY
+              value: "16"
+            - name: RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS
+              value: "60000"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

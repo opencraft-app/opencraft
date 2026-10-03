@@ -1,0 +1,46 @@
+using Workerd = import "/workerd/workerd.capnp";
+
+const unitTests :Workerd.Config = (
+  services = [
+    (name = "cache-test", worker = (
+      compatibilityDate = "2026-08-07",
+      modules = [(name = "test.js", esModule = embed "stateless-isolate-cache-native-test.js")],
+      bindings = [
+        (name = "ROOT", service = "root"),
+        (name = "TTL_ROOT", service = "ttl-root"),
+      ],
+    )),
+    (name = "root", worker = (
+      compatibilityDate = "2025-08-08",
+      compatibilityFlags = ["experimental"],
+      modules = [(name = "root.js", esModule = embed "stateless-worker.js")],
+      bindings = [
+        (name = "RIVET_WORKERD_TOKEN", text = "test-token"),
+        (name = "RIVET_OBJECT_ROUTER_TOKEN", text = "test-router-token"),
+        (name = "RIVET_STATELESS_ISOLATE_CACHE_CAPACITY", text = "2"),
+        (name = "RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS", text = "3600000"),
+        (name = "WORKER_LOADER", workerLoader = ()),
+        (name = "WORKER_CODE", service = "code"),
+        (name = "OBJECT_ROUTER", service = "code"),
+      ],
+    )),
+    (name = "ttl-root", worker = (
+      compatibilityDate = "2025-08-08",
+      compatibilityFlags = ["experimental"],
+      modules = [(name = "root.js", esModule = embed "stateless-worker.js")],
+      bindings = [
+        (name = "RIVET_WORKERD_TOKEN", text = "test-token"),
+        (name = "RIVET_OBJECT_ROUTER_TOKEN", text = "test-router-token"),
+        (name = "RIVET_STATELESS_ISOLATE_CACHE_CAPACITY", text = "2"),
+        (name = "RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS", text = "50"),
+        (name = "WORKER_LOADER", workerLoader = ()),
+        (name = "WORKER_CODE", service = "code"),
+        (name = "OBJECT_ROUTER", service = "code"),
+      ],
+    )),
+    (name = "code", worker = (
+      compatibilityDate = "2026-08-07",
+      modules = [(name = "code.js", esModule = embed "stateless-isolate-cache-native-code.js")],
+    )),
+  ],
+);
