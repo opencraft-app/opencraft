@@ -24,3 +24,7 @@
 
 ## next_action
 用户确认后按队列技能创建 `frontsandbox/chat-friendly-loading-20261003` → `master` MR，再完成 Fanny/owner CR 与登录态验收。
+
+## MR 交付更新
+
+用户明确授权「提交mr」。已创建 [MR !4947](https://git.woa.com/wisp/mono2/-/merge_requests/4947)，源分支 frontsandbox/chat-friendly-loading-20261003 → master，状态 opened、can_be_merged；与 origin/master@02f3c6763 的 merge-tree 检查无冲突。待 Fanny/负责人 CR 与登录态验收；全量测试限制保留，未合并或发布生产。

@@ -55,7 +55,6 @@
 | OPT-004 | [账单页订单列表](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685615) | 用户已决定挂起 | 真实订单查询接口具备账号隔离、状态、最终实付金额和分页能力后恢复；不能展示演示订单或假空列表 |
 | OPT-005 | [售罄加急交互](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685654) | 是否创建 `frontsandbox/subscribe-soldout-urgent` → `master` MR | 双站预览已返回 200；用户确认后创建 MR；完整信息见卡片评论 |
 | OPT-008 | [测试运行任务残留](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138709055) | 是否按报告实施存量旧周期测试任务止损和持久清理 | 确认治理范围；生产实例盘点/暂停/删除需另行明确授权与影响范围。当前仅有调查文档，无代码实现/预览/MR |
-| OPT-009 | [Chat 小助理加载状态](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138744537) | 是否创建 `frontsandbox/chat-friendly-loading-20261003` → `master` MR | 功能提交2bfd749a5已推送；双站预览200并核验资源，MR草稿就绪；全量测试未通过与登录态完整链路限制保留 |
 
 ## 待验收
 
@@ -66,6 +65,8 @@
 | OPT-006 | [移动端首页转义符](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138690655) | [!4774](https://git.woa.com/wisp/mono2/-/merge_requests/4774) | 已合入 master；Fanny、负责人 CR 与移动端视觉验收待核实，发布状态未核实 |
 
 | OPT-007 | [创建 Agent 建议卡片滚动](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138696615) | [!4850](https://git.woa.com/wisp/mono2/-/merge_requests/4850) | 需求分支已同步最新 master 并复验、双站预览 200；CR 与登录态视觉验收待完成，尚未合并或发布 |
+
+| OPT-009 | [Chat 小助理加载状态](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138744537) | [!4947](https://git.woa.com/wisp/mono2/-/merge_requests/4947) | MR已创建，可合并；待Fanny/负责人CR与登录态验收，尚未合并或发布 |
 
 ## 等待队列（FIFO）
 
@@ -116,3 +117,5 @@
 - 2026-10-03：OPT-009 国际构建最终单独重跑 exit 0（session `58649`；日志 `/tmp/chat-friendly-loading-build-global-final-20261003.log`），42 条公开静态路由 SEO 与全部 postprocess 检查通过，双站构建均 exit 0。TAPD 已移至「待确认」，流转评论 `1070234090217814055`；最终双站构建成功证据已追加至评论 `1070234090217814062`，卡片描述同步并回读待确认分组 `3875`。仍待用户明确确认 Git 提交与推送预览，全量测试限制与未登录完整链路限制保留。
 - 2026-10-03：用户明确回复「确认提交并推送预览」，OPT-009 恢复 `active`；TAPD 评论 `1070234090217814534` 记录范围。复用已有工蜂 SSH 认证，正在提交并推送分支，不创建 MR 或变更生产。
 - 2026-10-03：用户明确确认后提交并推送 OPT-009 功能提交 `2bfd749a5`。双站 `/agents/chat` 已 HTTP 200，发布资源含新加载文案/译文且与 master 不同；匿名桌面和移动端回执正常。验证报告与 MR 草稿就绪，恢复 `pending_user` 等待创建 MR，不再次请求提交推送确认。
+
+- 2026-10-03：用户授权「提交mr」，创建 MR !4947，opened/can_be_merged；本地 merge-tree 验证与最新 master 无冲突。TAPD流转待验收，保留全量测试与登录态验收限制。

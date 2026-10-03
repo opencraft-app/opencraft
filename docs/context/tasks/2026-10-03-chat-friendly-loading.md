@@ -134,3 +134,7 @@
 - 浏览器证据：`online-cn-evidence.json`、`online-intl-evidence.json`，对应桌面与移动端截图保留。
 - 国际站首次在预览就绪时的短等待回执出现一次页面错误；随后等待 networkidle 重测并对照 intl-master，均正常。最终回执无错误和缺失资产，不以首查异常猜测源码原因。
 - 交付回执文档提交不改变 `frontend/` tree，不额外触发前端预览构建。
+
+## MR 交付更新
+
+用户明确授权「提交mr」。已创建 [MR !4947](https://git.woa.com/wisp/mono2/-/merge_requests/4947)，源分支 frontsandbox/chat-friendly-loading-20261003 → master，状态 opened、can_be_merged；与 origin/master@02f3c6763 的 merge-tree 检查无冲突。待 Fanny/负责人 CR 与登录态验收；全量测试限制保留，未合并或发布生产。
