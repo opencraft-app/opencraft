@@ -42,6 +42,21 @@ entrypoint. Preparing or transferring it does not prove that load ran or passed.
 `test_release_admission.py` executes its real jq filters as subprocesses; the
 original load/SLO/cleanup/drain verifier remains unchanged.
 
+The next prepared artifact,
+`evidence/2757-runtime-tools120-admission-prepared-20261004.sh`, retains that
+same tools-120 load graph. Its only changes are the exact runtime/product
+identity and the `cycle-owner-v2` qualification paths for this release. The
+same regression suite runs its real jq predicates against the archived 2757 A
+control receipt, including rejection of a stale source manifest. Preparing it
+is not submission or success: both Cells must first complete their own exact
+Bottomless/HA/activation chains. Do not replay the successful A rollout or
+reuse a previous failed load's run ID.
+Its companion `evidence/2757-runtime-tools120-launch-prepared-20261004.sh`
+accepts a fresh run ID and retains the existing systemd supervisor. It checks
+all current management Node names rather than a remembered Node IP. Submission
+of that service is not a passed load receipt, and it must not begin while the
+original B qualification is still running.
+
 Capacity truth is identity-bound. Every complete sample must retain the
 baseline FoundationDB, Host StatefulSet and canonical MachineSet UIDs and the
 same converged Host runtime revision. Recreating a same-name resource or

@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.49.0
+revision: 1.50.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,36 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.50.0）：前轮是实际progress，A完整Bottomless/HA/activation已通过，
+五份原字节收据与B唯一submission已FF推master 7d62c0081cc3；保留post-push空lornvnsk，
+本轮new plulxuqm继续。B原producer inv-e9f9qug68r在19:01:56Z native仍RUNNING，
+stdout确认rollout_passed qualification_pending=true。只读inv-d9fa2ig0jg于19:01:57Z
+SUCCESS/0读取formal cycle 20261003T185139Z-4164821：pre allow/0、action0、post block/1。
+ERR diagnostics的release/qualify exit2均为允许的证据恢复状态，不因这些行重发release。
+B exact新digest6 Engine/4 Host全部Ready，UID不变、Bottomless log1001bytes，实际资格
+已开始；readyForPlacement=false仍正确，HA/activation未通过。继续原monitor session9813，
+不能仅凭RUNNING exit0或observer SUCCESS开负载。后续19:07:10Z只读inv-d9fa7f0i2v
+SUCCESS/0证实waiting_for_exact_cold_state：21/48 cold-ready、27pending、2651hot shards、
+3768cold shards、staged0、read/create-retry/cleanup errors均0，cold elapsed462386ms。
+本轮末仍follow原producer/monitor；下一次进度观察不早于19:12:10Z。
+新prepared2757/tools120 admission原字节（SHA前缀2385bb343b8d）已归档到load/
+ten-thousand-active/evidence/2757-runtime-tools120-admission-prepared-20261004.sh；与旧
+c631 artifact精确diff仅Runtime/source/product path和cycle-owner-v2收据名，load/SLO/
+cleanup/drain不变。test_release_admission.py现在运行两版本的真实jq，每版5项均通过，
+新增拒绝旧manifest并保留source/UID/convergence等拒绝；真实2757 A control作为新fixture。
+本地52项Python load suite通过；这不冒充云端万级结果。新systemd launcher仅prepare于
+/data/tmp/minisandbox-strict10k-runtime2757-tools120-launch-prepared-20261004.sh，SHA前缀
+3fc4505fb0d7，原字节同时归档evidence/2757-runtime-tools120-launch-prepared-20261004.sh，
+syntax通过、未上传/运行。它沿用原48h supervisor、原whole-operation锁
+由wrapper持有、不再读取旧Node IP，而是核验当前C三节点fs余量；尚未分配fresh run ID。
+只有B完整资格和A/B链再次验真后才上传入口并启动fresh strict10k。完整Phase5仍active，
+本轮包含实际B阶段推进、已运行的入口回归及verified wait，不属于阻塞或已完成目标。
+本轮bounded collect-storage-pressure.py查询不存在，已限定load目录file inventory，未继续
+猜路径或扩大搜索。真实压力证据继续来自原observer/capacity trace，不修改qualifier语义。
+本地Node负载suite13项、audit33项通过；root26项仍同4个历史失败。documentation零
+error/warning，Context4970历史错误且Task零错误，error-set hash前缀75428dbc9fc2未变，
+实际changed-file impact通过；default audit仅discovery、不宣称语义评分或云端资格。
 
 当前checkpoint（1.49.0，终态推进）：A唯一resume inv-g9f8xi0ukh于18:50:25Z native
 SUCCESS/0（RequestId 26c6b303-eb4b-4728-8930-ada96c51d256）。未重放release；真实

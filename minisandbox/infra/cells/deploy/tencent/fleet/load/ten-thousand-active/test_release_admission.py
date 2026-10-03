@@ -17,8 +17,14 @@ API_IMAGE = "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/workers-api@sha2
 
 
 class ReleaseAdmissionTests(unittest.TestCase):
+    admission = ADMISSION
+    runtime_revision = "c631f5542f45b974455543d5bb458e0b3b3cf395"
+    runtime_manifest = "a54e7daa59d1b1a48403d6766a866486630b2cb7d1187a1e0d2a4427eb82bd0c"
+    control_receipt = RUNTIME_EVIDENCE / "beijing-point-read-c631f554-a01-control-20261003.json"
+    admission_sha256 = "653289721ab7db2b11e5699ca22973e0a3b11cd5fe2196cca54520971d6de374"
+
     def setUp(self):
-        self.source = ADMISSION.read_text()
+        self.source = self.admission.read_text()
         matches = re.findall(r"--arg uid " + API_UID + r" '\s*(.*?)' >/dev/null", self.source, re.DOTALL)
         self.assertEqual(len(matches), 1, "test must execute the unique live API workload filter")
         self.api_filter = matches[0]
@@ -68,10 +74,9 @@ class ReleaseAdmissionTests(unittest.TestCase):
     def test_real_native_control_filter_preserves_qualified_source_identity(self):
         matches = re.findall(r"--arg manifest \"\$runtime_manifest\" '(.*?)' \"\$control\"", self.source)
         self.assertEqual(len(matches), 1)
-        payload = json.loads((RUNTIME_EVIDENCE / "beijing-point-read-c631f554-a01-control-20261003.json").read_bytes())
+        payload = json.loads(self.control_receipt.read_bytes())
         command = ["jq", "-e", "--arg", "cell", "actor-bj-a01", "--arg", "revision",
-                   "c631f5542f45b974455543d5bb458e0b3b3cf395", "--arg", "manifest",
-                   "a54e7daa59d1b1a48403d6766a866486630b2cb7d1187a1e0d2a4427eb82bd0c", matches[0]]
+                   self.runtime_revision, "--arg", "manifest", self.runtime_manifest, matches[0]]
         result = subprocess.run(command, input=json.dumps(payload), capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         for key, value in (("control", "block"), ("cell", "actor-bj-b01"), ("warnings", ["unknown"])):
@@ -79,19 +84,30 @@ class ReleaseAdmissionTests(unittest.TestCase):
             mutated[key] = value
             self.assertNotEqual(subprocess.run(command, input=json.dumps(mutated),
                                               capture_output=True, text=True).returncode, 0)
-        payload["sourceIdentity"]["revision"] = "0" * 40
-        self.assertNotEqual(subprocess.run(command, input=json.dumps(payload),
-                                          capture_output=True, text=True).returncode, 0)
+        for key, value in (("revision", "0" * 40), ("manifest_sha256", "0" * 64)):
+            mutated = copy.deepcopy(payload)
+            mutated["sourceIdentity"][key] = value
+            self.assertNotEqual(subprocess.run(command, input=json.dumps(mutated),
+                                              capture_output=True, text=True).returncode, 0)
 
     def test_wrapper_retains_original_load_and_shared_operation_lock(self):
-        self.assertEqual(hashlib.sha256(ADMISSION.read_bytes()).hexdigest(),
-                         "653289721ab7db2b11e5699ca22973e0a3b11cd5fe2196cca54520971d6de374")
+        self.assertEqual(hashlib.sha256(self.admission.read_bytes()).hexdigest(), self.admission_sha256)
         self.assertIn('tools_revision=12080fbe94ac5b39324a98c7a3ec60d82b87f6c1', self.source)
         self.assertIn('with-autonomy-operation-lock.sh" -- bash "$0" "$@"', self.source)
         self.assertIn('bash "$fleet/load/ten-thousand-active/run-on-builder.sh" "$run_id"', self.source)
         self.assertNotIn("kubectl scale", self.source)
         self.assertNotIn("--ready-slo-ms", self.source)
-        self.assertEqual(subprocess.run(["bash", "-n", str(ADMISSION)], capture_output=True).returncode, 0)
+        self.assertEqual(subprocess.run(["bash", "-n", str(self.admission)], capture_output=True).returncode, 0)
+
+
+class Runtime2757AdmissionTests(ReleaseAdmissionTests):
+    """Exercise the next load's exact filters, not just the historical wrapper."""
+
+    admission = ROOT / "evidence/2757-runtime-tools120-admission-prepared-20261004.sh"
+    runtime_revision = "2757fc785d8f572d1b6430e471100c4a880aefac"
+    runtime_manifest = "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300"
+    control_receipt = RUNTIME_EVIDENCE / "beijing-runtime-2757-a01-control-20261004.json"
+    admission_sha256 = "2385bb343b8d549c3ca4b0acec14f804af8f413fa19ae4d423255af81425a74f"
 
 
 if __name__ == "__main__":
