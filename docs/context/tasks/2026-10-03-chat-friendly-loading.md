@@ -10,7 +10,7 @@
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户请求（2026-10-03）：Chat 页面打开时的「正在加载对话...」不符合个人 AI 助理的产品调性，希望改得活泼可爱，并加图案或动效。
 - OPT-009：[TAPD 卡片 1070234090138744537](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138744537)，项目 `70234090`「Vela体验优化」。
-- 独立分支：`frontsandbox/chat-friendly-loading-20261003`；根代理已创建卡片并回读初始「进行中」，入队/开始评论尾号分别为 `3797`/`3798`。用户已回复「确认提交并推送预览」，当前恢复 `active`；root 已将 TAPD 移至「待确认」，流转评论 `1070234090217814055`、最终构建证据评论 `1070234090217814062`，回读待确认分组 `3875`。
+- 独立分支：`frontsandbox/chat-friendly-loading-20261003`；根代理已创建卡片并回读初始「进行中」，入队/开始评论尾号分别为 `3797`/`3798`。用户已回复「确认提交并推送预览」，本次授权范围已交付，当前 `pending_user` 等待 MR 确认；root 已将 TAPD 移至「待确认」，流转评论 `1070234090217814055`、最终构建证据评论 `1070234090217814062`，回读待确认分组 `3875`。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/components/site/chat-loading-state.tsx`：共享初始等待状态，包含文案、装饰头像及状态播报。
@@ -73,7 +73,7 @@
 ## evidence
 - 文档代理第一条路由查询 `frontend chat initial loading friendly assistant GeometricAvatar` 未命中；改用精确仓库路径后命中 frontend 服务、产品面与站点路由三个 Pack。
 - 首次有界查询误用了 `components/site/agent-chat-panel.tsx`，路径不存在；在 `frontend/src/pages/marketing/` 的文件名查询定位真实宿主，不再扩大扫描范围。
-- 本分支 `git status --short --branch` 显示 `frontsandbox/chat-friendly-loading-20261003...origin/master`；基线 `0c07c1202`。
+- 分支 `frontsandbox/chat-friendly-loading-20261003`；基线 `0c07c1202`，功能提交 `2bfd749a5` 已推送并发布为双站预览。
 - 根代理实时 TAPD 回读：OPT-007 [MR !4850](https://git.woa.com/wisp/mono2/-/merge_requests/4850)，源分支 `frontsandbox/agent-onboarding-suggestions-scroll-20260929` → `master`，已合入最新 master 至需求分支并复验、双站 HTTP 200，尚未合并 MR 或发布；OPT-008 待确认清理范围。
 - 文档代理 `python3 .agents/context/scripts/validate_documentation.py --repo . --format json` exit 0：`errors=[]`、`warnings=[]`、一方断链 0；`git diff --check` 无输出。
 - root 聚焦回归：7 个文件、115 个测试通过，命令 exit 0；本地 CR 无阻断项。仅更新现有 `opencraft-embedded-workbench.cn.test.tsx` 的两个加载文案断言，没有新增 `ChatLoadingState` 测试文件。
@@ -113,15 +113,24 @@
 - 精确源码/测试锚点已列在 interface_refs，未产生持久化扫描产物。
 
 ## handoff
-- 本地源码、字典与设计规范已完成；聚焦测试、check、双站构建、组件浏览器证据和本地 CR 已就绪。用户已确认 Git commit 与 push 预览，恢复 `active` 执行提交推送；尚未创建 MR，也没有线上分支预览。
-- TAPD 已进入「待确认」，流转评论 `1070234090217814055`；最终双站构建成功证据已追加至评论 `1070234090217814062`，卡片描述同步成功并回读分组 `3875`。全量测试未通过，已登录完整链路与生产发布尚未验证。
-- 拟定 MR 标题：`feat(chat): add a friendly assistant loading state`。
-- 源/目标：`frontsandbox/chat-friendly-loading-20261003` → `master`；最新提交仍为基线 `0c07c1202`，源码变更未提交。
-- MR 描述草稿：Chat 打开时的初始等待统一显示「你的 AI 小助理，马上就来」与「正在准备我们的对话」，并复用橘橙 blob 头像的轻量呼吸、眨眼和星光装饰。launch token、SDK lazy chunk 与嵌入式工作台采用同一加载状态，错误、超时、暂停和重连继续显示真实消息及操作。
-- MR 验证草稿：7 files / 115 tests、check、双站构建通过；7 语言与窄屏/reduced-motion 浏览器组件预览通过。本地 CR 无阻断；全量测试未通过，线上预览与完整登录链路待补。
+- 用户明确授权的提交、推送和分支预览已完成；功能提交 `2bfd749a54260a4411e31392f2980e0197f7f4b2` 已推送，双站预览 HTTP 200。
+- 国内：`https://chat-friendly-loading-20261003.preview.lightclaw.tech/agents/chat`；国际：`https://intl-chat-friendly-loading-20261003.preview.lightclaw.tech/agents/chat`。
+- 已发布资源含新加载文案和 hash keys；国内 37 个链接 JS 中 7 个、国际 35 个中 4 个相对对应 master 不同。匿名桌面/390px 移动端浏览器显示正确登录入口，最终回执无页面错误、无缺失 JS、无横向溢出。
+- 相关 115 测试、完整 check、双站构建与 7 语言组件视觉检查通过；全量测试未通过，不能将相关检查代称完整门禁通过。
+- 验证报告：`/data/chat-friendly-loading-preview-20261003/report.html`；JSON、资源证据和截图同目录。已登录完整 Chat 链路仍未验证，生产未发布。
+- MR 草稿：`feat(chat): add a friendly assistant loading state`，`frontsandbox/chat-friendly-loading-20261003` → `master`；准备完成，尚未创建。
+- MR 描述：Chat 打开时的初始等待统一显示「你的 AI 小助理，马上就来」与「正在准备我们的对话」，并复用橘橙 blob 头像的轻量呼吸、眨眼和星光装饰。launch token、SDK lazy chunk 与嵌入式工作台采用同一加载状态，错误、超时、暂停和重连继续显示真实消息及操作。
+- 卡片转入「待确认」，具体待决定项为是否创建 MR；已获授权的提交和推送无需再次确认。
 
 ## delivery_authorization
 - 2026-10-03：用户在确认问题中明确回复「确认提交并推送预览」。
 - 实时 TAPD 核对没有其他进行中项，OPT-009 恢复「进行中」，评论 `1070234090217814534`。
 - 复用现有配置的工蜂 SSH 认证，已验证仓库可读且远端同名分支不存在；不输出或复制凭据。
 - 提交与推送后核对双站分支预览的 HTTP 状态和新加载文案/组件资源。
+
+## delivery_evidence
+- 远端分支回读确认功能提交 `2bfd749a5` 已存在；提交前 staging diff 与 change-impact 检查通过。
+- 资源证据：`/data/chat-friendly-loading-preview-20261003/published-cn-assets.json`、`published-intl-assets.json`；两站均包含新中文文案，国际站资源同时包含英文译文。
+- 浏览器证据：`online-cn-evidence.json`、`online-intl-evidence.json`，对应桌面与移动端截图保留。
+- 国际站首次在预览就绪时的短等待回执出现一次页面错误；随后等待 networkidle 重测并对照 intl-master，均正常。最终回执无错误和缺失资产，不以首查异常猜测源码原因。
+- 交付回执文档提交不改变 `frontend/` tree，不额外触发前端预览构建。
