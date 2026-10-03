@@ -1,0 +1,15 @@
+{
+  "dependencies": [
+    {
+      "ref": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/runtime-base@sha256:0185b70cbff0e1e1295ddb4165af36ca7384fb2d481bd5129b511852c603182e",
+      "repository": "runtime-base"
+    }
+  ],
+  "ref": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+  "registryPullVerified": true,
+  "repository": "rivet-runtime",
+  "schema": "actor-product-image-build/v1",
+  "sourceManifestDigest": "sha256:c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "sourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "verdict": "passed"
+}

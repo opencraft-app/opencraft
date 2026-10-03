@@ -80,4 +80,17 @@ detached+=("$(<"$temporary/detached.pid")")
 kill -0 "${detached[-1]}"
 flock -n "$temporary/lock" true
 
+# The ops cycle owns its lock from pre-audit through post-audit. An outer
+# supervisor must not also acquire that lock before calling the cycle.
+set +e
+AUTONOMY_CONTROL_LOCK_PATH=$temporary/lock "$wrapper" -- \
+	"$script_dir/run-autonomy-ops-cycle.sh" --state-dir "$temporary/nested-cycle" \
+	>"$temporary/nested-cycle.out" 2>"$temporary/nested-cycle.err"
+status=$?
+set -e
+[[ $status == 1 ]]
+grep -Fq 'autonomy-ops-cycle: another risky Cell operation is running' "$temporary/nested-cycle.err"
+[[ -z $(find "$temporary/nested-cycle" -type f -print -quit) ]]
+flock -n "$temporary/lock" true
+
 echo "autonomy operation lock tests passed"

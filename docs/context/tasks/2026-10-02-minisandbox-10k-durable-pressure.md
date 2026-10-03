@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.46.0
+revision: 1.47.0
 precedence: task
 derived: false
 ---
@@ -415,6 +415,99 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
   标为万级容量问题已解决。
 
 ## checkpoint
+
+当前checkpoint（1.47.0）：4f4931ffc86c已正常FF推master，保留空pxvmryvv后另new
+xyynlmpr。原build guest inv-a9f73xgu29于17:44:16Z、outer inv-c9f73m0252于17:44:18Z
+均native SUCCESS/0，RequestId ced77d1f-a149-4350-8a0f-1e2ccba9cd4d，原观测文件保留。
+正式build-image完成locked Engine/Host编译，真实workerd_process六项全部通过，
+WorkerLoader ABI、exact生产config和容器binary/config selfchecks均通过；未重编V8。
+local image config hash前缀42056376ec1d，Engine/Host hash前缀812ad83364bb/e2ae76adc4db，
+日志37323bytes、hash前缀89abeabe026e。local-build通过证据独立成文件，不改旧失败记录。
+原wait session 21204已exit0；镜像仍只在builder，不把local config hash当registry manifest。
+独立publish adapter前缀e92ba039ce72已通过官方tat-upload送原ops并验hash，唯一新outer
+inv-d9f7t2065a正在正式整段ops锁下验证原双终态、fresh attachment/私网TCR及原local labels，
+只推本轮已验证镜像、不调用Cargo；新临时auth只送builder并在native终态清理。
+目的tag带fresh RequestId避免覆盖旧tag，正式record-product-image隔离cold pull后才给收据。
+本地wait session 52483跟随原publish outer；session 61870已exit0，官方tat-download验过
+37323byte日志及hash，本地为/data/tmp/minisandbox-runtime-builder-build-2757-20261004.log。
+publish fresh capture inv-a9f7t6gh9e及preflight inv-a9f7t8g3r0后，唯一guest
+inv-e9f7tf0hfg已提交，intent为/data/actor-build/runtime-builder-verify-eec1f1ef/input/
+publish-intent.w2K6iz，outer native RequestId 9d9ec3f2-d853-4c1d-af98-3551c2f6562a为RUNNING。
+只跟随其准确ID至终态，不重提build/publish；A/B仍旧Runtime、无新负载。
+下一步才是官方A/B release、Bottomless/EngineHA与固定strict10k，然后继续完整Phase5。
+后续publish guest与outer均native SUCCESS/0，17:46:17Z/17:46:23Z完成，RequestId
+9f35ca22-0d1c-4ac4-bb5a-4ce6ca3937ce；registry digest前缀06797c645337，正式product
+receipt文件hash前缀aea4ca3f31b2，canonical semantic digest前缀69feb2db89d1，彼此不混用。
+原publish wait已exit0，独立cleanup inv-a9f7vh0q1f SUCCESS/0证明credentials目录空；没有
+重编译。product receipt官方download成功并原样进入evidence，再官方upload到原ops input。
+17:49:14Z只读inventory inv-a9f7wd081b SUCCESS/0确认A/B UID/旧c631 digest及4 Host/6
+Engine/4 Machine全部Ready，HPA 4..301、controller envelope 3..301保持原样；但2757完整
+source不在ops。后续exact incoming检查inv-d9f7xk0fj8确认四输入均不存在，不擅自运行旧
+源码release。admit-reviewed-source.sh/relay-local-to-builder.sh两次猜测不存在，已改用真实
+file inventory定位formal materializer/relay，不继续猜路径。
+从同一git2757 subtree重建deterministic full bundle，14334files、projectTree前缀b78e799437b9、
+archive54831539bytes/hash前缀1774b05e81aa、receipt515bytes/hash前缀ae0ea2feebdf，与builder
+原输入完全一致。四文件经COS relay inv-e9f82w07nb/inv-a9f832030f/inv-e9f8330i60/
+inv-d9f8340kpw全部SUCCESS/0到原ops incoming。新source-admission wrapper前缀24823bae688a
+已官方upload，唯一inv-c9f84aguhf持原ops整段锁跑完整materializer/static gate，绝不Cargo；
+只跟随原handle。发布adapter前缀84bb1104b62c也已验hash送ops，但尚未执行：由已审阅
+c631 adapter逐项替换source/manifest/前一release/product exact输入与receipt名，并将完整
+preflight/release/qualify放同一原ops锁。资格标准、UID/容量门槛和故障测试不减弱。
+ops source admission首轮inv-c9f84aguhf已native FAILED/1，RequestId
+a9b63d89-e57c-4f1d-9db0-c93c0f7ecf10，Dropped=0，失败原日志保留；未进release。
+明确首因是test-autonomy-reviewed-source-entrypoint.sh继承外层LOCK_HELD=1，模拟另一
+临时lock被持有时绕过自己的lock，不是产品build失败。已review真实fixture及entrypoint，
+只改v2 caller：flock supervisor仍持真实全段ops锁，static child env -u移除LOCK_HELD及
+CONTROL_REQUIRE_LOCK标记再跑完整materializer；不跳测试、不让source可写、不重编。
+v2 wrapper前缀5781bd8659fa已官方upload并验hash，原第一终态不改写；新唯一native
+inv-a9f87k06pd已提交，本地wait session71384跟随原handle，A/B未变更。此前新bundle完成
+前就读receipt的本地观察失败，仅因文件尚未发布；原producer后来exit0，已确认两hash
+与原builder完全相同，无producer重放。一次checkpoint apply_patch上下文匹配失败未写入，
+之后只读准确片段并改用完整匹配行；native提交在失败前已成功，不因此重复提交。
+后续v2 admission inv-a9f87k06pd已native SUCCESS/0于18:01:14Z完成，RequestId
+a6040ca7-9eff-4888-91fc-236c2eb76c81、Dropped=0，114个static test summaries（含已有
+optional skip）与发布后full file manifest通过。源准入新evidence保留首轮失败及local
+真flock重现：继承marker时expected exit1，static子进程清除两marker后exit0，真实parent
+flock仍持有；不改变产品源码、ABI、qualification标准。preflight inv-d9f8b2gppb已
+SUCCESS/0，A/B exact UID/image/config/容量前置均通过，只staged新product inventory。
+首轮A release inv-g9f8cggt6w于18:04:19Z已FAILED/1，RequestId
+7bd5a88f-8c71-4f97-a306-40c83572c088，raw hash前缀240e257e1db7。只读诊断
+inv-c9f8gt05w7 SUCCESS/0确认正式ops cycle被外层重复flock拒绝，A Engine仍旧c631
+digest且6 Ready。没有进入action，不删除失败receipt root，不将release_started当rollout。
+恢复正式所有权：release由run-autonomy-ops-cycle持锁覆盖pre-audit/action/post-audit；
+preflight及qualify由supervisor持同一锁。不修改锁路径、不削弱control或release gate，
+资格phase依旧重新核对exact UID/new image，未合格中间态保持block。
+新v2 adapter hash前缀737db204431f，唯一差异是避免嵌套flock并使用新的cycle-owner-v2
+receipt root；完整原失败attempt保留。官方upload inv-e9f8kd0x4u/inv-g9f8kdgqdt/
+inv-e9f8keg90v均SUCCESS/0，已验hash。既有真实operation-lock测试通过；不存在的
+test-autonomy-ops-cycle.sh查询已记录，改用真实test-autonomy-operation-lock.sh，不猜路径。
+唯一新A release+qualification native inv-f9f8mhg67k于18:13:56Z启动；initial RequestId
+2652fd9b-71a4-45c7-9272-813a81c0b675为RUNNING，A/B preflight再次通过。源为2757、
+manifest前缀c6785b95c7d2、产品digest前缀06797c645337，exact product仍aea4ca3f31b2。
+两个/data/tmp目录枚举只读query延迟已停止或结束，不是云端发布任务、无外部状态变更。
+不可并行B、负载或维护变更；只跟随这个新的handle至终态，确认rollout/Bottomless/EngineHA/qualified activation，再处理B；
+两Cell均合格后才跑固定strict10k与其余完整Phase5。原生21600秒仅为detached命令预算，
+本地观察/wait均有界；不把native RUNNING/exit0当success，也不因观察中断重发pipeline。
+后续A inv-f9f8mhg67k已18:19:26Z FAILED/1，RequestId
+d61a9cca-f84b-4cea-b26c-9902e983623b。实际正式cycle preControl allow/action exit0、postControl
+block，stdout明确rollout_passed；只读inv-d9f8t60cn0 SUCCESS/0确认新06797c645337已在
+6 Engine/4 Host全部Ready、UID不变，但qualification前停止，readyForPlacement=false。
+inv-a9f8ufg9hk确认容量env仍3..301、Host/Machineset均4 Ready、HPA4..301、C API12/12；
+postrelease/Bottomless/HA日志不存在。没有修改容量策略、没有资格阶段副作用。原v2没有
+标注失败predicate，不能臆测为minReplicas错误或声称首因修复。原exact readonly qualification
+preflight inv-d9f8vx0st6 SUCCESS/0，所有条件原样通过后，才续跑qualify而非release。
+v3前缀268ca63fa28f只加ERR phase/cell/line/exit诊断，正式入口、同一receipt root、UID、
+产品、所有qualification fence不变。官方upload三native均SUCCESS/0；新唯一资格native
+inv-g9f8xi0ukh于18:24:37Z开始，initial RequestId9376f7ec-c897-4fba-bd94-e42d7de76ca8
+仍RUNNING。此前inv-f9原monitor session27210已终态exit1，receipt不存在导致download
+inv-e9f8w5g558 FAILED/1，是资格未开始的事实，不是再次跑物理恢复或重提负载。
+两版exact adapter均归档，失败原native与root保留；不重复成功rollout。默认block在资格
+完成前保留，B和strict10k未开始。继续只跟随新的资格handle，不能把RUNNING exit0当pass。
+本轮新增真实nested-cycle锁回归通过，storage tests67/67、audit tests33/33；文档零错误。
+root26仍原四失败。误用build-catalog全量刷新了66条无关entry，已用exact diff恢复，只保留
+本Task row；当前4970历史错误与上轮sorted集合完全一致、Task零错，未提交额外治理。
+一次context文本格式被误当JSON，以及一次含不存在上下文行的patch验证失败均只影响本地
+观察/编辑，已用实际CLI和准确行修正，无native重提；change-impact按实际changed list通过。
 
 当前checkpoint（1.46.0）：继续同一目标，53dc2b1e1a19已正常FF推master；保留post-push
 空spszslsl，当前tnopssrp继续记录。原guest inv-a9f73xgu29与outer inv-c9f73m0252

@@ -328,6 +328,50 @@ self-checks permits publication. Publication must push the already validated
 local image rather than rerun Cargo, then cold-pull the registry digest through
 the formal product-receipt entrypoint before any Cell rollout.
 
+The separate [terminal local-build evidence](evidence/runtime-builder-local-build-beijing-20261004.json)
+binds original guest/coordinator `SUCCESS/0`, six real workerd process tests,
+WorkerLoader ABI and exact production config/container checks to the candidate
+source and binary hashes. Its local OCI configuration hash is not a registry
+manifest digest and grants neither Cell release nor strict10k qualification.
+
+The [publication evidence](evidence/runtime-builder-publication-beijing-20261004.json)
+then records a separately fenced push of that local image and an isolated
+private-registry cold pull. The exact [product receipt](evidence/runtime-builder-product-2757-beijing-20261004.receipt.json)
+binds its registry manifest digest, source and runtime-base dependency. An
+independent read-only check confirms temporary registry credentials are gone.
+The deployment coordinator still needs the same complete reviewed source tree;
+builder source admission does not imply source admission on the operations host.
+
+The [operations-source admission evidence](evidence/runtime-2757-operations-source-admission-beijing-20261004.json)
+preserves the inherited-lock-marker test failure and corrected native result.
+Keep the real supervisor lock held, but clear inherited operation-held markers
+only in static validation children so fixture locks remain isolated. Never clear
+those markers in a live release or qualification child. The complete original
+static gate still runs, with no test waiver or runtime rebuild.
+
+For runtime release, `run-autonomy-ops-cycle.sh` itself owns the shared lock
+from pre-audit through the action and post-audit. Do not wrap that cycle in
+`with-autonomy-operation-lock.sh`: the cycle unconditionally acquires the same
+kernel lock and rejects the nested invocation before workload mutation.
+Use the supervisor wrapper for the subsequent complete qualification phase,
+revalidate the exact release identity, and retain the intermediate blocked
+state until qualification succeeds. Preserve a failed attempt's receipt root
+and allocate a distinct root for corrected orchestration, not a different lock.
+The [orchestration evidence](evidence/runtime-2757-release-orchestration-beijing-20261004.json)
+retains the exact failed invocation and read-only diagnosis, plus the corrected
+attempt's handle. Its pending qualification state is not a qualification receipt. The
+operation-lock regression runs the real cycle under a conflicting supervisor
+and confirms rejection before any governance or workload action.
+The [exact corrected adapter](evidence/runtime-2757-release-and-qualify-cycle-owner-v2-20261004.sh)
+is archived byte-for-byte for this release's identity-bound evidence. It is not
+a general rebuild entrypoint or permission to replay a running invocation.
+If rollout is proven but qualification has not started, first recheck the exact
+original read-only predicates. Resume only the qualification phase under its
+supervisor lock against that release's receipt root. Do not replay release or
+delete the failed coordinator record. The [diagnostic adapter](evidence/runtime-2757-release-and-qualify-cycle-owner-v3-diagnostic-20261004.sh)
+adds only bounded phase/line/exit diagnostics without printing commands, data or
+credentials. Accepted nonzero governance statuses are not fatal outcomes.
+
 Host preparation installs Python 3.11 plus PyYAML as part of the declared
 bootstrap tool set. Cell and management entrypoints resolve
 `ACTOR_BOOTSTRAP_PYTHON` and use that qualified runtime; they never inherit

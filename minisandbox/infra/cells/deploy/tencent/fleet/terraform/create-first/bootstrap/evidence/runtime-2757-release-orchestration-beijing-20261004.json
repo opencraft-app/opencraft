@@ -1,0 +1,101 @@
+{
+  "schema": "actor-runtime-release-orchestration-evidence/v1",
+  "verdict": "release-passed-qualification-pending",
+  "qualificationEvidence": false,
+  "instanceId": "ins-55ry1kb1",
+  "cell": "actor-bj-a01",
+  "runtimeSourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "runtimeSourceManifestSha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "runtimeRef": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+  "productReceiptSha256": "aea4ca3f31b280c99f710833203352547373fdd1299f8a0b6f44a3f033662b72",
+  "firstAttempt": {
+    "invocationId": "inv-g9f8cggt6w",
+    "status": "FAILED",
+    "exitCode": 1,
+    "startedAtUtc": "2026-10-03T18:04:18Z",
+    "finishedAtUtc": "2026-10-03T18:04:19Z",
+    "nativeRequestId": "7bd5a88f-8c71-4f97-a306-40c83572c088",
+    "nativeResponseSha256": "240e257e1db79bc32a8e645286074ef710cba8d9ebd82afd05e5675895705e64",
+    "adapterSha256": "84bb1104b62cce0c21c84505ea72e63985b9675a7655ed0884d2b2be2f7a1dd7",
+    "cause": "The outer supervisor and formal ops cycle attempted to hold the same kernel lock. The cycle refused before audit/action.",
+    "workloadMutationStarted": false
+  },
+  "readOnlyDiagnosis": {
+    "invocationId": "inv-c9f8gt05w7",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "nativeRequestId": "3bc29574-0177-48d2-836a-a0249dc33b22",
+    "nativeResponseSha256": "586df471e3abea5088305f3fd7ddc5c573372add119d34c2295c36fc9ccd9dc9",
+    "cycleLog": "autonomy-ops-cycle: another risky Cell operation is running",
+    "engineUid": "0910ca53-a473-47e1-beae-f1ac78b932df",
+    "engineReadyReplicas": 6,
+    "engineRuntimeRef": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711"
+  },
+  "correctedAttempt": {
+    "invocationId": "inv-f9f8mhg67k",
+    "status": "FAILED",
+    "exitCode": 1,
+    "finishedAtUtc": "2026-10-03T18:19:26Z",
+    "terminalNativeRequestId": "d61a9cca-f84b-4cea-b26c-9902e983623b",
+    "terminalNativeResponseSha256": "c54d0db935e9df17b98df22f51c2cdb7578cd7df0f60fc5b4b536f69777dd1fa",
+    "rolloutPassed": true,
+    "qualificationStarted": false,
+    "startedAtUtc": "2026-10-03T18:13:56Z",
+    "initialNativeRequestId": "2652fd9b-71a4-45c7-9272-813a81c0b675",
+    "initialNativeResponseSha256": "66d5db6558a2e9f9186f2bbed1651f71c0410ff65cab045bb47e70a10c8c4768",
+    "adapterSha256": "737db204431f73a1740df61bd248486f9afd59c27a73e29dd5fc5dd28e27668e",
+    "archivedAdapter": "runtime-2757-release-and-qualify-cycle-owner-v2-20261004.sh",
+    "nativeCommandSha256": "d62122ad53a9d29de3b8df4adbaa78cb72f1d6b9f9985e54550715d5a1462349",
+    "receiptRootSuffix": "cycle-owner-v2",
+    "bothCellsPreflightPassed": true
+  },
+  "rolloutObservation": {
+    "invocationId": "inv-d9f8t60cn0",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "nativeRequestId": "fcbef14a-2791-4f99-9a28-2334baf27edb",
+    "nativeResponseSha256": "d41abccb33b858bac60f4fc37513e1bf073371a83aabcc60346bb957d98b2dec",
+    "engineReadyReplicas": 6,
+    "hostReadyReplicas": 4,
+    "exactRuntimeDigestDeployed": true,
+    "workloadUidsUnchanged": true,
+    "preControl": "allow",
+    "actionExitCode": 0,
+    "postControl": "block",
+    "readyForPlacement": false
+  },
+  "qualificationPreflightRecheck": {
+    "invocationId": "inv-d9f8vx0st6",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "nativeRequestId": "b905e02d-ff5a-42c2-92f8-f828ae39c866",
+    "nativeResponseSha256": "d743b7143887452285c56ec17a65b01b435c22953a604577caa10194743bf30b",
+    "originalPredicatesUnchanged": true,
+    "earlierFailureCause": "The original preflight did not label its failing predicate. Subsequent read-only checks pass. No specific root cause is claimed."
+  },
+  "qualificationResume": {
+    "invocationId": "inv-g9f8xi0ukh",
+    "lastObservedStatus": "RUNNING",
+    "startedAtUtc": "2026-10-03T18:24:37Z",
+    "initialNativeRequestId": "9376f7ec-c897-4fba-bd94-e42d7de76ca8",
+    "adapterSha256": "268ca63fa28f11db9e733a667c7d89f121fb491b16b46ef0f6779f6435ab315a",
+    "nativeCommandSha256": "cda21e58a96744387bc17571f8b72230fbe6b0082046901a4c8789473d239ac8",
+    "archivedAdapter": "runtime-2757-release-and-qualify-cycle-owner-v3-diagnostic-20261004.sh",
+    "releaseReplayed": false,
+    "allOriginalGatesRetained": true,
+    "diagnostics": "Only ERR phase/cell/line/exit diagnostics were added. An accepted nonzero governance status is not itself a fatal qualification failure."
+  },
+  "localRegression": {
+    "test": "operations/test-autonomy-operation-lock.sh",
+    "testSourceSha256": "6830985a4d86a6512b5e42a3fecb8a9b7fa413d5fc22afe63c44ae2f475d877a",
+    "exitCode": 0,
+    "logSha256": "488c47fc5230e920cbf9949ff77c2b096419055b16c9f4f94d56c7604ed66b29",
+    "nestedFormalCycleRejectedBeforeAuditAndAction": true
+  },
+  "boundaries": [
+    "The formal ops cycle exclusively owns the shared lock over release pre-audit, action and post-audit. Qualification subsequently acquires the same lock through the supervisor and revalidates exact identity.",
+    "The first failed invocation and receipt root remain intact. The corrected attempt uses a distinct receipt root, not a different lock or relaxed control predicate.",
+    "Only orchestration changed. The candidate source, image, UID checks, production capacity policy and qualification criteria remain unchanged. No runtime or V8 rebuild occurred.",
+    "The rollout is independently confirmed, but RUNNING qualification with exit code zero does not prove Bottomless, Engine HA, activation or strict10k. Cell B and load remain unstarted until Cell A qualifies."
+  ]
+}

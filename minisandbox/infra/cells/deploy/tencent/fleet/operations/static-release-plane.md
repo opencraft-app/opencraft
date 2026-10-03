@@ -10,6 +10,7 @@
 4. 运行态必须同时满足：workload 期望 digest、Pod `imageID`、OCI source label 和最近资格 receipt 的 release binding 一致。
 5. 静态发布面不写动态容量字段。资格或 operation lock 存在时，它只报告漂移，不发起同步。
 6. 自动同步失败不能触发 Node/Machine 更换；Registry、DNS、FDB、COS、NATS 等共享故障不得归咎于单节点。
+7. 一段 workflow 只能有一个共享内核锁所有者。`run-autonomy-ops-cycle.sh` 自己持锁覆盖 pre-audit、action 和 post-audit，不能再嵌套在持同一锁的 supervisor 下。后续完整 qualification 使用 supervisor，并重新核验 release 身份；中间不合格状态不能开放 placement。
 
 ## 字段所有权
 

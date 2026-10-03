@@ -1,0 +1,47 @@
+{
+  "schema": "actor-runtime-operations-source-admission-evidence/v1",
+  "verdict": "passed",
+  "instanceId": "ins-55ry1kb1",
+  "runtimeSourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "runtimeSourceManifestSha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "runtimeSourceProjectTree": "b78e799437b9ce6a50203a98596dc6622915b71b",
+  "sourceFileCount": 14334,
+  "sourceBundleBytes": 54831539,
+  "sourceBundleSha256": "1774b05e81aa0229ec82132dd934917bc326e62aae8ae32f18b50c078751b673",
+  "sourceReceiptBytes": 515,
+  "sourceReceiptSha256": "ae0ea2feebdf1dac38fdba485726d4f907b0f5394cd0dfc1059ebca24318db4b",
+  "sourcePath": "/var/lib/actor-build/deploy/q01-src-2757fc785d8f572d1b6430e471100c4a880aefac-c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "firstAttempt": {
+    "invocationId": "inv-c9f84aguhf", "status": "FAILED", "exitCode": 1,
+    "nativeRequestId": "a9b63d89-e57c-4f1d-9db0-c93c0f7ecf10",
+    "nativeResponseSha256": "5c937ccdbc42fd878b72f13a34c0cc73f94298ce77c08a76ed06eebf2f350789",
+    "logSha256": "c559dcb7ee962e318b455f9d7c79bf686c76c1ee1dbf468006d534adefceab49",
+    "cause": "Static child tests inherited the real operation supervisor's LOCK_HELD marker, bypassing the fixture's isolated lock conflict. No runtime compilation or release occurred."
+  },
+  "correctedAttempt": {
+    "invocationId": "inv-a9f87k06pd", "status": "SUCCESS", "exitCode": 0,
+    "startedAtUtc": "2026-10-03T17:59:05Z", "finishedAtUtc": "2026-10-03T18:01:14Z",
+    "nativeRequestId": "a6040ca7-9eff-4888-91fc-236c2eb76c81",
+    "nativeResponseSha256": "f133d3903a4cded8357efc8ae3bf6b7578a1c1699130f30798d05befdcd778de",
+    "adapterSha256": "5781bd8659fa665ef653eb78dc958374980d32001102dd0fdcd87ab69a20a504",
+    "logSha256": "5b36c0b24e133848376861f77719baf3bc0e6842531d3ce7ab0f93d345dce17f",
+    "nativeDroppedBytes": 0,
+    "staticTestSummaries": 114,
+    "sourcePublishedExisting": false,
+    "fullSourceManifestVerifiedAfterPublication": true,
+    "compiled": false
+  },
+  "localReproduction": {
+    "realParentFlockRetained": true,
+    "inheritedMarkerExpectedExit": 1,
+    "inheritedMarkerLogSha256": "ce77968a1c9cda8832c894597d05c191223377be4bfd2f6c86cb1a2e6189070a",
+    "isolatedStaticChildExit": 0,
+    "isolatedStaticChildLogSha256": "ccad20eaf7a6de8a8dd27a7a0411c3d542b48c6d65f5b63acc880a23a94e7f2a"
+  },
+  "boundaries": [
+    "Only static validation children clear AUTONOMY_OPERATION_LOCK_HELD and AUTONOMY_CONTROL_REQUIRE_LOCK. The flock supervisor retains the actual complete operations lock throughout admission.",
+    "The candidate source bundle is deterministically rebuilt from its original Git subtree and is byte-identical to the builder's reviewed bundle. No remembered subset, node copy or changed candidate source is substituted.",
+    "The full original materializer and static gate rerun unchanged. Existing optional skipped tests remain skipped; the summary count is not a claim of live production qualification.",
+    "This is operations-source admission, not Cell release, Bottomless, Engine HA, strict10k or complete Phase5 evidence. The original failed invocation is retained unchanged."
+  ]
+}
