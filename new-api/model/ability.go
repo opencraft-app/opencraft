@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -52,6 +53,24 @@ func GetEnabledModels() []string {
 	// Find distinct models
 	DB.Table("abilities").Where("enabled = ?", true).Distinct("model").Pluck("model", &models)
 	return models
+}
+
+// HasConfiguredAbilityForGroups includes disabled abilities so callers can
+// distinguish an unknown model from a temporarily unavailable channel. It is
+// intended for the no-channel error path, not for regular channel selection.
+func HasConfiguredAbilityForGroups(groups []string, modelName string) (bool, error) {
+	if len(groups) == 0 {
+		return false, nil
+	}
+	models := []string{modelName}
+	if normalized := ratio_setting.FormatMatchingModelName(modelName); normalized != modelName {
+		models = append(models, normalized)
+	}
+	var count int64
+	err := DB.Model(&Ability{}).
+		Where(map[string]any{"group": groups, "model": models}).
+		Limit(1).Count(&count).Error
+	return count > 0, err
 }
 
 func GetAllEnableAbilities() []Ability {
