@@ -44,14 +44,22 @@ class Client:
 
 def load_receipt():
     return {
-        "schema": "actor-router-binding-performance-load/v1",
+        "schema": "actor-router-binding-performance-load/v2",
         "mode": "stateless-worker-durable-object-binding",
         "verdict": "passed",
         "startedAt": "2026-09-25T00:00:00Z",
         "finishedAt": "2026-09-25T00:10:00Z",
+        "offeredWindowFinishedAt": "2026-09-25T00:10:00Z",
+        "durationTargetSeconds": 600,
+        "rateTargetPerSecond": 20,
+        "requestTarget": 12000,
+        "objectTarget": 100,
+        "dispatchWindow": {"startedWithinWindow": 12000, "startedAfterWindow": 0},
         "counters": {
             "objectsPrepared": 100,
-            "requestsSucceeded": 10000,
+            "objectsDeleted": 100,
+            "requestsScheduled": 12000,
+            "requestsSucceeded": 12000,
             "requestsFailed": 0,
             "requestRetries": 0,
         },
@@ -59,6 +67,9 @@ def load_receipt():
             "actor-bj-a01": {"objects": 50},
             "actor-bj-b01": {"objects": 50},
         },
+        **{name: {"count": 12000, "p50UpperBoundMs": 1, "p95UpperBoundMs": 2,
+                  "p99UpperBoundMs": 3, "p999UpperBoundMs": 4, "maxMs": 4}
+           for name in ("latency", "scheduleLatency", "arrivalLatency")},
     }
 
 
@@ -87,6 +98,7 @@ class CaptureTest(unittest.TestCase):
             CAPTURE.collect(Client(), load, 15, 10000)
         load = load_receipt()
         load["finishedAt"] = "2026-09-25T00:01:00Z"
+        load["offeredWindowFinishedAt"] = load["finishedAt"]
         with self.assertRaisesRegex(ValueError, "too short"):
             CAPTURE.collect(Client(), load, 15, 10000)
 
@@ -117,6 +129,54 @@ class CaptureTest(unittest.TestCase):
             self.assertEqual(json.loads(target.read_text()), {"answer": 42})
             with self.assertRaisesRegex(ValueError, "new file"):
                 CAPTURE.publish(target, {"answer": 43})
+
+    def test_every_rolling_selector_excludes_preparation_and_response_drain(self):
+        client = Client()
+        load = load_receipt()
+        load["finishedAt"] = "2026-09-25T00:10:30Z"
+        raw, unused = CAPTURE.collect(client, load, 15, 10000)
+        started = CAPTURE.parse_time(load["startedAt"], "startedAt").timestamp()
+        offered_end = CAPTURE.parse_time(load["offeredWindowFinishedAt"], "end").timestamp()
+        for query, first, last, step in client.calls:
+            self.assertGreaterEqual(first - CAPTURE.ROLLING_WINDOW_SECONDS, started)
+            self.assertEqual(last, offered_end)
+        self.assertEqual(raw["loadWindow"]["start"], "2026-09-25T00:00:00+00:00")
+        self.assertEqual(raw["timeRange"]["start"], "2026-09-25T00:05:00+00:00")
+
+    def test_partial_schedule_and_incomplete_timing_fail_before_metrics_access(self):
+        for field in ("requestsScheduled", "requestsSucceeded", "objectsDeleted"):
+            client = Client()
+            load = load_receipt()
+            load["counters"][field] -= 1
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "clean binding"):
+                CAPTURE.collect(client, load, 15, 10000)
+            self.assertFalse(client.calls)
+        for field in ("latency", "scheduleLatency", "arrivalLatency"):
+            client = Client()
+            load = load_receipt()
+            load[field]["count"] -= 1
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "arrival/dispatch evidence"):
+                CAPTURE.collect(client, load, 15, 10000)
+            self.assertFalse(client.calls)
+
+    def test_invalid_shape_and_old_schema_are_not_accepted(self):
+        for field, value in (("rateTargetPerSecond", True), ("requestTarget", 12001),
+                             ("objectTarget", 101), ("durationTargetSeconds", float("inf")),
+                             ("schema", "actor-router-binding-performance-load/v1")):
+            client = Client()
+            load = load_receipt()
+            load[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                CAPTURE.collect(client, load, 15, 10000)
+            self.assertFalse(client.calls)
+
+    def test_late_dispatch_cannot_be_mistaken_for_a_clean_offered_window(self):
+        client = Client()
+        load = load_receipt()
+        load["dispatchWindow"] = {"startedWithinWindow": 11999, "startedAfterWindow": 1}
+        with self.assertRaisesRegex(ValueError, "outside the offered-load window"):
+            CAPTURE.collect(client, load, 15, 10000)
+        self.assertFalse(client.calls)
 
 
 if __name__ == "__main__":

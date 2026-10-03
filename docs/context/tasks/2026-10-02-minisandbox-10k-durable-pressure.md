@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.9.5
+revision: 1.9.6
 precedence: task
 derived: false
 ---
@@ -79,6 +79,8 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
   FIFO barrier。真实 native FDB 验证读写顺序、64 并发值、generation 冲突和 on_error 重试。
 - 新 digest 经正式 release 后，真实 10k receipt 必须满足零 retry、零 active failure、10,000 active；
   通过前不得运行或宣称 Router performance qualification 完成。
+- Router 性能工具必须区分固定到达计划、实际 dispatch 和 response 时延；五分钟 Prometheus
+  滚动窗口全部位于 offered-load 窗口内部。准备、尾部等待和清理不能污染 steady-load 指标。
 
 ## affected_paths
 
@@ -92,6 +94,7 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 - `minisandbox/infra/cells/deploy/tencent/fleet/qualification/actor-bj-q01/`
 - `minisandbox/infra/cells/deploy/tencent/fleet/verify-manifests.sh`
 - `minisandbox/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/`
+- `minisandbox/infra/cells/deploy/tencent/fleet/load/router-performance/`
 - `minisandbox/infra/cells/docs/design/2026-09-22-stateless-workers-durable-object-routing.md`
 
 ## required_context
@@ -106,6 +109,9 @@ SLO 的条件下通过，并确保后台 SQLite/Depot 维护不会饿死交互�
 
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
+| `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{prepare-cargo-cache.sh,build-image.sh,README.md}@ae339fd6` | Rust 重编工作量诊断 | 输入/toolchain closure 改变会清空整批 Cargo target；不将此次编译描述为只编几份修改源码，不改 live build |
+| `minisandbox/infra/cells/deploy/tencent/fleet/load/router-performance/{README.md,run.py,capture.py,run-on-builder.sh,test_run.py,test_lifecycle.py,test_capture.py,test_sample_window.py,test_capacity_receipt.py,test_run_on_builder.py}@ae339fd6` | 后续 Router 性能门禁的实际覆盖 | 修正固定到达延迟与五分钟窗口污染；只跑本地真实 HTTP/子进程回归，不抢占云端 ops lock |
+| `minisandbox/infra/cells/internal/workersapi/{object_router.go,objectrouter/router.go,metrics.go,api.go}@ae339fd6` | 缓存模型边界 | 固定轮询不能保证命中率；32,768 项/十分钟 TTL 与 Router 副本独立，意图不能代替实测 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/runtime/{bundle-full-reviewed-source.sh,verify-full-source-bundle.py,build-image.sh,reuse-stage-from-runtime.sh,test_full_source_bundle.py}@c631f554`、`qualification/actor-bj-q01/{materialize-full-reviewed-source-via-relay.sh,relay-upload-to-builder.sh,build-runtime-via-tat.sh}@c631f554` | 正式不可变源码、COS relay 与 stage 复用 | 构建包含 fold/point-read 修正的新 Runtime；不重编未改 V8，不绕过 compiled-input closure，不改线上 Cell |
 | `minisandbox/engine/packages/universaldb/src/driver/foundationdb/{database,transaction}.rs@0700632d`、`minisandbox/engine/packages/universaldb/tests/{foundationdb,foundationdb_unavailable,foundationdb_node_loss,conflict_parity}.rs@0700632d` | adapter 真实等待与重试边界 | 修正相邻点读，并保留 FIFO state barrier 与 native conflict/maybe-committed 语义 |
 | `minisandbox/infra/cells/deploy/tencent/fleet/observability/{infrastructure-metrics.yaml,values.yaml}@0700632d` | FDB 诊断来源及缺失指标 | 容量 gauge 不是延迟证明；nodeExporter 禁用时空磁盘指标保持 unknown |
@@ -724,6 +730,59 @@ B 原 invocation 已 SUCCESS/0，完成新产品全部资格。strict10k 新 run
 
 ### next_action
 
+- 当前 Router 工具的最终 source 门禁：49/49、changed Python AST 六文件通过、diff-check
+  无错误，documentation 零 error/warning；Context 4,942 历史 error 的 normalized Counter
+  与基线完全相同、Task 零 error。26 项 context tests 与旧 FDB-read-flights 日志的四个失败
+  名称完全相同，audit tests 33/33；audit discovery 是 needs_agent_review/not_assessed，
+  不冒充成熟度通过。十个 changed paths 的 impact gate passed、matched_rules 为空。
+  错误猜测 `/data/tmp/minisandbox-context-tests-20261003.log` 已纠正为 bounded 目录定位的
+  `/data/tmp/minisandbox-fdb-read-flights-context-tests-20261003.log`；不重复猜测。
+- 原监督服务 05:50:59 UTC `inv-e9eiv1g7t1` SUCCESS/0、同一 MainPID/InvocationID
+  running，load failed/cleanup passed/final waiting。A/B Host 114/113 Ready，Machine
+  123/120 Ready，active 零、观察 errors/warnings/missing 空。下次 load 只读观察不早于
+  05:56:05 UTC；既有失败首错与收据不改写。
+  build 05:52:25 UTC `inv-d9eiwcg9af` SUCCESS/0，正式日志继续编译 rivet-telemetry 等
+  Rust dependencies；cargo 真进程仍在。原 build session 67448/`inv-a9eij1gqpt` 只续接。
+  下次 builder tail 不早于 05:57:30 UTC；没有重提、发布、第二负载或手工扩缩容。
+- Router v4 本地完整 suite session 4607 已 exit 0，49/49（含真实 HTTP/CLI、单完整五分钟
+  样本、late dispatch 拒绝、arrival/dispatch 时间分解与原容量 fail-closed 门禁）。最终日志
+  `/data/tmp/minisandbox-router-arrival-window-gate-v4-20261003.log`；v3 原 46/46，v2 失败
+  保留。v2 schema 不接纳旧的缺少 offered/timing 证据 receipt，不改生产协议或 compiled Rust。
+  当前准备最终 docs/context/impact 门禁和推 master；云端仍不能运行 Router performance。
+- build 只读 v2 `inv-e9eirag1gs` 在 05:47:01 UTC SUCCESS/0，cargo/rustc 真进程存在，
+  唯一正式日志 `/data/actor-qualification/builds/runtime-c631f5542f45b974455543d5bb458e0b3b3cf395.OJTtUP.log`
+  显示 Rust dependencies 正常编译。原 session 67448/build `inv-a9eij1gqpt` 继续，未重发。
+  `prepare-cargo-cache.py` 是错误路径，正确 helper 经 rg --files 为 `.sh`，现已完整读取。
+  helper 在 transitive local input/toolchain digest 改变时清空整个有界 target，这是 Rust
+  依赖重编的确定原因；并非 V8 重编或构建已失败。mtime/immutable-source 与 Cargo fingerprint
+  正确性需独立设计，不能直接删除 cache guard 或中途干预该 build。
+  下次 builder build tail 不早于 05:52:05 UTC，原 load 进度不早于 05:50:05 UTC。
+- 当前 Router 工具修正已实现 v2 offered window、三种 client timing histogram 和完整
+  scheduled/succeeded/cleanup/count 门禁；Prometheus 评估只覆盖五分钟内完整 offered load。
+  第一轮本地真实 HTTP/CLI suite 45/45。新增单点五分钟 fixture 后第二轮 45 passed/1 failed，
+  原因是 fixture 错写 2025 epoch 而声明 2026；collector 实际返回正确 2026 epoch。
+  已仅修 expected 常量，第三轮 session 32418 正在运行；失败日志原样留在
+  `/data/tmp/minisandbox-router-arrival-window-gate-v2-20261003.log`。不隐藏失败或改实现放行。
+  README/formal design 同步，仍未完成受控 cache/replica 矩阵或云端 Router 资格。
+- 05:45:00 UTC `inv-d9eipe0wsw` SUCCESS/0，唯一 supervisor 原身份 running，
+  load failed/cleanup passed/final waiting；A/B Host 各 127 Ready、Machine 137/134 Ready、
+  active 零、观察无 error/warning/missing。下一只读观察不早于 05:50:05 UTC。
+  build `inv-a9eij1gqpt` 原 session 67448 仍运行，不重发。
+  builder 只读 `inv-c9eiqp0450` 在 05:46:22 UTC 已确认 cargo/rustc 进程，随后因远端
+  不安装 rg 而 FAILED/127，未更改文件或构建。下一观察改用单目录 exact revision 的
+  bounded find，不安装工具、不 restart build；此错误不是 build 已失败。
+- 上一 goal turn 为 progress：full bundle 验证、两套 helper 各五项通过，唯一 build 已启动，
+  Task/catalog 正常 FF 推 `ae339fd6` 并核验远端与 clean worktree。当前 `vkvvnqzq`
+  parent `ae339fd6` 是独立 Router 验收工具修正，不改正在构建的 c631 immutable source。
+  本轮 cloud Skill/networking/docker references 已完整读取；环境 status tool 仍不存在、
+  network-policy snapshot 缺失，不推断权限；原 session 67448 已续接仍 live。
+  source atomic materialize `inv-e9eih40404`、build preflight `inv-e9eiiw0vmi` 和 push-auth
+  helper 已 SUCCESS/0；原 build `inv-a9eij1gqpt` 正在继续，不重复提交。
+- 新检索失败：`workersapi/actor_cache.go` 与 `router-performance/test_capture_transport.py`
+  不存在。随后分别以 rg --files 定位 `objectrouter/router.go` 与 `test_sample_window.py`；
+  不继续猜路径。当前固定轮询工具不能完成 1/50/99 cache mix 矩阵。
+  下一项先修确定性证据问题：计划到 dispatch 的排队遗漏、[5m] 查询混入 preparation。
+  保留真实 Worker binding、每次持久 increment、零 retry、精确清理和 strict10k 前置门禁。
 - 用户重申从模型/设计解决劣化。沿用正式设计的前台成本向量、有效 maintenance 与
   rework/replay 分解；不把机器 CPU 均值、有界 permit、排队延期或源码测试当作容量收益。
   两项确定性修正已在 master `c631f554`，仍须同负载实际尾延迟/有效吞吐证明。

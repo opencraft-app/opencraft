@@ -30,8 +30,11 @@ class SampleWindowTest(unittest.TestCase):
                 query = params["query"][0]
                 final = start + int((end - start) // step) * step
                 labels = {"source_cell": "actor-bj-a01", "target_cell": "actor-bj-b01"}
+                samples = {start: "1", final: "2"}
+                if start + step < final:
+                    samples[start + step] = "NaN"
                 series = [{"metric": labels, "values": [
-                    [start, "1"], [start + step, "NaN"], [final, "2"],
+                    [timestamp, value] for timestamp, value in sorted(samples.items())
                 ]}]
                 if mutation and query == CAPTURE.QUERIES[query_name]:
                     mutation(series, start, final)
@@ -180,11 +183,29 @@ class SampleWindowTest(unittest.TestCase):
     def test_subsecond_load_boundary_uses_actual_serialized_query_grid(self):
         load = load_receipt()
         load["startedAt"] = "2026-09-25T00:00:00.123456Z"
+        load["offeredWindowFinishedAt"] = "2026-09-25T00:10:00.123456Z"
         load["finishedAt"] = "2026-09-25T00:10:15.122476Z"
         result, receipt, _, observed = self.capture(load=load)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(observed)
         self.assertTrue(receipt["measurements"]["objectQps"]["series"][0]["latestEvaluationObserved"])
+
+    def test_five_minute_load_has_one_full_rolling_evaluation_without_preparation(self):
+        load = load_receipt()
+        load["durationTargetSeconds"] = 300
+        load["rateTargetPerSecond"] = 40
+        load["offeredWindowFinishedAt"] = "2026-09-25T00:05:00Z"
+        load["finishedAt"] = "2026-09-25T00:05:30Z"
+        result, receipt, raw_bytes, observed = self.capture(load=load)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        raw = json.loads(raw_bytes)
+        self.assertEqual(raw["timeRange"]["start"], raw["timeRange"]["end"])
+        self.assertEqual(raw["rollingWindowSeconds"], 300)
+        for name, query in raw["queries"].items():
+            values = query["response"]["data"]["result"][0]["values"]
+            self.assertEqual(len(values), 1)
+            self.assertEqual(values[0][0], 1790294700)
+        self.assertEqual(receipt["clientTiming"]["scheduleLatency"], load["scheduleLatency"])
 
 
 if __name__ == "__main__":

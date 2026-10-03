@@ -17,8 +17,9 @@ import urllib.parse
 import urllib.request
 
 
-SCHEMA = "actor-router-performance-evidence/v1"
-RAW_SCHEMA = "actor-router-performance-prometheus-raw/v1"
+SCHEMA = "actor-router-performance-evidence/v2"
+RAW_SCHEMA = "actor-router-performance-prometheus-raw/v2"
+ROLLING_WINDOW_SECONDS = 300
 CAPACITY_CHECKS = frozenset({
     "loadReceiptPassed", "exactObjectCleanupPassed", "initialLowCapacity",
     "tenThousandActiveSustained", "automaticScaleUpObserved", "activeCapacityReady",
@@ -266,30 +267,69 @@ def validate_cross_cell(summary: dict) -> None:
         raise ValueError("cross-Cell latency has no distinct bounded source/target pair")
 
 
-def collect(client: PrometheusClient, load: dict, step: int,
-            minimum_object_requests: int) -> tuple[dict, dict]:
-    if (load.get("schema") != "actor-router-binding-performance-load/v1"
+def load_window(load: dict, minimum_object_requests: int) -> tuple[dt.datetime, dt.datetime]:
+    if (not isinstance(load, dict)
+            or load.get("schema") != "actor-router-binding-performance-load/v2"
             or load.get("mode") != "stateless-worker-durable-object-binding"
             or load.get("verdict") != "passed"):
         raise ValueError("load receipt is not a passed stateless Worker binding performance run")
+    shape = {name: load.get(name) for name in (
+        "durationTargetSeconds", "rateTargetPerSecond", "requestTarget", "objectTarget",
+    )}
+    if (any(type(value) is not int or value <= 0 for value in shape.values())
+            or shape["requestTarget"] != shape["durationTargetSeconds"] * shape["rateTargetPerSecond"]
+            or shape["requestTarget"] < minimum_object_requests or shape["objectTarget"] < 2):
+        raise ValueError("performance load has an invalid offered-load shape")
     counters = load.get("counters", {})
+    required = {
+        "objectsPrepared": shape["objectTarget"], "objectsDeleted": shape["objectTarget"],
+        "requestsScheduled": shape["requestTarget"], "requestsSucceeded": shape["requestTarget"],
+        "requestsFailed": 0, "requestRetries": 0,
+    }
     if (not isinstance(counters, dict)
-            or counters.get("objectsPrepared", 0) < 2
-            or counters.get("requestsSucceeded", 0) < minimum_object_requests
-            or counters.get("requestsFailed", 0) != 0
-            or counters.get("requestRetries", 0) != 0):
+            or any(type(counters.get(name)) is not int or counters[name] != expected
+                   for name, expected in required.items()) or load.get("stopReason") is not None):
         raise ValueError("performance load did not provide enough clean binding requests")
+    dispatches = load.get("dispatchWindow")
+    if (not isinstance(dispatches, dict)
+            or type(dispatches.get("startedWithinWindow")) is not int
+            or dispatches["startedWithinWindow"] != shape["requestTarget"]
+            or type(dispatches.get("startedAfterWindow")) is not int
+            or dispatches["startedAfterWindow"] != 0):
+        raise ValueError("performance load dispatched requests outside the offered-load window")
+    for name in ("latency", "scheduleLatency", "arrivalLatency"):
+        histogram = load.get(name)
+        if (not isinstance(histogram, dict) or type(histogram.get("count")) is not int
+                or histogram["count"] != shape["requestTarget"]
+                or any(type(histogram.get(field)) not in (int, float)
+                       or not math.isfinite(histogram[field]) or histogram[field] < 0
+                       for field in ("p50UpperBoundMs", "p95UpperBoundMs", "p99UpperBoundMs",
+                                     "p999UpperBoundMs", "maxMs"))):
+            raise ValueError(f"performance load has incomplete {name} arrival/dispatch evidence")
     placements = load.get("placements", {})
     if (not isinstance(placements, dict) or len(placements) < 2
-            or any(not isinstance(value, dict) or value.get("objects", 0) < 1
-                   for value in placements.values())):
+            or any(not isinstance(value, dict) or type(value.get("objects")) is not int
+                   or value["objects"] < 1 for value in placements.values())
+            or sum(value["objects"] for value in placements.values()) != shape["objectTarget"]):
         raise ValueError("performance load did not bind Objects to at least two Cells")
     started = parse_time(load.get("startedAt"), "startedAt")
     finished = parse_time(load.get("finishedAt"), "finishedAt")
-    if finished <= started or (finished - started).total_seconds() < 300:
+    offered_finished = parse_time(load.get("offeredWindowFinishedAt"), "offeredWindowFinishedAt")
+    offered_seconds = (offered_finished - started).total_seconds()
+    if (offered_seconds < ROLLING_WINDOW_SECONDS or finished < offered_finished
+            or abs(offered_seconds - shape["durationTargetSeconds"]) > 0.001):
         raise ValueError("load receipt performance window is too short")
-    start = started.timestamp()
-    end = finished.timestamp()
+    return started, offered_finished
+
+
+def collect(client: PrometheusClient, load: dict, step: int,
+            minimum_object_requests: int) -> tuple[dict, dict]:
+    started, offered_finished = load_window(load, minimum_object_requests)
+    # Every [5m] selector must be contained in the offered-load window. The
+    # preparation and response-drain phases are deliberately outside that window.
+    evaluation_started = started + dt.timedelta(seconds=ROLLING_WINDOW_SECONDS)
+    start = evaluation_started.timestamp()
+    end = offered_finished.timestamp()
     responses = {}
     summaries = {}
     for name, query in QUERIES.items():
@@ -301,8 +341,11 @@ def collect(client: PrometheusClient, load: dict, step: int,
     raw = {
         "schema": RAW_SCHEMA,
         "timeRange": {
-            "start": started.isoformat(), "end": finished.isoformat(), "stepSeconds": step,
+            "start": evaluation_started.isoformat(), "end": offered_finished.isoformat(),
+            "stepSeconds": step,
         },
+        "loadWindow": {"start": started.isoformat(), "end": offered_finished.isoformat()},
+        "rollingWindowSeconds": ROLLING_WINDOW_SECONDS,
         "queries": {name: {"promql": QUERIES[name], "response": responses[name]}
                     for name in sorted(QUERIES)},
     }
@@ -389,6 +432,11 @@ def main() -> int:
             "rawEvidence": {"path": str(raw_path), "sha256": sha256(raw_path)},
         },
         "timeRange": raw["timeRange"],
+        "loadWindow": raw["loadWindow"],
+        "rollingWindowSeconds": raw["rollingWindowSeconds"],
+        "clientTiming": {name: load[name] for name in (
+            "latency", "scheduleLatency", "arrivalLatency", "dispatchWindow",
+        )},
         "minimumObjectRequests": args.minimum_object_requests,
         "queriesSha256": "sha256:" + hashlib.sha256(json.dumps(
             QUERIES, sort_keys=True, separators=(",", ":")

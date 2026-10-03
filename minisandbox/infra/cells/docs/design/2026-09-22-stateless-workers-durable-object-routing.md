@@ -1216,6 +1216,22 @@ head-fenced 冷降计划反复失效；大量 Envoy 一次加入带来的协调�
 只有对应窗口有效服务追上负载、积压不持续增长且原零重试/身份/持久性门禁不放宽，才可称
 性能改进。该模型是实验与设计约束，不是当前万级/百万资格已经通过的证据。
 
+Router binding 负载工具以固定时钟生成到达计划，分别记录计划到实际 dispatch、dispatch
+到 response、计划到 response 的时延。客户端迟到和线程调度时间不能从端到端数字中消失；
+所有已提交请求仍只执行一次，达到有界 in-flight 上限即失败，不改成慢速闭环掩盖过载。
+请求计划窗口与等待尾部响应的 drain 窗口分开记录。
+实际 dispatch 超出计划窗口时，即使所有响应成功，也以 `load_generator_deadline` 拒绝该
+负载资格；不能把尾部补发算成原窗口达到目标速率。Prometheus 使用 `[5m]` 时，第一评估
+时刻至少为计划窗口开始后五分钟，最后评估不得超过计划窗口结束，因此准备和尾部等待
+不能混入 steady-load 曲线。五分钟负载可能只提供一个完整滚动评估；更长曲线需更长负载，
+不能用准备阶段补足点数。客户端 latency histogram 包含所有成功请求的完整尾部，仍不是
+某个服务端阶段的纯 execution latency。滚动速率仍是采样估计，不作为精确事件总账。
+
+固定 Object 轮询不能保证 Router cache 为 1%、50% 或 99% 命中。命中取决于每副本的
+LRU 容量、idle TTL、流量分配与 reuse distance；新的 Object 还会混入 claim/wake 成本。
+完整 cache/replica 矩阵仍须独立工作集/流量形状和实际 cache 指标验证，不能把拟定的热 key
+比例写成命中率或将这次工具门禁等同于整个性能矩阵完成。
+
 容量单位还须包括工作负载形状，不能只报“多少 Agent”。当前 strict10k fixture 的每次
 heartbeat 都读取去重记录，并用 `storage.put()` 更新 state 和新的 operation 结果；
 10,000 个 Object、十秒周期的目标到达率约为 1,000 次持久交互/秒，而不是 1,000 次纯

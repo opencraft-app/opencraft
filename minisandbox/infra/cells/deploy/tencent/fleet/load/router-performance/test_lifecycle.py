@@ -180,6 +180,11 @@ class RouterLifecycleTest(unittest.TestCase):
             self.assertEqual(receipt["verdict"], "passed")
             self.assertEqual(receipt["counters"]["requestsSucceeded"], 2)
             self.assertEqual(receipt["latency"]["count"], 2)
+            self.assertEqual(receipt["scheduleLatency"]["count"], 2)
+            self.assertEqual(receipt["arrivalLatency"]["count"], 2)
+            self.assertGreaterEqual(receipt["arrivalLatency"]["maxMs"], receipt["latency"]["maxMs"])
+            self.assertEqual((RUN.dt.datetime.fromisoformat(receipt["offeredWindowFinishedAt"]) -
+                              RUN.dt.datetime.fromisoformat(receipt["startedAt"])).total_seconds(), 1)
             self.assertEqual(receipt["counters"]["objectsDeleted"], 2)
             self.assertFalse(receipt["cleanup"]["errors"])
 

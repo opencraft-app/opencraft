@@ -12,6 +12,27 @@ It records:
 - placement-cache hit ratio and Registry TPS/p99.
 - bounded source/target Cell p50/p99/p999 latency and route rate.
 - Workers API CPU, RSS, ready replicas, and CPU seconds per Object request.
+- client arrival-to-dispatch delay, dispatch-to-response latency, and complete
+  arrival-to-response latency, with a fixed offered-request count and no retries.
+
+Load and capture receipts use schema v2. The collector rejects older receipts
+that cannot distinguish the offered-load window from response drain. It also
+requires every planned request to be scheduled, completed, and represented in
+all three client timing histograms; a slow load generator cannot be mistaken
+for a successful smaller workload. Generator delay is measured, not silently
+subtracted from the end-to-end latency. Reaching the bounded in-flight limit
+still fails the load rather than turning it into a self-throttling closed loop.
+Requests first dispatched after the offered-load deadline make the run fail
+with `load_generator_deadline`, even if their later responses all succeed.
+The receipt records within-window and late dispatch counts separately.
+
+Every five-minute Prometheus selector is evaluated only after the first five
+minutes of offered load and no later than the offered-load deadline. Preparation,
+waiting for final responses, and cleanup do not extend that measurement window.
+A five-minute load therefore has just one complete rolling evaluation; choose
+a longer load for a time-series curve. The receipt preserves both the offered
+window and the evaluation window. Client histograms still include final response
+latency, and rolling Prometheus rates remain sampling estimates, not exact counts.
 
 The collector saves the complete Prometheus `query_range` responses before it
 writes a receipt. The receipt binds the raw evidence, performance load, 10k
@@ -96,3 +117,10 @@ The current Prometheus retention must cover the load receipt's full time
 window. The collector does not mutate Kubernetes resources and does not infer
 capacity thresholds from one run; it preserves measurements for comparison
 across cache-hit mixes and Router replica curves.
+
+The current balanced round-robin working set does not guarantee a chosen cache
+hit ratio. The 1%/50%/99% and 1/4/8/16 replica matrix still requires controlled
+working sets, immutable runtime/config identities, and observed cache-hit
+validation. A proposed hot-key fraction is not cache-hit evidence. Increasing
+the number of newly created Objects also changes claim/wake cost and must not
+be presented as an isolated placement-cache experiment.

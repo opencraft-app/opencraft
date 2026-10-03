@@ -24,7 +24,7 @@ import urllib.request
 import uuid
 
 
-SCHEMA = "actor-router-binding-performance-load/v1"
+SCHEMA = "actor-router-binding-performance-load/v2"
 CLASS_NAME = "Counter"
 ROOT = Path(__file__).resolve().parent
 REPO = Path(os.environ.get("MINISANDBOX_REPO", ROOT.parents[6]))
@@ -173,6 +173,38 @@ class Histogram:
         }
 
 
+class RequestTiming:
+    def __init__(self):
+        self.schedule = Histogram()
+        self.response = Histogram()
+        self.arrival = Histogram()
+        self.within_window = 0
+        self.after_window = 0
+        self._lock = threading.Lock()
+
+    def started(self, scheduled: float, dispatched: float, deadline: float) -> None:
+        if (not all(math.isfinite(value) for value in (scheduled, dispatched, deadline))
+                or dispatched < scheduled or scheduled >= deadline):
+            raise ValueError("invalid monotonic request arrival timing")
+        self.schedule.add((dispatched - scheduled) * 1000)
+        with self._lock:
+            if dispatched < deadline:
+                self.within_window += 1
+            else:
+                self.after_window += 1
+
+    def completed(self, scheduled: float, dispatched: float, finished: float) -> None:
+        if (not all(math.isfinite(value) for value in (scheduled, dispatched, finished))
+                or scheduled > dispatched or dispatched > finished):
+            raise ValueError("invalid monotonic request response timing")
+        self.response.add((finished - dispatched) * 1000)
+        self.arrival.add((finished - scheduled) * 1000)
+
+    def window(self) -> dict:
+        with self._lock:
+            return {"startedWithinWindow": self.within_window, "startedAfterWindow": self.after_window}
+
+
 def publish(path: Path, value: object) -> None:
     path = path.resolve()
     if path.exists() or not path.parent.is_dir():
@@ -195,7 +227,10 @@ def passed(receipt: dict, expected_requests: int, object_count: int,
     counters = receipt["counters"]
     return (
         receipt.get("stopReason") is None
+        and counters["requestsScheduled"] == expected_requests
         and counters["requestsSucceeded"] == expected_requests
+        and receipt["dispatchWindow"]["startedWithinWindow"] == expected_requests
+        and receipt["dispatchWindow"]["startedAfterWindow"] == 0
         and counters["requestsFailed"] == 0
         and counters["requestRetries"] == 0
         and counters["objectsPrepared"] == object_count
@@ -245,7 +280,7 @@ def run_with_registry(args, registry: str) -> dict:
     }
     errors: dict[str, int] = {}
     placements = {cell: {"cellUid": uid, "objects": 0} for cell, uid in cells.items()}
-    histogram = Histogram()
+    timing = RequestTiming()
     stop_reason = None
     version_id = None
     deployment_id = None
@@ -253,6 +288,7 @@ def run_with_registry(args, registry: str) -> dict:
     expected_requests = args.rate * args.duration_seconds
     started_at = utc_now()
     finished_at = started_at
+    offered_finished_at = None
     elapsed = 0.0
     attempted = []
     verified = set()
@@ -269,8 +305,12 @@ def run_with_registry(args, registry: str) -> dict:
                                 timeout=args.timeout_seconds)
         deployment_id = deployment["id"]
 
-        def dispatch(item: dict[str, str], measure=True):
+        def dispatch(item: dict[str, str], measure=True, scheduled=None):
             began = time.monotonic()
+            if measure:
+                if scheduled is None:
+                    raise ValueError("measured dispatch requires its original arrival deadline")
+                timing.started(scheduled, began, deadline)
             _, payload = request(
                 "POST", f"{root}/dispatch",
                 headers={"X-Workers-Original-URL": "https://router-performance.example/counter?" +
@@ -280,7 +320,8 @@ def run_with_registry(args, registry: str) -> dict:
             if payload.get("name") != item["name"] or not isinstance(payload.get("value"), int):
                 raise RuntimeError("binding response identity differs")
             if measure:
-                histogram.add((time.monotonic() - began) * 1000)
+                finished = time.monotonic()
+                timing.completed(scheduled, began, finished)
             return payload
 
         # Create every Object through the real binding and independently prove its immutable placement.
@@ -303,6 +344,9 @@ def run_with_registry(args, registry: str) -> dict:
         # The evidence window excludes publishing, first placement, Registry verification, and cleanup.
         phase = "load"
         started_at = utc_now()
+        offered_finished_at = (
+            dt.datetime.fromisoformat(started_at) + dt.timedelta(seconds=args.duration_seconds)
+        ).isoformat()
         began = time.monotonic()
         deadline = began + args.duration_seconds
         futures: set[concurrent.futures.Future] = set()
@@ -329,7 +373,7 @@ def run_with_registry(args, registry: str) -> dict:
                     stop_reason = "load_generator_backlog"
                     break
                 item = objects[index % len(objects)]
-                futures.add(executor.submit(dispatch, item))
+                futures.add(executor.submit(dispatch, item, scheduled=scheduled))
                 counters["requestsScheduled"] += 1
                 counters["inFlightPeak"] = max(counters["inFlightPeak"], len(futures))
             for future in concurrent.futures.as_completed(futures):
@@ -345,6 +389,8 @@ def run_with_registry(args, registry: str) -> dict:
             time.sleep(max(0.0, deadline - time.monotonic()))
         finished_at = utc_now()
         elapsed = time.monotonic() - began
+        if stop_reason is None and timing.after_window:
+            stop_reason = "load_generator_deadline"
 
     except Exception as error:
         stop_reason = f"{phase}_failed"
@@ -375,6 +421,7 @@ def run_with_registry(args, registry: str) -> dict:
         "sourceSha256": "sha256:" + sha256(WORKER_SOURCE.encode()),
         "startedAt": started_at,
         "finishedAt": finished_at,
+        "offeredWindowFinishedAt": offered_finished_at,
         "elapsedSeconds": elapsed,
         "durationTargetSeconds": args.duration_seconds,
         "rateTargetPerSecond": args.rate,
@@ -382,7 +429,10 @@ def run_with_registry(args, registry: str) -> dict:
         "objectTarget": args.objects,
         "placements": placements,
         "counters": counters,
-        "latency": histogram.as_json(),
+        "latency": timing.response.as_json(),
+        "scheduleLatency": timing.schedule.as_json(),
+        "arrivalLatency": timing.arrival.as_json(),
+        "dispatchWindow": timing.window(),
         "errors": errors,
         "stopReason": stop_reason,
         "cleanup": {
