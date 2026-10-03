@@ -2053,6 +2053,15 @@ control SHA 必须绑定实际写出的字节，不得重新编码已经归档�
 严格 JSON、真实 collector HTTP 和 evaluator CLI 回归是诊断工具门禁，不是吞吐收益
 或万级资格；此工具修正不要求重建 V8/workerd，也不修改在途资格的 immutable source。
 
+性能整改的下一次发布必须保持可证伪：固定请求形状、到达计划与容量策略，按对象基数、
+数据库年龄和 eligible prefix 分组，对比实际派发/跳过、有效安装推进、返工/扫描与前台
+尾延迟。stage success 增加但 durable watermark 不推进，仍是无效吞吐；心跳因在途
+而少发，不能算相同 offered load 下的改善。普通 membership churn 不再失效无关 DB
+proof 是源码可验证的依赖边界，真正 fork、history/pin 和 publication fence 保留；它的
+云端收益尚须发布后观察。消除返工后，如果有效债务仍持续增长，再以各资源的单位请求
+成本和实测可持续供给确定扩容。原 strict10k 的一万活跃、零普通重试、三秒创建和自然
+扩缩容门槛不变；native builder 创建或更快构建不属于业务性能验收通过。
+
 ## 所有权与核心不变量
 
 | 状态/动作 | 唯一所有者 |

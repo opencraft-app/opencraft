@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-03
 review_due: 2026-11-02
-revision: 1.30.0
+revision: 1.31.0
 precedence: task
 derived: false
 ---
@@ -415,7 +415,60 @@ test_monitor_bottomless.py 延用本轮此前完整读取的真实 release 邻�
 
 ## checkpoint
 
-当前 checkpoint（1.30.0）：上一轮 d644c661 已正常 FF 推 master，并完成原 strict10k
+当前 checkpoint（1.31.0）：上一 goal turn 为 progress，coordinator 已正常推至 master
+fc83364db9018eb8b9391459b84d290a09564d82；incoming NewAPI 与全部 empty ancestors
+保留。新 revision vvszvxzn 接续用户要求：性能劣化要从依赖/单位有效成本建模修复，不由
+配置 permit、完成者均值或扩大副本推导吞吐已恢复。当前 c631 仍是云端 Runtime，严格
+万活跃资格仍失败，0eb 的修复未部署；不能因 builder provisioning 推进而改变此结论。
+
+原 operations host ins-55ry1kb1 两次 native preflight（inv-e9f0peg7ar、inv-c9f0sj0v4v）
+SUCCESS/0：原 strict10k 同 InvocationID 已 MainPID0；固定 Terraform1.9.8 已安装但不在
+PATH，正常配置的 tccli tool/container 与原 inventory/kubeconfig 在。nodefs `/data` 仍是
+共享根盘、约18.23GiB available；不启动 compiler，不降低 build admission。锁 availability
+probe 只是观察，实际 provision 仍由原 wrapper 全程持有 kernel lock。
+
+fc833 full source v2 已原字节校验：14,329 files、manifest82ce13079551、bundle
+58cc40f63580、54,821,077 bytes。通过原 COS relay 的 source、receipt、credential-free
+management vars 均 native SUCCESS/0（inv-d9f0t5gg46、inv-e9f0t6ggc5、inv-e9f0t7gse5）；
+没有转移旧 saved plan、完整 state 或云 root key。新完整 management plan 在原 host
+生成，原 wrapper 覆盖 plan gate/apply；gate 只允许五个 exact builder resource create，
+要求原 state lineage 与 C/VPC/bootstrap identity 匹配，禁止 target、change 或 destroy。
+
+第一次 inv-d9f0u9gxxv native FAILED/1，在 backend init 后 provider discovery 超时，
+未进入 plan/apply。protected init.log 的有界脱敏诊断 inv-c9f0v00i01 SUCCESS/0，确认
+registry.terraform.io discovery Client.Timeout，不是云权限拒绝或资源创建错误。保留该
+失败；没有改 TLS、代理、provider version/checksum 或绕过 plan。固定 provider1.83.11
+ZIP 的 SHA bc73e608a474 与 source 中 tracked `.terraform.lock.hcl` zh 匹配，经原 COS
+relay inv-e9f0wm0jvf 交接；明确的 filesystem mirror 配置（无 direct fallback）由
+inv-d9f0wr0165 交接。它是非敏感 bootstrap input，不是任意旧缓存作为发布真值。
+
+inv-c9f0x40wp7 已 native FAILED/1，原 observer1914 收齐终态：provider init 已过，plan
+在获取 COS state lock 时失败。脱敏诊断 inv-e9f1130rm4 SUCCESS/0：Tag API 请求公网
+120.53.67.32:443 dial timeout，尚未 apply。COS read 成功不证明 Tag lock 可用；核对
+HashiCorp Terraform1.9.8 COS backend 与固定 provider 源码，均支持 TENCENTCLOUD_DOMAIN。
+第三次 inv-c9f11ng8bg 在同源流程中明确使用原 tccli 相同的 internal.tencentcloudapi.com，
+不禁 TLS、不关闭 backend lock、不强解锁。13:53:53 UTC fresh full plan 的 gate 通过：
+五 create、零 update/destroy、原 lineage/serial62 identity 匹配，planSHA25d7f5f1386a。
+
+该 invocation 已 native FAILED/1，实际 apply 因 SecurityGroup LimitExceeded 停止。
+有界诊断 inv-e9f12q0m96 SUCCESS/0，API request4783e5ce-dab4-430d-9687-112bdb8f55e5；
+native state pull 确认 lineage 未变、serial63，仅新增 CBS runtime_builder disk-kkels2ln。
+未创建 builder CVM/SG/attachment，没有实际 mkfs 或 mount。原 protected plan、state 和
+apply.log 保留于 `/data/actor-build/runtime-builder-tools-fc83364d/provision.bGki5P`。
+不能重用旧 serial62 plan；后续在配额有明确余量后重新完整 plan，复用 state 中这块 exact
+disk。禁止删未知 SG、复用更宽 control SG、丢弃 state 或反复申请磁盘。当前所需的是
+北京安全组配额提升，或对一组确认闲置 SG 的精确清理授权，不是放宽 builder 资源隔离。
+正常配置的只读 DescribeSecurityGroups(limit1) 与 DescribeSecurityGroupLimits 又确认
+北京已用50/limit50，RequestId344858f2-2b05-4a5f-b921-52adf30e84c0 与
+4fc30470-4799-472e-ab45-5daebcc13a21；没有输出安全组全清单，没有删除/改绑任何 SG。
+
+CLI observer 一次错误使用 InvocationId 参数，exit1/空 JSON 不算通过，未重试或创建
+第二份原 mutation。README 已沉淀 offline mirror/private Tag API/锁与 partial state 的
+边界；正式设计补明确的同负载、有效推进/返工/尾延迟对照标准。真实 builder 创建、
+Python 安装、初始化/reboot、Buildah/reserve、stage reuse、Engine release 和新 strict10k
+仍须分别举证，不由 source 或模型检查推断完成。整个 Phase5 保留原 acceptance。
+
+历史 checkpoint（1.30.0）：上一轮 d644c661 已正常 FF 推 master，并完成原 strict10k
 终态收据归档；上一 goal turn 是 progress，原 run 已 terminal，不再以其旧锁状态重复等待。
 本轮隔离 revision wywwnwul 增加原 operations-host coordinator：核验 fixed reviewed
 tools closure、实际 host metadata 和原 kernel flock；root-backed submitting/submitted/

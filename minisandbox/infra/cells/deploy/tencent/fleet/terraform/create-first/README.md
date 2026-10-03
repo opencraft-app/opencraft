@@ -42,6 +42,38 @@ and attachment, and retains `operationsInstanceId` as the original bootstrap
 host. It is not part of the strict platform `management_inventory` contract.
 Do not move release/qualification to a second operation-lock domain.
 
+Run the full management plan and its exact saved-plan apply under the original
+operations-host wrapper. A short lock-availability probe on that host does not
+authorize applying from a different machine. Join the backend state lineage and
+the current management/VPC/bootstrap identities before mutation; a builder-only
+change must create only the five declared builder resources, with no existing
+resource update or destruction. Transfer neither saved plans nor state through
+the ordinary credential-free source relay.
+
+On a private operations host, Terraform needs both an offline provider source
+and the established private Tencent API domain. A cached installed provider alone
+does not eliminate Registry discovery. Transfer the exact provider ZIP through
+COS, verify it against the tracked `.terraform.lock.hcl`, and use a protected
+`TF_CLI_CONFIG_FILE` with a `filesystem_mirror` and no `direct` fallback.
+The mirror's packed layout is
+`registry.terraform.io/tencentcloudstack/tencentcloud/terraform-provider-tencentcloud_1.83.11_linux_amd64.zip`.
+Do not disable TLS or replace the lock file with hashes generated from an arbitrary
+cache. Terraform's COS backend also uses the Tencent Tag API for state locking:
+being able to read COS does not prove that it can acquire the state lock.
+Set `TENCENTCLOUD_DOMAIN=internal.tencentcloudapi.com` before backend initialization,
+plan and apply on the configured same-VPC operations host. This is the same
+private API root used by the existing tccli wrapper, not a second state or lock
+authority. Never work around a network failure using `-lock=false` or force-unlock.
+See HashiCorp's [provider mirror configuration](https://developer.hashicorp.com/terraform/cli/config/config-file#explicit-installation-method-configuration)
+and [COS backend domain and locking](https://developer.hashicorp.com/terraform/language/backend/cos).
+
+If cloud quota stops an apply after another resource was created, preserve the
+backend state and the native terminal invocation. Collect the exact partial
+resource identities before any recovery. A new complete plan after quota is
+resolved must reuse recorded resources; never rerun the old plan, discard state,
+delete unreviewed security groups, or adopt a broader control-worker security
+group merely to bypass the standalone builder's isolation contract.
+
 Provisioning is not build readiness. The inventory deliberately requires a
 storage bootstrap: verify the cloud attachment and exact guest block-device
 identity before any initialization; never infer `/dev/vdb` or overwrite a used
