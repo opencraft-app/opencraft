@@ -329,6 +329,12 @@ html.lw-settings-scrollbar-stable {
     transition: grid-template-columns 200ms ease-in-out;
   }
 
+  header.lv-agent-sidebar-header--motion-pending,
+  .lv-agent-sidebar-motion-pending .lv-agent-settings-grid,
+  .lv-agent-sidebar-motion-pending .lv-agents-sidebar-scroll-isolated {
+    transition: none !important;
+  }
+
   /* Labels hide immediately on collapse, so let the width change finish more gradually. */
   .lv-agent-sidebar-collapsed .lv-agent-settings-grid {
     transition-duration: 260ms;

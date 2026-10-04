@@ -23,11 +23,11 @@ export function AgentsPageClient({
   sectionId?: AgentSectionId;
 }) {
   const isWorkbench = sectionId === 'workbench';
-  const { collapsed, toggle } = useAgentSidebarCollapse();
+  const { collapsed, toggle, transitionReady } = useAgentSidebarCollapse();
   const productHeader = (
     <ProductReturnHomeHeader
       beforeUserMenu={isWorkbench ? undefined : <AgentSidebarToggle collapsed={collapsed} onToggle={toggle} />}
-      className={isWorkbench ? undefined : `lv-agent-sidebar-header${collapsed ? ' lv-agent-sidebar-header--collapsed' : ''}`}
+      className={isWorkbench ? undefined : `lv-agent-sidebar-header${collapsed ? ' lv-agent-sidebar-header--collapsed' : ''}${transitionReady ? '' : ' lv-agent-sidebar-header--motion-pending'}`}
       reloadLanguageAfterSwitch
       showAccountLanguageSwitcher
       showDesktopUserMenu={isWorkbench}

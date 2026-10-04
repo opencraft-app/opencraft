@@ -1,5 +1,5 @@
 ## stage
-Implementation complete; user authorized commit, push, and MR submission. Final validation passed; remote delivery is in progress.
+MR !4951 CR follow-up in progress; source and focused validation passed, regional builds and remote delivery remain.
 
 ## verified
 - Sidebar toggle, persisted state, icon layout, account avatar, localized labels, and design document change are in the isolated worktree.
@@ -22,9 +22,12 @@ Implementation complete; user authorized commit, push, and MR submission. Final 
 - Bot action spacing: removed the switch chevron's negative left margin. Chrome measured equal 28px center spacing among restart, delete, and switch icons and confirmed the Bot menu opens and closes. `pnpm check`, focused tests (4/4), and `git diff --check` passed.
 - Motion pacing: width transitions were 200ms both ways, while collapse hid labels immediately. Collapse now uses 260ms across header, sidebar, and grid; expansion remains 200ms. Chrome confirmed computed timings and the 72px collapsed width. `pnpm check`, focused tests (4/4), documentation, change-impact, and diff checks passed.
 - After rebasing onto `origin/master`, `pnpm check` passed with 0 new TypeScript diagnostics; focused tests passed 4/4; documentation validation found 0 broken first-party links and 0 warnings; both `pnpm build:cn` and `pnpm build:global` passed.
+- MR !4951 CR follow-up: merged current `origin/master`, fixed stale source guards, prevented first-load persisted-state animation and duplicated expanded-label titles, and made the local/controlled collapse prop contract explicit. CN and global focused suites each passed 48/48, `pnpm check` passed with 0 new TypeScript diagnostics, and Chrome checked collapsed/expanded title behavior and the new-Bot action.
+- Both regional builds, OpenCraft source synchronization, documentation validation, and context-audit unit tests passed. The domestic dev preview was restored on port 5174; `/agents/overview/` returned HTTP 200 from this worktree.
 
 ## unverified
 - International and mobile live browser states were not revisited in this preview turn.
+- Repository-wide context catalog and context unit validation report pre-existing metadata and Chinese-first failures across historical Task Packs; these are outside MR !4951's sidebar scope.
 
 ## discard
 - Temporary Vitest config removed. The full-page Vitest attempt exhausted an 8 GB worker.
@@ -34,4 +37,4 @@ Implementation complete; user authorized commit, push, and MR submission. Final 
 - The user authorized commit, push, and MR creation on 2026-10-04; merge, release, and production changes remain out of scope.
 
 ## next_action
-- Push `codex/agent-sidebar-collapse`, create the MR to `master`, and confirm remote branch, MR, and CI status.
+- Run both regional builds and context gates, restart the worktree preview on port 5174, then commit/push the fix to existing MR !4951 and confirm its new CI status.

@@ -5,16 +5,28 @@ import { useT } from "@/i18n/t";
 
 const COLLAPSED_STORAGE_KEY = "lv-agent-sidebar-collapsed";
 
-export function useAgentSidebarCollapse() {
+export function useAgentSidebarCollapse(readStoredChoice = true) {
   const [collapsed, setCollapsed] = useState(false);
+  const [transitionReady, setTransitionReady] = useState(false);
 
   useEffect(() => {
-    try {
-      setCollapsed(window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true");
-    } catch {
-      // Browser storage may be unavailable; the sidebar still works for this visit.
+    if (readStoredChoice) {
+      try {
+        setCollapsed(window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true");
+      } catch {
+        // Browser storage may be unavailable; the sidebar still works for this visit.
+      }
     }
-  }, []);
+    // Let the stored width paint before enabling the user-triggered transition.
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => setTransitionReady(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [readStoredChoice]);
 
   const toggle = () => setCollapsed((current) => {
     const next = !current;
@@ -26,7 +38,7 @@ export function useAgentSidebarCollapse() {
     return next;
   });
 
-  return { collapsed, toggle };
+  return { collapsed, toggle, transitionReady };
 }
 
 export function AgentSidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {

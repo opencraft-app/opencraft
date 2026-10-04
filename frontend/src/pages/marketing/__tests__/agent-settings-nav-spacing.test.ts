@@ -116,7 +116,8 @@ describe("Agent settings navigation spacing", () => {
      * 路由级加载壳（app-route-shell）与最终页面都是左对齐宽容器 + 68px，
      * 中间就会横竖双向跳一下。
      */
-    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('"lw-app-top-pad flex-grow bg-white"');
+    expect(page).toContain('useMobileChatLayout ? "pb-0" : "pb-6"');
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain('"lw-settings-shell"');
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell"');
@@ -131,9 +132,9 @@ describe("Agent settings navigation spacing", () => {
     expect(appRouteShell).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
     expect(appRouteShell).toContain('className="lw-settings-shell lv-agent-settings-shell"');
     expect(page.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
-    expect(agentsPageClient).toContain(
-      "className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}",
-    );
+    expect(agentsPageClient).toContain("<AgentSidebarToggle collapsed={collapsed} onToggle={toggle} />");
+    expect(agentsPageClient).toContain("sidebarCollapsed={collapsed}");
+    expect(agentsPageClient).toContain("lv-agent-sidebar-header--motion-pending");
     expect(agentShell).toContain("width: calc(100% - 40px);");
     expect(agentShell).toContain("margin-left: 16px;");
     expect(agentShell).toContain("margin-right: 24px;");
@@ -213,8 +214,8 @@ describe("Agent settings navigation spacing", () => {
       desktopStyles ?? "",
       "\n  .lv-agents-sidebar-middle .lv-agents-nav-item {",
     );
-    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
-    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n\n  .lv-agents-nav {");
+    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {\n  .lv-agents-sidebar {");
+    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {\n    gap:");
     const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
 
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
@@ -247,7 +248,7 @@ describe("Agent settings navigation spacing", () => {
     expect(accountFooter).toContain("padding-top: 8px;");
     expect(accountFooter).toContain("border-top: 1px solid #e9ecf1;");
     expect(styles).toContain("height: calc(100dvh - 68px);");
-    expect(desktopSidebar).toContain("padding-top: 20px;");
+    expect(desktopSidebar).toContain("padding-top: 12px;");
   });
 
   it("keeps auth and data loading states on the final Agent shell geometry", () => {
@@ -279,7 +280,7 @@ describe("Agent settings navigation spacing", () => {
       "\n  .lv-agents-sidebar-scroll-isolated {",
     );
 
-    expect(profileSeparator).toContain("width: calc(100% + 12px);");
+    expect(profileSeparator).toContain("width: auto;");
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
     expect(controls).toContain("padding-top: 16px;");
