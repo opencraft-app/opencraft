@@ -22,6 +22,7 @@ class VerifyRunnerTest(unittest.TestCase):
             ignored = shutil.ignore_patterns("__pycache__", "*.pyc")
             shutil.copytree(ROOT, copied, ignore=ignored)
             shutil.copytree(ROOT.parent / "gitops" / "image-seed", source / "gitops" / "image-seed", ignore=ignored)
+            shutil.copytree(ROOT.parent / "tat", source / "tat", ignore=ignored)
             (source / "runtime").mkdir()
             shutil.copy2(ROOT.parent / "runtime" / "ensure-stateless-auth.sh", source / "runtime" / "ensure-stateless-auth.sh")
             operator_cwd = temporary / "operator"

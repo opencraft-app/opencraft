@@ -140,6 +140,13 @@ Dockerfile deliberately has no defaults. After push, the wrapper cold-pulls the 
 rechecks the source OCI labels, and only then publishes the receipt. It runs the Workers API unit
 tests inside the Go 1.25 build stage.
 
+The TAT build wrapper gives each operation an immutable receipt identity bound
+to source revision, source manifest, both base digests and the unique image tag.
+Changing bases or tag cannot collide with an earlier source-only receipt.
+Python bytecode is disabled on the builder so receipt validation cannot add
+derived files to the reviewed source closure. This prepares a candidate image;
+it does not update Kubernetes, Argo, or the live release inventory.
+
 ```sh
 ./verify.sh
 python3.11 ./render.py \

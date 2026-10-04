@@ -103,7 +103,7 @@ python3 "$script_dir/qualify-public-admission.py" --help >/dev/null
 (
 	cd "$script_dir"
 	PYTHONPATH="$script_dir" python3 -m unittest \
-		test_render test_qualify_public_admission test_credentials_contract test_sync_credentials
+		test_render test_qualify_public_admission test_credentials_contract test_sync_credentials test_build_via_tat
 )
 python3 "$script_dir/test_install.py"
 bash -n "$script_dir/sync-credentials.sh" "$script_dir/gitops/publish.sh" \

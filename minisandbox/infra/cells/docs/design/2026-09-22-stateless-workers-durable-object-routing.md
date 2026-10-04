@@ -2263,6 +2263,10 @@ Workers API容器，使用精确topic/logset ID、显式metadata白名单、JSON
 解析失败不上传与增量采集；不写Terraform拥有的topic/index字段。见observability/cls/README。
 声明与本地mock provider plan不是云collector资格：尚未安装agent或发布安全API镜像，
 后续需在operation lock空闲后核验addon/CRD/实际topic归属、独立Argo及查询收据。
+安全API候选使用独立Go构建，不因日志/fetch/readiness改动重编workerd。其TAT入口的
+immutable回执身份绑定source/manifest、两个base digest和唯一tag，且关闭Python bytecode，
+避免改base/tag撞旧proof或污染源码closure。CLI协议回归不是镜像cold-pull/云发布资格；
+候选仍须匹配当前完整inventory，再经串行发布与探索验收才能进入CLS前置门禁。
 
 中央CLS规则的Argo准备入口现读取既有desired Git的完整commit，仅允许与Terraform binding
 匹配的regular `logconfig.json`，拒绝symlink、过大/重复JSON及topic/采集范围漂移。真实本地Git
