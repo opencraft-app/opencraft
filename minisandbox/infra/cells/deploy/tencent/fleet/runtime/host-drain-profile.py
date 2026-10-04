@@ -3,6 +3,8 @@
 
 import copy
 import json
+from pathlib import Path
+import re
 import sys
 
 
@@ -141,6 +143,70 @@ def render_bundle(document, profile):
     return result
 
 
+def transition_patch(document, profile):
+    """Change only the profile on one existing, installer-owned controller."""
+    rendered = render_profile(document, profile)
+    replicas = document["spec"].get("replicas")
+    if type(replicas) is not int or replicas != 1 or document["spec"].get("strategy", {}).get("type") != "Recreate":
+        raise ValueError("single-writer Recreate controller required")
+    metadata = document["metadata"]
+    for name in ("uid", "resourceVersion", "name", "namespace"):
+        value = metadata.get(name)
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,256}", value):
+            raise ValueError("live controller identity required")
+    annotations = metadata.get("annotations", {})
+    labels = metadata.get("labels", {})
+    if (
+        "argocd.argoproj.io/tracking-id" in annotations
+        or "argocd.argoproj.io/instance" in annotations
+        or "argocd.argoproj.io/instance" in labels
+        or "app.kubernetes.io/instance" in labels
+        or any("argocd" in str(item.get("manager", "")).lower()
+               for item in metadata.get("managedFields", []))
+    ):
+        raise ValueError("controller has another declarative owner")
+    container = document["spec"]["template"]["spec"]["containers"][0]
+    if not re.fullmatch(r"[^\s]+/actor-fleet/actor-fleet-controller@sha256:[0-9a-f]{64}",
+                        str(container.get("image", ""))):
+        raise ValueError("immutable controller image required")
+    patch = [
+        {"op": "test", "path": "/metadata/uid", "value": metadata["uid"]},
+        {"op": "test", "path": "/metadata/resourceVersion", "value": metadata["resourceVersion"]},
+    ]
+    values = dict(zip(TIMERS, PROFILES[profile]))
+    for index, entry in enumerate(container["env"]):
+        if entry["name"] in values:
+            patch.append({"op": "replace",
+                          "path": f"/spec/template/spec/containers/0/env/{index}/value",
+                          "value": values[entry["name"]]})
+    path = "/spec/template/metadata/annotations/" + PROFILE_ANNOTATION.replace("~", "~0").replace("/", "~1")
+    before = document["spec"]["template"]["metadata"]["annotations"]
+    after = rendered["spec"]["template"]["metadata"]["annotations"]
+    if PROFILE_ANNOTATION in after:
+        patch.append({"op": "add", "path": path, "value": after[PROFILE_ANNOTATION]})
+    elif PROFILE_ANNOTATION in before:
+        patch.append({"op": "remove", "path": path})
+    return patch
+
+
+def check_transition(before, after, profile):
+    transition_patch(before, profile)
+    # Revalidate ownership and literal guards at the final evidence boundary.
+    transition_patch(after, profile)
+    check_profile(after, profile)
+    for name in ("uid", "name", "namespace"):
+        if before["metadata"][name] != after["metadata"][name]:
+            raise ValueError("controller identity changed")
+    if render_profile(before, "production")["spec"] != render_profile(after, "production")["spec"]:
+        raise ValueError("unrelated controller spec changed")
+
+
+def parse_document(raw):
+    if len(raw) > MAX_INPUT_BYTES:
+        raise ValueError("input too large")
+    return json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
+
+
 def unique_object(pairs):
     result = {}
     for name, value in pairs:
@@ -156,22 +222,29 @@ def reject_constant(_value):
 
 def main():
     args = sys.argv[1:]
-    if len(args) != 2 or args[0] not in ("render", "check") or args[1] not in PROFILES:
-        print("usage: host-drain-profile.py render|check production|exploration < deployment.json", file=sys.stderr)
+    valid = (len(args) == 2 and args[0] in ("render", "check", "patch")) or (
+        len(args) == 3 and args[0] == "check-transition")
+    if not valid or args[1] not in PROFILES:
+        print("usage: host-drain-profile.py render|check|patch production|exploration < deployment.json; check-transition PROFILE BEFORE_FILE < after.json", file=sys.stderr)
         return 2
     try:
         raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
-        if len(raw) > MAX_INPUT_BYTES:
-            raise ValueError("input too large")
-        document = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
-        if args[0] == "render":
-            rendered = render_bundle(document, args[1])
+        document = parse_document(raw)
+        if args[0] in ("render", "patch"):
+            rendered = (render_bundle if args[0] == "render" else transition_patch)(document, args[1])
             encoded = json.dumps(rendered, ensure_ascii=False, allow_nan=False)
             sys.stdout.write(encoded + "\n")
+        elif args[0] == "check-transition":
+            before_path = Path(args[2])
+            if before_path.is_symlink() or not before_path.is_file():
+                raise ValueError("before input must be a regular file")
+            with before_path.open("rb") as source:
+                before = parse_document(source.read(MAX_INPUT_BYTES + 1))
+            check_transition(before, document, args[1])
         else:
             check_profile(document, args[1])
         return 0
-    except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError):
         # Do not echo the supplied object, raw values, URL, or exception text.
         print("Host drain profile input rejected", file=sys.stderr)
         return 2

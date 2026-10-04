@@ -31,6 +31,10 @@ Host 与 canonical Machine 扩展、峰值 Ready/admitted Node，以及最后自
 选择 `exploration` Host drain profile。不得直接 patch timer、暂停 Argo 或关闭安全门禁。
 安装源码已接线，但真实云模式切换及 Argo desired-state 收敛尚未验证，当前不能把本地
 double 回归当作这些前提已满足。`e2e-fast` 不是本入口的运行时配置。
+仅改现有 controller timer 时，应使用原安装器的
+[`--transition-profile`](../../runtime/README.md#仅切换现有-controller-的-profile)，
+保留当前镜像/RBAC/HPA，并绑定本次实际 Deployment UID/RV。检测到另一个声明式 owner
+时必须拒绝，不能通过重新 apply 全量 manifest 或暂停 Argo 绕过。该切换/恢复仍待云验证。
 
 准备已审阅的不可变源码、真实 `/v1` endpoint receipt、两 Cell kubeconfig/federation
 selectors，并通过当前 autonomy control。入口默认调用现有整段锁 wrapper；持锁时分别

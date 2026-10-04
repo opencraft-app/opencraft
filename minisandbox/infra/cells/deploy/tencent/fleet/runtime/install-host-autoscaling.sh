@@ -3,6 +3,13 @@ set -euo pipefail
 umask 077
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+transition_only=false
+if [[ $# == 1 && $1 == --transition-profile ]]; then
+	transition_only=true
+elif [[ $# != 0 ]]; then
+	echo "usage: install-host-autoscaling.sh [--transition-profile]" >&2
+	exit 2
+fi
 drain_profile=${RUNTIME_HOST_DRAIN_PROFILE:-production}
 case "$drain_profile" in
 production) ;;
@@ -16,6 +23,45 @@ exploration)
 esac
 namespace=${RIVET_CELL_NAMESPACE:-actor-fdb-cell-system}
 cell_name=${RIVET_CELL_NAME:?RIVET_CELL_NAME is required}
+if [[ $transition_only == true ]]; then
+	[[ ${AUTONOMY_OPERATION_LOCK_HELD:-0} == 1 ]] || {
+		echo "Host drain profile transition requires the whole-operation lock" >&2
+		exit 75
+	}
+	expected_uid=${RUNTIME_HOST_DRAIN_EXPECTED_UID:-}
+	[[ $cell_name =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ && $namespace =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ \
+		&& $expected_uid =~ ^[A-Za-z0-9_.-]{1,256}$ ]] || {
+		echo "profile transition requires exact Cell, namespace and expected Deployment UID" >&2
+		exit 2
+	}
+	for command in kubectl python3; do command -v "$command" >/dev/null; done
+	AUTONOMY_WORKFLOW=runtime.qualify AUTONOMY_CONTROL_CELL="$cell_name" \
+		AUTONOMY_CONTROL_NAMESPACE="$namespace" bash "$script_dir/../operations/assert-autonomy-control.sh"
+	kubeconfig_args=()
+	[[ -n ${KUBECONFIG:-} ]] && kubeconfig_args=(--kubeconfig "$KUBECONFIG")
+	temporary_root=${TMPDIR:-/data/tmp}
+	mkdir -p "$temporary_root"
+	temporary=$(mktemp -d "$temporary_root/host-drain-transition.XXXXXX")
+	cleanup() { rm -rf -- "$temporary"; }
+	trap cleanup EXIT INT TERM
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get deployment "${cell_name}-host-drain" -o json >"$temporary/before.json"
+	python3 "$script_dir/host-drain-profile.py" patch "$drain_profile" \
+		<"$temporary/before.json" >"$temporary/patch.json"
+	observed_uid=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["value"])' "$temporary/patch.json")
+	[[ $observed_uid == "$expected_uid" ]] || {
+		echo "profile transition Deployment UID mismatch" >&2
+		exit 2
+	}
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" patch deployment "${cell_name}-host-drain" \
+		--type=json --patch-file "$temporary/patch.json" --dry-run=server >/dev/null
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" patch deployment "${cell_name}-host-drain" \
+		--type=json --patch-file "$temporary/patch.json" >/dev/null
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" rollout status deployment/"${cell_name}-host-drain" --timeout=5m
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get deployment "${cell_name}-host-drain" -o json \
+		| python3 "$script_dir/host-drain-profile.py" check-transition "$drain_profile" "$temporary/before.json"
+	echo "Host drain profile transitioned: cell=$cell_name profile=$drain_profile"
+	exit 0
+fi
 controller_image=${RIVET_REPORTER_IMAGE:?RIVET_REPORTER_IMAGE is required}
 min_replicas=${RUNTIME_CAPACITY_MIN_REPLICAS:-4}
 max_replicas=${RUNTIME_CAPACITY_MAX_REPLICAS:-301}

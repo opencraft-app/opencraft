@@ -1011,6 +1011,13 @@ API double，不能等同云API/Argo收敛资格；尚未发布云上探索配�
 autonomy control，两端读取实际profile；drift/API失败保留独立exit status且最终失败。
 开发收据使用独立schema、`claimEligible=false`，不能进入生产Router性能门禁；本地真实
 子进程/flock回归不证明云上模式切换、Argo收敛或实际扩缩容速度，原live任务不变。
+仅切timer使用原installer的`--transition-profile`，要求整段锁、当前autonomy control和
+本次实际Deployment UID；JSON Patch同时测试UID/RV，仅修改两timer和自己的annotation。
+dry-run、提交、rollout后重新核对同UID、目标profile和其余完整spec不变；不更新controller
+镜像/RBAC/HPA，不重编二进制，也不改变Host/Node/Machine数量。响应丢失视为未知状态，
+不得启动实验或拿旧完整对象盲回滚；恢复同样绑定原UID。当前源码中Host drain由installer
+管理，未纳入stateless Argo或静态release ledger；发现Argo tracking/instance/manager便
+拒绝切换，未来改owner需另定正式desired-state协议。此本地回归不是云TKE切换资格。
 
 ### Phase 5：资格与演进决策
 

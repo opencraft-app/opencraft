@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 import test_host_autoscaling as manifests
@@ -146,6 +147,93 @@ class HostDrainProfileTests(unittest.TestCase):
         result = self.invoke("render", "exploration", json.dumps(self.production).encode())
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, b"")
+
+
+class HostDrainTransitionTests(unittest.TestCase):
+    def setUp(self):
+        self.production = next(
+            document for document in manifests.HostAutoscalingManifestTests().render()
+            if document["kind"] == "Deployment"
+        )
+        self.production["metadata"].update(uid="controller-original", resourceVersion="42")
+
+    def invoke(self, action, profile, raw):
+        return HostDrainProfileTests.invoke(self, action, profile, raw)
+
+    def test_patch_is_uid_rv_cas_and_only_profile_fields(self):
+        patch = PROFILE.transition_patch(self.production, "exploration")
+        self.assertEqual(patch[:2], [
+            {"op": "test", "path": "/metadata/uid", "value": "controller-original"},
+            {"op": "test", "path": "/metadata/resourceVersion", "value": "42"},
+        ])
+        self.assertEqual(len(patch), 5)
+        entries = self.production["spec"]["template"]["spec"]["containers"][0]["env"]
+        expected_paths = {
+            f"/spec/template/spec/containers/0/env/{index}/value"
+            for index, item in enumerate(entries) if item["name"] in PROFILE.TIMERS
+        }
+        self.assertEqual({item["path"] for item in patch if item["op"] == "replace"}, expected_paths)
+        self.assertEqual(patch[-1], {"op": "add", "path": "/spec/template/metadata/annotations/fleet.actor.dev~1host-drain-profile", "value": "exploration"})
+        explored = PROFILE.render_profile(self.production, "exploration")
+        self.assertEqual(PROFILE.transition_patch(explored, "production")[-1]["op"], "remove")
+        self.assertEqual(len(PROFILE.transition_patch(self.production, "production")), 4)
+
+    def test_transition_preserves_spec_but_allows_controller_status_updates(self):
+        explored = PROFILE.render_profile(self.production, "exploration")
+        explored["metadata"]["resourceVersion"] = "48"
+        explored["metadata"]["generation"] = 2
+        explored["status"] = {"observedGeneration": 2, "readyReplicas": 1}
+        PROFILE.check_transition(self.production, explored, "exploration")
+        PROFILE.check_transition(explored, PROFILE.render_profile(explored, "production"), "production")
+
+    def test_final_check_rejects_new_uid_unrelated_spec_and_owner_changes(self):
+        explored = PROFILE.render_profile(self.production, "exploration")
+        for mutate in (
+            lambda item: item["metadata"].update(uid="replacement"),
+            lambda item: item["metadata"].update(name="replacement"),
+            lambda item: item["spec"].update(replicas=2),
+            lambda item: item["spec"].update(replicas=True),
+            lambda item: item["spec"]["template"]["spec"]["containers"][0].update(image="registry.example/actor-fleet/actor-fleet-controller@sha256:" + "2" * 64),
+            lambda item: item["metadata"].setdefault("annotations", {}).update({"argocd.argoproj.io/tracking-id": "new-owner"}),
+        ):
+            changed = copy.deepcopy(explored)
+            mutate(changed)
+            with self.assertRaises(ValueError):
+                PROFILE.check_transition(self.production, changed, "exploration")
+
+    def test_missing_identity_mutable_image_and_argo_owner_fail_closed(self):
+        for mutate in (
+            lambda item: item["metadata"].pop("uid"),
+            lambda item: item["spec"].update(replicas=2),
+            lambda item: item["spec"].update(strategy={"type": "RollingUpdate"}),
+            lambda item: item["metadata"].update(resourceVersion=""),
+            lambda item: item["metadata"].update(resourceVersion=42),
+            lambda item: item["spec"]["template"]["spec"]["containers"][0].update(image="registry.example/controller:latest"),
+            lambda item: item["metadata"].setdefault("annotations", {}).update({"argocd.argoproj.io/tracking-id": "owner"}),
+            lambda item: item["metadata"]["labels"].update({"app.kubernetes.io/instance": "owner"}),
+            lambda item: item["metadata"].update(managedFields=[{"manager": "argocd-controller"}]),
+        ):
+            changed = copy.deepcopy(self.production)
+            mutate(changed)
+            result = self.invoke("patch", "exploration", json.dumps(changed).encode())
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(result.stdout, b"")
+            self.assertEqual(result.stderr, b"Host drain profile input rejected\n")
+
+    def test_real_transition_check_cli_and_regular_file_requirement(self):
+        with tempfile.TemporaryDirectory(prefix="drain-transition-", dir="/data/tmp") as directory:
+            before = Path(directory) / "before.json"
+            before.write_text(json.dumps(self.production))
+            linked = Path(directory) / "linked.json"
+            linked.symlink_to(before)
+            after = json.dumps(PROFILE.render_profile(self.production, "exploration")).encode()
+            for path, status in ((before, 0), (linked, 2), (Path(directory) / "missing", 2)):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "check-transition", "exploration", str(path)],
+                    input=after, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+                )
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(result.stdout, b"")
 
 
 if __name__ == "__main__":

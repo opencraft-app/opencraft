@@ -14,7 +14,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -31,6 +31,7 @@ derived: false
 - 用户：探索阶段能否增加快速缩容模式；原stateless/DO设计Phase4安全缩容仍适用。
 - 用户最新要求：后续先用探索模式作为第一道验收，加快推进；生产资格仍独立验收。
 - 本轮延伸：建立独立探索容量入口，复用现有真实负载/清理/采样/验证逻辑，输出明确开发证据。
+- 后续延伸：原installer增加仅profile切换，绑定现有Deployment UID/RV，不重部署镜像/RBAC/HPA。
 - profile不得混入生产容量资格，短稳定窗口不能解决111Host的拓扑liveness卡点。
 - 用户另问AZ售罄：供应不足不是健康节点故障；本任务不自动降低三AZ约束。
 
@@ -66,6 +67,9 @@ derived: false
 | release-gitops.md、upstream-subtrees.md、adjacency/argocd-ci-secrets.md@227681a2 | route全文及test_supervisor/test_capacity_receipt邻居 | 共享实际shell入口、不同scope、生产拒绝开发证据 |
 | shared-agent-scale/runner.mjs与README、strict10k入口/verify/tests@227681a2 | recipe段及完整编排/校验 | 保留真实代码上传、SQLite、稳态3秒及精确清理 |
 | operations/with-autonomy-operation-lock.sh与assert-autonomy-control.sh@227681a2 | 全文 | 真整段flock、两Cell控制门禁、不新增bypass |
+| 根AGENTS、minisandbox/AGENTS、infra/cells/AGENTS及route must_read@b43776e0 | 本轮重读全文 | 无构建/云mutation、同一installer owner |
+| adjacency/argocd-ci-secrets与test_host_autoscaling/profile/scripts及API double@b43776e0 | 全文与邻居 | 真实CLI/CAS回归、不是静态文本证明 |
+| runtime/gitops/render-desired-state.py及release_ledger.py相关inventory段@b43776e0 | 有界读取 | 现有stateless Argo不拥有Host drain，ledger也未纳入该Deployment |
 
 ## evidence / risks / validation / decisions
 
@@ -126,6 +130,23 @@ derived: false
   50b1af24之后；保留团队30个文件变更，无重叠冲突、无force，minisandbox tree逐字不变。
   重读当前docs仍0错误/警告；context新增56项全部来自该远端新增的4个sidebar Task文件，
   其余4970项与原基线一致；不替其他团队修改或重建历史catalog。
+- b43776e0后的本轮源码事实：Host drain没有进入stateless executor Argo或静态release
+  ledger；不为探索把它塞进另一个应用。原installer新增仅profile路径，先control，再
+  GET并绑定expected UID，patch内UID/RV CAS，不更新镜像/RBAC/HPA。final GET比较原UID、
+  target profile与其余完整spec；检测到Argo owner拒绝。没有新writer或控制bypass。
+- 34 focused测试通过，含10个新增transition测试；真实CLI/shell double复现UID/RV冲突、
+  dry-run/提交失败、响应丢失、rollout失败、最终无关spec漂移。丢响应不能宣称配置未变；
+  仅原UID受锁恢复生产。syntax/diff check通过，仍未运行live installer。
+- 02:13:36Z inv-e9fnp80gkt SUCCESS/0：原unit同PID/InvocationID active/running，
+  没有因本地工作启动平行producer。managed环境状态工具缺失、policy文件缺失，不把
+  此缺失当作网络ready；沿用已配置selector，验证实际TAT终态，不输出凭据。
+- 最终仅profile路径还核对单副本Recreate；34 focused测试通过，邻接容量73项通过。
+  root26仍同4项历史失败（逐名对照），audit33通过；discovery仅needs_agent_review、
+  Unknown/null，不等于语义评审。docs0错误/警告、context5026项与b43776e0后的基线
+  sorted cmp一致；impact、syntax、diff check通过。本轮无Rust/workerd/Go构建。
+- 本轮一次apply_patch hunk格式错误已修正；没有以shell写文件代替源码patch或改变云状态。
+- 02:21:47Z inv-e9fnwvgq43 SUCCESS/0：原PID/InvocationID仍active/running，A111/115、
+  B4/4、active0；本轮没有发布、模式切换、probe或平行负载。
 
 ## scan_scope / scan_output
 
@@ -136,11 +157,11 @@ derived: false
 
 ## checkpoint / handoff
 
-- stage：独立探索入口和共享容量周期已实现、本轮门禁已完成；准备FF源码交付。
-- verified：无需二进制重编；73容量+11 Router+13 JS本地测试通过，shell语法通过；
+- stage：UID/RV绑定仅profile切换与回归完成，准备FF源码交付；云上接线尚未验证。
+- verified：本轮34 focused测试与shell语法通过；上一轮73容量+11 Router+13 JS已通过；
   不改原live任务，未运行云installer/qualifier/probe。
 - unverified：真实云安装/转换与Argo收敛、探索扩缩容、生产容量与完整Phase5、CLS采集。
 - discard：不存在的上述locator与把e2e-fast当快速缩容的方案。
 - restore：仅编辑mono2隔离工作副本，继续原unit/InvocationID观察，不运行云probe。
-- next_action：完成本轮交付门禁并FF源码；原任务释放锁后
+- next_action：FF源码交付；原任务释放锁后
   再探索功能收敛、实际TKE身份绑定故障门禁与生产容量验收，不启动平行producer。

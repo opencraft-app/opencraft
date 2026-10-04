@@ -61,6 +61,38 @@ scale-in hold/启动负载前拒绝。该回归不证明真实 Kubernetes API、
 固定 320 活跃/352 总对象、4 Version，复用同一容量周期，输出独立开发收据。真实云
 模式切换与 Argo 收敛仍需验证，不能把该本地入口视为当前已能启动的云任务。
 
+### 仅切换现有 controller 的 profile
+
+切 timer 不应借机更新 controller 镜像、HPA 或 RBAC。原安装器提供独立的
+`--transition-profile` 路径：要求整段 operation lock、当前 autonomy control，以及从
+实际 GET 得到的 `RUNTIME_HOST_DRAIN_EXPECTED_UID`。该路径不需要 reporter image，
+不调用完整 runtime installer，不编译二进制，不 apply 完整 manifest。
+
+```sh
+# 仅在既有整段 operation lock 内，deployment_uid 为本次实际 GET 的 UID。
+RUNTIME_HOST_DRAIN_PROFILE=exploration \
+RUNTIME_HOST_DRAIN_EXPECTED_UID="$deployment_uid" \
+bash install-host-autoscaling.sh --transition-profile
+```
+
+它先校验单副本 Recreate、现有 literal guards、digest-pinned image 和配置 owner，再用同时测试 UID 与
+resourceVersion 的 JSON Patch 只改两个 timer 和自己的标记；先 server dry-run，后提交。
+CAS 冲突不自动重读后重试。rollout 后 GET 必须仍是原 UID、目标 profile，且除 profile
+之外的整个 controller spec 不变；镜像、权限、安全参数或同名替换不能混成成功证据。
+恢复时用相同入口、原 UID 和 `RUNTIME_HOST_DRAIN_PROFILE=production`，不拿旧完整
+Deployment 快照覆盖当前对象。工具不操作 Host replicas、Node、Machine 或 Actor。
+
+响应丢失/rollout 失败意味着状态未知，不保证配置未变，也不隐式回滚；调用者应在同一
+锁内 GET 原 UID 后判断是否需要恢复，失败不得启动新容量实验。即使已确认返回成功，
+后续实验仍须读取 live profile，并在实验结束后恢复生产。当前原 strict10k 运行期间
+不得调用此入口；本地 API doubles 不能证明真实 TKE 的切换/恢复资格。
+
+当前源码中，Host drain 的 declarative owner 是 runtime 安装器；stateless executor 的
+Argo Application 和静态 release ledger 都不拥有该 Deployment。不要因此把它塞进
+stateless Application、暂停 Argo 或扩展忽略差异。仅切换路径检测到 Argo tracking、
+instance label 或 managedFields 后拒绝；未来若改变 owner，应先设计正式 desired-state
+切换协议，再验证 live Argo revision/Synced/Healthy，不能同时保留两个配置 writer。
+
 ## 安装与构建前提
 
 Before creating auth Secrets or changing admission/runtime workloads, the

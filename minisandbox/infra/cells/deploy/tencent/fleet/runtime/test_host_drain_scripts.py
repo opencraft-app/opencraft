@@ -46,9 +46,9 @@ class HostDrainScriptTests(unittest.TestCase):
         content = self.kubectl.read_text()
         self.kubectl.write_text("#!" + sys.executable + "\n" + content.split("\n", 1)[1])
 
-    def invoke(self, script, **environment):
+    def invoke(self, script, *, arguments=(), **environment):
         return subprocess.run(
-            ["bash", str(script)], env=self.env | environment,
+            ["bash", str(script), *arguments], env=self.env | environment,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10,
         )
 
@@ -166,6 +166,98 @@ class HostDrainScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls(), [])
         self.assertIn("qualification_hold_boundary_reached", result.stdout)
+
+
+class HostDrainTransitionScriptTests(unittest.TestCase):
+    def setUp(self):
+        HostDrainScriptTests.setUp(self)
+        self.production["metadata"].update(uid="controller-original", resourceVersion="42")
+        (self.root / "live.json").write_text(json.dumps(self.production))
+        runtime = self.root / "transition-runtime"
+        runtime.mkdir()
+        operations = self.root / "operations"
+        operations.mkdir()
+        for name in ("install-host-autoscaling.sh", "host-drain-profile.py"):
+            shutil.copyfile(ROOT / name, runtime / name)
+        control = operations / "assert-autonomy-control.sh"
+        control.write_text('#!/usr/bin/env bash\nset -euo pipefail\n'
+                           '[[ $AUTONOMY_OPERATION_LOCK_HELD == 1 && $AUTONOMY_WORKFLOW == runtime.qualify ]]\n'
+                           '[[ $AUTONOMY_CONTROL_CELL == actor-bj-a01 && $AUTONOMY_CONTROL_NAMESPACE == actor-fdb-cell-system ]]\n'
+                           'echo control >> "$DRAIN_TEST_ROOT/events"\nexit "${DRAIN_TEST_CONTROL_STATUS:-0}"\n')
+        self.script = runtime / "install-host-autoscaling.sh"
+
+    def invoke(self, script, *, arguments=(), **environment):
+        return HostDrainScriptTests.invoke(self, script, arguments=arguments, **environment)
+
+    def calls(self):
+        return HostDrainScriptTests.calls(self)
+
+    def applied(self):
+        return HostDrainScriptTests.applied(self)
+
+    def transition(self, **environment):
+        settings = {"AUTONOMY_OPERATION_LOCK_HELD": "1", "RUNTIME_HOST_DRAIN_PROFILE": "exploration",
+                    "RUNTIME_HOST_DRAIN_EXPECTED_UID": "controller-original", "RIVET_REPORTER_IMAGE": ""}
+        return self.invoke(self.script, arguments=("--transition-profile",), **(settings | environment))
+
+    def test_transition_and_restore_preserve_existing_controller(self):
+        result = self.transition(RIVET_REPORTER_IMAGE="not-a-candidate",
+                                 RUNTIME_CAPACITY_MIN_REPLICAS="999",
+                                 RUNTIME_HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED="true")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.applied(), [profiles.PROFILE.render_profile(self.production, "exploration") |
+                                        {"metadata": self.production["metadata"] | {"resourceVersion": "43"}}])
+        calls = self.calls()
+        self.assertEqual({args[4] for args in calls}, {"get", "patch", "rollout"})
+        self.assertEqual(sum("patch" in args for args in calls), 2)
+        self.assertEqual(sum("--dry-run=server" in args for args in calls), 1)
+        self.assertEqual((self.root / "events").read_text().splitlines()[0], "control")
+        restored = self.transition(RUNTIME_HOST_DRAIN_PROFILE="production")
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        document = self.applied()[0]
+        self.assertEqual(document["spec"], self.production["spec"])
+        self.assertEqual(document["metadata"]["uid"], "controller-original")
+        self.assertIn("profile=production", restored.stdout)
+
+    def test_missing_lock_uid_or_control_refuses_before_api(self):
+        for settings, status in (
+            ({"AUTONOMY_OPERATION_LOCK_HELD": "0"}, 75),
+            ({"AUTONOMY_OPERATION_LOCK_HELD": "0", "RUNTIME_HOST_DRAIN_PROFILE": "production"}, 75),
+            ({"RUNTIME_HOST_DRAIN_EXPECTED_UID": ""}, 2),
+            ({"DRAIN_TEST_CONTROL_STATUS": "1"}, 1),
+        ):
+            with self.subTest(settings=settings):
+                result = self.transition(**settings)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(self.calls(), [])
+
+    def test_uid_mismatch_and_argo_owner_refuse_before_patch(self):
+        for changed in (self.production | {"metadata": self.production["metadata"] | {"uid": "replacement"}},
+                        self.production | {"metadata": self.production["metadata"] | {"annotations": {"argocd.argoproj.io/tracking-id": "owner"}}}):
+            (self.root / "live.json").write_text(json.dumps(changed))
+            result = self.transition()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(any("patch" in args for args in self.calls()))
+
+    def test_api_cas_rollout_and_final_boundary_failures_never_report_success(self):
+        for mode in ("get-failed", "malformed", "timer-drift", "dry-run-failed", "patch-failed",
+                     "patch-rv-conflict", "patch-uid-replaced", "rollout-failed", "final-uid-replaced", "final-spec-drift"):
+            with self.subTest(mode=mode):
+                state = self.root / "bundle.json"
+                if state.exists():
+                    state.unlink()
+                result = self.transition(DRAIN_TEST_LIVE_MODE=mode)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertNotIn("profile transitioned:", result.stdout)
+
+    def test_response_lost_is_ambiguous_and_exact_uid_restore_is_available(self):
+        result = self.transition(DRAIN_TEST_LIVE_MODE="patch-response-lost")
+        self.assertNotEqual(result.returncode, 0)
+        profiles.PROFILE.check_profile(self.applied()[0], "exploration")
+        self.assertNotIn("profile transitioned:", result.stdout)
+        result = self.transition(RUNTIME_HOST_DRAIN_PROFILE="production")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        profiles.PROFILE.check_profile(self.applied()[0], "production")
 
 
 if __name__ == "__main__":
