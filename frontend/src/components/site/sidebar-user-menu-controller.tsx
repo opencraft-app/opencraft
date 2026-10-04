@@ -7,7 +7,6 @@ import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID, getAgentSectionHref, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
-import { shouldMoveModelEntryToAccountMenu } from "@/lib/agent-plan-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { accountPassCanRenew, accountPassDisplayName } from "@/lib/account-pass-summary";
 import { getPassStatus, isPaidBillingEnabled } from "@/lib/billing-flow";
@@ -17,7 +16,6 @@ import { isGlobal } from "@/lib/region";
 import { useAccountPassSummary } from "@/lib/use-account-pass-summary";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { installConsoleShowCommand, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
-import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { InternationalLanguageMenu } from "./language-switcher";
 import { SidebarUserMenu, type SidebarUserMenuProps } from "./sidebar-user-menu";
@@ -63,12 +61,6 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     ? { state: "ready", label: t("已使用积分"), ...summary.credits }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
   const entries: SidebarUserMenuProps["entries"][number][] = [];
-  if (shouldMoveModelEntryToAccountMenu(activePass)) entries.push({
-    id: "model",
-    kind: "model",
-    href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams),
-    label: resolveAgentConsoleCollectionLabel("model", i18n.language, t),
-  });
   entries.push(
     {
       id: "files",

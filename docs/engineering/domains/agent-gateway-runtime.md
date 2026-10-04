@@ -37,6 +37,8 @@ OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展
 
 国内站嵌入式 Chat 的手机输入区由 OpenCraft Shadow DOM 内的 Composer 样式负责：窄屏下编辑区最小高度为 48px，宽屏保持 74px，底部操作按钮尺寸不随之缩小。宿主页面负责根据 iOS 可视视口底部和自身相对视口的实际位置调整聊天容器高度；输入法聚焦导致整页滚动时，输入区仍需贴近键盘上沿。
 
+国内站嵌入式聊天删除执行中的 Hermes 会话时，先请求 `session.interrupt`，再通过 `session.activate` 确认会话已停止，然后才执行 `session.close` 与 `session.delete`；停止失败或未获确认时保留会话。此删除流程只停止目标会话，不调用全局 `process.stop`。
+
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
 OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。
@@ -50,6 +52,8 @@ OpenCraft 的弱网恢复分开拥有共享 AppHost 连接、各 Host 的协议�
 OpenCraft Hermes Host 的 `initialize` 同时读取 CTL Bot 绑定、Hermes Profile 和群聊能力，待各自完成后才发布该连接的能力声明；其中任一读取失败仍按原有可用性/错误语义处理。首屏会话列表继续在 Host 就绪后新鲜读取 `session.list`，不跨越初始化缓存旧列表。桥接器分别记录连接、初始化与 `thread/list` 的无内容耗时，用于区分云端隧道和会话目录延迟。
 
 国内站嵌入式 Chat 的会话启动记忆按当前物理实例和原生 Profile 组成的 Host ID 隔离；若当前 Host 没有记录过会话，从新草稿开始，不使用旧版全局 Thread ID。独立 Workbench 保留旧版全局 ID 的兼容回退；显式选择的会话仍按当前 Host 执行恢复。
+
+嵌入式 Chat 向国内站侧栏回传每条会话是否正在执行，来源是同一 AppServer Thread 目录的活动状态；Hermes 对已恢复会话的目录投影沿用其缓存的运行态，`turn/started` 与 `turn/completed` 触发目录刷新。侧栏仅据此显示旋转提示，不用当前选中项、Bot 运行状态或加载历史的状态推断会话执行。
 
 OpenCraft 会话权限目录由 Host 根据 Codex 内置 profile 或 DSH preset 的实际沙箱/审批组合投影为标准语义（只读、接受编辑、完全访问）；无法验证的原生/自定义 profile 仍以引擎档案呈现，不由 Renderer 猜测。`opencraft/permission-modes` v1 的标准档位使用稳定的 `opencraft:permission-mode:*` 提交 ID，由 Host 在提交时映射为当前引擎原生 profile；恢复后的原生生效 ID 经目录映射回产品档位。DSH 选定 preset 在 Thread 创建时应用并回读校验，Turn 与 Fork 入口也校验，避免首轮执行前权限状态不一致。完整 bb 式 Host ceiling、请求值与生效值的持久对账仍属后续设计边界，不得据此宣称已经生效。
 
@@ -125,7 +129,7 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 
 - OpenCraft 标签栏在 + 后提供统一下拉：上方新建类型、下方当前任务该 region 的全部标签；右侧 Browser/Terminal 图标保持一键新建。切换复用 activate-tab，新建复用 creation action，不按类型拆菜单或新增列表真源。见 [工作区所有权](../../../opencraft/docs/platform-architecture.md)。
 
-- OpenCraft Embedded Workbench 以无内层 Sidebar 的 Web Component 接入 LightVela Agent 页：LightVela 持有外层 Sidebar、Explore/Chat 路由和会话列表呈现，OpenCraft 只提供会话 snapshot/action，并拥有右侧 Chat 与 Composer 画布。每个逻辑 Host 由 LightVela `instance_id + profile_id` 唯一确定，普通 Thread 的列表、创建、恢复、历史、模型和生命周期写入均固定在该 Hermes Profile；物理 Dashboard token 可按实例复用，但 Composer queue 等逻辑状态必须按 Profile 隔离。国内 Chat 默认进入 OpenCraft；准备期间只呈现中性加载态，embedded `show()` 成功后由 OpenCraft 拥有唯一写权限。控制台 `show()` 只控制其他隐藏功能，不切换 Chat owner。国际站继续由 AgentChat 持有 Chat。嵌入 Host profile 与 Conversation binding 仅当前 Application 有效，不写入普通 Workbench Host 目录。见 [Embedded Workbench Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
+- OpenCraft Embedded Workbench 以无内层 Sidebar 的 Web Component 接入 LightVela Agent 页：LightVela 持有外层 Sidebar、Explore/Chat 路由和会话列表呈现，OpenCraft 提供会话 snapshot、是否仍有下一页及显式加载下一页的 action，并拥有右侧 Chat 与 Composer 画布。外层列表按最近更新顺序初始展示 20 条，每次展开最多增加 20 条，可逐批收起；需要更多数据时才通过嵌入 action 翻页。每个逻辑 Host 由 LightVela `instance_id + profile_id` 唯一确定，普通 Thread 的列表、创建、恢复、历史、模型和生命周期写入均固定在该 Hermes Profile；物理 Dashboard token 可按实例复用，但 Composer queue 等逻辑状态必须按 Profile 隔离。国内 Chat 默认进入 OpenCraft；准备期间只呈现中性加载态，embedded `show()` 成功后由 OpenCraft 拥有唯一写权限。控制台 `show()` 只控制其他隐藏功能，不切换 Chat owner。国际站继续由 AgentChat 持有 Chat。嵌入 Host profile 与 Conversation binding 仅当前 Application 有效，不写入普通 Workbench Host 目录。见 [Embedded Workbench Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
 - Embedded Workbench 的生产交付保持独立 Vite target：frontend release matrix 将无 sourcemap、内容寻址的静态树同源投影到 Pages artifact 的 `/__opencraft/`，但 Next 主 bundle 不导入该树；国内用户进入 Chat 时才请求 loader。缺少 loader、manifest 或 version 输入必须令 artifact 构建失败；不得用 Legacy AgentChat 的正常 fallback 掩盖不完整发布。该同源命名空间是静态交付边界，不改变 Hermes Host/Profile、Thread 或唯一写 lease 的运行时所有权。
 - 已发送消息的图片缩略图由 ChatUI 打开预览弹窗；弹窗默认挂载到当前 Workbench Presentation Root，确保国内站内嵌 Shadow DOM 的样式、层级和焦点仍有效。显式传入的 portal 目标优先于默认根。
 - 国内默认接入的范围还包含非主 Bot Chat，以及默认收起的网页标签和会话文件只读预览面板。当前回滚须恢复前端门禁与旧 Chat token 请求并重新发布；CTL 运行时配置在页面加载后异步到达，不能直接作为启动前的 Chat owner 开关。

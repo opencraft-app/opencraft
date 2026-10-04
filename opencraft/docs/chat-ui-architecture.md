@@ -397,6 +397,9 @@ infer a second conversation model, and the embedded surface must not inject
 Sidebar DOM or rewrite the host page route. The right canvas is an
 OpenCraft-owned presentation and may reuse the standard Header, Composer,
 and Timeline implementations. The embedded product projects a collapsed preview panel with a Header toggle.
+The session snapshot also carries the AppServer Thread catalog's running state
+for each Thread. The host Sidebar may show activity from that field; selected
+Thread identity and session-list loading are not execution status.
 Only webpage tabs and read-only files linked from the conversation are exposed.
 
 For LightVela multi-Bot instances, one embedded Host is identified by
@@ -414,9 +417,12 @@ into the recent-conversation list.
 
 Hermes-backed session mutations stay on that same authority path. Rename uses
 `thread/name/set` and the bridge's native `session.title`; irreversible
-delete uses `thread/delete`, closes a live Hermes session, then invokes
-`session.delete`. UI adapters must retain the operation Promise long enough
-to expose pending and failure state.
+delete uses `thread/delete`. The bridge reads the live Hermes session first;
+if it is running, it pauses queued submissions, sends `session.interrupt`, and
+waits for `session.activate` to confirm `running: false` before closing the
+session and invoking `session.delete`. An interrupt failure or missing idle
+confirmation leaves the conversation intact. UI adapters must retain the
+operation Promise long enough to expose pending and failure state.
 
 The embedded canvas permits the existing `vela.voice-input.toggle` Composer
 action. Dictation uses the platform speech provider and the same transient input
@@ -572,6 +578,8 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 内嵌新会话标题与新建/已有会话的差异化占位提示覆盖控制台 en-US、zh-CN（含 zh-SG）、zh-Hant、id-ID、es、ja-JP、ko-KR。额外五套文案由 embedded-companion-messages.json 提供，通过嵌入专用 catalog 注入 LocaleController，跟随宿主语言切换；这不代表其他工作台文案已完整翻译，未覆盖项继续使用 defaultMessage。独立工作台语言选择项保持原样。
 
 内嵌新会话（draft 存在且尚无 submission）由 sessions bridge 显式发布 isDraft；启用右侧预览时保留顶部面板开关，已有会话继续展示标题与重命名。国内控制台内嵌聊天的加载、新会话和已有会话均无宿主圆角外框，内嵌主内容表面无阴影；保留标题重命名入口与输入框边界。预览面板默认关闭，网页标签随会话 scope 切换；文件只读预览不展示目录树、搜索或编辑。
+
+内嵌会话列表由宿主分页呈现。OpenCraft 的 Thread catalog 仍以 30 条为一个后端分页单元，sessions bridge 将当前已取会话和 `hasMoreSessions` 一并发布，并通过 `loadMoreConversations()` 显式读取下一页；宿主初始展示最近 20 条，每次「查看更多」最多增加 20 条，「收起」逐批撤回。加载失败时不推进宿主的可见数量。
 
 内嵌右侧预览面板的入口、标签列表/空态、缩放与关闭提示、宽度调整无障碍标签以及不可用状态均通过稳定消息 ID 跟随宿主语言；网页自身正文由目标站点控制，不由控制台翻译。
 
