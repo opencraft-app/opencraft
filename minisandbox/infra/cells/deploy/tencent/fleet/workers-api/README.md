@@ -147,6 +147,16 @@ Python bytecode is disabled on the builder so receipt validation cannot add
 derived files to the reviewed source closure. This prepares a candidate image;
 it does not update Kubernetes, Argo, or the live release inventory.
 
+The [2026-10-04 candidate receipt](evidence/workers-api-product-42ef7aea-20261004.json)
+records a real Go build, TCR push and isolated cold pull for the safe platform
+logger, redirect-preserving fetch client and Registry-outage facade readiness.
+Its source is the committed mono2 Go subtree, not a remembered file subset.
+It matches the runtime-2757 dependency lock and has passed leaf promotion into
+a staged inventory. It is not deployed; the original strict10k final-drain
+supervisor remains unchanged. CLS addon/CRD/topic compatibility, controlled
+canary collection, positive/negative queries and exploration release gates
+remain separate prerequisites.
+
 ```sh
 ./verify.sh
 python3.11 ./render.py \

@@ -2267,6 +2267,11 @@ Workers API容器，使用精确topic/logset ID、显式metadata白名单、JSON
 immutable回执身份绑定source/manifest、两个base digest和唯一tag，且关闭Python bytecode，
 避免改base/tag撞旧proof或污染源码closure。CLI协议回归不是镜像cold-pull/云发布资格；
 候选仍须匹配当前完整inventory，再经串行发布与探索验收才能进入CLS前置门禁。
+2026-10-04安全API候选已完成实际Go build/test、TCR push、隔离cold pull及产品回执下载，
+见[API候选回执](../../deploy/tencent/fleet/workers-api/evidence/workers-api-product-42ef7aea-20261004.json)。
+源码为mono2完整Go subtree的42ef7aea，TAT `inv-d9fteug2em` SUCCESS/0；28项staged
+inventory仅替换API leaf且保持其余27项及root metadata不变。它含安全JSON日志、fetch
+重定向不跟随与Registry outage不全局摘流修复；尚未云发布，不证明CLS通道或万活跃资格。
 
 中央CLS规则的Argo准备入口现读取既有desired Git的完整commit，仅允许与Terraform binding
 匹配的regular `logconfig.json`，拒绝symlink、过大/重复JSON及topic/采集范围漂移。真实本地Git
