@@ -43,3 +43,10 @@ webhook UID 替换则拒绝清理，不删 successor；回执新建 `0600`，拒
 回执始终 `intraServerConditionDeleteWindowObserved=false`、`claimEligible=false`。
 即使此门禁实际通过，仍要真实 Actor generation、目的 AZ 容量和完整串行安全缩容证据；
 不能据此自动启用 repair 或宣布 strict10k、完整 stateless/DO/跨 Cell 目标完成。
+
+已提交的 `d2037c0e` 全部 Go subtree 共 1,322 个 regular files，冻结副本的 hostdrain
+race 与 8 项 wrapper/verifier 回归通过，已经当前管理模板的 COS relay 落地 builder。
+[源码准备回执](evidence/source-prepared-d2037c0e-20261004.json)绑定 tree、manifest、archive
+与 exact destination；builder 核验完整 closure 和执行位，不依赖工作目录或旧节点拷贝。
+与 `03e7e7b7` 候选相比全部非测试 Go 源码没有差异，不重复构建 controller/workerd。
+这份回执的 `claimEligible=false`、`cloudFixtureExecuted=false`，不是 TKE primitive 通过。

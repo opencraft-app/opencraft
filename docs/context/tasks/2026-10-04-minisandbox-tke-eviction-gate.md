@@ -82,6 +82,20 @@ derived: false
   needs_agent_review/not_assessed/Unknown，不伪造完成评测或成熟度得分。
 - documentation校验0错误/警告；context错误列表4970项与前轮逐项一致，新Task无错误。
   actual local receipt与归档字节一致；wrapper可执行权限已补齐，不改实际运行句柄。
+- d2037c0e已FF push，工作副本干净。后续source preparation只从该committed完整Go
+  subtree导出1322 regular files；tree/manifest/bundle摘要与exact destination见source evidence。
+  frozen export的hostdrain race通过2.205秒、wrapper/verifier8项通过；实际API entry仍未运行。
+- inv-e9fixugfia SUCCESS/0：当前management plan的relay bucket经标准COS helper中转
+  2,756,071字节。inv-d9fj0ugm9f SUCCESS/0：builder核验exact archive/完整manifest/
+  closure/执行位/8GiB reserve后落地独立immutable路径，不改原source或任何Cell。
+  source preparation不是TKE gate或placement资格，claimEligible=false。
+- 03e7e7b7 candidate到d2037c0e的infra/cells全部非测试Go源码diff为空；三adapter hash
+  也与现有candidate源相同。无需重复编译controller/workerd；没有执行cloud fixture或打开repair。
+- inv-c9fj1j0k4t SUCCESS/0，00:08:07Z原unit仍同PID/InvocationID active；采样00:07:59Z
+  仍A111/115、B4/4、active0，无缺失metric/warning。下一常规观察不早于00:13:12Z。
+- 归档JSON字段与实际remote stage及local export一致；本轮最终docs0错误/警告、context4970
+  与上轮逐项相同，root26测试仍同4个历史失败、audit33通过，discovery仍not_assessed。
+  secret/impact覆盖全部5个变更（含新增source evidence），不以未快照Git diff遗漏新增文件。
 
 ## scan_scope / scan_output
 
@@ -92,9 +106,9 @@ derived: false
 
 ## checkpoint / handoff
 
-- stage：受锁TKE入口source prepared，local shared fixture真实复验通过。
-- verified：readonly target guard、source/receipt wrapper及local 12 primitive检查。
+- stage：受锁TKE入口完整冻结源码已送达builder，local shared fixture真实复验通过。
+- verified：readonly target guard、source/receipt wrapper、local 12 primitive检查及remote完整源码closure。
 - unverified：cloud callback/gate、真正Actor/目的AZ缩容及完整Phase5；join token需独立维护。
-- next_action：完成source/context/impact/secret门禁与授权FF push；下一观察不早于00:02:14Z，
+- next_action：归档source preparation证据并完成source/context/impact/secret门禁与授权FF push；
   继续同原handle观察，
   不执行云fixture或发布。锁释放后才运行独立TKE primitive，随后还需完整业务资格。

@@ -1,0 +1,25 @@
+{
+  "schema": "minisandbox-tke-source-stage/v1",
+  "verdict": "passed",
+  "scope": "source-preparation-not-cloud-gate-or-admission",
+  "claimEligible": false,
+  "sourceRevision": "d2037c0ef940199dc347287277dbe98875b014cc",
+  "sourceTree": "0e3bbc68ccb8c1aed9e286a5d52ddd4f8081a56e",
+  "manifestSha256": "65a6c306a61a0372429bcaabc39e22882893bdf7ef2055eb00454571d94f070f",
+  "fileCount": 1322,
+  "destination": "/data/actor-build/deploy/tke-eviction-src-d2037c0ef940199dc347287277dbe98875b014cc-65a6c306a61a0372429bcaabc39e22882893bdf7ef2055eb00454571d94f070f",
+  "cloudFixtureExecuted": false,
+  "checks": {
+    "exactArchiveBytesAndHash": true,
+    "entireManifestAndClosureVerified": true,
+    "sourceExecutableModesVerified": true,
+    "wrapperExecutable": true
+  },
+  "relayInvocation": "inv-e9fixugfia",
+  "stageInvocation": "inv-d9fj0ugm9f",
+  "bundleSha256": "6bfbb5c6d638a93264dd839356b493799265291baf076fa9f12c9146926b200c",
+  "bundleBytes": 2756071,
+  "localFrozenHostdrainRace": "passed",
+  "localWrapperTests": 8,
+  "nonTestGoDiffFromControllerCandidate": []
+}

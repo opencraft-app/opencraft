@@ -2305,6 +2305,13 @@ namespace，TLS/IP SAN、PDB与普通grace不放宽，cleanup按实际namespace/
 目的AZ容量和最终安全缩容均不能据此宣称通过。回执始终claimEligible=false，且未拦截
 真实server内部condition/Delete窗口；API primitive不是controller/Actor admission。
 
+该入口的committed `d2037c0e` Go subtree已完整冻结（1322 files），frozen副本race与
+wrapper回归通过，并经当前management模板COS relay落地builder；
+[源码准备证据](../../deploy/tencent/fleet/qualification/host-eviction-api/evidence/source-prepared-d2037c0e-20261004.json)
+绑定archive/tree/manifest/exact destination及执行位。全部非测试Go源码与已构建controller
+candidate相同，不重复构建controller/workerd。此证据仅source preparation，cloud fixture
+未执行、claimEligible=false；原持锁supervisor及111Host缩容状态没有被改动。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循
