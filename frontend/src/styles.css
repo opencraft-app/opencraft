@@ -1107,8 +1107,9 @@ a {
   outline-offset: 1px;
 }
 
-/* ── 日常栏的可折叠对话列表 ── */
-.lv-agents-chat-group {
+/* ── 对话与实验室分隔线 ── */
+.lv-agents-chat-group,
+.lv-agents-nav-group--labs {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid #e9ecf1;
@@ -1623,7 +1624,8 @@ a {
     border-top: 1px solid #e9ecf1;
   }
 
-  .lv-agent-sidebar-collapsed .lv-agents-chat-group {
+  .lv-agent-sidebar-collapsed .lv-agents-chat-group,
+  .lv-agent-sidebar-collapsed .lv-agents-nav-group--labs {
     margin-top: 0;
   }
 
