@@ -648,6 +648,36 @@ requested when domestic Chat is active. The release build fails closed when the
 reviewed Embedded artifact is unavailable, so legacy fallback cannot disguise
 an incomplete production artifact.
 
+Resource preparation starts at the enabled host Chat route, alongside Bot
+discovery, through the same deduplicated loader used by the migration surface.
+It registers the component but creates no Application or Host; the confirmed
+instance/Profile binding still gates the single canvas owner. Failed speculative
+loads are retryable by the surface. Optional Host Proxy startup runs independently
+of chat readiness. Remote loopback Browser navigation instead waits for its own
+proxy registration to activate; it never falls back to client-local localhost.
+Embedded Vite `assets/a-[hash][extname]` resources have immutable one-year cache
+headers in the Pages artifact. Stable loaders, version files and Service Workers
+remain revalidated; publishing must continue retaining old content-hash closures.
+
+The Embedded Application owns one deferred startup lane for Voice,
+Collaboration, Bot Chat/Management presentation and the Terminal panel module.
+The element releases that lane after its first visible `show()` handoff has
+painted; repeated `show()` calls do not activate a second copy. The required
+account/instance/Profile validation, WebSocket and Hermes providers remain in
+bootstrap, as do Terminal session/tool services needed by protocol capabilities.
+Only optional presentation modules move behind chat readiness. They activate in
+dependency order through the existing ExtensionSupervisor/Panel runtime; failure
+does not revoke an already usable chat. Full Workbench defaults to its existing
+eager startup policy. This is an Application startup plan, not a second
+Application, speculative Host, or general extension activation-event dispatcher.
+
+Retirement aborts pending optional module scopes before factories can acquire
+resources. An in-flight activation is drained before borrowed services,
+registries or the Host are disposed; its own Supervisor owns activation and
+rollback deadlines. Module waits are bounded, and late imports after timeout or
+retirement cannot install into the retired Application. A hidden/disposed element
+cannot release a stale paint callback's startup lane.
+
 `show()` is a browser-origin-scoped persisted toggle, not a one-way component
 callback. One shared feature-state controller owns versioned storage, in-page
 events, cross-tab storage reconciliation and a ref-counted global command.

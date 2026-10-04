@@ -151,6 +151,7 @@ import { environmentSourceAdapter } from "./environment-directory/contribution-a
 import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { IndexedDbSidebarLayoutStorage } from "./indexeddb-sidebar-layout-storage";
 import { BrowserModuleUrlExtensionLoader } from "./module-url-extension-loader";
+import { loadOptionalFeatureModule, type OptionalFeatureStartup } from "./optional-feature-startup";
 import { connectElectronAppHost } from "./electron-app-host";
 import { connectWebSocketAppHost } from "./websocket-app-host";
 import {
@@ -586,6 +587,8 @@ export type WebWorkbenchApplicationSupervisor =
   | ActiveWebWorkbenchApplicationSupervisor;
 
 export interface WebWorkbenchSupervisorOptions {
+  /** Internal Application-owned lane; absent keeps full Workbench eager behavior. */
+  readonly optionalFeatureStartup?: OptionalFeatureStartup;
   /** Application-owned profiles that must never enter the durable Host store. */
   readonly ephemeralHostProfiles?: readonly HostConnectionProfile[];
   /** Embedded products keep the outer page URL under their host's authority. */
@@ -1054,10 +1057,37 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => sidebarLayout.close());
     await extensions.activate(BuiltinWebSocketHostConnectionExtension);
     await extensions.activateOptional(BuiltinThemePackExtension);
-    await extensions.loadOptional("vela.voice-input", async () => {
+    const loadPresentationExtension = async (
+      id: string,
+      load: (signal?: AbortSignal) => ReturnType<Parameters<ExtensionSupervisor["loadOptional"]>[1]>,
+    ): Promise<void> => {
+      const activate = async (signal?: AbortSignal) => {
+        const moduleScope = new AbortController();
+        const abortModule = () => moduleScope.abort(signal?.reason);
+        if (signal?.aborted) abortModule();
+        else signal?.addEventListener("abort", abortModule, { once: true });
+        try {
+          return await extensions.loadOptional(id, () => loadOptionalFeatureModule(
+            moduleSignal => Promise.resolve().then(() => load(moduleSignal)), moduleScope.signal,
+          ));
+        } finally {
+          // The Supervisor's own deadline may finish before the module timer.
+          // Revoke that factory scope before accepting any late import result.
+          moduleScope.abort();
+          signal?.removeEventListener("abort", abortModule);
+        }
+      };
+      if (options.optionalFeatureStartup !== undefined) {
+        options.optionalFeatureStartup.add(id, activate);
+      } else {
+        await activate();
+      }
+    };
+    await loadPresentationExtension("vela.voice-input", async signal => {
       const createVoiceInputExtension = (
         await import("@opencraft/plugin-voice-input/runtime-entry")
       ).default;
+      signal?.throwIfAborted();
       return createVoiceInputExtension();
     });
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
@@ -1125,19 +1155,21 @@ export async function createWebWorkbenchApplicationSupervisor(
       ]);
     }
     if (platform === "web") {
-      await extensions.loadOptional("lightvela.collaboration", async () => {
+      await loadPresentationExtension("lightvela.collaboration", async signal => {
         const createLightVelaCollaborationExtension = (
           await import("@opencraft/plugin-lightvela-collaboration/runtime-entry")
         ).default;
+        signal?.throwIfAborted();
         return createLightVelaCollaborationExtension({ account: lightVelaAccount });
       });
     }
     const botSource = new AppServerBotConversationSource(botConversations.service);
     startupRollback.push(() => botSource.dispose());
-    await extensions.loadOptional("vela.bot-chat", async () => {
+    await loadPresentationExtension("vela.bot-chat", async signal => {
       const createBotChatExtension = (
         await import("@opencraft/plugin-bot-chat/runtime-entry")
       ).default;
+      signal?.throwIfAborted();
       return createBotChatExtension({
         source: botSource,
         resolver: new AppServerBotConversationResolver(botConversations.service),
@@ -1145,8 +1177,9 @@ export async function createWebWorkbenchApplicationSupervisor(
       });
     });
     let connectBotHost: (hostId: string) => Promise<void> = async () => { throw new Error("暂无可连接的实例。"); };
-    await extensions.loadOptional("vela.bot-management", async () => {
+    await loadPresentationExtension("vela.bot-management", async signal => {
       const { createBotManagementExtension } = await import("./bot-management-extension");
+      signal?.throwIfAborted();
       return createBotManagementExtension(botDirectory, botConversations.service, hostId => connectBotHost(hostId));
     });
     const extensionInstallationFiber = cordis.plugin(

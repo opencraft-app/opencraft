@@ -43,6 +43,13 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 ## 稳定不变量
 
+主站嵌入 OpenCraft 的资源准备与 Bot 发现并行，但确认实例/Profile 后才创建单一 Application。
+聊天就绪不等待可选 Host Proxy；远端回环预览由自己的窄作用域 Service Worker 注册激活决定就绪，
+而非主站页面 controller/ready。停止、关闭、切地址或销毁会拒绝迟到导航，失败不回退到客户端 localhost。
+Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/SW 仍重验证；具体边界见上述平台架构。
+
+嵌入聊天的语音、协作、Bot Chat/管理呈现与 Terminal 面板模块由同一 Application 在首个可用可见帧后按依赖顺序启动，不再阻塞 Host/Thread 就绪。账户身份、实例/Profile 校验与协议声明所需服务仍为必需依赖。未完成模块加载在超时或销毁时撤销工厂 scope；已开始的扩展激活排空后才销毁借用的 registry/Host。Full Workbench 默认保持原 eager 策略；这不等于 Host 启动超时已修复。详见 [Embedded Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
+
 - NewAPI 在选渠道失败时区分配置缺失与运行时不可用：当前授权分组（`auto` 为其可用分组集合）没有该模型的任何 `ability`，返回 HTTP 404 与 `model_not_found`；已配置但禁用的渠道、路径筛选后无候选、选渠道出错或配置查询失败继续返回 HTTP 503 与 `get_channel_failed`。正常选渠道路径不增加数据库查询。404 文案同时保留 `model_not_found` 标识，以兼容只保留异常 message 的 Hermes provider wrapper。
 
 - OpenCraft macOS 分发由下游 GitHub 镜像的 `macos-release` Environment 承载，但不取得源码权威。arm64 与 x64 必须在对应原生 Runner 组装，最终 job 才可读取 Developer ID 与 Apple 公证凭据；Universal 合并后依次完成签名、公证、staple、DMG/ZIP 封包和完整性验证。手工主分支运行只生成 Actions artifact，只有 `v*` tag 创建 GitHub Release；源码进入 mono2、镜像导出和公开制品发布仍是三个独立状态。镜像依赖的 mono2-parent shared package 使用带哈希清单的机械 workspace 快照，`shared/` 保持唯一真源，禁止用 Vite external 掩盖缺包。详细运行契约见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md)。
