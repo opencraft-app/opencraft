@@ -822,6 +822,25 @@ Deployment。这只限制数据面 fetch client，不改变控制面 client 的�
 | Router 在 activate 响应前崩溃 | 重试从 Registry 读取已提交状态；不盲删 Actor |
 | DELETE 后迟到 fetch | terminal tombstone，不能复活 Object |
 
+### 共享 Registry 故障不摘除公共 Router
+
+Workers API `/readyz` 只表达已完成配置校验、能处理请求的本地进程就绪，不主动探测 Registry
+或所有 Cell。Kubernetes startup/readiness probe 使用此路径；否则共享 Registry 短暂不可达会
+摘除全部 API Endpoint，使本可继续的 placement cache hit 也失去入口。它不代表 Cell
+`readyForPlacement`、代码发布成功或依赖系统可用，各请求仍执行原有权威和身份校验。
+
+已有 Object 的缓存命中仍刷新 UID-bound Cell serving route；新 Object、缓存淘汰和冷 Router
+必须访问 Registry，故障中返回 retryable unavailable，不猜测 placement 或创建另一 Actor。
+Deployment watch 断线仍使 active Version cache 失效，stateless dispatch 和 Host 代码加载的
+依赖不能因此旁路。Registry 自己的 `/readyz` 仍负责检查它的存储。
+
+2026-10-04 本地真实 TCP 503/断连回归确认：修复前 Object cache hit 可以完成，但公共
+`/readyz` 返回503；修复后该探针和已有 cache hit 不访问 Registry，新建/淘汰/冷 Router miss
+拒绝且不触达 Engine，恢复后从持久记录读回相同 Actor ID、generation、placement 和计数。
+测试为 `internal/workersapi/registry_outage_test.go`，使用真实 filesystem Registry Store 和
+HTTP Engine protocol double，不证明 FDB 事务或云网络故障。此前直接请求成功的证据不能
+代替 API 在故障中仍留在 Kubernetes Ready Endpoint 的实际门禁，此源码尚需发布后验证。
+
 ## 版本与 Deployment
 
 普通 Worker 的 Deployment 选择是 request-scoped。Durable Object 的代码选择是 object-scoped：

@@ -505,18 +505,13 @@ func (a *API) internalNotFound(writer http.ResponseWriter, request *http.Request
 	http.NotFound(writer, request)
 }
 
-func (a *API) ready(writer http.ResponseWriter, request *http.Request) {
-	var status map[string]any
-	if err := a.requestJSON(request.Context(), http.MethodGet, a.registryURL("/readyz"), nil, &status); err != nil {
-		a.writeUpstreamError(writer, request, err)
-		return
-	}
-	// Capacity and Cell reachability are request-scoped states, not process
-	// readiness. Existing Objects remain routable while every Cell is closed to
-	// new placement, and an outage of one Cell must not withdraw all three Hub
-	// replicas. Resolve() still fails closed for a new Object, while a request to
-	// an Object whose selected Engine is unavailable receives the public,
-	// retryable worker_unavailable response.
+func (a *API) ready(writer http.ResponseWriter, _ *http.Request) {
+	// Shared Registry availability, capacity, and Cell reachability are
+	// request-scoped states, not process readiness. Cached Objects can route
+	// without Registry, so its outage must not withdraw every Hub replica.
+	// Cache misses still require Registry truth and fail closed. Cell route
+	// identity is checked on every hit, and Deployment watch loss still fences
+	// the active code cache. No request dependency is bypassed by this probe.
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
 }
 

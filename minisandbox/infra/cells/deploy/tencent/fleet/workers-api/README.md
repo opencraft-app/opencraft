@@ -43,12 +43,15 @@ and passes module names to `unittest`, not absolute file paths. The fleet
 static gate includes a real copied-tree regression with dotted parent paths
 and an unrelated working directory.
 
-`/readyz` proves that the stateless facade and authoritative Worker Registry
-are usable. It deliberately does not require an admitted placement candidate
-or every Cell Engine to be healthy. Capacity is request-scoped: new Object
-creation fails closed with `no_admission_capacity`, and an Object pinned to an
-unavailable Cell returns retryable `worker_unavailable`; neither condition may
-withdraw every Hub replica and interrupt Objects assigned to other Cells.
+`/readyz` reports local facade readiness after configuration validation. It does
+not probe Registry, require an admitted placement candidate, or require every
+Cell Engine to be healthy. Registry outages must not withdraw all Hub replicas
+and cut off already-cached Object routes. New Objects and placement-cache misses
+still need Registry truth and fail closed when it is unavailable. Cell route
+identity is checked on every hit. Deployment watch loss still disables the active
+Worker code cache; readiness does not bypass code loading or freshness checks.
+Registry has its own storage readiness probe, and Cell qualification remains
+independent of facade readiness. Capacity and dependency failures are request-scoped.
 
 Stateless dispatch keeps at most 4,096 recently used active Workers per API
 replica. This is not a TTL cache: Registry changes an opaque namespace cursor
@@ -184,7 +187,8 @@ ACTOR_WORKERS_API_INSTALL_RECEIPT=/protected/workers-api-install.json \
 
 Installation passes only after the current HPA replica target (never fewer than three)
 is digest-pinned, fully Ready and spread across at least three distinct nodes, and
-`/readyz` reaches the Registry. The renderer and install
+the local `/readyz` probe succeeds. This does not qualify Registry availability or
+an end-to-end Worker request. The renderer and install
 receipt still require the complete pair of private Engine routes and separate
 credentials; live Engine and placement-capacity health are monitored and
 enforced per request rather than coupled to global Pod readiness.
