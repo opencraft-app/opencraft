@@ -9,26 +9,35 @@ performance_run_id=${2:?usage: run-on-builder.sh CAPACITY_RUN_ID PERFORMANCE_RUN
 	exit 2
 }
 
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [[ ${AUTONOMY_OPERATION_LOCK_HELD:-0} != 1 ]]; then
+	exec "$script_dir/../../operations/with-autonomy-operation-lock.sh" -- bash "$0" "$@"
+fi
+base=${ACTOR_BOOTSTRAP_ROOT:-/data/actor-bootstrap/beijing-rebuild-20260915}
+# Keep compatibility with capacity producers that hold their own lock. Both
+# descriptors survive through load, response drain, cleanup and capture.
+exec 8>"$base/load-tests/ten-thousand-active.lock"
+flock -n 8 || { echo "another capacity qualification is running" >&2; exit 75; }
+lock=$base/load-tests/router-performance.lock
+exec 9>"$lock"
+flock -n 9 || { echo "another Router performance qualification is running" >&2; exit 75; }
+
 source_root=$(readlink -e "${ACTOR_REVIEWED_SOURCE:?ACTOR_REVIEWED_SOURCE must name the immutable reviewed source}")
 [[ $source_root =~ ^/var/lib/actor-build/deploy/q01-src-[a-f0-9]{40}-[a-f0-9]{64}$ ]] || {
 	echo "ACTOR_REVIEWED_SOURCE must resolve to an immutable q01 source tree" >&2
 	exit 2
 }
-base=${ACTOR_BOOTSTRAP_ROOT:-/data/actor-bootstrap/beijing-rebuild-20260915}
 runner=$source_root/infra/cells/deploy/tencent/fleet/load/router-performance/run.py
 collector=$source_root/infra/cells/deploy/tencent/fleet/load/router-performance/capture.py
 capacity_receipt=$base/load-tests/ten-thousand-active-$capacity_run_id/receipt.json
 endpoint_receipt=$base/receipts/workers-api/endpoint-installation.json
 kubeconfig=$base/input/management.kubeconfig
 out=$base/load-tests/router-performance-$performance_run_id
-lock=$base/load-tests/router-performance.lock
 
 for input in "$runner" "$collector" "$capacity_receipt" "$endpoint_receipt" "$kubeconfig"; do
 	test -f "$input"
 done
 test ! -e "$out"
-exec 9>"$lock"
-flock -n 9 || { echo "another Router performance qualification is running" >&2; exit 75; }
 
 # Reject a stale, partial, or failed capacity result before publishing temporary
 # Worker/Object resources. capture.py repeats this validation when it binds the

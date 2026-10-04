@@ -1074,6 +1074,10 @@ dry-run、提交、rollout后重新核对同UID、目标profile和其余完整sp
   2026-10-02 本地真实子进程回归已复现旧 verifier 对 UID 替换、未准入节点和时间重放的错误放行。
   新校验只加强离线证据门禁，不改变正在运行的云端请求、3 秒 SLO 或零稳态重试约束。
 - 量化 Router p50/p99/p999、cache hit ratio、Registry TPS、跨 Cell RTT 和每请求 CPU；
+- Router性能编排也必须持有舰队整段operation lock与capacity producer锁，覆盖负载、响应
+  排空、精确清理及采集；原容量supervisor尚存活时，即使只在自然drain等待也拒绝并行。
+  入口的真实Bash/flock回归证明冲突先于输入/输出/API，以及失败后释放；这是本地编排
+  证据，不代替万活跃、缓存命中/副本曲线或云性能资格。
 - Runtime 云构建可显式接入候选源码的 fresh stage：在签发临时 push 权限前验真 source/manifest、
   fork/FDB/toolchain identity、规范四文件 hash 和 static ELF，复制后再次校验并保留原 receipt。
   不读取旧 Runtime、不重标旧产物，不改变 Rust workspace/ABI/资源限制或发布资格。

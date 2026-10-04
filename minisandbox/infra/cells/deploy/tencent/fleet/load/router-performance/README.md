@@ -90,6 +90,17 @@ kubeconfig from authoritative receipts and selects the Hub Registry Service. It
 refuses to create temporary resources unless the exact capacity receipt is a
 complete passed 10k cycle, then runs both the five-minute load and collector:
 
+The entrypoint also holds the existing fleet-wide autonomy operation lock,
+the capacity producer's `ten-thousand-active.lock`, and its own performance
+lock for the whole workflow. Contention fails before source selection, output
+creation, or API requests. A caller already inside the fleet operation wrapper
+keeps that wrapper's ownership; the capacity and performance locks still apply.
+These are operational serialization guards, not authorization boundaries.
+Do not run it alongside an original capacity supervisor that is still alive,
+even after that supervisor has finished Object cleanup and is only waiting for
+natural drain. Local Bash/flock tests prove serialization and release after
+preflight failure, not cloud performance or successful 10k qualification.
+
 容量前置门禁与最终采集共用 `capture.py` 的 `validate_qualification`。八项周期检查必须全部存在，
 每个值必须为 JSON `true`；空或部分表、字符串 `"false"`、整数 `1` 均不能替代通过。
 新增检查项也必须为真，`expected.active` 必须为至少10000的整数。builder 在创建输出目录和
