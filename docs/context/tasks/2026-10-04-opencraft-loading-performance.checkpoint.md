@@ -16,6 +16,7 @@ derived: true
 ---
 
 ## stage
+Feature commit ee7ddd3f9 pushed; MR !4961 created (global ID 27556291), target master. First platform readback: opened/can_be_merged, commit_check_state=success, commit_check_block=false. Normal merge is authorized; later readback must establish actual merged state and master ancestry. TAPD is moving to awaiting acceptance, not done; public preview, Fanny/owner CR and production deployment are not completed.
 First batch implemented and second-batch optional startup implemented. Same-Application deferred lane, module/factory retirement fencing and bounded loads preserve Supervisor ownership. Earlier source typecheck and embedded release build passed; 26 startup/lifecycle and 132 related regression tests passed. Latest user explicitly authorized commit, push and MR merge to master. Production release/restart remains outside scope. Changes are isolated onto perf/opencraft-embedded-startup-20261004 at master bbd7ffb83 for fresh verification, retaining upstream loader deadlines and browser storage options.
 Readiness failure reproduced on unchanged first-batch artifact: TAT/session succeeds, PtyReady and a 7631-byte input occur, but no ensure completion marker and no AppServer initialize. At ~75 seconds Host connect fails at the ensure deadline. Diagnostic-only prompt-gated A/B succeeds, strongly supporting an early long-line PTY input race. Final optional artifact without that diagnostic gate still reproduces cold/warm >40s; do not claim Host stability fixed.
 

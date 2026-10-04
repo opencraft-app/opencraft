@@ -28,7 +28,7 @@
 
 ## 需求清单
 
-OPT-010：[OpenCraft 嵌入启动链路](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138752342)，当前 `active`；独立分支 `perf/opencraft-embedded-startup-20261004` 基于最新 master `bbd7ffb83`。用户明确授权本项提交、推送、合入 master，不等待挂起需求，不包含生产发布。保留未修复的 Host bootstrap 竞态及因果 A/B 缺口，不宣称稳定性已解决；公开分支预览及 Fanny/负责人 CR 未完成。
+OPT-010：[OpenCraft 嵌入启动链路](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138752342)，当前 `awaiting_review`；独立分支 `perf/opencraft-embedded-startup-20261004` 基于 master `bbd7ffb83`，功能提交 `ee7ddd3f9` 已推送并创建 [MR !4961](https://git.woa.com/wisp/mono2/-/merge_requests/4961)。用户明确授权本项提交、推送、合入 master，不等待挂起需求，不包含生产发布。保留未修复的 Host bootstrap 竞态及因果 A/B 缺口，不宣称稳定性已解决；公开分支预览及 Fanny/负责人 CR 未完成。
 
 | ID | 需求 | 状态 | 独立分支 | 验收目标 | 下一步 |
 |---|---|---|---|---|---|
@@ -47,7 +47,6 @@ OPT-010：[OpenCraft 嵌入启动链路](https://tapd.woa.com/tapd_fe/t/index/70
 
 | ID | 需求 | 状态 | 独立分支 | 下一步 |
 |---|---|---|---|---|
-| OPT-010 | OpenCraft 嵌入启动链路优化 | `active` | `perf/opencraft-embedded-startup-20261004` | 独立复验、提交前 CR、提交推送、MR 并按正常合并门禁进入 master；生产及验收另记 |
 
 ## 待确认（看板统一回溯）
 
@@ -62,6 +61,7 @@ OPT-010：[OpenCraft 嵌入启动链路](https://tapd.woa.com/tapd_fe/t/index/70
 
 | ID | 卡片 | MR | 后续 |
 |---|---|---|---|
+| OPT-010 | [嵌入启动链路](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138752342) | [!4961](https://git.woa.com/wisp/mono2/-/merge_requests/4961) | 功能提交已推送，平台检查 success/can_be_merged；按用户授权尝试正常合并。公开预览、Fanny/负责人 CR 与登录态验收尚未完成；Host 风险和全量 gate 限制保留；未发布生产 |
 | OPT-001 | [订阅页促销标签](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685577) | [!4775](https://git.woa.com/wisp/mono2/-/merge_requests/4775) | 已合入 master；等待用户反馈 CR 结果与登录后真实报价验收，发布状态未核实 |
 | OPT-003 | [套餐卡 Hover 外框](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138685610) | [!4776](https://git.woa.com/wisp/mono2/-/merge_requests/4776) | 已合入 master；等待用户反馈 CR 结果与真实设备视觉验收，发布状态未核实 |
 | OPT-006 | [移动端首页转义符](https://tapd.woa.com/tapd_fe/t/index/70234090?workitemId=1070234090138690655) | [!4774](https://git.woa.com/wisp/mono2/-/merge_requests/4774) | 已合入 master；Fanny、负责人 CR 与移动端视觉验收待核实，发布状态未核实 |
@@ -77,6 +77,8 @@ OPT-010：[OpenCraft 嵌入启动链路](https://tapd.woa.com/tapd_fe/t/index/70
 | — | — | 当前无尚未启动的新需求；OPT-004 挂起 | — | — | 需用户回复的 OPT-002、005、008 暂存待确认；当前无 active |
 
 ## 处理记录
+
+- 2026-10-04：OPT-010 完成功能提交 `ee7ddd3f9` 并推送；MR !4961（全局 ID `27556291`）已创建，首次回读 `opened/can_be_merged`、commit check `success`、block=false。独立复验18启动测试、28相关/真实PTY、8前端测试、类型与边界、同步、国内/embedded构建及真实Chromium代理smoke通过；未改范围 extension-artifacts 断言失败并挂起，完整 gate 未通过。用户直接源码交付授权不等于公开预览或生产已部署，后续 CR/验收未冒充完成。
 
 - 2026-10-04：OPT-010 卡片 `1070234090138752342` 入「待优化」后转「进行中」（原处理槽为空），评论 `1070234090217875734` 记录用户直接交付授权。仅提取本项资源并行准备、SW 就绪与聊天分离、哈希缓存、单 Application 可选扩展调度；原 dirty 工作区及其他改动保持不变。独立工作区按锁文件安装自己的依赖，不借用其他 checkout。已有隔离浏览器诊断用于风险说明，不将诊断 prompt gate 当成生产修复。
 

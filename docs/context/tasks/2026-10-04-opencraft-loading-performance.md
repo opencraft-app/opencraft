@@ -80,6 +80,8 @@ derived: false
 
 ## 2026-10-04 Git 交付复验
 
+- 交付回执：功能提交 `ee7ddd3f9` 已推送；[MR !4961](https://git.woa.com/wisp/mono2/-/merge_requests/4961) 已创建，目标 master。首次平台回读 `can_be_merged`、commit check `success`、block=false；按最新授权继续正常合并，合并结果以随后平台及 Git readback 为准。
+
 - 最新授权：用户要求“先提交，推送，合入 master”。单项独立分支 `perf/opencraft-embedded-startup-20261004` 从 `origin/master@bbd7ffb83` 创建；仅提取本项改动，保留 upstream loader 的30秒 deadline、轻量错误文案和 browserMetadataStorage。原 dirty checkout 及其其他改动不在提交集。
 - 新工作区按各自锁文件安装 OpenCraft/npm 与 frontend/pnpm 依赖，没有借用其他 checkout 的 node_modules。
 - 新源码 Web 类型检查、typography/platform boundaries、130 文件 Agent Console 同步检查通过。前端 check exit 0（166 current/171 baseline，0 new/5 resolved）；启动与所有权聚焦测试18/18、相关浏览器/扩展/嵌入账户/恢复/真实PTY回归28/28、前端资源准备和缓存规则测试8/8。
