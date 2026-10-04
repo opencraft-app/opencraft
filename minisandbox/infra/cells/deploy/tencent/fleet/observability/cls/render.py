@@ -86,6 +86,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binding", type=Path, required=True)
     parser.add_argument("--expected-cluster-id", required=True)
+    parser.add_argument("--format", choices=("yaml", "json"), default="yaml")
     args = parser.parse_args()
     try:
         with args.binding.open("rb") as source:
@@ -97,7 +98,10 @@ def main() -> int:
         # Never echo an untrusted binding or JSON parser excerpt.
         print(f"CLS render rejected: {type(error).__name__}", file=sys.stderr)
         return 2
-    yaml.safe_dump(document, sys.stdout, sort_keys=False)
+    if args.format == "json":
+        print(json.dumps(document, sort_keys=True, separators=(",", ":")))
+    else:
+        yaml.safe_dump(document, sys.stdout, sort_keys=False)
     return 0
 
 

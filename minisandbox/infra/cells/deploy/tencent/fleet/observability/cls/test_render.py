@@ -88,6 +88,9 @@ class CLSRenderTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(yaml.safe_load(result.stdout), MODULE.render(binding(), "cls-test1234"))
+            json_result = subprocess.run(command + ["--format", "json"], capture_output=True, text=True)
+            self.assertEqual(json_result.returncode, 0, json_result.stderr)
+            self.assertEqual(json.loads(json_result.stdout), MODULE.render(binding(), "cls-test1234"))
             for invalid in (
                 '{"authorization":"private-message" invalid-json}',
                 json.dumps(binding())[:-1] + ',"topicId":"33333333-3333-3333-3333-333333333333"}',

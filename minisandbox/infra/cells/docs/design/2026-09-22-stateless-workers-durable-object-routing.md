@@ -2221,6 +2221,14 @@ Workers API容器，使用精确topic/logset ID、显式metadata白名单、JSON
 声明与本地mock provider plan不是云collector资格：尚未安装agent或发布安全API镜像，
 后续需在operation lock空闲后核验addon/CRD/实际topic归属、独立Argo及查询收据。
 
+中央CLS规则的Argo准备入口现读取既有desired Git的完整commit，仅允许与Terraform binding
+匹配的regular `logconfig.json`，拒绝symlink、过大/重复JSON及topic/采集范围漂移。真实本地Git
+回归覆盖脏工作树、较新HEAD和Git replace均不得改变旧固定commit。独立Project按基座Argo
+v3.5.2的group/kind/name限定单份LogConfig，拒绝所有namespaced资源；Application只解析该
+文件，固定C destination，明确unqualified且不自动sync/selfHeal/prune。它不发布Git、安装
+组件或证明云身份；auto-sync关闭也不阻止手工Sync。实际collector、Argo版本/CRD、仅C
+resource inclusions、安全API镜像和CLS正反查询仍需独立锁内门禁，不能从准备声明晋升资格。
+
 严格负载后的自然缩容还暴露一个独立liveness缺口：A在111 Ready Host、active0、无release
 hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的skew7超过当前缩容
 边界6。低前缀最终可平衡不代表中间删除已被授权，等待也不会改变现有ordinal到AZ映射。

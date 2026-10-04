@@ -62,3 +62,35 @@ TF_DATA_DIR 做 `init -backend=false` 和 `validate`，不要接旧 COS state �
 
 renderer 的 annotation 只是声明，不是 live UID 或安全镜像的证明。本轮没有实现安装/发布
 入口或完成上述云 gate；不得把 Terraform validate 或本地测试当成 CLS 已上线。
+
+## 独立中央 Argo 发布准备
+
+`render.py --format json` 可生成单份 `logconfig.json`，保持 YAML 默认输出不变。
+候选规则放在中央既有 desired Git 的 `management/cls/<managementId>/logconfig.json`，
+不放入 Workers API 工作负载目录。`render-gitops.py` 从调用者选定的可信本地 clone 读取
+指定完整 commit，核对 origin 身份、regular blob、64 KiB 上限、唯一 JSON 字段及规则全文。
+不读取脏工作树、不追踪 main/HEAD、不接受 symlink，不执行 fetch/checkout/push。
+
+```sh
+# 要先在已有发布流程中取得候选 commit 和其本地 clone。本命令只输出准备声明。
+python3 infra/cells/deploy/tencent/fleet/observability/cls/render-gitops.py \
+  --repository-dir /protected/central-desired-clone \
+  --revision <full-reviewed-candidate-commit> \
+  --binding /protected/platform-cls-binding.json \
+  --expected-cluster-id cls-exactcluster
+```
+
+生成独立 AppProject/Application：只允许精确同名的 cluster-scoped `LogConfig`，所有
+namespaced 资源拒绝，固定 C 的 in-cluster destination；Application 固定 Git revision，
+非递归且只解析 `logconfig.json`，不包含其他文件、agent、CRD、Secret 或 runtime。
+资源 name 限制依据基座锁定的
+[Argo v3.5.2 实现](https://github.com/argoproj/argo-cd/blob/v3.5.2/pkg/apis/application/v1alpha1/types.go)，
+文件过滤使用[官方 directory include 机制](https://argo-cd.readthedocs.io/en/stable/user-guide/directory/)。
+旧 Argo 不得忽略未知 name 字段后继续安装，实际版本/CRD仍需上线核验。
+
+准备声明明确为 `collection-admission=unqualified`，自动同步、自愈、prune 默认关闭，
+不加级联删除 finalizer。禁用 auto-sync 不会禁止操作员手工 Sync；本入口不是安全镜像/
+agent/云身份/查询验证器，未通过上节门禁仍不能安装或手工同步。origin 字符串与 annotation
+不证明 clone 来源或集群 UID；可信发布链、实际精确版本和实时重新核对不可省略。
+后续还要将 LogConfig discovery 纳入仅 C 的 Argo resource inclusions，并在整段 operation
+lock 内证明规则归属与正反查询，再通过正式发布打开自愈。当前没有修改共享 Argo policy。
