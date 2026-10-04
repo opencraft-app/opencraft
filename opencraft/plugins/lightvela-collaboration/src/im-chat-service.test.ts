@@ -232,6 +232,37 @@ test("a late send clears only its original conversation draft", async () => {
   service.dispose();
 });
 
+test("reopening a conversation cannot submit its in-flight draft twice", async () => {
+  let resolveSend!: (value: Message) => void;
+  const sent: SendTextInput[] = [];
+  const service = new ImChatService({
+    loadHistory: async () => ({ completed: true, messages: [] }),
+    markRead: async () => undefined,
+    reconcileMessage: async () => { throw new Error("not used"); },
+    sendText: async (input) => {
+      sent.push(input);
+      if (sent.length === 1) return new Promise<Message>((resolve) => { resolveSend = resolve; });
+      return message("duplicate", input.channel.conversationId, input.text);
+    },
+    subscribeMessages: () => () => undefined,
+    waitUntilReady: async () => undefined,
+  });
+  await service.open(channel);
+  service.setDraft("one message");
+  const first = service.sendDraft();
+  try {
+    await service.open(direct);
+    await service.open(channel);
+    await service.sendDraft();
+    assert.equal(sent.length, 1);
+    assert.equal(service.getSnapshot().phase, "sending");
+  } finally {
+    resolveSend(message("sent-1", channel.conversationId, "one message"));
+    await first;
+    service.dispose();
+  }
+});
+
 test("IM Chat loads older pages in chronological order without duplicating messages", async () => {
   const cursors: Array<string | undefined> = [];
   const at = (id: string, minute: number) => ({

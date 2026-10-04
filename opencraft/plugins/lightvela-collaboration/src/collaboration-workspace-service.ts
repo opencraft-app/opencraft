@@ -175,10 +175,12 @@ export class CollaborationWorkspaceService {
       throw error;
     });
     const operation = submitted.then(async (result) => {
+      if (this.disposed) throw new Error("Collaboration workspace service is disposed");
       const serverId = result.kind === "ready" ? result.resource.id : result.accepted.resourceId;
       const page = await this.client.listServers();
       const server = page.items.find((item) => item.id === serverId) ??
         (result.kind === "ready" ? result.resource : await this.client.getServer(serverId));
+      if (this.disposed) throw new Error("Collaboration workspace service is disposed");
       if (!this.disposed) {
         this.publish({
           servers: Object.freeze(
@@ -203,6 +205,7 @@ export class CollaborationWorkspaceService {
     if (this.disposed) throw new Error("Collaboration workspace service is disposed");
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const result = await this.client.createInvite(serverId, expiresAt);
+    if (this.disposed) throw new Error("Collaboration workspace service is disposed");
     return result.token;
   }
 
@@ -230,9 +233,11 @@ export class CollaborationWorkspaceService {
         throw error;
       });
     const operation = submitted.then(async (result) => {
+      if (this.disposed) throw new Error("Collaboration workspace service is disposed");
       const page = await this.client.listServers();
       const server = page.items.find((item) => item.id === result.serverId) ??
         await this.client.getServer(result.serverId);
+      if (this.disposed) throw new Error("Collaboration workspace service is disposed");
       if (!this.disposed) {
         this.publish({
           servers: Object.freeze(page.items.some((item) => item.id === server.id)
@@ -273,6 +278,7 @@ export class CollaborationWorkspaceService {
 			crypto.randomUUID(),
 		);
 		await this.loadComputers(serverId);
+		if (this.disposed) throw new Error("Collaboration workspace service is disposed");
 		return created;
 	}
 
@@ -280,6 +286,8 @@ export class CollaborationWorkspaceService {
     if (this.disposeOperation !== null) return this.disposeOperation;
     this.disposed = true;
     this.generation += 1;
+    this.createAttempt = null;
+    this.joinAttempt = null;
     this.listeners.clear();
     this.disposeOperation = this.messaging.dispose();
     return this.disposeOperation;

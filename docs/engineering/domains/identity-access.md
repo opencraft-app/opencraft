@@ -160,6 +160,9 @@ Collaboration 同时验证内部 Bearer 和 LightVela subject。首次出现的�
 保存邮箱。旧 `GET /me` 的已发布邮箱 Account 响应保持不变；没有邮箱的委托 actor 不得
 伪造邮箱满足旧 DTO，旧接口必须在写成功状态前拒绝编码无效资料。OpenCraft 使用新的资料接口，
 Gateway 只按精确路径放行，身份断言和内部 Bearer 校验不变。
+协作客户端的 IM owner、目录、历史、草稿及一次性邀请显示按共享账户
+`authGeneration` 分代。身份变化时立即废弃旧 scope，旧 SDK 注销完成后才可登录新用户；
+旧请求迟到不能向新 View 返回 Server/私聊导航。该消费侧不销毁共享账户或建立第二套登录态。
 配置内部 Gateway token 时，本地注册、密码登录、refresh 和 logout 路由不进入已实现路由集合。
 Human 产品路径由 Gateway 的精确 allowlist 控制；
 成员邀请只公开经 Human 会话验证的 `POST /servers/{serverId}/invites` 与

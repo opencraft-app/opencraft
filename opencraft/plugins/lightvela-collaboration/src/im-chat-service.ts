@@ -48,6 +48,7 @@ export class ImChatService {
   private readonly unsubscribeMessages: () => void;
   private readonly drafts = new Map<string, string>();
   private readonly pendingSends = new Map<string, { readonly requestId: string; readonly draft: string }>();
+  private readonly inFlightSends = new Set<string>();
   private historyOperation: Promise<void> | null = null;
   private generation = 0;
   private disposed = false;
@@ -107,7 +108,7 @@ export class ImChatService {
       const page = await this.messaging.loadHistory(address);
       if (this.disposed || generation !== this.generation) return;
       this.publish({
-        phase: "ready",
+        phase: this.inFlightSends.has(address.conversationId) ? "sending" : "ready",
         messages: mergeMessages(page.messages, this.snapshot.messages),
         historyCompleted: page.completed,
         historyCursor: page.nextCursor ?? null,
@@ -170,9 +171,10 @@ export class ImChatService {
 
   async sendDraft(): Promise<void> {
     const address = this.snapshot.address;
-    if (this.disposed || address === null || this.snapshot.phase === "sending") return;
+    if (this.disposed || address === null || this.inFlightSends.has(address.conversationId)) return;
     const pending = this.pendingSends.get(address.conversationId);
     if (pending !== undefined) {
+      this.inFlightSends.add(address.conversationId);
       this.publish({ phase: "sending", error: null });
       try {
         const result = await this.messaging.reconcileMessage({
@@ -197,6 +199,8 @@ export class ImChatService {
             error: error instanceof Error ? error.message : String(error),
           });
         }
+      } finally {
+        this.inFlightSends.delete(address.conversationId);
       }
       return;
     }
@@ -204,6 +208,7 @@ export class ImChatService {
     const text = draft.trim();
     if (text === "") return;
     const requestId = this.createRequestId();
+    this.inFlightSends.add(address.conversationId);
     this.publish({ phase: "sending", error: null });
     try {
       const message = await this.messaging.sendText({
@@ -223,6 +228,8 @@ export class ImChatService {
         sendResolution: this.pendingSends.has(address.conversationId) ? "uncertain" : "none",
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      this.inFlightSends.delete(address.conversationId);
     }
   }
 

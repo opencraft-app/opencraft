@@ -123,6 +123,8 @@ export class TencentMessagingPort implements MessagingPort {
 
   public async close(): Promise<void> {
     this.ready = false;
+    this.allowedConversationIds = new Set();
+    this.scopeGeneration = 0;
     await this.gateway.logout();
   }
 

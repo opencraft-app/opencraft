@@ -17,6 +17,7 @@ export class CollaborationMessagingService {
   constructor(
     private readonly sessions: HumanImSessionClient,
     private readonly messaging: MessagingLifecyclePort,
+    private readonly beforeConnect: Promise<void> = Promise.resolve(),
   ) {}
 
   connect(): Promise<void> {
@@ -25,12 +26,14 @@ export class CollaborationMessagingService {
     }
     if (this.connectOperation !== null) return this.connectOperation;
     const operation = (async () => {
+      await this.beforeConnect;
+      if (this.disposed) return;
       const session = await this.sessions.createHumanImSession();
       if (this.disposed) return;
       await this.messaging.connect(session);
       if (this.disposed) await this.close();
     })().catch((error: unknown) => {
-      this.connectOperation = null;
+      if (this.connectOperation === operation) this.connectOperation = null;
       throw error;
     });
     this.connectOperation = operation;

@@ -15,6 +15,7 @@ Tasks/Reminders 暂不进入插件。
 - Human Web 通过本扩展内的 `@tencentcloud/chat` Adapter 直连腾讯云 IM。
 - Agent/Host Runtime 继续由 `lightvela.hermes` 与 `vela-computer` 持有；本扩展不注册 Bot contribution。
 - 腾讯 IM SDK、连接与消息 snapshot 属于 Extension activation/service 生命周期，不属于 React View。
+- 账户身份变化会重新建立独立会话 scope；旧 IM owner 注销后才登录新用户，草稿和目录不跨账户沿用。
 - Computer View 只读取 Server 已有映射，不提供外部 Enrollment、安装脚本或 TAT 纳管入口。
 - Computer 创建只允许选择当前 LightVela 账户下已有实例；本页面不购买或新建实例。
 - 腾讯 IM Chat 不 import 或复用 Codex Thread/Turn/Activity/Composer 状态。

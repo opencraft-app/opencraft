@@ -59,6 +59,24 @@ test("a failed IM login can be retried without creating a second connection owne
   await service.dispose();
 });
 
+test("new account IM login waits for the previous account shutdown", async () => {
+  let finishShutdown!: () => void;
+  const shutdown = new Promise<void>((resolve) => { finishShutdown = resolve; });
+  let requests = 0;
+  const service = new CollaborationMessagingService(
+    { createHumanImSession: async () => { requests += 1; return session; } },
+    { connect: async () => {}, close: async () => {} },
+    shutdown,
+  );
+  const connection = service.connect();
+  await Promise.resolve();
+  assert.equal(requests, 0);
+  finishShutdown();
+  await connection;
+  assert.equal(requests, 1);
+  await service.dispose();
+});
+
 test("Collaboration workspace loads Servers and connects messaging through one owner", async () => {
   let messagingConnects = 0;
   let messagingDisposals = 0;
@@ -86,6 +104,8 @@ test("Collaboration workspace loads Servers and connects messaging through one o
       }),
 	  getServer: async () => { throw new Error("not used"); },
 	  createServer: async () => { throw new Error("not used"); },
+	  createInvite: async () => { throw new Error("not used"); },
+	  acceptJoinLink: async () => { throw new Error("not used"); },
 	  listComputersV2: async () => [],
 	  attachComputerV2: async () => { throw new Error("Computer is disabled"); },
     },

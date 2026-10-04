@@ -178,7 +178,27 @@ test("LightVela collaboration contributes one routed Workspace without owning Ag
       };
     },
   };
+  let authGeneration = 0;
+  let accountDisposals = 0;
+  const authorityListeners = new Set<() => void>();
+  let messageSubscriptions = 0;
+  let messagingCloses = 0;
+  let signalFirstClose!: () => void;
+  const firstClose = new Promise<void>((resolve) => { signalFirstClose = resolve; });
+  const messaging = {
+    subscribeMessages: () => {
+      messageSubscriptions += 1;
+      return () => { messageSubscriptions -= 1; };
+    },
+    close: async () => { messagingCloses += 1; signalFirstClose(); },
+  };
   const account = {
+    getSnapshot: () => ({ authGeneration }),
+    subscribe: (listener: () => void) => {
+      authorityListeners.add(listener);
+      return () => { authorityListeners.delete(listener); };
+    },
+    dispose: () => { accountDisposals += 1; },
     async listInstances() { return []; },
     async requestRaw<T>(): Promise<T> {
       return { items: [], nextCursor: null } as T;
@@ -202,7 +222,7 @@ test("LightVela collaboration contributes one routed Workspace without owning Ag
     },
     activate() {},
   });
-  await supervisor.activate(createLightVelaCollaborationExtension({ account }));
+  await supervisor.activate(createLightVelaCollaborationExtension({ account, messaging: messaging as never }));
 
   const snapshot = supervisor.contributions.getSnapshot();
   assert.deepEqual(
@@ -233,7 +253,16 @@ test("LightVela collaboration contributes one routed Workspace without owning Ag
   ]);
   assert.equal(typeof renderers.get("lightvela.collaboration.workspace")?.Component, "function");
 
+  authGeneration = 1;
+  authorityListeners.forEach((listener) => listener());
+  await firstClose;
+  assert.equal(messagingCloses, 1);
+  assert.equal(messageSubscriptions, 1);
   assert.equal(await supervisor.deactivate("lightvela.collaboration"), true);
+  assert.equal(messagingCloses, 2);
+  assert.equal(messageSubscriptions, 0);
+  assert.equal(authorityListeners.size, 0);
+  assert.equal(accountDisposals, 0);
   assert.equal(renderers.size, 0);
   assert.deepEqual(supervisor.contributions.getSnapshot().views, []);
   assert.deepEqual(supervisor.contributions.getSnapshot().navigation, []);

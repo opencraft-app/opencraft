@@ -27,6 +27,12 @@ Collaboration 与 Hermes 复用该账户 authority；北京本地预览的 Colla
 该同步预检只属于绑定了配置式 Host 的嵌入式 Chat。登录态过期时，独立 Web
 仍应启动并由账户入口和 Collaboration View 给出可恢复的登录提示。
 
+Collaboration 在同一次扩展 activation 内按共享账户的 `authGeneration` 持有独立
+service scope。身份变化立即废弃旧聊天/目录并将 View 回到协作首页；旧 IM owner
+注销完成后才允许新用户登录，旧 Server/邀请/私聊请求迟到不能导航或覆盖新 scope。
+该消费侧只解除账户订阅，不销毁或退出应用级账户。正在发送的消息按 conversation
+持有锁，导航离开再返回不能释放该锁并产生第二次提交。
+
 OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展示 Hermes 指令库；选择指令只写入可编辑草稿。用户发送时，普通指令沿既有 Composer → AppServer → Hermes `prompt.submit` 链路处理。单独发送 `/stop` 走 Hermes Host 的 `hermes/stop` 请求：已有运行中 Turn 先经 `session.interrupt` 中断，再调用 `process.stop` 清理后台进程；空闲或新会话直接调用 `process.stop`。输入框停止按钮仍只走 `turn/interrupt`，其他 Host 不展示 Hermes 指令库。
 
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。

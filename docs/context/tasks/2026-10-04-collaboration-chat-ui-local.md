@@ -133,6 +133,12 @@ precedence: task
 - 新增邀请与伪成功响应回归：插件 71/71、Gateway 包 210/210、Gateway 模块
   215/215 及其 race 检查通过；最终 OpenCraft 全量 gate、文档系统、docs-impact
   和差异空白检查通过。
+- 合入前审查补充：切走再返回仍在发送的会话曾重复提交（RED 实测 2 次），现在按会话
+  保留 in-flight 锁。共享账户切换现在替换整组 Workspace/Chat/目录/View scope，并等待
+  旧 IM owner 注销后登录新用户；旧 scope 的 Server/邀请/私聊请求迟到时被拒绝。
+  账户注销时 transport 的会话 allowlist 与代次清空，不复用旧权限范围。聚焦插件
+  76 项和扩展集成测试通过；本轮最终完整门禁通过。真实插件的隔离浏览器夹具还验证
+  账号切换→协作首页，旧 Server 请求为 0；切回原账号后草稿与一次性邀请显示均为空。
 
 ## risks
 

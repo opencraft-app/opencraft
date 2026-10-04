@@ -512,6 +512,7 @@ export function createCollaborationWorkspaceView(
                   <button
                     disabled={!chatMatchesRoute ||
                       (chat.sendResolution !== "uncertain" && !chat.draft.trim()) ||
+                      chat.phase === "loading" ||
                       chat.phase === "sending"}
                     type="submit"
                   >

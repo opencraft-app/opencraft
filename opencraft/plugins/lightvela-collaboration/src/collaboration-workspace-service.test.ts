@@ -208,3 +208,25 @@ test("Workspace accepts a join link with one request key and opens the resulting
   assert.deepEqual(keys, [keys[0], keys[0]]);
   assert.deepEqual(service.getSnapshot().servers, [server]);
 });
+
+test("a disposed account scope cannot return a late Server creation to its old View", async () => {
+  const server = {
+    id: "old-server", slug: "old", name: "Old account",
+    ownerMemberId: "owner-1", imState: "ready" as const, revision: 1,
+  };
+  let finish!: (result: { kind: "ready"; resource: typeof server }) => void;
+  const service = new CollaborationWorkspaceService({
+    getMe: async () => ({ id: "account-1" }) as Account,
+    listServers: async () => ({ items: [server], nextCursor: null }),
+    getServer: async () => server,
+    createServer: async () => new Promise((resolve) => { finish = resolve; }),
+    createInvite: async () => { throw new Error("not used"); },
+    acceptJoinLink: async () => { throw new Error("not used"); },
+    listComputersV2: async () => [],
+    attachComputerV2: async () => { throw new Error("not used"); },
+  }, { connect: async () => {}, dispose: async () => {} }, { listInstances: async () => [] });
+  const creating = service.createServer("Old account");
+  await service.dispose();
+  finish({ kind: "ready", resource: server });
+  await assert.rejects(creating, /disposed/);
+});

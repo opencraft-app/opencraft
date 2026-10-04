@@ -696,6 +696,14 @@ owns SDK close. View mount/unmount only subscribes to the service snapshot; it
 cannot recreate or dispose the IM connection. This conversation state is
 separate from AppServer Agent conversations and does not register a
 `BotContribution`.
+Within that activation, services are scoped to the shared account's
+`authGeneration`. An identity change immediately invalidates the old Chat and
+directory, replaces the Workspace and View state, and waits for the previous
+SDK owner to finish logout before logging in the new Human. Late mutations
+from a disposed scope cannot navigate the new View. The extension only
+unsubscribes from account authority on disposal; it never disposes or signs out
+the shared account. A send in progress remains locked to its conversation even
+when the user leaves and reopens that conversation.
 The empty Workspace offers Server creation through the same authenticated
 account request port; one idempotency key is retained across uncertain
 submissions, and both immediate and accepted creation responses lead to the
