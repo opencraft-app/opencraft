@@ -38,6 +38,7 @@ import {
 } from "./embedded-chat-root";
 
 import { observeEmbeddedConnection } from "./embedded-connection";
+import { HermesPhysicalConnectionPreparation, type HermesPhysicalConnectionPreparationOptions } from "@opencraft/plugin-lightvela-hermes/physical-connection";
 
 const ELEMENT_NAME = "opencraft-embedded-workbench";
 
@@ -145,6 +146,10 @@ class EmbeddedWorkbenchErrorBoundary extends Component<{
 }
 
 export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
+  /** Does not construct an element, Application, Dashboard or logical Host. */
+  static preparePhysicalConnection(options: HermesPhysicalConnectionPreparationOptions): HermesPhysicalConnectionPreparation {
+    return new HermesPhysicalConnectionPreparation(options);
+  }
   private readonly mount: HTMLDivElement;
   private readonly root: Root;
   private actions: EmbeddedWorkbenchAppActions | null = null;

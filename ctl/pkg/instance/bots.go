@@ -46,6 +46,13 @@ type hermesProfileListPayload struct {
 	Items []hermesProfileRecord `json:"items"`
 }
 
+type hermesInstanceBotsPayload struct {
+	Kind          string                 `json:"kind"`
+	Items         *[]hermesProfileRecord `json:"items"`
+	WeixinOwner   *channelBindingPayload `json:"weixin_owner"`
+	WhatsAppOwner *channelBindingPayload `json:"whatsapp_owner"`
+}
+
 type channelBindingPayload struct {
 	OK            bool   `json:"ok"`
 	Reason        string `json:"reason"`
@@ -156,7 +163,7 @@ for relative in sorted(baseline, key=lambda path: path.as_posix()):
 print(f"Aligned {len(baseline)} LightVela base skills")
 `
 
-const listHermesProfilesScript = `import asyncio
+const hermesProfileListFunctions = `import asyncio
 from datetime import datetime, timezone
 import json
 import os
@@ -165,7 +172,7 @@ import secrets
 
 import httpx
 
-async def main():
+async def list_hermes_profiles():
     token = secrets.token_urlsafe(32)
     os.environ["HERMES_DASHBOARD_SESSION_TOKEN"] = token
 
@@ -197,9 +204,11 @@ async def main():
             "gateway_running": bool(profile["gateway_running"]) if "gateway_running" in profile else None,
             "modified_at": modified,
         })
-    print(json.dumps({"items": items}, ensure_ascii=False))
+    return {"items": items}
+`
 
-asyncio.run(main())
+const listHermesProfilesScript = hermesProfileListFunctions + `
+print(json.dumps(asyncio.run(list_hermes_profiles()), ensure_ascii=False))
 `
 
 const writeHermesProfileMetadataScript = `import json
@@ -212,7 +221,7 @@ write_profile_meta(get_profile_dir(profile_id), **fields)
 print(json.dumps({"ok": True}))
 `
 
-const manageChannelBindingScript = `import fcntl
+const hermesChannelBindingFunctions = `import fcntl
 import json
 import os
 from pathlib import Path
@@ -220,153 +229,179 @@ import secrets
 import sys
 from datetime import datetime, timedelta, timezone
 
-action, channel, bot_id, profile_id, default_bot_id = sys.argv[1:6]
-reservation_id = sys.argv[6] if len(sys.argv) > 6 else ""
-# QR waits for at most 180 seconds; a longer lease tolerates delayed TAT completion.
-reservation_ttl = timedelta(minutes=10)
-home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
-root = home / ".lightvela" / "channel-bindings"
-root.mkdir(parents=True, exist_ok=True)
-path = root / (channel + ".json")
-lock_path = root / (channel + ".lock")
-scan_lock_path = root / "whatsapp-qr.lock"
-legacy_marker = root / "whatsapp-legacy-checked-v2"
 
-def scan_busy():
-    if channel != "whatsapp":
-        return False
-    with scan_lock_path.open("a") as scan_lock:
+def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, reservation_id=""):
+    # QR waits for at most 180 seconds; a longer lease tolerates delayed TAT completion.
+    reservation_ttl = timedelta(minutes=10)
+    home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
+    root = home / ".lightvela" / "channel-bindings"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / (channel + ".json")
+    lock_path = root / (channel + ".lock")
+    scan_lock_path = root / "whatsapp-qr.lock"
+    legacy_marker = root / "whatsapp-legacy-checked-v2"
+
+    def scan_busy():
+        if channel != "whatsapp":
+            return False
+        with scan_lock_path.open("a") as scan_lock:
+            try:
+                fcntl.flock(scan_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            return False
+
+    def read_current():
         try:
-            fcntl.flock(scan_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return True
-        return False
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else None
+        except (OSError, ValueError):
+            return None
 
-def read_current():
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else None
-    except (OSError, ValueError):
-        return None
+    def write_current(value):
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        temporary.replace(path)
 
-def write_current(value):
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(path)
+    def whatsapp_credentials_path(native_profile_id):
+        # ACLI --agent selects $HERMES_HOME/profiles/<id> for a named profile.
+        default_home = home if native_profile_id in ("", "default", "main") else home / "profiles" / native_profile_id
+        runtime_home = Path(os.environ.get("ACLI_RUNTIME_HOME", str(default_home)))
+        auth_dir = Path(os.environ.get("ACLI_WHATSAPP_AUTH_DIR", str(runtime_home / "whatsapp" / "session")))
+        return auth_dir / "creds.json"
 
-def whatsapp_credentials_path(native_profile_id):
-    # ACLI --agent selects $HERMES_HOME/profiles/<id> for a named profile.
-    default_home = home if native_profile_id in ("", "default", "main") else home / "profiles" / native_profile_id
-    runtime_home = Path(os.environ.get("ACLI_RUNTIME_HOME", str(default_home)))
-    auth_dir = Path(os.environ.get("ACLI_WHATSAPP_AUTH_DIR", str(runtime_home / "whatsapp" / "session")))
-    return auth_dir / "creds.json"
-
-def fresh_legacy_credentials(binding):
-    credentials = whatsapp_credentials_path(binding.get("profile_id", "default"))
-    try:
-        # No-token confirms must not consume a newer same-Bot reservation
-        # using credentials that predate that reservation.
-        return credentials.stat().st_mtime_ns >= int(datetime.fromisoformat(binding["updated_at"]).timestamp() * 1_000_000_000)
-    except (OSError, KeyError, TypeError, ValueError):
-        return False
-
-with lock_path.open("a", encoding="utf-8") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    current = read_current()
-    if channel == "whatsapp" and not legacy_marker.exists():
-        if not current and whatsapp_credentials_path("default").is_file():
-            current = {
-                "ok": True,
-                "channel": channel,
-                "bot_id": default_bot_id,
-                "profile_id": "default",
-                "status": "connected",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            write_current(current)
-        legacy_marker.touch(mode=0o600)
-    if channel == "whatsapp" and current and current.get("status") == "reserved":
+    def fresh_legacy_credentials(binding):
+        credentials = whatsapp_credentials_path(binding.get("profile_id", "default"))
         try:
-            updated_at = datetime.fromisoformat(current["updated_at"])
-            expired = datetime.now(timezone.utc) - updated_at >= reservation_ttl
-        except (KeyError, TypeError, ValueError):
-            expired = True
-        if expired and not scan_busy():
-            if whatsapp_credentials_path(current.get("profile_id", "default")).is_file():
-                # The QR process may have connected while its browser disappeared.
-                # Preserve ownership rather than allow a second Bot to scan.
-                current["status"] = "connected"
-                current["updated_at"] = datetime.now(timezone.utc).isoformat()
-                current.pop("reservation_id", None)
+            # No-token confirms must not consume a newer same-Bot reservation
+            # using credentials that predate that reservation.
+            return credentials.stat().st_mtime_ns >= int(datetime.fromisoformat(binding["updated_at"]).timestamp() * 1_000_000_000)
+        except (OSError, KeyError, TypeError, ValueError):
+            return False
+
+    with lock_path.open("a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        current = read_current()
+        if channel == "whatsapp" and not legacy_marker.exists():
+            if not current and whatsapp_credentials_path("default").is_file():
+                current = {
+                    "ok": True,
+                    "channel": channel,
+                    "bot_id": default_bot_id,
+                    "profile_id": "default",
+                    "status": "connected",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
                 write_current(current)
+            legacy_marker.touch(mode=0o600)
+        if channel == "whatsapp" and current and current.get("status") == "reserved":
+            try:
+                updated_at = datetime.fromisoformat(current["updated_at"])
+                expired = datetime.now(timezone.utc) - updated_at >= reservation_ttl
+            except (KeyError, TypeError, ValueError):
+                expired = True
+            if expired and not scan_busy():
+                if whatsapp_credentials_path(current.get("profile_id", "default")).is_file():
+                    # The QR process may have connected while its browser disappeared.
+                    # Preserve ownership rather than allow a second Bot to scan.
+                    current["status"] = "connected"
+                    current["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    current.pop("reservation_id", None)
+                    write_current(current)
+                else:
+                    path.unlink(missing_ok=True)
+                    current = None
+        if action == "get":
+            result = current or {"ok": True}
+        elif action == "claim":
+            if (channel == "whatsapp" and scan_busy()) or (current and (current.get("bot_id") != bot_id or (channel == "whatsapp" and current.get("status") == "reserved"))):
+                result = {"ok": False, "reason": "occupied", "bot_id": current.get("bot_id", "") if current else ""}
             else:
-                path.unlink(missing_ok=True)
-                current = None
-    if action == "get":
-        result = current or {"ok": True}
-    elif action == "claim":
-        if (channel == "whatsapp" and scan_busy()) or (current and (current.get("bot_id") != bot_id or (channel == "whatsapp" and current.get("status") == "reserved"))):
-            result = {"ok": False, "reason": "occupied", "bot_id": current.get("bot_id", "") if current else ""}
-        else:
-            result = {
-                "ok": True,
-                "channel": channel,
-                "bot_id": bot_id,
-                "profile_id": profile_id,
-                "status": "reserved" if channel == "whatsapp" else (current.get("status", "reserved") if current else "reserved"),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
-            if channel == "whatsapp":
-                result["reservation_id"] = secrets.token_urlsafe(24)
-            write_current(result)
-    elif action == "confirm":
-        may_confirm = bool(current and current.get("bot_id") == bot_id)
-        if channel == "whatsapp" and may_confirm:
-            # Both client generations require the reserved scan's actual credentials.
-            # Tokenized clients must also match their scan; old browsers have no token.
-            may_confirm = current.get("status") == "reserved" and (
-                current.get("reservation_id") == reservation_id if reservation_id else fresh_legacy_credentials(current)
-            ) and whatsapp_credentials_path(current.get("profile_id", "default")).is_file() and not scan_busy()
-        if not may_confirm:
-            result = {"ok": False, "reason": "owner_mismatch"}
-        else:
-            current.update({"ok": True, "status": "connected", "updated_at": datetime.now(timezone.utc).isoformat()})
-            current.pop("reservation_id", None)
-            write_current(current)
-            result = current
-    elif action in ("release", "release_reserved", "disconnect"):
-        may_release = current and current.get("bot_id") == bot_id
-        result = {"ok": True}
-        if channel == "whatsapp":
-            if scan_busy():
-                # A stale browser failure must not drop a live QR command's owner.
-                result = {"ok": False, "reason": "scan_in_progress"}
-                may_release = False
-            # A legacy DELETE has no lease or intent: never let it delete a
-            # reservation. A connected owner can be cleared only if the actual
-            # credentials are gone and no QR/delete request is in flight.
-            rollback = action == "release" and reservation_id and may_release and current.get("status") == "reserved" and current.get("reservation_id") == reservation_id
-            credentials_present = may_release and whatsapp_credentials_path(current.get("profile_id", "default")).is_file()
-            if rollback and credentials_present:
-                # A scan completed but its confirm failed in transit. Preserve ownership.
-                current["status"] = "connected"
-                current["updated_at"] = datetime.now(timezone.utc).isoformat()
+                result = {
+                    "ok": True,
+                    "channel": channel,
+                    "bot_id": bot_id,
+                    "profile_id": profile_id,
+                    "status": "reserved" if channel == "whatsapp" else (current.get("status", "reserved") if current else "reserved"),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                if channel == "whatsapp":
+                    result["reservation_id"] = secrets.token_urlsafe(24)
+                write_current(result)
+        elif action == "confirm":
+            may_confirm = bool(current and current.get("bot_id") == bot_id)
+            if channel == "whatsapp" and may_confirm:
+                # Both client generations require the reserved scan's actual credentials.
+                # Tokenized clients must also match their scan; old browsers have no token.
+                may_confirm = current.get("status") == "reserved" and (
+                    current.get("reservation_id") == reservation_id if reservation_id else fresh_legacy_credentials(current)
+                ) and whatsapp_credentials_path(current.get("profile_id", "default")).is_file() and not scan_busy()
+            if not may_confirm:
+                result = {"ok": False, "reason": "owner_mismatch"}
+            else:
+                current.update({"ok": True, "status": "connected", "updated_at": datetime.now(timezone.utc).isoformat()})
                 current.pop("reservation_id", None)
                 write_current(current)
-            disconnected = may_release and current.get("status") == "connected" and not credentials_present
-            may_release = (rollback and not credentials_present) or (action in ("release", "disconnect") and disconnected)
-            if action == "disconnect" and current and current.get("bot_id") == bot_id and not may_release and result["ok"]:
-                result = {"ok": False, "reason": "credentials_present" if credentials_present else "not_connected"}
-        elif action == "release_reserved":
-            may_release = may_release and current.get("status") == "reserved"
-        if may_release:
-            path.unlink(missing_ok=True)
-    else:
-        result = {"ok": False, "reason": "unsupported_action"}
-    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                result = current
+        elif action in ("release", "release_reserved", "disconnect"):
+            may_release = current and current.get("bot_id") == bot_id
+            result = {"ok": True}
+            if channel == "whatsapp":
+                if scan_busy():
+                    # A stale browser failure must not drop a live QR command's owner.
+                    result = {"ok": False, "reason": "scan_in_progress"}
+                    may_release = False
+                # A legacy DELETE has no lease or intent: never let it delete a
+                # reservation. A connected owner can be cleared only if the actual
+                # credentials are gone and no QR/delete request is in flight.
+                rollback = action == "release" and reservation_id and may_release and current.get("status") == "reserved" and current.get("reservation_id") == reservation_id
+                credentials_present = may_release and whatsapp_credentials_path(current.get("profile_id", "default")).is_file()
+                if rollback and credentials_present:
+                    # A scan completed but its confirm failed in transit. Preserve ownership.
+                    current["status"] = "connected"
+                    current["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    current.pop("reservation_id", None)
+                    write_current(current)
+                disconnected = may_release and current.get("status") == "connected" and not credentials_present
+                may_release = (rollback and not credentials_present) or (action in ("release", "disconnect") and disconnected)
+                if action == "disconnect" and current and current.get("bot_id") == bot_id and not may_release and result["ok"]:
+                    result = {"ok": False, "reason": "credentials_present" if credentials_present else "not_connected"}
+            elif action == "release_reserved":
+                may_release = may_release and current.get("status") == "reserved"
+            if may_release:
+                path.unlink(missing_ok=True)
+        else:
+            result = {"ok": False, "reason": "unsupported_action"}
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
-print(json.dumps(result, ensure_ascii=False))
+    return result
+`
+
+const manageChannelBindingScript = hermesChannelBindingFunctions + `
+print(json.dumps(manage_channel_binding(*sys.argv[1:7]), ensure_ascii=False))
+`
+
+// One interpreter and one regional TAT execution; preserve the existing ordered
+// Profile read and per-channel locking/reconciliation, never return a partial list.
+const listHermesInstanceBotsScript = `import os
+instance_environment = dict(os.environ)
+` + hermesProfileListFunctions + hermesChannelBindingFunctions + `
+try:
+    profiles = asyncio.run(list_hermes_profiles())
+finally:
+    # The official API may load Profile-local dotenv configuration. Previously
+    # each binding action was a new process with the instance's original env.
+    os.environ.clear()
+    os.environ.update(instance_environment)
+weixin = manage_channel_binding("get", "weixin", "", "default", sys.argv[1])
+whatsapp = manage_channel_binding("get", "whatsapp", "", "default", sys.argv[1])
+print(json.dumps({
+    "kind": "lightvela.instance-bots.v1",
+    "items": profiles["items"],
+    "weixin_owner": weixin,
+    "whatsapp_owner": whatsapp,
+}, ensure_ascii=False))
 `
 
 const sanitizeClonedProfileEnvScript = `from pathlib import Path
@@ -605,18 +640,30 @@ func (l *logic) ListInstanceBots(ctx pctx.Context, instanceID string) (*transpor
 	if err != nil {
 		return nil, err
 	}
-	profiles, err := l.listHermesProfiles(ctx, instanceID, instanceEntity.DisplayName)
+	result, err := l.execHermesProfileCommand(ctx, instanceID, buildHermesPythonCommand(listHermesInstanceBotsScript, instanceID))
 	if err != nil {
-		return nil, err
+		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "list Hermes bots: %v", err)
 	}
-	weixinOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWeixin)
-	if err != nil {
-		return nil, err
+	if result == nil {
+		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "invalid Hermes bot list response")
 	}
-	whatsAppOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWhatsApp)
-	if err != nil {
-		return nil, err
+	return parseHermesInstanceBots(result.Output, instanceID, instanceEntity.DisplayName)
+}
+
+func parseHermesInstanceBots(output, instanceID, defaultName string) (*transport.ListInstanceBotsResponse, error) {
+	var envelope json.RawMessage
+	var payload hermesInstanceBotsPayload
+	// Select the JSON line before decoding its schema. Retrying json.Unmarshal
+	// into the same struct can retain fields from a preceding failed decode.
+	if parseLastJSONLine(output, &envelope) != nil || json.Unmarshal(envelope, &payload) != nil || payload.Kind != "lightvela.instance-bots.v1" ||
+		payload.Items == nil || payload.WeixinOwner == nil || payload.WhatsAppOwner == nil {
+		// Logs, truncated output and a successful prefix must not masquerade as
+		// a completed empty catalog or silently discard either channel's owner.
+		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "invalid Hermes bot list response")
 	}
+	profiles := projectHermesProfiles(*payload.Items, instanceID, defaultName)
+	weixinOwner := projectChannelBinding(payload.WeixinOwner)
+	whatsAppOwner := projectChannelBinding(payload.WhatsAppOwner)
 	for _, owner := range []*transport.InstanceChannelBindingResponse{weixinOwner, whatsAppOwner} {
 		if owner == nil {
 			continue
@@ -921,12 +968,23 @@ func (l *logic) getChannelBindingResponse(ctx pctx.Context, instanceID, channel 
 		return nil, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
 	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "get", "", "")
-	if err != nil || binding.BotID == "" {
+	if err != nil {
 		return nil, err
 	}
+	return projectChannelBinding(binding), nil
+}
+
+func projectChannelBinding(binding *channelBindingPayload) *transport.InstanceChannelBindingResponse {
+	if binding == nil || binding.BotID == "" {
+		return nil
+	}
+	profileID := binding.ProfileID
+	if profileID == defaultHermesProfileID {
+		profileID = rootProfileID
+	}
 	return &transport.InstanceChannelBindingResponse{
-		Channel: binding.Channel, BotID: binding.BotID, ProfileID: binding.ProfileID, Status: binding.Status,
-	}, nil
+		Channel: binding.Channel, BotID: binding.BotID, ProfileID: profileID, Status: binding.Status,
+	}
 }
 
 func (l *logic) runChannelBindingAction(ctx pctx.Context, instanceID, channel, action, botID, profileID string, reservationID ...string) (*channelBindingPayload, error) {

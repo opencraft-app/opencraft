@@ -454,7 +454,10 @@ export interface WorkerActionStatusResult {
 }
 
 export interface BotRepository {
-  getDashboardSnapshot(mode?: DataMode): Promise<DashboardSnapshot>;
+  getDashboardSnapshot(mode?: DataMode, options?: {
+    /** Verified physical instances, before the slower per-instance Profile catalogs. */
+    onInstances?: (instances: readonly { instanceId: string; running: boolean }[]) => void;
+  }): Promise<DashboardSnapshot>;
   createBot(input?: {
     name?: string;
     description?: string;
@@ -473,7 +476,7 @@ export interface BotRepository {
   getWorkspaceSnapshot(botId: string, mode?: DataMode): Promise<WorkspaceSnapshot>;
   sendWorkspaceMessage(botId: string, text: string): Promise<WorkspaceMessage[]>;
   getSettingsSnapshot(botId: string, mode?: DataMode): Promise<SettingsSnapshot>;
-  getTerminalSession(botId: string): Promise<BotTerminalSession>;
+  getTerminalSession(botId: string, options?: { signal?: AbortSignal; suppressUnauthorizedBroadcast?: boolean }): Promise<BotTerminalSession>;
   /** 云桌面（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。 */
   ensureDesktopSession(botId: string): Promise<CloudDesktopSession>;
   /** 云桌面（VNC）：GET 轮询会话状态；Ready 时兼作 idle 回收心跳。 */

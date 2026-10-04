@@ -73,6 +73,40 @@ describe("Pass modification refresh", () => {
     expect(currentState.bots[0]?.name).toBe("已有 Bot");
   });
 
+  it("exposes verified instances before Bot completion and revokes them on account replacement", async () => {
+    localStorage.setItem("lightclaw-auth-token-v1", "synthetic-token");
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active" }]);
+    let onInstances!: (items: { instanceId: string; running: boolean }[]) => void;
+    getDashboardSnapshot.mockImplementationOnce((_mode, options) => {
+      onInstances = options.onInstances;
+      return new Promise<DashboardSnapshot>(() => {});
+    });
+    const view = await mount();
+    await act(async () => { onInstances([{ instanceId: "ins-1", running: true }]); });
+    expect(currentState.hasResolvedBots).toBe(false);
+    expect(currentState.instanceDiscovery?.items).toEqual([{ instanceId: "ins-1", running: true }]);
+    const old = currentState.instanceDiscovery!;
+    session.user = { id: "u2", name: "Other" };
+    await act(async () => { view.rerender(<OpenClawProvider><Probe /></OpenClawProvider>); });
+    expect(old.isCurrent()).toBe(false);
+    await act(async () => { onInstances([{ instanceId: "late-old", running: true }]); });
+    expect(currentState.instanceDiscovery).toBeNull();
+  });
+
+  it("cannot publish an instance result whose credential has already changed", async () => {
+    localStorage.setItem("lightclaw-auth-token-v1", "synthetic-token");
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active" }]);
+    let onInstances!: (items: { instanceId: string; running: boolean }[]) => void;
+    getDashboardSnapshot.mockImplementationOnce((_mode, options) => {
+      onInstances = options.onInstances;
+      return new Promise<DashboardSnapshot>(() => {});
+    });
+    await mount();
+    localStorage.setItem("lightclaw-auth-token-v1", "different-token");
+    await act(async () => { onInstances([{ instanceId: "old-account-instance", running: true }]); });
+    expect(currentState.instanceDiscovery).toBeNull();
+  });
+
   it("recovers a stuck initial Pass read without labeling it as an upgrade", async () => {
     let resolveOld!: (passes: Pass[]) => void;
     listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolveOld = resolve; }));

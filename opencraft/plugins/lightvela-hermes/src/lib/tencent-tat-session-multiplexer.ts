@@ -298,6 +298,8 @@ export class TencentTatSessionMultiplexer {
     private readonly bootstrap: BotTerminalSession,
     private readonly options: TsshProxyClientOptions = {},
   ) {
+    // The transport owns health configuration; never mutate a caller's options.
+    this.options = { ...options };
     this.connectDelayMs = options.connectDelayMs ?? DEFAULT_PROXY_CONNECT_DELAY_MS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_PROXY_REQUEST_TIMEOUT_MS;
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket;
@@ -573,6 +575,13 @@ export class TencentTatSessionMultiplexer {
     return operation;
   }
 
+  /** Enable Host-owned health probing only after a prepared tunnel is adopted. */
+  configureIdleKeepalive(options: Pick<TsshProxyClientOptions, "idleKeepaliveIntervalMs" | "idleKeepaliveTarget" | "onUnhealthy">): void {
+    this.stopIdleKeepalive();
+    Object.assign(this.options, options);
+    if (this.state === "ready") this.startIdleKeepalive();
+  }
+
   private startIdleKeepalive(): void {
     const intervalMs = this.options.idleKeepaliveIntervalMs ?? 0;
     const target = this.options.idleKeepaliveTarget;
@@ -717,6 +726,7 @@ export class TencentTatSessionMultiplexer {
     this.retired = true;
     this.stopIdleKeepalive();
     const error = new TatTransportError("connection_lost", "TAT tunnel retired", { phase: "websocket" });
+    this.rejectReady?.(error);
     for (const pending of this.pending.values()) {
       globalThis.clearTimeout(pending.timer);
       pending.connection.fail(error);

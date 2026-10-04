@@ -648,8 +648,11 @@ requested when domestic Chat is active. The release build fails closed when the
 reviewed Embedded artifact is unavailable, so legacy fallback cannot disguise
 an incomplete production artifact.
 
-Resource preparation starts at the enabled host Chat route, alongside Bot
-discovery, through the same deduplicated loader used by the migration surface.
+Resource preparation starts at the domestic host Chat route after authentication,
+before the Next entitlement/Bot gate and lazy settings page, alongside Bot
+discovery, through the same lightweight deduplicated loader used by the migration
+surface. The actual domestic rollout authority, not hidden-tool preferences,
+enables both paths. Loading code never bypasses the entitlement gate for content.
 It registers the component but creates no Application or Host; the confirmed
 instance/Profile binding still gates the single canvas owner. Failed speculative
 loads are retryable by the surface. Optional Host Proxy startup runs independently
@@ -658,6 +661,32 @@ proxy registration to activate; it never falls back to client-local localhost.
 Embedded Vite `assets/a-[hash][extname]` resources have immutable one-year cache
 headers in the Pages artifact. Stable loaders, version files and Service Workers
 remain revalidated; publishing must continue retaining old content-hash closures.
+
+The authenticated domestic Chat route may also prepare a physical TAT connection
+from the intermediate result of its existing instance-list read, independently
+of the slower per-instance Profile catalogs. A sole discovered instance that is Running or an
+explicit verified root-instance selection is required; a named Bot among several
+machines is not enough to guess its physical target. The TAT API retains ownership,
+Running-state and active-Pass checks. No extra Application/account service is
+created, and the preparation sends only the TAT handshake: no PTY, Dashboard
+bootstrap, loopback health probe, Profile tools or AppServer RPC.
+
+This in-process preparation capability is owned by the route/session discovery
+generation and is bounded to 15 seconds while unclaimed. Navigation, discovery
+replacement and credential changes revoke it; late HTTP/socket results cannot
+revive it. The confirmed Profile's normal provider/preflight and fresh instance
+validation still run. Only a matching account, region, instance and API base can
+claim the same multiplexer exactly once. Adoption enables the formal transport's
+ordinary health probing and transfers disposal responsibility to that transport;
+the preparation binding and multiplexer configuration are owner-held snapshots,
+not borrowed mutable caller options. Health configuration must succeed before
+the transfer commits, so failures still leave a resource that can be disposed;
+the route's old preparation owner cannot close an adopted Host. Failed, expired,
+lost or already-consumed preparations use the ordinary connection path. The
+capability is not stored in profiles, HTML, browser storage or a global pool.
+Older independently deployed Embedded artifacts without the static preparation
+API keep their original startup path. Dashboard ensure remains a post-adoption
+Host operation because it can start or replace an owned remote backend.
 
 The Embedded Application owns one deferred startup lane for Voice,
 Collaboration, Bot Chat/Management presentation and the Terminal panel module.

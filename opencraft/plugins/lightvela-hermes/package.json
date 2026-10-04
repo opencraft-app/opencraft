@@ -8,7 +8,8 @@
     "./account-contract": "./src/account/lightvela-account-contract.ts",
     "./onboarding": "./src/onboarding/lightvela-bot-onboarding.ts",
     "./runtime-entry": "./src/runtime-entry.ts",
-    "./transport": "./src/transport/lightvela-hermes-transport.ts"
+    "./transport": "./src/transport/lightvela-hermes-transport.ts",
+    "./physical-connection": "./src/transport/hermes-physical-connection-preparation.ts"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.1",
