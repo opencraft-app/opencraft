@@ -1,4 +1,4 @@
-import { AgentSidebar } from "@/components/site/agent-sidebar";
+import { AgentSidebar, AgentSidebarToggle, useAgentSidebarCollapse } from "@/components/site/agent-sidebar";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -2601,16 +2601,20 @@ const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefin
   return !RESCUE_EXPORT_TERMINAL_PHASES.has(status.phase);
 };
 
+type AgentSettingsPageProps = {
+  initialSectionSlug?: string;
+  sectionId?: AgentSettingsSectionId;
+} & ({ showHeader?: true; sidebarCollapsed?: never } | { showHeader: false; sidebarCollapsed?: boolean });
+
 export const AgentSettingsPage = ({
   initialSectionSlug,
   sectionId,
   showHeader = true,
-}: {
-  initialSectionSlug?: string;
-  sectionId?: AgentSettingsSectionId;
-  showHeader?: boolean;
-} = {}) => {
+  sidebarCollapsed,
+}: AgentSettingsPageProps = {}) => {
   const t = useT();
+  const localSidebar = useAgentSidebarCollapse(sidebarCollapsed === undefined);
+  const isSidebarCollapsed = sidebarCollapsed ?? localSidebar.collapsed;
   const locale = useCurrentLocale();
   const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
@@ -5028,11 +5032,16 @@ export const AgentSettingsPage = ({
         useMobileChatLayout && mobileChatNavOpen && "lv-agent-mobile-nav-open",
         isEmptyAgentPage && "lv-agent-empty-page",
         isModifying && "lv-agent-upgrading-page",
+        isSidebarCollapsed && "lv-agent-sidebar-collapsed",
+        !localSidebar.transitionReady && "lv-agent-sidebar-motion-pending",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
       {showHeader && (
         <ProductReturnHomeHeader
+          beforeUserMenu={(hasSidebarLayout || shouldShowDataLoading) ? (
+            <AgentSidebarToggle collapsed={isSidebarCollapsed} onToggle={localSidebar.toggle} />
+          ) : undefined}
           /*
            * lv-agent-sidebar-header 会把 header 固定成 264px 宽的侧边栏表头
            * （见 styles.css 的 @media min-width:1024px）。没有侧边栏时它会留下
@@ -5047,6 +5056,8 @@ export const AgentSettingsPage = ({
            */
           className={cn(
             (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-sidebar-header",
+            isSidebarCollapsed && "lv-agent-sidebar-header--collapsed",
+            !localSidebar.transitionReady && "lv-agent-sidebar-header--motion-pending",
             (showBuddyOnboarding || showMultiBotOnboarding) && "lv-agent-sidebar-header--borderless",
           ) || undefined}
           reloadLanguageAfterSwitch
@@ -5871,7 +5882,7 @@ export const AgentSettingsPage = ({
                     "lv-agent-settings-grid grid items-start",
                     activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6",
                     /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
-                    hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]",
+                    hasSidebarLayout && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]"),
                   )}
                 >
                   {/* 引导态隐藏整个侧边栏：新用户先专注建伙伴，
@@ -5914,10 +5925,11 @@ export const AgentSettingsPage = ({
                     )}
                     <div className="lv-agents-sidebar-profile">
                     {fleetOverviewEnabled && (
-                      <div className="mb-4 border-b border-black/[0.06] pb-4">
+                      <div className="mb-2 pb-2 lg:mb-1.5 lg:pb-1.5">
                         <AppLink
                           to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
                           aria-current={activeSection === "overview" ? "page" : undefined}
+                          title={isSidebarCollapsed ? t("总览") : undefined}
                           className={cn("lw-settings-nav-item lv-agents-nav-item", activeSection === "overview" && "is-active")}
                         >
                           <span className="lv-agents-nav-icon"><LayoutDashboard className="size-4" aria-hidden="true" /></span>
@@ -5925,6 +5937,7 @@ export const AgentSettingsPage = ({
                         </AppLink>
                       </div>
                     )}
+                      <div className="lv-agent-profile-row">
                       <div className="lv-agent-profile-wrap">
                         <Popover
                           open={visibleBots.length > 1 && isAgentMenuOpen}
@@ -5947,6 +5960,8 @@ export const AgentSettingsPage = ({
                                 "lv-agent-profile",
                                 visibleBots.length <= 1 && "cursor-default",
                               )}
+                              aria-label={agentProfileDisplayName}
+                              title={isSidebarCollapsed ? agentProfileDisplayName : undefined}
                               aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                             >
                               {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
@@ -6047,27 +6062,6 @@ export const AgentSettingsPage = ({
                                   }
                                 }}
                               >
-                                {multiBotEnabled && (
-                                  <WorkspaceActionTooltip
-                                    content={createLimitMessage || t("新建 Bot")}
-                                    side="bottom"
-                                    compact
-                                    focusable={!canCreateAdditionalBot}
-                                  >
-                                    <button
-                                      type="button"
-                                      aria-label={t("新建 Bot")}
-                                      disabled={!canCreateAdditionalBot}
-                                      className="lv-agent-action-button"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        handleCreateNew();
-                                      }}
-                                    >
-                                      <Plus className="h-4 w-4" aria-hidden="true" />
-                                    </button>
-                                  </WorkspaceActionTooltip>
-                                )}
                                 <WorkspaceActionTooltip content={restartTooltip} side="bottom" compact focusable={false}>
                                   <button
                                     type="button"
@@ -6114,7 +6108,7 @@ export const AgentSettingsPage = ({
                               {visibleBots.length > 1 && (
                                 <ChevronDown
                                   aria-hidden="true"
-                                  className={cn("-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
+                                  className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                                 />
                               )}
                             </div>
@@ -6124,7 +6118,10 @@ export const AgentSettingsPage = ({
                               align="start"
                               side="bottom"
                               sideOffset={8}
-                              className="max-h-80 w-[var(--radix-popover-trigger-width)] overflow-y-auto !rounded-[8px] border-black/10 bg-white p-1.5 shadow-xl"
+                              className={cn(
+                                "max-h-80 overflow-y-auto !rounded-[8px] border-black/10 bg-white p-1.5 shadow-xl",
+                                isSidebarCollapsed ? "w-56" : "w-[var(--radix-popover-trigger-width)]",
+                              )}
                             >
                               {visibleBots.map((bot) => {
                                 const isActive = bot.id === activeTabId;
@@ -6157,6 +6154,26 @@ export const AgentSettingsPage = ({
                           <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                         )}
                       </div>
+                      {multiBotEnabled && !isSidebarCollapsed && (
+                        <WorkspaceActionTooltip
+                          content={createLimitMessage || t("新建 Bot")}
+                          side="bottom"
+                          compact
+                          focusable={!canCreateAdditionalBot}
+                          className="lv-agent-create-bot-action"
+                        >
+                          <button
+                            type="button"
+                            aria-label={t("新建 Bot")}
+                            disabled={!canCreateAdditionalBot}
+                            className="lv-agent-action-button"
+                            onClick={handleCreateNew}
+                          >
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </WorkspaceActionTooltip>
+                      )}
+                      </div>
 
                     </div>
                     <div className="lv-agents-sidebar-controls">
@@ -6166,10 +6183,13 @@ export const AgentSettingsPage = ({
                           type="button"
                           role="tab"
                           aria-selected={sidebarTab === "settings"}
+                          aria-label={t("探索")}
+                          title={isSidebarCollapsed ? t("探索") : undefined}
                           className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
                           onClick={handleSidebarSettingsTabClick}
                         >
-                          {t("探索")}
+                          <LayoutDashboard className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
+                          <span className="lv-agents-sidebar-tab-label">{t("探索")}</span>
                         </button>
                         {/* 「对话」入口不可用时，用 Portal 提示原因，避免被侧栏滚动容器裁切。 */}
                         <span
@@ -6190,12 +6210,15 @@ export const AgentSettingsPage = ({
                               type="button"
                               role="tab"
                               aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
+                              aria-label={t("对话")}
+                              title={isSidebarCollapsed ? t("对话") : undefined}
                               aria-disabled={isChatTabDisabled}
                               disabled={isChatTabDisabled}
                               className={cn("lv-agents-sidebar-tab w-full", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
                               onClick={handleSidebarChatTabClick}
                             >
-                              {t("对话")}
+                              <MessageSquare className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
+                              <span className="lv-agents-sidebar-tab-label">{t("对话")}</span>
                             </button>
                           </WorkspaceActionTooltip>
                         </span>
@@ -6213,6 +6236,7 @@ export const AgentSettingsPage = ({
                                   selectedChatId === "" && "is-active",
                                 )}
                                 aria-label={t("新会话")}
+                                title={isSidebarCollapsed ? t("新会话") : undefined}
                                 disabled={chatSessionCommands === null || chatSessionMutationState?.pending === true}
                                 onClick={() => {
                                   setMobileChatNavOpen(false);
@@ -6244,6 +6268,7 @@ export const AgentSettingsPage = ({
                                       to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
                                       onClick={() => setMobileChatNavOpen(false)}
                                       aria-current={activeSection === "chat" ? "page" : undefined}
+                                      title={isSidebarCollapsed ? t("默认对话") : undefined}
                                       className={cn(
                                         "lv-agents-session-item lv-agents-nav-item",
                                         activeSection === "chat" && "is-active",
@@ -6292,6 +6317,8 @@ export const AgentSettingsPage = ({
                                             <AppLink
                                               to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
                                               aria-current={isSelected ? "page" : undefined}
+                                              aria-label={sessionDisplayTitle}
+                                              title={isSidebarCollapsed ? sessionDisplayTitle : undefined}
                                               onClick={() => {
                                                 setSelectedChatId(session.chatId);
                                                 setMobileChatNavOpen(false);
@@ -6388,6 +6415,8 @@ export const AgentSettingsPage = ({
                                   <AppLink
                                     to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
                                     aria-current={activeSection === "overview" ? "page" : undefined}
+                                    aria-label={showBuddyOnboarding ? t("个性化你的智能伙伴") : t("总览")}
+                                    title={isSidebarCollapsed ? (showBuddyOnboarding ? t("个性化你的智能伙伴") : t("总览")) : undefined}
                                     className={cn(
                                       "lw-settings-nav-item lv-agents-nav-item",
                                       activeSection === "overview" || showBuddyOnboarding
@@ -6414,6 +6443,8 @@ export const AgentSettingsPage = ({
                                     <AppLink
                                       to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
                                       aria-current={activeSection === "terminal" ? "page" : undefined}
+                                      aria-label={t("终端")}
+                                      title={isSidebarCollapsed ? t("终端") : undefined}
                                       className={cn(
                                         "lw-settings-nav-item lv-agents-nav-item",
                                         activeSection === "terminal"
@@ -6429,6 +6460,8 @@ export const AgentSettingsPage = ({
                                     <AppLink
                                       to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
                                       aria-current={activeSection === "browser" ? "page" : undefined}
+                                      aria-label={t("浏览器")}
+                                      title={isSidebarCollapsed ? t("浏览器") : undefined}
                                       className={cn(
                                         "lw-settings-nav-item lv-agents-nav-item",
                                         activeSection === "browser"
@@ -6487,8 +6520,9 @@ export const AgentSettingsPage = ({
                                         <li key={section.id}>
                                           <AppLink
                                             to={getAgentSectionHref(section.path, searchParams)}
-                                            aria-label={section.badge ? section.label : undefined}
+                                            aria-label={section.label}
                                             aria-current={isActive ? "page" : undefined}
+                                            title={isSidebarCollapsed ? section.label : undefined}
                                             className={cn(
                                               "lw-settings-nav-item lv-agents-nav-item",
                                               section.badge && "has-badge",

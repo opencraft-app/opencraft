@@ -35,7 +35,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("shows additional Bot creation without show() while preserving feature and quota gates", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).toContain("{multiBotEnabled && (");
+    expect(page).toContain("{multiBotEnabled && !isSidebarCollapsed && (");
     expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
     expect(page).toContain("!isCreating && !botsLoading");
@@ -274,20 +274,20 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('lv-agents-session-item');
   });
 
-  it("places the create icon before restart and the multi-Bot chevron after delete", () => {
+  it("places the create action beside the Bot card and the switcher after delete", () => {
     const page = readPageSource();
-    const profile = page.slice(
-      page.indexOf('className="lv-agent-actions"'),
-      page.indexOf("{visibleBots.length > 1 &&", page.indexOf('className="lv-agent-actions"')),
-    );
+    const profileRow = page.slice(page.indexOf('className="lv-agent-profile-row"'), page.indexOf('className="lv-agents-sidebar-controls"'));
+    const profile = profileRow.slice(0, profileRow.indexOf('className="lv-agent-create-bot-action"'));
+    const createAction = profileRow.slice(profileRow.indexOf('className="lv-agent-create-bot-action"'));
 
     expect(profile).toContain("setShowRestartConfirm(true)");
     expect(profile).toContain("setShowDeleteConfirm(true)");
     expect(profile).toContain("<RefreshCw");
     expect(profile).toContain("<Trash2");
-    expect(profile).toContain('aria-label={t("新建 Bot")}');
-    expect(profile).toContain('<Plus className="h-4 w-4" aria-hidden="true" />');
-    expect(profile.indexOf('aria-label={t("新建 Bot")}')).toBeLessThan(profile.indexOf("<RestartIcon"));
+    expect(profile).not.toContain('aria-label={t("新建 Bot")}');
+    expect(createAction).toContain('aria-label={t("新建 Bot")}');
+    expect(createAction).toContain('<Plus className="h-4 w-4" aria-hidden="true" />');
+    expect(profileRow.indexOf("</Popover>")).toBeLessThan(profileRow.indexOf('className="lv-agent-create-bot-action"'));
     expect(profile.indexOf("<RestartIcon")).toBeLessThan(profile.indexOf("<Trash2"));
     expect(profile).not.toContain("<MoreHorizontal");
     expect(page).toMatch(/\{visibleBots.length > 1 && \(\s*<ChevronDown/);
@@ -332,7 +332,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(actions).toContain("gap: 4px;");
     expect(button).toContain("width: 24px;");
     expect(button).toContain("height: 24px;");
-    expect(readPageSource()).toContain('"-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform"');
+    expect(readPageSource()).toContain('"h-4 w-4 flex-shrink-0 text-black/35 transition-transform"');
+    expect(readPageSource()).not.toContain('"-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform"');
   });
 
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
@@ -455,7 +456,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain("lv-agent-settings-grid grid items-start");
     expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6"');
-    expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
+    expect(page).toContain('hasSidebarLayout && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]")');
   });
 
   it("exposes rename and delete in the session menu (delete needs confirmation)", () => {

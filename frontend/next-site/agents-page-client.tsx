@@ -2,6 +2,7 @@
 
 import { lazy, Suspense } from 'react';
 
+import { AgentSidebarToggle, useAgentSidebarCollapse } from '@/components/site/agent-sidebar';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import type { AgentSectionId, AgentSettingsSectionId } from '@/lib/agent-routes';
 
@@ -22,9 +23,11 @@ export function AgentsPageClient({
   sectionId?: AgentSectionId;
 }) {
   const isWorkbench = sectionId === 'workbench';
+  const { collapsed, toggle, transitionReady } = useAgentSidebarCollapse();
   const productHeader = (
     <ProductReturnHomeHeader
-      className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}
+      beforeUserMenu={isWorkbench ? undefined : <AgentSidebarToggle collapsed={collapsed} onToggle={toggle} />}
+      className={isWorkbench ? undefined : `lv-agent-sidebar-header${collapsed ? ' lv-agent-sidebar-header--collapsed' : ''}${transitionReady ? '' : ' lv-agent-sidebar-header--motion-pending'}`}
       reloadLanguageAfterSwitch
       showAccountLanguageSwitcher
       showDesktopUserMenu={isWorkbench}
@@ -45,6 +48,7 @@ export function AgentsPageClient({
               initialSectionSlug={initialSectionSlug}
               sectionId={sectionId as AgentSettingsSectionId | undefined}
               showHeader={false}
+              sidebarCollapsed={collapsed}
             />
           )}
         </Suspense>

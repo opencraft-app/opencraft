@@ -253,7 +253,8 @@ html.lw-settings-scrollbar-stable {
 }
 
 .lv-agents-sidebar .lv-agents-nav-item.is-active {
-  background: #f2f2ef !important;
+  border-radius: 10px;
+  background: #f5f5f3 !important;
   color: #171717 !important;
   font-weight: 600;
 }
@@ -321,6 +322,36 @@ html.lw-settings-scrollbar-stable {
     border-right-color: #e9ecf1 !important;
     border-bottom-color: #e9ecf1 !important;
     background: #fff !important;
+    transition: width 200ms ease-in-out;
+  }
+
+  .lv-agent-settings-grid {
+    transition: grid-template-columns 200ms ease-in-out;
+  }
+
+  header.lv-agent-sidebar-header--motion-pending,
+  .lv-agent-sidebar-motion-pending .lv-agent-settings-grid,
+  .lv-agent-sidebar-motion-pending .lv-agents-sidebar-scroll-isolated {
+    transition: none !important;
+  }
+
+  /* Labels hide immediately on collapse, so let the width change finish more gradually. */
+  .lv-agent-sidebar-collapsed .lv-agent-settings-grid {
+    transition-duration: 260ms;
+  }
+
+  header.lv-agent-sidebar-header--collapsed {
+    width: 72px;
+    transition-duration: 260ms;
+  }
+
+  header.lv-agent-sidebar-header--collapsed [data-testid="site-header-brand"] {
+    display: none !important;
+  }
+
+  header.lv-agent-sidebar-header--collapsed > div {
+    display: flex !important;
+    justify-content: center;
   }
 
   .lw-settings-shell.lv-agent-settings-shell {
@@ -390,6 +421,58 @@ html.lw-settings-scrollbar-stable {
     padding-left: 16px !important;
     padding-right: 16px !important;
   }
+
+  header.lv-agent-sidebar-header--collapsed > div [data-testid="site-header-actions"] {
+    margin: 0;
+  }
+}
+
+.lv-agent-sidebar-toggle {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  color: #737373;
+  background: transparent;
+}
+
+.lv-agent-sidebar-toggle:hover,
+.lv-agent-sidebar-toggle:focus-visible {
+  color: #616161;
+  background: #f2f2ef;
+}
+
+.lv-agent-sidebar-toggle:focus-visible {
+  outline: 2px solid rgb(0 0 0 / 35%);
+  outline-offset: 2px;
+}
+
+.lv-agent-sidebar-toggle::after {
+  position: absolute;
+  z-index: 60;
+  top: 50%;
+  left: calc(100% + 8px);
+  padding: 8px 12px;
+  transform: translateY(-50%);
+  border: 1px solid #e9ecf1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 12%);
+  color: #171717;
+  content: attr(data-tooltip);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lv-agent-sidebar-toggle:hover::after,
+.lv-agent-sidebar-toggle:focus-visible::after {
+  opacity: 1;
 }
 
 .lv-agent-chat-mobile-nav-toggle,
@@ -517,6 +600,26 @@ header.lv-agent-sidebar-header--borderless {
   .lv-agent-onboarding header.lv-agent-sidebar-header {
     width: auto;
     right: 0;
+  }
+
+  .lv-agent-onboarding header.lv-agent-sidebar-header--collapsed [data-testid="site-header-brand"],
+  header.lv-agent-sidebar-header--collapsed:has(+ :is(.lv-agent-empty-page, .lv-agent-upgrading-page)) [data-testid="site-header-brand"] {
+    display: flex !important;
+  }
+
+  .lv-agent-onboarding .lv-agent-sidebar-toggle,
+  header.lv-agent-sidebar-header:has(+ :is(.lv-agent-empty-page, .lv-agent-upgrading-page)) .lv-agent-sidebar-toggle {
+    display: none;
+  }
+
+  header.lv-agent-sidebar-header--collapsed:has(+ :is(.lv-agent-empty-page, .lv-agent-upgrading-page)) {
+    width: auto;
+    right: 0;
+  }
+
+  .lv-agent-onboarding header.lv-agent-sidebar-header--collapsed > div,
+  header.lv-agent-sidebar-header--collapsed:has(+ :is(.lv-agent-empty-page, .lv-agent-upgrading-page)) > div {
+    justify-content: flex-start;
   }
 }
 
@@ -742,9 +845,31 @@ a {
   box-shadow: 0 0 0 2px rgb(0 0 0 / 18%);
 }
 
+.lv-agent-profile-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
 .lv-agent-profile-wrap {
-  width: calc(100% + 12px);
+  width: auto;
+  min-width: 0;
+  flex: 1 1 auto;
   padding-bottom: 8px;
+}
+
+.lv-agent-create-bot-action {
+  flex: 0 0 24px;
+}
+
+.lv-agent-create-bot-action .lv-agent-action-button {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  border: 1px solid #dedee2;
+  border-radius: 50%;
+  background: #fff;
 }
 
 .lv-agent-profile {
@@ -955,6 +1080,10 @@ a {
   transition:
     background 0.15s ease,
     color 0.15s ease;
+}
+
+.lv-agents-sidebar-tab-icon {
+  display: none;
 }
 
 .lv-agents-sidebar-tab:hover:not(:disabled) {
@@ -1189,6 +1318,7 @@ a {
     overflow-y: hidden;
     overscroll-behavior: contain;
     background: #fff;
+    transition: width 200ms ease-in-out;
   }
 
   .lv-agents-sidebar {
@@ -1196,7 +1326,7 @@ a {
     height: calc(100dvh - 68px);
     min-height: 0;
     flex-direction: column;
-    padding-top: 20px;
+    padding-top: 12px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
     gap: 0;
   }
@@ -1216,7 +1346,19 @@ a {
 
   .lv-agents-sidebar-profile {
     padding-left: 16px;
-    border-bottom: 1px solid #e9ecf1;
+  }
+
+  .lv-agents-sidebar-profile .lv-agent-profile-wrap {
+    width: auto;
+    padding: 6px 8px;
+    border: 1px solid #dedee2;
+    border-radius: 16px;
+    background: #fff;
+  }
+
+  .lv-agents-sidebar-profile .lv-agent-profile {
+    width: 100%;
+    gap: 8px;
   }
 
   .lv-agents-sidebar-controls {
@@ -1294,6 +1436,101 @@ a {
     gap: 10px;
     font-size: 13px;
     line-height: 20px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-scroll-isolated {
+    width: 72px;
+    padding-left: 16px;
+    padding-right: 16px;
+    transition-duration: 260ms;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-profile,
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-controls,
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-footer {
+    width: 72px;
+    padding-right: 16px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agent-profile-wrap,
+  .lv-agent-sidebar-collapsed .lv-agents-nav {
+    width: 40px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-profile .lv-agent-profile-wrap {
+    width: 40px;
+    flex: 0 0 40px;
+    padding: 3px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agent-profile {
+    width: 40px;
+    min-width: 40px;
+    justify-content: center;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-profile .lv-agent-profile {
+    width: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agent-profile-text,
+  .lv-agent-sidebar-collapsed .lv-agent-actions,
+  .lv-agent-sidebar-collapsed .lv-agent-profile > svg,
+  .lv-agent-sidebar-collapsed .lv-agents-nav-group-label,
+  .lv-agent-sidebar-collapsed .lv-agents-nav-item > span:not(.lv-agents-nav-icon),
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-tab-label,
+  .lv-agent-sidebar-collapsed .lv-agents-session-list,
+  .lv-agent-sidebar-collapsed .lv-agents-session-hint,
+  .lv-agent-sidebar-collapsed .lv-agent-account-trigger > span,
+  .lv-agent-sidebar-collapsed .lv-agent-account-trigger > svg {
+    display: none;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-tabs {
+    width: 40px;
+    flex-direction: column;
+    border-radius: 8px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-tab {
+    display: flex;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 6px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-sidebar-tab-icon {
+    display: block;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-nav-item,
+  .lv-agent-sidebar-collapsed .lv-agents-nav-group .lv-agents-nav-item {
+    width: 40px;
+    min-height: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-nav-group + .lv-agents-nav-group {
+    padding-top: 8px;
+    border-top: 1px solid #e9ecf1;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agent-account-footer,
+  .lv-agent-sidebar-collapsed .lv-agent-account-menu,
+  .lv-agent-sidebar-collapsed .lv-agent-account-trigger {
+    width: 40px;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agent-account-trigger {
+    min-height: 40px;
+    justify-content: center;
+    padding: 2px;
   }
 
 }
