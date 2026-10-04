@@ -46,6 +46,10 @@ pnpm build
 
 开发时运行最小有效子集，交接前运行 `check`/`test`/`build` 门禁。（`package.json` 未定义独立的 `lint` script，勿单独执行 `pnpm lint`。）
 
+## OpenCraft Agent Console 同步门禁
+
+修改 `frontend/src/` 或 `frontend/public/` 后，提交 MR 前须在仓库根运行只读检查 `npm --prefix opencraft run check:mono2-agent-console`；前端的 `pnpm check` 和构建不能替代它。若检查报告生成副本漂移，先提交 frontend 真源（同步清单的 `sourceRevision` 取自 Git 历史），再运行 `npm --prefix opencraft run sync:mono2-agent-console`，将脚本生成的副本及 `UPSTREAM.json` 作为独立的后续提交，并重新运行只读检查。同步范围以 `opencraft/scripts/sync-mono2-agent-console.mjs` 为准，不手工编辑生成副本或清单。
+
 ## 硬规则
 
 - 不得新增 `any`；使用 `unknown` 或具体类型。
