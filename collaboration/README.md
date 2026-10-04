@@ -21,6 +21,11 @@ implemented-route allowlist，不能通过 collaboration 创建第二套登录�
 必须由受限 `0600` 文件提供，并在 service-gateway route 上通过
 `upstream_bearer_token_env` 注入；`X-Lightclaw-User-ID` 不能由外部客户端直连信任。
 
+成员加入使用已有的 `POST /v1/join-links/accept`，公开网关路径为
+`POST /v1/collaboration/join-links/accept`。该 operation 必须同时注册到 bootstrap 的
+implemented-route allowlist 和 Human HTTP mux，复用当前 Human 身份、邀请消费和
+幂等加入落点；处理器存在本身不能保证运行时路径可达。
+
 未启用旧 Computer artifact 发布时，不再要求配置 Computer install URL。旧
 Enrollment/TAT/Computer artifact 代码仍处于迁移基线，尚未从机器契约和源码完整删除。
 
