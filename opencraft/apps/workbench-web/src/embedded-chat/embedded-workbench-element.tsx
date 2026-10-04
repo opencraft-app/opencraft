@@ -98,6 +98,9 @@ function embeddedStyles(): string {
     .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-frame { border-top: 0; }
     .opencraft-embedded-workbench-root .main-content-surface { box-shadow: none; }
     .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 74px; }
+    @media (max-width: 639px) {
+      .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 48px; }
+    }
     .opencraft-embedded-workbench-root .codex-composer-voice-footer__status-label { display: none; }
     .opencraft-embedded-workbench-root .codex-composer-submit.is-stop {
       border-radius: 50%;

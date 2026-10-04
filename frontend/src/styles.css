@@ -483,7 +483,7 @@ html.lw-settings-scrollbar-stable {
 
 @media (max-width: 1023px) {
   .lv-agent-embedded-chat-page {
-    height: 100dvh;
+    height: var(--lv-agent-chat-viewport-height, 100dvh);
     min-height: 0;
     overflow: hidden;
   }
