@@ -20,13 +20,32 @@ describe("Buddy Soul locale resolver", () => {
       { ...JAPANESE_SOULS[0]!, slug: "MUM" },
       { ...JAPANESE_SOULS[1]!, slug: "YYDS" },
     ];
-    expect(localization?.getRecommendableSouls(domesticSouls).map((soul) => soul.slug)).toEqual(["YYDS"]);
+    expect(localization?.getRecommendableSouls(domesticSouls, "domestic-zh").map((soul) => soul.slug)).toEqual(["YYDS"]);
     expect(domesticSouls[0]?.slug).toBe("MUM");
 
     for (const locale of ["global-zh", "en", "id", "es", "ja", "ko"] as const) {
       const sourceSouls = localization?.getBuddySoulPool(locale) ?? [];
       expect(sourceSouls.some((soul) => soul.slug === "MOMMY")).toBe(true);
-      expect(localization?.getRecommendableSouls(sourceSouls).some((soul) => soul.slug === "MOMMY")).toBe(false);
+      expect(localization?.getRecommendableSouls(sourceSouls, locale).some((soul) => soul.slug === "MOMMY")).toBe(false);
+    }
+  });
+
+  it("excludes risky Souls only from new domestic recommendations", async () => {
+    const localization = await loadLocalizationModule();
+    expect(localization).not.toBeNull();
+
+    const slugs = ["MUM", "LOVE-R", "SOLO", "GRASS", "YYDS"];
+    const domesticSouls = slugs.map((slug, id) => ({ ...JAPANESE_SOULS[0]!, id, slug }));
+    expect(localization?.getRecommendableSouls(domesticSouls, "domestic-zh").map((soul) => soul.slug)).toEqual(["YYDS"]);
+    expect(domesticSouls.map((soul) => soul.slug)).toEqual(slugs);
+
+    for (const locale of ["global-zh", "en", "id", "es", "ja", "ko"] as const) {
+      const sourceSouls = localization?.getBuddySoulPool(locale) ?? [];
+      const recommended = localization?.getRecommendableSouls(sourceSouls, locale) ?? [];
+      for (const slug of ["LOVE-R", "SOLO", "NO-FILTER"]) {
+        expect(sourceSouls.some((soul) => soul.slug === slug)).toBe(true);
+        expect(recommended.some((soul) => soul.slug === slug)).toBe(true);
+      }
     }
   });
 
