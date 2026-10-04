@@ -770,6 +770,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         text: textFrom(source.content ?? source.text ?? source.message),
         streaming: !isDisplayItemCompleted(source, context),
         asyncQuestions: source.delivery === "async" ? projectAsyncQuestions(item.id, source.questions) : [],
+        delivery: source.delivery === "async" ? "async" : null,
         completed: isDisplayItemCompleted(source, context),
         sentAtMs: number(source.sentAtMs) ?? number(source.startedAtMs) ??
           (context.itemIndex === context.turn.items.map((candidate) => candidate.type === "agentMessage" || candidate.type === "assistantMessage").lastIndexOf(true)

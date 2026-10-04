@@ -21,6 +21,8 @@ export interface TextTimelineBlock extends TimelineBlockBase<"text"> {
   readonly text: string;
   readonly streaming: boolean;
   readonly asyncQuestions?: readonly AsyncQuestion[];
+  /** Delivery semantics survive even when structured questions are absent. */
+  readonly delivery?: "async" | null;
   readonly completed?: boolean;
   readonly hasStructuredOutput?: boolean;
   readonly sentAtMs?: number | null;
