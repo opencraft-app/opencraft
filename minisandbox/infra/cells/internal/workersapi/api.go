@@ -877,7 +877,7 @@ func (a *API) dispatchFetch(writer http.ResponseWriter, request *http.Request) {
 	response, err := a.fetchClient.Do(forwarded)
 	if err != nil {
 		slog.WarnContext(request.Context(), "stateless Worker transport failed",
-			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", err)
+			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", diagnosticErrorClass(err))
 		// The request body may already have entered user code. Retrying on a
 		// different executor would duplicate non-idempotent side effects.
 		metricStatus, metricCode = http.StatusBadGateway, "indeterminate_result"
@@ -899,7 +899,7 @@ func (a *API) dispatchFetch(writer http.ResponseWriter, request *http.Request) {
 		// request because user code may already have committed side effects.
 		metricStatus, metricCode = http.StatusBadGateway, "indeterminate_result"
 		slog.WarnContext(request.Context(), "stateless Worker response stream failed",
-			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", err)
+			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", diagnosticErrorClass(err))
 		panic(http.ErrAbortHandler)
 	}
 }
@@ -1025,7 +1025,7 @@ func (a *API) fetchActorAtURL(writer http.ResponseWriter, request *http.Request,
 	if err != nil {
 		attrs := append(transportTrace.attributes(),
 			slog.String("request_id", requestID(request)), slog.String("engine", engine.Host),
-			slog.Any("error", err))
+			slog.String("error", diagnosticErrorClass(err)))
 		slog.Default().LogAttrs(request.Context(), slog.LevelWarn, "Worker fetch transport failed", attrs...)
 		// Once the request is handed to the HTTP transport, the target Object may
 		// already have executed and committed a side effect even if no response
@@ -1045,7 +1045,7 @@ func (a *API) fetchActorAtURL(writer http.ResponseWriter, request *http.Request,
 		metricStatus, metricCode = http.StatusBadGateway, "indeterminate_result"
 		a.metrics.indeterminate.WithLabelValues(a.namespace, metricCell(targetCell)).Inc()
 		slog.WarnContext(request.Context(), "Worker response stream failed",
-			"request_id", requestID(request), "engine", engine.Host, "error", err)
+			"request_id", requestID(request), "engine", engine.Host, "error", diagnosticErrorClass(err))
 		panic(http.ErrAbortHandler)
 	}
 }
@@ -1166,7 +1166,7 @@ func (a *API) ensureActorUncached(ctx context.Context, worker, className, object
 				return actorBinding{}, actorReadyError(readyContext, err)
 			}
 			if cleanup := a.deleteActor(context.WithoutCancel(ctx), engine, created.Actor.ActorID); cleanup != nil {
-				slog.Warn("delete rejected Durable Object Actor", "actorID", created.Actor.ActorID, "error", cleanup)
+				slog.WarnContext(ctx, "delete rejected Durable Object Actor", "error", diagnosticErrorClass(cleanup), "status", cleanup.Status)
 			}
 			return actorBinding{}, err
 		}
@@ -1193,7 +1193,7 @@ func actorReadyError(ctx context.Context, err *upstreamError) *upstreamError {
 }
 
 func placementUpstreamError(err error) *upstreamError {
-	slog.Warn("Agent placement unavailable", "error", err)
+	slog.Warn("Agent placement unavailable", "error", diagnosticErrorClass(err))
 	return &upstreamError{
 		Status: http.StatusServiceUnavailable, Code: "no_admission_capacity",
 		Message: "No fresh admitted Cell is available", Retryable: true,
@@ -1434,7 +1434,7 @@ func (a *API) prepareEntrypoint(ctx context.Context, requestID, worker, versionI
 		deleteTarget := engineURL(engine, "/actors/"+url.PathEscape(actorID))
 		deleteTarget.RawQuery = url.Values{"namespace": []string{a.namespace}}.Encode()
 		if cleanup := a.requestJSON(context.WithoutCancel(ctx), http.MethodDelete, deleteTarget, nil, nil); cleanup != nil {
-			slog.Warn("delete Worker prepare Actor", "actorID", actorID, "error", cleanup)
+			slog.WarnContext(ctx, "delete Worker prepare Actor", "error", diagnosticErrorClass(cleanup), "status", cleanup.Status)
 			if result == nil {
 				result = &upstreamError{Status: http.StatusServiceUnavailable, Code: "prepare_cleanup_failed", Message: "The Worker validation probe could not be cleaned up", Retryable: true}
 			}

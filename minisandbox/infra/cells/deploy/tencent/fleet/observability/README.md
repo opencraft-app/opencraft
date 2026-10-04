@@ -52,6 +52,16 @@ the `rivet_` namespace, so PromQL and dashboards use `rivet_sqlite_*` names.
 Do not install or upgrade this stack during a production runtime qualification
 or rollout. Once the Cell gate is idle, run on the same-VPC builder:
 
+CLS is not supplied by this Prometheus stack. Future CLS collection must bind
+exact cluster/topic/logset identities and an explicit workload/container
+allowlist, with a bounded retention policy. Do not collect all containers,
+user JavaScript console output, request bodies, headers, or raw URL/error text.
+The Workers API library uses finite typed error classes for transport, stream,
+cleanup, placement, and deployment-watch diagnostics; real HTTP regressions
+cover disconnects without replay and truncated-response aborts. This does not
+qualify startup logs, net/http's default server errors, or other containers for
+collection, and source changes alone do not prove a live CLS channel.
+
 ```sh
 # Run once from a Docker host that can reach the upstream registries and has
 # already authenticated to the regional TCR.

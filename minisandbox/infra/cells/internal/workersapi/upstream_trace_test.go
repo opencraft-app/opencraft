@@ -66,7 +66,7 @@ func TestControlTransportFailureIsSanitizedAndNotReplayed(t *testing.T) {
 	}
 }
 
-func TestControlTransportErrorClassUsesWrappedTypesNotMessages(t *testing.T) {
+func TestDiagnosticErrorClassUsesWrappedTypesNotMessages(t *testing.T) {
 	for _, test := range []struct {
 		err  error
 		want string
@@ -77,10 +77,12 @@ func TestControlTransportErrorClassUsesWrappedTypesNotMessages(t *testing.T) {
 		{syscall.ECONNREFUSED, "connection_refused"},
 		{syscall.ECONNRESET, "connection_reset"},
 		{io.ErrUnexpectedEOF, "eof"},
+		{ErrNoAdmissionCapacity, "no_admission_capacity"},
+		{&upstreamError{Status: 503, Code: "private-code", Message: "private-upstream-message"}, "upstream_error"},
 		{fmt.Errorf("private-transport-message"), "transport_error"},
 	} {
 		wrapped := &url.Error{Op: "Post", URL: "https://private-host/private-path?private-query", Err: test.err}
-		if got := controlTransportErrorClass(wrapped); got != test.want {
+		if got := diagnosticErrorClass(wrapped); got != test.want {
 			t.Errorf("class=%s want=%s", got, test.want)
 		}
 	}

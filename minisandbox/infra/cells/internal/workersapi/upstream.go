@@ -171,7 +171,7 @@ func (a *API) requestJSON(
 		// url.Error includes the full URL. Emit bounded classification and socket
 		// milestones instead of raw errors, paths, headers, or response payloads.
 		attrs := append(transportTrace.attributes(),
-			slog.String("code", code), slog.String("error", controlTransportErrorClass(err)),
+			slog.String("code", code), slog.String("error", diagnosticErrorClass(err)),
 			slog.Int("status", status))
 		if requestID, ok := ctx.Value(requestIDKey{}).(string); ok && requestID != "" {
 			attrs = append(attrs, slog.String("request_id", requestID))
@@ -214,14 +214,23 @@ func (a *API) requestJSON(
 	return nil
 }
 
-func controlTransportErrorClass(err error) string {
+// diagnosticErrorClass never serializes an error message or an upstream code.
+// Those values can contain a URL, response payload, or other user data.
+func diagnosticErrorClass(err error) string {
 	var networkError net.Error
 	var dnsError *net.DNSError
+	var upstream *upstreamError
 	switch {
+	case err == nil:
+		return "none"
 	case errors.Is(err, context.Canceled):
 		return "cancelled"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "deadline"
+	case errors.Is(err, ErrNoAdmissionCapacity):
+		return "no_admission_capacity"
+	case errors.As(err, &upstream):
+		return "upstream_error"
 	case errors.As(err, &dnsError):
 		return "dns"
 	case errors.Is(err, syscall.ECONNREFUSED):

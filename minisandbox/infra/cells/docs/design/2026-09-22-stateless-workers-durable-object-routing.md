@@ -2201,6 +2201,17 @@ admission资格。未来标准采集应纳入Terraform/Argo desired state，绑�
 优先保留结构化平台错误，默认不采集用户JS请求内容、Secret或console输出；不要用全量
 DEBUG和无界日志量替代定位。原supervisor持锁期间没有安装或变更日志采集组件。
 
+CLS接线前，`internal/workersapi`的fetch、stream、cleanup、placement和Deployment watch
+错误日志统一使用有限的typed error分类；不会调用原始error的String/Error，也不写上游
+任意code/message或cleanup响应中的Actor ID。控制transport继续保留已有request ID与
+socket阶段；fetch继续保留目标host和相关request ID，不新增payload或URL采集。
+真实HTTP回归覆盖stateless/DO各自在POST接收后断连和响应截断，要求上游执行一次，
+断连返回502且`indeterminate_result`不可透明重试，截断仍`http.ErrAbortHandler`。
+两种cleanup与watch回归用真实HTTP返回任意错误message/code，证明不进入结构化日志。
+这是源码日志边界，不是CLS通道已部署、503已定位或全进程stdout已安全的声明。
+`cmd/workers-api`启动错误、HTTP server默认错误输出及其他容器仍需单独审计；不能据此
+放开所有容器采集。request ID为既有的有界客户端相关标识，不是可信租户身份。
+
 严格负载后的自然缩容还暴露一个独立liveness缺口：A在111 Ready Host、active0、无release
 hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的skew7超过当前缩容
 边界6。低前缀最终可平衡不代表中间删除已被授权，等待也不会改变现有ordinal到AZ映射。

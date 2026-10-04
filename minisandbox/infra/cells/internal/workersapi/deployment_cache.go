@@ -196,7 +196,7 @@ func (a *API) watchDeployments(ctx context.Context) {
 		}
 		a.deployments.Invalidate()
 		if upstream != nil && ctx.Err() == nil {
-			slog.WarnContext(ctx, "Worker deployment watch unavailable", "code", upstream.Code)
+			slog.WarnContext(ctx, "Worker deployment watch unavailable", "error", diagnosticErrorClass(upstream), "status", upstream.Status)
 		}
 		timer := time.NewTimer(delay)
 		select {
