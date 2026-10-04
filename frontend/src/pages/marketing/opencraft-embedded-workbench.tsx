@@ -12,6 +12,12 @@ import { isCN } from "@/lib/region";
 
 import { AUTH_SESSION_CHANGED_EVENT, readStoredAuthToken } from "@/repositories/http-repositories";
 import { cn } from "@/lib/utils";
+import { useEmbeddedPhysicalConnectionPreparation } from "@/lib/opencraft-embedded-connection";
+import {
+  EMBEDDED_WORKBENCH_ELEMENT_NAME as ELEMENT_NAME,
+  embeddedWorkbenchScriptUrl,
+  loadEmbeddedWorkbench,
+} from "@/lib/opencraft-embedded-resources";
 import type {
   LightVelaMultiSessionOptions,
   LightVelaSessionActions,
@@ -26,6 +32,7 @@ interface EmbeddedWorkbenchConfig {
   readonly instanceId: string;
   readonly profileId: string;
   readonly region: "cn" | "intl";
+  readonly physicalConnection?: unknown;
 }
 
 interface EmbeddedWorkbenchElement extends HTMLElement {
@@ -83,72 +90,6 @@ interface EmbeddedSessionsDetail {
   readonly isDraft?: boolean;
 }
 
-const ELEMENT_NAME = "opencraft-embedded-workbench";
-const scriptLoads = new Map<string, Promise<void>>();
-
-function embeddedWorkbenchScriptUrl(): string | null {
-  const configured = (
-    typeof process !== "undefined"
-      ? process.env.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL
-      : undefined
-  )?.trim();
-  if (configured) return configured;
-  if (typeof window !== "undefined" && (
-    window.location.hostname === "127.0.0.1"
-    || window.location.hostname === "localhost"
-    || window.location.hostname === "localhost.lightvela.ai"
-  )) {
-    return "http://127.0.0.1:10000/__opencraft/embedded-workbench.js";
-  }
-  return null;
-}
-
-function loadEmbeddedWorkbench(url: string): Promise<void> {
-  const existing = scriptLoads.get(url);
-  if (existing) return existing;
-  const operation = new Promise<void>((resolve, reject) => {
-    if (customElements.get(ELEMENT_NAME)) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.type = "module";
-    script.src = url;
-    script.crossOrigin = "anonymous";
-    script.dataset.opencraftEmbeddedWorkbench = "true";
-    const timer = window.setTimeout(() => {
-      script.remove();
-      reject(new Error("Embedded Workbench loading timed out"));
-    }, 30_000);
-    script.addEventListener("load", () => {
-      void customElements.whenDefined(ELEMENT_NAME).then(() => {
-        window.clearTimeout(timer);
-        resolve();
-      }, reject);
-    }, { once: true });
-    script.addEventListener("error", () => {
-      window.clearTimeout(timer);
-      script.remove();
-      reject(new Error("Could not load Embedded Workbench"));
-    }, { once: true });
-    document.head.append(script);
-  });
-  scriptLoads.set(url, operation);
-  operation.catch(() => scriptLoads.delete(url));
-  return operation;
-}
-
-/** Resource preparation only: the confirmed Bot/Profile still owns Application creation. */
-export function useEmbeddedWorkbenchResourcePreparation(enabled: boolean, active: boolean): void {
-  useEffect(() => {
-    if (!enabled || !active) return;
-    const url = embeddedWorkbenchScriptUrl();
-    if (url) void loadEmbeddedWorkbench(url).catch(() => {
-      // The actual migration surface owns error UI and retries a failed load.
-    });
-  }, [enabled, active]);
-}
-
 export function AgentChatMigrationSurface({
   active,
   agentPaused = false,
@@ -165,6 +106,9 @@ export function AgentChatMigrationSurface({
   region,
 }: AgentChatMigrationSurfaceProps) {
   const t = useT();
+  const physicalConnection = useEmbeddedPhysicalConnectionPreparation();
+  const physicalConnectionRef = useRef(physicalConnection);
+  physicalConnectionRef.current = physicalConnection;
   const [promptRevision, setPromptRevision] = useState(0);
   const mountRef = useRef<HTMLDivElement>(null);
   const legacyRef = useRef<HTMLDivElement>(null);
@@ -347,7 +291,8 @@ export function AgentChatMigrationSurface({
       element.addEventListener("opencraft-sessions", handleSessions);
       element.addEventListener("opencraft-error", handleEmbeddedError);
       element.addEventListener("opencraft-connection", handleConnection);
-      element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken });
+      element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken,
+        physicalConnection: physicalConnectionRef.current ?? undefined });
       mount.append(element);
       await candidate.prepare();
       if (retired || failed) return;

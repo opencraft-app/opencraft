@@ -600,6 +600,7 @@ export interface WebWorkbenchSupervisorOptions {
   readonly lightVelaApiBase?: string;
   /** Embedded session storage is supplied by the containing application. */
   readonly lightVelaAccountStorage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  readonly lightVelaPhysicalConnection?: import("@opencraft/plugin-lightvela-hermes").HermesPhysicalConnectionPreparation;
 }
 
 function setLocalPreference(key: string, value: string | null): void {
@@ -1142,6 +1143,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     }));
     await extensions.activateOptional(createLightVelaHermesExtension({
       account: lightVelaAccount,
+      physicalConnection: options.lightVelaPhysicalConnection,
+      apiBase: options.lightVelaApiBase,
       profileSkills: profileSkills.service,
       profileDirectory: botDirectory,
     }));

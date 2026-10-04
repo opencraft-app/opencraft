@@ -43,7 +43,20 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 ## 稳定不变量
 
+CTL `/v1/instances/:id/bots` 通过一次地域 TAT 调用、一个 Python 进程，依次获取官方 Hermes
+`GET /api/profiles` 和微信、WhatsApp 绑定；仍复用通道操作的同一实现和各通道独占文件锁。
+Profile API 可能加载本地环境配置，绑定读取之前恢复本次执行的原始环境，避免归属路径被 Profile 配置改变。
+保留遗留 WhatsApp 归属迁移、过期预约/实际凭据/正在扫码的对账；它不是无副作用缓存读取或跨 Profile/通道的原子快照。
+只有三个阶段全部完成才输出带内部版本标识的完整 payload；命令失败、输出截断或缺失阶段均失败，
+不返回部分成功或自动重跑三条旧命令。公共响应、默认 Profile 的 `default→main` 映射、通道 owner/name
+以及 gateway_running 的 unknown/false/true 三态保持不变，实例归属/权益和 TAT 地域仍走既有权威路径。
+单次执行沿用原始调试命令的120秒预算与请求取消，不将三次预算相加。
+
 主站嵌入 OpenCraft 的资源准备与 Bot 发现并行，但确认实例/Profile 后才创建单一 Application。
+认证后的国内 Chat 入口还可从同一次实例列表读取的阶段结果准备 TAT 会话与握手：仅唯一物理实例或明确匹配的 Running 根实例，多个实例中的命名 Bot 不猜归属、不预连全部机器。
+TAT 服务端仍校验归属、Running 和 active Pass；预备不启动 PTY/Dashboard，不发送 Profile/AppServer RPC。
+预备 capability 不持久化，未认领15秒到期，账号/地域/实例/API 和发现代次失效即撤销；正式 Host 完成既有预检与新鲜实例确认后只能接管一次同一 multiplexer，接管后连接由 Host 释放。
+失败、过期或旧嵌入制品缺少能力时使用原连接路径，不另建 Application；Dashboard ensure 仍在接管后执行。
 聊天就绪不等待可选 Host Proxy；远端回环预览由自己的窄作用域 Service Worker 注册激活决定就绪，
 而非主站页面 controller/ready。停止、关闭、切地址或销毁会拒绝迟到导航，失败不回退到客户端 localhost。
 Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/SW 仍重验证；具体边界见上述平台架构。

@@ -1,17 +1,18 @@
 'use client';
 
-import { lazy, Suspense } from 'react';
+import React, { Suspense } from 'react';
 
 import { AgentSidebarToggle, useAgentSidebarCollapse } from '@/components/site/agent-sidebar';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import type { AgentSectionId, AgentSettingsSectionId } from '@/lib/agent-routes';
+import { EmbeddedChatPreparation } from '@/lib/opencraft-embedded-connection';
 
 import { AgentsRouteLoading, AppRouteShell, NextAgentEntitlementGate } from './app-route-shell';
 
-const AgentSettingsPage = lazy(() => import('@/pages/marketing/agent-settings-page').then(
+const AgentSettingsPage = React.lazy(() => import('@/pages/marketing/agent-settings-page').then(
   (module) => ({ default: module.AgentSettingsPage }),
 ));
-const AgentsWorkbenchPage = lazy(() => import('@/pages/marketing/agents-workbench/AgentsWorkbenchPage').then(
+const AgentsWorkbenchPage = React.lazy(() => import('@/pages/marketing/agents-workbench/AgentsWorkbenchPage').then(
   (module) => ({ default: module.AgentsWorkbenchPage }),
 ));
 
@@ -38,6 +39,7 @@ export function AgentsPageClient({
 
   return (
     <AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>
+      <EmbeddedChatPreparation active={sectionId === 'chat'}>
       <NextAgentEntitlementGate loadingFallback={loadingFallback}>
         <Suspense fallback={loadingFallback}>
           {productHeader}
@@ -53,6 +55,7 @@ export function AgentsPageClient({
           )}
         </Suspense>
       </NextAgentEntitlementGate>
+      </EmbeddedChatPreparation>
     </AppRouteShell>
   );
 }

@@ -8,6 +8,7 @@ import type { LightVelaAccountService } from "../account/lightvela-account-servi
 import type { HermesSessionTokenCache } from "../lib/hermes-session-token-cache";
 import { LightVelaHermesTransport, type LightVelaAccountPort } from "../transport/lightvela-hermes-transport";
 import type { LightVelaRegion } from "../account/lightvela-account-contract";
+import type { HermesPhysicalConnectionPreparation } from "../transport/hermes-physical-connection-preparation";
 
 export interface LightVelaHermesHostConfig {
   readonly dashboardUrl?: string;
@@ -74,6 +75,8 @@ export function environmentAccountPort(account: LightVelaAccountService, config:
 export function createLightVelaHermesHostProvider(
   account: LightVelaAccountService,
   sessionTokenCache?: HermesSessionTokenCache,
+  physicalConnection?: HermesPhysicalConnectionPreparation,
+  apiBase?: string,
 ): HostConnectionProvider {
   return {
     id: "lightvela.hermes",
@@ -105,6 +108,13 @@ export function createLightVelaHermesHostProvider(
           ? undefined
           : nativeHermesProfileId(normalized.profileId),
         sessionTokenCache,
+        physicalConnection,
+        physicalBinding: normalized.instanceId && normalized.accountId && normalized.region ? {
+          instanceId: normalized.instanceId,
+          accountId: normalized.accountId,
+          region: normalized.region,
+          apiBase,
+        } : undefined,
       });
     },
   };
