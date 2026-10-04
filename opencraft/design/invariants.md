@@ -2,6 +2,14 @@
 
 状态：实施及验证中。下表记录目标与责任，不把测试名称当成已运行的证据。最新结果在 [progress.md](progress.md)。
 
+## Application navigation restoration
+
+历史记录只持有聊天引用，不拥有草稿的存活事实。启动与历史恢复必须先由 Host 配置、ScopeRegistry 和 BindingStore 校验/规范化，再让 Router 与激活层消费同一个目标；有效当前 entry 优先于跨标签页共享的最后使用偏好。失效 Draft 不按旧 ID 重建，已提交 Draft 经持久 alias 找回 Thread。Router 唯一写回纠正结果并保留 Settings/Extension 目的地；失效引用回到当前实际保留的 View 与输入，View 不能跨 Scope 复用。规范化为 REPLACE 的 POP 仍须被资源事务消费。
+
+返回同一个保留 View 不依赖远端就绪：Chat、当前会话入口与 POP 共用本地呈现/后台续接语义，晚到结果受导航代次和释放约束；提交中的草稿仍拥有导航。侧栏只表达 `selectConversation`，不自行解释活动 Thread、pending 或设置页返回；重复目标合并、保留 View 复用与可见项早退都由导航事务决定。显式 `navigate` 不等于选择，不能按 Thread ID 合并独立历史 View 的输入。后台草稿准备、返回、POP 与提交转换共享 intent/释放/Router revision 资格及接受或释放路径；非活动草稿不得获得当前导航权。嵌入式 memory Router 不读写外层页面历史。责任与入口见 [Application Router authority](../docs/platform-architecture.md#application-router-authority)、`workbench-location-restoration`；验证使用 `test:application-route-restoration` 与 `smoke:application-route-restoration`，不将隔离 Host 替身验收冒充手机或完整账号启动实测。
+
+## 工作区契约
+
 | ID | 不变量 | 责任/验证 |
 |---|---|---|
 | WSP-01 | 同一主会话只有一个可交互主 Composer；普通/工具展开分支互斥，Side Chat 不叠加父输入 | ThreadComposerPresentation；Web smoke |
@@ -120,6 +128,13 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 - 目录的 `openCraftMode`/`openCraftLabel` 只在 Host 声明 `opencraft/permission-modes` v1 时有效。缺失能力时，客户端不得自行猜测标准档位。
 - DSH 的 Thread 创建、Turn 执行与 Fork 必须先校验所选 preset；新建 Thread 在创建时应用并回读生效值，不能等到首轮 Turn。DSH 的外部沙箱投影不能冒充 Codex 沙箱。
 - 标准档位用稳定的 `opencraft:permission-mode:*` 提交值，Host 在每次提交时解析当前引擎目录并翻译为原生 profile；会话恢复后原生生效 profile 由目录重新映射为产品档位。产品级权限上限与独立的请求值/生效值持久对账尚未建立，不得声称已实现 bb 的完整权限策略。
+
+## 会话顺序与展示分段（2026-10-05）
+
+- 一个执行轮次可以有多个有序问答与活动片段；执行所有者唯一，不等于折叠组唯一。问答、追问与交互边界不得被“回答区/活动区”重新分桶。Renderer 只消费共享呈现计划。
+- 异步提问的可见文字与原生 phase 不赋予最终回答资格；折叠边界、最终回答资格和执行完成相互独立。折叠只控制连续片段的显隐，不改变消息位置。
+- 源消息与边界身份决定显示 key；流式、完成与补历史不按数组索引重建已有回复。历史片段保持结束状态，当前响应最多一个 Thinking owner；总用时与完成信息不因分段而重复。
+- 回归须覆盖同轮次的异步提问→用户回答→工作→回答→多次追问，包含桌面/触控、折叠、刷新、补历史和正在输出期间的 DOM 身份。
 
 ## 图片附件呈现（2026-09-27）
 

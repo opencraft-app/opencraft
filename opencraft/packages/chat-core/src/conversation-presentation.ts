@@ -2,6 +2,7 @@ import type {
   AssistantTimelineFrame,
   CompactionTimelineBlock,
   TextTimelineBlock,
+  TimelineBlock,
   TodoTimelineBlock,
 } from "./timeline";
 import type { CommandExecutionTimelineBlock } from "./timeline";
@@ -58,21 +59,33 @@ export function todoSummary(block: TodoTimelineBlock): string {
   return `Step ${index + 1} / ${block.entries.length}`;
 }
 
-/** The final message owns action eligibility, independently of Turn failure. */
+/** Visible questions are not answers, regardless of the native phase label. */
+export function isAssistantAnswerContent(block: TimelineBlock): boolean {
+  return block.type === "text" && block.phase !== "commentary"
+    && block.delivery !== "async" && (block.asyncQuestions?.length ?? 0) === 0;
+}
+
+/** The current response owns action eligibility, independently of Turn failure. */
 export function assistantMessageActions(frame: AssistantTimelineFrame): {
   readonly message: TextTimelineBlock;
   readonly copyText: string;
+  readonly copyBlockIds: readonly string[];
   readonly completed: boolean;
   readonly sentAtMs: number | null;
 } | null {
-  const messages = frame.blocks.filter(
-    (block): block is TextTimelineBlock =>
-      block.type === "text" && block.phase !== "commentary",
+  let lastInput = -1;
+  frame.blocks.forEach((block, index) => {
+    if (block.type === "user-message" || block.type === "realtime-transcript"
+      || (block.type === "text" && (block.delivery === "async" || (block.asyncQuestions?.length ?? 0) > 0))) lastInput = index;
+  });
+  const messages = frame.blocks.slice(lastInput + 1).filter(
+    (block): block is TextTimelineBlock => isAssistantAnswerContent(block),
   );
   const message = messages[messages.length - 1];
   if (!message) return null;
   return {
     message,
+    copyBlockIds: messages.map(block => block.id),
     copyText: messages
       .map((block) => block.text)
       .join("\n\n")

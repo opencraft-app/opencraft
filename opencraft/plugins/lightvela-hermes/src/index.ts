@@ -8,3 +8,4 @@ export * from "./hermes-appserver-bridge/composer-queue/service";
 export * from "./settings/lightvela-hermes-settings-view";
 export * from "./settings/lightvela-hermes-empty-view";
 export * from "./transport/lightvela-hermes-transport";
+export * from "./transport/hermes-physical-connection-preparation";

@@ -230,6 +230,32 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
    capability lease, and a failed prewarm is retried there rather than
    invalidating already-restored history.
 
+### History positions and concurrent observations
+
+Execution ownership and transcript grouping are different boundaries. One
+AppServer Turn may contain an asynchronous question, its user reply, multiple
+answers and steering inputs. `chat-core` projects one ordered presentation
+surface: only the contiguous initial user frames are an intro; later user and
+interaction frames stay at their original positions. Adjacent activity forms
+independent disclosure segments, ended by visible input, question, response or
+interaction boundaries. Web and Native consume this plan without collecting
+all answers first or appending earlier activity after later messages.
+
+Asynchronous delivery is retained even when structured questions are absent;
+neither its native `final_answer` phase nor its text gives it final-answer
+eligibility. Displayability, disclosure closure and execution completion are
+separate predicates. Stable rows/segments use source identity and boundary
+anchors, not status, array indices or inferred timestamps. Collapsing a segment
+never moves steering or other responses across that boundary. The Turn parent
+arbitrates at most one live Thinking owner from the current response suffix;
+closed earlier segments cannot inherit a later response's running state.
+Only one segment presents the Turn's work interval/total-duration fallback,
+and response-copy actions exclude questions and earlier inputs' answers.
+Tests cover async-final questions, multiple answers and follow-ups, in-place
+streaming, phase/completion changes, disclosure, history prepend and refresh.
+
+### Embedded submission and recovery
+
 Embedded workbench templates enter through `submitPrompt(requestId, text)`, not
 through a legacy SDK sender or a DOM button. The embedded element deduplicates
 admitted request IDs in its Bot lifetime. The App admits only into an empty,

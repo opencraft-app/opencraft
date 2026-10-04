@@ -23,6 +23,8 @@ Headless OpenCraft 的入口校验先于运行时健康判断：包内 Web relea
 
 ## 验证
 
+OpenCraft 的执行轮次与展示片段分开：同一轮次内的异步提问、回答、Steer 与后续工作按原有记录顺序投影，活动只在连续范围内折叠，不把所有回答集中到旧工作记录之前。共享 `chat-core` 拥有顺序分段和当前响应判定；Web/Native 不独立重排。异步提问即使带最终回答 phase 也不能结束工作计时，历史回答不得压住后续响应的运行状态。具体契约见 [ChatUI 顺序与所有权](../../../opencraft/docs/chat-ui-architecture.md#history-positions-and-concurrent-observations)。
+
 覆盖普通响应、流式分片、客户端取消、provider 超时/限流、fallback、渠道发送失败和重连。OpenCraft 还必须覆盖 steer/queue 可见性、断线恢复不重复投影、完成瞬间组件身份和滚动所有权；工具终态必须有结果证据，不可恢复的资源缺失不得自动重连，Web/Expo 消息折叠需在宽度变化后重新测量自然高度。Host 从失败恢复到 ready 时应在无消息提交条件下重载 Catalog，BFCache 往返不得销毁应用所有权图。跨 gateway/runtime artifact 的变更分别验证镜像 pin 与 runtime SHA。
 
 Web 图片附件的浏览器 `File` 与预览 URL 属于 Composer View/Controller 生命周期，不进入可序列化的 AppServer 请求或重放事件。异步图片处理必须按草稿和附件身份回写；切换目标不能串写，删除、清空或释放 Controller 后的迟到结果不能复活附件。发送后的图片只按已获准的会话媒体资源解析，并以可关闭、可恢复焦点的查看器呈现。

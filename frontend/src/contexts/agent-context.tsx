@@ -20,6 +20,7 @@ import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN
 import { isGlobal } from "@/lib/region";
 import { summarizePassCredits } from "@/lib/pass-credits";
 import { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
+import { readStoredAuthToken } from "@/repositories/http-repositories";
 
 export { resolveBotQuotaPerAgent } from "@/lib/bot-quota";
 
@@ -69,6 +70,11 @@ interface OpenClawContextValue {
   isSubscribed: boolean;
   user: OpenClawUser;
   bots: OpenClawBot[];
+  instanceDiscovery: {
+    readonly accountId: string;
+    readonly items: readonly { instanceId: string; running: boolean }[];
+    isCurrent(): boolean;
+  } | null;
   botsLoading: boolean;
   /** 当前账号的 Bot 列表已从服务端成功读取，空数组才可信。 */
   hasResolvedBots: boolean;
@@ -225,6 +231,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const { isAuthenticated, session, signOut: sessionSignOut } = useSession();
   const repositories = useRepositories();
   const effectiveIsAuthenticated = isAuthenticated || LOCAL_PREVIEW_AUTH_ENABLED;
+  const [instanceDiscovery, setInstanceDiscovery] = useState<OpenClawContextValue["instanceDiscovery"]>(null);
 
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [activePass, setActivePass] = useState<Pass | null>(null);
@@ -502,9 +509,17 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   /* ── Load bots from backend, then fetch openclaw config to restore channel status ── */
   const refreshBots = useCallback(async () => {
     const generation = ++botRefreshGeneration.current;
+    const accountId = session.user?.id;
+    const token = readStoredAuthToken();
+    const isCurrent = () => generation === botRefreshGeneration.current && readStoredAuthToken() === token;
+    setInstanceDiscovery(null);
     setBotsLoading(true);
     try {
-      const snapshot = await repositories.bots.getDashboardSnapshot("live");
+      const snapshot = await repositories.bots.getDashboardSnapshot("live", {
+        onInstances: items => {
+          if (accountId && token && isCurrent()) setInstanceDiscovery({ accountId, items, isCurrent });
+        },
+      });
       if (generation !== botRefreshGeneration.current) return;
       const mappedBots = projectBotCatalog(snapshot.bots)
         .map(({ source }) => mapBotToOpenClawBot(source));
@@ -541,6 +556,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       //   }
       // }
     } catch {
+      if (generation === botRefreshGeneration.current) setInstanceDiscovery(null);
       if (generation === botRefreshGeneration.current) setBotsError(true);
       if (generation === botRefreshGeneration.current && LOCAL_PREVIEW_AUTH_ENABLED) {
         setBots((prev) => (prev.length > 0 ? prev : [buildLocalPreviewBot()]));
@@ -548,7 +564,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     } finally {
       if (generation === botRefreshGeneration.current) setBotsLoading(false);
     }
-  }, [repositories.bots]);
+  }, [repositories.bots, session.user?.id]);
 
   /* ── Fetch bots & passes once on login ── */
   const fetchedUserIdRef = useRef(session.user?.id);
@@ -571,6 +587,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setHasResolvedPasses(false);
     setIsSubscribed(false);
     setBots([]);
+    setInstanceDiscovery(null);
     setHasResolvedBots(false);
     setBotsError(false);
     setPassesLoading(Boolean(session.user));
@@ -607,6 +624,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setLatestPass(null);
       setHasResolvedPasses(false);
       setBots([]);
+      setInstanceDiscovery(null);
       setHasResolvedBots(false);
       setBotsError(false);
       fetchedRef.current = false;
@@ -713,6 +731,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       isSubscribed,
       user,
       bots,
+      instanceDiscovery: instanceDiscovery && instanceDiscovery.accountId === session.user?.id && instanceDiscovery.isCurrent() ? instanceDiscovery : null,
       botsLoading,
       hasResolvedBots: hasResolvedBots && fetchedUserIdRef.current === session.user?.id,
       botsError,
@@ -738,7 +757,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, hasResolvedBots, botsError, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots, session.user?.id],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, instanceDiscovery, botsLoading, hasResolvedBots, botsError, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots, session.user?.id],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

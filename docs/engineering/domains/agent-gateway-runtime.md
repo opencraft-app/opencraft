@@ -65,7 +65,20 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 ## 稳定不变量
 
+CTL `/v1/instances/:id/bots` 通过一次地域 TAT 调用、一个 Python 进程，依次获取官方 Hermes
+`GET /api/profiles` 和微信、WhatsApp 绑定；仍复用通道操作的同一实现和各通道独占文件锁。
+Profile API 可能加载本地环境配置，绑定读取之前恢复本次执行的原始环境，避免归属路径被 Profile 配置改变。
+保留遗留 WhatsApp 归属迁移、过期预约/实际凭据/正在扫码的对账；它不是无副作用缓存读取或跨 Profile/通道的原子快照。
+只有三个阶段全部完成才输出带内部版本标识的完整 payload；命令失败、输出截断或缺失阶段均失败，
+不返回部分成功或自动重跑三条旧命令。公共响应、默认 Profile 的 `default→main` 映射、通道 owner/name
+以及 gateway_running 的 unknown/false/true 三态保持不变，实例归属/权益和 TAT 地域仍走既有权威路径。
+单次执行沿用原始调试命令的120秒预算与请求取消，不将三次预算相加。
+
 主站嵌入 OpenCraft 的资源准备与 Bot 发现并行，但确认实例/Profile 后才创建单一 Application。
+认证后的国内 Chat 入口还可从同一次实例列表读取的阶段结果准备 TAT 会话与握手：仅唯一物理实例或明确匹配的 Running 根实例，多个实例中的命名 Bot 不猜归属、不预连全部机器。
+TAT 服务端仍校验归属、Running 和 active Pass；预备不启动 PTY/Dashboard，不发送 Profile/AppServer RPC。
+预备 capability 不持久化，未认领15秒到期，账号/地域/实例/API 和发现代次失效即撤销；正式 Host 完成既有预检与新鲜实例确认后只能接管一次同一 multiplexer，接管后连接由 Host 释放。
+失败、过期或旧嵌入制品缺少能力时使用原连接路径，不另建 Application；Dashboard ensure 仍在接管后执行。
 聊天就绪不等待可选 Host Proxy；远端回环预览由自己的窄作用域 Service Worker 注册激活决定就绪，
 而非主站页面 controller/ready。停止、关闭、切地址或销毁会拒绝迟到导航，失败不回退到客户端 localhost。
 Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/SW 仍重验证；具体边界见上述平台架构。
@@ -284,6 +297,8 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - OpenCraft 会话顶栏分隔线资格由布局所有者的窗口宽度减右侧面板宽度决定，不再混用 DOM 主区测量值与左栏动画值，防止临界宽度的跨帧测量误差导致横线闪烁。Vela 首页字标和顶栏隐藏测量副本共用相同文字几何；品牌字体资源尚待确认，不将临时 UI 字体回退视为定制字体交付。
 - Sidecar 统一绘制导航栏、上下文栏及 Footer 后面的连续材质，子栏和 Footer 不再分别叠加背景或模糊；保留 Footer 真实布局占位，但不得出现白色底条或上下文栏下方露出的深灰窗口底色。
 - OpenCraft 应用入口直接切换停靠栏，宽屏没有中间菜单或二次 Pin 操作；窄屏切换同一导航内容的抽屉，不覆盖宽屏偏好。账户仍独立使用菜单。设备设置在有 Host 和零 Host 宿主中均复用 AppShell 的上下文与主内容插槽，替换分类/详情而不替换 Shell；不允许设置自行禁用全局导航或引入私有宽度/折叠控制器。应用栏展开时为导航、设置分类、设置内容三栏，收起后自然变为两栏。Agent 管理仍由独立模态容器拥有。
+- OpenCraft 应用历史只保存聊天引用；启动时当前 entry 的有效目标优先于共享的最后使用偏好，Router 与资源激活必须采用同一解析结果。Host 配置验证可用身份，草稿存储验证存活，绑定存储将已提交草稿映射到 Thread；失效草稿不按旧 ID 重建。Router 独占纠正 entry 并保留设置/扩展页面，规范化为 REPLACE 的后退也要被激活事务消费。当前保留 View 的返回不等待远端连接，后台续接受新导航/释放约束，不能跨会话复用 View 或丢弃当前输入；提交中的导航保护不变。嵌入式 memory 导航不读取或改写外层页面历史。详见 [Application Router authority](../../../opencraft/docs/platform-architecture.md#application-router-authority)。
+- 会话选择由导航事务唯一解释；侧栏只发语义意图，不自行用活动/pending 投影早退或拼接设置页返回逻辑。重复恢复目标合并、已呈现 View 的复用和显式新页面打开分别建模，同 Thread 多个历史页面保留独立输入。所有异步提交共用导航代次、释放及 Router revision 资格；过期草稿转换不能抢新页面，接受失败/抛错释放准备资源，最后使用偏好只记录仍有效的命令结果。
 - OpenCraft 将“账号已认证但没有可运行 Bot”建模为应用级 `bot-required` 状态，而不是登录失败或 Host 传输错误。Web 零 Host/连接干预与 Expo 账户门共享同一纯状态投影和区域创建地址，各端只拥有自己的呈现适配；实际创建、套餐、实名与资格校验继续由 `frontend` 的 `/dashboard/create` 统一流程拥有。
 - OpenCraft 的 LightVela 匿名状态不是应用级 intervention：只要本地 Host 可用，默认路由必须保留本地新任务 Workbench，不能由登录页接管主内容。Sidecar 的匿名账户入口明确显示为 `Sign in`，点击后才打开国内/国际区域选择并继续到对应 LightVela Web OIDC；已登录账户恢复头像/名称，已登录但无 Bot 仍使用既有 `bot-required`。只有用户明确选择需要 LightVela 凭据的 Host 时，Host-specific `authentication-required` 才可接管该连接上下文。
 - OpenCraft 内嵌 Hermes 控件以语义状态和 Host token 为契约：业务页面只拥有选项值与策略，Web Option/Select 原语拥有可访问性语义，Host 主题适配层拥有颜色、焦点、选中与禁用视觉。挂载到 `body` 的 Select/Popover/Dialog 必须显式选择命名呈现层级，不得在功能页面使用数值 `z-index` 与应用模态窗竞争。

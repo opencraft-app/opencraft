@@ -648,8 +648,11 @@ requested when domestic Chat is active. The release build fails closed when the
 reviewed Embedded artifact is unavailable, so legacy fallback cannot disguise
 an incomplete production artifact.
 
-Resource preparation starts at the enabled host Chat route, alongside Bot
-discovery, through the same deduplicated loader used by the migration surface.
+Resource preparation starts at the domestic host Chat route after authentication,
+before the Next entitlement/Bot gate and lazy settings page, alongside Bot
+discovery, through the same lightweight deduplicated loader used by the migration
+surface. The actual domestic rollout authority, not hidden-tool preferences,
+enables both paths. Loading code never bypasses the entitlement gate for content.
 It registers the component but creates no Application or Host; the confirmed
 instance/Profile binding still gates the single canvas owner. Failed speculative
 loads are retryable by the surface. Optional Host Proxy startup runs independently
@@ -658,6 +661,32 @@ proxy registration to activate; it never falls back to client-local localhost.
 Embedded Vite `assets/a-[hash][extname]` resources have immutable one-year cache
 headers in the Pages artifact. Stable loaders, version files and Service Workers
 remain revalidated; publishing must continue retaining old content-hash closures.
+
+The authenticated domestic Chat route may also prepare a physical TAT connection
+from the intermediate result of its existing instance-list read, independently
+of the slower per-instance Profile catalogs. A sole discovered instance that is Running or an
+explicit verified root-instance selection is required; a named Bot among several
+machines is not enough to guess its physical target. The TAT API retains ownership,
+Running-state and active-Pass checks. No extra Application/account service is
+created, and the preparation sends only the TAT handshake: no PTY, Dashboard
+bootstrap, loopback health probe, Profile tools or AppServer RPC.
+
+This in-process preparation capability is owned by the route/session discovery
+generation and is bounded to 15 seconds while unclaimed. Navigation, discovery
+replacement and credential changes revoke it; late HTTP/socket results cannot
+revive it. The confirmed Profile's normal provider/preflight and fresh instance
+validation still run. Only a matching account, region, instance and API base can
+claim the same multiplexer exactly once. Adoption enables the formal transport's
+ordinary health probing and transfers disposal responsibility to that transport;
+the preparation binding and multiplexer configuration are owner-held snapshots,
+not borrowed mutable caller options. Health configuration must succeed before
+the transfer commits, so failures still leave a resource that can be disposed;
+the route's old preparation owner cannot close an adopted Host. Failed, expired,
+lost or already-consumed preparations use the ordinary connection path. The
+capability is not stored in profiles, HTML, browser storage or a global pool.
+Older independently deployed Embedded artifacts without the static preparation
+API keep their original startup path. Dashboard ensure remains a post-adoption
+Host operation because it can start or replace an owned remote backend.
 
 The Embedded Application owns one deferred startup lane for Voice,
 Collaboration, Bot Chat/Management presentation and the Terminal panel module.
@@ -1103,11 +1132,46 @@ back/forward. Web saves that key projection per browser session and verifies the
 current Router key when restoring it; it is not another path authority. Desktop
 memory history lasts for the window, not across process restarts.
 
+History contains resource references, not evidence that a Draft still exists.
+At Web bootstrap, the URL/current Router entry is resolved before choosing a
+global last-used conversation, and the Router and initial activation consume the
+same effective target. Host profiles validate Host availability, ScopeRegistry
+validates retained Drafts, and BindingStore resolves durable promotion aliases
+to canonical Threads. An expired unsubmitted Draft is not recreated under its
+old ID. Global last-used preferences (including changes from another tab) cannot
+override a valid current-entry target. Explicit embedded memory navigation starts
+at Home and never reads or writes the containing page's conversation history.
+
+The same resource projection validates later restored entries. Invalid references
+fall back to the actual retained View, keeping its Composer; promoted aliases may
+retain their original View. A View already bound to another Scope must not be
+reused. Only the Router REPLACEs corrected entry metadata, preserving the current
+Settings/Extension destination. The transaction consumes these corrections as
+restoration events even when a POP is normalized into REPLACE.
+
 `WorkbenchNavigationTransaction` fences preparation by intent epoch, commits only
 accepted destinations, and restores the complete prior entry after a failed POP.
 Changing routes cancels pending readiness without stopping a live turn. A late
 Thread lease is released; late success/error cannot take navigation ownership.
 POP to a different View of the same conversation must still restore that View.
+Returning to the already retained View, by Chat or POP, presents it locally and
+resumes readiness in the background; a newer intent or disposal fences and
+releases late preparations. Selecting the current sidebar conversation from
+Settings uses this same return operation, not a new View or a network-gated
+selection. Submission ownership guards remain in force.
+Sidebar and other selection adapters express only `selectConversation`; they do
+not decide whether a Thread is already selected, whether pending hydration should
+be deduplicated, or whether Settings requires Chat return. The transaction owns
+that decision: reuse the remembered entry's View (or the actual retained View),
+coalesce an in-flight destination only when its View also matches, and no-op only for the presented View with no
+competing destination. `navigate` remains a distinct explicit-open operation, so
+different history Views of one Thread keep independent Composer documents.
+All preparations use one intent/lifetime/Router-revision eligibility check and
+one accept-or-release path, including local Draft readiness and promotion. A
+promotion must originate from the still-active Draft and capture its View before
+awaiting; an inactive Draft cannot supersede a newer navigation. Last-used
+preferences are written only for still-current accepted command results, never
+used as a second selected-conversation or route authority.
 Thread/Draft stores, composer state, Host connections and background execution
 remain resource owners independent of route history. Shell divider hit targets
 start below the toolbar, so pane geometry cannot intercept history controls.

@@ -183,7 +183,7 @@ test("Timeline projection groups consecutive assistant Items into a stable Frame
   assert.equal(snapshot.anchorFrameIds.get("call:call-1"), snapshot.frames[1]?.id);
 });
 
-test("a Turn folds split assistant Frames and arbitrates Thinking to its Activity group", () => {
+test("a Turn retains interaction boundaries and arbitrates Thinking to its latest Activity group", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-split-assistant",
     status: "streaming",
@@ -203,14 +203,15 @@ test("a Turn folds split assistant Frames and arbitrates Thinking to its Activit
   assert.equal(plan.assistantFrame?.id, "turn-split-assistant:assistant-surface");
   assert.deepEqual(plan.assistantFrame?.blocks.map((block) => block.type), [
     "command-execution",
+    "approval",
     "reasoning",
     "tool-call",
   ]);
-  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 1);
+  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 2);
   assert.equal(plan.assistant?.slots[0]?.id, "turn-split-assistant:slot:agent-activity");
   assert.equal(plan.thinkingOwner.type, "activity");
   if (plan.thinkingOwner.type !== "activity") throw new Error("Expected Activity Thinking owner");
-  assert.equal(plan.thinkingOwner.activityId, "turn-split-assistant:slot:agent-activity");
+  assert.equal(plan.thinkingOwner.activityId, plan.assistant?.slots.at(-1)?.id);
 });
 
 test("only the most recent Turn may materialize transient Thinking chrome", () => {
@@ -257,7 +258,7 @@ test("a pending Composer-owned interaction suppresses generic Turn Thinking", ()
   if (turn === undefined) throw new Error("Expected Turn");
 
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
-  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 1);
+  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 2);
   assert.notEqual(plan.thinkingOwner.type, "turn");
 });
 
@@ -276,7 +277,7 @@ test("final answer actions remain owned by one synthesized assistant surface", (
 
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
   assert.equal(plan.assistantFrame?.blocks.filter((block) => block.type === "text").length, 1);
-  assert.deepEqual(plan.assistant?.slots.map((slot) => slot.type), ["agent-activity", "assistant-content"]);
+  assert.deepEqual(plan.assistant?.slots.map((slot) => slot.type), ["agent-activity", "assistant-content", "assistant-content"]);
   assert.notEqual(plan.thinkingOwner.type, "turn");
 });
 
@@ -2886,7 +2887,7 @@ test("MCP App persistence requires both the feature cohort and a renderer surfac
   ]);
 });
 
-test("steering and hook feedback are assistant Activity units that persist while collapsed", () => {
+test("steering and hook feedback retain their own slots outside Activity disclosures", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-persistent-feedback",
     status: "complete",
@@ -2902,28 +2903,24 @@ test("steering and hook feedback are assistant Activity units that persist while
   assert.deepEqual(snapshot.frames.map((frame) => frame.type), ["user", "assistant"]);
   const assistant = snapshot.frames[1];
   if (assistant?.type !== "assistant") throw new Error("Expected assistant frame");
-  const outer = createAssistantTurnPresentationPlan(assistant).slots[0];
+  const slots = createAssistantTurnPresentationPlan(assistant).slots;
+  const outer = slots[0];
   if (outer?.type !== "agent-activity") throw new Error("Expected Agent Activity");
   assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
-  assert.deepEqual(outer.partitions.persistentUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:user-message:steering",
-    "agent-activity-standalone:user-message:hook",
+  assert.deepEqual(outer.partitions.persistentUnits, []);
+  assert.deepEqual(slots.filter(slot => slot.type === "assistant-content").map(slot => slot.block.id), [
+    "user-message:steering", "user-message:hook", "text:answer",
   ]);
   const collapsedLayout = resolveAgentActivityLayout(outer, true);
   assert.equal(collapsedLayout.showToggle, true);
   assert.equal(collapsedLayout.isCollapsed, true);
   assert.deepEqual(collapsedLayout.visibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
-  assert.deepEqual(collapsedLayout.persistentUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:user-message:steering",
-    "agent-activity-standalone:user-message:hook",
-  ]);
+  assert.deepEqual(collapsedLayout.persistentUnits, []);
   const expandedLayout = resolveAgentActivityLayout(outer, false);
   assert.equal(expandedLayout.isCollapsed, false);
   assert.deepEqual(expandedLayout.persistentUnits, []);
   assert.deepEqual(expandedLayout.visibleUnits.map((unit) => unit.id), [
     "agent-activity-group:command-execution:command",
-    "agent-activity-standalone:user-message:steering",
-    "agent-activity-standalone:user-message:hook",
   ]);
 });
 

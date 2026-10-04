@@ -1,4 +1,5 @@
 import type { TurnId } from "./identity";
+import { isAssistantAnswerContent } from "./conversation-presentation";
 import type {
   ApprovalTimelineBlock,
   QuestionTimelineBlock,
@@ -120,20 +121,15 @@ export function deriveTimelineLatestTurnPhase(
   if (turn === null || turn === undefined || (turn.status !== "pending" && turn.status !== "streaming")) {
     return "idle";
   }
-  let hasPrework = false;
+  let phase: TimelineLatestTurnPhase = "idle";
   for (const frame of turn.frames) {
     for (const block of frame.blocks) {
-      if (
-        frame.type === "assistant"
-        && block.type === "text"
-        && block.phase !== "commentary"
-      ) {
-        return "final_answer";
-      }
-      if (frame.type !== "user") hasPrework = true;
+      if (block.type === "user-message") phase = block.messageKind === "steering" ? "prework" : "idle";
+      else if (isAssistantAnswerContent(block)) phase = "final_answer";
+      else if (frame.type !== "user") phase = "prework";
     }
   }
-  return hasPrework ? "prework" : "idle";
+  return phase;
 }
 
 export function groupTimelineFramesByTurn(

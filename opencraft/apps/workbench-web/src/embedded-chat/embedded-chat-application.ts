@@ -1,4 +1,5 @@
 import { createEmbeddedAccountStorage } from "./embedded-account-storage";
+import { HermesPhysicalConnectionPreparation } from "@opencraft/plugin-lightvela-hermes/physical-connection";
 import {
   createWebWorkbenchApplication,
   type WebWorkbenchApplication,
@@ -11,6 +12,8 @@ import {
 export interface EmbeddedChatApplicationOptions extends EmbeddedHostProfileOptions {
   readonly apiBase?: string;
   readonly getSessionToken?: () => string | null;
+  /** In-process capability, never a serializable Host profile field. */
+  readonly physicalConnection?: unknown;
 }
 
 export interface EmbeddedChatApplication {
@@ -23,6 +26,9 @@ export async function createEmbeddedChatApplication(
   options: EmbeddedChatApplicationOptions,
 ): Promise<EmbeddedChatApplication> {
   const profile = embeddedHostProfile(options);
+  if (options.physicalConnection !== undefined && !(options.physicalConnection instanceof HermesPhysicalConnectionPreparation)) {
+    throw new TypeError("Invalid embedded physical preparation capability");
+  }
   // Browser pages and conversation bindings belong to this Bot lifetime.
   // Never restore standalone or another embedded account's browser metadata.
   const browserMetadata = new Map<string, string>();
@@ -39,6 +45,7 @@ export async function createEmbeddedChatApplication(
       ? createEmbeddedAccountStorage(options.getSessionToken)
       : undefined,
     lightVelaRegion: options.region,
+    lightVelaPhysicalConnection: options.physicalConnection,
     navigationMode: "memory",
     deferOptionalFeatures: true,
   });

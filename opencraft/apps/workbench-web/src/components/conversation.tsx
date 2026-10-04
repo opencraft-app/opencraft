@@ -541,7 +541,9 @@ function Frame({
           return (
             <div
               className="thread-frame__slot"
-              data-assistant-copy-content={unit.type === "assistant-content" && unit.block.type === "text" ? "" : undefined}
+              data-presentation-slot-id={unit.id}
+              data-source-item-id={unit.type === "assistant-content" ? unit.block.sourceItemIds[0] : undefined}
+              data-assistant-copy-content={unit.type === "assistant-content" && actions?.copyBlockIds.includes(unit.block.id) ? "" : undefined}
               ref={unit.type === "agent-activity" ? undefined : followContentRef}
               data-virtualized-turn-content={virtualizeSingleSlot ? "" : undefined}
               key={unit.id}

@@ -6,6 +6,7 @@ triggers: ["embedded startup", "opencraft loading performance"]
 owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth:
+  - ctl/pkg/instance/bots.go
   - frontend/src/pages/marketing/opencraft-embedded-workbench.tsx
   - opencraft/apps/workbench-web/src/browser/web-host-proxy-broker.ts
   - opencraft/docs/platform-architecture.md
@@ -20,11 +21,15 @@ derived: false
 # OpenCraft 线上加载性能、启动优化与稳定性诊断
 
 ## goal
+2026-10-05 最新交付授权：“提交，推送，合入master”，随后“继续啊”。提交当前已验证的启动优化源码（CTL批量读取、路由资源准备、TAT物理预备与正式接管），按frontend要求先提交真源再机械同步生成副本/独立提交，接入最新master后推送并走正常MR合并门禁。不使用任务卡、不提交本机kubeconfig或历史队列修改、不发布生产。实时工蜂回读确认旧MR!4961已merged（merge_commit_sha630a61c7ae64c38077aff064bc986b5912fd7ec0）；本轮使用新的follow-up分支/MR，不复用已结束的MR。
+2026-10-05 当前新增授权“好的，该起来”：实施已确认实例的物理 TAT 预连接与正式 Host 单次接管；只在认证国内 Chat 路由准备，不创建额外 Application、Profile、Dashboard/PTY 或聊天执行权限。实例发现以现有同一次 `/v1/instances` 读取的阶段回调发布，不增加一个发现请求；多实例目标未知不猜。前置资源拥有取消/15秒未认领期限；正式 Host 校验账号/地域/实例/API 后接管同一 multiplexer，失败回到原连接路径。不要任务卡；不自动提交、推送或发布。现有 CTL batching 和前端优化修改全部保留。
+最新实施授权：“你直接实现就可以了”，承接 CTL `/bots` 单次远端执行方案。用户明确不使用任务卡：本轮不读写 TAPD 或继续队列流转。实现、回归和隔离验证，不提交/推送或发布生产。先保持物理实例与逻辑Profile分层，批量路径保留通道锁/迁移/预约对账和失败语义；Host连接并行另外核对真实依赖，不把可并行性与已实现混为一谈。
 定位并实施 `https://lightvela.com/agents/chat` 嵌入启动优化第一批：主体资源与 Bot 发现并行、聊天不等待可选代理、内容哈希资源长期缓存。独立站只作对照。
 第二批按最新授权移出可选扩展的首屏等待，并先定位超过40秒未就绪的阻塞阶段；Host修复不在这次“先查”的实施范围。
 
 ## non_goals
-- 最新用户已授权提交、推送并通过 MR 合入 master；不发布、不替换生产，不改 CTL、账户模型。第二批只调整已授权的可选呈现扩展启动调度，不重构通用扩展协议。
+- 当前Git交付授权只覆盖本轮启动优化和正常合并；不绕过review/commit-check、不替用户审核、不修改GitOps/生产。以下“不提交”表述是此前实施阶段的历史授权边界，现以本段与最新goal为准。
+- 本轮新增已授权的物理TAT预备/正式接管，不更改渠道CRUD/claim/confirm/release、实例归属或公共HTTP接口；不发布、不替换生产。此前Git交付授权是历史阶段，本轮新改动不自动提交/推送。
 - 不发送模型消息、不创建 Bot、不输出账户凭据或会话内容。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -70,6 +75,7 @@ derived: false
 | `opencraft/docs/build-matrix.md` 与 Vite 配置 | 独立嵌入制品 | 隔离输出，不覆盖正在运行的预览 |
 | `.agents/context/change-impact.json` | 正式设计映射 | 保留既有文档修改，追加当前启动不变量 |
 | `docs/context/domains/agent-gateway-runtime.md` | 后续 /bots 优化评估边界 | 区分 CTL 执行、公共入口与实际测量，未实施或操作生产 |
+| `docs/context/project/services/ctl.md`、`ctl/docs/README.md` | 本轮router命中control-plane-ops必读与服务入口 | CTL读取批量化复用权威存储、鉴权和地域TAT路径 |
 | `docs/context/project/services/collaboration.md` | 第二批路由必读 | 协作仍借用同一账户/Application，不改服务端连接所有权 |
 | `opencraft/docs/plugin-architecture.md` | 扩展生命周期与依赖 | 完整阅读；保持 Supervisor 激活、回滚与退休权威 |
 | `docs/context/tasks/optimization-queue.md` | 优化需求交付队列 | 回读最新 master 与实时 TAPD，独立分支/卡片 |
@@ -77,6 +83,18 @@ derived: false
 | `docs/context/flows/change-delivery.md` | 源码交付检查 | 独立复验、文档影响和证据 |
 | `docs/context/domains/release-gitops.md` | 发布边界 | 合入 master 不等于生产发布 |
 | `.agents/skills/gongfeng/SKILL.md` 与 `DEPENDENCIES.md` | 工蜂接口与鉴权 | mcporter-internal 不可用，使用已验证的仓库 CI API 路径 |
+
+## 2026-10-05 Follow-up Git 交付复验（最新）
+
+- 外部交付实查：`perf/opencraft-startup-followup-20261005` 已推送，HEAD `da44811b627ba953a494ab60906201f64c0cbc11`；[MR !4971](https://git.woa.com/wisp/mono2/-/merge_requests/4971)，全局 ID 27556944，目标 master。新鲜回读提交检查 pending/block=true，合并保护性预检在发送 PUT 前停止；没有实际合并响应，不推断评审结果。尚未合入 master，未发布或操作任务卡。
+
+- 用户明确授权提交/推送/合入master，不发布生产、不使用任务卡。旧MR!4961实查已merged，不再复用；当前新分支 `perf/opencraft-startup-followup-20261005`。
+- 真源提交 `cda3c5c9e` 共31个相关文件，随后 `6fb303c4c` 正常合入最新master33b29c515，无冲突，保留手机竖屏键盘/输入框高度以及仅显式Embedded账户预检的修复。机械AgentConsole同步提交 `3c48fbb5f` 独立保留，130文件检查通过，sourceRevision准确指向cda3c5c9e27062775136e4382fdaee74a526722a；未手改生成层。
+- 整合后前端10文件168/168通过（含手机visual-viewport邻居）；Host/TAT/Embedded/bootstrap authority9文件121/121通过；CTL全服务go test、go vet和gofmt通过。前端check0new/5resolved、所有OpenCraft workspace类型检查、平台/typography边界、实际分支docs-impact通过。bounded凭据/私钥扫描34文件无命中，MR差异不包含.kube和历史queue修改，后两者仍原样留在工作区。
+- 源码3c48fbb5f匹配Embedded release及完整国内Next生产组合构建通过（106页/194HTML/155版本资源引用/13路由），隔离制品 `/tmp/opencraft-startup-delivery-20261005-srRoIL/embed`。构建生成next-env/font已精确恢复到预构建备份，不提交制品或生成噪声。
+- 新整合制品真实授权API/TAT启动cold/warm2/2通过：editor4772/4693ms、sessions4803/4730ms，17条会话、焦点正确、一个Application/canvas/TAT、提前SessionAuth/正式接管后PtyStart均断言通过；页面/API/静态错误为空，诊断会话撤销204，自有进程/监听已结束。安全结果 `startup-delivery-20261005.json`。仍是线上旧CTL和回环静态服务，非手机/CDN/联合新CTL效果；旧12样本中位数只作先前匹配对照，不与这2条独立复验拼接算收益。
+- 全量gate既有extension-artifacts失败保持公开，不伪称全绿、不在本项修复独立测试。当前源码/生成闭包/整合构建就绪；外部推送、MR和正常合并结果以下一条实际平台/Git回读为准，不把本地merge origin/master当成已合入远端master。
+- `da44811b6` 已推送，MR [!4971](https://git.woa.com/wisp/mono2/-/merge_requests/4971)（globalID27556944）已创建目标master。初始回读检查success后切到pending/block=true；合并保护性预检停止，尚未发送PUT。实际trusted guard包含isolated npm ci/test:embedded-ci、前端隔离安装/校验/双区域构建，不把pending当异常或绕过门禁。新预连接回归已补入 MR 实际 `test:embedded-ci` 专项入口，本机完整入口 166/166 通过（无失败、取消或跳过），保持持续 CI 覆盖接管/取消/失败语义。标准commit-status URL返回404，未反复猜鉴权或索要新令牌；从primary CI定义定位实际检查范围。
 
 ## 2026-10-04 Git 交付复验
 
@@ -92,7 +110,77 @@ derived: false
 - 真实账户端到端耗时来自较早隔离诊断，并非最新 master 回执；诊断 prompt gate 不在交付代码中。尚未完成原始优化前与新版本的受控因果 A/B，不能排除第一批时序变化放大旧竞态，不能把成功样本平均值当作稳定性已解决。
 - 公开分支预览未发布；Fanny/负责人 CR 和完整登录态验收仍待完成。按用户直接源码交付授权创建并尝试正常平台合并，不绕过平台检查；TAPD 保持 open，尚不标记已完成。
 
-## evidence
+## 2026-10-04 偶发卡住归因复查（最新，取代旧制品的交付归因）
+
+- 最新用户授权：“再看看，偶发卡住的问题深入分析下 别是我们这个版本引入的”。仅诊断；不修改产品行为、不提交/推送、不修改 MR/TAPD、不发布或操作云资源。沿用用户授权账户的受审计短期诊断会话，没有发送聊天/付费模型消息。
+- 按 OpenCraft maintenance skill 核对源码、实际制品及真实阶段。补读根/局部 AGENTS、维护 skill 与 verification 清单、CTL 服务入口、frontend-runtime-openspec-i18n 邻接卡及其 Tencent PTY ready 测试；当前正式架构的嵌入启动/所有权段、ensure/transport/multiplexer 和对应测试。没有修改 CTL 或账户数据。
+- **版本纠正**：此前 75 秒 ensure 超时、7631 字节 PtyInput、prompt-gated 对照都来自旧 checkout `5b3a3ccaf` 衍生制品，不是合入前 master 或 MR 最终版。旧制品 buildId `20261004032123-f763ba8af287` 的 bootstrap bundle 不含 `exec /bin/sh -i`；当前两版含有它。不得将这些历史失败用于证明最终 MR 回归或当前生产同样存在长行投递问题。
+- 历史 `493bbc5fa`（2026-09-30）已把 ensure 从一次长 PtyInput 改为 `/bin/sh -c <bootstrap>; exec /bin/sh -i` 的 Program/Args 启动，并处理 PTY error。合入前 `bbd7ffb83` 与 MR `009dfd7b1` 的 ensure blob 都是 `29a486be77bfd7904878f4f8ac3c7a5fa8614320`，旧 checkout 是 `d8aa3fa36e2b7c4c2557459c7bada512ce50a018`；MR 没有修改 ensure/multiplexer/transport。源码一致本身不排除间接时序回归，故另外做真实 A/B。
+- 首轮 A/B 的 feature frontend 使用通用 Next 配置，没有进入 OpenCraft；构造数0、无 embedded/TAT，实际走旧聊天入口。这两条等待样本标为**无效构建配置样本**，不统计为 OpenCraft 超时。已关闭该轮自有浏览器使 finally 撤销会话204。证据 `regression-matched.json` 仅保留作实验排除记录。
+- 有效 A/B：在 `bbd7ffb83` 新独立 worktree 按本 checkout 锁文件安装依赖，分别构建 baseline embedded release 和国内 `eo:cn-lightvela-prod-next` 完整 frontend；MR frontend 按相同组合重新构建，使用已核对的最终 embedded 制品。两版 frontend 使用同一 release ID/区域/API/嵌入路径；各自生成缓存规则。分别106静态页、194 HTML、155版本引用检查成功。没有借用另一个 checkout 的依赖或重建正在运行的服务。
+- 同一诊断账户/真实 API/TAT/既有远端后端；三轮每版 cold/warm，共12条，顺序 baseline→feature、feature→baseline、baseline→feature。每组独立浏览器上下文，warm 复用该上下文缓存。未拦截输入、未等 shell prompt、未人为延迟注册/语音、未节流网络；静态制品在本机 HTTPS 预压缩服务，真实远端 API 不替换。cold 仅指浏览器缓存，不代表停止/重启远端后端。
+
+| 实际制品 | 样本/超时 | 编辑器 cold 中位 | 编辑器 warm 中位 | Host connect 范围 |
+|---|---|---|---|---|
+| master 优化前 `bbd7ffb83` | 6 / 0 | 8819ms | 8870ms | 994–1092ms |
+| MR !4961 最终源码 `009dfd7b1` | 6 / 0 | 6331ms | 5652ms | 958–1010ms |
+
+- 12条均一个 element/Application 构造、一个 canvas、一个物理 TAT WebSocket，编辑器可聚焦、17条会话列表完成，无 pageerror、静态/API 4xx/5xx。每次真正 bootstrap 的 PtyStart 为 `/bin/sh`、Args字节数 `[2,7646]`，**PtyInput=0字节**，READY 均收到，initialize 均完成。没有复现旧 >40 秒失败。baseline SW 激活约2ms后仍等待 document.ready 的4秒 fallback；feature 不读取该 ready 等待，Host→会话列表准备间隔明显缩短。
+- 两版都出现 `config/read`、`connectors/managed/list` 的 -32601（未支持方法），会话列表随后正常成功；它们是共同存在且不阻塞启动的能力差异，不归因为本 MR 卡住。
+- 生产 HTTP 只读核验：当前 `version.json` 为 `embedded-50b1af24da2e`、builtAt `2026-10-04T01:49:22.213Z`；实际 bootstrap bundle `a-DCPzX9iH.js` SHA256 `784db4e605edee31a2f4fbaed9fa260c3e6334a7f6cf39b76ea48fa4d93c1e90` 含 argv 后续 interactive shell 路径。该事实取代先前生产版本摘要；没有把本地 MR 制品当生产已发布。
+- **独立发现的 MR 整合遗漏**：`agent-settings-page.tsx` 的提前资源准备 hook 仍传 `showHiddenAgentTools`，但同页实际 Surface 用 `openCraftChatEnabled = !isGlobal`。`console-show` 默认 false，因此普通国内用户不会提前加载；6条 feature 入口请求都在 /bots 返回后319–365ms才开始，未实现普通用户的 /bots/主体资源并行目标。hook 单测只覆盖两个消费者使用同一 enabled，没覆盖真实页面的不同开关。此项是性能优化漏生效，不是永久 loading 的证据；合入前应统一为实际 rollout authority 并补页面级回归。当前“深入分析”授权下没有改源码。
+- 有效安全元数据：`/tmp/mono2-startup-benchmark-bzrXhq/regression-valid-matched.json`；诊断脚本 `regression-measure.mjs`、构建脚本 `regression-build.mjs`。只保存阶段、帧类型/字节数/布尔标记，PTY正文与令牌仅在进程内解析、不落结果。两个新诊断会话均 DELETE204，自有浏览器/443服务器/auth port-forward 已关闭；构建生成的两个 tracked 文件恢复到本轮前状态，临时 discovery cache 移出交付 checkout。
+- 最终版 ensure 相关5个测试通过（含 Program/Args、禁止 PtyInput、READY/ERROR、PTY error 和保留 proxy owner）。本轮未运行/宣称全仓 gate，也未声称覆盖真实 iPhone、生产 CDN、首次后端启动、锁屏/断网/跨发布或概率很低的所有卡住。
+- **结论**：此前明确定位的长行 PTY 超时来自过时的诊断制品；当前匹配 A/B 没有发现这次优化导致该超时。有限样本不能证明所有偶发卡住已消失；先修正独立发现的 rollout 门禁遗漏，再在准确制品下扩展手机/首次后端/断线恢复取证，不能用旧制品故障推动重复实现已经进入 master 的 Host 修复。
+
+## 2026-10-04 继续优化：真实路由资源并行（当前本地实现）
+
+- 授权为“继续优化看看，6秒还是太慢了点”；本轮只实施前端启动调度，不发布、不提交/推送新改动、不改 CTL 或账户模型。沿用 OPT-010、既有分支和 MR !4961，不新建重复需求。
+- 再次发现外层串行：`NextAgentEntitlementGate` 等待完整 Bot/Pass 数据后才挂载 lazy `AgentSettingsPage`。仅将页面内 preload 的 hidden-tools 开关改对，仍无法提前真实请求。将纯代码 loader 抽到轻量共享库，并在 `AgentsPageClient` 的认证门禁之后、权益/Bot 门禁之前启动；按实际国内 Chat rollout 而不是 console-show 偏好启用。Surface 复用同一 loader；下载代码不创建 Application/Host，所有内容、确认实例/Profile 及连接仍受原门禁约束。
+- 本轮 Context Router 查询 `frontend OpenCraft embedded startup resource preparation rollout parallel bots optimize loading` 无匹配；按有界检索读取真实 Next 路由/门禁与邻接测试。最初猜测 frontend/app、src/next-site、ctl/internal 不存在，回退到 rg --files/实际 import。后续 `next-agent-entitlement-gate.tsx` 与 validate_docs_impact.py 猜测也不存在，改用实际 app-route-shell.tsx 与 validate_change_impact.py；未扩大为无界搜索。
+- 回归42/42：真实 AppRouteShell/NextAgentEntitlementGate 上覆盖普通国内用户（console-show=0）、Bot 未就绪、认证恢复、匿名、国际站、非 Chat、进入/离开 Chat、共享加载去重；相邻 Surface 的失败重试、晚到结果/退休、一 Application 测试保持通过。Frontend check exit0（166 current/171 baseline，0 new/5 resolved）；130文件 Agent Console 同步检查通过；国内生产组合构建 exit0（106静态页、194 HTML、155资源版本引用、13路由）。文档校验0错误/0断链、显式变更集 docs-impact通过；未声明全仓测试或国际构建通过。
+- 公平对照：先保存同一交付 checkout 修改前的完整 frontend/out；修改后按相同国内 release 组合重建，同一个已验证 embedded 制品保持不变。真实 API/TAT、同一授权账户、390×844 viewport、静态域名仅在诊断 Chromium 指向回环 HTTPS、无网络/CPU节流、无 prompt hold/人工延迟；三轮交错 before→after、after→before、before→after，每版 cold/warm 共6次。cold只表示浏览器缓存，不表示新启动远端后端。
+
+| 同配置前端 | 样本/超时 | 编辑器 cold 中位 | 编辑器 warm 中位 |
+|---|---|---|---|
+| 修改前 MR frontend | 6 / 0 | 5506ms | 5276ms |
+| 路由层资源预备修复 | 6 / 0 | 5419ms | 5117ms |
+
+- 热缓存中位差159ms，冷缓存中位差87ms；总样本中位5422→5256.5ms。样本较少且真实后端存在抖动，不用此前另一轮6秒值计算本轮收益，不能声称本轮省了整秒。回环静态服务不体现生产CDN下载往返，移动弱网潜在收益仍未测。
+- 并行契约确实生效：6条新版入口请求开始于338–533ms，均早于对应 /bots 开始或完成；元素在529–739ms定义，确认Bot后3776–4063ms才 configure。旧版入口均在 /bots 返回之后请求。每条均一元素/Application、一canvas、一物理TAT；编辑器可聚焦、17条会话列表完成，无 pageerror/静态或API失败。PtyInput始终0、READY/initialize/list完成；12次成功不能证明所有偶发卡住已消失。
+- 剩余关键路径 /bots：新版3005–3170ms，Host约1秒。源码 `ListInstanceBots` 依次执行 Profile 列表、微信binding、WhatsApp binding，三项各经TAT远端脚本；frontend对多实例已经 Promise.all。没有内部逐阶段生产span，不能按三项推断各恰好1秒。binding get包含锁、旧归属迁移和预约对账，不能删掉或未经建模直接并行。
+- 下一步需确认扩大到 CTL `/bots` 单次批量执行的实现/验证范围，保留鉴权、TAT地域、官方Profile投影、三态gateway_running、通道锁/对账与失败语义；生产发布仍另行授权。现有 MR 正常合并此前被 Review check not passed 拦截，未绕过审核，本轮新修复尚未进入远端分支。
+- 安全元数据 `/tmp/mono2-startup-benchmark-bzrXhq/preload-optimized-matched.json`；本轮诊断会话 DELETE204、浏览器/443静态服务/自有auth-forward均关闭。未发送模型消息、未创建Bot或修改账号数据。构建自动生成的两个 tracked 文件已精确恢复，原 dirty checkout 未改。
+
+## 2026-10-05 CTL Bot读取批量化（本地已实现，未发布）
+
+- 用户授权“你直接实现就可以了”承接本轮 CTL 方案；明确不要任务卡。本轮没有 TAPD/队列流转操作，没有提交/推送、替换服务或生产发布；上一轮既有队列文件修改保持原样。
+- `ListInstanceBots` 改为一次 `execHermesProfileCommand`，仍经既有归属DAO、Running/权益检查、agentuser和地域 TAT adapter。一个 Python 进程按原顺序执行官方 `/api/profiles`、微信get、WhatsApp get；单独操作与批量读取复用提取的同一函数，未复制或删除通道锁/claim/confirm/release规则。Profile失败不触碰通道，通道失败不发布部分目录；不做三条旧命令的隐式fallback。
+- 合并进程不等于共享配置权威：Profile API导入/读取可能加载环境配置，批量程序在其前记录原始环境，结束后恢复，绑定仍按实例原始 HERMES_HOME/ACLI路径读取。真实 Python负例可复现缺少隔离时读错目录，最终测试保持原owner及禁止写入替代目录；这不声称生产此前已发生该环境重定向。
+- 内部完整结果采用 `lightvela.instance-bots.v1` envelope；缺失items/任一owner、null、类型错误、截断均失败。先选择 `json.RawMessage` 再一次性按schema解码，避免复用struct时失败解码遗留字段与之前的JSON进度行拼出假空目录；新增负例先复现假成功再修正。公共响应不变，root default→main、owner/name、gateway unknown/false/true及真实空列表语义保持。
+- 单次命令保持现有 raw-debug120秒预算与请求取消，而非叠加三段预算。可观察通道读取仍可能执行遗留迁移/过期预约对账，各通道按原锁顺序执行；不是分布式事务或跨通道原子快照，先前阶段的对账不会因后续失败而自动回滚。
+- 最终验证：Go1.26.0匹配ctl/go.mod；`go test ./... -count=1 -timeout=90s` 全服务通过，包含HTTP handler、TAT adapter及原渠道操作回归；新路径聚焦 `-race`通过，`go vet ./...`通过，gofmt检查通过。新增10个顶层测试覆盖单TAT/无envd、最大封装命令<64KiB、完整/无效/空结果、存储/执行失败、官方API替身下真实Python脚本、遗留与过期预约、有实际凭据的迟到扫码、held频道锁、正在扫码锁与环境隔离。外部Profile API仅在本地单元测试中替身，真实对照另见下面，不将替身视为生产验收。
+- 真实路径对照沿用已授权手机号的受审计短期诊断登录：公共 `/v1/instances` 发现其一个 Running实例；公共 `/bots` 当前旧版约3145ms/3个Profile。通过现有公开 `/debug/exec` 指定tat，执行从HEAD提取的旧三段读取与当前源文件的完整新脚本，没有发布CTL、修改服务配置、启动/停止Host或发送模型消息。仅原本get就会发生的读取/锁/对账，不做渠道连接或配置修改。
+- 三轮交错 old→new、new→old、old→new；旧三段总时 `3106/3182/3130ms`（中位3130ms），新单次 `1983/1983/1933ms`（中位1983ms），约减少1147ms。旧官方Profile阶段 `1940/1949/1970ms`，绑定阶段各约0.56–0.63秒；当前主要收益确为减少两次远端执行，不宣称三段都各1秒或Profile读取已降至0.6秒。
+- 三组Profile身份、名称、描述、gateway状态及通道归属业务字段全部等价；连续实时读取的目录mtime可能变化，单独验证合法时间值，不要求按字节等价。前面一次朴素JSON字符串比较和一次要求mtime完全相同的试验未通过，均及时停止并撤销会话，不能当产品业务不一致或成功基准；最终比较记录明确业务等价与mtime差异数量。最终新脚本含环境隔离，Go parser进一步硬化不改变该脚本。
+- 安全结果 `/tmp/mono2-startup-benchmark-bzrXhq/ctl-bots-remote-compare.json` 包含script SHA-256、timings/counts和字段等价布尔值，不含token、Profile文本/ID或stdout。本轮所有四次诊断会话均DELETE204，自有auth-forward已关闭。没有完整页面接新CTL的端到端总耗时；不能将5.12秒直接宣称为3秒，真实手机/CDN和首次后端启动未覆盖。
+- 用户指出的并行关系成立：物理TAT握手/凭据只依赖经验证的账号、区域、Running实例，Profile绑定/协议发布才依赖完整Bot/Profile。当前串行源是主站 Next权益/Bot gate和Surface挂载；OpenCraft自身的 `resolveActiveBot`只做实例发现。资源目前并行，完整Host仍在门禁之后；本轮未改物理预连接。后续若实现，需账号/区域/实例代次的单owner和正式Host lease接管，避免双隧道、离开页面/切账号后的迟到执行；不能把完整AppServer open提前伪装成仅TAT握手。
+
+## 2026-10-05 物理 TAT 预连接与正式 Host 接管（本地已实现，未发布）
+
+- 当前授权为本地实现，不提交/推送或发布，不使用任务卡。路由器查询 `frontend opencraft embedded physical connection preparation TAT ownership` 无匹配；在 frontend 现有实例读取、Chat 门禁、Embedded 元素及 Hermes transport/multiplexer 内做 bounded exact search。重读 maintenance skill 和 verification、正式平台架构/构建矩阵的相关段；身份/权益/CTL 边界沿用本次先前分析的 must-read 回执。
+- 现有 `/v1/instances` 同一次读取在等待各实例 `/bots` 前发布账号/token/刷新代次约束的实例发现；不新增一个实例发现请求。认证国内 Chat 路由在内容门禁外准备；只有全列表唯一且 Running 的实例，或 URL 明确选中的 Running 根实例才能准备，多实例的逻辑 Profile 未知目标不猜，暂停目标也不改选其他 Running 实例。
+- Embedded static factory 只建立一次物理 SessionAuth 握手，不创建元素/Application、不启动 PTY/Dashboard、不进行 loopback health probe 或 RPC；未接管期限15秒，账号/路由/发现刷新取消与迟到返回受栅栏约束。正式 Host 仍走原 preflight 和新鲜实例校验，并核对账号/地域/实例/API base 后单次接管原 multiplexer；接管后仅 transport 能关闭连接并启用健康检查，原准备 owner dispose 无权关闭它。失败、过期、丢连接或已认领回到原冷连接路径。旧独立 Embedded 制品缺少 static API 时保留原路径。
+- `./physical-connection` 窄包导出避免静态 preparation import 把整个 Hermes 插件拉入初始闭包；第一次构建中的动态加载失效警告已通过窄导出修正，最终 Embedded 构建无该警告。Surface 读取最新 capability 的 ref，capability 变更不作为创建 Application effect 的依赖；仍只创建一个 Application。
+- 前端最终 `pnpm check` 通过（166current/171baseline，0new、5resolved；47条已有 i18n 告警）；最新9文件167/167通过，覆盖早期实例发布、真正 Surface capability 传递、单元素、模糊目标/暂停目标/账号退休、迟到401不登出新会话、请求取消和旧 Embedded 无 preparation API 的正常启动。OpenCraft 选定7文件114/114与独立 Bot-management 32/32通过，覆盖 SessionAuth-only、接管一次、取消/过期/丢连接、真实 transport 接管与冷连接回退，新测试加入持续 `test:extensions`。Web与Hermes两端TS、平台/typography边界及完整国内 Next+Embedded 构建通过。当前新增配置快照保护：preparation身份及multiplexer健康配置由其owner持有，外部改写/冻结构造options不能改变绑定或阻止接管；启用健康检查成功后才转移资源，失败仍可释放。新增该负例后重建最终Embedded并机械重新装入前端制品。文档影响staged检查空集不能当作源码门禁。
+- 完整前端与匹配 Embedded 制品，旧/新交错3组 cold+warm，共12次真实授权API/TAT启动全部就绪。旧冷编辑器5665/5380/5337ms，中位5380ms；新4623/4684/4671ms，中位4671ms，节省709ms。旧暖5250/5332/5309ms，中位5309ms；新4536/4460/4394ms，中位4460ms，节省849ms。会话列表冷中位5416→4706ms、暖5346→4501ms。Host connect:open 冷中位1038→256ms、暖1027→261ms。
+- 新版6/6记录 `tat:session-adopted`，SessionAuth在1082–1322ms，早于配置3700–4019ms；PtyStart在4134–4422ms，晚于配置。全部样本一个元素、一个canvas、一个TATsocket、17sessions、编辑器焦点正确，浏览器/API/静态资源错误列表为空。未输出 socket/PTY 内容或令牌；诊断会话 DELETE204，浏览器/静态服务器/本轮 auth forward 全部关闭。安全元数据在 `/tmp/mono2-startup-benchmark-bzrXhq/physical-preconnection-20261005.json`，匹配制品在 `/tmp/opencraft-physical-preconnect-20261005-YLhJj9`。
+- 续接后核对上轮完整构建与元数据，未因旧进程session ID失效而从头重新实现。配置所有权硬化后的最终产物追加一组匹配cold/warm对照4/4通过：旧5284/5272ms，新4579/4430ms；正式Host820/1015→252/246ms。新TAT请求在688/538ms开始、于完整Bots返回前完成；SessionAuth1307/1086ms早于configure3933/3808ms，PtyStart4320/4174ms晚于configure。断言单Application/canvas/TAT、焦点、无页面/API/静态错误与正式接管全部通过。诊断会话撤销204，443/18088无自有listener，安全结果 `physical-preconnection-final-20261005.json`。这4个追加样本不替代上轮3组中位数，不声称生产已替换。
+- 本轮额外运行完整 `npm run gate`：i18n检查与10个i18n测试、边界、所有workspace类型检查、4个Electron-launch测试均通过；到 `test:extensions` 时既有 `extension-artifacts.test.ts:38` 因actual包含artifactRef而expected缺失报deep-equal失败并挂起。该测试和extension-runtime相对HEAD无修改，本任务早期已有同一失败记录；只向确认属于本轮的测试进程组发送SIGINT结束，最终exit1，未触碰产品服务。后续全量测试/多端构建未执行，不能声称完整gate通过。当前相关聚焦检查、文档验证0错误/0告警/0断链、显式源码集合docs-impact与diff-check均通过；site-environment-routing映射仍只有不阻断提示，站点选择规则未改变。
+- 该实测使用同一生产旧 CTL、回环静态服务、未人为限速的桌面 Chromium 移动视口；不是生产CDN/真实手机或新版CTL批量化的综合效果，不把之前 `/bots` 节省1147ms直接相加，也不以12次成功证明所有首启/重连竞态不存在。构建生成的 next-env/font 已恢复到本轮构建前备份，源码/用户改动保留。
+- Agent Console 只读同步检查发现 `repositories/http-repositories.ts` 生成副本漂移。frontend AGENTS 要求先获授权提交 frontend 真源，再机械同步并独立提交生成物/sourceRevision；本轮无提交授权，所以此交付门禁明确待处理，不手改生成层、也不宣称全门禁通过。pnpm 不在默认PATH且 Corepack 指向缺失12.9.1缓存；最后使用已安装 npm CLI 和直接 Vitest，不把失败命令当作通过。其他路径猜测 frontend/src/domain/repositories.ts、lightvela-platform/account/lightvela-regions.ts、apps/workbench-web/node_modules/vite/bin/vite.js 已由实际 imports/有界 rg 定位正确路径。
+
+## evidence（以下是早期版本的历史记录）
 - 2026-10-04 09 时左右 CST，隔离 Chromium 手机 viewport（非真实手机、未节流），使用用户授权的受审计短期代登录会话；开启主站既有 console-show rollout 标记，仅在隔离浏览器中设置。
 - 生产嵌入版本：`embedded-f08e38a40a63`，version.json builtAt `2026-10-03T16:00:59.338Z`。源码未完整包含在该主仓库提交树中，不以主仓库 SHA 证明全部本地文件与部署一致；关键等待行为已通过线上浏览器插桩验证。
 - 多次正常冷加载 `opencraft-ready` 11.19 / 11.60 / 11.83 / 11.78 / 11.73 秒；正常缓存刷新 10.06 秒。该指标是嵌入界面接管显示，不宣称已验证真实手机可输入或已有会话历史恢复。
@@ -201,4 +289,4 @@ derived: false
 - 广泛 gate 的范围外失败需另行对账，不把聚焦验证描述成全仓通过。
 
 ## handoff
-第一批与第二批可选呈现调度源码已实现并完成聚焦验证；没有提交、发布或重启生产。长等待明确在Host启动检查，75秒耗尽仍无命令回执；诊断对照高度指向过早长行PTY输入，不是扩展加载或协议初始化。Host可靠投递修复尚未实施，不能声明稳定性验收通过。/bots批量执行与账户模型仍未授权/未实施；正式发布前另需真实手机/CDN冷暖及旧hash闭包验证。
+前端资源并行、CTL读取批量化与物理TAT预连接/单次正式接管均在独立checkout实现，尚未提交/推送或发布。物理预连接完整匹配对照冷中位5380→4671ms、暖5309→4460ms，12/12成功、一Application/TAT；仍用旧生产CTL。CTL脚本单独中位3130→1983ms，综合新版CTL完整页面未测。提交须额外按frontend AGENTS先提交真源再生成同步，既有MR仍需正常审批；本轮不自动提交或使用任务卡。真实手机/CDN冷暖、首个后台启动/重连及旧hash闭包验证未完成；历史长行PTY归因以“偶发卡住归因复查”为准，不重复实现master已有修复。

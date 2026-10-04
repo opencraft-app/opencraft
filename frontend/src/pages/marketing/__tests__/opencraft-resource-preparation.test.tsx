@@ -1,6 +1,7 @@
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { AgentChatMigrationSurface, useEmbeddedWorkbenchResourcePreparation } from "../opencraft-embedded-workbench";
+import { AgentChatMigrationSurface } from "../opencraft-embedded-workbench";
+import { useEmbeddedWorkbenchResourcePreparation } from "@/lib/opencraft-embedded-resources";
 
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 

@@ -123,3 +123,149 @@ test("a late conversation preparation cannot replace a newer Settings intent", a
     assert.equal(commits, 0); assert.equal(cancellations, 1);
   } finally { nav.dispose(); }
 });
+
+test("POP of the retained View resumes readiness locally and fences late results", async () => {
+  const a = createWorkbenchDraftLocation("local", "a");
+  const finishes: Array<(value: any) => void> = [];
+  let commits = 0, cancellations = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: () => new Promise(resolve => { finishes.push(resolve); }),
+  } as any, { getActiveDraft: () => null } as any);
+  const original = nav.getSnapshot().routeScopeId;
+  try {
+    nav.openSettings(); nav.back(); await settle();
+    assert.equal(nav.getSnapshot().applicationRoute.kind, "conversation");
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+    assert.equal(finishes.length, 1, "POP must restart readiness canceled by Settings");
+    nav.openSettings();
+    finishes[0]!({ commit() { commits++; return true; }, cancel() { cancellations++; } });
+    await settle();
+    assert.equal(commits, 0); assert.equal(cancellations, 1);
+    assert.equal(nav.getSnapshot().applicationRoute.kind, "settings");
+    assert.equal(await nav.openChat(), true, "retained presentation does not await physical readiness");
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+    assert.equal(finishes.length, 2);
+    nav.dispose();
+    finishes[1]!({ commit() { commits++; return true; }, cancel() { cancellations++; } });
+    await settle();
+    assert.equal(commits, 0); assert.equal(cancellations, 2);
+  } finally { nav.dispose(); }
+});
+
+test("submission retains ownership over local Chat return and history controls", async () => {
+  const a = createWorkbenchDraftLocation("local", "a");
+  let blocked = false, prepared = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => { prepared++; return { commit: () => true, cancel() {} }; },
+  } as any, { getActiveDraft: () => blocked ? { phase: "submitting" } : null } as any,
+  { mode: "memory", initialEntries: ["/?hostId=local&draftId=expired", "/?hostId=local&draftId=a"],
+    resolveRestoredEntry: entry => ({ ...entry, location: a }) });
+  try {
+    nav.openSettings(); const before = nav.getSnapshot();
+    blocked = true;
+    assert.equal(await nav.openChat(), false);
+    assert.equal(await nav.selectConversation(a), false);
+    nav.back(); await settle();
+    assert.deepEqual(nav.getSnapshot(), before);
+    assert.equal(prepared, 0);
+  } finally { nav.dispose(); }
+});
+
+test("selecting the retained conversation cancels another pending destination", async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchDraftLocation("local", "b");
+  const finishes: Array<(value: any) => void> = [];
+  let cancelled = 0, commits = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: () => new Promise(resolve => { finishes.push(resolve); }),
+  } as any, { getActiveDraft: () => null } as any);
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    const pending = nav.selectConversation(b);
+    assert.equal(await nav.selectConversation(a), true);
+    finishes[0]!({ commit() { commits++; return true; }, cancel() { cancelled++; } });
+    assert.equal(await pending, false);
+    assert.equal(commits, 0); assert.equal(cancelled, 1);
+    assert.deepEqual(nav.getSnapshot().location, a);
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+  } finally { nav.dispose(); }
+});
+
+test("failed selection may be retried and cannot leave an orphaned prepared lease", async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchDraftLocation("local", "b");
+  let attempts = 0, cancelled = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => { const attempt = ++attempts; return {
+      commit() { if (attempt === 1) throw new Error("rejected View"); return true; },
+      cancel() { cancelled++; },
+    }; },
+  } as any, { getActiveDraft: () => null } as any);
+  try {
+    nav.openSettings(); const before = nav.getSnapshot();
+    await assert.rejects(nav.selectConversation(b), /rejected View/);
+    assert.deepEqual(nav.getSnapshot(), before); assert.equal(cancelled, 1);
+    assert.equal(await nav.selectConversation(b), true);
+    assert.equal(attempts, 2); assert.deepEqual(nav.getSnapshot().location, b);
+  } finally { nav.dispose(); }
+});
+
+test("New-chat readiness uses the same lifetime fence as retained returns", async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchDraftLocation("local", "b");
+  let finish!: (value: any) => void, cancelled = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {}, presentLocalDraft() {},
+    prepare: () => new Promise(resolve => { finish = resolve; }),
+  } as any, { getActiveDraft: () => null } as any);
+  try {
+    assert.equal(nav.navigateToHome(b), true);
+    nav.openExtensionView("files");
+    finish({ commit() { throw new Error("old readiness committed"); }, cancel() { cancelled++; } });
+    await settle();
+    assert.equal(cancelled, 1); assert.equal(nav.getSnapshot().applicationRoute.kind, "extension-view");
+  } finally { nav.dispose(); }
+});
+
+test("late promotion is fenced and an inactive Draft cannot acquire navigation ownership", async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchDraftLocation("local", "b");
+  let finish!: (value: any) => void, cancelled = 0, prepared = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {}, presentLocalDraft() {},
+    prepare: async () => null,
+    preparePromotion: () => { prepared++; return new Promise(resolve => { finish = resolve; }); },
+  } as any, { getActiveDraft: () => null } as any);
+  try {
+    const pending = nav.promoteDraft("a", {} as any);
+    nav.navigateToHome(b);
+    const before = nav.getSnapshot();
+    finish({ commit() { throw new Error("old promotion committed"); }, cancel() { cancelled++; } });
+    await assert.rejects(pending, /superseded/);
+    assert.equal(cancelled, 1); assert.deepEqual(nav.getSnapshot(), before);
+    await assert.rejects(nav.promoteDraft("a", {} as any), /no longer owns/);
+    assert.equal(prepared, 1); assert.deepEqual(nav.getSnapshot(), before);
+  } finally { nav.dispose(); }
+});
+
+test("a stale selection completion cannot clear the successor's pending ownership", async () => {
+  const a = createWorkbenchDraftLocation("local", "a"), b = createWorkbenchDraftLocation("local", "b"), c = createWorkbenchDraftLocation("local", "c");
+  const finishes: Array<(value: any) => void> = [];
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: () => new Promise(resolve => { finishes.push(resolve); }),
+  } as any, { getActiveDraft: () => null } as any);
+  try {
+    const old = nav.selectConversation(b), current = nav.selectConversation(c);
+    finishes[0]!(null);
+    assert.equal(await old, false);
+    assert.equal(nav.selectConversation(c), current);
+    assert.equal(finishes.length, 2);
+    finishes[1]!({ commit: () => true, cancel() {} });
+    assert.equal(await current, true);
+    assert.deepEqual(nav.getSnapshot().location, c);
+  } finally { nav.dispose(); }
+});
+
+test("disposed async navigation commands reject through their Promise contract", async () => {
+  const a = createWorkbenchDraftLocation("local", "a");
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {} } as any,
+    { getActiveDraft: () => null } as any);
+  nav.dispose();
+  await assert.rejects(nav.navigate(a), /disposed/);
+  await assert.rejects(nav.openChat(), /disposed/);
+  await assert.rejects(nav.selectConversation(a), /disposed/);
+});
